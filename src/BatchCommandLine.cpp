@@ -146,10 +146,10 @@ int run_batch_command( int argc, char **argv )
       if( batch_peak_fit && batch_act_fit )
         throw std::runtime_error( "You may not specify both 'batch-peak-fit' and 'batch-act-fit'." );
       
-      bool output_stdout, refit_energy_cal, write_n42_with_results;
+      bool output_stdout, fit_all_peaks, refit_energy_cal, write_n42_with_results;
       bool use_exemplar_energy_cal, use_exemplar_energy_cal_for_background;
       bool show_nonfit_peaks, overwrite_output_files, create_csv_output, create_json_output;
-      bool use_existing_background_peaks;
+      bool use_existing_background_peaks, concatenate_to_n42;
       double peak_stat_threshold = 0.0, peak_hypothesis_threshold = 0.0;
       vector<std::string> input_files, report_templates, summary_report_templates;
       string ini_file_path, exemplar_path, output_path, exemplar_samples, background_sub_file, background_samples, template_include_dir;
@@ -164,7 +164,8 @@ int run_batch_command( int argc, char **argv )
       ("exemplar", po::value<std::string>(&exemplar_path),
        "File containing exemplar peaks, that will try to be fitted in the input spectra."
        " Can be a N42-2012 file save from InterSpec that contains peaks, or a peaks CSV file"
-       " exported from the \"Peak Manager\" tab."
+       " exported from the \"Peak Manager\" tab.  You must specify this file, unless you specify the"
+       " 'fit-all-peaks' option to be true."
        )
       ("exemplar-sample-nums", po::value<std::string>(&exemplar_samples),
        "Only applicable if the exemplar file is an N42 file, and there are peaks for multiple"
@@ -177,9 +178,13 @@ int run_batch_command( int argc, char **argv )
        "One or more spectrum files to fit peaks for.  If a directory, all files in it, recursively,"
        " will attempt to be used."
        )
+      ("fit-all-peaks", po::value<bool>(&fit_all_peaks)->implicit_value(true)->default_value(false),
+       "Instead of fitting for peaks in an exemplar file - all peaks in the spectrum will be fit for."
+       )
       ("refit-energy-cal", po::value<bool>(&refit_energy_cal)->implicit_value(true)->default_value(false),
        "After initial peak fit, uses the those peaks (and their assigned nuclides) to adjust energy"
        " gain, then refits the peaks with the updated energy calibration."
+       " If you are fitting for activity/shielding, this will also apply to the background file, if being used."
        )
       ("use-exemplar-energy-cal", po::value<bool>(&use_exemplar_energy_cal)->implicit_value(true)->default_value(false),
        "Use the exemplar N42 energy calibration with the input foreground files.\n"
@@ -221,6 +226,9 @@ int run_batch_command( int argc, char **argv )
        )
       ("result-json-output", po::value<bool>(&create_json_output)->implicit_value(true)->default_value(false),
        "Writes the JSON used to create the report templates, out to file."
+       )
+      ("concatenate-to-n42", po::value<bool>(&concatenate_to_n42)->implicit_value(true)->default_value(false),
+       "Create a N42 file that has spectra and peaks fit from all input files."
        )
       ("print", po::value<bool>(&output_stdout)->implicit_value(true)->default_value(false),
        "Print results to stdout."
@@ -431,7 +439,18 @@ int run_batch_command( int argc, char **argv )
       
       if( use_exemplar_energy_cal_for_background && background_sub_file.empty() )
         throw runtime_error( "You must specify a background spectrum when requesting to use exemplar energy calibration with background." );
-      
+
+      if( exemplar_path.empty() && !fit_all_peaks )
+        throw runtime_error( "You must specify a exemplar spectrum file path, or the 'fit-all-peaks' option to be true." );
+
+      if( use_exemplar_energy_cal && exemplar_path.empty() )
+        throw runtime_error( "You must specify a exemplar spectrum file path when specifying to use the exemplar energy calibration" );
+
+      if( fit_all_peaks && refit_energy_cal )
+        throw runtime_error( "You can not specify to fit for all peaks, and to refit energy calibration"
+                             " (there are no nuclides associated with peaks when you fit for all peaks,"
+                             " so energy recalibration is not possible)." );
+
       const string norm_background_path = SpecUtils::lexically_normalize_path(background_sub_file);
       const string norm_exemplar_path = SpecUtils::lexically_normalize_path(exemplar_path);
       if( (norm_background_path == norm_exemplar_path) && use_exemplar_energy_cal_for_background )
@@ -466,6 +485,7 @@ int run_batch_command( int argc, char **argv )
       
       BatchActivity::BatchActivityFitOptions options;  //derived from BatchPeak::BatchPeakFitOptions
       options.to_stdout = output_stdout;
+      options.fit_all_peaks = fit_all_peaks;
       options.refit_energy_cal = refit_energy_cal;
       options.use_exemplar_energy_cal = use_exemplar_energy_cal;
       options.write_n42_with_results = write_n42_with_results;
@@ -473,6 +493,7 @@ int run_batch_command( int argc, char **argv )
       options.overwrite_output_files = overwrite_output_files;
       options.create_csv_output = create_csv_output;
       options.create_json_output = create_json_output;
+      options.concatenate_to_n42 = concatenate_to_n42;
       options.output_dir = output_path;
       options.background_subtract_file = background_sub_file;
       options.background_subtract_samples = background_sample_nums;
@@ -489,15 +510,15 @@ int run_batch_command( int argc, char **argv )
       
       if( batch_peak_fit )
       {
-        BatchPeak::fit_peaks_in_files( exemplar_path, exemplar_sample_nums, 
-                                      expanded_input_files, options );
+        BatchPeak::fit_peaks_in_files( exemplar_path, nullptr, exemplar_sample_nums, 
+                                      expanded_input_files, {}, options );
       }//if( batch_peak_fit )
       
       if( batch_act_fit )
       {
         options.drf_override = BatchActivity::init_drf_from_name( drf_file, drf_name );
-        BatchActivity::fit_activities_in_files( exemplar_path, exemplar_sample_nums,
-                                               expanded_input_files, options );
+        BatchActivity::fit_activities_in_files( exemplar_path, nullptr, exemplar_sample_nums,
+                                               expanded_input_files, {}, options, nullptr );
       }//if( batch_act_fit )
     }catch( std::exception &e )
     {

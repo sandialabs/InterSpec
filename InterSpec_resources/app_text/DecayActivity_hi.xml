@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dw- short for DecayWindow.cpp,
+       dad- short for DecayActivityDiv
+       dcc- short for DecayChainChart
+       dcn- DecaySelectNuclide
+  -->
+  <message id="dw-qr-window-title">क्षय उपकरण स्थिति</message>
+  <message id="dw-qr-window-text">क्षय उपकरण की वर्तमान स्थिति।</message>
+  <message id="dad-units-label">प्रदर्शन इकाइयाँ:</message>
+  <message id="dad-units-label-phone">इकाइयाँ:</message>
+  <message id="dad-logy-cb">Log-Y स्केल</message>
+  <message id="dad-grid-cb">ग्रिड रेखाएँ</message>
+  <message id="dad-add-nucs">न्यूक्लाइड जोड़ें...</message>
+  <message id="dad-remove-all">सभी हटाएं</message>
+  <message id="dad-sel-nuc-window-title">जोड़ने के लिए न्यूक्लाइड चुनें</message>
+  <message id="dad-mi-act-chart">गतिविधि चार्ट</message>
+  <message id="dad-mi-decay-chain">क्षय श्रृंखला</message>
+  <message id="dad-mi-calc">कैलकुलेटर</message>
+  <message id="dad-arbitrary">मनमाना</message>
+  <message id="dad-time-span-label">समय अवधि:</message>
+  <message id="dad-tt-age">
+    <div>
+      आयु को समय इकाइयों के संयोजन का उपयोग करके निर्दिष्ट किया जा सकता है, जैसे '<b>5.3y 8d 22m</b>' या अर्ध-जीवन में जैसे '<b>2.5 HL</b>'।
+    </div>
+    <div>
+      स्वीकार्य समय इकाइयाँ: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>,
+      <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, या
+      आप <b>hh:mm:ss</b> द्वारा समय अवधि निर्दिष्ट कर सकते हैं। अर्ध-जीवन इकाइयों को
+      <b>hl</b>, <b>halflife</b>, <b>halflives</b>, <b>half-life</b>, <b>half-lives</b>,
+      <b>half lives</b>, या <b>half life</b> का उपयोग करके निर्दिष्ट किया जा सकता है।
+    </div>
+    <div>
+      अर्ध-जीवन इकाइयों या समय अवधि को
+      अन्य इकाइयों के साथ मिश्रित नहीं किया जा सकता है, और यदि कई न्यूक्लाइड निर्दिष्ट किए गए हैं तो पहला माना जाता है। जब कई समय अवधि
+      निर्दिष्ट की जाती हैं, तो उन्हें जोड़ा जाता है, जैसे '1y6months 3m' की व्याख्या
+      18 महीने और 3 मिनट के रूप में की जाती है
+    </div>
+  </message>
+  <message id="dad-yaxis-label-phone">Y-अक्ष:</message>
+  <message id="dad-yaxis-label">Y-अक्ष प्रकार:</message>
+  <message id="dad-gamma-rate">गामा दर</message>
+  <message id="dad-beta-rate">बीटा दर</message>
+  <message id="dad-alpha-rate">अल्फा दर</message>
+  <message id="dad-click-for-more-info">अधिक जानकारी के लिए क्लिक करें</message>
+  <message id="dad-tt-double-click">इस स्रोत न्यूक्लाइड को संपादित करने के लिए डबल क्लिक करें। इस न्यूक्लाइड को प्रदर्शित करने के लिए क्षय श्रृंखला बनाने के लिए एकल क्लिक करें</message>
+  <message id="dad-summary-at-time">समय t={1} पर सारांश</message>
+  <message id="dad-hdr-date">दिनांक ({1})</message>
+  <message id="dad-hdr-total-act">कुल गतिविधि</message>
+  <message id="dad-hdr-total-gammas">कुल गामा</message>
+  <message id="dad-yaxis-title-total-gammas">गामा/सेकंड</message>
+  <message id="dad-hdr-total-betas">कुल बीटा</message>
+  <message id="dad-yaxis-title-total-betas">बीटा/सेकंड</message>
+  <message id="dad-hdr-total-alphas">कुल अल्फा</message>
+  <message id="dad-yaxis-title-total-alphas">अल्फा/सेकंड</message>
+  <message id="dad-chart-click-more-info">अधिक जानकारी के लिए क्लिक करें - T0 के {1} {2} बाद हमारे पास है:</message>
+
+  <message id="dcc-window-title-decay-chain">{1} क्षय श्रृंखला</message>
+  <message id="dcc-window-title-decay-through">{1} के माध्यम से क्षय</message>
+  <message id="dcc-nuc-info-protons">प्रोटॉन: {1}</message>
+  <message id="dcc-nuc-info-mass">द्रव्यमान: {1} Da</message>
+  <message id="dcc-nuc-info-hl-stable">अर्ध-जीवन: स्थिर</message>
+  <message id="dcc-nuc-info-hl">अर्ध-जीवन: {1}</message>
+  <message id="dcc-nuc-info-br-from">{1} से BR: {2}</message>
+  <message id="dcc-nuc-info-br-through">{1} के माध्यम से BR: {2}</message>
+  <message id="dcc-nuc-info-specific-act">विशिष्ट गतिविधि: {1}</message>
+  <message id="dcc-nuc-info-decay-mode">{1} {2} में क्षय होता है, BR {3}</message>
+  <message id="dcc-particle-window-title">क्षय कण ऊर्जा</message>
+  <message id="dcc-particles-from">{1} से कण</message>
+  <message id="dcc-nuc-has-no-particles">इस न्यूक्लाइड में क्षय से कोई कण नहीं है</message>
+  <message id="dcc-particle">कण</message>
+  <message id="dcc-intensity">तीव्रता</message>
+  <message id="dcc-decay-through-window-title">{1} के माध्यम से क्षय</message>
+
+  <!-- The following variables are for the decay chain chart, and will be passed to the JavScript as part of a string, so cant have any single quote (') characters! -->
+  <message id="dcc-xAxisTitle">घटता परमाणु द्रव्यमान</message>
+  <message id="dcc-yAxisTitle">बढ़ता परमाणु क्रमांक</message>
+  <message id="dcc-clickNucTxt">अधिक जानकारी के लिए न्यूक्लाइड पर क्लिक करें।</message>
+  <message id="dcc-clickNucMoreInfoTxt2">प्रदर्शित क्षय श्रृंखला को बदलने के लिए</message>
+  <message id="dcc-clickNucMoreInfoTxt3">ऊपर एक अलग स्रोत न्यूक्लाइड पर क्लिक करें।</message>
+  <message id="dcc-clickNucMblTxt">अधिक जानकारी के लिए न्यूक्लाइड पर टैप करें।</message>
+  <message id="dcc-clickNucMblMoreInfoTxt2">प्रदर्शित क्षय श्रृंखला को बदलने के लिए</message>
+  <message id="dcc-clickNucMblMoreInfoTxt3">ऊपर एक अलग स्रोत न्यूक्लाइड पर क्लिक करें।</message>
+  <message id="dcc-show-decay-products">{nuclide} क्षय उत्पाद दिखाएं</message>
+  <message id="dcc-show-decays-through">{nuclide} के माध्यम से क्षय दिखाएं</message>
+
+
+  <message id="dcn-initial-age">प्रारंभिक आयु: </message>
+
+</messages>

@@ -67,8 +67,10 @@ namespace AppUtils
   /** Similar to #query_str_key_values, but keeps key-value pairs in original order, allows duplicates, and empty values. */
   // std::vector<std::pair<std::string,std::string>> query_key_values( const std::string &query );
   
+  /** Sanatizes a string so it can be a CSS class name. */
+  //std::string sanitize_css_class_name( const std::string &src_name );
   
-#if( USE_BATCH_TOOLS || BUILD_AS_LOCAL_SERVER )
+#if( USE_BATCH_CLI_TOOLS || BUILD_AS_LOCAL_SERVER || BUILD_FOR_WEB_DEPLOYMENT )
   /** Returns the terminal character width */
   InterSpec_API unsigned terminal_width();
 #endif
@@ -121,6 +123,22 @@ namespace AppUtils
 #endif //#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
   
   InterSpec_API std::string file_contents( const std::string &filename );
+  
+  /** Finds a localized XML file based on the current locale.
+   
+   Given a base resource path like "InterSpec_resources/help/some_help", this function
+   will attempt to find the best matching localized XML file by:
+   1. Getting the current locale from WLocale::currentLocale().name()
+   2. Trying progressively more general locale codes:
+      - base + "_" + full_locale + ".xml" (e.g., "help_fr-CH.xml")  
+      - base + "_" + language_code + ".xml" (e.g., "help_fr.xml")
+      - base + ".xml" (fallback to default)
+   3. Returns the path to the first existing file found
+   
+   @param resource_base The base path without locale suffix or .xml extension
+   @returns The full path to the localized XML file that exists, or the base + ".xml" as fallback
+   */
+  InterSpec_API std::string find_localized_xml_file( const std::string &resource_base );
   
 #ifdef _WIN32
 /** Get command line arguments encoded as UTF-8.

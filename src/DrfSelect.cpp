@@ -516,20 +516,23 @@ namespace
     
     const string drfsdir = SpecUtils::append_path( base_dir, "drfs" );
     
-    const vector<string> drf_files = SpecUtils::recursive_ls( drfsdir );
-    for( const auto &p : drf_files )
+    if( SpecUtils::is_directory(drfsdir) )
     {
-      const string fname = SpecUtils::filename(p);
-      if( SpecUtils::iequals_ascii( fname, "Efficiency.csv") )
-        continue;
-      
-      const string type = SpecUtils::file_extension(fname);
-      if( !SpecUtils::iequals_ascii( type, ".csv") && !SpecUtils::iequals_ascii( type, ".tsv") )
-        continue;
-      
-      // Note that this next line will cause duplicate TSV entries - we'll remove them later
-      potential_paths.push_back( p );
-    }//for( const auto &p : drf_files )
+      const vector<string> drf_files = SpecUtils::recursive_ls( drfsdir );
+      for( const auto &p : drf_files )
+      {
+        const string fname = SpecUtils::filename(p);
+        if( SpecUtils::iequals_ascii( fname, "Efficiency.csv") )
+          continue;
+        
+        const string type = SpecUtils::file_extension(fname);
+        if( !SpecUtils::iequals_ascii( type, ".csv") && !SpecUtils::iequals_ascii( type, ".tsv") )
+          continue;
+        
+        // Note that this next line will cause duplicate TSV entries - we'll remove them later
+        potential_paths.push_back( p );
+      }//for( const auto &p : drf_files )
+    }//if( SpecUtils::is_directory(drfsdir) )
   }//potential_rel_eff_files(..)
 
 /*
@@ -1346,38 +1349,7 @@ void RelEffDetSelect::docreate()
   addIcon->clicked().connect( this, &RelEffDetSelect::addFile );
 #endif
   
-  vector<string> user_data_paths;
-
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
-  try
-  {
-    const string userDir = InterSpec::writableDataDirectory();
-    potential_rel_eff_files( userDir, user_data_paths );
-  }catch( std::exception & )
-  {
-    cerr << "Couldnt call into InterSpec::writableDataDirectory()" << endl;
-  }
-#endif
-  
-  try
-  {
-    const string dataDir = InterSpec::staticDataDirectory();
-    potential_rel_eff_files( dataDir, user_data_paths );
-  }catch( std::exception & )
-  {
-    cerr << "Couldnt call into InterSpec::staticDataDirectory()" << endl;
-  }
-
-  
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
-  if( !InterSpecApp::isPrimaryWindowInstance() )
-  {
-    // TODO: decide if we want to do anything here
-  }//if( InterSpecApp::isPrimaryWindowInstance() )
-#endif
-
-  
-  remove_duplicate_paths( user_data_paths );
+  vector<string> user_data_paths = DrfSelect::potential_rel_eff_det_files();
   
   size_t num_user = 0;
   for( const string &path : user_data_paths )
@@ -1472,66 +1444,7 @@ void GadrasDetSelect::docreate()
   addIcon->clicked().connect( this, &GadrasDetSelect::addDirectory );
 #endif
   
-  string pathstr;
-  vector<string> paths;
-#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
-  try
-  {
-    if( m_interspec )
-      pathstr = UserPreferences::preferenceValue<string>( "GadrasDRFPath", m_interspec );
-  }catch( std::exception & )
-  {
-    passMessage( "Error retrieving 'GadrasDRFPath' preference.", WarningWidget::WarningMsgHigh );
-  }
-#endif
-
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
-  try
-  {
-    //ToDo: do more testing and use only the Android implementation
-#if( ANDROID )
-    const string basestr = InterSpec::writableDataDirectory();
-    const vector<string> subdirs = SpecUtils::ls_directories_in_directory( basestr );
-    for( const string &subdirpath : subdirs )
-    {
-      auto subsubdirs = GadrasDirectory::recursive_list_gadras_drfs(subdirpath);
-      if( subsubdirs.size() )
-        pathstr += (pathstr.empty() ? "" : ";") + subdirpath;
-    }//for( const string &subdir : subdirs )
-#else
-    using namespace boost::filesystem;
-    auto itr = directory_iterator( InterSpec::writableDataDirectory() );
-    
-    for( ; itr != directory_iterator(); ++itr )
-    {
-      const boost::filesystem::path &p = itr->path();
-      const string pstr = p.string<string>();
-      if( SpecUtils::is_directory( pstr ) )
-      {
-        auto subdirs = GadrasDirectory::recursive_list_gadras_drfs(pstr);
-        if( subdirs.size() )
-          pathstr += (pathstr.empty() ? "" : ";") + pstr;
-      }
-    }//for( loop over
-#endif //if ANDROID / else
-  }catch( std::exception &e )
-  {
-    cerr << "Got exception looking for GADRAS DRFs in user document dir: " << e.what() << endl;
-  }//try / catch
-#endif
-  
-  SpecUtils::split( paths, pathstr, "\r\n;" );
-  
-  //Make sure we always at least have the default generic detectors available.
-  bool hasGeneric = false;
-  for( size_t i = 0; !hasGeneric && (i < paths.size()); ++i )
-    hasGeneric = (paths[i].find("GenericGadrasDetectors") != string::npos);
-  
-  if( !hasGeneric )
-  {
-    const string drfpaths = SpecUtils::append_path( InterSpec::staticDataDirectory(), "GenericGadrasDetectors" );
-    paths.push_back( drfpaths );
-  }
+  vector<string> paths = DrfSelect::potential_gadras_det_dirs( m_interspec );
   
     
   for( const string &path : paths )
@@ -1766,8 +1679,7 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
 //                     );
   //m_pathSelectedSignal->connect( boost::bind( &SpecFileQueryWidget::newElectronPathSelected, this, boost::placeholders::_1 ) );
 //#elif( BUILD_AS_OSX_APP )
-//  SpecFileQuery::setIsSelectingDirectory( true );
-//  setSearchDirectory( "" );
+//  see usage of macOsUtils::showFilePicker(...)
 //  m_baseLocation = new WFileUpload();
 //  m_baseLocation->changed().connect( this, &SpecFileQueryWidget::newMacOsPathSelected );
 //  linelayout->addWidget( m_baseLocation, 0, 1 );
@@ -1824,11 +1736,15 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
   m_pathSelectedSignal->connect( boost::bind( &SpecFileQueryWidget::newElectronPathSelected, this, boost::placeholders::_1 ) );
 #elif( BUILD_AS_OSX_APP )
  //For macOS dont saved picked directory to preferences in DB as sandboxing will mess this up.
-  SpecFileQuery::setIsSelectingDirectory( true );
-  setSearchDirectory( "" );
-  m_baseLocation = new WFileUpload();
-  m_baseLocation->changed().connect( this, &SpecFileQueryWidget::newMacOsPathSelected );
-  linelayout->addWidget( m_baseLocation, 0, 1 );
+ 
+ ... use similar to above for electron, but call below inseadt of Electron stuff
+ macOsUtils::showFilePicker( "Select Directory", "Select base-directory of reference spectra.",
+                            canChooseFiles, canChooseDirectories, allowsMultipleSelection,
+                            on_select_callback );
+ 
+  //m_baseLocation = new WFileUpload();
+  //m_baseLocation->changed().connect( this, &SpecFileQueryWidget::newMacOsPathSelected );
+  //linelayout->addWidget( m_baseLocation, 0, 1 );
 #else
 */
   
@@ -2002,51 +1918,7 @@ std::shared_ptr<DetectorPeakResponse> GadrasDirectory::parseDetector( string pat
 
 vector<string> GadrasDirectory::recursive_list_gadras_drfs( const string &sourcedir )
 {
-  vector<string> files;
-  if( !SpecUtils::is_directory( sourcedir ) )
-    return files;
-  
-  const string csv_file = SpecUtils::append_path( sourcedir, "Efficiency.csv");
-  const string dat_file = SpecUtils::append_path( sourcedir, "Detector.dat");
-  
-  if( SpecUtils::is_file(csv_file) && SpecUtils::is_file(dat_file) )
-    files.push_back( sourcedir );
-  
-  //ToDo: Maybe we should use the Android implemenatation always.
-#if( ANDROID )
-  const vector<string> subdirs = SpecUtils::ls_directories_in_directory( sourcedir );
-  for( const string &subdirpath : subdirs )
-  {
-    auto subsubdirs = recursive_list_gadras_drfs( subdirpath );
-    files.insert( end(files), begin(subsubdirs), end(subsubdirs) );
-  }//for( const string &subdir : subdirs )
-#else
-using namespace boost::filesystem;
-  directory_iterator end_itr; // default construction yields past-the-end
-  
-  directory_iterator itr;
-  try
-  {
-    itr = directory_iterator( sourcedir );
-  }catch( std::exception & )
-  {
-    //ex: boost::filesystem::filesystem_error: boost::filesystem::directory_iterator::construct: Permission denied: "..."
-    return files;
-  }
-  
-  for( ; itr != end_itr; ++itr )
-  {
-    const boost::filesystem::path &p = itr->path();
-    const string pstr = p.string<string>();
-    if( SpecUtils::is_directory( pstr ) )
-    {
-      auto subdirs = recursive_list_gadras_drfs(pstr);
-      files.insert( end(files), begin(subdirs), end(subdirs) );
-    }
-  }//for( loop over
-#endif //if ANDROID / else
-  
-  return files;
+  return DrfSelect::recursive_list_gadras_drfs( sourcedir );
 }//vector<string> recursive_list_gadras_drfs( const string &sourcedir )
 
 
@@ -3955,6 +3827,164 @@ void DrfSelect::updateChart()
 } //DrfSelect::updateChart()
 
 
+std::vector<std::string> DrfSelect::potential_rel_eff_det_files()
+{
+  vector<string> user_data_paths;
+
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
+  try
+  {
+    const string userDir = InterSpec::writableDataDirectory();
+    potential_rel_eff_files( userDir, user_data_paths );
+  }catch( std::exception & )
+  {
+    cerr << "Couldnt call into InterSpec::writableDataDirectory()" << endl;
+  }
+#endif
+
+  try
+  {
+    const string dataDir = InterSpec::staticDataDirectory();
+    potential_rel_eff_files( dataDir, user_data_paths );
+  }catch( std::exception & )
+  {
+    cerr << "Couldnt call into InterSpec::staticDataDirectory()" << endl;
+  }
+
+
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+  if( !InterSpecApp::isPrimaryWindowInstance() )
+  {
+    // TODO: decide if we want to do anything here
+  }//if( InterSpecApp::isPrimaryWindowInstance() )
+#endif
+
+
+  remove_duplicate_paths( user_data_paths );
+
+  return user_data_paths;
+}//DrfSelect::potential_rel_eff_det_files()
+
+
+std::vector<std::string> DrfSelect::recursive_list_gadras_drfs( const std::string &sourcedir )
+{
+  vector<string> files;
+  if( !SpecUtils::is_directory( sourcedir ) )
+    return files;
+
+  const string csv_file = SpecUtils::append_path( sourcedir, "Efficiency.csv");
+  const string dat_file = SpecUtils::append_path( sourcedir, "Detector.dat");
+
+  if( SpecUtils::is_file(csv_file) && SpecUtils::is_file(dat_file) )
+    files.push_back( sourcedir );
+
+  //ToDo: Maybe we should use the Android implemenatation always.
+#if( ANDROID )
+  const vector<string> subdirs = SpecUtils::ls_directories_in_directory( sourcedir );
+  for( const string &subdirpath : subdirs )
+  {
+    auto subsubdirs = recursive_list_gadras_drfs( subdirpath );
+    files.insert( end(files), begin(subsubdirs), end(subsubdirs) );
+  }//for( const string &subdir : subdirs )
+#else
+  using namespace boost::filesystem;
+  directory_iterator end_itr; // default construction yields past-the-end
+
+  directory_iterator itr;
+  try
+  {
+    itr = directory_iterator( sourcedir );
+  }catch( std::exception & )
+  {
+    //ex: boost::filesystem::filesystem_error: boost::filesystem::directory_iterator::construct: Permission denied: "..."
+    return files;
+  }
+
+  for( ; itr != end_itr; ++itr )
+  {
+    const boost::filesystem::path &p = itr->path();
+    const string pstr = p.string<string>();
+    if( SpecUtils::is_directory( pstr ) )
+    {
+      auto subdirs = recursive_list_gadras_drfs(pstr);
+      files.insert( end(files), begin(subdirs), end(subdirs) );
+    }
+  }//for( loop over
+#endif //if ANDROID / else
+
+  return files;
+}//DrfSelect::recursive_list_gadras_drfs()
+
+
+std::vector<std::string> DrfSelect::potential_gadras_det_dirs( InterSpec *interspec )
+{
+  string pathstr;
+  vector<string> paths;
+
+#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
+  try
+  {
+    if( interspec )
+      pathstr = UserPreferences::preferenceValue<string>( "GadrasDRFPath", interspec );
+  }catch( std::exception & )
+  {
+    if( interspec )
+      passMessage( "Error retrieving 'GadrasDRFPath' preference.", WarningWidget::WarningMsgHigh );
+  }
+#endif
+
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
+  try
+  {
+    //ToDo: do more testing and use only the Android implementation
+#if( ANDROID )
+    const string basestr = InterSpec::writableDataDirectory();
+    const vector<string> subdirs = SpecUtils::ls_directories_in_directory( basestr );
+    for( const string &subdirpath : subdirs )
+    {
+      auto subsubdirs = DrfSelect::recursive_list_gadras_drfs(subdirpath);
+      if( subsubdirs.size() )
+        pathstr += (pathstr.empty() ? "" : ";") + subdirpath;
+    }//for( const string &subdir : subdirs )
+#else
+    using namespace boost::filesystem;
+    auto itr = directory_iterator( InterSpec::writableDataDirectory() );
+
+    for( ; itr != directory_iterator(); ++itr )
+    {
+      const boost::filesystem::path &p = itr->path();
+      const string pstr = p.string<string>();
+      if( SpecUtils::is_directory( pstr ) )
+      {
+        auto subdirs = DrfSelect::recursive_list_gadras_drfs(pstr);
+        if( subdirs.size() )
+          pathstr += (pathstr.empty() ? "" : ";") + pstr;
+      }
+    }//for( loop over
+#endif //if ANDROID / else
+  }catch( std::exception &e )
+  {
+    cerr << "Got exception looking for GADRAS DRFs in user document dir: " << e.what() << endl;
+  }//try / catch
+#endif
+
+  SpecUtils::split( paths, pathstr, "\r\n;" );
+
+  //Make sure we always at least have the default generic detectors available.
+  bool hasGeneric = false;
+  for( size_t i = 0; !hasGeneric && (i < paths.size()); ++i )
+    hasGeneric = (paths[i].find("GenericGadrasDetectors") != string::npos);
+
+  if( !hasGeneric )
+  {
+    const string drfpaths = SpecUtils::append_path( InterSpec::staticDataDirectory(), "GenericGadrasDetectors" );
+    paths.push_back( drfpaths );
+  }
+
+  return paths;
+}//DrfSelect::potential_gadras_det_dirs()
+
+
 std::shared_ptr<DetectorPeakResponse> DrfSelect::parseRelEffCsvFile( const std::string filename )
 {
 #ifdef _WIN32
@@ -4624,7 +4654,7 @@ void DrfSelect::finishWithNoDetector()
 }//void finishWithNoDetector()
 
 
-vector<pair<string,string>> DrfSelect::avaliableGadrasDetectors() const
+vector<pair<string,string>> DrfSelect::avaliableGadrasDetectors( InterSpec *viewer )
 {
   vector<pair<string,string>> answer;
 
@@ -4633,10 +4663,9 @@ vector<pair<string,string>> DrfSelect::avaliableGadrasDetectors() const
   
 #if( BUILD_FOR_WEB_DEPLOYMENT )
   const string datadir = InterSpec::staticDataDirectory();
-  const string drfpaths = SpecUtils::append_path( datadir, "GenericGadrasDetectors" )
-                          + ";" + SpecUtils::append_path( datadir, "OUO_GadrasDetectors" );
+  const string drfpaths = SpecUtils::append_path( datadir, "GenericGadrasDetectors" );
 #else
-  const string drfpaths = UserPreferences::preferenceValue<string>( "GadrasDRFPath", m_interspec );
+  const string drfpaths = UserPreferences::preferenceValue<string>( "GadrasDRFPath", viewer );
 #endif
   
   vector<string> paths;
@@ -4828,11 +4857,29 @@ shared_ptr<DetectorPeakResponse> DrfSelect::initARelEffDetector( const SpecUtils
         
       case SpecUtils::DetectorType::KromekD3S:
         return { "D3S", "Kromek D3S", "D3", "Kromek D3S", "Kromek D3" };
-      
-      case SpecUtils::DetectorType::RadiaCode:
-        return { "Radiacode 102", "Radiacode", "Radiacode 101" };
+
+      case SpecUtils::DetectorType::KromekD5:
+        return { "D5", "KromekD5", "Kromek-D5", "Kromek D5" };
+
+      case SpecUtils::DetectorType::KromekGR1:
+        return { "GR1", "Kromek GR1", "Kromek-GR1" };
+
+      case SpecUtils::DetectorType::RadiaCodeCsI10:
+        return { "Radiacode 102", "Radiacode", "Radiacode 101", "Radiacode 103" };
         break;
-        
+
+      case SpecUtils::DetectorType::RadiaCodeCsI14:
+        return { "Radiacode 110" };
+        break;
+
+      case SpecUtils::DetectorType::RadiaCodeGAGG10:
+        return { "Radiacode 103G" };
+        break;
+
+      case SpecUtils::DetectorType::Raysid:
+        return { "Raysid" };
+        break;
+
       case SpecUtils::DetectorType::Fulcrum:
         //return {};
         break;
@@ -5031,6 +5078,10 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector(
     case DetectorType::IdentiFinderR500LaBr:       name = "IdentiFINDER-R500-LaBr3"; break;
       
     case SpecUtils::DetectorType::KromekD3S:       name = "D3S"; break;
+    case SpecUtils::DetectorType::KromekD5:        name = "Kromek-D5"; break;
+    case SpecUtils::DetectorType::KromekGR1:       name = "Kromek-GR1-CZT"; break;
+    case SpecUtils::DetectorType::Raysid:          name = "Raysid"; break;
+    case SpecUtils::DetectorType::RadiaCodeCsI10:  name = "Radiacode 102"; break;
     case DetectorType::Fulcrum40h:                 name = "Fulcrum40h"; break;
     case DetectorType::IdentiFinderR425NaI: 	     name = "IdentiFINDER-R425"; break;
     case DetectorType::Sam950:                     name = "SAM-950GN-N30"; break;
@@ -5046,7 +5097,8 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector(
     case DetectorType::RIIDEyeLaBr:
     case DetectorType::Fulcrum:
     case DetectorType::IdentiFinderR425LaBr:
-    case SpecUtils::DetectorType::RadiaCode:
+    case SpecUtils::DetectorType::RadiaCodeCsI14:
+    case SpecUtils::DetectorType::RadiaCodeGAGG10:
       // \TODO: fill in these names
       break;
   }//switch( type )
@@ -5301,7 +5353,7 @@ Wt::Signal<> &DrfSelect::done()
 
 DrfSelectWindow::DrfSelectWindow( InterSpec *viewer )
   : AuxWindow( WString::tr("window-title-select-det-eff-fcn"),
-              Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+              AuxWindowProperties::IsModal
                    | AuxWindowProperties::TabletNotFullScreen
                    | AuxWindowProperties::DisableCollapse
                    | AuxWindowProperties::EnableResize

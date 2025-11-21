@@ -25,6 +25,7 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
 #include <vector>
 #include <memory>
 #include <istream>
@@ -80,19 +81,6 @@ struct SandiaDecayNuc
   const ReactionGamma::Reaction *reaction = nullptr;
 };//struct SandiaDecayNuc
 
-
-/** Information about a SandiaDecay defined nuclide for input into relative efficiency calculation.
- */
-/*
-template<typename T>
-struct SandiaDecayNucRelAct
-{
-  const SandiaDecay::Nuclide *nuclide = nullptr;
-  /// Age at start of measurement.
-  double age = -1.0;
-  T rel_activity = -1.0;
-};//struct SandiaDecayNucRelAct
-*/
 
 /** Struct to specify the yield of a nuclide, that will be associated with a specific peak. */
 struct GenericLineInfo
@@ -204,10 +192,31 @@ struct ManualActRatioConstraint
 */
 };//struct ManualActRatioConstraint
 
+
+// As of 20250509 using MassFractionConstraint has not been tested at all, beyond that it compiles - so I'll leave this flag here to help rember to check it out.
+#define USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT 1
+
+#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
+/** A constraint on the mass fraction of an element in a sample.
+ */
+struct MassFractionConstraint
+{
+  std::string m_nuclide;
+  double m_mass_fraction_lower;
+  double m_mass_fraction_upper;
+
+  /** You must specify the specific activities of each nuclide for this same element,
+   including for this nuclide itself.
+   */
+  std::map<std::string, double> m_specific_activities;
+};//struct MassFractionConstraint
+#endif //USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT
+
 /** Adds the `GenericLineInfo` info (e.g. nuclides and their BR) to input `peaks` by clustering gamma lines of
  provided nuclides.
  
- @param peaks Input peaks, with all info except `GenericPeakInfo::m_source_gammas` filled out
+ @param peaks Input peaks, with all info except `GenericPeakInfo::m_source_gammas` filled out.
+        Note: there must not be any duplicate energies, or else an exception will be thrown, as assignment would be ambigious..
  @param nuclides The input nuclides to cluster and assign to peaks
  @param real_time The real time of the measurement - only used if correcting for the nuclides decay during measurement
         \sa `SandiaDecayNuc::correct_for_decay_during_meas`
@@ -348,8 +357,6 @@ struct IsotopeRelativeActivity
   /** The uncertainty of the activity; this value is just the sqrt of the diagonal of the relative
    activity covariance matrix.  I.e., it doesnt account for uncertainty of the relative efficiency;
    correlations between isotope activities could also be important, and not taken into account here.
-   
-   TODO: check correlations between isotopes to see if we need to take this into account to have a reasonable uncertainty
    */
   double m_rel_activity_uncert;
 };//struct IsotopeRelativeActivity
@@ -433,7 +440,17 @@ struct RelEffInput
   /** The activity ratio constraints. */
   std::vector<ManualActRatioConstraint> act_ratio_constraints;
 
-
+#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
+  /** The mass fraction constraints. 
+   
+   Note: this initial implementation is less than ideal, as the initial relative activities
+   of the non-mass-fraction constrained isotopes are determined by just ignoring the 
+   mass-fraction-constrained isotopes exist at all.  This can lead to say the 185 keV peak
+   being attributed to the tiny (BR=1.3E-4) peak of U238 at 184.8 keV, instead of the
+   main peak of U235.
+  */
+  std::vector<MassFractionConstraint> mass_fraction_constraints;
+#endif //USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT
   /** Checks that the nuclide constraints are valid.
 
    Checks for cyclical constraints, and that all constrained nuclides are found in #nuclides.
@@ -491,7 +508,9 @@ struct RelEffSolution
    relative activities, in the same index ordering as \p m_rel_activities. 
    But also see `m_activity_norms`, as you need to multiple the relative activities by these
    scale factors before using with this covariance matrix.
-   
+   If a activity was constrained to a non-zero mass-fraction range, then the row and column of that nuclides
+   activity will be d(RelAct)/d(par).
+
    If the equation form is `RelActCalc::RelEffEqnForm::PhysicalModel`, then the following
    indeices are for the shielding parameters:
    - {self-atten AN}
@@ -558,6 +577,10 @@ struct RelEffSolution
    The entries in this vector correspond to \p m_rel_activities on an index-by-index basis.
    
    To state it another way, these are the relative activities if the relative efficiency curve is 1.0.
+
+   If a nuclide is controlled by another nuclide, its value will be -1.
+   If the mass-fraction is fixed to a specific value, its value in this entry will be -1.0
+   If the mass-fraction is constrained to a non-zero range, its value in this entry will be 1.0
    */
   std::vector<double> m_activity_norms;
   
@@ -619,7 +642,13 @@ struct RelEffSolution
    Throws std::exception if an invalid nuclide.
    */
   double relative_activity( const std::string &nuclide ) const;
-  
+
+  /** Returns the uncertainty of a nuclide.
+
+      Will throw exception if covariances were not computed, or invlaid nuclide.
+   */
+  double relative_activity_uncertainty( const std::string &nuclide ) const;
+
   /** The fit relative efficiency curve value; the curve is shifted so its centered around 1
    over all your input points.
    */

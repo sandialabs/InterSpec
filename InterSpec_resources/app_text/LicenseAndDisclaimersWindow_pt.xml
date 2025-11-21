@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ladw- is short for LicenseAndDisclaimersWindow
+  -->
+  <message id="ladw-mi-disclaimer">Isenção de Responsabilidade</message>
+  <message id="ladw-mi-credits">Créditos</message>
+  <message id="ladw-mi-contact">Contato</message>
+  <message id="ladw-mi-license">Licença</message>
+  <message id="ladw-mi-data">Dados</message>
+  <message id="ladw-data-location-user">
+    Os dados do usuário são armazenados em
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-data-location-static">
+    Os dados que vêm com o InterSpec, como informações de decaimento nuclear, seção transversal e similares são armazenados em
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-show-data-location">Abrir no Explorer</message>
+  <message id="ladw-show-data-location-macOS">Abrir no Finder</message>
+  <message id="ladw-show-data-location-win">mostrar</message>
+  <message id="ladw-data-location-network">
+    Você também pode usar o InterSpec do seu navegador em (o número da porta mudará quando você reiniciar o InterSpec):
+    <div class="DataLocation">http://127.0.0.1:{1}</div>
+  </message>
+  <message id="ladw-user-stats">
+      Você usou ativamente o InterSpec por aproximadamente {1}, para abrir {2} arquivos, ao longo de {3} sessões desde {4}.
+  </message>
+  <message id="ladw-external-none">O InterSpec não envia ou recebe dados externos ao seu dispositivo.</message>
+  <message id="ladw-external-only-remote-rid">O InterSpec não envia ou recebe dados externos ao seu dispositivo, exceto quando o recurso RID Externo é usado.</message>
+  <message id="ladw-external-only-map">O InterSpec não envia ou recebe dados externos ao seu dispositivo, exceto quando o recurso de Mapa é usado.</message>
+  <message id="ladw-external-remote-rid-and-map">O InterSpec não envia ou recebe dados externos ao seu dispositivo, exceto quando os recursos de Mapas ou RID Externo são usados.</message>
+  <message id="ladw-local-store-info">
+    <br />
+    O InterSpec armazena localmente preferências, espectros que você carrega, estados de aplicativo salvos e estatísticas de uso.
+    Essas informações não saem do seu dispositivo e podem ser excluídas removendo o diretório de dados do usuário mostrado acima.
+  </message>
+  <message id="ladw-google-map">
+    <br />
+    Quando o recurso Google Maps é usado, as informações de localização do arquivo de espectro são enviadas ao Google para receber mapas da localização relevante.
+  </message>
+  <message id="ladw-leaflet-map">
+    <br />
+    Quando a ferramenta Mapas é usada, blocos de mapa são solicitados de <a href="https://arcgis.com">https://arcgis.com</a>
+    para a área que abrange as coordenadas GPS das medições de radiação, mas a marcação/exibição dos dados de radiação nos mapas é feita em seu dispositivo.
+  </message>
+  <message id="ladw-remote-rid">
+    <br />
+    Para a ferramenta RID Externa, consulte a política de privacidade de
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-remote-rid-none">
+    Para a ferramenta RID Externa, consulte a política de privacidade para a URL que você inserir.
+  </message>
+</messages>

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- gxsg- is short for GammaXsGui -->
+  <message id="gxsg-material-formula">Material/Fórmula</message>
+  <message id="gxsg-tt-material">
+    Você pode inserir o nome de um material ou elemento predefinido (limpe o texto do formulário
+    e clique na seta à direita do formulário para ver todas as opções predefinidas), ou pode
+    inserir uma fórmula química como 'H0.112 O0.88' onde os números são a
+    densidade em g/cm3, (ou use fração de massa e campo Densidade), do
+    elemento precedente.
+  </message>
+  <message id="gxsg-total-atten-xs">Seção de choque de aten. total</message>
+  <message id="gxsg-compton-label">Compton</message>
+  <message id="gxsg-rayleigh-label">Rayleigh</message>
+  <message id="gxsg-photoelec-label">Fotoelétrico</message>
+  <message id="gxsg-pp-label">Produção de pares</message>
+  <message id="gxsg-mass-avrg-an">Núm atômico médio de massa</message>
+  <message id="gxsg-opt-atten">Atenuação (opcional):</message>
+  <message id="gxsg-density-label">Densidade:</message>
+  <message id="gxsg-thickness-label">Espessura:</message>
+  <message id="gxsg-tt-thickness">Espessura do atenuador.</message>
+  <message id="gxsg-trans-frac-label">Fração Trans.</message>
+  <message id="gxsg-tt-trans-frac">Esta é a fração de gamas que passarão pela blindagem especificada.</message>
+  <message id="gxsg-tt-distance">Esta é a distância do centro da fonte ao detector.</message>
+  <message id="gxsg-intrinsic-eff-label">Eficiência Intrínseca</message>
+  <message id="gxsg-tt-intrinsic-eff">Eficiência intrínseca (eficiência de detecção no pico de gamas atingindo a face do detector).</message>
+  <message id="gxsg-solid-angle-frac-label">Fração de Ângulo Sólido</message>
+  <message id="gxsg-tt-solid-angle-frac">Fração de ângulo sólido do detector selecionado à distância especificada.</message>
+  <message id="gxsg-det-eff-label">Eficiência de Detecção</message>
+  <message id="gxsg-tt-det-eff">Eficiência intrínseca vezes fração de ângulo sólido. Por exemplo, a fração de gamas saindo da blindagem que serão detectados. Não inclui atenuação.</message>
+  <message id="gxsg-total-eff-label">Eficiência Total</message>
+  <message id="gxsg-tt-total-eff">Fração de transmissão vezes eficiência de detecção. Por exemplo, a fração de gamas emitidos da fonte que serão detectados.</message>
+  <message id="gxsg-warn-suspect">Cálculo XS pode ser suspeito: {1}</message>
+  <message id="gxsg-tool-state-title">Estado da Ferramenta Gamma XS</message>
+  <message id="gxsg-tool-state-text">Estado atual da ferramenta xs.</message>
+</messages>

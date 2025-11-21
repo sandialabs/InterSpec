@@ -24,8 +24,11 @@
 #include "InterSpec_config.h"
 
 #include <cmath>
+#include <map>
 #include <string>
 #include <vector>
+#include <memory>
+#include <algorithm>
 #include <assert.h>
 #include <iostream> //for cout, only for debug
 #include <cstring>
@@ -33,9 +36,13 @@
 
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/SpecUtilsAsync.h"
+#include "SpecUtils/SpecFile.h"
 
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/RelActCalc.h"
+#include "InterSpec/PeakDef.h"
+#include "InterSpec/PeakFit.h"
 #include "InterSpec/XmlUtils.hpp"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -43,14 +50,23 @@
 #include "InterSpec/GammaInteractionCalc.h"
 
 #include "InterSpec/RelActCalc_imp.hpp"
+#include "InterSpec/PeakFit_imp.hpp"
 
 using namespace std;
 
 namespace 
 {
   /** Make "Pu (plutonium)" into "Pu", for printing PhysicalModelShieldInput materials. */
-  string cleanup_mat_name( string text )
+  string cleanup_mat_name( const std::shared_ptr<const Material> &material )
   {
+    assert( material );
+    if( !material )
+      return "null";
+    
+    string text = material->name;
+    if( !material->description.empty() && (material->description.size() < material->name.size()) )
+      text = material->description;
+    
     size_t first = text.find('(');
     if( first != std::string::npos )
     {
@@ -496,204 +512,6 @@ const std::string &to_description( const PuCorrMethod method )
 }
 
 
-Pu242ByCorrelationOutput correct_pu_mass_fractions_for_pu242( Pu242ByCorrelationInput input, PuCorrMethod method )
-{
-  // First, lets normalize the the input relative mass, jic it isnt already
-  float sum_input_mass = 0.0f;
-  sum_input_mass += input.pu238_rel_mass;
-  sum_input_mass += input.pu239_rel_mass;
-  sum_input_mass += input.pu240_rel_mass;
-  sum_input_mass += input.pu241_rel_mass;
-  sum_input_mass += input.other_pu_mass;
-  
-  // TODO: in principle we want to account for the decay of Am241 and Pu241 better, but for now we'll just be really gross about it and equate the two nuclides
-  sum_input_mass += input.am241_rel_mass;
-  
-  input.pu238_rel_mass /= sum_input_mass;
-  input.pu239_rel_mass /= sum_input_mass;
-  input.pu240_rel_mass /= sum_input_mass;
-  input.pu241_rel_mass /= sum_input_mass;
-  input.am241_rel_mass /= sum_input_mass;
-  input.other_pu_mass  /= sum_input_mass;
-  
-  double pu242_mass_frac = 0.0, fractional_uncert = 0.0;
-  switch( method )
-  {
-    case PuCorrMethod::Bignan95_PWR:
-    case PuCorrMethod::Bignan95_BWR:
-    {
-      // Note: Bignan 98 provides a nice "database" in Table 1 that could be used to improve
-      //  the value of c_0 used, based on ratios of Pu238, Pu240, and Pu242 to Pu239, but
-      //  realistically this is way to fine-meshed for the calculations we could hope to do
-      //  in InterSpec
-      
-      const double c_0 = ((method == PuCorrMethod::Bignan95_PWR) ? 1.313 : 1.117);
-      const double pu238_to_pu239 = input.pu238_rel_mass / input.pu239_rel_mass;
-      const double pu240_to_pu239 = input.pu240_rel_mass / input.pu239_rel_mass;
-      const double pu242_to_pu239 = c_0 * std::pow( pu238_to_pu239, 0.33 ) * std::pow( pu240_to_pu239, 1.7 );
-      
-      pu242_mass_frac = pu242_to_pu239 * input.pu239_rel_mass;
-      break;
-    }//case PuCorrMethod::Bignan95_BWR:
-    
-    case PuCorrMethod::ByPu239Only:
-    {
-      const double A = 9.66E-3;
-      const double C = -3.83;
-      
-      pu242_mass_frac = A * std::pow( input.pu239_rel_mass, C );
-      break;
-    }//case PuCorrMethod::ByPu239Only:
-      
-    case PuCorrMethod::NotApplicable:
-      pu242_mass_frac = 0.0;
-      break;
-  }//switch( method )
-  
-  
-  Pu242ByCorrelationOutput answer;
-  
-  // We need to correct for the Pu242 mass fraction.
-  //  See equation 8-14 (page 249) in:
-  //    "Plutonium Isotopic Composition by Gamma-Ray Spectroscopy"
-  //    T. E. Sampson
-  // https://www.lanl.gov/org/ddste/aldgs/sst-training/_assets/docs/PANDA/Plutonium%20Isotopic%20Composition%20by%20Gamma-Ray%20Spectroscopy%20Ch.%208%20p.%20221-272.pdf
-  
-  answer.pu238_mass_frac = input.pu238_rel_mass * (1.0 - pu242_mass_frac);
-  answer.pu239_mass_frac = input.pu239_rel_mass * (1.0 - pu242_mass_frac);
-  answer.pu240_mass_frac = input.pu240_rel_mass * (1.0 - pu242_mass_frac);
-  answer.pu241_mass_frac = input.pu241_rel_mass * (1.0 - pu242_mass_frac);
-  answer.am241_mass_frac = input.am241_rel_mass * (1.0 - pu242_mass_frac);
-  answer.pu242_mass_frac = pu242_mass_frac;
-  
-  
-  switch( method )
-  {
-    case PuCorrMethod::Bignan95_PWR:
-    case PuCorrMethod::Bignan95_BWR:
-    {
-      const double pu238_pu239 = answer.pu238_mass_frac / answer.pu239_mass_frac;
-      const double pu240_pu239 = answer.pu240_mass_frac / answer.pu239_mass_frac;
-      const double pu242_pu239 = answer.pu242_mass_frac / answer.pu239_mass_frac;
-      
-      answer.is_within_range = ((pu238_pu239 >= 0.007851) && (pu238_pu239 <= 0.02952))
-                                && ((pu240_pu239 >= 0.2688) && (pu240_pu239 <= 0.4586))
-                                && ((pu242_pu239 >= 0.03323) && (pu242_pu239 <= 0.1152));
-      
-      if( method == PuCorrMethod::Bignan95_PWR )
-        answer.pu242_uncert = 0.03;
-      else
-        answer.pu242_uncert = 0.07;
-      
-      break;
-    }//case PuCorrMethod::Bignan95_BWR:
-      
-    case PuCorrMethod::ByPu239Only:
-    {
-      answer.is_within_range = (answer.pu239_mass_frac >= 0.55) && (answer.pu239_mass_frac <= 0.80);
-      
-      if( (answer.pu239_mass_frac >= 0.55) && (answer.pu239_mass_frac <= 0.64) )
-        answer.pu242_uncert = 0.012;
-      else if( answer.pu239_mass_frac < 0.55 )
-        answer.pu242_uncert = 0.05; //totally made up
-      else if( answer.pu239_mass_frac < 0.70 )
-        answer.pu242_uncert = 0.01;
-      else if( answer.pu239_mass_frac < 0.80 )
-        answer.pu242_uncert = 0.04;
-      else
-        answer.pu242_uncert = 0.05; //totally made up
-      
-      break;
-    }//case PuCorrMethod::ByPu239Only
-      
-    case PuCorrMethod::NotApplicable:
-      answer.is_within_range = true;
-      answer.pu242_uncert = 0.0;
-    break;
-  }//switch( method )
-  
-  
-  // Except for the totally made up uncertainties (which are out of validated ranges), the
-  //  actual errors are likely much larger than reported in the paper, as their data probably
-  //  came from similar sources, or at least dont include nearly all the ways Pu is made, so
-  //  we'll throw an arbitrary factor of 2 onto the uncertainty.
-  const double engineering_uncert_multiple = 2.0;
-  answer.pu242_uncert *= engineering_uncert_multiple;
-  
-  return answer;
-}//correct_pu_mass_fractions_for_pu242( ... )
-
-
-
-void test_pu242_by_correlation()
-{
-  // We will first roughly test PuCorrMethod::ByPu239Only to data given in paper.
-  //
-  // Fig 3 in Swinhoe 2010 gives Pu239 content vs Pu242 content; I manually
-  //  extracted the following values from the fit line in the PDF.
-  const vector<pair<double,double>> swinhoe_approx_fig_3_data = {
-    {0.55496, 0.06998},
-    {0.55894, 0.06821},
-    {0.56438, 0.06619},
-    {0.57073, 0.06399},
-    {0.57829, 0.06154},
-    {0.58453, 0.05952},
-    {0.59068, 0.05756},
-    {0.59471, 0.05634},
-    {0.59844, 0.05524},
-    {0.60146, 0.05444},
-    {0.60579, 0.05322},
-    {0.61526, 0.05077},
-    {0.62101, 0.04906},
-    {0.62605, 0.04802},
-    {0.63088, 0.04691},
-    {0.63542, 0.04594},
-    {0.6402, 0.0449}
-  };//swinhoe_approx_fig_3_data
-  
-  
-  for( const auto x_y : swinhoe_approx_fig_3_data )
-  {
-    const double x = x_y.first;
-    const double y = x_y.second;
-    const double gamma_spec_pu239 = x / (1.0 - y);
-    const double gamma_spec_pu_other = (1.0 - x - y)/(1.0 - y);
-    
-    // gamma_spec_pu239 plus gamma_spec_pu_other should sum to 1.0
-    assert( fabs(1.0 - (gamma_spec_pu239 + gamma_spec_pu_other)) < 0.001 );
-    
-    Pu242ByCorrelationInput input;
-    input.pu238_rel_mass = gamma_spec_pu_other;
-    input.pu239_rel_mass = gamma_spec_pu239;
-    // Pu240, and Pu241/Am241 are irrelevant, all that
-    
-    Pu242ByCorrelationOutput output = correct_pu_mass_fractions_for_pu242( input, PuCorrMethod::ByPu239Only );
-    
-    //cout << "For Swinhoe [" << x << ", " << y << "]: Pu239: " << output.pu239_mass_frac
-    //     << ", Pu242: " << output.pu242_mass_frac << " +- " << 100.0*output.pu242_uncert << "%\n";
-    
-    assert( fabs(output.pu239_mass_frac - x) < 0.005 );
-    assert( fabs(output.pu242_mass_frac - y) < 0.0005 );
-  }//for( const auto x_y : swinhoe_approx_fig_3_data )
-  
-  
-  // For PuCorrMethod::Bignan95_BWR and PuCorrMethod::Bignan95_PWR, we dont have nearly as good
-  //  of comparison data
-  Pu242ByCorrelationInput input;
-  input.pu238_rel_mass = 0.0120424;
-  input.pu239_rel_mass = 0.6649628;
-  input.pu240_rel_mass = 0.2327493;
-  input.pu241_rel_mass = 0.0501864;
-  input.pu241_rel_mass = 0.0361259;
-  Pu242ByCorrelationOutput output = correct_pu_mass_fractions_for_pu242( input, PuCorrMethod::Bignan95_BWR );
-  cout << "For Bignan95_BWR: Pu239: " << output.pu239_mass_frac
-       << ", Pu242: " << output.pu242_mass_frac << " +- " << 100.0*output.pu242_uncert << "%\n";
-  
-  output = correct_pu_mass_fractions_for_pu242( input, PuCorrMethod::Bignan95_PWR );
-  cout << "For Bignan95_PWR: Pu239: " << output.pu239_mass_frac
-       << ", Pu242: " << output.pu242_mass_frac << " +- " << 100.0*output.pu242_uncert << "%\n";
-}//void test_pu242_by_correlation()
-
 
 double mass_ratio_to_act_ratio( const SandiaDecay::Nuclide * const numerator_nuclide, 
                                 const SandiaDecay::Nuclide * const denominator_nuclide, 
@@ -844,6 +662,8 @@ rapidxml::xml_node<char> *PhysicalModelShieldInput::toXml( ::rapidxml::xml_node<
   XmlUtils::append_bool_node( base_node, "FitArealDensity", fit_areal_density );
   XmlUtils::append_float_node( base_node, "LowerFitArealDensity", lower_fit_areal_density / PhysicalUnits::g_per_cm2 );
   XmlUtils::append_float_node( base_node, "UpperFitArealDensity", upper_fit_areal_density / PhysicalUnits::g_per_cm2 );
+
+  return base_node;
 }//rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const
   
   
@@ -1005,21 +825,6 @@ double eval_physical_model_eqn( const double energy,
 }//eval_physical_model_eqn(...)
   
     
-double eval_physical_model_eqn_uncertainty( const double energy,
-                               const std::optional<PhysModelShield<double>> &self_atten,
-                               const std::vector<PhysModelShield<double>> &external_attens,
-                               const DetectorPeakResponse * const drf,
-                               std::optional<double> hoerl_b,
-                               std::optional<double> hoerl_c,
-                               const std::vector<std::vector<double>> &covariance )
-{
-#warning "eval_physical_model_eqn_uncertainty not implemented."
-static int ntimeshere = 0;
-if( ntimeshere++ < 5 )  
-  cerr << "eval_physical_model_eqn_uncertainty not implemented. " << endl;
-return 0.0;
-}
-  
 std::function<double(double)> physical_model_eff_function( const std::optional<PhysModelShield<double>> &self_atten,
                                                           const std::vector<PhysModelShield<double>> &external_attens,
                                                           const std::shared_ptr<const DetectorPeakResponse> &drf,
@@ -1089,7 +894,7 @@ string physical_model_rel_eff_eqn_text( const std::optional<PhysModelShield<doub
     const double sa_an = self_atten->atomic_number;
     const double sa_ad = self_atten->areal_density / PhysicalUnits::g_per_cm2;
     const string sa_ad_str = SpecUtils::printCompact(sa_ad, 3);
-    const string mu_name = self_atten->material ? cleanup_mat_name(self_atten->material->name) : SpecUtils::printCompact(sa_an, 3);
+    const string mu_name = self_atten->material ? cleanup_mat_name(self_atten->material) : SpecUtils::printCompact(sa_an, 3);
     if( html_format )
     {
       eqn +=
@@ -1119,7 +924,7 @@ string physical_model_rel_eff_eqn_text( const std::optional<PhysModelShield<doub
         
       eqn += (i ? " * " : "");
       const shared_ptr<const Material> &mat = atten.material;
-      const string mu_name = mat ? cleanup_mat_name(mat->name) : SpecUtils::printCompact(atten.atomic_number, 3);
+      const string mu_name = mat ? cleanup_mat_name(mat) : SpecUtils::printCompact(atten.atomic_number, 3);
       const string ad_str = SpecUtils::printCompact(atten.areal_density/PhysicalUnits::g_per_cm2, 3);
       if( html_format )
       { 
@@ -1197,6 +1002,146 @@ std::string physical_model_rel_eff_eqn_js_function( const std::optional<PhysMode
   "}";
   
   return fcn;
+}
+
+std::vector<PeakDef> refit_roi_continuums( const std::vector<PeakDef> &solution_peaks,
+                                          std::shared_ptr<const SpecUtils::Measurement> foreground )
+{
+  using namespace std;
+  
+  // Start with a copy of all input peaks
+  vector<PeakDef> result_peaks = solution_peaks;
+  
+  if( !foreground || solution_peaks.empty() )
+    return result_peaks;
+  
+  const size_t num_channels = foreground->num_gamma_channels();
+  if( !num_channels )
+    return result_peaks;
+  
+  const vector<float> &channel_energies = *foreground->channel_energies();
+  const vector<float> &gamma_counts = *foreground->gamma_counts();
+  
+  // Group peaks by their shared continuum (only polynomial-based ones)
+  map<shared_ptr<const PeakContinuum>, vector<size_t>> continuum_to_peaks;
+  
+  for( size_t i = 0; i < result_peaks.size(); ++i )
+  {
+    const PeakDef &peak = result_peaks[i];
+    auto continuum = peak.continuum();
+    
+    // Only process polynomial-based continuums (skip NoOffset and External)
+    if( !continuum || continuum->type() == PeakContinuum::OffsetType::NoOffset ||
+        continuum->type() == PeakContinuum::OffsetType::External )
+      continue;
+      
+    continuum_to_peaks[continuum].push_back(i);
+  }
+  
+  // Create a vector of ROI groups for processing
+  vector<vector<size_t>> roi_groups;
+  for( const auto &entry : continuum_to_peaks )
+  {
+    roi_groups.push_back(entry.second);
+  }
+  
+  const size_t num_rois = roi_groups.size();
+  if( num_rois == 0 )
+  {
+    // No polynomial continuums to refit, just sort and return
+    sort( begin(result_peaks), end(result_peaks), &PeakDef::lessThanByMean );
+    return result_peaks;
+  }
+  
+  // Function to refit a single ROI's continuum
+  auto refit_roi_continuum = [&](const vector<size_t> &peak_indices) {
+    if( peak_indices.empty() )
+      return;
+      
+    const PeakDef &first_peak = result_peaks[peak_indices[0]];
+    auto continuum = first_peak.continuum();
+    if( !continuum )
+      return;
+      
+    // Get the energy range for this ROI
+    const double lower_energy = continuum->lowerEnergy();
+    const double upper_energy = continuum->upperEnergy();
+    
+    // Find channel range using find_gamma_channel
+    const size_t lower_channel = static_cast<size_t>(floor(foreground->find_gamma_channel(lower_energy)));
+    const size_t upper_channel = static_cast<size_t>(ceil(foreground->find_gamma_channel(upper_energy))) + 1;
+    
+    if( lower_channel >= upper_channel || upper_channel > num_channels )
+      return;
+      
+    const size_t roi_channels = upper_channel - lower_channel;
+    
+    // Get ROI data
+    const float *roi_energies = &channel_energies[lower_channel];
+    const float *roi_data = &gamma_counts[lower_channel];
+    const float *roi_uncerts = nullptr; // Use nullptr for uncertainties
+    
+    // Prepare peaks for this ROI
+    vector<PeakDef> roi_peaks;
+    for( size_t idx : peak_indices )
+    {
+      roi_peaks.push_back(result_peaks[idx]);
+    }
+    
+    const int num_polynomial_terms = static_cast<int>(continuum->parameters().size());
+    const bool is_step_continuum = PeakContinuum::is_step_continuum( continuum->type() );
+    const double ref_energy = continuum->referenceEnergy();
+    
+    vector<double> continuum_coeffs(num_polynomial_terms);
+    vector<double> peak_counts(roi_channels);
+    
+    try {
+      // Refit the continuum using PeakFit::fit_continuum
+      PeakFit::fit_continuum( roi_energies, roi_data, roi_uncerts, roi_channels,
+                             num_polynomial_terms, is_step_continuum, ref_energy,
+                             roi_peaks, false, continuum_coeffs.data(), peak_counts.data() );
+      
+      // Update all peaks with the new continuum coefficients
+      for( size_t idx : peak_indices )
+      {
+        auto new_continuum = make_shared<PeakContinuum>(*continuum);
+        new_continuum->setParameters( lower_energy, continuum_coeffs, {} );
+        result_peaks[idx].setContinuum(new_continuum);
+      }
+    } catch( const exception &e ) {
+      // If fitting fails, silently continue with original continuum
+    }
+  };
+  
+  // Decide whether to use threading
+  if( num_rois > 4 )
+  {
+    // Use ThreadPool for parallel processing
+    SpecUtilsAsync::ThreadPool pool;
+    
+    for( const auto &roi_group : roi_groups )
+    {
+      pool.post( [&refit_roi_continuum, roi_group]() {
+        refit_roi_continuum(roi_group);
+      });
+    }
+    
+    // Wait for all tasks to complete
+    pool.join();
+  }
+  else
+  {
+    // Process sequentially
+    for( const auto &roi_group : roi_groups )
+    {
+      refit_roi_continuum(roi_group);
+    }
+  }
+  
+  // Sort peaks by energy before returning
+  sort( begin(result_peaks), end(result_peaks), &PeakDef::lessThanByMean );
+  
+  return result_peaks;
 }
 
   

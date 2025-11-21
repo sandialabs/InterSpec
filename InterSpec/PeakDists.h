@@ -514,7 +514,7 @@ extern template void photopeak_function_integral<double>( const double, const do
     
   double DSCB_gauss_indefinite_non_norm_t( const double t );
 
-
+#if( __cplusplus >= 202002L )
   template <typename ContType, typename ScalarType>
   concept ContinuumTypeConcept = requires(ContType cont, ScalarType scalar, std::size_t index) {
     // Check `cont.parameters()` returns something like an array, or vector, or something
@@ -526,6 +526,7 @@ extern template void photopeak_function_integral<double>( const double, const do
     { cont.externalContinuum() } -> std::same_as<std::shared_ptr<const SpecUtils::Measurement>>;
   };
 
+
   // This function is just templated version of `PeakContinuum::offset_integral(...)` - need to refactor
   //  both to use the same code
   template<typename ContType, typename ScalarType>
@@ -534,6 +535,50 @@ extern template void photopeak_function_integral<double>( const double, const do
                   ScalarType *channels,
                   const size_t nchannel,
                   const std::shared_ptr<const SpecUtils::Measurement> &data ) requires ContinuumTypeConcept<ContType,ScalarType>;
+#else
+
+// Helper traits to check if a type satisfies certain conditions
+template <typename ContType, typename ScalarType>
+struct ContinuumTypeConcept {
+private:
+    template <typename T>
+    static auto check_parameters(T* cont, std::size_t index) -> decltype((*cont).parameters()[index], std::true_type{});
+
+    template <typename T>
+    static auto check_referenceEnergy(T* cont) -> decltype((*cont).referenceEnergy(), std::true_type{});
+
+    template <typename T>
+    static auto check_lowerEnergy(T* cont) -> decltype((*cont).lowerEnergy(), std::true_type{});
+
+    template <typename T>
+    static auto check_upperEnergy(T* cont) -> decltype((*cont).upperEnergy(), std::true_type{});
+
+    template <typename T>
+    static auto check_type(T* cont) -> decltype((*cont).type(), std::true_type{});
+
+    template <typename T>
+    static auto check_externalContinuum(T* cont) -> decltype((*cont).externalContinuum(), std::true_type{});
+
+public:
+    static constexpr bool value =
+        std::is_same<decltype(check_parameters(static_cast<ContType*>(nullptr), std::size_t{})), std::true_type>::value &&
+        std::is_same<decltype(check_referenceEnergy(static_cast<ContType*>(nullptr))), std::true_type>::value &&
+        std::is_same<decltype(check_lowerEnergy(static_cast<ContType*>(nullptr))), std::true_type>::value &&
+        std::is_same<decltype(check_upperEnergy(static_cast<ContType*>(nullptr))), std::true_type>::value &&
+        std::is_same<decltype(check_type(static_cast<ContType*>(nullptr))), std::true_type>::value &&
+        std::is_same<decltype(check_externalContinuum(static_cast<ContType*>(nullptr))), std::true_type>::value;
+};
+
+
+// Enable the function only if the ContinuumTypeConcept is satisfied
+template <typename ContType, typename ScalarType>
+typename std::enable_if<ContinuumTypeConcept<ContType, ScalarType>::value, void>::type
+offset_integral(const ContType& cont,
+                const float* energies,
+                ScalarType* channels,
+                const size_t nchannel,
+                const std::shared_ptr<const SpecUtils::Measurement>& data);
+#endif //__cplusplus >= 202002L
 }//namespace PeakDists
 
 #endif  //PeakDists_h

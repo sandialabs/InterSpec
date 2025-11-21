@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- rr- is short for RemoteRid
+  -->
+  <message id="rr-mi-url">URL</message>
+  <message id="rr-mi-executable-path">Path Exe</message>
+  <message id="rr-url-empty-text">URL dari Layanan FullSpectrum</message>
+  <message id="rr-exe-path-empty-text">Path ke executable FullSpectrum</message>
+  <message id="rr-get-detectors">Ambil DRF</message>
+  <message id="rr-detectors-label">DRF:</message>
+  <message id="rr-url-instructions">Setelah memasukkan URL layanan web, harap (opsional) ambil DRF, lalu tekan "<em>Kirim</em>"</message>
+  <message id="rr-only-disp-samples-cb">Hanya Sampel yang Ditampilkan</message>
+  <message id="rr-tt-only-disp-samples">Biasanya data mode-pencarian dan portal dianalisis secara keseluruhan, tetapi memilih opsi ini akan menyebabkan hanya latar depan/latar belakang yang ditampilkan yang dianalisis.</message>
+  <message id="rr-submit-ana-btn">Kirim Analisis</message>
+  <message id="rr-show-dialog-cb">Tampilkan dialog</message>
+  <message id="rr-always-call-cb">Selalu panggil saat memuat spektrum</message>
+  <message id="rr-tt-show-dialog">Jika dicentang, dialog yang harus ditutup oleh pengguna akan ditampilkan dengan hasil RID. Jika tidak dicentang, hanya notifikasi yang akan menghilang setelah waktu singkat, akan ditampilkan dengan hasil RID.</message>
+  <message id="rr-gadras-rid-error">Kesalahan GADRAS RID: {1}</message>
+  <message id="rr-gadras-rid-error-code">Kode kesalahan GADRAS RID {1}</message>
+  <message id="rr-gadras-rid-no-id">GADRAS RID: tidak ada yang diidentifikasi</message>
+  <message id="rr-gadras-result">GADRAS RID: {1}</message>
+  <message id="rr-gadras-fail-parse">Gagal mem-parse hasil GADRAS RID.</message>
+  <message id="rr-rid-results-window-title">Hasil RID Eksternal</message>
+  <message id="rr-rid-tool-btn">Alat RID</message>
+  <message id="rr-err-incorrect-url">Kesalahan memanggil analisis: URL salah atau tidak ada internet.</message>
+  <message id="rr-err-locating-exe">Kesalahan menemukan executable: '{1}'</message>
+  <message id="rr-err-creating-tmp-file">Kesalahan membuat nama file temp.</message>
+  <message id="rr-err-opening-tmp-file">Kesalahan membuka file temp.</message>
+  <message id="rr-requesting-ana">Meminta analisis</message>
+  <message id="rr-err-no-spec">Tidak ada spektrum yang ditampilkan</message>
+  <message id="rr-requesting-service-info">Meminta informasi layanan.</message>
+  <message id="rr-error-parsing-service-info">Kesalahan mem-parse hasil informasi layanan: <code></code></message>
+  <message id="rr-incorrect-url">URL salah atau tidak ada internet.</message>
+  <message id="rr-err-requesting-service-info">Kesalahan mengambil informasi layanan: <code>{1}</code></message>
+</messages>
+

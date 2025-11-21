@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ spectrum_title | default("Relative Activity Analysis Report") }}</title>
+    <meta charset="utf-8">
+    <style>
+        body { 
+            font-family: 'Segoe UI', Arial, sans-serif; 
+            margin: 0; 
+            padding: 20px; 
+            background-color: #f8f9fa;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 { 
+            color: #2c3e50; 
+            border-bottom: 3px solid #3498db; 
+            padding-bottom: 10px; 
+        }
+        h2 { 
+            color: #34495e; 
+            margin-top: 30px; 
+            border-left: 4px solid #3498db; 
+            padding-left: 15px; 
+        }
+        .status-bar {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 6px;
+            font-weight: 500;
+        }
+        .success { 
+            color: #155724; 
+            background-color: #d4edda; 
+            border: 1px solid #c3e6cb; 
+        }
+        .error { 
+            color: #721c24; 
+            background-color: #f8d7da; 
+            border: 1px solid #f5c6cb; 
+        }
+        .releffeqn { 
+            font-family: 'Consolas', 'Monaco', monospace; 
+            background: #f8f9fa; 
+            border: 1px solid #dee2e6;
+            padding: 15px; 
+            margin: 10px 0; 
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        table { 
+            border-collapse: collapse; 
+            width: 100%; 
+            margin: 20px 0; 
+            font-size: 14px;
+            background: white;
+        }
+        th, td { 
+            border: 1px solid #dee2e6; 
+            padding: 12px 8px; 
+            text-align: left; 
+        }
+        th { 
+            background-color: #f8f9fa; 
+            font-weight: 600;
+            color: #495057;
+        }
+        tbody tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+        tbody tr:hover {
+            background-color: #e9ecef;
+        }
+        .resulttable { 
+            margin: 25px 0; 
+            border-radius: 6px;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .resulttable caption {
+            background: #343a40;
+            color: white;
+            padding: 12px;
+            font-weight: 600;
+            text-align: left;
+            caption-side: top;
+        }
+        .warning { 
+            color: #856404; 
+            background: #fff3cd; 
+            border: 1px solid #ffeaa7; 
+            padding: 12px; 
+            margin: 10px 0; 
+            border-radius: 4px;
+            border-left: 4px solid #ffc107;
+        }
+        .anatime, .anacomputetime { 
+            font-size: 0.9em; 
+            color: #6c757d; 
+            margin: 20px 0; 
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+        .energy-cal-info {
+            background: #e7f3ff;
+            border: 1px solid #b8daff;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 15px 0;
+        }
+        .numeric {
+            font-family: 'Consolas', 'Monaco', monospace;
+            text-align: right;
+        }
+        .highlight {
+            background-color: #fff3cd;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>{{ spectrum_title | default("Relative Activity Analysis Report") }}</h1>
+        
+        {% if status.success %}
+            <div class="status-bar success">
+                <strong>✓ Analysis completed successfully</strong><br>
+                χ² = {{ "%.3f" | format(chi2) }}, DOF = {{ dof }}, χ²/DOF = <span class="highlight">{{ "%.3f" | format(chi2_per_dof) }}</span>
+            </div>
+        {% else %}
+            <div class="status-bar error">
+                <strong>✗ Analysis failed:</strong> {{ status.error_message }}
+            </div>
+        {% endif %}
+        
+        {% if rel_eff_curves %}
+            <h2>📈 Relative Efficiency Equations</h2>
+            {% for curve in rel_eff_curves %}
+                <div class="releffeqn">
+                    <strong>Rel. Eff. Eqn{% if have_multiple_rel_eff %} {{ curve.index }}{% endif %}:</strong> 
+                    y = {{ curve.equation_html | safe }}
+                </div>
+            {% endfor %}
+        {% endif %}
+        
+        {% if plutonium_corrections %}
+            <h2>☢️ Plutonium Mass Fractions</h2>
+            {% for pu_data in plutonium_corrections %}
+                <table class="resulttable">
+                    <caption>Plutonium mass fractions{% if have_multiple_rel_eff %} (Rel. Eff. {{ pu_data.curve_index }}){% endif %}</caption>
+                    <thead>
+                        <tr>
+                            <th>Nuclide</th>
+                            <th class="numeric">% Pu Mass</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Pu-238</td><td class="numeric">{{ "%.4f" | format(pu_data.mass_fractions.pu238 * 100) }}</td></tr>
+                        <tr><td>Pu-239</td><td class="numeric">{{ "%.4f" | format(pu_data.mass_fractions.pu239 * 100) }}</td></tr>
+                        <tr><td>Pu-240</td><td class="numeric">{{ "%.4f" | format(pu_data.mass_fractions.pu240 * 100) }}</td></tr>
+                        <tr><td>Pu-241</td><td class="numeric">{{ "%.4f" | format(pu_data.mass_fractions.pu241 * 100) }}</td></tr>
+                        <tr><td>Pu-242 (by corr)</td><td class="numeric">{{ "%.4f" | format(pu_data.mass_fractions.pu242 * 100) }}</td></tr>
+                    </tbody>
+                </table>
+            {% endfor %}
+        {% endif %}
+        
+        {% if relative_activities %}
+            <h2>⚛️ Relative Activities and Mass Fractions</h2>
+            {% for curve_data in relative_activities %}
+                <table class="resulttable">
+                    <caption>Relative activities and mass fractions{% if have_multiple_rel_eff %} (Rel. Eff. {{ curve_data.curve_index }}){% endif %}</caption>
+                    <thead>
+                        <tr>
+                            <th>Nuclide</th>
+                            <th class="numeric">Rel. Activity</th>
+                            <th class="numeric">Total Mass Frac.</th>
+                            <th class="numeric">Enrichment</th>
+                            <th class="numeric">Enrich 2σ Range</th>
+                            <th class="numeric">Det. Counts</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for nuclide in curve_data.nuclides %}
+                            <tr>
+                                <td><strong>{{ nuclide.name }}</strong></td>
+                                <td class="numeric">{{ nuclide.rel_activity | scientific(6) }} ± {{ nuclide.rel_activity_uncertainty | scientific(6) }}</td>
+                                <td class="numeric">{% if nuclide.total_mass_fraction %}{{ "%.2f" | format(nuclide.total_mass_fraction * 100) }}%{% else %}—{% endif %}</td>
+                                <td class="numeric">{% if nuclide.enrichment %}{{ "%.3f" | format(nuclide.enrichment * 100) }}%{% else %}—{% endif %}</td>
+                                <td class="numeric">
+                                    {% if nuclide.enrichment_minus_2sigma and nuclide.enrichment_plus_2sigma %}
+                                        {{ "%.3f" | format(nuclide.enrichment_minus_2sigma * 100) }}%–{{ "%.3f" | format(nuclide.enrichment_plus_2sigma * 100) }}%
+                                    {% else %}
+                                        —
+                                    {% endif %}
+                                </td>
+                                <td class="numeric">{% if nuclide.detector_counts %}{{ nuclide.detector_counts | scientific(6) }}{% else %}—{% endif %}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% endfor %}
+        {% endif %}
+        
+        {% if ratios %}
+            <h2>⚖️ Mass and Activity Ratios</h2>
+            {% for curve_data in ratios %}
+                <table class="resulttable">
+                    <caption>Mass and Activity Ratios{% if have_multiple_rel_eff %} (Rel. Eff. {{ curve_data.curve_index }}){% endif %}</caption>
+                    <thead>
+                        <tr>
+                            <th>Nuclide Ratio</th>
+                            <th class="numeric">Mass Ratio</th>
+                            <th class="numeric">Activity Ratio</th>
+                            <th class="numeric">Uncertainty</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for pair in curve_data.pairs %}
+                            <tr>
+                                <td><strong>{{ pair.numerator }}</strong>/{{ pair.denominator }}</td>
+                                <td class="numeric">{% if pair.mass_ratio %}{{ pair.mass_ratio | scientific(6) }}{% else %}—{% endif %}</td>
+                                <td class="numeric">{{ pair.activity_ratio | scientific(6) }}</td>
+                                <td class="numeric">{% if pair.activity_ratio_uncertainty_percent %}{{ "%.2f" | format(pair.activity_ratio_uncertainty_percent) }}%{% else %}—{% endif %}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>{{ pair.denominator }}</strong>/{{ pair.numerator }}</td>
+                                <td class="numeric">{% if pair.mass_ratio %}{{ (1.0 / pair.mass_ratio) | scientific(6) }}{% else %}—{% endif %}</td>
+                                <td class="numeric">{{ (1.0 / pair.activity_ratio) | scientific(6) }}</td>
+                                <td class="numeric">{% if pair.activity_ratio_uncertainty_percent %}{{ "%.2f" | format(pair.activity_ratio_uncertainty_percent) }}%{% else %}—{% endif %}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% endfor %}
+        {% endif %}
+        
+        {% if energy_calibration.was_fit and energy_calibration.adjustments %}
+            <h2>🔧 Energy Calibration Adjustments</h2>
+            <div class="energy-cal-info">
+                <strong>Applied adjustments:</strong>
+                <ul>
+                    {% for adj in energy_calibration.adjustments %}
+                        <li><strong>{{ adj.type | title }}</strong>: {{ "%.4f" | format(adj.physical_value) }} {{ adj.units }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        {% endif %}
+        
+        {% if warnings %}
+            <h2>⚠️ Warnings</h2>
+            {% for warning in warnings %}
+                <div class="warning">
+                    <strong>Warning:</strong> {{ warning }}
+                </div>
+            {% endfor %}
+        {% endif %}
+        
+        {% if timing %}
+            <div class="anacomputetime">
+                <strong>⏱️ Computation Performance:</strong> 
+                Analysis completed in {{ timing.duration_formatted }} with {{ timing.function_eval_solution }} function evaluations for solution 
+                and {{ timing.function_eval_total - timing.function_eval_solution }} additional evaluations for covariance matrix calculation.
+            </div>
+        {% endif %}
+        
+        <div class="anatime">
+            <strong>📅 Analysis Information:</strong> 
+            Report generated on {{ timestamps.local }}{% if timestamps.utc %} ({{ timestamps.utc }} UTC){% endif %} 
+            using InterSpec RelActCalcAuto module.
+        </div>
+    </div>
+</body>
+</html> 

@@ -150,7 +150,13 @@ namespace
     }
     
     const shared_ptr<SpecMeas> foreground = viewer->measurment( SpecUtils::SpectrumType::Foreground );
-    const set<int> &foresamples = viewer->displayedSamples( SpecUtils::SpectrumType::Foreground );
+    const set<int> &foreSamples = viewer->displayedSamples( SpecUtils::SpectrumType::Foreground );
+    
+    const shared_ptr<SpecMeas> background = viewer->measurment( SpecUtils::SpectrumType::Background );
+    const set<int> &backSamples = viewer->displayedSamples( SpecUtils::SpectrumType::Background );
+    
+    const shared_ptr<SpecMeas> secondary = viewer->measurment( SpecUtils::SpectrumType::SecondForeground );
+    const set<int> &secoSamples = viewer->displayedSamples( SpecUtils::SpectrumType::SecondForeground );
     
   
     EnergyCalTool *tool = viewer->energyCalTool();
@@ -197,8 +203,12 @@ namespace
       const deque<shared_ptr<const PeakDef>> &to_peaks = is_undo ? get<1>(m_o_n) : get<2>(m_o_n);
       
       specfile->setPeaks( to_peaks, samples );
-      if( peakModel && (specfile == foreground) && (samples == foresamples) )
-        peakModel->setPeakFromSpecMeas(foreground, foresamples);
+      if( peakModel && (specfile == foreground) && (samples == foreSamples) )
+        peakModel->setPeakFromSpecMeas( foreground, foreSamples, SpecUtils::SpectrumType::Foreground );
+      else if( peakModel && (specfile == background) && (samples == backSamples) )
+        peakModel->setPeakFromSpecMeas( background, backSamples, SpecUtils::SpectrumType::Background );
+      else if( peakModel && (specfile == secondary) && (samples == secoSamples) )
+        peakModel->setPeakFromSpecMeas( secondary, secoSamples, SpecUtils::SpectrumType::SecondForeground );
     }//for( loop over changed peaks )
     
     for( const auto &m_o_n : meas_old_new_hint_peaks )
@@ -670,7 +680,7 @@ DeviationPairDisplay::DeviationPairDisplay( Wt::WContainerWidget *parent )
     //, m_msg( nullptr )
 {
   addStyleClass( "DevPairDisplay" );
-  WLabel *title = new WLabel( "Deviation Pairs", this );
+  WLabel *title = new WLabel( WString::tr("ect-deviation-pairs"), this );
   title->setStyleClass( "Wt-itemview Wt-header Wt-label DevPairTitle" );
   title->setInline( false );
 
@@ -1012,7 +1022,7 @@ public:
     spacer->addStyleClass( "Spacer" );
     
 #if( IMP_COEF_FIT_BTN_NEAR_COEFS )
-    m_fitCoeffs = new WPushButton( "Fit Coeffs", btndiv );
+    m_fitCoeffs = new WPushButton( WString::tr("ect-fit-coeff-btn"), btndiv );
     m_fitCoeffs->addStyleClass( "CalCoefFitBtn" );
 #endif
     
@@ -1209,15 +1219,15 @@ public:
       return;
     }//if( !m_cal )
     
-    const char *typetxt = "";
+    WString typetxt;
     switch( m_cal->type() )
     {
-      case SpecUtils::EnergyCalType::LowerChannelEdge:    typetxt = "Lower Channel Energy"; break;
-      case SpecUtils::EnergyCalType::InvalidEquationType: typetxt = "Not Defined";          break;
-      case SpecUtils::EnergyCalType::Polynomial:          typetxt = "Polynomial";           break;
+      case SpecUtils::EnergyCalType::LowerChannelEdge:    typetxt = WString::tr("ect-cal-type-lower-channel"); break;
+      case SpecUtils::EnergyCalType::InvalidEquationType: typetxt = WString::tr("ect-cal-type-not-defined");    break;
+      case SpecUtils::EnergyCalType::Polynomial:          typetxt = WString::tr("ect-cal-type-polynomial");     break;
       case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-                                                          typetxt = "Default Polynomial";   break;
-      case SpecUtils::EnergyCalType::FullRangeFraction:   typetxt = "Full Range Fraction";  break;
+                                                          typetxt = WString::tr("ect-cal-type-default-poly");  break;
+      case SpecUtils::EnergyCalType::FullRangeFraction:   typetxt = WString::tr("ect-cal-type-frf");            break;
     }//switch( m_cal->type() )
     
     m_type->setText( typetxt );
@@ -1235,7 +1245,7 @@ public:
         {
           if( auto p = dynamic_cast<WContainerWidget *>( m_type->parent() ) )
           {
-            m_convertMsg = new WText( "Please convert to Polynomial calibration to edit", p );
+            m_convertMsg = new WText( WString::tr("ect-convert-to-poly-msg"), p );
             m_convertMsg->addStyleClass( "ConvertToPolyMsg" );
             m_convertMsg->setInline( false );
           }
@@ -2462,6 +2472,8 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
   const auto secgrnd = m_interspec->measurment(SpecUtils::SpectrumType::SecondForeground);
   
   const set<int> &foresamples = m_interspec->displayedSamples( SpectrumType::Foreground );
+  const set<int> &backSamples = m_interspec->displayedSamples( SpecUtils::SpectrumType::Background );
+  const set<int> &secoSamples = m_interspec->displayedSamples( SpecUtils::SpectrumType::SecondForeground );
   
   
   // Create a cache of modified calibration both to save time/memory, but also keep it so previous
@@ -2832,7 +2844,11 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
           
           change.meas->setPeaks( pos->second, samples );
           if( m_peakModel && (change.meas == forgrnd) && (samples == foresamples) )
-            m_peakModel->setPeakFromSpecMeas(forgrnd, foresamples);
+            m_peakModel->setPeakFromSpecMeas( forgrnd, foresamples, SpecUtils::SpectrumType::Foreground );
+          else if( m_peakModel && (change.meas == backgrnd) && (samples == backSamples) )
+            m_peakModel->setPeakFromSpecMeas( backgrnd, backSamples, SpecUtils::SpectrumType::Background );
+          else if( m_peakModel && (change.meas == secgrnd) && (samples == secoSamples) )
+            m_peakModel->setPeakFromSpecMeas(secgrnd, secoSamples, SpecUtils::SpectrumType::SecondForeground );
         }//if( pos == end(updated_peaks) ) / else
       }//if( oldpeaks )
     }//for( const set<int> &samples : peaksampels )
@@ -3100,7 +3116,10 @@ void EnergyCalTool::setEnergyCal( shared_ptr<const SpecUtils::EnergyCalibration>
     
     
   //Now actually set the updated peaks
-  const set<int> &foresamples = m_interspec->displayedSamples( SpecUtils::SpectrumType::Foreground );
+  const set<int> &foreSamples = m_interspec->displayedSamples( SpecUtils::SpectrumType::Foreground );
+  const set<int> &backSamples = m_interspec->displayedSamples( SpecUtils::SpectrumType::Background );
+  const set<int> &secoSamples = m_interspec->displayedSamples( SpecUtils::SpectrumType::SecondForeground );
+  
   for( const set<int> &samples : peaksamples )
   {
     auto oldpeaks = changemeas.meas->peaks(samples);
@@ -3117,8 +3136,12 @@ void EnergyCalTool::setEnergyCal( shared_ptr<const SpecUtils::EnergyCalibration>
         meas_old_new_peaks.emplace_back( samples, *oldpeaks, pos->second );
         
         changemeas.meas->setPeaks( pos->second, samples );
-        if( m_peakModel && (changemeas.meas == forgrnd) && (samples == foresamples) )
-          m_peakModel->setPeakFromSpecMeas(forgrnd, foresamples);
+        if( m_peakModel && (changemeas.meas == forgrnd) && (samples == foreSamples) )
+          m_peakModel->setPeakFromSpecMeas( forgrnd, foreSamples, SpecUtils::SpectrumType::Foreground );
+        else if( m_peakModel && (changemeas.meas == backgrnd) && (samples == backSamples) )
+          m_peakModel->setPeakFromSpecMeas( backgrnd, backSamples, SpecUtils::SpectrumType::Background );
+        else if( m_peakModel && (changemeas.meas == secgrnd) && (samples == secoSamples) )
+          m_peakModel->setPeakFromSpecMeas( secgrnd, secoSamples, SpecUtils::SpectrumType::SecondForeground );
       }//if( pos == end(updated_peaks) ) / else
     }//if( oldpeaks )
   }//for( const set<int> &samples : peaksampels )
@@ -3156,7 +3179,9 @@ void EnergyCalTool::addDeviationPair( const std::pair<float,float> &new_pair )
   const auto backgrnd = m_interspec->measurment(SpecUtils::SpectrumType::Background);
   const auto secgrnd = m_interspec->measurment(SpecUtils::SpectrumType::SecondForeground);
   
-  const set<int> &foresamples = m_interspec->displayedSamples( SpectrumType::Foreground );
+  const set<int> &foreSamples = m_interspec->displayedSamples( SpectrumType::Foreground );
+  const set<int> &backSamples = m_interspec->displayedSamples( SpectrumType::Background );
+  const set<int> &secoSamples = m_interspec->displayedSamples( SpectrumType::SecondForeground );
   
   // We will calculate all new energy calibrations, to make sure we actually can, befor setting them
   map<shared_ptr<const EnergyCalibration>,shared_ptr<const EnergyCalibration>> old_to_new_cals;
@@ -3416,8 +3441,12 @@ void EnergyCalTool::addDeviationPair( const std::pair<float,float> &new_pair )
       }
       
       change.meas->setPeaks( pos->second, samples );
-      if( m_peakModel && (change.meas == forgrnd) && (samples == foresamples) )
-        m_peakModel->setPeakFromSpecMeas(forgrnd, foresamples);
+      if( m_peakModel && (change.meas == forgrnd) && (samples == foreSamples) )
+        m_peakModel->setPeakFromSpecMeas( forgrnd, foreSamples, SpectrumType::Foreground );
+      else if( m_peakModel && (change.meas == backgrnd) && (samples == backSamples) )
+        m_peakModel->setPeakFromSpecMeas( backgrnd, backSamples, SpecUtils::SpectrumType::Background );
+      else if( m_peakModel && (change.meas == secgrnd) && (samples == secoSamples) )
+        m_peakModel->setPeakFromSpecMeas( secgrnd, secoSamples, SpecUtils::SpectrumType::SecondForeground );
     }//for( const set<int> &samples : peaksampels )
     
     // Also grab the updated hint peaks
@@ -3591,11 +3620,16 @@ void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display,
   m_lastGraphicalRecalType = EnergyCalGraphicalConfirm::NumRecalTypes;
   m_lastGraphicalRecalEnergy = -999.0f;
   
-  const auto forgrnd = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
-  const set<int> &foresamples = m_interspec->displayedSamples( SpectrumType::Foreground );
+  const shared_ptr<SpecMeas> foregrnd = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
+  const shared_ptr<SpecMeas> backgrnd = m_interspec->measurment(SpecUtils::SpectrumType::Background);
+  const shared_ptr<SpecMeas> secogrnd = m_interspec->measurment(SpecUtils::SpectrumType::SecondForeground);
   
-  assert( forgrnd );
-  if( !forgrnd )
+  const set<int> &foreSamples = m_interspec->displayedSamples( SpectrumType::Foreground );
+  const set<int> &backSamples = m_interspec->displayedSamples( SpectrumType::Background );
+  const set<int> &secoSamples = m_interspec->displayedSamples( SpectrumType::SecondForeground );
+  
+  assert( foregrnd );
+  if( !foregrnd )
     return;
   
   const shared_ptr<const EnergyCalibration> old_cal = display->lastSetCalibration();
@@ -3781,9 +3815,9 @@ void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display,
   
   // Track some info for Undo/Redo
   EnergyCalUndoRedoSentry undo_sentry;
-  meas_old_new_cal_t &meas_old_new_cal = undo_sentry.cal_info(forgrnd);
-  meas_old_new_peaks_t &meas_old_new_peaks = undo_sentry.peak_info(forgrnd);
-  meas_old_new_peaks_t &meas_old_new_hint_peaks = undo_sentry.hint_peak_info(forgrnd);
+  meas_old_new_cal_t &meas_old_new_cal = undo_sentry.cal_info(foregrnd);
+  meas_old_new_peaks_t &meas_old_new_peaks = undo_sentry.peak_info(foregrnd);
+  meas_old_new_peaks_t &meas_old_new_hint_peaks = undo_sentry.hint_peak_info(foregrnd);
   
   for( auto &m : specfile->measurements() )
   {
@@ -3840,8 +3874,12 @@ void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display,
     meas_old_new_peaks.emplace_back( samples, *oldpeaks, peakpos->second );
     
     specfile->setPeaks( peakpos->second, samples );
-    if( m_peakModel && (specfile == forgrnd) && (samples == foresamples) )
-      m_peakModel->setPeakFromSpecMeas(forgrnd, foresamples);
+    if( m_peakModel && (specfile == foregrnd) && (samples == foreSamples) )
+      m_peakModel->setPeakFromSpecMeas( foregrnd, foreSamples, SpecUtils::SpectrumType::Foreground );
+    else if( m_peakModel && (specfile == backgrnd) && (samples == backSamples) )
+      m_peakModel->setPeakFromSpecMeas( backgrnd, backSamples, SpecUtils::SpectrumType::Background );
+    else if( m_peakModel && (specfile == secogrnd) && (samples == secoSamples) )
+      m_peakModel->setPeakFromSpecMeas( secogrnd, secoSamples, SpecUtils::SpectrumType::SecondForeground );
   }//for( const set<int> &samples : samplesWithPeaks )
   
   // And set the automated hint peaks

@@ -25,6 +25,7 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
 #include <set>
 #include <mutex>
 #include <chrono>
@@ -43,6 +44,7 @@ namespace Wt
   class WText;
   class WGridLayout;
   class WPushButton;
+  class WCssTextRule;
 }//namespace Wt
 
 class PopupDivMenuItem;
@@ -91,6 +93,8 @@ public:
   void svlog( const std::string& message, int priority = 1 );
 
   InterSpec *viewer();
+
+  std::chrono::steady_clock::time_point startTime() const;
 
   std::chrono::steady_clock::time_point::duration activeTimeInCurrentSession() const;
   
@@ -236,7 +240,27 @@ public:
    the list of the capture group.
    */
   static const std::set<std::string> &languagesAvailable();
-  
+
+  /** Sets or replaces a global CSS rule for this app instance.
+      Used by various components to manage global theme colors and styles.
+
+      @param rulename Unique name for the CSS rule
+      @param selector CSS selector (e.g., ":root")
+      @param declarations CSS declarations (e.g., "--d3spec-fore-line-color: rgb(0,0,0);")
+
+      If a rule with the same name already exists, it will be removed before adding the new one.
+   */
+  void setGlobalCssRule( const std::string &rulename,
+                         const std::string &selector,
+                         const std::string &declarations );
+
+  /** Removes a global CSS rule for this app instance.
+
+      @param rulename Name of the CSS rule to remove
+      @returns true if the rule was found and removed, false if it didn't exist
+   */
+  bool removeGlobalCssRule( const std::string &rulename );
+
 protected:
 
   //notify(): over-riding WApplication::notify in order to catch any exceptions
@@ -289,9 +313,19 @@ protected:
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
   Wt::Signal<const InterSpecApp *> m_destructing;
 #endif
-  
+
+  /** When the application session was created. */
+  const std::chrono::steady_clock::time_point m_startTime;
+
+  /** Tracks the last time the `notify(...)` function is called with a `Wt::UserEvent`  event.
+   */
   std::chrono::steady_clock::time_point m_lastAccessTime;
+
+  /** When the `notify(...)` function is called with a user event, if its been less than 1 minute (arbitrary)
+   since the last call with a user event, then the amount of time between calls will be accumulated to this variable.
+   */
   std::chrono::steady_clock::time_point::duration m_activeTimeInSession;
+
   /** We will occasionally update the use duration in the database - this field tracks how long of
    active use since the database was last updated.
    */
@@ -357,7 +391,12 @@ protected:
   /** CSS px values for areas on iPhoneX's like the notch or bottom bar. */
   float m_safeAreas[4];
 #endif
-  
+
+  /** Map of global D3 spectrum CSS rules for this app instance.
+      Used to manage global theme colors that apply to all D3SpectrumDisplayDiv instances.
+   */
+  std::map<std::string, Wt::WCssTextRule*> m_globalD3SpectrumCssRules;
+
   friend class InterSpec;
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   friend class SpectrumViewerTester;

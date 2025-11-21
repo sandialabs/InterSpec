@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
+  <!-- pe- is short for PeakEdit -->
   <message id="pe-value">Valeur</message>
   <message id="pe-uncertainty">Incertitude</message>
   <message id="pe-parameter">Paramètre</message>
@@ -9,9 +10,13 @@
   <message id="pe-peak-model-data">Région de données</message>
   <message id="pe-skew-type">Type d'asymétrie</message>
   <message id="pe-btn-refit">Réajuster</message>
+  <message id="pe-btn-refit-roi-standard">Réajuster ROI : FWHM liées</message>
+  <message id="pe-btn-refit-roi-independent">Réajuster ROI : FWHM indépendantes</message>
+  <message id="pe-btn-refit-roi-fine">Réajuster ROI : affinements légers</message>
+  <message id="pe-btn-refit-roi-independent-fine">Réajuster ROI : affiner avec FWHM indép.</message>
   
   <message id="pe-label-centroid">Centroïde</message>
-  <message id="pe-label-drf-fwhm">FWHM prédite par la DRF</message>
+  <message id="pe-label-drf-fwhm">FWHM prédite DRF</message>
   <message id="pe-label-amp">Amplitude</message>
   <message id="pe-label-skew0">Asymétrie 0</message>
   <message id="pe-label-skew1">Asymétrie 1</message>
@@ -24,12 +29,19 @@
   <message id="pe-label-cont-p4">Cont. P4</message>
   <message id="pe-label-roi-start">Début ROI (keV)</message>
   <message id="pe-label-roi-end">Fin ROI (keV)</message>
-  <message id="pe-label-chi2-dof">𝜒²/DDL</message>
+  <message id="pe-label-chi2-dof">𝜒²/DOF</message>
   <message id="pe-label-peak-color">Couleur du pic</message>
 
-  <message id="pe-multipeak-in-roi">Pic {1} de {2} dans la ROI</message>
+  <message id="pe-multipeak-in-roi">Pic {1} de {2} dans ROI</message>
   <message id="pe-apply-all-of-type">Tous les pics {1}</message>
-  <message id="pe-drf-predict-fwhm-txt">La DRF prédit une FWHM de {1} keV</message>
+  <message id="pe-drf-predict-fwhm-txt">DRF prédit FWHM de {1} keV</message>
+  <message id="pe-btn-cont-to-linear">Estimer continuum linéaire</message>
+  <message id="pe-tt-btn-cont-to-linear">Utilise les canaux à droite et à gauche de la ROI pour estimer un continuum rectiligne.</message>
   <message id="pe-failed-refit-insig">Échec du réajustement du pic (devenu insignifiant), donc aucune action</message>
 
+  <message id="pe-est-lin-cont-no-data">Veuillez charger un spectre de premier plan avant d'estimer le continuum.</message>
+  <message id="pe-failed-est-lin-cont">Échec de l'estimation du continuum à partir des bords de la ROI : {1}</message>
+  
+  
+  
 </messages>

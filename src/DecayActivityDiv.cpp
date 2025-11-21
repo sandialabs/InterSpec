@@ -708,15 +708,15 @@ class DateLengthCalculator : public WContainerWidget
             mintime = std::min( mintime, nuc->halfLife );
         }
         
-        if( (duration < 0.01*mintime) && m_activityDiv && m_activityDiv->m_displayTimeLength )
+        if( (fabs(duration) < 0.01*mintime) && m_activityDiv && m_activityDiv->m_displayTimeLength )
         {
           m_duration->setText( m_activityDiv->m_displayTimeLength->text() );
           updateInfo();
           return;
         }
         
-        int64_t ndays = std::floor(duration / PhysicalUnits::day);
-        double remanderSeconds = duration - (ndays * PhysicalUnits::day);
+        int64_t ndays = std::floor(fabs(duration) / PhysicalUnits::day);
+        double remanderSeconds = fabs(duration) - (ndays * PhysicalUnits::day);
         if( fabs(PhysicalUnits::day - remanderSeconds) <= 1.0 )
         {
           remanderSeconds = PhysicalUnits::day - remanderSeconds;
@@ -724,13 +724,23 @@ class DateLengthCalculator : public WContainerWidget
         }
         
         // \TODO: do the same thing as days, but for years to try and set an initial date
-        
-        if( (ndays < 1) || (remanderSeconds > 1.0)
-           || (m_enddate->validate() != WValidator::State::Valid)
-           || ndays >= std::numeric_limits<int>::max() )
+        if( duration < 0.0 )
+          ndays = -ndays;
+
+        if( (abs(ndays) < 1) || (remanderSeconds > 1.0))
+        {
           m_begindate->setText( "" );
-        else
+        }else if( m_enddate->validate() == WValidator::State::Valid )
+        {
           m_begindate->setDate( m_enddate->date().addDays( -static_cast<int>(ndays) ) );
+        }else if( m_begindate->validate() == WValidator::State::Valid )
+        {
+          m_enddate->setDate( m_begindate->date().addDays( static_cast<int>(ndays) ) );
+        }else
+        {
+          m_begindate->setText( "" );
+          m_enddate->setText( "" );
+        }
       }catch(...)
       {
         m_begindate->setText( "" );
@@ -890,7 +900,7 @@ class DateLengthCalculator : public WContainerWidget
       activityEdit->setTextSize( 10 );
       activityEdit->setText( actTxt );
       
-      auto doActivityUpdate = [=,this](){
+      auto doActivityUpdate = [this, activityEdit, nucinfo, actTxt](){
         if( activityEdit->validate() != WValidator::State::Valid )
         {
           activityEdit->setText( actTxt );
@@ -960,7 +970,7 @@ class DateLengthCalculator : public WContainerWidget
       ageEdit->setTextSize( 10 );
       ageEdit->setText( ageTxt );
       
-      auto doAgeUpdate = [=,this](){
+      auto doAgeUpdate = [this, ageEdit, ageTxt, nucinfo](){
         if( ageEdit->validate() != WValidator::State::Valid )
         {
           ageEdit->setText( ageTxt );
@@ -1479,7 +1489,10 @@ class CsvDownloadGui : public AuxWindow
 public:
   
   CsvDownloadGui( DecayActivityDiv *parent )
-  : AuxWindow( "CSV Export", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::TabletNotFullScreen | AuxWindowProperties::DisableCollapse | AuxWindowProperties::SetCloseable) ),
+  : AuxWindow( "CSV Export", (AuxWindowProperties::IsModal
+                              | AuxWindowProperties::TabletNotFullScreen
+                              | AuxWindowProperties::DisableCollapse
+                              | AuxWindowProperties::SetCloseable) ),
   m_parent( parent ),
   m_csvResouce( nullptr ),
   m_ageEdit( nullptr )
@@ -1750,7 +1763,7 @@ void DecayActivityDiv::init()
   m_createNewNuclideButton         = new WPushButton( WString::tr("dad-add-nucs") );
   m_clearNuclidesButton            = new WPushButton( WString::tr(isPhone ? "Clear" : "dad-remove-all")  );
   m_nuclideSelectDialog            = new AuxWindow( WString::tr("dad-sel-nuc-window-title"),
-                                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen) | AuxWindowProperties::DisableCollapse) );
+                                    (AuxWindowProperties::TabletNotFullScreen | AuxWindowProperties::DisableCollapse) );
   
   m_nuclideSelect                  = new DecaySelectNuclide( isPhone, nullptr, m_nuclideSelectDialog );
   m_decayLegend                    = new WContainerWidget();
@@ -2195,6 +2208,7 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
   {
     displOptLower = new WContainerWidget( displayOptionsDiv );
     displOptLower->setMargin( 5, Wt::Top );
+    displOptLower->addStyleClass( "LowerOptions" );
   }
   
   
@@ -2215,6 +2229,9 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
   
   if( !m_viewer->isPhone() )
   {
+    WContainerWidget *spacer = new WContainerWidget( displOptLower );
+    spacer->addStyleClass( "LowerOptionsSpacer" );
+    
     WPushButton *csvButton = new WPushButton( displOptLower );
     csvButton->setIcon( "InterSpec_resources/images/download_small.svg" );
     csvButton->setText( WString("{1}...").arg( WString::tr("CSV") ) );
@@ -2863,7 +2880,7 @@ WContainerWidget *DecayActivityDiv::isotopesSummary( const double time ) const
   
   
    //Or the equivalent, but not compiling code is:
-  string mixtureInfo = [=,this]() -> std::string {
+  string mixtureInfo = [this, time]() -> std::string {
     using namespace SandiaDecay;
     const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
     
@@ -2878,7 +2895,7 @@ WContainerWidget *DecayActivityDiv::isotopesSummary( const double time ) const
       
       stringstream infostrm;
     
-    auto use_curry = [=,this]( const SandiaDecay::Nuclide * const initial_nuc ) -> bool {
+    auto use_curry = [this,db]( const SandiaDecay::Nuclide * const initial_nuc ) -> bool {
       for( const Nuclide &nuc : m_nuclides )
       {
         const SandiaDecay::Nuclide * const nuclide = db->nuclide( nuc.z, nuc.a, nuc.iso );

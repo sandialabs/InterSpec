@@ -72,6 +72,11 @@
 }
 
 
+.EnergyCalTool .MoreActionsMenuContent
+{
+  min-width: 120px; /* So the help and CALp download/upload buttons will fit, even for languages where the text is narrow. */
+}
+
 .EnergyCalTool .ApplyToItem
 {
   

@@ -1628,10 +1628,11 @@ void PeakDef::gammaTypeFromUserInput( std::string &txt,
   {
     type = PeakDef::SingleEscapeGamma;
     SpecUtils::ireplace_all( txt, "s.e.", "" );
-  }else if( SpecUtils::icontains( txt, "single escape" ) )
+  }else if( SpecUtils::icontains( txt, "single escape" ) || SpecUtils::icontains( txt, "single-escape" ) )
   {
     type = PeakDef::SingleEscapeGamma;
     SpecUtils::ireplace_all( txt, "single escape", "" );
+    SpecUtils::ireplace_all( txt, "single-escape", "" );
   }else if( SpecUtils::iequals_ascii( txt, "s.e." )
      || SpecUtils::iequals_ascii( txt, "se" )
      || SpecUtils::iequals_ascii( txt, "escape" ) )
@@ -1650,10 +1651,11 @@ void PeakDef::gammaTypeFromUserInput( std::string &txt,
   {
     type = PeakDef::DoubleEscapeGamma;
     SpecUtils::ireplace_all( txt, "d.e.", "" );
-  }else if( SpecUtils::icontains( txt, "double escape" ) )
+  }else if( SpecUtils::icontains( txt, "double escape" ) || SpecUtils::icontains( txt, "double-escape" ) )
   {
     type = PeakDef::DoubleEscapeGamma;
     SpecUtils::ireplace_all( txt, "double escape", "" );
+    SpecUtils::ireplace_all( txt, "double-escape", "" );
   }else if( SpecUtils::icontains( txt, "de " ) && txt.size() > 5 )
   {
     type = PeakDef::DoubleEscapeGamma;
@@ -1676,6 +1678,8 @@ void PeakDef::gammaTypeFromUserInput( std::string &txt,
     SpecUtils::ireplace_all( txt, "x-ray", "" );
     SpecUtils::ireplace_all( txt, "x ray", "" );
   }
+  
+  SpecUtils::trim( txt );
 }//PeakDef::SourceGammaType gammaType( std::string txt )
 
 
@@ -2661,11 +2665,17 @@ void PeakDef::fromXml( const rapidxml::xml_node<char> *peak_node,
 
 #if( SpecUtils_ENABLE_D3_CHART )
 std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const PeakDef> > &peaks,
-                                  const std::shared_ptr<const SpecUtils::Measurement> &foreground )
+                                        const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+                                        const Wt::WColor &defaultPeakColor,
+                                        int override_alpha )
 {
   //Need to check all numbers to make sure not inf or nan
   
   stringstream answer;
+  
+  if( (override_alpha < 0) || (override_alpha > 255) )
+    override_alpha = 255; //0 is completely transparent, 255 is totally solid
+  const bool use_alpha = (override_alpha != 255);
   
   if (peaks.empty())
     return answer.str();
@@ -2769,9 +2779,11 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         
         firstbin = (firstbin > 0) ? (firstbin - 1) : firstbin;
         firstbin = (firstbin > 0) ? (firstbin - 1) : firstbin;
-        lastbin = (lastbin < (nchannel - 1)) ? (lastbin + 1) : nchannel;
-        lastbin = (lastbin < (nchannel - 1)) ? (lastbin + 1) : nchannel;
+        lastbin = (lastbin < (nchannel - 1)) ? (lastbin + 1) : lastbin;
+        lastbin = (lastbin < (nchannel - 1)) ? (lastbin + 1) : lastbin;
         
+        assert( firstbin <= lastbin );
+        assert( lastbin <= (nchannel - 1) );
         
         // When the JSON of the spectrum chart is defined, D3SpectrumExport.cpp/write_spectrum_data_js(...)
         //  will send the energy calibration as coefficients sometimes, and lower channel energies other
@@ -2820,16 +2832,41 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
           answer << "]," << q << "continuumCounts" << q << ":[";
         }
          */
-#ifndef _WIN32        
-#warning "Can make computing continuumCounts for FlatStep/LinearStep/BiLinearStep so much more efficient"
-#endif        
-        for (size_t i = firstbin; i <= lastbin; ++i)
-        {
-          const float lower_x = foreground->gamma_channel_lower( i );
-          const float upper_x = foreground->gamma_channel_upper( i );
-          const float cont_counts = continuum->offset_integral( lower_x, upper_x, foreground );
-          answer << ((i!=firstbin) ? "," : "") << cont_counts;
-        }
+        
+        //Slow implementation pre 20251105
+        //for (size_t i = firstbin; i <= lastbin; ++i)
+        //{
+        //  const float lower_x = foreground->gamma_channel_lower( i );
+        //  const float upper_x = foreground->gamma_channel_upper( i );
+        //  const float cont_counts = continuum->offset_integral( lower_x, upper_x, foreground );
+        //  answer << ((i!=firstbin) ? "," : "") << cont_counts;
+        //}
+        
+        {// Begin write continuum counts for each channel
+          const shared_ptr<const vector<float>> &channel_energies_ptr = foreground->channel_energies();
+          assert( channel_energies_ptr && (lastbin < channel_energies_ptr->size()) && (firstbin <= lastbin) );
+          const size_t num_roi_channels = (lastbin > firstbin) ? (1 + lastbin - firstbin) : size_t(1);
+          assert( num_roi_channels > 0 );
+          
+          const float * const energies = &(channel_energies_ptr->at(firstbin));
+          vector<double> continuum_counts( nchannel, 0.0 );
+          continuum->offset_integral( energies, &(continuum_counts[0]), num_roi_channels, foreground );
+          
+          for( size_t i = 0; i < num_roi_channels; ++i )
+          {
+            answer << (i ? "," : "") << continuum_counts[i];
+#if( PERFORM_DEVELOPER_CHECKS )
+            {
+              const size_t channel = i + firstbin;
+              const float lower_x = foreground->gamma_channel_lower( channel );
+              const float upper_x = foreground->gamma_channel_upper( channel );
+              const double cont_counts_test = continuum->offset_integral( lower_x, upper_x, foreground );
+              assert( fabs(continuum_counts[i] - cont_counts_test) < std::max( 0.0001*std::max( fabs(continuum_counts[i]), fabs(cont_counts_test) ), 1.0E-6) );
+            }
+#endif
+          }
+        }// End write continuum counts for each channel
+        
         answer << "]";
         
         answer << std::setprecision(9);
@@ -2902,8 +2939,90 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
       }
     }
 
-    if (!p.lineColor().isDefault())
-      answer << q << "lineColor" << q << ":" << q << p.lineColor().cssText(false) << q << ",";
+    if( !p.lineColor().isDefault() || (use_alpha && !defaultPeakColor.isDefault()) )
+    {
+      const Wt::WColor &orig_color = p.lineColor().isDefault() ? defaultPeakColor : p.lineColor();
+      string color_str = orig_color.cssText(true);
+      
+      // Note: the WColor could have been created with a string like "rgba(12,1,99,0.1)", and we will only over-ride
+      //       the alpha value, if `use_alpha` is true, because `Wt::WColor::cssText` will always output the string the
+      //       color was created with, regardless of if we specify to use alpha or not.
+      
+      if( use_alpha )
+      {
+        // TODO: move all this into its own function
+        
+        // The `WColor::cssText(bool)` function will return the string the WColor was
+        // created with, even if it was a string like "#FFA1GT", which WColor also parsed
+        // out the RGB components of.  So we will work around this for colors except
+        // black, or if a string like "red", "silver", etc was used.
+        // Unfortuanetly WColor doesnt currently have a great way to check for this, so we'll
+        // half-heartedly do some string checks
+#if( WT_VERSION > 0x4000000 )
+#pragma message( "Need to check if WColor can have a bit better of a treatment" )
+#endif
+        
+        if( (color_str.find("rgba(") != string::npos)
+           || (color_str.find("rgb(") != string::npos)
+           || orig_color.red() || orig_color.green() || orig_color.blue() )
+        {
+          // The WColor could have been created with string like "rgba(12,1,99,0.1)", so we will override the alpha
+          Wt::WColor c( orig_color.red(), orig_color.green(), orig_color.blue(), override_alpha );
+          color_str = c.cssText(true);
+        }else
+        {
+          Wt::WColor c;
+          if( color_str.empty()  )
+            c.setRgb(0, 0, 0, override_alpha);
+          else if( color_str == "black" )
+            c.setRgb(0, 0, 0, override_alpha);
+          else if( color_str == "silver" )
+            c.setRgb(192, 192, 192, override_alpha);
+          else if( color_str == "white" )
+            c.setRgb(255, 255, 255, override_alpha);
+          else if( color_str == "red" )
+            c.setRgb(255, 0, 0, override_alpha);
+          else if( color_str == "green" )
+            c.setRgb(0, 128, 0, override_alpha);
+          else if( color_str == "blue" )
+            c.setRgb(0, 0, 255, override_alpha);
+          else if( color_str == "yellow" )
+            c.setRgb(255, 255, 0, override_alpha);
+          else if( color_str == "cyan" )
+            c.setRgb(0, 255, 255, override_alpha);
+          else if( color_str == "magenta" )
+            c.setRgb(255, 0, 255, override_alpha);
+          else if( color_str == "orange" )
+            c.setRgb(255, 165, 0, override_alpha);
+          else if( color_str == "purple" )
+            c.setRgb(128, 0, 128, override_alpha);
+          else if( color_str == "lime" )
+            c.setRgb(0, 255, 0, override_alpha);
+          else if( color_str == "navy" )
+            c.setRgb(0, 0, 128, override_alpha);
+          else if( color_str == "gray" || color_str == "grey" )
+            c.setRgb(128, 128, 128, override_alpha);
+          else if( color_str == "maroon" )
+            c.setRgb(128, 0, 0, override_alpha);
+          else if( color_str == "olive" )
+            c.setRgb(128, 128, 0, override_alpha);
+          else if( color_str == "teal" )
+            c.setRgb(0, 128, 128, override_alpha);
+          else if( color_str == "aqua" )
+            c.setRgb(0, 255, 255, override_alpha);
+          else if( color_str == "fuchsia" )
+            c.setRgb(255, 0, 255, override_alpha);
+          
+          if( !c.isDefault() )
+            color_str = c.cssText(true);
+          else 
+            cerr << "Warning: not setting alpha color for WColor of text '" << color_str << "'." << endl;
+        }
+      }//if( !use_alpha ) / else
+        
+      answer << q << "lineColor" << q << ":" << q << color_str << q << ",";
+    }//if( !p.lineColor().isDefault() )
+    
     answer << q << "type" << q << ":" << q << PeakDef::to_str(p.type()) << q << ",";
     
     double dist_norm = 0.0;
@@ -3207,7 +3326,9 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
 
 
 string PeakDef::peak_json(const vector<std::shared_ptr<const PeakDef> > &inpeaks,
-                          const std::shared_ptr<const SpecUtils::Measurement> &foreground )
+                          const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+                          const Wt::WColor &defaultPeakColor,
+                          int override_alpha )
 {
   if (inpeaks.empty())
     return "[]";
@@ -3220,7 +3341,7 @@ string PeakDef::peak_json(const vector<std::shared_ptr<const PeakDef> > &inpeaks
 
   string json = "[";
   for (const ContinuumToPeakMap_t::value_type &vt : continuumToPeaks)
-    json += ((json.size()>2) ? "," : "") + gaus_peaks_to_json(vt.second,foreground);
+    json += ((json.size()>2) ? "," : "") + gaus_peaks_to_json(vt.second,foreground,defaultPeakColor,override_alpha);
 
   json += "]";
   
@@ -3767,6 +3888,18 @@ bool PeakDef::hasSourceGammaAssigned() const
   return ((m_parentNuclide && m_transition && m_radparticleIndex>=0) 
     || (m_parentNuclide && (m_sourceGammaType == PeakDef::SourceGammaType::AnnihilationGamma))
     || m_xrayElement || m_reaction);
+}
+
+
+std::string PeakDef::sourceName() const
+{
+  if( m_parentNuclide )
+    return m_parentNuclide->symbol;
+  if( m_xrayElement )
+    return m_xrayElement->symbol;
+  if( m_reaction )
+    return m_reaction->name();
+  return "";
 }
 
 void PeakDef::setNuclearTransition( const SandiaDecay::Nuclide *parentNuclide,

@@ -120,7 +120,7 @@
       },
       {
         "id":"rel-act-dialog",
-        "title":"Relative Activity Isotopics",
+        "title":"Isotopics by nuclides",
         "help-xml":"rel_act_help.xml",
         "keywords":"Relative Activity Efficiency Isotopics"
       },
@@ -154,6 +154,13 @@
         "help-xml":"simple_mda_help.xml",
         "keywords":"MDA Detectable simple"
       },
+      {
+        "id":"simple-activity-calc",
+        "title": "Simple Activity Calculator",
+        "help-xml":"simple_activity_calc_help.xml",
+        "keywords":"Activity simple"
+      },
+      
       {
         "id":"color-theme-dialog",
         "title": "Colors/Theme",

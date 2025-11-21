@@ -43,6 +43,7 @@
 #include <wx/sizer.h>
 #include "wx/webview.h"
 #include <wx/utils.h>
+#include <wx/msgdlg.h>
 
 #include "wx/numdlg.h"
 #include "wx/infobar.h"
@@ -364,7 +365,7 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
   wx = std::max( 0l, std::min(wx, screen_x / 2) );
   wy = std::max( 0l, std::min(wy, screen_y / 2) );
 
-  wxLogMessage("Will set window tp: %ld x %ld at %ld,%ld", ww, wh, wx, wy);
+  wxLogMessage("Will set window to: %ld x %ld at %ld,%ld", ww, wh, wx, wy);
 
   //I'm not sure how/if screen_x and screen_y take into account GetDPIScaleFactor()
   //SetSize(FromDIP(wxSize(0.85*screen_x, 0.85*screen_y)));
@@ -373,9 +374,9 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
     
   
 #ifdef NDEBUG
-    const bool allowDevTool = (false || InterSpecWxApp::open_dev_console());
+  const bool allowDevTool = (false || InterSpecWxApp::open_dev_console());
 #else
-    const bool allowDevTool = true;
+  const bool allowDevTool = true;
 #endif
 
 
@@ -1223,7 +1224,14 @@ void InterSpecWebFrame::OnError(wxWebViewEvent& evt)
     WX_ERROR_CASE(wxWEBVIEW_NAV_ERR_OTHER);
   }
 
-  wxLogMessage("%s", "Error; url='" + evt.GetURL() + "', error='" + category + " (" + evt.GetString() + ")'");
+  wxString message = "WebView Error; url='" + evt.GetURL() + "', error='" + category + " (" + evt.GetString() + ")'";
+  wxLogMessage( "%s", message );
+
+  auto app = dynamic_cast<InterSpecWxApp *>(wxApp::GetInstance());
+  wxMessageDialog dialog( app->GetTopWindow(), "Error", "WebView Error", wxOK | wxICON_ERROR | wxSTAY_ON_TOP );
+  dialog.SetExtendedMessage( message );
+  dialog.ShowModal();
+
 
   //Show the info bar with an error
   //m_info->ShowMessage(_("An error occurred loading ") + evt.GetURL() + "\n" +

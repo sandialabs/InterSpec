@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- bgw- is short for BatchGuiWidget, strings used by BatchGuiAnaWidget -->
+
+  <!-- Exemplar group -->
+  <message id="bgw-exemplar-grp-title">例示</message>
+  <message id="bgw-exemplar-use-current-fore">現在のフォアグラウンドを使用</message>
+
+  <!-- Background group -->
+  <message id="bgw-back-grp-title">バックグラウンド</message>
+  <message id="bgw-back-use-current">現在のバックグラウンドを使用</message>
+  <message id="bgw-back-none">バックグラウンドなし</message>
+
+  <!-- Peak fitting options -->
+  <message id="bgw-fit-all-peaks">全てのピークをフィット</message>
+  <message id="bgw-refit-energy-cal">エネルギー校正を再フィット</message>
+  <message id="bgw-use-exemplar-energy-cal">例示エネルギー校正を使用</message>
+  <message id="bgw-write-n42-with-results">結果付きN42を書き出し</message>
+  <message id="bgw-show-nonfit-peaks">非フィットピークを表示</message>
+  <message id="bgw-overwrite-output-files">出力ファイルを上書き</message>
+  <message id="bgw-create-csv-output">ピークCSV</message>
+  <message id="bgw-create-json-output">JSONを書き出し</message>
+  <message id="bgw-concatenate-to-n42">連結N42を作成</message>
+  <message id="bgw-use-existing-background-peaks">既存のバックグラウンドピークを使用</message>
+  <message id="bgw-use-exemplar-energy-cal-for-background">バックグラウンドに例示エネルギー校正を使用</message>
+  
+  <!-- Threshold labels -->
+  <message id="bgw-peak-stat-threshold-label">ピーク統計閾値:</message>
+  <message id="bgw-peak-hypothesis-threshold-label">ピーク仮説閾値:</message>
+  
+  <!-- File convert options options -->
+  <message id="bgw-overwrite-output-cb">出力を上書き</message>
+  <message id="bgw-sum-multirecord-to-single">複数レコードファイルを単一レコードに合計</message>
+  <message id="bgw-info-will-convert-file-type">ファイルは選択されたタイプに変換されます。</message>
+  
+  
+  <!-- Reports group -->
+  <message id="bgw-reports-grp-title">書き出すレポート</message>
+  <message id="bgw-reports-write-html">HTML</message>
+  <message id="bgw-reports-write-html-tooltip">解析結果のHTMLレポートを書き出します。</message>
+  <message id="bgw-reports-write-csv">サマリーCSV</message>
+  <message id="bgw-reports-write-csv-tooltip">全入力ファイルの解析結果のサマリーCSVファイルを書き出します。</message>
+  <message id="bgw-reports-write-custom-per-file">カスタム各ファイル用</message>
+  <message id="bgw-reports-write-custom-per-file-tooltip">各ファイルに使用するカスタムレポートテンプレートをアップロードします。</message>
+  <message id="bgw-reports-write-custom-summary">カスタムサマリー</message>
+  <message id="bgw-reports-write-custom-summary-tooltip">全入力ファイルのサマリーを提供する一つまたは複数のテンプレートファイル。</message>
+
+  <!-- Reasons analysis cant be done -->
+  <message id="bgw-no-ana-peak-fit-no-peaks">例示にピークがありません。</message>
+  <message id="bgw-no-ana-peak-fit-need-peaks">ピーク付き例示スペクトルまたはピークCSVファイルが必要です。</message>
+  <message id="bgw-no-ana-peak-fit-bad-background">有効なバックグラウンドが必要</message>
+  <message id="bgw-no-ana-act-shield-no-drf">検出器効率が利用できません。</message>
+  <message id="bgw-no-ana-act-shield-no-exemplar">例示スペクトルが選択されていません。</message>
+  <message id="bgw-no-ana-act-shield-no-peaks-in-exemplar">選択された例示スペクトルにピークがありません。</message>
+  <message id="bgw-no-ana-act-shield-no-act-fit-model">例示に放射能/遮蔽フィットモデルがありません。</message>
+  <message id="bgw-no-ana-act-shield-invalid-background">無効なバックグラウンド</message>
+  <message id="bgw-no-ana-no-input-files">入力ファイルがありません。</message>
+  <message id="bgw-no-ana-invalid-output-path">有効な出力ディレクトリを選択してください。</message>
+
+
+  <!-- Analysis progress and results -->
+  <message id="bgw-performing-work-title">作業実行中</message>
+  <message id="bgw-performing-work-msg">バッチ解析の実行をお待ちください...</message>
+  <message id="bgw-error-analysis-title">バッチ解析実行エラー</message>
+  <message id="bgw-error-analysis-msg">エラー: {1}</message>
+  <message id="bgw-analysis-summary-title">バッチ解析サマリー</message>
+  <message id="bgw-json-parse-error">
+    <p>JSON結果の解析エラー:</p>
+    <code>{1}</code>
+  </message>
+  <message id="bgw-inja-error">
+    <p>例外によるHTML作成エラー:</p>
+    <code>{1}</code>
+    <br />
+    行 {2}, 列 {3}
+  </message>
+  <message id="bgw-misc-error">
+    <p>例外により結果サマリーを生成できません:</p>
+    <code>{1}</code>
+  </message>
+  <message id="bgw-warning-title">警告</message>
+ 
+  <!-- Tooltips matching command line help text -->
+  <message id="bgw-fit-all-peaks-tt">例示ファイルのピークをフィットする代わりに、スペクトル内の全ピークがフィットされます。</message>
+  
+  <message id="bgw-refit-energy-cal-tt">初期ピークフィット後、それらのピーク（とその割り当て核種）を使用してエネルギーゲインを調整し、更新されたエネルギー校正でピークを再フィットします。
+  これは放射能/遮蔽をフィットする場合のバックグラウンドファイルにも適用されます。
+  </message>
+  
+  <message id="bgw-use-exemplar-energy-cal-tt">入力フォアグラウンドファイルで例示N42エネルギー校正を使用します。
+refit-energy-calがtrueに指定された場合、例示エネルギー校正が初期フィットに使用され、その後調整されてピークが再フィットされます。
+  </message>
+
+  <message id="bgw-write-n42-with-results-tt">フィットピークを入力スペクトルファイルに追加し、N42として保存します。このオプションを指定する場合は'output_path'を指定する必要があります。また、既存ファイルの上書きは拒否されます。</message>
+  
+  <message id="bgw-show-nonfit-peaks-tt">フィットされないピークを出力CSVピーク結果に含めます。これらのピークは振幅がゼロに設定されます。</message>
+  
+  <message id="bgw-overwrite-output-files-tt">出力N42、CSV、またはレポートファイルの上書きを許可します。デフォルトではファイルを上書きしません。</message>
+  
+  <message id="bgw-create-csv-output-tt">ピークフィットCSVを出力します。</message>
+  
+  <message id="bgw-create-json-output-tt">レポートテンプレートの作成に使用されるJSONをファイルに書き出します。</message>
+  
+  <message id="bgw-concatenate-to-n42-tt">すべての入力ファイルのピークフィットを含む出力N42ファイルを作成します。</message>
+  
+  <message id="bgw-use-existing-background-peaks-tt">ピークを再フィットするのではなく、指定されたバックグラウンドのフィットピークを使用します。
+InterSpecからのピークがスペクトルファイルに存在する必要があり、このオプションはハードバックグラウンド減算では使用できません。</message>
+  
+  <message id="bgw-use-exemplar-energy-cal-for-background-tt">バックグラウンドファイルに例示N42エネルギー校正を使用します。
+例示にN42ファイルが使用される場合のみ適用されます。</message>
+  
+  <message id="bgw-peak-stat-threshold-tt">ROIに対してコンティニューアムのみをフィットする場合と比べて、ピークフィットのChi2の改善に必要な値。
+負またはゼロの値は要求なしを示し（バッチ解析ではピークがスペクトルに存在する可能性を前提とするためデフォルト）、一般的なピーク検索では〜1（弱いピーク）から〜5（有意なピーク）の間の合理的な値です。</message>
+  
+  <message id="bgw-peak-hypothesis-threshold-tt">ROIがガウシアンピーク+コンティニューアムにどの程度適合する必要があるかの要求。
+これは帰無仮説chi2（コンティニューアムのみ、ガウシアンなし）対検定仮説（コンティニューア+ガウシアン）chi2の比率です。
+この合理的な値は1から5の範囲にあるようです。
+ゼロまたは負の値は要求なしを意味し、また'peak-stat-threshold'要求もありません。</message>
+  
+  <message id="bgw-reports-write-custom-per-file-tooltip">一つまたは複数のスペクトルレポートテンプレートファイル - 各入力ファイルに対して、指定された各テンプレートでレポートが生成されます。</message>
+
+  <message id="bgw-reports-write-custom-summary-tooltip">全入力ファイルのサマリーを提供する一つまたは複数のテンプレートファイル。</message>
+
+  <!-- Activity/Shielding Analysis specific strings -->
+  <message id="bgw-use-bq">Bq単位を使用</message>
+  <message id="bgw-hard-background-sub">ハードバックグラウンド減算</message>
+  
+  <!-- Detector input strings -->
+  <message id="bgw-detector-input-label">検出器応答関数</message>
+  <message id="bgw-use-detector-override">カスタム検出器を使用</message>
+  
+  <!-- Distance override strings -->
+  <message id="bgw-override-distance">距離を上書き</message>
+  <message id="bgw-distance-label">距離:</message>
+  
+  <!-- Error and completion messages -->
+  <message id="bgw-no-exemplar-msg">例示スペクトルが利用できません。フォアグラウンドスペクトルを選択するか例示ファイルをアップロードしてください。</message>
+</messages>

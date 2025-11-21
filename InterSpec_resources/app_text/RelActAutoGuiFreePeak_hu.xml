@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raagfp- is short for RelActAutoGuiFreePeak -->
+  
+  <!-- Checkboxes -->
+  <message id="raagfp-constrain-fwhm">FWHM Korlátozása</message>
+  <message id="raagfp-true-energy">Valódi Energia</message>
+  
+  <!-- Messages -->
+  <message id="raagfp-not-in-roi">Nincs ROI-ban.</message>
+  
+  <!-- Tooltips -->
+  <message id="raagfp-constrain-fwhm-tt">Ha be van jelölve, ez a csúcs korlátozva lesz arra a FWHM funkcionális formára, amelyre a gamma és röntgen-sugár csúcsok általában korlátozva vannak.&lt;br /&gt;Ha nincs bejelölve, ennek a csúcsnak a FWHM-e az adatokból lesz illesztve, minden más csúcs szélességétől függetlenül.&lt;br /&gt;Ennek az opciónak a kikapcsolása hasznos annihilációs és reakció fotocsúcsokra.</message>
+  <message id="raagfp-true-energy-tt">Jelölje be ezt az opciót, ha a csúcs ismert energiájú gamma sugaré.&lt;br /&gt;Törölje ezt az opciót, ha ez a csúcs egy megfigyelt csúcs a spektrumban ismeretlen valódi energiával.</message>
+  
+</messages>

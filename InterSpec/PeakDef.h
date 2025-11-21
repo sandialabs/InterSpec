@@ -106,7 +106,13 @@ struct PeakContinuum
     
     BiLinearStep,
     
-    /** A continuum is determined algorithmically for the entire spectrum; not recommended to use. */
+    /** A continuum is determined algorithmically for the entire spectrum; not recommended to use.
+
+     It use the Sensitive Nonlinear Iterative Peak (SNIP) clipping algorithm to estimate the background.
+     It works by iteratively comparing each data point with the average of its neighboring points and replacing it with
+     the smaller value. This process is repeated with increasing window sizes, effectively smoothing out peaks and
+     revealing the underlying background. 
+     */
     External
   };//enum OffsetType
   
@@ -221,7 +227,7 @@ struct PeakContinuum
    \param energies Array of lower channel energies; must have at least one more entry than
           `nchannel`.  For stepped continua (FlatStep, LinearStep, BiLinearStep), this must point
           into the energy calibration energies array of `data`.
-   \param channels Channel count array integrals of Gaussian and Skew will be _added_ to (e.g.,
+   \param channels Channel count array integrals of continuum; will be _added_ to (e.g.,
           will not be zeroed); must have at least `nchannel` entries
    \param nchannel The number of channels to do the integration over.
    \param data The spectrum (only used for stepped continua).
@@ -500,7 +506,7 @@ public:
   {
     GaussianDefined,
     DataDefined
-  };//enum PeakType
+  };//enum DefintionType
   
   /** Returns "GaussianDefined" or "DataDefined". */
   static const char *to_str( const DefintionType type );
@@ -656,12 +662,18 @@ public:
 
   inline bool useForEnergyCalibration() const;
   inline void useForEnergyCalibration( const bool use );
+  /** Returns the raw user preference for energy calibration, without checking source assignment */
+  inline bool useForEnergyCalibrationUserPreference() const { return m_useForEnergyCal; }
 
   inline bool useForShieldingSourceFit() const;
   inline void useForShieldingSourceFit( const bool use );
-  
+  /** Returns the raw user preference for shielding/source fit, without checking source assignment */
+  inline bool useForShieldingSourceFitUserPreference() const { return m_useForShieldingSourceFit; }
+
   inline bool useForManualRelEff() const;
   inline void useForManualRelEff( const bool use );
+  /** Returns the raw user preference for manual relative efficiency, without checking source assignment */
+  inline bool useForManualRelEffUserPreference() const { return m_useForManualRelEff; }
   
   /** Returns if should use for DRF intrinsic efficiency fit.  Note that this does not check that the nuclide and transition has actually
    been defined.
@@ -688,6 +700,9 @@ public:
   
   /** Check if nuclide, xray, or reaction has been set. */
   bool hasSourceGammaAssigned() const;
+  
+  /** Returns the `nuclide->symbol`, `element->symbol`, or `reaction->name()` if defined, else an empty string.  */
+  std::string sourceName() const;
   
   //setNuclearTransition(...): sets the inforation about what nuclide is
   //  responsible for this peak.  The transition and radParticle index specifies
@@ -950,9 +965,21 @@ public:
 
 #if( SpecUtils_ENABLE_D3_CHART )
   static std::string gaus_peaks_to_json( const std::vector<std::shared_ptr<const PeakDef> > &peaks,
-                                  const std::shared_ptr<const SpecUtils::Measurement> &foreground );
+                                        const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+                                        const Wt::WColor &defaultPeakColor,
+                                        int override_alpha );
+  /** Converts the given peaks to JSON suitable for sending to D3SpectrumDisplayDiv/SpectrumChartD3.js
+   @param inpeaks Peaks to convert to JSON
+   @param spectrum The spectrum the peaks are for - used for calculating stepped continua
+   @param defaultPeakColor The default color to use if the peak doesnt already have a color assigned.
+   @param override_alpha If a value in range [0,254] (inclusive range), the the alpha-value of the peak colors will be overridden by this value. A value
+          of `0` is completely clear, and a value of 254 is almost entirely solid.  A value of 255 (or -1, or 256, etc) will default to what the color has defined,
+          which is almost certainly 255.
+   */
   static std::string peak_json( const std::vector<std::shared_ptr<const PeakDef> > &inpeaks,
-                                const std::shared_ptr<const SpecUtils::Measurement> &foreground );
+                                const std::shared_ptr<const SpecUtils::Measurement> &spectrum,
+                               const Wt::WColor &defaultPeakColor,
+                               int override_alpha );
 #endif
   
 
@@ -1256,11 +1283,15 @@ bool PeakDef::useForManualRelEff() const
   
   switch( m_sourceGammaType )
   {
+    case PeakDef::XrayGamma:
+      if( m_parentNuclide )
+        return m_useForManualRelEff;
+      return false;
+
     case PeakDef::NormalGamma:
     case PeakDef::AnnihilationGamma:
       return m_useForManualRelEff;
-      
-    case PeakDef::XrayGamma:
+
     case PeakDef::SingleEscapeGamma:
     case PeakDef::DoubleEscapeGamma:
       break;

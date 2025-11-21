@@ -162,8 +162,6 @@ public:
   
   virtual ~DetectionLimitTool();
   
-  void do_development();
-  
   void setRefLinesAndGetLineInfo();
   
   void scheduleCalcUpdate();
@@ -247,9 +245,9 @@ protected:
   
   void roiDraggedCallback( double new_roi_lower_energy,
                    double new_roi_upper_energy,
-                   double new_roi_lower_px,
-                   double new_roi_upper_px,
+                   double new_roi_px,
                    double original_roi_lower_energy,
+                   const std::string &spectrum_type,
                    bool is_final_range );
   
   void doCalc();

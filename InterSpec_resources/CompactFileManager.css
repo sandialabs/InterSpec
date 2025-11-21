@@ -2,7 +2,7 @@
   padding-top: 5px;
   padding-left: 5px;
   padding-right: 5px;
-  padding-bottom: 3px;
+  padding-bottom: 0px;
   /* overflow-y: hidden; */
 }
 
@@ -14,7 +14,7 @@
   /* We need to keep too long of file selectors of titles from forcing each display from overgrowing its allotted 1/3 of width. */
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
   grid-column-gap: 5px;
-  grid-auto-rows: minmax(100px, auto) 23px;
+  grid-auto-rows: minmax(100px, auto) 20px;
 }
 
 .CompactFileManager div.DispType {
@@ -42,12 +42,12 @@
 
 .CompactFileManager.LeftToRight div.DispType.Background {
   grid-column: 2;
-  grid-row: 1 / 3;
+  grid-row: 1;
 }
 
 .CompactFileManager.LeftToRight div.DispType.Secondary {
   grid-column: 3;
-  grid-row: 1 / 3;
+  grid-row: 1;
 }
 
 div.DispType > div {
@@ -56,20 +56,44 @@ div.DispType > div {
   margin-right: 5px;
 }
 
-.CompactManagerButtons {
+.CompactFileManager .CompactManagerButtons,
+.CompactFileManager .BackgroundBtns,
+.CompactFileManager .SecondForegroundBtns {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
 }
 
-.CompactManagerButtons > button {
-  
+.CompactFileManager .CompactManagerButtons button.LinkBtn,
+.CompactFileManager .BackgroundBtns button.LinkBtn,
+.CompactFileManager .SecondForegroundBtns button.LinkBtn {
+  float: none;
+  font-weight: normal;
+  padding-top: 0px;
+  padding-bottom: 0px;
+  border: none;
+  height: 16px;
+  border-radius: 0px;
 }
 
 .CompactManagerButtons .ContentHelpBtn {
   position: relative;
-  top: 7px;
+  top: -1px;
 }
 
 .CompactFileManager.LeftToRight .CompactManagerButtons {
   grid-column: 1;
+  grid-row: 2;
+}
+
+.CompactFileManager .BackgroundBtns {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.CompactFileManager .SecondForegroundBtns {
+  grid-column: 3;
   grid-row: 2;
 }
 
@@ -109,13 +133,15 @@ div.SampleSelectRow .NextNextSample{
 }
 
 div.DispType .SpecTitle {
-  margin-top: 15px;
+  margin-top: 10px; /* If info table 4 rows, then title is partially cutoff if we make this 15px, like I like. */
   text-overflow: ellipsis;
   white-space: nowrap;
   overflow: hidden;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
-div.DispType .StretcherRow {
+.CompactFileManager .StretcherRow {
   flex-grow: 10;
   flex-shrink: 10;
 }
@@ -179,7 +205,6 @@ button.LinkBtn.GpsBtn, button.LinkBtn.GpsBtn:hover {
  at the same height as the foreground table (which has some additional buttons below the section)
  */
 .CompactFileManager.LeftToRight .DispType.Background .SummaryTable, .CompactFileManager.LeftToRight .DispType.Secondary .SummaryTable {
-  margin-bottom: 23px;
 }
 
 /* The "Scale Factor:" input for background and secondary - add a little space*/
@@ -195,6 +220,8 @@ div.DispType .BottomRow {
   flex-wrap: nowrap;
   justify-content: flex-start;
   align-items: flex-end;
+
+  height: 23px;
 }
 
 div.DispType .BottomRow > div {
@@ -222,6 +249,23 @@ div.DispType div.ScaleFactorRow{
   flex-direction: row;
   /* justify-content: space-between; */
   column-gap: 8px;
+}
+
+.CompactFileManager .SpecFileSelectRow {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  column-gap: 4px;
+}
+
+.CompactFileManager .SpecFileSelectRow > select {
+  flex-grow: 1;
+  flex-shrink: 1;
+}
+
+.CompactFileManager .SpecFileSelectClearBtn {
+  
 }
 
 .CompactFileManager .SpecLeg {

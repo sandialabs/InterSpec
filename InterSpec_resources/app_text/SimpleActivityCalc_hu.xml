@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- SimpleActivityCalc widget text resources -->
+  <message id="simple-activity-calc-title">Egyszerű Aktivitás Kalkulátor</message>
+  <message id="simple-activity-calc-menu">Egyszerű Akt. Kalkul.</message>
+  
+  <message id="sac-peak-label">Csúcs:</message>
+  <message id="sac-background-subtract-label">háttér kivonás</message>
+  
+  <message id="sac-distance-label">Távolság:</message>
+  <message id="sac-age-label">Kor:</message>
+  <message id="sac-shielding-label">Árnyékolás:</message>
+  <message id="sac-geometry-label">Geometria:</message>
+  <message id="sac-result-label">Aktivitás:</message>
+  <message id="sac-advanced-btn">Haladó akt/árnyékolás illesztés</message>
+  
+  <message id="sac-geometry-point">Pont Forrás</message>
+  <message id="sac-geometry-plane">Végtelen Sík</message>
+  <message id="sac-geometry-self-atten">Saját-Csillapító Gömb</message>
+  <message id="sac-geometry-trace-src">Nyom Forrás</message>
+  
+  <message id="sac-error-no-peak">Nincs csúcs kiválasztva</message>
+  <message id="sac-error-no-detector">Nincs detektor válasz betöltve</message>
+  <message id="sac-error-invalid-distance">Érvénytelen távolság megadva</message>
+  
+  <message id="sac-error-no-background-peak">
+    <p>Úgy tűnik, nincs csúcs a háttérben ugyanazon a helyen, mint ez a csúcs.</p>
+    <p>Ha úgy gondolja, hogy van, kérjük, cserélje fel az előtér és háttér spektrumokat, illeszsze a csúcsot a háttér spektrumban, majd cserélje vissza őket.</p>
+  </message>
+  
+  
+  <message id="sac-use-fit-background-peak">Szeretné használni az automatikusan illesztett háttér csúcsot?</message>
+  
+  <message id="sac-error-fitting-background-peak">
+    <p>Hiba történt a csúcs illesztése során a háttér spektrumra:</p>
+    <p style="SimpleActPeakFitErrorTxt">{1}</p>
+  </message>
+  
+  
+  <message id="sac-qr-tool-state-title">Egyszerű Aktivitás Kalkul. Eszköz Állapot</message>
+  <message id="sac-qr-tool-state-txt">Az egyszerű aktivitás kalkulátor eszköz jelenlegi állapota.</message>
+</messages>

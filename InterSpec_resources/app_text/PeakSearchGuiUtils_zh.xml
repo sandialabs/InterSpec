@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- psw- is short for PeakSelectorWindow
+  psgu- is short for PeakSearchGuiUtils, and are misc stuff
+  -->
+  <message id="psw-title-confirm-nuc-ass">确认核素指定</message>
+  <message id="psw-title-check-search">检查峰搜索结果</message>
+  <message id="psw-title-prev-spec">从先前谱保留的峰</message>
+  <message id="psw-title-csv-import">从CSV导入的峰</message>
+  <message id="psw-search-instruct-adjust">调整核素指定或要保留的峰。</message>
+  <message id="psw-search-instruct-unselect">取消选择您不想保留的任何峰。</message>
+  <message id="psw-search-instruct-assign">检查并修复核素指定。</message>
+  <message id="psw-search-instruct-keep">选择您想保留的峰。</message>
+  <message id="psw-show-all-peaks">显示所有峰</message>
+  <message id="psw-show-prev-peaks">也显示先前峰</message>
+  <message id="psw-show-missing-peaks">显示缺失峰</message>
+  <message id="psw-keep-only-assigned-peaks">仅保留指定给{1}的新峰</message>
+  <message id="psw-orig-nuc">原始核素</message>
+  <message id="psw-assigned-nuc">指定核素</message>
+  <message id="psw-peak-preview">峰预览</message>
+  <message id="psw-not-found">未找到</message>
+  <message id="psw-keep-peak">保留峰</message>
+  <message id="psw-keep-peak-q">保留峰？    </message>  <!-- There are four No-Break Space characters at end -->
+  <message id="psw-dont-change">不更改</message>
+  <message id="psw-no-nuc-changed">未更改核素</message>
+  <message id="psw-rel-eff-plot-title">相对效率图</message>
+  <message id="psw-rel-eff-plot-y-axis-title">相对峰面积/BR</message>
+
+  <message id="psgu-peaks-not-updated-no-change-msg">峰未更新，谱已更改。</message>
+  <message id="psgu-peaks-updated-msg">峰已更新。</message>
+
+  <message id="psgu-search-wait-title">稍等片刻</message>
+  <message id="psgu-search-wait-content">
+    <div style="text-align: left; white-space: nowrap;">
+      <div>正在搜索峰 - 这可能需要一些时间。</div>
+      <div>您可以关闭此对话框，搜索完成时，</div>
+      <div>您将收到通知</div>
+    </div>
+  </message>
+
+
+  <message id="psgu-fwhm-info-needed-title">需要FWHM信息</message>
+  <message id="psgu-fwhm-info-needed-has-det-eff">
+    <div>当前探测器响应不包含FWHM信息。</div>
+    <div>您想从当前谱拟合FWHM信息吗？</div>
+  </message>
+  <message id="psgu-fwhm-info-needed-no-det-eff">
+    <div>未选择探测器响应。</div>
+    <div>您想从当前谱拟合FWHM信息吗？</div>
+  </message>
+  <message id="psgu-fwhm-fit-fail">重新拟合峰失败（变得不显著），从{1}个峰到{2}个峰</message>
+
+
+  <message id="psgu-no-peak-near-right-click-msg">没有峰要设置为伽马的能量</message>
+  <message id="psgu-no-ref-line-near-peak-msg">没有参考伽马能量可将峰的均值设置为。</message>
+  <message id="psgu-failed-refit-after-fixing-mean">
+    将均值固定为参考光峰后重新拟合峰失败。
+    一个峰变得不显著；从{1}个峰到{2}个峰。
+  </message>
+  <message id="psgu-failed-change-cont-type">
+  将连续谱类型更改为{1}导致{2}峰变得不显著。<br />
+  请使用<b>峰编辑器</b>进行此更改。
+  </message>
+  <message id="psgu-failed-change-cont-singular">该</message>  <!-- this or next message will be substituted for {2} of previous message -->
+  <message id="psgu-failed-change-cont-plural">至少一个</message>
+  <message id="psgu-failed-change-cont-insig-msg">
+  天真地将连续谱类型更改为{1}导致峰变得不显著。<br />
+  请使用<b>峰编辑器</b>进行此更改。
+  </message>
+  <message id="psgu-change-skew-not-gaus">{1} keV处ROI中的峰不是高斯定义的 - 请在设置偏斜类型之前在<b>峰编辑器</b>中更改此项。</message>
+  <message id="psgu-change-skew-make-insig">
+    将偏斜类型更改为{1}导致{2}峰变得不显著。<br />
+    请使用<b>峰编辑器</b>进行此更改。
+  </message>
+  <message id="psgu-failed-change-skew-insig-msg">
+  天真地将偏斜类型更改为{1}导致峰变得不显著。<br />
+  请使用<b>峰编辑器</b>进行此更改。
+  </message>
+  
+</messages>
+

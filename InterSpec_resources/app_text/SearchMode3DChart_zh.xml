@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- sm3dc- is short for SearchMode3DChart -->
+  <message id="sm3dc-loading">加载中...</message>
+  <message id="sm3dc-min-energy">最小能量</message>
+  <message id="sm3dc-max-energy">最大能量</message>
+  <message id="sm3dc-min-time">最小时间(s)</message>
+  <message id="sm3dc-max-time">最大时间(s)</message>
+  <message id="sm3dc-time-bins">时间显示通道</message>
+  <message id="sm3dc-tt-time-bins">
+    要绘制的最大时间分段数；如果您的数据在显示范围内具有比此数量更多的时间样本，
+    时间样本将组合在一起，直到小于此值。
+    <br />
+    <br />
+    例如，如果此值为60，但您的测量有208个样本，那么每4个
+    样本将被求和在一起作为时间轴的单个通道，
+    时间轴上总共有52个通道。
+    <br />
+    如果时间通道数乘以能量通道数
+    的乘积太大，可能会遇到性能问题。
+  </message>
+  <message id="sm3dc-energy-bins">能量显示通道</message>
+  <message id="sm3dc-tt-energy-bins">
+    要绘制的最大能量分段数；如果您的数据在显示范围内具有比此数量更多的能量通道，
+    通道将组合在一起，直到小于此值。
+    <br />
+    <br />
+    如果时间通道数乘以能量通道数
+    的乘积太大，可能会遇到性能问题。
+  </message>
+  <message id="sm3dc-time-axis-label">时间（秒）</message>
+  <message id="sm3dc-counts-axis-label">每通道计数</message>
+</messages>
+

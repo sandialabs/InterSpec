@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- anpd is short for SnapshotBrowser -->
+  <message id="sb-resume-from-prev">দেখে মনে হচ্ছে আপনি এই স্পেকট্রাম ফাইলটি একটি সেভ-স্টেটের অংশ হিসাবে সংরক্ষণ করেছেন; আপনি কি আপনার পূর্ববর্তী কাজ পুনরায় শুরু করতে চান?</message>
+  <message id="sb-no-saved-states">কোনো সংরক্ষিত অ্যাপ্লিকেশন স্টেট নেই</message>
+  <message id="sb-tt-del-state">স্টেট মুছুন</message>
+  <message id="sb-tt-edit-state">স্টেট নাম বা বর্ণনা সম্পাদনা করুন</message>
+  <message id="sb-state-HEAD-label">সংরক্ষিত-স্টেট</message>
+  <message id="sb-state-auto-saved-label">স্বয়ং-সংরক্ষিত</message>
+  <message id="sb-unsaved-spectra-parent-node-label">স্পেকট্রা খোলা হয়েছে, কিন্তু স্পষ্টভাবে সংরক্ষিত নয়</message>
+  <message id="sb-tt-unsaved-spectra-node">স্পেকট্রা যা আপনি InterSpec-এ খুলেছেন, কিন্তু স্পষ্টভাবে সংরক্ষণ করেননি।</message>
+  <message id="sb-unsaved-spectrum-node">{1} (খোলা হয়েছে {2})</message>
+  <message id="sb-tt-unsaved-spectrum-node">ফাইলের নাম: {1}
+পরিমাপ সময়: {2}
+লোড করার সময়: {3}
+নমুনার সংখ্যা: {4}
+মোট রিয়েল টাইম: {5}</message>
+  <message id="sb-open-spectrum-as">নির্বাচিত স্পেকট্রাম এভাবে খুলুন:</message>
+  <message id="sb-load-spectrum-only">শুধুমাত্র স্পেকট্রাম লোড করুন</message>
+  <message id="sb-load-app-state">অ্যাপ স্টেট লোড করুন</message>
+  <message id="sb-err-making-browser-txt">ডাটাবেস স্পেকট্রাম ফাইল ব্রাউজার তৈরি করতে অপ্রত্যাশিত ত্রুটি</message>
+  <message id="sb-err-making-browser-msg">ডাটাবেস স্পেকট্রাম ফাইল ব্রাউজার তৈরি করতে ত্রুটি: {1}</message>
+
+  <!-- DbSpecFileItem messages -->
+  <message id="sb-loaded-label">লোড করা হয়েছে: {1}</message>
+  <message id="sb-loaded-modified-label">লোড করা হয়েছে: {1}, পরিবর্তিত হয়েছিল</message>
+  <message id="sb-resume-from-btn">পুনরায় শুরু করুন</message>
+  <message id="sb-err-displaying-measurement">পূর্ববর্তী পরিমাপ প্রদর্শন করতে ত্রুটি, বিষয়গুলি প্রত্যাশিত নাও হতে পারে</message>
+
+  <!-- SnapshotBrowser error messages -->
+  <message id="sb-no-active-db-session">কোনো সক্রিয় ডাটাবেস সেশন নেই</message>
+  <message id="sb-invalid-state-selected">অবৈধ স্টেট নির্বাচিত</message>
+  <message id="sb-must-enter-name">আপনাকে একটি নাম লিখতে হবে</message>
+  <message id="sb-err-modifying-state">স্টেট পরিবর্তন করতে ত্রুটি - সম্ভবত পরিবর্তিত হয়নি</message>
+  <message id="sb-couldnt-load-snapshot">দুঃখিত, অনুরোধ করা স্ন্যাপশট লোড করতে পারেনি</message>
+  <message id="sb-no-state-selected">মুছতে কোনো স্টেট নির্বাচিত নেই</message>
+  <message id="sb-snapshot-removed">স্ন্যাপশট '{1}' ডাটাবেস থেকে সরানো হয়েছে।</message>
+  <message id="sb-err-removing-snapshot">ডাটাবেস থেকে স্ন্যাপশট সরাতে ত্রুটি।</message>
+  <message id="sb-err-loading-from-db">ডাটাবেস থেকে লোড করতে ত্রুটি</message>
+  <message id="sb-failed-to-load-state">স্টেট লোড করতে ব্যর্থ</message>
+  <message id="sb-already-opened">ইতিমধ্যে খোলা</message>
+
+  <!-- Delete confirmation dialog -->
+  <message id="sb-confirm-delete-title">মুছতে নিশ্চিত করুন</message>
+  <message id="sb-confirm-delete-msg"><div>আপনি কি নিশ্চিত যে আপনি মুছতে চান:</div><div style="white-space: nowrap; text-align: center; text-overflow: ellipsis; overflow: hidden; font-weight: bold; max-width:98%;">{1}</div><div>?</div></message>
+
+  <!-- Constructor error messages -->
+  <message id="sb-err-creating-browser"><b>SnapshotBrowser তৈরি করতে ত্রুটি</b> - দুঃখিত :(<br />ত্রুটি: {1}</message>
+  <message id="sb-unexpected-issue"><b>SnapshotBrowser তৈরি করতে অপ্রত্যাশিত সমস্যা</b> - দুঃখিত :(</message>
+
+  <!-- Edit dialog -->
+  <message id="sb-edit-name-label">নাম</message>
+  <message id="sb-edit-name-placeholder">(যে নামে সংরক্ষণ করতে হবে)</message>
+  <message id="sb-edit-desc-label">বর্ণনা</message>
+  <message id="sb-edit-desc-placeholder">(ঐচ্ছিক বর্ণনা)</message>
+</messages>

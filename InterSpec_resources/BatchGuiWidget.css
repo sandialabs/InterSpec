@@ -1,0 +1,237 @@
+/* We need to override some of the SimpleDialog CSS so we can be wider than 50% of screen width */
+.simple-dialog.BatchGuiDialog
+{
+  max-width: 95vw;
+  max-height: 95vh;
+}
+
+.simple-dialog.BatchGuiDialog .body
+{
+  /* The 95vh is from .simple-dialog, and the 90px is the header and footer height. */
+  max-height: calc( 95vh - 90px );
+  overflow-y: hidden;
+  padding-top: 16px;
+  padding-bottom: 5px;
+}
+
+@media screen and (max-width: 1000px) {
+  .simple-dialog.BatchGuiDialog {
+    max-width: calc(99vw);
+  }
+  
+  .simple-dialog.BatchGuiDialog .body {
+    max-width: calc(99vw - 30px );
+  }
+}
+
+@media screen and (min-width: 1000px) {
+  .simple-dialog.BatchGuiDialog {
+    max-width: calc(99vw)
+  }
+  .simple-dialog.BatchGuiDialog .body {
+    max-width: calc( 99vw - 30px );
+  }
+}
+
+.simple-dialog.BatchGuiDialog.BatchGuiDialog-phone
+{
+}
+
+.simple-dialog.BatchGuiDialog.BatchGuiDialog-portrait
+{
+}
+
+.simple-dialog.BatchGuiDialog.BatchGuiDialog-phone.BatchGuiDialog-iphone .body
+{
+  /* Not sure why the extra 10 px are needed on iPhone, but seems to be (havent tested on Android phone - just Chrome device sim.)*/
+  /* padding-bottom: 20px; */
+}
+
+.BatchGuiDialog
+{
+
+}
+
+.BatchGuiWidget
+{
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex-wrap: nowrap;
+
+  padding-bottom: 5px;
+}
+
+.BatchGuiWidget .TypeSelectContainer
+{
+  display: flex;
+  flex-direction: row;
+  gap: 5px;
+  align-items: center;
+  flex-wrap: nowrap;
+
+  padding-left: 5px;
+  padding-right: 5px;
+  padding-top: 0px;
+  padding-bottom: 0px;
+
+  height: 220px;
+}
+
+@media screen and (min-height: 651px) {
+  .BatchGuiWidget .TypeSelectContainer {
+    height: 250px;
+  }
+}
+
+@media screen and (min-height: 801px) {
+  .BatchGuiWidget .TypeSelectContainer {
+    height: 300px;
+  }
+}
+
+.BatchGuiWidget .TypeSelectContainer ul.AnaTypeMenu.VerticalNavMenu
+{
+  width: 55px;
+  min-width: 25px; /* The width doesnt seem to work well, bu min-width does... not sure why */
+  height: 100%;
+  overflow-x: hidden;
+
+  padding-inline-start: 0px;
+  list-style-type: none;
+  
+  margin-block-start: 0em;
+  margin-block-end: 0em;
+}
+
+.BatchGuiWidget .TypeSelectContainer ul.AnaTypeMenu li
+{
+  display: inline-block;
+  writing-mode: vertical-rl;
+  transform: scale(-1, -1);
+  white-space: nowrap;
+
+  font-weight: normal;
+  font-size: 11px;
+
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 4px;
+  padding-right: 4px;
+  margin-top: 2px;
+  margin-bottom: 2px;
+  margin-right: 6px;
+  border-radius: 5px;
+  
+  text-align: center;
+}
+
+.BatchGuiWidget .TypeSelectContainer .Wt-stack
+{
+  flex-grow: 1;
+  flex-shrink: 1;
+
+  /* height: 100%; */
+
+  height: 200px;
+  overflow-y: auto;
+}
+
+/* I cant seem to get this area to set itself to its parent 
+height in all browsers, so for the moment we'll just match
+`.BatchGuiWidget .TypeSelectContainer`, which is less than satisfying
+*/
+@media screen and (min-height: 651px) {
+  .BatchGuiWidget .TypeSelectContainer .Wt-stack {
+    height: 230px;
+  }
+}
+
+@media screen and (min-height: 801px) {
+  .BatchGuiWidget .TypeSelectContainer .Wt-stack {
+    height: 280px;
+  }
+}
+
+.BatchGuiWidget .InputFilesContainer
+{
+  flex-grow: 1;
+  flex-shrink: 1;
+  min-height: 100px;
+  display: flex;
+  flex-direction: row;
+  gap: 5px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-around;
+  overflow-y: auto;
+}
+
+/* Shared drag and drop utilities used by both BatchGuiWidget and BatchGuiAnaWidget */
+.BatchGuiWidget .DragedOver,
+.BatchGuiWidget .DragedOver.DomIsDrugOver
+{
+  border: 3px dashed green;
+  border-radius: 8px;
+}
+
+.BatchGuiWidget .Uploading
+{
+  border: 3px dashed green;
+  border-radius: 8px;
+  animation: blink 1s infinite;
+}
+
+@keyframes blink {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.BatchGuiWidget .DomIsDrugOver,
+.BatchGuiWidget .ExemplarFileDrop.DomIsDrugOver,
+.BatchGuiWidget .BatchGuiInputFile.DomIsDrugOver,
+.BatchGuiWidget .BatchGuiInputSpectrumFile.DomIsDrugOver
+{
+  border: 3px dashed grey;
+  border-radius: 8px;
+
+  /* Add styles to grey out the element */
+  position: relative; /* Establish positioning context for overlay */
+  background-color: rgba(128, 128, 128, 0.5); /* Grey background with transparency */
+}
+
+.BatchGuiWidget .InputFilesContainer.DomIsDrugOver::after,
+.BatchGuiWidget .ExemplarFileDrop.DomIsDrugOver::after
+{
+  content: 'Drop file or click here';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%); /* Center the text */
+  color: white; /* White text color */
+  font-size: 1.2em; /* Adjust font size as needed */
+  text-align: center;
+}
+
+.BatchGuiWidget .InputFilesContainer.DragedOver.DomIsDrugOver::after,
+.BatchGuiWidget .ExemplarFileDrop.DragedOver.DomIsDrugOver::after
+{
+  background-color: transparent;
+}
+
+.BatchGuiWidget .DirectorySelector
+{
+} 
+
+
+.BatchGuiWidget .ReasonCantAnalyzeMsg
+{
+  color: orange;
+}

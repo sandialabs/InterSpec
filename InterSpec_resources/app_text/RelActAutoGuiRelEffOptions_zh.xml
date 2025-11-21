@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raageo- is short for RelActAutoGuiRelEffOptions -->
+  
+  <!-- Labels -->
+  <message id="raageo-eqn-type">方程类型</message>
+  <message id="raageo-eqn-order">方程阶数</message>
+  <message id="raageo-pu242-corr">Pu242校正</message>
+  
+  <!-- Checkboxes -->
+  <message id="raageo-use-corr-fcn">使用校正函数</message>
+  <message id="raageo-share-corr-fcn">共享校正函数</message>
+  <message id="raageo-share-ext-atten">共享外部衰减</message>
+  <message id="raageo-shielded-by-other-curves">被其他曲线屏蔽</message>
+  
+  <!-- Equation types -->
+  <message id="raageo-eqn-log-x">Log(x)</message>
+  <message id="raageo-eqn-log-y">Log(y)</message>
+  <message id="raageo-eqn-log-x-log-y">Log(x)Log(y)</message>
+  <message id="raageo-eqn-empirical">经验</message>
+  <message id="raageo-eqn-physical">物理</message>
+  
+  <!-- Placeholders -->
+  <message id="raageo-curve-name">曲线名称</message>
+  
+  <!-- Tooltips -->
+  <message id="raageo-eqn-type-tt">用于相对效率曲线的功能形式。<br />选项有：<table style="margin-left: 10px;"><tr><th>Log(能量)：</th>               <th>y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...</th></tr><tr><th>Log(相对效率)：</th>            <th>y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )</th></tr><tr><th>Log(能量)Log(相对效率)：</th> <th>y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )</th></tr><tr><th>经验：</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr><tr><th>物理：</th>             <th>y = <span style="display: inline-block; vertical-align: middle;"><span style="display: block; text-align: center;">(1 - exp(-AD<sub>0</sub>*μ<sub>0</sub>))</span><span style="display: block; border-top: 1px solid black; text-align: center;">(AD<sub>0</sub>*μ<sub>0</sub>)</span></span> * [exp(-AD<sub>1</sub>*μ<sub>1</sub>) * exp(-AD<sub>2</sub>*μ<sub>2</sub>) + ...] * [探测器效率] * [E<sup>b</sup> * C<sup>1/E</sup>]</th></tr></table></message>
+  <message id="raageo-eqn-order-tt">使用的相对效率方程的阶数（有多少个能量相关项）。</message>
+  <message id="raageo-pu242-corr-tt">Pu-242通常在伽马谱中无法直接观察到。但是，为了在计算富集度时校正此同位素，可以从其他Pu同位素推断此同位素的预期贡献。此表单允许您选择校正方法。</message>
+  <message id="raageo-share-corr-fcn-tt">选中时，相关函数设置将在所有物理模型曲线中同步。</message>
+  <message id="raageo-share-ext-atten-tt">选中时，外部屏蔽配置将在所有物理模型曲线中同步。</message>
+  <message id="raageo-shielded-by-other-curves-tt">选中时，此曲线的源将被所有其他物理模型曲线屏蔽。</message>
+  <message id="raageo-del-rel-eff-curve-tt">删除此相对效率曲线。</message>
+  <message id="raageo-add-rel-eff-curve-tt">添加另一条相对效率曲线。</message>
+  
+</messages>
+

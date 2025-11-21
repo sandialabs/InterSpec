@@ -82,6 +82,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UserPreferences.h"
+#include "InterSpec/DirectorySelector.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/SpecFileQueryWidget.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -89,13 +90,16 @@
 
 #include "js/SpecFileQueryWidget.js"
 
-#ifdef _WIN32
-#include "SpecUtils/StringAlgo.h"
-#endif
 
 #if( BUILD_AS_ELECTRON_APP )
 #include "target/electron/ElectronUtils.h"
 #endif
+
+
+#if( BUILD_AS_OSX_APP )
+#include "target/osx/macOsUtils.h"
+#endif
+
 
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
 
@@ -273,14 +277,19 @@ namespace
                 case 35: val = static_cast<int>(SpecUtils::DetectorType::VerifinderNaI); break;
                 case 36: val = static_cast<int>(SpecUtils::DetectorType::VerifinderLaBr); break;
                 case 37: val = static_cast<int>(SpecUtils::DetectorType::KromekD3S); break;
-                case 38: val = static_cast<int>(SpecUtils::DetectorType::RadiaCode); break;
-                case 39: val = static_cast<int>(SpecUtils::DetectorType::Fulcrum); break;
-                case 40: val = static_cast<int>(SpecUtils::DetectorType::Fulcrum40h); break;
-                case 41: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinderR425NaI); break;
-                case 42: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinderR425LaBr); break;
-                case 43: val = static_cast<int>(SpecUtils::DetectorType::Sam950); break;
-                case 44: val = static_cast<int>(SpecUtils::DetectorType::Unknown); break;
-                  
+                case 38: val = static_cast<int>(SpecUtils::DetectorType::RadiaCodeCsI10); break;
+                case 39: val = static_cast<int>(SpecUtils::DetectorType::RadiaCodeCsI14); break;
+                case 40: val = static_cast<int>(SpecUtils::DetectorType::RadiaCodeGAGG10); break;
+                case 41: val = static_cast<int>(SpecUtils::DetectorType::Fulcrum); break;
+                case 42: val = static_cast<int>(SpecUtils::DetectorType::Fulcrum40h); break;
+                case 43: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinderR425NaI); break;
+                case 44: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinderR425LaBr); break;
+                case 45: val = static_cast<int>(SpecUtils::DetectorType::Sam950); break;
+                case 46: val = static_cast<int>(SpecUtils::DetectorType::KromekD5); break;
+                case 47: val = static_cast<int>(SpecUtils::DetectorType::KromekGR1); break;
+                case 48: val = static_cast<int>(SpecUtils::DetectorType::Raysid); break;
+                case 49: val = static_cast<int>(SpecUtils::DetectorType::Unknown); break;
+
                 default:
                   throw runtime_error( "Unknown DetectionSystemType value type" );
               }//switch( val )
@@ -1468,17 +1477,13 @@ SpecFileQueryWidget::~SpecFileQueryWidget()
     if( c.second )  //should always be true
       c.second->stop_caching();
   }
-  
-#if( BUILD_AS_OSX_APP )
-  SpecFileQuery::setIsSelectingDirectory( false );
-  SpecFileQuery::setSearchDirectory( "" );
-#endif
 }//~SpecFileQueryWidget()
 
 
 void SpecFileQueryWidget::init()
 {
   wApp->useStyleSheet( "InterSpec_resources/SpecFileQueryWidget.css" );
+  m_viewer->useMessageResourceBundle( "SpecFileQueryWidget" );
   
   wApp->useStyleSheet( "InterSpec_resources/assets/js/QueryBuilder2.5.2/css/query-builder.default.min.css" );
   wApp->useStyleSheet( "InterSpec_resources/assets/js/QueryBuilder2.5.2/css/QueryBuilderFakeBootstrap.css" );
@@ -1526,71 +1531,17 @@ void SpecFileQueryWidget::init()
     }
   }
   
-  WLabel *label = new WLabel( "Base Path:" );
-  linelayout->addWidget( label, 0, 0 );
-  label->setMargin( 3, Wt::Top );
+  m_baseLocation = new DirectorySelector();
+  m_baseLocation->setLabelTxt( "Base Path:" );
+  linelayout->addWidget( m_baseLocation, 0, 0 );
   
-#if( BUILD_AS_ELECTRON_APP )
-  WContainerWidget *pathDiv = new WContainerWidget();
-  linelayout->addWidget( pathDiv, 0, 1 );
-
-  //ToDo: make a proper path selecting widget for Electron
-  WPushButton *pickPath = new WPushButton( "Select Path", pathDiv );
-  m_baseLocation = new WText( "(No Path Selected)", pathDiv );
-  m_baseLocation->addStyleClass( "SpecFileQueryPathTxt" );
-  m_baseLocation->setMargin( 3, Wt::Left );
+  m_baseLocation->pathChanged().connect( this, &SpecFileQueryWidget::basePathChanged );  
   
-  
-  pickPath->clicked().connect( std::bind( [this](){
-    // We need to use the lifetime management of WObject to safely bind the callback:
-    auto bound_callback = boost::bind( &SpecFileQueryWidget::newElectronPathSelected, this, boost::placeholders::_1 );
-    
-    // Now we need to convert the boost bound thing, to a std::function, so we'll use a lamda as an
-    //  intermediary to also capture the bound_function
-    auto callback = [bound_callback]( string value ){
-      bound_callback( value );
-    };
-    
-    ElectronUtils::browse_for_directory( "Select Directory", "Select base-directory to search in.", callback );
-  }) );
-
-
-  /*
-  const string uploadname = id() + "PathPicker";
-  const string uploadhtml = "<input id=\"" + uploadname + "\" type=\"file\" webkitdirectory=\"\" />";
-  
-  WText *m_baseLocation = new WText( uploadhtml, XHTMLUnsafeText );
-  linelayout->addWidget( m_baseLocation, 0, 1 );
-  
-  //TODO: put in error handling!
-  wApp->doJavaScript( "document.getElementById('" + uploadname + "').onchange = function(event){"
-                         "var outputDir = document.getElementById('" + uploadname + "').files[0].path;"
-                         "Wt.emit( \"" + id() + "\", { name: 'BaseDirSelected' }, outputDir );"
-                     "};"
-                     );
-  */
-#elif( BUILD_AS_OSX_APP )
-  SpecFileQuery::setIsSelectingDirectory( true );
-  setSearchDirectory( "" );
-  m_baseLocation = new WFileUpload();
-  m_baseLocation->changed().connect( this, &SpecFileQueryWidget::newMacOsPathSelected );
-  linelayout->addWidget( m_baseLocation, 0, 1 );
-#else
-  m_baseLocation = new WLineEdit();
-  
-  if( !defpath.empty() )
-    m_baseLocation->setText( defpath );
-  linelayout->addWidget( m_baseLocation, 0, 1 );
-  m_baseLocation->changed().connect( this, &SpecFileQueryWidget::basePathChanged );
-  m_baseLocation->enterPressed().connect( this, &SpecFileQueryWidget::basePathChanged );
-  m_baseLocation->setEmptyText( "Path to base directory to search" );
-#endif
-  
-  m_optionsBtn = new WPushButton( "Options" );
+  m_optionsBtn = new WPushButton( WString::tr("sfqw-options") );
   m_optionsBtn->addStyleClass( "SpecFileQueryOptionsBtn" );
   
   m_optionsMenu = new PopupDivMenu( m_optionsBtn, PopupDivMenu::MenuType::TransientMenu );
-  linelayout->addWidget( m_optionsBtn, 0, 2 );
+  linelayout->addWidget( m_optionsBtn, 0, 1, AlignMiddle );
   
   auto item = m_optionsMenu->addMenuItem( "recursive" );
   item->setCheckable( true );
@@ -1608,7 +1559,7 @@ void SpecFileQueryWidget::init()
   m_recursive->checked().connect( this, &SpecFileQueryWidget::basePathChanged );
   m_recursive->unChecked().connect( this, &SpecFileQueryWidget::basePathChanged );
   
-  linelayout->setColumnStretch( 1, 1 );
+  linelayout->setColumnStretch( 0, 1 );
   
   layout->addWidget( line, 0, 0 );
   
@@ -1626,7 +1577,7 @@ void SpecFileQueryWidget::init()
 //  linelayout->setColumnStretch( linelayout->columnCount()-1, 1 );
 
   auto maxFileSizeDiv = new WContainerWidget();
-  label = new WLabel( "Max file size:", maxFileSizeDiv );
+  WLabel *label = new WLabel( "Max file size:", maxFileSizeDiv );
   label->setMargin( 4, Wt::Bottom );
   label->setMargin( 15, Wt::Left );
   
@@ -1718,12 +1669,12 @@ void SpecFileQueryWidget::init()
   
   
   
-  m_cancelUpdate = new WPushButton( "Cancel" );
+  m_cancelUpdate = new WPushButton( WString::tr("Cancel") );
   m_cancelUpdate->setHidden( true );
   linelayout->addWidget( m_cancelUpdate, 0, linelayout->columnCount() );
   m_cancelUpdate->clicked().connect( this, &SpecFileQueryWidget::cancelUpdate );
   
-  m_update = new WPushButton( "Update" );
+  m_update = new WPushButton( WString::tr("sfqw-update") );
   m_update->clicked().connect(
   "function(){"
     "var result = $('#" + m_conditions->id() + "').queryBuilder('getRules',{ allow_invalid: true });"
@@ -1799,7 +1750,7 @@ void SpecFileQueryWidget::init()
   m_csv->setStyleClass( "LinkBtn" );
   m_csv->disable();
   
-  m_loadSelectedFile = new WPushButton( "Load Selected" );
+  m_loadSelectedFile = new WPushButton( WString::tr("sfqw-load-selected") );
   linelayout->addWidget( m_loadSelectedFile, 0, linelayout->columnCount(), AlignRight );
   m_loadSelectedFile->clicked().connect( this, &SpecFileQueryWidget::loadSelected );
   m_loadSelectedFile->disable();
@@ -2123,17 +2074,11 @@ void SpecFileQueryWidget::doPersistCacheChanged()
 #if( BUILD_AS_ELECTRON_APP )
 void SpecFileQueryWidget::newElectronPathSelected( std::string path )
 {
-  if( path == "")
-    return;
-  
-  m_basePath = path;
-  
   basePathChanged();
 }
 #elif( BUILD_AS_OSX_APP )
-void SpecFileQueryWidget::newMacOsPathSelected()
+void SpecFileQueryWidget::newMacOsPathSelected( std::string path )
 {
-  m_basePath = SpecFileQuery::getSearchDirectory();
   basePathChanged();
 }//void newMacOsPathSelected()
 #endif
@@ -2153,19 +2098,10 @@ void SpecFileQueryWidget::basePathChanged()
   if( basepath.empty() || !SpecUtils::is_directory( basepath ) )
   {
     m_numberResults->setText( "Not a valid base directory" );
-#if( BUILD_AS_ELECTRON_APP )
-    m_baseLocation->setText( "(No Path Selected)" );
-#elif( !BUILD_AS_OSX_APP )
     m_baseLocation->addStyleClass( "SpecFileQueryErrorTxt" );
-#endif
     m_update->disable();
     return;
   }
-  
-#if( BUILD_AS_ELECTRON_APP )
-  // TODO: need to limit string length here... maybe by adding a style class, or whatever
-  m_baseLocation->setText( WString::fromUTF8(basepath) );
-#endif
   
   const bool recursive = m_recursive->isChecked();
   const bool docache = m_cacheParseResults->isChecked();
@@ -2289,7 +2225,11 @@ void SpecFileQueryWidget::updateNumberFiles( const string srcdir,
     size_t nfiles = 0;
 #ifdef _WIN32
     const wstring wsrcdir = SpecUtils::convert_from_utf8_to_utf16( srcdir );
+#if BOOST_VERSION >= 108400 && BOOST_FILESYSTEM_VERSION >= 3
+    boost::filesystem::recursive_directory_iterator diriter( wsrcdir, boost::filesystem::directory_options::follow_directory_symlink );
+#else
     boost::filesystem::recursive_directory_iterator diriter( wsrcdir, boost::filesystem::symlink_option::recurse );
+#endif
 #else
 #if BOOST_VERSION >= 108400 && BOOST_FILESYSTEM_VERSION >= 3
     boost::filesystem::recursive_directory_iterator diriter( srcdir, boost::filesystem::directory_options::follow_directory_symlink );
@@ -2415,11 +2355,7 @@ void SpecFileQueryWidget::updateNumberFiles( const string srcdir,
 
 std::string SpecFileQueryWidget::baseDirectory()
 {
-#if( BUILD_AS_OSX_APP || BUILD_AS_ELECTRON_APP )
-  return m_basePath;
-#else
-  return m_baseLocation->text().toUTF8();
-#endif
+  return m_baseLocation->path();
 }//std::string baseDirectory()
 
 
@@ -2825,7 +2761,11 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
     
 #ifdef _WIN32
     const std::wstring wbasedir = SpecUtils::convert_from_utf8_to_utf16( basedir );
+#if BOOST_VERSION >= 108400 && BOOST_FILESYSTEM_VERSION >= 3
+    boost::filesystem::recursive_directory_iterator diriter( wbasedir, boost::filesystem::directory_options::follow_directory_symlink );
+#else
     boost::filesystem::recursive_directory_iterator diriter( wbasedir, boost::filesystem::symlink_option::recurse );
+#endif
 #else
 #if BOOST_VERSION >= 108400 && BOOST_FILESYSTEM_VERSION >= 3
     boost::filesystem::recursive_directory_iterator diriter( basedir, boost::filesystem::directory_options::follow_directory_symlink );

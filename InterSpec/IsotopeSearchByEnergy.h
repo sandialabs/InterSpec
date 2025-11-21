@@ -240,7 +240,7 @@ public:
     Wt::WString m_description;
     
     /** Values of min BR and min HL.  Users can still change these afterwards. */
-    double m_minBr, m_minHl;
+    double m_min_rel_br, m_minHl;
     
     /** If should search on nuclide gammas and decay x-rays. */
     bool m_nuclides;
@@ -380,7 +380,7 @@ protected:
   Wt::WComboBox *m_search_category_select;
   
   size_t m_nextSearchEnergy;
-  double m_minBr, m_minHl;
+  double m_minRelativeBr, m_minHl;
   
   /** A struct that represents the GUI state, using basic types.
    

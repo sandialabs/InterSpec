@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- bgw- is short for BatchGuiWidget, strings used by BatchGuiAnaWidget -->
+
+  <!-- Exemplar group -->
+  <message id="bgw-exemplar-grp-title">Exemplar</message>
+  <message id="bgw-exemplar-use-current-fore">Use Current Foreground</message>
+
+  <!-- Background group -->
+  <message id="bgw-back-grp-title">Background</message>
+  <message id="bgw-back-use-current">Use Current Background</message>
+  <message id="bgw-back-none">No Background</message>
+
+  <!-- Peak fitting options -->
+  <message id="bgw-fit-all-peaks">Fit all peaks</message>
+  <message id="bgw-refit-energy-cal">Refit energy calibration</message>
+  <message id="bgw-use-exemplar-energy-cal">Use exemplar energy calibration</message>
+  <message id="bgw-write-n42-with-results">Write N42 with results</message>
+  <message id="bgw-show-nonfit-peaks">Show non-fit peaks</message>
+  <message id="bgw-overwrite-output-files">Overwrite output files</message>
+  <message id="bgw-create-csv-output">Peak CSV</message>
+  <message id="bgw-create-json-output">Write JSON</message>
+  <message id="bgw-concatenate-to-n42">Create concatenated N42</message>
+  <message id="bgw-use-existing-background-peaks">Use existing background peaks</message>
+  <message id="bgw-use-exemplar-energy-cal-for-background">Use exemplar energy cal for background</message>
+  
+  <!-- Threshold labels -->
+  <message id="bgw-peak-stat-threshold-label">Peak stat threshold:</message>
+  <message id="bgw-peak-hypothesis-threshold-label">Peak hypothesis threshold:</message>
+  
+  <!-- File convert options options -->
+  <message id="bgw-overwrite-output-cb">Overwrite output</message>
+  <message id="bgw-sum-multirecord-to-single">Sum files with multiple records to single record</message>
+  <message id="bgw-info-will-convert-file-type">Files will be converted to selected type.</message>
+  
+  
+  <!-- Reports group -->
+  <message id="bgw-reports-grp-title">Reports to Write</message>
+  <message id="bgw-reports-write-html">HTML</message>
+  <message id="bgw-reports-write-html-tooltip">Write an HTML report of the analysis results.</message>
+  <message id="bgw-reports-write-csv">Summary CSV</message>
+  <message id="bgw-reports-write-csv-tooltip">Write a summary CSV file with analysis results from all input files.</message>
+  <message id="bgw-reports-write-custom-per-file">Custom Per-File</message>
+  <message id="bgw-reports-write-custom-per-file-tooltip">Upload a custom report template to use for each file.</message>
+  <message id="bgw-reports-write-custom-summary">Custom Summary</message>
+  <message id="bgw-reports-write-custom-summary-tooltip">One or more template files used to provide a summary of all input files.</message>
+
+  <!-- Reasons analysis cant be done -->
+  <message id="bgw-no-ana-peak-fit-no-peaks">No peaks present in exemplar.</message>
+  <message id="bgw-no-ana-peak-fit-need-peaks">Need exemplar spectrum with peaks, or a peaks CSV file.</message>
+  <message id="bgw-no-ana-peak-fit-bad-background">Need valid background</message>
+  <message id="bgw-no-ana-act-shield-no-drf">No detector efficiency available.</message>
+  <message id="bgw-no-ana-act-shield-no-exemplar">No exemplar spectrum selected.</message>
+  <message id="bgw-no-ana-act-shield-no-peaks-in-exemplar">No peaks in selected exemplar spectrum.</message>
+  <message id="bgw-no-ana-act-shield-no-act-fit-model">No Act/Shield fit model present in exemplar.</message>
+  <message id="bgw-no-ana-act-shield-invalid-background">Invalid background</message>
+  <message id="bgw-no-ana-no-input-files">No input files.</message>
+  <message id="bgw-no-ana-invalid-output-path">Please select a valid output directory.</message>
+
+
+  <!-- Analysis progress and results -->
+  <message id="bgw-performing-work-title">Performing Work</message>
+  <message id="bgw-performing-work-msg">Please wait while the batch analysis is performed...</message>
+  <message id="bgw-error-analysis-title">Error Performing Batch Analysis</message>
+  <message id="bgw-error-analysis-msg">Error: {1}</message>
+  <message id="bgw-analysis-summary-title">Batch Analysis Summary</message>
+  <message id="bgw-json-parse-error">
+    <p>Error parsing JSON results:</p>
+    <code>{1}</code>
+  </message>
+  <message id="bgw-inja-error">
+    <p>Error creating HTML due to exception:</p>
+    <code>{1}</code>
+    <br />
+    from line {2}, column {3}
+  </message>
+  <message id="bgw-misc-error">
+    <p>Unable to generate result summary due to exception:</p>
+    <code>{1}</code>
+  </message>
+  <message id="bgw-warning-title">Warning</message>
+ 
+  <!-- Tooltips matching command line help text -->
+  <message id="bgw-fit-all-peaks-tt">Instead of fitting for peaks in an exemplar file - all peaks in the spectrum will be fit for.</message>
+  
+  <message id="bgw-refit-energy-cal-tt">After initial peak fit, uses the those peaks (and their assigned nuclides) to adjust energy gain, then refits the peaks with the updated energy calibration.
+  This also applies to the background file if you are fitting for activity/shielding.
+  </message>
+  
+  <message id="bgw-use-exemplar-energy-cal-tt">Use the exemplar N42 energy calibration with the input foreground files.
+If refit-energy-cal is specified true, then the exemplar energy cal will be used for initial fit, and then refined and peaks refit.
+  </message>
+
+  <message id="bgw-write-n42-with-results-tt">Adds the fit peaks to the input spectrum file, and then saves as a N42. You must specify 'output_path' if you specify this option; also, will refuse to overwrite existing files.</message>
+  
+  <message id="bgw-show-nonfit-peaks-tt">Include peaks that are not fit into the output CSV peak results; these peaks will have a zero amplitude set.</message>
+  
+  <message id="bgw-overwrite-output-files-tt">Allows overwriting output N42, CSV, or report files. By default will not overwrite files.</message>
+  
+  <message id="bgw-create-csv-output-tt">Output peak fit CSV.</message>
+  
+  <message id="bgw-create-json-output-tt">Writes the JSON used to create the report templates, out to file.</message>
+  
+  <message id="bgw-concatenate-to-n42-tt">Create an output N42 file that has all peak fits of all input files.</message>
+  
+  <message id="bgw-use-existing-background-peaks-tt">Uses the fit peaks of the specified background, rather than re-fitting peaks.
+Peaks from InterSpec must exist in the spectrum file, and this option can not be used with hard background subtract.</message>
+  
+  <message id="bgw-use-exemplar-energy-cal-for-background-tt">Use the exemplar N42 energy calibration for the background file.
+Only applicable if N42 file is used for exemplar.</message>
+  
+  <message id="bgw-peak-stat-threshold-tt">The improvement to the Chi2 of a peak fit required, over just fitting the continuum, to the ROI.
+A negative or zero value indicates no requirement (and default, since we are asserting peak is likely in the spectrum for batch analysis), and for general peak searching, reasonable values are between ~1 (a weak peak) and ~5 (a significant peak).</message>
+  
+  <message id="bgw-peak-hypothesis-threshold-tt">Requirement for how compatible the ROI must be to Gaussian peaks + continuum.
+It is the ratio of the null hypothesis chi2 (continuum only, no Gaussian), to the test hypothesis (continuum + Gaussian) chi2.
+A reasonable values for this seems to be in the 1 to 5 range.
+A zero or negative value will mean no requirement, and also no 'peak-stat-threshold' requirement.</message>
+  
+  <message id="bgw-reports-write-custom-per-file-tooltip">One or more spectrum report template files - for each input file, a report will be produced with each template specified.</message>
+
+  <message id="bgw-reports-write-custom-summary-tooltip">One or more template files used to provide a summary of all input files.</message>
+
+  <!-- Activity/Shielding Analysis specific strings -->
+  <message id="bgw-use-bq">Use Bq units</message>
+  <message id="bgw-hard-background-sub">Hard background subtract</message>
+  
+  <!-- Detector input strings -->
+  <message id="bgw-detector-input-label">Detector Response Function</message>
+  <message id="bgw-use-detector-override">Use custom detector</message>
+  
+  <!-- Distance override strings -->
+  <message id="bgw-override-distance">Override Distance</message>
+  <message id="bgw-distance-label">Distance:</message>
+  
+  <!-- Error and completion messages -->
+  <message id="bgw-no-exemplar-msg">No exemplar spectrum is available. Please select a foreground spectrum or upload an exemplar file.</message>
+</messages> 

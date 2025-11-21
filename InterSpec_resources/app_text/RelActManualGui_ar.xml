@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ramrr- short for RelActManualReportResource
+       mrend- short for ManRelEffNucDisp
+       ramg-  short for RelActManualGui
+  -->
+
+  <!-- Messages when creating HTML report -->
+  <message id="ramrr-no-solution-title">لا يوجد حل للنشاط النسبي متاح</message>
+  <message id="ramrr-no-solution-text"></message>
+  <message id="ramrr-err-report">خطأ في الحصول على ملف الطيف المعروض حاليًا: {1}</message>
+  
+  <!-- Messages in the nuclide component of the GUI -->
+  <message id="mrend-spec-act">النشاط المحدد</message>
+  <message id="mrend-X(a,n)">الألفا على {1} تخلق النيوترونات</message>
+  <message id="mrend-X(n,a)">النيوترونات على {1} تخلق الألفا</message>
+  <message id="mrend-X(a,p)">الألفا على {1} تخلق البروتونات</message>
+  <message id="mrend-X(n,g)">النيوترونات البطيئة على {1} يتم أسرها</message>
+  <message id="mrend-X(n,n)">النيوترونات السريعة تتشتت بشكل غير مرن من {1}</message>
+  <message id="mrend-X(a,a)">التشتت غير المرن للألفا من {1}</message>
+  <message id="mrend-annih">أشعة جاما الإبادة</message>
+  <message id="mrend-unknown-rxctn">تفاعل غير معروف</message>
+  <message id="mrend-X(,)"></message>
+  <message id="mrend-cb-decay-during-meas">التحلل أثناء القياس</message>
+  <message id="mrend-tt-decay-during-meas">عند التحديد، سيتم حساب تحلل النواة أثناء القياس، مع كون النشاط النسبي المقتبس هو النشاط في بداية القياس.</message>
+  
+  <!-- Message on the general GUI interface -->
+  <message id="ramg-eqn-form-label">شكل المعادلة</message>
+  <message id="ramg-options-label">الخيارات</message>
+  <message id="ramg-tt-eqn-form">
+    الشكل الوظيفي لاستخدامه لمنحنى الكفاءة النسبية.
+    <br />
+    الخيارات هي:
+    <table style="margin-left: 10px;">
+      <tr><th>Log(energy):</th>               <th>y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...</th></tr>
+      <tr><th>Log(rel. eff.):</th>            <th>y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )</th></tr>
+      <tr><th>Log(energy)Log(rel. eff.):</th> <th>y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )</th></tr>
+      <tr><th>FRAM Empirical:</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr>
+      <tr><th>FRAM Physical:</th>             <th>
+        y = <span style="display: inline-block; vertical-align: middle;">
+              <span style="display: block; text-align: center;">
+               (1 - exp(-AD<sub>0</sub>*μ<sub>0</sub>))
+              </span>
+              <span style="display: block; border-top: 1px solid black; text-align: center;">
+                (AD<sub>0</sub>*μ<sub>0</sub>)
+              </span>
+            </span>
+             * [exp(-AD<sub>1</sub>*μ<sub>1</sub>) * exp(-AD<sub>2</sub>*μ<sub>2</sub>) + ...]
+             * [Det. Eff.]
+             * [E<sup>b</sup> * C<sup>1/E</sup>]
+        </th></tr>
+    </table>
+  </message>
+  <message id="ramg-eqn-order-label">ترتيب المعادلة</message>
+  <message id="ramg-tt-eqn-order">الترتيب (كم عدد الحدود المعتمدة على الطاقة) لمعادلة الكفاءة النسبية للاستخدام.</message>
+  <message id="ramg-phys-model-use-hoerl">استخدام دالة التصحيح</message>
+  <message id="ramg-tt-phys-model-use-hoerl">عند التحديد، يتم استخدام عامل التصحيح Modified Hoerl (أي E<sup>b</sup> * C<sup>1/E</sup>) لحساب الاختلافات بين النموذج الفيزيائي و/أو كفاءة الكاشف، والبيانات المرصودة.</message>
+  <message id="ramg-yield-info-label">معلومات الإنتاجية</message>
+  <message id="ramg-tt-data-src">مصدر البيانات النووية لنسب تفرع الجاما.</message>
+  <message id="ramg-match-tol-label">تسامح المطابقة</message>
+  <message id="ramg-tt-match-tol">
+    عدد FWHM، من متوسط القمة، لتشمل أشعة الجاما المصدر من كمساهمة في مساحة القمة.
+    <br />
+    لبعض القمم الضوئية لبعض النوى قد تساهم عدة أشعة جاما قريبة في الطاقة
+    في إنشاء مساحة قمة مكتشفة. هذا التسامح في المطابقة يحدد كم FWHM من
+    متوسط القمة المرصودة يجب جمع أشعة الجاما المصدر لتحديد نسبة التفرع للاستخدام.
+    <br />
+    تحديد قيمة صفر سيتسبب في استخدام طاقة الجاما المخصصة للقمة فقط،
+    حتى لو كانت هناك أشعة جاما أخرى قريبة جدًا.
+  </message>
+  <message id="ramg-add-uncert-label">عدم يقين إضافي</message>
+  <message id="ramg-tt-add-uncert">
+    عدم يقين إضافي لإضافته إلى خط الكفاءة النسبية، لكل قمة ضوئية ملائمة.
+    <br />
+    الانحرافات الصغيرة في كفاءة الكشف لقمة أو قليل من القمم عالية الإحصائيات يمكن أن تتسبب في
+    انحراف منحنى الكفاءة بشكل ملحوظ عن النقاط الأخرى إذا تم استخدام عدم اليقين الإحصائي فقط؛
+    عند إضافة عدم يقين إضافي ستقوم الكفاءة النسبية بعمل أفضل
+    في المرور بصريًا عبر جميع نقاط البيانات، ومن الاختبار المحدود تنتج نتائج أكثر دقة.
+    يمكنك التفكير في هذا كإضافة عدم يقين منهجي لكل قمة ضوئية مكتشفة،
+    غير مترابط بين القمم. من الاختبار المحدود القيمة المستخدمة ليست مهمة جدًا،
+    فقط طالما أن هناك شيء. يمكنك أيضًا اختيار استخدام ملائمة غير موزونة،
+    حيث ستساهم كل قمة في الملائمة بالتساوي، بغض النظر عن عدم يقينها الإحصائي.
+  </message>
+  <message id="ramg-unweighted-label">غير موزون</message>
+  <message id="ramg-stat-only-label">إحصائي فقط</message>
+  <message id="ramg-back-sub-cb">طرح الخلفية</message>
+  <message id="ramg-html-export-label">تقرير HTML</message>
+  <message id="ramg-nucs-label">النوى</message>
+  <message id="ramg-nucs-shield-label">الدروع/النوى</message>
+  <message id="ramg-peaks-to-use-label">القمم للاستخدام</message>
+  <message id="ramg-results-label">النتائج</message>
+  <message id="ramg-mi-results">جدول</message>
+  <message id="ramg-mi-chart">مخطط</message>
+  <message id="ramg-back-sub-neg">بعد طرح الخلفية، القمة عند {1} كيلوإلكترون فولت كان لديها عدد سالب لذا لم تُستخدم.</message>
+  <message id="ramg-warn-reaction">استخدام القمم الضوئية للتفاعل غالبًا ما لا يكون صالحًا، إلا إذا كانت أشعة الجاما تُنبعث بشكل متجانس من كائن واحد.</message>
+  <message id="ramg-warn-no-bkg-sub-used">تم اختيار طرح قمم الخلفية، لكن لا توجد قمم خلفية تطابق القمم المقدمة المختارة.</message>
+  <message id="ramg-warn-rel-eff-u/pu-xray">منحنى الكفاءة النسبية لا يحسب حواف امتصاص الأشعة السينية - استخدام القمم تحت 120 كيلوإلكترون فولت لمشاكل U أو Pu غير موصى به.</message>
+  <message id="ramg-warn-rel-eff-other-xray">منحنى الكفاءة النسبية لا يحسب حواف امتصاص الأشعة السينية لأي تدريع محتمل - يرجى التأكد من أن القمم المستخدمة لا تمتد عبر حواف امتصاص أي تدريع.</message>
+  <message id="ramg-warn-match-outside-tol">الجاما المخصصة{1} من {2} كيلوإلكترون فولت خارج تسامح المطابقة مع القمة{1} من {3}؛ لاحظ أن طاقة الجاما المخصصة تُستخدم للتعويض عن أشعة الجاما القريبة، وليس متوسط القمة الملائمة.</message>
+  <message id="ramg-warn-failed-match">فشل في مطابقة النواة{1} مع أي قمم: {2}</message>
+  <message id="ramg-err-setting-up-calc">خطأ في إعداد حساب الكفاءة النسبية: {1}</message>
+  <message id="ramg-err-performing-calc">خطأ في تنفيذ حساب الكفاءة النسبية: {1}</message>
+  <message id="ramg-no-results-available">لا توجد نتائج متاحة.</message>
+  <message id="ramg-result-error-msg">خطأ: {1}</message>
+  <message id="ramg-result-warn-msg">تحذير: {1}</message>
+  <message id="ramg-and-there-were">وكان هناك</message>
+  <message id="ramg-dof">DOF</message> <!-- Degrees of freedom -->
+  <message id="ramg-fit-unweighted-txt">الملائمة كانت غير موزونة؛ قد لا تكون عدم اليقين منطقية.</message>
+  <message id="ramg-fit-stat-only">عدم اليقين إحصائي فقط.</message>
+  <message id="ramg-fit-uncert-increased">تم زيادة عدم اليقين صناعيًا بواسطة "عدم يقين إضافي".</message>
+  <message id="ramg-consider-add-uncert-u">قد تريد النظر في إضافة "عدم يقين إضافي" لمشاكل اليورانيوم.</message>
+  <message id="ramg-you-using-add-uncert-u">أنت تضيف "عدم يقين إضافي" - فسر عدم اليقين المحسوب بحذر.</message>
+  <message id="ramg-you-using-add-uncert-non-u">أنت تضيف حاليًا "عدم يقين إضافي"، مما سيتسبب في عدم صحة عدم اليقين المحسوب.</message>
+  <message id="ramg-chart-info-title">χ²/dof = {1}/{2}{3}{4}</message>
+  <message id="ramg-pval"> (pval={1})</message>
+  <message id="ramg-1-pval"> (1-pval={1})</message>
+</messages>

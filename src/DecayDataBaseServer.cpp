@@ -125,9 +125,9 @@ void DecayDataBaseServer::setXmlFileDirectory( const std::string &dir )  //assum
 
 
 double EnergyToNuclideServer::sm_halfLife = 6000.0*SandiaDecay::second;
-double EnergyToNuclideServer::sm_branchRatio = 0.0;
+double EnergyToNuclideServer::sm_minRelativeBranchRatio = 0.0;
 
-const std::shared_ptr< const EnergyToNuclideServer::EnergyNuclidePairVec > &
+const std::shared_ptr< const EnergyToNuclideServer::EnergyNuclidePairVec > 
                                         EnergyToNuclideServer::energyToNuclide()
 {
   std::lock_guard<std::mutex> lock( sm_mutex );
@@ -137,7 +137,7 @@ const std::shared_ptr< const EnergyToNuclideServer::EnergyNuclidePairVec > &
     auto result = make_shared<EnergyNuclidePairVec>();
     result->reserve( 79264 );
     const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-    EnergyToNuclideServer::initGammaToNuclideMatches( db, *result, sm_halfLife, sm_branchRatio );
+    EnergyToNuclideServer::initGammaToNuclideMatches( db, *result, sm_halfLife, sm_minRelativeBranchRatio );
     sm_energyToNuclide = result;
   }//if( sm_energyToNuclide.empty() )
 
@@ -165,19 +165,19 @@ double EnergyToNuclideServer::minHalfLife()
 double EnergyToNuclideServer::minBranchingRatio()
 {
   std::lock_guard<std::mutex> lock( sm_mutex );
-  return sm_branchRatio;
+  return sm_minRelativeBranchRatio;
 }
 
 
 void EnergyToNuclideServer::setLowerLimits( const double halfLife,
-                                            const double branchRatio )
+                                            const double minRelativeBranchRatio )
 {
   std::lock_guard<std::mutex> lock( sm_mutex );
-  if( (sm_branchRatio==branchRatio) && (sm_halfLife==halfLife) )
+  if( (sm_minRelativeBranchRatio==minRelativeBranchRatio) && (sm_halfLife==halfLife) )
     return;
   sm_energyToNuclide.reset();
-  sm_branchRatio = branchRatio;
   sm_halfLife    = halfLife;
+  sm_minRelativeBranchRatio = minRelativeBranchRatio;
 }//setLowerLimits(...)
 
 
@@ -252,6 +252,9 @@ vector<const SandiaDecay::Nuclide *> EnergyToNuclideServer::nuclidesWithGammaInR
                                                  float highE,
                                                  const EnergyNuclidePairVec &gammaToNuc )
 {
+  if( gammaToNuc.empty() )
+    return {};
+  
   if( highE < lowE )
     swap( highE, lowE );
   const EnergyNuclidePair lowerE( lowE, NULL ), upperE( highE, NULL );
@@ -279,7 +282,7 @@ vector<const SandiaDecay::Nuclide *> EnergyToNuclideServer::nuclidesWithGammaInR
 void EnergyToNuclideServer::initGammaToNuclideMatches( const SandiaDecay::SandiaDecayDataBase *database,
                                EnergyNuclidePairVec &results,
                                const double min_halflife,
-                               const double min_gamma_intensity )
+                               const double min_gamma_rel_br )
 {
   if( !results.empty() )
     results.clear();
@@ -309,8 +312,8 @@ void EnergyToNuclideServer::initGammaToNuclideMatches( const SandiaDecay::Sandia
         continue;
     }//if( nuclide->halfLife < min_halflife )
     
-    float gamma_br_sum = 0.0;
-    if( min_gamma_intensity > 0.0 )
+    float max_gamma_br = 0.0f;
+    if( min_gamma_rel_br > 0.0 )
     {
       for( size_t trans = 0; trans < transitions.size(); ++trans )
       {
@@ -320,13 +323,14 @@ void EnergyToNuclideServer::initGammaToNuclideMatches( const SandiaDecay::Sandia
         {
           if( (products[part].type == SandiaDecay::GammaParticle)
              || (products[part].type == SandiaDecay::XrayParticle) )
-            gamma_br_sum += products[part].intensity * transition->branchRatio;
+            max_gamma_br = std::max( max_gamma_br, products[part].intensity * transition->branchRatio );
           else if( products[part].type == SandiaDecay::PositronParticle )
-            gamma_br_sum += 2.0f * products[part].intensity * transition->branchRatio;
+            max_gamma_br = std::max( max_gamma_br, 2.0f * products[part].intensity * transition->branchRatio );
         }//for( size_t part = 0; part < products.size(); ++part )
       }//for( size_t trans = 0; trans < transitions.size(); ++trans )
+
+      max_gamma_br = (max_gamma_br <= 0.0f) ? 1.0f : max_gamma_br;
     }//if( min_gamma_intensity > 0.0 )
-    
     
     for( size_t trans = 0; trans < transitions.size(); ++trans )
     {
@@ -338,11 +342,11 @@ void EnergyToNuclideServer::initGammaToNuclideMatches( const SandiaDecay::Sandia
                                     || (products[part].type == SandiaDecay::XrayParticle));
         if( gamma_or_xray || products[part].type == SandiaDecay::PositronParticle )
         {
-          if( min_gamma_intensity > 0.0 )
+          if( min_gamma_rel_br > 0.0 )
           {
             const float mult = 1.0f + static_cast<float>(products[part].type==SandiaDecay::PositronParticle);
-            const float intensity = mult * products[part].intensity * transition->branchRatio / gamma_br_sum;
-            if( intensity < min_gamma_intensity )
+            const float intensity = mult * products[part].intensity * transition->branchRatio / max_gamma_br;
+            if( intensity < min_gamma_rel_br )
               continue;
           }//if( min_gamma_intensity > 0.0 )
           

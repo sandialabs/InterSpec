@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ftw- is short for FluxToolWidget or FluxToolWindow
+  -->
+  <message id="ftw-qr-tool-state-title">通量工具状态</message>
+  <message id="ftw-qr-tool-state-text">通量工具的当前状态。</message>
+  <message id="ftw-hdr-intrinsic-eff">本征效率</message>
+  <message id="ftw-hdr-geom-eff">几何效率</message>
+  <message id="ftw-hdr-flux-on-det">探测器上的通量（ɣ/s）</message>
+  <message id="ftw-hdr-flux-cm">通量（ɣ/cm²/s）</message>
+  <message id="ftw-hdr-flux-4pi">ɣ/4π/s</message>
+  <message id="ftw-tt-distance">
+    从源中心到探测器表面的距离。数字后面必须
+    跟单位；有效单位为：meters、m、cm、mm、km、feet、
+    ft、'、in、inches或"。您还可以添加多个距离，
+    例如'3ft 4in'或'3.6E-2 m 12 cm'，它们分别等于
+    40英寸和15.6厘米。
+  </message>
+  <message id="ftw-simple">简单</message>
+  <message id="ftw-standard">标准</message>
+  <message id="ftw-more">更多</message>
+  <message id="ftw-copy-btn">复制到剪贴板</message>
+  <message id="ftw-copy-btn-narrow">复制</message>
+  <message id="ftw-invalid-dist">距离无效</message>
+  <message id="ftw-no-drf">未选择探测器响应函数</message>
+  <message id="ftw-no-foreground">未加载前景谱</message>
+  <message id="ftw-invalid-livetime">前景活时间无效</message>
+  <message id="ftw-err-copy-clipboard">复制到剪贴板失败 - 可能是权限问题 - 抱歉。</message>
+  <message id="ftw-copied-to-clipboard">已将表复制到剪贴板。</message>
+  <message id="ftw-copied-as-html">已将表作为HTML文本复制到剪贴板。</message>
+  <message id="ftw-copy-unknown-status">复制命令的结果未知 - 抱歉。</message>
+</messages>
+

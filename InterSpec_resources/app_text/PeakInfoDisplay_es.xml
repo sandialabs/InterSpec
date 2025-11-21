@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- pid is short for PeakInfoDisplay -->
+
+  <message id="pid-dialog-peak-erase">¿Borrar todos los picos?</message>
+
+  <message id="pid-err-no-foreground">Debe cargarse un espectro de primer plano para añadir un pico.</message>
+
+  <message id="pid-search-peaks-btn">Buscar picos</message>
+  <message id="pid-tt-search-peaks-btn">Buscar picos usando el algoritmo automatizado de búsqueda de picos.</message>
+  <message id="pid-clear-peaks-btn">Limpiar todos los picos</message>
+  <message id="pid-tt-clear-peaks-btn">Quita <b>todos</b> los picos existentes.</message>
+  <message id="pid-nuc-from-ref-btn">Nuc. de ref.</message>
+  <message id="pid-tt-nuc-from-ref-btn">
+    Asignar nucleídos de picos desde líneas de referencia que se muestran. Solo aplica a
+    picos que no tienen ya un nucleído asociado con ellos.
+  </message>
+
+  <message id="pid-add-peak-btn">Añadir...</message>
+  <message id="pid-tt-add-peak-btn">Añadir manualmente un nuevo pico.</message>
+  <message id="pid-tt-del-peaks">Elimina pico que se está editando actualmente.</message>
+  <message id="pid-better-editor-hint">Clic derecho en picos para mejor editor</message>
+  <message id="pid-better-editor-hint-mobile">Tocar y mantener en picos para mejor editor</message>
+  <message id="pid-tt-csv-export">Exportar información sobre los picos identificados a formato separado por comas.</message>
+  <message id="pid-tt-csv-copy">Copiar información CSV de picos a su portapapeles.
+    <p>Los datos de picos se copiarán en su portapapeles en variantes formateadas y de texto plano,
+      así que el formato de los datos dependerá de la aplicación en la que esté pegando.
+    </p>
+  </message>
+
+  <message id="pid-csv-copy-full">Copiar CSV completo de picos</message>
+  <message id="pid-csv-copy-no-hdr">Copiar sin encabezados</message>
+  <message id="pid-csv-copy-compact">Copiar info de picos ajustados</message>
+</messages>
+
+

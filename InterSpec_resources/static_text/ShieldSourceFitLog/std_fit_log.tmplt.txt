@@ -1,10 +1,11 @@
 {% if exists("foreground") %}Foreground LiveTime: {% if foreground.LiveTime_s %}{{ foreground.LiveTime_s }} seconds{% endif %} {% if foreground.LiveTime %}({{ foreground.LiveTime }}){% endif %}{% else %}No foreground spectrum{% endif %}
-{% if HasFitResults %}{% if FixedGeometryDetector %}Results given as {{ ActShieldFitSetup.FixedGeometryType }}.{% else %}Distance to source center from detector: {{ ActShieldFitSetup.Distance }}{% endif %}{% endif %}
-{% if exists("Detector") %}{% if Detector %}Detector: {{ Detector.Name }} radius {{ printFixed(Detector.Radius_cm,1) }}{% endif %}{% endif %}
-{% if HasFitResults %}
-{% if ActShieldFitSetup.FitOptions.InterferenceCorrection %}Allowing multiple nuclides being fit for to potentially contribute to the same photopeak{% else %}Not allowing multiple nuclides being fit for to contribute to the same photopeak{% endif %}
-{% if ActShieldFitSetup.FitOptions.DecayDuringMeasurement %}Branching ratios are being corrected for nuclide decay during measurement{% endif %}
-{% endif %}
+{% if HasFitResults %}{% if FixedGeometryDetector %}Results given as {{ ActShieldFitSetup.FixedGeometryType }}.
+{% else %}Distance to source center from detector: {{ ActShieldFitSetup.Distance }}
+{% endif %}{% endif %}{% if exists("Detector") %}{% if Detector %}Detector: {{ Detector.Name }} radius {{ printFixed(Detector.Radius_cm,1) }}
+{% endif %}{% endif %}{% if HasFitResults %}{% if ActShieldFitSetup.FitOptions.InterferenceCorrection %}Allowing multiple nuclides being fit for to potentially contribute to the same photopeak
+{% else %}Not allowing multiple nuclides being fit for to contribute to the same photopeak
+{% endif %}{% if ActShieldFitSetup.FitOptions.DecayDuringMeasurement %}Branching ratios are being corrected for nuclide decay during measurement
+{% endif %}{% endif %}
 {% if HasErrorMessage %}
 
 
@@ -66,17 +67,17 @@ Chi2 Contributions Of Peaks:
     At {{ peak.Energy }} keV expected {{ peak.PredictedCounts }} counts, recieved {{ peak.SignalCounts }} +- {{ peak.SignalCountsUncert }}. giving (observed-expected)/uncert={{ peak.PredictedNumSigmaOff }}
 ##endfor
 {% endif %}
-&nbsp;
+
 {% if HasFitResults %}
 There were {{ NumDof }} parameters fit for
 It took {{ NumberFcnCalls }} solution trials to reach chi2={{ FitChi2 }} with an estimated distance to minumum of {{ EstimatedDistanceToMinimum }}
 ## for src in Sources
-{{ src.Nuclide }} fit activity {{ src.Activity }}{% if src.ActivityIsFit %} with uncertainty {{ src.ActivityUncert }} ({{ src.ActivityUncertPercent }}) {% endif %} at {% if src.AgeIsFit %}assumed {% else %}fit {% endif %} age {{ src.Age }}
+{{ src.Nuclide }} fit activity {{ src.Activity }} {% if src.ActivityIsFit %}with uncertainty {{ src.ActivityUncert }} ({{ src.ActivityUncertPercent }}) {% endif %}at {% if src.AgeIsFit %}assumed {% else %}fit {% endif %}age {{ src.Age }}
 ## endfor
 {% if HasFitResults %}
-Geometry: {% if FixedGeometryDetector %}Fixed geometry, {{ ActShieldFitSetup.FixedGeometryType }}.{% else %}{{ ActShieldFitSetup.Geometry }}{% endif %}
-{% endif %}
-{% if exists("Shieldings") %}
+Geometry: {% if FixedGeometryDetector %}Fixed geometry, {{ ActShieldFitSetup.FixedGeometryType }}.
+{% else %}{{ ActShieldFitSetup.Geometry }}
+{% endif %}{% endif %}{% if exists("Shieldings") %}
 Shieldings:
 {% if exists("Shieldings") and existsIn(Shieldings,"Shields") %}
 ## for shield in Shieldings.Shields

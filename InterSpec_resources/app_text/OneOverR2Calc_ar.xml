@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- oor2c- short for OneOverR2Calc
+  -->
+  <message id="oor2c-instructions">استخدم قياسين في مواقع مختلفة لإيجاد المسافة إلى مصدر غير مرئي. مثلاً عندما يكون المصدر خلف جدار.</message>
+  <message id="oor2c-near-meas-label">شدة القياس القريب:</message>
+  <message id="oor2c-far-meas-label">شدة القياس البعيد:</message>
+  <message id="oor2c-background-intensity">شدة الخلفية (اختياري):</message>
+  <message id="oor2c-dist-label">المسافة بين القياسات:</message>
+  <message id="oor2c-power-law-label">قانون القوة</message>
+  <message id="oor2c-low-scatter">تشتت منخفض أو استخدام مساحة القمة، 1/r^2</message>
+  <message id="oor2c-mid-scatter">معدل جرعة تشتت متوسط، 1/r^1.85</message>
+  <message id="oor2c-high-scatter">معدل جرعة تشتت عالي، 1/r^1.65</message>
+  <message id="oor2c-dist-to-near-label">مسافة القياس القريب إلى المصدر:</message>
+  <message id="oor2c-bottom-message">استخدم نفس الوحدات للقياسات القريبة والخلفية والبعيدة. 
+    النتائج بنفس الوحدات المستخدمة للمسافة بين القياسات.
+  </message>
+  <message id="oor2c-qr-state-title">حالة حاسبة 1/r2</message>
+  <message id="oor2c-qr-state-txt">الحالة الحالية لأداة حاسبة 1/r<sup>2</sup>.</message>
+  <message id="oor2c-invalid-near">قياس قريب غير صالح</message>
+  <message id="oor2c-invalid-far">قياس بعيد غير صالح</message>
+  <message id="oor2c-invalid-dist">مسافة غير صالحة</message>
+  <message id="oor2c-far-larger-than-near">القياس البعيد يجب أن يكون أقل من القريب</message>
+  <message id="oor2c-back-larger-than-far">الخلفية يجب أن تكون أقل من البعيد</message>
+  <message id="oor2c-near-is-zero">القياس القريب يجب أن يكون غير صفر</message>
+  <message id="oor2c-far-is-zero">القياس البعيد يجب أن يكون غير صفر</message>
+  <message id="oor2c-dist-is-zero">المسافة بين القياسات يجب أن تكون غير صفر</message>
+</messages>

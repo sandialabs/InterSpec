@@ -22,7 +22,7 @@ you restart InterSpec).
     -->
     <Name internationalize="1">isbe-category-nuc-xray-rctn</Name>
     <Description internationalize="1">isbe-category-nuc-xray-rctn-desc</Description>
-    <MinBr>0.0</MinBr>                    <!-- Defaults to zero if not specified.  Only applicable to AllowNucGammas. -->
+    <MinBr>0.0</MinBr>                    <!-- Defaults to zero if not specified.  Only applicable to AllowNucGammas. This is actually the minimum relative BR (e.g., aged gamma line BR divided by max intensity line). -->
     <MinHl>6000 s</MinHl>                 <!-- Defaults to zero if not specified.  Only applicable to AllowNucGammas. -->
     <AllowNucGammas>1</AllowNucGammas>    <!-- If should search on nuclide gammas and decay x-rays. These options default to false if not specified. -->
     <AllowFluorXrays>1</AllowFluorXrays>  <!-- If should search on element fluorescence x-rays. -->

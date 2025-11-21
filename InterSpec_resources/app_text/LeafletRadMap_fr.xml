@@ -22,4 +22,18 @@
   <message id="lrm-displayed-as">Affiché en tant que</message>
   <message id="lrm-measurements-as">mesures en tant que</message>
   <message id="lrm-load-meas-as-short">Charger en tant que</message>
+  <message id="lrm-filter-label">Filtre</message>
+  <message id="lrm-filter-none">Aucun</message>
+  <message id="lrm-filter-energy-range">Plage d'énergie</message>
+  <message id="lrm-filter-peaks-in-range">Pics dans la plage</message>
+  <message id="lrm-lower-energy">Énergie inférieure</message>
+  <message id="lrm-upper-energy">Énergie supérieure</message>
+  <message id="lrm-energy-filter-help">
+    L'application d'un filtre de plage d'énergie changera comment et potentiellement quelles données sont affichées sur la carte.
+    <ul>
+    <li><b>Aucun</b> : Aucun filtrage appliqué - les couleurs et le texte CPS sont basés sur le taux de comptage du spectre complet.</li>
+    <li><b>Plage d'énergie</b> : Filtrer les comptages gamma dans la plage d'énergie spécifiée.</li>
+    <li><b>Pics dans la plage</b> : Afficher uniquement les numéros d'échantillon qui ont des pics dans la plage d'énergie avec les couleurs des marqueurs et le CPS basés sur le taux de comptage des pics.</li>
+    </ul>
+  </message>
 </messages>

@@ -45,12 +45,17 @@ class DetectorPeakResponse;
 class ReferencePhotopeakDisplay;
 
 namespace SpecUtils{
+  enum class SpectrumType : int;
   class Measurement;
 }
 
 namespace Wt{
   class WSvgImage;
 };
+
+namespace SandiaDecay{
+  struct Nuclide;
+}
 
 /** Functions in this header/source are kinda go between of the GUI and the
  numerical code (although of course, separation is never as clean as one would
@@ -95,7 +100,9 @@ SpectrumChart *createFixedSpectrumDisplay( std::shared_ptr<const SpecUtils::Meas
 void fit_peak_from_double_click( InterSpec *interspec,
                                 const double energy_clicked,
                                 const double pixel_per_keV,
-                                std::shared_ptr<const DetectorPeakResponse> det );
+                                std::shared_ptr<const DetectorPeakResponse> det,
+                                std::string ref_line_name,
+                                const SpecUtils::SpectrumType spec_type );
   
   
 /** Performs the automated search for peaks - setting the results to the GUI. */
@@ -179,6 +186,21 @@ std::vector<std::shared_ptr<const PeakDef>> assign_srcs_from_ref_lines( const st
                                    const bool showingEscapePeakFeature,
                                    const bool only_peaks_with_no_src );
 
+/** Assigns the passed in peak to a reference line if reasonable.  If this
+ assignment would cause one of the already existing peaks to change assignment
+ (most likely if two peaks of diff amp, but same nuc, are right next to each
+ other) then the peak that should be changed, along with the string of the
+ assignment it should be changed to.
+
+ TODO: I dont think the return value is what is claimed, or at least not handled correctly; this should all be improved
+ */
+std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
+      assign_nuc_from_ref_lines( PeakDef &peak,
+                                 std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> previouspeaks,
+                                 const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                 const std::vector<ReferenceLineInfo> &displayed,
+                                 const bool colorPeaksBasedOnReferenceLines,
+                                const bool showingEscapePeakFeature );
 
 /** Enum to tell #refit_peaks_from_right_click what type of refit to do.
  */
@@ -221,20 +243,24 @@ void refit_peaks_from_right_click( InterSpec * const interspec, const double rig
  */
 void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightClickEnergy );
   
-/** Returns the energy of its assigned nuclides gamma line, or peak doesnt have assigned gamma line, returns the
- nearest showing Reference Photopeak line. Returns a negative value if neither can be found
+/** Returns the energy of its assigned source gamma line, or if the peak doesnt have assigned gamma line,
+ then will use `ref_line_hint` to look for matching displayed or dynamic reference lines, and finally
+ will look for displayed referfence lines.
  
+ Returns a negative value if none can be found
  */
-float reference_line_energy_near_peak( InterSpec * const interspec, 
-                                      const PeakDef &peak );
+float source_or_reference_line_near_peak_energy( InterSpec * const interspec,
+                                                const PeakDef &peak,
+                                                const std::string &ref_line_hint );
   
 /** Returns the reference line info, and index for the specific reference line
  
  @param only_nuclide If true, then only lines with a parent nuclide, who are a gamma or xray, will be considered
+ @param ref_line_hint If non-empty, will be the prefered reference line, or if dynamic reference lines are active, will look through those for this source.
  
  Example usage:
  ```
- auto refline = reference_line_near_peak( interspec, peak, false );
+ auto refline = reference_line_near_peak( interspec, peak, false, "" );
  if( refline.first )
  {
    ReferenceLineInfo::RefLine &line = refline.first->m_ref_lines[refline.second];
@@ -248,25 +274,33 @@ float reference_line_energy_near_peak( InterSpec * const interspec,
 std::pair<std::unique_ptr<ReferenceLineInfo>,int> reference_line_near_peak( 
                                                                   InterSpec * const interspec,
                                                                   const PeakDef &peak,
-                                                                  const bool only_nuclide );
+                                                                  const bool only_nuclide,
+                                                                  const std::string &ref_line_hint );
   
 /** Returns the reference line nuclide and energy near the given energy, that the user probably intends.
    
   Intended to be called with the energy of a users click - takes into account detectors resolution and nuclide yields.
+  Must be called from the main Wt application thread.
+ 
+  @param viewer The InterSpec instance the click is from.
+  @param energy The energy of the click
+  @param hint_parent If non-empty, this ref-line (or dynamic reference line) will be the prefered source.
    
   @returns The nuclide, its age, and energy of the reference line.  If not near a line, or no reference line, or a non-nuc reference
           line is showing, will return {nullptr, 0.0, 0.0f}.
    
-  \sa PeakSearchGuiUtils::reference_line_energy_near_peak
+  \sa PeakSearchGuiUtils::source_or_reference_line_near_peak_energy
 */
 std::tuple<const SandiaDecay::Nuclide *, double /* age */, float /* energy */>
-  nuclide_reference_line_near( InterSpec *viewer, const float energy );
+  nuclide_reference_line_near( InterSpec *viewer, const float energy, const std::string &hint_parent );
   
   
 /** Set the peak nearest `rightClickEnergy` to preferably its assigned gamma energy, or if none assigned, to
  nearest showing reference photopeak energy, and then refits peak.
  */
-void refit_peak_with_photopeak_mean( InterSpec * const interspec, const double rightClickEnergy );
+void refit_peak_with_photopeak_mean( InterSpec * const interspec,
+                                    const double rightClickEnergy,
+                                    const std::string &ref_line_hint );
   
 /** Changes the continuum type and causes a refit of ROI.
  
@@ -337,8 +371,11 @@ void prepare_and_add_gadras_peaks(
  * 
  * @param interspec The InterSpec instance to operate on
  * @param rightClickEnergy The energy where the user right-clicked
+ * @param ref_line_hint The reference line info from the client-side from the click (may be empty, a user displayed ref line, or kinematic ref line).
  */
-void add_peak_from_right_click( InterSpec * const interspec, const double rightClickEnergy );
+void add_peak_from_right_click( InterSpec * const interspec,
+                               const double rightClickEnergy,
+                               const std::string &ref_line_hint );
 
 }//namespace PeakSearchGuiUtils
 #endif //AssignPeaksToRefLine_h

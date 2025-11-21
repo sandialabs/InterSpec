@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- gcd- is short for GammaCountDialog
+  -->
+  <message id="gcd-summary">عد عدد أشعة الجاما في نطاق الطاقة المحدد.</message>
+  <message id="gcd-lower-energy-label">الطاقة الدنيا</message>
+  <message id="gcd-upper-energy-label">الطاقة العليا</message>
+  <message id="gcd-shift-alt-drag">Shift-Alt-السحب</message>
+  <message id="gcd-shift-option-drag">Shift-⌘-السحب</message>
+  <message id="gcd-select-shortcut">يمكنك أيضًا <b>{1}</b> على المخطط لاختيار نطاق الطاقة</message>
+  <message id="gcd-foreground-counts-label">عدد المقدمة:</message>
+  <message id="gcd-secondary-counts-label">عدد الثانوي:</message>
+  <message id="gcd-background-counts-label">عدد الخلفية:</message>
+  <message id="gcd-tt-n-sigma">
+    يتم حساب عدد سيجما الفرق بقسمة
+    الفرق بين المقدمة والخلفية (المقيسة)،
+    مقسومًا على عدم اليقين. يتم حساب عدم اليقين بجمع
+    عدم اليقين الإحصائي للمقدمة والخلفية في
+    التربيع، ثم أخذ الجذر التربيعي
+  </message>
+  <message id="gcd-qr-window-title">حالة مجموع نطاق الطاقة</message>
+  <message id="gcd-qr-window-text">الحالة الحالية لأداة مجموع نطاق الطاقة.</message>
+  <message id="gcd-background-scale-note">يتم قياس الخلفية بـ {1}</message>
+  <message id="gcd-and-secondary-scaled"> والثانوي بـ </message>
+  <message id="gcd-secondary-scale-note">يتم قياس الخلفية الثانوية بـ </message>
+  <message id="gcd-foreground-above-background">المقدمة {1} σ فوق الخلفية.</message>
+  <message id="gcd-foreground-below-background">المقدمة {1} σ تحت الخلفية.</message>
+</messages>

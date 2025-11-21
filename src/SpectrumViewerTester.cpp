@@ -1204,9 +1204,9 @@ SpectrumViewerTester::Score SpectrumViewerTester::testManualPeakClicking()
       
       const double frac = double(attempt) / sm_num_manual_click;
       const double x = peak->mean() + (2.0*frac-1.0)*sm_nfwhm_manually_click*peak->fwhm();
-      
+
       const size_t nprepeaks = peakModel->npeaks();
-      m_viewer->searchForSinglePeak( x );
+      m_viewer->searchForSinglePeak( x, "", Wt::WFlags<Wt::KeyboardModifier>() );
       
       const size_t npostpeaks = peakModel->npeaks();
       if( nprepeaks == npostpeaks )
@@ -1994,7 +1994,8 @@ SpectrumViewerTester::Score SpectrumViewerTester::testShieldSourceFit()
     note.m_title = "Fit Chi2 Graphic";
     note.m_originalImage = make_shared<Wt::WSvgImage>(m_picWidth, m_picHeight);
     disp->updateChi2ChartActual( nullptr );
-    disp->renderChi2Chart( *note.m_originalImage );
+    // TODO: 20251110 The Wt-based Chi2 chart was replaced by `ShieldingSourceFitPlot` - so should update to that...
+    //disp->renderChi2Chart( *note.m_originalImage );
     
     // Set all the quantities being fit for to some default values, so we wont be starting off in
     //  unfairly close to the real answer.
@@ -2006,7 +2007,8 @@ SpectrumViewerTester::Score SpectrumViewerTester::testShieldSourceFit()
     result = disp->doModelFit( false );
     
     note.m_testImage = make_shared<Wt::WSvgImage>(m_picWidth, m_picHeight);
-    disp->renderChi2Chart( *note.m_testImage );
+    // TODO: 20251110 The Wt-based Chi2 chart was replaced by `ShieldingSourceFitPlot` - so should update to that...
+    //disp->renderChi2Chart( *note.m_testImage );
     answer.m_notes.push_back( note );
     
     switch( result->successful )

@@ -100,11 +100,9 @@
   height: 28px;
   vertical-align: middle;
   margin-bottom: 3px;
-}
-
-.DrfPeak > span, .DrfPeak > label {
-  display: inline-block;
-  padding-top: 6px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
 }
 
 .DrfPeakUseCb {
@@ -132,7 +130,7 @@
 
 
 .DrfPeakShowChart, .DrfPeakShowChart:hover {
-  display: inline-block;
+  /* display: inline-block; */
   background: none;
   border: none;
   outline: none;
@@ -143,9 +141,8 @@
   /* position: absolute;
   right: 20px;
    */
-  float: right;
   margin-right: 0.5em;
-  margin-top: 5px;
+  margin-left: auto;
 }
 
 .DrfPeakShowChart.active {
@@ -194,7 +191,4 @@
   user-select: all;
   -moz-user-select: all;
   -webkit-user-select: all;
-  -ms-user-select: all;
-  -khtml-user-select: all;
-  -o-user-select: all;
 }

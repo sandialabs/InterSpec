@@ -208,7 +208,9 @@ bool is_likely_high_res( InterSpec *viewer )
     case SpecUtils::DetectorType::IdentiFinderUnknown:
     case SpecUtils::DetectorType::SAIC8:
     case SpecUtils::DetectorType::MicroRaider:
-    case SpecUtils::DetectorType::RadiaCode:
+    case SpecUtils::DetectorType::RadiaCodeCsI10:
+    case SpecUtils::DetectorType::RadiaCodeCsI14:
+    case SpecUtils::DetectorType::RadiaCodeGAGG10:
     case SpecUtils::DetectorType::RadHunterNaI:
     case SpecUtils::DetectorType::RadHunterLaBr3:
     case SpecUtils::DetectorType::Rsi701:
@@ -230,6 +232,9 @@ bool is_likely_high_res( InterSpec *viewer )
     case SpecUtils::DetectorType::VerifinderLaBr:
     case SpecUtils::DetectorType::KromekD3S:
     case SpecUtils::DetectorType::Sam950:
+    case SpecUtils::DetectorType::KromekD5:
+    case SpecUtils::DetectorType::KromekGR1:
+    case SpecUtils::DetectorType::Raysid:
       return false;
       
     case SpecUtils::DetectorType::Falcon5000: //Any Canberra/Mirion system will be classified as a Falcon 5k

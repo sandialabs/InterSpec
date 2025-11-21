@@ -154,6 +154,10 @@
 #include "InterSpec/QRSpectrum.h"
 #endif
 
+#if( USE_BATCH_GUI_TOOLS )
+#include "InterSpec/BatchGuiWidget.h"
+#endif
+
 using namespace Wt;
 using namespace std;
 
@@ -323,7 +327,7 @@ namespace
   public:
     FileUploadDialog( InterSpec *viewer,
                       SpecMeasManager *manager )
-    : AuxWindow( "", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+    : AuxWindow( "", (AuxWindowProperties::IsModal
                       | AuxWindowProperties::PhoneNotFullScreen
                       | AuxWindowProperties::DisableCollapse
                       | AuxWindowProperties::SetCloseable) ),
@@ -714,100 +718,186 @@ public:
   }//void addUrl( const string &url )
 };//MultiUrlSpectrumDialog
 #endif //USE_QR_CODES
+  
 
-WT_DECLARE_WT_MEMBER
-(LookForQrCode, Wt::JavaScriptFunction, "LookForQrCode",
-async function( sender_id, u8Buffer )
-{
-  let zxing = await ZXing();
-  
-  let zxingBuffer = zxing._malloc(u8Buffer.length);
-  zxing.HEAPU8.set(u8Buffer, zxingBuffer);
-  
-  let results = zxing.readBarcodesFromImage(zxingBuffer, u8Buffer.length, true, "QRCode", 0xff);
-  zxing._free(zxingBuffer);
-  
-  const firstRes = (results.size() > 0) ? results.get(0) : null;
-  
-  if( (results.size() === 0)
-     || (firstRes && firstRes.error && (firstRes.error.length !== 0) && (!firstRes.text || firstRes.text.length)) )
-  {
-    if( firstRes && firstRes.error && (firstRes.error.length !== 0) )
-    {
-      console.log( "QR-code reading error:", firstRes.error );
-      Wt.emit( sender_id, 'QrDecodedFromImg', -1, firstRes.error );
-    }else
-    {
-      // No QR-code found
-      console.log( "No QR-code found." );
-      Wt.emit( sender_id, 'QrDecodedFromImg', 0, "" );
-    }
-  }else
-  {
-    console.log( "Successfully got QR-code results." );
-    let uri = "";
-    for( let i = 0; i < results.size(); i += 1)
-    {
-      const { format, text, bytes, error } = results.get(i);
-      uri += (uri.length ? "\n" : "") + btoa(text);
-      //console.log( "text: ", text, "\nerror:", error );
-    }
-    
-    Wt.emit( sender_id, 'QrDecodedFromImg', results.size(), uri );
-  }//if( error ) / else
-}
-);
-  
-  
-WT_DECLARE_WT_MEMBER
-(SearchForQrFromImgData, Wt::JavaScriptFunction, "SearchForQrFromImgData",
-function( sender_id, b64_img_data_str )
-{
-  let binaryString = atob(b64_img_data_str);
-  let bytes = new Uint8Array(binaryString.length);
-  for( let i = 0; i < binaryString.length; i++)
-    bytes[i] = binaryString.charCodeAt(i);
-    
-  let u8Buffer = new Uint8Array(bytes);
-  
-  Wt.WT.LookForQrCode(sender_id, u8Buffer).then( function(){
-    console.log( "Done calling qr decode" );
-  }).catch(function(err){
-    console.log( "qr decode error: ", err );
-    Wt.emit( sender_id, 'QrDecodedFromImg', -999, "There was an error calling decoding routine." );
-  });
-}
-);
-  
-  
+/** Searches the image if an `<img />` element for a QR code.
+
+ @param sender_id The string ID of the element that should be used to emit the found/not-found signal
+ @param img The JS ref to the <img /> element holding the image to process
+ @param numTimesMoreCall For some reason, a search for the QR code can randomly fail for one call, and then succeed the next with nothing changing; I dont know why, and it makes me uneasy.  But to work around this, this function will recursively call itself this many times.
+
+ Emits the 'QrDecodedFromImg' signal when found/not-found.
+ */
 WT_DECLARE_WT_MEMBER
 (SearchForQrUsingCanvas, Wt::JavaScriptFunction, "SearchForQrUsingCanvas",
-function( sender_id, img )
+ async function( sender_id, img, numTimesMoreCall )
 {
-  //Turn image into PNG, then call Wt.WT.LookForQrCode(sender_id, u8Buffer).then...
   try
   {
-    let canvas = document.createElement('canvas');
-    canvas.width = Math.max(img.width, img.naturalWidth ? img.naturalWidth : 0);
-    canvas.height = Math.max(img.height, img.naturalHeight ? img.naturalHeight : 0);
+    const originalCanvas = document.createElement('canvas');
+    originalCanvas.width = Math.max(img.width, img.naturalWidth ? img.naturalWidth : 0);
+    originalCanvas.height = Math.max(img.height, img.naturalHeight ? img.naturalHeight : 0);
+    const originalCtx = originalCanvas.getContext('2d');
+    originalCtx.drawImage(img, 0, 0);
     
-    let ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0);
+    
+    // Function to resize the canvas contents - if each QR code element is too large, the
+    //  zxing heuristics may not work out.
+    function resizeCanvas(scaleFactor) {
+      const resizedCanvas = document.createElement('canvas');
+      const resizedCtx = resizedCanvas.getContext('2d');
+      resizedCanvas.width = originalCanvas.width * scaleFactor;
+      resizedCanvas.height = originalCanvas.height * scaleFactor;
+      resizedCtx.drawImage(originalCanvas, 0, 0, originalCanvas.width, originalCanvas.height, 0, 0, resizedCanvas.width, resizedCanvas.height);
+      return resizedCanvas;
+    };//function resizeCanvas
+    
+    // Function to adjust image properties
+    //  wcjohns knowns nothing about image transformations - this function was thanks to a LLM - seems to work, kinda
+    function adjustImage(canvas, options) {
+      const ctx = canvas.getContext('2d');
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data; // Pixel data (RGBA)
+      
+      const {
+        exposure = 1.0,       // Exposure multiplier (default: 1.0)
+        contrast = 1.0,       // Contrast multiplier (default: 1.0)
+        saturation = 1.0,     // Saturation multiplier (default: 1.0)
+        highlights = 0.0,     // Highlights adjustment (default: 0.0)
+        shadows = 0.0         // Shadows adjustment (default: 0.0)
+      } = options;
+      
+      for (let i = 0; i < data.length; i += 4) {
+        let r = data[i], g = data[i + 1], b = data[i + 2];
+        
+        // Adjust exposure
+        r *= exposure;
+        g *= exposure;
+        b *= exposure;
+        
+        // Adjust contrast
+        r = ((r - 128) * contrast) + 128;
+        g = ((g - 128) * contrast) + 128;
+        b = ((b - 128) * contrast) + 128;
+        
+        // Adjust highlights and shadows
+        r += highlights - shadows;
+        g += highlights - shadows;
+        b += highlights - shadows;
+        
+        // Adjust saturation
+        const avg = (r + g + b) / 3; // Calculate average intensity
+        r += (r - avg) * saturation;
+        g += (g - avg) * saturation;
+        b += (b - avg) * saturation;
+        
+        // Clamp values to [0, 255]
+        data[i] = Math.min(255, Math.max(0, r));
+        data[i + 1] = Math.min(255, Math.max(0, g));
+        data[i + 2] = Math.min(255, Math.max(0, b));
+      }
+      
+      // Put the adjusted image data back onto the canvas
+      ctx.putImageData(imageData, 0, 0);
+
+      return canvas;
+    };//function adjustImage(...)
+    
+    
+    // We will make a number of transforms to try an look for the QR code in.
+    //  These have NOT been carefully chosen - will need adjusting as we run into pictures that dont work
+    let canvas_transforms_to_try = [
+      function(){return resizeCanvas(0.75);},
+      function(){return resizeCanvas(0.5);},
+      function(){return resizeCanvas(0.25);},
+      function(){return resizeCanvas(0.15);},
+      function(){ //increase contrast
+        let c = resizeCanvas(1.0);
+        adjustImage(c, {
+          exposure: 1.0,    // exposure - leave nominal
+          contrast: 1.5,    // Increase contrast
+          saturation: 1.0,  // leave saturation
+          highlights: 0,    // Brighten highlights - adds to pixel values (e.g. 0,255)
+          shadows: 0        // Darken shadows - subtracts to pixel values (e.g. 0,255)
+        });
+        return c;
+      },
+      function(){ return adjustImage( resizeCanvas(0.5), { contrast: 1.5 });  }, //cut size in half and increase contrast
+      function(){ return adjustImage( resizeCanvas(1.0), { contrast: 1.5 });  }, //Leaves size alone, but increases contrast
+      function(){ return adjustImage( resizeCanvas(1.0), { highlights: 20 }); },
+      function(){ return adjustImage( resizeCanvas(1.0), { exposure: 1.2 });  },
+      function(){ return adjustImage( resizeCanvas(1.0), { exposure: 0.8 });  },
+      function(){ return adjustImage( resizeCanvas(1.0), { shadows: 20 });    }
+    ];//let canvas_transforms_to_try = [...]
+  
+    let error_status = null;
+    const zxing = await ZXing();
+    
+    async function LookForQrCode( blobData ){
+      const arrBuf = await blobData.arrayBuffer();
+      const u8Buffer = new Uint8Array( arrBuf );
+      
+      let zxingBuffer = zxing._malloc(u8Buffer.length);
+      zxing.HEAPU8.set(u8Buffer, zxingBuffer);
+      
+      const results = zxing.readBarcodesFromImage(zxingBuffer, u8Buffer.length, true, "QRCode", 0xff);
+      zxing._free(zxingBuffer);
+
+      console.log( "results:", results );
+
+      const firstRes = (results.size() > 0) ? results.get(0) : null;
+      
+      if( (results.size() === 0)
+         || (firstRes && firstRes.error && (firstRes.error.length !== 0) && (!firstRes.text || firstRes.text.length)) )
+      {
+        if( firstRes && firstRes.error && (firstRes.error.length !== 0) )
+        {
+          console.log( "QR-code reading error:", firstRes.error );
+          if( !error_status )
+            error_status = { status: -1, msg: "" + firstRes.error };
+        }else
+        {
+          // No QR-code found
+          console.log( "No QR-code found." );
+          if( !error_status )
+            error_status = { status: 0, msg: "" };
+        }
+      }else
+      {
+        console.log( "Successfully got QR-code results." );
+        let uri = "";
+        for( let i = 0; i < results.size(); i += 1)
+        {
+          const { format, text, bytes, error } = results.get(i);
+          uri += (uri.length ? "\n" : "") + btoa(text);
+          //console.log( "text: ", text, "\nerror:", error );
+        }
+        
+        Wt.emit( sender_id, 'QrDecodedFromImg', results.size(), uri );
+        return;
+      }//if( error ) / else
+      
+      
+      if( canvas_transforms_to_try.length > 0 )
+      {
+        const xform = canvas_transforms_to_try.shift();
+        const new_canvas = xform();
+        new_canvas.toBlob( LookForQrCode, 'image/png' );
+        return;
+      }
+
+      if( numTimesMoreCall && (numTimesMoreCall > 0) )
+      {
+        setTimeout( function(){ Wt.WT.SearchForQrUsingCanvas( sender_id, img, numTimesMoreCall-1 ); }, 1 );
+      }else
+      {
+        Wt.emit( sender_id, 'QrDecodedFromImg', error_status ? error_status.status : 0, error_status ? error_status.msg : "" );
+      }
+    };//function LookForQrCode
+    
     
     // Convert the image to PNG format
-    function blobToQr(blobData){
-      blobData.arrayBuffer().then( function(arrBuf){
-        let u8Buffer = new Uint8Array( arrBuf );
-        Wt.WT.LookForQrCode(sender_id, u8Buffer).then( function(){
-          console.log( "Done calling qr decode for canvas blob" );
-        }).catch(function(err){
-          console.log( "qr decode error: ", err );
-          Wt.emit( sender_id, 'QrDecodedFromImg', -999, "Error calling decoding routine." );
-        });
-      });
-    };//blobToQr
-    
-    canvas.toBlob( blobToQr, 'image/png' );
+    originalCanvas.toBlob( LookForQrCode, 'image/png' );
   }catch( err )
   {
     console.log( "qr decode error (1): ", err );
@@ -1093,27 +1183,12 @@ protected:
   }//void qr_check_result( const int num_qr, const string b64_value )
   
   
-  void check_for_qr_with_raw()
-  {
-    LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsLookForQrCode);
-    LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsSearchForQrFromImgData);
-    wApp->require( "InterSpec_resources/assets/js/zxing-cpp-wasm/zxing_reader.js", "zxing_reader.js" );
-    
-    vector<unsigned char> raw_data = m_resource->data();
-    string str_data( raw_data.size(), '\0' );
-    memcpy( (void *)&(str_data[0]), (void *)raw_data.data(), raw_data.size() );
-    string b64_data = Wt::Utils::base64Encode(str_data, false);
-    this->doJavaScript( "Wt.WT.SearchForQrFromImgData('" + this->id() + "','" + b64_data + "');" );
-  }//void check_for_qr_with_raw()
-  
-  
   void check_for_qr_from_canvas()
   {
-    LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsLookForQrCode);
     LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsSearchForQrUsingCanvas);
     wApp->require( "InterSpec_resources/assets/js/zxing-cpp-wasm/zxing_reader.js", "zxing_reader.js" );
     
-    this->doJavaScript( "Wt.WT.SearchForQrUsingCanvas('" + this->id() + "'," + m_image->jsRef() + ");" );
+    this->doJavaScript( "Wt.WT.SearchForQrUsingCanvas('" + this->id() + "'," + m_image->jsRef() + ", 5);" );
   }//void check_for_qr_from_canvas()
   
   
@@ -1213,10 +1288,6 @@ public:
       return;
     }//if( !success )
     
-    const bool is_gif_jpg_png = (SpecUtils::icontains(mimetype, "gif")
-                              || SpecUtils::icontains(mimetype, "jpeg")
-                              || SpecUtils::icontains(mimetype, "png"));
-    
     m_resource = new WMemoryResource( mimetype, this );
     m_resource->setData( totaldata );
         
@@ -1243,41 +1314,25 @@ public:
     m_qrDecodeSignal.connect( boost::bind( &UploadedImgDisplay::qr_check_result, this,
                                           boost::placeholders::_1, boost::placeholders::_2 ) );
     
-    if( is_gif_jpg_png )
+    // We will draw the image to a canvas, and use that
+    if( m_autoQrCodeSearch )
     {
-      // We will use the raw image data
-      if( m_autoQrCodeSearch )
-      {
-        assert( m_qrCodeStatusTxt );
-        m_qrCodeStatusTxt->setText( WString::tr("uid-looking-for-qr") );
-        check_for_qr_with_raw();
-      }else
-      {
-        m_checkForQrCodeBtn->clicked().connect( this, &UploadedImgDisplay::check_for_qr_with_raw );
-      }
+      LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsSearchForQrUsingCanvas);
+      wApp->require( "InterSpec_resources/assets/js/zxing-cpp-wasm/zxing_reader.js", "zxing_reader.js" );
+        
+      assert( m_qrCodeStatusTxt );
+      m_qrCodeStatusTxt->setText( WString::tr("uid-looking-for-qr") );
+        
+      // If `imageLoaded()` is never called, it means the image couldnt be displayed, for example
+      //  if image file is invalid, or a HEIC on Windows.
+      m_image->imageLoaded().connect( "function(){ Wt.WT.SearchForQrUsingCanvas('" + this->id() + "'," + m_image->jsRef() + ", 5); }" );
+      m_image->imageLoaded().connect( boost::bind( &WText::setText, m_qrCodeStatusTxt, WString("Looking for QR-codes.") ) );
     }else
     {
-      // We will draw the image to a canvas, and use that
-      if( m_autoQrCodeSearch )
-      {
-        LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsLookForQrCode);
-        LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsSearchForQrUsingCanvas);
-        wApp->require( "InterSpec_resources/assets/js/zxing-cpp-wasm/zxing_reader.js", "zxing_reader.js" );
-        
-        assert( m_qrCodeStatusTxt );
-        m_qrCodeStatusTxt->setText( WString::tr("uid-no-qr-found") );
-        
-        // If `imageLoaded()` is never called, it means the image couldnt be displayed, for example
-        //  if image file is invalid, or a HEIC on Windows.
-        m_image->imageLoaded().connect( "function(){ Wt.WT.SearchForQrUsingCanvas('" + this->id() + "'," + m_image->jsRef() + "); }" );
-        m_image->imageLoaded().connect( boost::bind( &WText::setText, m_qrCodeStatusTxt, WString("Looking for QR-codes.") ) );
-      }else
-      {
-        m_checkForQrCodeBtn->clicked().connect( this, &UploadedImgDisplay::check_for_qr_from_canvas );
-        m_checkForQrCodeBtn->disable();
-        m_image->imageLoaded().connect( m_checkForQrCodeBtn, &WPushButton::enable );
-      }
-    }//if( zxing can read the image directly ) / else
+      m_checkForQrCodeBtn->clicked().connect( this, &UploadedImgDisplay::check_for_qr_from_canvas );
+      m_checkForQrCodeBtn->disable();
+      m_image->imageLoaded().connect( m_checkForQrCodeBtn, &WPushButton::enable );
+    }
     
         
     if( m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) )
@@ -1308,7 +1363,7 @@ class UploadBrowser : public AuxWindow
 public:
   UploadBrowser( SpecMeasManager *manager )
   : AuxWindow( "Import Spectrum Files",
-               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+               (AuxWindowProperties::IsModal
                 | AuxWindowProperties::DisableCollapse
                 | AuxWindowProperties::EnableResize) ),
   m_manager( manager )
@@ -1392,12 +1447,18 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
     m_foregroundDragNDrop( new FileDragUploadResource(this) ),
     m_secondForegroundDragNDrop( new FileDragUploadResource(this) ),
     m_backgroundDragNDrop( new FileDragUploadResource(this) ),
+#if( USE_BATCH_GUI_TOOLS )
+    m_batchDragNDrop( nullptr ),
+#endif
     m_multiUrlSpectrumDialog( nullptr ),
     m_destructMutex( new std::mutex() ),
     m_destructed( new bool(false) ),
     m_previousStatesDialog( nullptr ),
     m_processingUploadDialog( nullptr ),
     m_nonSpecFileDialog( nullptr ),
+#if( USE_BATCH_GUI_TOOLS )
+    m_batchDialog( nullptr ),
+#endif
     m_processingUploadTimer{}
 {
   std::unique_ptr<UndoRedoManager::BlockUndoRedoInserts> undo_blocker;
@@ -1432,17 +1493,19 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
                                                          boost::placeholders::_2,
                                                          SpectrumType::Background ) );
   
-  m_foregroundDragNDrop->setUploadProgress( true );
   m_foregroundDragNDrop->dataReceived().connect( boost::bind( &SpecMeasManager::handleDataRecievedStatus, this,
                                       boost::placeholders::_1, boost::placeholders::_2, SpectrumType::Foreground ) );
   
-  m_secondForegroundDragNDrop->setUploadProgress( true );
   m_secondForegroundDragNDrop->dataReceived().connect( boost::bind( &SpecMeasManager::handleDataRecievedStatus, this,
                                       boost::placeholders::_1, boost::placeholders::_2, SpectrumType::SecondForeground ) );
   
-  m_backgroundDragNDrop->setUploadProgress( true );
   m_backgroundDragNDrop->dataReceived().connect( boost::bind( &SpecMeasManager::handleDataRecievedStatus, this,
                                       boost::placeholders::_1, boost::placeholders::_2, SpectrumType::Background ) );
+
+#if( USE_BATCH_GUI_TOOLS )
+  m_batchDragNDrop = new FileDragUploadResource( this );
+  m_batchDragNDrop->fileDrop().connect( this, &SpecMeasManager::showBatchDialog );
+#endif
 }// SpecMeasManager
 
 //Moved what use to be SpecMeasManager, out to a startSpectrumManager() to correct modal issues
@@ -1460,7 +1523,7 @@ void SpecMeasManager::startSpectrumManager()
   }//if( m_spectrumManagerWindow )
   
     m_spectrumManagerWindow = new AuxWindow( WString::tr("smm-window-title"),
-                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                    (AuxWindowProperties::IsModal
                      | AuxWindowProperties::TabletNotFullScreen
                      | AuxWindowProperties::DisableCollapse
                      | AuxWindowProperties::SetCloseable
@@ -1597,6 +1660,13 @@ FileDragUploadResource *SpecMeasManager::backgroundDragNDrop()
 {
   return m_backgroundDragNDrop;
 }
+
+#if( USE_BATCH_GUI_TOOLS )
+FileDragUploadResource *SpecMeasManager::batchDragNDrop()
+{
+  return m_batchDragNDrop;
+}
+#endif
 
 
 void SpecMeasManager::extractAndOpenFromZip( const std::string &spoolName,
@@ -1750,7 +1820,7 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
     }
     
     AuxWindow *window = new AuxWindow( WString::tr("smm-zip-window-title"),
-                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                  (AuxWindowProperties::IsModal
                    | AuxWindowProperties::TabletNotFullScreen
                    | AuxWindowProperties::EnableResize) );
     window->stretcher()->addWidget( t, 0, 0 );
@@ -1959,7 +2029,6 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   assert( !m_nonSpecFileDialog );
   
   m_nonSpecFileDialog = dialog;
-  cout << "Assigning m_nonSpecFileDialog to " << dialog << endl;
   
   // The dialog may get deleted, and never accepted, so we will hook up to the
   //  `destroyed()` signal to keep track of `m_nonSpecFileDialog`
@@ -1969,8 +2038,6 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     assert( manager );
     if( !manager )
       return;
-    
-    cerr << "deleting m_nonSpecFileDialog of" << manager->m_nonSpecFileDialog << endl;
     
     assert( !manager->m_nonSpecFileDialog || (dialog == manager->m_nonSpecFileDialog) );
     
@@ -2273,7 +2340,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
         
         // For peaks from a InterSpec/PeakEasy CSV file, we will re-fit the peaks, as in practice
         //  they might not be from this exact spectrum file.
-        Wt::WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=,this](){
+        Wt::WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [this, currdata, candidate_peaks, orig_peaks, seessionid](){
           PeakSearchGuiUtils::fit_template_peaks( m_viewer, currdata, candidate_peaks,
                                                  orig_peaks, PeakSearchGuiUtils::PeakTemplateFitSrc::CsvFile, seessionid );
         } ) );
@@ -2659,7 +2726,8 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   
   if( !foreground )
     return false;
-  
+
+  bool any_new_cal_is_poly_ish = false;
   const size_t num_display_channel = currdata->num_gamma_channels();
   map<string,shared_ptr<const SpecUtils::EnergyCalibration>> det_to_cal;
   
@@ -2810,6 +2878,8 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
       case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
       case SpecUtils::EnergyCalType::FullRangeFraction:
       {
+        any_new_cal_is_poly_ish = true;
+
         msg += "<p>";
         if( type == SpecUtils::EnergyCalType::FullRangeFraction )
           msg += "FullRangeFrac:";
@@ -2838,8 +2908,15 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   }else
   {
     msg += WString::tr("smm-CALp-multi-dets").arg( static_cast<int>(det_to_cal.size()) );
-  }
-  
+
+    for( const auto &name_cal : det_to_cal )
+    {
+      any_new_cal_is_poly_ish |= (name_cal.second
+                                  && name_cal.second->valid()
+                                  && (name_cal.second->type() != SpecUtils::EnergyCalType::LowerChannelEdge));
+    }
+  }//if( (det_to_cal.size() == 1) && det_to_cal.begin()->second ) / else
+
   if( !have_cal_for_all_dets )
     msg += WString::tr( (det_to_cal.size() == 1) ? "smm-warn-single-for-multi" : "smm-warn-multi-for-single" );
   
@@ -2889,8 +2966,19 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   t = new WText( WString::tr("smm-CALp-like-to-use") );
   stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
   t->setTextAlignment( Wt::AlignCenter );
-  
-  
+
+  // Sometimes detectors that provide lower channel energy calibration wont have a consistent binning
+  //  structure, but the uploaded CALp may be assuming that, so we'll give a warning in this case.
+  if( currdata
+     && currdata->energy_calibration()
+     && (currdata->energy_calibration()->type() == SpecUtils::EnergyCalType::LowerChannelEdge)
+     && any_new_cal_is_poly_ish )
+  {
+    t = new WText( WString::tr("smm-CALp-prev-is-channel-lower-energy") );
+    stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
+    t->setTextAlignment( Wt::AlignCenter );
+  }
+
   dialog->contents()->addStyleClass( "CALp" );
   // TODO: ask if they want to update deviation pairs - maybe?
   
@@ -2932,7 +3020,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
       }
     }catch( std::exception &e )
     {
-      const char *key = (napplied == 1) ? "smm-CALp-err-applying-single" : "mm-CALp-err-applying-mult";
+      const char *key = (napplied == 1) ? "smm-CALp-err-applying-single" : "smm-CALp-err-applying-mult";
       passMessage( WString::tr(key).arg( e.what() ), WarningWidget::WarningMsgHigh );
     }//try / catch
   };//applyLambda(...)
@@ -3642,7 +3730,8 @@ void SpecMeasManager::handleFileDropWorker( const std::string &name,
   
  
   if( (name.length() > 4)
-     && SpecUtils::iequals_ascii( name.substr(name.length()-4), ".zip")
+     && (SpecUtils::iequals_ascii( name.substr(name.length()-4), ".zip")
+         || SpecUtils::iequals_ascii( name.substr(name.length()-4), ".tfa"))
      && handleZippedFile( name, spoolName, type ) )
   {
     return;
@@ -3719,6 +3808,23 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
                                                     name, spoolName, type, dialog, wApp ) );
 }//handleFileDrop(...)
 
+
+#if( USE_BATCH_GUI_TOOLS )
+void SpecMeasManager::showBatchDialog()
+{
+  if( m_batchDialog )
+    return;
+
+  m_batchDialog = BatchGuiDialog::createDialog( m_batchDragNDrop );
+  m_batchDialog->finished().connect( this, &SpecMeasManager::handleBatchDialogFinished );
+  wApp->triggerUpdate();
+}//void showBatchDialog()
+
+void SpecMeasManager::handleBatchDialogFinished()
+{
+  m_batchDialog = nullptr;
+}//void handleBatchDialogFinished()
+#endif
 
 #if( USE_QR_CODES )
 void SpecMeasManager::handleSpectrumUrl( std::string &&unencoded )
@@ -4382,7 +4488,7 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
       
       SimpleDialog *dialog = new SimpleDialog( WString::tr("smm-vd-load-title"), msgtxt );
       
-      auto add_button = [=,this]( string btn_txt, const set<string> &dets, size_t max_txt_size ){
+      auto add_button = [this, dialog, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck]( string btn_txt, const set<string> &dets, size_t max_txt_size ){
         if( btn_txt.size() > max_txt_size )
         {
           SpecUtils::utf8_limit_str_size( btn_txt, max_txt_size - 1 );
@@ -5898,7 +6004,7 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
     handleCancelPreviousStatesDialog( m_previousStatesDialog );
   
   AuxWindow *window = new AuxWindow( WString::tr("smm-prev-states-window-title"),
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::DisableCollapse)
+                                    (AuxWindowProperties::DisableCollapse
                                      | AuxWindowProperties::EnableResize
                                      | AuxWindowProperties::TabletNotFullScreen
                                      | AuxWindowProperties::SetCloseable) );
@@ -6094,10 +6200,15 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
         }//if( header->shouldSaveToDb() )
       }catch( FileToLargeForDbException &e )
       {
-        WString msg = WString::tr("smm-cant-save").arg( e.message() );
-        
+        const string save_size = SpecUtils::printCompact(e.m_saveSize/(1024.0*1024.0), 3) + " MB";
+        const string limit_size = SpecUtils::printCompact(e.m_limit/(1024.0*1024.0), 3) + " MB";
+
+        WString msg = WString::tr("smm-cant-save")
+          .arg( save_size )
+          .arg( limit_size );
+
         WServer::instance()->post( sessionID,
-                  boost::bind( &postErrorMessage, msg, WarningWidget::WarningMsgHigh ) );
+                  boost::bind( &postErrorMessage, msg, WarningWidget::WarningMsgMedium ) );
       }
       return;
     }//if( this is a new-to-us file )

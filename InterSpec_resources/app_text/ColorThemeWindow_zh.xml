@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ctw- is short for ColorThemeWindow -->
+  
+  <!-- Window and main UI -->
+  <message id="ctw-window-title">颜色主题</message>
+  
+  <!-- Button tooltips -->
+  <message id="ctw-remove-tooltip">删除当前选定的主题。</message>
+  <message id="ctw-clone-tooltip">基于当前选定的主题创建新颜色主题。</message>
+  <message id="ctw-upload-tooltip">导入要使用的颜色主题JSON文件。</message>
+  <message id="ctw-download-tooltip">将当前选定的主题导出为JSON文件。</message>
+  
+  <!-- Auto dark mode -->
+  <message id="ctw-auto-dark-cb">从操作系统自动应用"深色"</message>
+  <message id="ctw-auto-dark-tooltip">根据操作系统的当前值或切换时自动应用"深色"颜色主题。</message>
+  
+  <!-- Clone theme -->
+  <message id="ctw-cloned-name">{1}（克隆）</message>
+  
+  <!-- Delete confirmation dialog -->
+  <message id="ctw-delete-confirm-title">删除{1}？</message>
+  <message id="ctw-delete-confirm-text"><![CDATA[<span style="white-space: nowrap;">您确定要删除<em>{1}</em>吗？</span>]]></message>
+  
+  <!-- Upload dialog -->
+  <message id="ctw-upload-title">上传颜色主题JSON</message>
+  <message id="ctw-upload-error-open">打开上传的文件时出错。</message>
+  <message id="ctw-upload-error-empty">上传的文件为空。</message>
+  <message id="ctw-upload-error-large">上传的文件太大；最大64kb。</message>
+  <message id="ctw-upload-error-read">无法读取上传的文件。</message>
+  <message id="ctw-upload-error-json">JSON无效或缺少必需信息。</message>
+  <message id="ctw-upload-too-large">文件太大。</message>
+  <message id="ctw-import-confirm"><![CDATA[您想导入<em>{1}</em>吗？]]></message>
+  
+  <!-- Save changes dialog -->
+  <message id="ctw-save-changes-title">保存更改？</message>
+  <message id="ctw-save-changes-text"><![CDATA[<span style="white-space: nowrap;">保存对<em>{1}</em>的更改？</span>]]></message>
+  <message id="ctw-discard-btn">放弃</message>
+</messages>
+

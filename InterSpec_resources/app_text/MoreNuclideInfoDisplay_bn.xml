@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- mnid- is short for MoreNuclideInfoDisplay -->
+  <message id="mnid-show-decay-chain">ক্ষয় চেইন দেখান</message>
+  <message id="mnid-show-decays-through">ক্ষয়ের মধ্য দিয়ে দেখান</message>
+</messages>

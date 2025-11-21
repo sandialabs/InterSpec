@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- pid is short for PeakInfoDisplay -->
+
+  <message id="pid-dialog-peak-erase">Hapus Semua Puncak?</message>
+
+  <message id="pid-err-no-foreground">Spektrum latar depan harus dimuat untuk menambah puncak.</message>
+
+  <message id="pid-search-peaks-btn">Cari Puncak</message>
+  <message id="pid-tt-search-peaks-btn">Cari puncak menggunakan algoritma pencarian puncak otomatis.</message>
+  <message id="pid-clear-peaks-btn">Hapus semua Puncak</message>
+  <message id="pid-tt-clear-peaks-btn">Menghapus <b>semua</b> puncak yang ada.</message>
+  <message id="pid-nuc-from-ref-btn">Nuc. dari Ref.</message>
+  <message id="pid-tt-nuc-from-ref-btn">
+    Tetapkan nuklida puncak dari garis referensi yang ditampilkan. Hanya berlaku untuk
+    puncak yang belum memiliki nuklida yang terkait dengannya.
+  </message>
+
+  <message id="pid-add-peak-btn">Tambah...</message>
+  <message id="pid-tt-add-peak-btn">Menambahkan puncak baru secara manual.</message>
+  <message id="pid-tt-del-peaks">Menghapus puncak yang sedang diedit.</message>
+  <message id="pid-better-editor-hint">Klik kanan pada puncak untuk editor yang lebih baik</message>
+  <message id="pid-better-editor-hint-mobile">Ketuk dan tahan pada puncak untuk editor yang lebih baik</message>
+  <message id="pid-tt-csv-export">Ekspor informasi tentang puncak yang diidentifikasi ke format yang dipisahkan koma.</message>
+  <message id="pid-tt-csv-copy">Salin informasi CSV puncak ke papan tempel Anda.
+    <p>Data puncak akan disalin ke papan tempel Anda dalam varian terformat dan teks biasa,
+      sehingga format data akan tergantung pada aplikasi tempat Anda menempelkan.
+    </p>
+  </message>
+
+  <message id="pid-csv-copy-full">Salin CSV puncak lengkap</message>
+  <message id="pid-csv-copy-no-hdr">Salin tanpa header</message>
+  <message id="pid-csv-copy-compact">Salin info puncak yang cocok</message>
+</messages>
+

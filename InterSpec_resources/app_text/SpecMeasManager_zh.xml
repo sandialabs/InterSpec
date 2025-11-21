@@ -1,0 +1,382 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- This file contains most of the strings for SpecMeasManager.cpp - e.g., File -> "Manager..."
+    smm- is short for Spectrum Measurement Manager
+    musd- is short for MultiUrlSpectrumDialog
+    uid- is short for UploadedImgDisplay.
+    fud- is short for FileUploadDialog
+  -->
+  <message id="smm-window-title">谱管理器</message>
+  <message id="smm-load-spec-from">从以下位置加载谱：</message>
+  <message id="smm-tt-upload-file">从文件导入谱</message>
+
+  <message id="smm-err-zip">从zip提取文件时出错</message>
+  <message id="smm-zip-sel-file-no-name">
+    上传的文件是ZIP文件。
+    <br />
+    {2}
+    选择您想打开的文件。
+  </message>
+  <message id="smm-zip-sel-file">
+    <b>{1}</b>是ZIP文件。
+    <br />
+    {2}
+    选择您想打开的文件。
+  </message>
+  <message id="smm-zip-window-title">上传的ZIP文件内容</message>
+  <message id="smm-zip-filename-hdr">文件名</message>
+  <message id="smm-zip-kilobyte-hdr">kb</message>
+  <message id="smm-zip-display-btn">显示</message>
+  <message id="smm-empty-file">文件可能是空文件 - 不是谱文件。</message>
+  <message id="smm-failed-reading-nonspec-file">读取非谱文件失败。</message>
+  <message id="smm-not-spec-file">不是谱文件</message>
+  <message id="smm-image-file">已选择图像文件</message>
+  <message id="smm-icd2">这似乎是一个N42 ICD2文件，包含分析结果
+    而不是原始谱。
+    <br />
+    如果您认为这是合法的谱文件，请将其发送至
+    <a href="mailto:interspec@sandia.gov" target="_blank">interspec@sandia.gov</a>
+    以支持此文件类型。
+  </message>
+  <message id="smm-invalid-zip">此文件似乎是无效的ZIP文件（或xlsx、pptx、
+    <br />
+    docx、odp、jar、apk等），抱歉我无法打开它 :(
+  </message>
+  <message id="smm-unsupported-archive">此文件看起来是存档文件，InterSpec尚不支持。
+    请联系
+    <a href="mailto:wcjohns@sandia.gov" target="_blank">wcjohns@sandia.gov</a>
+    如果您希望添加对此存档类型的支持。
+  </message>
+  <message id="smm-unsupported-document">此文件看起来是文档文件，InterSpec不支持。</message>
+  <message id="smm-invalid-peak-csv">上传的文件看起来像峰CSV文件，但无效。</message>
+  <message id="smm-file-is-drf">
+    <p style="white-space: nowrap;">
+      此文件看起来是探测器响应函数。
+    </p>
+    <p style="text-align: left; white-space: nowrap;">
+      名称：{1}
+    </p>
+   <p>您想使用此DRF吗？</p>
+  </message>
+  <message id="smm-saved-drf-conf">
+    已保存'{1}'供以后使用，将在
+    "<em>探测器响应函数选择</em>"工具的"<em>相对效率</em>"部分中可用。
+  </message>
+  <message id="smm-err-saving-drf">保存DRF文件供以后使用时出错。</message>
+  <message id="smm-file-is-drf">此文件看起来是探测器响应函数。</message>
+  <message id="smm-file-is-multi-drf">此文件包含多个探测器响应函数。</message>
+
+  <!-- Text for dialog that appears when user drag-n-drop a .CALp file onto InterSpec -->
+  <message id="smm-CALp-no-fore"><p>当前没有显示前景 - 跳过CALp文件。</p></message>
+  <message id="smm-CALp-invalid">
+    <p style="white-space: nowrap;">
+      此CALp文件的内容
+      <br />
+      不可读或与数据不兼容
+    </p>
+  </message>
+  <message id="smm-CALp-contains-energy-cal">
+    <p style="white-space: nowrap;">此文件似乎包含能量刻度。</p>
+  </message>
+  <message id="smm-CALp-multi-dets"><p>有{1}个探测器的刻度</p></message>
+  <message id="smm-warn-single-for-multi">
+    <p style="text-align: left; white-space: nowrap;">
+    警告：此CALp文件包含单个刻度；它将<br />
+    应用于主要显示的能量刻度，并且<br />
+    相对变化将应用于其他探测器<br />
+    能量刻度，这可能是您想要的。
+    </p>
+  </message>
+  <message id="smm-warn-multi-for-single">
+    <p style="text-align: left; white-space: nowrap;">
+    警告：此能量刻度可能与<br />
+    当前数据的结构不一致。
+    </p>
+  </message>
+  <message id="smm-CALp-cb-disp-samples-only">仅应用于显示的样本</message>
+  <message id="smm-CALp-cb-apply-to-fore">应用于前景</message>
+  <message id="smm-CALp-cb-apply-to-back">应用于本底</message>
+  <message id="smm-CALp-cb-apply-to-second">应用于次要</message>
+  <message id="smm-CALp-like-to-use"><p style="white-space: nowrap;">您想使用它吗？</p></message>
+  <message id="smm-CALp-prev-is-channel-lower-energy">
+    <p style="margin-top: 10px; font-style: italic;">
+      注意：当前能量刻度是通道下限能量；<br />
+      您可能希望在应用此<br />
+      能量刻度之前将谱线性化。
+    </p>
+  </message>
+
+  <message id="smm-CALp-err-applying-single">应用刻度时出错：
+    <br />
+    {1}
+    <br />
+    <br />
+    刻度已应用于前景。
+  </message>
+  <message id="smm-CALp-err-applying-mult">应用刻度时出错：
+    <br />
+    {1}
+    <br />
+    <br />
+    刻度已应用于前景和本底。
+  </message>
+
+  <!-- Text for dialog that appears when user drag-n-drops a .ECC file onto InterSpec -->
+  <message id="smm-err-load-iso-by-nuc">加载<em>按核素分析同位素</em>XML配置文件时出错：{1}</message>
+  <message id="smm-err-load-xml-iso-by-nuc">解析配置XML时出错：{1}{2}</message>
+  <message id="smm-err-iso-by-nuc-window-title">无效的<em>按核素分析同位素</em>XML配置文件。</message>
+  <message id="smm-ecc-curve">ISOCS效率校准曲线DRF</message>
+  <message id="smm-ecc-how-to-interpret">如何解释</message>
+  <message id="smm-ecc-far-field">远场DRF</message>
+  <message id="smm-ecc-fix-geom-total-act">固定几何 - 总活度</message>
+  <message id="smm-ecc-fix-geom-act-cm2">固定几何 - 每平方厘米活度</message>
+  <message id="smm-ecc-fix-geom-act-m2">固定几何 - 每平方米活度</message>
+  <message id="smm-ecc-fix-geom-act-gram">固定几何 - 每克活度</message>
+  <message id="smm-ecc-det-diam">探测器直径</message>
+  <message id="smm-ecc-dist">距离</message>
+  <message id="smm-ecc-use-drf">使用DRF</message>
+  <message id="smm-ecc-error">从ECC创建DRF时出错：{1}</message>
+
+  <!-- Text for dialog when user drag-n-drop the Activity/Shielding fit file onto app -->
+  <message id="smm-act-shield-xml">活度/屏蔽XML</message>
+  <message id="smm-act-shield-use">使用此活度/屏蔽拟合设置？</message>
+  <message id="smm-err-act-shield">抱歉，加载活度/屏蔽拟合模型时出错：{1}</message>
+
+  <!-- Text for dialog when user drag-n-drop a Source.lib file onto app, and the Make Detector Response tool is open -->
+  <message id="smm-source-lib-title">特征源库文件</message>
+  <message id="smm-source-source-use">
+    这将在制作探测器响应工具中使用此Source.lib文件。
+    <br />
+    您想使用库中第一个匹配的核素自动填充源吗？
+  </message>
+
+  <!-- Other errors -->
+  <message id="smm-upload-timeout">文件上传可能已超时 - 120秒未接收文件数据。</message>
+  <message id="smm-finishing-upload">完成上传</message>
+  <message id="smm-finishing-copying">完成复制文件</message>
+  <message id="smm-finish-up-txt">{1} {2}文件的 - 可能需要一分钟。</message> <!-- ex. "of 112.2 kb foreground file - may take a minute."-->
+  <message id="smm-window-title-parsing">解析文件</message>
+  <message id="smm-window-msg-parsing">这可能需要一秒钟。</message>
+  <message id="smm-no-file-disp">错误，未显示{1}测量。</message>
+  <message id="smm-no-spec-disp">抱歉，{1}看起来没有显示谱。</message>
+  <message id="smm-err-parse-spec-title">无法解析文件</message>
+  <message id="smm-err-parse-spec">
+    <p>抱歉，我无法解析文件{1}：</p>
+  <p>错误：<em>{2}</em></p>
+  <p>如果您认为这是有效的谱文件，请将其发送至
+  <a href="mailto:interspec@sandia.gov" target="_blank">interspec@sandia.gov</a>，
+   我们将尝试解决此问题。</p>
+  </message>
+  <message id="smm-failed-combine">合并文件失败：{1}</message>
+  <message id="smm-failed-sum">求和谱失败：{1}</message>
+
+  <!-- URI entry -->
+  <message id="smm-qr-no-meas">URL/QR码中没有伽马测量</message>
+  <message id="smm-qr-no-gamma">URL/QR码中没有伽马测量</message>
+  <message id="smm-qr-name-placeholder">来自QR码/URL</message>
+  <message id="smm-qr-err-decode">解码谱URL/QR码时出错：{1}</message>
+  <message id="smm-qr-couldnt-encode">
+    无法将谱编码为QR码。
+    <br />
+    可能是由于需要超过9个QR码。
+  </message>
+  <message id="smm-qr-encode-fail">将谱编码为QR码失败：{1}</message>
+
+  <!-- Messages for "Virtual Detectors" at RSI systems -->
+  <message id="smm-vd-load-title">要加载的虚拟探测器？</message>
+  <message id="smm-vd-load-msg">
+    <div>此文件包含多个"虚拟探测器"，</div>
+    <div>可能是多个物理探测器的总和，也可能不是。</div>
+    <div>如果加载全部，请参阅<b>视图</b>→<b>探测器</b>菜单以</div>
+    <div>显示子集。</div>
+    {1}
+    <div style="margin-top: 20px; margin-bottom: 5px; white-space: nowrap; font-weight: bold;">
+      您想加载哪些探测器数据？
+    </div>
+  </message>
+  <message id="smm-vd-gt-5dets">
+    <div>有{1}个VD，只能选择"全部"或前5个。</div>
+  </message>
+  <message id="smm-vd-all-btn">全部</message>
+
+  <!-- Derived data related text-->
+  <message id="smm-derived-window-title">使用派生数据？</message>
+  <message id="smm-derived-window-txt">
+    <div>此文件包含"派生数据"谱，</div>
+    <div>通常是检测系统用于分析的数据。</div>
+    <div style="margin-top: 20px; margin-bottom: 5px; white-space: nowrap; font-weight: bold;">
+      您想加载哪些数据？
+    </div>
+  </message>
+  <message id="smm-derived-all">所有数据</message>
+  <message id="smm-derived-raw">原始数据</message>
+  <message id="smm-derived-derived">派生数据</message>
+  <message id="smm-multiple-binnings-window-title">选择能量分组</message>
+  <message id="smm-multiple-binnings-window-txt">
+    <div style="white-space: nowrap;">在谱文件中找到多个能量分组。</div>
+    <div style="margin-top: 5px; margin-bottom: 5px;">请选择您想要的一个</div>
+  </message>
+  <message id="smm-multiple-binnings-keep-all-btn">保留全部</message>
+  <message id="smm-warn-has-intrinsic">上传的文件包含固有活度谱，但当前显示文件中的其他谱。</message>
+  <message id="smm-warn-upload-mult-spec">上传的文件包含{1}个样本<br /></message>
+  <message id="smm-warn-upload-mult-showing-fore">正在显示第一个前景样本。<br /></message>
+  <message id="smm-warn-upload-mult-showing-first">正在显示第一个样本。<br /></message>
+  <message id="smm-warn-upload-mult-showing-other">正在显示样本{1}。<br /></message>
+  <message id="smm-warn-upload-use-spec-manager">使用<b>谱文件</b>选项卡或<b>文件管理器</b>选择其他记录。</message>
+  <message id="smm-warn-upload-use-file-manager">使用<b>文件管理器</b>选择其他记录。</message>
+
+  <message id="smm-multi-cal-present">上传的文件包含{1}个刻度或派生数据样本
+    <br />
+    {2}
+    将不显示。
+    <br />
+    使用<b>谱文件</b>选项卡或<b>文件管理器</b>更改此设置。
+  </message>
+  <message id="smm-multi-cal-it">它</message>
+  <message id="smm-multi-cal-they">它们</message>
+  <message id="smm-multi-spectra-using-back">文件有多个谱，因此仅显示本底谱。</message>
+  <message id="smm-multi-spectra-using-first">上传的文件包含{1}个样本，所以
+    <br />
+    正在显示第一个。
+    <br />
+    使用<b>文件管理器</b>更改此设置。
+  </message>
+
+
+  <!-- The visual components of the Spectrum Measurement Manager GUI -->
+  <message id="smm-selected-spec-label">已选择的谱：</message>
+  <message id="smm-disp-as-btn">显示为</message>
+  <message id="smm-to-new-file">到新文件</message>
+  <message id="smm-tt-to-new-file">从当前选择创建新的内存谱文件。</message>
+  <message id="smm-as-new-file">作为新文件</message>
+  <message id="smm-tt-as-new-file">从当前选择创建新的内存谱文件。</message>
+  <message id="smm-sum-spectra">求和谱</message>
+  <message id="smm-tt-sum-spectra">从当前选择创建新的内存谱文件。</message>
+  <message id="smm-export-btn">导出...</message>
+  <message id="smm-unload-btn">卸载</message>
+  <message id="smm-unassign-label">取消分配：</message>
+
+
+  <message id="smm-prev-states-window-title">先前存储的状态</message>
+  <message id="smm-err-prev-state-unexpected">显示可用保存状态时出现意外问题：{1}</message>
+  <message id="smm-tab-saved-states">已保存状态</message>
+  <message id="smm-tab-auto-saved">自动保存的谱</message>
+  <message id="smm-auto-check-prev-cb">自动检查先前工作。</message>
+  <message id="smm-cant-save">
+    此谱文件太大，无法保存到内部数据库。<br />
+    因此，您的工作不会自动保存到内部数据库，下次加载文件时，您将无法从离开的地方继续。
+    <p>此文件大小为{1}，而可以保存的最大值为{2}。</p>
+  </message>
+  <message id="smm-max-file-to-large">尝试的文件太大；最大大小为{1} kb，您尝试上传{2} kb。</message>
+  <message id="smm-must-specify-name">您必须指定名称</message>
+  <message id="smm-save-spectype-as-window-title">将{1}谱另存为</message>
+  <message id="smm-save-spectype-name-empty-txt">（存储的名称）</message>
+  <message id="smm-save-spectype-desc-empty-txt">（可选描述）</message>
+  <message id="smm-save-state-toast">已保存{1}的状态</message>
+  <message id="smm-save-spec-version-window-title">保存谱版本</message>
+  <message id="smm-save-state">保存状态</message>
+  <message id="smm-create-new-tag-toast">创建了新标签：'{1}'。</message>
+
+  <message id="smm-next-qr">下一个QR码</message>
+  <message id="smm-qr-desc">{1}  为{2}谱。</message>
+  <message id="smm-qr-title">谱文件{1}</message>
+  <message id="smm-qr-sequence-single">QR码</message>
+  <message id="smm-qr-sequence-multi">QR码{1} / {2}</message>
+  
+  
+  <message id="smm-changed-background">
+    本底谱也已更新为新加载文件中包含的谱。
+  </message>
+  <message id="smm-didnt-changed-background">
+    新加载的前景文件包含本底谱
+    - 但显示的本底<b>尚未</b>更新。
+  </message>
+  
+  <message id="fud-dialog-title">选择要打开的文件</message>
+  <message id="fud-open-foreground-only-msg">下面的{1}选择要打开的前景谱文件。</message>
+  <message id="fud-open-any-type-msg">选择您想如何打开谱文件，然后下面的{1}浏览文件。</message>
+  <message id="fud-btn-grp-title">打开文件为：</message>
+  <message id="fud-drg-n-drop-msg">
+    您还可以直接将文件拖放到<br />
+    应用程序窗口作为更快的替代方法。<br />
+    <br />对于更高级的文件打开和<br />
+    操作，请使用<b>文件管理器</b>
+  </message>
+  <message id="fud-drg-n-drop-msg-mbl">
+    <span style="font-size: 10px;">
+      您还可以从电子邮件或文件应用打开谱文件。
+    </span>
+  </message>
+  
+  <message id="musd-dialog-title">多部分QR/URL谱</message>
+  <message id="musd-err-diff-spec">收到的URL/QR码来自与先前URL/QR码不同的谱</message>
+  <message id="musd-err-duplicate-url">已经收到此URL/QR码</message>
+  <message id="musd-from-qr-file-name">来自QR码/URL</message>
+  <message id="musd-err-decoding-url">解码URL时出错：{1}</message>
+  <message id="musd-received-urls-list">已收到{2}个url中的{1}个。<p>等待更多URL/QR码</p></message>
+
+
+  <message id="uid-qr-code-pic">QR码图片</message>
+  <message id="uid-no-qr-found">未找到QR码 ⓘ</message>
+  <message id="uid-no-qr-found-title">未找到QR码</message>
+  <message id="uid-no-qr-content">
+    <p>
+      如果图像中有QR码，您可以尝试裁剪照片或调整颜色级别。
+      <br/>
+      使用第三方应用/网站，或iOS或Android内置的功能，通常也会效果更好。
+    </p>
+  </message>
+  <message id="uid-err-qr-search-title">搜索QR码时出错</message>
+  <message id="uid-err-qr-search-content">
+    <div>
+      错误值：{1}
+    </div>
+    <p>
+      错误消息：{2}
+    </p>
+  </message>
+  <message id="uid-some-invalid-qrs">{1}个QR码具有无效的URI。</message>
+  <message id="uid-qr-didnt-have-uri">QR码不包含<code>interspec://</code>或<code>raddata://</code> URI。</message>
+  <message id="uid-invalid-qr">无效的QR码</message>
+  <message id="uid-invalid-uri">QR码包含无效的URI</message>
+  <message id="uid-multi-qr-found-title">找到{1}个QR码</message>
+  <message id="uid-multi-qr-found-content">您想使用所有这些吗？</message>
+  <message id="uid-multi-qr-status">找到{1}个QR码</message>
+  <message id="uid-qr-found-title">找到QR码</message>
+  <message id="uid-qr-found-content">您想使用以<br /> <code>{1}...</code>开头的QR码吗</message>
+  <message id="uid-found-qr">找到QR码</message>
+  <message id="uid-err-getting-data">检索要嵌入的数据时出错 - 不嵌入图像。</message>
+  <message id="uid-err-no-foreground-embedd">未加载前景 - 不嵌入图像。</message>
+  <message id="uid-image-embed-conf">图像已嵌入前景谱文件；只有以N42-2012文件格式导出才会保留此内容。</message>
+  <message id="uid-image-not-spectrum">此文件看起来是图像，而不是谱文件。</message>
+  <message id="uid-err-to-large">上传的文件太大，无法尝试显示。</message>
+  <message id="uid-err-reading-upload">无法读取上传的文件。</message>
+  <message id="uid-embed-image-btn">将图像嵌入谱文件</message>
+  <message id="uid-no-qr-found">未找到QR码 ⓘ</message>
+  <message id="uid-looking-for-qr">正在查找QR码。</message>
+  <message id="uid-check-for-qr-btn">检查QR码</message>
+  <message id="uid-tt-auto-qr">
+    图像会自动搜索InterSpec可能使用的QR码。
+    <br/>
+    如果图像中有未找到的QR码，您可能
+    使用第三方应用/网站或iOS
+    或Android内置的功能会有更好的运气。
+    <br />
+    如果您使用第三方工具从QR码中提取URI，您可以
+    使用"<b>编辑</b>"菜单中的"<b>输入URL</b>"
+    项将其输入InterSpec。
+  </message>
+
+  <!-- Column headers for SpectraFileModel -->
+  <message id="sfm-col-file">文件</message>
+  <message id="sfm-col-n-samples">样本数</message>
+  <message id="sfm-col-live-time">活时间(s)</message>
+  <message id="sfm-col-real-time">实时间(s)</message>
+  <message id="sfm-col-gam-count">伽马计数</message>
+  <message id="sfm-col-neut-count">中子计数</message>
+  <message id="sfm-col-time-taken">采集时间</message>
+  <message id="sfm-col-n-dets">探测器数</message>
+  <message id="sfm-col-loaded">已加载</message>
+  <message id="sfm-col-file-rid">文件RID</message>
+</messages>
+

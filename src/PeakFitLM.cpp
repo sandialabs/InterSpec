@@ -46,6 +46,11 @@
 #include "InterSpec/PeakDists_imp.hpp"
 #include "InterSpec/RelActCalcAuto_imp.hpp"
 
+// Undefine isnan and isinf macros
+#undef isnan
+#undef isinf
+
+
 using namespace std;
 
 namespace
@@ -276,8 +281,10 @@ struct PeakFitDiffCostFunction
 
     auto continuum = m_starting_peaks[0]->continuum();
     // TODO: get rid of m_roi_lower_energy, m_roi_upper_energy, m_offset_type, and m_ref_energy - since they are all duplicated
-    assert( fabs(continuum->lowerEnergy() - m_roi_lower_energy) < 1.0E-6*std::max(continuum->lowerEnergy(),m_roi_lower_energy) );
-    assert( fabs(continuum->upperEnergy() - m_roi_upper_energy) < 1.0E-6*std::max(continuum->upperEnergy(),m_roi_upper_energy) );
+    assert( (continuum->lowerEnergy() < 5.0)
+           || (fabs(continuum->lowerEnergy() - m_roi_lower_energy) < 1.0E-6*std::max(continuum->lowerEnergy(),m_roi_lower_energy)) );
+    assert( ((continuum->upperEnergy()+5) > m_data->gamma_energy_max())
+           || (fabs(continuum->upperEnergy() - m_roi_upper_energy) < 1.0E-6*std::max(continuum->upperEnergy(),m_roi_upper_energy)) );
     assert( continuum->type() == m_offset_type );
     //assert( continuum->referenceEnergy() == m_ref_energy ); //When dragging edge of ROI to make it smaller, we have to shift the ref enerergy to keep valid
     
@@ -300,11 +307,7 @@ struct PeakFitDiffCostFunction
     if( !valid_offset_type )
       throw runtime_error( "PeakFitDiffCostFunction: !valid_offset_type" );
     
-    // It wouldnt be that hard to support external continuum, but we'll leave that for later, at
-    //  the moment.
-    assert( m_offset_type != PeakContinuum::OffsetType::External );
-    if( m_offset_type == PeakContinuum::OffsetType::External )
-      throw runtime_error( "PeakFitDiffCostFunction: PeakContinuum::OffsetType::External not supported" );
+    // External continuum is now supported - it uses pre-calculated background from SNIP algorithm
     
     if( dof() <= 0.0 )
       throw runtime_error( "PeakFitDiffCostFunction: not enough data channels to fit all the parameters" );
@@ -388,8 +391,11 @@ struct PeakFitDiffCostFunction
     const size_t end_data_residual = m_upper_channel - m_lower_channel;
 
     auto starting_continuum = m_starting_peaks[0]->continuum();
-    assert( fabs(starting_continuum->lowerEnergy() - m_roi_lower_energy) < 1.0E-6*std::max(starting_continuum->lowerEnergy(),m_roi_lower_energy) );
-    assert( fabs(starting_continuum->upperEnergy() - m_roi_upper_energy) < 1.0E-6*std::max(starting_continuum->upperEnergy(),m_roi_upper_energy) );
+    assert( (fabs(starting_continuum->lowerEnergy() - m_roi_lower_energy) < 1.0E-6*std::max(starting_continuum->lowerEnergy(),m_roi_lower_energy))
+           || (m_roi_lower_energy < 10.0) );
+    assert( (fabs(starting_continuum->upperEnergy() - m_roi_upper_energy) < 1.0E-6*std::max(starting_continuum->upperEnergy(),m_roi_upper_energy))
+           || !m_data
+           || ((m_roi_upper_energy + 10) > m_data->gamma_energy_max()));
     assert( starting_continuum->type() == m_offset_type );
     //assert( starting_continuum->referenceEnergy() == m_ref_energy ); //may not be true if we are dragging ROI edges to make smaller, so we had to change ref energy to keep it valid
 
@@ -424,6 +430,19 @@ struct PeakFitDiffCostFunction
 #endif
 
     size_t fit_sigma_num = 0;
+
+    // TODO: if move to fitting the distance between peaks, can remove this next little loop.
+    T min_mean = T(std::numeric_limits<double>::infinity());
+    T max_mean = T(-std::numeric_limits<double>::infinity());
+    for( size_t i = 0; i < m_num_peaks; ++i )
+    {
+      const size_t mean_par_index = num_fit_continuum_pars + num_skew + num_sigmas_fit + i;
+      const T frac_roi_range = params[mean_par_index] - 0.5;
+      const T mean = m_roi_lower_energy + frac_roi_range*range;
+      min_mean = min( min_mean, mean );
+      max_mean = max( max_mean, mean );
+    }
+
     for( size_t i = 0; i < m_num_peaks; ++i )
     {
       const size_t mean_par_index = num_fit_continuum_pars + num_skew + num_sigmas_fit + i;
@@ -431,6 +450,7 @@ struct PeakFitDiffCostFunction
 
       const bool fit_amp = m_starting_peaks[i]->fitFor(PeakDef::GaussAmplitude);
 
+      // TODO: should move from fitting `frac_roi_range` to instead fitting for the difference between each peak.  Use npeaks unconstrained paramaters, and have thier distances be `exp(par[i])`, then normalize the spacing and add that fraction to each on.  Actually could use npeaks-1 paramaters, and fix the first one to be 0 (so `exp(0) = 1`) to set scale for the other parameters
       const T frac_roi_range = params[mean_par_index] - 0.5;
       const T mean = m_roi_lower_energy + frac_roi_range*range;
       const T amp = fit_amp ? T(1.0) : T(m_starting_peaks[i]->amplitude());
@@ -449,6 +469,30 @@ struct PeakFitDiffCostFunction
 
         sigma = params[sigma_index] * m_max_initial_sigma;
         sigma_uncert = uncertainties ? (uncertainties[sigma_index] * m_max_initial_sigma) : T(0.0);
+
+
+        if( isnan(sigma) || isinf(sigma) )
+        {
+          if constexpr ( !std::is_same_v<T, double> )
+          {
+            cerr << "Recieved a NaN or Inf sigma; params[" << sigma_index<< "] = " << params[sigma_index].a
+            << ", sigma=" << sigma.a << endl;
+            cerr << "Pars=[";
+            for( size_t i = 0; i < m_num_parameters; ++i )
+              cerr << params[i].a << ",";
+            cerr << "]" << endl;
+          }else
+          {
+            cerr << "Recieved a NaN or Inf sigma; params[" << sigma_index<< "] = " << params[sigma_index]
+            << ", sigma=" << sigma << endl;
+            cerr << "Pars=[";
+            for( size_t i = 0; i < m_num_parameters; ++i )
+              cerr << params[i] << ",";
+            cerr << "]" << endl;
+          }
+
+          throw runtime_error( "Inf or NaN sigma" );
+        }//if( isnan(sigma) || isinf(sigma) )
       }else
       {
         // If we fit for only one sigma, we use the paramaters value.
@@ -466,7 +510,21 @@ struct PeakFitDiffCostFunction
           const T frac_last_roi_range = params[last_mean_par_index] - 0.5;
           const T first_mean = m_roi_lower_energy + frac_first_roi_range*range;
           const T last_mean = m_roi_lower_energy + frac_last_roi_range*range;
-          const T frac_dist = (mean - first_mean) / (last_mean - first_mean);
+
+          // I dont know what/why in the world I was doign the below
+          T frac_dist;
+          //if( (last_mean - first_mean) > 1.0E-2 )
+          //  frac_dist = (mean - first_mean) / (last_mean - first_mean);
+          //else
+          //  frac_dist = T(1.0*i) / (num_sigmas_fit - 1.0);
+          assert( mean >= min_mean );
+          assert( mean <= max_mean );
+          T mean_dists = max_mean - min_mean;
+          if( mean_dists > 1.0E-6 )
+            frac_dist = (mean - min_mean) / (max_mean - min_mean);
+          else
+            frac_dist = T(0.5);
+
           const T fist_sigma = sigma;
           const T last_sigma = sigma * params[sigma_index + 1];
           sigma = fist_sigma + frac_dist*(last_sigma - fist_sigma);
@@ -482,8 +540,157 @@ struct PeakFitDiffCostFunction
             sigma_uncert = first_uncert + frac_dist*(last_uncert - first_uncert);
           }
         }//if( num_sigmas_fit > 1 )
+
+        if( isnan(sigma) || isinf(sigma) )
+        {
+          if constexpr ( !std::is_same_v<T, double> )
+          {
+            cerr << "Recieved a NaN _or_ Inf sigma; params[" << sigma_index<< "] = " << params[sigma_index].a
+            << ", sigma=" << sigma.a
+            << ", num_sigmas_fit=" << num_sigmas_fit
+            << endl;
+            if( (i > 0) && (num_sigmas_fit > 1) )
+            {
+              const size_t first_mean_par_index = num_fit_continuum_pars + num_skew + num_sigmas_fit + 0;
+              const size_t last_mean_par_index = num_fit_continuum_pars + num_skew + num_sigmas_fit + m_num_peaks - 1;
+              const T frac_first_roi_range = params[first_mean_par_index] - 0.5;
+              const T frac_last_roi_range = params[last_mean_par_index] - 0.5;
+              const T first_mean = m_roi_lower_energy + frac_first_roi_range*range;
+              const T last_mean = m_roi_lower_energy + frac_last_roi_range*range;
+              T frac_dist;
+              if( (last_mean - first_mean) > 1.0E-2 )
+                frac_dist = (mean - first_mean) / (last_mean - first_mean);
+              else
+                frac_dist = T(1.0*i) / (num_sigmas_fit - 1.0);
+
+              const T fist_sigma = sigma;
+              const T last_sigma = sigma * params[sigma_index + 1];
+              sigma = fist_sigma + frac_dist*(last_sigma - fist_sigma);
+
+              cerr << "\ti=" << i << ", num_sigmas_fit=" << num_sigmas_fit
+              << ", frac_first_roi_range=" << frac_first_roi_range.a
+              << ", frac_last_roi_range=" << frac_last_roi_range.a
+              << ", first_mean=" << first_mean.a
+              << ", last_mean=" << last_mean.a
+              << ", frac_dist=" << frac_dist.a
+              << ", fist_sigma=" << fist_sigma.a
+              << ", last_sigma=" << last_sigma.a
+              << ", sigma=" << sigma.a
+              << endl;
+            }
+
+            cerr << "Pars=[";
+            for( size_t i = 0; i < m_num_parameters; ++i )
+              cerr << params[i].a << ",";
+            cerr << "]" << endl;
+          }else
+          {
+            cerr << "Recieved a NaN _or_ Inf sigma; params[" << sigma_index<< "] = " << params[sigma_index]
+            << ", sigma=" << sigma
+            << ", num_sigmas_fit=" << num_sigmas_fit
+            << endl;
+            if( (i > 0) && (num_sigmas_fit > 1) )
+            {
+              const size_t first_mean_par_index = num_fit_continuum_pars + num_skew + num_sigmas_fit + 0;
+              const size_t last_mean_par_index = num_fit_continuum_pars + num_skew + num_sigmas_fit + m_num_peaks - 1;
+              const T frac_first_roi_range = params[first_mean_par_index] - 0.5;
+              const T frac_last_roi_range = params[last_mean_par_index] - 0.5;
+              const T first_mean = m_roi_lower_energy + frac_first_roi_range*range;
+              const T last_mean = m_roi_lower_energy + frac_last_roi_range*range;
+              T frac_dist;
+              if( (last_mean - first_mean) > 1.0E-2 )
+                frac_dist = (mean - first_mean) / (last_mean - first_mean);
+              else
+                frac_dist = T(1.0*i) / (num_sigmas_fit - 1);
+              
+              const T fist_sigma = sigma;
+              const T last_sigma = sigma * params[sigma_index + 1];
+              sigma = fist_sigma + frac_dist*(last_sigma - fist_sigma);
+
+              cerr << "\ti=" << i << ", num_sigmas_fit=" << num_sigmas_fit
+              << ", frac_first_roi_range=" << frac_first_roi_range
+              << ", frac_last_roi_range=" << frac_last_roi_range
+              << ", first_mean=" << first_mean
+              << ", last_mean=" << last_mean
+              << ", frac_dist=" << frac_dist
+              << ", fist_sigma=" << fist_sigma
+              << ", last_sigma=" << last_sigma
+              << ", sigma=" << sigma
+              << endl;
+            }//if( (i > 0) && (num_sigmas_fit > 1) )
+
+            cerr << "Pars=[";
+            for( size_t i = 0; i < m_num_parameters; ++i )
+              cerr << params[i] << ",";
+            cerr << "]" << endl;
+          }
+
+          throw runtime_error( "Inf or NaN sigma" );
+        }//if( isnan(sigma) || isinf(sigma) )
+
       }//if( num_sigmas_fit == 0 ) / else
 
+      // We will protect against 0 or negative sigmas - even though we should have limited the possible range of
+      //  peak widths.  We will nearly-arbitrarily choose a width of 0.2 keV to start checking for reasonableness
+      //  wrt spectrum binning width; a nice HPGe might have a 59 keV peak width of 0.25 keV.
+      //  We will require peak width to be wider than 0.42 channels; the minimum number of channels per
+      //  gaussian sigma that I could find in a commercial detector is 0.5707 channels per Gaussian-sigma.
+      //  For a ROI with multiple peaks, we are limiting the Ceres paramaters to be 0.525 channels per gaussian,
+      //  but we will let the upper peak vary by 20% either way, and 0.525*0.8=0.42, we will enforce this as our
+      //  absolute narrowest allowed peak.
+      //  However, if we arent fitting for the FWHM - let it be whatever the user specified.
+      if( (sigma < 0.2) && m_starting_peaks[i]->fitFor(PeakDef::Sigma) && (num_sigmas_fit != 0) )
+      {
+        float peak_mean;
+        if constexpr ( std::is_same_v<T, double> )
+          peak_mean = static_cast<float>(mean);
+        else
+          peak_mean = static_cast<float>(mean.a);
+
+        const float left_val = m_data->gamma_channel_lower( m_lower_channel );
+        const float upper_val = m_data->gamma_channel_upper( m_upper_channel );
+        const double avrg_chnl_width = (upper_val - left_val) / (1.0 + (m_upper_channel - m_lower_channel));
+        const double min_reasonable_sigma = (0.42*0.99)*avrg_chnl_width;
+
+        if( (sigma <= min_reasonable_sigma) || (sigma < 0.00025) ) //The 0.00025 is totally arbitrary
+        {
+          double peak_sigma;
+          if constexpr ( std::is_same_v<T, double> )
+            peak_sigma = sigma;
+          else
+            peak_sigma = sigma.a;
+
+          {
+            cout << "num_sigmas_fit=" << num_sigmas_fit << ", i=" << i << endl;
+            cout << "m_options.testFlag(PeakFitLM::PeakFitLMOptions::AllPeakFwhmIndependent)=" << m_options.testFlag(PeakFitLM::PeakFitLMOptions::AllPeakFwhmIndependent) << endl;
+
+            if( (i > 0) && (num_sigmas_fit > 1) )
+            {
+              const size_t first_mean_par_index = num_fit_continuum_pars + num_skew + num_sigmas_fit + 0;
+              const size_t last_mean_par_index = num_fit_continuum_pars + num_skew + num_sigmas_fit + m_num_peaks - 1;
+              const T frac_first_roi_range = params[first_mean_par_index] - 0.5;
+              const T frac_last_roi_range = params[last_mean_par_index] - 0.5;
+              const T first_mean = m_roi_lower_energy + frac_first_roi_range*range;
+              const T last_mean = m_roi_lower_energy + frac_last_roi_range*range;
+              T frac_dist;
+              if( (last_mean - first_mean) > 1.0E-2 )
+                frac_dist = (mean - first_mean) / (last_mean - first_mean);
+              else
+                frac_dist = T(1.0*i) / (num_sigmas_fit - 1.0);
+
+              const T fist_sigma = sigma;
+              const size_t sigma_index = num_fit_continuum_pars + num_skew;
+              const T last_sigma = sigma * params[sigma_index + 1];
+              const T this_sigma = fist_sigma + frac_dist*(last_sigma - fist_sigma);
+              cout << endl;
+            }
+          }
+
+          throw runtime_error( "peak sigma (" + std::to_string(peak_sigma) + ") smaller than reasonable ("
+                              + std::to_string( min_reasonable_sigma )
+                              + ", avrg_chnl_width=" + std::to_string(avrg_chnl_width) + ")" );
+        }//if( (sigma <= ((0.42*0.99)*avrg_chnl_width)) || (sigma < 0.00025) )
+      }//if( sigma is potentually quite small )
 #if( DEBUG_PAR_TO_PEAKS )
     if constexpr ( !std::is_same_v<T, double> )
     {
@@ -544,7 +751,7 @@ struct PeakFitDiffCostFunction
 
     assert( !!m_data->gamma_counts() );
     const vector<float> &counts_vec = *m_data->gamma_counts();
-    assert( counts_vec.size() > (m_lower_channel + nchannel) );
+    assert( energies_ptr->size() > (m_lower_channel + nchannel) );
 
     vector<T> peak_counts( nchannel, T(0.0) );
     const float * const energies = energies_ptr->data() + m_lower_channel;
@@ -553,22 +760,79 @@ struct PeakFitDiffCostFunction
     const int num_polynomial_terms = static_cast<int>( PeakContinuum::num_parameters( m_offset_type ) );
     const bool is_step_continuum = PeakContinuum::is_step_continuum( m_offset_type );
 
-    auto continuum = create_continuum( peaks.front().getContinuum() );
+    assert( !peaks.empty() || !fixed_amp_peaks.empty() );
+    auto continuum = create_continuum( (!peaks.empty()) ? peaks.front().getContinuum() : fixed_amp_peaks.front().getContinuum() );
+
     continuum->setRange( T(m_roi_lower_energy), T(m_roi_upper_energy) );
     continuum->setType( m_offset_type );
 
     assert( (m_offset_type != PeakContinuum::OffsetType::External) || !!m_external_continuum );
-    assert( (m_offset_type != PeakContinuum::OffsetType::External) || !m_use_lls_for_cont );
+    assert( (m_offset_type != PeakContinuum::OffsetType::External) || m_use_lls_for_cont );
 
     if( m_offset_type == PeakContinuum::OffsetType::External )
+    {
       continuum->setExternalContinuum( m_external_continuum );
-
-    if( !m_use_lls_for_cont )
+      
+      if( !peaks.empty() )
+      {
+        // We need to fit peak amplitudes here - but we also need to account for the external countinuum counts,
+        //  so we'll just subtract the external continuum from the data, but keep the original data
+        //  around for the variances
+        vector<float> data_copy( channel_counts, channel_counts + nchannel );
+        vector<float> data_variances( channel_counts, channel_counts + nchannel );
+        for( size_t i = 0; i < nchannel; ++i )
+        {
+          data_copy[i] -= m_external_continuum->gamma_integral( energies[i], energies[i+1] );
+          data_copy[i] = std::max( 0.0f, data_copy[i] );
+          
+          if( data_variances[i] < PEAK_FIT_MIN_CHANNEL_UNCERT )
+            data_variances[i] = PEAK_FIT_MIN_CHANNEL_UNCERT;
+        }
+        
+        vector<T> means, sigmas;
+        for( const auto &peak : peaks )
+        {
+          means.push_back( peak.mean() );
+          sigmas.push_back( peak.sigma() );
+        }
+        
+        const vector<T> skew_pars( params + num_fit_continuum_pars, params + num_fit_continuum_pars + num_skew );
+        
+        vector<T> amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts;
+        
+        PeakFit::fit_amp_and_offset_imp(energies, &(data_copy[0]), &(data_variances[0]), nchannel,
+                                        num_polynomial_terms, is_step_continuum, T(m_ref_energy), means, sigmas,
+                                        fixed_amp_peaks, m_skew_type, skew_pars.data(),
+                                        amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts,
+                                        &(peak_counts[0]) );
+        
+        assert( peaks.size() == amplitudes.size() );
+        assert( amp_uncerts.empty() || (amp_uncerts.size() == peaks.size()));
+        for( size_t peak_index = 0; peak_index < peaks.size(); ++peak_index )
+        {
+          peaks[peak_index].setAmplitude( amplitudes[peak_index] );
+          if( !amp_uncerts.empty() )
+            peaks[peak_index].setAmplitudeUncert( amp_uncerts[peak_index] );
+        }
+      }else
+      {
+        for( size_t peak_index = 0; peak_index < fixed_amp_peaks.size(); ++peak_index )
+          fixed_amp_peaks[peak_index].gauss_integral( energies, &(peak_counts[0]), nchannel );
+      }
+      
+      // Loop manually since PeakContinuumImp doesn't have offset_integral method
+      assert( m_external_continuum );
+      for( size_t i = 0; i < nchannel; ++i )
+        peak_counts[i] += T( m_external_continuum->gamma_integral( energies[i], energies[i+1] ) );
+    }else if( !m_use_lls_for_cont )
     {
       continuum->setParameters( T(m_ref_energy), params, nullptr );
 
       for( size_t peak_index = 0; peak_index < peaks.size(); ++peak_index )
         peaks[peak_index].gauss_integral( energies, &(peak_counts[0]), nchannel );
+      
+      for( size_t peak_index = 0; peak_index < fixed_amp_peaks.size(); ++peak_index )
+        fixed_amp_peaks[peak_index].gauss_integral( energies, &(peak_counts[0]), nchannel );
 
       PeakDists::offset_integral( *continuum, energies, &(peak_counts[0]), nchannel, m_data );
     }else
@@ -584,7 +848,7 @@ struct PeakFitDiffCostFunction
 
       vector<T> amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts;
 
-      PeakFit::fit_amp_and_offset_imp(energies, channel_counts, nchannel, num_polynomial_terms, is_step_continuum,
+      PeakFit::fit_amp_and_offset_imp(energies, channel_counts, nullptr, nchannel, num_polynomial_terms, is_step_continuum,
                                           T(m_ref_energy), means, sigmas, fixed_amp_peaks, m_skew_type, skew_pars.data(),
                                           amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts,
                                           &(peak_counts[0]) );
@@ -826,6 +1090,20 @@ struct PeakFitDiffCostFunction
       peaks[old_to_new.second].inheritUserSelectedOptions( *m_starting_peaks[old_to_new.first],  inheritNonFitForValues );
     }//for( const auto &old_to_new : old_to_new_indexs )
 
+#if( !defined(NDEBUG) && PERFORM_DEVELOPER_CHECKS && defined(CERES_PUBLIC_JET_H_) )
+    const size_t nresids = number_residuals();
+    for( size_t i = 0; i < nresids; ++i )
+    {
+      if constexpr ( std::is_same_v<T, double> )
+      {
+        assert( !isnan(residuals[i]) && !isinf(residuals[i]) );
+      }else
+      {
+        check_jet_for_NaN( residuals[i] );
+      }
+    }//for( size_t i = 0; i < nresids; ++i )
+#endif
+
     return peaks;
   }
 
@@ -1021,6 +1299,15 @@ struct PeakFitDiffCostFunction
     const double range = (m_roi_upper_energy - m_roi_lower_energy);
     const size_t midbin = m_data->find_gamma_channel( 0.5*(m_roi_lower_energy + m_roi_upper_energy) );
     const float binwidth = m_data->gamma_channel_width( midbin );
+
+    const double avrg_bin_width = ([this](){
+      const size_t lower_bin = m_data->find_gamma_channel(m_roi_lower_energy);
+      const size_t upper_bin = m_data->find_gamma_channel(m_roi_upper_energy);
+      const double left_energy = m_data->gamma_channel_lower(lower_bin);
+      const double right_energy = m_data->gamma_channel_upper(upper_bin);
+      return (right_energy - left_energy) / (1 + (upper_bin - lower_bin));
+    })();
+
     double minsigma = binwidth, min_input_sigma = binwidth;
     double maxsigma = 0.5*range, max_input_sigma = binwidth;
 
@@ -1033,6 +1320,8 @@ struct PeakFitDiffCostFunction
 
       const size_t mean_par_index = num_fit_continuum_pars + num_skew + num_sigmas_fit + i;
 
+      // TODO:
+      // TODO: for more than one peak, move to using parameters to, move to using npeaks unconstrained paramaters, and have thier distances be `exp(par[i])` from the previous peak, then normalize the spacing and add that fraction to each on.  Actually could use npeaks-1 paramaters, and fix the first one to be 0 (so `exp(0) = 1`) to set scale for the other parameters
       const double rel_mean = 0.5 + (mean - m_roi_lower_energy) / range;
       parameters[mean_par_index] = rel_mean;
 
@@ -1053,7 +1342,9 @@ struct PeakFitDiffCostFunction
         //          upper_bounds[mean_par_index] = rel_mean + 0.5*sigma/range;
         //        }
 
-        // If we want to limit the peaks to be within ROI:
+        // If we want to limit the peaks to be within ROI, we would limit its range to [0.5, 1.5],
+        //  however, we might be fitting a peak outside the ROI, so a little below, if the
+        //  peak is already outside the ROI, we'll let it roam around a little there:
         lower_bounds[mean_par_index] = 0.5;
         upper_bounds[mean_par_index] = 1.5;
 
@@ -1076,6 +1367,15 @@ struct PeakFitDiffCostFunction
           assert( rel_mean >= *lower_bounds[mean_par_index] );
           assert( rel_mean <= *upper_bounds[mean_par_index] );
         }
+
+        // If the peak is already outside the ROI - we'll exand the limits, and give it a little extra to roam
+        if( rel_mean <= *lower_bounds[mean_par_index] )
+          lower_bounds[mean_par_index] = rel_mean - std::max( 0.1, fabs(0.25*rel_mean) ); // A little careful to not g onegative
+        if( rel_mean >= *upper_bounds[mean_par_index] )
+          upper_bounds[mean_par_index] = 1.2*rel_mean;
+
+        assert( rel_mean >= *lower_bounds[mean_par_index] );
+        assert( rel_mean <= *upper_bounds[mean_par_index] );
       }//if( fixed mean ) / else
 
       min_input_sigma = std::min( min_input_sigma, sigma );
@@ -1139,43 +1439,87 @@ struct PeakFitDiffCostFunction
     }else
     {
       // We have one paramater if fitting a single sigma, or two paramaters if fitting multiple.
-      parameters[num_fit_continuum_pars + num_skew] = 1.0;
+      const size_t fit_sigma_index = num_fit_continuum_pars + num_skew;
+      parameters[fit_sigma_index] = 1.0;
 
-      lower_bounds[num_fit_continuum_pars + num_skew] = (0.5*std::min(minsigma,0.75*min_input_sigma)) / m_max_initial_sigma;
-      upper_bounds[num_fit_continuum_pars + num_skew] = (1.5*std::max(maxsigma,1.25*max_input_sigma)) / m_max_initial_sigma;
+      lower_bounds[fit_sigma_index] = (0.5*std::min(minsigma,0.75*min_input_sigma)) / m_max_initial_sigma;
+      upper_bounds[fit_sigma_index] = (1.5*std::max(maxsigma,1.25*max_input_sigma)) / m_max_initial_sigma;
+
+      assert( parameters[fit_sigma_index] >= *lower_bounds[fit_sigma_index] );
+      assert( parameters[fit_sigma_index] <= *upper_bounds[fit_sigma_index] );
 
       if( m_options.testFlag(PeakFitLM::PeakFitLMOptions::MediumRefinementOnly) )
       {
         // These bounds are only approximately the claimed 50% - since we're lumping all peaks in ROI together
         //  but its probably not worth the hassle of correctness to go into much more detail
-        lower_bounds[num_fit_continuum_pars + num_skew] = (0.5*min_input_sigma) / m_max_initial_sigma;
-        upper_bounds[num_fit_continuum_pars + num_skew] = (1.5*max_input_sigma) / m_max_initial_sigma;
+        lower_bounds[fit_sigma_index] = (0.5*min_input_sigma) / m_max_initial_sigma;
+        upper_bounds[fit_sigma_index] = (1.5*max_input_sigma) / m_max_initial_sigma;
+
+        assert( parameters[fit_sigma_index] >= *lower_bounds[fit_sigma_index] );
+        assert( parameters[fit_sigma_index] <= *upper_bounds[fit_sigma_index] );
       }
 
       if( m_options.testFlag(PeakFitLM::PeakFitLMOptions::SmallRefinementOnly) )
       {
         // These bounds are only approximately the claimed 15% - since we're lumping all peaks in ROI together
         //  but its probably not worth the hassle of correctness to go into much more detail
-        lower_bounds[num_fit_continuum_pars + num_skew] = (0.85*min_input_sigma) / m_max_initial_sigma;
-        upper_bounds[num_fit_continuum_pars + num_skew] = (1.15*max_input_sigma) / m_max_initial_sigma;
+        lower_bounds[fit_sigma_index] = (0.85*min_input_sigma) / m_max_initial_sigma;
+        upper_bounds[fit_sigma_index] = (1.15*max_input_sigma) / m_max_initial_sigma;
+
+        assert( parameters[fit_sigma_index] >= *lower_bounds[fit_sigma_index] );
+        assert( parameters[fit_sigma_index] <= *upper_bounds[fit_sigma_index] );
       }
 
-      assert( parameters[num_fit_continuum_pars + num_skew] >= *lower_bounds[num_fit_continuum_pars + num_skew] );
-      assert( parameters[num_fit_continuum_pars + num_skew] <= *upper_bounds[num_fit_continuum_pars + num_skew] );
+      // The least number of channels per FWHM that I could find in commercial detectors is a FWHM of 1.344 channels,
+      //  so we will make this an absolute lower bound on FWHM (we are actually fitting gaussian sigma, so this
+      //  becomes 0.5707 channels per sigma - so we'll round down to 0.525, which since peaks can go down to 0.8
+      //  times this, brings down the absolute narrowest peak to a sigma of 0.42 channels - narrow than reasonable)
+      //
+      //  If any peak has a fixed width that is less than `0.525*avrg_bin_width`, then we wont apply this constraint
+      bool any_peak_fixed_narrow = false, all_widths_fixed = true;
+      for( size_t i = 0; i < m_starting_peaks.size(); ++i )
+      {
+        const std::shared_ptr<const PeakDef> &peak = m_starting_peaks[i];
+        const bool fit_width = peak->fitFor(PeakDef::CoefficientType::Sigma);
+        any_peak_fixed_narrow |= (!fit_width && (peak->sigma() < 0.525*avrg_bin_width));
+        all_widths_fixed = (all_widths_fixed && !fit_width);
+      }
+
+      if( !any_peak_fixed_narrow )
+      {
+        const double rel_bin_width = avrg_bin_width / m_max_initial_sigma;
+        //cout << "Before: par[fit_sigma_index]={" << lower_bounds[fit_sigma_index].value()
+        //<< " < " << parameters[fit_sigma_index]
+        //<< " < " << upper_bounds[fit_sigma_index].value()
+        //<< "}, with 0.525*rel_bin_width=" << 0.525*rel_bin_width << endl;
+
+        lower_bounds[fit_sigma_index] = std::max( 0.525*rel_bin_width, lower_bounds[fit_sigma_index].value() );
+        upper_bounds[fit_sigma_index] = std::max( 0.525*rel_bin_width, upper_bounds[fit_sigma_index].value() );
+        parameters[fit_sigma_index]   = std::max( 0.525*rel_bin_width, parameters[fit_sigma_index] );
+      }//if( !any_peak_fixed_narrow )
+
+      assert( parameters[fit_sigma_index] >= *lower_bounds[fit_sigma_index] );
+      assert( parameters[fit_sigma_index] <= *upper_bounds[fit_sigma_index] );
+      assert( all_widths_fixed || (lower_bounds[fit_sigma_index].has_value() && (lower_bounds[fit_sigma_index].value() >= 0.525*(avrg_bin_width / m_max_initial_sigma)) ) );
 
       if( num_sigmas_fit > 1 )
       {
+        const size_t upper_sigma_index = fit_sigma_index + 1;
+
         //Allow FWHM to vary by +-20% over the ROI.
-        // The `num_fit_continuum_pars + num_skew` paramters is the width of the first peak in ROI,
-        //  and `num_fit_continuum_pars + num_skew + 1` is the multiplier of that first ROI, to give
+        // The `fit_sigma_index` parameters is the width of the first peak in ROI,
+        //  and `upper_sigma_index` is the multiplier of that first ROI, to give
         //  the width of the last peak in the ROI.  Peaks between the first and last peak are scaled
         //  according to thier distance between.
-        parameters[num_fit_continuum_pars + num_skew + 1] = 1.0;
-        lower_bounds[num_fit_continuum_pars + num_skew + 1] = 0.8;
-        upper_bounds[num_fit_continuum_pars + num_skew + 1] = 1.2;
+        parameters[upper_sigma_index] = 1.0;
+        lower_bounds[upper_sigma_index] = 0.8;
+        upper_bounds[upper_sigma_index] = 1.2;
 
         // TODO: if PeakFitLM::PeakFitLMOptions::MediumRefinementOnly or PeakFitLM::PeakFitLMOptions::SmallRefinementOnly
         //       we should limit things in a bit more sensical way
+
+        assert( parameters[upper_sigma_index] >= *lower_bounds[upper_sigma_index] );
+        assert( parameters[upper_sigma_index] <= *upper_bounds[upper_sigma_index] );
       }
     }//if( !num_sigmas_fit ) / else
 
@@ -1260,9 +1604,14 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     const double roi_lower = dataH->gamma_channel_lower( lower_channel );
     const double roi_upper = dataH->gamma_channel_upper( upper_channel );
     
-    assert( roi_lower <= roiLowerEnergy );
-    assert( roi_upper >= roiUpperEnergy );
-    
+    assert( (lower_channel < 2) || (roi_lower <= roiLowerEnergy) );
+    assert( (roi_upper >= roiUpperEnergy) || ((upper_channel + 3) >= dataH->num_gamma_channels()) );
+
+    if( coFitPeaks.size() >= (upper_channel - lower_channel) ) //PeakFitDiffCostFunction will check for this in an assert
+      throw runtime_error( "Invalid energy channels (" + std::to_string(lower_channel) + ", "
+                          + std::to_string(upper_channel) + ") for " + std::to_string(coFitPeaks.size()) + " peaks." );
+    assert( coFitPeaks.size() < (upper_channel - lower_channel) );
+
     const size_t nchannels = dataH->num_gamma_channels();
     const size_t midbin = dataH->find_gamma_channel( 0.5*(roiLowerEnergy + roiUpperEnergy) );
     const float binwidth = dataH->gamma_channel_width( midbin );
@@ -1282,15 +1631,14 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     const size_t num_skew = PeakDef::num_skew_parameters( skew_type );
 
 
-    auto cost_functor = new PeakFitDiffCostFunction( dataH, coFitPeaks, roiLowerEnergy, roiUpperEnergy,
+    auto cost_functor = make_unique<PeakFitDiffCostFunction>( dataH, coFitPeaks, roiLowerEnergy, roiUpperEnergy,
                                                     offset_type, reference_energy, skew_type, isHPGe, fit_options );
 
     //Choosing 8 paramaters to include in the `ceres::Jet<>` is 4 peaks in ROI, which covers most cases
     //  without introducing a ton of extra overhead.
-    auto cost_function = new ceres::DynamicAutoDiffCostFunction<PeakFitDiffCostFunction,8>( cost_functor );
+    auto cost_function = new ceres::DynamicAutoDiffCostFunction<PeakFitDiffCostFunction,8>( cost_functor.get(), ceres::Ownership::DO_NOT_TAKE_OWNERSHIP );
 
     const size_t num_fit_pars = cost_functor->number_parameters();
-    const size_t num_sigmas_fit = cost_functor->number_sigma_parameters();
 
     cost_function->AddParameterBlock( static_cast<int>(num_fit_pars) );
     cost_function->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
@@ -1305,20 +1653,20 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     double * const pars = &parameters[0];
 
 
-    ceres::Problem problem;
+    std::unique_ptr<ceres::Problem> problem = make_unique<ceres::Problem>();
 
     // A brief look at a dataset of ~4k HPGe spectra with known truth-value peaks areas shows
     //  that using a loss function doesnt seem improve outcomes, when measured by sucessful
     //  peak fits, and by comparison of fit to truth peak areas.
     ceres::LossFunction *lossfcn = nullptr;
 
-    problem.AddResidualBlock( cost_function, lossfcn, pars );
+    problem->AddResidualBlock( cost_function, lossfcn, pars ); //Note: problem takes ownership of `cost_function`
 
 
     if( !prob_setup.m_constant_parameters.empty() )
     {
       ceres::Manifold *subset_manifold = new ceres::SubsetManifold( static_cast<int>(num_fit_pars), prob_setup.m_constant_parameters );
-      problem.SetManifold( pars, subset_manifold );
+      problem->SetManifold( pars, subset_manifold );
     }
 
     for( size_t i = 0; i < num_fit_pars; ++i )
@@ -1326,13 +1674,13 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
       if( prob_setup.m_lower_bounds[i].has_value() )
       {
         assert( *prob_setup.m_lower_bounds[i] <= parameters[i] );
-        problem.SetParameterLowerBound(pars, static_cast<int>(i), *prob_setup.m_lower_bounds[i] );
+        problem->SetParameterLowerBound(pars, static_cast<int>(i), *prob_setup.m_lower_bounds[i] );
       }
 
       if( prob_setup.m_upper_bounds[i].has_value() )
       {
         assert( *prob_setup.m_upper_bounds[i] >= parameters[i] );
-        problem.SetParameterUpperBound(pars, static_cast<int>(i), *prob_setup.m_upper_bounds[i] );
+        problem->SetParameterUpperBound(pars, static_cast<int>(i), *prob_setup.m_upper_bounds[i] );
       }
     }//for( size_t i = 0; i < num_fit_pars; ++i )
 
@@ -1343,6 +1691,9 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT; //ceres::DOGLEG
     options.use_nonmonotonic_steps = true;
     options.max_consecutive_nonmonotonic_steps = 10;
+
+    //options.max_num_consecutive_invalid_steps = 10; //default 5
+
     // Initial trust region was very coursely optimized using a fit over ~4k HPGe spectra, using the median peak area
     //  error from truth value (whose value was 1.65*sqrt(area)); but also the average error was also about optimal
     //  (value 3.12*sqrt(area)).
@@ -1354,13 +1705,26 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     options.min_trust_region_radius = 1e-32;
     // Lower bound for the relative decrease before a step is accepted.
     options.min_relative_decrease = 1e-3; //pseudo optimized based on success rate of fitting peaks - but unknown effect on accuracy of fits.
-    options.max_num_iterations = 50000;
+
+    // It looks like it usually takes well below 100 calls to solve most problems, but a tail up to ~500, and then rare
+    //  (pathelogical?) cases that can take >50k
+    //  However, for these pathological cases, if we just try again starting from where it left off, it will solve
+    //  it super quick - I guess because there will be more "momentum" to find the minimum, or something, not totally
+    //  sure.
+    //  We could probably reduce this number of iterations to ~100 - but the effects or impact of this hasnt been
+    //  evaluated.
+    //  Also, have not checked dependence on number of peaks at all
+    options.max_num_iterations = (coFitPeaks.size() > 2) ? 1000 : 500;
 #ifndef NDEBUG
-    options.max_solver_time_in_seconds = 300.0;
+    options.max_solver_time_in_seconds = (coFitPeaks.size() > 2) ? 180.0 : 120;
+#else
+    options.max_solver_time_in_seconds = (coFitPeaks.size() > 2) ? 30.0 : 150.0;
+#endif
+
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
     options.minimizer_progress_to_stdout = true;
     options.logging_type = ceres::PER_MINIMIZER_ITERATION;
 #else
-    options.max_solver_time_in_seconds = 30.0;
     options.minimizer_progress_to_stdout = false;
     options.logging_type = ceres::SILENT;
 #endif
@@ -1379,17 +1743,27 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     options.parameter_tolerance = 1e-11; //Default value is 1e-8.  Using 1e-11, so its usually the function tolerance that terminates things.
     options.num_threads = 1; //Probably wont have much/any effect
 
-    ceres::Solver::Summary summary;
-    ceres::Solve(options, &problem, &summary);
+    // Default value of `max_num_consecutive_invalid_steps` is 5, however, if we are re-fitting a peak who already has
+    //  near perfect values, occasionally the fit fails with the devault values - I guess the trust-region is just so
+    //  far off (but I dont really know - this is just a guess), but if we increase this value to 10, the fit seems
+    //  to be sucessful, for a limited number of test cases.
+    options.max_num_consecutive_invalid_steps = 10;
 
-#ifndef NDEBUG
+    // Just to note for the future, the following values are enabled by the default options, and are what we want.
+    //options.preconditioner_type = ceres::JACOBI;
+    //options.jacobi_scaling = true; // Let Ceres estimate scale based on Jacobian diagonal
+
+    ceres::Solver::Summary summary;
+    ceres::Solve(options, problem.get(), &summary);
+
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
     //std::cout << summary.BriefReport() << "\n";
     std::cout << summary.FullReport() << "\n";
     cout << "Took " << cost_functor->m_ncalls.load() << " calls to solve." << endl;
 #endif
 
-    cost_functor->m_ncalls = 0;
-    
+    string failure_reason;
+
     switch( summary.termination_type )
     {
       case ceres::CONVERGENCE:
@@ -1397,17 +1771,128 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
         break;
         
       case ceres::NO_CONVERGENCE:
+      {
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+        cerr << "The L-M ceres::Solver solving failed - NO_CONVERGENCE:\n" << summary.FullReport() << endl;
+#endif
+        // We will give it another go - for most cases it seems the solution will now be succesffuly found really
+        //  quickly.  The guess is this is from momentum, or whatever, but not really sure.
+        //cerr << "Initial L-M ceres::Solver failed with " << cost_functor->m_ncalls.load() << " calls and "
+        //  << summary.num_successful_steps << " steps - will try again" << endl;
+
+        options.max_num_iterations = 5000;
+        // TODO: see if we should loosed any of the following up.
+        //options.function_tolerance = 1e-6;
+        //options.parameter_tolerance = 1e-9;
+        //options.initial_trust_region_radius = 35*(cost_functor->number_parameters() - prob_setup.m_constant_parameters.size());
+        cost_functor->m_ncalls = 0;
+
+        summary = ceres::Solver::Summary();
+
+        ceres::Solve(options, problem.get(), &summary);
+
+        // If things worked out, we're good here and we can `break` from this case statement
+        if( (summary.termination_type == ceres::CONVERGENCE)
+            || (summary.termination_type == ceres::USER_SUCCESS) )
+        {
+          break;
+        }
+
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+        cerr << "Retry of L-M ceres::Solver Failed with " << cost_functor->m_ncalls.load() << " additional calls" << endl;
+#endif
+
+        // If we have failed here, we will re-try, but with numerical differentiation - havent explicitly found any
+        //  cases where this is necassary, or helpful
+        failure_reason = "The L-M ceres::Solver solving failed - NO_CONVERGENCE.";
+
+        [[fallthrough]]; //Fallthrough intentional
+      }//case ceres::NO_CONVERGENCE:
+
       case ceres::FAILURE:
-      case ceres::USER_FAILURE:
-        throw runtime_error( "The L-M ceres::Solver solving failed." );
+      {
+        if( failure_reason.empty() )
+          failure_reason = "The L-M ceres::Solver solving failed - FAILURE.";
+
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+        cerr << "The L-M ceres::Solver solving failed - FAILURE:\n" << summary.FullReport() << endl;
+#endif
+        // We will re-try with numerical differntiation - the one case that the author has observed this being
+        //  necassary is with peak-refits, where all peak paramaeters are already about perfect, very rarely, it seems
+        //  to throw off trust-region searching, or something - however, numerical differentiating seems to work for
+        //  these (rare!) cases that this is observed.
+
+        auto numeric_cost_fnct = new ceres::DynamicNumericDiffCostFunction<PeakFitDiffCostFunction>( cost_functor.get(),
+                                                                            ceres::Ownership::DO_NOT_TAKE_OWNERSHIP );
+        numeric_cost_fnct->AddParameterBlock( static_cast<int>(num_fit_pars) );
+        numeric_cost_fnct->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
+
+        std::unique_ptr<ceres::Problem> numerical_problem = make_unique<ceres::Problem>();
+        numerical_problem->AddResidualBlock( numeric_cost_fnct, lossfcn, pars ); //Note: numerical_problem takes ownership of `numeric_cost_fnct`
+
+        if( !prob_setup.m_constant_parameters.empty() )
+        {
+          ceres::Manifold *subset_manifold = new ceres::SubsetManifold( static_cast<int>(num_fit_pars), prob_setup.m_constant_parameters );
+          numerical_problem->SetManifold( pars, subset_manifold );
+        }
+
+        for( size_t i = 0; i < num_fit_pars; ++i )
+        {
+          if( prob_setup.m_lower_bounds[i].has_value() )
+            numerical_problem->SetParameterLowerBound(pars, static_cast<int>(i), *prob_setup.m_lower_bounds[i] );
+          if( prob_setup.m_upper_bounds[i].has_value() )
+            numerical_problem->SetParameterUpperBound(pars, static_cast<int>(i), *prob_setup.m_upper_bounds[i] );
+        }//for( size_t i = 0; i < num_fit_pars; ++i )
+
+        cost_functor->m_ncalls = 0;
+        summary = ceres::Solver::Summary();
+        ceres::Solve(options, numerical_problem.get(), &summary);
+
+        switch( summary.termination_type )
+        {
+          case ceres::CONVERGENCE:
+          case ceres::USER_SUCCESS:
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+            cout << "Was able to solved problem using numerical differentiation!" << endl;
+#endif
+            problem = std::move(numerical_problem);
+            break;
+
+          case ceres::NO_CONVERGENCE:
+          case ceres::FAILURE:
+          case ceres::USER_FAILURE:
+          {
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+            cerr << "Failed to get successful fit with numerical differentiation either - giving up." << endl;
+#endif
+            throw runtime_error( failure_reason );
+          }
+        }
+
         break;
+      }//case ceres::FAILURE:
+
+      case ceres::USER_FAILURE:
+      {
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+        cerr << "The L-M ceres::Solver solving failed - USER_FAILURE:\n" << summary.FullReport() << endl;
+#endif
+        throw runtime_error( "The L-M ceres::Solver solving failed - USER_FAILURE." );
+      }//case ceres::USER_FAILURE:
     }//switch( summary.termination_type )
 
-    
+    cost_functor->m_ncalls = 0;
+
     ceres::Covariance::Options cov_options;
-    cov_options.algorithm_type = ceres::CovarianceAlgorithmType::SPARSE_QR; //
-    //cov_options.num_threads = 1;
-    
+    cov_options.algorithm_type = ceres::CovarianceAlgorithmType::DENSE_SVD; //SPARSE_QR;
+
+    // Some terms we are fitting may not matter much, so when computing the inverse of J'J, we will opt
+    //  to drop all terms where the eigen value of that term, divided by the maximum eigenvalue is
+    //  less than the condition number.
+    //  TODO: Currently leaving condition number at default 1e-14 - but what value is reasonable should be investigated
+    cov_options.null_space_rank = -1;
+    cov_options.min_reciprocal_condition_number = 1e-14;
+
     vector<double> uncertainties( num_fit_pars, 0.0 );
     double *uncertainties_ptr = uncertainties.data();
     
@@ -1416,9 +1901,11 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     vector<pair<const double*, const double*> > covariance_blocks;
     covariance_blocks.push_back( make_pair( pars, pars) );
     
-    if( !covariance.Compute(covariance_blocks, &problem) )
+    if( !covariance.Compute(covariance_blocks, problem.get()) )
     {
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
       cerr << "Failed to compute covariance!" << endl;
+#endif
       uncertainties_ptr = nullptr;
     }else
     {
@@ -1450,7 +1937,7 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
       }//
     }//if( we failed to computer covariance ) / else
 
-#ifndef NDEBUG
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
     // Using numeric differentiation, should only be a single call to get covariance.
     cout << "Took " << cost_functor->m_ncalls.load() << " calls to get covariance." << endl;
 #endif
@@ -1465,7 +1952,9 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     return results;
   }catch( std::exception &e )
   {
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
     cout << "fit_peak_for_user_click_LM caught: " << e.what() << endl;
+#endif
     //assert( 0 );
     throw;
   }//try / catch
@@ -1651,8 +2140,12 @@ void fit_peaks_LM( vector<shared_ptr<const PeakDef>> &results,
         continue;
       }
 
-      const bool significant = chi2_significance_test( *peak, stat_threshold, hypothesis_threshold, {}, data );
-      if( !significant )
+      const double num_sigma = (peak->amplitude() / peak->amplitudeUncert());
+      const bool is_sig = (stat_threshold <= 0.0) || (num_sigma >= stat_threshold);
+
+      const double dummy_stat_thresh = 0.0;
+      const bool significant = chi2_significance_test( *peak, dummy_stat_thresh, hypothesis_threshold, {}, data );
+      if( !is_sig || !significant )
       {
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
         DebugLog(cerr) << "\tPeak at mean=" << peak->mean()
@@ -1713,14 +2206,18 @@ void fit_peaks_LM( vector<shared_ptr<const PeakDef>> &results,
     return;
   }catch( std::exception &e )
   {
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO || !defined(NDEBUG) )
     cerr << "fit_peaks_LM: caught exception '" << e.what() << "'" << endl;
+#endif
+    results.clear();
+    return;
   }//try / catch
 
 
-  //We will only reach here if there was an exception, so since we dont
-  //  expect this to normally happen, we'll just return empty results...
-  //results = input_peaks;
-  results.clear();
+  //We will only reach here if there was no exception, so since never expect
+  //  this to actually happen, just assign the results to be same as the input
+  assert( 0 );
+  results = input_peaks;
 }//vector<PeakDef> fit_peaks_LM(...);
 
 
@@ -1755,6 +2252,8 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_range_LM( const double x0, const 
   // The returned pointers all point to the original peaks.
   const vector<vector<shared_ptr<const PeakDef>>> seperated_peaks
                                           = causilyDisconnectedPeaks( ncausalitysigma, false, peaks_in_range );
+
+  assert( ([seperated_peaks](){ size_t i = 0; for(auto &p:seperated_peaks) i += p.size(); return i; })() == peaks_in_range.size() );
 
   //Fit each of the ranges
   vector<vector<shared_ptr<const PeakDef>>> fit_peak_ranges( seperated_peaks.size() );
@@ -1800,7 +2299,7 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_range_LM( const double x0, const 
 
   if( migration )
   {
-#ifndef NDEBUG
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
     cerr << "fitPeaksInRange(...)\n\tWarning: Migration happened!" << endl;
 #endif
 

@@ -25,6 +25,7 @@
 
 #include "InterSpec_config.h"
 
+#include <tuple>
 #include <string>
 
 #include <Wt/WEvent>
@@ -43,16 +44,43 @@ class FileDragUploadResource : public Wt::WResource
 public:
   FileDragUploadResource( Wt::WObject *parent  );
   virtual ~FileDragUploadResource();
-  Wt::Signal<std::string,std::string > &fileDrop(); //<display_name,spool_name>
+  Wt::Signal<std::string,std::string> &fileDrop(); //<display_name,spool_name>
+
+  /** Take ownership of all files currently owned by this object.
+   *  The first string is the display name, the second is the spooled file name,
+   *  and the boolean is true than the caller must take care of deleting the file  
+   * (e.g., it is a temporary file uploaded over http that needs deleting).  
+   *  If false, the file is must not be deleted (e.g., on a native app and we 
+   * revieved the full filesystem path, instead of doing an upload over http).
+  */
+  std::vector<std::tuple<std::string,std::string,bool>> takeSpooledFiles();
+
+  /** Get currently spooled files.
+   *  The first string is the display name, the second is the spooled file name,
+   *  and the boolean is true if the file is owned by this object (e.g., it is a temporary file
+   *  that will be deleted).  If false, the file is must not be deleted (e.g., on a native
+   *  app and we revieved the full filesystem path, instead of doing an upload
+   *  over http).
+   * Does not transfer ownership of the files.
+  */
+  const std::vector<std::tuple<std::string,std::string,bool>> &spooledFiles() const;
+
+  /** Clear all files currently owned by this object; e.g., deletes from disk. */
+  void clearSpooledFiles();
 
 protected:
-  //XXX - It's assuming handleRequest(...) is only called once all the data
-  //      is uploaded.  See implementation for other possible issues.
   virtual void handleRequest( const Wt::Http::Request& request,
                               Wt::Http::Response& response );
 
 private:
-  std::vector<std::string> m_spooledFiles;
+  /** Files currently owned by this object.  
+   * The first string is the display name, the second is the spooled file name. 
+  */
+  std::vector<std::tuple<std::string,std::string,bool>> m_spooledFiles;
+
+  /** Signal emitted when a file is dropped.
+   *  The first string is the display name, the second is the spooled file name. 
+  */
   Wt::Signal< std::string, std::string > m_fileDrop;  //<display_name,spool_name>
 };//class FileDragUploadResource ...
 

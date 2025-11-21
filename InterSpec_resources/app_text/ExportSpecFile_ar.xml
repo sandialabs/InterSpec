@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages nplurals="2" plural="n==1 ? 0 : 1">
+  <!-- esf- is short for ExportSpecFile -->
+  
+  <!-- Window title -->
+  <message id="esf-window-title">تصدير ملف الطيف</message>
+  
+  <!-- Main UI sections -->
+  <message id="esf-file-to-export">الملف المراد تصديره</message>
+  <message id="esf-file-format">تنسيق الملف</message>
+  <message id="esf-samples-to-include">العينات المراد تضمينها</message>
+  
+  <!-- Mobile tab titles -->
+  <message id="esf-file-tab">الملف</message>
+  <message id="esf-format-tab">التنسيق</message>
+  <message id="esf-options-tab">الخيارات</message>
+  
+  <!-- Checkbox labels for foreground/background combination -->
+  <message id="esf-plus-back"> + خلفية</message>
+  <message id="esf-plus-secondary"> + ثانوي</message>
+  <message id="esf-fore-plus-back-tt">تصدير الطيف الأمامي والخلفية و/أو الطيف الثانوي معًا في نفس الملف.</message>
+  
+  <!-- Sample selection checkboxes -->
+  <message id="esf-disp-foreground">الأمامي المعروض</message>
+  <message id="esf-disp-background">الخلفية المعروضة</message>
+  <message id="esf-disp-secondary">الثانوي المعروض</message>
+  <message id="esf-all-samples">جميع العينات</message>
+  <message id="esf-custom-samples">عينات مخصصة</message>
+  <message id="esf-custom-samples-tt">أدخل رقم العينة التي تريد عرضها هنا. يمكنك إدخال نطاق من أرقام العينات مثل '33-39' أو '33 to 39'، أو أرقام عينات CSV مثل '34,39,84'</message>
+  <message id="esf-filter-detectors">تصفية أجهزة الكشف</message>
+  
+  <!-- Options section -->
+  <message id="esf-options">الخيارات</message>
+  <message id="esf-sum-to-single-record">جمع في سجل واحد</message>
+  <message id="esf-sum-to-single-record-tt">سيتم جمع جميع العينات و/أو أجهزة الكشف المحددة معًا في طيف واحد.<br />تحذير: إذا كان لديك كل من الأمامي والخلفية محددين، فسيتم جمعهما معًا.</message>
+  
+  <message id="esf-sum-fore-to-single-record">جمع الأمامي في سجل واحد</message>
+  <message id="esf-sum-fore-to-single-record-tt">هناك إما أرقام عينات متعددة، أو أجهزة كشف متعددة تشكل الأمامي المعروض؛ تحديد هذا الخيار سيجمع كل هذه في طيف واحد في ملف الإخراج.</message>
+  
+  <message id="esf-sum-back-to-single-record">جمع الخلفية في سجل واحد</message>
+  <message id="esf-sum-back-to-single-record-tt">هناك إما أرقام عينات متعددة، أو أجهزة كشف متعددة تشكل الخلفية المعروضة؛ تحديد هذا الخيار سيجمع كل هذه في طيف واحد في ملف الإخراج.</message>
+  
+  <message id="esf-sum-sec-to-single-record">جمع الثانوي في سجل واحد</message>
+  
+  <message id="esf-background-subtract">طرح الخلفية</message>
+  <message id="esf-background-subtract-tt">سيكون طيف الإخراج هو الأمامي، ناقصًا الخلفية.</message>
+  
+  <message id="esf-sum-det-per-sample">جمع أجهزة الكشف لكل عينة</message>
+  <message id="esf-sum-det-per-sample-tt">لكل رقم عينة، جمع جميع أجهزة الكشف لرقم العينة ذلك معًا.<br />مثلاً، إذا كان لديك 8 أجهزة كشف في ملف الطيف، كل منها بـ 120 عينة، فستكون النتائج تحتوي على 120 طيفًا، كل منها هو مجموع 8 أجهزة كشف للعينات المعنية.</message>
+  
+  <message id="esf-sum-samples-per-det">جمع العينات لكل جهاز كشف</message>
+  <message id="esf-sum-samples-per-det-tt">لكل جهاز كشف، يجمع جميع أرقام العينات معًا.<br />مثلاً، إذا كان لديك 8 أجهزة كشف في ملف الطيف، كل منها بـ 120 عينة، فستكون النتائج تحتوي على 8 أطياف، كل منها هو مجموع 120 عينة لأجهزة الكشف المعنية.</message>
+  
+  <message id="esf-remove-interspec-info">إزالة معلومات InterSpec</message>
+  <message id="esf-remove-interspec-info-tt">إزالة استجابة الكاشف والقمم ونتائج التحليل الأخرى التي قد تكون أضفتها في InterSpec.</message>
+  
+  <message id="esf-remove-gps">إزالة GPS</message>
+  
+  <!-- Status text -->
+  <message id="esf-not-applicable">غير قابل للتطبيق</message>
+  <message id="esf-none-available">لا يوجد متاح</message>
+  
+  <!-- Buttons -->
+  <message id="esf-export">تصدير</message>
+  <message id="esf-show-qr-code">عرض رمز QR</message>
+  
+  <!-- File info table headers -->
+  <message id="esf-displayed-as">معروض كـ</message>
+  <message id="esf-fore-abbrev">أمامي</message>
+  <message id="esf-back-abbrev">خلفية</message>
+  <message id="esf-sec-abbrev">ثانوي</message>
+  
+  <!-- QR Code dialog -->
+  <message id="esf-next-qr-code">رمز QR التالي</message>
+  <message id="esf-url-link">رابط URL</message>
+  <message id="esf-email-link">رابط البريد الإلكتروني</message>
+  
+  <!-- Error dialogs -->
+  <message id="esf-error-title">خطأ</message>
+  <message id="esf-qr-encode-failed">فشل في عرض الطيف كرمز QR: {1}</message>
+  
+  <!-- Pluralized messages -->
+  <message id="esf-disp-sample">
+    <plural case="0">عينة&nbsp;معروضة</plural>
+    <plural case="1">عينات&nbsp;معروضة</plural>
+  </message>
+  
+  <!-- Table headers -->
+  <message id="esf-start-time">وقت البداية</message>
+  <message id="esf-end-time">وقت النهاية</message>
+  <message id="esf-first-sample">أول عينة</message>
+  <message id="esf-last-sample">آخر عينة</message>
+  <message id="esf-num-samples">عدد العينات</message>
+  <message id="esf-neut-dets">كواشف نيوترونية</message>
+  <message id="esf-gamma-dets">كواشف غاما</message>
+  <message id="esf-num-dets">عدد الكواشف</message>
+  <message id="esf-latitude">خط العرض</message>
+  <message id="esf-longitude">خط الطول</message>
+  <message id="esf-total-time">الوقت الإجمالي</message>
+  <message id="esf-sum-gamma">مجموع غاما</message>
+  <message id="esf-sum-neut">مجموع نيوترون</message>
+  <message id="esf-manufacturer">الصانع</message>
+  <message id="esf-model">الطراز</message>
+  <message id="esf-serial">الرقم التسلسلي</message>
+</messages>

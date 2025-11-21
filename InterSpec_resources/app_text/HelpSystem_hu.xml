@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- hw- is short for HelpWindow
+  -->
+  <message id="hw-welcome-link">Üdvözlő...</message>
+  <message id="hw-tutorials-link">Oktatóanyagok és használati tippek</message>
+  <message id="hw-err-opening-xml">Súgó oldal nem található</message>
+  <message id="hw-err-opening-json">Nem sikerült megnyitni a súgó JSON fájlt itt: '{1}'.</message>
+  <message id="hw-search-empty-text">Keresés</message>
+</messages>

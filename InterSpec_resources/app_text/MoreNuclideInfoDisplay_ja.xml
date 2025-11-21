@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- mnid- is short for MoreNuclideInfoDisplay -->
+  <message id="mnid-show-decay-chain">崩壊チェーン表示</message>
+  <message id="mnid-show-decays-through">崩壊経路表示</message>
+</messages>

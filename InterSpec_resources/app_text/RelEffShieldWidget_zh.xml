@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- resw- is short for RelEffShieldWidget
+  -->
+  <message id="resw-self-atten-title">自衰减</message>
+  <message id="resw-ext-atten-title">外部衰减</message>
+  <message id="resw-thickness-label">厚度</message>
+  <message id="resw-atomic-number-label">原子序数</message>
+  <message id="resw-areal-density-label">面密度</message>
+  <message id="resw-material-frame-label">材料</message>
+  <message id="resw-generic-frame-label">通用</message>
+  <message id="resw-areal-density-placeholder">g/cm²</message>
+</messages>
+

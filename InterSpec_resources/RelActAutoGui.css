@@ -16,7 +16,68 @@
   flex-wrap: nowrap;
 }
 
-.RelActAutoGui .UpperStack
+.RelActAutoGui .RelActAutoOptions
+{
+  margin-top: 5px;
+  margin-bottom: 5px;
+  margin-left: 5px;
+  margin-right: 5px;
+  
+  border: 1px solid #e1e1e1;
+  padding: 2px;
+
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+}
+
+.RelActAutoGui .RelEffCurveOptions
+{
+  height: 100%;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 8px;
+  
+  align-items: center;
+  /* justify-content: space-between; */
+
+  /* --- Container Query Setup --- */
+  container-type: inline-size;
+  container-name: rel-eff-curve-opt-container;
+}
+
+.RelActAutoGui .RelEffCurveOptions .RelEffCurveName
+{
+  margin-left: 5px;
+  font-style: italic;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  width: 60px;
+}
+
+.RelActAutoGui .RelEffCurveOptions .RelEffCurveName input
+{
+  width: 55px;
+}
+
+
+.RelActAutoGui .EqnTypeDiv,
+.RelActAutoGui .EqnOrderDiv,
+.RelActAutoGui .PuCorrDiv
+{
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 5px;
+}
+
+
+.RelActAutoGui .UpperStack,
+.RelActAutoGui .RelEffCurveOptsStack
 {
   flex: 1 1 auto;
   height: 100%;
@@ -27,7 +88,17 @@
   height: 100%;
 }
 
-.RelActAutoGui .UpperMenu
+.RelActAutoGui .RelActTxtResults
+{
+  /* Let this text be selectable so user can copy/paste. */
+  user-select: auto;
+  -moz-user-select: auto;
+  -webkit-user-select: auto;
+}
+
+.RelActAutoGui .UpperMenu,
+.RelActAutoGui .RelEffCurveOptsMenu,
+.RelActAutoGui .RelEffNuclidesMenu
 {
   padding-left: 2px;
   padding-right:2px;
@@ -39,7 +110,9 @@
 
 
 
-.RelActAutoGui .UpperMenu a
+.RelActAutoGui .UpperMenu a,
+.RelActAutoGui .RelEffCurveOptsMenu a,
+.RelActAutoGui .RelEffNuclidesMenu a
 {
   /*
    padding-left: 10px;
@@ -48,14 +121,18 @@
 }
 
 
-.RelActAutoGui ul.UpperMenu
+.RelActAutoGui ul.UpperMenu,
+.RelActAutoGui ul.RelEffCurveOptsMenu,
+.RelActAutoGui ul.RelEffNuclidesMenu
 {
   padding-inline-start: 0px;
   list-style-type: none;
   max-width: 40px;
 }
 
-.RelActAutoGui ul.UpperMenu li
+
+.RelActAutoGui ul.UpperMenu li,
+.RelActAutoGui ul.RelEffCurveOptsMenu li
 {
   display: inline-block;
   -webkit-writing-mode: vertical-lr;
@@ -64,8 +141,15 @@
   transform: scale(-1, -1);
   white-space: nowrap;
   height: 50px;
-  
+
   font-weight: bold;
+}
+
+
+.RelActAutoGui ul.UpperMenu li,
+.RelActAutoGui ul.RelEffCurveOptsMenu li,
+.RelActAutoGui ul.RelEffNuclidesMenu li
+{
   padding-top: 4px;
   padding-bottom: 4px;
   padding-left: 4px;
@@ -79,32 +163,101 @@
   text-align: center;
 }
 
+.RelActAutoGui ul.RelEffCurveOptsMenu
+{
+  max-width: 60px;
+  margin-block-start: 5px;
+  margin-block-end: 5px;
+}
+.RelActAutoGui ul.RelEffCurveOptsMenu li
+{
+  width: 15px;
+  height: 35px;
+  font-weight: normal;
+  font-size: 10px;
+  padding-left: 0px;
+  padding-right: 1px;
+}
+
+
+.RelActAutoGui ul.RelEffNuclidesMenu
+{
+  margin-block-start: 5px;
+  margin-block-end: 5px;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 5px;
+  align-items: center;
+
+  padding-top: 0px;
+  padding-bottom: 0px;
+  margin-top: 0px;
+  margin-bottom: 0px;
+}
+
+.RelActAutoGui ul.RelEffNuclidesMenu li
+{
+  padding-top: 1px;
+  width: 50px;
+  font-weight: normal;
+  font-size: 10px;
+  font-weight: normal;
+  padding-top: 1px;
+padding-bottom: 1px;
+}
+
 
 .RelActAutoGui .PresetsRow
 {
-  margin-top: 10px;
+  margin-top: 5px;
   margin-bottom: 5px;
   margin-left: 5px;
   padding-left: 3px;
+
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 5px;
+  padding-left: 5px;
 }
 
-.RelActAutoGui .PresetsRow > label
+.RelActAutoGui .RelActAutoSpacer
 {
-  margin-right: 5px;
+  flex: 1 1 auto;
 }
 
+.RelActAutoGui .RelActAutoUserNote
+{
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  font-size: 10px;
+  font-weight: normal;
+  margin-left: 5px;
+
+  flex: 1 5 auto;
+}
 
 .RelActAutoGui .RelActAutoErrMsg,
 .RelActAutoGui .RelActAutoStatusMsg,
 .RelActAutoGui .RelActAutoChi2Msg
 {
-  float: right;
-  display: inline-block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  /* Let this text be selectable so user can copy/paste. */
+  user-select: auto;
+  -moz-user-select: auto;
+  -webkit-user-select: auto;
 }
 
 .RelActAutoGui .RelActAutoErrMsg
 {
-  color: red;
+  flex: 1 1 auto;
+  color: #ff6600; /* dark orange */
 }
 
 .RelActAutoGui .RelActAutoChi2Msg
@@ -133,38 +286,60 @@
 }
 
 
-
-.RelActAutoGui .RelActAutoOptions
+.RelActAutoGui .RelActAutoGeneralOptionsRow
 {
-  margin-top: 5px;
-  margin-bottom: 5px;
-  margin-left: 5px;
-  margin-right: 5px;
+  display: flex;
+  flex-direction: row;
   
   border: 1px solid #e1e1e1;
   padding: 2px;
-  
-  display: grid;
-  
-  column-gap: 5px;
-  row-gap: 5px;
-  justify-items: start;
+
+  gap: 5px;
   align-items: center;
-  justify-content: start;
-  
-  position: relative;
+  justify-content: space-between;
+
+  padding-top: 5px;
+  padding-bottom: 5px;
+  padding-left: 5px;
+  padding-right: 5px;
+
+  flex-wrap: wrap;
 }
 
-.RelActAutoGui .RelActAutoOptions > label
+
+.RelActAutoGui .RelActAutoFwhmEstDiv, 
+.RelActAutoGui .RelActAutoFwhmFormDiv,
+.RelActAutoGui .RelActAutoSkewDiv,
+.RelActAutoGui .RelActAutoAddUncertDiv
 {
-  margin-left: 10px;
-  justify-self: end;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 5px;
+  align-items: center;
 }
+
+
+.RelActAutoGui .RelEffCurveOptsStack
+{ 
+  height: 70px;
+}
+
+.RelActAutoGui .RelEffCurveOptions .AddDelRelEffDiv
+{
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: bottom;
+  gap: 2px;
+}
+
+
 
 .RelActAutoGui .PhysicalModelOpts
 {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   flex-wrap: nowrap;
   
   /* flex: 1 1 auto; */
@@ -181,21 +356,54 @@
   gap: 10px;
 }
 
+.RelActAutoGui .RelEffCurveOptions .RelEffEqnTxt
+{
+  font-size: 8px;
+  font-style: italic;
+  text-align: center;
+  
+  flex: 1 1 auto;
+}
+
+/* We will hide Rel. Eff. curve display text, unless our display is really wide... this is a hack, for the moment */
+@container rel-eff-curve-opt-container (max-width: 1300px) {
+  .RelActAutoGui .RelEffCurveOptions .RelEffEqnTxt {
+    font-size: 0px;
+  }
+}
+
 .RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow
 {
   display: flex;
-  flex-direction: row;
-  gap: 10px;
+  flex-direction: column;
+  justify-content: space-evenly;
+  transform: scale(0.85);
 }
 
 .RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow > .DetectorDisplay
 {
-  transform: scale(0.66);
 }
 
-.RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow .UseCorrFcnCb
+.RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow .PhysOptionCbDiv
 {
-  font-size: x-small;
+  display: grid;
+  /*
+  display: flex;
+  flex-direction: row;
+  justify-content: start;
+  align-items: center;
+   */
+}
+
+.RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow .PhysOptionCb
+{
+  font-size: small;
+  /*padding-left: 40px;*/
+  transform: scale(0.80);
+}
+
+.RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow > label
+{
 }
 
 .RelActAutoGui .MoreMenuIcon,
@@ -248,8 +456,29 @@
   display: flex;
   flex-direction: column;
   flex-wrap: nowrap;
+
+  padding-top: 0px; /* The legend takes care of top padding */
+
+  border: 1px solid #e1e1e1;
 }
 
+.RelActAutoGui .NuclidesHolder legend
+{
+  width: 8ex;
+  white-space: nowrap;
+}
+
+.RelActAutoGui .EnergiesHolder legend
+{
+  width: 14ex;
+  white-space: nowrap;
+}
+
+.RelActAutoGui .FreePeaksHolder legend
+{
+  width: 10ex;
+  white-space: nowrap;
+}
 
 .RelActAutoGui .FreePeaksHolder
 {
@@ -266,13 +495,25 @@
 }
 
 
-.RelActAutoGui .EnergyNucContent
+.RelActAutoGui .RelEffNuclidesStack
 {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  overflow-y: auto;
+  
   flex: 1 1 auto;
   
   border: 1px solid #e1e1e1;
+}
+
+.RelActAutoGui .EnergyNucContent
+{
+  flex: 1 1 auto;
   overflow-x: auto;
   overflow-y: auto;
+
+  border: 1px solid #e1e1e1;
 }
 
 .RelActAutoGui .EnergyNucFooter
@@ -280,12 +521,23 @@
   border-left: 1px solid #e1e1e1;
   border-right: 1px solid #e1e1e1;
   border-bottom: 1px solid #e1e1e1;
+  display: flex;
+  padding-right: 5px;
+  align-items: center;
+  gap: 5px;
 }
 
+.RelActAutoGui .EnergyNucFooter .SameZAgeCb
+{
+  
+}
 
 .RelActAutoGui .AddEnergyRangeOrNuc, .RelActAutoGui .AddEnergyRangeOrNuc:hover,
 .RelActAutoGui .DeleteEnergyRangeOrNuc, .RelActAutoGui .DeleteEnergyRangeOrNuc:hover,
-.RelActAutoGui .ToIndividualRois, .RelActAutoGui .ToIndividualRois:hover
+.RelActAutoGui .ToIndividualRois, .RelActAutoGui .ToIndividualRois:hover,
+.RelActAutoGui .AddRelEffCurve, .RelActAutoGui .AddRelEffCurve:hover,
+.RelActAutoGui .DelRelEffCurve, .RelActAutoGui .DelRelEffCurve:hover,
+.RelActAutoGui .SortEneRanges, .RelActAutoGui .SortEneRanges:hover
 {
   opacity: 0.6;
   
@@ -299,12 +551,28 @@
   height: 21px;
 }
 
+.RelActAutoGui .SortEneRanges
+{
+  opacity: 0.35; /* Looks to thick, compared to rest of lines otherwise. */
+}
+
 .RelActAutoGui .AddEnergyRangeOrNuc:hover,
 .RelActAutoGui .DeleteEnergyRangeOrNuc:hover,
-.RelActAutoGui .ToIndividualRois:hover
+.RelActAutoGui .ToIndividualRois:hover,
+.RelActAutoGui .AddRelEffCurve:hover,
+.RelActAutoGui .DelRelEffCurve:hover,
+.RelActAutoGui .SortEneRanges:hover
 {
   opacity: 1.0;
 }
+
+
+.RelActAutoGui .AddRelEffCurve,
+.RelActAutoGui .DelRelEffCurve
+{
+  align-self: flex-end;
+}
+
 
 .RelActAutoGui .ToIndividualRois,
 .RelActAutoGui .ToIndividualRois:hover
@@ -337,9 +605,6 @@
 {
   font-size: 80%;
   height: 21px;
-  float: right;
-  margin-right: 5px;
-  margin-top: 2px;
 }
 
 .RelActAutoGui .DeleteEnergyRangeOrNuc,
@@ -348,34 +613,44 @@
   justify-self: end;
 }
 
+.RelActAutoGui .SortEneRanges.Ascend
+{
+
+}
+
+.RelActAutoGui .SortEneRanges.Decend
+{
+  transform: scaleY(-1);
+}
+
 
 .RelActAutoGuiContextMenu
 {
   
 }
 
-.RelActAutoEnergyRange > label
+.RelActAutoGuiEnergyRange > label
 {
   justify-self: end;
 }
 
 
-.RelActAutoGui .RelActAutoEnergyRange,
-.RelActAutoGui .RelActAutoNuclide,
-.RelActAutoGui .RelActFreePeak
+.RelActAutoGui .RelActAutoGuiEnergyRange,
+.RelActAutoGui .RelActAutoGuiNuclide,
+.RelActAutoGui .RelActAutoGuiFreePeak
 {
   border: 1px solid #e1e1e1;
   margin: 5px;
   padding: 5px;
 }
 
-.RelActAutoGui .RelActFreePeak > input
+.RelActAutoGui .RelActAutoGuiFreePeak > input
 {
   width: 55px;
   /* justify-self: stretch; */
 }
 
-.RelActAutoGui .RelActAutoEnergyRange
+.RelActAutoGui .RelActAutoGuiEnergyRange
 {
   display: grid;
   
@@ -388,51 +663,127 @@
 }
 
 
-.RelActAutoEnergyRange > input
+.RelActAutoGuiEnergyRange > input
 {
-  width: 8ex;
+  width: 9ex;
 }
 
 
-.RelActAutoGui .RelActAutoNuclide
+.RelActAutoGui .RelActAutoGuiNuclide
 {
-  padding-left: 0px;
+  padding-left: 5px;
+  padding-right: 5px;
   
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 5px;
+}
+
+.RelActAutoGui .RelActAutoGuiNuclide .RelActAutoGuiNuclideAgeContainer
+{
   display: flex;
   flex-direction: row;
   flex-wrap: nowrap;
   align-items: center;
+  padding-left: 5px;
+  gap: 5px;
 }
 
-
-.RelActAutoGui .RelActAutoNuclide > label
+.RelActAutoGui .RelActAutoGuiNuclide .RelActAutoGuiNuclideSummaryText
 {
-  margin-left: 10px;
-}
-
-
-.RelActAutoGui .RelActAutoNuclide > input[type="text"]
-{
-  margin-right: 5px;
+  font-size: 10px;
+  overflow: hidden;
   margin-left: 5px;
-  width: 8ex;
-}
-
-
-.RelActAutoGui .RelActAutoNuclide > input[type="color"]
-{
-  margin-right: 5px;
-}
-
-
-.RelActAutoNuclide .RelActAutoNuclideSpacer
-{
   flex: 1 1 auto;
+
+  /* Let this text be selectable so user can copy/paste. */
+  user-select: auto;
+  -moz-user-select: auto;
+  -webkit-user-select: auto;
+}
+
+.RelActAutoGui .RelActAutoGuiNuclide .RelActAutGuiNuclideColorSelect
+{
+  width: 35px;
+}
+
+.RelActAutoGui .RelActAutoGuiNuclide .UpperRow,
+.RelActAutoGui .RelActAutoGuiNuclide .LowerRow
+{
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 5px;
+  height: 25px;
+}
+
+.RelActAutoGui .RelActAutoGuiNuclide .LowerRow
+{
+  font-size: 11px;
+  height: 20px;
+}
+
+.RelActAutoGui .RelActAutoGuiNuclide .AddConstraintBtn
+{
+  width: 285px;
+  font-weight: normal;
+  text-align: left;
+}
+
+.RelActAutoGui .RelActAutoGuiNuclide .RelActAutoGuiNuclideConstraint
+{
+  display: flex;
+  flex-direction: row;
+  width: 285px;
   align-items: center;
 }
 
+.RelActAutoGui .RelActAutoGuiNuclide .RelActAutoGuiNuclideConstraint .DeleteEnergyRangeOrNuc.Wt-icon
+{
+  height: 20px;
+}
 
-.RelActAutoGui .RelActFreePeak
+.RelActAutoGui .RelActAutoGuiNuclide .RelActAutoGuiNuclideConstraint .DeleteEnergyRangeOrNuc.Wt-icon img
+{
+  height: 12px;
+}
+
+.RelActAutoGui .RelActAutoGuiNuclide .NucAgeRangeContainer
+{
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  padding-left: 5px;
+  gap: 5px;
+}
+
+.RelActAutoGui .RelActAutoGuiNuclide .NucAgeRangeContainer > input
+{
+  width: 55px;
+  margin-right: 5px;
+}
+
+.RelActAutoGui .RelActAutoGuiNuclideConstraint .ConstraintInputDiv
+{
+  margin-left: 5px;
+
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.RelActAutoGui .RelActAutoGuiNuclideConstraint .ConstraintInputDiv > label
+{
+  margin-left: 5px;
+}
+
+
+.RelActAutoGui .RelActAutoGuiFreePeak
 {
   display: grid;
   
@@ -443,7 +794,7 @@
   justify-content: start;
 }
 
-.RelActAutoGui RelActFreePeak .FreePeakConstrain
+.RelActAutoGui RelActAutoGuiFreePeak .FreePeakConstrain
 {
   /* justify-self: end; */
   margin-left: 10px;

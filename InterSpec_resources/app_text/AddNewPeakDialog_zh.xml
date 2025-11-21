@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- anpd is short for AddNewPeakDialog -->
+  <message id="anpd-dialog-add-peak-title">添加峰</message>
+  <message id="anpd-err-no-foreground">必须加载前景谱才能添加峰。</message>
+  <message id="anpd-err-no-foreground-1">无前景谱</message>
+  <message id="anpd-peak-mean">峰值均值</message>
+  <message id="anpd-peak-fwhm">峰半高宽</message>
+  <message id="anpd-peak-amp">峰幅度</message>
+  <message id="anpd-roi-lower">ROI下限</message>
+  <message id="anpd-roi-upper">ROI上限</message>
+  <message id="anpd-tt-more-adv">需要更多高级选项，请在添加后查看<em>峰编辑器</em>。</message>
+  <message id="anpd-screen-to-small">屏幕太小无法预览。</message>
+  <message id="anpd-err-preview">预览渲染错误</message>
+  <message id="anpd-err-fit-failed">拟合失败。</message>
+  <message id="anpd-associate-with">关联{1}</message>
+</messages>
+

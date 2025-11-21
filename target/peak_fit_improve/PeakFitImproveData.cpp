@@ -279,7 +279,7 @@ InjectSourceInfo parse_inject_source_files( const string &base_name )
 
   auto spec_file = make_shared<SpecUtils::SpecFile>();
   const bool loaded_pcf = spec_file->load_pcf_file( pcf_filename );
-  assert( loaded_pcf );
+  //assert( loaded_pcf );
   if( !loaded_pcf )
     throw runtime_error( "failed to load " + pcf_filename );
 
@@ -370,9 +370,12 @@ InjectSourceInfo parse_inject_source_files( const string &base_name )
 std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_data_with_truth_info(
                                                                         const std::string &base_dir,
                                                                         const std::vector<std::string> &wanted_detectors,
-                                                                        const std::vector<std::string> &live_times )
+                                                                        const std::vector<std::string> &live_times,
+                                                                        const std::vector<std::string> &wanted_cities )
 {
   vector<DetectorInjectSet> inject_sets;
+
+  std::mutex input_srcs_mutex;
   vector<DataSrcInfo> input_srcs;
   vector<bool> used_detector( wanted_detectors.size(), false ), used_live_times( live_times.size(), false );
 
@@ -412,7 +415,8 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
       const boost::filesystem::path city_path = city_itr->path();
       cout << "In city directory: " << city_path.filename() << endl;
 
-      if( city_path.filename() != "Livermore" )
+      const auto wanted_pos = std::find(begin(wanted_cities), end(wanted_cities), city_path.filename() );
+      if( !wanted_cities.empty() && (wanted_pos == end(wanted_cities)) )
       {
         cout << "Skipping city " << city_itr->path().filename() << endl;
         continue;
@@ -499,7 +503,6 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
         const size_t num_srcs = files_to_load_basenames.size();
 
         inject_sets.push_back( DetectorInjectSet{} );
-
         DetectorInjectSet &injects = inject_sets.back();
         injects.detector_name = detector_path.filename().string();
         injects.location_name = city_path.filename().string();
@@ -514,182 +517,230 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
           const string base_name = files_to_load_basenames[file_index];
 
           pool.post( [info,base_name](){
-            *info = PeakFitImproveData::parse_inject_source_files( base_name );
+            try
+            {
+              *info = PeakFitImproveData::parse_inject_source_files( base_name );
+            }catch( std::exception &e )
+            {
+              //Baltimore/1800_seconds/Re188_Sh.pcf doesnt load
+              cerr << "Failed to load file: " << e.what() << endl;
+            }
           } );
         }//for( loop over files to parse )
 
         pool.join();
 
-        // A smoke check to make sure nothing got messed up
+        //injects.source_infos.erase( std::remove_if( begin(injects.source_infos), end(injects.source_infos),
+        // []( const InjectSourceInfo &info ){
+        //  return !info.spec_file;
+        //}), end(injects.source_infos) );
+
+        // A smoke check to make sure nothing got messed up - let 5 files not parse though
         assert( injects.source_infos.size() == num_srcs );
+        size_t num_sucess = 0;
         for( size_t index = 0; index < num_srcs; ++index )
         {
+          if( !injects.source_infos[index].spec_file )
+            continue;
+
           assert( !injects.source_infos[index].source_lines.empty() );
           assert( !injects.source_infos[index].background_lines.empty() );
           assert( injects.source_infos[index].file_base_path == files_to_load_basenames[index] );
           assert( !injects.source_infos[index].src_spectra.empty() );
           assert( injects.source_infos[index].src_spectra[0]->title() == SpecUtils::filename(files_to_load_basenames[index]) );
-        }//for( size_t index = 0; index < injects.source_infos.size(); ++index )
 
-        cout << "Parsed " << injects.source_infos.size() << " sources" << endl;
+          num_sucess += 1;
+        }//for( size_t index = 0; index < injects.source_infos.size(); ++index )
+        assert( (num_sucess + 5) >= num_srcs );
+
+        cout << "Parsed " << num_sucess << " sources" << endl;
       }//for( loop over live-time directories, livetime_itr )
     }//for( loop over cities, city_itr )
   }//for( loop over detector types )
 
-  size_t num_inputs = 0, num_accepted_inputs = 0;
+  std::atomic<size_t> num_inputs = 0, num_accepted_inputs = 0;
+
+  size_t num_queued = 0;
+  SpecUtilsAsync::ThreadPool pool;
   for( const DetectorInjectSet &inject_set : inject_sets )
   {
     for( const InjectSourceInfo &info : inject_set.source_infos )
     {
-      // For the moment, we'll look for visible lines on the first Poisson varied source
-      //cout << "For " << inject_set.detector_name << "/"
-      //<< inject_set.live_time_name << "/" << inject_set.location_name
-      //<< " source " << info.src_name << ": ";
-      //cout << "For '" << info.file_base_path << "':" << endl;
+      const auto create_DataSrcInfo = [&num_inputs, &num_accepted_inputs, &inject_set, &input_srcs_mutex, &input_srcs]( const InjectSourceInfo &info ){
+        // For the moment, we'll look for visible lines on the first Poisson varied source
+        //cout << "For " << inject_set.detector_name << "/"
+        //<< inject_set.live_time_name << "/" << inject_set.location_name
+        //<< " source " << info.src_name << ": ";
+        //cout << "For '" << info.file_base_path << "':" << endl;
 
-      num_inputs += 1;
+        num_inputs += 1;
 
-      // The "truth" lines are all before random-summing, so the observed peaks will be smaller
-      //  in area than the truth CSV says, but if we keep dead-time low, this wont be noticeable.
-      //  Right now have chosen 2%, fairly arbitrarily
-      //  For EX-100
-      //   1%: Lose 14 out of 223 files
-      //   2%: Lose  8 out of 223 files
-      //   5%: Lose  4 out of 223 files
-      //  10%: Lose  4 out of 223 files
+        // The "truth" lines are all before random-summing, so the observed peaks will be smaller
+        //  in area than the truth CSV says, but if we keep dead-time low, this wont be noticeable.
+        //  Right now have chosen 2%, fairly arbitrarily
+        //  For EX-100
+        //   1%: Lose 14 out of 223 files
+        //   2%: Lose  8 out of 223 files
+        //   5%: Lose  4 out of 223 files
+        //  10%: Lose  4 out of 223 files
 
-//#if( !RETURN_PeakDef_Candidates )
+        if( !info.spec_file || !info.src_no_poisson || info.src_spectra.empty() || !info.short_background )
+        {
+          cerr << "load_inject_data_with_truth_info: Skipping '" << info.src_name << "' - as it looks like it didnt read in" << endl;
+          return;
+        }
+
+        //#if( !RETURN_PeakDef_Candidates )
 #if( !WRITE_ALL_SPEC_TO_HTML )
 #warning "Only using <2% dead-time files"
-      if( info.src_no_poisson->live_time() < 0.98*info.src_no_poisson->real_time() )
-      {
-        continue;
-      }
+        if( info.src_no_poisson->live_time() < 0.98*info.src_no_poisson->real_time() )
+        {
+          return;
+        }
 #endif //#if( !WRITE_ALL_SPEC_TO_HTML )
-//#else
-//#warning "Using all Live-Times for peak search"
-//#endif
+        //#else
+        //#warning "Using all Live-Times for peak search"
+        //#endif
 
-      const shared_ptr<const SpecUtils::Measurement> meas = info.src_spectra[0];
-      vector<PeakTruthInfo> lines = info.source_lines;
-      lines.insert( end(lines), begin(info.background_lines), end(info.background_lines) );
+        const shared_ptr<const SpecUtils::Measurement> meas = info.src_spectra[0];
+        vector<PeakTruthInfo> lines = info.source_lines;
+        lines.insert( end(lines), begin(info.background_lines), end(info.background_lines) );
 
-      //for( const PeakTruthInfo &line : lines )
-      //  cout << "Source line: " << line.energy << " keV, area=" << line.area << endl;
+        //for( const PeakTruthInfo &line : lines )
+        //  cout << "Source line: " << line.energy << " keV, area=" << line.area << endl;
 
-      /**
-       - Sort lines from largest area to smallest.
-       - cluster, using `~0.75*FWHM`
-       - See what is hit, and whats not
-       */
+        /**
+         - Sort lines from largest area to smallest.
+         - cluster, using `~0.75*FWHM`
+         - See what is hit, and whats not
+         */
 
-      std::sort( begin(lines), end(lines), []( const PeakTruthInfo &lhs, const PeakTruthInfo &rhs ){
-        return (lhs.area < rhs.area);
-      } );
+        std::sort( begin(lines), end(lines), []( const PeakTruthInfo &lhs, const PeakTruthInfo &rhs ){
+          return (lhs.area < rhs.area);
+        } );
 
 
-      const double cluster_fwhm_multiple = 0.5;
-      vector<vector<PeakTruthInfo>> clustered_lines;
-      while( !lines.empty() )
-      {
-        const PeakTruthInfo main_line = std::move( lines.back() );
-        lines.resize( lines.size() - 1 ); //remove the line we just grabbed
-
-        vector<PeakTruthInfo> cluster;
-        cluster.push_back( main_line );
-
-        // Look all through `lines` for lines within `cluster_fwhm_multiple` of main_line
-        deque<size_t> index_to_remove;
-        for( size_t i = 0; i < lines.size(); ++i )
+        const double cluster_fwhm_multiple = 0.5;
+        vector<vector<PeakTruthInfo>> clustered_lines;
+        while( !lines.empty() )
         {
-          if( fabs(lines[i].energy - main_line.energy) < cluster_fwhm_multiple*main_line.fwhm )
+          const PeakTruthInfo main_line = std::move( lines.back() );
+          lines.resize( lines.size() - 1 ); //remove the line we just grabbed
+
+          vector<PeakTruthInfo> cluster;
+          cluster.push_back( main_line );
+
+          // Look all through `lines` for lines within `cluster_fwhm_multiple` of main_line
+          deque<size_t> index_to_remove;
+          for( size_t i = 0; i < lines.size(); ++i )
           {
-            index_to_remove.push_back( i );
-            cluster.push_back( lines[i] );
+            if( fabs(lines[i].energy - main_line.energy) < cluster_fwhm_multiple*main_line.fwhm )
+            {
+              index_to_remove.push_back( i );
+              cluster.push_back( lines[i] );
+            }
+          }//for( loop over lines to cluster )
+
+          for( auto iter = std::rbegin(index_to_remove); iter != std::rend(index_to_remove); ++iter )
+          {
+            //          cout << "Removing " << *iter << ", which has energy " << lines[*iter].energy
+            //          << ", main line=" << main_line.energy << endl;
+            lines.erase( begin(lines) + (*iter) );
           }
-        }//for( loop over lines to cluster )
 
-        for( auto iter = std::rbegin(index_to_remove); iter != std::rend(index_to_remove); ++iter )
+          clustered_lines.push_back( cluster );
+        }//while( !lines.empty() )
+
+
+
+        vector<ExpectedPhotopeakInfo> detectable_clusters;
+        for( const vector<PeakTruthInfo> &cluster : clustered_lines )
         {
-//          cout << "Removing " << *iter << ", which has energy " << lines[*iter].energy
-//          << ", main line=" << main_line.energy << endl;
-          lines.erase( begin(lines) + (*iter) );
-        }
 
-        clustered_lines.push_back( cluster );
-      }//while( !lines.empty() )
+          assert( !cluster.empty() );
+          if( cluster.empty() )
+            continue;
+
+          const PeakTruthInfo &main_line = cluster.front();
+          if( (main_line.area < 5.0)  // Let be realistic, and require something
+             || (fabs(main_line.energy - 478.0) < 1.2)  // Avoid Alpha-Li reaction
+             || (fabs(main_line.energy - 511.0) < 1.0 ) // Avoid D.B. 511
+             // Shouldn't there be some other broadened reaction lines here???
+             || ((main_line.energy + 0.5*main_line.full_width) > info.src_no_poisson->gamma_energy_max()) // Make sure not off upper-end
+             || ((main_line.energy - 0.5*main_line.full_width) < info.src_no_poisson->gamma_energy_min()) // Make sure not below lower-end
+             || ((main_line.energy - 0.5*main_line.full_width) < 50.0) //eh, kinda arbitrary, maybe shouldnt limit?
+             )
+          {
+            continue;
+          }
+
+          ExpectedPhotopeakInfo roi_info = PeakFitImproveData::create_expected_photopeak( info, cluster );
+
+          if( (roi_info.peak_area > JudgmentFactors::min_truth_peak_area)
+             && (roi_info.nsigma_over_background > JudgmentFactors::min_truth_nsigma) )
+            detectable_clusters.push_back( std::move(roi_info) );
+        }//for( const vector<PeakTruthInfo> &cluster : clustered_lines )
+
+        std::sort( begin(detectable_clusters), end(detectable_clusters),
+                  []( const ExpectedPhotopeakInfo &lhs, const ExpectedPhotopeakInfo &rhs ) -> bool {
+          return lhs.effective_energy < rhs.effective_energy;
+        } );
+
+        if( PeakFitImprove::debug_printout )
+        {
+          /*
+           for( const ExpectedPhotopeakInfo &roi_info : detectable_clusters )
+           {
+           cout << "Expected ROI: {energy: " << roi_info.effective_energy
+           << ", fwhm: " << roi_info.gamma_lines.front().fwhm
+           << ", PeakArea: " << roi_info.peak_area
+           << ", ContinuumArea: " << roi_info.continuum_area
+           << ", NSigma: " << roi_info.nsigma_over_background
+           << ", ROI: [" << roi_info.roi_lower << ", " << roi_info.roi_upper << "]"
+           << "}"
+           << endl;
+
+           //cout << "cluster: {";
+           //for( const auto &c : cluster )
+           //  cout << "{" << c.energy << "," << c.area << "}, ";
+           //cout << "}" << endl;
+           }//for( const ExpectedPhotopeakInfo &roi_info : detectable_clusters )
+           */
+        }//if( PeakFitImprove::debug_printout )
 
 
+        if( !detectable_clusters.empty() )
+        {
+          num_accepted_inputs += 1;
+          DataSrcInfo src_info;
+          src_info.detector_name = inject_set.detector_name;
+          src_info.location_name = inject_set.location_name;
+          src_info.live_time_name = inject_set.live_time_name;
 
-      vector<ExpectedPhotopeakInfo> detectable_clusters;
-      for( const vector<PeakTruthInfo> &cluster : clustered_lines )
+          src_info.src_info = info;
+          src_info.expected_photopeaks = detectable_clusters;
+
+          std::lock_guard<std::mutex> lock( input_srcs_mutex );
+
+          input_srcs.push_back( src_info );
+        }//if( !detectable_clusters.empty() )
+      };//create_DataSrcInfo lambda
+
+      num_queued += 1;
+      if( num_queued > 100 )
       {
+        pool.join();
+        num_queued = 0;
+      }
 
-        assert( !cluster.empty() );
-        if( cluster.empty() )
-          continue;
-
-        const PeakTruthInfo &main_line = cluster.front();
-        if( (main_line.area < 5.0)  // Let be realistic, and require something
-           || (fabs(main_line.energy - 478.0) < 1.2)  // Avoid Alpha-Li reaction
-           || (fabs(main_line.energy - 511.0) < 1.0 ) // Avoid D.B. 511
-              // Shouldn't there be some other broadened reaction lines here???
-           || ((main_line.energy + 0.5*main_line.full_width) > info.src_no_poisson->gamma_energy_max()) // Make sure not off upper-end
-           || ((main_line.energy - 0.5*main_line.full_width) < info.src_no_poisson->gamma_energy_min()) // Make sure not below lower-end
-           || ((main_line.energy - 0.5*main_line.full_width) < 50.0) //eh, kinda arbitrary, maybe shouldnt limit?
-           )
-        {
-          continue;
-        }
-
-        ExpectedPhotopeakInfo roi_info = PeakFitImproveData::create_expected_photopeak( info, cluster );
-
-        if( (roi_info.peak_area > JudgmentFactors::min_truth_peak_area)
-           && (roi_info.nsigma_over_background > JudgmentFactors::min_truth_nsigma) )
-          detectable_clusters.push_back( std::move(roi_info) );
-      }//for( const vector<PeakTruthInfo> &cluster : clustered_lines )
-
-      std::sort( begin(detectable_clusters), end(detectable_clusters),
-                []( const ExpectedPhotopeakInfo &lhs, const ExpectedPhotopeakInfo &rhs ) -> bool {
-        return lhs.effective_energy < rhs.effective_energy;
+      pool.post( [&](){
+        create_DataSrcInfo( info );
       } );
-
-      if( PeakFitImprove::debug_printout )
-      {
-        for( const ExpectedPhotopeakInfo &roi_info : detectable_clusters )
-        {
-          cout << "Expected ROI: {energy: " << roi_info.effective_energy
-          << ", fwhm: " << roi_info.gamma_lines.front().fwhm
-          << ", PeakArea: " << roi_info.peak_area
-          << ", ContinuumArea: " << roi_info.continuum_area
-          << ", NSigma: " << roi_info.nsigma_over_background
-          << ", ROI: [" << roi_info.roi_lower << ", " << roi_info.roi_upper << "]"
-          << "}"
-          << endl;
-
-          //cout << "cluster: {";
-          //for( const auto &c : cluster )
-          //  cout << "{" << c.energy << "," << c.area << "}, ";
-          //cout << "}" << endl;
-        }//for( const ExpectedPhotopeakInfo &roi_info : detectable_clusters )
-      }//if( PeakFitImprove::debug_printout )
-
-
-      if( !detectable_clusters.empty() )
-      {
-        num_accepted_inputs += 1;
-        DataSrcInfo src_info;
-        src_info.detector_name = inject_set.detector_name;
-        src_info.location_name = inject_set.location_name;
-        src_info.live_time_name = inject_set.live_time_name;
-
-        src_info.src_info = info;
-        src_info.expected_photopeaks = detectable_clusters;
-
-        input_srcs.push_back( src_info );
-      }//if( !detectable_clusters.empty() )
-    }//for( const InjectSourceInfo &src : source_infos )
+    }//for( const InjectSourceInfo &info : source_infos )
   }//for( const DetectorInjectSet &inject_set : inject_sets )
+
+  pool.join();
+
 
   for( size_t i = 0; i < wanted_detectors.size(); ++i )
   {
@@ -709,7 +760,9 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
     }
   }
 
-  cout << "Used " << num_accepted_inputs << " of total " << num_inputs << " input files." << endl;
+  cout << "Used " << num_accepted_inputs.load() << " of total " << num_inputs.load() << " input files." << endl;
+
+  std::lock_guard<std::mutex> lock( input_srcs_mutex ); //dont really need, I dont think
 
   return tuple<vector<DetectorInjectSet>,vector<DataSrcInfo>>{ std::move(inject_sets), std::move(input_srcs) };
 }//std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_data_with_truth_info( )

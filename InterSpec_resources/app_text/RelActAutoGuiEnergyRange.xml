@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raager- is short for RelActAutoGuiEnergyRange -->
+  
+  <!-- Labels -->
+  <message id="raager-lower-energy">Lower Energy</message>
+  <message id="raager-upper-energy">Upper Energy</message>
+  <message id="raager-continuum-type">Continuum Type:</message>
+  
+  <!-- Checkboxes -->
+  <message id="raager-force-full-range">Force full-range</message>
+  
+  <!-- Tooltips -->
+  <message id="raager-split-to-individual-rois-tt">Converts this energy range into individual ROIs, based on which gammas should be grouped together vs apart (e.g., leaves gammas with overlapping peaks in a single ROI, while if two gammas are far apart, they will be split into seperate ROIs.</message>
+  
+</messages>

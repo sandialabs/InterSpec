@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- uiw- is short for UseInfoWindow -->
+
+  <!-- Button text -->
+  <message id="uiw-load-btn">लोड करें</message>
+
+  <!-- File handling -->
+  <message id="uiw-file-too-large"><![CDATA[<span style="color: red;">फ़ाइल बहुत बड़ी है।</span>]]></message>
+
+  <!-- Cheat sheet -->
+  <message id="uiw-cheat-sheet">चीट शीट (PDF)</message>
+  <message id="uiw-cheat-sheet-desc">क्रियाओं, शॉर्टकट कुंजियों और समस्या निवारण को त्वरित रूप से संदर्भित करने के लिए इस चीट शीट (PDF प्रारूप) को प्रिंट करें।</message>
+
+  <!-- Settings -->
+  <message id="uiw-show-at-start-cb">जब कोई स्पेक्ट्रा नहीं तो प्रारंभ में दिखाएं</message>
+
+  <!-- Tooltips -->
+  <message id="uiw-back-to-top">शीर्ष पर वापस</message>
+
+  <!-- Error messages -->
+  <message id="uiw-error-loading-faq">FAQ विषय लोड करने में त्रुटि: {1}</message>
+
+  <!-- Welcome messages - Mobile -->
+  <message id="uiw-mobile-start-example"><![CDATA[आप नीचे उदाहरण स्पेक्ट्रा खोलकर शुरू कर सकते हैं, या आप बाहरी फ़ाइलें लोड करने के लिए <em>स्पेक्ट्रा आयात करें</em> टैब का उपयोग कर सकते हैं।<br />]]></message>
+  <message id="uiw-mobile-saved-spectra"><![CDATA[<p>आपके पहले सहेजे गए स्पेक्ट्रा नीचे दिखाए गए हैं। आप उदाहरण स्पेक्ट्रा खोलने के लिए, या बाहरी स्पेक्ट्रल फ़ाइलें आयात करने के लिए अन्य टैब का उपयोग कर सकते हैं।<br />आप ईमेल, या क्लाउड स्टोरेज ऐप से जुड़े स्पेक्ट्रा भी खोल सकते हैं।</p>]]></message>
+  <message id="uiw-mobile-select-example"><![CDATA[<p>आप नीचे एक उदाहरण स्पेक्ट्रम फ़ाइल चुन सकते हैं, या अपने iCloud, Dropbox, Google Drive, आदि से एक खोलने के लिए आयात टैब का उपयोग कर सकते हैं।<br />आप ईमेल से जुड़ी स्पेक्ट्रम फ़ाइलें भी खोल सकते हैं।</p>]]></message>
+
+  <!-- Welcome messages - Desktop -->
+  <message id="uiw-desktop-welcome-title"><![CDATA[<h1 align="center"><code>InterSpec</code> में आपका स्वागत है</h1><div align="left">]]></message>
+  <message id="uiw-desktop-welcome-text"><![CDATA[<p>आप <code>InterSpec</code> से अधिक परिचित होने के लिए बाईं ओर के संदर्भों का उपयोग कर सकते हैं, या आप नीचे पिछले सत्र या स्पेक्ट्रम से उठा सकते हैं।]]></message>
+  <message id="uiw-desktop-drag-drop"><![CDATA[ वैकल्पिक रूप से, आप अपनी स्वयं की स्पेक्ट्रम फ़ाइल को <code>InterSpec</code> पर ड्रैग और ड्रॉप भी कर सकते हैं।</p>]]></message>
+
+  <!-- Mobile postscript -->
+  <message id="uiw-mobile-phone-postscript"><![CDATA[<p>चार्ट के साथ इंटरैक्ट करने और शिखरों के लिए फिटिंग की मूल बातें के लिए बाईं ओर <img src="InterSpec_resources/images/phone_tips.png" width=12 height=12 alt="information icon" class="WhiteIcon" /> आइकन पर टैप करें। <code>InterSpec</code> के उपकरणों और सुविधाओं के बारे में विस्तृत जानकारी के लिए <img src="InterSpec_resources/images/help_mobile.svg" width=12 height=12 alt="help icon" class="WhiteIcon" /> आइकन टैप करें।</p>]]></message>
+  <message id="uiw-mobile-tablet-postscript"><![CDATA[<p>चार्ट के साथ इंटरैक्ट करने और शिखरों के लिए फिटिंग की मूल बातें के लिए बाईं ओर <b>उपयोग जानकारी</b> बटन पर टैप करें। <code>InterSpec</code> के उपकरणों और सुविधाओं के बारे में विस्तृत जानकारी के लिए <img src="InterSpec_resources/images/help_mobile.svg" width=12 height=12 alt="help icon" class="WhiteIcon" /> आइकन टैप करें।</p>]]></message>
+
+  <!-- File import instructions -->
+  <message id="uiw-tap-choose-file"><![CDATA[<p>आप जिस फ़ाइल को खोलना चाहते हैं उसे ब्राउज़ करने के लिए <em>फ़ाइल चुनें</em> टैप करें।</p>]]></message>
+  <message id="uiw-open-file-instructions"><![CDATA[<p>आप इस स्क्रीन से बाहर निकलने के बाद <code>InterSpec</code> उप मेनू में <em>फ़ाइल खोलें</em> का चयन करके भी स्पेक्ट्रा फ़ाइलें खोल सकते हैं।<br />ईमेल अटैचमेंट के लिए, या <code>Files</code>, <code>Dropbox</code>, <code>Google Drive</code>, आदि जैसे ऐप में फ़ाइलों के लिए, आप "Copy To InterSpec" का चयन करके <code>InterSpec</code> में स्पेक्ट्रा फ़ाइलें खोल सकते हैं</p>]]></message>
+
+  <!-- Tab titles -->
+  <message id="uiw-tab-saved-states">सहेजी गई स्थितियां</message>
+  <message id="uiw-tab-example-spectra">उदाहरण स्पेक्ट्रा</message>
+  <message id="uiw-tab-import-spectra">स्पेक्ट्रा आयात करें</message>
+
+  <!-- Welcome section -->
+  <message id="uiw-welcome">स्वागत है</message>
+  <message id="uiw-controls">नियंत्रण</message>
+
+  <!-- Anchor links -->
+  <message id="uiw-license-and-terms">लाइसेंस और शर्तें</message>
+  <message id="uiw-more-info">अधिक गहन जानकारी</message>
+</messages>

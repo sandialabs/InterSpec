@@ -48,6 +48,7 @@
 #include <Wt/WGridLayout>
 #include <Wt/WApplication>
 #include <Wt/WEnvironment>
+#include <Wt/WCssStyleSheet>
 #include <Wt/WContainerWidget>
 
 #if( PROMPT_USER_BEFORE_LOADING_PREVIOUS_STATE )
@@ -124,7 +125,8 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
   :  WApplication( env ),
     m_viewer( 0 ),
     m_layout( nullptr ),
-    m_lastAccessTime( std::chrono::steady_clock::now() ),
+    m_startTime( std::chrono::steady_clock::now() ),
+    m_lastAccessTime( m_startTime ),
     m_activeTimeInSession{ std::chrono::seconds(0) },
     m_activeTimeSinceDbUpdate{ std::chrono::seconds(0) },
     m_hotkeySignal( domRoot(), "hotkey", false )
@@ -453,8 +455,12 @@ void InterSpecApp::setupDomEnvironment()
     wApp->useStyleSheet( "InterSpec_resources/DrfSelect.css" );
     wApp->useStyleSheet( "InterSpec_resources/SimpleDialog.css" );
     wApp->useStyleSheet( "InterSpec_resources/DbFileBrowser.css" );
+    wApp->useStyleSheet( "InterSpec_resources/BatchGuiWidget.css" );
     wApp->useStyleSheet( "InterSpec_resources/ExportSpecFile.css" );
     wApp->useStyleSheet( "InterSpec_resources/GammaCountDialog.css" );
+    wApp->useStyleSheet( "InterSpec_resources/RefSpectraWidget.css" );
+    wApp->useStyleSheet( "InterSpec_resources/BatchGuiAnaWidget.css" );
+    wApp->useStyleSheet( "InterSpec_resources/BatchGuiInputFile.css" );
     wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
     wApp->useStyleSheet( "InterSpec_resources/MoreNuclideInfoDisplay.css" );
     // anything else relevant?
@@ -510,14 +516,28 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     delete m_viewer;
     m_viewer = nullptr;
   }
-  
+
   if( m_layout )
   {
     delete m_layout;
     root()->clear();
   }
-  
-  
+
+
+#if( BUILD_AS_OSX_APP )
+  // Inject JavaScript to catch errors, that the objective-c will then recieve.
+  const string jsErrorCode = "window.onerror = function(message, source, lineno, colno, error) {\n"
+  "if(message.includes('ResizeObserver') || message.includes('V(a).curve')) return true;\n" // Suppress these specific errors; returning true prevents the error from being logged
+  "  console.error( 'JS Error:', message, ', from source:', source, ', lineno:', lineno, ', error:', error );\n"
+  "  window.webkit.messageHandlers.jsErrorHandler.postMessage({\n"
+  "    message: message, source: source, lineno: lineno, colno: colno, error: error ? error.toString() : null\n"
+  "  });\n"
+  "};";
+
+  doJavaScript( jsErrorCode );
+#endif // #if( BUILD_AS_OSX_APP )
+
+
   try
   {
     m_viewer = new InterSpec();
@@ -791,7 +811,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
 #endif
       }else
       {
-        Wt::log("error") << "Could not load previously saved state.";
+        Wt::log("info") << "No previous state to load.";
       }
     }//if(  saveState )
   }catch( std::exception &e )
@@ -1044,6 +1064,11 @@ InterSpec *InterSpecApp::viewer()
 }//InterSpec* viewer()
 
 
+std::chrono::steady_clock::time_point InterSpecApp::startTime() const
+{
+  return m_startTime;
+}
+
 std::chrono::steady_clock::time_point::duration InterSpecApp::activeTimeInCurrentSession() const
 {
   return m_activeTimeInSession;
@@ -1285,6 +1310,10 @@ void InterSpecApp::prepareForEndOfSession()
   if( !m_viewer || !m_viewer->user() )
     return;
 
+#if( BUILD_AS_UNIT_TEST_SUITE )
+  return;
+#endif
+  
   updateUsageTimeToDb();
   
   const chrono::milliseconds nmilli = chrono::duration_cast<chrono::milliseconds>(m_activeTimeInSession);
@@ -1608,13 +1637,46 @@ const set<string> &InterSpecApp::languagesAvailable()
 }//vector<string> languagesAvailable();
 
 
+void InterSpecApp::setGlobalCssRule( const std::string &rulename,
+                                     const std::string &selector,
+                                     const std::string &declarations )
+{
+  WCssStyleSheet &style = styleSheet();
+
+  // Remove old rule if it exists
+  if( m_globalD3SpectrumCssRules.count(rulename) )
+  {
+    style.removeRule( m_globalD3SpectrumCssRules[rulename] );
+    m_globalD3SpectrumCssRules.erase( rulename );
+  }
+
+  // Add new rule
+  m_globalD3SpectrumCssRules[rulename] = style.addRule( selector, declarations, rulename );
+}//void setGlobalCssRule(...)
+
+
+bool InterSpecApp::removeGlobalCssRule( const std::string &rulename )
+{
+  if( !m_globalD3SpectrumCssRules.count(rulename) )
+    return false;
+
+  WCssStyleSheet &style = styleSheet();
+  style.removeRule( m_globalD3SpectrumCssRules[rulename] );
+  m_globalD3SpectrumCssRules.erase( rulename );
+
+  return true;
+}//bool removeGlobalCssRule(...)
+
+
 void InterSpecApp::finalize()
 {
   prepareForEndOfSession();
   
+#if( !BUILD_AS_UNIT_TEST_SUITE )
   if( m_viewer && m_viewer->user() )
     Wt::log("info") << "Have finalized session " << sessionId() << " for user "
          << m_viewer->user()->userName();
+#endif
 }//void InterSpecApp::finalize()
 
 

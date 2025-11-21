@@ -69,15 +69,12 @@ namespace CandidatePeak_GA
 std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils::Measurement> data,
                           size_t start_channel,
                           size_t end_channel,
-                          std::vector< std::tuple<float,float,float> > &results,
                           const FindCandidateSettings &settings )
 {
   // Plan:
   //  - Should we split the spectrum up into N regions?  So we can refine have fewer smoothing bins lower in energy?
   //    - For HPGe it looks like we can avoid this (but out of time to investigate)
   std::vector<PeakDef> result_peaks;
-
-  results.clear();
 
   const size_t nchannel = data->num_gamma_channels();
 
@@ -106,7 +103,7 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
 
   const vector<float> &spectrum = *data->gamma_counts();
 
-  vector<float> second_deriv, smoothed_data, coarser_data, rougher_second_deriv;
+  vector<float> second_deriv, smoothed_data, coarser_data, rougher_first_deriv, rougher_second_deriv, rougher_second_deriv_var;
 
   // Create a smoothed second order derivative; its negative-most values will correspond
   //  to peak centers
@@ -115,10 +112,15 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
   // We will smooth the data a bit, so we can sum it to help determine stat significance
   smoothSpectrum( spectrum, static_cast<int>(side_bins), 1, 0, smoothed_data );
 
+  smoothSpectrum( spectrum, 3, 3, 1, rougher_first_deriv );
+
   // We will use `rougher_second_deriv` to evaluate sigma, and ROI extents, because if
   // `side_bins`, than the predicted sigma and ROI extents will be a lot wider than
   // expected.
-  smoothSpectrum( spectrum, 3, 3, 2, rougher_second_deriv );
+  {
+    SavitzyGolayCoeffs sgcoeffs( 3, 3, 3, 2 );
+    sgcoeffs.smooth_with_variance( spectrum, rougher_second_deriv, rougher_second_deriv_var );
+  }
 
 
   //XXX: the below 1.5 is empiracally found, I'm not entirely sure where
@@ -161,6 +163,10 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
 
   for( size_t channel = start_channel; channel <= end_channel; ++channel )
   {
+    const double channel_energy = data->gamma_channel_center(channel);
+    const bool debug_channel = ((channel_energy >= PeakFitImprove::debug_lower_energy)
+                                && (channel_energy <= PeakFitImprove::debug_upper_energy));
+
     const float secondDeriv = second_deriv[channel]; //Not dividing by binwidth^2 here,
 
     bool secondSumPositive = true;
@@ -225,10 +231,6 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
       }
 
       double mean = data->gamma_channel_center(minbin);
-
-      //cout << "mean=" << mean << ", pos2ndDerivAreaSum=" << pos2ndDerivAreaSum
-      //<< ", positive2ndDataSum=" << positive2ndDataSum << ", secondsum=" << secondsum
-      //<< " - seconsumratios=" << -secondsum/pos2ndDerivAreaSum << endl;
 
       // TODO: More carefully estimate lower and upper sigma-zeros, to have sub-channel accuracy
       //       Maybe fit a tine over the surrounding two (or at least <nFluxuate) bins on either side?
@@ -299,7 +301,16 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
       // We'll take the ROI to include the first negative bins, after 2nd deriv gos positive
       size_t roi_begin_index = 0, roi_end_index = 0;
 
-      if( rougher_second_deriv[rough_index] < 0.0 )
+      bool rougher_confident_multi_roi = false;
+      const double rougher_scnd_drv = rougher_second_deriv[rough_index];
+
+      if( debug_channel )
+        cout << "Candidate: mean=" << mean << ", rougher_scnd_drv=" << rougher_scnd_drv
+        << ", minbin=" << minbin << ", firstzero=" << firstzero
+        << ", secondzero=" << secondzero << endl;
+
+
+      if( rougher_scnd_drv < 0.0 )
       {
         //size_t nFluxuate = 1; //
         size_t lower_pos_index = rough_index, upper_pos_index = rough_index;
@@ -364,15 +375,10 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
         double rough_data_area = 0.0;
         for( size_t i = lower_pos_index+1; i <= upper_pos_index-1; ++i )
           rough_data_area += smoothed_data[i];
-        const double rough_est_sigma = sqrt( std::max(rough_data_area,1.0) );
+        const double rough_est_std_dev = sqrt( std::max(rough_data_area,1.0) );
 
 
-        rougher_FOM = 0.68*rougher_amplitude / rough_est_sigma;
-
-        //cout << "mean=" << mean << " -> sigma=" << sigma
-        //<< ", rougher_sigma=" << rougher_sigma
-        //<< ", rougher_amp=" << rougher_amplitude
-        //<< ", rougher_FOM=" << rougher_FOM << endl;
+        rougher_FOM = 0.68*rougher_amplitude / rough_est_std_dev;
 
 
         // We'll take the ROI to include the first negative bins, after 2nd deriv gos positive
@@ -387,6 +393,8 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
         {
           //++tester;
           //lower_data_counts += spectrum[roi_begin_index];
+          if( (roi_begin_index > 1) && (rougher_first_deriv[roi_begin_index] < 0) && (rougher_first_deriv[roi_begin_index-1] < 0) )
+            break;
         }
         //assert( tester == (lower_pos_index - roi_begin_index) );
         //lower_data_counts /= (lower_pos_index - roi_begin_index);
@@ -396,6 +404,8 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
         {
           //++tester;
           //upper_data_counts += spectrum[roi_end_index];
+          if( ((roi_end_index + 1) < end_channel) && (rougher_first_deriv[roi_end_index] > 0.0) && (rougher_first_deriv[roi_end_index+1] > 0.0) )
+            break;
         }
         //assert( tester == (roi_end_index - upper_pos_index) );
         //upper_data_counts /= (roi_end_index - upper_pos_index);
@@ -411,7 +421,14 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
 
         //cout << "midCPC: " << mid_data_counts << ", low: " << lower_data_counts << ", up: " << upper_data_counts << endl;
 
-
+        //cout << "mean=" << mean << " -> sigma=" << sigma
+        //<< ", rougher_sigma=" << rougher_sigma
+        //<< ", rougher_amp=" << rougher_amplitude
+        //<< ", rougher_FOM=" << rougher_FOM
+        //<< ", rougher_ROI=[" << data->gamma_channel_lower(roi_begin_index) << ", " << data->gamma_channel_upper(roi_end_index) << "]"
+        //<< ", energy(lower_pos_index)=" << data->gamma_channel_lower(lower_pos_index)
+        //<< ", mean_second_deriv=" << rougher_second_deriv[data->find_gamma_channel(mean)]
+        //<< endl;
 
 
         // Sum data in rougher +-sigma range
@@ -431,9 +448,23 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
         }
 
         // TODO: There is something to do using `rougher_second_deriv` to make sure there are at least a few more negative bins between `firstzero` and `secondzero` than posivite bins, to really get rid of larger-scale features
-      }else
+      }else //if( rougher_second_deriv[minbin] < 0 )
       {
-        //cout << "mean=" << mean << " had a positive rougher 2nd deriv" << endl;
+        // If we are here, the `rougher_second_deriv` of the mean bin, is positive - indicating it is not the middle of the peak
+        //
+        // We tend to get here when:
+        //  1) It is an insignificant peak
+        //  2) Two HPGe peaks are close together, so that with the smoothing and everything, we cant resolve them
+        //
+        // We will still use the smoother second derivative to set the ROI bounds.
+        // We will check the significance of the rougher second derivative, and if at least two channels next to
+        //  each other pass a threshold of a positive value, then we its probably two peaks - in which case we will
+        //  update the `mean` and `sigma` values using the rougher second derivative, for the largest of the peaks
+        //  in the ROI.  We will NOT add more than one peak for this ROI - we will rely on later stages of peak fitting
+        //  to pick this up.
+
+        // We will use `second_deriv` to find the ROI extent - so thi
+        //  TODO: Maybe use `rougher_first_deriv` to help with this.
         roi_begin_index = firstzero;
         roi_end_index = secondzero;
 
@@ -450,6 +481,8 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
         {
         }
 
+        //cout << "1) roi_begin_index=" << data->gamma_channel_lower(roi_begin_index) << ", roi_end_index=" << data->gamma_channel_upper(roi_end_index) << endl;
+
         assert( second_deriv[roi_begin_index] >= 0.0 );
         assert( second_deriv[roi_end_index] >= 0.0 );
 
@@ -462,6 +495,110 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
         for( ; ((roi_end_index+1) < end_channel) && (second_deriv[roi_end_index] > 0.0); ++roi_end_index )
         {
         }
+
+        if( debug_channel )
+        {
+          cout << "Looking at coarser (positive) second-deriv for mean=" << mean << " - minbin=" << minbin << endl;
+          cout << "firstzero=" << data->gamma_channel_lower(firstzero) << ", secondzero=" << data->gamma_channel_upper(secondzero) << endl;
+
+          cout << "Channel, Energy, 2nd, 2nd-rough, 2nd-rough-sqrt(var)" << endl;
+          for( size_t i = roi_begin_index; i <= roi_end_index; ++i )
+          {
+            cout << i << ", " << data->gamma_channel_lower(i) << ", " << second_deriv[i] << ", " << rougher_second_deriv[i] << ", " << sqrt(rougher_second_deriv_var[i]);
+            if( i == firstzero )
+              cout << "  <-- firstzero";
+            else if( i == secondzero )
+              cout << "  <-- secondzero";
+            cout << endl;
+          }
+          cout << endl;
+        }
+
+        // If the rougher second derivative being negative is really significant, we will update mean and sigma
+        //  to match what it says (for the most significant peak in this ROI
+
+        // Make lambda to give second-derivative significance for channels relative to `minbin`
+        const auto second_deriv_sig = [minbin, &rougher_second_deriv, &rougher_second_deriv_var]( const int i ) -> double {
+          if( (minbin < i) || ((minbin + i) >= rougher_second_deriv_var.size()) || (rougher_second_deriv_var[minbin + i] <= 0.0) )
+            return 0.0;
+          return rougher_second_deriv[minbin+i]/sqrt(rougher_second_deriv_var[minbin+i]);
+        };
+
+        int num_sig_pos = 0;
+        const double second_deriv_sig_thresh = 1.0;  //This is totall arbitrary, and not vetted - just from a single ROI of a single file
+        num_sig_pos += (second_deriv_sig(-1) > second_deriv_sig_thresh);
+        num_sig_pos += (second_deriv_sig(0) > second_deriv_sig_thresh);
+        num_sig_pos += (second_deriv_sig(1) > second_deriv_sig_thresh);
+
+        const bool roi_center_is_dip = (num_sig_pos >= 2);
+
+        if( roi_center_is_dip )
+        {
+          // We will verify we can see to peaks (means) inside the ROI, and if so, set `rougher_confident_multi_roi` to
+          //  true, so we will know when we are making decisions.
+          bool peak_lower = false, peak_upper = false;
+          const double required_convex_limit = -1.5; // Totally arbitrarily chosen - not investigated - just something we are reasonably sure is the peak mea
+
+          for( size_t i = roi_begin_index; !peak_lower && (i < minbin); ++i )
+          {
+            const double val = rougher_second_deriv[i];
+            const double var = (rougher_second_deriv_var[i] > 0.0) ? sqrt(rougher_second_deriv_var[i]) : 1.0;
+            peak_lower = ((val / var) < required_convex_limit);
+          }
+
+          for( size_t i = minbin + 1; !peak_upper && (i <= roi_end_index); ++i )
+          {
+            const double val = rougher_second_deriv[i];
+            const double var = (rougher_second_deriv_var[i] > 0.0) ? sqrt(rougher_second_deriv_var[i]) : 1.0;
+            peak_upper = ((val / var) < required_convex_limit);
+          }
+
+          rougher_confident_multi_roi = (peak_lower && peak_upper);
+        }
+
+        if( roi_center_is_dip )
+        {
+          //cout << "Will update for...mean=" << mean << endl;
+
+          // Scan from `firstzero` to `secondzero` and find the most negative `rougher_second_deriv` - call this
+          size_t min_2nd_deriv_index = firstzero;
+          for( size_t i = firstzero + 1; i < secondzero; ++i )
+          {
+            if( rougher_second_deriv[i] < rougher_second_deriv[min_2nd_deriv_index] )
+              min_2nd_deriv_index = i;
+          }
+
+          size_t rough_firstzero = firstzero, rough_secondzero = secondzero;
+          for( size_t i = min_2nd_deriv_index + 1; i < secondzero; ++i )
+          {
+            if( std::signbit(rougher_second_deriv[i-1]) != std::signbit(rougher_second_deriv[i]) )
+            {
+              rough_secondzero = i;
+              break;
+            }
+          }
+
+          for( size_t i = min_2nd_deriv_index - 1; (i > 0) && (i > firstzero); ++i )
+          {
+            if( std::signbit(rougher_second_deriv[i]) != std::signbit(rougher_second_deriv[i+1]) )
+            {
+              rough_firstzero = i;
+              break;
+            }
+          }
+
+          const double rough_mean = data->gamma_channel_center(min_2nd_deriv_index);
+          const double rough_sigma = 0.5*(data->gamma_channel_center(rough_secondzero)
+                                             - data->gamma_channel_center(rough_firstzero));
+          if( rough_sigma > 0.01 )
+          {
+            mean = rough_mean;
+            sigma = rough_sigma;
+          }
+        }//if( num_sig_pos >= 2 )
+
+        if( debug_channel )
+          cout << "Coarser look updated mean=" << mean << ", sigma=" << sigma << endl;
       }//if( rougher_second_deriv can be used to better estimate sigma ) / else
 
       assert( roi_begin_index != roi_end_index );
@@ -488,23 +625,32 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
         data_area += smoothed_data[i];
 
 
-      double est_sigma = sqrt( std::max(data_area,1.0) );
+      double est_std_dev = sqrt( std::max(data_area,1.0) );
 
       //In principle we would want to use the (true) continuums area to derive
-      //  the est_sigma from, but for practical purposes I think this can give
+      //  the est_std_dev from, but for practical purposes I think this can give
       //  us false positives fairly often
 
-      const double figure_of_merit = 0.68*amplitude / est_sigma;
+      const double figure_of_merit = 0.68*amplitude / est_std_dev;
+
+      if( debug_channel )
+      {
+        cout << "Candidate mean=" << mean << ", est_std_dev=" << est_std_dev << ", amplitude=" << amplitude << ", figure_of_merit=" << figure_of_merit
+        << ", threshold_FOM=" << threshold_FOM << ", more_scrutiny_FOM_threshold=" << settings.more_scrutiny_FOM_threshold
+        << endl;
+      }
 
       bool passed_higher_scrutiny = true;
       if( figure_of_merit < settings.more_scrutiny_FOM_threshold
          && (settings.more_scrutiny_FOM_threshold >= threshold_FOM) )
       {
-        passed_higher_scrutiny = ((rougher_second_deriv[rough_index] < 0.0)
-                                  && (rougher_FOM >= settings.more_scrutiny_coarser_FOM)
-                                  );
+        //passed_higher_scrutiny = ( (rougher_scnd_drv < 0.0) && (rougher_FOM >= settings.more_scrutiny_coarser_FOM) );
 
         //rougher_amplitude
+
+        if( debug_channel && !passed_higher_scrutiny )
+          cout << "Failed higher_scrutiny: rougher_scnd_drv=" << rougher_scnd_drv << ", while rougher_FOM="
+          << rougher_FOM << " and settings.more_scrutiny_coarser_FOM=" << settings.more_scrutiny_coarser_FOM << endl;
 
         //passed_higher_scrutiny
       }//if( figure_of_merit < settings.more_scrutiny_FOM_threshold )
@@ -560,12 +706,12 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
           const double pred_chnl_nts = lower_cnts_per_chnl + ((i-roi_begin_index) + 0.5) * diff_per_chnl;
           const double dc = spectrum[i] - pred_chnl_nts;
 
-          //if( mean > 640.0 && mean < 641 )
-          //{
-          //  cout << "For energy " << mean << ", channel " << i << " has energy "
-          //  << data->gamma_channel_lower(i) << " with counts "
-          //  << spectrum[i] << " and predicted counts " << pred_chnl_nts << endl;
-          //}
+          if( debug_channel )
+          {
+            cout << "For energy " << mean << ", channel " << i << " has energy "
+            << data->gamma_channel_lower(i) << " with counts "
+            << spectrum[i] << " and predicted counts " << pred_chnl_nts << endl;
+          }
 
           const double uncert2 = std::max( (pred_chnl_nts > 0.0) ? pred_chnl_nts : static_cast<double>(spectrum[i]), 1.0 );
           const double val = dc*dc / uncert2;
@@ -578,35 +724,47 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
         chi2_dof /= (roi_end_index - roi_begin_index);
 
         if( PeakFitImprove::debug_printout )
-          cout << "Straight-line Chi2 = " << chi2_dof << " and max_chi2=" << max_chi2 << " for energy=" << mean << endl;
+        {
+          //cout << "Straight-line Chi2 = " << chi2_dof << " and max_chi2=" << max_chi2 << " for energy=" << mean << endl;
+        }
 
         //vector<double> cont_equation{0.0, 0.0};
         //PeakContinuum::eqn_from_offsets( roi_begin_index, roi_end_index, mean, data,
         //                                cont_est_channels, cont_est_channels,
         //                                cont_equation[1], cont_equation[0] );
 
-        passed_higher_scrutiny = (max_chi2 > settings.more_scrutiny_min_dev_from_line);
+        //passed_higher_scrutiny = (max_chi2 > settings.more_scrutiny_min_dev_from_line);
+
+        if( debug_channel && !passed_higher_scrutiny )
+          cout << "Failed higher_scrutiny: max_chi2=" << max_chi2 << ", while settings.more_scrutiny_min_dev_from_line="
+          << settings.more_scrutiny_min_dev_from_line << endl;
       }//if( check Chi2 of region )
 
 
+      if( (figure_of_merit < 5) && (rougher_scnd_drv >= 0.0) && !rougher_confident_multi_roi )
 
-      if( (figure_of_merit < 5) && (rougher_second_deriv[rough_index] >= 0.0) )
+        if( debug_channel ){
+          cout << "Failed higher_scrutiny: " << figure_of_merit << ", rougher_scnd_drv=" << rougher_scnd_drv
+          << ", rougher_confident_multi_roi=" << rougher_confident_multi_roi << endl;
         passed_higher_scrutiny = false;
+      }
+
+      if( debug_channel )
+        cout << "  passed_higher_scrutiny=" << passed_higher_scrutiny << ", figure_of_merit=" << figure_of_merit << ", threshold_FOM=" << threshold_FOM << endl;
 
       //const double min_required_data = settings.min_counts_per_channel*2*deriv_sigma;
 
       if( (figure_of_merit > threshold_FOM) && passed_higher_scrutiny )
       {
-        if( PeakFitImprove::debug_printout )
-          cout << "Accepted: energy=" << mean << ", FOM=" << figure_of_merit
-          << ", amp=" << amplitude << ", FWHM=" << sigma*2.35482f
-          << ", data_area=" << data_area << ", rougher_FOM=" << rougher_FOM
-          //<< ", min_required=" << min_required_data
-          << endl;
+        if( debug_channel || PeakFitImprove::debug_printout )
+        {
+           cout << "Accepted: energy=" << mean << ", FOM=" << figure_of_merit
+                << ", amp=" << amplitude << ", FWHM=" << sigma*2.35482f
+                << ", data_area=" << data_area << ", rougher_FOM=" << rougher_FOM
+                << ", ROI=[" << roi_start_energy << ", " << roi_end_energy
+                << endl;
+        }
 
-        results.push_back( std::tuple<float,float,float>{mean, sigma, amplitude} );
-
-#if( RETURN_PeakDef_Candidates )
         PeakDef peak( mean, sigma, amplitude );
         peak.continuum()->setRange( roi_start_energy, roi_end_energy );
 
@@ -619,15 +777,17 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
         peak.continuum()->setParameters( mean, cont_equation, {} );
 
         result_peaks.push_back( std::move(peak) );
-#endif
       }else
       {
-       if( PeakFitImprove::debug_printout )
-        cout << "Rejected: energy=" << mean << ", FOM=" << figure_of_merit
-        << ", amp=" << amplitude << ", FWHM=" << sigma*2.35482f
-        << ", data_area=" << data_area  << ", rougher_FOM=" << rougher_FOM
-        //<< ", min_required=" << min_required_data
-        << endl;
+        if( debug_channel || PeakFitImprove::debug_printout )
+       {
+         cout << "Rejected: energy=" << mean << ", FOM=" << figure_of_merit
+         << ", amp=" << amplitude << ", FWHM=" << sigma*2.35482f
+         << ", data_area=" << data_area  << ", rougher_FOM=" << rougher_FOM
+         << ", ROI=[" << roi_start_energy << ", " << roi_end_energy
+         << ", passed_higher_scrutiny=" << passed_higher_scrutiny
+         << endl;
+       }
       }//if( region we were just in passed_threshold )
 
       secondsum = 0.0;
@@ -691,9 +851,12 @@ tuple<double,size_t,size_t,size_t,size_t,size_t> eval_candidate_settings( const 
 
   for( const DataSrcInfo &info : input_srcs )
   {
-    vector<tuple<float,float,float>> detected_peaks; //{mean, sigma, amplitude}
     shared_ptr<const SpecUtils::Measurement> src_spectrum = info.src_info.src_spectra.front();
-    CandidatePeak_GA::find_candidate_peaks( src_spectrum, 0, 0, detected_peaks, settings );
+    const vector<PeakDef> peaks = CandidatePeak_GA::find_candidate_peaks( src_spectrum, 0, 0, settings );
+
+    vector<tuple<float,float,float>> detected_peaks; //{mean, sigma, amplitude}
+    for( const PeakDef &p : peaks )
+      detected_peaks.emplace_back( p.mean(), p.sigma(), p.amplitude() );
 
     const vector<tuple<float,float,float>> orig_peak_candidates = detected_peaks;
 
@@ -1106,6 +1269,9 @@ CandidatePeakSolution mutate(
 {
   CandidatePeakSolution X_new;
   const double mu = 0.2*shrink_scale; // mutation radius (adjustable)
+
+  const double mutate_threshold = PeakFitImprove::sm_ga_mutate_threshold;
+
   bool in_range;
 
   size_t num_tries = 0;
@@ -1131,44 +1297,68 @@ CandidatePeakSolution mutate(
     in_range = true;
     X_new = X_base;
 
-    X_new.num_smooth_side_channels += shrink_scale*(rnd01()-rnd01()); //not multiplying by `mu`, because we can get stuck in a single int
+    if( rnd01() > mutate_threshold )
+      X_new.num_smooth_side_channels += shrink_scale*(rnd01()-rnd01()); //not multiplying by `mu`, because we can get stuck in a single int
     //in_range=in_range&&(X_new.num_smooth_side_channels>=2 && X_new.num_smooth_side_channels<15);
-    X_new.num_smooth_side_channels = std::max( X_new.num_smooth_side_channels, 6 );
-    X_new.num_smooth_side_channels = std::min( X_new.num_smooth_side_channels, 13 );
-    in_range=in_range&&(X_new.num_smooth_side_channels>=6 && X_new.num_smooth_side_channels<=13);
+    if( rnd01() > mutate_threshold )
+      X_new.num_smooth_side_channels = std::max( X_new.num_smooth_side_channels, 6 );
+    if( rnd01() > mutate_threshold )
+    {
+      X_new.num_smooth_side_channels = std::min( X_new.num_smooth_side_channels, 13 );
+      in_range=in_range&&(X_new.num_smooth_side_channels>=6 && X_new.num_smooth_side_channels<=13);
+    }
 
     //X_new.smooth_polynomial_order+=mu*(rnd01()-rnd01()); //This is an int we could get stuck in...
     //in_range=in_range&&(X_new.smooth_polynomial_order>=2 && X_new.smooth_polynomial_order<3);
 
-    X_new.threshold_FOM += mu * (rnd01() - rnd01());
-    //in_range=in_range&&(X_new.threshold_FOM>=0.75 && X_new.threshold_FOM<3.5);
-    in_range=in_range&&(X_new.threshold_FOM>=0.75 && X_new.threshold_FOM<=2);
+    if( rnd01() > mutate_threshold )
+    {
+      X_new.threshold_FOM += mu * (rnd01() - rnd01());
+      //in_range=in_range&&(X_new.threshold_FOM>=0.75 && X_new.threshold_FOM<3.5);
+      in_range=in_range&&(X_new.threshold_FOM>=0.75 && X_new.threshold_FOM<=2);
+    }
 
-    X_new.more_scrutiny_FOM_threshold_delta += mu*(rnd01() - rnd01());
-    //in_range=in_range&&(X_new.more_scrutiny_FOM_threshold_delta>=-0.5 && X_new.more_scrutiny_FOM_threshold_delta<3.5);
-    in_range=in_range&&(X_new.more_scrutiny_FOM_threshold_delta>=-0.1 && X_new.more_scrutiny_FOM_threshold_delta<=2);
+    if( rnd01() > mutate_threshold )
+    {
+      X_new.more_scrutiny_FOM_threshold_delta += mu*(rnd01() - rnd01());
+      //in_range=in_range&&(X_new.more_scrutiny_FOM_threshold_delta>=-0.5 && X_new.more_scrutiny_FOM_threshold_delta<3.5);
+      in_range=in_range&&(X_new.more_scrutiny_FOM_threshold_delta>=-0.1 && X_new.more_scrutiny_FOM_threshold_delta<=2);
+    }
 
-    X_new.pos_sum_threshold_sf += 0.05 * mu * (rnd01() - rnd01()); //mu*(rnd01() - rnd01());
-    //in_range=in_range&&(X_new.pos_sum_threshold_sf>=-0.1 && X_new.pos_sum_threshold_sf<0.1);
-    in_range=in_range&&(X_new.pos_sum_threshold_sf>=-0.15 && X_new.pos_sum_threshold_sf<=0.15);
+    if( rnd01() > mutate_threshold )
+    {
+      X_new.pos_sum_threshold_sf += 0.05 * mu * (rnd01() - rnd01()); //mu*(rnd01() - rnd01());
+      //in_range=in_range&&(X_new.pos_sum_threshold_sf>=-0.1 && X_new.pos_sum_threshold_sf<0.1);
+      in_range=in_range&&(X_new.pos_sum_threshold_sf>=-0.15 && X_new.pos_sum_threshold_sf<=0.15);
+    }
 
     //X_new.num_chan_fluctuate+=mu*(rnd01()-rnd01());  //THis is an int we could get stuck in...
     //in_range=in_range&&(X_new.num_chan_fluctuate>=1 && X_new.num_chan_fluctuate<4);
 
-    X_new.more_scrutiny_coarser_FOM_delta += mu*(rnd01() - rnd01());
-    //in_range=in_range&&(X_new.more_scrutiny_coarser_FOM_delta>=-0.1 && X_new.more_scrutiny_coarser_FOM_delta<5);
-    in_range=in_range&&(X_new.more_scrutiny_coarser_FOM_delta>=-0.1 && X_new.more_scrutiny_coarser_FOM_delta<4);
+    if( rnd01() > mutate_threshold )
+    {
+      X_new.more_scrutiny_coarser_FOM_delta += mu*(rnd01() - rnd01());
+      //in_range=in_range&&(X_new.more_scrutiny_coarser_FOM_delta>=-0.1 && X_new.more_scrutiny_coarser_FOM_delta<5);
+      in_range=in_range&&(X_new.more_scrutiny_coarser_FOM_delta>=-0.1 && X_new.more_scrutiny_coarser_FOM_delta<4);
+    }
 
-    X_new.more_scrutiny_min_dev_from_line += 2 * mu*(rnd01()-rnd01());
-    //in_range=in_range&&(X_new.more_scrutiny_min_dev_from_line>=0.0 && X_new.more_scrutiny_min_dev_from_line<10.0);
-    in_range=in_range&&(X_new.more_scrutiny_min_dev_from_line>=0.0 && X_new.more_scrutiny_min_dev_from_line<7.0);
+    if( rnd01() > mutate_threshold )
+    {
+      X_new.more_scrutiny_min_dev_from_line += 2 * mu*(rnd01()-rnd01());
+      //in_range=in_range&&(X_new.more_scrutiny_min_dev_from_line>=0.0 && X_new.more_scrutiny_min_dev_from_line<10.0);
+      in_range=in_range&&(X_new.more_scrutiny_min_dev_from_line>=0.0 && X_new.more_scrutiny_min_dev_from_line<7.0);
+    }
 
-    X_new.amp_to_apply_line_test_below += 5 * mu*(rnd01()-rnd01());
-    X_new.amp_to_apply_line_test_below = std::max( X_new.amp_to_apply_line_test_below, 0 );
-    X_new.amp_to_apply_line_test_below = std::min( X_new.amp_to_apply_line_test_below, 100 );
-    in_range=in_range&&(X_new.amp_to_apply_line_test_below>=0.0 && X_new.amp_to_apply_line_test_below<=100);
-    //in_range=in_range&&(X_new.amp_to_apply_line_test_below>=0.0 && X_new.amp_to_apply_line_test_below<=75);
-
+    if( rnd01() > mutate_threshold )
+      X_new.amp_to_apply_line_test_below += 5 * mu*(rnd01()-rnd01());
+    if( rnd01() > mutate_threshold )
+      X_new.amp_to_apply_line_test_below = std::max( X_new.amp_to_apply_line_test_below, 0 );
+    if( rnd01() > mutate_threshold )
+    {
+      X_new.amp_to_apply_line_test_below = std::min( X_new.amp_to_apply_line_test_below, 100 );
+      in_range=in_range&&(X_new.amp_to_apply_line_test_below>=0.0 && X_new.amp_to_apply_line_test_below<=100);
+      //in_range=in_range&&(X_new.amp_to_apply_line_test_below>=0.0 && X_new.amp_to_apply_line_test_below<=75);
+    }
   } while(!in_range);
   return X_new;
 }
@@ -1179,38 +1369,96 @@ CandidatePeakSolution crossover(
     const CandidatePeakSolution& X2,
     const std::function<double(void)> &rnd01)
 {
-  CandidatePeakSolution X_new;
+  const double crossover_threshold = PeakFitImprove::sm_ga_crossover_threshold;
+
+
+  CandidatePeakSolution X_new = X1;
+
 
   double r;
-  r=rnd01();
-  X_new.num_smooth_side_channels=r*X1.num_smooth_side_channels+(1.0-r)*X2.num_smooth_side_channels;
-  //X_new.num_smooth_side_channels = X1.num_smooth_side_channels;
+  if( rnd01() < crossover_threshold )
+  {
+    r=rnd01();
+    X_new.num_smooth_side_channels=r*X1.num_smooth_side_channels+(1.0-r)*X2.num_smooth_side_channels;
+    //X_new.num_smooth_side_channels = X1.num_smooth_side_channels;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.num_smooth_side_channels = X2.num_smooth_side_channels;
+  }
 
-  r=rnd01();
-  //X_new.smooth_polynomial_order=r*X1.smooth_polynomial_order+(1.0-r)*X2.smooth_polynomial_order;
-  X_new.smooth_polynomial_order = X1.smooth_polynomial_order;
+  if( rnd01() < crossover_threshold )
+  {
+    r=rnd01();
+    //X_new.smooth_polynomial_order=r*X1.smooth_polynomial_order+(1.0-r)*X2.smooth_polynomial_order;
+    X_new.smooth_polynomial_order = X1.smooth_polynomial_order;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.smooth_polynomial_order = X2.smooth_polynomial_order;
+  }
 
-  r=rnd01();
-  X_new.threshold_FOM=r*X1.threshold_FOM+(1.0-r)*X2.threshold_FOM;
+  if( rnd01() < crossover_threshold )
+  {
+    r=rnd01();
+    X_new.threshold_FOM=r*X1.threshold_FOM+(1.0-r)*X2.threshold_FOM;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.threshold_FOM = X2.threshold_FOM;
+  }
 
-  r=rnd01();
-  X_new.more_scrutiny_FOM_threshold_delta=r*X1.more_scrutiny_FOM_threshold_delta+(1.0-r)*X2.more_scrutiny_FOM_threshold_delta;
+  if( rnd01() < crossover_threshold )
+  {
+    r=rnd01();
+    X_new.more_scrutiny_FOM_threshold_delta=r*X1.more_scrutiny_FOM_threshold_delta+(1.0-r)*X2.more_scrutiny_FOM_threshold_delta;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.more_scrutiny_FOM_threshold_delta = X2.more_scrutiny_FOM_threshold_delta;
+  }
 
-  r=rnd01();
-  X_new.pos_sum_threshold_sf=r*X1.pos_sum_threshold_sf+(1.0-r)*X2.pos_sum_threshold_sf;
+  if( rnd01() < crossover_threshold )
+  {
+    r=rnd01();
+    X_new.pos_sum_threshold_sf=r*X1.pos_sum_threshold_sf+(1.0-r)*X2.pos_sum_threshold_sf;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.pos_sum_threshold_sf = X2.pos_sum_threshold_sf;
+  }
 
-  r=rnd01();
-  //X_new.num_chan_fluctuate=r*X1.num_chan_fluctuate+(1.0-r)*X2.num_chan_fluctuate;
-  X_new.num_chan_fluctuate = X1.num_chan_fluctuate;
+  if( rnd01() < crossover_threshold )
+  {
+    r=rnd01();
+    //X_new.num_chan_fluctuate=r*X1.num_chan_fluctuate+(1.0-r)*X2.num_chan_fluctuate;
+    X_new.num_chan_fluctuate = X1.num_chan_fluctuate;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.num_chan_fluctuate = X2.num_chan_fluctuate;
+  }
 
-  r=rnd01();
-  X_new.more_scrutiny_coarser_FOM_delta=r*X1.more_scrutiny_coarser_FOM_delta+(1.0-r)*X2.more_scrutiny_coarser_FOM_delta;
+  if( rnd01() < crossover_threshold )
+  {
+    r=rnd01();
+    X_new.more_scrutiny_coarser_FOM_delta=r*X1.more_scrutiny_coarser_FOM_delta+(1.0-r)*X2.more_scrutiny_coarser_FOM_delta;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.more_scrutiny_coarser_FOM_delta = X2.more_scrutiny_coarser_FOM_delta;
+  }
 
-  r=rnd01();
-  X_new.more_scrutiny_min_dev_from_line=r*X1.more_scrutiny_min_dev_from_line+(1.0-r)*X2.more_scrutiny_min_dev_from_line;
+  if( rnd01() < crossover_threshold )
+  {
+    r=rnd01();
+    X_new.more_scrutiny_min_dev_from_line=r*X1.more_scrutiny_min_dev_from_line+(1.0-r)*X2.more_scrutiny_min_dev_from_line;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.more_scrutiny_min_dev_from_line = X2.more_scrutiny_min_dev_from_line;
+  }
 
-  r=rnd01();
-  X_new.amp_to_apply_line_test_below=r*X1.amp_to_apply_line_test_below+(1.0-r)*X2.amp_to_apply_line_test_below;
+  if( rnd01() < crossover_threshold )
+  {
+    r=rnd01();
+    X_new.amp_to_apply_line_test_below=r*X1.amp_to_apply_line_test_below+(1.0-r)*X2.amp_to_apply_line_test_below;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.amp_to_apply_line_test_below = X2.amp_to_apply_line_test_below;
+  }
 
   return X_new;
 }
@@ -1265,14 +1513,6 @@ FindCandidateSettings do_ga_eval( std::function<double(const FindCandidateSettin
 
   sm_has_been_called = true;
 
-  assert( !RETURN_PeakDef_Candidates ); //dont want to do a static_assert - since I am still compiling all this code both ways...
-  if( RETURN_PeakDef_Candidates )
-  {
-    cerr << "Please change 'RETURN_PeakDef_Candidates' to false and recompile (for efficiency)." << endl;
-    exit(1);
-  }
-
-
   assert( !!ga_eval_fcn );
   if( !ga_eval_fcn )
     throw runtime_error( "Invalid eval function passed in." );
@@ -1292,19 +1532,19 @@ FindCandidateSettings do_ga_eval( std::function<double(const FindCandidateSettin
   ga_obj.idle_delay_us=1; // switch between threads quickly
   ga_obj.dynamic_threading = true; //If false,  thread responsibilities are divided at the beginning
   ga_obj.verbose=false;
-  ga_obj.population=1000;
-  ga_obj.generation_max=1000;
+  ga_obj.population = static_cast<unsigned int>(PeakFitImprove::sm_ga_population);
+  ga_obj.generation_max = static_cast<int>(PeakFitImprove::sm_ga_generation_max);
   ga_obj.calculate_SO_total_fitness=calculate_SO_total_fitness;
   ga_obj.init_genes=init_genes;
   ga_obj.eval_solution=eval_solution;
   ga_obj.mutate=mutate;
   ga_obj.crossover=crossover;
   ga_obj.SO_report_generation=SO_report_generation;
-  ga_obj.crossover_fraction=0.7;
-  ga_obj.mutation_rate=0.2;
-  ga_obj.best_stall_max=10;
-  ga_obj.elite_count=10;
-  ga_obj.N_threads = 8; //Keep some free cores on my M1 max so I can still use the computer
+  ga_obj.crossover_fraction=PeakFitImprove::sm_ga_crossover_fraction;
+  ga_obj.mutation_rate=PeakFitImprove::sm_ga_mutation_rate;
+  ga_obj.best_stall_max = static_cast<int>(PeakFitImprove::sm_ga_best_stall_max);
+  ga_obj.elite_count = static_cast<int>(PeakFitImprove::sm_ga_elite_count);
+  ga_obj.N_threads = static_cast<int>(PeakFitImprove::sm_num_optimization_threads);
   EA::StopReason stop_reason = ga_obj.solve();
 
   cout << "Stop reason was: " << ga_obj.stop_reason_to_string( stop_reason) << endl;

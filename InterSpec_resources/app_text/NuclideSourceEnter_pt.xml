@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+    <message id="dcw-tt-nuc-edit">ex. <b>U235</b>, <b>235 Uranium</b>, <b>U-235m</b> (estado meta-estável), <b>Cs137</b>, etc.</message>
+    <message id="dcw-tt-age-edit">
+      <div>
+        A idade pode ser especificada usando uma combinação de unidades de tempo,
+        similar a '<b>5.3y 8d 22m</b>' ou em meias-vidas como
+        '<b>2.5 HL</b>'.
+      </div>
+      <br />
+      <div>
+        A idade não afeta a atividade do nuclídeo inserido, apenas afeta a quantidade
+        de crescimento de progênie (ou seja, altera apenas atividades de progênie, não atividade do nuclídeo pai)
+        - a atividade que você inseriu será sempre usada para o nuclídeo pai que você inseriu, não
+        importa a idade.
+      </div>
+      <br />
+      <div>
+        Unidades de tempo aceitáveis: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>,
+        <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, ou
+        você pode especificar período de tempo por <b>hh:mm:ss</b>.
+      </div>
+      <div>Unidades de meia-vida ou períodos de tempo não podem ser misturados com outras unidades.</div>
+      <div>
+        Quando múltiplos períodos de tempo são especificados, eles são somados, ex. '1y6months 3m' é interpretado como
+        18 meses e 3 minutos.
+      </div>
+    </message>
+    <message id="dcw-age-to-big">{1} são muitas meias-vidas para decair {2}</message>
+    <message id="dcw-nuc-is-stable">{1} é estável</message>
+    <message id="dcw-made-age-reasonable">Alterou idade para um valor mais razoável para {1} de '{2}' para '{3}'</message>
+</messages>

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- sfs- is short for SpecFileSummary
+  -->
+  <message id="sfs-spectrum">谱</message>
+  <message id="sfs-alow-edit-cb">允许编辑</message>
+  <message id="sfs-update-display-btn">更新显示</message>
+  <message id="sfs-tt-update-display">在此屏幕上所做的更改可能不会传播到GUI组件，直到您重新加载谱。</message>
+  <message id="sfs-file-info-title">文件信息</message>
+  <message id="sfs-file-name-label">文件名：</message>
+  <message id="sfs-memory-size-label">内存大小：</message>
+  <message id="sfs-inspection-label">检查：</message>
+  <message id="sfs-lane-label">通道：</message>
+  <message id="sfs-location-label">位置：</message>
+  <message id="sfs-no-det-id-btn">无探测器ID</message>
+  <message id="sfs-show-det-id-btn">显示探测器ID</message>
+  <message id="sfs-show-pics-btn">显示图片</message>
+  <message id="sfs-instrument-type-label">仪器类型：</message>
+  <message id="sfs-manufacturer-label">制造商：</message>
+  <message id="sfs-model-label">型号：</message>
+  <message id="sfs-instrument-id-label">仪器ID：</message>
+  <message id="sfs-uuid-label">UUID：</message>
+  <message id="sfs-file-label">文件</message>
+  <message id="sfs-remarks-label">备注：</message>
+  <message id="sfs-measurement-info-label">测量信息</message>
+  <message id="sfs-date-time-label">日期/时间：</message>
+  <message id="sfs-live-time-label">活时间：</message>
+  <message id="sfs-real-time-label">实时间：</message>
+  <message id="sfs-detector-name-label">探测器名称：</message>
+  <message id="sfs-sample-number-label">样本编号：</message>
+  <message id="sfs-energy-range-label">能量(keV)：</message>
+  <message id="sfs-number-channels-label">通道数：</message>
+  <message id="sfs-sum-gammas-label">伽马总计：</message>
+  <message id="sfs-gamma-cps-label">伽马CPS：</message>
+  <message id="sfs-sum-neutrons-label">中子总计：</message>
+  <message id="sfs-neutrons-cps-label">中子CPS：</message>
+  <message id="sfs-latitude-label">纬度：</message>
+  <message id="sfs-longitude-label">经度：</message>
+  <message id="sfs-position-time-label">位置时间：</message>
+  <message id="sfs-latitude-empty-text">十进制或度分'秒" N/S</message>
+  <message id="sfs-longitude-empty-text">十进制或度分'秒" E/W</message>
+  <message id="sfs-show-map-btn">显示地图</message>
+  <message id="sfs-description-label">描述：</message>
+  <message id="sfs-source-type-label">源类型：</message>
+  <message id="sfs-spectra-label">谱</message>
+  <message id="sfs-err-show-map">尝试显示坐标时出错：{1}</message>
+  <message id="sfs-err-time-format">将'{1}'转换为日期/时间字符串时出错</message>
+  <message id="sfs-err-lat-lon">将经度/纬度转换为有效浮点数时出错</message>
+  <message id="sfs-no-spectrum-to-update">无可更新的谱</message>
+</messages>
+

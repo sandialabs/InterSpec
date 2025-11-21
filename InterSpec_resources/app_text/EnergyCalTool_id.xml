@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ect- is short for EnergyCalTool -->
+  <message id="ect-no-spec">Tidak ada spektrum yang dimuat</message>
+  <message id="ect-more-act">Aksi Lainnya</message>
+  <message id="ect-linearize">Linearisasi...</message>
+  <message id="ect-tt-linearize">Linearisasi spektrum sehingga setiap kanal energi memiliki lebar yang sama.</message>
+  <message id="ect-truncate">Potong Energi...</message>
+  <message id="ect-tt-truncate">Memotong rentang energi spektrum dengan membuang kanal data.</message>
+  <message id="ect-combine">Gabungkan Kanal...</message>
+  <message id="ect-tt-combine">Menggabungkan kanal energi sehingga spektrum akan memiliki lebih sedikit kanal data</message>
+  <message id="ect-to-frf">Ke FRF...</message>
+  <message id="ect-tt-to-frf">Mengonversi tipe kalibrasi energi ke Fraksi Rentang Penuh</message>
+  <message id="ect-to-poly">Ke Polinomial...</message>
+  <message id="ect-tt-to-poly">Mengonversi tipe kalibrasi energi ke Polinomial.</message>
+  <message id="ect-multi-file">Kal. Multi File...</message>
+  <message id="ect-tt-multi-file">
+    Memungkinkan menggunakan beberapa spektrum dengan puncak yang di-fit, dari satu atau lebih file spektrum,
+    untuk melakukan kalibrasi energi. Bisa sangat berguna untuk
+    detektor resolusi-lebih-rendah di mana setiap spektrum memiliki sumber uji yang berbeda
+  </message>
+  <message id="ect-tt-CALp">Unduh file .CALp yang berisi kalibrasi energi saat ini.
+    Anda dapat menyeret-dan-melepaskan file ini kembali ke InterSpec nanti untuk menggunakan kembali kalibrasi energi ini.
+    Ini sangat berguna jika Anda sering menggunakan data dari detektor yang kalibrasinya perlu
+    disesuaikan secara konsisten.
+  </message>
+  <message id="ect-export-CALp-msg">Anda dapat menerapkan file CALp ini nanti ke spektrum yang berbeda dengan menyeret dan melepaskan file CALp ke InterSpec.</message>
+  <message id="ect-fit-coeff-btn">Fit Koefisien</message>
+  <message id="ect-tt-fit-coeff-btn">
+    Menggunakan energi yang diharapkan dari fotopuncak yang terkait dengan puncak yang di-fit untuk melakukan fitting untuk koefisien energi.  
+    Tombol ini dinonaktifkan jika tidak ada koefisien yang dipilih untuk di-fit, atau puncak yang dipilih kurang dari koefisien.
+  </message>
+  <message id="ect-apply-changes-to">Terapkan Perubahan Ke</message>
+  <message id="ect-disp-dets">Detektor yang Ditampilkan</message>
+  <message id="ect-all-dets">Semua Detektor</message>
+  <message id="ect-disp-samples">Sampel yang Ditampilkan</message>
+  <message id="ect-all-samples">Semua Sampel</message>
+  <message id="ect-calib-coeffs">Koefisien Kalibrasi</message>
+  <message id="ect-cal-peaks">Puncak Kalibrasi</message>
+  <message id="ect-CALp-no-meas">Tidak ada pengukuran yang ditampilkan untuk {1}</message>
+  <message id="ect-CALp-not-applic-det">Perubahan kalibrasi tidak berlaku untuk detektor apa pun dari {1}</message>
+  <message id="ect-CALp-not-applic-sample">Perubahan kalibrasi tidak berlaku untuk sampel apa pun dari {1}</message>
+  <message id="ect-CALp-invalid-input">Kalibrasi energi input tidak valid</message>
+  <message id="ect-CALp-num-channel-mismatch">Jumlah kanal kalibrasi baru ({1}) tidak cocok dengan kalibrasi lama ({2}).</message>
+  <message id="ect-CALp-missing-det">File CALp kehilangan kalibrasi untuk detektor: {1}.{2}</message>
+  <message id="ect-CALp-extra-det">  Ada kalibrasi ekstra untuk detektor yang tidak ada: {1}.</message>
+  <message id="ect-CALp-named-vs-unamed">Semua kalibrasi dalam file CALp menentukan nama detektor, tetapi detektor spektrum saat ini tidak bernama.</message>
+  <message id="ect-CALp-no-cal-for-det">"Tidak ada kalibrasi tersedia untuk detektor '{1}'"</message>
+  <message id="ect-CALp-no-prev-for-det">Tidak dapat mengidentifikasi kalibrasi sebelumnya untuk digunakan untuk detektor '{1}'.</message>
+  <message id="ect-CALp-nchannel-mismatch-det">Jumlah kanal kalibrasi baru ({1}) tidak cocok dengan kalibrasi lama ({2}) untuk detektor '{3}'.</message>
+  <message id="ect-import-CALp">Impor file CALp</message>
+  <message id="ect-select-CALp"><p>Pilih file CALp untuk digunakan</p></message>
+  <message id="ect-upload-CALp-to-large">File terlalu besar untuk diunggah</message>
+  <message id="ect-invalid-CALp">Bukan file CALp yang valid</message>
+  <message id="ect-CALp-drag-n-drop-note"><p style="font-size: small;">Catatan: Anda juga dapat menyeret-dan-melepaskan file CALp ke InterSpec<br /></p></message>
+  <message id="ect-change-made-invalid">Perubahan kalibrasi membuat kalibrasi energi menjadi tidak valid{1}. Kesalahan: {2}</message>
+  <message id="ect-for-the-fore"> untuk latar depan</message>
+  <message id="ect-for-the-back"> untuk latar belakang</message>
+  <message id="ect-for-the-sec"> untuk spektrum sekunder</message>
+  <message id="ect-set-cal-invalid-nchan">Sampel {1}, Detektor '{2}' memiliki {3} kanal tetapi kalibrasi yang diatur memiliki {4}.</message>
+  <message id="ect-error-setting-cal">Kesalahan mengatur kalibrasi energi baru: {1}</message>
+  <message id="ect-add-dev-pair-made-invalid">Menambahkan pasangan deviasi membuat kalibrasi energi menjadi tidak valid{1}. Kesalahan: {2}</message>
+  <message id="ect-unexpected-error-prev-coefs">Kesalahan tak terduga mengambil koefisien kalibrasi sebelumnya - tidak menerapkan perubahan</message>
+  <message id="ect-changed-cal-not-selected">Tampaknya kalibrasi energi yang Anda ubah tidak ditandai untuk perubahan yang akan diterapkan; harap perbaiki itu.</message>
+  <message id="ect-dev-pair-change-invalid">Mengubah pasangan deviasi membuat kalibrasi energi menjadi tidak valid. Kesalahan: {1}</message>
+  <message id="ect-set-dev-pair-err">Terjadi kesalahan mengatur pasangan deviasi untuk detektor ini.</message>
+  <message id="ect-dev-applied-dets-samples">Pasangan deviasi diterapkan hanya pada detektor '{1}', tetapi untuk semua nomor sampel{2}.</message>
+  <message id="ect-dev-applied-to-samples">Pasangan deviasi diterapkan untuk semua nomor sampel{1}.</message>
+  <message id="ect-of-the-fore"> dari latar depan.</message>
+  <message id="ect-of-the-sec"> dari sekunder.</message>
+  <message id="ect-of-the-back"> dari latar belakang.</message>
+  <message id="ect-err-not-enough-peaks">Tidak dapat melakukan fitting koefisien kalibrasi sekarang. Anda harus memilih setidaknya sebanyak puncak untuk fitting sebagai koefisien yang telah Anda pilih untuk di-fit.</message>
+  <message id="ect-no-peaks">Tidak ada puncak yang tersedia.</message>
+  <message id="ect-select-cal-of-disp-det">Silakan pilih kalibrasi dari detektor yang ditampilkan</message>
+  <message id="ect-not-enough-channel">Tidak cukup kanal dalam data.</message>
+  <message id="ect-no-coeff-selected">Anda harus memilih setidaknya satu koefisien untuk di-fit.</message>
+  <message id="ect-fail-min">PesanKesalahan Gagal melakukan fitting kalibrasi energi menggunakan pendekatan matriks dan iteratif</message>
+  <message id="ect-fit-successful">Kalibrasi energi telah diperbarui dari fitting.</message>
+  <message id="ect-fail-fit">Gagal kalibrasi dengan fitting rerata puncak. {1}</message>
+  <message id="ect-del-graphical-msg">Jika Anda mengkalibrasi ulang lagi dengan ALT+CTRL+DRAG pada bagian lain dari spektrum, Anda akan diberi opsi untuk mempertahankan efek kalibrasi ini juga.</message>
+  <message id="ect-lc-disp-dets">detektor yang ditampilkan</message>
+  <message id="ect-lc-all-dets">semua detektor</message>
+  <message id="ect-lc-all-samples">semua sampel</message>
+  <message id="ect-lc-disp-samples">sampel yang ditampilkan</message>
+  <message id="ect-short-fore">Lat. Depan</message>
+  <message id="ect-short-back">Lat. Belakang</message>
+  <message id="ect-short-secondary">Sek.</message>
+  
+  <message id="ect-offset-label">Offset</message>
+  <message id="ect-linear-label">Linear</message>
+  <message id="ect-quad-label">Kuad.</message>
+  <message id="ect-cubic-label">Kubik</message>
+  <message id="ect-nth-label">orde ke-{1}</message>
+  
+  <!-- Energy calibration types -->
+  <message id="ect-cal-type-lower-channel">Energi Kanal Bawah</message>
+  <message id="ect-cal-type-not-defined">Tidak Didefinisikan</message>
+  <message id="ect-cal-type-polynomial">Polinomial</message>
+  <message id="ect-cal-type-default-poly">Polinomial Default</message>
+  <message id="ect-cal-type-frf">Fraksi Rentang Penuh</message>
+  <message id="ect-convert-to-poly-msg">Silakan konversi ke kalibrasi Polinomial untuk mengedit</message>
+  <message id="ect-deviation-pairs">Pasangan Deviasi</message>
+</messages>
+

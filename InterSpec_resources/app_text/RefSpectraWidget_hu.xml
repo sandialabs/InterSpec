@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- rs- is short for Reference Spectra -->
+  <message id="rs-dialog-title">Referencia Spektrumok</message>
+  <message id="rs-show-foreground">Előtér Mutatása</message>
+  <message id="rs-show-background">Háttér</message>
+  <message id="rs-tt-add-dir-btn">Könyvtár hozzáadása referencia spektrumok megnyitásához.</message>
+  <message id="rs-tt-delete-dir-btn">A jelenleg kiválasztott könyvtár eltávolítása a referencia spektrumok helyeinek listájából.</message>
+  <message id="rs-no-dir-selected-desktop">
+    Válasszon referencia spektrumot betöltéshez. <br />
+    <br />
+    Referencia spektrumok könyvtárak hozzáadása a
+    <img src="InterSpec_resources/images/plus_min_black.svg" style="width: 12px; height: 12px; display: inline-block; vertical-align: middle;"/> ikon használatával.
+    </message>
+  <message id="rs-no-dir-selected-mobile">
+    Válasszon referencia spektrumot betöltéshez. <br /> 
+    <div style="font-size: smaller;">
+      (saját referencia spektrumok könyvtárat is hozzáadhat egy "reference_spectra" könyvtár létrehozásával 
+      az <em>InterSpec</em> adatkönyvtárában (a Files app használatával), majd további alkönyvtárak
+      hozzáadásával a spektrumokkal)
+    </div>
+  </message>
+  <message id="rs-some-dirs-removed">{1} könyvtár már nem elérhető, és eltávolításra került.</message>
+  <message id="rs-dir-added-successfully">'{1}' elérési út hozzáadva.</message>
+  <message id="rs-show-as">Betöltés mint</message>
+  <message id="rs-add-dir-dialog-title">Referencia Spektrumok Könyvtár Hozzáadása</message>
+  <message id="rs-duplicate-dir-path">Könyvtár már kiválasztva: '{1}'</message>
+  <message id="rs-dir-not-found">Könyvtár nem található, így nem került eltávolításra a beállításokból: '{1}'</message>
+  <message id="rs-dir-info-only-spectra">A könyvtár {1} spektrum fájlt tartalmaz<br /></message>
+  <message id="rs-dir-info-only-subdir">A könyvtár {1} alkönyvtárat tartalmaz<br /></message>
+  <message id="rs-dir-info-with-subdir-spectra">A könyvtár {1} spektrum fájlt és {2} alkönyvtárat tartalmaz<br /></message>
+  <message id="rs-error-loading-file">Hiba a fájl betöltésekor: '{1}'</message>
+  <message id="rs-show-in-explorer">Megjelenítés az Explorerben</message>
+  <message id="rs-show-in-finder">Megjelenítés a Finderben</message>
+  <message id="rs-show-in-linux-file-manager">Megjelenítés a Fájlkezelőben</message>
+  <message id="rs-error-invalid-file">Érvénytelen spektrum fájl: '{1}'.</message>
+  <message id="rs-error-invalid-type-selected">Érvénytelen spektrum típus kiválasztva.</message>
+  </messages>
+

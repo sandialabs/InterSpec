@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ds- is short for DrfSelect
+       ref- is short for RelEffFile
+       reds- is short for RelEffDetSelect
+  -->
+  <message id="ds-default-manual-det-name">ব্যবহারকারী সংজ্ঞায়িত ডিটেক্টর</message>
+
+  <message id="ref-tt-remove-drf-file">InterSpec ডিটেক্টর রেসপন্স ফাংশন খুঁজবে এমন ফাইলের তালিকা থেকে ফাইল সরান।</message>
+  <message id="ref-remove-drf-window-title">ডিটেক্টর রেসপন্স সরান?</message>
+  <message id="ref-remove-drf-window-txt">আপনি কি ভবিষ্যৎ ব্যবহার থেকে এই DRF গুলি সরাতে চান?</message>
+  <message id="ref-file-removed-toast">ফাইল '{1}' ভবিষ্যৎ ব্যবহার থেকে সরানো হয়েছে।</message>
+  <message id="ref-file-saved-for-later">পরবর্তী ব্যবহারের জন্য '{1}' সংরক্ষিত এবং "<em>ডিটেক্টর রেসপন্স ফাংশন নির্বাচন</em>" টুলের "<em>Rel. Eff.</em>" অংশে উপলব্ধ থাকবে।</message>
+  <message id="ref-err-saving-drf-file">পরবর্তী ব্যবহারের জন্য DRF ফাইল সংরক্ষণে ত্রুটি; দুঃখিত।</message>
+  <message id="ref-err-invalid-csv-drf">বৈধ TSV বা CSV আপেক্ষিক-দক্ষতা DRF ফাইল নয়।</message>
+  <message id="ref-save-drf-window-title">ডিটেক্টর রেসপন্স সংরক্ষণ করবেন?</message>
+  <message id="ref-save-drf-window-txt">আপনি কি পরবর্তী ব্যবহারের জন্য এই ডিটেক্টর রেসপন্স সংরক্ষণ করতে চান?</message>
+  <message id="ref-upload-csv-file">একটি TSV/CSV ফাইল আপলোড করুন।</message>
+  <message id="ref-dont-use-drf-in-file">ফাইলে কোনো রেসপন্স নেই</message>
+  <message id="ref-select-det-from-file">ডিটেক্টর নির্বাচন করুন</message>
+  <message id="ref-no-drfs-in-file">ফাইলে কোনো বৈধ DRF নেই।</message>
+  <message id="ref-couldnt-open-drf-file">DRF ফাইল খুলতে পারেনি।</message>
+  <message id="ref-no-rel-eff-drfs-in-file">কোনো Rel. Eff. DRF উপলব্ধ নেই।</message>
+  <message id="ref-no-drfs-available">কোনো রেসপন্স উপলব্ধ নেই</message>
+  <message id="ref-file-has-no-drfs">ফাইলে কোনো DRF নেই</message>
+  <message id="reds-tt-add-drf-btn">অতিরিক্ত আপেক্ষিক দক্ষতা ডিটেক্টর রেসপন্স ফাংশন ফাইল যোগ করতে প্লাস বোতামে ক্লিক করুন।</message>
+  <message id="reds-tt-add-dir">ডিটেক্টর রেসপন্স ফাংশন খুঁজতে পুনরাবৃত্তভাবে একটি অতিরিক্ত ডিরেক্টরি যোগ করতে প্লাস বোতামে ক্লিক করুন।</message>
+  <message id="reds-gadras-drf-info-ios">আপনি GADRAS-DRF থেকে আমদানি করা ডিটেক্টর রেসপন্স ফাংশন <b>Files</b> অ্যাপের মধ্যে <code>InterSpec</code>-এর ডিরেক্টরিতে রাখতে পারেন।</message>
+  <message id="reds-gadras-drf-info">এগুলি GADRAS-DRF থেকে আমদানি করা ডিটেক্টর রেসপন্স ফাংশন। বর্তমানে শুধুমাত্র ডিটেক্টর মাত্রা, পরম দক্ষতা, এবং FWHM রেজোলিউশন ব্যবহার করা হয়।</message>
+  <message id="reds-failed-parse-gadras-det">একটি GADRAS ডিটেক্টর পার্স করতে ব্যর্থ: {1}</message>
+  <message id="reds-err-saving-gad-path">ব্যবহারকারী পছন্দে GADRAS পাথ সংরক্ষণে ত্রুটি: {1}</message>
+  <message id="reds-tt-remove-gad-dir">InterSpec ডিটেক্টর রেসপন্স ফাংশন খুঁজবে এমন ডিরেক্টরির তালিকা থেকে ডিরেক্টরি সরান।</message>
+  <message id="reds-tt-gad-set-dir">ডিটেক্টর রেসপন্স ফাংশন পুনরাবৃত্তভাবে খুঁজতে প্রবেশিত ডিরেক্টরি সেট করুন।</message>
+  <message id="reds-err-not-valid-dir">বৈধ ডিরেক্টরি নয়।</message>
+  <message id="reds-invalid-dir">অবৈধ ডিরেক্টরি</message>
+  <message id="reds-no-drf-in-dir">ডিরেক্টরিতে কোনো রেসপন্স নেই</message>
+  <message id="reds-recursive-no-drfs-in-dir">ডিরেক্টরি বা এর সাবডিরেক্টরিতে কোনো বৈধ DRF নেই।</message>
+  <message id="ds-csv-upload-desc">
+    <div style="white-space:nowrap;">
+      অভ্যন্তরীণ দক্ষতা CSV ফাইল:
+    </div>
+    <div>
+      প্রথম কলাম keV তে শক্তি।
+      দ্বিতীয় কলাম হল সেই শক্তিতে গামার জন্য % দক্ষ (0 থেকে 100), ডিটেক্টরে আপতিত হয়ে ফটোপিকে রেকর্ড হতে।
+    </div>
+    <div>
+      আপনাকে একটি GADRAS Detector.dat ফাইল আপলোড করতে হবে, বা দক্ষতা ফাইল আপলোড করার পরে ডিটেক্টরের ব্যাস প্রবেশ করাতে হবে।
+    </div>
+    <div>
+      আপনি <em>Make Detector Response</em> টুল থেকে এক্সপোর্ট করা CSV আপলোড করতে পারেন।
+    </div>
+  </message>
+  <message id="ds-enter-gad-det-diam">ডিটেক্টর ব্যাস প্রবেশ করান বা Detector.dat ফাইল আপলোড করুন:</message>
+  <message id="ds-det-diam">ডিটেক্টর ব্যাস:</message>
+  <message id="ds-fixed-geom">স্থির জ্যামিতি</message>
+  <message id="ds-gad-det-file-label">GADRAS Detector.Dat ফাইল:</message>
+  <message id="ds-manual-det-empty-fcn">উদাহরণ: exp(-9.8 - 8.1*log(x) + 4.62E-02*log(x)^2 + ...)\n
+    অথবা সমতুল্যভাবে: -9.8 -8.1 4.62E-02 ...</message>
+  <message id="ds-manual-det-desc">একটি গাণিতিক সূত্র দ্বারা সংজ্ঞায়িত ডিটেক্টর দক্ষতা, শক্তি x দেওয়া;
+     অথবা আপনি মানক সমীকরণ ফর্মের জন্য সহগ প্রবেশ করাতে পারেন। আরো তথ্যের জন্য প্রশ্ন চিহ্ন আইকনে ক্লিক করুন।
+  </message>
+  <message id="ds-manual-det-name-label">ডিটেক্টর নাম </message>
+  <message id="ds-manual-det-name-empty-txt">অনন্য ডিটেক্টর নাম</message>
+  <message id="ds-manual-function-label">দক্ষতা f(x) = </message>
+  <message id="ds-tt-manual-energy-unit">দক্ষতা সূত্রের জন্য শক্তি একক</message>
+  <message id="ds-tt-manual-desc">এই ডিটেক্টর রেসপন্সের বিবরণ</message>
+  <message id="ds-manual-det-diam-label">ডিটেক্টর ব্যাস।</message>
+  <message id="ds-energy-range">শক্তি রেঞ্জ</message>
+  <message id="ds-(optional)">(ঐচ্ছিক)</message>
+  <message id="ds-min.">ন্যূনতম।</message>
+  <message id="ds-max.">সর্বোচ্চ।</message>
+  <message id="ds-intrinsic-eff">অভ্যন্তরীণ দক্ষতা</message>
+  <message id="ds-abs-eff">পরম দক্ষতা</message>
+  <message id="ds-fixed-geom-total">স্থির জ্যামিতি - মোট কার্যকলাপ</message>
+  <message id="ds-fixed-geom-cm2">স্থির জ্যামিতি - প্রতি cm² কার্যকলাপ</message>
+  <message id="ds-fixed-geom-m2">স্থির জ্যামিতি - প্রতি m² কার্যকলাপ</message>
+  <message id="ds-fixed-geom-gram">স্থির জ্যামিতি - প্রতি গ্রাম কার্যকলাপ</message>
+
+  <message id="ds-tt-manual-drf-type">এই দক্ষতা কীভাবে ব্যাখ্যা করা উচিত।<br />
+    <br />
+    অভ্যন্তরীণ দক্ষতা: ডিটেক্টরের মুখে আঘাত করা এক্স-রে বা গামার জন্য একটি সম্পূর্ণ-শক্তি সনাক্তকরণ ইভেন্ট নিবন্ধন করার সম্ভাবনা।<br />
+    <br />
+    পরম দক্ষতা: উৎস থেকে একটি এক্স-রে বা গামার জন্য একটি সম্পূর্ণ-শক্তি সনাক্তকরণ ইভেন্ট নিবন্ধন করার সম্ভাবনা, এবং এই দক্ষতা 1/r2 দ্বারা অন্য দূরত্বে স্কেল করার অনুমতি দেওয়া উপযুক্ত (যেমন, একটি বিন্দু-উৎসের জন্য)।<br />
+    <br />
+    স্থির জ্যামিতি - মোট কার্যকলাপ: উৎস থেকে একটি এক্স-রে বা গামার জন্য একটি সম্পূর্ণ-শক্তি সনাক্তকরণ ইভেন্ট নিবন্ধন করার সম্ভাবনা, এবং এই দক্ষতা অন্য দূরত্বে স্কেল করার অনুমতি দেওয়া উপযুক্ত নয় (যেমন, একটি কাছের বা বৃহৎ বিস্তৃত উৎসের জন্য)।<br />
+    <br />
+    স্থির জ্যামিতি - প্রতি cm2 কার্যকলাপ: মোট কার্যকলাপের অনুরূপ, তবে দক্ষতা বক্ররেখা প্রতি বর্গ সেন্টিমিটার প্রতি ক্ষয়ে দক্ষতা প্রতিনিধিত্ব করে (যেমন, পৃষ্ঠ দূষণ)।<br />
+    <br />
+    স্থির জ্যামিতি - প্রতি m2 কার্যকলাপ: প্রতি cm2 এর অনুরূপ, তবে প্রতি বর্গ মিটারের জন্য।<br />
+    <br />
+    স্থির জ্যামিতি - প্রতি g কার্যকলাপ: প্রতি cm2 এর অনুরূপ, তবে উৎসের প্রতি গ্রামের জন্য।
+  </message>
+  <message id="ds-dist-label">দূরত্ব:</message>
+  <message id="ds-set-btn">সেট করুন</message>
+  <message id="ds-last-used">সর্বশেষ ব্যবহৃত</message>
+  <message id="ds-det-type-filter-all">সব</message>
+  <message id="ds-det-type-filter-uploaded">আপলোড করা</message>
+  <message id="ds-det-type-filter-formula">প্রবেশিত সূত্র</message>
+  <message id="ds-det-type-filter-data">ডেটা থেকে তৈরি</message>
+  <message id="ds-det-type-filter-N42">N42 ফাইলে অন্তর্ভুক্ত</message>
+  <message id="ds-show-label">দেখান:</message>
+  <message id="ds-mi-gadras">GADRAS</message>
+  <message id="ds-mi-rel-eff">Rel. Eff.</message>
+  <message id="ds-mi-import">ইমপোর্ট</message>
+  <message id="ds-mi-formula">সূত্র</message>
+  <message id="ds-mi-previous">পূর্ববর্তী</message>
+  <message id="ds-use-for-serialnum-cb">SN '{1}' এর জন্য ডিফল্ট DRF হিসাবে ব্যবহার করুন</message>
+  <message id="ds-use-for-model-cb">মডেল '{1}' এর জন্য ডিফল্ট DRF হিসাবে ব্যবহার করুন</message>
+  <message id="ds-no-drf-loaded">কোনো DRF লোড করা হয়নি</message>
+  <message id="ds-no-det-btn">কোনো ডিটেক্টর নেই</message>
+  <message id="ds-fit-fwhm-btn">FWHM ফিট করুন...</message>
+  <message id="ds-tt-cancel">এই ডায়ালগ দ্বারা করা সমস্ত পরিবর্তন বা নির্বাচন সরান, এবং ডায়ালগ বন্ধ করুন।</message>
+  <message id="ds-tt-accept">সমস্ত পরিবর্তন/নির্বাচন গ্রহণ করুন এবং ডায়ালগ বন্ধ করুন।</message>
+  <message id="ds-use-det-btn">ডিটেক্টর ব্যবহার করুন</message>
+  <message id="ds-use-drf">DRF ব্যবহার করবেন?</message>
+  <message id="ds-select-drf">ব্যবহার করার জন্য DRF নির্বাচন করুন</message>
+  <message id="ds-drf-desc">DRF বিবরণ</message>
+  <message id="ds-save-for-later-cb">পরবর্তী ব্যবহারের জন্য সংরক্ষণ করবেন?</message>
+  <message id="ds-err-drf-uri-invalid">ডিটেক্টর রেসপন্স ফাংশন URL অবৈধ।</message>
+  <message id="ds-err-det-diam-pos">ডিটেক্টর ব্যাস অবশ্যই ধনাত্মক হতে হবে</message>
+  <message id="ds-err-det-dist-pos">পরম দক্ষতার জন্য দূরত্ব অবশ্যই ধনাত্মক হতে হবে</message>
+  <message id="ds-warn-min-max-energy-swapped">ডিটেক্টর ন্যূনতম শক্তি সর্বোচ্চ শক্তির চেয়ে বেশি; শক্তি রেঞ্জ উপেক্ষা করা হচ্ছে।</message>
+  <message id="ds-need-det-diam">ডিটেক্টরের ব্যাস প্রয়োজন</message>
+</messages>

@@ -51,10 +51,6 @@
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/DataBaseVersionUpgrade.h"
 
-#if( USE_SPECRUM_FILE_QUERY_WIDGET )
-#include "InterSpec/SpecFileQueryWidget.h"
-#endif
-
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/SerialToDetectorModel.h"
 
@@ -433,7 +429,10 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   //  does something like:
   //      window.webkit.messageHandlers.interOp.postMessage({"action": "DoSomething"});
   [webConfig.userContentController addScriptMessageHandler: self name:@"interOp"];
-  
+
+  // Add a script message handler
+  [webConfig.userContentController addScriptMessageHandler:self name:@"jsErrorHandler"];
+
   //Some additional settings we may want to set:
   //  see more at http://jonathanblog2000.blogspot.com/2016/11/understanding-ios-wkwebview.html
   //[prefs setValue:@YES forKey:@"allowFileAccessFromFileURLs"];
@@ -677,6 +676,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   }
 }//themeChanged
 
+
 //WKUIDelegate
 //webView:createWebViewWithConfiguration:forNavigationAction:windowFeatures:
 //webViewDidClose:
@@ -688,11 +688,22 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   // Create the File Open Dialog class.
   NSOpenPanel *openDlg = [NSOpenPanel openPanel];
   
-  bool chooseDirectory = false;
-  
-#if( USE_SPECRUM_FILE_QUERY_WIDGET )
-  chooseDirectory = SpecFileQuery::isSelectingDirectory();
-#endif
+  // You can allow the WKWebView to select directories, using the Wt::WFileUpload,
+  //  by setting the 'webkitdirectory' attribute on the input element of the WFileUpload,
+  //  through a call like:
+  //    upload->doJavaScript( "document.querySelector('#" + upload->id() + " input').setAttribute('webkitdirectory', true);" );
+  //    (and similarly to allow multiple files with the attribute 'multiple')
+  //  The user can then select directories, and the following will will correctly get what we want,
+  //  and below in the obj-c we can get the path of the directory selected, and pass it off to other
+  //  parts of the program, or the DOM, or whatever.
+  //  But the cleaner way of doing things is to call `macOsUtils::showFilePicker(...)`,
+  //  Leaving in this mechanism, and note in the code for now because it is likely we will
+  //  want a multi-file and/or directory selector, that uses a WFileUpload as the presentation
+  //  to the user, so it would be reasonable to create a class that inherits from, or contains,
+  //  WFileUpload and will just kinda take care of providing native filesystem paths normally,
+  //  but will fallback to html upload.
+  const BOOL chooseDirectory = [parameters allowsDirectories];
+  const BOOL multiSelect = [parameters allowsMultipleSelection]; //Untested
   
   if( chooseDirectory )
   {
@@ -704,21 +715,56 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     [openDlg setCanChooseDirectories:NO];
   }
   
+  if( multiSelect )
+    [openDlg setAllowsMultipleSelection: YES];
+  
   if( [openDlg runModal] == NSModalResponseOK )
   {
-    NSArray* files = [[openDlg URLs]valueForKey:@"relativePath"];
+    NSArray<NSURL *> *urls = [openDlg URLs];
     
-#if( USE_SPECRUM_FILE_QUERY_WIDGET )
-    if( chooseDirectory && [files count] )
-    {
-      NSURL *u = [files objectAtIndex:0];
-      if( u && [u respondsToSelector:@selector(UTF8String)]) {
-        SpecFileQuery::setSearchDirectory( [u UTF8String] );
+    /*
+    {//Begin get user selected paths, and set to DOM, and wherever else in memory wanted
+      Wt::Json::Array json_array;
+      
+      // Form some JSON to set a variable in JS client-side, that can then make the call to server code
+      for (NSURL *url in urls)
+      {
+        const char *fs_path = [url fileSystemRepresentation];  //Will be UTF-8 encoded
+        json_array.push_back( Wt::WString::fromUTF8(fs_path) );
       }
-    }
-#endif
+      
+      if( json_array.empty() )
+      {
+        //Probably got file promise(s) here - we'll just fall-back to normal file upload, and
+        //  let WkWebView take care of getting the files.
+        NSString *js = @"(function(){$(document).data('SelectedPaths',null);})()";
+        [_InterSpecWebView evaluateJavaScript: js completionHandler:nil];
+        
+        NSLog( @"Cleared path data to JS." );
+      }else
+      {
+        const std::string json_data = Wt::Json::serialize(json_array);
+        const std::string js_str =
+        "(function(){\n\t"
+        "let fns = {};\n\t"
+        "fns.time = new Date();\n\t"
+        "fns.isDir = " + std::string(chooseDirectory ? "1" : "0") + ";"
+        "fns.filenames = " + json_data + ";\n\t"
+        "$(document).data('SelectedPaths',fns);\n\t"
+        "console.log(\"Set SelectedPaths paths\",fns);\n"
+        "})();";
+        
+        NSString *js = [[NSString alloc] initWithCString:js_str.c_str() encoding:NSUTF8StringEncoding];
+        [_InterSpecWebView evaluateJavaScript: js completionHandler:nil];
+        
+        NSLog( @"Set path data to JS=%s", js_str.c_str() );
+      }//if( !json_array.empty() )
+      
+      // Set to wherever else in memory wanted
+    }//end get user selected paths, and set to DOM, and wherever else in memory wanted
+    */
     
-    completionHandler( [openDlg URLs] );
+    completionHandler( urls );
   }else
   {
     completionHandler( nil );
@@ -764,13 +810,141 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
         {
           //CSV, spectrum file, JSON file, etc
           NSLog(@"Will attempt to download spectrum, CSV, JSON, PNG, etc. file");
-         
-          NSURLRequest *theRequest = [NSURLRequest requestWithURL:[[request URL] absoluteURL]];
-          NSURLDownload  *theDownload = [[NSURLDownload alloc] initWithRequest:theRequest delegate:self];
-          
-          if( !theDownload )
-            NSLog(@"The download failed");  // Inform the user that the download failed.
-        }
+
+          //Using NSURLDownload is depreciated in 10.11, so instead we'll use a lot more code to do the same thing, maybe not even as well
+          //NSURLRequest *theRequest = [NSURLRequest requestWithURL:[[request URL] absoluteURL]];
+          //NSURLDownload  *theDownload = [[NSURLDownload alloc] initWithRequest:theRequest delegate:self];
+          //if( !theDownload )
+          //  NSLog(@"The download failed");  // Inform the user that the download failed.
+
+          NSURL *url = [[request URL] absoluteURL];
+          NSURLSession *session = [NSURLSession sharedSession];
+
+          // Create a download task
+          NSURLSessionDownloadTask *downloadTask = [session downloadTaskWithURL:url
+            completionHandler:^(NSURL *location, NSURLResponse *response, NSError *error) {
+              if( error )
+              {
+                // Display an error alert to the user
+                dispatch_async(dispatch_get_main_queue(), ^{
+                  NSAlert *alert = [[NSAlert alloc] init];
+                  alert.messageText = @"Download Failed";
+                  alert.informativeText = error.localizedDescription;
+                  alert.alertStyle = NSAlertStyleCritical;
+                  [alert addButtonWithTitle:@"OK"];
+                  [alert runModal];
+                });
+                return;
+              }else
+              {
+                NSLog(@"Download succeeded. File is located at: %@", location.path);
+
+                // Copy the temporary file to a persistent location
+                NSFileManager *fileManager = [NSFileManager defaultManager];
+                NSURL *persistentTempURL = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:response.suggestedFilename ?: @"downloadedFile"]];
+
+                NSError *copyError = nil;
+                [fileManager copyItemAtURL:location toURL:persistentTempURL error:&copyError];
+
+                if( copyError )
+                {
+                  NSLog(@"Failed to copy temporary file: %@", copyError.localizedDescription);
+
+                  // Display an error alert to the user
+                  dispatch_async(dispatch_get_main_queue(), ^{
+                    NSAlert *alert = [[NSAlert alloc] init];
+                    alert.messageText = @"Error Copying File";
+                    alert.informativeText = copyError.localizedDescription;
+                    alert.alertStyle = NSAlertStyleCritical;
+                    [alert addButtonWithTitle:@"OK"];
+                    [alert runModal];
+                  });
+                  return;
+                }//if( copyError )
+
+                // Present NSSavePanel to let the user choose where to save the file
+                dispatch_async(dispatch_get_main_queue(), ^{
+                  NSSavePanel *savePanel = [NSSavePanel savePanel];
+                  savePanel.title = @"Save Exported File";
+                  savePanel.prompt = @"Save";
+                  savePanel.nameFieldStringValue = response.suggestedFilename ?: @"downloadedFile";
+
+                  [savePanel beginWithCompletionHandler:^(NSModalResponse result) {
+                    if( result == NSModalResponseOK )
+                    {
+                      NSURL *destinationURL = savePanel.URL;
+                      if( destinationURL )
+                      {
+                        NSError *moveError = nil;
+
+                        // Ensure parent directory exists
+                        NSURL *parentDir = [destinationURL URLByDeletingLastPathComponent];
+                        NSError *dirError = nil;
+                        [fileManager createDirectoryAtURL:parentDir
+                                    withIntermediateDirectories:YES
+                                    attributes:nil
+                                    error:&dirError];
+
+                        if( dirError )
+                        {
+                          NSLog(@"Failed to create parent directory: %@", dirError.localizedDescription);
+
+                          // Display an error alert to the user
+                          dispatch_async(dispatch_get_main_queue(), ^{
+                            NSAlert *alert = [[NSAlert alloc] init];
+                            alert.messageText = @"Error Creating Directory";
+                            alert.informativeText = dirError.localizedDescription;
+                            alert.alertStyle = NSAlertStyleCritical;
+                            [alert addButtonWithTitle:@"OK"];
+                            [alert runModal];
+                          });
+                          return;
+                        }//if( dirError )
+
+                        // Move the persistent temporary file to the chosen destination
+                        [fileManager moveItemAtURL:persistentTempURL toURL:destinationURL error:&moveError];
+
+                        if( moveError )
+                        {
+                          NSLog(@"Error saving to: %@", destinationURL.path);
+
+                          // Show an error alert to the user
+                          dispatch_async(dispatch_get_main_queue(), ^{
+                            NSAlert *alert = [[NSAlert alloc] init];
+                            alert.messageText = @"Error Saving File";
+                            alert.informativeText = moveError.localizedDescription;
+                            alert.alertStyle = NSAlertStyleCritical;
+                            [alert addButtonWithTitle:@"OK"];
+                            [alert runModal];
+                          });
+                          NSLog(@"Failed to save file: %@", moveError.localizedDescription);
+                        }else
+                        {
+                          NSLog(@"File saved to: %@", destinationURL.path);
+                        }//if( moveError ) / else
+                      }//if( destinationURL )
+                    }else
+                    {
+                      NSLog(@"User canceled saving the file.");
+                      // Delete the persistent temporary file if the user cancels
+                      NSError *deleteError = nil;
+                      [fileManager removeItemAtURL:persistentTempURL error:&deleteError];
+                      if( deleteError )
+                      {
+                        NSLog(@"Failed to delete persistent temporary file: %@", deleteError.localizedDescription);
+                      }else
+                      {
+                        NSLog(@"Persistent temporary file deleted.");
+                      }
+                    }//if( result == NSModalResponseOK ) / else
+                  }]; //[savePanel beginWithCompletionHandler:^(NSModalResponse result) {...
+                });//dispatch_async(dispatch_get_main_queue(), ^{...
+              }//if( error ) / else
+            }];//NSURLSessionDownloadTask *downloadTask....completionHandler:^(NSURL *location, NSURLResponse *response, NSError *error) {....
+
+          // Start the download task
+          [downloadTask resume];
+        }//if( (host && [host isEqualToString:@"127.0.0.1"]) || ....
       }//if( request )
       
       decisionHandler(WKNavigationActionPolicyCancel);
@@ -1074,16 +1248,43 @@ createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration
 // This method is for WKScriptMessageHandler, and is triggered each time 'interOp' is sent a
 //    message from the JavaScript code with something like:
 //      window.webkit.messageHandlers.interOp.postMessage({"val": 1});
+//      window.webkit.messageHandlers.jsErrorHandler.postMessage({"message": message, "source": source, ...} );
 - (void)userContentController:(WKUserContentController *)userContentController
       didReceiveScriptMessage:(WKScriptMessage *)message{
   NSDictionary *sentData = (NSDictionary*)message.body;
-  
+
   if( sentData == nil )
   {
     NSLog( @"didReceiveScriptMessage: got nil dictionary" );
     return;
   }
-  
+
+  if ([message.name isEqualToString:@"jsErrorHandler"]) {
+    NSString *errorMessage = sentData[@"message"];
+    NSString *source = sentData[@"source"];
+    NSNumber *lineNumber = sentData[@"lineno"];
+    NSNumber *columnNumber = sentData[@"colno"];
+    NSString *errorDetails = sentData[@"error"];
+
+    //If the error message contained "Wt internal error" or "c.size", it was a fatal error...
+
+    // Create the alert
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"JavaScript Error";
+    alert.informativeText = [NSString stringWithFormat:@"Unexpected JavaScript Error - please consider reporting to InterSpec@sandia.gov and restarting app:\n\nMessage: %@\nSource: %@\nLine: %@\nColumn: %@\nDetails: %@",
+       errorMessage ?: @"Unknown",
+       source ?: @"Unknown",
+       lineNumber ?: @0,
+       columnNumber ?: @0,
+       errorDetails ?: @"No additional details"];
+    alert.alertStyle = NSAlertStyleWarning;
+
+    [alert addButtonWithTitle:@"OK"];
+    [alert runModal];
+
+    return;
+  }//if( a JS error )
+
   id val = [sentData objectForKey: @"action"];
   if( val != (id)[NSNull null] )
   {

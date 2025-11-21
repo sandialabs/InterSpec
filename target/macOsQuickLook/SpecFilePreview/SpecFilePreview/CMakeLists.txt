@@ -6,6 +6,7 @@ project( SpecFilePreview )
 set( CMAKE_CXX_STANDARD 14 )
 set( CMAKE_CXX_STANDARD_REQUIRED ON )
 
+set(CMAKE_OSX_ARCHITECTURES "x86_64;arm64")
 
 find_package( ZLIB REQUIRED )
 find_package( Threads REQUIRED )

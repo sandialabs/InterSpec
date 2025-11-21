@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raagn- is short for RelActAutoGuiNuclide -->
+  
+  <!-- Labels -->
+  <message id="raagn-nuclide">Нуклид:</message>
+  <message id="raagn-age">Возраст:</message>
+  <message id="raagn-min-age">Мин. возраст:</message>
+  <message id="raagn-max-age">Макс. возраст:</message>
+  
+  <!-- Constraint labels -->
+  <message id="raagn-select-constraint-type">Выберите тип ограничения.</message>
+  <message id="raagn-min">мин:</message>
+  <message id="raagn-max">макс:</message>
+  <message id="raagn-src">источ:</message>
+  <message id="raagn-val">знач:</message>
+  
+  <!-- Constraint types -->
+  <message id="raagn-constraint-none">Нет</message>
+  <message id="raagn-constraint-rel-act">Отн. акт.</message>
+  <message id="raagn-constraint-act-ratio">Отнош. акт.</message>
+  <message id="raagn-constraint-mass-frac">Масс. доля</message>
+  
+  <!-- Checkboxes -->
+  <message id="raagn-fit-age">Подгонка возраста</message>
+  
+  <!-- Buttons -->
+  <message id="raagn-add-constraint">Добавить ограничение</message>
+  
+  <!-- Tooltips -->
+  <message id="raagn-nuclide-tt">напр. <b>U235</b>, <b>235 Uranium</b>, <b>U-235m</b> (метастабильное состояние), <b>Cs137</b>, Pb, Fe(n,n), и т.д.</message>
+  <message id="raagn-remove-constraint-tt">Удалить это ограничение</message>
+  <message id="raagn-add-constraint-tt">Добавить ограничение к этому нуклиду</message>
+  
+  <!-- User messages -->
+  <message id="raagn-invalid-nuclide">{1} не является допустимым нуклидом, рентгеновским излучением или реакцией.</message>
+  <message id="raagn-stable-nuclide">{1} является стабильным нуклидом.</message>
+  
+</messages>

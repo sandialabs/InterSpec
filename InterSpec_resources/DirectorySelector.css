@@ -1,0 +1,37 @@
+/* CSS styles for DirectorySelector widget */
+
+.DirectorySelector {
+  margin: 10px 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+}
+
+
+.DirectorySelectorPathTxt {
+  border: 1px solid #d1d1d1;
+  border-radius: 3px;
+  font-family: monospace;
+  min-height: 20px;
+  flex-grow: 1;
+  flex-shrink: 1;
+}
+
+.DirectorySelectorPathTxt.DirectorySelectorValidPath {
+  border-color: #28a745;
+  background-color: #f8fff8;
+}
+
+.DirectorySelectorPathTxt.DirectorySelectorInvalidPath {
+  border-color: #dc3545;
+  background-color: #fff8f8;
+}
+
+/* Text input styling */
+.DirectorySelector input[type="text"] {
+  
+}

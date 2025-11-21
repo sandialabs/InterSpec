@@ -34,20 +34,26 @@ namespace SpecUtils
   class Measurement;
 }
 
-// While optimizing `FindCandidateSettings`, its better to not return a bunch of PeakDefs,
-//  so while we're transitioning phases here we will return the vector of tuple results, as
-//  well as PeakDefs
-#define RETURN_PeakDef_Candidates 1
-
-
-#define USE_CERES_PEAK_FITTING 1
-
 
 #define WRITE_ALL_SPEC_TO_HTML 0
 
 namespace PeakFitImprove
 {
 const bool debug_printout = false;
+
+const double debug_lower_energy = 725;
+const double debug_upper_energy = 720;
+
+extern size_t sm_num_optimization_threads;
+extern size_t sm_num_threads_per_individual;
+extern size_t sm_ga_population;
+extern size_t sm_ga_generation_max;
+extern size_t sm_ga_best_stall_max;
+extern size_t sm_ga_elite_count;
+extern double sm_ga_crossover_fraction;
+extern double sm_ga_mutation_rate;
+extern double sm_ga_mutate_threshold;
+extern double sm_ga_crossover_threshold;
 }
 
 
@@ -182,24 +188,24 @@ namespace JudgmentFactors
 
 struct FindCandidateSettings
 {
-  int num_smooth_side_channels = 4; // low res more
-  int smooth_polynomial_order = 3;  // highres 3, lowres 2
-  double threshold_FOM = 1.3;  // accept peaks higher than this FOM
-  double more_scrutiny_FOM_threshold = 3.5; // Peaks bellow this get extra scrutiny
-  float pos_sum_threshold_sf = -0.01f;
+  int num_smooth_side_channels = 9; // low res more
+  int smooth_polynomial_order = 2;  // highres 3, lowres 2
+  double threshold_FOM = 0.758621;  // accept peaks higher than this FOM
+  double more_scrutiny_FOM_threshold = 1.598265; // Peaks bellow this get extra scrutiny
+  float pos_sum_threshold_sf = 0.119178f;
 
   /** For second-derivative, how many channels are required to be above threshold, in-order to signal a transition */
-  size_t num_chan_fluctuate = 2;
+  size_t num_chan_fluctuate = 1;
 
   //float min_counts_per_channel = 1.0f;
-  float more_scrutiny_coarser_FOM = 5.0f;
+  float more_scrutiny_coarser_FOM = 3.001943f;
 
   /** The minimum Chi2 required, of at least one channel in ROI, to be above a straight
    line predicted by the channels on either side of the ROI.
    */
-  float more_scrutiny_min_dev_from_line = 4.0;
+  float more_scrutiny_min_dev_from_line = 6.816465;
 
-  float amp_to_apply_line_test_below = 40;
+  float amp_to_apply_line_test_below = 6.000000;
 
   std::string print( const std::string &var_name ) const;
 
@@ -220,9 +226,11 @@ struct InitialPeakFindSettings
    in order to keep the peak.  The higher this number, the more like a gaussian it must be. It is actually the ratio of
    the null hypothesis chi2 to the test hypothesis chi2.  A reasonable search range of values is maybe between -0.1 and 10.
    */
-  double initial_stat_threshold, initial_hypothesis_threshold;
+  double initial_stat_threshold = 1.951264;
+  double initial_hypothesis_threshold = 0.673169;
 
-  double initial_min_nsigma_roi, initial_max_nsigma_roi;
+  double initial_min_nsigma_roi = 2.246770;
+  double initial_max_nsigma_roi = 6.378162;
 
   enum class FwhmFcnForm : int {
     Gadras,
@@ -247,15 +255,19 @@ struct InitialPeakFindSettings
    `search_roi_nsigma_deficit`: Reasonable search range of 1 to 10.
    `search_stat_threshold`: Reasonable search range of 0 and 8.
    `search_hypothesis_threshold`: Reasonable search range of 0 and 8. -0.1 and 10.
-   `search_stat_significance`: Reasonable search range of 1 and 6.
+   `search_stat_significance`: Reasonable search range of 1 and 8.
    */
-  double search_roi_nsigma_deficit, search_stat_threshold, search_hypothesis_threshold, search_stat_significance;
+  double search_roi_nsigma_deficit = 4.241748;
+  //double search_stat_threshold = 8.051485;
+  double search_hypothesis_threshold = 3.342207;
+  double search_stat_significance = 2.025582;
 
   /** Add peaks to ROIs.  WIP.
    `ROI_add_nsigma_required`: required previous and new peaks to be better than. Reasonable search range: 1 to 8
    `ROI_add_chi2dof_improve`: Reasonable search range: 0 to 8
    */
-  double ROI_add_nsigma_required, ROI_add_chi2dof_improve;
+  double ROI_add_nsigma_required = 3.526017;
+  double ROI_add_chi2dof_improve = 0.516229;
 
   std::string print( const std::string &var_name ) const;
 };//struct InitialPeakFindSettings
@@ -265,10 +277,27 @@ struct FinalPeakFitSettings
 {
   /** Combine ROIs, based on how near means are, and how much initial ROIs are overlapping.
 
-   `combine_nsigma_near`: Reasonable search range of 1 to 10
-   `combine_ROI_overlap_frac`: Reasonable search range of -1 to 1
+   Reasonable search range of 1 to 10
    */
-  double combine_nsigma_near, combine_ROI_overlap_frac;
+  double combine_nsigma_near_;
+
+  /** Some very rough guesses as to what we should about expect
+
+    < 0.8 FWHMMust combineSingle peak artifact
+   0.8-2.0 FWHM - Should combineStrong interference
+   2.0-3.0 FWHM - Prefer combineContinuum sharing
+   3.0-4.0 FWHM - Either OKWeak interference
+     > 4.0 FWHM - Prefer separateIndependent peaks
+  */
+  double require_combine_num_fwhm_near;
+  double not_allow_combine_num_fwhm_near;
+
+
+  /** Combine ROIs, based on how much initial ROIs are overlapping.
+   
+   Reasonable search range of -1 to 1
+   */
+  //double combine_ROI_overlap_frac;
 
 
   /** How many nsigma the peak needs to be to consider modifying the continuum type; e.g., how statistically significant
@@ -334,39 +363,27 @@ struct FinalPeakFitSettings
   /** Determine ROI left and right base-widths for single peak ROIs.
    Width will be modified based on stat uncert of initial fit.
 
-   Reasonable search range: 0.5 to 7. ???
+   Reasonable search range: 0.5 to 7 - nominal ~2.5 FWHM
   */
-  double roi_extent_low_num_fwhm_base, roi_extent_high_num_fwhm_base;
+  double roi_extent_low_num_fwhm_base_highstat, roi_extent_high_num_fwhm_base_highstat;
 
-  /** How to add/subtract based the multiple based of statistical significance.
+  double roi_extent_low_num_fwhm_base_lowstat, roi_extent_high_num_fwhm_base_lowstat;
+
+  double high_stat_threshold;
+
+  /** The maximum amount extra FWHM beyond `roi_extent_low/high_num_fwhm_base` that the ROI can extend */
+  double roi_extent_low_num_fwhm_extra;
+  double roi_extent_high_num_fwhm_extra;
+
+  /** We will walk away from the extent minimum, towards the extent maximum, but if we detect a second derivative
+   that is above this statisticaly significant, we'll stop, and not include that channel.
    */
-  enum class RoiExtentMultType : int
-  {
-    Linear, Sqrt
-  };
+  double roi_end_second_deriv_thresh;
 
-  RoiExtentMultType roi_extent_mult_type;
-
-  /** The multiple to add/subtract from ROI width
-
-   The multiple can be peak-area within +-1 FWHM, and continuum-area in +- 1 FWHM
-
-   This does not apply to stepped continua.
-
-   Reasonable search range: 0 to 1. ???
-   */
-  double roi_extent_lower_side_stat_multiple, roi_extent_upper_side_stat_multiple;
-
-  //- Add in upper-bounds on stat uncert for peak (e.g., no differenace above 60 sigma or something)
-  //- Or maybe it should be height mult or divided by stat significance
-
-  /** The multiple to add/subtract from multiple-peak ROI widths
-
-   Use single peak peak value for starting, then have an additional add/subtract on each side
-
-   Reasonable search range: -1 to 2. ???
-   */
-  double multi_roi_extent_lower_side_fwhm_mult, multi_roi_extent_upper_side_fwhm_mult;
+  /** If data is this number of statistical below away from fit continuum + peak, the multi-peak ROI will be broken up, but only if
+   the resultant Chi2Dof improves by `break_multi_roi_up_required_chi2dof_improve`. */
+  double break_multi_roi_up_continuum_away_sigma;
+  double break_multi_roi_up_required_chi2dof_improve;
 
   std::string print( const std::string &var_name ) const;
 };//struct FinalPeakFitSettings

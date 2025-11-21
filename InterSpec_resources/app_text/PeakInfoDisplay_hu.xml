@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- pid is short for PeakInfoDisplay -->
+
+  <message id="pid-dialog-peak-erase">Összes Csúcs Törlése?</message>
+
+  <message id="pid-err-no-foreground">Előtér spektrumot be kell tölteni csúcs hozzáadásához.</message>
+
+  <message id="pid-search-peaks-btn">Csúcsok Keresése</message>
+  <message id="pid-tt-search-peaks-btn">Csúcsok keresése automatikus csúcskereső algoritmus használatával.</message>
+  <message id="pid-clear-peaks-btn">Összes Csúcs Törlése</message>
+  <message id="pid-tt-clear-peaks-btn"><b>Összes</b> meglévő csúcs eltávolítása.</message>
+  <message id="pid-nuc-from-ref-btn">Nuklid Ref.-ből</message>
+  <message id="pid-tt-nuc-from-ref-btn">
+    Csúcs nuklidok hozzárendelése a megjelenített referencia vonalakból. Csak azokra a
+    csúcsokra vonatkozik, amelyekhez még nem tartozik nuklid.
+  </message>
+
+  <message id="pid-add-peak-btn">Hozzáadás...</message>
+  <message id="pid-tt-add-peak-btn">Új csúcs kézi hozzáadása.</message>
+  <message id="pid-tt-del-peaks">A jelenleg szerkesztett csúcs törlése.</message>
+  <message id="pid-better-editor-hint">Jobb klikk a csúcsokon a jobb szerkesztőért</message>
+  <message id="pid-better-editor-hint-mobile">Tartsa lenyomva a csúcsokat a jobb szerkesztőért</message>
+  <message id="pid-tt-csv-export">Az azonosított csúcsok információinak exportálása vesszővel elválasztott formátumba.</message>
+  <message id="pid-tt-csv-copy">Csúcs CSV információk másolása a vágólapra.
+    <p>A csúcs adatok mind formázott, mind egyszerű szöveges változatban másolásra kerülnek a vágólapra,
+      így az adatok formátuma attól az alkalmazástól függ, amelybe beilleszti.
+    </p>
+  </message>
+
+  <message id="pid-csv-copy-full">Teljes csúcs CSV másolása</message>
+  <message id="pid-csv-copy-no-hdr">Másolás fejlécek nélkül</message>
+  <message id="pid-csv-copy-compact">Illesztett csúcs info másolása</message>
+</messages>

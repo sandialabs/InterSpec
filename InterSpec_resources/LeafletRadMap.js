@@ -620,9 +620,16 @@ LeafletRadMap.prototype.refresh = function( dont_update_zoom ){
         else if( m.displayType == 2 ) html += self.options.backgroundTxt;
         html += '</td></tr>';
       }
-      
-      html += `<tr><td>Sample</td><td>${m.sampleNumber}</td></tr>`;
-      
+
+      if( m.sampleNumbers )
+      {
+        const val = (m.sampleNumbers.length > 14) ? (m.sampleNumbers.substr(0,11) + "...") : m.sampleNumbers;
+        html += `<tr><td>Samples</td><td>${val}</td></tr>`;
+      }else
+      {
+        html += `<tr><td>Sample</td><td>${m.sampleNumber}</td></tr>`;
+      }
+
       html += `</table>`;
 
       m.setPopupContent( html );
@@ -634,6 +641,8 @@ LeafletRadMap.prototype.refresh = function( dont_update_zoom ){
     marker.on('mouseover', function(){ onMarkerMouseover(marker); });
 
     marker.sampleNumber = sample.sample;
+    if( sample.samples && ((typeof sample.samples) === "string") )
+      marker.sampleNumbers = sample.samples;
     marker.realTime = sample.rt;
     marker.rateIntensity = rel_gamma_rate;
     marker.displayType = (typeof sample.disp === "number") ? sample.disp : 3;

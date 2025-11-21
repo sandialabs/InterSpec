@@ -44,10 +44,8 @@ set(USE_DB_TO_STORE_SPECTRA ON CACHE BOOL "")
 set(PERFORM_DEVELOPER_CHECKS ON CACHE BOOL "")
 set(SpecUtils_ENABLE_EQUALITY_CHECKS ON CACHE BOOL "")
 set(USE_SPECRUM_FILE_QUERY_WIDGET ON CACHE BOOL "")
-
-# We dont currently export all functions tested when making a DLL for LibInterSpec, 
-#  so we'll disable batch analysis, so a static library will be made.
-set(USE_BATCH_TOOLS OFF CACHE INTERNAL "")
+set(USE_BATCH_CLI_TOOLS OFF CACHE INTERNAL "")
+set(USE_BATCH_GUI_TOOLS ON CACHE INTERNAL "")
 
 set(TEST_SUITE_BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/test_data"
     CACHE STRING
@@ -86,6 +84,15 @@ add_test( NAME FindCharacteristicNuclides
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+
+add_executable( test_nuclideSearch test_nuclideSearch.cpp )
+target_link_libraries( test_nuclideSearch PRIVATE InterSpecLib )
+add_test( NAME NuclideSearch
+  COMMAND $<TARGET_FILE:test_nuclideSearch> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+
 add_executable( test_RefLines test_RefLines.cpp )
 target_link_libraries( test_RefLines PRIVATE InterSpecLib )
 add_test( NAME TesRefLines
@@ -111,7 +118,7 @@ add_test( NAME TestRelEffManual
 
 add_executable( test_RelEffAuto test_RelEffAuto.cpp )
 target_link_libraries( test_RelEffAuto PRIVATE InterSpecLib )
-add_test( NAME TestRelEffManual
+add_test( NAME TestRelEffAuto
   COMMAND $<TARGET_FILE:test_RelEffAuto> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
@@ -151,6 +158,65 @@ add_test( NAME TMakeDrfSrcDef
   COMMAND $<TARGET_FILE:test_MakeDrfSrcDef> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
+
+add_executable( test_GammaInteractionCalc test_GammaInteractionCalc.cpp )
+target_link_libraries( test_GammaInteractionCalc PRIVATE InterSpecLib )
+add_test( NAME TGammaInteractionCalc
+  COMMAND $<TARGET_FILE:test_GammaInteractionCalc> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+
+add_executable( test_SimpleActivityCalc test_SimpleActivityCalc.cpp )
+target_link_libraries( test_SimpleActivityCalc PRIVATE InterSpecLib )
+add_test( NAME TSimpleActivityCalc
+  COMMAND $<TARGET_FILE:test_SimpleActivityCalc> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_BersteinPolynomial test_BersteinPolynomial.cpp )
+target_link_libraries( test_BersteinPolynomial PRIVATE InterSpecLib )
+add_test( NAME TBersteinPolynomial
+  COMMAND $<TARGET_FILE:test_BersteinPolynomial> ${BOOST_TEST_CL_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_MakeDrfFit test_MakeDrfFit.cpp )
+target_link_libraries( test_MakeDrfFit PRIVATE InterSpecLib )
+add_test( NAME TMakeDrfFit
+  COMMAND $<TARGET_FILE:test_MakeDrfFit> ${BOOST_TEST_CL_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_EnergyCal test_EnergyCal.cpp )
+target_link_libraries( test_EnergyCal PRIVATE InterSpecLib )
+add_test( NAME TEnergyCal
+  COMMAND $<TARGET_FILE:test_EnergyCal> ${BOOST_TEST_CL_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_PeakModel test_PeakModel.cpp )
+target_link_libraries( test_PeakModel PRIVATE InterSpecLib )
+add_test( NAME TPeakModel
+  COMMAND $<TARGET_FILE:test_PeakModel> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+if( USE_LLM_INTERFACE )
+  add_executable( test_LlmToolRegistry test_LlmToolRegistry.cpp )
+  target_link_libraries( test_LlmToolRegistry PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TLlmToolRegistry
+    COMMAND $<TARGET_FILE:test_LlmToolRegistry> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
+  add_executable( test_AnalystChecks test_AnalystChecks.cpp )
+  target_link_libraries( test_AnalystChecks PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TAnalystChecks
+    COMMAND $<TARGET_FILE:test_AnalystChecks> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+endif( USE_LLM_INTERFACE )
 
 
 # ./test_offlineAnalysis.cpp

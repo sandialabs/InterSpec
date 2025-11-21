@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- anpd is short for SnapshotBrowser -->
+  <message id="sb-resume-from-prev">Parece que você salvou este arquivo de espectro como parte de um estado salvo; gostaria de retomar seu trabalho anterior?</message>
+  <message id="sb-no-saved-states">Nenhum estado de aplicativo salvo</message>
+  <message id="sb-tt-del-state">Excluir estado</message>
+  <message id="sb-tt-edit-state">Editar nome ou descrição do estado</message>
+  <message id="sb-state-HEAD-label">Estado Salvo</message>
+  <message id="sb-state-auto-saved-label">Auto-Salvo</message>
+  <message id="sb-unsaved-spectra-parent-node-label">Espectros abertos, mas não armazenados explicitamente</message>
+  <message id="sb-tt-unsaved-spectra-node">Espectros que você abriu no InterSpec, mas não salvou explicitamente.</message>
+  <message id="sb-unsaved-spectrum-node">{1} (aberto em {2})</message>
+  <message id="sb-tt-unsaved-spectrum-node">Nome do arquivo: {1}
+Tempo de Medição: {2}
+Tempo Carregado: {3}
+Número de Amostras: {4}
+Tempo Real Total: {5}</message>
+  <message id="sb-open-spectrum-as">Abrir espectro selecionado como:</message>
+  <message id="sb-load-spectrum-only">Carregar Apenas Espectro</message>
+  <message id="sb-load-app-state">Carregar Estado do Aplicativo</message>
+  <message id="sb-err-making-browser-txt">Erro inesperado ao criar navegador de arquivos de espectro do banco de dados</message>
+  <message id="sb-err-making-browser-msg">Erro ao criar navegador de arquivos de espectro do banco de dados: {1}</message>
+
+  <!-- DbSpecFileItem messages -->
+  <message id="sb-loaded-label">Carregado: {1}</message>
+  <message id="sb-loaded-modified-label">Carregado: {1}, foi modificado</message>
+  <message id="sb-resume-from-btn">Retomar De</message>
+  <message id="sb-err-displaying-measurement">Erro ao exibir medição anterior, as coisas podem não estar como esperado</message>
+
+  <!-- SnapshotBrowser error messages -->
+  <message id="sb-no-active-db-session">Nenhuma sessão de banco de dados ativa</message>
+  <message id="sb-invalid-state-selected">Estado inválido selecionado</message>
+  <message id="sb-must-enter-name">Você deve inserir um nome</message>
+  <message id="sb-err-modifying-state">Erro ao modificar estado - provavelmente não alterado</message>
+  <message id="sb-couldnt-load-snapshot">Desculpe, não foi possível carregar o snapshot solicitado</message>
+  <message id="sb-no-state-selected">Nenhum estado selecionado para excluir</message>
+  <message id="sb-snapshot-removed">Snapshot '{1}' removido do banco de dados.</message>
+  <message id="sb-err-removing-snapshot">Erro ao remover snapshot do banco de dados.</message>
+  <message id="sb-err-loading-from-db">Erro ao carregar do banco de dados</message>
+  <message id="sb-failed-to-load-state">Falha ao carregar estado</message>
+  <message id="sb-already-opened">Já aberto</message>
+
+  <!-- Delete confirmation dialog -->
+  <message id="sb-confirm-delete-title">Confirmar Exclusão</message>
+  <message id="sb-confirm-delete-msg"><div>Tem certeza de que deseja excluir:</div><div style="white-space: nowrap; text-align: center; text-overflow: ellipsis; overflow: hidden; font-weight: bold; max-width:98%;">{1}</div><div>?</div></message>
+
+  <!-- Constructor error messages -->
+  <message id="sb-err-creating-browser"><b>Erro ao criar SnapshotBrowser</b> - desculpe :(<br />Erro: {1}</message>
+  <message id="sb-unexpected-issue"><b>Problema inesperado ao criar SnapshotBrowser</b> - desculpe :(</message>
+
+  <!-- Edit dialog -->
+  <message id="sb-edit-name-label">Nome</message>
+  <message id="sb-edit-name-placeholder">(Nome para armazenar)</message>
+  <message id="sb-edit-desc-label">Desc.</message>
+  <message id="sb-edit-desc-placeholder">(Descrição opcional)</message>
+</messages>

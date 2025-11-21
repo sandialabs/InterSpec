@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- This file applies to ShieldingSourceDisplay.cpp
+    ssd- is short for ShieldingSourceDisplay, and is basically the GUI component
+    sfm- is short for SourceFitModel
+    x2g- is short for ShieldingSourceDisplay::Chi2Graphic - e.g., the chart on this page
+  -->
+  <message id="ssd-tt-distance">
+    線源中心から検出器面までの距離。数値には単位が必要です；
+    有効な単位：meters、m、cm、mm、km、feet、
+    ft、'、in、inches、または"。複数の距離を追加することもでき、
+    '3ft 4in'や'3.6E-2 m 12 cm'のように記述でき、
+    それぞれ40インチと15.6cmに相当します。
+  </message>
+  <message id="ssd-geom-point">点/球状</message>
+  <message id="ssd-geom-cyl-end">円筒状：端面</message>
+  <message id="ssd-geom-cyl-side">円筒状：側面</message>
+  <message id="ssd-rectangular">矩形</message>
+  <message id="ssd-fixed-geom-notification">固定ジオメトリDRFを使用</message>
+  <message id="ssd-tt-shieldings">
+    遮蔽は殻として扱われ、最内側の
+    殻が最初に追加したもの（このボックスの一番上）で、
+    その後の遮蔽がその周りに層状に配置されます。遮蔽の
+    成分として属さない線源は中心の点
+    線源として扱われます。
+  </message>
+  <message id="ssd-add-shield-label">遮蔽追加:</message>
+  <message id="ssd-tt-add-shield">事前定義された一般的な遮蔽材料のライブラリから選択。</message>
+  <message id="ssd-generic-btn">汎用</message>
+  <message id="ssd-tt-generic">原子番号と面密度を定義してフィットできます。</message>
+  <message id="ssd-perform-fit-btn">モデルフィット実行</message>
+  <message id="ssd-cancel-fit">モデルフィットキャンセル</message>
+  <message id="ssd-mi-calc-log">計算ログ</message>
+  <message id="ssd-mi-import-model">モデルインポート...</message>
+  <message id="ssd-mi-export-model">モデルエクスポート</message>
+  <message id="ssd-mi-from-db">データベースから開く...</message>
+  <message id="ssd-mi-save-to-db">データベースに保存...</message>
+  <message id="ssd-mi-clone-db-entry">データベースでクローン...</message>
+  <message id="ssd-to-small-for-chart">(χ<sup>2</sup>を表示するにはウィンドウを高くしてください)</message>
+  <message id="ssd-tt-chi2-switch">現在のモデルの各ピークのχを表示するか、現在のモデルと観測ピーク間の相対ピーク面積倍数を表示するかを切り替え。</message>
+  <message id="ssd-cb-all-peaks">全ピーク</message>
+  <message id="ssd-multi-iso-per-peak">干渉補正</message>
+  <message id="ssd-options-title">オプション</message>
+  <message id="ssd-tt-multi-iso-per-peak">このオプションをチェックすると、ピークに割り当てられた核種以外でフィットされている他の核種が、観測ピークの期待カウントに寄与できるようになります。これは例えば、185 keV付近にピークを持つHo166mとU235の両方をフィットする際に有用です。</message>
+  <message id="ssd-cluster-width-label">干渉幅 (num σ):</message>
+  <message id="ssd-tt-cluster-width">任意の核種からのガンマ線がピークの平均から離れた
+    シグマ数で、合計されピークに帰属されます。デフォルト値は1.25シグマですが、
+    干渉により明らかに広がっているピークや不適合の場合、この値を増加させることができます。
+    0.0に減少させると、ピークに関連付けられたガンマのみが使用されます
+    (「複数核種がピークに寄与」のチェックを外すのと同じ)。
+  </message>
+
+  <!-- Additional key interface elements -->
+  <message id="ssd-distance-label">距離:</message>
+  <message id="ssd-activity-label">放射能:</message>
+  <message id="ssd-age-label">年数:</message>
+  <message id="ssd-geometry-label">ジオメトリ:</message>
+  <message id="ssd-source-label">線源:</message>
+  <message id="ssd-shielding-label">遮蔽:</message>
+  <message id="ssd-material-label">材料:</message>
+  <message id="ssd-thickness-label">厚さ:</message>
+  <message id="ssd-chi2-label">χ²:</message>
+  <message id="ssd-fit-peaks">フィットピーク</message>
+  <message id="ssd-add-nuclide">核種追加</message>
+  <message id="ssd-remove-nuclide">核種削除</message>
+  <message id="ssd-update-display">表示更新</message>
+  <message id="ssd-save-changes">変更保存</message>
+  <message id="ssd-discard-changes">変更破棄</message>
+</messages>

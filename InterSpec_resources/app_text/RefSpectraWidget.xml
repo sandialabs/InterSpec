@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- rs- is short for Reference Spectra -->
+  <message id="rs-dialog-title">Reference Spectra</message>
+  <message id="rs-show-foreground">Compare Foreground</message>
+  <message id="rs-show-foreground-portrait">Compare</message>
+  <message id="rs-show-background">Show Background</message>
+  <message id="rs-show-background-portrait">Background</message>
+  <message id="rs-tt-add-dir-btn">Add directory to open reference spectra from.</message>
+  <message id="rs-tt-delete-dir-btn">Removes the currently selected directory from the list of places to show reference spectra from.</message>
+  <message id="rs-no-dir-selected-desktop">
+    Select a reference spectrum to load. <br />
+    <br />
+    Add reference spectra directories using the
+    <img src="InterSpec_resources/images/plus_min_black.svg" style="width: 12px; height: 12px; display: inline-block; vertical-align: middle;"/> icon.
+    </message>
+  <message id="rs-no-dir-selected-mobile">
+    Select a reference spectrum to load. <br /> 
+    <div style="font-size: smaller;">
+      (you can also add your own reference spectra directory by creating a "reference_spectra" directory 
+      in <em>InterSpec</em>s data directory (using the Files app), and then add further sub-directories
+      with your spectra in them)
+    </div>
+  </message>
+  <message id="rs-some-dirs-removed">{1} directories are no longer avaiable, and have been removed.</message>
+  <message id="rs-dir-added-successfully">Added path '{1}'.</message>
+  <message id="rs-show-as">Load as</message>
+  <message id="rs-add-dir-dialog-title">Add Reference Spectra Directory</message>
+  <message id="rs-duplicate-dir-path">Directory already in selected: '{1}'</message>
+  <message id="rs-dir-not-found">Directory not found, so not removed from preferences: '{1}'</message>
+  <message id="rs-dir-info-only-spectra">Directory contains {1} spectra files<br /></message>
+  <message id="rs-dir-info-only-subdir">Directory contains {1} sub-directories<br /></message>
+  <message id="rs-dir-info-with-subdir-spectra">Directory contains {1} spectra files and {2} sub-directories<br /></message>
+  <message id="rs-error-loading-file">Error loading file: '{1}'</message>
+  <message id="rs-show-in-explorer">Show in Explorer</message>
+  <message id="rs-show-in-finder">Show in Finder</message>
+  <message id="rs-show-in-linux-file-manager">Show in File Manager</message>
+  <message id="rs-error-invalid-file">Invalid spectrum file: '{1}'.</message>
+  <message id="rs-error-invalid-type-selected">Invalid spectrum type selected.</message>
+  </messages>
+
+

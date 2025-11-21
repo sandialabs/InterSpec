@@ -67,6 +67,7 @@ namespace Wt
   class WApplication;
 }
 
+class DirectorySelector;
 class SpecFileQueryDbCache;
 
 /* Implimetation ideas
@@ -131,7 +132,7 @@ protected:
 #elif( BUILD_AS_OSX_APP )
   ///Called when the user selects a new path. \basePathChanged is called also
   /// when filter options change.
-  void newMacOsPathSelected();
+  void newMacOsPathSelected( std::string path );
 #endif
   
   void basePathChanged();
@@ -203,16 +204,8 @@ protected:
   ResultTableModel *m_resultmodel;
   RowStretchTreeView *m_resultview;
   
-#if( BUILD_AS_ELECTRON_APP )
-  std::string m_basePath;
-  Wt::WText *m_baseLocation;
-#elif( BUILD_AS_OSX_APP )
-  //TODO: currently using a WFileUpload to browse for a file - should use custom JS/html to get rid of some issues
-  std::string m_basePath;
-  Wt::WFileUpload *m_baseLocation;
-#else
-  Wt::WLineEdit *m_baseLocation;
-#endif
+  DirectorySelector *m_baseLocation;
+
   
   Wt::WCheckBox *m_recursive;
   Wt::WCheckBox *m_filterByExtension;

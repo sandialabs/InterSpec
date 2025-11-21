@@ -32,22 +32,23 @@
 #include <Wt/WServer>
 #include <Wt/WApplication>
 
+#include "SandiaDecay/SandiaDecay.h"
+
+#include "SpecUtils/SpecFile.h"
+#include "SpecUtils/SpecUtilsAsync.h"
+
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
-#include "SpecUtils/SpecFile.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/IsotopeId.h"
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/IsotopeSearchByEnergyModel.h"
-
-
-#include "SandiaDecay/SandiaDecay.h"
 
 
 using namespace Wt;
@@ -134,7 +135,7 @@ namespace
       specified energy ranges, with at least the minimum branching ratio and
       half-lives specified.
    */
-  NuclideMatches filter_nuclides( const double minbr,
+  NuclideMatches filter_nuclides( const double min_relative_br,
                                   const double minHalfLife,
                                   const bool no_progeny,
                                   const vector<double> &energies,
@@ -147,12 +148,12 @@ namespace
     NuclideMatches filteredNuclides;
     
     //Get isotopes with gammas in all ranges...
-    EnergyToNuclideServer::setLowerLimits( minHalfLife, minbr );
-    
+    EnergyToNuclideServer::setLowerLimits( minHalfLife, min_relative_br );
+
     auto nucnuc = EnergyToNuclideServer::energyToNuclide();
     if( !nucnuc )
       throw runtime_error( "Couldnt get EnergyToNuclideServer" );
-    
+
     for( size_t i = 0; i < energies.size(); ++i )
     {
       const float minenergy = static_cast<float>(energies[i] - windows[i]);
@@ -209,426 +210,68 @@ namespace
             if( nuc->halfLife < minHalfLife )
               continue;
             
-            if( (minbr <= 0.0) || (nuc->branchRatioToDecendant(pos->nuclide)*transbr >= minbr) )
-              filteredNuclides[nuc].insert( energies[i] );
+            filteredNuclides[nuc].insert( energies[i] );
           }
         }//if( !no_progeny )
       }//for( pos = begin; pos != end; ++pos )
     }//for( size_t i = 0; i < energies.size(); ++i )
-    
+
+    if( min_relative_br > 0.0 )
+    {
+      //Age each nuclide to default nuclide age; find its max rel intensity line, then divide each gamma by that
+      //  and re-due the above.  This pathway is a lot slower since we are doing the full decay calculation, so we'll
+      //  try to use multiple threads.
+      SpecUtilsAsync::ThreadPool pool;
+      for( NuclideMatches::value_type &nuc_matches : filteredNuclides )
+      {
+        const SandiaDecay::Nuclide * const nuc = nuc_matches.first;
+        set<double> * const matched_energies = &(nuc_matches.second);
+
+        pool.post( [min_relative_br, nuc, no_progeny, matched_energies, &energies, &windows](){
+          matched_energies->clear();
+          const double age = no_progeny ? 0.0 : PeakDef::defaultDecayTime( nuc );
+          SandiaDecay::NuclideMixture mixture;
+          mixture.addNuclide( SandiaDecay::NuclideActivityPair(nuc,1.0E4) );
+          const vector<SandiaDecay::EnergyRatePair> photons
+                                        = mixture.photons(age, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy);
+          double max_intensity = 0.0;
+          for( const SandiaDecay::EnergyRatePair &energy_rate : photons )
+            max_intensity = std::max( max_intensity, energy_rate.numPerSecond );
+
+          if( (max_intensity <= 0.0) || IsNan(max_intensity) || IsInf(max_intensity) )
+            max_intensity = 1.0; //JIC
+
+          for( size_t window_index = 0; window_index < energies.size(); ++window_index )
+          {
+            const double min_energy = energies[window_index] - fabs(windows[window_index]);
+            const double max_energy = energies[window_index] + fabs(windows[window_index]);
+
+            const auto photon_begin = lower_bound( begin(photons), end(photons), min_energy,
+              []( const SandiaDecay::EnergyRatePair &el, const double value ){
+                return el.energy < value;
+            } );
+
+            const auto photon_end = upper_bound( begin(photons), end(photons), max_energy,
+              []( const double value, const SandiaDecay::EnergyRatePair &el ){
+                return value < el.energy;
+            } );
+
+            auto max_in_range_iter = photon_end;
+            for( auto iter = photon_begin; iter != photon_end; ++iter )
+            {
+              if( (max_in_range_iter == photon_end) || (iter->numPerSecond > max_in_range_iter->numPerSecond) )
+                max_in_range_iter = iter;
+            }
+            if( (max_in_range_iter != photon_end) && ( (max_in_range_iter->numPerSecond/max_intensity) >= min_relative_br) )
+              matched_energies->insert( max_in_range_iter->energy );
+          }//for( size_t window_index = 0; window_index < energies.size(); ++window_index )
+        } );
+      }//for( const auto &nuc_matches : filteredNuclides )
+      pool.join();
+    }//if( we are filtering on BRs )
+
     return filteredNuclides;
   }//filter_nuclides( )
-
-  
-  std::shared_ptr<const PeakDef> nearest_peak( const float energy,
-                                              const std::vector<std::shared_ptr<const PeakDef>> &allpeaks )
-  {
-    std::shared_ptr<const PeakDef> nearest;
-    double minDE = std::numeric_limits<double>::infinity();
-    
-    for( const auto &peak : allpeaks )
-    {
-      const double dE = fabs( peak->mean() - energy );
-      if( (dE < minDE)
-         && ((energy > peak->lowerX()) && (energy < peak->upperX())) )
-      {
-        minDE = dE;
-        nearest = peak;
-      }//if( dE < minDE )
-    }//for( int row = 0; row < nrow; ++row )
-    
-    return nearest;
-  }//nearest_peak(...)
-  
-  
-  /** A first attempt to guess which nuclide most closely matches the searched
-      energy ranges, using the "profile" of the spectrum, represented by the
-      peaks fit (both aurtomated and user) - this is work in progress, and
-      there is still very much room to come up with somethign better.
-   */
-  double profile_weight( std::shared_ptr<const DetectorPeakResponse> detector,
-                        const std::shared_ptr<const SpecUtils::Measurement> displayed_measurement,
-                       const std::vector<std::shared_ptr<const PeakDef>> &user_peaks,
-                       const std::vector<std::shared_ptr<const PeakDef>> &automated_search_peaks,
-                       std::vector<SandiaDecay::EnergyRatePair> srcgammas,
-                       const vector<double> &energies,
-                       const vector<double> &windows,
-                       const IsotopeSearchByEnergyModel::IsotopeMatch &nucmatches,
-                       double shielding_an,
-                       double shielding_ad )
-  {
-    /* This function takes a kinda complex approach to seeing if the expected
-       profile of a source nuclide matches the observed data - something much
-       simpler could probably do just as well or maybe even better (but its been
-       a while since I've gotten to think about physics, so we'll try the
-       slightly more complicated approach first, especially since its not *that*
-       complicated)
-     
-     [For shielding passed in] A rough overview of this functions is:
-     -Add in effects of DRF and shielding for passed in gamma lines, then
-      normalize sum of gamma line rates to 1.0.
-     -Combine all peaks
-     -Match source lines to peaks they may contribute towards
-     -Create a sum of weighted gamma intensities for the source that are located
-      within peaks.  The weight for each gamma line is determined comparing the
-      expected yeild for each peak with the observed yeild.  The expected yeild
-      is determined by normaling the gamma rate relative to the nearest search
-      energy peak count rate (min detectable counts is used if no peak fit).
-     -As a penalty: Sum the fraction of source lines that should have created
-      a peak, but did not (but only if the expected peak area, determined
-      similar to previous bullet, is larger than the minimum detectable area)
-     
-     See notes at the end of this function for additional improvements.
-     
-     See fractionDetectedWeight(...) function in IsotopeId.h for a similarish function
-     
-     */
-    
-    auto print_debug = [&]() -> bool {
-      return nucmatches.m_displayData[IsotopeSearchByEnergyModel::Column::ParentIsotope].toUTF8() == "Fe59";
-      //return nucmatches.m_nuclide->symbol && nucmatches.m_nuclide->symbol == "Fe59";
-      //return false;
-    };
-    
-    const string source_name = print_debug() ? nucmatches.m_displayData[IsotopeSearchByEnergyModel::Column::ParentIsotope].toUTF8() : "";
-    
-    //Combine user peaks with the automated search peaks
-    const vector<shared_ptr<const PeakDef>> allpeaks
-      = [&]() -> vector<shared_ptr<const PeakDef>> {
-        vector<shared_ptr<const PeakDef>> answer;
-        for( const auto &p : user_peaks )
-        {
-          if( p )
-            answer.push_back( p );
-        }
-    
-        //Add automated search peaks that arent already represented by the user peaks
-        for( const auto &peak : automated_search_peaks ){
-          if( !peak )
-            continue;
-          
-          auto nearpeak = nearest_peak( peak->mean(), allpeaks );
-          const double peak_sigma = peak->gausPeak() ? peak->sigma() : 0.25*peak->roiWidth();
-          if( !nearpeak || (fabs(nearpeak->mean() - peak->mean()) > peak_sigma) )
-            answer.push_back( peak );
-        }
-        return answer;
-      }();
-    
-    if( print_debug() )
-    {
-      cout << "Have peaks: ";
-      for( auto i : allpeaks )
-        cout << "{" << i->mean() << "keV,amp=" << (i->gausPeak() ? i->amplitude() : -1.0) << "},";
-      cout << endl;
-    }//if( print_debug() )
-    
-    
-    if( srcgammas.empty() )
-    {
-      cerr << "IsotopeSearchByEnergyModel profile_weight: no source lines" << endl;
-      return -1.0;
-    }
-    
-    //Scale the yeilds for the detector response function and shielding specified
-    for( auto &src : srcgammas )
-    {
-      const double det_sf = (!!detector ? detector->intrinsicEfficiency(src.energy) : 1.0f);
-      const double xs = MassAttenuation::massAttenuationCoefficientFracAN( shielding_an, src.energy );
-      const double shielding_sf = exp( -shielding_ad * xs );
-      
-      src.numPerSecond *= det_sf * shielding_sf;
-    }//for( auto &src : srcgammas )
-    
-    
-    const double min_energy = [&]() -> double {
-        double answer = 80.0;  //80keV is arbitrary.  IF we are searching x-rays, perhaps we should allow down to 40 keV or so
-        for( size_t i = 0; i < energies.size() && i < windows.size(); ++i )
-          answer = std::min( answer, energies[i] - windows[i] );
-        return answer;
-      }();
-    
-    //Normalize expected gammas to sum to 1.0 above min_energy.
-    const double srcgamma_sum = [&]() -> double {
-      double sum = 0.0;
-      for( const auto &src : srcgammas )
-        if( src.energy >= min_energy )
-          sum += src.numPerSecond;
-      return sum;
-    }();
-    
-    if( srcgamma_sum <= DBL_EPSILON )
-      return -1.0;
-    
-    for( auto &src : srcgammas )
-      src.numPerSecond /= srcgamma_sum;
-    
-    
-    //Pair up search energie/windows with the fraction of gammas in that range and peak area
-    vector<tuple<double,double,double,double>> search_energies;
-    for( size_t i = 0; i < energies.size() && i < windows.size(); ++i )
-    {
-      const double energy = energies[i], w = windows[i];
-      double frac_gammas_in_range = 0.0;
-      for( auto &src : srcgammas )
-      {
-        if( (src.energy > (energy-w)) && (src.energy < (energy+w)) )
-          frac_gammas_in_range += src.numPerSecond;
-      }//for( auto &src : srcgammas )
-      
-      double peak_area = 0.0;
-      for( const auto &p : allpeaks )
-      {
-        if( (p->mean() > (energy-w)) && (p->mean() < (energy+w)) )
-          peak_area += p->gausPeak() ? p->amplitude() : p->areaFromData(displayed_measurement);
-      }
-      
-      //If no peaks, use somethign like minimum detectable peak area
-      if( peak_area < 0.1 && displayed_measurement )
-        peak_area = 2.33*sqrt(displayed_measurement->gamma_integral(energy-w, energy+w));
-      
-      if( frac_gammas_in_range > 0.0 )
-      {
-        
-        if( print_debug() )
-          cout << "For " << source_name << " SearchEnergyRange "
-               << energies[i] << "keV has frac_gammas_in_range="
-               << frac_gammas_in_range << ", and peak_area=" << peak_area << endl;
-        search_energies.emplace_back( energies[i], windows[i], frac_gammas_in_range, peak_area );
-      }
-    }//for( size_t i = 0; i < energies.size() && i < windows.size(); ++i )
-    
-    std::sort( begin(search_energies), end(search_energies),
-              [](const tuple<double,double,double,double> &a,
-                 const tuple<double,double,double,double> &b) -> bool
-              { return get<0>(a) < get<0>(b); } );
-    
-    
-    if( search_energies.size() == 0 )
-    {
-      if( print_debug() )
-        cerr << "IsotopeSearchByEnergyModel: no search energies specified" << endl;
-      return -1.0;
-    }
-    
-    //Go through and see which lines can be accounted for with peaks in the spectrum.
-    //  Lines in the search areas will always be considered to be in peaks.
-    
-    
-    double in_peaks_frac = 0.0, not_in_peaks_frac = 0.0;
-    vector<SandiaDecay::EnergyRatePair> out_of_peak_src_lines;
-    std::map<std::shared_ptr<const PeakDef>,double> src_counts_in_peaks;
-    
-    for( auto &src : srcgammas )
-    {
-      if( src.energy < min_energy )
-        continue;
-      
-      //Check if this srb energy is in a peak.
-      //  Use Mean +- 0.75 FWHM as range (arbitrarily chosen)
-      bool in_peak = false;
-      auto peak = nearest_peak(src.energy, allpeaks );
-      if( peak && (src.energy > (peak->mean() - 0.75*peak->fwhm()))
-          && (src.energy < (peak->mean() + 0.75*peak->fwhm())) )
-      {
-        in_peak = true;
-        //I think std::map requires its template type (e.g., the double) to be
-        //  default constructable, which I think implies that the default
-        //  constructor (e.g., value set to 0.0) will be called for the double
-        //  in src_counts_in_peaks[peak] += src.numPerSecond;, but I'll be
-        //  safe/faster anyway.
-        auto pos = src_counts_in_peaks.find(peak);
-        if( pos == end(src_counts_in_peaks) )
-          src_counts_in_peaks.insert( make_pair(peak,src.numPerSecond) );
-        else
-          pos->second += src.numPerSecond;
-        if( print_debug() )
-          cout << "For " << source_name << " Peak " << peak->mean() << "keV "
-               << " is contributed to by " << src.numPerSecond << endl;
-        in_peaks_frac += src.numPerSecond;
-      }//if( src.energy contributes to thie peak )
-      
-  
-      bool in_search_range = false;
-      for( const auto &range : search_energies )
-      {
-        const double energy = get<0>(range), window = get<1>(range);
-        if( (src.energy > (energy - window)) && (src.energy < (energy + window)) )
-        {
-          in_search_range = true;
-          break;
-        }
-      }//for( const auto &range : search_energies )
-      
-      if( !in_search_range && !in_peak )
-      {
-        out_of_peak_src_lines.push_back( src );
-        not_in_peaks_frac += src.numPerSecond;
-      }
-    }//for( auto &src : srcgammas )
-    
-    
-    double weighted_in_peak_frac = 0.0;
-    
-    for( const auto &peak_srcamp : src_counts_in_peaks )
-    {
-      const auto peak = peak_srcamp.first;
-      const double peak_mean = peak->mean();
-      const double peak_area = peak->amplitude();
-      const double peak_range_rate = peak_srcamp.second;
-      
-      if( (peak_mean < min_energy) || (peak_area < DBL_EPSILON) || (peak_range_rate < DBL_EPSILON) )
-        continue;  //there could be some edge effect here, but whatever for now.
-      
-      const tuple<double,double,double,double> &nearest_search
-        = *std::min_element( begin(search_energies), end(search_energies),
-          [=]( const tuple<double,double,double,double> &lhs, const tuple<double,double,double,double> &rhs ) -> bool {
-            const double lhsdist = std::fabs( get<0>(lhs) - peak->mean() );
-            const double rhsdist = std::fabs( get<0>(rhs) - peak->mean() );
-            return lhsdist < rhsdist;
-          } );
-      
-      const double nearest_search_energy = get<0>(nearest_search);
-      const double nearest_search_window = get<1>(nearest_search);
-      
-      if( peak_mean > (nearest_search_energy-nearest_search_window)
-         && peak_mean < (nearest_search_energy+nearest_search_window) )
-      {
-        weighted_in_peak_frac += peak_range_rate;
-        continue;
-      }
-      
-      const double search_range_rate = get<2>(nearest_search);
-      if( search_range_rate <= DBL_EPSILON ) //this should never happen, or else we messed up before callign this function, but JIC
-      {
-//#if( PERFORM_DEVELOPER_CHECKS )
-//        char buffer[256];
-//        snprintf( buffer, sizeof(buffer), "Found a search_range_rate=%f for nuclide=%s - should not happen.",
-//                  search_range_rate, source_name.c_str() );
-//        log_developer_error( __func__, buffer );
-//#endif
-//        continue;
-        return -1.0;
-      }//if( search_range_rate <= 0.0 )
-      
-      const double search_range_peak_area = get<3>(nearest_search);
-      const double expected_peak_area = peak_range_rate * search_range_peak_area / search_range_rate;
-      
-      if( expected_peak_area > peak_area )
-      {
-        //There could be another nuclide adding to things, so only
-        //  assymptotically punish up to a factor of 0.05 (arbitrarily chosen)
-        weighted_in_peak_frac += peak_range_rate * std::max(0.05,1.0/sqrt(expected_peak_area/peak_area));
-        
-        if( print_debug() )
-          cout << "For " << source_name << " Peak " << peak->mean() << "keV (smaller, expected="
-               << expected_peak_area << " vs peak_area=" << peak_area << ") "
-               << "contributing " << (peak_range_rate * std::max(0.05,1.0/sqrt(expected_peak_area/peak_area)))
-               << endl;
-      }else
-      {
-        //We arent seeing as many gammas here as expected, punish up to 0.2 (arbitrary)
-        weighted_in_peak_frac += peak_range_rate * std::max( 0.05, expected_peak_area/peak_area );
-        
-        if( print_debug() )
-          cout << "For " << source_name << " Peak " << peak->mean() << "keV (larger, expected="
-               << expected_peak_area << " vs peak_area=" << peak_area << ") "
-               << "contributing " << (peak_range_rate * std::max(0.05, expected_peak_area/peak_area))
-               << endl;
-      }
-      if( print_debug() )
-        cout << source_name << " at peak energy=" << peak->mean()
-             << " gives expected_peak_area=" << expected_peak_area
-             << ", and peak_area=" << peak_area << endl;
-    }//for( const auto &peak_srcamp : src_counts_in_peaks )
-    
-    //Now punish for not having peaks you should probably have
-    double weighted_out_of_peak_frac = 0.0;
-    for( const auto &src : out_of_peak_src_lines )
-    {
-      if( src.energy < min_energy )
-        continue;
-      
-      if( !displayed_measurement )
-      {
-        weighted_out_of_peak_frac += src.numPerSecond;
-        continue;
-      }
-      
-      const tuple<double,double,double,double> &nearest_search
-      = *std::min_element( begin(search_energies), end(search_energies),
-                          [&]( const tuple<double,double,double,double> &lhs, const tuple<double,double,double,double> &rhs ) -> bool {
-                            const double lhsdist = std::fabs( get<0>(lhs) - src.energy );
-                            const double rhsdist = std::fabs( get<0>(rhs) - src.energy );
-                            return lhsdist < rhsdist;
-                          } );
-      
-      //const double nearest_search_energy = get<0>(nearest_search);
-      const double nearest_search_window = get<1>(nearest_search);
-      const double search_range_rate = get<2>(nearest_search);
-      const double search_range_peak_area = get<3>(nearest_search);
-      
-      const double peak_sigma = ((detector && detector->hasResolutionInfo())
-                                  ? detector->peakResolutionSigma(src.energy) : nearest_search_window);
-      
-      const double background = gamma_integral( displayed_measurement, src.energy-3.0*peak_sigma, src.energy+3.0*peak_sigma );
-      const double mindetcounts = 2.33 * sqrt(background);
-      
-      const double expected = src.numPerSecond * search_range_peak_area / search_range_rate;
-      if( expected > mindetcounts )
-      {
-        if( print_debug() )
-          cout << "For " << source_name << " out_of_peak_src_line " << src.energy << "keV "
-               << "contributing " << src.numPerSecond << " (expected=" << expected << " vs mindetcounts=" << mindetcounts << ")" << endl;
-        weighted_out_of_peak_frac += src.numPerSecond;  //could do a weighting similar to in-peak area
-      }else
-      {
-        if( print_debug() )
-          cout << "For " << source_name << " out_of_peak_src_line " << src.energy << "keV "
-               << "is insignificant (expected=" << expected << " vs mindetcount=" << mindetcounts
-                << "), not contributing" << endl;
-      }
-    }//for( const auto &src : out_of_peak_src_lines )
-    
-    
-    if( print_debug() )
-    {
-      cout << source_name << " weighted_in_peak_frac=" << weighted_in_peak_frac << endl;
-      cout << source_name << " weighted_out_of_peak_frac=" << weighted_out_of_peak_frac << endl;
-    }
-    
-    
-    //maybe make a penalty if the observed peaks in the search regions would
-    //  show negative shielding or something.
-    
-    //Maybe reward this nuclide for being responsible for more peaks.  This
-    //  would counteract nuclides that have just the one energy that you are
-    //  searching for, even though there may be other nuclides that are
-    //  responsible for many peaks.  It looks like something like +0.02 for
-    //  every peak accounted for would be reasonably powerful for this.
-    
-    //Could reward for the search ranges having a higher BR of gammas in them
-    
-    //Right now src lines are included if they are within 0.75*FWHM of the peak
-    //  mean.  We could weight lines according to how close they are to the peak
-    //  mean; or even tighten up the 0.75 to like 0.5. This would be
-    //  particularly useful for NaI detectors.  I think somewhere I had used
-    //  a small constant plus fraction of FWHM, and that worked well; maybe look
-    //  for that.
-    
-    //Should now check half-lives of parents and decendants and bias things
-    //  towards preffering more likely to be seen isotopes (e.g., filter really
-    //  short time periods out)
-    
-    //Maybe not in this function, but where value is returned, could preffer
-    //  unshielded solutions.
-    
-    
-    
-    //Currently performs poorly on NaI for Np237
-    
-    return weighted_in_peak_frac - weighted_out_of_peak_frac;
-  }//double profile_weight(...)
 
 
   void alphaOrBetasWithAllEnergies( const bool isAlpha,
@@ -843,10 +486,11 @@ namespace
           
           if( isAlpha )
           {
-            const double weight = profile_weight( nullptr, displayed_measurement,
+            const double weight = IsotopeId::profile_weight( nullptr, displayed_measurement,
                                                  user_peaks, automated_search_peaks,
                                                  particle_rates, energies, windows,
-                                                 match, 26, 0.0 );
+                                                 26, 0.0,
+                                                 match.m_displayData[IsotopeSearchByEnergyModel::Column::ParentIsotope] );
             
             match.m_profileDistance = weight;
             snprintf( buffer, sizeof(buffer), "%.2f", weight );
@@ -900,7 +544,7 @@ void IsotopeSearchByEnergyModel::nuclidesWithAllEnergies(
             const IsotopeSearchByEnergyModel::NucToEnergiesMap &filteredNuclides,
             const vector<double> &energies,
             const vector<double> &windows,
-            const double minBR,
+            const double min_rel_br,
             const bool no_progeny,
             const std::shared_ptr<const DetectorPeakResponse> detector_response_function,
             const std::shared_ptr<const SpecUtils::Measurement> displayed_measurement,
@@ -941,9 +585,8 @@ void IsotopeSearchByEnergyModel::nuclidesWithAllEnergies(
         up = nm.second.upper_bound( energy + de );
         bool found = false;
         for( iter = lb; iter != up; ++iter )
-        found |= (fabs((*iter)-energy) <= de);
-        
-        
+          found |= (fabs((*iter)-energy) <= de);
+
         if( !found && (energy < 125.0*PhysicalUnits::keV) )
         {//lets look through the fluorescent x-rays for this element
           double minxraydist = 999.9;
@@ -985,7 +628,7 @@ void IsotopeSearchByEnergyModel::nuclidesWithAllEnergies(
     
     if( !hasAll )
       continue;
-    
+
     double dist = 0.0;
     vector<IsotopeMatch> nucmatches;
     for( size_t i = 0; i < energies.size(); ++i )
@@ -1082,7 +725,6 @@ void IsotopeSearchByEnergyModel::nuclidesWithAllEnergies(
           }//switch( sourceGammaType )
           
           match.m_age = no_progeny ? 0.0 : PeakDef::defaultDecayTime( nm.first );
-          
           SandiaDecay::NuclideMixture mixture;
           mixture.addNuclide( SandiaDecay::NuclideActivityPair(nm.first,1.0) );
           const vector<SandiaDecay::EnergyRatePair> photons
@@ -1109,9 +751,9 @@ void IsotopeSearchByEnergyModel::nuclidesWithAllEnergies(
           
           match.m_branchRatio = nearestAbun / maxAbund;
           
-          if( (match.m_branchRatio < minBR) || (match.m_branchRatio <= 0.0) )
+          if( (match.m_branchRatio < min_rel_br) || (match.m_branchRatio <= 0.0) )
             continue;
-          
+
           match.m_displayData[ParentIsotope] = match.m_nuclide->symbol;
           
           if( match.m_sourceGammaType == PeakDef::AnnihilationGamma )
@@ -1203,12 +845,13 @@ void IsotopeSearchByEnergyModel::nuclidesWithAllEnergies(
       
       for( size_t i = 0; i < 3; ++i )
       {
-        const double weight = profile_weight( detector_response_function,
-                                             displayed_measurement,
-                                             user_peaks,
-                                             automated_search_peaks, srcgammas,
-                                             energies, windows, nucmatches[0],
-                                             atomic_nums[i], areal_density[i] );
+        const double weight = IsotopeId::profile_weight( detector_response_function,
+                                        displayed_measurement,
+                                        user_peaks,
+                                        automated_search_peaks, srcgammas,
+                                        energies, windows,
+                                        atomic_nums[i], areal_density[i],
+                                        nucmatches[0].m_displayData[IsotopeSearchByEnergyModel::Column::ParentIsotope] );
         mw = std::max(mw,weight);
       }
       nucmatches[0].m_profileDistance = mw;
@@ -1337,9 +980,10 @@ void IsotopeSearchByEnergyModel::xraysWithAllEnergies(
         srcxrays.emplace_back( x.intensity, x.energy );
       
       nucmatches[0].m_profileDistance
-         = profile_weight( detector_response_function, displayed_measurement,
-                           user_peaks, automated_search_peaks, srcxrays,
-                           energies, windows, nucmatches[0], 1.0, 0.0);
+         = IsotopeId::profile_weight( detector_response_function, displayed_measurement,
+                          user_peaks, automated_search_peaks, srcxrays,
+                          energies, windows, 1.0, 0.0,
+                          nucmatches[0].m_displayData[IsotopeSearchByEnergyModel::Column::ParentIsotope] );
       
       snprintf( buffer, sizeof(buffer), "%.2f", nucmatches[0].m_profileDistance );
       nucmatches[0].m_displayData[ProfileDistance] = buffer;
@@ -1467,9 +1111,10 @@ void IsotopeSearchByEnergyModel::reactionsWithAllEnergies(
         srcgammas.emplace_back( ea.abundance, ea.energy );
       
       matches[0].m_profileDistance
-        = profile_weight( detector_response_function, displayed_measurement,
+        = IsotopeId::profile_weight( detector_response_function, displayed_measurement,
                        user_peaks, automated_search_peaks, srcgammas,
-                       energies, windows, matches[0], 1.0, 0.0);
+                       energies, windows, 1.0, 0.0,
+                       matches[0].m_displayData[IsotopeSearchByEnergyModel::Column::ParentIsotope] );
       
       snprintf( buffer, sizeof(buffer), "%.2f", matches[0].m_profileDistance );
       matches[0].m_displayData[ProfileDistance] = buffer;
@@ -1573,7 +1218,7 @@ void IsotopeSearchByEnergyModel::updateSearchResults(
 
 void IsotopeSearchByEnergyModel::setSearchEnergies(
                                                    std::shared_ptr<SearchWorkingSpace> workingspace,
-                                                   const double minbr,
+                                                   const double min_rel_br,
                                                    const double minHalfLife,
                                                    Wt::WFlags<IsotopeSearchByEnergyModel::RadSource> srcs,
                                                    const std::vector<const SandiaDecay::Element *> &elements,
@@ -1598,7 +1243,8 @@ void IsotopeSearchByEnergyModel::setSearchEnergies(
     
     if( energies.empty() )
     {
-      WServer::instance()->post( appid, updatefcn );
+      if( updatefcn )
+        WServer::instance()->post( appid, updatefcn );
       return;
     }//if( energies.empty() )
     
@@ -1664,8 +1310,8 @@ void IsotopeSearchByEnergyModel::setSearchEnergies(
     {
       // nuclidesWithAllEnergies probably wont throw - it will discard any sub-results that cause
       //  unexpected (and there really are none expected) exceptions.
-      NuclideMatches filteredNuclides = filter_nuclides( minbr, minHalfLife, no_progeny, energies, windows );
-      
+      NuclideMatches filteredNuclides = filter_nuclides( min_rel_br, minHalfLife, no_progeny, energies, windows );
+
       if( !nuclides.empty() )
       {
         NuclideMatches valid_matches;
@@ -1680,7 +1326,7 @@ void IsotopeSearchByEnergyModel::setSearchEnergies(
         valid_matches.swap( filteredNuclides );
       }//if( !nuclides.empty() )
       
-      nuclidesWithAllEnergies( filteredNuclides, energies, windows, minbr, no_progeny,
+      nuclidesWithAllEnergies( filteredNuclides, energies, windows, min_rel_br, no_progeny,
                               drf, meas, user_peaks, auto_peaks, matches );
     }//if( srcs & RadSource::NuclideGammaOrXray )
     
@@ -1718,8 +1364,9 @@ void IsotopeSearchByEnergyModel::setSearchEnergies(
     
     cerr << msg.str() << endl;
   }//try / catch
-  
-  WServer::instance()->post(  appid, updatefcn );
+
+  if( updatefcn )
+    WServer::instance()->post(  appid, updatefcn );
 }//void setSearchEnergies( const vector<double> &energies, const double window )
 
 

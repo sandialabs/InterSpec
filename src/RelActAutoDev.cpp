@@ -109,7 +109,7 @@ void check_auto_state_xml_serialization()
   curve.pu242_correlation_method = RelActCalc::PuCorrMethod::ByPu239Only;
 
   RelActCalcAuto::NucInputInfo u235_input;
-  u235_input.nuclide = db->nuclide("U235");
+  u235_input.source = db->nuclide("U235");
   u235_input.age = 20.0*PhysicalUnits::year;
   u235_input.fit_age = false;
   u235_input.gammas_to_exclude = { 26.325 };
@@ -117,7 +117,7 @@ void check_auto_state_xml_serialization()
   curve.nuclides.push_back( u235_input );
 
   RelActCalcAuto::NucInputInfo u238_input;
-  u238_input.nuclide = db->nuclide("U238");
+  u238_input.source = db->nuclide("U238");
   u238_input.age = 18.0*PhysicalUnits::year;
   u238_input.fit_age = true;
   u238_input.gammas_to_exclude = { 1001.1 };
@@ -188,7 +188,7 @@ void check_auto_state_xml_serialization()
   curve2.rel_eff_eqn_order = 2;
 
   RelActCalcAuto::NucInputInfo co60_input;
-  co60_input.nuclide = db->nuclide("Co60");
+  co60_input.source = db->nuclide("Co60");
   co60_input.age = 18.0*PhysicalUnits::year;
   co60_input.fit_age = true;
   co60_input.gammas_to_exclude = { 1001.1 };
@@ -439,10 +439,10 @@ void run_u02_example()
   //Sample 1 is background
   //Sample 38 is UO2_50%_50%
   assert( specfile.num_measurements() == 38 );
-  shared_ptr<const SpecUtils::Measurement> background = specfile.measurement(size_t(0));
+  shared_ptr<const SpecUtils::Measurement> background = specfile.measurement_at_index(0);
   assert( background );
   assert( background->title() == "Background" );
-  shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement(size_t(37));
+  shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement_at_index(37);
   assert( foreground );
   assert( SpecUtils::istarts_with( foreground->title(), "U02_50%_50% @ 25 cm H=100 cm" ) );
   
@@ -459,6 +459,14 @@ void run_u02_example()
   RelActCalcAuto::RelActAutoGuiState state;
   state.deSerialize( setup_base_node, &matdb );
   
+  //RelActCalcAuto::RelEffCurveInput::MassFractionConstraint constraint;
+  //constraint.nuclide = db->nuclide("U235");
+  //constraint.lower_mass_fraction = 0.1;
+  //constraint.upper_mass_fraction = 0.4;
+  //state.options.rel_eff_curves[0].mass_fraction_constraints.push_back( constraint );
+
+
+
   const string detector_xml_path = "Detective-X_GADRAS_drf.xml";
   rapidxml::file<char> detector_input_file( detector_xml_path.c_str() );
   
@@ -487,8 +495,12 @@ void run_u02_example()
   solution.print_summary( cout );
   solution.print_html_report( out_html );
   
-  cout << "Enrichment: " << solution.mass_enrichment_fraction( db->nuclide("U235"), 0 ) << endl;
+  pair<double,optional<double>> enrich = solution.mass_enrichment_fraction( db->nuclide("U235"), 0);
   
+  cout << "Enrichment: " << enrich.first
+  << " +- " << (enrich.second.has_value() ? std::to_string(enrich.second.value()) : string("UncertCalcError"))
+  << endl;
+
   cout << "Took:\n"
   << "\tNum Function Calls: " << solution.m_num_function_eval_solution << endl
   << "\tFcn Evals total:    " << solution.m_num_function_eval_total << endl
@@ -590,7 +602,12 @@ void run_u02_example()
 }//void run_u02_example()
   
 
-void run_multi_enrich_u02_ex()
+
+
+
+
+
+void czt_pu_example()
 {
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   assert( db );
@@ -599,8 +616,9 @@ void run_multi_enrich_u02_ex()
   const string materialfile = SpecUtils::append_path( data_dir, "MaterialDataBase.txt" );
   matdb.parseGadrasMaterialFile( materialfile, db, false );
   
-  const string specfilename = "mixed_U02_sample.pcf";
-  SpecUtils::SpecFile specfile;
+  const string specfilename = "czt_600keV__Pu84_60mm_1mmCd_ex.n42";
+  
+  SpecMeas specfile;
   const bool loaded_spec = specfile.load_file(specfilename, SpecUtils::ParserType::Auto );
   if( !loaded_spec )
   {
@@ -608,286 +626,12 @@ void run_multi_enrich_u02_ex()
   }
   
   
-  assert( specfile.num_measurements() == 38 );
-  shared_ptr<const SpecUtils::Measurement> background = specfile.measurement(size_t(0));
-  assert( background );
-  assert( background->title() == "Background" );
-  
-  const size_t enrich_choice = 26;
-  shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement( enrich_choice );
+  assert( specfile.num_measurements() == 1 );
+  shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement_at_index( size_t(0) );
   assert( foreground );
 
-  string title;
-  double lesser_enrichment = 0.0;
-  double greater_enrichment = 0.0;
-  switch( enrich_choice )
-  {
-    case 1: 
-      title = "U02_0.2%_0.2% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*0.2;
-      greater_enrichment = 0.01*0.2;
-      break;
-    
-    case 2: 
-      title = "U02_0.72%_3.3% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*0.72;
-      greater_enrichment = 0.01*3.3;
-      break;
   
-    case 3: 
-      title = "U02_3.3%_3.3% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*3.3;
-      greater_enrichment = 0.01*3.3;
-      break;
-    
-    case 4: 
-      title = "U02_50%_93.5% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*50;
-      greater_enrichment = 0.01*93.5;
-      break;
-    
-    case 5: 
-      title = "U02_0.2%_0.72% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*0.2;
-      greater_enrichment = 0.01*0.72;
-      break;
-    
-    case 6: 
-      title = "U02_0.72%_50% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*0.72;
-      greater_enrichment = 0.01*50;
-      break;
-    
-    case 7: 
-      title = "U02_3.3%_50% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*3.3;
-      greater_enrichment = 0.01*50;
-      break;
-    
-    case 8: 
-      title = "U02_90%_0.72% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*90;
-      greater_enrichment = 0.01*0.72;
-      break;
-    
-    case 9: 
-      title = "U02_0.2%_20% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*0.2;
-      greater_enrichment = 0.01*20;
-      break;
-    
-    case 10: 
-      title = "U02_0.72%_93.5% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*0.72;
-      greater_enrichment = 0.01*93.5;
-      break;
-    
-    case 11: 
-      title = "U02_3.3%_93.5% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*3.3;
-      greater_enrichment = 0.01*93.5;
-      break;
-    
-    case 12: 
-      title = "U02_90%_3.3% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*90;
-      greater_enrichment = 0.01*3.3;
-      break;
-    
-    case 13: 
-      title = "U02_0.2%_3.3% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*0.2;
-      greater_enrichment = 0.01*3.3;
-      break;
-    
-    case 14: 
-      title = "U02_20%_0.72% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*20;
-      greater_enrichment = 0.01*0.72;
-      break;
-    
-    case 15: 
-      title = "U02_5%_0.72% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*5;
-      greater_enrichment = 0.01*0.72;
-      break;
-    
-    case 16: 
-      title = "U02_90%_50% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*90;
-      greater_enrichment = 0.01*50;
-      break;
-    
-    case 17: 
-      title = "U02_0.2%_5% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*0.2;
-      greater_enrichment = 0.01*5;
-      break;
-    
-    case 18: 
-      title = "U02_20%_20% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*20;
-      greater_enrichment = 0.01*20;
-      break;
-    
-    case 19: 
-      title = "U02_5%_3.3% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*5;
-      greater_enrichment = 0.01*3.3;
-      break;
-    
-    case 20: 
-      title = "U02_90%_90% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*90;
-      greater_enrichment = 0.01*90;
-      break;
-    
-    case 21: 
-      title = "U02_0.2%_50% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*0.2;
-      greater_enrichment = 0.01*50;
-      break;
-    
-    case 22: 
-      title = "U02_20%_3.3% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*20;
-      greater_enrichment = 0.01*3.3;
-      break;
-    
-    case 23: 
-      title = "U02_5%_5% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*5;
-      greater_enrichment = 0.01*5;
-      break;
-    
-    case 24: 
-      title = "U02_90%_93.5% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*90;
-      greater_enrichment = 0.01*93.5;
-      break;
-    
-    case 25: 
-      title = "U02_0.2%_90% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*0.2;
-      greater_enrichment = 0.01*90;
-      break;
-    
-    case 26: 
-      title = "U02_20%_5% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*20;
-      greater_enrichment = 0.01*5;
-      break;
-    
-    case 27: 
-      title = "U02_5%_50% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*5;
-      greater_enrichment = 0.01*50;
-      break;
-    
-    case 28: 
-      title = "U02_93.5%_93.5% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*93.5;
-      greater_enrichment = 0.01*93.5;
-      break;
-    
-    case 29: 
-      title = "U02_0.2%_93.5% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*0.2;
-      greater_enrichment = 0.01*93.5;
-      break;
-    
-    case 30: 
-      title = "U02_20%_50% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*20;
-      greater_enrichment = 0.01*50;
-      break;
-    
-    case 31: 
-      title = "U02_5%_90% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*5;
-      greater_enrichment = 0.01*90;
-      break;
-    
-    case 32: 
-      title = "U02_0.72%_0.72% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*0.72;
-      greater_enrichment = 0.01*0.72;
-      break;
-    
-    case 33: 
-      title = "U02_20%_90% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*20;
-      greater_enrichment = 0.01*90;
-      break;
-    
-    case 34: 
-      title = "U02_5%_93.5% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*5;
-      greater_enrichment = 0.01*93.5;
-      break;
-    
-    case 35: 
-      title = "U02_0.72%_20% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*0.72;
-      greater_enrichment = 0.01*20;
-      break;
-    
-    case 36: 
-      title = "U02_20%_93.5% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*20;
-      greater_enrichment = 0.01*93.5;
-      break;
-    
-    case 37: 
-      title = "U02_50%_50% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*50;
-      greater_enrichment = 0.01*50;
-      break;
-  }//switch
-
-  if( lesser_enrichment > greater_enrichment )
-    std::swap( lesser_enrichment, greater_enrichment );
-
-  assert( SpecUtils::istarts_with( foreground->title(), title ) );
-
-/*
-  cout << "  int enrich_choice = 1;" << endl;
-  cout << "  string title;\n";
-  cout << "  double lesser_enrichment = 0.0;\n";
-  cout << "  double greater_enrichment = 0.0;\n";
-  cout << "  switch( enrich_choice )" << endl;
-  cout << "  {" << endl;
-  for( size_t i = 1; i < specfile.num_measurements(); ++i )
-  {
-    const auto &meas = specfile.measurement(i);
-    string title = meas->title();
-    
-    cout << "    case " << i << ": " << endl;
-    cout << "      title = \"" << title << "\";" << endl;
-    // the title is of the form "U02_20%_3.3% @ 25 cm H=100 cm"
-    // we want to extract the 20% and 3.3%
-    std::regex regex("U02_(\\d*\\.?\\d+)%_(\\d*\\.?\\d+)% @ 25 cm H=100 cm");
-    std::smatch match;
-    if( std::regex_search(title, match, regex) ) 
-    { 
-      cout << "      lesser_enrichment = 0.01*" << match[1].str() << ";\n";
-      cout << "      greater_enrichment = 0.01*" << match[2].str() << ";\n";
-    }else 
-    {
-      cerr << "Failed to extract enrichments from title: " << meas->title() << endl;
-      assert( 0 );
-    }
-    cout << "      break;" << endl;
-  }
-  cout << "  }" << endl;
-return;
-*/
-
-
-  //const string mult_name = "single";
-  const string mult_name = "two";
-
-  const string setup_xml_path = "mixed_U02_" + mult_name + "_rel_eff.xml";
+  const string setup_xml_path = "isotopics_by_nuclides_CZT500_Pu84_@60mm_1mmCd_04-2.xml";
   rapidxml::file<char> setup_input_file( setup_xml_path.c_str() );
   
   rapidxml::xml_document<char> setup_doc;
@@ -899,68 +643,30 @@ return;
   RelActCalcAuto::RelActAutoGuiState state;
   state.deSerialize( setup_base_node, &matdb );
   
-  assert( ((mult_name == "two") && (state.options.rel_eff_curves.size() == 2)) 
-         || ((mult_name == "single") && (state.options.rel_eff_curves.size() == 1) ) );
+  assert( state.options.rel_eff_curves.size() == 1 );
 
-  const string detector_xml_path = "ORTEC Detective-X_LANL_100cm (59%).drf.xml";
-  rapidxml::file<char> detector_input_file( detector_xml_path.c_str() );
   
-  rapidxml::xml_document<char> detector_doc;
-  detector_doc.parse<rapidxml::parse_trim_whitespace>( detector_input_file.data() );
-  
-  const rapidxml::xml_node<char> *detector_base_node = detector_doc.first_node( "DetectorPeakResponse" );
-  assert( detector_base_node );
+  auto det = specfile.detector();
   
   
-  auto det = make_shared<DetectorPeakResponse>();
-  det->fromXml( detector_base_node );
-  
-  vector<shared_ptr<const PeakDef>> all_peaks{};
-
-  const SandiaDecay::Nuclide * const u232 = db->nuclide("U232");
-  const SandiaDecay::Nuclide * const u234 = db->nuclide("U234");
-  const SandiaDecay::Nuclide * const u235 = db->nuclide("U235");
-  const SandiaDecay::Nuclide * const u238 = db->nuclide("U238");
-  assert( u235 && u238 && u232 && u234 );
-
-  double u235_to_u238_mass_ratio = lesser_enrichment/(1.0 - lesser_enrichment);
-  RelActCalcAuto::RelEffCurveInput::ActRatioConstraint constraint 
-    = RelActCalcAuto::RelEffCurveInput::ActRatioConstraint::from_mass_ratio( u235, u238, u235_to_u238_mass_ratio );
-
-  cout << "Adding constraint act(" << constraint.constrained_nuclide->symbol << ")/act(" << constraint.controlling_nuclide->symbol << ") = " << constraint.constrained_to_controlled_activity_ratio << endl;
-  state.options.rel_eff_curves[0].act_ratio_constraints.push_back( constraint );
-
-  // We will make the first curve the lower enrichment, so if we expect the lower 
-  // enrichment to be less than 25% we will remove U232 and U234 from this first curve
-  if( lesser_enrichment < 0.25 )
-  {
-    state.options.rel_eff_curves[0].nuclides.erase( 
-    std::remove_if( state.options.rel_eff_curves[0].nuclides.begin(), state.options.rel_eff_curves[0].nuclides.end(),
-      [u232,u234](const RelActCalcAuto::NucInputInfo &nuc) { return (nuc.nuclide == u232) || (nuc.nuclide == u234); } ),
-      state.options.rel_eff_curves[0].nuclides.end() 
-    );
-  }//if( lesser_enrichment < 0.25 )
-
-
   //state.options.rel_eff_curves.resize(1);
-  state.options.rel_eff_curves[0].phys_model_use_hoerl = true;
-  state.options.rel_eff_curves[1].phys_model_use_hoerl = true;
-
-  /*
+  state.options.rel_eff_curves[0].phys_model_use_hoerl = false;
+  
+  
   // We can constrain the RelActivity.
   for( auto &nuc : state.options.rel_eff_curves[0].nuclides )
   {
-    if( nuc.nuclide == u238 )
+    if( RelActCalcAuto::to_name(nuc.source) == "Pu239" )
     {
-      nuc.min_rel_act = 8000.0;
-      nuc.max_rel_act = 50000.0;
-      nuc.starting_rel_act = 16228.0;
+      nuc.starting_rel_act = 750*16228.0;
+      nuc.min_rel_act = nuc.max_rel_act = nuc.starting_rel_act;
+    }else if( RelActCalcAuto::to_name(nuc.source) == "Am241" )
+    {
+      nuc.starting_rel_act = 5*96521.1;
+      nuc.min_rel_act = nuc.max_rel_act = nuc.starting_rel_act;
+      
     }
   }
-  */
-  
-  state.options.same_hoerl_for_all_rel_eff_curves = true;
-  //state.options.same_external_shielding_for_all_rel_eff_curves = true;
 
 
   //det->setFwhmCoefficients( {}, DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm );
@@ -984,24 +690,30 @@ return;
   } 
 #endif
   
+  vector<shared_ptr<const PeakDef>> all_peaks{};
   const RelActCalcAuto::RelActAutoSolution solution = RelActCalcAuto::solve( state.options,
-                                                                            foreground, background, det, all_peaks, nullptr );
-  ofstream out_html( "U02_" + mult_name + "_rel_eff_result.html" );
+                                                                            foreground, nullptr, det, all_peaks, nullptr );
+  ofstream out_html( "czt_Pu_rel_eff_result.html" );
   solution.print_summary( cout );
   solution.print_html_report( out_html );
   
+  /*
   for( size_t i = 0; i < solution.m_rel_activities.size(); ++i )
   {
     const double enrichment = solution.mass_enrichment_fraction( u235, i );
     const double u235_counts = solution.nuclide_counts( u235, i );
-    const double u238_counts = solution.nuclide_counts( u238, i );    
-    cout << "Enrichment " << i << std::left << ": " << setprecision(6) << setw(11) << enrichment 
-    << ", counts(u235)=" << setw(11) << u235_counts 
+    const double u238_counts = solution.nuclide_counts( u238, i );
+    cout << "Enrichment " << i << std::left << ": " << setprecision(6) << setw(11) << enrichment
+    << ", counts(u235)=" << setw(11) << u235_counts
     << ", counts(u238)=" << setw(11) << u238_counts << endl;
   }
   cout << "For sample: " << title << endl;
-}//void run_multi_enrich_u02_ex()
-  
+  */
+}//void czt_pu_example()
+
+
+
+
 void check_auto_nuclide_constraints_checks()
 {
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
@@ -1014,21 +726,21 @@ void check_auto_nuclide_constraints_checks()
   RelActCalcAuto::RelEffCurveInput rel_eff_curve;
 
   RelActCalcAuto::NucInputInfo u235_input;
-  u235_input.nuclide = u235;
+  u235_input.source = u235;
   u235_input.age = 20.0 * PhysicalUnits::year;
   u235_input.fit_age = false;
   u235_input.gammas_to_exclude = {};
   u235_input.peak_color_css = "rgb(0, 0, 255)";
   
   RelActCalcAuto::NucInputInfo u238_input;
-  u238_input.nuclide = u238;
+  u238_input.source = u238;
   u238_input.age = 20.0 * PhysicalUnits::year;
   u238_input.fit_age = false;
   u238_input.gammas_to_exclude = {};
   u238_input.peak_color_css = "rgb(255, 69, 0)";
 
   RelActCalcAuto::NucInputInfo u234_input;
-  u234_input.nuclide = u234;
+  u234_input.source = u234;
   u234_input.age = 20.0 * PhysicalUnits::year;
   u234_input.fit_age = false;
   u234_input.gammas_to_exclude = {};
@@ -1124,8 +836,8 @@ void check_auto_nuclide_constraints_checks()
   {
     RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
     RelActCalcAuto::RelEffCurveInput::ActRatioConstraint nuc_constraint;
-    nuc_constraint.constrained_nuclide = u235;
-    nuc_constraint.controlling_nuclide = u238;
+    nuc_constraint.constrained_source = u235;
+    nuc_constraint.controlling_source = u238;
     nuc_constraint.constrained_to_controlled_activity_ratio = -1.0;
     
     rel_eff_cpy.act_ratio_constraints.push_back( nuc_constraint );
@@ -1155,6 +867,250 @@ void check_auto_nuclide_constraints_checks()
   {
     // We are suppoest to get here because of the cycle
   }
+
+
+  // Now check mass fraction constraints
+  try
+  {
+    RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
+    RelActCalcAuto::RelEffCurveInput::MassFractionConstraint constraint;
+    constraint.nuclide = u235;
+    constraint.lower_mass_fraction = 0.0072;
+    constraint.upper_mass_fraction = 0.0072;
+
+    rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
+    
+    rel_eff_cpy.check_nuclide_constraints();
+    
+    // We are suppoest to get here
+  }catch(const std::exception& e)
+  {
+    cerr << "Valid mass fraction constraint erroneously detected: Error: " << e.what() << endl;
+    assert( 0 );
+  }
+
+  try
+  {
+    RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
+
+    RelActCalcAuto::RelEffCurveInput::MassFractionConstraint constraint;
+    constraint.nuclide = db->nuclide("U233");
+    constraint.lower_mass_fraction = 0.0072;
+    constraint.upper_mass_fraction = 0.0072;
+
+    rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
+    
+    rel_eff_cpy.check_nuclide_constraints();
+    
+    cerr << "Failed to detect invalid nuclide in mass fraction constraint" << endl;
+    assert( 0 );
+  }catch(const std::exception& e)
+  {
+    // We are suppoest to get here
+  }
+
+
+  try
+  {
+    RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
+    RelActCalcAuto::RelEffCurveInput::MassFractionConstraint constraint;
+    constraint.nuclide = u235;
+    constraint.lower_mass_fraction = 0.0072;
+    constraint.upper_mass_fraction = 1.00001;
+
+    rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
+    
+    rel_eff_cpy.check_nuclide_constraints();
+    
+    cerr << "Failed to detect invalid nuclide mass fraction" << endl;
+    assert( 0 );
+  }catch(const std::exception& e)
+  {
+    // We are suppoest to get here
+  }
+
+  try
+  {
+    RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
+    RelActCalcAuto::RelEffCurveInput::MassFractionConstraint constraint;
+    constraint.nuclide = u235;
+    constraint.lower_mass_fraction = -0.0001;
+    constraint.upper_mass_fraction = 0.8;
+
+    rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
+    
+    rel_eff_cpy.check_nuclide_constraints();
+    
+    cerr << "Failed to detect invalid nuclide mass fraction" << endl;
+    assert( 0 );
+  }catch(const std::exception& e)
+  {
+    // We are suppoest to get here
+  }
+
+  try
+  {
+    RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
+    RelActCalcAuto::RelEffCurveInput::MassFractionConstraint constraint;
+    constraint.nuclide = u235;
+    constraint.lower_mass_fraction = 1.0;
+    constraint.upper_mass_fraction = 1.0;
+
+    rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
+    
+    rel_eff_cpy.check_nuclide_constraints();
+    
+    cerr << "Failed to detect invalid nuclide mass fraction" << endl;
+    assert( 0 );
+  }catch(const std::exception& e)
+  {
+    // We are suppoest to get here
+  }
+
+
+  try
+  {
+    RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
+    RelActCalcAuto::RelEffCurveInput::MassFractionConstraint constraint;
+    constraint.nuclide = u235;
+    constraint.lower_mass_fraction = 0.0;
+    constraint.upper_mass_fraction = 0.5;
+
+    rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
+    rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
+    
+    rel_eff_cpy.check_nuclide_constraints();
+    
+    cerr << "Failed to detect multiple mass fraction constraints for same nuclide" << endl;
+    assert( 0 );
+  }catch(const std::exception& e)
+  {
+    // We are suppoest to get here
+  }
+
+
+  try
+  {
+    RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
+    RelActCalcAuto::RelEffCurveInput::MassFractionConstraint constraint;
+    constraint.nuclide = u235;
+    constraint.lower_mass_fraction = 0.0;
+    constraint.upper_mass_fraction = 0.5;
+
+    rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
+
+    constraint.nuclide = u238;
+    rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
+    
+    constraint.nuclide = u234;
+    rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
+    
+
+    rel_eff_cpy.check_nuclide_constraints();
+    
+    cerr << "Failed to detect all nuclides of element being mass fraction constrained" << endl;
+    assert( 0 );
+  }catch(const std::exception& e)
+  {
+    // We are suppoest to get here
+  }
+
+
+  try
+  {
+    RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
+    RelActCalcAuto::RelEffCurveInput::MassFractionConstraint constraint;
+    constraint.nuclide = u235;
+    constraint.lower_mass_fraction = 0.8;
+    constraint.upper_mass_fraction = 0.9;
+
+    rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
+
+    constraint.nuclide = u234;
+    rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
+    
+
+    rel_eff_cpy.check_nuclide_constraints();
+    
+    cerr << "Failed to detect sum of lower mass fraction values being larger than 1.0" << endl;
+    assert( 0 );
+  }catch(const std::exception& e)
+  {
+    // We are suppoest to get here
+  }
+
+
+  try
+  {
+    RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
+    RelActCalcAuto::RelEffCurveInput::MassFractionConstraint constraint;
+    constraint.nuclide = u235;
+    constraint.lower_mass_fraction = 0.1;
+    constraint.upper_mass_fraction = 0.9;
+    rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
+
+    RelActCalcAuto::RelEffCurveInput::ActRatioConstraint nuc_constraint;
+    nuc_constraint.constrained_source = u235;
+    nuc_constraint.controlling_source = u238;
+    nuc_constraint.constrained_to_controlled_activity_ratio = 0.1;
+    rel_eff_cpy.act_ratio_constraints.push_back( nuc_constraint );
+
+    rel_eff_cpy.check_nuclide_constraints();
+    
+    cerr << "Failed to detect nuclide being both activity and mass-fraction constrained." << endl;
+    assert( 0 );
+  }catch(const std::exception& e)
+  {
+    // We are suppoest to get here
+  }
+
+
+  try
+  {
+    RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
+
+
+    RelActCalcAuto::NucInputInfo co60_input;
+    co60_input.source = db->nuclide("Co60");
+    co60_input.age = 20.0 * PhysicalUnits::year;
+    co60_input.fit_age = false;
+    co60_input.gammas_to_exclude = {};
+    rel_eff_cpy.nuclides.push_back( co60_input );
+
+
+     RelActCalcAuto::NucInputInfo cs137_input;
+    cs137_input.source = db->nuclide("Cs137");
+    cs137_input.age = 20.0 * PhysicalUnits::year;
+    cs137_input.fit_age = false;
+    cs137_input.gammas_to_exclude = {};
+    rel_eff_cpy.nuclides.push_back( cs137_input );
+
+    RelActCalcAuto::RelEffCurveInput::MassFractionConstraint constraint;
+    constraint.nuclide = u235;
+    constraint.lower_mass_fraction = 0.1;
+    constraint.upper_mass_fraction = 0.9;
+    rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
+
+    RelActCalcAuto::RelEffCurveInput::ActRatioConstraint nuc_constraint;
+    nuc_constraint.constrained_source = co60_input.source;
+    nuc_constraint.controlling_source = u238;
+    nuc_constraint.constrained_to_controlled_activity_ratio = 0.1;
+    rel_eff_cpy.act_ratio_constraints.push_back( nuc_constraint );
+
+    nuc_constraint.constrained_source = cs137_input.source;
+    nuc_constraint.controlling_source = u235;
+    nuc_constraint.constrained_to_controlled_activity_ratio = 0.1;
+    rel_eff_cpy.act_ratio_constraints.push_back( nuc_constraint );
+
+    rel_eff_cpy.check_nuclide_constraints();
+
+    // We are suppoest to get here
+  }catch(const std::exception& e)
+  {
+    cerr << "Failed to allow mass-constrained nuclide activity ratio control nuclide of other element." << endl;
+    assert( 0 );
+  }
+
 
   cout << "All act_ratio_constraints checks passed" << endl;
 }//void check_auto_nuclide_constraints_checks()
@@ -1625,22 +1581,334 @@ void check_auto_hoerl_and_ext_shield_checks()
     // We are suppoest to get here
   }
 
+  try
+  {
+    RelActCalcAuto::Options options_cpy = options;
+    options_cpy.same_hoerl_for_all_rel_eff_curves = true;
+    options_cpy.same_external_shielding_for_all_rel_eff_curves = true;
+
+    RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy = rel_eff_curve;
+    rel_eff_curve_cpy.shielded_by_other_phys_model_curve_shieldings.insert( 1 );
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve_cpy );
+
+    RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy2 = rel_eff_curve;
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve_cpy2 );
+
+    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+    cerr << "Failed to throw an error for same_external_shielding_for_all_rel_eff_curves with one curve shielding another" << endl;
+    assert( 0 );
+  }catch( std::exception &e )
+  {
+    // We are suppoest to get here
+  }
+
+  try
+  {
+    RelActCalcAuto::Options options_cpy = options;
+    options_cpy.same_hoerl_for_all_rel_eff_curves = true;
+    options_cpy.same_external_shielding_for_all_rel_eff_curves = false;
+
+    RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy = rel_eff_curve;
+    rel_eff_curve_cpy.phys_model_self_atten = make_shared<RelActCalc::PhysicalModelShieldInput>( *ext_shield );
+    rel_eff_curve_cpy.phys_model_external_atten.push_back( make_shared<RelActCalc::PhysicalModelShieldInput>( *ext_shield ) );
+
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve_cpy );
+
+    RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy2 = rel_eff_curve;
+    rel_eff_curve_cpy2.phys_model_self_atten = make_shared<RelActCalc::PhysicalModelShieldInput>( *ext_shield );
+    rel_eff_curve_cpy2.shielded_by_other_phys_model_curve_shieldings.insert( 0 );
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve_cpy2 );
+
+    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+
+    // We are suppoest to get here
+  }catch( std::exception &e )
+  {
+    cerr << "Eroneously threw for shielded_by_other_phys_model_curve_shieldings" << endl;
+    assert( 0 );
+  }
+
+  try
+  {
+    RelActCalcAuto::Options options_cpy = options;
+    options_cpy.same_hoerl_for_all_rel_eff_curves = true;
+    options_cpy.same_external_shielding_for_all_rel_eff_curves = false;
+
+    RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy = rel_eff_curve;
+    rel_eff_curve_cpy.phys_model_self_atten = make_shared<RelActCalc::PhysicalModelShieldInput>( *ext_shield );
+    rel_eff_curve_cpy.phys_model_external_atten.push_back( make_shared<RelActCalc::PhysicalModelShieldInput>( *ext_shield ) );
+    rel_eff_curve_cpy.shielded_by_other_phys_model_curve_shieldings.insert( 1 );
+
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve_cpy );
+
+    RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy2 = rel_eff_curve;
+    rel_eff_curve_cpy2.phys_model_self_atten = make_shared<RelActCalc::PhysicalModelShieldInput>( *ext_shield );
+    rel_eff_curve_cpy2.shielded_by_other_phys_model_curve_shieldings.insert( 0 );
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve_cpy2 );
+
+    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+
+    cerr << "Didnt throw for cyclical curves shielding eachother" << endl;
+    assert( 0 );
+  }catch( std::exception &e )
+  {
+    // We are suppoest to get here
+  }
+
+  try
+  {
+    RelActCalcAuto::Options options_cpy = options;
+    options_cpy.same_hoerl_for_all_rel_eff_curves = true;
+    options_cpy.same_external_shielding_for_all_rel_eff_curves = false;
+
+    RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy = rel_eff_curve;
+    rel_eff_curve_cpy.phys_model_self_atten = make_shared<RelActCalc::PhysicalModelShieldInput>( *ext_shield );
+    rel_eff_curve_cpy.phys_model_external_atten.push_back( make_shared<RelActCalc::PhysicalModelShieldInput>( *ext_shield ) );
+    rel_eff_curve_cpy.shielded_by_other_phys_model_curve_shieldings.insert( 1 );
+
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve_cpy );
+
+    RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy2 = rel_eff_curve;
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve_cpy2 );
+
+    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+
+    cerr << "Didnt throw for shielding curve not having any shieldings defined." << endl;
+    assert( 0 );
+  }catch( std::exception &e )
+  {
+    // We are suppoest to get here
+  }
+
   cout << "All auto hoerl and ext shield checks passed" << endl;
 }//void check_auto_hoerl_and_ext_shield_checks()
 
 
+void utile_ana()
+{
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  assert( db );
+  MaterialDB matdb;
+  const string data_dir = InterSpec::staticDataDirectory();
+  const string materialfile = SpecUtils::append_path( data_dir, "MaterialDataBase.txt" );
+  matdb.parseGadrasMaterialFile( materialfile, db, false );
+  
+  const string specfilename = "HEU-025_DU-100_Detective.Chn";
+  SpecUtils::SpecFile specfile;
+  const bool loaded_spec = specfile.load_file(specfilename, SpecUtils::ParserType::Auto );
+  if( !loaded_spec )
+  {
+    cerr << "Failed to load '" << specfilename << "', aborting." << endl;
+  }
+  
+  const string backfilename = "bg_Detective.Chn";
+  SpecUtils::SpecFile backfile;
+  const bool loaded_back = backfile.load_file(backfilename, SpecUtils::ParserType::Auto );
+  if( !loaded_back )
+  {
+    cerr << "Failed to load '" << backfilename << "', aborting." << endl;
+  }
+  
+  
+  assert( specfile.num_measurements() == 1 );
+  assert( backfile.num_measurements() == 1 );
+  
+  const shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement_at_index(size_t(0));
+  assert( foreground );
+  
+  const shared_ptr<const SpecUtils::Measurement> background = backfile.measurement_at_index(size_t(0));
+  assert( background );
+  
+  
+  const string setup_xml_path = "multienrich_u_detective_releff.xml";
+  rapidxml::file<char> setup_input_file( setup_xml_path.c_str() );
+    
+  rapidxml::xml_document<char> setup_doc;
+  setup_doc.parse<rapidxml::parse_trim_whitespace>( setup_input_file.data() );
+    
+  const rapidxml::xml_node<char> *setup_base_node = setup_doc.first_node( "RelActCalcAuto" );
+  assert( setup_base_node );
+    
+  RelActCalcAuto::RelActAutoGuiState state;
+  state.deSerialize( setup_base_node, &matdb );
+    
+  assert( state.options.rel_eff_curves.size() == 2 );
+  
+  const string detector_xml_path = "Detective-DX_LANL_25cm_fwhm.drf.xml";
+  rapidxml::file<char> detector_input_file( detector_xml_path.c_str() );
+    
+  rapidxml::xml_document<char> detector_doc;
+  detector_doc.parse<rapidxml::parse_trim_whitespace>( detector_input_file.data() );
+    
+  const rapidxml::xml_node<char> *detector_base_node = detector_doc.first_node( "DetectorPeakResponse" );
+  assert( detector_base_node );
+    
+    
+  auto det = make_shared<DetectorPeakResponse>();
+  det->fromXml( detector_base_node );
+    
+  vector<shared_ptr<const PeakDef>> all_peaks{};
+    
+  const SandiaDecay::Nuclide * const u232 = db->nuclide("U232");
+  const SandiaDecay::Nuclide * const u234 = db->nuclide("U234");
+  const SandiaDecay::Nuclide * const u235 = db->nuclide("U235");
+  const SandiaDecay::Nuclide * const u238 = db->nuclide("U238");
+  assert( u235 && u238 && u232 && u234 );
+    
+        
+  const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint leu_constraint
+    = RelActCalcAuto::RelEffCurveInput::ActRatioConstraint::from_mass_ratio( u235, u238, 0.002/0.98 ); //DU - 0.2% enriched
+
+  state.options.rel_eff_curves[0].act_ratio_constraints.push_back( leu_constraint );
+    
+    
+  //const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint heu_constraint
+  //  = RelActCalcAuto::RelEffCurveInput::ActRatioConstraint::from_mass_ratio( u235, u238, 0.82467/0.046746 ); //a mas ratio of about 35 give ~90% enrichment
+  //state.options.rel_eff_curves[1].act_ratio_constraints.push_back( heu_constraint );
+    
+  //state.options.rel_eff_curves.resize(1);
+  const bool use_hoerl = false;
+  state.options.rel_eff_curves[0].phys_model_use_hoerl = use_hoerl;
+  state.options.rel_eff_curves[1].phys_model_use_hoerl = use_hoerl;
+  state.options.same_hoerl_for_all_rel_eff_curves = use_hoerl;
+  //state.options.same_external_shielding_for_all_rel_eff_curves = true;
+    
+    
+  const RelActCalcAuto::RelActAutoSolution solution
+                = RelActCalcAuto::solve( state.options, foreground, background, det, all_peaks, nullptr );
+  ofstream out_html( specfilename + "_releff_result.html" );
+    
+  solution.print_summary( cout );
+  solution.print_html_report( out_html );
+    
+  for( size_t i = 0; i < solution.m_rel_activities.size(); ++i )
+  {
+    pair<double,optional<double>> enrich = solution.mass_enrichment_fraction( u235, i );
+    const double enrichment = enrich.first;
+    const double u235_counts = solution.nuclide_counts( u235, i );
+    const double u238_counts = solution.nuclide_counts( u238, i );
+    cout << "Enrichment " << i << std::left << ": "
+    << setprecision(6) << setw(11) << enrichment
+    << " +- " << setw(11) << (enrich.second.has_value() ? enrich.second.value() : -999.0)
+      << ", counts(u235)=" << setw(11) << u235_counts
+      << ", counts(u238)=" << setw(11) << u238_counts << endl;
+  }
+}//void utile_ana()
+
+
+void leu_heu_ana()
+{
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  assert( db );
+  MaterialDB matdb;
+  const string data_dir = InterSpec::staticDataDirectory();
+  const string materialfile = SpecUtils::append_path( data_dir, "MaterialDataBase.txt" );
+  matdb.parseGadrasMaterialFile( materialfile, db, false );
+
+  const string specfilename = "NBS900+U295_B95Dish_2h_COAX.CNF";  //LEU + HEU
+  //const string specfilename = "NBS900_B95Dish_2h_COAX.CNF"; //HEU
+  //const string specfilename = "U295_B95Dish_2h_COAX.CNF"; //LEU
+  SpecUtils::SpecFile specfile;
+  const bool loaded_spec = specfile.load_file(specfilename, SpecUtils::ParserType::Auto );
+  if( !loaded_spec )
+  {
+    cerr << "Failed to load '" << specfilename << "', aborting." << endl;
+  }
+
+  assert( specfile.num_measurements() == 1 );
+
+  const shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement_at_index(size_t(0));
+  assert( foreground );
+
+  const shared_ptr<const SpecUtils::Measurement> background;
+
+  const string setup_xml_path = "isotopics_by_nuclides_jozsef_releff.xml";
+  rapidxml::file<char> setup_input_file( setup_xml_path.c_str() );
+
+  rapidxml::xml_document<char> setup_doc;
+  setup_doc.parse<rapidxml::parse_trim_whitespace>( setup_input_file.data() );
+
+  const rapidxml::xml_node<char> *setup_base_node = setup_doc.first_node( "RelActCalcAuto" );
+  assert( setup_base_node );
+
+  RelActCalcAuto::RelActAutoGuiState state;
+  state.deSerialize( setup_base_node, &matdb );
+
+  assert( state.options.rel_eff_curves.size() == 2 );
+
+  const string detector_xml_path = "LAB14_100cm_ISOCS (39%).drf.xml";
+  rapidxml::file<char> detector_input_file( detector_xml_path.c_str() );
+
+  rapidxml::xml_document<char> detector_doc;
+  detector_doc.parse<rapidxml::parse_trim_whitespace>( detector_input_file.data() );
+
+  const rapidxml::xml_node<char> *detector_base_node = detector_doc.first_node( "DetectorPeakResponse" );
+  assert( detector_base_node );
+
+
+  auto det = make_shared<DetectorPeakResponse>();
+  det->fromXml( detector_base_node );
+
+  vector<shared_ptr<const PeakDef>> all_peaks{};
+
+  const SandiaDecay::Nuclide * const u232 = db->nuclide("U232");
+  const SandiaDecay::Nuclide * const u234 = db->nuclide("U234");
+  const SandiaDecay::Nuclide * const u235 = db->nuclide("U235");
+  const SandiaDecay::Nuclide * const u238 = db->nuclide("U238");
+  assert( u235 && u238 && u232 && u234 );
+
+
+  //const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint leu_constraint
+  //  = RelActCalcAuto::RelEffCurveInput::ActRatioConstraint::from_mass_ratio( u235, u238, 0.02764 );
+
+  //state.options.rel_eff_curves[0].act_ratio_constraints.push_back( leu_constraint );
+
+
+  //const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint heu_constraint
+  //  = RelActCalcAuto::RelEffCurveInput::ActRatioConstraint::from_mass_ratio( u235, u238, 0.82467/0.046746 ); //a mas ratio of about 35 give ~90% enrichment
+  //state.options.rel_eff_curves[1].act_ratio_constraints.push_back( heu_constraint );
+
+  //state.options.rel_eff_curves.resize(1);
+  //const bool use_hoerl = false;
+  //state.options.rel_eff_curves[0].phys_model_use_hoerl = use_hoerl;
+  //state.options.rel_eff_curves[1].phys_model_use_hoerl = use_hoerl;
+  //state.options.same_hoerl_for_all_rel_eff_curves = use_hoerl;
+  //state.options.same_external_shielding_for_all_rel_eff_curves = true;
+
+
+  const RelActCalcAuto::RelActAutoSolution solution
+                = RelActCalcAuto::solve( state.options, foreground, background, det, all_peaks, nullptr );
+  ofstream out_html( specfilename + "_releff_result.html" );
+
+  solution.print_summary( cout );
+  solution.print_html_report( out_html );
+
+  for( size_t i = 0; i < solution.m_rel_activities.size(); ++i )
+  {
+    pair<double,optional<double>> enrich = solution.mass_enrichment_fraction( u235, i );
+    const double enrichment = enrich.first;
+    const double u235_counts = solution.nuclide_counts( u235, i );
+    const double u238_counts = solution.nuclide_counts( u238, i );
+    cout << "Enrichment " << i << std::left << ": "
+    << setprecision(6) << setw(11) << enrichment
+    << " +- " << setw(11) << (enrich.second.has_value() ? enrich.second.value() : -999.0)
+    << ", counts(u235)=" << setw(11) << u235_counts
+    << ", counts(u238)=" << setw(11) << u238_counts << endl;
+  }
+}//void leu_heu_ana()
+
 
 int dev_code()
 {
-  //check_auto_nuclide_constraints_checks();
-  //check_manual_nuclide_constraints_checks();
-  //check_auto_hoerl_and_ext_shield_checks();
-  //return 1;
+  check_auto_nuclide_constraints_checks();
+  check_manual_nuclide_constraints_checks();
+  check_auto_hoerl_and_ext_shield_checks();
+  return 1;
   
   //check_auto_state_xml_serialization();
 
-  //run_u02_example();
-  //return 1;
+  run_u02_example();
+  return 1;
   
   //check_physical_model_eff_function();
   //return 1;
@@ -1650,9 +1918,18 @@ int dev_code()
 
   //return RelActCalcAuto::run_test();
   
-  run_multi_enrich_u02_ex();
-  return 1;
+  //czt_pu_example();
+  //return 1;
   
+  //run_multi_enrich_u02_ex();
+  //return 1;
+
+  //run_multi_enrich_sensitivity_study_u02();
+  //return 1;
+
+  //utile_ana();
+  leu_heu_ana();
+  return 1;
 
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   assert( db );
@@ -1754,8 +2031,6 @@ int dev_code()
   
   const vector<RelActCalcAuto::NucInputInfo> nuclides{ {
       db->nuclide("Pu238"),
-      nullptr,
-      nullptr,
       20.0*PhysicalUnits::year,  //Default age
       false, //fit age
       std::nullopt, //fit_age_min
@@ -1767,8 +2042,6 @@ int dev_code()
       "rgb(0, 0, 255)",
     }, {
       db->nuclide("Pu239"),
-      nullptr,
-      nullptr,
       20.0*PhysicalUnits::year,  //Default age
       false, //fit age
       std::nullopt, //fit_age_min
@@ -1780,8 +2053,6 @@ int dev_code()
       "rgb(255, 69, 0)",
     }, {
       db->nuclide("Pu240"),
-      nullptr,
-      nullptr,
       20.0*PhysicalUnits::year,  //Default age
       false, //fit age
       std::nullopt, //fit_age_min
@@ -1793,8 +2064,6 @@ int dev_code()
       "rgb(34, 139, 34)",
     }, {
       db->nuclide("Pu241"),
-      nullptr,
-      nullptr,
       20.0*PhysicalUnits::year,  //Default age
       false, //fit age
       std::nullopt, //fit_age_min
@@ -1818,7 +2087,7 @@ int dev_code()
   rel_eff_curve.phys_model_self_atten = make_shared<RelActCalc::PhysicalModelShieldInput>( self_atten_def );
   options.rel_eff_curves.push_back( rel_eff_curve );
   
-  shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement( size_t(0) );
+  shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement_at_index( size_t(0) );
   assert( foreground );
   shared_ptr<const SpecUtils::Measurement> background = nullptr;
   shared_ptr<const DetectorPeakResponse> drf = nullptr; //We dont have this

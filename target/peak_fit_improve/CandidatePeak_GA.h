@@ -42,10 +42,9 @@ namespace SpecUtils
 namespace CandidatePeak_GA
 {
   std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils::Measurement> data,
-                          size_t start_channel,
-                          size_t end_channel,
-                          std::vector< std::tuple<float,float,float> > &results,
-                                          const FindCandidateSettings &settings );
+                                            size_t start_channel,
+                                            size_t end_channel,
+                                            const FindCandidateSettings &settings );
 
 
   std::tuple<double,size_t,size_t,size_t,size_t,size_t> //<score, num_peaks_found, num_possibly_accepted_peaks_not_found, num_extra_peaks>

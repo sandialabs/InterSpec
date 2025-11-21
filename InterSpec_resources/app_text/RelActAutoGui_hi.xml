@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raag- is short for RelActAutoGui -->
+  <message id="raag-window-title">सापेक्ष सक्रियता समस्थानिक</message>
+
+  <!-- Presets section -->
+  <message id="raag-presets">प्रीसेट</message>
+  <message id="raag-preset-blank">रिक्त</message>
+  <message id="raag-user-preset">उपयोगकर्ता: {1}</message>
+
+  <!-- Status messages -->
+  <message id="raag-not-calculated">गणना नहीं की गई।</message>
+  <message id="raag-calculating">गणना हो रही है...</message>
+
+  <!-- General options -->
+  <message id="raag-spectrum-peak-options">स्पेक्ट्रम और शिखर विकल्प</message>
+  <message id="raag-rel-eff-curve-options">सापेक्ष दक्षता वक्र विकल्प</message>
+  <message id="raag-fit-energy-cal">ऊर्जा अंशांकन फिट करें</message>
+  <message id="raag-back-sub">पृष्ठभूमि घटाव</message>
+  <message id="raag-fwhm-est">FWHM अनुमान</message>
+  <message id="raag-fwhm-form">FWHM रूप</message>
+  <message id="raag-peak-skew">शिखर विषमता</message>
+  <message id="raag-add-uncert">अतिरिक्त अनिश्चितता</message>
+  <message id="raag-yield-info">उपज जानकारी</message>
+
+  <!-- FWHM estimation methods -->
+  <message id="raag-fwhm-start-det-peaks">डिटेक्टर/शिखर से प्रारंभ</message>
+  <message id="raag-fwhm-start-peaks">शिखर से प्रारंभ</message>
+  <message id="raag-fwhm-fixed-peaks">शिखर पर निश्चित</message>
+  <message id="raag-fwhm-start-det-eff">डिटेक्टर दक्षता से प्रारंभ</message>
+  <message id="raag-fwhm-fixed-det-eff">डिटेक्टर दक्षता पर निश्चित</message>
+
+  <!-- UI Elements -->
+  <message id="raag-same-z-same-age">समान Z समान आयु</message>
+  <message id="raag-refit-peaks">शिखर पुनः फिट करें</message>
+  <message id="raag-use-det-eff">डिटेक्टर दक्षता उपयोग करें</message>
+  <message id="raag-none">कोई नहीं</message>
+  <message id="raag-nuclides">न्यूक्लाइड</message>
+  <message id="raag-energy-ranges">ऊर्जा सीमाएं</message>
+  <message id="raag-free-peaks">मुक्त शिखर</message>
+
+  <!-- Main Tab Menu Items -->
+  <message id="raag-spec">स्पेक्ट्रम</message>
+  <message id="raag-rel-eff">सापेक्ष दक्षता</message>
+  <message id="raag-result">परिणाम</message>
+
+  <!-- Menu Items -->
+  <message id="raag-apply-energy-cal">ऊर्जा अंशांकन लागू करें</message>
+  <message id="raag-show-ref-lines">संदर्भ गामा रेखाएं दिखाएं</message>
+  <message id="raag-hide-ref-lines">संदर्भ गामा रेखाएं छुपाएं</message>
+  <message id="raag-set-peaks-foreground">शिखर को अग्रभूमि पर सेट करें</message>
+  <message id="raag-show-background">पृष्ठभूमि दिखाएं</message>
+  <message id="raag-hide-background">पृष्ठभूमि छुपाएं</message>
+  <message id="raag-roi-options">ROI विकल्प:</message>
+  <message id="raag-remove-roi">ROI हटाएं</message>
+  <message id="raag-combine-roi-left">बाएं ROI के साथ संयोजित करें</message>
+  <message id="raag-combine-roi-right">दाएं ROI के साथ संयोजित करें</message>
+
+  <!-- Tooltips -->
+  <message id="raag-tt-fwhm-form">समीकरण प्रकार जो शिखर FWHM को ऊर्जा के फ़ंक्शन के रूप में मॉडल करने के लिए उपयोग किया जाता है।</message>
+  <message id="raag-tt-skew-type">शिखरों पर लागू करने के लिए विषमता का प्रकार; विषमता पैरामीटर फिट किए जाएंगे।</message>
+  <message id="raag-tt-u-pu-data-source">यूरेनियम और प्लूटोनियम के गामा शाखा अनुपात के लिए परमाणु डेटा स्रोत।</message>
+  <message id="raag-tt-add-source">स्रोत जोड़ें।</message>
+  <message id="raag-tt-add-energy-range">ऊर्जा सीमा जोड़ें।</message>
+
+  <!-- Buttons -->
+  <message id="raag-add-free-peaks">मुक्त शिखर जोड़ें</message>
+  <message id="raag-clear-all-ranges">सभी सीमाएं साफ़ करें</message>
+  <message id="raag-html-report">HTML रिपोर्ट</message>
+  <message id="raag-xml-config">XML कॉन्फ़िगरेशन</message>
+
+  <!-- Dialog titles and messages -->
+  <message id="raag-clear-energy-ranges-title">ऊर्जा सीमाएं साफ़ करें?</message>
+  <message id="raag-cant-perform-action">यह कार्रवाई नहीं कर सकते।</message>
+  <message id="raag-divide-energy-range-title">ऊर्जा सीमा विभाजित करें?</message>
+  <message id="raag-apply-fit-energy-cal-title">फिट ऊर्जा अंशांकन लागू करें?</message>
+  <message id="raag-cant-continue">जारी नहीं रख सकते</message>
+  <message id="raag-no-peaks-in-solution">वर्तमान समाधान में कोई शिखर नहीं</message>
+  <message id="raag-error">त्रुटि</message>
+  <message id="raag-unexpected-error-finding-original">मूल खोजने में अप्रत्याशित त्रुटि थी</message>
+
+  <!-- Upload dialog -->
+  <message id="raag-import-xml-config-title">XML कॉन्फ़िगरेशन फ़ाइल आयात करें</message>
+  <message id="raag-select-isotopics-xml-file">उपयोग करने के लिए <em>न्यूक्लाइड द्वारा समस्थानिक</em> XML फ़ाइल चुनें</message>
+  <message id="raag-file-too-large-title">अपलोड करने के लिए फ़ाइल बहुत बड़ी</message>
+  <message id="raag-drag-drop-note">
+    <p style="font-size: small;">नोट: आप XML कॉन्फ़िगरेशन फ़ाइलों को InterSpec पर ड्रैग-एन-ड्रॉप भी कर सकते हैं</p>
+  </message>
+
+  <!-- Tooltips -->
+  <message id="raag-sort-energy-ranges-tt">ऊर्जा सीमाएं क्रमबद्ध करें।</message>
+  <message id="raag-remove-all-ranges-tt">सभी ऊर्जा सीमाएं हटाता है।</message>
+  <message id="raag-remove-free-peaks-tt">सभी मुक्त शिखर हटाएं, और मुक्त शिखर इनपुट छुपाएं।</message>
+  <message id="raag-free-peaks-tt">&quot;मुक्त शिखर&quot; एक विशिष्ट ऊर्जा वाले शिखर हैं, जो किसी न्यूक्लाइड से संबद्ध नहीं हैं, और उनका आयाम डेटा के लिए सर्वोत्तम मूल्य के लिए फिट किया जाता है। शिखरों को वैकल्पिक रूप से कार्यात्मक FWHM बाधा से भी मुक्त किया जा सकता है।<br />मुक्त शिखर प्रतिक्रियाओं से शिखरों को संभालने के लिए, या अज्ञात न्यूक्लाइड से उपयोगी हैं।</message>
+
+  <!-- Peak uncertainty dialog -->
+  <message id="raag-peaks-uncert-based-on-fit">शिखर अनिश्चितताएं कुल सापेक्ष दक्षता फिट (जैसे, शिखर अनिश्चितताओं को कम करने में एक दूसरे की मदद करने) पर आधारित होंगी, जब तक कि आप उन्हें पुनः फिट करना नहीं चुनते, उस स्थिति में वे सापेक्ष दक्षता वक्र या FWHM कार्यात्मक रूप द्वारा बाधित नहीं होंगे।</message>
+
+  <!-- User messages with energy formatting -->
+  <message id="raag-energy-already-in-range">{1} keV पहले से ही ऊर्जा सीमा [{2}, {3}] keV में है - कोई कार्रवाई नहीं की जाएगी।</message>
+  <message id="raag-extended-energy-range">मौजूदा ऊर्जा सीमा को [{1}, {2}] keV तक बढ़ाया।</message>
+  <message id="raag-added-new-energy-range">{1} से {2} keV तक नई ऊर्जा सीमा जोड़ी।</message>
+  <message id="raag-split-roi-at">{1} keV पर ROI विभाजित करें</message>
+  <message id="raag-add-free-peak-at">{1} keV पर मुक्त शिखर जोड़ें</message>
+  <message id="raag-energy-range-no-contributions">ऊर्जा सीमा {1} keV से {2} keV में कोई महत्वपूर्ण गामा योगदान नहीं था।</message>
+  <message id="raag-divide-energy-range-msg">
+    यह कार्रवाई {1} keV से {2} keV तक की ऊर्जा सीमा को {3} अलग ऊर्जा सीमाओं में विभाजित करेगी।
+    <br />
+    <p>क्या आप जारी रखना चाहेंगे?</p>
+  </message>
+  <message id="raag-add-energy-offset"> {1} keV का ऑफ़सेट जोड़ें</message>
+  <message id="raag-increase-gain-first"> लाभ को {1} से बढ़ाएं</message>
+  <message id="raag-increase-gain-additional"> और लाभ को {1} से बढ़ाएं</message>
+  <message id="raag-increase-quad-first"> द्विघातीय को {1} से बढ़ाएं</message>
+  <message id="raag-increase-quad-additional"> और द्विघातीय को {1} से बढ़ाएं</message>
+
+  <!-- Energy calibration application messages -->
+  <message id="raag-apply-energy-cal-msg">यह प्राथमिक अग्रभूमि{1}{2}{3} के लिए{1} करेगा।<br />क्या आप यह करना चाहते हैं?</message>
+  <message id="raag-and-background"> और पृष्ठभूमि</message>
+  <message id="raag-files"> फ़ाइलें</message>
+  <message id="raag-file"> फ़ाइल</message>
+  <message id="raag-energy-cal-updated">प्रदर्शित अग्रभूमि{1} के लिए ऊर्जा अंशांकन अपडेट किया है।</message>
+  <message id="raag-and-background-period"> और पृष्ठभूमि</message>
+
+  <!-- Error messages -->
+  <message id="raag-error-creating-tool">सापेक्ष सक्रियता समस्थानिक उपकरण बनाने में त्रुटि: {1}</message>
+  <message id="raag-handle-double-click-error">handleDoubleLeftClick त्रुटि: {1}</message>
+  <message id="raag-expected-state-info">'{1}' के लिए अपेक्षित स्थिति जानकारी उपलब्ध नहीं है - यह अपेक्षित नहीं है - क्षमा करें!</message>
+  <message id="raag-state-info-not-saved">'{1}' के लिए स्थिति जानकारी पहले सहेजी नहीं जा सकी - यह अपेक्षित नहीं है - क्षमा करें!</message>
+  <message id="raag-error-deserializing">उपकरण स्थिति को डी-सीरियलाइज़ करने में त्रुटि: {1}</message>
+  <message id="raag-error-loading-preset">प्रीसेट लोड करने में त्रुटि: {1}</message>
+  <message id="raag-error-applying-energy-cal">ऊर्जा अंशांकन लागू करने में त्रुटि: {1}</message>
+  <message id="raag-error-loading-xml-config"><em>न्यूक्लाइड द्वारा समस्थानिक</em> XML कॉन्फ़िगरेशन फ़ाइल लोड करने में त्रुटि: {1}</message>
+
+</messages>

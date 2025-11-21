@@ -47,6 +47,7 @@ namespace InitialFit_GA
 std::vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_settings,
                               const FindCandidateSettings &candidate_settings,
                               const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                               const bool multithread,
                               size_t &num_add_candidates_fit_for,  //Only for eval purposes
                               size_t &num_add_candidates_accepted //Only for eval purposes
 );
@@ -72,8 +73,9 @@ struct PeakFindAndFitWeights
 
 
 PeakFindAndFitWeights eval_initial_peak_find_and_fit( const InitialPeakFindSettings &fit_settings,
-                                      const FindCandidateSettings &candidate_settings,
-                                                     const DataSrcInfo &src_info );
+                                                     const FindCandidateSettings &candidate_settings,
+                                                     const DataSrcInfo &src_info,
+                                                     const bool multithread );
 
   // I think we could actually just use `InitialPeakFindSettings` instead of defining this struck - but I'll wait on that until we get it up and going a bit
   struct InitialFitSolution
@@ -84,7 +86,7 @@ PeakFindAndFitWeights eval_initial_peak_find_and_fit( const InitialPeakFindSetti
     double initial_max_nsigma_roi;
     int fwhm_fcn_form;
     double search_roi_nsigma_deficit;
-    double search_stat_threshold;
+    //double search_stat_threshold;
     double search_hypothesis_threshold;
     double search_stat_significance;
     double ROI_add_nsigma_required;

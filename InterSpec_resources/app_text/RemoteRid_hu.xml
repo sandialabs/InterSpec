@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- rr- is short for RemoteRid
+  -->
+  <message id="rr-mi-url">URL</message>
+  <message id="rr-mi-executable-path">Exe Útvonal</message>
+  <message id="rr-url-empty-text">FullSpectrum Szolgáltatás URL-je</message>
+  <message id="rr-exe-path-empty-text">FullSpectrum futtatható fájl útvonala</message>
+  <message id="rr-get-detectors">DRF-ek Lekérése</message>
+  <message id="rr-detectors-label">DRF:</message>
+  <message id="rr-url-instructions">A web szolgáltatás URL-jének megadása után kérjük (opcionálisan) kérje le a DRF-eket, majd nyomja meg a "<em>Küldés</em>" gombot</message>
+  <message id="rr-only-disp-samples-cb">Csak Megjelenített Minták</message>
+  <message id="rr-tt-only-disp-samples">Általában a keresési mód és portál adatok teljes egészében kerülnek elemzésre, de ennek az opciónak a kiválasztása csak a megjelenített előtér/háttér elemzését okozza.</message>
+  <message id="rr-submit-ana-btn">Elemzés Küldése</message>
+  <message id="rr-show-dialog-cb">Párbeszéd mutatása</message>
+  <message id="rr-always-call-cb">Mindig hívja meg spektrum betöltéskor</message>
+  <message id="rr-tt-show-dialog">Ha be van jelölve, egy párbeszéd jelenik meg, amelyet a felhasználónak el kell utasítania a RID eredményekkel. Ha nincs bejelölve, csak egy értesítés jelenik meg, amely rövid idő után eltűnik a RID eredményekkel.</message>
+  <message id="rr-gadras-rid-error">GADRAS RID Hiba: {1}</message>
+  <message id="rr-gadras-rid-error-code">GADRAS RID Hibakód {1}</message>
+  <message id="rr-gadras-rid-no-id">GADRAS RID: semmi nem azonosítva</message>
+  <message id="rr-gadras-result">GADRAS RID: {1}</message>
+  <message id="rr-gadras-fail-parse">GADRAS RID eredmények elemzése sikertelen.</message>
+  <message id="rr-rid-results-window-title">Külső RID Eredmények</message>
+  <message id="rr-rid-tool-btn">RID Eszköz</message>
+  <message id="rr-err-incorrect-url">Hiba az elemzés hívásakor: helytelen URL vagy nincs internet.</message>
+  <message id="rr-err-locating-exe">Hiba a futtatható fájl megtalálásakor: '{1}'</message>
+  <message id="rr-err-creating-tmp-file">Hiba az ideiglenes fájlnév létrehozásakor.</message>
+  <message id="rr-err-opening-tmp-file">Hiba az ideiglenes fájl megnyitásakor.</message>
+  <message id="rr-requesting-ana">Elemzés kérése</message>
+  <message id="rr-err-no-spec">Nincs megjelenített spektrum</message>
+  <message id="rr-requesting-service-info">Szolgáltatás információ kérése.</message>
+  <message id="rr-error-parsing-service-info">Hiba a szolgáltatás információ eredmények elemzésekor: <code></code></message>
+  <message id="rr-incorrect-url">helytelen URL vagy nincs internet.</message>
+  <message id="rr-err-requesting-service-info">Hiba a szolgáltatás információ lekérésekor: <code>{1}</code></message>
+</messages>

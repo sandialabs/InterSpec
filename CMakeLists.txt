@@ -1,19 +1,37 @@
- cmake_minimum_required(VERSION 3.1...3.20 FATAL_ERROR)
+ cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 
-project(InterSpec VERSION 1.0.13)
+project(InterSpec VERSION 1.0.14)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set( CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL "Set PIC to make InterSpec static lib" )
 
+if( CONTAINER_LIBC OR CONTAINER_MUSL)
+  set( BUILD_AS_LOCAL_SERVER OFF CACHE INTERNAL "" )
+  set( CMAKE_BUILD_TYPE "Release" CACHE STRING "" FORCE)
+  set( USE_REL_ACT_TOOL ON CACHE INTERNAL "")
+  set( BUILD_FOR_WEB_DEPLOYMENT ON CACHE INTERNAL "" )
+  set( CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+  #set( Boost_INCLUDE_DIR "build/_deps/boost-src/libs")
+  set( ZLIB_INCLUDE_DIR:STRING "build/_deps/zlib-build")
+  set( SpecUtils_PYTHON_BINDINGS ON )
+  set( InterSpec_FETCH_DEPENDENCIES ON CACHE INTERNAL "" )
+  if( CONTAINER_MUSL )
+    # In Alpine, the hardening and link-time-optimization clash for `vsnprintf`, so we need to disable one
+    # of these - and for serving to web, lto seems like the better one to disable.
+    #set( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -U_FORTIFY_SOURCE" ) # or  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_FORTIFY_SOURCE=0")
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION FALSE)
+    set( CMAKE_EXE_LINKER_FLAGS "-static -static-libgcc -static-libstdc++" CACHE INTERNAL "")
+    set( CMAKE_FIND_LIBRARY_SUFFIXES ".a" CACHE INTERNAL "")
+  endif()
+endif()
 
 if( InterSpec_FETCH_DEPENDENCIES )
-  include( cmake/FetchInterSpecDeps.txt )
+  include( cmake/FetchInterSpecDeps.cmake )
 endif( InterSpec_FETCH_DEPENDENCIES )
 
 # If we are the top-level project, we'll build the local-server exe
 get_directory_property(hasParent PARENT_DIRECTORY)
-
 
 option(
     BUILD_AS_ELECTRON_APP
@@ -30,7 +48,14 @@ option(
     "Selects options appropriate for the web in the future"
     OFF
 )
-
+option(
+    BUILD_FOR_CONTAINER_LIBC
+    "Configures the executable to be run as a Docker app in a libc-based container"
+)
+option(
+    BUILD_FOR_CONTAINER_MUSL
+    "Configures the executable to be run as a Docker app in a musl-based container"
+)
 if( hasParent )
   option( BUILD_AS_LOCAL_SERVER "Build for use as a server for localhost" OFF )
 else( hasParent )
@@ -101,19 +126,28 @@ set(GOOGLE_MAPS_KEY "" CACHE STRING "Google maps api key.")
 option(USE_LEAFLET_MAP "Use leaflet-based maps widget" OFF)
 set(LEAFLET_MAPS_KEY "n/a" CACHE STRING "Leaflet maps api key.")
 
-option(
-    USE_CSS_FLEX_LAYOUT
-    "Use CSS Flex/Grid Layout in-place of Wts layouts were possible (work in progress)"
-    OFF
-)
-
 option(USE_REMOTE_RID "Enables using remote RID tool" ON)
-option(USE_REL_ACT_TOOL "Enables Relative Activity tool - experimental" ON)
+option(USE_REL_ACT_TOOL "Enables Relative Activity tool" ON)
+option(USE_LLM_INTERFACE "Enables the AI/LLM interface and MCP server code" ON)
 
-if( IOS OR ANDROID )
-  set( USE_BATCH_TOOLS OFF CACHE INTERNAL "")
+
+
+if(BUILD_FOR_WEB_DEPLOYMENT)
+    set(TRY_TO_STATIC_LINK OFF)
+    set(CMAKE_BUILD_TYPE:STRING "Release")
+    set(USE_DB_TO_STORE_SPECTRA ON)
+    set(PERFORM_DEVELOPER_CHECKS OFF CACHE INTERNAL "")
+    set(SpecUtils_ENABLE_EQUALITY_CHECKS OFF CACHE INTERNAL "")
+    set(USE_SPECRUM_FILE_QUERY_WIDGET OFF)
+endif(BUILD_FOR_WEB_DEPLOYMENT)
+
+
+if( IOS OR ANDROID OR BUILD_FOR_WEB_DEPLOYMENT )
+  set(USE_BATCH_CLI_TOOLS OFF CACHE INTERNAL "")
+  set(USE_BATCH_GUI_TOOLS OFF CACHE INTERNAL "")
 else()
-  option( USE_BATCH_TOOLS "Enables (command line for now) batch processing." ON )
+  option( USE_BATCH_CLI_TOOLS "Enables command line batch processing." ON )
+  option( USE_BATCH_GUI_TOOLS "Enables GUI batch processing." ON )
 endif()
 
 if(MSVC)
@@ -138,11 +172,13 @@ set(MAX_SPECTRUM_MEMMORY_SIZE_MB 256
 # If we are creating the normal InterSpec executable, and the InterSpec_batch executable,
 #  we will compile LibInterSpec as a shared library, so both exes can use it; otherwise
 #  we will create a static library, and statically link it into our final executable.
-#  (Electron doesnt need a separate exe for batch)
-if( (USE_BATCH_TOOLS AND NOT BUILD_AS_ELECTRON_APP) OR BUILD_AS_OSX_APP )
+#  (Electron doesnt need a separate exe for batch, and we dont care abour disk space for unit tests)
+if( USE_BATCH_CLI_TOOLS AND NOT BUILD_AS_ELECTRON_APP AND NOT BUILD_AS_UNIT_TEST_SUITE )
   set( INTERSPEC_LIB_TYPE SHARED )
+  set( BUILD_LibInterSpec_SHARED ON )
 else()
   set( INTERSPEC_LIB_TYPE STATIC )
+  set( BUILD_LibInterSpec_SHARED OFF )
 endif()
 
 
@@ -166,19 +202,6 @@ if(NOT CMAKE_BUILD_TYPE)
 endif(NOT CMAKE_BUILD_TYPE)
 
 
-if(BUILD_FOR_WEB_DEPLOYMENT)
-    set(TRY_TO_STATIC_LINK ON)
-    set(CMAKE_BUILD_TYPE:STRING "Release")
-    set(USE_DB_TO_STORE_SPECTRA ON)
-    #    set( USE_SQLITE3_DB ON )
-    #    set( USE_MYSQL_DB OFF )
-    set(DATABASE_PASSWORD_FILE "/path/to/passwords/databases.xml")
-    set(PERFORM_DEVELOPER_CHECKS OFF CACHE INTERNAL "")
-    set(SpecUtils_ENABLE_EQUALITY_CHECKS OFF CACHE INTERNAL "")
-    set(USE_SPECRUM_FILE_QUERY_WIDGET OFF)
-    set(USE_TERMINAL_WIDGET OFF)
-endif(BUILD_FOR_WEB_DEPLOYMENT)
-
 if(BUILD_AS_LOCAL_SERVER)
     set(PERFORM_DEVELOPER_CHECKS ON CACHE INTERNAL "")
     set(SpecUtils_ENABLE_EQUALITY_CHECKS ON CACHE INTERNAL "")
@@ -186,7 +209,7 @@ endif(BUILD_AS_LOCAL_SERVER)
 
 
 if(BUILD_FOR_WEB_DEPLOYMENT AND BUILD_AS_LOCAL_SERVER )
-  message( FATAL_ERROR "You can not buildfor both local webserver and web deployment" )
+  message( FATAL_ERROR "You can not build for both local webserver and web deployment" )
 endif()
 
 
@@ -215,10 +238,8 @@ else( InterSpec_FETCH_DEPENDENCIES )
   set(Boost_USE_MULTITHREADED ON)
   find_package(Boost 1.68 REQUIRED COMPONENTS thread date_time system filesystem program_options regex random )
 
-  if( USE_REL_ACT_TOOL )
-    find_package( Eigen3 3.4 REQUIRED NO_MODULE )
-    find_package( Ceres REQUIRED )
-  endif( USE_REL_ACT_TOOL ) 
+  find_package( Eigen3 3.4 REQUIRED NO_MODULE )
+  find_package( Ceres REQUIRED )
 endif( InterSpec_FETCH_DEPENDENCIES )
 
 
@@ -239,6 +260,7 @@ set(sources
     src/ShieldingSelect.cpp
     src/GammaXsGui.cpp
     src/ReferenceLineInfo.cpp
+    src/ReferenceLinePredef.cpp
     src/ReferencePhotopeakDisplay.cpp
     src/IsotopeNameFilterModel.cpp
     src/ReactionGamma.cpp
@@ -247,6 +269,7 @@ set(sources
     src/SpectrumChart.cpp
     src/SpectrumDataModel.cpp
     src/HelpSystem.cpp
+    src/InjaLogDialog.cpp
     src/InterSpec.cpp
     src/InterSpecServer.cpp
     src/PopupDiv.cpp
@@ -321,9 +344,18 @@ set(sources
     src/AppUtils.cpp
     src/ExportSpecFile.cpp
     src/EnterAppUrlWindow.cpp
+    src/ExternalRidResult.cpp
     src/NuclideSourceEnter.cpp
     src/AddNewPeakDialog.cpp
     src/UserPreferences.cpp
+    src/RefSpectraWidget.cpp
+    src/RefSpectraModel.cpp
+    src/SimpleActivityCalc.cpp
+    src/RefLineDynamic.cpp
+    src/AnalystChecks.cpp
+    src/BatchPeak.cpp
+    src/BatchActivity.cpp
+    src/BatchInfoLog.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -345,6 +377,7 @@ set(headers
     InterSpec/ShieldingSelect.h
     InterSpec/GammaXsGui.h
     InterSpec/ReferenceLineInfo.h
+    InterSpec/ReferenceLinePredef.h
     InterSpec/ReferencePhotopeakDisplay.h
     InterSpec/IsotopeNameFilterModel.h
     InterSpec/ReactionGamma.h
@@ -353,6 +386,7 @@ set(headers
     InterSpec/SpectrumChart.h
     InterSpec/SpectrumDataModel.h
     InterSpec/HelpSystem.h
+    InterSpec/InjaLogDialog.h
     InterSpec/InterSpec.h
     InterSpec/InterSpecServer.h
     InterSpec/PopupDiv.h
@@ -425,14 +459,23 @@ set(headers
     InterSpec/MoreNuclideInfoDisplay.h
     InterSpec/UndoRedoManager.h
     InterSpec/AppUtils.h
+    InterSpec/BersteinPolynomial.hpp
     InterSpec/ExportSpecFile.h
+    InterSpec/ExternalRidResult.h
     InterSpec/EnterAppUrlWindow.h
     InterSpec/NuclideSourceEnter.h
     InterSpec/AddNewPeakDialog.h
     InterSpec/UserPreferences.h
     InterSpec/XmlUtils.hpp
+    InterSpec/RefSpectraWidget.h
+    InterSpec/RefSpectraModel.h
+    InterSpec/SimpleActivityCalc.h
+    InterSpec/RefLineDynamic.h
+    InterSpec/AnalystChecks.h
+    InterSpec/BatchPeak.h
+    InterSpec/BatchActivity.h
+    InterSpec/BatchInfoLog.h
 )
-
 
 if(USE_DB_TO_STORE_SPECTRA)
     list(APPEND sources src/DbFileBrowser.cpp)
@@ -518,7 +561,13 @@ if( USE_REL_ACT_TOOL )
         src/RelActTxtResults.cpp
         src/RelEffChart.cpp
         src/RelEffShieldWidget.cpp
+        src/RelActAutoGuiRelEffOptions.cpp
+        src/RelActAutoGuiEnergyRange.cpp
+        src/RelActAutoGuiNuclide.cpp
+        src/RelActAutoGuiFreePeak.cpp
+        src/RelActAutoReport.cpp
         src/RelActAutoDev.cpp
+        src/ShieldingSourceFitPlot.cpp
   )
   
   list( APPEND headers
@@ -533,32 +582,56 @@ if( USE_REL_ACT_TOOL )
         InterSpec/RelActTxtResults.h
         InterSpec/RelEffChart.h
         InterSpec/RelEffShieldWidget.h
+        InterSpec/ShieldingSourceFitPlot.h
+        InterSpec/RelActAutoGuiRelEffOptions.h
+        InterSpec/RelActAutoGuiEnergyRange.h
+        InterSpec/RelActAutoGuiNuclide.h
+        InterSpec/RelActAutoGuiFreePeak.h
+        InterSpec/RelActAutoReport.h
         InterSpec/RelActAutoDev.h
   )
 endif( USE_REL_ACT_TOOL )
 
 
-if( USE_BATCH_TOOLS )
+if( USE_BATCH_CLI_TOOLS )
+  list( APPEND sources src/BatchCommandLine.cpp )
+  list( APPEND headers InterSpec/BatchCommandLine.h )
+endif( USE_BATCH_CLI_TOOLS )
+
+
+if( USE_BATCH_GUI_TOOLS )
   list( APPEND sources
-        src/BatchCommandLine.cpp
-        src/BatchPeak.cpp
-        src/BatchActivity.cpp
-        src/BatchInfoLog.cpp
+        src/BatchGuiWidget.cpp
+        src/BatchGuiAnaWidget.cpp
+        src/BatchGuiInputFile.cpp
   )
   
   list( APPEND headers
-        InterSpec/BatchCommandLine.h
-        InterSpec/BatchPeak.h
-        InterSpec/BatchActivity.h
-        InterSpec/BatchInfoLog.h
+        InterSpec/BatchGuiWidget.h
+        InterSpec/BatchGuiAnaWidget.h
+        InterSpec/BatchGuiInputFile.h
   )
-endif( USE_BATCH_TOOLS )
+endif( USE_BATCH_GUI_TOOLS )
+
+if( (NOT IOS) AND (NOT ANDROID) AND (NOT BUILD_FOR_WEB_DEPLOYMENT) )
+  list( APPEND sources src/DirectorySelector.cpp )
+  list( APPEND headers InterSpec/DirectorySelector.h )
+endif( (NOT IOS) AND (NOT ANDROID) AND (NOT BUILD_FOR_WEB_DEPLOYMENT) )
+
 
 if( BUILD_AS_OSX_APP )
   list( APPEND sources target/osx/macOsUtils.mm target/osx/NativeMenu.mm )
   list( APPEND headers target/osx/macOsUtils.h target/osx/NativeMenu.h )
 endif( BUILD_AS_OSX_APP )
 
+if( USE_LLM_INTERFACE )
+  list( APPEND sources src/LlmMcpResource.cpp src/LlmInterface.cpp src/LlmToolRegistry.cpp src/LlmConfig.cpp src/LlmConversationHistory.cpp src/LlmToolGui.cpp )
+list( APPEND headers InterSpec/LlmMcpResource.h InterSpec/LlmInterface.h InterSpec/LlmToolRegistry.h InterSpec/LlmConfig.h InterSpec/LlmConversationHistory.h InterSpec/LlmToolGui.h )
+  
+  if( BUILD_FOR_WEB_DEPLOYMENT OR IOS OR ANDROID )
+    MESSAGE(FATAL_ERROR "MCP server can not be enabled for web or mobile builds")
+  endif( BUILD_FOR_WEB_DEPLOYMENT OR IOS OR ANDROID )
+endif( USE_LLM_INTERFACE )
 
 #Copy D3 resources into InterSpec_resources directory at compile time
 include(cmake/DeployJsAndCss.cmake)
@@ -570,7 +643,11 @@ deploy_js_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resou
 
 
 
-list( APPEND OTHER_InterSpec_SUPPORT_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/D3TimeChart.js )
+list( APPEND OTHER_InterSpec_SUPPORT_FILES
+  ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/D3TimeChart.js
+  ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/ShieldingSourceFitPlot.js
+  ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/ShieldingSourceFitPlot.css
+)
 
 deploy_js_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/SpectrumChartD3.js"
          "${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/SpectrumChartD3.js"
@@ -620,19 +697,34 @@ add_subdirectory(external_libs/SpecUtils)
 add_subdirectory(external_libs/SandiaDecay)
 add_subdirectory(external_libs/muparserx-4.0.7)
 
-add_library(InterSpecLib ${INTERSPEC_LIB_TYPE} ${sources} ${headers})
-
+add_library(InterSpecLib ${INTERSPEC_LIB_TYPE} ${sources} ${headers} )
 
 # If we are the top-level project, we'll build the local-server exe
 if( NOT hasParent)
   add_executable(InterSpecExe main.cpp)
   target_link_libraries(InterSpecExe PUBLIC InterSpecLib)
   set_target_properties(InterSpecExe PROPERTIES OUTPUT_NAME "InterSpec")
+  # Tell the runtime linker to search ../lib beside the executable
+  if(UNIX AND NOT APPLE)           # $ORIGIN is a Linux/BSD feature
+    set_target_properties(InterSpecExe PROPERTIES
+        BUILD_RPATH  "$ORIGIN/../lib"
+        INSTALL_RPATH "$ORIGIN/../lib")
+    # makes variables such as $ORIGIN legal in BUILD_RPATH
+    set(CMAKE_BUILD_RPATH_USE_ORIGIN ON)
+  endif()
 endif()
 
 
 set_target_properties(InterSpecLib PROPERTIES PREFIX "")
 set_target_properties(InterSpecLib PROPERTIES OUTPUT_NAME "InterSpec")
+
+if((UNIX AND NOT APPLE) AND (BUILD_FOR_WEB_DEPLOYMENT OR BUILD_AS_LOCAL_SERVER) )           # $ORIGIN is a Linux/BSD feature
+  set_target_properties(InterSpecExe PROPERTIES
+      BUILD_RPATH  "$ORIGIN/../lib"
+      INSTALL_RPATH "$ORIGIN/../lib")
+  # makes variables such as $ORIGIN legal in BUILD_RPATH
+  set(CMAKE_BUILD_RPATH_USE_ORIGIN ON)
+endif()
 
 # Turn off some compiler warnings
 target_compile_options(InterSpecLib PRIVATE
@@ -651,34 +743,15 @@ if(WIN32)
   target_compile_definitions( InterSpecLib PRIVATE InterSpec_EXPORTS )
   add_definitions( /bigobj )
         
-  if( USE_BATCH_TOOLS )
+  if( INTERSPEC_LIB_TYPE STREQUAL "SHARED" )
     # We get error compiling multi-processor debug build of shared LibInterSpec, presumably due to some 
     #  file locking issues, so only enable parallel builds for release, if we are building shared LibInterSpec
     target_compile_options( InterSpecLib PUBLIC $<$<CONFIG:Release>:/MP> )
-  else( USE_BATCH_TOOLS )
+  else()
     add_definitions( /MP )
-  endif( USE_BATCH_TOOLS )
+  endif()
 endif(WIN32)
 
-target_link_libraries(
-    InterSpecLib
-    PUBLIC
-    Threads::Threads
-    SpecUtils
-    SandiaDecay
-    Minuit2::Minuit2
-    Cuba-3.0
-    muparserx
-    Boost::thread
-    Boost::date_time
-    Boost::system
-    Boost::filesystem
-    Boost::program_options
-    Boost::regex
-    Boost::random
-    ZLIB::ZLIB
-    ${CMAKE_DL_LIBS}
-)
 
 if( USE_SPECRUM_FILE_QUERY_WIDGET )
     add_subdirectory(external_libs/pugixml-1.9)
@@ -707,9 +780,7 @@ if( InterSpec_FETCH_DEPENDENCIES )
   target_link_libraries( InterSpecLib
     PUBLIC
       Boost::math Boost::scope_exit Boost::uuid Boost::iostreams Boost::assign Boost::multi_array Boost::crc Boost::process Boost::crc
-      # Boost::signals2 Boost::asio Boost::multi_index
       wt
-#      wttest
       wthttp
       wtdbosqlite3
       wtdbo
@@ -724,30 +795,59 @@ if( InterSpec_FETCH_DEPENDENCIES )
   # Need to fix copying the "resources" directory and configs and stuff probably
 endif( InterSpec_FETCH_DEPENDENCIES )
 
+# We will explicitly set the Wt include directory, marked as SYSTEM, to
+#  avoid a ton of warning messages from those headers (if you take this
+#  next line out, things will still work just fine, just with more warnings)
+target_include_directories( InterSpecLib PUBLIC SYSTEM ${Wt_INCLUDE_DIR} )
 
 if(WIN32)
     if( NOT InterSpec_FETCH_DEPENDENCIES )
-        target_link_libraries(InterSpecLib PUBLIC 
-            debug "${Wt_DEBUG_LIBRARIES}"
-            optimized "${Wt_LIBRARIES}"
-        )
+      if( BUILD_AS_UNIT_TEST_SUITE )
+        target_link_libraries(InterSpecLib PUBLIC  debug "${Wt_TEST_DEBUG_LIBRARY}" optimized "${Wt_TEST_LIBRARY}" )
+      else( BUILD_AS_UNIT_TEST_SUITE )
+        target_link_libraries(InterSpecLib PUBLIC  debug "${Wt_HTTP_DEBUG_LIBRARY}" optimized "${Wt_HTTP_LIBRARY}" )
+      endif( BUILD_AS_UNIT_TEST_SUITE )
+      
+      target_link_libraries(InterSpecLib PUBLIC
+        debug ${Wt_DEBUG_LIBRARY} ${Wt_DBO_DEBUG_LIBRARY} ${Wt_DBOSQLITE3_DEBUG_LIBRARY}
+        optimized ${Wt_LIBRARY} ${Wt_DBO_LIBRARY} ${Wt_DBOSQLITE3_LIBRARY}
+      )
     endif( NOT InterSpec_FETCH_DEPENDENCIES )
     
     target_link_directories(InterSpecLib PUBLIC ${Boost_LIBRARY_DIR})
 else(WIN32)
-    target_link_libraries(InterSpecLib PUBLIC
-        ${Wt_LIBRARIES}
-        ${Wt_LIBRARY}
-        ${Wt_HTTP_LIBRARY}
-        ${Wt_DBO_LIBRARY}
-        ${Wt_DBOSQLITE3_LIBRARY}
-    )
+  if( BUILD_AS_UNIT_TEST_SUITE )
+    target_link_libraries(InterSpecLib PUBLIC ${Wt_TEST_LIBRARY})
+  else( BUILD_AS_UNIT_TEST_SUITE )
+    target_link_libraries(InterSpecLib PUBLIC ${Wt_HTTP_LIBRARY})
+  endif( BUILD_AS_UNIT_TEST_SUITE )
+  
+  target_link_libraries(InterSpecLib PUBLIC ${Wt_LIBRARY} ${Wt_DBO_LIBRARY} ${Wt_DBOSQLITE3_LIBRARY} )
 endif(WIN32)
 
 
-if( USE_REL_ACT_TOOL )
-  target_link_libraries(InterSpecLib PUBLIC Eigen3::Eigen Ceres::ceres)
-endif( USE_REL_ACT_TOOL )
+
+target_link_libraries(
+    InterSpecLib
+    PUBLIC
+    Threads::Threads
+    SpecUtils
+    SandiaDecay
+    Minuit2::Minuit2
+    Cuba-3.0
+    muparserx
+    Boost::thread
+    Boost::date_time
+    Boost::system
+    Boost::filesystem
+    Boost::program_options
+    Boost::regex
+    Boost::random
+    ZLIB::ZLIB
+    Eigen3::Eigen
+    Ceres::ceres
+    ${CMAKE_DL_LIBS}
+)
 
 
 if( BUILD_AS_OSX_APP )
@@ -765,7 +865,7 @@ if( BUILD_AS_OSX_APP )
     ${FOUNDATION_LIBRARY}
   )
   
-  if( USE_BATCH_TOOLS )
+  if( INTERSPEC_LIB_TYPE STREQUAL "SHARED" )
     set_target_properties( InterSpecLib PROPERTIES
       FRAMEWORK TRUE
       FRAMEWORK_VERSION A
@@ -784,7 +884,7 @@ if( BUILD_AS_OSX_APP )
     set_target_properties( InterSpecLib PROPERTIES
       PUBLIC_HEADER "InterSpec_config.h"
     )
-  endif( USE_BATCH_TOOLS )
+  endif( INTERSPEC_LIB_TYPE STREQUAL "SHARED" )
 endif( BUILD_AS_OSX_APP )
 
 
@@ -796,6 +896,8 @@ if( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
             XCODE_SCHEME_WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
         )
     endif( ${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.17.0" )
+    
+    set(CMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO") #macOS 26 requires this, or else we get some error for development
 endif( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
 
 if(MSVC AND (NOT hasParent))
@@ -843,11 +945,6 @@ if(TRY_TO_STATIC_LINK)
         include(cmake/WtFindFcgi.txt)
         target_link_libraries(InterSpecLib PUBLIC ${FCGI_LIBRARIES})
     endif(Wt_FCGI_LIBRARY)
-
-    #include(cmake/WtFindSsl.txt)
-    #if(SSL_FOUND)
-    #    target_link_libraries(InterSpecLib PUBLIC ${SSL_LIBRARIES})
-    #endif(SSL_FOUND)
 
     if(("${CMAKE_SYSTEM}" MATCHES "Linux") AND (NOT ANDROID))
         find_library( RT_LIB rt REQUIRES )
@@ -897,6 +994,14 @@ if( WIN32 )
   # The following are only needed for Wt 3.7.1, not 3.3.4
   target_link_libraries( InterSpecLib PUBLIC opengl32.lib d2d1.lib windowscodecs.lib Dwrite.lib )
 endif( WIN32 )
+
+# after the target_link_libraries() for InterSpecLib / InterSpecExe
+if (CMAKE_CXX_STANDARD LESS 17)
+    # GCC < 9 still needs libstdc++fs for <experimental/filesystem>
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        target_link_libraries(InterSpecLib PUBLIC stdc++fs)
+    endif()
+endif()
 
 #if( ${PERFORM_DEVELOPER_CHECKS} EQUAL ${SpecUtils_ENABLE_EQUALITY_CHECKS} )
 #  MESSAGE(FATAL_ERROR "PERFORM_DEVELOPER_CHECKS (${PERFORM_DEVELOPER_CHECKS}) must be equal to SpecUtils_ENABLE_EQUALITY_CHECKS (${SpecUtils_ENABLE_EQUALITY_CHECKS})")
@@ -958,6 +1063,9 @@ if(NOT WT_RESOURCES_DIRECTORY)
 else(NOT WT_RESOURCES_DIRECTORY)
     MESSAGE("Using Wt resources from ${WT_RESOURCES_DIRECTORY}")
     file(COPY ${WT_RESOURCES_DIRECTORY} DESTINATION ${PROJECT_BINARY_DIR}/)
+    if(BUILD_FOR_WEB_DEPLOYMENT)
+      file(COPY ${WT_RESOURCES_DIRECTORY} DESTINATION ${PROJECT_BINARY_DIR}/resources)
+    endif(BUILD_FOR_WEB_DEPLOYMENT)
 endif(NOT WT_RESOURCES_DIRECTORY)
 
 if(NOT ANDROID)
@@ -999,6 +1107,11 @@ configure_file(
 # Only create an install target if this is a top-level project (e.g., not Electron, or iOS, etc)
 if( NOT hasParent )
   INSTALL(TARGETS InterSpecExe DESTINATION bin)
-  INSTALL(TARGETS InterSpecLib DESTINATION lib)
+  
+  if( INTERSPEC_LIB_TYPE STREQUAL "SHARED" )
+    INSTALL(TARGETS InterSpecLib DESTINATION lib)
+  endif()
+  
   INSTALL(DIRECTORY data example_spectra InterSpec_resources DESTINATION share/interspec)
+  INSTALL(DIRECTORY ${WT_RESOURCES_DIRECTORY}/ DESTINATION share/interspec/resources)
 endif( NOT hasParent )

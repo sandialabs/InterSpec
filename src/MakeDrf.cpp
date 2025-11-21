@@ -670,8 +670,8 @@ namespace
       m_previewPopup->setOffsets(42, Left | Top);
       m_previewPopup->setOffsets(-10000, Left | Top);
       doJavaScript(WT_CLASS ".positionXY('" + m_previewPopup->id() + "',"
-                   + boost::lexical_cast<std::string>(event.window().x) + ","
-                   + boost::lexical_cast<std::string>(event.window().y) + ");");
+                   + std::to_string(event.window().x) + ","
+                   + std::to_string(event.window().y) + ");");
       
       m_previewPopup->setTransient( true, 0 );
       // connecting to WWebWidget::removeStyleClass(...) fails for some reason I cant quite tell why,
@@ -1437,7 +1437,7 @@ MakeDrfWindow::MakeDrfWindow( InterSpec *viewer,
                 MaterialDB *materialDB,
                 Wt::WSuggestionPopup *materialSuggest )
 : AuxWindow( WString::tr("window-title-create-drf"), 
-            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+            (AuxWindowProperties::TabletNotFullScreen
              | AuxWindowProperties::SetCloseable
              | AuxWindowProperties::DisableCollapse
              | AuxWindowProperties::EnableResize
@@ -1775,10 +1775,10 @@ MakeDrf::~MakeDrf()
 
 void MakeDrf::startSaveAs()
 {
-  Wt::WFlags<AuxWindowProperties> windowprop = Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+  Wt::WFlags<AuxWindowProperties> windowprop = (AuxWindowProperties::IsModal
                                                | AuxWindowProperties::PhoneNotFullScreen
                                                | AuxWindowProperties::SetCloseable
-                                               | AuxWindowProperties::DisableCollapse;
+                                               | AuxWindowProperties::DisableCollapse);
   if( m_effEqnCoefs.empty() )
   {
     AuxWindow *w = new AuxWindow( "Error", windowprop );

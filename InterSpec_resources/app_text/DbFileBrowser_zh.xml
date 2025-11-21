@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- anpd is short for SnapshotBrowser -->
+  <message id="sb-resume-from-prev">看起来您已将此谱文件保存为保存状态的一部分；您想恢复之前的工作吗？</message>
+  <message id="sb-no-saved-states">无保存的应用状态</message>
+  <message id="sb-tt-del-state">删除状态</message>
+  <message id="sb-tt-edit-state">编辑状态名称或描述</message>
+  <message id="sb-state-HEAD-label">保存状态</message>
+  <message id="sb-state-auto-saved-label">自动保存</message>
+  <message id="sb-unsaved-spectra-parent-node-label">已打开但未明确存储的谱</message>
+  <message id="sb-tt-unsaved-spectra-node">您在InterSpec中打开但未明确保存的谱。</message>
+  <message id="sb-unsaved-spectrum-node">{1}（打开于{2}）</message>
+  <message id="sb-tt-unsaved-spectrum-node">文件名：{1}
+测量时间：{2}
+加载时间：{3}
+样本数：{4}
+总实时间：{5}</message>
+  <message id="sb-open-spectrum-as">打开所选谱为：</message>
+  <message id="sb-load-spectrum-only">仅加载谱</message>
+  <message id="sb-load-app-state">加载应用状态</message>
+  <message id="sb-err-making-browser-txt">创建数据库谱文件浏览器时出现意外错误</message>
+  <message id="sb-err-making-browser-msg">创建数据库谱文件浏览器时出错：{1}</message>
+  
+  <!-- DbSpecFileItem messages -->
+  <message id="sb-loaded-label">已加载：{1}</message>
+  <message id="sb-loaded-modified-label">已加载：{1}，已修改</message>
+  <message id="sb-resume-from-btn">从此恢复</message>
+  <message id="sb-err-displaying-measurement">显示先前测量时出错，情况可能与预期不符</message>
+  
+  <!-- SnapshotBrowser error messages -->
+  <message id="sb-no-active-db-session">无活动数据库会话</message>
+  <message id="sb-invalid-state-selected">选择的状态无效</message>
+  <message id="sb-must-enter-name">您必须输入名称</message>
+  <message id="sb-err-modifying-state">修改状态时出错 - 可能未更改</message>
+  <message id="sb-couldnt-load-snapshot">抱歉，无法加载请求的快照</message>
+  <message id="sb-no-state-selected">未选择要删除的状态</message>
+  <message id="sb-snapshot-removed">快照'{1}'已从数据库中删除。</message>
+  <message id="sb-err-removing-snapshot">从数据库中删除快照时出错。</message>
+  <message id="sb-err-loading-from-db">从数据库加载时出错</message>
+  <message id="sb-failed-to-load-state">加载状态失败</message>
+  <message id="sb-already-opened">已打开</message>
+  
+  <!-- Delete confirmation dialog -->
+  <message id="sb-confirm-delete-title">确认删除</message>
+  <message id="sb-confirm-delete-msg"><div>您确定要删除：</div><div style="white-space: nowrap; text-align: center; text-overflow: ellipsis; overflow: hidden; font-weight: bold; max-width:98%;">{1}</div><div>？</div></message>
+  
+  <!-- Constructor error messages -->
+  <message id="sb-err-creating-browser"><b>创建SnapshotBrowser时出错</b> - 抱歉 :(<br />错误：{1}</message>
+  <message id="sb-unexpected-issue"><b>创建SnapshotBrowser时出现意外问题</b> - 抱歉 :(</message>
+  
+  <!-- Edit dialog -->
+  <message id="sb-edit-name-label">名称</message>
+  <message id="sb-edit-name-placeholder">（存储的名称）</message>
+  <message id="sb-edit-desc-label">描述</message>
+  <message id="sb-edit-desc-placeholder">（可选描述）</message>
+</messages>
+

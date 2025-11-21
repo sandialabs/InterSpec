@@ -159,7 +159,7 @@ IsotopeSearchByEnergy::SearchEnergy::SearchEnergy( Wt::WContainerWidget *p )
 {
   addStyleClass( "SearchEnergy" );
   
-  WLabel *label = new WLabel( "Energy", this );
+  WLabel *label = new WLabel( WString::tr("Energy"), this );
   label->addStyleClass( "SearchEnergyLabel" );
   
   m_energy = new NativeFloatSpinBox( this );
@@ -179,7 +179,7 @@ IsotopeSearchByEnergy::SearchEnergy::SearchEnergy( Wt::WContainerWidget *p )
   m_window->setValue( 10.0f );
   m_window->enterPressed().connect( this, &SearchEnergy::emitEnter );
   
-  label = new WLabel( "keV", this );
+  label = new WLabel( WString::tr("keV"), this );
   label->addStyleClass( "KeVLabel" );
   
   m_energy->valueChanged().connect( this, &SearchEnergy::emitChanged );
@@ -307,7 +307,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_search_categories{},
   m_search_category_select( nullptr ),
   m_nextSearchEnergy( 0 ),
-  m_minBr( 0.0 ), m_minHl( 6000.0 * PhysicalUnits::second ),
+  m_minRelativeBr( 0.0 ), m_minHl( 6000.0 * PhysicalUnits::second ),
   m_undo_redo_sentry{},
   m_state{},
   m_selected_row( -1 )
@@ -373,9 +373,9 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   HelpSystem::attachToolTipOn( m_minBranchRatio, WString::tr("isbe-tt-min-br"),
                               showToolTips , HelpSystem::ToolTipPosition::Top);
   
-  m_minBranchRatio->setValue( m_minBr );
+  m_minBranchRatio->setValue( m_minRelativeBr );
   m_minBranchRatio->setRange( 0.0f, 1.0f );
-  m_minBranchRatio->setSingleStep( 0.1f );
+  m_minBranchRatio->setSpinnerHidden( true );
   label->setBuddy( m_minBranchRatio );
   
   m_minHalfLiveDiv = new WContainerWidget( searchOptions );
@@ -528,7 +528,7 @@ void IsotopeSearchByEnergy::render( Wt::WFlags<Wt::RenderFlag> flags )
     
     // Initialize the mapping from energies to nuclides when we render this widget the first
     //  time, so this way it will be ever so slightly quicker when the user does the first search.
-    const double minHl = m_minHl, minBr = m_minBr;
+    const double minHl = m_minHl, minBr = m_minRelativeBr;
     WServer::instance()->ioService().boost::asio::io_service::post( [minHl,minBr](){
       EnergyToNuclideServer::setLowerLimits( minHl, minBr );
       EnergyToNuclideServer::energyToNuclide();
@@ -1140,7 +1140,7 @@ void IsotopeSearchByEnergy::init_category_info( std::vector<NucSearchCategory> &
     NucSearchCategory def_category;
     def_category.m_name = WString::tr("isbe-category-nuc-xray");
     def_category.m_description = WString::tr("isbe-category-nuc-xray-desc");
-    def_category.m_minBr = 0.0;
+    def_category.m_min_rel_br = 0.0;
     def_category.m_minHl = 6000*PhysicalUnits::second;
     def_category.m_nuclides = true;
     def_category.m_fluorescence_xrays = true;
@@ -1162,11 +1162,23 @@ void IsotopeSearchByEnergy::init_category_info( std::vector<NucSearchCategory> &
 
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
   // Load user specific category info
-  const string user_data_dir = InterSpec::writableDataDirectory();
-  const std::string user_xml = SpecUtils::append_path(def_xml, "NuclideSearchCatagories.xml");
-  if( append_categories(user_xml) == 0 )
+  string user_xml;
+  try
   {
-    if( SpecUtils::is_file(user_xml) )
+    const string user_data_dir = InterSpec::writableDataDirectory();
+    user_xml = SpecUtils::append_path(def_xml, "NuclideSearchCatagories.xml");
+  }catch( std::exception & )
+  {
+    // We may not have set `writableDataDirectory`, especially if we are doing unit tests
+  }
+  
+  if( !user_xml.empty() && SpecUtils::is_file(user_xml) )
+  {
+    // If we throw an exception here, the try/catch in `initFilterTypes()` will just catch it and print out a message
+    // - the catagories we aredy loaded will be used.  If no catagories are loaded (including from the default
+    //   catagories), then the GUI will just have one catagory (nuclides + x-rays).
+    // I'm not sure why we we mix printing out to stderr and throwing exceptions, but whatever
+    if( append_categories(user_xml) == 0 )
       throw runtime_error( "Error loading user NuclideSearchCatagories.xml" );
   }
 #endif
@@ -1201,10 +1213,10 @@ void IsotopeSearchByEnergy::initFilterTypes()
 void IsotopeSearchByEnergy::minBrOrHlChanged()
 {
   if( m_minBranchRatio->validate() == WValidator::Valid )
-    m_minBr = m_minBranchRatio->value();
+    m_minRelativeBr = m_minBranchRatio->value();
   else
-    m_minBranchRatio->setValue( m_minBr );
-  
+    m_minBranchRatio->setValue( m_minRelativeBr );
+
   try
   {
     const string hltxt = m_minHalfLife->valueText().toUTF8();
@@ -1240,10 +1252,10 @@ void IsotopeSearchByEnergy::categoryChanged( const bool update_results )
   m_minHl = cat.m_minHl;
   m_minHalfLife->setValueText( PhysicalUnitsLocalized::printToBestTimeUnits(m_minHl, 1) );
   
-  const bool refreshBr = (m_minBr != cat.m_minBr);
-  m_minBr = cat.m_minBr;
-  m_minBranchRatio->setValue( m_minBr );
-  
+  const bool refreshBr = (m_minRelativeBr != cat.m_min_rel_br);
+  m_minRelativeBr = cat.m_min_rel_br;
+  m_minBranchRatio->setValue( m_minRelativeBr );
+
   m_minBranchRatioDiv->setHidden( !cat.m_nuclides );
   m_minHalfLiveDiv->setHidden( !cat.m_nuclides );
   
@@ -2115,13 +2127,13 @@ void IsotopeSearchByEnergy::NucSearchCategory::deSerialize( const rapidxml::xml_
   translate = get_bool_val( trans_el );
   m_description = translate ? Wt::WString::tr(desc) : Wt::WString::fromUTF8(desc);
   
-  m_minBr = 0.0;
+  m_min_rel_br = 0.0;
   const rapidxml::xml_node<char> *min_br_el = XML_FIRST_NODE(xml_data, "MinBr");
   if( min_br_el )
   {
-    if( !SpecUtils::parse_double(min_br_el->value(), min_br_el->value_size(), m_minBr) )
+    if( !SpecUtils::parse_double(min_br_el->value(), min_br_el->value_size(), m_min_rel_br) )
       throw runtime_error( "IsotopeSearchByEnergy::NucSearchCategory: min BR invalid" );
-    if( (m_minBr < 0.0) || (m_minBr > 1.0) )
+    if( (m_min_rel_br < 0.0) || (m_min_rel_br > 1.0) )
       throw runtime_error( "IsotopeSearchByEnergy::NucSearchCategory: min BR must be between 0 and 1" );
   }//if( min_br_el )
   
@@ -2188,43 +2200,47 @@ void IsotopeSearchByEnergy::NucSearchCategory::deSerialize( const rapidxml::xml_
   if( reactions_el )
   {
     const ReactionGamma *reactionDb = nullptr;
-    try
-    {
-      reactionDb = ReactionGammaServer::database();
-    }catch(...)
-    {
-      cerr << "NucSearchCategory::deSerialize(): Failed to open gamma reactions XML file" << endl;
-    }
-    
-    if( reactionDb )
-    {
-      set<const ReactionGamma::Reaction *> reactions_seen;
+   
+    set<const ReactionGamma::Reaction *> reactions_seen;
       
-      XML_FOREACH_CHILD( reaction, reactions_el, "Reaction" )
+    XML_FOREACH_CHILD( reaction, reactions_el, "Reaction" )
+    {
+      if( !reactionDb )
       {
-        const string rectn_str = SpecUtils::xml_value_str(reaction);
-        
         try
         {
-          vector<ReactionGamma::ReactionPhotopeak> photopeaks;
-          reactionDb->gammas( rectn_str, photopeaks);
+          reactionDb = ReactionGammaServer::database();
+        }catch(...)
+        {
+          cerr << "NucSearchCategory::deSerialize(): Failed to open gamma reactions XML file" << endl;
+        }
+
+        if( !reactionDb )
+          break;
+      }//if( !reactionDb )
+
+      const string rectn_str = SpecUtils::xml_value_str(reaction);
+        
+      try
+      {
+        vector<ReactionGamma::ReactionPhotopeak> photopeaks;
+        reactionDb->gammas( rectn_str, photopeaks);
           
-          for( const ReactionGamma::ReactionPhotopeak &gamma : photopeaks )
+        for( const ReactionGamma::ReactionPhotopeak &gamma : photopeaks )
+        {
+          if( gamma.reaction && !reactions_seen.count(gamma.reaction) )
           {
-            if( gamma.reaction && !reactions_seen.count(gamma.reaction) )
-            {
-              reactions_seen.insert( gamma.reaction );
-              m_specific_reactions.push_back( gamma.reaction );
+            reactions_seen.insert( gamma.reaction );
+            m_specific_reactions.push_back( gamma.reaction );
               // We're not exiting the loop here, because some of the element reactions
               // may be composed of specific nuclide reactions
-            }//if( gamma.reaction && !reactions_seen.count(gamma.reaction) )
-          }//for( const ReactionGamma::ReactionPhotopeak &gamma : photopeaks )
-        }catch( std::exception &e )
-        {
-          cerr << "NucSearchCategory::deSerialize(): Failed to get reaction '" << rectn_str << "'" << endl;
-        }
-      }//for( loop over <Reactions> )
-    }//if( reactionDb )
+          }//if( gamma.reaction && !reactions_seen.count(gamma.reaction) )
+        }//for( const ReactionGamma::ReactionPhotopeak &gamma : photopeaks )
+      }catch( std::exception &e )
+      {
+        cerr << "NucSearchCategory::deSerialize(): Failed to get reaction '" << rectn_str << "'" << endl;
+      }
+    }//for( loop over <Reactions> )
   }//if( reactions_el )
   
   if( !m_specific_nuclides.empty() && !m_nuclides && !m_alphas && !m_beta_endpoint )
@@ -2331,8 +2347,8 @@ void IsotopeSearchByEnergy::startSearch( const bool refreshBr )
   addUndoRedoPoint();
   
   if( refreshBr )
-    EnergyToNuclideServer::setLowerLimits( m_minHl, m_minBr );
-  
+    EnergyToNuclideServer::setLowerLimits( m_minHl, m_minRelativeBr );
+
   loadSearchEnergiesToClient();
   
   vector<double> energies, windows;
@@ -2355,7 +2371,7 @@ void IsotopeSearchByEnergy::startSearch( const bool refreshBr )
   std::vector<const ReactionGamma::Reaction *> reactions;
   
   const int cat_index = std::max(0, m_search_category_select->currentIndex() );
-  if( cat_index <= static_cast<int>(m_search_categories.size()) )
+  if( cat_index < static_cast<int>(m_search_categories.size()) )
   {
     const NucSearchCategory &cat = m_search_categories[cat_index];
     
@@ -2420,7 +2436,7 @@ void IsotopeSearchByEnergy::startSearch( const bool refreshBr )
                             m_model, workingspace ) );
   boost::function< void(void) > worker = boost::bind(
                                 &IsotopeSearchByEnergyModel::setSearchEnergies,
-                                workingspace, m_minBr, m_minHl, srcs,
+                                workingspace, m_minRelativeBr, m_minHl, srcs,
                                 std::move(elements), std::move(nuclides), std::move(reactions),
                                 app->sessionId(), updatefcnt );
   WServer::instance()->ioService().boost::asio::io_service::post( worker );

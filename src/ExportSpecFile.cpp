@@ -34,6 +34,7 @@
 #include <Wt/Utils>
 #include <Wt/WMenu>
 #include <Wt/WText>
+#include <Wt/WTable>
 #include <Wt/WImage>
 #include <Wt/WServer>
 #include <Wt/WCheckBox>
@@ -42,6 +43,7 @@
 #include <Wt/WMenuItem>
 #include <Wt/WResource>
 #include <Wt/WTabWidget>
+#include <Wt/WTableCell>
 #include <Wt/WPushButton>
 #include <Wt/Http/Request>
 #include <Wt/WApplication>
@@ -177,7 +179,7 @@ std::string clean_uuid( string uuid )
     
     if( (index + 1) < urls.size() )
     {
-      WPushButton *btn = dialog->addButton( "Next QR code" );
+      WPushButton *btn = dialog->addButton( WString::tr("esf-next-qr-code") );
       btn->clicked().connect( std::bind([=](){
         displayQrDialog( urls, index + 1, successfullyDone, as_emailto, toogleEmailVsUri );
       }) );
@@ -204,7 +206,7 @@ std::string clean_uuid( string uuid )
     
     if( toogleEmailVsUri )
     {
-      const char *btn_txt = as_emailto ? "URL Link" : "Email Link";
+      WString btn_txt = as_emailto ? WString::tr("esf-url-link") : WString::tr("esf-email-link");
       WPushButton *btn = dialog->addButton( btn_txt );
       dialog->footer()->removeWidget( btn );
       dialog->footer()->insertWidget( 0, btn );
@@ -272,9 +274,9 @@ void displayQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
                                          : "<p>Likely due to not being able to fit multiple spectra"
                                            " into a single QR code.</p>";
       
-      auto dialog = new SimpleDialog( "Error",
+      auto dialog = new SimpleDialog( WString::tr("esf-error-title"),
                                      "<p>Spectrum could not be encoded to a QR code.</p>" + msg );
-      dialog->addButton( "Ok" );
+      dialog->addButton( WString::tr("Ok") );
       return;
     }//if( urls.empty() )
     
@@ -286,7 +288,7 @@ void displayQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
     displayQrDialog( urls, 0, successfullyDone, as_emailto, toogleEmailVsUri );
   }catch( std::exception &e )
   {
-    auto dialog = new SimpleDialog( "Error", "Failed to display spectrum as a QR code: " + string(e.what()) );
+    auto dialog = new SimpleDialog( WString::tr("esf-error-title"), WString::tr("esf-qr-encode-failed").arg(e.what()) );
     dialog->addButton( "Ok" );
   }//try catch
 }//void displayQrCode( const vector<SpecUtils::UrlSpectrum> urlspec, const bool as_emailto )
@@ -443,10 +445,12 @@ namespace ExportSpecFileTool_imp
 #if( PERFORM_DEVELOPER_CHECKS )
     log_developer_error( __func__, msg.c_str() );
 #endif
-      
+
       passMessage( msg, WarningWidget::WarningMsgHigh );
       
       response.setStatus(500);
+
+      wApp->triggerUpdate();
     }//try / catch
   }//void DownloadSpectrumResource::handleRequest(...)
 
@@ -589,13 +593,24 @@ namespace ExportSpecFileTool_imp
             //if( title != data->title() )
             //data->set_title( title );  //JIC, proper escaping not implemented in SpecUtils yet.
             
+            int alpha = 255;
             D3SpectrumExport::D3SpectrumOptions options;
             switch( type )
             {
-              case SpecUtils::SpectrumType::Foreground: options.line_color = "black"; break;
-              case SpecUtils::SpectrumType::SecondForeground: options.line_color = "steelblue"; break;
-              case SpecUtils::SpectrumType::Background: options.line_color = "green"; break;
+              case SpecUtils::SpectrumType::Foreground:
+                alpha = 255;
+                options.line_color = "black";
+                break;
+              case SpecUtils::SpectrumType::SecondForeground:
+                alpha = 125;
+                options.line_color = "steelblue";
+                break;
+              case SpecUtils::SpectrumType::Background:
+                alpha = 125;
+                options.line_color = "green";
+                break;
             }
+            
             options.display_scale_factor = viewer->displayScaleFactor( type );
             options.spectrum_type = type;
             const std::set<int> samples = viewer->displayedSamples( type );
@@ -605,13 +620,19 @@ namespace ExportSpecFileTool_imp
             {
               vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
               std::shared_ptr<const SpecUtils::Measurement> foreground = viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
-              options.peaks_json = PeakDef::peak_json( inpeaks, foreground );
+              options.peaks_json = PeakDef::peak_json( inpeaks, foreground, Wt::WColor(0,51,255), alpha );
             }
             
             measurements.push_back( pair<const SpecUtils::Measurement *,D3SpectrumExport::D3SpectrumOptions>(histogram.get(),options) );
           }//for( SpecUtils::SpectrumType type : types )
-          
+
+#if( SpecUtils_D3_SUPPORT_FILE_STATIC )
           write_d3_html( output, measurements, viewer->getD3SpectrumOptions() );
+#else
+          const string ds_js_css_base_dir = SpecUtils::append_path( wApp->docRoot(), "InterSpec_resources" );
+
+          write_d3_html( output, measurements, viewer->getD3SpectrumOptions(), ds_js_css_base_dir );
+#endif
         }//if( viewer )
       }
         break;
@@ -734,10 +755,13 @@ void ExportSpecFileTool::init()
   
   addStyleClass( "ExportSpecFileTool" );
   
+  m_interspec->useMessageResourceBundle( "ExportSpecFile" );
+  
   // Store Act/Shield fit and Rel Eff fit into file - if these tools are open, so the
   //   tools current states will be available in the foreground N42 files.
   m_interspec->saveShieldingSourceModelToForegroundSpecMeas();
 #if( USE_REL_ACT_TOOL )
+  m_interspec->saveRelActAutoStateToForegroundSpecMeas();
   m_interspec->saveRelActManualStateToForegroundSpecMeas();
 #endif
   
@@ -769,11 +793,11 @@ void ExportSpecFileTool::init()
   WContainerWidget *fileSelectDiv = new WContainerWidget( body );
   fileSelectDiv->addStyleClass( "ExportSpecSelect" );
   if( isPhone )
-    mobileTabs->addTab( fileSelectDiv, "File", Wt::WTabWidget::LoadPolicy::PreLoading );
+    mobileTabs->addTab( fileSelectDiv, WString::tr("esf-file-tab"), Wt::WTabWidget::LoadPolicy::PreLoading );
   
   if( !m_specific_spectrum )
   {
-    WText *title = new WText( "File to Export", fileSelectDiv );
+    WText *title = new WText( WString::tr("esf-file-to-export"), fileSelectDiv );
     title->addStyleClass( "ExportColTitle" );
     
     m_fileSelect = new WComboBox( fileSelectDiv );
@@ -799,27 +823,38 @@ void ExportSpecFileTool::init()
     
     if( fore && (unique_back || unique_seco) )
     {
-      string title = "For." + string(back ? " + Back." : "") + string(secondary ? " + Secon." : "");
+      WString title = WString::tr("esf-fore-abbrev");
+      if( back )
+        title = title + WString::tr("esf-plus-back");
       
-      m_forePlusBack = new WCheckBox( title, fileSelectDiv );
+      if( secondary )
+        title = title + WString::tr("esf-plus-secondary");
+
+      string title_str = title.toUTF8();
+      
+      m_forePlusBack = new WCheckBox( title_str, fileSelectDiv );
       m_forePlusBack->addStyleClass( "ExportForPlusBack CbNoLineBreak" );
       m_forePlusBack->checked().connect( this, &ExportSpecFileTool::handleForePlusBackChanged );
       m_forePlusBack->unChecked().connect( this, &ExportSpecFileTool::handleForePlusBackChanged );
-      m_forePlusBack->setToolTip( "Export the foreground and background and/or secondary"
-                                 " spectra together into the same file." );
+      m_forePlusBack->setToolTip( WString::tr("esf-fore-plus-back-tt") );
     }
   }//if( !m_specific_spectrum )
   
-  m_fileInfo = new WText( fileSelectDiv );
-  m_fileInfo->addStyleClass( "ExportSpecInfo" );
+  // We will put the table in a holder so it can scroll if we are limited on height
+  WContainerWidget *tableHolder = new WContainerWidget( fileSelectDiv );
+  tableHolder->addStyleClass( "ExportSpecInfo" );
+  
+  m_fileInfo = new WTable( tableHolder );
+  m_fileInfo->addStyleClass( "ExportSpecInfoTable" );
+  m_fileInfo->setHeaderCount( 1, Orientation::Vertical );
   
   // Spectrum format
   WContainerWidget *menuHolder = new WContainerWidget( body );
   menuHolder->addStyleClass( "ExportSpecFormat" );
   if( isPhone )
-    mobileTabs->addTab( menuHolder, "Format", Wt::WTabWidget::LoadPolicy::PreLoading );
+    mobileTabs->addTab( menuHolder, WString::tr("esf-format-tab"), Wt::WTabWidget::LoadPolicy::PreLoading );
   
-  WText *title = new WText( "File Format", menuHolder );
+  WText *title = new WText( WString::tr("esf-file-format"), menuHolder );
   title->addStyleClass( "ExportColTitle" );
   
   m_formatMenu = new WMenu( menuHolder );
@@ -830,7 +865,7 @@ void ExportSpecFileTool::init()
   if( !isMobile )
   {
     const string docroot = wApp->docRoot();
-    const string bundle_file = SpecUtils::append_path(docroot, "InterSpec_resources/static_text/spectrum_file_format_descriptions" );
+    const string bundle_file = SpecUtils::append_path(docroot, "InterSpec_resources/app_text/spectrum_file_format_descriptions" );
     descrip_bundle.use(bundle_file,true);
   }//if( !isMobile )
   
@@ -889,32 +924,32 @@ void ExportSpecFileTool::init()
   m_samplesHolder->addStyleClass( "ExportSpecSamples" );
 
   if( isPhone )
-    mobileTabs->addTab( m_samplesHolder, "Options", Wt::WTabWidget::LoadPolicy::PreLoading );
+    mobileTabs->addTab( m_samplesHolder, WString::tr("esf-options-tab"), Wt::WTabWidget::LoadPolicy::PreLoading );
 
-  title = new WText( "Samples to Include", m_samplesHolder );
+  title = new WText( WString::tr("esf-samples-to-include"), m_samplesHolder );
   title->addStyleClass( "ExportColTitle" );
   
-  m_dispForeSamples   = new WCheckBox( "Disp. Foreground", m_samplesHolder );
+  m_dispForeSamples   = new WCheckBox( WString::tr("esf-disp-foreground"), m_samplesHolder );
   m_dispForeSamples->addStyleClass( "CbNoLineBreak" );
   m_dispForeSamples->checked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::Foreground ) );
   m_dispForeSamples->unChecked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::Foreground ) );
   
-  m_dispBackSamples   = new WCheckBox( "Disp. Background", m_samplesHolder );
+  m_dispBackSamples   = new WCheckBox( WString::tr("esf-disp-background"), m_samplesHolder );
   m_dispBackSamples->addStyleClass( "CbNoLineBreak" );
   m_dispBackSamples->checked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::Background ) );
   m_dispBackSamples->unChecked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::Background ) );
   
-  m_dispSecondSamples = new WCheckBox( "Disp. Secondary", m_samplesHolder );
+  m_dispSecondSamples = new WCheckBox( WString::tr("esf-disp-secondary"), m_samplesHolder );
   m_dispSecondSamples->addStyleClass( "CbNoLineBreak" );
   m_dispSecondSamples->checked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::SecondForeground ) );
   m_dispSecondSamples->unChecked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::SecondForeground ) );
   
-  m_allSamples = new WCheckBox( "All Samples", m_samplesHolder );
+  m_allSamples = new WCheckBox( WString::tr("esf-all-samples"), m_samplesHolder );
   m_allSamples->addStyleClass( "CbNoLineBreak" );
   m_allSamples->checked().connect( this, &ExportSpecFileTool::handleAllSampleChanged );
   m_allSamples->unChecked().connect( this, &ExportSpecFileTool::handleAllSampleChanged );
   
-  m_customSamples = new WCheckBox( "Custom Samples", m_samplesHolder );
+  m_customSamples = new WCheckBox( WString::tr("esf-custom-samples"), m_samplesHolder );
   m_customSamples->addStyleClass( "CbNoLineBreak" );
   m_customSamples->checked().connect( this, &ExportSpecFileTool::handleCustomSampleChanged );
   m_customSamples->unChecked().connect( this, &ExportSpecFileTool::handleCustomSampleChanged );
@@ -939,15 +974,12 @@ void ExportSpecFileTool::init()
   m_customSamplesEdit->blurred().connect( this, &ExportSpecFileTool::handleCustomSampleTxtChanged );
   
   
-  const char *tooltip = "Enter the sample number you'de like displayed here"
-  ". You may enter a range of sample numbers similar"
-  " to '33-39' or '33 to 39', or CSV sample numbers"
-  " like '34,39,84'";
+  WString tooltip = WString::tr("esf-custom-samples-tt");
   HelpSystem::attachToolTipOn( m_customSamplesEdit, tooltip, showToolTips, HelpSystem::ToolTipPosition::Right );
   
   m_customSamplesEdit->hide();
 
-  m_filterDetector = new WCheckBox( "Filter Detectors", m_samplesHolder );
+  m_filterDetector = new WCheckBox( WString::tr("esf-filter-detectors"), m_samplesHolder );
   m_filterDetector->addStyleClass( "CbNoLineBreak" );
   m_filterDetector->checked().connect( this, &ExportSpecFileTool::handleFilterDetectorCbChanged );
   m_filterDetector->unChecked().connect( this, &ExportSpecFileTool::handleFilterDetectorCbChanged );
@@ -960,62 +992,54 @@ void ExportSpecFileTool::init()
   // Options
   m_optionsHolder = new WContainerWidget( m_samplesHolder );
   m_optionsHolder->addStyleClass( "ExportSpecOptions" );
-  title = new WText( "Options", m_optionsHolder );
+  title = new WText( WString::tr("esf-options"), m_optionsHolder );
   title->addStyleClass( "ExportColTitle" );
   
   
-  m_sumAllToSingleRecord = new WCheckBox( "Sum to single record", m_optionsHolder );
+  m_sumAllToSingleRecord = new WCheckBox( WString::tr("esf-sum-to-single-record"), m_optionsHolder );
   m_sumAllToSingleRecord->addStyleClass( "CbNoLineBreak" );
-  tooltip = "All selected samples and/or detectors will be summed together into a single spectrum.<br />"
-            "Caution: if you have both foreground and background selected, they will be summed together.";
+  tooltip = WString::tr("esf-sum-to-single-record-tt");
   HelpSystem::attachToolTipOn( m_sumAllToSingleRecord, tooltip, true,
                               HelpSystem::ToolTipPosition::Right,
                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
   m_sumAllToSingleRecord->checked().connect( this, &ExportSpecFileTool::handleSumToSingleRecordChanged );
   m_sumAllToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumToSingleRecordChanged );
   
-  m_sumForeToSingleRecord = new WCheckBox( "Sum Fore to single record", m_optionsHolder );
+  m_sumForeToSingleRecord = new WCheckBox( WString::tr("esf-sum-fore-to-single-record"), m_optionsHolder );
   m_sumForeToSingleRecord->addStyleClass( "CbNoLineBreak" );
-  tooltip = "There are either multiple sample numbers, or multiple detectors that comprise the"
-            " displayed foreground; checking this option will sum all these to a single spectrum"
-            " in the output file.";
+  tooltip = WString::tr("esf-sum-fore-to-single-record-tt");
   HelpSystem::attachToolTipOn( m_sumForeToSingleRecord, tooltip, true,
                               HelpSystem::ToolTipPosition::Right,
                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
   m_sumForeToSingleRecord->checked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   m_sumForeToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   
-  m_sumBackToSingleRecord = new WCheckBox( "Sum Back to single record", m_optionsHolder );
+  m_sumBackToSingleRecord = new WCheckBox( WString::tr("esf-sum-back-to-single-record"), m_optionsHolder );
   m_sumBackToSingleRecord->addStyleClass( "CbNoLineBreak" );
-  tooltip = "There are either multiple sample numbers, or multiple detectors that comprise the"
-            " displayed background; checking this option will sum all these to a single spectrum"
-            " in the output file.";
+  tooltip = WString::tr("esf-sum-back-to-single-record-tt");
   HelpSystem::attachToolTipOn( m_sumForeToSingleRecord, tooltip, true,
                               HelpSystem::ToolTipPosition::Right,
                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
   m_sumBackToSingleRecord->checked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   m_sumBackToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   
-  m_sumSecoToSingleRecord = new WCheckBox( "Sum Sec to single record", m_optionsHolder );
+  m_sumSecoToSingleRecord = new WCheckBox( WString::tr("esf-sum-sec-to-single-record"), m_optionsHolder );
   m_sumSecoToSingleRecord->addStyleClass( "CbNoLineBreak" );
   m_sumSecoToSingleRecord->checked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   m_sumSecoToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   
-  m_backSubFore = new WCheckBox( "Background subtract", m_optionsHolder );
+  m_backSubFore = new WCheckBox( WString::tr("esf-background-subtract"), m_optionsHolder );
   m_backSubFore->addStyleClass( "CbNoLineBreak" );
-  tooltip = "The output spectrum will be the foreground, minus the background.";
+  tooltip = WString::tr("esf-background-subtract-tt");
   HelpSystem::attachToolTipOn( m_backSubFore, tooltip, true,
                               HelpSystem::ToolTipPosition::Right,
                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
   m_backSubFore->checked().connect( this, &ExportSpecFileTool::handleBackSubForeChanged );
   m_backSubFore->unChecked().connect( this, &ExportSpecFileTool::handleBackSubForeChanged );
   
-  m_sumDetsPerSample = new WCheckBox( "Sum det. per sample", m_optionsHolder );
+  m_sumDetsPerSample = new WCheckBox( WString::tr("esf-sum-det-per-sample"), m_optionsHolder );
   m_sumDetsPerSample->addStyleClass( "CbNoLineBreak" );
-  tooltip = "For each sample number, sum all detectors for that sample number together.<br />"
-            "E.g., if you have 8 detectors in your spectrum file, each with 120 samples"
-            " then the results will have 120 spectra, each of which is the sum of the"
-            " 8 detectors of the respective samples.";
+  tooltip = WString::tr("esf-sum-det-per-sample-tt");
   HelpSystem::attachToolTipOn( m_sumDetsPerSample, tooltip, true,
                               HelpSystem::ToolTipPosition::Right,
                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
@@ -1023,12 +1047,9 @@ void ExportSpecFileTool::init()
   m_sumDetsPerSample->unChecked().connect( this, &ExportSpecFileTool::handleSumDetPerSampleChanged );
   
   
-  m_sumSamplesPerDets = new WCheckBox( "Sum samples per det.", m_optionsHolder );
+  m_sumSamplesPerDets = new WCheckBox( WString::tr("esf-sum-samples-per-det"), m_optionsHolder );
   m_sumSamplesPerDets->addStyleClass( "CbNoLineBreak" );
-  tooltip = "For each detector, sums all sample numbers together.<br />"
-            "E.g., if you have 8 detectors in your spectrum file, each with 120 samples"
-            " then the results will have 8 spectra, each of which is the sum of the"
-            " 120 samples of their respective detectors.";
+  tooltip = WString::tr("esf-sum-samples-per-det-tt");
   HelpSystem::attachToolTipOn( m_sumSamplesPerDets, tooltip, true,
                               HelpSystem::ToolTipPosition::Right,
                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
@@ -1036,24 +1057,23 @@ void ExportSpecFileTool::init()
   m_sumSamplesPerDets->unChecked().connect( this, &ExportSpecFileTool::handleSumSamplesPerDetChanged );
   
   
-  m_excludeInterSpecInfo = new WCheckBox( "Remove InterSpec info", m_optionsHolder );
+  m_excludeInterSpecInfo = new WCheckBox( WString::tr("esf-remove-interspec-info"), m_optionsHolder );
   m_excludeInterSpecInfo->addStyleClass( "CbNoLineBreak" );
-  tooltip = "Removes detector response, peaks, and other analysis"
-            " results you may have added in InterSpec.";
+  tooltip = WString::tr("esf-remove-interspec-info-tt");
   HelpSystem::attachToolTipOn( m_excludeInterSpecInfo, tooltip, true,
                               HelpSystem::ToolTipPosition::Right,
                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
   m_excludeInterSpecInfo->checked().connect( this, &ExportSpecFileTool::handleIncludeInterSpecInfoChanged );
   m_excludeInterSpecInfo->unChecked().connect( this, &ExportSpecFileTool::handleIncludeInterSpecInfoChanged );
   
-  m_excludeGpsInfo = new WCheckBox( "Remove GPS", m_optionsHolder );
+  m_excludeGpsInfo = new WCheckBox( WString::tr("esf-remove-gps"), m_optionsHolder );
   m_excludeGpsInfo->addStyleClass( "CbNoLineBreak" );
   
-  m_sampleSelectNotAppTxt = new WText( "Not Applicable" );
+  m_sampleSelectNotAppTxt = new WText( WString::tr("esf-not-applicable") );
   m_sampleSelectNotAppTxt->addStyleClass( "ExportNotAppTxt" );
   m_samplesHolder->insertWidget( 1, m_sampleSelectNotAppTxt ); // Put right below title
   
-  m_optionsNotAppTxt = new WText( "None Available" );
+  m_optionsNotAppTxt = new WText( WString::tr("esf-none-available") );
   m_optionsNotAppTxt->addStyleClass( "ExportNotAppTxt" );
   m_optionsHolder->insertWidget( 1, m_optionsNotAppTxt );      // Put right below title
   
@@ -1068,7 +1088,7 @@ void ExportSpecFileTool::init()
   btnsDiv->addStyleClass( "ExportSpecBtns" );
   
   
-  WPushButton *cancel_btn = new WPushButton( "Cancel", btnsDiv );
+  WPushButton *cancel_btn = new WPushButton( WString::tr("Cancel"), btnsDiv );
   cancel_btn->addStyleClass( "LightButton" );
   cancel_btn->clicked().connect( boost::bind(&ExportSpecFileTool::emitDone, this, false) );
   
@@ -1101,12 +1121,12 @@ void ExportSpecFileTool::init()
 #endif //ANDROID
 #endif
   
-  m_export_btn->setText( "Export" );
+  m_export_btn->setText( WString::tr("esf-export") );
   m_export_btn->disable();
 
 
 #if( USE_QR_CODES )
-  m_show_qr_btn = new WPushButton( "Show QR-code", btnsDiv );
+  m_show_qr_btn = new WPushButton( WString::tr("esf-show-qr-code"), btnsDiv );
   m_show_qr_btn->clicked().connect( this, &ExportSpecFileTool::handleGenerateQrCode );
   m_show_qr_btn->disable();
   m_show_qr_btn->hide();
@@ -1152,15 +1172,42 @@ void ExportSpecFileTool::updateInfoAboutSelectedFile()
   
   shared_ptr<const SpecMeas> meas = currentlySelectedFile();
   
+  // Clear the table
+  m_fileInfo->clear();
+  
   if( !meas )
   {
-    // Put a empty table in - just to keep column width
-    const char *dummy_tbl = "<table class=\"ExportSpecInfoTable\">\n"
-                            "<tr><th>&nbsp;</th><td>&nbsp;</td></tr>\n"
-                            "</table>";
-    m_fileInfo->setText( dummy_tbl );
+    // Put a empty table row in - just to keep column width
+    new WText("&nbsp;", m_fileInfo->elementAt(0, 0));
+    new WText("&nbsp;", m_fileInfo->elementAt(0, 1));
     return;
   }
+  
+  // Helper lambda to add a table row - if `withDiv` is true, will put text in a div, so this way
+  //  CSS will be applied to prevent wrapping, and display ellipses if to long
+  auto addTableRow = [this](const WString &header, const WString &value, const bool withDiv ) {
+    const int row = m_fileInfo->rowCount();
+    new WText(header, m_fileInfo->elementAt(row, 0));
+    
+    if( withDiv )
+    {
+      WContainerWidget *w = new WContainerWidget( m_fileInfo->elementAt(row, 1) );
+      w->addStyleClass( "DetInfoNoWrap" );
+      new WText(value, w );
+    }else
+    {
+      new WText(value, m_fileInfo->elementAt(row, 1));
+    }
+  };
+  
+  // Helper lambda to add a table row with empty header (for continuation rows)
+  auto addContinuationRow = [this](const WString &value) {
+    const int row = m_fileInfo->rowCount();
+    new WText("", m_fileInfo->elementAt(row, 0));
+    WContainerWidget *w = new WContainerWidget( m_fileInfo->elementAt(row, 1) );
+    w->addStyleClass( "DetInfoNoWrap" );
+    new WText( value, w );
+  };
   
   double min_gamma_cps = 0.0, max_gamma_cps = 0.0, min_neutron_cps = 0.0, max_neutron_cps = 0.0;
   SpecUtils::time_point_t start_time = SpecUtils::time_point_t{} + SpecUtils::time_point_t::duration::max();
@@ -1205,10 +1252,6 @@ void ExportSpecFileTool::updateInfoAboutSelectedFile()
     }
   }//for( const auto m : meass )
   
-  
-  WStringStream tabletxt;
-  tabletxt << "<table class=\"ExportSpecInfoTable\">\n";
-  
   // If the file is a foreground / background type file - let the user know
   const bool is_fore = (meas && (meas == m_interspec->measurment(SpecUtils::SpectrumType::Foreground)));
   const bool is_back = (meas && (meas == m_interspec->measurment(SpecUtils::SpectrumType::Background)));
@@ -1219,40 +1262,39 @@ void ExportSpecFileTool::updateInfoAboutSelectedFile()
     // We will only show Displayed Sample Numbers if the spectrum is loaded for only one type
     set<int> samples;
     
-    tabletxt << "<tr><th>Displayed As</th><td>";
+    WString displayType;
     if( is_fore && !is_back && !is_sec )
     {
-      tabletxt << "Foreground";
+      displayType = WString::tr("Foreground");
       samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Foreground);
     }else if( !is_fore && is_back && !is_sec )
     {
-      tabletxt << "Background";
+      displayType = WString::tr("Background");
       samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Background);
     }else if( !is_fore && !is_back && is_sec )
     {
-      tabletxt << "Secondary";
+      displayType = WString::tr("Secondary");
       samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::SecondForeground);
     }else
     {
       string types;
       if( is_fore )
-        types += string(types.empty() ? "" : "/") + "Fore";
+        types += string(types.empty() ? "" : "/") + WString::tr("esf-fore-abbrev").toUTF8();
       if( is_back )
-        types += string(types.empty() ? "" : "/") + "Back";
+        types += string(types.empty() ? "" : "/") + WString::tr("esf-back-abbrev").toUTF8();
       if( is_sec )
-        types += string(types.empty() ? "" : "/") + "Sec";
-      tabletxt << types;
+        types += string(types.empty() ? "" : "/") + WString::tr("esf-sec-abbrev").toUTF8();
+      displayType = WString::fromUTF8(types);
     }
     
-    tabletxt << "</td></tr>\n";
-    
+    addTableRow( WString::tr("esf-displayed-as"), displayType , false);
     
     if( !samples.empty() )
-      tabletxt << "<tr><th>Disp.&nbsp;Sample" << string((samples.size() > 1) ? "s" : "")
-               << "</th><td>" << SpecUtils::sequencesToBriefString( samples )
-               << "</td></tr>\n";
+    {
+      const WString samplesStr = WString::fromUTF8( SpecUtils::sequencesToBriefString(samples) );
+      addTableRow( WString::trn("esf-disp-sample", samples.size()), samplesStr, true );
+    }
   }//if( is_fore || is_back || is_sec )
-  
   
   if( !SpecUtils::is_special(start_time) )
   {
@@ -1261,8 +1303,8 @@ void ExportSpecFileTool::updateInfoAboutSelectedFile()
     const string start_date = start_str.substr(0, pos);
     const string start_tod = (pos == string::npos) ? string() : start_str.substr(pos+1);
     
-    tabletxt << "<tr><th>Start Time</th><td><div>" << start_date << "</div></td></tr>\n"
-                "<tr><th></th><td><div>" << start_tod << "</div></td></tr>\n";
+    addTableRow( WString::tr("esf-start-time"), WString::fromUTF8(start_date), true );
+    addContinuationRow( WString::fromUTF8(start_tod) );
     
     if( (end_time - start_time) > 2*std::chrono::minutes(15) )
     {
@@ -1271,8 +1313,8 @@ void ExportSpecFileTool::updateInfoAboutSelectedFile()
       const string end_date = end_str.substr(0, pos);
       const string end_tod = (pos == string::npos) ? string() : end_str.substr(pos+1);
       
-      tabletxt << "<tr><th>End Time</th><td><div>" << end_date << "</div></td></tr>\n"
-                  "<tr><th></th><td><div>" << end_tod << "</div></td></tr>\n";
+      addTableRow( WString::tr("esf-end-time"), WString::fromUTF8(end_date), true );
+      addContinuationRow( WString::fromUTF8(end_tod) );
     }
   }//if( !SpecUtils::is_special(start_time) )
   
@@ -1280,41 +1322,44 @@ void ExportSpecFileTool::updateInfoAboutSelectedFile()
   if( samples.size() <= 1 )
   {
     const int nsample = static_cast<int>(meas->sample_numbers().size());
-    tabletxt << "<tr><th>Num. Samples</th><td>" << nsample << "</td></tr>\n";
+    addTableRow( WString::tr("esf-num-samples"), WString("{1}").arg(nsample), false );
   }else
   {
-    tabletxt << "<tr><th>First Sample</th><td>" << (*samples.begin()) << "</td></tr>\n";
-    tabletxt << "<tr><th>Last Sample</th><td>" << (*samples.rbegin()) << "</td></tr>\n";
+    addTableRow( WString::tr("esf-first-sample"), WString("{1}").arg(*samples.begin()), false );
+    addTableRow( WString::tr("esf-last-sample"), WString("{1}").arg(*samples.rbegin()), false );
   }
   
   if( meas->contained_neutron() )
   {
-    tabletxt << "<tr><th>Neut. Dets</th><td><div>"
-             << static_cast<int>(meas->neutron_detector_names().size()) << "</div></td></tr>\n";
-    tabletxt << "<tr><th>Gamma Dets</th><td><div>"
-            << static_cast<int>(meas->gamma_detector_names().size()) << "</div></td></tr>\n";
+    const WString neutDetsStr = WString("{1}").arg( static_cast<int>(meas->neutron_detector_names().size()) );
+    const WString gammaDetsStr = WString("{1}").arg( static_cast<int>(meas->gamma_detector_names().size()) );
+    addTableRow( WString::tr("esf-neut-dets"), neutDetsStr, true );
+    addTableRow( WString::tr("esf-gamma-dets"), gammaDetsStr, true );
   }else
   {
-    tabletxt << "<tr><th>Num Dets</th><td><div>"
-             << static_cast<int>(meas->detector_names().size()) << "</div></td></tr>\n";
+    const WString numDetsStr = WString("{1}").arg( static_cast<int>(meas->detector_names().size()) );
+    addTableRow( WString::tr("esf-num-dets"), numDetsStr, true );
   }
   
   if( meas->has_gps_info() )
   {
-    tabletxt << "<tr><th>Latitude</th><td><div>"
-             << SpecUtils::printCompact( meas->mean_latitude(), 7 ) << "</div></td></tr>\n";
-    tabletxt << "<tr><th>Longitude</th><td><div>"
-             << SpecUtils::printCompact( meas->mean_longitude(), 7 ) << "</div></td></tr>\n";
+    const WString latStr = WString::fromUTF8(SpecUtils::printCompact( meas->mean_latitude(), 7 ));
+    const WString lonStr = WString::fromUTF8(SpecUtils::printCompact( meas->mean_longitude(), 7 ));
+    addTableRow( WString::tr("esf-latitude"), latStr, true );
+    addTableRow( WString::tr("esf-longitude"), lonStr, true );
   }//if( meas->has_gps_info() )
   
   const string total_time = PhysicalUnitsLocalized::printToBestTimeUnits( meas->gamma_real_time() );
-  tabletxt << "<tr><th>Total Time</th><td><div>" << total_time << "</div></td></tr>\n";
+  addTableRow( WString::tr("esf-total-time"), WString::fromUTF8(total_time), true );
   
-  tabletxt << "<tr><th>Sum Gamma</th><td><div>"
-           << SpecUtils::printCompact( meas->gamma_count_sum(), 5) << "</div></td></tr>\n";
+  const WString sumGammaStr = WString::fromUTF8(SpecUtils::printCompact( meas->gamma_count_sum(), 5));
+  addTableRow( WString::tr("esf-sum-gamma"), sumGammaStr, true );
+  
   if( meas->contained_neutron() )
-    tabletxt << "<tr><th>Sum Neut.</th><td><div>"
-             << SpecUtils::printCompact( meas->neutron_counts_sum(), 5) << "</div></td></tr>\n";
+  {
+    const WString sumNeutStr = WString::fromUTF8(SpecUtils::printCompact( meas->neutron_counts_sum(), 5));
+    addTableRow( WString::tr("esf-sum-neut"), sumNeutStr,true );
+  }
   
   //const string &instrument_type = meas->instrument_type();
   const string &manufacturer = meas->manufacturer();
@@ -1322,22 +1367,26 @@ void ExportSpecFileTool::updateInfoAboutSelectedFile()
   const string &instrument_id = meas->instrument_id();
   
   if( !manufacturer.empty() )
-    tabletxt << "<tr><th>Manufacturer</th><td><div>"
-             << Wt::Utils::htmlEncode(manufacturer) << "</div></td></tr>\n";
+  {
+    const WString mfgStr = WString("{1}").arg( WString::fromUTF8(manufacturer) );
+    addTableRow( WString::tr("esf-manufacturer"), mfgStr, true );
+  }
   
   if( meas->detector_type() != SpecUtils::DetectorType::Unknown )
-    tabletxt << "<tr><th>Model</th><td><div>"
-             << SpecUtils::detectorTypeToString(meas->detector_type()) << "</div></td></tr>\n";
-  else if( !instrument_model.empty() )
-    tabletxt << "<tr><th>Model</th><td><div>"
-             << Wt::Utils::htmlEncode(instrument_model) << "</div></td></tr>\n";
+  {
+    const WString modelStr = WString::fromUTF8(SpecUtils::detectorTypeToString(meas->detector_type()));
+    addTableRow( WString::tr("esf-model"), modelStr, true );
+  }else if( !instrument_model.empty() )
+  {
+    const WString modelStr = WString::fromUTF8(instrument_model);
+    addTableRow( WString::tr("esf-model"), modelStr, true );
+  }
   
   if( !instrument_id.empty() )
-    tabletxt << "<tr><th>Serial</th><td><div>" << Wt::Utils::htmlEncode(instrument_id) << "</div></td></tr>\n";
-  
-  tabletxt << "</table>\n";
-  
-  m_fileInfo->setText( tabletxt.str() );
+  {
+    const WString serialStr = WString::fromUTF8(instrument_id);
+    addTableRow( WString::tr("esf-serial"), serialStr, true );
+  }
 }//void updateInfoAboutSelectedFile()
 
 
@@ -1732,13 +1781,11 @@ SpecUtils::SaveSpectrumAsType ExportSpecFileTool::currentSaveType() const
 }//SpecUtils::SaveSpectrumAsType currentSaveType() const;
 
 
-uint16_t ExportSpecFileTool::maxRecordsInCurrentSaveType( shared_ptr<const SpecMeas> spec ) const
+uint16_t ExportSpecFileTool::maxRecordsInCurrentSaveType( const SpecUtils::SaveSpectrumAsType save_format, std::shared_ptr<const SpecMeas> spec )
 {
-  const SpecUtils::SaveSpectrumAsType save_format = currentSaveType();
-  
   switch( save_format )
   {
-    // Spectrum file types that can have many spectra in them
+      // Spectrum file types that can have many spectra in them
     case SpecUtils::SaveSpectrumAsType::Txt:
     case SpecUtils::SaveSpectrumAsType::Csv:
     case SpecUtils::SaveSpectrumAsType::Pcf:
@@ -1749,10 +1796,8 @@ uint16_t ExportSpecFileTool::maxRecordsInCurrentSaveType( shared_ptr<const SpecM
       return std::numeric_limits<uint16_t>::max();
       
 #if( USE_QR_CODES )
-    // Spectrum file types that can have two spectra in them (foreground + background)
+      // Spectrum file types that can have two spectra in them (foreground + background)
     case SpecUtils::SaveSpectrumAsType::Uri:
-      if( !spec )
-        spec = currentlySelectedFile();
       return (spec && (spec->num_gamma_channels() < 2075)) ? 2 : 1;
 #endif
       
@@ -1761,7 +1806,7 @@ uint16_t ExportSpecFileTool::maxRecordsInCurrentSaveType( shared_ptr<const SpecM
       return 2;
 #endif
       
-    // Spectrum file types that can have a single spectra in them
+      // Spectrum file types that can have a single spectra in them
     case SpecUtils::SaveSpectrumAsType::Chn:
     case SpecUtils::SaveSpectrumAsType::SpcBinaryInt:
     case SpecUtils::SaveSpectrumAsType::SpcBinaryFloat:
@@ -1770,13 +1815,13 @@ uint16_t ExportSpecFileTool::maxRecordsInCurrentSaveType( shared_ptr<const SpecM
     case SpecUtils::SaveSpectrumAsType::Cnf:
     case SpecUtils::SaveSpectrumAsType::Tka:
       return 1;
-    
+      
 #if( SpecUtils_INJA_TEMPLATES )
     case SpecUtils::SaveSpectrumAsType::Template:
       assert( 0 );
       break;
 #endif
-    
+      
     case SpecUtils::SaveSpectrumAsType::NumTypes:
       assert( 0 );
       break;
@@ -1785,6 +1830,16 @@ uint16_t ExportSpecFileTool::maxRecordsInCurrentSaveType( shared_ptr<const SpecM
   assert( 0 );
   
   return 0;
+}
+
+uint16_t ExportSpecFileTool::maxRecordsInCurrentSaveType( shared_ptr<const SpecMeas> spec ) const
+{
+  const SpecUtils::SaveSpectrumAsType save_format = currentSaveType();
+  
+  if( (save_format == SpecUtils::SaveSpectrumAsType::Uri) && !spec )
+    spec = currentlySelectedFile();
+  
+  return maxRecordsInCurrentSaveType( save_format, spec );
 }//uint16_t maxRecordsInCurrentSaveType() const
 
 
@@ -3630,7 +3685,7 @@ std::string ExportSpecFileTool::encodeStateToUrl() const
 
 
 ExportSpecFileWindow::ExportSpecFileWindow( InterSpec *viewer )
-  : SimpleDialog( ((viewer && !viewer->isPhone()) ? "Spectrum File Export" : ""), "" ),
+  : SimpleDialog( ((viewer && !viewer->isPhone()) ? WString::tr("esf-window-title") : WString()), "" ),
   m_tool( nullptr )
 {
   // If the CSS isnt available to set widths and stuff when HTML is first formed

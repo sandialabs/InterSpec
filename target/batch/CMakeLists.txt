@@ -9,7 +9,7 @@ get_directory_property(hasParent PARENT_DIRECTORY)
 
 if( NOT hasParent )
   # These options have not been tested
-  set(CMAKE_CXX_STANDARD 14)
+  set(CMAKE_CXX_STANDARD 17)
   set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
   set( BUILD_AS_WX_WIDGETS_APP ON CACHE BOOL "Set to build wxWidget target" )

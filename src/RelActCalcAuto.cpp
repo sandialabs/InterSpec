@@ -29,7 +29,6 @@
 #include <deque>
 #include <tuple>
 #include <chrono>
-#include <format>
 #include <thread>
 #include <limits>
 #include <cstdlib>
@@ -55,6 +54,7 @@
 #undef isnan
 #undef isfinite
 #undef isnormal
+#undef ERROR
 #endif
 
 #include "ceres/ceres.h"
@@ -63,8 +63,9 @@
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/DateTime.h"
-#include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/ParseUtils.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "SpecUtils/RapidXmlUtils.hpp"
 #include "SpecUtils/D3SpectrumExport.h"
@@ -79,11 +80,13 @@
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/XmlUtils.hpp"
+#include "InterSpec/RelEffChart.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/RelActCalcManual.h"
+#include "InterSpec/BersteinPolynomial.hpp"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
@@ -92,6 +95,14 @@
 #include "InterSpec/RelActCalc_imp.hpp"
 #include "InterSpec/RelActCalcAuto_imp.hpp"
 #include "InterSpec/RelActCalc_CeresJetTraits.hpp"
+
+#ifdef _MSC_VER
+#undef isinf
+#undef isnan
+#undef isfinite
+#undef isnormal
+#undef ERROR
+#endif
 
 using namespace std;
 using namespace XmlUtils;
@@ -111,8 +122,78 @@ using namespace XmlUtils;
 
 namespace
 {
+void sort_rois_by_energy( vector<RelActCalcAuto::RoiRange> &rois )
+{
+  std::sort( begin(rois), end(rois), []( const RelActCalcAuto::RoiRange &lhs,
+                                        const RelActCalcAuto::RoiRange &rhs ) -> bool {
+    return lhs.lower_energy < rhs.lower_energy;
+  });
+}//void sort_rois( vector<RoiRange> &rois )
+
+/** Combines nearby peaks, so we dont do a bad job matching gammas to pleaces where two automated fit peaks are where there should be one.
+
+ A hasty implementation because its not a common or critical thing.
+
+ @param input_peaks [in|out] The peaks to potentually combine together.
+ @returns The number of peaks combined.
+ */
+size_t combine_nearby_peaks( vector<RelActCalcManual::GenericPeakInfo> &input_peaks, const double combine_threshold = 1.85 )
+{
+  std::sort( begin(input_peaks), end(input_peaks),
+    []( const RelActCalcManual::GenericPeakInfo &lhs, const RelActCalcManual::GenericPeakInfo &rhs ){
+    return lhs.m_energy < rhs.m_energy;
+  } );
+
+  if( input_peaks.empty() )
+    return 0;
+
+  vector<RelActCalcManual::GenericPeakInfo> answer;
+  answer.reserve( input_peaks.size() );
+  answer.push_back( input_peaks.front() );
+  for( size_t i = 1; i < input_peaks.size(); ++i )
+  {
+    RelActCalcManual::GenericPeakInfo &prev_peak = answer.back();
+    const RelActCalcManual::GenericPeakInfo &this_peak = input_peaks[i];
+    const double weighted_fwhm = (prev_peak.m_counts*prev_peak.m_fwhm + this_peak.m_counts*this_peak.m_fwhm)
+                                / (prev_peak.m_counts + this_peak.m_counts);
+    const double dist = fabs(this_peak.m_energy - prev_peak.m_energy);
+    if( dist < combine_threshold*(weighted_fwhm / 2.35482) )
+    {
+      prev_peak.m_counts += this_peak.m_counts;
+      prev_peak.m_counts_uncert = sqrt(prev_peak.m_counts_uncert*prev_peak.m_counts_uncert + this_peak.m_counts*this_peak.m_counts);
+      const double weighted_mean  = (prev_peak.m_counts*prev_peak.m_energy + this_peak.m_counts*this_peak.m_energy)
+                                      / (prev_peak.m_counts + this_peak.m_counts);
+
+      const double w_1 = prev_peak.m_counts;
+      const double sigma_1 = prev_peak.m_fwhm / 2.35482;
+      const double w_2 = this_peak.m_counts;
+      const double sigma_2 = this_peak.m_fwhm / 2.35482;
+
+      const double weighted_sigma = sqrt( (w_1*(sigma_1*sigma_1 + pow(prev_peak.m_energy - weighted_mean,2.0))
+                              + w_2*(sigma_2*sigma_2 + pow(this_peak.m_energy - weighted_mean,2.0)))
+                                    / (w_1 + w_2) );
+
+      //cout << "Changing peak energy from " << prev_peak.m_mean << " to " << weighted_mean << " keV, and FWHM from " << prev_peak.m_fwhm << " to " << (2.35482 * weighted_sigma) << endl;
+
+      prev_peak.m_fwhm = 2.35482 * weighted_sigma;
+      prev_peak.m_energy = prev_peak.m_energy = weighted_mean;
+    }else
+    {
+      answer.push_back( this_peak );
+    }
+  }
+
+  const size_t num_combined = input_peaks.size() - answer.size();
+  input_peaks.swap( answer );
+  return num_combined;
+};//combine_nearby_peaks(...)
+}//namespace
+
+namespace RelActCalcAutoImp
+{
 const double ns_decay_act_mult = SandiaDecay::MBq;
-  
+
+
 // Forward declaration
 struct RelActAutoCostFcn;
 
@@ -122,17 +203,8 @@ struct DoWorkOnDestruct
   DoWorkOnDestruct( std::function<void()> &&worker ) : m_worker( std::move(worker) ){}
   ~DoWorkOnDestruct(){ if(m_worker) m_worker(); }
 };//struct DoWorkOnDestruct
-
-
-void sort_rois_by_energy( vector<RelActCalcAuto::RoiRange> &rois )
-{
-  std::sort( begin(rois), end(rois), []( const RelActCalcAuto::RoiRange &lhs,
-                                        const RelActCalcAuto::RoiRange &rhs ) -> bool {
-    return lhs.lower_energy < rhs.lower_energy;
-  });
-}//void sort_rois( vector<RoiRange> &rois )
  
-  
+
   /*
    /// Function used to convert parameters of one FWHM type, to another.
    ///  Currently it goes from GADRAS to all other types, for a set of
@@ -193,6 +265,15 @@ void sort_rois_by_energy( vector<RelActCalcAuto::RoiRange> &rois )
         case RelActCalcAuto::FwhmForm::Polynomial_6:
           drf_form_to_fit = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
           fit_order = num_parameters(form_to_fit);
+          break;
+
+        case RelActCalcAuto::FwhmForm::Berstein_2:
+        case RelActCalcAuto::FwhmForm::Berstein_3:
+        case RelActCalcAuto::FwhmForm::Berstein_4:
+        case RelActCalcAuto::FwhmForm::Berstein_5:
+        case RelActCalcAuto::FwhmForm::Berstein_6:
+          drf_form_to_fit = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
+          fit_order = num_parameters(form_to_fit) - 2; // Subtract min/max energy params
           break;
           
         case RelActCalcAuto::FwhmForm::NotApplicable:
@@ -298,7 +379,7 @@ void sort_rois_by_energy( vector<RelActCalcAuto::RoiRange> &rois )
   }//void fit_nominal_gadras_pars()
 */
   
-void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fwhm_start, bool highres, RelActCalcAuto::FwhmForm fwhm_form )
+void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fwhm_start, bool highres, RelActCalcAuto::FwhmForm fwhm_form, double lowest_energy, double highest_energy )
 {
   if( highres )
   {
@@ -381,6 +462,72 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
         parameters[fwhm_start + 3] = 0.734524;
         parameters[fwhm_start + 4] = -0.568632;
         parameters[fwhm_start + 5] = 0.0969217;
+        break;
+
+      case RelActCalcAuto::FwhmForm::Berstein_2:
+      case RelActCalcAuto::FwhmForm::Berstein_3:
+      case RelActCalcAuto::FwhmForm::Berstein_4:
+      case RelActCalcAuto::FwhmForm::Berstein_5:
+      case RelActCalcAuto::FwhmForm::Berstein_6:
+        // Convert from corresponding polynomial coefficients to Berstein
+        {
+          const size_t num_params = num_parameters( fwhm_form );
+          const size_t num_berstein_coeffs = num_params - 2;
+          
+          assert( parameters.empty() || (parameters.size() >= (fwhm_start + num_params)) );
+          if( parameters.size() < (fwhm_start + num_params) )
+            parameters.resize( fwhm_start + num_params, 0.0 );
+          
+          // Use corresponding polynomial coefficients as starting point
+          std::vector<double> poly_coeffs;
+          switch( fwhm_form )
+          {
+            case RelActCalcAuto::FwhmForm::Berstein_2:
+              poly_coeffs = {2.10029, 2.03657}; // From Polynomial_2
+              break;
+            case RelActCalcAuto::FwhmForm::Berstein_3:
+              poly_coeffs = {2.26918, 1.54837, 0.192}; // From Polynomial_3
+              break;
+            case RelActCalcAuto::FwhmForm::Berstein_4:
+              poly_coeffs = {2.49021, 0.346357, 1.3902, -0.294974}; // From Polynomial_4
+              break;
+            case RelActCalcAuto::FwhmForm::Berstein_5:
+              poly_coeffs = {2.5667, -0.333729, 2.59812, -0.991013, 0.124209}; // From Polynomial_5
+              break;
+            case RelActCalcAuto::FwhmForm::Berstein_6:
+              poly_coeffs = {2.51611, 0.318145, 0.838887, 0.734524, -0.568632, 0.0969217}; // From Polynomial_6
+              break;
+            default:
+              assert( 0 );
+              break;
+          }
+          
+          // Convert power series to Berstein coefficients
+          const std::vector<double> berstein_coeffs = BersteinPolynomial::power_series_to_bernstein( 
+            poly_coeffs.data(), poly_coeffs.size(), lowest_energy, highest_energy );
+          
+          // Set Berstein coefficients
+          for( size_t i = 0; i < num_berstein_coeffs; ++i )
+            parameters[fwhm_start + i] = berstein_coeffs[i];
+          
+#if( PERFORM_DEVELOPER_CHECKS )
+          // Verify power series and Berstein give same results
+          for( int j = 0; j <= 4; ++j ) {
+            const double test_energy = lowest_energy + j * (highest_energy - lowest_energy) / 4.0;
+            const double t = (test_energy - lowest_energy) / (highest_energy - lowest_energy);
+            double poly_val = 0.0, berstein_val = 0.0;
+            for( size_t k = 0; k < poly_coeffs.size(); ++k ) {
+              poly_val += poly_coeffs[k] * pow(test_energy, static_cast<double>(k));
+            }
+            berstein_val = BersteinPolynomial::evaluate( t, berstein_coeffs.data(), berstein_coeffs.size() );
+            assert( fabs(poly_val - berstein_val) < 1.0E-10 * std::max({poly_val, berstein_val, 1.0}) );
+          }
+#endif
+          
+          // Set energy range
+          parameters[fwhm_start + num_berstein_coeffs] = lowest_energy;
+          parameters[fwhm_start + num_berstein_coeffs + 1] = highest_energy;
+        }
         break;
 
       case RelActCalcAuto::FwhmForm::NotApplicable:
@@ -468,6 +615,72 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
         parameters[fwhm_start + 3] = -5991.02;
         parameters[fwhm_start + 4] = 2192.23;
         parameters[fwhm_start + 5] = -286.53;
+        break;
+
+      case RelActCalcAuto::FwhmForm::Berstein_2:
+      case RelActCalcAuto::FwhmForm::Berstein_3:
+      case RelActCalcAuto::FwhmForm::Berstein_4:
+      case RelActCalcAuto::FwhmForm::Berstein_5:
+      case RelActCalcAuto::FwhmForm::Berstein_6:
+        // Convert from corresponding polynomial coefficients to Berstein
+        {
+          const size_t num_params = num_parameters( fwhm_form );
+          const size_t num_berstein_coeffs = num_params - 2;
+          
+          assert( parameters.empty() || (parameters.size() >= (fwhm_start + num_params)) );
+          if( parameters.size() < (fwhm_start + num_params) )
+            parameters.resize( fwhm_start + num_params, 0.0 );
+          
+          // Use corresponding polynomial coefficients as starting point
+          std::vector<double> poly_coeffs;
+          switch( fwhm_form )
+          {
+            case RelActCalcAuto::FwhmForm::Berstein_2:
+              poly_coeffs = {-146.632, 3928.7}; // From Polynomial_2
+              break;
+            case RelActCalcAuto::FwhmForm::Berstein_3:
+              poly_coeffs = {-101.518, 3037.91, 555.973}; // From Polynomial_3
+              break;
+            case RelActCalcAuto::FwhmForm::Berstein_4:
+              poly_coeffs = {-68.9708, 2334.29, 1873.59, -428.651}; // From Polynomial_4
+              break;
+            case RelActCalcAuto::FwhmForm::Berstein_5:
+              poly_coeffs = {-37.7014, 1605.68, 4201.01, -2230.26, 383.314}; // From Polynomial_5
+              break;
+            case RelActCalcAuto::FwhmForm::Berstein_6:
+              poly_coeffs = {-11.4349, 947.497, 7088.34, -5991.02, 2192.23, -286.53}; // From Polynomial_6
+              break;
+            default:
+              assert( 0 );
+              break;
+          }
+          
+          // Convert power series to Berstein coefficients
+          const std::vector<double> berstein_coeffs = BersteinPolynomial::power_series_to_bernstein( 
+            poly_coeffs.data(), poly_coeffs.size(), lowest_energy, highest_energy );
+          
+          // Set Berstein coefficients
+          for( size_t i = 0; i < num_berstein_coeffs; ++i )
+            parameters[fwhm_start + i] = berstein_coeffs[i];
+          
+#if( PERFORM_DEVELOPER_CHECKS )
+          // Verify power series and Berstein give same results
+          for( int j = 0; j <= 4; ++j ) {
+            const double test_energy = lowest_energy + j * (highest_energy - lowest_energy) / 4.0;
+            const double t = (test_energy - lowest_energy) / (highest_energy - lowest_energy);
+            double poly_val = 0.0, berstein_val = 0.0;
+            for( size_t k = 0; k < poly_coeffs.size(); ++k ) {
+              poly_val += poly_coeffs[k] * pow(test_energy, static_cast<double>(k));
+            }
+            berstein_val = BersteinPolynomial::evaluate( t, berstein_coeffs.data(), berstein_coeffs.size() );
+            assert( fabs(poly_val - berstein_val) < 1.0E-10 * std::max({poly_val, berstein_val, 1.0}) );
+          }
+#endif
+          
+          // Set energy range
+          parameters[fwhm_start + num_berstein_coeffs] = lowest_energy;
+          parameters[fwhm_start + num_berstein_coeffs + 1] = highest_energy;
+        }
         break;
 
       case RelActCalcAuto::FwhmForm::NotApplicable:
@@ -610,6 +823,19 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
                                 || (drfpars.size() != num_parameters(fwhm_form)) );
       break;
 
+      case RelActCalcAuto::FwhmForm::Berstein_2:
+      case RelActCalcAuto::FwhmForm::Berstein_3:
+      case RelActCalcAuto::FwhmForm::Berstein_4:
+      case RelActCalcAuto::FwhmForm::Berstein_5:
+      case RelActCalcAuto::FwhmForm::Berstein_6:
+      {
+        // Check if we can convert directly from polynomial of same order
+        const size_t berstein_order = num_parameters(fwhm_form) - 2; // Remove min/max energy params
+        needToFitOtherType = !((drf_fwhm_type == DetectorPeakResponse::kSqrtPolynomial)
+                                 && (drfpars.size() == berstein_order));
+        break;
+      }//case any Berstein
+
       case RelActCalcAuto::FwhmForm::NotApplicable:
       {
         needToFitOtherType = false;
@@ -622,15 +848,43 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
      
     if( !needToFitOtherType )
     {
-      // We are done here, return the input DetectorPeakResponse, and update the FWHM parameters, 
-      //  with the values from the input DetectorPeakResponse
-      assert( num_parameters(fwhm_form) == drfpars.size() );
+      // Handle special case for Berstein: convert from polynomial coefficients
+      switch( fwhm_form )
+      {
+        case RelActCalcAuto::FwhmForm::Berstein_2:
+        case RelActCalcAuto::FwhmForm::Berstein_3:
+        case RelActCalcAuto::FwhmForm::Berstein_4:
+        case RelActCalcAuto::FwhmForm::Berstein_5:
+        case RelActCalcAuto::FwhmForm::Berstein_6:
+        {
+          // Convert polynomial coefficients to Berstein
+          std::vector<double> poly_coeffs( drfpars.begin(), drfpars.end() );
+          const std::vector<double> berstein_coeffs = BersteinPolynomial::power_series_to_bernstein( 
+            poly_coeffs.data(), poly_coeffs.size(), lowest_energy, highest_energy );
+          
+          const size_t num_params = num_parameters(fwhm_form);
+          paramaters.resize( num_params );
+          
+          // Set Berstein coefficients
+          for( size_t i = 0; i < berstein_coeffs.size(); ++i )
+            paramaters[i] = berstein_coeffs[i];
+          
+          // Set energy range
+          paramaters[num_params - 2] = lowest_energy;
+          paramaters[num_params - 1] = highest_energy;
+          
+          return input_drf;
+        }
+        default:
+          // Normal case: use DRF parameters directly
+          assert( num_parameters(fwhm_form) == drfpars.size() );
 
-      paramaters.resize( drfpars.size() );
-      for( size_t i = 0; i < drfpars.size(); ++i )
-        paramaters[i] = static_cast<double>( drfpars[i] );
+          paramaters.resize( drfpars.size() );
+          for( size_t i = 0; i < drfpars.size(); ++i )
+            paramaters[i] = static_cast<double>( drfpars[i] );
 
-      return input_drf;
+          return input_drf;
+      }
     }//if( !needToFitOtherType )
 
     // We need to convert from the DetectorPeakResponse FWHM type to the FWHM type we want to use.
@@ -639,10 +893,10 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
     const double delta_energy = 0.05*(highest_energy - lowest_energy);
         
     auto fake_peaks = make_shared<std::deque< std::shared_ptr<const PeakDef> > >();
-    for( double ene = lowest_energy; ene <=(1.001*highest_energy); ene += delta_energy )
+    for( double ene = lowest_energy; ene <= (1.001*highest_energy); ene += delta_energy )
     {
       const float sigma = input_drf->peakResolutionSigma(ene);
-      auto p = make_shared<PeakDef>( ene, sigma, 1000.0 );
+      auto p = make_shared<PeakDef>( std::min(ene,highest_energy), sigma, 1000.0 );
       p->setSigmaUncert( 0.05*sigma );
       fake_peaks->push_back( p );
     }
@@ -673,6 +927,15 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
         formToFit = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
       break;
 
+      case RelActCalcAuto::FwhmForm::Berstein_2:
+      case RelActCalcAuto::FwhmForm::Berstein_3:
+      case RelActCalcAuto::FwhmForm::Berstein_4:
+      case RelActCalcAuto::FwhmForm::Berstein_5:
+      case RelActCalcAuto::FwhmForm::Berstein_6:
+        // Fit using corresponding polynomial order, then convert to Berstein
+        formToFit = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
+      break;
+
       case RelActCalcAuto::FwhmForm::NotApplicable:
         assert( 0 );
         throw logic_error( "FwhmForm::NotApplicable should not have made it here" );
@@ -682,14 +945,59 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
     try
     {
       vector<float> new_sigma_coefs, sigma_coef_uncerts;
-      MakeDrfFit::performResolutionFit( fake_peaks, formToFit, static_cast<int>(num_fwhm_pars),
+      
+      // For Berstein forms, fit with polynomial order (without +2 for min/max energy)
+      size_t fit_num_pars = num_fwhm_pars;
+      switch( fwhm_form )
+      {
+        case RelActCalcAuto::FwhmForm::Berstein_2:
+        case RelActCalcAuto::FwhmForm::Berstein_3:
+        case RelActCalcAuto::FwhmForm::Berstein_4:
+        case RelActCalcAuto::FwhmForm::Berstein_5:
+        case RelActCalcAuto::FwhmForm::Berstein_6:
+          fit_num_pars = num_fwhm_pars - 2; // Remove min/max energy parameters
+          break;
+        default:
+          break;
+      }
+      
+      MakeDrfFit::performResolutionFit( fake_peaks, formToFit, static_cast<int>(fit_num_pars),
                                           new_sigma_coefs, sigma_coef_uncerts );
       
-      assert( new_sigma_coefs.size() == num_fwhm_pars );
+      assert( new_sigma_coefs.size() == fit_num_pars );
+      
+      // Handle Berstein conversion
+      switch( fwhm_form )
+      {
+        case RelActCalcAuto::FwhmForm::Berstein_2:
+        case RelActCalcAuto::FwhmForm::Berstein_3:
+        case RelActCalcAuto::FwhmForm::Berstein_4:
+        case RelActCalcAuto::FwhmForm::Berstein_5:
+        case RelActCalcAuto::FwhmForm::Berstein_6:
+        {
+          // Convert polynomial coefficients to Berstein - note that the power-series
+          //  representation uses MeV, while lowest_energy and highest_energy are in keV
+          std::vector<double> poly_coeffs( new_sigma_coefs.begin(), new_sigma_coefs.end() );
+          const std::vector<double> berstein_coeffs = BersteinPolynomial::power_series_to_bernstein( 
+            poly_coeffs.data(), poly_coeffs.size(), lowest_energy/1000.0, highest_energy/1000.0 );
           
-      paramaters.resize( new_sigma_coefs.size() );
-      for( size_t i = 0; i < new_sigma_coefs.size(); ++i )
-        paramaters[i] = static_cast<double>( new_sigma_coefs[i] );
+          assert( berstein_coeffs.size() == (num_fwhm_pars - 2) );
+          paramaters.resize( num_fwhm_pars );
+          for( size_t i = 0; i < berstein_coeffs.size(); ++i )
+            paramaters[i] = berstein_coeffs[i];
+          
+          // Set energy range, in keV
+          paramaters[num_fwhm_pars - 2] = lowest_energy;
+          paramaters[num_fwhm_pars - 1] = highest_energy;
+          break;
+        }
+        default:
+          // Normal case - use fitted coefficients directly
+          paramaters.resize( new_sigma_coefs.size() );
+          for( size_t i = 0; i < new_sigma_coefs.size(); ++i )
+            paramaters[i] = static_cast<double>( new_sigma_coefs[i] );
+          break;
+      }
 
       estimate_fwhm_from_data = false;
 
@@ -703,9 +1011,9 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
       }else
       {
         // We failed to convert from one FWHM type to another
-        throw runtime_error( std::format("Failed to convert detectors efficiency functions FWHM info to"
-                                            " {} initial FWHM estimation.  Issue: {}", 
-                                            to_str(fwhm_form), e.what()) );
+        throw runtime_error( "Failed to convert detectors efficiency functions FWHM info to "
+                             + std::string(to_str(fwhm_form)) + " initial FWHM estimation."
+                            " Issue:" + string(e.what()) );
       }//if( fwhm_estimation_method == StartFromDetEffOrPeaksInSpectrum ) / else
     }//try / catch
   }//if( use_drf_fwhm )
@@ -742,6 +1050,15 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
       form_to_fit = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
       fit_order = static_cast<int>( num_parameters(fwhm_form) );
     break;
+
+    case RelActCalcAuto::FwhmForm::Berstein_2:
+    case RelActCalcAuto::FwhmForm::Berstein_3:
+    case RelActCalcAuto::FwhmForm::Berstein_4:
+    case RelActCalcAuto::FwhmForm::Berstein_5:
+    case RelActCalcAuto::FwhmForm::Berstein_6:
+      form_to_fit = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
+      fit_order = static_cast<int>( num_parameters(fwhm_form) - 2 ); // Subtract min/max energy params
+    break;
           
     case RelActCalcAuto::FwhmForm::NotApplicable:
       assert( 0 );
@@ -773,9 +1090,9 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
       return lhs.first > rhs.first;
     } );
 
-    // Limit to un-selecting max of 20% of peaks (arbitrarily chosen), if the deviate
-    // more than 17.5% from the fit (again, arbitrarily chosen).
-    const size_t max_remove = distances.size() < 8 ? size_t(0) : static_cast<size_t>( std::ceil( 0.2*distances.size() ) );
+    // Limit to un-selecting max of 20% of peaks (arbitrarily chosen), if they deviate
+    // more than 17.5% (again, arbitrarily chosen) from the fit.
+    const size_t max_remove = (distances.size() < 8) ? size_t(0) : static_cast<size_t>( std::ceil( 0.2*distances.size() ) );
     auto filtered_peaks = make_shared<deque<shared_ptr<const PeakDef>>>();
     for( size_t index = 0, num_removed = 0; index < distances.size(); ++index )
     {
@@ -788,7 +1105,12 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
       filtered_peaks->push_back( distances[index].second );
     }//for( size_t index = 0, num_removed = 0; index < distances.size(); ++index )
 
-    assert( (max_remove + filtered_peaks->size()) >= all_peaks.size() );
+    if( (max_remove + filtered_peaks->size()) < distances.size() )
+      cerr << "RelActCalcAuto - failed logic: max_remove=" << max_remove 
+      << ", filtered_peaks->size()=" << filtered_peaks->size() 
+      << ", distances.size()=" << distances.size() << endl;
+
+    assert( (max_remove + filtered_peaks->size()) >= distances.size() );
 
     if( filtered_peaks->size() != all_peaks.size() )
     {
@@ -801,18 +1123,18 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
         uncerts.swap( new_result_uncerts );
       }catch( std::exception &e )
       {
-        warnings.push_back( std::format("Failed to refine FWHM fit from data: {}.  Will use initial estimate.", e.what()) );
+        warnings.push_back( "Failed to refine FWHM fit from data: " + string(e.what()) + ".  Will use initial estimate." );
       }
     }//if( filtered_peaks->size() != all_peaks.size() )
-
+    
     paramaters.resize( fwhm_paramatersf.size() );
     for( size_t i = 0; i < fwhm_paramatersf.size(); ++i )
       paramaters[i] = static_cast<double>( fwhm_paramatersf[i] );
   }catch( std::exception &e )
   {
     paramaters.clear();
-    fill_in_default_start_fwhm_pars( paramaters, 0, highres, fwhm_form );
-    warnings.push_back( std::format("Failed to estimate FWHM from data: {}.  Using default FWHM parameters.", e.what()) );
+    fill_in_default_start_fwhm_pars( paramaters, 0, highres, fwhm_form, lowest_energy, highest_energy );
+    warnings.push_back( "Failed to estimate FWHM from data: " + string(e.what()) + ".  Using default FWHM parameters." );
   }
   
   vector<float> fwhm_pars_float( paramaters.size() );
@@ -825,20 +1147,42 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
   
   if( !new_drf )
   {
-    const string drfpaths = SpecUtils::append_path( InterSpec::staticDataDirectory(), "GenericGadrasDetectors" );
-    const string drf_dir = SpecUtils::append_path( drfpaths, highres ? "HPGe 40%" : "LaBr 10%" );
-    try
+    const string drf_file = SpecUtils::append_path( InterSpec::staticDataDirectory(), "common_drfs.tsv" );
+
+#ifdef _WIN32
+    const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(drf_file);
+    std::ifstream input( wfilename.c_str() );
+#else
+    std::ifstream input( drf_file.c_str() );
+#endif
+    string line;
+    while( !new_drf && SpecUtils::safe_get_line( input, line, 2048 ) )
     {
-      new_drf = std::make_shared<DetectorPeakResponse>();
-      new_drf->fromGadrasDirectory( drf_dir );
-      new_drf->setFwhmCoefficients( {}, DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm ); //just to be sure
-    }catch( std::exception &e )
+      SpecUtils::trim( line );
+      auto det = (!line.empty() && line[0]!='#') ? DetectorPeakResponse::parseSingleCsvLineRelEffDrf( line ) : nullptr;
+      if( det && (det->name() == "Cx033%_56x56mm_100cm_ISOCS (33%)") )
+        new_drf = det;
+    }//while( SpecUtils::safe_get_line( input, line, 2048 ) )
+
+    assert( new_drf );
+
+    if( !new_drf )
     {
-      //throw runtime_error( "RelActAutoCostFcn: failed to open default DRF." );
-      cerr << "RelActAutoCostFcn: failed to open default DRF." << endl;
-      assert( 0 );
-      new_drf.reset();
-    }
+      const string drfpaths = SpecUtils::append_path( InterSpec::staticDataDirectory(), "GenericGadrasDetectors" );
+      const string drf_dir = SpecUtils::append_path( drfpaths, highres ? "HPGe 40%" : "LaBr 10%" );
+      try
+      {
+        new_drf = std::make_shared<DetectorPeakResponse>();
+        new_drf->fromGadrasDirectory( drf_dir );
+        new_drf->setFwhmCoefficients( {}, DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm ); //just to be sure
+      }catch( std::exception &e )
+      {
+        //throw runtime_error( "RelActAutoCostFcn: failed to open default DRF." );
+        cerr << "RelActAutoCostFcn: failed to open default DRF." << endl;
+        assert( 0 );
+        new_drf.reset();
+      }
+    }//if( !new_drf )
   }//if( !new_drf )
   
   assert( !!new_drf );
@@ -857,6 +1201,28 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
   
   new_drf->setFwhmCoefficients( fwhm_pars_float, form_to_fit );
 
+  switch( fwhm_form )
+  {
+    case RelActCalcAuto::FwhmForm::Berstein_2:
+    case RelActCalcAuto::FwhmForm::Berstein_3:
+    case RelActCalcAuto::FwhmForm::Berstein_4:
+    case RelActCalcAuto::FwhmForm::Berstein_5:
+    case RelActCalcAuto::FwhmForm::Berstein_6:
+    {
+      // Convert polynomial coefficients to Berstein - note that the power-series
+      //  representation uses MeV, while lowest_energy and highest_energy are in keV
+      vector<double> poly_coeffs( begin(paramaters), end(paramaters) );
+      paramaters = BersteinPolynomial::power_series_to_bernstein( poly_coeffs.data(), poly_coeffs.size(),
+                                                                 lowest_energy/1000.0, highest_energy/1000.0 );
+      paramaters.push_back( lowest_energy );
+      paramaters.push_back( highest_energy );
+      break;
+    }
+      
+    default:
+      break;
+  }//switch( fwhm_form )
+  
   return new_drf;
 };//get_fwhm_coefficients(...)
 
@@ -1142,7 +1508,7 @@ void setup_physical_model_shield_par( vector<optional<double>> &lower_bounds,
   
   if( (ad == 0.0) && opt->fit_areal_density )
   {
-    ad = 2.5; // We want something away from zero, because Ceres doesnt like zero values much - 2.5 is arbitrary
+    ad = std::min( std::max( 0.5, lower_ad), upper_ad ); // We want something away from zero, because Ceres doesnt like zero values much - 0.5 is arbitrary
     //  ad = 0.5*(lower_ad + upper_ad); //Something like 250 would be way too much
   }
   if( (ad < 0.0) || (ad > max_ad) )
@@ -1167,6 +1533,29 @@ void setup_physical_model_shield_par( vector<optional<double>> &lower_bounds,
 
 struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 {
+  /** How to perform differentiation for jacobians; either "auto" or numeric.
+
+   We should use auto-diff generally, since it is faster, and should be less-error-prone, but to check on
+   things, you can choose to use numeric differentiation.
+   */
+  static const bool sm_use_auto_diff = true;
+
+  /** Ceres uses a compile time constant for the number of parameters it performs for "auto" differentiation for; this
+   variable constrols how many parameters will be differentiated at a time.
+
+   It looks like using Jets<double,32> is fastest for an example problem, however it really
+   doesnt seem to matter much (Wall times of {0.1728, 0.1789, 0.1665, 0.1608}, for strides of
+   {4, 8, 16, 32}, respectively
+  */
+  static const size_t sm_auto_diff_stride_size = 32;
+
+  
+  /** Activity parameters will have a lower possible value of 1.0 - this is to avoid the Ceres parameters getting near zero,
+   which causes them to behave badly
+   */
+  constexpr static double sm_activity_par_offset = 1.0;
+  
+
   RelActCalcAuto::Options m_options;
   std::vector<std::vector<NucInputGamma>> m_nuclides; //has same number of entries as `m_options.rel_eff_curves`
   std::vector<RoiRangeChannels> m_energy_ranges;
@@ -1209,8 +1598,23 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   bool m_skip_skew; // 20250324 HACK to test fitting peak skew
 #endif
 
+  /** When m_options.additional_br_uncert we will allow each peak range (see `cluster_photopeaks(...)`) to vary within this uncertainty;
+  This variable defines the lower and upper energy of each peak range.
+   */
   std::vector<std::pair<double,double>> m_peak_ranges_with_uncert;
-  static constexpr double sm_peak_range_uncert_par_offset = 5.0;
+
+  /** We will use a Ceres paramater to scale the yield of each peak-range.
+   The Ceres paramater is defined like:
+
+   ```
+     const T par_value = x[range_index];
+     const T num_sigma_from_nominal = (par_value - sm_peak_range_uncert_offset)/sm_peak_range_uncert_par_scale;
+     const T yield_multiple = 1.0 + num_sigma_from_nominal*m_options.additional_br_uncert;
+   ```
+   */
+  static constexpr double sm_peak_range_uncert_offset = 1.0;
+  static constexpr double sm_peak_range_uncert_par_scale = 0.1;
+
   
   mutable std::mutex m_aged_gammas_cache_mutex;
   /** When we are fitting the age of nuclides, performing the decay can take a significant amount of the time, so we'll cache results.
@@ -1225,6 +1629,19 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
    */
   mutable std::map<std::pair<const void *,float>,std::shared_ptr<const std::vector<NucInputGamma::EnergyYield>>> m_aged_gammas_cache;
   
+
+  /** The initial estimate of the area of each free peak.
+
+   This is used to multiple the free peak area paramater by to get the peak amplitude.
+   */
+  vector<double> m_free_peak_area_multiples;
+  
+  /** Tracks if a solution has been found yet or not (e.g., minimization is complete).
+   
+   Currently, only used to make sure we arent calling functions intended for use only after
+   an an intitial solution has been found (e.g., depends on covariance matrix).
+   */
+  bool m_solution_finished;
   
   /** Thread pool used to calculate the each ROI.
    
@@ -1309,6 +1726,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   m_peak_ranges_with_uncert{},
   m_aged_gammas_cache_mutex{},
   m_aged_gammas_cache{},
+  m_free_peak_area_multiples{},
+  m_solution_finished( false ),
   m_pool{ std::max(4u, std::thread::hardware_concurrency()) },
   m_cancel_calc( cancel_calc ),
   m_ncalls( 0 ),
@@ -1330,9 +1749,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     if( energy_ranges.empty() )
       throw runtime_error( "RelActAutoCostFcn: no energy ranges specified." );
     
-    m_nuclides.resize( options.rel_eff_curves.size() );
+    const size_t num_rel_eff_curves = options.rel_eff_curves.size();
+    m_nuclides.resize( num_rel_eff_curves );
     
-    for( size_t rel_eff_index = 0; rel_eff_index < options.rel_eff_curves.size(); ++rel_eff_index )
+    for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
     {
       const RelActCalcAuto::RelEffCurveInput &rel_eff_input = options.rel_eff_curves[rel_eff_index];
       const vector<RelActCalcAuto::NucInputInfo> &input_nuclides = rel_eff_input.nuclides;
@@ -1344,13 +1764,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
       for( const RelActCalcAuto::NucInputInfo &n : input_nuclides )
       {
-        if( !n.nuclide && !n.element && !n.reaction )
+        if( RelActCalcAuto::is_null(n.source) )
           throw runtime_error( "RelActAutoCostFcn: null Nuclide." );
       
         for( const NucInputGamma &pn : these_nuclides )
         {
-          if( (n.nuclide == pn.nuclide) && (n.element == pn.element) && (n.reaction == pn.reaction) )
-            throw runtime_error( "RelActAutoCostFcn: duplicate nuclide (" + n.name() + ")." );
+          if( (n.source == pn.source) )
+            throw runtime_error( "RelActAutoCostFcn: duplicate nuclide (" + RelActCalcAuto::to_name(n.source) + ")." );
         }
 
         these_nuclides.emplace_back( n, this );
@@ -1536,14 +1956,28 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       if( !in_a_range )
         throw runtime_error( "Free floating peak at " + std::to_string(peak.energy) + " is not in a ROI." );
+
+      assert( m_drf && m_drf->isValid() && m_drf->hasResolutionInfo() );
+      const double det_fwhm = m_drf->peakResolutionFWHM( peak.energy );
+      
+      double data_count = m_spectrum->gamma_integral(peak.energy - 0.5*det_fwhm, peak.energy + 0.5*det_fwhm);
+
+      // Enforce using a peak area estimate of least 1 count; the fit paramater will scale this, so its fine.
+      //  and we are only really concerned with really large peak areas for this scaling.
+      data_count = std::max( 0.76, data_count );
+      
+      // Assume data is entirely due to peak; mean +- 0.5*fwhm is ~76% gaussian are
+      m_free_peak_area_multiples.push_back( data_count / 0.76 );
     }//for( const auto &peak : m_options.floating_peaks )
     
+    assert( m_free_peak_area_multiples.size() == m_options.floating_peaks.size() );
     
     // TODO: Figure out a proper value to set m_rel_eff_anchor_enhancement to, like maybe largest peak area divided m_live_time, or something like that
     m_rel_eff_anchor_enhancement = 0.0;
     for( const auto &r : m_energy_ranges )
       m_rel_eff_anchor_enhancement += spectrum->gamma_integral( r.lower_energy, r.upper_energy );
-    
+    m_rel_eff_anchor_enhancement = (m_rel_eff_anchor_enhancement > 1.0) ? sqrt(m_rel_eff_anchor_enhancement) : 1.0;
+
     
     // Start assigning where we expect to see each 'type' of parameter in Ceres par vectr
     m_energy_cal_par_start_index = 0;
@@ -1652,25 +2086,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                                         std::shared_ptr<std::atomic_bool> cancel_calc
                                                         )
   {
-    /*
-    {//begin hack
-      cerr << "\n\n\nHACK to add in constraint\n\n\n" << endl;
-#warning "Hacking in Isotope constraint"
-      assert( options.rel_eff_curves.size() == 1 );
-      
-      const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-      RelActCalcAuto::RelEffCurveInput::ActRatioConstraint constraint
-        = RelActCalcAuto::RelEffCurveInput::ActRatioConstraint::from_mass_ratio( db->nuclide("Pu240"), db->nuclide("Pu239"), 0.1/0.9 );
-      options.rel_eff_curves[0].act_ratio_constraints.push_back( constraint );
-    }//end hack
-    */
-    
     const vector<RelActCalcAuto::RoiRange> &energy_ranges = options.rois;
     const vector<RelActCalcAuto::FloatingPeak> &extra_peaks = options.floating_peaks;
 
     const auto start_time = std::chrono::high_resolution_clock::now();
     
     const bool highres = PeakFitUtils::is_high_res( foreground );
+    
+    const size_t num_rel_eff_curves = options.rel_eff_curves.size();
     
     RelActCalcAuto::RelActAutoSolution solution;
     
@@ -1685,6 +2108,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     vector<float> channel_counts, channel_count_uncerts;
     vector<double> starting_fwhm_paramaters; //The initial FWHM parameters to use in the fit
 
+    // We'll track highest/lowest energy we'll use for FWHM function purposes, for when we use the Berstein
+    double lowest_fwhm_energy = 0.0, highest_fwhm_energy = 0.0;
+    
     try
     {
       solution.m_foreground       = foreground;
@@ -1697,8 +2123,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       solution.m_fwhm_form = options.fwhm_form;
       for( const auto &rel_eff_curve : options.rel_eff_curves )
         solution.m_rel_eff_forms.push_back( rel_eff_curve.rel_eff_eqn_type );
-    
-    
+
+      if( !foreground )
+        throw runtime_error( "Not valid foreground provided." );
+
+      if( (foreground->live_time() < 0.01) || (foreground->real_time() < 0.01) )
+        throw runtime_error( "Foreground must have non-zero live and real times." );
+
       const auto check_rel_eff_form = [&]( const RelActCalcAuto::RelEffCurveInput &rel_eff_curve ){
         switch( rel_eff_curve.rel_eff_eqn_type )
         {
@@ -1764,7 +2195,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         {
           const double fore_counts = (channel_counts[i] < 0.0f) ? 0.0 : channel_counts[i];
           const double back_counts = (background_counts[i] < 0.0f) ? 0.0f : background_counts[i];
-          const double uncert_2 = fore_counts*fore_counts + lt_sf*lt_sf*back_counts*back_counts;
+          const double uncert_2 = fore_counts + lt_sf*lt_sf*back_counts;
           const double sub_val = fore_counts - lt_sf*back_counts;
         
           channel_counts[i] = static_cast<float>( std::max(sub_val,0.0) );
@@ -1783,9 +2214,17 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const double live_time = spectrum->live_time();
     
       if( (!cancel_calc || !cancel_calc->load()) && all_peaks.empty() )
+      {
+        cout << "Will search for peaks: " << endl;
         all_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks( spectrum, nullptr, {}, false, highres );
+
+        for( const auto &p : all_peaks )
+          cout << "  auto peak: energy=" << p->mean() << ", fwhm=" << p->fwhm() << ", area=" << p->peakArea()
+          << ", lx=" << p->lowerX() << ", ux=" << p->upperX() << endl;
+      }
       solution.m_spectrum_peaks = all_peaks;
-    
+
+      /*
       vector<shared_ptr<const PeakDef>> peaks_in_rois;
       for( const shared_ptr<const PeakDef> &p : all_peaks )
       {
@@ -1798,26 +2237,44 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           }
         }//for( const RelActCalcAuto::RoiRange &range : energy_ranges )
       }//for( const shared_ptr<const PeakDef> &p : peaks_in_roi )
-    
+       */
+
       // Get the initial FWHM parameters to use in the fit
       try
       {
-        double lowest_energy = 10000.0, highest_energy = 0.0;
+        lowest_fwhm_energy = 10000.0;
+        highest_fwhm_energy = 0.0;
+        
         for( const RelActCalcAuto::RoiRange &r : options.rois )
         {
-          lowest_energy = std::min( lowest_energy, r.lower_energy );
-          highest_energy = std::max( highest_energy, r.upper_energy );
-        }
+          lowest_fwhm_energy = std::min( lowest_fwhm_energy, r.lower_energy );   //Unnecassary, but JIC
+          highest_fwhm_energy = std::max( highest_fwhm_energy, r.upper_energy ); //Unnecassary, but JIC
+
+          // We want to account for peaks outside of the ROI that will contribute to the ROI, as well as if the ROI
+          //  is allow to expand for peak width.
+          //  In the end, the range of FWHM on matters if we are using the Berstein polynomials, and even then it
+          //  doesnt matter a ton if we say its larger than we need - it should only ever-so-slightly reduce our
+          //  allowed variation of FWHM, for a given order.
+          const double aditional_factor = r.allow_expand_for_peak_width ? 2.0 : 1.5;
+          float min_sigma, max_sigma;
+          expected_peak_width_limits( static_cast<float>(r.lower_energy), highres, spectrum, min_sigma, max_sigma );
+          lowest_fwhm_energy = std::min( lowest_fwhm_energy, r.lower_energy - aditional_factor*DEFAULT_PEAK_HALF_WIDTH_SIGMA*max_sigma );
+          lowest_fwhm_energy = std::max( lowest_fwhm_energy, 10.0 );
+            
+          expected_peak_width_limits( static_cast<float>(r.upper_energy), highres, spectrum, min_sigma, max_sigma );
+          highest_fwhm_energy = std::max( highest_fwhm_energy, r.upper_energy + aditional_factor*DEFAULT_PEAK_HALF_WIDTH_SIGMA*max_sigma );
+          highest_fwhm_energy = std::min( highest_fwhm_energy, 10000.0 );
+        }//for( const RelActCalcAuto::RoiRange &r : options.rois )
           
         // This next call may return `input_drf` if its valid and has FWHM info,
         //  otherwise it will add FWHM estimate, or if it isnt valid at all, it will
         //  load a default efficiency function
         solution.m_drf = get_fwhm_coefficients( options.fwhm_form, options.fwhm_estimation_method, all_peaks,
-                                              highres, lowest_energy, highest_energy, input_drf,
+                                              highres, lowest_fwhm_energy, highest_fwhm_energy, input_drf,
                                               starting_fwhm_paramaters, solution.m_warnings );
       }catch( std::exception &e )
       {
-        throw runtime_error( std::format("Failed to get initial FWHM: {}.", e.what()) );
+        throw runtime_error( "Failed to get initial FWHM: " + string(e.what()) + "." );
       }//try / catch (getting initial FWHM parameters)
 
       assert( solution.m_drf  && solution.m_drf->isValid() && solution.m_drf->hasResolutionInfo() );
@@ -1826,18 +2283,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       auto check_pu_corr_method = [&]( const RelActCalcAuto::RelEffCurveInput &rel_eff_curve ){
         const vector<RelActCalcAuto::NucInputInfo> &nuclides = rel_eff_curve.nuclides;
       
-        // Make a lamda that returns the mass-number of Plutonium nuclides; or if Am241 is present,
-        //  will insert 241
+        // Make a lamda that returns the mass-number of Plu nuclides
         auto pu_iso_present = [&]() -> set<short> {
           set<short> answer;
           for( const RelActCalcAuto::NucInputInfo &nuc : nuclides )
           {
-            if( nuc.nuclide
-               && ((nuc.nuclide->atomicNumber == 94)
-                   || ((nuc.nuclide->atomicNumber == 95) && (nuc.nuclide->massNumber == 241) ) ) )
-            {
-              answer.insert(nuc.nuclide->massNumber);
-            }
+            const SandiaDecay::Nuclide * const nuc_nuclide = RelActCalcAuto::nuclide(nuc.source);
+            if( nuc_nuclide && (nuc_nuclide->atomicNumber == 94) )
+              answer.insert(nuc_nuclide->massNumber);
           }//for( loop over input nucldies )
         
           return answer;
@@ -1857,7 +2310,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             
             if( !punucs.count(238) || !punucs.count(239) || !punucs.count(240) )
             {
-              string msg = "Pu242 correction method of Bignan95 was specified, but problem did not"
+              string msg = "Pu242 correlation method of Bignan95 was specified, but problem did not"
               " contain";
               if( !punucs.count(238) )
                 msg += " Pu238";
@@ -1884,7 +2337,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             
             if( !punucs.count(239) || (punucs.size() < 2) )
             {
-              string msg = "Pu242 correction method  using Pu239-only was specified, but problem did"
+              string msg = "Pu242 correlation method  using Pu239-only was specified, but problem did"
               " not contain";
               
               if( punucs.count(239) )
@@ -1947,12 +2400,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }//try / catch
   
     
+    solution.m_cost_functor = cost_functor;
     solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::FailToSolveProblem;
     solution.m_drf = cost_functor->m_drf;
     solution.m_spectrum = make_shared<SpecUtils::Measurement>( *spectrum );
     
     solution.m_final_roi_ranges.clear();
-    for( const RoiRangeChannels &roi : cost_functor->m_energy_ranges )
+    for( const RelActCalcAutoImp::RoiRangeChannels &roi : cost_functor->m_energy_ranges )
       solution.m_final_roi_ranges.push_back( roi );
 
     // `cost_functor` hasnt had `m_peak_ranges_with_uncert` initialized yet, which we cant do
@@ -1970,7 +2424,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 #if( PEAK_SKEW_HACK == 2 )
     vector<int> initial_const_parameters;
 #endif
-    
+
+    // If we are fitting the Physical model with a Hoerl function, we will do the first fit without the Hoerl,
+    //  but after the initial fit, we will want to restore some parameters back to inital values
+    vector<pair<int,double>> initial_par_vals_to_restore_after_initial_fit;
+
     assert( cost_functor->m_energy_cal && cost_functor->m_energy_cal->valid() );
     for( size_t i = 0; i < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars; ++i )
       parameters[i] = RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset;
@@ -2005,7 +2463,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const double highest_energy = cost_functor->m_energy_ranges.back().upper_energy;
       
       // Completely arbitrary
-      if( ((lowest_energy < 200) && (highest_energy > 600))
+      if( ((lowest_energy < 250) && (highest_energy > 650))
          || ((lowest_energy < 120) && (highest_energy > 250)) )
       {
         solution.m_fit_energy_cal[0] = true;
@@ -2118,10 +2576,146 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         if( options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToAllPeaksInSpectrum )
           constant_parameters.push_back( static_cast<int>(par_index) );
       }
+      
+      
+      // Set bounds for Berstein coefficients based on expected peak width limits
+      switch( options.fwhm_form )
+      {
+        case RelActCalcAuto::FwhmForm::Berstein_2:
+        case RelActCalcAuto::FwhmForm::Berstein_3:
+        case RelActCalcAuto::FwhmForm::Berstein_4:
+        case RelActCalcAuto::FwhmForm::Berstein_5:
+        case RelActCalcAuto::FwhmForm::Berstein_6:
+        {
+          assert( highest_fwhm_energy > lowest_fwhm_energy );
+          if( highest_fwhm_energy < lowest_fwhm_energy )
+            throw std::logic_error( "Failed to set highest_energy, lowest_fwhm_energy..." );
+          
+          const size_t num_berstein_coeffs = starting_fwhm_paramaters.size() - 2;
+          
+          // Get min/max FWHM values from expected peak width limits
+          float min_fwhm_keV = std::numeric_limits<float>::max();
+          float max_fwhm_keV = std::numeric_limits<float>::lowest();
+          
+          // Sample a few energies across the range to get bounds
+          const double energy_step = (highest_fwhm_energy - lowest_fwhm_energy) / 10.0;
+          for( double energy = lowest_fwhm_energy; energy <= highest_fwhm_energy; energy += energy_step )
+          {
+            float min_sigma, max_sigma;
+            expected_peak_width_limits( static_cast<float>(energy), highres, spectrum, min_sigma, max_sigma );
+            
+            const float min_fwhm = min_sigma * 2.35482f; // Convert sigma to FWHM
+            const float max_fwhm = max_sigma * 2.35482f;
+            
+            min_fwhm_keV = std::min( min_fwhm_keV, min_fwhm );
+            max_fwhm_keV = std::max( max_fwhm_keV, max_fwhm );
+          }
+          
+          // For high-res detectors, set lower bound to 1.5 times mean channel width
+          if( highres )
+          {
+            const size_t lower_channel = spectrum->find_gamma_channel( lowest_fwhm_energy );
+            const size_t upper_channel = spectrum->find_gamma_channel( highest_fwhm_energy );
+            const double mean_channel_width = (highest_fwhm_energy - lowest_fwhm_energy) / (upper_channel - lower_channel + 1);
+            min_fwhm_keV = std::min( min_fwhm_keV, static_cast<float>(1.5 * mean_channel_width) );
+          }else
+          {
+            // For other detectors, ensure bounds are at least 1.5 and 0.5 times values found in all_peaks
+            if( !all_peaks.empty() )
+            {
+              float min_peak_fwhm = std::numeric_limits<float>::max();
+              float max_peak_fwhm = std::numeric_limits<float>::lowest();
+              
+              for( const auto &peak : all_peaks )
+              {
+                const float fwhm = peak->fwhm();
+                min_peak_fwhm = std::min( min_peak_fwhm, fwhm );
+                max_peak_fwhm = std::max( max_peak_fwhm, fwhm );
+              }
+              
+              min_fwhm_keV = std::min( min_fwhm_keV, 0.5f * min_peak_fwhm );
+              max_fwhm_keV = std::max( max_fwhm_keV, 1.5f * max_peak_fwhm );
+            }
+          }
+          
+          // Set bounds for each Berstein coefficient - setting all these coeffiecients bounds
+          //  ensures the equation never goes outside of this range.
+          //  Note: `fwhm = sqrt( sum over Berstein terms )`, so we need to square things.
+          for( size_t i = 0; i < num_berstein_coeffs; ++i )
+          {
+            const size_t par_index = cost_functor->m_fwhm_par_start_index + i;
+            lower_bounds[par_index] = static_cast<double>(min_fwhm_keV * min_fwhm_keV);
+            upper_bounds[par_index] = static_cast<double>(max_fwhm_keV * max_fwhm_keV);
+            
+            if( parameters[par_index] < lower_bounds[par_index].value() )
+            {
+              const string msg = "Initial FWHM parameter " + std::to_string(i) + " value ("
+              + std::to_string(parameters[par_index])
+              + ") is less than expected lower range (" + std::to_string(lower_bounds[par_index].value())
+              + ") - will bring up to lower range.";
+              cerr << endl << msg << endl << endl;
+              solution.m_warnings.push_back( msg );
+            }
+            
+            if( parameters[par_index] > upper_bounds[par_index].value() )
+            {
+              const string msg = "Initial FWHM parameter "+ std::to_string(i) + " value ("
+              + std::to_string(parameters[par_index])
+              + ") is more than expected upper range (" + std::to_string(upper_bounds[par_index].value())
+              + ") - will bring down to upper range.";
+              cerr << endl << msg << endl << endl;
+              solution.m_warnings.push_back( msg );
+            }//if( parameters[par_index] > upper_bounds[par_index].value() )
+            
+            parameters[par_index] = std::max( parameters[par_index], lower_bounds[par_index].value() );
+            parameters[par_index] = std::min( parameters[par_index], upper_bounds[par_index].value() );
+          }//for( size_t i = 0; i < num_berstein_coeffs; ++i )
+           
+          // For Berstein forms, mark the min/max energy parameters as constant (if not already marked)
+          const int min_energy_par_index = static_cast<int>( cost_functor->m_fwhm_par_start_index + num_berstein_coeffs );
+          const int max_energy_par_index = min_energy_par_index + 1;
+          parameters[min_energy_par_index] = lowest_fwhm_energy;
+          parameters[max_energy_par_index] = highest_fwhm_energy;
+          
+          assert( starting_fwhm_paramaters[starting_fwhm_paramaters.size() - 2] == lowest_fwhm_energy );
+          assert( starting_fwhm_paramaters[starting_fwhm_paramaters.size() - 1] == highest_fwhm_energy );
+          
+          if( std::find( begin(constant_parameters), end(constant_parameters), min_energy_par_index ) == end(constant_parameters) )
+            constant_parameters.push_back( min_energy_par_index );
+          if( std::find( begin(constant_parameters), end(constant_parameters), max_energy_par_index ) == end(constant_parameters) )
+            constant_parameters.push_back( max_energy_par_index );
+          
+          break;
+        }//case Berstein
+          
+        default:
+          break;
+      }//switch( options.fwhm_form )
+
+      // We may have two peaks really close together (like ~1.5 sigma or less - sometimes caused by peak skew), that
+      // become hard to correctly assign gammas to, and then end up with a with like a large peak with a tiny BR.
+      // So we will combine close-together peaks, before picking out what peaks we want to use, or assigning gammas
+      vector<RelActCalcManual::GenericPeakInfo> all_generic_peaks;
+      for( const shared_ptr<const PeakDef> &p : all_peaks )
+      {
+        RelActCalcManual::GenericPeakInfo peak;
+        peak.m_energy = p->mean();
+        peak.m_mean = peak.m_energy;
+        peak.m_fwhm = p->gausPeak() ? p->fwhm() : (2.35482 * 0.25 * p->roiWidth());
+        peak.m_counts = p->amplitude();
+        peak.m_counts_uncert = p->amplitudeUncert();
+        peak.m_base_rel_eff_uncert = 0.1; //TODO: do we want this?
+        all_generic_peaks.push_back( peak );
+      }//for( const shared_ptr<const PeakDef> &p : all_peaks )
+
+      // Combine nearby peaks, until there is no more to combine.
+      for( size_t num_times = 0, num_change = 1; (num_times < 10) && (num_change > 0); ++num_times )
+        num_change = combine_nearby_peaks( all_generic_peaks );
 
       // Filter peaks to those in ranges we want
       vector<RelActCalcManual::GenericPeakInfo> peaks_in_range;
-      vector<std::shared_ptr<const PeakDef> > debug_manual_display_peaks;
+      //vector<std::shared_ptr<const PeakDef> > debug_manual_display_peaks;
+
       for( const shared_ptr<const PeakDef> &p : all_peaks )
       {
         bool use_peak = energy_ranges.empty();
@@ -2133,34 +2727,89 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         
         if( use_peak )
         {
-          RelActCalcManual::GenericPeakInfo peak;
-          peak.m_energy = p->mean();
-          peak.m_mean = peak.m_energy;
-          peak.m_fwhm = p->gausPeak() ? p->fwhm() : (2.35482 * 0.25 * p->roiWidth());
-          peak.m_counts = p->amplitude();
-          peak.m_counts_uncert = p->amplitudeUncert();
-          peak.m_base_rel_eff_uncert = 0.1; //TODO: do we want this?
-          peaks_in_range.push_back( peak );
+          //debug_manual_display_peaks.push_back( p );
+          //We'll make sure peaks wont have duplicate energies, so `add_nuclides_to_peaks(...)` wont throw exception.
+          const auto pos = find_if( begin(peaks_in_range), end(peaks_in_range), [&p]( const RelActCalcManual::GenericPeakInfo &other_p ){
+            return (p->mean() == other_p.m_energy);
+          } );
           
-          debug_manual_display_peaks.push_back( p );
+          if( pos != end(peaks_in_range) )
+          {
+            //This can happen if we have a duplicate peak with exactly the same energies
+            pos->m_counts += p->amplitude();
+            pos->m_counts_uncert = sqrt( pos->m_counts_uncert*pos->m_counts_uncert + p->amplitudeUncert()*p->amplitudeUncert());
+          }else
+          {
+            RelActCalcManual::GenericPeakInfo peak;
+            peak.m_energy = p->mean();
+            peak.m_mean = peak.m_energy;
+            peak.m_fwhm = p->gausPeak() ? p->fwhm() : (2.35482 * 0.25 * p->roiWidth());
+            peak.m_counts = p->amplitude();
+            peak.m_counts_uncert = p->amplitudeUncert();
+            peak.m_base_rel_eff_uncert = 0.1; //TODO: do we want this?
+            peaks_in_range.push_back( peak );
+          }
         }//if( use_peak )
       }//for( const shared_ptr<const PeakDef> &p : all_peaks )
-      
+
       const double real_time = (foreground && (foreground->real_time() > 0))
                                  ? foreground->real_time() : -1.0f;
 
-      assert( cost_functor->m_nuclides.size() == options.rel_eff_curves.size() );
-      if( cost_functor->m_nuclides.size() != options.rel_eff_curves.size() )
+      assert( cost_functor->m_nuclides.size() == num_rel_eff_curves );
+      if( cost_functor->m_nuclides.size() != num_rel_eff_curves )
         throw logic_error( "Number of nuclides in cost functor does not match number of relative efficiency curves." );
 
-      // Loop over each relative efficiency curve and estimate the starting parameters for the "auto" fit
+
+      // We will next loop over each relative efficiency curve and estimate the starting parameters for the "auto" fit
       //  by doing a rough/course/poor manual fit.
-      const RelActCalcAuto::RelEffCurveInput *first_phys_model_curve = nullptr; //We'll track this for sharing external shielding and Hoerl function, if the user has selected it
-      size_t first_phys_model_par_start = std::numeric_limits<size_t>::max();
-      size_t num_re_nucs_seen = 0, num_re_curve_pars_seen = 0; // To help us keep track of rel eff and act/age index in parameters vector
-      for( size_t re_eff_index = 0; re_eff_index < options.rel_eff_curves.size(); ++re_eff_index )
+      //
+      //  However, because some Physical model curves may shield others, we may need to evaluate the "outer"
+      //  curves first.  So we
+
+
+      // The Physical curves may share Hoerl and/or external shielding; the first Physical curve in
+      //   options.rel_eff_curves defines these shared things, so we will find them now (we need to do
+      //   this now, because we will
+      const RelActCalcAuto::RelEffCurveInput *first_phys_model_curve = nullptr;
+      size_t first_phys_model_par_start = numeric_limits<size_t>::max();
+
+      for( size_t re_eff_index = 0; re_eff_index < num_rel_eff_curves; ++re_eff_index )
       {
-        const double base_rel_eff_uncert = 1.0;
+        const auto &rel_eff_curve = options.rel_eff_curves[re_eff_index];
+        if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+        {
+          first_phys_model_curve = &(rel_eff_curve);
+          first_phys_model_par_start = cost_functor->rel_eff_eqn_start_parameter(re_eff_index);
+          break;
+        }
+      }//for( size_t re_eff_index = 0; re_eff_index < num_rel_eff_curves; ++re_eff_index )
+
+      // If a physical curve is shielded by other physical curves, we want to evaluate the outer curves first, so we can
+      //  use the computed thickenses for the inner curves.  So here we'll figure out this order
+      deque<size_t> rel_eff_indices;
+      for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
+      {
+        const auto index_pos = std::find( begin(rel_eff_indices), end(rel_eff_indices), rel_eff_index );
+        if( index_pos == end(rel_eff_indices) )
+          rel_eff_indices.push_back( rel_eff_index );
+
+        const auto &rel_eff_curve = options.rel_eff_curves[rel_eff_index];
+        if( rel_eff_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+          continue;
+
+        for( const size_t shielding_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
+        {
+          const auto shield_index_pos = std::find( begin(rel_eff_indices), end(rel_eff_indices), shielding_index );
+          if( shield_index_pos == end(rel_eff_indices) )
+            rel_eff_indices.push_front( shielding_index );
+        }
+      }//for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
+
+      assert( rel_eff_indices.size() == num_rel_eff_curves );
+
+      for( size_t re_eff_index_index = 0; re_eff_index_index < rel_eff_indices.size(); ++re_eff_index_index )
+      {
+        const size_t re_eff_index = rel_eff_indices[re_eff_index_index];
         
         const auto &rel_eff_curve = options.rel_eff_curves[re_eff_index];
         //assert( (rel_eff_curve.rel_eff_eqn_order != 0)
@@ -2171,7 +2820,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         const bool correct_for_decay = false;
         
         const size_t this_rel_eff_start = cost_functor->rel_eff_eqn_start_parameter(re_eff_index);
-        assert( this_rel_eff_start == (cost_functor->m_rel_eff_par_start_index + num_re_curve_pars_seen) );
         
         const std::vector<NucInputGamma> &nucs = cost_functor->m_nuclides[re_eff_index];
         
@@ -2235,14 +2883,15 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               const size_t b_index = this_rel_eff_start + 2 + 2*rel_eff_curve.phys_model_external_atten.size();
               const size_t c_index = b_index + 1;
               
-              pars[b_index] = 0.0;  //(energy/1000)^b - start b at 0, so term is 1.0
-              pars[c_index] = 1.0;  //c^(1000/energy) - start c at 1, so term is 1
-              if( !rel_eff_curve.phys_model_use_hoerl || (options.same_hoerl_for_all_rel_eff_curves && first_phys_model_curve) )
+              pars[b_index] = (0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;  //(energy/1000)^b - start b at 0, so term is 1.0
+              pars[c_index] = (1.0/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;  //c^(1000/energy) - start c at 1, so term is 1
+              if( !rel_eff_curve.phys_model_use_hoerl
+                 || (options.same_hoerl_for_all_rel_eff_curves && (first_phys_model_curve != &(rel_eff_curve))) )
               {
                 constant_parameters.push_back( static_cast<int>(b_index) );
                 constant_parameters.push_back( static_cast<int>(c_index) );
                 
-                if( options.same_hoerl_for_all_rel_eff_curves && first_phys_model_curve )
+                if( options.same_hoerl_for_all_rel_eff_curves && (first_phys_model_curve != &(rel_eff_curve)) )
                 {
                   // This is just so we can assert on the values later, as a double check
                   pars[b_index] = -1.0;
@@ -2250,16 +2899,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 }
               }else
               {
-                lower_bounds[b_index] = 0.0;
-                upper_bounds[b_index] = 2.0;
-                lower_bounds[c_index] = 1.0E-6;  //e.x, pow(-0.1889,1000/124.8) is NaN
-                upper_bounds[c_index] = 3.0;
-              }
-
-              if( !first_phys_model_curve )
-              {
-                first_phys_model_curve = &rel_eff_curve;
-                first_phys_model_par_start = this_rel_eff_start;
+                lower_bounds[b_index] = (0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
+                upper_bounds[b_index] = (2.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
+                lower_bounds[c_index] = (1.0E-6/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;  //e.x, pow(-0.1889,1000/124.8) is NaN
+                upper_bounds[c_index] = (3.0/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;
               }
 
               break;
@@ -2272,9 +2915,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           for( const RelActCalcAuto::NucInputInfo &info : nucs )
           {
             RelActCalcManual::SandiaDecayNuc nucinfo;
-            nucinfo.nuclide = info.nuclide;
-            nucinfo.element = info.element;
-            nucinfo.reaction = info.reaction;
+            nucinfo.nuclide = RelActCalcAuto::nuclide(info.source);
+            nucinfo.element = RelActCalcAuto::element(info.source);
+            nucinfo.reaction = RelActCalcAuto::reaction(info.source);
             nucinfo.age = info.age;
             nucinfo.correct_for_decay_during_meas = correct_for_decay;
             nuc_sources.push_back( nucinfo );
@@ -2287,7 +2930,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           
           
           vector<RelActCalcManual::GenericPeakInfo> peaks_with_sources;
-          for( const auto &p : peaks_with_nucs )
+          for( const RelActCalcManual::GenericPeakInfo &p : peaks_with_nucs )
           {
             bool is_floater_peak = false;
             // TODO: - Need to deal with extra floater peaks in getting the initial "manual" solution
@@ -2302,7 +2945,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             
             
             if( !is_floater_peak && !p.m_source_gammas.empty() )
+            {
+              cout << "Peak at {" << p.m_energy << ", " << p.m_fwhm << ", " << p.m_counts << "} keV has sources: ";
+              for( const auto s : p.m_source_gammas )
+                cout << "{" << s.m_isotope << ", " << s.m_yield << "}, ";
+              cout << endl;
               peaks_with_sources.push_back( p );
+            }
           }//for( const auto &p : peaks_with_nucs )
           
           
@@ -2345,13 +2994,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                         && manual_input.phys_model_use_hoerl
                                         && (first_phys_model_curve != (&rel_eff_curve)));
 
-
           if( use_first_ext_shield )
           {
             for( size_t i = 0; i < manual_input.phys_model_external_attens.size(); ++i )
             {
-              //assert( 0 ); // this has not been checked as of 20250317
-
               const size_t ext_att_index = first_phys_model_par_start + 2 + 2*i;
               const shared_ptr<const RelActCalc::PhysicalModelShieldInput> orig_ext_att = manual_input.phys_model_external_attens[i];
               assert( orig_ext_att );
@@ -2364,17 +3010,101 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               
               manual_input.phys_model_external_attens[i] = updated_ext_att;
             }
-          }//if( use_first_ext_shield )
-          
+          }else if( !rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty() )
+          {
+            for( const size_t outer_curve_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
+            {
+              assert( outer_curve_index < options.rel_eff_curves.size() );
+              const RelActCalcAuto::RelEffCurveInput &outer_curve = options.rel_eff_curves[outer_curve_index];
+
+              assert( outer_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel );
+              if( outer_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+                continue;
+
+              // For only two curves, with one shielding the other, we should be totally fine, but for more complex
+              //  dependencies there could be an issue that we arent evaluating things in the correct order; this is
+              //  fixable, but since it is such an edge case, we'll just put in a warning for now.
+              bool has_been_computed = false;
+
+              for( size_t index = 0; index < re_eff_index_index; ++index )
+                has_been_computed |= (rel_eff_indices[index] == outer_curve_index);
+
+              if( !has_been_computed )
+              {
+                // if all parameters are fixed for `outer_curve_index` shielding, then we will consider it computed
+                has_been_computed = true;
+                if( outer_curve.phys_model_self_atten )
+                  has_been_computed = (!outer_curve.phys_model_self_atten->fit_atomic_number
+                                        && !outer_curve.phys_model_self_atten->fit_areal_density);
+                for( size_t ext_shield_index = 0;
+                    has_been_computed && (ext_shield_index < outer_curve.phys_model_external_atten.size());
+                    ++ext_shield_index )
+                {
+                  const auto &ext_shield_ptr = outer_curve.phys_model_external_atten[ext_shield_index];
+                  assert( ext_shield_ptr );
+                  if( ext_shield_ptr )
+                    has_been_computed = (!ext_shield_ptr->fit_atomic_number && !ext_shield_ptr->fit_areal_density);
+                }
+              }//if( !has_been_computed )
+
+              if( !has_been_computed )
+              {
+                solution.m_warnings.push_back( "For starting parameter estimates, not having some curves be shielded, "
+                                              "as intended, by other curves, due to order-of-operations issues" );
+                continue;
+              }
+
+              const size_t outer_shield_start_index = cost_functor->rel_eff_eqn_start_parameter(outer_curve_index);
+              if( outer_curve.phys_model_self_atten )
+              {
+                shared_ptr<RelActCalc::PhysicalModelShieldInput> input
+                      = make_shared<RelActCalc::PhysicalModelShieldInput>( *outer_curve.phys_model_self_atten );
+
+                if( !input->material && input->fit_atomic_number )
+                  input->atomic_number = parameters[outer_shield_start_index + 0] * RelActCalc::ns_an_ceres_mult;
+                if( input->fit_areal_density)
+                  input->areal_density = parameters[outer_shield_start_index + 1] * PhysicalUnits::g_per_cm2;
+
+                input->fit_areal_density = false;
+                input->fit_atomic_number = false;
+
+                manual_input.phys_model_external_attens.push_back( input );
+              }//if( outer_curve.phys_model_self_atten )
+
+              for( size_t ext_index = 0; ext_index < outer_curve.phys_model_external_atten.size(); ++ext_index )
+              {
+                const auto &ext_shield = outer_curve.phys_model_external_atten[ext_index];
+                assert( ext_shield );
+                if( !ext_shield )
+                  continue;
+
+                shared_ptr<RelActCalc::PhysicalModelShieldInput> input
+                                       = make_shared<RelActCalc::PhysicalModelShieldInput>( *ext_shield );
+
+                const size_t an_index = outer_shield_start_index + 2 + 2*ext_index;
+
+                if( !input->material && input->fit_atomic_number )
+                  input->atomic_number = parameters[an_index + 0] * RelActCalc::ns_an_ceres_mult;
+                if( input->fit_areal_density)
+                  input->areal_density = parameters[an_index + 1] * PhysicalUnits::g_per_cm2;
+
+                input->fit_areal_density = false;
+                input->fit_atomic_number = false;
+
+                manual_input.phys_model_external_attens.push_back( input );
+              }//
+            }//for( const size_t other_curve_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
+          }//if( use_first_ext_shield ) / else is shielded by other curves
+
           for( const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &constraint : rel_eff_curve.act_ratio_constraints )
           {
             RelActCalcManual::ManualActRatioConstraint manual_constraint;
-            assert( constraint.constrained_nuclide && constraint.controlling_nuclide );
-            if( !constraint.constrained_nuclide || !constraint.controlling_nuclide )
+            assert( !RelActCalcAuto::is_null(constraint.constrained_source) && !RelActCalcAuto::is_null(constraint.controlling_source) );
+            if( RelActCalcAuto::is_null(constraint.constrained_source) || RelActCalcAuto::is_null(constraint.controlling_source) )
               throw runtime_error( "Invalid nuclide in activity ratio constraint" );
             
-            manual_constraint.m_constrained_nuclide = constraint.constrained_nuclide->symbol;
-            manual_constraint.m_controlling_nuclide = constraint.controlling_nuclide->symbol;
+            manual_constraint.m_constrained_nuclide = RelActCalcAuto::to_name(constraint.constrained_source);
+            manual_constraint.m_controlling_nuclide = RelActCalcAuto::to_name(constraint.controlling_source);
             manual_constraint.m_constrained_to_controlled_activity_ratio = constraint.constrained_to_controlled_activity_ratio;
             manual_input.act_ratio_constraints.push_back( manual_constraint );
           }
@@ -2386,6 +3116,24 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             //       way to contrain the Hoerl parameters yet).
           }//if( use_first_hoerl )
 
+          for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint : rel_eff_curve.mass_fraction_constraints )
+          {
+            // Manual mass fraction constraints only accept a single fixed mass fraction for an isotope.
+            RelActCalcManual::MassFractionConstraint manual_constraint;
+            manual_constraint.m_nuclide = RelActCalcAuto::to_name(constraint.nuclide);
+            manual_constraint.m_mass_fraction_lower = constraint.lower_mass_fraction;
+            manual_constraint.m_mass_fraction_upper = constraint.upper_mass_fraction;
+
+            for( const RelActCalcAuto::NucInputInfo &nuc : rel_eff_curve.nuclides )
+            {
+              const SandiaDecay::Nuclide * const nuc_nuclide = RelActCalcAuto::nuclide(nuc.source);
+              if( nuc_nuclide && (nuc_nuclide->atomicNumber == constraint.nuclide->atomicNumber) )
+                manual_constraint.m_specific_activities[nuc_nuclide->symbol] = nuc_nuclide->activityPerGram();
+            }
+
+            manual_input.mass_fraction_constraints.push_back( manual_constraint );
+          }//for( const MassFractionConstraint &constraint : rel_eff_curve.mass_fraction_constraints )
+
           RelActCalcManual::RelEffSolution manual_solution
                                = RelActCalcManual::solve_relative_efficiency( manual_input );
           
@@ -2394,8 +3142,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                           " efficiency equation order had to be reduced for initial"
                                           " estimate of relative efficiencies and activities." );
           
-          const string re_id_str =  (options.rel_eff_curves.size() > 1) ? ("RE_" + std::to_string(re_eff_index)) : string("");
-          cout << "Initial manual " << re_id_str << " estimate:" << endl;
+          const string re_id_str =  (num_rel_eff_curves > 1) ? ("RE_" + std::to_string(re_eff_index)) : string("");
+          cout << "Initial manual '" << re_id_str << "' estimate:" << endl;
           manual_solution.print_summary( cout );
           
           //ofstream debug_manual_html( "/Users/wcjohns/rad_ana/InterSpec_RelAct/RelActTest/initial_manual" + re_id_str + "_estimate.html" );
@@ -2438,16 +3186,47 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             size_t manual_index = 0;
             if( rel_eff_curve.phys_model_self_atten )
             {
-              if( rel_eff_curve.phys_model_self_atten->fit_atomic_number )
+              const RelActCalc::PhysicalModelShieldInput &self_atten = *rel_eff_curve.phys_model_self_atten;
+
+              if( self_atten.fit_atomic_number )
               {
                 assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
                 parameters[this_rel_eff_start + 0] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index); //Atomic number; note both manual and auto RelEff use RelActCalc::ns_an_ceres_mult
                 manual_index += 1;
               }
-              
+
+              const int ad_index = static_cast<int>( this_rel_eff_start + 1 );
+
               assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
-              parameters[this_rel_eff_start + 1] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index); //Areal density; both manual and auto RelEff use g/cm2
-              
+              parameters[ad_index] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index); //Areal density; both manual and auto RelEff use g/cm2
+
+              if( self_atten.fit_areal_density )
+              {
+                if( parameters[ad_index]  < 0.25 )
+                {
+                  double lower_ad = self_atten.lower_fit_areal_density / PhysicalUnits::g_per_cm2;
+                  double upper_ad = self_atten.upper_fit_areal_density / PhysicalUnits::g_per_cm2;
+
+                  if( (lower_ad == upper_ad) && (lower_ad == 0.0) )
+                  {
+                    lower_ad = 0.0;
+                    upper_ad = RelActCalc::PhysicalModelShieldInput::sm_upper_allowed_areal_density_in_g_per_cm2;
+                  }
+
+                  //TODO: add and use the following variables for both Auto and Manual solutions
+                  //const double RelActCalc::ns_ad_ceres_offset = 1.0;
+                  //const double RelActCalc::ns_ad_ceres_multiple = 0.5;
+
+                  const double reasonable_starting_ad = 2.5; //pretty arbitrary - just something away from zero
+                  const double mid_allowed_ad = 0.5*(lower_ad + upper_ad);
+                  const double starting_ad = std::max( std::min(mid_allowed_ad, reasonable_starting_ad), lower_ad );
+
+                  parameters[ad_index] = starting_ad;
+                }
+
+                initial_par_vals_to_restore_after_initial_fit.emplace_back( ad_index, parameters[ad_index] );
+              }//if( rel_eff_curve.phys_model_self_atten->fit_areal_density )
+
               manual_index += 1;
             }//if( options.phys_model_self_atten )
 
@@ -2474,7 +3253,40 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               }
                 
               assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
-              parameters[this_rel_eff_start + 2 + 2*i + 1] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
+              const int ad_par_index = static_cast<int>( this_rel_eff_start + 2 + 2*i + 1 );
+              double ad_par = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
+
+              if( ext_att->fit_areal_density )
+              {
+                if( ad_par  < 0.25 )
+                {
+                  double lower_ad = ext_att->lower_fit_areal_density / PhysicalUnits::g_per_cm2;
+                  double upper_ad = ext_att->upper_fit_areal_density / PhysicalUnits::g_per_cm2;
+
+                  if( (lower_ad == upper_ad) && (lower_ad == 0.0) )
+                  {
+                    lower_ad = 0.0;
+                    upper_ad = RelActCalc::PhysicalModelShieldInput::sm_upper_allowed_areal_density_in_g_per_cm2;
+                  }
+
+                  //TODO: add and use the following variables for both Auto and Manual solutions
+                  //const double RelActCalc::ns_ad_ceres_offset = 1.0;
+                  //const double RelActCalc::ns_ad_ceres_multiple = 0.5;
+
+                  const double reasonable_starting_ad = 1.0; //pretty arbitrary - just something away from zero
+                  const double mid_allowed_ad = 0.5*(lower_ad + upper_ad);
+                  const double starting_ad = std::max( std::min(mid_allowed_ad, reasonable_starting_ad), lower_ad );
+
+                  ad_par = starting_ad;
+                }
+
+                // For an example problem, it looks like we dont want to go back to starting paramters after initial fit
+                //if( rel_eff_curve.phys_model_self_atten && rel_eff_curve.phys_model_self_atten->fit_areal_density )
+                  //initial_par_vals_to_restore_after_initial_fit.emplace_back( ad_par_index, ad_par );
+              }//if( ext_att->fit_areal_density )
+
+              parameters[ad_par_index] = ad_par;
+
               manual_index += 1;
             }//for( loop over options.phys_model_external_atten )
               
@@ -2492,11 +3304,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               }else
               {
                 assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
-                parameters[b_index] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
+                const double b_par_val = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
+                parameters[b_index] = b_par_val;
                 manual_index += 1;
                 
                 assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
-                parameters[c_index] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
+                const double c_par_val = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
+                parameters[c_index] = c_par_val;
                 manual_index += 1;
               }
             }else
@@ -2507,8 +3321,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 assert( parameters[c_index] == -1.0 );
               }else
               {
-                pars[b_index] = 0.0;  //(energy/1000)^b
-                pars[c_index] = 1.0;  //c^(1000/energy)
+                parameters[b_index] = (0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;  //(energy/1000)^b
+                parameters[c_index] = (1.0/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;  //c^(1000/energy)
               }
             }//if( manual_input.phys_model_use_hoerl ) / else
           }//if( no Physical Model ) / else
@@ -2519,54 +3333,131 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           for( size_t nuc_num = 0; nuc_num < rel_eff_curve.nuclides.size(); ++nuc_num )
           {
             const RelActCalcAuto::NucInputInfo &nuc = rel_eff_curve.nuclides[nuc_num];
-            const size_t act_index = cost_functor->nuclide_parameter_index(nuc, re_eff_index);
+            const size_t act_index = cost_functor->nuclide_parameter_index(nuc.source, re_eff_index);
             double rel_act = manual_solution.relative_activity( nuc.name() ) / live_time;
+
+            // If the rel_act has an uncertainty approaching 100%, we may get totally wild starting values of activity,
+            //  so we'll arbitrarily use an initial guess of 1, which may be well-off
+            try
+            {
+              const double rel_act_uncert = manual_solution.relative_activity_uncertainty( nuc.name() )  / live_time;
+              if( rel_act_uncert > 0.75*rel_act ) //A value of 0.75 is totally arbitrary
+              {
+                rel_act = 10.0;
+
+                // TODO: we could look through `peaks_with_sources` for the peak with the largest BR for `nuc`, attribute
+                //       that peak to this nuc 100%, and assume a RE of 1.0, then estimate the RelAct from that.
+              }
+            }catch( std::exception &e )
+            {
+
+            }//try / catch check on rel act uncertainty having reasonable confidence range.
+
+            // Its pretty arbitrary, the smallest relative activity I've encountered, using "log(x)" equation, is 0.025,
+            //  for a very low-background, long-duration count - so we'll make sure the starting activity isnt really
+            //  close to zero.
+            if( IsInf(rel_act) || IsNan(rel_act) || (rel_act < 1.0E-2) )
+              rel_act = 1.0;
 
             //Count how many rel eff curves this nuclide is in, and divide by that... we can probably come up with a better solution...
             size_t nuc_count = 0;
             for( const auto &rel_eff_curve : options.rel_eff_curves )
             {
               for( const RelActCalcAuto::NucInputInfo &other_nuc : rel_eff_curve.nuclides )
-                if( (nuc.nuclide == other_nuc.nuclide )
-                    && (nuc.element == other_nuc.element)
-                    && (nuc.reaction == other_nuc.reaction) )
-                {
-                  nuc_count += 1;
-                }
+                nuc_count += (nuc.source == other_nuc.source);
             }
             assert( nuc_count != 0 );
             rel_act /= nuc_count;
             
-            assert( cost_functor->m_nuclides[re_eff_index][nuc_num].nuclide == nuc.nuclide );
-            assert( cost_functor->m_nuclides[re_eff_index][nuc_num].element == nuc.element );
-            assert( cost_functor->m_nuclides[re_eff_index][nuc_num].reaction == nuc.reaction );
+            assert( cost_functor->m_nuclides[re_eff_index][nuc_num].source == nuc.source );
 
             bool is_constrained = false;
-            for( const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &nuc_constraint : rel_eff_curve.act_ratio_constraints )
+            const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint * const act_ratio_constraint
+                                                    = cost_functor->activity_ratio_constraint(nuc.source, re_eff_index);
+            const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint * const mass_frac_constraint
+                                                    = cost_functor->mass_fraction_constraint(nuc.source, re_eff_index);
+            // Make sure only one constraint or the other, or neither
+            assert( (!act_ratio_constraint && !mass_frac_constraint)
+                    || ((!!act_ratio_constraint) != (!!mass_frac_constraint)) );
+
+            if( act_ratio_constraint )
             {
-              is_constrained = nuc.nuclide && (nuc_constraint.constrained_nuclide == nuc.nuclide); //right now we are only consrtaining nuclides
-              if( is_constrained )
+              assert( act_ratio_constraint->constrained_source == nuc.source );
+              is_constrained = true;
+              parameters[act_index] = -1.0;
+              cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
+              
+              cout << "Fixing act_index=" << act_index << ", "
+              << RelActCalcAuto::to_name(act_ratio_constraint->constrained_source)
+              << ":" << RelActCalcAuto::to_name(act_ratio_constraint->controlling_source)
+              << " = " << act_ratio_constraint->constrained_to_controlled_activity_ratio
+              << endl;
+              
+              assert( std::find( begin(constant_parameters), end(constant_parameters), static_cast<int>(act_index) ) == end(constant_parameters) );
+              constant_parameters.push_back( static_cast<int>(act_index) );
+            }//if( act_ratio_constraint )
+
+            if( mass_frac_constraint )
+            {
+              assert( mass_frac_constraint->nuclide == RelActCalcAuto::nuclide(nuc.source) );
+              is_constrained = true;
+
+              //Rel Act paramater is constrained within 0.5 and 1.5, to make mass fraction go between lower and upper values
+              //  If there are multiple mass fraction constraints on the same nuclide, and a particular Ceres parameter
+              //  solution gives the sum of all the mass fractions to be greater than 1.0, we will just return a say
+              //  that particular set of parameters is invalid, even though we could maybe do something more intelligent.
+
+              //TODO: To model mass-fraction constraints, should switch to a paramter that gives total RelAct of an element, and then use a ceres::Manifold to make all the nuclides of the element add up to 1.0 (eg, on a surface).
+
+              parameters[act_index] = 0.5 + RelActAutoCostFcn::sm_activity_par_offset;
+              if( mass_frac_constraint->lower_mass_fraction != mass_frac_constraint->upper_mass_fraction )
               {
-                parameters[act_index] = -1.0;
-                cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
+                try
+                {
+                  const double mf = manual_solution.mass_fraction( mass_frac_constraint->nuclide->symbol );
+                  const double frac = (mf - mass_frac_constraint->lower_mass_fraction) / (mass_frac_constraint->upper_mass_fraction - mass_frac_constraint->lower_mass_fraction);
+                  assert( frac > -0.0002 && frac < 1.0002 );
+                  const double clamped_frac = std::min( 1.0, std::max( frac, 0.0 ) );
+                  parameters[act_index] = RelActAutoCostFcn::sm_activity_par_offset + 0.5*clamped_frac;
+
+                  cerr << "\n\nStill having trouble navigating to global minima\n\nHacked mass fraction to be halfway in the range it should! - From " << frac << " to " << 0.5*clamped_frac << "\n\n" << endl;
+
+#pragma message("Still having trouble navigating to global minima for RelActAuto. Hacked mass fraction to be halfway in the range it should! - should undo this (but seems to help for some problems).")
+                }catch( std::exception & )
+                {
+                  cerr << "Warning: failed to get initial manual solution rel-eff fraction" << endl;
+                }
+              }//if( mass_frac_constraint->lower_mass_fraction != mass_frac_constraint->upper_mass_fraction )
+
+              cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
+
+              //If the lower and upper mass fractions are the same, we can just fix the rel act to 1.0
+              if( fabs(mass_frac_constraint->lower_mass_fraction - mass_frac_constraint->upper_mass_fraction)
+                  <= 1.0E-6*std::max(mass_frac_constraint->lower_mass_fraction, mass_frac_constraint->upper_mass_fraction) )
+              {
+                cout << "Fixing act_index=" << act_index << ", " << mass_frac_constraint->nuclide << ", for mass fraction constraint" << endl;
                 assert( std::find( constant_parameters.begin(), constant_parameters.end(), static_cast<int>(act_index) ) == constant_parameters.end() );
                 constant_parameters.push_back( static_cast<int>(act_index) );
-                break;
+              }else
+              {
+                lower_bounds[act_index] = RelActAutoCostFcn::sm_activity_par_offset;
+                upper_bounds[act_index] = 1.0 + RelActAutoCostFcn::sm_activity_par_offset;
               }
-            }//for( const auto &nuc_constraint : rel_eff_curve.act_ratio_constraints )
+            }//if( mass_frac_constraint )
 
             if( is_constrained )
               continue;
 
-            assert( nuc.nuclide );
+            assert( !RelActCalcAuto::is_null(nuc.source) );
 
             // Check if nuclide has relative activity limits defined, or maybe even fixed.
             if( nuc.min_rel_act.has_value() 
                && nuc.max_rel_act.has_value() 
                 && (nuc.min_rel_act.value() == nuc.max_rel_act.value()) )
             {
-              parameters[act_index] = 1.0;
+              parameters[act_index] = 1.0 + RelActAutoCostFcn::sm_activity_par_offset;
               cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = nuc.min_rel_act.value();
+              assert( cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple > 0.0 );
               constant_parameters.push_back( static_cast<int>(act_index) );
               cout << "Fixing " << nuc.name() << " rel act to " << nuc.min_rel_act.value() << " for rel eff curve " << re_eff_index << endl;
               continue;
@@ -2578,19 +3469,20 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                    << " on rel eff curve " << re_eff_index << ", instead of initial estimate of " << rel_act << endl;
               rel_act = nuc.starting_rel_act.value();
             }
-            if( (rel_act < 1.0E-16) || std::isinf(rel_act) || std::isnan(rel_act) )
+            if( (rel_act < 1.0E-16) || IsInf(rel_act) || IsNan(rel_act) )
               rel_act = 1.0;
             
-            lower_bounds[act_index] = (nuc.min_rel_act.has_value() ? nuc.min_rel_act.value() : 0.0) / rel_act;
+            lower_bounds[act_index] = ((nuc.min_rel_act.has_value() ? nuc.min_rel_act.value() : 0.0) / rel_act) + RelActAutoCostFcn::sm_activity_par_offset;
             if( nuc.max_rel_act.has_value() )
-              upper_bounds[act_index] = nuc.max_rel_act.value() / rel_act;
+              upper_bounds[act_index] = (nuc.max_rel_act.value() / rel_act) + RelActAutoCostFcn::sm_activity_par_offset;
 
             cout << "Updating initial activity estimate for " << nuc.name() << " from "
                    << parameters[act_index] << " to " << rel_act << endl;          
             
             cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = rel_act;
-            
-            parameters[act_index] = 1.0;
+            assert( rel_act > 0.0 );
+
+            parameters[act_index] = 1.0 + RelActAutoCostFcn::sm_activity_par_offset;
           }//for( size_t nuc_num = 0; nuc_num < rel_eff_curve.nuclides.size(); ++nuc_num )
           
           
@@ -2608,36 +3500,43 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         for( size_t nuc_num = 0; nuc_num < rel_eff_curve.nuclides.size(); ++nuc_num )
         {
           const RelActCalcAuto::NucInputInfo &nuc = rel_eff_curve.nuclides[nuc_num];
-          const size_t act_index = cost_functor->nuclide_parameter_index( nuc, re_eff_index );
+          
+          const size_t act_index = cost_functor->nuclide_parameter_index( nuc.source, re_eff_index );
           const size_t age_index = act_index + 1;
           
-          assert( nuc.nuclide || nuc.element || nuc.reaction );
-          assert( !nuc.nuclide || (nuc.age >= 0.0) );
-          assert( nuc.nuclide || (nuc.age <= 0.0) );
+          assert( !RelActCalcAuto::is_null(nuc.source) );
 
-          if( nuc.nuclide && nuc.nuclide->isStable() )
+          const SandiaDecay::Nuclide * const nuc_nuclide = RelActCalcAuto::nuclide(nuc.source);
+          const SandiaDecay::Element * const nuc_element = RelActCalcAuto::element(nuc.source);
+          const ReactionGamma::Reaction * const nuc_reaction = RelActCalcAuto::reaction(nuc.source);
+
+          assert( nuc_nuclide || nuc_element || nuc_reaction );
+          assert( !nuc_nuclide || (nuc.age >= 0.0) );
+          assert( nuc_nuclide || (nuc.age <= 0.0) );
+
+          if( nuc_nuclide && nuc_nuclide->isStable() )
             throw runtime_error( "Invalid stable nuclide (" + nuc.name() + ")" );
           
-          if( nuc.nuclide && (nuc.age < 0.0) )
+          if( nuc_nuclide && (nuc.age < 0.0) )
             throw runtime_error( "Invalid nuclide (" + nuc.name() + ") age" );
           
-          if( (nuc.element || nuc.reaction) && (nuc.age > 0.0) )
+          if( !nuc_nuclide && (nuc.age > 0.0) )
             throw runtime_error( "Invalid age for non-nuclide source (" + nuc.name() + ")" );
           
           assert( re_eff_index < cost_functor->m_nuclides.size() );
           assert( nuc_num < cost_functor->m_nuclides[re_eff_index].size() );
-          assert( cost_functor->m_nuclides[re_eff_index][nuc_num].nuclide == nuc.nuclide );
+          assert( cost_functor->m_nuclides[re_eff_index][nuc_num].source == nuc.source );
           
           NucInputGamma &nuc_info = cost_functor->m_nuclides[re_eff_index][nuc_num];
 
           bool fit_age = nuc.fit_age;
-          if( nuc.nuclide )
+          if( nuc_nuclide )
           {
             nuc_info.age_multiple = nuc.age;
             parameters[age_index] = 1.0;
 
             if( nuc_info.age_multiple <= 1.0*PhysicalUnits::second )
-              nuc_info.age_multiple = PeakDef::defaultDecayTime( nuc.nuclide, nullptr );
+              nuc_info.age_multiple = PeakDef::defaultDecayTime( nuc_nuclide, nullptr );
           
             if( nuc_info.age_multiple <= 1.0*PhysicalUnits::second )
             {
@@ -2646,7 +3545,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             }
           }else
           {
-            assert( nuc.element || nuc.reaction );
+            assert( RelActCalcAuto::element(nuc.source) || RelActCalcAuto::reaction(nuc.source) );
             assert( nuc.age <= 0.0 );
 
             fit_age = false;  // This will make age a constant parameter below
@@ -2658,14 +3557,15 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           //  of the first nuclide to control the age of all nuclides for that element; we'll check
           //  for this here, and if we have a nuclide of the same element preceding \c nuc_num, we'll
           //  fix the age here
-          if( (nuc_num > 0) && nuc.nuclide && rel_eff_curve.nucs_of_el_same_age )
+          if( (nuc_num > 0) && nuc_nuclide && rel_eff_curve.nucs_of_el_same_age )
           {
             bool found_control_age = false;
             for( size_t i = 0; i < nuc_num; ++i )
             {
               const RelActCalcAuto::NucInputInfo &other_nuc = rel_eff_curve.nuclides[i];
+              const SandiaDecay::Nuclide * const other_nuc_nuclide = RelActCalcAuto::nuclide(other_nuc.source);
 
-              if( other_nuc.nuclide && (other_nuc.nuclide->atomicNumber == nuc.nuclide->atomicNumber) )
+              if( other_nuc_nuclide && (other_nuc_nuclide->atomicNumber == nuc_nuclide->atomicNumber) )
               {
                 if( (other_nuc.age != nuc.age) || (other_nuc.fit_age != nuc.fit_age) )
                   throw runtime_error( "When its specified that all nuclides of the element"
@@ -2689,13 +3589,16 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             // If we are tying the ages of all nuclides in an element together, we dont want to
             //  accidentally limit the max age based on the shortest nuclides half-life (think U-237 for
             //  uranium).
-            double half_life = nuc.nuclide->halfLife;
+            double half_life = nuc_nuclide->halfLife;
             if( rel_eff_curve.nucs_of_el_same_age )
             {
               for( size_t i = 0; i < rel_eff_curve.nuclides.size(); ++i )
               {
-                if( rel_eff_curve.nuclides[i].nuclide->atomicNumber == nuc.nuclide->atomicNumber )
-                  half_life = std::max(half_life, rel_eff_curve.nuclides[i].nuclide->halfLife);
+                const RelActCalcAuto::NucInputInfo &other_nuc = rel_eff_curve.nuclides[i];
+                const SandiaDecay::Nuclide * const other_nuc_nuclide = RelActCalcAuto::nuclide(other_nuc.source);
+
+                if( other_nuc_nuclide && (other_nuc_nuclide->atomicNumber == nuc_nuclide->atomicNumber) )
+                  half_life = std::max(half_life, other_nuc_nuclide->halfLife);
               }
             }//if( options.nucs_of_el_same_age )
             
@@ -2716,8 +3619,28 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           {
             constant_parameters.push_back( static_cast<int>(age_index) );
           }
-          
-          if( !succesfully_estimated_re_and_ra )
+
+          // If the `RelActCalcManual` solution failed, we will need to somehow make a coarse estimate
+          //  for the initial value of the relative activities.
+          // Or, if (NucInputGamma::activity_multiple == 1.0), it probably means the `RelActCalcManual` claimed
+          //  to have worked, but really didnt fit any activity - so we should also do a coarse estimate
+          // However, if a starting value for relative activity was provided, or it is a constant parameter,
+          //  or if there is a `ActRatioConstraint` or `MassFractionConstraint` for this source, then we dont
+          //  need to do this rough estimate.
+
+          const bool act_is_const = (find(begin(constant_parameters), end(constant_parameters), act_index)
+                                      != end(constant_parameters));
+          const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint *src_act_ratio_constr
+                                                  = cost_functor->activity_ratio_constraint( nuc.source, re_eff_index );
+          const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint *src_mass_frac_constr
+                                                  = cost_functor->mass_fraction_constraint( nuc.source, re_eff_index );
+
+          const bool is_rel_act_constr = (nuc.min_rel_act.has_value() || nuc.max_rel_act.has_value());
+
+          const bool do_rough_act_est = (!succesfully_estimated_re_and_ra
+                                          || (!nuc.starting_rel_act.has_value() && (nuc_info.activity_multiple < 1.5)));
+
+          if( do_rough_act_est )
           {
             // Now do a very rough initial activity estimate; there are two obvious ideas
             //  1) Either take in user peaks, or auto-search peaks, and try to match up.  However, we may
@@ -2734,20 +3657,20 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             
             vector<SandiaDecay::EnergyRatePair> gammas;
             
-            if( nuc.nuclide )
+            if( nuc_nuclide )
             {
               SandiaDecay::NuclideMixture mix;
-              mix.addAgedNuclideByActivity( nuc.nuclide, ns_decay_act_mult, nuc.age );
-              gammas = mix.photons(0.0);
-            }else if( nuc.element )
+              mix.addAgedNuclideByActivity( nuc_nuclide, ns_decay_act_mult, nuc.age );
+              gammas = mix.photons( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy );
+            }else if( nuc_element )
             {
-              gammas.reserve( nuc.element->xrays.size() );
-              for( const SandiaDecay::EnergyIntensityPair &xray : nuc.element->xrays )
+              gammas.reserve( nuc_element->xrays.size() );
+              for( const SandiaDecay::EnergyIntensityPair &xray : nuc_element->xrays )
                 gammas.emplace_back( ns_decay_act_mult*xray.intensity, xray.energy );
-            }else if( nuc.reaction )
+            }else if( nuc_reaction )
             {
-              gammas.reserve( nuc.reaction->gammas.size() );
-              for( const ReactionGamma::Reaction::EnergyYield &rctn_gamma : nuc.reaction->gammas )
+              gammas.reserve( nuc_reaction->gammas.size() );
+              for( const ReactionGamma::Reaction::EnergyYield &rctn_gamma : nuc_reaction->gammas )
                 gammas.emplace_back( ns_decay_act_mult*rctn_gamma.abundance, rctn_gamma.energy );
             }else
             {
@@ -2756,7 +3679,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             }
             
             
-            for( const auto &erange : energy_ranges )
+            for( const RelActCalcAuto::RoiRange &erange : energy_ranges )
             {
               vector<tuple<double,double,double>> energy_to_rel_act; //{energy, br, rel. act.}
               for( const SandiaDecay::EnergyRatePair &er : gammas )
@@ -2802,27 +3725,48 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             } );
             
 
-            bool is_constrained = false;
-            for( const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &nuc_constraint : rel_eff_curve.act_ratio_constraints )
+            if( src_act_ratio_constr )
             {
-              is_constrained = (nuc.nuclide && (nuc_constraint.constrained_nuclide == nuc.nuclide));
-              if( is_constrained )
+              // We already set all "fixed" values for this nuclide a few hundred lines ago, but we'll make sure
+              const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &nuc_constraint = *src_act_ratio_constr;
+              assert( nuc_constraint.constrained_source == nuc.source );
+              assert( parameters[act_index] == -1.0 );
+              assert( cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple == -1.0 );
+              auto pos = std::find( constant_parameters.begin(), constant_parameters.end(), static_cast<int>(act_index) );
+              assert( pos != constant_parameters.end() );
+              if( pos == constant_parameters.end() )
               {
                 parameters[act_index] = -1.0;
-                cout << "Setting par " << act_index << " to -1.0 for " << nuc.name() << endl;
+                constant_parameters.push_back( static_cast<int>(act_index) );
+                cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
+              }
+              continue;
+            }//for( const auto &nuc_constraint : rel_eff_curve.act_ratio_constraints )
 
+            if( src_mass_frac_constr )
+            {
+              const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint = *src_mass_frac_constr;
+              assert( (constraint.nuclide == nuc_nuclide) && nuc_nuclide );
+
+              parameters[act_index] = 1.0 + RelActAutoCostFcn::sm_activity_par_offset;
+              cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
+              cout << "Setting par " << act_index << " to " << (1.0 + RelActAutoCostFcn::sm_activity_par_offset) << " for " << nuc.name() << endl;
+
+              if( constraint.lower_mass_fraction == constraint.upper_mass_fraction )
+              {
                 cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
                 assert( std::find( constant_parameters.begin(), constant_parameters.end(), static_cast<int>(act_index) ) == constant_parameters.end() );
                 constant_parameters.push_back( static_cast<int>(act_index) );
-                break;
+              }else
+              {
+                lower_bounds[act_index] = RelActAutoCostFcn::sm_activity_par_offset;
+                upper_bounds[act_index] = 1.0 + RelActAutoCostFcn::sm_activity_par_offset;
               }
-            }//for( const auto &nuc_constraint : rel_eff_curve.act_ratio_constraints )
 
-            if( is_constrained )
               continue;
-              
+            }//if( src_mass_frac_constr )
 
-            assert( cost_functor->m_nuclides[re_eff_index][nuc_num].nuclide == nuc.nuclide );
+            assert( cost_functor->m_nuclides[re_eff_index][nuc_num].source == nuc.source );
 
             double rel_act_mult = 1.0;
             if( nuc.starting_rel_act.has_value() )
@@ -2842,13 +3786,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               //  for this; the other Rel Eff equations we will assume a starting flat line at 1.0.
               if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
               {
-                //const size_t this_rel_eff_start = cost_functor->rel_eff_eqn_start_parameter(re_eff_index);
-                //const RelActAutoCostFcn::PhysModelRelEqnDef<double> re_input
-                //          = RelActAutoCostFcn::make_phys_eqn_input( rel_eff_curve, cost_functor->m_drf,
-                //                                                   parameters, this_rel_eff_start );
-                //const double rel_eff = RelActCalc::eval_physical_model_eqn_imp( energy, re_input.self_atten,
-                //                                           re_input.external_attens, re_input.det.get(),
-                //                                           re_input.hoerl_b, re_input.hoerl_c );
                 const double energy = std::get<0>( representative_act );
                 const double rel_eff = cost_functor->relative_eff( energy, re_eff_index, parameters );
                 assert( !IsNan(rel_eff) && !IsInf(rel_eff) );
@@ -2873,10 +3810,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             if( nuc.max_rel_act.has_value() )
               rel_act_mult = std::min( rel_act_mult, nuc.max_rel_act.value() );
 
-            parameters[act_index] = 1.0;
-            cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = rel_act_mult; 
+            parameters[act_index] = 1.0 + RelActAutoCostFcn::sm_activity_par_offset;
+            cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = rel_act_mult;
+            assert( rel_act_mult > 0.0 );
 
-            
+#ifndef NDEBUG
             {// begin debug input
               for( const auto &erange : energy_ranges )
               {
@@ -2904,8 +3842,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               cout << "Setting initial relative activity for " << nuc.name()
                    << " to " << rel_act_mult << " bq" << endl;
             }// end debug input
-            
-            
+#endif
+
             if( nuc.min_rel_act.has_value()
              && nuc.max_rel_act.has_value() 
              && (nuc.min_rel_act.value() == nuc.max_rel_act.value()) )
@@ -2913,18 +3851,88 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               constant_parameters.push_back( static_cast<int>(act_index) );
             }else
             {
-              lower_bounds[act_index] = (nuc.min_rel_act.has_value() ? nuc.min_rel_act.value() : 0.0) / rel_act_mult;
+              lower_bounds[act_index] = ((nuc.min_rel_act.has_value() ? nuc.min_rel_act.value() : 0.0) / rel_act_mult) + RelActAutoCostFcn::sm_activity_par_offset;
               if( nuc.max_rel_act.has_value() )
-                upper_bounds[act_index] = nuc.max_rel_act.value() / rel_act_mult;
+                upper_bounds[act_index] = (nuc.max_rel_act.value() / rel_act_mult) + RelActAutoCostFcn::sm_activity_par_offset;
             }
           }//if( !succesfully_estimated_re_and_ra )
         }//for( size_t nuc_num = 0; nuc_num < rel_eff_curve.nuclides.size(); ++nuc_num )
-        
-        num_re_nucs_seen += rel_eff_curve.nuclides.size();
-        if( rel_eff_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
-          num_re_curve_pars_seen += rel_eff_curve.rel_eff_eqn_order + 1;
-        else
-          num_re_curve_pars_seen += 2 + 2*rel_eff_curve.phys_model_external_atten.size() + 2;
+
+
+        // If we have multiple mass-fraction constraints for this element, we need to make sure thier initial
+        //  values sum to less than 1.0.
+        // Sum starting mass fractions for all constraints in this Rel Eff curve
+        map<short int,double> elements_starting_mass_fracs, elements_lower_mass_fracs, elements_fixed_mass_frac;
+        for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint : rel_eff_curve.mass_fraction_constraints )
+        {
+          const SandiaDecay::Nuclide *nuc = constraint.nuclide;
+          const size_t act_index = cost_functor->nuclide_parameter_index( nuc, re_eff_index );
+          const double starting_dist = parameters[act_index] - 0.5;
+
+          const double lower_frac = constraint.lower_mass_fraction;
+          const double upper_frac = constraint.upper_mass_fraction;
+          const double starting_mass_frac = lower_frac + starting_dist*(upper_frac - lower_frac);
+
+          elements_lower_mass_fracs[nuc->atomicNumber] += lower_frac;
+          if( lower_frac == upper_frac )
+            elements_fixed_mass_frac[nuc->atomicNumber] += lower_frac;
+
+          elements_starting_mass_fracs[nuc->atomicNumber] += starting_mass_frac;
+        }//for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint : rel_eff_curve.mass_fraction_constraints )
+
+        //Now go through and check if any sum is greater than or equal to 1.0
+        for( const map<short int,double>::value_type &an_sum : elements_starting_mass_fracs )
+        {
+          const short int atomic_number = an_sum.first;
+          const double starting_mass_frac = an_sum.second;
+          if( starting_mass_frac < 1.0 )
+            continue;
+
+          // If we're here, we have need to reduce the mass fractions for this element
+          const double lower_allowed_frac = elements_lower_mass_fracs[atomic_number];
+
+          assert( lower_allowed_frac < 1.0 ); //`RelEffCurveInput::check_nuclide_constraints()` should have already checked this
+          if( lower_allowed_frac >= 1.0 )
+            throw std::logic_error( "Mass fraction constraint sums to over 1 - please fix `RelEffCurveInput::check_nuclide_constraints()` to catch this." );
+
+          const double fixed_fraction = elements_fixed_mass_frac[atomic_number];
+          const double initial_variable_amount = starting_mass_frac - fixed_fraction;
+          const double target_var_frac = 0.5*((1.0 - fixed_fraction) + lower_allowed_frac);  //halfway between the smallest and largest amount allowed
+          const double amount_need_reduced = initial_variable_amount - target_var_frac;
+          const double frac_variable_reduce = amount_need_reduced / (initial_variable_amount - lower_allowed_frac);
+          const double updated_variable_frac = initial_variable_amount - amount_need_reduced;
+
+          //Example starting mass fraction 1.25, with 0.5 fixed, and lowest variable amount of 0.1
+          //  fixed_fraction = 0.5
+          //  starting_mass_frac = 1.25
+          //  lower_allowed_frac = 0.1
+          //  initial_variable_amount = 1.25 - 0.5 = 0.75
+          //  target_var_frac = 0.5*((1.0 - 0.5) + 0.1) = 0.3;
+          //  amount_need_reduced = 0.75 - 0.3 = 0.45;
+          //  frac_variable_reduce = 0.45 / (0.75 - 0.1) = 0.6923;
+          //  updated_variable_frac = 0.75 - 0.45 = 0.3;
+          //So then 0.5 fixed, 0.3 variable, and 0.2 "other"
+
+          assert( initial_variable_amount > 0.0 );
+          assert( amount_need_reduced >= 0.0 );
+          assert( (frac_variable_reduce > 0.0) && (frac_variable_reduce < 1.0) );
+
+          double check_var_frac = 0.0;
+          for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &c : rel_eff_curve.mass_fraction_constraints )
+          {
+            if( (c.nuclide->atomicNumber != atomic_number) || (c.lower_mass_fraction == c.upper_mass_fraction) )
+              continue;
+
+            const size_t act_index = cost_functor->nuclide_parameter_index( c.nuclide, re_eff_index );
+            const double offset = RelActAutoCostFcn::sm_activity_par_offset;
+            parameters[act_index] = offset + ((1.0 - frac_variable_reduce)*(parameters[act_index] - offset));
+            assert( (parameters[act_index] >= offset) && (parameters[act_index] <= (1.0 + offset)) );
+
+            check_var_frac += (c.lower_mass_fraction + (parameters[act_index] - offset)*(c.upper_mass_fraction - c.lower_mass_fraction));
+          }//for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint : rel_eff_curve.mass_fraction_constraints )
+
+          assert( fabs(check_var_frac - updated_variable_frac) < 0.0001 );
+        }//for( const map<short int,double>::value_type &an_sum : elements_starting_mass_fracs )
       }//for( const auto &rel_eff_curve : options.rel_eff_curves )
         
       // The parameters will have entries for two sets of peak-skew parameters; one for
@@ -2945,32 +3953,51 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         if( !use )
           throw logic_error( "Inconsistent skew parameter thing" );
           
-        bool fit_energy_dep = PeakDef::is_energy_dependent( options.skew_type, ct );
-          
-        if( fit_energy_dep && (energy_ranges.size() == 1) )
+        bool fit_skew_energy_dep = PeakDef::is_energy_dependent( options.skew_type, ct );
+
+        if( fit_skew_energy_dep )
         {
-          // TODO: if statistically significant peaks across less than ~100 keV, then set fit_energy_dep to false
-#ifdef _MSC_VER
-#pragma message( "if statistically significant peaks across less than ~100 keV, then set fit_energy_dep to false" )
-#else
-#warning "if statistically significant peaks across less than ~100 keV, then set fit_energy_dep to false"
-#endif
-          const double dx = (energy_ranges.front().upper_energy - energy_ranges.front().lower_energy);
-          fit_energy_dep = (dx > 100.0);
-        }
-         
+          //We'll check if stat sig peaks span at least 100 keV (arbitrarily chosen), and if not,
+          // drop fitting the energy dependence for skew
+          const double min_energy_range_for_skew_ene_dep = 100;
+          shared_ptr<const PeakDef> lowest_peak, highest_peak;
+          for( const shared_ptr<const PeakDef> &p : all_peaks )
+          {
+            for( const auto &r : energy_ranges )
+            {
+              if( (p->mean() >= r.lower_energy) && (p->mean() <= r.upper_energy) )
+              {
+                if( !lowest_peak || (p->mean() < lowest_peak->mean()) )
+                  lowest_peak = p;
+
+                if( !highest_peak || (p->mean() > highest_peak->mean()) )
+                  highest_peak = p;
+
+                break;
+              }//if( we found the ROI for this peak )
+            }//for( const auto &r : energy_ranges )
+          }//for( const shared_ptr<const PeakDef> &p : all_peaks )
+
+          if( !lowest_peak
+             || !highest_peak
+             || (highest_peak->mean() < (lowest_peak->mean() + min_energy_range_for_skew_ene_dep)))
+          {
+            fit_skew_energy_dep = false;
+          }
+        }//if( fit_skew_energy_dep )
+
         // 20250324 HACK to test fitting peak skew
 #if( PEAK_SKEW_HACK == 1 ) //Fix the peak skew, and dont fit it
         assert( options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall );
         if( options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall )
         {
-          fit_energy_dep = false;
+          fit_skew_energy_dep = false;
         }
 #endif
         
         // If we will be fitting an energy dependence, make sure the cost functor knows this
-        cost_functor->m_skew_has_energy_dependance |= fit_energy_dep;
-          
+        cost_functor->m_skew_has_energy_dependance |= fit_skew_energy_dep;
+
         const size_t skew_start = cost_functor->m_skew_par_start_index;
         const size_t num_skew_coefs = PeakDef::num_skew_parameters( options.skew_type );
         
@@ -2980,7 +4007,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         
         // 20250324 HACK to test fitting peak skew
 #if( PEAK_SKEW_HACK == 1 ) //Fix the peak skew, and dont fit it
-#warning "Doing peak skew hack - fixing peak skew to preset values!"
+#pragma message( "Doing peak skew hack - fixing peak skew to preset values!" )
         assert( options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall );
         if( options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall )
         {
@@ -2993,7 +4020,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           upper_bounds[skew_start + i] = std::nullopt;
         }
 #elif( PEAK_SKEW_HACK == 2 ) //First fit without peak skew, then fit with
-#warning "Doing peak skew hack! - first fitting without skew, then fitting skew."
+#pragma message( "Doing peak skew hack! - first fitting without skew, then fitting skew." )
         if( options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall )
         {
           cerr << "\n\n\nDoing peak skew hack! - first fitting without skew, then fitting skew.\n\n\n" << endl;
@@ -3006,7 +4033,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         
           
         // Specify ranges for second set of skew parameters
-        if( !fit_energy_dep )
+        if( !fit_skew_energy_dep )
         {
           parameters[skew_start + i + num_skew_coefs] = -999.9;
           constant_parameters.push_back( static_cast<int>(skew_start + i + num_skew_coefs) );
@@ -3046,17 +4073,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const size_t amp_index = free_peak_start + 2*extra_peak_index;
       const size_t fwhm_index = amp_index + 1;
       
-      const double det_fwhm = cost_functor->fwhm( peak.energy, parameters );
-      double data_count = foreground->gamma_integral(peak.energy - 0.5*det_fwhm, peak.energy + 0.5*det_fwhm);
-      if( background )
-      {
-        const double backarea = background->gamma_integral(peak.energy - 0.5*det_fwhm, peak.energy + 0.5*det_fwhm);
-        data_count -= backarea * foreground->live_time() / background->live_time();
-        data_count = std::max( 0.0, data_count );
-      }//
-      
-      // Assume data is entirely due to peak; mean +- 0.5*fwhm is ~76% gaussian area
-      parameters[amp_index] = data_count / 0.76;
+      parameters[amp_index] = 1.0;   //See cost_functor->m_free_peak_area_multiples[extra_peak_index] for the initial peak amplitude estimate, which is what this paramater will multiply to get the actual area
       lower_bounds[amp_index] = 0.0;
       
       parameters[fwhm_index] = 1.0;
@@ -3072,6 +4089,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         upper_bounds[fwhm_index] = 4.0;
       }else
       {
+        parameters[fwhm_index] = -1.0; //so we can assert on
         constant_parameters.push_back( static_cast<int>(fwhm_index) );
       }
     }//for( size_t extra_peak_index = 0; extra_peak_index < extra_peaks.size(); ++extra_peak_index )
@@ -3079,16 +4097,20 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     // If we are adding an additional uncertainty onto "branching ratios", what we will actually
     //  do is cluster things together that will effectively appear as one peak.  We will then
-    //  add each clustered peak as its own residual, to allow it to vary
+    //  add each clustered peak as its own residual, to allow it to vary.
+    //  Note: depends that the initial ages of nuclides have been set, along with most other information
     if( options.additional_br_uncert > 0.0 )
     {
       const double cluster_num_sigma = 1.5;
       cost_functor->m_peak_ranges_with_uncert = cost_functor->cluster_photopeaks( cluster_num_sigma, parameters );
       
       const size_t num_pars = parameters.size() + cost_functor->m_peak_ranges_with_uncert.size();
-      parameters.resize( num_pars, sm_peak_range_uncert_par_offset );
+      parameters.resize( num_pars, sm_peak_range_uncert_offset );
       pars = &parameters[0];
-      lower_bounds.resize( num_pars, optional<double>(0.0) );
+                
+      const double val_with_zero_yield = sm_peak_range_uncert_offset - sm_peak_range_uncert_par_scale/options.additional_br_uncert;
+
+      lower_bounds.resize( num_pars, optional<double>(val_with_zero_yield) );
       upper_bounds.resize( num_pars );
       
       const size_t num_skew_coefs = PeakDef::num_skew_parameters( options.skew_type );
@@ -3101,10 +4123,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     const size_t num_pars = cost_functor->number_parameters();
     
     ceres::CostFunction *cost_function = nullptr;
-    
+
+    /*
 #if( PERFORM_DEVELOPER_CHECKS )
     //Test auto diff vs numerical diff
     auto test_gradients = [constant_parameters,&cost_functor]( RelActAutoCostFcn *fcn, const vector<double> &x ){
+      
       ceres::DynamicAutoDiffCostFunction<RelActAutoCostFcn,32> auto_diff( fcn, ceres::DO_NOT_TAKE_OWNERSHIP );
       auto_diff.SetNumResiduals( static_cast<int>(fcn->number_residuals()) );
       auto_diff.AddParameterBlock( static_cast<int>(fcn->number_parameters()) );
@@ -3131,11 +4155,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       std::vector<double> residuals_numeric( num_res, 0.0 ), jacobians_numeric( num_pars*num_res, 0.0 );
       std::vector<double*> jacobian_ptrs_numeric = { &(jacobians_numeric[0]) };
       num_diff.Evaluate( parameter_blocks.data(), residuals_numeric.data(), jacobian_ptrs_numeric.data() );
-      
-      // TODO: should make function to give parameter name!
-      
+
       cout << "Non-equal of numeric and auto-diff Jacobians\n";
-      cout << setw(7) << "Index" << setw(7) << "ParName" << setw(10) << "ResNum"
+      cout << setw(7) << "Index"
+      << setw(8) << "ParName" << setw(10) << "ResNum"
       << setw(12) << "ResVal" << setw(12) << "ParVal"
       << setw(12) << "Auto" << setw(12) << "Numeric"
       << setw(12) << "Diff" << setw(12) << "FracDiff"
@@ -3157,7 +4180,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         if( (diff > 1.0E-18) && (frac_diff > 1.0E-2) )  //This is totally arbitrary
         {
           cout << setprecision(4)
-          << setw(7) << i << setw(10) << par_name << setw(7) << residual_num
+          << setw(8) << i << setw(10) << par_name << setw(7) << residual_num
           << setw(12) << residuals_numeric[residual_num] << setw(12) << x[par_num]
           << setw(12) << jacobians_auto[i] << setw(12) << jacobians_numeric[i]
           << setw(12) << diff << setw(12) << frac_diff
@@ -3169,18 +4192,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     test_gradients( cost_functor.get(), parameters );
 #endif
-    
-    // We should use auto-diff generally, since it is faster, and should be less-error-prone, but to check on
-    //  things, you can choose to use numeric differentiation.
-    const bool use_auto_diff = true;
+     */
 
-    if( use_auto_diff )
+    if( sm_use_auto_diff )
     {
-      // It looks like using Jets<double,32> is fastest for an example problem, however it really
-      //  doesnt seem to matter much (Wall times of {0.1728, 0.1789, 0.1665, 0.1608}, for strides of
-      //  {4, 8, 16, 32}, respectively
-      ceres::DynamicAutoDiffCostFunction<RelActAutoCostFcn,32> *dyn_auto_diff_cost_function
-            = new ceres::DynamicAutoDiffCostFunction<RelActAutoCostFcn,32>( cost_functor.get(),
+      ceres::DynamicAutoDiffCostFunction<RelActAutoCostFcn,sm_auto_diff_stride_size> *dyn_auto_diff_cost_function
+            = new ceres::DynamicAutoDiffCostFunction<RelActAutoCostFcn,sm_auto_diff_stride_size>( cost_functor.get(),
                                                                       ceres::DO_NOT_TAKE_OWNERSHIP );
       dyn_auto_diff_cost_function->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
       dyn_auto_diff_cost_function->AddParameterBlock( static_cast<int>(cost_functor->number_parameters()) );
@@ -3197,8 +4214,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       dyn_num_diff_cost_function->AddParameterBlock( static_cast<int>(cost_functor->number_parameters()) );
 
       cost_function = dyn_num_diff_cost_function;
-    }//if( use_auto_diff ) / else
-    
+    }//if( sm_use_auto_diff ) / else
+
     
     //auto cost_function = new ceres::DynamicNumericDiffCostFunction<RelActAutoCostFcn>( cost_functor.get(),
     //                                                                ceres::DO_NOT_TAKE_OWNERSHIP );
@@ -3209,8 +4226,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     ceres::Problem problem;
     ceres::LossFunction *lossfcn = nullptr;
     // For an example problem, the loss function didnt seem to have a impact, or if they did, it wasnt good.
-    //lossfcn = new ceres::HuberLoss( 5.0);  //The Huber loss function is quadratic for small residuals and linear for large residuals - probably what we would want to use
-    //lossfcn = new ceres::CauchyLoss(15.0); //The Cauchy loss function is less sensitive to large residuals than the Huber loss.
+    //lossfcn = new ceres::HuberLoss( 25.0 );  //The Huber loss function is quadratic for small residuals and linear for large residuals - probably what we would want to use
+    //lossfcn = new ceres::CauchyLoss( 25.0 ); //The Cauchy loss function is less sensitive to large residuals than the Huber loss.
     //lossfcn = new ceres::SoftLOneLoss(5.0);
     //lossfcn = new ceres::TukeyLoss(10.0); //Quadratic for small residuals and zero for large residuals - not good if initial guess isnt great
     problem.AddResidualBlock( cost_function, lossfcn, pars );
@@ -3218,9 +4235,26 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
     if( !constant_parameters.empty() )
     {
+      bool has_duplicate = false;
+      std::sort( begin(constant_parameters), end(constant_parameters) );
+      for( size_t i = 1; i < constant_parameters.size(); ++i )
+      {
+        if( constant_parameters[i-1] == constant_parameters[i] )
+        {
+          const string msg = "Programming logic error: duplicate const par: " + to_string(constant_parameters[i-1])
+                 + ", named '" + cost_functor->parameter_name(i) + "'";
+          solution.m_warnings.push_back( msg );
+          cerr << msg << endl;
+          assert( constant_parameters[i-1] != constant_parameters[i] );
+          has_duplicate = true;
+        }
+      }//for( size_t i = 1; i < constant_parameters.size(); ++i )
+      if( has_duplicate )
+        constant_parameters.erase(std::unique(begin(constant_parameters), end(constant_parameters)), end(constant_parameters));
+
       ceres::Manifold *subset_manifold = new ceres::SubsetManifold( static_cast<int>(num_pars), constant_parameters );
       problem.SetManifold( pars, subset_manifold );
-    }
+    }//if( !constant_parameters.empty() )
     
     
     for( size_t i = 0; i < num_pars; ++i )
@@ -3265,6 +4299,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     ceres_options.use_nonmonotonic_steps = true;
     ceres_options.max_consecutive_nonmonotonic_steps = 5;
     
+
+    ceres_options.max_num_consecutive_invalid_steps = 10;
     
     // Trust region minimizer settings.
     //
@@ -3286,16 +4322,16 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       if( const_pos == end(constant_parameters) )
       {
         num_fit_par += 1;
-        par_area *= (parameters[i] > 0.1) ? parameters[i] : 1.0;
+        par_area *= (fabs(parameters[i]) > 1.0) ? std::min(10.0,fabs(parameters[i])) : 1.0;
         cout << "Starting value of " << cost_functor->parameter_name(i) << ": " << parameters[i] << endl;
       }
     }
     cout << "Starting with parameter volume of " << par_area << " from " << num_fit_par << " paramaters." << endl;
     // The below is pretty arbitrary - and only kinda sort optimized on one problem
-    ceres_options.initial_trust_region_radius = std::min( std::max( par_area, 10.0 ), 10.0*num_fit_par );
+    ceres_options.initial_trust_region_radius = 100.0*std::min( std::max( par_area, 10.0 ), 10.0*num_fit_par );
 
     ceres_options.max_trust_region_radius = 1e16;
-    
+
     // Minimizer terminates when the trust region radius becomes smaller than this value.
     ceres_options.min_trust_region_radius = 1e-32;
     // Lower bound for the relative decrease before a step is accepted.
@@ -3308,15 +4344,16 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     ceres_options.logging_type = ceres::PER_MINIMIZER_ITERATION;
     ceres_options.max_num_iterations = 50000;
 #ifndef NDEBUG
-    ceres_options.max_solver_time_in_seconds = 300.0;
+    ceres_options.max_solver_time_in_seconds = 600.0; //10 minutes!
 #else
     ceres_options.max_solver_time_in_seconds = 120.0;
 #endif
 
     // Changing function_tolerance from 1e-9 to 1e-7, and using initial_trust_region_radius=1E5, and use_nonmonotonic_steps=false
     //  - 52.88% enrich, 261 function calls, 64 iterations, Chi2=0.664167 (terminate due to function tol reached)
-    ceres_options.function_tolerance = 1e-7; //1e-9;
-    
+    // Decreasing from 1e-7 to 1e9 increases number of calls/time by about 30%, for one example problem, but solution is better.
+    ceres_options.function_tolerance = 1e-9;
+
     ceres_options.gradient_tolerance = 1.0E-4*ceres_options.function_tolerance; // Per documentation of `gradient_tolerance`
     // parameter_tolerance seems to be what terminates the minimization on some example problems.
     //  It looks to be:
@@ -3341,10 +4378,218 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     //  some multiple threaded computations in RelActAutoSolution::eval(...)
     ceres_options.num_threads = static_cast<int>( std::thread::hardware_concurrency(), 2 );
 
+    cost_functor->m_solution_finished = false;
+
+#define TRY_FIXING_PARAMETERS_FOR_INITIAL_ESTIMATE 1
+
+#if( TRY_FIXING_PARAMETERS_FOR_INITIAL_ESTIMATE )
+    /* To help get to the correct solution, we will first fix a number of currently-not-fixed parameters, get
+     an initial solution, then release some of these fixed paramters, get a hopefully improved solution, then
+
+     TODO: put getting all these paramater indexes, and organizing them into seperate rounds, into its own function
+    */
+    const auto already_fixed = [&constant_parameters]( const size_t index ) -> bool {
+      return (std::find(begin(constant_parameters), end(constant_parameters), static_cast<int>(index))
+              != end(constant_parameters));
+    };
+
+    // Grap Physical paramaters to fix in the different rounds
+    vector<size_t> hoerl_par_indexes, self_atten_par_indexes, ext_atten_par_indexs, non_phys_rel_eff_pars;
+    for( size_t rel_eff_index = 0; rel_eff_index < options.rel_eff_curves.size(); rel_eff_index += 1 )
+    {
+      const RelActCalcAuto::RelEffCurveInput &rel_eff = options.rel_eff_curves[rel_eff_index];
+      const size_t this_rel_eff_start = cost_functor->rel_eff_eqn_start_parameter( rel_eff_index );
+
+      if( (rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel) )
+      {
+        for( size_t sub_index = 0; sub_index <= rel_eff.rel_eff_eqn_order; ++sub_index )
+          non_phys_rel_eff_pars.push_back( this_rel_eff_start + sub_index );
+        continue;
+      }
+
+      if( rel_eff.phys_model_use_hoerl )
+      {
+        const size_t b_index = this_rel_eff_start + 2 + 2*rel_eff.phys_model_external_atten.size() + 0;
+        const size_t c_index = this_rel_eff_start + 2 + 2*rel_eff.phys_model_external_atten.size() + 1;
+
+        if( options.same_hoerl_for_all_rel_eff_curves && !hoerl_par_indexes.empty() )
+        {
+          assert( parameters[b_index] == -1.0 ); //Just a consistency/sanity check
+          assert( parameters[c_index] == -1.0 );
+        }else
+        {
+          // Right now we hard-wire not using Hoerl correction for manual Physical Rel Eff solution, so `b` and `c` should be at their starting values
+          assert( parameters[b_index] == ((0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset) );  //(energy/1000)^b
+          assert( parameters[c_index] == ((1.0/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset) );  //c^(1000/energy)
+          if( !already_fixed(b_index) )
+            hoerl_par_indexes.push_back( b_index );
+          if( !already_fixed(c_index) )
+            hoerl_par_indexes.push_back( c_index );
+        }//
+      }//if( rel_eff.phys_model_use_hoerl )
+
+      if( rel_eff.phys_model_self_atten
+         && rel_eff.phys_model_self_atten->fit_atomic_number
+         && !already_fixed(this_rel_eff_start + 0) )
+      {
+        self_atten_par_indexes.push_back( this_rel_eff_start + 0 );
+      }
+
+      if( rel_eff.phys_model_self_atten
+         && rel_eff.phys_model_self_atten->fit_areal_density
+         && !already_fixed(this_rel_eff_start + 1) )
+      {
+        self_atten_par_indexes.push_back( this_rel_eff_start + 1 );
+      }
+
+      for( size_t ext_atten_index = 0;  ext_atten_index < rel_eff.phys_model_external_atten.size(); ++ext_atten_index )
+      {
+        const size_t index = this_rel_eff_start + 2 + 2*ext_atten_index;
+        const shared_ptr<const RelActCalc::PhysicalModelShieldInput> &shield = rel_eff.phys_model_external_atten[ext_atten_index];
+        if( shield && shield->fit_atomic_number && !already_fixed(index + 0) )
+          ext_atten_par_indexs.push_back( index + 0 );
+        if( shield && shield->fit_areal_density && !already_fixed(index + 1) )
+          ext_atten_par_indexs.push_back( index + 1 );
+      }
+    }//for( const RelActCalcAuto::RelEffCurveInput &rel_eff : options.rel_eff_curves )
+
+    // Get the applicable energy cal paramaters we will fix
+    vector<size_t> ene_cal_pars_indexes;
+    if( options.fit_energy_cal )
+    {
+      for( size_t index = cost_functor->m_energy_cal_par_start_index;
+          index < cost_functor->m_fwhm_par_start_index;
+          ++index )
+      {
+        if( !already_fixed(index) )
+          ene_cal_pars_indexes.push_back( index );
+      }
+    }
+
+    vector<size_t> fwhm_par_indexes;
+    if( options.fit_energy_cal )
+    {
+      for( size_t index = cost_functor->m_fwhm_par_start_index;
+          index < cost_functor->m_rel_eff_par_start_index;
+          ++index )
+      {
+        if( !already_fixed(index) )
+          fwhm_par_indexes.push_back( index );
+      }
+    }
+
+    /** lambda to evaluate the problems, holding a number of paramaters constant.
+     Will update `parameters` if solution is better than previous best solution, otherwise leaves them alone.
+    */
+    double initial_cost = std::numeric_limits<double>::max(), best_cost_val = std::numeric_limits<double>::max();
+
+    const auto eval_with_constants = [&best_cost_val, &initial_cost, &problem, ceres_options, constant_parameters, num_pars, &parameters]( const vector<vector<size_t>> &indices_to_fix ){
+      const vector<double> orig_parameters = parameters;
+      vector<int> tmp_constant_parameters = constant_parameters;
+      for( const vector<size_t> &indices : indices_to_fix )
+      {
+        for( const size_t index : indices )
+        {
+          const auto pos = std::find(begin(tmp_constant_parameters), end(tmp_constant_parameters), static_cast<int>(index));
+          //assert( pos == end(tmp_constant_parameters) );
+          if( pos == end(tmp_constant_parameters) )
+            tmp_constant_parameters.push_back( static_cast<int>(index) );
+        }
+      }//for( const vector<size_t> &indices : indices_to_fix )
+
+      if( tmp_constant_parameters.empty() )
+        return;
+
+      ceres::Manifold *subset_manifold = new ceres::SubsetManifold( static_cast<int>(num_pars), tmp_constant_parameters );
+      double *pars = &parameters[0];
+      problem.SetManifold( pars, subset_manifold );
+      ceres::Solver::Summary summary;
+      ceres::Solve(ceres_options, &problem, &summary);
+
+      if( (initial_cost == std::numeric_limits<double>::max()) && (summary.initial_cost > 0.0) )
+        initial_cost = summary.initial_cost;
+
+      bool solution_is_better = false;
+      switch( summary.termination_type )
+      {
+        case ceres::CONVERGENCE:
+        case ceres::USER_SUCCESS:
+          cout << "Pre-fit correction was successful with FinalCost="
+          << summary.final_cost << " (InitialCost=" << summary.initial_cost << ")."
+          << "  Previous best_cost_val=" << best_cost_val
+          << endl;
+          solution_is_better = (summary.final_cost < best_cost_val);
+          break;
+
+        case ceres::NO_CONVERGENCE:
+          cout << "Pre-fit correction did not converge" << endl;
+          break;
+
+        case ceres::FAILURE:
+          cout << "Pre-fit correction failed" << endl;
+          break;
+
+        case ceres::USER_FAILURE:
+          cout << "Pre-fit correction was user-cancelled" << endl;
+          break;
+      }//switch( summary.termination_type )
+
+
+      if( solution_is_better )
+      {
+        best_cost_val = summary.final_cost;
+      }else
+      {
+        for( size_t i = 0; i < orig_parameters.size(); ++i )
+          parameters[i] = orig_parameters[i];
+      }//if( solution_is_better ) / else
+    };//eval_with_constants lambda
+
+
+    // Evaluate the problem a few times, holding different sets of paramaters constant.
+    // The paramaters we currently have available to us to hold constant (could implement more), are:
+    //    hoerl_par_indexes, ene_cal_pars_indexes, fwhm_par_indexes, self_atten_par_indexes, ext_atten_par_indexs,ext_atten_par_indexs, non_phys_rel_eff_pars
+    //
+    // The
+    // - Fix {Ene. Cal., FWHM} - if Physical{Hoerl, shielding} else starting rel-eff-pars
+    // - if Physical{Hoerl}
+    // At each step, we will only take answer if better - otherwise reset parmaters to the before state.
+    //
+    // TODO: Check if for non-physical solution, holding starting rel-eff-pars constant helps
+    // TODO: Go through and refactor getting these parameters into a seperate function
+    //  Also, all the above getting of indexes is totally not tested.
+    //  Also, still need to give offset and scale for AD shielding - e.g., so zero doesnt mean no shielding
+    eval_with_constants( {ene_cal_pars_indexes, fwhm_par_indexes, hoerl_par_indexes, self_atten_par_indexes, ext_atten_par_indexs, ext_atten_par_indexs, non_phys_rel_eff_pars} );
+
+    if( !initial_par_vals_to_restore_after_initial_fit.empty() )
+    {
+      for( const pair<int,double> &intial_vals : initial_par_vals_to_restore_after_initial_fit )
+        parameters[intial_vals.first] = intial_vals.second;
+      eval_with_constants( {ene_cal_pars_indexes, fwhm_par_indexes, hoerl_par_indexes, self_atten_par_indexes, ext_atten_par_indexs, ext_atten_par_indexs} );
+    }
+
+    if( !hoerl_par_indexes.empty() )
+      eval_with_constants( {hoerl_par_indexes} );
+
+
+    if( !constant_parameters.empty() )
+    {
+      // Restore the original manifold we want
+      ceres::SubsetManifold *subset_manifold = new ceres::SubsetManifold( static_cast<int>(num_pars), constant_parameters );
+      problem.SetManifold( pars, subset_manifold );
+    }else
+    {
+      problem.SetManifold( pars, nullptr );
+    }//if( !constant_parameters.empty() ) / else
+#endif //TRY_FIXING_PARAMETERS_FOR_INITIAL_ESTIMATE
+
 
     ceres::Solver::Summary summary;
     ceres::Solve(ceres_options, &problem, &summary);
     //std::cout << summary.BriefReport() << "\n";
+    
+    cost_functor->m_solution_finished = true;
+    
     std::cout << summary.FullReport() << "\n";
     cout << "Took " << cost_functor->m_ncalls.load() << " calls to solve." << endl;
     
@@ -3437,8 +4682,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }
     
     ceres::Covariance::Options cov_options;
-    cov_options.algorithm_type = ceres::CovarianceAlgorithmType::SPARSE_QR; //
+    // DENSE_SVD: accurate but slow (only to be used for small to moderate sized problems). Handles full-rank as well as rank deficient Jacobians.
+    // SPARSE_QR: fast, but not capable of computing the covariance if the Jacobian is rank deficient
+    cov_options.algorithm_type = ceres::CovarianceAlgorithmType::DENSE_SVD; //SPARSE_QR;
     cov_options.num_threads = ceres_options.num_threads;
+    //cov_options.min_reciprocal_condition_number = 1e-14;
+    //cov_options.column_pivot_threshold = -1;
+    cov_options.null_space_rank = -1; //default: 0;
     
     vector<double> uncertainties( num_pars, 0.0 ), uncerts_squared( num_pars, 0.0 );
     
@@ -3458,10 +4708,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       //add_cov_block( acts_start, num_acts_par );
       //add_cov_block( fwhm_start, num_fwhm_pars );
       solution.m_covariance.clear();
+      solution.m_phys_units_cov.clear();
       solution.m_final_uncertainties.clear();
       
       if( !covariance.Compute(covariance_blocks, &problem) )
       {
+        //Possible reason we're here: rank deficient Jacobian is encountered
         cerr << "Failed to compute final covariances!" << endl;
         solution.m_warnings.push_back( "Failed to compute final covariances." );
       }else
@@ -3474,7 +4726,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         const bool success = covariance.GetCovarianceMatrix( const_par_blocks, row_major_covariance.data() );
         assert( success );
         if( !success )
-          throw runtime_error( "Failed to get covariance matrix - maybe didnt add all covariance blocks?" );
+          throw runtime_error( "Failed to get covariance matrix." );
         
         solution.m_covariance.resize( num_pars, vector<double>(num_pars, 0.0) );
         
@@ -3506,13 +4758,24 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           }
         };
         
-        solution.m_rel_eff_covariance.resize( cost_functor->m_options.rel_eff_curves.size() );
-        solution.m_rel_act_covariance.resize( cost_functor->m_options.rel_eff_curves.size() );
-        for( size_t rel_eff_index = 0; rel_eff_index < cost_functor->m_options.rel_eff_curves.size(); ++rel_eff_index )
+        solution.m_rel_eff_covariance.resize( num_rel_eff_curves );
+        solution.m_rel_act_covariance.resize( num_rel_eff_curves );
+        for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
         {
           const size_t rel_eff_start = cost_functor->rel_eff_eqn_start_parameter(rel_eff_index);
           const size_t num_rel_eff_par = cost_functor->rel_eff_eqn_num_parameters(rel_eff_index);
-          get_cov_block( rel_eff_start, num_rel_eff_par, solution.m_rel_eff_covariance[rel_eff_index] );
+          vector<vector<double>> &cov = solution.m_rel_eff_covariance[rel_eff_index];
+          
+          get_cov_block( rel_eff_start, num_rel_eff_par, cov );
+          
+          for( size_t par_index = 0; par_index < num_rel_eff_par; ++par_index )
+          {
+            const double scale = cost_functor->parameter_scale_factor(rel_eff_start + par_index);
+            for( size_t row = 0; row < num_rel_eff_par; ++row )
+              cov[row][par_index] *= scale;
+            for( size_t col = 0; col < num_rel_eff_par; ++col )
+              cov[par_index][col] *= scale;
+          }
         
           const size_t acts_start = cost_functor->rel_act_start_parameter( rel_eff_index );
           const size_t num_acts_par = cost_functor->rel_act_num_parameters( rel_eff_index );
@@ -3524,10 +4787,62 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         get_cov_block( fwhm_start, num_fwhm_pars, solution.m_fwhm_covariance );
       }//if( we failed to get covariance ) / else
     }//if( solution.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success )
-    
+
+
+    // Now we will estimate the effective degrees of freedom by doing SVD on the Jacobian,
+    //  and then looking at how many of the singular values effectively contribute to the
+    //  problem.  This seems to give reasonable answers, but havent strictly evaluated it
+    //  beyond that.
+    size_t num_effective_paramaters = num_pars;
+    try
+    {
+      ceres::Problem::EvaluateOptions evaluate_options;
+      evaluate_options.apply_loss_function = false;
+      ceres::CRSMatrix sparse_jacobian;
+      problem.Evaluate(evaluate_options, nullptr, nullptr, nullptr, &sparse_jacobian);
+
+      if( sparse_jacobian.num_rows == 0 )
+        throw runtime_error( "Failed to evaluate Jacobian" );
+
+      Eigen::MatrixXd jacobian;
+      jacobian.resize(sparse_jacobian.num_rows, sparse_jacobian.num_cols);
+      jacobian.setZero();
+      for( int row = 0; row < sparse_jacobian.num_rows; ++row )
+      {
+        for( int idx = sparse_jacobian.rows[row]; idx < sparse_jacobian.rows[row + 1]; ++idx )
+          jacobian(row, sparse_jacobian.cols[idx]) = sparse_jacobian.values[idx];
+      }//
+
+#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
+      Eigen::JacobiSVD<Eigen::MatrixXd> svd(jacobian, Eigen::ComputeThinU | Eigen::ComputeThinV);
+#else
+      const Eigen::BDCSVD<Eigen::MatrixX<ScalarType>> svd(jacobian, Eigen::ComputeThinU | Eigen::ComputeThinV);
+#endif
+
+      Eigen::VectorXd singular_values = svd.singularValues();
+      const double threshold = 1.0e-6 * singular_values.maxCoeff(); // Arbitrary threshold to consider what is contributing to problem
+
+      size_t npar_eff = 0;
+      for( int i = 0; i < singular_values.size(); ++i)
+        npar_eff += (singular_values(i) > threshold);
+
+      if( (npar_eff < 1) || npar_eff < (num_pars/5) )
+        throw runtime_error( "Only computed " + std::to_string(npar_eff)
+                            + " DOF, compared to " + std::to_string(num_pars) + " parameters." );
+
+      num_effective_paramaters = npar_eff;
+    }catch( std::exception &e )
+    {
+      solution.m_warnings.push_back( "Computation of the effective number of parameters failed ('"
+                                    + string(e.what()) + "'), will use total number of fit parameters"
+                                    " to estimate the degrees of freedom." );
+    }//try / catch evaluate NDOF
+
+
     solution.m_num_function_eval_total = static_cast<int>( cost_functor->m_ncalls );
   
     solution.m_final_parameters = parameters;
+    solution.m_parameter_scale_factors.resize( parameters.size(), 1.0 );
     
     solution.m_parameter_names.resize( parameters.size() );
     solution.m_parameter_were_fit.resize( parameters.size(), true );
@@ -3535,8 +4850,32 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     {
       solution.m_parameter_names[i] = cost_functor->parameter_name( i );
       solution.m_parameter_were_fit[i] = std::find( begin(constant_parameters), end(constant_parameters), static_cast<int>(i) ) == end(constant_parameters);
-    }
 
+      solution.m_parameter_scale_factors[i] = cost_functor->parameter_scale_factor( i );
+      
+      assert( (solution.m_parameter_scale_factors[i] > 0.0)
+             || !solution.m_parameter_were_fit[i]
+             || cost_functor->mass_constraint_multiple(i,parameters).has_value() );
+    }//for( size_t i = 0; i < parameters.size(); ++i )
+
+    if( !solution.m_covariance.empty() )
+    {
+      solution.m_phys_units_cov = solution.m_covariance;
+
+      for( size_t row = 0; row < num_pars; ++row )
+      {
+        const optional<double> row_mass_mult = cost_functor->mass_constraint_multiple(row,parameters);
+        const double row_mult = row_mass_mult.has_value() ? *row_mass_mult : solution.m_parameter_scale_factors[row];
+
+        for( size_t col = 0; col < num_pars; ++col )
+        {
+          const optional<double> col_mass_mult = cost_functor->mass_constraint_multiple(col,parameters);
+          const double col_mult = col_mass_mult.has_value() ? *col_mass_mult : solution.m_parameter_scale_factors[row];
+
+          solution.m_phys_units_cov[row][col] *= row_mult*col_mult;
+        }//for( size_t col = 0; col < num_pars; ++col )
+      }//for( size_t row = 0; row < num_pars; ++row )
+    }//if( !solution.m_covariance.empty() )
 
     for( size_t i = 0; i < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars; ++i )
       solution.m_energy_cal_adjustments[i] = parameters[i];
@@ -3558,47 +4897,99 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }//if( options.additional_br_uncert > 0.0 )
   
     vector<PeakDef> fit_peaks;
+    vector<vector<PeakDef>> fit_peaks_for_each_curve( (num_rel_eff_curves > 1) ? num_rel_eff_curves : size_t(0) );
+    
     for( const RoiRangeChannels &range : cost_functor->m_energy_ranges )
     {
-      PeaksForEnergyRange these_peaks = cost_functor->peaks_for_energy_range( range, parameters );
+      const PeaksForEnergyRange these_peaks = cost_functor->peaks_for_energy_range( range, parameters, {}, &(solution.m_covariance) );
 
       fit_peaks.insert( end(fit_peaks), begin(these_peaks.peaks), end(these_peaks.peaks) );
-    }
+      
+      if( num_rel_eff_curves > 1 )
+      {
+        shared_ptr<PeakContinuum> shared_continuum;
+        for( size_t i = 0; i < num_rel_eff_curves; ++i )
+        {
+          PeaksForEnergyRange this_re_peaks = cost_functor->peaks_for_energy_range( range, parameters, {i}, &(solution.m_covariance)  );
+          
+          //Set the peaks for this ROI to share the same PeakContinuum as for this ROI and other R.E. curves
+          for( PeakDef &p : this_re_peaks.peaks )
+          {
+            if( !shared_continuum )
+              shared_continuum = p.continuum();
+            p.setContinuum( shared_continuum );
+          }//for( PeakDef &p : this_re_peaks.peaks )
+          
+          vector<PeakDef> &re_peaks = fit_peaks_for_each_curve[i];
+          re_peaks.insert( end(re_peaks), begin(this_re_peaks.peaks), end(this_re_peaks.peaks) );
+        }//for( size_t i = 0; i < num_rel_eff_curves; ++i )
+      }//if( more than R.E. curve )
+    }//for( const RoiRangeChannels &range : cost_functor->m_energy_ranges )
     
     std::sort( begin(fit_peaks), end(fit_peaks), &PeakDef::lessThanByMean );
+    for( vector<PeakDef> &re_peaks : fit_peaks_for_each_curve )
+      std::sort( begin(re_peaks), end(re_peaks), &PeakDef::lessThanByMean );
     
     solution.m_fit_peaks_in_spectrums_cal = fit_peaks;
-    
+    if( num_rel_eff_curves == 1 )
+      solution.m_fit_peaks_in_spectrums_cal_for_each_curve = vector<vector<PeakDef>>{1, fit_peaks};
+    else
+      solution.m_fit_peaks_in_spectrums_cal_for_each_curve = fit_peaks_for_each_curve;
+
+    if( background )
+    {
+      // We subtracted the background from foreground before fitting peaks, so if we plot the resulting
+      // peaks, they will be abit below the actual data.  So here we will adjust the continuum to best
+      // value we can, without changing the rest of the peak
+      solution.m_peaks_without_back_sub = RelActCalc::refit_roi_continuums( solution.m_fit_peaks_in_spectrums_cal, foreground );
+    }else
+    {
+      solution.m_peaks_without_back_sub = solution.m_fit_peaks_in_spectrums_cal;
+    }
     // \c fit_peaks are in the original energy calibration of the spectrum, we may need to adjust
     //  them to match the new energy calibration
     if( new_cal != cost_functor->m_energy_cal )
     {
-      deque<shared_ptr<const PeakDef>> tmp_peaks;
-      for( const auto &p : fit_peaks )
-        tmp_peaks.push_back( make_shared<const PeakDef>( p ) );
+      auto adjust_peaks = [cost_functor, new_cal]( vector<PeakDef> &input_peaks ){
+        deque<shared_ptr<const PeakDef>> tmp_peaks;
+        for( const auto &p : input_peaks )
+          tmp_peaks.push_back( make_shared<const PeakDef>( p ) );
+        
+        auto adjusted_peaks = EnergyCal::translatePeaksForCalibrationChange( tmp_peaks,
+                                                                            cost_functor->m_energy_cal, new_cal );
+        input_peaks.clear();
+        for( const auto &p : adjusted_peaks )
+          input_peaks.push_back( *p );
+      };//adjust_peaks lambda
       
-      auto adjusted_peaks = EnergyCal::translatePeaksForCalibrationChange( tmp_peaks,
-                                       cost_functor->m_energy_cal, new_cal );
+      adjust_peaks( fit_peaks );
       
-      fit_peaks.clear();
-      for( const auto &p : adjusted_peaks )
-        fit_peaks.push_back( *p );
+      for( vector<PeakDef> &re_peaks : fit_peaks_for_each_curve )
+        adjust_peaks( re_peaks );
     }//if( new_cal != cost_functor->m_energy_cal )
     
     solution.m_fit_peaks = fit_peaks;
-
-    assert( cost_functor->m_nuclides.size() == cost_functor->m_options.rel_eff_curves.size() );
+    if( num_rel_eff_curves == 1 )
+      solution.m_fit_peaks_for_each_curve = vector<vector<PeakDef>>{1, fit_peaks};
+    else
+      solution.m_fit_peaks_for_each_curve = fit_peaks_for_each_curve;
+    
+    assert( solution.m_fit_peaks_for_each_curve.size() == num_rel_eff_curves );
+    assert( solution.m_fit_peaks_in_spectrums_cal_for_each_curve.size() == num_rel_eff_curves );
+    
+    assert( cost_functor->m_nuclides.size() == num_rel_eff_curves );
+    assert( cost_functor->m_options.rel_eff_curves.size() == num_rel_eff_curves );
 
     solution.m_rel_eff_forms.clear();
-    solution.m_rel_eff_forms.resize( cost_functor->m_options.rel_eff_curves.size(), RelActCalc::RelEffEqnForm::LnX );
+    solution.m_rel_eff_forms.resize( num_rel_eff_curves, RelActCalc::RelEffEqnForm::LnX );
 
     solution.m_rel_eff_coefficients.clear();
-    solution.m_rel_eff_coefficients.resize( cost_functor->m_options.rel_eff_curves.size() );
+    solution.m_rel_eff_coefficients.resize( num_rel_eff_curves );
 
     solution.m_rel_activities.clear();
-    solution.m_rel_activities.resize( cost_functor->m_options.rel_eff_curves.size() );
+    solution.m_rel_activities.resize( num_rel_eff_curves );
     
-    for( size_t rel_eff_index = 0; rel_eff_index < cost_functor->m_options.rel_eff_curves.size(); ++rel_eff_index )
+    for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
     {
       const vector<NucInputGamma> &input_nuclides = cost_functor->m_nuclides[rel_eff_index];
       const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = cost_functor->m_options.rel_eff_curves[rel_eff_index];
@@ -3613,34 +5004,43 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       {
         const NucInputGamma &nuc_input = input_nuclides[act_index];
         const RelActCalcAuto::NucInputInfo &src = rel_eff_curve.nuclides[act_index];
-        assert( (nuc_input.nuclide == src.nuclide)
-               && (nuc_input.element == src.element)
-               && (nuc_input.reaction == src.reaction) );
+        assert( nuc_input.source == src.source );
       
         RelActCalcAuto::NuclideRelAct nuc_output;
-        nuc_output.nuclide = nuc_input.nuclide;
-        nuc_output.element = nuc_input.element;
-        nuc_output.reaction = nuc_output.reaction;
+        nuc_output.source = nuc_input.source;
         nuc_output.age = cost_functor->age( nuc_input, rel_eff_index, parameters );
         nuc_output.age_was_fit = nuc_input.fit_age;
-        nuc_output.rel_activity = cost_functor->relative_activity( nuc_input, rel_eff_index, parameters );
+        nuc_output.rel_activity = cost_functor->relative_activity( nuc_input.source, rel_eff_index, parameters );
       
         nuc_output.age_uncertainty = cost_functor->age( nuc_input, rel_eff_index, uncertainties );
-        nuc_output.rel_activity_uncertainty = cost_functor->relative_activity( nuc_input, rel_eff_index, uncertainties );
-      
+        
+        bool is_mass_constrained = false;
+        
+        if( const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(nuc_output.source) )
+        {
+          for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint mass_cons : rel_eff_curve.mass_fraction_constraints )
+            is_mass_constrained |= (mass_cons.nuclide == nuc);
+        }
+
+        if( solution.m_covariance.empty() )
+          nuc_output.rel_activity_uncertainty = -1.0;
+        else
+          nuc_output.rel_activity_uncertainty = cost_functor->relative_activity_uncertainty(
+                                                  nuc_output.source, rel_eff_index, parameters, solution.m_covariance );
+
         vector<SandiaDecay::EnergyRatePair> gammas;
-        if( nuc_input.nuclide )
+        if( const SandiaDecay::Nuclide *nuc = RelActCalcAuto::nuclide(nuc_output.source) )
         {
           SandiaDecay::NuclideMixture mix;
-          mix.addAgedNuclideByActivity( nuc_input.nuclide, ns_decay_act_mult, nuc_output.age );
-          gammas = mix.gammas( 0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy, true );
-        }else if( nuc_input.element )
+          mix.addAgedNuclideByActivity( nuc, ns_decay_act_mult, nuc_output.age );
+          gammas = mix.photons( 0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy );
+        }else if( const SandiaDecay::Element *el = RelActCalcAuto::element(nuc_output.source) )
         {
-          for( const SandiaDecay::EnergyIntensityPair &xray : nuc_input.element->xrays )
+          for( const SandiaDecay::EnergyIntensityPair &xray : el->xrays )
             gammas.emplace_back( ns_decay_act_mult*xray.intensity, xray.energy );
-        }else if( nuc_input.reaction )
+        }else if( const ReactionGamma::Reaction *rctn = RelActCalcAuto::reaction(nuc_output.source) )
         {
-          for( const ReactionGamma::Reaction::EnergyYield &reaction : nuc_input.reaction->gammas )
+          for( const ReactionGamma::Reaction::EnergyYield &reaction : rctn->gammas )
             gammas.emplace_back( ns_decay_act_mult*reaction.abundance, reaction.energy );
         }else
         {
@@ -3656,7 +5056,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
         if( IsNan(nuc_output.age_uncertainty) )
         {
-          const size_t par_act_index = cost_functor->nuclide_parameter_index( src, rel_eff_index );
+          const size_t par_act_index = cost_functor->nuclide_parameter_index( src.source, rel_eff_index );
           const size_t par_age_index = par_act_index + 1;
           solution.m_warnings.push_back( "Variance for nuclide " + nuc_input.name()
                                       + " age, is invalid ("
@@ -3665,7 +5065,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
         if( IsNan(nuc_output.rel_activity_uncertainty) )
         {
-          const size_t par_act_index = cost_functor->nuclide_parameter_index( src, rel_eff_index );
+          const size_t par_act_index = cost_functor->nuclide_parameter_index( src.source, rel_eff_index );
           solution.m_warnings.push_back( "Variance for nuclide " + nuc_input.name()
                                       + " activity, is invalid ("
                                       + std::to_string(uncerts_squared[par_act_index]) + ")" );
@@ -3673,18 +5073,20 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
         solution.m_rel_activities[rel_eff_index].push_back( nuc_output );
       }//for( size_t act_index = 0; act_index < cost_functor->m_nuclides.size(); ++ act_index )
-    }//for( size_t rel_eff_index = 0; rel_eff_index < cost_functor->m_options.rel_eff_curves.size(); ++rel_eff_index )
+    }//for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
     
     
-    assert( cost_functor->m_options.rel_eff_curves.size() == solution.m_rel_activities.size() );
-    if( cost_functor->m_options.rel_eff_curves.size() != solution.m_rel_activities.size() )
+    assert( solution.m_rel_activities.size() == num_rel_eff_curves );
+    if( solution.m_rel_activities.size() != num_rel_eff_curves )
       throw logic_error( "size(rel_eff_curves) != size(solution.m_rel_activities)" );
     
     // If we want to correct for Pu242, we wont alter solution.m_rel_activities, but place the
     //  corrected Pu mass fractions in solution.m_corrected_pu
     solution.m_corrected_pu.clear();
-    solution.m_corrected_pu.resize( cost_functor->m_options.rel_eff_curves.size() );
-    for( size_t rel_eff_index = 0; rel_eff_index < cost_functor->m_options.rel_eff_curves.size(); ++rel_eff_index )
+    solution.m_uncorrected_pu.clear();
+    solution.m_corrected_pu.resize( num_rel_eff_curves );
+    solution.m_uncorrected_pu.resize( num_rel_eff_curves );
+    for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
     {
       const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = cost_functor->m_options.rel_eff_curves[rel_eff_index];
       const vector<RelActCalcAuto::NuclideRelAct> &rel_acts = solution.m_rel_activities[rel_eff_index];
@@ -3693,38 +5095,45 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       {
         try
         {
-          RelActCalc::Pu242ByCorrelationInput raw_rel_masses;
-          
+          RelActCalc::Pu242ByCorrelationInput<double> raw_rel_masses;
+
+          set<double> pu_ages;
           double pu_total_mass = 0.0, raw_rel_mass = 0.0;
           for( const RelActCalcAuto::NuclideRelAct &nuc : rel_acts )
           {
-            assert( nuc.nuclide );
-            if( !nuc.nuclide || (nuc.nuclide->atomicNumber < 94) )
+            assert( !RelActCalcAuto::is_null(nuc.source) );
+            const SandiaDecay::Nuclide * const nuclide = RelActCalcAuto::nuclide(nuc.source);
+            if( !nuclide || (nuclide->atomicNumber != 94) )
               continue;
             
-            const double rel_mass = nuc.rel_activity / nuc.nuclide->activityPerGram();
+            const double rel_mass = nuc.rel_activity / nuclide->activityPerGram();
             
-            if( nuc.nuclide->atomicNumber == 94 )
+            pu_ages.insert( nuc.age );
+            pu_total_mass += rel_mass;
+            switch( nuclide->massNumber )
             {
-              pu_total_mass += rel_mass;
-              switch( nuc.nuclide->massNumber )
-              {
-                case 238: raw_rel_masses.pu238_rel_mass = rel_mass; break;
-                case 239: raw_rel_masses.pu239_rel_mass = rel_mass; break;
-                case 240: raw_rel_masses.pu240_rel_mass = rel_mass; break;
-                case 241: raw_rel_masses.pu241_rel_mass = rel_mass; break;
-                case 242:
-                  assert( 0 );
-                  throw std::logic_error( "Pu242 shouldnt be in the input nuclides if a Pu242"
+              case 238: raw_rel_masses.pu238_rel_mass = rel_mass; break;
+              case 239: raw_rel_masses.pu239_rel_mass = rel_mass; break;
+              case 240: raw_rel_masses.pu240_rel_mass = rel_mass; break;
+              case 241: raw_rel_masses.pu241_rel_mass = rel_mass; break;
+              case 242:
+                assert( 0 );
+                throw std::logic_error( "Pu242 shouldnt be in the input nuclides if a Pu242"
                                          " correlation correction method was specified." );
-                  break;
-                default:  raw_rel_masses.other_pu_mass = rel_mass;  break;
-              }//switch( nuc.nuclide->massNumber )
-            }else if( (nuc.nuclide->atomicNumber == 95) && (nuc.nuclide->massNumber == 241) )
+                break;
+              default:  raw_rel_masses.other_pu_mass = rel_mass;  break;
+            }//switch( nuclide->massNumber )
+
+            if( pu_ages.size() == 0 )
             {
-              // TODO: need to account for half-life of Am-241 and back decay the equivalent Pu241 mass
-              pu_total_mass += (242.0/241.0) * rel_mass;
-              raw_rel_masses.am241_rel_mass = rel_mass;
+              assert( pu_total_mass == 0.0 );
+            }else if( pu_ages.size() == 1 )
+            {
+              raw_rel_masses.pu_age = *begin(pu_ages);
+            }else
+            {
+              const vector<double> ages( begin(pu_ages), end(pu_ages) );
+              raw_rel_masses.pu_age = ages[ages.size() / 2]; //just take the median age...
             }
           }//for( const NuclideRelAct &nuc : m_rel_activities )
           
@@ -3734,24 +5143,25 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           raw_rel_masses.pu239_rel_mass /= pu_total_mass;
           raw_rel_masses.pu240_rel_mass /= pu_total_mass;
           raw_rel_masses.pu241_rel_mass /= pu_total_mass;
-          raw_rel_masses.am241_rel_mass /= pu_total_mass;
           raw_rel_masses.other_pu_mass  /= pu_total_mass;
           
-          const RelActCalc::Pu242ByCorrelationOutput corr_output
+          solution.m_uncorrected_pu[rel_eff_index].reset( new RelActCalc::Pu242ByCorrelationInput<double>(raw_rel_masses) );
+          
+          const RelActCalc::Pu242ByCorrelationOutput<double> corr_output
           = RelActCalc::correct_pu_mass_fractions_for_pu242( raw_rel_masses,
                                                             rel_eff_curve.pu242_correlation_method );
           
           if( !corr_output.is_within_range )
             solution.m_warnings.push_back( "The fit Pu enrichment is outside range validated in the"
-                                          " literature for the Pu242 correction by correlation." );
+                                          " literature for the Pu242 correlation." );
           
-          solution.m_corrected_pu[rel_eff_index].reset( new RelActCalc::Pu242ByCorrelationOutput(corr_output) );
+          solution.m_corrected_pu[rel_eff_index].reset( new RelActCalc::Pu242ByCorrelationOutput<double>(corr_output) );
         }catch( std::exception &e )
         {
           solution.m_warnings.push_back( "Correcting for Pu242 content failed: " + string(e.what()) );
         }//try / catch
       }//if( options.pu242_correlation_method != RelActCalc::PuCorrMethod::NotApplicable )
-    }//for( size_t rel_eff_index = 0; rel_eff_index < cost_functor->m_options.rel_eff_curves.size(); ++rel_eff_index )
+    }//for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
     
     
     solution.m_fwhm_form = options.fwhm_form;
@@ -3762,7 +5172,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     // If we are fitting the energy cal, we need to adjust the ROI ranges to the spectrum cal
     solution.m_final_roi_ranges_in_spectrum_cal.clear();
-    for( const RoiRangeChannels &roi : cost_functor->m_energy_ranges )
+    for( const RelActCalcAutoImp::RoiRangeChannels &roi : cost_functor->m_energy_ranges )
     {
       RelActCalcAuto::RoiRange roi_range = roi;
       if( options.fit_energy_cal )
@@ -3775,14 +5185,18 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }//for( const RoiRangeChannels &roi : cost_functor->m_energy_ranges )
 
 
+    assert( cost_functor->m_free_peak_area_multiples.size() == cost_functor->m_options.floating_peaks.size() );
+    
     for( size_t i = 0; i < cost_functor->m_options.floating_peaks.size(); ++i )
     {
       const size_t amp_index = cost_functor->m_free_peak_par_start_index + 2*i + 0;
       const size_t fwhm_index = amp_index + 1;
+
+      const double area_multiple = cost_functor->m_free_peak_area_multiples[i];
       
       RelActCalcAuto::FloatingPeakResult peak;
       peak.energy = cost_functor->m_options.floating_peaks[i].energy;
-      peak.amplitude = parameters[amp_index];
+      peak.amplitude = parameters[amp_index] * area_multiple;
       peak.fwhm = parameters[fwhm_index];
       
       if( !cost_functor->m_options.floating_peaks[i].release_fwhm )
@@ -3803,7 +5217,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         }
       }//if( we didnt let FWHM float ) / else
       
-      peak.amplitude_uncert = uncertainties[amp_index];
+      peak.amplitude_uncert = uncertainties[amp_index] * area_multiple;
       
       
       if( IsNan(peak.amplitude_uncert) )
@@ -3819,8 +5233,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     // Fill out PhysicalModel stuff, if we are fitting that
     solution.m_phys_model_results.clear();
-    solution.m_phys_model_results.resize( cost_functor->m_options.rel_eff_curves.size() );
-    const size_t num_rel_eff_curves = cost_functor->m_options.rel_eff_curves.size();
+    solution.m_phys_model_results.resize( num_rel_eff_curves );
+    
+    size_t first_phys_model_index = num_rel_eff_curves;
+    const RelActCalcAuto::RelEffCurveInput *first_phys_model_rel_eff_curve = nullptr;
+
     for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
     {
       const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = cost_functor->m_options.rel_eff_curves[rel_eff_index];
@@ -3829,13 +5246,23 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
       {
-        assert( rel_eff_coefficients.size() == (2 + 2*rel_eff_curve.phys_model_external_atten.size() + 2) );
-        
+        assert( !rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty()
+               || (rel_eff_coefficients.size() == (2 + 2*rel_eff_curve.phys_model_external_atten.size() + 2)) );
+
+        if( !first_phys_model_rel_eff_curve )
+        {
+          first_phys_model_index = rel_eff_index;
+          first_phys_model_rel_eff_curve = &rel_eff_curve;
+        }
+
         RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo phys_model_result;
         
         auto get_shield_info = [&]( const RelActCalc::PhysicalModelShieldInput &input,
+                                   const vector<double> &these_rel_eff_coefficients,
                                    const size_t start_index )
           -> RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::ShieldInfo {
+
+          assert( (start_index + 2) <= these_rel_eff_coefficients.size() );
 
           RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::ShieldInfo answer;
           
@@ -3844,14 +5271,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           if( input.fit_atomic_number )
           {
             assert( !input.material );
-            answer.atomic_number = rel_eff_coefficients[start_index + 0] * RelActCalc::ns_an_ceres_mult;
+            answer.atomic_number = these_rel_eff_coefficients[start_index + 0] * RelActCalc::ns_an_ceres_mult;
             assert( (answer.atomic_number >= 1.0) && (answer.atomic_number <= 98.0) );
             
             if( uncertainties.size() > (this_rel_eff_start_index + start_index) )
               answer.atomic_number_uncert = uncertainties[this_rel_eff_start_index + start_index + 0] * RelActCalc::ns_an_ceres_mult;
           }else if( !input.material )
           {
-            assert( (rel_eff_coefficients[start_index + 0] * RelActCalc::ns_an_ceres_mult)
+            assert( (these_rel_eff_coefficients[start_index + 0] * RelActCalc::ns_an_ceres_mult)
                    == input.atomic_number );
             answer.atomic_number = input.atomic_number;
             assert( (answer.atomic_number >= 1.0) && (answer.atomic_number <= 98.0) );
@@ -3863,14 +5290,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           answer.areal_density_was_fit = input.fit_areal_density;
           if( input.fit_areal_density )
           {
-            answer.areal_density = rel_eff_coefficients[start_index + 1] * PhysicalUnits::g_per_cm2;
+            answer.areal_density = these_rel_eff_coefficients[start_index + 1] * PhysicalUnits::g_per_cm2;
             assert( answer.areal_density >= 0.0 );
             
             if( uncertainties.size() > (this_rel_eff_start_index + start_index + 1) )
               answer.areal_density_uncert = uncertainties[this_rel_eff_start_index + start_index + 1] * PhysicalUnits::g_per_cm2; //or sqrt( m_rel_eff_covariance[start_index + 1][start_index + 1] )
           }else
           {
-            assert( rel_eff_coefficients[start_index + 1] == (input.areal_density / PhysicalUnits::g_per_cm2) );
+            assert( these_rel_eff_coefficients[start_index + 1] == (input.areal_density / PhysicalUnits::g_per_cm2) );
             answer.areal_density = input.areal_density;
           }
           
@@ -3883,15 +5310,44 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                || ((rel_eff_curve.phys_model_self_atten->atomic_number >= 1.0) && (rel_eff_curve.phys_model_self_atten->atomic_number <= 98.0))
                || rel_eff_curve.phys_model_self_atten->fit_atomic_number ) )
         {
-          phys_model_result.self_atten = get_shield_info( *rel_eff_curve.phys_model_self_atten, 0 );
+          phys_model_result.self_atten = get_shield_info( *rel_eff_curve.phys_model_self_atten, rel_eff_coefficients, 0 );
         }//if( options.phys_model_self_atten )
         
         for( size_t ext_ind = 0; ext_ind < rel_eff_curve.phys_model_external_atten.size(); ++ext_ind )
         {
-          auto res = get_shield_info( *rel_eff_curve.phys_model_external_atten[ext_ind], 2 + 2*ext_ind );
+          auto res = get_shield_info( *rel_eff_curve.phys_model_external_atten[ext_ind], rel_eff_coefficients, 2 + 2*ext_ind );
           phys_model_result.ext_shields.push_back( std::move(res) );
         }//for( loop over external attens )
-        
+
+        for( const size_t outer_curve_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
+        {
+          assert( outer_curve_index != rel_eff_index );
+          assert( outer_curve_index < cost_functor->m_options.rel_eff_curves.size() );
+          if( (outer_curve_index == rel_eff_index)
+             || (outer_curve_index >= cost_functor->m_options.rel_eff_curves.size()) )
+          {
+            continue;
+          }
+
+          const RelActCalcAuto::RelEffCurveInput &outer_curve = cost_functor->m_options.rel_eff_curves[outer_curve_index];
+          const size_t re_start_index = cost_functor->rel_eff_eqn_start_parameter(outer_curve_index);
+
+          if( outer_curve.phys_model_self_atten )
+          {
+            auto res = get_shield_info( *outer_curve.phys_model_self_atten, solution.m_final_parameters, re_start_index );
+            phys_model_result.shields_from_other_curves.push_back( res );
+          }
+          for( size_t i = 0; i < outer_curve.phys_model_external_atten.size(); ++i )
+          {
+            if( outer_curve.phys_model_self_atten )
+            {
+              auto res = get_shield_info( *outer_curve.phys_model_self_atten, solution.m_final_parameters, re_start_index + 2 + 2*i );
+              phys_model_result.shields_from_other_curves.push_back( res );
+            }
+          }
+        }//for( const size_t outer_curve_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
+        //shields_from_other_curves
+
         if( rel_eff_curve.phys_model_use_hoerl )
         {
           // Modified Hoerl corrections only present if fitting the Hoerl function was selected
@@ -3899,29 +5355,40 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           const size_t c_index = b_index + 1;
           assert( c_index < rel_eff_coefficients.size() );
           
-          phys_model_result.hoerl_b = rel_eff_coefficients[b_index];
-          phys_model_result.hoerl_c = rel_eff_coefficients[c_index];
+          phys_model_result.hoerl_b = (rel_eff_coefficients[b_index] - RelActCalc::ns_decay_hoerl_b_offset) * RelActCalc::ns_decay_hoerl_b_multiple;
+          phys_model_result.hoerl_c = (rel_eff_coefficients[c_index] - RelActCalc::ns_decay_hoerl_c_offset) * RelActCalc::ns_decay_hoerl_c_multiple;
           
           if( uncertainties.size() > (this_rel_eff_start_index + b_index) )
-            phys_model_result.hoerl_b_uncert = uncertainties[this_rel_eff_start_index + b_index];
+            phys_model_result.hoerl_b_uncert = uncertainties[this_rel_eff_start_index + b_index] * RelActCalc::ns_decay_hoerl_b_multiple;
+
           if( uncertainties.size() > (this_rel_eff_start_index + c_index) )
-            phys_model_result.hoerl_b_uncert = uncertainties[this_rel_eff_start_index + c_index];
+            phys_model_result.hoerl_c_uncert = uncertainties[this_rel_eff_start_index + c_index] * RelActCalc::ns_decay_hoerl_c_multiple; 
+
+          // If this isnt the first physical model, and we are using the same Hoerl function for all
+          //  then we will use the Hoerl function from the first physical model.
+          if( first_phys_model_rel_eff_curve && options.same_hoerl_for_all_rel_eff_curves && (rel_eff_index != first_phys_model_index) )
+          {
+            assert( phys_model_result.hoerl_b == solution.m_phys_model_results[first_phys_model_index]->hoerl_b );
+            assert( phys_model_result.hoerl_c == solution.m_phys_model_results[first_phys_model_index]->hoerl_c );
+            
+            phys_model_result.hoerl_b_uncert = solution.m_phys_model_results[first_phys_model_index]->hoerl_b_uncert;
+            phys_model_result.hoerl_c_uncert = solution.m_phys_model_results[first_phys_model_index]->hoerl_c_uncert;
+          }
         }//if( options.phys_model_use_hoerl )
         
         solution.m_phys_model_results[rel_eff_index] = std::move(phys_model_result);
       }//if( FramPhysicalModel )
     }//for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
     
-    
-    // We will fit the "best" peak amplitudes.  To do this we will cluster the peaks into regions
-    //  and fit them on a ROI by ROI basis; we will only fit the amplitude multiple in each region.
-    //
-    // blah blah blah
-    //  For plotting the Rel. Eff. points
+    try
     {
-     // const double cluster_num_sigma = 1.5;
-     // cost_functor->m_peak_ranges_with_uncert = cost_functor->cluster_photopeaks( cluster_num_sigma, parameters );
-     
+      solution.m_obs_eff_for_each_curve
+           = RelActCalcAuto::RelActAutoSolution::fit_free_peak_amplitudes( options, cost_functor.get(), parameters, solution );
+    }catch( std::exception &e )
+    {
+      assert( 0 );
+      solution.m_warnings.push_back( "Failed to freely-fit peak amplitudes for comparison to rel. eff. curve ('"
+                                    + string(e.what()) + "')."  );
     }
     
     /*
@@ -3932,24 +5399,50 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       {
         const auto range = cost_functor->m_peak_ranges_with_uncert[roi_index];
         const size_t par_index = cost_functor->m_add_br_uncert_start_index + roi_index;
-        const double multiple = solution.m_final_parameters[par_index]/sm_peak_range_uncert_par_offset;
+        const double multiple = 1.0 + (solution.m_final_parameters[par_index] - sm_peak_range_uncert_offset)/sm_peak_range_uncert_par_scale;
         cout << "\t[" << setprecision(4) << setw(6) << range.first << "," << setprecision(4) << setw(5) << range.second << "]: "
         << multiple << endl;
       }
       cout << endl;
     }//if( options.additional_br_uncert > 0.0 )
      */
-    
+
+    const size_t num_residuals = cost_functor->number_residuals();
     vector<double> residuals( cost_functor->number_residuals(), 0.0 );
     cost_functor->eval( parameters, residuals.data() );
     solution.m_chi2 = 0.0;
     for( const double v : residuals )
       solution.m_chi2 += v*v;
+
+    solution.m_dof = ((num_residuals >= num_effective_paramaters) ? (num_residuals - num_effective_paramaters) : size_t(0));
+
     
-    // TODO: need to setup the DOF
-    solution.m_dof = 0;
-    solution.m_warnings.push_back( "Not currently calculating DOF - need to implement" );
-    //solution.m_dof = residuals.size() - ;
+#ifndef NDEBUG
+    // Now that have the solution filled out, lets do a few sanity checks
+    for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
+    {
+      const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = cost_functor->m_options.rel_eff_curves[rel_eff_index];
+      const size_t this_rel_eff_start_index = cost_functor->rel_eff_eqn_start_parameter(rel_eff_index);
+      const vector<double> &rel_eff_coefficients = solution.m_rel_eff_coefficients[rel_eff_index];
+      
+      const vector<RelActCalcAuto::NuclideRelAct> &solution_rel_acts = solution.m_rel_activities[rel_eff_index];
+      const vector<NucInputGamma> &input_nuclides = cost_functor->m_nuclides[rel_eff_index];
+      assert( input_nuclides.size() == solution_rel_acts.size() );
+      
+      for( size_t act_index = 0; act_index < input_nuclides.size(); ++act_index )
+      {
+        const NucInputGamma &input_src = input_nuclides[act_index];
+        const RelActCalcAuto::NuclideRelAct &solution_src = solution_rel_acts[act_index];
+        assert( input_src.source == solution_src.source );
+        
+        const size_t solution_index = solution.fit_parameters_index_for_source( solution_src.source, rel_eff_index );
+        const size_t implementation_index = cost_functor->nuclide_parameter_index( input_src.source, rel_eff_index );
+        if( solution_index != implementation_index )
+          cout << "solution_index != implementation_index - " << solution_index << " != " << implementation_index << endl;
+        assert( solution_index == implementation_index );
+      }//for( size_t act_index = 0; act_index < input_nuclides.size(); ++act_index )
+    }//for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
+#endif
     
     //solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::Success;
     
@@ -3968,30 +5461,26 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                           double age,
                                           const std::vector<double> &gammas_to_exclude ) const
   {
-    assert( nuc_info.nuclide || (nuc_info.age < 0.0) );
-    assert( !nuc_info.nuclide || (nuc_info.age >= 0.0) );
-    assert( (static_cast<int>(!!nuc_info.nuclide) 
-             + static_cast<int>(!!nuc_info.element) 
-             + static_cast<int>(!!nuc_info.reaction)) == 1 );
+    assert( RelActCalcAuto::nuclide(nuc_info.source) || (nuc_info.age < 0.0) );
+    assert( !RelActCalcAuto::nuclide(nuc_info.source) || (nuc_info.age >= 0.0) );
+    
+    assert( !RelActCalcAuto::is_null(nuc_info.source) );
         
-    const void *key_ptr = nullptr;
-    if( nuc_info.nuclide )
-    {
-      key_ptr = static_cast<const void *>(nuc_info.nuclide);
-    }else if( nuc_info.element )
-    {
-      key_ptr = static_cast<const void *>(nuc_info.element);
-      assert( age <= 0.0 );
-      age = 0.0;
-    }else if( nuc_info.reaction )
-    {
-      key_ptr = static_cast<const void *>(nuc_info.reaction);
-      assert( age <= 0.0 );
-      age = 0.0;
-    }else
-    {
+    const SandiaDecay::Nuclide * const nuclide = RelActCalcAuto::nuclide(nuc_info.source);
+    const SandiaDecay::Element * const element = RelActCalcAuto::element(nuc_info.source);
+    const ReactionGamma::Reaction * const reaction = RelActCalcAuto::reaction(nuc_info.source);
+
+    assert( nuclide || (age <= 0.0) );
+    age = nuclide ? age : 0.0; //for non nuclides, make sure age is 0.0
+
+    const void *key_ptr = static_cast<const void *>( nuclide );
+    if( !key_ptr )
+      key_ptr = static_cast<const void *>( element );
+    if( !key_ptr )
+      key_ptr = static_cast<const void *>( reaction );
+    if( !key_ptr )
       throw std::logic_error( "Invalid NucInputInfo" );
-    }
+    
     
     const pair<const void *,float> key{ key_ptr, static_cast<float>(age) };
     
@@ -4001,7 +5490,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           
       const auto pos = m_aged_gammas_cache.find( key );
       if( pos != end(m_aged_gammas_cache) )
+      {
+        assert( pos->second );
         return pos->second;
+      }
     }//end lock on m_aged_gammas_cache_mutex
 
     // We havent cached what we are being asked for, so we will compute it and cache the result
@@ -4010,16 +5502,16 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     //Taking arguments by reference for this next cleanup block because the cleanup variable
     // variable (addToCacheOnExit) will be destructed before any of the ones already defined
     // at this point.
-    DoWorkOnDestruct addToCacheOnExit( [this, &key, &answer]() { 
+    DoWorkOnDestruct addToCacheOnExit( [this, key, answer]() { 
       std::lock_guard<std::mutex> cache_lock( m_aged_gammas_cache_mutex );
+      assert( answer );
       m_aged_gammas_cache[key] = answer;
             
       // TODO: limit size of cache
     } );
 
-    if( nuc_info.element )
+    if( element )
     {
-      const SandiaDecay::Element * const element = nuc_info.element;
       const vector<SandiaDecay::EnergyIntensityPair> &xrays = element->xrays;
       
       for( const SandiaDecay::EnergyIntensityPair &xray : xrays )
@@ -4027,31 +5519,32 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         NucInputGamma::EnergyYield info;
         info.energy = xray.energy;
         info.yield = xray.intensity;
+        info.transition_index = 0;
+        info.transition = nullptr;
         info.gamma_type = PeakDef::SourceGammaType::XrayGamma;
         info.element = element;
         answer->push_back( std::move(info) );
       }//for( const SandiaDecay::EnergyIntensityPair &xray : xrays )
 
       return answer;
-    }else if( nuc_info.reaction )
+    }else if( reaction )
     {
-      const ReactionGamma::Reaction * const rctn = nuc_info.reaction;
-      const vector<ReactionGamma::Reaction::EnergyYield> &gammas = rctn->gammas;
+      const vector<ReactionGamma::Reaction::EnergyYield> &gammas = reaction->gammas;
       
-      for( const ReactionGamma::Reaction::EnergyYield &reaction : gammas )
+      for( const ReactionGamma::Reaction::EnergyYield &reaction_yield : gammas )
       {
         NucInputGamma::EnergyYield info;
-        info.energy = reaction.energy;
-        info.yield = reaction.abundance;
+        info.energy = reaction_yield.energy;
+        info.yield = reaction_yield.abundance;
         info.gamma_type = PeakDef::SourceGammaType::NormalGamma;
-        info.reaction = rctn;
+        info.reaction = reaction;
         answer->push_back( std::move(info) );
       }//for( const ReactionGamma::EnergyYield &reaction : reactions )
 
       return answer;
     }//if( nuc_info.element ) / else if( nuc_info.reaction )
     
-    const SandiaDecay::Nuclide * const parent = nuc_info.nuclide;
+    const SandiaDecay::Nuclide * const parent = nuclide;
     assert( parent );
     
     SandiaDecay::NuclideMixture mix;
@@ -4087,7 +5580,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         for( size_t productNum = 0; productNum < n_products; ++productNum )
         {
           const SandiaDecay::RadParticle &particle = transition->products[productNum];
-          if( particle.type == SandiaDecay::ProductType::GammaParticle )
+          if( (particle.type == SandiaDecay::ProductType::GammaParticle)
+              || (particle.type == SandiaDecay::ProductType::XrayParticle) )
           {
             bool exclude = false;
             for( const double exclude_energy : gammas_to_exclude )
@@ -4103,7 +5597,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             
             info.transition_index = productNum;
             info.transition = transition;
-            info.gamma_type = PeakDef::SourceGammaType::NormalGamma;
+            info.gamma_type = (particle.type == SandiaDecay::ProductType::GammaParticle) 
+                              ? PeakDef::SourceGammaType::NormalGamma
+                              : PeakDef::SourceGammaType::XrayGamma;
           }else if( particle.type == SandiaDecay::ProductType::PositronParticle )
           {
             has_annihilation = true;
@@ -4171,10 +5667,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       }
     }//for( size_t current_index = 1; current_index < all_gamma_transitions.size(); ++current_index )
 
+    assert( answer );
     return answer;
   }//std::shared_ptr<const vector<EnergyYield>> decay_gammas( const SandiaDecay::Nuclide * const parent, ... )
 
-  
+  /** Provides the lower and upper ranges for each "independent" peak; use `<=` and `>=` to check if a gamma is in this energy range.
+   The energies are "true" energies, so not adjusted for energy calibration or the spectrum or anything.
+   Only energies in a ROI will be returned.
+   */
   vector<pair<double,double>> cluster_photopeaks( const double cluster_num_sigma, const std::vector<double> &x ) const
   {
     // TODO: this function is by no means optimized - it does stupid O(N^2) things.
@@ -4205,7 +5705,15 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       for( const NucInputGamma &nuc_input : rel_rff_nucs )
       {
         assert( nuc_input.nominal_gammas );
-        for( const NucInputGamma::EnergyYield &line_info : *nuc_input.nominal_gammas )
+
+        shared_ptr<const vector<NucInputGamma::EnergyYield>> gammas = nuc_input.nominal_gammas;
+        if( nuc_input.fit_age )
+        {
+          const double age = this->age(nuc_input, rel_eff_index, x);
+          gammas = this->decay_gammas( nuc_input, age, nuc_input.gammas_to_exclude );
+        }
+
+        for( const NucInputGamma::EnergyYield &line_info : *gammas )
         {
           const double energy = line_info.energy;
           
@@ -4219,7 +5727,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           if( !in_a_roi )
             continue;
           
-          const double rel_act = relative_activity( nuc_input, rel_eff_index, x );
+          const double rel_act = relative_activity( nuc_input.source, rel_eff_index, x );
           const double rel_eff = relative_eff( energy, rel_eff_index, x );
           
           const double counts = rel_act * rel_eff * line_info.yield * live_time;
@@ -4332,6 +5840,15 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     assert( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars == m_fwhm_par_start_index );
     const size_t num_drf_par = num_parameters(m_options.fwhm_form);
     
+#ifndef NDEBUG
+    // Make sure the scale factors are 1.0 for all FWHM parameters that are not FWHM parameters
+    for( size_t i = 0; i < num_drf_par; ++i )
+    {
+      const double scale_factor = this->parameter_scale_factor( i + RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars );
+      assert( scale_factor == 1.0 );
+    }
+#endif
+
     return eval_fwhm( energy, m_options.fwhm_form, drf_start, num_drf_par, m_drf );
   }//float fwhm(...)
   
@@ -4399,11 +5916,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   }//set_peak_skew(...)
   
   /// Returns the index for this nuclide within the relative efficiency curve
-  size_t nuclide_index( const RelActCalcAuto::NucInputInfo &src, const size_t rel_eff_index ) const
+  size_t nuclide_index( const RelActCalcAuto::SrcVariant &src, const size_t rel_eff_index ) const
   {
-    assert( (static_cast<int>(!!src.nuclide) + static_cast<int>(!!src.element) + static_cast<int>(!!src.reaction)) == 1 );
+    assert( !RelActCalcAuto::is_null(src) );
     
-    if( !src.nuclide && !src.element && !src.reaction )
+    if( RelActCalcAuto::is_null(src) )
       throw runtime_error( "nuclide_index: null src" );
     
     assert( rel_eff_index < m_options.rel_eff_curves.size() );
@@ -4415,12 +5932,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     size_t nuc_index = rel_eff_curve.nuclides.size();
     for( size_t i = 0; i < nuc_index; ++i )
     {
-      if( (rel_eff_curve.nuclides[i].nuclide == src.nuclide)
-         && (rel_eff_curve.nuclides[i].element == src.element)
-         && (rel_eff_curve.nuclides[i].reaction == src.reaction))
-      {
+      if( rel_eff_curve.nuclides[i].source == src )
         nuc_index = i;
-      }
     }
     
     assert( nuc_index < rel_eff_curve.nuclides.size() );
@@ -4432,7 +5945,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   
 
   /** Returns the index for this nuclide's activity (the age is +1) within the Ceres parameter vector */
-  size_t nuclide_parameter_index( const RelActCalcAuto::NucInputInfo &src, const size_t rel_eff_index ) const
+  size_t nuclide_parameter_index( const RelActCalcAuto::SrcVariant &src, const size_t rel_eff_index ) const
   {
     assert( rel_eff_index < m_options.rel_eff_curves.size() );
     if( rel_eff_index >= m_options.rel_eff_curves.size() )
@@ -4602,7 +6115,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             return "Hoerl" + re_ind + "(c)";
         }else
         {
-          return "RE_" + re_ind + std::to_string(index - sub_ind);
+          return "RE_" + re_ind + std::to_string(sub_ind);
         }//if( physical model ) / else
       }//for( const auto &rel_eff_curve : m_options.rel_eff_curves )
 
@@ -4632,9 +6145,17 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         if( act_num >= rel_eff_curve.nuclides.size() )
           throw runtime_error( "Logic for determining nuclide index is total whack, yo" );
       
-        assert( rel_eff_curve.nuclides[act_num].nuclide || rel_eff_curve.nuclides[act_num].element || rel_eff_curve.nuclides[act_num].reaction );
+        assert( !RelActCalcAuto::is_null(rel_eff_curve.nuclides[act_num].source) );
         if( (act_index % 2) == 0 )
+        {
+          //Check if mass fraction constraint for nuclide, and if so
+          const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint *constraint
+                                    = mass_fraction_constraint(rel_eff_curve.nuclides[act_num].source, rel_eff_index );
+          if( constraint )
+            return "MFrac" + re_ind + "(" + rel_eff_curve.nuclides[act_num].name() + ")";
+
           return "Act" + re_ind + "(" + rel_eff_curve.nuclides[act_num].name() + ")";
+        }
         return "Age" + re_ind + "(" + rel_eff_curve.nuclides[act_num].name() + ")";
       }//for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
     }//if( index < m_free_peak_par_start_index )
@@ -4666,9 +6187,199 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     return "dBr" + std::to_string(mid_energy);
   }//std::string parameter_name( const size_t index ) const
   
+
+  double parameter_scale_factor( const size_t index ) const
+  {
+    assert( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars == m_fwhm_par_start_index );
+    
+    if( index < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars )
+    {
+      // The offset, gain, and quad adjustments are `(par/sm_energy_par_offset - 1.0) * sm_energy_cal_multiple`
+      //  This value is then added to the base paramater value.
+      return RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple / RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset;
+    }//if( index < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars )
+    
+    
+    if( index < m_rel_eff_par_start_index )
+    {
+      // Its a FWHM parameter
+      return 1.0;  // No scale factor for FWHM parameters currently
+    }//if( index < m_rel_eff_par_start_index )
+    
+    
+    if( index < m_acts_par_start_index )
+    {
+      //This is a relative efficiency curve values
+      size_t coef_num = m_rel_eff_par_start_index;
+
+      const size_t num_rel_eff_curves = m_options.rel_eff_curves.size();
+      size_t first_physical_model_index = num_rel_eff_curves;
+      for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
+      {
+        const auto &rel_eff_curve = m_options.rel_eff_curves[rel_eff_index];
+        size_t num_coefs_this_rel_eff = rel_eff_curve.rel_eff_eqn_order + 1;
+        if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+          num_coefs_this_rel_eff = 2 + 2*rel_eff_curve.phys_model_external_atten.size() + 2;
+
+        const size_t sub_ind = index - coef_num;
+        if( sub_ind >= num_coefs_this_rel_eff )
+        {
+          coef_num += num_coefs_this_rel_eff;
+          continue;
+        }
+
+        const string re_ind = num_rel_eff_curves > 1 ? std::to_string(rel_eff_index) : "";
+        if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+        {
+          if( first_physical_model_index == num_rel_eff_curves )
+            first_physical_model_index = rel_eff_index;
+
+          if( sub_ind == 0 )
+            return RelActCalc::ns_an_ceres_mult; //Atomic number
+          if( sub_ind == 1 )
+            return 1.0; // We just use 1.0 for areal density right now
+        
+          if( sub_ind < (2 + 2*rel_eff_curve.phys_model_external_atten.size()) )
+          {
+            const size_t ext_atten_num = (sub_ind - 2) / 2;
+            if( (sub_ind % 2) == 0 )
+              return RelActCalc::ns_an_ceres_mult;
+            return 1.0; //AD
+          }
+
+          assert( sub_ind >= (2 + 2*rel_eff_curve.phys_model_external_atten.size()) );
+
+          if( !rel_eff_curve.phys_model_use_hoerl )
+            return 0.0;  // We arent using the Hoerl function, so no scale factor
+
+          if( m_options.same_hoerl_for_all_rel_eff_curves && (rel_eff_index != first_physical_model_index) )
+            return 0.0;  // We arent using the Hoerl function, so no scale factor
+
+          const size_t hoerl_num = sub_ind - 2 - 2*rel_eff_curve.phys_model_external_atten.size();
+          if( hoerl_num == 0 )
+            return rel_eff_curve.phys_model_use_hoerl ? RelActCalc::ns_decay_hoerl_b_multiple : 0.0;
+        
+          assert( hoerl_num == 1 );
+          if( hoerl_num == 1 )
+            return rel_eff_curve.phys_model_use_hoerl ? RelActCalc::ns_decay_hoerl_c_multiple : 0.0;
+        }else
+        {
+          return 1.0; // The polynomial-esque Rel. Eff. eqn coefficients are not scaled
+        }//if( physical model ) / else
+      }//for( const auto &rel_eff_curve : m_options.rel_eff_curves )
+
+      assert( 0 );
+      throw std::logic_error( "Logic for determining Physical Model coefficient name is bad." );
+    }//if( index < m_acts_par_start_index )
+    
+    if( index < m_free_peak_par_start_index )
+    {
+      // This is a nuclide activity or age parameter; each source gets two parameters, activity, and age
+      size_t coef_num = m_acts_par_start_index;
+      const size_t num_rel_eff_curves = m_options.rel_eff_curves.size();
+      for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
+      {
+        const auto &rel_eff_curve = m_options.rel_eff_curves[rel_eff_index];
+        const size_t act_index = index - coef_num;
+        const size_t num_coefs_this_rel_eff = 2*rel_eff_curve.nuclides.size();
+        if( act_index >= num_coefs_this_rel_eff )
+        {
+          coef_num += num_coefs_this_rel_eff;
+          continue;
+        }
+
+        const string re_ind = num_rel_eff_curves > 1 ? std::to_string(rel_eff_index) : "";
+        const size_t act_num = act_index / 2;
+        assert( act_num < rel_eff_curve.nuclides.size() );
+        if( act_num >= rel_eff_curve.nuclides.size() )
+          throw runtime_error( "Logic for determining nuclide index is total whack, yo" );
+      
+        const NucInputGamma &src = m_nuclides[rel_eff_index][act_num];
+        assert( !RelActCalcAuto::is_null(rel_eff_curve.nuclides[act_num].source) );
+        if( (act_index % 2) == 0 )
+          return (src.activity_multiple > 0.0) ? src.activity_multiple : 0.0;
+        return (src.age_multiple > 0.0) ? src.age_multiple : 0.0;
+      }//for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
+    }//if( index < m_free_peak_par_start_index )
+    
+    if( index < m_skew_par_start_index )
+    {
+      // This is a free peak parameter; each peak gets one parameter - its amplitude.
+      assert( m_free_peak_area_multiples.size() == m_options.floating_peaks.size() );
+      if( m_free_peak_area_multiples.size() != m_options.floating_peaks.size() )
+        throw std::logic_error( "Bad computing of parameter scale factor - free peak area multiples size mismatch" );  //shouldnt ever happen
+
+      const size_t index_within_free_peaks = index - m_free_peak_par_start_index;
+      const size_t free_peak_num = index_within_free_peaks / 2;
+      assert( free_peak_num < m_options.floating_peaks.size() );
+      if( free_peak_num >= m_options.floating_peaks.size() )
+        throw std::logic_error( "Bad computing of parameter scale factor - too large of index" );
+      
+      if( (index_within_free_peaks % 2) == 0 )  // We want the amplitude.
+        return m_free_peak_area_multiples[free_peak_num];
+
+      if( !m_options.floating_peaks[free_peak_num].release_fwhm ) //If not fitting FWHM, return 0.0.
+        return 0.0;
+      return 1.0;
+    }//if( index < m_skew_par_start_index )
+    
+    if( index < m_add_br_uncert_start_index )
+    {
+      return 1.0; // No scale factor for skew parameters currently
+    }//if( index < m_add_br_uncert_start_index )
+    
+    assert( m_add_br_uncert_start_index != std::numeric_limits<size_t>::max() );
+    assert( (m_add_br_uncert_start_index + m_peak_ranges_with_uncert.size()) == number_parameters() );
+    
+    if( m_add_br_uncert_start_index == std::numeric_limits<size_t>::max() )
+      throw runtime_error( "Whack computing of scale - things not legit." );
+    
+    if( index >= (m_add_br_uncert_start_index + m_peak_ranges_with_uncert.size()) )
+      throw runtime_error( "Bad computing of parameter name - too large of index" );
+    
+    //(par_value - sm_peak_range_uncert_offset)/sm_peak_range_uncert_par_scale;
+    return 1.0 / sm_peak_range_uncert_par_scale;
+  }//double parameter_scale_factor( const size_t index ) const
   
+
+  const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint *activity_ratio_constraint(
+                                                                          const RelActCalcAuto::SrcVariant &src,
+                                                                          const size_t rel_eff_index ) const
+  {
+    assert( (rel_eff_index < m_nuclides.size()) && (rel_eff_index < m_options.rel_eff_curves.size()) );
+    if( rel_eff_index >= m_nuclides.size() )
+      return nullptr;
+
+    const vector<RelActCalcAuto::RelEffCurveInput::ActRatioConstraint> &c
+                                                        = m_options.rel_eff_curves[rel_eff_index].act_ratio_constraints;
+
+    const auto pos = std::find_if( begin(c), end(c), [src]( const auto &a ){
+      assert( !RelActCalcAuto::is_null(a.constrained_source) );
+      assert( !RelActCalcAuto::is_null(a.controlling_source) );
+      return a.constrained_source == src;
+    } );
+    return (pos != end(c)) ? &(*pos) : nullptr;
+  }//activity_ratio_constraint(...)
+
+
+  const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint *mass_fraction_constraint(
+                                                                            const RelActCalcAuto::SrcVariant &src,
+                                                                            const size_t rel_eff_index ) const
+  {
+    assert( (rel_eff_index < m_nuclides.size()) && (rel_eff_index < m_options.rel_eff_curves.size()) );
+    const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(src);
+    if( !nuc || (rel_eff_index >= m_nuclides.size()) )
+      return nullptr;
+
+    const vector<RelActCalcAuto::RelEffCurveInput::MassFractionConstraint> &c
+                                                  = m_options.rel_eff_curves[rel_eff_index].mass_fraction_constraints;
+    const auto pos = std::find_if( begin(c), end(c), [nuc]( const auto &m ){ return m.nuclide == nuc; } );
+    return (pos != end(c)) ? &(*pos) : nullptr;
+  }//const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint *mass_fraction_constraint( nuc.source, re_eff_index )
+
+
   template<typename T>
-  T relative_activity( const RelActCalcAuto::NucInputInfo &src, const size_t rel_eff_index, const std::vector<T> &x ) const
+  T relative_activity( const RelActCalcAuto::SrcVariant &src, const size_t rel_eff_index, const std::vector<T> &x ) const
   {
     assert( x.size() == number_parameters() );
     assert( m_nuclides.size() == m_options.rel_eff_curves.size() );
@@ -4676,35 +6387,124 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     if( rel_eff_index >= m_nuclides.size() )
       throw std::logic_error( "relative_activity: invalid relative efficiency curve index." );
     
-    // Check for a nuclide constraint, if a nuclide source
-    if( src.nuclide )
-    {
-      const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = m_options.rel_eff_curves[rel_eff_index];
-      for( const auto &nuc_constraint : rel_eff_curve.act_ratio_constraints )
-      {
-        if( nuc_constraint.constrained_nuclide == src.nuclide )
-        {
+    assert( !RelActCalcAuto::is_null(src) );
+    if( RelActCalcAuto::is_null(src) )
+      throw runtime_error( "relative_activity: invalid source." );
+
+    // Check for a source constraint
+    const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = m_options.rel_eff_curves[rel_eff_index];
+
 #ifndef NDEBUG
-          const size_t nuc_x_index = nuclide_parameter_index( src, rel_eff_index );
-          const size_t nuc_index = nuclide_index( src, rel_eff_index );
-          assert( m_nuclides[rel_eff_index][nuc_index].nuclide == src.nuclide );
-          assert( m_nuclides[rel_eff_index][nuc_index].activity_multiple == -1.0 );
-          const T rel_act_x_val = x[nuc_x_index];
-          // rel_act_x_val should be fixed to -1.0, but numeric differentiator may still vary a little, 
-          //  or if we pass in paramater uncertainties, then the value will be 0.0.
-          assert( rel_act_x_val <= 0.0 ); 
+    {
+      const size_t nuc_x_index = nuclide_parameter_index( src, rel_eff_index );
+      const size_t nuc_index = nuclide_index( src, rel_eff_index ); // Will throw exception if not a nuclide in the rel eff curve
+      const double act_multiple = parameter_scale_factor( nuc_x_index );
+      const double age_multiple = parameter_scale_factor( nuc_x_index + 1 );
+      assert( ((m_nuclides[rel_eff_index][nuc_index].age_multiple < 0.0) && (age_multiple == 0.0)) 
+              || (age_multiple == m_nuclides[rel_eff_index][nuc_index].age_multiple) );
+      assert( ((m_nuclides[rel_eff_index][nuc_index].activity_multiple < 0.0) && (act_multiple == 0.0))
+              || (act_multiple == m_nuclides[rel_eff_index][nuc_index].activity_multiple) );
+    }
 #endif
 
-          const double act_ratio = nuc_constraint.constrained_to_controlled_activity_ratio;
-          assert( act_ratio > 0.0 );
-          const SandiaDecay::Nuclide *control_nuc = nuc_constraint.controlling_nuclide;
-          assert( nuc_constraint.controlling_nuclide );
-          const RelActCalcAuto::NucInputInfo &constrol_info = input_src_info( nuc_constraint.controlling_nuclide, rel_eff_index );
+    for( const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &nuc_constraint : rel_eff_curve.act_ratio_constraints )
+    {
+      if( nuc_constraint.constrained_source == src )
+      {
+#ifndef NDEBUG
+        const size_t nuc_x_index = nuclide_parameter_index( src, rel_eff_index );
+        const size_t nuc_index = nuclide_index( src, rel_eff_index );
+        assert( m_nuclides[rel_eff_index][nuc_index].source == src );
+        assert( m_nuclides[rel_eff_index][nuc_index].activity_multiple == -1.0 );
+        const T rel_act_x_val = x[nuc_x_index];
+        // rel_act_x_val should be fixed to -1.0, but numeric differentiator may still vary a little, 
+        //  or if we pass in paramater uncertainties, then the value will be 0.0.
+        assert( rel_act_x_val <= 0.0 );
+        assert( activity_ratio_constraint(src, rel_eff_index) == (&nuc_constraint) );
+#endif
+
+        const double act_ratio = nuc_constraint.constrained_to_controlled_activity_ratio;
+        assert( act_ratio > 0.0 );
+        const RelActCalcAuto::SrcVariant &control_nuc = nuc_constraint.controlling_source;
+        assert( !RelActCalcAuto::is_null(control_nuc) );
+        const T controlled_act = relative_activity( control_nuc, rel_eff_index, x );
+        return act_ratio * controlled_act;
+      }
+    }//for( const auto &nuc_constraint : rel_eff_curve.act_ratio_constraints )
+
+    // Check for a mass fraction constraint (only applicable for nuclide sources)
+    const SandiaDecay::Nuclide *src_nuc = RelActCalcAuto::nuclide(src);
+    if( src_nuc )
+    {
+      for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &mass_frac_constraint : rel_eff_curve.mass_fraction_constraints )
+      {
+        if( mass_frac_constraint.nuclide != src_nuc )
+          continue;
+        
+        // If we are here, `src.nuclide` is a mass-constrained nuclide.
+
+        assert( mass_fraction_constraint(src,rel_eff_index) == (&mass_frac_constraint) );
+
+        // Sum the relative masses of the other nuclides of this element
+        // and sum the mass-constrained portion of this element.
+        T sum_unconstrained_rel_mass_of_el( 0.0 ); //Note this is rel act divide by specific activity, and does not add up to one
+        T sum_constrained_frac_rel_mass_of_el( 0.0 ); // This will include `src.nuclide`, and be less than 1.0
+        for( const RelActCalcAuto::NucInputInfo &nuclide : rel_eff_curve.nuclides )
+        {
+          const SandiaDecay::Nuclide *nuclide_nuc = RelActCalcAuto::nuclide(nuclide.source);
+          if( !nuclide_nuc || (nuclide_nuc->atomicNumber != src_nuc->atomicNumber) )
+            continue;
           
-          const T controlled_act = relative_activity( constrol_info, rel_eff_index, x );
-          return act_ratio * controlled_act;
-        }
-      }//for( const auto &nuc_constraint : rel_eff_curve.act_ratio_constraints )
+          const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint * const mass_constraint
+                                                               = mass_fraction_constraint(nuclide.source,rel_eff_index);
+           
+          if( mass_constraint )
+          {
+            const size_t nuc_x_index = nuclide_parameter_index( nuclide.source, rel_eff_index );
+            const T rel_dist = (x[nuc_x_index] - RelActAutoCostFcn::sm_activity_par_offset); //Rel Act paramater is constrained within offset and 1.0+offset, to make mass fraction go between lower and upper
+            assert( rel_dist >= (0.0 - 1.0E-6) );
+            assert( rel_dist <= (1.0 + 1.0E-6) );
+            
+            const T rel_mass = (1.0 - rel_dist)*mass_constraint->lower_mass_fraction + rel_dist*mass_constraint->upper_mass_fraction;
+            sum_constrained_frac_rel_mass_of_el += rel_mass;
+          }else
+          {
+            const T rel_act = relative_activity( nuclide.source, rel_eff_index, x );
+            const double specific_activity = nuclide_nuc->activityPerGram();
+            sum_unconstrained_rel_mass_of_el += (rel_act / specific_activity);
+          }//if( is_mass_constrained ) / else
+        }//for( const NucInputInfo &nuclide : rel_eff_curve.nuclides )
+
+        // If there are multiple mass fraction constraints on the same nuclide, and a particular Ceres parameter
+        //  solution gives the sum of all the mass fractions to be greater than 1.0, we throw an exception, causing
+        //  this particular set of parameters to be rejected.
+        //  Also, right now we are requiring at least one nuclide for the element to not have a mass-fraction constraint,
+        //  which we may relax in the future (its just a little easier to implement this way, because otherwise we would
+        //  have to scale the rel_act of them all, which we could do...)
+        if( sum_constrained_frac_rel_mass_of_el > 1.0 )
+          throw runtime_error( "Sum of constrained mass fractions of element is greater than 1.0." );
+
+        if( sum_constrained_frac_rel_mass_of_el < 0.0 )
+          throw runtime_error( "Sum of constrained mass fractions of element is less than 0.0." );
+
+        const T unconstrained_rel_mass_frac_of_el = 1.0 - sum_constrained_frac_rel_mass_of_el;
+        
+
+        const size_t this_nuc_x_index = nuclide_parameter_index( src, rel_eff_index );
+        const T rel_dist = x[this_nuc_x_index] - RelActAutoCostFcn::sm_activity_par_offset;
+        assert( (rel_dist >= (0.0 - 1.0E-6)) || (x[this_nuc_x_index] == 0.0) );
+        assert( rel_dist <= (1.0 + 1.0E-6) || (x[this_nuc_x_index] == 0.0) );
+        const T this_rel_mass_frac = mass_frac_constraint.lower_mass_fraction
+                                     + rel_dist*(mass_frac_constraint.upper_mass_fraction - mass_frac_constraint.lower_mass_fraction);
+        assert( this_rel_mass_frac >= (0.0 - 1.0E-6) );
+        assert( this_rel_mass_frac <= (1.0 + 1.0E-6) );
+
+        const T total_rel_mass = sum_unconstrained_rel_mass_of_el / unconstrained_rel_mass_frac_of_el;
+        const T this_rel_mass = total_rel_mass * this_rel_mass_frac;
+        const T this_rel_act = this_rel_mass * mass_frac_constraint.nuclide->activityPerGram();
+
+        return this_rel_act;
+      }//for( const auto &mass_frac_constraint : rel_eff_curve.mass_fraction_constraints )
     }//if( src.nuclide )
     
     // No nuclide constraint, so we can just use the normal logic
@@ -4713,16 +6513,307 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
     const size_t nuc_index = nuclide_index( src, rel_eff_index );
     const NucInputGamma &nuc_info = nuclides[nuc_index];
-    assert( (nuc_info.nuclide == src.nuclide)
-            && (nuc_info.element == src.element)
-            && (nuc_info.reaction == src.reaction) );
+    assert( nuc_info.source == src );
     
     assert( nuc_info.activity_multiple > 0.0 );
 
-    return nuc_info.activity_multiple * x[parent_nuc_par_index];
+    return nuc_info.activity_multiple * (x[parent_nuc_par_index] - RelActAutoCostFcn::sm_activity_par_offset);
   }//double relative_activity(...)
-  
-  
+
+
+  /** Returns the uncertainty on relative activity.
+
+   For the simple case of if no constraints/relations, this function is a bit heavy duty and expensive, but it handles all the cases.
+
+   Throws an exception on error.
+   */
+  double relative_activity_uncertainty( const RelActCalcAuto::SrcVariant &src, const size_t rel_eff_index,
+                                       const std::vector<double> &x, vector<vector<double>> &covariance ) const
+  {
+    typedef ceres::Jet<double,RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size> Jet;
+
+    const size_t num_pars = this->number_parameters();
+    assert( x.size() == covariance.size() );
+    if( x.size() != num_pars )
+      throw runtime_error( "relative_activity_uncertainty: invalid number of parameters." );
+
+    if( covariance.size() != num_pars )
+      throw runtime_error( "relative_activity_uncertainty: invalid covariance size." );
+
+    vector<double> jacobian( num_pars, 0.0 );
+    for( size_t i = 0; i < num_pars; i += RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size )
+    {
+      vector<Jet> x_local( begin(x), end(x) );
+      for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size) && (i+j < num_pars); ++j )
+        x_local[i+j].v[j] = 1.0;
+      const Jet rel_act_jet = this->relative_activity( src, rel_eff_index, x_local );
+      for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size) && ((i+j) < num_pars); ++j )
+        jacobian[i+j] = rel_act_jet.v[j];
+    }
+
+    double uncertainty_2 = 0.0;
+    for( size_t i = 0; i < num_pars; ++i )
+    {
+      assert( covariance[i].size() == num_pars );
+      if( covariance[i].size() != num_pars )
+        throw runtime_error( "relative_activity_uncertainty: invalid shaped covariance." );
+
+      for( size_t j = 0; j < num_pars; ++j )
+        uncertainty_2 += jacobian[i] * covariance[i][j] * jacobian[j];
+    }
+
+    return sqrt( uncertainty_2 );
+  }//double relative_activity_uncertainty(...)
+
+
+  template<typename T>
+  T mass_enrichment_fraction( const RelActCalcAuto::SrcVariant &src, const size_t rel_eff_index, const std::vector<T> &x ) const
+  {
+    assert( x.size() == number_parameters() );
+    assert( m_nuclides.size() == m_options.rel_eff_curves.size() );
+    assert( (rel_eff_index < m_nuclides.size()) && (rel_eff_index < m_options.rel_eff_curves.size()) );
+    if( rel_eff_index >= m_nuclides.size() )
+      throw std::logic_error( "mass_enrichment_fraction: invalid relative efficiency curve index." );
+    
+      assert( m_solution_finished );
+    if( !m_solution_finished )
+      throw std::logic_error( "mass_enrichment_fraction: should only be called after minimiztion has been completed." );
+    
+    assert( !RelActCalcAuto::is_null(src) );
+    if( RelActCalcAuto::is_null(src) )
+      throw runtime_error( "mass_enrichment_fraction: invalid source." );
+
+    const SandiaDecay::Nuclide *nuclide = RelActCalcAuto::nuclide(src);
+    if( !nuclide )
+      throw runtime_error( "mass_enrichment_fraction: source is not a nuclide." );
+
+    // Check for a source constraint
+    const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = m_options.rel_eff_curves[rel_eff_index];
+    
+    // If this is a plutonium source, we need to correct for the correlation between Pu239 and Pu242
+    if( (nuclide->atomicNumber == 94)
+       && (rel_eff_curve.pu242_correlation_method != RelActCalc::PuCorrMethod::NotApplicable) )
+    {
+      RelActCalc::Pu242ByCorrelationInput<T> raw_rel_masses;
+      
+      set<T> pu_ages;
+      T pu_total_mass(0.0), nuc_rel_mass(0.0);
+      
+      for( const RelActCalcAuto::NucInputInfo &nuclide_info : rel_eff_curve.nuclides )
+      {
+        const SandiaDecay::Nuclide *nuc = RelActCalcAuto::nuclide(nuclide_info.source);
+        if( !nuc || (nuc->atomicNumber != 94) )
+          continue;
+        
+        const T rel_act = relative_activity( nuclide_info.source, rel_eff_index, x );
+        const T rel_mass = rel_act / nuc->activityPerGram();
+        const T nuc_age = this->age( nuclide_info, rel_eff_index, x );
+        
+        pu_ages.insert( nuc_age );
+        pu_total_mass += rel_mass;
+        
+        if( nuc == nuclide )
+          nuc_rel_mass = rel_mass;
+        
+        switch( nuc->massNumber )
+        {
+          case 238: raw_rel_masses.pu238_rel_mass = rel_mass; break;
+          case 239: raw_rel_masses.pu239_rel_mass = rel_mass; break;
+          case 240: raw_rel_masses.pu240_rel_mass = rel_mass; break;
+          case 241: raw_rel_masses.pu241_rel_mass = rel_mass; break;
+          case 242:
+            assert( 0 );
+            throw std::logic_error( "Pu242 shouldnt be in the input nuclides if a Pu242"
+                                   " correlation correction method was specified." );
+            break;
+          default:  raw_rel_masses.other_pu_mass = rel_mass;  break;
+        }//switch( nuc->massNumber )
+      }//for( const RelActCalcAuto::NucInputInfo &nuclide_info : rel_eff_curve.nuclides )
+      
+      if( pu_ages.size() == 0 )
+      {
+        assert( pu_total_mass == 0.0 );
+      }else if( pu_ages.size() == 1 )
+      {
+        raw_rel_masses.pu_age = *begin(pu_ages);
+      }else
+      {
+        const vector<T> ages( begin(pu_ages), end(pu_ages) );
+        raw_rel_masses.pu_age = ages[ages.size() / 2]; //just take the median age...
+      }
+      
+      // We dont have to divide by `pu_total_mass`, but we will, just for debugging.
+      raw_rel_masses.pu238_rel_mass /= pu_total_mass;
+      raw_rel_masses.pu239_rel_mass /= pu_total_mass;
+      raw_rel_masses.pu240_rel_mass /= pu_total_mass;
+      raw_rel_masses.pu241_rel_mass /= pu_total_mass;
+      raw_rel_masses.other_pu_mass  /= pu_total_mass;
+      
+      const RelActCalc::PuCorrMethod method = rel_eff_curve.pu242_correlation_method;
+      const RelActCalc::Pu242ByCorrelationOutput<T> corr_output = RelActCalc::correct_pu_mass_fractions_for_pu242( raw_rel_masses, method );
+      
+      // Return the corrected mass fraction for the specific nuclide
+      switch( nuclide->massNumber )
+      {
+        case 238: return corr_output.pu238_mass_frac;
+        case 239: return corr_output.pu239_mass_frac;
+        case 240: return corr_output.pu240_mass_frac;
+        case 241: return corr_output.pu241_mass_frac;
+        case 242: return corr_output.pu242_mass_frac;
+        default:
+          // For other Pu isotopes, return the corrected mass fraction
+          // This is the same logic used in the other parts of the codebase
+          return (T(1.0) - corr_output.pu242_mass_frac) * nuc_rel_mass / pu_total_mass;
+      }//switch( nuclide->massNumber )
+
+      assert( 0 );
+      throw std::logic_error( "Failed to find expected Pu nuclide." );
+      return nuc_rel_mass / pu_total_mass;
+    }//if( (nuclide->atomicNumber == 94) && (m_options.pu_corr_method != RelActCalc::PuCorrMethod::NotApplicable) )
+
+    // Check for mass fraction constraints
+    for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &mass_frac_constraint : rel_eff_curve.mass_fraction_constraints )
+    {
+      if( mass_frac_constraint.nuclide == nuclide )
+      {
+        // For mass-constrained nuclides, return the mass fraction directly
+        const size_t nuc_x_index = nuclide_parameter_index( src, rel_eff_index );
+        const T rel_dist = x[nuc_x_index] - T(RelActAutoCostFcn::sm_activity_par_offset);
+        const T mass_frac = mass_frac_constraint.lower_mass_fraction
+                           + rel_dist*(mass_frac_constraint.upper_mass_fraction - mass_frac_constraint.lower_mass_fraction);
+        return mass_frac;
+      }
+    }//for( const auto &mass_frac_constraint : rel_eff_curve.mass_fraction_constraints )
+    
+    // No constraints, calculate normal mass enrichment fraction
+    T sum_rel_mass = T(0.0);
+    T nuc_rel_mass = T(-1.0);
+    
+    for( const RelActCalcAuto::NucInputInfo &nuclide_info : rel_eff_curve.nuclides )
+    {
+      const SandiaDecay::Nuclide *nuc = RelActCalcAuto::nuclide(nuclide_info.source);
+      if( !nuc || (nuc->atomicNumber != nuclide->atomicNumber) )
+        continue;
+      
+      const T rel_act = relative_activity( nuclide_info.source, rel_eff_index, x );
+      const T rel_mass = rel_act / nuc->activityPerGram();
+      
+      if( nuclide_info.source == src )
+        nuc_rel_mass = rel_mass;
+        
+      sum_rel_mass += (std::max)( rel_mass, T(0.0) );
+    }
+    
+    if( nuc_rel_mass < T(0.0) )
+      return T(0.0);
+    
+    return nuc_rel_mass / sum_rel_mass;
+  }//T mass_enrichment_fraction(...)
+
+
+  /** If the passed in index is the RelativeActivity index of a mass-constrained nuclide, will return the
+   multiple from the parameter value, to the relative activity value; this is useful for convertering the uncertainties
+   of the parameter into RelativeActivity uncertainty, or correlations between relative activiies.
+
+   @param cost_functor The cost functor used to solve the problem.
+   @param index The index, in `x` parametes, that you want the multiple of.
+   @param parameters The solved, or current, parameters of the problem; the returned value will depend on the current parameters.
+   @returns If `index` is Rel. Act. index of a nuclide that is mass-constrained, returns `d{RelAct}/d{parameter[index]}`, otherwise returns `nullopt`
+  */
+  std::optional<double> mass_constraint_multiple( const size_t index, const vector<double> &parameters ) const
+  {
+    const RelActAutoCostFcn *cost_functor = this;
+    assert( index < parameters.size() );
+    // First check if `index` refers to the relative activity of a source.
+    if( (index < cost_functor->m_acts_par_start_index)
+       || (index >= cost_functor->m_free_peak_par_start_index) )
+    {
+      return std::nullopt;
+    }
+
+    // Get the rel eff curve index and source `index` refers to
+    for( size_t rel_eff_index = 0; rel_eff_index < cost_functor->m_options.rel_eff_curves.size(); ++rel_eff_index )
+    {
+      const size_t relact_begin = cost_functor->rel_act_start_parameter( rel_eff_index );
+      const size_t relact_end = relact_begin + cost_functor->rel_act_num_parameters( rel_eff_index );
+
+      if( (index < relact_begin) || (index >= relact_end) )
+        continue;
+
+      if( ((index - relact_begin) % 2) != 0 )
+        return std::nullopt;
+
+      const RelActCalcAuto::RelEffCurveInput &rel_effs = cost_functor->m_options.rel_eff_curves[rel_eff_index];
+      if( rel_effs.mass_fraction_constraints.empty() )
+        return std::nullopt; //common case; skip looping over sources below
+
+      for( size_t src_index = 0; src_index < rel_effs.nuclides.size(); src_index += 1 )
+      {
+        const RelActCalcAuto::SrcVariant &src = rel_effs.nuclides[src_index].source;
+        const size_t src_par_index = cost_functor->nuclide_parameter_index( src, rel_eff_index );
+        if( index != src_par_index )
+          continue;
+
+        const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(src);
+        if( !nuc )
+          return std::nullopt; //non-nucs dont have mass-fraction constraints.
+
+        for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint : rel_effs.mass_fraction_constraints )
+        {
+          if( constraint.nuclide != nuc )
+            continue;
+
+          // If we are here, we have a constraint for this source.
+          //Rel Act paramater is constrained within 0.5 and 1.5, to make mass fraction go between lower and upper:
+          // i.e.: rel_mass = (1.0 - rel_dist)*mass_constraint->lower_mass_fraction + rel_dist*mass_constraint->upper_mass_fraction;
+          //  So we will multiple by d{RelAct}/d{Par[index]} to convert to the multiple for Rel. Act.
+          double derivative = std::numeric_limits<double>::infinity();
+          const double rel_act = cost_functor->relative_activity(src, rel_eff_index, parameters);
+          if( sm_use_auto_diff )
+          {
+            vector<ceres::Jet<double,sm_auto_diff_stride_size>> input_jets( begin(parameters), end(parameters) );
+            input_jets[index].v[0] = 1.0; //It doesnt matter which element of `v` we use to get the derivative, so we'll just use the first one.
+            ceres::Jet<double,sm_auto_diff_stride_size> rel_act_jet = cost_functor->relative_activity(src, rel_eff_index, input_jets);
+            assert( (rel_act < 1.0E-12) || (fabs(rel_act - rel_act_jet.a) < 1.0E-8*rel_act) );
+            derivative = rel_act_jet.v[0];
+          }else
+          {
+            // We dont really need this, as we always use auto diff - but will leave this in here to potentually use as a check in this future.
+            const double step_size = 1.0E-3;
+            vector<double> local_pars = parameters;
+            if( ((parameters[index] - step_size) > 0.5) && ((parameters[index] + step_size) < 1.5) )
+            {
+              local_pars[index] = parameters[index] - step_size;
+              const double lower_act = cost_functor->relative_activity(src, rel_eff_index, local_pars);
+              local_pars[index] = parameters[index] + step_size;
+              const double upper_act = cost_functor->relative_activity(src, rel_eff_index, local_pars);
+              derivative = (upper_act - lower_act) / (2*step_size);
+            }else if( (parameters[index] - step_size) > 0.5 )
+            {
+              local_pars[index] = parameters[index] - step_size;
+              const double lower_act = cost_functor->relative_activity(src, rel_eff_index, local_pars);
+              derivative = (rel_act - lower_act) / step_size;
+            }else
+            {
+              local_pars[index] = parameters[index] + step_size;
+              const double upper_act = cost_functor->relative_activity(src, rel_eff_index, local_pars);
+              derivative = (upper_act - rel_act) / step_size;
+            }
+          }//if( we can use auto-diff ) / else numeric diff
+
+
+          return derivative;
+        }//for( const RelEffCurveInput::MassFractionConstraint &constraint : rel_effs.mass_fraction_constraints )
+
+        return std::nullopt; //Didnt have the constraint
+      }//for( size_t src_index = 0; src_index < rel_effs.nuclides.size(); src_index += 1 )
+    }//for( loop over rel eff curves )
+
+    assert( 0 );
+    throw std::logic_error( "Failed to find expected source to check for constraint" );
+    return std::nullopt;
+  };//mass_constraint_multiple lambda
+
   //template<typename T>
   //T relative_activity( const RelActCalcAuto::SrcVariant &src, const size_t rel_eff_index, const std::vector<T> &x ) const
   //{
@@ -4732,24 +6823,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   /** Converts between SandiaDecay::Nuclide, SandiaDecay::Element, or Reaction to its NucInputInfo. */
   const RelActCalcAuto::NucInputInfo &input_src_info( const RelActCalcAuto::SrcVariant &src, const size_t rel_eff_index ) const
   {
-    const SandiaDecay::Nuclide *nuc = nullptr;
-    const SandiaDecay::Element *el = nullptr;
-    const ReactionGamma::Reaction *reaction = nullptr;
-    std::visit( [&]( auto &&arg ) {
-      using T = std::decay_t<decltype(arg)>;
-      if constexpr( std::is_same_v<T, const SandiaDecay::Nuclide *> )
-        nuc = std::get<const SandiaDecay::Nuclide *>(src);
-      else if constexpr( std::is_same_v<T, const SandiaDecay::Element *> )
-        el = std::get<const SandiaDecay::Element *>(src);
-      else if constexpr( std::is_same_v<T, const ReactionGamma::Reaction *> )
-        reaction = std::get<const ReactionGamma::Reaction *>(src);
-      else
-      {
-        assert( 0 );
-        static_assert( false, "Non-exhaustive visitor.");
-      }
-    }, src );
-    
+    assert( !RelActCalcAuto::is_null(src) );
+    if( RelActCalcAuto::is_null(src) )
+      throw runtime_error( "input_src_info: null src requested." );
+
     assert( rel_eff_index < m_nuclides.size() );
     if( rel_eff_index >= m_nuclides.size() )
       throw runtime_error( "Invalid relative efficiency curve index." ); 
@@ -4757,12 +6834,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     const vector<NucInputGamma> &nuclides = m_nuclides[rel_eff_index];
     for( size_t i = 0; i < nuclides.size(); ++i )
     {
-      if( (nuclides[i].nuclide == nuc)
-          && (nuclides[i].element == el)
-          && (nuclides[i].reaction == reaction) )
-      {
+      if( nuclides[i].source == src )
         return nuclides[i];
-      }
     }
 
     throw runtime_error( "input_src_info: src not found in nuclide list." );
@@ -4783,22 +6856,27 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       throw std::logic_error( "Invalid number of nuclides." );
 
     const vector<NucInputGamma> &nuclides = m_nuclides[rel_eff_index];
-    const auto &rel_eff_curve = m_options.rel_eff_curves[rel_eff_index];
+    const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = m_options.rel_eff_curves[rel_eff_index];
     
     if( !rel_eff_curve.nucs_of_el_same_age )
       return nuc;
     
     const RelActCalcAuto::NucInputInfo &src = input_src_info( nuc, rel_eff_index );
     
-    const size_t nuc_index = nuclide_index( src, rel_eff_index );
+    const size_t nuc_index = nuclide_index( src.source, rel_eff_index );
     assert( nuc_index < nuclides.size() );
     if( nuc_index >= nuclides.size() )
       throw std::logic_error( "Invalid nuclides index." );
+
+    const NucInputGamma &input_nuc = nuclides[nuc_index];
+    assert( RelActCalcAuto::nuclide(input_nuc.source) == nuc );
     
     for( size_t i = 0; i < nuc_index; ++i )
     {
-      if( nuclides[i].nuclide->atomicNumber == nuclides[nuc_index].nuclide->atomicNumber )
-        return nuclides[i].nuclide;
+      const NucInputGamma &nuc_info = nuclides[i];
+      const SandiaDecay::Nuclide * const nuc_info_nuc = RelActCalcAuto::nuclide(nuc_info.source);
+      if( nuc_info_nuc && (nuc_info_nuc->atomicNumber == nuc->atomicNumber) )
+        return nuc_info_nuc;
     }
     
     return nuc;
@@ -4812,13 +6890,17 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     if( rel_eff_index >= m_nuclides.size() )
       throw std::logic_error( "age: invalid releff passed in." );
    
-    if( !src.nuclide )
+   assert( !RelActCalcAuto::is_null(src.source) );
+   if( RelActCalcAuto::is_null(src.source) )
+     throw runtime_error( "age: invalid source." );
+   
+    const SandiaDecay::Nuclide * const src_nuc = RelActCalcAuto::nuclide(src.source);
+    if( !src_nuc )
     {
-      assert( src.element || src.reaction );
       if constexpr ( !std::is_same_v<T, double> )
-        assert( x[nuclide_parameter_index(src, rel_eff_index) + 1] <= 0.0 );
+        assert( x[nuclide_parameter_index(src.source, rel_eff_index) + 1] <= 0.0 );
       else
-        assert( x[nuclide_parameter_index(src, rel_eff_index) + 1] <= 1.0E-6 );
+        assert( x[nuclide_parameter_index(src.source, rel_eff_index) + 1] <= 1.0E-6 );
       
       return T(0.0);
     }
@@ -4829,11 +6911,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     assert( act_start_index == m_acts_par_start_index );
     
     // The `parent_nuc` will often times be `nuc`.
-    const SandiaDecay::Nuclide *parent_nuc = age_controlling_nuc( src.nuclide, rel_eff_index );
-    const RelActCalcAuto::NucInputInfo &parent_src = input_src_info( parent_nuc, rel_eff_index );
+    const SandiaDecay::Nuclide *parent_nuc = age_controlling_nuc( src_nuc, rel_eff_index );
     
-    const size_t parent_par_index = nuclide_parameter_index( parent_src, rel_eff_index );
-    const size_t par_nuc_index = nuclide_index( parent_src, rel_eff_index );
+    const size_t parent_par_index = nuclide_parameter_index( parent_nuc, rel_eff_index );
+    const size_t par_nuc_index = nuclide_index( parent_nuc, rel_eff_index );
 
     const T age_scaler = x[parent_par_index + 1];
     const T age = age_scaler * m_nuclides[rel_eff_index][par_nuc_index].age_multiple;
@@ -4851,8 +6932,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   {
     assert( nuc );
     const SandiaDecay::Nuclide *parent_nuc = age_controlling_nuc( nuc, rel_eff_index );
-    const RelActCalcAuto::NucInputInfo &parent_src = input_src_info( parent_nuc, rel_eff_index );
-    const size_t nuc_index = nuclide_index( parent_src, rel_eff_index );
+    const size_t nuc_index = nuclide_index( parent_nuc, rel_eff_index );
     return !m_nuclides[rel_eff_index][nuc_index].fit_age;
   }//
   
@@ -4871,15 +6951,21 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   
   
   template<typename T>
-  static PhysModelRelEqnDef<T> make_phys_eqn_input( const RelActCalcAuto::RelEffCurveInput &rel_eff_curve,
+  static PhysModelRelEqnDef<T> make_phys_eqn_input_no_other_curve_shielding( const RelActCalcAuto::RelEffCurveInput &rel_eff_curve,
                                                 std::shared_ptr<const DetectorPeakResponse> drf,
                                                 const std::vector<T> &coeffs,
                                                 const size_t rel_eff_start )
   {
+    //Note: `rel_eff_curve` may not be a curve in `m_options.rel_eff_curves` - it could be a copy where shieldings from
+    //      other curves added into external shieldings, with `coeffs` appropriately modified
+    assert( rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty() );
+    if( !rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty() )
+      throw std::logic_error( "make_phys_eqn_input_no_other_curve_shielding: you can-not have other curves shielding this one." );
+
     assert( (rel_eff_start + 2 + 2*rel_eff_curve.phys_model_external_atten.size() + 2) <= coeffs.size() );
     if( (rel_eff_start + 2 + 2*rel_eff_curve.phys_model_external_atten.size() + 2) > coeffs.size() )
-      throw std::logic_error( "make_phys_eqn_input: whack number of inputs." );
-    
+      throw std::logic_error( "make_phys_eqn_input_no_other_curve_shielding: whack number of inputs." );
+
     PhysModelRelEqnDef<T> answer;
     answer.det = drf;
     
@@ -4923,17 +7009,16 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const size_t b_index = rel_eff_start + 2 + 2*rel_eff_curve.phys_model_external_atten.size();
       const size_t c_index = b_index + 1;
       
-      //TODO: maybe should consult: phys_model_use_hoerl?
-      const T b = coeffs[b_index]; //(energy/1000)^b
-      const T c = coeffs[c_index]; //c^(1000/energy)
+      const T &b = coeffs[b_index];
+      const T &c = coeffs[c_index];
       
-      answer.hoerl_b = coeffs[b_index];
-      answer.hoerl_c = coeffs[c_index];
+      answer.hoerl_b = (b - RelActCalc::ns_decay_hoerl_b_offset) * RelActCalc::ns_decay_hoerl_b_multiple;  //(energy/1000)^b
+      answer.hoerl_c = (c - RelActCalc::ns_decay_hoerl_c_offset) * RelActCalc::ns_decay_hoerl_c_multiple;  //c^(1000/energy)
     }//if( (b != 0.0) || (c != 1.0) )
     
     return answer;
-  }//static PhysModelRelEqnDef make_phys_eqn_input(...)
-  
+  }//static PhysModelRelEqnDef make_phys_eqn_input_no_other_curve_shielding(...)
+
 
   template<typename T>
   PhysModelRelEqnDef<T> make_phys_eqn_input( const size_t rel_eff_curve_index, const std::vector<T> &x ) const 
@@ -4949,15 +7034,56 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     const size_t rel_eff_start = rel_eff_eqn_start_parameter(rel_eff_curve_index);
 
-    if( (!m_options.same_hoerl_for_all_rel_eff_curves && !m_options.same_external_shielding_for_all_rel_eff_curves) )
-      return make_phys_eqn_input( rel_eff_curve, m_drf, x, rel_eff_start );
+    if( !m_options.same_hoerl_for_all_rel_eff_curves
+       && !m_options.same_external_shielding_for_all_rel_eff_curves
+       && rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty() )
+    {
+      return make_phys_eqn_input_no_other_curve_shielding( rel_eff_curve, m_drf, x, rel_eff_start );
+    }
 
     const vector<T> coefs = pars_for_rel_eff_curve( rel_eff_curve_index, x );
 
-    return make_phys_eqn_input( rel_eff_curve, m_drf, coefs, 0 );
+    if( rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty() )
+      return make_phys_eqn_input_no_other_curve_shielding( rel_eff_curve, m_drf, coefs, 0 );
+
+    // If we are here, we are being shielded by other curves, so we have to make a copy of the RelEff curve, and then
+    //  add the shieldings from the other curves to this one.
+    RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy = rel_eff_curve;
+    rel_eff_curve_cpy.shielded_by_other_phys_model_curve_shieldings.clear();
+
+    for( const size_t outer_re_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
+    {
+      assert( outer_re_index < m_options.rel_eff_curves.size() );
+      assert( outer_re_index != rel_eff_curve_index );
+
+      if( (outer_re_index >= m_options.rel_eff_curves.size()) || (outer_re_index == rel_eff_curve_index) )
+        continue;
+
+      const RelActCalcAuto::RelEffCurveInput &outer_curve = m_options.rel_eff_curves[outer_re_index];
+      assert( outer_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel );
+      if( outer_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+        continue;
+
+      if( outer_curve.phys_model_self_atten )
+        rel_eff_curve_cpy.phys_model_external_atten.push_back( outer_curve.phys_model_self_atten );
+      for( shared_ptr<const RelActCalc::PhysicalModelShieldInput> outer_ext : outer_curve.phys_model_external_atten )
+      {
+        assert( outer_ext );
+        if( outer_ext )
+          rel_eff_curve_cpy.phys_model_external_atten.push_back( outer_ext );
+      }
+    }//for( const size_t outer_re_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
+
+    return make_phys_eqn_input_no_other_curve_shielding( rel_eff_curve_cpy, m_drf, coefs, 0 );
   }//make_phys_eqn_input(...)
   
 
+  /** Returns the parameters for the specified relative efficiency curve.
+   Note: scale factors have not been applied, as `make_phys_eqn_input(...)` will apply them, or for non-physical
+   models, no scale factors are used.
+
+   If this rel. eff. curve is being shielded by another curve, the parameters for the other curves shieldings will come before the Hoerl parameters.
+   */
   template<typename T>
   vector<T> pars_for_rel_eff_curve( const size_t rel_eff_index, const std::vector<T> &x ) const
   {
@@ -4976,12 +7102,22 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     vector<T> coefs( begin(x) + rel_eff_start_index, begin(x) + rel_eff_start_index + num_rel_eff_par );
 
     if( (rel_eff_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel)
-      || (!m_options.same_hoerl_for_all_rel_eff_curves && !m_options.same_external_shielding_for_all_rel_eff_curves) )
+      || (!m_options.same_hoerl_for_all_rel_eff_curves
+          && !m_options.same_external_shielding_for_all_rel_eff_curves
+          && rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty()) )
     {
+      // The polynomial-esque Rel. Eff. eqn coefficients are not scaled
+      //  and `make_phys_eqn_input(...)` applies the scale factors for physical model.
+      // For non-physical model, we'll test first/last paramater scale is 1.0.
+      assert( (rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel)
+             || (parameter_scale_factor(rel_eff_start_index) == 1.0) );
+      assert( (rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel)
+             || (parameter_scale_factor(rel_eff_start_index + num_rel_eff_par - 1) == 1.0) );
+      
       return coefs;
     }
 
-    // Find first Physical Model
+    // Find first Physical Model, and adjust Hoerl B and C paramaters.
     const RelActCalcAuto::RelEffCurveInput *first_phys_model = nullptr;
     size_t first_phys_model_par_start_index = std::numeric_limits<size_t>::max();
     
@@ -4990,7 +7126,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = m_options.rel_eff_curves[i];
       if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
       {
-        if( rel_eff_index == i )
+        if( (rel_eff_index == i) && (rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty()) )
           return coefs;
 
         first_phys_model = &rel_eff_curve;
@@ -5003,20 +7139,25 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     if( !first_phys_model )
       throw std::logic_error( "make_phys_eqn_input: no physical model found" );
 
-    assert( (2 + 2*first_phys_model->phys_model_external_atten.size() + 2) <= coefs.size() );
-    if( (2 + 2*first_phys_model->phys_model_external_atten.size() + 2) > coefs.size() )
-      throw std::logic_error( "make_phys_eqn_input: inconsistent number of rel eff parameters - shouldnt have happened - programming logic error." ); //shouldnt happen
-
     if( m_options.same_hoerl_for_all_rel_eff_curves )
     {
-      const size_t hoerl_b_index = first_phys_model_par_start_index + 2 + 2*first_phys_model->phys_model_external_atten.size();
-      const size_t hoerl_c_index = hoerl_b_index + 1;
-      assert( hoerl_c_index < x.size() );
-      if( hoerl_c_index >= x.size() )
-        throw std::logic_error( "make_phys_eqn_input: hoerl indices out of range" ); //shouldnt happen
+      const size_t first_hoerl_b_index = first_phys_model_par_start_index + 2 + 2*first_phys_model->phys_model_external_atten.size();
+      const size_t first_hoerl_c_index = first_hoerl_b_index + 1;
+      assert( first_hoerl_c_index < x.size() );
+      if( first_hoerl_c_index >= x.size() )
+        throw std::logic_error( "make_phys_eqn_input: first hoerl indices out of range" ); //shouldnt happen
 
-      coefs[2 + 2*first_phys_model->phys_model_external_atten.size() + 0] = x[hoerl_b_index];
-      coefs[2 + 2*first_phys_model->phys_model_external_atten.size() + 1] = x[hoerl_c_index];
+      const size_t this_hoerl_b_coefs_index = 2 + 2*rel_eff_curve.phys_model_external_atten.size();  
+      const size_t this_hoerl_c_coefs_index = this_hoerl_b_coefs_index + 1;
+      assert( this_hoerl_c_coefs_index < coefs.size() );
+      if( this_hoerl_c_coefs_index >= coefs.size() )
+        throw std::logic_error( "make_phys_eqn_input: this hoerl indices out of range" ); //shouldnt happen
+
+      assert( coefs[this_hoerl_b_coefs_index] == -1.0 );
+      assert( coefs[this_hoerl_c_coefs_index] == -1.0 );
+
+      coefs[this_hoerl_b_coefs_index] = x[first_hoerl_b_index];
+      coefs[this_hoerl_c_coefs_index] = x[first_hoerl_c_index];
     }//if( m_options.same_hoerl_for_all_rel_eff_curves )
 
     if( m_options.same_external_shielding_for_all_rel_eff_curves )
@@ -5028,6 +7169,48 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         coefs[2 + 2*i + 1] = x[atten_index + 1];  //AD
       }
     }//if( m_options.same_external_shielding_for_all_rel_eff_curves )
+
+    if( !rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty() )
+    {
+      assert( coefs.size() > 2 ); //actually should be at least 4
+      const size_t this_hoerl_b_coefs_index = 2 + 2*rel_eff_curve.phys_model_external_atten.size();
+      const size_t this_hoerl_c_coefs_index = this_hoerl_b_coefs_index + 1;
+      assert( this_hoerl_c_coefs_index == (coefs.size() - 1) );
+      const T hoerl_b_val = coefs[this_hoerl_b_coefs_index];
+      const T hoerl_c_val = coefs[this_hoerl_c_coefs_index];
+      coefs.resize( coefs.size() - 2 );
+
+      for( const size_t outer_re_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
+      {
+        assert( outer_re_index < m_options.rel_eff_curves.size() );
+        assert( outer_re_index != rel_eff_index );
+        if( (outer_re_index >= m_options.rel_eff_curves.size()) || (outer_re_index == rel_eff_index) )
+          continue;
+
+        const RelActCalcAuto::RelEffCurveInput &outer_curve = m_options.rel_eff_curves[outer_re_index];
+        assert( outer_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel );
+        if( outer_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+          continue;
+
+        const size_t outer_start_index = rel_eff_eqn_start_parameter(outer_re_index);
+        if( outer_curve.phys_model_self_atten )
+        {
+          assert( x.size() >= (outer_start_index + 2) );
+          coefs.push_back( x.at(outer_start_index + 0) );
+          coefs.push_back( x.at(outer_start_index + 1) );
+        }
+        for( size_t ext_index = 0; ext_index < outer_curve.phys_model_external_atten.size(); ++ext_index )
+        {
+          assert( outer_curve.phys_model_external_atten[ext_index] );
+          assert( x.size() >= (outer_start_index + 2 + 2*ext_index + 2) );
+          coefs.push_back( x.at(outer_start_index + 2 + 2*ext_index + 0) );
+          coefs.push_back( x.at(outer_start_index + 2 + 2*ext_index + 1) );
+        }
+      }//for( const size_t outer_rel_eff_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
+
+      coefs.push_back( hoerl_b_val );
+      coefs.push_back( hoerl_c_val );
+    }//if( !rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty() )
 
     return coefs;
   }//pars_for_rel_eff_curve( const size_t rel_eff_index, const std::vector<T> &x )
@@ -5074,10 +7257,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
    */
   template<typename T>
   T apply_energy_cal_adjustment( double energy, const std::vector<T> &x ) const
-  {
-    // TODO: Auto differentiation doesnt _seem_ to capture effects of energy calibration
-    //assert( std::is_same_v<T, double> );
-    
+  { 
     assert( x.size() > RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars );
     assert( 0 == m_energy_cal_par_start_index );
     
@@ -5128,7 +7308,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                  * RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple)
                               : T(0.0);
     
-    
+    assert( parameter_scale_factor(0) == (RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple / RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) );
+    assert( parameter_scale_factor(1) == (RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple / RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) );
+    assert( (RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars <= 2)
+         || (parameter_scale_factor(2) == (RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple / RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset)) );
+
     
     // TODO: implement and try out optimization so that if there is no adjustment to be made, skip doing the energy cal adjustment.
     //       Note: we do need to be careful we dont make the cuts so large that the steps of the
@@ -5151,14 +7335,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         assert( coefs.size() >= 2 );
         coefs[0] += offest_adj;
         coefs[1] += (gain_adj / num_channel);
-        if( quad_adj != 0.0 )
+        if( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars > 2 )
         {
           if( coefs.size() > 2 )
             coefs[2] += (quad_adj / (num_channel*num_channel));
           else
             coefs.push_back( quad_adj / (num_channel*num_channel) );
-        }//if( quad_adj != 0.0 )
-        
+        }//if( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars > 2 )
+
         const auto &dev_pairs = m_energy_cal->deviation_pairs();
         const double channel = m_energy_cal->channel_for_energy( energy );
         
@@ -5193,7 +7377,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         coefs[0] += offest_adj;
         coefs[1] += gain_adj;
         
-        if( quad_adj != 0.0 )
+        if( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars > 2 )
         {
           if( coefs.size() > 2 )
             coefs[2] += quad_adj;
@@ -5262,8 +7446,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     if( !m_options.fit_energy_cal )
     {
-      assert( fabs(x[0]) < std::numeric_limits<float>::epsilon() );
-      assert( fabs(1.0 - x[1]) < std::numeric_limits<float>::epsilon() );
+      assert( fabs(x[0] - RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) < 1.0E-5 );
+      assert( fabs(x[1] - RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) < 1.0E-5 );
       
       return adjusted_energy;
     }//if( we arent fitting energy cal )
@@ -5355,10 +7539,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     return adjusted_energy;
   }//double un_apply_energy_cal_adjustment( double energy, const std::vector<double> &x ) const
+
   
   
-  
-  
+  /** Computes peaks for a ROI range, given current paramaters
+   @param range The channel range to generate peaks for
+   @param x The Ceres paramaters to use to form the peaks
+   @param multithread Wether to use a single, or multiple threads to compute the peaks
+   */
   template<typename T>
   RelActCalcAuto::PeaksForEnergyRangeImp<T> peaks_for_energy_range_imp( const RoiRangeChannels &range,
                                                        const std::vector<T> &x,
@@ -5377,7 +7565,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       channel_range = range.channel_range( adjusted_lower_energy.a, adjusted_upper_energy.a, num_channels, m_energy_cal );
     else
       channel_range = range.channel_range( adjusted_lower_energy, adjusted_upper_energy, num_channels, m_energy_cal );
-    
+
+    // TODO: find a problem that fails with energy range, and then try fixing the channels according to initial energy cal, and see if that works better
+
     const size_t first_channel = channel_range.first;
     const size_t last_channel = channel_range.second;
     
@@ -5422,10 +7612,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       // Do a sanity check to make sure peak isnt getting too narrow
       const double nchannel = m_energy_cal->channel_for_energy(gamma_energy + 0.5*fwhm)
                                        - m_energy_cal->channel_for_energy(gamma_energy - 0.5*fwhm);
-      if( nchannel < 1.5 )
+      if( nchannel < 1.25 )
         throw runtime_error( "peaks_for_energy_range_imp: for peak at " + std::to_string(gamma_energy)
                             + " keV, FWHM=" + std::to_string(fwhm) + " which is only "
-                            + std::to_string(nchannel) + "channels - too small." );
+                            + std::to_string(nchannel) + " channels - too small." );
 
       if( fwhm < 0.001 )
         throw runtime_error( "peaks_for_energy_range_imp: for peak at " + std::to_string(gamma_energy)
@@ -5469,15 +7659,27 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                   || (m_options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall));
 
     const double missing_frac = is_crystal_ball ? 1.0E-3 : 1.0E-4;
-    const pair<double,double> lower_peak_limits = lower_range_peak.peak_coverage_limits( missing_frac, 20.0 );
-    const pair<double,double> upper_peak_limits = upper_range_peak.peak_coverage_limits( missing_frac, 20.0 );
+    const double max_nsigma = is_crystal_ball ? 20.0 : 15.0; //arbitrarily chosen - but it seems like using CrystalBall is the standard for really large skews
+    const pair<double,double> lower_peak_limits = lower_range_peak.peak_coverage_limits( missing_frac, max_nsigma );
+    const pair<double,double> upper_peak_limits = upper_range_peak.peak_coverage_limits( missing_frac, max_nsigma );
 
     assert( range.lower_energy >= lower_peak_limits.first );
     assert( range.upper_energy <= upper_peak_limits.second );
 
+    // We will approximate what peaks might affect this ROI, using the coverage limits of the lower and upper peaks
     // TODO: for Crystal Ball dists, they can have really far-reaching tails - perhaps we should limit the max extent of peaks to save CPU, or whatever
-    const double lower_mean = lower_peak_limits.first;
-    const double upper_mean = upper_peak_limits.second;
+    //const double lower_mean = lower_peak_limits.first;
+    //const double upper_mean = upper_peak_limits.second;
+    double lower_mean, upper_mean;
+    if constexpr ( !std::is_same_v<T, double> )
+    {
+      lower_mean = range.lower_energy - (lower_peak_limits.second - lower_range_peak.m_mean.a);
+      upper_mean = range.upper_energy + (upper_range_peak.m_mean.a - upper_peak_limits.first);
+    }else
+    {
+      lower_mean = range.lower_energy - (lower_peak_limits.second - lower_range_peak.m_mean);
+      upper_mean = range.upper_energy + (upper_range_peak.m_mean - upper_peak_limits.first);
+    }
 
 
     size_t num_free_peak_pars = 0;
@@ -5495,32 +7697,39 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     for( size_t rel_eff_index = 0; rel_eff_index < m_nuclides.size(); ++rel_eff_index )
     {
       const vector<NucInputGamma> &nuclides = m_nuclides[rel_eff_index];
-      for( const NucInputGamma &nucinfo : nuclides )
+      for( const NucInputGamma &src_info : nuclides )
       {
-        const bool fixed_age = ((!nucinfo.nuclide) || is_fixed_age(nucinfo.nuclide, rel_eff_index));
+        const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(src_info.source);
+        const SandiaDecay::Element * const el = RelActCalcAuto::element(src_info.source);
+        const ReactionGamma::Reaction * const rctn = RelActCalcAuto::reaction(src_info.source);
+
+        const bool fixed_age = ((!nuc) || is_fixed_age(nuc, rel_eff_index));
         double nuc_age_val = -1.0, forward_diff_nuc_age_val = -1.0, backward_diff_nuc_age_val = -1.0;
         std::shared_ptr<const vector<NucInputGamma::EnergyYield>> gammas, forward_diff_gammas, backward_diff_gammas;
         
-        const T rel_act = relative_activity( nucinfo, rel_eff_index, x );
-        //cout << "peaks_for_energy_range_imp: Relative activity of " << nucinfo.name()
+        const T rel_act = relative_activity( src_info.source, rel_eff_index, x );
+        //cout << "peaks_for_energy_range_imp: Relative activity of " << src_info.name()
         //     << " is " << PhysicalUnits::printToBestActivityUnits(rel_act) << endl;
         
         T nuc_age;
         if( fixed_age )
         {
-          gammas = nucinfo.nominal_gammas;
+          gammas = src_info.nominal_gammas;
+          assert( gammas );
         }else
         {
           // If we are here, we are fitting the age - however, automatic differentiation does
           //  not work with age, so if our template type is a `Jet<>` we will do numeric 
           //  differentiation, and insert this info into the Jet.
-          nuc_age = age(nucinfo, rel_eff_index, x);
-          
+
+          assert( nuc );
+
+          nuc_age = age(src_info, rel_eff_index, x);
           
           if constexpr ( !std::is_same_v<T, double> )
           {
             nuc_age_val = nuc_age.a;
-            gammas = this->decay_gammas( nucinfo, nuc_age_val, nucinfo.gammas_to_exclude );
+            gammas = this->decay_gammas( src_info, nuc_age_val, src_info.gammas_to_exclude );
             assert( gammas );
             
             // TODO: be a bit smarter about selecting dt
@@ -5528,13 +7737,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             //  bit larger of a time delta, to hopefully avoid getting zero derivative; this
             //  was not tested, and I'm not even sure its needed!
             double forward_dt = 0.001*nuc_age_val, backward_dt = -1.0;
-            if( nuc_age_val > 0.1*nucinfo.nuclide->halfLife )
+            if( nuc_age_val > 0.1*nuc->halfLife )
             {
-              if( nuc_age_val > 5.0*nucinfo.nuclide->halfLife )
+              if( nuc_age_val > 5.0*nuc->halfLife )
               {
                 forward_dt = 0.1*nuc_age_val;
                 backward_dt = 0.1*nuc_age_val;
-              }else if( nuc_age_val > 2.5*nucinfo.nuclide->halfLife )
+              }else if( nuc_age_val > 2.5*nuc->halfLife )
               {
                 forward_dt = 0.01*nuc_age_val;
                 backward_dt = 0.01*nuc_age_val;
@@ -5545,13 +7754,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               }
             }else
             {
-              forward_dt = std::min( 0.01*nuc_age_val, 0.001*nucinfo.nuclide->halfLife );
+              forward_dt = std::min( 0.01*nuc_age_val, 0.001*nuc->halfLife );
               if( nuc_age_val > 0.0 )
-                backward_dt = std::min(0.1*nuc_age_val, 0.001*nucinfo.nuclide->halfLife);
-            }//if( nuc_age_val > 0.001*nucinfo.nuclide->halfLife ) / else
+                backward_dt = std::min(0.1*nuc_age_val, 0.001*nuc->halfLife);
+            }//if( nuc_age_val > 0.001*nuc->halfLife ) / else
             
             forward_diff_nuc_age_val = nuc_age_val + forward_dt;
-            forward_diff_gammas = this->decay_gammas( nucinfo, forward_diff_nuc_age_val, nucinfo.gammas_to_exclude );
+            forward_diff_gammas = this->decay_gammas( src_info, forward_diff_nuc_age_val, src_info.gammas_to_exclude );
 
             assert( forward_diff_gammas );
             assert( forward_diff_gammas->size() == gammas->size() );
@@ -5559,14 +7768,15 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             if( backward_dt > 0.0 )
             {
               backward_diff_nuc_age_val = nuc_age_val - backward_dt;
-              backward_diff_gammas = this->decay_gammas( nucinfo, backward_diff_nuc_age_val, nucinfo.gammas_to_exclude );
+              backward_diff_gammas = this->decay_gammas( src_info, backward_diff_nuc_age_val, src_info.gammas_to_exclude );
               assert( backward_diff_gammas );
               assert( backward_diff_gammas->size() == gammas->size() );
             }//if( nuc_age_val > 0.0 )
           }else
           {
             nuc_age_val = nuc_age;
-            gammas = this->decay_gammas( nucinfo, nuc_age_val, nucinfo.gammas_to_exclude );
+            gammas = this->decay_gammas( src_info, nuc_age_val, src_info.gammas_to_exclude );
+            assert( gammas );
           }
         }//if( age is fixed ) / else( age may vary )
         
@@ -5582,8 +7792,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           const SandiaDecay::Transition * const transition = gamma.transition;
           const PeakDef::SourceGammaType gamma_type = gamma.gamma_type;
           
-          assert( !nucinfo.nuclide || (transition || (gamma_type == PeakDef::SourceGammaType::AnnihilationGamma)) );
-          assert( !nucinfo.nuclide
+          assert( !transition || transition->products.empty() || (transition_index < transition->products.size()) );
+          assert( !nuc || (transition || (gamma_type == PeakDef::SourceGammaType::AnnihilationGamma)) );
+          assert( !nuc
                  || !transition
                  || (gamma_type == PeakDef::SourceGammaType::AnnihilationGamma)
                  || (fabs(transition->products[transition_index].energy - energy) < 0.0001) );
@@ -5619,12 +7830,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           if( (energy < lower_mean) || (energy > upper_mean) )
             continue;
           
-          if( nucinfo.nuclide )
-            nuclides_used.insert( nucinfo.nuclide );
-          else if( nucinfo.element )
-            nuclides_used.insert( nucinfo.element );
-          else if( nucinfo.reaction )
-            nuclides_used.insert( nucinfo.reaction );
+          if( nuc )
+            nuclides_used.insert( nuc );
+          else if( el )
+            nuclides_used.insert( el );
+          else if( rctn )
+            nuclides_used.insert( rctn );
           else
           {
             assert( 0 );
@@ -5650,9 +7861,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               
               if( (gamma.energy >= range.first) && (gamma.energy <= range.second) )
               {
-                // If `x[m_add_br_uncert_start_index + range_index]` is zero, then our amplitude is zero; if it is two, then our amplitude is doubled.
-                const T adjvalue = x[m_add_br_uncert_start_index + range_index]/sm_peak_range_uncert_par_offset - 1.0;
-                br_uncert_adj = max(T(0.0), 1.0 + adjvalue);
+                const T par_value = x[m_add_br_uncert_start_index + range_index];
+                const T num_sigma_from_nominal = (par_value - sm_peak_range_uncert_offset)/sm_peak_range_uncert_par_scale;
+
+                br_uncert_adj = max(T(0.0), 1.0 + num_sigma_from_nominal*m_options.additional_br_uncert);
                 
                 break;
               }//
@@ -5661,16 +7873,20 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
           if constexpr ( !std::is_same_v<T, double> )
           {
-            if( nucinfo.nuclide && !is_fixed_age(nucinfo.nuclide, rel_eff_index) )
+            if( nuc && !is_fixed_age(nuc, rel_eff_index) )
             {
               // Here we will do the numeric differentiation and put the results in the Jet
               assert( forward_diff_gammas );
               assert( gamma_index < forward_diff_gammas->size() );
               const NucInputGamma::EnergyYield &gamma_forward = (*forward_diff_gammas)[gamma_index];
               assert( gamma_forward.energy == gamma.energy );
-              assert( gamma_forward.transition_index == gamma.transition_index );
+              // The `transition_index` can actually change with age.
+              //  `decay_gammas(...)` notes "We will assign the transition to the largest yield", so since the yield
+              //  changes with age, the transition may change.  It does really matter to us, since the yield was
+              //  summed in `decay_gammas(..)` anyway.
+              //assert( gamma_forward.transition_index == gamma.transition_index );
+              //assert( gamma_forward.transition == gamma.transition );
               assert( gamma_forward.gamma_type == gamma.gamma_type );
-              assert( gamma_forward.transition == gamma.transition );
               const double forward_yield = gamma_forward.yield;
               const double forward_derivative = (forward_yield - yield.a) / (forward_diff_nuc_age_val - nuc_age_val);
 
@@ -5679,9 +7895,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 assert( gamma_index < backward_diff_gammas->size() );
                 const NucInputGamma::EnergyYield &gamma_backward = (*backward_diff_gammas)[gamma_index];
                 assert( gamma_backward.energy == gamma.energy );
-                assert( gamma_backward.transition_index == gamma.transition_index );
+                //See note above about why this next assert is commented out
+                //assert( gamma_backward.transition_index == gamma.transition_index );
+                //assert( gamma_backward.transition == gamma.transition );
                 assert( gamma_backward.gamma_type == gamma.gamma_type );
-                assert( gamma_backward.transition == gamma.transition );
                 
                 const double f_x = yield.a;
                 const double f_plus = gamma_forward.yield;
@@ -5699,7 +7916,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
                 yield.v = derivative * nuc_age.v;
               }
-            }//if( is_fixed_age(nucinfo.nuclide, rel_eff_index) )
+            }//if( is_fixed_age(src_info.nuclide, rel_eff_index) )
           }//if( !std::is_same_v<T, double> )          
 
           const T peak_mean = apply_energy_cal_adjustment( gamma.energy, x );
@@ -5715,18 +7932,18 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           
           if( transition || (gamma_type == PeakDef::SourceGammaType::AnnihilationGamma) )
           {
-            peak.m_parent_nuclide = nucinfo.nuclide;
+            peak.m_parent_nuclide = nuc;
             peak.m_transition = transition;
             peak.m_rad_particle_index = transition_index;
             peak.m_gamma_type = gamma_type;
-          }else if( nucinfo.element )
+          }else if( el )
           {
-            peak.m_xray_element = nucinfo.element;
+            peak.m_xray_element = el;
             assert( gamma_type == PeakDef::SourceGammaType::XrayGamma );
             peak.m_gamma_type = PeakDef::SourceGammaType::XrayGamma;
-          }else if( nucinfo.reaction )
+          }else if( rctn )
           {
-            peak.m_reaction = nucinfo.reaction;
+            peak.m_reaction = rctn;
             peak.m_gamma_type = gamma_type;
           }
           
@@ -5735,17 +7952,20 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
           check_peak_reasonable( peak, gamma.energy );
 
-
-          if( peak_amplitude < static_cast<double>( std::numeric_limits<float>::min() ) )
-            continue;
+          // We need to also include peaks with an amplitude of zero, so this way auto-differentiation
+          //  will be able to provide gradient information to Ceres, so we cant do any optimizations
+          //  ignoring zero amplitude peaks, like the next couple lines would do
+          //if( peak_amplitude < static_cast<double>( std::numeric_limits<float>::min() ) )
+          //  continue;
 
           peaks.push_back( std::move(peak) );
         }//for( const SandiaDecay::EnergyRatePair &gamma : gammas )
-      }//for( const NucInputGamma &nucinfo : m_nuclides )
+      }//for( const NucInputGamma &src_info : m_nuclides )
     }//for( size_t rel_eff_index = 0; rel_eff_index < m_nuclides.size(); ++rel_eff_index )
     
     const size_t free_peaks_start_index = m_free_peak_par_start_index;
-    
+    assert( m_free_peak_area_multiples.size() == m_options.floating_peaks.size() );
+
     for( size_t index = 0; index < m_options.floating_peaks.size(); ++index )
     {
       const RelActCalcAuto::FloatingPeak &peak = m_options.floating_peaks[index];
@@ -5755,9 +7975,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const size_t amp_index = free_peaks_start_index + 2*index + 0;
       const size_t fwhm_index = free_peaks_start_index + 2*index + 1;
       assert( fwhm_index < x.size() );
+
+      const double area_multiple = m_free_peak_area_multiples[index];
       
       num_free_peak_pars += 1;
-      const T peak_amp = x[amp_index];
+      // TODO: we should use some sort of a scale-factor for the peak amplitude
+      const T peak_amp = x[amp_index] * area_multiple;
       if( isinf(peak_amp) || isnan(peak_amp) )
         throw runtime_error( "peaks_for_energy_range_imp: inf or NaN peak amplitude for "
                             + std::to_string(peak.energy) + " keV extra peak.");
@@ -5770,13 +7993,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         throw runtime_error( "peaks_for_energy_range_imp: inf or NaN peak mean for "
                             + std::to_string(peak.energy) + " keV extra peak.");
       
-      const T peak_fwhm = x[fwhm_index] * fwhm(peak_mean, x);
+      const T peak_fwhm = (peak.release_fwhm ? x[fwhm_index] : T(1.0)) * fwhm(peak_mean, x);
       
       if( isinf(peak_fwhm) || isnan(peak_fwhm) )
         throw runtime_error( "peaks_for_energy_range_imp: inf or NaN peak FWHM for "
                             + std::to_string(peak.energy) + " keV extra peak.");
       
-      assert( peak.release_fwhm || (abs(x[fwhm_index] - 1.0) < 1.0E-5) );
+      assert( peak.release_fwhm || (abs(x[fwhm_index] + 1.0) < 1.0E-5) );
       
       num_free_peak_pars += peak.release_fwhm;
       
@@ -5810,6 +8033,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       peak.m_mean = T(middle_energy);
       peak.m_sigma = T(middle_fwhm/2.35482);
       peak.m_amplitude = T(0.0);
+      peak.m_rel_eff_index = std::numeric_limits<size_t>::max(); //should already be this value
       
       peaks.push_back( std::move(peak) );
     }//if( peaks.empty() )
@@ -5824,6 +8048,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     assert( num_channels == ((1 + last_channel) - first_channel) );
     assert( first_channel < m_channel_counts.size() );
     assert( last_channel < m_channel_counts.size() );
+    assert( m_channel_count_uncerts.size() == m_channel_counts.size() );
     assert( m_energy_cal && m_energy_cal->channel_energies() );
     assert( m_energy_cal->channel_energies()->size() >= m_channel_counts.size() );
     
@@ -5831,6 +8056,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     const T ref_energy = answer.continuum.m_reference_energy;
     const float * const data = &(m_channel_counts[first_channel]);
+    const float * const data_uncerts = &(m_channel_count_uncerts[first_channel]);
     const float * const energies = &((*m_energy_cal->channel_energies())[first_channel]);
 
     std::vector<T> &peak_counts = answer.peak_counts;
@@ -5838,7 +8064,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     T *continuum_coeffs = answer.continuum.m_values.data();
 
     vector<RelActCalcAuto::PeakDefImp<T>> dummy;
-    PeakFit::fit_continuum( energies, data, num_channels, num_polynomial_terms,
+
+    PeakFit::fit_continuum( energies, data, data_uncerts, num_channels, num_polynomial_terms,
                                   is_step_continuum, ref_energy, peaks, multithread,
                                   continuum_coeffs,
                                   peak_counts.data() );
@@ -5889,10 +8116,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                             + std::to_string(range.lower_energy) + " to "
                             + std::to_string(range.upper_energy) + " keV" );
     }//for( const double &val : continuum_coeffs )
-    
-    // TODO: - currently not defining degrees of freedom well - not using number of relative efficiency terms, or FWHM terms at all, and just blindly using all activity and free peak terms.
-    const double approx_dof = 1.0*range.num_channels - nuclides_used.size() - num_polynomial_terms - num_free_peak_pars;
-    
+
     std::sort( begin(peaks), end(peaks), []( const auto &lhs, const auto &rhs ){
       return lhs.mean() < rhs.mean();
     } );
@@ -5930,17 +8154,97 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
    @param range The energy range to create peaks for.
    @param x The vector of parameters that specify relative activities, efficiencies, energy
           calibration, etc. of the problem.
+   @param rel_eff_indices GIves which Rel. Eff. curves to return peaks for.
+          If empty, will return for all curves plus free peaks.
+          If has all indices, then will not return free-peaks.
+          Note: this argument being non-empty is actually less efficient than it being empty, because all peaks need to be
+          calculated in order to fit the continuum anyway (so the filtering happens after this).
    
    @returns A peak for each gamma, of each nuclide, as well as each free-floating peak, in the
-            problem, that is within the specified energy range.
-
+            problem, that is within the specified energy range, and in the specified Rel. Eff. curve(s).
+   
     Currently this function is only used to get the final peaks fit, so not hyper optimized.
    */
   PeaksForEnergyRange peaks_for_energy_range( const RoiRangeChannels &range,
-                                             const std::vector<double> &x ) const
+                                             const std::vector<double> &x,
+                                             const std::set<size_t> &rel_eff_indices,
+                                             const std::vector<std::vector<double>> * const convariance ) const
   {
-    const RelActCalcAuto::PeaksForEnergyRangeImp<double> computed_peaks = peaks_for_energy_range_imp( range, x, true );
+    typedef ceres::Jet<double,RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size> Jet;
+    
+    RelActCalcAuto::PeaksForEnergyRangeImp<double> computed_peaks = peaks_for_energy_range_imp( range, x, true );
 
+    // Compute uncertainties if covariance is provided and valid
+    vector<vector<double>> peak_uncertainties; // [peak_index][param_index] where param_index: 0=mean, 1=sigma, 2=amplitude, 3+=skew_pars
+    
+    if( convariance && !convariance->empty() && (convariance->size() == x.size()) )
+    {
+      const size_t num_par = x.size();
+      const size_t num_peaks = computed_peaks.peaks.size();
+      peak_uncertainties.resize(num_peaks, vector<double>(4 + 4, 0.0)); // mean, sigma, amplitude, 4 skew pars
+      
+      // For each peak, compute jacobians for each parameter (mean, sigma, amplitude, skew_pars)
+      vector<vector<vector<double>>> peak_jacobians(num_peaks, vector<vector<double>>(8, vector<double>(num_par, 0.0)));
+      
+      for( size_t i = 0; i < num_par; i += RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size )
+      {
+        vector<Jet> x_local( begin(x), end(x) );
+        for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size) && (i+j < num_par); ++j )
+          x_local[i+j].v[j] = 1.0;
+        
+        RelActCalcAuto::PeaksForEnergyRangeImp<Jet> computed_peaks_jet = peaks_for_energy_range_imp( range, x_local, true );
+        
+        // Store jacobians for each peak parameter
+        for( size_t peak_idx = 0; peak_idx < num_peaks && peak_idx < computed_peaks_jet.peaks.size(); ++peak_idx )
+        {
+          const auto &peak_jet = computed_peaks_jet.peaks[peak_idx];
+          
+          for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size) && (i+j < num_par); ++j )
+          {
+            peak_jacobians[peak_idx][0][i+j] = peak_jet.m_mean.v[j];        // mean jacobian
+            peak_jacobians[peak_idx][1][i+j] = peak_jet.m_sigma.v[j];       // sigma jacobian  
+            peak_jacobians[peak_idx][2][i+j] = peak_jet.m_amplitude.v[j];   // amplitude jacobian
+            
+            for( size_t skew_idx = 0; skew_idx < 4; ++skew_idx )
+              peak_jacobians[peak_idx][3 + skew_idx][i+j] = peak_jet.m_skew_pars[skew_idx].v[j];
+          }
+        }
+      }
+      
+      // Compute uncertainties using full covariance propagation: uncertainty = sqrt(J^T * Cov * J)
+      for( size_t peak_idx = 0; peak_idx < num_peaks; ++peak_idx )
+      {
+        for( size_t param_idx = 0; param_idx < 8; ++param_idx )
+        {
+          const vector<double> &jacobian = peak_jacobians[peak_idx][param_idx];
+          double uncertainty = 0.0;
+          
+          for( size_t i = 0; i < num_par; ++i )
+          {
+            for( size_t j = 0; j < num_par; ++j )
+            {
+              if( i < convariance->size() && j < (*convariance)[i].size() )
+                uncertainty += jacobian[i] * (*convariance)[i][j] * jacobian[j];
+            }
+          }
+          
+          peak_uncertainties[peak_idx][param_idx] = std::sqrt(std::max(0.0, uncertainty));
+        }
+      }
+    }//if( covariance provided and valid )
+
+    
+    if( !rel_eff_indices.empty() )
+    {
+      vector<RelActCalcAuto::PeakDefImp<double>> filtered_peaks;
+      for( const RelActCalcAuto::PeakDefImp<double> &p : computed_peaks.peaks )
+      {
+        if( rel_eff_indices.count(p.m_rel_eff_index) )
+          filtered_peaks.push_back( p );
+      }
+      computed_peaks.peaks.swap( filtered_peaks );
+    }//if( !rel_eff_indices.empty() )
+    
     PeaksForEnergyRange answer;
     answer.first_channel = computed_peaks.first_channel;
     answer.last_channel = computed_peaks.last_channel;
@@ -5951,6 +8255,15 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     {
       const RelActCalcAuto::PeakDefImp<double> &comp_peak = computed_peaks.peaks[i];
       PeakDef peak( comp_peak.m_mean, comp_peak.m_sigma, comp_peak.m_amplitude );
+      
+      // Set uncertainties if they were computed
+      if( i < peak_uncertainties.size() )
+      {
+        peak.setMeanUncert( peak_uncertainties[i][0] );
+        peak.setSigmaUncert( peak_uncertainties[i][1] );
+        peak.setAmplitudeUncert( peak_uncertainties[i][2] );
+      }
+      
       peak.setSkewType( comp_peak.m_skew_type );
       const size_t num_skew = PeakDef::num_skew_parameters( comp_peak.m_skew_type );
       for( size_t skew_index = 0; skew_index < num_skew; ++skew_index )
@@ -5958,6 +8271,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         const PeakDef::CoefficientType coef
              = static_cast<PeakDef::CoefficientType>( static_cast<int>(PeakDef::CoefficientType::SkewPar0) + skew_index );
         peak.set_coefficient( comp_peak.m_skew_pars[skew_index], coef );
+        
+        // Set skew parameter uncertainty if computed
+        if( i < peak_uncertainties.size() && skew_index < 4 )
+        {
+          peak.set_uncertainty( peak_uncertainties[i][3 + skew_index], coef );
+        }
       }//for( size_t skew_index = 0; skew_index < num_skew; ++skew_index )
       
       if( comp_peak.m_parent_nuclide )
@@ -5995,9 +8314,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         for( size_t nuc_index = 0; !nuc_info && (nuc_index < rel_eff_nucs.size()); ++nuc_index )
         {
           const NucInputGamma &input_src = rel_eff_nucs[nuc_index];
-          if( (input_src.nuclide == comp_peak.m_parent_nuclide)
-             && (input_src.element == comp_peak.m_xray_element)
-             && (input_src.reaction == comp_peak.m_reaction) )
+          if( (RelActCalcAuto::nuclide(input_src.source) == comp_peak.m_parent_nuclide)
+             && (RelActCalcAuto::element(input_src.source) == comp_peak.m_xray_element)
+             && (RelActCalcAuto::reaction(input_src.source) == comp_peak.m_reaction) )
           {
             nuc_info = &(rel_eff_nucs[nuc_index]);
           }
@@ -6021,7 +8340,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     return answer;
   }//PeaksForEnergyRange peaks_for_energy_range( const double lower_energy, const double upper_energy ) const
   
-  
+
   template<typename T>
   void eval( const std::vector<T> &x, T *residuals ) const
   {
@@ -6061,7 +8380,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     {
       memset( residuals, 0, sizeof(double) * num_residuals );
     }
-    
     // We'll do the simplest parallelization we can by computing peaks in multiple threads; this
     //  actually seems to be reasonably effective in filling up the CPU cores during fitting.
     //  (setting ceres_options.num_threads >1 doesnt seem to do much (any?) good)
@@ -6117,57 +8435,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     assert( SpecUtilsAsync::num_logical_cpu_cores() > 0 );
 
-    
-#define print_debug_each_call 0
-#if( print_debug_each_call )
-    // Print out some debug info to try to help figure whats going on
-    
-    cout << "For RelActAutoCostFcn::eval call " << m_ncalls << ", have:" << endl;
-    cout << "\tRelActs:" << endl;
-    for( size_t rel_eff_index = 0; rel_eff_index < m_nuclides.size(); ++rel_eff_index )
-    {
-      for( const NucInputGamma &nuc : m_nuclides[rel_eff_index] )
-      {
-        double nuc_counts = 0.0;
-        for( size_t erange_index = 0; erange_index < m_energy_ranges.size(); ++erange_index )
-        {
-          const RelActCalcAuto::PeaksForEnergyRangeImp<T> &peaks = peaks_in_ranges_imp[erange_index];
-          for( const RelActCalcAuto::PeakDefImp<T> &peak : peaks.peaks )
-          {
-            if( (peak.m_parent_nuclide == nuc.nuclide)
-               && (peak.m_xray_element == nuc.element)
-               && (peak.m_reaction == nuc.reaction) )
-            {
-              if constexpr ( std::is_same_v<T, double> )
-              {
-                nuc_counts += peak.m_amplitude;
-              }else
-              {
-                nuc_counts += peak.m_amplitude.a;
-              }
-            }
-          }
-        }//
-        
-        double rel_act;
-        if constexpr ( std::is_same_v<T, double> )
-          rel_act = relative_activity(nuc.nuclide, rel_eff_index, x);
-        else
-          rel_act = relative_activity(nuc.nuclide, rel_eff_index, x).a;
-        
-        cout << "\t\t" << nuc.name() << ": " << rel_act << ", giving " << nuc_counts << " counts." << endl;
-      }
-    }
-    cout << "\n\n";
-#endif //print_debug_each_call
-    
+
     
     assert( peaks_in_ranges_imp.size() == m_energy_ranges.size() );
     
     size_t residual_index = 0;
-    
-    const bool try_better_par = true;
-    
+
+    T sum_src_counts( 0.0 );
+    vector<T> source_counts_for_rois( m_energy_ranges.size(), T(0.0) );
     for( size_t roi_index = 0; roi_index < m_energy_ranges.size(); ++roi_index )
     {
       const RoiRangeChannels &energy_range = m_energy_ranges[roi_index];
@@ -6194,20 +8469,16 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         const double data_counts = m_channel_counts[data_index];
         const double data_uncert = m_channel_count_uncerts[data_index];
         const T peak_area = info.peak_counts[index];
-        
+
+        sum_src_counts += peak_area;
+        source_counts_for_rois[roi_index] += peak_area;
+
         this_residual[index] = (data_counts - peak_area) / data_uncert;
         assert( !isnan(this_residual[index]) && !isinf(this_residual[index]) );
       }
     }//for( loop over m_energy_ranges )
     
-    
-    // See TODO above about calculations methods giving slightly different end-results, unless be
-    //  truncate the accuracy of the residuals to be floats.
-    //cerr << "\n\nRounding residuals to floats for debug\n\n" << endl;
-    //const size_t nresid = number_residuals();
-    //for( size_t i = 0; (i+1) < nresid; ++i )
-    //  residuals[i] = static_cast<float>(residuals[i]);
-    
+
     for( size_t rel_eff_index = 0; rel_eff_index < m_options.rel_eff_curves.size(); ++rel_eff_index )
     {
       const auto &rel_eff = m_options.rel_eff_curves[rel_eff_index];
@@ -6216,13 +8487,37 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       {
         assert( rel_eff_index
                || ((residual_index + m_options.rel_eff_curves.size() + m_peak_ranges_with_uncert.size()) == number_residuals()) );
-        
+
+        // Note: see `USE_RESIDUAL_TO_BREAK_DEGENERACY` in the manual solution for a slight amount more info
+        //
         // Now make sure the relative efficiency curve is anchored to 1.0 (this removes the degeneracy
         //  between the relative efficiency amplitude, and the relative activity amplitudes).
-        const double lowest_energy = m_energy_ranges.front().lower_energy;
-        const T lowest_energy_rel_eff = relative_eff( lowest_energy, rel_eff_index, x );
-        residuals[residual_index] = m_rel_eff_anchor_enhancement * (1.0 - lowest_energy_rel_eff);
-        assert( !isnan(residuals[residual_index]) && !isinf(residuals[residual_index]) );
+        //const double lowest_energy = m_energy_ranges.front().lower_energy;
+        //const T lowest_energy_rel_eff = relative_eff( lowest_energy, rel_eff_index, x );
+        //residuals[residual_index] = m_rel_eff_anchor_enhancement * (1.0 - lowest_energy_rel_eff);
+        //assert( !isnan(residuals[residual_index]) && !isinf(residuals[residual_index]) );
+
+        // We will make it so the source counts weighted rel eff curve value (evaluated at the center of each ROI)
+        //  is 1.0 (i.e., RE for approx half source counts above and below 1.0) to remove degeneracy between RE and
+        //  activities - this is slightly different than how the manual solution does it, but seemingly a little more
+        //  fitting here.
+        T avrg_rel_eff( 0.0 );
+        for( size_t roi_index = 0; roi_index < m_options.rois.size(); ++roi_index )
+        {
+          const RelActCalcAuto::RoiRange &roi = m_options.rois[roi_index];
+          const T counts = (sum_src_counts > 1.0) ? source_counts_for_rois[roi_index] : T(1.0);
+          const double mid_energy = roi.lower_energy + 0.5*(roi.upper_energy - roi.lower_energy);
+          const T rel_eff = relative_eff( mid_energy, rel_eff_index, x );
+          avrg_rel_eff += counts*rel_eff;
+        }
+
+        avrg_rel_eff /= ((sum_src_counts > 1.0) ? sum_src_counts : T(static_cast<double>(m_options.rois.size())));
+
+        //  Note: `m_rel_eff_anchor_enhancement` is the sqrt of counts in all the ranges - I'm not really sure if
+        //        this is the appropriate scale to use, but this value effects the error bands displayed on the
+        //        rel. eff. chart, I think more than any other obvious effect
+        residuals[residual_index] = m_rel_eff_anchor_enhancement * (1.0 - avrg_rel_eff);
+
         ++residual_index;
       }//if( m_options.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
     }//for( size_t rel_eff_index = 0; rel_eff_index < m_options.rel_eff_curves.size(); ++rel_eff_index )
@@ -6237,14 +8532,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         assert( par_index < x.size() );
         
         // Normalize the parameter so nominal is 0, and a 100% change is +-1;
-        const T norm_val = x[par_index]/sm_peak_range_uncert_par_offset - 1.0;
-        residuals[residual_index] = norm_val / m_options.additional_br_uncert;
+        const T num_sigma_from_nominal = (x[par_index] - sm_peak_range_uncert_offset)/sm_peak_range_uncert_par_scale;
+        residuals[residual_index] = num_sigma_from_nominal; // m_options.additional_br_uncert;
         assert( !isnan(residuals[residual_index]) && !isinf(residuals[residual_index]) );
         ++residual_index;
       }
     }//if( !m_peak_ranges_with_uncert.empty() )
-    
-    
+
     assert( residual_index == number_residuals() );
 #ifndef NDEBUG
     for( size_t i = 0; i < residual_index; ++i )
@@ -6307,33 +8601,99 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 NucInputGamma::NucInputGamma( const RelActCalcAuto::NucInputInfo &info, const RelActAutoCostFcn * const cost_fcn )
    : RelActCalcAuto::NucInputInfo( info )
 {
-  if( !nuclide && !element && !reaction )
+  if( RelActCalcAuto::is_null(source) )
     throw runtime_error( "NucInputGamma: null Nuclide, Element, and Reaction." );
   
-  if( (static_cast<int>(!!nuclide) + static_cast<int>(!!element) + static_cast<int>(!!reaction)) != 1 )
-    throw runtime_error( "NucInputGamma: must specify exactly one of Nuclide, Element, or Reaction." );
-  
-  if( nuclide && (age < 0.0) )
+  const SandiaDecay::Nuclide *nuc = RelActCalcAuto::nuclide(source);
+  if( nuc && (age < 0.0) )
     throw runtime_error( "NucInputGamma: age may not be negative for nuclide (" + info.name() + ": "
                            + PhysicalUnits::printToBestTimeUnits(age)  + ")" );
-  if( !nuclide && (age > 0.0) )
+  if( !nuc && (age > 0.0) )
     throw runtime_error( "NucInputGamma: age must be negative for Element or Reaction." );
     
-  if( !nuclide && fit_age  )
+  if( !nuc && fit_age  )
     throw runtime_error( "NucInputGamma: fit_age must be false for Element or Reaction." );
     
   assert( cost_fcn );
   nominal_gammas = cost_fcn->decay_gammas( info, info.age, gammas_to_exclude );
 }//NucInputGamma constructor
 
-}
+}//namespace RelActCalcAutoImp
 
 
 namespace RelActCalcAuto
 {
+const SandiaDecay::Nuclide *nuclide( const SrcVariant &src )
+{
+  if( std::holds_alternative<const SandiaDecay::Nuclide *>(src) )
+    return std::get<const SandiaDecay::Nuclide *>(src);
+  return nullptr;
+}
+
+const SandiaDecay::Element *element( const SrcVariant &src )
+{
+  if( std::holds_alternative<const SandiaDecay::Element *>(src) )
+    return std::get<const SandiaDecay::Element *>(src);
+  return nullptr;
+}
+
+const ReactionGamma::Reaction *reaction( const SrcVariant &src )
+{
+  if( std::holds_alternative<const ReactionGamma::Reaction *>(src) )
+    return std::get<const ReactionGamma::Reaction *>(src);
+  return nullptr;
+}
+
+bool is_null( const SrcVariant &src )
+{
+  return (!nuclide(src) && !element(src) && !reaction(src));
+}
 
 
+std::string to_name( const SrcVariant &src )
+{
+  const SandiaDecay::Nuclide *nuc = nuclide(src);
+  if( nuc )
+    return nuc->symbol;
+  const SandiaDecay::Element *el = element(src);
+  if( el )
+    return el->symbol;
+  const ReactionGamma::Reaction *rxn = reaction(src);
+  if( rxn )
+    return rxn->name();
+  throw runtime_error( "to_name(SrcVariant): unknown source type" );
+  return "";
+}
 
+
+SrcVariant source_from_string( const std::string &name )
+{
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  if( !db )
+    throw runtime_error( "source_from_string: no decay database" );
+  
+  const SandiaDecay::Nuclide *nuc = db->nuclide( name );
+  if( nuc )
+    return nuc;
+  
+  const SandiaDecay::Element *el = db->element( name );
+  if( el )
+    return el;
+  
+  const ReactionGamma * const reaction_db = ReactionGammaServer::database();
+  assert( reaction_db );
+  if( !reaction_db )
+    throw runtime_error( "Couldnt load reaction DB" );
+      
+  vector<ReactionGamma::ReactionPhotopeak> possible_rctns;
+  reaction_db->gammas( name, possible_rctns );
+      
+  // TODO: we are currently taking the first reaction; however, in principle there could be multiple - however, `ReactionGamma` doesnt have an interface to just return a reaction by name, I guess because
+  for( const ReactionGamma::ReactionPhotopeak &r : possible_rctns )
+    return r.reaction;
+
+  return std::monostate();
+}//source_from_string()
 
 
 int run_test()
@@ -6462,7 +8822,7 @@ int run_test()
             nucinfo.age = PeakDef::defaultDecayTime( n, nullptr );
             nucinfo.fit_age = false;
             //nucinfo.gammas_to_exclude
-            nucinfo.nuclide = n;
+            nucinfo.source = n;
             nucinfo.peak_color_css = peak->lineColor().cssText();
             
             nuclides.push_back( nucinfo );
@@ -6497,13 +8857,13 @@ int run_test()
           double common_age = 20*PhysicalUnits::year;
           for( const auto &n : nuclides )
           {
-            if( en_nuc.second.count(n.nuclide) )
+            if( en_nuc.second.count( RelActCalcAuto::nuclide(n.source) ) )
               common_age = std::max( common_age, n.age );
           }
           
           for( auto &n : nuclides )
           {
-            if( en_nuc.second.count(n.nuclide) )
+            if( en_nuc.second.count( RelActCalcAuto::nuclide(n.source) ) )
               n.age = common_age;
           }
         }//for( const auto &en_nuc : nuc_per_el )
@@ -6703,6 +9063,11 @@ const char *to_str( const FwhmForm form )
     case FwhmForm::Polynomial_4:  return "Polynomial_4";
     case FwhmForm::Polynomial_5:  return "Polynomial_5";
     case FwhmForm::Polynomial_6:  return "Polynomial_6";
+    case FwhmForm::Berstein_2:    return "Berstein_2";
+    case FwhmForm::Berstein_3:    return "Berstein_3";
+    case FwhmForm::Berstein_4:    return "Berstein_4";
+    case FwhmForm::Berstein_5:    return "Berstein_5";
+    case FwhmForm::Berstein_6:    return "Berstein_6";
     case FwhmForm::NotApplicable: return "NotApplicable";
   }//switch( form )
   
@@ -6832,10 +9197,20 @@ T peakResolutionFWHM( T energy, DetectorPeakResponse::ResolutionFnctForm fcnFrm,
       
       energy /= PhysicalUnits::MeV;
       //return  A1 + A2*std::pow( energy + A3*energy*energy, A4 );
-      
-      T val(0.0);
+
+      // Use Horner's method to evaluate the polynomial - more stable.
+      T val = pars[num_pars - 1];
+      for( int i = static_cast<int>(num_pars) - 2; i >= 0; i -= 1 )
+        val = val * energy + pars[i];
+
+#ifndef NDEBUG
+      T unstable_val(0.0);
       for( size_t i = 0; i < num_pars; ++i )
-        val += pars[i] * pow(energy, static_cast<double>(i) );
+        unstable_val += pars[i] * pow(energy, static_cast<double>(i) );
+      const T diff = abs(unstable_val - val);
+      assert( (diff < 1.0E-4) || (diff < 1.0E-3*max(abs(unstable_val), abs(val))) );
+#endif
+
       return sqrt( val );
     }//case kSqrtPolynomial:
       
@@ -6848,7 +9223,69 @@ T peakResolutionFWHM( T energy, DetectorPeakResponse::ResolutionFnctForm fcnFrm,
   //Lets keep MSVS happy
   assert(0);
   return T(0.0);
-}//static float peakResolutionFwhmGadras(...)
+}//static T peakResolutionFWHM(...)
+
+
+/** Berstein polynomial FWHM function.
+ *
+ * @param energy The energy in keV
+ * @param pars The parameters: [berstein_coeffs..., min_energy, max_energy]
+ * @param num_pars The number of parameters (berstein coeffs + 2 for min/max energy)
+ */
+template<typename T>
+T bersteinPeakResolutionFWHM( T energy, const T * const pars, const size_t num_pars )
+{
+  if( num_pars < 4 )
+    throw std::runtime_error( "bersteinPeakResolutionFWHM(): insufficient parameters" );
+  
+  const size_t num_berstein_coeffs = num_pars - 2;
+  const T min_energy = pars[num_berstein_coeffs];
+  const T max_energy = pars[num_berstein_coeffs + 1];
+  
+  // Check energy bounds and clamp if necessary
+  if( energy < (min_energy - 10.0) )
+  {
+#ifndef NDEBUG
+    // This can happen for really large skew peaks so there are peaks from well outside the ROI range
+    //  contributing to the peak.
+    //  TODO: We could probably do a little better job of preventing this from happening, but its not the biggest fish to fry atm
+    if constexpr ( std::is_same_v<T, double> )
+    {
+      //std::cerr << "Warning: bersteinPeakResolutionFWHM() - energy " << energy
+      //<< " below minimum " << min_energy << ", clamping to minimum: " << min_energy << std::endl;
+    }else
+    {
+      //std::cerr << "Warning: bersteinPeakResolutionFWHM() - energy " << energy.a
+      //<< " below minimum " << min_energy.a << ", clamping to minimum: " << min_energy.a << std::endl;
+    }
+#endif
+
+    energy = min_energy;
+  }
+  
+  if( energy > (max_energy + 10.0) )
+  {
+#ifndef NDEBUG
+    if constexpr ( std::is_same_v<T, double> )
+    {
+      //std::cerr << "Warning: bersteinPeakResolutionFWHM() - energy " << energy
+      //<< " above maximum " << max_energy << ", clamping to maximum: " << max_energy << std::endl;
+    }else
+    {
+      //std::cerr << "Warning: bersteinPeakResolutionFWHM() - energy " << energy.a
+      //<< " above maximum " << max_energy.a << ", clamping to maximum: " << max_energy.a << std::endl;
+    }
+#endif
+
+    energy = max_energy;
+  }
+  
+  // Normalize energy to [0, 1] for Berstein polynomial
+  const T t = (energy - min_energy) / (max_energy - min_energy);
+  
+  // Evaluate Berstein polynomial using the optimized implementation
+  return sqrt( BersteinPolynomial::evaluate( t, pars, num_berstein_coeffs ) );
+}//T bersteinPeakResolutionFWHM( energy, pars, num_pars )
 
   
 template<typename T>
@@ -6877,28 +9314,113 @@ T eval_fwhm( const T energy, const FwhmForm form, const T * const pars, const si
       fctntype = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
       break;
 
+    case RelActCalcAuto::FwhmForm::Berstein_2:
+    case RelActCalcAuto::FwhmForm::Berstein_3:
+    case RelActCalcAuto::FwhmForm::Berstein_4:
+    case RelActCalcAuto::FwhmForm::Berstein_5:
+    case RelActCalcAuto::FwhmForm::Berstein_6:
+      // Handle Berstein polynomials directly without using fctntype
+      return bersteinPeakResolutionFWHM( energy, pars, num_pars );
+
     case RelActCalcAuto::FwhmForm::NotApplicable:
       assert( drf && drf->isValid() && drf->hasResolutionInfo() );
       if( !drf || !drf->hasResolutionInfo() )
         throw runtime_error( "RelActCalcAuto::eval_fwhm(): invalid detector response function - how did we get here???" );
       
+      const std::vector<float> &drf_coefs = drf->resolutionFcnCoefficients();
+      const size_t num_drf_coefs = drf_coefs.size();
+      const DetectorPeakResponse::ResolutionFnctForm fwhm_form = drf->resolutionFcnType();
+      
       if constexpr ( std::is_same_v<T, double> )
       {
-        return drf->peakResolutionFWHM( static_cast<float>(energy) );
+        const std::vector<float> &drf_coefs = drf->resolutionFcnCoefficients();
+        const double local_val = peakResolutionFWHM( static_cast<float>(energy), fwhm_form, drf_coefs.data(), num_drf_coefs );
+        
+#if( PERFORM_DEVELOPER_CHECKS )
+        const float drf_val = drf->peakResolutionFWHM( static_cast<float>(energy) );
+        const double diff = fabs(drf_val - local_val);
+        assert( (diff < 1.0E-4*std::max(local_val,1.0*drf_val)) || (diff < 1.0E-8) );
+#endif
+        return local_val;
       }else
       {
-        return T(drf->peakResolutionFWHM( static_cast<float>(energy.a) ));
+        // We will try to keep the gradients w.r.t. energy by converting the detectors paramaters into `ceres::Jets<>`
+        //  so we can use our local `peakResolutionFWHM(...)`, which should hopefully propogate things through
+        //  (minor effect, but the right thing to do).
+        T local_val;
+        if( num_drf_coefs < 7 )
+        {
+          T local_pars[6]; //Avoid allocation overhead of std::vector
+          for( size_t i = 0; i < num_drf_coefs; ++i )
+            local_pars[i] = T( static_cast<double>(drf_coefs[i]) );
+          local_val = peakResolutionFWHM( energy, fwhm_form, local_pars, num_drf_coefs );
+        }else
+        {
+          //Dont expect to ever get here
+          vector<T> local_pars( num_drf_coefs );
+          for( size_t i = 0; i < num_drf_coefs; ++i )
+            local_pars[i] = T( static_cast<double>(drf_coefs[i]) );
+          local_val = peakResolutionFWHM( energy, fwhm_form, local_pars.data(), num_drf_coefs );
+        }//if( num_drf_coefs < 7 ) / else
+          
+#if( PERFORM_DEVELOPER_CHECKS )
+        const float drf_val = drf->peakResolutionFWHM( static_cast<float>(energy.a) );
+        const double diff = fabs(drf_val - local_val.a);
+        assert( (diff < 1.0E-4*std::max(local_val.a,1.0*drf_val)) || (diff < 1.0E-8) );
+#endif
+        
+        return local_val;
       }
       break;
   }//switch( m_options.fwhm_form )
-  
+
   assert( fctntype != DetectorPeakResponse::kNumResolutionFnctForm );
   if( fctntype == DetectorPeakResponse::kNumResolutionFnctForm )
     throw runtime_error( "eval_fwhm: invalid FwhmForm" );
   
-  //return DetectorPeakResponse::peakResolutionFWHM( energy, fctntype, drfx );
-  return peakResolutionFWHM( energy, fctntype, pars, num_pars );
-}//float eval_fwhm( const float energy, const FwhmForm form, const vector<float> &drfx )
+  //return
+  const T answer = peakResolutionFWHM( energy, fctntype, pars, num_pars );
+
+  if( isnan(answer) || isinf(answer) )
+    throw runtime_error( "eval_fwhm: inf/NaN result." );
+  
+  if constexpr ( !std::is_same_v<T, double> )
+  {
+    if( answer.a <= 0.0 )
+      throw runtime_error( "eval_fwhm: negative result." );
+    if( answer.a > energy )
+      throw runtime_error( "eval_fwhm: unreasonably large result." );
+  }else
+  {
+    if( answer <= 0.0 )
+      throw runtime_error( "eval_fwhm: negative result." );
+    if( answer > energy )
+      throw runtime_error( "eval_fwhm: unreasonably large result." );
+  }
+  
+#ifndef NDEBUG
+  float energy_kev;
+  vector<float> drf_pars;
+
+  if constexpr ( !std::is_same_v<T, double> )
+  {
+    energy_kev = static_cast<float>( energy.a );
+    for( size_t i = 0; i < num_pars; ++i )
+      drf_pars.push_back( static_cast<float>(pars[i].a) );
+  }else
+  {
+    energy_kev = static_cast<float>( energy );
+    for( size_t i = 0; i < num_pars; ++i )
+      drf_pars.push_back( static_cast<float>(pars[i]) );
+  }
+
+  const double drf_answer = DetectorPeakResponse::peakResolutionFWHM( energy_kev, fctntype, drf_pars );
+
+  assert( (abs(answer - drf_answer) < 0.01) || (abs(answer - drf_answer) < 0.01*max(abs(answer),abs(T(drf_answer)))) );
+#endif
+
+  return answer;
+}//T eval_fwhm( const T energy, const FwhmForm form, ... )
 
 
 void RoiRange::toXml( ::rapidxml::xml_node<char> *parent ) const
@@ -6960,25 +9482,33 @@ void RoiRange::fromXml( const rapidxml::xml_node<char> *range_node )
 
 const std::string NucInputInfo::name() const
 {
-  if( nuclide )
-    return nuclide->symbol;
-  if( element )
-    return element->symbol;
-  if( reaction )
-    return reaction->name();
-  return "";
+  if( RelActCalcAuto::is_null(source) )
+    return "";
+
+  return RelActCalcAuto::to_name(source);
 }//NucInputInfo::name()
+
+bool NucInputInfo::operator==( const NucInputInfo &rhs ) const
+{
+  return ((this->source == rhs.source) &&
+         (this->age == rhs.age) &&
+         (this->fit_age == rhs.fit_age) &&
+         (this->fit_age_min == rhs.fit_age_min) &&
+         (this->fit_age_max == rhs.fit_age_max) &&
+         (this->min_rel_act == rhs.min_rel_act) &&
+         (this->max_rel_act == rhs.max_rel_act) &&
+         (this->starting_rel_act == rhs.starting_rel_act) &&
+         (this->gammas_to_exclude == rhs.gammas_to_exclude) &&
+         (this->peak_color_css == rhs.peak_color_css));
+}
 
 void NucInputInfo::toXml( ::rapidxml::xml_node<char> *parent ) const
 {
   using namespace rapidxml;
   
-  assert( nuclide || element || reaction );
-  if( !nuclide && !element && !reaction )
+  assert( !RelActCalcAuto::is_null(source) );
+  if( RelActCalcAuto::is_null(source) )
     throw runtime_error( "NucInputInfo::toXml: null nuclide, element, or reaction." );
-
-  if( (static_cast<int>(!!nuclide) + static_cast<int>(!!element) + static_cast<int>(!!reaction)) > 1 )
-    throw runtime_error( "NucInputInfo::toXml: multiple inputs are non-null." );
   
   assert( parent );
   if( !parent || !parent->document() )
@@ -6990,9 +9520,11 @@ void NucInputInfo::toXml( ::rapidxml::xml_node<char> *parent ) const
   
   append_version_attrib( base_node, NucInputInfo::sm_xmlSerializationVersion );
   
-  if( nuclide )
+  const string src_name = RelActCalcAuto::to_name(source);
+
+  if( RelActCalcAuto::nuclide(source) )
   {
-    append_string_node( base_node, "Nuclide", nuclide->symbol );  
+    append_string_node( base_node, "Nuclide", src_name );  
     const string age_str = PhysicalUnits::printToBestTimeUnits(age, 10);
     append_string_node( base_node, "Age", age_str);
     append_bool_node( base_node, "FitAge", fit_age );
@@ -7000,13 +9532,12 @@ void NucInputInfo::toXml( ::rapidxml::xml_node<char> *parent ) const
       append_string_node( base_node, "FitAgeMin", PhysicalUnits::printToBestTimeUnits(fit_age_min.value()) );
     if( fit_age_max.has_value() )
       append_string_node( base_node, "FitAgeMax", PhysicalUnits::printToBestTimeUnits(fit_age_max.value()) );
-
-  }else if( element )
+  }else if( RelActCalcAuto::element(source) )
   {
-    append_string_node( base_node, "Element", element->symbol );
-  }else if( reaction )
+    append_string_node( base_node, "Element", src_name );
+  }else if( RelActCalcAuto::reaction(source) )
   {
-    append_string_node( base_node, "Reaction", reaction->name() );
+    append_string_node( base_node, "Reaction", src_name );
   }
   
   if( min_rel_act.has_value() )
@@ -7048,9 +9579,7 @@ void NucInputInfo::fromXml( const ::rapidxml::xml_node<char> *nuc_info_node )
     check_xml_version( nuc_info_node, NucInputInfo::sm_xmlSerializationVersion );
     
     age = -1.0;
-    nuclide = nullptr;
-    element = nullptr;
-    reaction = nullptr;
+    source = std::monostate();
     fit_age = false;
     fit_age_min = std::nullopt;
     fit_age_max = std::nullopt;
@@ -7073,16 +9602,16 @@ void NucInputInfo::fromXml( const ::rapidxml::xml_node<char> *nuc_info_node )
     if( nuc_node )
     {
       const string nuc_str = SpecUtils::xml_value_str( nuc_node );
-      nuclide = db->nuclide( nuc_str );
-      if( !nuclide )
+      const SandiaDecay::Nuclide * const nuc = db->nuclide( nuc_str );
+      if( !nuc )
         throw runtime_error( "Invalid nuclide '" + nuc_str + "'" );
-
+      source = nuc;
       const auto age_node = XML_FIRST_INODE( nuc_info_node, "Age");
       const string age_str = SpecUtils::xml_value_str( age_node );
       if( age_str.empty() || SpecUtils::iequals_ascii(age_str, "default") )
-        age = PeakDef::defaultDecayTime(nuclide);
+        age = PeakDef::defaultDecayTime(nuc);
       else
-        age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( age_str, nuclide->halfLife );
+        age = PhysicalUnits::stringToTimeDurationPossibleHalfLife( age_str, nuc->halfLife );
     
       if( XML_FIRST_NODE(nuc_info_node, "FitAge") )
         fit_age = get_bool_node_value( nuc_info_node, "FitAge" );
@@ -7091,21 +9620,22 @@ void NucInputInfo::fromXml( const ::rapidxml::xml_node<char> *nuc_info_node )
       if( fit_age_min_node )
       {
         const string strval = SpecUtils::xml_value_str( fit_age_min_node );
-        fit_age_min = PhysicalUnits::stringToTimeDurationPossibleHalfLife( strval, nuclide->halfLife );
+        fit_age_min = PhysicalUnits::stringToTimeDurationPossibleHalfLife( strval, nuc->halfLife );
       }
 
       const rapidxml::xml_node<char> *fit_age_max_node = XML_FIRST_NODE(nuc_info_node, "FitAgeMax");
       if( fit_age_max_node )
       {
         const string strval = SpecUtils::xml_value_str( fit_age_max_node );
-        fit_age_max = PhysicalUnits::stringToTimeDurationPossibleHalfLife( strval, nuclide->halfLife );
+        fit_age_max = PhysicalUnits::stringToTimeDurationPossibleHalfLife( strval, nuc->halfLife );
       }
     }else if( element_node )
     {
       const string element_str = SpecUtils::xml_value_str( element_node );
-      element = db->element( element_str );
+      const SandiaDecay::Element * const element = db->element( element_str );
       if( !element )
         throw runtime_error( "Invalid element '" + element_str + "'" );
+      source = element;
     }else if( reaction_node )
     {
       const string reaction_str = SpecUtils::xml_value_str( reaction_node );
@@ -7117,12 +9647,15 @@ void NucInputInfo::fromXml( const ::rapidxml::xml_node<char> *nuc_info_node )
       vector<ReactionGamma::ReactionPhotopeak> possible_rctns;
       reaction_db->gammas( reaction_str, possible_rctns );
       
+      const ReactionGamma::Reaction *reaction = nullptr;
       // TODO: we are currently taking the first reaction; however, in principle there could be multiple - however, `ReactionGamma` doesnt have an interface to just return a reaction by name, I guess because
       for( size_t i = 0; !reaction && (i < possible_rctns.size()); ++i )
         reaction = possible_rctns[i].reaction;
       
       if( !reaction )
         throw runtime_error( "Invalid reaction '" + reaction_str + "'" );
+
+      source = reaction;
     }else
     {
       assert( 0 );
@@ -7229,7 +9762,20 @@ void Options::check_same_hoerl_and_external_shielding_specifications() const
 
   if( same_external_shielding_for_all_rel_eff_curves )
   {
-    // Check at least 
+    for( const auto &rel_eff_curve : rel_eff_curves )
+    {
+      if( !rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty() )
+      {
+        if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+          throw logic_error( "You can not specify 'same_external_shielding_for_all_rel_eff_curves' and"
+                                 " specify one physical model to shield another.");
+        else
+          throw logic_error( "A non-physical model efficiency function can not be shielded by other Rel. Eff. curves"
+                            " - and the 'same_external_shielding_for_all_rel_eff_curves' option was specified." );
+      }//if( !rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty() )
+    }//for( const auto &rel_eff_curve : rel_eff_curves )
+
+    // Check at least
     size_t num_external_shielding_curves = 0;
     const RelActCalcAuto::RelEffCurveInput *first_phys_model = nullptr;
     for( const auto &rel_eff_curve : rel_eff_curves )
@@ -7318,7 +9864,45 @@ void Options::check_same_hoerl_and_external_shielding_specifications() const
     if( num_external_shielding_curves < 2 )
       throw logic_error( "If using the same external shielding for all relative efficiency curves, "
                         "you must have at least two relative efficiency curves with the external shielding enabled." );
-  }//if( same_external_shielding_for_all_rel_eff_curves )
+  }else //if( same_external_shielding_for_all_rel_eff_curves )
+  {
+    // TODO: when there are more than 2 curves, we could enforce a little more consistency, like if curve 1 is shielded by {2,3}, and 2 is by {3,4}, then 1 should also be shielded by 4
+    for( size_t rel_eff_index = 0; rel_eff_index < rel_eff_curves.size(); ++rel_eff_index )
+    {
+      const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = rel_eff_curves[rel_eff_index];
+      if( rel_eff_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+      {
+        // With some minor coding, we could release this next constraint, but we wont because people probably wont
+        //  intend to use this potential option (it could make sense, rarely, maybe)
+        if( !rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty() )
+          throw logic_error( "A non-physical model efficiency function can not be shielded by other Rel. Eff. curves." );
+        continue;
+      }
+
+      for( const size_t shielding_curve_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
+      {
+        if( shielding_curve_index == rel_eff_index )
+          throw logic_error( "A physical model rel. eff. curve can not shield itself. " );
+        if( shielding_curve_index >= rel_eff_curves.size() )
+          throw logic_error( "An invalid index was specified in 'shielded_by_other_phys_model_curve_shieldings'." );
+
+        const RelActCalcAuto::RelEffCurveInput &shielding_curve = rel_eff_curves[shielding_curve_index];
+        if( shielding_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+          throw logic_error( "A non-physical model rel eff curve can not shield another curve." );
+
+        if( !shielding_curve.phys_model_self_atten && shielding_curve.phys_model_external_atten.empty() )
+          throw logic_error( "The physical model curve shielding another curve doesnt have any shielding defined." );
+
+        for( const size_t other_curve_index : shielding_curve.shielded_by_other_phys_model_curve_shieldings )
+        {
+          // The calculations would work if tow Rel. Eff. curves shielded each other, but I dont know what this would
+          //  mean physically, so we wont allow it.
+          if( other_curve_index == rel_eff_index )
+            throw logic_error( "Two physical model curves can not shield each other." );
+        }
+      }//for( size_t shielding_curve_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
+    }//for( size_t rel_eff_index = 0; rel_eff_index < rel_eff_curves.size(); ++rel_eff_index
+  }//if( same_external_shielding_for_all_rel_eff_curves ) / else
 }//void Options::check_same_hoerl_and_external_shielding_specifications() const
 
 
@@ -7339,7 +9923,7 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
   
   const char *fwhm_form_str = to_str( fwhm_form );
   auto fwhm_node = append_string_node( base_node, "FwhmForm", fwhm_form_str );
-  append_attrib( fwhm_node, "remark", "Possible values: Gadras, Polynomial_2, Polynomial_3, Polynomial_4, Polynomial_5, Polynomial_6" );
+  append_attrib( fwhm_node, "remark", "Possible values: Gadras, Polynomial_2, Polynomial_3, Polynomial_4, Polynomial_5, Polynomial_6, Berstein_2, Berstein_3, Berstein_4, Berstein_5, Berstein_6" );
   
   const char *fwhm_estimation_method_str = to_str( fwhm_estimation_method );
   auto fwhm_estimation_method_node = append_string_node( base_node, "FwhmEstimationMethod", fwhm_estimation_method_str );
@@ -7525,6 +10109,11 @@ size_t num_parameters( const FwhmForm eqn_form )
     case FwhmForm::Polynomial_4:  return 4;
     case FwhmForm::Polynomial_5:  return 5;
     case FwhmForm::Polynomial_6:  return 6;
+    case FwhmForm::Berstein_2:    return 4;  // 2 Berstein coefficients + min_energy + max_energy
+    case FwhmForm::Berstein_3:    return 5;  // 3 Berstein coefficients + min_energy + max_energy
+    case FwhmForm::Berstein_4:    return 6;  // 4 Berstein coefficients + min_energy + max_energy
+    case FwhmForm::Berstein_5:    return 7;  // 5 Berstein coefficients + min_energy + max_energy
+    case FwhmForm::Berstein_6:    return 8;  // 6 Berstein coefficients + min_energy + max_energy
     case FwhmForm::NotApplicable: return 0;
   }//switch( m_options.fwhm_form )
   
@@ -7540,6 +10129,7 @@ RelEffCurveInput::RelEffCurveInput()
   rel_eff_eqn_order( 0 ),
   phys_model_self_atten( nullptr ),
   phys_model_external_atten{},
+  shielded_by_other_phys_model_curve_shieldings{},
   phys_model_use_hoerl( true ),
   pu242_correlation_method( RelActCalc::PuCorrMethod::NotApplicable )
 {
@@ -7555,40 +10145,64 @@ void RelEffCurveInput::check_nuclide_constraints() const
     if( nuc_constraint.constrained_to_controlled_activity_ratio <= 0.0 )
       throw logic_error( "Constrained to controlled activity ratio is less than or equal to 0.0." );
 
-    if( !nuc_constraint.constrained_nuclide )
+    if( !nuclide(nuc_constraint.constrained_source)
+    && !element(nuc_constraint.constrained_source)
+    && !reaction(nuc_constraint.constrained_source) )
       throw logic_error( "Constrained nuclide is nullptr." );
 
-    if( !nuc_constraint.controlling_nuclide )
+    if( !nuclide(nuc_constraint.controlling_source)
+        && !element(nuc_constraint.controlling_source)
+       && !reaction(nuc_constraint.controlling_source) )
       throw logic_error( "Controlling nuclide is nullptr." );
 
-    if( nuc_constraint.constrained_nuclide == nuc_constraint.controlling_nuclide )
+    if( nuc_constraint.constrained_source == nuc_constraint.controlling_source )
       throw logic_error( "Constrained and controlling nuclides are the same." );
 
     // Check that the constrained nuclide is a nuclide in this RelEffCurve
     bool is_constrained_nuclide_in_curve = false, is_controlling_nuclide_in_curve = false;
-    for( const auto &nuclide : nuclides )
+    for( const NucInputInfo &nuclide : nuclides )
     {
-      if( nuc_constraint.constrained_nuclide == nuclide.nuclide )
+      if( nuc_constraint.constrained_source == nuclide.source )
         is_constrained_nuclide_in_curve = true;
 
-      if( nuc_constraint.controlling_nuclide == nuclide.nuclide )
+      if( nuc_constraint.controlling_source == nuclide.source )
         is_controlling_nuclide_in_curve = true;
-    }
+    }//for( const auto &nuclide : nuclides )
         
     if( !is_constrained_nuclide_in_curve )
       throw logic_error( "Constrained nuclide is not in the relative efficiency curve." );
 
     if( !is_controlling_nuclide_in_curve )
       throw logic_error( "Controlling nuclide is not in the relative efficiency curve." );
+
+    for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &mass_fraction_constraint : mass_fraction_constraints )
+    {
+      const SandiaDecay::Nuclide * const mass_frac_nuc = mass_fraction_constraint.nuclide;
+      if( !mass_frac_nuc )
+        throw logic_error( "Mass fraction constraint nuclide is nullptr." );
+
+      if( mass_frac_nuc == nuclide(nuc_constraint.constrained_source) )
+        throw logic_error( "Constrained nuclide " + mass_frac_nuc->symbol + " is also a mass fraction constraint." );
+
+      if( mass_frac_nuc == nuclide(nuc_constraint.controlling_source) )
+      {
+        // We'll let a mass fraction constrained nuclide constrol the activity for a nuclide of another element
+        // but not of the same element.
+        const SandiaDecay::Nuclide *constrained_nuclide = nuclide(nuc_constraint.constrained_source);
+        if( constrained_nuclide && (mass_frac_nuc->atomicNumber == constrained_nuclide->atomicNumber) )
+          throw logic_error( "Constrained nuclide " + constrained_nuclide->symbol 
+                             + " is controlled by a mass fraction constrained nuclide of the same element (not currently supported)." );
+      }//if( mass_fraction_constraint.nuclide == nuc_constraint.controlling_nuclide )
+    }//for( const RelEffCurveInput::MassFractionConstraint &mass_fraction_constraint : mass_fraction_constraints )
   }//for( const RelEffCurveInput::ActRatioConstraint &nuc_constraint : act_ratio_constraints )
 
   // Check that the constrained nuclide is only controlled by one nuclide
-  for( const auto &nuc_constraint : act_ratio_constraints )
+  for( const ActRatioConstraint &nuc_constraint : act_ratio_constraints )
   {
     size_t count = 0;
-    for( const auto &other_constraint : act_ratio_constraints )
+    for( const ActRatioConstraint &other_constraint : act_ratio_constraints )
     {
-      if( other_constraint.constrained_nuclide == nuc_constraint.constrained_nuclide )
+      if( other_constraint.constrained_source == nuc_constraint.constrained_source )
         ++count;
     }
 
@@ -7596,15 +10210,16 @@ void RelEffCurveInput::check_nuclide_constraints() const
       throw logic_error( "Constrained nuclide is controlled by more than one nuclide." );
   }//for( const auto &nuc_constraint : act_ratio_constraints )
 
-  // Make sure no duplicate constraints
+  // Make sure no duplicate constraints (although we should have caught this in the above 
+  //  check for duplicate constrained sources)
   for( size_t i = 1; i < act_ratio_constraints.size(); ++i )
   {
     const RelEffCurveInput::ActRatioConstraint &outer_constraint = act_ratio_constraints[i];
     for( size_t j = 0; j < i; ++j )
     {
       const RelEffCurveInput::ActRatioConstraint &inner_constraint = act_ratio_constraints[j];
-      if( (outer_constraint.constrained_nuclide == inner_constraint.constrained_nuclide)
-        && (outer_constraint.controlling_nuclide == inner_constraint.controlling_nuclide) )
+      if( (outer_constraint.constrained_source == inner_constraint.constrained_source)
+        && (outer_constraint.controlling_source == inner_constraint.controlling_source) )
         {
           throw logic_error( "Duplicate nuclide constraints." );
         }
@@ -7621,7 +10236,7 @@ void RelEffCurveInput::check_nuclide_constraints() const
     visited_constraints.insert( outer_index );
 
     bool found_controller = true;
-    const SandiaDecay::Nuclide *current_controller = outer_constraint.controlling_nuclide;  // e.g. U238
+    SrcVariant current_controller = outer_constraint.controlling_source;  // e.g. U238
 
     while( found_controller )
     {
@@ -7630,13 +10245,13 @@ void RelEffCurveInput::check_nuclide_constraints() const
       for( size_t inner_index = 0; inner_index < act_ratio_constraints.size(); ++inner_index )
       {
         const RelEffCurveInput::ActRatioConstraint &inner_constraint = act_ratio_constraints[inner_index];
-        if( current_controller == inner_constraint.constrained_nuclide )
+        if( current_controller == inner_constraint.constrained_source )
         {
           if( visited_constraints.count( inner_index ) )
             throw logic_error( "Cycle in nuclide constraints." );
 
           found_controller = true;
-          current_controller = inner_constraint.controlling_nuclide; // e.g. U234
+          current_controller = inner_constraint.controlling_source; // e.g. U234
           visited_constraints.insert( inner_index );
           break;
         }
@@ -7645,118 +10260,225 @@ void RelEffCurveInput::check_nuclide_constraints() const
   }//for( const RelEffCurveInput::ActRatioConstraint &nuc_constraint : rel_eff_curve.act_ratio_constraints )
 
 
+  //Now check the mass fraction constraints (we have already checked that the nuclide is not constrained by an act ratio constraint)
+  std::map<short int, size_t> num_constrained_nucs_of_el;
+  std::map<short int, double> lower_mass_fraction_sums_of_el;
+  for( size_t index = 0; index < mass_fraction_constraints.size(); ++index )
+  {
+    const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint = mass_fraction_constraints[index];
+    if( !constraint.nuclide )
+      throw logic_error( "Mass fraction constraint nuclide is nullptr." );
+
+    if( constraint.lower_mass_fraction < 0.0 || constraint.lower_mass_fraction > 1.0 )
+      throw logic_error( "Mass fraction constraint (" + constraint.nuclide->symbol 
+                            + ") has lower mass fraction (" + std::to_string(constraint.lower_mass_fraction) 
+                            + ") which is not in [0.0, 1.0." );
+
+    if( constraint.lower_mass_fraction > constraint.upper_mass_fraction )
+      throw logic_error( "Mass fraction constraint (" + constraint.nuclide->symbol 
+                            + ") has lower mass fraction (" + std::to_string(constraint.lower_mass_fraction) 
+                            + ") which is greater than the upper mass fraction (" + std::to_string(constraint.upper_mass_fraction) + ")." );
+
+    if( constraint.upper_mass_fraction < 0.0 || constraint.upper_mass_fraction > 1.0 )
+      throw logic_error( "Mass fraction constraint (" + constraint.nuclide->symbol 
+                            + ") has upper mass fraction (" + std::to_string(constraint.upper_mass_fraction) 
+                            + ") which is not in (0.0, 1.0)." );
+
+    if( (constraint.upper_mass_fraction == constraint.lower_mass_fraction)
+        && ((constraint.lower_mass_fraction <= 0.0) || (constraint.lower_mass_fraction >= 1.0)) )
+    {
+      throw logic_error( "Mass fraction constraint (" + constraint.nuclide->symbol 
+                            + ") has upper and lower mass fractions set to the same value (" 
+                            + std::to_string(constraint.upper_mass_fraction) + "), which must be in (0, 1)." );
+    }
+
+    lower_mass_fraction_sums_of_el[constraint.nuclide->atomicNumber] += constraint.lower_mass_fraction;
+
+    // Check that the constrained nuclide is a nuclide in this RelEffCurve
+    size_t num_src_nucs_for_element = 0;
+    bool is_constrained_nuclide_in_curve = false;
+    
+    num_constrained_nucs_of_el[constraint.nuclide->atomicNumber] += 1;
+
+    for( const NucInputInfo &src : nuclides )
+    {
+      const SandiaDecay::Nuclide *src_nuc = nuclide(src.source);
+      if( constraint.nuclide == src_nuc )
+        is_constrained_nuclide_in_curve = true;
+
+      if( src_nuc && (src_nuc->atomicNumber == constraint.nuclide->atomicNumber) )
+        ++num_src_nucs_for_element;
+    }//for( const NucInputInfo &nuclide : nuclides )
+
+    if( !is_constrained_nuclide_in_curve )
+      throw logic_error( "Mass fraction constraint nuclide (" + constraint.nuclide->symbol 
+                            + ") is not in the relative efficiency curve." );
+
+    if( num_src_nucs_for_element < 2  )
+      throw logic_error( "Constrained nuclide (" + constraint.nuclide->symbol 
+                            + ") must have at least 2 nuclides of the same element in the relative efficiency curve." );
+
+    for( size_t i = index + 1; i < mass_fraction_constraints.size(); ++i )
+    {
+      const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &other_constraint = mass_fraction_constraints[i];
+      if( other_constraint.nuclide == constraint.nuclide )
+        throw logic_error( "Multiple mass fraction constraints for the same nuclide (" + constraint.nuclide->symbol + ")." );
+    }//for( size_t i = index + 1; i < mass_fraction_constraints.size(); ++i )
+  }//for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &mass_fraction_constraint : mass_fraction_constraints )
+
+  // Check that the mass fraction sum of each element is 1.0
+  for( const auto &[el, lower_mass_fraction_sum] : lower_mass_fraction_sums_of_el )
+  {
+    if( lower_mass_fraction_sum >= 1.0 )
+      throw logic_error( "The lower mass fraction sum of element (AN=" + std::to_string(el) 
+                          + ") is above 1.0 (sum=" + std::to_string(lower_mass_fraction_sum) + ")." );
+  }//for( const [const short int &el, const double &lower_mass_fraction_sum] : lower_mass_fraction_sums_of_el )
+
+  // Check that there is at least one nuclide of each element that is not constrained; to do
+  // this we need to count the number of nuclides of each element total, and compare that to the
+  // number of constrained nuclides of that element (num_constrained_nucs_of_el).
+  std::map<short int, size_t> num_nucs_of_el;
+  for( const NucInputInfo &src : nuclides )
+  {
+    const SandiaDecay::Nuclide *src_nuc = nuclide(src.source);
+    if( src_nuc )
+      num_nucs_of_el[src_nuc->atomicNumber] += 1;
+  }
+  
+  for( const auto &[el, num_constrained_nucs] : num_constrained_nucs_of_el )
+  {
+    assert( num_nucs_of_el[el] > 0 );
+
+    if( num_nucs_of_el[el] <= num_constrained_nucs )
+      throw logic_error( "For each element with a mass fraction constraint, you must have at least one nuclide which is not constrained." );
+  }//for( const [const short int &el, const size_t &num_nucs] : num_constrained_nucs_of_el )
+
+
   // Check that if rel act min/max/starting values are set, then nuclide is not constrained to another nuclide
   for( const NucInputInfo &nuc : nuclides )
   {
-    assert( nuc.nuclide || nuc.element || nuc.reaction );
-    if( !nuc.nuclide && !nuc.element && !nuc.reaction )
+    assert( !is_null(nuc.source) );                                                                         
+    if( is_null(nuc.source) )
       throw logic_error( "Nuclide, element, or reaction is nullptr." );
       
     if( nuc.min_rel_act.has_value() || nuc.max_rel_act.has_value() || nuc.starting_rel_act.has_value() )
     {
       for( const ActRatioConstraint &constraint : act_ratio_constraints )
       {
-        if( constraint.constrained_nuclide == nuc.nuclide )
+        if( constraint.constrained_source == nuc.source )
           throw runtime_error( "Nuclide " + nuc.name() + " is constrained to another nuclide"
                                " - you can not specify its min, max, or starting activity." );
       }//for( const ActRatioConstraint &constraint : act_ratio_constraints )
+
+      for( const MassFractionConstraint &constraint : mass_fraction_constraints )
+      {
+        assert( constraint.nuclide );
+        if( !constraint.nuclide )
+          continue;
+
+        if( constraint.nuclide == nuclide(nuc.source) )
+          throw runtime_error( "Nuclide " + nuc.name() + " is a mass fraction constraint."
+                               " - you can not specify its min, max, or starting activity." );
+      }//for( const MassFractionConstraint &constraint : mass_fraction_constraints )
     }//if( nuc.min_rel_act.has_value() || nuc.max_rel_act.has_value() || nuc.starting_rel_act.has_value() )
     
     if( nuc.min_rel_act.has_value() && (nuc.min_rel_act.value() < 0.0) )
-      throw runtime_error( std::format( "Nuclide {} has min rel act set to {} - min rel act must be greater or equal to 0.0.",
-                                        nuc.name(), nuc.min_rel_act.value() ) );
+      throw runtime_error( "Nuclide " + nuc.name() + " has min rel act set to "
+                        + std::to_string(nuc.min_rel_act.value()) + " - min rel act must be greater or equal to 0.0." );
 
     if( nuc.max_rel_act.has_value() && (nuc.max_rel_act.value() < 0.0) )
-      throw runtime_error( std::format( "Nuclide {} has max rel act set to {} - max rel act must be greater or equal to 0.0.",
-                                        nuc.name(), nuc.max_rel_act.value() ) );
+      throw runtime_error( "Nuclide " + nuc.name() + " has max rel act set to "
+                      + std::to_string(nuc.max_rel_act.value()) + " - max rel act must be greater or equal to 0.0." );
 
     if( nuc.starting_rel_act.has_value() && (nuc.starting_rel_act.value() < 0.0) )
-      throw runtime_error( std::format( "Nuclide {} has starting rel act set to {} - starting rel act must be greater or equal to 0.0.",
-                                        nuc.name(), nuc.starting_rel_act.value() ) );  
+      throw runtime_error( "Nuclide " + nuc.name() + " has starting rel act set to "
+                          + std::to_string(nuc.starting_rel_act.value())
+                          + " - starting rel act must be greater or equal to 0.0." );
 
     //Check that if min_rel_act is set, and max_rel_act is set, then max_rel_act is greater than min_rel_act
     if( (nuc.min_rel_act.has_value() && nuc.max_rel_act.has_value())
         && (nuc.min_rel_act.value() > nuc.max_rel_act.value()) )
     {
-      const string msg = std::format( "Nuclide {} has min rel act set to {} and max rel act set to {}"
-                                      " - max rel act must be greater or equal to min rel act.",
-                                      nuc.name(), nuc.min_rel_act.value(), nuc.max_rel_act.value() );
+      const string msg = "Nuclide " + nuc.name() + " has min rel act set to " + std::to_string(nuc.min_rel_act.value())
+                         + " and max rel act set to " + std::to_string(nuc.max_rel_act.value())
+                         + " - max rel act must be greater or equal to min rel act.";
       throw runtime_error( msg );
     }
     
     if( (nuc.starting_rel_act.has_value() && nuc.min_rel_act.has_value()) 
         && (nuc.starting_rel_act.value() < nuc.min_rel_act.value()) )
     {
-      const string msg = std::format( "Nuclide {} has starting rel act set to {}"
-                                      " - starting rel act must be greater or equal to min rel act.",
-                                      nuc.name(), nuc.starting_rel_act.value() );
+      const string msg = "Nuclide " + nuc.name() + " has starting rel act set to "
+                        + std::to_string(nuc.starting_rel_act.value())
+                        + " - starting rel act must be greater or equal to min rel act.";
       throw runtime_error( msg );
     }
 
     if( (nuc.starting_rel_act.has_value() && nuc.max_rel_act.has_value()) 
         && (nuc.starting_rel_act.value() > nuc.max_rel_act.value()) )
     {
-      const string msg = std::format( "Nuclide {} has starting rel act set to {}"
-                                      " - starting rel act must be less or equal to max rel act.",
-                                      nuc.name(), nuc.starting_rel_act.value() );
+      const string msg = "Nuclide " + nuc.name() + " has starting rel act set to "
+                          + std::to_string(nuc.starting_rel_act.value())
+                          + " - starting rel act must be less or equal to max rel act.";
       throw runtime_error( msg );
     }
 
-    if( !nuc.nuclide )
+    const SandiaDecay::Nuclide *src_nuc = nuclide(nuc.source);
+    if( !src_nuc )
     {
       if( nuc.age > 0.0 )
-        throw runtime_error( std::format( "non-nuclide {} has age set to {} - age must be less than or equal to 0.0.",
-                                        nuc.name(), nuc.age ) );
+        throw runtime_error( "non-nuclide " + nuc.name() + " has age set to " + std::to_string(nuc.age)
+                             + " - age must be less than or equal to 0.0." );
       if( nuc.fit_age )
-        throw runtime_error( std::format( "non-nuclide {} has fit age set to true - fit age must be false.",
-                                        nuc.name() ) );
+        throw runtime_error( "non-nuclide " + nuc.name() + " has fit age set to true - fit age must be false." );
       if( nuc.fit_age_min.has_value() || nuc.fit_age_max.has_value() )
-        throw runtime_error( std::format( "non-nuclide {} has fit age min or max set, but fit age is not set.",
-                                        nuc.name() ) );
+        throw runtime_error( "non-nuclide " + nuc.name() + " has fit age min or max set, but fit age is not set." );
     }else
     {
       if( !nuc.fit_age )
       {
         if( nuc.fit_age_min.has_value() || nuc.fit_age_max.has_value() )
-          throw runtime_error( std::format( "Nuclide {} has fit age min or max set, but fit age is not set.",
-                                            nuc.name() ) );
+          throw runtime_error( "Nuclide " + nuc.name() + " has fit age min or max set, but fit age is not set." );
       }
 
       if( nuc.age < 0.0 )
-        throw runtime_error( std::format( "Nuclide {} has age set to {} - age must be greater or equal to 0.0.",
-                                        nuc.name(), nuc.age ) );
+        throw runtime_error( "Nuclide " + nuc.name() + " has age set to " + std::to_string(nuc.age)
+                            + " - age must be greater or equal to 0.0." );
 
       if( nuc.fit_age_min.has_value() && nuc.fit_age_max.has_value() )
       {
         if( nuc.fit_age_min.value() >= nuc.fit_age_max.value() )
-          throw runtime_error( std::format( "Nuclide {} has fit age min set to {} and fit age max set to {}"
-                                           " - fit age max must be greater or equal to fit age min.",
-                                           nuc.name(), nuc.fit_age_min.value(), nuc.fit_age_max.value() ) );
+          throw runtime_error( "Nuclide " + nuc.name() + " has fit age min set to "
+                              + std::to_string(nuc.fit_age_min.value()) + " and fit age max set to "
+                              + std::to_string(nuc.fit_age_max.value())
+                              + " - fit age max must be greater or equal to fit age min." );
       }
 
       if( nuc.fit_age_min.has_value() && nuc.age < nuc.fit_age_min.value() )
-        throw runtime_error( std::format( "Nuclide {} has age set to {} - age must be greater or equal to fit age min.",
-                                        nuc.name(), nuc.age ) );
+        throw runtime_error( "Nuclide " + nuc.name() + " has age set to " + std::to_string(nuc.age)
+                            + " - age must be greater or equal to fit age min." );
 
       if( nuc.fit_age_max.has_value() && nuc.age > nuc.fit_age_max.value() )
-        throw runtime_error( std::format( "Nuclide {} has age set to {} - age must be less or equal to fit age max.",
-                                          nuc.name(), nuc.age ) );  
-    }//if( !nuc.nuclide ) / else
+        throw runtime_error( "Nuclide " + nuc.name() + " has age set to " + std::to_string(nuc.age)
+                            + " - age must be less or equal to fit age max." );
+    }//if( !nuclide ) / else
   }//for( const NucInputInfo &nuc : nuclides )
 
   if( nucs_of_el_same_age )
   {
     for( const NucInputInfo &inner_nuc : nuclides )
     {
-      if( !inner_nuc.nuclide )
+      const SandiaDecay::Nuclide *inner_src_nuc = nuclide(inner_nuc.source);
+      if( !inner_src_nuc )
         continue;
       
       for( const NucInputInfo &outer_nuc : nuclides )
       {
-        if( !outer_nuc.nuclide )
+        const SandiaDecay::Nuclide *outer_src_nuc = nuclide(outer_nuc.source);
+        if( !outer_src_nuc )
           continue;
         
-        if( inner_nuc.nuclide->atomicNumber != outer_nuc.nuclide->atomicNumber )
+        if( inner_src_nuc->atomicNumber != outer_src_nuc->atomicNumber )
           continue;
 
         if( inner_nuc.age != outer_nuc.age )
@@ -7770,10 +10492,14 @@ void RelEffCurveInput::check_nuclide_constraints() const
             || (inner_nuc.fit_age_min.has_value() && (inner_nuc.fit_age_min.value() != outer_nuc.fit_age_min.value()))
             || (inner_nuc.fit_age_max.has_value() && (inner_nuc.fit_age_max.value() != outer_nuc.fit_age_max.value())) )
         {
-          const string msg = std::format( "When nucs_of_el_same_age is true, all nuclides of same element must have the same fit_age_min and fit_age_max input."
-                                          " - nuclide {} has fit_age_min set to {} and fit_age_max set to {}, but nuclide {} has fit_age_min set to {} and fit_age_max set to {}.",
-                                          inner_nuc.name(), inner_nuc.fit_age_min.value_or(0.0), inner_nuc.fit_age_max.value_or(0.0),
-                                          outer_nuc.name(), outer_nuc.fit_age_min.value_or(0.0), outer_nuc.fit_age_max.value_or(0.0) );
+          const string msg = "When nucs_of_el_same_age is true, all nuclides of same element must have the same"
+          " fit_age_min and fit_age_max input."
+          " - nuclide " + inner_nuc.name() + " has fit_age_min set to "
+          + std::to_string(inner_nuc.fit_age_min.value_or(0.0)) + " and fit_age_max set to "
+          + std::to_string(inner_nuc.fit_age_max.value_or(0.0))
+          + ", but nuclide " + outer_nuc.name() + " has fit_age_min set to "
+          + std::to_string(outer_nuc.fit_age_min.value_or(0.0))
+          + " and fit_age_max set to " + std::to_string(outer_nuc.fit_age_max.value_or(0.0)) + ".";
           throw runtime_error( msg );
         }//if( same age limits not specified for all nuclides of same element )
       }//for( const NucInputInfo &outer_nuc : nuclides )
@@ -7791,8 +10517,8 @@ RelEffCurveInput::ActRatioConstraint RelEffCurveInput::ActRatioConstraint::from_
   assert( mass_ratio_constrained_to_controlling > 0.0 );
   
   ActRatioConstraint answer;
-  answer.constrained_nuclide = constrained;
-  answer.controlling_nuclide = controlling;
+  answer.constrained_source = constrained;
+  answer.controlling_source = controlling;
   answer.constrained_to_controlled_activity_ratio = RelActCalc::mass_ratio_to_act_ratio(constrained, controlling, mass_ratio_constrained_to_controlling);
 
   return answer;
@@ -7803,7 +10529,7 @@ void RelEffCurveInput::ActRatioConstraint::toXml( ::rapidxml::xml_node<char> *pa
 {
   using namespace rapidxml;
   
-  if( !controlling_nuclide || !constrained_nuclide )
+  if( is_null(controlling_source) || is_null(constrained_source) )
     throw logic_error( "Controlling or constrained nuclide is nullptr." );
 
   if( constrained_to_controlled_activity_ratio <= 0.0 )
@@ -7818,8 +10544,8 @@ void RelEffCurveInput::ActRatioConstraint::toXml( ::rapidxml::xml_node<char> *pa
   parent->append_node( base_node );
   append_version_attrib( base_node, RelEffCurveInput::ActRatioConstraint::sm_xmlSerializationVersion );
   
-  append_string_node( base_node, "ControllingNuclide", controlling_nuclide->symbol );
-  append_string_node( base_node, "ConstrainedNuclide", constrained_nuclide->symbol );
+  append_string_node( base_node, "ControllingSource", to_name(controlling_source) );
+  append_string_node( base_node, "ConstrainedSource", to_name(constrained_source) );
   append_float_node( base_node, "ActivityRatio", constrained_to_controlled_activity_ratio );
 }//void RelEffCurveInput::ActRatioConstraint::toXml( ::rapidxml::xml_node<char> *parent ) const
 
@@ -7840,8 +10566,17 @@ void RelEffCurveInput::ActRatioConstraint::fromXml( const ::rapidxml::xml_node<c
     
   XmlUtils::check_xml_version( constraint_node, RelEffCurveInput::ActRatioConstraint::sm_xmlSerializationVersion );
 
-  const rapidxml::xml_node<char> *controlling_node = XmlUtils::get_required_node( constraint_node, "ControllingNuclide" );
-  const rapidxml::xml_node<char> *constrained_node = XmlUtils::get_required_node( constraint_node, "ConstrainedNuclide" );
+  const rapidxml::xml_node<char> *controlling_node = XML_FIRST_INODE( constraint_node, "ControllingSource" );
+  if( !controlling_node )
+    controlling_node = XML_FIRST_INODE( constraint_node, "ControllingNuclide" );
+  if( !controlling_node )
+    throw std::runtime_error( "No <ControllingSource> or <ControllingNuclide> node" );
+
+  const rapidxml::xml_node<char> *constrained_node = XML_FIRST_INODE( constraint_node, "ConstrainedSource" );
+  if( !constrained_node )
+    constrained_node = XML_FIRST_INODE( constraint_node, "ConstrainedNuclide" );
+  if( !constrained_node )
+    throw std::runtime_error( "No <ConstrainedSource> or <ConstrainedNuclide> node" );
   
   const string controlling_nuclide_name = SpecUtils::xml_value_str( controlling_node );
   const string constrained_nuclide_name = SpecUtils::xml_value_str( constrained_node );
@@ -7849,17 +10584,13 @@ void RelEffCurveInput::ActRatioConstraint::fromXml( const ::rapidxml::xml_node<c
   if( activity_ratio <= 0.0 )
     throw runtime_error( "Activity ratio is less than or equal to 0.0." );
 
-  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-  if( !db )
-    throw runtime_error( "No decay database found." );
-
-  controlling_nuclide = db->nuclide( controlling_nuclide_name );
-  if( !controlling_nuclide )
+  controlling_source = source_from_string( controlling_nuclide_name );
+  if( is_null(controlling_source) )
     throw runtime_error( "Controlling nuclide ('" + controlling_nuclide_name + ") not found in decay database." );
 
-  constrained_nuclide = db->nuclide( constrained_nuclide_name );
-  if( !constrained_nuclide )
-    throw runtime_error( "Constrained nuclide not found in decay database." );
+  constrained_source = source_from_string( constrained_nuclide_name );
+  if( is_null(constrained_source) )
+    throw runtime_error( "Constrained nuclide ('" + constrained_nuclide_name + ") not found in decay database." );
 
   constrained_to_controlled_activity_ratio = activity_ratio;
 }//void RelEffCurveInput::ActRatioConstraint::fromXml( const ::rapidxml::xml_node<char> *parent )  
@@ -7871,12 +10602,103 @@ void RelEffCurveInput::ActRatioConstraint::equalEnough( const ActRatioConstraint
   if( fabs(lhs.constrained_to_controlled_activity_ratio - rhs.constrained_to_controlled_activity_ratio) > 1e-6 )
     throw logic_error( "Constrained to controlled activity ratio is not equal." );
 
-  if( lhs.controlling_nuclide != rhs.controlling_nuclide )
+  if( lhs.controlling_source != rhs.controlling_source )
     throw logic_error( "Controlling nuclide is not equal." );
 
-  if( lhs.constrained_nuclide != rhs.constrained_nuclide )
+  if( lhs.constrained_source != rhs.constrained_source )
     throw logic_error( "Constrained nuclide is not equal." );
 }//void RelEffCurveInput::ActRatioConstraint::equalEnough(...)
+#endif
+
+
+void RelEffCurveInput::MassFractionConstraint::toXml( ::rapidxml::xml_node<char> *parent ) const
+{
+  using namespace rapidxml;
+  
+  assert( parent );
+  if( !parent || !parent->document() )
+    throw runtime_error( "RoiRange::toXml: invalid parent." );
+
+  xml_document<char> *doc = parent->document();
+  xml_node<char> *base_node = doc->allocate_node( node_element, "MassFractionConstraint", nullptr, 22, 0 );
+  parent->append_node( base_node );
+  append_version_attrib( base_node, MassFractionConstraint::sm_xmlSerializationVersion );
+
+  append_string_node( base_node, "Nuclide", nuclide->symbol );
+  if( lower_mass_fraction == upper_mass_fraction )
+  {
+    append_float_node( base_node, "MassFraction", lower_mass_fraction );  
+  }else
+  {
+    append_float_node( base_node, "LowerMassFraction", lower_mass_fraction );
+    append_float_node( base_node, "UpperMassFraction", upper_mass_fraction );
+  }
+}//void MassFractionConstraint::toXml( ::rapidxml::xml_node<char> *parent ) const
+
+
+void RelEffCurveInput::MassFractionConstraint::fromXml( const ::rapidxml::xml_node<char> *parent )
+{
+  using namespace rapidxml;
+  
+  if( !parent )
+    throw runtime_error( "invalid input" ); 
+    
+  if( !rapidxml::internal::compare( parent->name(), parent->name_size(), "MassFractionConstraint", 22, false ) )
+    throw std::logic_error( "invalid input node name" );
+    
+  // A reminder double check these logics when changing RoiRange::sm_xmlSerializationVersion
+  static_assert( MassFractionConstraint::sm_xmlSerializationVersion == 0,
+                  "needs to be updated for new serialization version." );
+                  
+  const rapidxml::xml_node<char> *nuclide_node = XmlUtils::get_required_node( parent, "Nuclide" );
+  const string nuclide_name = SpecUtils::xml_value_str( nuclide_node );
+
+  double lower_mass_fraction_value = 0.0, upper_mass_fraction_value = 0.0;
+  const rapidxml::xml_node<char> *mass_fraction_node = XML_FIRST_NODE( parent, "MassFraction" );
+  
+  if( mass_fraction_node )
+  {
+    if( !SpecUtils::parse_double(mass_fraction_node->value(), mass_fraction_node->value_size(), lower_mass_fraction_value) )
+      throw std::runtime_error( "Invalid MassFraction XML value ('" + SpecUtils::xml_value_str(mass_fraction_node) + "')." );
+    upper_mass_fraction_value = lower_mass_fraction_value;
+  }else
+  {
+    lower_mass_fraction_value = XmlUtils::get_float_node_value( parent, "LowerMassFraction" );
+    upper_mass_fraction_value = XmlUtils::get_float_node_value( parent, "UpperMassFraction" );
+  }
+  
+  if( lower_mass_fraction_value < 0.0 || lower_mass_fraction_value >= 1.0 )
+    throw runtime_error( "Lower mass fraction must be at least 0.0 and less than 1.0." );
+
+  if( upper_mass_fraction_value <= 0.0 || upper_mass_fraction_value > 1.0 )
+    throw runtime_error( "Upper mass fraction must be greater than 0.0 and less than or equal to 1.0." );
+
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  if( !db )
+    throw runtime_error( "No decay database found." );  
+
+  const SandiaDecay::Nuclide *nuclide_ptr = db->nuclide( nuclide_name );
+  if( !nuclide_ptr )
+    throw runtime_error( "Nuclide '" + nuclide_name + "' not found in decay database." );
+
+  nuclide = nuclide_ptr;
+  lower_mass_fraction = lower_mass_fraction_value;
+  upper_mass_fraction = upper_mass_fraction_value;
+}//void MassFractionConstraint::fromXml( const ::rapidxml::xml_node<char> *parent )
+
+
+#if( PERFORM_DEVELOPER_CHECKS )
+void RelEffCurveInput::MassFractionConstraint::equalEnough( const MassFractionConstraint &lhs, const MassFractionConstraint &rhs )
+{
+  if( lhs.nuclide != rhs.nuclide )
+    throw logic_error( "Nuclide is not equal." );
+
+  if( fabs(lhs.lower_mass_fraction - rhs.lower_mass_fraction) > 1e-7 )
+    throw logic_error( "Lower mass fraction is not equal." );
+
+  if( fabs(lhs.upper_mass_fraction - rhs.upper_mass_fraction) > 1e-7 )
+    throw logic_error( "Upper mass fraction is not equal." );
+}//void MassFractionConstraint::equalEnough(...)
 #endif
 
 
@@ -7892,6 +10714,8 @@ rapidxml::xml_node<char> *RelEffCurveInput::toXml( ::rapidxml::xml_node<char> *p
   xml_node<char> *base_node = doc->allocate_node( node_element, "RelEffCurveInput" );
   parent->append_node( base_node );
   append_version_attrib( base_node, RelEffCurveInput::sm_xmlSerializationVersion );
+
+  append_string_node( base_node, "Name", name );
 
   if( !nuclides.empty() )
   {
@@ -7934,7 +10758,15 @@ rapidxml::xml_node<char> *RelEffCurveInput::toXml( ::rapidxml::xml_node<char> *p
       for( const auto &ext : phys_model_external_atten )
         ext->toXml( ext_atten_node );
     }//if( !phys_model_external_atten.empty() )
-    
+
+    if( !shielded_by_other_phys_model_curve_shieldings.empty() )
+    {
+      xml_node<char> *shield_by_node = doc->allocate_node( node_element, "ShieldedByCurves" );
+      phys_node->append_node( shield_by_node );
+      for( const size_t curve_index : shielded_by_other_phys_model_curve_shieldings )
+        XmlUtils::append_int_node( shield_by_node, "RelEffCurveIndex", curve_index );
+    }//if( shielded_by_other_phys_model_curve_shieldings.empty() )
+
     XmlUtils::append_bool_node( phys_node, "PhysModelUseHoerl", phys_model_use_hoerl );
   }//if( phys_model_self_atten || !phys_model_external_atten.empty() )
 
@@ -7951,6 +10783,14 @@ rapidxml::xml_node<char> *RelEffCurveInput::toXml( ::rapidxml::xml_node<char> *p
     for( const auto &constraint : act_ratio_constraints )
       constraint.toXml( act_ratio_constraints_node );
   }//if( !act_ratio_constraints.empty() )
+
+  if( !mass_fraction_constraints.empty() )
+  {
+    xml_node<char> *mass_fraction_constraints_node = doc->allocate_node( node_element, "MassFractionConstraints" );
+    base_node->append_node( mass_fraction_constraints_node );
+    for( const auto &constraint : mass_fraction_constraints )
+      constraint.toXml( mass_fraction_constraints_node );
+  }//if( !mass_fraction_constraints.empty() ) 
 
   return base_node;
 }//RelEffCurveInput::toXml(...)
@@ -7973,6 +10813,8 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent, Materi
   
   check_xml_version( parent, is_rel_eff_curve_input ? RelEffCurveInput::sm_xmlSerializationVersion : 1 );
   
+  const rapidxml::xml_node<char> *name_node = XML_FIRST_NODE(parent, "Name");
+  name = SpecUtils::xml_value_str( name_node );
 
   const rapidxml::xml_node<char> *node = XML_FIRST_NODE(parent, "NucInputInfoList");
   if( !node && parent->parent() && is_options )  //Compatibility with Options::sm_xmlSerializationVersion versions 0 and 1
@@ -8012,6 +10854,7 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent, Materi
   phys_model_use_hoerl = true;
   phys_model_self_atten.reset();
   phys_model_external_atten.clear();
+  shielded_by_other_phys_model_curve_shieldings.clear();
   const rapidxml::xml_node<char> *phys_model_node = XML_FIRST_NODE( parent, "PhysicalModelOptions" );
     
   if( (rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel) && !phys_model_node )
@@ -8040,7 +10883,20 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent, Materi
         phys_model_external_atten.push_back( att );
       }
     }//if( ext_atten_node )
-      
+
+    const rapidxml::xml_node<char> *outer_curve_node = XML_FIRST_NODE( phys_model_node, "ShieldedByCurves" );
+    if( outer_curve_node )
+    {
+      XML_FOREACH_CHILD( index_node, outer_curve_node, "RelEffCurveIndex" )
+      {
+        size_t index;
+        const string index_str = SpecUtils::xml_value_str( index_node );
+        if( !(stringstream(index_str) >> index) )
+          throw runtime_error( "Invalid 'RelEffCurveIndex' value '" + index_str + "'" );
+        shielded_by_other_phys_model_curve_shieldings.insert( index );
+      }//
+    }//if( outer_curve_node )
+
     phys_model_use_hoerl = XmlUtils::get_bool_node_value(phys_model_node, "PhysModelUseHoerl" );
   }//if( phys_model_node )
 
@@ -8075,20 +10931,22 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent, Materi
       constraint.fromXml( constraint_node );
 
       // Check that the nuclides are valid, and in this Rel Eff Curve
-      if( !constraint.controlling_nuclide || !constraint.constrained_nuclide )
+      if( is_null(constraint.controlling_source) || is_null(constraint.constrained_source) )
         throw runtime_error( "Invalid nuclide in ActRatioConstraint" ); 
 
-      if( constraint.controlling_nuclide == constraint.constrained_nuclide )
-        throw runtime_error( "Controlling and constrained nuclides cannot be the same" );
+      if( constraint.controlling_source == constraint.constrained_source )
+        throw runtime_error( "Controlling and constrained sources cannot be the same" );
 
       if( constraint.constrained_to_controlled_activity_ratio <= 0.0 )
         throw runtime_error( "Constrained to controlled activity ratio must be greater than 0.0" );
 
       bool has_constrained = false, has_controlling = false;
-      for( const auto &nuc : nuclides )
+      for( const NucInputInfo &src : nuclides )
       {
-        has_constrained |= (nuc.nuclide == constraint.constrained_nuclide);
-        has_controlling |= (nuc.nuclide == constraint.controlling_nuclide);
+        assert( !is_null(src.source) );
+
+        has_constrained |= (constraint.constrained_source == src.source);
+        has_controlling |= (constraint.controlling_source == src.source);
       }   
 
       if( !has_constrained )
@@ -8100,6 +10958,36 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent, Materi
       act_ratio_constraints.push_back( constraint );
     }//for( each ActRatioConstraint )
   }//if( act_ratio_constraints_node )
+
+  // Get the MassFractionConstraints
+  const rapidxml::xml_node<char> *mass_fraction_constraints_node = XML_FIRST_NODE( parent, "MassFractionConstraints" );
+  if( mass_fraction_constraints_node )
+  {
+    XML_FOREACH_CHILD( constraint_node, mass_fraction_constraints_node, "MassFractionConstraint" )
+    {
+      MassFractionConstraint constraint;
+      constraint.fromXml( constraint_node );
+
+      bool has_nuclide = false;
+      size_t num_nucs_of_el = 0;
+      for( const NucInputInfo &nuc : nuclides )
+      {
+        const SandiaDecay::Nuclide *src_nuc = nuclide(nuc.source);
+        has_nuclide |= (src_nuc == constraint.nuclide);
+        if( src_nuc && (src_nuc->atomicNumber == constraint.nuclide->atomicNumber) )
+          ++num_nucs_of_el;
+      }   
+
+      if( !has_nuclide )
+        throw runtime_error( "MassFractionConstraint nuclide '" + constraint.nuclide->symbol + "' not found in problems nuclides." );
+
+      if( num_nucs_of_el < 2 )
+        throw runtime_error( "MassFractionConstraint for " + constraint.nuclide->symbol 
+                                + " can only be used when there is two or more nuclides for an element." );
+
+      mass_fraction_constraints.push_back( constraint );
+    }//for( each MassFractionConstraint )
+  }//if( mass_fraction_constraints_node )
 }//void RelEffCurveInput::fromXml(...)
   
   
@@ -8142,7 +11030,14 @@ RelActAutoGuiState::RelActAutoGuiState()
   
   xml_attribute<char> *attrib = doc->allocate_attribute( "version", "0" );
   base_node->append_attribute( attrib );
-  
+
+  if( !note.empty() )
+  {
+    const char *val = doc->allocate_string( note.c_str() );
+    xml_node<char> *node = doc->allocate_node( node_element, "Note", val );
+    base_node->append_node( node );
+  }//if( !note.empty() )
+
   // Elements in the offline-xml we dont deal with here
   //  base_node->append_node( <"ForegroundFileName"> );
   //  base_node->append_node( <"BackgroundFileName"> );
@@ -8202,7 +11097,10 @@ void RelActAutoGuiState::deSerialize( const rapidxml::xml_node<char> *base_node,
   const string base_version = SpecUtils::xml_value_str(attrib);
   if( !SpecUtils::istarts_with(base_version, "0") )
     throw runtime_error( "RelActAutoGuiState::deSerialize: invalid xml version='" + base_version + "'" );
-  
+
+  const xml_node<char> * const note_node = XML_FIRST_NODE(base_node, "Note");
+  note = SpecUtils::xml_value_str( note_node );
+
   const xml_node<char> *node = XML_FIRST_NODE(base_node, "Options");
   if( !node )
     throw runtime_error( "RelActAutoGui::deSerialize: No <Options> node." );
@@ -8271,6 +11169,11 @@ RelActAutoSolution::RelActAutoSolution()
   m_error_message( "" ),
   m_foreground{ nullptr },
   m_background{ nullptr },
+  m_final_parameters{},
+  m_final_uncertainties{},
+  m_covariance{},
+  m_parameter_names{},
+  m_parameter_were_fit{},
   m_spectrum{ nullptr },
   m_rel_eff_forms{},
   m_rel_eff_coefficients{},
@@ -8306,17 +11209,21 @@ std::string RelActAutoSolution::rel_eff_txt( const bool html_format, const size_
   assert( rel_eff_index < m_options.rel_eff_curves.size() );
   
   if( rel_eff_index >= m_options.rel_eff_curves.size() )
-    throw logic_error( "RelActAutoSolution::rel_eff_txt: invalis rel eff index" );
-  
+    throw logic_error( "RelActAutoSolution::rel_eff_txt: invalid rel eff index" );
+
   const RelActCalc::RelEffEqnForm eqn_form = m_rel_eff_forms[rel_eff_index];
   const vector<double> &coeffs = m_rel_eff_coefficients[rel_eff_index];
   
   if( eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
     return RelActCalc::rel_eff_eqn_text( eqn_form, coeffs);
-  
-  const RelActAutoCostFcn::PhysModelRelEqnDef phys_in
-           = RelActAutoCostFcn::make_phys_eqn_input( m_options.rel_eff_curves[rel_eff_index], m_drf, coeffs, 0 );
-  
+
+  assert( m_cost_functor );
+  if( !m_cost_functor )
+    return "ErrorWithEqn";
+
+  const RelActCalcAutoImp::RelActAutoCostFcn::PhysModelRelEqnDef<double> phys_in
+               = m_cost_functor->make_phys_eqn_input( rel_eff_index, m_final_parameters );
+
   return RelActCalc::physical_model_rel_eff_eqn_text( phys_in.self_atten, phys_in.external_attens,
                                 phys_in.det, phys_in.hoerl_b, phys_in.hoerl_c, html_format );
 }//std::string RelActAutoSolution::rel_eff_txt()
@@ -8324,12 +11231,9 @@ std::string RelActAutoSolution::rel_eff_txt( const bool html_format, const size_
 
 std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
 {
+  char buffer[128] = { '\0' };
+
   const double nsec_eval = 1.0E-6*m_num_microseconds_eval;
-  
-  out << "Computation took " << PhysicalUnits::printToBestTimeUnits(nsec_eval)
-  << " with " << m_num_function_eval_solution << " function calls to solve, and "
-  << (m_num_function_eval_total - m_num_function_eval_solution)
-  << " more for covariance\n";
   
   switch( m_status )
   {
@@ -8355,22 +11259,26 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
   }//switch( m_status )
   
   if( m_error_message.size() )
-    out << "Error: " << m_error_message << "\n";
-  
+    out << "\nError: " << m_error_message << "\n";
+
+  if( !m_warnings.empty() )
+    out << "\n";
   for( const string &warning: m_warnings )
     out << "Warning: " << warning << "\n";
-  
+  if( !m_warnings.empty() )
+    out << "\n";
+
   if( m_status != Status::Success )
     return out;
   
   assert( m_final_parameters.size() == m_parameter_names.size() );
-  out << "Raw Ceres par values: [";
-  for( size_t i = 0; i < m_final_parameters.size(); ++i )
-    out << ((i > 0) ? ", " : "") << "{" << m_parameter_names[i] << "=" << m_final_parameters[i] 
-        << "," << (m_parameter_were_fit[i] ? "Fit" : "NotFit") << "}";
-  out << "]\n\n";
+  //out << "Raw Ceres par values: [";
+  //for( size_t i = 0; i < m_final_parameters.size(); ++i )
+  //  out << ((i > 0) ? ", " : "") << "{" << m_parameter_names[i] << "=" << m_final_parameters[i]
+  //      << "," << (m_parameter_were_fit[i] ? "Fit" : "NotFit") << "}";
+  //out << "]\n\n";
 
-  // Rake code from RelEff
+  // Rel Eff code from RelEff
   const size_t num_rel_eff = m_options.rel_eff_curves.size();
   for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff; ++rel_eff_index )
   {
@@ -8404,8 +11312,7 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
           value *= RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple / num_chan;
         else if( i == 2 )
           value *= RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple / (num_chan * num_chan);
-        
-        char buffer[32] = { '\0' };
+
         snprintf( buffer, sizeof(buffer), "%1.6G", value );
         out << (printed_out ? ", " : "") << label[i] << "=" << buffer << " " << post_script[i];
         printed_out = true;
@@ -8419,34 +11326,89 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
   for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff; ++rel_eff_index )
   {
     const vector<NuclideRelAct> &rel_acts = m_rel_activities[rel_eff_index];
-    if( rel_eff_index )
-      out << "\n";
+    out << "\n";
     out << "Activity ratios" << ((num_rel_eff > 1) ? (" " + std::to_string(rel_eff_index)) : string()) << ":\n";
     for( size_t i = 1; i < rel_acts.size(); ++i )
     {
       const NuclideRelAct &nuc_i = rel_acts[i];
-      
+      const SandiaDecay::Nuclide * const nuc_i_nuclide = RelActCalcAuto::nuclide(nuc_i.source);
+
       for( size_t j = 0; j < i; ++j )
       {
         const NuclideRelAct &nuc_j = rel_acts[j];
+        const SandiaDecay::Nuclide * const nuc_j_nuclide = RelActCalcAuto::nuclide(nuc_j.source);
+
         
-        const double act_ratio = activity_ratio(nuc_i, nuc_j, rel_eff_index);
-        const double nuc_mass_ratio = (nuc_i.nuclide && nuc_j.nuclide) ? mass_ratio(nuc_i.nuclide, nuc_j.nuclide, rel_eff_index) : 0.0;
-        
-        out << "\t" << std::setw(16) << (nuc_i.name() + " / " + nuc_j.name())
-        << "\tact: " << std::setw(10) << std::setprecision(4) << act_ratio
-        << "\tmass: " << std::setw(10) << std::setprecision(4) << nuc_mass_ratio
-        << "\n";
-        
-        if( nuc_i.nuclide && nuc_j.nuclide )
+        const pair<double,optional<double>> act_ratio = activity_ratio(nuc_i.source, rel_eff_index,
+                                                                       nuc_j.source, rel_eff_index);
+
+        double nuc_mass_ratio = 0.0, nuc_mass_ratio_uncert = 0.0;
+        if( nuc_i_nuclide && nuc_j_nuclide )
         {
-          out << "\t" << std::setw(16) << (nuc_j.name() + " / " + nuc_i.name())
-          << "\tact: " << std::setw(10) << std::setprecision(4) << 1.0/act_ratio
-          << "\tmass: " << std::setw(10) << std::setprecision(4) << 1.0/nuc_mass_ratio
-          << "\n";
+          const double act_to_mass = nuc_j_nuclide->activityPerGram() / nuc_i_nuclide->activityPerGram();
+          nuc_mass_ratio = act_ratio.first * act_to_mass;
+          if( act_ratio.second.has_value() )
+            nuc_mass_ratio_uncert = act_ratio.second.value() * act_to_mass;
         }
+
+        string act_val_str = SpecUtils::printCompact(act_ratio.first,4);
+        if( act_ratio.second.has_value() )
+          act_val_str += " ± " + SpecUtils::printCompact(act_ratio.second.value(),4);
+
+        out << "    " << std::setw(16) << (nuc_i.name() + " / " + nuc_j.name())
+        << "\tact: " << std::setw(16)
+        << act_val_str;
+        if( nuc_i_nuclide && nuc_j_nuclide )
+        {
+          string mass_ratio_str = SpecUtils::printCompact(nuc_mass_ratio,4);
+          if( act_ratio.second.has_value() )
+            mass_ratio_str += " ± " + SpecUtils::printCompact(nuc_mass_ratio_uncert,4);
+          out << ",\tmass: "<< std::setw(16) << mass_ratio_str;
+        }
+        out << "\n";
+        
+
+        const pair<double,optional<double>> inv_act_ratio = activity_ratio(nuc_j.source, rel_eff_index,
+                                                                             nuc_i.source, rel_eff_index);
+        const double inv = inv_act_ratio.first;
+        double inv_uncert = inv_act_ratio.second.has_value() ? inv_act_ratio.second.value() : -1.0;
+
+        string inv_act_val_str = SpecUtils::printCompact(inv,4);
+        if( inv_act_ratio.second.has_value() )
+          inv_act_val_str += " ± " + SpecUtils::printCompact(inv_uncert,4);
+
+        out << "\t" << std::setw(16) << (nuc_j.name() + " / " + nuc_i.name())
+        << "\tact: " << std::setw(16) << inv_act_val_str;
+
+        if( nuc_i_nuclide && nuc_j_nuclide )
+        {
+          const double inv_act_to_mass = nuc_i_nuclide->activityPerGram() / nuc_j_nuclide->activityPerGram();
+          const double inv_nuc_mass_ratio = inv_act_ratio.first * inv_act_to_mass;
+
+          string inv_mass_val_str = SpecUtils::printCompact(inv_nuc_mass_ratio,4);
+          if( inv_act_ratio.second.has_value() )
+          {
+            const double inv_nuc_mass_ratio_uncert = inv_act_ratio.second.value() * inv_act_to_mass;
+            inv_mass_val_str += " ± " + SpecUtils::printCompact(inv_nuc_mass_ratio_uncert,4);
+          }
+
+          out << ",\tmass: " << std::setw(16) << inv_mass_val_str;
+        }
+        out << "\n";
       }//for( size_t j = 0; j < i; ++j )
     }//for( size_t i = 0; i < used_isotopes.size(); ++i )
+
+    out << "\n";
+    out << "Relative Activities" << ((num_rel_eff > 1) ? (" " + std::to_string(rel_eff_index)) : string()) << ":\n";
+    for( size_t i = 0; i < rel_acts.size(); ++i )
+    {
+      const NuclideRelAct &nuc_i = rel_acts[i];
+      
+      out << "    " << std::setw(10) << nuc_i.name()
+      << " act: " << std::setw(8) << SpecUtils::printCompact(nuc_i.rel_activity,5)
+      << " +- " << std::setw(8) << SpecUtils::printCompact(nuc_i.rel_activity_uncertainty,5)
+      << "\n";
+    }//
   }//for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff; ++rel_eff_index )
   
   
@@ -8460,7 +11422,7 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
     const SandiaDecay::Nuclide *u235 = nullptr, *pu240 = nullptr;
     for( const NuclideRelAct &nuc_rel_act : rel_acts )
     {
-      const SandiaDecay::Nuclide * const nuc = nuc_rel_act.nuclide;
+      const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(nuc_rel_act.source);
       if( !nuc )
         continue;
       
@@ -8472,17 +11434,45 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
       if( (nuc->atomicNumber == 94) && (nuc->massNumber == 240) )
         pu240 = nuc;
     }//for( const NuclideRelAct &nuc : m_rel_activities )
-    
+
+    const auto print_enrich = [&out,this,rel_eff_index]( const SandiaDecay::Nuclide *const nuc ){
+      try
+      {
+        char buffer[128] = { '\0' };
+        const pair<double,optional<double>> enrich_frac = mass_enrichment_fraction(nuc,rel_eff_index);
+        const double enrich = 100.0*enrich_frac.first;
+        snprintf( buffer, sizeof(buffer), "%.2f", enrich );
+        out << "\nEnrichment " << buffer << "% " << nuc->symbol;
+        
+        if( enrich_frac.second.has_value() )
+        {
+          const double neg_2sigma = 100.0*(enrich_frac.first - 2.0*enrich_frac.second.value());
+          const double pos_2sigma = 100.0*(enrich_frac.first + 2.0*enrich_frac.second.value());
+          
+          snprintf( buffer, sizeof(buffer), " (2σ: %.2f%%, %.2f%%)", neg_2sigma, pos_2sigma );
+          out << buffer;
+        }
+      }catch( std::exception &e )
+      {
+        // If covariance matrix couldnt be computed
+        cerr << "Failed to get enrichment 2σ for " << nuc->symbol << ": " << e.what() << endl;
+      }//try / catch
+
+      out << "\n";
+    };//print_enrich lambda
+
     if( u235 )
-      out << "\nEnrichment " << 100.0*mass_enrichment_fraction(u235,rel_eff_index) << "% U235\n";
-    
+      print_enrich( u235 );
+
     if( pu240 )
-      out << "\nEnrichment " << 100.0*mass_enrichment_fraction(pu240,rel_eff_index) << "% Pu240\n";
-    
+      print_enrich( pu240 );
+
     assert( m_corrected_pu.size() <= m_rel_activities.size() );
+    assert( m_uncorrected_pu.size() <= m_rel_activities.size() );
+    assert( m_uncorrected_pu.size() == m_corrected_pu.size() );
     
     // For Pu, print a corrected enrichment table
-    const shared_ptr<const RelActCalc::Pu242ByCorrelationOutput> pu_corr = (m_corrected_pu.size() > rel_eff_index)
+    const shared_ptr<const RelActCalc::Pu242ByCorrelationOutput<double>> pu_corr = (m_corrected_pu.size() > rel_eff_index)
     ? m_corrected_pu[rel_eff_index]
     : nullptr;
     if( pu_corr )
@@ -8492,26 +11482,94 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
       set<string> nuclides;
       for( const auto &act : rel_acts )
       {
-        if( act.nuclide
-           && ((act.nuclide->atomicNumber == 94)
-               || ((act.nuclide->atomicNumber == 95) && (act.nuclide->massNumber == 241))) )
+        const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(act.source);
+        if( nuc && (nuc->atomicNumber == 94) )
         {
           nuclides.insert( act.name() );
         }
       }//for( const auto &act : rel_acts )
-      
-      if( nuclides.count( "Pu238" ) )
-        out << "\tPu238: " << SpecUtils::printCompact(100.0*pu_corr->pu238_mass_frac, 4) << "\n";
-      if( nuclides.count( "Pu239" ) )
-        out << "\tPu239: " << SpecUtils::printCompact(100.0*pu_corr->pu239_mass_frac, 4) << "\n";
-      if( nuclides.count( "Pu240" ) )
-        out << "\tPu40: " << SpecUtils::printCompact(100.0*pu_corr->pu240_mass_frac, 4) << "\n";
-      if( nuclides.count( "Pu241" ) )
-        out << "\tPu241: " << SpecUtils::printCompact(100.0*pu_corr->pu241_mass_frac, 4) << "\n";
-      out << "\tPu242 (by corr): " << SpecUtils::printCompact(100.0*pu_corr->pu242_mass_frac, 4) << "\n";
-      if( nuclides.count( "Am241" ) )
-        out << "\tAm241: " << SpecUtils::printCompact(100.0*pu_corr->am241_mass_frac, 4) << "\n";
+
+      const auto print_iso_line = [&]( string iso ){
+        const SandiaDecay::Nuclide * const nuc = db->nuclide( iso );
+        assert( nuc );
+        if( !nuc || (!nuclides.count( iso ) && (nuc->massNumber != 242)) )
+          return;
+
+        double mass_frac = -1.0, mass_frac_uncert = -1.0;
+        try
+        {
+          const pair<double,optional<double>> val = mass_enrichment_fraction( nuc, rel_eff_index );
+          mass_frac = val.first;
+          if( val.second.has_value() )
+            mass_frac_uncert = val.second.value();
+        }catch( std::exception & )
+        {
+          //dont really expect this to happen
+          if( nuc->massNumber == 238 )      mass_frac = pu_corr->pu239_mass_frac;
+          else if( nuc->massNumber == 239 ) mass_frac = pu_corr->pu239_mass_frac;
+          else if( nuc->massNumber == 240 ) mass_frac = pu_corr->pu240_mass_frac;
+          else if( nuc->massNumber == 241 ) mass_frac = pu_corr->pu241_mass_frac;
+          else if( nuc->massNumber == 242 )
+          {
+            mass_frac = pu_corr->pu242_mass_frac;
+            mass_frac_uncert = mass_frac * pu_corr->pu242_uncert;
+          }
+        }//
+
+        out << "    " << iso << ((nuc->massNumber == 242) ? " (by corr): " : ": ");
+        out << setw(9) << SpecUtils::printCompact(100.0*mass_frac, 4) << "%";
+        if( mass_frac_uncert >= 0.0 )
+          out << " ± " << setw(9) << SpecUtils::printCompact(100.0*mass_frac_uncert, 4) << "%";
+        out << "\n";
+      };//print_iso_line(...)
+
+
+      print_iso_line( "Pu238" );
+      print_iso_line( "Pu239" );
+      print_iso_line( "Pu240" );
+      print_iso_line( "Pu241" );
+      print_iso_line( "Pu242" );
       out << "\n";
+
+
+      /*
+      //Correct back to a specific age.
+      const SpecUtils::time_point_t meas_time = m_foreground->start_time();
+      const SpecUtils::time_point_t wanted_time = SpecUtils::time_from_string( "19880101", SpecUtils::DateParseEndianType::MiddleEndianFirst );
+      if( SpecUtils::is_special(meas_time) || SpecUtils::is_special(wanted_time) )
+      {
+        cerr << "Meas time (" << SpecUtils::to_iso_string(meas_time) << ") or wanted time (" << SpecUtils::to_iso_string(wanted_time) << ") is invalid." << endl;
+      }else
+      {
+        const double num_seconds_back_decay = 1.0*std::chrono::duration_cast<std::chrono::seconds>(meas_time - wanted_time).count();
+        const size_t rel_eff_index = 0;
+        const SandiaDecay::Nuclide * const pu238 = db->nuclide( "Pu238" );
+        const SandiaDecay::Nuclide * const pu239 = db->nuclide( "Pu239" );
+        const SandiaDecay::Nuclide * const pu240 = db->nuclide( "Pu240" );
+        const SandiaDecay::Nuclide * const pu241 = db->nuclide( "Pu241" );
+        const SandiaDecay::Nuclide * const pu242 = db->nuclide( "Pu242" );
+
+        assert( pu238 && pu239 && pu240 && pu241 && pu242 );
+
+        vector<tuple<const SandiaDecay::Nuclide *,double>> input_nuclide_rel_acts;
+        try{ input_nuclide_rel_acts.emplace_back( pu238, rel_activity(pu238, rel_eff_index) ); }catch(...){}
+        try{ input_nuclide_rel_acts.emplace_back( pu239, rel_activity(pu239, rel_eff_index) ); }catch(...){}
+        try{ input_nuclide_rel_acts.emplace_back( pu240, rel_activity(pu240, rel_eff_index) ); }catch(...){}
+        try{ input_nuclide_rel_acts.emplace_back( pu241, rel_activity(pu241, rel_eff_index) ); }catch(...){}
+        try{ input_nuclide_rel_acts.emplace_back( pu242, rel_activity(pu242, rel_eff_index) ); }catch(std::exception &e){
+          cerr << "Failed to get Pu242 act: " << e.what() << endl;
+        }
+
+        const vector<tuple<const SandiaDecay::Nuclide *,double,double>> wanted_time_vals
+                    = RelActCalc::back_decay_relative_activities( num_seconds_back_decay, input_nuclide_rel_acts );
+        for( const tuple<const SandiaDecay::Nuclide *,double,double> &nuc_act_mass : wanted_time_vals )
+        {
+          const SandiaDecay::Nuclide * const nuc = get<0>(nuc_act_mass);
+          const double rel_mass = get<2>(nuc_act_mass);
+          cout << "Time corrected " << nuc->symbol << " rel mass to " << SpecUtils::to_iso_string(wanted_time) << " is " << (100.0*rel_mass) << "%" << endl;
+        }
+      }//if( correct from/to times okay ) / else
+       */
     }//if( pu_corr )
     
     
@@ -8531,14 +11589,24 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
       
       out << "For " << el->name << ":\n";
       for( const SandiaDecay::Nuclide *nuc : nucs )
-        out << std::setw(5) << nuc->symbol << ": "
-        << std::setw(10) << std::setprecision(4) << 100.0*mass_enrichment_fraction(nuc,rel_eff_index) << "%"
-        << " of the " << el->name << ", by mass.\n";
+      {
+        try
+        {
+          const pair<double,optional<double>> enrich_frac = mass_enrichment_fraction(nuc,rel_eff_index);
+          const double frac = enrich_frac.first;
+          out << std::setw(5) << nuc->symbol << ": "
+          << std::setw(10) << std::setprecision(4) << (100.0*frac) << "%"
+          << " of the " << el->name << ", by mass.\n";
+        }catch( std::exception & )
+        {
+          assert( 0 ); //shouldnt throw, I dont thing
+        }
+      }
     }//for( auto &v : nucs_of_element )
   }//for( size_t rel_eff_index = 0; rel_eff_index < m_rel_activities.size(); ++rel_eff_index )
-  
-  
-  // Now print out ratios of activities for Rel Eff cyrves that have same nuclides
+
+  // Now print out ratios of activities for Rel Eff curves that have same nuclides
+  bool printed_any_ratio = false;
   for( size_t outer_re_index = 0; outer_re_index < m_rel_activities.size(); ++outer_re_index )
   {
     for( const NuclideRelAct &outer_act : m_rel_activities[outer_re_index] )
@@ -8547,27 +11615,44 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
       {
         for( const NuclideRelAct &inner_act : m_rel_activities[inner_re_index] )
         {
-          if( (outer_act.nuclide != inner_act.nuclide)
-            || (outer_act.element != inner_act.element)
-            || (outer_act.reaction != inner_act.reaction) )
-          {
+          if( outer_act.source != inner_act.source )
             continue;
-          }
-            
+
           const double inner_activity = inner_act.rel_activity;
           const double outer_activity = outer_act.rel_activity;
-          const double inner_counts = nuclide_counts(inner_act, inner_re_index);
-          const double outer_counts = nuclide_counts(outer_act, outer_re_index);
-          
+          const double inner_counts = nuclide_counts(inner_act.source, inner_re_index);
+          const double outer_counts = nuclide_counts(outer_act.source, outer_re_index);
+
+          if( !printed_any_ratio )
+            out << "\n";
+          printed_any_ratio = true;
+
           out << "Ratio of " << outer_act.name() << " between RE curves "
           << outer_re_index << " and " << inner_re_index << ":\n"
-          << "\tActivity: " << outer_activity << " / " << inner_activity << " = " << (outer_activity/inner_activity) << "\n"
-          << "\tCounts  : " << outer_counts << " / " << inner_counts << " = " << (outer_counts/inner_counts) << "\n"; 
+          << "    Activity: " << outer_activity << " / " << inner_activity << " = " 
+          << SpecUtils::printCompact( outer_activity/inner_activity, 4 );
+          try
+          {
+            const double act_ratio_uncert = activity_ratio_uncertainty(outer_act.source, outer_re_index,
+                                                                       inner_act.source, inner_re_index);
+            out << " ± " << SpecUtils::printCompact( act_ratio_uncert, 4 );
+          }catch( std::exception & )
+          {
+            // Happens if we dont have covariance matrix or whatever
+          }
+
+          out << "\n"
+          << "    Counts  : " << outer_counts << " / " << inner_counts << " = " << (outer_counts/inner_counts) << "\n";
         }//for( const NuclideRelAct &inner_act : m_rel_activities[inner_re_index] )
       }//for( loop over further RE curves )
     }//for( const NuclideRelAct &outer_act : m_rel_activities[outer_re_index] )
   }//for( loop over Rel Eff curves print out ratios of activities between curves )
-  
+
+  out << "\nComputation took " << PhysicalUnits::printToBestTimeUnits(nsec_eval)
+  << " with " << m_num_function_eval_solution << " function calls to solve, and "
+  << (m_num_function_eval_total - m_num_function_eval_solution)
+  << " more for covariance\n";
+
   return out;
 }//RelActAutoSolution::print_summary(...)
 
@@ -8681,65 +11766,153 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     const RelEffCurveInput &rel_eff = m_options.rel_eff_curves[rel_eff_index];
     const vector<NuclideRelAct> &rel_activities = m_rel_activities[rel_eff_index];
     
-    shared_ptr<const RelActCalc::Pu242ByCorrelationOutput> pu_corr = (rel_eff_index >= m_corrected_pu.size())
+    shared_ptr<const RelActCalc::Pu242ByCorrelationOutput<double>> pu_corr = (rel_eff_index >= m_corrected_pu.size())
                                                                    ? nullptr : m_corrected_pu[rel_eff_index];
+    shared_ptr<const RelActCalc::Pu242ByCorrelationInput<double>> uncorrected_pu
+                = (rel_eff_index >= m_corrected_pu.size()) ? nullptr : m_uncorrected_pu[rel_eff_index];
     
     // For Pu, print a corrected enrichment table
-    if( pu_corr )
+    if( pu_corr && uncorrected_pu )
     {
-      results_html << "<table class=\"nuctable resulttable\">\n"
-      "  <caption>Plutonium mass fractions"
-      << (have_multiple_rel_eff ? (" Rel. Eff. " + std::to_string(rel_eff_index)) : string())
-      << "</caption>\n"
-      "  <thead><tr>"
-      " <th scope=\"col\">Nuclide</th>"
-      " <th scope=\"col\">% Pu Mass</th>"
-      " </tr></thead>\n"
-      "  <tbody>\n";
-      
-      set<string> nuclides;
-      for( const auto &act : rel_activities )
+      try
       {
-        if( act.nuclide
-           && ((act.nuclide->atomicNumber == 94)
-               || ((act.nuclide->atomicNumber == 95) && (act.nuclide->massNumber == 241))) )
+        stringstream pu_table;
+        pu_table << "<table class=\"nuctable resulttable\">\n"
+        "  <caption>Plutonium mass fractions"
+        << (have_multiple_rel_eff ? (" Rel. Eff. " + std::to_string(rel_eff_index)) : string())
+        << "</caption>\n"
+        "  <thead><tr>"
+        " <th scope=\"col\">Nuclide</th>"
+        " <th scope=\"col\">Uncor. % Pu Mass</th>"
+        " <th scope=\"col\">% Pu Mass</th>"
+        " <th scope=\"col\">1-σ Uncert</th>"
+        " </tr></thead>\n"
+        "  <tbody>\n";
+
+        double pu239_act = 0.0; //We will need this to convert Pu242 rel mass, to a matching rel act
+        set<string> pu_nuclides;
+        set<double> pu_nuclide_ages;
+        vector<tuple<const SandiaDecay::Nuclide *,double>> pu_rel_acts;
+        for( const NuclideRelAct &act : rel_activities )
         {
-          nuclides.insert( act.name() );
-        }
-      }//for( const auto &act : rel_activities )
-      
-      if( nuclides.count( "Pu238" ) )
-        results_html << "  <tr><td>Pu238</td><td>"
-        << SpecUtils::printCompact(100.0*pu_corr->pu238_mass_frac, 4)
-        << "</td></tr>\n";
-      if( nuclides.count( "Pu239" ) )
-        results_html << "  <tr><td>Pu239</td><td>"
-        << SpecUtils::printCompact(100.0*pu_corr->pu239_mass_frac, 4)
-        << "</td></tr>\n";
-      if( nuclides.count( "Pu240" ) )
-        results_html << "  <tr><td>Pu40</td><td>"
-        << SpecUtils::printCompact(100.0*pu_corr->pu240_mass_frac, 4)
-        << "</td></tr>\n";
-      if( nuclides.count( "Pu241" ) )
-        results_html << "  <tr><td>Pu241</td><td>"
-        << SpecUtils::printCompact(100.0*pu_corr->pu241_mass_frac, 4)
-        << "</td></tr>\n";
-      results_html << "  <tr><td>Pu242 (by corr)</td><td>"
-      << SpecUtils::printCompact(100.0*pu_corr->pu242_mass_frac, 4)
-      << "</td></tr>\n";
-      if( nuclides.count( "Am241" ) )
-        results_html << "  <tr><td>Am241</td><td>"
-        << SpecUtils::printCompact(100.0*pu_corr->am241_mass_frac, 4)
-        << "</td></tr>\n";
-      results_html << "  </tbody>\n"
-      << "</table>\n\n";
+          const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(act.source);
+          if( nuc && (nuc->atomicNumber == 94) )
+          {
+            if( nuc->massNumber == 239 )
+              pu239_act = act.rel_activity;
+            pu_nuclides.insert( act.name() );
+            pu_nuclide_ages.insert( act.age );
+            pu_rel_acts.emplace_back( nuc, act.rel_activity );
+          }
+        }//for( const auto &act : rel_activities )
+
+        auto write_iso_line = [&]( string iso, const double uncorr_frac ){
+          const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+          const SandiaDecay::Nuclide * const nuc = db->nuclide( iso );
+          assert( nuc );
+
+          if( !nuc || (!pu_nuclides.count(iso) && (nuc->massNumber != 242)) )
+            return;
+
+          pu_table << "  <tr><td>" << nuc->symbol << ((nuc->massNumber == 242) ? " (by corr)" : "") << "</td>";
+          if( nuc->massNumber == 242 )
+            pu_table << "<td></td>";
+          else
+            pu_table << "<td>" << SpecUtils::printCompact(100.0*uncorr_frac, 4) << "</td>";
+
+          double mass_frac = -1.0, mass_frac_uncert = -1.0;
+          try
+          {
+            const pair<double,optional<double>> val = mass_enrichment_fraction( nuc, rel_eff_index );
+            mass_frac = val.first;
+            if( val.second.has_value() )
+              mass_frac_uncert = val.second.value();
+          }catch( std::exception & )
+          {
+            //dont really expect this to happen
+            if( nuc->massNumber == 238 )      mass_frac = pu_corr->pu239_mass_frac;
+            else if( nuc->massNumber == 239 ) mass_frac = pu_corr->pu239_mass_frac;
+            else if( nuc->massNumber == 240 ) mass_frac = pu_corr->pu240_mass_frac;
+            else if( nuc->massNumber == 241 ) mass_frac = pu_corr->pu241_mass_frac;
+            else if( nuc->massNumber == 242 ) mass_frac = pu_corr->pu242_mass_frac;
+          }//
+
+          pu_table << "<td>" << SpecUtils::printCompact(100.0*mass_frac, 4) << "</td>";
+          if( mass_frac_uncert >= 0.0 )
+            pu_table << "<td>" << SpecUtils::printCompact(100.0*mass_frac_uncert, 4) << "</td>";
+          else
+            pu_table << "<td></td>";
+
+          pu_table << "</tr>\n";
+        };//write_iso_line
+
+        write_iso_line( "Pu238", uncorrected_pu->pu238_rel_mass );
+        write_iso_line( "Pu239", uncorrected_pu->pu239_rel_mass );
+        write_iso_line( "Pu240", uncorrected_pu->pu240_rel_mass );
+        write_iso_line( "Pu241", uncorrected_pu->pu241_rel_mass );
+        write_iso_line( "Pu242", 0.0 );
+
+        pu_table << "  </tbody>\n"
+        << "</table>\n\n";
+
+        {//Begin put pu242 into `pu_rel_acts`
+          const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+          assert( db );
+          const SandiaDecay::Nuclide * const pu239 = db->nuclide("Pu239");
+          const SandiaDecay::Nuclide * const pu242 = db->nuclide("Pu242");
+          assert( pu239 && pu242 );
+          const double pu242_rel_act = pu239_act * (pu_corr->pu242_mass_frac * pu242->activityPerGram())
+          / (pu_corr->pu239_mass_frac * pu239->activityPerGram());
+
+          pu_rel_acts.emplace_back( pu242, pu242_rel_act );
+        }//End put pu242 into `pu_rel_acts`
+
+        if( (pu_nuclide_ages.size() == 1) && (pu_nuclides.size() > 1) )
+        {
+          const double back_decay_time = *begin(pu_nuclide_ages);
+          vector<tuple<const SandiaDecay::Nuclide *,double,double>> nuc_act_massfrac_at_t0
+          = RelActCalc::back_decay_relative_activities( back_decay_time, pu_rel_acts );
+          std::sort( begin(nuc_act_massfrac_at_t0), end(nuc_act_massfrac_at_t0), []( const auto &lhs, const auto &rhs ) -> bool {
+            return (get<0>(lhs)->symbol < get<0>(rhs)->symbol);
+          } );
+
+          pu_table << "<table class=\"nuctable resulttable\">\n"
+          "  <caption>Plutonium mass fractions at T=0"
+          << (have_multiple_rel_eff ? (" Rel. Eff. " + std::to_string(rel_eff_index)) : string())
+          << "</caption>\n"
+          "  <thead><tr>"
+          " <th scope=\"col\">Nuclide</th>"
+          " <th scope=\"col\">% Pu Mass</th>"
+          " </tr></thead>\n"
+          "  <tbody>\n";
+          for( tuple<const SandiaDecay::Nuclide *,double,double> nuc_act_mass : nuc_act_massfrac_at_t0 )
+          {
+            pu_table << "  <tr><td>" << get<0>(nuc_act_mass)->symbol << "</td><td>"
+            << SpecUtils::printCompact(100.0*get<2>(nuc_act_mass), 4)
+            << "</td></tr>\n";
+          }
+          pu_table << "  </tbody>\n"
+          << "</table>\n\n";
+        }//if( (pu_nuclide_ages.size() == 1) && (pu_nuclides.size() > 1) )
+
+        results_html << pu_table.str();
+      }catch( std::exception &e )
+      {
+        // We dont expect this to happen, so dont put in a lot of effort to it
+        results_html << "\n\n<div color=\"red\">Error getting Pu mass fractions: <pre>" << e.what() << "</pre></div>\n\n";
+      }//try / catch to write Pu enrichment
+
     }//if( pu_corr )
-    
-    
+
+
     double sum_rel_mass = 0.0;
     for( const auto &act : rel_activities )
-      sum_rel_mass += act.rel_activity / act.nuclide->activityPerGram();
-    
+    {
+      const SandiaDecay::Nuclide * const nuc = nuclide(act.source);
+      if( nuc )
+        sum_rel_mass += act.rel_activity / nuc->activityPerGram();
+    }
+
     
     results_html << "<table class=\"nuctable resulttable\">\n"
     "  <caption>Relative activities and mass fractions"
@@ -8750,7 +11923,9 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     " <th scope=\"col\">Rel. Act.</th>"
     " <th scope=\"col\">Total Mas Frac.</th>"
     " <th scope=\"col\">Enrichment</th>"
+    " <th scope=\"col\">Enrich 2&sigma;</th>"
     " <th scope=\"col\">Det. Counts</th>"
+    " <th scope=\"col\">Age</th>"
     " </tr></thead>\n"
     "  <tbody>\n";
     
@@ -8759,9 +11934,10 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     {
       results_html << "  <tr><td>" << act.name();
       
-      if( act.nuclide
-         && (act.nuclide->atomicNumber == 94)
-         && (act.nuclide->massNumber == 242)
+      const SandiaDecay::Nuclide *nuc = RelActCalcAuto::nuclide(act.source);
+      if( nuc
+         && (nuc->atomicNumber == 94)
+         && (nuc->massNumber == 242)
          && (rel_eff.pu242_correlation_method != RelActCalc::PuCorrMethod::NotApplicable) )
       {
         results_html << " (by corr)";
@@ -8770,18 +11946,57 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
       results_html << "</td>"
       << "<td>" << act.rel_activity << " &plusmn; " << act.rel_activity_uncertainty << "</td>";
 
-      if( act.nuclide )
+      if( nuc )
       {
-        const double rel_mass = act.rel_activity / act.nuclide->activityPerGram();
-        results_html << "<td>" << (100.0*rel_mass/sum_rel_mass) << "%</td>"; 
-        results_html << "<td>" << (100.0*mass_enrichment_fraction(act.nuclide,rel_eff_index)) << "%</td>";
+        const double rel_mass = act.rel_activity / nuc->activityPerGram();
+        results_html << "<td>" << (100.0*rel_mass/sum_rel_mass) << "%</td>";
+        try
+        {
+          const pair<double,optional<double>> enrich_frac = mass_enrichment_fraction(nuc,rel_eff_index);
+          results_html << "<td>" << (100.0*enrich_frac.first) << "%</td>";
+          if( enrich_frac.second.has_value() )
+          {
+            const double minus_2sigma = 100.0*(enrich_frac.first - 2.0*enrich_frac.second.value());
+            const double plus_2sigma = 100.0*(enrich_frac.first - 2.0*enrich_frac.second.value());
+            results_html << "<td>" << minus_2sigma << "%, " << plus_2sigma << "%</td>";
+          }else
+          {
+            results_html << "<td>--</td>";
+          }
+        }catch( std::exception &e )
+        {
+          results_html << "<td>--</td><td>--</td>";
+        }
       }else
       {
-        results_html << "<td></td>" << "<td></td>";
+        results_html << "<td></td>" << "<td></td>" << "<td></td>";
       }
       
-      const double nuc_counts = nuclide_counts( act, rel_eff_index );
+      const double nuc_counts = nuclide_counts( act.source, rel_eff_index );
       results_html << "<td>" << nuc_counts << "</td>";
+
+
+      if( nuc )
+      {
+        const PhysicalUnits::UnitNameValuePair time_units = PhysicalUnits::bestTimeUnit( act.age );
+
+        results_html << "<td>";
+        const string &units = time_units.first;
+        const double age_units = act.age / time_units.second;
+        const double age_uncert_units = act.age_uncertainty/time_units.second;
+
+        if( act.age_was_fit )
+          results_html << PhysicalUnits::printValueWithUncertainty( age_units, age_uncert_units, 5 ) << " " << units;
+        else if( act.age == 0.0 )
+          results_html << "0";
+        else
+          results_html << SpecUtils::printCompact(age_units, 5) << " " << units;
+        results_html << "</td>";
+      }else
+      {
+        results_html << "<td> -- </td>";
+      }
+
       results_html << "</tr>\n";
     }//for( const auto &act : rel_activities )
     
@@ -8811,6 +12026,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     "<th scope=\"col\">Nuclides</th>"
     "<th scope=\"col\">Mass Ratio</th>"
     "<th scope=\"col\">Activity Ratio</th>"
+    "<th scope=\"col\">Uncertainty</th>"
     "</tr></thead>\n"
     "  <tbody>\n";
     for( size_t i = 1; i < rel_activities.size(); ++i )
@@ -8819,23 +12035,55 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
       {
         const NuclideRelAct &nuc_i = rel_activities[i];
         const NuclideRelAct &nuc_j = rel_activities[j];
-        assert( nuc_i.nuclide && nuc_j.nuclide );
-        
+
+        assert( !is_null(nuc_i.source) && !is_null(nuc_j.source) );
+        if( is_null(nuc_i.source) || is_null(nuc_j.source) )
+          continue;
+
+        const SandiaDecay::Nuclide * const nuc_i_nuc = nuclide(nuc_i.source);
+        const SandiaDecay::Nuclide * const nuc_j_nuc = nuclide(nuc_j.source);
+
         const double act_i = nuc_i.rel_activity;
         const double act_j = nuc_j.rel_activity;
-        
-        const double mass_i = act_i / nuc_i.nuclide->activityPerGram();
-        const double mass_j = act_j / nuc_j.nuclide->activityPerGram();
-        
-        snprintf( buffer, sizeof(buffer), "<tr><td>%s</td><td>%1.6G</td><td>%1.6G</td></tr>\n",
-                 (nuc_i.nuclide->symbol + "/" + nuc_j.nuclide->symbol).c_str(),
-                 (mass_i / mass_j), (act_i / act_j) );
+        const std::string name_i = to_name(nuc_i.source);
+        const std::string name_j = to_name(nuc_j.source);
+
+        string mass_i_j = "--", mass_j_i = "--";
+        if( nuc_i_nuc && nuc_j_nuc )
+        {
+          const double mass_i = act_i / nuc_i_nuc->activityPerGram();
+          const double mass_j = act_j / nuc_j_nuc->activityPerGram();
+
+          snprintf( buffer, sizeof(buffer), "%1.6G", (mass_i / mass_j) );
+          mass_i_j = buffer;
+
+          snprintf( buffer, sizeof(buffer), "%1.6G", (mass_j / mass_i) );
+          mass_j_i = buffer;
+        }
+
+        string uncert_i_j_str = "--", uncert_j_i_str = "--";
+        try
+        {
+          const double uncert_i_j = activity_ratio_uncertainty( nuc_i.source, rel_eff_index, nuc_j.source, rel_eff_index );
+          const double uncert_j_i = activity_ratio_uncertainty( nuc_j.source, rel_eff_index, nuc_i.source, rel_eff_index );
+
+          snprintf( buffer, sizeof(buffer), "%1.6G%%", 100.0*uncert_i_j/(act_i/act_j) );
+          uncert_i_j_str = buffer;
+
+          snprintf( buffer, sizeof(buffer), "%1.6G%%", 100.0*uncert_j_i/(act_j/act_i) );
+          uncert_j_i_str = buffer;
+        }catch( std::exception &e )
+        {
+          // We get here if there was an issue computing the covatriance
+        }//try / catch
+
+        snprintf( buffer, sizeof(buffer), "<tr><td>%s</td><td>%s</td><td>%1.6G</td><td>%s</td></tr>\n",
+                 (name_i + "/" + name_j).c_str(), mass_i_j.c_str(), (act_i / act_j), uncert_i_j_str.c_str() );
         results_html << buffer;
         
-        snprintf( buffer, sizeof(buffer), "<tr><td>%s</td><td>%1.6G</td><td>%1.6G</td></tr>\n",
-                 (nuc_j.nuclide->symbol + "/" + nuc_i.nuclide->symbol).c_str(),
-                 (mass_j / mass_i), (act_j / act_i) );
-        
+        snprintf( buffer, sizeof(buffer), "<tr><td>%s</td><td>%s</td><td>%1.6G</td><td>%s</td></tr>\n",
+                 (name_j + "/" + name_i).c_str(), mass_j_i.c_str(), (act_j / act_i), uncert_j_i_str.c_str() );
+
         results_html << buffer;
       }//for( size_t j = 0; j < i; ++j )
     }//for( size_t i = 0; i < used_isotopes.size(); ++i )
@@ -8867,8 +12115,19 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
   for( const PeakDef &info : m_fit_peaks )
   {
     const double energy = info.mean();
+    SrcVariant peak_src;
     const SandiaDecay::Nuclide * const nuc = info.parentNuclide();
-      
+    const SandiaDecay::Element * const el = info.xrayElement();
+    const ReactionGamma::Reaction * const reaction = info.reaction();
+    if( nuc )
+      peak_src = nuc;
+    else if( el )
+      peak_src = el;
+    else if( reaction )
+      peak_src = reaction;
+    assert( !is_null(peak_src) );
+    if( is_null(peak_src) )
+      throw logic_error( "Peak with null src not in solution?" );
 
     int rel_eff_index = 0;
     if( have_multiple_rel_eff )
@@ -8893,10 +12152,10 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     
     const NuclideRelAct *nuc_info = nullptr;
     for( const NuclideRelAct &rel_act : rel_activities )
-      nuc_info = (rel_act.nuclide == nuc) ? &rel_act : nuc_info;
+      nuc_info = (rel_act.source == peak_src) ? &rel_act : nuc_info;
     
-    assert( !nuc || nuc_info );
-    if( nuc && !nuc_info )
+    assert( nuc_info );
+    if( !nuc_info )
       throw logic_error( "Peak with nuc not in solution?" );
       
 
@@ -8909,8 +12168,6 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     
     assert( !self_atten || (rel_eff.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel) );
     assert( external_attens.empty() || (rel_eff.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel) );
-   
-
 
     if( !nuc || !nuc_info )
     {
@@ -8932,58 +12189,24 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
       const double rel_act = nuc_info->rel_activity;
       const double cps_over_yield = info.amplitude() / (yield * live_time);
       const double meas_rel_eff = info.amplitude() / (yield * rel_act * live_time);
-      double fit_rel_eff = -1.0;
-        
-      if( rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+      
+      double fit_rel_eff = -1.0, fit_rel_eff_uncert = -1.0;
+      try
       {
-        fit_rel_eff = RelActCalc::eval_eqn( energy, rel_eff.rel_eff_eqn_type, m_rel_eff_coefficients[rel_eff_index] );
-      }else
-      {
-        assert( m_drf );
-          
-        const RelActAutoCostFcn::PhysModelRelEqnDef input
-          = RelActAutoCostFcn::make_phys_eqn_input( rel_eff, m_drf, m_rel_eff_coefficients[rel_eff_index], 0 );
-          
-        fit_rel_eff = RelActCalc::eval_physical_model_eqn( energy, input.self_atten,
-                                                            input.external_attens, input.det.get(), input.hoerl_b, input.hoerl_c );
-      }//if( m_options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
-        
-      //assert( fabs(meas_rel_eff - fit_rel_eff) < 0.1*std::max(meas_rel_eff,fit_rel_eff) );
-      double fit_rel_eff_uncert = -1.0;
-        
-      if( m_rel_eff_covariance.size() )
+        // First we'll try to get RelEff with uncert - and then if that fails we'll skip the uncert.
+        const pair<double,double> rel_eff_uncert = relative_efficiency_with_uncert( energy, rel_eff_index );
+        fit_rel_eff = rel_eff_uncert.first;
+        fit_rel_eff_uncert = rel_eff_uncert.second / rel_eff_uncert.first;
+      }catch( std::exception & )
       {
         try
         {
-          //TODO: should implement `rel_eff_eqn_uncert(energy)` member function, and get rid of manually calling functions
-          //fit_rel_eff_uncert = rel_eff_eqn_uncert( energy );
-          //fit_rel_eff_uncert /= fit_rel_eff;
-            
-          vector<vector<double>> cov;
-          if( m_rel_eff_covariance.size() > rel_eff_index )
-            cov = m_rel_eff_covariance[rel_eff_index];
-          const vector<double> &rel_eff_pars = m_rel_eff_coefficients[rel_eff_index];
-          if( rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
-          {
-            fit_rel_eff_uncert = RelActCalc::eval_eqn_uncertainty( energy, rel_eff.rel_eff_eqn_type,
-                                                                    rel_eff_pars, cov );
-              
-          }else
-          {
-            const RelActAutoCostFcn::PhysModelRelEqnDef input
-              = RelActAutoCostFcn::make_phys_eqn_input( rel_eff, m_drf, rel_eff_pars, 0 );
-              
-            fit_rel_eff_uncert = RelActCalc::eval_physical_model_eqn_uncertainty( energy,
-                                                                                   input.self_atten, input.external_attens, input.det.get(),
-                                                                                   input.hoerl_b, input.hoerl_c, cov );
-              
-            fit_rel_eff_uncert /= fit_rel_eff;
-          }
-        }catch( std::exception &e )
+          fit_rel_eff = relative_efficiency( energy, rel_eff_index );
+        }catch( std::exception & )
         {
-            cerr << "Error calling RelActCalc::eval_eqn_uncertainty: " << e.what() << endl;
+          
         }
-      }//if( m_rel_eff_covariance.size() )
+      }//try / catch
         
       std::string format_str = "  <tr>"s
                  "<td>%.2f</td>"    // energy
@@ -9154,37 +12377,71 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     results_html << "<div class=\"anatime\">Analysis performed " << local_time << " (" << utc_time
     << " UTC), with code compiled " __TIMESTAMP__ "</div>\n";
     
-  const size_t num_rel_eff = std::min( m_options.rel_eff_curves.size(), m_rel_activities.size() );
-  for( size_t rel_eff_index = 0; (rel_eff_index < 1) && (rel_eff_index < num_rel_eff); ++rel_eff_index )
+  vector<RelEffChart::ReCurveInfo> rel_eff_info_sets;
+  
+  assert( m_fit_peaks_for_each_curve.size() == m_rel_eff_forms.size() );
+  
+  for( size_t rel_eff_index = 0; rel_eff_index < m_rel_eff_forms.size(); ++rel_eff_index )
   {
     const RelEffCurveInput &rel_eff = m_options.rel_eff_curves[rel_eff_index];
-
-    stringstream rel_eff_plot_values, add_rel_eff_plot_css;
-    rel_eff_json_data( rel_eff_plot_values, add_rel_eff_plot_css, rel_eff_index );
-
-    SpecUtils::ireplace_all( html, "${REL_EFF_DATA_VALS}", rel_eff_plot_values.str().c_str() );
-    SpecUtils::ireplace_all( html, "${REL_EFF_PLOT_ADDITIONAL_CSS}", add_rel_eff_plot_css.str().c_str() );
   
-    string rel_eff_eqn_js;
-    
-    if( rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    RelEffChart::ReCurveInfo info;
+
+    info.live_time = m_spectrum ? m_spectrum->live_time() : 1.0;
+    //info.obs_eff_data = m_obs_eff_for_each_curve[rel_eff_index];
+    if( rel_eff_index < m_obs_eff_for_each_curve.size() ) //`m_obs_eff_for_each_curve` may be empty if computation failed
     {
-      rel_eff_eqn_js = RelActCalc::rel_eff_eqn_js_function( rel_eff.rel_eff_eqn_type, m_rel_eff_coefficients[rel_eff_index] );
-    }else
+      // Filter to only include ObsEff entries with observed_efficiency > 0 and num_sigma_significance > 4, and
+      //  having at least 5% of counts in ROI, and whose peak means+-1sigma are in the ROI.
+      for( const RelActCalcAuto::RelActAutoSolution::ObsEff &obs_eff : m_obs_eff_for_each_curve[rel_eff_index] )
+      { 
+        if( (obs_eff.observed_efficiency > 0.0)
+           && (obs_eff.num_sigma_significance > 2.5)
+           && (obs_eff.fraction_roi_counts > 0.05)
+           && obs_eff.within_roi )
+        {
+          info.obs_eff_data.push_back( obs_eff );
+        }
+      }
+    }
+
+    info.rel_acts = m_rel_activities[rel_eff_index];
+    info.re_curve_name = Wt::WString::fromUTF8(rel_eff.name);
+
+    try
     {
-      const RelActAutoCostFcn::PhysModelRelEqnDef input
-                   = RelActAutoCostFcn::make_phys_eqn_input( rel_eff, m_drf, m_rel_eff_coefficients[rel_eff_index], 0 );
-      
-      rel_eff_eqn_js = RelActCalc::physical_model_rel_eff_eqn_js_function( input.self_atten,
+      info.re_curve_eqn_txt = Wt::WString::fromUTF8( "y = " + rel_eff_txt( false, rel_eff_index ) ); 
+
+      if( rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+      {
+        info.js_rel_eff_eqn = RelActCalc::rel_eff_eqn_js_function( rel_eff.rel_eff_eqn_type, m_rel_eff_coefficients[rel_eff_index] );
+      }else if( m_cost_functor )
+      {
+        const RelActCalcAutoImp::RelActAutoCostFcn::PhysModelRelEqnDef input
+        = m_cost_functor->make_phys_eqn_input( rel_eff_index, m_final_parameters );
+
+        info.js_rel_eff_eqn = RelActCalc::physical_model_rel_eff_eqn_js_function( input.self_atten,
                                                                           input.external_attens, input.det.get(), input.hoerl_b, input.hoerl_c );
-    }//if( not FramPhysicalModel ) / else
-    
-    SpecUtils::ireplace_all( html, "${FIT_REL_EFF_EQUATION}", rel_eff_eqn_js.c_str() );
-    
-    SpecUtils::ireplace_all( html, "${RESULTS_TXT}", results_html.str().c_str() );
+      }else
+      {
+        assert( 0 );
+        info.js_rel_eff_eqn = "function(x){ return 1; }";
+      }//if( not FramPhysicalModel ) / else / m_cost_functor
+    }catch( std::exception &e )
+    {
+      cerr << "Error creating RelEffChart::ReCurveInfo: " << e.what() << endl;
+    }
+
+    rel_eff_info_sets.push_back( info );
   }//for( size_t rel_eff_index = 0; rel_eff_index < m_rel_eff_forms.size(); ++rel_eff_index )
+
   
+  const string rel_eff_json = RelEffChart::jsonForData( rel_eff_info_sets );
+
+  SpecUtils::ireplace_all( html, "${REL_EFF_JSON}", rel_eff_json.c_str() );
   
+  SpecUtils::ireplace_all( html, "${RESULTS_TXT}", results_html.str().c_str() );
+
   if( m_spectrum )
   {
     stringstream set_js_str;
@@ -9245,7 +12502,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     vector<shared_ptr<const PeakDef>> peaks;
     for( const auto &p : m_fit_peaks )
       peaks.push_back( make_shared<PeakDef>(p) );
-    spec_options.peaks_json = PeakDef::peak_json( peaks, m_spectrum );
+    spec_options.peaks_json = PeakDef::peak_json( peaks, m_spectrum, Wt::WColor(0,51,255), 255 );
     
     const SpecUtils::Measurement * const meas_ptr = m_spectrum.get();
     D3SpectrumExport::write_and_set_data_for_chart( set_js_str, "specchart", { std::make_pair(meas_ptr,spec_options) } );
@@ -9273,190 +12530,113 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
 }//void print_html_report( std::ostream &out ) const
 
 
-void RelActAutoSolution::rel_eff_json_data( std::ostream &rel_eff_plot_values,
-                                            std::ostream &add_rel_eff_plot_css,
-                                           const size_t rel_eff_index ) const
+
+pair<double,optional<double>> RelActAutoSolution::mass_enrichment_fraction( const SandiaDecay::Nuclide *nuclide, const size_t rel_eff_index ) const
 {
-  // TODO: refactor RelEffChart::setData to take care of all this functionality, and just call it their
+#define USE_RelActAutoCostFcn_MASS_FRAC_IMP 1
   
-  const bool multiple_rel_eff = (m_rel_eff_forms.size() > 1);
-  assert( rel_eff_index < m_rel_activities.size() );
+#if( USE_RelActAutoCostFcn_MASS_FRAC_IMP )
   
-  rel_eff_plot_values << "[";
-  //rel_eff_plot_values << "{energy: 185, counts: 100, counts_uncert: 10, eff: 1.0, eff_uncert: 0.1, nuc_info: [{nuc: \"U235\", br: 0.2, rel_act: 300}]}"
-  //", {energy: 1001, counts: 10, counts_uncert: 3, eff: 0.1, eff_uncert: 0.1, nuc_info: [{nuc: \"U238\", br: 0.1, rel_act: 100}]}";
-  char buffer[1024] = { '\0' };
-  const float live_time = m_spectrum ? m_spectrum->live_time() : 1.0f;
+  if( !m_cost_functor )
+    throw std::runtime_error( "RelActAutoSolution::mass_enrichment_fraction(): cost_functor not set." );
   
-  set<const SandiaDecay::Nuclide *> nuclides_with_colors, all_nuclides;
+  const vector<double> &x = m_final_parameters;
+  const vector<vector<double>> &covariance = m_covariance;
   
-  size_t num_rel_eff_data_points = 0;
-  for( const PeakDef &peak : m_fit_peaks )
+  if( covariance.empty() )
   {
-    // Skip peaks that are essentially zero amplitide
-    if( peak.amplitude() < 0.1 )
-      continue;
-    
-    const SandiaDecay::Nuclide *nuc = peak.parentNuclide();
-    if( !nuc )
-      continue;
-
-    if( multiple_rel_eff )
-    {
-      string label = peak.userLabel();
-      const bool is_rel_eff_label = SpecUtils::istarts_with( label, "RelEff " );
-      assert( is_rel_eff_label );
-      if( !is_rel_eff_label )
-        continue;
-      
-      label = label.substr(7);
-      int this_rel_eff = -1;
-      const bool ok = SpecUtils::parse_int( label.c_str(), label.size(), this_rel_eff );
-      assert( ok );
-      if( !ok )
-        continue;
-      assert( this_rel_eff >= 0 && this_rel_eff < static_cast<int>(m_rel_eff_forms.size()) );
-      if( this_rel_eff < 0 || this_rel_eff >= static_cast<int>(m_rel_eff_forms.size()) )
-        continue;
-      
-      if( this_rel_eff != rel_eff_index )
-        continue;
-    }//if( multiple_rel_eff )
-    
-    const NuclideRelAct *nuc_info = nullptr;
-    for( const auto &rel_act : m_rel_activities[rel_eff_index] )
-      nuc_info = (rel_act.nuclide == nuc) ? &rel_act : nuc_info;
-    
-    // Not all Rel Eff Curves will have all nuclides, so if we don't have a nuc_info,
-    // and we have more than one Rel Eff Curve, then just skip this peak ... for now
-    if( nuc && !nuc_info && (m_rel_eff_forms.size() > 1) )
-    {
-      continue;
-    }
-
-    assert( nuc_info );
-    if( !nuc_info )
-      continue;
-    
-    all_nuclides.insert( nuc );
-    if( !nuclides_with_colors.count(nuc) && !peak.lineColor().isDefault() )
-    {
-      add_rel_eff_plot_css << "        .RelEffPlot circle." << nuc->symbol << "{ fill: " << peak.lineColor().cssText() << "; }\n";
-      nuclides_with_colors.insert( nuc );
-    }
-    
-    double yield = 0;
-    for( const pair<double,double> &energy_br : nuc_info->gamma_energy_br )
-    {
-      if( fabs(energy_br.first - peak.gammaParticleEnergy()) < 1.0E-6 )
-        yield += energy_br.second;
-    }
-    
-    snprintf( buffer, sizeof(buffer), "{nuc: \"%s\", br: %1.6G, rel_act: %1.6G}",
-             nuc_info->nuclide->symbol.c_str(), yield, nuc_info->rel_activity );
-    
-    const string isotopes_json = buffer;
-    
-    const double src_counts = nuc_info->rel_activity * yield * live_time;
-    //if( src_counts < 1.0E-6 )
-    //  continue;
-    
-    //if( peak.amplitude() < 1.0E-6 )
-    //  continue;
-    
-    const double eff = peak.amplitude() / src_counts;
-    
-    //TODO: need to use proper uncertainty
-    const double eff_uncert = 0; //peak.amplitudeUncert() / src_counts;
-    
-    snprintf( buffer, sizeof(buffer),
-             "%s{energy: %.2f, counts: %1.7g, counts_uncert: %1.7g,"
-             " eff: %1.6g, eff_uncert: %1.6g, nuc_info: [%s]}",
-             (num_rel_eff_data_points ? ", " : ""),
-             peak.mean(), peak.amplitude(), peak.amplitudeUncert(),
-             eff, eff_uncert, isotopes_json.c_str() );
-    
-    //cout << "peak rel_eff: " << buffer << endl;
-    
-    if( IsNan(eff) || IsInf(eff)
-       || IsNan(eff_uncert) || IsInf(eff_uncert)
-       || IsNan(peak.amplitude()) || IsInf(peak.amplitude())
-       || IsNan(peak.amplitudeUncert()) || IsInf(peak.amplitudeUncert())
-       )
-    {
-      cerr << "Skipping Rel Eff plot point: " << buffer << endl;
-    }else
-    {
-      rel_eff_plot_values << buffer;
-      num_rel_eff_data_points += 1;
-    }
-  }//for( const PeakDef &peak : m_fit_peaks )
+    const double frac = m_cost_functor->mass_enrichment_fraction( nuclide, rel_eff_index, x );
+    return { frac, optional<double>{} };
+  }
   
-  rel_eff_plot_values << "]";
-  
-  
-  // Incase user didnt associate color with a nuclide, assign some (pretty much randomly chosen)
-  //  default colors.
-  size_t unseen_nuc_index = 0;
-  const vector<string> default_nuc_colors{ "#003f5c", "#ffa600", "#7a5195", "#ff764a", "#ef5675", "#374c80" };
-  for( const auto *nuc : all_nuclides )
+  const size_t num_pars = m_cost_functor->number_parameters();
+  assert( covariance.size() == num_pars );
+  if( covariance.size() != num_pars )
+    throw std::logic_error( "mass_enrichment_fraction: covariance matrix has wrong number of rows." );
+  for( const auto &row : covariance )
   {
-    if( nuclides_with_colors.count(nuc) )
-      continue;
-    
-    add_rel_eff_plot_css << "        .RelEffPlot circle." << nuc->symbol << "{ fill: "
-    << default_nuc_colors[unseen_nuc_index % default_nuc_colors.size()]
-    << "; }\n";
-    
-    unseen_nuc_index += 1;
-  }//for( const auto *nuc : all_nuclides )
+    assert( row.size() == num_pars );
+    if( row.size() != num_pars )
+      throw std::logic_error( "mass_enrichment_fraction: covariance matrix has wrong number of columns." );
+  }
   
-}//std::string rel_eff_json_data() const
-
-
-
-double RelActAutoSolution::mass_enrichment_fraction( const SandiaDecay::Nuclide *nuclide, const size_t rel_eff_index ) const
-{
-  if( !nuclide )
-    throw runtime_error( "RelActAutoSolution::mass_enrichment_fraction: null nuclide." );
-
-  assert( m_rel_activities.size() == m_options.rel_eff_curves.size() );
   
-  assert( rel_eff_index < m_rel_activities.size() );
-  if( rel_eff_index >= m_rel_activities.size() )
-    throw std::logic_error( "mass_enrichment_fraction: invalid rel eff index" );
-  
-  const vector<NuclideRelAct> &rel_acts = m_rel_activities[rel_eff_index];
-  
-  // We will consider this to by Pu if either Pu or Am241
-  const bool is_pu = ((nuclide->atomicNumber == 94)
-                      || ((nuclide->atomicNumber == 95) && (nuclide->massNumber == 241)));
-  
-  auto is_wanted_element = [is_pu,nuclide]( const SandiaDecay::Nuclide *test ) -> bool {
-    if( test->atomicNumber == nuclide->atomicNumber )
-      return true;
-    
-    return is_pu
-            && ((test->atomicNumber == 94)
-                || ((test->atomicNumber == 95) && (test->massNumber == 241)));
-  };//is_wanted_element lamda
-  
-  const size_t nuc_index = nuclide_index( nuclide, rel_eff_index );
-  const double rel_mass = rel_acts[nuc_index].rel_activity / nuclide->activityPerGram();
-    
-  double el_total_mass = 0.0;
-  for( const NuclideRelAct &nuc : rel_acts )
+  // We will use `J * cov * J^T` (where J is jacobian - e.g, d{MassFrac(nuclide)}/d{paramater}) to comput the
+  //  uncertainty, using auto-differentiation to compute the Jacobian vector.  Only the elements corresponding
+  //  to the activities of the other nuclides of this element will be non-zero in principle; however, we will
+  //  compute all element, because there may be some activity ratio, or mass-ratio constraints that would
+  //  complicate things, so we'll just be consistent.
+  double enrichment = -1.0;
+  vector<double> jacobian( num_pars, 0.0 );
+  for( size_t i = 0; i < num_pars; i += RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size )
   {
-    if( nuc.nuclide && is_wanted_element(nuc.nuclide) )
-      el_total_mass += nuc.rel_activity / nuc.nuclide->activityPerGram();
+    vector<ceres::Jet<double,RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size>> x_local( begin(x), end(x) );
+    for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size) && (i+j < num_pars); ++j )
+      x_local[i+j].v[j] = 1.0;
+    const ceres::Jet<double,RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size> enrichment_jet
+                      = m_cost_functor->mass_enrichment_fraction( nuclide, rel_eff_index, x_local );
+    for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size) && ((i+j) < num_pars); ++j )
+      jacobian[i+j] = enrichment_jet.v[j];
+    enrichment = enrichment_jet.a;
   }
     
-  if( is_pu && (m_corrected_pu.size() > rel_eff_index) && m_corrected_pu[rel_eff_index] )
+  double uncertainty = 0.0;
+  for( size_t i = 0; i < num_pars; ++i )
   {
-    const auto &pu_corr = m_corrected_pu[rel_eff_index];
-    if( (nuclide->atomicNumber == 95) && (nuclide->massNumber == 241) )
-      return pu_corr->am241_mass_frac;
+    for( size_t j = 0; j < num_pars; ++j )
+      uncertainty += jacobian[i]*covariance[i][j]*jacobian[j];
+  }
     
+  uncertainty = sqrt( uncertainty );
+
+  if( nuclide && (nuclide->atomicNumber == 94) && (nuclide->massNumber == 242)
+     && (m_corrected_pu.size() > rel_eff_index) && m_corrected_pu[rel_eff_index] )
+  {
+    const double corr_uncert = enrichment * m_corrected_pu[rel_eff_index]->pu242_uncert;
+    uncertainty = sqrt(uncertainty*uncertainty + corr_uncert*corr_uncert);
+  }
+
+  return {enrichment, uncertainty};
+#else
+  static_assert( 0, "RelActAutoSolution::mass_enrichment_fraction(...): this implementation needs a little work to return both nominal answer, as well as uncertainty." );
+  // This is based upon `RelEffSolution::mass_fraction( const std::string &nuclide, const double num_sigma ) const`
+  //  If any issues are found in this function, please also check that function.
+  const double num_sigma = 1.0;
+  
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+
+  if( !nuclide ) //Will be nullptr for reactions and x-rays
+    throw runtime_error( "RelActAutoSolution::mass_enrichment_fraction(nullptr, " + std::to_string(rel_eff_index)
+                         + "): invalid nuclide" );
+
+  if( m_phys_units_cov.empty() && (num_sigma != 0.0) )
+    throw runtime_error( "RelActAutoSolution::mass_enrichment_fraction(" + nuclide->symbol + ", "
+                      + std::to_string(rel_eff_index)  + ", " + std::to_string(num_sigma) + "): no valid covariance" );
+
+  const NuclideRelAct &nuc_info = nucinfo( nuclide, rel_eff_index );
+
+  assert( rel_eff_index < m_options.rel_eff_curves.size() );
+  const RelEffCurveInput &re_curve = m_options.rel_eff_curves.at(rel_eff_index);
+
+  const bool is_pu = (nuclide->atomicNumber == 94);
+  const bool using_pu242_corr = (is_pu && (m_corrected_pu.size() > rel_eff_index) && m_corrected_pu[rel_eff_index]);
+  if( using_pu242_corr && (num_sigma == 0.0) )
+  {
+    const vector<NuclideRelAct> &rel_acts = m_rel_activities[rel_eff_index];
+    const size_t nuc_index = nuclide_index( nuclide, rel_eff_index );
+    assert( RelActCalcAuto::nuclide(rel_acts[nuc_index].source) == nuclide );
+    const double rel_mass = rel_acts[nuc_index].rel_activity / nuclide->activityPerGram();
+
+    double el_total_mass = 0.0;
+    for( const NuclideRelAct &nuc : rel_acts )
+    {
+      const SandiaDecay::Nuclide * const nuc_nuclide = RelActCalcAuto::nuclide(nuc.source);
+      if( nuc_nuclide && (nuc_nuclide->atomicNumber == nuclide->atomicNumber) )
+        el_total_mass += nuc.rel_activity / nuc_nuclide->activityPerGram();
+    }
+
+    const shared_ptr<const RelActCalc::Pu242ByCorrelationOutput<double>> &pu_corr = m_corrected_pu[rel_eff_index];
+
     switch( nuclide->massNumber )
     {
       case 238: return pu_corr->pu238_mass_frac; break;
@@ -9466,11 +12646,234 @@ double RelActAutoSolution::mass_enrichment_fraction( const SandiaDecay::Nuclide 
       case 242: return pu_corr->pu242_mass_frac; break;
       default: return (1.0 - pu_corr->pu242_mass_frac) * rel_mass / el_total_mass;
     }//switch( nuclide->massNumber )
-    
+
     assert( 0 );
-  }//if( is_pu && pu_corr )
-  
-  return rel_mass / el_total_mass;
+
+    assert( (rel_mass >= 0.0) && (rel_mass <= el_total_mass) );
+
+    return rel_mass / el_total_mass;
+  }//if( is pu, and using Pu correction, and nominal answer is wanted )
+
+
+ // If this nuclide was constrained, then we need to find the ultimate controlling nuclide.
+  double nuc_mult = 1.0;
+  SrcVariant src( nuclide );
+  const bool nuc_was_constrained = walk_to_controlling_nuclide( src, rel_eff_index, nuc_mult );
+
+ #pragma message( "RelActAutoSolution: Need to check if we are computing mass_fraction with uncertainties correctly when there are constraints (looks correct with a simple example)." )
+  if( nuc_was_constrained )
+    cerr << "RelActAutoSolution: Need to check if we are computing mass_fraction with uncertainties correctly when there are constraints." << endl;
+
+
+  // The Covariance matrix is in terms of fit paramaters - so we need to multiple by the nuclides mutliepl to get to activity.
+  const size_t nuc_act_par_index = fit_parameters_index_for_source( src, rel_eff_index );
+  assert( nuc_act_par_index < m_parameter_scale_factors.size() );
+
+  const double cov_nuc_nuc = m_phys_units_cov[nuc_act_par_index][nuc_act_par_index];
+  const double sqrt_cov_nuc_nuc = sqrt(cov_nuc_nuc);
+
+#ifndef NDEBUG
+  // Check that relative activity uncertainties have been computed compatible with what we are
+  //  assuming here (and no funny business has happened).
+  if( fabs(sqrt_cov_nuc_nuc - nuc_info.rel_activity_uncertainty) > 1.0E-6*(std::max)(sqrt_cov_nuc_nuc, nuc_info.rel_activity_uncertainty) )
+  {
+    cout << "sqrt_cov_nuc_nuc = " << sqrt_cov_nuc_nuc << " (="<< sqrt_cov_nuc_nuc << ")" << endl;
+    cout << "m_rel_activities[nuc_index].m_rel_activity_uncert = " << nuc_info.rel_activity_uncertainty << endl;
+    cout << "m_rel_activities[nuc_index].m_rel_activity = " << nuc_info.rel_activity << endl;
+  }
+  assert( fabs(sqrt_cov_nuc_nuc - nuc_info.rel_activity_uncertainty) < 1.0E-6*(std::max)(nuc_info.rel_activity_uncertainty, sqrt_cov_nuc_nuc) );
+#endif 
+
+  double sum_rel_mass = 0.0, nuc_rel_mas = -1.0;
+
+  set<double> pu_ages;//only used if using_pu242_corr
+  RelActCalc::Pu242ByCorrelationInput raw_pu_masses; //only used if using_pu242_corr
+
+
+#define TRY_ALT_ENRICH_UNCERT_METHOD 0
+
+#if( TRY_ALT_ENRICH_UNCERT_METHOD )
+  //I think the currently implemented way of getting mass fraction uncertainty is not forrect, instead, if we
+  //  think of enrichment fraction as:
+  //let y = (RelAct[nuclide]/c_nuc) / ( (RelAct[0]/c_0) + (RelAct[1]/c_1) + ... );
+  //  where c_0 is el_nuc_0->activityPerGram(), c_1 is el_nuc_1->activityPerGram(), etc
+  //Then we can get the Jacobian J=[dy/dRelAct0, dy/dRelAct1, ...]
+  //  and then uncert_squared = J*[Cov]*J^T
+  //I tried to do this in this section - but its not quite working out yet (may give negative uncert2), so leaving not working for now
+
+  vector<double> rel_masses, controlled_rel_act_mults, rel_act_scale_factors, act_per_grams;
+  vector<size_t> src_act_par_indexes;
+  size_t src_act_par_index = m_rel_activities[rel_eff_index].size(), src_index = m_rel_activities[rel_eff_index].size();
+  double sum_nominal_rel_masses = 0.0;
+#endif
+
+  //for( size_t rel_eff_loop_index = 0; rel_eff_loop_index < m_rel_activities.size(); ++rel_eff_loop_index )
+  {
+    const size_t rel_eff_loop_index = rel_eff_index;
+    const vector<NuclideRelAct> &rel_acts = m_rel_activities[rel_eff_loop_index];
+    for( size_t rel_act_loop_index = 0; rel_act_loop_index < rel_acts.size(); ++rel_act_loop_index )
+    {
+      const NuclideRelAct &act = rel_acts[rel_act_loop_index];
+      SrcVariant act_src = act.source;
+      const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(act_src);
+      if( !nuc || (nuc->atomicNumber != nuclide->atomicNumber) )
+        continue;
+
+      double loop_nuc_mult = 1.0;
+      walk_to_controlling_nuclide( act_src, rel_eff_loop_index, loop_nuc_mult );
+
+      const size_t act_par_index = fit_parameters_index_for_source( act_src, rel_eff_loop_index );
+
+      const double rel_act_scale_factor = m_parameter_scale_factors[act_par_index];
+      double fit_act_for_index = loop_nuc_mult * rel_act_scale_factor * m_final_parameters[act_par_index];
+
+      // Need to check if mass-fraction constrained nuc, and if so, correct `fit_act_for_index`.
+      const RelActCalcAuto::RelEffCurveInput &input = m_options.rel_eff_curves[rel_eff_index];
+      const vector<RelEffCurveInput::MassFractionConstraint> &mass_frac_consts = input.mass_fraction_constraints;
+      for( const RelEffCurveInput::MassFractionConstraint &constraint : mass_frac_consts )
+      {
+        if( constraint.nuclide == nuc )
+        {
+          fit_act_for_index = rel_activity( act_src, rel_eff_index );
+          break;
+        }//if( constraint.nuclide == nuc )
+      }//for( const MassFractionConstraint &constraint : mass_frac_consts )
+
+      assert( fabs(fit_act_for_index - rel_activity(act_src, rel_eff_index)) < 1.0E-6*fit_act_for_index );
+
+      const double cov_nuc_index = loop_nuc_mult*m_phys_units_cov[nuc_act_par_index][act_par_index]; //TODO: this may need another loop_nuc_mult type thing multiplied
+      const double varied_fit_act_for_index = fit_act_for_index + (cov_nuc_index / cov_nuc_nuc) * num_sigma * sqrt_cov_nuc_nuc;
+
+      const double rel_act = varied_fit_act_for_index;
+      const double rel_mass = rel_act / nuc->activityPerGram();
+
+#if( TRY_ALT_ENRICH_UNCERT_METHOD )
+      if( nuc == nuclide )
+      {
+        assert( (src_act_par_index == rel_acts.size()) && (src_index == rel_acts.size()) );
+
+        src_index = rel_masses.size();
+        src_act_par_index = act_par_index;
+      }
+
+      const double nominal_rel_mass = fit_act_for_index / nuc->activityPerGram();
+      rel_masses.push_back( nominal_rel_mass );
+      src_act_par_indexes.push_back( act_par_index );
+      controlled_rel_act_mults.push_back( loop_nuc_mult );
+      rel_act_scale_factors.push_back( rel_act_scale_factor );
+      act_per_grams.push_back( nuc->activityPerGram() );
+      sum_nominal_rel_masses += nominal_rel_mass;
+#endif
+
+      if( using_pu242_corr && (nuc->atomicNumber == 94) )
+      {
+        assert( act.age >= 0.0 );
+        if( act.age >= 0.0 )
+          pu_ages.insert( act.age );
+
+        switch( nuc->massNumber )
+        {
+          case 238: raw_pu_masses.pu238_rel_mass = rel_mass; break;
+          case 239: raw_pu_masses.pu239_rel_mass = rel_mass; break;
+          case 240: raw_pu_masses.pu240_rel_mass = rel_mass; break;
+          case 241: raw_pu_masses.pu241_rel_mass = rel_mass; break;
+          case 242:
+            assert( 0 );
+            throw std::logic_error( "Pu242 cant be fit nuclide Pu242 correlation correction method was specified." );
+            break;
+          default:  raw_pu_masses.other_pu_mass = rel_mass;  break;
+        }//switch( nuclide->massNumber )
+      }//if( using_pu242_corr && (nuc->atomicNumber == 94) )
+
+      sum_rel_mass += (std::max)( rel_mass, 0.0 );
+      //cout << "mass_frac(" << nuclide->symbol << "): for nuc " << nuc->symbol << " nom_act=" << fit_act_for_index
+      //<< ", varied=" << varied_fit_act_for_index << ", cov_nuc_index=" << cov_nuc_index << ", cov_nuc_nuc=" << cov_nuc_nuc
+      //<< ", num_sigma=" << num_sigma << ", sqrt_cov_nuc_nuc=" << sqrt_cov_nuc_nuc << endl;
+
+      if( (rel_eff_loop_index == rel_eff_index) && (nuclide == nuc) )
+        nuc_rel_mas = rel_mass;
+    }//for( size_t rel_act_loop_index = 0; rel_act_loop_index < rel_acts.size(); ++rel_act_loop_index )
+  }//for( size_t rel_eff_loop_index = 0; rel_eff_loop_index < m_rel_activities.size(); ++rel_eff_loop_index )
+
+#if( TRY_ALT_ENRICH_UNCERT_METHOD )
+  assert( src_index < m_rel_activities[rel_eff_index].size() );
+  vector<double> jacobians( src_act_par_indexes.size(), 0.0 );
+  for( size_t row = 0; row < src_act_par_indexes.size(); ++row )
+  {
+    const double rel_mass = rel_masses[row];
+    const double rel_act_scale_factor = rel_act_scale_factors[row];
+    const double loop_nuc_mult = controlled_rel_act_mults[row];
+
+    if( src_index == row )
+      jacobians[row] = (sum_nominal_rel_masses - rel_mass) / (sum_nominal_rel_masses*sum_nominal_rel_masses * act_per_grams[row]);
+    else
+      jacobians[row] = -rel_masses[src_index] / (sum_nominal_rel_masses*sum_nominal_rel_masses* act_per_grams[row] );
+  }//for( size_t i = 0; i < src_act_par_indexes.size(); ++i )
+
+  double uncert_sq = 0.0;
+  for( size_t i = 0; i < src_act_par_indexes.size(); ++i )
+  {
+    for( size_t j = 0; j < src_act_par_indexes.size(); ++j )
+      uncert_sq += jacobians[i]*jacobians[j]*m_phys_units_cov[src_act_par_indexes[i]][src_act_par_indexes[j]];
+  }
+
+  const double uncert = sqrt( uncert_sq );
+  cout << "Using updated uncert method, we would get: " << rel_masses[src_index] << " + " << num_sigma << "*" << uncert << endl;
+  return rel_masses[src_index] + num_sigma*uncert;
+#endif
+
+  // If we are doing Pu242 correction, we have to recompute the correction, based on the varied mass fractions
+  if( using_pu242_corr )
+  {
+    const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = m_options.rel_eff_curves[rel_eff_index];
+    assert( rel_eff_curve.pu242_correlation_method != RelActCalc::PuCorrMethod::NotApplicable );
+
+    assert( num_sigma != 0.0 );  //We already dealt with the nominal case above.
+
+    if( pu_ages.size() == 0 )
+    {
+      assert( sum_rel_mass == 0.0 );
+      raw_pu_masses.pu_age = 0.0; //no correction for age - but we shouldnt get here anyway
+    }else if( pu_ages.size() == 1 )
+    {
+      raw_pu_masses.pu_age = *begin(pu_ages);
+    }else
+    {
+      const vector<double> ages( begin(pu_ages), end(pu_ages) );
+      raw_pu_masses.pu_age = ages[ages.size() / 2]; //just take the median age...
+    }
+
+    // We dont have to divide `pu_total_mass`, but we will, just for debuging.
+    raw_pu_masses.pu238_rel_mass /= sum_rel_mass;
+    raw_pu_masses.pu239_rel_mass /= sum_rel_mass;
+    raw_pu_masses.pu240_rel_mass /= sum_rel_mass;
+    raw_pu_masses.pu241_rel_mass /= sum_rel_mass;
+    raw_pu_masses.other_pu_mass  /= sum_rel_mass;
+
+    const RelActCalc::Pu242ByCorrelationOutput corr_output
+           = RelActCalc::correct_pu_mass_fractions_for_pu242( raw_pu_masses, rel_eff_curve.pu242_correlation_method );
+
+    switch( nuclide->massNumber )
+    {
+      case 238: return corr_output.pu238_mass_frac;
+      case 239: return corr_output.pu239_mass_frac;
+      case 240: return corr_output.pu240_mass_frac;
+      case 241: return corr_output.pu241_mass_frac;
+      case 242: return corr_output.pu242_mass_frac;
+      default:
+        assert( 0 );
+        throw runtime_error( "Unhandled Pu isotope for mass fraction amount" );
+    }//switch( nuclide->massNumber )
+  }//if( using_pu242_corr )
+
+
+  if( nuc_rel_mas < 0.0 ) // This can happen when we go down a couple sigma
+    return 0.0;
+
+  //cout << "nuc_rel_mas = " << nuc_rel_mas << ", sum_rel_mass = " << sum_rel_mass << endl;
+  //cout << "nuc_rel_mas / sum_rel_mass = " << nuc_rel_mas / sum_rel_mass << endl;
+  return nuc_rel_mas / sum_rel_mass;
+#endif //#if( USE_RelActAutoCostFcn_MASS_FRAC_IMP ) / else
 }//mass_enrichment_fraction
 
 
@@ -9478,9 +12881,10 @@ double RelActAutoSolution::mass_ratio( const SandiaDecay::Nuclide *numerator,
                                       const SandiaDecay::Nuclide *denominator,
                                       const size_t rel_eff_index ) const
 {
-  const double ratio = activity_ratio(numerator, denominator, rel_eff_index);
-  
-  return ratio * denominator->activityPerGram() / numerator->activityPerGram();
+  const pair<double,std::optional<double>> ratio = activity_ratio(SrcVariant(numerator), rel_eff_index,
+                                                                  SrcVariant(denominator), rel_eff_index);
+
+  return ratio.first * denominator->activityPerGram() / numerator->activityPerGram();
 }//double mass_ratio(...)
 
 
@@ -9495,23 +12899,7 @@ const NuclideRelAct &RelActAutoSolution::nucinfo( const SrcVariant src, const si
   for( size_t nuc_index = 0; nuc_index < nuclides.size(); ++nuc_index )
   {
     const NuclideRelAct &nucinfo = nuclides[nuc_index];
-    
-    const bool found = std::visit( [&]( const auto &arg ) -> bool {
-      using T = std::decay_t<decltype(arg)>;
-      if constexpr( std::is_same_v<T, const SandiaDecay::Nuclide *> )
-        return arg == std::get<const SandiaDecay::Nuclide *>(src);
-      
-      if constexpr( std::is_same_v<T, const SandiaDecay::Element *> )
-        return arg == std::get<const SandiaDecay::Element *>(src);
-      
-      if constexpr( std::is_same_v<T, const ReactionGamma::Reaction *> )
-        return arg == std::get<const ReactionGamma::Reaction *>(src);
-      
-      assert( 0 );
-      return false;
-    }, src);
-
-    if( found )
+    if( nucinfo.source == src )
       return nucinfo;
   }//for( size_t nuc_index = 0; nuc_index < nuclides.size(); ++nuc_index )
 
@@ -9519,33 +12907,382 @@ const NuclideRelAct &RelActAutoSolution::nucinfo( const SrcVariant src, const si
 }
 
 
-double RelActAutoSolution::activity_ratio( const SrcVariant &numerator,
-                                          const SrcVariant &denominator,
-                                          const size_t rel_eff_index ) const
+pair<double,optional<double>> RelActAutoSolution::activity_ratio( const SrcVariant &numerator, const size_t num_rel_eff_index,
+                                            const SrcVariant &denominator, const size_t denom_rel_eff_index ) const
 {
-  return activity_ratio( nucinfo(numerator, rel_eff_index), nucinfo(denominator, rel_eff_index), rel_eff_index );
-}
+  assert( m_cost_functor );
+  if( !m_cost_functor || m_covariance.empty() )
+  {
+    const double ratio = rel_activity(numerator, num_rel_eff_index) / rel_activity(denominator, denom_rel_eff_index);
+    return make_pair( ratio, optional<double>{} );
+  }
 
-double RelActAutoSolution::activity_ratio( const NuclideRelAct &numerator,
-                                          const NuclideRelAct &denominator,
-                                          const size_t rel_eff_index ) const
-{
-  assert( m_rel_activities.size() == m_options.rel_eff_curves.size() );
-  
-  assert( rel_eff_index < m_rel_activities.size() );
-  if( rel_eff_index >= m_rel_activities.size() )
-    throw std::logic_error( "activity_ratio: invalid rel eff index" );
-  
-  return rel_activity(numerator, rel_eff_index) / rel_activity(denominator, rel_eff_index);
+  const vector<double> &x = m_final_parameters;
+  const vector<vector<double>> &covariance = m_covariance;
+
+  const size_t num_pars = m_cost_functor->number_parameters();
+  assert( covariance.size() == num_pars );
+  if( covariance.size() != num_pars )
+    throw std::logic_error( "activity_ratio: covariance matrix has wrong number of rows." );
+  for( const auto &row : covariance )
+  {
+    assert( row.size() == num_pars );
+    if( row.size() != num_pars )
+      throw std::logic_error( "activity_ratio: covariance matrix has wrong number of columns." );
+  }
+
+  typedef ceres::Jet<double,RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size> Jet;
+
+  double ratio = -1.0;
+  vector<double> jacobian( num_pars, 0.0 );
+  for( size_t i = 0; i < num_pars; i += RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size )
+  {
+    vector<Jet> x_local( begin(x), end(x) );
+    for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size) && (i+j < num_pars); ++j )
+      x_local[i+j].v[j] = 1.0;
+    const Jet num_rel_act_jet = m_cost_functor->relative_activity(numerator, num_rel_eff_index, x_local);
+    const Jet denom_rel_act_jet = m_cost_functor->relative_activity(denominator, denom_rel_eff_index, x_local);
+
+    const Jet ratio_jet = num_rel_act_jet / denom_rel_act_jet;
+
+    for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size) && ((i+j) < num_pars); ++j )
+      jacobian[i+j] = ratio_jet.v[j];
+
+    ratio = ratio_jet.a;
+  }//for( size_t i = 0; i < num_pars; i += RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size )
+
+  double uncertainty = 0.0;
+  for( size_t i = 0; i < num_pars; ++i )
+  {
+    for( size_t j = 0; j < num_pars; ++j )
+      uncertainty += jacobian[i]*covariance[i][j]*jacobian[j];
+  }
+
+  uncertainty = sqrt( uncertainty );
+
+  if( IsInf(uncertainty) || IsNan(uncertainty) )
+    return {ratio, optional<double>{}};
+
+  return {ratio, uncertainty};
 }//double activity_ratio(...)
 
 
-double RelActAutoSolution::rel_activity( const SrcVariant &src, const size_t rel_eff_index ) const
+size_t RelActAutoSolution::fit_parameters_index_for_source( const SrcVariant &src, const size_t rel_eff_index ) const
 {
-  return rel_activity( nucinfo(src, rel_eff_index), rel_eff_index );
-}
+  // Calculate the starting index of activity parameters for this rel_eff_index
+  // This follows the same structure as in the RelActAutoCostFcn class
+  size_t acts_start_index = RelActAutoSolution::sm_num_energy_cal_pars; // Energy cal parameters
+  
+  // Add FWHM parameters
+  acts_start_index += num_parameters( m_options.fwhm_form );
+  
+  // Add relative efficiency parameters for all curves up to this one
+  for( size_t i = 0; i < m_options.rel_eff_curves.size(); ++i )
+  {
+    const auto &rel_eff_curve = m_options.rel_eff_curves[i];
+    if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+      acts_start_index += (2 + 2*rel_eff_curve.phys_model_external_atten.size() + 2); // AN + AD + external shields + hoerl b,c
+    else
+      acts_start_index += (rel_eff_curve.rel_eff_eqn_order + 1);
+  }
+  
+  // Add activity parameters for all nuclides in curves before this one
+  for( size_t i = 0; i < rel_eff_index; ++i )
+  {
+    acts_start_index += 2 * m_options.rel_eff_curves[i].nuclides.size();
+  }
 
-double RelActAutoSolution::rel_activity( const NuclideRelAct &nucinfo, const size_t rel_eff_index ) const
+  const size_t nuc_index = nuclide_index( src, rel_eff_index );
+  return acts_start_index + 2 * nuc_index;
+}//size_t fit_parameters_index_for_source(...)
+
+
+bool RelActAutoSolution::walk_to_controlling_nuclide( SrcVariant &src, const size_t rel_eff_index, double &multiple ) const
+{
+  assert( multiple == 1.0 );
+  multiple = 1.0;
+  assert( rel_eff_index < m_rel_activities.size() );
+  assert( m_rel_activities.size() == m_options.rel_eff_curves.size() );
+  if( rel_eff_index >= m_rel_activities.size() )
+    throw std::logic_error( "walk_to_controlling_nuclide: invalid rel eff index" );
+  if( m_rel_activities.size() != m_options.rel_eff_curves.size() )
+    throw std::logic_error( "walk_to_controlling_nuclide: size(m_rel_activities) != size(m_options.rel_eff_curves)" );
+
+  const vector<NuclideRelAct> &rel_acts = m_rel_activities[rel_eff_index];
+  
+  // Check source is valid one in the rel eff curve
+  bool found_src = false;
+  for( size_t i = 0; !found_src && (i < m_rel_activities[rel_eff_index].size()); ++i )
+    found_src = ( src == m_rel_activities[rel_eff_index][i].source );
+  if( !found_src )
+    throw std::logic_error( "walk_to_controlling_nuclide: src not found in rel eff curve" );
+
+#ifndef NDEBUG
+  const SrcVariant original_src = src;
+#endif
+
+  const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = m_options.rel_eff_curves[rel_eff_index];
+  
+  if( rel_eff_curve.act_ratio_constraints.empty() )
+    return false;
+
+  SrcVariant controller_src = std::monostate();
+
+  bool found_controller = false;
+  size_t sentinel = 0; //Dont need, but just to check the logic for development
+
+  while( controller_src != src )
+  {
+    sentinel += 1;
+    assert( sentinel < 100 );
+    if( sentinel > 1000 )
+      throw logic_error( "RelActAutoSolution::activity_ratio_uncert: possible infinite loop - logic error" );
+
+    controller_src = src;
+    for( const RelEffCurveInput::ActRatioConstraint &constraint : rel_eff_curve.act_ratio_constraints )
+    {
+      if( constraint.constrained_source == src )
+      {
+        controller_src = constraint.controlling_source;
+        multiple *= constraint.constrained_to_controlled_activity_ratio;
+        found_controller = true;
+        break;
+      }
+    }
+  }//while( controller_index != src_index )
+
+#ifndef NDEBUG
+  const size_t orig_src_index = nuclide_index( original_src, rel_eff_index ); 
+  const size_t final_src_index = nuclide_index( src, rel_eff_index ); 
+  assert( fabs((multiple * m_rel_activities[rel_eff_index][final_src_index].rel_activity_uncertainty) - m_rel_activities[rel_eff_index][orig_src_index].rel_activity_uncertainty) < 1e-6 );
+#endif
+
+  return found_controller;
+}//bool walk_to_controlling_nuclide( size_t &iso_index, double &multiple ) const;
+
+
+double RelActAutoSolution::activity_ratio_uncertainty( SrcVariant numerator, size_t numerator_rel_eff_index,
+                                                      SrcVariant denominator, size_t denominator_rel_eff_index ) const
+{
+  typedef ceres::Jet<double,RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size> Jet;
+
+  // Check if covariance matrix is available
+  if( m_phys_units_cov.empty() || m_final_parameters.empty() || !m_cost_functor )
+    throw std::logic_error( "activity_ratio_uncertainty: covariance matrix or parameters not available" );
+
+  assert( m_rel_eff_forms.size() == m_rel_eff_coefficients.size() );
+  assert( m_rel_eff_covariance.empty() || (m_rel_eff_covariance.size() == m_rel_eff_coefficients.size()) );
+
+  assert( numerator_rel_eff_index < m_rel_eff_forms.size() );
+  if( numerator_rel_eff_index >= m_rel_eff_forms.size() )
+    throw std::logic_error( "activity_ratio_uncertainty: invalid numerator rel eff index" );
+
+  assert( denominator_rel_eff_index < m_rel_eff_forms.size() );
+  if( denominator_rel_eff_index >= m_rel_eff_forms.size() )
+    throw std::logic_error( "activity_ratio_uncertainty: invalid denominator rel eff index" );
+
+
+  const size_t num_par = m_final_parameters.size();
+  double act_ratio = -1.0;
+  vector<double> jacobian( num_par, 0.0 );
+  for( size_t i = 0; i < num_par; i += RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size )
+  {
+    vector<Jet> x_local( begin(m_final_parameters), end(m_final_parameters) );
+    for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size) && (i+j < num_par); ++j )
+      x_local[i+j].v[j] = 1.0;
+
+    const Jet numerator_jet = m_cost_functor->relative_activity(numerator, numerator_rel_eff_index, x_local);
+    const Jet denominator_jet = m_cost_functor->relative_activity(denominator, denominator_rel_eff_index, x_local);
+    const Jet act_ratio_jet = numerator_jet / denominator_jet;
+
+    for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size) && ((i+j) < num_par); ++j )
+      jacobian[i+j] = act_ratio_jet.v[j];
+    act_ratio = act_ratio_jet.a;
+  }
+
+  double uncertainty_2 = 0.0;
+  for( size_t i = 0; i < num_par; ++i )
+  {
+    assert( m_covariance[i].size() == num_par );
+    if( m_covariance[i].size() != num_par )
+      throw logic_error( "activity_ratio_uncertainty: invalid act ratio covariance matrix row." );
+
+    for( size_t j = 0; j < num_par; ++j )
+      uncertainty_2 += jacobian[i]*m_covariance[i][j]*jacobian[j];
+  }
+
+  if( (uncertainty_2 < 0.0) || IsNan(uncertainty_2) || IsInf(uncertainty_2) )
+    throw std::logic_error( "activity_ratio_uncertainty: negative variance in covariance matrix" );
+
+  const double uncertainty = std::sqrt( uncertainty_2 );
+  return uncertainty;
+
+  // The below is the previous implementation - we can probably remove
+  /*
+  cerr << "activity_ratio_uncertainty: Got NaN uncert (uncert2=" << uncertainty_2 << ")" << endl;
+  assert( !IsNan(uncertainty) && !IsInf(uncertainty) );
+
+  // TODO: I think we can remove the rest of the code from this function.
+
+  // Validate inputs
+  assert( !RelActCalcAuto::is_null(numerator) );
+  assert( !RelActCalcAuto::is_null(denominator) );
+  if( RelActCalcAuto::is_null(numerator) || RelActCalcAuto::is_null(denominator) )
+    throw std::logic_error( "activity_ratio_uncertainty: null source provided" );
+  
+  assert( numerator_rel_eff_index < m_options.rel_eff_curves.size() );
+  if( numerator_rel_eff_index >= m_options.rel_eff_curves.size() )
+    throw std::logic_error( "activity_ratio_uncertainty: invalid numerator rel eff index" );
+
+  assert( denominator_rel_eff_index < m_options.rel_eff_curves.size() );
+  if( denominator_rel_eff_index >= m_options.rel_eff_curves.size() )
+    throw std::logic_error( "activity_ratio_uncertainty: invalid denominator rel eff index" );
+  
+  const RelEffCurveInput &num_rel_eff_curve = m_options.rel_eff_curves[numerator_rel_eff_index];
+  const RelEffCurveInput &denom_rel_eff_curve = m_options.rel_eff_curves[denominator_rel_eff_index];
+  
+  double num_mult = 1.0, den_mult = 1.0;
+  if( !num_rel_eff_curve.act_ratio_constraints.empty() )
+    walk_to_controlling_nuclide( numerator, numerator_rel_eff_index, num_mult );
+  
+  if( !denom_rel_eff_curve.act_ratio_constraints.empty() )
+    walk_to_controlling_nuclide( denominator, denominator_rel_eff_index, den_mult );
+
+  if( (numerator == denominator) && (numerator_rel_eff_index == denominator_rel_eff_index) )
+    return 0.0;
+  
+  
+  // TODO: implement support when mass fractions are constrained
+  const auto mass_frac_constraint = []( const SrcVariant &src, const RelEffCurveInput &curve )
+              -> const RelEffCurveInput::MassFractionConstraint *{
+    const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(src);
+    if( !nuc )
+      return nullptr;
+    const auto start_iter = begin(curve.mass_fraction_constraints);
+    const auto end_iter = end(curve.mass_fraction_constraints);
+    const auto pos = std::find_if( start_iter, end_iter, [&]( const RelEffCurveInput::MassFractionConstraint &mfc ){
+      return mfc.nuclide == nuc;
+    } );
+    return (pos != end_iter) ? &(*pos) : nullptr;
+  };
+
+
+  const size_t num_activity_param_index = fit_parameters_index_for_source( numerator, numerator_rel_eff_index );
+  const size_t den_activity_param_index = fit_parameters_index_for_source( denominator, denominator_rel_eff_index );
+
+
+  // Check parameter indices are valid
+  if( (num_activity_param_index >= m_final_parameters.size())
+     || (den_activity_param_index >= m_final_parameters.size())
+     || (num_activity_param_index >= m_phys_units_cov.size())
+     || (den_activity_param_index >= m_phys_units_cov.size())
+     || ((num_activity_param_index < m_phys_units_cov.size()) && (den_activity_param_index >= m_phys_units_cov[num_activity_param_index].size()))
+     || ((den_activity_param_index < m_phys_units_cov.size()) && (num_activity_param_index >= m_phys_units_cov[den_activity_param_index].size()))
+     || (num_activity_param_index >= m_parameter_scale_factors.size())
+     || (den_activity_param_index >= m_parameter_scale_factors.size())
+     )
+  {
+    throw std::logic_error( "activity_ratio_uncertainty: parameter index out of bounds" );
+  }
+
+  // Get the parameter values
+  const double num_activity = rel_activity( numerator, numerator_rel_eff_index );
+  const double den_activity = rel_activity( denominator, denominator_rel_eff_index );
+
+  #ifndef NDEBUG
+  {// Begin make sure we are handling `m_parameter_scale_factors` correctly
+    const RelEffCurveInput::MassFractionConstraint *numerator_mfc = mass_frac_constraint( numerator, num_rel_eff_curve );
+    const RelEffCurveInput::MassFractionConstraint *denominator_mfc = mass_frac_constraint( denominator, denom_rel_eff_curve );
+
+    if( !numerator_mfc )
+    {
+      const double num_scale_factor = m_parameter_scale_factors[num_activity_param_index];
+      const double num_activity_other_calc = m_final_parameters[num_activity_param_index] * num_scale_factor;
+      const double num_actual_rel_act = m_rel_activities[numerator_rel_eff_index][nuclide_index(numerator, numerator_rel_eff_index)].rel_activity;
+      assert( ((std::max)(num_activity_other_calc, num_actual_rel_act) < 1.0E-6)
+              || (fabs(num_activity_other_calc - num_actual_rel_act) < 1e-6*(std::max)(num_activity_other_calc, num_actual_rel_act)) );
+      assert( ((std::max)(num_activity_other_calc, num_activity) < 1.0E-6)
+              || (fabs(num_activity_other_calc - num_activity) < 1e-6*(std::max)(num_activity_other_calc, num_activity)) );
+    }
+
+    if( !denominator_mfc )
+    {
+      const double den_scale_factor = m_parameter_scale_factors[den_activity_param_index];
+      const double den_activity_other_calc = m_final_parameters[den_activity_param_index] * den_scale_factor;
+      const double den_actual_rel_act = m_rel_activities[denominator_rel_eff_index][nuclide_index(denominator, denominator_rel_eff_index)].rel_activity;
+      assert( ((std::max)(den_activity_other_calc, den_actual_rel_act) < 1.0E-6)
+              || (fabs(den_activity_other_calc - den_actual_rel_act) < 1e-6*(std::max)(den_activity_other_calc, den_actual_rel_act)) );
+      assert( ((std::max)(den_activity, den_actual_rel_act) < 1.0E-6)
+              || (fabs(den_activity - den_actual_rel_act) < 1e-6*(std::max)(den_activity, den_actual_rel_act)) );
+    }
+  }// End make sure we are handling `m_parameter_scale_factors` correctly
+  #endif
+  
+  // Check denominator is not zero
+  if( fabs(den_activity) < std::numeric_limits<double>::epsilon() )
+    throw std::logic_error( "activity_ratio_uncertainty: denominator activity is zero" );
+  
+  // Get covariance elements
+  const double var_num = m_phys_units_cov[num_activity_param_index][num_activity_param_index];
+  const double var_den = m_phys_units_cov[den_activity_param_index][den_activity_param_index];
+  const double cov_num_den = m_phys_units_cov[num_activity_param_index][den_activity_param_index];
+
+  // Check that variances are non-negative
+  if( var_num < 0.0 || var_den < 0.0 )
+    throw std::logic_error( "activity_ratio_uncertainty: negative variance in covariance matrix" );
+  
+  //const double ratio_variance = (var_num - 2.0 * num_activity * cov_num_den / den_activity
+  //                              + num_activity * num_activity * var_den / (den_activity * den_activity))
+  //                              / (den_activity * den_activity);
+
+  //const double ratio_variance = (var_num
+  //                                + ((num_activity*num_activity*var_den)/(den_activity*den_activity))
+  //                                - ((2.0*num_activity*cov_num_den)/den_activity))
+  //                              / (den_activity*den_activity);
+
+  const double ratio_2 = std::pow( num_activity / den_activity, 2.0 );
+  const double uncert_frac_2_num = (var_num/(num_activity*num_activity));
+  const double uncert_frac_2_den = (var_den/(den_activity*den_activity));
+  const double corr_term_2 = (2.0*cov_num_den)/(num_activity*den_activity);
+
+  const double ratio_variance = ratio_2 * (uncert_frac_2_num + uncert_frac_2_den - corr_term_2);
+
+  // Check for negative variance (numerical issues)
+  if( ratio_variance < 0.0 )
+  {
+    // This could happen for a few reasons
+    //  - Numerical precision issues - we are out of luck anyway
+    //  - the Covariance matrix is calculated incorrectly; like if there is some spurious correlation - again out of luck.
+    //  - Small denominator; the square or cube, or whatever of these valuse amplifies contributions of
+    //    correlation too much.  In this case we can calc the uncertainty of the inverse ratio, and then convert
+    //    this to what we want - but this is a bit sketch, and probably means the ratio in nearly meaningless anyway
+    //    maybe.
+    if( fabs(den_activity) < fabs(num_activity) )
+    {
+      const double inv_ratio_2 = std::pow( den_activity / num_activity, 2.0 );
+      const double cov_den_num = m_phys_units_cov[den_activity_param_index][num_activity_param_index];
+      const double inv_corr_term_2 = (2.0*cov_den_num)/(num_activity*den_activity);
+      const double inv_ratio_variance = inv_ratio_2 * (uncert_frac_2_den + uncert_frac_2_num - inv_corr_term_2);
+      if( inv_ratio_variance > 0.0 )
+      {
+        const double inv_ratio_uncert = sqrt( inv_ratio_variance );
+        const double inv_ratio_val = den_activity / num_activity;
+        const double orig_ratio_val = num_activity / den_activity;
+        const double inv_inv_uncert = orig_ratio_val * (inv_ratio_uncert / inv_ratio_val);
+
+        return inv_inv_uncert;
+      }//if( inv_ratio_variance > 0.0 )
+    }//if( den_activity < num_activity )
+
+    return 0.0;
+  }//if( ratio_variance < 0.0 )
+
+  return std::sqrt( ratio_variance );
+  */
+}//double activity_ratio_uncertainty(...)
+
+
+double RelActAutoSolution::rel_activity( const SrcVariant &src, const size_t rel_eff_index ) const
 {
   assert( m_rel_activities.size() == m_options.rel_eff_curves.size() );
   
@@ -9553,15 +13290,12 @@ double RelActAutoSolution::rel_activity( const NuclideRelAct &nucinfo, const siz
   if( rel_eff_index >= m_rel_activities.size() )
     throw std::logic_error( "rel_activity: invalid rel eff index" );
 
-  const size_t nuc_index = nuclide_index( nucinfo, rel_eff_index );
   const vector<NuclideRelAct> &nuclides = m_rel_activities[rel_eff_index];
     
   // If Pu242, we will use the corrected mass ratio to Pu239 to get activity relative
   //  to Pu239, and return the multiple of this.
   //  The other Pu isotopes dont need a correction, I dont think
-  const SandiaDecay::Nuclide * const nuc = nucinfo.nuclide;
-  const bool is_pu = (nuc && ((nuc->atomicNumber == 94)
-                        || ((nuc->atomicNumber == 95) && (nuc->massNumber == 241))));
+  const SandiaDecay::Nuclide * const nuc = nuclide(src);
   if( nuc && (nuc->atomicNumber == 94) && (nuc->massNumber == 242)
      && (m_corrected_pu.size() > rel_eff_index) && m_corrected_pu[rel_eff_index] )
   {
@@ -9575,18 +13309,73 @@ double RelActAutoSolution::rel_activity( const NuclideRelAct &nucinfo, const siz
     const double corr_rel_pu242_act = pu242->activityPerGram() * m_corrected_pu[rel_eff_index]->pu242_mass_frac;
       
     const double raw_pu239_activity = m_rel_activities[rel_eff_index][nuclide_index(pu239,rel_eff_index)].rel_activity;
-    return raw_pu239_activity * corr_rel_pu242_act / corr_rel_pu242_act;
+    return raw_pu239_activity * corr_rel_pu242_act / corr_rel_pu239_act;
   }//if( Pu242, and make correction )
 
+  const size_t nuc_index = nuclide_index( src, rel_eff_index );
   return nuclides[nuc_index].rel_activity;
 }//double rel_activity(...)
-  
 
-double RelActAutoSolution::nuclide_counts( const NuclideRelAct &srcinfo, const size_t rel_eff_index ) const
+
+pair<double,double> RelActAutoSolution::rel_activity_with_uncert( const SrcVariant &src, const size_t rel_eff_index ) const
 {
-  assert( (static_cast<int>(!!srcinfo.nuclide) 
-            + static_cast<int>(!!srcinfo.element) 
-            + static_cast<int>(!!srcinfo.reaction)) == 1 );
+  typedef ceres::Jet<double,RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size> Jet;
+
+  // Check if covariance matrix is available
+  if( m_phys_units_cov.empty() || m_final_parameters.empty() || !m_cost_functor )
+    throw std::logic_error( "rel_activity_with_uncert: covariance matrix or parameters not available" );
+
+  assert( m_rel_eff_forms.size() == m_rel_eff_coefficients.size() );
+  assert( m_rel_eff_covariance.empty() || (m_rel_eff_covariance.size() == m_rel_eff_coefficients.size()) );
+
+  assert( rel_eff_index < m_rel_eff_forms.size() );
+  if( rel_eff_index >= m_rel_eff_forms.size() )
+    throw std::logic_error( "rel_activity_with_uncert: invalid numerator rel eff index" );
+
+  // We compute the full Jacobian and multiply everything out here because reh Rel. Act. could be subject to a
+  //  constraint or something, so we want to fully take that into account.
+  const size_t num_par = m_final_parameters.size();
+  double rel_act = -1.0;
+  vector<double> jacobian( num_par, 0.0 );
+  for( size_t i = 0; i < num_par; i += RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size )
+  {
+    vector<Jet> x_local( begin(m_final_parameters), end(m_final_parameters) );
+    for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size) && (i+j < num_par); ++j )
+      x_local[i+j].v[j] = 1.0;
+
+    const Jet value_jet = m_cost_functor->relative_activity(src, rel_eff_index, x_local);
+
+    for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size) && ((i+j) < num_par); ++j )
+      jacobian[i+j] = value_jet.v[j];
+    rel_act = value_jet.a;
+  }
+
+  double uncertainty_2 = 0.0;
+  for( size_t i = 0; i < num_par; ++i )
+  {
+    assert( m_covariance[i].size() == num_par );
+    if( m_covariance[i].size() != num_par )
+      throw logic_error( "rel_activity_with_uncert: invalid act ratio covariance matrix row." );
+
+    for( size_t j = 0; j < num_par; ++j )
+      uncertainty_2 += jacobian[i]*m_covariance[i][j]*jacobian[j];
+  }
+
+  if( (uncertainty_2 < 0.0) || IsNan(uncertainty_2) || IsInf(uncertainty_2) )
+    throw std::logic_error( "rel_activity_with_uncert: negative variance in covariance matrix" );
+
+  const double uncertainty = std::sqrt( uncertainty_2 );
+
+  return std::make_pair( rel_act, uncertainty );
+}//{double,double} rel_activity_with_uncert( const SrcVariant &src, const size_t rel_eff_index ) const
+
+
+
+double RelActAutoSolution::nuclide_counts( const SrcVariant &src, const size_t rel_eff_index ) const
+{
+  assert( !RelActCalcAuto::is_null(src) );
+  if( RelActCalcAuto::is_null(src) )
+    throw std::logic_error( "RelActAutoSolution::nuclide_counts: invalid source" );
   
   double total_counts = 0.0;
   
@@ -9605,16 +13394,12 @@ double RelActAutoSolution::nuclide_counts( const NuclideRelAct &srcinfo, const s
     for( size_t nuc_index = 0; nuc_index < nuclides.size(); ++nuc_index )
     {
       const NuclideRelAct &nucinfo = nuclides[nuc_index];
-      if( (nucinfo.nuclide != srcinfo.nuclide)
-          || (nucinfo.element != srcinfo.element)
-          || (nucinfo.reaction != srcinfo.reaction) )
-      {
+      if( nucinfo.source != src )
         continue;
-      }
 
       found_src = true;
 
-      const double rel_act = rel_activity( nucinfo.nuclide, rel_eff_index ); //almost same as `nucinfo.rel_activity`, except with Pu corrections
+      const double rel_act = rel_activity( nucinfo.source, rel_eff_index ); //almost same as `nucinfo.rel_activity`, except with Pu corrections
         
       const vector<pair<double,double>> &gamma_energy_br = nucinfo.gamma_energy_br;
 
@@ -9651,8 +13436,13 @@ double RelActAutoSolution::nuclide_counts( const NuclideRelAct &srcinfo, const s
               
               if( (energy >= range.first) && (energy <= range.second) )
               {
-                const double adjvalue = m_final_parameters[m_add_br_uncert_start_index + range_index]/RelActAutoCostFcn::sm_peak_range_uncert_par_offset - 1.0;
-                br_uncert_adj = max(0.0, 1.0 + adjvalue);
+                const size_t par_index = m_add_br_uncert_start_index + range_index;
+                const double par_value = m_final_parameters[par_index];
+                const double num_sigma_from_nominal = (par_value
+                                                        - RelActCalcAutoImp::RelActAutoCostFcn::sm_peak_range_uncert_offset)
+                                                          /RelActCalcAutoImp::RelActAutoCostFcn::sm_peak_range_uncert_par_scale;
+                
+                br_uncert_adj = max(0.0, 1.0 + num_sigma_from_nominal*m_options.additional_br_uncert);
                 
                 break;
               }//
@@ -9671,16 +13461,10 @@ double RelActAutoSolution::nuclide_counts( const NuclideRelAct &srcinfo, const s
       }//for( const NucInputGamma &nucinfo : m_nuclides )
 
     if( !found_src )
-      throw runtime_error( "nuclide_counts: nuclide " + srcinfo.name() + " not found in rel eff curve" );
+      throw runtime_error( "nuclide_counts: nuclide " + (is_null(src) ? string("null") : to_name(src)) + " not found in rel eff curve" );
   }//for( const RoiRange &range : m_final_roi_ranges )
   
   return total_counts;
-}//double nuclide_counts(...)
-
-
-double RelActAutoSolution::nuclide_counts( const SrcVariant &src, const size_t rel_eff_index ) const
-{
-  return nuclide_counts( nucinfo(src,rel_eff_index), rel_eff_index );
 }//double nuclide_counts(...)
 
 
@@ -9729,62 +13513,262 @@ double RelActAutoSolution::relative_efficiency( const double energy, const size_
     external_attens.push_back( std::move(ext_shield_mdl) );
   }
 
+  for( const PhysicalModelFitInfo::ShieldInfo &other_curve_shield : phys_model_result->shields_from_other_curves )
+  {
+    RelActCalc::PhysModelShield<double> ext_shield_mdl;
+    ext_shield_mdl.material = other_curve_shield.material;
+    if( other_curve_shield.atomic_number.has_value() )
+      ext_shield_mdl.atomic_number = *other_curve_shield.atomic_number;
+    ext_shield_mdl.areal_density = other_curve_shield.areal_density;
+    external_attens.push_back( std::move(ext_shield_mdl) );
+  }
+
   return RelActCalc::eval_physical_model_eqn( energy, self_atten, external_attens, m_drf.get(), 
                                               phys_model_result->hoerl_b, phys_model_result->hoerl_c );
 }//double relative_efficiency( const double energy, const size_t rel_eff_index ) const;
 
+  
+pair<double,double> RelActAutoSolution::relative_efficiency_with_uncert( const double energy, const size_t rel_eff_index ) const
+{
+  typedef ceres::Jet<double,RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size> Jet;
+  assert( m_rel_eff_forms.size() == m_rel_eff_coefficients.size() );
+  assert( m_rel_eff_covariance.empty() || (m_rel_eff_covariance.size() == m_rel_eff_coefficients.size()) );
+  
+  assert( rel_eff_index < m_rel_eff_forms.size() );
+  if( rel_eff_index >= m_rel_eff_forms.size() )
+    throw std::logic_error( "relative_efficiency: invalid rel eff index" );
+  
+  if( m_covariance.empty() || (m_covariance.size() != m_final_parameters.size()) )
+    throw runtime_error( "relative_efficiency_with_uncert: no valid covariance matrix." );
+  
+  const size_t num_par = m_final_parameters.size();
+  double rel_eff = -1.0;
+  vector<double> jacobian( num_par, 0.0 );
+  for( size_t i = 0; i < num_par; i += RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size )
+  {
+    vector<Jet> x_local( begin(m_final_parameters), end(m_final_parameters) );
+    for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size) && (i+j < num_par); ++j )
+      x_local[i+j].v[j] = 1.0;
+    
+    const Jet rel_eff_jet = m_cost_functor->relative_eff(energy, rel_eff_index, x_local);
+    
+    for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size) && ((i+j) < num_par); ++j )
+      jacobian[i+j] = rel_eff_jet.v[j];
+    rel_eff = rel_eff_jet.a;
+  }
+  
+  double uncertainty = 0.0;
+  for( size_t i = 0; i < num_par; ++i )
+  {
+    assert( m_covariance[i].size() == num_par );
+    
+    if( m_covariance[i].size() != num_par )
+      throw logic_error( "relative_efficiency_with_uncert: invalid Rel. Eff. covariance matrix row." );
+    
+    for( size_t j = 0; j < num_par; ++j )
+      uncertainty += jacobian[i]*m_covariance[i][j]*jacobian[j];
+  }
+  
+  uncertainty = std::sqrt( uncertainty );
+  
+#ifndef NDEBUG
+  // We can double-check this rel eff calc, but more importantly, for non-physical models, we
+  //  can check the uncertainty calculated with auto-differentiation (ie, above), against an
+  //  analytical solution.
+  const double manual_rel_eff = RelActAutoSolution::relative_efficiency( energy, rel_eff_index );
+  const double releff_diff = fabs(manual_rel_eff - rel_eff);
+  assert( (releff_diff < 1.0E-8) || (releff_diff < 1.0E-6*(std::max)(manual_rel_eff, rel_eff)) );
+  
+  if( m_rel_eff_forms[rel_eff_index] != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+  {
+    const RelActCalc::RelEffEqnForm eqn_form = m_rel_eff_forms[rel_eff_index];
+    const vector<double> &coeffs = m_rel_eff_coefficients[rel_eff_index];
+    assert( !m_rel_eff_covariance.empty() );
+    assert( m_rel_eff_covariance.size() == m_rel_eff_coefficients.size() );
+    if( rel_eff_index >= m_rel_eff_covariance.size() )
+      throw runtime_error( "relative_efficiency_with_uncert: no valid Rel. Eff. covariance matrix." );
+    const vector<vector<double>> &cov = m_rel_eff_covariance[rel_eff_index];
+    assert( cov.empty() || (cov.size() == coeffs.size()) );
+    if( cov.size() != coeffs.size() )
+      throw logic_error( "relative_efficiency_with_uncert: invalid Rel. Eff. covariance matrix." );
+    
+    const double manual_uncert = RelActCalc::eval_eqn_uncertainty( energy, eqn_form, coeffs, cov );
+    const double diff = fabs(manual_uncert - uncertainty);
+    assert( (diff < 1.0E-8) || (diff < 1.0E-6*(std::max)(manual_uncert, uncertainty)) );
+  }//if( eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+#endif //NDEBUG
+  
+  if( IsNan(rel_eff) || IsInf(rel_eff) )
+    throw runtime_error( "relative_efficiency_with_uncert: invalid rel eff value." );
+  
+  if( IsNan(uncertainty) || IsInf(uncertainty) )
+    throw runtime_error( "relative_efficiency_with_uncert: invalid uncertainty." );
+  
+  return {rel_eff, uncertainty};
+}//pair<double,double> relative_efficiency_with_uncert( const double energy, const size_t rel_eff_index ) const
+
+  
+  
 size_t RelActAutoSolution::nuclide_index( const SrcVariant &src, const size_t rel_eff_index ) const
 {
-  return nuclide_index( nucinfo(src, rel_eff_index), rel_eff_index );
-}
-
-size_t RelActAutoSolution::nuclide_index( const NuclideRelAct &nucinfo, const size_t rel_eff_index ) const
-{
   assert( m_rel_activities.size() == m_options.rel_eff_curves.size() );
-  assert( static_cast<int>(!!nucinfo.nuclide)
-          + static_cast<int>(!!nucinfo.element)
-          + static_cast<int>(!!nucinfo.reaction) == 1 );
+  assert( !RelActCalcAuto::is_null(src) );
+  if( RelActCalcAuto::is_null(src) )
+    throw std::logic_error( "RelActAutoSolution::nuclide_index: invalid source" );
+  
   assert( rel_eff_index < m_rel_activities.size() );
   if( rel_eff_index >= m_rel_activities.size() )
     throw std::logic_error( "nuclide_index: invalid rel eff index" );
   
   for( size_t i = 0; i < m_rel_activities[rel_eff_index].size(); ++i )
   {
-    if( (nucinfo.nuclide == m_rel_activities[rel_eff_index][i].nuclide )
-        && (nucinfo.element == m_rel_activities[rel_eff_index][i].element)
-        && (nucinfo.reaction == m_rel_activities[rel_eff_index][i].reaction) )
+    if( src == m_rel_activities[rel_eff_index][i].source )
     {
       return i;
     }
   }//for( size_t i = 0; i < m_rel_activities[rel_eff_index].size(); ++i )
   
   assert( 0 );
-  throw runtime_error( "RelActAutoSolution: " + nucinfo.name() + " is an invalid nuclide." );
+  throw runtime_error( "RelActAutoSolution: " + to_name(src) + " is an invalid nuclide." );
 }//nuclide_index(...)
 
 
 string RelActAutoSolution::rel_eff_eqn_js_function( const size_t rel_eff_index ) const
 {
+  assert( m_cost_functor );
   assert( m_rel_activities.size() == m_rel_eff_forms.size() );
   assert( m_rel_eff_coefficients.size() == m_rel_eff_forms.size() );
   
   assert( rel_eff_index < m_rel_eff_forms.size() );
   if( rel_eff_index >= m_rel_eff_forms.size() )
     throw std::logic_error( "rel_eff_eqn_js_function: invalid rel eff index" );
-  
+
+  if( !m_cost_functor )
+    throw std::logic_error( "rel_eff_eqn_js_function: invalid cost functor pointer" );
+
   const RelActCalc::RelEffEqnForm eqn_form = m_rel_eff_forms[rel_eff_index];
   const vector<double> &coeffs = m_rel_eff_coefficients[rel_eff_index];
   
   if( eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
     return RelActCalc::rel_eff_eqn_js_function( eqn_form, coeffs );
-  
-  const RelActAutoCostFcn::PhysModelRelEqnDef input = RelActAutoCostFcn::make_phys_eqn_input(
-                            m_options.rel_eff_curves[rel_eff_index], m_drf, coeffs, 0 );
-  
-    
+
+  const RelActCalcAutoImp::RelActAutoCostFcn::PhysModelRelEqnDef input
+                                    = m_cost_functor->make_phys_eqn_input( rel_eff_index, m_final_parameters );
+
   return RelActCalc::physical_model_rel_eff_eqn_js_function( input.self_atten,
                             input.external_attens, input.det.get(), input.hoerl_b, input.hoerl_c );
 }//string rel_eff_eqn_js_function() const
+  
+  
+string RelActAutoSolution::rel_eff_eqn_js_uncert_fcn( const size_t rel_eff_index ) const
+{ 
+  if( m_final_roi_ranges.empty() )
+    return "null";
+  
+  vector<RelActCalcAuto::RoiRange> rois = m_final_roi_ranges;
+  
+  std::sort( begin(rois), end(rois), []( const RelActCalcAuto::RoiRange &lhs, const RelActCalcAuto::RoiRange &rhs ){
+    return lhs.lower_energy < rhs.lower_energy;
+  } );
+
+  vector<PeakDef> fit_peaks = m_fit_peaks;
+  std::sort( begin(fit_peaks), end(fit_peaks), []( const PeakDef &lhs, const PeakDef &rhs ){
+    return lhs.mean() < rhs.mean();
+  } );
+  
+  double lower_energy = std::min( rois.front().lower_energy, fit_peaks.empty() ? 3000.0 : fit_peaks.front().mean() );
+  double upper_energy = std::max( rois.back().upper_energy, fit_peaks.empty() ? 3000.0 : fit_peaks.back().mean() );
+  
+  if( lower_energy > 100 )
+    lower_energy -=15;
+  else if( lower_energy > 10 )
+    lower_energy -= 5;
+  else if( lower_energy > 1 )
+    lower_energy -= 1;
+
+  vector<double> energies;
+  double current_energy = lower_energy;
+  for( const PeakDef &peak : m_fit_peaks )
+  {
+    upper_energy = std::max( upper_energy, peak.mean() );
+
+    double min_dx = 1.0;
+    if( current_energy < 130 )
+      min_dx = 1.0;
+    else if( current_energy < 300 )
+      min_dx = 5.0;
+    else
+      min_dx = 15.0;
+
+    // We'll try to get in at least ~10 points between each peak
+    if( peak.mean() > current_energy )
+      min_dx = std::min( min_dx, 0.1*(peak.mean() - current_energy) );
+    min_dx = std::max( min_dx, 1.0 ); //but less than a keV between points is just to small.
+    
+    for( ; current_energy < peak.mean(); current_energy += min_dx )
+      energies.push_back( current_energy );
+    
+    if( !energies.empty() && (energies.back() < peak.mean()) )
+      current_energy = peak.mean();
+  }//for( const PeakDef &peak : m_fit_peaks )
+  
+  for( ; current_energy < upper_energy; current_energy += 15 )
+    energies.push_back( current_energy );
+  
+  size_t num_points = 0;
+  string fcn = "function(x){\n"
+  "  const points = [";
+  bool is_first_point = true;
+  
+  //cout << "RelEff: [";
+  for( double x : energies )
+  {
+    try
+    {
+      const std::pair<double,double> rel_eff_uncert = relative_efficiency_with_uncert( x, rel_eff_index );
+      //const double y = rel_eff_uncert.first;
+      const double unc = rel_eff_uncert.second;
+      //cout << "{" << rel_eff_uncert.first << ", " << unc << "}, ";
+
+      //assert( (y >= 0.0) && !IsNan(y) && !IsInf(y) ); //Can happen when we are out of bounds of the physical model
+      if( isnan(unc) || isinf(unc) )
+        continue;
+      
+      fcn += is_first_point ? "" : ",";
+      fcn += "[" + SpecUtils::printCompact(x, 4) + "," + SpecUtils::printCompact(unc, 4) + "]";
+      
+      num_points += 1;
+      is_first_point = false;
+    }catch( std::exception &e )
+    {
+      // This can happen when we are out of bounds of the physical model
+    }
+  }//for( double x : energies )
+  
+  //cout << "]" << endl;
+  
+  if( num_points < 2 )
+    return "null";
+  
+  fcn += "];\n"
+  "  if( x <= points[0][0] )\n"
+  "    return points[0][1];\n"
+  "  if( x >= points[points.length - 1][0] )\n"
+  "    return points[points.length - 1][1];\n"
+  "  for (let i = 0; i < points.length - 1; i++) {\n"
+  "    const [x1, y1] = points[i];\n"
+  "    const [x2, y2] = points[i + 1];\n"
+  "    if( x >= x1 && x <= x2) {\n"
+  "      const t = (x - x1) / (x2 - x1);\n"
+  "      return y1 + t * (y2 - y1);\n"
+  "    }\n"
+  "  }\n"
+  "console.assert(0,'Shouldnt get here in interpolating');\n"
+  "return points[points.length - 1][1];"
+  "}";
+  
+  return fcn;
+}//string RelActAutoSolution::rel_eff_eqn_js_uncert_fcn(i)
   
   
 std::shared_ptr<SpecUtils::EnergyCalibration> RelActAutoSolution::get_adjusted_energy_cal() const
@@ -9887,6 +13871,269 @@ std::shared_ptr<SpecUtils::EnergyCalibration> RelActAutoSolution::get_adjusted_e
 }//std::shared_ptr<SpecUtils::EnergyCalibration> get_adjusted_energy_cal() const
   
   
+std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
+  RelActAutoSolution::fit_free_peak_amplitudes( const RelActCalcAuto::Options &options,
+                                                const RelActCalcAutoImp::RelActAutoCostFcn *cost_functor,
+                                                const std::vector<double> &parameters,
+                                                const RelActCalcAuto::RelActAutoSolution &solution )
+{
+  vector<vector<PeakDef>> refit_peaks( options.rel_eff_curves.size() );
+  vector<vector<RelActCalcAuto::RelActAutoSolution::ObsEff>> obs_eff_for_each_curve( options.rel_eff_curves.size() );
+
+  const size_t num_skew = PeakDef::num_skew_parameters(options.skew_type);
+
+  //Note: we are working in "true" energies
+  const double cluster_num_sigma = 1.5;
+  const vector<pair<double,double>> clustered_ranges = cost_functor->cluster_photopeaks( cluster_num_sigma, parameters );
+  
+  vector<double> range_scales( clustered_ranges.size(), 1.0 );
+  
+  for( const RelActCalcAutoImp::RoiRangeChannels &roi : cost_functor->m_energy_ranges )
+  {
+    switch( roi.continuum_type )
+    {
+      case PeakContinuum::External:
+        //TODO: handle this case - if we can even have this case???
+        continue;
+        
+      case PeakContinuum::NoOffset:   case PeakContinuum::Constant:     case PeakContinuum::Linear:
+      case PeakContinuum::Quadratic:  case PeakContinuum::Cubic:        case PeakContinuum::FlatStep:
+      case PeakContinuum::LinearStep: case PeakContinuum::BiLinearStep:
+        break;
+    }//switch( roi.continuum_type )
+    
+    const pair<size_t,size_t> channel_range
+    = roi.channel_range( roi.lower_energy, roi.upper_energy, roi.num_channels, solution.m_spectrum->energy_calibration() );
+    
+    shared_ptr<const PeakContinuum> continuum;
+    
+    // Find the PeakContinuum that cooresponds to `roi`
+    double nearest_dist = 1000;
+    for( size_t rel_eff_index = 0; rel_eff_index < solution.m_fit_peaks_for_each_curve.size(); ++rel_eff_index )
+    {
+      const vector<PeakDef> &peaks = solution.m_fit_peaks_for_each_curve[rel_eff_index];
+      
+      for( size_t peak_index = 0; peak_index < peaks.size(); ++peak_index )
+      {
+        const PeakDef &p = peaks[peak_index];
+        assert( p.hasSourceGammaAssigned() );
+        if( !p.hasSourceGammaAssigned() || (p.continuum() == continuum) )
+          continue;
+        const double lower_diff = fabs(roi.lower_energy - p.continuum()->lowerEnergy());
+        const double upper_diff = fabs(roi.upper_energy - p.continuum()->upperEnergy());
+        const double diff = lower_diff + upper_diff;
+        if( (diff < nearest_dist) /*&& (diff < 1.0)*/ )
+        {
+          assert( (diff > 1.0) || (nearest_dist > 1.0) );
+          nearest_dist = diff;
+          continuum = p.continuum();
+        }
+      }//for( size_t peak_index = 0; peak_index < peaks.size(); ++peak_index )
+    }//for( size_t rel_eff_index = 0; rel_eff_index < solution.m_fit_peaks_for_each_curve.size(); ++rel_eff_index )
+    
+    assert( nearest_dist < 1.1 );
+    if( !continuum || (nearest_dist > 10.0) )
+      continue;
+    
+    const double ref_energy = continuum->referenceEnergy();
+
+    // We will use the skew paramaters of the largest amplitude peak in the ROI
+    double max_peak_amp = -999.9;
+    vector<double> peak_skews( num_skew, 0.0 );
+
+    vector<double> effective_means, effective_sigmas, effective_amps;
+    vector<pair<double,double>> clusters;
+    vector<vector<pair<size_t,size_t>>> peak_indices; //index into solution.m_fit_peaks_for_each_curve, via `peak_indices[]`
+    for( size_t range_index = 0; range_index < clustered_ranges.size(); ++range_index )
+    {
+      const pair<double,double> &range = clustered_ranges[range_index];
+      
+      //If the clustered range is in the ROI at all, we will use it.
+      //  TODO: peaks with means outside the ROI will contribute to the ROI, which we should fix up...
+      if( ((range.first >= roi.lower_energy) && (range.first <= roi.upper_energy))
+         || ((range.second >= roi.lower_energy) && (range.second <= roi.upper_energy))
+         || ((range.first < roi.lower_energy) && (range.second > roi.upper_energy)) )
+      {
+        //cout << "Cluster: [" << range.first << "," << range.second << "], in ROI: [" << roi.lower_energy << ", " << roi.upper_energy << "]" << endl;
+        size_t num_peaks_in_range = 0;
+        double effective_mean = 0.0;
+        double sum_weights = 0.0;
+        vector<pair<size_t,size_t>> range_peak_indices;
+        vector<double> means, sigmas, amps;
+        for( size_t rel_eff_index = 0; rel_eff_index < solution.m_fit_peaks_for_each_curve.size(); ++rel_eff_index )
+        {
+          const vector<PeakDef> &peaks = solution.m_fit_peaks_for_each_curve[rel_eff_index]; //Note: do not include free-floating peaks.
+          
+          for( size_t peak_index = 0; peak_index < peaks.size(); ++peak_index )
+          {
+            const PeakDef &p = peaks[peak_index];
+            assert( p.hasSourceGammaAssigned() );
+            if( !p.hasSourceGammaAssigned() || (p.continuum() != continuum) )
+              continue;
+
+            if( p.amplitude() <= 0.01 )
+              continue;
+
+            const float energy = p.gammaParticleEnergy();
+            if( (energy < range.first) || (energy > range.second) )
+              continue;
+
+            if( p.amplitude() > max_peak_amp )
+            {
+              max_peak_amp = p.amplitude();
+              for( int skew_index = 0; skew_index < static_cast<int>(num_skew); ++skew_index )
+              {
+                const PeakDef::CoefficientType par = static_cast<PeakDef::CoefficientType>(
+                                            static_cast<int>(PeakDef::CoefficientType::SkewPar0) + skew_index );
+                peak_skews[skew_index] = p.coefficient( par );
+              }
+            }//if( p.amplitude() > max_counts )
+
+            num_peaks_in_range += 1;
+            const double w = p.amplitude();
+            sum_weights += w;
+            effective_mean += w*energy;
+            means.push_back( energy );
+            sigmas.push_back( p.sigma() );
+            amps.push_back( w );
+            range_peak_indices.emplace_back( rel_eff_index, peak_index );
+          }//for( const PeakDef &p : solution.m_fit_peaks_in_spectrums_cal )
+        }//for( size_t rel_eff_index = 0; rel_eff_index < solution.m_fit_peaks_for_each_curve.size(); ++rel_eff_index )
+        
+        effective_mean /= sum_weights;
+        double effective_sigma = 0.0;
+        for( size_t i = 0; i < means.size(); ++i )
+          effective_sigma += amps[i]*(sigmas[i]*sigmas[i] + std::pow(means[i] - effective_mean,2.0));
+        effective_sigma = sqrt( effective_sigma / sum_weights);
+        
+        assert( num_peaks_in_range > 0 );
+        if( !num_peaks_in_range )
+          continue;
+        
+        effective_means.push_back( effective_mean );
+        effective_sigmas.push_back( effective_sigma );
+        effective_amps.push_back( sum_weights );
+        peak_indices.push_back( range_peak_indices );
+        clusters.push_back( range );
+      }//if( cluseter in in ROI )
+    }//for( pair<double,double> &range : clustered_ranges )
+    
+    //assert( ref_energy > 0.0 );
+    if( ref_energy < 0.0 )
+      continue;
+    
+    const int num_polynomial_terms = static_cast<int>( PeakContinuum::num_parameters( roi.continuum_type ) );
+    const bool is_step_continuum = PeakContinuum::is_step_continuum( roi.continuum_type );
+    
+    vector<PeakDef> fixed_amp_peaks;
+    for( const RelActCalcAuto::FloatingPeakResult &floater : solution.m_floating_peaks )
+    {
+      if( (floater.energy >= roi.lower_energy) && (floater.energy <= roi.upper_energy) )
+        fixed_amp_peaks.emplace_back( floater.energy, floater.fwhm/2.35482, floater.amplitude );
+    }//for( const FloatingPeakResult &floater : solution.m_floating_peaks )
+    
+    double * const peak_counts = nullptr;
+    const double * const skew_parameters = peak_skews.empty() ? nullptr : peak_skews.data();
+    vector<double> fit_amps, fit_continuum_coefs, fit_amp_uncert, fit_continuum_uncerts;
+    assert( cost_functor->m_energy_cal && cost_functor->m_energy_cal->channel_energies() );
+    
+    if( !solution.m_spectrum )
+      throw runtime_error( "Result spectrum not avaiable ?!?" );
+    
+    const shared_ptr<const SpecUtils::EnergyCalibration> energy_cal = solution.m_spectrum->energy_calibration();
+    if( !energy_cal || !energy_cal->valid() )
+      throw runtime_error( "Result energy cal not avaiable ?!?" );
+    
+    shared_ptr<const vector<float>> spectrum = solution.m_spectrum->gamma_counts();
+    if( !spectrum
+       || (solution.m_spectrum->num_gamma_channels() != energy_cal->num_channels()) )
+      throw runtime_error( "Spectrum energy cal num channel mismatch." );
+    
+    const shared_ptr<const vector<float>> channel_energies_ptr = energy_cal->channel_energies();
+    
+    if( !channel_energies_ptr
+       || (channel_range.first >= channel_energies_ptr->size())
+       || ((channel_range.second+1) >= channel_energies_ptr->size()) )
+    {
+      throw runtime_error( "Invalid energy cal." );
+    }
+
+    const float * const channel_counts = &((*spectrum)[channel_range.first]);
+    const float * const channel_energies = &((*channel_energies_ptr)[channel_range.first]);
+    PeakFit::fit_amp_and_offset_imp( channel_energies, channel_counts, nullptr, roi.num_channels,
+                                    num_polynomial_terms, is_step_continuum, ref_energy, effective_means,
+                                    effective_sigmas, fixed_amp_peaks, options.skew_type, skew_parameters,
+                                    fit_amps, fit_continuum_coefs, fit_amp_uncert, fit_continuum_uncerts, peak_counts );
+    
+    assert( fit_amps.size() == effective_amps.size() );
+    auto new_continuum = make_shared<PeakContinuum>( *continuum );
+    new_continuum->setParameters( ref_energy, fit_continuum_coefs, fit_continuum_uncerts );
+    
+    double total_roi_signal_counts = 0.0;
+    for( size_t i = 0; i < fit_amps.size(); ++i )
+      total_roi_signal_counts += std::max(0.0, fit_amps[i]);
+    
+    for( size_t i = 0; i < fit_amps.size(); ++i )
+    {
+      double scale_factor_for_cluster = fit_amps[i] / effective_amps[i];
+      const double rel_uncert = fit_amp_uncert[i] / fit_amps[i];
+      //cout << "For range [" << clusters[i].first << ", " << clusters[i].second << "], SF=" << scale_factor_for_cluster
+      //<< ", uncert=" << rel_uncert << endl;
+
+      const vector<pair<size_t,size_t>> &range_peak_indices = peak_indices[i];
+      
+      for( size_t rel_eff_index = 0; rel_eff_index < options.rel_eff_curves.size(); rel_eff_index += 1 )
+      {
+        RelActCalcAuto::RelActAutoSolution::ObsEff eff;
+        eff.energy = effective_means[i];
+        eff.orig_solution_eff = cost_functor->relative_eff(eff.energy, rel_eff_index, parameters );
+        eff.observed_efficiency = eff.orig_solution_eff * scale_factor_for_cluster;
+        eff.observed_scale_factor = scale_factor_for_cluster;
+        eff.observed_efficiency_uncert = eff.observed_efficiency * rel_uncert;
+        eff.num_sigma_significance = fit_amps[i] / fit_amp_uncert[i];
+        eff.cluster_lower_energy = clusters[i].first;
+        eff.roi_upper_energy = clusters[i].second;
+        eff.fit_clustered_peak_amplitude = fit_amps[i];
+        eff.fit_clustered_peak_amplitude_uncert = fit_amp_uncert[i];
+        eff.initial_clustered_peak_amplitude = effective_amps[i];
+
+        eff.effective_sigma = effective_sigmas[i];
+        eff.fraction_roi_counts = fit_amps[i] / total_roi_signal_counts;
+        eff.within_roi = (((effective_means[i] - eff.effective_sigma) >= roi.lower_energy)
+                          && ((effective_means[i] + eff.effective_sigma) <= roi.upper_energy));
+
+        //TODO: store peak indices better than `range_peak_indices` (its an artifact of prev code)
+        for( const pair<size_t,size_t> &re_peak_ind : range_peak_indices )
+        {
+          const size_t inner_rel_eff_index = re_peak_ind.first;
+          if( inner_rel_eff_index != rel_eff_index )
+            continue;
+          
+          const size_t peak_index = re_peak_ind.second;
+          
+          PeakDef new_peak = solution.m_fit_peaks_for_each_curve[rel_eff_index][peak_index];
+          new_peak.setAmplitude( new_peak.amplitude() * scale_factor_for_cluster );
+          new_peak.setAmplitudeUncert( rel_uncert * new_peak.amplitude() );
+          new_peak.setContinuum( new_continuum );
+          eff.fit_peaks.push_back( new_peak );
+
+          refit_peaks[rel_eff_index].push_back( std::move(new_peak) );
+        }//for( size_t rel_eff_index = 0; rel_eff_index < solution.m_fit_peaks_in_spectrums_cal_for_each_curve.size(); ++rel_eff_index )
+        
+        // Order `eff.fit_peaks` by largest peak first.
+        std::sort( begin(eff.fit_peaks), end(eff.fit_peaks), []( const PeakDef &lhs, const PeakDef &rhs ){
+          return lhs.amplitude() > rhs.amplitude();
+        } );
+        
+        obs_eff_for_each_curve[rel_eff_index].push_back( std::move(eff) );
+      }//for( size_t rel_eff_index = 0; rel_eff_index < options.rel_eff_curves.size(); rel_eff_index += 1 )
+    }//for( size_t i = 0; i < fit_amps.size(); ++i )
+  }//for( const RoiRangeChannels &roi : cost_functor->m_energy_ranges )
+  
+  return obs_eff_for_each_curve;
+}//fit_free_peak_amplitudes(...)
+ 
+  
   
 RelActAutoSolution solve( const Options options,
                          std::shared_ptr<const SpecUtils::Measurement> foreground,
@@ -9900,7 +14147,7 @@ RelActAutoSolution solve( const Options options,
   const std::vector<FloatingPeak> &extra_peaks = options.floating_peaks;
   
 
-  const RelActAutoSolution orig_sol = RelActAutoCostFcn::solve_ceres(
+  const RelActAutoSolution orig_sol = RelActCalcAutoImp::RelActAutoCostFcn::solve_ceres(
                      options,
                      foreground,
                      background,
@@ -10045,7 +14292,7 @@ RelActAutoSolution solve( const Options options,
     };//add_updated_roi
     
     
-    vector<optional<RelActAutoCostFcn::PhysModelRelEqnDef<double>>> phys_model_inputs( current_sol.m_rel_eff_coefficients.size() );
+    vector<optional<RelActCalcAutoImp::RelActAutoCostFcn::PhysModelRelEqnDef<double>>> phys_model_inputs( current_sol.m_rel_eff_coefficients.size() );
     assert( options.rel_eff_curves.size() == current_sol.m_rel_activities.size() );
 
     
@@ -10067,20 +14314,22 @@ RelActAutoSolution solve( const Options options,
         const vector<double> &rel_eff_coefs = current_sol.m_rel_eff_coefficients[rel_eff_index];
         const RelActCalc::RelEffEqnForm eqn_form = rel_eff.rel_eff_eqn_type;
         
-        optional<RelActAutoCostFcn::PhysModelRelEqnDef<double>> &phys_model_input = phys_model_inputs[rel_eff_index];
+        optional<RelActCalcAutoImp::RelActAutoCostFcn::PhysModelRelEqnDef<double>> &phys_model_input = phys_model_inputs[rel_eff_index];
         if( (eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel) && !phys_model_input.has_value() )
-          *phys_model_input = RelActAutoCostFcn::make_phys_eqn_input( rel_eff, current_sol.m_drf, rel_eff_coefs, 0 );
-        
-        
+          phys_model_input = current_sol.m_cost_functor->make_phys_eqn_input(rel_eff_index, current_sol.m_final_parameters );
+
         for( const NuclideRelAct &rel_act : rel_acts )
         {
-          assert( rel_act.nuclide );
-          if( !rel_act.nuclide )
+          assert( !is_null(rel_act.source) );
+          if( !is_null(rel_act.source) )
             continue;
+
+          const SandiaDecay::Nuclide * const nuclide = RelActCalcAuto::nuclide(rel_act.source);
           
           if( (rel_eff.pu242_correlation_method != RelActCalc::PuCorrMethod::NotApplicable)
-             && (rel_act.nuclide->atomicNumber == 94)
-             && (rel_act.nuclide->massNumber == 242) )
+             && nuclide
+             && (nuclide->atomicNumber == 94)
+             && (nuclide->massNumber == 242) )
           {
             continue;
           }
@@ -10124,7 +14373,7 @@ RelActAutoSolution solve( const Options options,
             const double significance_limit = 3.0;
             const bool significant = (expected_counts > significance_limit*sqrt(data_counts));
             
-            cout << "For " << energy << " keV " << rel_act.nuclide->symbol
+            cout << "For " << energy << " keV " << to_name(rel_act.source)
             << " expect counts=" << expected_counts
             << ", and FWHM=" << fwhm
             << ", with data_counts=" << data_counts
@@ -10237,7 +14486,7 @@ RelActAutoSolution solve( const Options options,
       updated_options.rois = updated_energy_ranges;
       
       const RelActAutoSolution updated_sol
-      = RelActAutoCostFcn::solve_ceres( updated_options, foreground, background, input_drf, all_peaks, cancel_calc );
+      = RelActCalcAutoImp::RelActAutoCostFcn::solve_ceres( updated_options, foreground, background, input_drf, all_peaks, cancel_calc );
       
       switch( updated_sol.m_status )
       {
@@ -10305,14 +14554,10 @@ RelActAutoSolution solve( const Options options,
   
 string NuclideRelAct::name() const
 {
-  if( nuclide )
-    return nuclide->symbol;
-  if( element )
-    return element->symbol;
-  if( reaction )
-    return reaction->name();
-  assert( 0 );
-  return "";
+  assert( !is_null(source) );
+  if( is_null(source) )
+    return "";
+  return to_name(source);
 }//NuclideRelAct::name()
   
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -10338,8 +14583,8 @@ void RoiRange::equalEnough( const RoiRange &lhs, const RoiRange &rhs )
 
 void NucInputInfo::equalEnough( const NucInputInfo &lhs, const NucInputInfo &rhs )
 {
-  if( lhs.nuclide != rhs.nuclide )
-    throw std::runtime_error( "Nuclide in lhs and rhs are not the same" );
+  if( lhs.source != rhs.source )
+    throw std::runtime_error( "Source in lhs and rhs are not the same" );
   
   if( fabs(lhs.age - rhs.age) > 1.0e-5 * std::max(lhs.age, rhs.age) )
     throw std::runtime_error( "Age in lhs and rhs are not the same" );
@@ -10451,6 +14696,12 @@ void RelEffCurveInput::equalEnough( const RelEffCurveInput &lhs, const RelEffCur
   
   for( size_t i = 0; i < lhs.act_ratio_constraints.size(); ++i )
     ActRatioConstraint::equalEnough( lhs.act_ratio_constraints[i], rhs.act_ratio_constraints[i] );
+
+  if( lhs.mass_fraction_constraints.size() != rhs.mass_fraction_constraints.size() )
+    throw std::runtime_error( "Number of mass fraction constraints in lhs and rhs are not the same" );
+  
+  for( size_t i = 0; i < lhs.mass_fraction_constraints.size(); ++i )
+    MassFractionConstraint::equalEnough( lhs.mass_fraction_constraints[i], rhs.mass_fraction_constraints[i] );
 }//RelEffCurveInput::equalEnough
 
 

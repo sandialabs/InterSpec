@@ -135,6 +135,11 @@ button.LinkBtn.NonSpecQrCodeBtn.Wt-btn.with-label
   max-width: 85vw;
 }
 
+.simple-dialog.EccDrfDialog .body.NonSpecDialogBody
+{
+  padding-bottom: 8px;
+}
+
 .simple-dialog.EccDrfDialog .HowToUseGrp
 {
   display: flex;
@@ -146,12 +151,15 @@ button.LinkBtn.NonSpecQrCodeBtn.Wt-btn.with-label
 {
   margin-left: 40px;
   margin-top: 10px;
+
 }
 
 .simple-dialog.EccDrfDialog table.FarFieldOptTbl td
 {
   vertical-align: middle;
-  padding-left: 5px
+  padding-left: 5px;
+  padding-bottom: 2px;
+  padding-top: 2px;
 }
 
 .simple-dialog.EccDrfDialog .EccDrfTypeBtn

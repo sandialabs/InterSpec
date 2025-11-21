@@ -26,6 +26,7 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <mutex>
 #include <memory>
 #include <vector>
 
@@ -95,8 +96,15 @@ namespace ShieldingSourceFitCalc
   {
     const SandiaDecay::Nuclide *nuclide = nullptr;
     
-    //activity: in units of PhysicalUnits
+    /** The source activity, in units of PhysicalUnits.
+     
+     Note: for trace-sources, the activity will be retrieved from the shielding definition, as we actually fit for the
+          trace-source type quantity (i.e., total OR per cm3, OR per m2, OR per gram).
+     
+     TODO: right now when fitting from the GUI, we set this activity to the trace source type activity, but when fitting from file, we may have it in total activity - need to rectify this ambigutity, or over-specification that leads to inconsistencies
+     */
     double activity;
+    
     /** If the activity is fit for.
      
      Note: if source type is `ShieldingSourceFitCalc::ModelSourceType::Intrinsic`, then this value will be false,
@@ -257,6 +265,7 @@ namespace ShieldingSourceFitCalc
     void handleAppUrl( std::string query_str, MaterialDB *materialDb );
     
 #if( PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
+    /** Throws exception if the two shieldings are not equal. */
     static void equalEnough( const ShieldingInfo &lhs, const ShieldingInfo &rhs );
 #endif
     

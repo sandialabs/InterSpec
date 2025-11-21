@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- anpd is short for SnapshotBrowser -->
+  <message id="sb-resume-from-prev">Tampaknya Anda telah menyimpan file spektrum ini sebagai bagian dari save-state; apakah Anda ingin melanjutkan pekerjaan sebelumnya?</message>
+  <message id="sb-no-saved-states">Tidak ada status aplikasi tersimpan</message>
+  <message id="sb-tt-del-state">Hapus status</message>
+  <message id="sb-tt-edit-state">Edit nama atau deskripsi status</message>
+  <message id="sb-state-HEAD-label">Status-Tersimpan</message>
+  <message id="sb-state-auto-saved-label">Tersimpan-Otomatis</message>
+  <message id="sb-unsaved-spectra-parent-node-label">Spektrum dibuka, tetapi tidak secara eksplisit disimpan</message>
+  <message id="sb-tt-unsaved-spectra-node">Spektrum yang telah Anda buka di InterSpec, tetapi tidak secara eksplisit disimpan.</message>
+  <message id="sb-unsaved-spectrum-node">{1} (dibuka {2})</message>
+  <message id="sb-tt-unsaved-spectrum-node">Nama file: {1}
+Waktu Pengukuran: {2}
+Waktu Dimuat: {3}
+Jumlah Sampel: {4}
+Total Waktu Nyata: {5}</message>
+  <message id="sb-open-spectrum-as">Buka spektrum yang dipilih sebagai:</message>
+  <message id="sb-load-spectrum-only">Muat Spektrum Saja</message>
+  <message id="sb-load-app-state">Muat Status Aplikasi</message>
+  <message id="sb-err-making-browser-txt">Kesalahan tak terduga membuat browser file spektrum database</message>
+  <message id="sb-err-making-browser-msg">Kesalahan membuat browser file spektrum database: {1}</message>
+  
+  <!-- DbSpecFileItem messages -->
+  <message id="sb-loaded-label">Dimuat: {1}</message>
+  <message id="sb-loaded-modified-label">Dimuat: {1}, telah dimodifikasi</message>
+  <message id="sb-resume-from-btn">Lanjutkan Dari</message>
+  <message id="sb-err-displaying-measurement">Kesalahan menampilkan pengukuran sebelumnya, hal-hal mungkin tidak seperti yang diharapkan</message>
+  
+  <!-- SnapshotBrowser error messages -->
+  <message id="sb-no-active-db-session">Tidak ada sesi database aktif</message>
+  <message id="sb-invalid-state-selected">Status yang dipilih tidak valid</message>
+  <message id="sb-must-enter-name">Anda harus memasukkan nama</message>
+  <message id="sb-err-modifying-state">Kesalahan memodifikasi status - mungkin tidak diubah</message>
+  <message id="sb-couldnt-load-snapshot">Maaf, tidak dapat memuat snapshot yang diminta</message>
+  <message id="sb-no-state-selected">Tidak ada status yang dipilih untuk dihapus</message>
+  <message id="sb-snapshot-removed">Snapshot '{1}' dihapus dari database.</message>
+  <message id="sb-err-removing-snapshot">Kesalahan menghapus snapshot dari database.</message>
+  <message id="sb-err-loading-from-db">Kesalahan memuat dari database</message>
+  <message id="sb-failed-to-load-state">Gagal memuat status</message>
+  <message id="sb-already-opened">Sudah dibuka</message>
+  
+  <!-- Delete confirmation dialog -->
+  <message id="sb-confirm-delete-title">Konfirmasi Hapus</message>
+  <message id="sb-confirm-delete-msg"><div>Apakah Anda yakin ingin menghapus:</div><div style="white-space: nowrap; text-align: center; text-overflow: ellipsis; overflow: hidden; font-weight: bold; max-width:98%;">{1}</div><div>?</div></message>
+  
+  <!-- Constructor error messages -->
+  <message id="sb-err-creating-browser"><b>Kesalahan membuat SnapshotBrowser</b> - maaf :(<br />Kesalahan: {1}</message>
+  <message id="sb-unexpected-issue"><b>Masalah tak terduga membuat SnapshotBrowser</b> - maaf :(</message>
+  
+  <!-- Edit dialog -->
+  <message id="sb-edit-name-label">Nama</message>
+  <message id="sb-edit-name-placeholder">(Nama untuk disimpan)</message>
+  <message id="sb-edit-desc-label">Desk.</message>
+  <message id="sb-edit-desc-placeholder">(Deskripsi opsional)</message>
+</messages>
+

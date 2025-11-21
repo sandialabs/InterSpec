@@ -49,6 +49,7 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/ShowRiidInstrumentsAna.h"
+#include "InterSpec/ShieldingSourceFitPlot.h"
 
 using namespace std;
 
@@ -95,10 +96,8 @@ namespace BatchInfoLog
   }//std::string template_include_dir( const BatchPeak::BatchPeakFitOptions &options )
   
   
-  inja::Environment get_default_inja_env( const BatchPeak::BatchPeakFitOptions &options )
+  inja::Environment get_default_inja_env( const string &tmplt_dir )
   {
-    const string tmplt_dir = BatchInfoLog::template_include_dir( options );
-    
     if( !tmplt_dir.empty() && !SpecUtils::is_directory(tmplt_dir) )
       throw runtime_error( string("Template include directory, '") + tmplt_dir
                           + "', doesnt look to be a valid directory - not performing analysis." );
@@ -185,7 +184,7 @@ namespace BatchInfoLog
     }
     
     return env;
-  }//inja::Environment get_default_inja_env( const BatchPeak::BatchPeakFitOptions &options )
+  }//inja::Environment get_default_inja_env( const string &tmplt_dir )
   
   
   vector<pair<string,string>> load_spectrum_chart_js_and_css()
@@ -218,7 +217,34 @@ namespace BatchInfoLog
     
     return answer;
   }//load_spectrum_chart_js_and_css()
-  
+
+
+  vector<pair<string,string>> load_shielding_fit_plot_js_and_css()
+  {
+    vector<pair<string,string>> answer;
+
+#if( SpecUtils_ENABLE_D3_CHART )
+    //InterSpec::setStaticDataDirectory( SpecUtils::append_path(datadir,"data") );
+    assert( !InterSpec::staticDataDirectory().empty() );
+    const string static_data_dir = InterSpec::staticDataDirectory().empty() ? string("./data")
+    : InterSpec::staticDataDirectory();
+    //Also see: `WServer::instance()->appRoot()`, which isnt valid right now
+    const string app_root = SpecUtils::append_path( static_data_dir, ".." );
+    const string docroot  = SpecUtils::append_path( app_root, "InterSpec_resources" );
+
+    string d3_js = AppUtils::file_contents( SpecUtils::append_path( docroot, "d3.v3.min.js") );
+
+    string plot_js  = AppUtils::file_contents( SpecUtils::append_path( docroot, "ShieldingSourceFitPlot.js" ) );
+    string plot_css = AppUtils::file_contents( SpecUtils::append_path( docroot, "ShieldingSourceFitPlot.css" ) );
+
+    answer.emplace_back( "D3_JS", std::move(d3_js) );
+    answer.emplace_back( "ShieldingSourceFitPlot_JS", std::move(plot_js) );
+    answer.emplace_back( "ShieldingSourceFitPlot_CSS", std::move(plot_css) );
+#endif // SpecUtils_ENABLE_D3_CHART
+
+    return answer;
+  }//load_shielding_fit_plot_js_and_css()
+
   string render_template( string tmplt, 
                          inja::Environment &env,
                          const TemplateRenderType type,
@@ -382,6 +408,15 @@ namespace BatchInfoLog
   {
     try
     {
+      if( args.empty() )
+        return "";
+      if( args[0]->is_null() )
+        return "--";  //This happens if you try to put a inf or NaN as the value - the JSON will just have a null object, since JSON doesnt support these values
+      if( args[0]->is_string() )
+        return args[0]->get<string>();
+      if( !args[0]->is_number() )
+        throw runtime_error( "not a number, like expected." );
+
       const double val = args.at(0)->get<double>();
       const int numDecimal = std::max( 0, args.at(1)->get<int>() );
       
@@ -400,7 +435,7 @@ namespace BatchInfoLog
     }catch( std::exception &e )
     {
       cerr << "Error in 'printFixed': " << e.what() << endl;
-      throw;
+      return "ErrorPrintingValue{" + string(e.what()) + "}";
     }
   };
   
@@ -408,6 +443,15 @@ namespace BatchInfoLog
   {
     try
     {
+      if( args.empty() )
+        return "";
+      if( args[0]->is_null() )
+        return "--";  //This happens if you try to put a inf or NaN as the value - the JSON will just have a null object, since JSON doesnt support these values
+      if( args[0]->is_string() )
+        return args[0]->get<string>();
+      if( !args[0]->is_number() )
+        throw runtime_error( "not a number, like expected." );
+      
       const double val = args.at(0)->get<double>();
       const int numSigFig = args.at(1)->get<int>();
       if( numSigFig <= 1 )
@@ -425,7 +469,7 @@ namespace BatchInfoLog
     }catch( std::exception &e )
     {
       cerr << "Error in 'printCompact': " << e.what() << endl;
-      throw;
+      return "ErrorPrintingValue{" + string(e.what()) + "}";
     }
     return "";
   };
@@ -1195,12 +1239,12 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     {
       // This info is already in the Peaks info, but we'll put in anyways
       auto &energy_obj = data["PeakToModelComparison"];
-      
+
       for( const GammaInteractionCalc::PeakResultPlotInfo &p : *results.peak_comparisons )
       {
         energy_obj["UsedPeaks"].push_back( {} );
         nlohmann::basic_json<> &p_json = energy_obj["UsedPeaks"].back();
-        
+
         char buffer[64] = { '\0' };
         snprintf( buffer, sizeof(buffer), "%.2f", p.energy );
         p_json["Energy"] = string(buffer);
@@ -1209,17 +1253,28 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
         p_json["ObservedOverExpectedUncert"] = SpecUtils::printCompact( p.observedOverExpectedUncert, 6 );
       }
     }//if( results.peak_comparisons )
-    
+
+    // Add ShieldingSourceFitPlot chart data
+    const string plot_json_str = ShieldingSourceFitPlot::jsonForData( results );
+    try
+    {
+      data["ShieldingSourceFitPlotData"] = nlohmann::json::parse( plot_json_str );
+    }catch( std::exception &e )
+    {
+      cerr << "Error parsing ShieldingSourceFitPlot JSON: " << e.what() << endl;
+      data["ShieldingSourceFitPlotData"] = nlohmann::json::object();
+    }
+
   }//void shield_src_fit_results_to_json()
   
   
-  void add_hist_to_json( nlohmann::json &data,
-                       const bool is_background,
+  void add_hist_to_json( nlohmann::json &spec_obj,
+                        const bool is_background,
                        const shared_ptr<const SpecUtils::Measurement> &spec_ptr,
                        const shared_ptr<const SpecMeas> &spec_file,
                        const std::set<int> &sample_numbers,
                        const string &filename,
-                       const BatchPeak::BatchPeakFitResult * const peak_fit )
+                        const deque<std::shared_ptr<const PeakDef>> * const peak_fit )
   {
     if( !spec_ptr )
       return;
@@ -1235,10 +1290,9 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     D3SpectrumExport::D3SpectrumOptions spec_json_options;
     if( peak_fit )
     {
-      const BatchPeak::BatchPeakFitResult &fit_res = *peak_fit;
-      const deque<std::shared_ptr<const PeakDef>> &fore_peaks = fit_res.fit_peaks;
+      const deque<std::shared_ptr<const PeakDef>> &fore_peaks = *peak_fit;
       const vector<shared_ptr<const PeakDef> > inpeaks( begin(fore_peaks), end(fore_peaks) );
-      spec_json_options.peaks_json = PeakDef::peak_json( inpeaks, spec_ptr );
+      spec_json_options.peaks_json = PeakDef::peak_json( inpeaks, spec_ptr, Wt::WColor(), 255 );
     }//if( fit_results.m_peak_fit_results )
     
     //spec_json_options.line_color = "rgb(0,0,0)"; //black
@@ -1268,16 +1322,13 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
       assert( 0 );
     }
     
-    const char * const label = is_background ? "background" : "foreground";
-    auto &spec_obj = data[label];
-    
     spec_obj["LiveTime"] = lt_str;
     spec_obj["RealTime"] = rt_str;
     spec_obj["LiveTime_s"] = lt;
     spec_obj["RealTime_s"] = rt;
     spec_obj["DeadTime"] = PhysicalUnits::printToBestTimeUnits(rt - lt);
     spec_obj["DeadTime_s"] = (rt - lt)/PhysicalUnits::second;
-    spec_obj["DeadTime_percent"] = 100.0*(rt - lt) / rt;
+    spec_obj["DeadTime_percent"] = 100.0*(rt - lt) / rt; //If rt is zero, will create a NaN, and then the JSON will have a `null` for the value
     spec_obj["StartTime"] = SpecUtils::to_extended_iso_string( spec.start_time() );
     spec_obj["StartTime_iso"] = SpecUtils::to_iso_string( spec.start_time() );
     spec_obj["StartTime_vax"] = SpecUtils::to_vax_string( spec.start_time() );
@@ -1458,6 +1509,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
   void add_peak_fit_options_to_json( nlohmann::json &data, const BatchPeak::BatchPeakFitOptions &options )
   {
     auto &options_obj = data["PeakFitOptions"];
+    options_obj["FitAllPeaks"] = options.fit_all_peaks;
     options_obj["RefitEnergyCal"] = options.refit_energy_cal;
     options_obj["UseExemplarEnergyCal"] = options.use_exemplar_energy_cal;
     options_obj["WriteN42WithResults"] = options.write_n42_with_results;
@@ -1467,9 +1519,13 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     options_obj["CreateJsonOutput"] = options.create_json_output;
     options_obj["OverwriteOutputFiles"] = options.overwrite_output_files;
     
-    if( !options.background_subtract_file.empty() )
+    if( !options.background_subtract_file.empty() || options.cached_background_subtract_spec )
     {
-      options_obj["BackgroundSubFile"] = options.background_subtract_file;
+      string back_filename = options.background_subtract_file;
+      if( back_filename.empty() && options.cached_background_subtract_spec )
+        back_filename = options.cached_background_subtract_spec->filename();
+
+      options_obj["BackgroundSubFile"] = back_filename;
       if( !options.background_subtract_samples.empty() )
       {
         options_obj["BackgroundSubSamples"] = vector<int>{ begin(options.background_subtract_samples),
@@ -1478,7 +1534,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
       }
       options_obj["UsedExistingBackgroundPeak"] = options.use_existing_background_peaks;
       options_obj["UseExemplarEnergyCalForBackground"] = options.use_exemplar_energy_cal_for_background;
-    }//if( !options.background_subtract_file.empty() )
+    }//if( !options.background_subtract_file.empty() || options.cached_background_subtract_spec )
     
     options_obj["ReportTemplateIncludeDir"] = options.template_include_dir;
     options_obj["ReportTemplates"] = options.report_templates;
@@ -1499,11 +1555,14 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     if( fit_results.spectrum )
     {
       fit_results.spectrum->set_title( SpecUtils::filename(fit_results.file_path) );
-      add_hist_to_json( data, false, fit_results.spectrum,
+      
+      auto &spec_obj = data["foreground"];
+      
+      add_hist_to_json( spec_obj, true, fit_results.spectrum,
                        fit_results.measurement,
                        fit_results.sample_numbers,
                        SpecUtils::filename(fit_results.file_path),
-                       &fit_results );
+                       &(fit_results.fit_peaks) );
     }//if( fit_results.spectrum )
     
     
@@ -1787,9 +1846,9 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
           peak_json["SourceName"] = p->parentNuclide()->symbol;
           
           const SandiaDecay::Transition *trans = p->nuclearTransition();
-          if( trans->parent )
+          if( trans && trans->parent )
             peak_json["SourceGammaParent"] = trans->parent->symbol;
-          if( trans->child )
+          if( trans && trans->child )
             peak_json["SourceGammaChild"] = trans->child->symbol;
         }else if( p->xrayElement() )
         {
@@ -1844,7 +1903,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     // For peak searches, background subtraction are always a hard channel-by-channel subtraction,
     //  and `fit_results.spectrum` is after the subtraction
     //if( fit_results.background )
-    //  add_hist_to_json( data, true, fit_results.background, ... );
+    //  add_hist_to_json( data["foreground"], true, fit_results.background, ... );
     //options.background_subtract_file;
     
      //std::shared_ptr<const SpecMeas> exemplar;
@@ -1900,6 +1959,10 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
           json_copy["SpectrumChart_JS"] = "/* Removed for brevity - this string will have a value of the contents of the file InterSpec_resource/SpectrumChartD3.js during analysis in InterSpec_batch.  */";
         if( json_copy.count("SpectrumChart_CSS") )
           json_copy["SpectrumChart_CSS"] = "/* Removed for brevity - this string will have a value of the contents of the file InterSpec_resource/SpectrumChartD3.css during analysis in InterSpec_batch. */";
+        if( json_copy.count("ShieldingSourceFitPlot_JS") )
+          json_copy["ShieldingSourceFitPlot_JS"] = "/* Removed for brevity - this string will have a value of the contents of the file InterSpec_resource/ShieldingSourceFitPlot.js during analysis in InterSpec_batch. */";
+        if( json_copy.count("ShieldingSourceFitPlot_CSS") )
+          json_copy["ShieldingSourceFitPlot_CSS"] = "/* Removed for brevity - this string will have a value of the contents of the file InterSpec_resource/ShieldingSourceFitPlot.css during analysis in InterSpec_batch. */";
   #endif // SpecUtils_ENABLE_D3_CHART
         
         output_json << std::setw(4) << json_copy << std::endl;

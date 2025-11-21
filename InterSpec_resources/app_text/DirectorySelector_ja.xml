@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ds- is short for DirectorySelector -->
+  <message id="ds-path-label">パス:</message>
+  <message id="ds-txt-input-placeholder">ディレクトリパスを入力...</message>
+  <message id="ds-native-select-path-button">パス選択</message>
+  <message id="ds-native-no-path-placeholder">(パスが選択されていません)</message>
+</messages>

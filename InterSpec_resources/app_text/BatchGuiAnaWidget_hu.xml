@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- bgw- is short for BatchGuiWidget, strings used by BatchGuiAnaWidget -->
+
+  <!-- Exemplar group -->
+  <message id="bgw-exemplar-grp-title">Példaspektrum</message>
+  <message id="bgw-exemplar-use-current-fore">Jelenlegi előtér használata</message>
+
+  <!-- Background group -->
+  <message id="bgw-back-grp-title">Háttér</message>
+  <message id="bgw-back-use-current">Jelenlegi háttér használata</message>
+  <message id="bgw-back-none">Nincs háttér</message>
+
+  <!-- Peak fitting options -->
+  <message id="bgw-fit-all-peaks">Összes csúcs illesztése</message>
+  <message id="bgw-refit-energy-cal">Energia kalibrálás újraillesztése</message>
+  <message id="bgw-use-exemplar-energy-cal">Példaspektrum energia kalibrálás használata</message>
+  <message id="bgw-write-n42-with-results">N42 írás eredményekkel</message>
+  <message id="bgw-show-nonfit-peaks">Nem illesztett csúcsok megjelenítése</message>
+  <message id="bgw-overwrite-output-files">Kimeneti fájlok felülírása</message>
+  <message id="bgw-create-csv-output">Csúcs CSV</message>
+  <message id="bgw-create-json-output">JSON írás</message>
+  <message id="bgw-concatenate-to-n42">Összefűzött N42 létrehozása</message>
+  <message id="bgw-use-existing-background-peaks">Meglévő háttér csúcsok használata</message>
+  <message id="bgw-use-exemplar-energy-cal-for-background">Példaspektrum energia kal. használata háttérhez</message>
+  
+  <!-- Threshold labels -->
+  <message id="bgw-peak-stat-threshold-label">Csúcs statisztikai küszöb:</message>
+  <message id="bgw-peak-hypothesis-threshold-label">Csúcs hipotézis küszöb:</message>
+  
+  <!-- File convert options options -->
+  <message id="bgw-overwrite-output-cb">Kimenet felülírása</message>
+  <message id="bgw-sum-multirecord-to-single">Többrekordos fájlok összegzése egyetlen rekorddá</message>
+  <message id="bgw-info-will-convert-file-type">A fájlok a kiválasztott típusra lesznek konvertálva.</message>
+  
+  
+  <!-- Reports group -->
+  <message id="bgw-reports-grp-title">Írható jelentések</message>
+  <message id="bgw-reports-write-html">HTML</message>
+  <message id="bgw-reports-write-html-tooltip">HTML jelentés írása az elemzési eredményekről.</message>
+  <message id="bgw-reports-write-csv">Összefoglaló CSV</message>
+  <message id="bgw-reports-write-csv-tooltip">Összefoglaló CSV fájl írása az összes bemeneti fájl elemzési eredményeivel.</message>
+  <message id="bgw-reports-write-custom-per-file">Egyéni fájlonként</message>
+  <message id="bgw-reports-write-custom-per-file-tooltip">Egyéni jelentés sablon feltöltése minden fájlhoz.</message>
+  <message id="bgw-reports-write-custom-summary">Egyéni összefoglaló</message>
+  <message id="bgw-reports-write-custom-summary-tooltip">Egy vagy több sablon fájl az összes bemeneti fájl összefoglalásához.</message>
+
+  <!-- Reasons analysis cant be done -->
+  <message id="bgw-no-ana-peak-fit-no-peaks">Nincsenek csúcsok a példaspektrumban.</message>
+  <message id="bgw-no-ana-peak-fit-need-peaks">Csúcsokat tartalmazó példaspektrum vagy csúcs CSV fájl szükséges.</message>
+  <message id="bgw-no-ana-peak-fit-bad-background">Érvényes háttér szükséges</message>
+  <message id="bgw-no-ana-act-shield-no-drf">Nincs elérhető detektor hatékonyság.</message>
+  <message id="bgw-no-ana-act-shield-no-exemplar">Nincs kiválasztott példaspektrum.</message>
+  <message id="bgw-no-ana-act-shield-no-peaks-in-exemplar">Nincsenek csúcsok a kiválasztott példaspektrumban.</message>
+  <message id="bgw-no-ana-act-shield-no-act-fit-model">Nincs Akt/Árnyékolás illesztési modell a példaspektrumban.</message>
+  <message id="bgw-no-ana-act-shield-invalid-background">Érvénytelen háttér</message>
+  <message id="bgw-no-ana-no-input-files">Nincsenek bemeneti fájlok.</message>
+  <message id="bgw-no-ana-invalid-output-path">Kérjük, válasszon érvényes kimeneti könyvtárat.</message>
+
+
+  <!-- Analysis progress and results -->
+  <message id="bgw-performing-work-title">Munka végrehajtása</message>
+  <message id="bgw-performing-work-msg">Kérjük, várjon, amíg a kötegelt elemzés végrehajtódik...</message>
+  <message id="bgw-error-analysis-title">Hiba a kötegelt elemzés végrehajtásában</message>
+  <message id="bgw-error-analysis-msg">Hiba: {1}</message>
+  <message id="bgw-analysis-summary-title">Kötegelt elemzés összefoglalása</message>
+  <message id="bgw-json-parse-error">
+    <p>Hiba a JSON eredmények feldolgozásában:</p>
+    <code>{1}</code>
+  </message>
+  <message id="bgw-inja-error">
+    <p>Hiba a HTML létrehozásában kivétel miatt:</p>
+    <code>{1}</code>
+    <br />
+    a(z) {2}. sorból, {3}. oszlopból
+  </message>
+  <message id="bgw-misc-error">
+    <p>Nem sikerült létrehozni az eredmény összefoglalót kivétel miatt:</p>
+    <code>{1}</code>
+  </message>
+  <message id="bgw-warning-title">Figyelmeztetés</message>
+ 
+  <!-- Tooltips matching command line help text -->
+  <message id="bgw-fit-all-peaks-tt">Példa fájl csúcsainak illesztése helyett - a spektrum összes csúcsa illesztésre kerül.</message>
+  
+  <message id="bgw-refit-energy-cal-tt">A kezdeti csúcs illesztés után azokat a csúcsokat (és hozzájuk rendelt nuklidokat) használja az energia erősítés beállításához, majd újraílleszti a csúcsokat a frissített energia kalibrálással.
+  Ez a háttér fájlra is vonatkozik, ha aktivitás/árnyékolás illesztést végez.
+  </message>
+  
+  <message id="bgw-use-exemplar-energy-cal-tt">A példaspektrum N42 energia kalibrálás használata a bemeneti előtér fájlokkal.
+Ha az energia kalibrálás újraillesztése igaz, akkor a példaspektrum energia kalibráció lesz használva a kezdeti illesztéshez, majd finomítva és a csúcsok újraíllesztve.
+  </message>
+
+  <message id="bgw-write-n42-with-results-tt">Hozzáadja az illesztett csúcsokat a bemeneti spektrum fájlhoz, majd N42-ként menti. Meg kell adnia az 'output_path'-t, ha ezt a beállítást megadja; valamint nem fogja felülírni a meglévő fájlokat.</message>
+  
+  <message id="bgw-show-nonfit-peaks-tt">Belefoglalja a nem illesztett csúcsokat a kimeneti CSV csúcs eredményekbe; ezek a csúcsok nulla amplitúdóval lesznek beállítva.</message>
+  
+  <message id="bgw-overwrite-output-files-tt">Lehetővé teszi a kimeneti N42, CSV vagy jelentés fájlok felülírását. Alapértelmezetten nem írja felül a fájlokat.</message>
+  
+  <message id="bgw-create-csv-output-tt">Csúcs illesztés CSV kimenet.</message>
+  
+  <message id="bgw-create-json-output-tt">Kiírja a jelentés sablonok létrehozásához használt JSON-t fájlba.</message>
+  
+  <message id="bgw-concatenate-to-n42-tt">Olyan N42 kimeneti fájl létrehozása, amely tartalmazza az összes bemeneti fájl összes csúcsillesztését.</message>
+  
+  <message id="bgw-use-existing-background-peaks-tt">A megadott háttér illesztett csúcsait használja, ahelyett, hogy újraíllesztené a csúcsokat.
+A csúcsoknak InterSpec-ből kell származniuk a spektrum fájlban, és ez a beállítás nem használható kemény háttér kivonással.</message>
+  
+  <message id="bgw-use-exemplar-energy-cal-for-background-tt">A példaspektrum N42 energia kalibrálás használata a háttér fájlhoz.
+Csak akkor alkalmazható, ha N42 fájlt használ példaként.</message>
+  
+  <message id="bgw-peak-stat-threshold-tt">A csúcs illesztés Chi2 javulása, ami szükséges a kontinuum illesztéséhez képest az ROI-hoz.
+Negatív vagy nulla érték azt jelzi, hogy nincs követelmény (és alapértelmezett, mivel állítjuk, hogy a csúcs valószínűleg jelen van a spektrumban a kötegelt elemzéshez), és általános csúcs kereséshez ésszerű értékek ~1 (gyenge csúcs) és ~5 (jelentős csúcs) között vannak.</message>
+  
+  <message id="bgw-peak-hypothesis-threshold-tt">Követelmény arra, hogy az ROI mennyire legyen kompatibilis a Gauss csúcsokkal + kontinuummal.
+Ez a null hipotézis chi2 (csak kontinuum, nincs Gauss) és a teszt hipotézis (kontinuum + Gauss) chi2 aránya.
+Ésszerű értéknek tűnik az 1-től 5-ig terjedő tartomány.
+Nulla vagy negatív érték azt jelenti, hogy nincs követelmény, és nincs 'peak-stat-threshold' követelmény sem.</message>
+  
+  <message id="bgw-reports-write-custom-per-file-tooltip">Egy vagy több spektrum jelentés sablon fájl - minden bemeneti fájlhoz egy jelentés készül minden megadott sablonnal.</message>
+
+  <message id="bgw-reports-write-custom-summary-tooltip">Egy vagy több sablon fájl az összes bemeneti fájl összefoglalásához.</message>
+
+  <!-- Activity/Shielding Analysis specific strings -->
+  <message id="bgw-use-bq">Bq egységek használata</message>
+  <message id="bgw-hard-background-sub">Kemény háttér kivonás</message>
+  
+  <!-- Detector input strings -->
+  <message id="bgw-detector-input-label">Detektor válaszfüggvény</message>
+  <message id="bgw-use-detector-override">Egyéni detektor használata</message>
+  
+  <!-- Distance override strings -->
+  <message id="bgw-override-distance">Távolság felülbírálása</message>
+  <message id="bgw-distance-label">Távolság:</message>
+  
+  <!-- Error and completion messages -->
+  <message id="bgw-no-exemplar-msg">Nincs elérhető példaspektrum. Kérjük, válasszon előtér spektrumot vagy töltsön fel példa fájlt.</message>
+</messages>

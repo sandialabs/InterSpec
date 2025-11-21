@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages nplurals="2" plural="n==1 ? 0 : 1">
+  <!-- esf- is short for ExportSpecFile -->
+  
+  <!-- Window title -->
+  <message id="esf-window-title">Ekspor File Spektrum</message>
+  
+  <!-- Main UI sections -->
+  <message id="esf-file-to-export">File untuk Diekspor</message>
+  <message id="esf-file-format">Format File</message>
+  <message id="esf-samples-to-include">Sampel yang Disertakan</message>
+  
+  <!-- Mobile tab titles -->
+  <message id="esf-file-tab">File</message>
+  <message id="esf-format-tab">Format</message>
+  <message id="esf-options-tab">Opsi</message>
+  
+  <!-- Checkbox labels for foreground/background combination -->
+  <message id="esf-plus-back"> + Lat. Belakang</message>
+  <message id="esf-plus-secondary"> + Sekunder</message>
+  <message id="esf-fore-plus-back-tt">Ekspor spektrum latar depan dan latar belakang dan/atau sekunder bersama-sama ke dalam file yang sama.</message>
+  
+  <!-- Sample selection checkboxes -->
+  <message id="esf-disp-foreground">Latar Depan Ditampilkan</message>
+  <message id="esf-disp-background">Latar Belakang Ditampilkan</message>
+  <message id="esf-disp-secondary">Sekunder Ditampilkan</message>
+  <message id="esf-all-samples">Semua Sampel</message>
+  <message id="esf-custom-samples">Sampel Kustom</message>
+  <message id="esf-custom-samples-tt">Masukkan nomor sampel yang ingin Anda tampilkan di sini. Anda dapat memasukkan rentang nomor sampel serupa dengan '33-39' atau '33 to 39', atau nomor sampel CSV seperti '34,39,84'</message>
+  <message id="esf-filter-detectors">Filter Detektor</message>
+  
+  <!-- Options section -->
+  <message id="esf-options">Opsi</message>
+  <message id="esf-sum-to-single-record">Jumlahkan ke rekaman tunggal</message>
+  <message id="esf-sum-to-single-record-tt">Semua sampel dan/atau detektor yang dipilih akan dijumlahkan bersama menjadi satu spektrum.<br />Perhatian: jika Anda memiliki latar depan dan latar belakang yang dipilih, mereka akan dijumlahkan bersama.</message>
+  
+  <message id="esf-sum-fore-to-single-record">Jumlahkan Lat. Depan ke rekaman tunggal</message>
+  <message id="esf-sum-fore-to-single-record-tt">Ada beberapa nomor sampel, atau beberapa detektor yang terdiri dari latar depan yang ditampilkan; mencentang opsi ini akan menjumlahkan semua ini menjadi satu spektrum dalam file output.</message>
+  
+  <message id="esf-sum-back-to-single-record">Jumlahkan Lat. Belakang ke rekaman tunggal</message>
+  <message id="esf-sum-back-to-single-record-tt">Ada beberapa nomor sampel, atau beberapa detektor yang terdiri dari latar belakang yang ditampilkan; mencentang opsi ini akan menjumlahkan semua ini menjadi satu spektrum dalam file output.</message>
+  
+  <message id="esf-sum-sec-to-single-record">Jumlahkan Sek ke rekaman tunggal</message>
+  
+  <message id="esf-background-subtract">Pengurangan latar belakang</message>
+  <message id="esf-background-subtract-tt">Spektrum output akan menjadi latar depan, dikurangi latar belakang.</message>
+  
+  <message id="esf-sum-det-per-sample">Jumlahkan det. per sampel</message>
+  <message id="esf-sum-det-per-sample-tt">Untuk setiap nomor sampel, jumlahkan semua detektor untuk nomor sampel tersebut bersama-sama.<br />Mis., jika Anda memiliki 8 detektor dalam file spektrum Anda, masing-masing dengan 120 sampel maka hasilnya akan memiliki 120 spektrum, masing-masing merupakan jumlah dari 8 detektor dari sampel masing-masing.</message>
+  
+  <message id="esf-sum-samples-per-det">Jumlahkan sampel per det.</message>
+  <message id="esf-sum-samples-per-det-tt">Untuk setiap detektor, jumlahkan semua nomor sampel bersama-sama.<br />Mis., jika Anda memiliki 8 detektor dalam file spektrum Anda, masing-masing dengan 120 sampel maka hasilnya akan memiliki 8 spektrum, masing-masing merupakan jumlah dari 120 sampel dari detektor masing-masing.</message>
+  
+  <message id="esf-remove-interspec-info">Hapus info InterSpec</message>
+  <message id="esf-remove-interspec-info-tt">Menghapus respons detektor, puncak, dan hasil analisis lain yang mungkin telah Anda tambahkan di InterSpec.</message>
+  
+  <message id="esf-remove-gps">Hapus GPS</message>
+  
+  <!-- Status text -->
+  <message id="esf-not-applicable">Tidak Berlaku</message>
+  <message id="esf-none-available">Tidak Ada yang Tersedia</message>
+  
+  <!-- Buttons -->
+  <message id="esf-export">Ekspor</message>
+  <message id="esf-show-qr-code">Tampilkan kode QR</message>
+  
+  <!-- File info table headers -->
+  <message id="esf-displayed-as">Ditampilkan Sebagai</message>
+  <message id="esf-fore-abbrev">Lat. Depan</message>
+  <message id="esf-back-abbrev">Lat. Belakang</message>
+  <message id="esf-sec-abbrev">Sek</message>
+  
+  <!-- QR Code dialog -->
+  <message id="esf-next-qr-code">Kode QR berikutnya</message>
+  <message id="esf-url-link">Link URL</message>
+  <message id="esf-email-link">Link Email</message>
+  
+  <!-- Error dialogs -->
+  <message id="esf-error-title">Kesalahan</message>
+  <message id="esf-qr-encode-failed">Gagal menampilkan spektrum sebagai kode QR: {1}</message>
+  
+  <!-- Pluralized messages -->
+  <message id="esf-disp-sample">
+    <plural case="0">Sampel&#160;Ditampilkan</plural>
+    <plural case="1">Sampel&#160;Ditampilkan</plural>
+  </message>
+  
+  <!-- Table headers -->
+  <message id="esf-start-time">Waktu Mulai</message>
+  <message id="esf-end-time">Waktu Selesai</message>
+  <message id="esf-first-sample">Sampel Pertama</message>
+  <message id="esf-last-sample">Sampel Terakhir</message>
+  <message id="esf-num-samples">Juml. Sampel</message>
+  <message id="esf-neut-dets">Det. Neutron</message>
+  <message id="esf-gamma-dets">Det. Gamma</message>
+  <message id="esf-num-dets">Juml Det</message>
+  <message id="esf-latitude">Lintang</message>
+  <message id="esf-longitude">Bujur</message>
+  <message id="esf-total-time">Total Waktu</message>
+  <message id="esf-sum-gamma">Juml Gamma</message>
+  <message id="esf-sum-neut">Juml Neutron</message>
+  <message id="esf-manufacturer">Produsen</message>
+  <message id="esf-model">Model</message>
+  <message id="esf-serial">Serial</message>
+</messages>
+

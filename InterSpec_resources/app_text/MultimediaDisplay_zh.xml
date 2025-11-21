@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- smmd- is short for ShowMultiMediaDisplay -->
+  <message id="smmd-prev-btn">上一个</message>
+  <message id="smmd-next-btn">下一个</message>
+  <message id="smmd-auto-show-images-cb">自动显示图像</message>
+  <message id="smmd-tt-auto-show-images">加载包含图像的谱文件时自动显示图像。</message>
+  <message id="smmd-tt-export-image-file">将当前显示的图像导出到文件。</message>
+  <message id="smmd-err-no-content">无多媒体内容可显示</message>
+  <message id="smmd-err-file-is-uri">数据编码为URI='{1}'处的文件</message>
+  <message id="smmd-err-no-multimedia-src">多媒体源不包含任何数据。</message>
+  <message id="smmd-err-encoding-not-supported">不支持多媒体内容数据编码。</message>
+  <message id="smmd-err-not-image">多媒体内容类型不是图像类型，或无法确定。</message>
+  <message id="smmd-image-index">{2}个图像中的第{1}个</message>
+  <message id="smmd-Time">时间</message>
+  <message id="smmd-window-title-single">谱文件中的图像</message>
+  <message id="smmd-window-title-multiple">谱文件中的图像</message>
+</messages>
+

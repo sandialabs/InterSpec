@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- gxsg- is short for GammaXsGui -->
+  <message id="gxsg-material-formula">सामग्री/सूत्र</message>
+  <message id="gxsg-tt-material">
+    आप या तो पूर्व-परिभाषित सामग्री या तत्व का नाम दर्ज कर सकते हैं (फॉर्म टेक्स्ट साफ़ करें
+    और सभी पूर्वपरिभाषित विकल्प देखने के लिए फॉर्म के दाईं ओर तीर पर क्लिक करें), या आप
+    'H0.112 O0.88' जैसा रासायनिक सूत्र दर्ज कर सकते हैं जहां संख्याएं
+    g/cm3 में घनत्व हैं, (या द्रव्यमान अंश और घनत्व फ़ील्ड का उपयोग करें), पूर्ववर्ती तत्व की।
+  </message>
+  <message id="gxsg-total-atten-xs">कुल क्षीणन क्रॉस सेक्शन</message>
+  <message id="gxsg-compton-label">Compton</message>
+  <message id="gxsg-rayleigh-label">Rayleigh</message>
+  <message id="gxsg-photoelec-label">Photoelectric</message>
+  <message id="gxsg-pp-label">Pair production</message>
+  <message id="gxsg-mass-avrg-an">द्रव्यमान औसत परमाणु संख्या</message>
+  <message id="gxsg-opt-atten">क्षीणन (वैकल्पिक):</message>
+  <message id="gxsg-density-label">घनत्व:</message>
+  <message id="gxsg-thickness-label">मोटाई:</message>
+  <message id="gxsg-tt-thickness">क्षीणक की मोटाई।</message>
+  <message id="gxsg-trans-frac-label">पारेषण अंश</message>
+  <message id="gxsg-tt-trans-frac">यह gamma की वह अंश है जो निर्दिष्ट परिरक्षण से गुजरेगी।</message>
+  <message id="gxsg-tt-distance">यह स्रोत केंद्र से डिटेक्टर तक की दूरी है।</message>
+  <message id="gxsg-intrinsic-eff-label">आंतरिक दक्षता</message>
+  <message id="gxsg-tt-intrinsic-eff">आंतरिक दक्षता (डिटेक्टर फेस से टकराने वाली gamma की इन-पीक पहचान दक्षता)।</message>
+  <message id="gxsg-solid-angle-frac-label">ठोस कोण अंश</message>
+  <message id="gxsg-tt-solid-angle-frac">निर्दिष्ट दूरी पर चयनित डिटेक्टर का भिन्नात्मक ठोस कोण।</message>
+  <message id="gxsg-det-eff-label">पहचान दक्षता</message>
+  <message id="gxsg-tt-det-eff">आंतरिक दक्षता गुना ठोस कोण अंश। उदा. परिरक्षण से बाहर निकलने वाली gamma का वह अंश जो पहचाना जाएगा। क्षीणन शामिल नहीं।</message>
+  <message id="gxsg-total-eff-label">कुल दक्षता</message>
+  <message id="gxsg-tt-total-eff">पारेषण अंश गुना पहचान दक्षता। उदा. स्रोत से उत्सर्जित gamma का वह अंश जो पहचाना जाएगा।</message>
+  <message id="gxsg-warn-suspect">XS गणना संदिग्ध हो सकती है: {1}</message>
+  <message id="gxsg-tool-state-title">Gamma XS टूल स्थिति</message>
+  <message id="gxsg-tool-state-text">xs टूल की वर्तमान स्थिति।</message>
+</messages>

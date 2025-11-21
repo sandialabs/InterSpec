@@ -37,13 +37,10 @@ label:has(input[type="checkbox"]) {
 
 .specviewer
 {
-/*Make none of the elements selectable by default*/
+  /* Make none of the elements selectable by default */
   user-select: none;
   -moz-user-select: none;
   -webkit-user-select: none;
-  -ms-user-select: none;
-  -khtml-user-select: none;
-  -o-user-select: none;
 }
 
 .SpectrumChart
@@ -181,6 +178,18 @@ border-right: 1px dashed white;
 .Up2ndForeground
 {
 left: 66.667%;
+}
+
+.FileUploadCover .UpDiv.UpBatch
+{
+  width: 100%;
+}
+
+.UpDiv.UpBatch > .UpCenterDiv
+{
+  width: 30%;
+  top: 25%;
+  left: 35%;
 }
 
 .UpInstrInfoWrapper
@@ -500,6 +509,10 @@ padding-left:10px;
 .HeavyNavMenu li
 {
   color: #ffffff;
+  
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .HeavyNavMenu li.item > a
@@ -970,7 +983,7 @@ a:hover { color:#E88400; border-bottom:none; }
   }
   
   
-  .HideSpinners .HideSpinners
+  .HideSpinners
   {
     width: 8em;
     /* remove the up/down spinbox for Firefox - if you re-enable this, also re-enable the c++ code to set step size */
@@ -1569,22 +1582,6 @@ a:hover { color:#E88400; border-bottom:none; }
     min-height: 65px;
   }
   
-  /* The entries from here below are only used when USE_CSS_FLEX_LAYOUT is tru in the C++ (experimental at the moment) */
-  .InterSpecFlex {
-    display: flex;
-    flex-direction: column;
-    flex-wrap: nowrap;
-  }
-  
-  .InterSpecFlex .D3SpectrumDisplayDiv {
-    flex: 3;
-    overflow: hidden;
-  }
-  
-  .InterSpecFlex .D3TimeChartParent {
-    flex: 2;
-    overflow: hidden;
-  }
   
   .FloatInput:invalid {
     background-color: pink;

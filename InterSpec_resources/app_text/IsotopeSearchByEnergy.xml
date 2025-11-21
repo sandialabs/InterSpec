@@ -11,8 +11,8 @@
   <message id="isbe-cb-gammas">Gammas</message>
 
   <message id="isbe-cb-rxnts">Reactions</message>
-  <message id="isbe-min-br">Min. BR</message>
-  <message id="isbe-tt-min-br">Minimum branching ratio.</message>
+  <message id="isbe-min-br">Min. Rel. BR</message>
+  <message id="isbe-tt-min-br">Minimum instensity required, relative to the maximum intensity gamma of the decay chain.</message>
   <message id="isbe-min-hl">Min. T½</message>
   <message id="isbe-tt-min-hl">
     Minimum half life of nuclides to be searched.

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- resw- is short for RelEffShieldWidget
+  -->
+  <message id="resw-self-atten-title">स्व क्षीणन</message>
+  <message id="resw-ext-atten-title">बाह्य क्षीणन</message>
+  <message id="resw-thickness-label">मोटाई</message>
+  <message id="resw-atomic-number-label">AN</message>
+  <message id="resw-areal-density-label">AD</message>
+  <message id="resw-material-frame-label">सामग्री</message>
+  <message id="resw-generic-frame-label">सामान्य</message>
+  <message id="resw-areal-density-placeholder">g/cm^2</message>
+</messages>

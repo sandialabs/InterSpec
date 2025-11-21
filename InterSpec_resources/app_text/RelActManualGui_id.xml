@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ramrr- short for RelActManualReportResource
+       mrend- short for ManRelEffNucDisp
+       ramg-  short for RelActManualGui
+  -->
+
+  <!-- Messages when creating HTML report -->
+  <message id="ramrr-no-solution-title">Tidak Ada Solusi Aktivitas Rel. yang Tersedia</message>
+  <message id="ramrr-no-solution-text"></message>
+  <message id="ramrr-err-report">Kesalahan mendapatkan file spektrum yang saat ini ditampilkan: {1}</message>
+  
+  <!-- Messages in the nuclide component of the GUI -->
+  <message id="mrend-spec-act">Akt. Spesifik</message>
+  <message id="mrend-X(a,n)">Alfa pada {1} membuat neutron</message>
+  <message id="mrend-X(n,a)">Neutron pada {1} membuat alfa</message>
+  <message id="mrend-X(a,p)">Alfa pada {1} membuat proton</message>
+  <message id="mrend-X(n,g)">Neutron lambat pada {1} ditangkap</message>
+  <message id="mrend-X(n,n)">Neutron cepat yang menyebar secara inelastis dari {1}</message>
+  <message id="mrend-X(a,a)">Penyebaran alfa inelastis dari {1}</message>
+  <message id="mrend-annih">Gamma anihilasi</message>
+  <message id="mrend-unknown-rxctn">Reaksi tidak diketahui</message>
+  <message id="mrend-X(,)"></message>
+  <message id="mrend-cb-decay-during-meas">Peluruhan selama pengukuran</message>
+  <message id="mrend-tt-decay-during-meas">Ketika dicentang, peluruhan nuklida selama pengukuran akan diperhitungkan, dengan aktivitas relatif yang dikutip menjadi aktivitas pada awal pengukuran.</message>
+  
+  <!-- Message on the general GUI interface -->
+  <message id="ramg-eqn-form-label">Bentuk Persamaan</message>
+  <message id="ramg-options-label">Opsi</message>
+  <message id="ramg-tt-eqn-form">
+    Bentuk fungsional untuk digunakan untuk kurva efisiensi relatif.
+    <br />
+    Opsi adalah:
+    <table style="margin-left: 10px;">
+      <tr><th>Log(energi):</th>               <th>y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...</th></tr>
+      <tr><th>Log(eff. rel.):</th>            <th>y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )</th></tr>
+      <tr><th>Log(energi)Log(eff. rel.):</th> <th>y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )</th></tr>
+      <tr><th>Empiris FRAM:</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr>
+      <tr><th>Fisik FRAM:</th>             <th>
+        y = <span style="display: inline-block; vertical-align: middle;">
+              <span style="display: block; text-align: center;">
+               (1 - exp(-AD<sub>0</sub>*μ<sub>0</sub>))
+              </span>
+              <span style="display: block; border-top: 1px solid black; text-align: center;">
+                (AD<sub>0</sub>*μ<sub>0</sub>)
+              </span>
+            </span>
+             * [exp(-AD<sub>1</sub>*μ<sub>1</sub>) * exp(-AD<sub>2</sub>*μ<sub>2</sub>) + ...]
+             * [Eff. Det.]
+             * [E<sup>b</sup> * C<sup>1/E</sup>]
+        </th></tr>
+    </table>
+  </message>
+  <message id="ramg-eqn-order-label">Urutan Persamaan</message>
+  <message id="ramg-tt-eqn-order">Urutan (berapa banyak istilah yang bergantung pada energi) persamaan efisiensi relatif untuk digunakan.</message>
+  <message id="ramg-phys-model-use-hoerl">Gunakan Fungsi Koreksi</message>
+  <message id="ramg-tt-phys-model-use-hoerl">Ketika dicentang, faktor koreksi Hoerl Modifikasi (yaitu E<sup>b</sup> * C<sup>1/E</sup>) digunakan untuk memperhitungkan perbedaan antara model fisik dan/atau efisiensi detektor, dan data yang diamati.</message>
+  <message id="ramg-yield-info-label">Info Hasil</message>
+  <message id="ramg-tt-data-src">Sumber data nuklir untuk rasio percabangan gamma.</message>
+  <message id="ramg-match-tol-label">Toleransi kecocokan</message>
+  <message id="ramg-tt-match-tol">
+    Jumlah FWHM, dari rerata puncak, untuk menyertakan gamma sumber dari sebagai kontribusi terhadap area puncak.
+    <br />
+    Untuk beberapa fotopeak dari beberapa nuklida, beberapa gamma yang dekat dalam energi dapat berkontribusi
+    untuk membuat area puncak terdeteksi. Toleransi kecocokan ini menentukan berapa banyak FWHM dari
+    rerata puncak yang diamati gamma sumber harus dijumlahkan untuk menentukan rasio percabangan yang akan digunakan.
+    <br />
+    Menentukan nilai nol akan menyebabkan hanya energi gamma yang ditugaskan ke puncak untuk
+    digunakan, bahkan jika ada gamma lain yang sangat dekat.
+  </message>
+  <message id="ramg-add-uncert-label">Ketidakpast. Tambh.</message>
+  <message id="ramg-tt-add-uncert">
+    Ketidakpastian tambahan untuk ditambahkan ke garis efisiensi relatif, untuk setiap fotopeak yang disesuaikan.
+    <br />
+    Penyimpangan kecil dalam efisiensi deteksi untuk satu atau beberapa puncak statistik tinggi dapat menyebabkan
+    kurva efisiensi menyimpang secara signifikan dari titik lain jika hanya ketidakpastian statistik yang
+    digunakan; ketika ketidakpastian tambahan ditambahkan, efisiensi relatif kemudian akan melakukan pekerjaan yang lebih baik
+    untuk secara visual melewati semua titik data, dan dari pengujian terbatas menghasilkan hasil yang lebih akurat.
+    Anda dapat menganggap ini sebagai menambahkan ketidakpastian sistematis ke setiap fotopeak yang terdeteksi,
+    yang tidak berkorelasi antara puncak. Dari pengujian terbatas, nilai yang digunakan tidak terlalu
+    penting, selama ada sesuatu. Anda juga dapat memilih untuk menggunakan penyesuaian yang tidak tertimbang,
+    di mana setiap puncak akan berkontribusi pada penyesuaian secara setara, tidak peduli ketidakpastian statistiknya.
+  </message>
+  <message id="ramg-unweighted-label">Tidak Tertimbang</message>
+  <message id="ramg-stat-only-label">Hanya Statistik</message>
+  <message id="ramg-back-sub-cb">Kurangi Latar Belakang</message>
+  <message id="ramg-html-export-label">Laporan HTML</message>
+  <message id="ramg-nucs-label">Nuklida</message>
+  <message id="ramg-nucs-shield-label">Perisai/Nuklida</message>
+  <message id="ramg-peaks-to-use-label">Puncak untuk Digunakan</message>
+  <message id="ramg-results-label">Hasil</message>
+  <message id="ramg-mi-results">Tabel</message>
+  <message id="ramg-mi-chart">Grafik</message>
+  <message id="ramg-back-sub-neg">Setelah pengurangan latar belakang, puncak pada {1} keV memiliki hitungan negatif sehingga tidak digunakan.</message>
+  <message id="ramg-warn-reaction">Menggunakan fotopeak reaksi kemungkinan tidak valid, kecuali gamma dipancarkan secara homogen dari satu objek.</message>
+  <message id="ramg-warn-no-bkg-sub-used">Pengurangan puncak latar belakang dipilih, tetapi tidak ada puncak latar belakang yang cocok dengan puncak latar depan yang dipilih.</message>
+  <message id="ramg-warn-rel-eff-u/pu-xray">Kurva efisiensi relatif tidak memperhitungkan tepi absorpsi sinar-x - menggunakan puncak di bawah 120 keV untuk masalah U atau Pu tidak direkomendasikan.</message>
+  <message id="ramg-warn-rel-eff-other-xray">Kurva efisiensi relatif tidak memperhitungkan tepi absorpsi sinar-x dari perisai potensial apa pun - harap pastikan puncak yang digunakan tidak melintasi tepi absorpsi perisai apa pun.</message>
+  <message id="ramg-warn-match-outside-tol">Gamma{1} yang ditugaskan {2} keV berada di luar toleransi kecocokan dengan puncak{1} {3}; perhatikan bahwa energi gamma yang ditugaskan digunakan untuk mengkompensasi gamma terdekat, dan bukan rerata puncak yang disesuaikan.</message>
+  <message id="ramg-warn-failed-match">Gagal mencocokkan nuklida{1} ke puncak apa pun: {2}</message>
+  <message id="ramg-err-setting-up-calc">Kesalahan menyiapkan perhitungan Efisiensi Relatif: {1}</message>
+  <message id="ramg-err-performing-calc">Kesalahan melakukan perhitungan Efisiensi Relatif: {1}</message>
+  <message id="ramg-no-results-available">Tidak ada hasil yang tersedia.</message>
+  <message id="ramg-result-error-msg">Kesalahan: {1}</message>
+  <message id="ramg-result-warn-msg">Peringatan: {1}</message>
+  <message id="ramg-and-there-were">dan ada</message>
+  <message id="ramg-dof">DOF</message> <!-- Degrees of freedom -->
+  <message id="ramg-fit-unweighted-txt">Penyesuaian tidak tertimbang; ketidakpastian mungkin tidak masuk akal.</message>
+  <message id="ramg-fit-stat-only">Ketidakpastian hanya statistik.</message>
+  <message id="ramg-fit-uncert-increased">Ketidakpastian ditingkatkan secara artifisial oleh "Ketidakpast. Tambh.".</message>
+  <message id="ramg-consider-add-uncert-u">Anda mungkin ingin mempertimbangkan untuk menambahkan "Ketidakpast. Tambh." untuk masalah Uranium.</message>
+  <message id="ramg-you-using-add-uncert-u">Anda menambahkan "Ketidakpast. Tambh." - interpretasikan ketidakpastian yang dihitung dengan hati-hati.</message>
+  <message id="ramg-you-using-add-uncert-non-u">Anda saat ini menambahkan "Ketidakpast. Tambh.", yang akan menyebabkan ketidakpastian yang dihitung tidak benar.</message>
+  <message id="ramg-chart-info-title">χ²/dof = {1}/{2}{3}{4}</message>
+  <message id="ramg-pval"> (pval={1})</message>
+  <message id="ramg-1-pval"> (1-pval={1})</message>
+</messages>
+

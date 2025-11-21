@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- pe- is short for PeakEdit -->
+  <message id="pe-value">মান</message>
+  <message id="pe-uncertainty">অনিশ্চয়তা</message>
+  <message id="pe-parameter">প্যারামিটার</message>
+  <message id="pe-label">লেবেল</message>
+  <message id="pe-peak-type">পিক টাইপ</message>
+  <message id="pe-peak-model-gaussian">Gaussian</message>
+  <message id="pe-peak-model-data">ডেটা অঞ্চল</message>
+  <message id="pe-skew-type">স্কিউ টাইপ</message>
+  <message id="pe-btn-refit">পুনরায় ফিট</message>
+  <message id="pe-btn-refit-roi-standard">ROI পুনরায় ফিট: সংশ্লিষ্ট FWHM</message>
+  <message id="pe-btn-refit-roi-independent">ROI পুনরায় ফিট: স্বাধীন FWHM</message>
+  <message id="pe-btn-refit-roi-fine">ROI পুনরায় ফিট: ছোট পরিমার্জন</message>
+  <message id="pe-btn-refit-roi-independent-fine">ROI পুনরায় ফিট: স্বাধীন FWHM দিয়ে পরিমার্জন</message>
+
+  <message id="pe-label-centroid">সেন্ট্রয়েড</message>
+  <message id="pe-label-drf-fwhm">DRF পূর্বাভাস FWHM</message>
+  <message id="pe-label-amp">প্রশস্ততা</message>
+  <message id="pe-label-skew0">স্কিউ 0</message>
+  <message id="pe-label-skew1">স্কিউ 1</message>
+  <message id="pe-label-skew2">স্কিউ 2</message>
+  <message id="pe-label-skew3">স্কিউ 3</message>
+  <message id="pe-label-cont-p0">কন্টিনিউয়াম P0</message>
+  <message id="pe-label-cont-p1">কন্টিনিউয়াম P1</message>
+  <message id="pe-label-cont-p2">কন্টিনিউয়াম P2</message>
+  <message id="pe-label-cont-p3">কন্টিনিউয়াম P3</message>
+  <message id="pe-label-cont-p4">কন্টিনিউয়াম P4</message>
+  <message id="pe-label-roi-start">ROI শুরু (keV)</message>
+  <message id="pe-label-roi-end">ROI শেষ (keV)</message>
+  <message id="pe-label-chi2-dof">𝜒²/DOF</message>
+  <message id="pe-label-peak-color">পিক রং</message>
+
+  <message id="pe-multipeak-in-roi">ROI-তে পিক {1} / {2}</message>
+  <message id="pe-apply-all-of-type">সমস্ত {1} পিক</message>
+  <message id="pe-drf-predict-fwhm-txt">DRF {1} keV-এর FWHM পূর্বাভাস দেয়</message>
+  <message id="pe-btn-cont-to-linear">রৈখিক কন্টিনিউয়াম অনুমান করুন</message>
+  <message id="pe-tt-btn-cont-to-linear">একটি সরলরেখা কন্টিনিউয়াম অনুমান করতে ROI-এর ডান এবং বামের চ্যানেলগুলি ব্যবহার করে।</message>
+  <message id="pe-failed-refit-insig">পিক পুনরায় ফিট করতে ব্যর্থ (অতি সামান্য হয়ে গেছে), তাই কিছু করছে না</message>
+
+  <message id="pe-est-lin-cont-no-data">কন্টিনিউয়াম অনুমান করার আগে একটি ফোরগ্রাউন্ড স্পেকট্রাম লোড করুন।</message>
+  <message id="pe-failed-est-lin-cont">ROI-এর প্রান্ত থেকে কন্টিনিউয়াম অনুমান করতে ব্যর্থ: {1}</message>
+
+
+
+</messages>

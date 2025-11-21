@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- mnid- is short for MoreNuclideInfoDisplay -->
+  <message id="mnid-show-decay-chain">إظهار سلسلة التحلل</message>
+  <message id="mnid-show-decays-through">إظهار التحلل من خلال</message>
+</messages>

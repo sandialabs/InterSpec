@@ -43,32 +43,11 @@
 #include <Wt/WApplication>
 #include <Wt/WRegExpValidator>
 #include <Wt/WSuggestionPopup>
-#include <Wt/WStandardItemModel>
-#include <Wt/Chart/WCartesianChart>
 
 #include <Wt/Json/Array>
 #include <Wt/Json/Value>
 #include <Wt/Json/Object>
 #include <Wt/Json/Serializer>
-
-//Roots Minuit2 includes
-#include "Minuit2/FCNBase.h"
-#include "Minuit2/FunctionMinimum.h"
-#include "Minuit2/MnMigrad.h"
-#include "Minuit2/MnScan.h"
-#include "Minuit2/MnMinos.h"
-#include "Minuit2/MnSimplex.h"
-#include "Minuit2/MinosError.h"
-//#include "Minuit2/Minuit2Minimizer.h"
-#include "Minuit2/MnUserParameters.h"
-#include "Minuit2/MnUserParameterState.h"
-#include "Minuit2/CombinedMinimizer.h"
-#include "Minuit2/MnPrint.h"
-#include "Minuit2/FumiliMinimizer.h"
-#include "Minuit2/ScanMinimizer.h"
-#include "Minuit2/SimplexMinimizer.h"
-#include "Minuit2/MnMinimize.h"
-
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/SpecUtilsAsync.h"
@@ -86,7 +65,6 @@
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "InterSpec/PeakFitChi2Fcn.h"
 #include "InterSpec/MakeFwhmForDrf.h"
 #include "InterSpec/SwitchCheckbox.h"
 #include "InterSpec/ShieldingSelect.h"
@@ -966,7 +944,7 @@ DetectionLimitWindow::DetectionLimitWindow( InterSpec *viewer,
                                                      MaterialDB *materialDB,
                                                      WSuggestionPopup *materialSuggest )
 : AuxWindow( "Detection Confidence Tool",
-  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+  (AuxWindowProperties::TabletNotFullScreen
    | AuxWindowProperties::SetCloseable
    | AuxWindowProperties::DisableCollapse) ),
   m_tool( nullptr )
@@ -1096,10 +1074,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   m_chart->setCompactAxis( true );
   m_chart->disableLegend();
   m_chart->showHistogramIntegralsInLegend( true );
-  
-  m_chart->applyColorTheme( m_interspec->getColorTheme() );
-  m_interspec->colorThemeChanged().connect( m_chart, &D3SpectrumDisplayDiv::applyColorTheme );
-  
+
   //m_chart->xAxisSliderShown().connect(...)
   
   m_peakModel = new PeakModel( this );
@@ -1321,7 +1296,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
     m_our_meas = make_shared<SpecMeas>();
     m_our_meas->setDetector( primaryMeas->detector() );
     m_our_meas->add_measurement( ourspec, true );
-    m_peakModel->setPeakFromSpecMeas( m_our_meas, {ourspec->sample_number()} );
+    m_peakModel->setPeakFromSpecMeas( m_our_meas, {ourspec->sample_number()}, SpecUtils::SpectrumType::Foreground );
     m_chart->setData( ourspec, false );
   }//if( spec )
 
@@ -1883,8 +1858,6 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     shared_ptr<const SpecUtils::Measurement> hist = viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
     chart->setData( hist, true );
     chart->setYAxisLog( false );
-    chart->applyColorTheme( viewer->getColorTheme() );
-    viewer->colorThemeChanged().connect( boost::bind( &D3SpectrumDisplayDiv::applyColorTheme, chart, boost::placeholders::_1 ) );
     chart->disableLegend();
     const double dx = upper_upper_energy - lower_lower_energy;
     chart->setXAxisRange( lower_lower_energy - 0.5*dx, upper_upper_energy + 0.5*dx );
@@ -1932,46 +1905,60 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
           
           // There is enough excess counts that we would reliably detect this activity, so we will
           //  give the activity range.
-          WString obs_label, range_label;
-          string lowerstr, upperstr, nomstr;
           if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
           {
-            obs_label = "Observed activity";
-            range_label = "Activity range";
-            
-            const float lower_act = result.lower_limit / gammas_per_bq;
-            const float upper_act = result.upper_limit / gammas_per_bq;
-            const float nominal_act = result.source_counts / gammas_per_bq;
-            
-            lowerstr = PhysicalUnits::printToBestActivityUnits( lower_act, 2, useCuries )
-                        + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
-            upperstr = PhysicalUnits::printToBestActivityUnits( upper_act, 2, useCuries )
-                        + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
-            nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries )
-                      + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
-          }else
+            WString obs_label = "Observed activity";
+            const double nominal_act = result.source_counts / gammas_per_bq;
+            const string nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries )
+                                  + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+
+            cell = table->elementAt( table->rowCount(), 0 );
+            new WText( obs_label, cell );
+            cell = table->elementAt( table->rowCount() - 1, 1 );
+            new WText( nomstr, cell );
+            addTooltipToRow( "Greater than the &quot;critical level&quot;, L<sub>c</sub>,"
+                            " counts were observed in the peak region." );
+          }
+
           {
-            obs_label = "Observed counts";
-            range_label = "Counts range";
-            
-            lowerstr = SpecUtils::printCompact(result.lower_limit, 4);
-            upperstr = SpecUtils::printCompact(result.upper_limit, 4);
-            nomstr = SpecUtils::printCompact(result.source_counts, 4);
+            WString obs_label = "Observed counts";
+            const string nomstr = SpecUtils::printCompact(result.source_counts, 4);
+
+            cell = table->elementAt( table->rowCount(), 0 );
+            new WText( obs_label, cell );
+            cell = table->elementAt( table->rowCount() - 1, 1 );
+            new WText( nomstr, cell );
+            addTooltipToRow( "Greater than the &quot;critical level&quot;, L<sub>c</sub>,"
+                            " counts were observed in the peak region." );
+          }
+
+
+          if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
+          {
+            WString range_label = "Activity range";
+            const double lower_act = result.lower_limit / gammas_per_bq;
+            const double upper_act = result.upper_limit / gammas_per_bq;
+            const string lowerstr = PhysicalUnits::printToBestActivityUnits( lower_act, 2, useCuries )
+                        + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+            const string upperstr = PhysicalUnits::printToBestActivityUnits( upper_act, 2, useCuries )
+                        + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+            cell = table->elementAt( table->rowCount(), 0 );
+            new WText( range_label, cell );
+            cell = table->elementAt( table->rowCount() - 1, 1 );
+            new WText( "[" + lowerstr + ", " + upperstr + "]", cell );
+            addTooltipToRow( "The signal activity range estimate, to the " + confidence_level + " confidence level." );
+          }
+
+          {
+            WString range_label = "Counts range";
+            const string lowerstr = SpecUtils::printCompact(result.lower_limit, 4);
+            const string upperstr = SpecUtils::printCompact(result.upper_limit, 4);
+            cell = table->elementAt( table->rowCount(), 0 );
+            new WText( range_label, cell );
+            cell = table->elementAt( table->rowCount() - 1, 1 );
+            new WText( "[" + lowerstr + ", " + upperstr + "]", cell );
+            addTooltipToRow( "The signal counts range estimate, to the " + confidence_level + " confidence level." );
           }//if( drf ) / else
-          
-          
-          cell = table->elementAt( table->rowCount(), 0 );
-          new WText( obs_label, cell );
-          cell = table->elementAt( table->rowCount() - 1, 1 );
-          new WText( nomstr, cell );
-          addTooltipToRow( "Greater than the &quot;critical level&quot;, L<sub>c</sub>,"
-                          " counts were observed in the peak region." );
-          
-          cell = table->elementAt( table->rowCount(), 0 );
-          new WText( range_label, cell );
-          cell = table->elementAt( table->rowCount() - 1, 1 );
-          new WText( "[" + lowerstr + ", " + upperstr + "]", cell );
-          addTooltipToRow( "The activity range estimate, to the " + confidence_level + " confidence level." );
         }else if( result.upper_limit < 0 )
         {
           assert( !assertedNoSignal );
@@ -1994,28 +1981,38 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
         }else
         {
           // We will provide the upper bound on activity.
-          string mdastr;
-          WString label_txt;
           if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
           {
-            label_txt = "Activity upper bound";
-            
+            WString label_txt = "Activity upper bound";
+
             const double simple_mda = result.upper_limit / gammas_per_bq;
-            mdastr = PhysicalUnits::printToBestActivityUnits( simple_mda, 2, useCuries )
+            const string mdastr = PhysicalUnits::printToBestActivityUnits( simple_mda, 2, useCuries )
                       + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
-          }else
+
+            cell = table->elementAt( table->rowCount(), 0 );
+            new WText( label_txt, cell );
+            cell = table->elementAt( table->rowCount() - 1, 1 );
+            new WText( mdastr , cell);
+
+            addTooltipToRow( "The upper limit on how much activity could be present, to the "
+                            + confidence_level + " confidence level." );
+          }
+
+
           {
-            label_txt = "Counts upper bound";
-            mdastr = SpecUtils::printCompact( result.upper_limit, 4 ) + " counts";
+            WString label_txt = "Counts upper bound";
+            const string mdastr = SpecUtils::printCompact( result.upper_limit, 4 ) + " counts";
+
+            cell = table->elementAt( table->rowCount(), 0 );
+            new WText( label_txt, cell );
+            cell = table->elementAt( table->rowCount() - 1, 1 );
+            new WText( mdastr , cell);
+
+            addTooltipToRow( "The upper limit on how much activity could be present, to the "
+                            + confidence_level + " confidence level." );
           }
           
-          cell = table->elementAt( table->rowCount(), 0 );
-          new WText( label_txt, cell );
-          cell = table->elementAt( table->rowCount() - 1, 1 );
-          new WText( mdastr , cell);
-          
-          addTooltipToRow( "The upper limit on how much activity could be present, to the "
-                          + confidence_level + " confidence level." );
+
         }
         
         break;
@@ -2172,37 +2169,40 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
         {
           // There is NOT enough excess counts that we would reliably detect this activity, so we
           //  didnt give nominal activity above, so we'll do that here
-          WString obs_label;
-          string lowerstr, upperstr, nomstr;
-          if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
-          {
-            obs_label = "Activity";
-            const float nominal_act = result.source_counts / gammas_per_bq;
-            
-            nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries )
-                      + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
-            if( nominal_act < 0 )
-              nomstr = "&lt; " + PhysicalUnits::printToBestActivityUnits( 0.0, 2, useCuries )
-                        + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
-          }else
-          {
-            obs_label = "Observed counts";
-            nomstr = SpecUtils::printCompact(result.source_counts, 4);
-            
-            if( result.source_counts < 0 )
-              nomstr = "&lt; 0 counts";
-          }//if( drf ) / else
-          
           if( !assertedNoSignal )
           {
-            nomstr += " <span style=\"font-size: smaller;\">(below L<sub>c</sub>)</span>";
-            
+            WString obs_counts_label = "Observed counts";
+            string nom_counts_str = SpecUtils::printCompact(result.source_counts, 4);
+            if( result.source_counts < 0 )
+              nom_counts_str = "&lt; 0 counts";
+
+            nom_counts_str += " <span style=\"font-size: smaller;\">(below L<sub>c</sub>)</span>";
             cell = table->elementAt( table->rowCount(), 0 );
-            new WText( obs_label, cell );
+            new WText( obs_counts_label, cell );
             cell = table->elementAt( table->rowCount() - 1, 1 );
-            new WText( nomstr, cell );
+            new WText( WString::fromUTF8(nom_counts_str), cell );
             addTooltipToRow( "The observed signal counts is less than the &quot;critical level&quot;, L<sub>c</sub>,"
-                            " so a detection can not be declared, but this is the excess over expected counts/activity." );
+                            " so a detection can not be declared, but this is the excess over expected counts." );
+
+            if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
+            {
+              WString obs_act_label = "Activity";
+              const float nominal_act = result.source_counts / gammas_per_bq;
+
+              string nom_act_str = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries )
+                        + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+              if( nominal_act < 0 )
+                nom_act_str = "&lt; " + PhysicalUnits::printToBestActivityUnits( 0.0, 2, useCuries )
+                          + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+
+              nom_act_str += " <span style=\"font-size: smaller;\">(below L<sub>c</sub>)</span>";
+              cell = table->elementAt( table->rowCount(), 0 );
+              new WText( obs_act_label, cell );
+              cell = table->elementAt( table->rowCount() - 1, 1 );
+              new WText( WString::fromUTF8(nom_act_str), cell );
+              addTooltipToRow( "The observed signal activity is less than the &quot;critical level&quot;, L<sub>c</sub>,"
+                              " so a detection can not be declared, but this is the excess over expected counts." );
+            }//if( !nom_act_str.empty() )
           }//if( !assertedNoSignal )
         }//if( result.source_counts <= result.decision_threshold )
       }//case DetectionLimitTool::LimitType::Activity:
@@ -2405,11 +2405,11 @@ void DetectionLimitTool::initChi2Chart()
 
 
 void DetectionLimitTool::roiDraggedCallback( double new_roi_lower_energy,
-                                                  double new_roi_upper_energy,
-                                                  double new_roi_lower_px,
-                                                  double new_roi_upper_px,
-                                                  double original_lower_energy,
-                                                  bool is_final_range )
+                                            double new_roi_upper_energy,
+                                            double new_roi_px,
+                                            double original_lower_energy,
+                                            const std::string &spectrum_type,
+                                            bool is_final_range )
 {
   if( !is_final_range )
     return;
@@ -3632,283 +3632,3 @@ void DetectionLimitTool::setRefLinesAndGetLineInfo()
   else
     m_chart->clearAllReferncePhotoPeakLines();
 }//std::vector<std::tuple<float,double,bool>> setRefLinesAndGetLineInfo();
-
-
-
-void DetectionLimitTool::do_development()
-{
-  auto specfile = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
-  if( !specfile )
-  {
-    new WLabel( "No Foreground File", this );
-    return;
-  }
-  
-  auto spec = m_interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
-  if( !spec )
-  {
-    new WLabel( "No foreground spectrum", this );
-    return;
-  }
-  
-  std::shared_ptr<DetectorPeakResponse> drf = specfile->detector();
-  if( !drf )
-  {
-    new WLabel( "No DRF loaded", this );
-    return;
-  }
-  
-  if( !drf->hasResolutionInfo() || !drf->isValid() )
-  {
-    new WLabel( "DRF not valid or doesnt have FWHM info.", this );
-    return;
-  }
-  
-  
-  vector<PeakDef> inputPeaks, fitPeaks;
-  
-  //vector<float> energies = { 80.9971, 276.4, 302.853, 356.017, 383.848 };
-  vector<float> energies = { 356.017 };
-  //vector<tuple<float,float>> peak_info = { {356.017f,0.0f} };
-  
-  //We provide <energy,gammas_per_uci> and optionally activity, and get out chi2, DOF, and activity if not provided
-  //First, fit for preffered activity.
-  //Then increase the activity until the Chi2 increases by quantile(chi_squared(n_pars),0.95)
-  
-  
-  const bool isHPGe = false; //Whatever, for now
-  
-  for( size_t i = 0; i < energies.size(); ++i )
-  {
-    const float mean = energies[i];
-    const float sigma = drf->peakResolutionSigma(mean);
-    const float amplitude = 0.0f;
-    PeakDef peak( mean, sigma, amplitude );
-    peak.setFitFor( PeakDef::CoefficientType::Mean, false );
-    peak.setFitFor( PeakDef::CoefficientType::Sigma, false );
-    peak.setFitFor( PeakDef::CoefficientType::GaussAmplitude, true );
-    shared_ptr<PeakContinuum> cont = peak.continuum();
-    cont->setType( PeakContinuum::OffsetType::Linear );
-    
-    double lowerEnengy, upperEnergy;
-    findROIEnergyLimits( lowerEnengy, upperEnergy, peak, spec, isHPGe );
-    cont->setRange( lowerEnengy, upperEnergy );
-    cont->calc_linear_continuum_eqn( spec, mean, lowerEnengy, upperEnergy, 4, 4 );
-    cont->setPolynomialCoefFitFor( 0, true );
-    cont->setPolynomialCoefFitFor( 1, true );
-    
-    inputPeaks.push_back( std::move(peak) );
-  }//for( size_t i = 0; i < energies.size(); ++i )
-  
-  ROOT::Minuit2::MnUserParameters inputFitPars;
-  PeakFitChi2Fcn::addPeaksToFitter( inputFitPars, inputPeaks, spec, PeakFitChi2Fcn::kFitForPeakParameters, isHPGe );
-  
-      
-  const int npeaks = static_cast<int>( inputPeaks.size() );
-  PeakFitChi2Fcn chi2Fcn( npeaks, spec, nullptr );
-  chi2Fcn.useReducedChi2( false );
-      
-  assert( inputFitPars.VariableParameters() != 0 );
-          
-  ROOT::Minuit2::MnUserParameterState inputParamState( inputFitPars );
-  ROOT::Minuit2::MnStrategy strategy( 2 ); //0 low, 1 medium, >=2 high
-  ROOT::Minuit2::MnMinimize fitter( chi2Fcn, inputParamState, strategy );
-      
-  unsigned int maxFcnCall = 5000;
-  double tolerance = 2.5;
-  tolerance = 0.5;
-  ROOT::Minuit2::FunctionMinimum minimum = fitter( maxFcnCall, tolerance );
-  const ROOT::Minuit2::MnUserParameters &fitParams = fitter.Parameters();
-  //  minimum.IsValid()
-  //      ROOT::Minuit2::MinimumState minState = minimum.State();
-  //      ROOT::Minuit2::MinimumParameters minParams = minState.Parameters();
-    
-  //    cerr << endl << endl << "EDM=" << minimum.Edm() << endl;
-  //    cerr << "MinValue=" <<  minimum.Fval() << endl << endl;
-      
-  if( !minimum.IsValid() )
-    minimum = fitter( maxFcnCall, tolerance );
-        
-  if( !minimum.IsValid() )
-  {
-      //XXX - should we try to re-fit here? Or do something to handle the
-      //      faliure in some reasonable way?
-      cerr << endl << endl << "status is not valid"
-            << "\n\tHasMadePosDefCovar: " << minimum.HasMadePosDefCovar()
-            << "\n\tHasAccurateCovar: " << minimum.HasAccurateCovar()
-            << "\n\tHasReachedCallLimit: " << minimum.HasReachedCallLimit()
-            << "\n\tHasValidCovariance: " << minimum.HasValidCovariance()
-            << "\n\tHasValidParameters: " << minimum.HasValidParameters()
-            << "\n\tIsAboveMaxEdm: " << minimum.IsAboveMaxEdm()
-            << endl;
-      if( minimum.IsAboveMaxEdm() )
-        cout << "\t\tEDM=" << minimum.Edm() << endl;
-  }//if( !minimum.IsValid() )
-      
-  
-  vector<double> fitpars = fitParams.Params();
-  vector<double> fiterrors = fitParams.Errors();
-  chi2Fcn.parametersToPeaks( fitPeaks, &fitpars[0], &fiterrors[0] );
-      
-  double initialChi2 = chi2Fcn.chi2( &fitpars[0] );
-  
-  //Lets try to keep whether or not to fit parameters should be the same for
-  //  the output peaks as the input peaks.
-  //Note that this doesnt account for peaks swapping with eachother in the fit
-  assert( fitPeaks.size() == inputPeaks.size() );
-  
-  //for( size_t i = 0; i < near_peaks.size(); ++i )
-  //  fitpeaks[i].inheritUserSelectedOptions( near_peaks[i], true );
-  //for( size_t i = 0; i < fixedpeaks.size(); ++i )
-  //  fitpeaks[i+near_peaks.size()].inheritUserSelectedOptions( fixedpeaks[i], true );
-        
-  set_chi2_dof( spec, fitPeaks, 0, fitPeaks.size() );
-      
-  
-  auto label = new WLabel( "Initial Chi2=" + std::to_string(initialChi2), this );
-  cout << "Intiial Chi2=" << initialChi2 << endl;
-  label->setInline( false );
-  
-  using boost::math::chi_squared;
-  using boost::math::quantile;
-  using boost::math::complement;
-  using boost::math::cdf;
-  
-  
-  std::sort( fitPeaks.begin(), fitPeaks.end(), &PeakDef::lessThanByMean );
-  for( auto &peak : fitPeaks )
-  {
-    const double amp = peak.amplitude();
-    string msg = "Peak at " + std::to_string(peak.mean()) + " keV"
-                 + " fit amplitude: " + std::to_string(amp)
-                 + " and Chi2/dof=" + std::to_string(peak.chi2dof());
-    auto label = new WLabel( msg, this );
-    label->setInline( false );
-    cout << msg << endl;
-    
-    std::vector<PeakDef *> peakptrs;
-    for( auto &peak : fitPeaks )
-      peakptrs.push_back( &peak );
-      
-    double chi2, dof;
-    get_chi2_and_dof_for_roi( chi2, dof, spec, peakptrs );
-    
-    chi_squared dist( dof );
-    const double prob = boost::math::cdf(dist,chi2); //Probability we would have seen a chi2 this large.
-    double p_value = 1.0 - prob; //Probability we would have observed this good of a chi2, or better
-    cout << "There are " << dof << " DOF" << endl;
-    cout << "This chi2=" << chi2 << " and prob of observing a Chi2 at least this extreme " << p_value << endl;
-    cout << "95% of the time, we would see a Chi2 value of " << quantile(dist, 0.95) << " or less" << endl;
-    
-    for( double alpha = 0.0; alpha < 1.0; alpha += 0.05 )
-    {
-      cout << "alpha=" << alpha << " --> quantile=" << quantile(dist, alpha) << endl;
-    }
-    
-    //We are estimating 1 parameter (amplitude), so the amplitude of the peak that we are 95% confident
-    //  it would be lower than is the amplitude that causes a chi2 change of 3.84
-    //const double n_parameters_being_fit = 1;
-    //chi_squared deltadist( n_parameters_being_fit );
-    //cout << "quantile(0.95)=" << quantile(deltadist, 0.95) << " (should be 3.84)" << endl;
-    
-    //We wa
-    
-  }//for( const auto &peak : fitPeaks )
-  
-  
-  
-  
-  
-  
-  
-  /*
-  vector<PeakDef> *all_peaks = &fitpeaks;
-      std::unique_ptr< vector<PeakDef> > all_peaks_ptr;
-      if( fixedpeaks.size() )
-      {
-        all_peaks = new vector<PeakDef>( fitpeaks );
-        all_peaks_ptr.reset( all_peaks );
-        all_peaks->insert( all_peaks->end(), fixedpeaks.begin(), fixedpeaks.end() );
-        std::sort( all_peaks->begin(), all_peaks->end(), &PeakDef::lessThanByMean );
-      }//if( fixedpeaks.size() )
-      
-      for( size_t i = 1; i <= fitpeaks.size(); ++i ) //Note weird convntion of index
-      {
-        const PeakDef *peak = &(fitpeaks[i-1]);
-        const bool significant = chi2_significance_test(
-                                                            *peak, stat_threshold, hypothesis_threshold,
-                                                            *all_peaks, data );
-        if( !significant )
-        {
-  #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
-          DebugLog(cerr) << "\tPeak at mean=" << peak->mean()
-                         << "is being discarded for not being significant"
-                         << "\n";
-  #endif
-          fitpeaks.erase( fitpeaks.begin() + --i );
-        }//if( !significant )
-      }//for( size_t i = 1; i < fitpeaks.size(); ++i )
-          
-      bool removed_peak = false;
-      for( size_t i = 1; i < fitpeaks.size(); ++i ) //Note weird convntion of index
-      {
-        PeakDef *this_peak = &(fitpeaks[i-1]);
-        PeakDef *next_peak = &(fitpeaks[i+1-1]);
-            
-        const double min_sigma = min( this_peak->sigma(), next_peak->sigma() );
-        const double mean_diff = next_peak->mean() - this_peak->mean();
-            
-        //In order to remove a gaussian, the peaks must both be within a sigma
-        //  of eachother.  Note that this proccess doesnt care about the widths
-        //  of the gaussians because we are assuming that the width of the gaussian
-        //  should only be dependant on energy, so should only have one width of
-        //  gaussian for a given energy
-        if( (mean_diff/min_sigma) < 1.0 ) //XXX 1.0 chosen arbitrarily, and not checked
-        {
-  #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
-          DebugLog(cerr) << "Removing duplicate peak at x=" << this_peak->mean() << " sigma="
-              << this_peak->sigma() << " in favor of mean=" << next_peak->mean()
-              << " sigma=" << next_peak->sigma() << "\n";
-  #endif
-              
-          removed_peak = true;
-              
-          //Delete the peak with the worst chi2
-          if( this_peak->chi2dof() > next_peak->chi2dof() )
-            fitpeaks.erase( fitpeaks.begin() + i - 1 );
-          else
-            fitpeaks.erase( fitpeaks.begin() + i );
-              
-          i = i - 1; //incase we have multiple close peaks in a row
-        }//if( (mean_diff/min_sigma) < 1.0 ) / else
-      }//for( size_t i = 1; i < fitpeaks.size(); ++i )
-          
-      if( removed_peak )
-        fitPeaks( fitpeaks, stat_threshold, hypothesis_threshold,
-                  data, fitpeaks, false );
-          
-      if( datadefined_peaks.size() )
-      {
-        fitpeaks.insert( fitpeaks.end(),
-                        datadefined_peaks.begin(), datadefined_peaks.end() );
-        std::sort( fitpeaks.begin(), fitpeaks.end(), &PeakDef::lessThanByMean );
-      }
-          
-      return;
-    }catch( std::exception &e )
-    {
-      cerr << "fitPeaks(...)\n\tSerious programming logic error: caught"
-           << " exception where I really shouldnt have.  what()=" << e.what()
-           << endl;
-    }catch(...)
-    {
-      cerr << "fitPeaks(...)\n\tSerious programming logic error: caught"
-           << " unknown exception where I really shouldnt have." << endl;
-    }//try/catch()
-          
-    //We will only reach here if there was no exception, so since never expect
-    //  this to actually happen, just assign the results to be same as the input
-    fitpeaks = all_near_peaks;
-  }//vector<PeakDef> fitPeaks(...);
-   */
-}//void do_development()

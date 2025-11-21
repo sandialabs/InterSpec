@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- rpd- is short for ReferencePhotopeakDisplay -->
+  <message id="rpd-add-another-btn">Másik Hozzáadása</message>
+  <message id="rpd-add-another-btn-narrow">Hozzáadás</message>
+  <message id="rpd-tt-add-another-btn">A jelenleg megjelenített vonalak megtartása és új nuklid/forrás hozzáadása a megjelenítéshez.</message>
+  <message id="rpd-tt-nuc-edit">pl. <b>U235</b>, <b>235 Uranium</b>, <b>U</b> (csak röntgen-sugarak), <b>Uranium</b> (röntgen-sugarak), <b>U-235m</b> (meta stabil állapot), <b>Cs137</b>, <b>background</b>, <b>H(n,g)</b>, stb.</message>
+  <message id="rpd-tt-age">
+    <div>
+      Az életkor időegységek kombinációjával adható meg, hasonlóan ehhez: '<b>5.3y 8d 22m</b>' vagy felezési időkben mint 
+      '<b>2.5 HL</b>'.
+    </div>
+    <div>
+      Elfogadható időegységek: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>,
+      <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, vagy
+      megadhatja az időperiódust <b>óó:pp:mm</b> formátumban. A felezési idő egységek
+      megadhatók a következőkkel: <b>hl</b>, <b>halflife</b>, <b>halflives</b>, <b>half-life</b>, <b>half-lives</b>,
+      <b>half lives</b>, vagy <b>half life</b>.
+    </div>
+    <div>
+      A felezési idő egységek vagy időperiódusok nem keverhetők más egységekkel. Ha több időperiódust ad meg,
+      azokat összeadja, pl. '1y6months 3m' értelmezése 18 hónap és 3 perc.
+    </div>
+  </message>
+  <message id="rpd-tt-clear">Törli az összes megőrzött vonalat, valamint a jelenlegi nem megőrzött vonalakat.</message>
+  <message id="rpd-more-info">több info</message>
+  <message id="rpd-shield-mat">árnyékoló anyag</message>
+  <message id="rpd-options">Opciók</message>
+  <message id="rpd-opt-prompt">Csak Prompt</message>
+  <message id="rpd-opt-tt-prompt">
+    Gamma sugarak csak az eredeti nuklidból, és az utódokból addig, amíg az egyik
+    hosszabb felezési idővel rendelkezik, mint az eredeti nuklid; a
+    bomlási lánc egyensúlyban van addig a pontig.
+  </message>
+  <message id="rpd-opt-gamma">Gammák Mutatása</message>
+  <message id="rpd-opt-xray">Röntgen-sugarak Mutatása</message>
+  <message id="rpd-opt-alphas">Alfák Mutatása</message>
+  <message id="rpd-opt-betas">Béták Mutatása</message>
+  <message id="rpd-opt-cascade">Kaszkád Összegek</message>
+  <message id="rpd-opt-escapes">Escape Csúcsok</message>
+  <message id="rpd-prev-nucs">Előző Nuklidok</message>
+  <message id="rpd-det-nucs">Det RID Nuklidok</message>
+  <message id="rpd-assoc-nucs">Társított Nuklidok</message>
+  <message id="rpd-suggestions">Javaslatok</message>
+  <message id="rpd-feature-markers">Jellemző Jelölők</message>
+
+  <!-- Reference line thickness options -->
+  <message id="rpd-line-thick-light">Keskeny Vonalak</message>
+  <message id="rpd-line-thick-normal">Standard Vastagság</message>
+  <message id="rpd-line-thick-thick">Vastag Vonalak</message>
+  <message id="rpd-line-thick-thicker">Vastagabb Vonalak</message>
+  
+  <!-- Reference lines visual verbosity options. -->
+  <message id="rpd-line-verb-none">Minimális Vonalak</message>
+  <message id="rpd-line-verb-hover">Útmutató Ref. Vonal</message>
+  <message id="rpd-line-verb-major">Teljes Fő Vonalak</message>
+  
+  <message id="rpd-csv-export-msg">A 'Nuklid Bomlási Info' eszköz további lehetőségeket biztosít nuklidok, bomlási termékek és bomlási információk CSV fájlokba exportálására.</message>
+  <message id="rpd-changed-age">Életkor megváltoztatva {1} számára ésszerűbb értékre '{2}'-ról '{3}'-ra</message>
+  <message id="rpd-changed-age-fission">Életkor megváltoztatva {1}-re, hogy érvényes legyen.</message>
+  <message id="rpd-det-id">Detektor ID</message>
+  <message id="rpd-ext-rid">Külső RID</message>
+  <message id="rpd-prev">Előző</message>
+  <message id="rpd-warn-cascade-xrays">röntgen-sugarak nem szerepelnek a kaszkádokban</message>
+
+  <!-- Values in the table on this tool -->
+  <message id="rpd-tbl-iso">Izo</message>  <!-- a.k.a meta-stable state of nuclide -->
+  <message id="rpd-tbl-el-cap">e.b.</message> <!-- a.k.a electron capture -->
+  <message id="rpd-tbl-proton">proton</message>
+  <message id="rpd-tbl-spont-fis">sp.h.</message> <!-- Spontaneous Fission-->
+  <message id="rpd-tbl-xray">röntgen</message>
+  <message id="rpd-tbl-reaction">Reakció</message>
+  <message id="rpd-tbl-norm">NORM</message>
+  <message id="rpd-tbl-cascade-sum">Kaszkád Összeg</message>
+
+  <message id="rpd-tbl-hdr-energy">Energia (keV)</message>
+  <message id="rpd-tbl-hdr-br">E.A.</message> <!-- branching ratio -->
+  <message id="rpd-tbl-hdr-parent">Szülő</message>
+  <message id="rpd-tbl-hdr-mode">Mód</message>
+  <message id="rpd-tbl-hdr-particle">Részecske</message>
+  <message id="rpd-tbl-hdr-tt-energy">A termelt részecske energiája</message>
+  <message id="rpd-tbl-hdr-tt-br">A részecskék száma másodpercenként, a szülő nuklid Bq-jére vonatkoztatva.</message>
+  <message id="rpd-tbl-hdr-tt-trans">Valódi nuklid, amely lebomlik és ezt a részecskét termeli.</message>
+  <message id="rpd-tbl-hdr-tt-trans-mode">A szülő nuklid bomlási módja, amely ezt a részecskét termelte.</message>
+  <message id="rpd-tbl-hdr-tt-type">A termelt részecske típusa</message>
+  <message id="rpd-tbl-hdr-tt-"></message>
+
+
+</messages>

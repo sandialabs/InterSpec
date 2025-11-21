@@ -1,3 +1,35 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 15aab351..6abd5022 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1,18 +1,18 @@
+-CMAKE_MINIMUM_REQUIRED(VERSION 2.8.12)
++CMAKE_MINIMUM_REQUIRED(VERSION 3.5)
+ 
+ SET(CMAKE_INCLUDE_DIRECTORIES_PROJECT_BEFORE true)
+ 
+-IF(COMMAND CMAKE_POLICY)
+-  CMAKE_POLICY(SET CMP0002 OLD)
+-  CMAKE_POLICY(SET CMP0003 OLD)
+-  CMAKE_POLICY(SET CMP0005 OLD)
+-  if(POLICY CMP0022)
++#IF(COMMAND CMAKE_POLICY)
++#  CMAKE_POLICY(SET CMP0002 OLD)
++#  CMAKE_POLICY(SET CMP0003 OLD)
++#  CMAKE_POLICY(SET CMP0005 OLD)
++#  if(POLICY CMP0022)
+     # Stops CMake from warning about CMP0022, even though we don't actually use
+     # the LINK_INTERFACE_LIBRARIES or INTERFACE_LINK_LIBRARIES (only indirectly
+     # through PUBLIC/PRIVATE in TARGET_LINK_LIBRARIES)
+-    CMAKE_POLICY(SET CMP0022 NEW)
+-  endif(POLICY CMP0022)
+-ENDIF(COMMAND CMAKE_POLICY)
++#    CMAKE_POLICY(SET CMP0022 NEW)
++#  endif(POLICY CMP0022)
++#ENDIF(COMMAND CMAKE_POLICY)
+ 
+ PROJECT(WT)
+ 
 diff --git a/src/Wt/Render/CssParser.C b/src/Wt/Render/CssParser.C
 index cf21160e..bf4710db 100644
 --- a/src/Wt/Render/CssParser.C
@@ -11,3 +43,29 @@ index cf21160e..bf4710db 100644
  #include <map>
  
  #include <Wt/Render/Block.h>
+diff --git a/src/http/Configuration.h b/src/http/Configuration.h
+index 0fe20e9f..4a23938d 100644
+--- a/src/http/Configuration.h
++++ b/src/http/Configuration.h
+@@ -89,7 +89,7 @@ public:
+   boost::function<std::string (std::size_t max_length, int purpose)> sslPasswordCallback()
+   { return sslPasswordCallback_; }
+   bool hasSslPasswordCallback()
+-  { return sslPasswordCallback_; }
++  { return !!sslPasswordCallback_; }
+ 
+ private:
+   std::vector<std::string> options_;
+diff --git a/src/web/FileUtils.C b/src/web/FileUtils.C
+index 5a15b09f..6994b461 100644
+--- a/src/web/FileUtils.C
++++ b/src/web/FileUtils.C
+@@ -7,7 +7,7 @@
+ #include "web/FileUtils.h"
+ 
+ #ifndef WT_HAVE_POSIX_FILEIO
+-#include <boost/filesystem/operations.hpp>
++#include <boost/filesystem.hpp>
+ #else //WT_HAVE_POSIX_FILEIO
+ #include <sys/types.h>
+ #include <sys/stat.h>

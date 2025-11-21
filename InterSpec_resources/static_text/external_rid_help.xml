@@ -33,7 +33,7 @@
   Sandia National Laboratories provides a web-based Radioisotope ID service at 
     <a href="https://full-spectrum.sandia.gov">https://full-spectrum.sandia.gov</a>,
   that can be can be integrated for use within <code>InterSpec</code>, by entering
-  &quot;<code>https://full-spectrum.sandia.gov/api/v1/info</code>&quot;
+  &quot;<code>https://full-spectrum.sandia.gov/api/v1</code>&quot;
   into the <b>URL</b> field on the &quot;<em>Remote URL</em>&quot; tab, as shown above.
 </p>
 <p>

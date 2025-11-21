@@ -66,6 +66,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UserPreferences.h"
+#include "InterSpec/RefSpectraWidget.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/CompactFileManager.h"
@@ -93,12 +94,15 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     m_scaleValueRow{ nullptr },
     m_scaleValueTxt{ nullptr },
     m_rescaleByLiveTime{ nullptr },
+    m_clearFileSelection{ nullptr },
     m_previousSampleTxt{ WString() },
     m_titles{ nullptr },
     m_summaryTables{ nullptr },
     m_showRidIdResult{ nullptr },
     m_showImage{ nullptr },
     m_moreInfoBtn{ nullptr },
+    m_swapBackgroundWithForegroundBtn{ nullptr },
+    m_swapSecondaryWithForegroundBtn{ nullptr },
     m_files( fileManager->model() ),
     m_interspec( hostViewer ),
     m_fullFileManager( fileManager ),
@@ -217,13 +221,21 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     m_spectrumLineLegend[typeindex]->addStyleClass( "SpecLeg" );
     m_spectrumLineLegend[typeindex]->hide();
     
-    m_selects[typeindex] = new WComboBox( wrapper );
+    WContainerWidget *comboRow = new WContainerWidget( wrapper );
+    comboRow->addStyleClass( "SpecFileSelectRow" );
+    m_selects[typeindex] = new WComboBox( comboRow );
     m_selects[typeindex]->setInline( false );
     m_selects[typeindex]->addStyleClass( "SpecFileSelect" );
     m_selects[typeindex]->setNoSelectionEnabled( true );
     m_selects[typeindex]->setCurrentIndex( -1 );
     m_selects[typeindex]->activated().connect( boost::bind( &CompactFileManager::handleFileChangeRequest,
                                                         this, boost::placeholders::_1, type ) );
+    m_clearFileSelection[typeindex] = new WPushButton( comboRow );
+    m_clearFileSelection[typeindex]->addStyleClass( "closeicon-wtdefault" );
+    m_clearFileSelection[typeindex]->setHiddenKeepsGeometry( true );
+    m_clearFileSelection[typeindex]->hide();
+    HelpSystem::attachToolTipOn( m_clearFileSelection[typeindex], WString::tr("cfm-tt-clear-spectrum"), showToolTips, HelpSystem::ToolTipPosition::Right );
+    m_clearFileSelection[typeindex]->clicked().connect( boost::bind( &CompactFileManager::handleClearFileSelection, this, type ) );
     
     m_sampleDivs[typeindex] = new WContainerWidget( wrapper );
     m_sampleDivs[typeindex]->setStyleClass( "SampleSelectRow" );
@@ -285,19 +297,21 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     m_summaryTables[typeindex]->addStyleClass( "SummaryTable" );
     m_summaryTables[typeindex]->hide();
     
+    stretcher = new WContainerWidget( wrapper );
+    stretcher->addStyleClass( "StretcherRow" );
+
     WContainerWidget *bottomrow = new WContainerWidget( wrapper );
     bottomrow->addStyleClass( "BottomRow" );
     
+    m_scaleValueRow[typeindex] = new WContainerWidget( bottomrow ); 
+    m_scaleValueRow[typeindex]->addStyleClass( "ScaleFactorRow" );
+
     if( type == SpecUtils::SpectrumType::Foreground )
     {
-      m_scaleValueRow[typeindex] = nullptr;
       m_scaleValueTxt[typeindex] = nullptr;
       m_rescaleByLiveTime[typeindex] = nullptr;
     }else
     {
-      m_scaleValueRow[typeindex] = new WContainerWidget( bottomrow );
-      m_scaleValueRow[typeindex]->addStyleClass( "ScaleFactorRow" );
-      
       WLabel *label = new WLabel( WString::tr("cfm-scale-factor-label"), m_scaleValueRow[typeindex] );
       m_scaleValueTxt[typeindex] = new NativeFloatSpinBox( m_scaleValueRow[typeindex] );
       label->setBuddy( m_scaleValueTxt[typeindex] );
@@ -338,44 +352,68 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     m_moreInfoBtn[typeindex]->addStyleClass( "LinkBtn MoreInfoBtn" );
     m_moreInfoBtn[typeindex]->clicked().connect( boost::bind(&InterSpec::createFileParameterWindow, m_interspec, type) );
     m_moreInfoBtn[typeindex]->hide();
+    
+    //Lets add in a few more customizations based on the display type
+    switch( type )
+    {
+      case SpecUtils::SpectrumType::Foreground:
+      {
+        WContainerWidget *foregroundBtns = new WContainerWidget( (m_displayMode == LeftToRight) ? this : wrapper );
+        foregroundBtns->addStyleClass( "CompactManagerButtons" );
+        
+        //Foreground, add in Manager and Library buttons for quick access
+        WContainerWidget *helpBtn = new WContainerWidget( foregroundBtns );
+        helpBtn->addStyleClass( "Wt-icon ContentHelpBtn" );
+        helpBtn->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, "compact-file-manager" ) );
+        
+        WPushButton *fileManagerBtn = new WPushButton( WString::tr("app-mi-file-manager"), foregroundBtns );
+        fileManagerBtn->clicked().connect( m_interspec->fileManager(), &SpecMeasManager::startSpectrumManager );
+        fileManagerBtn->addStyleClass( "LinkBtn" );
+#if( USE_DB_TO_STORE_SPECTRA )
+        WPushButton *prevSpectraBtn = new WPushButton( WString::tr("app-mi-file-prev"), foregroundBtns );
+        prevSpectraBtn->clicked().connect( m_interspec->fileManager(), &SpecMeasManager::browsePrevSpectraAndStatesDb );
+        prevSpectraBtn->addStyleClass( "LinkBtn" );
+#endif
+        break;
+      }//case SpecUtils::SpectrumType::Foreground:
+      
+      case SpecUtils::SpectrumType::SecondForeground:
+      {
+        WContainerWidget *secondaryBtns = new WContainerWidget( (m_displayMode == LeftToRight) ? this : wrapper );
+        secondaryBtns->addStyleClass( "SecondForegroundBtns" );
+        
+        m_swapSecondaryWithForegroundBtn = new WPushButton( WString::tr("cfm-swap-secondary-with-foreground-btn"), secondaryBtns );
+        HelpSystem::attachToolTipOn( m_swapSecondaryWithForegroundBtn, WString::tr("cfm-tt-swap-secondary-with-foreground-btn"), showToolTips );
+        m_swapSecondaryWithForegroundBtn->clicked().connect( boost::bind( &CompactFileManager::handleSwapWithForeground, this, SpecUtils::SpectrumType::SecondForeground ) );
+        m_swapSecondaryWithForegroundBtn->addStyleClass( "LinkBtn" );
+        m_swapSecondaryWithForegroundBtn->hide();
+        
+        WContainerWidget *stretcher = new WContainerWidget( secondaryBtns );
+        stretcher->addStyleClass( "StretcherRow" );
+        
+        WPushButton *refSpectraBtn = new WPushButton( WString::tr("cfm-ref-spectra-btn"), secondaryBtns );
+        refSpectraBtn->clicked().connect( this, &CompactFileManager::handleCreateReferenceSpectrumDialog );
+        
+        refSpectraBtn->addStyleClass( "LinkBtn" );
+        
+        break;
+      }//case SpecUtils::SpectrumType::SecondForeground:
+          
+      case SpecUtils::SpectrumType::Background:
+      {
+        WContainerWidget *backgroundBtns = new WContainerWidget( (m_displayMode == LeftToRight) ? this : wrapper );
+        backgroundBtns->addStyleClass( "BackgroundBtns" );
+        
+        m_swapBackgroundWithForegroundBtn = new WPushButton( WString::tr("cfm-swap-back-with-foreground-btn"), backgroundBtns );
+        HelpSystem::attachToolTipOn( m_swapBackgroundWithForegroundBtn, WString::tr("cfm-tt-swap-back-with-foreground-btn"), showToolTips );
+        m_swapBackgroundWithForegroundBtn->clicked().connect( boost::bind( &CompactFileManager::handleSwapWithForeground, this, SpecUtils::SpectrumType::Background ) );
+        m_swapBackgroundWithForegroundBtn->addStyleClass( "LinkBtn" );
+        m_swapBackgroundWithForegroundBtn->hide();
+        break;
+      }
+    }//switch( type )
   }//for( int j = 0; j < 3; ++j )
   
-  
-  //Lets add in a few more customizations based on the display type
-  switch( m_displayMode )
-  {
-    case LeftToRight:
-    {
-      //Foreground, add in Manager and Library buttons for quick access
-      WContainerWidget *buttons = new WContainerWidget( this );
-      buttons->addStyleClass( "CompactManagerButtons" );
-      
-      auto helpBtn = new WContainerWidget( buttons );
-      helpBtn->addStyleClass( "Wt-icon ContentHelpBtn" );
-      helpBtn->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, "compact-file-manager" ) );
-      
-      WPushButton *button = new WPushButton( WString::tr("app-mi-file-manager"), buttons );
-      //button->setIcon(Wt::WLink("InterSpec_resources/images/computer.png" ));
-      button->clicked().connect( m_interspec->fileManager(), &SpecMeasManager::startSpectrumManager );
-#if( USE_DB_TO_STORE_SPECTRA )
-      WPushButton *button2 = new WPushButton( WString::tr("app-mi-file-prev"), buttons );
-      button2->clicked().connect( m_interspec->fileManager(), &SpecMeasManager::browsePrevSpectraAndStatesDb );
-#endif
-    break;
-    }//case LeftToRight:
-      
-    case Tabbed:
-    {
-      //Add in a link to open files in the database, as
-#if( USE_DB_TO_STORE_SPECTRA )
-      WContainerWidget *buttons = new WContainerWidget();
-      WPushButton *button = new WPushButton( WString::tr("cfm-db-spec"), buttons );
-      button->clicked().connect( fileManager, &SpecMeasManager::browsePrevSpectraAndStatesDb );
-      tabbedLayout->addWidget( buttons, 1, 0 );
-#endif
-      break;
-    }//case Tabbed:
-  }//switch( m_displayMode )
     
   // Then actually pull in the available files. If there are none, say so.
   refreshContents();
@@ -415,6 +453,12 @@ void CompactFileManager::handleFileChangeRequest( int row, SpecUtils::SpectrumTy
     m_showRidIdResult[typeindex]->hide();
     m_showImage[typeindex]->hide();
     m_moreInfoBtn[typeindex]->hide();
+    m_clearFileSelection[typeindex]->hide();
+
+    if( type == SpecUtils::SpectrumType::Background )
+      m_swapBackgroundWithForegroundBtn->hide();
+    else if( type == SpecUtils::SpectrumType::SecondForeground )
+      m_swapSecondaryWithForegroundBtn->hide();
     
     return;
   }//if( we should unload current file )
@@ -758,6 +802,13 @@ void CompactFileManager::handleDisplayChange( SpecUtils::SpectrumType spectrum_t
     m_showRidIdResult[typeindex]->hide();
     m_showImage[typeindex]->hide();
     m_moreInfoBtn[typeindex]->hide();
+    m_clearFileSelection[typeindex]->hide();
+    
+    if( spectrum_type == SpecUtils::SpectrumType::Background )
+      m_swapBackgroundWithForegroundBtn->hide();
+    else if( spectrum_type == SpecUtils::SpectrumType::SecondForeground )
+      m_swapSecondaryWithForegroundBtn->hide();
+
     return;
   }//if( !meas )
 
@@ -779,6 +830,13 @@ void CompactFileManager::handleDisplayChange( SpecUtils::SpectrumType spectrum_t
   
   if( m_rescaleByLiveTime[typeindex] )
     m_rescaleByLiveTime[typeindex]->hide();
+
+  m_clearFileSelection[typeindex]->show();
+
+  if( spectrum_type == SpecUtils::SpectrumType::Background )
+    m_swapBackgroundWithForegroundBtn->show();
+  else if( spectrum_type == SpecUtils::SpectrumType::SecondForeground )
+    m_swapSecondaryWithForegroundBtn->show();
 
   WModelIndex index = m_files->index( meas );
   if( !index.isValid() )
@@ -1266,3 +1324,70 @@ void CompactFileManager::handleRenormalizeByLIveTime( const SpecUtils::SpectrumT
   m_interspec->setDisplayScaleFactor( sf, type, true );
 }//void handleRenormalizeByLIveTime( const SpecUtils::SpectrumType type )
 
+
+void CompactFileManager::handleSwapWithForeground( const SpecUtils::SpectrumType type )
+{
+  assert( type == SpecUtils::SpectrumType::Background || type == SpecUtils::SpectrumType::SecondForeground );
+  if( type == SpecUtils::SpectrumType::Foreground )
+    return;
+  
+  const shared_ptr<SpecMeas> meas = m_interspec->measurment(type);
+  const set<int> samples = m_interspec->displayedSamples(type);
+  const vector<string> detectors = m_interspec->detectorsToDisplay(type);
+
+  // When we set the foreground, the background or secondary may get cleared, so we'll re-set that.
+  const SpecUtils::SpectrumType other_type = (type == SpecUtils::SpectrumType::Background) 
+                                               ? SpecUtils::SpectrumType::SecondForeground 
+                                               : SpecUtils::SpectrumType::Background;
+  const shared_ptr<SpecMeas> other_meas = m_interspec->measurment(other_type);
+  const set<int> other_samples = m_interspec->displayedSamples(other_type);
+  const vector<string> other_detectors = m_interspec->detectorsToDisplay(other_type);
+  
+  const shared_ptr<SpecMeas> foreground_meas = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
+  const set<int> foreground_samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Foreground);
+  const vector<string> foreground_detectors = m_interspec->detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
+  
+  const Wt::WModelIndex index = m_files->index(meas);
+  const Wt::WModelIndex foreground_index = m_files->index(foreground_meas);
+
+  if( !index.isValid() || !foreground_index.isValid() )
+    return;
+
+  Wt::WFlags<InterSpec::SetSpectrumOptions> options;
+  options |= InterSpec::SetSpectrumOptions::SkipParseWarnings;
+  options |= InterSpec::SetSpectrumOptions::SkipExternalRid;
+
+  m_interspec->setSpectrum( meas, samples, SpecUtils::SpectrumType::Foreground, options );
+  m_interspec->setSpectrum( foreground_meas, foreground_samples, type, options );
+  if( other_meas )
+    m_interspec->setSpectrum( other_meas, other_samples, other_type, options );
+
+  //m_fullFileManager->displayFile( index.row(), meas, SpecUtils::SpectrumType::Foreground, false, false, SpecMeasManager::VariantChecksToDo::None );
+  //m_fullFileManager->displayFile( foreground_index.row(), foreground_meas, type, false, false, SpecMeasManager::VariantChecksToDo::None );
+}//void handleSwapWithForeground( const SpecUtils::SpectrumType type )
+
+
+void CompactFileManager::handleClearFileSelection( const SpecUtils::SpectrumType type )
+{
+  const int typeindex = static_cast<int>(type);
+  m_selects[typeindex]->setCurrentIndex( -1 );
+
+  handleFileChangeRequest( -1, type );
+}//void handleClearFileSelection( const SpecUtils::SpectrumType type )
+
+
+void CompactFileManager::handleCreateReferenceSpectrumDialog()
+{
+  InterSpec *interspec = InterSpec::instance();
+  assert( interspec );
+  if( !interspec )
+    return;
+  
+  const shared_ptr<const SpecUtils::Measurement> fore
+                 = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  
+  const SpecUtils::SpectrumType type = fore ? SpecUtils::SpectrumType::SecondForeground
+                                            : SpecUtils::SpectrumType::Foreground;
+  
+  RefSpectraDialog::createDialog( RefSpectraInitialBehaviour::LastUserSelectedSpectra, type );
+}//void handleCreateReferenceSpectrumDialog()

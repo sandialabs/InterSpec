@@ -1,0 +1,379 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- This file contains most of the strings for SpecMeasManager.cpp - e.g., File -> "Manager..."
+    smm- is short for Spectrum Measurement Manager
+    musd- is short for MultiUrlSpectrumDialog
+    uid- is short for UploadedImgDisplay.
+    fud- is short for FileUploadDialog
+  -->
+  <message id="smm-window-title">スペクトルマネージャ</message>
+  <message id="smm-load-spec-from">スペクトル読み込み元: </message>
+  <message id="smm-tt-upload-file">ファイルからスペクトルをインポート</message>
+
+  <message id="smm-err-zip">zipからファイル抽出エラー</message>
+  <message id="smm-zip-sel-file-no-name">
+    アップロードファイルはZIPファイルです。
+    <br />
+    {2}
+    開きたいファイルを選択してください。
+  </message>
+  <message id="smm-zip-sel-file">
+    <b>{1}</b>はZIPファイルです。
+    <br />
+    {2}
+    開きたいファイルを選択してください。
+  </message>
+  <message id="smm-zip-window-title">アップロードZIPファイル内容</message>
+  <message id="smm-zip-filename-hdr">ファイル名</message>
+  <message id="smm-zip-kilobyte-hdr">kb</message>
+  <message id="smm-zip-display-btn">表示</message>
+  <message id="smm-empty-file">おそらく空のファイルです - スペクトルファイルではありません。</message>
+  <message id="smm-failed-reading-nonspec-file">非スペクトルファイルの読み取りに失敗。</message>
+  <message id="smm-not-spec-file">スペクトルファイルではありません</message>
+  <message id="smm-image-file">画像ファイル選択済み</message>
+  <message id="smm-icd2">これは生スペクトルではなく分析結果を含むN42 ICD2ファイルのようです。
+    <br />
+    これが正当なスペクトルファイルだと思われる場合は、
+    <a href="mailto:interspec@sandia.gov" target="_blank">interspec@sandia.gov</a>
+    にメールしてこのファイルタイプのサポートを依頼してください。
+  </message>
+  <message id="smm-invalid-zip">このファイルは無効なZIPファイル（またはxlsx、pptx、
+    <br />
+    docx、odp、jar、apkなど）のようです。申し訳ありませんが開けません :(
+  </message>
+  <message id="smm-unsupported-archive">このファイルはアーカイブファイルのようですが、InterSpecではまだサポートされていません。
+    このアーカイブタイプのサポート追加をご希望の場合は
+    <a href="mailto:wcjohns@sandia.gov" target="_blank">wcjohns@sandia.gov</a>
+    までご連絡ください。
+  </message>
+  <message id="smm-unsupported-document">このファイルは文書ファイルのようで、InterSpecではサポートされていません。</message>
+  <message id="smm-invalid-peak-csv">アップロードファイルはピークCSVファイルのようでしたが、無効でした。</message>
+  <message id="smm-file-is-drf">
+    <p style="white-space: nowrap;">
+      このファイルは検出器応答関数のようです。
+    </p>
+    <p style="text-align: left; white-space: nowrap;">
+      名前: {1}
+    </p>
+   <p>このDRFを使用しますか？</p>
+  </message>
+  <message id="smm-saved-drf-conf">
+    '{1}'を後で使用するために保存しました。「<em>検出器応答関数選択</em>」ツールの「<em>相対効率</em>」部分で利用できます。
+  </message>
+  <message id="smm-err-saving-drf">DRFファイルの後での使用のための保存エラー。</message>
+  <message id="smm-file-is-drf">このファイルは検出器応答関数のようです。</message>
+  <message id="smm-file-is-multi-drf">このファイルには複数の検出器応答関数が含まれています。</message>
+
+  <!-- Text for dialog that appears when user drag-n-drop a .CALp file onto InterSpec -->
+  <message id="smm-CALp-no-fore"><p>現在表示中のフォアグラウンドがありません - CALpファイルをスキップします。</p></message>
+  <message id="smm-CALp-invalid">
+    <p style="white-space: nowrap;">
+      このCALpファイルの内容は
+      <br />
+      読み取り不可能またはデータと非互換です
+    </p>
+  </message>
+  <message id="smm-CALp-contains-energy-cal">
+    <p style="white-space: nowrap;">このファイルにはエネルギー較正が含まれているようです。</p>
+  </message>
+  <message id="smm-CALp-multi-dets"><p>{1}個の検出器の較正があります</p></message>
+  <message id="smm-warn-single-for-multi">
+    <p style="text-align: left; white-space: nowrap;">
+    警告: このCALpファイルには単一の較正が含まれています。<br />
+    主に表示されるエネルギー較正に適用され、<br />
+    相対変化が他の検出器の<br />
+    エネルギー較正に適用されます。おそらくこれが望ましい動作です。
+    </p>
+  </message>
+  <message id="smm-warn-multi-for-single">
+    <p style="text-align: left; white-space: nowrap;">
+    警告: このエネルギー較正は現在のデータの<br />
+    構造と一致しない可能性があります。
+    </p>
+  </message>
+  <message id="smm-CALp-cb-disp-samples-only">表示されたサンプルのみに適用</message>
+  <message id="smm-CALp-cb-apply-to-fore">フォアグラウンドに適用</message>
+  <message id="smm-CALp-cb-apply-to-back">バックグラウンドに適用</message>
+  <message id="smm-CALp-cb-apply-to-second">セカンダリに適用</message>
+  <message id="smm-CALp-like-to-use"><p style="white-space: nowrap;">使用しますか？</p></message>
+  <message id="smm-CALp-prev-is-channel-lower-energy">
+    <p style="margin-top: 10px; font-style: italic;">
+      注: 現在のエネルギー較正は低チャンネルエネルギーです。<br />
+      このエネルギー較正を適用する前に<br />
+      スペクトルを線形化することをお勧めします。
+    </p>
+  </message>
+
+  <message id="smm-CALp-err-applying-single">較正の適用でエラーが発生しました:
+    <br />
+    {1}
+    <br />
+    <br />
+    較正はフォアグラウンドに適用されました。
+  </message>
+  <message id="smm-CALp-err-applying-mult">較正の適用でエラーが発生しました:
+    <br />
+    {1}
+    <br />
+    <br />
+    較正はフォアグラウンドとバックグラウンドに適用されました。
+  </message>
+
+  <!-- Text for dialog that appears when user drag-n-drops a .ECC file onto InterSpec -->
+  <message id="smm-err-load-iso-by-nuc"><em>核種別同位体組成</em>XML設定ファイルの読み込みエラー: {1}</message>
+  <message id="smm-err-load-xml-iso-by-nuc">設定XMLの解析エラー: {1}{2}</message>
+  <message id="smm-err-iso-by-nuc-window-title">無効な<em>核種別同位体組成</em>XML設定ファイル。</message>
+  <message id="smm-ecc-curve">ISOCS効率較正曲線DRF</message>
+  <message id="smm-ecc-how-to-interpret">解釈方法</message>
+  <message id="smm-ecc-far-field">遠距離DRF</message>
+  <message id="smm-ecc-fix-geom-total-act">固定ジオメトリ - 総放射能</message>
+  <message id="smm-ecc-fix-geom-act-cm2">固定ジオメトリ - 放射能/cm2</message>
+  <message id="smm-ecc-fix-geom-act-m2">固定ジオメトリ - 放射能/m2</message>
+  <message id="smm-ecc-fix-geom-act-gram">固定ジオメトリ - 放射能/g</message>
+  <message id="smm-ecc-det-diam">検出器直径</message>
+  <message id="smm-ecc-dist">距離</message>
+  <message id="smm-ecc-use-drf">DRF使用</message>
+  <message id="smm-ecc-error">ECCからのDRF作成エラー: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop the Activity/Shielding fit file onto app -->
+  <message id="smm-act-shield-xml">放射能/遮蔽XML</message>
+  <message id="smm-act-shield-use">この放射能/遮蔽フィット設定を使用しますか？</message>
+  <message id="smm-err-act-shield">申し訳ありませんが、放射能/遮蔽フィットモデルの読み込みエラーが発生しました: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop a Source.lib file onto app, and the Make Detector Response tool is open -->
+  <message id="smm-source-lib-title">特性化線源ライブラリファイル</message>
+  <message id="smm-source-source-use">
+    これにより、検出器応答作成ツールでこのSource.libファイルが使用されます。
+    <br />
+    ライブラリ内の最初に一致する核種で線源を自動入力しますか？
+  </message>
+
+  <!-- Other errors -->
+  <message id="smm-upload-timeout">ファイルアップロードがタイムアウトした可能性があります - ファイルデータを120秒間受信していません。</message>
+  <message id="smm-finishing-upload">アップロード完了中</message>
+  <message id="smm-finishing-copying">ファイルコピー完了中</message>
+  <message id="smm-finish-up-txt">{1} {2}ファイルの - 1分程度かかる場合があります。</message> <!-- ex. "of 112.2 kb foreground file - may take a minute."-->
+  <message id="smm-window-title-parsing">ファイル解析中</message>
+  <message id="smm-window-msg-parsing">少々お待ちください。</message>
+  <message id="smm-no-file-disp">エラー、{1}測定が表示されていません。</message>
+  <message id="smm-no-spec-disp">申し訳ありませんが、{1}はスペクトルを表示していないようです。</message>
+  <message id="smm-err-parse-spec-title">ファイルを解析できませんでした</message>
+  <message id="smm-err-parse-spec">
+    <p>申し訳ありませんが、ファイル{1}を解析できませんでした:</p>
+  <p>エラー: <em>{2}</em></p>
+  <p>これが有効なスペクトルファイルだと思われる場合は、
+  <a href="mailto:interspec@sandia.gov" target="_blank">interspec@sandia.gov</a>に送信してください。
+   この問題の修正を試みます。</p>
+  </message>
+  <message id="smm-failed-combine">ファイルの結合に失敗しました: {1}</message>
+  <message id="smm-failed-sum">スペクトルの合計に失敗しました: {1}</message>
+
+  <!-- URI entry -->
+  <message id="smm-qr-no-meas">URL/QRコードにガンマ測定がありません</message>
+  <message id="smm-qr-no-gamma">URL/QRコードにガンマ測定がありません</message>
+  <message id="smm-qr-name-placeholder">QRコード/URLから</message>
+  <message id="smm-qr-err-decode">スペクトルURL/QRコードの復号化エラー: {1}</message>
+  <message id="smm-qr-couldnt-encode">
+    スペクトルをQRコードにエンコードできませんでした。
+    <br />
+    おそらく9個を超えるQRコードが必要なためです。
+  </message>
+  <message id="smm-qr-encode-fail">スペクトルのQRコードへのエンコードに失敗しました: {1} </message>
+
+  <!-- Messages for "Virtual Detectors" at RSI systems -->
+  <message id="smm-vd-load-title">読み込む仮想検出器は？</message>
+  <message id="smm-vd-load-msg">
+    <div>このファイルには複数の「仮想検出器」が含まれており、</div>
+    <div>複数の物理検出器の合計である場合もそうでない場合もあります。</div>
+    <div>すべてを読み込む場合は、<b>表示</b>→<b>検出器</b>メニューで</div>
+    <div>サブセットを表示できます。</div>
+    {1}
+    <div style="margin-top: 20px; margin-bottom: 5px; white-space: nowrap; font-weight: bold;">
+      どの検出器データを読み込みますか？
+    </div>
+  </message>
+  <message id="smm-vd-gt-5dets">
+    <div>{1}個のVDがあります。「すべて」または最初の5個のみ選択可能です。</div>
+  </message>
+  <message id="smm-vd-all-btn">すべて</message>
+
+  <!-- Derived data related text-->
+  <message id="smm-derived-window-title">派生データを使用しますか？</message>
+  <message id="smm-derived-window-txt">
+    <div>このファイルには「派生データ」スペクトルが含まれており、</div>
+    <div>通常検出システムで分析に使用されるものです。</div>
+    <div style="margin-top: 20px; margin-bottom: 5px; white-space: nowrap; font-weight: bold;">
+      どのデータを読み込みますか？
+    </div>
+  </message>
+  <message id="smm-derived-all">すべてのデータ</message>
+  <message id="smm-derived-raw">生データ</message>
+  <message id="smm-derived-derived">派生データ</message>
+  <message id="smm-multiple-binnings-window-title">エネルギービニング選択</message>
+  <message id="smm-multiple-binnings-window-txt">
+    <div style="white-space: nowrap;">スペクトルファイルで複数のエネルギービニングが見つかりました。</div>
+    <div style="margin-top: 5px; margin-bottom: 5px;">使用するものを選択してください</div>
+  </message>
+  <message id="smm-multiple-binnings-keep-all-btn">すべて保持</message>
+  <message id="smm-warn-has-intrinsic">アップロードファイルには固有放射能スペクトルが含まれていましたが、現在ファイル内の他のスペクトルを表示しています。</message>
+  <message id="smm-warn-upload-mult-spec">アップロードファイルには{1}個のサンプルが含まれていました<br /></message>
+  <message id="smm-warn-upload-mult-showing-fore">最初のフォアグラウンドサンプルが表示されています。<br /></message>
+  <message id="smm-warn-upload-mult-showing-first">最初のサンプルが表示されています。<br /></message>
+  <message id="smm-warn-upload-mult-showing-other">サンプル{1}が表示されています。<br /></message>
+  <message id="smm-warn-upload-use-spec-manager"><b>スペクトルファイル</b>タブまたは<b>ファイルマネージャ</b>を使用して他のレコードを選択してください。</message>
+  <message id="smm-warn-upload-use-file-manager"><b>ファイルマネージャ</b>を使用して他を選択してください。</message>
+
+  <message id="smm-multi-cal-present">アップロードファイルには{1}個の較正または派生データサンプルが含まれていました
+    <br />
+    {2}
+    は表示されません。
+    <br />
+    <b>スペクトルファイル</b>タブまたは<b>ファイルマネージャ</b>を使用してこれを変更してください。
+  </message>
+  <message id="smm-multi-cal-it">それ</message>
+  <message id="smm-multi-cal-they">それら</message>
+  <message id="smm-multi-spectra-using-back">ファイルに複数のスペクトルがあるため、バックグラウンドスペクトルのみが表示されています。</message>
+  <message id="smm-multi-spectra-using-first">アップロードファイルには{1}個のサンプルが含まれているため
+    <br />
+    最初のものを表示します。
+    <br />
+    <b>ファイルマネージャ</b>を使用してこれを変更してください。
+  </message>
+
+
+  <!-- The visual components of the Spectrum Measurement Manager GUI -->
+  <message id="smm-selected-spec-label">選択されたスペクトル: </message>
+  <message id="smm-disp-as-btn">表示形式</message>
+  <message id="smm-to-new-file">新しいファイルへ</message>
+  <message id="smm-tt-to-new-file">現在の選択から新しいメモリ内スペクトルファイルを作成します。</message>
+  <message id="smm-as-new-file">新しいファイルとして</message>
+  <message id="smm-tt-as-new-file">現在の選択から新しいメモリ内スペクトルファイルを作成します。</message>
+  <message id="smm-sum-spectra">スペクトル合計</message>
+  <message id="smm-tt-sum-spectra">現在の選択から新しいメモリ内スペクトルファイルを作成します。</message>
+  <message id="smm-export-btn">エクスポート...</message>
+  <message id="smm-unload-btn">アンロード</message>
+  <message id="smm-unassign-label">割り当て解除: </message>
+
+
+  <message id="smm-prev-states-window-title">以前に保存された状態</message>
+  <message id="smm-err-prev-state-unexpected">使用可能な保存状態の表示で予期しない問題: {1}</message>
+  <message id="smm-tab-saved-states">保存状態</message>
+  <message id="smm-tab-auto-saved">自動保存スペクトル</message>
+  <message id="smm-auto-check-prev-cb">以前の作業を自動的にチェック。</message>
+  <message id="smm-cant-save">
+    このスペクトルファイルは内部データベースに保存するには大きすぎます。<br />
+    そのため、あなたの作業は内部データベースに自動保存されず、次回ファイルを読み込んだときに中断したところから再開できません。
+    <p>このファイルのサイズは{1}で、保存可能な最大サイズは{2}です。</p>
+  </message>
+  <message id="smm-max-file-to-large">試行ファイルが大きすぎます。最大サイズは{1} kb、{2} kbをアップロードしようとしました。</message>
+  <message id="smm-must-specify-name">名前を指定する必要があります</message>
+  <message id="smm-save-spectype-as-window-title">{1}スペクトルを名前を付けて保存</message>
+  <message id="smm-save-spectype-name-empty-txt">（保存する名前）</message>
+  <message id="smm-save-spectype-desc-empty-txt">（オプションの説明）</message>
+  <message id="smm-save-state-toast">{1}の状態を保存しました</message>
+  <message id="smm-save-spec-version-window-title">スペクトルバージョン保存</message>
+  <message id="smm-save-state">状態保存</message>
+  <message id="smm-create-new-tag-toast">新しいタグを作成しました: '{1}'。</message>
+
+  <message id="smm-next-qr">次のQRコード</message>
+  <message id="smm-qr-desc">{2}スペクトルの{1}。</message>
+  <message id="smm-qr-title">スペクトルファイル{1}</message>
+  <message id="smm-qr-sequence-single">QRコード</message>
+  <message id="smm-qr-sequence-multi">QRコード{2}の{1}</message>
+  
+  
+  <message id="smm-changed-background">
+    バックグラウンドスペクトルも新しく読み込まれたファイルに含まれているものに更新されました。
+  </message>
+  <message id="smm-didnt-changed-background">
+    新しく読み込まれたフォアグラウンドファイルにはバックグラウンドスペクトルが含まれていました
+    - しかし表示されているバックグラウンドは<b>更新されていません</b>。
+  </message>
+  
+  <message id="fud-dialog-title">開くファイルを選択</message>
+  <message id="fud-open-foreground-only-msg">下の{1}でフォアグラウンドスペクトルファイルを選択してください。</message>
+  <message id="fud-open-any-type-msg">スペクトルファイルの開き方を選択し、下の{1}でファイルを参照してください。</message>
+  <message id="fud-btn-grp-title">ファイルを次として開く:</message>
+  <message id="fud-drg-n-drop-msg">
+    より迅速な代替手段として、ファイルを直接 <br />
+    アプリケーションウィンドウにドラッグアンドドロップすることもできます。<br />
+    <br />より高度なファイル開封と<br />
+    操作には<b>ファイルマネージャ</b>を使用してください
+  </message>
+  <message id="fud-drg-n-drop-msg-mbl">
+    <span style="font-size: 10px;">
+      メールやファイルアプリからスペクトルファイルを開くこともできます。
+    </span>
+  </message>
+  
+  <message id="musd-dialog-title">マルチパートQR/URLスペクトル</message>
+  <message id="musd-err-diff-spec">受信したURL/QRコードは以前のURL/QRコードとは異なるスペクトルからのものです</message>
+  <message id="musd-err-duplicate-url">このURL/QRコードはすでに受信済みです</message>
+  <message id="musd-from-qr-file-name">QRコード/URLから</message>
+  <message id="musd-err-decoding-url">URL復号化エラー: {1}</message>
+  <message id="musd-received-urls-list">{2}のうち{1}のurlを受信しました。<p>さらなるURLs/QRコードを待機中</p></message>
+
+
+  <message id="uid-qr-code-pic">QRコード画像</message>
+  <message id="uid-no-qr-found">QRコードが見つかりません ⓘ</message>
+  <message id="uid-no-qr-found-title">QRコードが見つかりません</message>
+  <message id="uid-no-qr-content">
+    <p>
+      画像にQRコードがある場合は、写真をトリミングするか色レベルを調整してみてください。
+      <br/>
+      サードパーティのアプリ/ウェブサイト、またはiOSやAndroidに組み込まれた機能を使用することも、多くの場合より良い結果が得られます。
+    </p>
+  </message>
+  <message id="uid-err-qr-search-title">QRコード検索エラー</message>
+  <message id="uid-err-qr-search-content">
+    <div>
+      エラー値: {1}
+    </div>
+    <p>
+      エラーメッセージ: {2}
+    </p>
+  </message>
+  <message id="uid-some-invalid-qrs">{1}個のQRコードが無効なURIを含んでいました。</message>
+  <message id="uid-qr-didnt-have-uri">QRコードには<code>interspec://</code>または<code>raddata://</code> URIが含まれていませんでした。</message>
+  <message id="uid-invalid-qr">無効なQRコード</message>
+  <message id="uid-invalid-uri">QRコードに無効なURIが含まれています</message>
+  <message id="uid-multi-qr-found-title">{1}個のQRコードが見つかりました</message>
+  <message id="uid-multi-qr-found-content">これらすべてを使用しますか？</message>
+  <message id="uid-multi-qr-status">{1}個のQRコードが見つかりました</message>
+  <message id="uid-qr-found-title">QRコードが見つかりました</message>
+  <message id="uid-qr-found-content"><br /> <code>{1}...</code>で始まるQRコードを使用しますか？</message>
+  <message id="uid-found-qr">QRコードが見つかりました</message>
+  <message id="uid-err-getting-data">埋め込むデータの取得エラー - 画像を埋め込みません。</message>
+  <message id="uid-err-no-foreground-embedd">フォアグラウンドが読み込まれていません - 画像を埋め込みません。</message>
+  <message id="uid-image-embed-conf">画像はフォアグラウンドスペクトルファイルに埋め込まれました。N42-2012ファイル形式でエクスポートした場合のみこれが保持されます。</message>
+  <message id="uid-image-not-spectrum">このファイルは画像のようで、スペクトルファイルではありません。</message>
+  <message id="uid-err-to-large">アップロードファイルが大きすぎて表示を試行できませんでした。</message>
+  <message id="uid-err-reading-upload">アップロードファイルを読み取れませんでした。</message>
+  <message id="uid-embed-image-btn">スペクトルファイルに画像を埋め込む</message>
+  <message id="uid-no-qr-found">QRコードが見つかりません ⓘ</message>
+  <message id="uid-looking-for-qr">QRコードを検索中。</message>
+  <message id="uid-check-for-qr-btn">Qrコードをチェック</message>
+  <message id="uid-tt-auto-qr">
+    画像はInterSpecで使用可能なQRコードが自動的に検索されます。
+    <br/>
+    画像内にQRコードがあるのに見つからない場合は、
+    サードパーティのアプリ/ウェブサイト、またはiOS
+    やAndroidに組み込まれた機能を使用することをお勧めします。
+    <br />
+    サードパーティツールを使用してQRコードからURIを抽出する場合は、
+    「<b>編集</b>」メニューの「<b>URL入力</b>」
+    項目を使用してInterSpecに入力できます。
+  </message>
+
+  <!-- Column headers for SpectraFileModel -->
+  <message id="sfm-col-file">ファイル</message>
+  <message id="sfm-col-n-samples">サンプル数</message>
+  <message id="sfm-col-live-time">実測時間(秒)</message>
+  <message id="sfm-col-real-time">計時時間(秒)</message>
+  <message id="sfm-col-gam-count">γカウント</message>
+  <message id="sfm-col-neut-count">中性子カウント</message>
+  <message id="sfm-col-time-taken">測定時刻</message>
+  <message id="sfm-col-n-dets">検出器数</message>
+  <message id="sfm-col-loaded">読込済</message>
+  <message id="sfm-col-file-rid">ファイルRID</message>
+</messages>

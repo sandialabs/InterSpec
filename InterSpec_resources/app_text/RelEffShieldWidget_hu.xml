@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- resw- is short for RelEffShieldWidget
+  -->
+  <message id="resw-self-atten-title">Saját Csillapítás</message>
+  <message id="resw-ext-atten-title">Külső Csillapítás</message>
+  <message id="resw-thickness-label">Vastagság</message>
+  <message id="resw-atomic-number-label">Rendszám</message>
+  <message id="resw-areal-density-label">Felületi Sűrűség</message>
+  <message id="resw-material-frame-label">Anyag</message>
+  <message id="resw-generic-frame-label">Általános</message>
+  <message id="resw-areal-density-placeholder">g/cm^2</message>
+</messages>

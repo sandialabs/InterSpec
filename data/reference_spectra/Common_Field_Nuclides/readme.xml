@@ -1,0 +1,11 @@
+<div>
+<h3>Common Field Nuclide Reference Spectra</h3>
+
+<p>The spectra in this collection represent commonly encountered field nuclides, for a variety of handheld detectors.</p>
+
+<p>The spectra were all simulated using GADRAS v19, from inject definitions created by Michael Enhauser (org 06634) of Sandia National Laboratories.
+There are 223 inject source definitions, each simulated with a live time of 1800 seconds, and with a nominal background in Livermore California.
+</p>
+<br/>
+<div style="float: right">Dataset UUR - SAND2025-05468O</div>
+</div>

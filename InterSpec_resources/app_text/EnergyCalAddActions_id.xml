@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ecaa- is short for EnergyCalAddActions -->
+  <message id="ecaa-linearize-title">Linearisasi Spektrum</message>
+  <message id="ecaa-truncate-title">Potong Kanal Gamma</message>
+  <message id="ecaa-combine-title">Gabungkan Kanal Gamma</message>
+  <message id="ecaa-convert-frf-title">Konversi ke Kalibrasi Fraksi Rentang Penuh</message>
+  <message id="ecaa-convert-poly-title">Konversi ke Kalibrasi Polinomial</message>
+  <message id="ecaa-multi-file-title">Kalibrasi Multi-File</message>
+  
+  <!-- Conversion messages -->
+  <message id="ecaa-conversion-no-effect">Konversi tidak akan mempengaruhi spektrum apa pun; coba pilih lebih banyak kriteria "Terapkan Perubahan Ke".</message>
+  <message id="ecaa-already-polynomial">Semua spektrum yang akan diterapkan sudah polinomial.</message>
+  <message id="ecaa-already-frf">Semua spektrum yang akan diterapkan sudah fraksi rentang penuh.</message>
+  <message id="ecaa-multiple-cal-types">Ada lebih dari satu tipe kalibrasi dari spektrum sumber yang dipilih; coba batasi kriteria "Terapkan Perubahan Ke".</message>
+  <message id="ecaa-changes-applied-to">Perubahan akan diterapkan ke: {1}</message>
+  <message id="ecaa-terms-lost">Suku melewati suku keempat akan hilang karena tidak ada suku analog.</message>
+  <message id="ecaa-no-info-lost">Tidak ada informasi yang akan hilang jika Anda melanjutkan.</message>
+  <message id="ecaa-conversion-question">Bagaimana Anda ingin konversi dilakukan?</message>
+  
+  <!-- Tool-specific messages -->
+  <message id="ecaa-for-n-channel-spectra">Untuk spektrum kanal {1}:</message>
+  <message id="ecaa-lower-energy">Energi Bawah</message>
+  <message id="ecaa-upper-energy">Energi Atas</message>
+  <message id="ecaa-num-channels">Juml Kanal</message>
+  <message id="ecaa-no-undo-note">Tindakan ini tidak dapat dibatalkan.</message>
+  <message id="ecaa-combine-channels-desc">Ini akan menggabungkan kanal-kanal berikutnya yang berturut-turut</message>
+  <message id="ecaa-num-channels-to-combine">Jumlah kanal yang akan digabungkan:</message>
+  <message id="ecaa-first-channel-to-keep">Kanal Pertama yang Disimpan</message>
+  <message id="ecaa-last-channel-to-keep">Kanal Terakhir yang Disimpan</message>
+  <message id="ecaa-keep-overflow">Simpan cacahan overflow</message>
+  <message id="ecaa-tt-keep-overflow">Jika dipilih, semua cacahan dari kanal yang dibuang akan ditambahkan ke kanal pertama atau terakhir yang baru.</message>
+  <message id="ecaa-first-channel-note">Perhatikan bahwa kanal pertama adalah kanal 0.</message>
+  
+  <!-- ConvertCalTypeTool radio button options -->
+  <message id="ecaa-linearize-rebin-counts">Linearisasi, rebinning cacahan agar sesuai dengan lebar baru</message>
+  <message id="ecaa-linearize-same-counts">Linearisasi, meninggalkan cacahan dalam kanal tetap sama</message>
+  <message id="ecaa-fit-quadratic">Fit energi kanal ke persamaan kuadrat.</message>
+  <message id="ecaa-fit-cubic">Fit energi kanal ke persamaan kubik.</message>
+  
+  <!-- ConvertCalTypeTool tooltips -->
+  <message id="ecaa-tt-linearize-rebin">Kanal dalam spektrum hasil akan semuanya memiliki lebar yang sama, tetapi cacahan di setiap kanal tidak akan integer; opsi ini mempertahankan bentuk spektral (cacahan per keV).</message>
+  <message id="ecaa-tt-linearize-same">Energi kanal akan ditugaskan kembali sehingga setiap kanal akan memiliki lebar yang sama, tanpa memperhitungkan lebar asli kanal; yaitu, cacahan di setiap kanal akan tetap sama, tetapi bentuk spektral (cacahan per keV) akan diubah.</message>
+</messages>
+

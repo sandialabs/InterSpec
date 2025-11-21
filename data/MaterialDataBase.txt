@@ -2216,11 +2216,11 @@ O
 !
 Plutonium dioxide
 PuO2
-1 1 3
+2 0 11.46
 O
-11.8
-Pu239
-88.2
+11.8055
+Pu
+88.1945
 !
 PuO2 - 4.5% Pu240 Plutonium dioxide
 PuO2 - 4.5% Pu240 Enriched
@@ -2391,7 +2391,7 @@ Pu239
 99.4
 !
 plutonium_dioxide
-plutonium_dioxide
+PuO2
 2 0 11.46
 O
 11.8055

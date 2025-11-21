@@ -214,14 +214,18 @@ function( divid, parentid, additional_filters )
       35: 'Verifinder-NaI',
       36: 'Verifinder-LaBr3',
       37: 'Kromek D3S',
-      38: 'RadiaCode 102',
-      
-      39: 'Fulcrum',
-      40: 'Fulcrum40h',
-      41: 'IdentiFinder-R425-NaI',
-      42: 'IdentiFinder-R425-LaBr',
-      43: 'Sam-950',
-      44: 'Unknown'
+      38: 'RadiaCode CsI 10X',
+      39: 'RadiaCode CsI 110',
+      40: 'RadiaCode 103G',
+      41: 'Fulcrum',
+      42: 'Fulcrum40h',
+      43: 'IdentiFinder-R425-NaI',
+      44: 'IdentiFinder-R425-LaBr',
+      45: 'Sam-950',
+      46: 'KromekD5',
+      47: 'KromekGR1',
+      48: 'Raysid',
+      49: 'Unknown'
     },
     operators: ['equal']
   },{

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- SimpleActivityCalc widget text resources -->
+  <message id="simple-activity-calc-title">Calculateur activité simple</message>
+  <message id="simple-activity-calc-menu">Calc. act. simple</message>
+  
+  <message id="sac-peak-label">Pic :</message>
+  <message id="sac-background-subtract-label">soustraction bruit de fond</message>
+  
+  <message id="sac-distance-label">Distance :</message>
+  <message id="sac-age-label">Âge :</message>
+  <message id="sac-shielding-label">Blindage :</message>
+  <message id="sac-geometry-label">Géométrie :</message>
+  <message id="sac-result-label">Activité :</message>
+  <message id="sac-advanced-btn">Ajustement act/blindage avancé</message>
+  
+  <message id="sac-geometry-point">Source ponctuelle</message>
+  <message id="sac-geometry-plane">Plan infini</message>
+  <message id="sac-geometry-self-atten">Sphère auto-atténuante</message>
+  <message id="sac-geometry-trace-src">Source trace</message>
+  
+  <message id="sac-error-no-peak">Aucun pic sélectionné</message>
+  <message id="sac-error-no-detector">Aucune réponse détecteur chargée</message>
+  <message id="sac-error-invalid-distance">Distance invalide entrée</message>
+  
+  <message id="sac-error-no-background-peak">
+    <p>Il ne semble pas y avoir de pic dans le bruit de fond au même endroit que ce pic.</p>
+    <p>Si vous pensez qu'il y en a un, veuillez échanger les spectres de premier plan et de bruit de fond, ajuster le pic dans le spectre de bruit de fond, puis les échanger à nouveau.</p>
+  </message>
+  
+
+  <message id="sac-use-fit-background-peak">Voulez-vous utiliser le pic de bruit de fond ajusté automatiquement ?</message>
+  
+  <message id="sac-error-fitting-background-peak">
+    <p>Il y a eu une erreur en tentant d'ajuster un pic au spectre de bruit de fond :</p>
+    <p style="SimpleActPeakFitErrorTxt">{1}</p>
+  </message>
+  
+
+  <message id="sac-qr-tool-state-title">État outil calc. activité simple</message>
+  <message id="sac-qr-tool-state-txt">État actuel de l'outil calculateur d'activité simple.</message>
+</messages>

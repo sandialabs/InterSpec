@@ -40,6 +40,8 @@ namespace SpecUtils
 }//namespace SpecUtils
 
 
+#define PRINT_VERBOSE_PEAK_FIT_LM_INFO 0
+
 namespace PeakFitLM
 {
 
@@ -102,6 +104,8 @@ void fit_peak_for_user_click_LM( std::vector< std::shared_ptr<const PeakDef> > &
 
  Note different order of funciton arguments, as compared to `fitPeaks(...)`.
  All input peaks must be in the same ROI (e.g., share the same PeakContinuum).
+
+ Upon error, results will be empty.
  
  Uses default `PeakFitLMOptions` options (e.g., none of them), unless you specify `is_refit = true`,
  then `PeakFitLMOptions::MediumRefinementOnly` option is specified.

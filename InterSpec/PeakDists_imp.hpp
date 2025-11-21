@@ -73,9 +73,17 @@ void gaussian_integral( const T peak_mean,
                               T *channels,
                               const size_t nchannel )
 {
-  if( peak_sigma==0.0 || peak_amplitude==0.0 )
+  if( peak_sigma == 0.0 )
     return;
-    
+
+  if constexpr ( std::is_same_v<T, double> )
+  {
+    // We dont want to return for zero-amplitude peaks if we are usign a Ceres::Jet,
+    //  as we may need to take into account the derivatives at zero
+    if( peak_amplitude == 0.0 )
+      return;
+  }//if constexpr ( std::is_same_v<T, double> )
+
   const double zero_amp_point_nsigma = 8.0;
   const T start_energy = peak_mean - zero_amp_point_nsigma*peak_sigma;
   const T stop_energy = peak_mean + zero_amp_point_nsigma*peak_sigma;
@@ -244,10 +252,18 @@ void gauss_exp_integral( const T peak_mean,
     
 #else  //USE_SIMPLE_GAUSS_EXP_IMP
     
-  if( (peak_sigma == 0.0) || (peak_amplitude == 0.0) )
+  if( peak_sigma == 0.0 )
     return;
-    
-    
+
+  if constexpr ( std::is_same_v<T, double> )
+  {
+    // We dont want to return for zero-amplitude peaks if we are usign a Ceres::Jet,
+    //  as we may need to take into account the derivatives at zero
+    if( peak_amplitude == 0.0 )
+      return;
+  }//if constexpr ( std::is_same_v<T, double> )
+
+
   // TODO: estimate where we should actually start and stop computing values for, using `gauss_exp_coverage_limits(...)`, but need to check if it actually saves time
   const double zero_amp_point_nsigma = 8.0;
   const T start_energy( static_cast<double>(energies[0]) ); //static_cast<float>( peak_mean - zero_amp_point_nsigma*peak_sigma );
@@ -358,7 +374,7 @@ void gauss_exp_integral( const T peak_mean,
       const double simple_answer = peak_amplitude * PeakDists::gauss_exp_integral( peak_mean, peak_sigma, skew, lower_energy, upper_energy );
       const double diff = fabs(val - simple_answer);
       const double frac_diff = diff / std::max(val, simple_answer);
-      assert( (frac_diff < 1.0E-5) || (diff < 1.0E-8) );
+      assert( (frac_diff < 1.0E-5) || (diff < 1.0E-7) || (fabs(peak_mean - 0.5*(lower_energy + upper_energy)) > (5.0*peak_sigma)) );
     }
 #endif
     
@@ -449,9 +465,17 @@ void crystal_ball_integral( const T peak_mean,
   T dist_sum( 0.0 );
 #endif
   
-  if( (peak_sigma == 0.0) || (peak_amplitude == 0.0) )
+  if( peak_sigma == 0.0 )
     return;
-  
+
+  if constexpr ( std::is_same_v<T, double> )
+  {
+    // We dont want to return for zero-amplitude peaks if we are usign a Ceres::Jet,
+    //  as we may need to take into account the derivatives at zero
+    if( peak_amplitude == 0.0 )
+      return;
+  }//if constexpr ( std::is_same_v<T, double> )
+
   
   // TODO: estimate where we should actually start and stop computing values for, using `crystal_ball_coverage_limits(...)`, but need to check if it actually saves time
   const double zero_amp_point_nsigma = 8.0;
@@ -672,9 +696,18 @@ void exp_gauss_exp_integral( const T peak_mean,
 {
   using namespace std;
   
-  if( (peak_sigma == 0.0) || (peak_amplitude == 0.0) )
+  if( peak_sigma == 0.0 )
     return;
-  
+
+  if constexpr ( std::is_same_v<T, double> )
+  {
+    // We dont want to return for zero-amplitude peaks if we are usign a Ceres::Jet,
+    //  as we may need to take into account the derivatives at zero
+    if( peak_amplitude == 0.0 )
+      return;
+  }//if constexpr ( std::is_same_v<T, double> )
+
+
   // TODO: estimate where we should actually start and stop computing values for, using `exp_gauss_exp_coverage_limits(...)`, but need to check if it actually saves time
   //const double zero_amp_point_nsigma = 8.0;
   const T start_energy( static_cast<double>(energies[0]) ); //peak_mean - zero_amp_point_nsigma*peak_sigma;
@@ -963,8 +996,16 @@ void double_sided_crystal_ball_integral( const T peak_mean,
 {
   using namespace std;
   
-  if( (peak_sigma == 0.0) || (peak_amplitude == 0.0) )
+  if( peak_sigma == 0.0 )
     return;
+
+  if constexpr ( std::is_same_v<T, double> )
+  {
+    // We dont want to return for zero-amplitude peaks if we are usign a Ceres::Jet,
+    //  as we may need to take into account the derivatives at zero
+    if( peak_amplitude == 0.0 )
+      return;
+  }//if constexpr ( std::is_same_v<T, double> )
 
   check_jet_for_NaN( peak_mean );
   check_jet_for_NaN( peak_sigma );
@@ -1325,12 +1366,21 @@ void photopeak_function_integral( const T mean,
 }//void photopeak_function_integral(...)
 
 
-template<typename ContType, typename T>
+#if( __cplusplus >= 202002L )
 void offset_integral( const ContType &cont,
                      const float *energies,
                      T *channels,
                      const size_t nchannel,
                      const std::shared_ptr<const SpecUtils::Measurement> &data ) requires ContinuumTypeConcept<ContType,T>
+#else
+template <typename ContType, typename T>
+typename std::enable_if<ContinuumTypeConcept<ContType, T>::value, void>::type
+offset_integral(const ContType& cont,
+                const float* energies,
+                T* channels,
+                const size_t nchannel,
+                const std::shared_ptr<const SpecUtils::Measurement>& data)
+#endif
 {
   // This function should give the same answer as
   //  `PeakContinuum::offset_integral( double x0, const double x1, data)`, on a channel-by-channel

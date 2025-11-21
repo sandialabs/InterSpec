@@ -63,6 +63,7 @@ namespace BatchPeak
 namespace SpecUtils
 {
   class Measurement;
+  class EnergyCalibration;
 }
 
 namespace BatchActivity
@@ -83,17 +84,31 @@ namespace BatchInfoLog
    */
   std::string template_include_dir( const BatchPeak::BatchPeakFitOptions &options );
   
-  /** Returns the default inja environment, with include directory, options, and callbacks set, as well as default templates loaded. */
-  inja::Environment get_default_inja_env( const BatchPeak::BatchPeakFitOptions &options );
+  /** Returns the default inja environment, with include directory, options, and callbacks set, as well as default templates loaded.
+
+   @param tmplt_dir The template include directory to use.  Should include trailing path separator (as required by inja).
+                    If empty string, then no custom template directory will be used.
+                    To get the directory from options, use `template_include_dir(options)`.
+   */
+  inja::Environment get_default_inja_env( const std::string &tmplt_dir );
   
   /** Returns key-value pairs of of the file contents of the JS and CSS files needed for SpectrumChar.  Specifically returns:
 
    "D3_JS":                        contents of `InterSpec_resources/d3.v3.min.js`
    "SpectrumChart_JS":    contents of `InterSpec_resources/SpectrumChartD3.js`
    "SpectrumChart_CSS": contents of `InterSpec_resources/SpectrumChartD3.css`
-   
+
    */
   std::vector<std::pair<std::string,std::string>> load_spectrum_chart_js_and_css();
+
+  /** Returns key-value pairs of the file contents of the JS and CSS files needed for ShieldingSourceFitPlot. Specifically returns:
+
+   "D3_JS":                              contents of `InterSpec_resources/d3.v3.min.js`
+   "ShieldingSourceFitPlot_JS":  contents of `InterSpec_resources/ShieldingSourceFitPlot.js`
+   "ShieldingSourceFitPlot_CSS": contents of `InterSpec_resources/ShieldingSourceFitPlot.css`
+
+   */
+  std::vector<std::pair<std::string,std::string>> load_shielding_fit_plot_js_and_css();
   
   /** An enum to provide context of what default templates names "csv", "txt", and "html" refer to for `render_template(...)` */
   enum class TemplateRenderType : int
@@ -176,7 +191,7 @@ namespace BatchInfoLog
                        const std::shared_ptr<const SpecMeas> &spec_file,
                        const std::set<int> &sample_numbers,
                        const std::string &filename,
-                       const BatchPeak::BatchPeakFitResult * const peak_fit );
+                       const std::deque<std::shared_ptr<const PeakDef>> * const peak_fit );
   
   void add_energy_cal_json( nlohmann::basic_json<> &data,
                            const std::shared_ptr<const SpecUtils::EnergyCalibration> &cal );

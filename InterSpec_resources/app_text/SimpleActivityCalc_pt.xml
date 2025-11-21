@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- SimpleActivityCalc widget text resources -->
+  <message id="simple-activity-calc-title">Calculadora Simples de Atividade</message>
+  <message id="simple-activity-calc-menu">Calc. Ativ. Simples</message>
+
+  <message id="sac-peak-label">Pico:</message>
+  <message id="sac-background-subtract-label">subtrair fundo</message>
+
+  <message id="sac-distance-label">Distância:</message>
+  <message id="sac-age-label">Idade:</message>
+  <message id="sac-shielding-label">Blindagem:</message>
+  <message id="sac-geometry-label">Geometria:</message>
+  <message id="sac-result-label">Atividade:</message>
+  <message id="sac-advanced-btn">Ajuste avançado ativ/blindagem</message>
+
+  <message id="sac-geometry-point">Fonte Pontual</message>
+  <message id="sac-geometry-plane">Plano Infinito</message>
+  <message id="sac-geometry-self-atten">Esfera Auto-Atenuante</message>
+  <message id="sac-geometry-trace-src">Fonte Traço</message>
+
+  <message id="sac-error-no-peak">Nenhum pico selecionado</message>
+  <message id="sac-error-no-detector">Nenhuma resposta de detector carregada</message>
+  <message id="sac-error-invalid-distance">Distância inválida inserida</message>
+
+  <message id="sac-error-no-background-peak">
+    <p>Não parece haver um pico no plano de fundo no mesmo local que este pico.</p>
+    <p>Se você acha que há, por favor, troque os espectros de primeiro plano e plano de fundo, ajuste o pico no espectro de plano de fundo e então troque-os de volta.</p>
+  </message>
+
+
+  <message id="sac-use-fit-background-peak">Você gostaria de usar o pico de plano de fundo ajustado automaticamente?</message>
+
+  <message id="sac-error-fitting-background-peak">
+    <p>Houve um erro ao tentar ajustar um pico ao espectro de plano de fundo:</p>
+    <p style="SimpleActPeakFitErrorTxt">{1}</p>
+  </message>
+
+
+  <message id="sac-qr-tool-state-title">Estado da Ferramenta de Calc. Simples de Atividade</message>
+  <message id="sac-qr-tool-state-txt">Estado atual da ferramenta de calculadora simples de atividade.</message>
+</messages>

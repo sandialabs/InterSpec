@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dls- is short for DetectionLimitSimple
+  -->
+  <message id="dls-fit-fwhm-btn">Fit FWHM...</message>
+  <message id="dls-select-drf-btn">Pilih detektor...</message>
+  <message id="dls-further-details-link">detail lebih lanjut...</message>
+  <message id="dls-conf-level-label">Tingkat Kepercayaan:</message>
+  <message id="dls-roi-lower-label">ROI Bawah:</message>
+  <message id="dls-roi-upper-label">ROI Atas:</message>
+  <message id="dls-num-side-channel-label">Juml. Kanal Samping:</message>
+  <message id="dls-fwhm-label">FWHM:</message>
+  <message id="dls-decon-cont-norm-label">Norm. Kontinum:</message>
+  <message id="dls-is-background-spectrum-cb">Spektrum latar belakang</message>
+  <message id="dls-is-background-spectrum-tt">
+    Mencentang opsi ini menyatakan bahwa tidak ada sinyal dalam spektrum ini.
+    <p>
+      Wilayah puncak itu sendiri akan digunakan untuk memperkirakan latar belakang yang diharapkan.
+      Opsi untuk memilih kanal samping yang berdekatan dengan wilayah puncak menjadi tidak relevan lagi, sehingga akan disembunyikan.
+    </p>
+  </message>
+  <message id="dls-cont-norm-unknown">Mengambang</message>
+  <message id="dls-cont-norm-not-present">Tanpa sinyal</message>
+  <message id="dls-cont-norm-fixed-by-sides">Dari sisi</message>
+  <message id="dls-roi-changed-no-gamma">Mengubah ROI mengecualikan gamma primer - tidak mengubah</message>
+  <message id="dls-suggest-fwhm">FWHM Detektor: {1} keV</message>
+  <message id="dls-rough-est-fwhm">Perkiraan Kasar FWHM: {1} keV</message>
+  <message id="dls-calc-method">Metode Kalkulasi:</message>
+  <message id="dls-currie-tab-title">Currie</message>
+  <message id="dls-decon-tab-title">Dekonvolusi</message>
+  <message id="dls-err-no-input">Tidak ada input yang dimasukkan - harap masukkan nuklida, pilih energi gamma, dan input jarak.</message>
+  <message id="dls-err-calculating">Kesalahan menghitung jawaban: {1}</message>
+  <message id="dls-currie-desc">Metode Currie membandingkan cacahan bruto dengan prediksi kanal sekitar</message>
+  <message id="dls-decon-desc">Dekonvolusi memperhitungkan bentuk puncak dan distribusi data</message>
+  <message id="dls-qr-tool-state-title">Status Alat MDA Sederhana</message>
+  <message id="dls-qr-tool-state-txt">Status saat ini dari alat MDA Sederhana.</message>
+
+  <message id="dls-det-act-with-range">Terdeteksi: {1}, rentang [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-no-result">Maaf, tidak ada hasil</message>
+  <message id="dls-det-counts-with-range">Cacahan berlebih: {1}, rentang [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-act-less-zero">Aktivitas &lt; 0 {1} (diamati cacahan signifikan lebih sedikit dari yang diharapkan).</message>
+  <message id="dls-det-counts-less-zero">Cacahan berlebih &lt; 0 {2} (diamati cacahan signifikan lebih sedikit dari yang diharapkan).</message>
+  <message id="dls-det-upper-bound">Kurang dari {1} ada @{2} CL.</message>
+  <message id="dls-min-detectable-act">Aktivitas minimum yang dapat dideteksi secara andal: {1}.</message>
+  <message id="dls-min-detectable-counts">Cacahan berlebih minimum yang dapat dideteksi secara andal: {1}</message>
+  <message id="dls-error-computing-results">Kesalahan menghitung hasil</message>
+  <message id="dls-chart-title-estimated-counts">Perkiraan cacahan {1}.</message>
+  <message id="dls-results-txt-estimated-counts">
+    Cacahan terdeteksi {1}.
+    <br/>
+    Rentang: [{2}, {3}] @{4} CL
+  </message>
+  <message id="dls-chart-title-estimated-act">Perkiraan aktivitas {1}.</message>
+  <message id="dls-results-txt-estimated-act">
+    Aktivitas terdeteksi {1}.
+    <br/>
+    Rentang: [{2}, {3}] @{4} CL
+  </message>
+  <message id="dls-chart-title-upper-bound-act">Puncak untuk batas atas {1} @{2} CL</message>
+  <message id="dls-results-txt-upper-bound-act">Kurang dari {1} @{2} CL</message>
+  <message id="dls-chart-title-upper-bound-counts">Puncak untuk batas atas {1} cacahan @{2} CL</message>
+  <message id="dls-results-txt-upper-bound-counts">Kurang dari {1} cacahan sinyal ada @{2} CL</message>
+  <message id="dls-err-no-meas">Tidak ada pengukuran yang tersedia</message>
+  
+  <message id="dls-Info">Info</message>
+  <message id="dls-assumed-br=1">(aktivitas diasumsikan BR=1.0)</message>
+  <message id="dls-Limit">Batas</message>
+  <message id="dls-continuum-area">Area Kontinum</message>
+  <message id="dls-DOF" remark="Degrees of freedom abbreviation">DOF</message>
+  <message id="dls-Upper">Atas</message>
+  <message id="dls-Lower">Bawah</message>
+  <message id="dls-Best">Terbaik</message>
+  <message id="dls-ROI-range-label">Rentang ROI (keV)</message>
+  <message id="dls-ROI-Channels-label">Kanal ROI</message>
+  <message id="dls-ROI-Width">Lebar ROI</message>
+  <message id="dls-det-intrinsic-eff">Efisiensi Intrinsik Det.</message>
+  <message id="dls-solid-angle-frac">Fraksi sudut solid</message>
+  <message id="dls-air-trans">Transmisi udara</message>
+  <message id="dls-gamma-intensity">Intensitas Gamma</message>
+  <message id="dls-err-more-info-title">Kesalahan menghitung batas...</message>
+  <message id="dls-err-more-info-content">Kesalahan menghitung informasi batas: {1}</message>
+  <message id="dls-err-select-det">Silakan pilih fungsi efisiensi detektor.</message>
+  <message id="dls-err-neg-distance">Jarak tidak boleh negatif.</message>
+  <message id="dls-err-no-fwhm-info">Fungsi efisiensi detektor tidak memiliki info FWHM - harap fit untuk FWHM, atau ubah detektor.</message>
+  <message id="dls-"></message>
+  <message id="dls-"></message>
+  <message id="dls-"></message>
+</messages>
+

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- sfs- is short for SpecFileSummary
+  -->
+  <message id="sfs-spectrum">स्पेक्ट्रम</message>
+  <message id="sfs-alow-edit-cb">संपादन की अनुमति दें</message>
+  <message id="sfs-update-display-btn">प्रदर्शन अपडेट करें</message>
+  <message id="sfs-tt-update-display">इस स्क्रीन पर किए गए परिवर्तन GUI घटकों में प्रचारित नहीं हो सकते हैं जब तक कि आप स्पेक्ट्रम को पुनः लोड नहीं करते।</message>
+  <message id="sfs-file-info-title">फ़ाइल जानकारी</message>
+  <message id="sfs-file-name-label">फ़ाइल नाम:</message>
+  <message id="sfs-memory-size-label">मेमोरी आकार:</message>
+  <message id="sfs-inspection-label">निरीक्षण:</message>
+  <message id="sfs-lane-label">लेन:</message>
+  <message id="sfs-location-label">स्थान:</message>
+  <message id="sfs-no-det-id-btn">कोई डिटेक्टर ID नहीं</message>
+  <message id="sfs-show-det-id-btn">डिटेक्टर ID दिखाएं</message>
+  <message id="sfs-show-pics-btn">चित्र दिखाएं</message>
+  <message id="sfs-instrument-type-label">उपकरण प्रकार:</message>
+  <message id="sfs-manufacturer-label">निर्माता:</message>
+  <message id="sfs-model-label">मॉडल:</message>
+  <message id="sfs-instrument-id-label">उपकरण ID:</message>
+  <message id="sfs-uuid-label">UUID:</message>
+  <message id="sfs-file-label">फ़ाइल</message>
+  <message id="sfs-remarks-label">टिप्पणियां:</message>
+  <message id="sfs-measurement-info-label">माप जानकारी</message>
+  <message id="sfs-date-time-label">दिनांक/समय:</message>
+  <message id="sfs-live-time-label">लाइव समय:</message>
+  <message id="sfs-real-time-label">वास्तविक समय:</message>
+  <message id="sfs-detector-name-label">डिटेक्टर नाम:</message>
+  <message id="sfs-sample-number-label">नमूना संख्या:</message>
+  <message id="sfs-energy-range-label">ऊर्जा (keV):</message>
+  <message id="sfs-number-channels-label">चैनलों की संख्या:</message>
+  <message id="sfs-sum-gammas-label">योग गामा:</message>
+  <message id="sfs-gamma-cps-label">गामा CPS:</message>
+  <message id="sfs-sum-neutrons-label">योग न्यूट्रॉन:</message>
+  <message id="sfs-neutrons-cps-label">न्यूट्रॉन CPS:</message>
+  <message id="sfs-latitude-label">अक्षांश:</message>
+  <message id="sfs-longitude-label">देशांतर:</message>
+  <message id="sfs-position-time-label">स्थिति समय:</message>
+  <message id="sfs-latitude-empty-text">dec या deg min' sec" N/S</message>
+  <message id="sfs-longitude-empty-text">dec या deg min' sec" E/W</message>
+  <message id="sfs-show-map-btn">नक्शा दिखाएं</message>
+  <message id="sfs-description-label">विवरण:</message>
+  <message id="sfs-source-type-label">स्रोत प्रकार:</message>
+  <message id="sfs-spectra-label">स्पेक्ट्रा</message>
+  <message id="sfs-err-show-map">निर्देशांक प्रदर्शित करने का प्रयास करते समय त्रुटि: {1}</message>
+  <message id="sfs-err-time-format">'{1}' को दिनांक/समय स्ट्रिंग में परिवर्तित करने में त्रुटि</message>
+  <message id="sfs-err-lat-lon">Long/Lat को मान्य float में परिवर्तित करने में त्रुटि</message>
+  <message id="sfs-no-spectrum-to-update">अपडेट करने के लिए कोई स्पेक्ट्रम नहीं</message>
+</messages>

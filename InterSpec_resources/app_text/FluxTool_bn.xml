@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ftw- is short for FluxToolWidget or FluxToolWindow
+  -->
+  <message id="ftw-qr-tool-state-title">ফ্লাক্স টুল স্টেট</message>
+  <message id="ftw-qr-tool-state-text">ফ্লাক্স টুলের বর্তমান স্টেট।</message>
+  <message id="ftw-hdr-intrinsic-eff">অভ্যন্ত দক্ষতা</message>
+  <message id="ftw-hdr-geom-eff">জ্যামিতিক দক্ষতা</message>
+  <message id="ftw-hdr-flux-on-det">ডিটেক্টরে ফ্লাক্স (ɣ/s)</message>
+  <message id="ftw-hdr-flux-cm">ফ্লাক্স (ɣ/cm²/s)</message>
+  <message id="ftw-hdr-flux-4pi">ɣ/4π/s</message>
+  <message id="ftw-tt-distance">
+    উৎসের কেন্দ্র থেকে ডিটেক্টরের মুখ পর্যন্ত দূরত্ব। সংখ্যা অবশ্যই
+    ইউনিট দ্বারা অনুসরণ করতে হবে; বৈধ ইউনিট হল: meters, m, cm, mm, km, feet,
+    ft, ', in, inches, বা "। আপনি একাধিক দূরত্ব যোগ করতে পারেন,
+    যেমন '3ft 4in', বা '3.6E-2 m 12 cm' যা সমতুল্য
+    যথাক্রমে 40inches এবং 15.6cm।
+  </message>
+  <message id="ftw-simple">সরল</message>
+  <message id="ftw-standard">মান</message>
+  <message id="ftw-more">আরও</message>
+  <message id="ftw-copy-btn">ক্লিপবোর্ডে কপি করুন</message>
+  <message id="ftw-copy-btn-narrow">কপি</message>
+  <message id="ftw-invalid-dist">অবৈধ দূরত্ব</message>
+  <message id="ftw-no-drf">কোনো ডিটেক্টর রেসপন্স ফাংশন নির্বাচিত নেই</message>
+  <message id="ftw-no-foreground">কোনো ফোরগ্রাউন্ড স্পেকট্রাম লোড করা হয়নি</message>
+  <message id="ftw-invalid-livetime">অবৈধ ফোরগ্রাউন্ড লাইভ-টাইম</message>
+  <message id="ftw-err-copy-clipboard">ক্লিপবোর্ডে কপি করতে ব্যর্থ - সম্ভবত অনুমতির সমস্যা - দুঃখিত।</message>
+  <message id="ftw-copied-to-clipboard">ক্লিপবোর্ডে টেবিল কপি করা হয়েছে।</message>
+  <message id="ftw-copied-as-html">HTML টেক্সট হিসাবে ক্লিপবোর্ডে টেবিল কপি করা হয়েছে।</message>
+  <message id="ftw-copy-unknown-status">কপি কমান্ডের অজানা ফলাফল - দুঃখিত।</message>
+</messages>

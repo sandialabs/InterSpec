@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ramrr- short for RelActManualReportResource
+       mrend- short for ManRelEffNucDisp
+       ramg-  short for RelActManualGui
+  -->
+
+  <!-- Messages when creating HTML report -->
+  <message id="ramrr-no-solution-title">Nincs Rel. Aktivitás Megoldás Elérhető</message>
+  <message id="ramrr-no-solution-text"></message>
+  <message id="ramrr-err-report">Hiba a jelenleg megjelenített spektrum fájl lekérésekor: {1}</message>
+  
+  <!-- Messages in the nuclide component of the GUI -->
+  <message id="mrend-spec-act">Spec. Akt.</message>
+  <message id="mrend-X(a,n)">Alfák a(z) {1}-n neutronokat képezve</message>
+  <message id="mrend-X(n,a)">Neutronok a(z) {1}-n alfákat képezve</message>
+  <message id="mrend-X(a,p)">Alfák a(z) {1}-n protonokat képezve</message>
+  <message id="mrend-X(n,g)">Lassú neutronok a(z) {1}-n befogva</message>
+  <message id="mrend-X(n,n)">Gyors neutronok rugalmatlanul szóródva a(z) {1}-ról</message>
+  <message id="mrend-X(a,a)">Rugalmatlan alfa szórás a(z) {1}-ról</message>
+  <message id="mrend-annih">Annihilációs gammák</message>
+  <message id="mrend-unknown-rxctn">Ismeretlen reakció</message>
+  <message id="mrend-X(,)"></message>
+  <message id="mrend-cb-decay-during-meas">Bomlás mérés alatt</message>
+  <message id="mrend-tt-decay-during-meas">Ha be van jelölve, a nuklidok bomlása a mérés alatt figyelembe lesz véve, az idézett relatív aktivitás a mérés kezdetekor lesz.</message>
+  
+  <!-- Message on the general GUI interface -->
+  <message id="ramg-eqn-form-label">Egyenlet Forma</message>
+  <message id="ramg-options-label">Opciók</message>
+  <message id="ramg-tt-eqn-form">
+    A relatív hatékonyság görbéhez használandó funkcionális forma.
+    <br />
+    Opciók:
+    <table style="margin-left: 10px;">
+      <tr><th>Log(energia):</th>               <th>y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...</th></tr>
+      <tr><th>Log(rel. hat.):</th>            <th>y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )</th></tr>
+      <tr><th>Log(energia)Log(rel. hat.):</th> <th>y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )</th></tr>
+      <tr><th>FRAM Empirikus:</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr>
+      <tr><th>FRAM Fizikai:</th>             <th>
+        y = <span style="display: inline-block; vertical-align: middle;">
+              <span style="display: block; text-align: center;">
+               (1 - exp(-AD<sub>0</sub>*μ<sub>0</sub>))
+              </span>
+              <span style="display: block; border-top: 1px solid black; text-align: center;">
+                (AD<sub>0</sub>*μ<sub>0</sub>)
+              </span>
+            </span>
+             * [exp(-AD<sub>1</sub>*μ<sub>1</sub>) * exp(-AD<sub>2</sub>*μ<sub>2</sub>) + ...]
+             * [Det. Hat.]
+             * [E<sup>b</sup> * C<sup>1/E</sup>]
+        </th></tr>
+    </table>
+  </message>
+  <message id="ramg-eqn-order-label">Egyenlet Rend</message>
+  <message id="ramg-tt-eqn-order">A használandó relatív hatékonyság egyenlet rendje (hány energia-függő tag).</message>
+  <message id="ramg-phys-model-use-hoerl">Korr. Fv. Használata</message>
+  <message id="ramg-tt-phys-model-use-hoerl">Ha be van jelölve, a Módosított Hoerl korrekciós tényező (azaz E<sup>b</sup> * C<sup>1/E</sup>) kerül felhasználásra a fizikai modell és/vagy detektor hatékonyság és a megfigyelt adatok közötti különbségek figyelembevételére.</message>
+  <message id="ramg-yield-info-label">Hozam Info</message>
+  <message id="ramg-tt-data-src">A nukleáris adatforrás gamma elágazási arányokhoz.</message>
+  <message id="ramg-match-tol-label">Illeszkedési tűrés</message>
+  <message id="ramg-tt-match-tol">
+    A FWHM-ek száma a csúcs átlagtól, hogy forrás gamma sugarakat is belefoglaljon egy csúcs területéhez hozzájárulókként.
+    <br />
+    Egyes nuklidok bizonyos fotocsúcsainál több, energiában közeli gamma sugár is hozzájárulhat
+    egy detektált csúcs terület létrehozásához. Ez az illeszkedési tűrés meghatározza, hogy hány FWHM-nyi távolságban
+    a megfigyelt csúcs átlagtól kell összegezni a forrás gamma sugarakat az elágazási arány meghatározásához.
+    <br />
+    Nulla érték megadása azt okozza, hogy csak a csúcshoz rendelt gamma energia kerül
+    felhasználásra, még ha nagyon közeli más gammák is vannak.
+  </message>
+  <message id="ramg-add-uncert-label">Hozzáadott Bizonytalanság</message>
+  <message id="ramg-tt-add-uncert">
+    További bizonytalanság hozzáadása a relatív hatékonyság vonalhoz minden illesztett fotocsúcsra.
+    <br />
+    Egy vagy néhány nagy statisztikájú csúcs detektálási hatékonyságának kis eltérései jelentős eltérést okozhatnak
+    a hatékonysági görbében a többi ponttól, ha csak statisztikai bizonytalanságokat használunk; amikor további
+    bizonytalanságot adunk hozzá, a relatív hatékonyság akkor jobban fog vizuálisan átmenni az összes adatponton,
+    és korlátozott tesztelésből pontosabb eredményeket produkál. Úgy gondolhat erre, mint minden detektált 
+    fotocsúcshoz szisztematikus bizonytalanság hozzáadására, amely nincs korrelálva a csúcsok között. Korlátozott
+    tesztelésből a használt érték nem rendkívül fontos, csak legyen valami. Súlyozatlan illesztést is választhat,
+    ahol minden csúcs egyformán járul hozzá az illesztéshez, függetlenül a statisztikai bizonytalanságától.
+  </message>
+  <message id="ramg-unweighted-label">Súlyozatlan</message>
+  <message id="ramg-stat-only-label">Csak Stat.</message>
+  <message id="ramg-back-sub-cb">Háttér Kivonás</message>
+  <message id="ramg-html-export-label">HTML Jelentés</message>
+  <message id="ramg-nucs-label">Nuklidok</message>
+  <message id="ramg-nucs-shield-label">Árnyékolás/Nuklidok</message>
+  <message id="ramg-peaks-to-use-label">Használandó Csúcsok</message>
+  <message id="ramg-results-label">Eredmények</message>
+  <message id="ramg-mi-results">Táblázat</message>
+  <message id="ramg-mi-chart">Grafikon</message>
+  <message id="ramg-back-sub-neg">Háttér kivonás után a csúcs {1} keV-nél negatív impulzusokat kapott, így nem került felhasználásra.</message>
+  <message id="ramg-warn-reaction">Reakció fotocsúcsok használata valószínűleg nem érvényes, kivéve ha a gammák homogén módon egy objektumból származnak.</message>
+  <message id="ramg-warn-no-bkg-sub-used">Háttér csúcsok kivonása kiválasztva, de nem volt háttér csúcs egyezés a kiválasztott előtér csúcsokkal.</message>
+  <message id="ramg-warn-rel-eff-u/pu-xray">A relatív hatékonyság görbe nem veszi figyelembe a röntgen abszorpciós éleket - 120 keV alatti csúcsok használata U vagy Pu problémákra nem ajánlott.</message>
+  <message id="ramg-warn-rel-eff-other-xray">A relatív hatékonyság görbe nem veszi figyelembe bármilyen potenciális árnyékolás röntgen abszorpciós éleit - kérjük, győződjön meg arról, hogy a használt csúcsok nem nyúlnak át árnyékolás abszorpciós élein.</message>
+  <message id="ramg-warn-match-outside-tol">A hozzárendelt gamma{1} {2} keV az illeszkedési tűrésen kívül van a csúcs{1} {3}-mal; vegye figyelembe, hogy a hozzárendelt gamma energia kerül felhasználásra a közeli gammák kompenzálására, nem az illesztett csúcs átlag.</message>
+  <message id="ramg-warn-failed-match">Nem sikerült a nuklid{1} illesztése csúcsokhoz: {2}</message>
+  <message id="ramg-err-setting-up-calc">Hiba a Relatív Hatékonyság számítás beállításakor: {1}</message>
+  <message id="ramg-err-performing-calc">Hiba a Relatív Hatékonyság számítás végrehajtásakor: {1}</message>
+  <message id="ramg-no-results-available">Nincsenek elérhető eredmények.</message>
+  <message id="ramg-result-error-msg">Hiba: {1}</message>
+  <message id="ramg-result-warn-msg">Figyelmeztetés: {1}</message>
+  <message id="ramg-and-there-were">és voltak</message>
+  <message id="ramg-dof">SZF</message> <!-- Szabadságfok -->
+  <message id="ramg-fit-unweighted-txt">Az illesztés súlyozatlan volt; a bizonytalanságok nem feltétlenül értelmesek.</message>
+  <message id="ramg-fit-stat-only">A bizonytalanságok csak statisztikusak.</message>
+  <message id="ramg-fit-uncert-increased">A bizonytalanságok mesterségesen növelve a "Hozzáadott Bizonytalansággal".</message>
+  <message id="ramg-consider-add-uncert-u">Érdemes lehet mérlegelni "Hozzáadott Bizonytalanság" hozzáadását Urán problémákra.</message>
+  <message id="ramg-you-using-add-uncert-u">"Hozzáadott Bizonytalanságot" használ - értelmezze óvatosan a számított bizonytalanságokat.</message>
+  <message id="ramg-you-using-add-uncert-non-u">Jelenleg "Hozzáadott Bizonytalanságot" használ, amely azt fogja okozni, hogy a számított bizonytalanságok nem lesznek helyesek.</message>
+  <message id="ramg-chart-info-title">χ²/szf = {1}/{2}{3}{4}</message>
+  <message id="ramg-pval"> (pért={1})</message>
+  <message id="ramg-1-pval"> (1-pért={1})</message>
+</messages>

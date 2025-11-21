@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- oor2c- short for OneOverR2Calc
+  -->
+  <message id="oor2c-instructions">Két mérés használata különböző helyeken egy láthatatlan forrás távolságának meghatározásához. Pl. amikor a forrás fal mögött van.</message>
+  <message id="oor2c-near-meas-label">Közeli Mérés Intenzitása:</message>
+  <message id="oor2c-far-meas-label">Távoli Mérés Intenzitása:</message>
+  <message id="oor2c-background-intensity">Háttér Intenzitás (opcionális):</message>
+  <message id="oor2c-dist-label">Mérések közötti távolság:</message>
+  <message id="oor2c-power-law-label">Hatványtörvény</message>
+  <message id="oor2c-low-scatter">Alacsony Szórás vagy Csúcs Terület használata, 1/r^2</message>
+  <message id="oor2c-mid-scatter">Közepes Szórás Dózisteljesítmény, 1/r^1.85</message>
+  <message id="oor2c-high-scatter">Magas Szórás Dózisteljesítmény, 1/r^1.65</message>
+  <message id="oor2c-dist-to-near-label">Távolság a közeli méréstől a forrásig:</message>
+  <message id="oor2c-bottom-message">Használja ugyanazokat az egységeket a közeli, háttér és távoli 
+    mérésekhez. Az eredmények ugyanabban az egységben vannak, 
+    mint amelyet a mérések közötti távolsághoz használt.
+  </message>
+  <message id="oor2c-qr-state-title">1/r2 Kalkulátor Állapot</message>
+  <message id="oor2c-qr-state-txt">Az 1/r<sup>2</sup> kalkulátor eszköz jelenlegi állapota.</message>
+  <message id="oor2c-invalid-near">Érvénytelen közeli mérés</message>
+  <message id="oor2c-invalid-far">Érvénytelen távoli mérés</message>
+  <message id="oor2c-invalid-dist">Érvénytelen távolság</message>
+  <message id="oor2c-far-larger-than-near">A távoli mérésnek kisebbnek kell lennie, mint a közeli</message>
+  <message id="oor2c-back-larger-than-far">A háttérnek kisebbnek kell lennie, mint a távoli</message>
+  <message id="oor2c-near-is-zero">A közeli mérésnek nem nullának kell lennie</message>
+  <message id="oor2c-far-is-zero">A távoli mérésnek nem nullának kell lennie</message>
+  <message id="oor2c-dist-is-zero">A mérések közötti távolságnak nem nullának kell lennie</message>
+</messages>

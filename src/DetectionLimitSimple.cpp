@@ -105,7 +105,7 @@ DetectionLimitSimpleWindow::DetectionLimitSimpleWindow( MaterialDB *materialDB,
                                 Wt::WSuggestionPopup *materialSuggestion,
                                 InterSpec *viewer )
 : AuxWindow( WString::tr("window-title-simple-mda"),
-            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+            (AuxWindowProperties::TabletNotFullScreen
              | AuxWindowProperties::SetCloseable
              | AuxWindowProperties::DisableCollapse) )
 {
@@ -270,8 +270,6 @@ void DetectionLimitSimple::init()
   m_spectrum->setXAxisTitle( "" );
   m_spectrum->setYAxisTitle( "", "" );
   m_spectrum->setYAxisLog( false );
-  m_spectrum->applyColorTheme( m_viewer->getColorTheme() );
-  m_viewer->colorThemeChanged().connect( boost::bind( &D3SpectrumDisplayDiv::applyColorTheme, m_spectrum, boost::placeholders::_1 ) );
   m_spectrum->disableLegend();
   m_spectrum->setShowPeakLabel( SpectrumChart::PeakLabels::kShowPeakUserLabel, true );
   
@@ -541,9 +539,9 @@ void DetectionLimitSimple::init()
 
 void DetectionLimitSimple::roiDraggedCallback( double new_roi_lower_energy,
                  double new_roi_upper_energy,
-                 double new_roi_lower_px,
-                 double new_roi_upper_px,
+                 double new_roi_px,
                  double original_roi_lower_energy,
+                 const std::string &spec_type,
                  bool is_final_range )
 {
   if( !is_final_range )
@@ -2248,8 +2246,8 @@ void DetectionLimitSimple::updateResult()
         //  to definitely cover the entire possible activity range, so we will exaggerate the
         //  expected range from Currie-style limit
         //  The value of 5 is totally arbitrary, and I dont know what is actually a good range yet
-        const double diff_multiple = 5.0;
-        
+        const double diff_multiple = 50.0;
+
         if( currie_result.source_counts > currie_result.decision_threshold )
         {
           // There is enough excess counts to reliably detect this activity

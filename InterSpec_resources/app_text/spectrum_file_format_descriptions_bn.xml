@@ -1,0 +1,148 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<messages>
+  <message id="N42-2012">
+    সংরক্ষণs data to the ANSI N42.42-2012 data format.
+    
+    All information parsed from the original spectrum file, as well as information added by InterSpec, such as peaks fit, updated energy calibration, source fit information, detector response information, etc., will be included in the output file.
+    
+    This is the recomended spectrum file format to use, if you wish to work with the data within InterSpec again at a later time.
+        
+    The N42.42-2012 format has been updated to N42.42-2020, however the updated format is essentually identical to the 2012 version, with the changes being primarily clarifications to the documentation.
+    
+    Please see https://www.nist.gov/pml/radiation-physics/ansiieee-n4242-2020-version, or https://www.nist.gov/programs-projects/documentary-standards-ansiieee-n4242-standard for more information.
+        
+    নাte: the N42-2012 files produced by InterSpec contains a &lt;DHS:InterSpec&gt;&lt;/DHS:InterSpec&gt; element, in violation of the specification, and which may cause some XML parsers troubles; there also may be other small deviations from the specifications - these issues are known, and intended to be fixed in the future.
+  </message>
+
+  <message id="N42-2006">
+    সংরক্ষণs to the 2006 N42 XML format.
+    
+    Most relevant information of most input spectrum files will included in the output file, as well as information you added in InterSpec; however, not all spectroscopy programs are able to extract all fields, or read all variations of N42 files.
+
+    It is recomended to use the N42.42-2012 data format instead of this format, unless you are exporting the data for use with a legacy application.
+  </message>
+
+  <message id="CHN">
+    This options produces an integer binary CHN file.
+    
+    This format holds a single spectrum, measurement start time, spectrum title (up to 63 characters), detector description, and current energy calibration. 
+    
+    শক্তি deviation pairs, neutron counts, InterSpec specific information (DRF, activity fits, etc), as well as any other meta information, will not be included in the output file.
+  </message>
+
+  <message id="IAEA SPE">
+    SPE files are ASCII based, single spectrum files common for exchanging data between programs. 
+    
+    Saving to this format preserves neutron counts, start time, live time, real time, energy calibration, comments, and title.
+    
+    Deviation pairs, gps, model, InterSpec specific information (DRF, activity fits, etc), and other meta information will not be included in the output file.
+  </message>
+
+  <message id="CSV">
+    This option produces a comma seperated value (CSV) file, which may include multiple gamma spectra.
+    
+    The spectra are written out in a two column format (seperated by a comma); the first column is gamma channel lower edge energy (in keV), the second column is channel counts.  Each spectrum in the file are written out contiguously and seperated by a header that reads "শক্তি, Data".  
+    Windows style line endings are used (\\n\\r).
+    
+    This format loses all non-spectral information, including live and real times, and is intended to be an easy way to import the spectral information into other programs like Excel.
+  </message>
+
+  <message id="TXT">
+    স্পেকট্রাম(s) will be written to an ascii text file.  
+  
+    At the beginning of the file the original file name, total live and real times, sum gamma counts, sum neutron counts, serial number (if present), and any file level remarks will be written on seperate labeled lines.
+    Then after two blank lines each spectrum in the current file will be written, seperated by two blank lines.  Each spectrum will contain all remarks, measurment start time (if valid), live and real times, sample number, detector name, detector type, GPS coordinates/time (if valid), energy calibration type and coefficient values, and neutron counts (if valid); the channel number, channel lower energy, and channel counts is then provided with each channel being placed on a seperate line and each field being seperated by a space.
+  
+    Any detector provided analysis in the original program, as well manufacturer, UUID, deviation pairs, lane information, location name, or spectrum title is lost.
+    The Windows line ending convention is used (\\n\\r).
+  
+    This is not a standard format commonly read by other programs, and is intended as human readable summary of the spectrum file information; not all written information will be read in by InterSpec if you load the resulting file back into the program.
+  </message>
+  
+  <message id="PCF">
+    The PCF format is the binary native format of GADRAS.
+    
+    Saving to this format will cause the loss of some information.  However, Calibration, foreground/background, speed, sample, and spectrum title (up to 60 characters) will be preserved along with the spectral information and neutron counts.
+
+    This format is most commonly used for importing data into GADRAS.
+  </message>
+
+  <message id="CNF">
+    Mirion/Canberra CNF files are binary single spectrum files.
+
+    Saving to this format preserves start time, live time, real time, energy calibration, title, and gps coordinates. 
+    Neutron counts, deviation pairs, model, RIID results, InterSpec specific information (DRFs, peaks fit, fit activities, etc), and other meta information will be lost.
+
+    Only a subset of CAM file fields are supported for export, and some fields may not yet be correct.
+  </message>
+
+  <message id="SPC (int)">
+    This options produces a single-spectrum, integer-based binary SPC file.
+    
+    This format includes the gamma spectrum, neutron counts, gps info, measurement start time, detector serial number, and energy calibration.  
+    
+    শক্তি deviation pairs, analysis results, InterSpec specific information (DRFs, peaks fit, fit activities, etc), and other meta information will not be included.
+  </message>
+
+  <message id="SPC (float)">
+    This options produces a single-spectrum, float-based binary SPC file.
+    
+    This format includes the gamma spectrum, neutron counts, gps info, measurement start time, detector serial number, and energy calibration.  
+    
+    শক্তি deviation pairs, analysis results, InterSpec specific information (DRFs, peaks fit, fit activities, etc), and other meta information will not be included.
+  </message>
+
+  <message id="SPC (ascii)">
+    This options produces a single-spectrum ASCII SPC file.  
+    
+    This format includes the gamma spectrum, neutron counts, gps info, measurement start time, detector serial number, energy calibration, some detector analysis information, manufacturer, and model information.
+    
+    শক্তি deviation pairs, some analysis information results, InterSpec specific information (DRFs, peaks fit, fit activities, etc), and possibly some, but not all, meta information will not be included.
+  </message>
+
+  <message id="TKA">
+    Canberra Toolkit file.
+
+    Saving to this format will include a single gamma spectrum, live time, and the real time.
+    
+    All other information will be lost.
+  </message>
+
+  <message id="GR-130">
+    The GR130 format is the binary native format for Exploranium GR130 detectors.  
+    
+    Saving to this format will cause the data to be rebined to 256 channels, preserving the start and live times, but energy calibration and neutron information will be lost, along with all meta information such as comments, gps, etc. 
+    
+    Multiple spectra can be written to a single file, with the records ordered by sample number then detector number.
+  </message>
+
+  <message id="GR-135">
+    The GR135 format is the binary native format for Exploranium GR135v2 detectors.
+    
+    Saving to this format will cause the data to be rebined to 1024 channels, preserving the start and live times, neutron counts, energy calibration, and numeric serial numbers.
+    
+    Deviation pairs, comments, title, gps, and other meta information will be lost. 
+    
+    Multiple spectra can be written to a single file, with the records ordered by sample number then detector number.
+  </message>
+
+  <message id="HTML">
+    A stand-alone HTML file is produced with an interative spectrum chart.  
+    
+    The file may include a foreground and background spectrum, gamma reference lines, and it will have some basic viewing options.
+
+    This file format can only be read and displayed by web browsers that have javascript enabled and support SVG images.
+  </message>
+
+  <message id="QR-code/URL">
+    The spectrum will be encoded into a QR-code and/or URI.
+
+    The QR-code or URI may contain the foreground and background spectra, if they will fit.
+
+    The gamma spectra, neutron counts, GPS coordinates, energy calibration, and detector information will be included, if avaiable.
+
+    All other meta-information, and InterSpec specific information (DRFs, peaks fit, fit activities, etc) will not be included.
+
+    HPGe spectra may require multiple QR-codes to represent a single spectrum, in which case the background and foreground spectra should be seperately encoded.
+  </message>
+</messages>
