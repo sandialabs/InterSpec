@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- This file applies to InjaLogDialog.cpp - a reusable dialog for displaying inja-rendered content -->
+  <message id="ild-no-templates">Aucun modèle fourni.</message>
+  <message id="ild-json-parse-error">
+    <p>Erreur lors de l'analyse des données JSON :</p>
+    <code>{1}</code>
+  </message>
+  <message id="ild-inja-error">
+    <p>Erreur lors du rendu du modèle :</p>
+    <code>{1}</code>
+    <br />
+    à la ligne {2}, colonne {3}
+  </message>
+  <message id="ild-misc-error">
+    <p>Erreur lors de l'affichage du contenu :</p>
+    <code>{1}</code>
+  </message>
+</messages>

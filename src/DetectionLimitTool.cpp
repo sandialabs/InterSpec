@@ -43,8 +43,6 @@
 #include <Wt/WApplication>
 #include <Wt/WRegExpValidator>
 #include <Wt/WSuggestionPopup>
-#include <Wt/WStandardItemModel>
-#include <Wt/Chart/WCartesianChart>
 
 #include <Wt/Json/Array>
 #include <Wt/Json/Value>

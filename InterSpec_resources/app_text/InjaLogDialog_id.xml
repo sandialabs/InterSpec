@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- This file applies to InjaLogDialog.cpp - a reusable dialog for displaying inja-rendered content -->
+  <message id="ild-no-templates">Tidak ada templat yang disediakan.</message>
+  <message id="ild-json-parse-error">
+    <p>Kesalahan mengurai data JSON:</p>
+    <code>{1}</code>
+  </message>
+  <message id="ild-inja-error">
+    <p>Kesalahan merender templat:</p>
+    <code>{1}</code>
+    <br />
+    pada baris {2}, kolom {3}
+  </message>
+  <message id="ild-misc-error">
+    <p>Kesalahan menampilkan konten:</p>
+    <code>{1}</code>
+  </message>
+</messages>

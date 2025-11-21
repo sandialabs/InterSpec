@@ -26,6 +26,7 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <mutex>
 #include <memory>
 #include <vector>
 

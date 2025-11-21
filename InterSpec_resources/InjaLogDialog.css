@@ -1,0 +1,63 @@
+/* Analysis result dialogs */
+.simple-dialog.InjaLogDialog
+{
+}
+
+.simple-dialog.InjaLogDialog .body
+{
+  /* The 95vh is from .simple-dialog, and the 90px is the header and footer height. */
+  max-height: calc( 95vh - 90px );
+  max-width: calc(95vw - 30px);
+  overflow-y: hidden;
+  overflow-x: hidden;
+  padding-top: 16px;
+  padding-bottom: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Toolbar containing template selector and download button */
+.simple-dialog.InjaLogDialog .InjaLogToolbar
+{
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 10px;
+  flex-shrink: 0;
+}
+
+.simple-dialog.InjaLogDialog .InjaLogTemplateSelector
+{
+  flex-grow: 1;
+  max-width: 300px;
+}
+
+.simple-dialog.InjaLogDialog .InjaLogDownloadBtn
+{
+  flex-shrink: 0;
+}
+
+
+.RefGammaCsv
+{
+
+}
+
+.simple-dialog.InjaLogDialog .body .InjaLogDialogIFrameHolder
+{
+  border: solid 1px #e1e1e1;
+  border-radius: 5px;
+  display: block;
+  flex-grow: 1;
+  overflow: hidden;
+}
+
+.simple-dialog.InjaLogDialog .body .InjaLogDialogJsonError,
+.simple-dialog.InjaLogDialog .body .InjaLogDialogInjaError,
+.simple-dialog.InjaLogDialog .body .InjaLogDialogMiscError
+{
+  color: red;
+}

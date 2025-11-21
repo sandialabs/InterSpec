@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- This file applies to InjaLogDialog.cpp - a reusable dialog for displaying inja-rendered content -->
+  <message id="ild-no-templates">Шаблоны не предоставлены.</message>
+  <message id="ild-json-parse-error">
+    <p>Ошибка разбора данных JSON:</p>
+    <code>{1}</code>
+  </message>
+  <message id="ild-inja-error">
+    <p>Ошибка отображения шаблона:</p>
+    <code>{1}</code>
+    <br />
+    в строке {2}, столбец {3}
+  </message>
+  <message id="ild-misc-error">
+    <p>Ошибка отображения содержимого:</p>
+    <code>{1}</code>
+  </message>
+</messages>

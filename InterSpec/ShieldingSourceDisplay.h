@@ -26,24 +26,21 @@
 #include "InterSpec_config.h"
 
 #include <map>
-#include <tuple>
 #include <mutex>
 #include <utility>
 
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
+#include <tuple>
+
 #include <boost/optional.hpp>
 #endif
 
-#include <Wt/WRectF>
-#include <Wt/WColor>
-#include <Wt/WPainter>
 #include <Wt/WModelIndex>
-#include <Wt/WGridLayout>
 #include <Wt/WContainerWidget>
 #include <Wt/WAbstractItemModel>
-#include <Wt/Chart/WCartesianChart>
 
-#include "InterSpec/DetectorPeakResponse.h" //DetectorPeakResponse::EffGeometryType
+#include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/ShieldingSourceFitPlot.h"
 #include "InterSpec/ShieldingSourceFitCalc.h"
 
 //Forward declarations
@@ -51,6 +48,7 @@ class PeakDef;
 struct Material;
 class PeakModel;
 class AuxWindow;
+class InjaLogDialog;
 class MaterialDB;
 class ColorTheme;
 class PopupDivMenu;
@@ -87,8 +85,6 @@ namespace Wt
 {
   class WText;
   class WLabel;
-  class WAnchor;
-  class WSvgImage;
   class WCheckBox;
   class WLineEdit;
   class WTreeView;
@@ -97,11 +93,6 @@ namespace Wt
   class WFileUpload;
   class WSelectionBox;
   class WSuggestionPopup;
-  class WStandardItemModel;
-//  namespace Chart
-//  {
-//    class WCartesianChart;
-//  }//namespace Chart
 }//namespace Wt
 
 
@@ -355,9 +346,6 @@ public:
   
   /** Returns <num values specified, num fit values, is valid> */
   std::tuple<int,int,bool> numTruthValuesForFitValues();
-  
-  /** Renders the Chi2Chart to a SVG image */
-  void renderChi2Chart( Wt::WSvgImage &image );
 
   /** Tests the current values, for all quantities being fit for, against truth-level values.
    
@@ -489,8 +477,11 @@ public:
   void handleShieldingChange();
   
   void handleDetectorChanged( std::shared_ptr<DetectorPeakResponse> new_det );
-  
+
   void updateChi2Chart();
+
+  /** Callback for when the user toggles between Chi and Mult display modes in the chart */
+  void handleChi2ChartDisplayModeChanged( bool showChi );
   
   void showCalcLog();
   void closeCalcLogWindow();
@@ -690,8 +681,7 @@ protected:
   Wt::WText *m_fixedGeometryTxt;
   
   Wt::WText *m_showChi2Text;
-  Wt::WStandardItemModel *m_chi2Model;
-  Chi2Graphic *m_chi2Graphic;
+  ShieldingSourceFitPlot *m_chi2Plot;
   
 
   Wt::WCheckBox  *m_multiIsoPerPeak;
@@ -707,10 +697,11 @@ protected:
   bool m_multithread_computation;
   
   PopupDivMenuItem *m_showLog;
-  
-  AuxWindow *m_logDiv;
+
+  InjaLogDialog *m_logDiv;
   std::vector<std::string> m_calcLog;
   std::unique_ptr<const std::vector<GammaInteractionCalc::PeakDetail>> m_peakCalcLogInfo;
+  std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> m_lastFitResults;
   
   AuxWindow *m_modelUploadWindow;
 #if( USE_DB_TO_STORE_SPECTRA )
@@ -730,30 +721,6 @@ protected:
   std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> m_currentFitFcn;
   
   //A class to draw the chi2 distribution of the fit to activity/shielding.
-  //  We have to overide the Paint(...) method to draw some text on chart
-  //  indicating the chi2
-  class Chi2Graphic : public Wt::Chart::WCartesianChart
-  {
-  public:
-    Chi2Graphic( Wt::WContainerWidget *parent = 0 );
-    virtual ~Chi2Graphic();
-    virtual void paint( Wt::WPainter &painter,
-                        const Wt::WRectF &rectangle = Wt::WRectF() ) const;
-    virtual void paintEvent( Wt::WPaintDevice *paintDevice );
-    void setNumFitForParams( unsigned int npar );
-    
-    void setShowChiOnChart( const bool show_chi );
-    void setTextPenColor( const Wt::WColor &color );
-    void setColorsFromTheme( std::shared_ptr<const ColorTheme> theme );
-  protected:
-    void calcAndSetAxisRanges();
-    void calcAndSetAxisPadding( double yHeightPx );
-    
-    int m_nFitForPar;
-    bool m_showChi;
-    Wt::WColor m_textPenColor;
-  };//class WCartesianChart
-
   static const int sm_xmlSerializationMajorVersion;
   static const int sm_xmlSerializationMinorVersion;
   

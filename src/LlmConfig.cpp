@@ -84,6 +84,12 @@ std::shared_ptr<LlmConfig> LlmConfig::load()
     throw; // rethrow
   }
   
+  if( !config->llmApi.enabled && !config->mcpServer.enabled )
+  {
+    cout << "Not enabling LLM assistant or MCP server." << endl;
+    return config;
+  }
+  
   try
   {
     config->agents = loadAgentsFromFile(agentsPath);

@@ -7077,7 +7077,6 @@ bool chi2_significance_test( const PeakDef &peak,
 
   if( without_peak_chi2 < 5 )
     noRatioRequired = true;
-          
   //Dont require the ratio test to apply if peaks share a continuum
   std::shared_ptr<const PeakContinuum> continuum = peak.continuum();
   for( const PeakDef &p : other_peaks )
@@ -7101,11 +7100,10 @@ bool chi2_significance_test( const PeakDef &peak,
   //       << endl << endl;
   //}
 
-  
   return ((noRatioRequired || (chi2Ratio >= chi2ratioRequired))
           && (noDeltaRequired || (deltaChi2 > withoutPeakDSigma)));
 }//bool chi2_significance_test( ... 0
-        
+
         
 namespace ExperimentalPeakSearch
 {

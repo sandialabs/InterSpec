@@ -1631,12 +1631,12 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     const size_t num_skew = PeakDef::num_skew_parameters( skew_type );
 
 
-    auto cost_functor = new PeakFitDiffCostFunction( dataH, coFitPeaks, roiLowerEnergy, roiUpperEnergy,
+    auto cost_functor = make_unique<PeakFitDiffCostFunction>( dataH, coFitPeaks, roiLowerEnergy, roiUpperEnergy,
                                                     offset_type, reference_energy, skew_type, isHPGe, fit_options );
 
     //Choosing 8 paramaters to include in the `ceres::Jet<>` is 4 peaks in ROI, which covers most cases
     //  without introducing a ton of extra overhead.
-    auto cost_function = new ceres::DynamicAutoDiffCostFunction<PeakFitDiffCostFunction,8>( cost_functor );
+    auto cost_function = new ceres::DynamicAutoDiffCostFunction<PeakFitDiffCostFunction,8>( cost_functor.get(), ceres::Ownership::DO_NOT_TAKE_OWNERSHIP );
 
     const size_t num_fit_pars = cost_functor->number_parameters();
 
@@ -1653,20 +1653,20 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     double * const pars = &parameters[0];
 
 
-    ceres::Problem problem;
+    std::unique_ptr<ceres::Problem> problem = make_unique<ceres::Problem>();
 
     // A brief look at a dataset of ~4k HPGe spectra with known truth-value peaks areas shows
     //  that using a loss function doesnt seem improve outcomes, when measured by sucessful
     //  peak fits, and by comparison of fit to truth peak areas.
     ceres::LossFunction *lossfcn = nullptr;
 
-    problem.AddResidualBlock( cost_function, lossfcn, pars );
+    problem->AddResidualBlock( cost_function, lossfcn, pars ); //Note: problem takes ownership of `cost_function`
 
 
     if( !prob_setup.m_constant_parameters.empty() )
     {
       ceres::Manifold *subset_manifold = new ceres::SubsetManifold( static_cast<int>(num_fit_pars), prob_setup.m_constant_parameters );
-      problem.SetManifold( pars, subset_manifold );
+      problem->SetManifold( pars, subset_manifold );
     }
 
     for( size_t i = 0; i < num_fit_pars; ++i )
@@ -1674,13 +1674,13 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
       if( prob_setup.m_lower_bounds[i].has_value() )
       {
         assert( *prob_setup.m_lower_bounds[i] <= parameters[i] );
-        problem.SetParameterLowerBound(pars, static_cast<int>(i), *prob_setup.m_lower_bounds[i] );
+        problem->SetParameterLowerBound(pars, static_cast<int>(i), *prob_setup.m_lower_bounds[i] );
       }
 
       if( prob_setup.m_upper_bounds[i].has_value() )
       {
         assert( *prob_setup.m_upper_bounds[i] >= parameters[i] );
-        problem.SetParameterUpperBound(pars, static_cast<int>(i), *prob_setup.m_upper_bounds[i] );
+        problem->SetParameterUpperBound(pars, static_cast<int>(i), *prob_setup.m_upper_bounds[i] );
       }
     }//for( size_t i = 0; i < num_fit_pars; ++i )
 
@@ -1743,14 +1743,26 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     options.parameter_tolerance = 1e-11; //Default value is 1e-8.  Using 1e-11, so its usually the function tolerance that terminates things.
     options.num_threads = 1; //Probably wont have much/any effect
 
+    // Default value of `max_num_consecutive_invalid_steps` is 5, however, if we are re-fitting a peak who already has
+    //  near perfect values, occasionally the fit fails with the devault values - I guess the trust-region is just so
+    //  far off (but I dont really know - this is just a guess), but if we increase this value to 10, the fit seems
+    //  to be sucessful, for a limited number of test cases.
+    options.max_num_consecutive_invalid_steps = 10;
+
+    // Just to note for the future, the following values are enabled by the default options, and are what we want.
+    //options.preconditioner_type = ceres::JACOBI;
+    //options.jacobi_scaling = true; // Let Ceres estimate scale based on Jacobian diagonal
+
     ceres::Solver::Summary summary;
-    ceres::Solve(options, &problem, &summary);
+    ceres::Solve(options, problem.get(), &summary);
 
 #if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
     //std::cout << summary.BriefReport() << "\n";
     std::cout << summary.FullReport() << "\n";
     cout << "Took " << cost_functor->m_ncalls.load() << " calls to solve." << endl;
 #endif
+
+    string failure_reason;
 
     switch( summary.termination_type )
     {
@@ -1777,34 +1789,96 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
 
         summary = ceres::Solver::Summary();
 
-        ceres::Solve(options, &problem, &summary);
+        ceres::Solve(options, problem.get(), &summary);
 
+        // If things worked out, we're good here and we can `break` from this case statement
         if( (summary.termination_type == ceres::CONVERGENCE)
             || (summary.termination_type == ceres::USER_SUCCESS) )
         {
-          //cerr << "Retry of L-M ceres::Solver worked with "
-          //<< cost_functor->m_ncalls.load() << " fcn additional calls in "
-          //<< summary.num_successful_steps << " succesfull steps"
-          //<< endl;
           break;
         }
 
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
         cerr << "Retry of L-M ceres::Solver Failed with " << cost_functor->m_ncalls.load() << " additional calls" << endl;
+#endif
 
-        throw runtime_error( "The L-M ceres::Solver solving failed - NO_CONVERGENCE." );
-      }
+        // If we have failed here, we will re-try, but with numerical differentiation - havent explicitly found any
+        //  cases where this is necassary, or helpful
+        failure_reason = "The L-M ceres::Solver solving failed - NO_CONVERGENCE.";
+
+        [[fallthrough]]; //Fallthrough intentional
+      }//case ceres::NO_CONVERGENCE:
 
       case ceres::FAILURE:
+      {
+        if( failure_reason.empty() )
+          failure_reason = "The L-M ceres::Solver solving failed - FAILURE.";
+
 #if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
         cerr << "The L-M ceres::Solver solving failed - FAILURE:\n" << summary.FullReport() << endl;
 #endif
-        throw runtime_error( "The L-M ceres::Solver solving failed - FAILURE." );
-        
+        // We will re-try with numerical differntiation - the one case that the author has observed this being
+        //  necassary is with peak-refits, where all peak paramaeters are already about perfect, very rarely, it seems
+        //  to throw off trust-region searching, or something - however, numerical differentiating seems to work for
+        //  these (rare!) cases that this is observed.
+
+        auto numeric_cost_fnct = new ceres::DynamicNumericDiffCostFunction<PeakFitDiffCostFunction>( cost_functor.get(),
+                                                                            ceres::Ownership::DO_NOT_TAKE_OWNERSHIP );
+        numeric_cost_fnct->AddParameterBlock( static_cast<int>(num_fit_pars) );
+        numeric_cost_fnct->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
+
+        std::unique_ptr<ceres::Problem> numerical_problem = make_unique<ceres::Problem>();
+        numerical_problem->AddResidualBlock( numeric_cost_fnct, lossfcn, pars ); //Note: numerical_problem takes ownership of `numeric_cost_fnct`
+
+        if( !prob_setup.m_constant_parameters.empty() )
+        {
+          ceres::Manifold *subset_manifold = new ceres::SubsetManifold( static_cast<int>(num_fit_pars), prob_setup.m_constant_parameters );
+          numerical_problem->SetManifold( pars, subset_manifold );
+        }
+
+        for( size_t i = 0; i < num_fit_pars; ++i )
+        {
+          if( prob_setup.m_lower_bounds[i].has_value() )
+            numerical_problem->SetParameterLowerBound(pars, static_cast<int>(i), *prob_setup.m_lower_bounds[i] );
+          if( prob_setup.m_upper_bounds[i].has_value() )
+            numerical_problem->SetParameterUpperBound(pars, static_cast<int>(i), *prob_setup.m_upper_bounds[i] );
+        }//for( size_t i = 0; i < num_fit_pars; ++i )
+
+        cost_functor->m_ncalls = 0;
+        summary = ceres::Solver::Summary();
+        ceres::Solve(options, numerical_problem.get(), &summary);
+
+        switch( summary.termination_type )
+        {
+          case ceres::CONVERGENCE:
+          case ceres::USER_SUCCESS:
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+            cout << "Was able to solved problem using numerical differentiation!" << endl;
+#endif
+            problem = std::move(numerical_problem);
+            break;
+
+          case ceres::NO_CONVERGENCE:
+          case ceres::FAILURE:
+          case ceres::USER_FAILURE:
+          {
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+            cerr << "Failed to get successful fit with numerical differentiation either - giving up." << endl;
+#endif
+            throw runtime_error( failure_reason );
+          }
+        }
+
+        break;
+      }//case ceres::FAILURE:
+
       case ceres::USER_FAILURE:
+      {
 #if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
         cerr << "The L-M ceres::Solver solving failed - USER_FAILURE:\n" << summary.FullReport() << endl;
 #endif
         throw runtime_error( "The L-M ceres::Solver solving failed - USER_FAILURE." );
+      }//case ceres::USER_FAILURE:
     }//switch( summary.termination_type )
 
     cost_functor->m_ncalls = 0;
@@ -1827,7 +1901,7 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     vector<pair<const double*, const double*> > covariance_blocks;
     covariance_blocks.push_back( make_pair( pars, pars) );
     
-    if( !covariance.Compute(covariance_blocks, &problem) )
+    if( !covariance.Compute(covariance_blocks, problem.get()) )
     {
 #if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
       cerr << "Failed to compute covariance!" << endl;
@@ -2132,7 +2206,7 @@ void fit_peaks_LM( vector<shared_ptr<const PeakDef>> &results,
     return;
   }catch( std::exception &e )
   {
-#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO || !defined(NDEBUG) )
     cerr << "fit_peaks_LM: caught exception '" << e.what() << "'" << endl;
 #endif
     results.clear();
@@ -2178,6 +2252,8 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_range_LM( const double x0, const 
   // The returned pointers all point to the original peaks.
   const vector<vector<shared_ptr<const PeakDef>>> seperated_peaks
                                           = causilyDisconnectedPeaks( ncausalitysigma, false, peaks_in_range );
+
+  assert( ([seperated_peaks](){ size_t i = 0; for(auto &p:seperated_peaks) i += p.size(); return i; })() == peaks_in_range.size() );
 
   //Fit each of the ranges
   vector<vector<shared_ptr<const PeakDef>>> fit_peak_ranges( seperated_peaks.size() );
