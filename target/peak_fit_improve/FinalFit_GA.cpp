@@ -119,12 +119,16 @@ public:
     settings.left_residual_sum_min_to_try_skew = params[index++];
     settings.right_residual_sum_min_to_try_skew = params[index++];
     settings.skew_improve_chi2_dof_threshold = params[index++];
-    settings.roi_extent_low_num_fwhm_base_ = params[index++];
-    settings.roi_extent_high_num_fwhm_base_ = params[index++];
+    settings.roi_extent_low_num_fwhm_base_highstat = params[index++];
+    settings.roi_extent_high_num_fwhm_base_highstat = params[index++];
+    settings.roi_extent_low_num_fwhm_base_lowstat = params[index++];
+    settings.roi_extent_high_num_fwhm_base_lowstat = params[index++];
+    settings.high_stat_threshold = params[index++];
     settings.roi_extent_low_num_fwhm_extra = params[index++];
     settings.roi_extent_high_num_fwhm_extra = params[index++];
     settings.roi_end_second_deriv_thresh = params[index++];
     settings.break_multi_roi_up_continuum_away_sigma = params[index++];
+    settings.break_multi_roi_up_required_chi2dof_improve = params[index++];
 
     assert( index == params.size() );
 
@@ -197,15 +201,50 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
   const vector<float> &channel_counts = *channel_counts_ptr;
   const vector<float> &energies = *energies_ptr;
 
-  // Do an initial fit
-  const double initial_stat_threshold = 0.0;
-  const double initial_hypothesis_threshold = 0.0;
-  const bool amplitudeOnly = false;
-
   const std::shared_ptr<const PeakContinuum> orig_continuum = pre_fit_peaks.front().continuum();
 
   if( 0.5*(pre_fit_peaks.front().fwhm() + pre_fit_peaks.back().fwhm()) <= 0.0 )
     return vector<PeakDef>();
+
+  const bool is_high_stat = ([&final_fit_settings, &pre_fit_peaks](){
+    for( const PeakDef &p : pre_fit_peaks )
+    {
+      if( (p.amplitude() > 0.0) && (sqrt(p.amplitude()) > final_fit_settings.high_stat_threshold) )
+        return true;
+    }
+    return false;
+  })();
+
+  const bool lower_extend_base_nfwhm = is_high_stat ? final_fit_settings.roi_extent_low_num_fwhm_base_highstat
+                                                    : final_fit_settings.roi_extent_low_num_fwhm_base_lowstat;
+  const bool upper_extend_base_nfwhm = is_high_stat ? final_fit_settings.roi_extent_high_num_fwhm_base_highstat
+                                                    : final_fit_settings.roi_extent_high_num_fwhm_base_lowstat;
+
+
+
+  const auto refit_peaks = [data, isHPGe]( const vector<PeakDef> &these_input_peaks ) -> vector<PeakDef> {
+
+    // Do an initial fit
+    const double initial_stat_threshold = 0.0;
+    const double initial_hypothesis_threshold = 0.0;
+    const bool amplitudeOnly = false;
+
+    vector<PeakDef> these_fit_peaks;
+#if( USE_LM_PEAK_FIT )
+      vector<shared_ptr<const PeakDef>> results_tmp, input_peaks_tmp;
+      for( const PeakDef &p : these_input_peaks )
+        input_peaks_tmp.push_back( make_shared<PeakDef>(p) );
+      PeakFitLM::fit_peaks_LM( results_tmp, input_peaks_tmp, data,
+                          initial_stat_threshold, initial_hypothesis_threshold,  amplitudeOnly, isHPGe );
+    for( const shared_ptr<const PeakDef> &p : results_tmp )
+      these_fit_peaks.push_back( *p );
+#else
+      fitPeaks( these_fit_peaks, initial_stat_threshold, initial_hypothesis_threshold,
+                data, initial_peaks, amplitudeOnly, isHPGe );
+#endif
+
+    return these_fit_peaks;
+  };
 
   const bool debug_peak = ((pre_fit_peaks.front().mean() > PeakFitImprove::debug_lower_energy && pre_fit_peaks.front().mean() < PeakFitImprove::debug_upper_energy)
                            || (pre_fit_peaks.back().mean() > PeakFitImprove::debug_lower_energy && pre_fit_peaks.back().mean() < PeakFitImprove::debug_upper_energy));
@@ -220,7 +259,7 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
 
   vector<PeakDef> initial_peaks = pre_fit_peaks;
 
-  const auto find_ROI_limits = [&initial_peaks,&data,&final_fit_settings,&channel_counts,isHPGe, debug_peak]() -> pair<double,double> {
+  const auto find_ROI_limits = [&initial_peaks,&data,&final_fit_settings,&channel_counts,isHPGe,lower_extend_base_nfwhm,upper_extend_base_nfwhm, debug_peak]() -> pair<double,double> {
 
     const PeakDef &first_peak = initial_peaks.front();
     const PeakDef &last_peak = initial_peaks.back();
@@ -257,8 +296,8 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
 
     assert( nchannel_half_fwhm > 1.0 );
 
-    const double base_roi_lower = first_mean - final_fit_settings.roi_extent_low_num_fwhm_base_*effective_fwhm;
-    const double base_roi_upper = last_mean + final_fit_settings.roi_extent_high_num_fwhm_base_*effective_fwhm;
+    const double base_roi_lower = first_mean - (lower_extend_base_nfwhm * effective_fwhm);
+    const double base_roi_upper = last_mean + (upper_extend_base_nfwhm * effective_fwhm);
 
     const double min_roi_lower = base_roi_lower - effective_fwhm * final_fit_settings.roi_extent_low_num_fwhm_extra;
     int min_roi_lower_channel = static_cast<int>( data->find_gamma_channel( static_cast<float>(min_roi_lower) ) );
@@ -520,6 +559,8 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
       const double lower_avrg = 0.5*(orig_lower_energy + roi_lower);
       const size_t lower_avrg_channel = data->find_gamma_channel( lower_avrg );
       //cout << "Moving roi_lower=" << roi_lower << " ---> " << data->gamma_channel_lower( lower_avrg_channel ) << endl;
+
+      roi_lower_channel = static_cast<int>(lower_avrg_channel);
       roi_lower = data->gamma_channel_lower( lower_avrg_channel );
     }
 
@@ -528,12 +569,17 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
       const double upper_avrg = 0.5*(orig_upper_energy + roi_upper);
       const size_t upper_avrg_channel = data->find_gamma_channel( upper_avrg );
       //cout << "Moving roi_upper=" << roi_upper << " ---> " << data->gamma_channel_lower( upper_avrg_channel ) << endl;
+
+      roi_upper_channel = static_cast<int>(upper_avrg_channel);
       roi_upper = data->gamma_channel_upper( upper_avrg_channel ) - 0.001;
     }
 
-    assert( data->find_gamma_channel(static_cast<float>(roi_lower)) == static_cast<size_t>(roi_lower_channel) );
-    assert( data->find_gamma_channel(static_cast<float>(roi_upper)) == static_cast<size_t>(roi_upper_channel) );
-
+#if( PERFORM_DEVELOPER_CHECKS )
+    const size_t test_roi_lower_ch = data->find_gamma_channel(static_cast<float>(roi_lower));
+    const size_t test_roi_upper_ch = data->find_gamma_channel(static_cast<float>(roi_upper));
+    assert( test_roi_lower_ch == static_cast<size_t>(roi_lower_channel) );
+    assert( test_roi_upper_ch == static_cast<size_t>(roi_upper_channel) );
+#endif
     return make_pair(roi_lower, roi_upper);
   };//find_ROI_limits lambda
 
@@ -552,28 +598,16 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
     shared_ptr<PeakContinuum> updated_continuum = make_shared<PeakContinuum>( *orig_continuum );
     updated_continuum->setRange( roi_limits.first, roi_limits.second );
 
-  #if( USE_LM_PEAK_FIT )
-    vector<shared_ptr<const PeakDef>> results_tmp, input_peaks_tmp;
-    for( const PeakDef &p : initial_peaks )
+    try
     {
-      auto new_peak = make_shared<PeakDef>(p);
-      new_peak->setContinuum( updated_continuum );
-      input_peaks_tmp.push_back( new_peak );
-    }
-    PeakFitLM::fit_peaks_LM( results_tmp, input_peaks_tmp, data,
-                            initial_stat_threshold, initial_hypothesis_threshold,  amplitudeOnly, isHPGe );
-    if( !results_tmp.empty() )
+      vector<PeakDef> updated_peaks = refit_peaks( initial_peaks );
+      if( !updated_peaks.empty() )
+        initial_peaks.swap( updated_peaks );
+    }catch( std::exception &e )
     {
-      initial_peaks.clear();
-      for( const shared_ptr<const PeakDef> &p : results_tmp )
-        initial_peaks.push_back( *p );
+      if( debug_peak )
+        cerr << "Initial peak refit failed: " << e.what() << endl;
     }
-  #else
-    for( PeakDef &p : initial_peaks )
-      p.setContinuum(updated_continuum);
-    fitPeaks( initial_peaks, initial_stat_threshold, initial_hypothesis_threshold,
-                 data, initial_peaks, amplitudeOnly, isHPGe );
-  #endif
 
     roi_limits = find_ROI_limits();
 
@@ -613,19 +647,7 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
 
   const double intial_chi2 = chi2_for_region_wrapper( initial_peaks, data, compare_lower_channel, compare_upper_channel );
 
-  vector<PeakDef> first_fit_peaks;
-#if( USE_LM_PEAK_FIT )
-  vector<shared_ptr<const PeakDef>> results_tmp, input_peaks_tmp;
-  for( const PeakDef &p : initial_peaks )
-    input_peaks_tmp.push_back( make_shared<PeakDef>(p) );
-  PeakFitLM::fit_peaks_LM( results_tmp, input_peaks_tmp, data,
-                          initial_stat_threshold, initial_hypothesis_threshold,  amplitudeOnly, isHPGe );
-  for( const shared_ptr<const PeakDef> &p : results_tmp )
-    first_fit_peaks.push_back( *p );
-#else
-  fitPeaks( first_fit_peaks, initial_stat_threshold, initial_hypothesis_threshold,
-               data, initial_peaks, amplitudeOnly, isHPGe );
-#endif
+  vector<PeakDef> first_fit_peaks = refit_peaks( initial_peaks );
 
   if( first_fit_peaks.empty() )
     throw std::runtime_error( "final_peak_fit_for_roi: first_fit_peaks is empty" );
@@ -763,18 +785,7 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
     vector<PeakDef> these_fit_peaks;
     try
     {
-#if( USE_LM_PEAK_FIT )
-      vector<shared_ptr<const PeakDef>> results_tmp, input_peaks_tmp;
-      for( const PeakDef &p : these_input_peaks )
-        input_peaks_tmp.push_back( make_shared<PeakDef>(p) );
-      PeakFitLM::fit_peaks_LM( results_tmp, input_peaks_tmp, data,
-                          initial_stat_threshold, initial_hypothesis_threshold,  amplitudeOnly, isHPGe );
-    for( const shared_ptr<const PeakDef> &p : results_tmp )
-      these_fit_peaks.push_back( *p );
-#else
-      fitPeaks( these_fit_peaks, initial_stat_threshold, initial_hypothesis_threshold,
-                data, initial_peaks, amplitudeOnly, isHPGe );
-#endif
+      these_fit_peaks = refit_peaks( these_input_peaks );
     }catch( const std::exception &e )
     {
       // TODO/Note: It doesn look like we can get here, neither `PeakFitLM::fit_peaks_LM(...)` or `fitPeaks(...)` will through
@@ -840,7 +851,7 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
       if( (this_chi2 + final_fit_settings.cont_poly_order_increase_chi2dof_required) < prev_chi2 )
       {
         if( debug_peak )
-          cout << "Udating to non-step type from "
+          cout << "Updating to non-step type from "
           << PeakContinuum::offset_type_str(std::get<0>(trial_peak_fits[chosen_index]))
           << " to "
           << PeakContinuum::offset_type_str(std::get<0>(trial_peak_fits[i]))
@@ -1018,18 +1029,8 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
 
         try
         {
-#if( USE_LM_PEAK_FIT )
-          vector<shared_ptr<const PeakDef>> results_tmp, input_peaks_tmp;
-          for( const PeakDef &p : these_input_peaks )
-            input_peaks_tmp.push_back( make_shared<PeakDef>(p) );
-          PeakFitLM::fit_peaks_LM( results_tmp, input_peaks_tmp, data,
-                                  initial_stat_threshold, initial_hypothesis_threshold,  amplitudeOnly, isHPGe );
-          for( const shared_ptr<const PeakDef> &p : results_tmp )
-            these_fit_peaks.push_back( *p );
-#else
-          fitPeaks( these_fit_peaks, initial_stat_threshold, initial_hypothesis_threshold,
-                   data, initial_peaks, amplitudeOnly, isHPGe );
-#endif
+          these_fit_peaks = refit_peaks( these_input_peaks );
+
           if( these_fit_peaks.empty() )
             throw runtime_error( "failed fitting" );
         }catch( const std::exception &e )
@@ -1110,6 +1111,144 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
       cout << "Not checking for skew." << endl;
   }//if( post_cont_type_max_nsigma > final_fit_settings.skew_nsigma ) / else
 
+
+  // Now if there are multiple peaks in the ROI, we'll check if we should break it up into multiple ROIs
+  //  TODO: It would be nice to do this at an earlier stage (like right after the different types of continuums are fit, and to do this for each type of continuum), but each call to fit peaks assumes a single ROI - so logic would need adjusting for this in all parts that might fit the peaks afterwards
+  if( (answer.size() > 1) && (final_fit_settings.break_multi_roi_up_continuum_away_sigma > 1.0) )
+  {
+    assert( std::count_if(begin(answer), end(answer), [&answer](const PeakDef &p) {
+      return (p.continuum() != answer.front().continuum());
+    }) == 0 );
+
+    //Start with first peak mean, and add `roi_extent_low_num_fwhm_base_` FWHM, then check for each channel if we
+    //  should break them until we get to within `roi_extent_high_num_fwhm_base_` FWHM of second peak, etc.
+    //  If we should break up a ROI
+    //final_fit_settings.break_multi_roi_up_required_chi2dof_improve
+    vector<vector<PeakDef>> splitup_rois;
+    const vector<PeakDef> &orig_roi = answer;
+    assert( std::is_sorted(begin(orig_roi), end(orig_roi), []( const PeakDef &lhs, const PeakDef &rhs ){
+      return lhs.mean() < rhs.mean();
+    }) );
+
+    // We will only break the ROI up at 1 point - where the deviation is max
+    size_t max_dev_channel = 0, last_left_peak_index = 0;
+    double max_deviation = -1.0;
+    for( size_t orig_peak_index = 0; (orig_peak_index + 1) < orig_roi.size(); ++orig_peak_index )
+    {
+      const PeakDef &this_peak = orig_roi[orig_peak_index];
+      const PeakDef &next_peak = orig_roi[orig_peak_index + 1];
+      const double start_energy = this_peak.mean() + this_peak.fwhm() * lower_extend_base_nfwhm;
+      const double end_energy = next_peak.mean() - next_peak.fwhm() * upper_extend_base_nfwhm;
+      const size_t start_check_channel = data->find_gamma_channel( static_cast<float>(start_energy) );
+      const size_t end_check_channel = data->find_gamma_channel( static_cast<float>(end_energy) );
+
+      //We will use two data channels at a time to compute things... this is arbitrarily chosen and not checked
+      for( size_t i = start_check_channel; i < end_check_channel; ++i )
+      {
+        const float data_cnts = data->gamma_channel_content(i)
+        + data->gamma_channel_content(i + 1);
+        const double uncert = (data_cnts > 0.1) ? sqrt(data_cnts) : 1.0;
+        const float ch_lower_energy = data->gamma_channel_lower(i);
+        const float ch_upper_energy = data->gamma_channel_upper(i + 1);
+
+        double fit_amp = 0.0;
+        for( const PeakDef &p : orig_roi )
+          fit_amp += p.gauss_integral(ch_lower_energy, ch_upper_energy);
+        fit_amp += orig_roi.front().continuum()->offset_integral(ch_lower_energy, ch_upper_energy, data);
+
+        const double deviation = fabs(fit_amp - data_cnts) / uncert;
+        if( deviation > max_deviation )
+        {
+          max_deviation = deviation;
+          max_dev_channel = i;
+          last_left_peak_index = orig_peak_index;
+        }
+      }//for( size_t i = start_check_channel; i < end_check_channel; ++i )
+    }//for( size_t orig_peak_index = 0; orig_peak_index < orig_roi.size(); ++orig_peak_index )
+
+
+    if( max_deviation > final_fit_settings.break_multi_roi_up_continuum_away_sigma )
+    {
+      const double break_energy = data->gamma_channel_center( max_dev_channel );
+      const double orig_roi_lower = orig_roi.front().continuum()->lowerEnergy();
+      const double orig_roi_upper = orig_roi.front().continuum()->upperEnergy();
+
+      assert( break_energy > orig_roi_lower );
+      assert( break_energy < orig_roi_upper );
+
+      vector<PeakDef> left_peaks;
+      shared_ptr<PeakContinuum> left_cont = make_shared<PeakContinuum>( *orig_roi.front().continuum() );
+      left_cont->setRange( orig_roi_lower, break_energy );
+      left_cont->setParameters( orig_roi_lower, left_cont->parameters(), left_cont->uncertainties() );
+
+      for( size_t i = 0; i <= last_left_peak_index; ++i )
+      {
+        PeakDef p = orig_roi[i];
+        p.setContinuum( left_cont );
+        left_peaks.push_back( p );
+      }
+
+
+      vector<PeakDef> right_peaks;
+      shared_ptr<PeakContinuum> right_cont = make_shared<PeakContinuum>( *orig_roi.front().continuum() );
+      right_cont->setRange( break_energy, orig_roi_upper );
+      right_cont->setParameters( break_energy, right_cont->parameters(), right_cont->uncertainties() );
+
+      for( size_t i = last_left_peak_index + 1; i < orig_roi.size(); ++i )
+      {
+        PeakDef p = orig_roi[i];
+        p.setContinuum( right_cont );
+        right_peaks.push_back( p );
+      }
+
+      assert( !left_peaks.empty() );
+      assert( !right_peaks.empty() );
+
+
+      vector<PeakDef> left_fit_peaks, right_fit_peaks;
+      try
+      {
+        left_fit_peaks = refit_peaks( left_peaks );
+        right_fit_peaks = refit_peaks( right_peaks );
+
+        if( left_fit_peaks.empty() || (left_fit_peaks.size() != left_peaks.size()) )
+          throw runtime_error( "Diff number of left peaks - prev: " + to_string(left_peaks.size()) + ", fit: " + to_string(left_fit_peaks.size()) );
+
+        if( right_fit_peaks.empty() || (right_fit_peaks.size() != right_peaks.size()) )
+          throw runtime_error( "Diff number of right peaks - prev: " + to_string(right_peaks.size()) + ", fit: " + to_string(right_fit_peaks.size()) );
+
+        const double lower_frac = (break_energy - orig_roi_lower) / (orig_roi_upper - orig_roi_lower);
+        const double upper_frac = (orig_roi_upper - break_energy) / (orig_roi_upper - orig_roi_lower);
+        assert( fabs((lower_frac + upper_frac) - 1.0) < 1.0E-6 );
+
+        const double left_chi2dof = left_fit_peaks.front().chi2dof();
+        const double right_chi2dof = right_fit_peaks.front().chi2dof();
+        const double orig_dof = orig_roi.front().chi2dof();
+        const double new_weighted_dof = lower_frac*left_chi2dof + upper_frac*right_chi2dof;
+        if( (new_weighted_dof + final_fit_settings.break_multi_roi_up_required_chi2dof_improve) < orig_dof )
+        {
+          answer.clear();
+          answer.insert( end(answer), begin(left_fit_peaks), end(left_fit_peaks) );
+          answer.insert( end(answer), begin(right_fit_peaks), end(right_fit_peaks) );
+
+          if( debug_peak || PeakFitImprove::debug_printout )
+          {
+            cout << "Split ROI UP!  Chi2Dof " << orig_dof << " --> " << left_chi2dof << " + " << right_chi2dof
+            << " (weighted: " << new_weighted_dof << ") with ROIs:"
+            << " [[" << orig_roi_lower << ", " << break_energy << "], [" << break_energy << ", " << orig_roi_upper << "]]"
+            << " - on file title='" << data->title() << "'" << endl;
+          }
+        }
+      }catch( const std::exception &e )
+      {
+        // TODO/Note: It doesn look like we can get here, neither `PeakFitLM::fit_peaks_LM(...)` or `fitPeaks(...)` will through
+        if( debug_peak || PeakFitImprove::debug_printout )
+          cout << "Error fitting broken-up ROI peaks: " << e.what() << endl;
+      }//try / catch to fit peaks
+    }//if( max_deviation > final_fit_settings.break_multi_roi_up_continuum_away_sigma )
+  }//if( answer.size() > 1 )
+
+
   return answer;
 }//vector<PeakDef> final_peak_fit_for_roi(...)
 
@@ -1154,7 +1293,7 @@ vector<PeakDef> final_peak_fit( const vector<PeakDef> &pre_fit_peaks,
   }//for( const PeakDef &p : pre_fit_peaks )
 
 
-  vector<pair<shared_ptr<const PeakContinuum>,vector<PeakDef>>> connected_rois;
+  bool combined_any_rois = false;
   for( size_t roi_index = 1; roi_index < rois.size(); ++roi_index )
   {
     const pair<shared_ptr<const PeakContinuum>,vector<PeakDef>> &prev_roi = rois[roi_index-1];
@@ -1198,7 +1337,7 @@ vector<PeakDef> final_peak_fit( const vector<PeakDef> &pre_fit_peaks,
       const double lesser_roi_extent = std::min( (prev_upper - prev_lower), (this_upper - this_lower) );
       if( (overlap / lesser_roi_extent) > 0.15 )
       {
-        cout << "Combining [" << prev_lower << ", " << prev_upper << "] and [" << this_lower << ", " << this_upper << "]" << endl;
+        //cout << "Combining [" << prev_lower << ", " << prev_upper << "] and [" << this_lower << ", " << this_upper << "]" << endl;
         combine_rois = true;
       }
     }//if( !combine_rois && (num_fwhm_near < final_fit_settings.not_allow_combine_num_fwhm_near) )
@@ -1206,6 +1345,8 @@ vector<PeakDef> final_peak_fit( const vector<PeakDef> &pre_fit_peaks,
 
     if( combine_rois )
     {
+      combined_any_rois = true;
+
       //Combine ROIs into a single ROI
       shared_ptr<PeakContinuum> new_cont = make_shared<PeakContinuum>( *prev_cont );
       const double new_lower = std::min(prev_lower, this_lower); //just to make sure nothings wonky
@@ -1255,15 +1396,18 @@ vector<PeakDef> final_peak_fit( const vector<PeakDef> &pre_fit_peaks,
   }//for( size_t size_t roi_index = 1; roi_index < rois.size(); ++i )
 
 
-  cout << "rois after combining:" << endl;
-  for( const auto &p : rois )
+  if( combined_any_rois && PeakFitImprove::debug_printout )
   {
-    cout << "    [" << p.first->lowerEnergy() << ", " << p.first->upperEnergy() << "]: ";
-    for( const auto &peak : p.second )
-      cout << "{" << peak.mean() << ", " << peak.fwhm() << "}, ";
+    cout << "rois after combining:" << endl;
+    for( const auto &p : rois )
+    {
+      cout << "    [" << p.first->lowerEnergy() << ", " << p.first->upperEnergy() << "]: ";
+      for( const auto &peak : p.second )
+        cout << "{" << peak.mean() << ", " << peak.fwhm() << "}, ";
+      cout << endl;
+    }
     cout << endl;
-  }
-  cout << endl;
+  }//if( debug_peak || PeakFitImprove::debug_printout )
 
   if( multithread )
   {
@@ -1595,6 +1739,7 @@ FinalPeakFitSettings minuit_fit_final_pars( std::function<double( const FinalPea
   inputPrams.Add( "roi_extent_high_num_fwhm_extra", 1.5, 0.5, 0.0, 6.0 );
   inputPrams.Add( "roi_end_second_deriv_thresh", 3, 0.0, 0, 20 );
   inputPrams.Add( "break_multi_roi_up_continuum_away_sigma", 4, 1.0, 0.0, 20.0 );
+  inputPrams.Add( "break_multi_roi_up_required_chi2dof_improve", 0.5, 0.1, 0.1, 2.0 );
 
   cerr << "Returning ititial paramaters..." << endl;
   return FitFinalPeakFitSettingsChi2::params_to_settings( inputPrams.Params() );
@@ -1885,12 +2030,16 @@ string FinalFitSolution::to_string( const string &separator ) const
   + separator + "left_residual_sum_min_to_try_skew: " + std::to_string(left_residual_sum_min_to_try_skew)
   + separator + "right_residual_sum_min_to_try_skew: " + std::to_string(right_residual_sum_min_to_try_skew)
   + separator + "skew_improve_chi2_dof_threshold: " + std::to_string(skew_improve_chi2_dof_threshold)
-  + separator + "roi_extent_low_num_fwhm_base: " + std::to_string(roi_extent_low_num_fwhm_base_)
-  + separator + "roi_extent_high_num_fwhm_base: " + std::to_string(roi_extent_high_num_fwhm_base_)
+  + separator + "roi_extent_low_num_fwhm_base_highstat: " + std::to_string(roi_extent_low_num_fwhm_base_highstat)
+  + separator + "roi_extent_high_num_fwhm_base_highstat: " + std::to_string(roi_extent_high_num_fwhm_base_highstat)
+  + separator + "roi_extent_low_num_fwhm_base_lowstat: " + std::to_string(roi_extent_low_num_fwhm_base_lowstat)
+  + separator + "roi_extent_high_num_fwhm_base_lowstat: " + std::to_string(roi_extent_high_num_fwhm_base_lowstat)
+  + separator + "high_stat_threshold: " + std::to_string(high_stat_threshold)
   + separator + "roi_extent_low_num_fwhm_extra: " + std::to_string(roi_extent_low_num_fwhm_extra)
   + separator + "roi_extent_high_num_fwhm_extra: " + std::to_string(roi_extent_high_num_fwhm_extra)
   + separator + "roi_end_second_deriv_thresh: " + std::to_string(roi_end_second_deriv_thresh)
   + separator + "break_multi_roi_up_continuum_away_sigma: " + std::to_string(break_multi_roi_up_continuum_away_sigma)
+  + separator + "break_multi_roi_up_required_chi2dof_improve: " + std::to_string(break_multi_roi_up_required_chi2dof_improve)
   ;
 }//to_string( separator )
 
@@ -1911,12 +2060,16 @@ void init_genes(FinalFitSolution& p,const std::function<double(void)> &rnd01)
   p.left_residual_sum_min_to_try_skew = 0.0 + 10.0*rnd01();  // Range 0-10
   p.right_residual_sum_min_to_try_skew = 0.0 + 5.0*rnd01();  // Range 0-5
   p.skew_improve_chi2_dof_threshold = 0.5 + 4.5*rnd01();  // Range 0.5-4.5
-  p.roi_extent_low_num_fwhm_base_  = 0.5 + 4.0*rnd01();  // Range 0.5-4
-  p.roi_extent_high_num_fwhm_base_ = 0.5 + 4.0*rnd01();  // Range 0.5-4
+  p.roi_extent_low_num_fwhm_base_highstat  = 0.5 + 4.0*rnd01();  // Range 0.5-4
+  p.roi_extent_high_num_fwhm_base_highstat = 0.5 + 4.0*rnd01();  // Range 0.5-4
+  p.roi_extent_low_num_fwhm_base_lowstat  = 0.5 + 4.0*rnd01();  // Range 0.5-4
+  p.roi_extent_high_num_fwhm_base_lowstat = 0.5 + 4.0*rnd01();  // Range 0.5-4
+  p.high_stat_threshold = 5.0 + 95.0*rnd01();  // Range 5-100
   p.roi_extent_low_num_fwhm_extra  = 0.0 + 5.0*rnd01();  // Range 0 - 5
   p.roi_extent_high_num_fwhm_extra = 0.0 + 5.0*rnd01();  // Range 0 - 5
   p.roi_end_second_deriv_thresh    = 0.0 + 20.0*rnd01();  // Range 0 - 20 - total guess
-  p.break_multi_roi_up_continuum_away_sigma = 0.0 + 15.0*rnd01();  // Range 0 - 15 - total guess
+  p.break_multi_roi_up_continuum_away_sigma = 0.0 + 15.0*rnd01();  // Range 0 - 15 - total guess - if less than 1, then requirement wont be applied
+  p.break_multi_roi_up_required_chi2dof_improve = 0.1 + 2.9*rnd01(); //Range 0.1 - 3 - total guess
 }
 
 
@@ -1937,12 +2090,16 @@ FinalPeakFitSettings genes_to_settings( const FinalFitSolution &solution )
   settings.left_residual_sum_min_to_try_skew = solution.left_residual_sum_min_to_try_skew;
   settings.right_residual_sum_min_to_try_skew = solution.right_residual_sum_min_to_try_skew;
   settings.skew_improve_chi2_dof_threshold = solution.skew_improve_chi2_dof_threshold;
-  settings.roi_extent_low_num_fwhm_base_ = solution.roi_extent_low_num_fwhm_base_;
-  settings.roi_extent_high_num_fwhm_base_ = solution.roi_extent_high_num_fwhm_base_;
+  settings.roi_extent_low_num_fwhm_base_highstat = solution.roi_extent_low_num_fwhm_base_highstat;
+  settings.roi_extent_high_num_fwhm_base_highstat = solution.roi_extent_high_num_fwhm_base_highstat;
+  settings.roi_extent_low_num_fwhm_base_lowstat = solution.roi_extent_low_num_fwhm_base_lowstat;
+  settings.roi_extent_high_num_fwhm_base_lowstat = solution.roi_extent_high_num_fwhm_base_lowstat;
+  settings.high_stat_threshold = solution.high_stat_threshold;
   settings.roi_extent_low_num_fwhm_extra = solution.roi_extent_low_num_fwhm_extra;
   settings.roi_extent_high_num_fwhm_extra = solution.roi_extent_high_num_fwhm_extra;
   settings.roi_end_second_deriv_thresh = solution.roi_end_second_deriv_thresh;
   settings.break_multi_roi_up_continuum_away_sigma = solution.break_multi_roi_up_continuum_away_sigma;
+  settings.break_multi_roi_up_required_chi2dof_improve = solution.break_multi_roi_up_required_chi2dof_improve;
 
   return settings;
 }
@@ -1952,19 +2109,26 @@ bool eval_solution( const FinalFitSolution &p, FinalFitCost &c )
 {
   const FinalPeakFitSettings settings = genes_to_settings( p );
 
-  c.objective1 = ns_ga_eval_fcn( settings );
-
-  if( IsInf(c.objective1) || IsNan(c.objective1) )
+  try
   {
-    cerr << "Value of c.objective1 is " << c.objective1 << " - will set to large positive value" << endl
-    << settings.print("    bad_settings") << endl;
+    c.objective1 = ns_ga_eval_fcn( settings );
 
-    c.objective1 = std::numeric_limits<double>::max();
+    if( IsInf(c.objective1) || IsNan(c.objective1) )
+    {
+      cerr << "Value of c.objective1 is " << c.objective1 << " - will set to large positive value" << endl
+      << settings.print("    bad_settings") << endl;
+
+      c.objective1 = std::numeric_limits<double>::max();
+      return false;
+    }else
+    {
+      cout << "\n\nEvaluation gave " << c.objective1 << " for\n"
+      << settings.print("    settings") << endl << endl;
+    }
+  }catch( std::exception &e )
+  {
+    cerr << "Failed to eval genes: " << e.what() << endl;
     return false;
-  }else
-  {
-    cout << "\n\nEvaluation gave " << c.objective1 << " for\n"
-    << settings.print("    settings") << endl << endl;
   }
 
   return true;
@@ -2003,12 +2167,16 @@ FinalFitSolution mutate(
   X_new.left_residual_sum_min_to_try_skew = mutate_value(X_base.left_residual_sum_min_to_try_skew, 0.0, 10.0);
   X_new.right_residual_sum_min_to_try_skew = mutate_value(X_base.right_residual_sum_min_to_try_skew, 0.0, 5.0);
   X_new.skew_improve_chi2_dof_threshold = mutate_value(X_base.skew_improve_chi2_dof_threshold, 0.5, 5.0);
-  X_new.roi_extent_low_num_fwhm_base_ = mutate_value(X_base.roi_extent_low_num_fwhm_base_, 0.5, 4.0);
-  X_new.roi_extent_high_num_fwhm_base_ = mutate_value(X_base.roi_extent_high_num_fwhm_base_, 0.5, 4.0);
+  X_new.roi_extent_low_num_fwhm_base_highstat = mutate_value(X_base.roi_extent_low_num_fwhm_base_highstat, 0.5, 4.0);
+  X_new.roi_extent_high_num_fwhm_base_highstat = mutate_value(X_base.roi_extent_high_num_fwhm_base_highstat, 0.5, 4.0);
+  X_new.roi_extent_low_num_fwhm_base_lowstat = mutate_value(X_base.roi_extent_low_num_fwhm_base_lowstat, 0.5, 4.0);
+  X_new.roi_extent_high_num_fwhm_base_lowstat = mutate_value(X_base.roi_extent_high_num_fwhm_base_lowstat, 0.5, 4.0);
+  X_new.high_stat_threshold = mutate_value(X_base.high_stat_threshold, 5.0, 100.0);
   X_new.roi_extent_low_num_fwhm_extra = mutate_value(X_base.roi_extent_low_num_fwhm_extra, 0.0, 5.0);
   X_new.roi_extent_high_num_fwhm_extra = mutate_value(X_base.roi_extent_high_num_fwhm_extra, 0.0, 5.0);
   X_new.roi_end_second_deriv_thresh = mutate_value(X_base.roi_end_second_deriv_thresh, 0.0, 20.0);
   X_new.break_multi_roi_up_continuum_away_sigma = mutate_value(X_base.break_multi_roi_up_continuum_away_sigma, 0.0, 15.0);
+  X_new.break_multi_roi_up_required_chi2dof_improve = mutate_value(X_base.break_multi_roi_up_required_chi2dof_improve, 0.1, 3.0);
 
   return X_new;
 }
@@ -2042,12 +2210,16 @@ FinalFitSolution crossover( const FinalFitSolution& X1,
   X_new.left_residual_sum_min_to_try_skew = cross_value(X1.left_residual_sum_min_to_try_skew, X2.left_residual_sum_min_to_try_skew);
   X_new.right_residual_sum_min_to_try_skew = cross_value(X1.right_residual_sum_min_to_try_skew, X2.right_residual_sum_min_to_try_skew);
   X_new.skew_improve_chi2_dof_threshold = cross_value(X1.skew_improve_chi2_dof_threshold, X2.skew_improve_chi2_dof_threshold);
-  X_new.roi_extent_low_num_fwhm_base_ = cross_value(X1.roi_extent_low_num_fwhm_base_, X2.roi_extent_low_num_fwhm_base_);
-  X_new.roi_extent_high_num_fwhm_base_ = cross_value(X1.roi_extent_high_num_fwhm_base_, X2.roi_extent_high_num_fwhm_base_);
+  X_new.roi_extent_low_num_fwhm_base_highstat = cross_value(X1.roi_extent_low_num_fwhm_base_highstat, X2.roi_extent_low_num_fwhm_base_highstat);
+  X_new.roi_extent_high_num_fwhm_base_highstat = cross_value(X1.roi_extent_high_num_fwhm_base_highstat, X2.roi_extent_high_num_fwhm_base_highstat);
+  X_new.roi_extent_low_num_fwhm_base_lowstat = cross_value(X1.roi_extent_low_num_fwhm_base_lowstat, X2.roi_extent_low_num_fwhm_base_lowstat);
+  X_new.roi_extent_high_num_fwhm_base_lowstat = cross_value(X1.roi_extent_high_num_fwhm_base_lowstat, X2.roi_extent_high_num_fwhm_base_lowstat);
+  X_new.high_stat_threshold = cross_value(X1.high_stat_threshold, X2.high_stat_threshold);
   X_new.roi_extent_low_num_fwhm_extra = cross_value(X1.roi_extent_low_num_fwhm_extra, X2.roi_extent_low_num_fwhm_extra);
   X_new.roi_extent_high_num_fwhm_extra = cross_value(X1.roi_extent_high_num_fwhm_extra, X2.roi_extent_high_num_fwhm_extra);
   X_new.roi_end_second_deriv_thresh = cross_value(X1.roi_end_second_deriv_thresh, X2.roi_end_second_deriv_thresh);
   X_new.break_multi_roi_up_continuum_away_sigma = cross_value(X1.break_multi_roi_up_continuum_away_sigma, X2.break_multi_roi_up_continuum_away_sigma);
+  X_new.break_multi_roi_up_required_chi2dof_improve = cross_value(X1.break_multi_roi_up_required_chi2dof_improve, X2.break_multi_roi_up_required_chi2dof_improve);
 
   return X_new;
 }

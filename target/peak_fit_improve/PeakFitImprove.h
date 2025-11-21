@@ -41,7 +41,7 @@ namespace PeakFitImprove
 {
 const bool debug_printout = false;
 
-const double debug_lower_energy = 715;
+const double debug_lower_energy = 725;
 const double debug_upper_energy = 720;
 
 extern size_t sm_num_optimization_threads;
@@ -365,7 +365,11 @@ struct FinalPeakFitSettings
 
    Reasonable search range: 0.5 to 7 - nominal ~2.5 FWHM
   */
-  double roi_extent_low_num_fwhm_base_, roi_extent_high_num_fwhm_base_;
+  double roi_extent_low_num_fwhm_base_highstat, roi_extent_high_num_fwhm_base_highstat;
+
+  double roi_extent_low_num_fwhm_base_lowstat, roi_extent_high_num_fwhm_base_lowstat;
+
+  double high_stat_threshold;
 
   /** The maximum amount extra FWHM beyond `roi_extent_low/high_num_fwhm_base` that the ROI can extend */
   double roi_extent_low_num_fwhm_extra;
@@ -376,8 +380,10 @@ struct FinalPeakFitSettings
    */
   double roi_end_second_deriv_thresh;
 
-  /** If data is this number of statistical below away from fit continuum + peak, the multi-peak ROI will be broken up. */
+  /** If data is this number of statistical below away from fit continuum + peak, the multi-peak ROI will be broken up, but only if
+   the resultant Chi2Dof improves by `break_multi_roi_up_required_chi2dof_improve`. */
   double break_multi_roi_up_continuum_away_sigma;
+  double break_multi_roi_up_required_chi2dof_improve;
 
   std::string print( const std::string &var_name ) const;
 };//struct FinalPeakFitSettings

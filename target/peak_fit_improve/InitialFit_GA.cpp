@@ -1310,11 +1310,11 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
     std::sort( begin(initial_fit_results), end(initial_fit_results), &PeakDef::lessThanByMean );
   }//if( added_any_peaks )
 
-  cout << "Initial initial_fit_results:" << endl;
-  for( const PeakDef &p : initial_fit_results )
-    cout << "    {" << p.mean() << ", " << p.fwhm() << ", " << p.lowerX() << "-" << p.upperX() << " - "
-    << PeakContinuum::offset_type_str(p.continuum()->type()) << "}" << endl;
-  cout << endl;
+  //cout << "Initial initial_fit_results:" << endl;
+  //for( const PeakDef &p : initial_fit_results )
+  //  cout << "    {" << p.mean() << ", " << p.fwhm() << ", " << p.lowerX() << "-" << p.upperX() << " - "
+  //  << PeakContinuum::offset_type_str(p.continuum()->type()) << "}" << endl;
+  //cout << endl;
 
   return initial_fit_results;
 }//vector<PeakDef> initial_peak_find_and_fit(...)

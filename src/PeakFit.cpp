@@ -7030,7 +7030,7 @@ bool chi2_significance_test( const PeakDef &peak,
     const double ref_energy = cont->referenceEnergy();
     const double * const skew_pars = peak.coefficients() + static_cast<size_t>(PeakDef::CoefficientType::SkewPar0);
     vector<double> amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts;
-    PeakFit::fit_amp_and_offset_imp(energies, channel_counts, num_roi_channel, static_cast<int>(poly_order), is_step,
+    PeakFit::fit_amp_and_offset_imp(energies, channel_counts, nullptr, num_roi_channel, static_cast<int>(poly_order), is_step,
                                     ref_energy, {}, {}, other_peaks, peak.skewType(), skew_pars,
                                     amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts, (double *)0 );
     shared_ptr<PeakContinuum> tmp_continuum = make_shared<PeakContinuum>( *cont );

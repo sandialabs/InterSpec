@@ -219,12 +219,17 @@ std::string FinalPeakFitSettings::print( const string &var_name ) const
   + var_name + ".left_residual_sum_min_to_try_skew = "           + std::to_string(left_residual_sum_min_to_try_skew)           + ";\n"
   + var_name + ".right_residual_sum_min_to_try_skew = "          + std::to_string(right_residual_sum_min_to_try_skew)          + ";\n"
   + var_name + ".skew_improve_chi2_dof_threshold = "             + std::to_string(skew_improve_chi2_dof_threshold)             + ";\n"
-  + var_name + ".roi_extent_low_num_fwhm_base = "                + std::to_string(roi_extent_low_num_fwhm_base_)                + ";\n"
-  + var_name + ".roi_extent_high_num_fwhm_base = "               + std::to_string(roi_extent_high_num_fwhm_base_)               + ";\n"
+  + var_name + ".roi_extent_low_num_fwhm_base_highstat = "       + std::to_string(roi_extent_low_num_fwhm_base_highstat)       + ";\n"
+  + var_name + ".roi_extent_high_num_fwhm_base_highstat = "      + std::to_string(roi_extent_high_num_fwhm_base_highstat)      + ";\n"
+  + var_name + ".roi_extent_low_num_fwhm_base_lowstat = "        + std::to_string(roi_extent_low_num_fwhm_base_lowstat)        + ";\n"
+  + var_name + ".roi_extent_high_num_fwhm_base_lowstat = "       + std::to_string(roi_extent_high_num_fwhm_base_lowstat)       + ";\n"
+  + var_name + ".high_stat_threshold = "               + std::to_string(high_stat_threshold)                                   + ";\n"
   + var_name + ".roi_extent_low_num_fwhm_extra = "               + std::to_string(roi_extent_low_num_fwhm_extra)               + ";\n"
   + var_name + ".roi_extent_high_num_fwhm_extra = "              + std::to_string(roi_extent_high_num_fwhm_extra)              + ";\n"
   + var_name + ".roi_end_second_deriv_thresh = "                 + std::to_string(roi_end_second_deriv_thresh)                 + ";\n"
-  + var_name + ".break_multi_roi_up_continuum_away_sigma = "     + std::to_string(break_multi_roi_up_continuum_away_sigma)     + ";\n";
+  + var_name + ".break_multi_roi_up_continuum_away_sigma = "     + std::to_string(break_multi_roi_up_continuum_away_sigma)     + ";\n"
+  + var_name + ".break_multi_roi_up_required_chi2dof_improve = "     + std::to_string(break_multi_roi_up_required_chi2dof_improve)     + ";\n"
+  ;
 }//std::string print( const string &var_name ) const
 
 
@@ -319,12 +324,16 @@ void create_n42_peak_fits_for_dir( const string &dir )
     settings.left_residual_sum_min_to_try_skew = 2.878255;
     settings.right_residual_sum_min_to_try_skew = 0.158640;
     settings.skew_improve_chi2_dof_threshold = 1.016935;
-    settings.roi_extent_low_num_fwhm_base_ = 1.5;
-    settings.roi_extent_high_num_fwhm_base_ = 1.5;
+    settings.roi_extent_low_num_fwhm_base_highstat = 1.5;
+    settings.roi_extent_high_num_fwhm_base_highstat = 1.5;
+    settings.roi_extent_low_num_fwhm_base_lowstat = 1.5;
+    settings.roi_extent_high_num_fwhm_base_lowstat = 1.5;
+    settings.high_stat_threshold = 15.0;
     settings.roi_extent_low_num_fwhm_extra = 1.5;
     settings.roi_extent_high_num_fwhm_extra = 1.5;
     settings.roi_end_second_deriv_thresh = 3.5;
     settings.break_multi_roi_up_continuum_away_sigma = 5;
+    settings.break_multi_roi_up_required_chi2dof_improve = 0.5;
 
     return settings;
   })();
@@ -465,7 +474,7 @@ void create_n42_peak_fits_for_dir( const string &dir )
     foreground_opts.title = SpecUtils::filename(filename);
     foreground_opts.display_scale_factor = 1.0;
     foreground_opts.spectrum_type = SpecUtils::SpectrumType::Foreground;
-    foreground_opts.peaks_json = PeakDef::peak_json( fit_peaks_ptrs, spectrum );
+    foreground_opts.peaks_json = PeakDef::peak_json( fit_peaks_ptrs, spectrum, Wt::WColor(), false );
 
     const string div_id = "chart_" + std::to_string(i);
 
@@ -592,12 +601,16 @@ void create_n42_peak_fits( const vector<DetectorInjectSet> &inject_sets, const v
     settings.left_residual_sum_min_to_try_skew = 2.878255;
     settings.right_residual_sum_min_to_try_skew = 0.158640;
     settings.skew_improve_chi2_dof_threshold = 1.016935;
-    settings.roi_extent_low_num_fwhm_base_ = 1.5;
-    settings.roi_extent_high_num_fwhm_base_ = 1.5;
+    settings.roi_extent_low_num_fwhm_base_highstat = 1.5;
+    settings.roi_extent_high_num_fwhm_base_highstat = 1.5;
+    settings.roi_extent_low_num_fwhm_base_lowstat = 1.5;
+    settings.roi_extent_high_num_fwhm_base_lowstat = 1.5;
+    settings.high_stat_threshold = 15.0;
     settings.roi_extent_low_num_fwhm_extra = 1.5;
     settings.roi_extent_high_num_fwhm_extra = 1.5;
     settings.roi_end_second_deriv_thresh = 3.5;
     settings.break_multi_roi_up_continuum_away_sigma = 5;
+    settings.break_multi_roi_up_required_chi2dof_improve = 0.5;
 
     return settings;
   })();
@@ -759,7 +772,7 @@ void create_n42_peak_fits( const vector<DetectorInjectSet> &inject_sets, const v
     background_opts.display_scale_factor = spectrum->live_time() / long_background->live_time();
     foreground_opts.spectrum_type = SpecUtils::SpectrumType::Foreground;
     background_opts.spectrum_type = SpecUtils::SpectrumType::Background;
-    foreground_opts.peaks_json = PeakDef::peak_json( fit_peaks_ptrs, spectrum );
+    foreground_opts.peaks_json = PeakDef::peak_json( fit_peaks_ptrs, spectrum, Wt::WColor(), false );
 
     const string div_id = "chart_" + std::to_string(i);
 
@@ -877,7 +890,7 @@ int main( int argc, char **argv )
   string static_data_dir;
   PeakFitImprove::sm_num_optimization_threads = std::max( 8u, std::thread::hardware_concurrency() > 2 ? std::thread::hardware_concurrency() - 2 : 1 );
   size_t number_threads_per_individual = 1;
-  string action_str = "CodeDev"; // "FinalFit"; //"InitialFit"; //"Candidate";
+  string action_str = "FinalFit"; //"CodeDev"; // "FinalFit"; //"InitialFit"; //"Candidate";
   bool debug_printout_arg = false;
   size_t ga_population = 1500;
   size_t ga_generation_max = 250;
