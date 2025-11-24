@@ -121,6 +121,8 @@
     Illesztés nem került végrehajtásra (nem lehetett Chi2Fcn-t létrehozni).
   </message>
   <message id="ssd-error-create-tool">Hiba az Aktivitás/Árnyékolás illesztési megjelenítő létrehozásakor: {1}</message>
+  <message id="ssd-shield-source-diagram">Árnyékolás/Forrás Diagram</message>
+  <message id="ssd-show-model-diagram">Modell Diagram Megjelenítése</message>
 
   <!-- SourceFitModel quantities -->
   <message id="sfm-tt-header-isotope">Nuklidok hozzáadása vagy eltávolítása az ehhez az illesztéshez használt fotocsúcsok szerint történik, így ebben a táblázatban nem szerkeszthetők</message>

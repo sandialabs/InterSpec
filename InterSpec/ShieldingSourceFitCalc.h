@@ -51,6 +51,12 @@ namespace SandiaDecay
   struct Element;
 }//namespace SandiaDecay
 
+namespace rapidxml
+{
+  template<class Ch> class xml_node;
+  template<class Ch> class xml_document;
+}//namespace rapidxml
+
 namespace ROOT
 {
   namespace Minuit2

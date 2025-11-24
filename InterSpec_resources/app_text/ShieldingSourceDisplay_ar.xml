@@ -123,6 +123,8 @@
     لم يتم تنفيذ الملاءمة (لم يتمكن من إنشاء Chi2Fcn).
   </message>
   <message id="ssd-error-create-tool">خطأ في إنشاء عرض ملاءمة النشاط/التدريع: {1}</message>
+  <message id="ssd-shield-source-diagram">مخطط التدريع/المصدر</message>
+  <message id="ssd-show-model-diagram">إظهار مخطط النموذج</message>
 
   <!-- SourceFitModel quantities -->
   <message id="sfm-tt-header-isotope">النوى تُضاف أو تُحذف وفقًا للذرى الضوئية المستخدمة لهذه الملاءمة، لذا قد لا تُحرر في هذا الجدول</message>

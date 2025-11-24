@@ -84,8 +84,9 @@
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/BatchInfoLog.h"
-#include "InterSpec/InjaLogDialog.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/SimpleDialog.h"
+#include "InterSpec/InjaLogDialog.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
@@ -104,6 +105,7 @@
 #include "InterSpec/IsotopeSelectionAids.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
+#include "InterSpec/ShieldingSourceDiagram.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
 
 using namespace Wt;
@@ -2580,6 +2582,9 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_showLog->disable();
 
   PopupDivMenuItem *item = NULL;
+  item = m_addItemMenu->addMenuItem( WString::tr("ssd-show-model-diagram") );
+  item->triggered().connect( this, &ShieldingSourceDisplay::showShieldSourceDiagram );
+
 //  PopupDivMenuItem *item = m_addItemMenu->addMenuItem( "Test Serialization" );
 //  item->triggered().connect( this, &ShieldingSourceDisplay::testSerialization );
 
@@ -8756,6 +8761,38 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
     calcLog.push_back( "There was an error and log may not be complete." );
   }
 }//updateCalcLogWithFitResults(...)
+
+
+void ShieldingSourceDisplay::showShieldSourceDiagram()
+{
+  std::vector<ShieldingSourceFitCalc::ShieldingInfo> shieldings;
+  
+  for( WWidget *widget : m_shieldingSelects->children() )
+  {
+    ShieldingSelect *select = dynamic_cast<ShieldingSelect *>( widget );
+    if( select )
+      shieldings.push_back( select->toShieldingInfo() );
+  }
+
+  string distanceStr = m_distanceEdit->text().toUTF8();
+  double distance = 100.0 * PhysicalUnits::cm; // Default
+  try {
+     distance = PhysicalUnits::stringToDistance( distanceStr );
+  } catch(...) {
+     // Ignore, use default or what was parsed.
+  }
+  
+  std::shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
+  double detDiameter = 3.0 * 2.54 * PhysicalUnits::cm; // Default 3 inches
+  if( det && det->detectorDiameter() > 0.0 )
+    detDiameter = det->detectorDiameter();
+
+  std::vector<ShieldingSourceFitCalc::IsoFitStruct> sources = m_sourceModel->underlyingData();
+  const GeometryType geom_type = geometry();
+  
+  SimpleDialog *dialog = createShieldingDiagram( shieldings, sources, geom_type, distance, detDiameter );
+}
+
 
 
 

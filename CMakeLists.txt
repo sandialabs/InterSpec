@@ -256,6 +256,7 @@ set(sources
     src/DetectorPeakResponse.cpp
     src/GammaInteractionCalc.cpp
     src/ShieldingSourceDisplay.cpp
+    src/ShieldingSourceDiagram.cpp
     src/ShieldingSourceFitCalc.cpp
     src/ShieldingSelect.cpp
     src/GammaXsGui.cpp
@@ -373,6 +374,7 @@ set(headers
     InterSpec/DetectorPeakResponse.h
     InterSpec/GammaInteractionCalc.h
     InterSpec/ShieldingSourceDisplay.h
+    InterSpec/ShieldingSourceDiagram.h
     InterSpec/ShieldingSourceFitCalc.h
     InterSpec/ShieldingSelect.h
     InterSpec/GammaXsGui.h
@@ -647,6 +649,10 @@ list( APPEND OTHER_InterSpec_SUPPORT_FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/D3TimeChart.js
   ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/ShieldingSourceFitPlot.js
   ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/ShieldingSourceFitPlot.css
+  ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/Shielding3DView.js
+  ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/Shielding3DView.css
+  ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/Shielding2DView.js
+  ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/Shielding2DView.css
 )
 
 deploy_js_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/SpectrumChartD3.js"

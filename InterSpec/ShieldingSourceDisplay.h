@@ -485,6 +485,8 @@ public:
   
   void showCalcLog();
   void closeCalcLogWindow();
+
+  void showShieldSourceDiagram();
   
   /** Returns the inner ShieldingSelect of the one passed in; e.g., returns the ShieldingSelect that is contained by the one passed in.
    
