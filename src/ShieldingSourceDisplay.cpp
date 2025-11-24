@@ -5496,6 +5496,72 @@ void ShieldingSourceDisplay::showCalcLog()
       }
     ) );
 
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
+    const string tmplts_dir = SpecUtils::append_path( InterSpec::writableDataDirectory(), "act_shield_fit_templates" );
+
+    if( !tmplts_dir.empty() && SpecUtils::is_directory(tmplts_dir) )
+    {
+      // Inja assumes trailing path seperator.
+#if( defined(_WIN32) )
+      const char path_sep = '\\';
+#else
+      const char path_sep = '/';
+#endif
+      const string tmplts_dir_inja = (tmplts_dir[tmplts_dir.size()-1] == path_sep) ? tmplts_dir : (tmplts_dir + path_sep);
+
+      const vector<string> potential_tmplts = SpecUtils::ls_files_in_directory( tmplts_dir );
+      for( const string tmplt_path : potential_tmplts )
+      {
+        const string filename = SpecUtils::filename(tmplt_path);
+
+        if( !SpecUtils::icontains(filename, "tmplt.")
+           && !SpecUtils::icontains(filename, "template.")
+           && !SpecUtils::icontains(filename, "inja.") )
+        {
+          continue;
+        }
+
+        string outname = filename;
+        string tmplt_ext = SpecUtils::file_extension(filename);
+
+        size_t pos = SpecUtils::ifind_substr_ascii(outname, "tmplt");
+        if( pos == string::npos )
+          pos = SpecUtils::ifind_substr_ascii(outname, "template");
+        if( pos != string::npos )
+          outname = outname.substr(0, pos);
+
+        while( !outname.empty()
+              && (SpecUtils::iends_with(outname, "_")
+                  || SpecUtils::iends_with(outname, ".")
+                  || SpecUtils::iends_with(outname, "-")) )
+        {
+          outname = outname.substr(0, outname.size() - 1);
+        }
+
+        if( tmplt_ext.empty()
+           || SpecUtils::iequals_ascii(tmplt_ext, "tmplt" )
+           || SpecUtils::iequals_ascii(tmplt_ext, "template" ) )
+          tmplt_ext = SpecUtils::file_extension(outname);
+
+        if( tmplt_ext.empty() )
+          tmplt_ext = ".txt";
+
+        outname += tmplt_ext;
+
+        InjaLogDialog::LogType rpt_type = InjaLogDialog::LogType::Text;
+        if( SpecUtils::icontains(tmplt_ext, "html") )
+          rpt_type = InjaLogDialog::LogType::Html;
+
+        templates.push_back( make_tuple( WString::fromUTF8(outname), "_" + outname, rpt_type,
+                                        [filename,tmplts_dir_inja]( inja::Environment &dummy_env, const nlohmann::json &data ) -> string {
+          inja::Environment env = BatchInfoLog::get_default_inja_env( tmplts_dir_inja );
+          return env.render_file( filename, data );
+        }
+                                        ) );
+      }//for( const string tmplt_path : potential_tmplts )
+    }//if( SpecUtils::is_directory(tmplts_dir) )
+#endif
+
     // Create and show the dialog, store in m_logDiv
     m_logDiv = new InjaLogDialog( WString::tr( "ssd-calc-log-html-title" ), data, templates );
     m_logDiv->finished().connect( this, &ShieldingSourceDisplay::closeCalcLogWindow );
