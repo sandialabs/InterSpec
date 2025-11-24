@@ -994,7 +994,6 @@ void PeakModel::setPeakFromSpecMeas( std::shared_ptr<SpecMeas> meas,
                                      const std::set<int> &samplenums,
                                     const SpecUtils::SpectrumType specType )
 {
-  
   std::shared_ptr< std::deque< std::shared_ptr<const PeakDef> > > peaks;
 
   if( meas )
@@ -1024,10 +1023,12 @@ void PeakModel::setPeakFromSpecMeas( std::shared_ptr<SpecMeas> meas,
   
   
   m_measurment = meas;
-  
-  if( peaks == m_peaks )
-    return;
-  
+
+  // Note: We cant take this next shortcut because when we do an energy calibration, we dont create a new peaks
+  //       deque, but we do create all new peaks, so we need to do the full-refresh of information
+  //if( peaks == m_peaks )
+  //  return;
+
   if( !!m_peaks && !m_peaks->empty() )
   {
     beginRemoveRows( WModelIndex(), 0, static_cast<int>(m_peaks->size()-1) );
