@@ -372,6 +372,24 @@ namespace {
       // TODO: add in more infor using `meas` here
     }
     
+    auto source_type_str = []( const PeakDef::SourceGammaType type ) -> const char * {
+      switch( type )
+      {
+        case PeakDef::NormalGamma:
+          return "gamma";
+        case PeakDef::AnnihilationGamma:
+          return "Annih.";
+        case PeakDef::SingleEscapeGamma:
+          return "S.E.";
+        case PeakDef::DoubleEscapeGamma:
+          return "D.E.";
+        case PeakDef::XrayGamma:
+          return "x-ray";
+      }//
+      assert( 0 );
+      return nullptr;
+    };
+    
     
     if( const SandiaDecay::Nuclide * const nuc = peak->parentNuclide() )
     {
@@ -390,39 +408,23 @@ namespace {
         src["photonEnergy"] = particle->energy;
       }
       
-      const char *gamma_type = nullptr;
-      switch( peak->sourceGammaType() )
-      {
-        case PeakDef::NormalGamma:
-          gamma_type = "gamma";
-          break;
-        case PeakDef::AnnihilationGamma:
-          gamma_type = "Annih.";
-          break;
-        case PeakDef::SingleEscapeGamma:
-          gamma_type = "S.E.";
-          break;
-        case PeakDef::DoubleEscapeGamma:
-          gamma_type = "D.E.";
-          break;
-        case PeakDef::XrayGamma:
-          gamma_type = "x-ray";
-          break;
-      }//
-      
+      const char * const gamma_type = source_type_str( peak->sourceGammaType() );
       if( gamma_type )
         src["photonType"] = gamma_type;
       
       src["energy"] = peak->gammaParticleEnergy();
     }else if( const SandiaDecay::Element * const el = peak->xrayElement() )
     {
-      peak_json["element"] = el->symbol;
+      peak_json["source"]["element"] = el->symbol;
       peak_json["source"]["photonType"] = "x-ray";
       peak_json["source"]["energy"] = peak->xrayEnergy();
     }else if( const ReactionGamma::Reaction * const rctn = peak->reaction() )
     {
       peak_json["source"]["reaction"] = rctn->name();
       peak_json["source"]["energy"] = peak->reactionEnergy();
+      const char * const gamma_type = source_type_str( peak->sourceGammaType() );
+      if( gamma_type )
+        peak_json["source"]["photonType"] = gamma_type;
     }
 
     // Add boolean flags for peak usage - use raw user preferences, not computed values
@@ -434,19 +436,27 @@ namespace {
   void to_json( json &roi_json,
                const shared_ptr<const PeakContinuum> &cont,
                const vector<shared_ptr<const PeakDef>> &peaks,
-               const shared_ptr<const SpecUtils::Measurement> &meas ){
+               const shared_ptr<const SpecUtils::Measurement> &meas,
+               const std::vector<std::shared_ptr<const PeakDef>> *analysis_peaks = nullptr ){
     roi_json = json{
       {"lowerEnergy", rount_to_hundredth(cont->lowerEnergy())},
       {"upperEnergy", rount_to_hundredth(cont->upperEnergy())},
       {"continuumType", PeakContinuum::offset_type_str(cont->type()) }
       //("continuumCounts", cont->offset_integral( cont->lowerEnergy(), cont->upperEnergy(), dataH ) }
     };
-    
+
     for( const shared_ptr<const PeakDef> &peak : peaks ) {
       json peak_json;
-      
+
       to_json( peak_json, peak, meas );
-      
+
+      // Check if this peak is in the analysis_peaks list
+      if( analysis_peaks )
+      {
+        const bool is_analysis_peak = std::find(analysis_peaks->begin(), analysis_peaks->end(), peak) != analysis_peaks->end();
+        peak_json["isAnalysisPeak"] = is_analysis_peak;
+      }
+
       roi_json["peaks"].push_back( peak_json );
     }
   }//void to_json( json &roi_json, const shared_ptr<const PeakContinuum> &cont, const vector<shared_ptr<const PeakDef>> &peaks )
@@ -454,9 +464,10 @@ namespace {
   
   void to_json( json &peak_rois,
                const std::vector<std::shared_ptr<const PeakDef>> &peaks,
-               const shared_ptr<const SpecUtils::Measurement> &meas ){
+               const shared_ptr<const SpecUtils::Measurement> &meas,
+               const std::vector<std::shared_ptr<const PeakDef>> *analysis_peaks = nullptr ){
     peak_rois = json::array();
-    
+
     vector<pair<shared_ptr<const PeakContinuum>,vector<shared_ptr<const PeakDef>>>> rois;
     for( const shared_ptr<const PeakDef> &peak : peaks ) {
       auto pos = std::find_if( begin(rois), end(rois), [&peak]( const auto &val){ return val.first == peak->continuum(); } );
@@ -465,19 +476,19 @@ namespace {
       else
         pos->second.push_back( peak );
     }
-    
-    
+
+
     for( size_t roi_index = 0; roi_index < rois.size(); ++roi_index )
     {
       const shared_ptr<const PeakContinuum> &cont = rois[roi_index].first;
       const vector<shared_ptr<const PeakDef>> &peaks = rois[roi_index].second;
-      
+
       json roi_json;
-      
-      to_json( roi_json, cont, peaks, meas );
-      
+
+      to_json( roi_json, cont, peaks, meas, analysis_peaks );
+
       roi_json["roiID"] = static_cast<int>(roi_index);
-      
+
       peak_rois.push_back(roi_json);
     }
   }
@@ -487,7 +498,7 @@ namespace {
                const AnalystChecks::DetectedPeakStatus& p,
                const shared_ptr<const SpecUtils::Measurement> &meas ) {
     json peak_rois;
-    to_json( peak_rois, p.peaks, meas );
+    to_json( peak_rois, p.peaks, meas, &p.analysis_peaks );
 
     j = json{{"rois", peak_rois}};
   }//void to_json(json& j, const AnalystChecks::DetectedPeakStatus& p) {
@@ -517,17 +528,26 @@ namespace {
   }//void to_json(json& j, const AnalystChecks::DetectedPeakStatus& p)
   
   
-  void from_json(const json& j, AnalystChecks::GetUserPeakOptions& p) {
-    std::string specTypeStr = j.value("specType", std::string());
-    if (specTypeStr.empty() || specTypeStr == "Foreground") {
-      p.specType = SpecUtils::SpectrumType::Foreground;
-    } else if (specTypeStr == "Background") {
-      p.specType = SpecUtils::SpectrumType::Background;
-    } else if (specTypeStr == "Secondary") {
-      p.specType = SpecUtils::SpectrumType::SecondForeground;
-    } else {
-      throw std::runtime_error("Invalid spectrum type: " + specTypeStr);
+  SpecUtils::SpectrumType parse_spectrum_type( const json &j, const std::string &field_name = "specType" )
+  {
+    std::string specTypeStr = j.value(field_name, std::string());
+    if( specTypeStr.empty() || specTypeStr == "Foreground" )
+    {
+      return SpecUtils::SpectrumType::Foreground;
+    }else if( specTypeStr == "Background" )
+    {
+      return SpecUtils::SpectrumType::Background;
+    }else if( specTypeStr == "Secondary" )
+    {
+      return SpecUtils::SpectrumType::SecondForeground;
+    }else
+    {
+      throw std::runtime_error( "Invalid spectrum type: " + specTypeStr );
     }
+  }
+
+  void from_json(const json& j, AnalystChecks::GetUserPeakOptions& p) {
+    p.specType = parse_spectrum_type( j );
 
     // Parse optional energy range
     if( j.contains("lowerEnergy") && !j["lowerEnergy"].is_null() )
@@ -825,6 +845,11 @@ namespace {
     j = json{{"rois", peak_rois}};
   }
 
+  void to_json( json &j, const std::vector<std::string> &sources )
+  {
+    j = json{{"sources", sources}};
+  }
+
   void to_json(json& j, const AnalystChecks::FitPeaksForNuclideStatus &p, const shared_ptr<const SpecUtils::Measurement> &meas ) {
     json peak_rois;
     to_json( peak_rois, p.fitPeaks, meas );
@@ -889,7 +914,7 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
   tool.name = toolName;
 
   // Assign executor based on tool name
-  if( toolName == "detected_peaks" )
+  if( toolName == "get_detected_peaks" )
   {
     tool.executor = [](const json& params, InterSpec* interspec) -> json {
       return executePeakDetection(params, interspec);
@@ -918,6 +943,16 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
     {
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
         return executeGetUserPeaks(params, interspec);
+      };
+    }else if( toolName == "get_identified_sources" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeGetIdentifiedSources(params, interspec);
+      };
+    }else if( toolName == "get_unidentified_peaks" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeGetUnidentifiedDetectedPeaks(params, interspec);
       };
     }else if( toolName == "get_spectrum_info" )
     {
@@ -1018,7 +1053,7 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
         return executeGetMaterialInfo(params, interspec);
       };
-    }else if( toolName == "avaiable_detector_efficiency_functions" )
+    }else if( toolName == "available_detector_efficiency_functions" )
     {
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
         return executeAvailableDetectors(params, interspec);
@@ -1153,10 +1188,14 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
       assert( 0 );
       throw std::runtime_error( "invoke_* tools should be handled by executeToolCalls, not called directly" );
     };
-    
-    // Only MainAgent can invoke sub-agents
-    invokeTool.availableForAgents = {AgentType::MainAgent};
-    
+
+    // Set which agents can invoke this sub-agent
+    // If agent.availableForAgents is empty, default to MainAgent only for backward compatibility
+    if( agent.availableForAgents.empty() )
+      invokeTool.availableForAgents = {AgentType::MainAgent};
+    else
+      invokeTool.availableForAgents = agent.availableForAgents;
+
     registerTool(invokeTool);
   }//for( loop over agents in config )
   
@@ -1201,12 +1240,14 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
 
   // Runtime validation: Check that all expected tools are registered
   const std::vector<std::string> expectedTools = {
-    "detected_peaks",
+    "get_detected_peaks",
     "add_analysis_peak",
     "edit_analysis_peak",
     "escape_peak_check",
     "sum_peak_check",
     "get_analysis_peaks",
+    "get_identified_sources",
+    "get_unidentified_peaks",
     "get_spectrum_info",
     "primary_gammas_for_source",
     "sources_with_primary_gammas_in_energy_range",
@@ -1227,7 +1268,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     "photopeak_detection_efficiency",
     "get_materials",
     "get_material_info",
-    "avaiable_detector_efficiency_functions",
+    "available_detector_efficiency_functions",
     "load_detector_efficiency_function",
     "detector_efficiency_function_info",
     "search_sources_by_energy",
@@ -1459,6 +1500,78 @@ nlohmann::json ToolRegistry::executeGetUserPeaks(const nlohmann::json& params, I
   return result_json;
 }//nlohmann::json executeGetUserPeaks(const nlohmann::json& params, InterSpec* interspec)
 
+
+nlohmann::json ToolRegistry::executeGetIdentifiedSources( const nlohmann::json &params, InterSpec *interspec )
+{
+  if( !interspec )
+    throw std::runtime_error( "No InterSpec session available." );
+
+  // Parse spectrum type parameter
+  const SpecUtils::SpectrumType specType = parse_spectrum_type( params );
+
+  // Call the AnalystChecks function to get the sources
+  const std::vector<std::string> sources = AnalystChecks::get_identified_sources( specType, interspec );
+
+  // Convert the result to JSON and return
+  json result_json;
+  to_json( result_json, sources );
+
+  return result_json;
+}//nlohmann::json ToolRegistry::executeGetIdentifiedSources(const nlohmann::json& params, InterSpec* interspec)
+
+
+nlohmann::json ToolRegistry::executeGetUnidentifiedDetectedPeaks( const nlohmann::json &params, InterSpec *interspec )
+{
+  if( !interspec )
+    throw std::runtime_error("No InterSpec session available.");
+
+  // Parse max_results parameter (default: 5)
+  size_t max_results = 5;
+  if( params.contains("max_results") && !params["max_results"].is_null() )
+  {
+    const int max_val = params["max_results"].get<int>();
+    if( max_val < 1 )
+      throw std::runtime_error("max_results must be at least 1");
+    max_results = static_cast<size_t>( max_val );
+  }
+
+  shared_ptr<const SpecUtils::Measurement> meas = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  shared_ptr<const SpecUtils::Measurement> background = interspec->displayedHistogram(SpecUtils::SpectrumType::Background);
+
+  AnalystChecks::DetectedPeaksOptions options;
+  options.specType = SpecUtils::SpectrumType::Foreground;
+  options.nonBackgroundPeaksOnly = !!background;
+  AnalystChecks::DetectedPeakStatus result = AnalystChecks::detected_peaks(options, interspec);
+
+  vector<shared_ptr<const PeakDef>> unidentified_peaks;
+  for( const shared_ptr<const PeakDef> &peak : result.peaks )
+  {
+    if( !peak->hasSourceGammaAssigned()
+       && (peak->userLabel().empty() || SpecUtils::icontains(peak->userLabel(), "unknown") ) )
+    {
+      unidentified_peaks.push_back( peak );
+    }
+  }//for( const shared_ptr<const PeakDef> &peak : result.peaks )
+
+  // Sort peaks by amplitude (largest first)
+  std::sort( unidentified_peaks.begin(), unidentified_peaks.end(),
+    []( const shared_ptr<const PeakDef> &lhs, const shared_ptr<const PeakDef> &rhs ) -> bool {
+      return lhs->amplitude() > rhs->amplitude();
+    }
+  );
+
+  // Apply max_results limit
+  if( unidentified_peaks.size() > max_results )
+    unidentified_peaks.resize( max_results );
+
+  result.peaks = unidentified_peaks;
+
+  json result_json;
+  to_json( result_json, result, meas );
+
+  return result_json;
+}//nlohmann::json ToolRegistry::executeGetUnidentifiedDetectedPeaks( const nlohmann::json &params, InterSpec *interspec )
+  
 
 nlohmann::json ToolRegistry::executeEditAnalysisPeak( const nlohmann::json &params, InterSpec *interspec )
 {
@@ -2628,7 +2741,7 @@ nlohmann::json ToolRegistry::executeGetMaterialInfo( const nlohmann::json& param
   
   
   /* Cooresponds to the "photopeak_detection_efficiency" callback, whose description is:
-    "Given an array of source photon energies, returns the fraction of photons that will contribute to a peak in data. The returned answer will include the attenuation factor of shielding (if specified), the fraction of photons making it to the detector (if distance is specified), the detection probability of photons that are incident upon the detector (i.e., the intrinsic detection efficiency) if a detector efficiency function is loaded (use 'detector_efficiency_function_info' tool call with no arguments to see if a detector efficiency function is loaded, and 'avaiable_detector_efficiency_functions' and 'load_detector_efficiency_function' to load an efficiency function), and gives total detection probability.",
+    "Given an array of source photon energies, returns the fraction of photons that will contribute to a peak in data. The returned answer will include the attenuation factor of shielding (if specified), the fraction of photons making it to the detector (if distance is specified), the detection probability of photons that are incident upon the detector (i.e., the intrinsic detection efficiency) if a detector efficiency function is loaded (use 'detector_efficiency_function_info' tool call with no arguments to see if a detector efficiency function is loaded, and 'available_detector_efficiency_functions' and 'load_detector_efficiency_function' to load an efficiency function), and gives total detection probability.",
 
    And paramaters accepted is:
    ```
@@ -2946,7 +3059,7 @@ nlohmann::json ToolRegistry::executePhotopeakDetectionCalc(nlohmann::json params
 }//nlohmann::json executePhotopeakDetectionCalc(const nlohmann::json& params, InterSpec* interspec)
   
 
-  /** cooresponds to the `avaiable_detector_efficiency_functions` tool call, which has the description:
+  /** cooresponds to the `available_detector_efficiency_functions` tool call, which has the description:
    "Returns a list of detector efficiency function names, and the detector efficiency source, that can be loaded to the foreground spectrum."
  */
 nlohmann::json ToolRegistry::executeAvailableDetectors(const nlohmann::json& params, InterSpec* interspec)
@@ -3441,7 +3554,7 @@ std::shared_ptr<DetectorPeakResponse> ToolRegistry::findDetectorByIdentifier(
       "properties": {
         "identifier": {
           "type": "string",
-          "description": "The detector efficiency function identifier. Can be a name from avaiable_detector_efficiency_functions, a filesystem path to a detector file or GADRAS directory, or a URI. Required."
+          "description": "The detector efficiency function identifier. Can be a name from available_detector_efficiency_functions, a filesystem path to a detector file or GADRAS directory, or a URI. Required."
         },
         "detectorName": {
           "type": "string",

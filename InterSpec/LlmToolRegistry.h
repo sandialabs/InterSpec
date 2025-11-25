@@ -137,6 +137,8 @@ private:
   static nlohmann::json executeGetSpectrumInfo(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executePeakFit(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeGetUserPeaks(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeGetIdentifiedSources(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeGetUnidentifiedDetectedPeaks(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeGetCharacteristicGammasForSource( const nlohmann::json& params );
   static nlohmann::json executeGetNuclidesWithCharacteristicsInEnergyRange( const nlohmann::json& params, InterSpec* interspec );
   static nlohmann::json executeGetLoadedSpectra(const nlohmann::json& params, InterSpec* interspec);

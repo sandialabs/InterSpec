@@ -56,6 +56,9 @@ namespace AnalystChecks
   /** Results of peak detection analysis. */
   struct DetectedPeakStatus {
     std::vector<std::shared_ptr<const PeakDef>> peaks;
+
+    /** Subset of `peaks` that are user-defined analysis peaks (not auto-detected peaks). */
+    std::vector<std::shared_ptr<const PeakDef>> analysis_peaks;
   };
   
   /** Perform automated peak detection on the specified spectrum.
@@ -96,6 +99,19 @@ namespace AnalystChecks
   };
   
   InterSpec_API GetUserPeakStatus get_user_peaks( const GetUserPeakOptions &options, InterSpec *interspec );
+
+  /** Get a list of unique sources assigned to peaks in the specified spectrum.
+
+   Returns a vector of source strings (nuclide symbols, element symbols, or reaction names)
+   that are assigned to user peaks in the specified spectrum. Each source appears only once
+   in the result, even if multiple peaks are assigned to that source.
+
+   @param specType Which spectrum to get sources from (Foreground, Background, or SecondForeground)
+   @param interspec Pointer to the InterSpec session
+   @return Vector of unique source strings assigned to peaks
+   @throws std::runtime_error if InterSpec is null or spectrum not loaded
+   */
+  InterSpec_API std::vector<std::string> get_identified_sources( const SpecUtils::SpectrumType specType, InterSpec *interspec );
 
   struct FitPeaksForNuclideOptions {
     std::vector<std::string> nuclides;

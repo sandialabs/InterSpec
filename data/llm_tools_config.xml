@@ -12,8 +12,8 @@
 
   <!-- Peak Detection and Analysis Tools -->
 
-  <Tool name="detected_peaks">
-    <Description>Returns all Regions Of Interest (ROI) with peaks detected by automated peak search. For ROI gives lower and upper energies, and for each peak it gives energy (in keV), FWHM, amplitude (area), and statistical significance (numSigma); if the peak is associated with a source, will also give information on that. Does not add peaks to the user peaks.</Description>
+  <Tool name="get_detected_peaks">
+    <Description>Returns all Regions Of Interest (ROI) with peaks detected by automated peak search, or that has been added to the internal analysis peak state. For ROI gives lower and upper energies, and for each peak it gives energy (in keV), FWHM, amplitude (area), statistical significance (numSigma), and if an analysis peak (isAnalysisPeak); if the peak is associated with a source, will also give that information.  Additional peaks may be fittable in data, as the automated peak search algorithm is not perfect.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -28,6 +28,57 @@
           }
       },
       "required": ["specType"]
+    }</ParametersSchema>
+  </Tool>
+
+  <Tool name="get_analysis_peaks">
+    <Description>Gets the peaks selected to use for further analysis that have either been manually added by the user, or by the 'add_analysis_peak' tool call, or similar.  These peaks are tracked by an internal state, and are used for things like activity/shielding fitting and tracking nuclides identified.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+          "specType": {
+            "type": "string",
+            "description": "Optional: Which displayed spectrum to search for peaks in; if not specified will use foreground (which is what user usually wants).",
+            "enum": ["Foreground", "Background", "Secondary"]
+          },
+          "lowerEnergy": {
+            "type": "number",
+            "description": "Optional: minimum energy (in keV) for peaks to return. If not specified, no lower bound is applied."
+          },
+          "upperEnergy": {
+            "type": "number",
+            "description": "Optional: maximum energy (in keV) for peaks to return. If not specified, no upper bound is applied."
+          }
+      }
+    }</ParametersSchema>
+  </Tool>
+
+  <Tool name="get_identified_sources">
+    <Description>Returns a list of unique sources (nuclides, x-ray elements, or reactions) that are currently assigned to user peaks in the specified spectrum. Each source appears only once in the list, even if multiple peaks are assigned to that source. Also includes user-defined labels that do not contain 'unknown'. This is useful for getting an overview of what sources have been identified in the spectrum.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+          "specType": {
+            "type": "string",
+            "description": "Optional: Which displayed spectrum to get identified sources from; if not specified will use foreground (which is what user usually wants).",
+            "enum": ["Foreground", "Background", "Secondary"]
+          }
+      }
+    }</ParametersSchema>
+  </Tool>
+
+  <Tool name="get_unidentified_peaks">
+    <Description>Returns the list of foreground peaks (either detected by the auto peak search algorithm or in the internal analysis peak state) that do not have a source (nuclide, x-ray element, or reaction) assigned to them, and that are not consistent with the background spectrum (if present) peaks. Results are sorted by amplitude (largest first) and limited to the specified maximum number of results.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+        "max_results": {
+          "type": "integer",
+          "description": "Maximum number of peaks to return, sorted by amplitude (largest first). Defaults to 5 if not specified.",
+          "minimum": 1,
+          "default": 5
+        }
+      }
     }</ParametersSchema>
   </Tool>
 
@@ -133,28 +184,6 @@
           }
       },
       "required": ["energy"]
-    }</ParametersSchema>
-  </Tool>
-
-  <Tool name="get_analysis_peaks">
-    <Description>Gets the peaks to use for further analysis that have either been manually fit by the user, or by the 'add_analysis_peak' tool call, or similar.  These peaks tracked by an internal state.</Description>
-    <ParametersSchema>{
-      "type": "object",
-      "properties": {
-          "specType": {
-            "type": "string",
-            "description": "Optional: Which displayed spectrum to search for peaks in; if not specified will use foreground (which is what user usually wants).",
-            "enum": ["Foreground", "Background", "Secondary"]
-          },
-          "lowerEnergy": {
-            "type": "number",
-            "description": "Optional: minimum energy (in keV) for peaks to return. If not specified, no lower bound is applied."
-          },
-          "upperEnergy": {
-            "type": "number",
-            "description": "Optional: maximum energy (in keV) for peaks to return. If not specified, no upper bound is applied."
-          }
-      }
     }</ParametersSchema>
   </Tool>
 
@@ -392,7 +421,7 @@ The 'profile_score' metric (larger = better match) is the best indicator of fit 
 
 Further investigation of top returned candidates is required to make sure they match the spectrum (e.g., the spectrum is not missing a peak it should have from that source, or the peaks in the spectrum have expected relative amplitudes, etc.)</Description>
 <Description role="NuclideId">Your primary identification tool. Search for candidate nuclides by gamma energy. Use extensively with single-energy searches. The profile_score metric (higher=better) accounts for peak heights and detector response. Prefer single-energy searches - only use 2-3 energies if desperately needed.</Description>
-<AvailableFor><Agent>MainAgent</Agent><Agent>NuclideId</Agent></AvailableFor>
+<AvailableFor><Agent>MainAgent</Agent><Agent>NuclideId</Agent><Agent>NuclideIdWorker</Agent></AvailableFor>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -473,7 +502,7 @@ Further investigation of top returned candidates is required to make sure they m
   </Tool>
 
   <Tool name="photopeak_detection_efficiency">
-    <Description>Given an array of source photon energies, returns the fraction of photons that will contribute to a peak in data. The returned answer will include the attenuation factor of shielding (if specified), the fraction of photons making it to the detector (if distance is specified), the detection probability of photons that are incident upon the detector (i.e., the intrinsic detection efficiency) if a detector efficiency function is loaded (use 'detector_efficiency_function_info' tool call with no arguments to see if a detector efficiency function is loaded, and 'avaiable_detector_efficiency_functions' and 'load_detector_efficiency_function' to load an efficiency function), and gives total detection probability.</Description>
+    <Description>Given an array of source photon energies, returns the fraction of photons that will contribute to a peak in data. The returned answer will include the attenuation factor of shielding (if specified), the fraction of photons making it to the detector (if distance is specified), the detection probability of photons that are incident upon the detector (i.e., the intrinsic detection efficiency) if a detector efficiency function is loaded (use 'detector_efficiency_function_info' tool call with no arguments to see if a detector efficiency function is loaded, and 'available_detector_efficiency_functions' and 'load_detector_efficiency_function' to load an efficiency function), and gives total detection probability.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -530,7 +559,7 @@ Further investigation of top returned candidates is required to make sure they m
 
   <!-- Detector Efficiency Tools -->
 
-  <Tool name="avaiable_detector_efficiency_functions">
+  <Tool name="available_detector_efficiency_functions">
     <Description>Returns a list of detector efficiency function names that can be loaded to the foreground spectrum.</Description>
     <ParametersSchema>{
       "type": "object",
@@ -546,7 +575,7 @@ Further investigation of top returned candidates is required to make sure they m
       "properties": {
         "identifier": {
           "type": "string",
-          "description": "The detector efficiency function identifier. Can be a name from avaiable_detector_efficiency_functions, a filesystem path to a detector file or GADRAS directory, or a URI. Required."
+          "description": "The detector efficiency function identifier. Can be a name from available_detector_efficiency_functions, a filesystem path to a detector file or GADRAS directory, or a URI. Required."
         },
         "detectorName": {
           "type": "string",

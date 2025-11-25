@@ -39,6 +39,7 @@ enum class AgentType : int
 {
   MainAgent,
   NuclideId,
+  NuclideIdWorker,
   ActivityFit
 };//enum class AgentType
 
@@ -69,6 +70,7 @@ public:
     std::string name;         // Agent name string (e.g., "MainAgent", "NuclideId")
     std::string description;  // Description of what this agent does (used for tool invocation description)
     std::string systemPrompt; // System prompt for this agent
+    std::vector<AgentType> availableForAgents; // List of agent types that can invoke this agent (empty = all agents can invoke)
   };//struct AgentConfig
 
   /** Configuration for a tool with role-specific descriptions */

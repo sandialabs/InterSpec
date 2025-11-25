@@ -210,6 +210,107 @@ bool LlmInterface::isRequestPending(int requestId) const {
 }
 
 
+/** Sanitize a JSON string to make it more likely to parse successfully.
+
+ This function attempts to fix common JSON formatting issues:
+ - Trims leading and trailing whitespace
+ - Removes BOM (Byte Order Mark) if present
+ - Replaces invalid UTF-8 sequences
+ - Strips null bytes
+
+ @param jsonStr The potentially malformed JSON string
+ @return Sanitized JSON string
+ */
+static std::string sanitizeJsonString( const std::string &jsonStr )
+{
+  std::string result = jsonStr;
+
+  // Trim leading and trailing whitespace
+  SpecUtils::trim( result );
+
+  // Remove UTF-8 BOM if present
+  if( result.size() >= 3 &&
+      static_cast<unsigned char>(result[0]) == 0xEF &&
+      static_cast<unsigned char>(result[1]) == 0xBB &&
+      static_cast<unsigned char>(result[2]) == 0xBF )
+  {
+    result = result.substr(3);
+  }
+
+  // Remove null bytes which can cause parse failures
+  result.erase( std::remove(result.begin(), result.end(), '\0'), result.end() );
+
+  // Replace any invalid UTF-8 sequences
+  // This is a simple implementation that handles common cases
+  std::string cleaned;
+  cleaned.reserve( result.size() );
+
+  for( size_t i = 0; i < result.size(); ++i )
+  {
+    unsigned char c = static_cast<unsigned char>(result[i]);
+
+    // Valid single-byte UTF-8 (ASCII)
+    if( c < 0x80 )
+    {
+      cleaned += c;
+      continue;
+    }
+
+    // Check for valid multi-byte UTF-8 sequences
+    size_t seqLen = 0;
+    if( (c & 0xE0) == 0xC0 ) seqLen = 2;      // 110xxxxx
+    else if( (c & 0xF0) == 0xE0 ) seqLen = 3; // 1110xxxx
+    else if( (c & 0xF8) == 0xF0 ) seqLen = 4; // 11110xxx
+
+    if( seqLen > 0 && i + seqLen <= result.size() )
+    {
+      // Verify continuation bytes (10xxxxxx)
+      bool validSeq = true;
+      for( size_t j = 1; j < seqLen; ++j )
+      {
+        unsigned char cont = static_cast<unsigned char>(result[i + j]);
+        if( (cont & 0xC0) != 0x80 )
+        {
+          validSeq = false;
+          break;
+        }
+      }
+
+      if( validSeq )
+      {
+        // Copy the valid UTF-8 sequence
+        for( size_t j = 0; j < seqLen; ++j )
+          cleaned += result[i + j];
+        i += seqLen - 1;
+        continue;
+      }
+    }
+
+    // Invalid UTF-8 sequence - skip this byte and continue
+    // (nlohmann::json will handle it or we'll get a parse error)
+  }
+
+  return cleaned;
+}//sanitizeJsonString(...)
+
+
+/** Parse JSON string with lenient preprocessing.
+
+ This function sanitizes the input string to handle common formatting issues
+ (whitespace, BOM, invalid UTF-8, null bytes) before parsing. This makes parsing
+ more robust when dealing with potentially malformed JSON from external sources.
+
+ @param jsonStr The JSON string to parse
+ @return Parsed JSON object
+ @throws nlohmann::json::parse_error if parsing fails after sanitization
+ */
+static nlohmann::json parseLenientJson( const std::string &jsonStr )
+{
+  const std::string sanitized = sanitizeJsonString( jsonStr );
+  return nlohmann::json::parse( sanitized );
+}//parseLenientJson(...)
+
+
 /** Manually serialize JSON request with specific field ordering for LLM provider caching.
 
  Some LLM providers cache parts of requests between calls to reduce costs, but only if
@@ -462,10 +563,10 @@ void LlmInterface::handleApiResponse( const std::string &response,
   }
   
   size_t number_tool_calls = 0;
-  
+
   try
   {
-    json responseJson = json::parse(response);
+    json responseJson = parseLenientJson( response );
     
     // Parse and accumulate token usage information if available
     std::optional<size_t> promptTokens, completionTokens;
@@ -655,7 +756,7 @@ size_t LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolC
       
       cout << "--- about to parse tool call arguments for toolName=" << toolName << endl;
       if( function_def.contains("arguments") ) //Some tool calls dont need any arguments
-        arguments = json::parse(function_def["arguments"].get<string>());
+        arguments = parseLenientJson( function_def["arguments"].get<string>() );
       cout << "--- done parsing tool call arguments for toolName=" << toolName << endl;
 
       cout << "Calling tool: " << toolName << " with ID: " << callId << endl;
@@ -801,12 +902,12 @@ size_t LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolC
               if( llmResp )
                 last_response = llmResp->content();
               cout << "--- about to parse sub_agent_convo->responses='" << last_response << "'" << endl;
-              SpecUtils::trim( last_response );
+
               nlohmann::json responseJson = nlohmann::json::object();
               try
               {
                 if( !last_response.empty() )
-                  responseJson = nlohmann::json::parse( last_response );
+                  responseJson = parseLenientJson( last_response );
                 cout << "--- Done parsing sub_agent_convo->responses" << endl;
                 
                 if( responseJson.contains("choices") && !responseJson["choices"].empty() )
@@ -1062,8 +1163,8 @@ size_t LlmInterface::parseContentForToolCallsAndSendResults( const std::string &
           // Single capture group - JSON object with name and arguments fields
           string toolCallJson = match[1].str();
           cout << "Found JSON tool call: " << toolCallJson << " -- and about to parse" << endl;
-          
-          json toolCallObj = json::parse(toolCallJson);
+
+          json toolCallObj = parseLenientJson( toolCallJson );
           cout << "Done parsing tool call JSON" << endl;
           
           if( toolCallObj.contains("name") )
@@ -1085,9 +1186,9 @@ size_t LlmInterface::parseContentForToolCallsAndSendResults( const std::string &
           if( !argumentsStr.empty() && (argumentsStr != "{}") )
           {
             cout << "About to parse alone tool call JSON" << endl;
-            
-            arguments = json::parse(argumentsStr);
-            
+
+            arguments = parseLenientJson( argumentsStr );
+
             cout << "Done parsing alone tool call JSON" << endl;
           }
         }
@@ -1427,7 +1528,7 @@ void LlmInterface::setupJavaScriptBridge() {
 
       // Create AbortController for timeout handling
       var controller = new AbortController();
-      var timeoutMs = 120000; // 2 minutes
+      var timeoutMs = 45000; // 0.75 minutes
       var timeoutId = setTimeout(function() {
         var elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
         console.error('=== LLM Request TIMEOUT (ID ' + requestId + ') ===');
@@ -1548,7 +1649,7 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
     
     // Check for errors first
     cout << "--- about to parse response to json --- " << endl;
-    json responseJson = json::parse(response);
+    json responseJson = parseLenientJson( response );
     cout << "--- done parsing response to json --- " << endl;
 
 

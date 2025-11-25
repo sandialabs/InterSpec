@@ -27,9 +27,10 @@ std::string agentTypeToString( AgentType type )
 {
   switch( type )
   {
-    case AgentType::MainAgent:    return "MainAgent";
-    case AgentType::NuclideId:    return "NuclideId";
-    case AgentType::ActivityFit:  return "ActivityFit";
+    case AgentType::MainAgent:       return "MainAgent";
+    case AgentType::NuclideId:       return "NuclideId";
+    case AgentType::NuclideIdWorker: return "NuclideIdWorker";
+    case AgentType::ActivityFit:     return "ActivityFit";
   }
 
   throw std::invalid_argument( "Unknown AgentType" );
@@ -38,9 +39,10 @@ std::string agentTypeToString( AgentType type )
 
 AgentType stringToAgentType( const std::string &name )
 {
-  if( name == "MainAgent" )    return AgentType::MainAgent;
-  if( name == "NuclideId" )    return AgentType::NuclideId;
-  if( name == "ActivityFit" )  return AgentType::ActivityFit;
+  if( name == "MainAgent" )       return AgentType::MainAgent;
+  if( name == "NuclideId" )       return AgentType::NuclideId;
+  if( name == "NuclideIdWorker" ) return AgentType::NuclideIdWorker;
+  if( name == "ActivityFit" )     return AgentType::ActivityFit;
 
   throw std::invalid_argument( "Unknown agent name: " + name );
 }//stringToAgentType(...)
@@ -461,6 +463,28 @@ std::vector<LlmConfig::AgentConfig> LlmConfig::loadAgentsFromFile( const std::st
         // Get value from element node directly
         agent.systemPrompt = SpecUtils::xml_value_str( promptNode );
       }
+
+      // Load AvailableFor (optional - if not specified, agent is available to all other agents)
+      const rapidxml::xml_node<char> * const availableForNode = XML_FIRST_NODE(agentNode, "AvailableFor");
+      if( availableForNode )
+      {
+        for( const rapidxml::xml_node<char> *invokingAgentNode = availableForNode->first_node("Agent");
+            invokingAgentNode; invokingAgentNode = invokingAgentNode->next_sibling("Agent") )
+        {
+          if( invokingAgentNode->value() && (invokingAgentNode->value_size() > 0) )
+          {
+            const string invokingAgentName = invokingAgentNode->value();
+            try
+            {
+              const AgentType invokingAgentType = stringToAgentType( invokingAgentName );
+              agent.availableForAgents.push_back( invokingAgentType );
+            }catch( const std::exception &e )
+            {
+              cerr << "Warning: Unknown agent type '" << invokingAgentName << "' in agent availableFor for '" << agent.name << "', skipping" << endl;
+            }
+          }
+        }//for( loop over Agent nodes in AvailableFor )
+      }//if( availableForNode )
 
       agents.push_back(agent);
     }//for( loop over Agent nodes )

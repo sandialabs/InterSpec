@@ -382,11 +382,11 @@ BOOST_AUTO_TEST_CASE( test_executeAvailableDetectors )
   try
   {
     // Note: tool name has typo - "avaiable" instead of "available"
-    result = registry.executeTool("avaiable_detector_efficiency_functions", params, fixture.m_interspec);
+    result = registry.executeTool("available_detector_efficiency_functions", params, fixture.m_interspec);
   }
   catch( const std::exception &e )
   {
-    BOOST_TEST_MESSAGE( "Exception calling avaiable_detector_efficiency_functions: " << e.what() );
+    BOOST_TEST_MESSAGE( "Exception calling available_detector_efficiency_functions: " << e.what() );
     throw;
   }
 
@@ -447,7 +447,7 @@ BOOST_AUTO_TEST_CASE( test_executeLoadDetectorEfficiency )
 
   // First get available detectors (note: tool name has typo - "avaiable" not "available")
   json available_result;
-  BOOST_REQUIRE_NO_THROW( available_result = registry.executeTool("avaiable_detector_efficiency_functions", json::object(), fixture.m_interspec) );
+  BOOST_REQUIRE_NO_THROW( available_result = registry.executeTool("available_detector_efficiency_functions", json::object(), fixture.m_interspec) );
 
   if( available_result.empty() )
   {
@@ -485,7 +485,7 @@ BOOST_AUTO_TEST_CASE( test_executeGetDetectorInfo )
 
   // First load a detector
   json available_result;
-  BOOST_REQUIRE_NO_THROW( available_result = registry.executeTool("avaiable_detector_efficiency_functions", json::object(), fixture.m_interspec) );
+  BOOST_REQUIRE_NO_THROW( available_result = registry.executeTool("available_detector_efficiency_functions", json::object(), fixture.m_interspec) );
 
   if( available_result.empty() )
   {
@@ -551,7 +551,7 @@ BOOST_AUTO_TEST_CASE( test_executePhotopeakDetectionCalc )
 
   // First load a detector
   json available_result;
-  BOOST_REQUIRE_NO_THROW( available_result = registry.executeTool("avaiable_detector_efficiency_functions", json::object(), fixture.m_interspec) );
+  BOOST_REQUIRE_NO_THROW( available_result = registry.executeTool("available_detector_efficiency_functions", json::object(), fixture.m_interspec) );
 
   if( available_result.empty() )
   {
@@ -803,7 +803,7 @@ BOOST_AUTO_TEST_CASE( test_executePeakDetection )
   params["specType"] = "Foreground";
 
   json result;
-  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("detected_peaks", params, fixture.m_interspec) );
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("get_detected_peaks", params, fixture.m_interspec) );
   BOOST_CHECK( result.is_object() && result.contains("rois") && result["rois"].is_array() );
   
 
@@ -861,7 +861,7 @@ BOOST_AUTO_TEST_CASE( test_executePeakDetection )
 
   // Test error handling - invalid spectrum type
   params["specType"] = "InvalidType";
-  BOOST_CHECK_THROW( registry.executeTool("detected_peaks", params, fixture.m_interspec), std::runtime_error );
+  BOOST_CHECK_THROW( registry.executeTool("get_detected_peaks", params, fixture.m_interspec), std::runtime_error );
 }
 
 
@@ -878,7 +878,7 @@ BOOST_AUTO_TEST_CASE( test_executeGetUserPeaks )
   json result;
   BOOST_REQUIRE_NO_THROW( result = registry.executeTool("get_analysis_peaks", params, fixture.m_interspec) );
 
-  // Should return an object with rois array (same structure as detected_peaks)
+  // Should return an object with rois array (same structure as get_detected_peaks)
   BOOST_CHECK( result.is_object() );
   BOOST_CHECK( result.contains("rois") );
   BOOST_CHECK( result["rois"].is_array() );
@@ -1394,7 +1394,7 @@ BOOST_AUTO_TEST_CASE( test_executeGetExpectedFwhm )
 
   // First load a detector
   json available_result;
-  BOOST_REQUIRE_NO_THROW( available_result = registry.executeTool("avaiable_detector_efficiency_functions", json::object(), fixture.m_interspec) );
+  BOOST_REQUIRE_NO_THROW( available_result = registry.executeTool("available_detector_efficiency_functions", json::object(), fixture.m_interspec) );
 
   if( available_result.empty() )
   {
@@ -2019,7 +2019,7 @@ BOOST_AUTO_TEST_CASE( test_toolsLoadedFromXml )
 
   // Define the expected tools (same list as in the validation code)
   const std::vector<std::string> expectedTools = {
-    "detected_peaks",
+    "get_detected_peaks",
     "add_analysis_peak",
     "edit_analysis_peak",
     "get_analysis_peaks",
@@ -2042,7 +2042,7 @@ BOOST_AUTO_TEST_CASE( test_toolsLoadedFromXml )
     "photopeak_detection_efficiency",
     "get_materials",
     "get_material_info",
-    "avaiable_detector_efficiency_functions",
+    "available_detector_efficiency_functions",
     "load_detector_efficiency_function",
     "detector_efficiency_function_info",
     "search_sources_by_energy"
@@ -2532,7 +2532,7 @@ BOOST_AUTO_TEST_CASE( test_executeActivityFit_SinglePeak )
   peak_params["specType"] = "Foreground";
 
   json peak_result;
-  BOOST_REQUIRE_NO_THROW( peak_result = registry->executeTool( "detected_peaks", peak_params, interspec ) );
+  BOOST_REQUIRE_NO_THROW( peak_result = registry->executeTool( "get_detected_peaks", peak_params, interspec ) );
   BOOST_CHECK( peak_result.contains("rois") );
 
   // Add the Br82 peak at 554.35 keV to the analysis peaks
@@ -2638,7 +2638,7 @@ BOOST_AUTO_TEST_CASE( test_executeActivityFit_WithAge )
       json peak_params;
       peak_params["specType"] = "Foreground";
 
-      BOOST_REQUIRE_NO_THROW( registry->executeTool( "detected_peaks", peak_params, interspec ) );
+      BOOST_REQUIRE_NO_THROW( registry->executeTool( "get_detected_peaks", peak_params, interspec ) );
 
       // Set up configuration for Ba133 with age fitting
       json config_params;
@@ -2699,7 +2699,7 @@ BOOST_AUTO_TEST_CASE( test_executeActivityFit_CustomMode )
   // Detect peaks first
   json peak_params;
   peak_params["specType"] = "Foreground";
-  BOOST_REQUIRE_NO_THROW( registry->executeTool( "detected_peaks", peak_params, interspec ) );
+  BOOST_REQUIRE_NO_THROW( registry->executeTool( "get_detected_peaks", peak_params, interspec ) );
 
   // Test custom mode with full configuration
   json fit_params;
@@ -2797,8 +2797,8 @@ BOOST_AUTO_TEST_CASE( test_agentsLoadedFromXml )
   // Check that agents were loaded
   BOOST_REQUIRE_MESSAGE( !llmConfig->agents.empty(), "No agents loaded from XML" );
 
-  // Expected agents: MainAgent, NuclideId, ActivityFit
-  const std::set<std::string> expectedAgents = { "MainAgent", "NuclideId", "ActivityFit" };
+  // Expected agents: MainAgent, NuclideId, NuclideIdWorker, ActivityFit
+  const std::set<std::string> expectedAgents = { "MainAgent", "NuclideId", "NuclideIdWorker", "ActivityFit" };
 
   cout << "Loaded " << llmConfig->agents.size() << " agents from XML configuration:" << endl;
 
