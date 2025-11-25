@@ -2370,6 +2370,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     m_multithread_computation( true ),
     m_showLog( nullptr ),
     m_logDiv( nullptr ),
+    m_diagramDialog( nullptr ),
     m_calcLog{},
     m_peakCalcLogInfo{},
     m_modelUploadWindow( nullptr ),
@@ -3081,6 +3082,10 @@ ShieldingSourceDisplay::~ShieldingSourceDisplay() noexcept(true)
     delete m_addItemMenu;
     m_addItemMenu = NULL;
   }//if( m_addItemMenu )
+  
+  if( m_diagramDialog )
+    delete m_diagramDialog;
+  m_diagramDialog = nullptr;
   
   closeModelUploadWindow();
 #if( USE_DB_TO_STORE_SPECTRA )
@@ -8790,8 +8795,79 @@ void ShieldingSourceDisplay::showShieldSourceDiagram()
   std::vector<ShieldingSourceFitCalc::IsoFitStruct> sources = m_sourceModel->underlyingData();
   const GeometryType geom_type = geometry();
   
-  ShieldingDiagramDialog *dialog = ShieldingDiagramDialog::createShieldingDiagram( shieldings, sources, geom_type, distance, detDiameter );
-}
+  if( m_diagramDialog )
+  {
+    // Dialog already exists, update its data and show it
+    m_diagramDialog->updateData( shieldings, sources, geom_type, distance, detDiameter );
+    m_diagramDialog->show();
+    return;
+  }
+  
+  m_diagramDialog = ShieldingDiagramDialog::createShieldingDiagram( shieldings, sources, geom_type, distance, detDiameter );
+  
+  //m_diagramDialog->destroyed().connect( std::bind([dialog_ptr]( Wt::WObject * ){
+  //  InterSpec *viewer = InterSpec::instance();
+  //  ShieldingSourceDisplay *shieldSourceFit = viewer ? viewer->shieldingSourceFit() : nullptr;
+  //  if( shieldSourceFit && shieldSourceFit->m_diagramDialog == dialog_ptr )
+  //    shieldSourceFit->m_diagramDialog = nullptr;
+  //}, std::placeholders::_1 ) );
+  
+  m_diagramDialog->finished().connect( this, &ShieldingSourceDisplay::handleShieldSourceDiagramClosed );
+  
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    auto undo = [](){
+      ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
+      if( shieldSourceFit )
+        shieldSourceFit->closeShieldSourceDiagram();
+    };
+
+    auto redo = [](){
+      ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
+      if( shieldSourceFit )
+        shieldSourceFit->showShieldSourceDiagram();
+    };
+
+    undoRedo->addUndoRedoStep( undo, redo, "Show shielding diagram." );
+  }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
+}//void showShieldSourceDiagram()
+
+
+void ShieldingSourceDisplay::handleShieldSourceDiagramClosed()
+{
+  m_diagramDialog = nullptr;
+  
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( !undoRedo || !undoRedo->canAddUndoRedoNow() )
+    return;
+  
+  auto undo = [](){
+    ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
+    if( shieldSourceFit )
+      shieldSourceFit->showShieldSourceDiagram();
+  };
+  
+  auto redo = [](){
+    ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
+    if( shieldSourceFit )
+      shieldSourceFit->closeShieldSourceDiagram();
+  };
+  
+  undoRedo->addUndoRedoStep( undo, redo, "Close shielding diagram." );
+}//void handleShieldSourceDiagramClosed();
+
+
+void ShieldingSourceDisplay::closeShieldSourceDiagram()
+{
+  if( !m_diagramDialog )
+    return;
+
+  // Delete the ShieldingDiagramDialog (it's a SimpleDialog, which is a WDialog subclass)
+  m_diagramDialog->accept();
+  assert( !m_diagramDialog );
+  m_diagramDialog = nullptr;
+}//void closeShieldSourceDiagram()
 
 
 

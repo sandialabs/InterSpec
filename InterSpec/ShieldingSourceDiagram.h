@@ -60,6 +60,13 @@ public:
   // Switch between 2D and 3D views
   void switchView( bool show3D );
   
+  // Update the data for both views
+  void updateData( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
+                   const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &sources,
+                   GammaInteractionCalc::GeometryType geometry,
+                   double detectorDistance,
+                   double detectorDiameter );
+  
 private:
   // Private constructor - use createShieldingDiagram() instead
   ShieldingDiagramDialog(
@@ -103,6 +110,13 @@ public:
                    double detectorDiameter,
                    Wt::WContainerWidget *parent = 0 );
   
+  // Update the data and refresh the display
+  void updateData( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
+                   const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &sources,
+                   GammaInteractionCalc::GeometryType geometry,
+                   double detectorDistance,
+                   double detectorDiameter );
+  
 private:
   void defineJavaScript();
   std::string createJsonData() const;
@@ -124,6 +138,13 @@ public:
                    double detectorDistance,
                    double detectorDiameter,
                    Wt::WContainerWidget *parent = 0 );
+  
+  // Update the data and refresh the display
+  void updateData( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
+                   const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &sources,
+                   GammaInteractionCalc::GeometryType geometry,
+                   double detectorDistance,
+                   double detectorDiameter );
   
 private:
   void defineJavaScript();

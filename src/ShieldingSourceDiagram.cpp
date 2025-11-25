@@ -78,9 +78,9 @@ void Shielding2DView::defineJavaScript()
   
   // Create options object with default padding
   string options = "{ padding: { top: 40, right: 40, bottom: 40, left: 40 } }";
-  string js = "new Shielding2DView('" + id() + "', " + jsonData + ", " + options + ");";
+  string js = "var c=" + jsRef() + ";if(c){c.chart=new Shielding2DView('" + id() + "', " + jsonData + ", " + options + ");}";
   
-  setJavaScriptMember( "chart", js );
+  doJavaScript( js );
   
   // Set up ResizeObserver
   setJavaScriptMember( "resizeObserver",
@@ -331,6 +331,27 @@ std::string Shielding2DView::createJsonData() const
   return createShieldingDiagramJson( m_shieldings, m_sources, m_geometry, m_detectorDistance, m_detectorDiameter );
 }
 
+void Shielding2DView::updateData( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
+                                  const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &sources,
+                                  GammaInteractionCalc::GeometryType geometry,
+                                  double detectorDistance,
+                                  double detectorDiameter )
+{
+  m_shieldings = shieldings;
+  m_sources = sources;
+  m_geometry = geometry;
+  m_detectorDistance = detectorDistance;
+  m_detectorDiameter = detectorDiameter;
+  
+  // Update JavaScript chart with new data
+  if( isRendered() )
+  {
+    string jsonData = createJsonData();
+    string js = "var c=" + jsRef() + ";if(c && c.chart && typeof c.chart.setData === 'function'){c.chart.setData(" + jsonData + ");}";
+    doJavaScript( js );
+  }
+}//void Shielding2DView::updateData(...)
+
 // Shielding3DView implementation (moved from Shielding3DView.cpp)
 Shielding3DView::Shielding3DView( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
                                   const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &sources,
@@ -357,7 +378,7 @@ Shielding3DView::Shielding3DView( const std::vector<ShieldingSourceFitCalc::Shie
 void Shielding3DView::defineJavaScript()
 {
   string jsonData = createJsonData();
-  string js = "new Shielding3DView('" + id() + "', " + jsonData + ");";
+  string js = "var c=" + jsRef() + ";if(c){c.chart=new Shielding3DView('" + id() + "', " + jsonData + ");}";
   doJavaScript( js );
 }
 
@@ -365,6 +386,27 @@ std::string Shielding3DView::createJsonData() const
 {
   return createShieldingDiagramJson( m_shieldings, m_sources, m_geometry, m_detectorDistance, m_detectorDiameter );
 }
+
+void Shielding3DView::updateData( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
+                                  const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &sources,
+                                  GammaInteractionCalc::GeometryType geometry,
+                                  double detectorDistance,
+                                  double detectorDiameter )
+{
+  m_shieldings = shieldings;
+  m_sources = sources;
+  m_geometry = geometry;
+  m_detectorDistance = detectorDistance;
+  m_detectorDiameter = detectorDiameter;
+  
+  // Update JavaScript 3D view with new data
+  if( isRendered() )
+  {
+    string jsonData = createJsonData();
+    string js = "var c=" + jsRef() + ";if(c && c.chart && typeof c.chart.setData === 'function'){c.chart.setData(" + jsonData + ");}";
+    doJavaScript( js );
+  }
+}//void Shielding3DView::updateData(...)
 
 // ShieldingDiagramDialog implementation
 ShieldingDiagramDialog::ShieldingDiagramDialog(
@@ -429,6 +471,39 @@ void ShieldingDiagramDialog::handleViewTypeToggle()
   const bool show3D = (m_select->currentIndex() == 1);
   switchView( show3D );
 }//void handleViewTypeToggle()
+
+void ShieldingDiagramDialog::updateData( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
+                                         const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &sources,
+                                         GammaInteractionCalc::GeometryType geometry,
+                                         double detectorDistance,
+                                         double detectorDiameter )
+{
+  // Update stored data
+  m_shieldings = shieldings;
+  m_sources = sources;
+  m_geometry = geometry;
+  m_detectorDistance = detectorDistance;
+  m_detectorDiameter = detectorDiameter;
+  
+  // Update the currently visible view
+  const bool show3D = (m_select && m_select->currentIndex() == 1);
+  
+  if( show3D && m_3DView )
+  {
+    m_3DView->updateData( shieldings, sources, geometry, detectorDistance, detectorDiameter );
+  }
+  else if( !show3D && m_2DView )
+  {
+    m_2DView->updateData( shieldings, sources, geometry, detectorDistance, detectorDiameter );
+  }
+  
+  // Also update the other view if it exists (so switching views will show updated data)
+  if( m_2DView )
+    m_2DView->updateData( shieldings, sources, geometry, detectorDistance, detectorDiameter );
+  
+  if( m_3DView )
+    m_3DView->updateData( shieldings, sources, geometry, detectorDistance, detectorDiameter );
+}//void ShieldingDiagramDialog::updateData(...)
 
 
 void ShieldingDiagramDialog::switchView( bool show3D )

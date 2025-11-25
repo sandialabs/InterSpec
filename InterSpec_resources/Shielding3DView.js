@@ -2,7 +2,16 @@
 
 Shielding3DView = function(id, data) {
   var container = document.getElementById(id);
-  if (!container) return;
+  if (!container) return null;
+  
+  var self = this;
+  this.container = container;
+  this.data = null;
+  this.meshes = [];
+  this.gl = null;
+  this.canvas = null;
+  this.program = null;
+  this.locs = null;
 
   // --- Constants & Units ---
   // data.distance and shielding dimensions are in base units (mm, since cm=10.0).
@@ -11,14 +20,14 @@ Shielding3DView = function(id, data) {
   var INCH = 2.54 * CM;
 
   // --- WebGL Setup ---
-  var canvas = document.createElement('canvas');
-  canvas.style.width = '100%';
-  canvas.style.height = '100%';
+  this.canvas = document.createElement('canvas');
+  this.canvas.style.width = '100%';
+  this.canvas.style.height = '100%';
   // Initial size
-  canvas.width = container.clientWidth;
-  canvas.height = container.clientHeight;
+  this.canvas.width = container.clientWidth;
+  this.canvas.height = container.clientHeight;
   container.innerHTML = '';
-  container.appendChild(canvas);
+  container.appendChild(this.canvas);
 
   // ResizeObserver
   var resizeObserver = new ResizeObserver(function(entries) {
@@ -29,8 +38,8 @@ Shielding3DView = function(id, data) {
         var height = entry.contentRect.height;
         
         // Update canvas size
-        canvas.width = width;
-        canvas.height = height;
+        self.canvas.width = width;
+        self.canvas.height = height;
         
         // Optionally force a render here if loop isn't running
       }
@@ -38,11 +47,14 @@ Shielding3DView = function(id, data) {
   });
   resizeObserver.observe(container);
 
-  var gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-  if (!gl) {
+  this.gl = this.canvas.getContext('webgl') || this.canvas.getContext('experimental-webgl');
+  if (!this.gl) {
     container.innerHTML = 'WebGL not supported';
-    return;
+    return null;
   }
+  
+  var gl = this.gl;
+  var canvas = this.canvas;
 
   // --- Shaders ---
   var vertexShaderSrc = [
@@ -97,7 +109,8 @@ Shielding3DView = function(id, data) {
     return;
   }
 
-  var locs = {
+  this.program = program;
+  this.locs = {
     aPosition: gl.getAttribLocation(program, 'aPosition'),
     aNormal: gl.getAttribLocation(program, 'aNormal'),
     uModelViewProjection: gl.getUniformLocation(program, 'uModelViewProjection'),
@@ -106,6 +119,8 @@ Shielding3DView = function(id, data) {
     uColor: gl.getUniformLocation(program, 'uColor'),
     uLightDir: gl.getUniformLocation(program, 'uLightDir')
   };
+  
+  var locs = this.locs;
 
   // --- Math Helpers ---
   var Mat4 = {
@@ -360,7 +375,177 @@ Shielding3DView = function(id, data) {
   }
 
   // --- Scene Objects Construction ---
-  var meshes = [];
+  this.meshes = [];
+  this.camRadius = 0;
+  this.camTheta = Math.PI / 4;
+  this.camPhi = Math.PI / 4;
+  this.camTarget = [0, 0, 0];
+  this.isDragging = false;
+  this.lastMouseX = 0;
+  this.lastMouseY = 0;
+  this.button = -1;
+  this.renderLoopId = null;
+  
+  // Initialize with data if provided
+  if (data) {
+    this.setData(data);
+  }
+  
+  return this;
+};
+
+// Set data and rebuild meshes
+Shielding3DView.prototype.setData = function(data) {
+  this.data = data;
+  
+  // Clear existing meshes (but keep WebGL context)
+  if (this.meshes) {
+    // Clean up old buffers
+    for (var i = 0; i < this.meshes.length; i++) {
+      if (this.meshes[i].buffer) {
+        if (this.meshes[i].buffer.position) this.gl.deleteBuffer(this.meshes[i].buffer.position);
+        if (this.meshes[i].buffer.normal) this.gl.deleteBuffer(this.meshes[i].buffer.normal);
+        if (this.meshes[i].buffer.indices) this.gl.deleteBuffer(this.meshes[i].buffer.indices);
+      }
+    }
+  }
+  
+  this.meshes = [];
+  
+  // Remove old overlay if it exists
+  var oldOverlay = this.container.querySelector('div[style*="position: absolute"]');
+  if (oldOverlay && oldOverlay !== this.canvas) {
+    oldOverlay.remove();
+  }
+  
+  if (!data) return;
+  
+  var gl = this.gl;
+  var container = this.container;
+  var self = this;
+  
+  // Helper functions (same as in constructor)
+  function createBufferInfo(gl, meshData) {
+    var posBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(meshData.position), gl.STATIC_DRAW);
+    
+    var normBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, normBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(meshData.normal), gl.STATIC_DRAW);
+    
+    var idxBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(meshData.indices), gl.STATIC_DRAW);
+    
+    return {
+      position: posBuf,
+      normal: normBuf,
+      indices: idxBuf,
+      numElements: meshData.indices.length
+    };
+  }
+  
+  function createSphere(radius, slices, stacks) {
+    var vertices = [];
+    var normals = [];
+    var indices = [];
+    for (var i = 0; i <= stacks; i++) {
+      var theta = i * Math.PI / stacks;
+      var sinTheta = Math.sin(theta);
+      var cosTheta = Math.cos(theta);
+      for (var j = 0; j <= slices; j++) {
+        var phi = j * 2 * Math.PI / slices;
+        var sinPhi = Math.sin(phi);
+        var cosPhi = Math.cos(phi);
+        var x = cosPhi * sinTheta;
+        var y = cosTheta;
+        var z = sinPhi * sinTheta;
+        vertices.push(radius * x, radius * y, radius * z);
+        normals.push(x, y, z);
+      }
+    }
+    for (var i = 0; i < stacks; i++) {
+      for (var j = 0; j < slices; j++) {
+        var first = i * (slices + 1) + j;
+        var second = first + slices + 1;
+        indices.push(first, second, first + 1);
+        indices.push(second, second + 1, first + 1);
+      }
+    }
+    return { position: vertices, normal: normals, indices: indices };
+  }
+  
+  function createCylinder(radius, height, segments) {
+    var vertices = [];
+    var normals = [];
+    var indices = [];
+    for (var i = 0; i <= segments; i++) {
+      var angle = 2 * Math.PI * i / segments;
+      var x = Math.cos(angle);
+      var z = Math.sin(angle);
+      vertices.push(radius * x, -height/2, radius * z);
+      normals.push(x, 0, z);
+      vertices.push(radius * x, height/2, radius * z);
+      normals.push(x, 0, z);
+    }
+    for (var i = 0; i < segments; i++) {
+      var base = i * 2;
+      indices.push(base, base + 1, (base + 2) % (segments * 2 + 2));
+      indices.push(base + 1, (base + 3) % (segments * 2 + 2), (base + 2) % (segments * 2 + 2));
+    }
+    // Top and bottom caps
+    var centerBottom = segments * 2 + 2;
+    var centerTop = centerBottom + 1;
+    vertices.push(0, -height/2, 0);
+    normals.push(0, -1, 0);
+    vertices.push(0, height/2, 0);
+    normals.push(0, 1, 0);
+    for (var i = 0; i < segments; i++) {
+      var base = i * 2;
+      var next = ((i + 1) % segments) * 2;
+      indices.push(centerBottom, next, base);
+      indices.push(centerTop, base + 1, next + 1);
+    }
+    return { position: vertices, normal: normals, indices: indices };
+  }
+  
+  function createBox(w, h, d) {
+    var positions = [
+      // Front
+       w,  h,  d,   w, -h,  d,  -w, -h,  d,  -w,  h,  d,
+      // Back
+      -w,  h, -d,  -w, -h, -d,   w, -h, -d,   w,  h, -d,
+      // Top
+      -w,  h,  d,   w,  h,  d,   w,  h, -d,  -w,  h, -d,
+      // Bottom
+      -w, -h, -d,   w, -h, -d,   w, -h,  d,  -w, -h,  d,
+      // Right
+       w,  h, -d,   w,  h,  d,   w, -h,  d,   w, -h, -d,
+      // Left
+      -w, -h, -d,  -w, -h,  d,  -w,  h,  d,  -w,  h, -d
+    ];
+    var normals = [
+      0, 0, 1,  0, 0, 1,  0, 0, 1,  0, 0, 1,
+      0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1,
+      0, 1, 0,  0, 1, 0,  0, 1, 0,  0, 1, 0,
+      0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0,
+      1, 0, 0,  1, 0, 0,  1, 0, 0,  1, 0, 0,
+      -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0
+    ];
+    var indices = [
+      0, 1, 2,      0, 2, 3,    // Front
+      4, 5, 6,      4, 6, 7,    // Back
+      8, 9, 10,     8, 10, 11,  // Top
+      12, 13, 14,   12, 14, 15, // Bottom
+      16, 17, 18,   16, 18, 19, // Right
+      20, 21, 22,   20, 22, 23  // Left
+    ];
+    return { position: positions, normal: normals, indices: indices };
+  }
+  
+  // Now create meshes (same logic as constructor)
+  var meshes = this.meshes;
   
   // 1. Detector
   var detDistance = data.distance * CM; // Center of shielding to Face of Detector (data.distance is in mm, convert to raw units?)
@@ -530,6 +715,13 @@ Shielding3DView = function(id, data) {
       overlay.innerHTML = html;
       container.appendChild(overlay);
   }
+  
+  // Update camera target based on new data
+  var detDistance = data.distance * MM;
+  this.camTarget = [0, 0, detDistance/2];
+  this.camRadius = detDistance * 1.5 + 10 * INCH;
+  if (this.camRadius < 100) this.camRadius = 100;
+};
 
   // --- Camera & Interaction ---
   // Initial zoom to show shielding and detector.
