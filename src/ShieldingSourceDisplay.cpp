@@ -8790,7 +8790,7 @@ void ShieldingSourceDisplay::showShieldSourceDiagram()
   std::vector<ShieldingSourceFitCalc::IsoFitStruct> sources = m_sourceModel->underlyingData();
   const GeometryType geom_type = geometry();
   
-  SimpleDialog *dialog = createShieldingDiagram( shieldings, sources, geom_type, distance, detDiameter );
+  ShieldingDiagramDialog *dialog = ShieldingDiagramDialog::createShieldingDiagram( shieldings, sources, geom_type, distance, detDiameter );
 }
 
 

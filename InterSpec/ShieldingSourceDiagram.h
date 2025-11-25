@@ -32,17 +32,57 @@
 
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/ShieldingSourceFitCalc.h"
+#include "InterSpec/SimpleDialog.h"
 
-class SimpleDialog;
+namespace Wt
+{
+  class WComboBox;
+  class WGridLayout;
+}
 
-// Create a dialog with 2D/3D view switcher
-SimpleDialog *createShieldingDiagram(
+// Forward declarations
+class Shielding2DView;
+class Shielding3DView;
+
+// Dialog class for displaying shielding diagrams with 2D/3D view switching
+class ShieldingDiagramDialog : public SimpleDialog
+{
+public:
+  // Static factory method to create a dialog with 2D/3D view switcher
+  static ShieldingDiagramDialog *createShieldingDiagram(
                                      const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
                                      const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &sources,
                                      GammaInteractionCalc::GeometryType geometry,
                                      double detectorDistance,
                                      double detectorDiameter
                                      );
+  
+  // Switch between 2D and 3D views
+  void switchView( bool show3D );
+  
+private:
+  // Private constructor - use createShieldingDiagram() instead
+  ShieldingDiagramDialog(
+                         const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
+                         const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &sources,
+                         GammaInteractionCalc::GeometryType geometry,
+                         double detectorDistance,
+                         double detectorDiameter
+                         );
+  
+  void handleViewTypeToggle();
+  
+  Shielding2DView *m_2DView;
+  Shielding3DView *m_3DView;
+  Wt::WComboBox *m_select;
+  Wt::WGridLayout *m_layout;
+  
+  std::vector<ShieldingSourceFitCalc::ShieldingInfo> m_shieldings;
+  std::vector<ShieldingSourceFitCalc::IsoFitStruct> m_sources;
+  GammaInteractionCalc::GeometryType m_geometry;
+  double m_detectorDistance;
+  double m_detectorDiameter;
+};
 
 // Create JSON representation of shielding data
 std::string createShieldingDiagramJson(
