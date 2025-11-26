@@ -291,13 +291,7 @@ struct LlmInteraction
   
   Type type;
   AgentType agent_type;
-  
-  /** The initial request JSON, as a string, as sent to the LLM. */
-  std::string initialRequestContent;
-  
-  /** The initial question/command from the user (or system) that kicked this conversation off. */
-  std::string content;
-  
+
   /** The time this conversation was started. */
   std::chrono::system_clock::time_point timestamp;
   
@@ -314,7 +308,11 @@ struct LlmInteraction
   std::optional<size_t> completionTokens;  // Tokens generated in the response
   std::optional<size_t> totalTokens;       // Total tokens used (prompt + completion)
   
-  // Nested follow-up responses (assistant responses, tool calls, tool results)
+  /** The conversation turns sent to, or recieved from the LLM.
+   
+   The first entry is the initial prompt sent to the LLM to start the conversation, with following entries being
+   assistant responses, tool calls, and tool results.
+   */
   std::vector<std::shared_ptr<LlmInteractionTurn>> responses;
 
   /** Function called when the conversation with the LLM has ended.
@@ -361,7 +359,7 @@ struct LlmInteraction
 
 private:
   LlmInteraction(Type t, AgentType a )
-  : type(t), agent_type(a), content(""), timestamp(std::chrono::system_clock::now()), conversationId{}
+  : type(t), agent_type(a), timestamp(std::chrono::system_clock::now()), conversationId{}
   {
   }
 

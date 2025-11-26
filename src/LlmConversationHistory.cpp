@@ -441,10 +441,6 @@ void LlmConversationHistory::toXml( const vector<shared_ptr<LlmInteraction>> &co
       XmlUtils::append_attrib(convNode, "finishTime", finishTimeStr );
     }
 
-    // Add content
-    if( !conv->content.empty() )
-      XmlUtils::append_string_node( convNode, "Content", conv->content );
-
     // Add responses
     rapidxml::xml_node<char> *responsesNode = nullptr; //Will create at first message
     for( const std::shared_ptr<LlmInteractionTurn> &response : conv->responses )
@@ -644,10 +640,6 @@ void LlmConversationHistory::fromXml( const rapidxml::xml_node<char> *node, std:
       conv->finishTime = std::nullopt;
     }
 
-    // Read content
-    if( rapidxml::xml_node<char> *contentNode = XML_FIRST_NODE(convNode,"Content") )
-      conv->content = SpecUtils::xml_value_str(contentNode);
-    
     // Read responses
     if( rapidxml::xml_node<char> *responsesNode = XML_FIRST_NODE(convNode, "Responses") )
     {

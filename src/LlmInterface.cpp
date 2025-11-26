@@ -131,7 +131,7 @@ shared_ptr<LlmInteraction> LlmInterface::sendUserMessage( const std::string &mes
       case LlmInteraction::Type::System: typeStr = "system"; break;
     }
 
-    // Get content from InitialRequest if available, fall back to legacy content field
+    // Get content from InitialRequest
     string contentPreview;
     if( !conv->responses.empty() && conv->responses.front()->type() == LlmInteractionTurn::Type::InitialRequest )
     {
@@ -139,8 +139,6 @@ shared_ptr<LlmInteraction> LlmInterface::sendUserMessage( const std::string &mes
       if( initialReq )
         contentPreview = initialReq->content();
     }
-    if( contentPreview.empty() )
-      contentPreview = conv->content;
 
     const string preview = contentPreview.length() > 50 ? contentPreview.substr(0, 50) + "..." : contentPreview;
     cout << "  " << i << ". " << typeStr << ": " << preview << " (responses: " << conv->responses.size() << ")" << endl;
@@ -153,10 +151,16 @@ shared_ptr<LlmInteraction> LlmInterface::sendUserMessage( const std::string &mes
   
   // Make tracked API call
   std::pair<int,std::string> request_id_content = makeTrackedApiCall( requestJson, convo );
-  
+
   cout << "Sent user message with request ID: " << request_id_content.first << endl;
-  
-  convo->initialRequestContent = std::move(request_id_content.second);
+
+  // Store raw JSON request in the InitialRequest turn's rawContent field
+  if( !convo->responses.empty() )
+  {
+    std::shared_ptr<LlmInteractionTurn> firstTurn = convo->responses.front();
+    if( firstTurn && firstTurn->type() == LlmInteractionTurn::Type::InitialRequest )
+      firstTurn->setRawContent( std::move(request_id_content.second) );
+  }
   
   convo->conversationFinished.connect( boost::bind( &LlmInterface::emitConversationFinished, this) );
   
@@ -178,8 +182,14 @@ void LlmInterface::sendSystemMessage( const std::string &message )
   // Make tracked API call
   std::pair<int,std::string> request_id_content = makeTrackedApiCall( requestJson, convo );
   cout << "Sent system message with request ID: " << request_id_content.first << endl;
-  
-  convo->initialRequestContent = std::move(request_id_content.second);
+
+  // Store raw JSON request in the InitialRequest turn's rawContent field
+  if( !convo->responses.empty() )
+  {
+    std::shared_ptr<LlmInteractionTurn> firstTurn = convo->responses.front();
+    if( firstTurn && firstTurn->type() == LlmInteractionTurn::Type::InitialRequest )
+      firstTurn->setRawContent( std::move(request_id_content.second) );
+  }
   
   convo->conversationFinished.connect( boost::bind( &LlmInterface::emitConversationFinished, this) );
 }
@@ -1822,8 +1832,15 @@ int LlmInterface::invokeSubAgent( std::shared_ptr<LlmInteraction> sub_agent_conv
 
   // Make the actual API call
   std::string msg_content = makeApiCallWithId(requestJson, requestId);
-  sub_agent_convo->initialRequestContent = std::move( msg_content );
-  
+
+  // Store raw JSON request in the InitialRequest turn's rawContent field
+  if( !sub_agent_convo->responses.empty() )
+  {
+    std::shared_ptr<LlmInteractionTurn> firstTurn = sub_agent_convo->responses.front();
+    if( firstTurn && firstTurn->type() == LlmInteractionTurn::Type::InitialRequest )
+      firstTurn->setRawContent( std::move( msg_content ) );
+  }
+
   return requestId;
 }//invokeSubAgent(...)
 

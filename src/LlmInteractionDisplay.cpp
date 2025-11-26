@@ -1186,10 +1186,6 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
     }
   }
 
-  // Fall back to interaction->content for backward compatibility with older saved conversations
-  if( questionContent.empty() )
-    questionContent = interaction->content;
-
   if( !questionContent.empty() )
   {
     WContainerWidget *questionDiv = new WContainerWidget( bodyContainer );
@@ -1469,10 +1465,6 @@ WString LlmInteractionDisplay::getTitleWithStatus() const
     }
   }
 
-  // Fall back to m_interaction->content for backward compatibility
-  if( questionContent.empty() )
-    questionContent = m_interaction->content;
-
   const string question = truncateString( questionContent, 60 );
   oss << question;
 
@@ -1609,7 +1601,14 @@ void LlmInteractionDisplay::createMenuIcon()
   // Add "Show Initial Request" option
   PopupDivMenuItem *showInitialRequest = menu->addMenuItem( "Show Initial Request" );
   showInitialRequest->triggered().connect( std::bind( [this]() {
-    const string &requestContent = m_interaction->initialRequestContent;
+    string requestContent;
+    if( !m_interaction->responses.empty() )
+    {
+      const std::shared_ptr<LlmInteractionTurn> &firstTurn = m_interaction->responses.front();
+      if( firstTurn && firstTurn->type() == LlmInteractionTurn::Type::InitialRequest )
+        requestContent = firstTurn->rawContent();
+    }
+
     if( requestContent.empty() )
     {
       showJsonDialog( "Initial Request", "{\"note\": \"Initial request content not available\"}", false );
