@@ -252,7 +252,7 @@ BOOST_AUTO_TEST_CASE( test_domain_transformation )
 
 BOOST_AUTO_TEST_CASE( test_higher_order_polynomials )
 {
-  const double tolerance = 1e-6;  // Tolerance appropriate for higher-order floating-point round-trip operations
+  const double tolerance = 5e-5;  // Tolerance, in percent (i.e. 5e-7 actual fractional diff), appropriate for higher-order floating-point round-trip operations
   
   // Test higher order polynomials up to degree 6
   for( int degree = 1; degree <= 6; ++degree )

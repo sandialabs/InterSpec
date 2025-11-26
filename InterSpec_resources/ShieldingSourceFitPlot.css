@@ -1,0 +1,85 @@
+/*
+CSS variables InterSpec will define for colors:
+--d3spec-axis-color
+--d3spec-text-color
+--d3spec-background-color
+--d3spec-chart-area-color
+*/
+
+.ShieldingSourceFitPlot {
+}
+
+.ShieldingSourceFitPlot > svg {
+  background: var(--d3spec-background-color, none);
+}
+
+.ShieldingSourceFitPlot .chartarea {
+  background: var(--d3spec-chart-area-color, white);
+}
+
+.ShieldingSourceFitPlot .xaxistitle {
+  fill: var(--d3spec-text-color, black);
+  font-size: 14px;
+}
+
+.ShieldingSourceFitPlot .yaxistitle {
+  fill: var(--d3spec-text-color, black);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.ShieldingSourceFitPlot .xAxis path.domain,
+.ShieldingSourceFitPlot .yAxis path.domain,
+.ShieldingSourceFitPlot .xAxisMinor path.domain {
+  fill: none;
+  stroke: var(--d3spec-axis-color, grey);
+}
+
+.ShieldingSourceFitPlot .xAxis .tick line,
+.ShieldingSourceFitPlot .yAxis .tick line,
+.ShieldingSourceFitPlot .xAxisMinor .tick line {
+  fill: none;
+  stroke: var(--d3spec-axis-color, grey);
+  stroke-width: 1px;
+  shape-rendering: crispEdges;
+}
+
+.ShieldingSourceFitPlot .xAxis text,
+.ShieldingSourceFitPlot .yAxis text {
+  fill: var(--d3spec-text-color, black);
+}
+
+.ShieldingSourceFitPlot circle {
+  cursor: pointer;
+}
+
+.ShieldingSourceFitPlot .yaxisarea {
+  cursor: pointer;
+}
+
+.ShieldingSourceFitPlot .errorbar {
+  fill: none;
+  stroke-width: 1;
+}
+
+.ShieldingSourceFitPlot .refline {
+  stroke: grey;
+  stroke-width: 1;
+  stroke-dasharray: 5,5;
+  fill: none;
+}
+
+.ShieldingSourceFitPlot .devtext {
+  fill: var(--d3spec-text-color, black);
+}
+
+div.ShieldingSourceFitPlotTooltip {
+  position: fixed;
+  padding: 6px;
+  font: 12px sans-serif;
+  background: #ffffcc;
+  border: 0px;
+  border-radius: 8px;
+  pointer-events: none;
+  color: #444422;
+}

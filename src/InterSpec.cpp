@@ -1691,7 +1691,7 @@ void InterSpec::initDragNDrop()
   doJavaScript( "$('.Wt-domRoot').data('SecondUpUrl','" +
                m_fileManager->secondForegroundDragNDrop()->url() + "');" );
   
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_GUI_TOOLS )
   doJavaScript( "$('.Wt-domRoot').data('BatchUploadEnabled', true);" );
   doJavaScript( "$('.Wt-domRoot').data('BatchUpUrl','" +
                m_fileManager->batchDragNDrop()->url() + "');" );
@@ -1899,6 +1899,11 @@ std::shared_ptr<const PeakDef> InterSpec::nearestPeak( const double energy ) con
       nearPeak = peak;
     }//if( dE < minDE )
   }//for( int row = 0; row < nrow; ++row )
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = m_peakModel->peaks();
+  assert( !nearPeak || !peaks || (std::find(begin(*peaks), end(*peaks), nearPeak) != end(*peaks)) );
+#endif
 
   return nearPeak;
 }//std::shared_ptr<const PeakDef> nearestPeak() const

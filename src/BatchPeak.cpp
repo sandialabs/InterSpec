@@ -379,7 +379,8 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
   const vector<pair<string,string>> spec_chart_js_and_css = BatchInfoLog::load_spectrum_chart_js_and_css();
   
   // Load report templates, and setup inja::environment
-  inja::Environment env = BatchInfoLog::get_default_inja_env( options );
+  const string tmplt_dir = BatchInfoLog::template_include_dir( options );
+  inja::Environment env = BatchInfoLog::get_default_inja_env( tmplt_dir );
   
   
   nlohmann::json summary_json;
@@ -1376,7 +1377,7 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
       if( options.refit_energy_cal )
       {
         // We will refit the energy calibration - maybe a few times - to really hone in on things
-        for( size_t i = 0; i < 5; ++i )
+        for( size_t i = 0; i < 4; ++i )
         {
           vector<PeakDef> energy_cal_peaks = candidate_peaks;
           for( auto &peak : energy_cal_peaks )
@@ -1389,6 +1390,7 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
           vector<PeakDef> peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
                                                   stat_threshold, hypothesis_threshold,
                                                   energy_cal_peaks, spec, {}, isRefit );
+
           try
           {
             fit_energy_cal_from_fit_peaks( spec, peaks );
@@ -1425,13 +1427,20 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
                                                   stat_threshold, hypothesis_threshold,
                                                   candidate_peaks, spec, {}, isRefit );
 
-      // Could re-fit the peaks again...
+#if( !USE_LM_PEAK_FIT )
+      // will re-fit the peaks again to make sure have the best solution.
+      //  Note: the Ceres/LM-based fitting does not need this - it seems to always fit the best solution on first try
       for( size_t i = 0; i < 3; ++i )
       {
+        const vector<PeakDef> prev_peaks = fit_peaks;
         fit_peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
                                     stat_threshold, hypothesis_threshold,
                                     fit_peaks, spec, {}, true );
+
+        if( fit_peaks.size() != prev_peaks.size() )
+          fit_peaks = prev_peaks;
       }
+#endif // !USE_LM_PEAK_FIT
 
       //cout << "Fit for the following " << fit_peaks.size() << " peaks (the exemplar file had "
       //<< starting_peaks.size() <<  ") from the raw spectrum:"
@@ -1448,10 +1457,32 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
           const double exemplar_mean = exemplar->mean();
 
           const double energy_diff = fabs( fit_mean - exemplar_mean );
-          // We will require the fit peak to be within 0.5 FWHM (arbitrarily chosen distance)
+
+          // Calculate the overlap fraction of the ROI
+          auto overlap_frac_fcn = []( const shared_ptr<const PeakDef> &peak_1, const PeakDef &p_2 ) -> double {
+            const double overlapLow = std::max(peak_1->lowerX(), p_2.lowerX());
+            const double overlapHigh = std::min(peak_1->upperX(), p_2.upperX() );
+            const double intersection = std::max(0.0, overlapHigh - overlapLow);
+            if( intersection <= 0.0 )
+              return 0.0;
+            const double length1 = peak_1->upperX() - peak_1->lowerX();
+            const double length2 = p_2.upperX() - p_2.lowerX();
+            const double unionLength = length1 + length2 - intersection;
+            if( unionLength <= 0.0 )
+              return unionLength;
+            return intersection / unionLength;
+          };
+
+          const double overlap_frac = overlap_frac_fcn( exemplar, p );
+
+          // We will require the fit peak to be within 1.5 FWHM (arbitrarily chosen distance)
           //  of the exemplar peak, and we will use the exemplar peak closest in energy to the
           //  fit peak
-          if( ((energy_diff < 0.5*p.fwhm()) || (energy_diff < 0.5*exemplar->fwhm()))
+          const double fwhm_match_multiple = 1.5;
+          const double min_overlap_frac = 0.75; //arbitrary
+          if( ((energy_diff < fwhm_match_multiple*p.fwhm())
+               || (energy_diff < fwhm_match_multiple*exemplar->fwhm())
+               || (overlap_frac > min_overlap_frac) )
              && (!exemplar_parent || (energy_diff < fabs(exemplar_parent->mean() - fit_mean))) )
           {
             exemplar_parent = exemplar;

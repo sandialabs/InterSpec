@@ -391,7 +391,7 @@ public:
   FileDragUploadResource *foregroundDragNDrop();
   FileDragUploadResource *secondForegroundDragNDrop();
   FileDragUploadResource *backgroundDragNDrop();
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_GUI_TOOLS )
   FileDragUploadResource *batchDragNDrop();
 #endif
 
@@ -438,7 +438,7 @@ public:
                        SimpleDialog *dialog,
                        Wt::WApplication *app );
 
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_GUI_TOOLS )
   void showBatchDialog();
   void handleBatchDialogFinished();
 #endif
@@ -525,7 +525,7 @@ protected:
   FileDragUploadResource *m_foregroundDragNDrop;
   FileDragUploadResource *m_secondForegroundDragNDrop;
   FileDragUploadResource *m_backgroundDragNDrop;
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_GUI_TOOLS )
   FileDragUploadResource *m_batchDragNDrop;
 #endif
   
@@ -559,7 +559,7 @@ protected:
   /** Dialog created when a non-spectrum file is dropped on the app. */
   SimpleDialog *m_nonSpecFileDialog;
 
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_GUI_TOOLS )
   /** Dialog created when a batch of files is dropped on the app. */
   BatchGuiDialog *m_batchDialog;
 #endif

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- This file applies to InjaLogDialog.cpp - a reusable dialog for displaying inja-rendered content -->
+  <message id="ild-no-templates">لم يتم توفير قوالب.</message>
+  <message id="ild-json-parse-error">
+    <p>خطأ في تحليل بيانات JSON:</p>
+    <code>{1}</code>
+  </message>
+  <message id="ild-inja-error">
+    <p>خطأ في عرض القالب:</p>
+    <code>{1}</code>
+    <br />
+    في السطر {2}، العمود {3}
+  </message>
+  <message id="ild-misc-error">
+    <p>خطأ في عرض المحتوى:</p>
+    <code>{1}</code>
+  </message>
+</messages>

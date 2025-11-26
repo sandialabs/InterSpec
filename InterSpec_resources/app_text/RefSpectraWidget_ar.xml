@@ -4,6 +4,8 @@
   <message id="rs-dialog-title">الأطياف المرجعية</message>
   <message id="rs-show-foreground">إظهار المقدمة</message>
   <message id="rs-show-background">الخلفية</message>
+  <message id="rs-load-background">تحميل الخلفية</message>
+  <message id="rs-load-background-portrait">+الخلفية</message>
   <message id="rs-tt-add-dir-btn">إضافة دليل لفتح الأطياف المرجعية منه.</message>
   <message id="rs-tt-delete-dir-btn">يزيل الدليل المختار حاليًا من قائمة الأماكن لإظهار الأطياف المرجعية منها.</message>
   <message id="rs-no-dir-selected-desktop">
