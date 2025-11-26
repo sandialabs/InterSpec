@@ -4,6 +4,8 @@
   <message id="rs-dialog-title">参照スペクトル</message>
   <message id="rs-show-foreground">フォアグラウンド表示</message>
   <message id="rs-show-background">バックグラウンド</message>
+  <message id="rs-load-background">バックグラウンドを読み込む</message>
+  <message id="rs-load-background-portrait">+バックグラウンド</message>
   <message id="rs-tt-add-dir-btn">参照スペクトルを開くディレクトリを追加。</message>
   <message id="rs-tt-delete-dir-btn">参照スペクトルを表示する場所のリストから現在選択されているディレクトリを削除。</message>
   <message id="rs-no-dir-selected-desktop">

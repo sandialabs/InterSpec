@@ -122,6 +122,8 @@
     Подгонка не выполнена (не удалось создать Chi2Fcn).
   </message>
   <message id="ssd-error-create-tool">Ошибка создания дисплея подгонки активность/экранирование: {1}</message>
+  <message id="ssd-shield-source-diagram">Диаграмма Экранирование/Источник</message>
+  <message id="ssd-show-model-diagram">Показать диаграмму модели</message>
 
   <!-- SourceFitModel quantities -->
   <message id="sfm-tt-header-isotope">Нуклиды добавляются или удаляются в соответствии с фотопиками, используемыми для этой подгонки, поэтому не могут редактироваться в этой таблице</message>

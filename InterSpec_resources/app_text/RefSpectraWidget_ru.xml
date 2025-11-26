@@ -4,6 +4,8 @@
   <message id="rs-dialog-title">Референсные спектры</message>
   <message id="rs-show-foreground">Показать передний план</message>
   <message id="rs-show-background">Фон</message>
+  <message id="rs-load-background">Загрузить фон</message>
+  <message id="rs-load-background-portrait">+Фон</message>
   <message id="rs-tt-add-dir-btn">Добавить каталог для открытия референсных спектров.</message>
   <message id="rs-tt-delete-dir-btn">Удаляет текущий выбранный каталог из списка мест для показа референсных спектров.</message>
   <message id="rs-no-dir-selected-desktop">

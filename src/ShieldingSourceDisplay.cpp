@@ -84,8 +84,9 @@
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/BatchInfoLog.h"
-#include "InterSpec/InjaLogDialog.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/SimpleDialog.h"
+#include "InterSpec/InjaLogDialog.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
@@ -104,6 +105,7 @@
 #include "InterSpec/IsotopeSelectionAids.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
+#include "InterSpec/ShieldingSourceDiagram.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
 
 using namespace Wt;
@@ -2368,6 +2370,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     m_multithread_computation( true ),
     m_showLog( nullptr ),
     m_logDiv( nullptr ),
+    m_diagramDialog( nullptr ),
     m_calcLog{},
     m_peakCalcLogInfo{},
     m_modelUploadWindow( nullptr ),
@@ -2580,6 +2583,9 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_showLog->disable();
 
   PopupDivMenuItem *item = NULL;
+  item = m_addItemMenu->addMenuItem( WString::tr("ssd-show-model-diagram") );
+  item->triggered().connect( this, &ShieldingSourceDisplay::showShieldSourceDiagram );
+
 //  PopupDivMenuItem *item = m_addItemMenu->addMenuItem( "Test Serialization" );
 //  item->triggered().connect( this, &ShieldingSourceDisplay::testSerialization );
 
@@ -3076,6 +3082,10 @@ ShieldingSourceDisplay::~ShieldingSourceDisplay() noexcept(true)
     delete m_addItemMenu;
     m_addItemMenu = NULL;
   }//if( m_addItemMenu )
+  
+  if( m_diagramDialog )
+    delete m_diagramDialog;
+  m_diagramDialog = nullptr;
   
   closeModelUploadWindow();
 #if( USE_DB_TO_STORE_SPECTRA )
@@ -5495,6 +5505,72 @@ void ShieldingSourceDisplay::showCalcLog()
         return result;
       }
     ) );
+
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
+    const string tmplts_dir = SpecUtils::append_path( InterSpec::writableDataDirectory(), "act_shield_fit_templates" );
+
+    if( !tmplts_dir.empty() && SpecUtils::is_directory(tmplts_dir) )
+    {
+      // Inja assumes trailing path seperator.
+#if( defined(_WIN32) )
+      const char path_sep = '\\';
+#else
+      const char path_sep = '/';
+#endif
+      const string tmplts_dir_inja = (tmplts_dir[tmplts_dir.size()-1] == path_sep) ? tmplts_dir : (tmplts_dir + path_sep);
+
+      const vector<string> potential_tmplts = SpecUtils::ls_files_in_directory( tmplts_dir );
+      for( const string tmplt_path : potential_tmplts )
+      {
+        const string filename = SpecUtils::filename(tmplt_path);
+
+        if( !SpecUtils::icontains(filename, "tmplt.")
+           && !SpecUtils::icontains(filename, "template.")
+           && !SpecUtils::icontains(filename, "inja.") )
+        {
+          continue;
+        }
+
+        string outname = filename;
+        string tmplt_ext = SpecUtils::file_extension(filename);
+
+        size_t pos = SpecUtils::ifind_substr_ascii(outname, "tmplt");
+        if( pos == string::npos )
+          pos = SpecUtils::ifind_substr_ascii(outname, "template");
+        if( pos != string::npos )
+          outname = outname.substr(0, pos);
+
+        while( !outname.empty()
+              && (SpecUtils::iends_with(outname, "_")
+                  || SpecUtils::iends_with(outname, ".")
+                  || SpecUtils::iends_with(outname, "-")) )
+        {
+          outname = outname.substr(0, outname.size() - 1);
+        }
+
+        if( tmplt_ext.empty()
+           || SpecUtils::iequals_ascii(tmplt_ext, "tmplt" )
+           || SpecUtils::iequals_ascii(tmplt_ext, "template" ) )
+          tmplt_ext = SpecUtils::file_extension(outname);
+
+        if( tmplt_ext.empty() )
+          tmplt_ext = ".txt";
+
+        outname += tmplt_ext;
+
+        InjaLogDialog::LogType rpt_type = InjaLogDialog::LogType::Text;
+        if( SpecUtils::icontains(tmplt_ext, "html") )
+          rpt_type = InjaLogDialog::LogType::Html;
+
+        templates.push_back( make_tuple( WString::fromUTF8(outname), "_" + outname, rpt_type,
+                                        [filename,tmplts_dir_inja]( inja::Environment &dummy_env, const nlohmann::json &data ) -> string {
+          inja::Environment env = BatchInfoLog::get_default_inja_env( tmplts_dir_inja );
+          return env.render_file( filename, data );
+        }
+                                        ) );
+      }//for( const string tmplt_path : potential_tmplts )
+    }//if( SpecUtils::is_directory(tmplts_dir) )
+#endif
 
     // Create and show the dialog, store in m_logDiv
     m_logDiv = new InjaLogDialog( WString::tr( "ssd-calc-log-html-title" ), data, templates );
@@ -8690,6 +8766,109 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
     calcLog.push_back( "There was an error and log may not be complete." );
   }
 }//updateCalcLogWithFitResults(...)
+
+
+void ShieldingSourceDisplay::showShieldSourceDiagram()
+{
+  std::vector<ShieldingSourceFitCalc::ShieldingInfo> shieldings;
+  
+  for( WWidget *widget : m_shieldingSelects->children() )
+  {
+    ShieldingSelect *select = dynamic_cast<ShieldingSelect *>( widget );
+    if( select )
+      shieldings.push_back( select->toShieldingInfo() );
+  }
+
+  string distanceStr = m_distanceEdit->text().toUTF8();
+  double distance = 100.0 * PhysicalUnits::cm; // Default
+  try {
+     distance = PhysicalUnits::stringToDistance( distanceStr );
+  } catch(...) {
+     // Ignore, use default or what was parsed.
+  }
+  
+  std::shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
+  double detDiameter = 3.0 * 2.54 * PhysicalUnits::cm; // Default 3 inches
+  if( det && det->detectorDiameter() > 0.0 )
+    detDiameter = det->detectorDiameter();
+
+  std::vector<ShieldingSourceFitCalc::IsoFitStruct> sources = m_sourceModel->underlyingData();
+  const GeometryType geom_type = geometry();
+  
+  if( m_diagramDialog )
+  {
+    // Dialog already exists, update its data and show it
+    m_diagramDialog->updateData( shieldings, sources, geom_type, distance, detDiameter );
+    m_diagramDialog->show();
+    return;
+  }
+  
+  m_diagramDialog = ShieldingDiagramDialog::createShieldingDiagram( shieldings, sources, geom_type, distance, detDiameter );
+  
+  //m_diagramDialog->destroyed().connect( std::bind([dialog_ptr]( Wt::WObject * ){
+  //  InterSpec *viewer = InterSpec::instance();
+  //  ShieldingSourceDisplay *shieldSourceFit = viewer ? viewer->shieldingSourceFit() : nullptr;
+  //  if( shieldSourceFit && shieldSourceFit->m_diagramDialog == dialog_ptr )
+  //    shieldSourceFit->m_diagramDialog = nullptr;
+  //}, std::placeholders::_1 ) );
+  
+  m_diagramDialog->finished().connect( this, &ShieldingSourceDisplay::handleShieldSourceDiagramClosed );
+  
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    auto undo = [](){
+      ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
+      if( shieldSourceFit )
+        shieldSourceFit->closeShieldSourceDiagram();
+    };
+
+    auto redo = [](){
+      ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
+      if( shieldSourceFit )
+        shieldSourceFit->showShieldSourceDiagram();
+    };
+
+    undoRedo->addUndoRedoStep( undo, redo, "Show shielding diagram." );
+  }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
+}//void showShieldSourceDiagram()
+
+
+void ShieldingSourceDisplay::handleShieldSourceDiagramClosed()
+{
+  m_diagramDialog = nullptr;
+  
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( !undoRedo || !undoRedo->canAddUndoRedoNow() )
+    return;
+  
+  auto undo = [](){
+    ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
+    if( shieldSourceFit )
+      shieldSourceFit->showShieldSourceDiagram();
+  };
+  
+  auto redo = [](){
+    ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
+    if( shieldSourceFit )
+      shieldSourceFit->closeShieldSourceDiagram();
+  };
+  
+  undoRedo->addUndoRedoStep( undo, redo, "Close shielding diagram." );
+}//void handleShieldSourceDiagramClosed();
+
+
+void ShieldingSourceDisplay::closeShieldSourceDiagram()
+{
+  if( !m_diagramDialog )
+    return;
+
+  // Delete the ShieldingDiagramDialog (it's a SimpleDialog, which is a WDialog subclass)
+  m_diagramDialog->accept();
+  assert( !m_diagramDialog );
+  m_diagramDialog = nullptr;
+}//void closeShieldSourceDiagram()
+
 
 
 
