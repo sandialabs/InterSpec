@@ -68,8 +68,9 @@ LlmToolGui::LlmToolGui(InterSpec *viewer, WContainerWidget *parent)
   {
     m_llmInterface = std::make_unique<LlmInterface>(m_viewer, config);
     
-    // Connect to LLM interface response signal
-    m_llmInterface->responseReceived().connect(this, &LlmToolGui::handleResponseReceived);
+    // Connect to LLM interface response signals
+    m_llmInterface->conversationFinished().connect(this, &LlmToolGui::handleConversationFinished);
+    m_llmInterface->responseError().connect(this, &LlmToolGui::handleResponseError);
 
     // Connect to spectrum change signal to cancel pending requests when foreground spectrum changes
     m_viewer->displayedSpectrumChanged().connect(this, &LlmToolGui::handleSpectrumChanged);
@@ -246,12 +247,7 @@ void LlmToolGui::sendMessage(const std::string& message)
       // Create display widget for this interaction
       LlmInteractionDisplay *interactionDisplay =
       new LlmInteractionDisplay( convo, 0, m_conversationContainer );
-      
-      // Set retry callback
-      interactionDisplay->setRetryCallback( [this](shared_ptr<LlmInteraction> interaction) {
-        handleRetry( interaction );
-      });
-      
+
       // Scroll to bottom
       const string js = "setTimeout(function() {"
       "  var scrollArea = " + m_conversationContainer->jsRef() + ".parentElement;"
@@ -276,9 +272,8 @@ void LlmToolGui::sendMessage(const std::string& message)
     std::ofstream output_request_json( debug_name.c_str(), ios::binary | ios::out);
 #endif
     output_request_json << message;
-#endif
-    
     cerr << "Wrote request string to '" << debug_name << "'" << endl;
+#endif
     
     // Re-enable input on error
     setInputEnabled(true);
@@ -292,27 +287,207 @@ void LlmToolGui::sendMessage(const std::string& message)
   }
 }
 
+/*
 void LlmToolGui::handleRetry( shared_ptr<LlmInteraction> interaction )
 {
   if( !interaction || !m_llmInterface )
     return;
 
-  // TODO: Implement retry logic
-  // This needs to:
-  // 1. Trim the conversation back to the error point
-  // 2. Re-submit the message
-  // 3. Update the GUI accordingly
+  cout << "\n=== Retry requested for conversation: " << interaction->conversationId << " ===" << endl;
 
-  cout << "Retry requested for interaction - not yet implemented" << endl;
+  // Validate the conversation has an error as the last response
+  if( interaction->responses.empty() )
+  {
+    cerr << "Cannot retry - conversation has no responses" << endl;
+    return;
+  }
+
+  std::shared_ptr<LlmInteractionTurn> lastResponse = interaction->responses.back();
+  if( lastResponse->type() != LlmInteractionTurn::Type::Error )
+  {
+    cerr << "Cannot retry - last response is not an error (type: "
+         << static_cast<int>(lastResponse->type()) << ")" << endl;
+    return;
+  }
+
+  std::shared_ptr<LlmInteractionError> error =
+    std::dynamic_pointer_cast<LlmInteractionError>( lastResponse );
+
+  if( !error )
+  {
+    cerr << "Cannot retry - failed to cast to LlmInteractionError" << endl;
+    return;
+  }
+
+  cout << "Retrying error (type: " << static_cast<int>(error->errorType()) << ")" << endl;
+
+  // Remove the error from conversation history
+  // This allows the conversation to continue as if the error never happened
+  interaction->responses.pop_back();
+
+  // Determine what to retry by looking at second-to-last response
+  // (since we just removed the error)
+
+  if( interaction->responses.empty() )
+  {
+    // The error was the only response - retry the initial user message
+    cout << "Retrying initial user message: " << interaction->content.substr(0, 50) << "..." << endl;
+
+    // Disable input during retry
+    setInputEnabled( false );
+    m_isRequestPending = true;
+
+    // Rebuild and send the request
+    try
+    {
+      // Build API request with the conversation history (which now excludes the error)
+      const nlohmann::json requestJson = m_llmInterface->buildMessagesArray( interaction );
+
+      // Make tracked API call
+      std::pair<int,std::string> request_id_content =
+        m_llmInterface->makeTrackedApiCall( requestJson, interaction );
+
+      cout << "Retry request sent with ID: " << request_id_content.first << endl;
+    }
+    catch( const std::exception &e )
+    {
+      cerr << "Error retrying request: " << e.what() << endl;
+
+      // Re-add error so user can see what happened
+      interaction->responses.push_back( error );
+
+      // Re-enable input
+      setInputEnabled( true );
+      m_isRequestPending = false;
+    }
+  }
+  else
+  {
+    // There were responses before the error - check what they were
+    std::shared_ptr<LlmInteractionTurn> lastNonErrorResponse = interaction->responses.back();
+
+    if( lastNonErrorResponse->type() == LlmInteractionTurn::Type::ToolResult )
+    {
+      // The error happened after tool results were sent
+      // Retry by re-sending tool results to LLM
+      cout << "Retrying after tool results" << endl;
+
+      // Disable input during retry
+      setInputEnabled( false );
+      m_isRequestPending = true;
+
+      try
+      {
+        const int requestId = m_llmInterface->sendToolResultsToLLM( interaction );
+        cout << "Retry request sent with ID: " << requestId << endl;
+      }
+      catch( const std::exception &e )
+      {
+        cerr << "Error retrying tool results: " << e.what() << endl;
+
+        // Re-add error
+        interaction->responses.push_back( error );
+
+        // Re-enable input
+        setInputEnabled( true );
+        m_isRequestPending = false;
+      }
+    }
+    else if( lastNonErrorResponse->type() == LlmInteractionTurn::Type::AutoReply )
+    {
+      // The error happened after an auto-reply
+      // Retry by re-sending the request with auto-reply
+      cout << "Retrying after auto-reply" << endl;
+
+      // Disable input during retry
+      setInputEnabled( false );
+      m_isRequestPending = true;
+
+      try
+      {
+        // Build API request with conversation including auto-reply
+        const nlohmann::json requestJson = m_llmInterface->buildMessagesArray( interaction );
+
+        // Make tracked API call
+        std::pair<int,std::string> request_id_content =
+          m_llmInterface->makeTrackedApiCall( requestJson, interaction );
+
+        cout << "Retry request sent with ID: " << request_id_content.first << endl;
+      }
+      catch( const std::exception &e )
+      {
+        cerr << "Error retrying request: " << e.what() << endl;
+
+        // Re-add error
+        interaction->responses.push_back( error );
+
+        // Re-enable input
+        setInputEnabled( true );
+        m_isRequestPending = false;
+      }
+    }
+    else
+    {
+      // Unexpected state - generic retry
+      cerr << "Warning: unexpected conversation state for retry (last response type: "
+           << static_cast<int>(lastNonErrorResponse->type()) << ")" << endl;
+
+      // Disable input during retry
+      setInputEnabled( false );
+      m_isRequestPending = true;
+
+      try
+      {
+        // Build API request with current conversation state
+        const nlohmann::json requestJson = m_llmInterface->buildMessagesArray( interaction );
+
+        // Make tracked API call
+        std::pair<int,std::string> request_id_content =
+          m_llmInterface->makeTrackedApiCall( requestJson, interaction );
+
+        cout << "Retry request sent with ID: " << request_id_content.first << endl;
+      }
+      catch( const std::exception &e )
+      {
+        cerr << "Error retrying request: " << e.what() << endl;
+
+        // Re-add error
+        interaction->responses.push_back( error );
+
+        // Re-enable input
+        setInputEnabled( true );
+        m_isRequestPending = false;
+      }
+    }
+  }
+
+  cout << "=== Retry handling complete ===" << endl;
+}
+*/
+
+
+void LlmToolGui::handleConversationFinished()
+{
+  // Re-enable input when we receive a successful response
+  // (errors are handled by handleResponseError() which keeps input disabled)
+  m_isRequestPending = false;
+  cout << "Conversation finished, re-enabling input" << endl;
+
+  setInputEnabled( true );
+  
+  // The display is automatically updated via signals in LlmInteractionDisplay
+  // No need to manually refresh
 }
 
-void LlmToolGui::handleResponseReceived()
+void LlmToolGui::handleResponseError()
 {
-  // Re-enable input when we receive a response
-  if (m_isRequestPending) {
-    cout << "Response received, re-enabling input" << endl;
-    setInputEnabled(true);
+  // Keep input disabled when we receive an error response
+  // User must click "Retry" or "Continue Anyway" to proceed
+  if( m_isRequestPending )
+  {
     m_isRequestPending = false;
+    cout << "Error response received, keeping input disabled" << endl;
+    // Input stays disabled - user must use retry/continue buttons
   }
 
   // The display is automatically updated via signals in LlmInteractionDisplay
@@ -456,18 +631,13 @@ void LlmToolGui::setConversationHistory(const std::shared_ptr<std::vector<std::s
   {
     // Clear current history and add conversations from saved history
     llmHistory->clear();
-    for( const auto& conv : *history )
+    for( const std::shared_ptr<LlmInteraction> &conv : *history )
     {
       llmHistory->getConversations().push_back(conv);
 
       // Create display widget for this interaction
       LlmInteractionDisplay *interactionDisplay =
         new LlmInteractionDisplay( conv, 0, m_conversationContainer );
-
-      // Set retry callback
-      interactionDisplay->setRetryCallback( [this](shared_ptr<LlmInteraction> interaction) {
-        handleRetry( interaction );
-      });
     }
   }else
   {

@@ -212,6 +212,13 @@ if( USE_LLM_INTERFACE )
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
   )
 
+  add_executable( test_LlmInterface test_LlmInterface.cpp )
+  target_link_libraries( test_LlmInterface PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TLlmInterface
+    COMMAND $<TARGET_FILE:test_LlmInterface> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
   add_executable( test_AnalystChecks test_AnalystChecks.cpp )
   target_link_libraries( test_AnalystChecks PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
   add_test( NAME TAnalystChecks

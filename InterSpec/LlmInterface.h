@@ -67,6 +67,9 @@ namespace LlmTools {
   class ToolRegistry;
 }
 
+class LlmToolRequest;
+class LlmToolResults;
+
 namespace Wt {
   class WResource;
 
@@ -84,7 +87,7 @@ namespace Wt {
  - Conversation history management  
  - Integration with InterSpec session
  */
-class LlmInterface
+class LlmInterface : public Wt::Signals::trackable
 {
 public:
   /** Construct LLM interface for the given InterSpec instance.
@@ -133,8 +136,11 @@ public:
   bool isConfigured() const;
   
   /** Signal emitted when a new response is received from the LLM */
-  Wt::Signal<>& responseReceived();
+  Wt::Signal<>& conversationFinished();
 
+  /** Signal emitted when an error response is received from the LLM */
+  Wt::Signal<>& responseError();
+  
   /** Check if a specific request ID is still pending */
   bool isRequestPending(int requestId) const;
 
@@ -144,18 +150,50 @@ public:
    */
   int invokeSubAgent( std::shared_ptr<LlmInteraction> sub_agent_convo );
 
+  /** Build the messages array for a conversation.
+
+   This is exposed publicly to support retry functionality from LlmToolGui.
+
+   @param convo The conversation to build messages for
+   @return JSON object ready to send to LLM API
+   */
+  nlohmann::json buildMessagesArray( const std::shared_ptr<LlmInteraction> &convo );
+
+  /** Make a tracked API call with the given JSON request.
+
+   This is exposed publicly to support retry functionality from LlmToolGui.
+
+   @param requestJson The JSON request to send
+   @param convo The conversation this request belongs to
+   @return Pair of (requestId, request content as string)
+   */
+  std::pair<int,std::string> makeTrackedApiCall( const nlohmann::json& requestJson,
+                         std::shared_ptr<LlmInteraction> convo );
+
+  /** Send tool results back to LLM for processing.
+
+   This is exposed publicly to support retry functionality from LlmToolGui.
+
+   @param convo The conversation to send tool results for
+   @return Request ID for the API call
+   */
+  int sendToolResultsToLLM( std::shared_ptr<LlmInteraction> convo );
+
 #ifdef USE_JS_BRIDGE_FOR_LLM
   /** JavaScript callback to handle LLM response */
   void handleJavaScriptResponse(std::string response, int requestId);
 #endif
 
 private:
+  void emitConversationFinished(){ conversationFinished().emit(); }
+  
   InterSpec* m_interspec;
   const std::shared_ptr<const LlmConfig> m_config;
   const std::shared_ptr<const LlmTools::ToolRegistry> m_tool_registry;
   std::shared_ptr<LlmConversationHistory> m_history;
   
-  Wt::Signal<> m_responseReceived; // Signal emitted when new responses are received
+  Wt::Signal<> m_conversationFinished; // Signal emitted when succesful final response from LLM is recieved.
+  Wt::Signal<> m_responseError;    // Signal emitted when error responses are received
   
 #ifdef USE_JS_BRIDGE_FOR_LLM
   std::unique_ptr<Wt::JSignal<std::string, int>> m_responseSignal; // For JavaScript bridge (response, requestId)
@@ -193,24 +231,11 @@ private:
   std::map<int, DeferredToolResult> m_deferredToolResults; // Key is sub-agent requestId
   
   /** Make an API call with request ID tracking
-   
+
    @returns The request body content (e.g., the JSON as a string).
    */
   std::string makeApiCallWithId(const nlohmann::json& requestJson, int requestId);
-  
-  /** Make an API call with request tracking
-   
-   Returns request ID (as an int) and the raw request body content (e.g., JSON sent to LLM, but as a string)
-   */
-  std::pair<int,std::string> makeTrackedApiCall( const nlohmann::json& requestJson,
-                         std::shared_ptr<LlmInteraction> convo );
-  
-  /** Send tool results back to LLM for processing.
-   
-   @returns The request ID.
-   */
-  int sendToolResultsToLLM( std::shared_ptr<LlmInteraction> convo );
-  
+
   /** Handle response from LLM API */
   void handleApiResponse( const std::string &response, const std::shared_ptr<LlmInteraction> &convo, const int requestId );
   
@@ -218,7 +243,8 @@ private:
    
    Returns the number of tool calls processed.
    */
-  size_t executeToolCallsAndSendResults( const nlohmann::json& toolCalls,
+  std::pair<std::shared_ptr<LlmToolRequest>, std::shared_ptr<LlmToolResults>>
+  executeToolCallsAndSendResults( const nlohmann::json& toolCalls,
                                          const std::shared_ptr<LlmInteraction> &convo,
                                          const int requestId,
                                          const std::string &rawResponseContent,
@@ -229,7 +255,8 @@ private:
    
    Returns the number of tool calls processed.
    */
-  size_t parseContentForToolCallsAndSendResults( const std::string &content,
+  std::pair<std::shared_ptr<LlmToolRequest>, std::shared_ptr<LlmToolResults>>
+  parseContentForToolCallsAndSendResults( const std::string &content,
                                                 const std::shared_ptr<LlmInteraction> &convo,
                                                 const int requestId,
                                                 const std::string &rawResponseContent );
@@ -239,19 +266,6 @@ private:
   
   /** Extract thinking content and clean content from LLM responses */
   static std::pair<std::string, std::string> extractThinkingAndContent(const std::string& content);
-  
-  /** Build the messages array for the API request including history and system prompt.
-   
-   Note: If you are starting a conversation with a user message - this would be `convo->content`.  If you are continuing a conversation, you should
-   have put the tool results into `convo->responses`.
-   
-   If you call this function for for a sub-agent (i.e., not MainAgent), then it will include only the history of `convo` and use the agent system prompt.
-   
-   If this function is being called for the MainAgent, will include entire chat history, up until and including `convo` (but nothing after it) in the returned JSON.
-   
-   @return JSON messages array for the API request
-   */
-  nlohmann::json buildMessagesArray( const std::shared_ptr<LlmInteraction> &convo );
 
   /** Get the system prompt for a specific agent from config
    */
@@ -273,5 +287,23 @@ private:
   void handleWtHttpClientResponse(boost::system::error_code err, const Wt::Http::Message& response);
 #endif
 };
+
+
+#if( PERFORM_DEVELOPER_CHECKS )
+// Test namespace to expose static functions for unit testing
+namespace LlmInterfaceTests
+{
+  /** Exposed for unit testing only - parse JSON with lenient error handling */
+  nlohmann::json lenientlyParseJson( const std::string &jsonStr );
+
+  /** Exposed for unit testing only - sanitize JSON string before parsing */
+  std::string sanitizeJsonString( const std::string &jsonStr );
+
+  /** Exposed for unit testing only - repair structurally incomplete JSON */
+  std::string repairIncompleteJson( const std::string &jsonStr,
+                                    std::string *repairLog = nullptr );
+}//namespace LlmInterfaceTests
+#endif
+
 
 #endif // LlmInterface_h 

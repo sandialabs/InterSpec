@@ -382,8 +382,11 @@ namespace AnalystChecks
       throw runtime_error( "Could not identify newly fit peak." );
     
     // get fit peak
+    string source = options.source.has_value() ? options.source.value() : ""s;
+    if( SpecUtils::icontains(source, "unknown") || SpecUtils::istarts_with(source, "unk") )
+      source = "";
     
-    if( options.source.has_value() && !options.source.value().empty() )
+    if( !source.empty() )
     {
       const string source = options.source.value();
       

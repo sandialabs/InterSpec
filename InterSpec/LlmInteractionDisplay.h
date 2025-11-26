@@ -173,15 +173,20 @@ public:
   /** Set the retry callback - called when user clicks retry button */
   void setRetryCallback( std::function<void()> callback );
 
+  /** Set the continue callback - called when user clicks "Continue Anyway" button */
+  void setContinueCallback( std::function<void()> callback );
+
 protected:
   virtual void createBodyContent() override;
   virtual Wt::WString getTitleText() const override;
 
   void handleRetry();
+  void handleContinueAnyway();
 
 private:
   std::shared_ptr<LlmInteractionError> m_error;
-  std::function<void()> m_retryCallback;
+  Wt::WPushButton *m_retryBtn;
+  Wt::WPushButton *m_continueBtn;
 };//class LlmInteractionErrorDisplay
 
 
@@ -203,9 +208,6 @@ public:
 
   /** Get the underlying interaction data */
   std::shared_ptr<LlmInteraction> interaction() const;
-
-  /** Set the retry callback for error handling */
-  void setRetryCallback( std::function<void(std::shared_ptr<LlmInteraction>)> callback );
 
 protected:
   /** Handle a new response being added to the interaction */
@@ -248,7 +250,6 @@ private:
   Wt::WText *m_statusText;
   Wt::WText *m_timerText;  // Separate widget for timer display
   Wt::WPushButton *m_menuIcon;
-  std::function<void(std::shared_ptr<LlmInteraction>)> m_retryCallback;
 
   int m_nestingLevel;  // For indentation of sub-agents
   bool m_isFinished;

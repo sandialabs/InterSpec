@@ -26,6 +26,7 @@
 #include <chrono>
 #include <sstream>
 #include <iomanip>
+#include <algorithm>
 
 #include <Wt/WText>
 #include <Wt/WLabel>
@@ -861,7 +862,8 @@ LlmInteractionErrorDisplay::LlmInteractionErrorDisplay( shared_ptr<LlmInteractio
                                                         WContainerWidget *parent )
   : LlmInteractionTurnDisplay( error, parent ),
     m_error( error ),
-    m_retryCallback( nullptr )
+    m_retryBtn( nullptr ),
+    m_continueBtn( nullptr )
 {
   addStyleClass( "LlmErrorDisplay" );
 
@@ -886,11 +888,6 @@ LlmInteractionErrorDisplay::~LlmInteractionErrorDisplay()
 }//~LlmInteractionErrorDisplay()
 
 
-void LlmInteractionErrorDisplay::setRetryCallback( function<void()> callback )
-{
-  m_retryCallback = callback;
-}//setRetryCallback(...)
-
 
 WString LlmInteractionErrorDisplay::getTitleText() const
 {
@@ -898,7 +895,27 @@ WString LlmInteractionErrorDisplay::getTitleText() const
   const string firstLine = getFirstLine( errorMsg );
   const string truncated = truncateString( firstLine, 80 );
 
-  return WString( "Error: {1}" ).arg( truncated );
+  // Add error type indicator to title
+  string prefix;
+  switch( m_error->errorType() )
+  {
+    case LlmInteractionError::ErrorType::Timeout:
+      prefix = "Timeout Error";
+      break;
+    case LlmInteractionError::ErrorType::Network:
+      prefix = "Network Error";
+      break;
+    case LlmInteractionError::ErrorType::LlmApi:
+      prefix = "LLM API Error";
+      break;
+    case LlmInteractionError::ErrorType::JsonParse:
+      prefix = "Parse Error";
+      break;
+    default:
+      prefix = "Error";
+  }
+
+  return WString( "{1}: {2}" ).arg( prefix ).arg( truncated );
 }//getTitleText()
 
 
@@ -910,18 +927,112 @@ void LlmInteractionErrorDisplay::createBodyContent()
   errorText->setTextFormat( PlainText );
   errorText->addStyleClass( "LlmErrorMessage" );
 
-  // Add retry button
-  WPushButton *retryBtn = new WPushButton( "Retry", m_bodyContainer );
-  retryBtn->addStyleClass( "LlmRetryButton" );
-  retryBtn->clicked().connect( this, &LlmInteractionErrorDisplay::handleRetry );
+  // Add retry status if automatic retry was attempted
+  if( m_error->supportsAutomaticRetry() && m_error->retryAttempted() )
+  {
+    WText *retryInfo = new WText( "Automatic retry was attempted", m_bodyContainer );
+    retryInfo->addStyleClass( "LlmErrorRetryInfo" );
+  }
+
+  // Add retry button (always shown for all errors)
+  m_retryBtn = new WPushButton( "Retry", m_bodyContainer );
+  m_retryBtn->addStyleClass( "LlmRetryButton" );
+  m_retryBtn->clicked().connect( this, &LlmInteractionErrorDisplay::handleRetry );
+
+  // Add "Continue Anyway" button (always shown for all errors)
+  m_continueBtn = new WPushButton( "Continue Anyway", m_bodyContainer );
+  m_continueBtn->addStyleClass( "LlmContinueButton" );
+  m_continueBtn->clicked().connect( this, &LlmInteractionErrorDisplay::handleContinueAnyway );
+
+  // Add help text
+  WText *helpText = new WText(
+    "Click Retry to attempt this request again, or Continue Anyway to start a new conversation.",
+    m_bodyContainer
+  );
+  helpText->addStyleClass( "LlmErrorHelpText" );
 }//createBodyContent()
 
 
 void LlmInteractionErrorDisplay::handleRetry()
 {
-  if( m_retryCallback )
-    m_retryCallback();
+  // Disable both buttons to prevent double-clicks
+  if( m_retryBtn )
+    m_retryBtn->setEnabled( false );
+  if( m_continueBtn )
+  {
+    m_continueBtn->setEnabled( false );
+    m_continueBtn->hide();  // Hide the button that wasn't clicked
+  }
+
+  // We will retry
+  
+  //m_turn;
+  
+  //blah blah blah
 }//handleRetry()
+
+
+void LlmInteractionErrorDisplay::handleContinueAnyway()
+{
+  // Disable both buttons to prevent double-clicks
+  if( m_continueBtn )
+    m_continueBtn->setEnabled( false );
+  if( m_retryBtn )
+  {
+    m_retryBtn->setEnabled( false );
+    m_retryBtn->hide();  // Hide the button that wasn't clicked
+  }
+
+  // Mark the error to exclude from history sent to LLM
+  m_error->setExcludeFromHistory( true );
+
+  // Find and mark the request that led to this error to also exclude from history
+  // Search backwards from the error to find the closest request we sent to the LLM:
+  // - InitialRequest (user/system message)
+  // - AutoReply (automatic continuation)
+  // - ToolResults (results from tool execution)
+  std::shared_ptr<LlmInteraction> convo = m_error->conversation().lock();
+  if( convo && !convo->responses.empty() )
+  {
+    // Find the error in the responses array
+    auto errorIt = std::find( convo->responses.begin(), convo->responses.end(), m_error );
+    if( errorIt != convo->responses.end() )
+    {
+      // Search backwards from the error to find the request that triggered it
+      auto it = errorIt;
+      while( it != convo->responses.begin() )
+      {
+        --it;
+        const LlmInteractionTurn::Type turnType = (*it)->type();
+
+        // Check if this is a request type we send to the LLM
+        if( turnType == LlmInteractionTurn::Type::InitialRequest ||
+            turnType == LlmInteractionTurn::Type::AutoReply ||
+            turnType == LlmInteractionTurn::Type::ToolResult )
+        {
+          (*it)->setExcludeFromHistory( true );
+          cout << "Marked error and preceding request (type: " << static_cast<int>(turnType)
+               << ") to exclude from history" << endl;
+          break;
+        }
+      }
+    }
+
+    // Mark conversation as finished
+    convo->finishTime = std::chrono::system_clock::now();
+    if( convo->conversation_completion_handler )
+      convo->conversation_completion_handler();
+    convo->conversationFinished.emit();
+  }
+
+  // Call the continue callback to re-enable input
+  //blah blah blah
+
+  // The conversation is already marked as finished in handleContinueAnyway()
+  // Trigger the status update and call parent's continue callback
+  // blah blah blah
+  //parent->updateStatus();
+}//handleContinueAnyway()
 
 
 //
@@ -939,7 +1050,6 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
     m_statusText( nullptr ),
     m_timerText( nullptr ),
     m_menuIcon( nullptr ),
-    m_retryCallback( nullptr ),
     m_nestingLevel( nestingLevel ),
     m_isFinished( false )
 {
@@ -974,7 +1084,24 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
   setCentralWidget( bodyContainer );
 
   // Display the user's question/content if non-empty
-  if( !interaction->content.empty() )
+  // Get content from the InitialRequest turn if it exists
+  std::string questionContent;
+  if( !interaction->responses.empty() )
+  {
+    const std::shared_ptr<LlmInteractionTurn> &firstTurn = interaction->responses.front();
+    if( firstTurn->type() == LlmInteractionTurn::Type::InitialRequest )
+    {
+      const LlmInteractionInitialRequest *initialReq = dynamic_cast<const LlmInteractionInitialRequest*>(firstTurn.get());
+      if( initialReq )
+        questionContent = initialReq->content();
+    }
+  }
+
+  // Fall back to interaction->content for backward compatibility with older saved conversations
+  if( questionContent.empty() )
+    questionContent = interaction->content;
+
+  if( !questionContent.empty() )
   {
     WContainerWidget *questionDiv = new WContainerWidget( bodyContainer );
     questionDiv->addStyleClass( "LlmUserQuestion" );
@@ -982,7 +1109,7 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
     WText *questionLabel = new WText( "Question:", questionDiv );
     questionLabel->addStyleClass( "LlmQuestionLabel" );
 
-    WText *questionText = new WText( interaction->content, questionDiv );
+    WText *questionText = new WText( questionContent, questionDiv );
     questionText->setTextFormat( PlainText );
     questionText->addStyleClass( "LlmQuestionContent" );
   }
@@ -1046,12 +1173,6 @@ shared_ptr<LlmInteraction> LlmInteractionDisplay::interaction() const
 }//interaction()
 
 
-void LlmInteractionDisplay::setRetryCallback( function<void(shared_ptr<LlmInteraction>)> callback )
-{
-  m_retryCallback = callback;
-}//setRetryCallback(...)
-
-
 void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> turn )
 {
   // Create appropriate display widget for this turn
@@ -1059,6 +1180,15 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
 
   switch( turn->type() )
   {
+    case LlmInteractionTurn::Type::InitialRequest:
+    {
+      // Initial request is displayed separately in the conversation header/summary
+      // We don't need a separate turn display for it
+      // Just update status and return early
+      updateStatus();
+      return;
+    }
+
     case LlmInteractionTurn::Type::FinalLlmResponse:
     {
       shared_ptr<LlmInteractionFinalResponse> response =
@@ -1097,12 +1227,6 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
         dynamic_pointer_cast<LlmInteractionError>( turn );
       LlmInteractionErrorDisplay *errorDisplay =
         new LlmInteractionErrorDisplay( error, m_turnContainer );
-
-      // Set retry callback
-      errorDisplay->setRetryCallback( [this]() {
-        if( m_retryCallback )
-          m_retryCallback( m_interaction );
-      });
 
       turnDisplay = errorDisplay;
 
@@ -1156,6 +1280,8 @@ void LlmInteractionDisplay::handleConversationFinished()
   stopStatusTimer();
   updateSummary();
   updateStatus();
+  
+  
 }//handleConversationFinished()
 
 
@@ -1241,8 +1367,24 @@ WString LlmInteractionDisplay::getTitleWithStatus() const
 {
   ostringstream oss;
 
-  // User question (truncated)
-  const string question = truncateString( m_interaction->content, 60 );
+  // User question (truncated) - get from InitialRequest turn if available
+  std::string questionContent;
+  if( !m_interaction->responses.empty() )
+  {
+    const std::shared_ptr<LlmInteractionTurn> &firstTurn = m_interaction->responses.front();
+    if( firstTurn->type() == LlmInteractionTurn::Type::InitialRequest )
+    {
+      const LlmInteractionInitialRequest *initialReq = dynamic_cast<const LlmInteractionInitialRequest*>(firstTurn.get());
+      if( initialReq )
+        questionContent = initialReq->content();
+    }
+  }
+
+  // Fall back to m_interaction->content for backward compatibility
+  if( questionContent.empty() )
+    questionContent = m_interaction->content;
+
+  const string question = truncateString( questionContent, 60 );
   oss << question;
 
   // Status

@@ -85,6 +85,7 @@ public:
   /** Type enum kept for backward compatibility and type identification */
   enum class Type
   {
+    InitialRequest,   // Initial user or system message that starts a conversation
     FinalLlmResponse, // LLM response
     ToolCall,         // LLM requesting to call a tool
     ToolResult,       // Result from tool execution
@@ -99,9 +100,10 @@ protected:
   std::string m_thinkingContent;  // Raw thinking content from LLM (e.g., <think>...</think>)
   std::optional<std::chrono::milliseconds> m_callDuration;  // Duration of API call or tool execution
   std::string m_rawContent;  // Raw content: JSON sent to LLM for tool results, or JSON received from LLM
+  bool m_exclude_from_history;  // If true, exclude this turn from conversation history sent to LLM
 
   LlmInteractionTurn( Type t, const std::shared_ptr<LlmInteraction> &convo )
-    : m_type(t), m_timestamp(std::chrono::system_clock::now()), m_conversation(convo)
+    : m_type(t), m_timestamp(std::chrono::system_clock::now()), m_conversation(convo), m_exclude_from_history(false)
   {
   }
 
@@ -117,6 +119,8 @@ public:
   void setCallDuration( std::chrono::milliseconds duration ) { m_callDuration = duration; }
   const std::string& rawContent() const { return m_rawContent; }
   void setRawContent( const std::string &raw ) { m_rawContent = raw; }
+  bool excludeFromHistory() const { return m_exclude_from_history; }
+  void setExcludeFromHistory( bool exclude ) { m_exclude_from_history = exclude; }
 };//class LlmInteractionTurn
 
 
@@ -176,17 +180,46 @@ public:
 /** Represents an error that occurred during conversation processing. */
 class LlmInteractionError : public LlmInteractionTurn
 {
+public:
+  enum class ErrorType
+  {
+    Unknown,           // Parsing errors, unexpected errors
+    Timeout,          // timeout_error from JavaScript
+    Network,          // network_error from JavaScript
+    LlmApi,           // LLM API errors (rate limit, invalid request, etc)
+    JsonParse         // JSON parsing failures
+  };
+
 protected:
   std::string m_errorMessage;
+  ErrorType m_errorType;
+  bool m_retryAttempted;  // True if JavaScript automatic retry was attempted
 
 public:
-  LlmInteractionError( const std::string &errorMsg, const std::shared_ptr<LlmInteraction> &convo )
-    : LlmInteractionTurn(Type::Error, convo), m_errorMessage(errorMsg)
+  LlmInteractionError( const std::string &errorMsg,
+                       const std::shared_ptr<LlmInteraction> &convo,
+                       ErrorType type = ErrorType::Unknown )
+    : LlmInteractionTurn(Type::Error, convo),
+      m_errorMessage(errorMsg),
+      m_errorType(type),
+      m_retryAttempted(false)
   {
   }
 
   const std::string& errorMessage() const { return m_errorMessage; }
   void setErrorMessage( const std::string &msg ) { m_errorMessage = msg; }
+
+  ErrorType errorType() const { return m_errorType; }
+  void setErrorType( ErrorType type ) { m_errorType = type; }
+
+  bool retryAttempted() const { return m_retryAttempted; }
+  void setRetryAttempted( bool attempted ) { m_retryAttempted = attempted; }
+
+  /** Returns true if this error supports automatic retry (timeout/network errors) */
+  bool supportsAutomaticRetry() const
+  {
+    return (m_errorType == ErrorType::Timeout || m_errorType == ErrorType::Network);
+  }
 };//class LlmInteractionError
 
 
@@ -210,8 +243,42 @@ public:
   void setContent( const std::string &content ) { m_content = content; }
 };//class LlmInteractionAutoReply
 
+
+/** Represents the initial request that starts a conversation (user or system message).
+
+ This replaces the old approach of storing the initial request in LlmInteraction::content.
+ Now the initial request is stored as the first turn in the responses array.
+ */
+class LlmInteractionInitialRequest : public LlmInteractionTurn
+{
+public:
+  enum class RequestType
+  {
+    System,  // System prompt or system-generated message
+    User     // User question or request
+  };
+
+protected:
+  RequestType m_requestType;
+  std::string m_content;
+
+public:
+  LlmInteractionInitialRequest( RequestType reqType, const std::string &content,
+                                const std::shared_ptr<LlmInteraction> &convo )
+    : LlmInteractionTurn(Type::InitialRequest, convo), m_requestType(reqType), m_content(content)
+  {
+  }
+
+  RequestType requestType() const { return m_requestType; }
+  void setRequestType( RequestType type ) { m_requestType = type; }
+
+  const std::string& content() const { return m_content; }
+  void setContent( const std::string &content ) { m_content = content; }
+};//class LlmInteractionInitialRequest
+
+
 /** Represents a user asking the LLM a question or to perform a task.
- 
+
  This is typically a user message or system message that initiates a conversation.
  */
 struct LlmInteraction
@@ -272,9 +339,33 @@ struct LlmInteraction
    */
   Wt::Signal<> conversationFinished;
 
-  LlmInteraction(Type t, const std::string& c, AgentType a )
-  : type(t), agent_type(a), content(c), timestamp(std::chrono::system_clock::now()), conversationId{}
-  {}
+  /** Factory method to create a new LlmInteraction with an initial message.
+
+   This ensures the InitialRequest turn is properly added to the responses array.
+
+   @param t The conversation type (User or System)
+   @param initialMessage The initial message content
+   @param a The agent type
+   @return A shared_ptr to the newly created LlmInteraction
+   */
+  static std::shared_ptr<LlmInteraction> create( Type t, const std::string& initialMessage, AgentType a );
+
+  /** Factory method for creating an empty LlmInteraction for deserialization.
+
+   This is used when loading conversations from XML where fields will be populated separately.
+   Should only be used by LlmConversationHistory deserialization code.
+
+   @return A shared_ptr to an empty LlmInteraction with default values
+   */
+  static std::shared_ptr<LlmInteraction> createEmpty();
+
+private:
+  LlmInteraction(Type t, AgentType a )
+  : type(t), agent_type(a), content(""), timestamp(std::chrono::system_clock::now()), conversationId{}
+  {
+  }
+
+  friend class LlmConversationHistory; // Allow LlmConversationHistory to call createEmpty()
 };
 
 
@@ -303,7 +394,7 @@ public:
   
 
   /** Add an assistant response with thinking content as a follow-up to the last message */
-  void addAssistantMessageWithThinking(const std::string &message,
+  std::shared_ptr<LlmInteractionFinalResponse> addAssistantMessageWithThinking(const std::string &message,
                                        const std::string &thinkingContent,
                                        const std::string &rawContent,
                                        std::shared_ptr<LlmInteraction> conversation );
@@ -331,7 +422,8 @@ public:
   /** Add an error message as a follow-up to the last message */
   std::shared_ptr<LlmInteractionError> addErrorMessage( const std::string &errorMessage,
                        const std::string &rawResponseContent,
-                       const std::shared_ptr<LlmInteraction> &convo );
+                       const std::shared_ptr<LlmInteraction> &convo,
+                       LlmInteractionError::ErrorType errorType = LlmInteractionError::ErrorType::Unknown );
 
   /** Add an automatic prompt message to continue the conversation */
   std::shared_ptr<LlmInteractionAutoReply> addAutoReplyMessage( const std::string &promptMessage,

@@ -77,8 +77,11 @@ public:
   /** Clear the conversation history display */
   void clearHistory();
 
-  /** Handle response received from LLM interface */
-  void handleResponseReceived();
+  /** Handle successful response received from LLM interface */
+  void handleConversationFinished();
+
+  /** Handle error response received from LLM interface */
+  void handleResponseError();
   
   /** Get the current conversation history for saving to SpecMeas */
   std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>> getConversationHistory() const;
@@ -100,7 +103,7 @@ protected:
   void sendMessage(const std::string& message);
 
   /** Handle retry request from error display */
-  void handleRetry( std::shared_ptr<LlmInteraction> interaction );
+  //void handleRetry( std::shared_ptr<LlmInteraction> interaction );
 
   /** Export entire conversation as JSON */
   void exportConversationJson();

@@ -24,28 +24,55 @@ LlmConversationHistory::LlmConversationHistory()
 {
 }
 
+std::shared_ptr<LlmInteraction> LlmInteraction::create( Type t, const std::string& initialMessage, AgentType a )
+{
+  // Create the interaction with empty content field (legacy field for backward compatibility)
+  std::shared_ptr<LlmInteraction> conv = std::shared_ptr<LlmInteraction>( new LlmInteraction(t, a) );
+
+  // Add InitialRequest as the first response if message is not empty
+  if( !initialMessage.empty() )
+  {
+    const LlmInteractionInitialRequest::RequestType reqType = (t == Type::System)
+                                                                ? LlmInteractionInitialRequest::RequestType::System
+                                                                : LlmInteractionInitialRequest::RequestType::User;
+    auto initialReq = std::make_shared<LlmInteractionInitialRequest>(
+      reqType,
+      initialMessage,
+      conv
+    );
+    conv->responses.push_back( initialReq );
+  }
+
+  return conv;
+}
+
+std::shared_ptr<LlmInteraction> LlmInteraction::createEmpty()
+{
+  return std::shared_ptr<LlmInteraction>( new LlmInteraction(Type::User, AgentType::MainAgent) );
+}
+
 std::shared_ptr<LlmInteraction> LlmConversationHistory::addUserMessageToMainConversation( const string &message )
 {
-  auto conv = make_shared<LlmInteraction>( LlmInteraction::Type::User, message, AgentType::MainAgent );
+  auto conv = LlmInteraction::create( LlmInteraction::Type::User, message, AgentType::MainAgent );
   conv->conversationId = "conv_" + std::to_string(chrono::duration_cast<chrono::milliseconds>( chrono::system_clock::now().time_since_epoch()).count());
 
   m_conversations.push_back(conv);
-  
+
   return conv;
 }
 
 
 std::shared_ptr<LlmInteraction> LlmConversationHistory::addSystemMessageToMainConversation( const std::string &message )
 {
-  auto conv = std::make_shared<LlmInteraction>(LlmInteraction::Type::System, message, AgentType::MainAgent );
+  auto conv = LlmInteraction::create( LlmInteraction::Type::System, message, AgentType::MainAgent );
   conv->conversationId = "conv_" + std::to_string(chrono::duration_cast<chrono::milliseconds>( chrono::system_clock::now().time_since_epoch()).count());
-  
+
   m_conversations.push_back(conv);
-  
+
   return conv;
 }
 
-void LlmConversationHistory::addAssistantMessageWithThinking(const std::string& message,
+std::shared_ptr<LlmInteractionFinalResponse> LlmConversationHistory::addAssistantMessageWithThinking(const std::string& message,
                                                              const std::string& thinkingContent,
                                                              const std::string &rawContent,
                                                              std::shared_ptr<LlmInteraction> conversation )
@@ -54,7 +81,7 @@ void LlmConversationHistory::addAssistantMessageWithThinking(const std::string& 
   if( !conversation )
   {
     cerr << "LlmConversationHistory::addAssistantMessageWithThinking: null conversation - not adding LLM response" << endl;
-    return;
+    return nullptr;
   }
   
   // Add message as a follow-up to an existing conversation
@@ -63,6 +90,8 @@ void LlmConversationHistory::addAssistantMessageWithThinking(const std::string& 
   response->setRawContent( rawContent );
   conversation->responses.push_back(response);
   conversation->responseAdded.emit( response );
+  
+  return response;
 }//void addAssistantMessageWithThinking(...)
 
 
@@ -121,7 +150,8 @@ std::shared_ptr<LlmToolResults> LlmConversationHistory::addToolResults( std::vec
 
 std::shared_ptr<LlmInteractionError> LlmConversationHistory::addErrorMessage( const std::string &errorMessage,
                                              const std::string &rawResponseContent,
-                                             const std::shared_ptr<LlmInteraction> &convo )
+                                             const std::shared_ptr<LlmInteraction> &convo,
+                                             LlmInteractionError::ErrorType errorType )
 {
   assert( convo );
   if( !convo )
@@ -131,7 +161,7 @@ std::shared_ptr<LlmInteractionError> LlmConversationHistory::addErrorMessage( co
   }
 
   // Add this as a follow-up to an existing conversation
-  auto response = std::make_shared<LlmInteractionError>( errorMessage, convo );
+  auto response = std::make_shared<LlmInteractionError>( errorMessage, convo, errorType );
   response->setRawContent( rawResponseContent );
   convo->responses.push_back( response );
   convo->responseAdded.emit( response );
@@ -230,31 +260,35 @@ void LlmConversationHistory::addConversationToLlmApiHistory( const LlmInteractio
   assert( messages.is_array() );
   if( !messages.is_array() )
     throw logic_error( "addConversationToLlmApiHistory: messages must be an array." );
-  
-  json apiMsg;
-  
-  switch( conv.type )
-  {
-    case LlmInteraction::Type::System:
-      apiMsg["role"] = "system";
-      apiMsg["content"] = conv.content;
-      break;
-      
-    case LlmInteraction::Type::User:
-      apiMsg["role"] = "user";
-      apiMsg["content"] = conv.content;
-      break;
-  }//switch( conv.type )
-  
-  messages.push_back(apiMsg);
-  
-  // Add all responses in chronological order
+
+  // Add all responses in chronological order (including the initial request which is now part of responses)
   for( const std::shared_ptr<LlmInteractionTurn> &response : conv.responses )
   {
+    // Skip responses marked to exclude from history
+    if( response->excludeFromHistory() )
+    {
+      cout << "Skipping response excluded from history (type: " << static_cast<int>(response->type()) << ")" << endl;
+      continue;
+    }
+
     json responseMsg;
 
     switch( response->type() )
     {
+      case LlmInteractionTurn::Type::InitialRequest:
+      {
+        const LlmInteractionInitialRequest *initialReq = dynamic_cast<const LlmInteractionInitialRequest*>(response.get());
+        assert( initialReq );
+        if( !initialReq )
+        {
+          cerr << "addConversationToLlmApiHistory: InitialRequest cast failed" << endl;
+          break;
+        }
+        responseMsg["role"] = (initialReq->requestType() == LlmInteractionInitialRequest::RequestType::System) ? "system" : "user";
+        responseMsg["content"] = initialReq->content();
+        break;
+      }
+
       case LlmInteractionTurn::Type::FinalLlmResponse:
       {
         const LlmInteractionFinalResponse *llmResp = dynamic_cast<const LlmInteractionFinalResponse*>(response.get());
@@ -327,6 +361,7 @@ void LlmConversationHistory::addConversationToLlmApiHistory( const LlmInteractio
           cerr << "addConversationToLlmApiHistory: Error response cast failed" << endl;
           break;
         }
+
         responseMsg["role"] = "assistant";
         responseMsg["content"] = "Error: " + errorResp->errorMessage();
         break;
@@ -431,6 +466,10 @@ void LlmConversationHistory::toXml( const vector<shared_ptr<LlmInteraction>> &co
       const string responseTimeStr = std::to_string(responseTimeT);
       XmlUtils::append_attrib(responseNode, "timestamp", responseTimeStr );
 
+      // Add excludeFromHistory flag if true
+      if( response->excludeFromHistory() )
+        XmlUtils::append_attrib(responseNode, "excludeFromHistory", "true" );
+
       // Add thinking content (common to all types)
       if( !response->thinkingContent().empty() )
         XmlUtils::append_string_node( responseNode, "ThinkingContent", response->thinkingContent() );
@@ -446,6 +485,20 @@ void LlmConversationHistory::toXml( const vector<shared_ptr<LlmInteraction>> &co
       // Handle type-specific fields using dynamic_cast
       switch( response->type() )
       {
+        case LlmInteractionTurn::Type::InitialRequest:
+        {
+          const LlmInteractionInitialRequest *initialReq = dynamic_cast<const LlmInteractionInitialRequest*>(response.get());
+          if( initialReq )
+          {
+            if( !initialReq->content().empty() )
+              XmlUtils::append_string_node( responseNode, "Content", initialReq->content() );
+            // Add request type attribute (system or user)
+            const string reqTypeStr = (initialReq->requestType() == LlmInteractionInitialRequest::RequestType::System) ? "system" : "user";
+            XmlUtils::append_attrib( responseNode, "requestType", reqTypeStr );
+          }
+          break;
+        }
+
         case LlmInteractionTurn::Type::FinalLlmResponse:
         {
           const LlmInteractionFinalResponse *llmResp = dynamic_cast<const LlmInteractionFinalResponse*>(response.get());
@@ -554,7 +607,7 @@ void LlmConversationHistory::fromXml( const rapidxml::xml_node<char> *node, std:
   {
     convCount++;
 
-    auto conv = std::make_shared<LlmInteraction>( LlmInteraction::Type::User, "", AgentType::MainAgent ); // Default, will be overridden
+    auto conv = LlmInteraction::createEmpty(); // Create empty conversation for deserialization
 
     // Read type
     if( rapidxml::xml_attribute<char>* typeAttr = XML_FIRST_ATTRIB(convNode, "type") )
@@ -610,6 +663,19 @@ void LlmConversationHistory::fromXml( const rapidxml::xml_node<char> *node, std:
 
         switch( responseType )
         {
+          case LlmInteractionTurn::Type::InitialRequest:
+          {
+            // Read request type attribute (system or user)
+            LlmInteractionInitialRequest::RequestType reqType = LlmInteractionInitialRequest::RequestType::User;
+            if( rapidxml::xml_attribute<char>* reqTypeAttr = XML_FIRST_ATTRIB(responseNode, "requestType") )
+            {
+              const string reqTypeStr = SpecUtils::xml_value_str(reqTypeAttr);
+              reqType = (reqTypeStr == "system") ? LlmInteractionInitialRequest::RequestType::System
+                                                 : LlmInteractionInitialRequest::RequestType::User;
+            }
+            response = std::make_shared<LlmInteractionInitialRequest>( reqType, "", conv );
+            break;
+          }
           case LlmInteractionTurn::Type::FinalLlmResponse:
             response = std::make_shared<LlmInteractionFinalResponse>( "", conv );
             break;
@@ -652,9 +718,27 @@ void LlmConversationHistory::fromXml( const rapidxml::xml_node<char> *node, std:
           response->setCallDuration( std::chrono::milliseconds( std::stoll(duration_str) ) );
         }
 
+        // Read excludeFromHistory flag
+        if( rapidxml::xml_attribute<char> *excludeAttr = XML_FIRST_ATTRIB(responseNode, "excludeFromHistory") )
+        {
+          const string exclude_str = SpecUtils::xml_value_str(excludeAttr);
+          response->setExcludeFromHistory( exclude_str == "true" || exclude_str == "1" );
+        }
+
         // Read type-specific fields
         switch( responseType )
         {
+          case LlmInteractionTurn::Type::InitialRequest:
+          {
+            LlmInteractionInitialRequest *initialReq = dynamic_cast<LlmInteractionInitialRequest*>(response.get());
+            if( initialReq )
+            {
+              if( rapidxml::xml_node<char>* contentNode = XML_FIRST_NODE(responseNode,"Content") )
+                initialReq->setContent( SpecUtils::xml_value_str(contentNode) );
+            }
+            break;
+          }
+
           case LlmInteractionTurn::Type::FinalLlmResponse:
           {
             LlmInteractionFinalResponse *llmResp = dynamic_cast<LlmInteractionFinalResponse*>(response.get());
@@ -786,6 +870,7 @@ LlmInteraction::Type LlmConversationHistory::stringToConversationType(const std:
 
 std::string LlmConversationHistory::responseTypeToString(LlmInteractionTurn::Type type) {
   switch (type) {
+    case LlmInteractionTurn::Type::InitialRequest: return "initial_request";
     case LlmInteractionTurn::Type::FinalLlmResponse: return "final_response";
     case LlmInteractionTurn::Type::ToolCall: return "tool_call";
     case LlmInteractionTurn::Type::ToolResult: return "tool_result";
@@ -796,6 +881,7 @@ std::string LlmConversationHistory::responseTypeToString(LlmInteractionTurn::Typ
 }
 
 LlmInteractionTurn::Type LlmConversationHistory::stringToResponseType(const std::string& str) {
+  if (str == "initial_request") return LlmInteractionTurn::Type::InitialRequest;
   if (str == "final_response") return LlmInteractionTurn::Type::FinalLlmResponse;
   if (str == "tool_call") return LlmInteractionTurn::Type::ToolCall;
   if (str == "tool_result") return LlmInteractionTurn::Type::ToolResult;
