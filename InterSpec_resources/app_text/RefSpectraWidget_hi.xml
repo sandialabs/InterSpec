@@ -6,6 +6,8 @@
   <message id="rs-show-foreground-portrait">तुलना करें</message>
   <message id="rs-show-background">पृष्ठभूमि दिखाएं</message>
   <message id="rs-show-background-portrait">पृष्ठभूमि</message>
+  <message id="rs-load-background">पृष्ठभूमि लोड करें</message>
+  <message id="rs-load-background-portrait">+पृष्ठभूमि</message>
   <message id="rs-tt-add-dir-btn">संदर्भ स्पेक्ट्रा खोलने के लिए निर्देशिका जोड़ें।</message>
   <message id="rs-tt-delete-dir-btn">वर्तमान में चयनित निर्देशिका को संदर्भ स्पेक्ट्रा दिखाने के स्थानों की सूची से हटाता है।</message>
   <message id="rs-no-dir-selected-desktop">

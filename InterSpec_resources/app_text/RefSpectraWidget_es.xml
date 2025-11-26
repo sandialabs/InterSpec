@@ -4,6 +4,8 @@
   <message id="rs-dialog-title">Espectros de referencia</message>
   <message id="rs-show-foreground">Mostrar primer plano</message>
   <message id="rs-show-background">Fondo</message>
+  <message id="rs-load-background">Cargar fondo</message>
+  <message id="rs-load-background-portrait">+Fondo</message>
   <message id="rs-tt-add-dir-btn">Añadir directorio para abrir espectros de referencia.</message>
   <message id="rs-tt-delete-dir-btn">Quita el directorio actualmente seleccionado de la lista de lugares para mostrar espectros de referencia.</message>
   <message id="rs-no-dir-selected-desktop">

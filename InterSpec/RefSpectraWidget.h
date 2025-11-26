@@ -140,6 +140,7 @@ protected:
 #endif // !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT
   void updatePreview();
   void updateTreeView();
+  void updateCheckboxVisibility();
 
   //Some commented out code to help prepair the default ref spectra from the source directory.
   //static void dev_code();
@@ -151,6 +152,7 @@ private:
   Wt::WContainerWidget *m_dirInfoContainer;
   Wt::WCheckBox *m_showCurrentForeground;
   Wt::WCheckBox *m_refBackground;
+  Wt::WCheckBox *m_loadBackground;
 #if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
   Wt::WContainerWidget *m_addDirButton;
   Wt::WContainerWidget *m_deleteDirButton;
