@@ -115,7 +115,7 @@ protected:
 
 private:
   InterSpec *m_viewer;              ///< The InterSpec instance
-  std::unique_ptr<LlmInterface> m_llmInterface;  ///< The LLM interface for sending messages
+  std::shared_ptr<LlmInterface> m_llmInterface;  ///< The LLM interface for sending messages
 
   Wt::WContainerWidget *m_conversationContainer;  ///< Container holding LlmInteractionDisplay widgets
   Wt::WLineEdit *m_inputEdit;             ///< Input field for user messages

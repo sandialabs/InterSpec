@@ -40,15 +40,7 @@
 #include <Wt/WWebWidget>
 #include <Wt/Http/Request>
 #include <Wt/Http/Response>
-
-#ifdef USE_JS_BRIDGE_FOR_LLM
 #include <Wt/WJavaScriptSlot>
-#endif
-
-#ifdef USE_WT_HTTP_FOR_LLM
-#include <Wt/Http/Client>
-#include <Wt/Http/Message>
-#endif
 
 #include <rapidxml/rapidxml.hpp>
 #include <rapidxml/rapidxml_print.hpp>
@@ -71,19 +63,16 @@ static_assert( USE_LLM_INTERFACE, "This file shouldnt be compiled unless USE_LLM
 using namespace std;
 using json = nlohmann::json;
 
+// Forward declarations
+static std::string sanitizeUtf8( const std::string &str );
+
 LlmInterface::LlmInterface( InterSpec* interspec, const std::shared_ptr<const LlmConfig> &config )
   : Wt::Signals::trackable(),
     m_interspec(interspec),
     m_config( config ),
     m_tool_registry( config ? make_shared<LlmTools::ToolRegistry>(*config) : shared_ptr<LlmTools::ToolRegistry>() ),
     m_history(std::make_shared<LlmConversationHistory>()),
-#ifdef USE_JS_BRIDGE_FOR_LLM
     m_responseSignal(std::make_unique<Wt::JSignal<std::string, int>>(interspec, "llmResponse")),
-#endif
-#ifdef USE_WT_HTTP_FOR_LLM
-    m_httpClient(std::make_unique<Wt::Http::Client>(interspec)),
-    m_currentRequestId(0),
-#endif
     m_nextRequestId(1)
 {
   if( !m_interspec )
@@ -102,21 +91,10 @@ LlmInterface::LlmInterface( InterSpec* interspec, const std::shared_ptr<const Ll
   }
   //cout << "LlmInterface created for session: " << sessionId << endl;
   
-#ifdef USE_JS_BRIDGE_FOR_LLM
   // Connect the JavaScript response signal
   m_responseSignal->connect(this, &LlmInterface::handleJavaScriptResponse);
   
   setupJavaScriptBridge();
-#endif
-
-#ifdef USE_WT_HTTP_FOR_LLM
-  // Configure HTTP client
-  m_httpClient->setTimeout(120); // 120 second timeout
-  m_httpClient->setMaximumResponseSize(1024 * 1024); // 1MB max response
-  
-  // Connect the done signal to our response handler
-  m_httpClient->done().connect(this, &LlmInterface::handleWtHttpClientResponse);
-#endif
 }
 
 LlmInterface::~LlmInterface() {
@@ -522,52 +500,101 @@ static nlohmann::json lenientlyParseJson( const std::string &jsonStr )
  @param requestJson The JSON object to serialize
  @return JSON string with fields in cache-friendly order
  */
+/** Helper function to recursively sanitize UTF-8 in JSON values */
+static nlohmann::json sanitizeJsonUtf8( const nlohmann::json &value )
+{
+  if( value.is_string() )
+  {
+    // Sanitize string values to ensure valid UTF-8
+    return sanitizeUtf8( value.get<std::string>() );
+  }
+  else if( value.is_array() )
+  {
+    nlohmann::json sanitizedArray = nlohmann::json::array();
+    for( const auto &item : value )
+      sanitizedArray.push_back( sanitizeJsonUtf8(item) );
+    return sanitizedArray;
+  }
+  else if( value.is_object() )
+  {
+    nlohmann::json sanitizedObj = nlohmann::json::object();
+    for( auto it = value.begin(); it != value.end(); ++it )
+      sanitizedObj[it.key()] = sanitizeJsonUtf8( it.value() );
+    return sanitizedObj;
+  }
+  else
+  {
+    // For numbers, booleans, null - return as-is
+    return value;
+  }
+}
+
 static std::string serializeRequestForCaching( const nlohmann::json &requestJson )
 {
-  std::string result = "{";
-  bool first = true;
-
-  // Helper lambda to add a field if it exists
-  auto addField = [&]( const std::string &key )
+  try
   {
-    if( !requestJson.contains(key) )
-      return;
+    std::string result = "{";
+    bool first = true;
 
-    if( !first )
-      result += ",";
-    first = false;
+    // Helper lambda to add a field if it exists
+    auto addField = [&]( const std::string &key )
+    {
+      if( !requestJson.contains(key) )
+        return;
 
-    result += "\"" + key + "\":";
-    result += requestJson[key].dump();
-  };
+      if( !first )
+        result += ",";
+      first = false;
 
-  // Add fields in priority order for caching (these should stay stable across requests)
-  addField( "model" );
-  addField( "max_completion_tokens" );
-  addField( "max_tokens" );
-  addField( "tools" );
-  addField( "tool_choice" );
+      result += "\"" + key + "\":";
 
-  // Add remaining fields (messages, etc.)
-  for( auto it = requestJson.begin(); it != requestJson.end(); ++it )
-  {
-    const std::string &key = it.key();
+      // Sanitize UTF-8 in the value before dumping to prevent JSON encoding errors
+      nlohmann::json sanitizedValue = sanitizeJsonUtf8( requestJson[key] );
+      result += sanitizedValue.dump();
+    };
 
-    // Skip fields we already added
-    if( key == "model" || key == "max_completion_tokens" || key == "max_tokens" ||
-        key == "tools" || key == "tool_choice" )
-      continue;
+    // Add fields in priority order for caching (these should stay stable across requests)
+    addField( "model" );
+    addField( "max_completion_tokens" );
+    addField( "max_tokens" );
+    addField( "tools" );
+    addField( "tool_choice" );
 
-    if( !first )
-      result += ",";
-    first = false;
+    // Add remaining fields (messages, etc.)
+    for( auto it = requestJson.begin(); it != requestJson.end(); ++it )
+    {
+      const std::string &key = it.key();
 
-    result += "\"" + key + "\":";
-    result += it.value().dump();
+      // Skip fields we already added
+      if( key == "model" || key == "max_completion_tokens" || key == "max_tokens" ||
+          key == "tools" || key == "tool_choice" )
+        continue;
+
+      if( !first )
+        result += ",";
+      first = false;
+
+      result += "\"" + key + "\":";
+
+      // Sanitize UTF-8 in the value before dumping to prevent JSON encoding errors
+      nlohmann::json sanitizedValue = sanitizeJsonUtf8( it.value() );
+      result += sanitizedValue.dump();
+    }
+
+    result += "}";
+    return result;
   }
+  catch( const std::exception &e )
+  {
+    std::cerr << "ERROR in serializeRequestForCaching: " << e.what() << std::endl;
+    std::cerr << "  Attempting to return fallback serialization" << std::endl;
 
-  result += "}";
-  return result;
+    // Fallback: try to return a basic error structure that can be serialized
+    nlohmann::json errorJson;
+    errorJson["error"] = "Failed to serialize request";
+    errorJson["details"] = e.what();
+    return errorJson.dump();
+  }
 }//serializeRequestForCaching(...)
 
 
@@ -585,50 +612,64 @@ std::string LlmInterface::makeApiCallWithId(const nlohmann::json& requestJson, i
   cout << "=== Making LLM API Call with ID " << requestId << " ===" << endl;
   cout << "Endpoint: " << m_config->llmApi.apiEndpoint << endl;
   cout << "Request JSON:" << endl;
-  nlohmann::json debugJson = requestJson;
-  // Truncate system prompt to first 100 characters
-  if( debugJson.contains("messages") && debugJson["messages"].is_array() && debugJson["messages"].size() && debugJson["messages"][0].is_object() )
-  {
-    if( debugJson["messages"][0].contains("content") && debugJson["messages"][0]["content"].is_string() )
-    {
-      std::string systemPrompt = debugJson["messages"][0]["content"].get<std::string>();
-      if( systemPrompt.length() > 100 )
-        debugJson["messages"][0]["content"] = systemPrompt.substr(0, 100) + "...";
-    }
-  }
 
-  // Truncate all message contents to 100 characters for readability
-  if( debugJson.contains("messages") && debugJson["messages"].is_array() )
+  // Wrap debug output in try-catch to prevent debug code from breaking actual functionality
+  try
   {
-    for( auto &msg : debugJson["messages"] )
+    nlohmann::json debugJson = requestJson;
+
+    // Truncate system prompt to first 100 characters, then sanitize UTF-8
+    if( debugJson.contains("messages") && debugJson["messages"].is_array() && debugJson["messages"].size() && debugJson["messages"][0].is_object() )
     {
-      if( msg.is_object() && msg.contains("content") && msg["content"].is_string() )
+      if( debugJson["messages"][0].contains("content") && debugJson["messages"][0]["content"].is_string() )
       {
-        std::string content = msg["content"].get<std::string>();
-        if( content.length() > 100 )
+        std::string systemPrompt = debugJson["messages"][0]["content"].get<std::string>();
+        if( systemPrompt.length() > 100 )
+          systemPrompt = systemPrompt.substr(0, 100) + "...";
+        systemPrompt = sanitizeUtf8( systemPrompt ); // Sanitize after substring to fix any broken UTF-8
+        debugJson["messages"][0]["content"] = systemPrompt;
+      }
+    }
+
+    // Truncate all message contents to 100 characters, then sanitize UTF-8
+    if( debugJson.contains("messages") && debugJson["messages"].is_array() )
+    {
+      for( auto &msg : debugJson["messages"] )
+      {
+        if( msg.is_object() && msg.contains("content") && msg["content"].is_string() )
         {
-          msg["content"] = content.substr(0, 100) + "...";
+          std::string content = msg["content"].get<std::string>();
+          if( content.length() > 100 )
+            content = content.substr(0, 100) + "...";
+          content = sanitizeUtf8( content ); // Sanitize after substring to fix any broken UTF-8
+          msg["content"] = content;
         }
       }
     }
+
+    if( debugJson.contains("tools") )
+    {
+      const size_t ntools = debugJson["tools"].size();
+      debugJson.erase("tools");
+      debugJson["tools"] = std::to_string(ntools) + " tools ommited";
+    }
+    if( debugJson.contains("tool_choice") )
+    {
+      const size_t ntools = debugJson["tool_choice"].size();
+      debugJson.erase("tool_choice");
+      debugJson["tool_choice"] = std::to_string(ntools) + " tool_choice ommited";
+    }
+
+    cout << debugJson.dump(2) << endl;
+  }
+  catch( const std::exception &e )
+  {
+    cerr << "Error generating debug output (this is non-fatal): " << e.what() << endl;
+    cerr << "  Request will still be sent to LLM API" << endl;
   }
 
-  if( debugJson.contains("tools") )
-  {
-    const size_t ntools = debugJson["tools"].size();
-    debugJson.erase("tools");
-    debugJson["tools"] = std::to_string(ntools) + " tools ommited";
-  }
-  if( debugJson.contains("tool_choice") )
-  {
-    const size_t ntools = debugJson["tool_choice"].size();
-    debugJson.erase("tool_choice");
-    debugJson["tool_choice"] = std::to_string(ntools) + " tool_choice ommited";
-  }
-  cout << debugJson.dump(2) << endl;
   cout << "=========================" << endl;
 
-#ifdef USE_JS_BRIDGE_FOR_LLM
   // Serialize request with consistent field ordering for LLM provider caching
   const std::string requestStr = serializeRequestForCaching( requestJson );
 
@@ -707,49 +748,6 @@ std::string LlmInterface::makeApiCallWithId(const nlohmann::json& requestJson, i
   cout << "JavaScript HTTP request with ID " << requestId << " initiated..." << endl;
 
   return requestStr;
-#endif
-
-#ifdef USE_WT_HTTP_FOR_LLM
-  // Use Wt HTTP client to make the request
-  cout << "Using Wt HTTP client with ID " << requestId << "..." << endl;
-
-  try {
-    // Create HTTP message with JSON body
-    Wt::Http::Message request;
-
-    // Set Content-Type header
-    request.setHeader("Content-Type", "application/json");
-
-    // Add Authorization header if bearer token is provided
-    if (!m_config->llmApi.bearerToken.empty()) {
-      request.setHeader("Authorization", "Bearer " + m_config->llmApi.bearerToken);
-    }
-
-    // Set request body to JSON with consistent field ordering for caching
-    const std::string requestBody = serializeRequestForCaching( requestJson );
-    request.addBodyText(requestBody);
-
-    cout << "Request body length: " << requestBody.length() << " bytes" << endl;
-
-    // Store request ID for response correlation (we'll use member variable for now)
-    // TODO: Better approach would be to store this in a map with client instance
-    m_currentRequestId = requestId;
-
-    // Make the HTTP POST request
-    bool success = m_httpClient->post(m_config->llmApi.apiEndpoint, request);
-
-    if (success) {
-      cout << "Wt HTTP POST request with ID " << requestId << " initiated successfully" << endl;
-    } else {
-      cout << "Failed to initiate Wt HTTP request" << endl;
-      handleWtHttpError(requestId, "Failed to initiate HTTP request");
-    }
-
-  } catch (const std::exception& e) {
-    cout << "Exception in Wt HTTP request: " << e.what() << endl;
-    handleWtHttpError(requestId, std::string("Exception: ") + e.what());
-  }
-#endif
 }
 
 void LlmInterface::handleApiResponse( const std::string &response,
@@ -951,44 +949,101 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
   {
     const string callId = toolCall.value("id", "");
     string toolName;
-    json arguments;
+    string rawArguments;  // Keep raw string before parsing
 
     try
     {
       if( !toolCall.contains("function") )
         throw runtime_error( "No 'function' definition in the JSON" );
-      
+
       const nlohmann::json &function_def = toolCall["function"];
-      
+
       if( !function_def.contains("name") )
         throw runtime_error( "No tool 'name' given definition in the JSON" );
       toolName = function_def["name"];
-      
-      cout << "--- about to parse tool call arguments for toolName=" << toolName << endl;
-      if( function_def.contains("arguments") ) //Some tool calls dont need any arguments
-        arguments = lenientlyParseJson( function_def["arguments"].get<string>() );
-      cout << "--- done parsing tool call arguments for toolName=" << toolName << endl;
+
+      // Get raw arguments string (don't parse yet - we'll parse based on tool type)
+      if( function_def.contains("arguments") )
+        rawArguments = function_def["arguments"].get<string>();
 
       cout << "Calling tool: " << toolName << " with ID: " << callId << endl;
 
-      // Create tool call request for batching
-      toolCallRequests.emplace_back( toolName, callId, arguments );
-
       // Check if this is an invoke_* tool (sub-agent invocation) - handle specially
-    
       if( SpecUtils::istarts_with(toolName, "invoke_") && (toolName.length() > 7) )
       {
+        // ===== SUB-AGENT INVOCATION BRANCH =====
+        // For sub-agents: Extract context/task robustly, don't require perfect JSON
+
+        string context, task;
+        json arguments;  // Will be constructed after extraction
+
+        // Try to parse as JSON and extract context/task
+        try
+        {
+          cout << "--- about to parse sub-agent arguments (lenient)" << endl;
+          arguments = lenientlyParseJson( rawArguments );
+          cout << "--- done parsing sub-agent arguments" << endl;
+
+          // Try to extract context and task fields
+          if( arguments.contains("context") && arguments["context"].is_string() )
+            context = arguments["context"].get<string>();
+
+          if( arguments.contains("task") && arguments["task"].is_string() )
+            task = arguments["task"].get<string>();
+
+          // If we didn't get both fields, try to extract any string values from malformed JSON
+          if( context.empty() && task.empty() && arguments.is_object() )
+          {
+            cerr << "Warning: Sub-agent arguments missing context/task fields, extracting string values" << endl;
+            vector<string> stringValues;
+            for( auto it = arguments.begin(); it != arguments.end(); ++it )
+            {
+              if( it.value().is_string() )
+                stringValues.push_back( it.value().get<string>() );
+            }
+
+            // Assume first string is context, second is task
+            if( stringValues.size() >= 1 )
+              context = stringValues[0];
+            if( stringValues.size() >= 2 )
+              task = stringValues[1];
+            else if( stringValues.size() == 1 )
+              task = stringValues[0];  // Use single string as task
+          }
+        }
+        catch( const std::exception &e )
+        {
+          // Complete JSON parsing failure - use raw string as task
+          cerr << "Failed to parse sub-agent arguments as JSON: " << e.what() << endl;
+          cerr << "Using raw arguments string as task" << endl;
+          task = rawArguments;
+        }
+
+        // If we still don't have any content, use raw string as task
+        if( context.empty() && task.empty() )
+        {
+          cerr << "Warning: Sub-agent invocation with empty context and task, using raw arguments" << endl;
+          task = rawArguments;
+        }
+
+        // Reconstruct arguments JSON for consistency
+        arguments = json::object();
+        arguments["context"] = context;
+        arguments["task"] = task;
+
+        // Add to requests BEFORE creating sub-agent (so it's always in sync with results)
+        toolCallRequests.emplace_back( toolName, callId, arguments );
+
         // Extract agent name from tool name (e.g., "invoke_NuclideId" -> "NuclideId")
         const string agentName = toolName.substr(7);
         const AgentType agent_type = stringToAgentType(agentName);
         assert( agent_type != AgentType::MainAgent );
         if( agent_type == AgentType::MainAgent )
           throw runtime_error( "Can not invoke a agent of type AgentType::MainAgent" );
-        
-        const string context = arguments.at("context").get<string>();
-        const string task = arguments.at("task").get<string>();
 
-        cout << "Detected sub-agent invocation: " << agentName << " via tool: " << toolName << endl;
+        cout << "Detected sub-agent invocation: " << agentName << " (context: " << context.substr(0,50)
+             << (context.length() > 50 ? "..." : "")
+             << ", task: " << task.substr(0,50) << (task.length() > 50 ? "..." : "") << ")" << endl;
 
         // Invoke sub-agent (returns request ID)
         const string combinedMessage = "Context:\n" + context + "\n\nTask:\n" + task + "\n\nWhen you are done, provide a summary of your reasoning, as well as how sure you are, or alternate possibilities to investigate.";
@@ -1144,9 +1199,13 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
               }
               
               
+              // Sanitize UTF-8 before adding to JSON (nlohmann::json requires valid UTF-8)
+              subAgentSummary = sanitizeUtf8( subAgentSummary );
+              subAgentThinkingContent = sanitizeUtf8( subAgentThinkingContent );
+
               cout << "Sub-agent summary: " << subAgentSummary.substr(0, 100) << (subAgentSummary.length() > 100 ? "..." : "") << endl;
               cout << "subAgentThinkingContent='" << subAgentThinkingContent << "'" << endl;
-              
+
               updatedResult["status"] = "completed";
               updatedResult["summary"] = subAgentSummary;
               updatedResult["agentName"] = agentTypeToString( sub_agent_convo->agent_type );
@@ -1164,6 +1223,48 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
             if( response )
             {
               response->setThinkingContent( subAgentThinkingContent );
+            }
+
+            // Aggregate sub-agent token usage to parent conversation
+            if( sub_agent_convo->promptTokens.has_value() ||
+                sub_agent_convo->completionTokens.has_value() ||
+                sub_agent_convo->totalTokens.has_value() )
+            {
+              cout << "=== Aggregating sub-agent token usage to parent ===" << endl;
+              cout << "Sub-agent prompt tokens: " << (sub_agent_convo->promptTokens.has_value() ? std::to_string(sub_agent_convo->promptTokens.value()) : "N/A") << endl;
+              cout << "Sub-agent completion tokens: " << (sub_agent_convo->completionTokens.has_value() ? std::to_string(sub_agent_convo->completionTokens.value()) : "N/A") << endl;
+              cout << "Sub-agent total tokens: " << (sub_agent_convo->totalTokens.has_value() ? std::to_string(sub_agent_convo->totalTokens.value()) : "N/A") << endl;
+
+              // Add sub-agent's tokens to parent conversation
+              if( sub_agent_convo->promptTokens.has_value() )
+              {
+                if( parent_conv->promptTokens.has_value() )
+                  parent_conv->promptTokens = parent_conv->promptTokens.value() + sub_agent_convo->promptTokens.value();
+                else
+                  parent_conv->promptTokens = sub_agent_convo->promptTokens.value();
+              }
+
+              if( sub_agent_convo->completionTokens.has_value() )
+              {
+                if( parent_conv->completionTokens.has_value() )
+                  parent_conv->completionTokens = parent_conv->completionTokens.value() + sub_agent_convo->completionTokens.value();
+                else
+                  parent_conv->completionTokens = sub_agent_convo->completionTokens.value();
+              }
+
+              if( sub_agent_convo->totalTokens.has_value() )
+              {
+                if( parent_conv->totalTokens.has_value() )
+                  parent_conv->totalTokens = parent_conv->totalTokens.value() + sub_agent_convo->totalTokens.value();
+                else
+                  parent_conv->totalTokens = sub_agent_convo->totalTokens.value();
+              }
+
+              cout << "Parent conversation now has:" << endl;
+              cout << "  Prompt tokens: " << (parent_conv->promptTokens.has_value() ? std::to_string(parent_conv->promptTokens.value()) : "N/A") << endl;
+              cout << "  Completion tokens: " << (parent_conv->completionTokens.has_value() ? std::to_string(parent_conv->completionTokens.value()) : "N/A") << endl;
+              cout << "  Total tokens: " << (parent_conv->totalTokens.has_value() ? std::to_string(parent_conv->totalTokens.value()) : "N/A") << endl;
+              cout << "===================================================" << endl;
             }
 
             // Emit signal that this sub-agent has finished
@@ -1201,7 +1302,19 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
         cout << "Sub-agent invocation deferred - will resume main agent when complete" << endl;
       }else
       {
-        // Normal tool execution
+        // ===== NORMAL TOOL EXECUTION BRANCH =====
+        // For normal tools: Parse arguments as JSON (strict)
+
+        cout << "--- about to parse normal tool arguments for toolName=" << toolName << endl;
+        json arguments;
+        if( !rawArguments.empty() )
+          arguments = lenientlyParseJson( rawArguments );
+        cout << "--- done parsing normal tool arguments for toolName=" << toolName << endl;
+
+        // Add to requests BEFORE execution (so it's always in sync with results)
+        toolCallRequests.emplace_back( toolName, callId, arguments );
+
+        // Execute the tool
         const auto exec_start = std::chrono::steady_clock::now();
         json result = m_tool_registry->executeTool(toolName, arguments, m_interspec);
         const auto exec_end = std::chrono::steady_clock::now();
@@ -1217,7 +1330,7 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
     }catch( const json::parse_error &e )
     {
       cout << "Tool execution JSON error: " << e.what() << endl;
-      
+
 #if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
       {
         const auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
@@ -1230,17 +1343,24 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
         std::ofstream output_request_json( debug_name.c_str(), ios::binary | ios::out);
 #endif
         output_request_json << rawResponseContent;
-        
+
         cerr << "Wrote message content to '" << debug_name << "'" << endl;
       }
 #endif
-      
+
+      // Create placeholder arguments with error info for tracking
+      json arguments = json::object();
+      arguments["_raw"] = rawArguments;
+      arguments["_parse_error"] = e.what();
+
+      // Note: Do NOT add to toolCallRequests here - it was already added before execution
+      // (line 1104 for sub-agents, line 1384 for normal tools)
+
       json result;
       result["error"] = "Tool call failed due to JSON parsing: " + string(e.what());
-      
+
       // Create error tool result entry
       LlmToolCall toolResult( toolName, callId, arguments );
-      toolResult.invocationId = callId;
       toolResult.status = LlmToolCall::CallStatus::Error;
       toolResult.content = result.dump();
       toolCallResults.push_back( std::move(toolResult) );
@@ -1261,17 +1381,24 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
         std::ofstream output_request_json( debug_name.c_str(), ios::binary | ios::out);
 #endif
         output_request_json << rawResponseContent;
-        
+
         cerr << "Wrote message content to '" << debug_name << "'" << endl;
       }
 #endif
-      
+
+      // Create placeholder arguments with error info for tracking
+      json arguments = json::object();
+      arguments["_raw"] = rawArguments;
+      arguments["_execution_error"] = e.what();
+
+      // Note: Do NOT add to toolCallRequests here - it was already added before execution
+      // (line 1104 for sub-agents, line 1384 for normal tools)
+
       json result;
       result["error"] = "Tool call failed: " + string(e.what());
 
       // Create error tool result entry
       LlmToolCall toolResult( toolName, callId, arguments );
-      toolResult.invocationId = callId;
       toolResult.status = LlmToolCall::CallStatus::Error;
       toolResult.content = result.dump();
       toolCallResults.push_back( std::move(toolResult) );
@@ -1443,6 +1570,119 @@ LlmInterface::parseContentForToolCallsAndSendResults( const std::string &content
 }//parseContentForToolCallsAndSendResults
 
 
+
+/** Sanitize a string to ensure it is valid UTF-8.
+
+ Invalid UTF-8 sequences are replaced with the Unicode replacement character (U+FFFD).
+ This is necessary because nlohmann::json requires valid UTF-8 strings.
+
+ @param str The string to sanitize
+ @return A valid UTF-8 string
+ */
+static std::string sanitizeUtf8( const std::string &str )
+{
+  std::string result;
+  result.reserve( str.size() );
+
+  size_t invalidCount = 0;
+
+  for( size_t i = 0; i < str.size(); )
+  {
+    const unsigned char byte = static_cast<unsigned char>(str[i]);
+
+    // Single-byte character (0xxxxxxx)
+    if( byte < 0x80 )
+    {
+      result += str[i];
+      ++i;
+      continue;
+    }
+
+    // Determine the number of bytes in this UTF-8 sequence
+    size_t seqLen = 0;
+    unsigned char mask = 0;
+
+    if( (byte & 0xE0) == 0xC0 )      // 2-byte sequence (110xxxxx)
+    {
+      seqLen = 2;
+      mask = 0x1F;
+    }
+    else if( (byte & 0xF0) == 0xE0 ) // 3-byte sequence (1110xxxx)
+    {
+      seqLen = 3;
+      mask = 0x0F;
+    }
+    else if( (byte & 0xF8) == 0xF0 ) // 4-byte sequence (11110xxx)
+    {
+      seqLen = 4;
+      mask = 0x07;
+    }
+    else
+    {
+      // Invalid start byte - replace with replacement character
+      result += "\xEF\xBF\xBD"; // U+FFFD in UTF-8
+      ++invalidCount;
+      ++i;
+      continue;
+    }
+
+    // Check if we have enough bytes
+    if( i + seqLen > str.size() )
+    {
+      // Truncated sequence - replace with replacement character
+      result += "\xEF\xBF\xBD"; // U+FFFD in UTF-8
+      ++invalidCount;
+      break;
+    }
+
+    // Validate continuation bytes (10xxxxxx)
+    bool valid = true;
+    for( size_t j = 1; j < seqLen; ++j )
+    {
+      const unsigned char contByte = static_cast<unsigned char>(str[i + j]);
+      if( (contByte & 0xC0) != 0x80 )
+      {
+        valid = false;
+        break;
+      }
+    }
+
+    if( valid )
+    {
+      // Copy the valid UTF-8 sequence
+      for( size_t j = 0; j < seqLen; ++j )
+        result += str[i + j];
+      i += seqLen;
+    }
+    else
+    {
+      // Invalid sequence - replace with replacement character
+      result += "\xEF\xBF\xBD"; // U+FFFD in UTF-8
+      ++invalidCount;
+      ++i;
+    }
+  }
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  if( invalidCount > 0 )
+  {
+    std::cerr << "sanitizeUtf8: Replaced " << invalidCount << " invalid UTF-8 sequence(s)" << std::endl;
+    std::cerr << "  Original length: " << str.size() << " bytes" << std::endl;
+    std::cerr << "  Sanitized length: " << result.size() << " bytes" << std::endl;
+
+    // Show a snippet of the original string with hex values for debugging
+    std::cerr << "  First 200 bytes (hex): ";
+    for( size_t i = 0; i < std::min(size_t(200), str.size()); ++i )
+    {
+      std::cerr << std::hex << std::setw(2) << std::setfill('0')
+                << static_cast<int>(static_cast<unsigned char>(str[i])) << " ";
+    }
+    std::cerr << std::dec << std::endl;
+  }
+#endif
+
+  return result;
+}
 
 std::string LlmInterface::stripThinkingContent(const std::string& content) {
   std::string result = content;
@@ -1681,7 +1921,6 @@ nlohmann::json LlmInterface::buildMessagesArray( const std::shared_ptr<LlmIntera
 }//nlohmann::json LlmInterface::buildMessagesArray( convo )
 
 
-#ifdef USE_JS_BRIDGE_FOR_LLM
 void LlmInterface::setupJavaScriptBridge() {
   auto app = Wt::WApplication::instance();
   if (!app) {
@@ -2051,7 +2290,6 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
       m_responseError.emit();
   }
 }
-#endif // USE_JS_BRIDGE_FOR_LLM
 
 std::pair<int,std::string> LlmInterface::makeTrackedApiCall( const nlohmann::json& requestJson,
                                       std::shared_ptr<LlmInteraction> convo )
@@ -2165,116 +2403,6 @@ int LlmInterface::sendToolResultsToLLM( std::shared_ptr<LlmInteraction> convo )
   
   return request_id_content.first;
 }//int sendToolResultsToLLM( std::shared_ptr<LlmInteraction> convo )
-
-
-#ifdef USE_WT_HTTP_FOR_LLM
-void LlmInterface::handleWtHttpClientResponse(boost::system::error_code err, const Wt::Http::Message& response) {
-  cout << "=== Wt HTTP Client Response Received ===" << endl;
-  
-  // Get the request ID from our stored current request
-  int requestId = m_currentRequestId;
-  cout << "Processing response for request ID: " << requestId << endl;
-  
-  if (err) {
-    cout << "HTTP error: " << err.message() << endl;
-    handleWtHttpError(requestId, err.message());
-    return;
-  }
-  
-  try {
-    cout << "Response status: " << response.status() << endl;
-    
-    // Check for successful HTTP status codes
-    if (response.status() < 200 || response.status() >= 300) {
-      string errorMsg = "HTTP error status: " + std::to_string(response.status());
-      cout << errorMsg << endl;
-      handleWtHttpError(requestId, errorMsg);
-      return;
-    }
-    
-    // Get response body
-    string responseBody = response.body();
-    cout << "Response length: " << responseBody.length() << " characters" << endl;
-    
-    // Find and remove the pending request
-    PendingRequest pendingRequest;
-    bool foundPending = false;
-    if (m_pendingRequests.find(requestId) != m_pendingRequests.end()) {
-      pendingRequest = m_pendingRequests[requestId];
-      foundPending = true;
-      m_pendingRequests.erase(requestId);
-      cout << "Matched to pending request: " << (pendingRequest.isToolResultFollowup ? "tool followup" : "original") << endl;
-    } else {
-      cout << "Warning: No pending request found for ID " << requestId << endl;
-    }
-    
-    // Process the LLM response using unified handler
-    handleApiResponse(responseBody);
-    
-  } catch (const std::exception& e) {
-    cout << "Exception processing Wt HTTP response: " << e.what() << endl;
-    handleWtHttpError(requestId, std::string("Exception: ") + e.what());
-  }
-}
-
-void LlmInterface::handleWtHttpResponse(int requestId, const std::string& responseBody, int statusCode) {
-  cout << "=== Wt HTTP Response Received for ID " << requestId << " ===" << endl;
-  cout << "Response status: " << statusCode << endl;
-  
-  try {
-    cout << "Response length: " << responseBody.length() << " characters" << endl;
-    
-    // Find and remove the pending request
-    PendingRequest pendingRequest;
-    bool foundPending = false;
-    if (m_pendingRequests.find(requestId) != m_pendingRequests.end()) {
-      pendingRequest = m_pendingRequests[requestId];
-      foundPending = true;
-      m_pendingRequests.erase(requestId);
-      cout << "Matched to pending request: " << (pendingRequest.isToolResultFollowup ? "tool followup" : "original") << endl;
-    } else {
-      cout << "Warning: No pending request found for ID " << requestId << endl;
-    }
-    
-    // Check HTTP status
-    if (statusCode != 200) {
-      cout << "HTTP Error: Status " << statusCode << endl;
-      return;
-    }
-    
-    // Process the LLM response
-    handleApiResponse(responseBody);
-    
-  } catch (const std::exception& e) {
-    cout << "Error processing Wt HTTP response: " << e.what() << endl;
-  }
-}
-
-void LlmInterface::handleWtHttpError(int requestId, const std::string& error) {
-  cout << "=== Wt HTTP Error for ID " << requestId << " ===" << endl;
-  cout << "Error: " << error << endl;
-  
-  // Find and remove the pending request
-  if (m_pendingRequests.find(requestId) != m_pendingRequests.end()) {
-    m_pendingRequests.erase(requestId);
-    cout << "Removed pending request for ID " << requestId << endl;
-  }
-  
-  // Add error to conversation history
-  if (m_history) {
-    m_history->addErrorMessage("HTTP Error: " + error, m_currentConversationId);
-  }
-
-  // Signal that an error response was received
-  // Only emit if no pending requests (this is the final response)
-  if (m_pendingRequests.empty()) {
-    cout << "HTTP Error - no pending requests, emitting error signal" << endl;
-    m_responseError.emit();
-  } else {
-    cout << "HTTP Error - still have " << m_pendingRequests.size() << " pending requests, not emitting signal yet" << endl;
-  }
-}
-#endif // USE_WT_HTTP_FOR_LLM
 
 
 #if( PERFORM_DEVELOPER_CHECKS )

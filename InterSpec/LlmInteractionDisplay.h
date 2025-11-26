@@ -137,6 +137,7 @@ class LlmToolResultsDisplay : public LlmInteractionTurnDisplay
 {
 public:
   LlmToolResultsDisplay( std::shared_ptr<LlmToolResults> results,
+                        std::weak_ptr<class LlmInterface> llmInterface,
                         int nestingLevel = 0,
                         Wt::WContainerWidget *parent = nullptr );
 
@@ -153,6 +154,7 @@ protected:
 
 private:
   std::shared_ptr<LlmToolResults> m_results;
+  std::weak_ptr<class LlmInterface> m_llmInterface;
   std::vector<class LlmInteractionDisplay*> m_subAgentDisplays;
   int m_nestingLevel;  // For passing to nested sub-agent displays
 
@@ -166,6 +168,7 @@ class LlmInteractionErrorDisplay : public LlmInteractionTurnDisplay
 {
 public:
   LlmInteractionErrorDisplay( std::shared_ptr<LlmInteractionError> error,
+                             std::weak_ptr<class LlmInterface> llmInterface,
                              Wt::WContainerWidget *parent = nullptr );
 
   virtual ~LlmInteractionErrorDisplay();
@@ -185,8 +188,10 @@ protected:
 
 private:
   std::shared_ptr<LlmInteractionError> m_error;
+  std::weak_ptr<class LlmInterface> m_llmInterface;
   Wt::WPushButton *m_retryBtn;
   Wt::WPushButton *m_continueBtn;
+  Wt::WText *m_helpText;
 };//class LlmInteractionErrorDisplay
 
 
@@ -201,6 +206,7 @@ class LlmInteractionDisplay : public Wt::WPanel
 {
 public:
   LlmInteractionDisplay( std::shared_ptr<LlmInteraction> interaction,
+                        std::weak_ptr<class LlmInterface> llmInterface,
                         int nestingLevel = 0,
                         Wt::WContainerWidget *parent = nullptr );
 
@@ -245,6 +251,7 @@ protected:
 
 private:
   std::shared_ptr<LlmInteraction> m_interaction;
+  std::weak_ptr<class LlmInterface> m_llmInterface;
   Wt::WContainerWidget *m_turnContainer;
   Wt::WContainerWidget *m_summaryDiv;
   Wt::WText *m_statusText;

@@ -35,25 +35,6 @@
 
 static_assert( USE_LLM_INTERFACE, "You should not include this library unless USE_LLM_INTERFACE is enabled" );
 
-// Choose LLM HTTP implementation method
-//#define USE_WT_HTTP_FOR_LLM  // Use Wt::Http::Client for HTTPS requests (needs further debugging)
-#define USE_JS_BRIDGE_FOR_LLM   // Use JavaScript bridge for HTTPS requests (default)
-
-// Ensure only one implementation is selected
-#if defined(USE_WT_HTTP_FOR_LLM) && defined(USE_JS_BRIDGE_FOR_LLM)
-#error "Cannot define both USE_WT_HTTP_FOR_LLM and USE_JS_BRIDGE_FOR_LLM"
-#endif
-
-#if !defined(USE_WT_HTTP_FOR_LLM) && !defined(USE_JS_BRIDGE_FOR_LLM)
-#error "Must define either USE_WT_HTTP_FOR_LLM or USE_JS_BRIDGE_FOR_LLM"
-#endif
-
-#ifdef USE_WT_HTTP_FOR_LLM
-#include <boost/system/error_code.hpp>
-#include <Wt/Http/Client>
-#include <Wt/Http/Message>
-#endif
-
 
 // Forward declarations
 class InterSpec;
@@ -73,10 +54,8 @@ class LlmToolResults;
 namespace Wt {
   class WResource;
 
-#ifdef USE_JS_BRIDGE_FOR_LLM
   template <typename A1, typename A2, typename A3, typename A4, typename A5, typename A6> 
   class JSignal;
-#endif
 }
 
 /** Main LLM interface class that handles communication with OpenAI-compatible API endpoints.
@@ -179,10 +158,8 @@ public:
    */
   int sendToolResultsToLLM( std::shared_ptr<LlmInteraction> convo );
 
-#ifdef USE_JS_BRIDGE_FOR_LLM
   /** JavaScript callback to handle LLM response */
   void handleJavaScriptResponse(std::string response, int requestId);
-#endif
 
 private:
   void emitConversationFinished(){ conversationFinished().emit(); }
@@ -195,15 +172,8 @@ private:
   Wt::Signal<> m_conversationFinished; // Signal emitted when succesful final response from LLM is recieved.
   Wt::Signal<> m_responseError;    // Signal emitted when error responses are received
   
-#ifdef USE_JS_BRIDGE_FOR_LLM
   std::unique_ptr<Wt::JSignal<std::string, int>> m_responseSignal; // For JavaScript bridge (response, requestId)
-#endif
 
-#ifdef USE_WT_HTTP_FOR_LLM
-  std::unique_ptr<Wt::Http::Client> m_httpClient; // Wt HTTP client for native C++ requests
-  int m_currentRequestId; // Current request ID for Wt HTTP client correlation
-#endif
-  
   // Request tracking
   int m_nextRequestId;
 
@@ -271,21 +241,8 @@ private:
    */
   std::string getSystemPromptForAgent( const AgentType agentType ) const;
   
-#ifdef USE_JS_BRIDGE_FOR_LLM
   /** Set up the JavaScript bridge for making HTTPS requests */
   void setupJavaScriptBridge();
-#endif
-
-#ifdef USE_WT_HTTP_FOR_LLM
-  /** Handle HTTP response from Wt::Http::Client */
-  void handleWtHttpResponse(int requestId, const std::string& responseBody, int statusCode = 200);
-  
-  /** Handle HTTP error from Wt::Http::Client */
-  void handleWtHttpError(int requestId, const std::string& error);
-  
-  /** Handle HTTP client done signal (boost::system::error_code, Http::Message) */
-  void handleWtHttpClientResponse(boost::system::error_code err, const Wt::Http::Message& response);
-#endif
 };
 
 

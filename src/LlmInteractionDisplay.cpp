@@ -44,6 +44,7 @@
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/SimpleDialog.h"
+#include "InterSpec/LlmInterface.h"
 #include "InterSpec/LlmInteractionDisplay.h"
 #include "InterSpec/LlmConversationHistory.h"
 
@@ -561,10 +562,12 @@ void LlmToolRequestDisplay::createBodyContent()
 //
 
 LlmToolResultsDisplay::LlmToolResultsDisplay( shared_ptr<LlmToolResults> results,
+                                              std::weak_ptr<LlmInterface> llmInterface,
                                               int nestingLevel,
                                               WContainerWidget *parent )
   : LlmInteractionTurnDisplay( results, parent ),
     m_results( results ),
+    m_llmInterface( llmInterface ),
     m_nestingLevel( nestingLevel )
 {
   addStyleClass( "LlmToolResultsDisplay" );
@@ -719,7 +722,7 @@ void LlmToolResultsDisplay::createBodyContent()
 
         // Create nested LlmInteractionDisplay for sub-agent
         LlmInteractionDisplay *subAgentDisplay =
-          new LlmInteractionDisplay( call.sub_agent_conversation, m_nestingLevel + 1, resultDiv );
+          new LlmInteractionDisplay( call.sub_agent_conversation, m_llmInterface, m_nestingLevel + 1, resultDiv );
         subAgentDisplay->addStyleClass( "LlmSubAgentNesting" );
 
         m_subAgentDisplays.push_back( subAgentDisplay );
@@ -859,11 +862,14 @@ void LlmToolResultsDisplay::handleSubAgentFinished( shared_ptr<LlmInteractionTur
 //
 
 LlmInteractionErrorDisplay::LlmInteractionErrorDisplay( shared_ptr<LlmInteractionError> error,
+                                                        std::weak_ptr<LlmInterface> llmInterface,
                                                         WContainerWidget *parent )
   : LlmInteractionTurnDisplay( error, parent ),
     m_error( error ),
+    m_llmInterface( llmInterface ),
     m_retryBtn( nullptr ),
-    m_continueBtn( nullptr )
+    m_continueBtn( nullptr ),
+    m_helpText( nullptr )
 {
   addStyleClass( "LlmErrorDisplay" );
 
@@ -922,10 +928,9 @@ WString LlmInteractionErrorDisplay::getTitleText() const
 void LlmInteractionErrorDisplay::createBodyContent()
 {
   // Display error message
-  WText *errorText = new WText( m_bodyContainer );
-  errorText->setText( m_error->errorMessage() );
-  errorText->setTextFormat( PlainText );
+  WText *errorText = new WText( m_error->errorMessage(), Wt::PlainText, m_bodyContainer );
   errorText->addStyleClass( "LlmErrorMessage" );
+  cout << "=======Setting error body text to:\n" << m_error->errorMessage() << "=======" << endl;
 
   // Add retry status if automatic retry was attempted
   if( m_error->supportsAutomaticRetry() && m_error->retryAttempted() )
@@ -945,11 +950,11 @@ void LlmInteractionErrorDisplay::createBodyContent()
   m_continueBtn->clicked().connect( this, &LlmInteractionErrorDisplay::handleContinueAnyway );
 
   // Add help text
-  WText *helpText = new WText(
+  m_helpText = new WText(
     "Click Retry to attempt this request again, or Continue Anyway to start a new conversation.",
     m_bodyContainer
   );
-  helpText->addStyleClass( "LlmErrorHelpText" );
+  m_helpText->addStyleClass( "LlmErrorHelpText" );
 }//createBodyContent()
 
 
@@ -964,11 +969,89 @@ void LlmInteractionErrorDisplay::handleRetry()
     m_continueBtn->hide();  // Hide the button that wasn't clicked
   }
 
-  // We will retry
-  
-  //m_turn;
-  
-  //blah blah blah
+  // Update help text to indicate retry action was taken
+  if( m_helpText )
+    m_helpText->setText( "Retrying request..." );
+
+  // Lock the weak_ptr to get access to LlmInterface
+  std::shared_ptr<LlmInterface> llmInterface = m_llmInterface.lock();
+  if( !llmInterface )
+  {
+    cerr << "Cannot retry - LlmInterface no longer available" << endl;
+    if( m_helpText )
+      m_helpText->setText( "Error: LLM interface no longer available" );
+    return;
+  }
+
+  // Get the conversation
+  std::shared_ptr<LlmInteraction> convo = m_error->conversation().lock();
+  if( !convo )
+  {
+    cerr << "Cannot retry - conversation no longer available" << endl;
+    if( m_helpText )
+      m_helpText->setText( "Error: Conversation no longer available" );
+    return;
+  }
+
+  // Validate the conversation has this error as the last response
+  if( convo->responses.empty() )
+  {
+    cerr << "Cannot retry - conversation has no responses" << endl;
+    if( m_helpText )
+      m_helpText->setText( "Error: No responses to retry" );
+    return;
+  }
+
+  std::shared_ptr<LlmInteractionTurn> lastResponse = convo->responses.back();
+  if( lastResponse != m_error )
+  {
+    cerr << "Cannot retry - error is not the last response" << endl;
+    if( m_helpText )
+      m_helpText->setText( "Error: Can only retry the most recent error" );
+    return;
+  }
+
+  cout << "\n=== Retrying request for conversation: " << convo->conversationId << " ===" << endl;
+  cout << "Error type: " << static_cast<int>(m_error->errorType()) << endl;
+
+  try
+  {
+    // Remove the error from conversation history
+    // This allows the conversation to continue as if the error never happened
+    convo->responses.pop_back();
+
+    // Build API request with the conversation history (which now excludes the error)
+    const nlohmann::json requestJson = llmInterface->buildMessagesArray( convo );
+
+    // Make tracked API call
+    std::pair<int,std::string> request_id_content =
+      llmInterface->makeTrackedApiCall( requestJson, convo );
+
+    cout << "Retry request sent with ID: " << request_id_content.first << endl;
+
+    // The response will be handled by the normal LlmInterface::handleApiResponse flow
+    // which will add new response turns to the conversation and emit signals
+  }
+  catch( const std::exception &e )
+  {
+    cerr << "Error during retry: " << e.what() << endl;
+
+    // Re-add the error to the conversation since retry failed
+    convo->responses.push_back( m_error );
+
+    // Update help text
+    if( m_helpText )
+      m_helpText->setText( std::string("Retry failed: ") + e.what() );
+
+    // Re-enable the retry button so user can try again
+    if( m_retryBtn )
+      m_retryBtn->setEnabled( true );
+    if( m_continueBtn )
+    {
+      m_continueBtn->setEnabled( true );
+      m_continueBtn->show();
+    }
+  }
 }//handleRetry()
 
 
@@ -982,6 +1065,10 @@ void LlmInteractionErrorDisplay::handleContinueAnyway()
     m_retryBtn->setEnabled( false );
     m_retryBtn->hide();  // Hide the button that wasn't clicked
   }
+
+  // Update help text to indicate continue action was taken
+  if( m_helpText )
+    m_helpText->setText( "Continuing with new conversation. The error has been excluded from history." );
 
   // Mark the error to exclude from history sent to LLM
   m_error->setExcludeFromHistory( true );
@@ -1042,10 +1129,12 @@ void LlmInteractionErrorDisplay::handleContinueAnyway()
 int LlmInteractionDisplay::s_nextTimerId = 0;
 
 LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interaction,
+                                              std::weak_ptr<LlmInterface> llmInterface,
                                               int nestingLevel,
                                               WContainerWidget *parent )
   : WPanel( parent ),
     m_interaction( interaction ),
+    m_llmInterface( llmInterface ),
     m_turnContainer( nullptr ),
     m_statusText( nullptr ),
     m_timerText( nullptr ),
@@ -1217,7 +1306,7 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
     {
       shared_ptr<LlmToolResults> results =
         dynamic_pointer_cast<LlmToolResults>( turn );
-      turnDisplay = new LlmToolResultsDisplay( results, m_nestingLevel, m_turnContainer );
+      turnDisplay = new LlmToolResultsDisplay( results, m_llmInterface, m_nestingLevel, m_turnContainer );
       break;
     }
 
@@ -1226,7 +1315,7 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
       shared_ptr<LlmInteractionError> error =
         dynamic_pointer_cast<LlmInteractionError>( turn );
       LlmInteractionErrorDisplay *errorDisplay =
-        new LlmInteractionErrorDisplay( error, m_turnContainer );
+        new LlmInteractionErrorDisplay( error, m_llmInterface, m_turnContainer );
 
       turnDisplay = errorDisplay;
 

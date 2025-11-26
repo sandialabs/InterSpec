@@ -66,7 +66,7 @@ LlmToolGui::LlmToolGui(InterSpec *viewer, WContainerWidget *parent)
   // Create our own LLM interface instance
   try
   {
-    m_llmInterface = std::make_unique<LlmInterface>(m_viewer, config);
+    m_llmInterface = std::make_shared<LlmInterface>(m_viewer, config);
     
     // Connect to LLM interface response signals
     m_llmInterface->conversationFinished().connect(this, &LlmToolGui::handleConversationFinished);
@@ -246,7 +246,7 @@ void LlmToolGui::sendMessage(const std::string& message)
     {
       // Create display widget for this interaction
       LlmInteractionDisplay *interactionDisplay =
-      new LlmInteractionDisplay( convo, 0, m_conversationContainer );
+      new LlmInteractionDisplay( convo, m_llmInterface, 0, m_conversationContainer );
 
       // Scroll to bottom
       const string js = "setTimeout(function() {"
@@ -637,7 +637,7 @@ void LlmToolGui::setConversationHistory(const std::shared_ptr<std::vector<std::s
 
       // Create display widget for this interaction
       LlmInteractionDisplay *interactionDisplay =
-        new LlmInteractionDisplay( conv, 0, m_conversationContainer );
+        new LlmInteractionDisplay( conv, m_llmInterface, 0, m_conversationContainer );
     }
   }else
   {
