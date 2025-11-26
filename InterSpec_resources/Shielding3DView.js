@@ -123,7 +123,7 @@ Shielding3DView = function(id, data) {
   var locs = this.locs;
 
   // --- Math Helpers ---
-  var Mat4 = {
+  this.Mat4 = {
     create: function() { return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]); },
     perspective: function(out, fovy, aspect, near, far) {
       var f = 1.0 / Math.tan(fovy / 2), nf = 1 / (near - far);
@@ -390,7 +390,139 @@ Shielding3DView = function(id, data) {
   if (data) {
     this.setData(data);
   }
-  
+
+  // --- Mouse Interaction ---
+  canvas.addEventListener('mousedown', function(e) {
+    self.isDragging = true;
+    self.lastMouseX = e.clientX;
+    self.lastMouseY = e.clientY;
+    self.button = e.button;
+    e.preventDefault(); // Prevent text selection
+  });
+
+  window.addEventListener('mouseup', function() {
+    self.isDragging = false;
+  });
+
+  canvas.addEventListener('mousemove', function(e) {
+    if (!self.isDragging) return;
+    var dx = e.clientX - self.lastMouseX;
+    var dy = e.clientY - self.lastMouseY;
+    self.lastMouseX = e.clientX;
+    self.lastMouseY = e.clientY;
+
+    if (self.button === 0) { // Left Button: Rotate
+      self.camPhi -= dx * 0.01;
+      self.camTheta -= dy * 0.01;
+      // Clamp theta to avoid gimbal lock or flipping
+      if (self.camTheta < 0.01) self.camTheta = 0.01;
+      if (self.camTheta > Math.PI - 0.01) self.camTheta = Math.PI - 0.01;
+    } else if (self.button === 2) { // Right Button: Pan
+      // Move camTarget relative to camera view
+      // Simple implementation: Pan in screen plane
+      var panSpeed = self.camRadius * 0.002; // Scale pan with distance
+      self.camTarget[0] -= dx * panSpeed * Math.cos(self.camPhi);
+      self.camTarget[2] -= dx * panSpeed * Math.sin(self.camPhi);
+      self.camTarget[1] += dy * panSpeed;
+    }
+  });
+
+  canvas.addEventListener('contextmenu', function(e) { e.preventDefault(); return false; }); // Disable context menu
+
+  canvas.addEventListener('wheel', function(e) {
+    e.preventDefault();
+    var delta = Math.sign(e.deltaY) * (self.camRadius * 0.1);
+    self.camRadius += delta;
+    if (self.camRadius < 1.0) self.camRadius = 1.0;
+  });
+
+  // --- Render Loop ---
+  function render() {
+    // Resize
+    if (canvas.width !== canvas.clientWidth || canvas.height !== canvas.clientHeight) {
+        canvas.width = canvas.clientWidth;
+        canvas.height = canvas.clientHeight;
+        gl.viewport(0, 0, canvas.width, canvas.height);
+    }
+
+    gl.clearColor(0.9, 0.9, 0.9, 1.0);
+    gl.enable(gl.DEPTH_TEST);
+    gl.enable(gl.CULL_FACE);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.enable(gl.BLEND);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    gl.useProgram(program);
+
+    // Camera Matrix
+    var eyeY = self.camTarget[1] + self.camRadius * Math.cos(self.camTheta);
+    var horizRad = self.camRadius * Math.sin(self.camTheta);
+    var eyeX = self.camTarget[0] + horizRad * Math.sin(self.camPhi);
+    var eyeZ = self.camTarget[2] + horizRad * Math.cos(self.camPhi);
+
+    var view = self.Mat4.lookAt(self.Mat4.create(), [eyeX, eyeY, eyeZ], self.camTarget, [0, 1, 0]);
+    var projection = self.Mat4.perspective(self.Mat4.create(), Math.PI / 4, canvas.width / canvas.height, 1.0, 10000.0); // near 1, far 10000
+    var viewProj = self.Mat4.multiply(self.Mat4.create(), projection, view);
+
+    var lightDir = [1, 1, 1]; // normalized in shader usually
+    var norm = Math.sqrt(3);
+    gl.uniform3f(locs.uLightDir, 1/norm, 1/norm, 1/norm);
+
+    // Draw Opaques First
+    // Actually, we have a list. Let's separate them.
+    var opaque = self.meshes.filter(function(m) { return !m.transparent; });
+    var trans = self.meshes.filter(function(m) { return m.transparent; });
+
+    // Sort transparent back-to-front?
+    // Distance from camera to object center.
+    trans.sort(function(a, b) {
+       // Get position from matrix (col 3)
+       var ax = a.matrix[12], ay = a.matrix[13], az = a.matrix[14];
+       var bx = b.matrix[12], by = b.matrix[13], bz = b.matrix[14];
+       var adist = (ax-eyeX)*(ax-eyeX) + (ay-eyeY)*(ay-eyeY) + (az-eyeZ)*(az-eyeZ);
+       var bdist = (bx-eyeX)*(bx-eyeX) + (by-eyeY)*(by-eyeY) + (bz-eyeZ)*(bz-eyeZ);
+       return bdist - adist; // Descending
+    });
+
+    var drawList = opaque.concat(trans);
+
+    for (var i = 0; i < drawList.length; i++) {
+      var mesh = drawList[i];
+      var mvp = self.Mat4.multiply(self.Mat4.create(), viewProj, mesh.matrix);
+
+      var normMat = new Float32Array(9);
+      // Normal matrix is inverse transpose of model upper 3x3.
+      // Since we only translate/rotate (and maybe uniform scale), model matrix upper 3x3 works if orthogonal.
+      // Mat4.normalFromMat4 handles inverse transpose.
+      self.Mat4.normalFromMat4(normMat, mesh.matrix);
+
+      gl.uniformMatrix4fv(locs.uModelViewProjection, false, mvp);
+      gl.uniformMatrix4fv(locs.uModel, false, mesh.matrix);
+      gl.uniformMatrix3fv(locs.uNormalMatrix, false, normMat);
+      gl.uniform4fv(locs.uColor, mesh.color);
+
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.buffer.indices);
+      gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffer.position);
+      gl.vertexAttribPointer(locs.aPosition, 3, gl.FLOAT, false, 0, 0);
+      gl.enableVertexAttribArray(locs.aPosition);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffer.normal);
+      gl.vertexAttribPointer(locs.aNormal, 3, gl.FLOAT, false, 0, 0);
+      gl.enableVertexAttribArray(locs.aNormal);
+
+      if (mesh.transparent) {
+          gl.depthMask(false); // Don't write depth for transparent
+      } else {
+          gl.depthMask(true);
+      }
+
+      gl.drawElements(gl.TRIANGLES, mesh.buffer.numElements, gl.UNSIGNED_SHORT, 0);
+    }
+
+    requestAnimationFrame(render);
+  }
+  requestAnimationFrame(render);
+
   return this;
 };
 
@@ -476,52 +608,65 @@ Shielding3DView.prototype.setData = function(data) {
     return { position: vertices, normal: normals, indices: indices };
   }
   
-  function createCylinder(radius, height, segments) {
-    var vertices = [];
+  function createCylinder(radius, length, radialSegments) {
+    var positions = [];
     var normals = [];
     var indices = [];
-    for (var i = 0; i <= segments; i++) {
-      var angle = 2 * Math.PI * i / segments;
-      var x = Math.cos(angle);
-      var z = Math.sin(angle);
-      vertices.push(radius * x, -height/2, radius * z);
-      normals.push(x, 0, z);
-      vertices.push(radius * x, height/2, radius * z);
-      normals.push(x, 0, z);
+    // Side
+    for (var i = 0; i <= radialSegments; i++) {
+      var theta = i * 2 * Math.PI / radialSegments;
+      var x = Math.sin(theta);
+      var y = Math.cos(theta);
+      // Top edge
+      normals.push(x, y, 0); positions.push(radius * x, radius * y, length / 2);
+      // Bottom edge
+      normals.push(x, y, 0); positions.push(radius * x, radius * y, -length / 2);
     }
-    for (var i = 0; i < segments; i++) {
-      var base = i * 2;
-      indices.push(base, base + 1, (base + 2) % (segments * 2 + 2));
-      indices.push(base + 1, (base + 3) % (segments * 2 + 2), (base + 2) % (segments * 2 + 2));
+    for (var i = 0; i < radialSegments; i++) {
+        var idx = i * 2;
+        indices.push(idx, idx + 1, idx + 2);
+        indices.push(idx + 1, idx + 3, idx + 2);
     }
-    // Top and bottom caps
-    var centerBottom = segments * 2 + 2;
-    var centerTop = centerBottom + 1;
-    vertices.push(0, -height/2, 0);
-    normals.push(0, -1, 0);
-    vertices.push(0, height/2, 0);
-    normals.push(0, 1, 0);
-    for (var i = 0; i < segments; i++) {
-      var base = i * 2;
-      var next = ((i + 1) % segments) * 2;
-      indices.push(centerBottom, next, base);
-      indices.push(centerTop, base + 1, next + 1);
+    // Caps (simple triangle fan approximation with center point)
+    var topCenterIdx = positions.length / 3;
+    positions.push(0, 0, length / 2); normals.push(0, 0, 1);
+    var bottomCenterIdx = topCenterIdx + 1;
+    positions.push(0, 0, -length / 2); normals.push(0, 0, -1);
+
+    // Add cap vertices with correct normals
+    var capStartIdx = bottomCenterIdx + 1;
+    for (var i = 0; i <= radialSegments; i++) {
+        var theta = i * 2 * Math.PI / radialSegments;
+        var x = Math.sin(theta) * radius;
+        var y = Math.cos(theta) * radius;
+        positions.push(x, y, length/2); normals.push(0, 0, 1);
+        positions.push(x, y, -length/2); normals.push(0, 0, -1);
     }
-    return { position: vertices, normal: normals, indices: indices };
+    for (var i = 0; i < radialSegments; i++) {
+        var top1 = capStartIdx + i * 2;
+        var top2 = top1 + 2;
+        indices.push(topCenterIdx, top2, top1); // Top cap
+        var bot1 = top1 + 1;
+        var bot2 = top2 + 1;
+        indices.push(bottomCenterIdx, bot1, bot2); // Bottom cap
+    }
+    return { position: positions, normal: normals, indices: indices };
   }
   
-  function createBox(w, h, d) {
+  function createBox(width, height, depth) {
+    // 8 vertices, but normals differ per face, so 24 vertices
+    var w = width/2, h = height/2, d = depth/2;
     var positions = [
       // Front
-       w,  h,  d,   w, -h,  d,  -w, -h,  d,  -w,  h,  d,
+      -w, -h,  d,   w, -h,  d,   w,  h,  d,  -w,  h,  d,
       // Back
-      -w,  h, -d,  -w, -h, -d,   w, -h, -d,   w,  h, -d,
+      -w, -h, -d,  -w,  h, -d,   w,  h, -d,   w, -h, -d,
       // Top
-      -w,  h,  d,   w,  h,  d,   w,  h, -d,  -w,  h, -d,
+      -w,  h, -d,  -w,  h,  d,   w,  h,  d,   w,  h, -d,
       // Bottom
       -w, -h, -d,   w, -h, -d,   w, -h,  d,  -w, -h,  d,
       // Right
-       w,  h, -d,   w,  h,  d,   w, -h,  d,   w, -h, -d,
+       w, -h, -d,   w,  h, -d,   w,  h,  d,   w, -h,  d,
       // Left
       -w, -h, -d,  -w, -h,  d,  -w,  h,  d,  -w,  h, -d
     ];
@@ -546,19 +691,13 @@ Shielding3DView.prototype.setData = function(data) {
   
   // Now create meshes (same logic as constructor)
   var meshes = this.meshes;
-  
+
   // 1. Detector
-  var detDistance = data.distance * CM; // Center of shielding to Face of Detector (data.distance is in mm, convert to raw units?)
-  // Wait, data.distance in JSON is in mm (createJsonData divides by mm).
-  // In JS, we want to render.
-  // Let's stick to a unit scale.
-  // If we assume 1 unit = 1 mm.
-  // CM = 10.0 is weird if we want 1 unit = 1 mm.
-  // Let's redefine units to be consistent with JSON input (mm).
+  // data.distance is in mm. We use mm as base unit (1 unit = 1 mm).
   var MM = 1.0;
   var CM = 10.0 * MM;
   var INCH = 25.4 * MM;
-  
+
   var detDistance = data.distance * MM;
   
   // Detector: Cylinder
@@ -579,7 +718,7 @@ Shielding3DView.prototype.setData = function(data) {
   meshes.push({
     buffer: createBufferInfo(gl, createCylinder(detRad, detLen, 32)),
     color: [0.7, 0.7, 0.7, 1.0], // Grey
-    matrix: Mat4.translate(Mat4.create(), Mat4.create(), [0, 0, detZ]),
+    matrix: this.Mat4.translate(this.Mat4.create(), this.Mat4.create(), [0, 0, detZ]),
     transparent: false
   });
 
@@ -593,7 +732,7 @@ Shielding3DView.prototype.setData = function(data) {
   meshes.push({
     buffer: createBufferInfo(gl, createBox(boxDim, boxDim, boxDim)),
     color: [0.2, 0.2, 0.8, 1.0], // Blueish
-    matrix: Mat4.translate(Mat4.create(), Mat4.create(), [0, 0, boxZ]),
+    matrix: this.Mat4.translate(this.Mat4.create(), this.Mat4.create(), [0, 0, boxZ]),
     transparent: false
   });
 
@@ -605,7 +744,7 @@ Shielding3DView.prototype.setData = function(data) {
   meshes.push({
     buffer: createBufferInfo(gl, createBox(handW, handH, handD)),
     color: [0.1, 0.1, 0.1, 1.0], // Dark
-    matrix: Mat4.translate(Mat4.create(), Mat4.create(), [0, handY, handZ]),
+    matrix: this.Mat4.translate(this.Mat4.create(), this.Mat4.create(), [0, handY, handZ]),
     transparent: false
   });
 
@@ -656,9 +795,9 @@ Shielding3DView.prototype.setData = function(data) {
     }
 
     if (meshData) {
-      var mat = Mat4.create();
+      var mat = this.Mat4.create();
       if (geo === "CylinderSideOn") {
-         Mat4.rotate(mat, mat, Math.PI/2, [1, 0, 0]);
+         this.Mat4.rotate(mat, mat, Math.PI/2, [1, 0, 0]);
       }
       
       meshes.push({
@@ -687,7 +826,7 @@ Shielding3DView.prototype.setData = function(data) {
       meshes.push({
         buffer: createBufferInfo(gl, createSphere(srcRad, 16, 16)),
         color: [1.0, 0.0, 0.0, 1.0], // Red
-        matrix: Mat4.translate(Mat4.create(), Mat4.create(), [0, 0, 0]), // At origin
+        matrix: this.Mat4.translate(this.Mat4.create(), this.Mat4.create(), [0, 0, 0]), // At origin
         transparent: false
       });
   }
@@ -721,158 +860,4 @@ Shielding3DView.prototype.setData = function(data) {
   this.camTarget = [0, 0, detDistance/2];
   this.camRadius = detDistance * 1.5 + 10 * INCH;
   if (this.camRadius < 100) this.camRadius = 100;
-};
-
-  // --- Camera & Interaction ---
-  // Initial zoom to show shielding and detector.
-  // Extents: Shielding around 0. Detector around detDistance.
-  // Center of view: (0 + detDistance)/2?
-  // Radius of scene: detDistance + size.
-  var camRadius = detDistance * 1.5 + 10 * INCH;
-  if (camRadius < 100) camRadius = 100;
-  
-  var camTheta = Math.PI / 4; // 45 deg
-  var camPhi = Math.PI / 4;
-  var camTarget = [0, 0, detDistance/2];
-  
-  var isDragging = false;
-  var lastMouseX = 0;
-  var lastMouseY = 0;
-  var button = -1;
-
-  canvas.addEventListener('mousedown', function(e) {
-    isDragging = true;
-    lastMouseX = e.clientX;
-    lastMouseY = e.clientY;
-    button = e.button;
-    e.preventDefault(); // Prevent text selection
-  });
-
-  window.addEventListener('mouseup', function() {
-    isDragging = false;
-  });
-
-  canvas.addEventListener('mousemove', function(e) {
-    if (!isDragging) return;
-    var dx = e.clientX - lastMouseX;
-    var dy = e.clientY - lastMouseY;
-    lastMouseX = e.clientX;
-    lastMouseY = e.clientY;
-
-    if (button === 0) { // Left Button: Rotate
-      camPhi -= dx * 0.01;
-      camTheta -= dy * 0.01;
-      // Clamp theta to avoid gimbal lock or flipping
-      if (camTheta < 0.01) camTheta = 0.01;
-      if (camTheta > Math.PI - 0.01) camTheta = Math.PI - 0.01;
-    } else if (button === 2) { // Right Button: Pan
-      // Move camTarget relative to camera view
-      // Simple implementation: Pan in screen plane
-      // We need Up and Right vectors of camera.
-      // For now, just crude pan along world axes adjusted by phi
-      var panSpeed = camRadius * 0.002; // Scale pan with distance
-      // This is non-trivial without full view matrix basis access easily available here
-      // Let's just modify camTarget Z/X/Y
-      // Better: Just standard orbit pan logic roughly
-      camTarget[0] -= dx * panSpeed * Math.cos(camPhi);
-      camTarget[2] -= dx * panSpeed * Math.sin(camPhi);
-      camTarget[1] += dy * panSpeed;
-    }
-  });
-  
-  canvas.addEventListener('contextmenu', function(e) { e.preventDefault(); return false; }); // Disable context menu
-
-  canvas.addEventListener('wheel', function(e) {
-    e.preventDefault();
-    var delta = Math.sign(e.deltaY) * (camRadius * 0.1);
-    camRadius += delta;
-    if (camRadius < 1.0) camRadius = 1.0;
-  });
-
-  // --- Render Loop ---
-  function render() {
-    // Resize
-    if (canvas.width !== canvas.clientWidth || canvas.height !== canvas.clientHeight) {
-        canvas.width = canvas.clientWidth;
-        canvas.height = canvas.clientHeight;
-        gl.viewport(0, 0, canvas.width, canvas.height);
-    }
-
-    gl.clearColor(0.9, 0.9, 0.9, 1.0);
-    gl.enable(gl.DEPTH_TEST);
-    gl.enable(gl.CULL_FACE);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-    gl.enable(gl.BLEND);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-
-    gl.useProgram(program);
-
-    // Camera Matrix
-    var eyeY = camTarget[1] + camRadius * Math.cos(camTheta);
-    var horizRad = camRadius * Math.sin(camTheta);
-    var eyeX = camTarget[0] + horizRad * Math.sin(camPhi);
-    var eyeZ = camTarget[2] + horizRad * Math.cos(camPhi);
-    
-    var view = Mat4.lookAt(Mat4.create(), [eyeX, eyeY, eyeZ], camTarget, [0, 1, 0]);
-    var projection = Mat4.perspective(Mat4.create(), Math.PI / 4, canvas.width / canvas.height, 1.0, 10000.0); // near 1, far 10000
-    var viewProj = Mat4.multiply(Mat4.create(), projection, view);
-
-    var lightDir = [1, 1, 1]; // normalized in shader usually
-    var norm = Math.sqrt(3);
-    gl.uniform3f(locs.uLightDir, 1/norm, 1/norm, 1/norm);
-
-    // Draw Opaques First
-    // Actually, we have a list. Let's separate them.
-    var opaque = meshes.filter(function(m) { return !m.transparent; });
-    var trans = meshes.filter(function(m) { return m.transparent; });
-    
-    // Sort transparent back-to-front?
-    // Distance from camera to object center.
-    trans.sort(function(a, b) {
-       // Get position from matrix (col 3)
-       var ax = a.matrix[12], ay = a.matrix[13], az = a.matrix[14];
-       var bx = b.matrix[12], by = b.matrix[13], bz = b.matrix[14];
-       var adist = (ax-eyeX)*(ax-eyeX) + (ay-eyeY)*(ay-eyeY) + (az-eyeZ)*(az-eyeZ);
-       var bdist = (bx-eyeX)*(bx-eyeX) + (by-eyeY)*(by-eyeY) + (bz-eyeZ)*(bz-eyeZ);
-       return bdist - adist; // Descending
-    });
-
-    var drawList = opaque.concat(trans);
-
-    for (var i = 0; i < drawList.length; i++) {
-      var mesh = drawList[i];
-      var mvp = Mat4.multiply(Mat4.create(), viewProj, mesh.matrix);
-      
-      var normMat = new Float32Array(9);
-      // Normal matrix is inverse transpose of model upper 3x3.
-      // Since we only translate/rotate (and maybe uniform scale), model matrix upper 3x3 works if orthogonal.
-      // Mat4.normalFromMat4 handles inverse transpose.
-      Mat4.normalFromMat4(normMat, mesh.matrix);
-
-      gl.uniformMatrix4fv(locs.uModelViewProjection, false, mvp);
-      gl.uniformMatrix4fv(locs.uModel, false, mesh.matrix);
-      gl.uniformMatrix3fv(locs.uNormalMatrix, false, normMat);
-      gl.uniform4fv(locs.uColor, mesh.color);
-
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.buffer.indices);
-      gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffer.position);
-      gl.vertexAttribPointer(locs.aPosition, 3, gl.FLOAT, false, 0, 0);
-      gl.enableVertexAttribArray(locs.aPosition);
-      
-      gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffer.normal);
-      gl.vertexAttribPointer(locs.aNormal, 3, gl.FLOAT, false, 0, 0);
-      gl.enableVertexAttribArray(locs.aNormal);
-
-      if (mesh.transparent) {
-          gl.depthMask(false); // Don't write depth for transparent
-      } else {
-          gl.depthMask(true);
-      }
-
-      gl.drawElements(gl.TRIANGLES, mesh.buffer.numElements, gl.UNSIGNED_SHORT, 0);
-    }
-    
-    requestAnimationFrame(render);
-  }
-  requestAnimationFrame(render);
 };

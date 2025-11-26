@@ -9023,7 +9023,7 @@ void ShieldingSourceDisplay::showShieldSourceDiagram()
   if( det && det->detectorDiameter() > 0.0 )
     detDiameter = det->detectorDiameter();
 
-  std::vector<ShieldingSourceFitCalc::IsoFitStruct> sources = m_sourceModel->underlyingData();
+  std::vector<ShieldingSourceFitCalc::SourceFitDef> sources = m_sourceModel->underlyingData();
   const GeometryType geom_type = geometry();
   
   if( m_diagramDialog )
