@@ -738,6 +738,9 @@ struct RelActAutoGuiState
 
   std::string note;
 
+  /** Description field for this configuration. Not currently exposed in GUI. */
+  std::string description;
+
   RelActCalcAuto::Options options;
   
     

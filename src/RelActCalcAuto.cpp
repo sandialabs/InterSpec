@@ -11038,6 +11038,13 @@ RelActAutoGuiState::RelActAutoGuiState()
     base_node->append_node( node );
   }//if( !note.empty() )
 
+  if( !description.empty() )
+  {
+    const char *val = doc->allocate_string( description.c_str() );
+    xml_node<char> *node = doc->allocate_node( node_element, "Description", val );
+    base_node->append_node( node );
+  }//if( !description.empty() )
+
   // Elements in the offline-xml we dont deal with here
   //  base_node->append_node( <"ForegroundFileName"> );
   //  base_node->append_node( <"BackgroundFileName"> );
@@ -11100,6 +11107,9 @@ void RelActAutoGuiState::deSerialize( const rapidxml::xml_node<char> *base_node,
 
   const xml_node<char> * const note_node = XML_FIRST_NODE(base_node, "Note");
   note = SpecUtils::xml_value_str( note_node );
+
+  const xml_node<char> * const description_node = XML_FIRST_NODE(base_node, "Description");
+  description = SpecUtils::xml_value_str( description_node );
 
   const xml_node<char> *node = XML_FIRST_NODE(base_node, "Options");
   if( !node )
@@ -14749,6 +14759,12 @@ void Options::equalEnough( const Options &lhs, const Options &rhs )
 
 void RelActAutoGuiState::equalEnough( const RelActAutoGuiState &lhs, const RelActAutoGuiState &rhs )
 {
+  if( lhs.note != rhs.note )
+    throw std::runtime_error( "note field in lhs and rhs are not the same" );
+
+  if( lhs.description != rhs.description )
+    throw std::runtime_error( "description field in lhs and rhs are not the same" );
+
   RelActCalcAuto::Options::equalEnough( lhs.options, rhs.options );
 
   if( lhs.background_subtract != rhs.background_subtract )
