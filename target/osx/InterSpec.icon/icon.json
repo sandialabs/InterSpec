@@ -1,0 +1,43 @@
+{
+  "color-space-for-untagged-svg-colors" : "display-p3",
+  "fill" : {
+    "solid" : "display-p3:0.83057,0.89697,0.97949,1.00000"
+  },
+  "groups" : [
+    {
+      "blend-mode" : "normal",
+      "blur-material" : null,
+      "hidden" : false,
+      "layers" : [
+        {
+          "blend-mode" : "overlay",
+          "fill" : "none",
+          "glass" : false,
+          "image-name" : "InterSpec_multipeak_no_background.svg",
+          "name" : "InterSpec_multipeak_no_background",
+          "opacity" : 1,
+          "position" : {
+            "scale" : 1.6,
+            "translation-in-points" : [
+              2.5390625,
+              43.359375
+            ]
+          }
+        }
+      ],
+      "lighting" : "individual",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "specular" : false,
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "squares" : "shared"
+  }
+}

@@ -1627,7 +1627,7 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
                                 ? drf->peakResolutionSigma(input.gamma_energy)
                                 : 0.25*(lower_upper_energy - upper_lower_energy);
       
-      const DetectorPeakResponse::EffGeometryType det_geom = drf ? drf->geometryType() : DetectorPeakResponse::EffGeometryType::FarField;
+      const DetectorPeakResponse::EffGeometryType det_geom = drf ? drf->geometryType() : DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
       
       PeakDef generic_peak( input.gamma_energy, peak_sigma, 0.0 );
       generic_peak.continuum()->setRange( upper_lower_energy, lower_upper_energy );
@@ -1835,7 +1835,7 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     const bool useCuries = use_curie_units();
     const bool fixed_geom = drf ? drf->isFixedGeometry() : false;
     const DetectorPeakResponse::EffGeometryType det_geom = drf ? drf->geometryType()
-                                                : DetectorPeakResponse::EffGeometryType::FarField;
+                                                : DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
     const bool air_atten = (do_air_attenuation && !fixed_geom && (distance > 0.0));
     const double intrinsic_eff = drf ? drf->intrinsicEfficiency( energy ) : 1.0f;
     const double geom_eff = (drf && (distance >= 0.0)) ? drf->fractionalSolidAngle( drf->detectorDiameter(), distance ) : 1.0;
@@ -3188,7 +3188,7 @@ void DetectionLimitTool::doCalc()
     double min_search_quantity = std::numeric_limits<double>::infinity(), max_search_quantity = 0.0;
   
     int nused = 0;
-    DetectorPeakResponse::EffGeometryType det_geom = DetectorPeakResponse::EffGeometryType::FarField;
+    DetectorPeakResponse::EffGeometryType det_geom = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
     
     for( auto w : m_peaks->children() )
     {

@@ -2385,7 +2385,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     
     if( rel_eff_csv_drf )
     {
-      det = DrfSelect::parseRelEffCsvFile( fileLocation );
+      det = DrfSelect::parseInterSpecRelEffCsvFile( fileLocation );
     }else
     {
       try
@@ -3221,7 +3221,7 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   WLabel *geom_label = new WLabel( WString::tr("smm-ecc-how-to-interpret"), btn_div );
   WComboBox *geom_combo = new WComboBox( btn_div );
   geom_combo->addItem( WString::tr("smm-ecc-far-field") );
-  index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FarField;
+  index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
   
   geom_combo->addItem( WString::tr("smm-ecc-fix-geom-total-act") );
   index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct;
@@ -3291,7 +3291,7 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
       throw runtime_error( "diam <= 0" );
     
     const bool correct_for_air_atten = true;
-    return det->convertFixedGeometryToFarField( diameter, distance, correct_for_air_atten );
+    return det->reinterpretAsFarFieldAbsEfficiency( diameter, distance, correct_for_air_atten );
   };//try_create_farfield
   
   auto update_state = [=](){
@@ -3307,11 +3307,13 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
     {
       shared_ptr<DetectorPeakResponse> new_drf = det;
       
-      far_field_opt->setHidden( (geom_type != DetectorPeakResponse::EffGeometryType::FarField) );
+      far_field_opt->setHidden( (geom_type != DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic)
+                               && (geom_type != DetectorPeakResponse::EffGeometryType::FarFieldAbsolute) );
       
       switch( geom_type )
       {
-        case DetectorPeakResponse::EffGeometryType::FarField:
+        case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
+        case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
           new_drf = try_create_farfield();
           break;
           
@@ -3357,7 +3359,8 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
     {
       switch( geom_type )
       {
-        case DetectorPeakResponse::EffGeometryType::FarField:
+        case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
+        case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
           new_drf = try_create_farfield();
           break;
           

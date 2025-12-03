@@ -1495,7 +1495,7 @@ void SpecMeas::load_cnf_using_reader( CAMInputOutput::CAMIO &reader )
       const float detDiameter = 0.0f;
       // I'm not actually sure how to, or if we can, know what type of efficiency this is
       const DetectorPeakResponse::EffGeometryType geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct;
-      det->setEfficiencyPoints( eff_points, detDiameter, geom_type );
+      det->setEfficiencyPoints( eff_points, detDiameter, -1.0, geom_type );
       m_detector = det;
     }//if( eff_points.size() > 2 )
   }catch( std::exception & )

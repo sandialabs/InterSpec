@@ -37,22 +37,15 @@
   <message id="reds-recursive-no-drfs-in-dir">Sin DRF válidos en directorio, o sus subdirectorios.</message>
   <message id="ds-csv-upload-desc">
     <div style="white-space:nowrap;">
-      Archivo CSV de eficiencia intrínseca:
+      Carga de archivo de eficiencia:
     </div>
     <div>
-      La primera columna es energía en keV.
-      La segunda columna es el % eficiente (0 a 100) para rayos gamma a esa
-      energía, incidentes en el detector, para ser registrados en el fotopico.
+      Para CSV de eficiencia, la primera columna es energía en keV; la segunda es % eficiencia (0 a 100).
     </div>
     <div>
-      También necesitará subir un archivo GADRAS Detector.dat, o ingresar el
-      diámetro del detector, después de subir el archivo de eficiencia.
-    </div>
-    <div>
-      También puede subir CSV exportado de la herramienta <em>Crear respuesta del detector</em>.
+      Intrínseca es eficiencia para gammas que golpean la superficie del detector, mientras que Absoluta es a una distancia dada.
     </div>
   </message>
-  <message id="ds-enter-gad-det-diam">Ingresar diámetro del detector o subir archivo Detector.dat:</message>
   <message id="ds-det-diam">Diámetro del detector:</message>
   <message id="ds-fixed-geom">Geometría fija</message>
   <message id="ds-gad-det-file-label">Archivo GADRAS Detector.Dat:</message>
