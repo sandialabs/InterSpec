@@ -604,7 +604,7 @@ BOOST_AUTO_TEST_CASE( test_intrinsic_efficiency_formula )
                                                  DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
 
     // Reinterpret as FarFieldAbsolute: the formula values now represent absolute efficiency at char_dist
-    shared_ptr<DetectorPeakResponse> drf_abs = drf_intrinsic->reinterpretAsFarFieldEfficiency( det_diameter, char_dist, true );
+    shared_ptr<DetectorPeakResponse> drf_abs = drf_intrinsic->reinterpretAsFarFieldAbsEfficiency( det_diameter, char_dist, true );
 
     BOOST_REQUIRE( drf_abs != nullptr );
     BOOST_CHECK( drf_abs->geometryType() == DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
@@ -731,7 +731,7 @@ BOOST_AUTO_TEST_CASE( test_reinterpret_as_far_field )
 
   shared_ptr<DetectorPeakResponse> drf_farfield;
   BOOST_CHECK_NO_THROW(
-    drf_farfield = drf_fixed->reinterpretAsFarFieldEfficiency( det_diameter, distance, true )
+    drf_farfield = drf_fixed->reinterpretAsFarFieldAbsEfficiency( det_diameter, distance, true )
   );
 
   BOOST_REQUIRE( drf_farfield != nullptr );
@@ -788,21 +788,20 @@ BOOST_AUTO_TEST_CASE( test_convert_fixed_to_far_field )
 
   shared_ptr<DetectorPeakResponse> drf_converted;
   BOOST_CHECK_NO_THROW(
-    drf_converted = drf_fixed->convertFixedGeometryToFarField( det_diameter, distance, true )
+    drf_converted = drf_fixed->reinterpretAsFarFieldAbsEfficiency( det_diameter, distance, true )
   );
 
   BOOST_REQUIRE( drf_converted != nullptr );
   BOOST_CHECK( drf_converted->geometryType() == DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
 
-  // Test that non-FixedGeomTotalAct throws exception
+  // Test that non-FixedGeomTotalAct doesnt throw exception
   shared_ptr<DetectorPeakResponse> drf_intrinsic = make_shared<DetectorPeakResponse>( "Test", "Test" );
   const vector<float> coeffs = { -5.0f, 0.5f };
   drf_intrinsic->fromExpOfLogPowerSeries( coeffs, {}, 0.0, det_diameter, PhysicalUnits::keV,
                                          50.0f, 3000.0f,
                                          DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
 
-  BOOST_CHECK_THROW( drf_intrinsic->convertFixedGeometryToFarField( det_diameter, distance, true ),
-                    std::exception );
+  BOOST_CHECK_NO_THROW( drf_intrinsic->reinterpretAsFarFieldAbsEfficiency( det_diameter, distance, true ) );
 
   cout << "  convertFixedGeometryToFarField tests passed" << endl;
 }
