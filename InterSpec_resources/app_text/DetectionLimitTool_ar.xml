@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dlt- is short for DetectionLimitTool
+  -->
+  <message id="dlt-window-title">أداة ثقة الكشف</message>
+  
+  <!-- MdaPeakRow strings -->
+  <message id="dlt-use-for-multi-peak">استخدام للذروات المتعددة</message>
+  <message id="dlt-roi-lower-label">ROI السفلي:</message>
+  <message id="dlt-roi-upper-label">ROI العلوي:</message>
+  <message id="dlt-continuum-label">الطيف المستمر</message>
+  <message id="dlt-cont-norm-label">تطبيع المستمر</message>
+  <message id="dlt-cont-norm-floating">عائم</message>
+  <message id="dlt-cont-norm-fixed-edges">ثابت عند الحواف</message>
+  <message id="dlt-cont-norm-fixed-full-roi">ثابت ROI كامل</message>
+  <message id="dlt-cont-norm-tt">
+    كيف يجب تحديد تطبيع الطيف المستمر:
+    <ul><li><b>عائم</b>: يتم ملاءمة الطيف المستمر متعدد الحدود، لكل نشاط معطى -
+    يؤثر النشاط على الطيف المستمر.</li>
+    <li><b>ثابت عند الحواف</b>: تُستخدم القنوات على جانبي ROI لتحديد
+    طيف مستمر خطي ثابت، ولا يتأثر بنشاط النويدات.</li>
+    <li><b>ثابت ROI كامل</b>: يتم ملاءمة الطيف المستمر باستخدام نطاق الطاقة الكامل لـ ROI،
+    بافتراض سعة غاوسية صفر؛ لاحقاً، سيكون مكون غاوس للذروة
+    فوق هذا الطيف المستمر الثابت.<br/>
+    هذا يؤكد بشكل فعال أنك تعلم أنه لا يوجد ذروة إشارة موجودة في البيانات.
+    لن يتأثر الطيف المستمر بقيمة نشاط النويدة، ومكون
+    غاوس للذروة سيكون فوق هذا الطيف المستمر الثابت عند تقييم
+    &chi;<sup>2</sup>.</li>
+    </ul>
+  </message>
+  <message id="dlt-single-peak-currie-limit">حد كوري للذروة الواحدة</message>
+  <message id="dlt-num-side-channels-label">عدد القنوات الجانبية</message>
+  <message id="dlt-further-details-link">تفاصيل إضافية...</message>
+  <message id="dlt-err-computing-info">خطأ في الحساب {1}, {2} كيلو إلكترون فولت معلومات</message>
+  <message id="dlt-err-computing-currie-info">خطأ في حساب معلومات حد كوري: {1}</message>
+  
+  <!-- MdaPeakRow setSimplePoisonTxt strings -->
+  <message id="dlt-nominal">الاسمي:</message>
+  <message id="dlt-range">النطاق:</message>
+  <message id="dlt-detected-activity-tt">النشاط المكتشف، باستخدام منطقة الاهتمام هذه فقط،
+    والزيادة المرصودة في العد، بالإضافة إلى
+    فترة الثقة الإحصائية.</message>
+  <message id="dlt-limit-lt-zero">الحد: &lt; 0{1}</message>
+  <message id="dlt-sig-fewer-counts">(عدد العد في ROI أقل بكثير من المتوقع)</message>
+  <message id="dlt-fewer-counts-tt">لوحظ عدد عد أقل بكثير في
+    منطقة الاهتمام، مما تنبأت به القنوات المجاورة.</message>
+  <message id="dlt-upper-limit">الحد الأعلى:</message>
+  <message id="dlt-critical-limit">الحد الحرج:</message>
+  <message id="dlt-limit-tt">الحد الأعلى هو أقصى نشاط موجود، لمستوى الثقة المعطى،
+    مع الأخذ في الاعتبار عدد العد المرصود في ROI.
+    الحد الحرج هو النشاط حيث سيتم اكتشاف الإشارة بشكل موثوق.
+    كلا الرقمين محسوبان باستخدام طريقة كوري.</message>
+  <message id="dlt-large-deficit">نقص كبير في العد في ROI</message>
+  
+  <!-- DetectionLimitTool main class strings -->
+  <message id="dlt-nuclide-label">النويدة:&nbsp;&nbsp;</message>
+  <message id="dlt-age-label">العمر:</message>
+  <message id="dlt-tt-age-edit">
+    <div>عمر النويدة.</div>
+    <br />
+    <div>العمر يتحكم في كمية نمو النسل؛ أنشطة النويدة الأب
+    (أي المدخلة) يتم الإبلاغ عنها دائماً في وقت القياس.
+    </div>
+  </message>
+  <message id="dlt-distance-label">المسافة:</message>
+  <message id="dlt-activity-label">النشاط:</message>
+  <message id="dlt-attenuate-for-air">التوهين للهواء</message>
+  <message id="dlt-shield-empty-text">مادة التدريع</message>
+  <message id="dlt-activity-limit">حد النشاط</message>
+  <message id="dlt-distance-limit">حد المسافة</message>
+  <message id="dlt-peaks-disp-act-label">الذروات عرض النشاط:</message>
+  <message id="dlt-peaks-disp-dist-label">الذروات عرض المسافة:</message>
+  <message id="dlt-conf-level-label">مستوى الثقة:</message>
+  <message id="dlt-conf-95">95%</message>
+  <message id="dlt-conf-99">99%</message>
+  <message id="dlt-conf-1sigma">1σ (68.2%)</message>
+  <message id="dlt-conf-2sigma">2σ (95.4%)</message>
+  <message id="dlt-conf-3sigma">3σ (99.7%)</message>
+  <message id="dlt-conf-4sigma">4σ</message>
+  <message id="dlt-conf-5sigma">5σ</message>
+  <message id="dlt-gamma-lines-to-use">خطوط جاما للاستخدام</message>
+  <message id="dlt-min-rel-intensity-label">الحد الأدنى للشدة النسبية:</message>
+  <message id="dlt-fit-fwhm-btn">ملاءمة FWHM...</message>
+  <message id="dlt-log">لوغاريتم</message>
+  <message id="dlt-lin">خطي</message>
+  <message id="dlt-below-lc">(أقل من L<sub>c</sub>)</message>
+  <message id="dlt-lt-zero-counts">&lt; 0 عد</message>
+  <message id="dlt-lt-zero-activity">&lt; {1}</message>
+  
+  <!-- Error messages -->
+  <message id="dlt-err-no-data">لا توجد بيانات محملة</message>
+  <message id="dlt-err-no-drf">لا يوجد DRF محمل</message>
+  <message id="dlt-err-no-fwhm">DRF لا يحتوي على معلومات FWHM - يرجى ملاءمة FWHM، أو تغيير DRF.</message>
+  <message id="dlt-err-no-nuclide">لا توجد نويدة صالحة</message>
+  <message id="dlt-err-activity-invalid">النشاط غير صالح</message>
+  <message id="dlt-err-distance-invalid">المسافة غير صالحة</message>
+  <message id="dlt-err-min-rel-intensity">الحد الأدنى للشدة النسبية للعرض غير صالح.</message>
+  <message id="dlt-err-shielding">خطأ في حساب تأثيرات التدريع</message>
+  <message id="dlt-err-gamma-yields">خطأ في عوائد جاما - جميع الشدات صفر.</message>
+  <message id="dlt-err-no-peaks-selected">لا توجد ذروات محددة</message>
+  <message id="dlt-err-calculating-chi2">خطأ في حساب Chi2: {1}</message>
+  <message id="dlt-err-calculating-limit">خطأ في حساب الحد: {1}</message>
+  
+  <!-- createCurrieRoiMoreInfoWindow strings -->
+  <message id="dlt-observed-activity">النشاط المرصود</message>
+  <message id="dlt-observed-counts">العد المرصود</message>
+  <message id="dlt-activity-range">نطاق النشاط</message>
+  <message id="dlt-counts-range">نطاق العد</message>
+  <message id="dlt-activity-le-zero">النشاط &le; 0 {1}</message>
+  <message id="dlt-counts-le-zero">العد &le; 0</message>
+  <message id="dlt-activity-upper-bound">الحد الأعلى للنشاط</message>
+  <message id="dlt-counts-upper-bound">الحد الأعلى للعد</message>
+  <message id="dlt-distance-not-supported">المسافة غير مدعومة للمعلومات الإضافية بعد</message>
+  <message id="dlt-lower-region-channels">قنوات المنطقة السفلية</message>
+  <message id="dlt-lower-region-counts">عد المنطقة السفلية</message>
+  <message id="dlt-upper-region-channels">قنوات المنطقة العلوية</message>
+  <message id="dlt-upper-region-counts">عد المنطقة العلوية</message>
+  <message id="dlt-using-roi-as-background">استخدام منطقة ROI كتقدير للخلفية</message>
+  <message id="dlt-roi-area-channels">قنوات منطقة ROI</message>
+  <message id="dlt-peak-area-channels">قنوات منطقة الذروة</message>
+  <message id="dlt-roi-region-counts">عد منطقة ROI</message>
+  <message id="dlt-peak-region-counts">عد منطقة الذروة</message>
+  <message id="dlt-roi-region-null-est">تقدير صفري لمنطقة ROI</message>
+  <message id="dlt-peak-region-null-est">تقدير صفري لمنطقة الذروة</message>
+  <message id="dlt-peak-critical-limit">الحد الحرج للذروة <span style="font-size: smaller;">(L<sub>c</sub>)</span></message>
+  <message id="dlt-peak-detection-limit">حد الكشف للذروة <span style="font-size: smaller;">(L<sub>d</sub>)</span></message>
+  <message id="dlt-detector-intrinsic-eff">الكفاءة الجوهرية للكاشف</message>
+  <message id="dlt-solid-angle-fraction">كسر الزاوية الصلبة</message>
+  <message id="dlt-shielding-transmission">نفاذية التدريع</message>
+  <message id="dlt-air-transmission">نفاذية الهواء</message>
+  <message id="dlt-nuclide-branching-ratio">نسبة التفرع للنويدة</message>
+  
+  <!-- Tooltip strings for createCurrieRoiMoreInfoWindow -->
+  <message id="dlt-tt-greater-than-lc">أكبر من &quot;المستوى الحرج&quot;، L<sub>c</sub>،
+    تم رصد العد في منطقة الذروة.</message>
+  <message id="dlt-tt-activity-range">تقدير نطاق نشاط الإشارة، إلى مستوى الثقة {1}.</message>
+  <message id="dlt-tt-counts-range">تقدير نطاق عد الإشارة، إلى مستوى الثقة {1}.</message>
+  <message id="dlt-tt-fewer-than-predicted">لوحظ عدد عد أقل بكثير في منطقة الذروة،
+    مما تنبأت به المناطق المجاورة.</message>
+  <message id="dlt-tt-upper-bound">الحد الأعلى على مقدار النشاط الذي يمكن أن يكون موجوداً، إلى
+    مستوى الثقة {1}.</message>
+  <message id="dlt-tt-lower-region-channels">المنطقة فوق الذروة في الطاقة، التي تُستخدم
+    لتقدير عد الطيف المستمر المتوقع في منطقة الذروة؛
+    يتوافق مع {1} إلى {2} كيلو إلكترون فولت</message>
+  <message id="dlt-tt-lower-region-counts">عدد العد المرصود في المنطقة أسفل منطقة الذروة،
+    الذي يُستخدم لتقدير عد منطقة الذروة المتوقع</message>
+  <message id="dlt-tt-upper-region-channels">المنطقة فوق الذروة في الطاقة، التي تُستخدم
+    لتقدير عد الطيف المستمر المتوقع في منطقة الذروة؛
+    يتوافق مع {1} إلى {2} كيلو إلكترون فولت</message>
+  <message id="dlt-tt-upper-region-counts">عدد العد المرصود في المنطقة فوق منطقة الذروة،
+    الذي يُستخدم لتقدير عد منطقة الذروة المتوقع</message>
+  <message id="dlt-tt-peak-area-channels">المنطقة التي يُفترض أن تكون الذروة فيها؛
+    يتوافق مع {1} إلى {2} كيلو إلكترون فولت</message>
+  <message id="dlt-tt-peak-region-counts">عدد العد المرصود في منطقة الذروة</message>
+  <message id="dlt-tt-peak-region-null-est">تقدير لعدد العد المتوقع، في منطقة الذروة، إذا
+    تم افتراض عدم وجود إشارة.</message>
+  <message id="dlt-tt-critical-limit">يتوافق مع &quot;المستوى الحرج&quot; لكوري، L<sub>c</sub>،
+    وهو مستوى الإشارة الصافية (استجابة الأداة) الذي فوقه
+    يمكن التعرف على إشارة مرصودة بشكل موثوق على أنها &quot;مكتشفة&quot;.</message>
+  <message id="dlt-tt-detection-limit">يتوافق مع &quot;حد الكشف&quot; لكوري، L<sub>d</sub>،
+    وهو مستوى الإشارة الصافية &quot;الحقيقي&quot; الذي قد يكون، <i>مسبقاً</i>،
+    متوقعاً أن يؤدي إلى الكشف.</message>
+  <message id="dlt-tt-detector-intrinsic-eff">الكفاءة لجاما يضرب وجه الكاشف،
+    ليتم اكتشافه في ذروة الطاقة الكاملة.</message>
+  <message id="dlt-tt-solid-angle-fraction">كسر الزاوية الصلبة، الذي يشغله وجه الكاشف، على المسافة المحددة.</message>
+  <message id="dlt-tt-shielding-transmission">كسر جاما، عند هذه الطاقة، التي ستمر عبر التدريع دون تفاعل.</message>
+  <message id="dlt-tt-air-transmission">كسر جاما، عند هذه الطاقة، التي ستمر عبر الهواء (بافتراض مستوى سطح البحر) دون تفاعل.</message>
+  <message id="dlt-tt-branching-ratio">عدد أشعة جاما المنبعثة عند هذه الطاقة، من المصدر
+    المشع قبل أي تدريع، ولكن مع الأخذ في الاعتبار عمر النويدة،
+    لكل اضمحلال للنويدة الأب.</message>
+  <message id="dlt-tt-below-lc-counts">عد الإشارة المرصود أقل من &quot;المستوى الحرج&quot;، L<sub>c</sub>،
+    لذلك لا يمكن الإعلان عن كشف، ولكن هذا هو الفائض على العد المتوقع.</message>
+  <message id="dlt-tt-below-lc-activity">نشاط الإشارة المرصود أقل من &quot;المستوى الحرج&quot;، L<sub>c</sub>،
+    لذلك لا يمكن الإعلان عن كشف، ولكن هذا هو الفائض على العد المتوقع.</message>
+  
+  <!-- Chart strings -->
+  <message id="dlt-chart-x-axis-distance">المسافة ({1})</message>
+  <message id="dlt-chart-x-axis-activity">النشاط ({1})</message>
+  <message id="dlt-chart-title-estimated-activity">النشاط المقدر {1}.</message>
+  <message id="dlt-chart-title-excess-counts">العد الزائد {1}.</message>
+  <message id="dlt-chart-title-activity-lt-zero">النشاط &lt; 0 {1}</message>
+  <message id="dlt-chart-title-data-peak">البيانات + الذروة {1}</message>
+  <message id="dlt-chart-title-peak-upper-bound">الذروة للحد الأعلى {1} @{2} CL</message>
+  <message id="dlt-currie-info-dialog-title">{1}{2} كيلو إلكترون فولت معلومات</message>
+  
+  <!-- Additional error/status messages -->
+  <message id="dlt-no-foreground-file">لا يوجد ملف المقدمة</message>
+  <message id="dlt-no-foreground-spectrum">لا يوجد طيف المقدمة</message>
+  <message id="dlt-no-drf-loaded">لا يوجد DRF محمل</message>
+  <message id="dlt-drf-not-valid">DRF غير صالح أو لا يحتوي على معلومات FWHM.</message>
+  <message id="dlt-err-max-distance-too-large">المسافة القصوى كبيرة جداً (&gt;100كم)</message>
+  <message id="dlt-err-upper-limit-negative">الحد الأعلى للعد أقل من الصفر، لكن العد المرصود أكبر من L_d.</message>
+  <message id="dlt-err-activity-zero-negative">لا يمكن أن يكون النشاط صفراً أو سالباً</message>
+  <message id="dlt-err-distance-zero-negative">لا يمكن أن تكون المسافة صفراً أو سالبة</message>
+</messages>
