@@ -20,6 +20,13 @@
  License along with this library; if not, write to the Free Software
  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
+// Fix for Windows WinSock header ordering issue
+// Must be defined before Windows.h (or any header that includes it) is included
+#ifdef _WIN32
+  #define WIN32_LEAN_AND_MEAN
+  #include <winsock2.h>
+  #include <windows.h>
+#endif
 
 #define BOOST_TEST_MODULE test_DetectorPeakResponse_suite
 #include <boost/test/included/unit_test.hpp>
