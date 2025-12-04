@@ -3499,7 +3499,8 @@ nlohmann::json ToolRegistry::executeGetDetectorInfo(const nlohmann::json& params
 
   switch( geomType )
   {
-    case DetectorPeakResponse::EffGeometryType::FarField:
+    case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
+    case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
       geomTypeStr = "FarField";
       geomTypeDesc = "Detection efficiency varies with ~1/r²";
       break;
@@ -3523,14 +3524,14 @@ nlohmann::json ToolRegistry::executeGetDetectorInfo(const nlohmann::json& params
 
   result["geometryType"] = geomTypeStr;
   result["geometryTypeDescription"] = geomTypeDesc;
-  result["isFixedGeometry"] = (geomType != DetectorPeakResponse::EffGeometryType::FarField);
+  result["isFixedGeometry"] = (geomType != DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic) && (geomType != DetectorPeakResponse::EffGeometryType::FarFieldAbsolute);
 
   // Energy range
   result["lowerEnergy"] = drf->lowerEnergy();
   result["upperEnergy"] = drf->upperEnergy();
 
   // Detector diameter (only for far field)
-  if( geomType == DetectorPeakResponse::EffGeometryType::FarField )
+  if( (geomType == DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic) || (geomType == DetectorPeakResponse::EffGeometryType::FarFieldAbsolute) )
   {
     result["detectorDiameter"] = drf->detectorDiameter();
   }

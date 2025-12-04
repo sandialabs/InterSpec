@@ -5479,6 +5479,8 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
     }//}//if( m_isGenericMaterial ) / else
   };//testShieldingSelectPartiallySameAsOrig
     
+  /*
+   // This next block can crash if this ShieldingSelect is destructing
   try
   {
     const string uri = encodeStateToUrl();
@@ -5492,6 +5494,8 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
     log_developer_error( __func__, msg.c_str() );
 //    assert( 0 );
   }//try
+  */
+  
   
   /*
    //This test will fail for trace-sources, as getting their total activity depends
@@ -5552,7 +5556,10 @@ void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node,
     switch( m_geometry )
     {
       case GeometryType::Spherical:
-        getval( "SphericalThickness", m_thicknessEdit );
+        if( material_node && material_node->first_node("SphericalThickness") )
+          getval( "SphericalThickness", m_thicknessEdit );
+        else
+          getval( "Thickness", m_thicknessEdit );
         break;
         
       case GeometryType::CylinderEndOn:
@@ -5580,7 +5587,11 @@ void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node,
   const ShieldingSourceFitCalc::ShieldingInfo roundtripped = toShieldingInfo();
   try
   {
-    ShieldingSourceFitCalc::ShieldingInfo::equalEnough( info, roundtripped );
+    // If oritingal was spherical, but detector is currently fixed geometry, the below comparison will fail
+    const bool was_fixed = (info.m_geometry == GammaInteractionCalc::GeometryType::NumGeometryType);
+    const bool is_fixed = (roundtripped.m_geometry == GammaInteractionCalc::GeometryType::NumGeometryType);
+    if( was_fixed == is_fixed )
+      ShieldingSourceFitCalc::ShieldingInfo::equalEnough( info, roundtripped );
   }catch( std::exception &e )
   {
     cerr << "ShieldingSelect::deSerialize - Failed to round-trip setting/getting: " << e.what() << endl;

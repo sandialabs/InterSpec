@@ -37,22 +37,15 @@
   <message id="reds-recursive-no-drfs-in-dir">निर्देशिका या उसकी उपनिर्देशिकाओं में कोई मान्य DRF नहीं।</message>
   <message id="ds-csv-upload-desc">
     <div style="white-space:nowrap;">
-      आंतरिक दक्षता CSV फ़ाइल:
+      दक्षता फ़ाइल अपलोड:
     </div>
     <div>
-      पहला कॉलम keV में ऊर्जा है।
-      दूसरा कॉलम उस ऊर्जा पर गामा के लिए % दक्षता (0 से 100) है,
-      जो डिटेक्टर पर आपतित है, photopeak में रिकॉर्ड किया जाना है।
+      दक्षता CSV के लिए, पहला कॉलम keV में ऊर्जा है; दूसरा % दक्षता (0 से 100) है।
     </div>
     <div>
-      दक्षता फ़ाइल अपलोड करने के बाद आपको GADRAS Detector.dat फ़ाइल अपलोड करनी होगी,
-      या डिटेक्टर का व्यास दर्ज करना होगा।
-    </div>
-    <div>
-      आप <em>डिटेक्टर प्रतिक्रिया बनाएं</em> उपकरण से निर्यात की गई CSV भी अपलोड कर सकते हैं।
+      आंतरिक डिटेक्टर की सतह पर आने वाले गामा के लिए दक्षता है, जबकि पूर्ण एक निश्चित दूरी पर है।
     </div>
   </message>
-  <message id="ds-enter-gad-det-diam">डिटेक्टर व्यास दर्ज करें या Detector.dat फ़ाइल अपलोड करें:</message>
   <message id="ds-det-diam">डिटेक्टर व्यास:</message>
   <message id="ds-fixed-geom">निश्चित ज्यामिति</message>
   <message id="ds-gad-det-file-label">GADRAS Detector.Dat फ़ाइल:</message>

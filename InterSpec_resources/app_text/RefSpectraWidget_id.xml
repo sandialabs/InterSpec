@@ -6,6 +6,8 @@
   <message id="rs-show-foreground-portrait">Bandingkan</message>
   <message id="rs-show-background">Tampilkan Latar Belakang</message>
   <message id="rs-show-background-portrait">Latar Belakang</message>
+  <message id="rs-load-background">Muat Latar Belakang</message>
+  <message id="rs-load-background-portrait">+Latar Belakang</message>
   <message id="rs-tt-add-dir-btn">Tambahkan direktori untuk membuka spektrum referensi darinya.</message>
   <message id="rs-tt-delete-dir-btn">Menghapus direktori yang saat ini dipilih dari daftar tempat untuk menampilkan spektrum referensi.</message>
   <message id="rs-no-dir-selected-desktop">

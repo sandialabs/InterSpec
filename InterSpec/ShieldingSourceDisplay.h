@@ -49,6 +49,7 @@ struct Material;
 class PeakModel;
 class AuxWindow;
 class InjaLogDialog;
+class ShieldingDiagramDialog;
 class MaterialDB;
 class ColorTheme;
 class PopupDivMenu;
@@ -485,6 +486,10 @@ public:
   
   void showCalcLog();
   void closeCalcLogWindow();
+
+  void showShieldSourceDiagram();
+  void closeShieldSourceDiagram();
+  void handleShieldSourceDiagramClosed();
   
   /** Returns the inner ShieldingSelect of the one passed in; e.g., returns the ShieldingSelect that is contained by the one passed in.
    
@@ -699,6 +704,7 @@ protected:
   PopupDivMenuItem *m_showLog;
 
   InjaLogDialog *m_logDiv;
+  ShieldingDiagramDialog *m_diagramDialog;
   std::vector<std::string> m_calcLog;
   std::unique_ptr<const std::vector<GammaInteractionCalc::PeakDetail>> m_peakCalcLogInfo;
   std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> m_lastFitResults;

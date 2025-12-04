@@ -84,8 +84,9 @@
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/BatchInfoLog.h"
-#include "InterSpec/InjaLogDialog.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/SimpleDialog.h"
+#include "InterSpec/InjaLogDialog.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
@@ -104,6 +105,7 @@
 #include "InterSpec/IsotopeSelectionAids.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
+#include "InterSpec/ShieldingSourceDiagram.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
 
 using namespace Wt;
@@ -358,7 +360,7 @@ SourceFitModel::SourceFitModel( PeakModel *peakModel,
     m_sortColumn( kIsotope ),
     m_peakModel( peakModel ),
     m_sameAgeForIsotopes( sameAgeIsotopes ),
-    m_det_type( DetectorPeakResponse::EffGeometryType::FarField )
+    m_det_type( DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic )
 {
   auto interspec = InterSpec::instance();
   if( !interspec )
@@ -529,7 +531,8 @@ void SourceFitModel::setDetectorType( const DetectorPeakResponse::EffGeometryTyp
     
     switch( det_type )
     {
-      case DetectorPeakResponse::EffGeometryType::FarField:
+      case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
+      case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
         break;
         
       case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
@@ -1507,7 +1510,8 @@ boost::any SourceFitModel::headerData( int section, Orientation orientation, int
     case kActivity:
       switch( m_det_type )
       {
-        case DetectorPeakResponse::EffGeometryType::FarField:
+        case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
+        case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
         case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
           return boost::any( WString::tr("Activity") );
           
@@ -2368,6 +2372,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     m_multithread_computation( true ),
     m_showLog( nullptr ),
     m_logDiv( nullptr ),
+    m_diagramDialog( nullptr ),
     m_calcLog{},
     m_peakCalcLogInfo{},
     m_modelUploadWindow( nullptr ),
@@ -2580,6 +2585,9 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_showLog->disable();
 
   PopupDivMenuItem *item = NULL;
+  item = m_addItemMenu->addMenuItem( WString::tr("ssd-show-model-diagram") );
+  item->triggered().connect( this, &ShieldingSourceDisplay::showShieldSourceDiagram );
+
 //  PopupDivMenuItem *item = m_addItemMenu->addMenuItem( "Test Serialization" );
 //  item->triggered().connect( this, &ShieldingSourceDisplay::testSerialization );
 
@@ -3076,6 +3084,10 @@ ShieldingSourceDisplay::~ShieldingSourceDisplay() noexcept(true)
     delete m_addItemMenu;
     m_addItemMenu = NULL;
   }//if( m_addItemMenu )
+  
+  if( m_diagramDialog )
+    delete m_diagramDialog;
+  m_diagramDialog = nullptr;
   
   closeModelUploadWindow();
 #if( USE_DB_TO_STORE_SPECTRA )
@@ -5098,7 +5110,7 @@ void ShieldingSourceDisplay::handleDetectorChanged( std::shared_ptr<DetectorPeak
   
   const bool fixed_geom = (det && det->isFixedGeometry());
   const DetectorPeakResponse::EffGeometryType det_type = det ? det->geometryType()
-                                                 : DetectorPeakResponse::EffGeometryType::FarField;
+                                                 : DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
   m_sourceModel->setDetectorType( det_type );
   
   if( fixed_geom /* && !m_distanceLabel->isHidden() */ )
@@ -8510,7 +8522,7 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
   
   const DetectorPeakResponse::EffGeometryType detType = (det && det->isValid())
                                                   ? det->geometryType()
-                                                  : DetectorPeakResponse::EffGeometryType::FarField;
+                                                  : DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
   
   try
   {
@@ -8756,6 +8768,109 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
     calcLog.push_back( "There was an error and log may not be complete." );
   }
 }//updateCalcLogWithFitResults(...)
+
+
+void ShieldingSourceDisplay::showShieldSourceDiagram()
+{
+  std::vector<ShieldingSourceFitCalc::ShieldingInfo> shieldings;
+  
+  for( WWidget *widget : m_shieldingSelects->children() )
+  {
+    ShieldingSelect *select = dynamic_cast<ShieldingSelect *>( widget );
+    if( select )
+      shieldings.push_back( select->toShieldingInfo() );
+  }
+
+  string distanceStr = m_distanceEdit->text().toUTF8();
+  double distance = 100.0 * PhysicalUnits::cm; // Default
+  try {
+     distance = PhysicalUnits::stringToDistance( distanceStr );
+  } catch(...) {
+     // Ignore, use default or what was parsed.
+  }
+  
+  std::shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
+  double detDiameter = 3.0 * 2.54 * PhysicalUnits::cm; // Default 3 inches
+  if( det && det->detectorDiameter() > 0.0 )
+    detDiameter = det->detectorDiameter();
+
+  std::vector<ShieldingSourceFitCalc::IsoFitStruct> sources = m_sourceModel->underlyingData();
+  const GeometryType geom_type = geometry();
+  
+  if( m_diagramDialog )
+  {
+    // Dialog already exists, update its data and show it
+    m_diagramDialog->updateData( shieldings, sources, geom_type, distance, detDiameter );
+    m_diagramDialog->show();
+    return;
+  }
+  
+  m_diagramDialog = ShieldingDiagramDialog::createShieldingDiagram( shieldings, sources, geom_type, distance, detDiameter );
+  
+  //m_diagramDialog->destroyed().connect( std::bind([dialog_ptr]( Wt::WObject * ){
+  //  InterSpec *viewer = InterSpec::instance();
+  //  ShieldingSourceDisplay *shieldSourceFit = viewer ? viewer->shieldingSourceFit() : nullptr;
+  //  if( shieldSourceFit && shieldSourceFit->m_diagramDialog == dialog_ptr )
+  //    shieldSourceFit->m_diagramDialog = nullptr;
+  //}, std::placeholders::_1 ) );
+  
+  m_diagramDialog->finished().connect( this, &ShieldingSourceDisplay::handleShieldSourceDiagramClosed );
+  
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    auto undo = [](){
+      ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
+      if( shieldSourceFit )
+        shieldSourceFit->closeShieldSourceDiagram();
+    };
+
+    auto redo = [](){
+      ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
+      if( shieldSourceFit )
+        shieldSourceFit->showShieldSourceDiagram();
+    };
+
+    undoRedo->addUndoRedoStep( undo, redo, "Show shielding diagram." );
+  }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
+}//void showShieldSourceDiagram()
+
+
+void ShieldingSourceDisplay::handleShieldSourceDiagramClosed()
+{
+  m_diagramDialog = nullptr;
+  
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( !undoRedo || !undoRedo->canAddUndoRedoNow() )
+    return;
+  
+  auto undo = [](){
+    ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
+    if( shieldSourceFit )
+      shieldSourceFit->showShieldSourceDiagram();
+  };
+  
+  auto redo = [](){
+    ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
+    if( shieldSourceFit )
+      shieldSourceFit->closeShieldSourceDiagram();
+  };
+  
+  undoRedo->addUndoRedoStep( undo, redo, "Close shielding diagram." );
+}//void handleShieldSourceDiagramClosed();
+
+
+void ShieldingSourceDisplay::closeShieldSourceDiagram()
+{
+  if( !m_diagramDialog )
+    return;
+
+  // Delete the ShieldingDiagramDialog (it's a SimpleDialog, which is a WDialog subclass)
+  m_diagramDialog->accept();
+  assert( !m_diagramDialog );
+  m_diagramDialog = nullptr;
+}//void closeShieldSourceDiagram()
+
 
 
 

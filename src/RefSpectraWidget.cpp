@@ -220,6 +220,7 @@ RefSpectraWidget::RefSpectraWidget( Wt::WContainerWidget *parent )
   m_dirInfoContainer( nullptr ),
   m_showCurrentForeground( nullptr ),
   m_refBackground( nullptr ),
+  m_loadBackground( nullptr ),
 #if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
   m_addDirButton( nullptr ),
   m_deleteDirButton( nullptr ),
@@ -470,8 +471,12 @@ void RefSpectraWidget::setupUI()
   m_refBackground = new Wt::WCheckBox( WString::tr(portrait ? "rs-show-background-portrait" : "rs-show-background"), stackOptions );
   m_refBackground->addStyleClass( "CbNoLineBreak" );
   m_refBackground->changed().connect( this, &RefSpectraWidget::updatePreview );
-  m_refBackground->setHiddenKeepsGeometry( true );
   m_refBackground->setHidden( true );
+  
+  m_loadBackground = new Wt::WCheckBox( WString::tr(portrait ? "rs-load-background-portrait" : "rs-load-background"), stackOptions );
+  m_loadBackground->addStyleClass( "CbNoLineBreak" );
+  m_loadBackground->changed().connect( this, &RefSpectraWidget::updatePreview );
+  m_loadBackground->setHidden( true );
   
   if( portrait )
   {
@@ -532,6 +537,9 @@ void RefSpectraWidget::setupUI()
   static_assert( ns_spectrum_types_size == 3, "ns_spectrum_types must have 3 elements" );
   m_showAsComboBox->setCurrentIndex( 2 );
   m_showAsComboBox->setFocus( true );
+  // Order of hooking the signals up is important here:
+  m_showAsComboBox->activated().connect( this, &RefSpectraWidget::updatePreview );            // Will be called after `updateCheckboxVisibility`
+  m_showAsComboBox->activated().connect( this, &RefSpectraWidget::updateCheckboxVisibility ); // Will be called before `updatePreview`
 }//void setupUI();
 
 #if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
@@ -845,6 +853,7 @@ void RefSpectraWidget::handleSelectionChanged()
     m_showInExplorerButton->setHidden( true );
 #endif
     m_refBackground->setHidden( true );
+    m_loadBackground->setHidden( true );
     m_showCurrentForeground->setHidden( true );
     //m_showAsComboBox->setHidden( true );
     m_stack->setCurrentIndex( 0 );
@@ -907,6 +916,7 @@ void RefSpectraWidget::handleSelectionChanged()
 #endif // !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT
 
     m_refBackground->setHidden( true );
+    m_loadBackground->setHidden( true );
     m_showCurrentForeground->setHidden( true );
     //m_showAsComboBox->setHidden( true );
 
@@ -978,7 +988,7 @@ void RefSpectraWidget::handleSelectionChanged()
 
   m_lastCollapsedIndex = WModelIndex();
 
-  m_refBackground->setHidden( true );
+  // Visibility will be updated by updatePreview() which calls updateCheckboxVisibility()
 #if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
   m_deleteDirButton->setHidden( true );
   m_showInExplorerButton->setHidden( false );
@@ -1097,7 +1107,7 @@ void RefSpectraWidget::updatePreview()
   const string extension = SpecUtils::file_extension( filename );
   const vector<string> background_files = SpecUtils::ls_files_in_directory( parent_path,
     []( const std::string &fname, void *userdata ) -> bool{
-      return SpecUtils::starts_with( SpecUtils::filename(fname), "background." );
+      return SpecUtils::istarts_with( SpecUtils::filename(fname), "background." );
   }, nullptr );
 
   SpecMeas infile;
@@ -1138,10 +1148,25 @@ void RefSpectraWidget::updatePreview()
       background_meas = background_infile.measurements().front();
   }//if( !background_meas && !background_files.empty() )
   
-  m_refBackground->setHidden( !background_meas );
+  updateCheckboxVisibility();
 
-  if( !m_refBackground->isChecked() )
-    background_meas = nullptr;
+  const int current_index = m_showAsComboBox->currentIndex();
+  if( (current_index >= 0) && (current_index < static_cast<int>( ns_spectrum_types_size )) )
+  {
+    const SpecUtils::SpectrumType type = ns_spectrum_types[current_index];
+    if( type == SpecUtils::SpectrumType::Foreground )
+    {
+      // When loading as Foreground, m_loadBackground controls preview
+      if( !m_loadBackground->isChecked() )
+        background_meas = nullptr;
+    }
+    else
+    {
+      // When loading as Background or Secondary, m_refBackground controls preview
+      if( !m_refBackground->isChecked() )
+        background_meas = nullptr;
+    }
+  }
 
   m_spectrum->setData( foreground_meas, false );
   m_spectrum->setBackground( background_meas );
@@ -1164,12 +1189,56 @@ void RefSpectraWidget::setLoadSpectrumType( SpecUtils::SpectrumType type )
     if( ns_spectrum_types[i] == type )
     {
       m_showAsComboBox->setCurrentIndex( static_cast<int>( i ) );
+      updateCheckboxVisibility();
       return;
     }
   }//for( size_t i = 0; i < ns_spectrum_types_size; ++i )
 
   assert( 0 ); //shouldnt ever happen
 }//void setLoadSpectrumType( SpecUtils::SpectrumType type )
+
+
+void RefSpectraWidget::updateCheckboxVisibility()
+{
+  const int current_index = m_showAsComboBox->currentIndex();
+  assert( (current_index >= 0) && (current_index < static_cast<int>( ns_spectrum_types_size )) );
+  
+  if( (current_index < 0) || (current_index >= static_cast<int>( ns_spectrum_types_size )) )
+    return;
+  
+  const SpecUtils::SpectrumType type = ns_spectrum_types[current_index];
+  
+  // Check if there's a background file available
+  bool background_available = false;
+  const WModelIndexSet selectedIndexes = m_treeView->selectedIndexes();
+  if( !selectedIndexes.empty() )
+  {
+    const WModelIndex index = *selectedIndexes.begin();
+    if( index.isValid() && !m_treeModel->isDirectory( index ) )
+    {
+      const std::string filePath = m_treeModel->getFilePath( index );
+      const string parent_path = SpecUtils::parent_path( filePath );
+      const vector<string> background_files = SpecUtils::ls_files_in_directory( parent_path,
+        []( const std::string &fname, void *userdata ) -> bool{
+          return SpecUtils::starts_with( SpecUtils::filename(fname), "background." );
+      }, nullptr );
+      background_available = !background_files.empty();
+    }
+  }
+  
+  if( type == SpecUtils::SpectrumType::Foreground )
+  {
+    // When loading as Foreground, show Load Background checkbox
+    m_loadBackground->setHidden( !background_available );
+    m_refBackground->setHidden( true );
+  }
+  else
+  {
+    // When loading as Background or Secondary, show Show Background checkbox
+    m_loadBackground->setHidden( true );
+    m_refBackground->setHidden( !background_available );
+  }
+}//void updateCheckboxVisibility()
 
 
 //void RefSpectraWidget::selectSimilarToForeground()
@@ -1244,6 +1313,37 @@ void RefSpectraWidget::loadSelectedSpectrum()
   interspec->fileManager()->displayFile( row, meas, type, 
                checkIfPreviouslyOpened, doPreviousEnergyRangeCheck,
                SpecMeasManager::VariantChecksToDo::None );
+  
+  // If loading as Foreground and Load Background is checked, also load the background file
+  if( (type == SpecUtils::SpectrumType::Foreground) && m_loadBackground->isChecked() )
+  {
+    const string parent_path = SpecUtils::parent_path( filePath );
+    const vector<string> background_files = SpecUtils::ls_files_in_directory( parent_path,
+      []( const std::string &fname, void *userdata ) -> bool{
+        return SpecUtils::istarts_with( SpecUtils::filename(fname), "background." );
+    }, nullptr );
+    
+    if( !background_files.empty() )
+    {
+      const string background_file = background_files.front();
+      const string background_displayName = SpecUtils::filename( background_file );
+      const string background_extension = SpecUtils::file_extension( background_file );
+      
+      auto background_meas = make_shared<SpecMeas>();
+      const bool background_success = background_meas->load_file( background_file, SpecUtils::ParserType::Auto, background_extension );
+      
+      if( background_success )
+      {
+        shared_ptr<SpectraFileHeader> background_header = std::make_shared<SpectraFileHeader>( true, interspec );
+        background_header->setFile( background_displayName, background_meas );
+        const int background_row = fileModel->addRow( background_header );
+        
+        interspec->fileManager()->displayFile( background_row, background_meas, SpecUtils::SpectrumType::Background,
+                     checkIfPreviouslyOpened, doPreviousEnergyRangeCheck,
+                     SpecMeasManager::VariantChecksToDo::None );
+      }
+    }
+  }
 }//void loadSelectedSpectrum()
 
 

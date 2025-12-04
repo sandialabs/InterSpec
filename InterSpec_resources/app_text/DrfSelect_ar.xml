@@ -37,22 +37,15 @@
   <message id="reds-recursive-no-drfs-in-dir">لا توجد DRFs صالحة في الدليل، أو أدلته الفرعية.</message>
   <message id="ds-csv-upload-desc">
     <div style="white-space:nowrap;">
-      ملف CSV للكفاءة الجوهرية:
+      تحميل ملف الكفاءة:
     </div>
     <div>
-      العمود الأول هو الطاقة بالكيلوإلكترون فولت.
-      العمود الثاني هو النسبة المئوية للكفاءة (0 إلى 100) لأشعة الجاما بتلك الطاقة،
-      الساقطة على الكاشف، لتسجيلها في القمة الضوئية.
+      بالنسبة لكفاءة CSV، العمود الأول هو الطاقة بالكيلوإلكترون فولت؛ الثاني هو % كفاءة (0 إلى 100).
     </div>
     <div>
-      ستحتاج أيضًا لرفع ملف GADRAS Detector.dat، أو إدخال قطر الكاشف،
-      بعد رفع ملف الكفاءة.
-    </div>
-    <div>
-      يمكنك أيضًا رفع CSV مُصدر من أداة <em>إنشاء استجابة الكاشف</em>.
+      الكفاءة الجوهرية هي للأشعة الجاما التي تصطدم بسطح الكاشف، بينما الكفاءة المطلقة هي على مسافة معينة.
     </div>
   </message>
-  <message id="ds-enter-gad-det-diam">أدخل قطر الكاشف أو ارفع ملف Detector.dat:</message>
   <message id="ds-det-diam">قطر الكاشف:</message>
   <message id="ds-fixed-geom">هندسة ثابتة</message>
   <message id="ds-gad-det-file-label">ملف GADRAS Detector.Dat:</message>

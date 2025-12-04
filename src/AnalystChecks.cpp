@@ -1036,7 +1036,7 @@ namespace AnalystChecks
         
         DetectorPeakResponse drf;
         drf.setIntrinsicEfficiencyFormula( "1.0", 2.54*PhysicalUnits::cm, PhysicalUnits::keV,
-                                               0.0f, 0.0f, DetectorPeakResponse::EffGeometryType::FarField );
+                                               0.0f, 0.0f, DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic);
         
         drf.fitResolution( peak_deque, spectrum, DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
         
@@ -1106,7 +1106,7 @@ namespace AnalystChecks
         
         DetectorPeakResponse drf;
         drf.setIntrinsicEfficiencyFormula( "1.0", 2.54*PhysicalUnits::cm, PhysicalUnits::keV,
-                                               0.0f, 0.0f, DetectorPeakResponse::EffGeometryType::FarField );
+                                               0.0f, 0.0f, DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic);
         
         drf.fitResolution( peak_deque, spectrum, DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
         

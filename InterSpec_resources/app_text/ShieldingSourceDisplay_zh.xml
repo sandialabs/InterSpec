@@ -119,6 +119,8 @@
     未执行拟合（无法创建Chi2Fcn）。
   </message>
   <message id="ssd-error-create-tool">创建活度/屏蔽拟合显示时出错：{1}</message>
+  <message id="ssd-shield-source-diagram">屏蔽/源图</message>
+  <message id="ssd-show-model-diagram">显示模型图</message>
 
   <!-- SourceFitModel quantities -->
   <message id="sfm-tt-header-isotope">核素根据用于此拟合的光峰添加或删除，因此不能在此表中编辑</message>

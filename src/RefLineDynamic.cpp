@@ -825,7 +825,7 @@ void RefLineDynamic::startUpdateLines()
         assert( 0 );
         cerr << "findCandidates(...): error opening default detector file" << endl;
         detPtr->setIntrinsicEfficiencyFormula( "1.0", 3.0*PhysicalUnits::cm, PhysicalUnits::keV,
-                                              0.0f, 0.0f, DetectorPeakResponse::EffGeometryType::FarField );
+                                              0.0f, 0.0f, DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic);
       }
       
       detector = detPtr;

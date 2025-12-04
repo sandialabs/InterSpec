@@ -37,22 +37,15 @@
   <message id="reds-recursive-no-drfs-in-dir">No valid DRFs in directory, or its subdirectories.</message>
   <message id="ds-csv-upload-desc">
     <div style="white-space:nowrap;">
-      Intrinsic Efficiency CSV File:
+      Efficiency File Upload:
     </div>
     <div>
-      The first column is energy in keV.
-      Second column is the % efficient (0 through 100) for gammas at that
-      energy, incident on the detector, to be recorded in the photopeak.
+      For efficiency CSV, the first column is energy in keV; second is % efficient (0 through 100).
     </div>
     <div>
-      You will also need to upload a GADRAS Detector.dat file, or enter the
-      detectors diameter, after uploading the efficiency file.
-    </div>
-    <div>
-      You can also upload CSV exported from the <em>Make Detector Response</em> tool.
+      Intrinsic is efficiency for gammas hitting surface of detector, while Absolute is at a given distance.
     </div>
   </message>
-  <message id="ds-enter-gad-det-diam">Enter detector diameter or upload Detector.dat file:</message>
   <message id="ds-det-diam">Detector Diameter:</message>
   <message id="ds-fixed-geom">Fixed Geometry</message>
   <message id="ds-gad-det-file-label">GADRAS Detector.Dat File:</message>
@@ -129,4 +122,9 @@
   <message id="ds-err-det-dist-pos">Distance must be positive for absolute efficiencies</message>
   <message id="ds-warn-min-max-energy-swapped">Detector min. energy was greater than max. energy; ignoring energy range.</message>
   <message id="ds-need-det-diam">Need the detectors diameter</message>
+  <message id="ds-err-invalid-csv-format">File CSV not recognized. Please upload a valid efficiency CSV file (MakeDrf format or simple format with energy and efficiency columns).</message>
+  <message id="ds-err-parsing-gadras">Error parsing GADRAS detector: {1}</message>
+  <message id="ds-eff-type-intrinsic">Intrinsic Efficiency</message>
+  <message id="ds-eff-type-farfield">Far-Field Efficiency</message>
+  <message id="ds-eff-type-gadras">GADRAS</message>
 </messages>

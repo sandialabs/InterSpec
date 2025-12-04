@@ -1328,7 +1328,7 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
       
       WString result_txt;
       const bool use_curie = use_curie_units();
-      const DetectorPeakResponse::EffGeometryType det_geom = drf ? drf->geometryType() : DetectorPeakResponse::EffGeometryType::FarField;
+      const DetectorPeakResponse::EffGeometryType det_geom = drf ? drf->geometryType() : DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
       
       assert( !result
              || (result->input.num_lower_side_channels != 0)
@@ -1819,7 +1819,7 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
   
   
   if( (distance > 0.0)
-     && (!drf || (drf->geometryType() == DetectorPeakResponse::EffGeometryType::FarField) ) 
+     && (!drf || !drf->isFixedGeometry()) 
      && result.baseInput.include_air_attenuation )
   {
     const double air_atten_coef = GammaInteractionCalc::transmission_coefficient_air( energy, distance );

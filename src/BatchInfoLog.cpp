@@ -484,7 +484,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
                           nlohmann::basic_json<> &src_json )
 {
   const DetectorPeakResponse::EffGeometryType eff_type = drf ? drf->geometryType()
-                                              : DetectorPeakResponse::EffGeometryType::FarField;
+                                              : DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
   
   const string act_postfix = DetectorPeakResponse::det_eff_geom_type_postfix(eff_type);
   
@@ -671,8 +671,10 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
       string gem_desc;
       switch( drf->geometryType() )
       {
-        case DetectorPeakResponse::EffGeometryType::FarField:
-          assert( drf->geometryType() != DetectorPeakResponse::EffGeometryType::FarField );
+        case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
+        case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
+          assert( (drf->geometryType() != DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic)
+                 && (drf->geometryType() != DetectorPeakResponse::EffGeometryType::FarFieldAbsolute) );
           break;
           
         case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
@@ -815,7 +817,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
                                       nlohmann::json &data )
   {
     const DetectorPeakResponse::EffGeometryType eff_type = drf ? drf->geometryType()
-                                                : DetectorPeakResponse::EffGeometryType::FarField;
+                                                : DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
     
     const string act_postfix = DetectorPeakResponse::det_eff_geom_type_postfix(eff_type);
     

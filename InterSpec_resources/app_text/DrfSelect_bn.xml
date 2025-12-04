@@ -37,20 +37,15 @@
   <message id="reds-recursive-no-drfs-in-dir">ডিরেক্টরি বা এর সাবডিরেক্টরিতে কোনো বৈধ DRF নেই।</message>
   <message id="ds-csv-upload-desc">
     <div style="white-space:nowrap;">
-      অভ্যন্তরীণ দক্ষতা CSV ফাইল:
+      দক্ষতা ফাইল আপলোড:
     </div>
     <div>
-      প্রথম কলাম keV তে শক্তি।
-      দ্বিতীয় কলাম হল সেই শক্তিতে গামার জন্য % দক্ষ (0 থেকে 100), ডিটেক্টরে আপতিত হয়ে ফটোপিকে রেকর্ড হতে।
+      দক্ষতা CSV-এর জন্য, প্রথম কলাম keV-তে শক্তি; দ্বিতীয় হল % দক্ষতা (0 থেকে 100)।
     </div>
     <div>
-      আপনাকে একটি GADRAS Detector.dat ফাইল আপলোড করতে হবে, বা দক্ষতা ফাইল আপলোড করার পরে ডিটেক্টরের ব্যাস প্রবেশ করাতে হবে।
-    </div>
-    <div>
-      আপনি <em>Make Detector Response</em> টুল থেকে এক্সপোর্ট করা CSV আপলোড করতে পারেন।
+      অভ্যন্তরীণ হল ডিটেক্টরের পৃষ্ঠে আঘাতকারী গামার জন্য দক্ষতা, যেখানে পরম হল একটি নির্দিষ্ট দূরত্বে।
     </div>
   </message>
-  <message id="ds-enter-gad-det-diam">ডিটেক্টর ব্যাস প্রবেশ করান বা Detector.dat ফাইল আপলোড করুন:</message>
   <message id="ds-det-diam">ডিটেক্টর ব্যাস:</message>
   <message id="ds-fixed-geom">স্থির জ্যামিতি</message>
   <message id="ds-gad-det-file-label">GADRAS Detector.Dat ফাইল:</message>

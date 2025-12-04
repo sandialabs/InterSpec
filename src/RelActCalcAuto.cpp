@@ -1190,13 +1190,12 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
   {
     new_drf = make_shared<DetectorPeakResponse>( "FLAT", "FLAT" );
     const vector<float> drf_coefs{ 0.0f, 0.0f, 0.0f, 0.0f }, uncerts;
-    new_drf->fromExpOfLogPowerSeriesAbsEff( drf_coefs, uncerts,
-                                           25*PhysicalUnits::cm,
+    new_drf->fromExpOfLogPowerSeries( drf_coefs, uncerts, 0.0,
                                            2*PhysicalUnits::cm,
                                            PhysicalUnits::keV,
                                            static_cast<float>(lowest_energy),
                                            static_cast<float>(highest_energy),
-                                           DetectorPeakResponse::EffGeometryType::FarField );
+                                           DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic);
   }//
   
   new_drf->setFwhmCoefficients( fwhm_pars_float, form_to_fit );

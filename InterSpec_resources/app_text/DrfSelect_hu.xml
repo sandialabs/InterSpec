@@ -37,22 +37,15 @@
   <message id="reds-recursive-no-drfs-in-dir">Nincsenek érvényes DRF-ek a könyvtárban vagy annak alkönyvtáraiban.</message>
   <message id="ds-csv-upload-desc">
     <div style="white-space:nowrap;">
-      Belső hatékonyság CSV fájl:
+      Hatékonysági fájl feltöltése:
     </div>
     <div>
-      Az első oszlop az energia keV-ben.
-      A második oszlop a %-os hatékonyság (0-tól 100-ig) azon gammákhoz az adott
-      energián, amelyek a detektorra esnek és a fotocsúcsban rögzítődnek.
+      Hatékonysági CSV esetén az első oszlop az energia keV-ben; a második a % hatékonyság (0-tól 100-ig).
     </div>
     <div>
-      Fel kell töltenie egy GADRAS Detector.dat fájlt is, vagy meg kell adnia a
-      detektor átmérőjét a hatékonysági fájl feltöltése után.
-    </div>
-    <div>
-      Fel lehet tölteni a <em>Detektor válasz készítés</em> eszközből exportált CSV-t is.
+      A belső a detektor felületére ütköző gammák hatékonysága, míg az abszolút egy adott távolságban van.
     </div>
   </message>
-  <message id="ds-enter-gad-det-diam">Adja meg a detektor átmérőjét vagy töltse fel a Detector.dat fájlt:</message>
   <message id="ds-det-diam">Detektor átmérő:</message>
   <message id="ds-fixed-geom">Rögzített geometria</message>
   <message id="ds-gad-det-file-label">GADRAS Detector.Dat fájl:</message>
