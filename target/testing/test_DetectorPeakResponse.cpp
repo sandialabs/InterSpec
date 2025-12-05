@@ -74,7 +74,7 @@ namespace {
   bool close_enough( const double a, const double b, const double rel_tol = 1e-5 )
   {
     const double diff = fabs(a - b);
-    const double max_val = std::max(fabs(a), fabs(b));
+    const double max_val = (std::max)(fabs(a), fabs(b));
     return diff <= rel_tol * max_val || diff <= 1e-8;
   }
 
@@ -990,7 +990,7 @@ BOOST_AUTO_TEST_CASE( test_url_serialization_round_trip )
       const float eff_rest = restored->intrinsicEfficiency( E * PhysicalUnits::keV );
 
       // URL encoding has limited precision, use 0.1% tolerance
-      const double rel_diff = fabs(eff_orig - eff_rest) / std::max(fabs(eff_orig), fabs(eff_rest));
+      const double rel_diff = fabs(eff_orig - eff_rest) / (std::max)(fabs(eff_orig), fabs(eff_rest));
       BOOST_CHECK_MESSAGE( rel_diff < 0.001,
                           original->name() + ": efficiency mismatch at " + to_string(E) + " keV: " +
                           to_string(eff_orig) + " vs " + to_string(eff_rest) );
