@@ -2201,58 +2201,50 @@ Wt::WWidget *RelActAutoGui::handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget
 }//void handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget *right_roi );
 
 
-rapidxml::xml_node<char> *RelActAutoGui::serialize( rapidxml::xml_node<char> *parent_node ) const
+void RelActAutoGui::serialize( RelActCalcAuto::RelActAutoGuiState &state ) const
 {
-  RelActCalcAuto::RelActAutoGuiState state;
   state.note = m_user_note->text().toUTF8();
   state.options = getCalcOptions();
   state.background_subtract = (m_background_subtract->isEnabled() && m_background_subtract->isChecked());
   state.show_ref_lines = m_hide_ref_lines_item->isEnabled();
   state.lower_display_energy = m_spectrum->xAxisMinimum();
   state.upper_display_energy = m_spectrum->xAxisMaximum();
-  
-  return state.serialize( parent_node );
-}//rapidxml::xml_node<char> *RelActAutoGui::serialize( rapidxml::xml_node<char> *parent )
+}//void serialize( RelActCalcAuto::RelActAutoGuiState &state ) const
 
 
-void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
+void RelActAutoGui::deSerialize( const RelActCalcAuto::RelActAutoGuiState &state )
 {
-  MaterialDB *materialDb = m_interspec->materialDataBase();
-  
-  RelActCalcAuto::RelActAutoGuiState state;
-  state.deSerialize( base_node, materialDb );
-
   const WString user_note = WString::fromUTF8(state.note);
   m_user_note->setText( user_note );
   m_user_note->setToolTip( user_note );
 
   m_background_subtract->setChecked( state.background_subtract );
-  
+
   m_show_ref_lines_item->setHidden( state.show_ref_lines );
   m_hide_ref_lines_item->setHidden( !state.show_ref_lines );
   m_show_ref_lines_item->setDisabled( state.show_ref_lines );
   m_hide_ref_lines_item->setDisabled( !state.show_ref_lines );
-    
+
   if( state.lower_display_energy < state.upper_display_energy )
   {
     // Note: this next line only works when creating this widget and then loading its state
     //       because #updateDuringRenderForSpectrumChange checks if the widget has rendered
     //       yet, and if not, and it looks like a custom range has been set, then it wont
     //       reset the range.
-    
+
     m_spectrum->setXAxisRange( state.lower_display_energy, state.upper_display_energy );
   }
-    
+
   m_loading_preset = true;
-  
+
   setCalcOptionsGui( state.options );
-  
+
   m_solution.reset();
   m_peak_model->setPeaks( vector<PeakDef>{} );
-  
+
   m_solution_updated.emit( m_solution );
   m_calc_failed.emit();
-  
+
   m_render_flags |= RenderActions::UpdateNuclidesPresent;
   m_render_flags |= RenderActions::UpdateEnergyRanges;
   m_render_flags |= RenderActions::UpdateCalculations;
@@ -2260,18 +2252,40 @@ void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
   m_render_flags |= RenderActions::UpdateRefGammaLines;
   if( state.lower_display_energy >= state.upper_display_energy )
     m_render_flags |= RenderActions::ChartToDefaultRange;
-  
+
   scheduleRender();
+}//void deSerialize( const RelActCalcAuto::RelActAutoGuiState &state )
+
+
+rapidxml::xml_node<char> *RelActAutoGui::serialize( rapidxml::xml_node<char> *parent_node ) const
+{
+  RelActCalcAuto::RelActAutoGuiState state;
+  serialize( state );  // Use new struct-based method
+
+  return state.serialize( parent_node );
+}//rapidxml::xml_node<char> *RelActAutoGui::serialize( rapidxml::xml_node<char> *parent )
+
+
+void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
+{
+  MaterialDB *materialDb = m_interspec->materialDataBase();
+
+  RelActCalcAuto::RelActAutoGuiState state;
+  state.deSerialize( base_node, materialDb );
+
+  deSerialize( state );  // Use new struct-based method
 }//void deSerialize( const rapidxml::xml_node<char> *base_node )
 
 
 std::unique_ptr<rapidxml::xml_document<char>> RelActAutoGui::guiStateToXml() const
 {
   std::unique_ptr<rapidxml::xml_document<char>> doc( new rapidxml::xml_document<char>() );
-  
-  serialize( doc.get() );
-  
-  return std::move( doc );
+
+  RelActCalcAuto::RelActAutoGuiState state;
+  serialize( state );  // Use new struct-based method
+  state.serialize( doc.get() );  // Serialize struct to XML
+
+  return doc;
 }//std::unique_ptr<rapidxml::xml_document<char>> guiStateToXml() const
 
 
@@ -2279,12 +2293,16 @@ void RelActAutoGui::setGuiStateFromXml( const rapidxml::xml_document<char> *doc 
 {
   if( !doc )
     throw runtime_error( "RelActAutoGui::setGuiStateFromXml: nullptr passed in." );
-  
+
   const rapidxml::xml_node<char> *base_node = doc->first_node( "RelActCalcAuto" );
   if( !base_node )
     throw runtime_error( "RelActAutoGui::setGuiStateFromXml: couldnt find <RelActCalcAuto> node." );
-  
-  deSerialize( base_node );
+
+  MaterialDB *materialDb = m_interspec->materialDataBase();
+  RelActCalcAuto::RelActAutoGuiState state;
+  state.deSerialize( base_node, materialDb );
+
+  deSerialize( state );  // Use new struct-based method
 }//void setGuiStateFromXml( const rapidxml::xml_node<char> *node );
 
 

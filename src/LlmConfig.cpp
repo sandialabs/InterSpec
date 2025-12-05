@@ -31,6 +31,7 @@ std::string agentTypeToString( AgentType type )
     case AgentType::NuclideId:       return "NuclideId";
     case AgentType::NuclideIdWorker: return "NuclideIdWorker";
     case AgentType::ActivityFit:     return "ActivityFit";
+    case AgentType::Isotopics:       return "Isotopics";
   }
 
   throw std::invalid_argument( "Unknown AgentType" );
@@ -43,6 +44,7 @@ AgentType stringToAgentType( const std::string &name )
   if( name == "NuclideId" )       return AgentType::NuclideId;
   if( name == "NuclideIdWorker" ) return AgentType::NuclideIdWorker;
   if( name == "ActivityFit" )     return AgentType::ActivityFit;
+  if( name == "Isotopics" )       return AgentType::Isotopics;
 
   throw std::invalid_argument( "Unknown agent name: " + name );
 }//stringToAgentType(...)
@@ -393,6 +395,219 @@ std::vector<LlmConfig::ToolConfig> LlmConfig::loadToolConfigsFromFile( const std
 }//loadToolConfigsFromFile(...)
 
 
+// ============================================================================
+// AgentStateMachine implementation
+// ============================================================================
+
+AgentStateMachine::AgentStateMachine()
+{
+}//AgentStateMachine constructor
+
+
+std::shared_ptr<AgentStateMachine> AgentStateMachine::copy() const
+{
+  auto newMachine = std::make_shared<AgentStateMachine>();
+  newMachine->m_initial_state = m_initial_state;
+  newMachine->m_current_state = m_initial_state;  // Reset to initial state
+  newMachine->m_states = m_states;  // Share state definitions
+  return newMachine;
+}//copy()
+
+
+void AgentStateMachine::fromXml( const rapidxml::xml_node<char> *state_machine_node )
+{
+  using rapidxml::internal::compare;
+  using namespace SpecUtils;
+
+  if( !state_machine_node )
+    throw std::runtime_error( "AgentStateMachine::fromXml: null state_machine_node" );
+
+  // Get initial state
+  const rapidxml::xml_node<char> *initial_state_node = XML_FIRST_NODE( state_machine_node, "InitialState" );
+  if( !initial_state_node )
+    throw std::runtime_error( "AgentStateMachine: <InitialState> node required" );
+
+  m_initial_state = xml_value_str( initial_state_node );
+  SpecUtils::trim( m_initial_state );
+
+  if( m_initial_state.empty() )
+    throw std::runtime_error( "AgentStateMachine: InitialState cannot be empty" );
+
+  m_current_state = m_initial_state;
+
+  // Parse all states
+  for( const rapidxml::xml_node<char> *state_node = XML_FIRST_NODE( state_machine_node, "State" );
+       state_node;
+       state_node = XML_NEXT_TWIN( state_node ) )
+  {
+    StateDefinition state_def;
+
+    // Get state name
+    const rapidxml::xml_attribute<char> *name_attr = XML_FIRST_ATTRIB( state_node, "name" );
+    if( !name_attr )
+      throw std::runtime_error( "AgentStateMachine: State node missing 'name' attribute" );
+
+    state_def.name = xml_value_str( name_attr );
+    SpecUtils::trim( state_def.name );
+
+    if( state_def.name.empty() )
+      throw std::runtime_error( "AgentStateMachine: State name cannot be empty" );
+
+    // Get description
+    const rapidxml::xml_node<char> *desc_node = XML_FIRST_NODE( state_node, "Description" );
+    if( desc_node )
+    {
+      state_def.description = xml_value_str( desc_node );
+      SpecUtils::trim( state_def.description );
+    }
+
+    // Get prompt guidance
+    const rapidxml::xml_node<char> *guidance_node = XML_FIRST_NODE( state_node, "PromptGuidance" );
+    if( guidance_node )
+    {
+      state_def.prompt_guidance = xml_value_str( guidance_node );
+      SpecUtils::trim( state_def.prompt_guidance );
+    }
+
+    // Check if final state
+    const rapidxml::xml_attribute<char> *final_attr = XML_FIRST_ATTRIB( state_node, "final" );
+    if( final_attr )
+    {
+      const string final_str = xml_value_str( final_attr );
+      state_def.is_final = (final_str == "true" || final_str == "1");
+    }
+
+    // Get allowed transitions
+    const rapidxml::xml_node<char> *transitions_node = XML_FIRST_NODE( state_node, "AllowedTransitions" );
+    if( transitions_node )
+    {
+      for( const rapidxml::xml_node<char> *to_node = XML_FIRST_NODE( transitions_node, "To" );
+           to_node;
+           to_node = XML_NEXT_TWIN( to_node ) )
+      {
+        string to_state = xml_value_str( to_node );
+        SpecUtils::trim( to_state );
+        if( !to_state.empty() )
+          state_def.allowed_transitions.push_back( to_state );
+      }
+    }
+
+    // Get required tools
+    const rapidxml::xml_node<char> *tools_node = XML_FIRST_NODE( state_node, "RequiredTools" );
+    if( tools_node )
+    {
+      for( const rapidxml::xml_node<char> *tool_node = XML_FIRST_NODE( tools_node, "Tool" );
+           tool_node;
+           tool_node = XML_NEXT_TWIN( tool_node ) )
+      {
+        string tool_name = xml_value_str( tool_node );
+        SpecUtils::trim( tool_name );
+        if( !tool_name.empty() )
+          state_def.required_tools.push_back( tool_name );
+      }
+    }
+
+    // Store state definition
+    if( m_states.count(state_def.name) )
+      throw std::runtime_error( "AgentStateMachine: Duplicate state name: " + state_def.name );
+
+    m_states[state_def.name] = state_def;
+  }//for( loop over State nodes )
+
+  // Validate initial state exists
+  if( !hasState(m_initial_state) )
+    throw std::runtime_error( "AgentStateMachine: InitialState '" + m_initial_state + "' not defined" );
+
+  // Validate all transition targets exist
+  for( const auto &state_pair : m_states )
+  {
+    const StateDefinition &state = state_pair.second;
+    for( const string &target : state.allowed_transitions )
+    {
+      if( !hasState(target) )
+        throw std::runtime_error( "AgentStateMachine: State '" + state.name + "' references undefined target state '" + target + "'" );
+    }
+  }
+}//AgentStateMachine::fromXml(...)
+
+
+const AgentStateMachine::StateDefinition& AgentStateMachine::getStateDefinition( const std::string &state_name ) const
+{
+  const auto iter = m_states.find( state_name );
+  if( iter == m_states.end() )
+    throw std::runtime_error( "AgentStateMachine: Unknown state: " + state_name );
+
+  return iter->second;
+}//getStateDefinition(...)
+
+
+bool AgentStateMachine::hasState( const std::string &state_name ) const
+{
+  return m_states.count( state_name ) > 0;
+}//hasState(...)
+
+
+bool AgentStateMachine::isFinalState( const std::string &state_name ) const
+{
+  if( !hasState(state_name) )
+    return false;
+
+  return getStateDefinition(state_name).is_final;
+}//isFinalState(...)
+
+
+bool AgentStateMachine::canTransitionTo( const std::string &new_state ) const
+{
+  if( !hasState(new_state) )
+    return false;
+
+  const StateDefinition &current = getStateDefinition( m_current_state );
+
+  // Check if new_state is in allowed transitions
+  return std::find( current.allowed_transitions.begin(),
+                    current.allowed_transitions.end(),
+                    new_state ) != current.allowed_transitions.end();
+}//canTransitionTo(...)
+
+
+void AgentStateMachine::transitionTo( const std::string &new_state )
+{
+  if( !hasState(new_state) )
+    throw std::runtime_error( "AgentStateMachine: Cannot transition to unknown state: " + new_state );
+
+  m_current_state = new_state;
+}//transitionTo(...)
+
+
+void AgentStateMachine::reset()
+{
+  m_current_state = m_initial_state;
+}//reset()
+
+
+std::string AgentStateMachine::getPromptGuidanceForCurrentState() const
+{
+  if( !hasState(m_current_state) )
+    return "";
+
+  return getStateDefinition(m_current_state).prompt_guidance;
+}//getPromptGuidanceForCurrentState()
+
+
+std::vector<std::string> AgentStateMachine::getAllowedTransitions() const
+{
+  if( !hasState(m_current_state) )
+    return {};
+
+  return getStateDefinition(m_current_state).allowed_transitions;
+}//getAllowedTransitions()
+
+
+// ============================================================================
+// End AgentStateMachine implementation
+// ============================================================================
+
+
 std::vector<LlmConfig::AgentConfig> LlmConfig::loadAgentsFromFile( const std::string &agentsConfigPath )
 {
   if( !SpecUtils::is_file(agentsConfigPath) )
@@ -491,6 +706,21 @@ std::vector<LlmConfig::AgentConfig> LlmConfig::loadAgentsFromFile( const std::st
           }
         }//for( loop over Agent nodes in AvailableFor )
       }//if( availableForNode )
+
+      // Load StateMachine (optional - if not specified, agent has no state machine)
+      const rapidxml::xml_node<char> * const stateMachineNode = XML_FIRST_NODE(agentNode, "StateMachine");
+      if( stateMachineNode )
+      {
+        try
+        {
+          auto stateMachine = std::make_shared<AgentStateMachine>();
+          stateMachine->fromXml( stateMachineNode );
+          agent.state_machine = stateMachine;
+        }catch( const std::exception &e )
+        {
+          throw std::runtime_error( "Failed to parse state machine for agent '" + agent.name + "': " + string(e.what()) );
+        }
+      }
 
       agents.push_back(agent);
     }//for( loop over Agent nodes )

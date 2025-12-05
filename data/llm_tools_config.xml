@@ -994,5 +994,87 @@ Further investigation of top returned candidates is required to make sure they m
     </AvailableFor>
   </Tool>
 
+  <Tool name="set_workflow_state">
+    <Description>Set the current workflow state for agents that use state machines. This tool is used by agents to track their progress through multi-step workflows and receive state-specific guidance. State machines are completely optional - agents without them can ignore this tool. The state machine provides soft enforcement: warnings are issued for unexpected transitions but the state change is still allowed. Each state has guidance text that helps the agent understand what to do next and which tools are typically needed in that state.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "description": "The name of the state to transition to. Valid state names are defined in the agent's state machine configuration in llm_agents.xml. Common states for isotopics workflows include: ANALYZE_REQUEST (understand user needs), SELECT_CONFIGURATION (choose appropriate preset), VALIDATE_CONFIGURATION (verify setup is correct), CHECK_INTERFERENCE (look for problematic peaks), EXECUTE_CALCULATION (run the analysis), EVALUATE_RESULTS (assess quality), FINALIZE_RESULTS (present to user)."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Optional notes about why this state transition is being made or what was accomplished in the previous state. Helps with debugging and understanding the agent's reasoning."
+        }
+      },
+      "required": ["state"]
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>Isotopics</Agent>
+    </AvailableFor>
+  </Tool>
+
+  <Tool name="list_isotopics_presets">
+    <Description>List available isotopics analysis preset configurations. Returns a list of preset files that can be loaded using load_isotopics_preset. Each preset contains pre-configured settings for specific analysis types like Plutonium isotopics, Uranium enrichment, etc. The list includes a special 'Current Configuration' entry if any configuration is currently loaded. Presets define which nuclides to fit, which energy regions (ROIs) to analyze, detector resolution settings, and other analysis parameters. Some internal/debug presets containing keywords like 'U inside U' or 'multiple U' are filtered out.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {}
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>Isotopics</Agent>
+    </AvailableFor>
+  </Tool>
+
+  <Tool name="get_isotopics_config">
+    <Description>Retrieve the current isotopics analysis configuration. Returns detailed information about what is currently configured, including: which energy regions (ROIs) are defined for analysis, which nuclides will be fit in each relative efficiency curve, whether energy calibration will be fit, and the detector resolution model (FWHM form). This allows the agent to verify the configuration is appropriate before running an analysis. Returns null if no configuration is loaded (use load_isotopics_preset first in that case).</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {}
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>Isotopics</Agent>
+    </AvailableFor>
+  </Tool>
+
+  <Tool name="reset_isotopics_config">
+    <Description>Clear the current isotopics analysis configuration. This removes any loaded preset configuration and returns to a blank state. Use this when starting a fresh analysis or when the user wants to switch to a completely different analysis type. After resetting, you'll need to load a new preset using load_isotopics_preset before performing any analysis.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {}
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>Isotopics</Agent>
+    </AvailableFor>
+  </Tool>
+
+  <Tool name="load_isotopics_preset">
+    <Description>Load an isotopics analysis preset configuration from a file. The preset must be specified either as a filename (e.g., 'PlutoniumIsotopics.xml') or a full path. If only a filename is provided, it will be searched for in the data/rel_act directory and its subdirectories. The preset file contains all the analysis configuration including which nuclides to fit, which energy ROIs to use, detector resolution settings, whether to fit energy calibration, and other options. After loading, the configuration is stored with the foreground spectrum and can be retrieved with get_isotopics_config. Returns a summary of the loaded configuration including ROI count, nuclide list, and key analysis options.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+        "preset": {
+          "type": "string",
+          "description": "The preset name or path to load. Can be: (1) a filename like 'PlutoniumIsotopics.xml' which will be found in data/rel_act recursively, (2) a filename without .xml extension (the extension will be added automatically), or (3) a full absolute path to a preset file. Use list_isotopics_presets to discover available presets."
+        }
+      },
+      "required": ["preset"]
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>Isotopics</Agent>
+    </AvailableFor>
+  </Tool>
+
+  <Tool name="perform_isotopics_calculation">
+    <Description>Execute isotopics analysis on the currently loaded spectrum using the configuration that was previously loaded via load_isotopics_preset. This performs the actual calculation to determine the mass fractions of isotopes from gamma-ray peak areas, detector response, and nuclear decay data. Before calling this tool, you MUST have: (1) a foreground spectrum loaded, (2) peaks fit to the spectrum, (3) an isotopics configuration loaded via load_isotopics_preset. The tool returns: mass fractions with uncertainties for each isotope, relative activities, ages (time since purification) if fit, quality metrics (chi-squared per degree of freedom), and optionally Pu242-corrected values for Plutonium analysis. Lower chi2/DOF (ideally near 1.0) indicates better fit quality. Values much greater than 2-3 may indicate problems with peak fits, interference, or incorrect configuration.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {}
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>Isotopics</Agent>
+    </AvailableFor>
+  </Tool>
+
 </ToolDefinitions>
 </LlmConfig>

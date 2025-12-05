@@ -177,6 +177,16 @@ private:
   static nlohmann::json executeCloseActivityShieldingDisplay(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeAskUserQuestion(const nlohmann::json& params, InterSpec* interspec);
 
+  // Workflow State Tool (for agents with state machines)
+  static nlohmann::json executeSetWorkflowState(const nlohmann::json& params, InterSpec* interspec);
+
+  // Isotopics Discovery and State Management Tools
+  static nlohmann::json executeListIsotopicsPresets(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeGetIsotopicsConfig(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeResetIsotopicsConfig(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeLoadIsotopicsPreset(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executePerformIsotopics(const nlohmann::json& params, InterSpec* interspec);
+
   /** Helper function to find and load a detector by identifier.
    @param identifier The detector identifier (name, path, or URI)
    @param detectorName Optional specific detector name for multi-detector files

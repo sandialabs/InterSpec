@@ -119,6 +119,9 @@ shared_ptr<LlmInteraction> LlmInterface::sendUserMessage( const std::string &mes
   shared_ptr<LlmInteraction> convo = m_history->addUserMessageToMainConversation( message );
   assert( convo );
   cout << "Starting new conversation with ID: " << convo->conversationId << endl;
+
+  // Initialize state machine if the agent has one
+  initializeStateMachineForConversation( convo );
   cout << "Added user message to history. History now has " << m_history->getConversations().size() << " conversations" << endl;
   
   // Debug: Show what's actually in history
@@ -173,9 +176,12 @@ void LlmInterface::sendSystemMessage( const std::string &message )
     throw std::runtime_error("LLM interface is not properly configured");
   
   cout << "System message: " << message << endl;
-  
+
   std::shared_ptr<LlmInteraction> convo = m_history->addSystemMessageToMainConversation( message );
-  
+
+  // Initialize state machine if the agent has one
+  initializeStateMachineForConversation( convo );
+
   // Build API request (marked as system-generated)
   json requestJson = buildMessagesArray( convo );
   
@@ -944,7 +950,10 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
     cerr << "LlmInterface::executeToolCallsAndSendResults: recieved null conversation for tool calls: " << toolCalls.dump(2) << endl << endl;
     return {nullptr, nullptr};
   }
-  
+
+  // Set current conversation for tool execution context
+  m_currentConversation = convo;
+
   cout << "Executing " << toolCalls.size() << " tool calls" << endl;
 
   // Track executed tool calls for follow-up
@@ -1456,7 +1465,10 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
       sendToolResultsToLLM( convo );
     }
   }
-  
+
+  // Clear current conversation after tool execution
+  m_currentConversation.reset();
+
   return { tool_request, tool_result };
 }
 
@@ -1788,13 +1800,50 @@ std::string LlmInterface::getSystemPromptForAgent( const AgentType agentType ) c
 }//getSystemPromptForAgent(...)
 
 
+void LlmInterface::initializeStateMachineForConversation( std::shared_ptr<LlmInteraction> convo ) const
+{
+  if( !convo || !m_config )
+    return;
+
+  // Find the agent config for this conversation
+  for( const LlmConfig::AgentConfig &agent : m_config->agents )
+  {
+    if( agent.type == convo->agent_type )
+    {
+      // If this agent has a state machine defined, create a fresh copy for this conversation
+      if( agent.state_machine )
+      {
+        // Create an independent copy of the state machine for this conversation
+        convo->state_machine = agent.state_machine->copy();
+
+        cout << "Initialized state machine for " << agentTypeToString(agent.type)
+             << " conversation, starting in state: " << convo->state_machine->getCurrentState() << endl;
+      }
+      return;
+    }
+  }
+
+  // If we get here, we didn't find the agent config (shouldn't happen)
+  cerr << "Warning: Could not find agent config for " << agentTypeToString(convo->agent_type) << endl;
+}//initializeStateMachineForConversation(...)
+
+
+std::shared_ptr<LlmInteraction> LlmInterface::getCurrentConversation() const
+{
+  return m_currentConversation.lock();
+}//getCurrentConversation()
+
+
 int LlmInterface::invokeSubAgent( std::shared_ptr<LlmInteraction> sub_agent_convo )
 {
   assert( sub_agent_convo );
   if( !sub_agent_convo )
     throw std::logic_error( "LlmInterface::invokeSubAgent called with null conversation" );
-  
+
   assert( sub_agent_convo->agent_type != AgentType::MainAgent );
+
+  // Initialize state machine if the agent has one
+  initializeStateMachineForConversation( sub_agent_convo );
 
   // The initial request should be in the responses array as an InitialRequest turn
   assert( !sub_agent_convo->responses.empty() );
@@ -1868,8 +1917,37 @@ nlohmann::json LlmInterface::buildMessagesArray( const std::shared_ptr<LlmIntera
   
   json messages = json::array();
 
-  // Add system prompt (use MainAgent's prompt)
-  const string systemPrompt = getSystemPromptForAgent( convo->agent_type );
+  // Add system prompt with optional state machine guidance
+  string systemPrompt = getSystemPromptForAgent( convo->agent_type );
+
+  // If conversation has a state machine, append current state guidance
+  if( convo->state_machine )
+  {
+    const string guidance = convo->state_machine->getPromptGuidanceForCurrentState();
+
+    if( !guidance.empty() )
+    {
+      systemPrompt += "\n\n## Current Workflow State\n\n";
+      systemPrompt += "**State**: " + convo->state_machine->getCurrentState() + "\n\n";
+      systemPrompt += "**Guidance**: " + guidance + "\n\n";
+
+      const vector<string> allowed = convo->state_machine->getAllowedTransitions();
+      if( !allowed.empty() )
+      {
+        systemPrompt += "**Next States**: ";
+        for( size_t i = 0; i < allowed.size(); ++i )
+        {
+          if( i > 0 )
+            systemPrompt += ", ";
+          systemPrompt += allowed[i];
+        }
+        systemPrompt += "\n\n";
+      }
+
+      systemPrompt += "**Action**: Use set_workflow_state tool when transitioning to next state.\n";
+    }
+  }
+
   if( !systemPrompt.empty() )
   {
     json systemMsg;

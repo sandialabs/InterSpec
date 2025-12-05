@@ -123,6 +123,13 @@ public:
   /** Check if a specific request ID is still pending */
   bool isRequestPending(int requestId) const;
 
+  /** Get the conversation currently being processed (for tool execution context).
+
+   Returns nullptr if no conversation is currently being processed.
+   This is used by tools that need access to conversation-specific state like state machines.
+   */
+  std::shared_ptr<LlmInteraction> getCurrentConversation() const;
+
   /** Invoke a sub-agent to handle a specific task (async).
    @param sub_agent_convo The conversation to send to the LLM to start the sub-agent
    @return Request ID for the sub-agent invocation
@@ -192,6 +199,9 @@ private:
   
   std::map<int, PendingRequest> m_pendingRequests;
 
+  // Track current conversation being processed (for tool execution context)
+  std::weak_ptr<LlmInteraction> m_currentConversation;
+
   // Deferred tool results (for sub-agent invocations that need to pause main agent)
   struct DeferredToolResult {
     std::string conversationId;
@@ -240,7 +250,15 @@ private:
   /** Get the system prompt for a specific agent from config
    */
   std::string getSystemPromptForAgent( const AgentType agentType ) const;
-  
+
+  /** Initialize state machine for a conversation if the agent has one defined.
+
+   Creates a fresh copy of the agent's state machine and resets it to the initial state.
+
+   @param convo The conversation to initialize state machine for
+   */
+  void initializeStateMachineForConversation( std::shared_ptr<LlmInteraction> convo ) const;
+
   /** Set up the JavaScript bridge for making HTTPS requests */
   void setupJavaScriptBridge();
 };

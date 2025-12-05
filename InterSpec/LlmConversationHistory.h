@@ -39,6 +39,7 @@ static_assert( USE_LLM_INTERFACE, "You should not include this library unless US
 
 enum class AgentType : int;
 struct LlmInteraction;
+class AgentStateMachine;
 
 // Forward declarations
 namespace rapidxml {
@@ -309,11 +310,18 @@ struct LlmInteraction
   std::optional<size_t> totalTokens;       // Total tokens used (prompt + completion)
   
   /** The conversation turns sent to, or recieved from the LLM.
-   
+
    The first entry is the initial prompt sent to the LLM to start the conversation, with following entries being
    assistant responses, tool calls, and tool results.
    */
   std::vector<std::shared_ptr<LlmInteractionTurn>> responses;
+
+  /** Optional state machine for this conversation (nullptr if agent doesn't use one).
+
+   Each conversation gets its own copy of the state machine, initialized to the agent's
+   initial state. This allows the conversation to track its workflow state independently.
+   */
+  std::shared_ptr<AgentStateMachine> state_machine;
 
   /** Function called when the conversation with the LLM has ended.
    For the main agent, this will be to update the GUI.

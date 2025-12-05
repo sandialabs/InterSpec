@@ -9820,12 +9820,12 @@ RelActAutoGui *InterSpec::showRelActAutoWindow()
     
     try
     {
-      rapidxml::xml_document<char> *relActState = m_dataMeasurement
-                                                  ? m_dataMeasurement->relActAutoGuiState()
+      std::unique_ptr<RelActCalcAuto::RelActAutoGuiState> relActState = m_dataMeasurement
+                                                  ? m_dataMeasurement->getRelActAutoGuiState( materialDataBase() )
                                                   : nullptr;
-      if( relActState && relActState->first_node() )
+      if( relActState )
       {
-        m_relActAutoGui->deSerialize( relActState->first_node() );
+        m_relActAutoGui->deSerialize( *relActState );
         m_relActAutoGui->checkIfInUserConfigOrCreateOne( true );
       }
     }catch( std::exception &e )
@@ -10025,13 +10025,17 @@ void InterSpec::saveRelActAutoStateToForegroundSpecMeas()
 {
   if( !m_relActAutoGui || !m_dataMeasurement )
     return;
-  
-  string xml_data;
-  std::unique_ptr<rapidxml::xml_document<char>> doc( new rapidxml::xml_document<char>() );
-  
-  m_relActAutoGui->serialize( doc.get() );
-  
-  m_dataMeasurement->setRelActAutoGuiState( std::move(doc) );
+
+  RelActCalcAuto::RelActAutoGuiState state;
+
+  try
+  {
+    m_relActAutoGui->serialize( state );
+    m_dataMeasurement->setRelActAutoGuiState( &state );
+  }catch( std::exception &e )
+  {
+    passMessage( "Error saving Rel. Act. Auto state: " + string(e.what()), WarningWidget::WarningMsgHigh );
+  }
 }//void saveRelActAutoStateToForegroundSpecMeas()
 
 #endif //#if( USE_REL_ACT_TOOL )

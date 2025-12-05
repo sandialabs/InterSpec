@@ -14,6 +14,8 @@
 #include "InterSpec/LlmConfig.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/LlmInterface.h"
+#include "InterSpec/LlmToolGui.h"
+#include "InterSpec/LlmConversationHistory.h"
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
@@ -38,6 +40,8 @@
 
 #include "InterSpec/ShieldingSourceFitCalc.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
+#include "InterSpec/RelActCalc.h"
+#include "InterSpec/RelActCalcAuto.h"
 
 #include "Minuit2/MnUserParameters.h"
 
@@ -52,7 +56,10 @@
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
+
 #include "SandiaDecay/SandiaDecay.h"
+
+#include "InterSpec/ReactionGamma.h"
 
 using namespace std;
 using json = nlohmann::json;
@@ -1102,6 +1109,36 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
     {
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
         return executeAskUserQuestion(params, interspec);
+      };
+    }else if( toolName == "set_workflow_state" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeSetWorkflowState(params, interspec);
+      };
+    }else if( toolName == "list_isotopics_presets" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeListIsotopicsPresets(params, interspec);
+      };
+    }else if( toolName == "get_isotopics_config" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeGetIsotopicsConfig(params, interspec);
+      };
+    }else if( toolName == "reset_isotopics_config" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeResetIsotopicsConfig(params, interspec);
+      };
+    }else if( toolName == "load_isotopics_preset" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeLoadIsotopicsPreset(params, interspec);
+      };
+    }else if( toolName == "perform_isotopics_calculation" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executePerformIsotopics(params, interspec);
       };
     }else
     {
@@ -4386,6 +4423,878 @@ nlohmann::json ToolRegistry::executeAskUserQuestion(
 
   return result;
 }//executeAskUserQuestion(...)
+
+
+nlohmann::json ToolRegistry::executeSetWorkflowState(
+  const nlohmann::json& params,
+  InterSpec* interspec
+)
+{
+  using namespace std;
+
+  if( !interspec )
+    throw runtime_error( "InterSpec instance required for set_workflow_state" );
+
+  // Get parameters
+  const string new_state = params.value( "state", string() );
+  const string notes = params.value( "notes", string() );
+
+  if( new_state.empty() )
+    throw runtime_error( "state parameter is required" );
+
+  json result;
+  result["success"] = true;
+  result["new_state"] = new_state;
+
+  if( !notes.empty() )
+    result["notes"] = notes;
+
+  // Get current LLM interface and conversation
+  LlmToolGui *llm_gui = interspec->currentLlmTool();
+  if( !llm_gui )
+  {
+    result["warning"] = "No active LLM interface - state tracking not available";
+    return result;
+  }
+
+  LlmInterface *interface = llm_gui->llmInterface();
+  if( !interface )
+  {
+    result["warning"] = "No LLM interface found - state tracking not available";
+    return result;
+  }
+
+  shared_ptr<LlmInteraction> conversation = interface->getCurrentConversation();
+  if( !conversation )
+  {
+    result["warning"] = "No active conversation - state tracking not available";
+    return result;
+  }
+
+  // Check if conversation has a state machine
+  if( !conversation->state_machine )
+  {
+    result["note"] = "Agent does not have a state machine defined";
+    return result;
+  }
+
+  AgentStateMachine *sm = conversation->state_machine.get();
+  result["previous_state"] = sm->getCurrentState();
+
+  // Check if state exists
+  if( !sm->hasState(new_state) )
+  {
+    result["success"] = false;
+    result["error"] = "Unknown state: " + new_state;
+    return result;
+  }
+
+  // Check if transition is valid (soft enforcement)
+  if( !sm->canTransitionTo(new_state) )
+  {
+    result["warning"] = "Unexpected state transition";
+    result["expected_transitions"] = sm->getAllowedTransitions();
+    result["reason"] = "Transition from " + sm->getCurrentState() +
+                       " to " + new_state + " not in allowed transitions";
+    // Continue anyway - soft enforcement
+  }
+
+  // Perform transition
+  sm->transitionTo(new_state);
+
+  // Provide guidance for new state
+  const AgentStateMachine::StateDefinition& state_def = sm->getStateDefinition(new_state);
+  result["guidance"] = state_def.prompt_guidance;
+  result["description"] = state_def.description;
+  result["allowed_next_states"] = state_def.allowed_transitions;
+
+  if( !state_def.required_tools.empty() )
+    result["required_tools"] = state_def.required_tools;
+
+  result["is_final_state"] = state_def.is_final;
+
+  return result;
+}//executeSetWorkflowState(...)
+
+
+// ============================================================================
+// Isotopics Tools Helper Functions
+// ============================================================================
+
+namespace {
+
+/** Helper function to convert RelActAutoGuiState to a summary JSON representation.
+
+ This provides a brief overview suitable for listing presets or showing what was loaded.
+
+ @param state The state to convert
+ @returns JSON object with summary information (note, description, config counts, basic options)
+ */
+nlohmann::json stateToJsonSummary( const RelActCalcAuto::RelActAutoGuiState &state )
+{
+  using namespace std;
+  using json = nlohmann::json;
+
+  json result;
+
+  // Basic metadata
+  if( !state.note.empty() )
+    result["note"] = state.note;
+
+  if( !state.description.empty() )
+    result["description"] = state.description;
+
+  // Configuration summary
+  const RelActCalcAuto::Options &options = state.options;
+
+  result["roi_count"] = options.rois.size();
+
+  // Count nuclides across all rel eff curves
+  size_t total_nuclides = 0;
+  vector<string> nuclide_names;
+  for( const RelActCalcAuto::RelEffCurveInput &curve : options.rel_eff_curves )
+  {
+    for( const RelActCalcAuto::NucInputInfo &nuc : curve.nuclides )
+    {
+      total_nuclides++;
+      nuclide_names.push_back( nuc.name() );
+    }
+  }
+  result["total_nuclides"] = total_nuclides;
+  result["nuclides"] = nuclide_names;
+
+  result["rel_eff_curve_count"] = options.rel_eff_curves.size();
+
+  // Basic options
+  result["fit_energy_cal"] = options.fit_energy_cal;
+  result["fwhm_form"] = RelActCalcAuto::to_str(options.fwhm_form);
+  result["background_subtract"] = state.background_subtract;
+
+  return result;
+}//stateToJsonSummary()
+
+
+/** Helper function to convert RelActAutoGuiState to a detailed JSON representation.
+
+ This provides complete configuration details suitable for reviewing the full configuration.
+
+ @param state The state to convert
+ @returns JSON object with detailed configuration information
+ */
+nlohmann::json stateToJsonDetailed( const RelActCalcAuto::RelActAutoGuiState &state )
+{
+  using namespace std;
+  using json = nlohmann::json;
+
+  json result;
+
+  // Basic metadata
+  if( !state.note.empty() )
+    result["note"] = state.note;
+
+  if( !state.description.empty() )
+    result["description"] = state.description;
+
+  const RelActCalcAuto::Options &opts = state.options;
+
+  // ROIs with full details
+  result["rois"] = json::array();
+  for( const auto &roi : opts.rois )
+  {
+    json roi_json;
+    roi_json["lower_energy"] = roi.lower_energy;
+    roi_json["upper_energy"] = roi.upper_energy;
+    roi_json["continuum_type"] = PeakContinuum::offset_type_label_tr(roi.continuum_type);
+    result["rois"].push_back( roi_json );
+  }
+
+  // Nuclides with full details (from all rel eff curves)
+  result["nuclides"] = json::array();
+  for( size_t curve_idx = 0; curve_idx < opts.rel_eff_curves.size(); ++curve_idx )
+  {
+    const RelActCalcAuto::RelEffCurveInput &curve = opts.rel_eff_curves[curve_idx];
+    for( const RelActCalcAuto::NucInputInfo &nuc_input : curve.nuclides )
+    {
+      json nuc_json;
+      nuc_json["name"] = nuc_input.name();
+      nuc_json["rel_eff_curve"] = curve.name;
+      nuc_json["rel_eff_index"] = curve_idx;
+
+      if( nuc_input.age >= 0.0 )
+      {
+        nuc_json["age_days"] = nuc_input.age / PhysicalUnits::day;
+        nuc_json["fit_age"] = nuc_input.fit_age;
+      }
+
+      result["nuclides"].push_back( nuc_json );
+    }
+  }
+
+  // Rel eff curves details
+  result["rel_eff_curves"] = json::array();
+  for( const auto &curve : opts.rel_eff_curves )
+  {
+    json curve_json;
+    curve_json["name"] = curve.name;
+    curve_json["rel_eff_eqn_type"] = RelActCalc::to_str( curve.rel_eff_eqn_type );
+    curve_json["rel_eff_eqn_order"] = curve.rel_eff_eqn_order;
+    curve_json["nucs_of_el_same_age"] = curve.nucs_of_el_same_age;
+    result["rel_eff_curves"].push_back( curve_json );
+  }
+
+  // All options
+  result["fit_energy_cal"] = opts.fit_energy_cal;
+  result["fwhm_form"] = RelActCalcAuto::to_str(opts.fwhm_form);
+  result["fwhm_estimation_method"] = RelActCalcAuto::to_str(opts.fwhm_estimation_method);
+  result["skew_type"] = PeakDef::to_string(opts.skew_type);
+  result["additional_br_uncert"] = opts.additional_br_uncert;
+  result["background_subtract"] = state.background_subtract;
+  result["show_ref_lines"] = state.show_ref_lines;
+
+  if( state.lower_display_energy < state.upper_display_energy )
+  {
+    result["lower_display_energy"] = state.lower_display_energy;
+    result["upper_display_energy"] = state.upper_display_energy;
+  }
+
+  if( !opts.spectrum_title.empty() )
+    result["spectrum_title"] = opts.spectrum_title;
+
+  return result;
+}//stateToJsonDetailed()
+
+
+/** Helper function to extract metadata from RelActAutoGuiState for listing purposes.
+
+ @param state The state to extract info from
+ @returns JSON object with metadata (description, sources, energy_range, rois, rel_eff_form)
+ */
+nlohmann::json extractStateMetadata( const RelActCalcAuto::RelActAutoGuiState &state )
+{
+  using namespace std;
+  using json = nlohmann::json;
+
+  json metadata;
+
+  // Extract description
+  if( !state.description.empty() )
+    metadata["description"] = state.description;
+
+  // Extract sources (nuclides) from all rel eff curves - remove duplicates
+  set<string> unique_sources;
+  for( const auto &curve : state.options.rel_eff_curves )
+  {
+    for( const auto &nuc_info : curve.nuclides )
+    {
+      // Extract source name from variant
+      if( const SandiaDecay::Nuclide * const* nuc = std::get_if<const SandiaDecay::Nuclide*>(&nuc_info.source) )
+      {
+        if( *nuc )
+          unique_sources.insert( (*nuc)->symbol );
+      }
+      else if( const SandiaDecay::Element * const* el = std::get_if<const SandiaDecay::Element*>(&nuc_info.source) )
+      {
+        if( *el )
+          unique_sources.insert( (*el)->symbol );
+      }
+      else if( const ReactionGamma::Reaction * const* rxn = std::get_if<const ReactionGamma::Reaction*>(&nuc_info.source) )
+      {
+        if( *rxn )
+          unique_sources.insert( (*rxn)->name() );
+      }
+    }
+  }
+
+  if( !unique_sources.empty() )
+  {
+    json sources_array = json::array();
+    for( const string &source : unique_sources )
+      sources_array.push_back( source );
+    metadata["sources"] = sources_array;
+  }
+
+  // Extract energy range from ROIs
+  double min_energy = std::numeric_limits<double>::max();
+  double max_energy = std::numeric_limits<double>::lowest();
+
+  for( const auto &roi : state.options.rois )
+  {
+    min_energy = std::min( min_energy, roi.lower_energy );
+    max_energy = std::max( max_energy, roi.upper_energy );
+  }
+
+  if( min_energy < max_energy && !state.options.rois.empty() )
+  {
+    metadata["energy_range"] = SpecUtils::printCompact( min_energy, 5 ) + " - "
+                              + SpecUtils::printCompact( max_energy, 5 ) + " keV";
+  }
+
+  // Extract ROIs list
+  json rois_array = json::array();
+  for( const auto &roi : state.options.rois )
+  {
+    json roi_obj;
+    roi_obj["lower_energy"] = roi.lower_energy;
+    roi_obj["upper_energy"] = roi.upper_energy;
+    rois_array.push_back( roi_obj );
+  }
+  if( !rois_array.empty() )
+    metadata["rois"] = rois_array;
+
+  // Extract relative efficiency form(s)
+  if( state.options.rel_eff_curves.size() == 1 )
+  {
+    // Single curve - return as string
+    metadata["rel_eff_form"] = RelActCalc::to_str( state.options.rel_eff_curves[0].rel_eff_eqn_type );
+  }
+  else if( state.options.rel_eff_curves.size() > 1 )
+  {
+    // Multiple curves - return as array
+    json rel_eff_forms_array = json::array();
+    for( const auto &curve : state.options.rel_eff_curves )
+      rel_eff_forms_array.push_back( RelActCalc::to_str( curve.rel_eff_eqn_type ) );
+    metadata["rel_eff_forms"] = rel_eff_forms_array;
+  }
+
+  return metadata;
+}//extractStateMetadata()
+
+
+/** Helper function to get the current RelActAutoGuiState from SpecMeas XML.
+
+ @param interspec InterSpec instance
+ @param create_if_missing If true, creates a new empty state if none exists
+ @returns Shared pointer to state, or nullptr if not found and create_if_missing is false
+ */
+std::shared_ptr<RelActCalcAuto::RelActAutoGuiState> getOrCreateRelActState(
+  InterSpec* interspec,
+  bool create_if_missing = true
+)
+{
+  if( !interspec )
+    throw std::runtime_error( "InterSpec instance required" );
+
+  std::shared_ptr<SpecMeas> spec = interspec->measurment( SpecUtils::SpectrumType::Foreground );
+  if( !spec )
+    throw std::runtime_error( "No foreground spectrum loaded" );
+
+  MaterialDB *materialDb = interspec->materialDataBase();
+  std::unique_ptr<RelActCalcAuto::RelActAutoGuiState> state_ptr = spec->getRelActAutoGuiState( materialDb );
+
+  if( !state_ptr )
+  {
+    if( create_if_missing )
+      return std::make_shared<RelActCalcAuto::RelActAutoGuiState>();
+    else
+      return nullptr;
+  }
+
+  // Return as shared_ptr (make a copy since we got unique_ptr)
+  return std::make_shared<RelActCalcAuto::RelActAutoGuiState>( *state_ptr );
+}//getOrCreateRelActState()
+
+
+/** Helper function to save RelActAutoGuiState to SpecMeas as XML.
+ */
+void saveRelActState(
+  InterSpec* interspec,
+  std::shared_ptr<RelActCalcAuto::RelActAutoGuiState> state
+)
+{
+  if( !interspec )
+    throw std::runtime_error( "InterSpec instance required" );
+
+  if( !state )
+    throw std::runtime_error( "Invalid state to save" );
+
+  std::shared_ptr<SpecMeas> spec = interspec->measurment( SpecUtils::SpectrumType::Foreground );
+  if( !spec )
+    throw std::runtime_error( "No foreground spectrum loaded" );
+
+  // Use new convenience setter
+  spec->setRelActAutoGuiState( state.get() );
+}//saveRelActState()
+
+}//namespace (anonymous)
+
+
+// ============================================================================
+// Isotopics Discovery and State Management Tools
+// ============================================================================
+
+nlohmann::json ToolRegistry::executeListIsotopicsPresets(
+  const nlohmann::json& params,
+  InterSpec* interspec
+)
+{
+  using namespace std;
+
+  json result;
+  result["presets"] = json::array();
+
+  // Check if there's a current configuration
+  try
+  {
+    shared_ptr<RelActCalcAuto::RelActAutoGuiState> state = getOrCreateRelActState( interspec, false );
+    if( state )
+    {
+      json current_preset;
+      current_preset["name"] = "Current Configuration";
+      current_preset["is_current"] = true;
+
+      // Extract metadata from current state
+      json metadata = extractStateMetadata( *state );
+
+      // Append description to base string if present
+      string base_description = "Current isotopics configuration in memory";
+      if( metadata.contains("description") && !metadata["description"].get<string>().empty() )
+      {
+        base_description += ": " + metadata["description"].get<string>();
+        metadata.erase("description"); // Remove from metadata since we've merged it
+      }
+      current_preset["description"] = base_description;
+
+      // Merge remaining metadata fields
+      current_preset.update(metadata);
+
+      result["presets"].push_back( current_preset );
+    }
+  }catch( ... )
+  {
+    // No current state - that's fine
+  }
+
+  // Scan data/rel_act directory for preset files
+  const string data_dir = InterSpec::staticDataDirectory();
+  const string rel_act_dir = SpecUtils::append_path( data_dir, "rel_act" );
+
+  if( !SpecUtils::is_directory(rel_act_dir) )
+  {
+    result["warning"] = "Isotopics preset directory not found: " + rel_act_dir;
+    return result;
+  }
+
+  vector<string> preset_files = SpecUtils::recursive_ls( rel_act_dir, ".xml" );
+
+  // Filter out unwanted presets
+  const vector<string> exclude_keywords = { "U inside U", "multiple U" };
+
+  for( const string &filepath : preset_files )
+  {
+    const string filename = SpecUtils::filename(filepath);
+
+    // Check if filename contains any exclude keywords (case-insensitive)
+    bool should_exclude = false;
+    for( const string &keyword : exclude_keywords )
+    {
+      if( SpecUtils::icontains(filename, keyword) )
+      {
+        should_exclude = true;
+        break;
+      }
+    }
+
+    if( should_exclude )
+      continue;
+
+    json preset;
+    preset["name"] = filename;
+    preset["path"] = filepath;
+    preset["is_current"] = false;
+
+    // Try to extract basic info from filename
+    if( SpecUtils::icontains(filename, "Pu") )
+      preset["material_type"] = "Plutonium";
+    else if( SpecUtils::icontains(filename, "U") )
+      preset["material_type"] = "Uranium";
+
+    // Try to parse the preset file to extract metadata
+    try
+    {
+      // Parse XML file
+      vector<char> xml_data;
+      SpecUtils::load_file_data( filepath.c_str(), xml_data );
+
+      rapidxml::xml_document<char> doc;
+      const int flags = rapidxml::parse_normalize_whitespace | rapidxml::parse_trim_whitespace;
+      doc.parse<flags>( &xml_data[0] );
+
+      const rapidxml::xml_node<char> *base_node = doc.first_node( "RelActCalcAuto" );
+      if( base_node )
+      {
+        // Deserialize as RelActAutoGuiState
+        RelActCalcAuto::RelActAutoGuiState file_state;
+        MaterialDB *materialDb = interspec ? interspec->materialDataBase() : nullptr;
+        file_state.deSerialize( base_node, materialDb );
+
+        // Extract metadata
+        json metadata = extractStateMetadata( file_state );
+
+        // Merge metadata into preset
+        preset.update( metadata );
+      }
+    }
+    catch( std::exception &e )
+    {
+      // Failed to parse - that's okay, just skip the metadata extraction
+      preset["parse_warning"] = string("Could not extract metadata: ") + e.what();
+    }
+
+    result["presets"].push_back( preset );
+  }
+
+  result["count"] = result["presets"].size();
+  return result;
+}//executeListIsotopicsPresets()
+
+
+nlohmann::json ToolRegistry::executeGetIsotopicsConfig(
+  const nlohmann::json& params,
+  InterSpec* interspec
+)
+{
+  using namespace std;
+
+  auto state = getOrCreateRelActState( interspec, false );
+  if( !state )
+  {
+    json result;
+    result["has_config"] = false;
+    result["message"] = "No isotopics configuration exists";
+    return result;
+  }
+
+  json result;
+  result["has_config"] = true;
+
+  // Use the detailed conversion helper
+  json details = stateToJsonDetailed( *state );
+  result.update( details );
+
+  return result;
+}//executeGetIsotopicsConfig()
+
+
+nlohmann::json ToolRegistry::executeResetIsotopicsConfig(
+  const nlohmann::json& params,
+  InterSpec* interspec
+)
+{
+  if( !interspec )
+    throw std::runtime_error( "InterSpec instance required" );
+
+  std::shared_ptr<SpecMeas> spec = interspec->measurment( SpecUtils::SpectrumType::Foreground );
+  if( !spec )
+    throw std::runtime_error( "No foreground spectrum loaded" );
+
+  // Clear the state
+  spec->setRelActAutoGuiState( nullptr );
+
+  json result;
+  result["success"] = true;
+  result["message"] = "Isotopics configuration cleared";
+
+  return result;
+}//executeResetIsotopicsConfig()
+
+
+nlohmann::json ToolRegistry::executeLoadIsotopicsPreset(
+  const nlohmann::json& params,
+  InterSpec* interspec
+)
+{
+  using namespace std;
+
+  if( !interspec )
+    throw runtime_error( "InterSpec instance required" );
+
+  const string preset_name_or_path = params.value( "preset", string() );
+
+  if( preset_name_or_path.empty() )
+    throw runtime_error( "preset parameter is required" );
+
+  json result;
+
+  // Determine the full path to the preset file
+  string preset_path;
+
+  // Check if it's already a full path
+  if( SpecUtils::is_file(preset_name_or_path) )
+  {
+    preset_path = preset_name_or_path;
+  }
+  else
+  {
+    // Try to find it in the data/rel_act directory
+    const string data_dir = InterSpec::staticDataDirectory();
+    const string rel_act_dir = SpecUtils::append_path( data_dir, "rel_act" );
+
+    // Try exact name first
+    string candidate = SpecUtils::append_path( rel_act_dir, preset_name_or_path );
+    if( SpecUtils::is_file(candidate) )
+    {
+      preset_path = candidate;
+    }
+    else
+    {
+      // Try adding .xml extension
+      if( !SpecUtils::iends_with(preset_name_or_path, ".xml") )
+      {
+        candidate = SpecUtils::append_path( rel_act_dir, preset_name_or_path + ".xml" );
+        if( SpecUtils::is_file(candidate) )
+        {
+          preset_path = candidate;
+        }
+      }
+
+      // If still not found, search recursively
+      if( preset_path.empty() )
+      {
+        const vector<string> all_files = SpecUtils::recursive_ls( rel_act_dir, ".xml" );
+        for( const string &filepath : all_files )
+        {
+          const string filename = SpecUtils::filename(filepath);
+          if( SpecUtils::iequals_ascii(filename, preset_name_or_path)
+             || SpecUtils::iequals_ascii(filename, preset_name_or_path + ".xml") )
+          {
+            preset_path = filepath;
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  if( preset_path.empty() )
+    throw runtime_error( "Could not find preset: " + preset_name_or_path );
+
+  // Load and parse the XML file
+  vector<char> xml_data;
+  SpecUtils::load_file_data( preset_path.c_str(), xml_data );
+
+  if( xml_data.size() < 10 )
+    throw runtime_error( "Failed to read preset file: " + preset_path );
+
+  // Parse XML into a new document
+  auto xml_doc = make_unique<rapidxml::xml_document<char>>();
+
+  try
+  {
+    const int flags = rapidxml::parse_normalize_whitespace | rapidxml::parse_trim_whitespace;
+    xml_doc->parse<flags>( &(xml_data[0]) );
+  }catch( std::exception &e )
+  {
+    throw runtime_error( "Failed to parse preset XML: " + string(e.what()) );
+  }
+
+  const rapidxml::xml_node<char> *base_node = xml_doc->first_node( "RelActCalcAuto" );
+  if( !base_node )
+    throw runtime_error( "Invalid preset file - missing RelActCalcAuto root node" );
+
+  // Save XML document to SpecMeas
+  shared_ptr<SpecMeas> spec = interspec->measurment( SpecUtils::SpectrumType::Foreground );
+  if( !spec )
+    throw runtime_error( "No foreground spectrum loaded" );
+
+  spec->setRelActAutoGuiState( std::move(xml_doc) );
+
+  // Parse the state to provide summary (after we've saved the XML)
+  RelActCalcAuto::RelActAutoGuiState state;
+  MaterialDB *materialDb = interspec->materialDataBase();
+
+  try
+  {
+    state.deSerialize( base_node, materialDb );
+  }catch( std::exception &e )
+  {
+    throw runtime_error( "Failed to load preset configuration: " + string(e.what()) );
+  }
+
+  // Build result with configuration summary
+  result["success"] = true;
+  result["preset_name"] = SpecUtils::filename(preset_path);
+  result["preset_path"] = preset_path;
+
+  // Use summary helper to get configuration info
+  json summary = stateToJsonSummary( state );
+  result["configuration"] = summary;
+
+  return result;
+}//executeLoadIsotopicsPreset()
+
+
+nlohmann::json ToolRegistry::executePerformIsotopics(
+  const nlohmann::json& params,
+  InterSpec* interspec
+)
+{
+  using namespace std;
+
+  if( !interspec )
+    throw runtime_error( "InterSpec instance required" );
+
+  // Get current configuration - REQUIRED
+  auto state = getOrCreateRelActState( interspec, false );
+  if( !state )
+    throw runtime_error( "No isotopics configuration loaded. Use load_isotopics_preset first." );
+
+  json result;
+
+  // Extract options from state
+  const RelActCalcAuto::Options &options = state->options;
+
+  // Get foreground spectrum
+  shared_ptr<SpecMeas> spec = interspec->measurment( SpecUtils::SpectrumType::Foreground );
+  if( !spec )
+    throw runtime_error( "No foreground spectrum loaded" );
+
+  shared_ptr<const SpecUtils::Measurement> foreground = interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+  if( !foreground )
+    throw runtime_error( "No foreground histogram available" );
+
+  // Get background if requested
+  shared_ptr<const SpecUtils::Measurement> background;
+  if( state->background_subtract )
+  {
+    background = interspec->displayedHistogram( SpecUtils::SpectrumType::Background );
+    // background can be null - solve() will handle it
+  }
+
+  // Get detector response function
+  shared_ptr<const DetectorPeakResponse> drf = spec->detector();
+
+  // Get peaks
+  PeakModel *peakModel = interspec->peakModel();
+  vector<shared_ptr<const PeakDef>> all_peaks;
+
+  if( peakModel )
+  {
+    shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = peakModel->peaks();
+    if( peaks )
+    {
+      for( const auto &peak : *peaks )
+      {
+        if( peak )
+          all_peaks.push_back( peak );
+      }
+    }
+  }
+
+  // Execute the solve
+  try
+  {
+    RelActCalcAuto::RelActAutoSolution solution = RelActCalcAuto::solve(
+      options,
+      foreground,
+      background,
+      drf,
+      all_peaks,
+      nullptr  // no cancel callback
+    );
+
+    // Check if solve was successful
+    if( solution.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success )
+    {
+      result["success"] = false;
+      result["status"] = "Failed";
+      result["error"] = solution.m_error_message;
+
+      if( !solution.m_warnings.empty() )
+        result["warnings"] = solution.m_warnings;
+
+      return result;
+    }
+
+    // Build success result
+    result["success"] = true;
+    result["status"] = "Success";
+
+    // Quality metrics
+    json quality;
+    quality["chi2"] = solution.m_chi2;
+    quality["dof"] = solution.m_dof;
+    quality["chi2_per_dof"] = (solution.m_dof > 0) ? (solution.m_chi2 / solution.m_dof) : -1.0;
+    quality["num_function_eval"] = solution.m_num_function_eval_solution;
+    result["quality"] = quality;
+
+    // Extract isotopics results (first rel eff curve)
+    if( solution.m_rel_activities.empty() || solution.m_rel_activities[0].empty() )
+      throw runtime_error( "No relative activities in solution" );
+
+    const vector<RelActCalcAuto::NuclideRelAct> &rel_acts = solution.m_rel_activities[0];
+
+    // Calculate mass fractions for all isotopes
+    json isotopics = json::array();
+
+    for( const RelActCalcAuto::NuclideRelAct &nuc_act : rel_acts )
+    {
+      const SandiaDecay::Nuclide *nuc = RelActCalcAuto::nuclide( nuc_act.source );
+      if( !nuc )
+        continue;
+
+      json nuc_result;
+      nuc_result["nuclide"] = nuc->symbol;
+
+      // Get mass fraction
+      try
+      {
+        const pair<double,optional<double>> mass_frac = solution.mass_enrichment_fraction( nuc, 0 );
+        nuc_result["mass_fraction"] = mass_frac.first;
+        if( mass_frac.second )
+          nuc_result["mass_fraction_uncert"] = *mass_frac.second;
+      }catch( exception &e )
+      {
+        nuc_result["mass_fraction_error"] = e.what();
+      }
+
+      // Relative activity
+      nuc_result["rel_activity"] = nuc_act.rel_activity;
+      nuc_result["rel_activity_uncert"] = nuc_act.rel_activity_uncertainty;
+
+      // Age
+      if( nuc_act.age >= 0.0 )
+      {
+        nuc_result["age_days"] = nuc_act.age / PhysicalUnits::day;
+        nuc_result["age_uncert_days"] = nuc_act.age_uncertainty / PhysicalUnits::day;
+        nuc_result["age_was_fit"] = nuc_act.age_was_fit;
+      }
+
+      isotopics.push_back( nuc_result );
+    }
+
+    result["isotopics"] = isotopics;
+
+    // Include Pu242 correction if available
+    if( !solution.m_corrected_pu.empty() && solution.m_corrected_pu[0] )
+    {
+      json pu242_corr;
+      const auto &corr_pu = solution.m_corrected_pu[0];
+
+      pu242_corr["pu238"] = corr_pu->pu238_mass_frac;
+      pu242_corr["pu239"] = corr_pu->pu239_mass_frac;
+      pu242_corr["pu240"] = corr_pu->pu240_mass_frac;
+      pu242_corr["pu241"] = corr_pu->pu241_mass_frac;
+      pu242_corr["pu242"] = corr_pu->pu242_mass_frac;
+
+      result["pu242_corrected"] = pu242_corr;
+    }
+
+    // Warnings
+    if( !solution.m_warnings.empty() )
+      result["warnings"] = solution.m_warnings;
+
+    // Save updated state back to SpecMeas
+    saveRelActState( interspec, state );
+
+  }catch( exception &e )
+  {
+    result["success"] = false;
+    result["error"] = e.what();
+    return result;
+  }
+
+  return result;
+}//executePerformIsotopics()
 
 
 nlohmann::json ToolRegistry::executeMarkPeaksForActivityFit(
