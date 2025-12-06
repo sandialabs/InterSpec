@@ -141,15 +141,44 @@ struct RoiRange
    TODO: Allow setting to #PeakContinuum::OffsetType::External to auto-choose this.
    */
   PeakContinuum::OffsetType continuum_type = PeakContinuum::OffsetType::Quadratic;
-  
-  /** Dont allow cutting range down based on peaks not being anywhere reasonably near edge. */
-  bool force_full_range = false;
-  
-  /** If we have a peak right-on the edge, allow the ROI to extend out to a few FWHM.
-   If #force_full_range is true, this value must be false.
+
+  /** Specifies how the energy range limits should be interpreted during fitting.
+
+   This controls whether the ROI boundaries are strictly enforced, can expand to accommodate
+   peaks at the edges, or can be broken into smaller ranges based on peak locations.
    */
-  bool allow_expand_for_peak_width = false;
-  
+  enum class RangeLimitsType : int
+  {
+    /** The lower and upper energies are strictly enforced - the ROI will not be
+     adjusted or broken up based on peak locations.
+     */
+    Fixed = 0,
+
+    /** The lower and upper energy values can be expanded to accommodate the FWHM of peaks
+     at or near the ROI edges. Not well tested yet.
+     */
+    CanExpandForFwhm = 1,
+
+    /** The ROI can be broken up into multiple smaller ROIs based on expected significant peaks.
+     The range may be subdivided to optimize fitting.
+     */
+    CanBeBrokenUp = 2
+  };//enum class RangeLimitsType
+
+  /** Specifies how the ROI limits should be interpreted. */
+  RangeLimitsType range_limits_type = RangeLimitsType::CanBeBrokenUp;
+
+  /** Returns string representation of the RangeLimitsType.
+   String returned is a static string, so do not delete it.
+   */
+  static const char *to_str( const RangeLimitsType type );
+
+  /** Converts from the string representation of RangeLimitsType to enumerated value.
+
+   Throws exception if invalid string (i.e., any string not returned by to_str(RangeLimitsType) ).
+   */
+  static RangeLimitsType range_limits_type_from_str( const char *str );
+
   static const int sm_xmlSerializationVersion = 0;
   void toXml( ::rapidxml::xml_node<char> *parent ) const;
   void fromXml( const ::rapidxml::xml_node<char> *parent );

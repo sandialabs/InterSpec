@@ -1720,8 +1720,7 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
     new_roi.lower_energy = lower_energy;
     new_roi.upper_energy = upper_energy;
     new_roi.continuum_type = PeakContinuum::OffsetType::Linear;
-    new_roi.force_full_range = true;
-    new_roi.allow_expand_for_peak_width = false;
+    new_roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
     
     
     // Now check if we overlap with a ROI, or perhaps we need to expand an existing ROI
@@ -1867,7 +1866,7 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
   item->triggered().connect( boost::bind( &RelActAutoGui::handleSplitEnergyRange, this, static_cast<WWidget *>(range), energy ) );
   
   const char *item_label = "";
-  if( roi.force_full_range )
+  if( roi.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed )
     item_label = "Don't force full-range";
   else
     item_label = "Force full-range";
@@ -2180,10 +2179,18 @@ Wt::WWidget *RelActAutoGui::handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget
   RelActCalcAuto::RoiRange new_roi = lroi;
   new_roi.lower_energy = std::min( lroi.lower_energy, rroi.lower_energy );
   new_roi.upper_energy = std::max( lroi.upper_energy, rroi.upper_energy );
-  if( rroi.force_full_range )
-    new_roi.force_full_range = true;
-  if( rroi.allow_expand_for_peak_width )
-    new_roi.allow_expand_for_peak_width = true;
+  // If either ROI is Fixed, the combined ROI should be Fixed
+  // Otherwise, if either is CanExpandForFwhm, use that, otherwise CanBeBrokenUp
+  if( (lroi.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed)
+     || (rroi.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed) )
+  {
+    new_roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
+  }
+  else if( (lroi.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::CanExpandForFwhm)
+          || (rroi.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::CanExpandForFwhm) )
+  {
+    new_roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::CanExpandForFwhm;
+  }
   new_roi.continuum_type = std::max( lroi.continuum_type, rroi.continuum_type );
   
   delete right_range;
@@ -3352,9 +3359,6 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
     //  TODO: improve the robustness of the matching between the initial ROI, and auto-split ROIs
     
     const double mid_energy = 0.5*(range.lower_energy + range.upper_energy);
-    //range.continuum_type = PeakContinuum::OffsetType::;
-    //range.force_full_range = false;
-    //range.allow_expand_for_peak_width = false;
     
     if( (mid_energy > lower_energy) && (mid_energy < upper_energy) )
       to_ranges.push_back( range );

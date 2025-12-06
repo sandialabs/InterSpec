@@ -4605,6 +4605,10 @@ nlohmann::json stateToJsonDetailed( const RelActCalcAuto::RelActAutoGuiState &st
     roi_json["lower_energy"] = roi.lower_energy;
     roi_json["upper_energy"] = roi.upper_energy;
     roi_json["continuum_type"] = PeakContinuum::offset_type_label_tr(roi.continuum_type);
+
+    const char *range_type_str = RelActCalcAuto::RoiRange::to_str( roi.range_limits_type );
+    roi_json["range_type"] = range_type_str;
+
     result["rois"].push_back( roi_json );
   }
 
@@ -4864,17 +4868,35 @@ nlohmann::json ToolRegistry::executeListIsotopicsPresets(
     // No current state - that's fine
   }
 
-  // Scan data/rel_act directory for preset files
-  const string data_dir = InterSpec::staticDataDirectory();
-  const string rel_act_dir = SpecUtils::append_path( data_dir, "rel_act" );
+  // Scan both writable and static data/rel_act directories for preset files
+  const string writable_data_dir = InterSpec::writableDataDirectory();
+  const string static_data_dir = InterSpec::staticDataDirectory();
 
-  if( !SpecUtils::is_directory(rel_act_dir) )
+  const string writable_rel_act_dir = SpecUtils::append_path( writable_data_dir, "rel_act" );
+  const string static_rel_act_dir = SpecUtils::append_path( static_data_dir, "rel_act" );
+
+  // Collect preset files from both directories
+  vector<string> preset_files;
+
+  // Scan writable directory first (user-created presets)
+  if( SpecUtils::is_directory(writable_rel_act_dir) )
   {
-    result["warning"] = "Isotopics preset directory not found: " + rel_act_dir;
-    return result;
+    vector<string> writable_files = SpecUtils::recursive_ls( writable_rel_act_dir, ".xml" );
+    preset_files.insert( preset_files.end(), writable_files.begin(), writable_files.end() );
   }
 
-  vector<string> preset_files = SpecUtils::recursive_ls( rel_act_dir, ".xml" );
+  // Scan static directory (built-in presets)
+  if( SpecUtils::is_directory(static_rel_act_dir) )
+  {
+    vector<string> static_files = SpecUtils::recursive_ls( static_rel_act_dir, ".xml" );
+    preset_files.insert( preset_files.end(), static_files.begin(), static_files.end() );
+  }
+
+  if( preset_files.empty() )
+  {
+    result["warning"] = "No isotopics preset files found in data directories";
+    return result;
+  }
 
   // Filter out unwanted presets
   const vector<string> exclude_keywords = { "U inside U", "multiple U" };
@@ -4899,8 +4921,15 @@ nlohmann::json ToolRegistry::executeListIsotopicsPresets(
 
     json preset;
     preset["name"] = filename;
-    preset["path"] = filepath;
     preset["is_current"] = false;
+    // We wont include the full path to the XML file, as the LLM doesnt need to know that
+    //preset["path"] = filepath;
+
+    // Indicate whether this is a user preset or built-in preset
+    if( SpecUtils::istarts_with(filepath, writable_rel_act_dir) )
+      preset["location"] = "user";
+    else
+      preset["location"] = "built-in";
 
     // Try to extract basic info from filename
     if( SpecUtils::icontains(filename, "Pu") )
@@ -5008,65 +5037,50 @@ nlohmann::json ToolRegistry::executeLoadIsotopicsPreset(
   if( !interspec )
     throw runtime_error( "InterSpec instance required" );
 
-  const string preset_name_or_path = params.value( "preset", string() );
+  string preset_name = params.value( "preset", string() );
 
-  if( preset_name_or_path.empty() )
+  if( preset_name.empty() )
     throw runtime_error( "preset parameter is required" );
 
   json result;
 
-  // Determine the full path to the preset file
+  // Extract just the filename (security: prevent directory traversal)
+  preset_name = SpecUtils::filename( preset_name );
+
+  if( preset_name.empty() )
+    throw runtime_error( "Invalid preset name" );
+
+  // Add .xml extension if not present
+  if( !SpecUtils::iends_with(preset_name, ".xml") )
+    preset_name += ".xml";
+
+  // Search for the preset file in writable directory first, then static directory
+  const string writable_data_dir = InterSpec::writableDataDirectory();
+  const string static_data_dir = InterSpec::staticDataDirectory();
+
+  const string writable_rel_act_dir = SpecUtils::append_path( writable_data_dir, "rel_act" );
+  const string static_rel_act_dir = SpecUtils::append_path( static_data_dir, "rel_act" );
+
   string preset_path;
 
-  // Check if it's already a full path
-  if( SpecUtils::is_file(preset_name_or_path) )
+  // Check writable directory first
+  string candidate = SpecUtils::append_path( writable_rel_act_dir, preset_name );
+  if( SpecUtils::is_file(candidate) )
   {
-    preset_path = preset_name_or_path;
+    preset_path = candidate;
   }
   else
   {
-    // Try to find it in the data/rel_act directory
-    const string data_dir = InterSpec::staticDataDirectory();
-    const string rel_act_dir = SpecUtils::append_path( data_dir, "rel_act" );
-
-    // Try exact name first
-    string candidate = SpecUtils::append_path( rel_act_dir, preset_name_or_path );
+    // Check static directory
+    candidate = SpecUtils::append_path( static_rel_act_dir, preset_name );
     if( SpecUtils::is_file(candidate) )
     {
       preset_path = candidate;
     }
-    else
-    {
-      // Try adding .xml extension
-      if( !SpecUtils::iends_with(preset_name_or_path, ".xml") )
-      {
-        candidate = SpecUtils::append_path( rel_act_dir, preset_name_or_path + ".xml" );
-        if( SpecUtils::is_file(candidate) )
-        {
-          preset_path = candidate;
-        }
-      }
-
-      // If still not found, search recursively
-      if( preset_path.empty() )
-      {
-        const vector<string> all_files = SpecUtils::recursive_ls( rel_act_dir, ".xml" );
-        for( const string &filepath : all_files )
-        {
-          const string filename = SpecUtils::filename(filepath);
-          if( SpecUtils::iequals_ascii(filename, preset_name_or_path)
-             || SpecUtils::iequals_ascii(filename, preset_name_or_path + ".xml") )
-          {
-            preset_path = filepath;
-            break;
-          }
-        }
-      }
-    }
   }
 
   if( preset_path.empty() )
-    throw runtime_error( "Could not find preset: " + preset_name_or_path );
+    throw runtime_error( "Could not find preset: " + preset_name );
 
   // Load and parse the XML file
   vector<char> xml_data;
@@ -5091,13 +5105,6 @@ nlohmann::json ToolRegistry::executeLoadIsotopicsPreset(
   if( !base_node )
     throw runtime_error( "Invalid preset file - missing RelActCalcAuto root node" );
 
-  // Save XML document to SpecMeas
-  shared_ptr<SpecMeas> spec = interspec->measurment( SpecUtils::SpectrumType::Foreground );
-  if( !spec )
-    throw runtime_error( "No foreground spectrum loaded" );
-
-  spec->setRelActAutoGuiState( std::move(xml_doc) );
-
   // Parse the state to provide summary (after we've saved the XML)
   RelActCalcAuto::RelActAutoGuiState state;
   MaterialDB *materialDb = interspec->materialDataBase();
@@ -5110,13 +5117,21 @@ nlohmann::json ToolRegistry::executeLoadIsotopicsPreset(
     throw runtime_error( "Failed to load preset configuration: " + string(e.what()) );
   }
 
+  // Save XML document to SpecMeas
+  shared_ptr<SpecMeas> spec = interspec->measurment( SpecUtils::SpectrumType::Foreground );
+  if( !spec )
+    throw runtime_error( "No foreground spectrum loaded" );
+
+  spec->setRelActAutoGuiState( &state );
+
   // Build result with configuration summary
   result["success"] = true;
   result["preset_name"] = SpecUtils::filename(preset_path);
   result["preset_path"] = preset_path;
 
   // Use summary helper to get configuration info
-  json summary = stateToJsonSummary( state );
+  //json summary = stateToJsonSummary( state );
+  json summary = stateToJsonDetailed( state );
   result["configuration"] = summary;
 
   return result;
