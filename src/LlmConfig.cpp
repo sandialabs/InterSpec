@@ -83,7 +83,18 @@ std::shared_ptr<LlmConfig> LlmConfig::load()
     cerr << "Failed to load LLM config from '" << configPath << "': " << e.what() << endl;
     throw; // rethrow
   }
-  
+
+#if( BUILD_AS_UNIT_TEST_SUITE )
+  // We dont have any unit-tests that call out to a LLM, but we do have some tests that require a valid LLM config,
+  //  so we will stub a dummy one in here - this must come before the early return below.
+  config->llmApi.enabled = true;
+  config->llmApi.apiEndpoint = "http://localhost:1234556787";
+  config->llmApi.bearerToken = "AnInvalidBearerToken...";
+  config->llmApi.model = "AnInvalidMdoel";
+  config->llmApi.maxTokens = 4000;
+  config->llmApi.contextLengthLimit = 128000;
+#endif
+
   if( !config->llmApi.enabled && !config->mcpServer.enabled )
   {
     cout << "Not enabling LLM assistant or MCP server." << endl;
@@ -123,18 +134,7 @@ std::shared_ptr<LlmConfig> LlmConfig::load()
     cerr << "Failed to load LLM tool config from '" << toolsPath << "': " << e.what() << endl;
     throw; // rethrow
   }
-  
-#if( BUILD_AS_UNIT_TEST_SUITE )
-  // We dont have any unit-tests that call out to a LLM, but we do have some tests that require a valid LLM config,
-  //  so we will stub a dummy one in here.
-  config->llmApi.enabled = true;
-  config->llmApi.apiEndpoint = "http://localhost:1234556787";
-  config->llmApi.bearerToken = "AnInvalidBearerToken...";
-  config->llmApi.model = "AnInvalidMdoel";
-  config->llmApi.maxTokens = 4000;
-  config->llmApi.contextLengthLimit = 128000;
-#endif
-  
+
   return config;
 }//LlmConfig LlmConfig::load()
 

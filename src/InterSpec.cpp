@@ -13711,8 +13711,10 @@ void InterSpec::displayBackgroundData()
 #if( USE_LLM_INTERFACE )
 void InterSpec::createLlmTool()
 {
+#if( !BUILD_AS_UNIT_TEST_SUITE )
   assert( LlmToolGui::llmToolIsConfigured() );
-  
+#endif
+
   if( m_llmTool )
     return;
     

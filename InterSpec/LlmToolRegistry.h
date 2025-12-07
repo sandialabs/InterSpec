@@ -187,6 +187,14 @@ private:
   static nlohmann::json executeLoadIsotopicsPreset(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executePerformIsotopics(const nlohmann::json& params, InterSpec* interspec);
 
+  // Isotopics Configuration Modification Tools
+  static nlohmann::json executeModifyIsotopicsNuclides(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeModifyIsotopicsRois(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeModifyIsotopicsCurveSettings(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeModifyIsotopicsOptions(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeModifyIsotopicsConstraints(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeGetIsotopicsConfigSchema(const nlohmann::json& params, InterSpec* interspec);
+
   /** Helper function to find and load a detector by identifier.
    @param identifier The detector identifier (name, path, or URI)
    @param detectorName Optional specific detector name for multi-detector files
