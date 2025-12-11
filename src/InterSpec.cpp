@@ -1691,7 +1691,7 @@ void InterSpec::initDragNDrop()
   doJavaScript( "$('.Wt-domRoot').data('SecondUpUrl','" +
                m_fileManager->secondForegroundDragNDrop()->url() + "');" );
   
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_GUI_TOOLS )
   doJavaScript( "$('.Wt-domRoot').data('BatchUploadEnabled', true);" );
   doJavaScript( "$('.Wt-domRoot').data('BatchUpUrl','" +
                m_fileManager->batchDragNDrop()->url() + "');" );
@@ -1899,6 +1899,11 @@ std::shared_ptr<const PeakDef> InterSpec::nearestPeak( const double energy ) con
       nearPeak = peak;
     }//if( dE < minDE )
   }//for( int row = 0; row < nrow; ++row )
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = m_peakModel->peaks();
+  assert( !nearPeak || !peaks || (std::find(begin(*peaks), end(*peaks), nearPeak) != end(*peaks)) );
+#endif
 
   return nearPeak;
 }//std::shared_ptr<const PeakDef> nearestPeak() const
@@ -4123,7 +4128,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       createRelActManualWidget();
     
     if( (entry->shownDisplayFeatures & UserState::kShowingRelActAuto) )
-      showRelActAutoWindow();
+      relActAutoWindow(true);
 #endif
     
 #if( USE_LLM_INTERFACE )
@@ -9800,8 +9805,11 @@ void InterSpec::programaticallyCloseAutoRemoteRidResultDialog()
 
 
 #if( USE_REL_ACT_TOOL )
-RelActAutoGui *InterSpec::showRelActAutoWindow()
+RelActAutoGui *InterSpec::relActAutoWindow( const bool createIfNotOpen )
 {
+  if( !createIfNotOpen )
+    return m_relActAutoGui;
+  
   if( !m_relActAutoGui )
   {
     const std::pair<RelActAutoGui *,AuxWindow *> widgets = RelActAutoGui::createWindow( this );
@@ -9815,12 +9823,12 @@ RelActAutoGui *InterSpec::showRelActAutoWindow()
     
     try
     {
-      rapidxml::xml_document<char> *relActState = m_dataMeasurement
-                                                  ? m_dataMeasurement->relActAutoGuiState()
+      std::unique_ptr<RelActCalcAuto::RelActAutoGuiState> relActState = m_dataMeasurement
+                                                  ? m_dataMeasurement->getRelActAutoGuiState( materialDataBase() )
                                                   : nullptr;
-      if( relActState && relActState->first_node() )
+      if( relActState )
       {
-        m_relActAutoGui->deSerialize( relActState->first_node() );
+        m_relActAutoGui->deSerialize( *relActState );
         m_relActAutoGui->checkIfInUserConfigOrCreateOne( true );
       }
     }catch( std::exception &e )
@@ -9838,7 +9846,7 @@ RelActAutoGui *InterSpec::showRelActAutoWindow()
     if( m_undo && m_undo->canAddUndoRedoNow() )
     {
       auto undo = [this](){ handleRelActAutoClose(); };
-      auto redo = [this](){ showRelActAutoWindow(); };
+      auto redo = [this](){ relActAutoWindow(true); };
       m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show 'Isotopics from nuclides' tool" );
     }//if( m_undo && !m_undo->canAddUndoRedoNow() )
 
@@ -9859,7 +9867,7 @@ RelActAutoGui *InterSpec::showRelActAutoWindow()
   m_relActAutoMenuItem->disable();
   
   return m_relActAutoGui;
-}//RelActAutoGui *showRelActAutoWindow()
+}//RelActAutoGui *relActAutoWindow()
 
 
 void InterSpec::handleRelActAutoClose()
@@ -9880,7 +9888,7 @@ void InterSpec::handleRelActAutoClose()
 
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
-    auto undo = [this](){ showRelActAutoWindow(); };
+    auto undo = [this](){ relActAutoWindow(true); };
     auto redo = [this](){ handleRelActAutoClose(); };
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close 'Isotopics from nuclides' tool" );
   }//if( m_undo && !m_undo->canAddUndoRedoNow() )
@@ -10020,13 +10028,17 @@ void InterSpec::saveRelActAutoStateToForegroundSpecMeas()
 {
   if( !m_relActAutoGui || !m_dataMeasurement )
     return;
-  
-  string xml_data;
-  std::unique_ptr<rapidxml::xml_document<char>> doc( new rapidxml::xml_document<char>() );
-  
-  m_relActAutoGui->serialize( doc.get() );
-  
-  m_dataMeasurement->setRelActAutoGuiState( std::move(doc) );
+
+  RelActCalcAuto::RelActAutoGuiState state;
+
+  try
+  {
+    m_relActAutoGui->serialize( state );
+    m_dataMeasurement->setRelActAutoGuiState( &state );
+  }catch( std::exception &e )
+  {
+    passMessage( "Error saving Rel. Act. Auto state: " + string(e.what()), WarningWidget::WarningMsgHigh );
+  }
 }//void saveRelActAutoStateToForegroundSpecMeas()
 
 #endif //#if( USE_REL_ACT_TOOL )
@@ -10125,7 +10137,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   {
     m_relActAutoMenuItem = popup->addMenuItem( WString::tr("app-mi-tools-iso-by-nuc") );
     HelpSystem::attachToolTipOn( m_relActAutoMenuItem, WString::tr("app-mi-tt-tools-iso-by-nuc") , showToolTips );
-    m_relActAutoMenuItem->triggered().connect( boost::bind( &InterSpec::showRelActAutoWindow, this ) );
+    m_relActAutoMenuItem->triggered().connect( boost::bind( &InterSpec::relActAutoWindow, this, true ) );
     
     m_relActManualMenuItem = popup->addMenuItem( WString::tr("app-mi-tools-iso-by-peak") );
     HelpSystem::attachToolTipOn( m_relActManualMenuItem, WString::tr("app-mi-tt-tools-iso-by-peak") , showToolTips );
@@ -13702,8 +13714,10 @@ void InterSpec::displayBackgroundData()
 #if( USE_LLM_INTERFACE )
 void InterSpec::createLlmTool()
 {
+#if( !BUILD_AS_UNIT_TEST_SUITE )
   assert( LlmToolGui::llmToolIsConfigured() );
-  
+#endif
+
   if( m_llmTool )
     return;
     

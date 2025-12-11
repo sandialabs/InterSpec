@@ -861,7 +861,7 @@ public:
 
 
 #if( USE_REL_ACT_TOOL )
-  RelActAutoGui *showRelActAutoWindow();
+  RelActAutoGui *relActAutoWindow( const bool createIfNotOpen );
   void handleRelActAutoClose();
   
   RelActManualGui *createRelActManualWidget();

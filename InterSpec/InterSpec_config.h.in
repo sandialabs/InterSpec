@@ -28,6 +28,7 @@
 #cmakedefine01 BUILD_AS_ELECTRON_APP
 #cmakedefine01 BUILD_AS_WX_WIDGETS_APP
 #cmakedefine01 BUILD_FOR_WEB_DEPLOYMENT
+#cmakedefine01 BUILD_LibInterSpec_SHARED
 
 #cmakedefine01 PERFORM_DEVELOPER_CHECKS
 #cmakedefine01 USE_OSX_NATIVE_MENU
@@ -52,7 +53,8 @@
 #cmakedefine01 USE_DETECTION_LIMIT_TOOL
 #cmakedefine01 USE_QR_CODES
 #cmakedefine01 USE_REMOTE_RID
-#cmakedefine01 USE_BATCH_TOOLS
+#cmakedefine01 USE_BATCH_CLI_TOOLS
+#cmakedefine01 USE_BATCH_GUI_TOOLS
 #cmakedefine01 USE_LLM_INTERFACE
 // TODO: figure out stuff behind enabling/requiring MCP authorization a little better.
 #define MCP_ENABLE_AUTH 1
@@ -110,10 +112,10 @@ void log_developer_error( const char *location, const char *error );
 
 #define InterSpec_PHONE_ROTATE_FOR_TABS 1
 
-// On Windows, we will compile LibInterSpec as a shared DLL only when
-//  `USE_BATCH_TOOLS` is enabled - so in this case we need to export the functions
+// On Windows, we will compile LibInterSpec as a shared DLL when building for
+//  command-line batch tools - so in this case we need to export the functions
 //  we will want to use from the DLL.
-#if( (USE_BATCH_TOOLS && !BUILD_AS_ELECTRON_APP) && (defined(WIN32) || defined(UNDER_CE) || defined(_WIN32) || defined(WIN64)) )
+#if( BUILD_LibInterSpec_SHARED && (defined(WIN32) || defined(UNDER_CE) || defined(_WIN32) || defined(WIN64)) )
   #ifdef InterSpec_EXPORTS
     #define InterSpec_API __declspec(dllexport)
   #else

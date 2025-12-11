@@ -137,6 +137,7 @@ class LlmToolResultsDisplay : public LlmInteractionTurnDisplay
 {
 public:
   LlmToolResultsDisplay( std::shared_ptr<LlmToolResults> results,
+                        std::weak_ptr<class LlmInterface> llmInterface,
                         int nestingLevel = 0,
                         Wt::WContainerWidget *parent = nullptr );
 
@@ -153,6 +154,7 @@ protected:
 
 private:
   std::shared_ptr<LlmToolResults> m_results;
+  std::weak_ptr<class LlmInterface> m_llmInterface;
   std::vector<class LlmInteractionDisplay*> m_subAgentDisplays;
   int m_nestingLevel;  // For passing to nested sub-agent displays
 
@@ -166,6 +168,7 @@ class LlmInteractionErrorDisplay : public LlmInteractionTurnDisplay
 {
 public:
   LlmInteractionErrorDisplay( std::shared_ptr<LlmInteractionError> error,
+                             std::weak_ptr<class LlmInterface> llmInterface,
                              Wt::WContainerWidget *parent = nullptr );
 
   virtual ~LlmInteractionErrorDisplay();
@@ -173,15 +176,22 @@ public:
   /** Set the retry callback - called when user clicks retry button */
   void setRetryCallback( std::function<void()> callback );
 
+  /** Set the continue callback - called when user clicks "Continue Anyway" button */
+  void setContinueCallback( std::function<void()> callback );
+
 protected:
   virtual void createBodyContent() override;
   virtual Wt::WString getTitleText() const override;
 
   void handleRetry();
+  void handleContinueAnyway();
 
 private:
   std::shared_ptr<LlmInteractionError> m_error;
-  std::function<void()> m_retryCallback;
+  std::weak_ptr<class LlmInterface> m_llmInterface;
+  Wt::WPushButton *m_retryBtn;
+  Wt::WPushButton *m_continueBtn;
+  Wt::WText *m_helpText;
 };//class LlmInteractionErrorDisplay
 
 
@@ -196,6 +206,7 @@ class LlmInteractionDisplay : public Wt::WPanel
 {
 public:
   LlmInteractionDisplay( std::shared_ptr<LlmInteraction> interaction,
+                        std::weak_ptr<class LlmInterface> llmInterface,
                         int nestingLevel = 0,
                         Wt::WContainerWidget *parent = nullptr );
 
@@ -203,9 +214,6 @@ public:
 
   /** Get the underlying interaction data */
   std::shared_ptr<LlmInteraction> interaction() const;
-
-  /** Set the retry callback for error handling */
-  void setRetryCallback( std::function<void(std::shared_ptr<LlmInteraction>)> callback );
 
 protected:
   /** Handle a new response being added to the interaction */
@@ -243,12 +251,12 @@ protected:
 
 private:
   std::shared_ptr<LlmInteraction> m_interaction;
+  std::weak_ptr<class LlmInterface> m_llmInterface;
   Wt::WContainerWidget *m_turnContainer;
   Wt::WContainerWidget *m_summaryDiv;
   Wt::WText *m_statusText;
   Wt::WText *m_timerText;  // Separate widget for timer display
   Wt::WPushButton *m_menuIcon;
-  std::function<void(std::shared_ptr<LlmInteraction>)> m_retryCallback;
 
   int m_nestingLevel;  // For indentation of sub-agents
   bool m_isFinished;

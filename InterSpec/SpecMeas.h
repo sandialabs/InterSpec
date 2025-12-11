@@ -38,11 +38,17 @@
 
 class PeakDef;
 class PeakModel;
+class MaterialDB;
 struct PeakContinuum;
 class DetectorPeakResponse;
 #if( USE_LLM_INTERFACE )
 struct LlmInteraction;
 #endif
+
+namespace RelActCalcAuto
+{
+  struct RelActAutoGuiState;
+}
 
 namespace rapidxml
 {
@@ -359,9 +365,16 @@ public:
   void setRelActManualGuiState( std::unique_ptr<rapidxml::xml_document<char>> &&model );
   
   rapidxml::xml_document<char> *relActAutoGuiState();
-  
+
   /** Sets the XML for the GUI state of the auto Rel. Act. widget. */
   void setRelActAutoGuiState( std::unique_ptr<rapidxml::xml_document<char>> &&model );
+
+  /** Gets the RelActAuto state as a struct. Returns nullptr if no state is set.
+      Caller must provide MaterialDB for deserializing PhysicalModel shields. */
+  std::unique_ptr<RelActCalcAuto::RelActAutoGuiState> getRelActAutoGuiState( MaterialDB *materialDb ) const;
+
+  /** Sets the RelActAuto state from a struct. Pass nullptr to clear the state. */
+  void setRelActAutoGuiState( const RelActCalcAuto::RelActAutoGuiState *state );
 #endif //#if( USE_REL_ACT_TOOL )
 
 #if( USE_LLM_INTERFACE )

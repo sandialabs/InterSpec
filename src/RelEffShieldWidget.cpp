@@ -220,6 +220,9 @@ const Material *RelEffShieldWidget::material( const std::string &text, MaterialD
 
 const Material *RelEffShieldWidget::material() const
 {
+  if( !isMaterialSelected() )
+    return nullptr;
+  
   InterSpec * const viewer = InterSpec::instance();
   MaterialDB * const matDB = viewer ? viewer->materialDataBase() : nullptr;
   
@@ -308,6 +311,8 @@ void RelEffShieldWidget::setFitAtomicNumber(bool fit)
 {
   m_fitAtomicNumber->setChecked( fit );
   m_atomicNumber->setDisabled( fit );
+  if( fit && m_atomicNumber->text().empty() )
+    m_atomicNumber->setText( "26" );
 }
 
 
@@ -420,13 +425,27 @@ std::unique_ptr<RelEffShieldState> RelEffShieldWidget::state() const
 void RelEffShieldWidget::setState(const RelEffShieldState& s)
 {
   m_frameSwitch->setChecked( !s.materialSelected );
-  setMaterial(s.material);
-  setThickness(s.thickness);
-  setFitThickness(s.fitThickness);
-  setAtomicNumber(s.atomicNumber);
-  setFitAtomicNumber(s.fitAtomicNumber);
-  setArealDensity(s.arealDensity);
-  setFitArealDensity(s.fitArealDensity);
+  
+  if( !s.materialSelected || ((s.atomicNumber >= 1) && (s.atomicNumber <= 98)) )
+  {
+    setAtomicNumber(s.atomicNumber);
+    setFitAtomicNumber(s.fitAtomicNumber);
+  }
+  
+  if( !s.materialSelected || (s.fitArealDensity >= 0.0) )
+  {
+    setArealDensity(s.arealDensity);
+    setFitArealDensity(s.fitArealDensity);
+  }
+  
+  if( s.materialSelected || !s.material.empty() )
+    setMaterial(s.material);
+  
+  if( s.materialSelected || !s.thickness.empty() )
+  {
+    setThickness(s.thickness);
+    setFitThickness(s.fitThickness);
+  }
   
   //materialTypeUpdated(); //Not calling, because we dont want to emit that user changed things
   m_stackedWidget->setCurrentIndex( m_frameSwitch->isChecked() ? 1 : 0 );

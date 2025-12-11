@@ -475,7 +475,7 @@ Further investigation of top returned candidates is required to make sure they m
   <!-- Detection Limit and Efficiency Tools -->
 
   <Tool name="currie_mda_calc">
-    <Description>Calculate Minimum Detectable Activity (MDA) and detection confidence intervals using Currie-style (ISO 11929) methodology. Determines if a peak is detectable at a specified energy. Returns decision threshold, detection limit, and confidence intervals - as well as if it looks like a peak is at the energy (see `peakPresentInData` in output).</Description>
+    <Description>Calculate Minimum Detectable Activity (MDA) and detection confidence intervals using Currie-style (ISO 11929) methodology. Determines if a peak is detectable at a specified energy. Returns decision threshold, detection limit, and confidence intervals - as well as if it looks like a peak is at the energy (see `peakPresentInData` in output). When nuclide and distance are specified, the response will also include activity calculations (detection limit in activity, or observed activity with ranges, etc.)</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -495,6 +495,56 @@ Further investigation of top returned candidates is required to make sure they m
           "description": "Optional: Additional relative uncertainty to include (e.g., from detector response function uncertainties). Defaults to 0.0.",
           "minimum": 0.0,
           "default": 0.0
+        },
+        "nuclide": {
+          "type": "string",
+          "description": "Optional: Nuclide symbol (e.g., 'Cs137', 'U238'). When specified along with distance, activity calculations will be included in the response."
+        },
+        "distance": {
+          "type": "string",
+          "description": "Optional: Distance from source to detector face (e.g., '10 cm', '1 m'). Required for activity calculations when nuclide is specified."
+        },
+        "age": {
+          "type": "string",
+          "description": "Optional: Age of the nuclide (e.g., '1 year', '100 days'). If not specified, uses default age for the nuclide."
+        },
+        "shielding": {
+          "type": "object",
+          "description": "Optional: Defines the shielding used to attenuate gammas and x-rays. Shielding must be specified in one of two formats.",
+          "oneOf": [{
+            "type": "object",
+            "properties": {
+              "AD": {
+                "type": "number",
+                "description": "Areal density of the shielding material in g/cm²."
+              },
+              "AN": {
+                "type": "number",
+                "description": "Effective atomic number of the shielding material."
+              }
+            },
+            "required": ["AD", "AN"],
+            "additionalProperties": false
+          },{
+            "type": "object",
+            "properties": {
+              "Material": {
+                "type": "string",
+                "description": "The shielding material, specified as an element symbol or material name. Available material names are returned by the `get_materials` tool. Example: 'Fe' (which is equivalent to 'Iron'), or 'glass_plate', etc.  The full list is returned from `get_materials`."
+              },
+              "Thickness": {
+                "type": "string",
+                "description": "The thickness of the shielding material, specified as a string with units. Example: '1.25cm'."
+              }
+            },
+            "required": ["Material", "Thickness"],
+            "additionalProperties": false
+          }]
+        },
+        "assertBackgroundSpectrum": {
+          "type": "boolean",
+          "description": "Optional: If true, treats the spectrum as a background spectrum with no signal present - set this to true if you know signal is not present in the spectrum. Defaults to false.",
+          "default": false
         }
       },
       "required": ["energy"]
@@ -633,23 +683,35 @@ Further investigation of top returned candidates is required to make sure they m
   <!-- Activity/Shielding Fit Tools (ActivityFit Agent Only) -->
 
   <Tool name="activity_fit">
-    <Description>Perform activity and shielding fitting using gamma ray peaks. Supports three modes: (1) from_app_state - uses existing GUI state or saved model, shows GUI; (2) single_peak - fits activity for one peak/nuclide; (3) custom - full control over sources, shielding, geometry. Can fit nuclide ages when progeny peaks are present. Returns fitted activities, shielding parameters, fit quality metrics, and per-peak observed vs expected counts with source contributions.</Description>
+    <Description>Perform activity and shielding fitting using the current application state (GUI configuration). Requires the Activity/Shielding fit GUI to be open. Uses existing sources, shielding, and configuration from the GUI. Can fit nuclide ages when progeny peaks are present. Returns fitted activities, shielding parameters, fit quality metrics, and per-peak observed vs expected counts with source contributions.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
-        "mode": {
-          "type": "string",
-          "enum": ["from_app_state", "single_peak", "custom"],
-          "description": "Fitting mode: from_app_state uses existing configuration and shows GUI; single_peak fits one peak; custom allows full specification"
-        },
         "peak_energies": {
           "type": "array",
           "items": {"type": "number"},
-          "description": "Peak energies in keV to use for fitting. Tolerance is max(peak FWHM, 1 keV). Required for single_peak and custom modes. Optional for from_app_state to filter peaks. Peaks must already be assigned to nuclides."
+          "description": "Optional: Peak energies in keV to filter which peaks are used for fitting. If not specified, uses all peaks marked for fitting in the GUI. Tolerance is max(peak FWHM, 1 keV). Peaks must already be assigned to nuclides."
+        }
+      }
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>ActivityFit</Agent>
+    </AvailableFor>
+  </Tool>
+
+  <Tool name="activity_fit_one_off">
+    <Description>Perform a one-off activity and shielding fit with full specification. Does not use or modify GUI state. Ideal for custom fits where you want complete control over all parameters. Requires specifying distance, geometry, and peak energies. Can optionally specify sources and shielding, otherwise sources are auto-generated from peak nuclide assignments. Can fit nuclide ages when progeny peaks are present. Returns fitted activities, shielding parameters, fit quality metrics, and per-peak observed vs expected counts with source contributions.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+        "peak_energies": {
+          "type": "array",
+          "items": {"type": "number"},
+          "description": "Peak energies in keV to use for fitting. Tolerance is `max(peak FWHM, 1 keV)`. Peaks must already be assigned to nuclides."
         },
         "distance": {
           "type": "string",
-          "description": "Source-to-detector distance with units (e.g., '100 cm', '3 ft', '1.5 m'). If numeric value provided, assumes cm. Required for non-fixed-geometry detectors. For from_app_state mode, overrides existing distance if specified."
+          "description": "Source-to-detector distance with units (e.g., '100 cm', '3 ft', '1.5 m'). If numeric value provided, assumes cm. Required for non-fixed-geometry detectors."
         },
         "geometry": {
           "type": "string",
@@ -726,11 +788,11 @@ Further investigation of top returned candidates is required to make sure they m
                     "activity_type": {
                       "type": "string",
                       "enum": ["per_cm3", "total_activity", "per_gram", "exponential"],
-                      "description": "Type of trace source distribution. Default: per_cm3. Units: per_cm3 uses Ci/cm3 or Bq/cm3, total_activity uses Ci or Bq, per_gram uses Ci/g or Bq/g, exponential uses Ci/m2 or Bq/m2"
+                      "description": "OPTIONAL: Type of trace source distribution. If not specified, auto-detected from activity string units. per_cm3 = volumetric contamination, total_activity = total activity in shielding, per_gram = mass-based contamination, exponential = surface contamination with exponential depth profile."
                     },
                     "activity": {
                       "type": "string",
-                      "description": "Initial activity guess with units (e.g., '1 uCi/cm3', '10 kBq', '0.5 mCi/g'). Can use metric prefixes (u, m, k, M, G) with Ci or Bq."
+                      "description": "Activity with units. AUTO-DETECTS activity_type from units: '1 Bq/cm3' or '1 Bq per cm3' -> per_cm3, '50 Bq/g' or '50 Bq per gram' -> per_gram, '10 uCi' -> total_activity. Supports metric prefixes (u, m, k, M, G) with Ci or Bq. Examples: '2.5 kBq/cm3', '100 Bq per cm3', '50 Bq/g', '25 Bq per gram', '10 uCi'."
                     },
                     "fit_activity": {
                       "type": "boolean",
@@ -751,7 +813,7 @@ Further investigation of top returned candidates is required to make sure they m
         },
         "sources": {
           "type": "array",
-          "description": "For custom mode: explicit source definitions. For other modes, derived from peak assignments.",
+          "description": "Optional, and suggested to not specify: explicit source definitions - if you are okay accepting default nuclide ages (recomended), not fitting for age (recomended), and fitting for activity (by default you probably want to do this, unless you already know the source activity) - then you do not need to specify this sources array - instead the sources used will be defined by the nuclides associated with the peaks in the `peak_energies` argument.",
           "items": {
             "type": "object",
             "properties": {
@@ -819,7 +881,7 @@ Further investigation of top returned candidates is required to make sure they m
           }
         }
       },
-      "required": ["mode"]
+      "required": ["distance", "geometry", "peak_energies"]
     }</ParametersSchema>
     <AvailableFor>
       <Agent>ActivityFit</Agent>
@@ -827,7 +889,7 @@ Further investigation of top returned candidates is required to make sure they m
   </Tool>
 
   <Tool name="get_shielding_source_config">
-    <Description>Retrieve the current activity/shielding fit configuration from the application state. Returns distance, geometry, source definitions (with ages), shielding layers (with trace sources), and which peaks are marked for use in fitting. Checks InterSpec::shieldingSourceFit() GUI first, then falls back to SpecMeas::m_shieldingSourceModel saved state.</Description>
+    <Description>Retrieve the current activity/shielding fit configuration from the application state (i.e., if "from_app_state" is used with the `activity_fit` tool). Returns distance, geometry, source definitions (with ages), shielding layers (with trace sources), and which peaks are marked for use in fitting.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {},
@@ -839,14 +901,14 @@ Further investigation of top returned candidates is required to make sure they m
   </Tool>
 
   <Tool name="modify_shielding_source_config">
-    <Description>Modify the activity/shielding fit configuration in the application state. Can add/remove shielding layers, add/remove sources, set distance, set geometry, set source ages, or set fitting options. Changes are saved to SpecMeas::m_shieldingSourceModel and updated in GUI if open. If dimension is specified when adding shielding (e.g., '0.5 inches'), it's fixed; if omitted, it will be fit.</Description>
+    <Description>Modify the activity/shielding fit configuration in the application state. Can add/remove shielding layers, remove sources, set distance, set geometry, set source ages, or set fitting options. Changes are saved to SpecMeas::m_shieldingSourceModel and updated in GUI if open. If dimension is specified when adding shielding (e.g., '0.5 inches'), it's fixed; if omitted, it will be fit.  To add a source you must use `mark_peaks_for_activity_fit` for peaks with the source you want to add.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
         "operation": {
           "type": "string",
-          "enum": ["add_shielding", "remove_shielding", "add_source", "remove_source", "set_distance", "set_geometry", "set_source_age", "set_fit_options"],
-          "description": "Operation to perform on the configuration"
+          "enum": ["add_shielding", "remove_shielding", "remove_source", "set_distance", "set_geometry", "set_source_age", "set_fit_options"],
+          "description": "Operation to perform on the configuration.  Note: the 'remove_source' option marks all peaks of the specified source to not be used in the fit."
         },
         "material": {
           "type": "string",
@@ -935,7 +997,7 @@ Further investigation of top returned candidates is required to make sure they m
   </Tool>
 
   <Tool name="mark_peaks_for_activity_fit">
-    <Description>Mark peaks to be used (or not used) in activity/shielding fitting. Updates the PeakDef::useForShieldingSourceFit() flag for specified peaks. Peaks are matched by energy with tolerance of max(peak FWHM, 1 keV).</Description>
+    <Description>Mark peaks to be used (or not used) in activity/shielding fitting. Equivalent of using the "SetUseForShieldingSourceFit" option for the `edit_analysis_peak` tool, but this provides a batch interface. Peaks are matched by energy with tolerance of max(peak FWHM, 1 keV).</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -991,6 +1053,473 @@ Further investigation of top returned candidates is required to make sure they m
     }</ParametersSchema>
     <AvailableFor>
       <Agent>ActivityFit</Agent>
+    </AvailableFor>
+  </Tool>
+
+  <Tool name="set_workflow_state">
+    <Description>Set the current workflow state for agents that use state machines. This tool is used by agents to track their progress through multi-step workflows and receive state-specific guidance. State machines are completely optional - agents without them can ignore this tool. The state machine provides soft enforcement: warnings are issued for unexpected transitions but the state change is still allowed. Each state has guidance text that helps the agent understand what to do next and which tools are typically needed in that state.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "description": "The name of the state to transition to. Valid state names are defined in the agent's state machine configuration in llm_agents.xml. Common states for isotopics workflows include: ANALYZE_REQUEST (understand user needs), SELECT_CONFIGURATION (choose appropriate preset), VALIDATE_CONFIGURATION (verify setup is correct), CHECK_INTERFERENCE (look for problematic peaks), EXECUTE_CALCULATION (run the analysis), EVALUATE_RESULTS (assess quality), FINALIZE_RESULTS (present to user)."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Optional notes about why this state transition is being made or what was accomplished in the previous state. Helps with debugging and understanding the agent's reasoning."
+        }
+      },
+      "required": ["state"]
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>Isotopics</Agent>
+    </AvailableFor>
+  </Tool>
+
+  <Tool name="list_isotopics_presets">
+    <Description>List available isotopics analysis preset configurations. 
+ Returns a list of preset files that can be loaded using load_isotopics_preset.
+ Each preset contains pre-configured settings for specific analysis types like Plutonium isotopics, Uranium enrichment, etc. 
+ The list includes a special 'Current Configuration' entry if any configuration is currently loaded to the applications internal state. 
+ Presets define which nuclides to fit, which energy regions (ROIs) to analyze, detector resolution settings, and other analysis parameters. 
+ The returned list of presets will contain descriptions for the presets that will help to determine which preset should be used as a starting point.
+</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {}
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>Isotopics</Agent>
+    </AvailableFor>
+  </Tool>
+
+  <Tool name="get_isotopics_config">
+    <Description>Retrieve the current isotopics analysis configuration. Returns detailed information about what is currently configured, including: which energy regions (ROIs) are defined for analysis, which nuclides will be fit in each relative efficiency curve, whether energy calibration will be fit, and the detector resolution model (FWHM form). This allows the agent to verify the configuration is appropriate before running an analysis. Returns null if no configuration is loaded (use load_isotopics_preset first in that case).</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {}
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>Isotopics</Agent>
+    </AvailableFor>
+  </Tool>
+
+  <Tool name="reset_isotopics_config">
+    <Description>Clear the current isotopics analysis configuration. This removes any loaded preset configuration and returns to a blank state. Use this when starting a fresh analysis or when the user wants to switch to a completely different analysis type. After resetting, you'll need to load a new preset using load_isotopics_preset before performing any analysis.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {}
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>Isotopics</Agent>
+    </AvailableFor>
+  </Tool>
+
+  <Tool name="load_isotopics_preset">
+    <Description>Load an isotopics analysis preset configuration from a file into the applications internal state. 
+The preset file contains the complete analysis configuration including which nuclides to fit, which energy ROIs to use, detector resolution settings, whether to fit energy calibration, and other options. 
+In addition to loading the configuration to the internal application state, this tool call returns a detailed description of the current state that includes ROIs used, nuclide list, and analysis options.
+Use list_isotopics_presets to discover the preset configurations available.
+</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+        "preset": {
+          "type": "string",
+          "description": "The preset name or path to load. Can be: (1) a filename like 'PlutoniumIsotopics.xml' which will be found in data/rel_act recursively, (2) a filename without .xml extension (the extension will be added automatically), or (3) a full absolute path to a preset file. Use list_isotopics_presets to discover available presets."
+        }
+      },
+      "required": ["preset"]
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>Isotopics</Agent>
+    </AvailableFor>
+  </Tool>
+
+  <Tool name="perform_isotopics_calculation">
+    <Description>Execute isotopics analysis on the currently loaded spectrum using the configuration that was previously loaded via load_isotopics_preset. This performs the actual calculation to determine the mass fractions of isotopes from gamma-ray peak areas, detector response, and nuclear decay data. Before calling this tool, you MUST have: (1) a foreground spectrum loaded, (2) peaks fit to the spectrum, (3) an isotopics configuration loaded via load_isotopics_preset. The tool returns: mass fractions with uncertainties for each isotope, relative activities, ages (time since purification) if fit, quality metrics (chi-squared per degree of freedom), and optionally Pu242-corrected values for Plutonium analysis. Lower chi2/DOF (ideally near 1.0) indicates better fit quality. Values much greater than 2-3 may indicate problems with peak fits, interference, or incorrect configuration.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {}
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>Isotopics</Agent>
+    </AvailableFor>
+  </Tool>
+
+  <Tool name="modify_isotopics_nuclides">
+    <Description>Modify nuclides in the currently loaded isotopics configuration.
+
+The 'nuclides' parameter format matches the 'nuclides' array from get_isotopics_config output.
+Use get_isotopics_config to see the current nuclides, then use this tool to add/remove/update them.
+
+Actions:
+- add: Add new nuclides to the configuration. Only 'name' is required; other fields use defaults if not specified.
+- remove: Remove nuclides by name. Only the 'name' field is needed.
+- update: Modify properties of existing nuclides. Only specify fields you want to change.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["add", "remove", "update"],
+          "description": "Action to perform on nuclides"
+        },
+        "nuclides": {
+          "type": "array",
+          "description": "Array of nuclide objects. Format matches 'nuclides' from get_isotopics_config.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Nuclide symbol (e.g., 'Pu239', 'U235'). Required for all actions."
+              },
+              "age": {
+                "type": "string",
+                "description": "Optional. Nuclide age with units (e.g., '5 years', '20 days'). Time since purification. If not specified, uses current value (for update) or default age (for add)."
+              },
+              "fit_age": {
+                "type": "boolean",
+                "description": "Optional. Whether age should be fitted during analysis."
+              },
+              "age_min": {
+                "type": "string",
+                "description": "Optional. Minimum age bound for fitting (with units). Required if fit_age=true."
+              },
+              "age_max": {
+                "type": "string",
+                "description": "Optional. Maximum age bound for fitting (with units). Required if fit_age=true."
+              },
+              "min_rel_act": {
+                "type": "number",
+                "description": "Optional. Minimum relative activity constraint for fitting."
+              },
+              "max_rel_act": {
+                "type": "number",
+                "description": "Optional. Maximum relative activity constraint for fitting."
+              }
+            },
+            "required": ["name"]
+          }
+        }
+      },
+      "required": ["action", "nuclides"]
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>Isotopics</Agent>
+    </AvailableFor>
+  </Tool>
+
+  <Tool name="modify_isotopics_rois">
+    <Description>Modify energy ROIs (regions of interest) in the currently loaded isotopics configuration.
+
+ROIs are identified by their energy bounds (lower_energy, upper_energy).
+The 'rois' parameter format matches the 'rois' array from get_isotopics_config output.
+Only specify fields you want to change - unspecified fields remain unchanged.
+
+Actions:
+- add: Add new ROIs to the configuration
+- remove: Remove ROIs matching the specified energy bounds
+- update: Modify properties of existing ROIs (continuum_type, range_type, or change bounds)
+- replace_all: Replace all ROIs with the specified list
+
+For update action: specify existing bounds to find the ROI, then new_lower_energy/new_upper_energy for new bounds.
+
+Validation: ROIs may not overlap - tool returns error if overlapping ROIs would result.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["add", "remove", "update", "replace_all"],
+          "description": "Action to perform on ROIs"
+        },
+        "rois": {
+          "type": "array",
+          "description": "Array of ROI objects. Format matches 'rois' from get_isotopics_config.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "lower_energy": {
+                "type": "number",
+                "description": "Lower energy bound in keV. Used to identify ROI for update/remove."
+              },
+              "upper_energy": {
+                "type": "number",
+                "description": "Upper energy bound in keV. Used to identify ROI for update/remove."
+              },
+              "new_lower_energy": {
+                "type": "number",
+                "description": "Optional. For update action: new lower energy bound if changing the ROI position."
+              },
+              "new_upper_energy": {
+                "type": "number",
+                "description": "Optional. For update action: new upper energy bound if changing the ROI position."
+              },
+              "continuum_type": {
+                "type": "string",
+                "description": "Optional. Continuum type for peak fitting. Valid values: Linear, Quadratic, Cubic, FlatStep, LinearStep, BiLinearStep.",
+                "enum": ["Linear", "Quadratic", "Cubic", "FlatStep", "LinearStep", "BiLinearStep"]
+              },
+              "range_type": {
+                "type": "string",
+                "description": "Optional. How ROI bounds behave. Valid values: Fixed (bounds strictly enforced), CanExpandForFwhm (can expand to accommodate peak FWHM), CanBeBrokenUp (ROI can be broken up based on peaks).",
+                "enum": ["Fixed", "CanExpandForFwhm", "CanBeBrokenUp"]
+              }
+            }
+          }
+        }
+      },
+      "required": ["action", "rois"]
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>Isotopics</Agent>
+    </AvailableFor>
+  </Tool>
+
+  <Tool name="modify_isotopics_curve_settings">
+    <Description>Modify relative efficiency curve settings in the currently loaded isotopics configuration.
+
+All parameters match the 'rel_eff_curve' structure from get_isotopics_config output.
+Only specify fields you want to change - unspecified fields remain unchanged.
+
+For physical models (FramPhysicalModel), can set use_hoerl and shielding.
+For non-physical models (LnXLnY, LnX, LnY, etc.), can set rel_eff_eqn_order.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+        "rel_eff_eqn_type": {
+          "type": "string",
+          "description": "Optional. Relative efficiency equation type.",
+          "enum": ["LnXLnY", "LnX", "LnY", "FramPhysicalModel"]
+        },
+        "rel_eff_eqn_order": {
+          "type": "integer",
+          "description": "Optional. Polynomial order for non-physical models (typically 2-6). Ignored for FramPhysicalModel.",
+          "minimum": 1,
+          "maximum": 8
+        },
+        "nucs_of_el_same_age": {
+          "type": "boolean",
+          "description": "Optional. Whether nuclides of same element should be constrained to same age."
+        },
+        "use_hoerl": {
+          "type": "boolean",
+          "description": "Optional. For FramPhysicalModel only: whether to use Hoerl form for rel eff equation."
+        },
+        "self_attenuation": {
+          "type": "object",
+          "description": "Optional. Self-attenuation (source material) for FramPhysicalModel. Set to null to remove.",
+          "properties": {
+            "material": {
+              "type": "string",
+              "description": "Optional. Material name (e.g., 'plutonium_dioxide', 'uranium_metal')."
+            },
+            "atomic_number": {
+              "type": "number",
+              "description": "Optional. Effective atomic number. Not needed if fitting, but if specified will be used as starting value. Cannot be used with 'material'."
+            },
+            "areal_density": {
+              "type": "number",
+              "description": "Optional. Areal density in g/cm2. Not needed if fitting, but if specified will be used as starting value. Cannot be used with 'thickness' (you can use one or the other)."
+            },
+            "thickness": {
+              "type": "string",
+              "description": "Optional. Thickness with units (e.g., '2.54 cm'). Only valid when 'material' is specified (not 'atomic_number'). Cannot be used with 'areal_density' (you can use one or the other)."
+            },
+            "fit_areal_density": {
+              "type": "boolean",
+              "description": "Optional. Whether to fit the areal density."
+            },
+            "fit_atomic_number": {
+              "type": "boolean",
+              "description": "Optional. Whether to fit the atomic number - it is usually not recommended to fit atomic number."
+            }
+          }
+        },
+        "external_attenuation": {
+          "type": "array",
+          "description": "Optional. External shielding layers for FramPhysicalModel. Set to empty array to remove all.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "material": {
+                "type": "string",
+                "description": "Optional. Material name."
+              },
+              "atomic_number": {
+                "type": "number",
+                "description": "Optional. Effective atomic number. Not needed if fitting, but if specified will be used as starting value. Cannot be used with 'material'."
+              },
+              "areal_density": {
+                "type": "number",
+                "description": "Optional. Areal density in g/cm2. Not needed if fitting, but if specified will be used as starting value. Cannot be used with 'thickness' (you can use one or the other)."
+              },
+              "thickness": {
+                "type": "string",
+                "description": "Optional. Thickness with units (e.g., '2.54 cm'). Only valid when 'material' is specified (not 'atomic_number'). Cannot be used with 'areal_density' (you can use one or the other)."
+              },
+              "fit_areal_density": {
+                "type": "boolean",
+                "description": "Optional. Whether to fit the areal density."
+              },
+              "fit_atomic_number": {
+                "type": "boolean",
+                "description": "Optional. Whether to fit the atomic number - it is usually not recommended to fit atomic number."
+              }
+            }
+          }
+        }
+      }
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>Isotopics</Agent>
+    </AvailableFor>
+  </Tool>
+
+  <Tool name="modify_isotopics_options">
+    <Description>Modify global isotopics analysis options in the currently loaded configuration.
+
+All parameters match the top-level fields from get_isotopics_config output.
+Only specify fields you want to change - unspecified fields remain unchanged.
+
+Note: background_subtract requires a background spectrum to be loaded.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+        "fit_energy_cal": {
+          "type": "boolean",
+          "description": "Optional. Whether to fit energy calibration during analysis."
+        },
+        "fwhm_form": {
+          "type": "string",
+          "description": "Optional. FWHM functional form for peak fitting.",
+          "enum": ["Gadras", "SqrtEnergyPlusInverse", "ConstantPlusSqrtEnergy", "Polynomial_2", "Polynomial_3", "Polynomial_4", "Polynomial_5", "Polynomial_6"]
+        },
+        "fwhm_estimation_method": {
+          "type": "string",
+          "description": "Optional. How FWHM parameters are estimated.",
+          "enum": ["StartFromDetEffOrPeaksInSpectrum", "StartFromDetectorEfficiency", "StartFromPeaksInSpectrum", "FixedToDetectorEfficiency"]
+        },
+        "skew_type": {
+          "type": "string",
+          "description": "Optional. Peak skew type for fitting.",
+          "enum": ["NoSkew", "Bortel", "GaussExp", "CrystalBall", "ExpGaussExp", "DoubleSidedCrystalBall"]
+        },
+        "additional_br_uncert": {
+          "type": "number",
+          "description": "Optional. Additional branching ratio uncertainty (fractional, e.g., 0.05 for 5%).",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "background_subtract": {
+          "type": "boolean",
+          "description": "Optional. Whether to subtract background spectrum. Requires background to be loaded."
+        },
+        "show_ref_lines": {
+          "type": "boolean",
+          "description": "Optional. Whether to show reference lines in display."
+        },
+        "note": {
+          "type": "string",
+          "description": "Optional. User notes for this configuration."
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional. Description of this configuration."
+        }
+      }
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>Isotopics</Agent>
+    </AvailableFor>
+  </Tool>
+
+  <Tool name="modify_isotopics_constraints">
+    <Description>Modify activity ratio and mass fraction constraints in the currently loaded isotopics configuration.
+
+Constraints are identified by the 'nuclide' field (the constrained nuclide).
+Each nuclide can have at most one activity ratio constraint and one mass fraction constraint.
+
+Actions:
+- add: Add new constraints
+- remove: Remove constraints for specified nuclides
+- update: Modify existing constraints
+- clear_all: Remove all constraints of the specified type
+
+Validation: Referenced nuclides must exist in the configuration, and no circular constraint chains are allowed.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["add", "remove", "update", "clear_all"],
+          "description": "Action to perform on constraints"
+        },
+        "constraint_type": {
+          "type": "string",
+          "enum": ["activity_ratio", "mass_fraction"],
+          "description": "Type of constraint to modify"
+        },
+        "constraints": {
+          "type": "array",
+          "description": "Array of constraint objects",
+          "items": {
+            "type": "object",
+            "properties": {
+              "nuclide": {
+                "type": "string",
+                "description": "The constrained nuclide (e.g., 'Pu240'). Required - identifies the constraint."
+              },
+              "relative_to": {
+                "type": "string",
+                "description": "The reference nuclide (e.g., 'Pu239'). Required for add action."
+              },
+              "ratio": {
+                "type": "number",
+                "description": "For activity_ratio: activity ratio of nuclide relative to reference (nuclide_activity / reference_activity). Example: 0.0612 means Pu240 has 6.12% the activity of Pu239."
+              },
+              "lower_fraction": {
+                "type": "number",
+                "description": "For mass_fraction: lower bound of mass fraction within the element. Example: 0.03 for minimum 3% U235 in uranium.",
+                "minimum": 0.0,
+                "maximum": 1.0
+              },
+              "upper_fraction": {
+                "type": "number",
+                "description": "For mass_fraction: upper bound of mass fraction within the element. Example: 0.20 for maximum 20% U235 in uranium.",
+                "minimum": 0.0,
+                "maximum": 1.0
+              }
+            },
+            "required": ["nuclide"]
+          }
+        }
+      },
+      "required": ["action", "constraint_type"]
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>Isotopics</Agent>
+    </AvailableFor>
+  </Tool>
+
+  <Tool name="get_isotopics_config_schema">
+    <Description>Get the schema and valid values for isotopics configuration fields.
+
+Returns detailed information about all configurable fields including:
+- Valid enum values for rel_eff_eqn_type, fwhm_form, skew_type, continuum_type, etc.
+- Field descriptions and constraints
+- Relationships between fields (e.g., use_hoerl only applies to FramPhysicalModel)
+
+This information provides detailed explanation about the meaning of fields and options, as well as indicating valid options and relations.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {}
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>Isotopics</Agent>
     </AvailableFor>
   </Tool>
 

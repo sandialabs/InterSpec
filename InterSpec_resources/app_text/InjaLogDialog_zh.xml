@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- This file applies to InjaLogDialog.cpp - a reusable dialog for displaying inja-rendered content -->
+  <message id="ild-no-templates">未提供模板。</message>
+  <message id="ild-json-parse-error">
+    <p>解析JSON数据时出错:</p>
+    <code>{1}</code>
+  </message>
+  <message id="ild-inja-error">
+    <p>渲染模板时出错:</p>
+    <code>{1}</code>
+    <br />
+    第{2}行,第{3}列
+  </message>
+  <message id="ild-misc-error">
+    <p>显示内容时出错:</p>
+    <code>{1}</code>
+  </message>
+</messages>

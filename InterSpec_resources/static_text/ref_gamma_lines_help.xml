@@ -27,7 +27,7 @@ for energy calibration, or for fitting source activity, age, or shielding.
 <p>
 Options for using the tool:
 <ul>
-  <li><b>Nuclide</b> to display: All non-stable nuclides are available for display.</li>
+  <li><b>Nuclide</b> to display: All non-stable nuclides are available for display, as well as fluorescent for elements, many nuclear reactions, and some other sources;  see &quot;<em>Sources Available To Display</em>&quot; section below for more info.</li>
   <li><b>Age</b>: For isotopes where aging will have an effect on the distribution
    of gamma and/or x-ray amplitudes, age of the nuclide can be specfied using a
    combination of time units, similar to &quot;<b>5.3y 8d 22m</b>&quot; or in half lives like
@@ -102,5 +102,16 @@ To show reference lines for multiple nuclides at once:
 </ol>
 
 </p>
+
+<div align="center">
+<h2 id="available_srcs"><b>Sources Available To Display</b></h2>
+</div>
+<div>
+
+In addition to displaying gammas for any non-stable nuclide, you can also display:
+<ul>
+</ul>
+
+</div>
 
 </div>

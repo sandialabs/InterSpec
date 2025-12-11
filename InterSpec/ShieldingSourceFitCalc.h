@@ -26,6 +26,7 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <mutex>
 #include <memory>
 #include <vector>
 #include <optional>
@@ -50,6 +51,12 @@ namespace SandiaDecay
   struct Nuclide;
   struct Element;
 }//namespace SandiaDecay
+
+namespace rapidxml
+{
+  template<class Ch> class xml_node;
+  template<class Ch> class xml_document;
+}//namespace rapidxml
 
 namespace ROOT
 {
@@ -196,6 +203,9 @@ namespace ShieldingSourceFitCalc
      Cylinder:  ['Radius','Length',n/a]
      Rectangle: ['Width','Height','Depth']
      Generic:   ['AtomicNumber','ArealDensity',n/a]
+     
+     Note that Length, Width, Height above refer to thicknesses, not absolute dimensions - i.e., for the first (inner-most) layer, it would
+     be the half-Length, half-Length, etc.  For subsequent layers, its the thickness in the respective dimensions.
      */
     double m_dimensions[3];
     bool m_fitDimensions[3];

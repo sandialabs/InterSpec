@@ -70,7 +70,7 @@ namespace AppUtils
   /** Sanatizes a string so it can be a CSS class name. */
   //std::string sanitize_css_class_name( const std::string &src_name );
   
-#if( USE_BATCH_TOOLS || BUILD_AS_LOCAL_SERVER || BUILD_FOR_WEB_DEPLOYMENT )
+#if( USE_BATCH_CLI_TOOLS || BUILD_AS_LOCAL_SERVER || BUILD_FOR_WEB_DEPLOYMENT )
   /** Returns the terminal character width */
   InterSpec_API unsigned terminal_width();
 #endif

@@ -42,50 +42,38 @@
 
 
 #include <Wt/WText>
-#include <Wt/WTime>
-#include <Wt/WImage>
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
 #include <Wt/WTable>
+#endif
 #include <Wt/WLabel>
-#include <Wt/WAnchor>
-#include <Wt/WBorder>
 #include <Wt/WServer>
 #include <Wt/WPainter>
 #include <Wt/WGroupBox>
 #include <Wt/WTextArea>
-#include <Wt/WRectArea>
 #include <Wt/WResource>
-#include <Wt/WSvgImage>
-#include <Wt/WTableCell>
-#include <Wt/WTabWidget>
 #include <Wt/WIOService>
+#include <Wt/WTabWidget>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
 #include <Wt/WJavaScript>
 #include <Wt/WFileUpload>
-#include <Wt/WEnvironment>
 #include <Wt/Http/Response>
 #include <Wt/WSelectionBox>
-#include <Wt/WStandardItem>
 #include <Wt/WItemDelegate>
-#include <Wt/WDoubleSpinBox>
 #include <Wt/Dbo/QueryModel>
-#include <Wt/WMemoryResource>
 #include <Wt/WSuggestionPopup>
 #include <Wt/WRegExpValidator>
 #include <Wt/WDoubleValidator>
-#include <Wt/WStandardItemModel>
-#if( WT_VERSION >= 0x3030600 )
-#include <Wt/Chart/WStandardChartProxyModel>
-#endif
-#include <Wt/WCssDecorationStyle>
-#include <Wt/Chart/WChartPalette>
-#include <Wt/Chart/WCartesianChart>
 
 #include "SandiaDecay/SandiaDecay.h"
 
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/SpecUtilsAsync.h"
+
+#include <nlohmann/json.hpp>
+
+#include "external_libs/SpecUtils/3rdparty/inja/inja.hpp"
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/SpecMeas.h"
@@ -96,7 +84,10 @@
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/MaterialDB.h"
+#include "InterSpec/BatchInfoLog.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/SimpleDialog.h"
+#include "InterSpec/InjaLogDialog.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
@@ -115,6 +106,7 @@
 #include "InterSpec/IsotopeSelectionAids.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
+#include "InterSpec/ShieldingSourceDiagram.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
 
 using namespace Wt;
@@ -2550,470 +2542,6 @@ void SourceFitModel::sort( int column, Wt::SortOrder order )
 }//void sort(...)
 
 
-ShieldingSourceDisplay::Chi2Graphic::Chi2Graphic( Wt::WContainerWidget *parent )
-  : Wt::Chart::WCartesianChart( parent ),
-    m_nFitForPar( 0 ),
-    m_showChi( true ),
-    m_textPenColor( Wt::black )
-{
-  setPreferredMethod( WPaintedWidget::HtmlCanvas );
-  LOAD_JAVASCRIPT( wApp, "shieldingSourceDisplay.cpp", "Chi2Graphic", wtjsShowChi2Info);
-  
-  auto interpsec = InterSpec::instance();
-  if( interpsec )
-    interpsec->useMessageResourceBundle( "ShieldingSourceDisplay" ); //JIC
-  
-  // We will use calcAndSetAxisRanges() to set the axis ranges, so turn off auto range.
-  axis(Chart::YAxis).setAutoLimits( 0 );
-  axis(Chart::YAxis).setRange( -1.0, 1.0 );
-  
-  axis(Chart::XAxis).setAutoLimits( 0 );
-  axis(Chart::XAxis).setRange( 0, 3000.0 );
-}
-
-ShieldingSourceDisplay::Chi2Graphic::~Chi2Graphic()
-{
-}
-
-
-void ShieldingSourceDisplay::Chi2Graphic::setColorsFromTheme( std::shared_ptr<const ColorTheme> theme )
-{
-  if( !theme )
-    return;
-  
-  //if( !theme->foregroundLine.isDefault() )
-  //  m_chartEnergyLineColor = theme->foregroundLine;
-  
-  if( !theme->spectrumChartText.isDefault() )
-  {
-    WPen txtpen(theme->spectrumChartText);
-    this->setTextPen( txtpen );
-    this->axis(Chart::XAxis).setTextPen( txtpen );
-    this->axis(Chart::YAxis).setTextPen( txtpen );
-    this->setTextPenColor( theme->spectrumChartText );
-  }
-  
-  if( theme->spectrumChartBackground.isDefault() )
-    this->setBackground( Wt::NoBrush );
-  else
-    this->setBackground( WBrush(theme->spectrumChartBackground) );
-  
-  if( (theme->spectrumChartMargins.isDefault() && !theme->spectrumChartBackground.isDefault()) )
-  {
-    //theme->spectrumChartBackground
-  }else if( !theme->spectrumChartMargins.isDefault() )
-  {
-    //theme->spectrumChartMargins
-  }
-  
-  if( !theme->spectrumAxisLines.isDefault() )
-  {
-    WPen defpen = this->axis(Chart::XAxis).pen();
-    defpen.setColor( theme->spectrumAxisLines );
-    this->axis(Chart::XAxis).setPen( defpen );
-    this->axis(Chart::YAxis).setPen( defpen );
-  }
-}//ShieldingSourceDisplay::Chi2Graphic::setColorsFromTheme( theme )
-
-
-void ShieldingSourceDisplay::Chi2Graphic::setNumFitForParams( unsigned int npar )
-{
-  m_nFitForPar = static_cast<int>( npar );
-}
-
-void ShieldingSourceDisplay::Chi2Graphic::setTextPenColor( const Wt::WColor &color )
-{
-  m_textPenColor = color;
-}
-
-void ShieldingSourceDisplay::Chi2Graphic::setShowChiOnChart( const bool show_chi )
-{
-  m_showChi = show_chi;
-  removeSeries(1);
-  removeSeries(2);
-  setXSeriesColumn( 0 );
-  
-  Chart::WDataSeries series( (show_chi ? 1 : 2), Chart::PointSeries );
-  series.setMarkerSize( 10.0 );
-  
-  addSeries( series );
-}
-
-
-void ShieldingSourceDisplay::Chi2Graphic::calcAndSetAxisRanges()
-{
-#if( WT_VERSION < 0x3030600 )
-  WAbstractItemModel *theModel = model();
-#else
-  Wt::Chart::WAbstractChartModel *theModel = model();
-  assert( theModel );
-#endif
-
-  if( !theModel )
-    return;
-  
-  double ymin = DBL_MAX, ymax = -DBL_MAX, xmin = DBL_MAX, xmax = -DBL_MAX;
-  
-  const int nrow = theModel->rowCount();
-  const int ycol = m_showChi ? 1 : 2;
-  for( int row = 0; row < nrow; ++row )
-  {
-    try
-    {
-#if( WT_VERSION >= 0x3030600 )
-      const double thischi = theModel->data(row,ycol);
-      const double energy = theModel->data(row,0);
-#else
-      WModelIndex index = theModel->index(row,ycol);
-      const double thischi = boost::any_cast<double>( theModel->data(index) );
-      index = theModel->index(row,0);
-      const double energy = boost::any_cast<double>( theModel->data(index) );
-#endif
-      xmin = std::min( xmin, energy );
-      xmax = std::max( xmax, energy );
-      
-      ymin = std::min( ymin, thischi );
-      ymax = std::max( ymax, thischi );
-    }catch(...)
-    {
-    }
-  }//for( int row = 0; row < nrow; ++row )
-  
-  if( !nrow || (ymin == DBL_MAX) || (ymax == -DBL_MAX) || (xmin == DBL_MAX) || (xmax == -DBL_MAX) )
-  {
-    // There are no points to display.
-    xmin = 0.0;
-    xmax = 3000.0;
-    ymin = (m_showChi ? -1.0 : 0.0);
-    ymax = (m_showChi ?  1.0 : 2.0);
-  }else if( (nrow == 1) || (ymin == ymax) )
-  {
-    // There is one point to display.
-    xmin -= 10.0;
-    xmax += 10.0;
-    
-    //  For chi, we should be really close to 0.0, and for multiple should be close to 1.0
-    ymin -= 0.25*ymin;
-    ymax += 0.25*ymax;
-    
-    if( m_showChi )
-    {
-      ymin = std::min( ymin, -1.0 );
-      ymax = std::max( ymax, 1.0 );
-    }else
-    {
-      ymin = std::min( ymin, 0.5 );
-      ymax = std::max( ymax, 1.5 );
-    }
-  }else
-  {
-    // There are many points to display
-    const double xrange = std::max( xmax - xmin, 10.0 );
-    xmin = ((xmin > 0.1*xrange) ? (xmin - 0.1*xrange) : 0.0);
-    xmax += 0.1*xrange;
-    
-    
-    const double yrange = std::max( ymax - ymin, 0.1 );
-    ymin -= 0.25*yrange;
-    ymax += 0.25*yrange;
-    
-    if( m_showChi )
-    {
-      ymin = std::min( ymin, -1.0 );
-      ymax = std::max( ymax, 1.0 );
-    }else
-    {
-      ymin = std::min( ymin, 0.5 );
-      ymax = std::max( ymax, 1.5 );
-    }
-  }//if( no rows ) / else / else
-
-  // Round up/down to the nearest 10 keV
-  xmin = 10.0 * std::floor( 0.1*xmin );
-  xmax = 10.0 * std::ceil( 0.1*xmax );
-  
-  // Round up/down to the nearest 0.1
-  ymin = 0.1 * std::floor( 10.0*ymin );
-  ymax = 0.1 * std::ceil( 10.0*ymax );
-  
-  //cout << "Setting xrange=" << xmin << ", " << xmax << "], yrange=[" << ymin << ", " << ymax << "]" << endl;
-  
-  const auto xLocation = m_showChi ? Chart::AxisValue::ZeroValue : Chart::AxisValue::MinimumValue;
-  axis(Chart::XAxis).setLocation( xLocation );
-  
-  axis(Chart::XAxis).setRange( xmin, xmax );
-  axis(Chart::YAxis).setRange( ymin, ymax );
-}//void calcAndSetAxisRanges();
-
-
-
-void ShieldingSourceDisplay::Chi2Graphic::calcAndSetAxisPadding( double yHeightPx )
-{
-  double ymin = axis(Chart::YAxis).minimum();
-  double ymax = axis(Chart::YAxis).maximum();
-  
-  if( fabs(ymax - ymin) < 0.1 )
-  {
-    ymin = 0.0;
-    ymax = 100.0;
-  }//
-
-//Calculate number of pixels we need to pad, for x axis to be at 45 pixels from
-//  the bottom of the chart; if less than 10px, pad at least 10px, or at most
-//  45px.
-  const int topPadding = plotAreaPadding(Top);
-  const double fracY = -ymin / (ymax - ymin);
-  double pxToXAxis = (fracY >= 1.0) ? 0.0 : (45.0 - fracY*(yHeightPx - topPadding) ) / (1.0-fracY);
-  if( IsInf(pxToXAxis) || IsNan(pxToXAxis) ) //JIC, but shouldnt be needed
-    pxToXAxis = 10;
-  pxToXAxis = std::floor( pxToXAxis + 0.5 );
-  pxToXAxis = std::max( pxToXAxis, 10.0 );
-  pxToXAxis = std::min( pxToXAxis, 45.0 );
-  const int bottomPadding = static_cast<int>(pxToXAxis);
-  
-  if( bottomPadding != plotAreaPadding(Bottom) )
-    setPlotAreaPadding( bottomPadding, Bottom );
-  
-  yHeightPx -= (topPadding + bottomPadding);
-  
-  {//Begin codeblock to determin min/max label values, following logic
-   //  determined from round*125() and other places in WAxis.C
-    const int numLabels = yHeightPx / 25.0;
-    const double range = ymax - ymin;
-    const double rangePerLabel = range / numLabels;
-
-    double renderinterval = 1.0;
-    double n = std::pow(10, std::floor(std::log10(rangePerLabel)));
-    double msd = rangePerLabel / n;
-    
-    if (msd < 1.5)
-      renderinterval = n;
-    else if (msd < 3.3)
-      renderinterval = 2*n;
-    else if (msd < 7)
-      renderinterval = 5*n;
-    else
-      renderinterval = 10*n;
-    
-    ymin += std::numeric_limits<double>::epsilon();
-    ymax -= std::numeric_limits<double>::epsilon();
-    ymin = renderinterval * std::floor( ymin / renderinterval);
-    ymax = renderinterval * std::ceil( ymax / renderinterval);
-  }//End codeblock to determin min/max label values
-
-  
-  const int oldleft = plotAreaPadding(Wt::Left);
-  const WString minlabel = axis(Chart::Y1Axis).label(ymin);
-  const WString maxlabel = axis(Chart::Y1Axis).label(ymax);
-  const size_t maxnchars = minlabel.narrow().length();
-  const size_t minnchars = maxlabel.narrow().length();
-  const size_t nchars = std::max( minnchars, maxnchars );
-  const int left = 32 + 6*std::max(static_cast<int>(nchars),2);
-  
-  if( left != oldleft )
-    setPlotAreaPadding( left, Wt::Left );
-}//void calcAndSetAxisPadding()
-
-
-void ShieldingSourceDisplay::Chi2Graphic::paintEvent( WPaintDevice *device )
-{
-  calcAndSetAxisRanges();
-  if( device )
-    calcAndSetAxisPadding( device->height().toPixels() );
-  Wt::Chart::WCartesianChart::paintEvent( device );
-}//void paintEvent( Wt::WPaintDevice *paintDevice )
-
-
-void ShieldingSourceDisplay::Chi2Graphic::paint( Wt::WPainter &painter,
-                      const Wt::WRectF &rectangle ) const
-{
-  WCartesianChart::paint( painter, rectangle );
-
-  //cout << "plot padding: [" << plotAreaPadding(Top) << ", " << plotAreaPadding(Right) << ", " << plotAreaPadding(Bottom) << ", " << plotAreaPadding(Left) << "]" << endl;
-  
-  //I think removing of the areas() is already done by
-  //  WCartesianChart::paintEvent(...), but jic
-  while( !areas().empty() )
-    delete areas().front();
-  
-#if( WT_VERSION < 0x3030600 )
-  WStandardItemModel *chi2Model = dynamic_cast<WStandardItemModel *>( model() );
-#else
-  auto proxyChi2Model = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model() );
-  assert( proxyChi2Model );
-  assert( proxyChi2Model->sourceModel() );
-  WStandardItemModel *chi2Model = dynamic_cast<WStandardItemModel *>( proxyChi2Model->sourceModel() );
-#endif
-    
-  if( !chi2Model )  //prob never happen, but JIC
-    return;
-  
-  const WPointF br = painter.window().bottomRight();
-  const int width = br.x();
-
-  const int nrow = chi2Model->rowCount();
-  double chi2 = 0.0;
-  
-  for( int row = 0; row < nrow; ++row )
-  {
-    try
-    {
-      WModelIndex index = chi2Model->index(row,1);
-      const double thischi = boost::any_cast<double>( chi2Model->data(index) );
-      chi2 += thischi*thischi;
-      
-
-      WColor color;
-      try
-      {
-        boost::any color_any = chi2Model->data(index, Wt::MarkerPenColorRole );
-        color = boost::any_cast<WColor>(color_any);
-        if( color.isDefault() )
-          throw runtime_error("");
-      }catch(...)
-      {
-        //I dont think we will ever get here, but JIC I guess.
-        Wt::Chart::WChartPalette *pal = palette();
-        if( pal )
-          color = pal->brush(0).color();
-        else
-          color = WColor( Wt::darkRed );
-      }//try / catch, get the color
-      
-      index = chi2Model->index(row,2);
-      const double thisscale = boost::any_cast<double>( chi2Model->data(index) );
-      
-      index = chi2Model->index(row,0);
-      double energy = boost::any_cast<double>( chi2Model->data(index) );
-      
-      
-      const double yval = m_showChi ? thischi : thisscale;
-      const WPointF pos = mapToDevice( energy, yval );
-      
-      index = chi2Model->index(row,3);
-      const string nucname = Wt::asString( chi2Model->data(index) ).toUTF8();
-      energy = ((100.0*energy+0.5)/100.0);
-      
-      char mouseoverjs[256];
-      if( nucname.empty() || nucname.size() > 8 )
-      {
-        snprintf( mouseoverjs, sizeof(mouseoverjs),
-                  "function(){Wt.WT.ShowChi2Info('%s','%.2f keV, &sigma;<sub>%i</sub>=%.2f, %.2fx model');}",
-                  id().c_str(), energy, row, thischi, thisscale );
-      }else
-      {
-        snprintf( mouseoverjs, sizeof(mouseoverjs),
-                 "function(){Wt.WT.ShowChi2Info('%s','%s, %.2f keV, &sigma;<sub>%i</sub>=%.2f, %.2fx model');}",
-                 id().c_str(), nucname.c_str(), energy, row, thischi, thisscale );
-      }
-      
-      //We could potentially include more info here, but it will be kinda hard,
-      //  so lets not worry about it now.
-      WRectArea *area = new WRectArea( pos.x()-10.0, pos.y()-10.0, 20.0, 20.0 );
-      const string mouseoutjs = "function(){$('#" + id() + "inf').remove();}";
-      area->mouseWentOver().connect( string(mouseoverjs) );
-      area->mouseWentOut().connect( mouseoutjs );
-      //area->clicked()
-      
-      //I hate doing const_casts, but the Wt source code itself does this
-      //  for adding image areas in Wt 3.3.2
-      const_cast<Chi2Graphic*>(this)->addArea( area );
-      
-      if( !m_showChi )
-      {
-        index = chi2Model->index(row,4);
-        const double scale_uncert = boost::any_cast<double>( chi2Model->data(index) );
-        
-        const WPointF upper_uncert = mapToDevice( energy, yval + scale_uncert );
-        const WPointF lower_uncert = mapToDevice( energy, yval - scale_uncert );
-        const WPen oldPen = painter.pen();
-        painter.setPen( WPen(color) );
-        painter.drawLine( upper_uncert, lower_uncert );
-        painter.setPen( oldPen );
-      }//if( !m_showChi )
-    }catch( std::exception &e )
-    {
-      cerr << "Caught exception drawing Chi2 chart: " << e.what() << endl;
-    }
-  }//for( int row = 0; row < nrow; ++row )
-  
-  if( nrow > 0 && !IsNan(sqrt(chi2)) )
-  {
-    char buffer[64];
-    //snprintf( buffer, sizeof(buffer), "&lt;dev&gt;=%.2g&sigma;", (sqrt(chi2)/nrow) );  //displays as literal tesxt, and not the symbols on android
-    //snprintf( buffer, sizeof(buffer), "\x3c\xCF\x87\x3E=%.2g\xCF\x83", (sqrt(chi2)/nrow) ); //<χ>=13.2σ
-    snprintf( buffer, sizeof(buffer), "\x3c\x64\x65\x76\x3E=%.2g\xCF\x83", (sqrt(chi2)/nrow) ); //<dev>=13.2σ
-  
-    WString text = WString::fromUTF8(buffer);
-    const size_t msglen = SpecUtils::utf8_str_len( buffer, strlen(buffer) );
-  
-    const double rightPadding = static_cast<double>( plotAreaPadding(Right) );
-    const double charwidth = 16;
-    const double charheight = 15;
-    const double x = width - charwidth*msglen - rightPadding - 5;
-    const double y = plotAreaPadding(Top) + 5;
-    const double twidth = charwidth*msglen;
-    const double theight = charheight + 2;
-    
-    WPen oldPen = painter.pen();
-    painter.setPen( WPen(m_textPenColor) );
-    painter.drawText( x, y, twidth, theight, AlignRight, TextSingleLine, text );
-    painter.setPen( oldPen );
-  }//if( nrow > 0 && !IsNan(sqrt(chi2)) )
-
-  const double yAxisMin = axis(Chart::YAxis).minimum();
-  const double yAxisMax = axis(Chart::YAxis).maximum();
-  
-  if( !m_showChi && (yAxisMin < 1.0) && (yAxisMax > 1.0) )
-  {
-    const double xAxisMin = axis(Chart::XAxis).minimum();
-    const double xAxisMax = axis(Chart::XAxis).maximum();
-    
-    WPointF left = mapToDevice( xAxisMin, 1.0 );
-    WPointF right = mapToDevice( xAxisMax, 1.0 );
-    
-    //cout << "xAxisMin=" << xAxisMin << ", xAxisMax=" << xAxisMax << ", yAxisMin=" << yAxisMin << ", yAxisMax=" << yAxisMax << endl;
-    //cout << "left={" << left.x() << "," << left.y() << "}, right={" << right.x() << "," << right.y() << "}" << endl;
-    
-    left.setY( left.y() + 0.5 );
-    right.setY( right.y() + 0.5 );
-    
-    WPen pen( GlobalColor::lightGray );
-    pen.setWidth( 1 );
-    pen.setStyle( Wt::PenStyle::DashLine );
-    const WPen oldPen = painter.pen();
-    painter.setPen( pen );
-    painter.drawLine( left, right );
-    painter.setPen( oldPen );
-  }//if( m_showChi )
-  
-  //Draw the y-axis label
-  painter.rotate( -90 );
-  painter.setPen( WPen() );
-  painter.setBrush( WBrush() );
-  
-  
-  
-  const char *yaxistitle_key = m_showChi ? "x2g-yaxis-title-chi" : "x2g-yaxis-title-mult";
-  const char * const yaxistooltip_key = m_showChi ? "x2g-tt-chi-axis" : "x2g-tt-scale-axis";
-  
-  WPen oldPen = painter.pen();
-  painter.setPen( WPen(m_textPenColor) );
-  painter.drawText( -0.45*painter.viewPort().height(), 0.0, 0.2, 0.1,
-                     AlignCenter, WString::tr(yaxistitle_key) );
-  painter.setPen( oldPen );
-  
-  const double yAxisWiddth = plotAreaPadding(Wt::Left);
-  const double chartHeight = painter.viewPort().height();
-  
-  WRectArea *yAxisArea = new WRectArea( 0.0, 0.0, yAxisWiddth, chartHeight );
-  yAxisArea->setToolTip( WString::tr(yaxistooltip_key) );
-  const_cast<Chi2Graphic*>(this)->addArea( yAxisArea );
-  
-  painter.restore();
-}//Chi2Graphic::paint(
-
-
 pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow( InterSpec *viewer )
 {
   assert( viewer );
@@ -3195,8 +2723,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     m_geometrySelect( nullptr ),
     m_fixedGeometryTxt( nullptr ),
     m_showChi2Text( nullptr ),
-    m_chi2Model( nullptr ),
-    m_chi2Graphic( nullptr ),
+    m_chi2Plot( nullptr ),
     m_multiIsoPerPeak( nullptr ),
     m_clusterWidth( nullptr ),
     m_attenForAir( nullptr ),
@@ -3209,6 +2736,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     m_multithread_computation( true ),
     m_showLog( nullptr ),
     m_logDiv( nullptr ),
+    m_diagramDialog( nullptr ),
     m_calcLog{},
     m_peakCalcLogInfo{},
     m_modelUploadWindow( nullptr ),
@@ -3421,6 +2949,11 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_showLog->disable();
 
   PopupDivMenuItem *item = NULL;
+  item = m_addItemMenu->addMenuItem( WString::tr("ssd-show-model-diagram") );
+  item->triggered().connect( this, &ShieldingSourceDisplay::showShieldSourceDiagram );
+
+//  PopupDivMenuItem *item = m_addItemMenu->addMenuItem( "Test Serialization" );
+//  item->triggered().connect( this, &ShieldingSourceDisplay::testSerialization );
 
   item = m_addItemMenu->addMenuItem( WString::tr("ssd-mi-import-model") );
   item->triggered().connect( this, &ShieldingSourceDisplay::startModelUpload );
@@ -3458,54 +2991,11 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_showChi2Text->setInline( false );
   m_showChi2Text->hide();
 
-  m_chi2Graphic = new Chi2Graphic();
-    
-  m_chi2Model = new WStandardItemModel( 0, 6, parent );
+  m_chi2Plot = new ShieldingSourceFitPlot();
 
-#if( WT_VERSION < 0x3030600 )
-  m_chi2Graphic->setModel( m_chi2Model );
-#else
-  auto proxyModel = new Wt::Chart::WStandardChartProxyModel( m_chi2Model, this );
-  m_chi2Graphic->setModel( m_chi2Model );
-#endif
+  // Connect to display mode change signal to update m_showChiOnChart
+  m_chi2Plot->displayModeChanged().connect( boost::bind( &ShieldingSourceDisplay::handleChi2ChartDisplayModeChanged, this, boost::placeholders::_1 ) );
 
-  m_chi2Graphic->setPlotAreaPadding( 12, Right );
-  m_chi2Graphic->setPlotAreaPadding(  2, Top );
-  
-  // Left and bottom paddings will be set by Chi2Graphic::calcAndSetAxisPadding(...)
-  //m_chi2Graphic->setPlotAreaPadding( 50, Left );
-  //m_chi2Graphic->setPlotAreaPadding( 40, Bottom );
-  //m_chi2Graphic->setAutoLayoutEnabled();
-  
-  m_chi2Graphic->addSeries( Chart::WDataSeries(1, Chart::PointSeries) );
-  m_chi2Graphic->setXSeriesColumn( 0 );
-  m_chi2Graphic->axis(Chart::XAxis).setTitle( WString::tr("Energy (keV)") );
-  
-  WFont font( WFont::Default );
-  font.setSize( WFont::Small );
-  m_chi2Graphic->axis(Chart::YAxis).setTitleFont(font);
-  m_chi2Graphic->axis(Chart::XAxis).setTitleFont(font);
-  
-  WFont labelFont( WFont::Default );
-  labelFont.setSize( WFont::Medium );
-  m_chi2Graphic->axis(Chart::YAxis).setLabelFont(font);
-  m_chi2Graphic->axis(Chart::XAxis).setLabelFont(font);
-  
-  m_chi2Graphic->axis(Chart::XAxis).setLocation( Chart::AxisValue::ZeroValue );
-  m_chi2Graphic->axis(Chart::YAxis).setLocation( Chart::AxisValue::MinimumValue );
-
-  m_chi2Graphic->axis(Chart::XAxis).setScale( Chart::LinearScale );
-  m_chi2Graphic->axis(Chart::YAxis).setScale( Chart::LinearScale );
-
-  m_chi2Graphic->setType( Chart::ScatterPlot );
-//  m_chi2Graphic->setMinimumSize( WLength(200), WLength(175) );
-  
-  
-  //We should check the color theme for colors
-  m_specViewer->colorThemeChanged().connect( m_chi2Graphic, &Chi2Graphic::setColorsFromTheme );
-  m_chi2Graphic->setColorsFromTheme( m_specViewer->getColorTheme() );
-  
-  
   //The next line is kinda inefficient because if all that changed was
   //  fit activity or fit age, then we dont really need to update the chi2 chart
   m_sourceModel->dataChanged().connect( this, &ShieldingSourceDisplay::updateChi2Chart );
@@ -3743,7 +3233,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     
     chartLayout->addWidget( m_detectorDisplay,      0, 0, AlignLeft );
     chartLayout->addWidget( addItemMenubutton,      0, 1, AlignRight);
-    chartLayout->addWidget( m_chi2Graphic,          1, 0, 1, 2 );
+    chartLayout->addWidget( m_chi2Plot,             1, 0, 1, 2 );
     m_showChiOnChart->setWidth( 130 );
     chartLayout->addWidget( m_showChiOnChart,       2, 1, AlignRight );
     chartLayout->addWidget( m_optionsDiv,           3, 0, 1, 2 );
@@ -3798,7 +3288,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     chartLayout->setVerticalSpacing( 0 );
     chartLayout->setHorizontalSpacing( 0 );
     chartLayout->setContentsMargins( 0, 0, 0, 0 );
-    chartLayout->addWidget( m_chi2Graphic, 0, 0 );
+    chartLayout->addWidget( m_chi2Plot, 0, 0 );
     
     //Put the switch in a <div> (which will be 0x0 px), so we can position the switch using absolute
     WContainerWidget *switchHolder = new WContainerWidget();
@@ -3958,6 +3448,10 @@ ShieldingSourceDisplay::~ShieldingSourceDisplay() noexcept(true)
     delete m_addItemMenu;
     m_addItemMenu = NULL;
   }//if( m_addItemMenu )
+  
+  if( m_diagramDialog )
+    delete m_diagramDialog;
+  m_diagramDialog = nullptr;
   
   closeModelUploadWindow();
 #if( USE_DB_TO_STORE_SPECTRA )
@@ -4996,14 +4490,6 @@ std::tuple<int,int,bool> ShieldingSourceDisplay::numTruthValuesForFitValues()
 }//bool haveTruthValuesForAllFitValues()
 
 
-void ShieldingSourceDisplay::renderChi2Chart( Wt::WSvgImage &image )
-{
-  WPainter p( &image );
-  m_chi2Graphic->paint( p );
-  p.end();
-}//void renderChi2Chart( Wt::WSvgImage &image );
-
-
 tuple<bool,int,int,vector<string>> ShieldingSourceDisplay::testCurrentFitAgainstTruth()
 {
   bool successful = true;
@@ -5542,7 +5028,7 @@ void ShieldingSourceDisplay::showGraphicTypeChanged()
   
   
   const bool chi = m_showChiOnChart->isChecked();
-  m_chi2Graphic->setShowChiOnChart( chi );
+  m_chi2Plot->setShowChi( chi );
   updateChi2Chart();
 }
 
@@ -6127,6 +5613,13 @@ void ShieldingSourceDisplay::updateChi2Chart()
 }//void updateChi2Chart()
 
 
+void ShieldingSourceDisplay::handleChi2ChartDisplayModeChanged( const bool showChi )
+{
+  if( m_showChiOnChart )
+    m_showChiOnChart->setChecked( showChi );
+}//void handleChi2ChartDisplayModeChanged( bool showChi )
+
+
 void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const ShieldingSourceFitCalc::ModelFitResults> results )
 {
   try
@@ -6136,7 +5629,7 @@ void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const Shield
   {
     passMessage( e.what(), WarningWidget::WarningMsgHigh );
   }//try / catch
-  
+
   try
   {
     if( m_logDiv )
@@ -6144,57 +5637,50 @@ void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const Shield
       m_logDiv->contents()->clear();
       m_logDiv->hide();
     }//if( m_logDiv )
-    
+
     unsigned int ndof = 1;
-    vector<GammaInteractionCalc::PeakResultPlotInfo> chis;
-    
-    if( results && results->peak_comparisons && results->peak_calc_details
-       && (results->successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final) )
-    {
-      ndof = results->numDOF;
-      chis = *results->peak_comparisons;
-      m_calcLog = results->peak_calc_log;
-      m_peakCalcLogInfo.reset( new vector<GammaInteractionCalc::PeakDetail>( *results->peak_calc_details ) );
-    }else
+
+    // Create a temporary results object if we don't have final results
+    ShieldingSourceFitCalc::ModelFitResults temp_results;
+    const ShieldingSourceFitCalc::ModelFitResults *results_to_use = results.get();
+
+    if( !results || !results->peak_comparisons || !results->peak_calc_details
+       || (results->successful != ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final) )
     {
       m_calcLog.clear();
       m_peakCalcLogInfo.reset();
-     
+
       auto fcnAndPars = shieldingFitnessFcn();
-      
+
       std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> &chi2Fcn = fcnAndPars.first;
       ROOT::Minuit2::MnUserParameters &inputPrams = fcnAndPars.second;
-      
+
       ndof = inputPrams.VariableParameters();
-      
+
       const vector<double> params = inputPrams.Params();
       const vector<double> errors = inputPrams.Errors();
       GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
-      
+
       vector<GammaInteractionCalc::PeakDetail> calcLog;
-      chis = chi2Fcn->energy_chi_contributions( params, errors, mixcache, &m_calcLog, &calcLog );
-      
+      vector<GammaInteractionCalc::PeakResultPlotInfo> chis = chi2Fcn->energy_chi_contributions( params, errors, mixcache, &m_calcLog, &calcLog );
+
       m_peakCalcLogInfo.reset( new vector<GammaInteractionCalc::PeakDetail>( calcLog ) );
-    }
-    
-    m_showLog->setDisabled( m_calcLog.empty() );
 
-    vector<GammaInteractionCalc::PeakResultPlotInfo> keeper_points;
-
-    for( size_t row = 0; row < chis.size(); ++row )
+      // Build temporary results object for the chart
+      temp_results.numDOF = ndof;
+      temp_results.peak_comparisons.reset( new vector<GammaInteractionCalc::PeakResultPlotInfo>( chis ) );
+      temp_results.peak_calc_details.reset( new vector<GammaInteractionCalc::PeakDetail>( calcLog ) );
+      results_to_use = &temp_results;
+    }else
     {
-      const double energy = chis[row].energy;
-      const double chi = chis[row].numSigmaOff;
-      const double scale = chis[row].observedOverExpected;
-      const WColor &color = chis[row].peakColor;
-      const double scale_uncert = chis[row].observedOverExpectedUncert;
+      ndof = results->numDOF;
+      m_calcLog = results->peak_calc_log;
+      m_peakCalcLogInfo.reset( new vector<GammaInteractionCalc::PeakDetail>( *results->peak_calc_details ) );
+    }
 
-      if( fabs(chi) < 1.0E5 && !IsInf(chi) && !IsNan(chi)
-          && !IsInf(energy) && !IsNan(energy) )
-        keeper_points.push_back( chis[row] );
-    }//for( size_t row = 0; row < chis.size(); ++row )
+    m_showLog->setDisabled( !m_lastFitResults );
 
-    m_chi2Graphic->setNumFitForParams( ndof );
+    // Add info about number of parameters to calc log
     if( !m_calcLog.empty() )
     {
       char buffer[64];
@@ -6203,90 +5689,14 @@ void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const Shield
       m_calcLog.push_back( "&nbsp;" );
       m_calcLog.push_back( buffer );
     }//if( !m_calcLog.empty() )
-    
-    const int nrow = static_cast<int>( keeper_points.size() );
-    const int nStartRows = m_chi2Model->rowCount();
-    if( nStartRows < nrow )
-      m_chi2Model->insertRows( nStartRows, nrow - nStartRows );
 
-    if( nStartRows > nrow )
-      m_chi2Model->removeRows( nrow, nStartRows - nrow );
+    // Pass the results directly to the new chart
+    m_chi2Plot->setData( *results_to_use );
 
-    std::shared_ptr<const deque< PeakModel::PeakShrdPtr > > peaks = m_peakModel->peaks();
-    
-    for( int row = 0; row < nrow; ++row  )
-    {
-      const GammaInteractionCalc::PeakResultPlotInfo &p = keeper_points[row];
-      
-      const double &energy = p.energy;
-      const double &chi = p.numSigmaOff;
-      const double &scale = p.observedOverExpected;
-      WColor color = p.peakColor;
-      const double &scale_uncert = p.observedOverExpectedUncert;
-      
-      if( IsNan(energy) || IsInf(chi) )
-      {
-        passMessage( WString::tr("ssd-warn-invalid-chi2-for-energy").arg( round(100*energy)/100 ),
-                    WarningWidget::WarningMsgHigh );
-        continue;
-      }//if( IsNan(p.second) || IsInf(p.second) )
-      
-      m_chi2Model->setData( row, 0, boost::any(energy) );
-      m_chi2Model->setData( row, 1, boost::any(chi) );
-      m_chi2Model->setData( row, 2, boost::any(scale) );
-      
-      if( color.isDefault() )
-        color = m_specViewer->getColorTheme()->defaultPeakLine;
-      color.setRgb( color.red(), color.green(), color.blue(), 255 );
-      
-      m_chi2Model->setData( row, 1, boost::any(color), Wt::MarkerPenColorRole );
-      m_chi2Model->setData( row, 1, boost::any(color), Wt::MarkerBrushColorRole );
-      m_chi2Model->setData( row, 2, boost::any(color), Wt::MarkerPenColorRole );
-      m_chi2Model->setData( row, 2, boost::any(color), Wt::MarkerBrushColorRole );
-      
-      //If we wanted to include the nuclide in the model, we would have to loop
-      //  over photopeaks in m_peakModel to try and match things up
-      WString nuclidename;
-      if( !!peaks )
-      {
-        for( const PeakModel::PeakShrdPtr &peak : *peaks )
-        {
-          if( peak->useForShieldingSourceFit()
-              && peak->parentNuclide() && peak->decayParticle() )
-          {
-            if( fabs(energy - peak->decayParticle()->energy) < 0.001 )
-            {
-              nuclidename = peak->parentNuclide()->symbol;
-              break;
-            }
-          }
-        }//for( const PeakModel::PeakShrdPtr &p : *peaks )
-        
-        m_chi2Model->setData( row, 3, boost::any(nuclidename) );
-        m_chi2Model->setData( row, 4, boost::any(scale_uncert) );
-      }//if( !!peaks )
-    }//for( int row = 0; row < nrow; ++row  )
   }catch( std::exception &e )
   {
-    //One reason we may have made it here is if there are no peaks selected
-    //Another is if we have removed using a peak from the peak, and it was an
-    //  age defining, and we havent updated the dependant ages yet (but will in this
-    //  event loop).
-    if( m_chi2Model->rowCount() )
-      m_chi2Model->removeRows( 0, m_chi2Model->rowCount() );
     cerr << "ShieldingSourceDisplay::updateChi2ChartActual()\n\tCaught:" << e.what() << endl;
   }
-  
-  
-  const std::vector<WAbstractArea *> oldareas = m_chi2Graphic->areas();
-  for( WAbstractArea *a : oldareas )
-  {
-    m_chi2Graphic->removeArea( a );
-    delete a;
-  }
-
-//  cerr << "m_chi2Model->rowCount()=" << m_chi2Model->rowCount()
-//       << "m_chi2Model->columnCount()=" << m_chi2Model->columnCount() << endl;
 
   m_calcLog.push_back( ns_no_uncert_info_txt );
 }//void ShieldingSourceDisplay::updateChi2ChartActual()
@@ -6294,103 +5704,290 @@ void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const Shield
 
 void ShieldingSourceDisplay::showCalcLog()
 {
-  if( !m_logDiv )
+  if( !m_lastFitResults )
   {
-    m_logDiv = new AuxWindow( WString::tr("ssd-calc-log-window-title") );
-    m_logDiv->contents()->addStyleClass( "CalculationLog" );
-    m_logDiv->disableCollapse();
-    m_logDiv->rejectWhenEscapePressed();
-    //set min size so setResizable call before setResizable so Wt/Resizable.js wont cause the initial
-    //  size to be the min-size
-    m_logDiv->setMinimumSize( 640, 480 );
-    m_logDiv->setResizable( true );
-  }//if( !m_logDiv )
-  
-  m_logDiv->contents()->clear();
-  vector<uint8_t> totaldata;
-  for( const string &str : m_calcLog )
-  {
-    auto line = new WText( str, m_logDiv->contents() );
-    line->setInline( false );
-    totaldata.insert( end(totaldata), begin(str), end(str) );
-    totaldata.push_back( static_cast<uint8_t>('\r') );
-    totaldata.push_back( static_cast<uint8_t>('\n') );
+    passMessage( WString::tr("ssd-no-fit-results"), WarningWidget::WarningMsgHigh );
+    return;
   }
-  
-  m_logDiv->show();
-  
-  // Add a link to download this log file
-  m_logDiv->footer()->clear();
-  
-  auto downloadResource = new WMemoryResource( "text/plain", m_logDiv->footer() );
-  downloadResource->setData( totaldata );
-  const int offset = wApp->environment().timeZoneOffset();
-  const auto nowTime = WDateTime::currentDateTime().addSecs( 60 * offset );
-  string filename = "act_shield_fit_" + nowTime.toString( "yyyyMMdd_hhmmss" ).toUTF8() + ".txt";
-  downloadResource->suggestFileName( filename, WResource::DispositionType::Attachment );
 
-#if( BUILD_AS_OSX_APP || IOS )
-  WAnchor *logDownload = new WAnchor( WLink( downloadResource ), m_logDiv->footer() );
-  logDownload->setStyleClass( "LinkBtn" );
-  logDownload->setTarget( AnchorTarget::TargetNewWindow );
-#else
-  WPushButton *logDownload = new WPushButton( m_logDiv->footer() );
-  logDownload->setIcon( "InterSpec_resources/images/download_small.svg" );
-  logDownload->setLink( WLink( downloadResource ) );
-  logDownload->setLinkTarget( Wt::TargetNewWindow );  //Note: we need to set new window after setLink, or else this wont actually get set
-  logDownload->setStyleClass( "LinkBtn DownloadBtn" );
-#endif
-  
-  logDownload->setText( WString::tr("ssd-calc-log-export-txt") );
-  logDownload->setFloatSide( Wt::Side::Left );
-    
-#if( ANDROID )
-  // Using hacked saving to temporary file in Android, instead of via network download of file.
-  logDownload->clicked().connect( std::bind([downloadResource](){
-    android_download_workaround(downloadResource, "fit_log.txt");
-  }) );
-#endif //ANDROID
-  
-  
-  WPushButton *close = m_logDiv->addCloseButtonToFooter();
-  close->clicked().connect( boost::bind( &AuxWindow::hide, m_logDiv ) );
-  m_logDiv->finished().connect( this, &ShieldingSourceDisplay::closeCalcLogWindow );
-  
-  const int wwidth = m_specViewer->renderedWidth();
-  const int wheight = m_specViewer->renderedHeight();
-  m_logDiv->setMaximumSize( 0.8*wwidth, 0.8*wheight );
-  m_logDiv->resizeToFitOnScreen();
-  m_logDiv->centerWindow();
-  
-  UndoRedoManager *undoRedo = UndoRedoManager::instance();
-  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  try
   {
-    auto undo = [](){
-      ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
-      if( shieldSourceFit )
-        shieldSourceFit->closeCalcLogWindow();
-    };
-    
-    auto redo = [](){
-      ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
-      if( shieldSourceFit )
-        shieldSourceFit->showCalcLog();
-    };
-    
-    undoRedo->addUndoRedoStep( undo, redo, "Show calculation log." );
-  }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
+    // Get detector response
+    const shared_ptr<const DetectorPeakResponse> drf = m_detectorDisplay->detector();
+
+    // Get activity units preference
+    const bool useBq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+
+    // Get foreground spectrum
+    shared_ptr<const SpecMeas> foreground_file = m_specViewer->measurment( SpecUtils::SpectrumType::Foreground );
+    shared_ptr<const SpecUtils::Measurement> foreground = m_specViewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+    set<int> foreground_samples = m_specViewer->displayedSamples( SpecUtils::SpectrumType::Foreground );
+
+    // Get background spectrum (if any)
+    shared_ptr<const SpecMeas> background_file = m_specViewer->measurment( SpecUtils::SpectrumType::Background );
+    shared_ptr<const SpecUtils::Measurement> background = m_specViewer->displayedHistogram( SpecUtils::SpectrumType::Background );
+    set<int> background_samples = m_specViewer->displayedSamples( SpecUtils::SpectrumType::Background );
+
+    // Create JSON data
+    nlohmann::json data;
+
+    // Add basic file information
+    const string filename = foreground_file ? foreground_file->filename() : string("Unknown");
+    data["Filepath"] = filename;
+    data["Filename"] = SpecUtils::filename( filename );
+    data["ParentDir"] = SpecUtils::parent_path( filename );
+    data["Success"] = (m_lastFitResults->successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final);
+    data["HasFitResults"] = true;
+    data["HasWarnings"] = false;
+    data["Warnings"] = nlohmann::json::array();
+    data["HasErrorMessage"] = !m_lastFitResults->errormsgs.empty();
+    if( !m_lastFitResults->errormsgs.empty() )
+    {
+      string combined_errors;
+      for( const string &err : m_lastFitResults->errormsgs )
+        combined_errors += (combined_errors.empty() ? "" : "; ") + err;
+      data["ErrorMessage"] = combined_errors;
+    }
+
+    // Add spectrum chart JS and CSS
+    const vector<pair<string,string>> spec_chart_js_and_css = BatchInfoLog::load_spectrum_chart_js_and_css();
+    for( const pair<string,string> &key_val : spec_chart_js_and_css )
+      data[key_val.first] = key_val.second;
+
+    // Add ShieldingSourceFitPlot JS and CSS
+    const vector<pair<string,string>> shielding_fit_plot_js_and_css = BatchInfoLog::load_shielding_fit_plot_js_and_css();
+    for( const pair<string,string> &key_val : shielding_fit_plot_js_and_css )
+      data[key_val.first] = key_val.second;
+
+    // Add foreground spectrum info
+    if( foreground )
+    {
+      auto &spec_obj = data["foreground"];
+      deque<std::shared_ptr<const PeakDef>> fore_peaks_deque;
+      for( const PeakDef &peak : m_lastFitResults->foreground_peaks )
+        fore_peaks_deque.push_back( make_shared<const PeakDef>( peak ) );
+      BatchInfoLog::add_hist_to_json( spec_obj, false, foreground, foreground_file,
+                                       foreground_samples, filename, &fore_peaks_deque );
+    }
+
+    // Add background spectrum info (if any)
+    if( background )
+    {
+      string back_filename = background_file ? background_file->filename() : string();
+      shared_ptr<const SpecMeas> back_file = (background_file != foreground_file) ? background_file : nullptr;
+
+      auto &spec_obj = data["background"];
+      deque<std::shared_ptr<const PeakDef>> back_peaks_deque;
+      for( const PeakDef &peak : m_lastFitResults->background_peaks )
+        back_peaks_deque.push_back( make_shared<const PeakDef>( peak ) );
+      BatchInfoLog::add_hist_to_json( spec_obj, true, background, back_file,
+                                       background_samples, back_filename, &back_peaks_deque );
+
+      data["background"]["Normalization"] = foreground->live_time() / background->live_time();
+    }
+
+    // Add activity fit options
+    BatchInfoLog::add_act_shield_fit_options_to_json( m_lastFitResults->options, m_lastFitResults->distance,
+                                                        m_lastFitResults->geometry, drf, data );
+
+    // Add exe info
+    BatchInfoLog::add_exe_info_to_json( data );
+
+    // Add fit results
+    BatchInfoLog::shield_src_fit_results_to_json( *m_lastFitResults, drf, useBq, data );
+
+    // If m_lastFitResults doesn't have peak_comparisons, we need to calculate them
+    // and override the ShieldingSourceFitPlotData in the JSON
+    if( !m_lastFitResults->peak_comparisons || !m_lastFitResults->peak_calc_details )
+    {
+      cerr << "ShieldingSourceDisplay::showCalcLog(): peak_comparisons missing, calculating them..." << endl;
+      // Need to calculate the peak comparisons for the plot
+      try
+      {
+        auto fcnAndPars = shieldingFitnessFcn();
+        std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> &chi2Fcn = fcnAndPars.first;
+        ROOT::Minuit2::MnUserParameters &inputPrams = fcnAndPars.second;
+
+        const vector<double> params = inputPrams.Params();
+        const vector<double> errors = inputPrams.Errors();
+        GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
+
+        vector<string> calc_log;
+        vector<GammaInteractionCalc::PeakDetail> calcLog;
+        vector<GammaInteractionCalc::PeakResultPlotInfo> chis = chi2Fcn->energy_chi_contributions( params, errors, mixcache, &calc_log, &calcLog );
+
+        // Create a temporary results object with just the peak comparison data for the plot
+        ShieldingSourceFitCalc::ModelFitResults temp_results;
+        temp_results.peak_comparisons.reset( new vector<GammaInteractionCalc::PeakResultPlotInfo>( chis ) );
+        temp_results.peak_calc_details.reset( new vector<GammaInteractionCalc::PeakDetail>( calcLog ) );
+
+        // Generate the plot JSON and add it to data
+        const string plot_json_str = ShieldingSourceFitPlot::jsonForData( temp_results );
+        cerr << "ShieldingSourceDisplay::showCalcLog(): Generated plot JSON with " << chis.size() << " data points" << endl;
+        try
+        {
+          data["ShieldingSourceFitPlotData"] = nlohmann::json::parse( plot_json_str );
+          cerr << "ShieldingSourceDisplay::showCalcLog(): Successfully set ShieldingSourceFitPlotData in JSON" << endl;
+        }catch( std::exception &e )
+        {
+          cerr << "ShieldingSourceDisplay::showCalcLog(): Error parsing ShieldingSourceFitPlot JSON: " << e.what() << endl;
+          data["ShieldingSourceFitPlotData"] = nlohmann::json::object();
+        }
+      }catch( std::exception &e )
+      {
+        cerr << "ShieldingSourceDisplay::showCalcLog(): Error calculating peak comparisons: " << e.what() << endl;
+      }
+    }
+
+    // Create template options vector
+    vector<tuple<WString, string, InjaLogDialog::LogType, function<string(inja::Environment&, const nlohmann::json&)>>> templates;
+
+    // Add HTML template
+    templates.push_back( make_tuple(
+      WString::tr( "ssd-template-html-report" ),
+      "_act_fit.html",
+      InjaLogDialog::LogType::Html,
+      []( inja::Environment &env, const nlohmann::json &data ) -> string {
+        return env.render_file( "act_fit.tmplt.html", data );
+      }
+    ) );
+
+    // Add text template
+    templates.push_back( make_tuple(
+      WString::tr( "ssd-template-text-log" ),
+      "_std_fit_log.txt",
+      InjaLogDialog::LogType::Text,
+      []( inja::Environment &env, const nlohmann::json &data ) -> string {
+        return env.render_file( "std_fit_log.tmplt.txt", data );
+      }
+    ) );
+
+    // Add deprecated text log (captured from m_calcLog)
+    // Copy m_calcLog to avoid capturing 'this'
+    const vector<string> deprecated_log_copy = m_calcLog;
+    templates.push_back( make_tuple(
+      WString::tr( "ssd-template-deprecated-txt" ),
+      "_deprecated_log.txt",
+      InjaLogDialog::LogType::Text,
+      [deprecated_log_copy]( inja::Environment &env, const nlohmann::json &data ) -> string {
+        // env and data are unused - just return the captured log text
+        string result;
+        for( const string &line : deprecated_log_copy )
+        {
+          result += line;
+          result += "\n";
+        }
+        return result;
+      }
+    ) );
+
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
+    const string tmplts_dir = SpecUtils::append_path( InterSpec::writableDataDirectory(), "act_shield_fit_templates" );
+
+    if( !tmplts_dir.empty() && SpecUtils::is_directory(tmplts_dir) )
+    {
+      // Inja assumes trailing path seperator.
+#if( defined(_WIN32) )
+      const char path_sep = '\\';
+#else
+      const char path_sep = '/';
+#endif
+      const string tmplts_dir_inja = (tmplts_dir[tmplts_dir.size()-1] == path_sep) ? tmplts_dir : (tmplts_dir + path_sep);
+
+      const vector<string> potential_tmplts = SpecUtils::ls_files_in_directory( tmplts_dir );
+      for( const string tmplt_path : potential_tmplts )
+      {
+        const string filename = SpecUtils::filename(tmplt_path);
+
+        if( !SpecUtils::icontains(filename, "tmplt.")
+           && !SpecUtils::icontains(filename, "template.")
+           && !SpecUtils::icontains(filename, "inja.") )
+        {
+          continue;
+        }
+
+        string outname = filename;
+        string tmplt_ext = SpecUtils::file_extension(filename);
+
+        size_t pos = SpecUtils::ifind_substr_ascii(outname, "tmplt");
+        if( pos == string::npos )
+          pos = SpecUtils::ifind_substr_ascii(outname, "template");
+        if( pos != string::npos )
+          outname = outname.substr(0, pos);
+
+        while( !outname.empty()
+              && (SpecUtils::iends_with(outname, "_")
+                  || SpecUtils::iends_with(outname, ".")
+                  || SpecUtils::iends_with(outname, "-")) )
+        {
+          outname = outname.substr(0, outname.size() - 1);
+        }
+
+        if( tmplt_ext.empty()
+           || SpecUtils::iequals_ascii(tmplt_ext, "tmplt" )
+           || SpecUtils::iequals_ascii(tmplt_ext, "template" ) )
+          tmplt_ext = SpecUtils::file_extension(outname);
+
+        if( tmplt_ext.empty() )
+          tmplt_ext = ".txt";
+
+        outname += tmplt_ext;
+
+        InjaLogDialog::LogType rpt_type = InjaLogDialog::LogType::Text;
+        if( SpecUtils::icontains(tmplt_ext, "html") )
+          rpt_type = InjaLogDialog::LogType::Html;
+
+        templates.push_back( make_tuple( WString::fromUTF8(outname), "_" + outname, rpt_type,
+                                        [filename,tmplts_dir_inja]( inja::Environment &dummy_env, const nlohmann::json &data ) -> string {
+          inja::Environment env = BatchInfoLog::get_default_inja_env( tmplts_dir_inja );
+          return env.render_file( filename, data );
+        }
+                                        ) );
+      }//for( const string tmplt_path : potential_tmplts )
+    }//if( SpecUtils::is_directory(tmplts_dir) )
+#endif
+
+    // Create and show the dialog, store in m_logDiv
+    m_logDiv = new InjaLogDialog( WString::tr( "ssd-calc-log-html-title" ), data, templates );
+    m_logDiv->finished().connect( this, &ShieldingSourceDisplay::closeCalcLogWindow );
+    m_logDiv->show();
+
+    // Add undo/redo support
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( undoRedo && undoRedo->canAddUndoRedoNow() )
+    {
+      auto undo = [](){
+        ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
+        if( shieldSourceFit )
+          shieldSourceFit->closeCalcLogWindow();
+      };
+
+      auto redo = [](){
+        ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
+        if( shieldSourceFit )
+          shieldSourceFit->showCalcLog();
+      };
+
+      undoRedo->addUndoRedoStep( undo, redo, "Show calculation log." );
+    }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
+
+  } catch( std::exception &e )
+  {
+    passMessage( WString::tr("ssd-error-creating-html-log").arg( e.what() ), WarningWidget::WarningMsgHigh );
+    cerr << "Error creating HTML calculation log: " << e.what() << endl;
+  }
 }//void showCalcLog()
 
 
 void ShieldingSourceDisplay::closeCalcLogWindow()
 {
-  assert( m_logDiv );
   if( !m_logDiv )
     return;
-  
-  AuxWindow::deleteAuxWindow( m_logDiv );
+
+  // Delete the InjaLogDialog (it's a SimpleDialog, which is a WDialog subclass)
+  delete m_logDiv;
   m_logDiv = nullptr;
-  
+
   UndoRedoManager *undoRedo = UndoRedoManager::instance();
   if( undoRedo && undoRedo->canAddUndoRedoNow() )
   {
@@ -6399,13 +5996,13 @@ void ShieldingSourceDisplay::closeCalcLogWindow()
       if( shieldSourceFit )
         shieldSourceFit->showCalcLog();
     };
-    
+
     auto redo = [](){
       ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
       if( shieldSourceFit )
         shieldSourceFit->closeCalcLogWindow();
     };
-    
+
     undoRedo->addUndoRedoStep( undo, redo, "Close calculation log." );
   }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
 }//void closeCalcLogWindow()
@@ -7526,7 +7123,7 @@ void ShieldingSourceDisplay::deSerialize( const ShieldingSourceDisplayState &sta
   m_sameIsotopesAge->setChecked( options.same_age_isotopes );
   m_decayCorrect->setChecked( options.account_for_decay_during_meas );
   m_showChiOnChart->setChecked( state.showChiOnChart );
-  m_chi2Graphic->setShowChiOnChart( state.showChiOnChart );
+  m_chi2Plot->setShowChi( state.showChiOnChart );
   string dist_str = PhysicalUnits::printToBestLengthUnits( state.config->distance, 6 );
   m_distanceEdit->setValueText( WString::fromUTF8(dist_str) );
   m_prevDistStr = dist_str;
@@ -7676,14 +7273,14 @@ void ShieldingSourceDisplay::layoutSizeChanged( int width, int height )
 
   if( m_nResizeSinceHint > 3 )
   {
-    if( m_height < 320 && !m_chi2Graphic->isHidden() )
+    if( m_height < 320 && !m_chi2Plot->isHidden() )
     {
-      m_chi2Graphic->hide();
+      m_chi2Plot->hide();
 //      m_layout->setRowStretch( 1, 0 );
       m_showChi2Text->show();
-    }else if( m_chi2Graphic->isHidden() && m_height >= 320 )
+    }else if( m_chi2Plot->isHidden() && m_height >= 320 )
     {
-      m_chi2Graphic->show();
+      m_chi2Plot->show();
       m_showChi2Text->hide();
 //      m_layout->setRowStretch( 1, 6 );
 //      leftLayout->setRowResizable( 0, true );
@@ -8416,23 +8013,26 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
 {
   WApplication *app = wApp;
   WApplication::UpdateLock applock( app );
-  
+
   if( !applock )
   {
     // Shouldnt ever get here
     cerr << "Failed to get application lock!" << endl;
     return;
   }
-  
+
   // Make sure we trigger a app update
   BOOST_SCOPE_EXIT(app){
     if( app )
       app->triggerUpdate();
   } BOOST_SCOPE_EXIT_END
- 
+
   ShieldSourceChange state_undo_creator( this, "Fit activity/shielding" );
-  
+
   assert( results );
+
+  // Cache the fit results for HTML log display
+  m_lastFitResults = results;
   
   setWidgetStateForFitBeingDone();
   
@@ -9397,6 +8997,109 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
     calcLog.push_back( "There was an error and log may not be complete." );
   }
 }//updateCalcLogWithFitResults(...)
+
+
+void ShieldingSourceDisplay::showShieldSourceDiagram()
+{
+  std::vector<ShieldingSourceFitCalc::ShieldingInfo> shieldings;
+  
+  for( WWidget *widget : m_shieldingSelects->children() )
+  {
+    ShieldingSelect *select = dynamic_cast<ShieldingSelect *>( widget );
+    if( select )
+      shieldings.push_back( select->toShieldingInfo() );
+  }
+
+  string distanceStr = m_distanceEdit->text().toUTF8();
+  double distance = 100.0 * PhysicalUnits::cm; // Default
+  try {
+     distance = PhysicalUnits::stringToDistance( distanceStr );
+  } catch(...) {
+     // Ignore, use default or what was parsed.
+  }
+  
+  std::shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
+  double detDiameter = 3.0 * 2.54 * PhysicalUnits::cm; // Default 3 inches
+  if( det && det->detectorDiameter() > 0.0 )
+    detDiameter = det->detectorDiameter();
+
+  std::vector<ShieldingSourceFitCalc::SourceFitDef> sources = m_sourceModel->underlyingData();
+  const GeometryType geom_type = geometry();
+  
+  if( m_diagramDialog )
+  {
+    // Dialog already exists, update its data and show it
+    m_diagramDialog->updateData( shieldings, sources, geom_type, distance, detDiameter );
+    m_diagramDialog->show();
+    return;
+  }
+  
+  m_diagramDialog = ShieldingDiagramDialog::createShieldingDiagram( shieldings, sources, geom_type, distance, detDiameter );
+  
+  //m_diagramDialog->destroyed().connect( std::bind([dialog_ptr]( Wt::WObject * ){
+  //  InterSpec *viewer = InterSpec::instance();
+  //  ShieldingSourceDisplay *shieldSourceFit = viewer ? viewer->shieldingSourceFit() : nullptr;
+  //  if( shieldSourceFit && shieldSourceFit->m_diagramDialog == dialog_ptr )
+  //    shieldSourceFit->m_diagramDialog = nullptr;
+  //}, std::placeholders::_1 ) );
+  
+  m_diagramDialog->finished().connect( this, &ShieldingSourceDisplay::handleShieldSourceDiagramClosed );
+  
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    auto undo = [](){
+      ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
+      if( shieldSourceFit )
+        shieldSourceFit->closeShieldSourceDiagram();
+    };
+
+    auto redo = [](){
+      ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
+      if( shieldSourceFit )
+        shieldSourceFit->showShieldSourceDiagram();
+    };
+
+    undoRedo->addUndoRedoStep( undo, redo, "Show shielding diagram." );
+  }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
+}//void showShieldSourceDiagram()
+
+
+void ShieldingSourceDisplay::handleShieldSourceDiagramClosed()
+{
+  m_diagramDialog = nullptr;
+  
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( !undoRedo || !undoRedo->canAddUndoRedoNow() )
+    return;
+  
+  auto undo = [](){
+    ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
+    if( shieldSourceFit )
+      shieldSourceFit->showShieldSourceDiagram();
+  };
+  
+  auto redo = [](){
+    ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
+    if( shieldSourceFit )
+      shieldSourceFit->closeShieldSourceDiagram();
+  };
+  
+  undoRedo->addUndoRedoStep( undo, redo, "Close shielding diagram." );
+}//void handleShieldSourceDiagramClosed();
+
+
+void ShieldingSourceDisplay::closeShieldSourceDiagram()
+{
+  if( !m_diagramDialog )
+    return;
+
+  // Delete the ShieldingDiagramDialog (it's a SimpleDialog, which is a WDialog subclass)
+  m_diagramDialog->accept();
+  assert( !m_diagramDialog );
+  m_diagramDialog = nullptr;
+}//void closeShieldSourceDiagram()
+
 
 
 

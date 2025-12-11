@@ -43,7 +43,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecServer.h"
 
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_CLI_TOOLS )
 #include "InterSpec/BatchCommandLine.h"
 #endif
 
@@ -70,7 +70,7 @@ int main( int argc, char **argv )
   int server_port_num;
   std::string docroot, wt_config, user_data_dir;
   
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_CLI_TOOLS )
   bool batch_peak_fit = false, batch_act_fit = false;
 #endif
   
@@ -115,7 +115,7 @@ int main( int argc, char **argv )
   ("static-data-dir", "The static data directory (e.g., 'data' dir that holds cross-sections, "
    "nuclear-data, etc) to use.  If not specified, uses 'data' in the `docroot` directory."
    )
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_CLI_TOOLS )
   ("batch-peak-fit", po::value<bool>(&batch_peak_fit)->implicit_value(true)->default_value(false),
      "Batch-fit peaks.\n"
      "\tUse '--batch-peak-fit --help' to see available options."
@@ -132,7 +132,7 @@ int main( int argc, char **argv )
   {
     po::parsed_options parsed_opts
       = po::command_line_parser(argc,argv)
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_CLI_TOOLS )
        .allow_unregistered()
 #endif
        .options(cl_desc)
@@ -148,7 +148,7 @@ int main( int argc, char **argv )
   }//try catch
   
   
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_CLI_TOOLS )
   const bool is_batch = (batch_peak_fit || batch_act_fit);
 #else
   const bool is_batch = false;
@@ -313,7 +313,7 @@ int main( int argc, char **argv )
   //return RelActAutoDev::dev_code();
 #endif
 
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_CLI_TOOLS )
   if( is_batch )
     return BatchCommandLine::run_batch_command( argc, argv );
 #endif

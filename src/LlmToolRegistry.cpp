@@ -14,6 +14,8 @@
 #include "InterSpec/LlmConfig.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/LlmInterface.h"
+#include "InterSpec/LlmToolGui.h"
+#include "InterSpec/LlmConversationHistory.h"
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
@@ -38,6 +40,10 @@
 
 #include "InterSpec/ShieldingSourceFitCalc.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
+#include "InterSpec/RelActCalc.h"
+#include "InterSpec/RelActCalcAuto.h"
+#include "InterSpec/LlmIsotopicsTool.h"
+#include "InterSpec/LlmActivityFitTool.h"
 
 #include "Minuit2/MnUserParameters.h"
 
@@ -52,7 +58,10 @@
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
+
 #include "SandiaDecay/SandiaDecay.h"
+
+#include "InterSpec/ReactionGamma.h"
 
 using namespace std;
 using json = nlohmann::json;
@@ -1082,32 +1091,97 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
     }else if( toolName == "activity_fit" )
     {
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
-        return executeActivityFit(params, interspec);
+        return ActivityFitTool::executeActivityFit(params, interspec);
+      };
+    }else if( toolName == "activity_fit_one_off" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return ActivityFitTool::executeActivityFitOneOff(params, interspec);
       };
     }else if( toolName == "get_shielding_source_config" )
     {
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
-        return executeGetShieldingSourceConfig(params, interspec);
+        return ActivityFitTool::executeGetShieldingSourceConfig(params, interspec);
       };
     }else if( toolName == "modify_shielding_source_config" )
     {
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
-        return executeModifyShieldingSourceConfig(params, interspec);
+        return ActivityFitTool::executeModifyShieldingSourceConfig(params, interspec);
       };
     }else if( toolName == "mark_peaks_for_activity_fit" )
     {
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
-        return executeMarkPeaksForActivityFit(params, interspec);
+        return ActivityFitTool::executeMarkPeaksForActivityFit(params, interspec);
       };
     }else if( toolName == "close_activity_shielding_display" )
     {
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
-        return executeCloseActivityShieldingDisplay(params, interspec);
+        return ActivityFitTool::executeCloseActivityShieldingDisplay(params, interspec);
       };
     }else if( toolName == "ask_user_question" )
     {
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
-        return executeAskUserQuestion(params, interspec);
+        return ActivityFitTool::executeAskUserQuestion(params, interspec);
+      };
+    }else if( toolName == "set_workflow_state" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeSetWorkflowState(params, interspec);
+      };
+    }else if( toolName == "list_isotopics_presets" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return IsotopicsTool::executeListIsotopicsPresets(params, interspec);
+      };
+    }else if( toolName == "get_isotopics_config" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return IsotopicsTool::executeGetIsotopicsConfig(params, interspec);
+      };
+    }else if( toolName == "reset_isotopics_config" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return IsotopicsTool::executeResetIsotopicsConfig(params, interspec);
+      };
+    }else if( toolName == "load_isotopics_preset" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return IsotopicsTool::executeLoadIsotopicsPreset(params, interspec);
+      };
+    }else if( toolName == "perform_isotopics_calculation" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return IsotopicsTool::executePerformIsotopics(params, interspec);
+      };
+    }else if( toolName == "modify_isotopics_nuclides" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return IsotopicsTool::executeModifyIsotopicsNuclides(params, interspec);
+      };
+    }else if( toolName == "modify_isotopics_rois" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return IsotopicsTool::executeModifyIsotopicsRois(params, interspec);
+      };
+    }else if( toolName == "modify_isotopics_curve_settings" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return IsotopicsTool::executeModifyIsotopicsCurveSettings(params, interspec);
+      };
+    }else if( toolName == "modify_isotopics_options" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return IsotopicsTool::executeModifyIsotopicsOptions(params, interspec);
+      };
+    }else if( toolName == "modify_isotopics_constraints" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return IsotopicsTool::executeModifyIsotopicsConstraints(params, interspec);
+      };
+    }else if( toolName == "get_isotopics_config_schema" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return IsotopicsTool::executeGetIsotopicsConfigSchema(params, interspec);
       };
     }else
     {
@@ -1279,11 +1353,24 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     "detector_efficiency_function_info",
     "search_sources_by_energy",
     "activity_fit",
+    "activity_fit_one_off",
     "ask_user_question",
     "close_activity_shielding_display",
     "get_shielding_source_config",
     "mark_peaks_for_activity_fit",
-    "modify_shielding_source_config"
+    "modify_shielding_source_config",
+    "get_isotopics_config",
+    "get_isotopics_config_schema",
+    "list_isotopics_presets",
+    "load_isotopics_preset",
+    "modify_isotopics_constraints",
+    "modify_isotopics_curve_settings",
+    "modify_isotopics_nuclides",
+    "modify_isotopics_options",
+    "modify_isotopics_rois",
+    "perform_isotopics_calculation",
+    "reset_isotopics_config"
+    "set_workflow_state",
   };
 
   std::vector<std::string> missingTools;
@@ -2217,40 +2304,241 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
   if (!spectrum)
     throw std::runtime_error("No foreground spectrum loaded");
 
-  // Parse only the selected parameters
+  // Parse basic parameters
   const double energy = get_number( params, "energy" );
   const double detection_probability = get_number( params, "detectionProbability", 0.95 );
   const float additional_uncertainty = static_cast<float>( get_number( params, "additionalUncertainty", 0.0 ) );
+  const bool assert_background_spectrum = get_boolean( params, "assertBackgroundSpectrum", false );
 
-  // Get expected FWHM for the energy to determine ROI width
+  // Parse optional nuclide, distance, age, and shielding parameters
+  const SandiaDecay::Nuclide *nuclide = nullptr;
+  double distance = -1.0;
+  double age = -1.0;
+  double branch_ratio = 0.0;
+  double shield_transmission = 1.0;
+  bool has_nuclide = false;
+  bool has_distance = false;
+  bool has_shielding = false;
+
+  if( params.contains("nuclide") && params["nuclide"].is_string() )
+  {
+    string nuclide_str = params["nuclide"].get<string>();
+    SpecUtils::trim( nuclide_str );
+    if( !nuclide_str.empty() )
+    {
+      const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+      if( !db )
+        throw runtime_error( "Could not initialize nuclide DecayDataBase." );
+      
+      nuclide = db->nuclide( nuclide_str );
+      if( !nuclide )
+        throw runtime_error( "Could not find nuclide '" + nuclide_str + "' in decay database." );
+      
+      has_nuclide = true;
+    }
+  }
+
+  if( params.contains("distance") && params["distance"].is_string() )
+  {
+    string distance_str = params["distance"].get<string>();
+    SpecUtils::trim( distance_str );
+    if( !distance_str.empty() )
+    {
+      distance = PhysicalUnits::stringToDistance( distance_str );
+      if( distance < 0.0 )
+        throw runtime_error( "Distance must be non-negative, got '" + distance_str + "'." );
+      has_distance = true;
+    }
+  }
+
+  // Get expected FWHM for the energy (needed for ROI width and branch ratio calculation)
   float fwhm = -1.0;
   shared_ptr<SpecMeas> meas = interspec->measurment(SpecUtils::SpectrumType::Foreground);
-  if (meas && meas->detector() && meas->detector()->hasResolutionInfo())
-    fwhm = meas->detector()->peakResolutionFWHM(static_cast<float>(energy));
   
-  // Fallback FWHM estimation if needed
-  if (fwhm <= 0.0) {
-    const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
-    const vector<float> pars = isHPGe ? vector<float>{1.54f, 0.264f, 0.33f} : vector<float>{-6.5f, 7.5f, 0.55f};
-    fwhm = DetectorPeakResponse::peakResolutionFWHM(energy, DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn, pars);
+  // If nuclide or distance is provided, require a valid detector
+  if( has_nuclide || has_distance )
+  {
+    if( !meas || !meas->detector() || !meas->detector()->isValid() )
+      throw runtime_error( "A valid detector efficiency function is required when nuclide or distance is specified." );
+  }
+  
+  // Try to get FWHM using AnalystChecks::get_expected_fwhm first
+  try
+  {
+    fwhm = AnalystChecks::get_expected_fwhm( energy, interspec );
+  }
+  catch( std::exception & )
+  {
+    // Fallback FWHM estimation if AnalystChecks::get_expected_fwhm fails
+    if (meas && meas->detector() && meas->detector()->hasResolutionInfo())
+      fwhm = meas->detector()->peakResolutionFWHM(static_cast<float>(energy));
+    
+    if (fwhm <= 0.0) {
+      const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
+      const vector<float> pars = isHPGe ? vector<float>{1.54f, 0.264f, 0.33f} : vector<float>{-6.5f, 7.5f, 0.55f};
+      fwhm = DetectorPeakResponse::peakResolutionFWHM(energy, DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn, pars);
+    }
   }
 
   if (fwhm <= 0.0)
     throw std::runtime_error("Could not determine FWHM for energy " + std::to_string(energy));
 
-  // Set up CurrieMdaInput with fixed values for ROI and side channels
+  if( has_nuclide )
+  {
+    // Parse age if provided
+    if( params.contains("age") && params["age"].is_string() )
+    {
+      string age_str = params["age"].get<string>();
+      SpecUtils::trim( age_str );
+      if( !age_str.empty() )
+      {
+        try
+        {
+          age = PhysicalUnits::stringToTimeDuration( age_str );
+          if( age < 0.0 )
+            throw runtime_error( "Age must be non-negative, got '" + age_str + "'." );
+        }catch( std::exception &e )
+        {
+          throw runtime_error( "Could not interpret '" + age_str + "' as a time duration for nuclide age: " + e.what() );
+        }
+      }
+    }
+    
+    // If age not provided, use default age for the nuclide
+    if( age < 0.0 )
+      age = PeakDef::defaultDecayTime( nuclide );
+
+    // Calculate branch ratio for the specified energy
+    const double dummy_activity = 0.001 * SandiaDecay::curie;
+    SandiaDecay::NuclideMixture mixture;
+    mixture.addAgedNuclideByActivity( nuclide, dummy_activity, age );
+    
+    const vector<SandiaDecay::EnergyRatePair> photons = mixture.photons( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy );
+    
+    // Find the largest amplitude line within 1.0 keV of the specified energy
+    const double energy_tolerance = 1.0; // keV
+    const SandiaDecay::EnergyRatePair *largest_amplitude_erp = nullptr;
+    double largest_amplitude = 0.0;
+    
+    for( const SandiaDecay::EnergyRatePair &erp : photons )
+    {
+      if( fabs(erp.energy - energy) < energy_tolerance )
+      {
+        const double amplitude = erp.numPerSecond / dummy_activity;
+        if( amplitude > largest_amplitude )
+        {
+          largest_amplitude = amplitude;
+          largest_amplitude_erp = &erp;
+        }
+      }
+    }
+    
+    if( !largest_amplitude_erp )
+      throw runtime_error( "Could not find a gamma or x-ray within " + to_string(energy_tolerance) + " keV of energy " + to_string(energy) + " keV for nuclide " + nuclide->symbol + "." );
+    
+    // Calculate peak_sigma from FWHM (FWHM = 2.355 * sigma)
+    const double peak_sigma = static_cast<double>(fwhm) / 2.355;
+    const double peak_window = 1.25 * peak_sigma;
+    const double largest_energy = largest_amplitude_erp->energy;
+    
+    // Sum all gammas within 1.25*peak_sigma of the largest amplitude gamma line
+    for( const SandiaDecay::EnergyRatePair &erp : photons )
+    {
+      if( fabs(erp.energy - largest_energy) < peak_window )
+      {
+        branch_ratio += erp.numPerSecond / dummy_activity;
+      }
+    }
+    
+    if( branch_ratio <= 0.0 )
+      throw runtime_error( "Could not calculate branch ratio for energy " + to_string(energy) + " keV for nuclide " + nuclide->symbol + "." );
+  }
+
+  // Parse shielding if provided
+  if( params.contains("shielding") && params["shielding"].is_object() )
+  {
+    has_shielding = true;
+    const json &shielding_json = params["shielding"];
+    
+    const bool has_ad = shielding_json.contains("AD");
+    const bool has_an = shielding_json.contains("AN");
+    const bool has_material = shielding_json.contains("Material");
+    const bool has_thickness = shielding_json.contains("Thickness");
+    
+    if( has_ad && has_an && !has_material && !has_thickness )
+    {
+      // Generic shielding (AD/AN format)
+      const double areal_density = get_double( shielding_json["AD"] ) * (PhysicalUnits::g / PhysicalUnits::cm2);
+      const double atomic_number = get_double( shielding_json["AN"] );
+      
+      if( areal_density < 0.0 )
+        throw runtime_error( "Areal density (AD) must be non-negative." );
+      
+      if( atomic_number <= 0.0 || atomic_number > 100.0 )
+        throw runtime_error( "Atomic number (AN) must be between 1 and 100." );
+      
+      const float energy_float = static_cast<float>( energy * PhysicalUnits::keV );
+      const double mu = GammaInteractionCalc::transmition_coefficient_generic(
+        static_cast<float>(atomic_number),
+        static_cast<float>(areal_density),
+        energy_float
+      );
+      shield_transmission = exp( -mu );
+    }
+    else if( has_material && has_thickness && !has_ad && !has_an )
+    {
+      // Material shielding
+      const string material_name = shielding_json["Material"].get<string>();
+      const string thickness_str = shielding_json["Thickness"].get<string>();
+      
+      MaterialDB *materialDB = interspec->materialDataBase();
+      if( !materialDB )
+        throw runtime_error( "Material database not available." );
+      
+      const Material *material = materialDB->material( material_name );
+      if( !material )
+        throw runtime_error( "Material '" + material_name + "' not found in material database." );
+      
+      const double thickness = PhysicalUnits::stringToDistance( thickness_str );
+      if( thickness < 0.0 )
+        throw runtime_error( "Thickness must be non-negative for material '" + material_name + "', got '" + thickness_str + "'." );
+      
+      const float energy_float = static_cast<float>( energy * PhysicalUnits::keV );
+      const double mu = GammaInteractionCalc::transmition_coefficient_material(
+        material,
+        energy_float,
+        static_cast<float>(thickness)
+      );
+      shield_transmission = exp( -mu );
+    }
+    else
+    {
+      throw runtime_error( "Shielding must have either (AD and AN) or (Material and Thickness), not a mix." );
+    }
+  }
+
+  // Set up CurrieMdaInput
   DetectionLimitCalc::CurrieMdaInput input;
   input.spectrum = spectrum;
   input.gamma_energy = static_cast<float>(energy);
   
-  // Set ROI to be ±1.5 FWHM around the energy
-  const float roi_half_width = 1.25f * fwhm; // recommended by ISO 11929:2010, could instead use 1.19
+  // Set ROI to be ±1.25 FWHM around the energy (recommended by ISO 11929:2010)
+  const float roi_half_width = 1.25f * fwhm;
   input.roi_lower_energy = static_cast<float>(energy) - roi_half_width;
   input.roi_upper_energy = static_cast<float>(energy) + roi_half_width;
   
-  // Use fixed values for side channels (typical values)
-  input.num_lower_side_channels = 4;
-  input.num_upper_side_channels = 4;
+  // Handle side channels based on assertBackgroundSpectrum
+  if( assert_background_spectrum )
+  {
+    input.num_lower_side_channels = 0;
+    input.num_upper_side_channels = 0;
+  }
+  else
+  {
+    // Use fixed values for side channels (typical values)
+    input.num_lower_side_channels = 4;
+    input.num_upper_side_channels = 4;
+  }
   
   // Use the parsed parameters
   input.detection_probability = detection_probability;
@@ -2259,9 +2547,87 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
   // Call the DetectionLimitCalc function to perform the calculation
   const DetectionLimitCalc::CurrieMdaResult result = DetectionLimitCalc::currie_mda_calc(input);
 
-  // Convert the result to JSON and return
+  // Convert the result to JSON
   json result_json;
   to_json(result_json, result);
+
+  // If nuclide and distance are provided, calculate and add activity information
+  if( has_nuclide && has_distance )
+  {
+    shared_ptr<const DetectorPeakResponse> drf = meas ? meas->detector() : nullptr;
+    if( drf && !drf->isValid() )
+      drf.reset();
+    
+    if( !drf )
+      throw runtime_error( "Distance specified but no detector efficiency function is currently loaded." );
+    
+    const bool fixed_geom = drf->isFixedGeometry();
+    if( fixed_geom && has_distance )
+      throw runtime_error( "Distance cannot be specified when detector efficiency function is for fixed geometry." );
+    
+    const float energy_float = static_cast<float>(energy);
+    const double det_eff = fixed_geom ? drf->intrinsicEfficiency(energy_float)
+                                      : drf->efficiency(energy_float, distance);
+    
+    const float live_time = spectrum->live_time();
+    const double air_transmission = (distance > 0.0) 
+      ? exp( -GammaInteractionCalc::transmission_coefficient_air( energy_float, static_cast<float>(distance) ) )
+      : 1.0;
+    
+    const double counts_per_bq_into_4pi = branch_ratio * live_time * shield_transmission;
+    const double counts_per_bq_into_4pi_with_air = air_transmission * counts_per_bq_into_4pi;
+    const double counts_4pi = fixed_geom ? counts_per_bq_into_4pi : counts_per_bq_into_4pi_with_air;
+    const double gammas_per_bq = counts_4pi * det_eff;
+    
+    if( gammas_per_bq > 0.0 )
+    {
+      // Add activity-related fields
+      result_json["gammasPerBq"] = gammas_per_bq;
+      result_json["branchRatio"] = branch_ratio;
+      
+      if( has_shielding )
+        result_json["shieldingTransmission"] = shield_transmission;
+      
+      if( distance > 0.0 && !fixed_geom )
+        result_json["airTransmission"] = air_transmission;
+      
+      if( drf )
+      {
+        result_json["detectorIntrinsicEfficiency"] = drf->intrinsicEfficiency(energy_float);
+        
+        if( distance >= 0.0 && !fixed_geom )
+        {
+          const double geom_eff = DetectorPeakResponse::fractionalSolidAngle( drf->detectorDiameter(), distance );
+          result_json["solidAngleFraction"] = geom_eff;
+        }
+      }
+      
+      // Convert counts to activity
+      if( result.source_counts > result.decision_threshold )
+      {
+        // Signal detected - provide observed activity and range
+        const double nominal_act = result.source_counts / gammas_per_bq;
+        result_json["observedActivity"] = nominal_act;
+        
+        const double lower_act = result.lower_limit / gammas_per_bq;
+        const double upper_act = result.upper_limit / gammas_per_bq;
+        result_json["activityRange"] = json{{"lower", lower_act}, {"upper", upper_act}};
+      }
+      else if( result.upper_limit >= 0.0 )
+      {
+        // No signal detected - provide upper bound
+        const double simple_mda = result.upper_limit / gammas_per_bq;
+        result_json["activityUpperBound"] = simple_mda;
+      }
+      
+      // Always provide decision threshold and detection limit in activity
+      const double decision_threshold_act = result.decision_threshold / gammas_per_bq;
+      result_json["decisionThresholdActivity"] = decision_threshold_act;
+      
+      const double detection_limit_act = result.detection_limit / gammas_per_bq;
+      result_json["detectionLimitActivity"] = detection_limit_act;
+    }
+  }
 
   return result_json;
 }//nlohmann::json executeCurrieMdaCalc(const nlohmann::json& params, InterSpec* interspec)
@@ -4110,1627 +4476,97 @@ nlohmann::json ToolRegistry::executeSearchSourcesByEnergy(nlohmann::json params,
 }//nlohmann::json executeSearchSourcesByEnergy(...)
 
 
-// ============================================================================
-// Activity/Shielding Fit Tools Implementation
-// ============================================================================
-
-namespace {
-  // Helper functions for activity/shielding fitting
-
-  /** Parse a distance/length string with units (e.g., "100 cm", "3 ft", "1.5 m")
-   * Returns value in PhysicalUnits (mm base unit).
-   * If input is numeric without units, assumes cm.
-   */
-  double parse_distance_string( const string &distance_str )
-  {
-    string trimmed = distance_str;
-    SpecUtils::trim( trimmed );
-
-    // Try to parse with units first
-    try
-    {
-      return PhysicalUnits::stringToDistance( trimmed );
-    }catch( std::exception & )
-    {
-      // If that failed, check if it's a plain number
-    }
-
-    // Check if string contains only valid numeric characters
-    bool has_invalid_chars = false;
-    for( const char c : trimmed )
-    {
-      if( !std::isdigit(c) && c != '.' && c != 'e' && c != 'E' &&
-          c != '+' && c != '-' && c != ' ' )
-      {
-        has_invalid_chars = true;
-        break;
-      }
-    }
-
-    if( has_invalid_chars )
-      throw runtime_error( "Could not parse distance '" + distance_str + "': invalid format" );
-
-    // Parse as plain number and assume cm
-    double val = 0.0;
-    if( !SpecUtils::parse_double( trimmed.c_str(), trimmed.size(), val ) )
-      throw runtime_error( "Could not parse distance '" + distance_str + "' as a number" );
-
-    return val * PhysicalUnits::cm;
-  }//parse_distance_string(...)
 
 
-  /** Parse an activity string with units (e.g., "10 uCi", "1 MBq", "100 Bq")
-   * Returns value in PhysicalUnits (becquerels).
-   */
-  double parse_activity_string( const string &activity_str )
-  {
-    string trimmed = activity_str;
-    SpecUtils::trim( trimmed );
-
-    try
-    {
-      return PhysicalUnits::stringToActivity( trimmed );
-    }catch( std::exception &e )
-    {
-      throw runtime_error( "Could not parse activity '" + activity_str + "': " + e.what() );
-    }
-  }//parse_activity_string(...)
-
-
-  /** Parse an age/time string with units (e.g., "20 years", "6 months", "100 days")
-   * Returns value in PhysicalUnits (seconds).
-   * If input is numeric, assumes seconds.
-   */
-  double parse_age_string( const string &age_str )
-  {
-    string trimmed = age_str;
-    SpecUtils::trim( trimmed );
-
-    // Try to parse as plain number first (assume seconds)
-    try
-    {
-      const double val = std::stod( trimmed );
-      return val * PhysicalUnits::second;
-    }catch(...)
-    {
-    }
-
-    // Parse with units
-    try
-    {
-      return PhysicalUnits::stringToTimeDuration( trimmed );
-    }catch( std::exception &e )
-    {
-      throw runtime_error( "Could not parse age/time '" + age_str + "': " + e.what() );
-    }
-  }//parse_age_string(...)
-
-
-  /** Find a peak by energy with tolerance of max(FWHM, 1 keV).
-   * Returns pointer to peak, or nullptr if not found.
-   * Throws exception if multiple peaks match (ambiguous).
-   */
-  std::shared_ptr<const PeakDef> find_peak_by_energy(
-    const double energy,
-    const std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> &peaks,
-    const string &context_msg = ""
-  )
-  {
-    if( !peaks || peaks->empty() )
-      return nullptr;
-
-    std::shared_ptr<const PeakDef> found_peak;
-
-    for( const auto &peak : *peaks )
-    {
-      if( !peak )
-        continue;
-
-      const double peak_energy = peak->mean();
-      const double tolerance = std::max( peak->fwhm(), 1.0 );
-
-      if( fabs(energy - peak_energy) <= tolerance )
-      {
-        if( found_peak )
-        {
-          // Multiple peaks match - ambiguous
-          string msg = "Multiple peaks found near " + std::to_string(energy) + " keV";
-          if( !context_msg.empty() )
-            msg += " (" + context_msg + ")";
-          msg += ". Found peaks at " + std::to_string(found_peak->mean())
-                + " keV and " + std::to_string(peak_energy) + " keV.";
-          throw runtime_error( msg );
-        }
-        found_peak = peak;
-      }
-    }
-
-    return found_peak;
-  }//find_peak_by_energy(...)
-
-
-  /** Check if age fitting is allowed for a nuclide (equivalent to !PeakDef::ageFitNotAllowed()).
-   * Age fitting is not allowed if:
-   * - Nuclide is null or decays to stable children
-   * - Nuclide reaches equilibrium too quickly (e.g., Cs-137)
-   * - No gamma-emitting progeny exist
-   */
-  bool is_age_fit_allowed( const SandiaDecay::Nuclide *nuc )
-  {
-    if( !nuc )
-      return false;
-
-    // Use the PeakDef function if available
-    return !PeakDef::ageFitNotAllowed( nuc );
-  }//is_age_fit_allowed(...)
-
-
-  /** Count unique progeny nuclides with peaks assigned.
-   * Only counts peaks with useForShieldingSourceFit() == true.
-   */
-  size_t count_progeny_peaks(
-    const SandiaDecay::Nuclide *parent_nuc,
-    const std::deque<std::shared_ptr<const PeakDef>> &peaks
-  )
-  {
-    if( !parent_nuc )
-      return 0;
-
-    std::set<const SandiaDecay::Nuclide*> progeny_nuclides;
-
-    for( const auto &peak : peaks )
-    {
-      if( !peak || !peak->useForShieldingSourceFit() )
-        continue;
-
-      if( peak->parentNuclide() != parent_nuc )
-        continue;
-
-      const SandiaDecay::Transition *trans = peak->nuclearTransition();
-      if( trans && trans->parent )
-      {
-        // This is a progeny peak
-        if( trans->parent != parent_nuc )
-          progeny_nuclides.insert( trans->parent );
-      }
-    }
-
-    return progeny_nuclides.size();
-  }//count_progeny_peaks(...)
-
-}//namespace
-
-
-nlohmann::json ToolRegistry::executeCloseActivityShieldingDisplay(
+nlohmann::json ToolRegistry::executeSetWorkflowState(
   const nlohmann::json& params,
-  InterSpec* interspec
-)
+  InterSpec* interspec )
 {
+  using namespace std;
+
   if( !interspec )
-    throw runtime_error( "InterSpec instance required for close_activity_shielding_display" );
-
-  json result;
-  result["success"] = false;
-
-  // Get the ShieldingSourceDisplay from InterSpec
-  ShieldingSourceDisplay *display = interspec->shieldingSourceFit();
-
-  if( !display )
-  {
-    result["message"] = "Activity/Shielding fit GUI is not currently open";
-    result["success"] = true; // Not an error - just wasn't open
-    return result;
-  }
-
-  // Close the display (this will delete it)
-  interspec->closeShieldingSourceFit();
-
-  result["success"] = true;
-  result["message"] = "Activity/Shielding fit GUI closed successfully";
-
-  return result;
-}//executeCloseActivityShieldingDisplay(...)
-
-
-nlohmann::json ToolRegistry::executeAskUserQuestion(
-  const nlohmann::json& params,
-  InterSpec* interspec
-)
-{
-  if( !interspec )
-    throw runtime_error( "InterSpec instance required for ask_user_question" );
+    throw runtime_error( "InterSpec instance required for set_workflow_state" );
 
   // Get parameters
-  const string question = params.value( "question", string() );
-  if( question.empty() )
-    throw runtime_error( "question parameter is required" );
+  const string new_state = params.value( "state", string() );
+  const string notes = params.value( "notes", string() );
 
-  const string default_response = params.value( "default_response", string() );
+  if( new_state.empty() )
+    throw runtime_error( "state parameter is required" );
 
   json result;
-
-  // Create a modal dialog
-  Wt::WDialog *dialog = new Wt::WDialog( "Question from Analysis Agent" );
-  dialog->setModal( true );
-  dialog->rejectWhenEscapePressed( false );
-
-  // Add question text
-  new Wt::WText( question, dialog->contents() );
-  dialog->contents()->addWidget( new Wt::WBreak() );
-  dialog->contents()->addWidget( new Wt::WBreak() );
-
-  // Add text area for response
-  Wt::WTextArea *response_area = new Wt::WTextArea( dialog->contents() );
-  response_area->setColumns( 60 );
-  response_area->setRows( 5 );
-  if( !default_response.empty() )
-    response_area->setText( default_response );
-
-  dialog->contents()->addWidget( new Wt::WBreak() );
-
-  // Add submit button
-  Wt::WPushButton *submit_btn = new Wt::WPushButton( "Submit", dialog->contents() );
-  submit_btn->setDefault( true );
-
-  // Result will be stored here
-  string user_response;
-  bool dialog_finished = false;
-
-  // Connect submit button (note: clicked() provides a WMouseEvent parameter)
-  submit_btn->clicked().connect( [dialog, response_area, &user_response, &dialog_finished](const Wt::WMouseEvent &) {
-    user_response = response_area->text().toUTF8();
-    dialog_finished = true;
-    dialog->accept();
-  });
-
-  // Execute the dialog (blocking)
-  dialog->exec();
-
-  // Return the user's response
-  result["response"] = user_response;
   result["success"] = true;
+  result["new_state"] = new_state;
 
-  return result;
-}//executeAskUserQuestion(...)
+  if( !notes.empty() )
+    result["notes"] = notes;
 
-
-nlohmann::json ToolRegistry::executeMarkPeaksForActivityFit(
-  const nlohmann::json& params,
-  InterSpec* interspec
-)
-{
-  if( !interspec )
-    throw runtime_error( "InterSpec instance required for mark_peaks_for_activity_fit" );
-
-  // Get parameters
-  if( !params.contains("peak_energies") || !params["peak_energies"].is_array() )
-    throw runtime_error( "peak_energies array parameter is required" );
-
-  const bool use_for_fit = params.value( "use_for_fit", true );
-  const string spec_type_str = params.value( "specType", string("Foreground") );
-
-  SpecUtils::SpectrumType spec_type = SpecUtils::SpectrumType::Foreground;
-  if( spec_type_str == "Background" )
-    spec_type = SpecUtils::SpectrumType::Background;
-  else if( spec_type_str == "Secondary" )
-    spec_type = SpecUtils::SpectrumType::SecondForeground;
-
-  // Get the PeakModel - this is the correct way to modify peaks
-  PeakModel *peakModel = interspec->peakModel();
-  if( !peakModel )
-    throw runtime_error( "PeakModel not available" );
-
-  std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> peaks = peakModel->peaks();
-  if( !peaks || peaks->empty() )
-    throw runtime_error( "No peaks available for " + spec_type_str );
-
-  json result;
-  result["marked_peaks"] = json::array();
-  result["errors"] = json::array();
-
-  int num_marked = 0;
-
-  // Process each energy
-  for( const auto &energy_json : params["peak_energies"] )
+  // Get current LLM interface and conversation
+  LlmToolGui *llm_gui = interspec->currentLlmTool();
+  if( !llm_gui )
   {
-    const double energy = energy_json.get<double>();
-
-    try
-    {
-      // Find the peak by energy
-      bool found = false;
-      for( size_t i = 0; i < peaks->size(); ++i )
-      {
-        const std::shared_ptr<const PeakDef> &peak = (*peaks)[i];
-        if( !peak )
-          continue;
-
-        const double peak_energy = peak->mean();
-        const double tolerance = std::max( peak->fwhm(), 1.0 );
-
-        if( std::fabs( peak_energy - energy ) <= tolerance )
-        {
-          // Check if we need to actually change the flag
-          if( peak->useForShieldingSourceFit() != use_for_fit )
-          {
-            // Use PeakModel::setData to properly modify the peak flag
-            Wt::WModelIndex model_index = peakModel->index( i, PeakModel::kUseForShieldingSourceFit );
-            peakModel->setData( model_index, boost::any(use_for_fit) );
-
-            json marked_peak;
-            marked_peak["energy"] = peak_energy;
-            marked_peak["use_for_fit"] = use_for_fit;
-            if( peak->parentNuclide() )
-              marked_peak["nuclide"] = peak->parentNuclide()->symbol;
-            result["marked_peaks"].push_back( marked_peak );
-
-            ++num_marked;
-          }
-
-          found = true;
-          break;
-        }
-      }//for( loop over peaks to find match )
-
-      if( !found )
-      {
-        json error;
-        error["energy"] = energy;
-        error["error"] = "No peak found near " + std::to_string(energy) + " keV";
-        result["errors"].push_back( error );
-      }
-
-    }catch( std::exception &e )
-    {
-      json error;
-      error["energy"] = energy;
-      error["error"] = e.what();
-      result["errors"].push_back( error );
-    }
-  }//for( loop over peak energies )
-
-  result["num_marked"] = num_marked;
-  result["success"] = (num_marked > 0);
-
-  return result;
-}//executeMarkPeaksForActivityFit(...)
-
-
-/** Helper function to convert ShieldingSourceDisplayState to JSON.
- * This function converts the configuration and peaks from a ShieldingSourceDisplayState
- * into a JSON format consistent with the modify_shielding_source_config tool.
- *
- * @param state The ShieldingSourceDisplayState to convert
- * @param peaks The peaks to use for counting progeny peaks; if nullptr, progeny peak counts will not be included
- * @return JSON object with configuration and peaks
- */
-nlohmann::json format_shielding_source_state_to_json(
-  const ShieldingSourceDisplay::ShieldingSourceDisplayState &state,
-  const std::deque<std::shared_ptr<const PeakDef>> *peaks
-)
-{
-  json result;
-
-  if( !state.config )
-    return result;
-
-  const GammaInteractionCalc::ShieldSourceConfig &config = *state.config;
-
-  // Format distance
-  const double distance_cm = config.distance / PhysicalUnits::cm;
-  result["distance_cm"] = distance_cm;
-
-  // Format geometry
-  switch( config.geometry )
-  {
-    case GammaInteractionCalc::GeometryType::Spherical:
-      result["geometry"] = "Spherical";
-      break;
-    case GammaInteractionCalc::GeometryType::CylinderSideOn:
-      result["geometry"] = "CylinderSideOn";
-      break;
-    case GammaInteractionCalc::GeometryType::CylinderEndOn:
-      result["geometry"] = "CylinderEndOn";
-      break;
-    case GammaInteractionCalc::GeometryType::Rectangular:
-      result["geometry"] = "Rectangular";
-      break;
-    case GammaInteractionCalc::GeometryType::NumGeometryType:
-      result["geometry"] = "Unknown";
-      break;
-  }
-
-  // Format shielding layers
-  result["shielding"] = json::array();
-  for( size_t i = 0; i < config.shieldings.size(); ++i )
-  {
-    const ShieldingSourceFitCalc::ShieldingInfo &shield = config.shieldings[i];
-    json shield_json;
-
-    shield_json["index"] = i;
-
-    if( shield.m_material )
-    {
-      shield_json["material"] = shield.m_material->name;
-      shield_json["is_generic"] = false;
-    }
-    else if( shield.m_isGenericMaterial )
-    {
-      shield_json["material"] = "Generic (AN=" + std::to_string(shield.m_dimensions[0]) + ")";
-      shield_json["is_generic"] = true;
-    }
-
-    // Format dimensions based on geometry
-    switch( shield.m_geometry )
-    {
-      case GammaInteractionCalc::GeometryType::Spherical:
-        shield_json["radial_thickness_cm"] = shield.m_dimensions[0] / PhysicalUnits::cm;
-        shield_json["fit_thickness"] = shield.m_fitDimensions[0];
-        break;
-
-      case GammaInteractionCalc::GeometryType::CylinderSideOn:
-      case GammaInteractionCalc::GeometryType::CylinderEndOn:
-        shield_json["radius_cm"] = shield.m_dimensions[0] / PhysicalUnits::cm;;
-        shield_json["length_cm"] = shield.m_dimensions[1] / PhysicalUnits::cm;
-        shield_json["fit_radius"] = shield.m_fitDimensions[0];
-        shield_json["fit_length"] = shield.m_fitDimensions[1];
-        break;
-
-      case GammaInteractionCalc::GeometryType::Rectangular:
-        shield_json["width_cm"] = shield.m_dimensions[0] / PhysicalUnits::cm;;
-        shield_json["height_cm"] = shield.m_dimensions[1] / PhysicalUnits::cm;;
-        shield_json["depth_cm"] = shield.m_dimensions[2] / PhysicalUnits::cm;;
-        shield_json["fit_width"] = shield.m_fitDimensions[0];
-        shield_json["fit_height"] = shield.m_fitDimensions[1];
-        shield_json["fit_depth"] = shield.m_fitDimensions[2];
-        break;
-
-      case GammaInteractionCalc::GeometryType::NumGeometryType:
-        break;
-    }
-
-    // Add trace sources if any
-    if( !shield.m_traceSources.empty() )
-    {
-      shield_json["trace_sources"] = json::array();
-      for( const ShieldingSourceFitCalc::TraceSourceInfo &trace : shield.m_traceSources )
-      {
-        json trace_json;
-
-        if( trace.m_nuclide )
-          trace_json["nuclide"] = trace.m_nuclide->symbol;
-
-        trace_json["activity"] = trace.m_activity;
-        trace_json["fit_activity"] = trace.m_fitActivity;
-
-        // Format trace activity type
-        switch( trace.m_type )
-        {
-          case GammaInteractionCalc::TraceActivityType::TotalActivity:
-            trace_json["activity_type"] = "TotalActivity";
-            trace_json["units"] = "Bq";
-            break;
-          case GammaInteractionCalc::TraceActivityType::ActivityPerCm3:
-            trace_json["activity_type"] = "ActivityPerCm3";
-            trace_json["units"] = "Bq/cm3";
-            break;
-          case GammaInteractionCalc::TraceActivityType::ExponentialDistribution:
-            trace_json["activity_type"] = "ExponentialDistribution";
-            trace_json["units"] = "Bq/m2";
-            trace_json["relaxation_distance_cm"] = trace.m_relaxationDistance;
-            break;
-          case GammaInteractionCalc::TraceActivityType::ActivityPerGram:
-            trace_json["activity_type"] = "ActivityPerGram";
-            trace_json["units"] = "Bq/g";
-            break;
-          case GammaInteractionCalc::TraceActivityType::NumTraceActivityType:
-            break;
-        }
-
-        shield_json["trace_sources"].push_back( trace_json );
-      }
-    }
-
-    // Add self-attenuating (intrinsic) source nuclide fractions if any
-    if( !shield.m_nuclideFractions_.empty() )
-    {
-      shield_json["self_atten_sources"] = json::array();
-      for( const auto &elem_fractions : shield.m_nuclideFractions_ )
-      {
-        const SandiaDecay::Element *element = elem_fractions.first;
-        const auto &nuclide_vec = elem_fractions.second;
-
-        for( const auto &nuc_tuple : nuclide_vec )
-        {
-          const SandiaDecay::Nuclide *nuclide = std::get<0>( nuc_tuple );
-          const double mass_fraction = std::get<1>( nuc_tuple );
-          const bool fit_fraction = std::get<2>( nuc_tuple );
-
-          json self_atten_json;
-          self_atten_json["element"] = element->symbol;
-
-          if( nuclide )
-            self_atten_json["nuclide"] = nuclide->symbol;
-          else
-            self_atten_json["nuclide"] = "Other"; // Represents stable/other isotopes
-
-          self_atten_json["mass_fraction"] = mass_fraction;
-          self_atten_json["fit_mass_fraction"] = fit_fraction;
-
-          shield_json["self_atten_sources"].push_back( self_atten_json );
-        }
-      }
-    }
-
-    result["shielding"].push_back( shield_json );
-  }
-
-  // Format sources
-  result["sources"] = json::array();
-  for( const ShieldingSourceFitCalc::SourceFitDef &src : config.sources )
-  {
-    json src_json;
-
-    if( src.nuclide )
-      src_json["nuclide"] = src.nuclide->symbol;
-
-    src_json["activity_bq"] = src.activity;
-    src_json["fit_activity"] = src.fitActivity;
-
-    if( src.age > 0.0 )
-    {
-      src_json["age_years"] = src.age / PhysicalUnits::year;
-      src_json["fit_age"] = src.fitAge;
-    }
-
-    // Format source type
-    switch( src.sourceType )
-    {
-      case ShieldingSourceFitCalc::ModelSourceType::Point:
-        src_json["source_type"] = "Point";
-        break;
-      case ShieldingSourceFitCalc::ModelSourceType::Trace:
-        src_json["source_type"] = "Trace";
-        break;
-      case ShieldingSourceFitCalc::ModelSourceType::Intrinsic:
-        src_json["source_type"] = "Intrinsic";
-        break;
-    }
-
-    // Add age fit allowability if we have a nuclide
-    if( src.nuclide )
-    {
-      src_json["age_potentially_fittable"] = is_age_fit_allowed( src.nuclide );
-
-      // Add progeny peak count if peaks are provided
-      if( peaks )
-      {
-        const size_t num_progeny = count_progeny_peaks( src.nuclide, *peaks );
-        src_json["num_progeny_peaks"] = num_progeny;
-      }
-    }
-
-    result["sources"].push_back( src_json );
-  }
-
-  // Format peaks
-  result["peaks"] = json::array();
-  for( const ShieldingSourceDisplay::ShieldingSourceDisplayState::Peak &peak : state.peaks )
-  {
-    json peak_json;
-    peak_json["energy_kev"] = peak.energy;
-    peak_json["use_for_fit"] = peak.use;
-    if( !peak.nuclideSymbol.empty() )
-      peak_json["nuclide"] = peak.nuclideSymbol;
-    result["peaks"].push_back( peak_json );
-  }
-
-  // Format fit options
-  result["options"] = json::object();
-  result["options"]["attenuate_for_air"] = config.options.attenuate_for_air;
-  result["options"]["multiple_nucs_contribute_to_peaks"] = config.options.multiple_nucs_contribute_to_peaks;
-  result["options"]["background_peak_subtract"] = config.options.background_peak_subtract;
-  result["options"]["same_age_isotopes"] = config.options.same_age_isotopes;
-  result["options"]["account_for_decay_during_meas"] = config.options.account_for_decay_during_meas;
-
-  return result;
-}//format_shielding_source_state_to_json(...)
-
-
-nlohmann::json ToolRegistry::executeGetShieldingSourceConfig(
-  const nlohmann::json& params,
-  InterSpec* interspec
-)
-{
-  if( !interspec )
-    throw runtime_error( "InterSpec instance required for get_shielding_source_config" );
-
-  json result;
-  result["has_config"] = false;
-  
-  // We will always grab the configuration from the GUI - if we grab it from the foreground SpecMeas, it
-  //  wont have picked up any source peaks we may have added since the last time the GUI was open - we could
-  //  probably work our way around this and manually update things, but just to keep it all consistent...
-
-  // Check if GUI is open (without creating it)
-  ShieldingSourceDisplay *display = interspec->shieldingSourceFit( false );
-
-  const bool was_open = !!display;
-  if( !display )
-    display = interspec->shieldingSourceFit( true );
-  
-  if( !display )
-    throw runtime_error( "Unable to crate Shield/Source fit GUI to alter its configuration" );
-  
-  // Extract configuration from GUI by serializing it
-  ShieldingSourceDisplay::ShieldingSourceDisplayState state = display->serialize();
-
-  if( !state.config )
-  {
-    result["message"] = "GUI is open but has no configuration";
-    result["source"] = "GUI (ShieldingSourceDisplay)";
+    result["warning"] = "No active LLM interface - state tracking not available";
     return result;
   }
 
-  // Get peaks from InterSpec for progeny counting
-  PeakModel *peakModel = interspec->peakModel();
-  const std::deque<std::shared_ptr<const PeakDef>> *peaks = nullptr;
-  std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> peaks_ptr;
-  if( peakModel )
+  LlmInterface *interface = llm_gui->llmInterface();
+  if( !interface )
   {
-    peaks_ptr = peakModel->peaks();
-    if( peaks_ptr )
-      peaks = peaks_ptr.get();
-  }
-
-  // Convert state to JSON
-  const json config_json = format_shielding_source_state_to_json( state, peaks );
-  
-  result["has_config"] = true;
-  //result["source"] = "GUI (ShieldingSourceDisplay)";
-  result["config"] = config_json;
-  
-  if( !was_open )
-    interspec->closeShieldingSourceFit();
-  
-  return result;
-  
-  /*
-  // Check saved model in SpecMeas
-  std::shared_ptr<SpecMeas> meas = interspec->measurment( SpecUtils::SpectrumType::Foreground );
-  if( !meas )
-  {
-    result["message"] = "No foreground spectrum loaded";
+    result["warning"] = "No LLM interface found - state tracking not available";
     return result;
   }
 
-  const rapidxml::xml_document<char> *model_xml = meas->shieldingSourceModel();
-  if( !model_xml )
+  shared_ptr<LlmInteraction> conversation = interface->getCurrentConversation();
+  if( !conversation )
   {
-    result["message"] = "No saved shielding/source model found";
+    result["warning"] = "No active conversation - state tracking not available";
     return result;
   }
 
-  // Parse the XML to get ShieldingSourceDisplayState
-  try
+  // Check if conversation has a state machine
+  if( !conversation->state_machine )
   {
-    const rapidxml::xml_node<char> *base_node = model_xml->first_node( "ShieldingSourceFit" );
-    if( !base_node )
-      throw runtime_error( "XML does not contain ShieldingSourceFit node" );
-
-    MaterialDB *materialDb = interspec->materialDataBase();
-    if( !materialDb )
-      throw runtime_error( "Material database not available" );
-
-    // Deserialize the XML into a state object
-    ShieldingSourceDisplay::ShieldingSourceDisplayState state;
-    state.deSerialize( base_node, materialDb );
-
-    if( !state.config )
-      throw runtime_error( "Failed to parse configuration from XML" );
-
-    // Get peaks from InterSpec for progeny counting
-    PeakModel *peakModel = interspec->peakModel();
-    const std::deque<std::shared_ptr<const PeakDef>> *peaks = nullptr;
-    std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> peaks_ptr;
-    if( peakModel )
-    {
-      peaks_ptr = peakModel->peaks();
-      if( peaks_ptr )
-        peaks = peaks_ptr.get();
-    }
-
-    // Convert state to JSON
-    const json config_json = format_shielding_source_state_to_json( state, peaks );
-
-    result["has_config"] = true;
-    result["source"] = "Saved model (SpecMeas::m_shieldingSourceModel)";
-    result["config"] = config_json;
-  }
-  catch( const std::exception &e )
-  {
-    result["has_config"] = false;
-    result["source"] = "Saved model (SpecMeas::m_shieldingSourceModel)";
-    result["message"] = string("Failed to parse configuration: ") + e.what();
-  }
-   */
-  
-  return result;
-}//executeGetShieldingSourceConfig(...)
-
-
-nlohmann::json ToolRegistry::executeModifyShieldingSourceConfig(
-  const nlohmann::json& params,
-  InterSpec* interspec
-)
-{
-  if( !interspec )
-    throw runtime_error( "InterSpec instance required for modify_shielding_source_config" );
-
-  // Get operation
-  const string operation = params.value( "operation", string() );
-  if( operation.empty() )
-    throw runtime_error( "operation parameter is required" );
-
-  json result;
-  result["operation"] = operation;
-
-  // Check if GUI is already open (without creating it)
-  ShieldingSourceDisplay *display = interspec->shieldingSourceFit( false );
-  const bool gui_was_open = (display != nullptr);
-
-  // If GUI wasn't open, open it temporarily to get/modify state
-  if( !display )
-  {
-    display = interspec->shieldingSourceFit( true );
-    if( !display )
-      throw runtime_error( "Failed to open Activity/Shielding Fit tool" );
-  }
-
-  // Get current state
-  ShieldingSourceDisplay::ShieldingSourceDisplayState state = display->serialize();
-
-  // Make a copy of the config to modify
-  if( !state.config )
-    throw runtime_error( "No configuration available to modify" );
-
-  GammaInteractionCalc::ShieldSourceConfig modified_config = *state.config;
-
-  // Apply the requested operation
-  if( operation == "set_distance" )
-  {
-    const string distance_str = params.value( "distance", string() );
-    if( distance_str.empty() )
-      throw runtime_error( "distance parameter is required for set_distance operation" );
-
-    modified_config.distance = parse_distance_string( distance_str );
-    const double distance_cm = modified_config.distance / PhysicalUnits::cm;
-    result["new_distance_cm"] = distance_cm;
-  }
-  else if( operation == "set_geometry" )
-  {
-    const string geometry_str = params.value( "geometry", string() );
-    if( geometry_str.empty() )
-      throw runtime_error( "geometry parameter is required for set_geometry operation" );
-
-    if( geometry_str == "Spherical" )
-      modified_config.geometry = GammaInteractionCalc::GeometryType::Spherical;
-    else if( geometry_str == "CylinderSideOn" )
-      modified_config.geometry = GammaInteractionCalc::GeometryType::CylinderSideOn;
-    else if( geometry_str == "CylinderEndOn" )
-      modified_config.geometry = GammaInteractionCalc::GeometryType::CylinderEndOn;
-    else if( geometry_str == "Rectangular" )
-      modified_config.geometry = GammaInteractionCalc::GeometryType::Rectangular;
-    else
-      throw runtime_error( "Invalid geometry: " + geometry_str );
-
-    result["new_geometry"] = geometry_str;
-  }
-  else if( operation == "add_shielding" )
-  {
-    string material = params.value( "material", string() );
-    if( material.empty() )
-      throw runtime_error( "material parameter is required for add_shielding operation" );
-
-    MaterialDB *materialDb = interspec->materialDataBase();
-    if( !materialDb )
-      throw runtime_error( "Material database not available" );
-
-    ShieldingSourceFitCalc::ShieldingInfo shielding;
-    shielding.m_geometry = modified_config.geometry;
-
-    // Try to find the material and normalize the name to match what's in the database
-    const Material *mat = materialDb->material( material );
-    if( !mat )
-      throw runtime_error( "Material '" + material + "' not found in database" );
-
-    // Use the canonical material name from the database (e.g., "Fe (iron)" instead of "Fe")
-    material = mat->name;
-
-    shielding.m_material = std::make_shared<const Material>( *mat );
-    shielding.m_isGenericMaterial = false;
-    shielding.m_forFitting = true;
-
-    // Handle dimensions based on geometry
-    const string radial_thickness_str = params.value( "radial_thickness", string() );
-    const string radius_str = params.value( "radius", string() );
-    const string length_str = params.value( "length", string() );
-
-    // Get fit flags
-    const bool fit_thickness = params.value( "fit_thickness", radial_thickness_str.empty() );
-    const bool fit_radius = params.value( "fit_radius", radius_str.empty() );
-    const bool fit_length = params.value( "fit_length", length_str.empty() );
-
-    switch( modified_config.geometry )
-    {
-      case GammaInteractionCalc::GeometryType::Spherical:
-      {
-        if( !radial_thickness_str.empty() )
-          shielding.m_dimensions[0] = parse_distance_string( radial_thickness_str );
-        else
-          shielding.m_dimensions[0] = 0.5 * PhysicalUnits::cm; // Default to 0.5 cm
-
-        shielding.m_fitDimensions[0] = fit_thickness;
-        const double thickness_cm = shielding.m_dimensions[0] / PhysicalUnits::cm;
-        result["thickness_cm"] = thickness_cm;
-        result["fit_thickness"] = fit_thickness;
-        break;
-      }
-
-      case GammaInteractionCalc::GeometryType::CylinderSideOn:
-      case GammaInteractionCalc::GeometryType::CylinderEndOn:
-      {
-        if( !radius_str.empty() )
-          shielding.m_dimensions[0] = parse_distance_string( radius_str );
-        else
-          shielding.m_dimensions[0] = 5.0 * PhysicalUnits::cm; // Default radius 5 cm
-
-        if( !length_str.empty() )
-          shielding.m_dimensions[1] = parse_distance_string( length_str );
-        else
-          shielding.m_dimensions[1] = 10.0 * PhysicalUnits::cm; // Default length 10 cm
-
-        shielding.m_fitDimensions[0] = fit_radius;
-        shielding.m_fitDimensions[1] = fit_length;
-        const double radius_cm = shielding.m_dimensions[0] / PhysicalUnits::cm;
-        const double length_cm = shielding.m_dimensions[1] / PhysicalUnits::cm;
-        result["radius_cm"] = radius_cm;
-        result["length_cm"] = length_cm;
-        result["fit_radius"] = fit_radius;
-        result["fit_length"] = fit_length;
-        break;
-      }
-
-      case GammaInteractionCalc::GeometryType::Rectangular:
-      case GammaInteractionCalc::GeometryType::NumGeometryType:
-        throw runtime_error( "Rectangular geometry not yet supported for add_shielding" );
-    }
-
-    modified_config.shieldings.push_back( shielding );
-    result["material_added"] = material;
-    result["num_shieldings"] = modified_config.shieldings.size();
-  }
-  else if( operation == "remove_shielding" )
-  {
-    string material = params.value( "material", string() );
-    const int index = params.value( "index", -1 );
-
-    if( material.empty() && index < 0 )
-      throw runtime_error( "Either material or index parameter is required for remove_shielding operation" );
-
-    if( !material.empty() && index >= 0 )
-      throw runtime_error( "Cannot specify both material and index for remove_shielding - use one or the other" );
-
-    if( index >= 0 )
-    {
-      // Remove by index
-      if( index >= static_cast<int>(modified_config.shieldings.size()) )
-        throw runtime_error( "Shielding index " + std::to_string(index) + " out of range (have " +
-                           std::to_string(modified_config.shieldings.size()) + " shielding layers)" );
-
-      const string removed_material = modified_config.shieldings[index].m_material
-                                       ? modified_config.shieldings[index].m_material->name
-                                       : "Generic";
-      modified_config.shieldings.erase( modified_config.shieldings.begin() + index );
-      result["index_removed"] = index;
-      result["material_removed"] = removed_material;
-    }
-    else
-    {
-      // Try to normalize material name using database
-      MaterialDB *materialDb = interspec->materialDataBase();
-      if( materialDb )
-      {
-        const Material *mat = materialDb->material( material );
-        if( mat )
-          material = mat->name;  // Use canonical name from database
-      }
-
-      // Remove by material name - check name, description, or substring match
-      auto it = std::find_if( modified_config.shieldings.begin(), modified_config.shieldings.end(),
-        [&material]( const ShieldingSourceFitCalc::ShieldingInfo &s ) {
-          if( !s.m_material )
-            return false;
-          // Check exact match of name or description
-          if( s.m_material->name == material || s.m_material->description == material )
-            return true;
-          // Check if material is a substring of the name (e.g., "Fe" matches "Fe (iron)")
-          if( s.m_material->name.find(material) != string::npos )
-            return true;
-          return false;
-        });
-
-      if( it == modified_config.shieldings.end() )
-        throw runtime_error( "Shielding material '" + material + "' not found in configuration" );
-
-      const string removed_material = it->m_material ? it->m_material->name : "Generic";
-      const int removed_index = std::distance( modified_config.shieldings.begin(), it );
-      modified_config.shieldings.erase( it );
-      result["material_removed"] = removed_material;
-      result["index_removed"] = removed_index;
-    }
-
-    result["num_shieldings"] = modified_config.shieldings.size();
-  }
-  else if( operation == "add_source" )
-  {
-    const string nuclide_str = params.value( "nuclide", string() );
-    if( nuclide_str.empty() )
-      throw runtime_error( "nuclide parameter is required for add_source operation" );
-
-    const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-    const SandiaDecay::Nuclide *nuclide = db->nuclide( nuclide_str );
-    if( !nuclide )
-      throw runtime_error( "Nuclide '" + nuclide_str + "' not found in database" );
-
-    // Check if source already exists
-    auto existing = std::find_if( modified_config.sources.begin(), modified_config.sources.end(),
-      [nuclide]( const ShieldingSourceFitCalc::SourceFitDef &s ) {
-        return s.nuclide == nuclide;
-      });
-
-    if( existing != modified_config.sources.end() )
-      throw runtime_error( "Source '" + nuclide_str + "' already exists in configuration" );
-
-    ShieldingSourceFitCalc::SourceFitDef source;
-    source.nuclide = nuclide;
-
-    // Parse activity
-    const string activity_str = params.value( "activity", string() );
-    if( !activity_str.empty() )
-      source.activity = parse_activity_string( activity_str );
-    else
-      source.activity = 1.0 * PhysicalUnits::microCi; // Default
-
-    source.fitActivity = true; // Always fit activity by default
-
-    // Parse age if provided
-    const string age_str = params.value( "age", string() );
-    if( !age_str.empty() )
-    {
-      source.age = parse_age_string( age_str );
-      source.fitAge = params.value( "fit_age", false );
-    }
-    else
-    {
-      source.age = 0.0;
-      source.fitAge = false;
-    }
-
-    // Parse source type
-    const string source_type_str = params.value( "source_type", "Point" );
-    if( source_type_str == "Point" )
-      source.sourceType = ShieldingSourceFitCalc::ModelSourceType::Point;
-    else if( source_type_str == "Trace" )
-      source.sourceType = ShieldingSourceFitCalc::ModelSourceType::Trace;
-    else if( source_type_str == "Intrinsic" )
-      source.sourceType = ShieldingSourceFitCalc::ModelSourceType::Intrinsic;
-    else
-      throw runtime_error( "Invalid source_type: " + source_type_str );
-
-    modified_config.sources.push_back( source );
-
-    // Mark all peaks with this nuclide to be used for fitting
-    PeakModel *peakModel = interspec->peakModel();
-    if( peakModel )
-    {
-      std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> peaks = peakModel->peaks();
-      if( peaks )
-      {
-        int num_peaks_marked = 0;
-        int total_peaks_for_nuclide = 0;
-        for( size_t i = 0; i < peaks->size(); ++i )
-        {
-          const std::shared_ptr<const PeakDef> &peak = (*peaks)[i];
-          if( peak && peak->parentNuclide() == nuclide )
-          {
-            ++total_peaks_for_nuclide;
-            if( !peak->useForShieldingSourceFit() )
-            {
-              // Create model index for this peak's kUseForShieldingSourceFit column
-              Wt::WModelIndex model_index = peakModel->index( i, PeakModel::kUseForShieldingSourceFit );
-              // Set the value to true (checked)
-              peakModel->setData( model_index, boost::any(true) );
-              ++num_peaks_marked;
-            }
-          }
-        }
-        result["num_peaks_marked"] = num_peaks_marked;
-      }
-    }
-
-    result["nuclide_added"] = nuclide_str;
-    const double activity_bq = source.activity / PhysicalUnits::bq;
-    result["activity_bq"] = activity_bq;
-    result["num_sources"] = modified_config.sources.size();
-  }
-  else if( operation == "remove_source" )
-  {
-    const string nuclide_str = params.value( "nuclide", string() );
-    if( nuclide_str.empty() )
-      throw runtime_error( "nuclide parameter is required for remove_source operation" );
-
-    const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-    const SandiaDecay::Nuclide *nuclide = db->nuclide( nuclide_str );
-    if( !nuclide )
-      throw runtime_error( "Nuclide '" + nuclide_str + "' not found in database" );
-
-    // Find and remove the source
-    auto it = std::find_if( modified_config.sources.begin(), modified_config.sources.end(),
-      [nuclide]( const ShieldingSourceFitCalc::SourceFitDef &s ) {
-        return s.nuclide == nuclide;
-      });
-
-    if( it == modified_config.sources.end() )
-      throw runtime_error( "Source '" + nuclide_str + "' not found in configuration" );
-
-    modified_config.sources.erase( it );
-
-    // Unmark all peaks with this nuclide from being used for fitting
-    PeakModel *peakModel = interspec->peakModel();
-    if( peakModel )
-    {
-      std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> peaks = peakModel->peaks();
-      if( peaks )
-      {
-        int num_peaks_unmarked = 0;
-        for( size_t i = 0; i < peaks->size(); ++i )
-        {
-          const std::shared_ptr<const PeakDef> &peak = (*peaks)[i];
-          if( peak && peak->parentNuclide() == nuclide && peak->useForShieldingSourceFit() )
-          {
-            // Create model index for this peak's kUseForShieldingSourceFit column
-            Wt::WModelIndex model_index = peakModel->index( i, PeakModel::kUseForShieldingSourceFit );
-            // Set the value to false (unchecked)
-            peakModel->setData( model_index, boost::any(false) );
-            ++num_peaks_unmarked;
-          }
-        }
-        result["num_peaks_unmarked"] = num_peaks_unmarked;
-      }
-    }
-
-    result["nuclide_removed"] = nuclide_str;
-    result["num_sources"] = modified_config.sources.size();
-  }
-  else if( operation == "set_source_age" )
-  {
-    const string nuclide_str = params.value( "nuclide", string() );
-    if( nuclide_str.empty() )
-      throw runtime_error( "nuclide parameter is required for set_source_age operation" );
-
-    const string age_str = params.value( "age", string() );
-    if( age_str.empty() )
-      throw runtime_error( "age parameter is required for set_source_age operation" );
-
-    const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-    const SandiaDecay::Nuclide *nuclide = db->nuclide( nuclide_str );
-    if( !nuclide )
-      throw runtime_error( "Nuclide '" + nuclide_str + "' not found in database" );
-
-    // Find the source
-    auto it = std::find_if( modified_config.sources.begin(), modified_config.sources.end(),
-      [nuclide]( const ShieldingSourceFitCalc::SourceFitDef &s ) {
-        return s.nuclide == nuclide;
-      });
-
-    if( it == modified_config.sources.end() )
-      throw runtime_error( "Source '" + nuclide_str + "' not found in configuration" );
-
-    it->age = parse_age_string( age_str );
-    it->fitAge = params.value( "fit_age", false );
-    result["nuclide"] = nuclide_str;
-    result["age_years"] = it->age / PhysicalUnits::year;
-    result["fit_age"] = it->fitAge;
-  }
-  else if( operation == "set_fit_options" )
-  {
-    // Set fitting options
-    bool options_changed = false;
-
-    if( params.contains("attenuate_for_air") )
-    {
-      const bool new_value = get_boolean( params, "attenuate_for_air" );
-      modified_config.options.attenuate_for_air = new_value;
-      result["attenuate_for_air"] = new_value;
-      options_changed = true;
-    }
-
-    if( params.contains("multiple_nucs_contribute_to_peaks") )
-    {
-      const bool new_value = get_boolean( params, "multiple_nucs_contribute_to_peaks" );
-      modified_config.options.multiple_nucs_contribute_to_peaks = new_value;
-      result["multiple_nucs_contribute_to_peaks"] = new_value;
-      options_changed = true;
-    }
-
-    if( params.contains("background_peak_subtract") )
-    {
-      const bool new_value = get_boolean( params, "background_peak_subtract" );
-      modified_config.options.background_peak_subtract = new_value;
-      result["background_peak_subtract"] = new_value;
-      options_changed = true;
-    }
-
-    if( params.contains("same_age_isotopes") )
-    {
-      const bool new_value = get_boolean( params, "same_age_isotopes" );
-      modified_config.options.same_age_isotopes = new_value;
-      result["same_age_isotopes"] = new_value;
-      options_changed = true;
-    }
-
-    if( !options_changed )
-      throw runtime_error( "set_fit_options requires at least one option parameter (attenuate_for_air, multiple_nucs_contribute_to_peaks, background_peak_subtract, or same_age_isotopes)" );
-  }
-  else
-  {
-    throw runtime_error( "Unknown operation: " + operation );
-  }
-
-  // Update the state with the modified config
-  state.config = std::make_shared<const GammaInteractionCalc::ShieldSourceConfig>( modified_config );
-
-  // Deserialize the modified state back to the GUI
-  display->deSerialize( state, 0 );
-
-  // Save to SpecMeas
-  interspec->saveShieldingSourceModelToForegroundSpecMeas();
-
-  // If GUI wasn't originally open, close it
-  if( !gui_was_open )
-    interspec->closeShieldingSourceFit();
-
-  result["success"] = true;
-  result["gui_was_open"] = gui_was_open;
-  result["message"] = "Configuration modified successfully";
-
-  return result;
-}//executeModifyShieldingSourceConfig(...)
-
-
-/** Helper function to format ModelFitResults into a JSON object.
- * This function converts fit results (activities, ages, shielding, fit quality)
- * into a structured JSON format for returning to the LLM.
- *
- * @param fit_results Pointer to ModelFitResults (can be null)
- * @return JSON object with formatted results, or empty object if fit_results is null
- */
-nlohmann::json format_fit_results_to_json(
-  const std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> &fit_results
-)
-{
-  json result;
-
-  if( !fit_results )
-    return result;
-
-  // Format fit quality
-  result["chi2"] = fit_results->chi2;
-  result["dof"] = fit_results->numDOF;
-  result["chi2_per_dof"] = (fit_results->numDOF > 0) ? (fit_results->chi2 / fit_results->numDOF) : fit_results->chi2;
-
-  // Format source results
-  result["sources"] = json::array();
-  for( const auto &src : fit_results->fit_src_info )
-  {
-    json src_json;
-    src_json["nuclide"] = src.nuclide->symbol;
-    src_json["activity_bq"] = src.activity;
-
-    if( src.activityUncertainty.has_value() )
-      src_json["activity_bq_uncertainty"] = *src.activityUncertainty;
-
-    
-    // Format as human-readable string
-    InterSpec * const interspec = InterSpec::instance();
-    const bool use_curries = interspec ? true : !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", interspec );
-    if( src.activityUncertainty.has_value() && (src.activityUncertainty.value() > 0.0) )
-      src_json["activity_str"] = PhysicalUnits::printToBestActivityUnitsWithUncert( src.activity, src.activityUncertainty.value(), 5, use_curries );
-    else
-      src_json["activity_str"] = PhysicalUnits::printToBestActivityUnits(src.activity, 5, use_curries);
-
-    // Add age if fitted
-    if( src.ageUncertainty.has_value() && *src.ageUncertainty > 0.0 )
-    {
-      const double age_years = src.age / PhysicalUnits::year;
-      const double age_unc_years = *src.ageUncertainty / PhysicalUnits::year;
-      src_json["age_years"] = age_years;
-      src_json["age_years_uncertainty"] = age_unc_years;
-      src_json["age_str"] = std::to_string(age_years) + " ± " + std::to_string(age_unc_years) + " years";
-    }
-
-    result["sources"].push_back( src_json );
-  }
-
-  // Format shielding results if any
-  if( !fit_results->final_shieldings.empty() )
-  {
-    result["shielding"] = json::array();
-    for( const auto &shield : fit_results->final_shieldings )
-    {
-      json shield_json;
-
-      if( shield.m_material )
-        shield_json["material"] = shield.m_material->name;
-      else if( shield.m_isGenericMaterial )
-        shield_json["material"] = "Generic (AN=" + std::to_string(shield.m_dimensions[0]) + ")";
-
-      // Format dimensions based on geometry
-      switch( shield.m_geometry )
-      {
-        case GammaInteractionCalc::GeometryType::Spherical:
-        {
-          shield_json["thickness_cm"] = shield.m_dimensions[0] / PhysicalUnits::cm;
-          shield_json["thickness_str"] = PhysicalUnits::printToBestLengthUnits( shield.m_dimensions[0], 4 );
-          if( shield.m_dimensionUncerts[0] > 0.0 )
-          {
-            shield_json["thickness_cm_uncertainty"] = shield.m_dimensionUncerts[0] / PhysicalUnits::cm;
-            shield_json["thickness_str_uncertainty"] = PhysicalUnits::printToBestLengthUnits( shield.m_dimensionUncerts[0], 4 );
-          }
-          break;
-        }//case GammaInteractionCalc::GeometryType::Spherical:
-
-        case GammaInteractionCalc::GeometryType::CylinderEndOn:
-        case GammaInteractionCalc::GeometryType::CylinderSideOn:
-        {
-          shield_json["radius_cm"] = shield.m_dimensions[0] / PhysicalUnits::cm;
-          shield_json["radius_str"] = PhysicalUnits::printToBestLengthUnits( shield.m_dimensions[0], 4 );
-          shield_json["length_cm"] = shield.m_dimensions[1] / PhysicalUnits::cm;;
-          shield_json["length_str"] = PhysicalUnits::printToBestLengthUnits( shield.m_dimensions[1], 4 );
-          
-          if( shield.m_dimensionUncerts[0] > 0.0 )
-          {
-            shield_json["radius_cm_uncertainty"] = shield.m_dimensionUncerts[0] / PhysicalUnits::cm;
-            shield_json["radius_str_uncertainty"] = PhysicalUnits::printToBestLengthUnits( shield.m_dimensionUncerts[0], 4 );
-          }
-          
-          if( shield.m_dimensionUncerts[1] > 0.0 )
-          {
-            shield_json["length_cm_uncertainty"] = shield.m_dimensionUncerts[1] / PhysicalUnits::cm;
-            shield_json["length_str_uncertainty"] = PhysicalUnits::printToBestLengthUnits( shield.m_dimensionUncerts[1], 4 );
-          }
-         
-          break;
-        }//case GammaInteractionCalc::GeometryType::CylinderEndOn: / CylinderSideOn:
-
-        case GammaInteractionCalc::GeometryType::Rectangular:
-        {
-          shield_json["width_cm"] = shield.m_dimensions[0] / PhysicalUnits::cm;
-          shield_json["height_cm"] = shield.m_dimensions[1] / PhysicalUnits::cm;
-          shield_json["depth_cm"] = shield.m_dimensions[2] / PhysicalUnits::cm;
-          
-          shield_json["width_str"] = PhysicalUnits::printToBestLengthUnits( shield.m_dimensions[0], 4 );
-          shield_json["height_str"] = PhysicalUnits::printToBestLengthUnits( shield.m_dimensions[1], 4 );
-          shield_json["depth_str"] = PhysicalUnits::printToBestLengthUnits( shield.m_dimensions[2], 4 );
-          
-          
-          if( shield.m_dimensionUncerts[0] > 0.0 )
-          {
-            shield_json["width_cm_uncertainty"] = shield.m_dimensionUncerts[0] / PhysicalUnits::cm;
-            shield_json["width_cm_uncertainty"] = PhysicalUnits::printToBestLengthUnits( shield.m_dimensionUncerts[0], 4 );
-          }
-          
-          if( shield.m_dimensionUncerts[1] > 0.0 )
-          {
-            shield_json["height_cm_uncertainty"] = shield.m_dimensionUncerts[1] / PhysicalUnits::cm;
-            shield_json["height_cm_uncertainty"] = PhysicalUnits::printToBestLengthUnits( shield.m_dimensionUncerts[1], 4 );
-          }
-          
-          if( shield.m_dimensionUncerts[2] > 0.0 )
-          {
-            shield_json["depth_cm_uncertainty"] = shield.m_dimensionUncerts[2] / PhysicalUnits::cm;
-            shield_json["depth_cm_uncertainty"] = PhysicalUnits::printToBestLengthUnits( shield.m_dimensionUncerts[2], 4 );
-          }
-          
-          break;
-        }//case GammaInteractionCalc::GeometryType::Rectangular:
-
-        case GammaInteractionCalc::GeometryType::NumGeometryType:
-          break;
-      }
-
-      result["shielding"].push_back( shield_json );
-    }
-  }
-
-  result["num_peaks_used"] = fit_results->foreground_peaks.size();
-
-  return result;
-}//format_fit_results_to_json(...)
-
-
-nlohmann::json ToolRegistry::executeActivityFit(
-  const nlohmann::json& params,
-  InterSpec* interspec
-)
-{
-  if( !interspec )
-    throw runtime_error( "InterSpec instance required for activity_fit" );
-
-  // Get mode
-  const string mode = params.value( "mode", string() );
-  if( mode.empty() )
-    throw runtime_error( "mode parameter is required" );
-
-  if( mode != "from_app_state" && mode != "single_peak" && mode != "custom" )
-    throw runtime_error( "mode must be 'from_app_state', 'single_peak', or 'custom'" );
-
-  json result;
-  result["status"] = "failed";
-  result["mode"] = mode;
-
-  // Handle from_app_state mode - use/create GUI
-  if( mode == "from_app_state" )
-  {
-    // Check if GUI is already open
-    ShieldingSourceDisplay *display = interspec->shieldingSourceFit();
-
-    if( !display )
-    {
-      // For now, creating the GUI requires more complex setup with viewer, etc.
-      // Return an error asking user to open the GUI manually first
-      throw runtime_error( "Activity/Shielding fit GUI is not currently open. "
-                         "Please open it manually from the Tools menu, or use 'custom' or 'single_peak' modes for direct fitting." );
-    }
-
-    // TODO: Apply any parameter overrides from params (distance, add shielding, etc.)
-    // For now, just trigger the fit with existing configuration
-
-    // Trigger the fit - doModelFit returns results when fit completes
-    std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> fit_results = display->doModelFit( false );
-
-    result["status"] = "success";
-    result["gui_displayed"] = true;
-
-    // If we got results back, format and return them using the helper function
-    if( fit_results )
-    {
-      result["message"] = "Activity/Shielding fit completed successfully in GUI.";
-
-      // Format the results using the helper function
-      const json formatted_results = format_fit_results_to_json( fit_results );
-
-      // Merge the formatted results into our result object
-      result["chi2"] = formatted_results["chi2"];
-      result["dof"] = formatted_results["dof"];
-      result["chi2_per_dof"] = formatted_results["chi2_per_dof"];
-      result["sources"] = formatted_results["sources"];
-      result["num_peaks_used"] = formatted_results["num_peaks_used"];
-
-      if( formatted_results.contains("shielding") )
-        result["shielding"] = formatted_results["shielding"];
-    }
-    else
-    {
-      result["message"] = "Activity/Shielding fit started in GUI. Results will be displayed when fit completes.";
-    }
-
+    result["note"] = "Agent does not have a state machine defined";
     return result;
   }
 
-  // For single_peak and custom modes: build ShieldSourceInput and fit directly
-  // Get foreground measurement
-  std::shared_ptr<const SpecUtils::Measurement> foreground = interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
-  if( !foreground )
-    throw runtime_error( "No foreground spectrum loaded" );
+  AgentStateMachine *sm = conversation->state_machine.get();
+  result["previous_state"] = sm->getCurrentState();
 
-  std::shared_ptr<SpecMeas> meas = interspec->measurment( SpecUtils::SpectrumType::Foreground );
-  if( !meas )
-    throw runtime_error( "No foreground SpecMeas available" );
-
-  const std::set<int> &sample_nums = interspec->displayedSamples( SpecUtils::SpectrumType::Foreground );
-
-  // Get background if available
-  std::shared_ptr<const SpecUtils::Measurement> background = interspec->displayedHistogram( SpecUtils::SpectrumType::Background );
-  std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> background_peaks;
-  if( background )
+  // Check if state exists
+  if( !sm->hasState(new_state) )
   {
-    std::shared_ptr<SpecMeas> back_meas = interspec->measurment( SpecUtils::SpectrumType::Background );
-    if( back_meas )
-    {
-      const std::set<int> &back_samples = interspec->displayedSamples( SpecUtils::SpectrumType::Background );
-      background_peaks = back_meas->peaks( back_samples );
-    }
+    result["success"] = false;
+    result["error"] = "Unknown state: " + new_state;
+    return result;
   }
 
-  // Get detector response function
-  std::shared_ptr<const DetectorPeakResponse> detector = meas->detector();
-  if( !detector || !detector->isValid() )
-    throw runtime_error( "No valid detector efficiency function loaded. Please load one before fitting." );
-
-  // Get peaks
-  std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> all_peaks = meas->peaks( sample_nums );
-  if( !all_peaks || all_peaks->empty() )
-    throw runtime_error( "No peaks available for fitting" );
-
-  // Filter peaks to use for fitting
-  std::deque<std::shared_ptr<const PeakDef>> fitting_peaks;
-
-  if( params.contains("peak_energies") && params["peak_energies"].is_array() )
+  // Check if transition is valid (soft enforcement)
+  if( !sm->canTransitionTo(new_state) )
   {
-    // Use specified peaks
-    for( const auto &energy_json : params["peak_energies"] )
-    {
-      const double energy = energy_json.get<double>();
-      auto peak = find_peak_by_energy( energy, all_peaks, "activity_fit" );
-      if( !peak )
-        throw runtime_error( "No peak found near " + std::to_string(energy) + " keV" );
-
-      if( !peak->parentNuclide() )
-        throw runtime_error( "Peak at " + std::to_string(peak->mean())
-                           + " keV does not have a nuclide assigned" );
-
-      fitting_peaks.push_back( peak );
-    }
-  }else
-  {
-    // Use peaks marked for fitting
-    for( const auto &peak : *all_peaks )
-    {
-      if( peak && peak->useForShieldingSourceFit() && peak->parentNuclide() )
-        fitting_peaks.push_back( peak );
-    }
+    result["warning"] = "Unexpected state transition";
+    result["expected_transitions"] = sm->getAllowedTransitions();
+    result["reason"] = "Transition from " + sm->getCurrentState() +
+                       " to " + new_state + " not in allowed transitions";
+    // Continue anyway - soft enforcement
   }
 
-  if( fitting_peaks.empty() )
-    throw runtime_error( "No peaks available for fitting. Either specify peak_energies or mark peaks with useForShieldingSourceFit" );
+  // Perform transition
+  sm->transitionTo(new_state);
 
-  // Build ShieldSourceInput
-  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
+  // Provide guidance for new state
+  const AgentStateMachine::StateDefinition& state_def = sm->getStateDefinition(new_state);
+  result["guidance"] = state_def.prompt_guidance;
+  result["description"] = state_def.description;
+  result["allowed_next_states"] = state_def.allowed_transitions;
 
-  // Set measurements
-  chi_input.detector = detector;
-  chi_input.foreground = foreground;
-  chi_input.background = background;
-  chi_input.foreground_peaks.assign( fitting_peaks.begin(), fitting_peaks.end() );
-  chi_input.background_peaks = background_peaks;
+  if( !state_def.required_tools.empty() )
+    result["required_tools"] = state_def.required_tools;
 
-  // Parse distance
-  if( detector->isFixedGeometry() )
-  {
-    chi_input.config.distance = 0.0;
-  }else if( !params.contains("distance") )
-  {
-    throw runtime_error( "distance parameter is required for non-fixed-geometry detectors" );
-  }else
-  {
-    const string distance_str = params["distance"].is_string()
-                                 ? params["distance"].get<string>()
-                                 : std::to_string( params["distance"].get<double>() );
-    chi_input.config.distance = parse_distance_string( distance_str );
-  }
-
-  // Parse geometry
-  const string geometry_str = params.value( "geometry", string("Spherical") );
-  if( geometry_str == "Spherical" )
-    chi_input.config.geometry = GammaInteractionCalc::GeometryType::Spherical;
-  else if( geometry_str == "CylinderSideOn" )
-    chi_input.config.geometry = GammaInteractionCalc::GeometryType::CylinderSideOn;
-  else if( geometry_str == "CylinderEndOn" )
-    chi_input.config.geometry = GammaInteractionCalc::GeometryType::CylinderEndOn;
-  else if( geometry_str == "Rectangular" )
-    chi_input.config.geometry = GammaInteractionCalc::GeometryType::Rectangular;
-  else
-    throw runtime_error( "Invalid geometry: " + geometry_str );
-
-  // Parse options
-  if( params.contains("options") && params["options"].is_object() )
-  {
-    const json &opts = params["options"];
-    chi_input.config.options.multiple_nucs_contribute_to_peaks = opts.value( "multiple_nucs_contribute_to_peaks", true );
-    chi_input.config.options.attenuate_for_air = opts.value( "attenuate_for_air", true );
-    chi_input.config.options.account_for_decay_during_meas = opts.value( "account_for_decay_during_meas", false );
-    chi_input.config.options.photopeak_cluster_sigma = opts.value( "photopeak_cluster_sigma", 1.25 );
-    chi_input.config.options.background_peak_subtract = opts.value( "background_peak_subtract", true );
-    chi_input.config.options.same_age_isotopes = opts.value( "same_age_isotopes", true );
-  }
-
-  // Build source definitions from peaks (simple case - one source per nuclide)
-  std::map<const SandiaDecay::Nuclide*, ShieldingSourceFitCalc::SourceFitDef> sources_map;
-  for( const auto &peak : fitting_peaks )
-  {
-    const SandiaDecay::Nuclide *nuc = peak->parentNuclide();
-    if( !nuc )
-      continue;
-
-    if( sources_map.find(nuc) == sources_map.end() )
-    {
-      ShieldingSourceFitCalc::SourceFitDef srcdef;
-      srcdef.nuclide = nuc;
-      srcdef.activity = 1.0E-6 * PhysicalUnits::curie; // Initial guess: 1 uCi
-      srcdef.fitActivity = true;
-      srcdef.age = PeakDef::defaultDecayTime( nuc );
-      srcdef.fitAge = false; // Default: don't fit age
-      srcdef.ageDefiningNuc = nullptr;
-      srcdef.sourceType = ShieldingSourceFitCalc::ModelSourceType::Point;
-
-      sources_map[nuc] = srcdef;
-    }
-  }
-
-  // Convert map to vector and set sources
-  chi_input.config.sources.clear();
-  for( auto &pair : sources_map )
-    chi_input.config.sources.push_back( pair.second );
-
-  // TODO: Parse shielding from parameters (for now, no shielding)
-  chi_input.config.shieldings.clear();
-
-  // Create the chi2 function and parameters
-  auto [chi2Fcn, inputParams] = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
-
-  if( !chi2Fcn )
-    throw runtime_error( "Failed to create chi2 function for fitting" );
-
-  // Perform the fit (synchronous)
-  auto progress = std::make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
-  auto fit_results = std::make_shared<ShieldingSourceFitCalc::ModelFitResults>();
-  fit_results->initial_shieldings = chi_input.config.shieldings;
-
-  ShieldingSourceFitCalc::fit_model(
-    "",  // Empty wtsession = synchronous
-    chi2Fcn,
-    std::make_shared<ROOT::Minuit2::MnUserParameters>(inputParams),
-    progress,
-    [](){},  // No progress callback
-    fit_results,
-    [](){}   // No finished callback
-  );
-
-  // Format results
-  result["status"] = "success";
-  result["chi2"] = fit_results->chi2;
-  result["dof"] = fit_results->numDOF;
-  result["chi2_per_dof"] = (fit_results->numDOF > 0) ? (fit_results->chi2 / fit_results->numDOF) : 0.0;
-
-  // Add source results
-  result["sources"] = json::array();
-  for( const auto &src : fit_results->fit_src_info )
-  {
-    json src_json;
-    src_json["nuclide"] = src.nuclide->symbol;
-    src_json["activity_bq"] = src.activity;
-    if( src.activityUncertainty.has_value() )
-      src_json["activity_bq_uncertainty"] = *src.activityUncertainty;
-
-    // Format as human-readable string
-    InterSpec * const interspec = InterSpec::instance();
-    const bool use_curries = interspec ? true : !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", interspec );
-    if( src.activityUncertainty.has_value() && (src.activityUncertainty.value() > 0.0) )
-      src_json["activity_str"]= PhysicalUnits::printToBestActivityUnitsWithUncert( src.activity, src.activityUncertainty.value(), 5, use_curries );
-    else
-      src_json["activity_str"] = PhysicalUnits::printToBestActivityUnits( src.activity, 5, use_curries );
-
-    result["sources"].push_back( src_json );
-  }
-
-  result["message"] = "Fit completed successfully";
-  result["num_peaks_used"] = fitting_peaks.size();
+  result["is_final_state"] = state_def.is_final;
 
   return result;
-}//executeActivityFit(...)
-
+}
 
 } // namespace LlmTools
 

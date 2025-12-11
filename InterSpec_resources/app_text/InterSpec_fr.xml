@@ -111,7 +111,7 @@
   <message id="units-labels-hours">heures|heure|hrs|h</message>
   <message id="units-labels-days">jours|jour|j</message>
   <message id="units-labels-year">années|année|ans|an|a</message>
-  <message id="units-labels-half-lives">dv|demi-vie|demi-vies|période|périodes</message>
+  <message id="units-labels-half-lives">dv|demi-vie|demi vie|demi-vies|demi vies|période|périodes</message>
   <!-- Unités à utiliser lors de l'écriture d'une durée -->
   <message id="units-label-seconds-short">s</message>
   <message id="units-label-minutes-short">m</message>

@@ -203,10 +203,16 @@ public:
   
   ::rapidxml::xml_node<char> *serialize( ::rapidxml::xml_node<char> *parent ) const;
   void deSerialize( const rapidxml::xml_node<char> *base_node );
-  
+
   std::unique_ptr<rapidxml::xml_document<char>> guiStateToXml() const;
   void setGuiStateFromXml( const rapidxml::xml_document<char> *doc );
-  
+
+  /** Serializes the GUI state to a RelActAutoGuiState struct. */
+  void serialize( RelActCalcAuto::RelActAutoGuiState &state ) const;
+
+  /** Deserializes a RelActAutoGuiState struct into the GUI. */
+  void deSerialize( const RelActCalcAuto::RelActAutoGuiState &state );
+
   void setCalcOptionsGui( const RelActCalcAuto::Options &options );
   
 

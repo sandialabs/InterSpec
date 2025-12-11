@@ -2366,11 +2366,18 @@ void fit_model( const std::string wtsession,
         row.activityUncertainty.reset();
         if( row.fitActivity || chi2Fcn->isTraceSource(nuc) || chi2Fcn->isSelfAttenSource(nuc) )
         {
-          const double activityUncert = chi2Fcn->totalActivityUncertainty( nuc, params, errors );
-          if( activityUncert > FLT_EPSILON )
+          try
           {
-            assert( activityUncert > 0.0 );
-            row.activityUncertainty = activityUncert;
+            const double activityUncert = chi2Fcn->totalActivityUncertainty( nuc, params, errors );
+            if( activityUncert > FLT_EPSILON )
+            {
+              assert( activityUncert > 0.0 );
+              row.activityUncertainty = activityUncert;
+            }
+          }catch( std::exception & )
+          {
+            //We dont seem to get here - but JUC
+            assert( 0 );
           }
         }
         

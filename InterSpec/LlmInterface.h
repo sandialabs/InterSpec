@@ -35,25 +35,6 @@
 
 static_assert( USE_LLM_INTERFACE, "You should not include this library unless USE_LLM_INTERFACE is enabled" );
 
-// Choose LLM HTTP implementation method
-//#define USE_WT_HTTP_FOR_LLM  // Use Wt::Http::Client for HTTPS requests (needs further debugging)
-#define USE_JS_BRIDGE_FOR_LLM   // Use JavaScript bridge for HTTPS requests (default)
-
-// Ensure only one implementation is selected
-#if defined(USE_WT_HTTP_FOR_LLM) && defined(USE_JS_BRIDGE_FOR_LLM)
-#error "Cannot define both USE_WT_HTTP_FOR_LLM and USE_JS_BRIDGE_FOR_LLM"
-#endif
-
-#if !defined(USE_WT_HTTP_FOR_LLM) && !defined(USE_JS_BRIDGE_FOR_LLM)
-#error "Must define either USE_WT_HTTP_FOR_LLM or USE_JS_BRIDGE_FOR_LLM"
-#endif
-
-#ifdef USE_WT_HTTP_FOR_LLM
-#include <boost/system/error_code.hpp>
-#include <Wt/Http/Client>
-#include <Wt/Http/Message>
-#endif
-
 
 // Forward declarations
 class InterSpec;
@@ -67,13 +48,14 @@ namespace LlmTools {
   class ToolRegistry;
 }
 
+class LlmToolRequest;
+class LlmToolResults;
+
 namespace Wt {
   class WResource;
 
-#ifdef USE_JS_BRIDGE_FOR_LLM
   template <typename A1, typename A2, typename A3, typename A4, typename A5, typename A6> 
   class JSignal;
-#endif
 }
 
 /** Main LLM interface class that handles communication with OpenAI-compatible API endpoints.
@@ -84,7 +66,7 @@ namespace Wt {
  - Conversation history management  
  - Integration with InterSpec session
  */
-class LlmInterface
+class LlmInterface : public Wt::Signals::trackable
 {
 public:
   /** Construct LLM interface for the given InterSpec instance.
@@ -133,10 +115,20 @@ public:
   bool isConfigured() const;
   
   /** Signal emitted when a new response is received from the LLM */
-  Wt::Signal<>& responseReceived();
+  Wt::Signal<>& conversationFinished();
 
+  /** Signal emitted when an error response is received from the LLM */
+  Wt::Signal<>& responseError();
+  
   /** Check if a specific request ID is still pending */
   bool isRequestPending(int requestId) const;
+
+  /** Get the conversation currently being processed (for tool execution context).
+
+   Returns nullptr if no conversation is currently being processed.
+   This is used by tools that need access to conversation-specific state like state machines.
+   */
+  std::shared_ptr<LlmInteraction> getCurrentConversation() const;
 
   /** Invoke a sub-agent to handle a specific task (async).
    @param sub_agent_convo The conversation to send to the LLM to start the sub-agent
@@ -144,28 +136,51 @@ public:
    */
   int invokeSubAgent( std::shared_ptr<LlmInteraction> sub_agent_convo );
 
-#ifdef USE_JS_BRIDGE_FOR_LLM
+  /** Build the messages array for a conversation.
+
+   This is exposed publicly to support retry functionality from LlmToolGui.
+
+   @param convo The conversation to build messages for
+   @return JSON object ready to send to LLM API
+   */
+  nlohmann::json buildMessagesArray( const std::shared_ptr<LlmInteraction> &convo );
+
+  /** Make a tracked API call with the given JSON request.
+
+   This is exposed publicly to support retry functionality from LlmToolGui.
+
+   @param requestJson The JSON request to send
+   @param convo The conversation this request belongs to
+   @return Pair of (requestId, request content as string)
+   */
+  std::pair<int,std::string> makeTrackedApiCall( const nlohmann::json& requestJson,
+                         std::shared_ptr<LlmInteraction> convo );
+
+  /** Send tool results back to LLM for processing.
+
+   This is exposed publicly to support retry functionality from LlmToolGui.
+
+   @param convo The conversation to send tool results for
+   @return Request ID for the API call
+   */
+  int sendToolResultsToLLM( std::shared_ptr<LlmInteraction> convo );
+
   /** JavaScript callback to handle LLM response */
   void handleJavaScriptResponse(std::string response, int requestId);
-#endif
 
 private:
+  void emitConversationFinished(){ conversationFinished().emit(); }
+  
   InterSpec* m_interspec;
   const std::shared_ptr<const LlmConfig> m_config;
   const std::shared_ptr<const LlmTools::ToolRegistry> m_tool_registry;
   std::shared_ptr<LlmConversationHistory> m_history;
   
-  Wt::Signal<> m_responseReceived; // Signal emitted when new responses are received
+  Wt::Signal<> m_conversationFinished; // Signal emitted when succesful final response from LLM is recieved.
+  Wt::Signal<> m_responseError;    // Signal emitted when error responses are received
   
-#ifdef USE_JS_BRIDGE_FOR_LLM
   std::unique_ptr<Wt::JSignal<std::string, int>> m_responseSignal; // For JavaScript bridge (response, requestId)
-#endif
 
-#ifdef USE_WT_HTTP_FOR_LLM
-  std::unique_ptr<Wt::Http::Client> m_httpClient; // Wt HTTP client for native C++ requests
-  int m_currentRequestId; // Current request ID for Wt HTTP client correlation
-#endif
-  
   // Request tracking
   int m_nextRequestId;
 
@@ -184,6 +199,9 @@ private:
   
   std::map<int, PendingRequest> m_pendingRequests;
 
+  // Track current conversation being processed (for tool execution context)
+  std::weak_ptr<LlmInteraction> m_currentConversation;
+
   // Deferred tool results (for sub-agent invocations that need to pause main agent)
   struct DeferredToolResult {
     std::string conversationId;
@@ -193,24 +211,11 @@ private:
   std::map<int, DeferredToolResult> m_deferredToolResults; // Key is sub-agent requestId
   
   /** Make an API call with request ID tracking
-   
+
    @returns The request body content (e.g., the JSON as a string).
    */
   std::string makeApiCallWithId(const nlohmann::json& requestJson, int requestId);
-  
-  /** Make an API call with request tracking
-   
-   Returns request ID (as an int) and the raw request body content (e.g., JSON sent to LLM, but as a string)
-   */
-  std::pair<int,std::string> makeTrackedApiCall( const nlohmann::json& requestJson,
-                         std::shared_ptr<LlmInteraction> convo );
-  
-  /** Send tool results back to LLM for processing.
-   
-   @returns The request ID.
-   */
-  int sendToolResultsToLLM( std::shared_ptr<LlmInteraction> convo );
-  
+
   /** Handle response from LLM API */
   void handleApiResponse( const std::string &response, const std::shared_ptr<LlmInteraction> &convo, const int requestId );
   
@@ -218,7 +223,8 @@ private:
    
    Returns the number of tool calls processed.
    */
-  size_t executeToolCallsAndSendResults( const nlohmann::json& toolCalls,
+  std::pair<std::shared_ptr<LlmToolRequest>, std::shared_ptr<LlmToolResults>>
+  executeToolCallsAndSendResults( const nlohmann::json& toolCalls,
                                          const std::shared_ptr<LlmInteraction> &convo,
                                          const int requestId,
                                          const std::string &rawResponseContent,
@@ -229,7 +235,8 @@ private:
    
    Returns the number of tool calls processed.
    */
-  size_t parseContentForToolCallsAndSendResults( const std::string &content,
+  std::pair<std::shared_ptr<LlmToolRequest>, std::shared_ptr<LlmToolResults>>
+  parseContentForToolCallsAndSendResults( const std::string &content,
                                                 const std::shared_ptr<LlmInteraction> &convo,
                                                 const int requestId,
                                                 const std::string &rawResponseContent );
@@ -239,39 +246,39 @@ private:
   
   /** Extract thinking content and clean content from LLM responses */
   static std::pair<std::string, std::string> extractThinkingAndContent(const std::string& content);
-  
-  /** Build the messages array for the API request including history and system prompt.
-   
-   Note: If you are starting a conversation with a user message - this would be `convo->content`.  If you are continuing a conversation, you should
-   have put the tool results into `convo->responses`.
-   
-   If you call this function for for a sub-agent (i.e., not MainAgent), then it will include only the history of `convo` and use the agent system prompt.
-   
-   If this function is being called for the MainAgent, will include entire chat history, up until and including `convo` (but nothing after it) in the returned JSON.
-   
-   @return JSON messages array for the API request
-   */
-  nlohmann::json buildMessagesArray( const std::shared_ptr<LlmInteraction> &convo );
 
   /** Get the system prompt for a specific agent from config
    */
   std::string getSystemPromptForAgent( const AgentType agentType ) const;
-  
-#ifdef USE_JS_BRIDGE_FOR_LLM
+
+  /** Initialize state machine for a conversation if the agent has one defined.
+
+   Creates a fresh copy of the agent's state machine and resets it to the initial state.
+
+   @param convo The conversation to initialize state machine for
+   */
+  void initializeStateMachineForConversation( std::shared_ptr<LlmInteraction> convo ) const;
+
   /** Set up the JavaScript bridge for making HTTPS requests */
   void setupJavaScriptBridge();
+};
+
+
+#if( PERFORM_DEVELOPER_CHECKS )
+// Test namespace to expose static functions for unit testing
+namespace LlmInterfaceTests
+{
+  /** Exposed for unit testing only - parse JSON with lenient error handling */
+  nlohmann::json lenientlyParseJson( const std::string &jsonStr );
+
+  /** Exposed for unit testing only - sanitize JSON string before parsing */
+  std::string sanitizeJsonString( const std::string &jsonStr );
+
+  /** Exposed for unit testing only - repair structurally incomplete JSON */
+  std::string repairIncompleteJson( const std::string &jsonStr,
+                                    std::string *repairLog = nullptr );
+}//namespace LlmInterfaceTests
 #endif
 
-#ifdef USE_WT_HTTP_FOR_LLM
-  /** Handle HTTP response from Wt::Http::Client */
-  void handleWtHttpResponse(int requestId, const std::string& responseBody, int statusCode = 200);
-  
-  /** Handle HTTP error from Wt::Http::Client */
-  void handleWtHttpError(int requestId, const std::string& error);
-  
-  /** Handle HTTP client done signal (boost::system::error_code, Http::Message) */
-  void handleWtHttpClientResponse(boost::system::error_code err, const Wt::Http::Message& response);
-#endif
-};
 
 #endif // LlmInterface_h 

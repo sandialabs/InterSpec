@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- This file applies to InjaLogDialog.cpp - a reusable dialog for displaying inja-rendered content -->
+  <message id="ild-no-templates">Nem lett sablon megadva.</message>
+  <message id="ild-json-parse-error">
+    <p>Hiba a JSON adatok elemzése során:</p>
+    <code>{1}</code>
+  </message>
+  <message id="ild-inja-error">
+    <p>Hiba a sablon megjelenítése során:</p>
+    <code>{1}</code>
+    <br />
+    {2}. sor, {3}. oszlop
+  </message>
+  <message id="ild-misc-error">
+    <p>Hiba a tartalom megjelenítése során:</p>
+    <code>{1}</code>
+  </message>
+</messages>

@@ -27,8 +27,9 @@
 
 #include <map>
 #include <set>
-#include <tuple>
 #include <array>
+#include <deque>
+#include <tuple>
 #include <atomic>
 #include <vector>
 #include <utility>
@@ -625,6 +626,8 @@ struct ShieldingDetails
 struct SourceDetails
 {
   const SandiaDecay::Nuclide *nuclide = nullptr;
+  
+  /** The total activity of the source. */
   double activity = 0.0;
   double activityUncertainty = 0.0;
   /** If the activity is fit for.

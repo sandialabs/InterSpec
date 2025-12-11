@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- This file applies to InjaLogDialog.cpp - a reusable dialog for displaying inja-rendered content -->
+  <message id="ild-no-templates">No se proporcionaron plantillas.</message>
+  <message id="ild-json-parse-error">
+    <p>Error al analizar datos JSON:</p>
+    <code>{1}</code>
+  </message>
+  <message id="ild-inja-error">
+    <p>Error al renderizar la plantilla:</p>
+    <code>{1}</code>
+    <br />
+    en la línea {2}, columna {3}
+  </message>
+  <message id="ild-misc-error">
+    <p>Error al mostrar el contenido:</p>
+    <code>{1}</code>
+  </message>
+</messages>

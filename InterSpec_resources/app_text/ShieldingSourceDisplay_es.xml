@@ -123,6 +123,8 @@
     Ajuste no realizado (no se pudo hacer Chi2Fcn).
   </message>
   <message id="ssd-error-create-tool">Error creando visualización de ajuste actividad/blindaje: {1}</message>
+  <message id="ssd-shield-source-diagram">Diagrama Blindaje/Fuente</message>
+  <message id="ssd-show-model-diagram">Mostrar Diagrama del Modelo</message>
 
   <!-- SourceFitModel quantities -->
   <message id="sfm-tt-header-isotope">Los nucleídos se añaden o quitan según los fotopicos usados para este ajuste, por tanto no pueden editarse en esta tabla</message>

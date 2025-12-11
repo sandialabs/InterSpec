@@ -54,6 +54,7 @@
 #include "InterSpec/LlmConversationHistory.h"
 #endif
 #include "InterSpec/PeakModel.h"
+#include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
@@ -1087,10 +1088,10 @@ void SpecMeas::setRelActManualGuiState( std::unique_ptr<rapidxml::xml_document<c
 void SpecMeas::setRelActAutoGuiState( std::unique_ptr<rapidxml::xml_document<char>> &&model )
 {
   std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
-  
+
   if( !model && !m_relActAutoGuiState )
     return;
-  
+
   bool is_diff = true;
   if( m_relActAutoGuiState && model && !modified_ )
   {
@@ -1101,12 +1102,74 @@ void SpecMeas::setRelActAutoGuiState( std::unique_ptr<rapidxml::xml_document<cha
     rapidxml::print( std::back_inserter(rhsdata), *model, 0 );
     is_diff = (lhsdata != rhsdata);
   }//
-  
+
   m_relActAutoGuiState = std::move( model );
-  
+
   if( is_diff )
     modified_ = modifiedSinceDecode_ = true;
 }//void setRelActAutoGuiState( std::unique_ptr<rapidxml::xml_document<char>> &&model )
+
+
+std::unique_ptr<RelActCalcAuto::RelActAutoGuiState> SpecMeas::getRelActAutoGuiState( MaterialDB *materialDb ) const
+{
+  std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
+
+  if( !m_relActAutoGuiState )
+    return nullptr;
+
+  const rapidxml::xml_node<char> *base_node = m_relActAutoGuiState->first_node( "RelActCalcAuto" );
+  if( !base_node )
+  {
+    // Shouldn't happen with valid XML, but handle gracefully
+    return nullptr;
+  }
+
+  std::unique_ptr<RelActCalcAuto::RelActAutoGuiState> state( new RelActCalcAuto::RelActAutoGuiState() );
+
+  try
+  {
+    state->deSerialize( base_node, materialDb );
+  }catch( std::exception &e )
+  {
+    // Log error but don't throw - return nullptr to indicate failure
+    cerr << "SpecMeas::getRelActAutoGuiState(): Error deserializing state: " << e.what() << endl;
+    return nullptr;
+  }
+
+  return state;
+}//std::unique_ptr<RelActCalcAuto::RelActAutoGuiState> getRelActAutoGuiState( MaterialDB *materialDb ) const
+
+
+void SpecMeas::setRelActAutoGuiState( const RelActCalcAuto::RelActAutoGuiState *state )
+{
+  std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
+
+  // Handle nullptr case - clear the state
+  if( !state )
+  {
+    if( m_relActAutoGuiState )
+    {
+      m_relActAutoGuiState.reset();
+      modified_ = modifiedSinceDecode_ = true;
+    }
+    return;
+  }
+
+  // Serialize the struct to a new XML document
+  std::unique_ptr<rapidxml::xml_document<char>> doc( new rapidxml::xml_document<char>() );
+
+  try
+  {
+    state->serialize( doc.get() );
+  }catch( std::exception &e )
+  {
+    cerr << "SpecMeas::setRelActAutoGuiState(): Error serializing state: " << e.what() << endl;
+    throw;
+  }
+
+  // Use existing XML setter which handles change detection
+  setRelActAutoGuiState( std::move(doc) );
+}//void setRelActAutoGuiState( const RelActCalcAuto::RelActAutoGuiState *state )
 
 #endif //#if( USE_REL_ACT_TOOL )
 

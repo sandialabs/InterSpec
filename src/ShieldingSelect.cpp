@@ -5497,6 +5497,8 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
     }//}//if( m_isGenericMaterial ) / else
   };//testShieldingSelectPartiallySameAsOrig
     
+  /*
+   // This next block can crash if this ShieldingSelect is destructing
   try
   {
     const string uri = encodeStateToUrl();
@@ -5510,6 +5512,8 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
     log_developer_error( __func__, msg.c_str() );
 //    assert( 0 );
   }//try
+  */
+  
   
   /*
    //This test will fail for trace-sources, as getting their total activity depends

@@ -90,6 +90,7 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/FileDragUploadResource.h"
 #include "InterSpec/ColorTheme.h"
+#include "InterSpec/InjaLogDialog.h"
 #include "InterSpec/ReferenceLineInfo.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/BatchGuiInputFile.h"
@@ -162,35 +163,8 @@ namespace
     
     return 0;
   }//max_records_in_save_type(...)
-  
-// Create a custom resource to serve the HTML content
-class BatchReportResource : public Wt::WResource
-{
-private:
-  const std::string m_html_content;
 
-public:
-  BatchReportResource( std::string &&html_content, WObject *parent = nullptr )
-  : Wt::WResource( parent ), m_html_content( std::move( html_content ) )
-  {
-    setDispositionType( DispositionType::Inline );
-  }
-
-  virtual ~BatchReportResource()
-  {
-    beingDeleted();
-  }
-
-  virtual void handleRequest( const Wt::Http::Request &request, Wt::Http::Response &response ) override
-  {
-    response.setMimeType( "text/html; charset=utf-8" );
-    response.addHeader( "Cache-Control", "no-cache, no-store, must-revalidate" );
-    response.addHeader( "Pragma", "no-cache" );
-    response.addHeader( "Expires", "0" );
-
-    response.out() << m_html_content;
-  }
-};// class BatchReportResource
+// BatchReportResource class moved to InjaLogDialog.cpp
 
 }// namespace
 
@@ -1018,60 +992,24 @@ void BatchGuiPeakFitWidget::performAnalysis(
   {
     close_waiting_dialog();
 
-    SimpleDialog *dialog = new SimpleDialog( WString::tr( "bgw-analysis-summary-title" ) );
-    dialog->addStyleClass( "BatchAnalysisResultDialog" );
+    // Parse the JSON data
+    nlohmann::json summary_json = nlohmann::json::parse( results->summary_json );
 
-    try
-    {
-      nlohmann::json summary_json = nlohmann::json::parse( results->summary_json );
-      inja::Environment env = BatchInfoLog::get_default_inja_env( options );
-      string rpt = BatchInfoLog::render_template(
-        "html", env, BatchInfoLog::TemplateRenderType::PeakFitSummary, options, summary_json );
+    // Create template options vector
+    vector<tuple<WString, string, InjaLogDialog::LogType, function<string(inja::Environment&, const nlohmann::json&)>>> templates;
+    templates.push_back( make_tuple(
+      Wt::WString( "Analysis Report" ), //wont be shown, as we'll hide th tool-bar
+      "_peak_fit_summary.html",
+      InjaLogDialog::LogType::Html,
+      [options]( inja::Environment &env, const nlohmann::json &data ) -> string {
+        return BatchInfoLog::render_template( "html", env, BatchInfoLog::TemplateRenderType::PeakFitSummary, options, data );
+      }
+    ) );
 
-      // Create the resource and get its URL
-      BatchReportResource *report_resource = new BatchReportResource( std::move( rpt ), dialog );
-      const string resource_url = report_resource->url();
-
-      const string contents = "<iframe "
-                              "style=\"width: 100%; height: 100%; border: none;\" "
-                              "sandbox=\"allow-scripts\" "
-                              "src=\"" +
-                              resource_url +
-                              "\" "
-                              "onerror=\"console.error('Iframe failed to load')\"> "
-                              "</iframe>";
-
-      dialog->resize( WLength( 80.0, WLength::Percentage ), WLength( 95.0, WLength::Percentage ) );
-
-      WText *result_text = new WText( contents, Wt::TextFormat::XHTMLUnsafeText, dialog->contents() );
-      result_text->addStyleClass( "BatchReportIFrameHolder" );
-      result_text->setWidth( WLength( 100.0, WLength::Percentage ) );
-      result_text->setHeight( WLength( 100.0, WLength::Percentage ) );
-    } catch( nlohmann::json::parse_error &e )
-    {
-      const string contents = "<p>" + WString::tr( "bgw-json-parse-error" ).arg( string( e.what() ) ).toUTF8() + "</p>";
-      WText *result_text = new WText( contents, Wt::TextFormat::XHTMLUnsafeText, dialog->contents() );
-      result_text->addStyleClass( "BatchReportJsonError" );
-    } catch( inja::InjaError &e )
-    {
-      const string contents = "<p>" +
-                              WString::tr( "bgw-inja-error" )
-                                .arg( e.message )
-                                .arg( std::to_string( e.location.line ) )
-                                .arg( std::to_string( e.location.column ) )
-                                .toUTF8() +
-                              "</p>";
-
-      WText *result_text = new WText( contents, Wt::TextFormat::XHTMLUnsafeText, dialog->contents() );
-      result_text->addStyleClass( "BatchReportInjaError" );
-    } catch( std::exception &e )
-    {
-      const string contents = "<p>" + WString::tr( "bgw-misc-error" ).arg( string( e.what() ) ).toUTF8() + "</p>";
-      WText *result_text = new WText( contents, Wt::TextFormat::XHTMLUnsafeText, dialog->contents() );
-      result_text->addStyleClass( "BatchReportMiscError" );
-    }
-
-    dialog->addButton( WString::tr( "Okay" ) );
+    // Create and show the dialog
+    InjaLogDialog *dialog = new InjaLogDialog( WString::tr( "bgw-analysis-summary-title" ), summary_json, templates );
+    dialog->setToolbarVisible( false );
+    dialog->show();
 
 
     if( !results->warnings.empty() )
@@ -1389,60 +1327,24 @@ void BatchGuiActShieldAnaWidget::performAnalysis(
   {
     close_waiting_dialog();
 
-    SimpleDialog *dialog = new SimpleDialog( WString::tr( "bgw-analysis-summary-title" ) );
-    dialog->addStyleClass( "BatchAnalysisResultDialog" );
+    // Parse the JSON data
+    nlohmann::json summary_json = nlohmann::json::parse( summary_results->summary_json );
 
-    try
-    {
-      nlohmann::json summary_json = nlohmann::json::parse( summary_results->summary_json );
-      inja::Environment env = BatchInfoLog::get_default_inja_env( summary_results->options );
-      string rpt = BatchInfoLog::render_template(
-        "html", env, BatchInfoLog::TemplateRenderType::ActShieldSummary, summary_results->options, summary_json );
+    // Create template options vector
+    vector<tuple<WString, string, InjaLogDialog::LogType, function<string(inja::Environment&, const nlohmann::json&)>>> templates;
+    templates.push_back( make_tuple(
+      Wt::WString( "Analysis Report" ), //wont be shown, as we'll hide th tool-bar
+      "_act_shield_summary.html",
+      InjaLogDialog::LogType::Html,
+      [options]( inja::Environment &env, const nlohmann::json &data ) -> string {
+        return BatchInfoLog::render_template( "html", env, BatchInfoLog::TemplateRenderType::ActShieldSummary, options, data );
+      }
+    ) );
 
-      // Create the resource and get its URL
-      BatchReportResource *report_resource = new BatchReportResource( std::move( rpt ), dialog );
-      const string resource_url = report_resource->url();
-
-      const string contents = "<iframe "
-                              "style=\"width: 100%; height: 100%; border: none;\" "
-                              "sandbox=\"allow-scripts\" "
-                              "src=\"" +
-                              resource_url +
-                              "\" "
-                              "onerror=\"console.error('Iframe failed to load')\"> "
-                              "</iframe>";
-
-      dialog->resize( WLength( 80.0, WLength::Percentage ), WLength( 95.0, WLength::Percentage ) );
-
-      WText *result_text = new WText( contents, Wt::TextFormat::XHTMLUnsafeText, dialog->contents() );
-      result_text->addStyleClass( "BatchReportIFrameHolder" );
-      result_text->setWidth( WLength( 100.0, WLength::Percentage ) );
-      result_text->setHeight( WLength( 100.0, WLength::Percentage ) );
-    } catch( nlohmann::json::parse_error &e )
-    {
-      const string contents = "<p>" + WString::tr( "bgw-json-parse-error" ).arg( string( e.what() ) ).toUTF8() + "</p>";
-      WText *result_text = new WText( contents, Wt::TextFormat::XHTMLUnsafeText, dialog->contents() );
-      result_text->addStyleClass( "BatchReportJsonError" );
-    } catch( inja::InjaError &e )
-    {
-      const string contents = "<p>" +
-                              WString::tr( "bgw-inja-error" )
-                                .arg( e.message )
-                                .arg( std::to_string( e.location.line ) )
-                                .arg( std::to_string( e.location.column ) )
-                                .toUTF8() +
-                              "</p>";
-
-      WText *result_text = new WText( contents, Wt::TextFormat::XHTMLUnsafeText, dialog->contents() );
-      result_text->addStyleClass( "BatchReportInjaError" );
-    } catch( std::exception &e )
-    {
-      const string contents = "<p>" + WString::tr( "bgw-misc-error" ).arg( string( e.what() ) ).toUTF8() + "</p>";
-      WText *result_text = new WText( contents, Wt::TextFormat::XHTMLUnsafeText, dialog->contents() );
-      result_text->addStyleClass( "BatchReportMiscError" );
-    }
-
-    dialog->addButton( WString::tr( "Okay" ) );
+    // Create and show the dialog
+    InjaLogDialog *dialog = new InjaLogDialog( WString::tr( "bgw-analysis-summary-title" ), summary_json, templates );
+    dialog->setToolbarVisible( false );
+    dialog->show();
 
 
     if( !summary_results->warnings.empty() )

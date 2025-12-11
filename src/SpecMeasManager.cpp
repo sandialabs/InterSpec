@@ -154,7 +154,7 @@
 #include "InterSpec/QRSpectrum.h"
 #endif
 
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_GUI_TOOLS )
 #include "InterSpec/BatchGuiWidget.h"
 #endif
 
@@ -1447,7 +1447,7 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
     m_foregroundDragNDrop( new FileDragUploadResource(this) ),
     m_secondForegroundDragNDrop( new FileDragUploadResource(this) ),
     m_backgroundDragNDrop( new FileDragUploadResource(this) ),
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_GUI_TOOLS )
     m_batchDragNDrop( nullptr ),
 #endif
     m_multiUrlSpectrumDialog( nullptr ),
@@ -1456,7 +1456,7 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
     m_previousStatesDialog( nullptr ),
     m_processingUploadDialog( nullptr ),
     m_nonSpecFileDialog( nullptr ),
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_GUI_TOOLS )
     m_batchDialog( nullptr ),
 #endif
     m_processingUploadTimer{}
@@ -1502,7 +1502,7 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
   m_backgroundDragNDrop->dataReceived().connect( boost::bind( &SpecMeasManager::handleDataRecievedStatus, this,
                                       boost::placeholders::_1, boost::placeholders::_2, SpectrumType::Background ) );
 
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_GUI_TOOLS )
   m_batchDragNDrop = new FileDragUploadResource( this );
   m_batchDragNDrop->fileDrop().connect( this, &SpecMeasManager::showBatchDialog );
 #endif
@@ -1661,7 +1661,7 @@ FileDragUploadResource *SpecMeasManager::backgroundDragNDrop()
   return m_backgroundDragNDrop;
 }
 
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_GUI_TOOLS )
 FileDragUploadResource *SpecMeasManager::batchDragNDrop()
 {
   return m_batchDragNDrop;
@@ -3064,7 +3064,7 @@ bool SpecMeasManager::handleRelActAutoXmlFile( std::istream &input, SimpleDialog
     doc.parse<rapidxml::parse_trim_whitespace>( &(data[0]) );
     
     
-    RelActAutoGui *tool = m_viewer->showRelActAutoWindow();
+    RelActAutoGui *tool = m_viewer->relActAutoWindow( true );
     if( !tool )
       throw runtime_error( "Could not create <em>Isotopics by nuclide</em> tool." );
     
@@ -3809,7 +3809,7 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
 }//handleFileDrop(...)
 
 
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_GUI_TOOLS )
 void SpecMeasManager::showBatchDialog()
 {
   if( m_batchDialog )

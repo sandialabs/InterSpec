@@ -382,8 +382,11 @@ namespace AnalystChecks
       throw runtime_error( "Could not identify newly fit peak." );
     
     // get fit peak
+    string source = options.source.has_value() ? options.source.value() : ""s;
+    if( SpecUtils::icontains(source, "unknown") || SpecUtils::istarts_with(source, "unk") )
+      source = "";
     
-    if( options.source.has_value() && !options.source.value().empty() )
+    if( !source.empty() )
     {
       const string source = options.source.value();
       
@@ -918,8 +921,7 @@ namespace AnalystChecks
       base_roi.lower_energy = std::max( 55.0f, foreground->gamma_energy_min() );
       base_roi.upper_energy = foreground->gamma_energy_max();
       base_roi.continuum_type = PeakContinuum::OffsetType::Linear;
-      base_roi.force_full_range = false;
-      base_roi.allow_expand_for_peak_width = true;
+      base_roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::CanExpandForFwhm;
       
       // Create all trial options combinations to run in parallel
       std::vector<RelActCalcAuto::Options> trial_options;

@@ -6659,8 +6659,8 @@ void ShieldingSourceChi2Fcn::log_source_info( const std::vector<double> &params,
       
       SourceDetails src;
       src.nuclide = nuc;
-      src.activity = chi2Fcn->activity( nuc, params );
-      src.activityUncertainty = chi2Fcn->activityUncertainty( nuc, params, errors );
+      src.activity = chi2Fcn->totalActivity( nuc, params );  //Note for trace-sources
+      src.activityUncertainty = chi2Fcn->totalActivityUncertainty( nuc, params, errors );
       src.activityIsFit = fit_info.fitActivity;
       src.nuclideMass = (src.activity / nuc->activityPerGram()) * PhysicalUnits::gram;
       src.age = chi2Fcn->age( nuc, params );
@@ -6672,10 +6672,10 @@ void ShieldingSourceChi2Fcn::log_source_info( const std::vector<double> &params,
       if( src.isTraceSource )
       {
         src.traceActivityType = chi2Fcn->traceSourceActivityType(nuc);
-        src.traceSrcDisplayAct = chi2Fcn->totalActivity(nuc,params);
-        src.traceSrcDisplayActUncertainty = chi2Fcn->totalActivityUncertainty(nuc, params, errors );
+        src.traceSrcDisplayAct = chi2Fcn->activity(nuc,params);
+        src.traceSrcDisplayActUncertainty = chi2Fcn->activityUncertainty(nuc, params, errors);
         src.traceRelaxationLength = 0.0;
-        
+
         TraceActivityType traceType = chi2Fcn->traceSourceActivityType(nuc);
         if( traceType == TraceActivityType::ExponentialDistribution )
           src.traceRelaxationLength = chi2Fcn->relaxationLength(nuc);

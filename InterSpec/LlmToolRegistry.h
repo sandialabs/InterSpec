@@ -169,13 +169,8 @@ private:
   static nlohmann::json executeEscapePeakCheck(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeSumPeakCheck(const nlohmann::json& params, InterSpec* interspec);
 
-  // Activity/Shielding Fit Tools (for ActivityFit agent)
-  static nlohmann::json executeActivityFit(const nlohmann::json& params, InterSpec* interspec);
-  static nlohmann::json executeGetShieldingSourceConfig(const nlohmann::json& params, InterSpec* interspec);
-  static nlohmann::json executeModifyShieldingSourceConfig(const nlohmann::json& params, InterSpec* interspec);
-  static nlohmann::json executeMarkPeaksForActivityFit(const nlohmann::json& params, InterSpec* interspec);
-  static nlohmann::json executeCloseActivityShieldingDisplay(const nlohmann::json& params, InterSpec* interspec);
-  static nlohmann::json executeAskUserQuestion(const nlohmann::json& params, InterSpec* interspec);
+  // Workflow State Tool (for agents with state machines)
+  static nlohmann::json executeSetWorkflowState(const nlohmann::json& params, InterSpec* interspec);
 
   /** Helper function to find and load a detector by identifier.
    @param identifier The detector identifier (name, path, or URI)

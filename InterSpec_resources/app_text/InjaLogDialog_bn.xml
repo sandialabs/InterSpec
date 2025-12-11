@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- This file applies to InjaLogDialog.cpp - a reusable dialog for displaying inja-rendered content -->
+  <message id="ild-no-templates">কোনো টেমপ্লেট প্রদান করা হয়নি।</message>
+  <message id="ild-json-parse-error">
+    <p>JSON ডেটা পার্স করতে ত্রুটি:</p>
+    <code>{1}</code>
+  </message>
+  <message id="ild-inja-error">
+    <p>টেমপ্লেট রেন্ডার করতে ত্রুটি:</p>
+    <code>{1}</code>
+    <br />
+    লাইন {2}, কলাম {3} এ
+  </message>
+  <message id="ild-misc-error">
+    <p>কন্টেন্ট প্রদর্শন করতে ত্রুটি:</p>
+    <code>{1}</code>
+  </message>
+</messages>

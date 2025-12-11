@@ -310,17 +310,22 @@ void fit_activities_in_files( const std::string &exemplar_filename,
   
   
   const vector<pair<string,string>> spec_chart_js_and_css = BatchInfoLog::load_spectrum_chart_js_and_css();
-  
+  const vector<pair<string,string>> shielding_fit_plot_js_and_css = BatchInfoLog::load_shielding_fit_plot_js_and_css();
+
   // Load report templates, and setup inja::environment
-  inja::Environment env = BatchInfoLog::get_default_inja_env( options );
-  
+  const string tmplt_dir = BatchInfoLog::template_include_dir( options );
+  inja::Environment env = BatchInfoLog::get_default_inja_env( tmplt_dir );
+
   bool set_setup_info_to_summary_json = false;
   nlohmann::json summary_json;
-  
+
   BatchInfoLog::add_exe_info_to_json( summary_json );
   BatchInfoLog::add_activity_fit_options_to_json( summary_json, options );
-  
+
   for( const pair<string,string> &key_val : spec_chart_js_and_css )
+    summary_json[key_val.first] = key_val.second;
+
+  for( const pair<string,string> &key_val : shielding_fit_plot_js_and_css )
     summary_json[key_val.first] = key_val.second;
   
   summary_json["ExemplarFile"] = exemplar_filename;
@@ -422,8 +427,11 @@ void fit_activities_in_files( const std::string &exemplar_filename,
   
     
     BatchInfoLog::add_activity_fit_options_to_json( data, fit_results.m_options );
-    
+
     for( const pair<string,string> &key_val : spec_chart_js_and_css )
+      data[key_val.first] = key_val.second;
+
+    for( const pair<string,string> &key_val : shielding_fit_plot_js_and_css )
       data[key_val.first] = key_val.second;
     
     const bool success = ((fit_results.m_result_code == BatchActivity::BatchActivityFitResult::ResultCode::Success)

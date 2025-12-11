@@ -32,6 +32,12 @@
 
 #include <nlohmann/json.hpp>
 
+// Forward declarations
+namespace rapidxml
+{
+  template<class Ch> class xml_node;
+}//namespace rapidxml
+
 static_assert( USE_LLM_INTERFACE, "You should not include this library unless USE_LLM_INTERFACE is enabled" );
 
 /** Agent types for LLM sub-agents */
@@ -40,7 +46,8 @@ enum class AgentType : int
   MainAgent,
   NuclideId,
   NuclideIdWorker,
-  ActivityFit
+  ActivityFit,
+  Isotopics
 };//enum class AgentType
 
 /** Convert AgentType to string name */
@@ -55,6 +62,65 @@ AgentType stringToAgentType( const std::string &name );
  It follows the InterSpec pattern of looking first in writableDataDirectory()
  then falling back to staticDataDirectory().
  */
+/** Optional state machine for guiding agent workflows.
+
+ State machines are completely optional - agents without one continue to work normally.
+ For agents with state machines, they provide:
+ - Structured workflow guidance
+ - Validation of state transitions (soft enforcement - warns but doesn't block)
+ - Dynamic prompt injection with state-specific guidance
+ */
+class AgentStateMachine
+{
+public:
+  /** Definition of a single state in the workflow */
+  struct StateDefinition
+  {
+    std::string name;                           // State name (e.g., "ANALYZE_REQUEST")
+    std::string description;                    // Human-readable description
+    std::vector<std::string> allowed_transitions; // States this can transition to
+    std::vector<std::string> required_tools;    // Tools typically used in this state
+    std::string prompt_guidance;                // Guidance text for the agent
+    bool is_final = false;                      // True if this is a terminal state
+  };//struct StateDefinition
+
+private:
+  std::string m_initial_state;                      // Starting state name
+  std::string m_current_state;                      // Current state in this conversation
+  std::map<std::string, StateDefinition> m_states;  // All state definitions
+
+public:
+  AgentStateMachine();
+
+  /** Create a copy of this state machine with its own independent state.
+
+   The copy shares the same state definitions but has its own current state tracker.
+   */
+  std::shared_ptr<AgentStateMachine> copy() const;
+
+  // Load from XML <StateMachine> node
+  void fromXml( const rapidxml::xml_node<char> *state_machine_node );
+
+  // State queries
+  const std::string& getCurrentState() const { return m_current_state; }
+  const std::string& getInitialState() const { return m_initial_state; }
+  const StateDefinition& getStateDefinition( const std::string &state_name ) const;
+  bool hasState( const std::string &state_name ) const;
+  bool isFinalState( const std::string &state_name ) const;
+
+  // Transition validation
+  bool canTransitionTo( const std::string &new_state ) const;
+
+  // State updates
+  void transitionTo( const std::string &new_state );
+  void reset();
+
+  // Guidance
+  std::string getPromptGuidanceForCurrentState() const;
+  std::vector<std::string> getAllowedTransitions() const;
+};//class AgentStateMachine
+
+
 class LlmConfig
 {
   static const int sm_xmlSerializationVersion = 0;
@@ -71,6 +137,7 @@ public:
     std::string description;  // Description of what this agent does (used for tool invocation description)
     std::string systemPrompt; // System prompt for this agent
     std::vector<AgentType> availableForAgents; // List of agent types that can invoke this agent (empty = all agents can invoke)
+    std::shared_ptr<AgentStateMachine> state_machine; // Optional state machine for workflow guidance (nullptr if not used)
   };//struct AgentConfig
 
   /** Configuration for a tool with role-specific descriptions */

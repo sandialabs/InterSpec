@@ -6,6 +6,8 @@
   <message id="rs-show-foreground-portrait">比较</message>
   <message id="rs-show-background">显示本底</message>
   <message id="rs-show-background-portrait">本底</message>
+  <message id="rs-load-background">加载本底</message>
+  <message id="rs-load-background-portrait">+本底</message>
   <message id="rs-tt-add-dir-btn">添加目录以打开参考谱。</message>
   <message id="rs-tt-delete-dir-btn">从显示参考谱的位置列表中删除当前选定的目录。</message>
   <message id="rs-no-dir-selected-desktop">

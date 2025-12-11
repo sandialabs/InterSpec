@@ -120,6 +120,8 @@
     फिट नहीं किया गया (Chi2Fcn नहीं बना सका)।
   </message>
   <message id="ssd-error-create-tool">सक्रियता/परिरक्षण फिट प्रदर्शन बनाने में त्रुटि: {1}</message>
+  <message id="ssd-shield-source-diagram">परिरक्षण/स्रोत आरेख</message>
+  <message id="ssd-show-model-diagram">मॉडल आरेख दिखाएं</message>
 
   <!-- SourceFitModel quantities -->
   <message id="sfm-tt-header-isotope">न्यूक्लाइड को इस फिट के लिए उपयोग किए गए फोटोपीक के अनुसार जोड़ा या हटाया जाता है, इसलिए इस तालिका में संपादित नहीं किया जा सकता है</message>
