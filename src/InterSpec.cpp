@@ -4128,7 +4128,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       createRelActManualWidget();
     
     if( (entry->shownDisplayFeatures & UserState::kShowingRelActAuto) )
-      showRelActAutoWindow();
+      relActAutoWindow(true);
 #endif
     
 #if( USE_LLM_INTERFACE )
@@ -9805,8 +9805,11 @@ void InterSpec::programaticallyCloseAutoRemoteRidResultDialog()
 
 
 #if( USE_REL_ACT_TOOL )
-RelActAutoGui *InterSpec::showRelActAutoWindow()
+RelActAutoGui *InterSpec::relActAutoWindow( const bool createIfNotOpen )
 {
+  if( !createIfNotOpen )
+    return m_relActAutoGui;
+  
   if( !m_relActAutoGui )
   {
     const std::pair<RelActAutoGui *,AuxWindow *> widgets = RelActAutoGui::createWindow( this );
@@ -9843,7 +9846,7 @@ RelActAutoGui *InterSpec::showRelActAutoWindow()
     if( m_undo && m_undo->canAddUndoRedoNow() )
     {
       auto undo = [this](){ handleRelActAutoClose(); };
-      auto redo = [this](){ showRelActAutoWindow(); };
+      auto redo = [this](){ relActAutoWindow(true); };
       m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show 'Isotopics from nuclides' tool" );
     }//if( m_undo && !m_undo->canAddUndoRedoNow() )
 
@@ -9864,7 +9867,7 @@ RelActAutoGui *InterSpec::showRelActAutoWindow()
   m_relActAutoMenuItem->disable();
   
   return m_relActAutoGui;
-}//RelActAutoGui *showRelActAutoWindow()
+}//RelActAutoGui *relActAutoWindow()
 
 
 void InterSpec::handleRelActAutoClose()
@@ -9885,7 +9888,7 @@ void InterSpec::handleRelActAutoClose()
 
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
-    auto undo = [this](){ showRelActAutoWindow(); };
+    auto undo = [this](){ relActAutoWindow(true); };
     auto redo = [this](){ handleRelActAutoClose(); };
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close 'Isotopics from nuclides' tool" );
   }//if( m_undo && !m_undo->canAddUndoRedoNow() )
@@ -10134,7 +10137,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   {
     m_relActAutoMenuItem = popup->addMenuItem( WString::tr("app-mi-tools-iso-by-nuc") );
     HelpSystem::attachToolTipOn( m_relActAutoMenuItem, WString::tr("app-mi-tt-tools-iso-by-nuc") , showToolTips );
-    m_relActAutoMenuItem->triggered().connect( boost::bind( &InterSpec::showRelActAutoWindow, this ) );
+    m_relActAutoMenuItem->triggered().connect( boost::bind( &InterSpec::relActAutoWindow, this, true ) );
     
     m_relActManualMenuItem = popup->addMenuItem( WString::tr("app-mi-tools-iso-by-peak") );
     HelpSystem::attachToolTipOn( m_relActManualMenuItem, WString::tr("app-mi-tt-tools-iso-by-peak") , showToolTips );

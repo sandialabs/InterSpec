@@ -469,7 +469,7 @@ void AgentStateMachine::fromXml( const rapidxml::xml_node<char> *state_machine_n
       SpecUtils::trim( state_def.prompt_guidance );
     }
 
-    // Check if final state
+    // Check if final state (can be specified as attribute or child node)
     const rapidxml::xml_attribute<char> *final_attr = XML_FIRST_ATTRIB( state_node, "final" );
     if( final_attr )
     {
@@ -477,15 +477,24 @@ void AgentStateMachine::fromXml( const rapidxml::xml_node<char> *state_machine_n
       state_def.is_final = (final_str == "true" || final_str == "1");
     }
 
+    // Also check for IsFinal child node
+    const rapidxml::xml_node<char> *is_final_node = XML_FIRST_NODE( state_node, "IsFinal" );
+    if( is_final_node )
+    {
+      const string final_str = xml_value_str( is_final_node );
+      SpecUtils::trim( const_cast<std::string&>(final_str) );
+      state_def.is_final = (final_str == "true" || final_str == "1");
+    }
+
     // Get allowed transitions
     const rapidxml::xml_node<char> *transitions_node = XML_FIRST_NODE( state_node, "AllowedTransitions" );
     if( transitions_node )
     {
-      for( const rapidxml::xml_node<char> *to_node = XML_FIRST_NODE( transitions_node, "To" );
-           to_node;
-           to_node = XML_NEXT_TWIN( to_node ) )
+      for( const rapidxml::xml_node<char> *transition_node = XML_FIRST_NODE( transitions_node, "Transition" );
+           transition_node;
+           transition_node = XML_NEXT_TWIN( transition_node ) )
       {
-        string to_state = xml_value_str( to_node );
+        string to_state = xml_value_str( transition_node );
         SpecUtils::trim( to_state );
         if( !to_state.empty() )
           state_def.allowed_transitions.push_back( to_state );

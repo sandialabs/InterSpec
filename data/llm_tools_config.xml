@@ -475,7 +475,7 @@ Further investigation of top returned candidates is required to make sure they m
   <!-- Detection Limit and Efficiency Tools -->
 
   <Tool name="currie_mda_calc">
-    <Description>Calculate Minimum Detectable Activity (MDA) and detection confidence intervals using Currie-style (ISO 11929) methodology. Determines if a peak is detectable at a specified energy. Returns decision threshold, detection limit, and confidence intervals - as well as if it looks like a peak is at the energy (see `peakPresentInData` in output).</Description>
+    <Description>Calculate Minimum Detectable Activity (MDA) and detection confidence intervals using Currie-style (ISO 11929) methodology. Determines if a peak is detectable at a specified energy. Returns decision threshold, detection limit, and confidence intervals - as well as if it looks like a peak is at the energy (see `peakPresentInData` in output). When nuclide and distance are specified, the response will also include activity calculations (detection limit in activity, or observed activity with ranges, etc.)</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -495,6 +495,56 @@ Further investigation of top returned candidates is required to make sure they m
           "description": "Optional: Additional relative uncertainty to include (e.g., from detector response function uncertainties). Defaults to 0.0.",
           "minimum": 0.0,
           "default": 0.0
+        },
+        "nuclide": {
+          "type": "string",
+          "description": "Optional: Nuclide symbol (e.g., 'Cs137', 'U238'). When specified along with distance, activity calculations will be included in the response."
+        },
+        "distance": {
+          "type": "string",
+          "description": "Optional: Distance from source to detector face (e.g., '10 cm', '1 m'). Required for activity calculations when nuclide is specified."
+        },
+        "age": {
+          "type": "string",
+          "description": "Optional: Age of the nuclide (e.g., '1 year', '100 days'). If not specified, uses default age for the nuclide."
+        },
+        "shielding": {
+          "type": "object",
+          "description": "Optional: Defines the shielding used to attenuate gammas and x-rays. Shielding must be specified in one of two formats.",
+          "oneOf": [{
+            "type": "object",
+            "properties": {
+              "AD": {
+                "type": "number",
+                "description": "Areal density of the shielding material in g/cm²."
+              },
+              "AN": {
+                "type": "number",
+                "description": "Effective atomic number of the shielding material."
+              }
+            },
+            "required": ["AD", "AN"],
+            "additionalProperties": false
+          },{
+            "type": "object",
+            "properties": {
+              "Material": {
+                "type": "string",
+                "description": "The shielding material, specified as an element symbol or material name. Available material names are returned by the `get_materials` tool. Example: 'Fe' (which is equivalent to 'Iron'), or 'glass_plate', etc.  The full list is returned from `get_materials`."
+              },
+              "Thickness": {
+                "type": "string",
+                "description": "The thickness of the shielding material, specified as a string with units. Example: '1.25cm'."
+              }
+            },
+            "required": ["Material", "Thickness"],
+            "additionalProperties": false
+          }]
+        },
+        "assertBackgroundSpectrum": {
+          "type": "boolean",
+          "description": "Optional: If true, treats the spectrum as a background spectrum with no signal present - set this to true if you know signal is not present in the spectrum. Defaults to false.",
+          "default": false
         }
       },
       "required": ["energy"]
@@ -633,23 +683,35 @@ Further investigation of top returned candidates is required to make sure they m
   <!-- Activity/Shielding Fit Tools (ActivityFit Agent Only) -->
 
   <Tool name="activity_fit">
-    <Description>Perform activity and shielding fitting using gamma ray peaks. Supports three modes: (1) from_app_state - uses existing GUI state or saved model, shows GUI; (2) single_peak - fits activity for one peak/nuclide; (3) custom - full control over sources, shielding, geometry. Can fit nuclide ages when progeny peaks are present. Returns fitted activities, shielding parameters, fit quality metrics, and per-peak observed vs expected counts with source contributions.</Description>
+    <Description>Perform activity and shielding fitting using the current application state (GUI configuration). Requires the Activity/Shielding fit GUI to be open. Uses existing sources, shielding, and configuration from the GUI. Can fit nuclide ages when progeny peaks are present. Returns fitted activities, shielding parameters, fit quality metrics, and per-peak observed vs expected counts with source contributions.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
-        "mode": {
-          "type": "string",
-          "enum": ["from_app_state", "single_peak", "custom"],
-          "description": "Fitting mode: from_app_state uses existing configuration and shows GUI; single_peak fits one peak; custom allows full specification"
-        },
         "peak_energies": {
           "type": "array",
           "items": {"type": "number"},
-          "description": "Peak energies in keV to use for fitting. Tolerance is max(peak FWHM, 1 keV). Required for single_peak and custom modes. Optional for from_app_state to filter peaks. Peaks must already be assigned to nuclides."
+          "description": "Optional: Peak energies in keV to filter which peaks are used for fitting. If not specified, uses all peaks marked for fitting in the GUI. Tolerance is max(peak FWHM, 1 keV). Peaks must already be assigned to nuclides."
+        }
+      }
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>ActivityFit</Agent>
+    </AvailableFor>
+  </Tool>
+
+  <Tool name="activity_fit_one_off">
+    <Description>Perform a one-off activity and shielding fit with full specification. Does not use or modify GUI state. Ideal for custom fits where you want complete control over all parameters. Requires specifying distance, geometry, and peak energies. Can optionally specify sources and shielding, otherwise sources are auto-generated from peak nuclide assignments. Can fit nuclide ages when progeny peaks are present. Returns fitted activities, shielding parameters, fit quality metrics, and per-peak observed vs expected counts with source contributions.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+        "peak_energies": {
+          "type": "array",
+          "items": {"type": "number"},
+          "description": "Peak energies in keV to use for fitting. Tolerance is `max(peak FWHM, 1 keV)`. Peaks must already be assigned to nuclides."
         },
         "distance": {
           "type": "string",
-          "description": "Source-to-detector distance with units (e.g., '100 cm', '3 ft', '1.5 m'). If numeric value provided, assumes cm. Required for non-fixed-geometry detectors. For from_app_state mode, overrides existing distance if specified."
+          "description": "Source-to-detector distance with units (e.g., '100 cm', '3 ft', '1.5 m'). If numeric value provided, assumes cm. Required for non-fixed-geometry detectors."
         },
         "geometry": {
           "type": "string",
@@ -726,11 +788,11 @@ Further investigation of top returned candidates is required to make sure they m
                     "activity_type": {
                       "type": "string",
                       "enum": ["per_cm3", "total_activity", "per_gram", "exponential"],
-                      "description": "Type of trace source distribution. Default: per_cm3. Units: per_cm3 uses Ci/cm3 or Bq/cm3, total_activity uses Ci or Bq, per_gram uses Ci/g or Bq/g, exponential uses Ci/m2 or Bq/m2"
+                      "description": "OPTIONAL: Type of trace source distribution. If not specified, auto-detected from activity string units. per_cm3 = volumetric contamination, total_activity = total activity in shielding, per_gram = mass-based contamination, exponential = surface contamination with exponential depth profile."
                     },
                     "activity": {
                       "type": "string",
-                      "description": "Initial activity guess with units (e.g., '1 uCi/cm3', '10 kBq', '0.5 mCi/g'). Can use metric prefixes (u, m, k, M, G) with Ci or Bq."
+                      "description": "Activity with units. AUTO-DETECTS activity_type from units: '1 Bq/cm3' or '1 Bq per cm3' -> per_cm3, '50 Bq/g' or '50 Bq per gram' -> per_gram, '10 uCi' -> total_activity. Supports metric prefixes (u, m, k, M, G) with Ci or Bq. Examples: '2.5 kBq/cm3', '100 Bq per cm3', '50 Bq/g', '25 Bq per gram', '10 uCi'."
                     },
                     "fit_activity": {
                       "type": "boolean",
@@ -751,7 +813,7 @@ Further investigation of top returned candidates is required to make sure they m
         },
         "sources": {
           "type": "array",
-          "description": "For custom mode: explicit source definitions. For other modes, derived from peak assignments.",
+          "description": "Optional, and suggested to not specify: explicit source definitions - if you are okay accepting default nuclide ages (recomended), not fitting for age (recomended), and fitting for activity (by default you probably want to do this, unless you already know the source activity) - then you do not need to specify this sources array - instead the sources used will be defined by the nuclides associated with the peaks in the `peak_energies` argument.",
           "items": {
             "type": "object",
             "properties": {
@@ -819,7 +881,7 @@ Further investigation of top returned candidates is required to make sure they m
           }
         }
       },
-      "required": ["mode"]
+      "required": ["distance", "geometry", "peak_energies"]
     }</ParametersSchema>
     <AvailableFor>
       <Agent>ActivityFit</Agent>
@@ -827,7 +889,7 @@ Further investigation of top returned candidates is required to make sure they m
   </Tool>
 
   <Tool name="get_shielding_source_config">
-    <Description>Retrieve the current activity/shielding fit configuration from the application state. Returns distance, geometry, source definitions (with ages), shielding layers (with trace sources), and which peaks are marked for use in fitting. Checks InterSpec::shieldingSourceFit() GUI first, then falls back to SpecMeas::m_shieldingSourceModel saved state.</Description>
+    <Description>Retrieve the current activity/shielding fit configuration from the application state (i.e., if "from_app_state" is used with the `activity_fit` tool). Returns distance, geometry, source definitions (with ages), shielding layers (with trace sources), and which peaks are marked for use in fitting.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {},
@@ -839,14 +901,14 @@ Further investigation of top returned candidates is required to make sure they m
   </Tool>
 
   <Tool name="modify_shielding_source_config">
-    <Description>Modify the activity/shielding fit configuration in the application state. Can add/remove shielding layers, add/remove sources, set distance, set geometry, set source ages, or set fitting options. Changes are saved to SpecMeas::m_shieldingSourceModel and updated in GUI if open. If dimension is specified when adding shielding (e.g., '0.5 inches'), it's fixed; if omitted, it will be fit.</Description>
+    <Description>Modify the activity/shielding fit configuration in the application state. Can add/remove shielding layers, remove sources, set distance, set geometry, set source ages, or set fitting options. Changes are saved to SpecMeas::m_shieldingSourceModel and updated in GUI if open. If dimension is specified when adding shielding (e.g., '0.5 inches'), it's fixed; if omitted, it will be fit.  To add a source you must use `mark_peaks_for_activity_fit` for peaks with the source you want to add.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
         "operation": {
           "type": "string",
-          "enum": ["add_shielding", "remove_shielding", "add_source", "remove_source", "set_distance", "set_geometry", "set_source_age", "set_fit_options"],
-          "description": "Operation to perform on the configuration"
+          "enum": ["add_shielding", "remove_shielding", "remove_source", "set_distance", "set_geometry", "set_source_age", "set_fit_options"],
+          "description": "Operation to perform on the configuration.  Note: the 'remove_source' option marks all peaks of the specified source to not be used in the fit."
         },
         "material": {
           "type": "string",
@@ -935,7 +997,7 @@ Further investigation of top returned candidates is required to make sure they m
   </Tool>
 
   <Tool name="mark_peaks_for_activity_fit">
-    <Description>Mark peaks to be used (or not used) in activity/shielding fitting. Updates the PeakDef::useForShieldingSourceFit() flag for specified peaks. Peaks are matched by energy with tolerance of max(peak FWHM, 1 keV).</Description>
+    <Description>Mark peaks to be used (or not used) in activity/shielding fitting. Equivalent of using the "SetUseForShieldingSourceFit" option for the `edit_analysis_peak` tool, but this provides a batch interface. Peaks are matched by energy with tolerance of max(peak FWHM, 1 keV).</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -1203,8 +1265,8 @@ Validation: ROIs may not overlap - tool returns error if overlapping ROIs would 
               },
               "range_type": {
                 "type": "string",
-                "description": "Optional. How ROI bounds behave. Valid values: Fixed, AllowAdjustment, ExpandFromPeaks, TakeAll.",
-                "enum": ["Fixed", "AllowAdjustment", "ExpandFromPeaks", "TakeAll"]
+                "description": "Optional. How ROI bounds behave. Valid values: Fixed (bounds strictly enforced), CanExpandForFwhm (can expand to accommodate peak FWHM), CanBeBrokenUp (ROI can be broken up based on peaks).",
+                "enum": ["Fixed", "CanExpandForFwhm", "CanBeBrokenUp"]
               }
             }
           }

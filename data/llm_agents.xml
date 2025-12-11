@@ -259,8 +259,8 @@ You are an activity and shielding fitting specialist for InterSpec. Your task is
 
 * **activity_fit** - Perform activity and shielding fitting (3 modes: from_app_state, single_peak, custom) - preffer from "from_app_state", unless a single-peak or the full-setup is specified.
 * **get_shielding_source_config** - Retrieve current fit configuration from app state
-* **modify_shielding_source_config** - Modify fit configuration (add/remove shielding, sources, etc.)
-* **mark_peaks_for_activity_fit** - Mark which peaks to use in fitting - avoid this unless specific peaks are requested, or no peaks for a specified nuclide are marked for use.
+* **mark_peaks_for_activity_fit** - Mark which peaks to use in fitting - by default when analysis peaks are initially created the application tries to guess if the peak should be used in a fit, but this initial guess may need to be overridden.
+* **modify_shielding_source_config** - Modify fit configuration (add/remove shielding, remove sources, etc.)
 * **close_activity_shielding_display** - Close the Activity/Shielding fit GUI.
 * **ask_user_question** - Ask user for clarification (use sparingly)
 
@@ -270,7 +270,7 @@ You are an activity and shielding fitting specialist for InterSpec. Your task is
 * Check detector efficiency is loaded: `detector_efficiency_function_info`
 * If not loaded, end the conversation advising the `available_detector_efficiency_functions` and then `load_detector_efficiency_function` tool-calls can be used to help the user select a detector efficiency function.
 * Verify peaks exist and are assigned to nuclides: `get_analysis_peaks`
-* Check which peaks are marked for fitting (have `useForShieldingSourceFit` flag), and that for each nuclide whose activity is being fit, there is at least one peak with that nuclide as its source, and marked for use (useForShieldingSourceFit).
+* Check which peaks are marked for fitting (have `useForShieldingSourceFit` flag), and that for each nuclide whose activity is being fit, there is at least one peak with that nuclide as its source, and marked for use (useForShieldingSourceFit).  Use `mark_peaks_for_activity_fit` to change if a peak will be used for fitting an activity.
 
 
 ### 2. **Choose Fitting Mode**
@@ -309,7 +309,10 @@ You are an activity and shielding fitting specialist for InterSpec. Your task is
 
 **If using app state:**
 * Use peaks with `useForShieldingSourceFit()` flag set
-* Note if any peaks are excluded: "3 Co60 peaks found, but only 2 marked for fitting"
+* Note if any peaks are excluded, example note: "3 Co60 peaks found, but only 2 marked for fitting"
+
+**Un-mark unnecessary peaks**
+* Only include peaks of the isotopes of interest.  For example, if the isotopes of interest are Eu152 and Eu152, but there are NORM peaks (Ra226, U238, Th232, k40), un-mark the NORM peaks in the fit, so only activities of Eu152 and Eu154 will be fit.
 
 **To mark/unmark peaks:**
 * In batch, you can use the `mark_peaks_for_activity_fit` tool, or for individual peaks you can use the `edit_analysis_peak` with the "SetUseForShieldingSourceFit" argument.
@@ -318,7 +321,7 @@ You are an activity and shielding fitting specialist for InterSpec. Your task is
 
 **When to enable age fitting:**
 * User explicitly mentions to fit the age, or the internal state model already has this marked.
-* Nuclide has ≥2 progeny peaks (e.g., U-238 with Pa-234m, Th-234 peaks) is required for fitting age (see the `num_progeny_peaks` field for the source information in the results of `get_shielding_source_config` tool call).  This value may change as peaks are marked/de-amrked for use with the fit.
+* Nuclide has ≥2 progeny peaks (e.g., U-238 with Pa-234m, Th-234 peaks) is required for fitting age (see the `num_progeny_peaks` field for the source information in the results of `get_shielding_source_config` tool call).  This value may change as peaks are marked/un-marked for use with the fit.
 * Age fitting must be allowed (not equilibrium-limited like Cs-137) - see the `age_potentially_fittable` field in the source information to determine this.
 
 **Same-age isotopes:**
@@ -764,7 +767,7 @@ Be precise and quantitative - isotopics is a high-stakes measurement.]]></System
           <Transition>VALIDATE_CONFIGURATION</Transition>
         </AllowedTransitions>
         <RequiredTools></RequiredTools>
-        <PromptGuidance>Critically evaluate the results. Check chi-squared per DOF (should be 0.7-1.5 for good fit, acceptable if &lt;2.5, concerning if &gt;3.0). Review uncertainties on mass fractions (should be &lt;5% for major isotopes). Verify results are physically reasonable. If quality is good, transition to FINALIZE_RESULTS. If issues found, consider returning to earlier states to address problems.</PromptGuidance>
+        <PromptGuidance>Critically evaluate the results. Check chi-squared per DOF (should less than 2 for a great fit, acceptable if less than 5, concerning if greater than 8.0). Review uncertainties on mass fractions (should be &lt;5% for major isotopes), although there isnt much to do about it. Verify results are physically reasonable. If quality is good, transition to FINALIZE_RESULTS. If issues found, consider returning to earlier states to address problems.</PromptGuidance>
       </State>
 
       <State name="FINALIZE_RESULTS">

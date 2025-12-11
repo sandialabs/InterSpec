@@ -203,6 +203,9 @@ namespace ShieldingSourceFitCalc
      Cylinder:  ['Radius','Length',n/a]
      Rectangle: ['Width','Height','Depth']
      Generic:   ['AtomicNumber','ArealDensity',n/a]
+     
+     Note that Length, Width, Height above refer to thicknesses, not absolute dimensions - i.e., for the first (inner-most) layer, it would
+     be the half-Length, half-Length, etc.  For subsequent layers, its the thickness in the respective dimensions.
      */
     double m_dimensions[3];
     bool m_fitDimensions[3];

@@ -3064,7 +3064,7 @@ bool SpecMeasManager::handleRelActAutoXmlFile( std::istream &input, SimpleDialog
     doc.parse<rapidxml::parse_trim_whitespace>( &(data[0]) );
     
     
-    RelActAutoGui *tool = m_viewer->showRelActAutoWindow();
+    RelActAutoGui *tool = m_viewer->relActAutoWindow( true );
     if( !tool )
       throw runtime_error( "Could not create <em>Isotopics by nuclide</em> tool." );
     
