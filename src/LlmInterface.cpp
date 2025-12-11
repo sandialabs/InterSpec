@@ -642,8 +642,30 @@ void LlmInterface::handleApiResponse( const std::string &response,
           }
         }//if( role == "assistant" )
       }//if( choice.contains("message") )
+    }
+
+    // Lets check for Ask Sage style tool-calls to the `/server/query` endpoint
+    if( (number_tool_calls == 0)
+       && responseJson.contains("tool_calls")
+       && !responseJson["tool_calls"].is_null()
+       && !responseJson["tool_calls"].empty() )
+    {
+      number_tool_calls += executeToolCallsAndSendResults( responseJson["tool_calls"], conversation, requestId, response, promptTokens, completionTokens );
     }//if( responseJson.contains("choices") && !responseJson["choices"].empty() )
-    
+
+    // Lets check for Ask Sage style message to the `/server/query` endpoint
+    if( content.empty()
+       && responseJson.contains("message")
+       && !responseJson["message"].is_null()
+       && !responseJson["message"].empty() )
+    {
+      content = responseJson["message"];
+      auto [cleanContent, thinkingContent] = extractThinkingAndContent(content);
+
+      if( number_tool_calls == 0 )
+        m_history->addAssistantMessageWithThinking( cleanContent, thinkingContent, response, conversation );
+    }
+
     // Sometimes a model might need a little prompting to continue....
     SpecUtils::trim( content );
     if( (number_tool_calls == 0) && content.empty() && !reasoning.empty() )
@@ -1524,6 +1546,7 @@ void LlmInterface::setupJavaScriptBridge() {
 
       if (bearerToken && bearerToken.trim() !== '') {
         headers['Authorization'] = 'Bearer ' + bearerToken;
+        headers['x-access-tokens'] = bearerToken;
       }
 
       // Create AbortController for timeout handling
@@ -1619,7 +1642,7 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
   SpecUtils::ireplace_all( responsePreview, "\r", "");
   if( responsePreview.length() > 300 )
     responsePreview = responsePreview.substr(0, 300) + "...";
-  cout << "Response: " << responsePreview << endl;
+  cout << "Response: " << response << endl;
 
   std::shared_ptr<LlmInteraction> convo;
   

@@ -521,9 +521,15 @@ namespace {
       //json peak_json;
       //to_json( peak_json, fitPeak );
       j["fitPeakEnergy"] = rount_to_hundredth(fitPeak->mean());
+
+      j["status"] = "success";
+
+      //"response":"OK"
+      //"status":200
     }else
     {
       j["error"] = "No peak fit.";
+      j["status"] = "failed";
     }
   }//void to_json(json& j, const AnalystChecks::DetectedPeakStatus& p)
   
