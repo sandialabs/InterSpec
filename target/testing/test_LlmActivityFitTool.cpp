@@ -48,6 +48,7 @@
 #include "InterSpec/LlmToolGui.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/LlmInterface.h"
+#include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/LlmToolRegistry.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -1668,37 +1669,23 @@ BOOST_AUTO_TEST_CASE( test_executeActivityFit_TraceSource )
         const string activity_str = trace["total_activity_str"].get<string>();
         cout << "  Trace source Br82 total activity: " << activity_str << endl;
 
-        // Parse activity to verify it's around 792 kBq
-        // Activity string should be in format like "792.3 kBq" or "0.792 MBq"
-        double activity_kbq = 0.0;
-        if( activity_str.find("kBq") != string::npos )
+        // Parse activity using PhysicalUnits::stringToActivity to verify it's a valid activity string
+        // and check it's around 792 kBq
+        double activity_bq = 0.0;
+        try
         {
-          // Extract number before "kBq"
-          size_t pos = activity_str.find("kBq");
-          string num_str = activity_str.substr(0, pos);
-          SpecUtils::trim(num_str);
-          activity_kbq = std::stod(num_str);
-        }
-        else if( activity_str.find("MBq") != string::npos )
-        {
-          // Extract number before "MBq" and convert to kBq
-          size_t pos = activity_str.find("MBq");
-          string num_str = activity_str.substr(0, pos);
-          SpecUtils::trim(num_str);
-          activity_kbq = std::stod(num_str) * 1000.0;
-        }
-        else if( activity_str.find("Bq") != string::npos && activity_str.find("kBq") == string::npos && activity_str.find("MBq") == string::npos )
-        {
-          // Plain Bq
-          size_t pos = activity_str.find("Bq");
-          string num_str = activity_str.substr(0, pos);
-          SpecUtils::trim(num_str);
-          activity_kbq = std::stod(num_str) / 1000.0;
-        }
+          activity_bq = PhysicalUnits::stringToActivity( activity_str );
+          const double activity_kbq = activity_bq / PhysicalUnits::kBq;
 
-        // Check activity is around 792 kBq (within 20%)
-        BOOST_CHECK_CLOSE( activity_kbq, 792.0, 20.0 );
-        cout << "  Parsed activity: " << activity_kbq << " kBq (expected ~792 kBq)" << endl;
+          // Check activity is around 792 kBq (within 20%)
+          BOOST_CHECK_CLOSE( activity_kbq, 792.0, 20.0 );
+          cout << "  Parsed activity: " << activity_kbq << " kBq (expected ~792 kBq)" << endl;
+        }
+        catch( const std::exception &e )
+        {
+          BOOST_CHECK_MESSAGE( false, "Failed to parse activity string '" << activity_str
+                              << "' using PhysicalUnits::stringToActivity: " << e.what() );
+        }
       }
 
       // Also check display_activity_str if present

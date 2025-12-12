@@ -155,6 +155,7 @@ private:
   static nlohmann::json executeGetCountsInEnergyRange(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeGetExpectedFwhm(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeCurrieMdaCalc(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeCalculateDose(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeGetMaterials(InterSpec* interspec);
   static nlohmann::json executeGetMaterialInfo(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeGetAttenuationOfShielding(nlohmann::json params, InterSpec* interspec);

@@ -2742,3 +2742,325 @@ BOOST_AUTO_TEST_CASE( test_executeCurrieMdaCalc_WithAge )
   }
 }
 
+
+// Dose Calculation Tests
+BOOST_AUTO_TEST_CASE( test_executeCalculateDose_BasicNoShielding )
+{
+  InterSpecTestFixture fixture;
+
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+
+  // Test Co60, 0.5 yr old, 100 µCi, 1m, no shielding
+  // Expected: 115.42 µrem/hr (from DoseCalcWidget::runtime_sanity_checks)
+  json params;
+  params["nuclide"] = "Co60";
+  params["activity"] = "100 uCi";
+  params["distance"] = "1 m";
+  params["age"] = "0.5 y";
+
+  json result;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("calculate_dose", params, fixture.m_interspec) );
+
+  // Check that result contains expected fields
+  BOOST_REQUIRE( result.contains("success") );
+  BOOST_CHECK( result["success"].get<bool>() == true );
+  BOOST_REQUIRE( result.contains("dose_rate_Sv_per_hr") );
+  BOOST_REQUIRE( result.contains("dose_rate_si_str") );
+  BOOST_REQUIRE( result.contains("dose_rate_REM_per_hr") );
+  BOOST_REQUIRE( result.contains("dose_rate_REM_str") );
+  BOOST_REQUIRE( result.contains("nuclide") );
+  BOOST_REQUIRE( result.contains("distance") );
+  BOOST_REQUIRE( result.contains("activity") );
+  BOOST_REQUIRE( result.contains("age") );
+
+  // Check numeric dose values
+  const double dose_rem_hr = result["dose_rate_REM_per_hr"].get<double>();
+  const string rem_hr_str = result["dose_rate_REM_str"].get<string>();
+
+  // Expected is 115.42 µrem/hr, allow 2% tolerance
+  BOOST_CHECK_CLOSE( dose_rem_hr, 115.42e-6, 2.0 );
+
+  // Verify the formatted string is reasonable
+  BOOST_CHECK( rem_hr_str.find("rem/hr") != string::npos || rem_hr_str.find("rem/h") != string::npos );
+
+  BOOST_TEST_MESSAGE( "Co60 dose rate (no shielding): " << rem_hr_str << " (" << dose_rem_hr << " rem/hr)" );
+}
+
+
+BOOST_AUTO_TEST_CASE( test_executeCalculateDose_WithMaterialShielding )
+{
+  InterSpecTestFixture fixture;
+
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+
+  // Test Cs137, 0.5 yr old, 100 µCi, 1m, with Fe shielding
+  // Using thickness to achieve ~5 g/cm² (Fe density is ~7.87 g/cm³, so 0.636 cm ≈ 5 g/cm²)
+  json params;
+  params["nuclide"] = "Cs137";
+  params["activity"] = "100 uCi";
+  params["distance"] = "1 m";
+  //params["age"] = "0.5 y"; //Use default age
+  params["material"] = "Fe";
+  params["thickness"] = "0.636 cm";
+
+  json result;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("calculate_dose", params, fixture.m_interspec) );
+
+  BOOST_REQUIRE( result.contains("success") );
+  BOOST_CHECK( result["success"].get<bool>() == true );
+  BOOST_REQUIRE( result.contains("shielding") );
+
+  // Check dose values
+  BOOST_REQUIRE( result.contains("dose_rate_REM_per_hr") );
+  BOOST_REQUIRE( result.contains("dose_rate_Sv_per_hr") );
+
+  const double dose_rem_hr = result["dose_rate_REM_per_hr"].get<double>();
+  const double dose_sv_hr = result["dose_rate_Sv_per_hr"].get<double>();
+
+  // Expected dose for Cs137, 100 µCi, 1m, 5 g/cm² Fe shielding, 25.19 µrem/hr
+  const double expected_rem_hr = 25.19e-6;  // rem/hr
+  BOOST_CHECK_CLOSE( dose_rem_hr, expected_rem_hr, 2.0 );
+
+  // Check shielding info
+  const json &shielding = result["shielding"];
+  BOOST_REQUIRE( shielding.contains("arealDensity_g_cm2") );
+  BOOST_REQUIRE( shielding.contains("atomicNumber") );
+
+  const double ad = shielding["arealDensity_g_cm2"].get<double>();
+  const double an = shielding["atomicNumber"].get<double>();
+
+  // Check areal density is close to 5 g/cm² (within 10% tolerance)
+  BOOST_CHECK_CLOSE( ad, 5.0, 10.0 );
+
+  // Check atomic number is close to 26 (iron)
+  BOOST_CHECK_CLOSE( an, 26.0, 1.0 );
+
+  BOOST_TEST_MESSAGE( "Cs137 with Fe shielding: " << result["dose_rate_REM_str"].get<string>() );
+  BOOST_TEST_MESSAGE( "  Areal density: " << ad << " g/cm²" );
+  BOOST_TEST_MESSAGE( "  Atomic number: " << an );
+}
+
+
+BOOST_AUTO_TEST_CASE( test_executeCalculateDose_WithArealDensityShielding )
+{
+  InterSpecTestFixture fixture;
+
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+
+  // Test Cs137 with direct areal density/atomic number specification
+  json params;
+  params["nuclide"] = "Cs137";
+  params["activity"] = "100 uCi";
+  params["distance"] = "100 cm";
+  // params["age"] = "0.5 y";  //Use the default age
+  params["arealDensity"] = 5.0;  // g/cm²
+  params["atomicNumber"] = 26.0;  // Iron
+
+  json result;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("calculate_dose", params, fixture.m_interspec) );
+
+  BOOST_REQUIRE( result.contains("success") );
+  BOOST_CHECK( result["success"].get<bool>() == true );
+  BOOST_REQUIRE( result.contains("shielding") );
+
+  const json &shielding = result["shielding"];
+  BOOST_CHECK_CLOSE( shielding["arealDensity_g_cm2"].get<double>(), 5.0, 0.1 );
+  BOOST_CHECK_CLOSE( shielding["atomicNumber"].get<double>(), 26.0, 0.1 );
+
+  // Check dose values
+  BOOST_REQUIRE( result.contains("dose_rate_REM_per_hr") );
+  BOOST_REQUIRE( result.contains("dose_rate_Sv_per_hr") );
+
+  const double dose_rem_hr = result["dose_rate_REM_per_hr"].get<double>();
+  const double dose_sv_hr = result["dose_rate_Sv_per_hr"].get<double>();
+
+  // Expected dose for Cs137, 100 µCi, 1m, 5 g/cm² Fe shielding, default age: 25.19 µrem/hr
+  const double expected_rem_hr = 25.19e-6;  // rem/hr
+  BOOST_CHECK_CLOSE( dose_rem_hr, expected_rem_hr, 2.0 );
+
+  BOOST_TEST_MESSAGE( "Cs137 with AD/AN shielding: " << result["dose_rate_REM_str"].get<string>() );
+}
+
+
+BOOST_AUTO_TEST_CASE( test_executeCalculateDose_DefaultAge )
+{
+  InterSpecTestFixture fixture;
+
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+
+  // Test F18 without specifying age (should use default, which is 0 for this nuclide)
+  json params;
+  params["nuclide"] = "F18";
+  params["activity"] = "100 uCi";
+  params["distance"] = "2 m";
+  // Note: age not specified, should use PeakDef::defaultDecayTime
+
+  json result;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("calculate_dose", params, fixture.m_interspec) );
+
+  BOOST_REQUIRE( result.contains("success") );
+  BOOST_CHECK( result["success"].get<bool>() == true );
+  BOOST_REQUIRE( result.contains("age") );
+
+  // Verify age was set (should be the default for F18)
+  const string age_str = result["age"].get<string>();
+  BOOST_CHECK( !age_str.empty() );
+
+  // Check dose values
+  BOOST_REQUIRE( result.contains("dose_rate_REM_per_hr") );
+  BOOST_REQUIRE( result.contains("dose_rate_Sv_per_hr") );
+
+  const double dose_rem_hr = result["dose_rate_REM_per_hr"].get<double>();
+  const double dose_sv_hr = result["dose_rate_Sv_per_hr"].get<double>();
+
+  // Expected dose for F18, 100 µCi, 2m, no shielding, default age: 13.29 µrem/hr
+  const double expected_rem_hr = 13.29e-6;  // rem/hr
+  BOOST_CHECK_CLOSE( dose_rem_hr, expected_rem_hr, 2.0 );
+
+  BOOST_TEST_MESSAGE( "F18 with default age (" << age_str << "): " << result["dose_rate_REM_str"].get<string>() );
+}
+
+
+BOOST_AUTO_TEST_CASE( test_executeCalculateDose_ErrorCases )
+{
+  InterSpecTestFixture fixture;
+
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+
+  // Test missing required parameter (nuclide)
+  json params1;
+  params1["distance"] = "1 m";
+  params1["activity"] = "1 uCi";
+  BOOST_CHECK_THROW( registry.executeTool("calculate_dose", params1, fixture.m_interspec), std::exception );
+
+  // Test invalid nuclide
+  json params2;
+  params2["nuclide"] = "InvalidNuclide123";
+  params2["distance"] = "1 m";
+  params2["activity"] = "1 uCi";
+  BOOST_CHECK_THROW( registry.executeTool("calculate_dose", params2, fixture.m_interspec), std::exception );
+
+  // Test invalid distance format
+  json params3;
+  params3["nuclide"] = "Co60";
+  params3["distance"] = "invalid distance";
+  params3["activity"] = "1 uCi";
+  BOOST_CHECK_THROW( registry.executeTool("calculate_dose", params3, fixture.m_interspec), std::exception );
+
+  // Test invalid activity format
+  json params4;
+  params4["nuclide"] = "Co60";
+  params4["distance"] = "1 m";
+  params4["activity"] = "invalid activity";
+  BOOST_CHECK_THROW( registry.executeTool("calculate_dose", params4, fixture.m_interspec), std::exception );
+
+  // Test unknown material
+  json params5;
+  params5["nuclide"] = "Co60";
+  params5["distance"] = "1 m";
+  params5["activity"] = "1 uCi";
+  params5["material"] = "UnknownMaterial123";
+  params5["thickness"] = "1 cm";
+  BOOST_CHECK_THROW( registry.executeTool("calculate_dose", params5, fixture.m_interspec), std::exception );
+}
+
+
+BOOST_AUTO_TEST_CASE( test_executeCalculateDose_WithMaterialAndArealDensity )
+{
+  InterSpecTestFixture fixture;
+
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+
+  // Test Cs137 with material + thickness
+  json params_thickness;
+  params_thickness["nuclide"] = "Cs137";
+  params_thickness["activity"] = "100 uCi";
+  params_thickness["distance"] = "100 cm";
+  //params_thickness["age"] = "0.5 y";  // Use default age
+  params_thickness["material"] = "Fe";
+  params_thickness["thickness"] = "0.636 cm";  // Fe density = 7.87 g/cm³, so 0.636 cm * 7.87 = ~5.0 g/cm²
+
+  json result_thickness;
+  BOOST_REQUIRE_NO_THROW( result_thickness = registry.executeTool("calculate_dose", params_thickness, fixture.m_interspec) );
+
+  BOOST_REQUIRE( result_thickness.contains("success") );
+  BOOST_CHECK( result_thickness["success"].get<bool>() == true );
+  BOOST_REQUIRE( result_thickness.contains("shielding") );
+
+  const json &shielding_thickness = result_thickness["shielding"];
+  const double ad_thickness = shielding_thickness["arealDensity_g_cm2"].get<double>();
+  const double an_thickness = shielding_thickness["atomicNumber"].get<double>();
+
+  BOOST_TEST_MESSAGE( "Cs137 with Fe + thickness: " << result_thickness["dose_rate_REM_str"].get<string>() );
+  BOOST_TEST_MESSAGE( "  Areal density: " << ad_thickness << " g/cm²" );
+  BOOST_TEST_MESSAGE( "  Atomic number: " << an_thickness );
+
+  // Now test the same scenario with material + arealDensity
+  json params_ad;
+  params_ad["nuclide"] = "Cs137";
+  params_ad["activity"] = "100 uCi";
+  params_ad["distance"] = "100 cm";
+  //params_ad["age"] = "0.5 y";   // Use default age
+  params_ad["material"] = "Fe";
+  params_ad["arealDensity"] = 5.0;  // Directly specify the areal density in g/cm²
+
+  json result_ad;
+  BOOST_REQUIRE_NO_THROW( result_ad = registry.executeTool("calculate_dose", params_ad, fixture.m_interspec) );
+
+  BOOST_REQUIRE( result_ad.contains("success") );
+  BOOST_CHECK( result_ad["success"].get<bool>() == true );
+  BOOST_REQUIRE( result_ad.contains("shielding") );
+
+  const json &shielding_ad = result_ad["shielding"];
+  const double ad_direct = shielding_ad["arealDensity_g_cm2"].get<double>();
+  const double an_direct = shielding_ad["atomicNumber"].get<double>();
+
+  BOOST_TEST_MESSAGE( "Cs137 with Fe + arealDensity: " << result_ad["dose_rate_REM_str"].get<string>() );
+  BOOST_TEST_MESSAGE( "  Areal density: " << ad_direct << " g/cm²" );
+  BOOST_TEST_MESSAGE( "  Atomic number: " << an_direct );
+
+  // Both methods should produce the same atomic number (Fe)
+  BOOST_CHECK_CLOSE( an_direct, an_thickness, 0.1 );
+  BOOST_CHECK_CLOSE( an_direct, 26.0, 0.1 );
+
+  // Areal density from thickness should be close to 5.0 g/cm² (depends on Fe density)
+  BOOST_CHECK_CLOSE( ad_thickness, 5.0, 2.0 );  // Allow 2% tolerance
+
+  // Direct areal density should be exactly 5.0 g/cm²
+  BOOST_CHECK_CLOSE( ad_direct, 5.0, 0.1 );
+
+  // Check that both methods give the same numeric dose values
+  const double dose_thickness_rem = result_thickness["dose_rate_REM_per_hr"].get<double>();
+  const double dose_ad_rem = result_ad["dose_rate_REM_per_hr"].get<double>();
+  const double dose_thickness_sv = result_thickness["dose_rate_Sv_per_hr"].get<double>();
+  const double dose_ad_sv = result_ad["dose_rate_Sv_per_hr"].get<double>();
+
+  // Expected dose for Cs137, 100 µCi, 1m, 5 g/cm² Fe shielding is approximately 25.19 µrem/hr (251.95 nSv/hr)
+  // Convert to rem/hr: 25.19 µrem/hr = 25.19e-6 rem/hr
+  // Convert to Sv/hr: 251.95 nSv/hr = 251.95e-9 Sv/hr
+  const double expected_rem_hr = 25.19e-6;  // rem/hr
+  const double expected_sv_hr = 251.95e-9;  // Sv/hr
+
+  // Check that calculated dose is close to expected value (within 2% tolerance)
+  BOOST_CHECK_CLOSE( dose_ad_rem, expected_rem_hr, 2.0 );
+  BOOST_CHECK_CLOSE( dose_ad_sv, expected_sv_hr, 2.0 );
+
+  // Both methods should give nearly identical numeric results (within 0.5% since areal densities are very close)
+  BOOST_CHECK_CLOSE( dose_thickness_rem, dose_ad_rem, 0.5 );
+  BOOST_CHECK_CLOSE( dose_thickness_sv, dose_ad_sv, 0.5 );
+
+  // Get formatted strings for display
+  const string dose_thickness_str = result_thickness["dose_rate_REM_str"].get<string>();
+  const string dose_ad_str = result_ad["dose_rate_REM_str"].get<string>();
+  const string dose_sv_str = result_ad["dose_rate_si_str"].get<string>();
+
+  // Note: Formatted strings may differ slightly due to small differences in areal density
+  // We verify numeric values are close instead
+
+  BOOST_TEST_MESSAGE( "Dose (thickness method): " << dose_thickness_str << " (" << dose_thickness_rem << " rem/hr)" );
+  BOOST_TEST_MESSAGE( "Dose (arealDensity method): " << dose_ad_str << " (" << dose_ad_rem << " rem/hr)" );
+  BOOST_TEST_MESSAGE( "Dose (Sv units): " << dose_sv_str << " (" << dose_ad_sv << " Sv/hr)" );
+  BOOST_TEST_MESSAGE( "Areal density (thickness): " << ad_thickness << " g/cm²" );
+  BOOST_TEST_MESSAGE( "Areal density (direct): " << ad_direct << " g/cm²" );
+}
+

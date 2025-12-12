@@ -551,6 +551,53 @@ Further investigation of top returned candidates is required to make sure they m
     }</ParametersSchema>
   </Tool>
 
+  <Tool name="calculate_dose">
+    <Description>Calculate gamma dose rate from a nuclide source at a specified distance. Computes dose using ANSI/ANS-6.1.1-1991 fluence-to-dose conversion factors (Anterior-Posterior orientation). Accounts for source activity, decay age, distance, and optional shielding. Returns dose rate in both Sv/hr and rem/hr.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+        "nuclide": {
+          "type": "string",
+          "description": "Nuclide symbol (e.g., 'Co60', 'Cs137', 'U238'). Use the exact format from the nuclide database."
+        },
+        "distance": {
+          "type": "string",
+          "description": "Distance from center of source to location of interest with units (e.g., '1 m', '3ft 5in', '100 cm'). Must be positive."
+        },
+        "activity": {
+          "type": "string",
+          "description": "Source activity with units (e.g., '1.2 kBq', '100 uCi', '1 mCi'). Supports metric prefixes (f, p, n, u, m, k, M, G, T) for both Becquerel and Curie."
+        },
+        "age": {
+          "type": "string",
+          "description": "Optional: Nuclide age with units (e.g., '0.5 y', '4y 4months', '100 days'). Strongly recomended to no be specified, unless an age of the source is explicitly known.  If not specified, and intelligent age will be used based on the nuclide."
+        },
+        "material": {
+          "type": "string",
+          "description": "Optional: Shielding material name (use with 'thickness'). Must be a valid material from get_materials tool. Example: 'Fe' (iron), 'Pb' (lead), 'concrete', etc. Cannot be used together with arealDensity/atomicNumber."
+        },
+        "thickness": {
+          "type": "string",
+          "description": "Optional: Material thickness with units (e.g., '1 cm', '5 mm', '0.25 in'). Used with 'material' parameter. Cannot be used together with arealDensity/atomicNumber."
+        },
+        "arealDensity": {
+          "type": "number",
+          "description": "Optional: Shielding areal density in g/cm² (range 0-240). Use with 'atomicNumber'. Provides an alternative to material/thickness specification. Cannot be used together with material/thickness."
+        },
+        "atomicNumber": {
+          "type": "number",
+          "description": "Optional: Shielding atomic number (range 1-98). Use with 'arealDensity'. Provides an alternative to material/thickness specification. Cannot be used together with material/thickness.",
+          "minimum": 1,
+          "maximum": 98
+        }
+      },
+      "required": ["nuclide", "distance", "activity"]
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>MainAgent</Agent>
+    </AvailableFor>
+  </Tool>
+
   <Tool name="photopeak_detection_efficiency">
     <Description>Given an array of source photon energies, returns the fraction of photons that will contribute to a peak in data. The returned answer will include the attenuation factor of shielding (if specified), the fraction of photons making it to the detector (if distance is specified), the detection probability of photons that are incident upon the detector (i.e., the intrinsic detection efficiency) if a detector efficiency function is loaded (use 'detector_efficiency_function_info' tool call with no arguments to see if a detector efficiency function is loaded, and 'available_detector_efficiency_functions' and 'load_detector_efficiency_function' to load an efficiency function), and gives total detection probability.</Description>
     <ParametersSchema>{
