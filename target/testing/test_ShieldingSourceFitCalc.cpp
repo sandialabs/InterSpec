@@ -26,6 +26,8 @@
 #include <iostream>
 
 #include <Wt/Utils>
+#include <Wt/WApplication>
+#include <Wt/Test/WTestEnvironment>
 
 #ifdef _WIN32
 // For some reason, we need to include the following includes, before unit_test.hpp,
@@ -56,6 +58,7 @@
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -63,6 +66,7 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/ShieldingSourceFitCalc.h"
+#include "InterSpec/ShieldingSourceDisplay.h"
 
 
 using namespace std;
@@ -140,6 +144,50 @@ void set_data_dir()
   const string required_data_path = SpecUtils::append_path(g_test_file_dir, required_data_file);
   BOOST_REQUIRE_MESSAGE( SpecUtils::is_file( required_data_path ), "'" << required_data_file << "' not at '" << required_data_path << "'" );
 }//void set_data_dir()
+
+
+// Helper class to manage InterSpec instance for tests
+class InterSpecTestFixture
+{
+public:
+  std::unique_ptr<Wt::Test::WTestEnvironment> m_env;
+  InterSpecApp *m_app;
+  std::unique_ptr<Wt::WApplication::UpdateLock> m_update_lock;
+  InterSpec *m_interspec;
+
+  InterSpecTestFixture()
+  : m_env( nullptr ),
+    m_app( nullptr ),
+    m_interspec( nullptr )
+  {
+    set_data_dir();
+
+    string wt_app_root = SpecUtils::append_path( InterSpec::staticDataDirectory(), "..");
+    wt_app_root = SpecUtils::lexically_normalize_path(wt_app_root);
+
+    // Create a test environment
+    const std::string applicationPath = "";
+    const std::string configurationFile = "";
+    m_env.reset( new Wt::Test::WTestEnvironment( applicationPath, configurationFile, Wt::Application ) );
+    m_env->setAppRoot( wt_app_root );
+
+    // Create the app
+    m_app = new InterSpecApp( *m_env );
+
+    m_update_lock.reset( new Wt::WApplication::UpdateLock(m_app) );
+
+    // Get the InterSpec viewer instance
+    m_interspec = m_app->viewer();
+    BOOST_REQUIRE( m_interspec );
+  }
+
+  ~InterSpecTestFixture()
+  {
+    m_update_lock.reset();
+    m_env.reset();
+    m_interspec = nullptr;
+  }
+};
 
 
 BOOST_AUTO_TEST_CASE( ShieldingInfoUri )
@@ -323,14 +371,14 @@ BOOST_AUTO_TEST_CASE( ShieldingInfoUri )
 }//BOOST_AUTO_TEST_CASE( ShieldingInfoUri )
 
 
-BOOST_AUTO_TEST_CASE( IsoFitStructSerialization )
+BOOST_AUTO_TEST_CASE( SourceFitDefSerialization )
 {
   set_data_dir();
   
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
   
-  ShieldingSourceFitCalc::IsoFitStruct test;
+  ShieldingSourceFitCalc::SourceFitDef test;
   
   test.nuclide = db->nuclide( "U238" );
   test.activity = 1.1*PhysicalUnits::curie;
@@ -339,10 +387,8 @@ BOOST_AUTO_TEST_CASE( IsoFitStructSerialization )
   test.fitAge = false;
   test.ageDefiningNuc = db->nuclide( "U235" );
   test.sourceType = ShieldingSourceFitCalc::ModelSourceType::Intrinsic;
-  test.numProgenyPeaksSelected = 2;
-  test.ageIsFittable = !PeakDef::ageFitNotAllowed( test.ageDefiningNuc ) ;
   test.activityUncertainty = 0.1*test.activity;
-  test.ageUncertainty = 0.0;
+  test.ageUncertainty.reset();
   
 #if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
   test.truthActivity = 1.0*PhysicalUnits::curie;
@@ -354,10 +400,10 @@ BOOST_AUTO_TEST_CASE( IsoFitStructSerialization )
   rapidxml::xml_document<char> doc;
   BOOST_REQUIRE_NO_THROW( test.serialize( &doc ) );
   
-  ShieldingSourceFitCalc::IsoFitStruct from_xml;
+  ShieldingSourceFitCalc::SourceFitDef from_xml;
   BOOST_REQUIRE_NO_THROW( from_xml.deSerialize( doc.first_node() ) );
-  BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::IsoFitStruct::equalEnough( test, from_xml ) );
-}//BOOST_AUTO_TEST_CASE( IsoFitStructSerialization )
+  BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::SourceFitDef::equalEnough( test, from_xml ) );
+}//BOOST_AUTO_TEST_CASE( SourceFitDefSerialization )
 
 
 
@@ -384,7 +430,7 @@ BOOST_AUTO_TEST_CASE( SrcFitOptionsSerialization )
     BOOST_REQUIRE_NO_THROW( from_xml.deSerialize( &doc ) );
     BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::ShieldingSourceFitOptions::equalEnough( test, from_xml ) );
   }//for( size_t i = 0; i < 20; ++i )
-}//BOOST_AUTO_TEST_CASE( IsoFitStructSerialization )
+}//BOOST_AUTO_TEST_CASE( SourceFitDefSerialization )
 
 
 // A simple, fully programmatically defined case of fitting a source/shielding model
@@ -469,10 +515,20 @@ BOOST_AUTO_TEST_CASE( SimpleSourceFit )
   ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
   options.attenuate_for_air = false;
   
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
+  chi_input.config.distance = distance;
+  chi_input.config.geometry = geometry;
+  chi_input.config.shieldings = shieldings;
+  chi_input.config.sources = src_definitions;
+  chi_input.config.options = options;
+  chi_input.detector = detector;
+  chi_input.foreground = foreground;
+  chi_input.background = nullptr;
+  chi_input.foreground_peaks = foreground_peaks;
+  chi_input.background_peaks = nullptr;
+
   pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars =
-                GammaInteractionCalc::ShieldingSourceChi2Fcn::create( distance, geometry,
-                                  shieldings, src_definitions, detector,
-                                  foreground, nullptr, foreground_peaks, nullptr, options );
+                GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
  
   auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
   *inputPrams = fcn_pars.second;
@@ -496,7 +552,7 @@ BOOST_AUTO_TEST_CASE( SimpleSourceFit )
   
   BOOST_REQUIRE( results->fit_src_info.size() == 1 );
   
-  const ShieldingSourceFitCalc::IsoFitStruct &fit_src_info = results->fit_src_info[0];
+  const ShieldingSourceFitCalc::SourceFitDef &fit_src_info = results->fit_src_info[0];
   BOOST_REQUIRE( results->fit_src_info.size() == 1 );
   BOOST_CHECK( fit_src_info.nuclide == db->nuclide( "Cs137" ) );
   BOOST_CHECK( !fit_src_info.ageDefiningNuc );
@@ -528,7 +584,7 @@ std::tuple<bool,int,int,vector<string>> test_fit_against_truth( const ShieldingS
   {
     for( int i = 0; i < results.fit_src_info.size(); ++i )
     {
-      const ShieldingSourceFitCalc::IsoFitStruct &src = results.fit_src_info[i];
+      const ShieldingSourceFitCalc::SourceFitDef &src = results.fit_src_info[i];
       const SandiaDecay::Nuclide *nuc = src.nuclide;
       BOOST_REQUIRE( nuc );
       
@@ -1088,14 +1144,65 @@ BOOST_AUTO_TEST_CASE( FitAnalystTraceSource )
     src_definitions.push_back( info );
   }
   BOOST_REQUIRE( src_definitions.size() == 1 );
+
+  GammaInteractionCalc::ShieldSourceConfig parsed_config;
+  BOOST_REQUIRE_NO_THROW( parsed_config.deSerialize( base_node, &matdb ) );
+
+  BOOST_CHECK_SMALL( fabs(parsed_config.distance - distance), 1e-9 * std::max(1.0, fabs(distance)) );
+  BOOST_CHECK_EQUAL( static_cast<int>(parsed_config.geometry), static_cast<int>(geometry) );
+  BOOST_CHECK_EQUAL( parsed_config.shieldings.size(), shield_definitions.size() );
+  std::vector<ShieldingSourceFitCalc::SourceFitDef> parsed_source_defs = parsed_config.sources;
+  BOOST_CHECK_EQUAL( parsed_source_defs.size(), src_definitions.size() );
+
+#if( PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
+  for( size_t i = 0; i < shield_definitions.size(); ++i )
+    BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::ShieldingInfo::equalEnough( shield_definitions[i], parsed_config.shieldings[i] ) );
+  for( size_t i = 0; i < src_definitions.size(); ++i )
+    BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::SourceFitDef::equalEnough( src_definitions[i], parsed_source_defs[i] ) );
+  BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::ShieldingSourceFitOptions::equalEnough( options, parsed_config.options ) );
+#endif
+
+  rapidxml::xml_document<char> roundtrip_doc;
+  rapidxml::xml_node<char> *round_root = roundtrip_doc.allocate_node( rapidxml::node_element, "ShieldingSourceFit" );
+  roundtrip_doc.append_node( round_root );
+  BOOST_REQUIRE_NO_THROW( parsed_config.serialize( round_root ) );
+
+  GammaInteractionCalc::ShieldSourceConfig reparsed_config;
+  BOOST_REQUIRE_NO_THROW( reparsed_config.deSerialize( round_root, &matdb ) );
+
+  BOOST_CHECK_SMALL( fabs(reparsed_config.distance - parsed_config.distance), 1e-9 * std::max(1.0, fabs(parsed_config.distance)) );
+  BOOST_CHECK_EQUAL( static_cast<int>(reparsed_config.geometry), static_cast<int>(parsed_config.geometry) );
+  BOOST_CHECK_EQUAL( reparsed_config.shieldings.size(), parsed_config.shieldings.size() );
+  std::vector<ShieldingSourceFitCalc::SourceFitDef> reparsed_source_defs = reparsed_config.sources;
+  BOOST_CHECK_EQUAL( reparsed_source_defs.size(), parsed_source_defs.size() );
+
+#if( PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
+  for( size_t i = 0; i < reparsed_config.shieldings.size(); ++i )
+    BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::ShieldingInfo::equalEnough( reparsed_config.shieldings[i], parsed_config.shieldings[i] ) );
+  for( size_t i = 0; i < reparsed_source_defs.size(); ++i )
+    BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::SourceFitDef::equalEnough( reparsed_source_defs[i], parsed_source_defs[i] ) );
+  BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::ShieldingSourceFitOptions::equalEnough( reparsed_config.options, parsed_config.options ) );
+#endif
+
+  BOOST_CHECK_EQUAL( reparsed_config.sources.size(), parsed_config.sources.size() );
   
   set_fit_quantities_to_default_values( shield_definitions, src_definitions );
   
   // We have all the parts, lets do the computation:
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
+  chi_input.config.distance = distance;
+  chi_input.config.geometry = geometry;
+  chi_input.config.shieldings = shield_definitions;
+  chi_input.config.sources = src_definitions;
+  chi_input.config.options = options;
+  chi_input.detector = detector;
+  chi_input.foreground = foreground;
+  chi_input.background = nullptr;
+  chi_input.foreground_peaks.assign( peaks->begin(), peaks->end() );
+  chi_input.background_peaks = nullptr;
+
   pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars =
-                GammaInteractionCalc::ShieldingSourceChi2Fcn::create( distance, geometry,
-                                  shield_definitions, src_definitions, detector,
-                                  foreground, nullptr, *peaks, nullptr, options );
+                GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
  
   auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
   *inputPrams = fcn_pars.second;
@@ -1274,10 +1381,11 @@ BOOST_AUTO_TEST_CASE( FitAnalystShieldingSourcecases )
     //cout << "XML: " << xml << endl;
     
     double distance;
+    std::string diststr;
     try
     {
       const rapidxml::xml_node<char> *dist_node = base_node->first_node( "Distance" );
-      const string diststr = SpecUtils::xml_value_str( dist_node );
+      diststr = SpecUtils::xml_value_str( dist_node );
       distance = PhysicalUnits::stringToDistance( diststr );
     }catch( std::exception &e )
     {
@@ -1424,13 +1532,61 @@ BOOST_AUTO_TEST_CASE( FitAnalystShieldingSourcecases )
                         << peak_fit_nucs.size() << "), vs src_definitions (" << src_definitions.size() << ")" );
     
     
+    GammaInteractionCalc::ShieldSourceConfig parsed_config;
+    BOOST_CHECK_NO_THROW( parsed_config.deSerialize( base_node, &matdb ) );
+
+    BOOST_CHECK_SMALL( fabs(parsed_config.distance - distance), 1e-9 * std::max(1.0, fabs(distance)) );
+    BOOST_CHECK_EQUAL( static_cast<int>(parsed_config.geometry), static_cast<int>(geometry) );
+    BOOST_CHECK_EQUAL( parsed_config.shieldings.size(), shield_definitions.size() );
+    std::vector<ShieldingSourceFitCalc::SourceFitDef> parsed_source_defs = parsed_config.sources;
+    BOOST_CHECK_EQUAL( parsed_source_defs.size(), src_definitions.size() );
+
+#if( PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
+    for( size_t i = 0; i < shield_definitions.size(); ++i )
+      BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::ShieldingInfo::equalEnough( shield_definitions[i], parsed_config.shieldings[i] ) );
+  for( size_t i = 0; i < src_definitions.size(); ++i )
+    BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::SourceFitDef::equalEnough( src_definitions[i], parsed_source_defs[i] ) );
+    BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::ShieldingSourceFitOptions::equalEnough( options, parsed_config.options ) );
+#endif
+
+    rapidxml::xml_document<char> roundtrip_doc;
+    rapidxml::xml_node<char> *round_root = roundtrip_doc.allocate_node( rapidxml::node_element, "ShieldingSourceFit" );
+    roundtrip_doc.append_node( round_root );
+    BOOST_CHECK_NO_THROW( parsed_config.serialize( round_root ) );
+
+    GammaInteractionCalc::ShieldSourceConfig reparsed_config;
+    BOOST_CHECK_NO_THROW( reparsed_config.deSerialize( round_root, &matdb ) );
+
+    BOOST_CHECK_SMALL( fabs(reparsed_config.distance - parsed_config.distance), 1e-9 * std::max(1.0, fabs(parsed_config.distance)) );
+    BOOST_CHECK_EQUAL( static_cast<int>(reparsed_config.geometry), static_cast<int>(parsed_config.geometry) );
+    BOOST_CHECK_EQUAL( reparsed_config.shieldings.size(), parsed_config.shieldings.size() );
+  std::vector<ShieldingSourceFitCalc::SourceFitDef> reparsed_source_defs = reparsed_config.sources;
+  BOOST_CHECK_EQUAL( reparsed_source_defs.size(), parsed_source_defs.size() );
+
+#if( PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
+    for( size_t i = 0; i < reparsed_config.shieldings.size(); ++i )
+      BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::ShieldingInfo::equalEnough( reparsed_config.shieldings[i], parsed_config.shieldings[i] ) );
+  for( size_t i = 0; i < reparsed_source_defs.size(); ++i )
+    BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::SourceFitDef::equalEnough( reparsed_source_defs[i], parsed_source_defs[i] ) );
+    BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::ShieldingSourceFitOptions::equalEnough( reparsed_config.options, parsed_config.options ) );
+#endif
+
     set_fit_quantities_to_default_values( shield_definitions, src_definitions );
     
     // We have all the parts, lets do the computation:
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
+    chi_input.config.distance = distance;
+    chi_input.config.geometry = geometry;
+    chi_input.config.shieldings = shield_definitions;
+    chi_input.config.sources = src_definitions;
+    chi_input.config.options = options;
+    chi_input.detector = detector;
+    chi_input.foreground = foreground;
+    chi_input.background = background;
+    chi_input.foreground_peaks.assign( foreground_peaks->begin(), foreground_peaks->end() );
+    chi_input.background_peaks = background_peaks;
     pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars =
-    GammaInteractionCalc::ShieldingSourceChi2Fcn::create( distance, geometry,
-                                                         shield_definitions, src_definitions, detector,
-                                                         foreground, background, *foreground_peaks, background_peaks, options );
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
     
     auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
     *inputPrams = fcn_pars.second;
@@ -1469,4 +1625,203 @@ BOOST_AUTO_TEST_CASE( FitAnalystShieldingSourcecases )
     for( const auto &msg : textInfoLines )
       cout << "\t" << msg << endl;
   }//for( const string n42_filename : files )
-}//BOOST_AUTO_TEST_CASE( FitAnalystTraceSource )
+}//BOOST_AUTO_TEST_CASE( FitAnalystShieldingSourcecases )
+
+
+BOOST_AUTO_TEST_CASE( ShieldingSourceDisplayGuiRoundTrip )
+{
+  set_data_dir();
+  
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
+  
+  MaterialDB matdb;
+  
+  const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
+  BOOST_REQUIRE_NO_THROW( matdb.parseGadrasMaterialFile( materialfile, db, false ) );
+  
+  const string base_dir = SpecUtils::append_path(g_test_file_dir, "../analysis_tests");
+  BOOST_REQUIRE( SpecUtils::is_directory(base_dir) );
+  
+  const vector<string> files = SpecUtils::recursive_ls( base_dir, ".n42" );
+  
+  // Make sure we found some files
+  BOOST_REQUIRE( files.size() >= 1 );
+  
+  for( const string n42_filename : files )
+  {
+    // Create a fresh fixture for each file to ensure clean state
+    InterSpecTestFixture fixture;
+    InterSpec *m_interspec = fixture.m_interspec;
+    
+    SpecMeas specfile;
+    const bool loaded = specfile.load_N42_file( n42_filename );
+    BOOST_CHECK_MESSAGE( loaded, "Analyst file '" << n42_filename << "' couldnt be loaded - skipping testing." );
+    if( !loaded )
+      continue;
+    
+    rapidxml::xml_document<char> *model_xml = specfile.shieldingSourceModel();
+    BOOST_CHECK_MESSAGE( model_xml, "Analyst file '" << n42_filename << "' doesnt have a ShieldingSourceModel - skipping test." );
+    if( !model_xml )
+      continue;
+    
+    rapidxml::xml_node<char> *base_node = model_xml->first_node();
+    BOOST_CHECK_MESSAGE( base_node, "Analyst file '" << n42_filename << "' has invalid ShieldingSourceModel - skipping test." );
+    if( !base_node )
+      continue;
+    
+    // Parse original config from XML
+    GammaInteractionCalc::ShieldSourceConfig original_config;
+    BOOST_CHECK_NO_THROW( original_config.deSerialize( base_node, &matdb ) );
+    
+    // Load the file into InterSpec
+    m_interspec->userOpenFileFromFilesystem( n42_filename, n42_filename );
+    
+    shared_ptr<SpecMeas> meas = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
+    BOOST_CHECK_MESSAGE( meas, "Analyst file '" << n42_filename << "' failed to load into InterSpec - skipping test." );
+    if( !meas )
+      continue;
+    
+    // Verify the measurement has the shielding source model
+    rapidxml::xml_document<char> *loaded_model_xml = meas->shieldingSourceModel();
+    BOOST_CHECK_MESSAGE( loaded_model_xml && loaded_model_xml->first_node(),
+                        "Analyst file '" << n42_filename << "' measurement doesn't have shielding source model after loading - skipping test." );
+    if( !loaded_model_xml || !loaded_model_xml->first_node() )
+      continue;
+    
+    
+    // Create the GUI (it will auto-deserialize from the measurement's shielding source model)
+    ShieldingSourceDisplay *gui = m_interspec->shieldingSourceFit();
+    BOOST_CHECK_MESSAGE( gui, "Analyst file '" << n42_filename << "' failed to create ShieldingSourceDisplay GUI - skipping test." );
+    if( !gui )
+      continue;
+    
+    // Serialize the GUI state back using the new serialize() method
+    // This tests that the new serialize() overload works correctly
+    ShieldingSourceDisplay::ShieldingSourceDisplayState gui_state;
+    BOOST_CHECK_NO_THROW( gui_state = gui->serialize() );
+    
+    BOOST_CHECK_MESSAGE( gui_state.config, "Analyst file '" << n42_filename << "' GUI state has no config - skipping test." );
+    if( !gui_state.config )
+      continue;
+    
+    const GammaInteractionCalc::ShieldSourceConfig &gui_config = *gui_state.config;
+    
+    // Compare the configs - note that the GUI may have auto-deserialized, so we check if it matches
+    // If the GUI has sources/shieldings, compare them; otherwise skip this file
+    if( gui_config.sources.empty() && gui_config.shieldings.empty() )
+    {
+      BOOST_WARN_MESSAGE( false, "Analyst file '" << n42_filename << "' GUI state is empty - GUI may not have auto-deserialized. Skipping comparison." );
+      continue;
+    }
+    
+    // Compare basic properties with detailed error messages
+    const double distance_diff = fabs(gui_config.distance - original_config.distance);
+    const double distance_tolerance = 1e-6 * std::max(1.0, fabs(original_config.distance));
+    BOOST_CHECK_MESSAGE( distance_diff < distance_tolerance,
+                        "Distance mismatch for '" << n42_filename << "': original=" 
+                        << PhysicalUnits::printToBestLengthUnits(original_config.distance, 6) << " (" << original_config.distance << ")"
+                        << ", GUI=" << PhysicalUnits::printToBestLengthUnits(gui_config.distance, 6) << " (" << gui_config.distance << ")"
+                        << ", diff=" << distance_diff << ", tolerance=" << distance_tolerance );
+    
+    BOOST_CHECK_MESSAGE( static_cast<int>(gui_config.geometry) == static_cast<int>(original_config.geometry),
+                        "Geometry mismatch for '" << n42_filename << "': original=" 
+                        << static_cast<int>(original_config.geometry) << " (" << GammaInteractionCalc::to_str(original_config.geometry) << ")"
+                        << ", GUI=" << static_cast<int>(gui_config.geometry) << " (" << GammaInteractionCalc::to_str(gui_config.geometry) << ")" );
+    
+    // Compare shieldings
+    BOOST_CHECK_MESSAGE( gui_config.shieldings.size() == original_config.shieldings.size(),
+                        "Shieldings count mismatch for '" << n42_filename << "': original=" 
+                        << original_config.shieldings.size() << ", GUI=" << gui_config.shieldings.size() );
+    
+    if( gui_config.shieldings.size() == original_config.shieldings.size() )
+    {
+      for( size_t i = 0; i < original_config.shieldings.size(); ++i )
+      {
+        try
+        {
+          ShieldingSourceFitCalc::ShieldingInfo::equalEnough( original_config.shieldings[i], gui_config.shieldings[i] );
+        }catch( std::exception &e )
+        {
+          cout << "Shielding " << i << " mismatch for '" << n42_filename << "': " << e.what() << endl;
+          const auto &orig_sh = original_config.shieldings[i];
+          const auto &gui_sh = gui_config.shieldings[i];
+          cout << "  Original: geometry=" << static_cast<int>(orig_sh.m_geometry) 
+               << ", isGeneric=" << orig_sh.m_isGenericMaterial
+               << ", material=" << (orig_sh.m_material ? orig_sh.m_material->name : "null") << endl;
+          cout << "  GUI: geometry=" << static_cast<int>(gui_sh.m_geometry)
+               << ", isGeneric=" << gui_sh.m_isGenericMaterial
+               << ", material=" << (gui_sh.m_material ? gui_sh.m_material->name : "null") << endl;
+          throw;
+        }
+      }
+    }
+    
+    // Compare sources
+    BOOST_CHECK_MESSAGE( gui_config.sources.size() == original_config.sources.size(),
+                        "Sources count mismatch for '" << n42_filename << "': original=" 
+                        << original_config.sources.size() << ", GUI=" << gui_config.sources.size() );
+    
+    if( gui_config.sources.size() == original_config.sources.size() )
+    {
+      for( size_t i = 0; i < original_config.sources.size(); ++i )
+      {
+        const auto &orig_src = original_config.sources[i];
+        const auto &gui_src = gui_config.sources[i];
+        
+        // Compare nuclide
+        BOOST_CHECK_MESSAGE( orig_src.nuclide == gui_src.nuclide,
+                            "Source " << i << " nuclide mismatch for '" << n42_filename << "': original="
+                            << (orig_src.nuclide ? orig_src.nuclide->symbol : "null")
+                            << ", GUI=" << (gui_src.nuclide ? gui_src.nuclide->symbol : "null") );
+        
+        // Compare sourceType
+        BOOST_CHECK_MESSAGE( static_cast<int>(orig_src.sourceType) == static_cast<int>(gui_src.sourceType),
+                            "Source " << i << " sourceType mismatch for '" << n42_filename << "': original="
+                            << static_cast<int>(orig_src.sourceType) << ", GUI=" << static_cast<int>(gui_src.sourceType) );
+        
+        // Compare fitActivity
+        BOOST_CHECK_MESSAGE( orig_src.fitActivity == gui_src.fitActivity,
+                            "Source " << i << " fitActivity mismatch for '" << n42_filename << "': original="
+                            << orig_src.fitActivity << ", GUI=" << gui_src.fitActivity );
+        
+        // Compare activity - allow 1% difference for self-attenuating sources
+        const double act_diff = fabs(orig_src.activity - gui_src.activity);
+        const double max_act = std::max(fabs(orig_src.activity), fabs(gui_src.activity));
+        const bool is_self_attenuating = (orig_src.sourceType == ShieldingSourceFitCalc::ModelSourceType::Intrinsic);
+        const double activity_tolerance = is_self_attenuating ? 0.01 * max_act : 1.0E-6 * max_act;
+        
+        BOOST_CHECK_MESSAGE( act_diff <= activity_tolerance,
+                            "Source " << i << " activity mismatch for '" << n42_filename << "': original="
+                            << PhysicalUnits::printToBestActivityUnits(orig_src.activity) << " (" << orig_src.activity << ")"
+                            << ", GUI=" << PhysicalUnits::printToBestActivityUnits(gui_src.activity) << " (" << gui_src.activity << ")"
+                            << ", diff=" << act_diff << ", tolerance=" << activity_tolerance
+                            << (is_self_attenuating ? " (self-attenuating, 1% allowed)" : "") );
+        
+        // Compare age
+        const double age_diff = fabs(orig_src.age - gui_src.age);
+        const double max_age = std::max(fabs(orig_src.age), fabs(gui_src.age));
+        const double age_tolerance = 1.0E-6 * std::max(1.0, max_age);
+        BOOST_CHECK_MESSAGE( age_diff <= age_tolerance,
+                            "Source " << i << " age mismatch for '" << n42_filename << "': original="
+                            << orig_src.age << ", GUI=" << gui_src.age
+                            << ", diff=" << age_diff << ", tolerance=" << age_tolerance );
+        
+        // Compare fitAge
+        BOOST_CHECK_MESSAGE( orig_src.fitAge == gui_src.fitAge,
+                            "Source " << i << " fitAge mismatch for '" << n42_filename << "': original="
+                            << orig_src.fitAge << ", GUI=" << gui_src.fitAge );
+        
+        // Compare ageDefiningNuc
+        BOOST_CHECK_MESSAGE( orig_src.ageDefiningNuc == gui_src.ageDefiningNuc,
+                            "Source " << i << " ageDefiningNuc mismatch for '" << n42_filename << "': original="
+                            << (orig_src.ageDefiningNuc ? orig_src.ageDefiningNuc->symbol : "null")
+                            << ", GUI=" << (gui_src.ageDefiningNuc ? gui_src.ageDefiningNuc->symbol : "null") );
+        
+        // Note: activityUncertainty and ageUncertainty are not preserved by GUI, so we don't compare them
+      }
+    }
+    
+    BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::ShieldingSourceFitOptions::equalEnough( original_config.options, gui_config.options ) );
+  }//for( const string n42_filename : files )
+}//BOOST_FIXTURE_TEST_CASE( ShieldingSourceDisplayGuiRoundTrip )

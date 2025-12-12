@@ -49,7 +49,7 @@ using namespace Wt;
 using namespace std;
 
 Shielding2DView::Shielding2DView( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
-                                  const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &sources,
+                                  const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
                                   GammaInteractionCalc::GeometryType geometry,
                                   double detectorDistance,
                                   double detectorDiameter,
@@ -101,7 +101,7 @@ void Shielding2DView::defineJavaScript()
 // JSON creation code (moved from ShieldingJsonUtils)
 std::string createShieldingDiagramJson(
     const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
-    const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &sources,
+    const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
     GammaInteractionCalc::GeometryType geometry,
     double detectorDistance,
     double detectorDiameter
@@ -144,7 +144,7 @@ std::string createShieldingDiagramJson(
   j["detectorDiameter"] = detectorDiameter / PhysicalUnits::mm;
   
   j["fitSources"] = nlohmann::json::array();
-  for( const ShieldingSourceFitCalc::IsoFitStruct &src : sources )
+  for( const ShieldingSourceFitCalc::SourceFitDef &src : sources )
   {
     nlohmann::json src_json;
     std::string symbol = src.nuclide ? src.nuclide->symbol : "Unknown";
@@ -163,8 +163,8 @@ std::string createShieldingDiagramJson(
     src_json["activity"] = src.activity;
     src_json["activityPretty"] = PhysicalUnits::printToBestActivityUnits( src.activity );
     
-    if( src.activityUncertainty > 0 ) {
-      src_json["activityUncert"] = src.activityUncertainty;
+    if( src.activityUncertainty.has_value() && (src.activityUncertainty.value() > 0.0) ) {
+      src_json["activityUncert"] = src.activityUncertainty.value();
     }
     
     // Age
@@ -332,7 +332,7 @@ std::string Shielding2DView::createJsonData() const
 }
 
 void Shielding2DView::updateData( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
-                                  const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &sources,
+                                  const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
                                   GammaInteractionCalc::GeometryType geometry,
                                   double detectorDistance,
                                   double detectorDiameter )
@@ -354,7 +354,7 @@ void Shielding2DView::updateData( const std::vector<ShieldingSourceFitCalc::Shie
 
 // Shielding3DView implementation (moved from Shielding3DView.cpp)
 Shielding3DView::Shielding3DView( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
-                                  const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &sources,
+                                  const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
                                   GammaInteractionCalc::GeometryType geometry,
                                   double detectorDistance,
                                   double detectorDiameter,
@@ -388,7 +388,7 @@ std::string Shielding3DView::createJsonData() const
 }
 
 void Shielding3DView::updateData( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
-                                  const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &sources,
+                                  const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
                                   GammaInteractionCalc::GeometryType geometry,
                                   double detectorDistance,
                                   double detectorDiameter )
@@ -411,7 +411,7 @@ void Shielding3DView::updateData( const std::vector<ShieldingSourceFitCalc::Shie
 // ShieldingDiagramDialog implementation
 ShieldingDiagramDialog::ShieldingDiagramDialog(
   const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
-  const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &sources,
+  const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
   GammaInteractionCalc::GeometryType geometry,
   double detectorDistance,
   double detectorDiameter
@@ -473,7 +473,7 @@ void ShieldingDiagramDialog::handleViewTypeToggle()
 }//void handleViewTypeToggle()
 
 void ShieldingDiagramDialog::updateData( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
-                                         const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &sources,
+                                         const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
                                          GammaInteractionCalc::GeometryType geometry,
                                          double detectorDistance,
                                          double detectorDiameter )
@@ -532,7 +532,7 @@ void ShieldingDiagramDialog::switchView( bool show3D )
 // Static factory method
 ShieldingDiagramDialog *ShieldingDiagramDialog::createShieldingDiagram(
   const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
-  const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &sources,
+  const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
   GammaInteractionCalc::GeometryType geometry,
   double detectorDistance,
   double detectorDiameter

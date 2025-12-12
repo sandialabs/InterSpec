@@ -48,6 +48,11 @@ class PeakDef;
 struct Material;
 class DetectorPeakResponse;
 
+namespace rapidxml
+{
+  template<typename Ch> class xml_node;
+}
+
 namespace SpecUtils
 {
   class Measurement;
@@ -621,6 +626,8 @@ struct ShieldingDetails
 struct SourceDetails
 {
   const SandiaDecay::Nuclide *nuclide = nullptr;
+  
+  /** The total activity of the source. */
   double activity = 0.0;
   double activityUncertainty = 0.0;
   /** If the activity is fit for.
@@ -654,6 +661,26 @@ struct SourceDetails
   //  insert peaks from `PeakDetail` as `PeakDetailSrc::nuclide` match this nuclide.
 };//struct SourceDetails
   
+  
+/** This is the setup of the problem - distances, shielding, how to calculate. */
+struct ShieldSourceConfig
+{
+  /** Distance to the CENTER of the item being measured.
+   
+   Note: If detector is fixed geometry, this value will not be used.
+   */
+  double distance;
+  
+  GammaInteractionCalc::GeometryType geometry;
+  std::vector<ShieldingSourceFitCalc::ShieldingInfo> shieldings;
+  std::vector<ShieldingSourceFitCalc::SourceFitDef> sources;
+  
+  ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
+  
+  rapidxml::xml_node<char> *serialize( rapidxml::xml_node<char> *base_node ) const;
+  void deSerialize( const rapidxml::xml_node<char> *base_node, MaterialDB *materialDb );
+};//struct ShieldSourceCalcInput
+
   
 class ShieldingSourceChi2Fcn
     : public ROOT::Minuit2::FCNBase
@@ -701,59 +728,21 @@ public:
   static const double sm_activityUnits;  //SandiaDecay::MBq
 
 
-  /** A struct to hold information about the material shieldings are made out of, and their respective self-attenuating and trace sources.
-   
-   Thicknesses and activity levels are specified by the fitting parameters, so not tracked in this struct.
-   
-   TODO: We could *almost* switch to using ShieldingSourceFitCalc::ShieldingInfo instead of ShieldLayerInfo,
-         but this would remove our logic to use `nucs_to_fit_mass_fraction_for`, since ShieldingInfo fits all mass-fractions, or none
-         (but since we only always do all or nothing, we arent actually losing much) - so we could upgrade ShieldingInfo to return mass-fractions
-         to fit, and just always have it return all self-atten sources, if fitting for them is selected.
-   */
-  struct ShieldLayerInfo_remove_mea
+  
+  struct ShieldSourceInput
   {
-    /** The material this struct holds info for.
-     If nullptr it represents generic shielding (e.g., AN/AD), and neither #self_atten_sources or #trace_sources may have entries.
-     */
-    std::shared_ptr<const Material> material;
+    ShieldSourceConfig config;
     
-    /** The nuclides which act as self-attenuating sources within the material, and their mass-fraction of the material.
-     The Material object must contain these nuclides as components, as well as at least one peak being used have this
-     nuclide as its assigned nuclide.  Note that some of these nuclides may also be in `nucs_to_fit_mass_fraction_for`
-     (via setNuclidesToFitMassFractionFor(...)).
-     */
-    std::vector<std::pair<const SandiaDecay::Nuclide *,double>> self_atten_sources;
+    std::shared_ptr<const DetectorPeakResponse> detector;
+    std::deque<std::shared_ptr<const PeakDef>> foreground_peaks;
+    std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> background_peaks;
     
-    /** Nuclides to fit mass fractions for; the sum of the mass fraction of all these nuclides will remain constant in the fit.
-     
-     Currently, our logic has it so, no matter what, all self-attenuating nuclides will be
-     fit for their fractions, or none.  In principal we could allow something different,
-     but this hasn't been tested.
-     
-     Nuclides will stored sorted alphabetically
-     */
-    std::vector<const SandiaDecay::Nuclide *> nucs_to_fit_mass_fraction_for;
-    
-    /** The trace sources info within this shielding.
-     
-     The 'double' argument of the tuple is the relaxation parameter, iff TraceActivityType==TraceActivityType::ExponentialDistribution.
-     
-     At least one peak being used have this nuclide as its assigned nuclide.
-     */
-    std::vector<std::tuple<const SandiaDecay::Nuclide *,TraceActivityType,double>> trace_sources;
-  };//struct ShieldLayerInfo
+    std::shared_ptr<const SpecUtils::Measurement> foreground;
+    std::shared_ptr<const SpecUtils::Measurement> background;
+  };//struct ShieldSourceInput
 
   static std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> create(
-                                     const double distance,
-                                     const GammaInteractionCalc::GeometryType geometry,
-                                     const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
-                                     const std::vector<ShieldingSourceFitCalc::SourceFitDef> &src_definitions,
-                                     std::shared_ptr<const DetectorPeakResponse> detector,
-                                     std::shared_ptr<const SpecUtils::Measurement> foreground,
-                                     std::shared_ptr<const SpecUtils::Measurement> background,
-                                     std::deque<std::shared_ptr<const PeakDef>> foreground_peaks,
-                                     std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> background_peaks,
-                                     const ShieldingSourceFitCalc::ShieldingSourceFitOptions &options );
+                                     const ShieldSourceInput &input );
   
 protected:
   ShieldingSourceChi2Fcn(
@@ -979,12 +968,12 @@ public:
 
   void log_shield_info( const std::vector<double> &params,
                         const std::vector<double> &error_params,
-                        const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &fit_src_info,
+                        const std::vector<ShieldingSourceFitCalc::SourceFitDef> &fit_src_info,
                         std::vector<ShieldingDetails> &info ) const;
   
   void log_source_info( const std::vector<double> &params,
                         const std::vector<double> &error_params,
-                        const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &fit_src_info,
+                        const std::vector<ShieldingSourceFitCalc::SourceFitDef> &fit_src_info,
                         std::vector<SourceDetails> &info ) const;
   
   

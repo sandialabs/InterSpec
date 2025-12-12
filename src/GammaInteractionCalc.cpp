@@ -37,6 +37,8 @@
 #include <algorithm>
 #include <stdexcept>
 
+#include <rapidxml/rapidxml.hpp>
+
 #include <boost/bind.hpp>
 #include <boost/function.hpp>
 #include <boost/asio/deadline_timer.hpp>
@@ -98,6 +100,123 @@ static_assert( 0, "Disable DEBUG_RAYTRACE_CALCS for release builds" );
 
 namespace GammaInteractionCalc
 {
+
+namespace
+{
+  template<typename Dest, typename Src>
+  void copySourceFitBase( Dest &dst, const Src &src )
+  {
+    dst.nuclide = src.nuclide;
+    dst.activity = src.activity;
+    dst.fitActivity = src.fitActivity;
+    dst.age = src.age;
+    dst.fitAge = src.fitAge;
+    dst.ageDefiningNuc = src.ageDefiningNuc;
+    dst.sourceType = src.sourceType;
+    dst.activityUncertainty = src.activityUncertainty;
+    dst.ageUncertainty = src.ageUncertainty;
+#if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
+    dst.truthActivity = src.truthActivity;
+    dst.truthActivityTolerance = src.truthActivityTolerance;
+    dst.truthAge = src.truthAge;
+    dst.truthAgeTolerance = src.truthAgeTolerance;
+#endif
+  }
+}//unnamed namespace
+
+rapidxml::xml_node<char> *ShieldSourceConfig::serialize( rapidxml::xml_node<char> *base_node ) const
+{
+  if( !base_node )
+    throw runtime_error( "ShieldSourceConfig::serialize: invalid parent node" );
+  rapidxml::xml_document<char> *doc = base_node->document();
+  if( !doc )
+    throw runtime_error( "ShieldSourceConfig::serialize: parent node missing document" );
+
+  if( geometry != GeometryType::NumGeometryType )
+  {
+    const char *geom_str = GammaInteractionCalc::to_str( geometry );
+    char *value = doc->allocate_string( geom_str );
+    rapidxml::xml_node<char> *geom_node = doc->allocate_node( rapidxml::node_element, "Geometry", value );
+    base_node->append_node( geom_node );
+  }
+
+  options.serialize( base_node );
+
+  std::string dist_value = PhysicalUnits::printToBestLengthUnits( distance, 6 );
+  char *dist_cstr = doc->allocate_string( dist_value.c_str() );
+  rapidxml::xml_node<char> *dist_node = doc->allocate_node( rapidxml::node_element, "Distance", dist_cstr );
+  base_node->append_node( dist_node );
+
+  rapidxml::xml_node<char> *shieldings_node = doc->allocate_node( rapidxml::node_element, "Shieldings" );
+  base_node->append_node( shieldings_node );
+  for( const auto &info : shieldings )
+    info.serialize( shieldings_node );
+
+  rapidxml::xml_node<char> *nuclides_node = doc->allocate_node( rapidxml::node_element, "Nuclides" );
+  base_node->append_node( nuclides_node );
+  for( const auto &row : sources )
+    row.serialize( nuclides_node );
+
+  return base_node;
+}
+
+void ShieldSourceConfig::deSerialize( const rapidxml::xml_node<char> *base_node,
+                                                          MaterialDB *materialDb )
+{
+  if( !base_node )
+    throw runtime_error( "ShieldSourceConfig::deSerialize: null node" );
+
+  const rapidxml::xml_node<char> *geom_node = base_node->first_node( "Geometry", 8 );
+  geometry = GeometryType::Spherical;
+  if( geom_node && geom_node->value() )
+  {
+    const std::string val( geom_node->value(), geom_node->value() + geom_node->value_size() );
+    bool found = false;
+    for( GeometryType i = GeometryType(0);
+        !found && (i != GeometryType::NumGeometryType);
+        i = GeometryType(static_cast<int>(i) + 1) )
+    {
+      found = ( val == GammaInteractionCalc::to_str(i) );
+      if( found )
+        geometry = i;
+    }
+    if( !found )
+      throw runtime_error( "ShieldSourceConfig::deSerialize: invalid Geometry value '" + val + "'" );
+  }
+
+  options.deSerialize( base_node );
+
+  const rapidxml::xml_node<char> *dist_node = base_node->first_node( "Distance", 8 );
+  if( !dist_node || !dist_node->value() )
+    throw runtime_error( "ShieldSourceConfig::deSerialize: missing Distance node" );
+  const std::string dist_str( dist_node->value(), dist_node->value() + dist_node->value_size() );
+  distance = PhysicalUnits::stringToDistance( dist_str );
+
+  const rapidxml::xml_node<char> *shieldings_node = base_node->first_node( "Shieldings", 10 );
+  if( !shieldings_node )
+    throw runtime_error( "ShieldSourceConfig::deSerialize: missing Shieldings node" );
+  shieldings.clear();
+  for( const rapidxml::xml_node<char> *shield_node = shieldings_node->first_node( "Shielding", 9 );
+      shield_node; shield_node = shield_node->next_sibling( "Shielding", 9 ) )
+  {
+    ShieldingSourceFitCalc::ShieldingInfo info;
+    info.deSerialize( shield_node, materialDb );
+    shieldings.push_back( std::move(info) );
+  }
+
+  const rapidxml::xml_node<char> *nuclides_node = base_node->first_node( "Nuclides", 8 );
+  if( !nuclides_node )
+    throw runtime_error( "ShieldSourceConfig::deSerialize: missing Nuclides node" );
+  sources.clear();
+  for( const rapidxml::xml_node<char> *src_node = nuclides_node->first_node( "Nuclide", 7 );
+      src_node; src_node = src_node->next_sibling( "Nuclide", 7 ) )
+  {
+    ShieldingSourceFitCalc::SourceFitDef info;
+    info.deSerialize( src_node );
+    sources.push_back( std::move(info) );
+  }
+}
+
 
 const char *to_str( const TraceActivityType type )
 {
@@ -1967,18 +2086,20 @@ void DistributedSrcCalc::eval_rect( const double xx[], const int *ndimptr,
 
 
 std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> ShieldingSourceChi2Fcn::create(
-                                const double distance,
-                                const GeometryType geom,
-                                const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
-                                const std::vector<ShieldingSourceFitCalc::SourceFitDef> &src_definitions,
-                                std::shared_ptr<const DetectorPeakResponse> detector,
-                                std::shared_ptr<const SpecUtils::Measurement> foreground,
-                                std::shared_ptr<const SpecUtils::Measurement> background,
-                                std::deque<std::shared_ptr<const PeakDef>> foreground_peaks,
-                                std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> background_peaks,
-                                const ShieldingSourceFitCalc::ShieldingSourceFitOptions &options )
+                                const ShieldSourceInput &input )
 {
   using GammaInteractionCalc::ShieldingSourceChi2Fcn;
+  const ShieldSourceConfig &config = input.config;
+  const double distance = config.distance;
+  const GeometryType geom = config.geometry;
+  const auto &shieldings = config.shieldings;
+  std::vector<ShieldingSourceFitCalc::SourceFitDef> src_definitions = config.sources;
+  const auto &options = config.options;
+  const auto &foreground_peaks = input.foreground_peaks;
+  const auto &background_peaks = input.background_peaks;
+  const auto &detector = input.detector;
+  const auto &foreground = input.foreground;
+  const auto &background = input.background;
     
   ROOT::Minuit2::MnUserParameters inputPrams;
   
@@ -2554,6 +2675,27 @@ size_t ShieldingSourceChi2Fcn::setInitialSourceDefinitions(
   
   size_t num_fit_params = 0;
   
+  auto countProgenyPeaks = [this]( const SandiaDecay::Nuclide *nuclide ) -> size_t
+  {
+    if( !nuclide )
+      return 0;
+    
+    std::set<const SandiaDecay::Nuclide *> progeny;
+    for( const PeakDef &peak : m_peaks )
+    {
+      if( !peak.useForShieldingSourceFit() )
+        continue;
+      if( peak.parentNuclide() != nuclide )
+        continue;
+      const SandiaDecay::Transition * const trans = peak.nuclearTransition();
+      if( trans && trans->parent )
+        progeny.insert( trans->parent );
+      else
+        progeny.insert( nuclide );
+    }
+    return progeny.size();
+  };
+  
   for( size_t i = 0; i < src_definitions.size(); ++i )
   {
     const SandiaDecay::Nuclide * const nuclide = this->nuclide(i);
@@ -2591,9 +2733,33 @@ size_t ShieldingSourceChi2Fcn::setInitialSourceDefinitions(
     
     bool fitAct = srcdef->fitActivity && (srcdef->sourceType != ShieldingSourceFitCalc::ModelSourceType::Intrinsic);
     const bool fitAge = srcdef->fitAge;
-    
     const SandiaDecay::Nuclide *ageDefiningNuc = srcdef->ageDefiningNuc;
     const bool hasOwnAge = (!ageDefiningNuc || (ageDefiningNuc == nuclide));
+    
+    if( fitAge && hasOwnAge )
+    {
+      const size_t numProgeny = countProgenyPeaks( nuclide );
+      const bool canFitAge = (numProgeny > 1);
+      const bool ageAllowed = !PeakDef::ageFitNotAllowed( nuclide );
+      
+      if( !canFitAge )
+      {
+        std::ostringstream msg;
+        msg << "Attempting to fit age for nuclide " << nuclide->symbol
+            << " but only " << numProgeny
+            << " progeny peak(s) are selected for the fit. At least two are required.";
+        throw std::runtime_error( msg.str() );
+      }
+      
+      if( ageAllowed != canFitAge )
+      {
+        std::ostringstream msg;
+        msg << "Inconsistent age-fit state for nuclide " << nuclide->symbol
+            << ": ageFitNotAllowed returns " << (ageAllowed ? "false" : "true")
+            << " despite " << numProgeny << " progeny peak(s) being selected.";
+        throw std::runtime_error( msg.str() );
+      }
+    }
     
     num_fit_params += fitAct + (fitAge && hasOwnAge);
     
@@ -4807,10 +4973,12 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
       try
       {
         const double energy = peak.gammaParticleEnergy();
-        
+        const double peak_mean = peak.mean();
+
         auto pos = std::find_if( begin(*log_info), end(*log_info),
-                                [energy]( const GammaInteractionCalc::PeakDetail &val ) {
-          return energy == val.decayParticleEnergy;
+                                [energy,peak_mean]( const GammaInteractionCalc::PeakDetail &val ) {
+          //return energy == val.decayParticleEnergy;
+          return peak_mean == val.energy;
         });
         
         assert( pos != end(*log_info) );
@@ -4819,7 +4987,7 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
         {
           GammaInteractionCalc::PeakDetail &log_peak = *pos;
           
-          assert( log_peak.energy == peak.mean() );
+          assert( log_peak.energy == peak.mean() );  //This will not be strictly true if the same particle is assigned to multiple peaks
           assert( log_peak.decayParticleEnergy == peak.gammaParticleEnergy() );
           assert( (peak.type() != PeakDef::GaussianDefined) || (log_peak.fwhm == peak.fwhm()) );
           assert( log_peak.counts == peak.peakArea() );
@@ -6264,7 +6432,7 @@ vector<PeakResultPlotInfo>
   
 void ShieldingSourceChi2Fcn::log_shield_info( const vector<double> &params,
                                               const vector<double> &errors,
-                              const vector<ShieldingSourceFitCalc::IsoFitStruct> &fit_src_info,
+                              const vector<ShieldingSourceFitCalc::SourceFitDef> &fit_src_info,
                               vector<ShieldingDetails> &shielding_details ) const
 {
   const ShieldingSourceChi2Fcn * const chi2Fcn = this;
@@ -6398,7 +6566,7 @@ void ShieldingSourceChi2Fcn::log_shield_info( const vector<double> &params,
 
 #ifndef NDEBUG
           const auto src_pos = find_if( begin(fit_src_info), end(fit_src_info),
-                  [nuc]( const ShieldingSourceFitCalc::IsoFitStruct &info ){
+                  [nuc]( const ShieldingSourceFitCalc::SourceFitDef &info ){
             return info.nuclide == nuc;
           });
           assert( src_pos != end(fit_src_info) );
@@ -6431,7 +6599,7 @@ void ShieldingSourceChi2Fcn::log_shield_info( const vector<double> &params,
           
 #ifndef NDEBUG
           const auto src_pos = find_if( begin(fit_src_info), end(fit_src_info),
-                  [nuc]( const ShieldingSourceFitCalc::IsoFitStruct &info ){
+                  [nuc]( const ShieldingSourceFitCalc::SourceFitDef &info ){
             return info.nuclide == nuc;
           });
           assert( src_pos != end(fit_src_info) );
@@ -6457,7 +6625,7 @@ void ShieldingSourceChi2Fcn::log_shield_info( const vector<double> &params,
   
 void ShieldingSourceChi2Fcn::log_source_info( const std::vector<double> &params,
                         const std::vector<double> &errors,
-                        const vector<ShieldingSourceFitCalc::IsoFitStruct> &fit_src_info,
+                        const vector<ShieldingSourceFitCalc::SourceFitDef> &fit_src_info,
                         std::vector<SourceDetails> &info ) const
 {
   const ShieldingSourceChi2Fcn * const chi2Fcn = this;
@@ -6474,35 +6642,35 @@ void ShieldingSourceChi2Fcn::log_source_info( const std::vector<double> &params,
       if( !nuc )
         continue;
       
-      const auto pos = std::find_if( begin(fit_src_info), end(fit_src_info), [nuc]( const ShieldingSourceFitCalc::IsoFitStruct &iso ) {
+      const auto pos = std::find_if( begin(fit_src_info), end(fit_src_info), [nuc]( const ShieldingSourceFitCalc::SourceFitDef &iso ) {
         return iso.nuclide == nuc;
       });
       
       assert( pos != end(fit_src_info) );
       if( pos == end(fit_src_info) )
-        throw runtime_error( "Missing ShieldingSourceFitCalc::IsoFitStruct for " + nuc->symbol );
+        throw runtime_error( "Missing ShieldingSourceFitCalc::SourceFitDef for " + nuc->symbol );
       
-      const ShieldingSourceFitCalc::IsoFitStruct &fit_info = *pos;
+      const ShieldingSourceFitCalc::SourceFitDef &fit_info = *pos;
       
       SourceDetails src;
       src.nuclide = nuc;
-      src.activity = chi2Fcn->activity( nuc, params );
-      src.activityUncertainty = chi2Fcn->activityUncertainty( nuc, params, errors );
+      src.activity = chi2Fcn->totalActivity( nuc, params );  //Note for trace-sources
+      src.activityUncertainty = chi2Fcn->totalActivityUncertainty( nuc, params, errors );
       src.activityIsFit = fit_info.fitActivity;
       src.nuclideMass = (src.activity / nuc->activityPerGram()) * PhysicalUnits::gram;
       src.age = chi2Fcn->age( nuc, params );
       src.ageUncertainty = chi2Fcn->age( nuc, errors );;
-      src.ageIsFittable = fit_info.ageIsFittable;
+      src.ageIsFittable = !PeakDef::ageFitNotAllowed( nuc );
       src.ageIsFit = fit_info.fitAge;
       src.ageDefiningNuc = fit_info.ageDefiningNuc;
       src.isTraceSource = chi2Fcn->isTraceSource(nuc);
       if( src.isTraceSource )
       {
         src.traceActivityType = chi2Fcn->traceSourceActivityType(nuc);
-        src.traceSrcDisplayAct = chi2Fcn->totalActivity(nuc,params);
-        src.traceSrcDisplayActUncertainty = chi2Fcn->totalActivityUncertainty(nuc, params, errors );
+        src.traceSrcDisplayAct = chi2Fcn->activity(nuc,params);
+        src.traceSrcDisplayActUncertainty = chi2Fcn->activityUncertainty(nuc, params, errors);
         src.traceRelaxationLength = 0.0;
-        
+
         TraceActivityType traceType = chi2Fcn->traceSourceActivityType(nuc);
         if( traceType == TraceActivityType::ExponentialDistribution )
           src.traceRelaxationLength = chi2Fcn->relaxationLength(nuc);

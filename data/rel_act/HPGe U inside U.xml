@@ -1,4 +1,5 @@
 <RelActCalcAuto version="0">
+	<Description>Uses two relative efficiency curves to detect when an object with one enrichment of Uranium, is being shielded by another Uranium object.  Requires HPGe data with high statistics.</Description>
 	<Note>Enriched U inside lower enrich U; requires background, det eff, high stats.</Note>
 	<Options version="2">
 		<FitEnergyCal>true</FitEnergyCal>
