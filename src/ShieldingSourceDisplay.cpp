@@ -702,7 +702,7 @@ SourceFitModel::SourceFitModel( PeakModel *peakModel,
     m_sortColumn( kIsotope ),
     m_peakModel( peakModel ),
     m_sameAgeForIsotopes( sameAgeIsotopes ),
-    m_det_type( DetectorPeakResponse::EffGeometryType::FarField )
+    m_det_type( DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic )
 {
   auto interspec = InterSpec::instance();
   if( !interspec )
@@ -867,7 +867,8 @@ void SourceFitModel::setDetectorType( const DetectorPeakResponse::EffGeometryTyp
     
     switch( det_type )
     {
-      case DetectorPeakResponse::EffGeometryType::FarField:
+      case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
+      case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
         break;
         
       case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
@@ -1855,7 +1856,8 @@ boost::any SourceFitModel::headerData( int section, Orientation orientation, int
     case kActivity:
       switch( m_det_type )
       {
-        case DetectorPeakResponse::EffGeometryType::FarField:
+        case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
+        case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
         case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
           return boost::any( WString::tr("Activity") );
           
@@ -5483,7 +5485,7 @@ void ShieldingSourceDisplay::handleDetectorChanged( std::shared_ptr<DetectorPeak
   
   const bool fixed_geom = (det && det->isFixedGeometry());
   const DetectorPeakResponse::EffGeometryType det_type = det ? det->geometryType()
-                                                 : DetectorPeakResponse::EffGeometryType::FarField;
+                                                 : DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
   m_sourceModel->setDetectorType( det_type );
   
   if( fixed_geom /* && !m_distanceLabel->isHidden() */ )
@@ -8751,7 +8753,7 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
   
   const DetectorPeakResponse::EffGeometryType detType = (det && det->isValid())
                                                   ? det->geometryType()
-                                                  : DetectorPeakResponse::EffGeometryType::FarField;
+                                                  : DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
   
   try
   {

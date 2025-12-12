@@ -1457,7 +1457,7 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
   
   const DetectorPeakResponse::EffGeometryType det_geom
   = base_input->drf ? base_input->drf->geometryType()
-  : DetectorPeakResponse::EffGeometryType::FarField;
+  : DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
   
   auto print_quantity = [is_dist_limit,det_geom,useCurie]( double quantity, int ndigits = 4 ) -> string {
     if( is_dist_limit )

@@ -1636,7 +1636,9 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
   void ShieldingInfo::equalEnough( const ShieldingInfo &lhs, const ShieldingInfo &rhs )
   {
     if( lhs.m_geometry != rhs.m_geometry )
-      throw runtime_error( "ShieldingInfo LHS Geometry != RHS Geometry" );
+      throw runtime_error( "ShieldingInfo LHS Geometry != RHS Geometry ("
+                          + string(GammaInteractionCalc::to_str(lhs.m_geometry))
+                          + " != " + string(GammaInteractionCalc::to_str(rhs.m_geometry)) + ")" ) ;
     
     if( lhs.m_isGenericMaterial != rhs.m_isGenericMaterial )
       throw runtime_error( "ShieldingInfo LHS IsGenericMaterial != RHS IsGenericMaterial" );

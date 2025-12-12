@@ -215,7 +215,7 @@ shared_ptr<DetectorPeakResponse> init_drf_from_name( std::string drf_file, std::
       input.seekg( 0, ios::beg );
       input.clear();
       
-      auto det = DrfSelect::parseRelEffCsvFile( drf_file );
+      auto det = DrfSelect::parseInterSpecRelEffCsvFile( drf_file );
       if( det )
         return det;
     }catch( std::exception &e )

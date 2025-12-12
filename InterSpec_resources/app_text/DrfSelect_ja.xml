@@ -37,22 +37,15 @@
   <message id="reds-recursive-no-drfs-in-dir">ディレクトリまたはそのサブディレクトリに有効なDRFがありません。</message>
   <message id="ds-csv-upload-desc">
     <div style="white-space:nowrap;">
-      内在効率CSVファイル:
+      効率ファイルアップロード:
     </div>
     <div>
-      最初の列はkeVでのエネルギーです。
-      2番目の列は、そのエネルギーで検出器に入射したガンマが
-      フォトピークに記録される効率%（0から100）です。
+      効率CSVの場合、第1列はkeV単位のエネルギー、第2列は効率%（0〜100）です。
     </div>
     <div>
-      効率ファイルをアップロードした後、GADRAS Detector.datファイルもアップロードするか、
-      検出器の直径を入力する必要があります。
-    </div>
-    <div>
-      <em>検出器応答作成</em>ツールからエクスポートしたCSVもアップロードできます。
+      内在効率は検出器表面に当たるガンマの効率、絶対効率は一定距離での効率です。
     </div>
   </message>
-  <message id="ds-enter-gad-det-diam">検出器直径を入力するかDetector.datファイルをアップロード:</message>
   <message id="ds-det-diam">検出器直径:</message>
   <message id="ds-fixed-geom">固定ジオメトリ</message>
   <message id="ds-gad-det-file-label">GADRAS Detector.Datファイル:</message>

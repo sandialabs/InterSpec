@@ -1128,7 +1128,7 @@ void MakeFwhmForDrf::setToDrf()
   {
     new_det = make_shared<DetectorPeakResponse>( "Flat Response", "FWHM info only" );
     new_det->setIntrinsicEfficiencyFormula( "1.0", 2.54*PhysicalUnits::cm, PhysicalUnits::keV,
-                                            0.0f, 0.0f, DetectorPeakResponse::EffGeometryType::FarField );
+                                            0.0f, 0.0f, DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic);
   }
   
   const auto fwhm_type = DetectorPeakResponse::ResolutionFnctForm( std::max(0,m_fwhmEqnType->currentIndex()) );

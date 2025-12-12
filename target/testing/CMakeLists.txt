@@ -239,6 +239,13 @@ if( USE_LLM_INTERFACE )
   )
 endif( USE_LLM_INTERFACE )
 
+add_executable( test_DetectorPeakResponse test_DetectorPeakResponse.cpp )
+target_link_libraries( test_DetectorPeakResponse PRIVATE InterSpecLib )
+add_test( NAME TDetectorPeakResponse
+  COMMAND $<TARGET_FILE:test_DetectorPeakResponse> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 
 # ./test_offlineAnalysis.cpp
 #target_link_libraries(test_offlineAnalysis PUBLIC 

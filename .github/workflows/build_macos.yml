@@ -24,7 +24,7 @@ concurrency: ci-macos-${{ github.ref }}
 
 jobs:
   macos-build:
-    runs-on: macos-14
+    runs-on: macos-26
     permissions:
       contents: read
     defaults:
