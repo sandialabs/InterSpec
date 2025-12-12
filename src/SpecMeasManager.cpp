@@ -2385,7 +2385,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     
     if( rel_eff_csv_drf )
     {
-      det = DrfSelect::parseRelEffCsvFile( fileLocation );
+      det = DrfSelect::parseInterSpecRelEffCsvFile( fileLocation );
     }else
     {
       try
@@ -3064,7 +3064,7 @@ bool SpecMeasManager::handleRelActAutoXmlFile( std::istream &input, SimpleDialog
     doc.parse<rapidxml::parse_trim_whitespace>( &(data[0]) );
     
     
-    RelActAutoGui *tool = m_viewer->showRelActAutoWindow();
+    RelActAutoGui *tool = m_viewer->relActAutoWindow( true );
     if( !tool )
       throw runtime_error( "Could not create <em>Isotopics by nuclide</em> tool." );
     
@@ -3221,7 +3221,7 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   WLabel *geom_label = new WLabel( WString::tr("smm-ecc-how-to-interpret"), btn_div );
   WComboBox *geom_combo = new WComboBox( btn_div );
   geom_combo->addItem( WString::tr("smm-ecc-far-field") );
-  index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FarField;
+  index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
   
   geom_combo->addItem( WString::tr("smm-ecc-fix-geom-total-act") );
   index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct;
@@ -3291,7 +3291,7 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
       throw runtime_error( "diam <= 0" );
     
     const bool correct_for_air_atten = true;
-    return det->convertFixedGeometryToFarField( diameter, distance, correct_for_air_atten );
+    return det->reinterpretAsFarFieldAbsEfficiency( diameter, distance, correct_for_air_atten );
   };//try_create_farfield
   
   auto update_state = [=](){
@@ -3307,11 +3307,13 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
     {
       shared_ptr<DetectorPeakResponse> new_drf = det;
       
-      far_field_opt->setHidden( (geom_type != DetectorPeakResponse::EffGeometryType::FarField) );
+      far_field_opt->setHidden( (geom_type != DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic)
+                               && (geom_type != DetectorPeakResponse::EffGeometryType::FarFieldAbsolute) );
       
       switch( geom_type )
       {
-        case DetectorPeakResponse::EffGeometryType::FarField:
+        case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
+        case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
           new_drf = try_create_farfield();
           break;
           
@@ -3357,7 +3359,8 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
     {
       switch( geom_type )
       {
-        case DetectorPeakResponse::EffGeometryType::FarField:
+        case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
+        case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
           new_drf = try_create_farfield();
           break;
           
@@ -3444,8 +3447,8 @@ bool SpecMeasManager::handleShieldingSourceFile( std::istream &input, SimpleDial
     PeakModel *peak_model = m_viewer->peakModel();
     WSuggestionPopup *shield_suggest = m_viewer->shieldingSuggester();
       
-    auto disp = make_unique<ShieldingSourceDisplay>( peak_model, m_viewer, shield_suggest, material_db );
-    disp->deSerialize( xml_doc->first_node() );
+    ShieldingSourceDisplay::ShieldingSourceDisplayState test_state;
+    test_state.deSerialize( xml_doc->first_node(), material_db );
     
     assert( dialog );
     dialog->contents()->clear();
@@ -3462,16 +3465,16 @@ bool SpecMeasManager::handleShieldingSourceFile( std::istream &input, SimpleDial
     dialog->footer()->clear();
     dialog->addButton( WString::tr("Cancel") );
     WPushButton *btn = dialog->addButton( WString::tr("Yes") );
-    btn->clicked().connect( std::bind([this,data,xml_doc](){
+    btn->clicked().connect( std::bind([this,data,test_state](){
       InterSpec *viewer = InterSpec::instance();
-      if( !viewer || !data || !xml_doc )
+      if( !viewer || !data )
         return;
       
       try
       {
         ShieldingSourceDisplay *display = viewer->shieldingSourceFit();
         if( display )
-          display->deSerialize( xml_doc->first_node() );
+          display->deSerialize( test_state, ShieldingSourceDisplay::DeserializeOptions::UpdatePeaksUseForFittingFromState );
       }catch( std::exception &e )
       {
         passMessage( WString::tr("smm-err-act-shield").arg(e.what()), WarningWidget::WarningMsgHigh );

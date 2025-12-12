@@ -1155,7 +1155,7 @@ void MakeDrfSrcDef::setIsEffGeometryType( const int drf_eff_geom_type )
 {
   const auto type = static_cast<DetectorPeakResponse::EffGeometryType>( drf_eff_geom_type );
   
-  assert( (type == DetectorPeakResponse::EffGeometryType::FarField)
+  assert( (type == DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic)
          || (type == DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct)
          || (type == DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2)
          || (type == DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2)
@@ -1165,11 +1165,11 @@ void MakeDrfSrcDef::setIsEffGeometryType( const int drf_eff_geom_type )
   const char *text = "Activity";
   switch( type )
   {
-    case DetectorPeakResponse::EffGeometryType::FarField:
+    case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
+    case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
       hide_distance = false;
       text = "Activity";
       break;
-      
     case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
       hide_distance = true;
       text = "Total Act.";

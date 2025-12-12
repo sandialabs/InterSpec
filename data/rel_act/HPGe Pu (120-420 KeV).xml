@@ -1,4 +1,7 @@
 <RelActCalcAuto version="0">
+	<Description>Performs plutonium isotopics over the  lower energy range (120 to 420 keV) - this is a good preset to start with if your spectrum has a limited energy, or the ~610 keV to ~780 keV range doesn't have a well defined peak structure.  
+Uses the 'Physical' model for the relative efficiency curve, meaning it takes into account the currently loaded detector efficiency (or will use a default one if not loaded), and the attenuation of the plutonium and external shielding.
+Requires HPGe data.</Description>
 	<Options version="2">
 		<FitEnergyCal>true</FitEnergyCal>
 		<FwhmForm remark="Possible values: Gadras, Polynomial_2, Polynomial_3, Polynomial_4, Polynomial_5, Polynomial_6">Polynomial_5</FwhmForm>

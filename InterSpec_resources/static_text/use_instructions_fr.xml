@@ -332,35 +332,81 @@ mais les éléments de menu seront désactivés si aucun spectre de fond ou seco
 
 <message id='10desktop-shortcuts-desc'>
 
+  <h3>Raccourcis Clavier</h3>
   <ul>
     <li>
-      <b><code>Ctrl-s</code></b> : Bascule vers l'onglet &quot;<em>Fichiers de <u>s</u>pectre</em>&quot;, ou
-      si les <em>Onglets d'outils</em> sont masqués, affiche l'outil <em>Fichiers de spectre</em>.
-    </li>
-    <li>
-      <b><code>Ctrl-p</code></b> : Bascule vers l'onglet &quot;<em>Gestionnaire de <u>p</u>ics</em>&quot;, ou
-      affiche l'outil.
-    </li>
-    <li>
-      <b><code>Ctrl-r</code></b> : Bascule vers l'onglet &quot;<em>Photopeaks de <u>r</u>éférence</em>&quot;, ou affiche l'outil.
-    </li>
-    <li>
-      <b><code>Ctrl-e</code></b> : Bascule vers l'onglet &quot;<em>Calibration en <u>é</u>nergie</em>&quot;, ou affiche l'outil.
-    </li>
-    <li>
-      <b><code>Ctrl-n</code></b> : Bascule vers l'onglet &quot;<em>Recherche de <u>n</u>ucléides</em>&quot;, ou affiche l'outil.
+      <b><code>Ctrl-1</code></b> à <b><code>Ctrl-7</code></b> : Bascule vers l'onglet d'outil 1-7 (c'est-à-dire, onglets &quot;<code>Fichiers de spectre</code>&quot;, &quot;<code>Gestionnaire de pics</code>&quot;, &quot;<code>Photopeaks de référence</code>&quot;, etc.), ou
+      si les <em>Onglets d'outils</em> sont masqués, affiche la fenêtre d'outil correspondante.
     </li>
     <li>
       <b><code>Ctrl-h</code></b> : Affiche l'<em>aide</em> dans l'application.
     </li>
     <li>
-      <b><code>Ctrl-i</code></b> : Affiche l'écran d'<em><u>i</u>nformations de bienvenue</em>.
+      <b><code>Ctrl-i</code></b> : Affiche l'écran d'<em>informations de bienvenue</em>.
+    </li>
+    <li>
+      <b><code>Ctrl-k</code></b> : Efface toutes les raies de photopeaks de référence affichées.
     </li>
     <li>
       <b><code>Ctrl-l</code></b> : Bascule l'axe y du spectre entre logarithmique et linéaire.
     </li>
     <li>
-      <b><code>Ctrl-c</code></b> : Efface toutes les raies de référence affichées.
+      <b><code>Ctrl-s</code></b> : Enregistre l'état actuel de l'application.
+    </li>
+    <li>
+      <b><code>Ctrl-e</code></b> : Ouvre la boîte de dialogue d'exportation du fichier de spectre.
+    </li>
+    <li>
+      <b><code>Ctrl-z</code></b> : Annuler la dernière action.
+    </li>
+    <li>
+      <b><code>Ctrl-Shift-z</code></b> : Rétablir la dernière action annulée.
+    </li>
+  </ul>
+
+  <h3>Modificateurs de Souris pour les Interactions du Spectre</h3>
+  En plus de ces raccourcis, vous pouvez cliquer sur le titre de l'axe y pour basculer entre l'échelle logarithmique/linéaire ; cliquer sur le titre de l'axe x affichera/masquera le graphique de bande d'aperçu.
+  <ul>
+    <li>
+      <b>Double-clic</b> : Ajuste un pic dans le spectre de premier plan à l'emplacement cliqué.
+    </li>
+    <li>
+      <b>Alt + Double-clic</b> : Ajuste un pic dans le spectre d'arrière-plan à l'emplacement cliqué.
+    </li>
+    <li>
+      <b>Shift + Double-clic</b> : Ajuste un pic dans le spectre secondaire à l'emplacement cliqué.
+    </li>
+    <li>
+      <b>Shift + Glisser gauche</b> : Mode suppression de pics - supprime les pics dans la plage d'énergie glissée.
+    </li>
+    <li>
+      <b>Alt + Shift + Glisser gauche</b> : Mode comptage des gammas - compte les rayons gamma dans la plage d'énergie glissée.
+    </li>
+    <li>
+      <b>Alt + Ctrl + Glisser gauche</b> : Mode recalibration - recalibre l'énergie en utilisant la plage glissée.
+    </li>
+    <li>
+      <b>Command + Glisser gauche (Mac)</b> ou <b>Alt + Glisser gauche (Windows)</b> : Glissez verticalement pour zoomer dans/hors de l'axe y.
+    </li>
+  </ul>
+
+  <h3>Modificateurs de Souris pour les Interactions du Graphique Temporel</h3>
+  Utilisez le menu dans le coin supérieur droit du graphique temporel pour simplifier les interactions.
+  <ul>
+    <li>
+      <b>Clic ou glissement</b> : Sélectionne des échantillons pour le spectre de premier plan.
+    </li>
+    <li>
+      <b>Alt + Clic/glissement</b> ou <b>maintenir la touche 'b'</b> : Sélectionne des échantillons pour le spectre d'arrière-plan.
+    </li>
+    <li>
+      <b>Meta + Clic/glissement</b> ou <b>maintenir la touche 's'</b> : Sélectionne des échantillons pour le spectre secondaire.
+    </li>
+    <li>
+      <b>Shift + Clic/glissement</b> : Ajoute des échantillons à la sélection actuelle.
+    </li>
+    <li>
+      <b>Ctrl + Clic/glissement</b> : Supprime des échantillons de la sélection actuelle.
     </li>
   </ul>
 </message>
@@ -395,3 +441,4 @@ mais les éléments de menu seront désactivés si aucun spectre de fond ou seco
     </ul>
   </message>
 </messages>
+

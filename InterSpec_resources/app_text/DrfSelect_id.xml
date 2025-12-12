@@ -37,22 +37,15 @@
   <message id="reds-recursive-no-drfs-in-dir">Tidak ada DRF valid dalam direktori, atau subdirektorinya.</message>
   <message id="ds-csv-upload-desc">
     <div style="white-space:nowrap;">
-      File CSV Efisiensi Intrinsik:
+      Unggah File Efisiensi:
     </div>
     <div>
-      Kolom pertama adalah energi dalam keV.
-      Kolom kedua adalah efisiensi % (0 hingga 100) untuk gamma pada energi tersebut, 
-      yang jatuh pada detektor, untuk dicatat dalam fotopuncak.
+      Untuk CSV efisiensi, kolom pertama adalah energi dalam keV; kedua adalah % efisiensi (0 hingga 100).
     </div>
     <div>
-      Anda juga perlu mengunggah file Detector.dat GADRAS, atau memasukkan
-      diameter detektor, setelah mengunggah file efisiensi.
-    </div>
-    <div>
-      Anda juga dapat mengunggah CSV yang diekspor dari alat <em>Make Detector Response</em>.
+      Intrinsik adalah efisiensi untuk gamma yang mengenai permukaan detektor, sedangkan Absolut adalah pada jarak tertentu.
     </div>
   </message>
-  <message id="ds-enter-gad-det-diam">Masukkan diameter detektor atau unggah file Detector.dat:</message>
   <message id="ds-det-diam">Diameter Detektor:</message>
   <message id="ds-fixed-geom">Geometri Tetap</message>
   <message id="ds-gad-det-file-label">File Detector.Dat GADRAS:</message>

@@ -28,6 +28,7 @@
 #include <cstdlib>
 #include <sstream>
 #include <iostream>
+#include <iomanip>
 
 #include <Wt/WText>
 #include <Wt/WLabel>
@@ -367,7 +368,23 @@ public:
     }catch( std::exception &e )
     {
       cerr << "Failed to rount-trip TraceSrcDisplay: " << e.what() << endl;
-      assert( 0 );
+      cerr << "  Original trace: nuclide=" << (trace.m_nuclide ? trace.m_nuclide->symbol : "null")
+           << ", activity=" << std::setprecision(17) << trace.m_activity
+           << ", type=" << static_cast<int>(trace.m_type)
+           << ", fitActivity=" << trace.m_fitActivity << endl;
+      cerr << "  Roundtrip trace: nuclide=" << (roundtrip.m_nuclide ? roundtrip.m_nuclide->symbol : "null")
+           << ", activity=" << std::setprecision(17) << roundtrip.m_activity
+           << ", type=" << static_cast<int>(roundtrip.m_type)
+           << ", fitActivity=" << roundtrip.m_fitActivity << endl;
+      cerr << "  Activity difference: " << std::setprecision(17) << fabs(trace.m_activity - roundtrip.m_activity) << endl;
+      
+      
+      if( (trace.m_nuclide != roundtrip.m_nuclide) && !roundtrip.m_nuclide )
+      {
+        //m_parent->m_sourceModel->
+      }
+      
+      //assert( 0 );
     }
 #endif
   }// void fromTraceSourceInfo( const ShieldingSourceFitCalc::TraceSourceInfo &trace )
@@ -5013,6 +5030,7 @@ void ShieldingSelect::handleUserChangeForUndoRedo()
   {
     auto worker = wApp->bind( boost::bind(&ShieldingSelect::handleUserChangeForUndoRedoWorker, this, true) );
     server->post( wApp->sessionId(), worker );
+    //server->schedule( 1, wApp->sessionId(), worker );
   }
 }//void handleUserChangeForUndoRedo()
 
@@ -5556,7 +5574,10 @@ void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node,
     switch( m_geometry )
     {
       case GeometryType::Spherical:
-        getval( "SphericalThickness", m_thicknessEdit );
+        if( material_node && material_node->first_node("SphericalThickness") )
+          getval( "SphericalThickness", m_thicknessEdit );
+        else
+          getval( "Thickness", m_thicknessEdit );
         break;
         
       case GeometryType::CylinderEndOn:
@@ -5584,7 +5605,11 @@ void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node,
   const ShieldingSourceFitCalc::ShieldingInfo roundtripped = toShieldingInfo();
   try
   {
-    ShieldingSourceFitCalc::ShieldingInfo::equalEnough( info, roundtripped );
+    // If oritingal was spherical, but detector is currently fixed geometry, the below comparison will fail
+    const bool was_fixed = (info.m_geometry == GammaInteractionCalc::GeometryType::NumGeometryType);
+    const bool is_fixed = (roundtripped.m_geometry == GammaInteractionCalc::GeometryType::NumGeometryType);
+    if( was_fixed == is_fixed )
+      ShieldingSourceFitCalc::ShieldingInfo::equalEnough( info, roundtripped );
   }catch( std::exception &e )
   {
     cerr << "ShieldingSelect::deSerialize - Failed to round-trip setting/getting: " << e.what() << endl;
@@ -5599,6 +5624,7 @@ void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node,
   {
     auto worker = wApp->bind( boost::bind(&ShieldingSelect::handleUserChangeForUndoRedoWorker, this, false) );
     server->post( wApp->sessionId(), worker );
+    //server->schedule( 1, wApp->sessionId(), worker );
   }//if( m_userChangedStateSignal.isConnected() && server )
 }//void deSerialize( const rapidxml::xml_node<char> *shielding_node ) const
 

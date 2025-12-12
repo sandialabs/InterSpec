@@ -154,9 +154,8 @@ T eval_eqn_imp( const double energy, const RelActCalc::RelEffEqnForm eqn_form,
 }//eval_eqn(...)
     
 
-/** This function is the equivalent of `mass_attenuation_coef(...)`, but
-   I blindly *think/hope/wish* it preserve the ceres::Jet derivative information.
-   TODO: check that this is actually proper way to propagate derivate info for fitting AN
+/** This function is the equivalent of `mass_attenuation_coef(...)`, but preserves ceres::Jet
+    derivative information by linearly interpolating between floor(AN) and ceil(AN).
 */
 template<typename T>
 T get_atten_coef_for_an( const T &an, const float energy )
@@ -170,19 +169,19 @@ T get_atten_coef_for_an( const T &an, const float energy )
     an_scalar = an.a;
   else
     an_scalar = an;
-  
+
   assert( (an_scalar >= 1.0) && (an_scalar <= 98.0) );
-  
-  const int lower_an = std::max( 1, static_cast<int>( std::floor(an_scalar) ) );
-  const int sign = (lower_an < 98) ? 1 : -1;
-  const int upper_an = lower_an + sign;
+
+  // Clamp to [1, 97] so we can always interpolate to lower_an+1 without exceeding element 98
+  const int lower_an = std::clamp( static_cast<int>(std::floor(an_scalar)), 1, 97 );
+  const int upper_an = lower_an + 1;
 
   const double lower_mu = MassAttenuation::massAttenuationCoefficientElement(lower_an, energy);
   const double upper_mu = MassAttenuation::massAttenuationCoefficientElement(upper_an, energy);
-  const T anfrac = an - static_cast<double>(lower_an);  //Looks like this preserves the derivative
+  const T anfrac = an - static_cast<double>(lower_an);  //This preserves the Jet derivative
   const T mu = (1.0 - anfrac)*lower_mu + anfrac*upper_mu;
-  
-  return mu * static_cast<double>(sign);
+
+  return mu;
 }//T get_atten_coef_for_an( const T &an )
 
     

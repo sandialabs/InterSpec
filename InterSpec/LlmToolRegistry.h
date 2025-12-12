@@ -137,6 +137,8 @@ private:
   static nlohmann::json executeGetSpectrumInfo(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executePeakFit(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeGetUserPeaks(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeGetIdentifiedSources(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeGetUnidentifiedDetectedPeaks(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeGetCharacteristicGammasForSource( const nlohmann::json& params );
   static nlohmann::json executeGetNuclidesWithCharacteristicsInEnergyRange( const nlohmann::json& params, InterSpec* interspec );
   static nlohmann::json executeGetLoadedSpectra(const nlohmann::json& params, InterSpec* interspec);
@@ -153,6 +155,7 @@ private:
   static nlohmann::json executeGetCountsInEnergyRange(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeGetExpectedFwhm(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeCurrieMdaCalc(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeCalculateDose(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeGetMaterials(InterSpec* interspec);
   static nlohmann::json executeGetMaterialInfo(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeGetAttenuationOfShielding(nlohmann::json params, InterSpec* interspec);
@@ -166,6 +169,9 @@ private:
   static nlohmann::json executeEditAnalysisPeak(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeEscapePeakCheck(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeSumPeakCheck(const nlohmann::json& params, InterSpec* interspec);
+
+  // Workflow State Tool (for agents with state machines)
+  static nlohmann::json executeSetWorkflowState(const nlohmann::json& params, InterSpec* interspec);
 
   /** Helper function to find and load a detector by identifier.
    @param identifier The detector identifier (name, path, or URI)

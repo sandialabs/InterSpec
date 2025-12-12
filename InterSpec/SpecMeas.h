@@ -38,11 +38,17 @@
 
 class PeakDef;
 class PeakModel;
+class MaterialDB;
 struct PeakContinuum;
 class DetectorPeakResponse;
 #if( USE_LLM_INTERFACE )
-struct LlmConversationStart;
+struct LlmInteraction;
 #endif
+
+namespace RelActCalcAuto
+{
+  struct RelActAutoGuiState;
+}
 
 namespace rapidxml
 {
@@ -73,7 +79,7 @@ public:
 
 #if( USE_LLM_INTERFACE )
   // Forward declaration for LLM conversation history
-  typedef std::map<std::set<int>, std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>>> SampleNumsToLlmHistoryMap;
+  typedef std::map<std::set<int>, std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>>> SampleNumsToLlmHistoryMap;
 #endif
   
   //
@@ -359,17 +365,24 @@ public:
   void setRelActManualGuiState( std::unique_ptr<rapidxml::xml_document<char>> &&model );
   
   rapidxml::xml_document<char> *relActAutoGuiState();
-  
+
   /** Sets the XML for the GUI state of the auto Rel. Act. widget. */
   void setRelActAutoGuiState( std::unique_ptr<rapidxml::xml_document<char>> &&model );
+
+  /** Gets the RelActAuto state as a struct. Returns nullptr if no state is set.
+      Caller must provide MaterialDB for deserializing PhysicalModel shields. */
+  std::unique_ptr<RelActCalcAuto::RelActAutoGuiState> getRelActAutoGuiState( MaterialDB *materialDb ) const;
+
+  /** Sets the RelActAuto state from a struct. Pass nullptr to clear the state. */
+  void setRelActAutoGuiState( const RelActCalcAuto::RelActAutoGuiState *state );
 #endif //#if( USE_REL_ACT_TOOL )
 
 #if( USE_LLM_INTERFACE )
   /** Gets the LLM conversation history for the specified sample numbers. */
-  std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>> llmConversationHistory( const std::set<int> &samplenums ) const;
+  std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>> llmConversationHistory( const std::set<int> &samplenums ) const;
 
   /** Sets the LLM conversation history for the specified sample numbers. */
-  void setLlmConversationHistory( const std::set<int> &samplenums, std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>> history );
+  void setLlmConversationHistory( const std::set<int> &samplenums, std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>> history );
   
   /** Removes LLM conversation history for the specified sample numbers. */
   void removeLlmConversationHistory( const std::set<int> &samplenums );

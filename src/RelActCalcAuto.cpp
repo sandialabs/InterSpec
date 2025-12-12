@@ -1190,13 +1190,12 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
   {
     new_drf = make_shared<DetectorPeakResponse>( "FLAT", "FLAT" );
     const vector<float> drf_coefs{ 0.0f, 0.0f, 0.0f, 0.0f }, uncerts;
-    new_drf->fromExpOfLogPowerSeriesAbsEff( drf_coefs, uncerts,
-                                           25*PhysicalUnits::cm,
+    new_drf->fromExpOfLogPowerSeries( drf_coefs, uncerts, 0.0,
                                            2*PhysicalUnits::cm,
                                            PhysicalUnits::keV,
                                            static_cast<float>(lowest_energy),
                                            static_cast<float>(highest_energy),
-                                           DetectorPeakResponse::EffGeometryType::FarField );
+                                           DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic);
   }//
   
   new_drf->setFwhmCoefficients( fwhm_pars_float, form_to_fit );
@@ -1828,15 +1827,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         }
       }//for( loop over ROIs that come after roi_range )
 
-      if( roi_range.force_full_range )
+      if( roi_range.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed )
       {
-        assert( !roi_range.allow_expand_for_peak_width );
-        if( roi_range.allow_expand_for_peak_width )
-          throw runtime_error( "RelActAutoCostFcn: RoiRange::force_full_range and RoiRange::allow_expand_for_peak_width can not both be true." );
-        
         m_energy_ranges.emplace_back( m_energy_cal, roi_range );
         continue;
-      }//if( roi_range.force_full_range )
+      }//if( roi_range.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed )
       
       if( cancel_calc && cancel_calc->load() )
         throw runtime_error( "User cancelled calculation." );
@@ -1869,8 +1864,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         
         double gamma_row_lower = energy - num_sigma_half_roi*energy_sigma;
         double gamma_row_upper = energy + num_sigma_half_roi*energy_sigma;
-        
-        if( !roi_range.allow_expand_for_peak_width )
+
+        if( roi_range.range_limits_type != RelActCalcAuto::RoiRange::RangeLimitsType::CanExpandForFwhm )
         {
           gamma_row_lower = std::max( gamma_row_lower, roi_range.lower_energy );
           gamma_row_upper = std::min( gamma_row_upper, roi_range.upper_energy );
@@ -2255,7 +2250,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           //  In the end, the range of FWHM on matters if we are using the Berstein polynomials, and even then it
           //  doesnt matter a ton if we say its larger than we need - it should only ever-so-slightly reduce our
           //  allowed variation of FWHM, for a given order.
-          const double aditional_factor = r.allow_expand_for_peak_width ? 2.0 : 1.5;
+          const double aditional_factor = (r.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::CanExpandForFwhm) ? 2.0 : 1.5;
           float min_sigma, max_sigma;
           expected_peak_width_limits( static_cast<float>(r.lower_energy), highres, spectrum, min_sigma, max_sigma );
           lowest_fwhm_energy = std::min( lowest_fwhm_energy, r.lower_energy - aditional_factor*DEFAULT_PEAK_HALF_WIDTH_SIGMA*max_sigma );
@@ -7689,7 +7684,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     answer.first_channel = first_channel;
     answer.last_channel = last_channel;
     answer.no_gammas_in_range = false;
-    answer.forced_full_range = range.force_full_range;
+    answer.forced_full_range = (range.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed);
     
     vector<RelActCalcAuto::PeakDefImp<T>> &peaks = answer.peaks;
 
@@ -8875,9 +8870,8 @@ int run_test()
         range.lower_energy = cont->lowerEnergy();
         range.upper_energy = cont->upperEnergy();
         range.continuum_type = cont->type();
-        range.force_full_range = true;
-        range.allow_expand_for_peak_width = false;
-        
+        range.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
+
         energy_ranges.push_back( range );
       }//for( loop over ROIs )
       
@@ -9134,7 +9128,40 @@ FwhmEstimationMethod fwhm_estimation_method_from_str( const char *str )
   return FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum;
 }//FwhmEstimationMethod fwhm_estimation_method_from_str(str)
 
-  
+
+const char *RoiRange::to_str( const RangeLimitsType type )
+{
+  switch( type )
+  {
+    case RangeLimitsType::Fixed:              return "Fixed";
+    case RangeLimitsType::CanExpandForFwhm:   return "CanExpandForFwhm";
+    case RangeLimitsType::CanBeBrokenUp:      return "CanBeBrokenUp";
+  }//switch( type )
+
+  assert( 0 );
+  return "";
+}//RoiRange::to_str( const RangeLimitsType type )
+
+
+RoiRange::RangeLimitsType RoiRange::range_limits_type_from_str( const char *str )
+{
+  const size_t str_len = strlen(str);
+
+  for( int itype = 0; itype <= static_cast<int>(RangeLimitsType::CanBeBrokenUp); itype += 1 )
+  {
+    const RangeLimitsType x = RangeLimitsType(itype);
+    const char *type_str = to_str( x );
+    const bool case_sensitive = false;
+    const size_t type_str_len = strlen(type_str);
+    if( rapidxml::internal::compare(str, str_len, type_str, type_str_len, case_sensitive) )
+      return x;
+  }
+
+  throw runtime_error( "RoiRange::range_limits_type_from_str(...): invalid input string '" + std::string(str) + "'" );
+  return RangeLimitsType::CanBeBrokenUp;
+}//RoiRange::range_limits_type_from_str(str)
+
+
 /** This function is the same as `DetectorPeakResponse::peakResolutionFWHM(...)`, but templated to allow Jets
  TODO: refactor this function and the equivalent `DetectorPeakResponse` function into a single imlpementation.
  */
@@ -9426,25 +9453,33 @@ T eval_fwhm( const T energy, const FwhmForm form, const T * const pars, const si
 void RoiRange::toXml( ::rapidxml::xml_node<char> *parent ) const
 {
   using namespace rapidxml;
-  
+
   assert( parent );
   if( !parent || !parent->document() )
     throw runtime_error( "RoiRange::toXml: invalid parent." );
-  
+
   xml_document<char> *doc = parent->document();
   xml_node<char> *base_node = doc->allocate_node( node_element, "RoiRange" );
   parent->append_node( base_node );
-  
+
   append_version_attrib( base_node, RoiRange::sm_xmlSerializationVersion );
-  
+
   append_float_node( base_node, "LowerEnergy", lower_energy );
   append_float_node( base_node, "UpperEnergy", upper_energy );
-  
+
   const char *cont_type_str = PeakContinuum::offset_type_str( continuum_type );
   append_string_node( base_node, "ContinuumType", cont_type_str );
-  
-  append_bool_node( base_node, "ForceFullRange", force_full_range );
-  append_bool_node( base_node, "AllowExpandForPeakWidth", allow_expand_for_peak_width );
+
+  // Write new format (preferred)
+  const char *range_type_str = RoiRange::to_str( range_limits_type );
+  append_string_node( base_node, "RangeLimitType", range_type_str );
+
+  // Also write old format for backward compatibility with older code
+  const bool compat_force_full = (range_limits_type == RangeLimitsType::Fixed);
+  const bool compat_allow_expand = (range_limits_type == RangeLimitsType::CanExpandForFwhm);
+
+  append_bool_node( base_node, "ForceFullRange", compat_force_full );
+  append_bool_node( base_node, "AllowExpandForPeakWidth", compat_allow_expand );
 }//RoiRange::toXml(...)
 
 
@@ -9454,25 +9489,61 @@ void RoiRange::fromXml( const rapidxml::xml_node<char> *range_node )
   {
     if( !range_node )
       throw runtime_error( "invalid input" );
-    
+
     if( !rapidxml::internal::compare( range_node->name(), range_node->name_size(), "RoiRange", 8, false ) )
       throw std::logic_error( "invalid input node name" );
-    
+
     // A reminder double check these logics when changing RoiRange::sm_xmlSerializationVersion
     static_assert( RoiRange::sm_xmlSerializationVersion == 0,
                   "needs to be updated for new serialization version." );
-    
+
     check_xml_version( range_node, RoiRange::sm_xmlSerializationVersion );
-    
+
     lower_energy = get_float_node_value( range_node, "LowerEnergy" );
     upper_energy = get_float_node_value( range_node, "UpperEnergy" );
-    
+
     const rapidxml::xml_node<char> *cont_type_node = XML_FIRST_NODE( range_node, "ContinuumType" );
     const string cont_type_str = SpecUtils::xml_value_str( cont_type_node );
     continuum_type = PeakContinuum::str_to_offset_type_str( cont_type_str.c_str(), cont_type_str.size() );
-        
-    force_full_range = get_bool_node_value( range_node, "ForceFullRange" );
-    allow_expand_for_peak_width = get_bool_node_value( range_node, "AllowExpandForPeakWidth" );
+
+    // Try to read new format first (preferred)
+    const rapidxml::xml_node<char> *range_type_node = XML_FIRST_NODE( range_node, "RangeLimitType" );
+    if( range_type_node )
+    {
+      // New format is present
+      const string range_type_str = SpecUtils::xml_value_str( range_type_node );
+      range_limits_type = RoiRange::range_limits_type_from_str( range_type_str.c_str() );
+    }
+    else
+    {
+      // Fall back to old format (for backward compatibility)
+      const rapidxml::xml_node<char> *force_full_node = XML_FIRST_NODE( range_node, "ForceFullRange" );
+      const rapidxml::xml_node<char> *allow_expand_node = XML_FIRST_NODE( range_node, "AllowExpandForPeakWidth" );
+
+      if( !force_full_node || !allow_expand_node )
+        throw runtime_error( "\"RangeLimitType\" node not present" );
+
+      const bool force_full_range = get_bool_node_value( range_node, "ForceFullRange" );
+      const bool allow_expand_for_peak_width = get_bool_node_value( range_node, "AllowExpandForPeakWidth" );
+
+      // Validate old format
+      if( force_full_range && allow_expand_for_peak_width )
+        throw runtime_error( "Both ForceFullRange and AllowExpandForPeakWidth cannot be true" );
+
+      // Convert from old boolean format to new enum
+      if( force_full_range )
+      {
+        range_limits_type = RangeLimitsType::Fixed;
+      }
+      else if( allow_expand_for_peak_width )
+      {
+        range_limits_type = RangeLimitsType::CanExpandForFwhm;
+      }
+      else
+      {
+        range_limits_type = RangeLimitsType::CanBeBrokenUp;
+      }
+    }
   }catch( std::exception &e )
   {
     throw runtime_error( "RoiRange::fromXml(): " + string(e.what()) );
@@ -11038,6 +11109,13 @@ RelActAutoGuiState::RelActAutoGuiState()
     base_node->append_node( node );
   }//if( !note.empty() )
 
+  if( !description.empty() )
+  {
+    const char *val = doc->allocate_string( description.c_str() );
+    xml_node<char> *node = doc->allocate_node( node_element, "Description", val );
+    base_node->append_node( node );
+  }//if( !description.empty() )
+
   // Elements in the offline-xml we dont deal with here
   //  base_node->append_node( <"ForegroundFileName"> );
   //  base_node->append_node( <"BackgroundFileName"> );
@@ -11100,6 +11178,9 @@ void RelActAutoGuiState::deSerialize( const rapidxml::xml_node<char> *base_node,
 
   const xml_node<char> * const note_node = XML_FIRST_NODE(base_node, "Note");
   note = SpecUtils::xml_value_str( note_node );
+
+  const xml_node<char> * const description_node = XML_FIRST_NODE(base_node, "Description");
+  description = SpecUtils::xml_value_str( description_node );
 
   const xml_node<char> *node = XML_FIRST_NODE(base_node, "Options");
   if( !node )
@@ -14157,17 +14238,16 @@ RelActAutoSolution solve( const Options options,
   
   bool all_roi_full_range = true;
   for( const auto &roi : energy_ranges )
-    all_roi_full_range = (all_roi_full_range && roi.force_full_range && !roi.allow_expand_for_peak_width);
-  
+    all_roi_full_range = (all_roi_full_range && (roi.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed));
+
   if( all_roi_full_range
      || (orig_sol.m_status != RelActAutoSolution::Status::Success)
      || !orig_sol.m_spectrum )
   {
     return orig_sol;
   }
-  
-  // If we are here there was at least one ROI that didnt have force_full_range set, or had
-  //  allow_expand_for_peak_width set.
+
+  // If we are here there was at least one ROI that didnt have range_limits_type set to Fixed.
   // So we will go through and adjust these ROIs based on peaks that are statistically significant,
   //  based on initial solution, and then re-fit.
     
@@ -14198,7 +14278,7 @@ RelActAutoSolution solve( const Options options,
     vector<RoiRange> fixed_energy_ranges;
     for( const RoiRange &roi : energy_ranges )
     {
-      if( roi.force_full_range )
+      if( roi.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed )
         fixed_energy_ranges.push_back( roi );
     }//for( const RoiRange &roi : energy_ranges )
     
@@ -14226,21 +14306,29 @@ RelActAutoSolution solve( const Options options,
       
       double roi_lower = energy - (num_sigma_half_roi * sigma);
       double roi_upper = energy + (num_sigma_half_roi * sigma);
-      
+
       bool keep_roi = true;
-      if( !roi.allow_expand_for_peak_width )
+      switch( roi.range_limits_type )
       {
-        roi_lower = std::max( roi_lower, roi.lower_energy );
-        roi_upper = std::min( roi_upper, roi.upper_energy );
-      }else
-      {
-        // Make sure we havent expanded into the range of any ROIs with forced widths
-        for( const RoiRange &fixed : fixed_energy_ranges )
+        case RelActCalcAuto::RoiRange::RangeLimitsType::Fixed:
+          assert( 0 );
+          throw std::logic_error( "RoiRange with Fixed range_limits_type should not be in this loop" );
+          break;
+
+        case RelActCalcAuto::RoiRange::RangeLimitsType::CanBeBrokenUp:
+          roi_lower = std::max( roi_lower, roi.lower_energy );
+          roi_upper = std::min( roi_upper, roi.upper_energy );
+          break;
+
+        case RelActCalcAuto::RoiRange::RangeLimitsType::CanExpandForFwhm:
         {
-          const bool overlaps = ((roi.upper_energy > fixed.lower_energy)
-                                 && (roi.lower_energy < fixed.upper_energy));
-          if( overlaps )
+          // Make sure we havent expanded into the range of any ROIs with forced widths
+          for( const RoiRange &fixed : fixed_energy_ranges )
           {
+            const bool overlaps = ((roi.upper_energy > fixed.lower_energy)
+                                   && (roi.lower_energy < fixed.upper_energy));
+            if( overlaps )
+            {
             // Do some development checks about bounds of ROI
             if( (roi_lower >= fixed.lower_energy) && (roi_upper <= fixed.upper_energy) )
             {
@@ -14273,7 +14361,9 @@ RelActAutoSolution solve( const Options options,
             assert( roi_lower < roi_upper );
           }//if( overlaps )
         }//for( const RoiRange &fixed : fixed_energy_ranges )
-      }//if( !roi.allow_expand_for_peak_width ) / else
+          break;
+        }//case CanExpandForFwhm
+      }//switch( roi.range_limits_type )
       
       
       if( !keep_roi || (roi_lower >= roi_upper) )
@@ -14282,26 +14372,25 @@ RelActAutoSolution solve( const Options options,
         assert( 0 );
         return;
       }
-      
-      roi.force_full_range = true;
-      roi.allow_expand_for_peak_width = false;
+
+      roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
       roi.lower_energy = roi_lower;
       roi.upper_energy = roi_upper;
-      
+
       significant_peak_ranges.push_back( roi );
     };//add_updated_roi
-    
-    
+
+
     vector<optional<RelActCalcAutoImp::RelActAutoCostFcn::PhysModelRelEqnDef<double>>> phys_model_inputs( current_sol.m_rel_eff_coefficients.size() );
     assert( options.rel_eff_curves.size() == current_sol.m_rel_activities.size() );
 
-    
+
     // Note: we loop over original energy_ranges, not the energy ranges from the solution,
     //       (to avoid the ROIs from expanding continuously, and also we've marked the
-    //        updated ROIs as force full-range)
+    //        updated ROIs as Fixed range_limits_type)
     for( const RoiRange &roi : energy_ranges )
     {
-      if( roi.force_full_range )
+      if( roi.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed )
         continue;
       
       // TODO: should we group peaks together by nuclide?  I think so, but probably not a huge effect at first
@@ -14572,12 +14661,9 @@ void RoiRange::equalEnough( const RoiRange &lhs, const RoiRange &rhs )
   
   if( lhs.continuum_type != rhs.continuum_type )
     throw std::runtime_error( "Continuum type in lhs and rhs are not the same" );
-  
-  if( lhs.force_full_range != rhs.force_full_range )
-    throw std::runtime_error( "Force full range in lhs and rhs are not the same" );
-  
-  if( lhs.allow_expand_for_peak_width != rhs.allow_expand_for_peak_width )
-    throw std::runtime_error( "Allow expand for peak width in lhs and rhs are not the same" );
+
+  if( lhs.range_limits_type != rhs.range_limits_type )
+    throw std::runtime_error( "Range limits type in lhs and rhs are not the same" );
 }//RoiRange::equalEnough
 
 
@@ -14749,6 +14835,12 @@ void Options::equalEnough( const Options &lhs, const Options &rhs )
 
 void RelActAutoGuiState::equalEnough( const RelActAutoGuiState &lhs, const RelActAutoGuiState &rhs )
 {
+  if( lhs.note != rhs.note )
+    throw std::runtime_error( "note field in lhs and rhs are not the same" );
+
+  if( lhs.description != rhs.description )
+    throw std::runtime_error( "description field in lhs and rhs are not the same" );
+
   RelActCalcAuto::Options::equalEnough( lhs.options, rhs.options );
 
   if( lhs.background_subtract != rhs.background_subtract )
