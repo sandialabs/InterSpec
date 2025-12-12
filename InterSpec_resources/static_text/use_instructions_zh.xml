@@ -331,23 +331,11 @@ the XHTML message for that entry.
 
 <message id='10desktop-shortcuts-desc'>
 
+  <h3>键盘快捷键</h3>
   <ul>
     <li>
-      <b><code>Ctrl-s</code></b>:切换到&quot;<em>能谱文件</em>&quot;选项卡,或
-      如果<em>工具选项卡</em>被隐藏,则显示<em>能谱文件</em>工具。
-    </li>
-    <li>
-      <b><code>Ctrl-p</code></b>:切换到&quot;<em>峰值管理器</em>&quot;选项卡,或
-      显示工具。
-    </li>
-    <li>
-      <b><code>Ctrl-r</code></b>:切换到&quot;<em>参考光电峰</em>&quot;选项卡,或显示工具。
-    </li>
-    <li>
-      <b><code>Ctrl-e</code></b>:切换到&quot;<em>能量校准</em>&quot;选项卡,或显示工具。
-    </li>
-    <li>
-      <b><code>Ctrl-n</code></b>:切换到&quot;<em>核素搜索</em>&quot;选项卡,或显示工具。
+      <b><code>Ctrl-1</code></b> 至 <b><code>Ctrl-7</code></b>:切换到工具选项卡 1-7（即"<code>能谱文件</code>"、"<code>峰值管理器</code>"、"<code>参考光电峰</code>"等选项卡），或
+      如果<em>工具选项卡</em>被隐藏，则显示相应的工具窗口。
     </li>
     <li>
       <b><code>Ctrl-h</code></b>:显示应用内<em>帮助</em>。
@@ -356,10 +344,68 @@ the XHTML message for that entry.
       <b><code>Ctrl-i</code></b>:显示<em>欢迎信息</em>屏幕。
     </li>
     <li>
+      <b><code>Ctrl-k</code></b>:清除所有显示的参考光电峰谱线。
+    </li>
+    <li>
       <b><code>Ctrl-l</code></b>:在对数和线性之间切换能谱 y 轴。
     </li>
     <li>
-      <b><code>Ctrl-c</code></b>:清除所有显示的参考谱线。
+      <b><code>Ctrl-s</code></b>:保存当前应用程序状态。
+    </li>
+    <li>
+      <b><code>Ctrl-e</code></b>:打开导出能谱文件对话框。
+    </li>
+    <li>
+      <b><code>Ctrl-z</code></b>:撤销上一个操作。
+    </li>
+    <li>
+      <b><code>Ctrl-Shift-z</code></b>:重做上一个撤销的操作。
+    </li>
+  </ul>
+
+  <h3>能谱交互的鼠标修饰键</h3>
+  除了这些快捷键外，您可以单击 y 轴标题以在对数/线性刻度之间切换；单击 x 轴标题将显示/隐藏概览带状图。
+  <ul>
+    <li>
+      <b>双击</b>:在单击位置拟合前景能谱中的峰。
+    </li>
+    <li>
+      <b>Alt + 双击</b>:在单击位置拟合背景能谱中的峰。
+    </li>
+    <li>
+      <b>Shift + 双击</b>:在单击位置拟合次级能谱中的峰。
+    </li>
+    <li>
+      <b>Shift + 左拖动</b>:删除峰模式 - 删除拖动能量范围内的峰。
+    </li>
+    <li>
+      <b>Alt + Shift + 左拖动</b>:计数伽马模式 - 计数拖动能量范围内的伽马射线。
+    </li>
+    <li>
+      <b>Alt + Ctrl + 左拖动</b>:重新校准模式 - 使用拖动的范围重新校准能量。
+    </li>
+    <li>
+      <b>Command + 左拖动 (Mac)</b> 或 <b>Alt + 左拖动 (Windows)</b>:垂直拖动以在 y 轴上放大/缩小。
+    </li>
+  </ul>
+
+  <h3>时间图表交互的鼠标修饰键</h3>
+  使用时间图右上角的菜单简化交互。
+  <ul>
+    <li>
+      <b>单击或拖动</b>:为前景能谱选择样本。
+    </li>
+    <li>
+      <b>Alt + 单击/拖动</b> 或 <b>按住 'b' 键</b>:为背景能谱选择样本。
+    </li>
+    <li>
+      <b>Meta + 单击/拖动</b> 或 <b>按住 's' 键</b>:为次级能谱选择样本。
+    </li>
+    <li>
+      <b>Shift + 单击/拖动</b>:将样本添加到当前选择。
+    </li>
+    <li>
+      <b>Ctrl + 单击/拖动</b>:从当前选择中删除样本。
     </li>
   </ul>
 </message>
@@ -394,3 +440,4 @@ the XHTML message for that entry.
     </ul>
   </message>
 </messages>
+
