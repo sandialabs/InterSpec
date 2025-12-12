@@ -245,7 +245,7 @@ ExpectedPhotopeakInfo create_expected_photopeak( const InjectSourceInfo &info, c
 }//ExpectedPhotopeakInfo create_expected_photopeak(...)
 
 
-InjectSourceInfo parse_inject_source_files( const string &base_name )
+InjectSourceInfo parse_inject_source_files( const string &base_name, const std::vector<std::pair<float,float>> &deviation_pairs )
 {
   /*
   CSV file is ordered as:
@@ -287,6 +287,41 @@ InjectSourceInfo parse_inject_source_files( const string &base_name )
   assert( meass.size() == 16 );
   if( meass.size() != 16 )
     throw runtime_error( "Unexpected number of measurements in " + pcf_filename );
+
+
+  // The PCF files dont contain the nonlinear deviation pairs that GADRAS created the spectrum files with, so we will
+  //  add them in here - if we have them.
+  if( !deviation_pairs.empty() )
+  {
+    map<shared_ptr<const SpecUtils::EnergyCalibration>,shared_ptr<const SpecUtils::EnergyCalibration>> updated_cals;
+    for( const shared_ptr<const SpecUtils::Measurement> &m : meass )
+    {
+      shared_ptr<const SpecUtils::EnergyCalibration> orig_cal = m ? m->energy_calibration() : nullptr;
+      assert( orig_cal && orig_cal->valid() );
+      if( !orig_cal || !orig_cal->valid() )
+        continue;
+
+      const auto prev_pos = updated_cals.find(orig_cal);
+      if( prev_pos != end(updated_cals) )
+      {
+        spec_file->set_energy_calibration( prev_pos->second, m );
+        continue;
+      }
+
+      assert( orig_cal->deviation_pairs().empty() );
+
+      assert( orig_cal->type() == SpecUtils::EnergyCalType::FullRangeFraction );
+      if( orig_cal->type() != SpecUtils::EnergyCalType::FullRangeFraction )
+        throw runtime_error( "unexpected energy cal type!" );
+
+      auto new_cal = make_shared<SpecUtils::EnergyCalibration>();
+      new_cal->set_full_range_fraction( orig_cal->num_channels(), orig_cal->coefficients(), deviation_pairs );
+
+      updated_cals[orig_cal] = new_cal;
+      spec_file->set_energy_calibration( new_cal, m );
+    }//for( const shared_ptr<const SpecUtils::Measurement> &m : meass )
+  }//if( !deviation_pairs.empty() )
+
 
   InjectSourceInfo info;
   info.file_base_path = base_name;
@@ -452,6 +487,31 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
         }//if( PeakFitImprove::debug_printout )
 
         //cout << "In livetime: " << livetime_path << endl;
+        const boost::filesystem::path deviation_path = livetime_path / "Deviation.gadras";
+
+        vector<pair<float,float>> deviation_pairs;
+        if( boost::filesystem::is_regular_file(deviation_path) )
+        {
+          const string dev_path_str = deviation_path.string();
+          std::ifstream file( dev_path_str.c_str(), ios::in | ios::binary );
+          assert( file.is_open() );
+          if( !file.is_open() )
+            std::runtime_error( "Error: Could not open file " + dev_path_str );
+          string line;
+          while( SpecUtils::safe_get_line(file, line, 1024) )
+          {
+            SpecUtils::trim(line);
+            if( line.empty() || !isnumber(line[0]) )
+              continue;
+            std::istringstream iss(line);
+            float first, second;
+            if (iss >> first >> second)
+              deviation_pairs.emplace_back(first, second);
+            else
+              throw runtime_error( "Failed to parse Deviation.gadras" );
+          }
+        }//if( boost::filesystem::is_regular_file(deviation_path) )
+
 
         // Now loop over PCF files
         vector<string> files_to_load_basenames;
@@ -481,9 +541,10 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
           {
             const vector<string> wanted_sources{
               //"Ac225_Unsh",
-              //"Eu152_Sh",
+              "Eu152_Sh",
               //"Fe59_Phant",
-              //"Am241_Unsh"
+              //"Am241_Unsh",
+              //"Ho166m_Unsh"
             };
             bool wanted = wanted_sources.empty();
             for( const string &src : wanted_sources )
@@ -516,10 +577,10 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
           InjectSourceInfo *info = &(injects.source_infos[file_index]);
           const string base_name = files_to_load_basenames[file_index];
 
-          pool.post( [info,base_name](){
+          pool.post( [info,base_name,deviation_pairs](){
             try
             {
-              *info = PeakFitImproveData::parse_inject_source_files( base_name );
+              *info = PeakFitImproveData::parse_inject_source_files( base_name, deviation_pairs );
             }catch( std::exception &e )
             {
               //Baltimore/1800_seconds/Re188_Sh.pcf doesnt load
@@ -662,15 +723,16 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
             continue;
 
           const PeakTruthInfo &main_line = cluster.front();
-          if( (main_line.area < 5.0)  // Let be realistic, and require something
+          if( (main_line.area < 4.0)  // Let be realistic, and require something
              || (fabs(main_line.energy - 478.0) < 1.2)  // Avoid Alpha-Li reaction
              || (fabs(main_line.energy - 511.0) < 1.0 ) // Avoid D.B. 511
              // Shouldn't there be some other broadened reaction lines here???
              || ((main_line.energy + 0.5*main_line.full_width) > info.src_no_poisson->gamma_energy_max()) // Make sure not off upper-end
              || ((main_line.energy - 0.5*main_line.full_width) < info.src_no_poisson->gamma_energy_min()) // Make sure not below lower-end
-             || ((main_line.energy - 0.5*main_line.full_width) < 50.0) //eh, kinda arbitrary, maybe shouldnt limit?
+             || ((main_line.energy - 0.5*main_line.full_width) < 5.0) //eh, kinda arbitrary, maybe shouldnt limit?
              )
           {
+            //cout << "Skipping cluster at " << main_line.energy << endl;
             continue;
           }
 
@@ -679,6 +741,8 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
           if( (roi_info.peak_area > JudgmentFactors::min_truth_peak_area)
              && (roi_info.nsigma_over_background > JudgmentFactors::min_truth_nsigma) )
             detectable_clusters.push_back( std::move(roi_info) );
+          //else
+          //  cout << "Discarding undetectable cluster at " << roi_info.effective_energy << endl;
         }//for( const vector<PeakTruthInfo> &cluster : clustered_lines )
 
         std::sort( begin(detectable_clusters), end(detectable_clusters),

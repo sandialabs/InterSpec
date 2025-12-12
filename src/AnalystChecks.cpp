@@ -304,8 +304,9 @@ namespace AnalystChecks
     assert( meas_peaks );
     if( !meas_peaks )
       throw runtime_error( "Unexpected error getting existing peak list" );
-    
-    
+
+    shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_search_peaks = meas->automatedSearchPeaks(sample_nums);
+
     const bool isHPGe = PeakFitUtils::is_likely_high_res( interspec );
     
     vector<shared_ptr<const PeakDef>> origPeaks;
@@ -321,8 +322,8 @@ namespace AnalystChecks
     
     double pixelPerKev = -1.0; //This triggers an "automed" peak fit, which has higher thresholds for keeping peak.
     pair<vector<shared_ptr<const PeakDef>>, vector<shared_ptr<const PeakDef>>> foundPeaks;
-    foundPeaks = searchForPeakFromUser( options.energy, pixelPerKev, data, origPeaks, det, isHPGe );
-    
+    foundPeaks = searchForPeakFromUser( options.energy, pixelPerKev, data, origPeaks, det, auto_search_peaks, isHPGe );
+
     vector<shared_ptr<const PeakDef>> &peaks_to_add_in = foundPeaks.first;
     const vector<shared_ptr<const PeakDef>> &peaks_to_remove = foundPeaks.second;
     

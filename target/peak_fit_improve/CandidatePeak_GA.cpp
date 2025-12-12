@@ -305,9 +305,16 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
       const double rougher_scnd_drv = rougher_second_deriv[rough_index];
 
       if( debug_channel )
+      {
         cout << "Candidate: mean=" << mean << ", rougher_scnd_drv=" << rougher_scnd_drv
         << ", minbin=" << minbin << ", firstzero=" << firstzero
         << ", secondzero=" << secondzero << endl;
+
+        cout << "rougher_second_deriv: [";
+        for( size_t i = firstzero - 20; i < (secondzero + 20); ++i )
+          cout << rougher_second_deriv[i] << ", ";
+        cout << "]" << endl;
+      }
 
 
       if( rougher_scnd_drv < 0.0 )
@@ -779,7 +786,7 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
         result_peaks.push_back( std::move(peak) );
       }else
       {
-        if( debug_channel || PeakFitImprove::debug_printout )
+        if( debug_channel && PeakFitImprove::debug_printout )
        {
          cout << "Rejected: energy=" << mean << ", FOM=" << figure_of_merit
          << ", amp=" << amplitude << ", FWHM=" << sigma*2.35482f
@@ -876,6 +883,8 @@ tuple<double,size_t,size_t,size_t,size_t,size_t> eval_candidate_settings( const 
     for( size_t expected_index = 0; expected_index < info.expected_photopeaks.size(); ++expected_index )
     {
       const ExpectedPhotopeakInfo &expected = info.expected_photopeaks[expected_index];
+      //cout << "Expected: mean=" << expected.effective_energy << ", range=[" << expected.roi_lower << ", " << expected.roi_upper << "], "
+      //<< "FWHM=" << expected.effective_fwhm << ", area=" << expected.peak_area << ", nsigma=" << expected.nsigma_over_background << endl;
 
       vector<pair<tuple<float,float,float>,size_t>> detected_matching_expected; //{mean, sigma, amplitude}
       for( size_t det_index = 0; det_index < detected_peaks.size(); ++det_index )

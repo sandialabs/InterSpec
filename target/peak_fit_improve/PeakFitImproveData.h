@@ -62,7 +62,8 @@ ExpectedPhotopeakInfo create_expected_photopeak( const InjectSourceInfo &info, c
  `base_name + "_gamma_lines.csv"`
  to exist.
  */
-InjectSourceInfo parse_inject_source_files( const std::string &base_name );
+InjectSourceInfo parse_inject_source_files( const std::string &base_name,
+                                           const std::vector<std::pair<float,float>> &deviation_pairs );
 
 
 /**

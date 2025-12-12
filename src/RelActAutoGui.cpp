@@ -558,8 +558,12 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_spectrum->dragCreateRoiUpdate().connect( this, &RelActAutoGui::handleCreateRoiDrag );
   m_spectrum->rightClicked().connect( this, &RelActAutoGui::handleRightClick );
   m_spectrum->shiftKeyDragged().connect( this, &RelActAutoGui::handleShiftDrag );
-  m_spectrum->doubleLeftClick().connect( this, &RelActAutoGui::handleDoubleLeftClick );
-  
+  m_spectrum->doubleLeftClick().connect( boost::bind( &RelActAutoGui::handleDoubleLeftClick, this,
+                                                       boost::placeholders::_1,
+                                                       boost::placeholders::_2,
+                                                       boost::placeholders::_3,
+                                                       boost::placeholders::_4 ) );
+
   m_rel_eff_chart = new RelEffChart();
   m_txt_results = new RelActTxtResults();
   
@@ -1638,7 +1642,9 @@ void RelActAutoGui::handleShiftDrag( const double lower_energy, const double upp
 }//void handleShiftDrag( const double lower_energy, const double upper_energy )
 
 
-void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* counts */ )
+void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* counts */,
+                                          const std::string &/* ref_line_name */,
+                                          const Wt::WFlags<Wt::KeyboardModifier> /* modifiers */ )
 {
   try
   {
@@ -1670,17 +1676,18 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
     
     // We'll prefer the DRF from m_solution, to what the user has picked
     shared_ptr<const DetectorPeakResponse> det = m_solution ? m_solution->m_drf : nullptr;
-    
-    if( !det || !det->hasResolutionInfo()  )
-    {
-      shared_ptr<const SpecMeas> meas = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
-      det = meas ? meas->detector() : nullptr;
-    }//if( solution didnt have DRF )
-    
+    shared_ptr<const SpecMeas> meas = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
+    const set<int> sample_nums = m_interspec->displayedSamples(SpecUtils::SpectrumType::Foreground);
+
+    if( (!det || !det->hasResolutionInfo()) && meas )
+      det = meas->detector();
+
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_peaks = meas ? meas->automatedSearchPeaks(sample_nums) : nullptr;
+
     const bool isHPGe = PeakFitUtils::is_likely_high_res( m_interspec );
     
-    const auto found_peaks = searchForPeakFromUser( energy, pixPerKeV, m_foreground, {}, det, isHPGe );
-    
+    const auto found_peaks = searchForPeakFromUser( energy, pixPerKeV, m_foreground, {}, det, auto_peaks, isHPGe );
+
     // If we didnt fit a peak, and we dont
     double lower_energy = energy - 10;
     double upper_energy = energy + 10;

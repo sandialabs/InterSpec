@@ -890,7 +890,7 @@ int main( int argc, char **argv )
   string static_data_dir;
   PeakFitImprove::sm_num_optimization_threads = std::max( 8u, std::thread::hardware_concurrency() > 2 ? std::thread::hardware_concurrency() - 2 : 1 );
   size_t number_threads_per_individual = 1;
-  string action_str = "FinalFit"; //"CodeDev"; // "FinalFit"; //"InitialFit"; //"Candidate";
+  string action_str = "CodeDev"; //"CodeDev"; // "FinalFit"; //"InitialFit"; //"Candidate";
   bool debug_printout_arg = false;
   size_t ga_population = 1500;
   size_t ga_generation_max = 250;
@@ -1058,13 +1058,13 @@ int main( int argc, char **argv )
   const string base_dir = data_base_dir;
 
   vector<string> hpges {
-    //"Detective-X",
+    "Detective-X",
     //"Detective-EX",
     //"Detective-X_noskew",
     //"Falcon 5000",
     //"Fulcrum40h",
     //"LANL_X",
-    "HPGe_Planar_50%"
+    //"HPGe_Planar_50%"
   };
 
   if( debug_printout_arg )
@@ -1077,8 +1077,8 @@ int main( int argc, char **argv )
 
   vector<string> live_times{
     //"30_seconds",
-    //"300_seconds",
-    "1800_seconds"
+    "300_seconds",
+    //"1800_seconds"
   };
 
 #if( WRITE_ALL_SPEC_TO_HTML )
@@ -1104,8 +1104,6 @@ int main( int argc, char **argv )
   PeakFitImproveData::write_html_summary( input_srcs );
   return 1;
 #endif
-
-
   
   
   /**
@@ -1696,7 +1694,38 @@ int main( int argc, char **argv )
     case OptimizationAction::CodeDev:
     {
       //create_n42_peak_fits_for_dir( "/Users/wcjohns/Downloads/spec 2" );
-      create_n42_peak_fits( inject_sets, input_srcs );
+      //create_n42_peak_fits( inject_sets, input_srcs );
+
+      {
+        FindCandidateSettings settings;
+        settings.num_smooth_side_channels = 11;
+        settings.smooth_polynomial_order = 2;
+        settings.threshold_FOM = 1.618534;
+        settings.more_scrutiny_FOM_threshold = 3.164526;
+        settings.pos_sum_threshold_sf = 0.106967;
+        settings.num_chan_fluctuate = 1;
+        settings.more_scrutiny_coarser_FOM = 2.440607;
+        settings.more_scrutiny_min_dev_from_line = 5.781510;
+        settings.amp_to_apply_line_test_below = 76.000000;
+
+        //found_extra_punishment = 0.25
+        //Best settings had score 18.5294, with values:
+        //  num_peaks_found:89647
+        //  def_wanted_peaks_found:68281
+        //  def_wanted_peaks_not_found:10499
+        //  num_possibly_accepted_peaks_not_found:82919
+        //  num_extra_peaks:21296
+
+        //vector<DataSrcInfo> filtered;
+        //for( const DataSrcInfo &data : input_srcs )
+        //{
+        //  if(  data.src_info.src_name.find("Ho166m_Unsh") != string::npos  )
+        //    filtered.push_back( data );
+        //}
+
+        CandidatePeak_GA::eval_candidate_settings( settings, input_srcs, true );
+      }//if( make N42 files )
+
       break;
 
       cerr << "Setting best_settings instead of actually finding them!" << endl;
