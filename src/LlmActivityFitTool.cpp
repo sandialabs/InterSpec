@@ -1814,7 +1814,9 @@ void add_fit_config_to_json(
     std::string geom_desc;
     switch( drf->geometryType() )
     {
-      case DetectorPeakResponse::EffGeometryType::FarField:
+      case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
+      case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
+        assert( 0 );
         break;
       case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
         geom_desc = "total activity";
