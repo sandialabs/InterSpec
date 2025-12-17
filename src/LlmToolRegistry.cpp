@@ -14,6 +14,8 @@
 #include "InterSpec/LlmConfig.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/LlmInterface.h"
+#include "InterSpec/LlmToolGui.h"
+#include "InterSpec/LlmConversationHistory.h"
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
@@ -25,6 +27,7 @@
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/MoreNuclideInfo.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/ExternalRidResult.h"
 #include "InterSpec/DetectionLimitCalc.h"
 #include "InterSpec/GammaInteractionCalc.h"
@@ -35,6 +38,22 @@
 #include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/IsotopeSearchByEnergyModel.h"
 
+#include "InterSpec/DoseCalc.h"
+#include "InterSpec/GadrasSpecFunc.h"
+
+#include "InterSpec/ShieldingSourceFitCalc.h"
+#include "InterSpec/ShieldingSourceDisplay.h"
+#include "InterSpec/RelActCalc.h"
+#include "InterSpec/RelActCalcAuto.h"
+#include "InterSpec/LlmIsotopicsTool.h"
+#include "InterSpec/LlmActivityFitTool.h"
+
+#include "Minuit2/MnUserParameters.h"
+
+#include <Wt/WDialog>
+#include <Wt/WTextArea>
+#include <Wt/WLineEdit>
+#include <Wt/WPushButton>
 #include <Wt/WApplication>
 #include <Wt/Dbo/Dbo>
 
@@ -42,7 +61,10 @@
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
+
 #include "SandiaDecay/SandiaDecay.h"
+
+#include "InterSpec/ReactionGamma.h"
 
 using namespace std;
 using json = nlohmann::json;
@@ -251,23 +273,20 @@ namespace {
     if( !params[field_name].is_string() )
       return; // Already a native type, no normalization needed
 
-    const string str_value = params[field_name].get<string>();
-
-    // Trim whitespace
-    string trimmed = str_value;
-    trimmed.erase( 0, trimmed.find_first_not_of(" \t\n\r") );
-    trimmed.erase( trimmed.find_last_not_of(" \t\n\r") + 1 );
+    string str_value = params[field_name].get<string>();
+    SpecUtils::trim( str_value );
 
     // Try to parse as JSON
     try
     {
-      json parsed = json::parse( trimmed );
-      params[field_name] = parsed;
-    }
-    catch( const json::parse_error& )
+      json parsed = json::parse( str_value );
+      params[field_name] = std::move(parsed);
+    }catch( const json::parse_error &e )
     {
       // If parsing fails, leave as string (might be intended as a string value)
       // Let the downstream code handle validation
+      cerr << "Failed to convert string into a JSON object: trimmed='" << str_value << "'." << endl;
+      cerr << endl;
     }
   }//void normalize_json_field( json& params, const string& field_name )
 
@@ -302,7 +321,19 @@ namespace {
       throw std::runtime_error("Invalid spectrum type: " + specTypeStr);
     }
 
-    p.source = j.value("source", std::optional<std::string>{});
+    p.source = std::nullopt;
+    if( j.contains("source") )
+      p.source = j["source"].get<std::string>();
+    else if( j.contains("nuclide") )
+      p.source = j["nuclide"].get<std::string>();
+    else if( j.contains("element") )
+      p.source = j["element"].get<std::string>();
+    else if( j.contains("xray") )
+      p.source = j["xray"].get<std::string>();
+    else if( j.contains("x-ray") )
+      p.source = j["x-ray"].get<std::string>();
+    else if( j.contains("reaction") )
+      p.source = j["reaction"].get<std::string>();
   }
   
   /*
@@ -353,6 +384,24 @@ namespace {
       // TODO: add in more infor using `meas` here
     }
     
+    auto source_type_str = []( const PeakDef::SourceGammaType type ) -> const char * {
+      switch( type )
+      {
+        case PeakDef::NormalGamma:
+          return "gamma";
+        case PeakDef::AnnihilationGamma:
+          return "Annih.";
+        case PeakDef::SingleEscapeGamma:
+          return "S.E.";
+        case PeakDef::DoubleEscapeGamma:
+          return "D.E.";
+        case PeakDef::XrayGamma:
+          return "x-ray";
+      }//
+      assert( 0 );
+      return nullptr;
+    };
+    
     
     if( const SandiaDecay::Nuclide * const nuc = peak->parentNuclide() )
     {
@@ -371,39 +420,23 @@ namespace {
         src["photonEnergy"] = particle->energy;
       }
       
-      const char *gamma_type = nullptr;
-      switch( peak->sourceGammaType() )
-      {
-        case PeakDef::NormalGamma:
-          gamma_type = "gamma";
-          break;
-        case PeakDef::AnnihilationGamma:
-          gamma_type = "Annih.";
-          break;
-        case PeakDef::SingleEscapeGamma:
-          gamma_type = "S.E.";
-          break;
-        case PeakDef::DoubleEscapeGamma:
-          gamma_type = "D.E.";
-          break;
-        case PeakDef::XrayGamma:
-          gamma_type = "x-ray";
-          break;
-      }//
-      
+      const char * const gamma_type = source_type_str( peak->sourceGammaType() );
       if( gamma_type )
         src["photonType"] = gamma_type;
       
       src["energy"] = peak->gammaParticleEnergy();
     }else if( const SandiaDecay::Element * const el = peak->xrayElement() )
     {
-      peak_json["element"] = el->symbol;
+      peak_json["source"]["element"] = el->symbol;
       peak_json["source"]["photonType"] = "x-ray";
       peak_json["source"]["energy"] = peak->xrayEnergy();
     }else if( const ReactionGamma::Reaction * const rctn = peak->reaction() )
     {
       peak_json["source"]["reaction"] = rctn->name();
       peak_json["source"]["energy"] = peak->reactionEnergy();
+      const char * const gamma_type = source_type_str( peak->sourceGammaType() );
+      if( gamma_type )
+        peak_json["source"]["photonType"] = gamma_type;
     }
 
     // Add boolean flags for peak usage - use raw user preferences, not computed values
@@ -415,19 +448,27 @@ namespace {
   void to_json( json &roi_json,
                const shared_ptr<const PeakContinuum> &cont,
                const vector<shared_ptr<const PeakDef>> &peaks,
-               const shared_ptr<const SpecUtils::Measurement> &meas ){
+               const shared_ptr<const SpecUtils::Measurement> &meas,
+               const std::vector<std::shared_ptr<const PeakDef>> *analysis_peaks = nullptr ){
     roi_json = json{
       {"lowerEnergy", rount_to_hundredth(cont->lowerEnergy())},
       {"upperEnergy", rount_to_hundredth(cont->upperEnergy())},
       {"continuumType", PeakContinuum::offset_type_str(cont->type()) }
       //("continuumCounts", cont->offset_integral( cont->lowerEnergy(), cont->upperEnergy(), dataH ) }
     };
-    
+
     for( const shared_ptr<const PeakDef> &peak : peaks ) {
       json peak_json;
-      
+
       to_json( peak_json, peak, meas );
-      
+
+      // Check if this peak is in the analysis_peaks list
+      if( analysis_peaks )
+      {
+        const bool is_analysis_peak = std::find(analysis_peaks->begin(), analysis_peaks->end(), peak) != analysis_peaks->end();
+        peak_json["isAnalysisPeak"] = is_analysis_peak;
+      }
+
       roi_json["peaks"].push_back( peak_json );
     }
   }//void to_json( json &roi_json, const shared_ptr<const PeakContinuum> &cont, const vector<shared_ptr<const PeakDef>> &peaks )
@@ -435,9 +476,10 @@ namespace {
   
   void to_json( json &peak_rois,
                const std::vector<std::shared_ptr<const PeakDef>> &peaks,
-               const shared_ptr<const SpecUtils::Measurement> &meas ){
+               const shared_ptr<const SpecUtils::Measurement> &meas,
+               const std::vector<std::shared_ptr<const PeakDef>> *analysis_peaks = nullptr ){
     peak_rois = json::array();
-    
+
     vector<pair<shared_ptr<const PeakContinuum>,vector<shared_ptr<const PeakDef>>>> rois;
     for( const shared_ptr<const PeakDef> &peak : peaks ) {
       auto pos = std::find_if( begin(rois), end(rois), [&peak]( const auto &val){ return val.first == peak->continuum(); } );
@@ -446,19 +488,19 @@ namespace {
       else
         pos->second.push_back( peak );
     }
-    
-    
+
+
     for( size_t roi_index = 0; roi_index < rois.size(); ++roi_index )
     {
       const shared_ptr<const PeakContinuum> &cont = rois[roi_index].first;
       const vector<shared_ptr<const PeakDef>> &peaks = rois[roi_index].second;
-      
+
       json roi_json;
-      
-      to_json( roi_json, cont, peaks, meas );
-      
+
+      to_json( roi_json, cont, peaks, meas, analysis_peaks );
+
       roi_json["roiID"] = static_cast<int>(roi_index);
-      
+
       peak_rois.push_back(roi_json);
     }
   }
@@ -468,7 +510,7 @@ namespace {
                const AnalystChecks::DetectedPeakStatus& p,
                const shared_ptr<const SpecUtils::Measurement> &meas ) {
     json peak_rois;
-    to_json( peak_rois, p.peaks, meas );
+    to_json( peak_rois, p.peaks, meas, &p.analysis_peaks );
 
     j = json{{"rois", peak_rois}};
   }//void to_json(json& j, const AnalystChecks::DetectedPeakStatus& p) {
@@ -498,23 +540,32 @@ namespace {
   }//void to_json(json& j, const AnalystChecks::DetectedPeakStatus& p)
   
   
-  void from_json(const json& j, AnalystChecks::GetUserPeakOptions& p) {
-    std::string specTypeStr = j.value("specType", std::string());
-    if (specTypeStr.empty() || specTypeStr == "Foreground") {
-      p.specType = SpecUtils::SpectrumType::Foreground;
-    } else if (specTypeStr == "Background") {
-      p.specType = SpecUtils::SpectrumType::Background;
-    } else if (specTypeStr == "Secondary") {
-      p.specType = SpecUtils::SpectrumType::SecondForeground;
-    } else {
-      throw std::runtime_error("Invalid spectrum type: " + specTypeStr);
+  SpecUtils::SpectrumType parse_spectrum_type( const json &j, const std::string &field_name = "specType" )
+  {
+    std::string specTypeStr = j.value(field_name, std::string());
+    if( specTypeStr.empty() || specTypeStr == "Foreground" )
+    {
+      return SpecUtils::SpectrumType::Foreground;
+    }else if( specTypeStr == "Background" )
+    {
+      return SpecUtils::SpectrumType::Background;
+    }else if( specTypeStr == "Secondary" )
+    {
+      return SpecUtils::SpectrumType::SecondForeground;
+    }else
+    {
+      throw std::runtime_error( "Invalid spectrum type: " + specTypeStr );
     }
+  }
+
+  void from_json(const json& j, AnalystChecks::GetUserPeakOptions& p) {
+    p.specType = parse_spectrum_type( j );
 
     // Parse optional energy range
-    if( j.contains("lowerEnergy") )
+    if( j.contains("lowerEnergy") && !j["lowerEnergy"].is_null() )
       p.lowerEnergy = get_number( j, "lowerEnergy" );
 
-    if( j.contains("upperEnergy") )
+    if( j.contains("upperEnergy") && !j["upperEnergy"].is_null() )
       p.upperEnergy = get_number( j, "upperEnergy" );
   }
 
@@ -556,16 +607,16 @@ namespace {
     }
 
     // Get optional values
-    if( j.contains("doubleValue") )
+    if( j.contains("doubleValue") && !j["doubleValue"].is_null() )
       p.doubleValue = get_double( j["doubleValue"] );
 
-    if( j.contains("stringValue") )
+    if( j.contains("stringValue") && !j["stringValue"].is_null() )
       p.stringValue = j["stringValue"].get<std::string>();
 
-    if( j.contains("boolValue") )
+    if( j.contains("boolValue") && !j["boolValue"].is_null() )
       p.boolValue = get_boolean( j, "boolValue" );
 
-    if( j.contains("uncertainty") )
+    if( j.contains("uncertainty") && !j["uncertainty"].is_null() )
       p.uncertainty = get_number( j, "uncertainty" );
   }//void from_json( const json &j, AnalystChecks::EditAnalysisPeakOptions &p )
 
@@ -668,14 +719,13 @@ namespace {
     }
 
     // Parse optional distance parameter
-    if( j.contains("distance") )
+    if( j.contains("distance") && !j["distance"].is_null() )
     {
       const std::string distanceStr = j["distance"].get<std::string>();
       try
       {
         p.distance = PhysicalUnits::stringToDistance( distanceStr );
-      }
-      catch( const std::exception &e )
+      }catch( const std::exception &e )
       {
         throw std::runtime_error( "Invalid distance value '" + distanceStr + "': " + e.what() );
       }
@@ -807,6 +857,11 @@ namespace {
     j = json{{"rois", peak_rois}};
   }
 
+  void to_json( json &j, const std::vector<std::string> &sources )
+  {
+    j = json{{"sources", sources}};
+  }
+
   void to_json(json& j, const AnalystChecks::FitPeaksForNuclideStatus &p, const shared_ptr<const SpecUtils::Measurement> &meas ) {
     json peak_rois;
     to_json( peak_rois, p.fitPeaks, meas );
@@ -850,6 +905,35 @@ namespace {
     
     return sourceCatagories;
   }//source_categories(...)
+
+
+  /** Helper function to get the GadrasScatterTable for dose calculations.
+   *  Uses a static shared pointer with mutex protection for thread-safe lazy initialization.
+   *  The scatter table is loaded from GadrasContinuum.lib in the static data directory.
+   */
+  mutex sm_dose_scatter_mutex;
+  bool sm_tried_init_dose_scatter = false;
+  shared_ptr<const GadrasScatterTable> sm_dose_scatter;
+
+  shared_ptr<const GadrasScatterTable> getDoseCalcScatterTable()
+  {
+    lock_guard<mutex> lock( sm_dose_scatter_mutex );
+    if( sm_tried_init_dose_scatter )
+      return sm_dose_scatter;
+
+    sm_tried_init_dose_scatter = true;
+
+    try
+    {
+      const string data = SpecUtils::append_path( InterSpec::staticDataDirectory(), "GadrasContinuum.lib" );
+      sm_dose_scatter = make_shared<GadrasScatterTable>( data );
+    }catch( exception &e )
+    {
+      cerr << "LlmToolRegistry: Failed to init GADRAS scatter for dose calc: " << e.what() << endl;
+    }
+
+    return sm_dose_scatter;
+  }//getDoseCalcScatterTable()
 }//namespace
 
 namespace LlmTools
@@ -871,7 +955,7 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
   tool.name = toolName;
 
   // Assign executor based on tool name
-  if( toolName == "detected_peaks" )
+  if( toolName == "get_detected_peaks" )
   {
     tool.executor = [](const json& params, InterSpec* interspec) -> json {
       return executePeakDetection(params, interspec);
@@ -900,6 +984,16 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
     {
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
         return executeGetUserPeaks(params, interspec);
+      };
+    }else if( toolName == "get_identified_sources" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeGetIdentifiedSources(params, interspec);
+      };
+    }else if( toolName == "get_unidentified_peaks" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeGetUnidentifiedDetectedPeaks(params, interspec);
       };
     }else if( toolName == "get_spectrum_info" )
     {
@@ -980,6 +1074,11 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
         return executeCurrieMdaCalc(params, interspec);
       };
+    }else if( toolName == "calculate_dose" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeCalculateDose(params, interspec);
+      };
     }else if( toolName == "source_photons" )
     {
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
@@ -1000,7 +1099,7 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
         return executeGetMaterialInfo(params, interspec);
       };
-    }else if( toolName == "avaiable_detector_efficiency_functions" )
+    }else if( toolName == "available_detector_efficiency_functions" )
     {
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
         return executeAvailableDetectors(params, interspec);
@@ -1020,6 +1119,101 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
         return executeSearchSourcesByEnergy(params, interspec);
       };
+    }else if( toolName == "activity_fit" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return ActivityFitTool::executeActivityFit(params, interspec);
+      };
+    }else if( toolName == "activity_fit_one_off" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return ActivityFitTool::executeActivityFitOneOff(params, interspec);
+      };
+    }else if( toolName == "get_shielding_source_config" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return ActivityFitTool::executeGetShieldingSourceConfig(params, interspec);
+      };
+    }else if( toolName == "modify_shielding_source_config" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return ActivityFitTool::executeModifyShieldingSourceConfig(params, interspec);
+      };
+    }else if( toolName == "mark_peaks_for_activity_fit" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return ActivityFitTool::executeMarkPeaksForActivityFit(params, interspec);
+      };
+    }else if( toolName == "close_activity_shielding_display" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return ActivityFitTool::executeCloseActivityShieldingDisplay(params, interspec);
+      };
+    }else if( toolName == "ask_user_question" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return ActivityFitTool::executeAskUserQuestion(params, interspec);
+      };
+    }else if( toolName == "set_workflow_state" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeSetWorkflowState(params, interspec);
+      };
+    }else if( toolName == "list_isotopics_presets" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return IsotopicsTool::executeListIsotopicsPresets(params, interspec);
+      };
+    }else if( toolName == "get_isotopics_config" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return IsotopicsTool::executeGetIsotopicsConfig(params, interspec);
+      };
+    }else if( toolName == "reset_isotopics_config" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return IsotopicsTool::executeResetIsotopicsConfig(params, interspec);
+      };
+    }else if( toolName == "load_isotopics_preset" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return IsotopicsTool::executeLoadIsotopicsPreset(params, interspec);
+      };
+    }else if( toolName == "perform_isotopics_calculation" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return IsotopicsTool::executePerformIsotopics(params, interspec);
+      };
+    }else if( toolName == "modify_isotopics_nuclides" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return IsotopicsTool::executeModifyIsotopicsNuclides(params, interspec);
+      };
+    }else if( toolName == "modify_isotopics_rois" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return IsotopicsTool::executeModifyIsotopicsRois(params, interspec);
+      };
+    }else if( toolName == "modify_isotopics_curve_settings" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return IsotopicsTool::executeModifyIsotopicsCurveSettings(params, interspec);
+      };
+    }else if( toolName == "modify_isotopics_options" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return IsotopicsTool::executeModifyIsotopicsOptions(params, interspec);
+      };
+    }else if( toolName == "modify_isotopics_constraints" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return IsotopicsTool::executeModifyIsotopicsConstraints(params, interspec);
+      };
+    }else if( toolName == "get_isotopics_config_schema" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return IsotopicsTool::executeGetIsotopicsConfigSchema(params, interspec);
+      };
     }else
     {
       throw std::runtime_error( "Unknown tool name: " + toolName );
@@ -1038,7 +1232,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
   if( config.tools.empty() )
     throw std::runtime_error("No tools configuration provided - cannot initialize LLM interface");
   
-  cout << "Registering default LLM tools..." << endl;
+  //cout << "Registering default LLM tools..." << endl;
 
   // Helper lambda to apply config overrides to a tool
   auto applyToolConfig = [&config](SharedTool &tool) {
@@ -1105,10 +1299,14 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
       assert( 0 );
       throw std::runtime_error( "invoke_* tools should be handled by executeToolCalls, not called directly" );
     };
-    
-    // Only MainAgent can invoke sub-agents
-    invokeTool.availableForAgents = {AgentType::MainAgent};
-    
+
+    // Set which agents can invoke this sub-agent
+    // If agent.availableForAgents is empty, default to MainAgent only for backward compatibility
+    if( agent.availableForAgents.empty() )
+      invokeTool.availableForAgents = {AgentType::MainAgent};
+    else
+      invokeTool.availableForAgents = agent.availableForAgents;
+
     registerTool(invokeTool);
   }//for( loop over agents in config )
   
@@ -1153,12 +1351,14 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
 
   // Runtime validation: Check that all expected tools are registered
   const std::vector<std::string> expectedTools = {
-    "detected_peaks",
+    "get_detected_peaks",
     "add_analysis_peak",
     "edit_analysis_peak",
     "escape_peak_check",
     "sum_peak_check",
     "get_analysis_peaks",
+    "get_identified_sources",
+    "get_unidentified_peaks",
     "get_spectrum_info",
     "primary_gammas_for_source",
     "sources_with_primary_gammas_in_energy_range",
@@ -1175,14 +1375,34 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     "get_counts_in_energy_range",
     "get_expected_fwhm",
     "currie_mda_calc",
+    "calculate_dose",
     "source_photons",
     "photopeak_detection_efficiency",
     "get_materials",
     "get_material_info",
-    "avaiable_detector_efficiency_functions",
+    "available_detector_efficiency_functions",
     "load_detector_efficiency_function",
     "detector_efficiency_function_info",
-    "search_sources_by_energy"
+    "search_sources_by_energy",
+    "activity_fit",
+    "activity_fit_one_off",
+    "ask_user_question",
+    "close_activity_shielding_display",
+    "get_shielding_source_config",
+    "mark_peaks_for_activity_fit",
+    "modify_shielding_source_config",
+    "get_isotopics_config",
+    "get_isotopics_config_schema",
+    "list_isotopics_presets",
+    "load_isotopics_preset",
+    "modify_isotopics_constraints",
+    "modify_isotopics_curve_settings",
+    "modify_isotopics_nuclides",
+    "modify_isotopics_options",
+    "modify_isotopics_rois",
+    "perform_isotopics_calculation",
+    "reset_isotopics_config",
+    "set_workflow_state",
   };
 
   std::vector<std::string> missingTools;
@@ -1235,7 +1455,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     }
   }
 
-  cout << "Registered " << m_tools.size() << " default tools" << endl;
+  //cout << "Registered " << m_tools.size() << " default tools" << endl;
 }
 
 const std::map<std::string, SharedTool>& ToolRegistry::getTools() const {
@@ -1332,8 +1552,15 @@ json ToolRegistry::executePeakDetection(const json& params, InterSpec* interspec
   
   // Parse parameters into DetectedPeaksOptions
   AnalystChecks::DetectedPeaksOptions options;
-  from_json(params, options);
-  
+  try
+  {
+    from_json(params, options);
+  }catch( std::exception &e )
+  {
+    cerr << "executePeakDetection: Failed to parse params: " << params.dump() << endl;
+    throw;
+  }
+
   shared_ptr<const SpecUtils::Measurement> meas;
   if( interspec )
     meas = interspec->displayedHistogram( options.specType );
@@ -1399,6 +1626,78 @@ nlohmann::json ToolRegistry::executeGetUserPeaks(const nlohmann::json& params, I
 }//nlohmann::json executeGetUserPeaks(const nlohmann::json& params, InterSpec* interspec)
 
 
+nlohmann::json ToolRegistry::executeGetIdentifiedSources( const nlohmann::json &params, InterSpec *interspec )
+{
+  if( !interspec )
+    throw std::runtime_error( "No InterSpec session available." );
+
+  // Parse spectrum type parameter
+  const SpecUtils::SpectrumType specType = parse_spectrum_type( params );
+
+  // Call the AnalystChecks function to get the sources
+  const std::vector<std::string> sources = AnalystChecks::get_identified_sources( specType, interspec );
+
+  // Convert the result to JSON and return
+  json result_json;
+  to_json( result_json, sources );
+
+  return result_json;
+}//nlohmann::json ToolRegistry::executeGetIdentifiedSources(const nlohmann::json& params, InterSpec* interspec)
+
+
+nlohmann::json ToolRegistry::executeGetUnidentifiedDetectedPeaks( const nlohmann::json &params, InterSpec *interspec )
+{
+  if( !interspec )
+    throw std::runtime_error("No InterSpec session available.");
+
+  // Parse max_results parameter (default: 5)
+  size_t max_results = 5;
+  if( params.contains("max_results") && !params["max_results"].is_null() )
+  {
+    const int max_val = params["max_results"].get<int>();
+    if( max_val < 1 )
+      throw std::runtime_error("max_results must be at least 1");
+    max_results = static_cast<size_t>( max_val );
+  }
+
+  shared_ptr<const SpecUtils::Measurement> meas = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  shared_ptr<const SpecUtils::Measurement> background = interspec->displayedHistogram(SpecUtils::SpectrumType::Background);
+
+  AnalystChecks::DetectedPeaksOptions options;
+  options.specType = SpecUtils::SpectrumType::Foreground;
+  options.nonBackgroundPeaksOnly = !!background;
+  AnalystChecks::DetectedPeakStatus result = AnalystChecks::detected_peaks(options, interspec);
+
+  vector<shared_ptr<const PeakDef>> unidentified_peaks;
+  for( const shared_ptr<const PeakDef> &peak : result.peaks )
+  {
+    if( !peak->hasSourceGammaAssigned()
+       && (peak->userLabel().empty() || SpecUtils::icontains(peak->userLabel(), "unknown") ) )
+    {
+      unidentified_peaks.push_back( peak );
+    }
+  }//for( const shared_ptr<const PeakDef> &peak : result.peaks )
+
+  // Sort peaks by amplitude (largest first)
+  std::sort( unidentified_peaks.begin(), unidentified_peaks.end(),
+    []( const shared_ptr<const PeakDef> &lhs, const shared_ptr<const PeakDef> &rhs ) -> bool {
+      return lhs->amplitude() > rhs->amplitude();
+    }
+  );
+
+  // Apply max_results limit
+  if( unidentified_peaks.size() > max_results )
+    unidentified_peaks.resize( max_results );
+
+  result.peaks = unidentified_peaks;
+
+  json result_json;
+  to_json( result_json, result, meas );
+
+  return result_json;
+}//nlohmann::json ToolRegistry::executeGetUnidentifiedDetectedPeaks( const nlohmann::json &params, InterSpec *interspec )
+  
+
 nlohmann::json ToolRegistry::executeEditAnalysisPeak( const nlohmann::json &params, InterSpec *interspec )
 {
   if( !interspec )
@@ -1421,6 +1720,7 @@ nlohmann::json ToolRegistry::executeEditAnalysisPeak( const nlohmann::json &para
   // Convert the result to JSON and return
   json result_json;
   to_json( result_json, result, meas );
+
 
   return result_json;
 }//nlohmann::json ToolRegistry::executeEditAnalysisPeak( const nlohmann::json &params, InterSpec *interspec )
@@ -2036,40 +2336,241 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
   if (!spectrum)
     throw std::runtime_error("No foreground spectrum loaded");
 
-  // Parse only the selected parameters
+  // Parse basic parameters
   const double energy = get_number( params, "energy" );
   const double detection_probability = get_number( params, "detectionProbability", 0.95 );
   const float additional_uncertainty = static_cast<float>( get_number( params, "additionalUncertainty", 0.0 ) );
+  const bool assert_background_spectrum = get_boolean( params, "assertBackgroundSpectrum", false );
 
-  // Get expected FWHM for the energy to determine ROI width
+  // Parse optional nuclide, distance, age, and shielding parameters
+  const SandiaDecay::Nuclide *nuclide = nullptr;
+  double distance = -1.0;
+  double age = -1.0;
+  double branch_ratio = 0.0;
+  double shield_transmission = 1.0;
+  bool has_nuclide = false;
+  bool has_distance = false;
+  bool has_shielding = false;
+
+  if( params.contains("nuclide") && params["nuclide"].is_string() )
+  {
+    string nuclide_str = params["nuclide"].get<string>();
+    SpecUtils::trim( nuclide_str );
+    if( !nuclide_str.empty() )
+    {
+      const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+      if( !db )
+        throw runtime_error( "Could not initialize nuclide DecayDataBase." );
+      
+      nuclide = db->nuclide( nuclide_str );
+      if( !nuclide )
+        throw runtime_error( "Could not find nuclide '" + nuclide_str + "' in decay database." );
+      
+      has_nuclide = true;
+    }
+  }
+
+  if( params.contains("distance") && params["distance"].is_string() )
+  {
+    string distance_str = params["distance"].get<string>();
+    SpecUtils::trim( distance_str );
+    if( !distance_str.empty() )
+    {
+      distance = PhysicalUnits::stringToDistance( distance_str );
+      if( distance < 0.0 )
+        throw runtime_error( "Distance must be non-negative, got '" + distance_str + "'." );
+      has_distance = true;
+    }
+  }
+
+  // Get expected FWHM for the energy (needed for ROI width and branch ratio calculation)
   float fwhm = -1.0;
   shared_ptr<SpecMeas> meas = interspec->measurment(SpecUtils::SpectrumType::Foreground);
-  if (meas && meas->detector() && meas->detector()->hasResolutionInfo())
-    fwhm = meas->detector()->peakResolutionFWHM(static_cast<float>(energy));
   
-  // Fallback FWHM estimation if needed
-  if (fwhm <= 0.0) {
-    const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
-    const vector<float> pars = isHPGe ? vector<float>{1.54f, 0.264f, 0.33f} : vector<float>{-6.5f, 7.5f, 0.55f};
-    fwhm = DetectorPeakResponse::peakResolutionFWHM(energy, DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn, pars);
+  // If nuclide or distance is provided, require a valid detector
+  if( has_nuclide || has_distance )
+  {
+    if( !meas || !meas->detector() || !meas->detector()->isValid() )
+      throw runtime_error( "A valid detector efficiency function is required when nuclide or distance is specified." );
+  }
+  
+  // Try to get FWHM using AnalystChecks::get_expected_fwhm first
+  try
+  {
+    fwhm = AnalystChecks::get_expected_fwhm( energy, interspec );
+  }
+  catch( std::exception & )
+  {
+    // Fallback FWHM estimation if AnalystChecks::get_expected_fwhm fails
+    if (meas && meas->detector() && meas->detector()->hasResolutionInfo())
+      fwhm = meas->detector()->peakResolutionFWHM(static_cast<float>(energy));
+    
+    if (fwhm <= 0.0) {
+      const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
+      const vector<float> pars = isHPGe ? vector<float>{1.54f, 0.264f, 0.33f} : vector<float>{-6.5f, 7.5f, 0.55f};
+      fwhm = DetectorPeakResponse::peakResolutionFWHM(energy, DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn, pars);
+    }
   }
 
   if (fwhm <= 0.0)
     throw std::runtime_error("Could not determine FWHM for energy " + std::to_string(energy));
 
-  // Set up CurrieMdaInput with fixed values for ROI and side channels
+  if( has_nuclide )
+  {
+    // Parse age if provided
+    if( params.contains("age") && params["age"].is_string() )
+    {
+      string age_str = params["age"].get<string>();
+      SpecUtils::trim( age_str );
+      if( !age_str.empty() )
+      {
+        try
+        {
+          age = PhysicalUnits::stringToTimeDuration( age_str );
+          if( age < 0.0 )
+            throw runtime_error( "Age must be non-negative, got '" + age_str + "'." );
+        }catch( std::exception &e )
+        {
+          throw runtime_error( "Could not interpret '" + age_str + "' as a time duration for nuclide age: " + e.what() );
+        }
+      }
+    }
+    
+    // If age not provided, use default age for the nuclide
+    if( age < 0.0 )
+      age = PeakDef::defaultDecayTime( nuclide );
+
+    // Calculate branch ratio for the specified energy
+    const double dummy_activity = 0.001 * SandiaDecay::curie;
+    SandiaDecay::NuclideMixture mixture;
+    mixture.addAgedNuclideByActivity( nuclide, dummy_activity, age );
+    
+    const vector<SandiaDecay::EnergyRatePair> photons = mixture.photons( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy );
+    
+    // Find the largest amplitude line within 1.0 keV of the specified energy
+    const double energy_tolerance = 1.0; // keV
+    const SandiaDecay::EnergyRatePair *largest_amplitude_erp = nullptr;
+    double largest_amplitude = 0.0;
+    
+    for( const SandiaDecay::EnergyRatePair &erp : photons )
+    {
+      if( fabs(erp.energy - energy) < energy_tolerance )
+      {
+        const double amplitude = erp.numPerSecond / dummy_activity;
+        if( amplitude > largest_amplitude )
+        {
+          largest_amplitude = amplitude;
+          largest_amplitude_erp = &erp;
+        }
+      }
+    }
+    
+    if( !largest_amplitude_erp )
+      throw runtime_error( "Could not find a gamma or x-ray within " + to_string(energy_tolerance) + " keV of energy " + to_string(energy) + " keV for nuclide " + nuclide->symbol + "." );
+    
+    // Calculate peak_sigma from FWHM (FWHM = 2.355 * sigma)
+    const double peak_sigma = static_cast<double>(fwhm) / 2.355;
+    const double peak_window = 1.25 * peak_sigma;
+    const double largest_energy = largest_amplitude_erp->energy;
+    
+    // Sum all gammas within 1.25*peak_sigma of the largest amplitude gamma line
+    for( const SandiaDecay::EnergyRatePair &erp : photons )
+    {
+      if( fabs(erp.energy - largest_energy) < peak_window )
+      {
+        branch_ratio += erp.numPerSecond / dummy_activity;
+      }
+    }
+    
+    if( branch_ratio <= 0.0 )
+      throw runtime_error( "Could not calculate branch ratio for energy " + to_string(energy) + " keV for nuclide " + nuclide->symbol + "." );
+  }
+
+  // Parse shielding if provided
+  if( params.contains("shielding") && params["shielding"].is_object() )
+  {
+    has_shielding = true;
+    const json &shielding_json = params["shielding"];
+    
+    const bool has_ad = shielding_json.contains("AD");
+    const bool has_an = shielding_json.contains("AN");
+    const bool has_material = shielding_json.contains("Material");
+    const bool has_thickness = shielding_json.contains("Thickness");
+    
+    if( has_ad && has_an && !has_material && !has_thickness )
+    {
+      // Generic shielding (AD/AN format)
+      const double areal_density = get_double( shielding_json["AD"] ) * (PhysicalUnits::g / PhysicalUnits::cm2);
+      const double atomic_number = get_double( shielding_json["AN"] );
+      
+      if( areal_density < 0.0 )
+        throw runtime_error( "Areal density (AD) must be non-negative." );
+      
+      if( atomic_number <= 0.0 || atomic_number > 100.0 )
+        throw runtime_error( "Atomic number (AN) must be between 1 and 100." );
+      
+      const float energy_float = static_cast<float>( energy * PhysicalUnits::keV );
+      const double mu = GammaInteractionCalc::transmition_coefficient_generic(
+        static_cast<float>(atomic_number),
+        static_cast<float>(areal_density),
+        energy_float
+      );
+      shield_transmission = exp( -mu );
+    }
+    else if( has_material && has_thickness && !has_ad && !has_an )
+    {
+      // Material shielding
+      const string material_name = shielding_json["Material"].get<string>();
+      const string thickness_str = shielding_json["Thickness"].get<string>();
+      
+      MaterialDB *materialDB = interspec->materialDataBase();
+      if( !materialDB )
+        throw runtime_error( "Material database not available." );
+      
+      const Material *material = materialDB->material( material_name );
+      if( !material )
+        throw runtime_error( "Material '" + material_name + "' not found in material database." );
+      
+      const double thickness = PhysicalUnits::stringToDistance( thickness_str );
+      if( thickness < 0.0 )
+        throw runtime_error( "Thickness must be non-negative for material '" + material_name + "', got '" + thickness_str + "'." );
+      
+      const float energy_float = static_cast<float>( energy * PhysicalUnits::keV );
+      const double mu = GammaInteractionCalc::transmition_coefficient_material(
+        material,
+        energy_float,
+        static_cast<float>(thickness)
+      );
+      shield_transmission = exp( -mu );
+    }
+    else
+    {
+      throw runtime_error( "Shielding must have either (AD and AN) or (Material and Thickness), not a mix." );
+    }
+  }
+
+  // Set up CurrieMdaInput
   DetectionLimitCalc::CurrieMdaInput input;
   input.spectrum = spectrum;
   input.gamma_energy = static_cast<float>(energy);
   
-  // Set ROI to be ±1.5 FWHM around the energy
-  const float roi_half_width = 1.25f * fwhm; // recommended by ISO 11929:2010, could instead use 1.19
+  // Set ROI to be ±1.25 FWHM around the energy (recommended by ISO 11929:2010)
+  const float roi_half_width = 1.25f * fwhm;
   input.roi_lower_energy = static_cast<float>(energy) - roi_half_width;
   input.roi_upper_energy = static_cast<float>(energy) + roi_half_width;
   
-  // Use fixed values for side channels (typical values)
-  input.num_lower_side_channels = 4;
-  input.num_upper_side_channels = 4;
+  // Handle side channels based on assertBackgroundSpectrum
+  if( assert_background_spectrum )
+  {
+    input.num_lower_side_channels = 0;
+    input.num_upper_side_channels = 0;
+  }
+  else
+  {
+    // Use fixed values for side channels (typical values)
+    input.num_lower_side_channels = 4;
+    input.num_upper_side_channels = 4;
+  }
   
   // Use the parsed parameters
   input.detection_probability = detection_probability;
@@ -2078,12 +2579,229 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
   // Call the DetectionLimitCalc function to perform the calculation
   const DetectionLimitCalc::CurrieMdaResult result = DetectionLimitCalc::currie_mda_calc(input);
 
-  // Convert the result to JSON and return
+  // Convert the result to JSON
   json result_json;
   to_json(result_json, result);
 
+  // If nuclide and distance are provided, calculate and add activity information
+  if( has_nuclide && has_distance )
+  {
+    shared_ptr<const DetectorPeakResponse> drf = meas ? meas->detector() : nullptr;
+    if( drf && !drf->isValid() )
+      drf.reset();
+    
+    if( !drf )
+      throw runtime_error( "Distance specified but no detector efficiency function is currently loaded." );
+    
+    const bool fixed_geom = drf->isFixedGeometry();
+    if( fixed_geom && has_distance )
+      throw runtime_error( "Distance cannot be specified when detector efficiency function is for fixed geometry." );
+    
+    const float energy_float = static_cast<float>(energy);
+    const double det_eff = fixed_geom ? drf->intrinsicEfficiency(energy_float)
+                                      : drf->efficiency(energy_float, distance);
+    
+    const float live_time = spectrum->live_time();
+    const double air_transmission = (distance > 0.0) 
+      ? exp( -GammaInteractionCalc::transmission_coefficient_air( energy_float, static_cast<float>(distance) ) )
+      : 1.0;
+    
+    const double counts_per_bq_into_4pi = branch_ratio * live_time * shield_transmission;
+    const double counts_per_bq_into_4pi_with_air = air_transmission * counts_per_bq_into_4pi;
+    const double counts_4pi = fixed_geom ? counts_per_bq_into_4pi : counts_per_bq_into_4pi_with_air;
+    const double gammas_per_bq = counts_4pi * det_eff;
+    
+    if( gammas_per_bq > 0.0 )
+    {
+      // Add activity-related fields
+      result_json["gammasPerBq"] = gammas_per_bq;
+      result_json["branchRatio"] = branch_ratio;
+      
+      if( has_shielding )
+        result_json["shieldingTransmission"] = shield_transmission;
+      
+      if( distance > 0.0 && !fixed_geom )
+        result_json["airTransmission"] = air_transmission;
+      
+      if( drf )
+      {
+        result_json["detectorIntrinsicEfficiency"] = drf->intrinsicEfficiency(energy_float);
+        
+        if( distance >= 0.0 && !fixed_geom )
+        {
+          const double geom_eff = DetectorPeakResponse::fractionalSolidAngle( drf->detectorDiameter(), distance );
+          result_json["solidAngleFraction"] = geom_eff;
+        }
+      }
+      
+      // Convert counts to activity
+      if( result.source_counts > result.decision_threshold )
+      {
+        // Signal detected - provide observed activity and range
+        const double nominal_act = result.source_counts / gammas_per_bq;
+        result_json["observedActivity"] = nominal_act;
+        
+        const double lower_act = result.lower_limit / gammas_per_bq;
+        const double upper_act = result.upper_limit / gammas_per_bq;
+        result_json["activityRange"] = json{{"lower", lower_act}, {"upper", upper_act}};
+      }
+      else if( result.upper_limit >= 0.0 )
+      {
+        // No signal detected - provide upper bound
+        const double simple_mda = result.upper_limit / gammas_per_bq;
+        result_json["activityUpperBound"] = simple_mda;
+      }
+      
+      // Always provide decision threshold and detection limit in activity
+      const double decision_threshold_act = result.decision_threshold / gammas_per_bq;
+      result_json["decisionThresholdActivity"] = decision_threshold_act;
+      
+      const double detection_limit_act = result.detection_limit / gammas_per_bq;
+      result_json["detectionLimitActivity"] = detection_limit_act;
+    }
+  }
+
   return result_json;
 }//nlohmann::json executeCurrieMdaCalc(const nlohmann::json& params, InterSpec* interspec)
+
+
+nlohmann::json ToolRegistry::executeCalculateDose(const nlohmann::json& params, InterSpec* interspec)
+{
+  using namespace PhysicalUnits;
+
+  // 1. Validate InterSpec instance
+  if( !interspec )
+    throw runtime_error( "No InterSpec session available." );
+
+  // 2. Parse required parameters
+  const string nuclide_str = params.at( "nuclide" ).get<string>();
+  const string distance_str = params.at( "distance" ).get<string>();
+  const string activity_str = params.at( "activity" ).get<string>();
+
+  // 3. Parse distance and activity
+  const double distance = stringToDistance( distance_str );
+  const double activity = stringToActivity( activity_str );
+
+  // 4. Get nuclide from database
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  if( !db )
+    throw runtime_error( "Nuclide database not available." );
+
+  const SandiaDecay::Nuclide * const nuc = db->nuclide( nuclide_str );
+  if( !nuc )
+    throw runtime_error( "Unknown nuclide: " + nuclide_str );
+
+  // 5. Parse optional age parameter (use default if not provided)
+  double age;
+  if( !params.contains("age") )
+  {
+    age = PeakDef::defaultDecayTime( nuc );
+  }else if( params.contains( "age" ) )
+  { 
+    if( !params["age"].is_string() )
+      throw runtime_error( "the `age` parameter must be a string." );
+    
+    const string age_str = params["age"].get<string>();
+    try
+    {
+      age = stringToTimeDuration( age_str );
+    }catch( std::runtime_error & )
+    {
+      throw runtime_error( "Can not interpret age string ('" + age_str + "') as a time duration." );
+    }
+  }
+
+  // 6. Create nuclide mixture at specified age
+  SandiaDecay::NuclideMixture mix;
+  mix.addAgedNuclideByActivity( nuc, activity, age );
+
+  // 7. Extract photon energies and intensities
+  vector<float> energies, intensities;
+  for( const auto &i : mix.photons(0) )
+  {
+    energies.push_back( i.energy );
+    intensities.push_back( i.numPerSecond );
+  }
+
+  // 8. Parse shielding (if provided)
+  float areal_density = 0.0f;
+  float atomic_number = 26.0f; // iron (doesn't matter when AD=0)
+
+  // Check if material-based shielding is provided
+  if( params.contains( "material" ) && !params["material"].is_null() )
+  {
+    const string material_name = params["material"].get<string>();
+
+    // Get material from database
+    MaterialDB * const materialDB = interspec->materialDataBase();
+    const Material * const mat = materialDB->material( material_name );
+    if( !mat )
+      throw runtime_error( "Unknown material: " + material_name );
+
+    atomic_number = static_cast<float>( mat->massWeightedAtomicNumber() );
+
+    // Check if arealDensity is specified (alternative to thickness)
+    if( params.contains( "arealDensity" ) && !params["arealDensity"].is_null() )
+    {
+      areal_density = static_cast<float>( get_number( params, "arealDensity" ) );
+      areal_density *= static_cast<float>( gram / cm2 );
+    }
+    else if( params.contains( "thickness" ) && !params["thickness"].is_null() )
+    {
+      // Parse thickness and compute areal density
+      const string thickness_str = params["thickness"].get<string>();
+      const double thickness = stringToDistance( thickness_str );
+      const double density = mat->density; // in PhysicalUnits (g/cm³)
+      areal_density = static_cast<float>( thickness * density );
+    }
+    else
+    {
+      throw runtime_error( "When material is specified, either thickness or arealDensity must be provided" );
+    }
+  }
+  // Check if direct areal density/atomic number is provided
+  else if( params.contains( "arealDensity" ) && !params["arealDensity"].is_null() )
+  {
+    areal_density = static_cast<float>( get_number( params, "arealDensity" ) );
+    areal_density *= static_cast<float>( gram / cm2 );
+    atomic_number = static_cast<float>( get_number( params, "atomicNumber" ) );
+  }
+
+  // 9. Get scatter table (using helper function)
+  shared_ptr<const GadrasScatterTable> scatter = getDoseCalcScatterTable();
+  if( !scatter )
+    throw runtime_error( "Failed to load scatter table for dose calculations." );
+
+  // 10. Calculate dose
+  const double dose = DoseCalc::gamma_dose_with_shielding(
+    energies, intensities, areal_density, atomic_number, static_cast<float>(distance), *scatter );
+
+  // 11. Format results
+  const string sv_hr = printToBestEquivalentDoseRateUnits( dose, 5, true );
+  const string rem_hr = printToBestEquivalentDoseRateUnits( dose, 5, false );
+
+  // 12. Return JSON
+  json result;
+  result["success"] = true;
+  result["dose_rate_Sv_per_hr"] = (dose / (sievert/hour));
+  result["dose_rate_si_str"] = sv_hr;
+  result["dose_rate_REM_per_hr"] = (dose / (rem/hour));
+  result["dose_rate_REM_str"] = rem_hr;
+  result["nuclide"] = nuclide_str;
+  result["distance"] = distance_str;
+  result["activity"] = activity_str;
+  result["age"] = printToBestTimeUnits( age, 4 );
+
+  if( areal_density > 0.0f )
+  {
+    const double ad_g_cm2 = areal_density * cm2 / gram;
+    result["shielding"] = json::object();
+    result["shielding"]["arealDensity_g_cm2"] = ad_g_cm2;
+    result["shielding"]["atomicNumber"] = atomic_number;
+  }
+
+  return result;
+}//nlohmann::json executeCalculateDose(const nlohmann::json& params, InterSpec* interspec)
 
 
 /** Returns a list of energy/intensity pairs associated with a nuclide, elemental fluorescence x-ray, or reaction.
@@ -2566,7 +3284,7 @@ nlohmann::json ToolRegistry::executeGetMaterialInfo( const nlohmann::json& param
   
   
   /* Cooresponds to the "photopeak_detection_efficiency" callback, whose description is:
-    "Given an array of source photon energies, returns the fraction of photons that will contribute to a peak in data. The returned answer will include the attenuation factor of shielding (if specified), the fraction of photons making it to the detector (if distance is specified), the detection probability of photons that are incident upon the detector (i.e., the intrinsic detection efficiency) if a detector efficiency function is loaded (use 'detector_efficiency_function_info' tool call with no arguments to see if a detector efficiency function is loaded, and 'avaiable_detector_efficiency_functions' and 'load_detector_efficiency_function' to load an efficiency function), and gives total detection probability.",
+    "Given an array of source photon energies, returns the fraction of photons that will contribute to a peak in data. The returned answer will include the attenuation factor of shielding (if specified), the fraction of photons making it to the detector (if distance is specified), the detection probability of photons that are incident upon the detector (i.e., the intrinsic detection efficiency) if a detector efficiency function is loaded (use 'detector_efficiency_function_info' tool call with no arguments to see if a detector efficiency function is loaded, and 'available_detector_efficiency_functions' and 'load_detector_efficiency_function' to load an efficiency function), and gives total detection probability.",
 
    And paramaters accepted is:
    ```
@@ -2684,10 +3402,14 @@ nlohmann::json ToolRegistry::executePhotopeakDetectionCalc(nlohmann::json params
   bool has_distance = false;
   if( params.contains("Distance") && params["Distance"].is_string() )
   {
-    const string distance_str = params["Distance"].get<string>();
-    distance = PhysicalUnits::stringToDistance( distance_str );
-    has_distance = true;
-  }
+    string distance_str = params["Distance"].get<string>();
+    SpecUtils::trim( distance_str );
+    if( !distance_str.empty() )
+    {
+      distance = PhysicalUnits::stringToDistance( distance_str );
+      has_distance = true;
+    }//if( !distance_str.empty() )
+  }//if( params.contains("Distance") && params["Distance"].is_string() )
 
   // Parse IncludeAirAttenuation (optional, default false)
   const bool include_air = get_boolean( params, "IncludeAirAttenuation", false );
@@ -2880,7 +3602,7 @@ nlohmann::json ToolRegistry::executePhotopeakDetectionCalc(nlohmann::json params
 }//nlohmann::json executePhotopeakDetectionCalc(const nlohmann::json& params, InterSpec* interspec)
   
 
-  /** cooresponds to the `avaiable_detector_efficiency_functions` tool call, which has the description:
+  /** cooresponds to the `available_detector_efficiency_functions` tool call, which has the description:
    "Returns a list of detector efficiency function names, and the detector efficiency source, that can be loaded to the foreground spectrum."
  */
 nlohmann::json ToolRegistry::executeAvailableDetectors(const nlohmann::json& params, InterSpec* interspec)
@@ -3375,7 +4097,7 @@ std::shared_ptr<DetectorPeakResponse> ToolRegistry::findDetectorByIdentifier(
       "properties": {
         "identifier": {
           "type": "string",
-          "description": "The detector efficiency function identifier. Can be a name from avaiable_detector_efficiency_functions, a filesystem path to a detector file or GADRAS directory, or a URI. Required."
+          "description": "The detector efficiency function identifier. Can be a name from available_detector_efficiency_functions, a filesystem path to a detector file or GADRAS directory, or a URI. Required."
         },
         "detectorName": {
           "type": "string",
@@ -3925,6 +4647,98 @@ nlohmann::json ToolRegistry::executeSearchSourcesByEnergy(nlohmann::json params,
   return result;
 }//nlohmann::json executeSearchSourcesByEnergy(...)
 
+
+
+
+nlohmann::json ToolRegistry::executeSetWorkflowState(
+  const nlohmann::json& params,
+  InterSpec* interspec )
+{
+  using namespace std;
+
+  if( !interspec )
+    throw runtime_error( "InterSpec instance required for set_workflow_state" );
+
+  // Get parameters
+  const string new_state = params.value( "state", string() );
+  const string notes = params.value( "notes", string() );
+
+  if( new_state.empty() )
+    throw runtime_error( "state parameter is required" );
+
+  json result;
+  result["success"] = true;
+  result["new_state"] = new_state;
+
+  if( !notes.empty() )
+    result["notes"] = notes;
+
+  // Get current LLM interface and conversation
+  LlmToolGui *llm_gui = interspec->currentLlmTool();
+  if( !llm_gui )
+  {
+    result["warning"] = "No active LLM interface - state tracking not available";
+    return result;
+  }
+
+  LlmInterface *interface = llm_gui->llmInterface();
+  if( !interface )
+  {
+    result["warning"] = "No LLM interface found - state tracking not available";
+    return result;
+  }
+
+  shared_ptr<LlmInteraction> conversation = interface->getCurrentConversation();
+  if( !conversation )
+  {
+    result["warning"] = "No active conversation - state tracking not available";
+    return result;
+  }
+
+  // Check if conversation has a state machine
+  if( !conversation->state_machine )
+  {
+    result["note"] = "Agent does not have a state machine defined";
+    return result;
+  }
+
+  AgentStateMachine *sm = conversation->state_machine.get();
+  result["previous_state"] = sm->getCurrentState();
+
+  // Check if state exists
+  if( !sm->hasState(new_state) )
+  {
+    result["success"] = false;
+    result["error"] = "Unknown state: " + new_state;
+    return result;
+  }
+
+  // Check if transition is valid (soft enforcement)
+  if( !sm->canTransitionTo(new_state) )
+  {
+    result["warning"] = "Unexpected state transition";
+    result["expected_transitions"] = sm->getAllowedTransitions();
+    result["reason"] = "Transition from " + sm->getCurrentState() +
+                       " to " + new_state + " not in allowed transitions";
+    // Continue anyway - soft enforcement
+  }
+
+  // Perform transition
+  sm->transitionTo(new_state);
+
+  // Provide guidance for new state
+  const AgentStateMachine::StateDefinition& state_def = sm->getStateDefinition(new_state);
+  result["guidance"] = state_def.prompt_guidance;
+  result["description"] = state_def.description;
+  result["allowed_next_states"] = state_def.allowed_transitions;
+
+  if( !state_def.required_tools.empty() )
+    result["required_tools"] = state_def.required_tools;
+
+  result["is_final_state"] = state_def.is_final;
+
+  return result;
+}
 
 } // namespace LlmTools
 

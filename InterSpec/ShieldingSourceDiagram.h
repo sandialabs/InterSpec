@@ -51,7 +51,7 @@ public:
   // Static factory method to create a dialog with 2D/3D view switcher
   static ShieldingDiagramDialog *createShieldingDiagram(
                                      const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
-                                     const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &sources,
+                                     const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
                                      GammaInteractionCalc::GeometryType geometry,
                                      double detectorDistance,
                                      double detectorDiameter
@@ -62,7 +62,7 @@ public:
   
   // Update the data for both views
   void updateData( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
-                   const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &sources,
+                   const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
                    GammaInteractionCalc::GeometryType geometry,
                    double detectorDistance,
                    double detectorDiameter );
@@ -71,7 +71,7 @@ private:
   // Private constructor - use createShieldingDiagram() instead
   ShieldingDiagramDialog(
                          const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
-                         const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &sources,
+                         const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
                          GammaInteractionCalc::GeometryType geometry,
                          double detectorDistance,
                          double detectorDiameter
@@ -85,7 +85,7 @@ private:
   Wt::WGridLayout *m_layout;
   
   std::vector<ShieldingSourceFitCalc::ShieldingInfo> m_shieldings;
-  std::vector<ShieldingSourceFitCalc::IsoFitStruct> m_sources;
+  std::vector<ShieldingSourceFitCalc::SourceFitDef> m_sources;
   GammaInteractionCalc::GeometryType m_geometry;
   double m_detectorDistance;
   double m_detectorDiameter;
@@ -94,7 +94,7 @@ private:
 // Create JSON representation of shielding data
 std::string createShieldingDiagramJson(
                                        const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
-                                       const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &sources,
+                                       const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
                                        GammaInteractionCalc::GeometryType geometry,
                                        double detectorDistance,
                                        double detectorDiameter
@@ -104,7 +104,7 @@ class Shielding2DView : public Wt::WContainerWidget
 {
 public:
   Shielding2DView( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
-                   const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &sources,
+                   const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
                    GammaInteractionCalc::GeometryType geometry,
                    double detectorDistance,
                    double detectorDiameter,
@@ -112,7 +112,7 @@ public:
   
   // Update the data and refresh the display
   void updateData( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
-                   const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &sources,
+                   const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
                    GammaInteractionCalc::GeometryType geometry,
                    double detectorDistance,
                    double detectorDiameter );
@@ -122,7 +122,7 @@ private:
   std::string createJsonData() const;
 
   std::vector<ShieldingSourceFitCalc::ShieldingInfo> m_shieldings;
-  std::vector<ShieldingSourceFitCalc::IsoFitStruct> m_sources;
+  std::vector<ShieldingSourceFitCalc::SourceFitDef> m_sources;
   GammaInteractionCalc::GeometryType m_geometry;
   double m_detectorDistance;
   double m_detectorDiameter;
@@ -133,7 +133,7 @@ class Shielding3DView : public Wt::WContainerWidget
 {
 public:
   Shielding3DView( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
-                   const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &sources,
+                   const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
                    GammaInteractionCalc::GeometryType geometry,
                    double detectorDistance,
                    double detectorDiameter,
@@ -141,7 +141,7 @@ public:
   
   // Update the data and refresh the display
   void updateData( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
-                   const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &sources,
+                   const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
                    GammaInteractionCalc::GeometryType geometry,
                    double detectorDistance,
                    double detectorDiameter );
@@ -151,7 +151,7 @@ private:
   std::string createJsonData() const;
 
   std::vector<ShieldingSourceFitCalc::ShieldingInfo> m_shieldings;
-  std::vector<ShieldingSourceFitCalc::IsoFitStruct> m_sources;
+  std::vector<ShieldingSourceFitCalc::SourceFitDef> m_sources;
   GammaInteractionCalc::GeometryType m_geometry;
   double m_detectorDistance;
   double m_detectorDiameter;

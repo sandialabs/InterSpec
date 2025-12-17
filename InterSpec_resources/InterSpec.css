@@ -467,6 +467,13 @@ padding-left:10px;
   border-top: none;
 }
 
+.WelcomeControlsTabContents
+{
+  padding: 5px;
+  padding-top: 10px;
+  overflow: auto;
+}
+
 /* .SideMenu holds all the size information for the elements, while .VerticalNavMenu holds the styling
  (color, hover, etc).
 */

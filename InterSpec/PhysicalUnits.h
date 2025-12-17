@@ -167,6 +167,11 @@ namespace PhysicalUnits
                                         int maxNpostDecimal = 2,
                                         bool useCuries = true, //or else use becquerel
                                         double bq_definition = becquerel );
+  std::string printToBestActivityUnitsWithUncert( double activity,
+                                                 double uncert,
+                                       int maxNpostDecimal = 2,
+                                       bool useCuries = true, //or else use becquerel
+                                       double bq_definition = becquerel );
   std::string printToBestTimeUnits( double time,
                                     int maxNpostDecimal = 2,
                                     double second_definition = second );

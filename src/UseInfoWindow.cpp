@@ -568,10 +568,8 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
         if( !desc_id.isNull() )
           m_resourceBundle.resolveKey( desc_id, descstr );
         
-        WContainerWidget* samplesContainer = new WContainerWidget();
-        samplesContainer->setOffsets(15,Wt::Top);
-        samplesContainer->setMargin(15,Wt::Top);
-        samplesContainer->setOverflow(WContainerWidget::OverflowAuto);
+        WContainerWidget *samplesContainer = new WContainerWidget();
+        samplesContainer->addStyleClass("WelcomeControlsTabContents");
         
         if( !imagestr.empty() )
         {

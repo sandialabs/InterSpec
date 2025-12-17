@@ -26,6 +26,7 @@
 #include <memory>
 #include <vector>
 #include <cstdlib>
+#include <limits>
 #include <sstream>
 #include <iostream>
 
@@ -110,6 +111,345 @@
 
 using namespace Wt;
 using namespace std;
+
+ShieldingSourceDisplay::ShieldingSourceDisplayState::ShieldingSourceDisplayState()
+  : versionMajor( ShieldingSourceDisplay::sm_xmlSerializationMajorVersion ),
+    versionMinor( ShieldingSourceDisplay::sm_xmlSerializationMinorVersion ),
+    showChiOnChart( true ),
+    config(),
+    peaks(),
+    chi2Elements()
+{
+}
+
+
+bool ShieldingSourceDisplay::ShieldingSourceDisplayState::Peak::operator==( const Peak &rhs ) const
+{
+  return (use == rhs.use)
+         && (nuclideSymbol == rhs.nuclideSymbol)
+         && (fabs(energy - rhs.energy) < 0.01);  // Compare energies within 0.01 keV
+}
+
+
+bool ShieldingSourceDisplay::ShieldingSourceDisplayState::Chi2EvalPoint::operator==( const Chi2EvalPoint &rhs ) const
+{
+  return (fabs(energy - rhs.energy) < 0.01)
+         && (fabs(chi - rhs.chi) < 1.0e-6)
+         && (fabs(scale - rhs.scale) < 1.0e-6)
+         && (colorCss == rhs.colorCss)
+         && (fabs(scaleUncert - rhs.scaleUncert) < 1.0e-6);
+}
+
+
+bool ShieldingSourceDisplay::ShieldingSourceDisplayState::Chi2Elements::operator==( const Chi2Elements &rhs ) const
+{
+  return (fabs(chi2 - rhs.chi2) < 1.0e-6)
+         && (numParametersFit == rhs.numParametersFit)
+         && (evalPoints == rhs.evalPoints);
+}
+
+
+bool ShieldingSourceDisplay::ShieldingSourceDisplayState::operator==( const ShieldingSourceDisplayState &rhs ) const
+{
+  // Compare simple members
+  if( versionMajor != rhs.versionMajor )
+    return false;
+
+  if( versionMinor != rhs.versionMinor )
+    return false;
+
+  if( showChiOnChart != rhs.showChiOnChart )
+    return false;
+
+  // Compare config - for now just compare pointers since we don't have operator== for ShieldSourceConfig
+  // This means two states are only equal if they share the same config object
+  if( config != rhs.config )
+    return false;
+
+  // Compare peaks vector
+  if( peaks != rhs.peaks )
+    return false;
+
+  // Compare chi2Elements optional
+  if( chi2Elements.has_value() != rhs.chi2Elements.has_value() )
+    return false;
+
+  if( chi2Elements.has_value() && !(chi2Elements.value() == rhs.chi2Elements.value()) )
+    return false;
+
+  return true;
+}
+
+
+rapidxml::xml_node<char> *ShieldingSourceDisplay::ShieldingSourceDisplayState::serialize( rapidxml::xml_node<char> *parent_node ) const
+{
+  if( !parent_node )
+    throw runtime_error( "ShieldingSourceDisplayState::serialize: invalid parent node" );
+  
+  rapidxml::xml_document<char> *doc = parent_node->document();
+  if( !doc )
+    throw runtime_error( "ShieldingSourceDisplayState::serialize: parent node missing document" );
+  
+  rapidxml::xml_node<char> *base_node = doc->allocate_node( rapidxml::node_element, "ShieldingSourceFit" );
+  parent_node->append_node( base_node );
+  
+  const std::string version_str = std::to_string( versionMajor ) + "." + std::to_string( versionMinor );
+  char *version_value = doc->allocate_string( version_str.c_str() );
+  rapidxml::xml_attribute<char> *version_attr = doc->allocate_attribute( "version", version_value );
+  base_node->append_attribute( version_attr );
+  
+  assert( config );
+  if( config )
+    config->serialize( base_node );
+  
+  rapidxml::xml_node<char> *distance_node = base_node->first_node( "Distance", 8 );
+  const char *show_name = "ShowChiOnChart";
+  const std::string show_str = showChiOnChart ? "1" : "0";
+  char *show_value = doc->allocate_string( show_str.c_str() );
+  rapidxml::xml_node<char> *show_node = doc->allocate_node( rapidxml::node_element, show_name, show_value );
+  if( distance_node )
+    base_node->insert_node( distance_node, show_node );
+  else
+    base_node->append_node( show_node );
+  
+  rapidxml::xml_node<char> *peaks_node = doc->allocate_node( rapidxml::node_element, "Peaks" );
+  base_node->append_node( peaks_node );
+  for( const Peak &peak : peaks )
+  {
+    rapidxml::xml_node<char> *peak_node = doc->allocate_node( rapidxml::node_element, "Peak" );
+    peaks_node->append_node( peak_node );
+    
+    const std::string use_str = peak.use ? "1" : "0";
+    char *use_value = doc->allocate_string( use_str.c_str() );
+    rapidxml::xml_attribute<char> *use_attr = doc->allocate_attribute( "Use", use_value );
+    peak_node->append_attribute( use_attr );
+    
+    const std::string symbol = peak.nuclideSymbol;
+    char *symbol_value = doc->allocate_string( symbol.c_str() );
+    rapidxml::xml_node<char> *nuc_node = doc->allocate_node( rapidxml::node_element, "Nuclide", symbol_value );
+    peak_node->append_node( nuc_node );
+    
+    const std::string energy_str = std::to_string( peak.energy );
+    char *energy_value = doc->allocate_string( energy_str.c_str() );
+    rapidxml::xml_node<char> *energy_node = doc->allocate_node( rapidxml::node_element, "Energy", energy_value );
+    peak_node->append_node( energy_node );
+  }
+  
+  if( chi2Elements )
+  {
+    rapidxml::xml_node<char> *chi2_node = doc->allocate_node( rapidxml::node_element, "Chi2Elements" );
+    base_node->append_node( chi2_node );
+    
+    const std::string chi2_str = std::to_string( chi2Elements->chi2 );
+    char *chi2_value = doc->allocate_string( chi2_str.c_str() );
+    rapidxml::xml_node<char> *chi2_val_node = doc->allocate_node( rapidxml::node_element, "Chi2", chi2_value );
+    chi2_node->append_node( chi2_val_node );
+    
+    const std::string num_param_str = std::to_string( chi2Elements->numParametersFit );
+    char *num_param_value = doc->allocate_string( num_param_str.c_str() );
+    rapidxml::xml_node<char> *num_param_node = doc->allocate_node( rapidxml::node_element, "NumParamFit", num_param_value );
+    chi2_node->append_node( num_param_node );
+    
+    rapidxml::xml_node<char> *eval_node = doc->allocate_node( rapidxml::node_element, "EvaluatedEnergies" );
+    chi2_node->append_node( eval_node );
+    
+    for( const Chi2EvalPoint &point : chi2Elements->evalPoints )
+    {
+      rapidxml::xml_node<char> *point_node = doc->allocate_node( rapidxml::node_element, "EvalPoint" );
+      eval_node->append_node( point_node );
+      
+      const std::string energy_str = std::to_string( point.energy );
+      char *energy_value = doc->allocate_string( energy_str.c_str() );
+      rapidxml::xml_node<char> *energy_node = doc->allocate_node( rapidxml::node_element, "Energy", energy_value );
+      point_node->append_node( energy_node );
+      
+      const std::string chi_str = std::to_string( point.chi );
+      char *chi_value = doc->allocate_string( chi_str.c_str() );
+      rapidxml::xml_node<char> *chi_node = doc->allocate_node( rapidxml::node_element, "Chi", chi_value );
+      point_node->append_node( chi_node );
+      
+      const std::string scale_str = std::to_string( point.scale );
+      char *scale_value = doc->allocate_string( scale_str.c_str() );
+      rapidxml::xml_node<char> *scale_node = doc->allocate_node( rapidxml::node_element, "Scale", scale_value );
+      point_node->append_node( scale_node );
+      
+      char *color_value = doc->allocate_string( point.colorCss.c_str() );
+      rapidxml::xml_node<char> *color_node = doc->allocate_node( rapidxml::node_element, "Color", color_value );
+      point_node->append_node( color_node );
+      
+      const std::string scale_uncert_str = std::to_string( point.scaleUncert );
+      char *scale_uncert_value = doc->allocate_string( scale_uncert_str.c_str() );
+      rapidxml::xml_node<char> *scale_uncert_node = doc->allocate_node( rapidxml::node_element, "ScaleUncert", scale_uncert_value );
+      point_node->append_node( scale_uncert_node );
+    }
+  }
+  
+  return base_node;
+}
+
+
+void ShieldingSourceDisplay::ShieldingSourceDisplayState::deSerialize( const rapidxml::xml_node<char> *base_node,
+                                                                       MaterialDB *materialDb )
+{
+  if( !base_node )
+    throw runtime_error( "No ShieldingSourceFit node" );
+  
+  if( !rapidxml::internal::compare( base_node->name(), base_node->name_size(), "ShieldingSourceFit", 18, true ) )
+    throw runtime_error( "ShieldingSourceDisplay::deSerialize: invalid node name passed in: '"
+                        + std::string( base_node->name(), base_node->name() + base_node->name_size() ) + "'" );
+  
+  const rapidxml::xml_attribute<char> *attr = base_node->first_attribute( "version", 7 );
+  if( !attr || !attr->value() )
+    throw runtime_error( "Deserializing requires a version" );
+  
+  const std::string version_text( attr->value(), attr->value() + attr->value_size() );
+  size_t dot_pos = version_text.find( '.' );
+  try
+  {
+    if( dot_pos == std::string::npos )
+    {
+      versionMajor = std::stoi( version_text );
+      versionMinor = 0;
+    }else
+    {
+      versionMajor = std::stoi( version_text.substr( 0, dot_pos ) );
+      versionMinor = std::stoi( version_text.substr( dot_pos + 1 ) );
+    }
+  }catch( ... )
+  {
+    throw runtime_error( "Invalid version of ShieldingSourceDisplay XML" );
+  }
+  
+  if( versionMajor != ShieldingSourceDisplay::sm_xmlSerializationMajorVersion )
+    throw runtime_error( "Invalid version of ShieldingSourceDisplay XML" );
+  
+  showChiOnChart = true;
+  if( const rapidxml::xml_node<char> *chart_node = base_node->first_node( "ShowChiOnChart", 14 ) )
+  {
+    if( chart_node->value() )
+    {
+      std::stringstream ss;
+      ss.write( chart_node->value(), chart_node->value_size() );
+      bool temp = true;
+      if( !(ss >> temp) )
+        throw runtime_error( "Invalid ShowChiOnChart node" );
+      showChiOnChart = temp;
+    }
+  }
+  
+  
+  shared_ptr<GammaInteractionCalc::ShieldSourceConfig> config_ptr = make_shared<GammaInteractionCalc::ShieldSourceConfig>();
+  config_ptr->deSerialize( base_node, materialDb );
+  
+  config = config_ptr;
+  
+  peaks.clear();
+  if( const rapidxml::xml_node<char> *peaks_node = base_node->first_node( "Peaks", 5 ) )
+  {
+    for( const rapidxml::xml_node<char> *peak_node = peaks_node->first_node( "Peak", 4 );
+        peak_node; peak_node = peak_node->next_sibling( "Peak", 4 ) )
+    {
+      Peak peak;
+      peak.use = true;
+      if( const rapidxml::xml_attribute<char> *use_attr = peak_node->first_attribute( "Use", 3 ) )
+      {
+        if( use_attr->value() )
+        {
+          std::stringstream ss;
+          ss.write( use_attr->value(), use_attr->value_size() );
+          if( !(ss >> peak.use) )
+            throw runtime_error( "Invalid 'Use' attribute in Peak XML element" );
+        }
+      }
+      
+      const rapidxml::xml_node<char> *symbol_node = peak_node->first_node( "Nuclide", 7 );
+      const rapidxml::xml_node<char> *energy_node = peak_node->first_node( "Energy", 6 );
+      if( !symbol_node || !symbol_node->value()
+         || !energy_node || !energy_node->value() )
+        throw runtime_error( "Invalid or missing node for Peak XML element" );
+      
+      peak.nuclideSymbol.assign( symbol_node->value(), symbol_node->value() + symbol_node->value_size() );
+      std::stringstream energy_stream;
+      energy_stream.write( energy_node->value(), energy_node->value_size() );
+      if( !(energy_stream >> peak.energy) )
+        throw runtime_error( "Invalid Energy value in Peak XML element" );
+      
+      peaks.push_back( peak );
+    }
+  }
+  
+  chi2Elements.reset();
+  if( const rapidxml::xml_node<char> *chi2_node = base_node->first_node( "Chi2Elements", 12 ) )
+  {
+    Chi2Elements info;
+    
+    const rapidxml::xml_node<char> *chi2_value_node = chi2_node->first_node( "Chi2", 4 );
+    const rapidxml::xml_node<char> *num_param_node = chi2_node->first_node( "NumParamFit", 11 );
+    if( !chi2_value_node || !chi2_value_node->value()
+       || !num_param_node || !num_param_node->value() )
+      throw runtime_error( "Invalid Chi2Elements node" );
+    
+    std::stringstream chi2_stream;
+    chi2_stream.write( chi2_value_node->value(), chi2_value_node->value_size() );
+    if( !(chi2_stream >> info.chi2) )
+      throw runtime_error( "Invalid Chi2 value in Chi2Elements node" );
+    
+    std::stringstream num_param_stream;
+    num_param_stream.write( num_param_node->value(), num_param_node->value_size() );
+    if( !(num_param_stream >> info.numParametersFit) )
+      throw runtime_error( "Invalid NumParamFit value in Chi2Elements node" );
+    
+    info.evalPoints.clear();
+    if( const rapidxml::xml_node<char> *eval_node = chi2_node->first_node( "EvaluatedEnergies", 17 ) )
+    {
+      for( const rapidxml::xml_node<char> *point_node = eval_node->first_node( "EvalPoint", 9 );
+          point_node; point_node = point_node->next_sibling( "EvalPoint", 9 ) )
+      {
+        Chi2EvalPoint point{};
+        
+        const rapidxml::xml_node<char> *energy_node = point_node->first_node( "Energy", 6 );
+        const rapidxml::xml_node<char> *chi_node = point_node->first_node( "Chi", 3 );
+        const rapidxml::xml_node<char> *scale_node = point_node->first_node( "Scale", 5 );
+        const rapidxml::xml_node<char> *color_node = point_node->first_node( "Color", 5 );
+        const rapidxml::xml_node<char> *scale_uncert_node = point_node->first_node( "ScaleUncert", 11 );
+        
+        if( !energy_node || !energy_node->value()
+           || !chi_node || !chi_node->value()
+           || !scale_node || !scale_node->value()
+           || !scale_uncert_node || !scale_uncert_node->value() )
+          throw runtime_error( "Invalid EvalPoint entry in Chi2Elements node" );
+        
+        std::stringstream energy_stream;
+        energy_stream.write( energy_node->value(), energy_node->value_size() );
+        if( !(energy_stream >> point.energy) )
+          throw runtime_error( "Invalid energy in EvalPoint" );
+        
+        std::stringstream chi_stream;
+        chi_stream.write( chi_node->value(), chi_node->value_size() );
+        if( !(chi_stream >> point.chi) )
+          throw runtime_error( "Invalid chi value in EvalPoint" );
+        
+        std::stringstream scale_stream;
+        scale_stream.write( scale_node->value(), scale_node->value_size() );
+        if( !(scale_stream >> point.scale) )
+          throw runtime_error( "Invalid scale value in EvalPoint" );
+        
+        point.colorCss.clear();
+        if( color_node && color_node->value() )
+          point.colorCss.assign( color_node->value(), color_node->value() + color_node->value_size() );
+        
+        std::stringstream scale_uncert_stream;
+        scale_uncert_stream.write( scale_uncert_node->value(), scale_uncert_node->value_size() );
+        if( !(scale_uncert_stream >> point.scaleUncert) )
+          throw runtime_error( "Invalid ScaleUncert value in EvalPoint" );
+        
+        info.evalPoints.push_back( point );
+      }
+    }
+    
+    chi2Elements = std::move( info );
+  }
+}
 
 
 #if( ANDROID )
@@ -222,7 +562,7 @@ namespace
   {
     ShieldingSourceDisplay *m_display;
     string m_description;
-    shared_ptr<const string> m_pre_doc;
+    shared_ptr<const ShieldingSourceDisplay::ShieldingSourceDisplayState> m_pre_state;
     
     // Make sure we dont insert multiple undo/redo steps, so using a BlockUndoRedoInserts.
     unique_ptr<UndoRedoManager::BlockUndoRedoInserts> m_block;
@@ -230,16 +570,24 @@ namespace
     ShieldSourceChange( ShieldingSourceDisplay *display, const string &descrip )
       : m_display( display ),
         m_description( descrip ),
-        m_pre_doc( nullptr ),
+        m_pre_state( nullptr ),
         m_block( nullptr )
     {
       UndoRedoManager *undoRedo = UndoRedoManager::instance();
       if( undoRedo && undoRedo->canAddUndoRedoNow() )
       {
         m_block = make_unique<UndoRedoManager::BlockUndoRedoInserts>();
-        shared_ptr<string> doc_xml = make_shared<string>();
-        doSerialization( *doc_xml );
-        m_pre_doc = doc_xml;
+        
+        try
+        {
+          ShieldingSourceDisplay::ShieldingSourceDisplayState state = m_display->serialize();
+          m_pre_state = make_shared<ShieldingSourceDisplay::ShieldingSourceDisplayState>( std::move(state) );
+        }catch( std::exception &e )
+        {
+          passMessage( "Error adding undo step for " + m_description + ": "
+                      + string(e.what()), WarningWidget::WarningMsgHigh );
+          m_pre_state.reset(); //JIC
+        }
       }
     }//ShieldSourceChange
     
@@ -261,33 +609,28 @@ namespace
     
     
     static void doDeSerialization( ShieldingSourceDisplay *display,
-                                   const shared_ptr<const string> xml_doc )
+                                   const shared_ptr<const ShieldingSourceDisplay::ShieldingSourceDisplayState> state )
     {
-      if( !display || !xml_doc || xml_doc->empty() )
+      if( !display || !state )
         throw logic_error( "Error with input logic" );
       
       display->cancelModelFitWithNoUpdate();
       
-      rapidxml::xml_document<char> new_doc;
-      const int flags = rapidxml::parse_normalize_whitespace | rapidxml::parse_trim_whitespace;
-      string pre_doc_cpy = *xml_doc;
-      new_doc.parse<flags>( &(pre_doc_cpy[0]) );
-      display->deSerialize( new_doc.first_node() );
+      display->deSerialize( *state, ShieldingSourceDisplay::DeserializeOptions::UpdatePeaksUseForFittingFromState );
     }//static void doDeSerialization( ShieldingSourceDisplay *display, const shared_ptr<const string> xml_doc )
     
     
     ~ShieldSourceChange()
     {
       UndoRedoManager *undoRedo = UndoRedoManager::instance();
-      if( !m_display || !m_pre_doc || m_pre_doc->empty() || !undoRedo )
+      if( !m_display || !m_pre_state || !undoRedo )
         return;
       
-      shared_ptr<string> post_doc_xml = make_shared<string>();
+      shared_ptr<const ShieldingSourceDisplay::ShieldingSourceDisplayState> post_state;
       try
       {
-        rapidxml::xml_document<char> doc;
-        m_display->serialize( &doc );
-        rapidxml::print( std::back_inserter(*post_doc_xml), doc, rapidxml::print_no_indenting );
+        ShieldingSourceDisplay::ShieldingSourceDisplayState state = m_display->serialize();
+        post_state = make_shared<ShieldingSourceDisplay::ShieldingSourceDisplayState>( std::move(state) );
       }catch( std::exception &e )
       {
         passMessage( "Error adding undo/redo step for " + m_description + ": "
@@ -296,10 +639,9 @@ namespace
       }
       
       const string descrip = std::move( m_description );
-      const shared_ptr<const string> post_doc = post_doc_xml;
-      const shared_ptr<const string> pre_doc = m_pre_doc;
+      const shared_ptr<const ShieldingSourceDisplay::ShieldingSourceDisplayState> pre_state = m_pre_state;
       
-      if( (*post_doc) == (*pre_doc) )
+      if( (*pre_state) == (*post_state) )
       {
         Wt::log("debug") << "ShieldSourceChange: no changes found; not inserting undo/redo step";
         return;
@@ -312,14 +654,14 @@ namespace
       //     << (m_description.size() + pre_doc->size() + post_doc->size())
       //     << " bytes of memory" << endl;
       
-      auto undo = [pre_doc, descrip](){
+      auto undo = [pre_state, descrip](){
         ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
-        if( !display || !pre_doc || pre_doc->empty() )
+        if( !display || !pre_state )
           return;
         
         try
         {
-          doDeSerialization( display, pre_doc );
+          doDeSerialization( display, pre_state );
         }catch( std::exception &e )
         {
           passMessage( "Error undoing " + descrip + ": " + string(e.what()),
@@ -327,14 +669,14 @@ namespace
         }
       };
       
-      auto redo = [post_doc, descrip](){
+      auto redo = [post_state, descrip](){
         ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
-        if( !display || !post_doc || post_doc->empty() )
+        if( !display || !post_state )
           return;
         
         try
         {
-          doDeSerialization( display, post_doc );
+          doDeSerialization( display, post_state );
         }catch( std::exception &e )
         {
           passMessage( "Error redoing" + descrip + ": " + string(e.what()),
@@ -347,7 +689,7 @@ namespace
     
     ShieldSourceChange( const ShieldSourceChange & ) = delete; // non construction-copyable
     ShieldSourceChange &operator=( const ShieldSourceChange & ) = delete; // non copyable
-  };//struct PeakModelChange
+  };//struct ShieldSourceChange
 }//namespace
 
 
@@ -410,43 +752,37 @@ void SourceFitModel::displayUnitsChanged( bool useBq )
 }//void SourceFitModel::displayUnitsChanged( boost::any value )
 
 
-const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &SourceFitModel::underlyingData() const
+const std::vector<ShieldingSourceFitCalc::SourceFitDef> &SourceFitModel::underlyingData() const
 {
   return m_nuclides;
 }
 
 
-void SourceFitModel::setUnderlyingData( const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &input_data )
+void SourceFitModel::setUnderlyingData( const std::vector<ShieldingSourceFitCalc::SourceFitDef> &input_data )
 {
   auto blocker = make_shared<UndoRedoManager::BlockUndoRedoInserts>();
   
-  const vector<ShieldingSourceFitCalc::IsoFitStruct> orig_rows = m_nuclides;
+  const vector<ShieldingSourceFitCalc::SourceFitDef> orig_rows = m_nuclides;
   
-  vector<ShieldingSourceFitCalc::IsoFitStruct> data;
+  vector<ShieldingSourceFitCalc::SourceFitDef> data;
   shared_ptr<const deque<PeakModel::PeakShrdPtr>> peaks = m_peakModel->peaks();
   const size_t npeaks = peaks ? peaks->size() : size_t(0);
-  for( ShieldingSourceFitCalc::IsoFitStruct in : input_data )
+  for( ShieldingSourceFitCalc::SourceFitDef in : input_data )
   {
     bool hasNuc = false;
-    set<const SandiaDecay::Nuclide *> progeny;
     for( size_t i = 0; i < npeaks; ++i )
     {
       const auto &p = (*peaks)[i];
       if( p->useForShieldingSourceFit() && (in.nuclide == p->parentNuclide()) )
       {
         hasNuc = true;
-        const SandiaDecay::Transition * const trans = p->nuclearTransition();
-        if( trans && trans->parent )
-          progeny.insert( trans->parent );
-      }//
+        break;
+      }
     }//for( size_t i = 0; i < npeaks; ++i )
     
     if( hasNuc )
-    {
-      in.numProgenyPeaksSelected = progeny.size();
       data.push_back( in );
-    }
-  }//for( const ShieldingSourceFitCalc::IsoFitStruct &in : input_data )
+  }//for( const ShieldingSourceFitCalc::SourceFitDef &in : input_data )
   
   std::sort( begin(data), end(data),
              boost::bind( &SourceFitModel::compare, boost::placeholders::_1,
@@ -505,7 +841,7 @@ void SourceFitModel::setUnderlyingData( const std::vector<ShieldingSourceFitCalc
     
     undoRedo->addUndoRedoStep( undo, redo, "Update Shielding/Source nuclide info" );
   }//if( undoRedo && !undoRedo->isInUndoOrRedo() )
-}//void setUnderlyingData( std::vector<ShieldingSourceFitCalc::IsoFitStruct> &data )
+}//void setUnderlyingData( std::vector<ShieldingSourceFitCalc::SourceFitDef> &data )
 
 
 void SourceFitModel::setDetectorType( const DetectorPeakResponse::EffGeometryType det_type )
@@ -540,7 +876,7 @@ void SourceFitModel::setDetectorType( const DetectorPeakResponse::EffGeometryTyp
       case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
       case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
       {
-        for( const ShieldingSourceFitCalc::IsoFitStruct &iso : m_nuclides )
+        for( const ShieldingSourceFitCalc::SourceFitDef &iso : m_nuclides )
         {
           switch( iso.sourceType )
           {
@@ -614,7 +950,7 @@ double SourceFitModel::activityUncert( int nuc ) const
 {
   if( nuc<0 || nuc>=static_cast<int>(m_nuclides.size()) )
     throw std::runtime_error( "SourceFitModel: called with invalid index" );
-  return m_nuclides[nuc].activityUncertainty;
+  return m_nuclides[nuc].activityUncertainty.value_or(-1.0);
 }//double activityUncert( int nuc ) const
 
 
@@ -650,7 +986,7 @@ double SourceFitModel::ageUncert( int nuc ) const
 {
   if( nuc<0 || nuc>=static_cast<int>(m_nuclides.size()) )
     throw std::runtime_error( "SourceFitModel: called with invalid index" );
-  return m_nuclides[nuc].ageUncertainty;
+  return m_nuclides[nuc].ageUncertainty.value_or(-1.0);
 }//double ageUncert( int nuc ) const
 
 
@@ -661,7 +997,7 @@ bool SourceFitModel::fitAge( int nuc ) const
   
   const auto &nucibj = m_nuclides[nuc];
   
-  return ((nucibj.numProgenyPeaksSelected > 1 || nucibj.ageDefiningNuc) && nucibj.fitAge);
+  return ((numProgenyPeaks( nucibj.nuclide ) > 1 || nucibj.ageDefiningNuc) && nucibj.fitAge);
 }//bool fitAge( int nuc ) const
 
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
@@ -706,6 +1042,39 @@ const SandiaDecay::Nuclide *SourceFitModel::ageDefiningNuclide(
     return m_nuclides[nuc].ageDefiningNuc;
   return m_nuclides[nuc].nuclide;
 }//bool ageDefiningNuclide( int nuc ) const
+
+size_t SourceFitModel::numProgenyPeaks( const SandiaDecay::Nuclide *nuclide ) const
+{
+  if( !nuclide || !m_peakModel )
+    return 0;
+  
+  std::shared_ptr<const std::deque<PeakModel::PeakShrdPtr>> peaks = m_peakModel->peaks();
+  if( !peaks )
+    return 0;
+  
+  std::set<const SandiaDecay::Nuclide *> progeny;
+  for( const auto &peak : *peaks )
+  {
+    if( !peak || !peak->useForShieldingSourceFit() )
+      continue;
+    
+    if( peak->parentNuclide() != nuclide )
+      continue;
+    
+    const SandiaDecay::Transition * const trans = peak->nuclearTransition();
+    if( trans && trans->parent )
+      progeny.insert( trans->parent );
+    else
+      progeny.insert( nuclide );
+  }
+  
+  return progeny.size();
+}
+
+bool SourceFitModel::ageIsFittable( const ShieldingSourceFitCalc::SourceFitDef &iso ) const
+{
+  return iso.nuclide ? !PeakDef::ageFitNotAllowed( iso.nuclide ) : false;
+}
 
 
 ShieldingSourceFitCalc::ModelSourceType SourceFitModel::sourceType( int nuc ) const
@@ -759,7 +1128,7 @@ void SourceFitModel::setSharedAgeNuclide( const SandiaDecay::Nuclide *dependantN
   if( definingNuc == dependantNuc )
     definingNuc = nullptr;
   
-  ShieldingSourceFitCalc::IsoFitStruct &iso = m_nuclides[row];
+  ShieldingSourceFitCalc::SourceFitDef &iso = m_nuclides[row];
   if( iso.ageDefiningNuc == definingNuc )
     return;
   
@@ -779,7 +1148,7 @@ void SourceFitModel::setSourceType( const SandiaDecay::Nuclide *nuc, ShieldingSo
 
   for( int row = 0; row < nrows; ++row )
   {
-    ShieldingSourceFitCalc::IsoFitStruct &iso = m_nuclides[row];
+    ShieldingSourceFitCalc::SourceFitDef &iso = m_nuclides[row];
 
     if( iso.nuclide && (iso.nuclide==nuc) )
     {
@@ -790,7 +1159,7 @@ void SourceFitModel::setSourceType( const SandiaDecay::Nuclide *nuc, ShieldingSo
         return;
       }
     }//if( this is the nuclide we want )
-  }//for( const ShieldingSourceFitCalc::IsoFitStruct &iso : m_nuclides )
+  }//for( const ShieldingSourceFitCalc::SourceFitDef &iso : m_nuclides )
 }//void setSourceType( const SandiaDecay::Nuclide *nuc, ShieldingSourceFitCalc::ModelSourceType type )
 
 
@@ -814,7 +1183,7 @@ void SourceFitModel::setUseSameAgeForIsotopes( bool useSame )
   typedef map< int, vector<const SandiaDecay::Nuclide *> > ElToNucMap_t;
   ElToNucMap_t elToNucMap;
   
-  for( const ShieldingSourceFitCalc::IsoFitStruct &n : m_nuclides )
+  for( const ShieldingSourceFitCalc::SourceFitDef &n : m_nuclides )
   {
     if( n.nuclide )
       elToNucMap[n.nuclide->atomicNumber].push_back( n.nuclide );
@@ -894,29 +1263,27 @@ void SourceFitModel::insertPeak( const PeakShrdPtr peak )
   if( !peak->useForShieldingSourceFit() )
     return;
 
-  for( const ShieldingSourceFitCalc::IsoFitStruct &iso : m_nuclides )
+  for( const ShieldingSourceFitCalc::SourceFitDef &iso : m_nuclides )
     if( iso.nuclide == peak->parentNuclide() )
       return;
 
-  ShieldingSourceFitCalc::IsoFitStruct newIso;
+  ShieldingSourceFitCalc::SourceFitDef newIso;
   newIso.activity = 0.001*PhysicalUnits::curie;
   newIso.fitActivity = true;
   newIso.nuclide = peak->parentNuclide();
   newIso.age = PeakDef::defaultDecayTime( newIso.nuclide );
   newIso.ageDefiningNuc = nullptr;
   newIso.fitAge = false;
-  newIso.ageIsFittable = !PeakDef::ageFitNotAllowed( newIso.nuclide );
   
-  std::map<const SandiaDecay::Nuclide *, ShieldingSourceFitCalc::IsoFitStruct>::iterator oldval
+  std::map<const SandiaDecay::Nuclide *, ShieldingSourceFitCalc::SourceFitDef>::iterator oldval
                                     = m_previousResults.find( newIso.nuclide );
   if( oldval != m_previousResults.end() )
   {
-    const ShieldingSourceFitCalc::IsoFitStruct &oldIso = oldval->second;
+    const ShieldingSourceFitCalc::SourceFitDef &oldIso = oldval->second;
     newIso.activity = oldIso.activity;
     newIso.fitActivity = oldIso.fitActivity;
     newIso.age = oldIso.age;
     newIso.fitAge = oldIso.fitAge;
-    newIso.ageIsFittable = oldIso.ageIsFittable;
     
     m_previousResults.erase( oldval );
   }//if( m_previousResults.count(newIso.nuclide) )
@@ -924,23 +1291,23 @@ void SourceFitModel::insertPeak( const PeakShrdPtr peak )
   if( m_previousResults.size() > 100 )
     m_previousResults.clear();
   
-  if( m_sameAgeForIsotopes && newIso.ageIsFittable )
+  if( m_sameAgeForIsotopes && ageIsFittable(newIso) )
   {
     vector<size_t> thisElementIndexs;
     for( size_t i = 0; i < m_nuclides.size(); ++i )
     {
-      const ShieldingSourceFitCalc::IsoFitStruct &iso = m_nuclides[i];
-      if( iso.ageIsFittable && (iso.nuclide->atomicNumber == newIso.nuclide->atomicNumber) )
+      const ShieldingSourceFitCalc::SourceFitDef &iso = m_nuclides[i];
+      if( ageIsFittable(iso) && (iso.nuclide->atomicNumber == newIso.nuclide->atomicNumber) )
       {
         thisElementIndexs.push_back( i );
         if( !iso.ageDefiningNuc )
           newIso.ageDefiningNuc = iso.nuclide;
       }
-    }//for( const ShieldingSourceFitCalc::IsoFitStruct &iso : m_nuclides )
+    }//for( const ShieldingSourceFitCalc::SourceFitDef &iso : m_nuclides )
     
     if( !newIso.ageDefiningNuc && !thisElementIndexs.empty() )
     {
-      const ShieldingSourceFitCalc::IsoFitStruct &previso = m_nuclides[thisElementIndexs[0]];
+      const ShieldingSourceFitCalc::SourceFitDef &previso = m_nuclides[thisElementIndexs[0]];
       newIso.ageDefiningNuc = previso.nuclide;
       //There is a slight hickup with emitting a datachanged and then inserting
       //  a row; if there wasnt this hickup, it would be nice to use the below
@@ -949,26 +1316,11 @@ void SourceFitModel::insertPeak( const PeakShrdPtr peak )
 //      else
 //        newIso.ageDefiningNuc = previso.nuclide;
     }//if( !newIso.ageDefiningNuc && !thisElementIndexs.empty() )
-  }//if( m_sameAgeForIsotopes && newIso.ageIsFittable )
+  }//if( m_sameAgeForIsotopes && ageIsFittable(newIso) )
   
   
   
-  const int npeaks = m_peakModel->rowCount();
-  set<const SandiaDecay::Nuclide *> progeny;
-  for( int peakn = 0; peakn < npeaks; ++peakn )
-  {
-    const PeakShrdPtr peak = m_peakModel->peak( m_peakModel->index(peakn,0) );
-    if( peak && (peak->parentNuclide() == newIso.nuclide) && peak->useForShieldingSourceFit() )
-    {
-      const SandiaDecay::Transition * const trans = peak->nuclearTransition();
-      if( trans && trans->parent )
-        progeny.insert( trans->parent );
-    }
-  }//for( loop over peaks)
-  
-  newIso.numProgenyPeaksSelected = progeny.size();
-  
-  std::vector<ShieldingSourceFitCalc::IsoFitStruct>::iterator pos;
+  std::vector<ShieldingSourceFitCalc::SourceFitDef>::iterator pos;
   pos = std::lower_bound( m_nuclides.begin(), m_nuclides.end(), newIso,
                           boost::bind( &SourceFitModel::compare, boost::placeholders::_1,
                                       boost::placeholders::_2, m_sortColumn, m_sortOrder ) );
@@ -1092,7 +1444,7 @@ void SourceFitModel::peakModelRowsRemovedCallback( Wt::WModelIndex /*index*/,
     double minage = std::numeric_limits<double>::infinity();
     vector<const SandiaDecay::Nuclide *> nucstochange;
     
-    for( ShieldingSourceFitCalc::IsoFitStruct &ifs : m_nuclides )
+    for( ShieldingSourceFitCalc::SourceFitDef &ifs : m_nuclides )
     {
       if( ifs.ageDefiningNuc == nuc )
       {
@@ -1103,7 +1455,7 @@ void SourceFitModel::peakModelRowsRemovedCallback( Wt::WModelIndex /*index*/,
           newDefining = ifs.nuclide;
         }
       }//if( ifs.ageDefiningNuc == nuc )
-    }//for( ShieldingSourceFitCalc::IsoFitStruct &ifs : m_nuclides )
+    }//for( ShieldingSourceFitCalc::SourceFitDef &ifs : m_nuclides )
     
     for( const SandiaDecay::Nuclide *nuc : nucstochange )
       setSharedAgeNuclide( nuc, newDefining );
@@ -1168,7 +1520,7 @@ void SourceFitModel::peakModelDataChangedCallback( Wt::WModelIndex topLeft,
   set<const SandiaDecay::Nuclide *> prenucs, postnucs;
   
   vector<const SandiaDecay::Nuclide *> preisotopes, postisotopes;
-  for( const ShieldingSourceFitCalc::IsoFitStruct &ifs : m_nuclides )
+  for( const ShieldingSourceFitCalc::SourceFitDef &ifs : m_nuclides )
   {
     prenucs.insert( ifs.nuclide );
     preisotopes.push_back( ifs.nuclide );
@@ -1178,7 +1530,7 @@ void SourceFitModel::peakModelDataChangedCallback( Wt::WModelIndex topLeft,
   
   repopulateIsotopes();
   
-  for( const ShieldingSourceFitCalc::IsoFitStruct &ifs : m_nuclides )
+  for( const ShieldingSourceFitCalc::SourceFitDef &ifs : m_nuclides )
   {
     postnucs.insert( ifs.nuclide );
     postisotopes.push_back( ifs.nuclide );
@@ -1206,9 +1558,9 @@ void SourceFitModel::peakModelDataChangedCallback( Wt::WModelIndex topLeft,
       const SandiaDecay::Nuclide *defining = NULL;
       double minage = std::numeric_limits<double>::infinity();
       
-      for( ShieldingSourceFitCalc::IsoFitStruct &ifs : m_nuclides )
+      for( ShieldingSourceFitCalc::SourceFitDef &ifs : m_nuclides )
       {
-        if( ifs.ageIsFittable && (ifs.nuclide->atomicNumber == nuc->atomicNumber) )
+        if( ageIsFittable(ifs) && (ifs.nuclide->atomicNumber == nuc->atomicNumber) )
         {
           if( ifs.age < minage )
           {
@@ -1217,15 +1569,15 @@ void SourceFitModel::peakModelDataChangedCallback( Wt::WModelIndex topLeft,
           }
           removedADefining = (removedADefining || (ifs.ageDefiningNuc==nuc));
         }//if( ifs.nuclide->atomicNumber == nuc->atomicNumber )
-      }//for( ShieldingSourceFitCalc::IsoFitStruct &ifs : m_nuclides )
+      }//for( ShieldingSourceFitCalc::SourceFitDef &ifs : m_nuclides )
       
       if( removedADefining )
       {
-        for( ShieldingSourceFitCalc::IsoFitStruct &ifs : m_nuclides )
+        for( ShieldingSourceFitCalc::SourceFitDef &ifs : m_nuclides )
         {
-          if( ifs.ageIsFittable && (ifs.nuclide->atomicNumber == nuc->atomicNumber) )
+          if( ageIsFittable(ifs) && (ifs.nuclide->atomicNumber == nuc->atomicNumber) )
             setSharedAgeNuclide( ifs.nuclide, defining );
-        }//for( ShieldingSourceFitCalc::IsoFitStruct &ifs : m_nuclides )
+        }//for( ShieldingSourceFitCalc::SourceFitDef &ifs : m_nuclides )
       }//if( removedADefining )
     }//for( const SandiaDecay::Nuclide *nuc : removednucs )
     
@@ -1237,23 +1589,23 @@ void SourceFitModel::peakModelDataChangedCallback( Wt::WModelIndex topLeft,
       const SandiaDecay::Nuclide *defining = NULL;
       double minage = std::numeric_limits<double>::infinity();
       
-      for( ShieldingSourceFitCalc::IsoFitStruct &ifs : m_nuclides )
+      for( ShieldingSourceFitCalc::SourceFitDef &ifs : m_nuclides )
       {
-        if( ifs.ageIsFittable
+        if( ageIsFittable(ifs)
            && (ifs.age < minage)
            && (ifs.nuclide->atomicNumber == nuc->atomicNumber) )
         {
           minage = ifs.age;
           defining = ifs.nuclide;
         }
-      }//for( ShieldingSourceFitCalc::IsoFitStruct &ifs : m_nuclides )
+      }//for( ShieldingSourceFitCalc::SourceFitDef &ifs : m_nuclides )
       
       if( !defining )
         defining = nuc;
       
-      for( ShieldingSourceFitCalc::IsoFitStruct &ifs : m_nuclides )
+      for( ShieldingSourceFitCalc::SourceFitDef &ifs : m_nuclides )
       {
-        if( ifs.ageIsFittable && (ifs.nuclide->atomicNumber == nuc->atomicNumber) )
+        if( ageIsFittable(ifs) && (ifs.nuclide->atomicNumber == nuc->atomicNumber) )
           setSharedAgeNuclide( ifs.nuclide, defining );
       }
     }//for( const SandiaDecay::Nuclide *nuc : addednucs )
@@ -1279,7 +1631,7 @@ void SourceFitModel::peakModelResetCallback()
   if( m_nuclides.empty() )
     return;
 
-  for( const ShieldingSourceFitCalc::IsoFitStruct &iss : m_nuclides )
+  for( const ShieldingSourceFitCalc::SourceFitDef &iss : m_nuclides )
     m_previousResults[iss.nuclide] = iss;
   
   beginRemoveRows( WModelIndex(), 0, static_cast<int>(m_nuclides.size())-1 );
@@ -1296,10 +1648,9 @@ void SourceFitModel::repopulateIsotopes()
 
   for( int ison = 0; ison < norigoiso; ++ison )
   {
-    ShieldingSourceFitCalc::IsoFitStruct &isof = m_nuclides[ison];
+    ShieldingSourceFitCalc::SourceFitDef &isof = m_nuclides[ison];
 
-    size_t numSourcePeaks = 0; // I think we can remove this and instead use only progeny.size(), but havent tested
-    set<const SandiaDecay::Nuclide *> progeny;
+    size_t numSourcePeaks = 0;
     const int npeaks = m_peakModel->rowCount();
     for( int peakn = 0; peakn < npeaks; ++peakn )
     {
@@ -1307,21 +1658,16 @@ void SourceFitModel::repopulateIsotopes()
 
       if( (peak->parentNuclide() == isof.nuclide) && peak->useForShieldingSourceFit() )
       {
-        const SandiaDecay::Transition * const trans = peak->nuclearTransition();
-        if( trans && trans->parent )
-          progeny.insert( trans->parent );
         numSourcePeaks += 1;
       }
     }//for( loop over peaks)
-
-    isof.numProgenyPeaksSelected = progeny.size();
     
     if( numSourcePeaks == 0 )
     {
       m_previousResults[isof.nuclide] = isof;
       indexs_to_remove.push_back( ison );
     }
-  }//for( const ShieldingSourceFitCalc::IsoFitStruct &isof : m_nuclides )
+  }//for( const ShieldingSourceFitCalc::SourceFitDef &isof : m_nuclides )
 
 //  cerr << "indexs_to_remove.size()=" << indexs_to_remove.size() << endl;
 
@@ -1343,12 +1689,12 @@ void SourceFitModel::repopulateIsotopes()
        continue;
 
     bool found = false;
-    for( const ShieldingSourceFitCalc::IsoFitStruct &isof : m_nuclides )
+    for( const ShieldingSourceFitCalc::SourceFitDef &isof : m_nuclides )
     {
       found = (peak->parentNuclide() == isof.nuclide);
       if( found )
         break;
-    }//for( const ShieldingSourceFitCalc::IsoFitStruct &isof : m_nuclides )
+    }//for( const ShieldingSourceFitCalc::SourceFitDef &isof : m_nuclides )
 
     if( !found )
       insertPeak( peak );
@@ -1386,7 +1732,7 @@ Wt::WFlags<Wt::ItemFlag> SourceFitModel::flags( const Wt::WModelIndex &index ) c
   if( row>=nrow || row<0 )
     return WFlags<ItemFlag>();
 
-  const ShieldingSourceFitCalc::IsoFitStruct &iso = m_nuclides[row];
+  const ShieldingSourceFitCalc::SourceFitDef &iso = m_nuclides[row];
 
   switch( index.column() )
   {
@@ -1417,15 +1763,15 @@ Wt::WFlags<Wt::ItemFlag> SourceFitModel::flags( const Wt::WModelIndex &index ) c
       break;
       
     case kAge:
-      if( !iso.ageIsFittable && !iso.ageDefiningNuc )
+      if( !ageIsFittable(iso) && !iso.ageDefiningNuc )
         return WFlags<ItemFlag>();
       
       if( iso.ageDefiningNuc )
       {
-        for( const ShieldingSourceFitCalc::IsoFitStruct &isodef : m_nuclides )
+        for( const ShieldingSourceFitCalc::SourceFitDef &isodef : m_nuclides )
         {
           if( isodef.nuclide == iso.ageDefiningNuc )
-            return isodef.ageIsFittable ? WFlags<ItemFlag>(Wt::ItemIsEditable) : WFlags<ItemFlag>();
+            return ageIsFittable(isodef) ? WFlags<ItemFlag>(Wt::ItemIsEditable) : WFlags<ItemFlag>();
         }
         return WFlags<ItemFlag>();
       }//if( iso.ageDefiningNuc )
@@ -1569,7 +1915,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
     return boost::any();
 
   const bool extra_precision = (role == (Wt::ItemDataRole::UserRole + 10));
-  const ShieldingSourceFitCalc::IsoFitStruct &isof = m_nuclides[row];
+  const ShieldingSourceFitCalc::SourceFitDef &isof = m_nuclides[row];
 
   if( role == Wt::ToolTipRole )
   {
@@ -1582,7 +1928,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
       return boost::any( msg );
     }else if( column == kAge )
     {
-      if( !isof.ageIsFittable )
+      if( !ageIsFittable(isof) )
         return boost::any( WString::tr("sfm-tt-aging-not-allowed") );
     }//if / else to determine column
 
@@ -1602,7 +1948,7 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
       
       // We'll require the uncertainty to be non-zero to show it - 1 micro-bq is an arbitrary cutoff to
       //  consider anything below it zero.
-      const double uncert = isof.activityUncertainty;
+      const double uncert = isof.activityUncertainty.value_or(-1.0);
       
       bool shouldHaveUncert = ( (uncert > 1.0E-6*PhysicalUnits::bq)
                                || ((uncert > 0.0) && (uncert > 1.0E-6*fabs(act)) ) );
@@ -1659,14 +2005,14 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
         {
           nuc = isof.ageDefiningNuc;
           age = m_nuclides[ind].age;
-          if( m_nuclides[ind].ageIsFittable && m_nuclides[ind].fitAge )
-            uncert = m_nuclides[ind].ageUncertainty;
+          if( ageIsFittable(m_nuclides[ind]) && m_nuclides[ind].fitAge )
+            uncert = m_nuclides[ind].ageUncertainty.value_or(-1.0);
         }else
         {
           nuc = isof.nuclide;
           age = isof.age;
-          if( isof.ageIsFittable && isof.fitAge )
-            uncert = isof.ageUncertainty;
+          if( ageIsFittable(isof) && isof.fitAge )
+            uncert = isof.ageUncertainty.value_or(-1.0);
           cerr << "SourceFitModel::data: ran into error when retrieving"
                << " age for a nuclide with a defining age isotope that isnt in"
                << " the model; charging on!" << endl;
@@ -1675,11 +2021,11 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
       {
         nuc = isof.nuclide;
         age = isof.age;
-        if( isof.ageIsFittable && isof.fitAge )
-          uncert = isof.ageUncertainty;
+        if( ageIsFittable(isof) && isof.fitAge )
+          uncert = isof.ageUncertainty.value_or(-1.0);
       }//if( isof.ageDefiningNuc && (isof.ageDefiningNuc!=isof.nuclide) )
       
-      if( !isof.ageIsFittable )
+      if( !ageIsFittable(isof) )
         return boost::any( WString::tr("NA") );
       
       string ans = PhysicalUnitsLocalized::printToBestTimeUnits( age, (extra_precision ? 8 : 2) );
@@ -1700,10 +2046,10 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
       //  (I guess you could fix activity, and shielding, and select a progeny peak, and fit for
       //   age based on that peak growing in, but this probably isnt realistically ever done, but if
       //   you did want to do it, you could round-about calculate it)
-      if( (isof.numProgenyPeaksSelected <= 1) && !isof.ageDefiningNuc )
+      if( (numProgenyPeaks(isof.nuclide) <= 1) && !isof.ageDefiningNuc )
         return boost::any();
       
-      if( !isof.ageIsFittable )
+      if( !ageIsFittable(isof) )
         return boost::any();
       
       return boost::any( isof.fitAge );
@@ -1722,10 +2068,10 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
 
     case kActivityUncertainty:
     {
-      if( isof.activityUncertainty < 0.0 )
+      if( !isof.activityUncertainty || (isof.activityUncertainty.value() <= 0.0) )
         return boost::any();
       
-      double act = isof.activityUncertainty;
+      const double act = isof.activityUncertainty.value();
       string ans = PhysicalUnits::printToBestActivityUnits( act, (extra_precision ? 8 : 2), m_displayCuries );
       ans += DetectorPeakResponse::det_eff_geom_type_postfix(m_det_type);
       
@@ -1734,9 +2080,9 @@ boost::any SourceFitModel::data( const Wt::WModelIndex &index, int role ) const
 
     case kAgeUncertainty:
     {
-      if( (!isof.ageIsFittable) || isof.ageUncertainty < 0.0 )
+      if( (!ageIsFittable(isof)) || !isof.ageUncertainty || (isof.ageUncertainty.value() <= 0.0) )
         return boost::any();
-      const string ans = PhysicalUnitsLocalized::printToBestTimeUnits( isof.ageUncertainty, (extra_precision ? 8 : 2) );
+      const string ans = PhysicalUnitsLocalized::printToBestTimeUnits( isof.ageUncertainty.value(), (extra_precision ? 8 : 2) );
       return boost::any( WString(ans) );
     }//case kAgeUncertainty:
 
@@ -1885,7 +2231,7 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
         utf_str = utf_str.substr(0, pos);
     }//if( we might have the +- )
     
-    ShieldingSourceFitCalc::IsoFitStruct &iso = m_nuclides[row];
+    ShieldingSourceFitCalc::SourceFitDef &iso = m_nuclides[row];
     
     
     // To facilitate undo/redo we could grab value for the row/column we are changing, and then
@@ -1893,7 +2239,7 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
     //  could work around this, but instead for the moment we will just copy all the data
 #define SOURCE_FIT_MODEL_FULL_COPY_UNDO_REDO 1
 #if( SOURCE_FIT_MODEL_FULL_COPY_UNDO_REDO )
-    const auto prev_data = make_shared<const vector<ShieldingSourceFitCalc::IsoFitStruct>>( m_nuclides );
+    const auto prev_data = make_shared<const vector<ShieldingSourceFitCalc::SourceFitDef>>( m_nuclides );
 #else
     const boost::any prev_value = SourceFitModel::data( index, Wt::ItemDataRole::UserRole + 10 );
     const boost::any new_value = value;
@@ -1910,8 +2256,8 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
       {
         iso.activity = PhysicalUnits::stringToActivity( utf_str );
         
-        if( iso.activityUncertainty >= 0.0 ) // For activity we will emit the whole row changed below
-          iso.activityUncertainty = -1.0;
+        if( iso.activityUncertainty && (iso.activityUncertainty.value() > 0.0) ) // For activity we will emit the whole row changed below
+          iso.activityUncertainty.reset();
       
         break;
       }//case kActivity:
@@ -1922,7 +2268,7 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
 
       case kAge:
       {
-        if( !iso.ageIsFittable )
+        if( !ageIsFittable(iso) )
         {
           break;
         }else
@@ -1930,12 +2276,12 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
           const double hl = (iso.nuclide ? iso.nuclide->halfLife : -1.0);
           iso.age = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( utf_str, hl );
 
-          if( iso.ageUncertainty >= 0.0 )
+          if( iso.ageUncertainty && (iso.ageUncertainty.value() > 0.0) )
           {
-            iso.ageUncertainty = -1.0;
+            iso.ageUncertainty.reset();
             WModelIndex uncertIndex = createIndex(row, kAgeUncertainty,(void *)0);
             dataChanged().emit( uncertIndex, uncertIndex );
-          }//if( iso.ageUncertainty >= 0.0 )
+          }//if( iso.ageUncertainty had value )
           
           if( m_sameAgeForIsotopes )
           {
@@ -1954,20 +2300,20 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
                 if( thisrow != row )  // We'll emit for 'row' later on
                   dataChanged().emit( ind, ind );
                 
-                if( iso.ageUncertainty >= 0.0 )
+                if( iso.ageUncertainty && (iso.ageUncertainty.value() > 0.0) )
                 {
                   ind = createIndex( thisrow, kAgeUncertainty, (void *)0 );
                   dataChanged().emit( ind, ind );
                 }//if( iso.ageUncertainty >= 0.0 )
               }//if( nuc.ageDefiningNuc == iso.nuclide )
-            }//for( ShieldingSourceFitCalc::IsoFitStruct *nuc : m_nuclides )
+            }//for( ShieldingSourceFitCalc::SourceFitDef *nuc : m_nuclides )
           }//if( m_sameAgeForIsotopes )
         }//if( decays to stable children / else )
         break;
       }//case kAge:
 
       case kFitAge:
-        if( !iso.ageIsFittable )
+        if( !ageIsFittable(iso) )
         {
           if( iso.fitAge )
             iso.fitAge = false;
@@ -1987,20 +2333,26 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
       break;
 
       case kActivityUncertainty:
-        iso.activityUncertainty = -1.0;
+      {
+        iso.activityUncertainty.reset();
         if( !value.empty() )
         {
-          iso.activityUncertainty = PhysicalUnits::stringToActivity( utf_str );
+          const double uncert = PhysicalUnits::stringToActivity( utf_str );
+          if( uncert > 0.0 )
+            iso.activityUncertainty = uncert;
         }//if( !value.empty() )
       break;
+      }
 
       case kAgeUncertainty:
       {
-        iso.ageUncertainty = -1.0;
-        if( iso.ageIsFittable && !value.empty() )
+        iso.ageUncertainty.reset();
+        if( ageIsFittable(iso) && !value.empty() )
         {
           const double hl = (iso.nuclide ? iso.nuclide->halfLife : -1.0);
-          iso.ageUncertainty = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( utf_str, hl );
+          const double parsed = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( utf_str, hl );
+          if( parsed > 0.0 )
+            iso.ageUncertainty = parsed;
         }//if( decays to stable children / else )
         
         if( m_sameAgeForIsotopes )
@@ -2012,7 +2364,7 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
               WModelIndex ind = createIndex( static_cast<int>(i), kAgeUncertainty, (void *)0);
               dataChanged().emit( ind, ind );
             }//if( nuc.ageDefiningNuc == iso.nuclide )
-          }//for( ShieldingSourceFitCalc::IsoFitStruct *nuc : m_nuclides )
+          }//for( ShieldingSourceFitCalc::SourceFitDef *nuc : m_nuclides )
         }//if( m_sameAgeForIsotopes )
         
         break;
@@ -2075,7 +2427,7 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
     if( undoRedo && undoRedo->canAddUndoRedoNow() )
     {
 #if( SOURCE_FIT_MODEL_FULL_COPY_UNDO_REDO )
-      const auto current_data = make_shared<const vector<ShieldingSourceFitCalc::IsoFitStruct>>( m_nuclides );
+      const auto current_data = make_shared<const vector<ShieldingSourceFitCalc::SourceFitDef>>( m_nuclides );
       auto undo_redo = [prev_data, current_data]( const bool is_undo ){
         InterSpec *viewer = InterSpec::instance();
         ShieldingSourceDisplay *srcfit = viewer ? viewer->shieldingSourceFit() : nullptr;
@@ -2125,8 +2477,8 @@ bool SourceFitModel::setData( const Wt::WModelIndex &index, const boost::any &va
 }//bool setData(...)
 
 
-bool SourceFitModel::compare( const ShieldingSourceFitCalc::IsoFitStruct &lhs_input,
-                             const ShieldingSourceFitCalc::IsoFitStruct &rhs_input,
+bool SourceFitModel::compare( const ShieldingSourceFitCalc::SourceFitDef &lhs_input,
+                             const ShieldingSourceFitCalc::SourceFitDef &rhs_input,
                              Columns sortColumn, Wt::SortOrder order )
 {
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
@@ -2142,8 +2494,8 @@ bool SourceFitModel::compare( const ShieldingSourceFitCalc::IsoFitStruct &lhs_in
 #endif
   
   const bool ascend = (order == Wt::AscendingOrder);
-  const ShieldingSourceFitCalc::IsoFitStruct &lhs = ascend ? lhs_input : rhs_input;
-  const ShieldingSourceFitCalc::IsoFitStruct &rhs = ascend ? rhs_input : lhs_input;
+  const ShieldingSourceFitCalc::SourceFitDef &lhs = ascend ? lhs_input : rhs_input;
+  const ShieldingSourceFitCalc::SourceFitDef &rhs = ascend ? rhs_input : lhs_input;
   
   switch( sortColumn )
   {
@@ -2154,8 +2506,18 @@ bool SourceFitModel::compare( const ShieldingSourceFitCalc::IsoFitStruct &lhs_in
     case kFitAge:      return (lhs.fitAge < rhs.fitAge);
     case kIsotopeMass: return ((lhs.activity/lhs.nuclide->activityPerGram())
                                < (rhs.activity/rhs.nuclide->activityPerGram()) );
-    case kActivityUncertainty: return (lhs.activityUncertainty < rhs.activityUncertainty);
-    case kAgeUncertainty:      return (lhs.ageUncertainty < rhs.ageUncertainty);
+    case kActivityUncertainty:
+    {
+      const double lhs_unc = lhs.activityUncertainty.value_or(-1.0);
+      const double rhs_unc = rhs.activityUncertainty.value_or(-1.0);
+      return (lhs_unc < rhs_unc);
+    }
+    case kAgeUncertainty:
+    {
+      const double lhs_unc = lhs.ageUncertainty.value_or(-1.0);
+      const double rhs_unc = rhs.ageUncertainty.value_or(-1.0);
+      return (lhs_unc < rhs_unc);
+    }
       
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
     case kTruthActivity:          return optionalLess( lhs.truthActivity, rhs.truthActivity );
@@ -2235,7 +2597,7 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
       //cout << msg << endl << endl;
       try
       {
-        disp->deSerialize( shield_source->first_node() );
+        disp->deSerialize( shield_source->first_node(), 0 );
       }catch( std::exception &e )
       {
         string xmlstring;
@@ -2251,6 +2613,10 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
   #endif
         passMessage( "There was an error loading the previous shielding/source model for this file - model state is suspect!",
                       WarningWidget::WarningMsgHigh );
+
+#if( BUILD_AS_UNIT_TEST_SUITE )
+        throw;
+#endif
       }
     }//if( shield_source )
     
@@ -3166,7 +3532,7 @@ pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::Mn
     srcdef.sourceType = m_sourceModel->sourceType(ison);
       
 #if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
-    for( const ShieldingSourceFitCalc::IsoFitStruct &underdata : m_sourceModel->underlyingData() )
+    for( const ShieldingSourceFitCalc::SourceFitDef &underdata : m_sourceModel->underlyingData() )
     {
       if( underdata.nuclide == nuclide )
       {
@@ -3176,7 +3542,7 @@ pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::Mn
         srcdef.truthAgeTolerance = underdata.truthAgeTolerance;
         break;
       }
-    }//for( const ShieldingSourceFitCalc::IsoFitStruct &underdata : m_sourceModel->underlyingData() )
+    }//for( const ShieldingSourceFitCalc::SourceFitDef &underdata : m_sourceModel->underlyingData() )
 #endif
     
     
@@ -3242,11 +3608,20 @@ pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::Mn
   }//for( const SandiaDecay::Nuclide *nuc : nuclides )
     
   const ShieldingSourceFitCalc::ShieldingSourceFitOptions options = fitOptions();
-    
-  return GammaInteractionCalc::ShieldingSourceChi2Fcn::create( distance, geom,
-                                  initial_shieldings, src_definitions,
-                                  detector, foreground, background, *peaks,
-                                  background_peaks, options );
+  
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
+  chi_input.config.distance = distance;
+  chi_input.config.geometry = geom;
+  chi_input.config.shieldings = initial_shieldings;
+  chi_input.config.sources = src_definitions;
+  chi_input.config.options = options;
+  chi_input.detector = detector;
+  chi_input.foreground = foreground;
+  chi_input.background = background;
+  chi_input.foreground_peaks.assign( peaks->begin(), peaks->end() );
+  chi_input.background_peaks = background_peaks;
+  
+  return GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
 }//pair<ShieldingSourceChi2Fcn,ROOT::Minuit2::MnUserParameters> shieldingFitnessFcn()
 
   
@@ -5667,16 +6042,23 @@ void ShieldingSourceDisplay::finishModelUpload( WFileUpload *upload )
 {
   ShieldSourceChange change( this, "Upload Activity/Shielding fit model." );
   
-  shared_ptr<const string> pre_doc;
-  if( change.m_pre_doc && !change.m_pre_doc->empty() )
+  shared_ptr<const ShieldingSourceDisplay::ShieldingSourceDisplayState> pre_state;
+  if( change.m_pre_state )
   {
-    pre_doc = change.m_pre_doc;
+    pre_state = change.m_pre_state;
   }else
   {
-    shared_ptr<string> xmldoc = make_shared<string>();
-    change.doSerialization( *xmldoc );
-    pre_doc = xmldoc;
-  }
+    try
+    {
+      ShieldingSourceDisplay::ShieldingSourceDisplayState state = serialize();
+      pre_state = make_shared<ShieldingSourceDisplay::ShieldingSourceDisplayState>( std::move(state) );
+      change.m_pre_state = pre_state;
+    }catch( std::exception &e )
+    {
+      passMessage( "Error adding undo step for 'Upload Activity/Shielding fit model': "
+                  + string(e.what()), WarningWidget::WarningMsgHigh );
+    }
+  }//if( change.m_pre_state ) / else
   
   try
   {
@@ -5689,7 +6071,7 @@ void ShieldingSourceDisplay::finishModelUpload( WFileUpload *upload )
     const int flags = rapidxml::parse_normalize_whitespace
                       | rapidxml::parse_trim_whitespace;
     new_doc.parse<flags>( &data.front() );
-    deSerialize( new_doc.first_node() );
+    deSerialize( new_doc.first_node(), DeserializeOptions::UpdatePeaksUseForFittingFromState );
     
     m_modifiedThisForeground = true;
   }catch( std::exception &e )
@@ -5699,7 +6081,7 @@ void ShieldingSourceDisplay::finishModelUpload( WFileUpload *upload )
     
     try
     {
-      ShieldSourceChange::doDeSerialization( this, pre_doc );
+      ShieldSourceChange::doDeSerialization( this, pre_state );
     }catch( std::exception & )
     {
       passMessage( "Even worse, there was an error trying to recover",
@@ -5710,7 +6092,7 @@ void ShieldingSourceDisplay::finishModelUpload( WFileUpload *upload )
     //  there will be a blank step (i.e., will try to close the upload window when there is
     //  none to close)
     // lets keep the ShieldSourceChange from inserting a undo/redo step.
-    change.m_pre_doc.reset();
+    change.m_pre_state.reset();
   }//try / catch
   
   closeModelUploadWindow();
@@ -5906,7 +6288,8 @@ bool ShieldingSourceDisplay::loadModelFromDb( Dbo::ptr<ShieldingSourceModel> shi
     string data = shieldmodel->xmlData;
     if( data.size() )
       new_doc.parse<flags>( &(data[0]) );
-    deSerialize( new_doc.first_node() );
+    
+    deSerialize( new_doc.first_node(), DeserializeOptions::UpdatePeaksUseForFittingFromState );
   }catch( std::exception &e )
   {
     passMessage( WString::tr("ssd-err-opening-db-model").arg(e.what()), 
@@ -5914,7 +6297,7 @@ bool ShieldingSourceDisplay::loadModelFromDb( Dbo::ptr<ShieldingSourceModel> shi
     
     try
     {
-      deSerialize( &original_doc );
+      deSerialize( &original_doc, DeserializeOptions::UpdatePeaksUseForFittingFromState );
     }catch( std::exception & )
     {
       passMessage( "Even worse, there was an error trying to recover",
@@ -5958,7 +6341,7 @@ void ShieldingSourceDisplay::finishLoadModelFromDatabase( WSelectionBox *first_s
   }//if( !shieldmodel )
   
   if( !loadModelFromDb( shieldmodel ) )
-    change.m_pre_doc.reset(); //keep ShieldSourceChange from inserting undo/redo step
+    change.m_pre_state.reset(); //keep ShieldSourceChange from inserting undo/redo step
   
   closeBrowseDatabaseModelsWindow();
 }//void finishLoadModelFromDatabase()
@@ -6525,144 +6908,107 @@ void ShieldingSourceDisplay::saveModelIfAlreadyInDatabase()
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
 
 
-void ShieldingSourceDisplay::testSerialization()
+
+void ShieldingSourceDisplay::deSerializePeaksToUse( const std::vector<ShieldingSourceDisplayState::Peak> &peaks )
 {
-  rapidxml::xml_document<char> doc;
-  
-  cerr << "Staring serialization" << endl;
-  serialize( &doc );
-  std::string s;
-  rapidxml::print(std::back_inserter(s), doc, 0);
-  cerr << "Serialized:\n" << doc << endl;
-  cerr << "\n\nStarting de-serialization" << endl;
-  deSerialize( &doc );
-  cerr << "Done deserializing\n\n" << endl;
-}//testSerialization()
-
-
-
-
-
-void ShieldingSourceDisplay::deSerializePeaksToUse(
-                                    const rapidxml::xml_node<char> *peaks_node )
-{
-  const rapidxml::xml_attribute<char> *attr;
-  const rapidxml::xml_node<char> *symbol_node, *energy_node, *peak_node;
-  
-  for( peak_node = peaks_node->first_node( "Peak", 4 );
-       peak_node; peak_node = peak_node->next_sibling( "Peak", 4 ) )
+  for( const ShieldingSourceDisplayState::Peak &state_peak : peaks )
   {
-    attr = peak_node->first_attribute( "Use", 3 );
-    symbol_node = peak_node->first_node( "Nuclide", 7 );
-    energy_node = peak_node->first_node( "Energy", 6 );
-    
-    bool use = true;
-    double energy;
-    if( attr && attr->value() && !(stringstream(attr->value())>>use) )
-      throw runtime_error( "Invalid 'Use' attribute in Peak XML element" );
-    if( !use )
+    if( !state_peak.use )
       continue;
-    if( !symbol_node || !energy_node
-       || !symbol_node->value() || !energy_node->value()
-       || !(stringstream(energy_node->value()) >> energy) )
-      throw runtime_error( "Invalid or missing node for Peak XML element" );
     
-    //    PeakModel::PeakShrdPtr nearestPeak = m_peakModel->nearestPeak( energy );
+    auto find_peak = [&]( const bool require_symbol, double &nearestE, WModelIndex &nearest_index,
+                          PeakModel::PeakShrdPtr &nearest_peak )->bool
+    {
+      nearestE = std::numeric_limits<double>::max();
+      nearest_peak.reset();
+      for( int peakn = 0; peakn < m_peakModel->rowCount(); ++peakn )
+      {
+        WModelIndex index = m_peakModel->index( peakn, PeakModel::kUseForShieldingSourceFit );
+        PeakModel::PeakShrdPtr peak = m_peakModel->peak( index );
+        const SandiaDecay::Nuclide *nuclide = peak->parentNuclide();
+        
+        if( !nuclide )
+          continue;
+        
+        if( require_symbol
+           && !state_peak.nuclideSymbol.empty()
+           && !SpecUtils::iequals_ascii( state_peak.nuclideSymbol, nuclide->symbol ) )
+          continue;
+        
+        try
+        {
+          const float gamenergy = peak->gammaParticleEnergy();
+          const double dE = fabs( gamenergy - state_peak.energy );
+          if( dE < nearestE )
+          {
+            nearestE = dE;
+            nearest_peak = peak;
+            nearest_index = index;
+          }
+        }catch( std::exception & )
+        {
+        }
+      }
+      return static_cast<bool>(nearest_peak);
+    };
     
-    double nearestE = DBL_MAX;
+    double nearestE = std::numeric_limits<double>::max();
     WModelIndex nearest_index;
     PeakModel::PeakShrdPtr nearest_peak;
-    for( int peakn = 0; peakn < m_peakModel->rowCount(); ++peakn )
-    {
-      WModelIndex index = m_peakModel->index( peakn, PeakModel::kUseForShieldingSourceFit );
-      PeakModel::PeakShrdPtr peak = m_peakModel->peak( index );
-      const SandiaDecay::Nuclide *nuclide = peak->parentNuclide();
-      
-      try
-      {
-        const float gamenergy = peak->gammaParticleEnergy();
-        const double dE = fabs(gamenergy - energy);
-        if( nuclide && (dE < nearestE) )
-        {
-          nearestE = dE;
-          nearest_peak = peak;
-          nearest_index = index;
-        }//if( this is nearest candidate peak )
-      }catch( std::exception & )
-      {
-        
-      }//try / catch
-    }//for( int peakn = 0; peakn < m_peakModel->rowCount(); ++peakn )
     
-    if( nearest_peak && (nearestE < 0.1) )
+    bool found = find_peak( true, nearestE, nearest_index, nearest_peak );
+    if( !found )
+      found = find_peak( false, nearestE, nearest_index, nearest_peak );
+    
+    if( found && (nearestE < 0.1) )
       m_peakModel->setData( nearest_index, true );
-  }//for( node = peaks_node->first_node(); node; node = node->next_sibling() )
-}//void deSerializePeaksToUse( rapidxml::xml_node<char> *peaks_node )
+  }
+}//void deSerializePeaksToUse(...)
 
 
-void ShieldingSourceDisplay::deSerializeSourcesToFitFor( const rapidxml::xml_node<char> *sources )
+void ShieldingSourceDisplay::deSerializeSourcesToFitFor( const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources )
 {
-  vector<ShieldingSourceFitCalc::IsoFitStruct> &model_isos = m_sourceModel->m_nuclides;
-  vector<bool> model_row_modded( model_isos.size(), false );
-  
-  for( const rapidxml::xml_node<> *src_node = sources->first_node( "Nuclide", 7 );
-       src_node; src_node = src_node->next_sibling( "Nuclide", 7 ) )
+  std::vector<ShieldingSourceFitCalc::SourceFitDef> &model_isos = m_sourceModel->m_nuclides;
+  std::vector<bool> model_row_modded( model_isos.size(), false );
+
+  for( const auto &src : sources )
   {
-    ShieldingSourceFitCalc::IsoFitStruct row;
-    row.deSerialize( src_node );
-    
+    ShieldingSourceFitCalc::SourceFitDef row = src;
     for( size_t i = 0; i < model_isos.size(); ++i )
     {
-      ShieldingSourceFitCalc::IsoFitStruct &cand = model_isos[i];
+      ShieldingSourceFitCalc::SourceFitDef &cand = model_isos[i];
       if( model_row_modded[i] || (cand.nuclide != row.nuclide) )
         continue;
-      row.numProgenyPeaksSelected = cand.numProgenyPeaksSelected;
       cand = row;
       model_row_modded[i] = true;
-    }//for( size_t i = 0; i < m_sourceModel->m_nuclides.size(); ++i )
-  }//for( loop over source isotopes )
-  
-  
-  //We should have modded all rows that are currently in m_sourceModel, but
-  //  we're not garunteed all rows that where in the XML are also in m_sourceModel
-  //Note 20200929: this check below is a little over-optimistic, so I commented it out; if you
-  //  stumble on this code in like a year, and its still commentd out, just delete it, because:
-  //  If m_sourceModel had "Tl201" because that is the peaks in our current spectrum (and that is
-  //  the peak that is marked to be used in a fit), but the XML model we're loading had "I131" in
-  //  it (because thats what we fit for in the previous record of the spectrum file), then
-  //  model_row_modded for this model will still be false.
-  //for( const bool modded : model_row_modded )
-  //{
-  //  if( !modded )
-  //    throw runtime_error( "Inconsistent state of source model and serialized from XML" );
-  //}//for( const bool modded : model_row_modded )
-  
+      break;
+    }
+  }
+
   if( m_sourceModel->rowCount() )
   {
     WModelIndex topLeft = m_sourceModel->index( 0, 0 );
     WModelIndex bottomRight = m_sourceModel->index( m_sourceModel->rowCount()-1,
                                               m_sourceModel->columnCount()- 1 );
     m_sourceModel->dataChanged().emit( topLeft, bottomRight );
-  }//if( m_sourceModel->rowCount() )
-}//void deSerializeSourcesToFitFor( rapidxml::xml_node<char> *sources );
+  }
+}//void deSerializeSourcesToFitFor(...)
 
 
-void ShieldingSourceDisplay::deSerializeShieldings( const rapidxml::xml_node<char> *shiledings )
+void ShieldingSourceDisplay::deSerializeShieldings( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings )
 {
-  const rapidxml::xml_node<> *shield_node;
-  
   const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
-  
-  // If our Detector Peak Efficiency is for fixed-geometry, we wont allow intrinsic
-  //  or trace sources
   const bool is_fixed_geom = det && det->isFixedGeometry();
-  
-  for( shield_node = shiledings->first_node( "Shielding", 9 );
-      shield_node; shield_node = shield_node->next_sibling( "Shielding", 9 ) )
+
+  for( const auto &info : shieldings )
   {
     ShieldingSelect *select = addShielding( nullptr, false );
-    select->deSerialize( shield_node, is_fixed_geom );
+    if( !select )
+      continue;
     
+    select->fromShieldingInfo( info );
+    select->handleUserChangeForUndoRedoWorker( false );
+
 #if( PERFORM_DEVELOPER_CHECKS )
     for( const SandiaDecay::Nuclide *nuc : select->traceSourceNuclides() )
     {
@@ -6670,18 +7016,17 @@ void ShieldingSourceDisplay::deSerializeShieldings( const rapidxml::xml_node<cha
       const bool guiFit = select->fitTraceSourceActivity(nuc);
       const bool modelFit = m_sourceModel->fitActivity( nucIndex );
       assert( guiFit == modelFit );
-      
+
       const double modelActivity = m_sourceModel->activity(nucIndex);
       const double guiActivity = select->traceSourceTotalActivity(nuc);
       assert( fabs(modelActivity - guiActivity) < 0.0001*std::max(modelActivity, guiActivity) );
-    }//for( const SandiaDecay::Nuclide *nuc : select->traceSourceNuclides() )
+    }
 #endif
-  }//for( loop over shieldings )
-  
-}//void deSerializeShieldings( const rapidxml::xml_node<char> *shiledings )
+  }
+}//void deSerializeShieldings(...)
 
 
-void ShieldingSourceDisplay::reset()
+void ShieldingSourceDisplay::reset( const bool set_use_peaks_false )
 {
   m_modifiedThisForeground = false;
   m_prevDistStr = "100 cm";
@@ -6694,14 +7039,17 @@ void ShieldingSourceDisplay::reset()
       delete select;
   }//for( WWebWidget *child : shieldings )
   
-  for( int peakn = 0; peakn < m_peakModel->rowCount(); ++peakn )
+  if( set_use_peaks_false )
   {
-    WModelIndex index = m_peakModel->index( peakn,
-                                         PeakModel::kUseForShieldingSourceFit );
-    const PeakModel::PeakShrdPtr &peak = m_peakModel->peak( index );
-    if( peak->useForShieldingSourceFit() )
-      m_peakModel->setData( index, false );
-  }//for( int peakn = 0; peakn < m_peakModel->rowCount(); ++peakn )
+    for( int peakn = 0; peakn < m_peakModel->rowCount(); ++peakn )
+    {
+      WModelIndex index = m_peakModel->index( peakn,
+                                             PeakModel::kUseForShieldingSourceFit );
+      const PeakModel::PeakShrdPtr &peak = m_peakModel->peak( index );
+      if( peak->useForShieldingSourceFit() )
+        m_peakModel->setData( index, false );
+    }//for( int peakn = 0; peakn < m_peakModel->rowCount(); ++peakn )
+  }//if( set_use_peaks_false )
   
   //We shouldnt actually need the next line
 //  m_sourceModel->repopulateIsotopes();
@@ -6721,14 +7069,10 @@ bool ShieldingSourceDisplay::userChangedDuringCurrentForeground() const
 }//bool userChangedDuringCurrentForeground() const;
 
 
-void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_node )
+void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_node,
+                                         const Wt::WFlags<ShieldingSourceDisplay::DeserializeOptions> &flags )
 {
   UndoRedoManager::BlockUndoRedoInserts undo_blocker;
-  
-  const rapidxml::xml_node<char> *geom_node, *muti_iso_node, *atten_air_node, *back_sub_node,
-                                 *peaks_node, *isotope_nodes, *shieldings_node,
-                                 *dist_node, *same_age_node, *decay_corr_node, *chart_disp_node;
-  const rapidxml::xml_attribute<char> *attr;
   
   if( !base_node )
     throw runtime_error( "No ShieldingSourceFit node" );
@@ -6737,55 +7081,23 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
     throw runtime_error( "ShieldingSourceDisplay::deSerialize: invalid node name passed in: '"
                         + std::string(base_node->name(),base_node->name()+base_node->name_size()) + "'" );
   
-  geom_node       = base_node->first_node( "Geometry", 8 );
-  muti_iso_node   = base_node->first_node( "MultipleIsotopesPerPeak", 23 );
-  atten_air_node  = base_node->first_node( "AttenuateForAir", 15 );
-  back_sub_node   = base_node->first_node( "BackgroundPeakSubtraction", 25 );
-  same_age_node   = base_node->first_node( "SameAgeIsotopes", 15 );
-  decay_corr_node = base_node->first_node( "DecayCorrect", 12 );
-  chart_disp_node = base_node->first_node( "ShowChiOnChart", 14 );
-  peaks_node      = base_node->first_node( "Peaks", 5 );
-  isotope_nodes   = base_node->first_node( "Nuclides", 8 );
-  shieldings_node = base_node->first_node( "Shieldings", 10 );
-  dist_node       = base_node->first_node( "Distance", 8 );
   
-  if( !peaks_node || !isotope_nodes || !shieldings_node )
-    throw runtime_error( "Missing necessary XML node" );
+  ShieldingSourceDisplayState state;
+  state.deSerialize( base_node, m_materialDB );
   
-  int version;
-  bool show_chi_on_chart = true;
+  deSerialize( state, flags );
+}//void deSerialize( const rapidxml::xml_node<char> *base_node )
+
+
+void ShieldingSourceDisplay::deSerialize( const ShieldingSourceDisplayState &state,
+                                         const Wt::WFlags<ShieldingSourceDisplay::DeserializeOptions> &flags )
+{
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
   
-  attr = base_node->first_attribute( "version", 7 );
-  if( !attr || !attr->value() || !(stringstream(attr->value())>>version) )
-    throw runtime_error( "Deserializing requires a version" );
+  if( !state.config )
+    throw runtime_error( "ShieldingSourceDisplay::deSerialize: somehow ShieldingSourceDisplayState::config is invalid");
   
-  if( version != sm_xmlSerializationMajorVersion )
-    throw runtime_error( "Invalid version of ShieldingSourceDisplay XML" );
-  
-  // Note that version is either "0" (implied minor version 0), or "0.1" or something; we could read
-  //  in the minor version to sm_xmlSerializationMinorVersion and use it, but theres really no need.
-  GeometryType geom_type = GeometryType::Spherical;
-  if( geom_node && geom_node->value() )
-  {
-    bool found = false;
-    const string val( geom_node->value(), geom_node->value() + geom_node->value_size() );
-    
-    for( GeometryType i = GeometryType(0);
-        !found && (i != GeometryType::NumGeometryType);
-        i = GeometryType(static_cast<int>(i) + 1) )
-    {
-      found = (val == GammaInteractionCalc::to_str(i));
-      if( found )
-        geom_type = i;
-    }//for( loop over GeometryType )
-    
-    if( !found )
-      throw runtime_error( "Invalid geometry specified in XML: " + val );
-  }//if( geom_node )
-  
-  
-  ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
-  options.deSerialize( base_node );
+  ShieldingSourceFitCalc::ShieldingSourceFitOptions options = state.config->options;
   
   options.background_peak_subtract = (options.background_peak_subtract
                                  && m_specViewer->measurment(SpecUtils::SpectrumType::Background));
@@ -6793,21 +7105,14 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   m_multithread_computation = options.multithread_self_atten;
   m_photopeak_cluster_sigma = options.photopeak_cluster_sigma;
   
-  if( chart_disp_node && chart_disp_node->value() )
-  {
-    if( !(stringstream(chart_disp_node->value()) >> show_chi_on_chart) )
-      throw runtime_error( "Invalid ShowChiOnChart node" );
-  }
-  
-  if( !dist_node || !dist_node->value() )
-    throw runtime_error( "Invalid or missing Distance node" );
+  const bool update_use_peaks = flags.testFlag(DeserializeOptions::UpdatePeaksUseForFittingFromState);
   
   //clear out the GUI
-  reset();
+  reset( update_use_peaks );
   
   
-  m_prevGeometry = geom_type;
-  m_geometrySelect->setCurrentIndex( static_cast<int>(geom_type) );
+  m_prevGeometry = state.config->geometry;
+  m_geometrySelect->setCurrentIndex( static_cast<int>(state.config->geometry) );
   
   m_multiIsoPerPeak->setChecked( options.multiple_nucs_contribute_to_peaks );
   m_clusterWidth->setValue( options.photopeak_cluster_sigma );
@@ -6819,15 +7124,17 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   m_backgroundPeakSub->setChecked( options.background_peak_subtract );
   m_sameIsotopesAge->setChecked( options.same_age_isotopes );
   m_decayCorrect->setChecked( options.account_for_decay_during_meas );
-  m_showChiOnChart->setChecked( show_chi_on_chart );
-  m_chi2Plot->setShowChi( show_chi_on_chart );
-  m_distanceEdit->setValueText( WString::fromUTF8(dist_node->value()) );
-  m_prevDistStr = dist_node->value();
+  m_showChiOnChart->setChecked( state.showChiOnChart );
+  m_chi2Plot->setShowChi( state.showChiOnChart );
+  string dist_str = PhysicalUnits::printToBestLengthUnits( state.config->distance, 6 );
+  m_distanceEdit->setValueText( WString::fromUTF8(dist_str) );
+  m_prevDistStr = dist_str;
   
-  deSerializePeaksToUse( peaks_node );
+  if( update_use_peaks && !state.peaks.empty() )
+    deSerializePeaksToUse( state.peaks );
   m_sourceModel->repopulateIsotopes();
-  deSerializeSourcesToFitFor( isotope_nodes );
-  deSerializeShieldings( shieldings_node );
+  deSerializeSourcesToFitFor( state.config->sources );
+  deSerializeShieldings( state.config->shieldings );
   
   m_modifiedThisForeground = true;
 
@@ -6836,67 +7143,49 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   handleDetectorChanged( m_detectorDisplay->detector() );
   
   updateChi2Chart();
-}//void deSerialize( rapidxml::xml_document<char> &doc )
+}//void deSerialize( const ShieldingSourceDisplayState &state )
 
 
 ::rapidxml::xml_node<char> *ShieldingSourceDisplay::serialize( rapidxml::xml_node<char> *parent_node )
 {
-  rapidxml::xml_document<char> *doc = parent_node->document();
-  
-  const char *name, *value;
-  rapidxml::xml_node<> *base_node, *node, *peaks_node, *isotope_nodes, *shieldings_node;
-  rapidxml::xml_attribute<> *attr;
-  
-  name = "ShieldingSourceFit";
-  base_node = doc->allocate_node( rapidxml::node_element, name );
-  parent_node->append_node( base_node );
-  
-  //If you change the available options or formatting or whatever, increment the
-  //  version field of the XML!
-  const string versionstr = std::to_string(ShieldingSourceDisplay::sm_xmlSerializationMajorVersion)
-                          + "." + std::to_string(ShieldingSourceDisplay::sm_xmlSerializationMinorVersion);
-  value = doc->allocate_string( versionstr.c_str() );
-  attr = doc->allocate_attribute( "version", value );
-  base_node->append_attribute( attr );
-  
-  // TODO: maybe add detector names, and sample numbers being used, for both the foeground
-  //       and background - this will make it easier to extract the model out of the N42 file.
-  //       Or rather, could associate the shield/source model with foreground sample
-  //       numbers/detector, like peaks (but then would still need background info).
-  
-  value = GammaInteractionCalc::to_str( geometry() );
-  node = doc->allocate_node( rapidxml::node_element, "Geometry", value );
-  base_node->append_node( node );
-  
-  const ShieldingSourceFitCalc::ShieldingSourceFitOptions options = fitOptions();
-  options.serialize( base_node );
-  
-  name = "ShowChiOnChart";
-  value = m_showChiOnChart->isChecked() ? "1" : "0";
-  node = doc->allocate_node( rapidxml::node_element, name, value );
-  base_node->append_node( node );
-  
-  name = "Distance";
-  value = doc->allocate_string( m_distanceEdit->valueText().toUTF8().c_str() );
-  node = doc->allocate_node( rapidxml::node_element, name, value );
-  base_node->append_node( node );
+  ShieldingSourceDisplayState state = serialize();
+  state.serialize( parent_node );
+  return parent_node;
+}//::rapidxml::xml_node<char> * serialize()
 
-  name = "Shieldings";
-  shieldings_node = doc->allocate_node( rapidxml::node_element, name );
-  base_node->append_node( shieldings_node );
 
+ShieldingSourceDisplay::ShieldingSourceDisplayState ShieldingSourceDisplay::serialize()
+{
+  ShieldingSourceDisplayState state;
+  state.versionMajor = ShieldingSourceDisplay::sm_xmlSerializationMajorVersion;
+  state.versionMinor = ShieldingSourceDisplay::sm_xmlSerializationMinorVersion;
+  state.showChiOnChart = m_showChiOnChart->isChecked();
   
-  const vector<WWidget *> shieldings = m_shieldingSelects->children();
-  for( WWidget *child : shieldings )
+  shared_ptr<GammaInteractionCalc::ShieldSourceConfig> config = make_shared<GammaInteractionCalc::ShieldSourceConfig>();
+  config->geometry = geometry();
+  config->options = fitOptions();
+  const std::string dist_text = m_distanceEdit->valueText().toUTF8();
+  try
+  {
+    config->distance = PhysicalUnits::stringToDistance( dist_text );
+  }catch( const std::exception & )
+  {
+    config->distance = 0.0;
+  }
+
+  const vector<WWidget *> shielding_widgets = m_shieldingSelects->children();
+  config->shieldings.reserve( shielding_widgets.size() );
+  for( WWidget *child : shielding_widgets )
   {
     const ShieldingSelect *select = dynamic_cast<ShieldingSelect *>( child );
     if( select )
-      select->serialize( shieldings_node );
-  }//for( WWebWidget *child : shieldings )
-  
-  peaks_node = doc->allocate_node( rapidxml::node_element, "Peaks" );
-  base_node->append_node( peaks_node );
-  
+      config->shieldings.push_back( select->toShieldingInfo() );
+  }
+
+  config->sources = m_sourceModel->underlyingData();
+  state.config = config;
+
+  state.peaks.clear();
   for( int peakn = 0; peakn < m_peakModel->rowCount(); ++peakn )
   {
     const PeakDef &peak = m_peakModel->peak( peakn );
@@ -6906,132 +7195,73 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
     
     if( peak.useForShieldingSourceFit() && nuclide && (particle || annhilation) )
     {
-      rapidxml::xml_node<> *peak_node, *nuc_node, *energy_node;
-      peak_node = doc->allocate_node( rapidxml::node_element, "Peak" );
-      peaks_node->append_node( peak_node );
-      
-      //meh, lets be explicit about using this peak, although were only writing
-      //  peaks were using for the fit
-      attr = doc->allocate_attribute( "Use", "1" );
-      peak_node->append_attribute( attr );
-      
-      value = doc->allocate_string( nuclide->symbol.c_str() );
-      nuc_node = doc->allocate_node( rapidxml::node_element, "Nuclide", value );
-      peak_node->append_node( nuc_node );
-      
-      const float energy = peak.gammaParticleEnergy();
-      value = doc->allocate_string( std::to_string(energy).c_str() );
-      energy_node = doc->allocate_node( rapidxml::node_element, "Energy", value );
-      peak_node->append_node( energy_node );
+      ShieldingSourceDisplayState::Peak state_peak;
+      state_peak.use = true;
+      state_peak.nuclideSymbol = nuclide->symbol;
+      state_peak.energy = peak.gammaParticleEnergy();
+      state.peaks.push_back( state_peak );
     }//if( peak.useForShieldingSourceFit() )
   }//for( int peakn = 0; peakn < m_peakModel->rowCount(); ++peakn )
   
-  isotope_nodes = doc->allocate_node( rapidxml::node_element, "Nuclides" );
-  base_node->append_node( isotope_nodes );
   
-  const vector<ShieldingSourceFitCalc::IsoFitStruct> &srcData = m_sourceModel->underlyingData();
-  assert( srcData.size() == m_sourceModel->rowCount() );
-  for( size_t nuc = 0; nuc < srcData.size(); ++nuc )
-    srcData[nuc].serialize( isotope_nodes );
-  
-  
-  try
+  vector<PeakDef> peaks;
+  shared_ptr<const deque<shared_ptr<const PeakDef>>> foreground_peaks = m_peakModel->peaks();
+  if( foreground_peaks && !foreground_peaks->empty() )
   {
-    auto fcnAndPars = shieldingFitnessFcn();
-    
-    std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> &chi2Fcn = fcnAndPars.first;
-    ROOT::Minuit2::MnUserParameters &inputPrams = fcnAndPars.second;
-    
-    const unsigned int ndof = inputPrams.VariableParameters();
-    const vector<double> params = inputPrams.Params();
-    const vector<double> errors = inputPrams.Errors();
-    GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
-    const vector<GammaInteractionCalc::PeakResultPlotInfo> chis
-                  = chi2Fcn->energy_chi_contributions( params, errors, mixcache, nullptr, nullptr );
-    
-    if( chis.size() )
+    for( const shared_ptr<const PeakDef> &peak : *foreground_peaks )
     {
-      char buffer[64] = { 0 };
-      
-      //We will write this information - for the record, JIC, but we will not
-      //  read it back in later, as we will re-calculate it from the actual
-      //  data present when this model gets deserialized.
-      rapidxml::xml_node<> *chi2_node = doc->allocate_node( rapidxml::node_element, "Chi2Elements" );
-      base_node->append_node( chi2_node );
-      
-      double chi2 = 0.0;
-      rapidxml::xml_node<> *node = nullptr;
-      rapidxml::xml_node<> *eval_node = doc->allocate_node( rapidxml::node_element, "EvaluatedEnergies" );
-      
-      for( const GammaInteractionCalc::PeakResultPlotInfo &p : chis )
-      {
-        rapidxml::xml_node<> *point_node = doc->allocate_node( rapidxml::node_element, "EvalPoint" );
-        eval_node->append_node( point_node );
-        
-        const double energy = p.energy;
-        const double chi = p.numSigmaOff;
-        const double scale = p.observedOverExpected;
-        const WColor &color = p.peakColor;
-        const double scale_uncert = p.observedOverExpectedUncert;
-        
-        if( !IsInf(chi) && !IsNan(chi) )
-          chi2 += chi*chi;
-        
-        node = doc->allocate_node( rapidxml::node_element, "Energy" );
-        snprintf( buffer, sizeof(buffer), "%f", energy );
-        value = doc->allocate_string( buffer );
-        node->value( value );
-        point_node->append_node( node );
-        
-        node = doc->allocate_node( rapidxml::node_element, "Chi" );
-        snprintf( buffer, sizeof(buffer), "%f", chi );
-        value = doc->allocate_string( buffer );
-        node->value( value );
-        point_node->append_node( node );
-        
-        node = doc->allocate_node( rapidxml::node_element, "Scale" );
-        snprintf( buffer, sizeof(buffer), "%f", scale );
-        value = doc->allocate_string( buffer );
-        node->value( value );
-        point_node->append_node( node );
-        
-        node = doc->allocate_node( rapidxml::node_element, "Color" );
-        snprintf( buffer, sizeof(buffer), "%s", (color.isDefault() ? "" : color.cssText().c_str()) );
-        value = doc->allocate_string( buffer );
-        node->value( value );
-        point_node->append_node( node );
-        
-        node = doc->allocate_node( rapidxml::node_element, "ScaleUncert" );
-        snprintf( buffer, sizeof(buffer), "%f", scale_uncert );
-        value = doc->allocate_string( buffer );
-        node->value( value );
-        point_node->append_node( node );
-      }//for( const auto &p : chis )
-      
-      node = doc->allocate_node( rapidxml::node_element, "Chi2" );
-      snprintf( buffer, sizeof(buffer), "%f", chi2 );
-      value = doc->allocate_string( buffer );
-      node->value( value );
-      chi2_node->append_node( node );
-      
-      node = doc->allocate_node( rapidxml::node_element, "NumParamFit" );
-      snprintf( buffer, sizeof(buffer), "%u", ndof );
-      value = doc->allocate_string( buffer );
-      node->value( value );
-      chi2_node->append_node( node );
-      
-      chi2_node->append_node( eval_node );
-    }//if( chis.size() )
-  }catch( std::exception &e )
-  {
-#if( PERFORM_DEVELOPER_CHECKS )
-    log_developer_error( __func__, ("Failed to get chi2 info during serialization - caught exception: " + string(e.what())).c_str() );
-#endif
+      if( peak && peak->useForShieldingSourceFit() )
+        peaks.push_back( *peak );
+    }//for(...)
   }
   
-  return parent_node;
-}//::rapidxml::xml_node<char> * serialize()
+  if( !peaks.empty() )
+  {
+    try
+    {
+      auto fcnAndPars = shieldingFitnessFcn();
+      
+      std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> &chi2Fcn = fcnAndPars.first;
+      ROOT::Minuit2::MnUserParameters &inputPrams = fcnAndPars.second;
+      
+      const unsigned int ndof = inputPrams.VariableParameters();
+      const vector<double> params = inputPrams.Params();
+      const vector<double> errors = inputPrams.Errors();
+      GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
+      const vector<GammaInteractionCalc::PeakResultPlotInfo> chis
+      = chi2Fcn->energy_chi_contributions( params, errors, mixcache, nullptr, nullptr );
+      
+      if( chis.size() )
+      {
+        ShieldingSourceDisplayState::Chi2Elements chi_state;
+        double chi2 = 0.0;
+        chi_state.evalPoints.reserve( chis.size() );
+        for( const GammaInteractionCalc::PeakResultPlotInfo &p : chis )
+        {
+          ShieldingSourceDisplayState::Chi2EvalPoint point;
+          point.energy = p.energy;
+          point.chi = p.numSigmaOff;
+          point.scale = p.observedOverExpected;
+          point.colorCss = p.peakColor.isDefault() ? "" : p.peakColor.cssText();
+          point.scaleUncert = p.observedOverExpectedUncert;
+          if( !IsInf(point.chi) && !IsNan(point.chi) )
+            chi2 += point.chi * point.chi;
+          chi_state.evalPoints.push_back( point );
+        }
+        chi_state.chi2 = chi2;
+        chi_state.numParametersFit = ndof;
+        state.chi2Elements = chi_state;
+      }//if( chis.size() )
+    }catch( std::exception &e )
+    {
+#if( PERFORM_DEVELOPER_CHECKS )
+      log_developer_error( __func__, ("Failed to get chi2 info during serialization - caught exception: " + string(e.what())).c_str() );
+#endif
+    }
+  }//if( peaks.empty() ) / else
 
+  return state;
+}//ShieldingSourceDisplayState serialize() const
 
 
 void ShieldingSourceDisplay::layoutSizeChanged( int width, int height )
@@ -7547,6 +7777,7 @@ void ShieldingSourceDisplay::handleShieldingUndoRedoPoint( const ShieldingSelect
     Wt::log("error") << "ShieldingSourceDisplay::handleShieldingUndoRedoPoint: couldnt find passed in ShieldingSelect.";
     return;
   }
+  
   
   const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
   const bool is_fixed_geom = det && det->isFixedGeometry();
@@ -8274,7 +8505,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
     const size_t nnucs = m_currentFitFcn->numNuclides();
     
     // Go through and update trace source activities displayed in the shieldings
-    for( const ShieldingSourceFitCalc::IsoFitStruct &src : results->fit_src_info )
+    for( const ShieldingSourceFitCalc::SourceFitDef &src : results->fit_src_info )
     {
       if( src.sourceType != ShieldingSourceFitCalc::ModelSourceType::Trace )
         continue;
@@ -8284,11 +8515,11 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
         ShieldingSelect *select = dynamic_cast<ShieldingSelect *>(widget);
         if( select && select->isTraceSourceForNuclide(src.nuclide) )
         {
-          select->setTraceSourceTotalActivity( src.nuclide, src.activity, src.activityUncertainty, false );
+          select->setTraceSourceTotalActivity( src.nuclide, src.activity, src.activityUncertainty.value_or(-1.0), false );
           break;
         }
       }//for( WWidget *widget : m_shieldingSelects->children() )
-    }//for( const ShieldingSourceFitCalc::IsoFitStruct &src : results->fit_src_info )
+    }//for( const ShieldingSourceFitCalc::SourceFitDef &src : results->fit_src_info )
     
     
     /*
@@ -8794,7 +9025,7 @@ void ShieldingSourceDisplay::showShieldSourceDiagram()
   if( det && det->detectorDiameter() > 0.0 )
     detDiameter = det->detectorDiameter();
 
-  std::vector<ShieldingSourceFitCalc::IsoFitStruct> sources = m_sourceModel->underlyingData();
+  std::vector<ShieldingSourceFitCalc::SourceFitDef> sources = m_sourceModel->underlyingData();
   const GeometryType geom_type = geometry();
   
   if( m_diagramDialog )

@@ -332,38 +332,81 @@ mas os itens do menu serão desabilitados se nenhum espectro de fundo ou secund�
 
 <message id='10desktop-shortcuts-desc'>
 
+  <h3>Atalhos de Teclado</h3>
   <ul>
     <li>
-      <b><code>Ctrl-s</code></b>: Muda para a aba &quot;<em>Arquivo<u>s</u> de Espectro</em>&quot;, ou
-      se as <em>Abas de Ferramentas</em> estiverem ocultas, mostra a ferramenta <em>Arquivos de Espectro</em>.
+      <b><code>Ctrl-1</code></b> até <b><code>Ctrl-7</code></b>: Muda para a aba de ferramenta 1-7 (ou seja, abas &quot;<code>Arquivos de Espectro</code>&quot;, &quot;<code>Gerenciador de Picos</code>&quot;, &quot;<code>Fotopicos de Referência</code>&quot;, etc.), ou
+      se as <em>Abas de Ferramentas</em> estiverem ocultas, mostra a janela de ferramenta correspondente.
     </li>
     <li>
-      <b><code>Ctrl-p</code></b>: Muda para a aba &quot;<em>Gerenciador de <u>P</u>icos</em>&quot;, ou
-      mostra a ferramenta.
+      <b><code>Ctrl-h</code></b>: Mostra a <em>Ajuda</em> no aplicativo.
     </li>
     <li>
-      <b><code>Ctrl-r</code></b>: Muda para a aba &quot;<em>Fotopicos de <u>R</u>eferência</em>&quot;
-      ou mostra a ferramenta.
+      <b><code>Ctrl-i</code></b>: Mostra a tela de <em>Informações de Boas-Vindas</em>.
     </li>
     <li>
-      <b><code>Ctrl-e</code></b>: Muda para a aba &quot;<em>Calibração de <u>E</u>nergia</em>&quot;
-      ou mostra a ferramenta.
+      <b><code>Ctrl-k</code></b>: Limpa todas as linhas de fotopicos de referência visíveis.
     </li>
     <li>
-      <b><code>Ctrl-n</code></b>: Muda para a aba &quot;<em>Busca de <u>N</u>uclídeos</em>&quot;
-      ou mostra a ferramenta.
+      <b><code>Ctrl-l</code></b>: Alterna o eixo y do espectro entre logarítmico e linear.
     </li>
     <li>
-      <b><code>Ctrl-h</code></b>: Mostra a <em>Ajuda (<u>H</u>elp)</em> no aplicativo.
+      <b><code>Ctrl-s</code></b>: Salva o estado atual do aplicativo.
     </li>
     <li>
-      <b><code>Ctrl-i</code></b>: Mostra a tela de <em><u>I</u>nformações de Boas-Vindas</em>.
+      <b><code>Ctrl-e</code></b>: Abre a caixa de diálogo de exportação de arquivo de espectro.
     </li>
     <li>
-      <b><code>Ctrl-l</code></b>: Alterna o eixo y do espectro entre <u>l</u>ogarítmico e <u>l</u>inear.
+      <b><code>Ctrl-z</code></b>: Desfazer a última ação.
     </li>
     <li>
-      <b><code>Ctrl-c</code></b>: Limpa (<u>C</u>lear) todas as linhas de referência visíveis.
+      <b><code>Ctrl-Shift-z</code></b>: Refazer a última ação desfeita.
+    </li>
+  </ul>
+
+  <h3>Modificadores de Mouse para Interações do Espectro</h3>
+  Além desses atalhos, você pode clicar no título do eixo y para alternar entre escala logarítmica/linear; clicar no título do eixo x mostrará/ocultará o gráfico de tira de visão geral.
+  <ul>
+    <li>
+      <b>Duplo clique</b>: Ajusta um pico no espectro de primeiro plano no local clicado.
+    </li>
+    <li>
+      <b>Alt + Duplo clique</b>: Ajusta um pico no espectro de fundo no local clicado.
+    </li>
+    <li>
+      <b>Shift + Duplo clique</b>: Ajusta um pico no espectro secundário no local clicado.
+    </li>
+    <li>
+      <b>Shift + Arrastar esquerda</b>: Modo excluir picos - remove picos na faixa de energia arrastada.
+    </li>
+    <li>
+      <b>Alt + Shift + Arrastar esquerda</b>: Modo contar gamas - conta raios gama na faixa de energia arrastada.
+    </li>
+    <li>
+      <b>Alt + Ctrl + Arrastar esquerda</b>: Modo recalibração - recalibra a energia usando a faixa arrastada.
+    </li>
+    <li>
+      <b>Command + Arrastar esquerda (Mac)</b> ou <b>Alt + Arrastar esquerda (Windows)</b>: Arraste verticalmente para ampliar/reduzir no eixo y.
+    </li>
+  </ul>
+
+  <h3>Modificadores de Mouse para Interações do Gráfico de Tempo</h3>
+  Use o menu no canto superior direito do gráfico de tempo para simplificar as interações.
+  <ul>
+    <li>
+      <b>Clique ou arraste</b>: Seleciona amostras para o espectro de primeiro plano.
+    </li>
+    <li>
+      <b>Alt + Clique/arraste</b> ou <b>mantenha pressionada a tecla 'b'</b>: Seleciona amostras para o espectro de fundo.
+    </li>
+    <li>
+      <b>Meta + Clique/arraste</b> ou <b>mantenha pressionada a tecla 's'</b>: Seleciona amostras para o espectro secundário.
+    </li>
+    <li>
+      <b>Shift + Clique/arraste</b>: Adiciona amostras à seleção atual.
+    </li>
+    <li>
+      <b>Ctrl + Clique/arraste</b>: Remove amostras da seleção atual.
     </li>
   </ul>
 </message>
@@ -398,3 +441,4 @@ mas os itens do menu serão desabilitados se nenhum espectro de fundo ou secund�
     </ul>
   </message>
 </messages>
+
