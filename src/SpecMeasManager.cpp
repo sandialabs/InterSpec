@@ -5610,11 +5610,38 @@ void SpecMeasManager::selectionChanged()
           fullFileSelected = true;
           selectedFiles.insert( index );
           header = m_fileModel->fileHeader( index.row() );
-          
-          // Let's set all of the children as selected.
+
+          // Add children as selected, but only if no children are already specifically selected.
+          // If user has selected specific children (e.g., sample 0 but not sample 1), respect that.
+          //
+          // However, if the file is collapsed, children won't be in `selected` even if they
+          // were programmatically added before - so we should add all children in that case.
           const int nrow = m_fileModel->rowCount( index );
-          for( int i = 0; i < nrow; ++i )
-            toSelect.insert( index.child(i,0) );
+
+          const WModelIndex indexCol0 = (index.column() == 0)
+                                        ? index
+                                        : m_fileModel->index( index.row(), 0 );
+          const bool fileIsExpanded = m_treeView->isExpanded( indexCol0 );
+
+          bool anyChildAlreadySelected = false;
+          if( fileIsExpanded )
+          {
+            // Only check for specifically selected children if file is expanded
+            // (collapsed children won't appear in selectedIndexes())
+            for( int i = 0; !anyChildAlreadySelected && (i < nrow); ++i )
+            {
+              if( selected.count( index.child(i,0) ) )
+                anyChildAlreadySelected = true;
+            }
+          }
+
+          if( !anyChildAlreadySelected )
+          {
+            // No children were specifically selected (or file is collapsed) - select all children
+            for( int i = 0; i < nrow; ++i )
+              toSelect.insert( index.child(i,0) );
+          }
+          // If some children were already selected (and visible), don't add the others
           break;
         } // case SpectraFileModel::FileHeaderLevel:
           
