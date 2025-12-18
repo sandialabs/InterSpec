@@ -73,6 +73,7 @@
 #include "CandidatePeak_GA.h"
 #include "FinalFit_GA.h"
 #include "PeakFitImproveData.h"
+#include "FitPeaksForNuclideDev.h"
 
 using namespace std;
 
@@ -890,7 +891,7 @@ int main( int argc, char **argv )
   string static_data_dir;
   PeakFitImprove::sm_num_optimization_threads = std::max( 8u, std::thread::hardware_concurrency() > 2 ? std::thread::hardware_concurrency() - 2 : 1 );
   size_t number_threads_per_individual = 1;
-  string action_str = "CodeDev"; //"CodeDev"; // "FinalFit"; //"InitialFit"; //"Candidate";
+  string action_str = "PeaksForNuclide"; // "PeaksForNuclide"; //"CodeDev"; // "FinalFit"; //"InitialFit"; //"Candidate";
   bool debug_printout_arg = false;
   size_t ga_population = 1500;
   size_t ga_generation_max = 250;
@@ -976,7 +977,8 @@ int main( int argc, char **argv )
     InitialFit,
     FinalFit,
     CodeDev,
-    AccuracyFromCsvsStudy
+    AccuracyFromCsvsStudy,
+    PeaksForNuclide
   };//enum class OptimizationAction : int
   
   OptimizationAction action;
@@ -990,9 +992,11 @@ int main( int argc, char **argv )
     action = OptimizationAction::CodeDev;
   else if( action_str == "AccuracyFromCsvsStudy" )
     action = OptimizationAction::AccuracyFromCsvsStudy;
+  else if( action_str == "PeaksForNuclide" )
+    action = OptimizationAction::PeaksForNuclide;
   else
   {
-    cerr << "Error: invalid action '" << action_str << "'. Valid actions are: Candidate, InitialFit, FinalFit, CodeDev, AccuracyFromCsvsStudy" << endl;
+    cerr << "Error: invalid action '" << action_str << "'. Valid actions are: Candidate, InitialFit, FinalFit, CodeDev, AccuracyFromCsvsStudy, PeaksForNuclide" << endl;
     return -4;
   }
   
@@ -1404,8 +1408,13 @@ int main( int argc, char **argv )
       
       break;
     }//case OptimizationAction::FinalFit
-      
-      
+
+    case OptimizationAction::PeaksForNuclide:
+    {
+      FitPeaksForNuclideDev::eval_peaks_for_nuclide( input_srcs );
+      break;
+    }//case OptimizationAction::PeaksForNuclide:
+
     case OptimizationAction::AccuracyFromCsvsStudy:
     {
       const string result_base_path = "/Users/wcjohns/rad_ana/InterSpec/target/peak_fit_improve/build_xcode/PeakSearchCsvs";
@@ -1704,7 +1713,7 @@ int main( int argc, char **argv )
         settings.more_scrutiny_FOM_threshold = 3.164526;
         settings.pos_sum_threshold_sf = 0.106967;
         settings.num_chan_fluctuate = 1;
-        settings.more_scrutiny_coarser_FOM = 2.440607;
+        settings.more_scrutiny_coarser_FOM = 2.2;
         settings.more_scrutiny_min_dev_from_line = 5.781510;
         settings.amp_to_apply_line_test_below = 76.000000;
 

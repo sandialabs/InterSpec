@@ -39,9 +39,9 @@ namespace SpecUtils
 
 namespace PeakFitImprove
 {
-const bool debug_printout = true;
+const bool debug_printout = false;
 
-const double debug_lower_energy = 230;
+const double debug_lower_energy = 250;
 const double debug_upper_energy = 240;
 
 extern size_t sm_num_optimization_threads;

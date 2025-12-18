@@ -163,11 +163,13 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
 
   for( size_t channel = start_channel; channel <= end_channel; ++channel )
   {
+    double rougher_amplitude = -1.0;
     const double channel_energy = data->gamma_channel_center(channel);
     const bool debug_channel = ((channel_energy >= PeakFitImprove::debug_lower_energy)
                                 && (channel_energy <= PeakFitImprove::debug_upper_energy));
 
     const float secondDeriv = second_deriv[channel]; //Not dividing by binwidth^2 here,
+    //cout << "  " << channel_energy << ":\t" << secondDeriv << endl;
 
     bool secondSumPositive = true;
     float positive2ndDerivSum = 0.0f, positive2ndDataSum = 0.0f;
@@ -376,7 +378,7 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
         const double rougher_part = sqrt( 2.0 / ( boost::math::constants::pi<double>() *
                                          boost::math::constants::e<double>() ) )
                               / ( rougher_deriv_sigma * rougher_deriv_sigma );
-        const double rougher_amplitude = -amp_fake_factor * rougher_secondsum / rougher_part;
+        rougher_amplitude = -amp_fake_factor * rougher_secondsum / rougher_part;
 
 
         double rough_data_area = 0.0;
@@ -601,6 +603,17 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
           {
             mean = rough_mean;
             sigma = rough_sigma;
+
+            double rougher_secondsum = 0.0;
+            for( size_t index = rough_firstzero; index <= rough_secondzero; ++index )
+            {
+              if( rougher_second_deriv[index] < 0.0 )
+                rougher_secondsum += rougher_second_deriv[index];
+            }
+            const double rougher_part = sqrt( 2.0 / ( boost::math::constants::pi<double>() *
+                                             boost::math::constants::e<double>() ) )
+                                  / ( rough_sigma * rough_sigma );
+            rougher_amplitude = -amp_fake_factor * rougher_secondsum / rougher_part;
           }
         }//if( num_sig_pos >= 2 )
 
@@ -619,6 +632,9 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
                             / ( deriv_sigma * deriv_sigma );
       const double amplitude = -amp_fake_factor * secondsum / part;
 
+
+      //cout << "For " << mean << " keV: rougher_amplitude=" << rougher_amplitude << " vs " << amplitude << endl;
+      //amplitude = (std::max)(amplitude, rougher_amplitude);
 
       // The following quantitiy looks to have some power, with it usually having a value ~0.1
       //  for legit peaks, and higher for non-legit.
@@ -651,7 +667,7 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
       if( figure_of_merit < settings.more_scrutiny_FOM_threshold
          && (settings.more_scrutiny_FOM_threshold >= threshold_FOM) )
       {
-        //passed_higher_scrutiny = ( (rougher_scnd_drv < 0.0) && (rougher_FOM >= settings.more_scrutiny_coarser_FOM) );
+        passed_higher_scrutiny = ( (rougher_scnd_drv < 0.0) && (rougher_FOM >= settings.more_scrutiny_coarser_FOM) );
 
         //rougher_amplitude
 
@@ -674,7 +690,7 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
         //Using the un-smoothed data - lets estimate the continuum using the area on
         //  either side of the ROI, then compute a chi2 for a straight line, and use this
         //  to help decide if a peak _could_ be useful
-        const size_t cont_est_channels = 1 + roi_end_index - roi_begin_index;
+        const size_t cont_est_channels = (std::min)( size_t(3), 1 + roi_end_index - roi_begin_index );
         const size_t lower_edge_start = (cont_est_channels < roi_begin_index)
                                       ? (roi_begin_index - cont_est_channels) : 0;
         const size_t upper_edge_end = ((roi_end_index + cont_est_channels) < end_channel)
@@ -717,7 +733,8 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
           {
             cout << "For energy " << mean << ", channel " << i << " has energy "
             << data->gamma_channel_lower(i) << " with counts "
-            << spectrum[i] << " and predicted counts " << pred_chnl_nts << endl;
+            << spectrum[i] << " and predicted counts " << pred_chnl_nts
+            << " with ROI=[" << roi_start_energy << ", " << roi_end_energy << "]" << endl;
           }
 
           const double uncert2 = std::max( (pred_chnl_nts > 0.0) ? pred_chnl_nts : static_cast<double>(spectrum[i]), 1.0 );
@@ -730,9 +747,9 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
         }
         chi2_dof /= (roi_end_index - roi_begin_index);
 
-        if( PeakFitImprove::debug_printout )
+        if( debug_channel && PeakFitImprove::debug_printout )
         {
-          //cout << "Straight-line Chi2 = " << chi2_dof << " and max_chi2=" << max_chi2 << " for energy=" << mean << endl;
+          cout << "Straight-line Chi2 = " << chi2_dof << " and max_chi2=" << max_chi2 << " for energy=" << mean << endl;
         }
 
         //vector<double> cont_equation{0.0, 0.0};
@@ -740,7 +757,7 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
         //                                cont_est_channels, cont_est_channels,
         //                                cont_equation[1], cont_equation[0] );
 
-        //passed_higher_scrutiny = (max_chi2 > settings.more_scrutiny_min_dev_from_line);
+        passed_higher_scrutiny = (max_chi2 > settings.more_scrutiny_min_dev_from_line);
 
         if( debug_channel && !passed_higher_scrutiny )
           cout << "Failed higher_scrutiny: max_chi2=" << max_chi2 << ", while settings.more_scrutiny_min_dev_from_line="
@@ -761,14 +778,14 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
 
       //const double min_required_data = settings.min_counts_per_channel*2*deriv_sigma;
 
-      if( (figure_of_merit > threshold_FOM) && passed_higher_scrutiny )
+      if( (figure_of_merit > threshold_FOM) || passed_higher_scrutiny )
       {
-        if( debug_channel || PeakFitImprove::debug_printout )
+        if( debug_channel && PeakFitImprove::debug_printout )
         {
            cout << "Accepted: energy=" << mean << ", FOM=" << figure_of_merit
                 << ", amp=" << amplitude << ", FWHM=" << sigma*2.35482f
                 << ", data_area=" << data_area << ", rougher_FOM=" << rougher_FOM
-                << ", ROI=[" << roi_start_energy << ", " << roi_end_energy
+                << ", ROI=[" << roi_start_energy << ", " << roi_end_energy << "]"
                 << endl;
         }
 
@@ -789,10 +806,12 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
         if( debug_channel && PeakFitImprove::debug_printout )
        {
          cout << "Rejected: energy=" << mean << ", FOM=" << figure_of_merit
+         << " (threshold_FOM=" << threshold_FOM << ")"
          << ", amp=" << amplitude << ", FWHM=" << sigma*2.35482f
          << ", data_area=" << data_area  << ", rougher_FOM=" << rougher_FOM
          << ", ROI=[" << roi_start_energy << ", " << roi_end_energy
-         << ", passed_higher_scrutiny=" << passed_higher_scrutiny
+         << "], passed_higher_scrutiny=" << passed_higher_scrutiny
+         << ", secondderiv_zeros=[" << data->gamma_channel_center(firstzero) << ", " << data->gamma_channel_center(secondzero) << "]"
          << endl;
        }
       }//if( region we were just in passed_threshold )

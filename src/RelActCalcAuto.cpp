@@ -5822,6 +5822,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     for( size_t i = 1; i < answer.size(); ++i )
     {
       assert( answer[i-1].second <= answer[i].first );
+      if( answer[i-1].second > answer[i].first )
+        throw runtime_error( "RelActAutoCostFcn::cluster_photopeaks: clustered photopeak is overlapping." );
     }
     
     return answer;

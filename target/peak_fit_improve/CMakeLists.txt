@@ -51,6 +51,7 @@ add_executable( PeakFitImprove
   CandidatePeak_GA.h CandidatePeak_GA.cpp
   InitialFit_GA.h InitialFit_GA.cpp
   FinalFit_GA.h FinalFit_GA.cpp
+  FitPeaksForNuclideDev.h FitPeaksForNuclideDev.cpp
 )
 
 target_link_libraries( PeakFitImprove PRIVATE InterSpecLib )

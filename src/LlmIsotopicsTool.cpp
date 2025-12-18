@@ -490,24 +490,25 @@ nlohmann::json executeListIsotopicsPresets(
     // No current state - that's fine (getOrCreateRelActState throws if create_if_missing=false and no state exists)
   }
 
+
   // Scan both writable and static data/rel_act directories for preset files
-  const string writable_data_dir = InterSpec::writableDataDirectory();
-  const string static_data_dir = InterSpec::staticDataDirectory();
-
-  const string writable_rel_act_dir = SpecUtils::append_path( writable_data_dir, "rel_act" );
-  const string static_rel_act_dir = SpecUtils::append_path( static_data_dir, "rel_act" );
-
   // Collect preset files from both directories
   vector<string> preset_files;
 
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
   // Scan writable directory first (user-created presets)
+  const string writable_data_dir = InterSpec::writableDataDirectory();
+  const string writable_rel_act_dir = SpecUtils::append_path( writable_data_dir, "rel_act" );
   if( SpecUtils::is_directory(writable_rel_act_dir) )
   {
     vector<string> writable_files = SpecUtils::recursive_ls( writable_rel_act_dir, ".xml" );
     preset_files.insert( preset_files.end(), writable_files.begin(), writable_files.end() );
   }
+#endif
 
   // Scan static directory (built-in presets)
+  const string static_data_dir = InterSpec::staticDataDirectory();
+  const string static_rel_act_dir = SpecUtils::append_path( static_data_dir, "rel_act" );
   if( SpecUtils::is_directory(static_rel_act_dir) )
   {
     vector<string> static_files = SpecUtils::recursive_ls( static_rel_act_dir, ".xml" );
@@ -551,11 +552,15 @@ nlohmann::json executeListIsotopicsPresets(
     // We wont include the full path to the XML file, as the LLM doesnt need to know that
     //preset["path"] = filepath;
 
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
     // Indicate whether this is a user preset or built-in preset
     if( SpecUtils::istarts_with(filepath, writable_rel_act_dir) )
       preset["location"] = "user";
     else
       preset["location"] = "built-in";
+#else
+    preset["location"] = "built-in";
+#endif
 
     // Try to extract basic info from filename
     if( SpecUtils::icontains(filename, "Pu") )
@@ -696,30 +701,31 @@ nlohmann::json executeLoadIsotopicsPreset(
   if( !SpecUtils::iends_with(preset_name, ".xml") )
     preset_name += ".xml";
 
+
   // Search for the preset file in writable directory first, then static directory
-  const string writable_data_dir = InterSpec::writableDataDirectory();
-  const string static_data_dir = InterSpec::staticDataDirectory();
-
-  const string writable_rel_act_dir = SpecUtils::append_path( writable_data_dir, "rel_act" );
-  const string static_rel_act_dir = SpecUtils::append_path( static_data_dir, "rel_act" );
-
   string preset_path;
 
-  // Check writable directory first
-  string candidate = SpecUtils::append_path( writable_rel_act_dir, preset_name );
-  if( SpecUtils::is_file(candidate) )
-  {
-    preset_path = candidate;
-  }
-  else
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
+  {// Begin check writable directory first
+    const string writable_data_dir = InterSpec::writableDataDirectory();
+    const string writable_rel_act_dir = SpecUtils::append_path( writable_data_dir, "rel_act" );
+
+    const string candidate = SpecUtils::append_path( writable_rel_act_dir, preset_name );
+    if( SpecUtils::is_file(candidate) )
+      preset_path = candidate;
+  }// End check writable directory first
+#endif
+
+  if( preset_path.empty() )
   {
     // Check static directory
-    candidate = SpecUtils::append_path( static_rel_act_dir, preset_name );
+    const string static_data_dir = InterSpec::staticDataDirectory();
+    const string static_rel_act_dir = SpecUtils::append_path( static_data_dir, "rel_act" );
+
+    const string candidate = SpecUtils::append_path( static_rel_act_dir, preset_name );
     if( SpecUtils::is_file(candidate) )
-    {
       preset_path = candidate;
-    }
-  }
+  }//if( preset_path.empty() )
 
   if( preset_path.empty() )
     throw runtime_error( "Could not find preset: " + preset_name );
