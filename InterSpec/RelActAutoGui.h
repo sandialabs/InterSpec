@@ -203,10 +203,16 @@ public:
   
   ::rapidxml::xml_node<char> *serialize( ::rapidxml::xml_node<char> *parent ) const;
   void deSerialize( const rapidxml::xml_node<char> *base_node );
-  
+
   std::unique_ptr<rapidxml::xml_document<char>> guiStateToXml() const;
   void setGuiStateFromXml( const rapidxml::xml_document<char> *doc );
-  
+
+  /** Serializes the GUI state to a RelActAutoGuiState struct. */
+  void serialize( RelActCalcAuto::RelActAutoGuiState &state ) const;
+
+  /** Deserializes a RelActAutoGuiState struct into the GUI. */
+  void deSerialize( const RelActCalcAuto::RelActAutoGuiState &state );
+
   void setCalcOptionsGui( const RelActCalcAuto::Options &options );
   
 
@@ -238,7 +244,13 @@ protected:
                            const bool is_final_range );
   
   void handleShiftDrag( const double lower_energy, const double upper_energy );
-  void handleDoubleLeftClick( const double energy, const double counts );
+
+  /** Callback for when user double-clicks on the spectrum - currently only energy argument is used. */
+  void handleDoubleLeftClick( const double energy, const double counts,
+                             const std::string &ref_line_name,
+                             const Wt::WFlags<Wt::KeyboardModifier> modifiers );
+
+
   void handleRightClick( const double energy, const double counts,
                         const int page_x_px, const int page_y_px );
   

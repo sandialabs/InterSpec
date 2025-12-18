@@ -1,4 +1,8 @@
 <RelActCalcAuto version="0">
+	<Description>Performs plutonium isotopics over the higher energy range (610 to 775 keV). 
+This is a good option when you have a well-defined peak structure in this region, and the lower-energy regions may have interferences (e.g., non-plutonium isotopes), significant lower-energy continuum, significant shielding, or you do not know your detector efficiency.
+This configuration does not use detectors efficiency, or require any knowledge of shielding.
+Requires HPGe data, with well-defined peak structure in the 610 to 775 keV energy range.</Description>
 	<Options version="2">
 		<FitEnergyCal>true</FitEnergyCal>
 		<FwhmForm remark="Possible values: Gadras, Polynomial_2, Polynomial_3, Polynomial_4, Polynomial_5, Polynomial_6">Polynomial_2</FwhmForm>

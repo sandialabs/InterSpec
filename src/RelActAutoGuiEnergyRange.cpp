@@ -254,29 +254,33 @@ void RelActAutoGuiEnergyRange::setFromRoiRange( const RelActCalcAuto::RoiRange &
 {
   if( roi.continuum_type == PeakContinuum::OffsetType::External )
     throw runtime_error( "setFromRoiRange: External continuum type not supported" );
-  
-  if( roi.allow_expand_for_peak_width )
-    throw runtime_error( "setFromRoiRange: allow_expand_for_peak_width set to true not supported" );
-  
+
+  if( roi.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::CanExpandForFwhm )
+    throw runtime_error( "setFromRoiRange: CanExpandForFwhm range type not supported in GUI" );
+
   m_lower_energy->setValue( roi.lower_energy );
   m_upper_energy->setValue( roi.upper_energy );
   m_continuum_type->setCurrentIndex( static_cast<int>(roi.continuum_type) );
-  m_force_full_range->setChecked( roi.force_full_range );
-  
-  enableSplitToIndividualRanges( !roi.force_full_range );
+
+  const bool is_fixed = (roi.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed);
+  m_force_full_range->setChecked( is_fixed );
+
+  enableSplitToIndividualRanges( !is_fixed );
 }//setFromRoiRange(...)
 
 
 RelActCalcAuto::RoiRange RelActAutoGuiEnergyRange::toRoiRange() const
 {
   RelActCalcAuto::RoiRange roi;
-  
+
   roi.lower_energy = m_lower_energy->value();
   roi.upper_energy = m_upper_energy->value();
   roi.continuum_type = PeakContinuum::OffsetType( m_continuum_type->currentIndex() );
-  roi.force_full_range = m_force_full_range->isChecked();
-  roi.allow_expand_for_peak_width = false; //not currently supported to the GUI, or tested in the calculation code
-  
+
+  const bool is_checked = m_force_full_range->isChecked();
+  roi.range_limits_type = is_checked ? RelActCalcAuto::RoiRange::RangeLimitsType::Fixed
+                                     : RelActCalcAuto::RoiRange::RangeLimitsType::CanBeBrokenUp;
+
   return roi;
 }//RelActCalcAuto::RoiRange toRoiRange() const
 

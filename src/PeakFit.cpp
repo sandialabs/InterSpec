@@ -151,7 +151,7 @@ void do_peak_automated_searchfit( const double x,
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
     DebugLog(cout) << "Will try fitting peak clicked on at " << x << "\n";
 #endif
-    answer = searchForPeakFromUser( x, -1.0, meas, inpeaks, drf, isHPGe );
+    answer = searchForPeakFromUser( x, -1.0, meas, inpeaks, drf, nullptr, isHPGe );
   }catch( std::exception &e )
   {
     cerr << "do_peak_searchfit(...): caught unexpected exception: '" << e.what()
@@ -285,8 +285,8 @@ std::vector<std::shared_ptr<const PeakDef> > filter_anomolous_width_peaks_highre
 
         PeakShrdVec onepeak( 1, input[i] );
         pair< PeakShrdVec, PeakShrdVec > twoPeaksPlus, twoPeaksMinus;
-        twoPeaksPlus = searchForPeakFromUser( m + s, -1.0, meas, onepeak, nullptr, true );
-        twoPeaksMinus = searchForPeakFromUser( m - s, -1.0, meas, onepeak, nullptr, true );
+        twoPeaksPlus = searchForPeakFromUser( m + s, -1.0, meas, onepeak, nullptr, nullptr, true );
+        twoPeaksMinus = searchForPeakFromUser( m - s, -1.0, meas, onepeak, nullptr, nullptr, true );
         
         if( twoPeaksPlus.first.size() == 2 && twoPeaksMinus.first.size() == 2 )
         {
@@ -4914,6 +4914,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
                                                         const std::shared_ptr<const Measurement> &dataH,
                                                         const PeakShrdVec &inpeaks,
                                                         std::shared_ptr<const DetectorPeakResponse> drf,
+                                                       const std::shared_ptr<const std::deque<shared_ptr<const PeakDef>>> &auto_search_peaks,
                                                        const bool isHPGe )
 {
   typedef std::shared_ptr<const PeakDef> PeakDefShrdPtr;

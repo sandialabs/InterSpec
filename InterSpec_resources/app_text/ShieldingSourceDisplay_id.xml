@@ -123,6 +123,8 @@
     Pencocokan tidak dilakukan (tidak dapat membuat Chi2Fcn).
   </message>
   <message id="ssd-error-create-tool">Kesalahan membuat tampilan pencocokan Aktivitas/Perisai: {1}</message>
+  <message id="ssd-shield-source-diagram">Diagram Perisai/Sumber</message>
+  <message id="ssd-show-model-diagram">Tampilkan Diagram Model</message>
 
   <!-- SourceFitModel quantities -->
   <message id="sfm-tt-header-isotope">Nuklida ditambahkan atau dihapus sesuai dengan fotopeak yang digunakan untuk pencocokan ini, sehingga mungkin tidak diedit dalam tabel ini</message>

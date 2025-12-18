@@ -104,6 +104,8 @@
     ফিট সম্পাদন করা হয়নি (Chi2Fcn তৈরি করতে পারেনি)।
   </message>
   <message id="ssd-error-create-tool">কার্যকলাপ/শিল্ডিং ফিট প্রদর্শন তৈরি করতে ত্রুটি: {1}</message>
+  <message id="ssd-shield-source-diagram">শিল্ডিং/সোর্স ডায়াগ্রাম</message>
+  <message id="ssd-show-model-diagram">মডেল ডায়াগ্রাম দেখান</message>
 
   <!-- SourceFitModel quantities -->
   <message id="sfm-tt-header-isotope">নিউক্লাইডগুলি এই ফিটের জন্য ব্যবহৃত ফটোপিক অনুসারে যোগ বা সরানো হয়, তাই এই টেবিলে সম্পাদনা করা যাবে না</message>

@@ -29,6 +29,7 @@
 #include <mutex>
 #include <memory>
 #include <vector>
+#include <optional>
 
 #include <boost/function.hpp>
 
@@ -50,6 +51,12 @@ namespace SandiaDecay
   struct Nuclide;
   struct Element;
 }//namespace SandiaDecay
+
+namespace rapidxml
+{
+  template<class Ch> class xml_node;
+  template<class Ch> class xml_document;
+}//namespace rapidxml
 
 namespace ROOT
 {
@@ -122,6 +129,12 @@ namespace ShieldingSourceFitCalc
         
     ModelSourceType sourceType;
     
+    /** 1-sigma activity uncertainty (only set when representing fit results). */
+    std::optional<double> activityUncertainty;
+    
+    /** 1-sigma age uncertainty (only set when representing fit results). */
+    std::optional<double> ageUncertainty;
+    
 #if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
       boost::optional<double> truthActivity, truthActivityTolerance;
       boost::optional<double> truthAge, truthAgeTolerance;
@@ -140,35 +153,6 @@ namespace ShieldingSourceFitCalc
     static const int sm_xmlSerializationMinorVersion;
   };//struct SourceFitDef
     
-    
-    
-  struct IsoFitStruct : public SourceFitDef
-  {
-    //numProdigenyPeaksSelected: The number of different progeny selected to be included in the fit
-    //  through all the peaks with the parent nuclide as assigned.
-    size_t numProgenyPeaksSelected;
-      
-    //ageIsNotFittable: update this whenever you set the nuclide.  Intended to
-    //  indicate nuclides where the spectrum doesnt change with time (ex Cs137,
-    //  W187, etc).  Not rock solid yet (not set true as often as could be), but
-    //  getting there.  See also PeakDef::ageFitNotAllowed(...).
-    bool ageIsFittable;
-      
-    double activityUncertainty;
-    double ageUncertainty;
-      
-    IsoFitStruct();
-    
-#if( PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
-    static void equalEnough( const IsoFitStruct &lhs, const IsoFitStruct &rhs );
-#endif
-    
-    virtual void deSerialize( const ::rapidxml::xml_node<char> *parent_node );
-    virtual ::rapidxml::xml_node<char> *serialize( rapidxml::xml_node<char> *parent_node ) const;
-  };//struct IsoFitStruct
-    
-  
-  
   /** Struct holding information corresponding to the `TraceSrcDisplay` class defined in ShieldingSelect.cpp;
    represents information about a trace-source in a shielding (e.g., a volumetric source distributed unifrmly in a shielding
    material, but does not effect the attenuation or density of that material.
@@ -219,6 +203,9 @@ namespace ShieldingSourceFitCalc
      Cylinder:  ['Radius','Length',n/a]
      Rectangle: ['Width','Height','Depth']
      Generic:   ['AtomicNumber','ArealDensity',n/a]
+     
+     Note that Length, Width, Height above refer to thicknesses, not absolute dimensions - i.e., for the first (inner-most) layer, it would
+     be the half-Length, half-Length, etc.  For subsequent layers, its the thickness in the respective dimensions.
      */
     double m_dimensions[3];
     bool m_fitDimensions[3];
@@ -285,7 +272,7 @@ namespace ShieldingSourceFitCalc
      */
     std::map<const SandiaDecay::Element *,std::map<const SandiaDecay::Nuclide *,double>> m_nuclideFractionUncerts;
     
-    /** 1-sigma uncertainties for fit trace source activities (duplicate information available in #IsoFitStruct) */
+    /** 1-sigma uncertainties for fit trace source activities (duplicate information available within #SourceFitDef when populated with fit results) */
     std::map<const SandiaDecay::Nuclide *,double> m_traceSourceActivityUncerts;
     
     FitShieldingInfo();
@@ -377,7 +364,7 @@ namespace ShieldingSourceFitCalc
     
     // Need to add: foreground spectrum, background spectrum,
     
-    std::vector<ShieldingSourceFitCalc::IsoFitStruct> fit_src_info;
+    std::vector<ShieldingSourceFitCalc::SourceFitDef> fit_src_info;
     
     std::unique_ptr<const std::vector<GammaInteractionCalc::PeakResultPlotInfo>> peak_comparisons;
     

@@ -332,23 +332,11 @@ tetapi item menu akan dinonaktifkan jika tidak ada latar belakang atau spektrum 
 
 <message id='10desktop-shortcuts-desc'>
 
+  <h3>Pintasan Keyboard</h3>
   <ul>
     <li>
-      <b><code>Ctrl-s</code></b>: Beralih ke tab &quot;<em>File Spektrum</em>&quot;, atau
-      jika <em>Tab Alat</em> disembunyikan, menampilkan alat <em>File Spektrum</em>.
-    </li>
-    <li>
-      <b><code>Ctrl-p</code></b>: Beralih ke tab &quot;<em>Pengelola Puncak</em>&quot;, atau
-      menampilkan alat.
-    </li>
-    <li>
-      <b><code>Ctrl-r</code></b>: Beralih ke tab &quot;<em>Fotopuncak Referensi</em>&quot;, atau menampilkan alat.
-    </li>
-    <li>
-      <b><code>Ctrl-e</code></b>: Beralih ke tab &quot;<em>Kalibrasi Energi</em>&quot;, atau menampilkan alat.
-    </li>
-    <li>
-      <b><code>Ctrl-n</code></b>: Beralih ke tab &quot;<em>Pencarian Nuklida</em>&quot;, atau menampilkan alat.
+      <b><code>Ctrl-1</code></b> hingga <b><code>Ctrl-7</code></b>: Beralih ke tab alat 1-7 (yaitu, tab &quot;<code>File Spektrum</code>&quot;, &quot;<code>Pengelola Puncak</code>&quot;, &quot;<code>Fotopuncak Referensi</code>&quot;, dll.), atau
+      jika <em>Tab Alat</em> disembunyikan, menampilkan jendela alat yang sesuai.
     </li>
     <li>
       <b><code>Ctrl-h</code></b>: Menampilkan <em>Bantuan</em> dalam aplikasi.
@@ -357,10 +345,68 @@ tetapi item menu akan dinonaktifkan jika tidak ada latar belakang atau spektrum 
       <b><code>Ctrl-i</code></b>: Menampilkan layar <em>Informasi Selamat Datang</em>.
     </li>
     <li>
+      <b><code>Ctrl-k</code></b>: Menghapus semua garis fotopuncak referensi yang ditampilkan.
+    </li>
+    <li>
       <b><code>Ctrl-l</code></b>: Beralih sumbu y spektrum antara log dan linear.
     </li>
     <li>
-      <b><code>Ctrl-c</code></b>: Menghapus semua garis referensi yang ditampilkan.
+      <b><code>Ctrl-s</code></b>: Menyimpan status aplikasi saat ini.
+    </li>
+    <li>
+      <b><code>Ctrl-e</code></b>: Membuka dialog ekspor file spektrum.
+    </li>
+    <li>
+      <b><code>Ctrl-z</code></b>: Membatalkan tindakan terakhir.
+    </li>
+    <li>
+      <b><code>Ctrl-Shift-z</code></b>: Mengulangi tindakan yang dibatalkan terakhir.
+    </li>
+  </ul>
+
+  <h3>Pengubah Mouse untuk Interaksi Spektrum</h3>
+  Selain pintasan ini, Anda dapat mengklik judul sumbu y untuk beralih skala log/linear; mengklik judul sumbu x akan menampilkan/menyembunyikan grafik strip ringkasan.
+  <ul>
+    <li>
+      <b>Klik ganda</b>: Menyesuaikan puncak di spektrum latar depan pada lokasi yang diklik.
+    </li>
+    <li>
+      <b>Alt + Klik ganda</b>: Menyesuaikan puncak di spektrum latar belakang pada lokasi yang diklik.
+    </li>
+    <li>
+      <b>Shift + Klik ganda</b>: Menyesuaikan puncak di spektrum sekunder pada lokasi yang diklik.
+    </li>
+    <li>
+      <b>Shift + Tarik kiri</b>: Mode hapus puncak - menghapus puncak dalam rentang energi yang ditarik.
+    </li>
+    <li>
+      <b>Alt + Shift + Tarik kiri</b>: Mode hitung gamma - menghitung sinar gamma dalam rentang energi yang ditarik.
+    </li>
+    <li>
+      <b>Alt + Ctrl + Tarik kiri</b>: Mode kalibrasi ulang - mengkalibrasi ulang energi menggunakan rentang yang ditarik.
+    </li>
+    <li>
+      <b>Command + Tarik kiri (Mac)</b> atau <b>Alt + Tarik kiri (Windows)</b>: Tarik secara vertikal untuk memperbesar/memperkecil pada sumbu y.
+    </li>
+  </ul>
+
+  <h3>Pengubah Mouse untuk Interaksi Grafik Waktu</h3>
+  Gunakan menu di sudut kanan atas grafik waktu untuk menyederhanakan interaksi.
+  <ul>
+    <li>
+      <b>Klik atau tarik</b>: Memilih sampel untuk spektrum latar depan.
+    </li>
+    <li>
+      <b>Alt + Klik/tarik</b> atau <b>tahan tombol 'b'</b>: Memilih sampel untuk spektrum latar belakang.
+    </li>
+    <li>
+      <b>Meta + Klik/tarik</b> atau <b>tahan tombol 's'</b>: Memilih sampel untuk spektrum sekunder.
+    </li>
+    <li>
+      <b>Shift + Klik/tarik</b>: Menambahkan sampel ke pilihan saat ini.
+    </li>
+    <li>
+      <b>Ctrl + Klik/tarik</b>: Menghapus sampel dari pilihan saat ini.
     </li>
   </ul>
 </message>
@@ -395,3 +441,4 @@ tetapi item menu akan dinonaktifkan jika tidak ada latar belakang atau spektrum 
     </ul>
   </message>
 </messages>
+

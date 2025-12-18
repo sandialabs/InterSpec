@@ -256,6 +256,7 @@ set(sources
     src/DetectorPeakResponse.cpp
     src/GammaInteractionCalc.cpp
     src/ShieldingSourceDisplay.cpp
+    src/ShieldingSourceDiagram.cpp
     src/ShieldingSourceFitCalc.cpp
     src/ShieldingSelect.cpp
     src/GammaXsGui.cpp
@@ -373,6 +374,7 @@ set(headers
     InterSpec/DetectorPeakResponse.h
     InterSpec/GammaInteractionCalc.h
     InterSpec/ShieldingSourceDisplay.h
+    InterSpec/ShieldingSourceDiagram.h
     InterSpec/ShieldingSourceFitCalc.h
     InterSpec/ShieldingSelect.h
     InterSpec/GammaXsGui.h
@@ -625,8 +627,9 @@ if( BUILD_AS_OSX_APP )
 endif( BUILD_AS_OSX_APP )
 
 if( USE_LLM_INTERFACE )
-  list( APPEND sources src/LlmMcpResource.cpp src/LlmInterface.cpp src/LlmToolRegistry.cpp src/LlmConfig.cpp src/LlmConversationHistory.cpp src/LlmToolGui.cpp )
-list( APPEND headers InterSpec/LlmMcpResource.h InterSpec/LlmInterface.h InterSpec/LlmToolRegistry.h InterSpec/LlmConfig.h InterSpec/LlmConversationHistory.h InterSpec/LlmToolGui.h )
+  list( APPEND sources src/LlmMcpResource.cpp src/LlmInterface.cpp src/LlmToolRegistry.cpp src/LlmIsotopicsTool.cpp src/LlmActivityFitTool.cpp src/LlmConfig.cpp src/LlmConversationHistory.cpp src/LlmToolGui.cpp src/LlmInteractionDisplay.cpp )
+  list( APPEND headers InterSpec/LlmMcpResource.h InterSpec/LlmInterface.h InterSpec/LlmToolRegistry.h InterSpec/LlmIsotopicsTool.h InterSpec/LlmActivityFitTool.h InterSpec/LlmConfig.h InterSpec/LlmConversationHistory.h InterSpec/LlmToolGui.h InterSpec/LlmInteractionDisplay.h )
+  list( APPEND OTHER_InterSpec_SUPPORT_FILES data/llm_config.xml data/llm_tools_config.xml data/llm_agents.xml )
   
   if( BUILD_FOR_WEB_DEPLOYMENT OR IOS OR ANDROID )
     MESSAGE(FATAL_ERROR "MCP server can not be enabled for web or mobile builds")
@@ -647,6 +650,10 @@ list( APPEND OTHER_InterSpec_SUPPORT_FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/D3TimeChart.js
   ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/ShieldingSourceFitPlot.js
   ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/ShieldingSourceFitPlot.css
+  ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/Shielding3DView.js
+  ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/Shielding3DView.css
+  ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/Shielding2DView.js
+  ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/Shielding2DView.css
 )
 
 deploy_js_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/SpectrumChartD3.js"

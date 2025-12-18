@@ -4,6 +4,8 @@
   <message id="rs-dialog-title">Referencia Spektrumok</message>
   <message id="rs-show-foreground">Előtér Mutatása</message>
   <message id="rs-show-background">Háttér</message>
+  <message id="rs-load-background">Háttér Betöltése</message>
+  <message id="rs-load-background-portrait">+Háttér</message>
   <message id="rs-tt-add-dir-btn">Könyvtár hozzáadása referencia spektrumok megnyitásához.</message>
   <message id="rs-tt-delete-dir-btn">A jelenleg kiválasztott könyvtár eltávolítása a referencia spektrumok helyeinek listájából.</message>
   <message id="rs-no-dir-selected-desktop">

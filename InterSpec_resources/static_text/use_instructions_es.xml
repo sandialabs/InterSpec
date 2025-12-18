@@ -332,38 +332,81 @@ pero los elementos del menú estarán deshabilitados si no se carga ningún espe
 
 <message id='10desktop-shortcuts-desc'>
 
+  <h3>Atajos de Teclado</h3>
   <ul>
     <li>
-      <b><code>Ctrl-s</code></b>: Cambia a la pestaña "<em>Archivos de E<u>s</u>pectro</em>", o
-      si las <em>Pestañas de Herramientas</em> están ocultas, muestra la herramienta <em>Archivos de Espectro</em>.
-    </li>
-    <li>
-      <b><code>Ctrl-p</code></b>: Cambia a la pestaña "<em>Gestor de <u>P</u>icos</em>", o
-      muestra la herramienta.
-    </li>
-    <li>
-      <b><code>Ctrl-r</code></b>: Cambia a la pestaña "<em>Fotopeaks de <u>R</u>eferencia</em>",
-      o muestra la herramienta.
-    </li>
-    <li>
-      <b><code>Ctrl-e</code></b>: Cambia a la pestaña "<em>Calibración de <u>E</u>nergía</em>",
-      o muestra la herramienta.
-    </li>
-    <li>
-      <b><code>Ctrl-n</code></b>: Cambia a la pestaña "<em>Búsqueda de <u>N</u>ucleídos</em>",
-      o muestra la herramienta.
+      <b><code>Ctrl-1</code></b> hasta <b><code>Ctrl-7</code></b>: Cambia a la pestaña de herramienta 1-7 (es decir, pestañas "<code>Archivos de Espectro</code>", "<code>Gestor de Picos</code>", "<code>Fotopeaks de Referencia</code>", etc.), o
+      si las <em>Pestañas de Herramientas</em> están ocultas, muestra la ventana de herramienta correspondiente.
     </li>
     <li>
       <b><code>Ctrl-h</code></b>: Muestra la <em>Ayuda</em> dentro de la aplicación.
     </li>
     <li>
-      <b><code>Ctrl-i</code></b>: Muestra la pantalla de <em><u>I</u>nformación de Bienvenida</em>.
+      <b><code>Ctrl-i</code></b>: Muestra la pantalla de <em>Información de Bienvenida</em>.
     </li>
     <li>
-      <b><code>Ctrl-l</code></b>: Cambia el eje y del espectro entre <u>l</u>ogarítmico y <u>l</u>ineal.
+      <b><code>Ctrl-k</code></b>: Limpia todas las líneas de fotopeaks de referencia mostradas.
     </li>
     <li>
-      <b><code>Ctrl-c</code></b>: <u>L</u>impia todas las líneas de referencia mostradas.
+      <b><code>Ctrl-l</code></b>: Cambia el eje y del espectro entre logarítmico y lineal.
+    </li>
+    <li>
+      <b><code>Ctrl-s</code></b>: Guarda el estado actual de la aplicación.
+    </li>
+    <li>
+      <b><code>Ctrl-e</code></b>: Abre el diálogo de exportación de archivo de espectro.
+    </li>
+    <li>
+      <b><code>Ctrl-z</code></b>: Deshacer la última acción.
+    </li>
+    <li>
+      <b><code>Ctrl-Shift-z</code></b>: Rehacer la última acción deshecha.
+    </li>
+  </ul>
+
+  <h3>Modificadores de Ratón para Interacciones del Espectro</h3>
+  Además de estos atajos, puedes hacer clic en el título del eje y para alternar entre escala logarítmica/lineal; hacer clic en el título del eje x mostrará/ocultará la gráfica de tira de vista general.
+  <ul>
+    <li>
+      <b>Doble clic</b>: Ajusta un pico en el espectro de primer plano en la ubicación clicada.
+    </li>
+    <li>
+      <b>Alt + Doble clic</b>: Ajusta un pico en el espectro de fondo en la ubicación clicada.
+    </li>
+    <li>
+      <b>Shift + Doble clic</b>: Ajusta un pico en el espectro secundario en la ubicación clicada.
+    </li>
+    <li>
+      <b>Shift + Arrastre izquierdo</b>: Modo eliminar picos - elimina picos en el rango de energía arrastrado.
+    </li>
+    <li>
+      <b>Alt + Shift + Arrastre izquierdo</b>: Modo contar gammas - cuenta rayos gamma en el rango de energía arrastrado.
+    </li>
+    <li>
+      <b>Alt + Ctrl + Arrastre izquierdo</b>: Modo recalibración - recalibra la energía usando el rango arrastrado.
+    </li>
+    <li>
+      <b>Command + Arrastre izquierdo (Mac)</b> o <b>Alt + Arrastre izquierdo (Windows)</b>: Arrastra verticalmente para hacer zoom dentro/fuera en el eje y.
+    </li>
+  </ul>
+
+  <h3>Modificadores de Ratón para Interacciones del Gráfico de Tiempo</h3>
+  Usa el menú en la esquina superior derecha del gráfico de tiempo para simplificar las interacciones.
+  <ul>
+    <li>
+      <b>Clic o arrastre</b>: Selecciona muestras para el espectro de primer plano.
+    </li>
+    <li>
+      <b>Alt + Clic/arrastre</b> o <b>mantener presionada la tecla 'b'</b>: Selecciona muestras para el espectro de fondo.
+    </li>
+    <li>
+      <b>Meta + Clic/arrastre</b> o <b>mantener presionada la tecla 's'</b>: Selecciona muestras para el espectro secundario.
+    </li>
+    <li>
+      <b>Shift + Clic/arrastre</b>: Añade muestras a la selección actual.
+    </li>
+    <li>
+      <b>Ctrl + Clic/arrastre</b>: Elimina muestras de la selección actual.
     </li>
   </ul>
 </message>
@@ -397,4 +440,5 @@ pero los elementos del menú estarán deshabilitados si no se carga ningún espe
         <li><b>Todos:</b> "Guardar Estado al Salir" en casos raros no funciona</li>
     </ul>
   </message>
+</messages>
 </messages>

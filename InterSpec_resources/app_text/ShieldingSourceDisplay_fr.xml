@@ -111,7 +111,9 @@
     <br />
     Ajustement non effectué (impossible de créer Chi2Fcn).
   </message>
-  <message id="ssd-error-create-tool">Erreur lors de la création de l'affichage d'ajustement activité/blindage : {1}</message>
+  <message id="ssd-error-create-tool">Erreur lors de la création de l'affichage d'ajustement activité/blindage : {1}</message>
+  <message id="ssd-shield-source-diagram">Schéma Blindage/Source</message>
+  <message id="ssd-show-model-diagram">Afficher le schéma du modèle</message>
 
   <message id="sfm-tt-header-isotope">Les nucléides sont ajoutés ou supprimés en fonction des photopics utilisés pour cet ajustement, ils ne peuvent donc pas être modifiés dans ce tableau</message>
   <message id="sfm-tt-header-activity">Activité du nucléide.  Entrer une valeur de départ raisonnable peut aider l'ajustement, ou l'activité n'a pas besoin d'être ajustée.  Les valeurs peuvent être entrées dans des formats similaires à '12.4 kBq', '1.0mCi', '55.3uCi', '15.82Mbq'</message>

@@ -130,6 +130,8 @@
     Fit not performed (couldnt make Chi2Fcn).
   </message>
   <message id="ssd-error-create-tool">Error creating Activity/Shielding fit display: {1}</message>
+  <message id="ssd-shield-source-diagram">Shielding/Source Diagram</message>
+  <message id="ssd-show-model-diagram">Show Model Diagram</message>
 
   <!-- SourceFitModel quantities -->
   <message id="sfm-tt-header-isotope">Nuclides are added or removed according to the photopeaks used for this fit, thus may not be edited in this table</message>

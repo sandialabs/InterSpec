@@ -29,7 +29,7 @@ ShieldingSourceFitPlot = function (elem, options) {
   const parentWidth = this.chart.clientWidth;
   const parentHeight = this.chart.clientHeight;
   const chartAreaWidth = parentWidth - this.options.margins.left - this.options.margins.right;
-  const chartAreaHeight = parentHeight - this.options.margins.top - this.options.margins.bottom;
+  const chartAreaHeight = Math.max(1, parentHeight - this.options.margins.top - this.options.margins.bottom);
 
   // Setup the tooltip
   this.tooltip = d3.select(this.chart).append("div")

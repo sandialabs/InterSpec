@@ -66,4 +66,6 @@
   <message id="ssd-update-display">表示更新</message>
   <message id="ssd-save-changes">変更保存</message>
   <message id="ssd-discard-changes">変更破棄</message>
+  <message id="ssd-shield-source-diagram">遮蔽/線源図</message>
+  <message id="ssd-show-model-diagram">モデル図を表示</message>
 </messages>

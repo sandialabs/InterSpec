@@ -59,11 +59,10 @@ using namespace std;
 
 namespace AnalystChecks
 {
-  DetectedPeakStatus detected_peaks(const DetectedPeaksOptions& options, InterSpec* interspec)
+  DetectedPeakStatus detected_peaks( const DetectedPeaksOptions& options, InterSpec *interspec )
   {
-    if (!interspec) {
+    if( !interspec )
       throw std::runtime_error("No InterSpec session available");
-    }
 
     // Validate nonBackgroundPeaksOnly option
     if( options.nonBackgroundPeaksOnly )
@@ -114,9 +113,13 @@ namespace AnalystChecks
     }
 
     vector<shared_ptr<const PeakDef>> all_peaks;
+    vector<shared_ptr<const PeakDef>> user_analysis_peaks;
 
     if (user_peaks)
+    {
       all_peaks.insert(all_peaks.end(), user_peaks->begin(), user_peaks->end());
+      user_analysis_peaks.insert(user_analysis_peaks.end(), user_peaks->begin(), user_peaks->end());
+    }
 
     // We will add auto-search peaks only if there isnt already a user peak at essentially the same energy
     if (auto_peaks) {
@@ -182,6 +185,7 @@ namespace AnalystChecks
 
       // Filter foreground peaks based on background
       vector<shared_ptr<const PeakDef>> filtered_peaks;
+      vector<shared_ptr<const PeakDef>> filtered_analysis_peaks;
       const double foreground_live_time = (spectrum->live_time() > 0.0f) ? spectrum->live_time() : 1.0f;
       const double background_live_time = (background_spectrum->live_time() > 0.0f ? background_spectrum->live_time() : 1.0f);
 
@@ -258,15 +262,24 @@ namespace AnalystChecks
         }//if( background_auto_peaks )
 
         if( include_peak )
+        {
           filtered_peaks.push_back(fg_peak);
+
+          // Check if this peak is also in the user_analysis_peaks
+          const bool is_user_peak = std::find(user_analysis_peaks.begin(), user_analysis_peaks.end(), fg_peak) != user_analysis_peaks.end();
+          if( is_user_peak )
+            filtered_analysis_peaks.push_back(fg_peak);
+        }
       }//for( const shared_ptr<const PeakDef> &fg_peak : all_peaks )
 
       all_peaks = std::move(filtered_peaks);
+      user_analysis_peaks = std::move(filtered_analysis_peaks);
     }//if( options.nonBackgroundPeaksOnly )
 
 
     DetectedPeakStatus result;
     result.peaks = std::move(all_peaks);
+    result.analysis_peaks = std::move(user_analysis_peaks);
 
     return result;
   }
@@ -304,8 +317,9 @@ namespace AnalystChecks
     assert( meas_peaks );
     if( !meas_peaks )
       throw runtime_error( "Unexpected error getting existing peak list" );
-    
-    
+
+    shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_search_peaks = meas->automatedSearchPeaks(sample_nums);
+
     const bool isHPGe = PeakFitUtils::is_likely_high_res( interspec );
     
     vector<shared_ptr<const PeakDef>> origPeaks;
@@ -321,13 +335,33 @@ namespace AnalystChecks
     
     double pixelPerKev = -1.0; //This triggers an "automed" peak fit, which has higher thresholds for keeping peak.
     pair<vector<shared_ptr<const PeakDef>>, vector<shared_ptr<const PeakDef>>> foundPeaks;
-    foundPeaks = searchForPeakFromUser( options.energy, pixelPerKev, data, origPeaks, det, isHPGe );
-    
+    foundPeaks = searchForPeakFromUser( options.energy, pixelPerKev, data, origPeaks, det, auto_search_peaks, isHPGe );
+
     vector<shared_ptr<const PeakDef>> &peaks_to_add_in = foundPeaks.first;
     const vector<shared_ptr<const PeakDef>> &peaks_to_remove = foundPeaks.second;
     
     if( peaks_to_add_in.empty() )
-      throw runtime_error( "Could not fit peak." );
+    {
+      // Check if the requested energy is within the ROI of any existing peak
+      bool within_existing_roi = false;
+      for( const shared_ptr<const PeakDef> &p : origPeaks )
+      {
+        if( (options.energy >= p->lowerX()) && (options.energy <= p->upperX()) )
+        {
+          within_existing_roi = true;
+          break;
+        }
+      }
+
+      string error_msg = "Could not fit peak at " + SpecUtils::printCompact(options.energy, 4) + " keV";
+      if( within_existing_roi )
+        error_msg += " - the energy is within the ROI of an existing peak, so maybe the peak you wanted already exists in the analysis peak list, or another peak just cant be fit in the same ROI";
+      else
+        error_msg += " - please try a different energy";
+      error_msg += ".";
+
+      throw runtime_error( error_msg );
+    }
     
     // The new peak may share a ROI with previously existing peaks, so we have to figure out
     //  what peak we just fit.
@@ -349,8 +383,11 @@ namespace AnalystChecks
       throw runtime_error( "Could not identify newly fit peak." );
     
     // get fit peak
+    string source = options.source.has_value() ? options.source.value() : ""s;
+    if( SpecUtils::icontains(source, "unknown") || SpecUtils::istarts_with(source, "unk") )
+      source = "";
     
-    if( options.source.has_value() && !options.source.value().empty() )
+    if( !source.empty() )
     {
       const string source = options.source.value();
       
@@ -524,7 +561,70 @@ namespace AnalystChecks
 
     return status;
   }
-  
+
+
+  std::vector<std::string> get_identified_sources( const SpecUtils::SpectrumType specType, InterSpec *interspec )
+  {
+    if( !interspec )
+      throw std::runtime_error( "No InterSpec session available" );
+
+    std::shared_ptr<SpecMeas> meas = interspec->measurment( specType );
+    if( !meas )
+    {
+      throw std::runtime_error( "No measurement loaded for "
+                                + std::string(SpecUtils::descriptionText(specType))
+                                + " spectrum" );
+    }
+
+    const set<int> sample_nums = interspec->displayedSamples( specType );
+    if( sample_nums.empty() )
+    {
+      throw std::runtime_error( "No samples displayed for "
+                                + std::string(SpecUtils::descriptionText(specType))
+                                + " spectrum" );
+    }
+
+    shared_ptr<const deque<shared_ptr<const PeakDef>>> meas_peaks = meas->peaks( sample_nums );
+    if( !meas_peaks )
+      return std::vector<std::string>();
+
+    // Use a set to track unique sources
+    std::set<std::string> unique_sources;
+
+    for( const shared_ptr<const PeakDef> &peak : *meas_peaks )
+    {
+      if( !peak )
+        continue;
+
+      // Check for nuclide source
+      if( const SandiaDecay::Nuclide * const nuc = peak->parentNuclide() )
+      {
+        unique_sources.insert( nuc->symbol );
+      }
+      // Check for x-ray element source
+      else if( const SandiaDecay::Element * const el = peak->xrayElement() )
+      {
+        unique_sources.insert( el->symbol );
+      }
+      // Check for reaction source
+      else if( const ReactionGamma::Reaction * const rctn = peak->reaction() )
+      {
+        unique_sources.insert( rctn->name() );
+      }
+      // Check for user label (if it doesn't contain "unknown")
+      else
+      {
+        const std::string &label = peak->userLabel();
+        if( !label.empty() && !SpecUtils::icontains(label, "unknown") )
+          unique_sources.insert( label );
+      }
+    }
+
+    // Convert set to vector
+    return std::vector<std::string>( unique_sources.begin(), unique_sources.end() );
+  }
+
+
   vector<tuple<float,float,float>> cacl_estimated_gamma_importance( const vector<tuple<float,float>> &gamma_energies_and_yields )
   {
     float sum_yields_sqrt_energy = 0.0f;
@@ -822,8 +922,7 @@ namespace AnalystChecks
       base_roi.lower_energy = std::max( 55.0f, foreground->gamma_energy_min() );
       base_roi.upper_energy = foreground->gamma_energy_max();
       base_roi.continuum_type = PeakContinuum::OffsetType::Linear;
-      base_roi.force_full_range = false;
-      base_roi.allow_expand_for_peak_width = true;
+      base_roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::CanExpandForFwhm;
       
       // Create all trial options combinations to run in parallel
       std::vector<RelActCalcAuto::Options> trial_options;
@@ -1036,7 +1135,7 @@ namespace AnalystChecks
         
         DetectorPeakResponse drf;
         drf.setIntrinsicEfficiencyFormula( "1.0", 2.54*PhysicalUnits::cm, PhysicalUnits::keV,
-                                               0.0f, 0.0f, DetectorPeakResponse::EffGeometryType::FarField );
+                                               0.0f, 0.0f, DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic);
         
         drf.fitResolution( peak_deque, spectrum, DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
         
@@ -1106,7 +1205,7 @@ namespace AnalystChecks
         
         DetectorPeakResponse drf;
         drf.setIntrinsicEfficiencyFormula( "1.0", 2.54*PhysicalUnits::cm, PhysicalUnits::keV,
-                                               0.0f, 0.0f, DetectorPeakResponse::EffGeometryType::FarField );
+                                               0.0f, 0.0f, DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic);
         
         drf.fitResolution( peak_deque, spectrum, DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
         

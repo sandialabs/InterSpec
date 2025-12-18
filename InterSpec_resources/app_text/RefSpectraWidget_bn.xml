@@ -6,6 +6,8 @@
   <message id="rs-show-foreground-portrait">তুলনা</message>
   <message id="rs-show-background">ব্যাকগ্রাউন্ড দেখান</message>
   <message id="rs-show-background-portrait">ব্যাকগ্রাউন্ড</message>
+  <message id="rs-load-background">ব্যাকগ্রাউন্ড লোড করুন</message>
+  <message id="rs-load-background-portrait">+ব্যাকগ্রাউন্ড</message>
   <message id="rs-tt-add-dir-btn">রেফারেন্স স্পেকট্রা খোলার জন্য ডিরেক্টরি যোগ করুন।</message>
   <message id="rs-tt-delete-dir-btn">রেফারেন্স স্পেকট্রা দেখানোর জায়গার তালিকা থেকে বর্তমানে নির্বাচিত ডিরেক্টরি সরিয়ে দেয়।</message>
   <message id="rs-no-dir-selected-desktop">
