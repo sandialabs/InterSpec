@@ -39,7 +39,7 @@ namespace SpecUtils
 
 namespace PeakFitImprove
 {
-const bool debug_printout = false;
+const bool debug_printout = true;
 
 const double debug_lower_energy = 250;
 const double debug_upper_energy = 240;
@@ -147,6 +147,8 @@ struct DataSrcInfo
   InjectSourceInfo src_info;
 
   std::vector<ExpectedPhotopeakInfo> expected_photopeaks;
+  std::vector<ExpectedPhotopeakInfo> expected_signal_photopeaks;
+  std::vector<ExpectedPhotopeakInfo> expected_background_photopeaks;
 };//struct DataSrcInfo
 
 

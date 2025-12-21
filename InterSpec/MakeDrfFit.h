@@ -52,6 +52,18 @@ namespace MakeDrfFit
                              std::vector<float> &result,
                              std::vector<float> &uncerts );
   
+  /** For use when fitting a FWHM equation from fit-peaks in a spectrum; use this function to filter peaks with anomolous widths from the set of peaks
+   you are using to fit the FWHM.
+   Generally you might call `performResolutionFit(...)`  with all of your peaks, then call this function to filter the outliers out, then call
+   `performResolutionFit(...)` again.
+   
+   Does no work, and just retuns the input peaks if there are less than 5 input peaks.
+   */
+  std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>>
+  removeOutlyingWidthPeaks( const std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> &peaks,
+                            const DetectorPeakResponse::ResolutionFnctForm fnctnlForm,
+                           const std::vector<float> &coefficients );
+  
   /** Fits the FWHM as a sqrt( Sum_i {A_i *pow(x,i)} )
    
    @param peaks The peaks to use for the fit

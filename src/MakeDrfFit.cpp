@@ -613,6 +613,54 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
 }//std::vector<float> performResolutionFit(...)
 
   
+  //removeOutlyingWidthPeaks(...): removes peaks whos width does not agree
+  //  well with the functional form passed in.  Returns surviving peaks.
+std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>>
+removeOutlyingWidthPeaks( const std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> &peaks,
+                          const DetectorPeakResponse::ResolutionFnctForm fnctnlForm,
+                          const std::vector<float> &coefficients )
+{
+    const double npeaks = static_cast<double>( peaks->size() );
+    if( npeaks < 5 )
+      return peaks;
+    const size_t ndel_max = static_cast<size_t>( floor(0.2*npeaks) );
+    
+    vector<double> weights;
+    double mean_weight = 0.0;
+    for( const PeakModel::PeakShrdPtr peak : *peaks )
+    {
+      double predicted_sigma = DetectorPeakResponse::peakResolutionSigma( peak->mean(), fnctnlForm, coefficients );
+      if( IsNan(predicted_sigma) || IsInf(predicted_sigma) )
+        predicted_sigma = 0.0;
+      
+      const double chi2 = MakeDrfFit::peak_width_chi2( predicted_sigma, *peak );
+      
+      mean_weight += chi2/npeaks;
+      weights.push_back( chi2 );
+    }//for( const EnergySigma &es : m_energies_and_sigmas )
+    
+    vector<size_t> indices( npeaks );
+    for( size_t i = 0; i < npeaks; ++i )
+      indices[i] = i;
+    
+    std::sort( begin(indices), end(indices), [&weights](const size_t &a, const size_t &b){
+      return weights[b] < weights[a];
+    } );
+    
+    size_t lastInd = 0;
+    while( lastInd <= ndel_max && weights[indices[lastInd]] > 2.5*mean_weight )
+      ++lastInd;
+    indices.erase( indices.begin() + lastInd, indices.end() );
+    
+    std::shared_ptr< deque< std::shared_ptr<const PeakDef> > > reduced_peaks( new deque< PeakModel::PeakShrdPtr >() );
+    for( size_t i = 0; i < npeaks; ++i )
+      if( find( indices.begin(), indices.end(), i) == indices.end() )
+        reduced_peaks->push_back( peaks->operator[](i) );
+    
+    return reduced_peaks;
+}//removeOutlyingWidthPeaks(...)
+
+  
   
 double fit_sqrt_poly_fwhm_lls( const std::deque< std::shared_ptr<const PeakDef> > &peaks,
                                const int num_fit_coefficients,

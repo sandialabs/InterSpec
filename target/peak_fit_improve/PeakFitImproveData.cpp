@@ -664,96 +664,113 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
         //#endif
 
         const shared_ptr<const SpecUtils::Measurement> meas = info.src_spectra[0];
-        vector<PeakTruthInfo> lines = info.source_lines;
-        lines.insert( end(lines), begin(info.background_lines), end(info.background_lines) );
 
-        //for( const PeakTruthInfo &line : lines )
-        //  cout << "Source line: " << line.energy << " keV, area=" << line.area << endl;
+        // Helper lambda to perform clustering on a given set of lines
+        const auto cluster_lines = [&info]( vector<PeakTruthInfo> input_lines ) -> vector<ExpectedPhotopeakInfo> {
+          vector<PeakTruthInfo> lines = input_lines;
 
-        /**
-         - Sort lines from largest area to smallest.
-         - cluster, using `~0.75*FWHM`
-         - See what is hit, and whats not
-         */
+          //for( const PeakTruthInfo &line : lines )
+          //  cout << "Source line: " << line.energy << " keV, area=" << line.area << endl;
 
-        std::sort( begin(lines), end(lines), []( const PeakTruthInfo &lhs, const PeakTruthInfo &rhs ){
-          return (lhs.area < rhs.area);
-        } );
+          /**
+           - Sort lines from largest area to smallest.
+           - cluster, using `~0.75*FWHM`
+           - See what is hit, and whats not
+           */
+
+          std::sort( begin(lines), end(lines), []( const PeakTruthInfo &lhs, const PeakTruthInfo &rhs ){
+            return (lhs.area < rhs.area);
+          } );
 
 
-        const double cluster_fwhm_multiple = 0.5;
-        vector<vector<PeakTruthInfo>> clustered_lines;
-        while( !lines.empty() )
-        {
-          const PeakTruthInfo main_line = std::move( lines.back() );
-          lines.resize( lines.size() - 1 ); //remove the line we just grabbed
-
-          vector<PeakTruthInfo> cluster;
-          cluster.push_back( main_line );
-
-          // Look all through `lines` for lines within `cluster_fwhm_multiple` of main_line
-          deque<size_t> index_to_remove;
-          for( size_t i = 0; i < lines.size(); ++i )
+          const double cluster_fwhm_multiple = 0.5;
+          vector<vector<PeakTruthInfo>> clustered_lines;
+          while( !lines.empty() )
           {
-            if( fabs(lines[i].energy - main_line.energy) < cluster_fwhm_multiple*main_line.fwhm )
+            const PeakTruthInfo main_line = std::move( lines.back() );
+            lines.resize( lines.size() - 1 ); //remove the line we just grabbed
+
+            vector<PeakTruthInfo> cluster;
+            cluster.push_back( main_line );
+
+            // Look all through `lines` for lines within `cluster_fwhm_multiple` of main_line
+            deque<size_t> index_to_remove;
+            for( size_t i = 0; i < lines.size(); ++i )
             {
-              index_to_remove.push_back( i );
-              cluster.push_back( lines[i] );
+              if( fabs(lines[i].energy - main_line.energy) < cluster_fwhm_multiple*main_line.fwhm )
+              {
+                index_to_remove.push_back( i );
+                cluster.push_back( lines[i] );
+              }
+            }//for( loop over lines to cluster )
+
+            for( auto iter = std::rbegin(index_to_remove); iter != std::rend(index_to_remove); ++iter )
+            {
+              //          cout << "Removing " << *iter << ", which has energy " << lines[*iter].energy
+              //          << ", main line=" << main_line.energy << endl;
+              lines.erase( begin(lines) + (*iter) );
             }
-          }//for( loop over lines to cluster )
 
-          for( auto iter = std::rbegin(index_to_remove); iter != std::rend(index_to_remove); ++iter )
+            clustered_lines.push_back( cluster );
+          }//while( !lines.empty() )
+
+
+
+          vector<ExpectedPhotopeakInfo> detectable_clusters;
+          for( const vector<PeakTruthInfo> &cluster : clustered_lines )
           {
-            //          cout << "Removing " << *iter << ", which has energy " << lines[*iter].energy
-            //          << ", main line=" << main_line.energy << endl;
-            lines.erase( begin(lines) + (*iter) );
-          }
 
-          clustered_lines.push_back( cluster );
-        }//while( !lines.empty() )
+            assert( !cluster.empty() );
+            if( cluster.empty() )
+              continue;
 
+            const PeakTruthInfo &main_line = cluster.front();
+            if( (main_line.area < 4.0)  // Let be realistic, and require something
+               || (fabs(main_line.energy - 478.0) < 1.2)  // Avoid Alpha-Li reaction
+               || (fabs(main_line.energy - 511.0) < 1.0 ) // Avoid D.B. 511
+               // Shouldn't there be some other broadened reaction lines here???
+               || ((main_line.energy + 0.5*main_line.full_width) > info.src_no_poisson->gamma_energy_max()) // Make sure not off upper-end
+               || ((main_line.energy - 0.5*main_line.full_width) < info.src_no_poisson->gamma_energy_min()) // Make sure not below lower-end
+               || ((main_line.energy - 0.5*main_line.full_width) < 5.0) //eh, kinda arbitrary, maybe shouldnt limit?
+               )
+            {
+              //cout << "Skipping cluster at " << main_line.energy << endl;
+              continue;
+            }
 
+            ExpectedPhotopeakInfo roi_info = PeakFitImproveData::create_expected_photopeak( info, cluster );
 
-        vector<ExpectedPhotopeakInfo> detectable_clusters;
-        for( const vector<PeakTruthInfo> &cluster : clustered_lines )
-        {
+            if( (roi_info.peak_area > JudgmentFactors::min_truth_peak_area)
+               && (roi_info.nsigma_over_background > JudgmentFactors::min_truth_nsigma) )
+              detectable_clusters.push_back( std::move(roi_info) );
+            //else
+            //  cout << "Discarding undetectable cluster at " << roi_info.effective_energy << endl;
+          }//for( const vector<PeakTruthInfo> &cluster : clustered_lines )
 
-          assert( !cluster.empty() );
-          if( cluster.empty() )
-            continue;
+          std::sort( begin(detectable_clusters), end(detectable_clusters),
+                    []( const ExpectedPhotopeakInfo &lhs, const ExpectedPhotopeakInfo &rhs ) -> bool {
+            return lhs.effective_energy < rhs.effective_energy;
+          } );
 
-          const PeakTruthInfo &main_line = cluster.front();
-          if( (main_line.area < 4.0)  // Let be realistic, and require something
-             || (fabs(main_line.energy - 478.0) < 1.2)  // Avoid Alpha-Li reaction
-             || (fabs(main_line.energy - 511.0) < 1.0 ) // Avoid D.B. 511
-             // Shouldn't there be some other broadened reaction lines here???
-             || ((main_line.energy + 0.5*main_line.full_width) > info.src_no_poisson->gamma_energy_max()) // Make sure not off upper-end
-             || ((main_line.energy - 0.5*main_line.full_width) < info.src_no_poisson->gamma_energy_min()) // Make sure not below lower-end
-             || ((main_line.energy - 0.5*main_line.full_width) < 5.0) //eh, kinda arbitrary, maybe shouldnt limit?
-             )
-          {
-            //cout << "Skipping cluster at " << main_line.energy << endl;
-            continue;
-          }
+          return detectable_clusters;
+        };//cluster_lines lambda
 
-          ExpectedPhotopeakInfo roi_info = PeakFitImproveData::create_expected_photopeak( info, cluster );
+        // Perform clustering 3 separate times:
+        // 1. Combined (source + background) - for backward compatibility
+        vector<PeakTruthInfo> combined_lines = info.source_lines;
+        combined_lines.insert( end(combined_lines), begin(info.background_lines), end(info.background_lines) );
+        vector<ExpectedPhotopeakInfo> combined_detectable_clusters = cluster_lines( combined_lines );
 
-          if( (roi_info.peak_area > JudgmentFactors::min_truth_peak_area)
-             && (roi_info.nsigma_over_background > JudgmentFactors::min_truth_nsigma) )
-            detectable_clusters.push_back( std::move(roi_info) );
-          //else
-          //  cout << "Discarding undetectable cluster at " << roi_info.effective_energy << endl;
-        }//for( const vector<PeakTruthInfo> &cluster : clustered_lines )
+        // 2. Signal only
+        vector<ExpectedPhotopeakInfo> signal_detectable_clusters = cluster_lines( info.source_lines );
 
-        std::sort( begin(detectable_clusters), end(detectable_clusters),
-                  []( const ExpectedPhotopeakInfo &lhs, const ExpectedPhotopeakInfo &rhs ) -> bool {
-          return lhs.effective_energy < rhs.effective_energy;
-        } );
+        // 3. Background only
+        vector<ExpectedPhotopeakInfo> background_detectable_clusters = cluster_lines( info.background_lines );
 
         if( PeakFitImprove::debug_printout )
         {
           /*
-           for( const ExpectedPhotopeakInfo &roi_info : detectable_clusters )
+           for( const ExpectedPhotopeakInfo &roi_info : combined_detectable_clusters )
            {
            cout << "Expected ROI: {energy: " << roi_info.effective_energy
            << ", fwhm: " << roi_info.gamma_lines.front().fwhm
@@ -768,12 +785,12 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
            //for( const auto &c : cluster )
            //  cout << "{" << c.energy << "," << c.area << "}, ";
            //cout << "}" << endl;
-           }//for( const ExpectedPhotopeakInfo &roi_info : detectable_clusters )
+           }//for( const ExpectedPhotopeakInfo &roi_info : combined_detectable_clusters )
            */
         }//if( PeakFitImprove::debug_printout )
 
 
-        if( !detectable_clusters.empty() )
+        if( !combined_detectable_clusters.empty() )
         {
           num_accepted_inputs += 1;
           DataSrcInfo src_info;
@@ -782,12 +799,14 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
           src_info.live_time_name = inject_set.live_time_name;
 
           src_info.src_info = info;
-          src_info.expected_photopeaks = detectable_clusters;
+          src_info.expected_photopeaks = combined_detectable_clusters;
+          src_info.expected_signal_photopeaks = signal_detectable_clusters;
+          src_info.expected_background_photopeaks = background_detectable_clusters;
 
           std::lock_guard<std::mutex> lock( input_srcs_mutex );
 
           input_srcs.push_back( src_info );
-        }//if( !detectable_clusters.empty() )
+        }//if( !combined_detectable_clusters.empty() )
       };//create_DataSrcInfo lambda
 
       num_queued += 1;
