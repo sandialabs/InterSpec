@@ -1064,12 +1064,26 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
           vector<pair<const SandiaDecay::Nuclide *, double>> nucs_and_acts;
           if( rel_eff_index < solution.m_rel_activities.size() )
           {
+            if( PeakFitImprove::debug_printout )
+              cout << "Collecting " << solution.m_rel_activities[rel_eff_index].size() << " nuclides from RelActAuto solution:" << endl;
+
             for( const RelActCalcAuto::NuclideRelAct &nuc_act : solution.m_rel_activities[rel_eff_index] )
             {
               // source is a SrcVariant which can be a nuclide or element
               const SandiaDecay::Nuclide * const * nuc_ptr = std::get_if<const SandiaDecay::Nuclide *>( &nuc_act.source );
               if( nuc_ptr && *nuc_ptr )
-                nucs_and_acts.emplace_back( *nuc_ptr, nuc_act.rel_activity );
+              {
+                const double live_time_seconds = foreground->live_time();
+                // RelActAuto's rel_activity is per second, need to multiply by live time for clustering
+                const double activity_for_clustering = nuc_act.rel_activity * live_time_seconds;
+
+                if( PeakFitImprove::debug_printout )
+                  cout << "  " << nuc_act.name() << ": rel_activity=" << nuc_act.rel_activity
+                       << ", live_time=" << live_time_seconds
+                       << "s, activity_for_clustering=" << activity_for_clustering << endl;
+
+                nucs_and_acts.emplace_back( *nuc_ptr, activity_for_clustering );
+              }
             }
           }
 
@@ -1079,6 +1093,21 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
               fwhmFnctnlForm, fwhm_coefficients,
               lowest_energy_gamma, highest_energy_gamma,
               auto_settings );
+
+          // Debug output: print refined ROIs with expected counts
+          if( PeakFitImprove::debug_printout )
+          {
+            cout << "Iteration " << iter << " refined ROIs:" << endl;
+            for( size_t roi_idx = 0; roi_idx < refined_rois.size(); ++roi_idx )
+            {
+              const RelActCalcAuto::RoiRange &roi = refined_rois[roi_idx];
+              const double roi_expected_counts = foreground->gamma_integral(
+                  static_cast<float>(roi.lower_energy), static_cast<float>(roi.upper_energy) );
+              cout << "  ROI " << roi_idx << ": [" << roi.lower_energy << " - " << roi.upper_energy
+                   << "] keV, width=" << (roi.upper_energy - roi.lower_energy)
+                   << " keV, expected_counts=" << roi_expected_counts << endl;
+            }
+          }
 
           // Check if ROIs changed significantly - if not, stop iterating
           if( rois_are_similar( refined_rois, solution.m_options.rois ) )
