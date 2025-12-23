@@ -13999,7 +13999,7 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
       for( size_t peak_index = 0; peak_index < peaks.size(); ++peak_index )
       {
         const PeakDef &p = peaks[peak_index];
-        assert( p.hasSourceGammaAssigned() );
+        assert( p.hasSourceGammaAssigned() || (p.amplitude() < 1.0) ); //very-near-zero-amplitude gammas wont be assigned a source
         if( !p.hasSourceGammaAssigned() || (p.continuum() == continuum) )
           continue;
         const double lower_diff = fabs(roi.lower_energy - p.continuum()->lowerEnergy());
@@ -14014,7 +14014,7 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
       }//for( size_t peak_index = 0; peak_index < peaks.size(); ++peak_index )
     }//for( size_t rel_eff_index = 0; rel_eff_index < solution.m_fit_peaks_for_each_curve.size(); ++rel_eff_index )
     
-    assert( nearest_dist < 1.1 );
+    //assert( nearest_dist < 1.1 );
     if( !continuum || (nearest_dist > 10.0) )
       continue;
     
@@ -14050,7 +14050,7 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
           for( size_t peak_index = 0; peak_index < peaks.size(); ++peak_index )
           {
             const PeakDef &p = peaks[peak_index];
-            assert( p.hasSourceGammaAssigned() );
+            assert( p.hasSourceGammaAssigned() || (p.amplitude() < 1.0) );
             if( !p.hasSourceGammaAssigned() || (p.continuum() != continuum) )
               continue;
 

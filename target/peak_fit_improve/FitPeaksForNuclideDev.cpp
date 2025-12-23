@@ -58,6 +58,442 @@ using namespace std;
 namespace FitPeaksForNuclideDev
 {
 
+// Struct to store cluster info including gamma line energies and amplitudes
+struct ClusteredGammaInfo {
+  double lower;
+  double upper;
+  vector<pair<double,double>> gamma_lines; // (energy, amplitude)
+};
+
+
+// Settings for the gamma clustering algorithm - different values may be used
+// for the initial RelActManual stage vs subsequent RelActAuto refinement stages
+struct GammaClusteringSettings {
+  double cluster_num_sigma;         // How many sigma to use for clustering gamma lines
+  double min_data_area_keep;        // Minimum data area to keep a cluster
+  double min_est_peak_area_keep;    // Minimum estimated peak area to keep
+  double min_est_significance_keep; // Minimum significance (est_counts / sqrt(data_area))
+  double roi_width_num_fwhm_lower;  // FWHM below lowest gamma line for ROI extent
+  double roi_width_num_fwhm_upper;  // FWHM above highest gamma line for ROI extent
+  double max_fwhm_width;            // Maximum ROI width in FWHM before breaking up
+  double min_fwhm_roi;              // Minimum ROI width in FWHM to keep
+  double min_fwhm_quad_cont;        // Width threshold to use quadratic continuum
+};
+
+
+// Helper to check if two ROI sets are similar enough to stop iterating
+bool rois_are_similar( const vector<RelActCalcAuto::RoiRange> &a,
+                       const vector<RelActCalcAuto::RoiRange> &b,
+                       const double energy_tolerance = 1.0 )
+{
+  if( a.size() != b.size() )
+    return false;
+
+  for( size_t i = 0; i < a.size(); ++i )
+  {
+    if( fabs(a[i].lower_energy - b[i].lower_energy) > energy_tolerance )
+      return false;
+    if( fabs(a[i].upper_energy - b[i].upper_energy) > energy_tolerance )
+      return false;
+  }
+  return true;
+}//rois_are_similar
+
+
+/** Clusters gamma lines and creates ROIs based on a relative efficiency function.
+
+ This function takes gamma lines from the specified nuclides, estimates their relative
+ amplitudes using the provided relative efficiency function, and clusters them into
+ ROIs (Regions of Interest) for fitting.
+
+ The clustering algorithm:
+ 1. Calculates expected counts for each gamma line using rel_eff_fcn
+ 2. Orders gamma lines by expected counts (highest first)
+ 3. For each gamma line, creates a cluster covering +/- cluster_num_sigma * sigma
+ 4. Merges overlapping clusters
+ 5. Breaks up clusters that are too wide (> max_fwhm_width FWHMs)
+ 6. Filters clusters that are too small or have insignificant expected signal
+ 7. Creates ROIs with appropriate bounds and continuum types
+
+ @param rel_eff_fcn Lambda returning relative efficiency at a given energy
+ @param nuclides_and_activities Vector of (nuclide*, activity) pairs
+ @param foreground The spectrum to use for data area calculations
+ @param fwhm_form FWHM functional form
+ @param fwhm_coefficients FWHM function coefficients
+ @param lowest_energy Lower energy bound for gamma lines
+ @param highest_energy Upper energy bound for gamma lines
+ @param settings Clustering and ROI parameters
+
+ @return Vector of RoiRange objects
+ */
+vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
+    const function<double(double)> &rel_eff_fcn,
+    const vector<pair<const SandiaDecay::Nuclide *, double>> &nuclides_and_activities,
+    const shared_ptr<const SpecUtils::Measurement> &foreground,
+    const DetectorPeakResponse::ResolutionFnctForm fwhm_form,
+    const vector<float> &fwhm_coefficients,
+    const double lowest_energy,
+    const double highest_energy,
+    const GammaClusteringSettings &settings )
+{
+  vector<RelActCalcAuto::RoiRange> result_rois;
+
+  // Collect all gamma lines with their expected counts
+  vector<pair<double,double>> gammas_by_counts;  // (energy, expected_counts)
+
+  for( const auto &nuc_act : nuclides_and_activities )
+  {
+    const SandiaDecay::Nuclide * const nuc = nuc_act.first;
+    const double activity = nuc_act.second;
+
+    if( !nuc || (activity <= 0.0) )
+      continue;
+
+    const double age = PeakDef::defaultDecayTime( nuc );
+
+    SandiaDecay::NuclideMixture mix;
+    mix.addAgedNuclideByActivity( nuc, activity, age );
+    const vector<SandiaDecay::EnergyRatePair> photons
+        = mix.photons( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy );
+
+    for( const SandiaDecay::EnergyRatePair &photon : photons )
+    {
+      if( (photon.energy < lowest_energy)
+         || (photon.energy > highest_energy)
+         || (photon.numPerSecond <= std::numeric_limits<double>::epsilon()) )
+      {
+        continue;
+      }
+
+      const double rel_eff = rel_eff_fcn( photon.energy );
+      if( rel_eff <= 0.0 )
+        continue;
+
+      gammas_by_counts.emplace_back( photon.energy, photon.numPerSecond * rel_eff );
+    }//for( const SandiaDecay::EnergyRatePair &photon : photons )
+  }//for( const auto &nuc_act : nuclides_and_activities )
+
+  if( gammas_by_counts.empty() )
+    return result_rois;
+
+  // Create a copy sorted by energy for efficient lookup
+  vector<pair<double,double>> gammas_by_energy = gammas_by_counts;
+  const auto lessThanByEnergy = []( const pair<double,double> &lhs, const pair<double,double> &rhs ) {
+    return lhs.first < rhs.first;
+  };
+  std::sort( begin(gammas_by_energy), end(gammas_by_energy), lessThanByEnergy );
+
+  // Sort gammas by expected counts (highest first)
+  std::sort( begin(gammas_by_counts), end(gammas_by_counts),
+    []( const pair<double,double> &lhs, const pair<double,double> &rhs ) {
+      return lhs.second > rhs.second;
+  } );
+
+  // Cluster gamma lines
+  vector<ClusteredGammaInfo> clustered_gammas;
+
+  for( const pair<double,double> &energy_counts : gammas_by_counts )
+  {
+    auto ene_pos = std::lower_bound( begin(gammas_by_energy), end(gammas_by_energy),
+                                    energy_counts, lessThanByEnergy );
+    if( ene_pos == end(gammas_by_energy) )
+      continue;
+
+    if( ene_pos->first != energy_counts.first )
+      continue; // Already removed from gammas_by_energy
+
+    const double energy = energy_counts.first;
+    const double counts = energy_counts.second;
+
+    const float fwhm = DetectorPeakResponse::peakResolutionFWHM(
+        static_cast<float>(energy), fwhm_form, fwhm_coefficients );
+    const double sigma = fwhm / PhysicalUnits::fwhm_nsigma;
+
+    const double lower = energy - settings.cluster_num_sigma * sigma;
+    const double upper = energy + settings.cluster_num_sigma * sigma;
+
+    // Find all gammas in this range
+    const auto start_remove = std::lower_bound( begin(gammas_by_energy), end(gammas_by_energy),
+                                               make_pair(lower, 0.0), lessThanByEnergy );
+    const auto end_remove = std::upper_bound( begin(gammas_by_energy), end(gammas_by_energy),
+                                             make_pair(upper, 0.0), lessThanByEnergy );
+
+    const double counts_in_region = std::accumulate( start_remove, end_remove, 0.0,
+        []( const double &sum, const pair<double,double> &el ) {
+          return sum + el.second;
+    } );
+
+    // Capture the gamma lines before erasing them
+    vector<pair<double,double>> gamma_lines_in_cluster( start_remove, end_remove );
+
+    const double data_area = foreground->gamma_integral( static_cast<float>(lower), static_cast<float>(upper) );
+
+    gammas_by_energy.erase( start_remove, end_remove );
+
+    const double signif = (data_area > 0.0) ? (counts_in_region / sqrt(data_area)) : 0.0;
+
+    if( (data_area > settings.min_data_area_keep)
+       && (counts_in_region > settings.min_est_peak_area_keep)
+       && (signif > settings.min_est_significance_keep) )
+    {
+      ClusteredGammaInfo cluster_info;
+      cluster_info.lower = lower;
+      cluster_info.upper = upper;
+      cluster_info.gamma_lines = std::move( gamma_lines_in_cluster );
+      clustered_gammas.push_back( std::move( cluster_info ) );
+    }
+  }//for( const pair<double,double> &energy_counts : gammas_by_counts )
+
+  // Sort by lower energy
+  std::sort( begin(clustered_gammas), end(clustered_gammas),
+    []( const ClusteredGammaInfo &lhs, const ClusteredGammaInfo &rhs ) {
+      return lhs.lower < rhs.lower;
+  } );
+
+  // Merge overlapping clusters
+  vector<ClusteredGammaInfo> merged_clusters;
+  for( const ClusteredGammaInfo &cluster : clustered_gammas )
+  {
+    if( merged_clusters.empty() || (cluster.lower > merged_clusters.back().upper) )
+    {
+      merged_clusters.push_back( cluster );
+    }
+    else
+    {
+      merged_clusters.back().upper = std::max( merged_clusters.back().upper, cluster.upper );
+      merged_clusters.back().gamma_lines.insert(
+        end(merged_clusters.back().gamma_lines),
+        begin(cluster.gamma_lines),
+        end(cluster.gamma_lines)
+      );
+    }
+  }//for( const ClusteredGammaInfo &cluster : clustered_gammas )
+
+  // Break up ROIs that are too wide
+  vector<ClusteredGammaInfo> final_clusters;
+  for( ClusteredGammaInfo &cluster : merged_clusters )
+  {
+    const double mid_energy = 0.5 * (cluster.lower + cluster.upper);
+    const double mid_fwhm = DetectorPeakResponse::peakResolutionFWHM(
+        static_cast<float>(mid_energy), fwhm_form, fwhm_coefficients );
+    const double max_width = settings.max_fwhm_width * mid_fwhm;
+    const double current_width = cluster.upper - cluster.lower;
+
+    if( current_width <= max_width )
+    {
+      final_clusters.push_back( std::move( cluster ) );
+      continue;
+    }
+
+    // Need to break up this cluster - sort gamma lines by energy first
+    std::sort( begin(cluster.gamma_lines), end(cluster.gamma_lines),
+      []( const pair<double,double> &a, const pair<double,double> &b ) {
+        return a.first < b.first;
+    } );
+
+    if( cluster.gamma_lines.size() <= 1 )
+    {
+      final_clusters.push_back( std::move( cluster ) );
+      continue;
+    }
+
+    // Calculate potential breakpoints between consecutive gamma lines
+    // See algorithm description in the comments near line 607-627
+    struct BreakpointInfo {
+      double gap_center;
+      double score;
+      size_t left_index;
+    };
+    vector<BreakpointInfo> potential_breaks;
+
+    const double min_distance = 0.1; // Minimum distance to avoid division by zero (0.1 keV)
+
+    for( size_t i = 0; i < cluster.gamma_lines.size() - 1; ++i )
+    {
+      const double left_energy = cluster.gamma_lines[i].first;
+      const double right_energy = cluster.gamma_lines[i+1].first;
+
+      const double gap_center = 0.5 * (left_energy + right_energy);
+      const double gap_width = right_energy - left_energy;
+
+      // Calculate weighted sum for left side (inverse distance weighting, quadrature sum)
+      double left_weight_sq_sum = 0.0;
+      for( size_t j = 0; j <= i; ++j )
+      {
+        const double gamma_energy = cluster.gamma_lines[j].first;
+        const double gamma_amp = cluster.gamma_lines[j].second;
+        const double distance = std::max( min_distance, std::abs(gap_center - gamma_energy) );
+        const double weighted_amp = gamma_amp / distance;
+        left_weight_sq_sum += weighted_amp * weighted_amp;
+      }
+      const double left_weight = std::sqrt( left_weight_sq_sum );
+
+      // Calculate weighted sum for right side
+      double right_weight_sq_sum = 0.0;
+      for( size_t j = i + 1; j < cluster.gamma_lines.size(); ++j )
+      {
+        const double gamma_energy = cluster.gamma_lines[j].first;
+        const double gamma_amp = cluster.gamma_lines[j].second;
+        const double distance = std::max( min_distance, std::abs(gap_center - gamma_energy) );
+        const double weighted_amp = gamma_amp / distance;
+        right_weight_sq_sum += weighted_amp * weighted_amp;
+      }
+      const double right_weight = std::sqrt( right_weight_sq_sum );
+
+      const double score = gap_width / (left_weight + right_weight);
+      potential_breaks.push_back( { gap_center, score, i } );
+    }//for( size_t i = 0; i < cluster.gamma_lines.size() - 1; ++i )
+
+    // Sort by score descending (best breakpoints first)
+    std::sort( begin(potential_breaks), end(potential_breaks),
+      []( const BreakpointInfo &a, const BreakpointInfo &b ) {
+        return a.score > b.score;
+    } );
+
+    // Greedily select breakpoints to ensure no sub-ROI exceeds max width
+    vector<size_t> selected_break_indices;
+
+    for( const BreakpointInfo &bp : potential_breaks )
+    {
+      selected_break_indices.push_back( bp.left_index );
+      std::sort( begin(selected_break_indices), end(selected_break_indices) );
+
+      // Check if all sub-ROIs are now within max width
+      bool all_ok = true;
+      double seg_start = cluster.lower;
+
+      for( size_t break_idx : selected_break_indices )
+      {
+        const double seg_end_energy = 0.5 * (cluster.gamma_lines[break_idx].first
+                                            + cluster.gamma_lines[break_idx + 1].first);
+        const double seg_mid = 0.5 * (seg_start + seg_end_energy);
+        const double seg_fwhm = DetectorPeakResponse::peakResolutionFWHM(
+            static_cast<float>(seg_mid), fwhm_form, fwhm_coefficients );
+        const double seg_max = settings.max_fwhm_width * seg_fwhm;
+
+        if( (seg_end_energy - seg_start) > seg_max )
+        {
+          all_ok = false;
+          break;
+        }
+        seg_start = seg_end_energy;
+      }
+
+      // Check the last segment
+      if( all_ok )
+      {
+        const double seg_mid = 0.5 * (seg_start + cluster.upper);
+        const double seg_fwhm = DetectorPeakResponse::peakResolutionFWHM(
+            static_cast<float>(seg_mid), fwhm_form, fwhm_coefficients );
+        const double seg_max = settings.max_fwhm_width * seg_fwhm;
+
+        if( (cluster.upper - seg_start) > seg_max )
+          all_ok = false;
+      }
+
+      if( all_ok )
+        break;
+    }//for( const BreakpointInfo &bp : potential_breaks )
+
+    // Create sub-clusters based on selected breakpoints
+    if( selected_break_indices.empty() )
+    {
+      final_clusters.push_back( std::move( cluster ) );
+    }
+    else
+    {
+      std::sort( begin(selected_break_indices), end(selected_break_indices) );
+
+      double seg_start = cluster.lower;
+      size_t gamma_start_idx = 0;
+
+      for( size_t break_idx : selected_break_indices )
+      {
+        const double seg_end = 0.5 * (cluster.gamma_lines[break_idx].first
+                                     + cluster.gamma_lines[break_idx + 1].first);
+
+        ClusteredGammaInfo sub_cluster;
+        sub_cluster.lower = seg_start;
+        sub_cluster.upper = seg_end;
+        for( size_t j = gamma_start_idx; j <= break_idx; ++j )
+          sub_cluster.gamma_lines.push_back( cluster.gamma_lines[j] );
+
+        final_clusters.push_back( std::move( sub_cluster ) );
+
+        seg_start = seg_end;
+        gamma_start_idx = break_idx + 1;
+      }
+
+      // Add the last segment
+      ClusteredGammaInfo sub_cluster;
+      sub_cluster.lower = seg_start;
+      sub_cluster.upper = cluster.upper;
+      for( size_t j = gamma_start_idx; j < cluster.gamma_lines.size(); ++j )
+        sub_cluster.gamma_lines.push_back( cluster.gamma_lines[j] );
+
+      final_clusters.push_back( std::move( sub_cluster ) );
+    }
+  }//for( ClusteredGammaInfo &cluster : merged_clusters )
+
+  // Create ROIs from final clusters
+  double previous_roi_upper = 0.0;
+
+  for( const ClusteredGammaInfo &cluster : final_clusters )
+  {
+    RelActCalcAuto::RoiRange roi;
+
+    if( cluster.gamma_lines.empty() )
+    {
+      roi.lower_energy = cluster.lower;
+      roi.upper_energy = cluster.upper;
+    }
+    else
+    {
+      // Find min/max gamma energies in this cluster
+      double min_gamma_energy = cluster.gamma_lines.front().first;
+      double max_gamma_energy = cluster.gamma_lines.front().first;
+      for( const pair<double,double> &gamma : cluster.gamma_lines )
+      {
+        min_gamma_energy = std::min( min_gamma_energy, gamma.first );
+        max_gamma_energy = std::max( max_gamma_energy, gamma.first );
+      }
+
+      // Calculate FWHM at the min and max gamma energies
+      const double fwhm_at_lower = DetectorPeakResponse::peakResolutionFWHM(
+          static_cast<float>(min_gamma_energy), fwhm_form, fwhm_coefficients );
+      const double fwhm_at_upper = DetectorPeakResponse::peakResolutionFWHM(
+          static_cast<float>(max_gamma_energy), fwhm_form, fwhm_coefficients );
+
+      // Calculate desired ROI bounds based on FWHM distance from outer gamma lines
+      const double desired_lower = min_gamma_energy - settings.roi_width_num_fwhm_lower * fwhm_at_lower;
+      const double desired_upper = max_gamma_energy + settings.roi_width_num_fwhm_upper * fwhm_at_upper;
+
+      // Constrain lower bound to not overlap with previous ROI
+      roi.lower_energy = std::max( desired_lower, previous_roi_upper );
+      roi.upper_energy = desired_upper;
+    }
+
+    const double mid_energy = 0.5 * (roi.upper_energy + roi.lower_energy);
+    const double mid_fwhm = DetectorPeakResponse::peakResolutionFWHM(
+        static_cast<float>(mid_energy), fwhm_form, fwhm_coefficients );
+    const double num_fwhm_wide = (roi.upper_energy - roi.lower_energy) / mid_fwhm;
+
+    if( num_fwhm_wide < settings.min_fwhm_roi )
+      continue;
+
+    roi.continuum_type = PeakContinuum::OffsetType::Linear;
+    roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
+    if( num_fwhm_wide > settings.min_fwhm_quad_cont )
+      roi.continuum_type = PeakContinuum::OffsetType::Quadratic;
+
+    result_rois.push_back( roi );
+    previous_roi_upper = roi.upper_energy;
+  }//for( const ClusteredGammaInfo &cluster : final_clusters )
+
+  return result_rois;
+}//cluster_gammas_to_rois
+
+
 // This is development playground for `AnalystChecks::fit_peaks_for_nuclides(...)`
 void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
 {
@@ -88,7 +524,10 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
   const double manual_rel_eff_sol_min_est_peak_area_keep = 5.0;
   const double manual_rel_eff_sol_min_est_significance_keep = 0.5;
   const double manual_rel_eff_sol_min_fwhm_roi = 1.0;
-  const double manual_rel_eff_sol_min_fwhm_quad_cont = 5;
+  const double manual_rel_eff_sol_min_fwhm_quad_cont = 8;
+  const double manual_rel_eff_sol_max_fwhm = 15.0;
+  const double manual_rel_eff_roi_width_num_fwhm_lower = 3.0;
+  const double manual_rel_eff_roi_width_num_fwhm_upper = 3.0;
   // TODO: lets better assign FWHM form that should be used
   RelActCalcAuto::FwhmForm fwhm_form = RelActCalcAuto::FwhmForm::Berstein_3;
   
@@ -365,9 +804,7 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
         {
           const RelActCalcManual::RelEffSolution manual_solution
               = RelActCalcManual::solve_relative_efficiency( manual_input );
-          
-          vector<pair<double,double>> clustered_significant_gammas;
-          
+
           if( manual_solution.m_status == RelActCalcManual::ManualSolutionStatus::Success )
           {
             cout << "Successfully fitted initial RelActCalcManual::RelEffSolution: chi2/dof="
@@ -376,146 +813,48 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
             << " using " << peak_match_results.peaks_matched.size() << " peaks"
             << endl;
             cout << endl;
-            
-            vector<pair<double,double>> gammas_by_counts;
-            
+
+            // Create settings for the manual RelEff clustering stage
+            GammaClusteringSettings manual_settings;
+            manual_settings.cluster_num_sigma = manual_eff_cluster_num_sigma;
+            manual_settings.min_data_area_keep = manual_rel_eff_sol_min_data_area_keep;
+            manual_settings.min_est_peak_area_keep = manual_rel_eff_sol_min_est_peak_area_keep;
+            manual_settings.min_est_significance_keep = manual_rel_eff_sol_min_est_significance_keep;
+            manual_settings.roi_width_num_fwhm_lower = manual_rel_eff_roi_width_num_fwhm_lower;
+            manual_settings.roi_width_num_fwhm_upper = manual_rel_eff_roi_width_num_fwhm_upper;
+            manual_settings.max_fwhm_width = manual_rel_eff_sol_max_fwhm;
+            manual_settings.min_fwhm_roi = manual_rel_eff_sol_min_fwhm_roi;
+            manual_settings.min_fwhm_quad_cont = manual_rel_eff_sol_min_fwhm_quad_cont;
+
+            // Create rel_eff lambda from manual solution - handles extrapolation clamping
+            const auto manual_rel_eff = [&manual_solution, &peaks_matched]( double energy ) -> double {
+              // Extrapolation is terrible for rel-eff, so clamp to the lowest/highest peak energy
+              if( energy < peaks_matched.front().m_energy )
+                return manual_solution.relative_efficiency( peaks_matched.front().m_energy );
+              else if( energy > peaks_matched.back().m_energy )
+                return manual_solution.relative_efficiency( peaks_matched.back().m_energy );
+              else
+                return manual_solution.relative_efficiency( energy );
+            };
+
+            // Collect nuclides and activities from the manual solution
+            vector<pair<const SandiaDecay::Nuclide *, double>> nucs_and_acts;
             for( const RelActCalcManual::IsotopeRelativeActivity &rel_act : manual_solution.m_rel_activities )
             {
-              const SandiaDecay::Nuclide * const nuc = db->nuclide(rel_act.m_isotope);
+              const SandiaDecay::Nuclide * const nuc = db->nuclide( rel_act.m_isotope );
               assert( nuc );
               if( !nuc )
                 throw std::logic_error( "Failed to get nuclide from RelAct nuc '" + rel_act.m_isotope + "'" );
-              
-              const double age = PeakDef::defaultDecayTime(nuc);
-              const double act = manual_solution.relative_activity(rel_act.m_isotope);
-              
-              SandiaDecay::NuclideMixture mix;
-              mix.addAgedNuclideByActivity( nuc, act, age );
-              const vector<SandiaDecay::EnergyRatePair> photons = mix.photons( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy );
-              for( const SandiaDecay::EnergyRatePair &photon : photons )
-              {
-                if( (photon.energy < lowest_energy_gamma)
-                   || (photon.energy > highest_energy_gamma)
-                   || (photon.numPerSecond <= std::numeric_limits<double>::epsilon()) )
-                {
-                  continue;
-                }
-                
-                assert( !peaks_matched.empty() );
-                
-                //Extrapolation is terrible for rel-eff, so if the energy is below or above the lowest/highest peak used,
-                //  we'll use the rel_eff of that peaks energy
-                double rel_eff = 0.0;
-                if( (photon.energy < peaks_matched.front().m_energy) )
-                  rel_eff = manual_solution.relative_efficiency( peaks_matched.front().m_energy );
-                else if( (photon.energy > peaks_matched.back().m_energy) )
-                  rel_eff = manual_solution.relative_efficiency( peaks_matched.back().m_energy );
-                else
-                  rel_eff = manual_solution.relative_efficiency( photon.energy );
-                
-                if( rel_eff <= 0.0 )
-                  continue;
-                
-                gammas_by_counts.emplace_back(photon.energy, photon.numPerSecond*rel_eff );
-              }//for( const SandiaDecay::EnergyRatePair &photon : photons )
-              
-              
-              vector<pair<double,double>> gammas_by_energy = gammas_by_counts;
-              const auto lessThanByEnergy = []( const pair<double,double> &lhs, const pair<double,double> &rhs ) {
-                return lhs.first < rhs.first;
-              };
-              
-              std::sort( begin(gammas_by_energy), end(gammas_by_energy), lessThanByEnergy );
-              
-              std::sort( begin(gammas_by_counts), end(gammas_by_counts),
-                []( const pair<double,double> &lhs, const pair<double,double> &rhs ) {
-                  return lhs.second > rhs.second;
-              } );
-              
-               
-              for( const pair<double,double> &energy_counts : gammas_by_counts )
-              {
-                auto ene_pos = std::lower_bound( begin(gammas_by_energy), end(gammas_by_energy),
-                                                energy_counts, lessThanByEnergy );
-                if( ene_pos == end(gammas_by_energy) )
-                  continue;
-               
-                if( ene_pos->first != energy_counts.first )
-                  continue; //We've already removed erp from gammas_by_energy
-               
-                const double energy = energy_counts.first;
-                const double counts = energy_counts.second;
-                
-                const float fwhm = DetectorPeakResponse::peakResolutionFWHM( static_cast<float>(energy),
-                                                                              fwhmFnctnlForm, fwhm_coefficients);
-                const double sigma = fwhm / PhysicalUnits::fwhm_nsigma;
+              nucs_and_acts.emplace_back( nuc, manual_solution.relative_activity( rel_act.m_isotope ) );
+            }
 
-                double lower = energy - manual_eff_cluster_num_sigma * sigma;
-                double upper = energy + manual_eff_cluster_num_sigma * sigma;
-               
-                // Now remove all gammas from `gammas_by_energy` that are between lower and upper.
-                //  Note that if a gamma is equal to the lower or upper bound, it will be removed
-                //  (I'm pretty sure)
-                const auto start_remove = std::lower_bound(begin(gammas_by_energy), end(gammas_by_energy),
-                                                           make_pair(lower,0.0), lessThanByEnergy );
-                const auto end_remove = std::upper_bound(begin(gammas_by_energy), end(gammas_by_energy),
-                                                         make_pair(upper,0.0), lessThanByEnergy );
-               
-                const double counts_in_region = std::accumulate(start_remove, end_remove, 0.0,
-                                                                []( const double &sum, const pair<double,double> &el ){
-                  return sum + el.second;
-                });
-               
-                const double data_area = foreground->gamma_integral( static_cast<float>(lower), static_cast<float>(upper) );
-               
-                gammas_by_energy.erase( start_remove, end_remove );
-               
-                
-                const double signif = counts_in_region / sqrt(data_area);
-                cout << "For [" << lower << "," << upper << "), there are data_area="
-                << data_area << ", peak_counts_in_region=" << counts_in_region << ", signif=" << signif
-                << endl;
-               
-                
-                if( (data_area > manual_rel_eff_sol_min_data_area_keep)
-                   && (counts_in_region > manual_rel_eff_sol_min_est_peak_area_keep)
-                   && (signif > manual_rel_eff_sol_min_est_significance_keep) )
-                {
-                  clustered_significant_gammas.emplace_back( lower, upper );
-                }
-              }//for( const SandiaDecay::EnergyRatePair &erp : gammas_by_counts )
-            }//for( const RelActCalcManual::IsotopeRelativeActivity &rel_act : manual_solution.m_rel_activities )
-            
-            // Now we will combine `clustered_significant_gammas`
-            std::sort( begin(clustered_significant_gammas), end(clustered_significant_gammas),
-                      []( const pair<double,double> &lhs, const pair<double,double> &rhs ){
-              return lhs.first < rhs.first;
-            });
-            
-            for( const pair<double,double> &energy_range : clustered_significant_gammas )
-            {
-              const double mid_energy = 0.5*(energy_range.second + energy_range.first);
-              const double mid_fwhm = DetectorPeakResponse::peakResolutionFWHM( static_cast<float>(mid_energy),
-                                                                               fwhmFnctnlForm, fwhm_coefficients);
-              const double num_fwhm_wide = (energy_range.second - energy_range.first) / mid_fwhm;
-              if( num_fwhm_wide < manual_rel_eff_sol_min_fwhm_roi )
-                continue;
-              
-              RelActCalcAuto::RoiRange roi;
-              roi.lower_energy = energy_range.first;
-              roi.upper_energy = energy_range.second;
-              roi.continuum_type = PeakContinuum::OffsetType::Linear;
-              roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
-              if( num_fwhm_wide > manual_rel_eff_sol_min_fwhm_quad_cont )
-                roi.continuum_type = PeakContinuum::OffsetType::Quadratic;
-              
-              initial_rois.push_back( roi );
-            }//for( const pair<double,double> &roi : clustered_significant_gammas )
-            
-            // TODO: Need to make sure ROIs arent overlapping, and have non-trivial widths
-            // TODO: Maybe need to break-up really wide ROIs - at least to begin with
-            
-            cout << "Initial ROIS: ";
+            // Use the reusable clustering function to create ROIs
+            initial_rois = cluster_gammas_to_rois( manual_rel_eff, nucs_and_acts, foreground,
+                                                   fwhmFnctnlForm, fwhm_coefficients,
+                                                   lowest_energy_gamma, highest_energy_gamma,
+                                                   manual_settings );
+
+            cout << "Initial ROIs from RelActManual: ";
             for( const auto &roi : initial_rois )
               cout << "[" << roi.lower_energy << ", " << roi.upper_energy << "], ";
             cout << endl;
@@ -692,13 +1031,97 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
       cout << "Best initial solution:" << endl;
       solution.print_summary( std::cout );
       cout << endl;
-      
-      //TODO: do a few rounds of RelActAuto fitting here - adjusting ROIs between iterations
-      
-      
-      // Now put the peaks into a N42 and write to disk so we can inspect the results
-      // Then we should do 1 to N more iterations, where we can use the fit RelAct solution to re-estimate significant
-      //  gammas, and we can use more-better estimates for ROI widths, as well as potentually try out skew
+
+      // Iteratively refine ROIs using RelActAuto solutions
+      // The idea is that each iteration provides a better relative efficiency estimate,
+      // which allows us to better identify significant gamma lines and create better ROIs.
+      {
+        // Settings for the auto refinement stage - may want different values than manual stage
+        GammaClusteringSettings auto_settings;
+        auto_settings.cluster_num_sigma = 2.0;  // Slightly wider clustering with better rel-eff
+        auto_settings.min_data_area_keep = 10;
+        auto_settings.min_est_peak_area_keep = 5.0;
+        auto_settings.min_est_significance_keep = 0.5;
+        auto_settings.roi_width_num_fwhm_lower = 3.5;  // Slightly more generous for refined fit
+        auto_settings.roi_width_num_fwhm_upper = 3.5;
+        auto_settings.max_fwhm_width = 12.0;  // Tighter constraint as solution improves
+        auto_settings.min_fwhm_roi = 1.0;
+        auto_settings.min_fwhm_quad_cont = 8;
+
+        const size_t max_iterations = 3;
+        for( size_t iter = 0; iter < max_iterations; ++iter )
+        {
+          // Use the first rel-eff curve (index 0)
+          const size_t rel_eff_index = 0;
+
+          // Create rel_eff lambda from current RelActAuto solution
+          const auto auto_rel_eff = [&solution, rel_eff_index]( double energy ) -> double {
+            return solution.relative_efficiency( energy, rel_eff_index );
+          };
+
+          // Collect nuclides and activities from the current solution
+          // m_rel_activities is a 2D vector: [rel_eff_curve_index][nuclide_index]
+          vector<pair<const SandiaDecay::Nuclide *, double>> nucs_and_acts;
+          if( rel_eff_index < solution.m_rel_activities.size() )
+          {
+            for( const RelActCalcAuto::NuclideRelAct &nuc_act : solution.m_rel_activities[rel_eff_index] )
+            {
+              // source is a SrcVariant which can be a nuclide or element
+              const SandiaDecay::Nuclide * const * nuc_ptr = std::get_if<const SandiaDecay::Nuclide *>( &nuc_act.source );
+              if( nuc_ptr && *nuc_ptr )
+                nucs_and_acts.emplace_back( *nuc_ptr, nuc_act.rel_activity );
+            }
+          }
+
+          // Cluster gammas using current solution's relative efficiency
+          const vector<RelActCalcAuto::RoiRange> refined_rois = cluster_gammas_to_rois(
+              auto_rel_eff, nucs_and_acts, foreground,
+              fwhmFnctnlForm, fwhm_coefficients,
+              lowest_energy_gamma, highest_energy_gamma,
+              auto_settings );
+
+          // Check if ROIs changed significantly - if not, stop iterating
+          if( rois_are_similar( refined_rois, solution.m_options.rois ) )
+          {
+            cout << "Iteration " << iter << ": ROIs are similar, stopping refinement" << endl;
+            break;
+          }
+
+          cout << "Iteration " << iter << ": trying " << refined_rois.size() << " refined ROIs" << endl;
+
+          // Re-run RelActAuto with refined ROIs
+          RelActCalcAuto::Options refined_options = solution.m_options;
+          refined_options.rois = refined_rois;
+
+          RelActCalcAuto::RelActAutoSolution refined_solution
+              = RelActCalcAuto::solve( refined_options, foreground, long_background, drf, auto_search_peaks );
+
+          if( refined_solution.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success )
+          {
+            cout << "Iteration " << iter << " failed: " << refined_solution.m_error_message << endl;
+            break;
+          }
+
+          const double old_chi2_dof = solution.m_chi2 / std::max( 1.0, static_cast<double>(solution.m_dof) );
+          const double new_chi2_dof = refined_solution.m_chi2 / std::max( 1.0, static_cast<double>(refined_solution.m_dof) );
+
+          // Check if chi2/dof improved
+          if( new_chi2_dof >= old_chi2_dof )
+          {
+            cout << "Iteration " << iter << " did not improve chi2/dof ("
+                 << old_chi2_dof << " -> " << new_chi2_dof << "), stopping" << endl;
+            break;
+          }
+
+          solution = std::move( refined_solution );
+          cout << "Iteration " << iter << " improved: chi2/dof=" << new_chi2_dof
+               << " (was " << old_chi2_dof << ")" << endl;
+        }//for( size_t iter = 0; iter < max_iterations; ++iter )
+
+        cout << "Final solution after refinement:" << endl;
+        solution.print_summary( std::cout );
+        cout << endl;
+      }//iterative refinement
 
 
       // Score the fit results using only signal photopeaks
