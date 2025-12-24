@@ -29,7 +29,6 @@ std::string agentTypeToString( AgentType type )
   {
     case AgentType::MainAgent:       return "MainAgent";
     case AgentType::NuclideId:       return "NuclideId";
-    case AgentType::NuclideIdWorker: return "NuclideIdWorker";
     case AgentType::ActivityFit:     return "ActivityFit";
     case AgentType::Isotopics:       return "Isotopics";
   }
@@ -42,7 +41,6 @@ AgentType stringToAgentType( const std::string &name )
 {
   if( name == "MainAgent" )       return AgentType::MainAgent;
   if( name == "NuclideId" )       return AgentType::NuclideId;
-  if( name == "NuclideIdWorker" ) return AgentType::NuclideIdWorker;
   if( name == "ActivityFit" )     return AgentType::ActivityFit;
   if( name == "Isotopics" )       return AgentType::Isotopics;
 

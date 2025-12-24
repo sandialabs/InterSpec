@@ -51,6 +51,8 @@ namespace AnalystChecks
   struct DetectedPeaksOptions {
     SpecUtils::SpectrumType specType;
     bool nonBackgroundPeaksOnly;
+    std::optional<double> lowerEnergy;
+    std::optional<double> upperEnergy;
   };
   
   /** Results of peak detection analysis. */

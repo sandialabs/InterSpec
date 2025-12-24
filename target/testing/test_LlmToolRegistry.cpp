@@ -871,6 +871,63 @@ BOOST_AUTO_TEST_CASE( test_executePeakDetection )
 }
 
 
+BOOST_AUTO_TEST_CASE( test_executePeakDetection_energy_range_filtering )
+{
+  InterSpecTestFixture fixture;
+
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+
+  // Ensure peaks are initialized before filtering
+  InterSpec * const viewer = fixture.m_interspec;
+  const std::set<int> &foreground_samples = viewer->displayedSamples(SpecUtils::SpectrumType::Foreground);
+  const shared_ptr<SpecMeas> foreground_meas = viewer->measurment(SpecUtils::SpectrumType::Foreground);
+  const shared_ptr<const SpecUtils::Measurement> foreground_spectrum = viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  viewer->searchForHintPeaks( foreground_meas, foreground_samples, foreground_spectrum, true );
+
+  json params = json::object();
+  params["specType"] = "Foreground";
+  params["lowerEnergy"] = 750.0;
+  params["upperEnergy"] = 850.0;
+
+  json result;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("get_detected_peaks", params, fixture.m_interspec) );
+  BOOST_REQUIRE( result.contains("rois") );
+  BOOST_REQUIRE( result["rois"].is_array() );
+
+  std::vector<double> peak_energies;
+
+  for( const auto &roi : result["rois"] )
+  {
+    BOOST_REQUIRE( roi.contains("peaks") );
+
+    for( const auto &peak : roi["peaks"] )
+    {
+      BOOST_REQUIRE( peak.contains("energy") );
+      const double energy = peak["energy"].get<double>();
+      peak_energies.push_back( energy );
+
+      BOOST_CHECK_GE( energy, 750.0 );
+      BOOST_CHECK_LE( energy, 850.0 );
+    }
+  }
+
+  BOOST_CHECK_MESSAGE( !peak_energies.empty(), "Should return peaks within specified energy range" );
+
+  const auto in_range_peak = std::find_if( peak_energies.begin(), peak_energies.end(),
+    []( double e ){ return (std::abs( e - 776.52 ) < 1.0) || (std::abs( e - 827.83 ) < 1.0); } );
+  BOOST_CHECK_MESSAGE( in_range_peak != peak_energies.end(), "Expected a Br82 peak near 776 or 828 keV in filtered results" );
+
+  const auto below_range = std::find_if( peak_energies.begin(), peak_energies.end(),
+    []( double e ){ return e < 750.0 || e > 850.0; } );
+  BOOST_CHECK( below_range == peak_energies.end() );
+
+  // Invalid bounds should throw
+  params["lowerEnergy"] = 900.0;
+  params["upperEnergy"] = 800.0;
+  BOOST_CHECK_THROW( registry.executeTool("get_detected_peaks", params, fixture.m_interspec), std::runtime_error );
+}
+
+
 BOOST_AUTO_TEST_CASE( test_executeGetUserPeaks )
 {
   InterSpecTestFixture fixture;
@@ -2107,8 +2164,8 @@ BOOST_AUTO_TEST_CASE( test_agentsLoadedFromXml )
   // Check that agents were loaded
   BOOST_REQUIRE_MESSAGE( !llmConfig->agents.empty(), "No agents loaded from XML" );
 
-  // Expected agents: MainAgent, NuclideId, NuclideIdWorker, ActivityFit, Isotopics
-  const std::set<std::string> expectedAgents = { "MainAgent", "NuclideId", "NuclideIdWorker", "ActivityFit", "Isotopics" };
+  // Expected agents: MainAgent, NuclideId, ActivityFit, Isotopics
+  const std::set<std::string> expectedAgents = { "MainAgent", "NuclideId", "ActivityFit", "Isotopics" };
 
   cout << "Loaded " << llmConfig->agents.size() << " agents from XML configuration:" << endl;
 
@@ -2164,6 +2221,20 @@ BOOST_AUTO_TEST_CASE( test_StateMachineBasicFunctionality )
   // Load configuration with state machine (Isotopics agent)
   std::shared_ptr<const LlmConfig> llmConfig = LlmConfig::load();
   BOOST_REQUIRE( llmConfig );
+
+  // NuclideId should now also have a state machine
+  const LlmConfig::AgentConfig *nuclideIdAgent = nullptr;
+  for( const LlmConfig::AgentConfig &agent : llmConfig->agents )
+  {
+    if( agent.name == "NuclideId" )
+    {
+      nuclideIdAgent = &agent;
+      break;
+    }
+  }
+  BOOST_REQUIRE_MESSAGE( nuclideIdAgent != nullptr, "NuclideId agent not found in configuration" );
+  BOOST_REQUIRE_MESSAGE( nuclideIdAgent->state_machine != nullptr, "NuclideId agent should have a state machine" );
+  BOOST_CHECK_EQUAL( nuclideIdAgent->state_machine->getInitialState(), "ANALYZE_REQUEST" );
 
   // Find the Isotopics agent which has a state machine
   const LlmConfig::AgentConfig *isotopicsAgent = nullptr;

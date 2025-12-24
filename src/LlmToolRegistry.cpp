@@ -302,6 +302,23 @@ namespace {
       throw std::runtime_error("Invalid spectrum type: " + specTypeStr);
     }
     p.nonBackgroundPeaksOnly = get_boolean( j, "NonBackgroundPeaksOnly", false );
+
+    // Optional energy bounds
+    p.lowerEnergy.reset();
+    p.upperEnergy.reset();
+
+    if( j.contains("lowerEnergy") && !j["lowerEnergy"].is_null() )
+      p.lowerEnergy = get_number( j, "lowerEnergy" );
+
+    if( j.contains("upperEnergy") && !j["upperEnergy"].is_null() )
+      p.upperEnergy = get_number( j, "upperEnergy" );
+
+    if( p.lowerEnergy && p.upperEnergy && (*p.upperEnergy < *p.lowerEnergy) )
+    {
+      throw std::runtime_error( "upperEnergy (" + std::to_string(*p.upperEnergy)
+                                + " keV) must be greater than or equal to lowerEnergy ("
+                                + std::to_string(*p.lowerEnergy) + " keV)" );
+    }
   }
 
   void from_json(const json& j, AnalystChecks::FitPeakOptions& p) {

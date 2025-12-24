@@ -25,6 +25,14 @@
           "NonBackgroundPeaksOnly": {
             "type": "boolean",
             "description": "Optional: If specified true, only peaks without a cooresponding background spectrum peak, or peaks notably elevated over the background, will be returned. May only be specified true for the 'Foreground' spectrum, and only if a background spectrum is loaded.  If not specified, all peaks for the spectrum are returned."
+          },
+          "lowerEnergy": {
+            "type": "number",
+            "description": "Optional: minimum energy (in keV) for peaks to return. If not specified, no lower bound is applied."
+          },
+          "upperEnergy": {
+            "type": "number",
+            "description": "Optional: maximum energy (in keV) for peaks to return. If not specified, no upper bound is applied."
           }
       },
       "required": ["specType"]
@@ -421,7 +429,7 @@ The 'profile_score' metric (larger = better match) is the best indicator of fit 
 
 Further investigation of top returned candidates is required to make sure they match the spectrum (e.g., the spectrum is not missing a peak it should have from that source, or the peaks in the spectrum have expected relative amplitudes, etc.)</Description>
 <Description role="NuclideId">Your primary identification tool. Search for candidate nuclides by gamma energy. Use extensively with single-energy searches. The profile_score metric (higher=better) accounts for peak heights and detector response. Prefer single-energy searches - only use 2-3 energies if desperately needed.</Description>
-<AvailableFor><Agent>MainAgent</Agent><Agent>NuclideId</Agent><Agent>NuclideIdWorker</Agent></AvailableFor>
+<AvailableFor><Agent>MainAgent</Agent><Agent>NuclideId</Agent></AvailableFor>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -1120,6 +1128,7 @@ Further investigation of top returned candidates is required to make sure they m
       "required": ["state"]
     }</ParametersSchema>
     <AvailableFor>
+      <Agent>NuclideId</Agent>
       <Agent>Isotopics</Agent>
     </AvailableFor>
   </Tool>
