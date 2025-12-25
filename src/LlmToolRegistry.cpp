@@ -47,6 +47,7 @@
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/LlmIsotopicsTool.h"
 #include "InterSpec/LlmActivityFitTool.h"
+#include "InterSpec/LlmRelActManualTool.h"
 
 #include "Minuit2/MnUserParameters.h"
 
@@ -1230,6 +1231,16 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
     {
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
         return IsotopicsTool::executeGetIsotopicsConfigSchema(params, interspec);
+      };
+    }else if( toolName == "peak_based_relative_efficiency" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return RelActManualTool::executePeakBasedRelativeEfficiency(params, interspec);
+      };
+    }else if( toolName == "get_rel_act_manual_state" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return RelActManualTool::executeGetRelActManualState(params, interspec);
       };
     }else
     {

@@ -224,6 +224,13 @@ if( USE_LLM_INTERFACE )
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
   )
 
+  add_executable( test_LlmRelActManualTool test_LlmRelActManualTool.cpp )
+  target_link_libraries( test_LlmRelActManualTool PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TLlmRelActManualTool
+    COMMAND $<TARGET_FILE:test_LlmRelActManualTool> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
   add_executable( test_LlmInterface test_LlmInterface.cpp )
   target_link_libraries( test_LlmInterface PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
   add_test( NAME TLlmInterface

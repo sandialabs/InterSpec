@@ -9983,6 +9983,15 @@ RelActManualGui *InterSpec::createRelActManualWidget()
 }//RelActManualGui *createRelActManualWidget()
 
 
+RelActManualGui *InterSpec::relActManualWidget( const bool createIfNotOpen )
+{
+  if( createIfNotOpen && !m_relActManualGui )
+    return createRelActManualWidget();
+  
+  return m_relActManualGui;
+}//RelActManualGui *relActManualWidget( const bool createIfNotOpen )
+
+
 void InterSpec::handleRelActManualClose()
 {
   assert( m_relActManualGui );
