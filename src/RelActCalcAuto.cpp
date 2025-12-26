@@ -4941,6 +4941,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     {
       solution.m_peaks_without_back_sub = solution.m_fit_peaks_in_spectrums_cal;
     }
+
+    // Calculate and set Chi2/DOF for the peaks
+    if( !solution.m_peaks_without_back_sub.empty() )
+    {
+      set_chi2_dof( foreground, solution.m_peaks_without_back_sub, 0, solution.m_peaks_without_back_sub.size() );
+    }
+
     // \c fit_peaks are in the original energy calibration of the spectrum, we may need to adjust
     //  them to match the new energy calibration
     if( new_cal != cost_functor->m_energy_cal )
@@ -14089,7 +14096,7 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
           effective_sigma += amps[i]*(sigmas[i]*sigmas[i] + std::pow(means[i] - effective_mean,2.0));
         effective_sigma = sqrt( effective_sigma / sum_weights);
         
-        assert( num_peaks_in_range > 0 );
+        //assert( num_peaks_in_range > 0 );
         if( !num_peaks_in_range )
           continue;
         
