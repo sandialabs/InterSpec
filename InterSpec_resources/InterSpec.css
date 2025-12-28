@@ -7,14 +7,25 @@ body
   -webkit-touch-callout: none !important;
 }
 
+.Wt-domRoot, .dialog-layout, .Wt-panel .body, textarea {
+  background-color: var(--interspec-background-color, white);
+  color: var(--interspec-text-color, black);
+}
+
 /* For when the app requests to go fullscreen in our JS. */
 .Wt-domRoot:fullscreen {
-  background-color: white;
+  background-color: var(--interspec-background-color, white);
+  color: var(--interspec-text-color, black);
 }
 
 input
 {
   /* border-width: 1px; */
+}
+
+input[type="text"], input[type="number"], textarea :not(.pm-textarea) {
+  background-color: var(--interspec-input-background, white);
+  color: var(--interspec-text-color, black);
 }
 
 textarea, select
@@ -444,7 +455,7 @@ padding-left:10px;
 
 .UseInfoStack
 {
-  border-left: solid 1px #e1e1e1;
+  border-left: solid 1px var(--interspec-border-color, #e1e1e1);
   margin-left: 5px;
   padding-left: 10px;
 }
@@ -560,7 +571,7 @@ padding-left:10px;
 .LightNavMenu li
 {
   /* color: #ffffff; */
-  border: 1px solid #e1e1e1;
+  border: 1px solid var(--interspec-border-color, #e1e1e1);
 }
 
 .LightNavMenu li.item > a
@@ -910,7 +921,7 @@ opacity:0.4;
   color:grey;
   text-decoration:underline;
   cursor:pointer;
-  border:1px solid #e1e1e1;
+  border:1px solid var(--interspec-border-color, #e1e1e1);
   -moz-border-radius: 5px;
   -webkit-border-radius: 5px;
   border-radius: 5px;
@@ -922,9 +933,9 @@ button, button:hover,
 {
   font-weight:bold;
   vertical-align: middle;
-  border:1px solid #e1e1e1;
-  color: #FFFFFF;
-  background-color: #888888;
+  border:1px solid var(--interspec-border-color, #e1e1e1);
+  color: var(--interspec-button-text-color, white);
+  background-color: var(--interspec-button-background, #888888);
   border-radius: 5px;
   height: 23px;
 }
@@ -954,6 +965,35 @@ button, button:hover {
 
 li{ padding-top: 0; }
 table { margin-bottom:0; }
+
+/* Links use CSS variable for theming */
+a, .InfoLink {
+  color: var(--interspec-link-color, blue);
+}
+
+/* Light buttons (link-style buttons) use link color */
+button.Wt-btn.with-label.LightButton,
+  button.Wt-btn.dropdown-toggle,
+  .btn-group.LightButton
+{
+  color: var(--interspec-link-color, blue);
+}
+
+/* Label text color */
+.Wt-label {
+  color: var(--interspec-label-color, black);
+}
+
+/* Tab text */
+.Wt-tabs a {
+  color: var(--interspec-label-color, black);
+}
+
+/* DevPair headers and similar */
+.DevPairTitle, .DevPairEnergyHeader, .DevPairOffsetHeader, .ReferencePhotopeakDisplay .OtherNucs .OtherNucTypeHeader {
+  color: var(--interspec-label-color, black);
+}
+
 a:hover { color:#E88400; border-bottom:none; }
   th, td { border: none; padding: 0; vertical-align: none; text-align: none; }
   
@@ -1082,7 +1122,7 @@ a:hover { color:#E88400; border-bottom:none; }
   .PopupDivMenu
   {
     background-color: #FAFAFA;
-    border: solid 1px #e1e1e1;
+    border: solid 1px var(--interspec-border-color, #e1e1e1);
     max-height: 90%;
     overflow-y: auto;
     /* right click on a peak, then "Change Nuclide" submenu can overflow with a long list, which adding
@@ -1409,7 +1449,7 @@ a:hover { color:#E88400; border-bottom:none; }
     margin: 0px;
     font-weight: bold;
     background: #888888; color: #FFFFFF;
-    border: 1px solid #e1e1e1;
+    border: 1px solid var(--interspec-border-color, #e1e1e1);
     cursor: pointer;
     height: 24px;
     white-space: nowrap;
@@ -1518,7 +1558,7 @@ a:hover { color:#E88400; border-bottom:none; }
     background: none;
     white-space: nowrap;
     padding: 6px 9px 4px;
-    color: black;
+    color: var(--interspec-text-color, black);
     border: 1px solid transparent;
     -moz-border-top-left-radius: .25rem;
     -webkit-border-top-left-radius: .25rem;
@@ -1597,23 +1637,23 @@ a:hover { color:#E88400; border-bottom:none; }
   
   .ToolTabSection
   {
-    border: 2px solid #e1e1e1;
+    border: 2px solid var(--interspec-border-color, #e1e1e1);
   }
-  
+
   .ToolTabTitledColumn
   {
-    border-right: 1px solid #e1e1e1;
+    border-right: 1px solid var(--interspec-border-color, #e1e1e1);
     padding-bottom: 3px;
   }
-  
+
   .ToolTabTitledColumn .ContentHelpBtn
   {
     position: absolute;
     margin-left: 5px;
     bottom: 0px;
   }
-  
-  
+
+
   .ToolTabTitledColumn .ToolTabColumnTitle
   {
     white-space: nowrap;
@@ -1625,7 +1665,7 @@ a:hover { color:#E88400; border-bottom:none; }
     padding-left: 3px;
     padding-right: 3px;
     margin-bottom: 2px;
-    border-bottom: 1px solid #e1e1e1;
+    border-bottom: 1px solid var(--interspec-border-color, #e1e1e1);
   }
   
   .IsPhone.Portrait .ToolTabTitledColumn .ToolTabColumnTitle {
