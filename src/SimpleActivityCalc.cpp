@@ -2090,7 +2090,7 @@ SimpleActivityCalcResult SimpleActivityCalc::performCalculation( const SimpleAct
     // Set up the data structures required by the framework
     ShieldingSourceFitCalc::ShieldingSourceFitOptions fit_options;
     fit_options.multiple_nucs_contribute_to_peaks = true;
-    fit_options.attenuate_for_air = true;
+    fit_options.attenuate_for_air = (!input.detector || !input.detector->isValid() || !input.detector->isFixedGeometry());
     fit_options.account_for_decay_during_meas = false;
     fit_options.photopeak_cluster_sigma = 1.25;
     fit_options.background_peak_subtract = !!input.background_peak;
