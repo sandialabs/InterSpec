@@ -959,10 +959,12 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
 #if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
   m_nuclideSuggest->setJavaScriptMember("wtNoReparent", "true");
 #endif
+  m_nuclideSuggest->addStyleClass( "nuclide-suggest" );
   m_nuclideSuggest->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
-  m_nuclideSuggest->setWidth( WLength(70, Wt::WLength::Unit::Pixel) );
+  // Width is set via CSS on the <li> elements in InterSpec.css (.nuclide-suggest li)
 
   IsotopeNameFilterModel::setQuickTypeFixHackjs( m_nuclideSuggest );
+  IsotopeNameFilterModel::setEnterKeyMatchFixJs( m_nuclideSuggest, m_nuclideEdit );
   
   isoSuggestModel->filter( "" );
   m_nuclideSuggest->setFilterLength( -1 );

@@ -1698,3 +1698,20 @@ a:hover { color:#E88400; border-bottom:none; }
   flex-direction: row;
   align-items: center;
 }
+
+/* Style nuclide suggestion popup list items to be wider and full-width for easier clicking */
+.nuclide-suggest
+{
+  min-width: 80px; /* Ensure popup is at least as wide as the list items */
+  overflow-x: hidden; /* Prevent horizontal scrollbar when vertical scrollbar appears */
+}
+
+.nuclide-suggest li,
+.nuclide-suggest .Wt-suggest-item
+{
+  min-width: 80px;
+  width: 100%;
+  padding-left: 5px;
+  padding-right: 5px;
+  box-sizing: border-box; /* Include padding in width calculation */
+}
