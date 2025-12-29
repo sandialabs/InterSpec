@@ -54,6 +54,10 @@
   <message id="ds-manual-det-desc">Efisiensi detektor didefinisikan oleh formula matematika, diberikan energi x;
      atau Anda dapat memasukkan koefisien untuk bentuk persamaan standar. Klik ikon tanda tanya untuk info lebih lanjut.
   </message>
+  <message id="ds-manual-det-desc-label">Efisiensi detektor didefinisikan oleh formula matematika, diberikan energi x;
+     atau Anda dapat memasukkan koefisien untuk bentuk persamaan standar. Klik ikon tanda tanya untuk info lebih lanjut.:</message>
+  <message id="ds-description-label">Deskripsi:</message>
+  <message id="ds-name-label">Nama:</message>
   <message id="ds-manual-det-name-label">Nama detektor </message>
   <message id="ds-manual-det-name-empty-txt">Nama Detektor Unik</message>
   <message id="ds-manual-function-label">Efisiensi f(x) = </message>

@@ -2067,7 +2067,7 @@ DetectorDisplay::DetectorDisplay( InterSpec *specViewer,
   addStyleClass( "DetectorDisplay" );  //In InterSpec.css since this widget is loaded almost always at initial load time anyway
 
   new WImage( "InterSpec_resources/images/detector_small_white.png", this );
-  new WText( WString("{1}:").arg(WString::tr("Detector") ), this );
+  new WText( WString::tr("detector-label"), this );
   const bool isMobile = (m_interspec && m_interspec->isMobile());
   
   WString txt = WString("<font style=\"font-weight:100;color:#CFCFCF;\">&lt;{1}&gt;</font>")
@@ -2395,7 +2395,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
 
   
   m_uploadedDetNameDiv = new WContainerWidget( uploadDetTab );
-  label = new WLabel( WString("{1}:").arg( WString::tr("Name") ), m_uploadedDetNameDiv );
+  label = new WLabel( WString::tr("ds-name-label"), m_uploadedDetNameDiv );
   m_uploadedDetName = new WLineEdit( m_uploadedDetNameDiv );
   label->setBuddy( m_uploadedDetName );
   
@@ -2430,9 +2430,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   const char *const diamtxt = "2.2 cm";
     
   WContainerWidget *formulaDiv = new WContainerWidget();
-  WString nameLabel = WString::tr("ds-manual-det-desc");
-  if( narrow_layout )
-    nameLabel = WString("{1}:").arg(nameLabel);
+  WString nameLabel = narrow_layout ? WString::tr("ds-manual-det-desc-label") : WString::tr("ds-manual-det-desc");
   
   WText *selfDefineLabel = new WText( nameLabel, formulaDiv );
   selfDefineLabel->setInline( false );
@@ -2522,9 +2520,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
 
   cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
   
-  WString descLabel = WString::tr("Description");
-  if( narrow_layout )
-    descLabel = WString("{1}:").arg(descLabel);
+  WString descLabel = narrow_layout ? WString::tr("ds-description-label") : WString::tr("Description");
   
   label = new WLabel( descLabel, cell );
   if( narrow_layout )

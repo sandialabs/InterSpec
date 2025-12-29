@@ -40,7 +40,7 @@
   <message id="dlt-detected-activity-tt">पता चली गतिविधि, केवल इस रुचि क्षेत्र का उपयोग करके,
     और देखे गए काउंट्स की अधिकता, साथ ही
     सांख्यिकीय आत्मविश्वास अंतराल।</message>
-  <message id="dlt-limit-lt-zero">सीमा: &lt; 0{1}</message>
+  <message id="dlt-limit-lt-zero"><![CDATA[सीमा: < 0{1}]]></message>
   <message id="dlt-sig-fewer-counts">(ROI में पूर्वानुमान से काफी कम काउंट्स)</message>
   <message id="dlt-fewer-counts-tt">रुचि क्षेत्र में काफी कम काउंट्स देखे गए,
     पड़ोसी चैनलों द्वारा पूर्वानुमानित से।</message>
@@ -53,8 +53,6 @@
   <message id="dlt-large-deficit">ROI में काउंट्स की बड़ी कमी</message>
   
   <!-- DetectionLimitTool main class strings -->
-  <message id="dlt-nuclide-label">न्यूक्लाइड:&nbsp;&nbsp;</message>
-  <message id="dlt-age-label">आयु:</message>
   <message id="dlt-tt-age-edit">
     <div>न्यूक्लाइड की आयु।</div>
     <br />
@@ -62,8 +60,6 @@
     (अर्थात, दर्ज) न्यूक्लाइड हमेशा माप के समय के लिए रिपोर्ट की जाती हैं।
     </div>
   </message>
-  <message id="dlt-distance-label">दूरी:</message>
-  <message id="dlt-activity-label">गतिविधि:</message>
   <message id="dlt-attenuate-for-air">हवा के लिए कम करें</message>
   <message id="dlt-shield-empty-text">सुरक्षा सामग्री</message>
   <message id="dlt-activity-limit">गतिविधि सीमा</message>
@@ -84,8 +80,8 @@
   <message id="dlt-log">लॉग</message>
   <message id="dlt-lin">लिन</message>
   <message id="dlt-below-lc">(L<sub>c</sub> के नीचे)</message>
-  <message id="dlt-lt-zero-counts">&lt; 0 काउंट्स</message>
-  <message id="dlt-lt-zero-activity">&lt; {1}</message>
+  <message id="dlt-lt-zero-counts"><![CDATA[< 0 काउंट्स]]></message>
+  <message id="dlt-lt-zero-activity"><![CDATA[< {1}]]></message>
   
   <!-- Error messages -->
   <message id="dlt-err-no-data">कोई डेटा लोड नहीं किया गया</message>
@@ -178,7 +174,7 @@
   <message id="dlt-chart-x-axis-activity">गतिविधि ({1})</message>
   <message id="dlt-chart-title-estimated-activity">अनुमानित गतिविधि {1}।</message>
   <message id="dlt-chart-title-excess-counts">अतिरिक्त काउंट्स {1}।</message>
-  <message id="dlt-chart-title-activity-lt-zero">गतिविधि &lt; 0 {1}</message>
+  <message id="dlt-chart-title-activity-lt-zero"><![CDATA[गतिविधि < 0 {1}]]></message>
   <message id="dlt-chart-title-data-peak">डेटा + पीक {1}</message>
   <message id="dlt-chart-title-peak-upper-bound">ऊपरी सीमा का पीक {1} @{2} CL</message>
   <message id="dlt-currie-info-dialog-title">{1}{2} keV जानकारी</message>
@@ -188,7 +184,7 @@
   <message id="dlt-no-foreground-spectrum">कोई फोरग्राउंड स्पेक्ट्रम नहीं</message>
   <message id="dlt-no-drf-loaded">कोई DRF लोड नहीं किया गया</message>
   <message id="dlt-drf-not-valid">DRF वैध नहीं है या FWHM जानकारी नहीं है।</message>
-  <message id="dlt-err-max-distance-too-large">अधिकतम दूरी बहुत बड़ी है (&gt;100किमी)</message>
+  <message id="dlt-err-max-distance-too-large"><![CDATA[अधिकतम दूरी बहुत बड़ी है (>100किमी)]]></message>
   <message id="dlt-err-upper-limit-negative">काउंट्स की ऊपरी सीमा शून्य से कम है, लेकिन देखे गए काउंट्स L_d से अधिक हैं।</message>
   <message id="dlt-err-activity-zero-negative">गतिविधि शून्य या नकारात्मक नहीं हो सकती</message>
   <message id="dlt-err-distance-zero-negative">दूरी शून्य या नकारात्मक नहीं हो सकती</message>

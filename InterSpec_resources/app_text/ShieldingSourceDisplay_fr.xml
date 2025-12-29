@@ -19,7 +19,8 @@
     non attribuées comme composants de blindages sont traitées comme des points
     sources au centre.
   </message>
-  <message id="ssd-add-shield-label">Ajouter un blindage :</message>
+  <message id="ssd-add-shield-label">Ajouter un blindage :</message>
+  <message id="ssd-geometry-label">Géométrie :</message>
   <message id="ssd-tt-add-shield">Choisissez parmi une bibliothèque de matériaux de blindage courants prédéfinis.</message>
   <message id="ssd-generic-btn">Générique</message>
   <message id="ssd-tt-generic">Permet de définir et d'ajuster le numéro atomique et la densité surfacique.</message>

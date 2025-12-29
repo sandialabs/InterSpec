@@ -305,13 +305,13 @@ void DetectionLimitSimple::init()
   generalInput->addStyleClass( "GeneralInput" );
   
   
-  WLabel *nucLabel = new WLabel( WString("{1}:").arg(WString::tr("Nuclide")), generalInput );
+  WLabel *nucLabel = new WLabel( WString::tr("nuclide-label"), generalInput );
   m_nuclideEdit = new WLineEdit( generalInput );
   
   m_nuclideEdit->setMinimumSize( 30, WLength::Auto );
   nucLabel->setBuddy( m_nuclideEdit );
   
-  WLabel *ageLabel = new WLabel( WString("{1}:").arg(WString::tr("Age")), generalInput );
+  WLabel *ageLabel = new WLabel( WString::tr("age-label"), generalInput );
   m_nuclideAgeEdit = new WLineEdit( generalInput );
   m_nuclideAgeEdit->setMinimumSize( 30, WLength::Auto );
   m_nuclideAgeEdit->setPlaceholderText( WString::tr("N/A") );
@@ -340,7 +340,7 @@ void DetectionLimitSimple::init()
                               WString::tr("dcw-tt-age-edit"), showToolTips );
   
   
-  WLabel *gammaLabel = new WLabel( WString("{1}:").arg(WString::tr("Gamma")), generalInput );
+  WLabel *gammaLabel = new WLabel( WString::tr("dls-gamma-label"), generalInput );
   gammaLabel->addStyleClass( "GridFirstCol GridThirdRow GridVertCenter" );
   
   
@@ -353,7 +353,7 @@ void DetectionLimitSimple::init()
   
   
   // Add Distance input
-  WLabel *distanceLabel = new WLabel( WString("{1}:").arg(WString::tr("Distance")), generalInput );
+  WLabel *distanceLabel = new WLabel( WString::tr("distance-label"), generalInput );
   distanceLabel->addStyleClass( "GridFourthCol GridFirstRow GridVertCenter" );
   
   m_prevDistance = "100 cm";

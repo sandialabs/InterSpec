@@ -13,6 +13,9 @@
   <message id="smmd-err-not-image">نوع محتوى الوسائط المتعددة لم يكن من نوع الصورة، أو لم يتمكن من تحديده.</message>
   <message id="smmd-image-index">الصورة {1} من {2}</message>
   <message id="smmd-Time">الوقت</message>
+  <message id="smmd-time-label">الوقت: {1}</message>
+  <message id="smmd-remark-label">ملاحظة: {1}</message>
+  <message id="smmd-desc-label">Desc.: {1}</message>
   <message id="smmd-window-title-single">صورة في ملف الطيف</message>
   <message id="smmd-window-title-multiple">صور في ملف الطيف</message>
 </messages>

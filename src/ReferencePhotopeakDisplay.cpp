@@ -899,7 +899,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   
   const WLength labelWidth(3.5,WLength::FontEm), fieldWidth(4,WLength::FontEm);
   
-  WLabel *nucInputLabel = new WLabel( WString("{1}:").arg( WString::tr("Nuclide") ) );
+  WLabel *nucInputLabel = new WLabel( WString::tr("nuclide-label") );
   nucInputLabel->setMinimumSize( labelWidth, WLength::Auto );
   m_nuclideEdit = new WLineEdit( "" );
   m_nuclideEdit->setMargin( 1 );
@@ -960,8 +960,6 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_nuclideSuggest->setJavaScriptMember("wtNoReparent", "true");
 #endif
   m_nuclideSuggest->addStyleClass( "nuclide-suggest" );
-  m_nuclideSuggest->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
-  // Width is set via CSS on the <li> elements in InterSpec.css (.nuclide-suggest li)
 
   IsotopeNameFilterModel::setQuickTypeFixHackjs( m_nuclideSuggest );
   IsotopeNameFilterModel::setEnterKeyMatchFixJs( m_nuclideSuggest, m_nuclideEdit );
@@ -973,7 +971,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_nuclideSuggest->forEdit( m_nuclideEdit, WSuggestionPopup::Editing );  // | WSuggestionPopup::DropDownIcon
 
 
-  WLabel *ageInputLabel = new WLabel( WString("{1}:").arg( WString::tr("Age") ) );
+  WLabel *ageInputLabel = new WLabel( WString::tr("age-label") );
   m_ageEdit = new WLineEdit( "" );
   WRegExpValidator *validator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex(), this );
   validator->setFlags(Wt::MatchCaseInsensitive);

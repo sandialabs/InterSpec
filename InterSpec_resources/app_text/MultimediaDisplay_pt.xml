@@ -13,6 +13,9 @@
   <message id="smmd-err-not-image">Tipo de conteúdo multimídia não era de um tipo de imagem, ou não pôde ser determinado.</message>
   <message id="smmd-image-index">Imagem {1} de {2}</message>
   <message id="smmd-Time">Tempo</message>
+  <message id="smmd-time-label">Tempo: {1}</message>
+  <message id="smmd-remark-label">Observação: {1}</message>
+  <message id="smmd-desc-label">Desc.: {1}</message>
   <message id="smmd-window-title-single">Imagem no Arquivo de Espectro</message>
   <message id="smmd-window-title-multiple">Imagens no Arquivo de Espectro</message>
 </messages>

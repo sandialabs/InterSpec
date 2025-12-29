@@ -13,6 +13,9 @@
   <message id="smmd-err-not-image">Tipe konten multimedia bukan tipe gambar, atau tidak dapat ditentukan.</message>
   <message id="smmd-image-index">Gambar {1} dari {2}</message>
   <message id="smmd-Time">Waktu</message>
+  <message id="smmd-time-label">Waktu: {1}</message>
+  <message id="smmd-remark-label">Catatan: {1}</message>
+  <message id="smmd-desc-label">Desc.: {1}</message>
   <message id="smmd-window-title-single">Gambar dalam File Spektrum</message>
   <message id="smmd-window-title-multiple">Gambar dalam File Spektrum</message>
 </messages>

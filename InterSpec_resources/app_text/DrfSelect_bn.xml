@@ -54,6 +54,10 @@
   <message id="ds-manual-det-desc">একটি গাণিতিক সূত্র দ্বারা সংজ্ঞায়িত ডিটেক্টর দক্ষতা, শক্তি x দেওয়া;
      অথবা আপনি মানক সমীকরণ ফর্মের জন্য সহগ প্রবেশ করাতে পারেন। আরো তথ্যের জন্য প্রশ্ন চিহ্ন আইকনে ক্লিক করুন।
   </message>
+  <message id="ds-manual-det-desc-label">একটি গাণিতিক সূত্র দ্বারা সংজ্ঞায়িত ডিটেক্টর দক্ষতা, শক্তি x দেওয়া;
+     অথবা আপনি মানক সমীকরণ ফর্মের জন্য সহগ প্রবেশ করাতে পারেন। আরো তথ্যের জন্য প্রশ্ন চিহ্ন আইকনে ক্লিক করুন।:</message>
+  <message id="ds-description-label">বিবরণ:</message>
+  <message id="ds-name-label">নাম:</message>
   <message id="ds-manual-det-name-label">ডিটেক্টর নাম </message>
   <message id="ds-manual-det-name-empty-txt">অনন্য ডিটেক্টর নাম</message>
   <message id="ds-manual-function-label">দক্ষতা f(x) = </message>

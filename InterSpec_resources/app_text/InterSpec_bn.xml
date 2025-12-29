@@ -32,6 +32,17 @@
   <message id="Detector">ডিটেক্টর</message>
   <message id="Distance">দূরত্ব</message>
   <message id="Activity">কার্যকলাপ</message>
+  <message id="nuclide-label">নিউক্লাইড:</message>
+  <message id="age-label">বয়স:</message>
+  <message id="distance-label">দূরত্ব:</message>
+  <message id="activity-label">কার্যকলাপ:</message>
+  <message id="dose-label">ডোজ:</message>
+  <message id="shielding-label">শিল্ডিং:</message>
+  <message id="detector-label">সনাক্তকারী:</message>
+  <message id="energy-label">শক্তি:</message>
+  <message id="foreground-label">সামনের:</message>
+  <message id="background-label">পটভূমি:</message>
+  <message id="secondary-label">দ্বিতীয়:</message>
   <message id="Remark">মন্তব্য</message>
   <message id="Tap">ট্যাপ করুন</message>
   <message id="Click">ক্লিক করুন</message>

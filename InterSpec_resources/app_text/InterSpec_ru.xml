@@ -32,6 +32,17 @@
   <message id="Detector">Детектор</message>
   <message id="Distance">Расстояние</message>
   <message id="Activity">Активность</message>
+  <message id="nuclide-label">Нуклид:</message>
+  <message id="age-label">Возраст:</message>
+  <message id="distance-label">Расстояние:</message>
+  <message id="activity-label">Активность:</message>
+  <message id="dose-label">Доза:</message>
+  <message id="shielding-label">Защита:</message>
+  <message id="detector-label">Детектор:</message>
+  <message id="energy-label">Энергия:</message>
+  <message id="foreground-label">Передний план:</message>
+  <message id="background-label">Фон:</message>
+  <message id="secondary-label">Вторичный:</message>
   <message id="Remark">Примечание</message>
   <message id="Tap">Коснуться</message>
   <message id="Click">Щёлкнуть</message>

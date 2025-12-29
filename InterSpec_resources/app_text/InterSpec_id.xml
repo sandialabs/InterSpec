@@ -32,6 +32,17 @@
   <message id="Detector">Detektor</message>
   <message id="Distance">Jarak</message>
   <message id="Activity">Aktivitas</message>
+  <message id="nuclide-label">Nuklida:</message>
+  <message id="age-label">Usia:</message>
+  <message id="distance-label">Jarak:</message>
+  <message id="activity-label">Aktivitas:</message>
+  <message id="dose-label">Dosis:</message>
+  <message id="shielding-label">Perisai:</message>
+  <message id="detector-label">Detektor:</message>
+  <message id="energy-label">Energi:</message>
+  <message id="foreground-label">Latar depan:</message>
+  <message id="background-label">Latar belakang:</message>
+  <message id="secondary-label">Sekunder:</message>
   <message id="Remark">Catatan</message>
   <message id="Tap">Ketuk</message>
   <message id="Click">Klik</message>

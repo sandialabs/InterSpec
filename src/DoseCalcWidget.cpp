@@ -543,7 +543,7 @@ void DoseCalcWidget::init()
     {
       case Dose:
       {
-        txt = new WText( WString("{1}:").arg(WString::tr("Dose")), m_enterWidgets[i] );
+        txt = new WText( WString::tr("dose-label"), m_enterWidgets[i] );
         txt->addStyleClass( "DoseEnterInd" );
         if( !isPhone )
           txt->setInline( false );
@@ -603,7 +603,7 @@ void DoseCalcWidget::init()
         
       case Activity:
       {
-        txt = new WText( WString("{1}:").arg(WString::tr("Activity")) );
+        txt = new WText( WString::tr("activity-label") );
         txt->addStyleClass( "DoseEnterInd" );
         if( !isPhone )
           txt->setInline( false );
@@ -678,7 +678,7 @@ void DoseCalcWidget::init()
         
       case Distance:
       {
-        txt = new WText( WString("{1}:").arg(WString::tr("Distance")) );
+        txt = new WText( WString::tr("distance-label") );
         txt->addStyleClass( "DoseEnterInd" );
         if( !isPhone )
           txt->setInline( false );
@@ -725,7 +725,7 @@ void DoseCalcWidget::init()
       {
         if( !isPhone )
         {
-          txt = new WText( WString("{1}:").arg(WString::tr("Shielding")) );
+          txt = new WText( WString::tr("shielding-label") );
           txt->addStyleClass( "DoseEnterInd" );
           txt->setInline( false );
           m_enterWidgets[i]->addWidget( txt );

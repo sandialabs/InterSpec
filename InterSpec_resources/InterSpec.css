@@ -39,13 +39,6 @@ label:has(input[type="checkbox"]) {
   align-items: center;
 }
 
-.Wt-suggest
-{
-  padding-left: 5px;
-  padding-right: 6px;
-}
-
-
 .specviewer
 {
   /* Make none of the elements selectable by default */
@@ -1699,19 +1692,24 @@ a:hover { color:#E88400; border-bottom:none; }
   align-items: center;
 }
 
-/* Style nuclide suggestion popup list items to be wider and full-width for easier clicking */
-.nuclide-suggest
+
+.Wt-suggest
 {
-  min-width: 80px; /* Ensure popup is at least as wide as the list items */
-  overflow-x: hidden; /* Prevent horizontal scrollbar when vertical scrollbar appears */
+  padding-left: 5px;
+  padding-right: 5px;
 }
 
-.nuclide-suggest li,
-.nuclide-suggest .Wt-suggest-item
+/* Style nuclide suggestion popup list items to be wider and full-width for easier clicking */
+.Wt-suggest.nuclide-suggest
+{
+  min-width: 80px; /* Ensure popup is at least as wide as the list items */
+  max-height: 15em; /* A bit of a workaround, to make sure the whole popup is visible */
+}
+
+.Wt-suggest.nuclide-suggest li,
+.Wt-suggest.nuclide-suggest .Wt-suggest-item
 {
   min-width: 80px;
   width: 100%;
-  padding-left: 5px;
-  padding-right: 5px;
   box-sizing: border-box; /* Include padding in width calculation */
 }

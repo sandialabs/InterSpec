@@ -31,4 +31,5 @@
   <message id="pid-csv-copy-full">Copy full peak CSV</message>
   <message id="pid-csv-copy-no-hdr">Copy without headers</message>
   <message id="pid-csv-copy-compact">Copy fit peak info</message>
+  <message id="pid-peak-label">Peak: </message>
 </messages>

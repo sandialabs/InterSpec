@@ -529,25 +529,9 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
 #if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
   nuclideSuggest->setJavaScriptMember("wtNoReparent", "true");
 #endif
-  nuclideSuggest->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
-  nuclideSuggest->setWidth( WLength(70, Wt::WLength::Unit::Pixel) );
+  nuclideSuggest->addStyleClass( "nuclide-suggest" );
 
-  //See ReferencePhotopeakDisplay.cpp for note on this next hack section of code
-  string js = INLINE_JAVASCRIPT(
-    var addTryCatch = function( elid ){
-      var dofix = function(elid){
-        var el = Wt.WT.getElement(elid);
-        var self = el ? jQuery.data(el, 'obj') : null;
-        if( !self ) self = el ? el.wtObj : null;; //Wt 3.7.1
-        if( !self ){ setTimeout( function(){dofix(elid);}, 100 ); return; }
-        var oldfcn = self.refilter;
-        self.refilter = function(value){ try{ oldfcn(value); }catch(e){ console.log('My refilter caught: ' + e ); } };
-      };
-      dofix(elid);
-    };
-  );
-  
-  nuclideSuggest->doJavaScript( js + " addTryCatch('" + nuclideSuggest->id() + "');" );
+  IsotopeNameFilterModel::setQuickTypeFixHackjs( nuclideSuggest );
   
   isoSuggestModel->filter( "" );
   nuclideSuggest->setFilterLength( -1 );
@@ -563,6 +547,7 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
     m_specificRefLineName[i] = new WLineEdit( cell );
     m_specificRefLineName[i]->setAttributeValue( "ondragstart", "return false" );
     nuclideSuggest->forEdit( m_specificRefLineName[i], WSuggestionPopup::Editing );
+    IsotopeNameFilterModel::setEnterKeyMatchFixJs( nuclideSuggest, m_specificRefLineName[i] );
     m_specificRefLineName[i]->changed().connect( boost::bind( &ColorThemeWidget::specificRefLineSourceChangedCallback, this, i ) );
     m_specificRefLineName[i]->enterPressed().connect( boost::bind( &ColorThemeWidget::specificRefLineSourceChangedCallback, this, i ) );
     
