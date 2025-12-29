@@ -395,7 +395,7 @@ void IsotopeNameFilterModel::filter( const Wt::WString &text )
   //      and is probably pretty ineffiecnt
   //Should also be seperated out into its own funciton
   vector<const ReactionGamma::Reaction *> suggest_reactions;
-  if( m_includeReactions && metalevel==0 )
+  if( m_includeReactions && (metalevel == 0) && numericstrs.empty() )
     suggest_reactions = suggestReactions( text, suggestions, candidate_elements );
 
   //if user has entered something like "Fe(...", they only want the reactions
@@ -855,6 +855,7 @@ void IsotopeNameFilterModel::setQuickTypeFixHackjs( Wt::WSuggestionPopup *popup 
 // multiple times without re-defining the JavaScript code
 WT_DECLARE_WT_MEMBER(SetupEnterKeyMatchFix, Wt::JavaScriptFunction, "SetupEnterKeyMatchFix",
   function( popupElId, editElId ){
+  
     var doSetup = function( popupElId, editElId ){
       var popupEl = Wt.WT.getElement( popupElId );
       var editEl = Wt.WT.getElement( editElId );
@@ -903,8 +904,8 @@ WT_DECLARE_WT_MEMBER(SetupEnterKeyMatchFix, Wt::JavaScriptFunction, "SetupEnterK
         
         // Monitor input to detect special characters and hide popup
         // But don't hide if we're in the middle of applying a suggestion (click)
-        editEl.addEventListener( 'input', function( event ){
-          var value = editEl.value || '';
+        editEl.addEventListener( "input", function( event ){
+          var value = editEl.value || "";
           // If value contains special characters, hide popup immediately
           // But only if we're not clicking a suggestion (let clicks work)
           if( /[()[\]{}]/.test( value ) && !isClickingSuggestion ){
@@ -1103,7 +1104,7 @@ WT_DECLARE_WT_MEMBER(SetupEnterKeyMatchFix, Wt::JavaScriptFunction, "SetupEnterK
             return true; // Allow default behavior
           }
           
-          var currentText = editElement ? (editElement.value || '') : '';
+          var currentText = editElement ? (editElement.value || "") : "";
           
           // This is an Enter key press - handle it
           {
@@ -1132,11 +1133,11 @@ WT_DECLARE_WT_MEMBER(SetupEnterKeyMatchFix, Wt::JavaScriptFunction, "SetupEnterK
                       itemText = span.getAttribute( 'sug' );
                     }
                     if( !itemText ){
-                      itemText = item.textContent || item.innerText || '';
+                      itemText = item.textContent || item.innerText || "";
                     }
-                    itemText = itemText ? itemText.trim() : '';
+                    itemText = itemText ? itemText.trim() : "";
                     
-                    if( itemText && itemText !== '' ){
+                    if( itemText && itemText !== "" ){
                       allSuggestions.push( itemText );
                       if( i === 0 ) firstSuggestion = itemText;
                       
@@ -1217,8 +1218,8 @@ WT_DECLARE_WT_MEMBER(SetupEnterKeyMatchFix, Wt::JavaScriptFunction, "SetupEnterK
                 }
               }
               
-              var firstLower = firstSuggestion ? firstSuggestion.toLowerCase().trim() : '';
-              var activeLower = activeSuggestion ? activeSuggestion.toLowerCase().trim() : '';
+              var firstLower = firstSuggestion ? firstSuggestion.toLowerCase().trim() : "";
+              var activeLower = activeSuggestion ? activeSuggestion.toLowerCase().trim() : "";
               var suggestionToUse = null;
               
               if( activeSuggestion ){
@@ -1311,15 +1312,15 @@ WT_DECLARE_WT_MEMBER(SetupEnterKeyMatchFix, Wt::JavaScriptFunction, "SetupEnterK
       // Intercept change events and suppress them if we're applying a suggestion
       // But only suppress premature events, not the actual suggestion application
       if( editEl ){
-        editEl.addEventListener( 'change', function( event ){
-          var currentValue = editEl.value || '';
+        editEl.addEventListener( "change", function( event ){
+          var currentValue = editEl.value || "";
           
           // Only suppress if we're tracking a suggestion click AND the value matches the old value
           // This prevents the premature change event with the old typed text
           if( isApplyingSuggestion && pendingSuggestionValue ){
             var currentLower = currentValue.toLowerCase().trim();
             var pendingLower = pendingSuggestionValue.toLowerCase().trim();
-            var valueBeforeLower = valueBeforeSuggestionClick ? valueBeforeSuggestionClick.toLowerCase().trim() : '';
+            var valueBeforeLower = valueBeforeSuggestionClick ? valueBeforeSuggestionClick.toLowerCase().trim() : "";
             
             // If current value matches the old value (before click), suppress this premature event
             if( currentLower === valueBeforeLower && currentLower !== pendingLower ){
@@ -1356,7 +1357,7 @@ WT_DECLARE_WT_MEMBER(SetupEnterKeyMatchFix, Wt::JavaScriptFunction, "SetupEnterK
       // When a suggestion is clicked, the value changes instantly to the full suggestion text
       // This is different from typing, which happens character by character
       if( editEl ){
-        var lastKnownValue = editEl.value || '';
+        var lastKnownValue = editEl.value || "";
         var lastChangeTime = Date.now();
         var isUserTyping = false;
         var typingTimeout = null;
@@ -1378,7 +1379,7 @@ WT_DECLARE_WT_MEMBER(SetupEnterKeyMatchFix, Wt::JavaScriptFunction, "SetupEnterK
         
         // Monitor input events to detect suggestion clicks
         var inputMonitor = function( event ){
-          var currentValue = editEl.value || '';
+          var currentValue = editEl.value || "";
           var now = Date.now();
           var timeSinceLastChange = now - lastChangeTime;
           
@@ -1435,18 +1436,18 @@ WT_DECLARE_WT_MEMBER(SetupEnterKeyMatchFix, Wt::JavaScriptFunction, "SetupEnterK
           if( li ){
             // A suggestion item was clicked - set flags early
             var suggestionText = null;
-            var span = li.querySelector ? li.querySelector( 'span[sug]' ) : null;
+            var span = li.querySelector ? li.querySelector( "span[sug]" ) : null;
             if( span && span.getAttribute ){
-              suggestionText = span.getAttribute( 'sug' );
+              suggestionText = span.getAttribute( "sug" );
             }
             if( !suggestionText ){
-              suggestionText = li.textContent || li.innerText || '';
+              suggestionText = li.textContent || li.innerText || "";
             }
-            suggestionText = suggestionText ? suggestionText.trim() : '';
+            suggestionText = suggestionText ? suggestionText.trim() : "";
             
             if( suggestionText && editEl ){
               // Track the click early - before WSuggestionPopup processes it
-              valueBeforeSuggestionClick = editEl.value || '';
+              valueBeforeSuggestionClick = editEl.value || "";
               isApplyingSuggestion = true;
               pendingSuggestionValue = suggestionText;
               isClickingSuggestion = true;
