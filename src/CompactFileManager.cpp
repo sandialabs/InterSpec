@@ -1154,7 +1154,7 @@ void CompactFileManager::updateSummaryTable( SpecUtils::SpectrumType type,
   {
     table_pos += 1;
     cell = table->elementAt(table_pos / num_info_col, 2*(table_pos % num_info_col) );
-    WText *label = new WText( WString::tr("cfm-meas-type"), cell );
+    WLabel *label = new WLabel( WString::tr("cfm-meas-type"), cell );
     
     
     WString spec_type;

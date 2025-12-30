@@ -5797,15 +5797,17 @@ void InterSpec::startStoreTestState()
   edit->setAttributeValue( "spellcheck", "off" );
 #endif
   
-  WText *label = new WText( WString::tr("Name") );
+  WLabel *label = new WLabel( WString::tr("Name") );
   layout->addWidget( label, 0, 0 );
   layout->addWidget( edit,  0, 1 );
-  
+  label->setBuddy( edit );
+
   if( !!m_dataMeasurement && m_dataMeasurement->filename().size() )
     edit->setText( m_dataMeasurement->filename() );
-  
+
   WTextArea *summary = new WTextArea();
-  label = new WText( WString::tr("Desc.") );
+  label = new WLabel( WString::tr("Desc.") );
+  label->setBuddy( summary );
   summary->setEmptyText( WString::tr("db-dec-empty-txt") );
   layout->addWidget( label, 1, 0 );
   layout->addWidget( summary, 1, 1 );

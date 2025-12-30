@@ -2067,7 +2067,7 @@ DetectorDisplay::DetectorDisplay( InterSpec *specViewer,
   addStyleClass( "DetectorDisplay" );  //In InterSpec.css since this widget is loaded almost always at initial load time anyway
 
   new WImage( "InterSpec_resources/images/detector_small_white.png", this );
-  new WText( WString::tr("detector-label"), this );
+  new WLabel( WString::tr("detector-label"), this );
   const bool isMobile = (m_interspec && m_interspec->isMobile());
   
   WString txt = WString("<font style=\"font-weight:100;color:#CFCFCF;\">&lt;{1}&gt;</font>")

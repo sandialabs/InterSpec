@@ -762,8 +762,8 @@ public:
     
     WContainerWidget *currieLimitContent = new WContainerWidget( rightColumn );
     currieLimitContent->addStyleClass( "MdaRowCurrieLimitContent" );
-    
-    WText *currie_label = new WText( WString::tr("dlt-single-peak-currie-limit"), currieLimitContent );
+
+    WLabel *currie_label = new WLabel( WString::tr("dlt-single-peak-currie-limit"), currieLimitContent );
     currie_label->addStyleClass( "MdaCurrieLimitTitle" );
     
     m_poisonLimit = new WText( "&nbsp;", currieLimitContent );
