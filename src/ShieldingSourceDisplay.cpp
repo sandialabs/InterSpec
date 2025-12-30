@@ -2994,7 +2994,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_showChi2Text->hide();
 
   m_chi2Plot = new ShieldingSourceFitPlot();
-
+  m_chi2Plot->setContentMargins( 5, 5, 13, 5 ); //top, right, bottom, left
+      
   // Connect to display mode change signal to update m_showChiOnChart
   m_chi2Plot->displayModeChanged().connect( boost::bind( &ShieldingSourceDisplay::handleChi2ChartDisplayModeChanged, this, boost::placeholders::_1 ) );
 
