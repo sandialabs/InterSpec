@@ -887,7 +887,8 @@ int main( int argc, char **argv )
   // Command line argument parsing
   namespace po = boost::program_options;
   
-  string data_base_dir = "/Users/wcjohns/rad_ana/peak_area_optimization/peak_fit_accuracy_inject/";
+  //string data_base_dir = "/Users/wcjohns/rad_ana/peak_area_optimization/peak_fit_accuracy_inject/";
+  string data_base_dir = "/Users/wcjohns/coding/InterSpec_peak_fit_improve/peak_fit_accuracy_inject";
   string static_data_dir;
   PeakFitImprove::sm_num_optimization_threads = std::max( 8u, std::thread::hardware_concurrency() > 2 ? std::thread::hardware_concurrency() - 2 : 1 );
   size_t number_threads_per_individual = 1;
@@ -1046,7 +1047,7 @@ int main( int argc, char **argv )
                                                    wt_config.c_str(),
                                                    static_cast<short int>(0) );
 
-  cout << "ThreadPool will have " << Wt::WServer::instance()->ioService().threadCount() << " threads." << endl;
+  //cout << "ThreadPool will have " << Wt::WServer::instance()->ioService().threadCount() << " threads." << endl;
 #endif //#if( defined(SpecUtils_USE_WT_THREADPOOL) )
 
 

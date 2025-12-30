@@ -108,7 +108,8 @@ struct PeakFitResult
 
 // Configuration parameters for peak fitting for nuclides
 // These values will be optimized via genetic algorithm for different detector types
-struct PeakFitForNuclideConfig {
+struct PeakFitForNuclideConfig
+{
   // FWHM functional form
   DetectorPeakResponse::ResolutionFnctForm fwhm_functional_form = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
 
@@ -148,7 +149,7 @@ struct PeakFitForNuclideConfig {
   // RelActAuto parameters
   RelActCalcAuto::FwhmForm fwhm_form = RelActCalcAuto::FwhmForm::Berstein_3;
   double num_sigma_contribution = 1.5;  // Peak area contribution sigma range
-  double rel_eff_auto_base_rel_eff_uncert = 0.01;  // BR uncertainty for RelActAuto
+  double rel_eff_auto_base_rel_eff_uncert = 0.1;  // BR uncertainty for RelActAuto
 
   // ROI clustering thresholds for auto RelEff refinement stage
   double auto_rel_eff_cluster_num_sigma = 2.0;  // Slightly wider clustering with better rel-eff
@@ -194,8 +195,8 @@ struct PeakFitForNuclideConfig {
   }
 
   // RelActAuto relative efficiency model parameters
-  RelActCalc::RelEffEqnForm rel_eff_eqn_type = RelActCalc::RelEffEqnForm::LnX;
-  size_t rel_eff_eqn_order = 3;
+  RelActCalc::RelEffEqnForm rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
+  size_t rel_eff_eqn_order = 0;
 
   // Physical model shielding (empty vectors mean no shielding)
   std::vector<std::shared_ptr<RelActCalc::PhysicalModelShieldInput>> phys_model_self_atten;
@@ -208,6 +209,11 @@ struct PeakFitForNuclideConfig {
   // Fields for RelActAuto options configuration
   bool fit_energy_cal = true;
   std::vector<RelActCalcAuto::NucInputInfo> base_nuclides;  // Set from outside
+
+  // ROI significance threshold for iterative refinement
+  // Minimum total chi2 reduction required for peaks in a ROI to be considered significant
+  // The chi2 with peaks must be at least this much lower than chi2 with continuum-only
+  double roi_significance_min_chi2_reduction = 10.0;
 };//struct PeakFitForNuclideConfig
 
 
@@ -228,6 +234,221 @@ bool rois_are_similar( const vector<RelActCalcAuto::RoiRange> &a,
   }
   return true;
 }//rois_are_similar
+
+
+/** Result of computing chi2 significance for a single ROI.
+ */
+struct RoiSignificanceResult
+{
+  double chi2_with_peaks = 0.0;
+  double chi2_continuum_only = 0.0;
+  double chi2_reduction = 0.0;  // chi2_continuum_only - chi2_with_peaks
+  size_t num_channels = 0;
+  bool has_significant_peaks = false;
+};//struct RoiSignificanceResult
+
+
+/** Computes chi2 significance for a single ROI by comparing chi2 with peaks vs continuum-only.
+
+ This function:
+ 1. Finds peaks within the ROI
+ 2. Computes chi2 with those peaks using chi2_for_region()
+ 3. Fits a continuum-only model using fit_amp_and_offset()
+ 4. Computes total chi2 reduction
+ 5. Determines if peaks are significant based on threshold
+
+ @param roi The ROI range to evaluate
+ @param all_peaks All peaks in the solution
+ @param data The spectrum measurement
+ @param min_chi2_reduction Minimum chi2 reduction to consider peaks significant
+ @return RoiSignificanceResult with chi2 values and significance determination
+ */
+RoiSignificanceResult compute_roi_chi2_significance(
+  const RelActCalcAuto::RoiRange &roi,
+  const std::vector<PeakDef> &all_peaks,
+  const std::shared_ptr<const SpecUtils::Measurement> &data,
+  const double min_chi2_reduction )
+{
+  RoiSignificanceResult result;
+
+  // Find peaks in this ROI
+  std::vector<std::shared_ptr<const PeakDef>> peaks_in_roi;
+  for( const PeakDef &peak : all_peaks )
+  {
+    if( peak.mean() >= roi.lower_energy && peak.mean() <= roi.upper_energy )
+      peaks_in_roi.push_back( std::make_shared<PeakDef>( peak ) );
+  }
+
+  if( peaks_in_roi.empty() )
+    return result;
+
+  // Get channel range
+  const size_t start_channel = data->find_gamma_channel( static_cast<float>( roi.lower_energy ) );
+  const size_t end_channel = data->find_gamma_channel( static_cast<float>( roi.upper_energy ) );
+  result.num_channels = (end_channel > start_channel) ? (end_channel - start_channel) : 0;
+
+  if( result.num_channels < 3 )
+    return result;
+
+
+  // Get continuum parameters from first peak
+  const std::shared_ptr<const PeakContinuum> continuum = peaks_in_roi[0]->continuum();
+  if( !continuum )
+    return result;
+
+  const int num_poly_terms = static_cast<int>( continuum->parameters().size() );
+  const bool step_continuum = (continuum->type() == PeakContinuum::OffsetType::FlatStep
+                            || continuum->type() == PeakContinuum::OffsetType::LinearStep
+                            || continuum->type() == PeakContinuum::OffsetType::BiLinearStep);
+
+  // Prepare data arrays for fit_amp_and_offset
+  const std::vector<float> &channel_energies = *data->channel_energies();
+  std::vector<float> channel_counts( result.num_channels );
+  for( size_t i = 0; i < result.num_channels; ++i )
+    channel_counts[i] = data->gamma_channel_content( start_channel + i );
+
+  std::vector<double> empty_means, empty_sigmas;
+  std::vector<double> continuum_coeffs, continuum_uncerts;
+  std::vector<double> dummy_amps, dummy_amp_uncerts;
+
+  // To compare apples to apples, call `fit_amp_and_offset(...)` for `peaks_in_roi`,
+  // but with the amplitudes of the peaks fixed, so the continuum is re-fit, but not the peak amplitudes.
+  // This way we can use the chi2 computed by fit_amp_and_offset, to consistently compare against
+  // the chi2 computed for the continuum fit for no peaks.
+  std::vector<PeakDef> fixed_peaks;
+  for( const std::shared_ptr<const PeakDef> &peak : peaks_in_roi )
+    fixed_peaks.push_back( *peak );
+
+  result.chi2_with_peaks = fit_amp_and_offset(
+    &channel_energies[start_channel],
+    channel_counts.data(),
+    result.num_channels,
+    num_poly_terms,
+    step_continuum,
+    continuum->referenceEnergy(),
+    empty_means,
+    empty_sigmas,
+    fixed_peaks,  // Pass peaks as fixed - their amplitudes won't be fit
+    PeakDef::SkewType::NoSkew,
+    nullptr,
+    dummy_amps,
+    continuum_coeffs,
+    dummy_amp_uncerts,
+    continuum_uncerts
+  );
+
+  // Fit continuum only (no peaks)
+  std::vector<PeakDef> empty_fixed_peaks;
+
+  result.chi2_continuum_only = fit_amp_and_offset(
+    &channel_energies[start_channel],
+    channel_counts.data(),
+    result.num_channels,
+    num_poly_terms,
+    step_continuum,
+    continuum->referenceEnergy(),
+    empty_means,
+    empty_sigmas,
+    empty_fixed_peaks,
+    PeakDef::SkewType::NoSkew,
+    nullptr,
+    dummy_amps,
+    continuum_coeffs,
+    dummy_amp_uncerts,
+    continuum_uncerts
+  );
+
+  // Compute chi2 reduction and determine significance
+  result.chi2_reduction = result.chi2_continuum_only - result.chi2_with_peaks;
+  result.has_significant_peaks = (result.chi2_reduction >= min_chi2_reduction);
+
+  return result;
+}//compute_roi_chi2_significance
+
+
+/** Computes filtered chi2/dof by only including ROIs with significant peaks.
+
+ This function loops through all ROIs in the solution, evaluates each for significance,
+ and returns the chi2/dof considering only the significant ROIs.
+
+ @param solution The RelActAuto solution containing ROIs and peaks
+ @param data The spectrum measurement
+ @param min_chi2_reduction Minimum chi2 reduction for ROI to be significant
+ @param insignificant_roi_indices Output vector of ROI indices that were insignificant
+ @return Chi2/DOF considering only significant ROIs
+ */
+double compute_filtered_chi2_dof(
+  const RelActCalcAuto::RelActAutoSolution &solution,
+  const std::shared_ptr<const SpecUtils::Measurement> &data,
+  const double min_chi2_reduction,
+  std::vector<size_t> &insignificant_roi_indices )
+{
+  insignificant_roi_indices.clear();
+
+  double total_chi2 = 0.0;
+  size_t total_channels = 0;
+
+  for( size_t roi_idx = 0; roi_idx < solution.m_final_roi_ranges.size(); ++roi_idx )
+  {
+    const RelActCalcAuto::RoiRange &roi = solution.m_final_roi_ranges[roi_idx];
+
+    const RoiSignificanceResult sig_result = compute_roi_chi2_significance(
+      roi, solution.m_peaks_without_back_sub, data, min_chi2_reduction );
+
+    if( sig_result.has_significant_peaks )
+    {
+      total_chi2 += sig_result.chi2_with_peaks;
+      total_channels += sig_result.num_channels;
+
+      if( PeakFitImprove::debug_printout )
+      {
+        cout << "  Significant ROI " << roi_idx << " [" << roi.lower_energy << ", " << roi.upper_energy << "] keV: "
+             << "chi2_reduction=" << sig_result.chi2_reduction
+             << " (threshold=" << min_chi2_reduction << ")" << endl;
+
+        // Print peaks in this ROI
+        for( const PeakDef &peak : solution.m_peaks_without_back_sub )
+        {
+          const double peak_roi_lower = peak.continuum()->lowerEnergy();
+          const double peak_roi_upper = peak.continuum()->upperEnergy();
+          if( (fabs( peak_roi_lower - roi.lower_energy ) < 1.0)
+             && (fabs( peak_roi_upper - roi.upper_energy ) < 1.0) )
+          {
+            cout << "    Peak: mean=" << peak.mean() << " keV, area=" << peak.peakArea() << endl;
+          }
+        }//for( loop over peaks )
+      }//if( debug_printout )
+    }
+    else
+    {
+      insignificant_roi_indices.push_back( roi_idx );
+
+      if( PeakFitImprove::debug_printout )
+      {
+        cout << "  Insignificant ROI " << roi_idx << " [" << roi.lower_energy << ", " << roi.upper_energy << "] keV: "
+             << "chi2_reduction=" << sig_result.chi2_reduction
+             << " (threshold=" << min_chi2_reduction << ")" << endl;
+
+        // Print peaks in this ROI
+        for( const PeakDef &peak : solution.m_peaks_without_back_sub )
+        {
+          const double peak_roi_lower = peak.continuum()->lowerEnergy();
+          const double peak_roi_upper = peak.continuum()->upperEnergy();
+          if( (fabs( peak_roi_lower - roi.lower_energy ) < 1.0)
+             && (fabs( peak_roi_upper - roi.upper_energy ) < 1.0) )
+          {
+            cout << "    Peak: mean=" << peak.mean() << " keV, area=" << peak.peakArea() << endl;
+          }
+        }//for( loop over peaks )
+      }//if( debug_printout )
+    }
+  }//for( loop over ROIs )
+
+  if( total_channels == 0 )
+    return std::numeric_limits<double>::max();
+
+  return total_chi2 / static_cast<double>( total_channels );
+}//compute_filtered_chi2_dof
 
 
 /** Fits peaks for nuclides using RelActAuto.
@@ -342,8 +563,6 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         // Use the FWHM coefficients passed to this function (computed from auto-search peaks
         // or DRF in fit_peaks_for_nuclides), rather than relying on solution.m_drf which may
         // not have valid FWHM info or may have incorrect values
-        
-        
 
         // Get energy range from foreground
         const double lowest_energy_gamma = foreground->gamma_energy_min();
@@ -367,11 +586,11 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
           for( size_t roi_idx = 0; roi_idx < refined_rois.size(); ++roi_idx )
           {
             const RelActCalcAuto::RoiRange &roi = refined_rois[roi_idx];
-            const double roi_expected_counts = foreground->gamma_integral(
+            const double roi_data_counts = foreground->gamma_integral(
                 static_cast<float>(roi.lower_energy), static_cast<float>(roi.upper_energy) );
             cout << "  ROI " << roi_idx << ": [" << roi.lower_energy << " - " << roi.upper_energy
                  << "] keV, width=" << (roi.upper_energy - roi.lower_energy)
-                 << " keV, expected_counts=" << roi_expected_counts << endl;
+                 << " keV, data_counts=" << roi_data_counts << endl;
           }
         }
 
@@ -397,14 +616,22 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
           break;
         }
 
-        const double old_chi2_dof = solution.m_chi2 / std::max( 1.0, static_cast<double>(solution.m_dof) );
-        const double new_chi2_dof = refined_solution.m_chi2 / std::max( 1.0, static_cast<double>(refined_solution.m_dof) );
+        // Compute filtered chi2/dof that only includes ROIs with significant peaks.
+        // This avoids the problem where adding a ROI in a flat region (with no real peaks)
+        // would artificially reduce chi2/dof.
+        std::vector<size_t> old_insignificant_rois, new_insignificant_rois;
+        const double old_chi2_dof = compute_filtered_chi2_dof(
+          solution, foreground, config.roi_significance_min_chi2_reduction, old_insignificant_rois );
+        const double new_chi2_dof = compute_filtered_chi2_dof(
+          refined_solution, foreground, config.roi_significance_min_chi2_reduction, new_insignificant_rois );
 
         // Check if chi2/dof improved
         if( new_chi2_dof >= old_chi2_dof )
         {
-          cout << "Iteration " << iter << " did not improve chi2/dof ("
+          cout << "Iteration " << iter << " did not improve filtered chi2/dof ("
                << old_chi2_dof << " -> " << new_chi2_dof << "), stopping" << endl;
+          if( !new_insignificant_rois.empty() )
+            cout << "  (" << new_insignificant_rois.size() << " ROIs had insignificant peaks)" << endl;
           break;
         }
 
@@ -416,15 +643,114 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
       cout << "Final solution after refinement:" << endl;
       solution.print_summary( std::cout );
       cout << endl;
+
+      // Print ROIs and sum fit peak areas for each ROI
+      cout << "Solution ROIs and fit peak areas:" << endl;
+      for( size_t roi_index = 0; roi_index < solution.m_final_roi_ranges.size(); ++roi_index )
+      {
+        const RelActCalcAuto::RoiRange &roi = solution.m_final_roi_ranges[roi_index];
+        double sum_peak_area = 0.0;
+        size_t num_peaks_in_roi = 0;
+
+        for( const PeakDef &peak : solution.m_fit_peaks )
+        {
+          const double peak_roi_lower = peak.continuum()->lowerEnergy();
+          const double peak_roi_upper = peak.continuum()->upperEnergy();
+          // Match if peak's ROI bounds are within 1 keV of the solution ROI bounds
+          if( (fabs( peak_roi_lower - roi.lower_energy ) < 1.0)
+             && (fabs( peak_roi_upper - roi.upper_energy ) < 1.0) )
+          {
+            sum_peak_area += peak.peakArea();
+            ++num_peaks_in_roi;
+          }
+        }//for( loop over fit peaks )
+
+        cout << "  ROI " << roi_index << ": [" << roi.lower_energy << ", " << roi.upper_energy << "] keV"
+             << ", " << num_peaks_in_roi << " peaks, sum area = " << sum_peak_area << endl;
+      }//for( loop over ROIs )
+      cout << endl;
     }//iterative refinement
 
-    // Populate result with successful solution
+    // Identify ROIs without significant peaks for filtering
+    std::vector<size_t> final_insignificant_rois;
+    compute_filtered_chi2_dof( solution, foreground,
+      config.roi_significance_min_chi2_reduction, final_insignificant_rois );
+
+    // Build set of insignificant ROI ranges for filtering
+    std::vector<std::pair<double,double>> insignificant_roi_ranges;
+    for( const size_t roi_idx : final_insignificant_rois )
+    {
+      const RelActCalcAuto::RoiRange &roi = solution.m_final_roi_ranges[roi_idx];
+      insignificant_roi_ranges.emplace_back( roi.lower_energy, roi.upper_energy );
+    }
+
+    // Populate result, filtering out peaks from insignificant ROIs
     result.status = solution.m_status;
     result.error_message = solution.m_error_message;
-    result.fit_peaks = solution.m_peaks_without_back_sub;
+
+    // Filter peaks - only include those NOT in insignificant ROIs
+    result.fit_peaks.clear();
+    if( PeakFitImprove::debug_printout && !insignificant_roi_ranges.empty() )
+      cout << "Peak filtering by ROI significance:" << endl;
+
+    for( const PeakDef &peak : solution.m_peaks_without_back_sub )
+    {
+      const double mean = peak.mean();
+      const double peak_roi_lower = peak.continuum()->lowerEnergy();
+      const double peak_roi_upper = peak.continuum()->upperEnergy();
+      bool in_insignificant_roi = false;
+
+      for( const std::pair<double,double> &roi_range : insignificant_roi_ranges )
+      {
+        // Match if peak's ROI bounds are within 1 keV of the insignificant ROI bounds
+        if( (fabs( peak_roi_lower - roi_range.first ) < 1.0)
+           && (fabs( peak_roi_upper - roi_range.second ) < 1.0) )
+        {
+          in_insignificant_roi = true;
+          break;
+        }
+      }
+
+      if( in_insignificant_roi )
+      {
+        if( PeakFitImprove::debug_printout )
+        {
+          cout << "  Filtered (insignificant ROI [" << peak.continuum()->lowerEnergy() << ", " << peak.continuum()->upperEnergy()
+               << "] keV): peak at " << mean << " keV, area = " << peak.peakArea() << endl;
+        }
+      }else
+      {
+        bool mean_in_roi = false;
+        for( size_t roi_index = 0; !mean_in_roi && (roi_index < solution.m_final_roi_ranges_in_spectrum_cal.size()); ++roi_index )
+        {
+          const auto pos = std::find( begin(final_insignificant_rois), end(final_insignificant_rois), roi_index );
+          if( pos != end(final_insignificant_rois) )
+            continue;
+          const RelActCalcAuto::RoiRange &roi = solution.m_final_roi_ranges_in_spectrum_cal[roi_index];
+          mean_in_roi = ((mean >= roi.lower_energy) && (mean <= roi.upper_energy));
+        }
+
+        if( PeakFitImprove::debug_printout && !insignificant_roi_ranges.empty() )
+        {
+          cout << "  Kept (significant ROI [" << peak.continuum()->lowerEnergy() << ", " << peak.continuum()->upperEnergy()
+               << "] keV): peak at " << mean << " keV, area = " << peak.peakArea() << (mean_in_roi ? " (was in ROI)" : " (skipping peak, not in a ROI)") << endl;
+        }
+        
+        if( mean_in_roi )
+          result.fit_peaks.push_back( peak );
+      }
+    }
+
+    if( !insignificant_roi_ranges.empty() )
+    {
+      const size_t num_filtered = solution.m_peaks_without_back_sub.size() - result.fit_peaks.size();
+      cout << "Filtered out " << num_filtered << " peaks from "
+           << insignificant_roi_ranges.size() << " ROIs without significant chi2 improvement" << endl;
+    }
+
     result.solution = std::move( solution );
 
-  } catch( const std::exception &e )
+  }catch( const std::exception &e )
   {
     result.status = RelActCalcAuto::RelActAutoSolution::Status::FailToSolveProblem;
     result.error_message = e.what();
@@ -544,9 +870,9 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_fallback(
 
     if( matched_peak )
     {
-      // Use peak area: activity = peak_area / (br * eff * live_time)
+      // Use peak area: activity = peak_area / (br * eff) - we wont divide by live_time, to be consistent with `cluster_gammas_to_rois(...)` convention
       const double peak_area = matched_peak->peakArea();
-      estimated_activity = peak_area / (best_br * best_eff * live_time);
+      estimated_activity = peak_area / (best_br * best_eff);
 
       cout << "Fallback: " << nuc->symbol << " matched peak at " << matched_peak->mean()
            << " keV (gamma at " << best_energy << " keV), area=" << peak_area
@@ -896,56 +1222,51 @@ PeakFitResult fit_peaks_for_nuclides(
         const RelActCalcManual::RelEffSolution manual_solution
             = RelActCalcManual::solve_relative_efficiency( manual_input );
 
-        if( manual_solution.m_status == RelActCalcManual::ManualSolutionStatus::Success )
+        if( manual_solution.m_status != RelActCalcManual::ManualSolutionStatus::Success )
+          throw std::runtime_error( "Failed to fit initial RelActCalcManual::RelEffSolution: " + manual_solution.m_error_message );
+        
+        
+        cout << "Successfully fitted initial RelActCalcManual::RelEffSolution: chi2/dof="
+        << manual_solution.m_chi2 << "/" << manual_solution.m_dof << "="
+        << manual_solution.m_chi2 / manual_solution.m_dof
+        << " using " << peak_match_results.peaks_matched.size() << " peaks"
+        << endl;
+        cout << endl;
+        
+        // Create rel_eff lambda from manual solution - handles extrapolation clamping
+        const auto manual_rel_eff = [&manual_solution, &peaks_matched]( double energy ) -> double {
+          // Extrapolation is terrible for rel-eff, so clamp to the lowest/highest peak energy
+          if( energy < peaks_matched.front().m_energy )
+            return manual_solution.relative_efficiency( peaks_matched.front().m_energy );
+          else if( energy > peaks_matched.back().m_energy )
+            return manual_solution.relative_efficiency( peaks_matched.back().m_energy );
+          else
+            return manual_solution.relative_efficiency( energy );
+        };
+        
+        // Collect nuclides and activities from the manual solution
+        vector<pair<const SandiaDecay::Nuclide *, double>> nucs_and_acts;
+        for( const RelActCalcManual::IsotopeRelativeActivity &rel_act : manual_solution.m_rel_activities )
         {
-          cout << "Successfully fitted initial RelActCalcManual::RelEffSolution: chi2/dof="
-          << manual_solution.m_chi2 << "/" << manual_solution.m_dof << "="
-          << manual_solution.m_chi2 / manual_solution.m_dof
-          << " using " << peak_match_results.peaks_matched.size() << " peaks"
-          << endl;
-          cout << endl;
-
-          // Create rel_eff lambda from manual solution - handles extrapolation clamping
-          const auto manual_rel_eff = [&manual_solution, &peaks_matched]( double energy ) -> double {
-            // Extrapolation is terrible for rel-eff, so clamp to the lowest/highest peak energy
-            if( energy < peaks_matched.front().m_energy )
-              return manual_solution.relative_efficiency( peaks_matched.front().m_energy );
-            else if( energy > peaks_matched.back().m_energy )
-              return manual_solution.relative_efficiency( peaks_matched.back().m_energy );
-            else
-              return manual_solution.relative_efficiency( energy );
-          };
-
-          // Collect nuclides and activities from the manual solution
-          vector<pair<const SandiaDecay::Nuclide *, double>> nucs_and_acts;
-          for( const RelActCalcManual::IsotopeRelativeActivity &rel_act : manual_solution.m_rel_activities )
-          {
-            const SandiaDecay::Nuclide * const nuc = db->nuclide( rel_act.m_isotope );
-            assert( nuc );
-            if( !nuc )
-              throw std::logic_error( "Failed to get nuclide from RelAct nuc '" + rel_act.m_isotope + "'" );
-            nucs_and_acts.emplace_back( nuc, manual_solution.relative_activity( rel_act.m_isotope ) );
-          }
-
-          // Use the reusable clustering function to create ROIs
-          initial_rois = cluster_gammas_to_rois( manual_rel_eff, nucs_and_acts, foreground,
-                                                 fwhmFnctnlForm, fwhm_coefficients,
-                                                 lower_fwhm_energy, upper_fwhm_energy,
-                                                 lowest_energy_gamma, highest_energy_gamma,
-                                                 manual_settings );
-
-          cout << "Initial ROIs from RelActManual: ";
-          for( const auto &roi : initial_rois )
-            cout << "[" << roi.lower_energy << ", " << roi.upper_energy << "], ";
-          cout << endl;
+          const SandiaDecay::Nuclide * const nuc = db->nuclide( rel_act.m_isotope );
+          assert( nuc );
+          if( !nuc )
+            throw std::logic_error( "Failed to get nuclide from RelAct nuc '" + rel_act.m_isotope + "'" );
+          nucs_and_acts.emplace_back( nuc, manual_solution.relative_activity( rel_act.m_isotope ) );
         }
-        else
-        {
-          cout << "Failed to fit initial RelActCalcManual::RelEffSolution: " << manual_solution.m_error_message << endl;
-          cout << endl;
-        }
-      }
-      catch( std::exception &e )
+        
+        // Use the reusable clustering function to create ROIs
+        initial_rois = cluster_gammas_to_rois( manual_rel_eff, nucs_and_acts, foreground,
+                                              fwhmFnctnlForm, fwhm_coefficients,
+                                              lower_fwhm_energy, upper_fwhm_energy,
+                                              lowest_energy_gamma, highest_energy_gamma,
+                                              manual_settings );
+        
+        cout << "Initial ROIs from RelActManual: ";
+        for( const auto &roi : initial_rois )
+          cout << "[" << roi.lower_energy << ", " << roi.upper_energy << "], ";
+        cout << endl;
+      }catch( std::exception &e )
       {
         cerr << "Error trying to fit initial manual rel-eff solution: " << e.what() << endl;
         cerr << "Using fallback activity estimation..." << endl;
@@ -982,6 +1303,8 @@ PeakFitResult fit_peaks_for_nuclides(
     rel_eff_curve.rel_eff_eqn_order = config.rel_eff_eqn_order;
 
     // FramPhysicalModel requires rel_eff_eqn_order to be 0
+    assert( (config.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel)
+           || (rel_eff_curve.rel_eff_eqn_order == 0) );
     if( config.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
       rel_eff_curve.rel_eff_eqn_order = 0;
 
@@ -998,11 +1321,7 @@ PeakFitResult fit_peaks_for_nuclides(
       rel_eff_curve.phys_model_external_atten.push_back( shield );
 
     // Generate name based on equation type and shielding
-    if( config.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::LnX )
-    {
-      rel_eff_curve.name = "LnX Peak Fit";
-    }
-    else if( config.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    if( config.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
     {
       rel_eff_curve.name = "Physical Model";
       if( !config.phys_model_external_atten.empty() )
@@ -1016,6 +1335,9 @@ PeakFitResult fit_peaks_for_nuclides(
           rel_eff_curve.name += " Z=" + std::to_string(z);
       }
       rel_eff_curve.name += " Peak Fit";
+    }else
+    {
+      rel_eff_curve.name = RelActCalc::to_str(config.rel_eff_eqn_type) + string(" Peak Fit");
     }
 
     options.rel_eff_curves.push_back( rel_eff_curve );
@@ -1597,7 +1919,7 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
       const SandiaDecay::Nuclide * const nuc = db->nuclide( src_name );
       if( !nuc )
       {
-        cout << "Unable to get nuclide for '" << src_name << "' - so will skip" << endl;
+        cout << "Unable to get nuclide for '" << src.src_name << "' - so will skip" << endl;
         continue;
       }
       source_nuclides.push_back( nuc );
@@ -2152,7 +2474,7 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
 
       if( PeakFitImprove::debug_printout )
       {
-        cout << "Fit score for " << src_name << ":" << endl;
+        cout << "Fit score for " << src.src_name << ":" << endl;
         cout << fit_score.print( "fit_score" ) << endl;
       }
 
@@ -2179,7 +2501,7 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
           cerr << "Failed to create directory '" << outdir << "'" << endl;
 
         // Use the source name for the output file
-        const string out_n42 = SpecUtils::append_path( outdir, src_name ) + "_relactauto_fit.n42";
+        const string out_n42 = SpecUtils::append_path( outdir, src.src_name ) + "_relactauto_fit.n42";
 
         SpecMeas output;
 
@@ -2212,6 +2534,29 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
           peaks.push_back( make_shared<PeakDef>( p ) );
 
         output.setPeaks( peaks, {1} );
+
+        // Add RelActAuto GUI state so the fit can be loaded in InterSpec
+        RelActCalcAuto::RelActAutoGuiState gui_state;
+        gui_state.options = solution.m_options;
+        gui_state.background_subtract = (long_background != nullptr);
+        gui_state.show_ref_lines = true;
+
+        // Set display energy range from ROIs or foreground spectrum
+        if( !solution.m_final_roi_ranges.empty() )
+        {
+          gui_state.lower_display_energy = solution.m_final_roi_ranges.front().lower_energy;
+          gui_state.upper_display_energy = solution.m_final_roi_ranges.back().upper_energy;
+        }
+        else
+        {
+          gui_state.lower_display_energy = foreground->gamma_energy_min();
+          gui_state.upper_display_energy = foreground->gamma_energy_max();
+        }
+
+        gui_state.note = "RelActAuto fit from PeakFitImprove";
+        gui_state.description = "Source: " + src.src_name;
+
+        output.setRelActAutoGuiState( &gui_state );
 
         output.save2012N42File( out_n42, [=](){
           cerr << "Failed to write '" << out_n42 << "'" << endl;
