@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- resw- is short for RelEffShieldWidget
+  -->
+  <message id="resw-self-atten-title">Atenuasi Diri</message>
+  <message id="resw-ext-atten-title">Atenuasi Eksternal</message>
+  <message id="resw-thickness-label">Tebal</message>
+  <message id="resw-atomic-number-label">AN</message>
+  <message id="resw-areal-density-label">AD</message>
+  <message id="resw-material-frame-label">Bahan</message>
+  <message id="resw-generic-frame-label">Umum</message>
+  <message id="resw-areal-density-placeholder">g/cm^2</message>
+</messages>
+

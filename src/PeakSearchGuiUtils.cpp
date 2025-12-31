@@ -173,7 +173,7 @@ public:
                       const vector<PeakDef> &final_peaks,
                       const vector<ReferenceLineInfo> &displayed )
   : AuxWindow( "Dummy",
-               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::TabletNotFullScreen | AuxWindowProperties::DisableCollapse) ),
+               (AuxWindowProperties::IsModal | AuxWindowProperties::TabletNotFullScreen | AuxWindowProperties::DisableCollapse) ),
     m_viewer( viewer ),
     m_table( nullptr ),
     m_previewChartColumn( -1 ),
@@ -1446,6 +1446,13 @@ public:
       case PeakModel::SetGammaSource::NoSourceChange:
         //Shouldnt ever happen, but JIC...
         passMessage( "Trouble making change to nuclide - not applying, sorry!<br />"
+                    "Please report error, including selected nuclides to interspec@sandia.gov", 2 );
+        populateNuclideSelects();
+        break;
+        
+      case PeakModel::SetGammaSource::FailedSourceChange:
+        //Shouldnt ever happen, but JIC...
+        passMessage( "Failed changing to nuclide - not applying, sorry!<br />"
                      "Please report error, including selected nuclides to interspec@sandia.gov", 2 );
         populateNuclideSelects();
         break;
@@ -1913,7 +1920,7 @@ namespace PeakSearchGuiUtils
     chart->setModel( dataModel );
     chart->setPeakModel( peakmodel );
     peakmodel->setForeground( meas );
-    peakmodel->setPeakFromSpecMeas( specmeas, specmeas->sample_numbers() );
+    peakmodel->setPeakFromSpecMeas( specmeas, specmeas->sample_numbers(), SpecUtils::SpectrumType::Foreground );
     
     dataModel->setDataHistogram( meas );
     
@@ -2023,77 +2030,43 @@ namespace PeakSearchGuiUtils
     
     return img;
   }//renderChartToSvg(...)
-
-std::vector<std::shared_ptr<const PeakDef>>
-  improve_initial_peak_fit( InterSpec *interspec, shared_ptr<const DetectorPeakResponse> det,
-                           const std::pair<std::vector<std::shared_ptr<const PeakDef>>,
-                                          std::vector<std::shared_ptr<const PeakDef>>> &inital_fit )
-{
-  const vector<shared_ptr<const PeakDef>> initial_fit_peaks = inital_fit.first;
-  const vector<shared_ptr<const PeakDef>> before_fit_peaks_to_rm = inital_fit.second;
-  
-  // Check we are the simplest case, right now
-  assert( initial_fit_peaks.size() == 1 );
-  assert( before_fit_peaks_to_rm.empty() );
-  if( initial_fit_peaks.size() != 1 || !before_fit_peaks_to_rm.empty() )
-    throw runtime_error( "improve_initial_peak_fit not implemented for all but simplest case" );
-  
-  shared_ptr<const SpecUtils::Measurement> data = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
-  if( !data )
-    return inital_fit.first;
-    
-  // Check ROI range, and limit it to a specified number of FWHM
-  
-  // Try a few different continuums - including flat and linear step - but first check if worthwhile
-  
-  // See if worth trying some skew
-  
-  //vector<shared_ptr<const PeakDef>> linear_cont = initial_fit_peaks;
-  //vector<shared_ptr<const PeakDef>> quadratic_cont = initial_fit_peaks;
-  //vector<shared_ptr<const PeakDef>> flat_step_cont = initial_fit_peaks;
-    // blah blah blah go through and set some value
-  
-    
-  //Pick best peak, but consider adding systematic uncertainty to peak area
-  
-    //vector<shared_ptr<const PeakDef>>
-    //    refitPeaksThatShareROI( data, det,
-    //                            const std::vector< std::shared_ptr<const PeakDef> > &inpeaks,
-    //                            -1.0 );
-    
-    
-  return inital_fit.first;
-}//improve_initial_peak_fit(...)
-
   
   
 void fit_peak_from_double_click( InterSpec *interspec, const double x, const double pixPerKeV,
                                 shared_ptr<const DetectorPeakResponse> det,
-                                std::string ref_line_name )
+                                std::string ref_line_name,
+                                const SpecUtils::SpectrumType spec_type )
 {
   PeakModel *pmodel = interspec ? interspec->peakModel() : nullptr;
   assert( pmodel );
   if( !pmodel )
     return;
-  
-  shared_ptr<const SpecUtils::Measurement> data = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+
+  shared_ptr<const SpecUtils::Measurement> data = interspec->displayedHistogram(spec_type);
   if( !data )
     return;
-  
+
   const bool isHPGe = PeakFitUtils::is_likely_high_res( interspec );
-  
+
+  // Get the appropriate SpecMeas and sample numbers for the spectrum type
+  shared_ptr<SpecMeas> meas = interspec->measurment( spec_type );
+  const std::set<int> sample_nums = interspec->displayedSamples( spec_type );
+
   vector< PeakModel::PeakShrdPtr > origPeaks;
-  if( !!pmodel->peaks() )
+
+  // Get peaks from the appropriate SpecMeas for the given spectrum type
+  shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> orig_peaks = meas ?   meas->peaks( sample_nums ) : nullptr;
+  if( orig_peaks )
   {
-    for( const PeakModel::PeakShrdPtr &p : *pmodel->peaks() )
+    for( const std::shared_ptr<const PeakDef> &p : *orig_peaks )
     {
       origPeaks.push_back( p );
-      
+
       //Avoid fitting a peak in the same area a data defined peak is.
       if( !p->gausPeak() && (x >= p->lowerX()) && (x <= p->upperX()) )
         return;
     }
-  }//if( pmodel->peaks() )
+  }//
   
   pair< PeakShrdVec, PeakShrdVec > foundPeaks;
   foundPeaks = searchForPeakFromUser( x, pixPerKeV, data, origPeaks, det, isHPGe );
@@ -2111,24 +2084,20 @@ void fit_peak_from_double_click( InterSpec *interspec, const double x, const dou
   }//if( foundPeaks.first.empty() )
   
   
-  // Check if we found a single peak, that is its own new ROI
-  //  20231209: right now, starting development for this simple case, and will expand later
-  if( (foundPeaks.first.size() == 1) && foundPeaks.second.empty() )
-    foundPeaks.first = improve_initial_peak_fit( interspec, det, foundPeaks );
-  
-  
-  for( const PeakModel::PeakShrdPtr &p : foundPeaks.second )
-    pmodel->removePeak( p );
-
-  
   //We want to add all of the previously found peaks back into the model, before
   //  adding the new peak.
-  PeakShrdVec peakstoadd( foundPeaks.first.begin(), foundPeaks.first.end() );
-  PeakShrdVec existingpeaks( foundPeaks.second.begin(), foundPeaks.second.end() );
+  vector<shared_ptr<const PeakDef>> peakstoadd( foundPeaks.first.begin(), foundPeaks.first.end() );
+  vector<shared_ptr<const PeakDef>> existingpeaks( foundPeaks.second.begin(), foundPeaks.second.end() );
+  
+  // For ROIs that will now have multiple peaks, we need to match up the previous peak(s) with the new peaks.
+  // We know that the newly added peak wont have a source associated with it.
+  // We will remove peaks from `peakstoadd`, and put them into `replacement_peaks`.
+  vector<shared_ptr<const PeakDef>> replacement_peaks;
+
   
   //First add all the new peaks that have a nuclide/reaction/xray associated
   //  with them, since we know they are existing peaks
-  for( const PeakModel::PeakShrdPtr &p : foundPeaks.first )
+  for( const PeakModel::PeakShrdPtr &p : foundPeaks.first ) //note, not looping over `peakstoadd`, as we are modifying that vector.
   {
     if( p->parentNuclide() || p->reaction() || p->xrayElement() )
     {
@@ -2156,13 +2125,12 @@ void fit_peak_from_double_click( InterSpec *interspec, const double x, const dou
       
       if( nearest >= 0 )
       {
-        pmodel->addNewPeak( *p );
+        replacement_peaks.push_back( p );
         existingpeaks.erase( existingpeaks.begin() + nearest );
         peakstoadd.erase( std::find(peakstoadd.begin(), peakstoadd.end(), p) );
       }//if( nearest >= 0 )
     }//if( p->parentNuclide() || p->reaction() || p->xrayElement() )
   }//for( const PeakModel::PeakShrdPtr &p : peakstoadd )
-  
   
   //Now go through and add the new versions of the previously existing peaks,
   //  using energy to match the previous to current peak.
@@ -2181,25 +2149,50 @@ void fit_peak_from_double_click( InterSpec *interspec, const double x, const dou
     }
     
     std::shared_ptr<const PeakDef> peakToAdd = peakstoadd[nearest];
-    peakstoadd.erase( peakstoadd.begin() + nearest );
-    pmodel->addNewPeak( *peakToAdd );
+    peakstoadd.erase( begin(peakstoadd) + nearest );
+    replacement_peaks.push_back( peakToAdd );
   }//for( const PeakModel::PeakShrdPtr &p : existingpeaks )
   
-  //Just in case we messed up the associations between the existing peak an
-  //  their respective new version, we'll add all peaks that have a
-  //  nuclide/reaction/xray associated with them, since they must be previously
-  //  existing
-  for( const PeakModel::PeakShrdPtr &p : peakstoadd )
-    if( p->parentNuclide() || p->reaction() || p->xrayElement() )
-      pmodel->addNewPeak( *p );
   
-  //Finally, in principle we will add the new peak here
+  //We'll check that we didnt mess up the associations between the existing peak an
+  //  their respective new version, for all peaks with a source associated with them
   for( const PeakModel::PeakShrdPtr &p : peakstoadd )
   {
-    if( !p->parentNuclide() && !p->reaction() && !p->xrayElement() )
-    {
-      interspec->addPeak( *p, true, ref_line_name );
-    }
+    assert( !p->parentNuclide() && !p->reaction() && !p->xrayElement() );
+  }
+  
+  // Now check we added exactly one new peak, and it doesnt yet hav a source associated with it
+  assert( (peakstoadd.size() == 1) && !peakstoadd.front()->hasSourceGammaAssigned() );
+  
+
+  if( spec_type != SpecUtils::SpectrumType::Foreground )
+  {
+    auto updated_peaks = make_shared<deque<std::shared_ptr<const PeakDef>>>();
+    if( orig_peaks )
+      updated_peaks->insert( end(*updated_peaks), begin(*orig_peaks), end(*orig_peaks) );
+
+    // Erase any peaks from `existingpeaks` that are in `updated_peaks`
+    updated_peaks->erase( std::remove_if( begin(*updated_peaks), end(*updated_peaks),
+      [&foundPeaks](const std::shared_ptr<const PeakDef> &peak) {
+        return (std::find( begin(foundPeaks.second), end(foundPeaks.second), peak ) != end(foundPeaks.second));
+    } ), end(*updated_peaks) );
+
+    // Insert peaks from `peakstoadd` to `updated_peaks`
+    updated_peaks->insert( end(*updated_peaks), begin(replacement_peaks), end(replacement_peaks) );
+    std::sort( begin(*updated_peaks), end(*updated_peaks), &PeakDef::lessThanByMeanShrdPtr );
+    
+    interspec->setPeaks( spec_type, updated_peaks );
+  }else
+  {
+    pmodel->removePeaks( {begin(foundPeaks.second), end(foundPeaks.second)} );
+    pmodel->addPeaks( replacement_peaks );
+  }//if( spec_type != SpecUtils::SpectrumType::Foreground ) / else
+  
+  for( shared_ptr<const PeakDef> p : peakstoadd )
+  {
+    assert( !p->parentNuclide() && !p->reaction() && !p->xrayElement() );
+     
+    interspec->addPeak( *p, true, spec_type, ref_line_name );
   }
 }//void fit_peak_from_double_click(...)
 
@@ -2821,12 +2814,13 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
     server->post( sessionID, callback );
     return;
   }
-  
+
+  auto results = make_shared<vector<shared_ptr<const PeakDef>>>();
+
   try
   {
-    *resultpeaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, drf, existingPeaks, singleThread, isHPGe );
-    
-    *resultpeaks = assign_srcs_from_ref_lines( data, *resultpeaks, displayed, setColor, false, true );
+    *results = ExperimentalAutomatedPeakSearch::search_for_peaks( data, drf, existingPeaks, singleThread, isHPGe );
+    *results = assign_srcs_from_ref_lines( data, *results, displayed, setColor, false, true );
   }catch( std::exception &e )
   {
     string msg = "InterSpec::search_for_peaks_worker(): caught exception: '";
@@ -2841,7 +2835,11 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
   }//try / catch
   
   
-  server->post( sessionID, callback );
+  server->post( sessionID, [callback,results,resultpeaks](){
+    if( resultpeaks )
+      *resultpeaks = *results;
+    callback();
+  } );
 }//void search_for_peaks_worker(...)
 
   
@@ -2915,7 +2913,7 @@ vector<shared_ptr<const PeakDef>> assign_srcs_from_ref_lines( const std::shared_
         
         PeakModel::SetGammaSource res = PeakModel::setNuclideXrayReaction( *moddedOldPeak, addswap->second, 1.0 );
         oldpeak = moddedOldPeak;
-        if( res == PeakModel::NoSourceChange )
+        if( (res == PeakModel::SetGammaSource::NoSourceChange) || (res == PeakModel::SetGammaSource::FailedSourceChange) )
         {
 #if( PERFORM_DEVELOPER_CHECKS )
           log_developer_error( __func__, "A suggested change to a peak did not result in a change - prob shouldnt have happened." );
@@ -4552,7 +4550,7 @@ void add_peak_from_right_click( InterSpec * const interspec,
   for( size_t i = 0; i < answer.size(); ++i )
   {
     const bool isNew = !new_to_orig_peaks.count(answer[i]);
-    interspec->addPeak( *answer[i], isNew, (isNew ? ref_line_hint : "") );
+    interspec->addPeak( *answer[i], isNew, SpecUtils::SpectrumType::Foreground, (isNew ? ref_line_hint : "") );
   }
 }//void add_peak_from_right_click()
 

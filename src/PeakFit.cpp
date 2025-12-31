@@ -37,6 +37,7 @@
 #include <boost/numeric/ublas/matrix.hpp>
 #include <boost/numeric/ublas/triangular.hpp>
 #include <boost/math/distributions/poisson.hpp>
+#include "Eigen/Dense"
 
 
 //Roots Minuit2 includes
@@ -4941,7 +4942,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
                           mean0, sigma0, area0, lowerEnergies, upperEnergies, isHPGe );
 #else
 
-#ifndef NDEBUG
+#if( !defined(NDEBUG) && !BUILD_AS_UNIT_TEST_SUITE )
   PeakShrdVec mnInitialfitpeaks;
   const auto t1 = std::chrono::high_resolution_clock::now();
   fit_peak_for_user_click( mnInitialfitpeaks, chi2Dof, dataH, coFitPeaks,
@@ -4953,15 +4954,15 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
     << " keV, FWHM=" << std::setw(10) << mnInitialfitpeaks[i]->fwhm() << ", amp=" << std::setw(10)
     << mnInitialfitpeaks[i]->amplitude() << endl;
   }
+  const auto t3 = std::chrono::high_resolution_clock::now();
 #endif
 
   PeakShrdVec lmInitialfitpeaks;
-  const auto t3 = std::chrono::high_resolution_clock::now();
   PeakFitLM::fit_peak_for_user_click_LM( lmInitialfitpeaks, dataH, coFitPeaks,
                              mean0, sigma0, area0, lowerEnergies[0], upperEnergies[0], isHPGe );
-  const auto t4 = std::chrono::high_resolution_clock::now();
   
-#ifndef NDEBUG
+#if( !defined(NDEBUG) && !BUILD_AS_UNIT_TEST_SUITE )
+  const auto t4 = std::chrono::high_resolution_clock::now();
   cout << "Old way fit " << mnInitialfitpeaks.size() << " peaks - LM way fit " << lmInitialfitpeaks.size() << endl;
   const size_t npeaks = std::min( lmInitialfitpeaks.size(), mnInitialfitpeaks.size() );
   
@@ -5069,7 +5070,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
 
       
 #if( USE_LM_PEAK_FIT )
-#ifndef NDEBUG
+#if( !defined(NDEBUG) && !BUILD_AS_UNIT_TEST_SUITE )
       fit_peak_for_user_click( initialfitpeaks, chi2Dof, dataH, coFitPeaks,
                           mean0, sigma0, area0, lowerEnergies, upperEnergies, isHPGe );
       for( size_t i = 0; i < initialfitpeaks.size(); ++i )
@@ -5083,7 +5084,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
       initialfitpeaks.clear();
       PeakFitLM::fit_peak_for_user_click_LM( initialfitpeaks, dataH, coFitPeaks,
                                  mean0, sigma0, area0, lowerEnergies[0], upperEnergies[0], isHPGe );
-#ifndef NDEBUG
+#if( !defined(NDEBUG) && !BUILD_AS_UNIT_TEST_SUITE )
       for( size_t i = 0; i < initialfitpeaks.size(); ++i )
       {
         cout << "LM  Peak " << std::setw(2) << i << ": mean=" << std::setw(10) << initialfitpeaks[i]->mean()
@@ -6350,11 +6351,10 @@ double fit_to_polynomial( const float *x, const float *data, const size_t nbin,
                                  std::vector<double> &coeff_uncerts )
 {
   //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
-  //Implementation is quite inneficient
-  using namespace boost::numeric;
+  //Implementation using Eigen SVD for numerical stability
   const int poly_terms = polynomial_order + 1;
-  ublas::matrix<double> A( nbin, poly_terms );
-  ublas::vector<double> b( nbin );
+  Eigen::MatrixX<double> A( nbin, poly_terms );
+  Eigen::VectorX<double> b( nbin );
   
   for( size_t row = 0; row < nbin; ++row )
   {
@@ -6364,15 +6364,17 @@ double fit_to_polynomial( const float *x, const float *data, const size_t nbin,
       A(row,col) = std::pow( double(x[row]), double(col)) / uncert;
   }//for( int col = 0; col < poly_terms; ++col )
   
-  const ublas::matrix<double> A_transpose = ublas::trans( A );
-  const ublas::matrix<double> alpha = prod( A_transpose, A );
-  ublas::matrix<double> C( alpha.size1(), alpha.size2() );
-  const bool success = matrix_invert( alpha, C );
-  if( !success )
-    throw runtime_error( "fit_to_polynomial(...): trouble inverting matrix" );
+#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
+  const Eigen::JacobiSVD<Eigen::MatrixX<double>,Eigen::ComputeThinU | Eigen::ComputeThinV> svd(A);
+#else
+  const Eigen::BDCSVD<Eigen::MatrixX<double>> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV );
+#endif
   
-  const ublas::vector<double> beta = prod( A_transpose, b );
-  const ublas::vector<double> a = prod( C, beta );
+  const Eigen::VectorXd a = svd.solve(b);
+  
+  const Eigen::MatrixX<double> A_transpose = A.transpose();
+  const Eigen::MatrixX<double> alpha = A_transpose * A;
+  const Eigen::MatrixX<double> C = alpha.inverse();
   
   poly_coeffs.resize( poly_terms );
   coeff_uncerts.resize( poly_terms );
@@ -6415,14 +6417,14 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
 #define COMPARE_TO_OLD_FIT_WAY 0
   double * const dummy_channel_counts = nullptr;
 #if( !COMPARE_TO_OLD_FIT_WAY )
-  return PeakFit::fit_amp_and_offset_imp( x, data, nbin, num_polynomial_terms, step_continuum,
+  return PeakFit::fit_amp_and_offset_imp( x, data, nullptr, nbin, num_polynomial_terms, step_continuum,
                   ref_energy, means, sigmas, fixedAmpPeaks, skew_type, skew_parameters,
                                          amplitudes, continuum_coeffs,
                                          amplitudes_uncerts, continuum_coeffs_uncerts,
                                          dummy_channel_counts );
 #else
   std::vector<double> dummy_amplitudes, dummy_continuum_coeffs, dummy_amplitudes_uncerts, dummy_continuum_coeffs_uncerts;
-  const double dummy_chi2 = PeakFit::fit_amp_and_offset_imp( x, data, nbin, num_polynomial_terms, step_continuum,
+  const double dummy_chi2 = PeakFit::fit_amp_and_offset_imp( x, data, nullptr, nbin, num_polynomial_terms, step_continuum,
                           ref_energy, means, sigmas, fixedAmpPeaks, skew_type, skew_parameters,
                                          dummy_amplitudes, dummy_continuum_coeffs,
                               dummy_amplitudes_uncerts, dummy_continuum_coeffs_uncerts,
@@ -6856,19 +6858,28 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
         
         
         
-bool chi2_significance_test( PeakDef peak,
+bool chi2_significance_test( const PeakDef &peak,
                              const double withoutPeakDSigma,
                              const double chi2ratioRequired,
                              std::vector<PeakDef> other_peaks,
-                             std::shared_ptr<const Measurement> data )
+                             const std::shared_ptr<const Measurement> &data )
 {
   if( !peak.gausPeak() )
-    throw runtime_error( "chi2_significance_test can only evaluate gaussian defined peaks" );
-          
-  //need to edit paramsForPeak and zeroPeakParams to evaluate the chi2 to a max
-  //  of 2.5 sigma from the mean
-  peak.makeUniqueNewContinuum();
-  
+    throw logic_error( "chi2_significance_test: can only evaluate gaussian defined peaks" );
+
+  for( const PeakDef &p : other_peaks )
+  {
+    if( !p.gausPeak() )
+      throw logic_error( "chi2_significance_test: all peaks in ROI must be gaussian defined" );
+  }
+
+  if( !data || (data->num_gamma_channels() < 7) || !data->energy_calibration() || !data->energy_calibration()->valid() )
+    throw runtime_error( "chi2_significance_test: invalid spectrum" );
+
+
+  std::shared_ptr<const PeakContinuum> cont = peak.continuum();
+  const PeakContinuum::OffsetType offset_type = cont->type();
+
   // We will limit the test range to +-2.5 FWHM of the peak mean to do the Chi2 test so we capture,
   //  only the relevant part of the peak.  But the step-continuum peaks we need to keep the original
   //  energy range, or else it will alter each channels continuum values (and we will fail peak fits
@@ -6877,182 +6888,179 @@ bool chi2_significance_test( PeakDef peak,
   //TODO 20210726: I dont really remember why I limited this check to +-2.5 FWHM from peak mean, but
   //  I'm guessing its to avoid failing long continuums where the tails are badly matched to the
   //  data, but user wants in order to force things.  Should investigate/document more thoroughly.
-  bool isStepContinuum = false;
-  switch( peak.continuum()->type() )
-  {
-    case PeakContinuum::NoOffset: case PeakContinuum::Constant:
-    case PeakContinuum::Linear:   case PeakContinuum::Quadratic:
-    case PeakContinuum::Cubic:    case PeakContinuum::External:
-      isStepContinuum = false;
-      break;
-    
-    case PeakContinuum::FlatStep:     case PeakContinuum::LinearStep:
-    case PeakContinuum::BiLinearStep:
-      isStepContinuum = true;
-      break;
-  }//switch( peak.continuum()->type() )
-  
-  
-  if( !isStepContinuum )
-  {
-    double ux = peak.upperX();
-    double lx = peak.lowerX();
-    ux = std::min( ux, peak.mean() + 2.5*peak.sigma() );
-    lx = std::max( lx, peak.mean() - 2.5*peak.sigma() );
-    peak.continuum()->setRange( lx, ux );
-  }//if( !isStepContinuum )
-  
+  const bool is_step = PeakContinuum::is_step_continuum( offset_type );
+
   //For section of code below here, please see notes in searchForPeaks()
-  std::vector<PeakDef>::iterator pos = other_peaks.end();
-  for( size_t i = 0; i < other_peaks.size(); ++i )
-  {
-    const PeakDef &other = other_peaks[i];
-    
-    if( fabs(other.mean() - peak.mean()) < 0.0001
-        && fabs(other.sigma() - peak.sigma()) < 0.0001 )
-    {
-      pos = other_peaks.begin() + i;
-      break;
-    }
-  }//for( size_t i = 0; i < other_peaks.size(); ++i )
-          
-  //  pos = std::find( other_peaks.begin(), other_peaks.end(), peak );
-  if( pos != other_peaks.end() )
-    other_peaks.erase( pos );
-          
+  other_peaks.erase( remove_if( begin(other_peaks), end(other_peaks), [&peak](const PeakDef &other) {
+          return fabs(other.mean() - peak.mean()) < 0.0001 && fabs(other.sigma() - peak.sigma()) < 0.0001;
+   } ), end(other_peaks) );
+
   //Some basic quality checks
   if( IsNan(peak.mean()) || IsInf(peak.mean()) )
     return false;
-  
-  if( peak.gausPeak() )
+
+  if( IsNan(peak.sigma()) || IsInf(peak.sigma()) )
+    return false;
+
+  if( IsNan(peak.amplitude()) || IsInf(peak.amplitude()) )
+    return false;
+
+  if( peak.fitFor(PeakDef::CoefficientType::GaussAmplitude) && ((peak.amplitude() <= 0.0)) )
+    return false;
+
+  if( peak.fitFor(PeakDef::CoefficientType::Sigma) && ((peak.sigma() <= 0.0)) )
+    return false;
+
+
+  const size_t poly_order = PeakContinuum::num_parameters( offset_type );
+
+  const double xmin = is_step ? cont->lowerEnergy() : std::max( cont->lowerEnergy(), peak.mean() - 2.5*peak.sigma() );
+  const double xmax = is_step ? cont->upperEnergy() : std::min( cont->upperEnergy(), peak.mean() + 2.5*peak.sigma() );
+
+  shared_ptr<const SpecUtils::EnergyCalibration> cal = data->energy_calibration();
+  assert( cal && cal->valid() );
+  const shared_ptr<const vector<float>> &channel_energies = cal->channel_energies();
+  assert( channel_energies && channel_energies->size() );
+  if( !channel_energies )
+    throw logic_error( "chi2_significance_test: invalid energy calibration" );
+
+  const shared_ptr<const vector<float>> &gamma_counts = data->gamma_counts();
+  assert( gamma_counts );
+
+  const size_t num_spec_channel = cal->num_channels();
+  const double lower_channelf = cal->channel_for_energy(xmin);
+  const double upper_channelf = cal->channel_for_energy(xmax);
+
+  const size_t begin_channel = std::min( static_cast<size_t>(std::max(lower_channelf, 0.0) ), num_spec_channel );
+  const size_t end_channel = std::min( static_cast<size_t>(std::ceil(upper_channelf)), num_spec_channel );
+  const size_t num_roi_channel = end_channel - begin_channel;
+
+  assert( begin_channel < channel_energies->size() );
+  assert( end_channel <= channel_energies->size() );
+
+  // Check if above energy range, or if a really narrow ROI, if so, just accept it - whatever.
+  if( (begin_channel >= channel_energies->size()) || (end_channel > channel_energies->size())
+     || (end_channel < (begin_channel + 2)) )
   {
-    if( IsNan(peak.sigma()) || IsInf(peak.sigma()) )
-      return false;
-    
-    if( IsNan(peak.amplitude()) || IsInf(peak.amplitude()) )
-      return false;
-    
-    if( peak.fitFor(PeakDef::CoefficientType::GaussAmplitude) && ((peak.amplitude() <= 0.0)) )
-      return false;
-    
-    if( peak.fitFor(PeakDef::CoefficientType::Sigma) && ((peak.sigma() <= 0.0)) )
-      return false;
-  }//if( peak.gausPeak() )
-          
-  vector<double> paramsForOtherPeaks, zeroPeakParams, paramsForPeak;
-          
-  {//start code block to create PeakFitChi2Fcn parameters for other peaks
-    const bool isHPGe = false; //doesnt matter, since peaks already have ROI range defined
-    ROOT::Minuit2::MnUserParameters mnparams;
-    PeakFitChi2Fcn::addPeaksToFitter( mnparams, other_peaks,
-                                    data, PeakFitChi2Fcn::kFixPeakParameters, isHPGe );
-    paramsForOtherPeaks = mnparams.Params();
-  }//end code block to create PeakFitChi2Fcn parameters for other peaks
-          
-  {//start code block to create PeakFitChi2Fcn parameters for zero amp test peak
-    PeakDef zeropeak = peak;
-    zeropeak.setAmplitude( 0.0 );
-    
-    assert( zeropeak.continuum()->energyRangeDefined() );
-    const bool isHPGe = false; //doesnt matter, since peaks already have ROI range defined
-    ROOT::Minuit2::MnUserParameters mnparams;
-    PeakFitChi2Fcn::addPeaksToFitter( mnparams, vector<PeakDef>(1,zeropeak),
-                                      data, PeakFitChi2Fcn::kFixPeakParameters, isHPGe);
-    zeroPeakParams = mnparams.Params();
-            
-    //I dont think this next little bit is necessary, but I left in to be sure
-    //  to be compatible w/ legacy code pre 20131230
-    if( !zeropeak.continuum()->energyRangeDefined() )
+    return true;
+  }
+
+  const float * const energies = channel_energies->data() + begin_channel;
+  const float * const channel_counts = gamma_counts->data() + begin_channel;
+
+  vector<double> original_counts( num_roi_channel, 0.0 );
+
+  for( const PeakDef &p : other_peaks )
+    p.gauss_integral( energies, &(original_counts[0]), num_roi_channel );
+
+  vector<double> without_peak_counts;
+
+// We can either fit the continuum with out the peak of interest, or just use the continuum as fit
+//  I think the better thing to do is refit it, but this is totally untested - so the #define will
+//  let you switch between options.
+#define REFIT_CONTIUUM_FOR_NULL_HYPOTHESIS 1
+
+  if( cont->type() == PeakContinuum::External )
+  {
+    shared_ptr<const Measurement> ext_contnuum = peak.continuum()->externalContinuum();
+    for( size_t i = 0; !ext_contnuum && (i<other_peaks.size()); ++i )
+      ext_contnuum = other_peaks[i].continuum()->externalContinuum();
+    assert( ext_contnuum );
+    if( !ext_contnuum || (ext_contnuum->num_gamma_channels() < data->num_gamma_channels()) )
+      throw logic_error( "chi2_significance_test: invalid external continuum" );
+
+    // In principle we should be able to just do a channel-by-channel sum, but we'll be safe
+    //const float * const ext_counts = &(ext_contnuum->gamma_counts()->at(begin_channel));
+    //for( size_t i = 0; i < num_roi_channel; ++i )
+    //  original_counts[i] += ext_counts[i];
+
+    cont->offset_integral( energies, &(original_counts[0]), num_roi_channel, data );
+    without_peak_counts = original_counts;
+  }//if( cont->type() == PeakContinuum::External )
+
+  if( cont->type() != PeakContinuum::External )
+  {
+#if( REFIT_CONTIUUM_FOR_NULL_HYPOTHESIS )
+    without_peak_counts = original_counts;
+    const double ref_energy = cont->referenceEnergy();
+    const double * const skew_pars = peak.coefficients() + static_cast<size_t>(PeakDef::CoefficientType::SkewPar0);
+    vector<double> amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts;
+    PeakFit::fit_amp_and_offset_imp(energies, channel_counts, nullptr, num_roi_channel, static_cast<int>(poly_order), is_step,
+                                    ref_energy, {}, {}, other_peaks, peak.skewType(), skew_pars,
+                                    amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts, (double *)0 );
+    shared_ptr<PeakContinuum> tmp_continuum = make_shared<PeakContinuum>( *cont );
+    tmp_continuum->setParameters( ref_energy, continuum_coeffs, cont_uncerts );
+    tmp_continuum->offset_integral( energies, &(without_peak_counts[0]), num_roi_channel, data );
+
+    cont->offset_integral( energies, &(original_counts[0]), num_roi_channel, data );
+#else
+    cont->offset_integral( energies, &(original_counts[0]), num_roi_channel, data );
+    without_peak_counts = original_counts;
+#endif
+  }//if( cont->type() != PeakContinuum::External )
+
+
+  peak.gauss_integral( energies, &(original_counts[0]), num_roi_channel );
+
+
+  //Now compute Chi2
+  double with_peak_chi2 = 0.0, without_peak_chi2 = 0.0;
+  for( size_t i = 0; i < num_roi_channel; ++i )
+  {
+    const double ndata = channel_counts[i];
+    const double uncert2 = (ndata > 1.0) ? ndata : 1.0;
+
+    //TODO: This is ad-hoc, and just following PeakFitDiffCostFunction::parametersToPeaks implementation, for the moment
+    if( ndata >= PEAK_FIT_MIN_CHANNEL_UNCERT )
     {
-      //double xmin, xmax;
-      //findROIEnergyLimits( xmin, xmax, peak, data );
-      
-      assert( peak.continuum()->energyRangeDefined() );
-      const double xmin = peak.lowerX();
-      const double xmax = peak.upperX();
-      
-      zeroPeakParams[PeakFitChi2Fcn::RangeStartEnergy] = xmin;
-      zeroPeakParams[PeakFitChi2Fcn::RangeEndEnergy]   = xmax;
-    }//if( !zeropeak.continuum()->energyRangeDefined() )
-  }//end code block to create PeakFitChi2Fcn parameters for zero amp test peak
-          
-  {//start code block to create PeakFitChi2Fcn parameters for test peak
-    const bool isHPGe = false; //Doesnt matter, since peaks already have ROI range defined
-    ROOT::Minuit2::MnUserParameters mnparams;
-    PeakFitChi2Fcn::addPeaksToFitter( mnparams, vector<PeakDef>(1,peak),
-                                      data, PeakFitChi2Fcn::kFixPeakParameters, isHPGe );
-    paramsForPeak = mnparams.Params();
-  }//end code block to create PeakFitChi2Fcn parameters for test peak
-          
-  const int npeaks = static_cast<int>( other_peaks.size() + 1 );
-          
-  std::shared_ptr<const Measurement> contnuum;
-  if( !!peak.continuum()->externalContinuum() )
-  {
-    contnuum = peak.continuum()->externalContinuum();
-  }else
-  {
-    for( size_t i = 0; !contnuum && (i<other_peaks.size()); ++i )
+      const double diff_all_peaks = (ndata - original_counts[i]);
+      with_peak_chi2 += (diff_all_peaks*diff_all_peaks) / uncert2;
+
+      const double diff_without_peak = (ndata - without_peak_counts[i]);
+      without_peak_chi2 += (diff_without_peak*diff_without_peak) / uncert2;
+    }else
     {
-      if( !!other_peaks[i].continuum()->externalContinuum() )
-      {
-        contnuum = other_peaks[i].continuum()->externalContinuum();
-        break;
-      }
-    }
-  }//
-          
-          
-  PeakFitChi2Fcn chi2fcn( npeaks, data, contnuum );
-  chi2fcn.useReducedChi2( true );
-  
-  vector<double> params = paramsForOtherPeaks;
-  params.insert( params.end(), zeroPeakParams.begin(), zeroPeakParams.end() );
-  
-  const double withoutGausChi2 = chi2fcn( &(params[0]) );
-  
-  params = paramsForOtherPeaks;
-  params.insert( params.end(), paramsForPeak.begin(), paramsForPeak.end() );
-  
-  const double withGausChi2 = chi2fcn( &(params[0]) );
-  const double chi2Ratio = withoutGausChi2 / withGausChi2;
-  
+      with_peak_chi2 += original_counts[i];
+      without_peak_chi2 += without_peak_counts[i];
+    }//if( ndata >= PEAK_FIT_MIN_CHANNEL_UNCERT ) / else
+  }
+
+  const double chi2Ratio = without_peak_chi2 / with_peak_chi2;
+
   const bool noDeltaRequired = (withoutPeakDSigma <= 0.0);
   bool noRatioRequired = (chi2ratioRequired <= 0.0);
 
-  if( withoutGausChi2 < 5 )
+  if( without_peak_chi2 < 5 )
     noRatioRequired = true;
-  
-          
+
   //Dont require the ratio test to apply if peaks share a continuum
   std::shared_ptr<const PeakContinuum> continuum = peak.continuum();
   for( const PeakDef &p : other_peaks )
     noRatioRequired |= (continuum == p.continuum());
 
-  const double deltaChi2 = withoutGausChi2 - withGausChi2;
-          
-/*
+  const double deltaChi2 = without_peak_chi2 - with_peak_chi2;
+
+
   static std::mutex s_mutex;
-  {
-    std::lock_guard<std::mutex> lock( s_mutex );
-    cerr << "chi2_significance_test(mean=" << peak.mean() << "): withGausChi2="
-         << withGausChi2 << ", withoutGausChi2=" << withoutGausChi2 << endl
-         << "chi2Ratio=" << chi2Ratio << " (requires " << chi2ratioRequired
-         << "), deltaChi2=" << deltaChi2
-         << " (required " << withoutPeakDSigma << ")"
-         << ", noRatioRequired=" << noRatioRequired
-         << ", peak.mean()=" << peak.mean()
-         << ", peak.sigma()=" << peak.sigma()
-         << " peak.amplitude()=" << peak.amplitude()
-         << endl << endl;
-  }
- */
-  
-  
+  //{
+  //  std::lock_guard<std::mutex> lock( s_mutex );
+  //  cerr << "chi2_significance_test(mean=" << peak.mean() << "): with_peak_chi2="
+  //       << with_peak_chi2 << ", without_peak_chi2=" << without_peak_chi2 << endl
+  //       << "chi2Ratio=" << chi2Ratio << " (requires " << chi2ratioRequired
+  //       << "), deltaChi2=" << deltaChi2
+  //       << " (required " << withoutPeakDSigma << ")"
+  //       << ", noRatioRequired=" << noRatioRequired
+  //       << ", peak.mean()=" << peak.mean()
+  //       << ", peak.sigma()=" << peak.sigma()
+  //       << " peak.amplitude()=" << peak.amplitude()
+  //       << endl << endl;
+  //}
+
+
   return ((noRatioRequired || (chi2Ratio >= chi2ratioRequired))
           && (noDeltaRequired || (deltaChi2 > withoutPeakDSigma)));
 }//bool chi2_significance_test( ... 0
-        
+
         
 namespace ExperimentalPeakSearch
 {

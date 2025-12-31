@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- bgw- is short for BatchGuiWidget, strings used by BatchGuiAnaWidget -->
+  <message id="bgw-peaks-csv-txt">File CSV puncak</message>
+  <message id="bgw-not-spec-preview">Bukan file spektrum</message>
+  <message id="bgw-passthrough-sum-error">Kesalahan passthrough</message>
+  <message id="bgw-preview-error">Kesalahan rendering pratinjau</message>
+</messages> 
+

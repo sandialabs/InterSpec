@@ -3581,8 +3581,8 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
       const float &first_energy = get<2>( casc );
       const float &second_energy = get<3>( casc );
       const float &coinc_frac = get<4>( casc );
-      const double &second_br = get<5>( casc );
-      
+      //const double &second_br = get<5>( casc );
+
       const float energy = first_energy + second_energy;
       
       ReferenceLineInfo::RefLine line;

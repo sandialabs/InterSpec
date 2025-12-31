@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dw- short for DecayWindow.cpp, 
+       dad- short for DecayActivityDiv
+       dcc- short for DecayChainChart
+       dcn- DecaySelectNuclide
+  -->
+  <message id="dw-qr-window-title">حالة أداة التحلل</message>
+  <message id="dw-qr-window-text">الحالة الحالية لحالة أداة التحلل.</message>
+  <message id="dad-units-label">وحدات العرض:</message>
+  <message id="dad-units-label-phone">الوحدات:</message>
+  <message id="dad-logy-cb">مقياس Y اللوغاريتمي</message>
+  <message id="dad-grid-cb">خطوط الشبكة</message>
+  <message id="dad-add-nucs">إضافة نواة...</message>
+  <message id="dad-remove-all">إزالة الكل</message>
+  <message id="dad-sel-nuc-window-title">اختيار النواة للإضافة</message>
+  <message id="dad-mi-act-chart">مخطط النشاط</message>
+  <message id="dad-mi-decay-chain">سلسلة التحلل</message>
+  <message id="dad-mi-calc">حاسبة</message>
+  <message id="dad-arbitrary">تعسفي</message>
+  <message id="dad-time-span-label">فترة زمنية:</message>
+  <message id="dad-tt-age">
+    <div>
+      يمكن تحديد العمر باستخدام مجموعة من وحدات الوقت، مثل '<b>5.3y 8d 22m</b>' أو بأنصاف الأعمار مثل '<b>2.5 HL</b>'.
+    </div>
+    <div>
+      وحدات الوقت المقبولة: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>,
+      <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>، أو
+      يمكنك تحديد الفترة الزمنية بـ <b>hh:mm:ss</b>. يمكن تحديد وحدات نصف العمر
+      باستخدام <b>hl</b>, <b>halflife</b>, <b>halflives</b>, <b>half-life</b>, <b>half-lives</b>,
+      <b>half lives</b>, أو <b>half life</b>.
+    </div>
+    <div>
+      لا يمكن خلط وحدات نصف العمر أو الفترات الزمنية مع
+      وحدات أخرى، وإذا تم تحديد نوى متعددة فيُفترض الأولى. عندما يتم تحديد فترات زمنية متعددة،
+      يتم جمعها، مثل '1y6months 3m' يُفسر كـ
+      18 شهر و 3 دقائق
+    </div>
+  </message>
+  <message id="dad-yaxis-label-phone">محور Y:</message>
+  <message id="dad-yaxis-label">نوع محور Y:</message>
+  <message id="dad-gamma-rate">معدل الجاما</message>
+  <message id="dad-beta-rate">معدل البيتا</message>
+  <message id="dad-alpha-rate">معدل الألفا</message>
+  <message id="dad-click-for-more-info">انقر للمزيد من المعلومات</message>
+  <message id="dad-tt-double-click">انقر مرتين لتحرير هذه النواة المصدر. انقر مرة واحدة لجعل سلسلة التحلل تعرض هذه النواة</message>
+  <message id="dad-summary-at-time">الملخص عند t={1}</message>
+  <message id="dad-hdr-date">التاريخ ({1})</message>
+  <message id="dad-hdr-total-act">إجمالي النشاط</message>
+  <message id="dad-hdr-total-gammas">إجمالي الجاما</message>
+  <message id="dad-yaxis-title-total-gammas">الجاما/ثانية</message>
+  <message id="dad-hdr-total-betas">إجمالي البيتا</message>
+  <message id="dad-yaxis-title-total-betas">البيتا/ثانية</message>
+  <message id="dad-hdr-total-alphas">إجمالي الألفا</message>
+  <message id="dad-yaxis-title-total-alphas">الألفا/ثانية</message>
+  <message id="dad-chart-click-more-info">انقر للمزيد من المعلومات - {1} {2} بعد T0 لدينا:</message>
+
+  <message id="dcc-window-title-decay-chain">سلسلة تحلل {1}</message>
+  <message id="dcc-window-title-decay-through">يتحلل خلال {1}</message>
+  <message id="dcc-nuc-info-protons">البروتونات: {1}</message>
+  <message id="dcc-nuc-info-mass">الكتلة: {1} دالتون</message>
+  <message id="dcc-nuc-info-hl-stable">نصف العمر: مستقر</message>
+  <message id="dcc-nuc-info-hl">نصف العمر: {1}</message>
+  <message id="dcc-nuc-info-br-from">BR من {1}: {2}</message>
+  <message id="dcc-nuc-info-br-through">BR خلال {1}: {2}</message>
+  <message id="dcc-nuc-info-specific-act">النشاط المحدد: {1}</message>
+  <message id="dcc-nuc-info-decay-mode">{1} يتحلل إلى {2}، BR {3}</message>
+  <message id="dcc-particle-window-title">طاقات جسيمات التحلل</message>
+  <message id="dcc-particles-from">الجسيمات من {1}</message>
+  <message id="dcc-nuc-has-no-particles">هذه النواة ليس لديها جسيمات من التحلل</message>
+  <message id="dcc-particle">الجسيم</message>
+  <message id="dcc-intensity">الشدة</message>
+  <message id="dcc-decay-through-window-title">يتحلل خلال {1}</message>
+
+  <!-- The following variables are for the decay chain chart, and will be passed to the JavScript as part of a string, so cant have any single quote (') characters! -->
+  <message id="dcc-xAxisTitle">تناقص الكتلة الذرية</message>
+  <message id="dcc-yAxisTitle">تزايد العدد الذري</message>
+  <message id="dcc-clickNucTxt">انقر على النواة للمزيد من المعلومات.</message>
+  <message id="dcc-clickNucMoreInfoTxt2">انقر على نواة مصدر مختلفة أعلاه لـ</message>
+  <message id="dcc-clickNucMoreInfoTxt3">تغيير سلسلة التحلل المعروضة.</message>
+  <message id="dcc-clickNucMblTxt">اضغط على النواة للمزيد من المعلومات.</message>
+  <message id="dcc-clickNucMblMoreInfoTxt2">انقر على نواة مصدر مختلفة أعلاه لـ</message>
+  <message id="dcc-clickNucMblMoreInfoTxt3">تغيير سلسلة التحلل المعروضة.</message>
+  <message id="dcc-show-decay-products">إظهار منتجات تحلل {nuclide}</message>
+  <message id="dcc-show-decays-through">إظهار التحللات عبر {nuclide}</message>
+
+
+  <message id="dcn-initial-age">العمر الأولي: </message>
+
+</messages>

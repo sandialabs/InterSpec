@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- psw- is short for PeakSelectorWindow
+  psgu- is short for PeakSearchGuiUtils, and are misc stuff
+  -->
+  <message id="psw-title-confirm-nuc-ass">Konfirmasi Penugasan Nuklida</message>
+  <message id="psw-title-check-search">Periksa Hasil Pencarian Puncak</message>
+  <message id="psw-title-prev-spec">Puncak untuk Disimpan dari Spektrum Sebelumnya</message>
+  <message id="psw-title-csv-import">Puncak untuk diimpor dari CSV</message>
+  <message id="psw-search-instruct-adjust">Sesuaikan penugasan nuklida, atau puncak mana yang akan disimpan.</message>
+  <message id="psw-search-instruct-unselect">Batalkan pilihan puncak apa pun yang tidak ingin Anda simpan.</message>
+  <message id="psw-search-instruct-assign">Periksa dan perbaiki penugasan nuklida.</message>
+  <message id="psw-search-instruct-keep">Pilih puncak yang ingin Anda simpan.</message>
+  <message id="psw-show-all-peaks">Tampilkan semua puncak</message>
+  <message id="psw-show-prev-peaks">Tampilkan puncak sebelumnya juga</message>
+  <message id="psw-show-missing-peaks">Tampilkan puncak yang tidak ada</message>
+  <message id="psw-keep-only-assigned-peaks">Simpan hanya puncak baru yang ditugaskan ke {1}</message>
+  <message id="psw-orig-nuc">Nuklida Asli</message>
+  <message id="psw-assigned-nuc">Nuklida yang Ditugaskan</message>
+  <message id="psw-peak-preview">Pratinjau Puncak</message>
+  <message id="psw-not-found">Tidak Ditemukan</message>
+  <message id="psw-keep-peak">Simpan Puncak</message>
+  <message id="psw-keep-peak-q">Simpan Puncak?    </message>  <!-- There are four No-Break Space characters at end -->
+  <message id="psw-dont-change">Jangan ubah</message>
+  <message id="psw-no-nuc-changed">Tidak ada nuklida yang diubah</message>
+  <message id="psw-rel-eff-plot-title">Plot Efisiensi Relatif</message>
+  <message id="psw-rel-eff-plot-y-axis-title">Area Puncak Rel. / BR</message>
+
+  <message id="psgu-peaks-not-updated-no-change-msg">Puncak tidak diperbarui, spektrum telah berubah.</message>
+  <message id="psgu-peaks-updated-msg">Puncak diperbarui.</message>
+
+  <message id="psgu-search-wait-title">Tunggu sebentar</message>
+  <message id="psgu-search-wait-content">
+    <div style="text-align: left; white-space: nowrap;">
+      <div>Mencari puncak - ini mungkin memakan waktu.</div>
+      <div>Anda dapat menutup dialog ini dan ketika pencarian selesai,</div>
+      <div>Anda akan diberi tahu</div>
+    </div>
+  </message>
+
+
+  <message id="psgu-fwhm-info-needed-title">Informasi FWHM diperlukan</message>
+  <message id="psgu-fwhm-info-needed-has-det-eff">
+    <div>Respons detektor saat ini tidak berisi info FWHM.</div>
+    <div>Apakah Anda ingin menyesuaikan info FWHM dari spektrum saat ini?</div>
+  </message>
+  <message id="psgu-fwhm-info-needed-no-det-eff">
+    <div>Tidak ada respons detektor yang dipilih.</div>
+    <div>Apakah Anda ingin menyesuaikan info FWHM dari spektrum saat ini?</div>
+  </message>
+  <message id="psgu-fwhm-fit-fail">Gagal mencocokkan ulang puncak (menjadi tidak signifikan), dari {1} menjadi {2} puncak</message>
+
+
+  <message id="psgu-no-peak-near-right-click-msg">Tidak ada puncak untuk diatur ke energi gamma</message>
+  <message id="psgu-no-ref-line-near-peak-msg">Tidak ada energi gamma referensi untuk mengatur rerata puncak.</message>
+  <message id="psgu-failed-refit-after-fixing-mean">
+    Gagal mencocokkan ulang puncak setelah memperbaiki rerata ke fotopeak referensi.
+    Sebuah puncak menjadi tidak signifikan; dari {1} menjadi {2} puncak.
+  </message>
+  <message id="psgu-failed-change-cont-type">
+  Mengubah tipe kontinum menjadi {1} menyebabkan {2} puncak menjadi tidak signifikan.<br />
+  Harap gunakan <b>Editor Puncak</b> untuk membuat perubahan ini.
+  </message>
+  <message id="psgu-failed-change-cont-singular">puncak</message>  <!-- this or next message will be substituted for {2} of previous message -->
+  <message id="psgu-failed-change-cont-plural">setidaknya satu</message>
+  <message id="psgu-failed-change-cont-insig-msg">
+  Secara naif mengubah tipe kontinum menjadi {1} menyebabkan puncak menjadi tidak signifikan.<br />
+  Harap gunakan <b>Editor Puncak</b> untuk membuat perubahan ini.
+  </message>
+  <message id="psgu-change-skew-not-gaus">Puncak dalam ROI pada {1} keV tidak didefinisikan Gaussian - harap ubah ini di <b>Editor Puncak</b> sebelum mengatur tipe miring.</message>
+  <message id="psgu-change-skew-make-insig">
+    Mengubah tipe miring menjadi {1} menyebabkan {2} puncak menjadi tidak signifikan.<br />
+    Harap gunakan <b>Editor Puncak</b> untuk membuat perubahan ini.
+  </message>
+  <message id="psgu-failed-change-skew-insig-msg">
+  Secara naif mengubah tipe miring menjadi {1} menyebabkan puncak menjadi tidak signifikan.<br />
+  Harap gunakan <b>Editor Puncak</b> untuk membuat perubahan ini.
+  </message>
+  
+</messages>
+

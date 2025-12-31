@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- psw- is short for PeakSelectorWindow
+  psgu- is short for PeakSearchGuiUtils, and are misc stuff
+  -->
+  <message id="psw-title-confirm-nuc-ass">تأكيد تخصيص النواة</message>
+  <message id="psw-title-check-search">فحص نتائج البحث عن القمة</message>
+  <message id="psw-title-prev-spec">القمم للاحتفاظ بها من الطيف السابق</message>
+  <message id="psw-title-csv-import">القمم لاستيرادها من CSV</message>
+  <message id="psw-search-instruct-adjust">اضبط تخصيصات النواة، أو أي القمم للاحتفاظ بها.</message>
+  <message id="psw-search-instruct-unselect">ألغ تحديد أي قمم لا تريد الاحتفاظ بها.</message>
+  <message id="psw-search-instruct-assign">تحقق وأصلح تخصيصات النواة.</message>
+  <message id="psw-search-instruct-keep">اختر القمم التي تريد الاحتفاظ بها.</message>
+  <message id="psw-show-all-peaks">إظهار جميع القمم</message>
+  <message id="psw-show-prev-peaks">إظهار القمم السابقة أيضًا</message>
+  <message id="psw-show-missing-peaks">إظهار القمم الغائبة</message>
+  <message id="psw-keep-only-assigned-peaks">الاحتفاظ فقط بالقمم الجديدة المخصصة لـ {1}</message>
+  <message id="psw-orig-nuc">النواة الأصلية</message>
+  <message id="psw-assigned-nuc">النواة المخصصة</message>
+  <message id="psw-peak-preview">معاينة القمة</message>
+  <message id="psw-not-found">غير موجود</message>
+  <message id="psw-keep-peak">الاحتفاظ بالقمة</message>
+  <message id="psw-keep-peak-q">الاحتفاظ بالقمة؟    </message>  <!-- There are four No-Break Space characters at end -->
+  <message id="psw-dont-change">لا تغير</message>
+  <message id="psw-no-nuc-changed">لا نوى تم تغييرها</message>
+  <message id="psw-rel-eff-plot-title">مخطط الكفاءة النسبية</message>
+  <message id="psw-rel-eff-plot-y-axis-title">مساحة القمة النسبية / BR</message>
+
+  <message id="psgu-peaks-not-updated-no-change-msg">القمم غير محدثة، الطيف تغير.</message>
+  <message id="psgu-peaks-updated-msg">تم تحديث القمم.</message>
+
+  <message id="psgu-search-wait-title">لحظات قليلة فقط</message>
+  <message id="psgu-search-wait-content">
+    <div style="text-align: left; white-space: nowrap;">
+      <div>البحث عن القمم - قد يستغرق هذا بعض الوقت.</div>
+      <div>يمكنك إغلاق هذا الحوار وعند انتهاء البحث،</div>
+      سيتم إشعارك
+    </div>
+  </message>
+
+
+  <message id="psgu-fwhm-info-needed-title">معلومات FWHM مطلوبة</message>
+  <message id="psgu-fwhm-info-needed-has-det-eff">
+    <div>استجابة الكاشف الحالية لا تحتوي على معلومات FWHM.</div>
+    <div>هل تريد ملائمة معلومات FWHM من الأطياف الحالية؟</div>
+  </message>
+  <message id="psgu-fwhm-info-needed-no-det-eff">
+    <div>لا يوجد استجابة كاشف مختارة.</div>
+    <div>هل تريد ملائمة معلومات FWHM من الأطياف الحالية؟</div>
+  </message>
+  <message id="psgu-fwhm-fit-fail">فشل في إعادة ملائمة القمة (أصبحت غير مهمة)، من {1} إلى {2} قمة</message>
+
+
+  <message id="psgu-no-peak-near-right-click-msg">لم تكن هناك قمة لتعيينها لطاقة الجاما</message>
+  <message id="psgu-no-ref-line-near-peak-msg">لم تكن هناك طاقة جاما مرجعية لتعيين متوسط القمة إليها.</message>
+  <message id="psgu-failed-refit-after-fixing-mean">
+    فشل في إعادة ملائمة القمة بعد تثبيت المتوسط للقمة الضوئية المرجعية.
+    أصبحت قمة غير مهمة؛ من {1} إلى {2} قمة.
+  </message>
+  <message id="psgu-failed-change-cont-type">
+  تغيير نوع المتصل إلى {1} تسبب في أن تصبح قمة {2} غير مهمة.<br />
+  يرجى استخدام <b>محرر القمة</b> لإجراء هذا التغيير.
+  </message>
+  <message id="psgu-failed-change-cont-singular">القمة</message>  <!-- this or next message will be substituted for {2} of previous message -->
+  <message id="psgu-failed-change-cont-plural">قمة واحدة على الأقل</message>
+  <message id="psgu-failed-change-cont-insig-msg">
+  تغيير نوع المتصل بشكل ساذج إلى {1} تسبب في أن تصبح القمة غير مهمة.<br />
+  يرجى استخدام <b>محرر القمة</b> لإجراء هذا التغيير.
+  </message>
+  <message id="psgu-change-skew-not-gaus">القمة في ROI عند {1} كيلوإلكترون فولت ليست محددة غاوسيًا - يرجى تغيير هذا في <b>محرر القمة</b> قبل تعيين نوع الانحراف.</message>
+  <message id="psgu-change-skew-make-insig">
+    تغيير نوع الانحراف إلى {1} تسبب في أن تصبح قمة {2} غير مهمة.<br />
+    يرجى استخدام <b>محرر القمة</b> لإجراء هذا التغيير.
+  </message>
+  <message id="psgu-failed-change-skew-insig-msg">
+  تغيير نوع الانحراف بشكل ساذج إلى {1} تسبب في أن تصبح القمة غير مهمة.<br />
+  يرجى استخدام <b>محرر القمة</b> لإجراء هذا التغيير.
+  </message>
+  
+</messages>

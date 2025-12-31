@@ -58,8 +58,9 @@ EnergyCalGraphicalConfirm::EnergyCalGraphicalConfirm( double lowe, double highe,
                             EnergyCalGraphicalConfirm::RecalTypes lastType,
                             float lastEnergy )
 : AuxWindow( "Confirm Recalibration",
-             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
-               | AuxWindowProperties::SetCloseable | AuxWindowProperties::DisableCollapse) ),
+             (AuxWindowProperties::IsModal
+              | AuxWindowProperties::SetCloseable
+              | AuxWindowProperties::DisableCollapse) ),
   m_calibrator( cal ), m_typeButtons( NULL), m_foregroundOnly( NULL ),
   m_startE( NULL ), m_finalE( NULL ),
   m_preserveLastCal( NULL ),
@@ -194,10 +195,10 @@ EnergyCalGraphicalConfirm::EnergyCalGraphicalConfirm( double lowe, double highe,
   AuxWindow::addHelpInFooter( footer(), "graphical-recal-dialog" );
   
   
-  WPushButton *button = new WPushButton( "Cancel", footer() );
+  WPushButton *button = new WPushButton( WString::tr("Cancel"), footer() );
   button->clicked().connect( this, &AuxWindow::hide );
   
-  button = new WPushButton( "Accept", footer()  );
+  button = new WPushButton( WString::tr("Accept"), footer()  );
   button->setIcon( "InterSpec_resources/images/accept.png" );
   button->clicked().connect( this, &EnergyCalGraphicalConfirm::apply );
   

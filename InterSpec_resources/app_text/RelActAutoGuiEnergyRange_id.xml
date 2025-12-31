@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raager- is short for RelActAutoGuiEnergyRange -->
+  
+  <!-- Labels -->
+  <message id="raager-lower-energy">Energi Bawah</message>
+  <message id="raager-upper-energy">Energi Atas</message>
+  <message id="raager-continuum-type">Jenis Kontinum:</message>
+  
+  <!-- Checkboxes -->
+  <message id="raager-force-full-range">Paksa rentang penuh</message>
+  
+  <!-- Tooltips -->
+  <message id="raager-split-to-individual-rois-tt">Mengonversi rentang energi ini menjadi ROI individual, berdasarkan gamma mana yang harus dikelompokkan bersama vs terpisah (mis., meninggalkan gamma dengan puncak yang tumpang tindih dalam satu ROI, sementara jika dua gamma berjauhan, mereka akan dibagi menjadi ROI terpisah).</message>
+  
+</messages>
+

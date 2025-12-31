@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- lrm- is short for LeafletRadMap
+  -->
+  <message id="lrm-pre-warn-title">继续之前</message>
+  <message id="lrm-pre-warn-content">
+    地图瓦片将从<a href="https://arcgis.com" target="_blank">https://arcgis.com</a>请求。
+    不会有辐射数据离开您的设备，但将向此服务请求
+    包含测量的地图瓦片。
+    {1}
+  </message>
+  <message id="lrm-pre-warn-user-key">
+    <p>您的自定义arcgis密钥（以'{1}'开头）将用于请求地图瓦片。</p>
+  </message>
+  <message id="lrm-pre-warn-invalid-user-key">
+    <p>在arcgis_key.txt中指定了无效的arcgis密钥，因此将使用内置密钥。</p>
+  </message>
+  <message id="lrm-pre-warn-dont-ask">不再询问</message>
+  <message id="lrm-pre-warn-proceed-btn">继续</message>
+  <message id="lrm-window-title">地图工具</message>
+  <message id="lrm-will-use-user-key">将使用用户指定的arcgis密钥（以'{1}'开头）来请求地图。</message>
+  <message id="lrm-user-key-invalid">有一个arcgis_key.txt文件，但它不包含有效密钥</message>
+  <message id="lrm-err-loading-samples">加载地图选定样本时出错：{1}</message>
+  <message id="lrm-displayed-as">显示为</message>
+  <message id="lrm-measurements-as">测量为</message>
+  <message id="lrm-load-meas-as-short">加载为</message>
+  <message id="lrm-filter-label">过滤器</message>
+  <message id="lrm-filter-none">无</message>
+  <message id="lrm-filter-energy-range">能量范围</message>
+  <message id="lrm-filter-peaks-in-range">范围内的峰值</message>
+  <message id="lrm-lower-energy">下限能量</message>
+  <message id="lrm-upper-energy">上限能量</message>
+  <message id="lrm-energy-filter-help">
+    应用能量范围过滤器将改变地图上显示数据的方式和内容。
+    <ul>
+    <li><b>无</b>：不应用过滤 - 颜色和CPS文本基于全谱计数率。</li>
+    <li><b>能量范围</b>：过滤指定能量范围内的伽马计数。</li>
+    <li><b>范围内的峰值</b>：仅显示在能量范围内具有峰值的样本编号，标记颜色和CPS基于峰值计数率。</li>
+    </ul>
+  </message>
+</messages>
+

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raageo- is short for RelActAutoGuiRelEffOptions -->
+  
+  <!-- Labels -->
+  <message id="raageo-eqn-type">Тип уравн.</message>
+  <message id="raageo-eqn-order">Порядок уравн.</message>
+  <message id="raageo-pu242-corr">Коррекц. Pu242</message>
+  
+  <!-- Checkboxes -->
+  <message id="raageo-use-corr-fcn">Исп. корр. функ.</message>
+  <message id="raageo-share-corr-fcn">Общая корр. функ.</message>
+  <message id="raageo-share-ext-atten">Общее внеш. ослаб.</message>
+  <message id="raageo-shielded-by-other-curves">Экранир. др. кривыми</message>
+  
+  <!-- Equation types -->
+  <message id="raageo-eqn-log-x">Log(x)</message>
+  <message id="raageo-eqn-log-y">Log(y)</message>
+  <message id="raageo-eqn-log-x-log-y">Log(x)Log(y)</message>
+  <message id="raageo-eqn-empirical">Эмпирическое</message>
+  <message id="raageo-eqn-physical">Физическое</message>
+  
+  <!-- Placeholders -->
+  <message id="raageo-curve-name">Имя кривой</message>
+  
+  <!-- Tooltips -->
+  <message id="raageo-eqn-type-tt">Функциональная форма для использования в кривой относительной эффективности.<br />Варианты:<table style="margin-left: 10px;"><tr><th>Log(энергия):</th>               <th>y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...</th></tr><tr><th>Log(отн. эфф.):</th>            <th>y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )</th></tr><tr><th>Log(энергия)Log(отн. эфф.):</th> <th>y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )</th></tr><tr><th>Эмпирическое:</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr><tr><th>Физическое:</th>             <th>y = <span style="display: inline-block; vertical-align: middle;"><span style="display: block; text-align: center;">(1 - exp(-AD<sub>0</sub>*μ<sub>0</sub>))</span><span style="display: block; border-top: 1px solid black; text-align: center;">(AD<sub>0</sub>*μ<sub>0</sub>)</span></span> * [exp(-AD<sub>1</sub>*μ<sub>1</sub>) * exp(-AD<sub>2</sub>*μ<sub>2</sub>) + ...] * [Эфф. дет.] * [E<sup>b</sup> * C<sup>1/E</sup>]</th></tr></table></message>
+  <message id="raageo-eqn-order-tt">Порядок (количество энергозависимых членов) уравнения относительной эффективности для использования.</message>
+  <message id="raageo-pu242-corr-tt">Pu-242 часто не наблюдается напрямую в гамма-спектрах. Однако для коррекции этого изотопа при расчёте обогащения ожидаемые вклады этого изотопа могут быть выведены из других изотопов Pu. Эта форма позволяет выбрать метод коррекции.</message>
+  <message id="raageo-share-corr-fcn-tt">При установке этого флажка настройка корреляционной функции будет синхронизирована для всех кривых физической модели.</message>
+  <message id="raageo-share-ext-atten-tt">При установке этого флажка конфигурация внешнего экранирования будет синхронизирована для всех кривых физической модели.</message>
+  <message id="raageo-shielded-by-other-curves-tt">При установке этого флажка источники этой кривой будут экранированы всеми другими кривыми физической модели.</message>
+  <message id="raageo-del-rel-eff-curve-tt">Удаляет эту кривую относительной эффективности.</message>
+  <message id="raageo-add-rel-eff-curve-tt">Добавить ещё одну кривую относительной эффективности.</message>
+  
+</messages>

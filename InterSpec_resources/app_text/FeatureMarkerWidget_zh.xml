@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- fmw- is short for FeatureMarkerWidget
+  -->
+  <message id="fmw-escape-peaks">逃逸峰</message>
+  <message id="fmw-compton-peak">康普顿峰</message>
+  <message id="fmw-angle">角度</message>
+  <message id="fmw-compton-edge">康普顿边缘</message>
+  <message id="fmw-sum-peak">求和峰</message>
+</messages>
+

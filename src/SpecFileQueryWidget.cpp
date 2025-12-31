@@ -1483,6 +1483,7 @@ SpecFileQueryWidget::~SpecFileQueryWidget()
 void SpecFileQueryWidget::init()
 {
   wApp->useStyleSheet( "InterSpec_resources/SpecFileQueryWidget.css" );
+  m_viewer->useMessageResourceBundle( "SpecFileQueryWidget" );
   
   wApp->useStyleSheet( "InterSpec_resources/assets/js/QueryBuilder2.5.2/css/query-builder.default.min.css" );
   wApp->useStyleSheet( "InterSpec_resources/assets/js/QueryBuilder2.5.2/css/QueryBuilderFakeBootstrap.css" );
@@ -1536,11 +1537,11 @@ void SpecFileQueryWidget::init()
   
   m_baseLocation->pathChanged().connect( this, &SpecFileQueryWidget::basePathChanged );  
   
-  m_optionsBtn = new WPushButton( "Options" );
+  m_optionsBtn = new WPushButton( WString::tr("sfqw-options") );
   m_optionsBtn->addStyleClass( "SpecFileQueryOptionsBtn" );
   
   m_optionsMenu = new PopupDivMenu( m_optionsBtn, PopupDivMenu::MenuType::TransientMenu );
-  linelayout->addWidget( m_optionsBtn, 0, 1 );
+  linelayout->addWidget( m_optionsBtn, 0, 1, AlignMiddle );
   
   auto item = m_optionsMenu->addMenuItem( "recursive" );
   item->setCheckable( true );
@@ -1668,12 +1669,12 @@ void SpecFileQueryWidget::init()
   
   
   
-  m_cancelUpdate = new WPushButton( "Cancel" );
+  m_cancelUpdate = new WPushButton( WString::tr("Cancel") );
   m_cancelUpdate->setHidden( true );
   linelayout->addWidget( m_cancelUpdate, 0, linelayout->columnCount() );
   m_cancelUpdate->clicked().connect( this, &SpecFileQueryWidget::cancelUpdate );
   
-  m_update = new WPushButton( "Update" );
+  m_update = new WPushButton( WString::tr("sfqw-update") );
   m_update->clicked().connect(
   "function(){"
     "var result = $('#" + m_conditions->id() + "').queryBuilder('getRules',{ allow_invalid: true });"
@@ -1749,7 +1750,7 @@ void SpecFileQueryWidget::init()
   m_csv->setStyleClass( "LinkBtn" );
   m_csv->disable();
   
-  m_loadSelectedFile = new WPushButton( "Load Selected" );
+  m_loadSelectedFile = new WPushButton( WString::tr("sfqw-load-selected") );
   linelayout->addWidget( m_loadSelectedFile, 0, linelayout->columnCount(), AlignRight );
   m_loadSelectedFile->clicked().connect( this, &SpecFileQueryWidget::loadSelected );
   m_loadSelectedFile->disable();

@@ -34,7 +34,8 @@
   <message id="ssd-to-small-for-chart">(agrandir la fenêtre pour afficher le χ<sup>2</sup>)</message>
   <message id="ssd-tt-chi2-switch">Afficher le Chi de chaque pic pour le modèle actuel sur le graphique, ou le multiple de l'aire du pic relative entre le modèle actuel et le pic observé.</message>
   <message id="ssd-cb-all-peaks">Tous les pics</message>
-  <message id="ssd-multi-iso-per-peak">Plusieurs nucléides contribuent au pic</message>
+  <message id="ssd-multi-iso-per-peak">Correction d'interférence</message>
+  <message id="ssd-options-title">Options</message>
   <message id="ssd-tt-multi-iso-per-peak">La sélection de cette option permettra à d'autres nucléides en cours d'ajustement, autres que celui attribué à un pic, de contribuer aux comptes attendus dans un pic observé.  Cela pourrait par exemple être utile lors de l'ajustement de Ho166m et U235 qui ont tous deux un pic près de 185 keV.</message>
   <message id="ssd-cb-atten-for-air">Atténuer pour l'air</message>
   <message id="ssd-tt-atten-for-air">Lorsque cette case est cochée, l'atténuation due à l'air entre la source, ou le blindage extérieur, et le détecteur sera prise en compte dans les calculs.</message>
@@ -110,7 +111,9 @@
     <br />
     Ajustement non effectué (impossible de créer Chi2Fcn).
   </message>
-  <message id="ssd-error-create-tool">Erreur lors de la création de l'affichage d'ajustement activité/blindage : {1}</message>
+  <message id="ssd-error-create-tool">Erreur lors de la création de l'affichage d'ajustement activité/blindage : {1}</message>
+  <message id="ssd-shield-source-diagram">Schéma Blindage/Source</message>
+  <message id="ssd-show-model-diagram">Afficher le schéma du modèle</message>
 
   <message id="sfm-tt-header-isotope">Les nucléides sont ajoutés ou supprimés en fonction des photopics utilisés pour cet ajustement, ils ne peuvent donc pas être modifiés dans ce tableau</message>
   <message id="sfm-tt-header-activity">Activité du nucléide.  Entrer une valeur de départ raisonnable peut aider l'ajustement, ou l'activité n'a pas besoin d'être ajustée.  Les valeurs peuvent être entrées dans des formats similaires à '12.4 kBq', '1.0mCi', '55.3uCi', '15.82Mbq'</message>

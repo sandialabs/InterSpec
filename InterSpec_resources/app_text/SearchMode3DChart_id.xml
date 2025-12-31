@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- sm3dc- is short for SearchMode3DChart -->
+  <message id="sm3dc-loading">Memuat...</message>
+  <message id="sm3dc-min-energy">Energi Min</message>
+  <message id="sm3dc-max-energy">Energi Maks</message>
+  <message id="sm3dc-min-time">Waktu Min (s)</message>
+  <message id="sm3dc-max-time">Waktu Maks (s)</message>
+  <message id="sm3dc-time-bins">Bin tampilan waktu</message>
+  <message id="sm3dc-tt-time-bins">
+    Jumlah maksimum pembagian waktu untuk diplot; jika data Anda memiliki lebih banyak sampel waktu daripada
+    ini dalam rentang yang ditampilkan, sampel waktu akan digabungkan bersama, hingga kurang dari nilai ini.
+    <br />
+    <br />
+    Misalnya, jika nilai ini adalah 60, tetapi pengukuran Anda memiliki 208 sampel, maka setiap 4
+    sampel akan dijumlahkan bersama untuk satu bin untuk sumbu waktu,
+    dengan total 52 bin pada sumbu waktu.
+    <br />
+    Jika produk dari jumlah kanal waktu, dikalikan dengan jumlah kanal energi
+    terlalu besar, masalah kinerja mungkin terjadi.
+  </message>
+  <message id="sm3dc-energy-bins">Bin tampilan energi</message>
+  <message id="sm3dc-tt-energy-bins">
+    Jumlah maksimum pembagian energi untuk diplot; jika data Anda memiliki lebih banyak kanal energi daripada
+    ini dalam rentang yang ditampilkan, kanal akan digabungkan bersama, hingga kurang dari nilai ini.
+    <br />
+    <br />
+    Jika produk dari jumlah kanal waktu, dikalikan dengan jumlah kanal energi
+    terlalu besar, masalah kinerja mungkin terjadi.
+  </message>
+  <message id="sm3dc-time-axis-label">Waktu (detik)</message>
+  <message id="sm3dc-counts-axis-label">Cacahan per Kanal</message>
+</messages>
+

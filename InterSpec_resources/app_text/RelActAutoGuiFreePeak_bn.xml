@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raagfp- is short for RelActAutoGuiFreePeak -->
+
+  <!-- Checkboxes -->
+  <message id="raagfp-constrain-fwhm">FWHM সীমাবদ্ধ করুন</message>
+  <message id="raagfp-true-energy">সত্য শক্তি</message>
+
+  <!-- Messages -->
+  <message id="raagfp-not-in-roi">একটি ROI-তে নেই।</message>
+
+  <!-- Tooltips -->
+  <message id="raagfp-constrain-fwhm-tt">চেক করা থাকলে, এই পিকটি FWHM কার্যকরী ফর্মের মধ্যে সীমাবদ্ধ থাকবে যা গামা এবং x-রে পিকগুলি সাধারণত সীমাবদ্ধ থাকে।&lt;br /&gt;আনচেক করা থাকলে, এই পিকের জন্য FWHM সমস্ত অন্যান্য পিক প্রস্থ থেকে স্বাধীনভাবে ডেটা থেকে ফিট করা হবে।&lt;br /&gt;এই বিকল্পটি আনচেক করা annihilation এবং reaction ফোটোপিকের জন্য উপযোগী।</message>
+  <message id="raagfp-true-energy-tt">পিকটি পরিচিত শক্তির একটি গামার জন্য হলে এই বিকল্পটি চেক করুন।&lt;br /&gt;এই পিকটি যদি অজানা সত্য শক্তি সহ স্পেকট্রামে একটি পরিলক্ষিত পিক হয় তবে এই বিকল্পটি আনচেক করুন।</message>
+
+</messages>

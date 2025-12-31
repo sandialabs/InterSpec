@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raager- is short for RelActAutoGuiEnergyRange -->
+  
+  <!-- Labels -->
+  <message id="raager-lower-energy">الطاقة الدنيا</message>
+  <message id="raager-upper-energy">الطاقة العليا</message>
+  <message id="raager-continuum-type">نوع المتصل:</message>
+  
+  <!-- Checkboxes -->
+  <message id="raager-force-full-range">فرض النطاق الكامل</message>
+  
+  <!-- Tooltips -->
+  <message id="raager-split-to-individual-rois-tt">يحول نطاق الطاقة هذا إلى ROIs فردية، بناءً على أي أشعة الجاما يجب تجميعها معًا أم منفصلة (مثل، يترك أشعة الجاما مع القمم المتداخلة في ROI واحد، بينما إذا كانت أشعة الجاما متباعدة، ستُقسم إلى ROIs منفصلة.</message>
+  
+</messages>

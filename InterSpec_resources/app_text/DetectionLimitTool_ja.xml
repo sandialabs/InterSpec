@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dlt- is short for DetectionLimitTool
+  -->
+  <message id="dlt-window-title">検出信頼度ツール</message>
+  
+  <!-- MdaPeakRow strings -->
+  <message id="dlt-use-for-multi-peak">マルチピークに使用</message>
+  <message id="dlt-roi-lower-label">ROI 下限:</message>
+  <message id="dlt-roi-upper-label">ROI 上限:</message>
+  <message id="dlt-continuum-label">連続体</message>
+  <message id="dlt-cont-norm-label">連続体正規化</message>
+  <message id="dlt-cont-norm-floating">浮動</message>
+  <message id="dlt-cont-norm-fixed-edges">端で固定</message>
+  <message id="dlt-cont-norm-fixed-full-roi">ROI全体で固定</message>
+  <message id="dlt-cont-norm-tt">
+    連続体の正規化を決定する方法：
+    <ul><li><b>浮動</b>：多項式連続体は、各与えられた活動に対して適合されます -
+    活動は連続体に影響します。</li>
+    <li><b>端で固定</b>：ROIの両側のチャンネルを使用して、
+    固定され、核種の活動の影響を受けない線形連続体を決定します。</li>
+    <li><b>ROI全体で固定</b>：連続体は、ROIの全エネルギー範囲を使用して適合され、
+    ガウス振幅がゼロであると仮定します。後で、ピークのガウス成分は
+    この固定連続体の上に配置されます。<br/>
+    これは、データに信号ピークが存在しないことを知っていることを実質的に主張しています。
+    連続体は核種の活動値の影響を受けず、ピークのガウス成分は
+    評価時にこの固定連続体の上に配置されます
+    &chi;<sup>2</sup>。</li>
+    </ul>
+  </message>
+  <message id="dlt-single-peak-currie-limit">単一ピークカリー限界</message>
+  <message id="dlt-num-side-channels-label">側チャンネル数</message>
+  <message id="dlt-further-details-link">詳細...</message>
+  <message id="dlt-err-computing-info">計算エラー {1}, {2} keV 情報</message>
+  <message id="dlt-err-computing-currie-info">カリー限界情報の計算エラー: {1}</message>
+  
+  <!-- MdaPeakRow setSimplePoisonTxt strings -->
+  <message id="dlt-nominal">名目:</message>
+  <message id="dlt-range">範囲:</message>
+  <message id="dlt-detected-activity-tt">検出された活動、この関心領域のみを使用し、
+    観測された過剰カウント、および
+    統計的信頼区間。</message>
+  <message id="dlt-limit-lt-zero">限界: &lt; 0{1}</message>
+  <message id="dlt-sig-fewer-counts">(ROIのカウントが予測より大幅に少ない)</message>
+  <message id="dlt-fewer-counts-tt">関心領域で観測されたカウントが
+    隣接チャンネルによって予測されたよりも大幅に少ない。</message>
+  <message id="dlt-upper-limit">上限:</message>
+  <message id="dlt-critical-limit">臨界限界:</message>
+  <message id="dlt-limit-tt">上限は、与えられたCLに対して存在する最大活動であり、
+    ROIで観測されたカウント数を考慮します。
+    臨界限界は、信号が確実に検出される活動です。
+    両方の数値はカリー法を使用して計算されます。</message>
+  <message id="dlt-large-deficit">ROIのカウントの大きな不足</message>
+  
+  <!-- DetectionLimitTool main class strings -->
+  <message id="dlt-nuclide-label">核種:&nbsp;&nbsp;</message>
+  <message id="dlt-age-label">年齢:</message>
+  <message id="dlt-tt-age-edit">
+    <div>核種の年齢。</div>
+    <br />
+    <div>年齢は子孫の増加量を制御します。親核種
+    （つまり、入力された）核種の活動は、常に測定時点で報告されます。
+    </div>
+  </message>
+  <message id="dlt-distance-label">距離:</message>
+  <message id="dlt-activity-label">活動:</message>
+  <message id="dlt-attenuate-for-air">空気で減衰</message>
+  <message id="dlt-shield-empty-text">遮蔽材</message>
+  <message id="dlt-activity-limit">活動限界</message>
+  <message id="dlt-distance-limit">距離限界</message>
+  <message id="dlt-peaks-disp-act-label">ピーク表示 活動:</message>
+  <message id="dlt-peaks-disp-dist-label">ピーク表示 距離:</message>
+  <message id="dlt-conf-level-label">信頼水準:</message>
+  <message id="dlt-conf-95">95%</message>
+  <message id="dlt-conf-99">99%</message>
+  <message id="dlt-conf-1sigma">1σ (68.2%)</message>
+  <message id="dlt-conf-2sigma">2σ (95.4%)</message>
+  <message id="dlt-conf-3sigma">3σ (99.7%)</message>
+  <message id="dlt-conf-4sigma">4σ</message>
+  <message id="dlt-conf-5sigma">5σ</message>
+  <message id="dlt-gamma-lines-to-use">使用するガンマ線</message>
+  <message id="dlt-min-rel-intensity-label">最小相対強度:</message>
+  <message id="dlt-fit-fwhm-btn">FWHMを適合...</message>
+  <message id="dlt-log">対数</message>
+  <message id="dlt-lin">線形</message>
+  <message id="dlt-below-lc">(L<sub>c</sub>以下)</message>
+  <message id="dlt-lt-zero-counts">&lt; 0 カウント</message>
+  <message id="dlt-lt-zero-activity">&lt; {1}</message>
+  
+  <!-- Error messages -->
+  <message id="dlt-err-no-data">データが読み込まれていません</message>
+  <message id="dlt-err-no-drf">DRFが読み込まれていません</message>
+  <message id="dlt-err-no-fwhm">DRFにFWHM情報がありません - FWHMを適合するか、DRFを変更してください。</message>
+  <message id="dlt-err-no-nuclide">有効な核種がありません</message>
+  <message id="dlt-err-activity-invalid">活動が無効です</message>
+  <message id="dlt-err-distance-invalid">距離が無効です</message>
+  <message id="dlt-err-min-rel-intensity">表示する最小相対強度が無効です。</message>
+  <message id="dlt-err-shielding">遮蔽効果の計算エラー</message>
+  <message id="dlt-err-gamma-yields">ガンマ収量エラー - すべての強度がゼロです。</message>
+  <message id="dlt-err-no-peaks-selected">ピークが選択されていません</message>
+  <message id="dlt-err-calculating-chi2">Chi2の計算エラー: {1}</message>
+  <message id="dlt-err-calculating-limit">限界の計算エラー: {1}</message>
+  
+  <!-- createCurrieRoiMoreInfoWindow strings -->
+  <message id="dlt-observed-activity">観測された活動</message>
+  <message id="dlt-observed-counts">観測されたカウント</message>
+  <message id="dlt-activity-range">活動範囲</message>
+  <message id="dlt-counts-range">カウント範囲</message>
+  <message id="dlt-activity-le-zero">活動 &le; 0 {1}</message>
+  <message id="dlt-counts-le-zero">カウント &le; 0</message>
+  <message id="dlt-activity-upper-bound">活動上限</message>
+  <message id="dlt-counts-upper-bound">カウント上限</message>
+  <message id="dlt-distance-not-supported">追加情報については距離はまだサポートされていません</message>
+  <message id="dlt-lower-region-channels">下部領域チャンネル</message>
+  <message id="dlt-lower-region-counts">下部領域カウント</message>
+  <message id="dlt-upper-region-channels">上部領域チャンネル</message>
+  <message id="dlt-upper-region-counts">上部領域カウント</message>
+  <message id="dlt-using-roi-as-background">ROI領域を背景推定として使用</message>
+  <message id="dlt-roi-area-channels">ROI領域チャンネル</message>
+  <message id="dlt-peak-area-channels">ピーク領域チャンネル</message>
+  <message id="dlt-roi-region-counts">ROI領域カウント</message>
+  <message id="dlt-peak-region-counts">ピーク領域カウント</message>
+  <message id="dlt-roi-region-null-est">ROI領域ヌル推定</message>
+  <message id="dlt-peak-region-null-est">ピーク領域ヌル推定</message>
+  <message id="dlt-peak-critical-limit">ピーク臨界限界 <span style="font-size: smaller;">(L<sub>c</sub>)</span></message>
+  <message id="dlt-peak-detection-limit">ピーク検出限界 <span style="font-size: smaller;">(L<sub>d</sub>)</span></message>
+  <message id="dlt-detector-intrinsic-eff">検出器固有効率</message>
+  <message id="dlt-solid-angle-fraction">立体角分数</message>
+  <message id="dlt-shielding-transmission">遮蔽透過率</message>
+  <message id="dlt-air-transmission">空気透過率</message>
+  <message id="dlt-nuclide-branching-ratio">核種分岐比</message>
+  
+  <!-- Tooltip strings for createCurrieRoiMoreInfoWindow -->
+  <message id="dlt-tt-greater-than-lc">&quot;臨界レベル&quot;、L<sub>c</sub>より大きい
+    カウントがピーク領域で観測されました。</message>
+  <message id="dlt-tt-activity-range">信号活動範囲の推定、信頼水準{1}まで。</message>
+  <message id="dlt-tt-counts-range">信号カウント範囲の推定、信頼水準{1}まで。</message>
+  <message id="dlt-tt-fewer-than-predicted">ピーク領域で観測されたカウントが
+    隣接領域によって予測されたよりも大幅に少ない。</message>
+  <message id="dlt-tt-upper-bound">存在する可能性のある活動量の上限、
+    信頼水準{1}まで。</message>
+  <message id="dlt-tt-lower-region-channels">エネルギーでピークより上の領域で、
+    ピーク領域の予想連続体カウントを推定するために使用されています。
+    {1}から{2} keVに対応</message>
+  <message id="dlt-tt-lower-region-counts">ピーク領域の下の領域で観測されたカウント数で、
+    予想ピーク領域カウントを推定するために使用されています</message>
+  <message id="dlt-tt-upper-region-channels">エネルギーでピークより上の領域で、
+    ピーク領域の予想連続体カウントを推定するために使用されています。
+    {1}から{2} keVに対応</message>
+  <message id="dlt-tt-upper-region-counts">ピーク領域の上の領域で観測されたカウント数で、
+    予想ピーク領域カウントを推定するために使用されています</message>
+  <message id="dlt-tt-peak-area-channels">ピークが存在すると仮定されている領域。
+    {1}から{2} keVに対応</message>
+  <message id="dlt-tt-peak-region-counts">ピーク領域で観測されたカウント数</message>
+  <message id="dlt-tt-peak-region-null-est">ピーク領域での予想カウント数の推定、信号が
+    存在しないと仮定した場合。</message>
+  <message id="dlt-tt-critical-limit">カリーの&quot;臨界レベル&quot;、L<sub>c</sub>に対応し、
+    これは正味信号レベル（機器応答）であり、その上で
+    観測された信号が&quot;検出された&quot;として確実に認識される可能性があります。</message>
+  <message id="dlt-tt-detection-limit">カリーの&quot;検出限界&quot;、L<sub>d</sub>に対応し、
+    これは<i>事前に</i>検出につながると期待される
+    &quot;真の&quot;正味信号レベルです。</message>
+  <message id="dlt-tt-detector-intrinsic-eff">検出器面に当たるガンマが
+    全エネルギーピークで検出される効率。</message>
+  <message id="dlt-tt-solid-angle-fraction">指定された距離で検出器面が占める立体角の分数。</message>
+  <message id="dlt-tt-shielding-transmission">このエネルギーでのガンマの分数で、相互作用せずに遮蔽を通過します。</message>
+  <message id="dlt-tt-air-transmission">このエネルギーでのガンマの分数で、相互作用せずに空気（海面を仮定）を通過します。</message>
+  <message id="dlt-tt-branching-ratio">このエネルギーで放出されるガンマ線の数、放射性
+    源から、任意の遮蔽の前、ただし核種の年齢を考慮して、
+    親核種の崩壊あたり。</message>
+  <message id="dlt-tt-below-lc-counts">観測された信号カウントは&quot;臨界レベル&quot;、L<sub>c</sub>より少なく、
+    したがって検出を宣言できませんが、これは予想カウントを超える過剰です。</message>
+  <message id="dlt-tt-below-lc-activity">観測された信号活動は&quot;臨界レベル&quot;、L<sub>c</sub>より少なく、
+    したがって検出を宣言できませんが、これは予想カウントを超える過剰です。</message>
+  
+  <!-- Chart strings -->
+  <message id="dlt-chart-x-axis-distance">距離 ({1})</message>
+  <message id="dlt-chart-x-axis-activity">活動 ({1})</message>
+  <message id="dlt-chart-title-estimated-activity">推定活動 {1}。</message>
+  <message id="dlt-chart-title-excess-counts">過剰カウント {1}。</message>
+  <message id="dlt-chart-title-activity-lt-zero">活動 &lt; 0 {1}</message>
+  <message id="dlt-chart-title-data-peak">データ + ピーク {1}</message>
+  <message id="dlt-chart-title-peak-upper-bound">上限のピーク {1} @{2} CL</message>
+  <message id="dlt-currie-info-dialog-title">{1}{2} keV 情報</message>
+  
+  <!-- Additional error/status messages -->
+  <message id="dlt-no-foreground-file">前景ファイルがありません</message>
+  <message id="dlt-no-foreground-spectrum">前景スペクトルがありません</message>
+  <message id="dlt-no-drf-loaded">DRFが読み込まれていません</message>
+  <message id="dlt-drf-not-valid">DRFが無効であるか、FWHM情報がありません。</message>
+  <message id="dlt-err-max-distance-too-large">最大距離が大きすぎます (&gt;100km)</message>
+  <message id="dlt-err-upper-limit-negative">カウントの上限がゼロ未満ですが、観測されたカウントはL_dより大きいです。</message>
+  <message id="dlt-err-activity-zero-negative">活動はゼロまたは負の値にできません</message>
+  <message id="dlt-err-distance-zero-negative">距離はゼロまたは負の値にできません</message>
+</messages>

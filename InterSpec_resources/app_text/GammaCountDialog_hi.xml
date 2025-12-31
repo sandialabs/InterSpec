@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- gcd- is short for GammaCountDialog
+  -->
+  <message id="gcd-summary">निर्दिष्ट ऊर्जा सीमा में gamma की संख्या गिनें।</message>
+  <message id="gcd-lower-energy-label">निचली ऊर्जा</message>
+  <message id="gcd-upper-energy-label">ऊपरी ऊर्जा</message>
+  <message id="gcd-shift-alt-drag">Shift-Alt-Drag</message>
+  <message id="gcd-shift-option-drag">Shift-⌘-Drag</message>
+  <message id="gcd-select-shortcut">आप ऊर्जा सीमा चुनने के लिए चार्ट पर <b>{1}</b> भी कर सकते हैं</message>
+  <message id="gcd-foreground-counts-label">Foreground गणना:</message>
+  <message id="gcd-secondary-counts-label">द्वितीयक गणना:</message>
+  <message id="gcd-background-counts-label">Background गणना:</message>
+  <message id="gcd-tt-n-sigma">
+    Sigma अंतर की संख्या की गणना foreground और (स्केल किए गए) background के बीच
+    अंतर को अनिश्चितता से विभाजित करके की जाती है। अनिश्चितता की गणना
+    foreground और background की सांख्यिकीय अनिश्चितताओं को
+    वर्ग में जोड़कर, फिर वर्गमूल लेकर की जाती है
+  </message>
+  <message id="gcd-qr-window-title">ऊर्जा सीमा योग स्थिति</message>
+  <message id="gcd-qr-window-text">ऊर्जा सीमा योग टूल की वर्तमान स्थिति।</message>
+  <message id="gcd-background-scale-note">Background को {1} से स्केल किया जा रहा है</message>
+  <message id="gcd-and-secondary-scaled"> और द्वितीयक को </message>
+  <message id="gcd-secondary-scale-note">द्वितीयक background को स्केल किया जा रहा है </message>
+  <message id="gcd-foreground-above-background">Foreground, background से {1} σ ऊपर है।</message>
+  <message id="gcd-foreground-below-background">Foreground, background से {1} σ नीचे है।</message>
+</messages>

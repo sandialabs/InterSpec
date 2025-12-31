@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ds- is short for DirectorySelector -->
+  <message id="ds-path-label">Path:</message>
+  <message id="ds-txt-input-placeholder">Ketik path ke direktori...</message>
+  <message id="ds-native-select-path-button">Pilih Path</message>
+  <message id="ds-native-no-path-placeholder">(Tidak Ada Path yang Dipilih)</message>
+</messages>
+

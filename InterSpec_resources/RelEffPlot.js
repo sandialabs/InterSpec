@@ -69,19 +69,39 @@ RelEffPlot = function (elem,options) {
   this.chartArea = this.svg  //This holds everything except the optional x and y axis titles
     .append("g")
     .attr("transform", "translate(" + this.options.margins.left + "," + this.options.margins.top + ")");
-
+    
+  // Create clipping path to prevent elements from being drawn outside the chart area
+  this.chartArea.append("defs")
+    .append("clipPath")
+    .attr("id", "releffplot-clip-" + this.chart.id)
+    .append("rect")
+    .attr("x", 0)
+    .attr("y", 0)
+    .attr("width", chartAreaWidth)
+    .attr("height", chartAreaHeight);
+    
   this.xScale.domain([0, 3000]);
   this.yScale.domain([0, 1]);
 
-  this.path_uncert = this.chartArea.append("path")
+  // Setup mouse interactions for zoom functionality (before plotGroup so it's behind data points)
+  this.setupMouseInteractions();
+
+  // Create a clipped group for all plot elements (paths, circles, error bars)
+  this.plotGroup = this.chartArea.append("g")
+    .attr("clip-path", "url(#releffplot-clip-" + this.chart.id + ")");
+
+  this.path_uncert = this.plotGroup.append("path")
     .attr("class", "RelEffPlotErrorBounds") //Applying in CSS doesnt seem to work for some reason
     .style("fill", "rgba(0, 0, 255, 0.1)")
     .style("stroke", "none")
     .style("pointer-events", "none");
+    .style("stroke", "none")
+    .style("pointer-events", "none");
 
   // Add the valueline path.
-  this.path = this.chartArea.append("path")    // Add the valueline path.
-    .attr("class", "line");
+  this.path = this.plotGroup.append("path")    // Add the valueline path.
+    .attr("class", "line")
+    .style("pointer-events", "none");
 
   // Add the X Axis
   this.chartArea.append("g")
@@ -757,9 +777,14 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
     .attr("transform", "translate(" + (this.options.margins.left + ytickw + ytitleh)
                        + "," + (this.options.margins.top + chi2_txt_pad) + ")");
     
+  // Update clipping rectangle dimensions
+  this.chartArea.select("#releffplot-clip-" + this.chart.id + " rect")
+    .attr("width", chartAreaWidth)
+    .attr("height", chartAreaHeight);
+    
   // Remove existing paths and create a group for each dataset
-  this.chartArea.selectAll("path.line").remove();
-  this.chartArea.selectAll("path.RelEffPlotErrorBounds").remove();
+  this.plotGroup.selectAll("path.line").remove();
+  this.plotGroup.selectAll("path.RelEffPlotErrorBounds").remove();
   
   // For each dataset with fit equation, create the fit line and uncertainty bounds
   all_fit_eqn_points.forEach(function(fit_data, index) {
@@ -768,10 +793,11 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
       .x(function(d) { return self.xScale(d.energy); })
       .y(function(d) { return self.yScale(d.eff); });
       
-    const path = self.chartArea.append("path")
+    const path = self.plotGroup.append("path")
       .attr("class", "line dataset-" + index)
       .attr("d", valueline(fit_data.points))
-      .style("stroke", self.getDatasetColor(index));
+      .style("stroke", self.getDatasetColor(index))
+      .style("pointer-events", "none");
       
     // Create path for uncertainty bounds if available
     if (fit_data.fit_uncert_fcn) {
@@ -780,7 +806,7 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
         .y0(function(d) { return d.eff_uncert !== null ? self.yScale(d.eff - 2*d.eff_uncert) : null; })
         .y1(function(d) { return d.eff_uncert !== null ? self.yScale(d.eff + 2*d.eff_uncert) : null; });
         
-      const path_uncert = self.chartArea.append("path")
+      const path_uncert = self.plotGroup.append("path")
         .attr("class", "RelEffPlotErrorBounds dataset-" + index)
         .attr("d", area(fit_data.points))
         .style("fill", self.getDatasetColor(index, 0.1))
@@ -791,8 +817,8 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
 
   // For some reason the circles position arent being updated on resize, so we'll just remove them first
   //  With later versions of D3 there is a .merge() function that is maybe relevant
-  this.chartArea.selectAll("circle").remove();
-  this.chartArea.selectAll("line.errorbar").remove();
+  this.plotGroup.selectAll("circle").remove();
+  this.plotGroup.selectAll("line.errorbar").remove();
     
   // Calculate min and max counts across all datasets for radius scaling
   let minCounts = Number.MAX_VALUE;
@@ -826,7 +852,7 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
       return;
       
     // Add error bars
-    let lines = self.chartArea.selectAll("line.errorbar.dataset-" + datasetIndex)
+    let lines = self.plotGroup.selectAll("line.errorbar.dataset-" + datasetIndex)
       .data(data_vals);
     
     lines.enter()
@@ -869,7 +895,7 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
       });
     
     // Add the data points
-    self.chartArea
+    self.plotGroup
       .selectAll("circle.dataset-" + datasetIndex)
       .data(data_vals)
       .enter()

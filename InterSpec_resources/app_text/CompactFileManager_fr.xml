@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
+  <!-- cfm is short for CompactFileManager -->
   <message id='cfm-tt-sample-num'>
     Entrez le numéro d'échantillon que vous souhaitez afficher ici.
     Vous pouvez entrer une plage de numéros d'échantillon similaire à '33-39' ou '33 à 39' ;
@@ -16,7 +17,8 @@
   <message id='cfm-show-rid-result-btn'>Résultats RID</message>
   <message id='cfm-show-image-btn'>image intégrée</message>
 
-  <message id='cfm-db-spec'>Spectres Préc. Enregistrés</message>
+  <message id='cfm-db-spec'>Spectres sauveg. préc.</message>
+  <message id='cfm-ref-spectra-btn'>Spectres de référence...</message>
 
   <message id='cfm-err-invalid-sample-num'>Le numéro d'échantillon demandé n'existe pas.</message>
   <message id='cfm-err-no-meas'>Impossible de changer les numéros d'échantillon, il n'y a pas de mesure actuelle.</message>
@@ -42,4 +44,11 @@
   <message id='cfm-model'>Modèle</message>
   <message id='cfm-meas-type'>Type d'enr.</message>
   <message id='cfm-tt-meas-type'>Le type d'enregistrements dans le fichier de spectre.</message>
+
+  <message id='cfm-tt-clear-spectrum'>Efface le spectre actuel.</message>
+  
+  <message id='cfm-swap-back-with-foreground-btn'>premier plan↔arrière-plan</message>
+  <message id='cfm-tt-swap-back-with-foreground-btn'>Échanger les spectres de premier plan et d'arrière-plan</message>
+  <message id='cfm-swap-secondary-with-foreground-btn'>premier plan↔secondaire</message>
+  <message id='cfm-tt-swap-secondary-with-foreground-btn'>Échanger les spectres de premier plan et secondaire</message>
 </messages>

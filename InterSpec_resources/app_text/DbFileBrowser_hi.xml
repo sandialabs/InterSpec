@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- anpd is short for SnapshotBrowser -->
+  <message id="sb-resume-from-prev">ऐसा लगता है कि आपने इस स्पेक्ट्रम फ़ाइल को save-state के हिस्से के रूप में सहेजा है; क्या आप अपना पिछला कार्य फिर से शुरू करना चाहेंगे?</message>
+  <message id="sb-no-saved-states">कोई सहेजी गई एप्लिकेशन स्थितियां नहीं</message>
+  <message id="sb-tt-del-state">स्थिति हटाएं</message>
+  <message id="sb-tt-edit-state">स्थिति नाम या विवरण संपादित करें</message>
+  <message id="sb-state-HEAD-label">सहेजी गई-स्थिति</message>
+  <message id="sb-state-auto-saved-label">स्वतः-सहेजी गई</message>
+  <message id="sb-unsaved-spectra-parent-node-label">स्पेक्ट्रा खोले गए, लेकिन स्पष्ट रूप से संग्रहीत नहीं</message>
+  <message id="sb-tt-unsaved-spectra-node">वे स्पेक्ट्रा जो आपने InterSpec में खोले हैं, लेकिन स्पष्ट रूप से सहेजे नहीं हैं।</message>
+  <message id="sb-unsaved-spectrum-node">{1} (खोला गया {2})</message>
+  <message id="sb-tt-unsaved-spectrum-node">फ़ाइल नाम: {1}
+माप समय: {2}
+लोड समय: {3}
+नमूनों की संख्या: {4}
+कुल वास्तविक समय: {5}</message>
+  <message id="sb-open-spectrum-as">चयनित स्पेक्ट्रम इस रूप में खोलें:</message>
+  <message id="sb-load-spectrum-only">केवल स्पेक्ट्रम लोड करें</message>
+  <message id="sb-load-app-state">ऐप स्थिति लोड करें</message>
+  <message id="sb-err-making-browser-txt">डेटाबेस स्पेक्ट्रम फ़ाइल ब्राउज़र बनाने में अप्रत्याशित त्रुटि</message>
+  <message id="sb-err-making-browser-msg">डेटाबेस स्पेक्ट्रम फ़ाइल ब्राउज़र बनाने में त्रुटि: {1}</message>
+
+  <!-- DbSpecFileItem messages -->
+  <message id="sb-loaded-label">लोड किया गया: {1}</message>
+  <message id="sb-loaded-modified-label">लोड किया गया: {1}, संशोधित किया गया था</message>
+  <message id="sb-resume-from-btn">से फिर से शुरू करें</message>
+  <message id="sb-err-displaying-measurement">पिछला माप प्रदर्शित करने में त्रुटि, चीजें अपेक्षित नहीं हो सकती हैं</message>
+
+  <!-- SnapshotBrowser error messages -->
+  <message id="sb-no-active-db-session">कोई सक्रिय डेटाबेस सत्र नहीं</message>
+  <message id="sb-invalid-state-selected">अमान्य स्थिति चयनित</message>
+  <message id="sb-must-enter-name">आपको एक नाम दर्ज करना होगा</message>
+  <message id="sb-err-modifying-state">स्थिति संशोधित करने में त्रुटि - शायद बदला नहीं गया</message>
+  <message id="sb-couldnt-load-snapshot">क्षमा करें, अनुरोधित स्नैपशॉट लोड नहीं कर सके</message>
+  <message id="sb-no-state-selected">हटाने के लिए कोई स्थिति चयनित नहीं</message>
+  <message id="sb-snapshot-removed">स्नैपशॉट '{1}' डेटाबेस से हटाया गया।</message>
+  <message id="sb-err-removing-snapshot">डेटाबेस से स्नैपशॉट हटाने में त्रुटि।</message>
+  <message id="sb-err-loading-from-db">डेटाबेस से लोड करने में त्रुटि</message>
+  <message id="sb-failed-to-load-state">स्थिति लोड करने में विफल</message>
+  <message id="sb-already-opened">पहले से खोला गया</message>
+
+  <!-- Delete confirmation dialog -->
+  <message id="sb-confirm-delete-title">हटाना पुष्टि करें</message>
+  <message id="sb-confirm-delete-msg"><div>क्या आप वाकई हटाना चाहते हैं:</div><div style="white-space: nowrap; text-align: center; text-overflow: ellipsis; overflow: hidden; font-weight: bold; max-width:98%;">{1}</div><div>?</div></message>
+
+  <!-- Constructor error messages -->
+  <message id="sb-err-creating-browser"><b>SnapshotBrowser बनाने में त्रुटि</b> - क्षमा करें :(<br />त्रुटि: {1}</message>
+  <message id="sb-unexpected-issue"><b>SnapshotBrowser बनाने में अप्रत्याशित समस्या</b> - क्षमा करें :(</message>
+
+  <!-- Edit dialog -->
+  <message id="sb-edit-name-label">नाम</message>
+  <message id="sb-edit-name-placeholder">(नाम जिसके तहत संग्रहीत करना है)</message>
+  <message id="sb-edit-desc-label">विवरण</message>
+  <message id="sb-edit-desc-placeholder">(वैकल्पिक विवरण)</message>
+</messages>

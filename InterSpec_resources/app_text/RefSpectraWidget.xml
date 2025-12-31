@@ -2,8 +2,12 @@
 <messages>
   <!-- rs- is short for Reference Spectra -->
   <message id="rs-dialog-title">Reference Spectra</message>
-  <message id="rs-show-foreground">Show Foreground</message>
-  <message id="rs-show-background">Background</message>
+  <message id="rs-show-foreground">Compare Foreground</message>
+  <message id="rs-show-foreground-portrait">Compare</message>
+  <message id="rs-show-background">Show Background</message>
+  <message id="rs-show-background-portrait">Background</message>
+  <message id="rs-load-background">Load Background</message>
+  <message id="rs-load-background-portrait">+Background</message>
   <message id="rs-tt-add-dir-btn">Add directory to open reference spectra from.</message>
   <message id="rs-tt-delete-dir-btn">Removes the currently selected directory from the list of places to show reference spectra from.</message>
   <message id="rs-no-dir-selected-desktop">

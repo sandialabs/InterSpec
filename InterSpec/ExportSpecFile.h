@@ -203,7 +203,7 @@ protected:
   Wt::WComboBox *m_fileSelect;
   Wt::WCheckBox *m_forePlusBack;
   
-  Wt::WText *m_fileInfo;
+  Wt::WTable *m_fileInfo;
   
   Wt::WMenu *m_formatMenu;
   

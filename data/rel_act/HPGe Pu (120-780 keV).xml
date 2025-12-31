@@ -1,4 +1,7 @@
 <RelActCalcAuto version="0">
+	<Description>Performs plutonium isotopics over a broad energy range (120 to 780 keV) - if your data covers this energy range, this is a good preset to start with.
+Uses the 'Physical' model for the relative efficiency curve, meaning it takes into account the currently loaded detector efficiency (or will use a default one if not loaded), and the attenuation of the plutonium and external shielding. 
+Requires HPGe data with high statistics, and preferably strong plutonium peak structures in the ~610 keV to ~780 keV range.</Description>
 	<Options version="2">
 		<FitEnergyCal>true</FitEnergyCal>
 		<FwhmForm remark="Possible values: Gadras, Polynomial_2, Polynomial_3, Polynomial_4, Polynomial_5, Polynomial_6">Polynomial_4</FwhmForm>
@@ -14,37 +17,29 @@
 						<Nuclide>Pu239</Nuclide>
 						<Age>29.5480000000 y</Age>
 						<FitAge>true</FitAge>
-						<FitAgeMin>1.00 y</FitAgeMin>
-						<FitAgeMax>90.00 y</FitAgeMax>
 						<PeakColorCss>#FF4500</PeakColorCss>
 					</NucInputInfo>
 					<NucInputInfo version="0">
 						<Nuclide>Pu240</Nuclide>
 						<Age>29.5480000000 y</Age>
 						<FitAge>true</FitAge>
-						<FitAgeMin>1.00 y</FitAgeMin>
-						<FitAgeMax>90.00 y</FitAgeMax>
 						<PeakColorCss>#228B22</PeakColorCss>
 					</NucInputInfo>
 					<NucInputInfo version="0">
 						<Nuclide>Pu241</Nuclide>
 						<Age>29.5480000000 y</Age>
 						<FitAge>true</FitAge>
-						<FitAgeMin>1.00 y</FitAgeMin>
-						<FitAgeMax>90.00 y</FitAgeMax>
 						<PeakColorCss>#CCCC00</PeakColorCss>
 					</NucInputInfo>
 					<NucInputInfo version="0">
 						<Nuclide>Pu238</Nuclide>
 						<Age>29.5480000000 y</Age>
 						<FitAge>true</FitAge>
-						<FitAgeMin>1.00 y</FitAgeMin>
-						<FitAgeMax>90.00 y</FitAgeMax>
 						<PeakColorCss>#0000FF</PeakColorCss>
 					</NucInputInfo>
 					<NucInputInfo version="0">
 						<Nuclide>Cs137</Nuclide>
-						<Age>75.2015752345 y</Age>
+						<Age>15 y</Age>
 						<FitAge>false</FitAge>
 						<PeakColorCss>#808000</PeakColorCss>
 					</NucInputInfo>

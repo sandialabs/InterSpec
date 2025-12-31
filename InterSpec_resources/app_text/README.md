@@ -1,7 +1,7 @@
 The text throughout InterSpec is loaded at runtime from the XML files in [InterSpec_resources/app_text](https://github.com/sandialabs/InterSpec/tree/master/InterSpec_resources/app_text).  These files are named according to the C++ file they contain the text for.  
 
 That is `InterSpec.xml` and the `InterSpec_xx-YY.xml` files contain the strings that [src/InterSpec.cpp](https://github.com/sandialabs/InterSpec/blob/master/src/InterSpec.cpp) use.  The `InterSpec.xml` file contains the default (English) language strings, while `InterSpec_fr.xml` contain the French strings, `InterSpec_de.xml` the german, `InterSpec_en-GB.xml` the British English strings, and so on. 
- The country codes scheme used to augment the file name are given in https://datatracker.ietf.org/doc/html/rfc5646#appendix-A, with some more examples being "en", "en-US", "fr", "fr-FR", "es-ES", "ja" Japanese, "zh-Hant" Chinese written using the Traditional Chinese script, etc.
+ The country codes scheme used to augment the file name are given in https://datatracker.ietf.org/doc/html/rfc5646#appendix-A, with some more examples being "en", "en-US", "fr", "fr-FR", "es-ES", "ja" Japanese, "zh-Hant" Chinese written using the Traditional Chinese script, "ru" Russian, etc.
 
 
 In these XML files, there are entries that look like:

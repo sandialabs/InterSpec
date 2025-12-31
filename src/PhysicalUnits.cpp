@@ -370,6 +370,52 @@ std::string printToBestActivityUnits( double activity,
   return buffer;
 }//std::string printToBestActivityUnits(...)
 
+  
+std::string printToBestActivityUnitsWithUncert( double activity,
+                                                 double uncert,
+                                                 int maxNpostDecimal,
+                                                 bool useCuries,
+                                                 double bq_definition )
+{
+  using namespace std;
+  activity *= becquerel / bq_definition;
+
+  char formatflag[32], buffer[128];
+  const char *unitstr = useCuries ? "Ci" : "Bq";
+  
+  snprintf(formatflag, sizeof(formatflag), "%%.%if ± %%.%if %%s%s", maxNpostDecimal, maxNpostDecimal, unitstr );
+  
+  
+  if( useCuries )
+    activity /= curie;
+  else
+    activity /= becquerel;
+  
+  if( activity == 0 && uncert == 0 )
+    snprintf(buffer, sizeof(buffer), "0 ± 0 %s", unitstr );
+  else if( activity < 1.0E-12 )
+    snprintf(buffer, sizeof(buffer), formatflag, (activity*1.0E15), (uncert*1.0E15), "f" );
+  else if( activity < 1.0E-9 )
+    snprintf(buffer, sizeof(buffer), formatflag, (activity*1.0E12), (uncert*1.0E12), "p" );
+  else if( activity < 1.0E-6 )
+    snprintf(buffer, sizeof(buffer), formatflag, (activity*1.0E9), (uncert*1.0E9), "n" );
+  else if( activity < 1.0E-3 )
+    snprintf(buffer, sizeof(buffer), formatflag, (activity*1.0E6), (uncert*1.0E6), "u" );
+  else if( activity < 1.0 )
+    snprintf(buffer, sizeof(buffer), formatflag, (activity*1.0E3), (uncert*1.0E3), "m" );
+  else if( activity < 1.0E3 )
+    snprintf(buffer, sizeof(buffer), formatflag, activity, "" );
+  else if( activity < 1.0E6 )
+    snprintf(buffer, sizeof(buffer), formatflag, (activity*1.0E-3), (uncert*1.0E-3), "k" );
+  else if( activity < 1.0E9 )
+    snprintf(buffer, sizeof(buffer), formatflag, (activity*1.0E-6), (uncert*1.0E-6), "M" );
+  else if( activity < 1.0E12 )
+    snprintf(buffer, sizeof(buffer), formatflag, (activity*1.0E-9), (uncert*1.0E-9), "G" );
+  else
+    snprintf(buffer, sizeof(buffer), formatflag, (activity*1.0E-12), (uncert*1.0E-12), "T" );
+  
+  return buffer;
+}//std::string printToBestActivityUnitsWithUncert(...)
 
 std::string printToBestTimeUnits( double time,
                                   int maxDecimal,

@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- rpd- is short for ReferencePhotopeakDisplay -->
+  <message id="rpd-add-another-btn">追加</message>
+  <message id="rpd-add-another-btn-narrow">追加</message>
+  <message id="rpd-tt-add-another-btn">現在表示されている線を保持し、表示する新しい核種/線源を追加。</message>
+  <message id="rpd-tt-nuc-edit">例: <b>U235</b>, <b>235 Uranium</b>, <b>U</b> (X線のみ), <b>Uranium</b> (X線), <b>U-235m</b> (準安定状態), <b>Cs137</b>, <b>background</b>, <b>H(n,g)</b> など。</message>
+  <message id="rpd-tt-age">
+    <div>
+      年数は時間単位の組み合わせで指定でき、'<b>5.3y 8d 22m</b>'のように、または半減期で
+      '<b>2.5 HL</b>'のように指定できます。
+    </div>
+    <div>
+      使用可能な時間単位: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>,
+      <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>、または
+      <b>hh:mm:ss</b>で時間期間を指定できます。半減期単位は
+      <b>hl</b>, <b>halflife</b>, <b>halflives</b>, <b>half-life</b>, <b>half-lives</b>,
+      <b>half lives</b>, または<b>half life</b>を使用して指定できます。
+    </div>
+    <div>
+      半減期単位または時間期間は他の単位と混在できません。複数の時間期間が
+      指定された場合、それらは合計されます。例：'1y6months 3m'は18ヶ月と3分として解釈されます。
+    </div>
+  </message>
+  <message id="rpd-tt-clear">すべての永続化された線と現在の非永続化線をクリア。</message>
+  <message id="rpd-more-info">詳細情報</message>
+  <message id="rpd-shield-mat">遮蔽材料</message>
+  <message id="rpd-options">オプション</message>
+  <message id="rpd-opt-prompt">プロンプトのみ</message>
+  <message id="rpd-opt-tt-prompt">
+    元の核種からのガンマのみ、および子孫のうち一つが
+    元の核種より長い半減期を持つまでの子孫；
+    崩壊チェーンはその点まで平衡状態。
+  </message>
+  <message id="rpd-opt-gamma">ガンマ表示</message>
+  <message id="rpd-opt-xray">X線表示</message>
+  <message id="rpd-opt-alphas">アルファ表示</message>
+  <message id="rpd-opt-betas">ベータ表示</message>
+  <message id="rpd-opt-cascade">カスケード和</message>
+  <message id="rpd-opt-escapes">エスケープピーク</message>
+  <message id="rpd-prev-nucs">前の核種</message>
+  <message id="rpd-det-nucs">検出器RID核種</message>
+  <message id="rpd-assoc-nucs">関連核種</message>
+  <message id="rpd-suggestions">提案</message>
+  <message id="rpd-feature-markers">特徴マーカー</message>
+
+  <!-- Reference line thickness options -->
+  <message id="rpd-line-thick-light">細線</message>
+  <message id="rpd-line-thick-normal">標準太さ</message>
+  <message id="rpd-line-thick-thick">太線</message>
+  <message id="rpd-line-thick-thicker">より太い線</message>
+  
+  <!-- Reference lines visual verbosity options. -->
+  <message id="rpd-line-verb-none">最小線</message>
+  <message id="rpd-line-verb-hover">ガイド参照線</message>
+  <message id="rpd-line-verb-major">完全主要線</message>
+  
+  <message id="rpd-csv-export-msg">'核種崩壊情報'ツールは、核種、崩壊生成物、崩壊情報をCSVファイルにエクスポートする追加機能を提供します。</message>
+  <message id="rpd-changed-age">{1}の年数を'{2}'から'{3}'のより合理的な値に変更</message>
+  <message id="rpd-changed-age-fission">有効にするため年数を{1}に変更。</message>
+  <message id="rpd-det-id">検出器ID</message>
+  <message id="rpd-ext-rid">外部RID</message>
+  <message id="rpd-prev">前の</message>
+  <message id="rpd-warn-cascade-xrays">X線はカスケードに含まれません</message>
+
+  <!-- Values in the table on this tool -->
+  <message id="rpd-tbl-iso">同位体</message>  <!-- a.k.a meta-stable state of nuclide -->
+  <message id="rpd-tbl-el-cap">電子捕獲</message> <!-- a.k.a electron capture -->
+  <message id="rpd-tbl-proton">陽子</message>
+  <message id="rpd-tbl-spont-fis">自発核分裂</message> <!-- Spontaneous Fission-->
+  <message id="rpd-tbl-xray">X線</message>
+  <message id="rpd-tbl-reaction">反応</message>
+  <message id="rpd-tbl-norm">NORM</message>
+  <message id="rpd-tbl-cascade-sum">カスケード和</message>
+
+  <message id="rpd-tbl-hdr-energy">エネルギー (keV)</message>
+  <message id="rpd-tbl-hdr-br">分岐比</message> <!-- branching ratio -->
+  <message id="rpd-tbl-hdr-parent">親</message>
+  <message id="rpd-tbl-hdr-mode">モード</message>
+  <message id="rpd-tbl-hdr-particle">粒子</message>
+  <message id="rpd-tbl-hdr-tt-energy">生成された粒子のエネルギー</message>
+  <message id="rpd-tbl-hdr-tt-br">親核種のBqあたりの毎秒粒子数。</message>
+  <message id="rpd-tbl-hdr-tt-trans">この粒子を生じるために崩壊した実際の核種。</message>
+  <message id="rpd-tbl-hdr-tt-trans-mode">この粒子を生成した親核種の崩壊モード。</message>
+  <message id="rpd-tbl-hdr-tt-type">生成された粒子のタイプ</message>
+  <message id="rpd-tbl-hdr-tt-"></message>
+
+
+</messages>

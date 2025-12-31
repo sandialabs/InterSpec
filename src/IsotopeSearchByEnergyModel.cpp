@@ -830,6 +830,13 @@ void IsotopeSearchByEnergyModel::nuclidesWithAllEnergies(
         }//for( IsotopeMatch &match : nmagicucmatches )
       }//if( !nucmatches[0].m_nuclide )
       
+      if( !nucmatches[0].m_nuclide )
+      {
+        // Skip this result if we still don't have a nuclide
+        // (e.g., all matches are x-rays with no associated nuclide)
+        continue;
+      }
+      
       nucmatches[0].m_distance = dist;
       
       const double gcm2 = PhysicalUnits::g / PhysicalUnits::cm2;

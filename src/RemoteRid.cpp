@@ -298,6 +298,8 @@ class RestRidInputResource : public Wt::WResource
 {
   Wt::WFlags<RemoteRid::AnaFileOptions> m_flags;
   std::string m_drf;
+  std::mutex m_drf_flags_mutex;
+
   Wt::WApplication *m_app; //it looks like WApplication::instance() will be valid in handleRequest, but JIC
   InterSpec *m_interspec;
   
@@ -2099,6 +2101,7 @@ RestRidInputResource::RestRidInputResource( InterSpec *interspec, WObject* paren
 : WResource( parent ),
 m_flags( 0 ),
 m_drf( "auto" ),
+m_drf_flags_mutex{},
 m_app( WApplication::instance() ),
 m_interspec( interspec )
 {
@@ -2113,40 +2116,66 @@ RestRidInputResource::~RestRidInputResource()
 
 void RestRidInputResource::setAnaFlags( Wt::WFlags<RemoteRid::AnaFileOptions> flags )
 {
+  std::lock_guard<std::mutex> lock( m_drf_flags_mutex );
   m_flags = flags;
 }//void setAnaFlags( Wt::WFlags<RemoteRid::AnaFileOptions> flags )
 
 
 void RestRidInputResource::setDrf( const std::string &drf )
 {
+  std::lock_guard<std::mutex> lock( m_drf_flags_mutex );
   m_drf = drf;
 }
 
 void RestRidInputResource::handleRequest( const Wt::Http::Request &request,
                                          Wt::Http::Response &response )
 {
-  WApplication::UpdateLock lock( m_app );
-  
-  if( !lock )
+
+  std::string ana_drf;
+  Wt::WFlags<RemoteRid::AnaFileOptions> ana_flags;
+
+  {// Begin lock on m_drf_flags_mutex
+    std::lock_guard<std::mutex> lock( m_drf_flags_mutex );
+    ana_drf = m_drf;
+    ana_flags = m_flags;
+  }// End lock on m_drf_flags_mutex
+
+  shared_ptr<const SpecUtils::SpecFile> spec_file;
+
+  {// Begin WApplication::UpdateLock
+    WApplication::UpdateLock lock( m_app );
+
+
+    if( !lock )
+    {
+      log("error") << "Failed to WApplication::UpdateLock in RestRidInputResource.";
+
+      response.out() << "Error grabbing application lock to form RestRidInputResource resource; please report to InterSpec@sandia.gov.";
+      response.setStatus(500);
+      assert( 0 );
+
+      return;
+    }//if( !lock )
+
+    spec_file = RemoteRid::fileForAnalysis(m_interspec, ana_flags);
+    assert( spec_file );
+  }// End WApplication::UpdateLock
+
+  if( !spec_file )
   {
-    log("error") << "Failed to WApplication::UpdateLock in RestRidInputResource.";
-    
-    response.out() << "Error grabbing application lock to form RestRidInputResource resource; please report to InterSpec@sandia.gov.";
+    response.out() << "Error creating spectrum file to send.";
     response.setStatus(500);
-    assert( 0 );
-    
     return;
-  }//if( !lock )
-  
+  }//if( !spec_file )
+
   // Generate some JSON then
-  shared_ptr<SpecUtils::SpecFile> spec_file = RemoteRid::fileForAnalysis(m_interspec, m_flags);
-  assert( spec_file );
-  
-  string options = "{\"drf\": \"" + m_drf + "\"";
+
+  Wt::Json::Object json;
+  json["drf"] = WString::fromUTF8(ana_drf);
   if( spec_file && (spec_file->num_measurements() < 2) )
-    options += ", \"synthesizeBackground\": true";
-  options += "}";
-  
+    json["synthesizeBackground"] = true;
+
+  const string options = Wt::Json::serialize(json);
   const string boundary = "InterSpec_MultipartBoundary_InterSpec";
   
   string n42_content;
@@ -2261,13 +2290,13 @@ SimpleDialog *RemoteRid::startRemoteRidDialog( InterSpec *viewer,
   cb->addStyleClass( "NoShowAgain" );
   cb->setInline( false );
   
-  Wt::WPushButton *btn = dialog->addButton( "Cancel" );
+  Wt::WPushButton *btn = dialog->addButton( WString::tr("Cancel") );
   btn->clicked().connect( std::bind([callback](){
     if( callback )
       callback( nullptr, nullptr );
   }) );
   
-  btn = dialog->addButton( "Continue" );
+  btn = dialog->addButton( WString::tr("Continue") );
   btn->clicked().connect( std::bind([viewer,callback,cb](){
     if( cb->isChecked() )
       UserPreferences::setPreferenceValue("ExternalRidWarn", false, viewer );
@@ -2284,7 +2313,7 @@ SimpleDialog *RemoteRid::startRemoteRidDialog( InterSpec *viewer,
 pair<AuxWindow *, RemoteRid *> RemoteRid::createDialog( InterSpec *viewer )
 {
   AuxWindow *window = new AuxWindow( WString::tr("window-title-external-rid"),
-                                    (Wt::WFlags<AuxWindowProperties> (AuxWindowProperties::DisableCollapse)
+                                    (AuxWindowProperties::DisableCollapse
                                      | AuxWindowProperties::SetCloseable
                                      | AuxWindowProperties::TabletNotFullScreen)
                                     );

@@ -795,7 +795,7 @@ namespace FluxToolImp
 
 FluxToolWindow::FluxToolWindow( InterSpec *viewer )
 : AuxWindow( WString::tr("window-title-flux-tool"),
-  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+  (AuxWindowProperties::TabletNotFullScreen
    | AuxWindowProperties::SetCloseable
    | AuxWindowProperties::DisableCollapse) ),
   m_fluxTool( nullptr )

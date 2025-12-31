@@ -49,6 +49,7 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/ShowRiidInstrumentsAna.h"
+#include "InterSpec/ShieldingSourceFitPlot.h"
 
 using namespace std;
 
@@ -95,10 +96,8 @@ namespace BatchInfoLog
   }//std::string template_include_dir( const BatchPeak::BatchPeakFitOptions &options )
   
   
-  inja::Environment get_default_inja_env( const BatchPeak::BatchPeakFitOptions &options )
+  inja::Environment get_default_inja_env( const string &tmplt_dir )
   {
-    const string tmplt_dir = BatchInfoLog::template_include_dir( options );
-    
     if( !tmplt_dir.empty() && !SpecUtils::is_directory(tmplt_dir) )
       throw runtime_error( string("Template include directory, '") + tmplt_dir
                           + "', doesnt look to be a valid directory - not performing analysis." );
@@ -185,7 +184,7 @@ namespace BatchInfoLog
     }
     
     return env;
-  }//inja::Environment get_default_inja_env( const BatchPeak::BatchPeakFitOptions &options )
+  }//inja::Environment get_default_inja_env( const string &tmplt_dir )
   
   
   vector<pair<string,string>> load_spectrum_chart_js_and_css()
@@ -218,7 +217,34 @@ namespace BatchInfoLog
     
     return answer;
   }//load_spectrum_chart_js_and_css()
-  
+
+
+  vector<pair<string,string>> load_shielding_fit_plot_js_and_css()
+  {
+    vector<pair<string,string>> answer;
+
+#if( SpecUtils_ENABLE_D3_CHART )
+    //InterSpec::setStaticDataDirectory( SpecUtils::append_path(datadir,"data") );
+    assert( !InterSpec::staticDataDirectory().empty() );
+    const string static_data_dir = InterSpec::staticDataDirectory().empty() ? string("./data")
+    : InterSpec::staticDataDirectory();
+    //Also see: `WServer::instance()->appRoot()`, which isnt valid right now
+    const string app_root = SpecUtils::append_path( static_data_dir, ".." );
+    const string docroot  = SpecUtils::append_path( app_root, "InterSpec_resources" );
+
+    string d3_js = AppUtils::file_contents( SpecUtils::append_path( docroot, "d3.v3.min.js") );
+
+    string plot_js  = AppUtils::file_contents( SpecUtils::append_path( docroot, "ShieldingSourceFitPlot.js" ) );
+    string plot_css = AppUtils::file_contents( SpecUtils::append_path( docroot, "ShieldingSourceFitPlot.css" ) );
+
+    answer.emplace_back( "D3_JS", std::move(d3_js) );
+    answer.emplace_back( "ShieldingSourceFitPlot_JS", std::move(plot_js) );
+    answer.emplace_back( "ShieldingSourceFitPlot_CSS", std::move(plot_css) );
+#endif // SpecUtils_ENABLE_D3_CHART
+
+    return answer;
+  }//load_shielding_fit_plot_js_and_css()
+
   string render_template( string tmplt, 
                          inja::Environment &env,
                          const TemplateRenderType type,
@@ -458,7 +484,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
                           nlohmann::basic_json<> &src_json )
 {
   const DetectorPeakResponse::EffGeometryType eff_type = drf ? drf->geometryType()
-                                              : DetectorPeakResponse::EffGeometryType::FarField;
+                                              : DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
   
   const string act_postfix = DetectorPeakResponse::det_eff_geom_type_postfix(eff_type);
   
@@ -645,8 +671,10 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
       string gem_desc;
       switch( drf->geometryType() )
       {
-        case DetectorPeakResponse::EffGeometryType::FarField:
-          assert( drf->geometryType() != DetectorPeakResponse::EffGeometryType::FarField );
+        case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
+        case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
+          assert( (drf->geometryType() != DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic)
+                 && (drf->geometryType() != DetectorPeakResponse::EffGeometryType::FarFieldAbsolute) );
           break;
           
         case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
@@ -789,7 +817,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
                                       nlohmann::json &data )
   {
     const DetectorPeakResponse::EffGeometryType eff_type = drf ? drf->geometryType()
-                                                : DetectorPeakResponse::EffGeometryType::FarField;
+                                                : DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
     
     const string act_postfix = DetectorPeakResponse::det_eff_geom_type_postfix(eff_type);
     
@@ -1213,12 +1241,12 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     {
       // This info is already in the Peaks info, but we'll put in anyways
       auto &energy_obj = data["PeakToModelComparison"];
-      
+
       for( const GammaInteractionCalc::PeakResultPlotInfo &p : *results.peak_comparisons )
       {
         energy_obj["UsedPeaks"].push_back( {} );
         nlohmann::basic_json<> &p_json = energy_obj["UsedPeaks"].back();
-        
+
         char buffer[64] = { '\0' };
         snprintf( buffer, sizeof(buffer), "%.2f", p.energy );
         p_json["Energy"] = string(buffer);
@@ -1227,7 +1255,18 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
         p_json["ObservedOverExpectedUncert"] = SpecUtils::printCompact( p.observedOverExpectedUncert, 6 );
       }
     }//if( results.peak_comparisons )
-    
+
+    // Add ShieldingSourceFitPlot chart data
+    const string plot_json_str = ShieldingSourceFitPlot::jsonForData( results );
+    try
+    {
+      data["ShieldingSourceFitPlotData"] = nlohmann::json::parse( plot_json_str );
+    }catch( std::exception &e )
+    {
+      cerr << "Error parsing ShieldingSourceFitPlot JSON: " << e.what() << endl;
+      data["ShieldingSourceFitPlotData"] = nlohmann::json::object();
+    }
+
   }//void shield_src_fit_results_to_json()
   
   
@@ -1255,7 +1294,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     {
       const deque<std::shared_ptr<const PeakDef>> &fore_peaks = *peak_fit;
       const vector<shared_ptr<const PeakDef> > inpeaks( begin(fore_peaks), end(fore_peaks) );
-      spec_json_options.peaks_json = PeakDef::peak_json( inpeaks, spec_ptr );
+      spec_json_options.peaks_json = PeakDef::peak_json( inpeaks, spec_ptr, Wt::WColor(), 255 );
     }//if( fit_results.m_peak_fit_results )
     
     //spec_json_options.line_color = "rgb(0,0,0)"; //black
@@ -1922,6 +1961,10 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
           json_copy["SpectrumChart_JS"] = "/* Removed for brevity - this string will have a value of the contents of the file InterSpec_resource/SpectrumChartD3.js during analysis in InterSpec_batch.  */";
         if( json_copy.count("SpectrumChart_CSS") )
           json_copy["SpectrumChart_CSS"] = "/* Removed for brevity - this string will have a value of the contents of the file InterSpec_resource/SpectrumChartD3.css during analysis in InterSpec_batch. */";
+        if( json_copy.count("ShieldingSourceFitPlot_JS") )
+          json_copy["ShieldingSourceFitPlot_JS"] = "/* Removed for brevity - this string will have a value of the contents of the file InterSpec_resource/ShieldingSourceFitPlot.js during analysis in InterSpec_batch. */";
+        if( json_copy.count("ShieldingSourceFitPlot_CSS") )
+          json_copy["ShieldingSourceFitPlot_CSS"] = "/* Removed for brevity - this string will have a value of the contents of the file InterSpec_resource/ShieldingSourceFitPlot.css during analysis in InterSpec_batch. */";
   #endif // SpecUtils_ENABLE_D3_CHART
         
         output_json << std::setw(4) << json_copy << std::endl;

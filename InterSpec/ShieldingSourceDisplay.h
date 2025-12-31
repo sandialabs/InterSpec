@@ -26,24 +26,24 @@
 #include "InterSpec_config.h"
 
 #include <map>
-#include <tuple>
 #include <mutex>
 #include <utility>
+#include <string>
+#include <vector>
+#include <optional>
 
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
+#include <tuple>
+
 #include <boost/optional.hpp>
 #endif
 
-#include <Wt/WRectF>
-#include <Wt/WColor>
-#include <Wt/WPainter>
 #include <Wt/WModelIndex>
-#include <Wt/WGridLayout>
 #include <Wt/WContainerWidget>
 #include <Wt/WAbstractItemModel>
-#include <Wt/Chart/WCartesianChart>
 
-#include "InterSpec/DetectorPeakResponse.h" //DetectorPeakResponse::EffGeometryType
+#include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/ShieldingSourceFitPlot.h"
 #include "InterSpec/ShieldingSourceFitCalc.h"
 
 //Forward declarations
@@ -51,6 +51,8 @@ class PeakDef;
 struct Material;
 class PeakModel;
 class AuxWindow;
+class InjaLogDialog;
+class ShieldingDiagramDialog;
 class MaterialDB;
 class ColorTheme;
 class PopupDivMenu;
@@ -87,8 +89,6 @@ namespace Wt
 {
   class WText;
   class WLabel;
-  class WAnchor;
-  class WSvgImage;
   class WCheckBox;
   class WLineEdit;
   class WTreeView;
@@ -97,11 +97,6 @@ namespace Wt
   class WFileUpload;
   class WSelectionBox;
   class WSuggestionPopup;
-  class WStandardItemModel;
-//  namespace Chart
-//  {
-//    class WCartesianChart;
-//  }//namespace Chart
 }//namespace Wt
 
 
@@ -112,6 +107,7 @@ namespace GammaInteractionCalc
   class ShieldingSourceChi2Fcn;
   struct SourceFitDef;
   struct PeakDetail;
+  struct ShieldSourceConfig;
 }//namespace GammaInteractionCalc
 
 class InterSpec;
@@ -185,7 +181,7 @@ public:
    */
   bool fitActivity( int nuc ) const;
   
-  //age(): returns IsoFitStruct::age, which is marked age for this nuclide,
+  //age(): returns SourceFitDef::age, which is marked age for this nuclide,
   //  which if there is a defining age nuclide set for this nuclide, you should
   //  get the age for that nuclide. See ageDefiningNuclide(...) for this case.
   double age( int nuc ) const;
@@ -198,7 +194,7 @@ public:
   boost::optional<double> truthAgeTolerance( int nuc ) const;
 #endif
   
-  //fitAge(): returns IsoFitStruct::fitAge, which is if it is marked to fit age
+  //fitAge(): returns SourceFitDef::fitAge, which is if it is marked to fit age
   //  for this nuclide, not if you should fit for the age of this nuclide since
   //  it may have another defining age nuclide that controlls the age, see
   //  ageDefiningNuclide(...) for this case
@@ -227,6 +223,8 @@ public:
   //  passed in nuclide.  If the passed in nuclide does not have another nuclide
   //  that controls its age, it returns the same nuclide that was passed in.
   const SandiaDecay::Nuclide *ageDefiningNuclide( const SandiaDecay::Nuclide *dependantNuc ) const;
+  size_t numProgenyPeaks( const SandiaDecay::Nuclide *nuclide ) const;
+  bool ageIsFittable( const ShieldingSourceFitCalc::SourceFitDef &iso ) const;
   
   
   /** Sets the source type for a nuclide.
@@ -288,17 +286,17 @@ public:
   virtual void sort( int column, Wt::SortOrder order = Wt::AscendingOrder );
 
 
-  //compare(...): function to compare IsoFitStruct according to relevant Column;
+  //compare(...): function to compare SourceFitDef according to relevant Column;
   //  functions similar to operator<
-  static bool compare( const ShieldingSourceFitCalc::IsoFitStruct &lhs,
-                      const ShieldingSourceFitCalc::IsoFitStruct &rhs,
+  static bool compare( const ShieldingSourceFitCalc::SourceFitDef &lhs,
+                      const ShieldingSourceFitCalc::SourceFitDef &rhs,
                        Columns sortColumn, Wt::SortOrder order );
 
   void displayUnitsChanged( bool displayBq );
   
-  const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &underlyingData() const;
+  const std::vector<ShieldingSourceFitCalc::SourceFitDef> &underlyingData() const;
   
-  void setUnderlyingData( const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &data );
+  void setUnderlyingData( const std::vector<ShieldingSourceFitCalc::SourceFitDef> &data );
   
   /** Set the DetectorPeakResponse::EffGeometryType, so correct label for activity can be shown.
    */
@@ -310,14 +308,14 @@ protected:
   Columns m_sortColumn;
   bool m_displayCuries;
   PeakModel *m_peakModel;
-  std::vector<ShieldingSourceFitCalc::IsoFitStruct> m_nuclides;
+  std::vector<ShieldingSourceFitCalc::SourceFitDef> m_nuclides;
   bool m_sameAgeForIsotopes;
   DetectorPeakResponse::EffGeometryType m_det_type;
   
   //m_previousResults: when a isotope gets removed from this model, we'll cache
   //  its current value, since it will often times get added again and be
   //  intended to be the same value
-  std::map<const SandiaDecay::Nuclide *, ShieldingSourceFitCalc::IsoFitStruct> m_previousResults;
+  std::map<const SandiaDecay::Nuclide *, ShieldingSourceFitCalc::SourceFitDef> m_previousResults;
   
   friend class ShieldingSourceDisplay;
 };//class SourceFitModel
@@ -355,9 +353,6 @@ public:
   
   /** Returns <num values specified, num fit values, is valid> */
   std::tuple<int,int,bool> numTruthValuesForFitValues();
-  
-  /** Renders the Chi2Chart to a SVG image */
-  void renderChi2Chart( Wt::WSvgImage &image );
 
   /** Tests the current values, for all quantities being fit for, against truth-level values.
    
@@ -489,11 +484,18 @@ public:
   void handleShieldingChange();
   
   void handleDetectorChanged( std::shared_ptr<DetectorPeakResponse> new_det );
-  
+
   void updateChi2Chart();
+
+  /** Callback for when the user toggles between Chi and Mult display modes in the chart */
+  void handleChi2ChartDisplayModeChanged( bool showChi );
   
   void showCalcLog();
   void closeCalcLogWindow();
+
+  void showShieldSourceDiagram();
+  void closeShieldSourceDiagram();
+  void handleShieldSourceDiagramClosed();
   
   /** Returns the inner ShieldingSelect of the one passed in; e.g., returns the ShieldingSelect that is contained by the one passed in.
    
@@ -504,25 +506,84 @@ public:
   const ShieldingSelect *innerShielding( const ShieldingSelect * const select ) const;
   
   
-  //testSerialization(): simply tries to round-trip this ShieldingSourceDisplay
-  //  to and then back from XML.  Does not actually check it was correctly done
-  //  but does print the XML to cerr, and will trigger exceptions being thrown
-  //  if XML isnt as expected; intended to be used for development.
-  void testSerialization();
+  struct ShieldingSourceDisplayState
+  {
+    struct Peak
+    {
+      bool use;
+      std::string nuclideSymbol;
+      double energy;
+
+      bool operator==( const Peak &rhs ) const;
+    };
+    
+    struct Chi2EvalPoint
+    {
+      double energy;
+      double chi;
+      double scale;
+      std::string colorCss;
+      double scaleUncert;
+
+      bool operator==( const Chi2EvalPoint &rhs ) const;
+    };
+    
+    struct Chi2Elements
+    {
+      double chi2;
+      unsigned int numParametersFit;
+      std::vector<Chi2EvalPoint> evalPoints;
+
+      bool operator==( const Chi2Elements &rhs ) const;
+    };
+    
+    int versionMajor;
+    int versionMinor;
+    bool showChiOnChart;
+    std::shared_ptr<const GammaInteractionCalc::ShieldSourceConfig> config;
+    std::vector<Peak> peaks;
+    std::optional<Chi2Elements> chi2Elements;
+    
+    ShieldingSourceDisplayState();
+    ::rapidxml::xml_node<char> *serialize( ::rapidxml::xml_node<char> *parent_node ) const;
+    void deSerialize( const ::rapidxml::xml_node<char> *base_node, MaterialDB *materialDb );
+
+    bool operator==( const ShieldingSourceDisplayState &rhs ) const;
+  };
   
   //serialize(): creates (and returns) a node "ShieldingSourceFit" under
   //  'parent' which contains the XML for this object.
   ::rapidxml::xml_node<char> *serialize( ::rapidxml::xml_node<char> *parent );
   
+  //serialize(): returns the ShieldingSourceDisplayState object directly
+  ShieldingSourceDisplayState serialize();
+  
+  /** Options for deserializing from state. */
+  enum DeserializeOptions
+  {
+    /** The `ShieldingSourceDisplayState` has a list of peaks that was used when the state was created, however, if you are working on
+     a different spectrum than the state was created with, your peaks may not be marked the same, so specifying this option will cause the
+     `deSerializePeaksToUse(...)` function to be called during deserialization, which will try to set the peaks to be the same as the
+     `ShieldingSourceDisplayState` specifies.
+     
+     Note InterSpec v1.0.13 and before always used this option - now it is only used when loading state that is loaded via a XML file or the DB.
+     */
+    UpdatePeaksUseForFittingFromState
+  };//enum DeserializeOptions
+  
   //deSerialize(): takes in a "ShieldingSourceFit" node and sets the state of
   //  this object to match the XML.
   //Throws when it runs into an unexpected situation, or invalid parent_node
-  void deSerialize( const ::rapidxml::xml_node<char> *parent_node );
+  void deSerialize( const ::rapidxml::xml_node<char> *parent_node, const Wt::WFlags<DeserializeOptions> &flags );
+  
+  //deSerialize(): takes in a ShieldingSourceDisplayState object and sets the state of
+  //  this object to match it.
+  void deSerialize( const ShieldingSourceDisplayState &state, const Wt::WFlags<DeserializeOptions> &flags );
   
   //some helper functions for deserialization:
-  void deSerializePeaksToUse( const ::rapidxml::xml_node<char> *peaks );
-  void deSerializeSourcesToFitFor( const ::rapidxml::xml_node<char> *sources );
-  void deSerializeShieldings( const ::rapidxml::xml_node<char> *shiledings );
+  void deSerializePeaksToUse( const std::vector<ShieldingSourceDisplayState::Peak> &peaks );
+  void deSerializeSourcesToFitFor( const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources );
+  void deSerializeShieldings( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings );
   
   void startModelUpload();
   void modelUploadError( const ::int64_t size_tried );
@@ -575,7 +636,7 @@ public:
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
   
   //reset(): removes all shielding and sources; removes all peaks from fit
-  void reset();
+  void reset( const bool set_use_peaks_false );
 
   //newForegroundSet(): call this function to reset the 'm_modifiedThisForeground'
   //  variable, so we can kinda track if the current state of this model should
@@ -690,8 +751,7 @@ protected:
   Wt::WText *m_fixedGeometryTxt;
   
   Wt::WText *m_showChi2Text;
-  Wt::WStandardItemModel *m_chi2Model;
-  Chi2Graphic *m_chi2Graphic;
+  ShieldingSourceFitPlot *m_chi2Plot;
   
 
   Wt::WCheckBox  *m_multiIsoPerPeak;
@@ -707,10 +767,12 @@ protected:
   bool m_multithread_computation;
   
   PopupDivMenuItem *m_showLog;
-  
-  AuxWindow *m_logDiv;
+
+  InjaLogDialog *m_logDiv;
+  ShieldingDiagramDialog *m_diagramDialog;
   std::vector<std::string> m_calcLog;
   std::unique_ptr<const std::vector<GammaInteractionCalc::PeakDetail>> m_peakCalcLogInfo;
+  std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> m_lastFitResults;
   
   AuxWindow *m_modelUploadWindow;
 #if( USE_DB_TO_STORE_SPECTRA )
@@ -730,30 +792,6 @@ protected:
   std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> m_currentFitFcn;
   
   //A class to draw the chi2 distribution of the fit to activity/shielding.
-  //  We have to overide the Paint(...) method to draw some text on chart
-  //  indicating the chi2
-  class Chi2Graphic : public Wt::Chart::WCartesianChart
-  {
-  public:
-    Chi2Graphic( Wt::WContainerWidget *parent = 0 );
-    virtual ~Chi2Graphic();
-    virtual void paint( Wt::WPainter &painter,
-                        const Wt::WRectF &rectangle = Wt::WRectF() ) const;
-    virtual void paintEvent( Wt::WPaintDevice *paintDevice );
-    void setNumFitForParams( unsigned int npar );
-    
-    void setShowChiOnChart( const bool show_chi );
-    void setTextPenColor( const Wt::WColor &color );
-    void setColorsFromTheme( std::shared_ptr<const ColorTheme> theme );
-  protected:
-    void calcAndSetAxisRanges();
-    void calcAndSetAxisPadding( double yHeightPx );
-    
-    int m_nFitForPar;
-    bool m_showChi;
-    Wt::WColor m_textPenColor;
-  };//class WCartesianChart
-
   static const int sm_xmlSerializationMajorVersion;
   static const int sm_xmlSerializationMinorVersion;
   

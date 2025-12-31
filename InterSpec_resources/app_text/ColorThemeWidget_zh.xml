@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ctwidget- is short for ColorThemeWidget -->
+  
+  <!-- Basic fields -->
+  <message id="ctwidget-theme-name">主题名称</message>
+  <message id="ctwidget-description">描述</message>
+  <message id="ctwidget-title-placeholder">未指定标题</message>
+  <message id="ctwidget-desc-placeholder">未指定描述</message>
+  <message id="ctwidget-empty">（空）</message>
+  
+  <!-- Non-chart area -->
+  <message id="ctwidget-non-chart-area">非图表区域</message>
+  <message id="ctwidget-backdrop-theme">背景主题</message>
+  <message id="ctwidget-backdrop-desc">所有非图表区域的主题</message>
+  
+  <!-- Chart colors section -->
+  <message id="ctwidget-chart-colors">图表颜色</message>
+  
+  <!-- Spectrum colors -->
+  <message id="ctwidget-spec-foreground">谱前景</message>
+  <message id="ctwidget-spec-foreground-desc">前景谱的线条颜色</message>
+  <message id="ctwidget-spec-background">谱本底</message>
+  <message id="ctwidget-spec-background-desc">本底谱的线条颜色</message>
+  <message id="ctwidget-spec-secondary">谱次要</message>
+  <message id="ctwidget-spec-secondary-desc">次要谱的线条颜色</message>
+  
+  <!-- Peak options -->
+  <message id="ctwidget-peaks-use-ref-color">峰使用参考线颜色</message>
+  <message id="ctwidget-peaks-use-ref-desc">确定新拟合的峰是否采用该峰的参考线颜色。</message>
+  <message id="ctwidget-default-peak-color">默认峰颜色</message>
+  <message id="ctwidget-default-peak-desc">用于没有指定颜色的峰的颜色</message>
+  
+  <!-- Spectrum chart -->
+  <message id="ctwidget-spectrum-axis">谱图坐标轴</message>
+  <message id="ctwidget-spectrum-axis-desc">谱X和Y轴的线条颜色</message>
+  <message id="ctwidget-spectrum-text">谱图文本</message>
+  <message id="ctwidget-spectrum-text-desc">谱图文本（y和x轴标签）颜色</message>
+  <message id="ctwidget-spectrum-area">谱区域</message>
+  <message id="ctwidget-spectrum-area-desc">谱图的背景颜色</message>
+  <message id="ctwidget-spectrum-margin">谱图背景</message>
+  <message id="ctwidget-spectrum-margin-desc">谱图边距的颜色</message>
+  <message id="ctwidget-same-as-spectrum">与谱区域相同</message>
+  
+  <!-- Time chart -->
+  <message id="ctwidget-time-gamma">时间图伽马计数</message>
+  <message id="ctwidget-time-gamma-desc">时间图中伽马计数的线条颜色</message>
+  <message id="ctwidget-time-neutron">时间图中子计数</message>
+  <message id="ctwidget-time-neutron-desc">时间图中中子计数的线条颜色</message>
+  <message id="ctwidget-time-axis">时间图坐标轴</message>
+  <message id="ctwidget-time-axis-desc">时间图X和Y轴的线条颜色</message>
+  <message id="ctwidget-time-background">时间图背景</message>
+  <message id="ctwidget-time-background-desc">时间图的背景颜色</message>
+  <message id="ctwidget-time-margins">时间图边距</message>
+  <message id="ctwidget-time-margins-desc">谱图边距的颜色</message>
+  <message id="ctwidget-same-as-background">与本底相同</message>
+  <message id="ctwidget-time-text">时间图文本</message>
+  <message id="ctwidget-time-text-desc">时间图的文本颜色（x和y轴标签）</message>
+  
+  <!-- Occupancy and highlights -->
+  <message id="ctwidget-occ-lines">占用指示线</message>
+  <message id="ctwidget-occ-lines-desc">指示占用开始和结束（门户数据）或感兴趣时间段（搜索模式数据）的线</message>
+  <message id="ctwidget-time-fore-highlight">时间前景高亮</message>
+  <message id="ctwidget-time-fore-highlight-desc">用于在时间图上指示哪些时间段被求和为前景谱的颜色。</message>
+  <message id="ctwidget-time-back-highlight">时间本底高亮</message>
+  <message id="ctwidget-time-back-highlight-desc">用于在时间图上指示哪些时间段被求和为本底谱的颜色。</message>
+  <message id="ctwidget-time-sec-highlight">时间次要高亮</message>
+  <message id="ctwidget-time-sec-highlight-desc">用于在时间图上指示哪些时间段被求和为次要谱的颜色。</message>
+  
+  <!-- Reference lines -->
+  <message id="ctwidget-ref-line-colors">参考线颜色</message>
+  <message id="ctwidget-ref-line-colors-desc">用于参考线的有序颜色</message>
+  <message id="ctwidget-specific-ref-colors">特定源参考线颜色</message>
+  <message id="ctwidget-specific-ref-desc">用于给定源的参考线的颜色</message>
+  <message id="ctwidget-dynamic-ref-lines">动态参考线</message>
+  <message id="ctwidget-dynamic-ref-desc">根据核素类型使用的颜色</message>
+  
+  <!-- Dynamic reference categories -->
+  <message id="ctwidget-medical">医用</message>
+  <message id="ctwidget-industrial">工业</message>
+  <message id="ctwidget-norm">NORM</message>
+  <message id="ctwidget-snm">SNM</message>
+  <message id="ctwidget-common">常见</message>
+  <message id="ctwidget-other">其他</message>
+  
+  <!-- Other options -->
+  <message id="ctwidget-other-options">其他选项</message>
+  <message id="ctwidget-peak-label-size">峰标签大小</message>
+  <message id="ctwidget-peak-label-size-desc">指定峰标签的字体大小</message>
+  <message id="ctwidget-peak-label-angle">峰标签角度</message>
+  <message id="ctwidget-peak-label-angle-desc">峰标签的旋转角度（以度为单位）</message>
+  <message id="ctwidget-log-y-min">对数Y最小值</message>
+  <message id="ctwidget-log-y-min-desc">当显示的x范围内有一个道计数为零或负时，对数y轴上显示的最小值。</message>
+</messages>
+

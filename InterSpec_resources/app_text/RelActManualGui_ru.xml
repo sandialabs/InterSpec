@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ramrr- short for RelActManualReportResource
+       mrend- short for ManRelEffNucDisp
+       ramg-  short for RelActManualGui
+  -->
+
+  <!-- Messages when creating HTML report -->
+  <message id="ramrr-no-solution-title">Решение относительной активности недоступно</message>
+  <message id="ramrr-no-solution-text"></message>
+  <message id="ramrr-err-report">Ошибка получения файла спектра, который в настоящее время показан: {1}</message>
+  
+  <!-- Messages in the nuclide component of the GUI -->
+  <message id="mrend-spec-act">Уд. акт.</message>
+  <message id="mrend-X(a,n)">Альфы на {1} создающие нейтроны</message>
+  <message id="mrend-X(n,a)">Нейтроны на {1} создающие альфы</message>
+  <message id="mrend-X(a,p)">Альфы на {1} создающие протоны</message>
+  <message id="mrend-X(n,g)">Медленные нейтроны на {1} захватываемые</message>
+  <message id="mrend-X(n,n)">Быстрые нейтроны неупруго рассеивающиеся на {1}</message>
+  <message id="mrend-X(a,a)">Неупругое рассеяние альф на {1}</message>
+  <message id="mrend-annih">Аннигиляционные гаммы</message>
+  <message id="mrend-unknown-rxctn">Неизвестная реакция</message>
+  <message id="mrend-X(,)"></message>
+  <message id="mrend-cb-decay-during-meas">Распад во время измер.</message>
+  <message id="mrend-tt-decay-during-meas">При выборе будет учтен распад нуклидов во время измерения, при этом указанная относительная активность будет активностью в начале измерения.</message>
+  
+  <!-- Message on the general GUI interface -->
+  <message id="ramg-eqn-form-label">Форма ур-я</message>
+  <message id="ramg-options-label">Опции</message>
+  <message id="ramg-tt-eqn-form">
+    Функциональная форма для использования в кривой относительной эффективности.
+    <br />
+    Опции:
+    <table style="margin-left: 10px;">
+      <tr><th>Log(энергия):</th>               <th>y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...</th></tr>
+      <tr><th>Log(отн. эфф.):</th>            <th>y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )</th></tr>
+      <tr><th>Log(энергия)Log(отн. эфф.):</th> <th>y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )</th></tr>
+      <tr><th>FRAM эмпирический:</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr>
+      <tr><th>FRAM физический:</th>             <th>
+        y = <span style="display: inline-block; vertical-align: middle;">
+              <span style="display: block; text-align: center;">
+               (1 - exp(-AD<sub>0</sub>*μ<sub>0</sub>))
+              </span>
+              <span style="display: block; border-top: 1px solid black; text-align: center;">
+                (AD<sub>0</sub>*μ<sub>0</sub>)
+              </span>
+            </span>
+             * [exp(-AD<sub>1</sub>*μ<sub>1</sub>) * exp(-AD<sub>2</sub>*μ<sub>2</sub>) + ...]
+             * [Эфф. дет.]
+             * [E<sup>b</sup> * C<sup>1/E</sup>]
+        </th></tr>
+    </table>
+  </message>
+  <message id="ramg-eqn-order-label">Порядок ур-я</message>
+  <message id="ramg-tt-eqn-order">Порядок (сколько зависящих от энергии терминов) уравнения относительной эффективности для использования.</message>
+  <message id="ramg-phys-model-use-hoerl">Использовать корр. ф-ю</message>
+  <message id="ramg-tt-phys-model-use-hoerl">При выборе используется модифицированный корректирующий фактор Хёрла (т.е. E<sup>b</sup> * C<sup>1/E</sup>) для учета различий между физической моделью и/или эффективностью детектора и наблюдаемыми данными.</message>
+  <message id="ramg-yield-info-label">Информация о выходе</message>
+  <message id="ramg-tt-data-src">Источник ядерных данных для коэффициентов ветвления гамма.</message>
+  <message id="ramg-match-tol-label">Допуск совп.</message>
+  <message id="ramg-tt-match-tol">
+    Количество FWHM от среднего пика для включения гамм источника как вносящих вклад в площадь пика.
+    <br />
+    Для некоторых фотопиков некоторых нуклидов несколько гамм, близких по энергии, могут вносить вклад
+    в создание обнаруженной площади пика. Этот допуск соответствия указывает, сколько FWHM от
+    наблюдаемого среднего пика должны суммироваться гаммы источника для определения коэффициента ветвления.
+    <br />
+    Указание значения ноль приведет к использованию только энергии гаммы, назначенной пику,
+    даже если есть очень близкие другие гаммы.
+  </message>
+  <message id="ramg-add-uncert-label">Доп. неопр.</message>
+  <message id="ramg-tt-add-uncert">
+    Дополнительная неопределенность для добавления к линии относительной эффективности для каждого фитированного фотопика.
+    <br />
+    Небольшие отклонения в эффективности обнаружения одного или нескольких высокостатистических пиков могут привести к заметному
+    отклонению кривой эффективности от других точек, если используются только статистические неопределенности;
+    когда добавляется дополнительная неопределенность, относительная эффективность будет лучше
+    визуально проходить через все точки данных и по результатам ограниченного тестирования давать более точные
+    результаты. Можно думать об этом как о добавлении систематической неопределенности к каждому обнаруженному фотопику,
+    которая некоррелирована между пиками. Из ограниченного тестирования используемое значение не очень
+    важно, если только что-то есть. Вы также можете выбрать невзвешенный фит,
+    где каждый пик будет равноценно вносить вклад в фит, независимо от его статистической неопределенности.
+  </message>
+  <message id="ramg-unweighted-label">Невзвешенный</message>
+  <message id="ramg-stat-only-label">Только стат.</message>
+  <message id="ramg-back-sub-cb">Вычитание фона</message>
+  <message id="ramg-html-export-label">HTML отчет</message>
+  <message id="ramg-nucs-label">Нуклиды</message>
+  <message id="ramg-nucs-shield-label">Защита/Нукл.</message>
+  <message id="ramg-peaks-to-use-label">Пики для использования</message>
+  <message id="ramg-results-label">Результаты</message>
+  <message id="ramg-mi-results">Таблица</message>
+  <message id="ramg-mi-chart">График</message>
+  <message id="ramg-back-sub-neg">После вычитания фона пик на {1} кэВ имел отрицательные отсчеты, поэтому не использовался.</message>
+  <message id="ramg-warn-reaction">Использование фотопиков реакций, вероятно, недействительно, если гаммы не испускаются однородно от одного объекта.</message>
+  <message id="ramg-warn-no-bkg-sub-used">Было выбрано вычитание фоновых пиков, но ни один фоновый пик не соответствовал выбранным пикам переднего плана.</message>
+  <message id="ramg-warn-rel-eff-u/pu-xray">Кривая относительной эффективности не учитывает края поглощения рентгеновских лучей - использование пиков ниже 120 кэВ для проблем U или Pu не рекомендуется.</message>
+  <message id="ramg-warn-rel-eff-other-xray">Кривая относительной эффективности не учитывает края поглощения рентгеновских лучей любой потенциальной защиты - убедитесь, что используемые пики не охватывают края поглощения любой защиты.</message>
+  <message id="ramg-warn-match-outside-tol">Назначенные гаммы{1} {2} кэВ находятся вне допуска соответствия с пиком{1} {3}; обратите внимание, что назначенная энергия гаммы используется для компенсации близких гамм, а не среднее фитированного пика.</message>
+  <message id="ramg-warn-failed-match">Не удалось сопоставить нуклид{1} с любыми пиками: {2}</message>
+  <message id="ramg-err-setting-up-calc">Ошибка настройки расчета относительной эффективности: {1}</message>
+  <message id="ramg-err-performing-calc">Ошибка выполнения расчета относительной эффективности: {1}</message>
+  <message id="ramg-no-results-available">Результаты недоступны.</message>
+  <message id="ramg-result-error-msg">Ошибка: {1}</message>
+  <message id="ramg-result-warn-msg">Предупреждение: {1}</message>
+  <message id="ramg-and-there-were">и было</message>
+  <message id="ramg-dof">СТС</message> <!-- Степени свободы -->
+  <message id="ramg-fit-unweighted-txt">Фит был невзвешенным; неопределенности могут не иметь смысла.</message>
+  <message id="ramg-fit-stat-only">Неопределенности только статистические.</message>
+  <message id="ramg-fit-uncert-increased">Неопределенности искусственно увеличены "Доп. неопр.".</message>
+  <message id="ramg-consider-add-uncert-u">Вы можете рассмотреть добавление "Доп. неопр." для проблем с ураном.</message>
+  <message id="ramg-you-using-add-uncert-u">Вы добавляете "Доп. неопр." - интерпретируйте вычисленные неопределенности с осторожностью.</message>
+  <message id="ramg-you-using-add-uncert-non-u">Вы в настоящее время добавляете "Доп. неопр.", что приведет к неправильности вычисленных неопределенностей.</message>
+  <message id="ramg-chart-info-title">χ²/стс = {1}/{2}{3}{4}</message>
+  <message id="ramg-pval"> (p-знач={1})</message>
+  <message id="ramg-1-pval"> (1-p-знач={1})</message>
+</messages>

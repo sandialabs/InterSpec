@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- rs- is short for Reference Spectra -->
+  <message id="rs-dialog-title">Spektrum Referensi</message>
+  <message id="rs-show-foreground">Bandingkan Latar Depan</message>
+  <message id="rs-show-foreground-portrait">Bandingkan</message>
+  <message id="rs-show-background">Tampilkan Latar Belakang</message>
+  <message id="rs-show-background-portrait">Latar Belakang</message>
+  <message id="rs-load-background">Muat Latar Belakang</message>
+  <message id="rs-load-background-portrait">+Latar Belakang</message>
+  <message id="rs-tt-add-dir-btn">Tambahkan direktori untuk membuka spektrum referensi darinya.</message>
+  <message id="rs-tt-delete-dir-btn">Menghapus direktori yang saat ini dipilih dari daftar tempat untuk menampilkan spektrum referensi.</message>
+  <message id="rs-no-dir-selected-desktop">
+    Pilih spektrum referensi untuk dimuat. <br />
+    <br />
+    Tambahkan direktori spektrum referensi menggunakan
+    <img src="InterSpec_resources/images/plus_min_black.svg" style="width: 12px; height: 12px; display: inline-block; vertical-align: middle;"/> ikon.
+    </message>
+  <message id="rs-no-dir-selected-mobile">
+    Pilih spektrum referensi untuk dimuat. <br /> 
+    <div style="font-size: smaller;">
+      (Anda juga dapat menambahkan direktori spektrum referensi Anda sendiri dengan membuat direktori "reference_spectra" 
+      di direktori data <em>InterSpec</em> (menggunakan aplikasi File), lalu menambahkan sub-direktori lebih lanjut
+      dengan spektrum Anda di dalamnya)
+    </div>
+  </message>
+  <message id="rs-some-dirs-removed">{1} direktori tidak lagi tersedia, dan telah dihapus.</message>
+  <message id="rs-dir-added-successfully">Menambahkan path '{1}'.</message>
+  <message id="rs-show-as">Muat sebagai</message>
+  <message id="rs-add-dir-dialog-title">Tambahkan Direktori Spektrum Referensi</message>
+  <message id="rs-duplicate-dir-path">Direktori sudah dipilih: '{1}'</message>
+  <message id="rs-dir-not-found">Direktori tidak ditemukan, jadi tidak dihapus dari preferensi: '{1}'</message>
+  <message id="rs-dir-info-only-spectra">Direktori berisi {1} file spektrum<br /></message>
+  <message id="rs-dir-info-only-subdir">Direktori berisi {1} sub-direktori<br /></message>
+  <message id="rs-dir-info-with-subdir-spectra">Direktori berisi {1} file spektrum dan {2} sub-direktori<br /></message>
+  <message id="rs-error-loading-file">Kesalahan memuat file: '{1}'</message>
+  <message id="rs-show-in-explorer">Tampilkan di Explorer</message>
+  <message id="rs-show-in-finder">Tampilkan di Finder</message>
+  <message id="rs-show-in-linux-file-manager">Tampilkan di File Manager</message>
+  <message id="rs-error-invalid-file">File spektrum tidak valid: '{1}'.</message>
+  <message id="rs-error-invalid-type-selected">Tipe spektrum yang dipilih tidak valid.</message>
+  </messages>
+
+
+

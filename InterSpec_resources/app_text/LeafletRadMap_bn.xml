@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- lrm- is short for LeafletRadMap
+  -->
+  <message id="lrm-pre-warn-title">এগিয়ে যাওয়ার আগে</message>
+  <message id="lrm-pre-warn-content">
+    ম্যাপ টাইল <a href="https://arcgis.com" target="_blank">https://arcgis.com</a> থেকে অনুরোধ করা হবে।
+    কোনো বিকিরণ ডেটা আপনার ডিভাইস ছেড়ে যাবে না, তবে
+    পরিমাপ অন্তর্ভুক্ত ম্যাপ টাইলের জন্য অনুরোধ এই পরিষেবাতে করা হবে।
+    {1}
+  </message>
+  <message id="lrm-pre-warn-user-key">
+    <p>ম্যাপ টাইল অনুরোধ করতে '{1}'-দিয়ে শুরু হওয়া আপনার কাস্টম arcgis কী ব্যবহার করা হবে।</p>
+  </message>
+  <message id="lrm-pre-warn-invalid-user-key">
+    <p>arcgis_key.txt-এ একটি অবৈধ arcgis কী নির্দিষ্ট করা হয়েছিল, তাই বিল্ট-ইন কী ব্যবহার করা হবে।</p>
+  </message>
+  <message id="lrm-pre-warn-dont-ask">আবার জিজ্ঞাসা করবেন না</message>
+  <message id="lrm-pre-warn-proceed-btn">এগিয়ে যান</message>
+  <message id="lrm-window-title">ম্যাপ টুল</message>
+  <message id="lrm-will-use-user-key">ম্যাপ অনুরোধ করতে '{1}'-দিয়ে শুরু হওয়া ব্যবহারকারী-নির্দিষ্ট arcgis কী ব্যবহার করা হবে।</message>
+  <message id="lrm-user-key-invalid">একটি arcgis_key.txt ফাইল ছিল, কিন্তু এতে কোনো বৈধ কী ছিল না</message>
+  <message id="lrm-err-loading-samples">ম্যাপ-নির্বাচিত নমুনা লোড করতে ত্রুটি: {1}</message>
+  <message id="lrm-displayed-as">প্রদর্শিত হিসাবে</message>
+  <message id="lrm-measurements-as">পরিমাপ হিসাবে</message>
+  <message id="lrm-load-meas-as-short">হিসাবে লোড করুন</message>
+
+  <message id="lrm-filter-label">ফিল্টার</message>
+  <message id="lrm-filter-none">কিছুই না</message>
+  <message id="lrm-filter-energy-range">শক্তি পরিসর</message>
+  <message id="lrm-filter-peaks-in-range">পরিসরে শিখর</message>
+  <message id="lrm-lower-energy">নিম্ন শক্তি</message>
+  <message id="lrm-upper-energy">উচ্চ শক্তি</message>
+  <message id="lrm-energy-filter-help">একটি শক্তি পরিসর ফিল্টার প্রয়োগ করলে মানচিত্রে কীভাবে এবং সম্ভাব্য কী ডেটা প্রদর্শিত হবে তা পরিবর্তন করবে।
+<ul>
+<li><b>কিছুই না</b>: কোন ফিল্টারিং প্রয়োগ করা হয় না - রং এবং CPS টেক্সট সম্পূর্ণ স্পেকট্রাম গণনার হার ভিত্তিক।</li>
+<li><b>শক্তি পরিসর</b>: নির্দিষ্ট শক্তি পরিসরের মধ্যে গামা গণনা ফিল্টার করুন।</li>
+<li><b>পরিসরে শিখর</b>: শুধুমাত্র সেই নমুনা নম্বরগুলি দেখান যেগুলির শক্তি পরিসরে শিখর রয়েছে, মার্কার রং এবং CPS শিখরের গণনার হার ভিত্তিক।</li>
+</ul></message>
+</messages>

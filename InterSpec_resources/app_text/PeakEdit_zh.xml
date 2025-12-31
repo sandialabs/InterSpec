@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- pe- is short for PeakEdit -->
+  <message id="pe-value">值</message>
+  <message id="pe-uncertainty">不确定度</message>
+  <message id="pe-parameter">参数</message>
+  <message id="pe-label">标签</message>
+  <message id="pe-peak-type">峰类型</message>
+  <message id="pe-peak-model-gaussian">高斯</message>
+  <message id="pe-peak-model-data">数据区域</message>
+  <message id="pe-skew-type">偏斜类型</message>
+  <message id="pe-btn-refit">重新拟合</message>
+  <message id="pe-btn-refit-roi-standard">重新拟合ROI：相关FWHM</message>
+  <message id="pe-btn-refit-roi-independent">重新拟合ROI：独立FWHM</message>
+  <message id="pe-btn-refit-roi-fine">重新拟合ROI：小细化</message>
+  <message id="pe-btn-refit-roi-independent-fine">重新拟合ROI：用独立FWHM细化</message>
+  
+  <message id="pe-label-centroid">质心</message>
+  <message id="pe-label-drf-fwhm">DRF预测FWHM</message>
+  <message id="pe-label-amp">幅度</message>
+  <message id="pe-label-skew0">偏斜0</message>
+  <message id="pe-label-skew1">偏斜1</message>
+  <message id="pe-label-skew2">偏斜2</message>
+  <message id="pe-label-skew3">偏斜3</message>
+  <message id="pe-label-cont-p0">连续P0</message>
+  <message id="pe-label-cont-p1">连续P1</message>
+  <message id="pe-label-cont-p2">连续P2</message>
+  <message id="pe-label-cont-p3">连续P3</message>
+  <message id="pe-label-cont-p4">连续P4</message>
+  <message id="pe-label-roi-start">ROI开始（keV）</message>
+  <message id="pe-label-roi-end">ROI结束（keV）</message>
+  <message id="pe-label-chi2-dof">𝜒²/DOF</message>
+  <message id="pe-label-peak-color">峰颜色</message>
+
+  <message id="pe-multipeak-in-roi">ROI中{2}个峰中的第{1}个峰</message>
+  <message id="pe-apply-all-of-type">所有{1}峰</message>
+  <message id="pe-drf-predict-fwhm-txt">DRF预测FWHM为{1} keV</message>
+  <message id="pe-btn-cont-to-linear">估计线性连续谱</message>
+  <message id="pe-tt-btn-cont-to-linear">使用ROI左右两侧的道来估计直线连续谱。</message>
+  <message id="pe-failed-refit-insig">重新拟合峰失败（变得不显著），因此不执行任何操作</message>
+
+  <message id="pe-est-lin-cont-no-data">请在估计连续谱之前加载前景谱。</message>
+  <message id="pe-failed-est-lin-cont">从ROI边缘估计连续谱失败：{1}</message>
+  
+  
+  
+</messages>
+

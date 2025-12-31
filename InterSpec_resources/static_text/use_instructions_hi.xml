@@ -1,0 +1,443 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+
+  <!--When you add a video to the content, you should use a template placeholder
+      in the content (e.x. ${myvideobinding}) to allow the C++ to bind this
+      video to a video playing widget in the WTemplate widget.  However since we
+      dont want to have to hard code the bind placeholder name, and which video
+      it points to in the C++, this next videoinfo message section encodes what
+      placeholder names the C++ templating code should look for, as well as
+      the actual video files and titles the placeholder name cooresponds to.
+      The below JSON object is indexed by keys that have the same value
+      as the 'id' for the message they coorespond to; the key cooresponds to an
+      array of objects that each have at least a "key" and "file" member, but
+      may also have an optional "title" member.
+  -->
+  <message id="videoinfo">
+  {
+    "1intro-video":
+      [
+        {   "key":"video1",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpecMouseIntro.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpecMouseIntro.ogv",
+            "title":"माउस परिचय"
+        }
+      ],
+    "3gamma-lines-video":
+       [
+        {   "key":"video2",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_GammaLines.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_GammaLines.ogv",
+            "title":"गामा रेखाएं"
+        }
+       ],
+    "4calibration-video":
+       [
+        {   "key":"video3",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_calibration.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_calibration.ogv",
+            "title":"अंशांकन"
+        }
+       ],
+    "2nuclide-peak-association-video":
+       [
+        {   "key":"video4",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_AssociatePeaksWithNuclides.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_AssociatePeaksWithNuclides.ogv",
+            "title":"शिखर पहचान"
+        }
+       ],
+    "5activity-shielding-fit-video":
+       [
+        {   "key":"video5",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_activityShieldingFit.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_activityShieldingFit.ogv",
+            "title":"गतिविधि और परिरक्षण"
+        }
+       ]
+  }
+  </message>
+
+  <message id='mobile-mouse-interactions'>
+	   <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">ज़ूम इन</div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_zoom_in.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         स्पेक्ट्रम के एक विशिष्ट भाग पर ज़ूम इन करने के लिए,
+         दो अंगुलियों को एक-दूसरे से <u>दूर धकेलें</u>।
+      </div>
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">ज़ूम आउट</div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_zoom_out.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         ज़ूम आउट करने के लिए,
+         दो अंगुलियों को एक-दूसरे की ओर <u>पिंच करें</u>।
+      </div>
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">ऊर्जा सीमा बदलें</div>
+    <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	    <img src="InterSpec_resources/static_text/images/touch_energy_pan.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         ग्राफ़ की x अक्ष (ऊर्जा) के साथ जाने के लिए,
+         चार्ट पर एक अंगुली रखें और प्रदर्शित ऊर्जा को बदलने के लिए इसे बाएं या दाएं ले जाएं।
+      </div>
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+      <div class="UseInstructionHeader">शिखर(शिखरों) को फिट करें</div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center"><h3><b>विधि 1</b></h3></div>
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_fit_peak.png" style="width:70%" />
+	  </div>
+    <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+      स्पेक्ट्रम पर वहां <u>डबल-टैप</u> करें जहां आप एक शिखर फिट करना चाहते हैं।
+    </div>
+	   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_multipeak_fit.png" style="width:70%" />
+	  </div>
+	  <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+        एक मौजूदा शिखर के पास फिर से <u>डबल-टैप</u> करने से अधिक शिखर फिट होंगे।
+    </div>
+	  <div style="padding-top: 10px" align="center"><h3><b>विधि 2</b></h3></div>
+	  <div style="padding-top: 10px" align="center">
+	    <img src="InterSpec_resources/static_text/images/mobile_multipeak.jpg" style="width:70%" />
+	  </div>
+	  <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+      यदि आप रुचि के क्षेत्र में शिखरों की एक निर्धारित संख्या को बाध्य करना चाहते हैं:
+      रुचि के क्षेत्र पर दो क्षैतिज रूप से संरेखित अंगुलियों को <u>खींचें</u>।
+      अपनी अंगुलियों को <u>हटाएं</u> और उन शिखरों की मात्रा <u>चुनें</u> जिन्हें आप पहचानना चाहते हैं।
+    </div>
+	  <div style="padding-top: 10px" align="center"><h3><b>अन्य विधियां</b></h3>
+      <em>मेनू</em>&rarr;<em>टूल्स</em>&rarr;<em>शिखर प्रबंधक</em> में आप
+      <img src="InterSpec_resources/static_text/images/mobil_search_for_peaks.png" style="height:1.25em;" /> बटन का उपयोग करके
+      एक स्पेक्ट्रम में सभी शिखरों के लिए स्वचालित रूप से फिट कर सकते हैं।
+      इस स्वचालित शिखर खोज का उपयोग करने से पहले न्यूक्लाइड संदर्भ रेखाएं दिखाने की सिफारिश की जाती है
+      ताकि शिखर स्वचालित रूप से शिखर बनाने के लिए जिम्मेदार न्यूक्लाइड के साथ जुड़ जाए।
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+      <div class="UseInstructionHeader">शिखर संपादक लॉन्च करें</div>
+         यदि आप पुनः फिट करना चाहते हैं, या मैन्युअल रूप से एक शिखर को समायोजित करना चाहते हैं, तो <em>शिखर संपादक</em> का उपयोग करें
+         लगभग एक सेकंड के लिए एक शिखर पर अपनी अंगुली दबाकर रखें, और एक मेनू पॉप अप होगा
+         जो आपको चुनने की अनुमति देगा कि आप क्या करना चाहते हैं।
+         <div style="padding-top: 1px" align="center">
+           <img src="InterSpec_resources/static_text/images/mobile_right_click.png"  class="imageBorder" style="width:75%;" />
+         </div>
+	    </div>
+    </div>
+	  <div class="UseInstructionSection">
+      <div class="UseInstructionHeader">शिखर(शिखरों) को हटाएं</div>
+      <p>
+        शिखरों को हटाने का सबसे आसान तरीका है कि लगभग एक सेकंड के लिए उस पर अपनी अंगुली दबाकर रखें,
+        और एक मेनू पॉप अप होगा जहां आप शिखर को हटाने के लिए चुन सकते हैं।
+        <div style="padding-top: 1px" align="center">
+          <img src="InterSpec_resources/static_text/images/mobile_right_click.png"  class="imageBorder" style="width:75%;" />
+        </div>
+      </p>
+
+      <p>
+        आप दो अंगुलियां भी रख सकते हैं जो उन शिखरों की ऊर्जा सीमा को फैलाती हैं जिन्हें आप हटाना चाहते हैं, स्क्रीन पर, और उन्हें ऊपर की ओर ले जाएं।
+        आपकी अंगुलियों के बीच केन्द्र वाले किसी भी शिखर को पूरी तरह से हटा दिया जाएगा; आप उसी इशारे का उपयोग करके
+        शिखरों की ऊर्जा सीमा को भी कम कर सकते हैं, जब तक कि शिखर का केन्द्र आपकी अंगुलियों के बीच न पड़े।
+        <div style="padding-top: 1px" align="center">
+          <img src="InterSpec_resources/static_text/images/mobile_delete_peaks.jpg"  class="imageBorder" style="width:75%;" />
+        </div>
+      </p>
+
+      <p>
+        <em>शिखर प्रबंधक</em> (<b>मेनू</b>&rarr;<b>टूल्स</b>&rarr;<b>शिखर प्रबंधक</b>) और
+        <em>शिखर संपादक</em> (शिखर पर एक सेकंड के लिए अंगुली रखें, <b>शिखर संपादक</b> चुनें) भी शिखरों को हटा सकते हैं।
+      </p>
+    </div>
+  </message>
+
+
+<!--
+For the desktop-mouse-interactions-info each JSON object should have a 'title',
+a 'img' and a optional 'desc_message_id' field.  If 'desc_message_id' is
+specified then this field refers to the id of a <message> element that contains
+the XHTML message for that entry.
+-->
+<message id='desktop-mouse-interactions-info'>
+{
+  "01desktop-mouse-interactions-zoominout": {
+    "title": "ज़ूम-इन/आउट",
+    "img": "InterSpec_resources/images/ZoomInOut.gif",
+    "desc_message_id": "01desktop-mouse-interactions-zoominout-desc"
+  },
+  "02desktop-mouse-interactions-shiftenergyrange": {
+    "title": "ऊर्जा पैन",
+    "img": "InterSpec_resources/images/ERShift.gif",
+    "desc_message_id": "02desktop-mouse-interactions-shiftenergyrange-desc"
+  },
+  "03desktop-mouse-interactions-energyslider": {
+    "title": "ऊर्जा स्लाइडर",
+    "img": "InterSpec_resources/images/energy_slider.gif",
+    "desc_message_id": "03desktop-mouse-interactions-energyslider-desc"
+  },
+  "04desktop-mouse-interactions-identifypeaks": {
+    "title": "शिखर फिट",
+    "img": "InterSpec_resources/images/PeakFit.gif",
+    "desc_message_id": "04desktop-mouse-interactions-identifypeaks-desc"
+  },
+  "04desktop-mouse-interactions-multipeaks": {
+    "title": "ROI फिट",
+    "img": "InterSpec_resources/images/multi_peak_fit.gif",
+    "desc_message_id": "04desktop-mouse-interactions-multipeaks-desc"
+  },
+  "07desktop-mouse-interactions-deletepeaks": {
+    "title": "शिखर हटाएं",
+    "img": "InterSpec_resources/images/DeletePeaks.gif",
+    "desc_message_id": "07desktop-mouse-interactions-deletepeaks-desc"
+  },
+  "06desktop-mouse-interactions-visualcalibration": {
+    "title": "ऊर्जा अंशांकन",
+    "img": "InterSpec_resources/images/VisRecalib.gif",
+    "desc_message_id": "06desktop-mouse-interactions-visualcalibration-desc"
+  },
+  "05desktop-mouse-interactions-peakeditor": {
+    "title": "शिखर संपादक",
+    "img": "InterSpec_resources/images/PeakEdit.gif",
+    "message-id": "05desktop-mouse-interactions-peakeditor-desc"
+  },
+  "08desktop-mouse-interactions-adjustROI": {
+    "title": "ROI समायोजित करें",
+    "img": "InterSpec_resources/images/roi_range_adjust.gif",
+    "desc_message_id": "08desktop-mouse-interactions-adjustROI-desc"
+  },
+  "08desktop-mouse-interactions-scale-y": {
+    "title": "Y स्केल करें",
+    "img": "InterSpec_resources/images/yscale.gif",
+    "desc_message_id": "08desktop-mouse-interactions-scale-y-desc"
+  },
+  "09desktop-mouse-interactions-countgamma": {
+    "title": "गामा गिनें",
+    "img": "InterSpec_resources/images/ERCount.gif",
+    "desc_message_id": "09desktop-mouse-interactions-countgamma-desc"
+  },
+  "10desktop-shortcuts" : {
+    "title": "कीबोर्ड शॉर्टकट",
+    "desc_message_id": "10desktop-shortcuts-desc"
+  }
+}
+</message>
+
+<message id='01desktop-mouse-interactions-zoominout-desc'>
+<div><center>ज़ूम-इन करने के लिए बाएं-क्लिक करके <b>दाएं</b> खींचें।</center></div>
+<div><center>ज़ूम-आउट करने के लिए बाएं-क्लिक करके <b>बाएं</b> खींचें।</center></div>
+</message>
+
+<message id='02desktop-mouse-interactions-shiftenergyrange-desc'>
+<center>दाएं-क्लिक करके खींचें</center>
+</message>
+
+
+<message id='03desktop-mouse-interactions-energyslider-desc'>
+<center> <b>देखें</b> मेनू से &quot;<b>ऊर्जा स्लाइडर दिखाएं</b>&quot; चुनें।</center>
+<div>यह स्पेक्ट्रम ऊर्जा सीमा को समायोजित करने का एक उपयोग में आसान तरीका है।</div>
+<div><b>InterSpec</b> याद रखेगा कि क्या आप ऊर्जा स्लाइडर चार्ट दिखाना चाहते हैं।</div>
+</message>
+
+<message id='04desktop-mouse-interactions-identifypeaks-desc'>
+<center>
+<p style="font-size: 14px">शिखरों को फिट करने के कई तरीके हैं, जिनमें शामिल हैं: </p>
+</center>
+<ol>
+  <li>डबल-बाएं-क्लिक। आप एक और जोड़ने के लिए फिर से उसी शिखर के पास डबल क्लिक कर सकते हैं।</li>
+  <li><b><kbd>CTRL</kbd></b> + बाएं-क्लिक करके खींचें &rarr; बाएं-क्लिक (&quot;ROI फिट&quot; देखें) </li>
+  <li>&quot;<b>शिखर प्रबंधक</b>&quot; टैब से &quot;<b>जोड़ें</b>&quot; &rarr; पर क्लिक करें। फिर आप तालिका में मापदंडों को अपनी इच्छित मानों में समायोजित कर सकते हैं।</li>
+  <li>&quot;<b>शिखर प्रबंधक</b>&quot; टैब से &quot;<b>शिखरों की खोज करें</b>&quot; पर क्लिक करें स्पेक्ट्रम में सभी शिखरों को फिट करने के लिए।</li>
+<li>एक मौजूदा शिखर पर दाएं-क्लिक करें और उसी ROI में एक शिखर जोड़ने के लिए &quot;<b>शिखर जोड़ें</b>&quot; चुनें।</li>
+</ol>
+
+<p>संकेत: शिखर को फिट करने से पहले इसके लिए जिम्मेदार न्यूक्लाइड की संदर्भ रेखाओं को दिखाना उपयोगी है,
+ताकि जब शिखर फिट हो, तो यह उस न्यूक्लाइड के साथ जुड़ जाए।
+यह जानकारी ऊर्जा अंशांकन, डिटेक्टर प्रतिक्रिया, गतिविधि और परिरक्षण मात्राओं के लिए फिट करने के लिए उपयोग की जाती है।
+</p>
+</message>
+
+
+<message id='04desktop-mouse-interactions-multipeaks-desc'>
+<div>रुचि के क्षेत्र (ROI) में शिखरों की एक निश्चित संख्या को फिट करने के लिए:</div>
+<center>
+<b><kbd>CTRL</kbd></b> + बाएं-क्लिक करके खींचें &rarr; और फिर कितने शिखर चुनें।
+</center>
+</message>
+
+<message id='07desktop-mouse-interactions-deletepeaks-desc'>
+<ol>
+<li>दाएं-क्लिक &rarr; &quot;<b>शिखर हटाएं</b>&quot;</li>
+<li>दाएं-क्लिक &rarr; &quot;<b>शिखर संपादक</b>&quot; &rarr; &quot;<b>हटाएं</b>&quot;</li>
+<li><b><kbd>SHIFT</kbd></b> + बाएं-क्लिक करके खींचें</li>
+<li>&quot;<b>सभी शिखर साफ़ करें</b>&quot; बाएं-क्लिक करें &rarr; &quot;<b>हां</b>&quot; बाएं-क्लिक करें</li>
+<li>ROI के एक तरफ को दूसरी तरफ से आगे खींचें।</li>
+</ol>
+</message>
+
+<message id='06desktop-mouse-interactions-visualcalibration-desc'>
+<div>ऊर्जा अंशांकन को ग्राफिक रूप से समायोजित करने के लिए:</div>
+<center> <kbd>CTRL</kbd> + <kbd>ALT</kbd> + बाएं-क्लिक करके खींचें &rarr; <u>वैकल्पिक</u>: मात्राओं को समायोजित करें &rarr; &quot;<b>स्वीकार करें</b>&quot;</center>
+<div>नोट: यदि आप इस क्रिया को फिर से करते हैं, जैसे कि पहले उच्च ऊर्जा शिखर पर, फिर कम ऊर्जा शिखर पर (या इसके विपरीत), जो संवाद पॉप अप होता है वह
+आपको ऑफसेट और लाभ दोनों को समायोजित करके दोनों क्रियाओं को संरक्षित करने का विकल्प देगा ताकि दोनों शिखर उन ऊर्जाओं पर बने रहें जहां आपने उन्हें खींचा था।
+</div>
+<p>&quot;ऊर्जा अंशांकन&quot; टैब आपको मैन्युअल रूप से ऊर्जा अंशांकन गुणांक को समायोजित करने की अनुमति देता है, या
+शिखरों के साथ जुड़े न्यूक्लाइड का उपयोग करके उनके लिए फिट करने की अनुमति देता है।
+</p>
+</message>
+
+<message id='05desktop-mouse-interactions-peakeditor-desc'>
+<div><center>दाएं-क्लिक &rarr; &quot;शिखर संपादक&quot;</center></div>
+</message>
+
+
+
+<message id='08desktop-mouse-interactions-adjustROI-desc'>
+<center><div>रुचि के क्षेत्र (ROI) के किनारे के पास माउस रखें और खींचें।</div></center>
+<div>माउस शिखर की y-सीमा के भीतर होना चाहिए, और ROI के किनारे के 10 पिक्सेल के भीतर होना चाहिए।</div>
+</message>
+
+
+<message id='08desktop-mouse-interactions-scale-y-desc'>
+<center><b>देखें</b> &rarr; &quot;<b>Y-अक्ष स्केलर्स दिखाएं</b>&quot; का चयन करके
+अग्रभूमि के सापेक्ष पृष्ठभूमि और/या द्वितीयक स्पेक्ट्रा के आयाम को स्केल करें।
+</center>
+<p>पृष्ठभूमि या द्वितीयक स्पेक्ट्रम को लाइव-टाइम सामान्यीकृत होने के लिए पुनर्स्थापित करने के लिए, &quot;स्पेक्ट्रम फ़ाइलें&quot; टैब पर &quot;सामान्य करें&quot; बटन पर क्लिक करें।</p>
+<p><b>InterSpec</b> याद रखेगा कि क्या आप इन स्लाइडरों को दिखाना चाहते हैं जब कोई पृष्ठभूमि या द्वितीयक स्पेक्ट्रम हो,
+लेकिन मेनू आइटम अक्षम हो जाएंगे यदि कोई पृष्ठभूमि या द्वितीयक स्पेक्ट्रम लोड नहीं है।</p>
+</message>
+
+
+<message id='09desktop-mouse-interactions-countgamma-desc'>
+  <center>
+    <ol>
+      <li><b><kbd>SHIFT</kbd></b> + <b><kbd>ALT</kbd></b> + बाएं-क्लिक करके खींचें &rarr; <u>वैकल्पिक</u>: मात्राओं को समायोजित करें</li>
+      <li><b>टूल्स</b> &rarr; <b>ऊर्जा सीमा योग</b></li>
+    </ol>
+  </center>
+</message>
+
+<message id='10desktop-shortcuts-desc'>
+
+  <h3>कीबोर्ड शॉर्टकट</h3>
+  <ul>
+    <li>
+      <b><code>Ctrl-1</code></b> से <b><code>Ctrl-7</code></b>: टूल टैब 1-7 पर स्विच करता है (अर्थात, &quot;<code>स्पेक्ट्रम फ़ाइलें</code>&quot;, &quot;<code>शिखर प्रबंधक</code>&quot;, &quot;<code>संदर्भ फोटोपीक्स</code>&quot;, आदि टैब), या
+      यदि <em>टूल टैब</em> छिपे हुए हैं, तो संबंधित टूल विंडो दिखाता है।
+    </li>
+    <li>
+      <b><code>Ctrl-h</code></b>: इन-ऐप <em>सहायता</em> दिखाता है।
+    </li>
+    <li>
+      <b><code>Ctrl-i</code></b>: <em>स्वागत जानकारी</em> स्क्रीन दिखाता है।
+    </li>
+    <li>
+      <b><code>Ctrl-k</code></b>: सभी प्रदर्शित संदर्भ फोटोपीक रेखाओं को साफ़ करता है।
+    </li>
+    <li>
+      <b><code>Ctrl-l</code></b>: स्पेक्ट्रम y-अक्ष को लॉग और रैखिक के बीच स्विच करता है।
+    </li>
+    <li>
+      <b><code>Ctrl-s</code></b>: वर्तमान एप्लिकेशन स्थिति सहेजता है।
+    </li>
+    <li>
+      <b><code>Ctrl-e</code></b>: निर्यात स्पेक्ट्रम फ़ाइल संवाद खोलता है।
+    </li>
+    <li>
+      <b><code>Ctrl-z</code></b>: अंतिम क्रिया पूर्ववत करें।
+    </li>
+    <li>
+      <b><code>Ctrl-Shift-z</code></b>: अंतिम पूर्ववत की गई क्रिया फिर से करें।
+    </li>
+  </ul>
+
+  <h3>स्पेक्ट्रम इंटरैक्शन के लिए माउस मॉडिफायर</h3>
+  इन शॉर्टकट के अलावा, आप लॉग/रैखिक स्केल टॉगल करने के लिए y-अक्ष शीर्षक पर क्लिक कर सकते हैं; x-अक्ष शीर्षक पर क्लिक करने से अवलोकन स्ट्रिप चार्ट दिखाया/छिपाया जाता है।
+  <ul>
+    <li>
+      <b>डबल-क्लिक</b>: क्लिक किए गए स्थान पर अग्रभूमि स्पेक्ट्रम में एक शिखर फिट करता है।
+    </li>
+    <li>
+      <b>Alt + डबल-क्लिक</b>: क्लिक किए गए स्थान पर पृष्ठभूमि स्पेक्ट्रम में एक शिखर फिट करता है।
+    </li>
+    <li>
+      <b>Shift + डबल-क्लिक</b>: क्लिक किए गए स्थान पर द्वितीयक स्पेक्ट्रम में एक शिखर फिट करता है।
+    </li>
+    <li>
+      <b>Shift + बाएं-खींचें</b>: शिखर हटाने का मोड - खींची गई ऊर्जा सीमा में शिखरों को हटाता है।
+    </li>
+    <li>
+      <b>Alt + Shift + बाएं-खींचें</b>: गामा गिनती मोड - खींची गई ऊर्जा सीमा में गामा किरणों को गिनता है।
+    </li>
+    <li>
+      <b>Alt + Ctrl + बाएं-खींचें</b>: पुनः अंशांकन मोड - खींची गई सीमा का उपयोग करके ऊर्जा का पुनः अंशांकन करता है।
+    </li>
+    <li>
+      <b>Command + बाएं-खींचें (Mac)</b> या <b>Alt + बाएं-खींचें (Windows)</b>: y-अक्ष पर ज़ूम इन/आउट करने के लिए लंबवत खींचें।
+    </li>
+  </ul>
+
+  <h3>टाइम-चार्ट इंटरैक्शन के लिए माउस मॉडिफायर</h3>
+  इंटरैक्शन को सरल बनाने के लिए टाइम चार्ट के ऊपरी-दाएं कोने में मेनू का उपयोग करें।
+  <ul>
+    <li>
+      <b>क्लिक या खींचें</b>: अग्रभूमि स्पेक्ट्रम के लिए नमूने चुनता है।
+    </li>
+    <li>
+      <b>Alt + क्लिक/खींचें</b> या <b>'b' कुंजी दबाए रखें</b>: पृष्ठभूमि स्पेक्ट्रम के लिए नमूने चुनता है।
+    </li>
+    <li>
+      <b>Meta + क्लिक/खींचें</b> या <b>'s' कुंजी दबाए रखें</b>: द्वितीयक स्पेक्ट्रम के लिए नमूने चुनता है।
+    </li>
+    <li>
+      <b>Shift + क्लिक/खींचें</b>: वर्तमान चयन में नमूने जोड़ता है।
+    </li>
+    <li>
+      <b>Ctrl + क्लिक/खींचें</b>: वर्तमान चयन से नमूने हटाता है।
+    </li>
+  </ul>
+</message>
+
+
+  <message id='1intro-video'>
+     <center>${video1}</center>
+  </message>
+
+  <message id='3gamma-lines-video'>
+     <center>${video2}</center>
+  </message>
+
+  <message id='4calibration-video'>
+     <center>${video3}</center>
+  </message>
+
+  <message id='2nuclide-peak-association-video'>
+     <center>${video4}</center>
+  </message>
+
+  <message id='5activity-shielding-fit-video'>
+     <center>${video5}</center>
+  </message>
+
+
+  <message id="known-issues">
+    वर्तमान ज्ञात समस्याएं:
+    <ul>
+<li><b>सभी:</b> (शिखर प्रबंधक) &quot;ID न्यूक्लाइड&quot; दुर्लभ मामलों में काम नहीं करता है </li>
+        <li><b>सभी:</b> &quot;बाहर निकलने पर स्थिति सहेजें&quot; दुर्लभ मामलों में काम नहीं करता है</li>
+    </ul>
+  </message>
+</messages>
+

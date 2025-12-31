@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- d3sdd- is short for D3SpectrumDisplayDiv
+
+    The part of the id coming after "d3sdd-", directly corresponds to the javascript variable name, the element value gets put into.
+
+    The JS 'xAxisTitle' variable is localized using the "Energy (keV)" key
+    The JS 'fwhm' variable is localized using the "FWHM" key
+  -->
+  <message id="d3sdd-yAxisTitle">Cacahan</message>
+  <message id="d3sdd-yAxisTitleMulti">Cacahan per {1} Kanal</message>
+  <message id="d3sdd-realTime">Waktu Nyata</message>
+  <message id="d3sdd-liveTime">Waktu Hidup</message>
+  <message id="d3sdd-deadTime">Waktu Mati</message>
+  <message id="d3sdd-scaledBy">Diskala dengan</message>
+  <message id="d3sdd-zoomIn">Perbesar</message>
+  <message id="d3sdd-neutrons">neutron</message>
+  <message id="d3sdd-Neutrons">Neutron</message>
+  <message id="d3sdd-cps">cps</message>
+  <message id="d3sdd-roiCounts">cacahan ROI</message>
+  <message id="d3sdd-gammaCounts">Cacahan Gamma</message>
+  <message id="d3sdd-contArea">area kontinum</message>
+  <message id="d3sdd-peakCps">cps puncak</message>
+  <message id="d3sdd-peakArea">area puncak</message>
+  <message id="d3sdd-mean">rerata</message>
+  <message id="d3sdd-spectrum">Spektrum</message>
+  <message id="d3sdd-comptonEdge">Tepi Compton</message>
+  <message id="d3sdd-sumPeak">Puncak Jumlah</message>
+  <message id="d3sdd-firstEnergyClick">Klik untuk mengatur energi pertama puncak jumlah.</message>
+  <message id="d3sdd-singleEscape">Pelolosan Tunggal</message>
+  <message id="d3sdd-doubleEscape">Pelolosan Ganda</message>
+  <message id="d3sdd-eraseInRange">Akan Menghapus Puncak Dalam Rentang</message>
+  <message id="d3sdd-zoomInY">Perbesar pada sumbu Y</message>
+  <message id="d3sdd-zoomOutY">Perkecil pada sumbu Y</message>
+  <message id="d3sdd-touchDefineRoi">Gerakkan 2 jari ke kanan untuk mendefinisikan ROI</message>
+  <message id="d3sdd-foreNSigmaBelowBack">Latar depan {1} σ di bawah latar belakang.</message>
+  <message id="d3sdd-foreNSigmaAboveBack">Latar depan {1} σ di atas latar belakang.</message>
+  <message id="d3sdd-backSubCounts">cacahan (sub LB)</message>
+  <message id="d3sdd-afterScalingBy">setelah diskala dengan </message>
+  <message id="d3sdd-clickedPeak">Puncak Diklik</message>
+  <message id="d3sdd-recalFromTo">Kalibrasi ulang data dari {1} ke {2} keV</message>
+  <message id="d3sdd-sumFromTo">{1} ke {2} keV</message>
+  <message id="d3sdd-comptonPeakAngle">Puncak Compton {1}°</message>
+  <message id="d3sdd-yaxis-lower-upper-equal">Cacahan bawah dan atas sama.</message>
+  <message id="d3sdd-yaxis-no-spectrum">Tidak ada spektrum yang ditampilkan.</message>
+  <message id="d3sdd-yaxis-upper-counts-below-zero">Rentang atas sama atau di bawah nol.</message>
+  <message id="d3sdd-yaxis-lower-counts-below-zero">Rentang bawah sama atau di bawah nol.</message>
+  <message id="d3sdd-yaxis-below-min-non-zero">Rentang atas kurang dari minimum yang ditampilkan, nilai bukan nol.</message>
+  <message id="d3sdd-candidates">Kandidat:</message>
+  <message id="d3sdd-use-arrows-to-select">(gunakan ↑ dan ↓ untuk memilih)</message>
+</messages>
+

@@ -1,7 +1,7 @@
 <RelActCalcAuto version="0">
 	<Options version="2">
 		<FitEnergyCal>true</FitEnergyCal>
-		<FwhmForm remark="Possible values: Gadras, Polynomial_2, Polynomial_3, Polynomial_4, Polynomial_5, Polynomial_6">Polynomial_4</FwhmForm>
+		<FwhmForm remark="Possible values: Gadras, Polynomial_2, Polynomial_3, Polynomial_4, Polynomial_5, Polynomial_6, Berstein_2, Berstein_3, Berstein_4, Berstein_5, Berstein_6">Berstein_4</FwhmForm>
 		<FwhmEstimationMethod remark="Possible values: StartFromDetEffOrPeaksInSpectrum, StartingFromAllPeaksInSpectrum, FixedToAllPeaksInSpectrum, StartingFromDetectorEfficiency, FixedToDetectorEfficiency">StartFromDetEffOrPeaksInSpectrum</FwhmEstimationMethod>
 		<Title>Foreground</Title>
 		<SkewType>GaussExp</SkewType>
@@ -66,13 +66,6 @@
 					</ExtAtten>
 					<PhysModelUseHoerl>true</PhysModelUseHoerl>
 				</PhysicalModelOptions>
-				<MassFractionConstraints>
-					<MassFractionConstraint version="0">
-						<Nuclide>U235</Nuclide>
-						<LowerMassFraction>0.00000000e+00</LowerMassFraction>
-						<UpperMassFraction>1.00000000e+00</UpperMassFraction>
-					</MassFractionConstraint>
-				</MassFractionConstraints>
 			</RelEffCurveInput>
 		</RelEffCurveInputs>
 		<SameHoerlForAllRelEffCurves>false</SameHoerlForAllRelEffCurves>

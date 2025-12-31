@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dp- is short for DrfPeak
+      dsfs- is short for DrfSpecFileSample
+      md- is short for MakeDrf
+  -->
+  <message id="dp-back-sub-txt">ব্যাকগ্রাউন্ডের জন্য {1} cps বিয়োগ হবে</message>
+  <message id="dp-no-peak-preview">প্রিভিউ তৈরি করা যায়নি</message>
+
+  <message id="dsfs-sample">নমুনা</message>
+  <message id="dsfs-samples">নমুনা</message>
+  <message id="dsfs-using-num-peaks"> ({2} পিকের মধ্যে {1} ব্যবহার করছে)</message>
+  <message id="dsfs-back-peak-txt">এই পিকগুলি অন্যান্য নমুনা থেকে বিয়োগ করা হবে</message>
+  <message id="dsfs-is-background-cb">ব্যাকগ্রাউন্ড?</message>
+  <message id="dsfs-all-peaks-cb">সব পিক</message>
+
+  <message id="md-det-diam">ডিট. ব্যাস</message>
+  <message id="md-eff-type">দক্ষতা ধরন</message>
+  <message id="md-eqn-in-kev">keV তে সমীকরণ</message>
+  <message id="md-eqn-in-mev">MeV তে সমীকরণ</message>
+  <message id="md-geom-intrinsic-eff">অভ্যন্তরীণ দক্ষতা।</message>
+  <message id="md-geom-fixed-geom">স্থির জ্যামিতি</message>
+  <message id="md-geom-fixed-cm2">স্থির: প্রতি cm2</message>
+  <message id="md-geom-fixed-m2">স্থির: প্রতি m2</message>
+  <message id="md-geom-fixed-gram">স্থির: প্রতি গ্রাম</message>
+  <message id="md-tt-eff-interpret">
+    এই দক্ষতা কীভাবে ব্যাখ্যা করা উচিত।<br />
+    <br />
+    দূর ক্ষেত্র: বিন্দু উৎস, অথবা ডিটেক্টরের দূরত্বের তুলনায় ছোট উৎস; 1/r2 এর জন্য স্কেল করতে সনাক্তকরণ দূরত্ব পরিবর্তনের অনুমতি দেবে।<br />
+    <br />
+    স্থির জ্যামিতি: যখন ক্যারেক্টারাইজেশন ডেটা জ্যামিতি এবং দূরত্ব পরিমাপের সাথে মেলে,
+    এবং আপনি উৎসের মোট কার্যকলাপ গণনা করতে চাইবেন (যেমন মারিনেলি বিকার)।\n
+    <br />
+    স্থির প্রতি cm2: মোট কার্যকলাপের অনুরূপ, তবে যখন ক্যালিব্রেশন ডেটা এবং পরিমাপ
+    পৃষ্ঠ দূষণের জন্য, প্রতি বর্গ সেন্টিমিটারে দেওয়া মানগুলির সাথে।<br />
+    <br />
+    স্থির প্রতি m2: মোট প্রতি cm2 এর অনুরূপ, তবে প্রতি বর্গ মিটারের জন্য।<br />
+    <br />
+    স্থির প্রতি গ্রাম: প্রতি cm2 এর অনুরূপ, তবে উৎসের প্রতি গ্রামের জন্য।
+  </message>
+  <message id="md-fwhm-eqn-form-label">FWHM সমীকরণ।</message>
+  <message id="md-fwhm-gadras">Gadras সমীকরণ</message>
+  <message id="md-sqrt-series">বর্গমূল পাওয়ার সিরিজ</message>
+  <message id="md-atten-for-air-cb">বায়ুর জন্য ক্ষয়</message>
+  <message id="md-tt-atten-for-air">
+    উৎস এবং ডিটেক্টরের মধ্যে বায়ু দ্বারা ক্ষয় হিসাব করা হবে,
+    দূরত্ব স্কেলিং (বিভিন্ন দূরত্বে দক্ষতা ফাংশন ব্যবহার করে) আরো সঠিকভাবে অনুমতি দিতে।
+    <br />
+    এটি নিম্ন শক্তিতে, অথবা বৃহত্তর ক্যালিব্রেশন দূরত্বে একটি বড় প্রভাব।
+  </message>
+  <message id="md-show-fwhm-markers">FWHM পয়েন্ট দেখান</message>
+  <message id="md-display-energy-lower-label">প্রদর্শন শক্তি, নিম্ন:</message>
+  <message id="md-display-energy-upper-label">উচ্চ:</message>
+  <message id="md-mi-chart-phone">চার্ট/বিকল্প</message>
+  <message id="md-mi-peaks-phone">ব্যবহার করার পিক</message>
+  <message id="md-export-btn">সংরক্ষণ/এক্সপোর্ট...</message>
+  <message id="md-export-window-title">DRF সংরক্ষণ/এক্সপোর্ট</message>
+  <message id="md-tt-name">
+    <em>InterSpec</em>-এর অভ্যন্তরীণ ডেটাবেসে সংরক্ষণ করার জন্য ডিটেক্টর রেসপন্স ফাংশনের নাম যাতে আপনি পরে রেসপন্স ফাংশন ব্যবহার করতে পারেন।
+    নাম অবশ্যই একটি বৈধ ফাইলনাম হতে হবে (যেমন, \, /, :, ইত্যাদি অক্ষর নেই)।
+  </message>
+  <message id="md-tt-desc">ভবিষ্যতে DRF ব্যবহার করার সময় বিবরণ মনে রাখতে সাহায্য করার জন্য DRF এর ঐচ্ছিক বিবরণ।</message>
+  <message id="md-make-default-for-serial-cb">সিরিয়াল নম্বর '{1}' এর জন্য ডিফল্ট DRF তৈরি করুন</message>
+  <message id="md-tt-make-default-serial">
+    এটি তৈরি করুন যাতে যখন একটি মিলিত সিরিয়াল নম্বর সহ ডিটেক্টর থেকে স্পেকট্রা InterSpec-এ লোড করা হয়, তখন এই ডিটেক্টর রেসপন্স ফাংশন স্বয়ংক্রিয়ভাবে লোড এবং ব্যবহার করা হবে।
+  </message>
+  <message id="md-make-default-for-model-cb">মডেল '{1}' এর জন্য ডিফল্ট DRF তৈরি করুন</message>
+  <message id="md-tt-make-default-model">
+    এটি তৈরি করুন যাতে যখন এই মডেল ডিটেক্টর থেকে স্পেকট্রা InterSpec-এ লোড করা হয়, তখন এই ডিটেক্টর রেসপন্স ফাংশন স্বয়ংক্রিয়ভাবে লোড এবং ব্যবহার করা হবে।
+  </message>
+  <message id="md-tt-export-n42">
+    এই DRF তৈরি করতে ব্যবহৃত সমস্ত স্পেকট্রা এবং পিক ধারণকারী একটি N42 ফাইল এক্সপোর্ট করুন।
+    উৎস এবং শিল্ডিং তথ্যও সাধারণত ফাইলে সংরক্ষণ করা হয়,
+    নীতিগতভাবে, ডিটেক্টর ব্যাস এবং সমীকরণ ক্রম ছাড়া,
+    DRF তৈরি করতে ব্যবহৃত সমস্ত ইনপুট তথ্য প্রদান করে।
+  </message>
+  <message id="md-export-as-csv">DRF CSV হিসাবে এক্সপোর্ট করুন।</message>
+  <message id="md-tt-export-as-csv">
+    DRF কে একটি CSV ফাইলে এক্সপোর্ট করে যাতে DRF এর সমস্ত তথ্য রয়েছে।
+    অন্যান্য টুল ব্যবহার করার জন্য বিশেষভাবে দরকারী।
+  </message>
+  <message id="md-export-quick-ref">দ্রুত রেফ কার্ড এক্সপোর্ট করুন</message>
+  <message id="md-tt-export-quick-ref">একটি 3x5 শৈলী কার্ড এক্সপোর্ট করে যাতে ডিটেক্টর কর্মক্ষমতার একটি সংক্ষিপ্ত সারাংশ রয়েছে।</message>
+  <message id="md-det-name-not-valid">ডিটেক্টর নাম বৈধ নয়।</message>
+  <message id="md-eqn-not-valid">অভ্যন্তরীণ দক্ষতা সমীকরণ বৈধ নয়।</message>
+  <message id="md-err-creating-drf">DRF তৈরি করতে ত্রুটি: {1}</message>
+  <message id="md-err-saving-to-db">DetectorPeakResponse ডেটা বেসে সংরক্ষণ করতে ত্রুটি: {1}</message>
+  <message id="md-saved-to-db">অভ্যন্তরীণ ডেটাবেসে '{1}' সংরক্ষিত।</message>
+  <message id="md-peak-counts">{1} {2} keV, পিক {3} গণনা</message>
+  <message id="md-peak-no-nuc">কোনো সংশ্লিষ্ট নিউক্লাইড নেই, {1} keV, পিক {2} গণনা</message>
+  <message id="md-err-det-diam-invalid">ডিটেক্টর ব্যাস অবৈধ - 2.54 cm অনুমান করা হচ্ছে।</message>
+  <message id="md-err-some-src">কিছু উৎসে ত্রুটি ছিল।</message>
+  <message id="md-n-fit-pars">{1} ফিট প্যারাম</message>
+  <message id="md-html-eff-table-caption">সম্পূর্ণ-শক্তি সনাক্তকরণ দক্ষতা (% মোট গামা)</message>
+  <message id="md-html-Intrinsic">অভ্যন্তরীণ</message>
+  <message id="md-chart-data-intrinsic-eff-label">ডেটা অভ্যন্তরীণ দক্ষতা।</message>
+  <message id="md-chart-data-fwhm-label">ডেটা FWHM</message>
+  <message id="md-chart-fit-intrinsic-eff-label">ফিট অভ্যন্তরীণ দক্ষতা।</message>
+  <message id="md-chart-intrinsic-eff-plus-label">অভ্যন্তরীণ দক্ষতা। +2σ</message>
+  <message id="md-chart-intrinsic-eff-minus-label">ফিট অভ্যন্তরীণ দক্ষতা। -2σ</message>
+  <message id="md-chart-fit-fwhm-label">ফিট FWHM</message>
+</messages>

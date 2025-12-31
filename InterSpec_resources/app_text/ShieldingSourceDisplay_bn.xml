@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- This file applies to ShieldingSourceDisplay.cpp
+    ssd- is short for ShieldingSourceDisplay, and is basically the GUI component
+    sfm- is short for SourceFitModel
+    x2g- is short for ShieldingSourceDisplay::Chi2Graphic - e.g., the chart on this page
+  -->
+  <message id="ssd-tt-distance">
+    উৎসের কেন্দ্র থেকে ডিটেক্টরের মুখ পর্যন্ত দূরত্ব। সংখ্যার পরে অবশ্যই একক থাকতে হবে; বৈধ একক হল: meters, m, cm, mm, km, feet, ft, ', in, inches, বা "।  আপনি একাধিক দূরত্ব যোগ করতে পারেন, যেমন '3ft 4in', বা '3.6E-2 m 12 cm' যা যথাক্রমে 40inches এবং 15.6cm এর সমতুল্য।
+  </message>
+  <message id="ssd-geom-point">বিন্দু/গোলাকার</message>
+  <message id="ssd-geom-cyl-end">নলাকার: প্রান্ত-মুখী</message>
+  <message id="ssd-geom-cyl-side">নলাকার: পার্শ্ব-মুখী</message>
+  <message id="ssd-rectangular">আয়তক্ষেত্রাকার</message>
+  <message id="ssd-fixed-geom-notification">নির্দিষ্ট জ্যামিতি DRF ব্যবহার করা হচ্ছে</message>
+  <message id="ssd-tt-shieldings">
+    শিল্ডিংগুলি খোলসের মতো ব্যবহার করা হয়, সবচেয়ে ভেতরের খোলস হল প্রথমটি যা আপনি যোগ করেন (এই বাক্সে উপরেরটি), এবং পরবর্তী শিল্ডিংগুলি তার চারপাশে স্তরে স্তরে সাজানো। শিল্ডিংয়ের উপাদান হিসাবে যে উৎসগুলি যুক্ত নয় সেগুলিকে কেন্দ্রে বিন্দু উৎস হিসাবে গণ্য করা হয়।
+  </message>
+  <message id="ssd-add-shield-label">শিল্ডিং যোগ করুন:</message>
+  <message id="ssd-tt-add-shield">পূর্বনির্ধারিত সাধারণ শিল্ডিং উপাদানের লাইব্রেরি থেকে বেছে নিন।</message>
+  <message id="ssd-generic-btn">জেনেরিক</message>
+  <message id="ssd-tt-generic">আপনাকে পারমাণবিক সংখ্যা এবং ক্ষেত্রফল ঘনত্ব সংজ্ঞায়িত এবং ফিট করতে দেয়।</message>
+  <message id="ssd-perform-fit-btn">মডেল ফিট সম্পাদন করুন</message>
+  <message id="ssd-cancel-fit">মডেল ফিট বাতিল করুন</message>
+  <message id="ssd-mi-calc-log">গণনা লগ</message>
+  <message id="ssd-mi-import-model">মডেল আমদানি...</message>
+  <message id="ssd-mi-export-model">মডেল রপ্তানি</message>
+  <message id="ssd-mi-from-db">ডাটাবেস থেকে খুলুন...</message>
+  <message id="ssd-mi-save-to-db">ডাটাবেসে সংরক্ষণ করুন...</message>
+  <message id="ssd-mi-clone-db-entry">ডাটাবেসে ক্লোন করুন...</message>
+  <message id="ssd-to-small-for-chart">(χ<sup>2</sup> দেখাতে উইন্ডো লম্বা করুন)</message>
+  <message id="ssd-tt-chi2-switch">চার্টে বর্তমান মডেলের জন্য প্রতিটি পিকের Chi দেখান, অথবা বর্তমান মডেল এবং পর্যবেক্ষিত পিকের মধ্যে আপেক্ষিক পিক ক্ষেত্রফল গুণক।</message>
+  <message id="ssd-cb-all-peaks">সব পিক</message>
+  <message id="ssd-multi-iso-per-peak">ইন্টারফারেন্স সংশোধন</message>
+  <message id="ssd-options-title">বিকল্পসমূহ</message>
+  <message id="ssd-tt-multi-iso-per-peak">এই বিকল্পটি পরীক্ষা করলে ফিট করা অন্যান্য নিউক্লাইডগুলি, একটি পিকে নির্ধারিত নিউক্লাইড ছাড়াও, পর্যবেক্ষিত পিকে প্রত্যাশিত গণনায় অবদান রাখতে পারবে। এটি উদাহরণস্বরূপ Ho166m এবং U235 উভয়ের জন্য ফিট করার সময় উপযোগী হতে পারে যেগুলোর উভয়েরই 185 keV এর কাছাকাছি একটি পিক রয়েছে।</message>
+  <message id="ssd-cluster-width-label">ইন্টারফারেন্স প্রশস্ততা (সংখ্যা σ):</message>
+  <message id="ssd-tt-cluster-width">পিকের গড় থেকে সিগমার সংখ্যা যা গামা লাইন, যেকোনো নিউক্লাইড থেকে, সমষ্টিবদ্ধ এবং পিকে দায়ী করা হবে। ডিফল্ট মান 1.25 সিগমা, কিন্তু যদি পিকটি ইন্টারফারেন্সের কারণে স্পষ্টভাবে প্রশস্ত হয়, বা এটি একটি দুর্বল ফিট হয়, আপনি এই মান বৃদ্ধি করতে চাইতে পারেন। এটি 0.0 এ হ্রাস করলে শুধুমাত্র পিকের সাথে সম্পর্কিত গামা ব্যবহার করা হবে (একই রকম "একাধিক নিউক্লাইড পিকে অবদান রাখে" আনচেক করার মতো)।
+  </message>
+  <message id="ssd-cb-atten-for-air">বায়ুর জন্য ক্ষয় করুন</message>
+  <message id="ssd-tt-atten-for-air">যখন চেক করা হয়, উৎস বা বাইরের শিল্ডিং এবং ডিটেক্টরের মধ্যে বায়ুর কারণে ক্ষয় গণনায় হিসাব করা হবে।</message>
+  <message id="ssd-cb-sub-back-peaks">ব্যাকগ্রাউন্ড পিক বিয়োগ করুন</message>
+  <message id="ssd-tt-sub-back-peaks">এটি ফিটে একটি মৌলের সমস্ত আইসোটোপকে একই বয়স হতে বাধ্য করে।</message>
+  <message id="ssd-cb-same-el-same-age">একই Z একই বয়স</message>
+  <message id="ssd-tt-same-el-same-age">একই মৌলের আইসোটোপগুলির সবার একই বয়স থাকা উচিত তা বলবত করুন।</message>
+  <message id="ssd-cb-corr-for-decay">পরিমাপের সময় ক্ষয়ের জন্য সংশোধন করুন</message>
+  <message id="ssd-tt-corr-for-decay">পরিমাপ নেওয়ার সময় যে ক্ষয় এবং ইন-গ্রোথ প্রভাবগুলি ঘটে তার জন্য সংশোধন করে। ফলাফল কার্যকলাপ পরিমাপের শুরুর সময় অনুরূপ। সমাধান খুঁজতে অতিরিক্ত গণনা সময় লাগতে পারে।</message>
+  <message id="ssd-tt-geometry">"ট্রেস" উৎস বা স্ব-ক্ষয়কারী উৎসগুলির মডেলিংয়ের জন্য জ্যামিতি ব্যবহার করুন।
+    <br />
+    <br />
+    ডিফল্টভাবে, সমস্ত জ্যামিতির জন্য সমস্ত উৎস ডিটেক্টর থেকে নির্দিষ্ট দূরত্বে বিন্দু উৎস।
+    <br />
+    তবে, আপনি যদি একটি নিউক্লাইডকে "ট্রেস" উৎস তৈরি করেন (শিল্ডিংয়ের নিচের ডান কোণে "<em>ট্রেস উৎস যোগ করুন</em>" বোতামে ক্লিক করে), বা একটি স্ব-ক্ষয়কারী উৎস (একটি শিল্ডিংয়ে আপনি ফিট করছেন এমন নিউক্লাইডের একই মৌল থাকলে <em>উৎস:</em>" চেকবক্স নির্বাচন করে), তাহলে উৎস আইসোটোপ শিল্ডিং জুড়ে বিতরণ হিসাবে মডেল করা হবে, এবং শিল্ডিংয়ের মধ্যে প্রতিটি স্থানে বিভিন্ন ক্ষয়ের জন্য রে-ট্রেসিং ব্যবহার করা হবে।
+    <br />
+    <br />
+    সহজ রাখতে, "ট্রেস" বা স্ব-ক্ষয়কারী উৎসে ফিট না করলে "বিন্দু/গোলাকার" জ্যামিতি নির্বাচন করুন।
+  </message>
+  <message id="ssd-phone-tab-source-peaks">উৎস পিক</message>
+  <message id="ssd-phone-tab-source-isotopes">উৎস আইসোটোপ</message>
+  <message id="ssd-phone-tab-shielding">শিল্ডিং</message>
+  <message id="ssd-warn-no-back-peaks">কোনো ব্যাকগ্রাউন্ড পিক সংজ্ঞায়িত নেই, সেগুলি বিয়োগ করা হচ্ছে না</message>
+  <message id="ssd-warn-no-back-spec">কোনো ব্যাকগ্রাউন্ড স্পেকট্রাম লোড নেই, তাই ফোরগ্রাউন্ড থেকে ব্যাকগ্রাউন্ড পিক ক্ষেত্রফল বিয়োগ করা যাবে না।</message>
+  <message id="ssd-warn-no-back-peaks-toggle">
+    ব্যাকগ্রাউন্ড স্পেকট্রামে কোনো পিক শনাক্ত নেই। আপনার ব্যাকগ্রাউন্ড স্পেকট্রাম ফোরগ্রাউন্ড হিসাবে লোড করা উচিত, বিয়োগ করার সম্ভাব্য পিকগুলি শনাক্ত করুন, এবং তারপর আপনার বর্তমান ফোরগ্রাউন্ড/ব্যাকগ্রাউন্ড সংমিশ্রণে ফিরে যান।
+  </message>
+  <message id="ssd-update-dim-to-be-min">ন্যূনতম পুরুত্ব হতে শিল্ডিং মাত্রা আপডেট করা হয়েছে।</message>
+  <message id="ssd-scaled-shield-to-be-less-dist">শিল্ডিং পুরুত্বগুলি ডিটেক্টর দূরত্বের চেয়ে কম হতে স্কেল করা হয়েছে।</message>
+  <message id="ssd-err-fit-only-one-an">আপনি একবারে শুধুমাত্র একটি জেনেরিক শিল্ডিংয়ের পারমাণবিক সংখ্যার জন্য ফিট করতে পারেন।</message>
+  <message id="ssd-warn-invalid-chi2-for-energy">{1} keV এর জন্য একটি অবৈধ chi2 গণনা করা হয়েছে, অন্যান্য ফলাফল অবৈধ হতে পারে</message>
+  <message id="ssd-calc-log-window-title">গণনা লগ</message>
+  <message id="ssd-calc-log-export-txt">TXT ফাইল</message>
+  <message id="ssd-err-opening-import-model">আপলোড করা উৎস শিল্ডিং ফিট মডেল খুলতে ত্রুটি: {1}</message>
+  <message id="ssd-import-model-window-title">উৎস শিল্ডিং XML মডেল আমদানি</message>
+  <message id="ssd-err-opening-db-model">ডাটাবেস থেকে উৎস শিল্ডিং ফিট মডেল খুলতে ত্রুটি: {1}</message>
+  <message id="ssd-err-loading-model">নির্বাচিত মডেল লোড করতে অক্ষম - দুঃখিত :(</message>
+  <message id="ssd-prev-saved-window-title">পূর্বে সংরক্ষিত মডেল</message>
+  <message id="ssd-models-prev-for-fore">এই ফোরগ্রাউন্ডের সাথে পূর্বে ব্যবহৃত মডেল:</message>
+  <message id="ssd-models-prev-saved">আপনার পূর্বে সংরক্ষিত মডেল:</message>
+  <message id="ssd-model-desc">মডেল বর্ণনা:</message>
+  <message id="ssd-cb-allow-del">মুছে ফেলার অনুমতি দিন</message>
+  <message id="ssd-no-model-in-db">আপনার জন্য ডাটাবেসে কোনো মডেল নেই</message>
+  <message id="ssd-err-creating-db-browser">ডাটাবেস মডেল ব্রাউজার তৈরি করতে ত্রুটি</message>
+  <message id="ssd-save-model-to-db-window-title">ডাটাবেসে কার্যকলাপ/শিল্ডিং মডেল সংরক্ষণ করুন</message>
+  <message id="ssd-save-to-db-name">মডেলের নাম লিখুন:</message>
+  <message id="ssd-save-to-db-desc">মডেলের বর্ণনা লিখুন (ঐচ্ছিক):</message>
+  <message id="ssd-must-enter-name">আপনাকে একটি নাম লিখতে হবে</message>
+  <message id="ssd-err-saving-to-db">ডাটাবেসে সংরক্ষণ করতে ত্রুটি</message>
+  <message id="ssd-Best">সেরা</message>
+  <message id="ssd-fit-failed">মডেলে ফিট ব্যর্থ হয়েছে</message>
+  <message id="ssd-using-fit-anyway">যাইহোক ফিট সমাধান ব্যবহার করা হচ্ছে।</message>
+  <message id="ssd-err-fit-not-performed">
+    {1}
+    <br />
+    ফিট সম্পাদন করা হয়নি।
+  </message>
+  <message id="ssd-err-before-fit">
+    {1}
+    <br />
+    ফিটের আগে।
+  </message>
+  <message id="ssd-err-couldnt-make-chi2-fcn">
+    {1}
+    <br />
+    ফিট সম্পাদন করা হয়নি (Chi2Fcn তৈরি করতে পারেনি)।
+  </message>
+  <message id="ssd-error-create-tool">কার্যকলাপ/শিল্ডিং ফিট প্রদর্শন তৈরি করতে ত্রুটি: {1}</message>
+  <message id="ssd-shield-source-diagram">শিল্ডিং/সোর্স ডায়াগ্রাম</message>
+  <message id="ssd-show-model-diagram">মডেল ডায়াগ্রাম দেখান</message>
+
+  <!-- SourceFitModel quantities -->
+  <message id="sfm-tt-header-isotope">নিউক্লাইডগুলি এই ফিটের জন্য ব্যবহৃত ফটোপিক অনুসারে যোগ বা সরানো হয়, তাই এই টেবিলে সম্পাদনা করা যাবে না</message>
+  <message id="sfm-tt-header-activity">নিউক্লাইডের কার্যকলাপ। একটি যুক্তিসঙ্গত শুরুর মান লেখা ফিটকে সাহায্য করতে পারে, বা কার্যকলাপের জন্য ফিট করার প্রয়োজন নেই। মানগুলি '12.4 kBq', '1.0mCi', '55.3uCi', '15.82Mbq' এর মতো ফর্ম্যাটে লেখা যেতে পারে</message>
+  <message id="sfm-tt-header-age">নিউক্লাইডের বয়স। মানগুলি এই ফর্ম্যাটে লেখা যেতে পারে: '23.3s' '2 hl' - (hl অর্থ অর্ধজীবন), '5.23y', '23:14:21.343', '19min', ইত্যাদি। মনে রাখবেন যে যে নিউক্লাইডগুলি স্থিতিশীল সন্তান পর্যন্ত ক্ষয় হয় তাদের বয়স করা যায় না।</message>
+  <message id="sfm-tt-header-fit-act">ফিট কি নিউক্লাইড কার্যকলাপও খুঁজে বের করার চেষ্টা করবে, নাকি প্রবেশ করা মান সঠিক মনে করবে?</message>
+  <message id="sfm-tt-header-fit-age">ফিট কি নিউক্লাইড বয়সও খুঁজে বের করার চেষ্টা করবে, নাকি কেবল প্রবেশ করা মান সঠিক মনে করবে? এই বিকল্পটি যে নিউক্লাইডগুলি কেবল স্থিতিশীল সন্তানে ক্ষয় হয় তাদের জন্য উপলব্ধ নয়।</message>
+  <message id="sfm-tt-header-iso-mass">এটি তালিকাভুক্ত কার্যকলাপ অনুমান করে খালি নিউক্লাইডের ভর।</message>
+  <message id="sfm-tt-header-act-uncert">এটি ফিট থেকে কার্যকলাপে অনিশ্চয়তা।</message>
+  <message id="sfm-tt-header-age-uncert">এটি ফিট থেকে বয়সে অনিশ্চয়তা।</message>
+  <message id="sfm-header-fit-act">ফিট কার্যকলাপ</message>
+  <message id="sfm-header-fit-age">ফিট বয়স</message>
+  <message id="sfm-header-act-uncert">কার্যকলাপ অনিশ্চয়তা</message>
+  <message id="sfm-header-age-uncert">বয়স অনিশ্চয়তা</message>
+  <message id="sfm-tt-aging-not-allowed">নিউক্লাইডের সন্তান স্থিতিশীল তাই বয়স করার অনুমতি নেই কারণ এটি গামা স্পেকট্রামকে প্রভাবিত করে না।</message>
+
+  <!-- Chi2Graphic -->
+  <message id="x2g-yaxis-title-chi">(পর্যবেক্ষিত-মডেল)/অনিশ্চয়তা</message>
+  <message id="x2g-yaxis-title-mult">মডেলের গুণক</message>
+  <message id="x2g-">Y-অক্ষ হল পিক ক্ষেত্রফল গণনা, বর্তমানে প্রদর্শিত উৎস এবং শিল্ডিং মান থেকে প্রত্যাশিত গণনার সংখ্যা বিয়োগ, সবগুলি পরিসংখ্যানগত অনিশ্চয়তা দ্বারা ভাগ। এর বর্গ হল যা শিল্ডিং এবং উৎস অপ্টিমাইজ করতে ব্যবহৃত হয়।</message>
+  <message id="x2g-tt-chi-axis">Y-অক্ষ হল পিক ক্ষেত্রফল গণনা, বর্তমানে প্রদর্শিত উৎস এবং শিল্ডিং মান থেকে প্রত্যাশিত গণনার সংখ্যা বিয়োগ, সবগুলি পরিসংখ্যানগত অনিশ্চয়তা দ্বারা ভাগ। এর বর্গ হল যা শিল্ডিং এবং উৎস অপ্টিমাইজ করতে ব্যবহৃত হয়।</message>
+  <message id="x2g-tt-scale-axis">Y-অক্ষ হল পর্যবেক্ষিত পিক গণনার গুণক, বর্তমান উৎস এবং শিল্ডিং মান থেকে যা প্রত্যাশিত তার তুলনায়।</message>
+</messages>

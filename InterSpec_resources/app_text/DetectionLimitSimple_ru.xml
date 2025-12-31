@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dls- is short for DetectionLimitSimple
+  -->
+  <message id="dls-fit-fwhm-btn">Фитировать FWHM...</message>
+  <message id="dls-select-drf-btn">Выбрать детектор...</message>
+  <message id="dls-further-details-link">подробности...</message>
+  <message id="dls-conf-level-label">Уровень доверия:</message>
+  <message id="dls-roi-lower-label">ROI нижний:</message>
+  <message id="dls-roi-upper-label">ROI верхний:</message>
+  <message id="dls-num-side-channel-label">Кол-во боковых кан.:</message>
+  <message id="dls-fwhm-label">FWHM:</message>
+  <message id="dls-decon-cont-norm-label">Норм. конт.:</message>
+  <message id="dls-is-background-spectrum-cb">Спектр фона</message>
+  <message id="dls-is-background-spectrum-tt">
+    Выбор этой опции утверждает, что в этом спектре отсутствует сигнал.
+    <p>
+      Сама область пика будет использована для оценки ожидаемого фона.
+      Опция выбора боковых каналов рядом с областью пика становится неактуальной, поэтому будет скрыта.
+    </p>
+  </message>
+  <message id="dls-cont-norm-unknown">Плавающий</message>
+  <message id="dls-cont-norm-not-present">Как отсутствие сигнала</message>
+  <message id="dls-cont-norm-fixed-by-sides">От краев</message>
+  <message id="dls-roi-changed-no-gamma">Изменение ROI исключило первичную гамму - не изменяю</message>
+  <message id="dls-suggest-fwhm">FWHM детектора: {1} кэВ</message>
+  <message id="dls-rough-est-fwhm">Грубая оценка FWHM: {1} кэВ</message>
+  <message id="dls-calc-method">Метод расчета:</message>
+  <message id="dls-currie-tab-title">Карри</message>
+  <message id="dls-decon-tab-title">Деконволюция</message>
+  <message id="dls-err-no-input">Нет ввода - введите нуклид, выберите энергию гамма и введите расстояние.</message>
+  <message id="dls-err-calculating">Ошибка расчета ответа: {1}</message>
+  <message id="dls-currie-desc">Метод Карри сравнивает валовые отсчеты с предсказанием окружающих каналов</message>
+  <message id="dls-decon-desc">Деконволюция учитывает форму пика и распределение данных</message>
+  <message id="dls-qr-tool-state-title">Состояние инструмента простого MDA</message>
+  <message id="dls-qr-tool-state-txt">Текущее состояние инструмента простого MDA.</message>
+
+  <message id="dls-det-act-with-range">Обнаружено: {1}, диапазон [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-no-result">Извините, нет результата</message>
+  <message id="dls-det-counts-with-range">Избыточные отсчеты: {1}, диапазон [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-act-less-zero">Активность &lt; 0 {1} (наблюдается значительно меньше отсчетов чем ожидалось).</message>
+  <message id="dls-det-counts-less-zero">Избыточные отсчеты &lt; 0 {2} (наблюдается значительно меньше отсчетов чем ожидалось).</message>
+  <message id="dls-det-upper-bound">Менее чем {1} присутствует @{2} CL.</message>
+  <message id="dls-min-detectable-act">Минимальная надежно детектируемая активность: {1}.</message>
+  <message id="dls-min-detectable-counts">Минимальные надежно детектируемые избыточные отсчеты: {1}</message>
+  <message id="dls-error-computing-results">Ошибка вычисления результата</message>
+  <message id="dls-chart-title-estimated-counts">Оценочные отсчеты {1}.</message>
+  <message id="dls-results-txt-estimated-counts">
+    Обнаруженные отсчеты {1}.
+    <br/>
+    Диапазон: [{2}, {3}] @{4} CL
+  </message>
+  <message id="dls-chart-title-estimated-act">Оценочная активность {1}.</message>
+  <message id="dls-results-txt-estimated-act">
+    Обнаруженная активность {1}.
+    <br/>
+    Диапазон: [{2}, {3}] @{4} CL
+  </message>
+  <message id="dls-chart-title-upper-bound-act">Пик для верхней границы {1} @{2} CL</message>
+  <message id="dls-results-txt-upper-bound-act">Менее чем {1} @{2} CL</message>
+  <message id="dls-chart-title-upper-bound-counts">Пик для верхней границы {1} отсчетов @{2} CL</message>
+  <message id="dls-results-txt-upper-bound-counts">Менее чем {1} сигнальных отсчетов присутствует @{2} CL</message>
+  <message id="dls-err-no-meas">Измерение недоступно</message>
+  
+  <message id="dls-Info">Инфо</message>
+  <message id="dls-assumed-br=1">(активность предполагает BR=1.0)</message>
+  <message id="dls-Limit">Предел</message>
+  <message id="dls-continuum-area">Площадь конт.</message>
+  <message id="dls-DOF" remark="Degrees of freedom abbreviation">СТС</message>
+  <message id="dls-Upper">Верхний</message>
+  <message id="dls-Lower">Нижний</message>
+  <message id="dls-Best">Лучший</message>
+  <message id="dls-ROI-range-label">Диапазон ROI (кэВ)</message>
+  <message id="dls-ROI-Channels-label">Каналы ROI</message>
+  <message id="dls-ROI-Width">Ширина ROI</message>
+  <message id="dls-det-intrinsic-eff">Собст. эфф. дет.</message>
+  <message id="dls-solid-angle-frac">Доля телесного угла</message>
+  <message id="dls-air-trans">Пропускание воздуха</message>
+  <message id="dls-gamma-intensity">Интенсивность гамма</message>
+  <message id="dls-err-more-info-title">Ошибка вычисления предела...</message>
+  <message id="dls-err-more-info-content">Ошибка вычисления информации о пределе: {1}</message>
+  <message id="dls-err-select-det">Выберите функцию эффективности детектора.</message>
+  <message id="dls-err-neg-distance">Расстояние не может быть отрицательным.</message>
+  <message id="dls-err-no-fwhm-info">Функция эффективности детектора не содержит информации FWHM - пожалуйста, фитируйте FWHM или измените детектор.</message>
+  <message id="dls-"></message>
+  <message id="dls-"></message>
+  <message id="dls-"></message>
+</messages>

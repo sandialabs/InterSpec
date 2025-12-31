@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- pe- is short for PeakEdit -->
+  <message id="pe-value">Érték</message>
+  <message id="pe-uncertainty">Bizonytalanság</message>
+  <message id="pe-parameter">Paraméter</message>
+  <message id="pe-label">Címke</message>
+  <message id="pe-peak-type">Csúcs típus</message>
+  <message id="pe-peak-model-gaussian">Gauss</message>
+  <message id="pe-peak-model-data">Adat régió</message>
+  <message id="pe-skew-type">Aszimmetria típus</message>
+  <message id="pe-btn-refit">Újraillesztés</message>
+  <message id="pe-btn-refit-roi-standard">ROI újraillesztés: kapcsolt FWHM-ek</message>
+  <message id="pe-btn-refit-roi-independent">ROI újraillesztés: független FWHM-ek</message>
+  <message id="pe-btn-refit-roi-fine">ROI újraillesztés: kis finomítások</message>
+  <message id="pe-btn-refit-roi-independent-fine">ROI újraillesztés: finomítás független FWHM-ekkel</message>
+  
+  <message id="pe-label-centroid">Centroid</message>
+  <message id="pe-label-drf-fwhm">DRF jósolt FWHM</message>
+  <message id="pe-label-amp">Amplitúdó</message>
+  <message id="pe-label-skew0">Aszimm. 0</message>
+  <message id="pe-label-skew1">Aszimm. 1</message>
+  <message id="pe-label-skew2">Aszimm. 2</message>
+  <message id="pe-label-skew3">Aszimm. 3</message>
+  <message id="pe-label-cont-p0">Kont. P0</message>
+  <message id="pe-label-cont-p1">Kont. P1</message>
+  <message id="pe-label-cont-p2">Kont. P2</message>
+  <message id="pe-label-cont-p3">Kont. P3</message>
+  <message id="pe-label-cont-p4">Kont. P4</message>
+  <message id="pe-label-roi-start">ROI kezdet (keV)</message>
+  <message id="pe-label-roi-end">ROI vége (keV)</message>
+  <message id="pe-label-chi2-dof">𝜒²/DOF</message>
+  <message id="pe-label-peak-color">Csúcs szín</message>
+
+  <message id="pe-multipeak-in-roi">{1}. csúcs a {2}-ből a ROI-ban</message>
+  <message id="pe-apply-all-of-type">Minden {1} csúcs</message>
+  <message id="pe-drf-predict-fwhm-txt">A DRF {1} keV FWHM-et jósol</message>
+  <message id="pe-btn-cont-to-linear">Lineáris kontinuum becslése</message>
+  <message id="pe-tt-btn-cont-to-linear">A ROI jobb és bal oldalán lévő csatornákat használja egyenes vonalú kontinuum becsléséhez.</message>
+  <message id="pe-failed-refit-insig">Nem sikerült a csúcs újraillesztése (jelentéktelenné vált), így nem teszünk semmit</message>
+
+  <message id="pe-est-lin-cont-no-data">Kérjük, töltsön be egy előtér spektrumot a kontinuum becslése előtt.</message>
+  <message id="pe-failed-est-lin-cont">Nem sikerült becsülni a kontinuumot a ROI széleiből: {1}</message>
+  
+  
+  
+</messages>

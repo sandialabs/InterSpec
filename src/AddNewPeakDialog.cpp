@@ -70,7 +70,7 @@ const float AddNewPeakDialog::m_maxfwhm = 450.0f;  //reasonable range of peak wi
 
 AddNewPeakDialog::AddNewPeakDialog( const float initialEnergy, const std::string &ref_line_hint )
 : AuxWindow( WString::tr("anpd-dialog-add-peak-title"),
-            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+            (AuxWindowProperties::IsModal
              | AuxWindowProperties::TabletNotFullScreen
              | AuxWindowProperties::DisableCollapse) ),
 m_renderFlags( 0 ),
@@ -290,7 +290,7 @@ m_chart( nullptr )
   
   doAdd->clicked().connect( std::bind( [this](){
     UndoRedoManager::PeakModelChange peak_undo_creator;
-    m_viewer->addPeak( *m_candidatePeak, false );
+    m_viewer->addPeak( *m_candidatePeak, false, SpecUtils::SpectrumType::Foreground );
     this->hide();
   }) );
   

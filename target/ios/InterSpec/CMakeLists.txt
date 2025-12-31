@@ -12,7 +12,7 @@ set( InterSpec_IOS ON CACHE INTERNAL "" )
 set( InterSpec_FETCH_DEPENDENCIES ON CACHE INTERNAL "" )
 
 
-#set( CMAKE_XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "11.0"
+#set( CMAKE_XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "15.0"
 #        CACHE STRING "Set the minimum deployment target value."
 #        FORCE
 #    )
@@ -37,7 +37,7 @@ set(MAX_SPECTRUM_MEMMORY_SIZE_MB 32 CACHE INTERNAL "" )
 set(USE_REL_ACT_TOOL ON CACHE INTERNAL "")
     
 
-project( InterSpecIOS VERSION 1.13 )
+project( InterSpecIOS VERSION 1.14 )
 
 add_definitions( -DIOS )
 

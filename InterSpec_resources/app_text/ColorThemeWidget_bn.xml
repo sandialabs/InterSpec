@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ctwidget- is short for ColorThemeWidget -->
+
+  <!-- Basic fields -->
+  <message id="ctwidget-theme-name">থিমের নাম</message>
+  <message id="ctwidget-description">বর্ণনা</message>
+  <message id="ctwidget-title-placeholder">শিরোনাম বরাদ্দ নেই</message>
+  <message id="ctwidget-desc-placeholder">বর্ণনা বরাদ্দ নেই</message>
+  <message id="ctwidget-empty">(খালি)</message>
+
+  <!-- Non-chart area -->
+  <message id="ctwidget-non-chart-area">নন-চার্ট এলাকা</message>
+  <message id="ctwidget-backdrop-theme">ব্যাকড্রপ থিম</message>
+  <message id="ctwidget-backdrop-desc">সমস্ত নন-চার্ট এলাকার জন্য থিম</message>
+
+  <!-- Chart colors section -->
+  <message id="ctwidget-chart-colors">চার্ট রং</message>
+
+  <!-- Spectrum colors -->
+  <message id="ctwidget-spec-foreground">স্পেক ফোরগ্রাউন্ড</message>
+  <message id="ctwidget-spec-foreground-desc">ফোরগ্রাউন্ড স্পেকট্রামের জন্য লাইন রং</message>
+  <message id="ctwidget-spec-background">স্পেক ব্যাকগ্রাউন্ড</message>
+  <message id="ctwidget-spec-background-desc">ব্যাকগ্রাউন্ড স্পেকট্রামের জন্য লাইন রং</message>
+  <message id="ctwidget-spec-secondary">স্পেক সেকেন্ডারি</message>
+  <message id="ctwidget-spec-secondary-desc">সেকেন্ডারি স্পেকট্রামের জন্য লাইন রং</message>
+
+  <!-- Peak options -->
+  <message id="ctwidget-peaks-use-ref-color">পিক রেফারেন্স লাইন রং ব্যবহার করে</message>
+  <message id="ctwidget-peaks-use-ref-desc">নতুন ফিট করা পিক সেই পিকের জন্য রেফারেন্স লাইনের রং নেয় কিনা নির্ধারণ করে।</message>
+  <message id="ctwidget-default-peak-color">ডিফল্ট পিক রং</message>
+  <message id="ctwidget-default-peak-desc">পিকের জন্য ব্যবহৃত রং যার কোনো বরাদ্দকৃত রং নেই</message>
+
+  <!-- Spectrum chart -->
+  <message id="ctwidget-spectrum-axis">স্পেকট্রাম চার্ট অক্ষ</message>
+  <message id="ctwidget-spectrum-axis-desc">স্পেকট্রাম X এবং Y অক্ষের জন্য লাইন রং</message>
+  <message id="ctwidget-spectrum-text">স্পেকট্রাম চার্ট টেক্সট</message>
+  <message id="ctwidget-spectrum-text-desc">স্পেকট্রাম চার্ট টেক্সট (y এবং x অক্ষ লেবেল) রং</message>
+  <message id="ctwidget-spectrum-area">স্পেকট্রাম এলাকা</message>
+  <message id="ctwidget-spectrum-area-desc">স্পেকট্রাম চার্টের জন্য ব্যাকগ্রাউন্ড রং</message>
+  <message id="ctwidget-spectrum-margin">স্পেকট্রাম চার্ট ব্যাকগ্রাউন্ড</message>
+  <message id="ctwidget-spectrum-margin-desc">স্পেকট্রাম চার্ট মার্জিনের জন্য রং</message>
+  <message id="ctwidget-same-as-spectrum">স্পেকট্রাম এলাকার মতো একই</message>
+
+  <!-- Time chart -->
+  <message id="ctwidget-time-gamma">টাইম চার্ট গামা কাউন্ট</message>
+  <message id="ctwidget-time-gamma-desc">টাইম চার্টে গামা কাউন্টের জন্য লাইন রং</message>
+  <message id="ctwidget-time-neutron">টাইম চার্ট নিউট্রন কাউন্ট</message>
+  <message id="ctwidget-time-neutron-desc">টাইম চার্টে নিউট্রন কাউন্টের জন্য লাইন রং</message>
+  <message id="ctwidget-time-axis">টাইম চার্ট অক্ষ</message>
+  <message id="ctwidget-time-axis-desc">টাইম চার্ট X এবং Y অক্ষের জন্য লাইন রং</message>
+  <message id="ctwidget-time-background">টাইম চার্ট ব্যাকগ্রাউন্ড</message>
+  <message id="ctwidget-time-background-desc">টাইম চার্টের জন্য ব্যাকগ্রাউন্ড রং</message>
+  <message id="ctwidget-time-margins">টাইম চার্ট মার্জিন</message>
+  <message id="ctwidget-time-margins-desc">স্পেকট্রাম চার্ট মার্জিনের জন্য রং</message>
+  <message id="ctwidget-same-as-background">ব্যাকগ্রাউন্ডের মতো একই</message>
+  <message id="ctwidget-time-text">টাইম চার্ট টেক্সট</message>
+  <message id="ctwidget-time-text-desc">টাইম চার্টের জন্য টেক্সট রং (x এবং y-অক্ষ লেবেল)</message>
+
+  <!-- Occupancy and highlights -->
+  <message id="ctwidget-occ-lines">অকুপেন্সি ইন্ডিকেটর লাইন</message>
+  <message id="ctwidget-occ-lines-desc">লাইন যা একটি অকুপেন্সি (পোর্টাল ডেটা) বা আগ্রহের সময়কাল (সার্চ মোড ডেটা) এর শুরু এবং শেষ নির্দেশ করে</message>
+  <message id="ctwidget-time-fore-highlight">টাইম ফোরগ্রাউন্ড হাইলাইট</message>
+  <message id="ctwidget-time-fore-highlight-desc">টাইম চার্টে নির্দেশ করতে ব্যবহৃত রং, সময়ের কোন অংশ ফোরগ্রাউন্ড স্পেকট্রামের জন্য সমষ্টি করা হচ্ছে।</message>
+  <message id="ctwidget-time-back-highlight">টাইম ব্যাকগ্রাউন্ড হাইলাইট</message>
+  <message id="ctwidget-time-back-highlight-desc">টাইম চার্টে নির্দেশ করতে ব্যবহৃত রং, সময়ের কোন অংশ ব্যাকগ্রাউন্ড স্পেকট্রামের জন্য সমষ্টি করা হচ্ছে।</message>
+  <message id="ctwidget-time-sec-highlight">টাইম সেকেন্ডারি হাইলাইট</message>
+  <message id="ctwidget-time-sec-highlight-desc">টাইম চার্টে নির্দেশ করতে ব্যবহৃত রং, সময়ের কোন অংশ সেকেন্ডারি স্পেকট্রামের জন্য সমষ্টি করা হচ্ছে।</message>
+
+  <!-- Reference lines -->
+  <message id="ctwidget-ref-line-colors">রেফারেন্স লাইন রং</message>
+  <message id="ctwidget-ref-line-colors-desc">রেফারেন্স লাইনের জন্য ব্যবহার করতে ক্রমযুক্ত রং</message>
+  <message id="ctwidget-specific-ref-colors">নির্দিষ্ট উৎস রেফারেন্স লাইন রং</message>
+  <message id="ctwidget-specific-ref-desc">প্রদত্ত উৎসের জন্য রেফারেন্স লাইনের জন্য ব্যবহার করতে রং</message>
+  <message id="ctwidget-dynamic-ref-lines">ডায়নামিক রেফারেন্স লাইন</message>
+  <message id="ctwidget-dynamic-ref-desc">একটি নিউক্লাইডের ধরনের উপর ভিত্তি করে ব্যবহার করতে রং</message>
+
+  <!-- Dynamic reference categories -->
+  <message id="ctwidget-medical">মেডিকেল</message>
+  <message id="ctwidget-industrial">শিল্প</message>
+  <message id="ctwidget-norm">NORM</message>
+  <message id="ctwidget-snm">SNM</message>
+  <message id="ctwidget-common">সাধারণ</message>
+  <message id="ctwidget-other">অন্যান্য</message>
+
+  <!-- Other options -->
+  <message id="ctwidget-other-options">অন্যান্য বিকল্প</message>
+  <message id="ctwidget-peak-label-size">পিক লেবেল আকার</message>
+  <message id="ctwidget-peak-label-size-desc">পিক লেবেলের ফন্ট-সাইজ নির্দিষ্ট করে</message>
+  <message id="ctwidget-peak-label-angle">পিক লেবেল কোণ</message>
+  <message id="ctwidget-peak-label-angle-desc">পিক লেবেলের ঘূর্ণন, ডিগ্রিতে</message>
+  <message id="ctwidget-log-y-min">Log-Y সর্বনিম্ন</message>
+  <message id="ctwidget-log-y-min-desc">লগারিদমিক y-অক্ষে প্রদর্শিত সর্বনিম্ন মান, যখন প্রদর্শিত x-পরিসরে শূন্য বা ঋণাত্মক কাউন্ট সহ একটি চ্যানেল থাকে।</message>
+</messages>

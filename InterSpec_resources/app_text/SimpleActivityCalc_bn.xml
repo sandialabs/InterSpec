@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- SimpleActivityCalc widget text resources -->
+  <message id="simple-activity-calc-title">সরল কার্যকলাপ ক্যালকুলেটর</message>
+  <message id="simple-activity-calc-menu">সরল অ্যাক্ট ক্যালক</message>
+
+  <message id="sac-peak-label">পিক:</message>
+  <message id="sac-background-subtract-label">ব্যাকগ্রাউন্ড বিয়োগ</message>
+
+  <message id="sac-distance-label">দূরত্ব:</message>
+  <message id="sac-age-label">বয়স:</message>
+  <message id="sac-shielding-label">শিল্ডিং:</message>
+  <message id="sac-geometry-label">জ্যামিতি:</message>
+  <message id="sac-result-label">কার্যকলাপ:</message>
+  <message id="sac-advanced-btn">উন্নত অ্যাক্ট/শিল্ড ফিট</message>
+
+  <message id="sac-geometry-point">বিন্দু উৎস</message>
+  <message id="sac-geometry-plane">অসীম সমতল</message>
+  <message id="sac-geometry-self-atten">স্ব-ক্ষয়কারী গোলক</message>
+  <message id="sac-geometry-trace-src">ট্রেস উৎস</message>
+
+  <message id="sac-error-no-peak">কোনো পিক নির্বাচিত নেই</message>
+  <message id="sac-error-no-detector">কোনো ডিটেক্টর রেসপন্স লোড করা হয়নি</message>
+  <message id="sac-error-invalid-distance">অবৈধ দূরত্ব প্রবেশ করানো হয়েছে</message>
+
+  <message id="sac-error-no-background-peak">
+    <p>এই পিকের মতো একই অবস্থানে ব্যাকগ্রাউন্ডে কোনো পিক নেই বলে মনে হচ্ছে।</p>
+    <p>যদি আপনি মনে করেন আছে, তাহলে অনুগ্রহ করে ফোরগ্রাউন্ড এবং ব্যাকগ্রাউন্ড স্পেকট্রা অদলবদল করুন, ব্যাকগ্রাউন্ড স্পেকট্রামে পিক ফিট করুন, এবং তারপর সেগুলি ফিরিয়ে দিন।</p>
+  </message>
+
+
+  <message id="sac-use-fit-background-peak">আপনি কি স্বয়ংক্রিয়ভাবে ফিট ব্যাকগ্রাউন্ড পিক ব্যবহার করতে চান?</message>
+
+  <message id="sac-error-fitting-background-peak">
+    <p>ব্যাকগ্রাউন্ড স্পেকট্রামে একটি পিক ফিট করার চেষ্টা করার সময় একটি ত্রুটি ছিল:</p>
+    <p style="SimpleActPeakFitErrorTxt">{1}</p>
+  </message>
+
+
+  <message id="sac-qr-tool-state-title">সরল কার্যকলাপ ক্যালক টুল স্টেট</message>
+  <message id="sac-qr-tool-state-txt">সরল কার্যকলাপ ক্যালক টুলের বর্তমান স্টেট।</message>
+</messages>

@@ -131,16 +131,14 @@ void check_auto_state_xml_serialization()
   range.lower_energy = 500.0;
   range.upper_energy = 2000.0;
   range.continuum_type = PeakContinuum::OffsetType::Quadratic;
-  range.force_full_range = false;
-  range.allow_expand_for_peak_width = false;
+  range.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::CanBeBrokenUp;
   state.options.rois.push_back( range );
 
   // Add a second range
   range.lower_energy = 50.0;
   range.upper_energy = 200.0;
   range.continuum_type = PeakContinuum::OffsetType::Linear;
-  range.force_full_range = true;
-  range.allow_expand_for_peak_width = true;
+  range.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::CanExpandForFwhm;
   state.options.rois.push_back( range );
 
   RelActCalcAuto::FloatingPeak peak;
@@ -2006,27 +2004,31 @@ int dev_code()
   }
 
   // Use "HPGe Pu 140 to 240 keV", adapted from FRAM
-  const vector<RelActCalcAuto::RoiRange> energy_ranges{ {
-      127.9,                                 //Lower energy
-      131.8,                                 //Upper energy
-    PeakContinuum::Linear, //Continuum type
-      true,                                  //force_full_range
-      false                                  //allow_expand_for_peak_width
-    },
-    { 124.2, 127.8, PeakContinuum::LinearStep, true, false },
-    { 145.1, 150.9, PeakContinuum::Linear, true, false },
-    { 150.9, 153.8, PeakContinuum::Linear, true, false },
-    { 163.2, 166.2, PeakContinuum::Linear, true, false },
-    { 158.9, 163.2, PeakContinuum::Linear, true, false },
-    { 223.1, 230.4, PeakContinuum::Linear, true, false },
-    { 200.9, 204.9, PeakContinuum::Linear, true, false },
-    { 204.9, 211.0, PeakContinuum::LinearStep, true, false },
-    { 253.1, 257.1, PeakContinuum::Linear, true, false },
-    { 309.5, 314.3, PeakContinuum::Linear, true, false },
-    { 338.9, 348.6, PeakContinuum::LinearStep, true, false },
-    { 330.2, 338.9, PeakContinuum::LinearStep, true, false },
-    { 363.2, 386.4, PeakContinuum::FlatStep, true, false },
+  vector<RelActCalcAuto::RoiRange> energy_ranges;
+
+  auto make_roi = []( double lower, double upper, PeakContinuum::OffsetType cont_type ) {
+    RelActCalcAuto::RoiRange roi;
+    roi.lower_energy = lower;
+    roi.upper_energy = upper;
+    roi.continuum_type = cont_type;
+    roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
+    return roi;
   };
+
+  energy_ranges.push_back( make_roi( 127.9, 131.8, PeakContinuum::Linear ) );
+  energy_ranges.push_back( make_roi( 124.2, 127.8, PeakContinuum::LinearStep ) );
+  energy_ranges.push_back( make_roi( 145.1, 150.9, PeakContinuum::Linear ) );
+  energy_ranges.push_back( make_roi( 150.9, 153.8, PeakContinuum::Linear ) );
+  energy_ranges.push_back( make_roi( 163.2, 166.2, PeakContinuum::Linear ) );
+  energy_ranges.push_back( make_roi( 158.9, 163.2, PeakContinuum::Linear ) );
+  energy_ranges.push_back( make_roi( 223.1, 230.4, PeakContinuum::Linear ) );
+  energy_ranges.push_back( make_roi( 200.9, 204.9, PeakContinuum::Linear ) );
+  energy_ranges.push_back( make_roi( 204.9, 211.0, PeakContinuum::LinearStep ) );
+  energy_ranges.push_back( make_roi( 253.1, 257.1, PeakContinuum::Linear ) );
+  energy_ranges.push_back( make_roi( 309.5, 314.3, PeakContinuum::Linear ) );
+  energy_ranges.push_back( make_roi( 338.9, 348.6, PeakContinuum::LinearStep ) );
+  energy_ranges.push_back( make_roi( 330.2, 338.9, PeakContinuum::LinearStep ) );
+  energy_ranges.push_back( make_roi( 363.2, 386.4, PeakContinuum::FlatStep ) );
   
   
   const vector<RelActCalcAuto::NucInputInfo> nuclides{ {

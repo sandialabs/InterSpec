@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- d3sdd- is short for D3SpectrumDisplayDiv
+
+    The part of the id coming after "d3sdd-", directly corresponds to the javascript variable name, the element value gets put into.
+
+    The JS 'xAxisTitle' variable is localized using the "Energy (keV)" key
+    The JS 'fwhm' variable is localized using the "FWHM" key
+  -->
+  <message id="d3sdd-yAxisTitle">गणना</message>
+  <message id="d3sdd-yAxisTitleMulti">प्रति {1} चैनल गणना</message>
+  <message id="d3sdd-realTime">वास्तविक समय</message>
+  <message id="d3sdd-liveTime">लाइव समय</message>
+  <message id="d3sdd-deadTime">मृत समय</message>
+  <message id="d3sdd-scaledBy">द्वारा स्केल किया गया</message>
+  <message id="d3sdd-zoomIn">ज़ूम इन</message>
+  <message id="d3sdd-neutrons">neutrons</message>
+  <message id="d3sdd-Neutrons">Neutrons</message>
+  <message id="d3sdd-cps">cps</message>
+  <message id="d3sdd-roiCounts">ROI गणना</message>
+  <message id="d3sdd-gammaCounts">Gamma गणना</message>
+  <message id="d3sdd-contArea">सतत क्षेत्र</message>
+  <message id="d3sdd-peakCps">पीक cps</message>
+  <message id="d3sdd-peakArea">पीक क्षेत्र</message>
+  <message id="d3sdd-mean">माध्य</message>
+  <message id="d3sdd-spectrum">स्पेक्ट्रम</message>
+  <message id="d3sdd-comptonEdge">Compton किनारा</message>
+  <message id="d3sdd-sumPeak">योग पीक</message>
+  <message id="d3sdd-firstEnergyClick">योग पीक की पहली ऊर्जा सेट करने के लिए क्लिक करें।</message>
+  <message id="d3sdd-singleEscape">एकल पलायन</message>
+  <message id="d3sdd-doubleEscape">दोहरा पलायन</message>
+  <message id="d3sdd-eraseInRange">सीमा में पीक मिटा दिए जाएंगे</message>
+  <message id="d3sdd-zoomInY">Y-अक्ष पर ज़ूम-इन</message>
+  <message id="d3sdd-zoomOutY">Y-अक्ष पर ज़ूम-आउट</message>
+  <message id="d3sdd-touchDefineRoi">ROI परिभाषित करने के लिए 2 उंगलियों को दाईं ओर ले जाएं</message>
+  <message id="d3sdd-foreNSigmaBelowBack">Foreground, background से {1} σ नीचे है।</message>
+  <message id="d3sdd-foreNSigmaAboveBack">Foreground, background से {1} σ ऊपर है।</message>
+  <message id="d3sdd-backSubCounts">गणना (BG घटाव)</message>
+  <message id="d3sdd-afterScalingBy">द्वारा स्केलिंग के बाद </message>
+  <message id="d3sdd-clickedPeak">क्लिक की गई पीक</message>
+  <message id="d3sdd-recalFromTo">डेटा को {1} से {2} keV तक पुनः अंशांकित करें</message>
+  <message id="d3sdd-sumFromTo">{1} से {2} keV</message>
+  <message id="d3sdd-comptonPeakAngle">{1}° Compton पीक</message>
+  <message id="d3sdd-yaxis-lower-upper-equal">निचली और ऊपरी गणना समान।</message>
+  <message id="d3sdd-yaxis-no-spectrum">कोई स्पेक्ट्रम प्रदर्शित नहीं।</message>
+  <message id="d3sdd-yaxis-upper-counts-below-zero">ऊपरी सीमा शून्य के बराबर या नीचे।</message>
+  <message id="d3sdd-yaxis-lower-counts-below-zero">निचली सीमा शून्य के बराबर या नीचे।</message>
+  <message id="d3sdd-yaxis-below-min-non-zero">ऊपरी सीमा न्यूनतम प्रदर्शित, गैर-शून्य मान से कम।</message>
+  <message id="d3sdd-candidates">उम्मीदवार:</message>
+  <message id="d3sdd-use-arrows-to-select">(चयन के लिए ↑ और ↓ उपयोग करें)</message>
+</messages>

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ecaa- is short for EnergyCalAddActions -->
+  <message id="ecaa-linearize-title">Spektrum Linearizálása</message>
+  <message id="ecaa-truncate-title">Gamma Csatornák Csonkítása</message>
+  <message id="ecaa-combine-title">Gamma Csatornák Egyesítése</message>
+  <message id="ecaa-convert-frf-title">Átalakítás Teljes Tartomány Töredék Kalibrációra</message>
+  <message id="ecaa-convert-poly-title">Átalakítás Polinomiális Kalibrációra</message>
+  <message id="ecaa-multi-file-title">Többfájlos Kalibráció</message>
+  
+  <!-- Conversion messages -->
+  <message id="ecaa-conversion-no-effect">A konverzió nem befolyásolna egyetlen spektrumot sem; próbáljon meg több "Változtatások Alkalmazása" kritériumot kiválasztani.</message>
+  <message id="ecaa-already-polynomial">Minden spektrum, amelyre ez alkalmazásra kerülne, már polinomiális.</message>
+  <message id="ecaa-already-frf">Minden spektrum, amelyre ez alkalmazásra kerülne, már teljes tartomány töredék.</message>
+  <message id="ecaa-multiple-cal-types">Egynél több kalibrációs típus van a kiválasztott forrás spektrumokban; próbálja meg korlátozni a "Változtatások Alkalmazása" kritériumokat.</message>
+  <message id="ecaa-changes-applied-to">A változtatások a következőkre lesznek alkalmazva: {1}</message>
+  <message id="ecaa-terms-lost">A negyedik tag utáni tagok elvesznek, mivel nincsenek analóg tagok.</message>
+  <message id="ecaa-no-info-lost">Nem veszít el információt, ha folytatja.</message>
+  <message id="ecaa-conversion-question">Hogyan szeretné végrehajtani a konverziót?</message>
+  
+  <!-- Tool-specific messages -->
+  <message id="ecaa-for-n-channel-spectra">{1} csatornás spektrumok esetén:</message>
+  <message id="ecaa-lower-energy">Alsó Energia</message>
+  <message id="ecaa-upper-energy">Felső Energia</message>
+  <message id="ecaa-num-channels">Csatornák Száma</message>
+  <message id="ecaa-no-undo-note">Ez a művelet nem vonható vissza.</message>
+  <message id="ecaa-combine-channels-desc">Ez összekapcsolja az egymást követő csatornákat</message>
+  <message id="ecaa-num-channels-to-combine">Kombinálni kívánt csatornák száma:</message>
+  <message id="ecaa-first-channel-to-keep">Megtartandó Első Csatorna</message>
+  <message id="ecaa-last-channel-to-keep">Megtartandó Utolsó Csatorna</message>
+  <message id="ecaa-keep-overflow">Túlcsordulási számok megtartása</message>
+  <message id="ecaa-tt-keep-overflow">Ha kiválasztja, az eldobott csatornák összes száma hozzáadásra kerül az új első vagy utolsó csatornához.</message>
+  <message id="ecaa-first-channel-note">Vegye figyelembe, hogy az első csatorna a 0. csatorna.</message>
+  
+  <!-- ConvertCalTypeTool radio button options -->
+  <message id="ecaa-linearize-rebin-counts">Linearize, rebinning counts to match new widths</message>
+  <message id="ecaa-linearize-same-counts">Linearize, leaving counts in channels the same</message>
+  <message id="ecaa-fit-quadratic">Fit channel energies to quadratic equation.</message>
+  <message id="ecaa-fit-cubic">Fit channel energies to cubic equation.</message>
+  
+  <!-- ConvertCalTypeTool tooltips -->
+  <message id="ecaa-tt-linearize-rebin">The channels in the resulting spectra will all have the same width, but counts in each channel will not be integer; this option preserves spectral shape (counts per keV).</message>
+  <message id="ecaa-tt-linearize-same">The channel energies will be reassigned so that each channel will have same width, without taking into account the channels original width; i.e., the counts in each channel will remain the same, but spectral shape (counts per keV) will be changed.</message>
+</messages>

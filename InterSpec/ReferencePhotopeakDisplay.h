@@ -268,6 +268,8 @@ public:
    */
   void setExternalRidResults( std::shared_ptr<const ExternalRidResults> results );
   
+  std::shared_ptr<const ExternalRidResults> currentExternalRidResults() const;
+  
   /** Signal emmitted whenever the user selects a new nuclide to be shown. */
   Wt::Signal<> &displayingNuclide();
   

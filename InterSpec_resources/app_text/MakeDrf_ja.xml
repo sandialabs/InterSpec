@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dp- is short for DrfPeak
+      dsfs- is short for DrfSpecFileSample
+      md- is short for MakeDrf
+  -->
+  <message id="dp-back-sub-txt">バックグラウンドに{1} cpsを減算</message>
+  <message id="dp-no-peak-preview">プレビューを生成できません</message>
+
+  <message id="dsfs-sample">サンプル</message>
+  <message id="dsfs-samples">サンプル</message>
+  <message id="dsfs-using-num-peaks"> ({2}ピーク中{1}を使用)</message>
+  <message id="dsfs-back-peak-txt">これらのピークは他のサンプルから減算されます</message>
+  <message id="dsfs-is-background-cb">バックグラウンド？</message>
+  <message id="dsfs-all-peaks-cb">全ピーク</message>
+  
+  <message id="md-det-diam">検出器直径</message>
+  <message id="md-eff-type">効率タイプ</message>
+  <message id="md-eqn-in-kev">方程式(keV)</message>
+  <message id="md-eqn-in-mev">方程式(MeV)</message>
+  <message id="md-geom-intrinsic-eff">内在効率</message>
+  <message id="md-geom-fixed-geom">固定ジオメトリ</message>
+  <message id="md-geom-fixed-cm2">固定: per cm2</message>
+  <message id="md-geom-fixed-m2">固定: per m2</message>
+  <message id="md-geom-fixed-gram">固定: per gram</message>
+  <message id="md-tt-eff-interpret">
+    この効率の解釈方法。<br />
+    <br />
+    遠距離場: 点線源、または検出器との距離に比べて小さい線源。1/r2でスケールするために
+    検出距離の変更を可能にします。<br />
+    <br />
+    固定ジオメトリ: 特性評価データのジオメトリと距離が測定と一致し、
+    線源の全放射能を計算したい場合（例：マリネリビーカー）。<br />
+    <br />
+    固定 per cm2: 全放射能と似ていますが、校正データと測定が
+    表面汚染用で、平方センチメートルあたりの値が与えられる場合。<br />
+    <br />
+    固定 per m2: per cm2と似ていますが、平方メートルあたりの場合。<br />
+    <br />
+    固定 per gram: per cm2と似ていますが、線源のグラムあたりの場合。
+  </message>
+  <message id="md-fwhm-eqn-form-label">半値幅方程式</message>
+  <message id="md-fwhm-gadras">Gadras方程式</message>
+  <message id="md-sqrt-series">平方根べき級数</message>
+  <message id="md-atten-for-air-cb">空気の減衰</message>
+  <message id="md-tt-atten-for-air">
+    線源と検出器間の空気による減衰が考慮され、
+    距離スケーリング（異なる距離での効率関数の使用）をより正確に行えます。
+    <br />
+    これは低エネルギーまたは大きな校正距離で影響が大きくなります。
+  </message>
+  <message id="md-show-fwhm-markers">半値幅点表示</message>
+  <message id="md-display-energy-lower-label">表示エネルギー下限:</message>
+  <message id="md-display-energy-upper-label">上限:</message>
+  <message id="md-mi-chart-phone">チャート/オプション</message>
+  <message id="md-mi-peaks-phone">使用ピーク</message>
+  <message id="md-export-btn">保存/エクスポート...</message>
+  <message id="md-export-window-title">DRF保存/エクスポート</message>
+  <message id="md-tt-name">
+    後で応答関数を使用できるよう<em>InterSpec</em>の
+    内部データベースに保存する検出器応答関数の名前。
+    名前は有効なファイル名である必要があります（例：\、/、:などの文字は不可）。
+  </message>
+  <message id="md-tt-desc">将来DRFを使用する際に詳細を思い出すのに役立つDRFのオプション説明。</message>
+  <message id="md-make-default-for-serial-cb">シリアル番号'{1}'のデフォルトDRFにする</message>
+  <message id="md-tt-make-default-serial">
+    一致するシリアル番号の検出器からのスペクトルが
+    InterSpecに読み込まれたときに、この検出器応答関数が
+    自動的に読み込まれ使用されるようにします。
+  </message>
+  <message id="md-make-default-for-model-cb">モデル'{1}'のデフォルトDRFにする</message>
+  <message id="md-tt-make-default-model">
+    このモデル検出器からのスペクトルが
+    InterSpecに読み込まれたときに、この検出器応答関数が
+    自動的に読み込まれ使用されるようにします。
+  </message>
+  <message id="md-tt-export-n42">
+    このDRFの作成に使用されたすべてのスペクトルとピークを含むN42ファイルをエクスポート。
+    線源と遮蔽情報も通常ファイルに保存され、
+    原則的に、検出器直径と方程式次数を除いて、
+    DRF作成に使用されたすべての入力情報を提供します。
+  </message>
+  <message id="md-export-as-csv">DRFをCSVでエクスポート。</message>
+  <message id="md-tt-export-as-csv">
+    DRFのすべての情報を含むCSVファイルにDRFをエクスポート。
+    他のツールでの使用に特に有用。
+  </message>
+  <message id="md-export-quick-ref">簡易参照カードエクスポート</message>
+  <message id="md-tt-export-quick-ref">検出器性能の簡潔な要約を含む3x5スタイルのカードをエクスポート。</message>
+  <message id="md-det-name-not-valid">検出器名が無効です。</message>
+  <message id="md-eqn-not-valid">内在効率方程式が無効です。</message>
+  <message id="md-err-creating-drf">DRF作成エラー: {1}</message>
+  <message id="md-err-saving-to-db">DetectorPeakResponseのデータベース保存エラー: {1}</message>
+  <message id="md-saved-to-db">'{1}'を内部データベースに保存しました。</message>
+  <message id="md-peak-counts">{1} {2} keV、ピーク{3}カウント</message>
+  <message id="md-peak-no-nuc">関連核種なし、{1} keV、ピーク{2}カウント</message>
+  <message id="md-err-det-diam-invalid">検出器直径が無効 - 2.54 cmと仮定。</message>
+  <message id="md-err-some-src">一部の線源でエラーが発生。</message>
+  <message id="md-n-fit-pars">{1}フィットパラメータ</message>
+  <message id="md-html-eff-table-caption">全エネルギー検出効率（全ガンマの%）</message>
+  <message id="md-html-Intrinsic">内在</message>
+  <message id="md-chart-data-intrinsic-eff-label">データ内在効率</message>
+  <message id="md-chart-data-fwhm-label">データ半値幅</message>
+  <message id="md-chart-fit-intrinsic-eff-label">フィット内在効率</message>
+  <message id="md-chart-intrinsic-eff-plus-label">内在効率+2σ</message>
+  <message id="md-chart-intrinsic-eff-minus-label">フィット内在効率-2σ</message>
+  <message id="md-chart-fit-fwhm-label">フィット半値幅</message>
+</messages>

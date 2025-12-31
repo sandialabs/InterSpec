@@ -14,13 +14,14 @@ set(TRY_TO_STATIC_LINK ON CACHE INTERNAL "Try to statically link" )
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE INTERNAL "Set OSX deployment target to 10.15" )
 set(USE_REL_ACT_TOOL ON CACHE INTERNAL "Enable Rel. Act. Tools" )
 set(USE_LEAFLET_MAP ON CACHE INTERNAL "Use leaflet map tool" )
-option( USE_BATCH_TOOLS "Enables (command line for now) batch processing." ON )
+option( USE_BATCH_CLI_TOOLS "Enables command line batch processing." OFF )
+option( USE_BATCH_GUI_TOOLS "Enables GUI batch processing." ON )
 
 add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../../ InterSpecLib )
 
 
 SET(MACOSX_BUNDLE_INFO_STRING   "InterSpec - Sandia National Lab, Will Johnson")
-SET(MACOSX_BUNDLE_ICON_FILE InterSpec )
+SET(MACOSX_BUNDLE_ICON_FILE InterSpec)
 SET(MACOSX_BUNDLE_LONG_VERSION_STRING "" )
 SET(MACOSX_BUNDLE_BUNDLE_NAME "InterSpec" )
 SET(MACOSX_BUNDLE_SHORT_VERSION_STRING "InterSpec" )
@@ -28,7 +29,7 @@ SET(MACOSX_BUNDLE_BUNDLE_VERSION "0" )
 SET(MACOSX_BUNDLE_COPYRIGHT "Sandia National Labs, Will Johnson" )
 SET(MACOSX_BUNDLE_GUI_IDENTIFIER "gov.sandia.macOS.InterSpec" )
 #set MACOS_BUNDLE_VERSION_NUMBER for Info.plist.template to populate corresponding value in Xcode
-set(MACOS_BUNDLE_VERSION_NUMBER 51)
+set(MACOS_BUNDLE_VERSION_NUMBER 52)
 
 
 SET( ${PRODUCT_NAME} "InterSpec" )
@@ -37,7 +38,12 @@ SET( MACOSX_BUNDLE_BUNDLE_NAME "InterSpec" )
 FIND_LIBRARY(WEBKIT_LIBRARY WebKit)
 MARK_AS_ADVANCED( WEBKIT_LIBRARY )
 
-set(app_sources main.m AppDelegate.mm AppDelegate.h InterSpec.icns en.lproj/MainMenu.xib )
+set(app_sources main.m AppDelegate.mm AppDelegate.h en.lproj/MainMenu.xib )
+if (XCODE_VERSION VERSION_GREATER_EQUAL 26)
+  list(APPEND app_sources "${CMAKE_CURRENT_SOURCE_DIR}/InterSpec.icon")
+else()
+  list(APPEND app_sources InterSpec.icns)
+endif()
 
 
 set( CMAKE_INSTALL_RPATH "@executable_path/../Frameworks" )
@@ -116,14 +122,20 @@ set_target_properties(InterSpecApp PROPERTIES OUTPUT_NAME "InterSpec")
 
 target_link_libraries(InterSpecApp PUBLIC InterSpecLib ${WEBKIT_LIBRARY} )
 
-SET_SOURCE_FILES_PROPERTIES( ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec.icns 
-    PROPERTIES MACOSX_PACKAGE_LOCATION Resources
-)
+if (XCODE_VERSION VERSION_GREATER_EQUAL 26)
+  SET_SOURCE_FILES_PROPERTIES( ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec.icon
+      PROPERTIES MACOSX_PACKAGE_LOCATION Resources
+  )
+else()
+  SET_SOURCE_FILES_PROPERTIES( ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec.icns
+      PROPERTIES MACOSX_PACKAGE_LOCATION Resources
+  )
+endif()
 
 add_dependencies(InterSpecApp SpecFilePreview)
 
 
-if( USE_BATCH_TOOLS )
+if( USE_BATCH_CLI_TOOLS )
   add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../batch InterSpec_batch )
   add_dependencies( InterSpecApp InterSpec_batch )
   
@@ -147,7 +159,7 @@ if( USE_BATCH_TOOLS )
     $<TARGET_FILE:InterSpec_batch>
     $<TARGET_FILE_DIR:InterSpecApp>/
   )
-endif( USE_BATCH_TOOLS )
+endif( USE_BATCH_CLI_TOOLS )
 
 #Set resources MACOSX_PACKAGE_LOCATION property so it is where we want in the app bundle
 #ToDo: combine 5 loops below into a single loop...
@@ -244,29 +256,50 @@ set_target_properties( InterSpecApp
 )
 
 #Figure out the development team ID, and set this info for Xcode so it will default to signing the app
-#  This is probably a little brittle on other peoples machined
-execute_process( COMMAND /usr/bin/security find-identity -v -p codesigning 
+#  This is probably a little brittle on other peoples machines, so allow overrides via env vars.
+set(mac_team_id "$ENV{MAC_DEVELOPER_TEAM_ID}")
+if( (NOT mac_team_id OR mac_team_id STREQUAL "") AND DEFINED ENV{MAC_NOTARY_TEAM_ID} )
+  set(mac_team_id "$ENV{MAC_NOTARY_TEAM_ID}")
+endif()
+
+if(NOT mac_team_id OR mac_team_id STREQUAL "")
+  execute_process(
+    COMMAND /usr/bin/security find-identity -v -p codesigning
     OUTPUT_VARIABLE dev_team_ids
-)
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+  )
+  STRING(REGEX REPLACE ";" "\\\\;" dev_team_ids "${dev_team_ids}")
+  STRING(REGEX REPLACE "\n" ";" dev_team_ids "${dev_team_ids}")
+  LIST(FILTER dev_team_ids INCLUDE REGEX "Developer ID Application:.+" )
+  if(dev_team_ids)
+    STRING(REGEX MATCH "\\(.+\\)" mac_team_id ${dev_team_ids} )
+    STRING(REGEX REPLACE "\\(|\\)" "" mac_team_id "${mac_team_id}")
+  endif()
+endif()
 
-STRING(REGEX REPLACE ";" "\\\\;" dev_team_ids "${dev_team_ids}")
-STRING(REGEX REPLACE "\n" ";" dev_team_ids "${dev_team_ids}")
-LIST(FILTER dev_team_ids INCLUDE REGEX "Developer ID Application:.+" )
-STRING(REGEX MATCH "\\(.+\\)" mac_team_id ${dev_team_ids} )
-STRING(REGEX REPLACE "\\(|\\)" "" mac_team_id "${mac_team_id}")
-message("Using Mac Developer Team ID='${mac_team_id}'")
+if(NOT mac_team_id OR mac_team_id STREQUAL "")
+  message(FATAL_ERROR "Unable to determine Mac Developer Team ID. Set the MAC_DEVELOPER_TEAM_ID (or MAC_NOTARY_TEAM_ID) environment variable before running CMake.")
+endif()
 
-set_target_properties( InterSpecApp PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Mac Developer" )
+set(mac_signing_identity "$ENV{MAC_SIGNING_IDENTITY}")
+if(NOT mac_signing_identity OR mac_signing_identity STREQUAL "")
+  set(mac_signing_identity "Mac Developer")
+endif()
+
+message("Using Mac Developer Team ID='${mac_team_id}' with signing identity='${mac_signing_identity}'")
+
+set_target_properties( InterSpecApp PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "${mac_signing_identity}" )
 set_target_properties( InterSpecApp PROPERTIES XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${mac_team_id}" )
 set_target_properties( InterSpecApp PROPERTIES XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES" )
 
-set_target_properties( InterSpecLib PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Mac Developer" )
+set_target_properties( InterSpecLib PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "${mac_signing_identity}" )
 set_target_properties( InterSpecLib PROPERTIES XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${mac_team_id}" )
 set_target_properties( InterSpecLib PROPERTIES XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES" )
 
-if( USE_BATCH_TOOLS )
-  set_target_properties( InterSpec_batch PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Mac Developer" )
+if( USE_BATCH_CLI_TOOLS )
+  set_target_properties( InterSpec_batch PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "${mac_signing_identity}" )
   set_target_properties( InterSpec_batch PROPERTIES XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${mac_team_id}" )
   set_target_properties( InterSpec_batch PROPERTIES XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES" )
-endif( USE_BATCH_TOOLS )
+endif( USE_BATCH_CLI_TOOLS )
 

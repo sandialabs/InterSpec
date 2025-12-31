@@ -43,13 +43,13 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecServer.h"
 
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_CLI_TOOLS )
 #include "InterSpec/BatchCommandLine.h"
 #endif
 
-static_assert( USE_REL_ACT_TOOL, "This branch of InterSpec requires USE_REL_ACT_TOOL enabled" );
-#include "InterSpec/RelActAutoDev.h"
-
+//#if( USE_REL_ACT_TOOL )
+//#include "InterSpec/RelActAutoDev.h"
+//#endif
 
 int main( int argc, char **argv )
 {
@@ -70,8 +70,12 @@ int main( int argc, char **argv )
   int server_port_num;
   std::string docroot, wt_config, user_data_dir;
   
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_CLI_TOOLS )
   bool batch_peak_fit = false, batch_act_fit = false;
+#endif
+  
+#if( USE_LLM_INTERFACE )
+  static_assert( !BUILD_FOR_WEB_DEPLOYMENT, "MCP interface can not be enabled for web deployment." );
 #endif
   
 #if( BUILD_FOR_WEB_DEPLOYMENT )
@@ -111,7 +115,7 @@ int main( int argc, char **argv )
   ("static-data-dir", "The static data directory (e.g., 'data' dir that holds cross-sections, "
    "nuclear-data, etc) to use.  If not specified, uses 'data' in the `docroot` directory."
    )
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_CLI_TOOLS )
   ("batch-peak-fit", po::value<bool>(&batch_peak_fit)->implicit_value(true)->default_value(false),
      "Batch-fit peaks.\n"
      "\tUse '--batch-peak-fit --help' to see available options."
@@ -128,7 +132,7 @@ int main( int argc, char **argv )
   {
     po::parsed_options parsed_opts
       = po::command_line_parser(argc,argv)
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_CLI_TOOLS )
        .allow_unregistered()
 #endif
        .options(cl_desc)
@@ -144,7 +148,7 @@ int main( int argc, char **argv )
   }//try catch
   
   
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_CLI_TOOLS )
   const bool is_batch = (batch_peak_fit || batch_act_fit);
 #else
   const bool is_batch = false;
@@ -304,14 +308,16 @@ int main( int argc, char **argv )
     InterSpec::setStaticDataDirectory( datadir );
   }//if( cl_vm.count("static-data-dir") ) / else
 #endif
-  
+
+#if( USE_REL_ACT_TOOL )
   //return RelActAutoDev::dev_code();
-  
-#if( USE_BATCH_TOOLS )
+#endif
+
+#if( USE_BATCH_CLI_TOOLS )
   if( is_batch )
     return BatchCommandLine::run_batch_command( argc, argv );
 #endif
-  
+    
   
   // Start the InterSpec server
   const int rval = InterSpecServer::start_server( argv[0], user_data_dir.c_str(),

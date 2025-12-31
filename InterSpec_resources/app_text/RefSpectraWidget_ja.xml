@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- rs- is short for Reference Spectra -->
+  <message id="rs-dialog-title">参照スペクトル</message>
+  <message id="rs-show-foreground">フォアグラウンド表示</message>
+  <message id="rs-show-background">バックグラウンド</message>
+  <message id="rs-load-background">バックグラウンドを読み込む</message>
+  <message id="rs-load-background-portrait">+バックグラウンド</message>
+  <message id="rs-tt-add-dir-btn">参照スペクトルを開くディレクトリを追加。</message>
+  <message id="rs-tt-delete-dir-btn">参照スペクトルを表示する場所のリストから現在選択されているディレクトリを削除。</message>
+  <message id="rs-no-dir-selected-desktop">
+    読み込む参照スペクトルを選択。 <br />
+    <br />
+    <img src="InterSpec_resources/images/plus_min_black.svg" style="width: 12px; height: 12px; display: inline-block; vertical-align: middle;"/> アイコンを使用して
+    参照スペクトルディレクトリを追加。
+    </message>
+  <message id="rs-no-dir-selected-mobile">
+    読み込む参照スペクトルを選択。 <br /> 
+    <div style="font-size: smaller;">
+      （<em>InterSpec</em>のデータディレクトリに「reference_spectra」ディレクトリを作成し（ファイルアプリを使用）、
+      その中にスペクトルを含むサブディレクトリを追加することで、独自の参照スペクトルディレクトリを追加することもできます）
+    </div>
+  </message>
+  <message id="rs-some-dirs-removed">{1}ディレクトリは利用できなくなり、削除されました。</message>
+  <message id="rs-dir-added-successfully">パス'{1}'を追加しました。</message>
+  <message id="rs-show-as">読み込み方法</message>
+  <message id="rs-add-dir-dialog-title">参照スペクトルディレクトリ追加</message>
+  <message id="rs-duplicate-dir-path">ディレクトリは既に選択済み: '{1}'</message>
+  <message id="rs-dir-not-found">ディレクトリが見つからないため、設定から削除されませんでした: '{1}'</message>
+  <message id="rs-dir-info-only-spectra">ディレクトリには{1}個のスペクトルファイルが含まれています<br /></message>
+  <message id="rs-dir-info-only-subdir">ディレクトリには{1}個のサブディレクトリが含まれています<br /></message>
+  <message id="rs-dir-info-with-subdir-spectra">ディレクトリには{1}個のスペクトルファイルと{2}個のサブディレクトリが含まれています<br /></message>
+  <message id="rs-error-loading-file">ファイル読み込みエラー: '{1}'</message>
+  <message id="rs-show-in-explorer">エクスプローラーで表示</message>
+  <message id="rs-show-in-finder">Finderで表示</message>
+  <message id="rs-show-in-linux-file-manager">ファイルマネージャで表示</message>
+  <message id="rs-error-invalid-file">無効なスペクトルファイル: '{1}'。</message>
+  <message id="rs-error-invalid-type-selected">無効なスペクトルタイプが選択されました。</message>
+  </messages>
+

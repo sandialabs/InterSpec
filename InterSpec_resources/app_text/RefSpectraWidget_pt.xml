@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- rs- is short for Reference Spectra -->
+  <message id="rs-dialog-title">Espectros de Referência</message>
+  <message id="rs-show-foreground">Comparar Espectro</message>
+  <message id="rs-show-foreground-portrait">Comparar</message>
+  <message id="rs-show-background">Mostrar Fundo</message>
+  <message id="rs-show-background-portrait">Fundo</message>
+  <message id="rs-load-background">Carregar Fundo</message>
+  <message id="rs-load-background-portrait">+Fundo</message>
+  <message id="rs-tt-add-dir-btn">Adicionar diretório para abrir espectros de referência.</message>
+  <message id="rs-tt-delete-dir-btn">Remove o diretório atualmente selecionado da lista de locais de onde mostrar espectros de referência.</message>
+  <message id="rs-no-dir-selected-desktop">
+    Selecione um espectro de referência para carregar. <br />
+    <br />
+    Adicione diretórios de espectros de referência usando o ícone
+    <img src="InterSpec_resources/images/plus_min_black.svg" style="width: 12px; height: 12px; display: inline-block; vertical-align: middle;"/>.
+    </message>
+  <message id="rs-no-dir-selected-mobile">
+    Selecione um espectro de referência para carregar. <br />
+    <div style="font-size: smaller;">
+      (você também pode adicionar seu próprio diretório de espectros de referência criando um diretório "reference_spectra"
+      no diretório de dados do <em>InterSpec</em> (usando o aplicativo Arquivos) e então adicionar mais subdiretórios
+      com seus espectros neles)
+    </div>
+  </message>
+  <message id="rs-some-dirs-removed">{1} diretórios não estão mais disponíveis e foram removidos.</message>
+  <message id="rs-dir-added-successfully">Adicionado caminho '{1}'.</message>
+  <message id="rs-show-as">Carregar como</message>
+  <message id="rs-add-dir-dialog-title">Adicionar Diretório de Espectros de Referência</message>
+  <message id="rs-duplicate-dir-path">Diretório já selecionado: '{1}'</message>
+  <message id="rs-dir-not-found">Diretório não encontrado, então não removido das preferências: '{1}'</message>
+  <message id="rs-dir-info-only-spectra">Diretório contém {1} arquivos de espectros<br /></message>
+  <message id="rs-dir-info-only-subdir">Diretório contém {1} subdiretórios<br /></message>
+  <message id="rs-dir-info-with-subdir-spectra">Diretório contém {1} arquivos de espectros e {2} subdiretórios<br /></message>
+  <message id="rs-error-loading-file">Erro ao carregar arquivo: '{1}'</message>
+  <message id="rs-show-in-explorer">Mostrar no Explorer</message>
+  <message id="rs-show-in-finder">Mostrar no Finder</message>
+  <message id="rs-show-in-linux-file-manager">Mostrar no Gerenciador de Arquivos</message>
+  <message id="rs-error-invalid-file">Arquivo de espectro inválido: '{1}'.</message>
+  <message id="rs-error-invalid-type-selected">Tipo de espectro inválido selecionado.</message>
+  </messages>
+
+
+

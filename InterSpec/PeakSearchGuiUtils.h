@@ -45,6 +45,7 @@ class DetectorPeakResponse;
 class ReferencePhotopeakDisplay;
 
 namespace SpecUtils{
+  enum class SpectrumType : int;
   class Measurement;
 }
 
@@ -100,7 +101,8 @@ void fit_peak_from_double_click( InterSpec *interspec,
                                 const double energy_clicked,
                                 const double pixel_per_keV,
                                 std::shared_ptr<const DetectorPeakResponse> det,
-                                std::string ref_line_name );
+                                std::string ref_line_name,
+                                const SpecUtils::SpectrumType spec_type );
   
   
 /** Performs the automated search for peaks - setting the results to the GUI. */

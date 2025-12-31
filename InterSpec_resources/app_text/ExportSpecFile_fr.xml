@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages nplurals="2" plural="n==1 ? 0 : 1">
+  <!-- esf- is short for ExportSpecFile -->
+  
+  <!-- Window title -->
+  <message id="esf-window-title">Exportation de Fichier Spectre</message>
+  
+  <!-- Main UI sections -->
+  <message id="esf-file-to-export">Fichier à Exporter</message>
+  <message id="esf-file-format">Format de Fichier</message>
+  <message id="esf-samples-to-include">Échantillons à Inclure</message>
+  
+  <!-- Mobile tab titles -->
+  <message id="esf-file-tab">Fichier</message>
+  <message id="esf-format-tab">Format</message>
+  <message id="esf-options-tab">Options</message>
+  
+  <!-- Checkbox labels for foreground/background combination -->
+  <message id="esf-plus-back"> + Fond</message>
+  <message id="esf-plus-secondary"> + Second.</message>
+  <message id="esf-fore-plus-back-tt">Exporter le spectre d'avant-plan et de fond et/ou les spectres secondaires ensemble dans le même fichier.</message>
+  
+  <!-- Sample selection checkboxes -->
+  <message id="esf-disp-foreground">Avant-plan Affiché</message>
+  <message id="esf-disp-background">Fond Affiché</message>
+  <message id="esf-disp-secondary">Secondaire Affiché</message>
+  <message id="esf-all-samples">Tous les Échantillons</message>
+  <message id="esf-custom-samples">Échantillons Personnalisés</message>
+  <message id="esf-custom-samples-tt">Entrez ici le numéro d'échantillon que vous souhaitez afficher. Vous pouvez entrer une plage de numéros d'échantillons comme '33-39' ou '33 to 39', ou des numéros d'échantillons CSV comme '34,39,84'</message>
+  <message id="esf-filter-detectors">Filtrer les Détecteurs</message>
+  
+  <!-- Options section -->
+  <message id="esf-options">Options</message>
+  <message id="esf-sum-to-single-record">Sommer en un seul enregistrement</message>
+  <message id="esf-sum-to-single-record-tt">Tous les échantillons et/ou détecteurs sélectionnés seront sommés ensemble en un seul spectre.<br />Attention : si vous avez à la fois l'avant-plan et le fond sélectionnés, ils seront sommés ensemble.</message>
+  
+  <message id="esf-sum-fore-to-single-record">Sommer Avant-plan en un enregistrement</message>
+  <message id="esf-sum-fore-to-single-record-tt">Il y a soit plusieurs numéros d'échantillons, soit plusieurs détecteurs qui composent l'avant-plan affiché ; cocher cette option sommera tous ceux-ci en un seul spectre dans le fichier de sortie.</message>
+  
+  <message id="esf-sum-back-to-single-record">Sommer Fond en un enregistrement</message>
+  <message id="esf-sum-back-to-single-record-tt">Il y a soit plusieurs numéros d'échantillons, soit plusieurs détecteurs qui composent le fond affiché ; cocher cette option sommera tous ceux-ci en un seul spectre dans le fichier de sortie.</message>
+  
+  <message id="esf-sum-sec-to-single-record">Sommer Sec en un enregistrement</message>
+  
+  <message id="esf-background-subtract">Soustraire le fond</message>
+  <message id="esf-background-subtract-tt">Le spectre de sortie sera l'avant-plan, moins le fond.</message>
+  
+  <message id="esf-sum-det-per-sample">Sommer dét. par échantillon</message>
+  <message id="esf-sum-det-per-sample-tt">Pour chaque numéro d'échantillon, sommer tous les détecteurs pour ce numéro d'échantillon ensemble.<br />Ex., si vous avez 8 détecteurs dans votre fichier de spectre, chacun avec 120 échantillons, les résultats auront 120 spectres, chacun étant la somme des 8 détecteurs des échantillons respectifs.</message>
+  
+  <message id="esf-sum-samples-per-det">Sommer échantillons par dét.</message>
+  <message id="esf-sum-samples-per-det-tt">Pour chaque détecteur, somme tous les numéros d'échantillons ensemble.<br />Ex., si vous avez 8 détecteurs dans votre fichier de spectre, chacun avec 120 échantillons, les résultats auront 8 spectres, chacun étant la somme des 120 échantillons de leurs détecteurs respectifs.</message>
+  
+  <message id="esf-remove-interspec-info">Supprimer info InterSpec</message>
+  <message id="esf-remove-interspec-info-tt">Supprime la réponse du détecteur, les pics et autres résultats d'analyse que vous avez pu ajouter dans InterSpec.</message>
+  
+  <message id="esf-remove-gps">Supprimer GPS</message>
+  
+  <!-- Status text -->
+  <message id="esf-not-applicable">Non Applicable</message>
+  <message id="esf-none-available">Aucun Disponible</message>
+  
+  <!-- Buttons -->
+  <message id="esf-export">Exporter</message>
+  <message id="esf-show-qr-code">Afficher code QR</message>
+  
+  <!-- File info table headers -->
+  <message id="esf-displayed-as">Affiché Comme</message>
+  <message id="esf-fore-abbrev">Avant</message>
+  <message id="esf-back-abbrev">Fond</message>
+  <message id="esf-sec-abbrev">Sec</message>
+  
+  <!-- QR Code dialog -->
+  <message id="esf-next-qr-code">Code QR suivant</message>
+  <message id="esf-url-link">Lien URL</message>
+  <message id="esf-email-link">Lien Email</message>
+  
+  <!-- Error dialogs -->
+  <message id="esf-error-title">Erreur</message>
+  <message id="esf-qr-encode-failed">Échec de l'affichage du spectre comme code QR : {1}</message>
+  
+  <!-- Pluralized messages -->
+  <message id="esf-disp-sample">
+    <plural case="0">Échantillon&nbsp;Affiché</plural>
+    <plural case="1">Échantillons&nbsp;Affichés</plural>
+  </message>
+  
+  <!-- Table headers -->
+  <message id="esf-start-time">Heure de Début</message>
+  <message id="esf-end-time">Heure de Fin</message>
+  <message id="esf-first-sample">Premier Échantillon</message>
+  <message id="esf-last-sample">Dernier Échantillon</message>
+  <message id="esf-num-samples">Nb. Échantillons</message>
+  <message id="esf-neut-dets">Dét. Neutron</message>
+  <message id="esf-gamma-dets">Dét. Gamma</message>
+  <message id="esf-num-dets">Nb. Dét</message>
+  <message id="esf-latitude">Latitude</message>
+  <message id="esf-longitude">Longitude</message>
+  <message id="esf-total-time">Temps Total</message>
+  <message id="esf-sum-gamma">Somme Gamma</message>
+  <message id="esf-sum-neut">Somme Neutron</message>
+  <message id="esf-manufacturer">Fabricant</message>
+  <message id="esf-model">Modèle</message>
+  <message id="esf-serial">Série</message>
+</messages>

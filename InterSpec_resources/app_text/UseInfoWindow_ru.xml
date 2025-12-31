@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- uiw- is short for UseInfoWindow -->
+  
+  <!-- Button text -->
+  <message id="uiw-load-btn">Загрузить</message>
+  
+  <!-- File handling -->
+  <message id="uiw-file-too-large"><![CDATA[<span style="color: red;">Слишком большой файл.</span>]]></message>
+  
+  <!-- Cheat sheet -->
+  <message id="uiw-cheat-sheet">Шпаргалка (PDF)</message>
+  <message id="uiw-cheat-sheet-desc">Распечатайте эту шпаргалку (формат PDF) для быстрой справки по действиям, горячим клавишам и устранению неполадок.</message>
+  
+  <!-- Settings -->
+  <message id="uiw-show-at-start-cb">показывать при запуске когда нет спектров</message>
+  
+  <!-- Tooltips -->
+  <message id="uiw-back-to-top">Наверх</message>
+  
+  <!-- Error messages -->
+  <message id="uiw-error-loading-faq">Ошибка загрузки тем FAQ: {1}</message>
+  
+  <!-- Welcome messages - Mobile -->
+  <message id="uiw-mobile-start-example"><![CDATA[Начните с открытия примеров спектров ниже, или используйте вкладку <em>Импорт Спектров</em>.<br />]]></message>
+  <message id="uiw-mobile-saved-spectra"><![CDATA[<p>Ваши сохраненные спектры показаны ниже. Используйте другие вкладки для примеров или импорта внешних файлов.<br /></p>]]></message>
+  <message id="uiw-mobile-select-example"><![CDATA[<p>Выберите пример спектра ниже или используйте вкладку импорта для iCloud, Dropbox, и т.д.<br /></p>]]></message>
+  
+  <!-- Welcome messages - Desktop -->
+  <message id="uiw-desktop-welcome-title"><![CDATA[<h1 align="center">Добро пожаловать в <code>InterSpec</code></h1><div align="left">]]></message>
+  <message id="uiw-desktop-welcome-text"><![CDATA[<p>Используйте справочники слева для знакомства с <code>InterSpec</code>, или продолжите с предыдущей сессии ниже.]]></message>
+  <message id="uiw-desktop-drag-drop"><![CDATA[ Альтернативно, перетащите свой спектральный файл в <code>InterSpec</code>.</p>]]></message>
+  
+  <!-- Mobile postscript -->
+  <message id="uiw-mobile-phone-postscript"><![CDATA[<p>Нажмите иконку советов для взаимодействия с графиком. Нажмите иконку помощи для подробной информации о <code>InterSpec</code>.</p>]]></message>
+  <message id="uiw-mobile-tablet-postscript"><![CDATA[<p>Нажмите <b>Инфо Об Использовании</b> слева для взаимодействия с графиком. Нажмите иконку помощи для подробностей.</p>]]></message>
+  
+  <!-- File import instructions -->
+  <message id="uiw-tap-choose-file"><![CDATA[<p>Нажмите <em>Выбрать Файл</em> для поиска файла, который хотите открыть.</p>]]></message>
+  <message id="uiw-open-file-instructions"><![CDATA[<p>Вы также можете открывать спектральные файлы, выбрав <em>Открыть Файл</em> в подменю <code>InterSpec</code> после выхода с этого экрана.<br />Для вложений электронной почты или файлов в приложениях вроде <code>Files</code>, <code>Dropbox</code>, <code>Google Drive</code> и т.д., вы можете открывать спектральные файлы в <code>InterSpec</code>, выбрав "Копировать в InterSpec"</p>]]></message>
+  
+  <!-- Tab titles -->
+  <message id="uiw-tab-saved-states">Сохраненные Состояния</message>
+  <message id="uiw-tab-example-spectra">Примеры Спектров</message>
+  <message id="uiw-tab-import-spectra">Импорт Спектров</message>
+  
+  <!-- Welcome section -->
+  <message id="uiw-welcome">Добро пожаловать</message>
+  <message id="uiw-controls">Управление</message>
+  
+  <!-- Anchor links -->
+  <message id="uiw-license-and-terms">Лицензия и Условия</message>
+  <message id="uiw-more-info">Более подробная информация</message>
+</messages>

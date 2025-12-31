@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- srria- is short for ShowRiidIntrumentAna -->
+  <message id="srria-algo-info-label">एल्गोरिदम जानकारी:</message>
+  <message id="srria-creator">निर्माता</message>
+  <message id="srria-version">संस्करण</message>
+  <message id="srria-remarks">टिप्पणियां</message>
+  <message id="srria-category">श्रेणी</message>
+  <message id="srria-confidence">विश्वास</message>
+  <message id="srria-no-id-provided">कोई न्यूक्लाइड पहचान प्रदान नहीं की गई।</message>
+  <message id="srria-algo-results">एल्गोरिदम परिणाम</message>
+  <message id="srria-no-algo-results">कोई एल्गोरिदम परिणाम उपलब्ध नहीं।</message>
+  <message id="srria-no-nucs">कोई न्यूक्लाइड पहचाना नहीं गया।</message>
+  <message id="srria-inst-ana-window-title">डिटेक्टर ID परिणाम</message>
+</messages>

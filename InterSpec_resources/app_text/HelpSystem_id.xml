@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- hw- is short for HelpWindow
+  -->
+  <message id="hw-welcome-link">Selamat Datang...</message>
+  <message id="hw-tutorials-link">Tutorial dan petunjuk penggunaan</message>
+  <message id="hw-err-opening-xml">Halaman Bantuan Tidak Ditemukan</message>
+  <message id="hw-err-opening-json">Tidak dapat membuka file JSON bantuan di '{1}'.</message>
+  <message id="hw-search-empty-text">Cari</message>
+</messages>
+

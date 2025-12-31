@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- srria- is short for ShowRiidIntrumentAna -->
+  <message id="srria-algo-info-label">アルゴリズム情報:</message>
+  <message id="srria-creator">作成者</message>
+  <message id="srria-version">バージョン</message>
+  <message id="srria-remarks">備考</message>
+  <message id="srria-category">カテゴリ</message>
+  <message id="srria-confidence">信頼度</message>
+  <message id="srria-no-id-provided">核種識別が提供されていません。</message>
+  <message id="srria-algo-results">アルゴリズム結果</message>
+  <message id="srria-no-algo-results">アルゴリズム結果が利用できません。</message>
+  <message id="srria-no-nucs">核種が識別されていません。</message>
+  <message id="srria-inst-ana-window-title">検出器のID結果</message>
+</messages>

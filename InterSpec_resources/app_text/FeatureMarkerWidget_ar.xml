@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- fmw- is short for FeatureMarkerWidget
+  -->
+  <message id="fmw-escape-peaks">قمم الهروب</message>
+  <message id="fmw-compton-peak">قمة كومبتون</message>
+  <message id="fmw-angle">الزاوية</message>
+  <message id="fmw-compton-edge">حافة كومبتون</message>
+  <message id="fmw-sum-peak">قمة المجموع</message>
+</messages>

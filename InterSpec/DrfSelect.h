@@ -202,7 +202,7 @@ public:
   //  contain Detector.dat and Efficiency.csv; doesnt test that they are valid.
   //  First each pair is the path to the detector, second in the pair is a
   //  reasonable display name.
-  std::vector< std::pair<std::string,std::string> > avaliableGadrasDetectors() const;
+  static std::vector< std::pair<std::string,std::string> > avaliableGadrasDetectors( InterSpec *viewer );
 
   //Will init detector in the data/detector_responses folder, and return result.
   //  throws exception if there is an error.
@@ -245,33 +245,51 @@ public:
   /** Checks if file at passed in path is a TSV/CSV file that contains
    coefficients for the exp( c0 + c1*logx + c2*logx^2 + ...) equation.
    If so, returns detector.  If not, returns nullptr.
-   
+
    ToDo: Currently reads in most of the information exported in the CSV from MakeDrf tool, but maybe not all.
    */
-  static std::shared_ptr<DetectorPeakResponse> parseRelEffCsvFile( const std::string filePath );
-  
-  
+  static std::shared_ptr<DetectorPeakResponse> parseInterSpecRelEffCsvFile( const std::string filePath );
+
+  /** Searches for potential relative efficiency detector files in static and user data directories.
+   Returns a vector of file paths to potential RelEff detector definition files.
+   */
+  static std::vector<std::string> potential_rel_eff_det_files();
+
+  /** Recursively searches a directory for GADRAS DRF directories.
+   Returns a vector of directory paths that contain both Efficiency.csv and Detector.dat files.
+   @param sourcedir The directory to search recursively
+   */
+  static std::vector<std::string> recursive_list_gadras_drfs( const std::string &sourcedir );
+
+  /** Searches for potential GADRAS detector directories.
+   Returns a vector of directory paths that may contain GADRAS DRF subdirectories.
+   Note: The returned paths may include parent directories that contain many sub-directories
+         with different detector efficiencies. Use recursive_list_gadras_drfs() to find
+         the actual DRF directories within these paths.
+   @param interspec Pointer to InterSpec instance; may be nullptr (will skip user preferences if null)
+   */
+  static std::vector<std::string> potential_gadras_det_dirs( InterSpec *interspec );
+
+
   //Callbacks for when detector is changed or modified
   void gadrasDetectorSelectCallback();
   void relEffDetectorSelectCallback();
   
   
-  /** Reason #fileUpladedCallback is being called */
-  enum class UploadCallbackReason
-  {
-    ImportTabChosen,
-    DetectorDiameterChanged,
-    EfficiencyCsvUploaded,
-    DetectorDotDatUploaded,
-    FixedGeometryChanged
-  };//enum class UploadCallbackReason
+  void handleUploadTabSelected();
   
-  /** Function called when "Import" tab is chosen, detector diameter is changed,
-      or if a Efficiency.csv, or Detector.dat file is uplaoded.
-      @param context Has value 0 
-   */
-  void fileUploadedCallback( const UploadCallbackReason context );
-
+  void handleDetectorDiameterOrDistanceChanged();
+  
+  void showWidgetsForCurrentEfficiencyType();
+  void updateUserNameFromCurrentDetEff();
+  
+  void handleEfficiencyCsvUpload();
+  void handleGadrasDetectorDotDatUpload();
+  void handleEfficiencyTypeChange();
+  
+  /** Returns a detector from the currently selected upload - returns nullptr if not fully specified (e.g., no diameter, or wahtever)*/
+  std::shared_ptr<DetectorPeakResponse> detectorFromEffUpload() const;
+  
   //updates energy efficient chart
   void updateChart();
   
@@ -349,7 +367,9 @@ protected:
   Wt::WFileUpload *m_efficiencyCsvUpload;
   Wt::WContainerWidget *m_detectrDotDatDiv;
   Wt::WFileUpload *m_detectorDotDatUpload;
-  Wt::WCheckBox *m_fixedGeometryCb;
+  Wt::WComboBox *m_efficiencyType;
+  Wt::WContainerWidget *m_detectorDistanceDiv;
+  Wt::WLineEdit *m_detectorDistance;
 
   Wt::WPushButton *m_acceptButton;
   Wt::WPushButton *m_cancelButton;

@@ -54,6 +54,8 @@
 
 #include <boost/filesystem.hpp>  //for boost::filesystem::is_symlink and read_symlink
 
+#include <Wt/WLocale>
+#include <Wt/WApplication>
 
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
@@ -228,7 +230,7 @@ namespace AppUtils
   }//string sanitize_css_class_name( const string &src_name )
    */
   
-#if( USE_BATCH_TOOLS || BUILD_AS_LOCAL_SERVER || BUILD_FOR_WEB_DEPLOYMENT )
+#if( USE_BATCH_CLI_TOOLS || BUILD_AS_LOCAL_SERVER || BUILD_FOR_WEB_DEPLOYMENT )
 #if defined(__APPLE__) || defined(unix) || defined(__unix) || defined(__unix__)
 unsigned terminal_width()
 {
@@ -254,7 +256,7 @@ unsigned terminal_width()
 #else
 static_assert( 0, "Not unix and not win32?  Unsupported getting terminal width" );
 #endif
-#endif //#if( USE_BATCH_TOOLS || BUILD_AS_LOCAL_SERVER )
+#endif //#if( USE_BATCH_CLI_TOOLS || BUILD_AS_LOCAL_SERVER )
   
   
 uint32_t compile_date_as_int()
@@ -610,4 +612,25 @@ std::string user_data_dir()
   return utf8Str;
 }//std::string AppUtils::user_data_dir()
 #endif
+
+std::string find_localized_xml_file( const std::string &resource_base )
+{
+  // The locale name comes from the HTTP Accept-Language header, which may be like
+  //  fr-CH, fr, en-US, en, de-DE-1996, de-CH
+  std::string locale = Wt::WLocale::currentLocale().name();
+  std::string resource_file = resource_base + (locale.empty() ? "" : "_") + locale + ".xml";
+  
+  do
+  {
+    if( SpecUtils::is_file(resource_file) )
+      break;
+    
+    const size_t pos = locale.rfind( '-' );
+    locale.erase( (pos == string::npos) ? size_t(0) : pos );
+    resource_file = resource_base + (locale.empty() ? "" : "_") + locale + ".xml";
+  }while( !locale.empty() );
+  
+  return resource_file;
+}//std::string find_localized_xml_file(...)
+
 }//namespace AppUtils

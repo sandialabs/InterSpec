@@ -1,0 +1,444 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+
+  <!--When you add a video to the content, you should use a template placeholder 
+      in the content (e.x. ${myvideobinding}) to allow the C++ to bind this 
+      video to a video playing widget in the WTemplate widget.  However since we 
+      dont want to have to hard code the bind placeholder name, and which video 
+      it points to in the C++, this next videoinfo message section encodes what
+      placeholder names the C++ templating code should look for, as well as
+      the actual video files and titles the placeholder name cooresponds to.
+      The below JSON object is indexed by keys that have the same value
+      as the 'id' for the message they coorespond to; the key cooresponds to an
+      array of objects that each have at least a "key" and "file" member, but
+      may also have an optional "title" member.
+  -->
+  <message id="videoinfo">
+  {
+    "1intro-video":
+      [ 
+        {   "key":"video1",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpecMouseIntro.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpecMouseIntro.ogv",
+            "title":"مقدمة الماوس"
+        }
+      ],
+    "3gamma-lines-video":
+       [
+        {   "key":"video2",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_GammaLines.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_GammaLines.ogv",
+            "title":"خطوط جاما"
+        }
+       ],
+    "4calibration-video":
+       [
+        {   "key":"video3",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_calibration.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_calibration.ogv",
+            "title":"المعايرة"
+        }
+       ],
+    "2nuclide-peak-association-video":
+       [
+        {   "key":"video4",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_AssociatePeaksWithNuclides.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_AssociatePeaksWithNuclides.ogv",
+            "title":"تحديد القمم"
+        }
+       ],
+    "5activity-shielding-fit-video":
+       [
+        {   "key":"video5",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_activityShieldingFit.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_activityShieldingFit.ogv",
+            "title":"حماية النشاط الإشعاعي"
+        }
+       ]
+  }
+  </message>
+
+  <message id='mobile-mouse-interactions'>
+	   <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">تكبير</div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_zoom_in.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         للتكبير على جزء محدد من الطيف،
+         <u>ادفع</u> إصبعين بعيداً عن بعضهما البعض.
+      </div>
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">تصغير</div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_zoom_out.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         للتصغير،
+         <u>اقرص</u> إصبعين نحو بعضهما البعض.
+      </div>
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">تغيير نطاق الطاقة</div>
+    <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	    <img src="InterSpec_resources/static_text/images/touch_energy_pan.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         للتحرك على طول المحور السيني (الطاقة) للرسم البياني،
+         ضع إصبعاً على المخطط واحركه يساراً أو يميناً لتغيير الطاقة المعروضة.
+      </div>
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+      <div class="UseInstructionHeader">ملائمة القمة/القمم</div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center"><h3><b>الطريقة الأولى</b></h3></div>
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_fit_peak.png" style="width:70%" />
+	  </div>
+    <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+      <u>اضغط مرتين</u> على الطيف حيث تريد ملائمة قمة.
+    </div>
+	   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_multipeak_fit.png" style="width:70%" />
+	  </div>
+	  <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+        <u>الضغط مرتين</u> مرة أخرى بالقرب من قمة موجودة سيلائم قمماً أكثر.
+    </div>
+	  <div style="padding-top: 10px" align="center"><h3><b>الطريقة الثانية</b></h3></div>
+	  <div style="padding-top: 10px" align="center">
+	    <img src="InterSpec_resources/static_text/images/mobile_multipeak.jpg" style="width:70%" />
+	  </div>
+	  <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+      إذا كنت تريد فرض عدد معين من القمم في منطقة اهتمام:
+      <u>اسحب</u> إصبعين محاذيين أفقياً فوق منطقة الاهتمام.
+      <u>ارفع</u> إصبعيك و<u>اختر</u> كمية القمم التي تريد تحديدها.
+    </div>
+	  <div style="padding-top: 10px" align="center"><h3><b>طرق أخرى</b></h3>
+      في <em>القائمة</em>&larr;<em>الأدوات</em>&larr;<em>مدير القمم</em> يمكنك ملائمة
+      جميع القمم في طيف تلقائياً باستخدام زر
+      <img src="InterSpec_resources/static_text/images/mobil_search_for_peaks.png" style="height:1.25em;" />.
+      يُنصح بإظهار خطوط مرجعية للنويدات قبل استخدام هذا
+      البحث التلقائي للقمم حتى تقترن القمم تلقائياً بالنويدات
+      المسؤولة عن إنشاء القمة.
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+      <div class="UseInstructionHeader">تشغيل محرر القمم</div>
+         إذا كنت تريد إعادة ملائمة أو ضبط قمة يدوياً، استخدم <em>محرر القمم</em>
+         بالضغط بإصبعك على قمة لحوالي ثانية، وستظهر قائمة
+         لتختار ما تريد فعله.
+         <div style="padding-top: 1px" align="center">
+           <img src="InterSpec_resources/static_text/images/mobile_right_click.png"  class="imageBorder" style="width:75%;" />
+         </div>
+	    </div>
+    </div>
+	  <div class="UseInstructionSection">
+      <div class="UseInstructionHeader">حذف القمة/القمم</div>
+      <p>
+        أسهل طريقة لحذف قمة هي الضغط بإصبعك عليها لحوالي ثانية،
+        وستظهر قائمة حيث يمكنك اختيار حذف القمة.
+        <div style="padding-top: 1px" align="center">
+          <img src="InterSpec_resources/static_text/images/mobile_right_click.png"  class="imageBorder" style="width:75%;" />
+        </div>
+      </p>
+
+      <p>
+        يمكنك أيضاً وضع إصبعين يمتدان عبر نطاق طاقة القمم التي تريد حذفها على الشاشة، واحركهما للأعلى.
+        أي قمم لها نقاط وسط بين إصبعيك ستُحذف نهائياً؛ يمكنك أيضاً تقليل نطاق طاقة القمم
+        باستخدام نفس الحركة، طالما أن نقطة وسط القمة لا تقع بين إصبعيك.
+        <div style="padding-top: 1px" align="center">
+          <img src="InterSpec_resources/static_text/images/mobile_delete_peaks.jpg"  class="imageBorder" style="width:75%;" />
+        </div>
+      </p>
+
+      <p>
+        <em>مدير القمم</em> (<b>القائمة</b>&larr;<b>الأدوات</b>&larr;<b>مدير القمم</b>) و
+        <em>محرر القمم</em> (اضغط بالإصبع على قمة لثانية واحدة، اختر <b>محرر القمم</b>) يمكنهما أيضاً حذف القمم.
+      </p>
+    </div>
+  </message>
+
+
+<!--
+For the desktop-mouse-interactions-info each JSON object should have a 'title',
+a 'img' and a optional 'desc_message_id' field.  If 'desc_message_id' is
+specified then this field refers to the id of a <message> element that contains
+the XHTML message for that entry.
+-->
+<message id='desktop-mouse-interactions-info'>
+{
+  "01desktop-mouse-interactions-zoominout": {
+    "title": "تكبير/تصغير",
+    "img": "InterSpec_resources/images/ZoomInOut.gif",
+    "desc_message_id": "01desktop-mouse-interactions-zoominout-desc"
+  },
+  "02desktop-mouse-interactions-shiftenergyrange": {
+    "title": "تحريك الطاقة",
+    "img": "InterSpec_resources/images/ERShift.gif",
+    "desc_message_id": "02desktop-mouse-interactions-shiftenergyrange-desc"
+  },
+  "03desktop-mouse-interactions-energyslider": {
+    "title": "شريط تمرير الطاقة",
+    "img": "InterSpec_resources/images/energy_slider.gif",
+    "desc_message_id": "03desktop-mouse-interactions-energyslider-desc"
+  },
+  "04desktop-mouse-interactions-identifypeaks": {
+    "title": "ملائمة القمة",
+    "img": "InterSpec_resources/images/PeakFit.gif",
+    "desc_message_id": "04desktop-mouse-interactions-identifypeaks-desc"
+  },
+  "04desktop-mouse-interactions-multipeaks": {
+    "title": "ملائمة ROI",
+    "img": "InterSpec_resources/images/multi_peak_fit.gif",
+    "desc_message_id": "04desktop-mouse-interactions-multipeaks-desc"
+  },
+  "07desktop-mouse-interactions-deletepeaks": {
+    "title": "حذف القمة",
+    "img": "InterSpec_resources/images/DeletePeaks.gif",
+    "desc_message_id": "07desktop-mouse-interactions-deletepeaks-desc"
+  },
+  "06desktop-mouse-interactions-visualcalibration": {
+    "title": "معايرة الطاقة",
+    "img": "InterSpec_resources/images/VisRecalib.gif",
+    "desc_message_id": "06desktop-mouse-interactions-visualcalibration-desc"
+  },
+  "05desktop-mouse-interactions-peakeditor": {
+    "title": "محرر القمم",
+    "img": "InterSpec_resources/images/PeakEdit.gif",
+    "message-id": "05desktop-mouse-interactions-peakeditor-desc"
+  },
+  "08desktop-mouse-interactions-adjustROI": {
+    "title": "ضبط ROI",
+    "img": "InterSpec_resources/images/roi_range_adjust.gif",
+    "desc_message_id": "08desktop-mouse-interactions-adjustROI-desc"
+  },
+  "08desktop-mouse-interactions-scale-y": {
+    "title": "مقياس Y",
+    "img": "InterSpec_resources/images/yscale.gif",
+    "desc_message_id": "08desktop-mouse-interactions-scale-y-desc"
+  },
+  "09desktop-mouse-interactions-countgamma": {
+    "title": "عد جاما",
+    "img": "InterSpec_resources/images/ERCount.gif",
+    "desc_message_id": "09desktop-mouse-interactions-countgamma-desc"
+  },
+  "10desktop-shortcuts" : {
+    "title": "اختصارات لوحة المفاتيح",
+    "desc_message_id": "10desktop-shortcuts-desc"
+  }
+}
+</message>
+
+<message id='01desktop-mouse-interactions-zoominout-desc'>
+<div><center>سحب النقر الأيسر <b>يميناً</b> للتكبير.</center></div>
+<div><center>سحب النقر الأيسر <b>يساراً</b> للتصغير.</center></div>
+</message>
+
+<message id='02desktop-mouse-interactions-shiftenergyrange-desc'>
+<center>سحب النقر الأيمن</center>
+</message>
+
+
+<message id='03desktop-mouse-interactions-energyslider-desc'>
+<center>من قائمة <b>عرض</b> اختر "<b>إظهار شريط تمرير الطاقة</b>".</center>
+<div>هذه طريقة سهلة الاستخدام لضبط نطاق طاقة الطيف.</div>
+<div><b>InterSpec</b> سيتذكر إذا كنت تريد إظهار مخطط شريط تمرير الطاقة.</div>
+</message>
+
+<message id='04desktop-mouse-interactions-identifypeaks-desc'>
+<center>
+<p style="font-size: 14px">هناك عدة طرق لملائمة القمم، منها: </p>
+</center>
+<ol>
+  <li>نقرة مزدوجة يسرى. يمكنك النقر مرتين بالقرب من نفس القمة مرة أخرى لإضافة أخرى.</li>
+  <li><b><kbd>CTRL</kbd></b> + سحب النقر الأيسر &larr; النقر الأيسر (انظر "ملائمة ROI") </li>
+  <li>من تبويب "<b>مدير القمم</b>" انقر "<b>إضافة</b>" &larr;. يمكنك بعدها ضبط المعاملات في الجدول للقيم التي تريدها.</li>
+  <li>من تبويب "<b>مدير القمم</b>" انقر "<b>البحث عن القمم</b>" لإيجاد جميع القمم في الطيف.</li>
+<li>انقر بالزر الأيمن على قمة موجودة واختر "<b>إضافة قمة</b>" لإضافة قمة لنفس ROI.</li>
+</ol>
+
+<p>نصيحة: قبل ملائمة قمة من المفيد إظهار الخطوط المرجعية للنويدة
+المسؤولة عنها، وبهذه الطريقة عندما تُلائم القمة، ستقترن
+بتلك النويدة. هذه المعلومات تُستخدم لملائمة معايرة الطاقة واستجابة الكاشف والنشاط وكميات الحماية.
+</p>
+</message>
+
+
+<message id='04desktop-mouse-interactions-multipeaks-desc'>
+<div>لملائمة عدد محدد من القمم في منطقة اهتمام (ROI):</div>
+<center>
+<b><kbd>CTRL</kbd></b> + سحب النقر الأيسر &larr; ثم اختر كم قمة.
+</center>
+</message>
+
+<message id='07desktop-mouse-interactions-deletepeaks-desc'>
+<ol>
+<li>النقر الأيمن &larr; "<b>حذف القمة</b>"</li>
+<li>النقر الأيمن &larr; "<b>محرر القمم</b>" &larr; "<b>حذف</b>"</li>
+<li><b><kbd>SHIFT</kbd></b> + سحب النقر الأيسر</li>
+<li>النقر الأيسر "<b>مسح جميع القمم</b>" &larr; النقر الأيسر "<b>نعم</b>"</li>
+<li>سحب جانب واحد من ROI عبر الجانب الآخر.</li>
+</ol>
+</message>
+
+<message id='06desktop-mouse-interactions-visualcalibration-desc'>
+<div>لضبط معايرة الطاقة بيانياً:</div>
+<center> <kbd>CTRL</kbd> + <kbd>ALT</kbd> + سحب النقر الأيسر &larr; <u>اختياري</u>: ضبط الكميات &larr; "<b>قبول</b>"</center>
+<div>ملاحظة: إذا كررت هذا الإجراء مرة أخرى، مثل أولاً على قمة عالية الطاقة، ثم على قمة منخفضة الطاقة (أو العكس)، فإن حوار الرسائل المنبثق سيعطيك
+خيار الحفاظ على كلا الإجراءين بضبط كل من الإزاحة والكسب بحيث تبقى كلتا القمتين عند الطاقات التي سحبتهما إليها.
+</div>
+<p>تبويب "معايرة الطاقة" يسمح أيضاً بضبط معاملات معايرة الطاقة يدوياً،
+أو ملائمتها باستخدام النويدات المقترنة بالقمم.
+</p>
+</message>
+
+<message id='05desktop-mouse-interactions-peakeditor-desc'>
+<div><center>النقر الأيمن &larr; "محرر القمم"</center></div>
+</message>
+
+
+
+<message id='08desktop-mouse-interactions-adjustROI-desc'>
+<center><div>ضع الماوس بالقرب من حافة منطقة الاهتمام (ROI) واسحب.</div></center>
+<div>يجب أن يكون الماوس ضمن نطاق y للقمة، وضمن 10 بكسل من حافة ROI.</div>
+</message>
+
+
+<message id='08desktop-mouse-interactions-scale-y-desc'>
+<center>قياس سعة أطياف الخلفية و/أو الثانوية نسبة للمقدمة
+باختيار <b>عرض</b> &larr; "<b>إظهار مقاييس المحور Y</b>".
+</center>
+<p>لاستعادة الطيف الخلفي أو الثانوي لتطبيع الوقت الحي، انقر زر "تطبيع" في تبويب "ملفات الطيف".</p>
+<p><b>InterSpec</b> سيتذكر إذا كنت تريد إظهار هذه المنزلقات عندما يكون هناك طيف خلفي أو ثانوي،
+لكن عناصر القائمة ستكون معطلة إذا لم يتم تحميل طيف خلفي أو ثانوي.</p>
+</message>
+
+
+<message id='09desktop-mouse-interactions-countgamma-desc'>
+  <center>
+    <ol>
+      <li><b><kbd>SHIFT</kbd></b> + <b><kbd>ALT</kbd></b> + سحب النقر الأيسر &larr; <u>اختياري</u>: ضبط الكميات</li>
+      <li><b>أدوات</b> &larr; <b>مجموع نطاق الطاقة</b></li>
+    </ol>
+  </center>
+</message>
+
+<message id='10desktop-shortcuts-desc'>
+
+  <h3>اختصارات لوحة المفاتيح</h3>
+  <ul>
+    <li>
+      <b><code>Ctrl-1</code></b> حتى <b><code>Ctrl-7</code></b>: ينتقل إلى تبويب الأداة 1-7 (أي تبويبات "<code>ملفات الطيف</code>"، "<code>مدير القمم</code>"، "<code>القمم المرجعية للصور</code>"، إلخ)، أو
+      إذا كانت <em>تبويبات الأدوات</em> مخفية، يظهر نافذة الأداة المقابلة.
+    </li>
+    <li>
+      <b><code>Ctrl-h</code></b>: يظهر <em>المساعدة</em> داخل التطبيق.
+    </li>
+    <li>
+      <b><code>Ctrl-i</code></b>: يظهر شاشة <em>معلومات الترحيب</em>.
+    </li>
+    <li>
+      <b><code>Ctrl-k</code></b>: يمسح جميع خطوط القمم المرجعية المعروضة.
+    </li>
+    <li>
+      <b><code>Ctrl-l</code></b>: ينتقل بمحور y الطيف بين لوغاريتمي وخطي.
+    </li>
+    <li>
+      <b><code>Ctrl-s</code></b>: يحفظ حالة التطبيق الحالية.
+    </li>
+    <li>
+      <b><code>Ctrl-e</code></b>: يفتح مربع حوار تصدير ملف الطيف.
+    </li>
+    <li>
+      <b><code>Ctrl-z</code></b>: التراجع عن الإجراء الأخير.
+    </li>
+    <li>
+      <b><code>Ctrl-Shift-z</code></b>: إعادة الإجراء الأخير الملغى.
+    </li>
+  </ul>
+
+  <h3>معدلات الماوس لتفاعلات الطيف</h3>
+  بالإضافة إلى هذه الاختصارات، يمكنك النقر على عنوان المحور y للتبديل بين المقياس اللوغاريتمي/الخطي؛ النقر على عنوان المحور x سيظهر/يخفي شريط الرسم البياني العام.
+  <ul>
+    <li>
+      <b>نقر مزدوج</b>: يناسب قمة في طيف المقدمة عند الموقع المنقور.
+    </li>
+    <li>
+      <b>Alt + نقر مزدوج</b>: يناسب قمة في طيف الخلفية عند الموقع المنقور.
+    </li>
+    <li>
+      <b>Shift + نقر مزدوج</b>: يناسب قمة في الطيف الثانوي عند الموقع المنقور.
+    </li>
+    <li>
+      <b>Shift + سحب يسار</b>: وضع حذف القمم - يزيل القمم في نطاق الطاقة المسحوب.
+    </li>
+    <li>
+      <b>Alt + Shift + سحب يسار</b>: وضع عد أشعة غاما - يعد أشعة غاما في نطاق الطاقة المسحوب.
+    </li>
+    <li>
+      <b>Alt + Ctrl + سحب يسار</b>: وضع إعادة المعايرة - يعيد معايرة الطاقة باستخدام النطاق المسحوب.
+    </li>
+    <li>
+      <b>Command + سحب يسار (Mac)</b> أو <b>Alt + سحب يسار (Windows)</b>: اسحب عموديًا للتكبير/التصغير على المحور y.
+    </li>
+  </ul>
+
+  <h3>معدلات الماوس لتفاعلات الرسم البياني الزمني</h3>
+  استخدم القائمة في الزاوية العلوية اليمنى من الرسم البياني الزمني لتبسيط التفاعلات.
+  <ul>
+    <li>
+      <b>نقر أو سحب</b>: يحدد العينات لطيف المقدمة.
+    </li>
+    <li>
+      <b>Alt + نقر/سحب</b> أو <b>اضغط مع الاستمرار على مفتاح 'b'</b>: يحدد العينات لطيف الخلفية.
+    </li>
+    <li>
+      <b>Meta + نقر/سحب</b> أو <b>اضغط مع الاستمرار على مفتاح 's'</b>: يحدد العينات للطيف الثانوي.
+    </li>
+    <li>
+      <b>Shift + نقر/سحب</b>: يضيف العينات إلى التحديد الحالي.
+    </li>
+    <li>
+      <b>Ctrl + نقر/سحب</b>: يزيل العينات من التحديد الحالي.
+    </li>
+  </ul>
+</message>
+
+
+  <message id='1intro-video'>
+     <center>${video1}</center>
+  </message>
+
+  <message id='3gamma-lines-video'>
+     <center>${video2}</center>
+  </message>
+
+  <message id='4calibration-video'>
+     <center>${video3}</center>
+  </message>
+
+  <message id='2nuclide-peak-association-video'>
+     <center>${video4}</center>
+  </message>
+
+  <message id='5activity-shielding-fit-video'>
+     <center>${video5}</center>
+  </message>
+
+
+  <message id="known-issues">
+    المشاكل المعروفة حالياً:
+    <ul>
+<li><b>الكل:</b> (مدير القمم) "معرف النويدة" في حالات نادرة لا يعمل </li>
+        <li><b>الكل:</b> "حفظ الحالة عند الخروج" في حالات نادرة لا يعمل</li>
+    </ul>
+  </message>
+</messages>
+</messages>

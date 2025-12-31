@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- Strings from PeakModel - e.g., tables that display peak info.
+  pm- is short for PeakModel
+  -->
+  <message id="pm-tt-use-for-cal">শক্তি ক্যালিব্রেট করতে সাহায্য করতে এই পিকটি ব্যবহার করা উচিত কিনা।
+    পিকে একটি নিউক্লাইড, প্রতিক্রিয়া, বা x-রে বরাদ্দ করতে হবে, এবং পিক এডিটর ব্যবহার করে মিন এনার্জি মান ফিক্স করা যাবে না।</message>
+  <message id="pm-gaussian">Gaussian</message>
+  <message id="pm-region">অঞ্চল</message>
+  <message id="pm-err-use-fit-no-nuc">শিল্ডিং/উৎস-ফিটিংয়ের জন্য ব্যবহার করার আগে পিকের সাথে একটি নিউক্লাইড সংযুক্ত করতে হবে।</message>
+  <message id="pm-err-use-cal-no-nuc">ক্যালিব্রেশনের জন্য ব্যবহার করার আগে পিকের সাথে একটি নিউক্লাইড, x-রে, বা প্রতিক্রিয়া সংযুক্ত করতে হবে।</message>
+  <message id="pm-err-use-rel-act-no-nuc">শুধুমাত্র একটি নিউক্লাইডের গামার সাথে সংযুক্ত পিক আপেক্ষিক কার্যকলাপ বিশ্লেষণের জন্য ব্যবহার করা যেতে পারে।</message>
+  <message id="pm-warn-use-xray-fit">সতর্কতা: উৎস নিউক্লাইড ফিট করার জন্য x-রে ব্যবহার করা সাধারণত একটি ভাল ধারণা নয়, তাই অনুগ্রহ করে সতর্কতা অবলম্বন করুন।</message>
+
+  <message id="pm-hdr-diff">পার্থক্য</message>
+  <message id="pm-hdr-cal-peak">ক্যালিব পিক</message>
+  <message id="pm-hdr-rel-act">আপেক্ষিক অ্যাক্ট</message>
+  <message id="pm-hdr-label">লেবেল</message>
+  <message id="pm-hdr-color">রং</message>
+  <message id="pm-hdr-skew-amp">স্কিউ অ্যাম্প</message>
+  <message id="pm-hdr-peak-type">পিক টাইপ</message>
+  <message id="pm-hdr-low-energy">নিম্ন শক্তি</message>
+  <message id="pm-hdr-up-energy">উচ্চ শক্তি</message>
+  <message id="pm-hdr-roi-counts">ROI কাউন্ট</message>
+
+
+  <message id="pm-hdr-tt-mean">মিন এনার্জি</message>
+  <message id="pm-hdr-tt-fwhm">অর্ধ সর্বোচ্চ এ সম্পূর্ণ প্রস্থ</message>
+  <message id="pm-hdr-tt-amp">পিক এলাকা</message>
+  <message id="pm-hdr-tt-cps">প্রতি সেকেন্ডে পিক কাউন্ট</message>
+  <message id="pm-hdr-tt-photopeak-energy">ফোটোপিক এনার্জি</message>
+  <message id="pm-hdr-tt-diff">ফোটোপিক এবং মিন এনার্জির মধ্যে পার্থক্য</message>
+  <message id="pm-hdr-tt-man-rel-eff">"পিক থেকে আইসোটোপিক্স" বিশ্লেষণের জন্য ব্যবহার করুন।</message>
+  <message id="pm-hdr-tt-color">পিক রং</message>
+  <message id="pm-hdr-tt-label">ব্যবহারকারী নির্দিষ্ট লেবেল</message>
+  <message id="pm-hdr-tt-roi-counts">আগ্রহের অঞ্চলে গামা কাউন্টের সমাকলন</message>
+  <message id="pm-hdr-tt-"></message>
+
+</messages>

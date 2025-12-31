@@ -62,6 +62,10 @@ class DoseCalcWindow;
 class FluxToolWindow;
 class PeakEditWindow;
 class RefLineDynamic;
+
+#if( USE_LLM_INTERFACE )
+class LlmToolGui;
+#endif
 class WarningMessage;
 class DrfSelectWindow;
 class PeakInfoDisplay;
@@ -361,6 +365,8 @@ public:
 
   /** Adds a new peak to the peak model, and returns the models index of the new peak.
    
+     Does NOT add a undo/redo action.
+   
    @param peak the peak to add
    @param associateShownNucXrayRctn is specified true _and_ the user is showing some
           reference gamma lines, OR `ref_line_name` is not empty, and the peak doesnt already have
@@ -369,12 +375,27 @@ public:
    @param ref_line_name optional string to specify the source name to assign to the peak.  if
           specified, this string will be tried as a source, before the reference lines.
    
-   @returns the WModelIndex of the added peak; if the peak was not added (because it is outside the spectrums
-            energy range, or the peak was not initialized), then the returned index will be invalid.
+   @returns the WModelIndex of the added peak if the SpectrumType was a foreground and the peak was added
+            (may have failed to be added because it is outside the spectrums energy range, or the peak was not initialized)
+            If not for the foreground, or the peak was not added, then the returned index will be invalid.
    */
   Wt::WModelIndex addPeak( PeakDef peak, const bool associateShownNucXrayRctn,
+                          const SpecUtils::SpectrumType spec_type,
                           const std::string &ref_line_name = "" );
   
+  /** Sets the peaks for the given spectrum - taking care of adding a undo/redo step.
+   
+   If you do not wish to add a undo/redo step, you can call `PeakModel::setPeaks(peaks,SpectrumType).`
+   (the undo/redo is the only differnce between calling this function and the PeakModel function directly).
+   
+   @param spectrum Which spectrum to set the peaks for.
+   @param peaks The peaks to set.  Must not be nullptr, or the currently set deque of peaks.
+   
+   Will trigger update of displayed spectrum.
+   
+   Throws exception if spectrum type specified is not displayed, or peaks is nullptr.
+   */
+  void setPeaks( const SpecUtils::SpectrumType spectrum, std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> peaks );
   
   Wt::WContainerWidget *menuDiv();
 
@@ -684,8 +705,11 @@ public:
   /** If "Activity/Shielding Fit" window is not showing, creates the tool/window, and returns the tool.
    If it is already showing, no changes are made, and a pointer to the tool is returned.
    When the window shown to the user is closed, the #closeShieldingSourceFit function will automatically be called, and tool deleted.
+
+   @param create_window If true (default), creates the window if it doesn't exist.
+                        If false and the window doesn't exist, returns nullptr without creating it.
    */
-  ShieldingSourceDisplay *shieldingSourceFit();
+  ShieldingSourceDisplay *shieldingSourceFit( const bool create_window = true );
   void closeShieldingSourceFit();
   void saveShieldingSourceModelToForegroundSpecMeas();
   
@@ -837,7 +861,7 @@ public:
 
 
 #if( USE_REL_ACT_TOOL )
-  RelActAutoGui *showRelActAutoWindow();
+  RelActAutoGui *relActAutoWindow( const bool createIfNotOpen );
   void handleRelActAutoClose();
   
   RelActManualGui *createRelActManualWidget();
@@ -875,6 +899,17 @@ public:
   /** If a `MakeFwhmForDrfWindow` is showing, deletes it, and sets `m_addFwhmTool` to nullptr.
    */
   void deleteFwhmFromForegroundWindow();
+
+#if( USE_LLM_INTERFACE )
+  /** Create and show the LLM tool widget in the tools tab, if its not already created. */
+  void createLlmTool();
+  
+  /** Returns current LLM tool, or nullptr if one does not currently exist. */
+  LlmToolGui *currentLlmTool();
+  
+  /** Handle cleanup when LLM tool is closed. */
+  void handleLlmToolClose();
+#endif
   
   /** Will show the disclaimer, license, and statment window, setting
       m_licenseWindow pointer with its value.
@@ -1144,7 +1179,7 @@ public:
                                        const bool user_interaction);
   
   //Peak finding functions
-  void searchForSinglePeak( const double x, const std::string &ref_line_name );
+  void searchForSinglePeak( const double x, const std::string &ref_line_name, Wt::WFlags<Wt::KeyboardModifier> mods );
   
   
   /** Function to call when the automated search for peaks (throughout the
@@ -1168,6 +1203,7 @@ public:
   //  which will call setHintPeaks(...) when done.
   void searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
                            const std::set<int> &samples,
+                          const std::shared_ptr<const SpecUtils::Measurement> &spectrum,
                           const bool isHPGe );
   
   //setHintPeaks(): sets the hint peaks (SpecMeas::m_autoSearchPeaks and
@@ -1653,6 +1689,13 @@ protected:
   //  would like to use a calibration from a previously used spectrum if the one
   //  they just uploaded is from the same detector as the previous one.
   EnergyCalPreserveWindow *m_preserveCalibWindow;
+
+#if( USE_LLM_INTERFACE )
+  /** Menu item for opening the LLM tool. */
+  PopupDivMenuItem *m_llmToolMenuItem;
+  /** LLM tool widget for user interaction. */
+  LlmToolGui          *m_llmTool;
+#endif
   
 #if( USE_SEARCH_MODE_3D_CHART )
   /** Pointer to window showing the Search Mode 3D data view. */

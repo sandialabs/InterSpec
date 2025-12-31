@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ftw- is short for FluxToolWidget or FluxToolWindow
+  -->
+  <message id="ftw-qr-tool-state-title">Status Alat Fluks</message>
+  <message id="ftw-qr-tool-state-text">Status saat ini alat fluks.</message>
+  <message id="ftw-hdr-intrinsic-eff">Efis. Intrinsik</message>
+  <message id="ftw-hdr-geom-eff">Efis. Geom.</message>
+  <message id="ftw-hdr-flux-on-det">Fluks pada Det. (ɣ/s)</message>
+  <message id="ftw-hdr-flux-cm">Fluks (ɣ/cm²/s)</message>
+  <message id="ftw-hdr-flux-4pi">ɣ/4π/s</message>
+  <message id="ftw-tt-distance">
+    Jarak dari pusat sumber ke muka detektor. Angka harus
+    diikuti dengan satuan; satuan yang valid adalah: meters, m, cm, mm, km, feet,
+    ft, ', in, inches, atau ".  Anda juga dapat menambahkan beberapa jarak,
+    seperti '3ft 4in', atau '3.6E-2 m 12 cm' yang setara dengan 
+    40inches dan 15.6cm.
+  </message>
+  <message id="ftw-simple">Sederhana</message>
+  <message id="ftw-standard">Standar</message>
+  <message id="ftw-more">Lebih</message>
+  <message id="ftw-copy-btn">Salin Ke Clipboard</message>
+  <message id="ftw-copy-btn-narrow">Salin</message>
+  <message id="ftw-invalid-dist">Jarak Tidak Valid</message>
+  <message id="ftw-no-drf">Tidak Ada Fungsi Respons Detektor yang Dipilih</message>
+  <message id="ftw-no-foreground">Tidak ada spektrum latar depan yang dimuat</message>
+  <message id="ftw-invalid-livetime">Waktu hidup latar depan tidak valid</message>
+  <message id="ftw-err-copy-clipboard">Gagal menyalin ke clipboard - mungkin masalah izin - maaf.</message>
+  <message id="ftw-copied-to-clipboard">Tabel disalin ke clipboard.</message>
+  <message id="ftw-copied-as-html">Tabel disalin ke clipboard sebagai teks HTML.</message>
+  <message id="ftw-copy-unknown-status">Hasil perintah salin tidak diketahui - maaf.</message>
+</messages>
+

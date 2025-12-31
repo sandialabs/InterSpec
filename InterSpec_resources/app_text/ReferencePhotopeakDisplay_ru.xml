@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- rpd- is short for ReferencePhotopeakDisplay -->
+  <message id="rpd-add-another-btn">Добавить ещё</message>
+  <message id="rpd-add-another-btn-narrow">Добавить</message>
+  <message id="rpd-tt-add-another-btn">Сохранить текущие отображаемые линии и добавить новый нуклид/источник для отображения.</message>
+  <message id="rpd-tt-nuc-edit">напр. <b>U235</b>, <b>235 Uranium</b>, <b>U</b> (только рентген), <b>Uranium</b> (рентген), <b>U-235m</b> (метастабильное состояние), <b>Cs137</b>, <b>background</b>, <b>H(n,g)</b> и т.д.</message>
+  <message id="rpd-tt-age">
+    <div>
+      Возраст можно указать, используя комбинацию временных единиц, например '<b>5.3y 8d 22m</b>' или в периодах полураспада, например 
+      '<b>2.5 HL</b>'.
+    </div>
+    <div>
+      Допустимые единицы времени: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>,
+      <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, или
+      можно указать период времени как <b>hh:mm:ss</b>. Единицы периода полураспада можно
+      указать, используя <b>hl</b>, <b>halflife</b>, <b>halflives</b>, <b>half-life</b>, <b>half-lives</b>,
+      <b>half lives</b>, или <b>half life</b>.
+    </div>
+    <div>
+      Единицы периода полураспада или периоды времени не могут смешиваться с другими единицами. Когда указано несколько периодов времени,
+      они суммируются, напр. '1y6months 3m' интерпретируется как 18 месяцев и 3 минуты.
+    </div>
+  </message>
+  <message id="rpd-tt-clear">Очищает все сохранённые линии, а также текущие несохранённые линии.</message>
+  <message id="rpd-more-info">подробнее</message>
+  <message id="rpd-shield-mat">экранирующий материал</message>
+  <message id="rpd-options">Опции</message>
+  <message id="rpd-opt-prompt">Только исходный</message>
+  <message id="rpd-opt-tt-prompt">
+    Гаммы только от исходного нуклида и потомков до тех пор, пока один
+    из них не будет иметь период полураспада больше, чем у исходного нуклида; цепь
+    распада находится в равновесии до этой точки.
+  </message>
+  <message id="rpd-opt-gamma">Показать гаммы</message>
+  <message id="rpd-opt-xray">Показать рентген</message>
+  <message id="rpd-opt-alphas">Показать альфы</message>
+  <message id="rpd-opt-betas">Показать беты</message>
+  <message id="rpd-opt-cascade">Каскадные суммы</message>
+  <message id="rpd-opt-escapes">Пики ухода</message>
+  <message id="rpd-prev-nucs">Пред. нукл.</message>
+  <message id="rpd-det-nucs">Дет RID нукл.</message>
+  <message id="rpd-assoc-nucs">Связ. нукл.</message>
+  <message id="rpd-suggestions">Предложения</message>
+  <message id="rpd-feature-markers">Маркеры признаков</message>
+
+  <!-- Reference line thickness options -->
+  <message id="rpd-line-thick-light">Тонкие линии</message>
+  <message id="rpd-line-thick-normal">Стандартная толщ.</message>
+  <message id="rpd-line-thick-thick">Толстые линии</message>
+  <message id="rpd-line-thick-thicker">Более толстые линии</message>
+  
+  <!-- Reference lines visual verbosity options. -->
+  <message id="rpd-line-verb-none">Минимум линий</message>
+  <message id="rpd-line-verb-hover">Справ. линия наведения</message>
+  <message id="rpd-line-verb-major">Полные основные линии</message>
+  
+  <message id="rpd-csv-export-msg">Инструмент 'Информация о распаде нуклидов' предоставляет дополнительные возможности для экспорта нуклидов, продуктов распада и информации о распаде в CSV файлы.</message>
+  <message id="rpd-changed-age">Изменён возраст на более разумное значение для {1} с '{2}' на '{3}'</message>
+  <message id="rpd-changed-age-fission">Изменён возраст на {1}, чтобы быть действительным.</message>
+  <message id="rpd-det-id">ID детектора</message>
+  <message id="rpd-ext-rid">Внешний RID</message>
+  <message id="rpd-prev">Предыдущий</message>
+  <message id="rpd-warn-cascade-xrays">рентгеновские лучи не включены в каскады</message>
+
+  <!-- Values in the table on this tool -->
+  <message id="rpd-tbl-iso">Изо</message>  <!-- a.k.a meta-stable state of nuclide -->
+  <message id="rpd-tbl-el-cap">э.з.</message> <!-- a.k.a electron capture -->
+  <message id="rpd-tbl-proton">протон</message>
+  <message id="rpd-tbl-spont-fis">с.д.</message> <!-- Spontaneous Fission-->
+  <message id="rpd-tbl-xray">рентген</message>
+  <message id="rpd-tbl-reaction">Реакция</message>
+  <message id="rpd-tbl-norm">NORM</message>
+  <message id="rpd-tbl-cascade-sum">Каскадная сумма</message>
+
+  <message id="rpd-tbl-hdr-energy">Энергия (кэВ)</message>
+  <message id="rpd-tbl-hdr-br">В.Р.</message> <!-- branching ratio -->
+  <message id="rpd-tbl-hdr-parent">Родитель</message>
+  <message id="rpd-tbl-hdr-mode">Режим</message>
+  <message id="rpd-tbl-hdr-particle">Частица</message>
+  <message id="rpd-tbl-hdr-tt-energy">Энергия образующейся частицы</message>
+  <message id="rpd-tbl-hdr-tt-br">Количество частиц в секунду, на Бк родительского нуклида.</message>
+  <message id="rpd-tbl-hdr-tt-trans">Фактический нуклид, который распался, давая эту частицу.</message>
+  <message id="rpd-tbl-hdr-tt-trans-mode">Режим распада родительского нуклида, который произвёл эту частицу.</message>
+  <message id="rpd-tbl-hdr-tt-type">Тип образующейся частицы</message>
+  <message id="rpd-tbl-hdr-tt-"></message>
+
+
+</messages>

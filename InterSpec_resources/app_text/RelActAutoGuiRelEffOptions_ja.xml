@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raageo- is short for RelActAutoGuiRelEffOptions -->
+  
+  <!-- Labels -->
+  <message id="raageo-eqn-type">方程式タイプ</message>
+  <message id="raageo-eqn-order">方程式次数</message>
+  <message id="raageo-pu242-corr">Pu242補正</message>
+  
+  <!-- Checkboxes -->
+  <message id="raageo-use-corr-fcn">補正関数使用</message>
+  <message id="raageo-share-corr-fcn">補正関数共有</message>
+  <message id="raageo-share-ext-atten">外部減衰共有</message>
+  <message id="raageo-shielded-by-other-curves">他の曲線による遮蔽</message>
+  
+  <!-- Equation types -->
+  <message id="raageo-eqn-log-x">Log(x)</message>
+  <message id="raageo-eqn-log-y">Log(y)</message>
+  <message id="raageo-eqn-log-x-log-y">Log(x)Log(y)</message>
+  <message id="raageo-eqn-empirical">経験的</message>
+  <message id="raageo-eqn-physical">物理的</message>
+  
+  <!-- Placeholders -->
+  <message id="raageo-curve-name">曲線名</message>
+  
+  <!-- Tooltips -->
+  <message id="raageo-eqn-type-tt">相対効率曲線に使用する関数形式。<br />オプションは：<table style="margin-left: 10px;"><tr><th>Log(energy):</th>               <th>y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...</th></tr><tr><th>Log(rel. eff.):</th>            <th>y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )</th></tr><tr><th>Log(energy)Log(rel. eff.):</th> <th>y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )</th></tr><tr><th>Empirical:</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr><tr><th>Physical:</th>             <th>y = <span style="display: inline-block; vertical-align: middle;"><span style="display: block; text-align: center;">(1 - exp(-AD<sub>0</sub>*μ<sub>0</sub>))</span><span style="display: block; border-top: 1px solid black; text-align: center;">(AD<sub>0</sub>*μ<sub>0</sub>)</span></span> * [exp(-AD<sub>1</sub>*μ<sub>1</sub>) * exp(-AD<sub>2</sub>*μ<sub>2</sub>) + ...] * [Det. Eff.] * [E<sup>b</sup> * C<sup>1/E</sup>]</th></tr></table></message>
+  <message id="raageo-eqn-order-tt">使用する相対効率方程式の次数（エネルギー依存項の数）。</message>
+  <message id="raageo-pu242-corr-tt">Pu-242はガンマスペクトルで直接観測されることは少ない。しかし、濃縮度計算時にこの同位体を補正するため、この同位体の期待寄与を他のPu同位体から推定できます。この形式では補正方法を選択できます。</message>
+  <message id="raageo-share-corr-fcn-tt">チェックすると、相関関数設定がすべての物理モデル曲線で同期されます。</message>
+  <message id="raageo-share-ext-atten-tt">チェックすると、外部遮蔽設定がすべての物理モデル曲線で同期されます。</message>
+  <message id="raageo-shielded-by-other-curves-tt">チェックすると、この曲線の線源がすべての他の物理モデル曲線によって遮蔽されます。</message>
+  <message id="raageo-del-rel-eff-curve-tt">この相対効率曲線を削除。</message>
+  <message id="raageo-add-rel-eff-curve-tt">別の相対効率曲線を追加。</message>
+  
+</messages>

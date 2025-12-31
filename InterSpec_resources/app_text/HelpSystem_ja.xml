@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- hw- is short for HelpWindow
+  -->
+  <message id="hw-welcome-link">ようこそ...</message>
+  <message id="hw-tutorials-link">チュートリアルと使用ヒント</message>
+  <message id="hw-err-opening-xml">ヘルプページが見つかりません</message>
+  <message id="hw-err-opening-json">'{1}'のヘルプJSONファイルを開けませんでした。</message>
+  <message id="hw-search-empty-text">検索</message>
+</messages>

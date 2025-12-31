@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dlt- is short for DetectionLimitTool
+  -->
+  <message id="dlt-window-title">Инструмент доверия обнаружения</message>
+  
+  <!-- MdaPeakRow strings -->
+  <message id="dlt-use-for-multi-peak">Использовать для мульти-пика</message>
+  <message id="dlt-roi-lower-label">ROI Нижний:</message>
+  <message id="dlt-roi-upper-label">ROI Верхний:</message>
+  <message id="dlt-continuum-label">Континуум</message>
+  <message id="dlt-cont-norm-label">Норм. Конт.</message>
+  <message id="dlt-cont-norm-floating">Плавающий</message>
+  <message id="dlt-cont-norm-fixed-edges">Фиксированный по краям</message>
+  <message id="dlt-cont-norm-fixed-full-roi">Фиксированный полный ROI</message>
+  <message id="dlt-cont-norm-tt">
+    Как должна определяться нормализация континуума:
+    <ul><li><b>Плавающий</b>: Полиномиальный континуум подбирается для каждой заданной активности -
+    активность влияет на континуум.</li>
+    <li><b>Фиксированный по краям</b>: Каналы по обе стороны от ROI используются для определения
+    линейного континуума, который фиксирован и не зависит от активности нуклидов.</li>
+    <li><b>Фиксированный полный ROI</b>: Континуум подбирается с использованием всего энергетического диапазона ROI,
+    предполагая гауссову амплитуду равной нулю; позже гауссова компонента пика
+    будет размещена поверх этого фиксированного континуума.<br/>
+    Это фактически утверждает, что вы знаете, что в данных нет сигнального пика.
+    Континуум не будет зависеть от значения активности нуклида, и гауссова
+    компонента пика будет размещена поверх этого фиксированного континуума при оценке
+    &chi;<sup>2</sup>.</li>
+    </ul>
+  </message>
+  <message id="dlt-single-peak-currie-limit">Предел Керри одиночного пика</message>
+  <message id="dlt-num-side-channels-label">Кол-во боковых каналов</message>
+  <message id="dlt-further-details-link">дополнительные детали...</message>
+  <message id="dlt-err-computing-info">Ошибка вычисления {1}, {2} кэВ Инфо</message>
+  <message id="dlt-err-computing-currie-info">Ошибка вычисления информации предела Керри: {1}</message>
+  
+  <!-- MdaPeakRow setSimplePoisonTxt strings -->
+  <message id="dlt-nominal">Номинальное:</message>
+  <message id="dlt-range">Диапазон:</message>
+  <message id="dlt-detected-activity-tt">Обнаруженная активность, используя только эту Область Интереса,
+    и наблюдаемый избыток отсчётов, а также
+    статистический доверительный интервал.</message>
+  <message id="dlt-limit-lt-zero">Предел: &lt; 0{1}</message>
+  <message id="dlt-sig-fewer-counts">(значительно меньше отсчётов в ROI, чем предсказано)</message>
+  <message id="dlt-fewer-counts-tt">Значительно меньше отсчётов было наблюдено в
+    Области Интереса, чем предсказано соседними каналами.</message>
+  <message id="dlt-upper-limit">Верхний предел:</message>
+  <message id="dlt-critical-limit">Критический предел:</message>
+  <message id="dlt-limit-tt">Верхний предел - это максимальная активность, присутствующая для данного УД,
+    учитывая наблюдаемое количество отсчётов в ROI.
+    Критический предел - это активность, при которой сигнал будет надёжно обнаружен.
+    Оба числа вычислены с использованием метода Керри.</message>
+  <message id="dlt-large-deficit">Большой дефицит отсчётов в ROI</message>
+  
+  <!-- DetectionLimitTool main class strings -->
+  <message id="dlt-nuclide-label">Нуклид:&nbsp;&nbsp;</message>
+  <message id="dlt-age-label">Возраст:</message>
+  <message id="dlt-tt-age-edit">
+    <div>Возраст нуклида.</div>
+    <br />
+    <div>Возраст контролирует количество роста потомства; активности родительского
+    (т.е., введённого) нуклида всегда указываются на момент измерения.
+    </div>
+  </message>
+  <message id="dlt-distance-label">Расстояние:</message>
+  <message id="dlt-activity-label">Активность:</message>
+  <message id="dlt-attenuate-for-air">Ослабление для воздуха</message>
+  <message id="dlt-shield-empty-text">материал экранирования</message>
+  <message id="dlt-activity-limit">Предел активности</message>
+  <message id="dlt-distance-limit">Предел расстояния</message>
+  <message id="dlt-peaks-disp-act-label">Пики отобр. акт.:</message>
+  <message id="dlt-peaks-disp-dist-label">Пики отобр. расст.:</message>
+  <message id="dlt-conf-level-label">Уровень доверия:</message>
+  <message id="dlt-conf-95">95%</message>
+  <message id="dlt-conf-99">99%</message>
+  <message id="dlt-conf-1sigma">1σ (68,2%)</message>
+  <message id="dlt-conf-2sigma">2σ (95,4%)</message>
+  <message id="dlt-conf-3sigma">3σ (99,7%)</message>
+  <message id="dlt-conf-4sigma">4σ</message>
+  <message id="dlt-conf-5sigma">5σ</message>
+  <message id="dlt-gamma-lines-to-use">Гамма-линии для использования</message>
+  <message id="dlt-min-rel-intensity-label">Мин. относительная интенсивность:</message>
+  <message id="dlt-fit-fwhm-btn">Подобрать FWHM...</message>
+  <message id="dlt-log">Лог</message>
+  <message id="dlt-lin">Лин</message>
+  <message id="dlt-below-lc">(ниже L<sub>c</sub>)</message>
+  <message id="dlt-lt-zero-counts">&lt; 0 отсчётов</message>
+  <message id="dlt-lt-zero-activity">&lt; {1}</message>
+  
+  <!-- Error messages -->
+  <message id="dlt-err-no-data">Нет загруженных данных</message>
+  <message id="dlt-err-no-drf">Нет загруженного DRF</message>
+  <message id="dlt-err-no-fwhm">DRF не имеет информации FWHM - пожалуйста, подберите FWHM или измените DRF.</message>
+  <message id="dlt-err-no-nuclide">Некорректный нуклид</message>
+  <message id="dlt-err-activity-invalid">Активность некорректна</message>
+  <message id="dlt-err-distance-invalid">Расстояние некорректно</message>
+  <message id="dlt-err-min-rel-intensity">Мин. относительная интенсивность для отображения некорректна.</message>
+  <message id="dlt-err-shielding">Ошибка вычисления эффектов экранирования</message>
+  <message id="dlt-err-gamma-yields">Ошибка выходов гамма - все интенсивности равны нулю.</message>
+  <message id="dlt-err-no-peaks-selected">Нет выбранных пиков</message>
+  <message id="dlt-err-calculating-chi2">Ошибка вычисления Chi2: {1}</message>
+  <message id="dlt-err-calculating-limit">Ошибка вычисления предела: {1}</message>
+  
+  <!-- createCurrieRoiMoreInfoWindow strings -->
+  <message id="dlt-observed-activity">Наблюдаемая активность</message>
+  <message id="dlt-observed-counts">Наблюдаемые отсчёты</message>
+  <message id="dlt-activity-range">Диапазон активности</message>
+  <message id="dlt-counts-range">Диапазон отсчётов</message>
+  <message id="dlt-activity-le-zero">Активность &le; 0 {1}</message>
+  <message id="dlt-counts-le-zero">Отсчёты &le; 0</message>
+  <message id="dlt-activity-upper-bound">Верхняя граница активности</message>
+  <message id="dlt-counts-upper-bound">Верхняя граница отсчётов</message>
+  <message id="dlt-distance-not-supported">Расстояние пока не поддерживается для дополнительной информации</message>
+  <message id="dlt-lower-region-channels">Каналы нижней области</message>
+  <message id="dlt-lower-region-counts">Отсчёты нижней области</message>
+  <message id="dlt-upper-region-channels">Каналы верхней области</message>
+  <message id="dlt-upper-region-counts">Отсчёты верхней области</message>
+  <message id="dlt-using-roi-as-background">Использование области ROI как оценки фона</message>
+  <message id="dlt-roi-area-channels">Каналы области ROI</message>
+  <message id="dlt-peak-area-channels">Каналы области пика</message>
+  <message id="dlt-roi-region-counts">Отсчёты области ROI</message>
+  <message id="dlt-peak-region-counts">Отсчёты области пика</message>
+  <message id="dlt-roi-region-null-est">Нулевая оценка области ROI</message>
+  <message id="dlt-peak-region-null-est">Нулевая оценка области пика</message>
+  <message id="dlt-peak-critical-limit">Критический предел пика <span style="font-size: smaller;">(L<sub>c</sub>)</span></message>
+  <message id="dlt-peak-detection-limit">Предел обнаружения пика <span style="font-size: smaller;">(L<sub>d</sub>)</span></message>
+  <message id="dlt-detector-intrinsic-eff">Внутренняя эффективность детектора</message>
+  <message id="dlt-solid-angle-fraction">Доля телесного угла</message>
+  <message id="dlt-shielding-transmission">Передача экранирования</message>
+  <message id="dlt-air-transmission">Передача воздуха</message>
+  <message id="dlt-nuclide-branching-ratio">Коэффициент ветвления нуклида</message>
+  
+  <!-- Tooltip strings for createCurrieRoiMoreInfoWindow -->
+  <message id="dlt-tt-greater-than-lc">Больше &quot;критического уровня&quot;, L<sub>c</sub>,
+    отсчётов было наблюдено в области пика.</message>
+  <message id="dlt-tt-activity-range">Оценка диапазона активности сигнала, до уровня доверия {1}.</message>
+  <message id="dlt-tt-counts-range">Оценка диапазона отсчётов сигнала, до уровня доверия {1}.</message>
+  <message id="dlt-tt-fewer-than-predicted">Значительно меньше отсчётов в области пика было наблюдено,
+    чем предсказано соседними областями.</message>
+  <message id="dlt-tt-upper-bound">Верхний предел того, сколько активности может присутствовать, до
+    уровня доверия {1}.</message>
+  <message id="dlt-tt-lower-region-channels">Область выше пика по энергии, которая используется
+    для оценки ожидаемых отсчётов континуума в области пика;
+    соответствует {1} до {2} кэВ</message>
+  <message id="dlt-tt-lower-region-counts">Количество отсчётов, наблюдённых в области ниже области пика,
+    которое используется для оценки ожидаемых отсчётов области пика</message>
+  <message id="dlt-tt-upper-region-channels">Область выше пика по энергии, которая используется
+    для оценки ожидаемых отсчётов континуума в области пика;
+    соответствует {1} до {2} кэВ</message>
+  <message id="dlt-tt-upper-region-counts">Количество отсчётов, наблюдённых в области выше области пика,
+    которое используется для оценки ожидаемых отсчётов области пика</message>
+  <message id="dlt-tt-peak-area-channels">Область, в которой предполагается, что находится пик;
+    соответствует {1} до {2} кэВ</message>
+  <message id="dlt-tt-peak-region-counts">Наблюдаемое количество отсчётов в области пика</message>
+  <message id="dlt-tt-peak-region-null-est">Оценка ожидаемого количества отсчётов в области пика, если
+    предполагается, что сигнал отсутствует.</message>
+  <message id="dlt-tt-critical-limit">Соответствует &quot;критическому уровню&quot; Керри, L<sub>c</sub>,
+    который является уровнем чистого сигнала (отклик инструмента), выше которого
+    наблюдаемый сигнал может быть надёжно распознан как &quot;обнаруженный&quot;.</message>
+  <message id="dlt-tt-detection-limit">Соответствует &quot;пределу обнаружения&quot; Керри, L<sub>d</sub>,
+    который является &quot;истинным&quot; уровнем чистого сигнала, который может быть, <i>a priori</i>,
+    ожидаемым для приведения к обнаружению.</message>
+  <message id="dlt-tt-detector-intrinsic-eff">Эффективность для гамма, попадающего на поверхность детектора,
+    быть обнаруженным в пике полной энергии.</message>
+  <message id="dlt-tt-solid-angle-fraction">Доля телесного угла, которую занимает поверхность детектора, на указанном расстоянии.</message>
+  <message id="dlt-tt-shielding-transmission">Доля гамма, при этой энергии, которые пройдут через экранирование без взаимодействия.</message>
+  <message id="dlt-tt-air-transmission">Доля гамма, при этой энергии, которые пройдут через воздух (предполагая уровень моря) без взаимодействия.</message>
+  <message id="dlt-tt-branching-ratio">Количество гамма-лучей, испускаемых при этой энергии, от радиоактивного
+    источника до любого экранирования, но с учётом возраста нуклида,
+    на распад родительского нуклида.</message>
+  <message id="dlt-tt-below-lc-counts">Наблюдаемые отсчёты сигнала меньше &quot;критического уровня&quot;, L<sub>c</sub>,
+    поэтому обнаружение не может быть объявлено, но это избыток над ожидаемыми отсчётами.</message>
+  <message id="dlt-tt-below-lc-activity">Наблюдаемая активность сигнала меньше &quot;критического уровня&quot;, L<sub>c</sub>,
+    поэтому обнаружение не может быть объявлено, но это избыток над ожидаемыми отсчётами.</message>
+  
+  <!-- Chart strings -->
+  <message id="dlt-chart-x-axis-distance">Расстояние ({1})</message>
+  <message id="dlt-chart-x-axis-activity">Активность ({1})</message>
+  <message id="dlt-chart-title-estimated-activity">Оценённая активность {1}.</message>
+  <message id="dlt-chart-title-excess-counts">Избыточные отсчёты {1}.</message>
+  <message id="dlt-chart-title-activity-lt-zero">Активность &lt; 0 {1}</message>
+  <message id="dlt-chart-title-data-peak">Данные + пик для {1}</message>
+  <message id="dlt-chart-title-peak-upper-bound">Пик для верхней границы {1} @{2} УД</message>
+  <message id="dlt-currie-info-dialog-title">{1}{2} кэВ Инфо</message>
+  
+  <!-- Additional error/status messages -->
+  <message id="dlt-no-foreground-file">Нет файла переднего плана</message>
+  <message id="dlt-no-foreground-spectrum">Нет спектра переднего плана</message>
+  <message id="dlt-no-drf-loaded">Нет загруженного DRF</message>
+  <message id="dlt-drf-not-valid">DRF некорректен или не имеет информации FWHM.</message>
+  <message id="dlt-err-max-distance-too-large">Максимальное расстояние слишком большое (&gt;100км)</message>
+  <message id="dlt-err-upper-limit-negative">Верхний предел отсчётов меньше нуля, но наблюдаемые отсчёты больше L_d.</message>
+  <message id="dlt-err-activity-zero-negative">Активность не может быть нулём или отрицательной</message>
+  <message id="dlt-err-distance-zero-negative">Расстояние не может быть нулём или отрицательным</message>
+</messages>

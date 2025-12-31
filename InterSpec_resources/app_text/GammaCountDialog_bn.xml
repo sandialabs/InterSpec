@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- gcd- is short for GammaCountDialog
+  -->
+  <message id="gcd-summary">নির্দিষ্ট শক্তি পরিসরে গামার সংখ্যা গণনা করুন।</message>
+  <message id="gcd-lower-energy-label">নিম্ন শক্তি</message>
+  <message id="gcd-upper-energy-label">উচ্চ শক্তি</message>
+  <message id="gcd-shift-alt-drag">Shift-Alt-ড্র্যাগ</message>
+  <message id="gcd-shift-option-drag">Shift-⌘-ড্র্যাগ</message>
+  <message id="gcd-select-shortcut">আপনি শক্তি পরিসর নির্বাচন করতে চার্টে <b>{1}</b> করতে পারেন</message>
+  <message id="gcd-foreground-counts-label">ফোরগ্রাউন্ড কাউন্ট:</message>
+  <message id="gcd-secondary-counts-label">সেকেন্ডারি কাউন্ট:</message>
+  <message id="gcd-background-counts-label">ব্যাকগ্রাউন্ড কাউন্ট:</message>
+  <message id="gcd-tt-n-sigma">
+    ফোরগ্রাউন্ড এবং (স্কেল করা) ব্যাকগ্রাউন্ডের মধ্যে পার্থক্য
+    অনিশ্চয়তা দ্বারা ভাগ করে সিগমা পার্থক্যের সংখ্যা গণনা করা হয়।
+    ফোরগ্রাউন্ড এবং ব্যাকগ্রাউন্ডের পরিসংখ্যান অনিশ্চয়তা
+    চতুর্ভুজে যোগ করে, তারপর বর্গমূল নিয়ে অনিশ্চয়তা গণনা করা হয়
+  </message>
+  <message id="gcd-qr-window-title">শক্তি পরিসর সমষ্টি স্টেট</message>
+  <message id="gcd-qr-window-text">শক্তি পরিসর সমষ্টি টুলের বর্তমান স্টেট।</message>
+  <message id="gcd-background-scale-note">ব্যাকগ্রাউন্ড {1} দ্বারা স্কেল করা হচ্ছে</message>
+  <message id="gcd-and-secondary-scaled"> এবং সেকেন্ডারি </message>
+  <message id="gcd-secondary-scale-note">সেকেন্ডারি ব্যাকগ্রাউন্ড স্কেল করা হচ্ছে </message>
+  <message id="gcd-foreground-above-background">ফোরগ্রাউন্ড ব্যাকগ্রাউন্ডের {1} σ উপরে।</message>
+  <message id="gcd-foreground-below-background">ফোরগ্রাউন্ড ব্যাকগ্রাউন্ডের {1} σ নিচে।</message>
+</messages>

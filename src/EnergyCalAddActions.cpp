@@ -48,14 +48,13 @@
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/EnergyCal.h"
+#include "InterSpec/HelpSystem.h"
 #include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/EnergyCalMultiFile.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/EnergyCalAddActions.h"
-
-// Forward declarations
-class ConvertCalTypeTool;
 
 using namespace std;
 using namespace Wt;
@@ -180,45 +179,48 @@ public:
 EnergyCalAddActionsWindow::EnergyCalAddActionsWindow( const MoreActionsIndex actionType,
                              const std::vector<MeasToApplyCoefChangeTo> &measToChange,
                              EnergyCalTool *calibrator )
-  : AuxWindow( "&nbsp", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
-                      | AuxWindowProperties::DisableCollapse) ),
+  : AuxWindow( "&nbsp", (AuxWindowProperties::SetCloseable | AuxWindowProperties::DisableCollapse) ),
     m_actionType( actionType ),
     m_measToChange( make_shared<vector<MeasToApplyCoefChangeTo>>(measToChange)),
     m_calibrator( calibrator )
 {
   wApp->useStyleSheet( "InterSpec_resources/EnergyCalAddActions.css");
   
+  InterSpec *interspec = InterSpec::instance();
+  if( interspec )
+    interspec->useMessageResourceBundle( "EnergyCalAddActions" );
+  
   switch( m_actionType )
   {
     case MoreActionsIndex::Linearize:
-      AuxWindow::setWindowTitle( "Linearize Spectrum" );
+      AuxWindow::setWindowTitle( WString::tr("ecaa-linearize-title") );
       new LinearizeCalTool( m_measToChange, m_calibrator, this );
       break;
       
     case MoreActionsIndex::Truncate:
-      AuxWindow::setWindowTitle( "Truncate Gamma Channels" );
+      AuxWindow::setWindowTitle( WString::tr("ecaa-truncate-title") );
       new TruncateChannelsTool( m_measToChange, m_calibrator, this );
       break;
       
     case MoreActionsIndex::CombineChannels:
-      AuxWindow::setWindowTitle( "Combine Gamma Channels" );
+      AuxWindow::setWindowTitle( WString::tr("ecaa-combine-title") );
       new CombineChannelsTool( m_measToChange, m_calibrator, this );
       break;
       
     case MoreActionsIndex::ConvertToFrf:
       setWidth( WLength(425.0, WLength::Unit::Pixel) );
-      AuxWindow::setWindowTitle( "Convert to Full Range Fraction Calibration" );
+      AuxWindow::setWindowTitle( WString::tr("ecaa-convert-frf-title") );
       new ConvertCalTypeTool( SpecUtils::EnergyCalType::FullRangeFraction, m_measToChange, m_calibrator, this );
       break;
       
     case MoreActionsIndex::ConvertToPoly:
       setWidth( WLength(425.0, WLength::Unit::Pixel) );
-      AuxWindow::setWindowTitle( "Convert to Polynomial Calibration" );
+      AuxWindow::setWindowTitle( WString::tr("ecaa-convert-poly-title") );
       new ConvertCalTypeTool( SpecUtils::EnergyCalType::Polynomial, m_measToChange, m_calibrator, this );
       break;
       
     case MoreActionsIndex::MultipleFilesCal:
-      AuxWindow::setWindowTitle( "Multi-File Calibration" );
+      AuxWindow::setWindowTitle( WString::tr("ecaa-multi-file-title") );
       new EnergyCalMultiFile( m_calibrator, this );
       break;
       
@@ -265,6 +267,8 @@ ConvertCalTypeTool::ConvertCalTypeTool( const SpecUtils::EnergyCalType targetTyp
   InterSpec *viewer = InterSpec::instance();
   assert( viewer );
   
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", viewer );
+  
   if( parent )
     parent->stretcher()->addWidget( this, 0, 0  );
   
@@ -304,18 +308,15 @@ ConvertCalTypeTool::ConvertCalTypeTool( const SpecUtils::EnergyCalType targetTyp
       parent->finished().connect( this, &ConvertCalTypeTool::handleFinish );
     }
     
-    string msgtxt = "";
+    WString msgtxt;
     if( caltypes.empty() )
-      msgtxt = "Conversion would not effect any spectra; try selecting more"
-               " &quot;Apply Changes To&quot; criteria.";
+      msgtxt = WString::tr("ecaa-conversion-no-effect");
     else if( caltypes.size() == 1 )
-      msgtxt = "All spectra this would be applied to is already "
-               + string( m_targetType==EnergyCalType::Polynomial ? "polynomial." : "full range fraction.");
+      msgtxt = WString::tr( m_targetType==EnergyCalType::Polynomial ? "ecaa-already-polynomial" : "ecaa-already-frf");
     else
-      msgtxt = "There is more than one calibration type of selected source spectra;"
-               " try restricting &quot;Apply Changes To&quot; criteria.";
+      msgtxt = WString::tr("ecaa-multiple-cal-types");
     
-    WText *msg = new WText( WString::fromUTF8(msgtxt), this );
+    WText *msg = new WText( msgtxt, this );
     msg->addStyleClass( "ConvertToNA" );
     msg->setInline( false );
     
@@ -326,8 +327,8 @@ ConvertCalTypeTool::ConvertCalTypeTool( const SpecUtils::EnergyCalType targetTyp
   string applyToTxt = cal->applyToSummaryTxt();
   if( !applyToTxt.empty() )
   {
-    applyToTxt = "Changes will be applied to: " + applyToTxt;
-    WText *msg = new WText( applyToTxt, this );
+    WString localizedMsg = WString::tr("ecaa-changes-applied-to").arg(applyToTxt);
+    WText *msg = new WText( localizedMsg, this );
     msg->addStyleClass( "ConvertToApplieTo" );
     msg->setInline( false );
   }//if( !applyToTxt.empty() )
@@ -342,11 +343,11 @@ ConvertCalTypeTool::ConvertCalTypeTool( const SpecUtils::EnergyCalType targetTyp
     {
       assert( coeforder.size() );
       const size_t maxorder = *coeforder.rbegin();
-      const char *msgtxt = "";
+      WString msgtxt;
       if( maxorder > 4 )
-        msgtxt = "Terms past the fourth term will be lost since there is no analogous terms.";
+        msgtxt = WString::tr("ecaa-terms-lost");
       else
-        msgtxt = "No information will be lost if you continue.";
+        msgtxt = WString::tr("ecaa-no-info-lost");
       WText *msg = new WText( msgtxt, this );
       msg->setInline( false );
       msg->addStyleClass( "ConvertToMsg" );
@@ -355,33 +356,28 @@ ConvertCalTypeTool::ConvertCalTypeTool( const SpecUtils::EnergyCalType targetTyp
       
     case SpecUtils::EnergyCalType::LowerChannelEdge:
     {
-      WText *msg = new WText( "How would you like the conversion to be performed?", this );
+      WText *msg = new WText( WString::tr("ecaa-conversion-question"), this );
       msg->addStyleClass( "ConvertToMsg" );
       msg->setInline( false );
       
       m_group = new WButtonGroup( this );
       WGroupBox *box = new WGroupBox( this );
       
-      WRadioButton *btn = new WRadioButton( "Linearize, rebinning counts to match new widths", box );
-      btn->setToolTip( "The channels in the resulting spectra will all have the same width,"
-                      " but counts in each channel will not be integer; this option preserves"
-                      " spectral shape (counts per keV)." );
+      WRadioButton *btn = new WRadioButton( WString::tr("ecaa-linearize-rebin-counts"), box );
+      HelpSystem::attachToolTipOn( btn, WString::tr("ecaa-tt-linearize-rebin"), showToolTips );
       btn->setInline( false );
       m_group->addButton( btn, 0 );
       
-      btn = new WRadioButton( "Linearize, leaving counts in channels the same", box );
-      btn->setToolTip( "The channel energies will be reassigned so that each channel will have"
-                      " same width, without taking into account the channels original width;"
-                      " i.e., the counts in each channel will remain the same, but spectral shape"
-                      " (counts per keV) will be changed." );
+      btn = new WRadioButton( WString::tr("ecaa-linearize-same-counts"), box );
+      HelpSystem::attachToolTipOn( btn, WString::tr("ecaa-tt-linearize-same"), showToolTips );
       btn->setInline( false );
       m_group->addButton( btn, 1 );
       
-      btn = new WRadioButton( "Fit channel energies to quadratic equation.", box );
+      btn = new WRadioButton( WString::tr("ecaa-fit-quadratic"), box );
       btn->setInline( false );
       m_group->addButton( btn, 2 );
       
-      btn = new WRadioButton( "Fit channel energies to cubic equation.", box );
+      btn = new WRadioButton( WString::tr("ecaa-fit-cubic"), box );
       btn->setInline( false );
       m_group->addButton( btn, 3 );
       
@@ -402,7 +398,7 @@ ConvertCalTypeTool::ConvertCalTypeTool( const SpecUtils::EnergyCalType targetTyp
     break;
   }//switch( m_sourceType )
   
-  WText *noUndoNote = new WText( "This action cannot be undone.", this );
+  WText *noUndoNote = new WText( WString::tr("ecaa-no-undo-note"), this );
   noUndoNote->addStyleClass( "NoUndoNote" );
   noUndoNote->setInline( false );
   
@@ -414,8 +410,8 @@ ConvertCalTypeTool::ConvertCalTypeTool( const SpecUtils::EnergyCalType targetTyp
   
   //AuxWindow::addHelpInFooter( buttonDiv, "convert-to-polynomial-dialog" );
   
-  m_cancel = new WPushButton( "Cancel", buttonDiv );
-  m_accept = new WPushButton( "Accept", buttonDiv );
+  m_cancel = new WPushButton( WString::tr("Cancel"), buttonDiv );
+  m_accept = new WPushButton( WString::tr("Accept"), buttonDiv );
   
   m_cancel->clicked().connect( boost::bind( &ConvertCalTypeTool::handleFinish, this, WDialog::Rejected ) );
   m_accept->clicked().connect( boost::bind( &ConvertCalTypeTool::handleFinish, this, WDialog::Accepted ) );
@@ -441,7 +437,8 @@ void ConvertCalTypeTool::convertLowerChannelEnegies( const size_t ncoeffs,
   set<shared_ptr<SpecMeas>> shiftedPeaksFor;
   map<shared_ptr<const EnergyCalibration>,shared_ptr<const EnergyCalibration>> updated_cals;
   map<pair<shared_ptr<SpecMeas>,set<int>>, deque<shared_ptr<const PeakDef>>> updated_peaks;
-  
+  map<pair<shared_ptr<SpecMeas>,set<int>>, deque<shared_ptr<const PeakDef>>> updated_auto_search_peaks;
+
   for( const auto &toapplyto : *m_measToChange )
   {
     for( const auto &detname : toapplyto.detectors )
@@ -555,6 +552,51 @@ void ConvertCalTypeTool::convertLowerChannelEnegies( const size_t ncoeffs,
                                + string(e.what()) );
         }//try / catch translate peaks
       }//for( const set<int> &samples : samplesWithPeak )
+
+
+
+      //updated_auto_search_peaks
+      const set<set<int>> samplesWithAutoSearchPeak = toapplyto.meas->sampleNumsWithAutomatedSearchPeaks();
+      for( const set<int> &samples : samplesWithAutoSearchPeak )
+      {
+        shared_ptr<const deque<shared_ptr<const PeakDef>>> oldPeaks = toapplyto.meas->automatedSearchPeaks(samples);
+        if( !oldPeaks || oldPeaks->empty() )
+            continue;
+
+        auto peak_cal = toapplyto.meas->suggested_sum_energy_calibration( samples, gammaDetNames );
+
+        //We dont expect to ever actually not get a valid calibration, but JIC
+        if( !peak_cal || !peak_cal->valid() )
+        {
+#if( PERFORM_DEVELOPER_CHECKS )
+          log_developer_error( __func__, "Unexpectedly didnt get suggested energy cal for"
+                                         " samples/detectector" );
+#endif
+          continue;
+        }//if( no previous calibration )
+
+        auto pos = updated_cals.find(peak_cal);
+        if( pos == end(updated_cals) )  //shouldnt ever really happen
+        {
+#if( PERFORM_DEVELOPER_CHECKS )
+          log_developer_error( __func__, "Unexpectedly couldnt find cal for auto-search peaks" );
+#endif
+          continue;
+        }//if( couldnt find old calibration )
+
+        const auto newPeakCal = pos->second;
+        try
+        {
+          updated_auto_search_peaks[{toapplyto.meas,samples}]
+                 = EnergyCal::translatePeaksForCalibrationChange( *oldPeaks, peak_cal, newPeakCal );
+        }catch( std::exception &e )
+        {
+          cerr << "Error translating auto-search peaks for calibration change: " << e.what() << endl;
+          assert( 0 );
+        }//try / catch translate peaks
+      }//for( const set<int> &samples : samplesWithAutoSearchPeak )
+
+
     }//if( !shiftedPeaksFor.count( toapplyto.meas) )
   }//for( const auto &toapplyto : applicables )
   
@@ -568,6 +610,12 @@ void ConvertCalTypeTool::convertLowerChannelEnegies( const size_t ncoeffs,
   
   const auto foreground = viewer->measurment(SpecUtils::SpectrumType::Foreground);
   const auto &foreSamples = viewer->displayedSamples(SpecUtils::SpectrumType::Foreground);
+
+  const auto background = viewer->measurment(SpecUtils::SpectrumType::Background);
+  const auto &backSamples = viewer->displayedSamples(SpecUtils::SpectrumType::Background);
+
+  const auto secondary = viewer->measurment(SpecUtils::SpectrumType::SecondForeground);
+  const auto &secoSamples = viewer->displayedSamples(SpecUtils::SpectrumType::SecondForeground);
   
   for( const auto &mp : updated_peaks )
   {
@@ -577,10 +625,22 @@ void ConvertCalTypeTool::convertLowerChannelEnegies( const size_t ncoeffs,
     spec->setPeaks( newpeaks, samples );
     
     if( (spec == foreground) && (samples == foreSamples) )
-      peakmodel->setPeakFromSpecMeas( spec, samples);
+      peakmodel->setPeakFromSpecMeas( spec, samples, SpecUtils::SpectrumType::Foreground );
+    else if( (spec == background) && (samples == backSamples) )
+      peakmodel->setPeakFromSpecMeas( spec, samples, SpecUtils::SpectrumType::Background );
+    else if( (spec == secondary) && (samples == secoSamples) )
+      peakmodel->setPeakFromSpecMeas( spec, samples, SpecUtils::SpectrumType::SecondForeground );
   }//for( const auto &mp : updated_peaks )
-  
-  
+
+  for( const auto &mp : updated_auto_search_peaks )
+  {
+    const auto &spec = mp.first.first;
+    const auto &samples = mp.first.second;
+    const deque<shared_ptr<const PeakDef>> &newpeaks = mp.second;
+    auto peaks = make_shared<deque<shared_ptr<const PeakDef>>>( newpeaks );
+    spec->setAutomatedSearchPeaks(samples, peaks );
+  }//for( const auto &mp : updated_peaks )
+
   for( const auto &toapplyto : *m_measToChange )
   {
     for( const auto &detname : toapplyto.detectors )
@@ -942,10 +1002,7 @@ LinearizeCalTool::LinearizeCalTool( shared_ptr<vector<MeasToApplyCoefChangeTo>> 
       parent->finished().connect( this, &LinearizeCalTool::handleFinish );
     }
     
-    const string msgtxt = "Conversion would not effect any spectra; try selecting more"
-    " &quot;Apply Changes To&quot; criteria.";
-    
-    WText *msg = new WText( WString::fromUTF8(msgtxt), this );
+    WText *msg = new WText( WString::tr("ecaa-conversion-no-effect"), this );
     msg->addStyleClass( "ConvertToNA" );
     msg->setInline( false );
     
@@ -968,8 +1025,8 @@ LinearizeCalTool::LinearizeCalTool( shared_ptr<vector<MeasToApplyCoefChangeTo>> 
     {
       auto cell = table->elementAt(0, 0);
       cell->setColumnSpan( 2 );
-      string msg = "For " + to_string(nchannel) + " channel spectra:";
-      WText *txt = new WText( WString::fromUTF8(msg), cell );
+      WString msg = WString::tr("ecaa-for-n-channel-spectra").arg(to_string(nchannel));
+      WText *txt = new WText( msg, cell );
       txt->addStyleClass( "NChannelSpecTxt" );
     }//if( multiple )
     
@@ -977,7 +1034,7 @@ LinearizeCalTool::LinearizeCalTool( shared_ptr<vector<MeasToApplyCoefChangeTo>> 
     const int input_width_px = 75;
     
     auto cell = table->elementAt( 0 + multiple, 0 );
-    auto label = new WLabel( "Lower Energy", cell );
+    auto label = new WLabel( WString::tr("ecaa-lower-energy"), cell );
     label->addStyleClass( "LinearizeLabel" );
     
     cell = table->elementAt( 0 + multiple, 1 );
@@ -990,7 +1047,7 @@ LinearizeCalTool::LinearizeCalTool( shared_ptr<vector<MeasToApplyCoefChangeTo>> 
     label->setBuddy( lower );
     
     cell = table->elementAt( 1 + multiple, 0 );
-    label = new WLabel( "Upper Energy", cell );
+    label = new WLabel( WString::tr("ecaa-upper-energy"), cell );
     label->addStyleClass( "LinearizeLabel" );
     
     cell = table->elementAt( 1 + multiple, 1 );
@@ -1004,7 +1061,7 @@ LinearizeCalTool::LinearizeCalTool( shared_ptr<vector<MeasToApplyCoefChangeTo>> 
     
     
     cell = table->elementAt( 2 + multiple, 0);
-    label = new WLabel( "Num Channels", cell );
+    label = new WLabel( WString::tr("ecaa-num-channels"), cell );
     label->addStyleClass( "LinearizeLabel" );
     
     cell = table->elementAt( 2 + multiple, 1 );
@@ -1027,13 +1084,13 @@ LinearizeCalTool::LinearizeCalTool( shared_ptr<vector<MeasToApplyCoefChangeTo>> 
   string applyToTxt = cal->applyToSummaryTxt();
   if( !applyToTxt.empty() )
   {
-    applyToTxt = "Changes will be applied to: " + applyToTxt;
-    WText *msg = new WText( applyToTxt, this );
+    const WString applyToMsg = WString::tr("ecaa-changes-applied-to").arg( applyToTxt );
+    WText *msg = new WText( applyToMsg, this );
     msg->addStyleClass( "ConvertToApplieTo" );
     msg->setInline( false );
   }//if( !applyToTxt.empty() )
   
-  WText *noUndoNote = new WText( "This action cannot be undone.", this );
+  WText *noUndoNote = new WText( WString::tr("ecaa-no-undo-note"), this );
   noUndoNote->addStyleClass( "NoUndoNote" );
   noUndoNote->setInline( false );
       
@@ -1045,8 +1102,8 @@ LinearizeCalTool::LinearizeCalTool( shared_ptr<vector<MeasToApplyCoefChangeTo>> 
   
   //AuxWindow::addHelpInFooter( buttonDiv, "linearize-dialog" );
   
-  m_cancel = new WPushButton( "Cancel", buttonDiv );
-  m_accept = new WPushButton( "Accept", buttonDiv );
+  m_cancel = new WPushButton( WString::tr("Cancel"), buttonDiv );
+  m_accept = new WPushButton( WString::tr("Accept"), buttonDiv );
   
   m_cancel->clicked().connect( boost::bind( &LinearizeCalTool::handleFinish, this, WDialog::Rejected ) );
   m_accept->clicked().connect( boost::bind( &LinearizeCalTool::handleFinish, this, WDialog::Accepted ) );
@@ -1263,11 +1320,11 @@ CombineChannelsTool::CombineChannelsTool( shared_ptr<vector<MeasToApplyCoefChang
   }//if( m_measToChange )
   
   //Create widgets
-  WText *txt = new WText( "This will combine the successive subsequent channels together", this );
+  WText *txt = new WText( WString::tr("ecaa-combine-channels-desc"), this );
   txt->setInline( false );
   txt->setPadding( 5, Wt::Side::Bottom );
   
-  WLabel *label = new WLabel( "Number of channels to combine:", this );
+  WLabel *label = new WLabel( WString::tr("ecaa-num-channels-to-combine"), this );
   label->setMargin( 5, Wt::Side::Right );
   m_ncombine = new WSpinBox( this );
   m_ncombine->setValue( 1 );
@@ -1277,13 +1334,13 @@ CombineChannelsTool::CombineChannelsTool( shared_ptr<vector<MeasToApplyCoefChang
   string applyToTxt = cal->applyToSummaryTxt();
   if( !applyToTxt.empty() )
   {
-    applyToTxt = "Changes will be applied to: " + applyToTxt;
-    WText *msg = new WText( applyToTxt, this );
+    const WString applyToMsg = WString::tr("ecaa-changes-applied-to").arg( applyToTxt );
+    WText *msg = new WText( applyToMsg, this );
     msg->addStyleClass( "ConvertToApplieTo" );
     msg->setInline( false );
   }//if( !applyToTxt.empty() )
   
-  WText *noUndoNote = new WText( "This action cannot be undone.", this );
+  WText *noUndoNote = new WText( WString::tr("ecaa-no-undo-note"), this );
   noUndoNote->addStyleClass( "NoUndoNote" );
   noUndoNote->setInline( false );
   
@@ -1295,8 +1352,8 @@ CombineChannelsTool::CombineChannelsTool( shared_ptr<vector<MeasToApplyCoefChang
   
   //AuxWindow::addHelpInFooter( buttonDiv, "combine-channels-dialog" );
   
-  m_cancel = new WPushButton( "Cancel", buttonDiv );
-  m_accept = new WPushButton( "Accept", buttonDiv );
+  m_cancel = new WPushButton( WString::tr("Cancel"), buttonDiv );
+  m_accept = new WPushButton( WString::tr("Accept"), buttonDiv );
   
   m_cancel->clicked().connect( boost::bind( &CombineChannelsTool::handleFinish, this, WDialog::Rejected ) );
   m_accept->clicked().connect( boost::bind( &CombineChannelsTool::handleFinish, this, WDialog::Accepted ) );
@@ -1457,6 +1514,8 @@ TruncateChannelsTool::TruncateChannelsTool( shared_ptr<vector<MeasToApplyCoefCha
   InterSpec *viewer = InterSpec::instance();
   assert( viewer );
     
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", viewer );
+    
   if( parent )
     parent->stretcher()->addWidget( this, 0, 0  );
     
@@ -1515,8 +1574,8 @@ TruncateChannelsTool::TruncateChannelsTool( shared_ptr<vector<MeasToApplyCoefCha
     {
       auto cell = table->elementAt(0, 0);
       cell->setColumnSpan( (cals.size() > 1) ? 2 : 3 );
-      string msg = "For " + to_string(nchannel) + " channel spectra:";
-      WText *txt = new WText( WString::fromUTF8(msg), cell );
+      WString msg = WString::tr("ecaa-for-n-channel-spectra").arg(to_string(nchannel));
+      WText *txt = new WText( msg, cell );
       txt->addStyleClass( "NChannelSpecTxt" );
     }//if( multiple )
     
@@ -1528,7 +1587,7 @@ TruncateChannelsTool::TruncateChannelsTool( shared_ptr<vector<MeasToApplyCoefCha
     const int input_width_px = 75;
     
     auto cell = table->elementAt( 0 + multiple, 0 );
-    auto label = new WLabel( "First Channel To Keep", cell );
+    auto label = new WLabel( WString::tr("ecaa-first-channel-to-keep"), cell );
     label->addStyleClass( "LinearizeLabel" );
     
     cell = table->elementAt( 0 + multiple, 1 );
@@ -1541,7 +1600,7 @@ TruncateChannelsTool::TruncateChannelsTool( shared_ptr<vector<MeasToApplyCoefCha
     label->setBuddy( lower );
     
     cell = table->elementAt( 1 + multiple, 0 );
-    label = new WLabel( "Last Channel To Keep", cell );
+    label = new WLabel( WString::tr("ecaa-last-channel-to-keep"), cell );
     label->addStyleClass( "LinearizeLabel" );
     
     cell = table->elementAt( 1 + multiple, 1 );
@@ -1567,27 +1626,26 @@ TruncateChannelsTool::TruncateChannelsTool( shared_ptr<vector<MeasToApplyCoefCha
     m_options[nchannel] = std::tuple<WSpinBox *,WLabel *,WSpinBox *,WLabel *>( lower, lowerEnergy, upper, upperEnergy );
   }//for( const auto &ranges : nchannelToRange )
   
-  m_keepOverflow = new WCheckBox( "Keep overflow counts", this );
+  m_keepOverflow = new WCheckBox( WString::tr("ecaa-keep-overflow"), this );
   m_keepOverflow->addStyleClass( "TruncateKeepOverflow" );
-  m_keepOverflow->setToolTip( "If selected, all counts from the discarded channels will be added to"
-                              " either the new first or last channel." );
+  HelpSystem::attachToolTipOn( m_keepOverflow, WString::tr("ecaa-tt-keep-overflow"), showToolTips );
   
   string applyToTxt = cal->applyToSummaryTxt();
   if( !applyToTxt.empty() )
   {
-    applyToTxt = "Changes will be applied to: " + applyToTxt;
-    WText *msg = new WText( applyToTxt, this );
+    const WString applyToMsg = WString::tr("ecaa-changes-applied-to").arg( applyToTxt );
+    WText *msg = new WText( applyToMsg, this );
     msg->addStyleClass( "TruncateApplyTo  " );
     msg->setInline( false );
   }//if( !applyToTxt.empty() )
   
-  WText *truncNote = new WText( "Note that the first channel is channel 0.", this );
+  WText *truncNote = new WText( WString::tr("ecaa-first-channel-note"), this );
   truncNote->addStyleClass( "TruncateNote" );
   if( applyToTxt.empty() )
     truncNote->addStyleClass( "TruncateApplyTo" );
   truncNote->setInline( false );
   
-  WText *noUndoNote = new WText( "This action cannot be undone.", this );
+  WText *noUndoNote = new WText( WString::tr("ecaa-no-undo-note"), this );
   noUndoNote->addStyleClass( "NoUndoNote" );
   noUndoNote->setInline( false );
     
@@ -1601,8 +1659,8 @@ TruncateChannelsTool::TruncateChannelsTool( shared_ptr<vector<MeasToApplyCoefCha
   
   //AuxWindow::addHelpInFooter( buttonDiv, "linearize-dialog" );
   
-  m_cancel = new WPushButton( "Cancel", buttonDiv );
-  m_accept = new WPushButton( "Accept", buttonDiv );
+  m_cancel = new WPushButton( WString::tr("Cancel"), buttonDiv );
+  m_accept = new WPushButton( WString::tr("Accept"), buttonDiv );
   
   m_cancel->clicked().connect( boost::bind( &TruncateChannelsTool::handleFinish, this, WDialog::Rejected ) );
   m_accept->clicked().connect( boost::bind( &TruncateChannelsTool::handleFinish, this, WDialog::Accepted ) );

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ctw- is short for ColorThemeWindow -->
+
+  <!-- Window and main UI -->
+  <message id="ctw-window-title">রং থিম</message>
+
+  <!-- Button tooltips -->
+  <message id="ctw-remove-tooltip">বর্তমানে নির্বাচিত থিমটি সরিয়ে দেয়।</message>
+  <message id="ctw-clone-tooltip">বর্তমানে নির্বাচিত থিমের উপর ভিত্তি করে একটি নতুন রং থিম তৈরি করে।</message>
+  <message id="ctw-upload-tooltip">ব্যবহার করতে একটি রং থিম JSON ফাইল আমদানি করে।</message>
+  <message id="ctw-download-tooltip">বর্তমানে নির্বাচিত থিমটি একটি JSON ফাইলে রপ্তানি করে।</message>
+
+  <!-- Auto dark mode -->
+  <message id="ctw-auto-dark-cb">OS থেকে "Dark" অটো প্রয়োগ করুন</message>
+  <message id="ctw-auto-dark-tooltip">অপারেটিং সিস্টেমের বর্তমান মান অনুযায়ী বা যখন এটি রূপান্তরিত হয় তখন "Dark" রং থিম স্বয়ংক্রিয়ভাবে প্রয়োগ করুন।</message>
+
+  <!-- Clone theme -->
+  <message id="ctw-cloned-name">{1} (ক্লোন করা)</message>
+
+  <!-- Delete confirmation dialog -->
+  <message id="ctw-delete-confirm-title">{1} মুছবেন?</message>
+  <message id="ctw-delete-confirm-text"><![CDATA[<span style="white-space: nowrap;">আপনি কি নিশ্চিত যে আপনি <em>{1}</em> মুছতে চান?</span>]]></message>
+
+  <!-- Upload dialog -->
+  <message id="ctw-upload-title">রং থিম JSON আপলোড করুন</message>
+  <message id="ctw-upload-error-open">আপলোড করা ফাইল খুলতে ত্রুটি।</message>
+  <message id="ctw-upload-error-empty">আপলোড করা ফাইল খালি।</message>
+  <message id="ctw-upload-error-large">আপলোড করা ফাইল খুব বড়; সর্বোচ্চ আকার 64kb।</message>
+  <message id="ctw-upload-error-read">আপলোড করা ফাইল পড়তে অক্ষম।</message>
+  <message id="ctw-upload-error-json">অবৈধ JSON, বা প্রয়োজনীয় তথ্য অনুপস্থিত।</message>
+  <message id="ctw-upload-too-large">খুব বড় ফাইল।</message>
+  <message id="ctw-import-confirm"><![CDATA[আপনি কি <em>{1}</em> আমদানি করতে চান?]]></message>
+
+  <!-- Save changes dialog -->
+  <message id="ctw-save-changes-title">পরিবর্তন সংরক্ষণ করবেন?</message>
+  <message id="ctw-save-changes-text"><![CDATA[<span style="white-space: nowrap;"><em>{1}</em>-এ পরিবর্তন সংরক্ষণ করবেন?</span>]]></message>
+  <message id="ctw-discard-btn">বাতিল করুন</message>
+</messages>

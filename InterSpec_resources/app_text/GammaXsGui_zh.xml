@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- gxsg- is short for GammaXsGui -->
+  <message id="gxsg-material-formula">材料/公式</message>
+  <message id="gxsg-tt-material">
+    您可以输入预定义材料或元素的名称（清除表单文本
+    并单击表单右侧的箭头以查看所有预定义选项），也可以
+    输入化学式，如'H0.112 O0.88'，其中数字是
+    密度（g/cm3），（或使用质量分数和密度字段），
+    前面元素的。
+  </message>
+  <message id="gxsg-total-atten-xs">总衰减截面</message>
+  <message id="gxsg-compton-label">康普顿</message>
+  <message id="gxsg-rayleigh-label">瑞利</message>
+  <message id="gxsg-photoelec-label">光电</message>
+  <message id="gxsg-pp-label">对产生</message>
+  <message id="gxsg-mass-avrg-an">质量平均原子序数</message>
+  <message id="gxsg-opt-atten">衰减（可选）：</message>
+  <message id="gxsg-density-label">密度：</message>
+  <message id="gxsg-thickness-label">厚度：</message>
+  <message id="gxsg-tt-thickness">衰减器的厚度。</message>
+  <message id="gxsg-trans-frac-label">透射分数</message>
+  <message id="gxsg-tt-trans-frac">这是将通过指定屏蔽的伽马分数。</message>
+  <message id="gxsg-tt-distance">这是从源中心到探测器的距离。</message>
+  <message id="gxsg-intrinsic-eff-label">本征效率</message>
+  <message id="gxsg-tt-intrinsic-eff">本征效率（射向探测器表面的伽马的全能峰检测效率）。</message>
+  <message id="gxsg-solid-angle-frac-label">立体角分数</message>
+  <message id="gxsg-tt-solid-angle-frac">所选探测器在指定距离处的立体角分数。</message>
+  <message id="gxsg-det-eff-label">检测效率</message>
+  <message id="gxsg-tt-det-eff">本征效率乘以立体角分数。例如，从屏蔽中出来的伽马将被检测的分数。不包括衰减。</message>
+  <message id="gxsg-total-eff-label">总效率</message>
+  <message id="gxsg-tt-total-eff">透射分数乘以检测效率。例如，从源发出的将被检测的伽马分数。</message>
+  <message id="gxsg-warn-suspect">XS计算可能不可靠：{1}</message>
+  <message id="gxsg-tool-state-title">伽马XS工具状态</message>
+  <message id="gxsg-tool-state-text">xs工具的当前状态。</message>
+</messages>
+

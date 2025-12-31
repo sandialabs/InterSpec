@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- pe- is short for PeakEdit -->
+  <message id="pe-value">القيمة</message>
+  <message id="pe-uncertainty">عدم اليقين</message>
+  <message id="pe-parameter">المعامل</message>
+  <message id="pe-label">التسمية</message>
+  <message id="pe-peak-type">نوع القمة</message>
+  <message id="pe-peak-model-gaussian">غاوسي</message>
+  <message id="pe-peak-model-data">منطقة البيانات</message>
+  <message id="pe-skew-type">نوع الانحراف</message>
+  <message id="pe-btn-refit">إعادة الملائمة</message>
+  <message id="pe-btn-refit-roi-standard">إعادة ملائمة ROI: FWHMs مترابطة</message>
+  <message id="pe-btn-refit-roi-independent">إعادة ملائمة ROI: FWHMs مستقلة</message>
+  <message id="pe-btn-refit-roi-fine">إعادة ملائمة ROI: تحسينات صغيرة</message>
+  <message id="pe-btn-refit-roi-independent-fine">إعادة ملائمة ROI: تحسين مع FWHMs مستقلة</message>
+  
+  <message id="pe-label-centroid">المركز</message>
+  <message id="pe-label-drf-fwhm">DRF المتنبأ FWHM</message>
+  <message id="pe-label-amp">السعة</message>
+  <message id="pe-label-skew0">الانحراف 0</message>
+  <message id="pe-label-skew1">الانحراف 1</message>
+  <message id="pe-label-skew2">الانحراف 2</message>
+  <message id="pe-label-skew3">الانحراف 3</message>
+  <message id="pe-label-cont-p0">المتصل P0</message>
+  <message id="pe-label-cont-p1">المتصل P1</message>
+  <message id="pe-label-cont-p2">المتصل P2</message>
+  <message id="pe-label-cont-p3">المتصل P3</message>
+  <message id="pe-label-cont-p4">المتصل P4</message>
+  <message id="pe-label-roi-start">بداية ROI (كيلوإلكترون فولت)</message>
+  <message id="pe-label-roi-end">نهاية ROI (كيلوإلكترون فولت)</message>
+  <message id="pe-label-chi2-dof">𝜒²/DOF</message>
+  <message id="pe-label-peak-color">لون القمة</message>
+
+  <message id="pe-multipeak-in-roi">القمة {1} من {2} في ROI</message>
+  <message id="pe-apply-all-of-type">جميع قمم {1}</message>
+  <message id="pe-drf-predict-fwhm-txt">DRF يتنبأ بـ FWHM من {1} كيلوإلكترون فولت</message>
+  <message id="pe-btn-cont-to-linear">تقدير المتصل الخطي</message>
+  <message id="pe-tt-btn-cont-to-linear">يستخدم القنوات على يمين ويسار ROI لتقدير متصل خط مستقيم.</message>
+  <message id="pe-failed-refit-insig">فشل في إعادة ملائمة القمة (أصبحت غير مهمة)، لذا لا نفعل شيئًا</message>
+
+  <message id="pe-est-lin-cont-no-data">يرجى تحميل طيف مقدمة قبل تقدير المتصل.</message>
+  <message id="pe-failed-est-lin-cont">فشل في تقدير المتصل من حواف ROI: {1}</message>
+  
+  
+  
+</messages>

@@ -1,6 +1,6 @@
- cmake_minimum_required(VERSION 3.1...3.20 FATAL_ERROR)
+ cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 
-project(InterSpec VERSION 1.0.13)
+project(InterSpec VERSION 1.0.14)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -128,7 +128,7 @@ set(LEAFLET_MAPS_KEY "n/a" CACHE STRING "Leaflet maps api key.")
 
 option(USE_REMOTE_RID "Enables using remote RID tool" ON)
 option(USE_REL_ACT_TOOL "Enables Relative Activity tool" ON)
-
+option(USE_LLM_INTERFACE "Enables the AI/LLM interface and MCP server code" ON)
 
 
 
@@ -139,14 +139,15 @@ if(BUILD_FOR_WEB_DEPLOYMENT)
     set(PERFORM_DEVELOPER_CHECKS OFF CACHE INTERNAL "")
     set(SpecUtils_ENABLE_EQUALITY_CHECKS OFF CACHE INTERNAL "")
     set(USE_SPECRUM_FILE_QUERY_WIDGET OFF)
-    set(USE_BATCH_TOOLS OFF)
 endif(BUILD_FOR_WEB_DEPLOYMENT)
 
 
 if( IOS OR ANDROID OR BUILD_FOR_WEB_DEPLOYMENT )
-  set( USE_BATCH_TOOLS OFF CACHE INTERNAL "")
-else( )
-  option( USE_BATCH_TOOLS "Enables (command line for now) batch processing." ON )
+  set(USE_BATCH_CLI_TOOLS OFF CACHE INTERNAL "")
+  set(USE_BATCH_GUI_TOOLS OFF CACHE INTERNAL "")
+else()
+  option( USE_BATCH_CLI_TOOLS "Enables command line batch processing." ON )
+  option( USE_BATCH_GUI_TOOLS "Enables GUI batch processing." ON )
 endif()
 
 if(MSVC)
@@ -171,11 +172,13 @@ set(MAX_SPECTRUM_MEMMORY_SIZE_MB 256
 # If we are creating the normal InterSpec executable, and the InterSpec_batch executable,
 #  we will compile LibInterSpec as a shared library, so both exes can use it; otherwise
 #  we will create a static library, and statically link it into our final executable.
-#  (Electron doesnt need a separate exe for batch)
-if( (USE_BATCH_TOOLS AND NOT BUILD_AS_ELECTRON_APP) OR BUILD_AS_OSX_APP )
+#  (Electron doesnt need a separate exe for batch, and we dont care abour disk space for unit tests)
+if( USE_BATCH_CLI_TOOLS AND NOT BUILD_AS_ELECTRON_APP AND NOT BUILD_AS_UNIT_TEST_SUITE )
   set( INTERSPEC_LIB_TYPE SHARED )
+  set( BUILD_LibInterSpec_SHARED ON )
 else()
   set( INTERSPEC_LIB_TYPE STATIC )
+  set( BUILD_LibInterSpec_SHARED OFF )
 endif()
 
 
@@ -253,6 +256,7 @@ set(sources
     src/DetectorPeakResponse.cpp
     src/GammaInteractionCalc.cpp
     src/ShieldingSourceDisplay.cpp
+    src/ShieldingSourceDiagram.cpp
     src/ShieldingSourceFitCalc.cpp
     src/ShieldingSelect.cpp
     src/GammaXsGui.cpp
@@ -266,6 +270,7 @@ set(sources
     src/SpectrumChart.cpp
     src/SpectrumDataModel.cpp
     src/HelpSystem.cpp
+    src/InjaLogDialog.cpp
     src/InterSpec.cpp
     src/InterSpecServer.cpp
     src/PopupDiv.cpp
@@ -348,6 +353,10 @@ set(sources
     src/RefSpectraModel.cpp
     src/SimpleActivityCalc.cpp
     src/RefLineDynamic.cpp
+    src/AnalystChecks.cpp
+    src/BatchPeak.cpp
+    src/BatchActivity.cpp
+    src/BatchInfoLog.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -365,6 +374,7 @@ set(headers
     InterSpec/DetectorPeakResponse.h
     InterSpec/GammaInteractionCalc.h
     InterSpec/ShieldingSourceDisplay.h
+    InterSpec/ShieldingSourceDiagram.h
     InterSpec/ShieldingSourceFitCalc.h
     InterSpec/ShieldingSelect.h
     InterSpec/GammaXsGui.h
@@ -378,6 +388,7 @@ set(headers
     InterSpec/SpectrumChart.h
     InterSpec/SpectrumDataModel.h
     InterSpec/HelpSystem.h
+    InterSpec/InjaLogDialog.h
     InterSpec/InterSpec.h
     InterSpec/InterSpecServer.h
     InterSpec/PopupDiv.h
@@ -450,6 +461,7 @@ set(headers
     InterSpec/MoreNuclideInfoDisplay.h
     InterSpec/UndoRedoManager.h
     InterSpec/AppUtils.h
+    InterSpec/BersteinPolynomial.hpp
     InterSpec/ExportSpecFile.h
     InterSpec/ExternalRidResult.h
     InterSpec/EnterAppUrlWindow.h
@@ -461,6 +473,10 @@ set(headers
     InterSpec/RefSpectraModel.h
     InterSpec/SimpleActivityCalc.h
     InterSpec/RefLineDynamic.h
+    InterSpec/AnalystChecks.h
+    InterSpec/BatchPeak.h
+    InterSpec/BatchActivity.h
+    InterSpec/BatchInfoLog.h
 )
 
 if(USE_DB_TO_STORE_SPECTRA)
@@ -553,6 +569,7 @@ if( USE_REL_ACT_TOOL )
         src/RelActAutoGuiFreePeak.cpp
         src/RelActAutoReport.cpp
         src/RelActAutoDev.cpp
+        src/ShieldingSourceFitPlot.cpp
   )
   
   list( APPEND headers
@@ -567,6 +584,7 @@ if( USE_REL_ACT_TOOL )
         InterSpec/RelActTxtResults.h
         InterSpec/RelEffChart.h
         InterSpec/RelEffShieldWidget.h
+        InterSpec/ShieldingSourceFitPlot.h
         InterSpec/RelActAutoGuiRelEffOptions.h
         InterSpec/RelActAutoGuiEnergyRange.h
         InterSpec/RelActAutoGuiNuclide.h
@@ -577,27 +595,25 @@ if( USE_REL_ACT_TOOL )
 endif( USE_REL_ACT_TOOL )
 
 
-if( USE_BATCH_TOOLS )
+if( USE_BATCH_CLI_TOOLS )
+  list( APPEND sources src/BatchCommandLine.cpp )
+  list( APPEND headers InterSpec/BatchCommandLine.h )
+endif( USE_BATCH_CLI_TOOLS )
+
+
+if( USE_BATCH_GUI_TOOLS )
   list( APPEND sources
-        src/BatchCommandLine.cpp
-        src/BatchPeak.cpp
-        src/BatchActivity.cpp
-        src/BatchInfoLog.cpp
         src/BatchGuiWidget.cpp
         src/BatchGuiAnaWidget.cpp
         src/BatchGuiInputFile.cpp
   )
   
   list( APPEND headers
-        InterSpec/BatchCommandLine.h
-        InterSpec/BatchPeak.h
-        InterSpec/BatchActivity.h
-        InterSpec/BatchInfoLog.h
         InterSpec/BatchGuiWidget.h
         InterSpec/BatchGuiAnaWidget.h
         InterSpec/BatchGuiInputFile.h
   )
-endif( USE_BATCH_TOOLS )
+endif( USE_BATCH_GUI_TOOLS )
 
 if( (NOT IOS) AND (NOT ANDROID) AND (NOT BUILD_FOR_WEB_DEPLOYMENT) )
   list( APPEND sources src/DirectorySelector.cpp )
@@ -610,6 +626,15 @@ if( BUILD_AS_OSX_APP )
   list( APPEND headers target/osx/macOsUtils.h target/osx/NativeMenu.h )
 endif( BUILD_AS_OSX_APP )
 
+if( USE_LLM_INTERFACE )
+  list( APPEND sources src/LlmMcpResource.cpp src/LlmInterface.cpp src/LlmToolRegistry.cpp src/LlmIsotopicsTool.cpp src/LlmActivityFitTool.cpp src/LlmConfig.cpp src/LlmConversationHistory.cpp src/LlmToolGui.cpp src/LlmInteractionDisplay.cpp )
+  list( APPEND headers InterSpec/LlmMcpResource.h InterSpec/LlmInterface.h InterSpec/LlmToolRegistry.h InterSpec/LlmIsotopicsTool.h InterSpec/LlmActivityFitTool.h InterSpec/LlmConfig.h InterSpec/LlmConversationHistory.h InterSpec/LlmToolGui.h InterSpec/LlmInteractionDisplay.h )
+  list( APPEND OTHER_InterSpec_SUPPORT_FILES data/llm_config.xml data/llm_tools_config.xml data/llm_agents.xml )
+  
+  if( BUILD_FOR_WEB_DEPLOYMENT OR IOS OR ANDROID )
+    MESSAGE(FATAL_ERROR "MCP server can not be enabled for web or mobile builds")
+  endif( BUILD_FOR_WEB_DEPLOYMENT OR IOS OR ANDROID )
+endif( USE_LLM_INTERFACE )
 
 #Copy D3 resources into InterSpec_resources directory at compile time
 include(cmake/DeployJsAndCss.cmake)
@@ -621,7 +646,15 @@ deploy_js_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resou
 
 
 
-list( APPEND OTHER_InterSpec_SUPPORT_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/D3TimeChart.js )
+list( APPEND OTHER_InterSpec_SUPPORT_FILES
+  ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/D3TimeChart.js
+  ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/ShieldingSourceFitPlot.js
+  ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/ShieldingSourceFitPlot.css
+  ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/Shielding3DView.js
+  ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/Shielding3DView.css
+  ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/Shielding2DView.js
+  ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/Shielding2DView.css
+)
 
 deploy_js_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/SpectrumChartD3.js"
          "${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/SpectrumChartD3.js"
@@ -717,13 +750,13 @@ if(WIN32)
   target_compile_definitions( InterSpecLib PRIVATE InterSpec_EXPORTS )
   add_definitions( /bigobj )
         
-  if( USE_BATCH_TOOLS )
+  if( INTERSPEC_LIB_TYPE STREQUAL "SHARED" )
     # We get error compiling multi-processor debug build of shared LibInterSpec, presumably due to some 
     #  file locking issues, so only enable parallel builds for release, if we are building shared LibInterSpec
     target_compile_options( InterSpecLib PUBLIC $<$<CONFIG:Release>:/MP> )
-  else( USE_BATCH_TOOLS )
+  else()
     add_definitions( /MP )
-  endif( USE_BATCH_TOOLS )
+  endif()
 endif(WIN32)
 
 target_link_libraries(
@@ -797,20 +830,27 @@ target_include_directories( InterSpecLib PUBLIC SYSTEM ${Wt_INCLUDE_DIR} )
 
 if(WIN32)
     if( NOT InterSpec_FETCH_DEPENDENCIES )
-        target_link_libraries(InterSpecLib PUBLIC 
-            debug "${Wt_DEBUG_LIBRARIES}"
-            optimized "${Wt_LIBRARIES}"
-        )
+      if( BUILD_AS_UNIT_TEST_SUITE )
+        target_link_libraries(InterSpecLib PUBLIC  debug "${Wt_TEST_DEBUG_LIBRARY}" optimized "${Wt_TEST_LIBRARY}" )
+      else( BUILD_AS_UNIT_TEST_SUITE )
+        target_link_libraries(InterSpecLib PUBLIC  debug "${Wt_HTTP_DEBUG_LIBRARY}" optimized "${Wt_HTTP_LIBRARY}" )
+      endif( BUILD_AS_UNIT_TEST_SUITE )
+      
+      target_link_libraries(InterSpecLib PUBLIC
+        debug ${Wt_DEBUG_LIBRARY} ${Wt_DBO_DEBUG_LIBRARY} ${Wt_DBOSQLITE3_DEBUG_LIBRARY}
+        optimized ${Wt_LIBRARY} ${Wt_DBO_LIBRARY} ${Wt_DBOSQLITE3_LIBRARY}
+      )
     endif( NOT InterSpec_FETCH_DEPENDENCIES )
     
     target_link_directories(InterSpecLib PUBLIC ${Boost_LIBRARY_DIR})
 else(WIN32)
-    target_link_libraries(InterSpecLib PUBLIC
-        ${Wt_LIBRARIES}
-        ${Wt_HTTP_LIBRARY}
-        ${Wt_DBO_LIBRARY}
-        ${Wt_DBOSQLITE3_LIBRARY}
-    )
+  if( BUILD_AS_UNIT_TEST_SUITE )
+    target_link_libraries(InterSpecLib PUBLIC ${Wt_TEST_LIBRARY})
+  else( BUILD_AS_UNIT_TEST_SUITE )
+    target_link_libraries(InterSpecLib PUBLIC ${Wt_HTTP_LIBRARY})
+  endif( BUILD_AS_UNIT_TEST_SUITE )
+  
+  target_link_libraries(InterSpecLib PUBLIC ${Wt_LIBRARY} ${Wt_DBO_LIBRARY} ${Wt_DBOSQLITE3_LIBRARY} )
 endif(WIN32)
 
 
@@ -830,7 +870,7 @@ if( BUILD_AS_OSX_APP )
     ${FOUNDATION_LIBRARY}
   )
   
-  if( USE_BATCH_TOOLS )
+  if( INTERSPEC_LIB_TYPE STREQUAL "SHARED" )
     set_target_properties( InterSpecLib PROPERTIES
       FRAMEWORK TRUE
       FRAMEWORK_VERSION A
@@ -849,7 +889,7 @@ if( BUILD_AS_OSX_APP )
     set_target_properties( InterSpecLib PROPERTIES
       PUBLIC_HEADER "InterSpec_config.h"
     )
-  endif( USE_BATCH_TOOLS )
+  endif( INTERSPEC_LIB_TYPE STREQUAL "SHARED" )
 endif( BUILD_AS_OSX_APP )
 
 

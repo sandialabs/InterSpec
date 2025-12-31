@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- cfm is short for CompactFileManager -->
+  <message id='cfm-tt-sample-num'>
+    输入您想要显示的样本编号。
+    您可以输入样本编号范围，如'33-39'或'33 to 39'；
+    或CSV样本编号，如'34,39,84'。
+  </message>
+  <message id='cfm-scale-factor-label'>缩放因子：</message>
+  <message id='cfm-tt-scale-factor'>
+    谱的缩放因子。输入空字符串将导致
+    谱被活时间归一化到前景谱。
+  </message>
+
+  <message id='cfm-norm-btn'>归一化</message>
+  <message id='cfm-more-info-btn'>详细信息</message>
+  <message id='cfm-show-rid-result-btn'>RID结果</message>
+  <message id='cfm-show-image-btn'>嵌入图像</message>
+
+  <message id='cfm-db-spec'>先前保存的谱</message>
+  <message id='cfm-ref-spectra-btn'>参考谱...</message>
+  <message id='cfm-err-invalid-sample-num'>请求的样本编号不存在。</message>
+  <message id='cfm-err-no-meas'>无法更改样本编号，没有当前测量。</message>
+  <message id='cfm-err-missing-sample-num'>请求的样本编号之一不存在。</message>
+  <message id='cfm-err-sample-num-doesnt-exist'>样本编号{1}不存在。</message>
+  <message id='cfm-err-sample-num-doesnt-exist-2'>测量中不存在样本编号{1}。</message>
+  <message id='cfm-err-general-1'>更改到请求的样本编号时出错</message>
+  <message id='cfm-err-advancing'>前进谱时出错</message>
+  <message id='cfm-no-spectra'>无已加载/可用的谱。</message>
+
+  <message id='cfm-no-fore'>无前景</message>
+  <message id='cfm-no-back'>无本底</message>
+  <message id='cfm-no-second'>无第二前景</message>
+
+  <message id='cfm-date'>日期</message>
+  <message id='cfm-start-time'>开始时间</message>
+  <message id='cfm-gamma-cps'>伽马CPS</message>
+  <message id='cfm-neut-live-time'>中子活时间</message>
+  <message id='cfm-neut-counts'>中子计数</message>
+  <message id='cfm-neut-cps'>中子CPS</message>
+  <message id='cfm-gps'>纬度/经度</message>
+  <message id='cfm-manufacturer'>制造商</message>
+  <message id='cfm-model'>型号</message>
+  <message id='cfm-meas-type'>记录类型</message>
+  <message id='cfm-tt-meas-type'>谱文件中记录的类型。</message>
+
+  <message id='cfm-tt-clear-spectrum'>清除当前谱。</message>
+  
+  <message id='cfm-swap-back-with-foreground-btn'>前景↔本底</message>
+  <message id='cfm-tt-swap-back-with-foreground-btn'>交换前景和本底谱</message>
+  <message id='cfm-swap-secondary-with-foreground-btn'>前景↔次要</message>
+  <message id='cfm-tt-swap-secondary-with-foreground-btn'>交换前景和次要谱</message>
+</messages>
+

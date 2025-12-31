@@ -81,4 +81,23 @@
   <message id="ect-short-fore">Prem. pl.</message>
   <message id="ect-short-back">Arr. pl</message>
   <message id="ect-short-secondary">Sec.</message>
+  
+  <message id="ect-of-the-fore"> du premier plan.</message>
+  <message id="ect-of-the-sec"> du secondaire.</message>
+  <message id="ect-of-the-back"> de l'arrière-plan.</message>
+
+  <message id="ect-offset-label">Décalage</message>
+  <message id="ect-linear-label">Linéaire</message>
+  <message id="ect-quad-label">Quad.</message>
+  <message id="ect-cubic-label">Cubique</message>
+  <message id="ect-nth-label">{1}ème ordre</message>
+  
+  <!-- Energy calibration types -->
+  <message id="ect-cal-type-lower-channel">Énergie du canal inférieur</message>
+  <message id="ect-cal-type-not-defined">Non défini</message>
+  <message id="ect-cal-type-polynomial">Polynomial</message>
+  <message id="ect-cal-type-default-poly">Polynomial par défaut</message>
+  <message id="ect-cal-type-frf">Fraction de plage complète</message>
+  <message id="ect-convert-to-poly-msg">Veuillez convertir en calibration polynomiale pour modifier</message>
+  <message id="ect-deviation-pairs">Paires de déviation</message>
 </messages>

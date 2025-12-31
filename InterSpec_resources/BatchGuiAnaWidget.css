@@ -176,42 +176,10 @@
   align-items: center;
 }
 
-/* Analysis result dialogs */
-.simple-dialog.BatchAnalysisResultDialog
-{
-  max-width: 95vw;
-  max-height: 95vh;
-  width: 95vw;
-  height: 95vw;
-}
-
-.simple-dialog.BatchAnalysisResultDialog .body
-{
-  /* The 95vh is from .simple-dialog, and the 90px is the header and footer height. */
-  max-height: calc( 95vh - 90px );
-  max-width: calc(95vw - 30px);
-  overflow-y: hidden;
-  padding-top: 16px;
-  padding-bottom: 5px;
-}
-
-.simple-dialog.BatchAnalysisResultDialog .body .BatchReportIFrameHolder
-{
-  border: solid 1px #e1e1e1;
-  border-radius: 5px;
-  display: block;
-}
-
-.simple-dialog.BatchAnalysisResultDialog .body .BatchReportJsonError,
-.simple-dialog.BatchAnalysisResultDialog .body .BatchReportInjaError,
-.simple-dialog.BatchAnalysisResultDialog .body .BatchReportMiscError
-{
-  color: red;
-}
-
+/* Warning dialog styles (analysis result dialog styles moved to InjaLogDialog.css) */
 .simple-dialog.BatchAnalysisWarningDialog
 {
-  
+
 }
 
 .simple-dialog.BatchAnalysisWarningDialog .body

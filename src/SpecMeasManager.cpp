@@ -154,7 +154,7 @@
 #include "InterSpec/QRSpectrum.h"
 #endif
 
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_GUI_TOOLS )
 #include "InterSpec/BatchGuiWidget.h"
 #endif
 
@@ -327,7 +327,7 @@ namespace
   public:
     FileUploadDialog( InterSpec *viewer,
                       SpecMeasManager *manager )
-    : AuxWindow( "", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+    : AuxWindow( "", (AuxWindowProperties::IsModal
                       | AuxWindowProperties::PhoneNotFullScreen
                       | AuxWindowProperties::DisableCollapse
                       | AuxWindowProperties::SetCloseable) ),
@@ -1363,7 +1363,7 @@ class UploadBrowser : public AuxWindow
 public:
   UploadBrowser( SpecMeasManager *manager )
   : AuxWindow( "Import Spectrum Files",
-               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+               (AuxWindowProperties::IsModal
                 | AuxWindowProperties::DisableCollapse
                 | AuxWindowProperties::EnableResize) ),
   m_manager( manager )
@@ -1447,7 +1447,7 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
     m_foregroundDragNDrop( new FileDragUploadResource(this) ),
     m_secondForegroundDragNDrop( new FileDragUploadResource(this) ),
     m_backgroundDragNDrop( new FileDragUploadResource(this) ),
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_GUI_TOOLS )
     m_batchDragNDrop( nullptr ),
 #endif
     m_multiUrlSpectrumDialog( nullptr ),
@@ -1456,7 +1456,7 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
     m_previousStatesDialog( nullptr ),
     m_processingUploadDialog( nullptr ),
     m_nonSpecFileDialog( nullptr ),
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_GUI_TOOLS )
     m_batchDialog( nullptr ),
 #endif
     m_processingUploadTimer{}
@@ -1502,7 +1502,7 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
   m_backgroundDragNDrop->dataReceived().connect( boost::bind( &SpecMeasManager::handleDataRecievedStatus, this,
                                       boost::placeholders::_1, boost::placeholders::_2, SpectrumType::Background ) );
 
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_GUI_TOOLS )
   m_batchDragNDrop = new FileDragUploadResource( this );
   m_batchDragNDrop->fileDrop().connect( this, &SpecMeasManager::showBatchDialog );
 #endif
@@ -1523,7 +1523,7 @@ void SpecMeasManager::startSpectrumManager()
   }//if( m_spectrumManagerWindow )
   
     m_spectrumManagerWindow = new AuxWindow( WString::tr("smm-window-title"),
-                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                    (AuxWindowProperties::IsModal
                      | AuxWindowProperties::TabletNotFullScreen
                      | AuxWindowProperties::DisableCollapse
                      | AuxWindowProperties::SetCloseable
@@ -1661,7 +1661,7 @@ FileDragUploadResource *SpecMeasManager::backgroundDragNDrop()
   return m_backgroundDragNDrop;
 }
 
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_GUI_TOOLS )
 FileDragUploadResource *SpecMeasManager::batchDragNDrop()
 {
   return m_batchDragNDrop;
@@ -1820,7 +1820,7 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
     }
     
     AuxWindow *window = new AuxWindow( WString::tr("smm-zip-window-title"),
-                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                  (AuxWindowProperties::IsModal
                    | AuxWindowProperties::TabletNotFullScreen
                    | AuxWindowProperties::EnableResize) );
     window->stretcher()->addWidget( t, 0, 0 );
@@ -2038,8 +2038,6 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     assert( manager );
     if( !manager )
       return;
-    
-    cerr << "deleting m_nonSpecFileDialog of" << manager->m_nonSpecFileDialog << endl;
     
     assert( !manager->m_nonSpecFileDialog || (dialog == manager->m_nonSpecFileDialog) );
     
@@ -2387,7 +2385,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     
     if( rel_eff_csv_drf )
     {
-      det = DrfSelect::parseRelEffCsvFile( fileLocation );
+      det = DrfSelect::parseInterSpecRelEffCsvFile( fileLocation );
     }else
     {
       try
@@ -3066,7 +3064,7 @@ bool SpecMeasManager::handleRelActAutoXmlFile( std::istream &input, SimpleDialog
     doc.parse<rapidxml::parse_trim_whitespace>( &(data[0]) );
     
     
-    RelActAutoGui *tool = m_viewer->showRelActAutoWindow();
+    RelActAutoGui *tool = m_viewer->relActAutoWindow( true );
     if( !tool )
       throw runtime_error( "Could not create <em>Isotopics by nuclide</em> tool." );
     
@@ -3200,7 +3198,7 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   WLabel *geom_label = new WLabel( WString::tr("smm-ecc-how-to-interpret"), btn_div );
   WComboBox *geom_combo = new WComboBox( btn_div );
   geom_combo->addItem( WString::tr("smm-ecc-far-field") );
-  index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FarField;
+  index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
   
   geom_combo->addItem( WString::tr("smm-ecc-fix-geom-total-act") );
   index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct;
@@ -3270,7 +3268,7 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
       throw runtime_error( "diam <= 0" );
     
     const bool correct_for_air_atten = true;
-    return det->convertFixedGeometryToFarField( diameter, distance, correct_for_air_atten );
+    return det->reinterpretAsFarFieldAbsEfficiency( diameter, distance, correct_for_air_atten );
   };//try_create_farfield
   
   auto update_state = [=](){
@@ -3286,11 +3284,13 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
     {
       shared_ptr<DetectorPeakResponse> new_drf = det;
       
-      far_field_opt->setHidden( (geom_type != DetectorPeakResponse::EffGeometryType::FarField) );
+      far_field_opt->setHidden( (geom_type != DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic)
+                               && (geom_type != DetectorPeakResponse::EffGeometryType::FarFieldAbsolute) );
       
       switch( geom_type )
       {
-        case DetectorPeakResponse::EffGeometryType::FarField:
+        case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
+        case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
           new_drf = try_create_farfield();
           break;
           
@@ -3335,7 +3335,8 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
     {
       switch( geom_type )
       {
-        case DetectorPeakResponse::EffGeometryType::FarField:
+        case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
+        case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
           new_drf = try_create_farfield();
           break;
           
@@ -3422,8 +3423,8 @@ bool SpecMeasManager::handleShieldingSourceFile( std::istream &input, SimpleDial
     PeakModel *peak_model = m_viewer->peakModel();
     WSuggestionPopup *shield_suggest = m_viewer->shieldingSuggester();
       
-    auto disp = make_unique<ShieldingSourceDisplay>( peak_model, m_viewer, shield_suggest, material_db );
-    disp->deSerialize( xml_doc->first_node() );
+    ShieldingSourceDisplay::ShieldingSourceDisplayState test_state;
+    test_state.deSerialize( xml_doc->first_node(), material_db );
     
     assert( dialog );
     dialog->contents()->clear();
@@ -3440,16 +3441,16 @@ bool SpecMeasManager::handleShieldingSourceFile( std::istream &input, SimpleDial
     dialog->footer()->clear();
     dialog->addButton( WString::tr("Cancel") );
     WPushButton *btn = dialog->addButton( WString::tr("Yes") );
-    btn->clicked().connect( std::bind([this,data,xml_doc](){
+    btn->clicked().connect( std::bind([this,data,test_state](){
       InterSpec *viewer = InterSpec::instance();
-      if( !viewer || !data || !xml_doc )
+      if( !viewer || !data )
         return;
       
       try
       {
         ShieldingSourceDisplay *display = viewer->shieldingSourceFit();
         if( display )
-          display->deSerialize( xml_doc->first_node() );
+          display->deSerialize( test_state, ShieldingSourceDisplay::DeserializeOptions::UpdatePeaksUseForFittingFromState );
       }catch( std::exception &e )
       {
         passMessage( WString::tr("smm-err-act-shield").arg(e.what()), WarningWidget::WarningMsgHigh );
@@ -3787,7 +3788,7 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
 }//handleFileDrop(...)
 
 
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_GUI_TOOLS )
 void SpecMeasManager::showBatchDialog()
 {
   if( m_batchDialog )
@@ -5585,11 +5586,38 @@ void SpecMeasManager::selectionChanged()
           fullFileSelected = true;
           selectedFiles.insert( index );
           header = m_fileModel->fileHeader( index.row() );
-          
-          // Let's set all of the children as selected.
+
+          // Add children as selected, but only if no children are already specifically selected.
+          // If user has selected specific children (e.g., sample 0 but not sample 1), respect that.
+          //
+          // However, if the file is collapsed, children won't be in `selected` even if they
+          // were programmatically added before - so we should add all children in that case.
           const int nrow = m_fileModel->rowCount( index );
-          for( int i = 0; i < nrow; ++i )
-            toSelect.insert( index.child(i,0) );
+
+          const WModelIndex indexCol0 = (index.column() == 0)
+                                        ? index
+                                        : m_fileModel->index( index.row(), 0 );
+          const bool fileIsExpanded = m_treeView->isExpanded( indexCol0 );
+
+          bool anyChildAlreadySelected = false;
+          if( fileIsExpanded )
+          {
+            // Only check for specifically selected children if file is expanded
+            // (collapsed children won't appear in selectedIndexes())
+            for( int i = 0; !anyChildAlreadySelected && (i < nrow); ++i )
+            {
+              if( selected.count( index.child(i,0) ) )
+                anyChildAlreadySelected = true;
+            }
+          }
+
+          if( !anyChildAlreadySelected )
+          {
+            // No children were specifically selected (or file is collapsed) - select all children
+            for( int i = 0; i < nrow; ++i )
+              toSelect.insert( index.child(i,0) );
+          }
+          // If some children were already selected (and visible), don't add the others
           break;
         } // case SpectraFileModel::FileHeaderLevel:
           
@@ -5982,7 +6010,7 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
     handleCancelPreviousStatesDialog( m_previousStatesDialog );
   
   AuxWindow *window = new AuxWindow( WString::tr("smm-prev-states-window-title"),
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::DisableCollapse)
+                                    (AuxWindowProperties::DisableCollapse
                                      | AuxWindowProperties::EnableResize
                                      | AuxWindowProperties::TabletNotFullScreen
                                      | AuxWindowProperties::SetCloseable) );

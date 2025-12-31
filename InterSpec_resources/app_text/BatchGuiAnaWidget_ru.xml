@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- bgw- is short for BatchGuiWidget, strings used by BatchGuiAnaWidget -->
+
+  <!-- Exemplar group -->
+  <message id="bgw-exemplar-grp-title">Образец</message>
+  <message id="bgw-exemplar-use-current-fore">Использовать текущий передний план</message>
+
+  <!-- Background group -->
+  <message id="bgw-back-grp-title">Фон</message>
+  <message id="bgw-back-use-current">Использовать текущий фон</message>
+  <message id="bgw-back-none">Без фона</message>
+
+  <!-- Peak fitting options -->
+  <message id="bgw-fit-all-peaks">Фитировать все пики</message>
+  <message id="bgw-refit-energy-cal">Пересчитать калибровку энергии</message>
+  <message id="bgw-use-exemplar-energy-cal">Использовать калибровку образца</message>
+  <message id="bgw-write-n42-with-results">Записать N42 с результатами</message>
+  <message id="bgw-show-nonfit-peaks">Показать нефитированные пики</message>
+  <message id="bgw-overwrite-output-files">Перезаписать выходные файлы</message>
+  <message id="bgw-create-csv-output">CSV пиков</message>
+  <message id="bgw-create-json-output">Записать JSON</message>
+  <message id="bgw-concatenate-to-n42">Создать объединенный N42</message>
+  <message id="bgw-use-existing-background-peaks">Использовать существующие пики фона</message>
+  <message id="bgw-use-exemplar-energy-cal-for-background">Использовать калибровку образца для фона</message>
+  
+  <!-- Threshold labels -->
+  <message id="bgw-peak-stat-threshold-label">Порог статистики пика:</message>
+  <message id="bgw-peak-hypothesis-threshold-label">Порог гипотезы пика:</message>
+  
+  <!-- File convert options options -->
+  <message id="bgw-overwrite-output-cb">Перезаписать вывод</message>
+  <message id="bgw-sum-multirecord-to-single">Объединить многозаписные файлы в одну запись</message>
+  <message id="bgw-info-will-convert-file-type">Файлы будут преобразованы в выбранный тип.</message>
+  
+  
+  <!-- Reports group -->
+  <message id="bgw-reports-grp-title">Отчеты для записи</message>
+  <message id="bgw-reports-write-html">HTML</message>
+  <message id="bgw-reports-write-html-tooltip">Записать HTML отчет результатов анализа.</message>
+  <message id="bgw-reports-write-csv">Сводный CSV</message>
+  <message id="bgw-reports-write-csv-tooltip">Записать сводный CSV файл с результатами анализа всех входных файлов.</message>
+  <message id="bgw-reports-write-custom-per-file">Пользовательский для каждого файла</message>
+  <message id="bgw-reports-write-custom-per-file-tooltip">Загрузить пользовательский шаблон отчета для каждого файла.</message>
+  <message id="bgw-reports-write-custom-summary">Пользовательская сводка</message>
+  <message id="bgw-reports-write-custom-summary-tooltip">Один или несколько файлов шаблонов для создания сводки всех входных файлов.</message>
+
+  <!-- Reasons analysis cant be done -->
+  <message id="bgw-no-ana-peak-fit-no-peaks">Нет пиков в образце.</message>
+  <message id="bgw-no-ana-peak-fit-need-peaks">Нужен спектр образца с пиками или CSV файл пиков.</message>
+  <message id="bgw-no-ana-peak-fit-bad-background">Нужен действительный фон</message>
+  <message id="bgw-no-ana-act-shield-no-drf">Эффективность детектора недоступна.</message>
+  <message id="bgw-no-ana-act-shield-no-exemplar">Спектр образца не выбран.</message>
+  <message id="bgw-no-ana-act-shield-no-peaks-in-exemplar">Нет пиков в выбранном спектре образца.</message>
+  <message id="bgw-no-ana-act-shield-no-act-fit-model">Нет модели фита активности/защиты в образце.</message>
+  <message id="bgw-no-ana-act-shield-invalid-background">Недействительный фон</message>
+  <message id="bgw-no-ana-no-input-files">Нет входных файлов.</message>
+  <message id="bgw-no-ana-invalid-output-path">Выберите действительную выходную директорию.</message>
+
+
+  <!-- Analysis progress and results -->
+  <message id="bgw-performing-work-title">Выполнение работы</message>
+  <message id="bgw-performing-work-msg">Пожалуйста, подождите пока выполняется пакетный анализ...</message>
+  <message id="bgw-error-analysis-title">Ошибка при выполнении пакетного анализа</message>
+  <message id="bgw-error-analysis-msg">Ошибка: {1}</message>
+  <message id="bgw-analysis-summary-title">Сводка пакетного анализа</message>
+  <message id="bgw-json-parse-error">
+    <p>Ошибка разбора результатов JSON:</p>
+    <code>{1}</code>
+  </message>
+  <message id="bgw-inja-error">
+    <p>Ошибка создания HTML из-за исключения:</p>
+    <code>{1}</code>
+    <br />
+    из строки {2}, столбца {3}
+  </message>
+  <message id="bgw-misc-error">
+    <p>Невозможно создать сводку результатов из-за исключения:</p>
+    <code>{1}</code>
+  </message>
+  <message id="bgw-warning-title">Предупреждение</message>
+ 
+  <!-- Tooltips matching command line help text -->
+  <message id="bgw-fit-all-peaks-tt">Вместо фитирования пиков в файле образца - будут фитированы все пики в спектре.</message>
+  
+  <message id="bgw-refit-energy-cal-tt">После начального фита пиков использует эти пики (и их назначенные нуклиды) для корректировки усиления энергии, затем перефитирует пики с обновленной калибровкой энергии.
+  Это также применяется к файлу фона если вы фитируете активность/защиту.
+  </message>
+  
+  <message id="bgw-use-exemplar-energy-cal-tt">Использовать калибровку энергии образца N42 с входными файлами переднего плана.
+Если refit-energy-cal указан как true, то калибровка энергии образца будет использована для начального фита, затем уточнена и пики перефитированы.
+  </message>
+
+  <message id="bgw-write-n42-with-results-tt">Добавляет фитированные пики в входной файл спектра и сохраняет как N42. Вы должны указать 'output_path' если указываете эту опцию; также откажется перезаписать существующие файлы.</message>
+  
+  <message id="bgw-show-nonfit-peaks-tt">Включить пики, которые не фитированы, в выходные результаты CSV пиков; у этих пиков будет установлена нулевая амплитуда.</message>
+  
+  <message id="bgw-overwrite-output-files-tt">Позволяет перезаписать выходные файлы N42, CSV или отчетов. По умолчанию не будет перезаписывать файлы.</message>
+  
+  <message id="bgw-create-csv-output-tt">Вывод CSV фита пиков.</message>
+  
+  <message id="bgw-create-json-output-tt">Записывает JSON, используемый для создания шаблонов отчетов, в файл.</message>
+  
+  <message id="bgw-concatenate-to-n42-tt">Создать выходной N42 файл, содержащий все пики всех входных файлов.</message>
+  
+  <message id="bgw-use-existing-background-peaks-tt">Использует фитированные пики указанного фона, а не перефитирование пиков.
+Пики из InterSpec должны существовать в файле спектра, и эта опция не может использоваться с жестким вычитанием фона.</message>
+  
+  <message id="bgw-use-exemplar-energy-cal-for-background-tt">Использовать калибровку энергии образца N42 для файла фона.
+Применимо только если файл N42 используется для образца.</message>
+  
+  <message id="bgw-peak-stat-threshold-tt">Улучшение Chi2 фита пика, требуемое по сравнению с фитированием только континуума, для ROI.
+Отрицательное или нулевое значение указывает отсутствие требования (и по умолчанию, поскольку мы утверждаем, что пик вероятно присутствует в спектре для пакетного анализа), и для общего поиска пиков разумные значения между ~1 (слабый пик) и ~5 (значительный пик).</message>
+  
+  <message id="bgw-peak-hypothesis-threshold-tt">Требование того, насколько совместимым должен быть ROI с гауссовыми пиками + континуум.
+Это отношение chi2 нулевой гипотезы (только континуум, без гауссиан) к chi2 тестовой гипотезы (континуум + гауссиан).
+Разумные значения для этого в диапазоне от 1 до 5.
+Нулевое или отрицательное значение означает отсутствие требования, а также отсутствие требования 'peak-stat-threshold'.</message>
+  
+  <message id="bgw-reports-write-custom-per-file-tooltip">Один или несколько файлов шаблонов отчетов спектра - для каждого входного файла будет создан отчет с каждым указанным шаблоном.</message>
+
+  <message id="bgw-reports-write-custom-summary-tooltip">Один или несколько файлов шаблонов, используемых для создания сводки всех входных файлов.</message>
+
+  <!-- Activity/Shielding Analysis specific strings -->
+  <message id="bgw-use-bq">Использовать единицы Бк</message>
+  <message id="bgw-hard-background-sub">Жесткое вычитание фона</message>
+  
+  <!-- Detector input strings -->
+  <message id="bgw-detector-input-label">Функция отклика детектора</message>
+  <message id="bgw-use-detector-override">Использовать пользовательский детектор</message>
+  
+  <!-- Distance override strings -->
+  <message id="bgw-override-distance">Переопределить расстояние</message>
+  <message id="bgw-distance-label">Расстояние:</message>
+  
+  <!-- Error and completion messages -->
+  <message id="bgw-no-exemplar-msg">Спектр образца недоступен. Выберите спектр переднего плана или загрузите файл образца.</message>
+</messages> 

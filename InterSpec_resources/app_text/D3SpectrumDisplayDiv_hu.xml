@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- d3sdd- is short for D3SpectrumDisplayDiv
+
+    The part of the id coming after "d3sdd-", directly corresponds to the javascript variable name, the element value gets put into.
+
+    The JS 'xAxisTitle' variable is localized using the "Energy (keV)" key
+    The JS 'fwhm' variable is localized using the "FWHM" key
+  -->
+  <message id="d3sdd-yAxisTitle">Impulzusok</message>
+  <message id="d3sdd-yAxisTitleMulti">Impulzusok {1} csatornánként</message>
+  <message id="d3sdd-realTime">Valós idő</message>
+  <message id="d3sdd-liveTime">Élő idő</message>
+  <message id="d3sdd-deadTime">Holt idő</message>
+  <message id="d3sdd-scaledBy">Skálázva ezzel</message>
+  <message id="d3sdd-zoomIn">Nagyítás</message>
+  <message id="d3sdd-neutrons">neutronok</message>
+  <message id="d3sdd-Neutrons">Neutronok</message>
+  <message id="d3sdd-cps">impulzus/s</message>
+  <message id="d3sdd-roiCounts">ROI impulzusok</message>
+  <message id="d3sdd-gammaCounts">Gamma impulzusok</message>
+  <message id="d3sdd-contArea">kont. terület</message>
+  <message id="d3sdd-peakCps">csúcs impulzus/s</message>
+  <message id="d3sdd-peakArea">csúcs terület</message>
+  <message id="d3sdd-mean">közép</message>
+  <message id="d3sdd-spectrum">Spektrum</message>
+  <message id="d3sdd-comptonEdge">Compton él</message>
+  <message id="d3sdd-sumPeak">Összeg csúcs</message>
+  <message id="d3sdd-firstEnergyClick">Kattintson az összeg csúcs első energiájának beállításához.</message>
+  <message id="d3sdd-singleEscape">Egyszeres menekülés</message>
+  <message id="d3sdd-doubleEscape">Kétszeres menekülés</message>
+  <message id="d3sdd-eraseInRange">Törli a csúcsokat a tartományban</message>
+  <message id="d3sdd-zoomInY">Y-tengely nagyítása</message>
+  <message id="d3sdd-zoomOutY">Y-tengely kicsinyítése</message>
+  <message id="d3sdd-touchDefineRoi">Mozgassa 2 ujját jobbra az ROI meghatározásához</message>
+  <message id="d3sdd-foreNSigmaBelowBack">Az előtér {1} σ-val a háttér alatt van.</message>
+  <message id="d3sdd-foreNSigmaAboveBack">Az előtér {1} σ-val a háttér felett van.</message>
+  <message id="d3sdd-backSubCounts">impulzusok (HT lev.)</message>
+  <message id="d3sdd-afterScalingBy">skálázás után ezzel: </message>
+  <message id="d3sdd-clickedPeak">Kiválasztott csúcs</message>
+  <message id="d3sdd-recalFromTo">Adatok újrakalibrálása {1}-tól {2} keV-ig</message>
+  <message id="d3sdd-sumFromTo">{1}-tól {2} keV-ig</message>
+  <message id="d3sdd-comptonPeakAngle">{1}° Compton csúcs</message>
+  <message id="d3sdd-yaxis-lower-upper-equal">Az alsó és felső impulzusszám egyenlő.</message>
+  <message id="d3sdd-yaxis-no-spectrum">Nincs megjelenített spektrum.</message>
+  <message id="d3sdd-yaxis-upper-counts-below-zero">A felső tartomány nulla vagy alatta van.</message>
+  <message id="d3sdd-yaxis-lower-counts-below-zero">Az alsó tartomány nulla vagy alatta van.</message>
+  <message id="d3sdd-yaxis-below-min-non-zero">A felső tartomány kisebb a minimális megjelenített, nem nulla értéknél.</message>
+  <message id="d3sdd-candidates">Jelöltek:</message>
+  <message id="d3sdd-use-arrows-to-select">(használja a ↑ és ↓ billentyűket a kiválasztáshoz)</message>
+</messages>

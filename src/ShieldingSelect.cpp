@@ -28,6 +28,7 @@
 #include <cstdlib>
 #include <sstream>
 #include <iostream>
+#include <iomanip>
 
 #include <Wt/WText>
 #include <Wt/WLabel>
@@ -139,7 +140,7 @@ class TraceSrcDisplay : public WGroupBox
   
 public:
   TraceSrcDisplay( ShieldingSelect *parent )
-  : WGroupBox( "Trace Source", parent->m_traceSources ),
+  : WGroupBox( WString::tr("ss-trace-source-title"), parent->m_traceSources ),
     m_currentNuclide( nullptr ),
     m_currentDisplayActivity( 0.0 ),
     m_currentTotalActivity( 0.0 ),
@@ -170,17 +171,17 @@ public:
     closeIcon->setToolTip( "Remove this trace source." );
     
     
-    WLabel *label = new WLabel( "Nuclide", this );
+    WLabel *label = new WLabel( WString::tr("Nuclide"), this );
     label->addStyleClass( "GridFirstCol GridSecondRow" );
     
     m_isoSelect = new WComboBox( this );
-    m_isoSelect->addItem( "Select" );
+    m_isoSelect->addItem( WString::tr("ss-select-option") );
     m_isoSelect->activated().connect( this, &TraceSrcDisplay::handleUserNuclideChange );
     m_isoSelect->addStyleClass( "GridSecondCol GridSecondRow GridSpanTwoCol" );
     label->setBuddy( m_isoSelect );
     
     
-    label = new WLabel( "Activity", this );
+    label = new WLabel( WString::tr("Activity"), this );
     label->addStyleClass( "GridFirstCol GridThirdRow" );
     
     
@@ -209,7 +210,7 @@ public:
     m_activityType->activated().connect( this, &TraceSrcDisplay::handleUserChangeActivityType );
     m_activityType->addStyleClass( "GridThirdCol GridThirdRow" );
     
-    m_allowFitting = new WCheckBox( "Fit activity value", this );
+    m_allowFitting = new WCheckBox( WString::tr("ss-fit-activity-cb"), this );
     m_allowFitting->addStyleClass( "GridSecondCol GridStretchCol GridFourthRow GridSpanTwoCol CbNoLineBreak" );
     
     
@@ -367,7 +368,23 @@ public:
     }catch( std::exception &e )
     {
       cerr << "Failed to rount-trip TraceSrcDisplay: " << e.what() << endl;
-      assert( 0 );
+      cerr << "  Original trace: nuclide=" << (trace.m_nuclide ? trace.m_nuclide->symbol : "null")
+           << ", activity=" << std::setprecision(17) << trace.m_activity
+           << ", type=" << static_cast<int>(trace.m_type)
+           << ", fitActivity=" << trace.m_fitActivity << endl;
+      cerr << "  Roundtrip trace: nuclide=" << (roundtrip.m_nuclide ? roundtrip.m_nuclide->symbol : "null")
+           << ", activity=" << std::setprecision(17) << roundtrip.m_activity
+           << ", type=" << static_cast<int>(roundtrip.m_type)
+           << ", fitActivity=" << roundtrip.m_fitActivity << endl;
+      cerr << "  Activity difference: " << std::setprecision(17) << fabs(trace.m_activity - roundtrip.m_activity) << endl;
+      
+      
+      if( (trace.m_nuclide != roundtrip.m_nuclide) && !roundtrip.m_nuclide )
+      {
+        //m_parent->m_sourceModel->
+      }
+      
+      //assert( 0 );
     }
 #endif
   }// void fromTraceSourceInfo( const ShieldingSourceFitCalc::TraceSourceInfo &trace )
@@ -665,7 +682,7 @@ public:
       switch( type )
       {
         case TraceActivityType::TotalActivity:
-          m_activityType->addItem( "Total" );
+          m_activityType->addItem( WString::tr("ss-total-activity") );
           break;
           
         case TraceActivityType::ActivityPerCm3:
@@ -1191,7 +1208,7 @@ public:
     const int numNucs = model->numNuclides();
 
     m_isoSelect->clear();
-    m_isoSelect->addItem( "Select" );
+    m_isoSelect->addItem( WString::tr("ss-select-option") );
     
     int indexToSelect = -1, numNucAdded = 0;
     for( int index = 0; index < numNucs; ++index )
@@ -2356,7 +2373,7 @@ void ShieldingSelect::init()
   
   if( m_forFitting )
   {
-    m_fitAtomicNumberCB = new WCheckBox( "Fit" );
+    m_fitAtomicNumberCB = new WCheckBox( WString::tr("Fit") );
     m_fitAtomicNumberCB->setChecked( false );
     m_fitAtomicNumberCB->addStyleClass( "CbNoLineBreak" );
     genericMatLayout->addWidget( m_fitAtomicNumberCB, 0, 2, AlignMiddle );
@@ -3430,6 +3447,25 @@ void ShieldingSelect::setFitRectangularWidthEnabled( const bool allow )
   
   assert( allow || !fitRectangularWidthThickness() );
 }//void setFitRectangularWidthEnabled( const bool allow )
+
+
+void ShieldingSelect::setFitRectangularDepthEnabled( const bool allow )
+{
+  checkIsCorrectCurrentGeometry( GeometryType::Rectangular, __func__ );
+  
+  if( !m_forFitting )
+    throw runtime_error( __func__ + string(": can't be called when not for fitting.") );
+  
+  WCheckBox *cb = m_fitRectDepthCB;
+  const bool previous = cb->isVisible();
+  if( previous == allow )
+    return;
+  
+  cb->setChecked( false );
+  cb->setHidden( !allow );
+  
+  assert( allow || !fitRectangularDepthThickness() );
+}//void setFitRectangularDepthEnabled( const bool allow )
 
 
 bool ShieldingSelect::fitAtomicNumber() const
@@ -4994,6 +5030,7 @@ void ShieldingSelect::handleUserChangeForUndoRedo()
   {
     auto worker = wApp->bind( boost::bind(&ShieldingSelect::handleUserChangeForUndoRedoWorker, this, true) );
     server->post( wApp->sessionId(), worker );
+    //server->schedule( 1, wApp->sessionId(), worker );
   }
 }//void handleUserChangeForUndoRedo()
 
@@ -5460,6 +5497,8 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
     }//}//if( m_isGenericMaterial ) / else
   };//testShieldingSelectPartiallySameAsOrig
     
+  /*
+   // This next block can crash if this ShieldingSelect is destructing
   try
   {
     const string uri = encodeStateToUrl();
@@ -5473,6 +5512,8 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
     log_developer_error( __func__, msg.c_str() );
 //    assert( 0 );
   }//try
+  */
+  
   
   /*
    //This test will fail for trace-sources, as getting their total activity depends
@@ -5533,7 +5574,10 @@ void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node,
     switch( m_geometry )
     {
       case GeometryType::Spherical:
-        getval( "SphericalThickness", m_thicknessEdit );
+        if( material_node && material_node->first_node("SphericalThickness") )
+          getval( "SphericalThickness", m_thicknessEdit );
+        else
+          getval( "Thickness", m_thicknessEdit );
         break;
         
       case GeometryType::CylinderEndOn:
@@ -5561,7 +5605,11 @@ void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node,
   const ShieldingSourceFitCalc::ShieldingInfo roundtripped = toShieldingInfo();
   try
   {
-    ShieldingSourceFitCalc::ShieldingInfo::equalEnough( info, roundtripped );
+    // If oritingal was spherical, but detector is currently fixed geometry, the below comparison will fail
+    const bool was_fixed = (info.m_geometry == GammaInteractionCalc::GeometryType::NumGeometryType);
+    const bool is_fixed = (roundtripped.m_geometry == GammaInteractionCalc::GeometryType::NumGeometryType);
+    if( was_fixed == is_fixed )
+      ShieldingSourceFitCalc::ShieldingInfo::equalEnough( info, roundtripped );
   }catch( std::exception &e )
   {
     cerr << "ShieldingSelect::deSerialize - Failed to round-trip setting/getting: " << e.what() << endl;
@@ -5576,6 +5624,7 @@ void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node,
   {
     auto worker = wApp->bind( boost::bind(&ShieldingSelect::handleUserChangeForUndoRedoWorker, this, false) );
     server->post( wApp->sessionId(), worker );
+    //server->schedule( 1, wApp->sessionId(), worker );
   }//if( m_userChangedStateSignal.isConnected() && server )
 }//void deSerialize( const rapidxml::xml_node<char> *shielding_node ) const
 
@@ -5667,6 +5716,14 @@ std::string ShieldingSelect::encodeStateToUrl() const
     std::string material_name = m_materialEdit->text().toUTF8();
     SpecUtils::ireplace_all(material_name, "#", "%23" );
     SpecUtils::ireplace_all(material_name, "&", "%26" );
+    const string::size_type open_pos = material_name.find('(');
+    if( open_pos != string::npos )
+    {
+      const string::size_type close_pos = material_name.find(')', open_pos);
+      if( close_pos != string::npos )
+        material_name.erase(open_pos, close_pos - open_pos + 1);
+    }
+    SpecUtils::trim( material_name );
     
     if( !m_currentMaterial )
       material_name = "";

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- gxsg- is short for GammaXsGui -->
+  <message id="gxsg-material-formula">উপাদান/সূত্র</message>
+  <message id="gxsg-tt-material">
+    আপনি হয় একটি পূর্ব-সংজ্ঞায়িত উপাদান বা মৌলের নাম লিখতে পারেন (ফর্ম টেক্সট সাফ করুন
+    এবং সমস্ত পূর্ব-সংজ্ঞায়িত বিকল্প দেখতে ফর্মের ডানদিকে তীর ক্লিক করুন), বা আপনি
+    একটি রাসায়নিক সূত্র লিখতে পারেন যেমন 'H0.112 O0.88' যেখানে সংখ্যাগুলি হল
+    g/cm3-এ ঘনত্ব, (বা ভর ভগ্নাংশ এবং ঘনত্ব ক্ষেত্র ব্যবহার করুন),
+    পূর্ববর্তী মৌলের।
+  </message>
+  <message id="gxsg-total-atten-xs">মোট ক্ষয় ক্রস সেকশন</message>
+  <message id="gxsg-compton-label">Compton</message>
+  <message id="gxsg-rayleigh-label">Rayleigh</message>
+  <message id="gxsg-photoelec-label">ফোটোইলেকট্রিক</message>
+  <message id="gxsg-pp-label">জোড়া উৎপাদন</message>
+  <message id="gxsg-mass-avrg-an">ভর গড় পরমাণু সংখ্যা</message>
+  <message id="gxsg-opt-atten">ক্ষয় (ঐচ্ছিক):</message>
+  <message id="gxsg-density-label">ঘনত্ব:</message>
+  <message id="gxsg-thickness-label">পুরুত্ব:</message>
+  <message id="gxsg-tt-thickness">ক্ষয়কারীর পুরুত্ব।</message>
+  <message id="gxsg-trans-frac-label">ট্রান্স ভগ্নাংশ</message>
+  <message id="gxsg-tt-trans-frac">এটি হল গামার ভগ্নাংশ যা নির্দিষ্ট শিল্ডিংয়ের মধ্য দিয়ে যাবে।</message>
+  <message id="gxsg-tt-distance">এটি হল উৎস কেন্দ্র থেকে ডিটেক্টর পর্যন্ত দূরত্ব।</message>
+  <message id="gxsg-intrinsic-eff-label">অভ্যন্তরীণ দক্ষতা</message>
+  <message id="gxsg-tt-intrinsic-eff">অভ্যন্তরীণ দক্ষতা (ডিটেক্টর মুখে আঘাত করা গামার ইন-পিক সনাক্তকরণ দক্ষতা)।</message>
+  <message id="gxsg-solid-angle-frac-label">কঠিন কোণ ভগ্নাংশ</message>
+  <message id="gxsg-tt-solid-angle-frac">নির্দিষ্ট দূরত্বে নির্বাচিত ডিটেক্টরের ভগ্নাংশ কঠিন কোণ।</message>
+  <message id="gxsg-det-eff-label">সনাক্তকরণ দক্ষতা</message>
+  <message id="gxsg-tt-det-eff">অভ্যন্তরীণ দক্ষতা কঠিন কোণ ভগ্নাংশ দ্বারা গুণিত। যেমন শিল্ডিং থেকে বেরিয়ে আসা গামার ভগ্নাংশ যা সনাক্ত করা হবে। ক্ষয় অন্তর্ভুক্ত করে না।</message>
+  <message id="gxsg-total-eff-label">মোট দক্ষতা</message>
+  <message id="gxsg-tt-total-eff">সংক্রমণ ভগ্নাংশ সনাক্তকরণ দক্ষতা দ্বারা গুণিত। যেমন উৎস থেকে নির্গত গামার ভগ্নাংশ যা সনাক্ত করা হবে।</message>
+  <message id="gxsg-warn-suspect">XS গণনা সন্দেহজনক হতে পারে: {1}</message>
+  <message id="gxsg-tool-state-title">গামা XS টুল স্টেট</message>
+  <message id="gxsg-tool-state-text">xs টুলের বর্তমান স্টেট।</message>
+</messages>

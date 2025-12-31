@@ -28,10 +28,14 @@
 #include <algorithm>
 
 #include <Wt/WText>
+#include <Wt/WLabel>
+#include <Wt/WComboBox>
 #include <Wt/WCheckBox>
+#include <Wt/WGridLayout>
 #include <Wt/WPushButton>
 #include <Wt/WApplication>
 #include <Wt/WContainerWidget>
+#include <Wt/WImage>
 
 #include <Wt/Json/Array>
 #include <Wt/Json/Value>
@@ -43,6 +47,7 @@
 #include "SpecUtils/ParseUtils.h"
 #include "SpecUtils/StringAlgo.h"
 
+#include "InterSpec/PeakDef.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
@@ -51,6 +56,8 @@
 #include "InterSpec/LeafletRadMap.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/UserPreferences.h"
+#include "InterSpec/NativeFloatSpinBox.h"
+#include "InterSpec/HelpSystem.h"
 
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
 #include <Wt/Utils>
@@ -204,12 +211,19 @@ LeafletRadMap *LeafletRadMapWindow::map()
 LeafletRadMap::LeafletRadMap( Wt::WContainerWidget *parent )
  : Wt::WContainerWidget( parent ),
   m_meas(),
-  m_jsmap( jsRef() + ".map" ),
+  m_map_holder( nullptr ),
+  m_energy_range_row( nullptr ),
+  m_filter_type( nullptr ),
+  m_filter_lower_energy_grp( nullptr ),
+  m_filter_lower_energy( nullptr ),
+  m_filter_upper_energy_grp( nullptr ),
+  m_filter_upper_energy( nullptr ),
   m_displaySamples( this, "loadSamples", false),
   m_loadSelected( this )
 {
-  addStyleClass( "LeafletRadMap" );
-      
+  //addStyleClass( "LeafletRadMap" );
+  addStyleClass( "LeafletRadMapWidget" );
+
   // Load Leaflet 1.9.3 (20221118), see https://leafletjs.com/index.html
   wApp->useStyleSheet( "InterSpec_resources/assets/js/leaflet/leaflet_1.9.3/leaflet.css" );
   wApp->require( "InterSpec_resources/assets/js/leaflet/leaflet_1.9.3/leaflet.js" );
@@ -254,8 +268,75 @@ LeafletRadMap::LeafletRadMap( Wt::WContainerWidget *parent )
   if( viewer )
   {
     viewer->useMessageResourceBundle( "LeafletRadMap" );
-    viewer->displayedSpectrumChanged().connect( this, &LeafletRadMap::handleDisplayedSpectrumChanged );
+    viewer->displayedSpectrumChanged().connect( boost::bind(&LeafletRadMap::handleDisplayedSpectrumChanged, this,
+                                                            boost::placeholders::_1, boost::placeholders::_2) );
   }
+
+  m_map_holder = new WContainerWidget();
+  m_map_holder->addStyleClass( "LeafletRadMap" );
+  m_energy_range_row = new WContainerWidget();
+  m_energy_range_row->addStyleClass( "EnergyRangeRow" );
+
+  WContainerWidget *ene_grp = new WContainerWidget( m_energy_range_row );
+  ene_grp->addStyleClass( "EnergyRangeGrp" );
+  WLabel *label = new WLabel( WString::tr("lrm-filter-label"), ene_grp );
+  m_filter_type = new WComboBox( ene_grp );
+  label->setBuddy( m_filter_type );
+  m_filter_type->addItem( WString::tr("lrm-filter-none") );
+  m_filter_type->addItem( WString::tr("lrm-filter-energy-range") );
+  m_filter_type->addItem( WString::tr("lrm-filter-peaks-in-range") );
+  m_filter_type->activated().connect( this, &LeafletRadMap::handleEnergyFilterChange );
+
+
+  m_filter_lower_energy_grp = new WContainerWidget( m_energy_range_row );
+  m_filter_lower_energy_grp->addStyleClass( "EnergyRangeGrp" );
+  label = new WLabel( WString::tr("lrm-lower-energy"), m_filter_lower_energy_grp );
+  m_filter_lower_energy = new NativeFloatSpinBox( m_filter_lower_energy_grp );
+  m_filter_lower_energy->setSpinnerHidden();
+  m_filter_lower_energy->setWidth( 45 );
+  m_filter_lower_energy->valueChanged().connect( this, &LeafletRadMap::handleEnergyFilterChange );
+  m_filter_lower_energy->setValue( 0.0f );
+
+  m_filter_upper_energy_grp = new WContainerWidget( m_energy_range_row );
+  m_filter_upper_energy_grp->addStyleClass( "EnergyRangeGrp" );
+  label = new WLabel( WString::tr("lrm-upper-energy"), m_filter_upper_energy_grp );
+  m_filter_upper_energy = new NativeFloatSpinBox( m_filter_upper_energy_grp );
+  m_filter_upper_energy->setSpinnerHidden();
+  m_filter_upper_energy->setWidth( 45 );
+  m_filter_upper_energy->valueChanged().connect( this, &LeafletRadMap::handleEnergyFilterChange );
+  m_filter_upper_energy->setValue( 0.0f );
+
+  m_filter_type->setCurrentIndex( 0 );
+  m_filter_lower_energy_grp->hide();
+  m_filter_upper_energy_grp->hide();
+
+  // Add spacer div to push help icon to the right
+  WContainerWidget *spacer = new WContainerWidget( m_energy_range_row );
+  spacer->addStyleClass( "EnergyFilterSpacer" );
+  
+  // Add help icon
+  WString tt = WString::tr("lrm-energy-filter-help");
+  WImage *img = new WImage( m_energy_range_row );
+  img->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
+  img->setStyleClass("Wt-icon EnergyFilterHelp");
+  img->decorationStyle().setCursor( Wt::Cursor::WhatsThisCursor );
+  
+  HelpSystem::attachToolTipOn( img, tt, true, HelpSystem::ToolTipPosition::Right,
+                              HelpSystem::ToolTipPrefOverride::InstantAlways );
+
+  WGridLayout *grid = new WGridLayout();
+  setLayout( grid );
+  grid->setContentsMargins(0, 0, 0, 0);
+  grid->setVerticalSpacing( 0 );
+  grid->setHorizontalSpacing( 0 );
+
+  grid->addWidget( m_map_holder, 0, 0  );
+  grid->addWidget( m_energy_range_row, 1, 0  );
+
+  grid->setRowStretch( 0, 1 );
+  grid->setColumnStretch( 0, 1 );
+
+  m_energy_range_row->hide();
 }//LeafletRadMap
 
 
@@ -371,8 +452,8 @@ void LeafletRadMap::defineJavaScript()
     ", liveTimeTxt: '" + WString::tr("Live Time").toUTF8() + "'"
   "}";
   
-  setJavaScriptMember( "map", "new LeafletRadMap(" + jsRef() + "," + options + ");");
-  
+  setJavaScriptMember( "map", "new LeafletRadMap(" + m_map_holder->jsRef() + "," + options + ");");
+
   for( const string &js : m_pendingJs )
     doJavaScript( js );
   m_pendingJs.clear();
@@ -406,7 +487,10 @@ std::string LeafletRadMap::createGeoLocationJson( const std::shared_ptr<const Sp
                                                  const std::vector<std::string> &det_to_include,
                                                  const std::set<int> &foreground_samples,
                                                  const std::set<int> &background_samples,
-                                                 const std::set<int> &secondary_samples )
+                                                 const std::set<int> &secondary_samples,
+                                                 const EnergyFilterType filter_type,
+                                                 const std::optional<double> lower_energy,
+                                                 const std::optional<double> upper_energy )
 {
   if( !meas || !meas->has_gps_info() )
   {
@@ -428,12 +512,130 @@ std::string LeafletRadMap::createGeoLocationJson( const std::shared_ptr<const Sp
   size_t numSamplesNoGps = 0;
   SpecUtils::time_point_t start_times_offset{};
   
-  for( const int sample : meas->sample_numbers() )
+  // Fill in missing energy bounds if only one is specified
+  std::optional<double> effective_lower_energy = lower_energy;
+  std::optional<double> effective_upper_energy = upper_energy;
+  
+  if( filter_type != EnergyFilterType::None && (lower_energy || upper_energy) )
   {
-    if( !sample_to_include.count(sample) && !sample_to_include.empty() )
+    // Get the gamma energy range from the first measurement with gamma data
+    double gamma_min = 0.0, gamma_max = 0.0;
+    bool found_gamma_range = false;
+    
+    for( const int sample : meas->sample_numbers() )
+    {
+      vector<shared_ptr<const SpecUtils::Measurement>> sample_meass = meas->sample_measurements(sample);
+      for( const auto &m : sample_meass )
+      {
+        if( m->num_gamma_channels() >= 1 )
+        {
+          gamma_min = m->gamma_energy_min();
+          gamma_max = m->gamma_energy_max();
+          found_gamma_range = true;
+          break;
+        }
+      }
+      if( found_gamma_range )
+        break;
+    }
+    
+    if( found_gamma_range )
+    {
+      if( !effective_lower_energy )
+        effective_lower_energy = gamma_min;
+      if( !effective_upper_energy )
+        effective_upper_energy = gamma_max;
+    }
+  }
+  
+  // Create sample sets to iterate over based on filter type
+  std::set<std::set<int>> sample_sets_to_iterate;
+  
+  if( filter_type == EnergyFilterType::PeaksInEnergyRange )
+  {
+    // Get all sample number sets that have peaks
+    const set<set<int>> sample_nums_with_peaks = meas->sampleNumsWithPeaks();
+    
+    // Filter by energy range if specified
+    for( const std::set<int> &sample_set : sample_nums_with_peaks )
+    {
+      // Check if any peak in this sample set falls within the energy range
+      bool has_peak_in_range = false;
+      
+      if( effective_lower_energy && effective_upper_energy )
+      {
+        const auto peaks = meas->peaks( sample_set );
+        if( peaks )
+        {
+          for( const auto &peak : *peaks )
+          {
+            const double peak_energy = peak->mean();
+            if( (peak_energy >= effective_lower_energy.value()) && (peak_energy <= effective_upper_energy.value()) )
+            {
+              has_peak_in_range = true;
+              break;
+            }
+          }
+        }
+      }
+      else
+      {
+        // If no energy range specified, include all sample sets with peaks
+        has_peak_in_range = true;
+      }
+      
+      if( has_peak_in_range )
+        sample_sets_to_iterate.insert( sample_set );
+    }
+  }
+  else
+  {
+    // For None and EnergyRange filters, iterate over individual samples
+    for( const int sample : meas->sample_numbers() )
+    {
+      if( !sample_to_include.count(sample) && !sample_to_include.empty() )
+        continue;
+      sample_sets_to_iterate.insert( {sample} );
+    }
+  }
+  
+  // Track sample counts for PeaksInEnergyRange filter info
+  size_t total_sample_count = 0;
+  std::set<int> included_sample_numbers;
+  
+  // Count total samples for PeaksInEnergyRange filter info
+  if( filter_type == EnergyFilterType::PeaksInEnergyRange )
+  {
+    for( const int sample : meas->sample_numbers() )
+    {
+      if( sample_to_include.empty() || sample_to_include.count(sample) )
+        total_sample_count++;
+    }
+  }
+  
+  for( const std::set<int> &sample_set : sample_sets_to_iterate )
+  {
+    // Check if any sample in the set should be included
+    bool should_include = false;
+    for( const int sample : sample_set )
+    {
+      if( sample_to_include.empty() || sample_to_include.count(sample) )
+      {
+        should_include = true;
+        break;
+      }
+    }
+    
+    if( !should_include )
       continue;
     
-    vector<shared_ptr<const SpecUtils::Measurement>> meass = meas->sample_measurements(sample);
+    // Collect all measurements for all samples in this set
+    vector<shared_ptr<const SpecUtils::Measurement>> meass;
+    for( const int sample : sample_set )
+    {
+      vector<shared_ptr<const SpecUtils::Measurement>> sample_meass = meas->sample_measurements(sample);
+      meass.insert( meass.end(), sample_meass.begin(), sample_meass.end() );
+    }
     
     meass.erase( std::remove_if(meass.begin(), meass.end(),
       [&](shared_ptr<const SpecUtils::Measurement> a){
@@ -449,8 +651,64 @@ std::string LeafletRadMap::createGeoLocationJson( const std::shared_ptr<const Sp
     double gammaRealTime = 0.0, gammaLiveTime = 0.0, gammaCounts = 0.0;
     double neutronRealTime = 0.0, neutronCounts = 0.0;
     
-    SpecUtils::time_point_t meas_start_time{};
+    // For GPS averaging when multiple samples are involved
+    double weighted_lat_sum = 0.0, weighted_lon_sum = 0.0, total_live_time = 0.0;
     
+    SpecUtils::time_point_t meas_start_time{};
+
+    if( (filter_type == EnergyFilterType::PeaksInEnergyRange) && effective_lower_energy && effective_upper_energy )
+    {
+      if( const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = meas->peaks(sample_set) )
+      {
+        for( const auto &peak : *peaks )
+        {
+          const double peak_energy = peak->mean();
+          if( (peak_energy < effective_lower_energy.value()) || (peak_energy > effective_upper_energy.value()) )
+            break;
+
+          if( peak->gausPeak() )
+          {
+            gammaCounts += peak->amplitude();
+          }else
+          {
+            if( meass.size() == 1 )
+            {
+              gammaCounts += peak->areaFromData(meass[0]);
+            }else
+            {
+              const float lower_x = static_cast<float>(peak->lowerX());
+              const float upper_x = static_cast<float>(peak->upperX());
+              for( const auto &m : meass )
+                gammaCounts += m->gamma_integral( lower_x, upper_x );
+
+              switch( peak->continuum()->type() )
+              {
+                case PeakContinuum::NoOffset:
+                case PeakContinuum::Constant:
+                case PeakContinuum::Linear:
+                case PeakContinuum::Quadratic:
+                case PeakContinuum::Cubic:
+                case PeakContinuum::External:
+                  gammaCounts -= peak->continuum()->offset_integral(lower_x, upper_x, nullptr);
+                  break;
+
+                case PeakContinuum::FlatStep:
+                case PeakContinuum::LinearStep:
+                case PeakContinuum::BiLinearStep:
+                  // TODO: we need to sum all `meass` and then pass that into offset_integral(...). For now we'll just ignore the continuum, since I cant imagine anyone using data-defined peaks with step continua (I think you could... but its not really a reasonable thing to do)
+                  cerr << "Not accounting for stepped continua on data-defined peaks" << endl;
+                  break;
+              }//switch( peak->continuum()->type() )
+            }//if( meass.size() == 1 ) / else
+          }//if( peak->gausPeak() ) / else
+        }//for( const auto &peak : *peaks )
+      }else
+      {
+        assert( 0 );
+      }//if( const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = meas->peaks(sample_set) ) / else
+    }//if( (filter_type == EnergyFilterType::PeaksInEnergyRange) && effective_lower_energy && effective_upper_energy )
+
+
     for( const shared_ptr<const SpecUtils::Measurement> &m : meass )
     {
       const string &det_name = m->detector_name();
@@ -461,9 +719,21 @@ std::string LeafletRadMap::createGeoLocationJson( const std::shared_ptr<const Sp
       if( m->has_gps_info() )
       {
         hadGps = true;
-        // TODO: we could average or something here... not sure it matters much
-        latitude = m->latitude();
-        longitude = m->longitude();
+        double live_time = m->live_time();
+        // Protection: if live time is 0 or negative, make it 1
+        if( live_time <= 0.0 )
+          live_time = 1.0;
+          
+        weighted_lat_sum += m->latitude() * live_time;
+        weighted_lon_sum += m->longitude() * live_time;
+        total_live_time += live_time;
+        
+        // For single sample case, just use the measurement's GPS directly
+        if( sample_set.size() == 1 )
+        {
+          latitude = m->latitude();
+          longitude = m->longitude();
+        }
       }
       
       if( SpecUtils::is_special(meas_start_time) && !SpecUtils::is_special(m->start_time()) )
@@ -479,7 +749,15 @@ std::string LeafletRadMap::createGeoLocationJson( const std::shared_ptr<const Sp
         realTime = std::max( realTime, m->real_time() );
         gammaLiveTime += m->live_time();
         gammaRealTime += m->real_time();
-        gammaCounts += m->gamma_count_sum();
+        
+        // Use gamma_integral for EnergyRange filter, otherwise use gamma_count_sum
+        if( filter_type == EnergyFilterType::EnergyRange && effective_lower_energy && effective_upper_energy )
+        {
+          gammaCounts += m->gamma_integral( *effective_lower_energy, *effective_upper_energy );
+        }else if( (filter_type == EnergyFilterType::None) || !effective_lower_energy.has_value() || !effective_upper_energy.has_value() )
+        {
+          gammaCounts += m->gamma_count_sum();
+        }
       }
       
       if( m->contained_neutron() )
@@ -495,10 +773,23 @@ std::string LeafletRadMap::createGeoLocationJson( const std::shared_ptr<const Sp
         source_type = m->source_type();
     }//for( const auto m : meass )
     
+    // Calculate weighted average GPS coordinates for multiple samples
+    if( hadGps && sample_set.size() > 1 && total_live_time > 0.0 )
+    {
+      latitude = weighted_lat_sum / total_live_time;
+      longitude = weighted_lon_sum / total_live_time;
+    }
+    
     if( !hadGps )
     {
-      numSamplesNoGps += 1;
+      numSamplesNoGps += sample_set.size();
       continue;
+    }
+    
+    // Update included sample numbers for PeaksInEnergyRange filter info
+    if( filter_type == EnergyFilterType::PeaksInEnergyRange )
+    {
+      included_sample_numbers.insert( begin(sample_set), end(sample_set) );
     }
     
     if( !numNeutDet && !numGammaDet )
@@ -531,12 +822,25 @@ std::string LeafletRadMap::createGeoLocationJson( const std::shared_ptr<const Sp
     sample_json["src"] = static_cast<int>(source_type);
     
     int displ_type = 3;
-    if( foreground_samples.count(sample) )
-      displ_type = 0;
-    else if( secondary_samples.count(sample) )
-      displ_type = 1;
-    else if( background_samples.count(sample) )
-      displ_type = 2;
+    // Check if any sample in the set matches foreground/secondary/background
+    for( const int sample : sample_set )
+    {
+      if( foreground_samples.count(sample) )
+      {
+        displ_type = 0;
+        break;
+      }
+      else if( secondary_samples.count(sample) )
+      {
+        displ_type = 1;
+        break;
+      }
+      else if( background_samples.count(sample) )
+      {
+        displ_type = 2;
+        break;
+      }
+    }
     sample_json["disp"] = displ_type;
     
     
@@ -544,10 +848,21 @@ std::string LeafletRadMap::createGeoLocationJson( const std::shared_ptr<const Sp
     gps.push_back(latitude);
     gps.push_back(longitude);
     sample_json["gps"] = gps;
-    sample_json["sample"] = sample;
+    
+    // For single sample, use the sample number directly
+    // For multiple samples, use the first sample number as representative and add samples array
+    if( sample_set.size() == 1 )
+    {
+      sample_json["sample"] = *sample_set.begin();
+    }
+    else
+    {
+      sample_json["sample"] = *sample_set.begin(); // Use first sample as representative
+      sample_json["samples"] = WString::fromUTF8( SpecUtils::sequencesToBriefString(sample_set) );
+    }
     
     samplesData.push_back( sample_json );
-  }//for( const int sample : meas->sample_numbers() )
+  }//for( const std::set<int> &sample_set : sample_sets_to_iterate )
   
   if( !SpecUtils::is_special(start_times_offset) )
   {
@@ -558,18 +873,61 @@ std::string LeafletRadMap::createGeoLocationJson( const std::shared_ptr<const Sp
   
   json["samples"] = samplesData;
   
+  // Add filter metadata if filter is active
+  Wt::Json::Object filterInfo;
+  if( filter_type != EnergyFilterType::None )
+  {
+    if( filter_type == EnergyFilterType::EnergyRange )
+    {
+      filterInfo["type"] = "EnergyRange";
+    }
+    else if( filter_type == EnergyFilterType::PeaksInEnergyRange )
+    {
+      filterInfo["type"] = "PeaksInEnergyRange";
+      filterInfo["totalSampleNumbers"] = static_cast<long long int>(total_sample_count);
+      filterInfo["includedSampleNumbers"] = static_cast<long long int>(included_sample_numbers.size());
+    }
+    
+    if( effective_lower_energy )
+      filterInfo["lowerEnergy"] = *effective_lower_energy;
+    if( effective_upper_energy )
+      filterInfo["upperEnergy"] = *effective_upper_energy;
+  }else
+  {
+    filterInfo["type"] = "None";
+  }
+
+  json["filterInfo"] = filterInfo;
+
   return Wt::Json::serialize(json);
 }//void createGeoLocationJson(...)
 
 
-void LeafletRadMap::handleDisplayedSpectrumChanged()
+void LeafletRadMap::handleDisplayedSpectrumChanged( const SpecUtils::SpectrumType type,
+                                                   const std::shared_ptr<const SpecMeas> meas )
 {
+  if( type != SpecUtils::SpectrumType::Foreground )
+    return;
+
   InterSpec *viewer = InterSpec::instance();
   assert( viewer );
-  
-  if( !m_meas || !viewer )
+  if( !viewer )
     return;
-  
+
+  const bool reset_energy_fiter = (m_meas != meas);
+  m_meas = meas;
+
+  if( reset_energy_fiter )
+    removeEnergyFiltering();
+
+  showOrHideEnergyRangeFilter();
+
+  if( !m_meas )
+  {
+    doJavaScript( jsRef() +  ".map.setData( null, true );" );
+    return;
+  }
+
   const shared_ptr<const SpecMeas> fore_meas = viewer->measurment( SpecUtils::SpectrumType::Foreground );
   set<int> foreground_samples = viewer->displayedSamples(SpecUtils::SpectrumType::Foreground);
   if( fore_meas != m_meas )
@@ -588,12 +946,15 @@ void LeafletRadMap::handleDisplayedSpectrumChanged()
   vector<string> det_to_include = viewer->detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
   if( fore_meas != m_meas )
     det_to_include = m_meas->detector_names();
-  
+
+  const EnergyRangeInfo filter_info = getEnergyRangeInfo();
+
   const string json = createGeoLocationJson( m_meas, m_meas->sample_numbers(),
                                              det_to_include, foreground_samples,
-                                             background_samples, secondary_samples );
+                                             background_samples, secondary_samples,
+                                             filter_info.filter_type, filter_info.lower_energy, filter_info.upper_energy );
   
-  doJavaScript( m_jsmap +  ".setData( " + json + ", true );" );
+  doJavaScript( jsRef() +  ".map.setData( " + json + ", true );" );
 }//void handleDisplayedSpectrumChanged();
 
 
@@ -662,6 +1023,134 @@ void LeafletRadMap::handleLoadSamples( const std::string &samples, const std::st
 }//void handleLoadSamples( const std::vector<int> &samples, std::string meas_type );
 
 
+void LeafletRadMap::handleEnergyFilterChange()
+{
+  const int selectIndex = m_filter_type->currentIndex();
+  if( selectIndex == 0 )
+  {
+    //No filter
+    m_filter_lower_energy_grp->hide();
+    m_filter_upper_energy_grp->hide();
+  }else if( (selectIndex == 1) || (selectIndex == 2) )
+  {
+    //Energy Range, or Peaks in Range
+    m_filter_lower_energy_grp->show();
+    m_filter_upper_energy_grp->show();
+  }else
+  {
+    assert( 0 );
+  }
+
+  handleDisplayedSpectrumChanged( SpecUtils::SpectrumType::Foreground, m_meas );
+}//void handleEnergyFilterChange()
+
+
+void LeafletRadMap::removeEnergyFiltering()
+{
+  if( m_meas )
+  {
+    float min_energy = 999999.9f, max_energy = -999999.9f;
+    const vector<shared_ptr<const SpecUtils::Measurement>> meass = m_meas->measurements();
+    for( const shared_ptr<const SpecUtils::Measurement> &m : meass )
+    {
+      if( m->energy_calibration() && m->energy_calibration()->valid() )
+      {
+        min_energy = std::min( min_energy, m->energy_calibration()->lower_energy() );
+        max_energy = std::max( max_energy, m->energy_calibration()->upper_energy() );
+      }
+    }
+
+    m_filter_lower_energy->setValue( std::min(min_energy, 0.0f) );
+    m_filter_upper_energy->setValue( std::max(max_energy, 0.0f) );
+  }else
+  {
+    m_filter_lower_energy->setValue( 0 );
+    m_filter_upper_energy->setValue( 3000 );
+  }
+
+  if( m_filter_type->currentIndex() == 0 )
+    return;
+
+  m_filter_type->setCurrentIndex( 0 );
+  m_filter_lower_energy_grp->hide();
+  m_filter_upper_energy_grp->hide();
+
+  handleEnergyFilterChange();
+}//void removeEnergyFiltering()
+
+
+void LeafletRadMap::showOrHideEnergyRangeFilter()
+{
+  set<double> unique_lats, unique_longs;
+  vector<shared_ptr<const SpecUtils::Measurement>> meass;
+  if( m_meas )
+    meass = m_meas->SpecFile::measurements();
+
+  for( const auto &m : meass )
+  {
+    if( m->has_gps_info() )
+    {
+      unique_lats.insert( m->latitude() );
+      unique_longs.insert( m->longitude() );
+    }
+  }//for( const auto &m : meass )
+
+  const bool show_energy_countrate = ((unique_lats.size() > 1) || (unique_longs.size() > 1));
+  if( show_energy_countrate == m_energy_range_row->isHidden() )
+    m_energy_range_row->setHidden( !show_energy_countrate );
+
+  if( show_energy_countrate )
+  {
+    const float lower_value = m_filter_lower_energy->value();
+    const float upper_value = m_filter_upper_energy->value();
+    if( lower_value > upper_value )
+    {
+      m_filter_lower_energy->setValue( upper_value );
+      m_filter_upper_energy->setValue( lower_value );
+    }
+  }
+}//void showOrHideEnergyRangeFilter()
+
+
+EnergyRangeInfo LeafletRadMap::getEnergyRangeInfo() const
+{
+  EnergyRangeInfo info;
+  
+  if( m_energy_range_row->isVisible() && (m_filter_type->currentIndex() != 0) )
+  {
+    const int filter_index = m_filter_type->currentIndex();
+    if( filter_index == 1 )
+    {
+      info.filter_type = EnergyFilterType::EnergyRange;
+    }
+    else if( filter_index == 2 )
+    {
+      info.filter_type = EnergyFilterType::PeaksInEnergyRange;
+    }
+    
+    info.lower_energy = m_filter_lower_energy->value();
+    info.upper_energy = m_filter_upper_energy->value();
+    
+    // If both energies are zero, don't apply a filter
+    if( info.lower_energy && info.upper_energy && 
+        *info.lower_energy == 0.0 && *info.upper_energy == 0.0 )
+    {
+      info.filter_type = EnergyFilterType::None;
+      info.lower_energy = std::nullopt;
+      info.upper_energy = std::nullopt;
+    }
+    // If lower energy is larger than upper energy, swap them
+    else if( info.lower_energy && info.upper_energy && 
+             *info.lower_energy > *info.upper_energy )
+    {
+      std::swap( info.lower_energy, info.upper_energy );
+    }
+  }
+  
+  return info;
+}//EnergyRangeInfo getEnergyRangeInfo() const
+
+
 void LeafletRadMap::displayMeasurementOnMap( const std::shared_ptr<const SpecMeas> &meas,
                                             std::set<int> sample_numbers,
                                             std::vector<std::string> detector_names )
@@ -675,9 +1164,14 @@ void LeafletRadMap::displayMeasurementOnMap( const std::shared_ptr<const SpecMea
   assert( viewer );
   if( !viewer )
     return;
-  
+
+  const bool reset_energy_fiter = (m_meas != meas);
   m_meas = meas;
-  
+  if( reset_energy_fiter )
+    removeEnergyFiltering();
+
+  showOrHideEnergyRangeFilter();
+
   const auto foremeas = viewer->measurment(SpecUtils::SpectrumType::Foreground);
   const auto backmeas = viewer->measurment(SpecUtils::SpectrumType::Background);
   const auto secondmeas = viewer->measurment(SpecUtils::SpectrumType::SecondForeground);
@@ -690,12 +1184,15 @@ void LeafletRadMap::displayMeasurementOnMap( const std::shared_ptr<const SpecMea
   if( meas == secondmeas )
     secon_samples = viewer->displayedSamples(SpecUtils::SpectrumType::SecondForeground);
   
+  const EnergyRangeInfo filter_info = getEnergyRangeInfo();
+  
   const string json = createGeoLocationJson( meas, sample_numbers, detector_names,
-                                            fore_samples, back_samples, secon_samples );
+                                            fore_samples, back_samples, secon_samples,
+                                            filter_info.filter_type, filter_info.lower_energy, filter_info.upper_energy );
   
   //cout << "displayMeasurementOnMap --> " << json << endl;
-  
-  doJavaScript( m_jsmap +  ".setData( " + json + ", false );" );
+
+  doJavaScript( jsRef() +  ".map.setData( " + json + ", false );" );
 }//void displayMeasurementOnMap(...)
 
 

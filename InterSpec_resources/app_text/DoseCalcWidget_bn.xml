@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dcw- is short for DoseCalcWidget -->
+  <message id="dcw-err-failed-fit-AD">পরিমাণ শিল্ডিং নির্ধারণে ব্যর্থ।</message>
+  <message id="dcw-qr-tool-state-title">ডোজ টুল স্টেট</message>
+  <message id="dcw-qr-tool-state-txt">ডোজ টুলের বর্তমান অবস্থা।</message>
+  <message id="dcw-inputs">ইনপুট</message>
+  <message id="dcw-answer">উত্তর</message>
+  <message id="dcw-intro-instructions">বামে যে পরিমাণ গণনা করতে চান তা নির্বাচন করুন</message>
+  <message id="dcw-intro-instructions-vert-phone">উপরে যে পরিমাণ গণনা করতে চান তা নির্বাচন করুন</message>
+  <message id="dcw-intro-calc-desc">ANSI/ANS-6.1.1-1991 সবচেয়ে সংরক্ষণশীল ক্ষেত্রে গণনা করা ডোজ মান: অ্যান্টিরিয়র-পোস্টেরিয়র অভিমুখ।
+    ডোজ গণনা সর্বোত্তম অবস্থায় একটি মোটামুটি নির্দেশিকা এবং অনেক অনিশ্চয়তা বা ত্রুটির সাপেক্ষে।
+  </message>
+  <message id="dcw-source-label">উৎস:</message>
+  <message id="dcw-neutron">নিউট্রন</message>
+  <message id="dcw-tt-neut-not-imp">নিউট্রন ডোজ গণনা এখনও বাস্তবায়িত হয়নি।</message>
+  <message id="dcw-tt-distance">উৎসের কেন্দ্র থেকে ডিটেক্টরের মুখ পর্যন্ত দূরত্ব। সংখ্যার সাথে ইউনিট প্রয়োজন; বৈধ ইউনিট: meters, m, cm, mm, km, feet, ft, ', in, inches, বা \"। আপনি একাধিক দূরত্ব যোগ করতে পারেন, যেমন '3ft 4in', বা '3.6E-2 m 12 cm' যা যথাক্রমে 40inches এবং 15.6cm এর সমতুল্য।</message>
+  <message id="dcw-shield-empty-text">শিল্ডিং উপাদান</message>
+  <message id="dcw-runtime-checks-failed">রানটাইম স্যানিটি চেক ব্যর্থ!</message>
+  <message id="dcw-runtime-check-msg">
+    <div>এই ক্যালকুলেটর ইউটিলিটির ফলাফল বিশ্বাস করবেন না</div>
+    অনুগ্রহ করে <a href="mailto:interspec@sandia.gov">interspec@sandia.gov</a>-এ এই ত্রুটি বার্তা ইমেল করুন এবং আপনার ডিভাইসের ধরন এবং মডেল অন্তর্ভুক্ত করুন (যেমন, iPad pro, Windows 10 Dell laptop, ইত্যাদি)
+  </message>
+  <message id="dcw-runtime-check-err-div">ফলাফল সন্দেহজনক - বিশ্বাস করবেন না</message>
+  <message id="dcw-err-no-nuc">খালি বা অবৈধ উৎস নিউক্লাইড</message>
+  <message id="dcw-act-invalid">কার্যকলাপ অবৈধ</message>
+  <message id="dcw-shield-invalid">অবৈধ শিল্ডিং</message>
+  <message id="dcw-generic-shield-invalid">ডোজ গণনা করতে ত্রুটি, অবৈধ শিল্ডিং, দুঃখিত :{</message>
+  <message id="dcw-dist-invalid">দূরত্ব অবৈধ।</message>
+  <message id="dcw-err-other">উৎস থেকে ডোজ গণনা করতে ত্রুটি, দুঃখিত :{</message>
+  <message id="dcw-invalid-src-dose">অবৈধ উৎস ডোজ।</message>
+  <message id="dcw-invalid-src-act">অবৈধ উৎস কার্যকলাপ।</message>
+  <message id="dcw-invalid-src-dose">অবৈধ উৎস ডোজ।</message>
+  <message id="dcw-failed-find-lower-dist">নিম্ন সীমানা দূরত্ব খুঁজে পেতে ব্যর্থ, {1} cm এ।</message>
+  <message id="dcw-failed-find-upper-dist">উচ্চ সীমানা দূরত্ব খুঁজে পেতে ব্যর্থ, {1} cm এ।</message>
+  <message id="dcw-failed-find-dist">দূরত্ব খুঁজে পাওয়া যায়নি; সর্বোচ্চ পুনরাবৃত্তি অতিক্রম করেছে।</message>
+  <message id="dcw-got-neg-dist">নেগেটিভ দূরত্ব পাওয়া গেছে: {1}</message>
+  <message id="dcw-err-calc-dose-for-dist">দূরত্ব অনুসন্ধানের সময় ডোজ গণনা করতে ত্রুটি, দুঃখিত :{</message>
+  <message id="dcw-material-not-valid">উপাদান বৈধ নয়</message>
+  <message id="dcw-no-an-entered">আপনাকে শিল্ডিং উপাদানের পারমাণবিক সংখ্যা প্রবেশ করাতে হবে।</message>
+  <message id="dcw-no-shield-name">আপনাকে শিল্ডিং উপাদানের ধরন প্রবেশ করাতে হবে।</message>
+  <message id="dcw-brehm-warning">সতর্কতা: বিটা ক্ষয়ের ব্রেমসট্রালুং হিসাব করা হয়নি, ফলাফল বিশ্বাসযোগ্য নাও হতে পারে।</message>
+  <message id="dcw-no-dose-entered">ডোজের জন্য কোনো সংখ্যাসূচক মান প্রবেশ করা হয়নি</message>
+  <message id="dcw-stay-time">থাকার সময়</message>
+  <message id="dcw-dental-xray">ডেন্টাল এক্স-রে</message>
+  <message id="dcw-annual-background">সাধারণ বার্ষিক পটভূমি</message>
+  <message id="dcw-annual-occ-limit">বার্ষিক পেশাগত সীমা</message>
+  <message id="dcw-save-property">মূল্যবান সম্পত্তি সংরক্ষণ</message>
+  <message id="dcw-life-saving">জীবন রক্ষা</message>
+  <message id="dcw-radiation-sickness">রেডিয়েশন অসুস্থতা</message>
+  <message id="dcw-units-label">ইউনিট:</message>
+</messages>

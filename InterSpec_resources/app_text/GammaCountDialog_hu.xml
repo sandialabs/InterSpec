@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- gcd- is short for GammaCountDialog
+  -->
+  <message id="gcd-summary">Gamma sugarak számának meghatározása a megadott energia tartományban.</message>
+  <message id="gcd-lower-energy-label">Alsó Energia</message>
+  <message id="gcd-upper-energy-label">Felső Energia</message>
+  <message id="gcd-shift-alt-drag">Shift-Alt-Húzás</message>
+  <message id="gcd-shift-option-drag">Shift-⌘-Húzás</message>
+  <message id="gcd-select-shortcut">A diagramon <b>{1}</b> használatával is kiválaszthatja az energia tartományt</message>
+  <message id="gcd-foreground-counts-label">Előtér Impulzusok:</message>
+  <message id="gcd-secondary-counts-label">Másodlagos Impulzusok:</message>
+  <message id="gcd-background-counts-label">Háttér Impulzusok:</message>
+  <message id="gcd-tt-n-sigma">
+    A sigma különbség számának kiszámítása az előtér és a (skálázott) háttér
+    közötti különbség osztásával történik a bizonytalansággal. A bizonytalanság
+    kiszámítása az előtér és háttér statisztikai bizonytalanságainak
+    négyzetes összegzésével, majd a négyzetgyök vételével történik
+  </message>
+  <message id="gcd-qr-window-title">Energia Tartomány Összeg Állapot</message>
+  <message id="gcd-qr-window-text">Az energia tartomány összeg eszköz jelenlegi állapota.</message>
+  <message id="gcd-background-scale-note">A háttér {1} értékkel van skálázva</message>
+  <message id="gcd-and-secondary-scaled"> és a másodlagos </message>
+  <message id="gcd-secondary-scale-note">A másodlagos háttér skálázva van </message>
+  <message id="gcd-foreground-above-background">Az előtér {1} σ-val van a háttér felett.</message>
+  <message id="gcd-foreground-below-background">Az előtér {1} σ-val van a háttér alatt.</message>
+</messages>

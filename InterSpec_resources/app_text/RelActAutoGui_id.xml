@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raag- is short for RelActAutoGui -->
+  <message id="raag-window-title">Isotopik Akt. Relatif</message>
+  
+  <!-- Presets section -->
+  <message id="raag-presets">Pra-atur</message>
+  <message id="raag-preset-blank">Kosong</message>
+  <message id="raag-user-preset">Pengguna: {1}</message>
+  
+  <!-- Status messages -->
+  <message id="raag-not-calculated">Belum Dihitung.</message>
+  <message id="raag-calculating">Menghitung...</message>
+  
+  <!-- General options -->
+  <message id="raag-spectrum-peak-options">Opsi Spektrum dan Puncak</message>
+  <message id="raag-rel-eff-curve-options">Opsi Kurva Efisiensi Relatif</message>
+  <message id="raag-fit-energy-cal">Sesuaikan Kal. Energi</message>
+  <message id="raag-back-sub">Kurangi Lat. Bel.</message>
+  <message id="raag-fwhm-est">Estimasi FWHM</message>
+  <message id="raag-fwhm-form">Bentuk FWHM</message>
+  <message id="raag-peak-skew">Kemiring Puncak</message>
+  <message id="raag-add-uncert">Ketidakpast. Tambh.</message>
+  <message id="raag-yield-info">Info Hasil</message>
+  
+  <!-- FWHM estimation methods -->
+  <message id="raag-fwhm-start-det-peaks">Mulai dari Det/Puncak</message>
+  <message id="raag-fwhm-start-peaks">Mulai dari Puncak</message>
+  <message id="raag-fwhm-fixed-peaks">Tetap pada Puncak</message>
+  <message id="raag-fwhm-start-det-eff">Mulai dari Eff. Det.</message>
+  <message id="raag-fwhm-fixed-det-eff">Tetap pada Eff. Det.</message>
+  
+  <!-- UI Elements -->
+  <message id="raag-same-z-same-age">Z sama usia sama</message>
+  <message id="raag-refit-peaks">Sesuaikan Ulang Puncak</message>
+  <message id="raag-use-det-eff">Gunakan Eff. Det.</message>
+  <message id="raag-none">Tidak Ada</message>
+  <message id="raag-nuclides">Nuklida</message>
+  <message id="raag-energy-ranges">Rentang Energi</message>
+  <message id="raag-free-peaks">Puncak Bebas</message>
+  
+  <!-- Main Tab Menu Items -->
+  <message id="raag-spec">Spek.</message>
+  <message id="raag-rel-eff">Eff. Rel.</message>
+  <message id="raag-result">Hasil</message>
+  
+  <!-- Menu Items -->
+  <message id="raag-apply-energy-cal">Terapkan Kal. Energi</message>
+  <message id="raag-show-ref-lines">Tampilkan Garis Gamma Ref.</message>
+  <message id="raag-hide-ref-lines">Sembunyikan Garis Gamma Ref.</message>
+  <message id="raag-set-peaks-foreground">Atur Puncak ke latar depan</message>
+  <message id="raag-show-background">Tampilkan Latar Belakang</message>
+  <message id="raag-hide-background">Sembunyikan Latar Belakang</message>
+  <message id="raag-roi-options">Opsi ROI:</message>
+  <message id="raag-remove-roi">Hapus ROI</message>
+  <message id="raag-combine-roi-left">Gabungkan dengan ROI di kiri</message>
+  <message id="raag-combine-roi-right">Gabungkan dengan ROI di kanan</message>
+  
+  <!-- Tooltips -->
+  <message id="raag-tt-fwhm-form">Jenis persamaan yang digunakan untuk memodelkan FWHM puncak sebagai fungsi energi.</message>
+  <message id="raag-tt-skew-type">Jenis kemiring untuk diterapkan pada puncak; parameter kemiring akan disesuaikan.</message>
+  <message id="raag-tt-u-pu-data-source">Sumber data nuklir untuk rasio percabangan gamma uranium dan plutonium.</message>
+  <message id="raag-tt-add-source">Tambahkan sumber.</message>
+  <message id="raag-tt-add-energy-range">Tambahkan rentang energi.</message>
+
+  <!-- Buttons -->
+  <message id="raag-add-free-peaks">tambah puncak bebas</message>
+  <message id="raag-clear-all-ranges">hapus semua rentang</message>
+  <message id="raag-html-report">Laporan HTML</message>
+  <message id="raag-xml-config">Konfigurasi XML</message>
+  
+  <!-- Dialog titles and messages -->
+  <message id="raag-clear-energy-ranges-title">Hapus rentang energi?</message>
+  <message id="raag-cant-perform-action">Tidak dapat melakukan tindakan ini.</message>
+  <message id="raag-divide-energy-range-title">Bagi Rentang Energi?</message>
+  <message id="raag-apply-fit-energy-cal-title">Terapkan kalibrasi energi yang disesuaikan?</message>
+  <message id="raag-cant-continue">Tidak Dapat Melanjutkan</message>
+  <message id="raag-no-peaks-in-solution">Tidak ada puncak dalam solusi saat ini</message>
+  <message id="raag-error">Kesalahan</message>
+  <message id="raag-unexpected-error-finding-original">Ada kesalahan tak terduga saat menemukan yang asli</message>
+  
+  <!-- Upload dialog -->
+  <message id="raag-import-xml-config-title">Impor file konfigurasi XML</message>
+  <message id="raag-select-isotopics-xml-file">Pilih file XML <em>Isotopik menurut nuklida</em> untuk digunakan</message>
+  <message id="raag-file-too-large-title">File terlalu besar untuk diunggah</message>
+  <message id="raag-drag-drop-note">
+    <p style="font-size: small;">Catatan: Anda juga dapat menyeret dan melepas file konfigurasi XML ke InterSpec</p>
+  </message>
+  
+  <!-- Tooltips -->
+  <message id="raag-sort-energy-ranges-tt">Urutkan rentang energi.</message>
+  <message id="raag-remove-all-ranges-tt">Hapus semua rentang energi.</message>
+  <message id="raag-remove-free-peaks-tt">Hapus semua puncak bebas, dan sembunyikan masukan puncak bebas.</message>
+  <message id="raag-free-peaks-tt">&quot;Puncak bebas&quot; adalah puncak dengan energi tertentu, yang tidak terkait dengan nuklida mana pun, dan amplitudonya disesuaikan dengan nilai terbaik untuk data. Puncak dapat secara opsional dilepaskan dari kendala FWHM fungsional juga.<br />Puncak bebas berguna untuk menangani puncak dari reaksi, atau dari nuklida yang tidak teridentifikasi.</message>
+  
+  <!-- Peak uncertainty dialog -->
+  <message id="raag-peaks-uncert-based-on-fit">Ketidakpastian puncak akan didasarkan pada penyesuaian efisiensi relatif total (mis., puncak saling membantu untuk mengurangi ketidakpastian), kecuali Anda memilih untuk menyesuaikannya kembali, dalam hal ini mereka tidak akan dibatasi oleh kurva Eff. Rel. dari bentuk fungsional FWHM.</message>
+  
+  <!-- User messages with energy formatting -->
+  <message id="raag-energy-already-in-range">{1} keV sudah berada dalam rentang energi [{2}, {3}] keV - tidak ada tindakan yang akan diambil.</message>
+  <message id="raag-extended-energy-range">Memperluas rentang energi yang ada menjadi [{1}, {2}] keV.</message>
+  <message id="raag-added-new-energy-range">Menambahkan rentang energi baru dari {1} hingga {2} keV.</message>
+  <message id="raag-split-roi-at">Pisahkan ROI pada {1} keV</message>
+  <message id="raag-add-free-peak-at">Tambahkan puncak bebas pada {1} keV</message>
+  <message id="raag-energy-range-no-contributions">Rentang energi {1} keV hingga {2} keV tidak mengandung kontribusi gamma yang signifikan.</message>
+  <message id="raag-divide-energy-range-msg">
+    Tindakan ini akan membagi rentang energi dari {1} keV hingga {2} keV menjadi {3} rentang energi terpisah.
+    <br />
+    <p>Apakah Anda ingin melanjutkan?</p>
+  </message>
+  <message id="raag-add-energy-offset"> tambahkan offset {1} keV</message>
+  <message id="raag-increase-gain-first"> tingkatkan gain sebesar {1}</message>
+  <message id="raag-increase-gain-additional"> dan tingkatkan gain sebesar {1}</message>
+  <message id="raag-increase-quad-first"> tingkatkan kuadrat sebesar {1}</message>
+  <message id="raag-increase-quad-additional"> dan tingkatkan kuadrat sebesar {1}</message>
+
+  <!-- Energy calibration application messages -->
+  <message id="raag-apply-energy-cal-msg">Ini akan{1} untuk latar depan primer{2}{3}.<br />Apakah Anda ingin melakukan ini?</message>
+  <message id="raag-and-background"> dan latar belakang</message>
+  <message id="raag-files"> file</message>
+  <message id="raag-file"> file</message>
+  <message id="raag-energy-cal-updated">Telah memperbarui kalibrasi energi untuk latar depan yang ditampilkan{1}.</message>
+  <message id="raag-and-background-period"> dan latar belakang</message>
+
+  <!-- Error messages -->
+  <message id="raag-error-creating-tool">Kesalahan membuat alat Isotopik Akt. Relatif: {1}</message>
+  <message id="raag-handle-double-click-error">Kesalahan handleDoubleLeftClick: {1}</message>
+  <message id="raag-expected-state-info">Informasi status yang diharapkan untuk '{1}' tidak tersedia - ini tidak diharapkan - maaf!</message>
+  <message id="raag-state-info-not-saved">Informasi status sebelumnya tidak dapat disimpan untuk '{1}' - ini tidak diharapkan - maaf!</message>
+  <message id="raag-error-deserializing">Kesalahan de-serialisasi status alat: {1}</message>
+  <message id="raag-error-loading-preset">Kesalahan memuat pra-atur: {1}</message>
+  <message id="raag-error-applying-energy-cal">Kesalahan menerapkan kalibrasi energi: {1}</message>
+  <message id="raag-error-loading-xml-config">Kesalahan memuat file konfigurasi XML <em>Isotopik menurut nuklida</em>: {1}</message>
+  
+</messages>
+

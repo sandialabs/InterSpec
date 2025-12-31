@@ -1,0 +1,444 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+
+  <!--When you add a video to the content, you should use a template placeholder
+      in the content (e.x. ${myvideobinding}) to allow the C++ to bind this
+      video to a video playing widget in the WTemplate widget.  However since we
+      dont want to have to hard code the bind placeholder name, and which video
+      it points to in the C++, this next videoinfo message section encodes what
+      placeholder names the C++ templating code should look for, as well as
+      the actual video files and titles the placeholder name cooresponds to.
+      The below JSON object is indexed by keys that have the same value
+      as the 'id' for the message they coorespond to; the key cooresponds to an
+      array of objects that each have at least a "key" and "file" member, but
+      may also have an optional "title" member.
+  -->
+  <message id="videoinfo">
+  {
+    "1intro-video":
+      [
+        {   "key":"video1",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpecMouseIntro.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpecMouseIntro.ogv",
+            "title":"Pengantar Mouse"
+        }
+      ],
+    "3gamma-lines-video":
+       [
+        {   "key":"video2",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_GammaLines.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_GammaLines.ogv",
+            "title":"Garis Gamma"
+        }
+       ],
+    "4calibration-video":
+       [
+        {   "key":"video3",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_calibration.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_calibration.ogv",
+            "title":"Kalibrasi"
+        }
+       ],
+    "2nuclide-peak-association-video":
+       [
+        {   "key":"video4",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_AssociatePeaksWithNuclides.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_AssociatePeaksWithNuclides.ogv",
+            "title":"Identifikasi Puncak"
+        }
+       ],
+    "5activity-shielding-fit-video":
+       [
+        {   "key":"video5",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_activityShieldingFit.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_activityShieldingFit.ogv",
+            "title":"Aktivitas dan Perisai"
+        }
+       ]
+  }
+  </message>
+
+  <message id='mobile-mouse-interactions'>
+	   <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">Perbesar</div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_zoom_in.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         Untuk memperbesar bagian tertentu dari spektrum,
+         <u>dorong</u> dua jari menjauh satu sama lain.
+      </div>
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">Perkecil</div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_zoom_out.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         Untuk memperkecil,
+         <u>jepit</u> dua jari menuju satu sama lain.
+      </div>
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">Ubah Rentang Energi</div>
+    <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	    <img src="InterSpec_resources/static_text/images/touch_energy_pan.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         Untuk bergerak sepanjang sumbu x (energi) dari grafik,
+         letakkan jari di grafik dan gerakkan ke kiri atau kanan untuk mengubah energi yang ditampilkan.
+      </div>
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+      <div class="UseInstructionHeader">Sesuaikan Puncak</div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center"><h3><b>Metode 1</b></h3></div>
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_fit_peak.png" style="width:70%" />
+	  </div>
+    <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+      <u>Ketuk dua kali</u> pada spektrum di mana Anda ingin menyesuaikan puncak.
+    </div>
+	   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_multipeak_fit.png" style="width:70%" />
+	  </div>
+	  <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+        <u>Mengetuk dua kali</u> lagi dekat puncak yang ada akan menyesuaikan lebih banyak puncak.
+    </div>
+	  <div style="padding-top: 10px" align="center"><h3><b>Metode 2</b></h3></div>
+	  <div style="padding-top: 10px" align="center">
+	    <img src="InterSpec_resources/static_text/images/mobile_multipeak.jpg" style="width:70%" />
+	  </div>
+	  <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+      Jika Anda ingin memaksa sejumlah puncak tertentu dalam wilayah yang diminati:
+      <u>seret</u> dua jari yang sejajar horizontal di atas wilayah yang diminati.
+      <u>Lepaskan</u> jari Anda dan <u>pilih</u> jumlah puncak yang ingin Anda identifikasi.
+    </div>
+	  <div style="padding-top: 10px" align="center"><h3><b>Metode Lain</b></h3>
+      Di <em>Menu</em>&rarr;<em>Alat</em>&rarr;<em>Pengelola Puncak</em> Anda dapat secara otomatis menyesuaikan
+      semua puncak dalam spektrum menggunakan
+      tombol <img src="InterSpec_resources/static_text/images/mobil_search_for_peaks.png" style="height:1.25em;" />.
+      Disarankan untuk menampilkan garis referensi nuklida sebelum menggunakan
+      pencarian puncak otomatis ini sehingga puncak akan secara otomatis dikaitkan dengan nuklida
+      yang bertanggung jawab untuk membuat puncak.
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+      <div class="UseInstructionHeader">Luncurkan Editor Puncak</div>
+         Jika Anda ingin menyesuaikan ulang, atau secara manual menyesuaikan puncak, gunakan <em>Editor Puncak</em>
+         dengan menahan jari Anda pada puncak selama sekitar satu detik, dan menu akan muncul
+         untuk memungkinkan Anda memilih apa yang ingin Anda lakukan.
+         <div style="padding-top: 1px" align="center">
+           <img src="InterSpec_resources/static_text/images/mobile_right_click.png"  class="imageBorder" style="width:75%;" />
+         </div>
+	    </div>
+    </div>
+	  <div class="UseInstructionSection">
+      <div class="UseInstructionHeader">Hapus Puncak</div>
+      <p>
+        Cara termudah untuk menghapus puncak adalah dengan menahan jari Anda di atasnya selama sekitar satu detik,
+        dan menu akan muncul di mana Anda dapat memilih untuk menghapus puncak.
+        <div style="padding-top: 1px" align="center">
+          <img src="InterSpec_resources/static_text/images/mobile_right_click.png"  class="imageBorder" style="width:75%;" />
+        </div>
+      </p>
+
+      <p>
+        Anda juga dapat menempatkan dua jari yang mencakup rentang energi puncak yang ingin Anda hapus, ke layar, dan menggerakkannya ke atas.
+        Setiap puncak dengan sentroid di antara jari Anda akan sepenuhnya dihapus; Anda juga dapat mengurangi rentang energi puncak
+        menggunakan gerakan yang sama, selama sentroid puncak tidak jatuh di antara jari Anda.
+        <div style="padding-top: 1px" align="center">
+          <img src="InterSpec_resources/static_text/images/mobile_delete_peaks.jpg"  class="imageBorder" style="width:75%;" />
+        </div>
+      </p>
+
+      <p>
+        <em>Pengelola Puncak</em> (<b>Menu</b>&rarr;<b>Alat</b>&rarr;<b>Pengelola Puncak</b>) dan
+        <em>Editor Puncak</em> (tahan jari pada puncak selama satu detik, pilih <b>Editor Puncak</b>) juga dapat menghapus puncak.
+      </p>
+    </div>
+  </message>
+
+
+<!--
+For the desktop-mouse-interactions-info each JSON object should have a 'title',
+a 'img' and a optional 'desc_message_id' field.  If 'desc_message_id' is
+specified then this field refers to the id of a <message> element that contains
+the XHTML message for that entry.
+-->
+<message id='desktop-mouse-interactions-info'>
+{
+  "01desktop-mouse-interactions-zoominout": {
+    "title": "Perbesar/Perkecil",
+    "img": "InterSpec_resources/images/ZoomInOut.gif",
+    "desc_message_id": "01desktop-mouse-interactions-zoominout-desc"
+  },
+  "02desktop-mouse-interactions-shiftenergyrange": {
+    "title": "Geser Energi",
+    "img": "InterSpec_resources/images/ERShift.gif",
+    "desc_message_id": "02desktop-mouse-interactions-shiftenergyrange-desc"
+  },
+  "03desktop-mouse-interactions-energyslider": {
+    "title": "Penggeser Energi",
+    "img": "InterSpec_resources/images/energy_slider.gif",
+    "desc_message_id": "03desktop-mouse-interactions-energyslider-desc"
+  },
+  "04desktop-mouse-interactions-identifypeaks": {
+    "title": "Penyesuaian Puncak",
+    "img": "InterSpec_resources/images/PeakFit.gif",
+    "desc_message_id": "04desktop-mouse-interactions-identifypeaks-desc"
+  },
+  "04desktop-mouse-interactions-multipeaks": {
+    "title": "Penyesuaian ROI",
+    "img": "InterSpec_resources/images/multi_peak_fit.gif",
+    "desc_message_id": "04desktop-mouse-interactions-multipeaks-desc"
+  },
+  "07desktop-mouse-interactions-deletepeaks": {
+    "title": "Hapus Puncak",
+    "img": "InterSpec_resources/images/DeletePeaks.gif",
+    "desc_message_id": "07desktop-mouse-interactions-deletepeaks-desc"
+  },
+  "06desktop-mouse-interactions-visualcalibration": {
+    "title": "Kalibrasi Energi",
+    "img": "InterSpec_resources/images/VisRecalib.gif",
+    "desc_message_id": "06desktop-mouse-interactions-visualcalibration-desc"
+  },
+  "05desktop-mouse-interactions-peakeditor": {
+    "title": "Editor Puncak",
+    "img": "InterSpec_resources/images/PeakEdit.gif",
+    "message-id": "05desktop-mouse-interactions-peakeditor-desc"
+  },
+  "08desktop-mouse-interactions-adjustROI": {
+    "title": "Sesuaikan ROI",
+    "img": "InterSpec_resources/images/roi_range_adjust.gif",
+    "desc_message_id": "08desktop-mouse-interactions-adjustROI-desc"
+  },
+  "08desktop-mouse-interactions-scale-y": {
+    "title": "Skala Y",
+    "img": "InterSpec_resources/images/yscale.gif",
+    "desc_message_id": "08desktop-mouse-interactions-scale-y-desc"
+  },
+  "09desktop-mouse-interactions-countgamma": {
+    "title": "Hitung Gamma",
+    "img": "InterSpec_resources/images/ERCount.gif",
+    "desc_message_id": "09desktop-mouse-interactions-countgamma-desc"
+  },
+  "10desktop-shortcuts" : {
+    "title": "Pintasan Keyboard",
+    "desc_message_id": "10desktop-shortcuts-desc"
+  }
+}
+</message>
+
+<message id='01desktop-mouse-interactions-zoominout-desc'>
+<div><center>Klik-Kiri Seret ke <b>kanan</b> untuk memperbesar.</center></div>
+<div><center>Klik-Kiri Seret ke <b>kiri</b> untuk memperkecil.</center></div>
+</message>
+
+<message id='02desktop-mouse-interactions-shiftenergyrange-desc'>
+<center>Klik-Kanan Seret</center>
+</message>
+
+
+<message id='03desktop-mouse-interactions-energyslider-desc'>
+<center> Dari menu <b>Tampilan</b> pilih &quot;<b>Tampilkan Penggeser Energi</b>&quot;.</center>
+<div>Ini adalah cara yang mudah digunakan untuk menyesuaikan rentang energi spektrum.</div>
+<div><b>InterSpec</b> akan mengingat jika Anda ingin grafik penggeser energi ditampilkan.</div>
+</message>
+
+<message id='04desktop-mouse-interactions-identifypeaks-desc'>
+<center>
+<p style="font-size: 14px">Ada beberapa cara untuk menyesuaikan puncak, termasuk: </p>
+</center>
+<ol>
+  <li>Klik-Kiri Ganda. Anda dapat mengklik dua kali dekat puncak yang sama lagi untuk menambahkan yang lain.</li>
+  <li><b><kbd>CTRL</kbd></b> + Klik-Kiri Seret &rarr; Klik-Kiri (lihat &quot;Penyesuaian ROI&quot;) </li>
+  <li>Dari tab &quot;<b>Pengelola Puncak</b>&quot; klik &quot;<b>Tambah</b>&quot; &rarr;. Anda kemudian dapat menyesuaikan parameter dalam tabel ke nilai yang Anda inginkan.</li>
+  <li>Dari tab &quot;<b>Pengelola Puncak</b>&quot; klik &quot;<b>Cari Puncak</b>&quot; untuk menyesuaikan semua puncak dalam spektrum.</li>
+<li>Klik-kanan pada puncak yang ada dan pilih &quot;<b>Tambah Puncak</b>&quot; untuk menambahkan puncak ke ROI yang sama.</li>
+</ol>
+
+<p>Petunjuk: sebelum menyesuaikan puncak, berguna untuk menampilkan garis referensi dari
+nuklida yang bertanggung jawab untuk itu, sehingga ketika puncak disesuaikan, itu akan dikaitkan
+dengan nuklida tersebut. Informasi ini digunakan untuk menyesuaikan kalibrasi energi, respons detektor, aktivitas, dan jumlah perisai.
+</p>
+</message>
+
+
+<message id='04desktop-mouse-interactions-multipeaks-desc'>
+<div>Untuk menyesuaikan sejumlah puncak tertentu dalam Wilayah yang Diminati (ROI):</div>
+<center>
+<b><kbd>CTRL</kbd></b> + Klik-Kiri Seret &rarr; dan kemudian pilih berapa banyak puncak.
+</center>
+</message>
+
+<message id='07desktop-mouse-interactions-deletepeaks-desc'>
+<ol>
+<li>Klik-Kanan &rarr; &quot;<b>Hapus Puncak</b>&quot;</li>
+<li>Klik-Kanan &rarr; &quot;<b>Editor Puncak</b>&quot; &rarr; &quot;<b>Hapus</b>&quot;</li>
+<li><b><kbd>SHIFT</kbd></b> + Klik-Kiri Seret</li>
+<li>Klik-Kiri &quot;<b>Hapus Semua Puncak</b>&quot; &rarr; Klik-Kiri &quot;<b>Ya</b>&quot;</li>
+<li>Seret satu sisi ROI melewati sisi lainnya.</li>
+</ol>
+</message>
+
+<message id='06desktop-mouse-interactions-visualcalibration-desc'>
+<div>Untuk menyesuaikan kalibrasi energi secara grafis:</div>
+<center> <kbd>CTRL</kbd> + <kbd>ALT</kbd> + Klik-Kiri Seret &rarr; <u>Opsional</u>: Sesuaikan Kuantitas &rarr; &quot;<b>Terima</b>&quot;</center>
+<div>Catatan: jika Anda melakukan tindakan ini lagi, seperti pertama pada puncak energi tinggi, kemudian pada puncak energi rendah (atau sebaliknya), dialog yang muncul akan
+memberi Anda opsi untuk mempertahankan kedua tindakan dengan menyesuaikan offset dan gain sehingga kedua puncak akan tetap pada energi yang Anda seret.
+</div>
+<p>Tab &quot;Kalibrasi Energi&quot; juga memungkinkan Anda untuk secara manual menyesuaikan
+koefisien kalibrasi energi, atau menyesuaikannya menggunakan nuklida yang terkait dengan puncak.
+</p>
+</message>
+
+<message id='05desktop-mouse-interactions-peakeditor-desc'>
+<div><center>Klik-Kanan &rarr; &quot;Editor Puncak&quot;</center></div>
+</message>
+
+
+
+<message id='08desktop-mouse-interactions-adjustROI-desc'>
+<center><div>Letakkan mouse di dekat tepi Wilayah yang Diminati (ROI) dan seret.</div></center>
+<div>Mouse harus berada dalam rentang y puncak, dan dalam 10 piksel dari tepi ROI.</div>
+</message>
+
+
+<message id='08desktop-mouse-interactions-scale-y-desc'>
+<center>Skalakan amplitudo latar belakang dan/atau spektrum sekunder relatif terhadap latar depan
+dengan memilih <b>Tampilan</b> &rarr; &quot;<b>Tampilkan Penskalaan Sumbu-Y</b>&quot;.
+</center>
+<p>Untuk mengembalikan latar belakang atau spektrum sekunder ke normalisasi waktu-hidup, klik tombol &quot;Normalisasi&quot; pada tab &quot;File Spektrum&quot;.</p>
+<p><b>InterSpec</b> akan mengingat jika Anda ingin penggeser ini ditampilkan ketika ada latar belakang atau spektrum sekunder,
+tetapi item menu akan dinonaktifkan jika tidak ada latar belakang atau spektrum sekunder yang dimuat.</p>
+</message>
+
+
+<message id='09desktop-mouse-interactions-countgamma-desc'>
+  <center>
+    <ol>
+      <li><b><kbd>SHIFT</kbd></b> + <b><kbd>ALT</kbd></b> + Klik-Kiri Seret &rarr; <u>Opsional</u>: Sesuaikan Kuantitas</li>
+      <li><b>Alat</b> &rarr; <b>Jumlah Rentang Energi</b></li>
+    </ol>
+  </center>
+</message>
+
+<message id='10desktop-shortcuts-desc'>
+
+  <h3>Pintasan Keyboard</h3>
+  <ul>
+    <li>
+      <b><code>Ctrl-1</code></b> hingga <b><code>Ctrl-7</code></b>: Beralih ke tab alat 1-7 (yaitu, tab &quot;<code>File Spektrum</code>&quot;, &quot;<code>Pengelola Puncak</code>&quot;, &quot;<code>Fotopuncak Referensi</code>&quot;, dll.), atau
+      jika <em>Tab Alat</em> disembunyikan, menampilkan jendela alat yang sesuai.
+    </li>
+    <li>
+      <b><code>Ctrl-h</code></b>: Menampilkan <em>Bantuan</em> dalam aplikasi.
+    </li>
+    <li>
+      <b><code>Ctrl-i</code></b>: Menampilkan layar <em>Informasi Selamat Datang</em>.
+    </li>
+    <li>
+      <b><code>Ctrl-k</code></b>: Menghapus semua garis fotopuncak referensi yang ditampilkan.
+    </li>
+    <li>
+      <b><code>Ctrl-l</code></b>: Beralih sumbu y spektrum antara log dan linear.
+    </li>
+    <li>
+      <b><code>Ctrl-s</code></b>: Menyimpan status aplikasi saat ini.
+    </li>
+    <li>
+      <b><code>Ctrl-e</code></b>: Membuka dialog ekspor file spektrum.
+    </li>
+    <li>
+      <b><code>Ctrl-z</code></b>: Membatalkan tindakan terakhir.
+    </li>
+    <li>
+      <b><code>Ctrl-Shift-z</code></b>: Mengulangi tindakan yang dibatalkan terakhir.
+    </li>
+  </ul>
+
+  <h3>Pengubah Mouse untuk Interaksi Spektrum</h3>
+  Selain pintasan ini, Anda dapat mengklik judul sumbu y untuk beralih skala log/linear; mengklik judul sumbu x akan menampilkan/menyembunyikan grafik strip ringkasan.
+  <ul>
+    <li>
+      <b>Klik ganda</b>: Menyesuaikan puncak di spektrum latar depan pada lokasi yang diklik.
+    </li>
+    <li>
+      <b>Alt + Klik ganda</b>: Menyesuaikan puncak di spektrum latar belakang pada lokasi yang diklik.
+    </li>
+    <li>
+      <b>Shift + Klik ganda</b>: Menyesuaikan puncak di spektrum sekunder pada lokasi yang diklik.
+    </li>
+    <li>
+      <b>Shift + Tarik kiri</b>: Mode hapus puncak - menghapus puncak dalam rentang energi yang ditarik.
+    </li>
+    <li>
+      <b>Alt + Shift + Tarik kiri</b>: Mode hitung gamma - menghitung sinar gamma dalam rentang energi yang ditarik.
+    </li>
+    <li>
+      <b>Alt + Ctrl + Tarik kiri</b>: Mode kalibrasi ulang - mengkalibrasi ulang energi menggunakan rentang yang ditarik.
+    </li>
+    <li>
+      <b>Command + Tarik kiri (Mac)</b> atau <b>Alt + Tarik kiri (Windows)</b>: Tarik secara vertikal untuk memperbesar/memperkecil pada sumbu y.
+    </li>
+  </ul>
+
+  <h3>Pengubah Mouse untuk Interaksi Grafik Waktu</h3>
+  Gunakan menu di sudut kanan atas grafik waktu untuk menyederhanakan interaksi.
+  <ul>
+    <li>
+      <b>Klik atau tarik</b>: Memilih sampel untuk spektrum latar depan.
+    </li>
+    <li>
+      <b>Alt + Klik/tarik</b> atau <b>tahan tombol 'b'</b>: Memilih sampel untuk spektrum latar belakang.
+    </li>
+    <li>
+      <b>Meta + Klik/tarik</b> atau <b>tahan tombol 's'</b>: Memilih sampel untuk spektrum sekunder.
+    </li>
+    <li>
+      <b>Shift + Klik/tarik</b>: Menambahkan sampel ke pilihan saat ini.
+    </li>
+    <li>
+      <b>Ctrl + Klik/tarik</b>: Menghapus sampel dari pilihan saat ini.
+    </li>
+  </ul>
+</message>
+
+
+  <message id='1intro-video'>
+     <center>${video1}</center>
+  </message>
+
+  <message id='3gamma-lines-video'>
+     <center>${video2}</center>
+  </message>
+
+  <message id='4calibration-video'>
+     <center>${video3}</center>
+  </message>
+
+  <message id='2nuclide-peak-association-video'>
+     <center>${video4}</center>
+  </message>
+
+  <message id='5activity-shielding-fit-video'>
+     <center>${video5}</center>
+  </message>
+
+
+  <message id="known-issues">
+    Masalah yang diketahui saat ini:
+    <ul>
+<li><b>Semua:</b> (Pengelola Puncak) &quot;ID Nuklida&quot; dalam kasus langka tidak berfungsi </li>
+        <li><b>Semua:</b> &quot;Simpan Status Saat Keluar&quot; dalam kasus langka tidak berfungsi</li>
+    </ul>
+  </message>
+</messages>
+

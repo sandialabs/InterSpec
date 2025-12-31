@@ -220,8 +220,17 @@ void RefLineDynamic::start_init_always_sources()
     // TODO: move this to being done in a background thread
     m_has_inited = true;
     
-    string always_defs_file = SpecUtils::append_path(InterSpec::writableDataDirectory(), "dynamic_ref_lines.xml");
-    if( !SpecUtils::is_file(always_defs_file) )
+    string always_defs_file;
+    
+    try
+    {
+      always_defs_file = SpecUtils::append_path(InterSpec::writableDataDirectory(), "dynamic_ref_lines.xml");
+    }catch( std::exception &e )
+    {
+      //writableDataDirectory not set
+    }
+    
+    if( always_defs_file.empty() || !SpecUtils::is_file(always_defs_file) )
       always_defs_file = SpecUtils::append_path(InterSpec::staticDataDirectory(), "dynamic_ref_lines.xml");
     
     map<string,ReferenceLinePredef::NucMix> nuc_mixes;
@@ -816,7 +825,7 @@ void RefLineDynamic::startUpdateLines()
         assert( 0 );
         cerr << "findCandidates(...): error opening default detector file" << endl;
         detPtr->setIntrinsicEfficiencyFormula( "1.0", 3.0*PhysicalUnits::cm, PhysicalUnits::keV,
-                                              0.0f, 0.0f, DetectorPeakResponse::EffGeometryType::FarField );
+                                              0.0f, 0.0f, DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic);
       }
       
       detector = detPtr;

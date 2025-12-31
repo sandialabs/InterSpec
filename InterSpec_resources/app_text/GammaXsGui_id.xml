@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- gxsg- is short for GammaXsGui -->
+  <message id="gxsg-material-formula">Material/Formula</message>
+  <message id="gxsg-tt-material">
+    Anda dapat memasukkan nama material atau elemen yang telah ditentukan sebelumnya (hapus teks formulir
+    dan klik panah di kanan formulir untuk melihat semua opsi yang telah ditentukan), atau Anda dapat
+    memasukkan formula kimia seperti 'H0.112 O0.88' di mana angka adalah
+    densitas dalam g/cm3, (atau gunakan fraksi massa dan bidang Densitas), dari
+    elemen sebelumnya.
+  </message>
+  <message id="gxsg-total-atten-xs">Penampang att. total</message>
+  <message id="gxsg-compton-label">Compton</message>
+  <message id="gxsg-rayleigh-label">Rayleigh</message>
+  <message id="gxsg-photoelec-label">Fotoelektrik</message>
+  <message id="gxsg-pp-label">Produksi pasangan</message>
+  <message id="gxsg-mass-avrg-an">Nomor atom rerata massa</message>
+  <message id="gxsg-opt-atten">Atenuasi (opsional):</message>
+  <message id="gxsg-density-label">Densitas:</message>
+  <message id="gxsg-thickness-label">Ketebalan:</message>
+  <message id="gxsg-tt-thickness">Ketebalan atenuator.</message>
+  <message id="gxsg-trans-frac-label">Fraksi Trans.</message>
+  <message id="gxsg-tt-trans-frac">Ini adalah fraksi gamma yang akan melewati perisai yang ditentukan.</message>
+  <message id="gxsg-tt-distance">Ini adalah jarak dari pusat sumber ke detektor.</message>
+  <message id="gxsg-intrinsic-eff-label">Efisiensi Intrinsik</message>
+  <message id="gxsg-tt-intrinsic-eff">Efisiensi intrinsik (efisiensi deteksi dalam puncak dari gamma yang mengenai muka detektor).</message>
+  <message id="gxsg-solid-angle-frac-label">Fraksi Sudut Solid</message>
+  <message id="gxsg-tt-solid-angle-frac">Fraksi sudut solid dari detektor yang dipilih pada jarak yang ditentukan.</message>
+  <message id="gxsg-det-eff-label">Efisiensi Deteksi</message>
+  <message id="gxsg-tt-det-eff">Efisiensi intrinsik dikalikan fraksi sudut solid. Mis. fraksi gamma yang keluar dari perisai yang akan terdeteksi. Tidak termasuk atenuasi.</message>
+  <message id="gxsg-total-eff-label">Efisiensi Total</message>
+  <message id="gxsg-tt-total-eff">Fraksi transmisi dikalikan efisiensi deteksi. Mis. fraksi gamma yang dipancarkan dari sumber yang akan terdeteksi.</message>
+  <message id="gxsg-warn-suspect">Kalkulasi XS mungkin diragukan: {1}</message>
+  <message id="gxsg-tool-state-title">Status Alat Gamma XS</message>
+  <message id="gxsg-tool-state-text">Status saat ini alat xs.</message>
+</messages>
+

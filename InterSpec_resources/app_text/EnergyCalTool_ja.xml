@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ect- is short for EnergyCalTool -->
+  <message id="ect-no-spec">スペクトルが読み込まれていません</message>
+  <message id="ect-more-act">その他のアクション</message>
+  <message id="ect-linearize">線形化...</message>
+  <message id="ect-tt-linearize">各エネルギーチャンネルが同じ幅を持つようにスペクトルを線形化します。</message>
+  <message id="ect-truncate">エネルギーを切り詰め...</message>
+  <message id="ect-tt-truncate">データチャンネルを破棄してスペクトルのエネルギー範囲を切り詰めます。</message>
+  <message id="ect-combine">チャンネルを結合...</message>
+  <message id="ect-tt-combine">エネルギーチャンネルを結合してスペクトルのデータチャンネル数を減らします</message>
+  <message id="ect-to-frf">FRFに...</message>
+  <message id="ect-tt-to-frf">エネルギー校正タイプを全範囲分数に変換します</message>
+  <message id="ect-to-poly">多項式に...</message>
+  <message id="ect-tt-to-poly">エネルギー校正タイプを多項式に変換します。</message>
+  <message id="ect-multi-file">マルチファイル校正...</message>
+  <message id="ect-tt-multi-file">
+    ピークがフィットされた複数のスペクトルを1つまたは複数のスペクトルファイルから使用して
+    エネルギー校正を実行できます。それぞれのスペクトルが異なるテスト線源を持つ
+    低分解能検出器に特に有用です
+  </message>
+  <message id="ect-tt-CALp">現在のエネルギー校正を含む.CALpファイルをダウンロードします。
+    このファイルを後でInterSpecにドラッグ&amp;ドロップして、このエネルギー校正を再利用できます。
+    これは校正を一貫して調整する必要がある検出器のデータを頻繁に使用する場合に特に有用です。
+  </message>
+  <message id="ect-export-CALp-msg">このCALpファイルをInterSpecにドラッグ&amp;ドロップして、後で異なるスペクトルに適用できます。</message>
+  <message id="ect-fit-coeff-btn">係数をフィット</message>
+  <message id="ect-tt-fit-coeff-btn">
+    フィットピークに関連するフォトピークの期待エネルギーを使用してエネルギー係数をフィットします。
+    フィットする係数が選択されていない場合、または選択されたピークが係数より少ない場合、このボタンは無効になります。
+  </message>
+  <message id="ect-apply-changes-to">変更を適用</message>
+  <message id="ect-disp-dets">表示された検出器</message>
+  <message id="ect-all-dets">全ての検出器</message>
+  <message id="ect-disp-samples">表示されたサンプル</message>
+  <message id="ect-all-samples">全てのサンプル</message>
+  <message id="ect-calib-coeffs">校正係数</message>
+  <message id="ect-cal-peaks">校正ピーク</message>
+  <message id="ect-CALp-no-meas">{1}の測定が表示されていません</message>
+  <message id="ect-CALp-not-applic-det">校正変更は{1}のどの検出器にも適用できません</message>
+  <message id="ect-CALp-not-applic-sample">校正変更は{1}のどのサンプルにも適用できません</message>
+  <message id="ect-CALp-invalid-input">無効な入力エネルギー校正</message>
+  <message id="ect-CALp-num-channel-mismatch">新しい校正チャンネル数（{1}）が古い校正（{2}）と一致しません。</message>
+  <message id="ect-CALp-missing-det">CALpファイルには検出器の校正が不足しています: {1}。{2}</message>
+  <message id="ect-CALp-extra-det">  存在しない検出器の追加校正がありました: {1}。</message>
+  <message id="ect-CALp-named-vs-unamed">CALpファイルの全ての校正が検出器名を指定していますが、現在のスペクトル検出器は無名です。</message>
+  <message id="ect-CALp-no-cal-for-det">検出器 '{1}' の校正が利用できません</message>
+  <message id="ect-CALp-no-prev-for-det">検出器 '{1}' に使用する以前の校正を特定できませんでした。</message>
+  <message id="ect-CALp-nchannel-mismatch-det">新しい校正チャンネル数（{1}）が検出器 '{3}' の古い校正（{2}）と一致しません。</message>
+  <message id="ect-import-CALp">CALpファイルをインポート</message>
+  <message id="ect-select-CALp"><p>使用するCALpファイルを選択</p></message>
+  <message id="ect-upload-CALp-to-large">ファイルが大きすぎてアップロードできません</message>
+  <message id="ect-invalid-CALp">有効なCALpファイルではありません</message>
+  <message id="ect-CALp-drag-n-drop-note"><p style="font-size: small;">注: CALpファイルをInterSpecにドラッグ&amp;ドロップすることもできます<br /></p></message>
+  <message id="ect-change-made-invalid">校正変更によりエネルギー校正が無効になりました{1}。エラー: {2}</message>
+  <message id="ect-for-the-fore"> フォアグラウンド用</message>
+  <message id="ect-for-the-back"> バックグラウンド用</message>
+  <message id="ect-for-the-sec"> セカンダリスペクトル用</message>
+  <message id="ect-set-cal-invalid-nchan">サンプル {1}、検出器 '{2}' は {3} チャンネルですが、設定される校正は {4} です。</message>
+  <message id="ect-error-setting-cal">新しいエネルギー校正の設定エラー: {1}</message>
+  <message id="ect-add-dev-pair-made-invalid">偏差ペアの追加によりエネルギー校正が無効になりました{1}。エラー: {2}</message>
+  <message id="ect-unexpected-error-prev-coefs">以前の校正係数の取得中に予期しないエラー - 変更を適用しません</message>
+  <message id="ect-changed-cal-not-selected">変更したエネルギー校正が変更適用対象としてマークされていないようです。修正してください。</message>
+  <message id="ect-dev-pair-change-invalid">偏差ペアの変更によりエネルギー校正が無効になりました。エラー: {1}</message>
+  <message id="ect-set-dev-pair-err">この検出器の偏差ペア設定中にエラーが発生しました。</message>
+  <message id="ect-dev-applied-dets-samples">偏差ペアは '{1}' 検出器のみに適用されましたが、全てのサンプル番号{2}に適用されました。</message>
+  <message id="ect-dev-applied-to-samples">偏差ペアは全てのサンプル番号{1}に適用されました。</message>
+  <message id="ect-of-the-fore"> フォアグラウンドの。</message>
+  <message id="ect-of-the-sec"> セカンダリの。</message>
+  <message id="ect-of-the-back"> バックグラウンドの。</message>
+  <message id="ect-err-not-enough-peaks">現在校正係数をフィットできません。フィット用に選択した係数と同じ数以上のピークを選択する必要があります。</message>
+  <message id="ect-no-peaks">利用可能なピークがありません。</message>
+  <message id="ect-select-cal-of-disp-det">表示された検出器の校正を選択してください</message>
+  <message id="ect-not-enough-channel">データに十分なチャンネルがありません。</message>
+  <message id="ect-no-coeff-selected">フィットする係数を少なくとも1つ選択する必要があります。</message>
+  <message id="ect-fail-min">エラーメッセージ 行列および反復アプローチの両方を使用したエネルギー校正のフィットに失敗しました</message>
+  <message id="ect-fit-successful">フィットによりエネルギー校正が更新されました。</message>
+  <message id="ect-fail-fit">ピーク平均のフィットによる校正に失敗しました。{1}</message>
+  <message id="ect-del-graphical-msg">スペクトルの別の部分でALT+CTRL+ドラッグにより再校正する場合、この校正の効果も保持するオプションが提供されます。</message>
+  <message id="ect-lc-disp-dets">表示された検出器</message>
+  <message id="ect-lc-all-dets">全ての検出器</message>
+  <message id="ect-lc-all-samples">全てのサンプル</message>
+  <message id="ect-lc-disp-samples">表示されたサンプル</message>
+  <message id="ect-short-fore">フォア</message>
+  <message id="ect-short-back">バック</message>
+  <message id="ect-short-secondary">セカ</message>
+  
+  <message id="ect-offset-label">オフセット</message>
+  <message id="ect-linear-label">線形</message>
+  <message id="ect-quad-label">二次</message>
+  <message id="ect-cubic-label">三次</message>
+  <message id="ect-nth-label">{1}次</message>
+  
+  <!-- Energy calibration types -->
+  <message id="ect-cal-type-lower-channel">下限チャンネルエネルギー</message>
+  <message id="ect-cal-type-not-defined">未定義</message>
+  <message id="ect-cal-type-polynomial">多項式</message>
+  <message id="ect-cal-type-default-poly">デフォルト多項式</message>
+  <message id="ect-cal-type-frf">全範囲分数</message>
+  <message id="ect-convert-to-poly-msg">編集するには多項式校正に変換してください</message>
+  <message id="ect-deviation-pairs">偏差ペア</message>
+</messages>

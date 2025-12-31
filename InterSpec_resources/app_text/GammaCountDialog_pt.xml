@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- gcd- is short for GammaCountDialog
+  -->
+  <message id="gcd-summary">Conte o número de gamas na faixa de energia especificada.</message>
+  <message id="gcd-lower-energy-label">Energia Inferior</message>
+  <message id="gcd-upper-energy-label">Energia Superior</message>
+  <message id="gcd-shift-alt-drag">Shift-Alt-Arrastar</message>
+  <message id="gcd-shift-option-drag">Shift-⌘-Arrastar</message>
+  <message id="gcd-select-shortcut">Você também pode fazer <b>{1}</b> no gráfico para selecionar a faixa de energia</message>
+  <message id="gcd-foreground-counts-label">Contagens Primeiro Plano:</message>
+  <message id="gcd-secondary-counts-label">Contagens Secundárias:</message>
+  <message id="gcd-background-counts-label">Contagens Fundo:</message>
+  <message id="gcd-tt-n-sigma">
+    O número de diferença sigma é calculado dividindo a
+    diferença entre o primeiro plano e o fundo (escalonado),
+    dividido pela incerteza. A incerteza é calculada
+    somando as incertezas estatísticas do primeiro plano e fundo em
+    quadratura, então tirando a raiz quadrada
+  </message>
+  <message id="gcd-qr-window-title">Estado da Soma de Faixa de Energia</message>
+  <message id="gcd-qr-window-text">Estado atual da ferramenta de soma de faixa de energia.</message>
+  <message id="gcd-background-scale-note">O fundo está sendo escalonado por {1}</message>
+  <message id="gcd-and-secondary-scaled"> e secundário por </message>
+  <message id="gcd-secondary-scale-note">O fundo secundário está sendo escalonado por </message>
+  <message id="gcd-foreground-above-background">Primeiro plano está {1} σ acima do fundo.</message>
+  <message id="gcd-foreground-below-background">Primeiro plano está {1} σ abaixo do fundo.</message>
+</messages>

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- uiw- is short for UseInfoWindow -->
+  
+  <!-- Button text -->
+  <message id="uiw-load-btn">読み込み</message>
+  
+  <!-- File handling -->
+  <message id="uiw-file-too-large"><![CDATA[<span style="color: red;">ファイルが大きすぎます。</span>]]></message>
+  
+  <!-- Cheat sheet -->
+  <message id="uiw-cheat-sheet">チートシート (PDF)</message>
+  <message id="uiw-cheat-sheet-desc">このチートシート（PDF形式）を印刷して、アクション、ショートカットキー、トラブルシューティングをすぐに参照できます。</message>
+  
+  <!-- Settings -->
+  <message id="uiw-show-at-start-cb">スペクトラがない時に開始時に表示</message>
+  
+  <!-- Tooltips -->
+  <message id="uiw-back-to-top">トップに戻る</message>
+  
+  <!-- Error messages -->
+  <message id="uiw-error-loading-faq">FAQトピック読み込みエラー: {1}</message>
+  
+  <!-- Welcome messages - Mobile -->
+  <message id="uiw-mobile-start-example"><![CDATA[下のサンプルスペクトラを開くか、<em>スペクトラインポート</em>タブで外部ファイルを読み込みできます。<br />]]></message>
+  <message id="uiw-mobile-saved-spectra"><![CDATA[<p>以前に保存したスペクトラが下に表示されています。他のタブでサンプルスペクトラや外部ファイルのインポートができます。<br /></p>]]></message>
+  <message id="uiw-mobile-select-example"><![CDATA[<p>下のサンプルスペクトラムファイルを選択するか、インポートタブでiCloud、Dropboxなどから開けます。<br /></p>]]></message>
+  
+  <!-- Welcome messages - Desktop -->
+  <message id="uiw-desktop-welcome-title"><![CDATA[<h1 align="center"><code>InterSpec</code>へようこそ</h1><div align="left">]]></message>
+  <message id="uiw-desktop-welcome-text"><![CDATA[<p>左のリファレンスで<code>InterSpec</code>に慣れ親しんでください。下の過去のセッションから継続することもできます。]]></message>
+  <message id="uiw-desktop-drag-drop"><![CDATA[ また、独自のスペクトラムファイルを<code>InterSpec</code>にドラッグ＆ドロップすることもできます。</p>]]></message>
+  
+  <!-- Mobile postscript -->
+  <message id="uiw-mobile-phone-postscript"><![CDATA[<p>チップアイコンでグラフ操作を学び、ヘルプアイコンで<code>InterSpec</code>の詳細情報を得てください。</p>]]></message>
+  <message id="uiw-mobile-tablet-postscript"><![CDATA[<p>左の<b>使用情報</b>ボタンでグラフ操作を学び、ヘルプアイコンで詳細情報を得てください。</p>]]></message>
+  
+  <!-- File import instructions -->
+  <message id="uiw-tap-choose-file"><![CDATA[<p><em>ファイルを選択</em>をタップして開きたいファイルを参照してください。</p>]]></message>
+  <message id="uiw-open-file-instructions"><![CDATA[<p>この画面を終了後、<code>InterSpec</code>サブメニューで<em>ファイルを開く</em>を選択してスペクトラムファイルを開くこともできます。<br />メール添付ファイルや、<code>Files</code>、<code>Dropbox</code>、<code>Google Drive</code>などのアプリ内のファイルについては、「InterSpecにコピー」を選択して<code>InterSpec</code>でスペクトラムファイルを開くことができます</p>]]></message>
+  
+  <!-- Tab titles -->
+  <message id="uiw-tab-saved-states">保存された状態</message>
+  <message id="uiw-tab-example-spectra">例示スペクトラム</message>
+  <message id="uiw-tab-import-spectra">スペクトラムインポート</message>
+  
+  <!-- Welcome section -->
+  <message id="uiw-welcome">ようこそ</message>
+  <message id="uiw-controls">コントロール</message>
+  
+  <!-- Anchor links -->
+  <message id="uiw-license-and-terms">ライセンスと条件</message>
+  <message id="uiw-more-info">さらに詳しい情報</message>
+</messages>

@@ -141,15 +141,44 @@ struct RoiRange
    TODO: Allow setting to #PeakContinuum::OffsetType::External to auto-choose this.
    */
   PeakContinuum::OffsetType continuum_type = PeakContinuum::OffsetType::Quadratic;
-  
-  /** Dont allow cutting range down based on peaks not being anywhere reasonably near edge. */
-  bool force_full_range = false;
-  
-  /** If we have a peak right-on the edge, allow the ROI to extend out to a few FWHM.
-   If #force_full_range is true, this value must be false.
+
+  /** Specifies how the energy range limits should be interpreted during fitting.
+
+   This controls whether the ROI boundaries are strictly enforced, can expand to accommodate
+   peaks at the edges, or can be broken into smaller ranges based on peak locations.
    */
-  bool allow_expand_for_peak_width = false;
-  
+  enum class RangeLimitsType : int
+  {
+    /** The lower and upper energies are strictly enforced - the ROI will not be
+     adjusted or broken up based on peak locations.
+     */
+    Fixed = 0,
+
+    /** The lower and upper energy values can be expanded to accommodate the FWHM of peaks
+     at or near the ROI edges. Not well tested yet.
+     */
+    CanExpandForFwhm = 1,
+
+    /** The ROI can be broken up into multiple smaller ROIs based on expected significant peaks.
+     The range may be subdivided to optimize fitting.
+     */
+    CanBeBrokenUp = 2
+  };//enum class RangeLimitsType
+
+  /** Specifies how the ROI limits should be interpreted. */
+  RangeLimitsType range_limits_type = RangeLimitsType::CanBeBrokenUp;
+
+  /** Returns string representation of the RangeLimitsType.
+   String returned is a static string, so do not delete it.
+   */
+  static const char *to_str( const RangeLimitsType type );
+
+  /** Converts from the string representation of RangeLimitsType to enumerated value.
+
+   Throws exception if invalid string (i.e., any string not returned by to_str(RangeLimitsType) ).
+   */
+  static RangeLimitsType range_limits_type_from_str( const char *str );
+
   static const int sm_xmlSerializationVersion = 0;
   void toXml( ::rapidxml::xml_node<char> *parent ) const;
   void fromXml( const ::rapidxml::xml_node<char> *parent );
@@ -315,6 +344,21 @@ enum class FwhmForm : int
   Polynomial_4,
   Polynomial_5,
   Polynomial_6,
+  
+  /** Berstein polynomial with 2 coefficients (order 1) */
+  Berstein_2,
+  
+  /** Berstein polynomial with 3 coefficients (order 2) */
+  Berstein_3,
+  
+  /** Berstein polynomial with 4 coefficients (order 3) */
+  Berstein_4,
+  
+  /** Berstein polynomial with 5 coefficients (order 4) */
+  Berstein_5,
+  
+  /** Berstein polynomial with 6 coefficients (order 5) */
+  Berstein_6,
 
   /** Do not fit the FWHM equation - use the FWHM from the detector efficiency function.
    
@@ -388,9 +432,6 @@ const char *to_str( const FwhmEstimationMethod form );
  */
 FwhmEstimationMethod fwhm_estimation_method_from_str( const char *str );
 
-
-/** Evaluates the FWHM equation for the input energy, returning the FWHM. */
-float eval_fwhm( const float energy, const FwhmForm form, const std::vector<float> &coeffs );
 
 size_t num_parameters( const FwhmForm eqn_form );
 
@@ -725,6 +766,9 @@ struct RelActAutoGuiState
   RelActAutoGuiState();
 
   std::string note;
+
+  /** Description field for this configuration. Not currently exposed in GUI. */
+  std::string description;
 
   RelActCalcAuto::Options options;
   

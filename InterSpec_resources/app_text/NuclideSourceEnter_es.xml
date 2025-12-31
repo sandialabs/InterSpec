@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+    <message id="dcw-tt-nuc-edit">ej. <b>U235</b>, <b>235 Uranium</b>, <b>U-235m</b> (estado meta estable), <b>Cs137</b>, etc.</message>
+    <message id="dcw-tt-age-edit">
+      <div>
+        La edad puede especificarse usando una combinación de unidades de tiempo,
+        similar a '<b>5.3y 8d 22m</b>' o en vidas medias como 
+        '<b>2.5 HL</b>'.
+      </div>
+      <br />
+      <div>
+        La edad no afecta la actividad del nucleído ingresado, solo afecta la cantidad
+        de crecimiento de progenie (es decir, solo altera las actividades de progenie, no la actividad del nucleído padre)
+        - la actividad que ingresó siempre se usará para el nucleído padre que ingresó, sin
+        importar la edad.
+      </div>
+      <br />
+      <div>
+        Unidades de tiempo aceptables: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>, 
+        <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, o
+        puede especificar período de tiempo por <b>hh:mm:ss</b>.
+      </div>
+      <div>Las unidades de vida media o períodos de tiempo no pueden mezclarse con otras unidades.</div>
+      <div>
+        Cuando se especifican múltiples períodos de tiempo, se suman, ej. '1y6months 3m' se interpreta como 
+        18 meses y 3 minutos.
+      </div>
+    </message>
+    <message id="dcw-age-to-big">{1} son demasiadas vidas medias para desintegrar {2}</message>
+    <message id="dcw-nuc-is-stable">{1} es estable</message>
+    <message id="dcw-made-age-reasonable">Se cambió la edad a un valor más razonable para {1} de '{2}' a '{3}'</message>
+</messages>
+
+

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raager- is short for RelActAutoGuiEnergyRange -->
+  
+  <!-- Labels -->
+  <message id="raager-lower-energy">下限能量</message>
+  <message id="raager-upper-energy">上限能量</message>
+  <message id="raager-continuum-type">连续谱类型：</message>
+  
+  <!-- Checkboxes -->
+  <message id="raager-force-full-range">强制全范围</message>
+  
+  <!-- Tooltips -->
+  <message id="raager-split-to-individual-rois-tt">将此能量范围转换为基于哪些伽马应该组合在一起与分开的各个ROI（例如，将具有重叠峰的伽马留在单个ROI中，而如果两个伽马相距很远，它们将被分成单独的ROI。</message>
+  
+</messages>
+

@@ -147,10 +147,19 @@ public:
    */
   enum class EffGeometryType
   {
-    /** This is the default DRF type, and allows the detection efficiency to vary with ~1/r2.
+    /** Intrinsic efficiency for far-field geometry (varies with ~1/r2).
+
+     This is the standard far-field DRF type where efficiency values are already intrinsic.
      */
-    FarField            = 0x00,
-    
+    FarFieldIntrinsic   = 0x00,
+
+    /** Absolute efficiency for far-field geometry.
+
+     Efficiency values are absolute for a specific measurement distance and need geometric
+     and optionally air attenuation corrections applied at runtime to get intrinsic efficiency.
+     */
+    FarFieldAbsolute    = 0x10,
+
     /** This describes where the transport from the source to the detector has already been performed,
      and the full-energy efficiency, per source decay, is known.  I.e. allows you to fit for the total activity of
      the source.
@@ -172,7 +181,7 @@ public:
      */
     FixedGeomActPerGram = 0x08
   };//enum class EffGeometryType
-  
+
   /** Returns the postfix to add to an activity value, for the type of geometry the DRF is for.
    
    For far-field and fixed-total-act, returns empty string.
@@ -281,10 +290,32 @@ public:
   //  Recomputes hash value.
   void fromEnergyEfficiencyCsv( std::istream &input,
                                const float detectorDiameter,
+                               const double characterizationDist,
                                const float energyUnits,
                                const EffGeometryType geometry_type );
-  
-  
+
+  struct EnergyEffPoint
+  {
+    float energy, efficiency;
+
+    /** Currently unused efficiency uncertainty. */
+    std::optional<float> efficiencyUncert;
+  };//struct EnergyEffPoint
+
+  /** Sets the detector efficiencies by pairs of energy (in keV) and efficiencies.
+
+   @param efficiencies The eneryg/efficiency information - must have at least two entries, and its range defines `m_lowerEnergy` and `m_upperEnergy`.
+   @param detectorDiameter The detector diameter - set to zero or negative if geometry type is not EffGeometryType::FarField; must be positive if far field
+   @param absoluteEffDistance Only applicable for absolute efficiency - gives deistance the efficiency is good at.
+   @param geometry_type The efficiency type these points are for.
+
+   Throws exception on error.
+   */
+  void setEfficiencyPoints( const std::vector<EnergyEffPoint> &efficiencies,
+                           const float detectorDiameter,
+                           const double absoluteEffDistance,
+                           const EffGeometryType geometry_type );
+
   //setIntrinsicEfficiencyFormula(): sets m_efficiencyForm, m_efficiencyFormula,
   //  and m_efficiencyFcn to correspond to the fucntional form passed in.
   //  Formula should be in the a general functional form, where energy is
@@ -361,7 +392,7 @@ public:
           or the same size as \p coefs.
    \param characterizationDist Distance used when fitting coefficients.  If
           coefficients are for intrinsic efficiency, or for fixed geometry, then this
-          value will be 0.0f.
+          value will be 0.0f or negative (i.e. ignored).  If for absolute eff, must be greater than zero, or will throw exception.
    \param equationEnergyUnits The energy units equation should be evaluated
           in. If eqn is in MeV, this will be 1000.  If in keV, will be 1.0.
    \param lowerEnergy Lower energy, in keV, the equation is good for; if
@@ -372,9 +403,9 @@ public:
    
    Recomputes hash value.
   */
-  void fromExpOfLogPowerSeriesAbsEff( const std::vector<float> &coefs,
+  void fromExpOfLogPowerSeries( const std::vector<float> &coefs,
                                       const std::vector<float> &uncerts,
-                                      const float characterizationDist,
+                                      const double characterizationDist,
                                       const float detector_diameter,
                                       const float equationEnergyUnits,
                                       const float lowerEnergy,
@@ -394,7 +425,7 @@ public:
    Detector Name: is usually the detector model, ex., "IdentiFINDER".
    Relative Eff:. is the efficiency relative to a 3x3 NaI detector at 661 keV; this is only used for reference, and may be empty, ex., "11%"
    Detector Description: Description of the detector crystal, ex., "2.5x1.5 Planar HPGe"
-   c0 through c7: the coefficients that will be fed into #fromExpOfLogPowerSeriesAbsEff and are in MeV (not keV); it is not uncommon for
+   c0 through c7: the coefficients that will be fed into #fromExpOfLogPowerSeries and are in MeV (not keV); it is not uncommon for
               only the first 4 or five coefficients to be non-zero.  These coefficients are teh relative efficiency at a given distance.
    p0 through p2: unused. interaction depth coefficients
    Calib Distance: the distance, in cm, the relative efficiency coefficients (c0 through c7) are defined for; a value of zero means the
@@ -477,23 +508,6 @@ public:
   static std::tuple<std::shared_ptr<DetectorPeakResponse>,double,double>
                                               parseEccFile( std::istream &input );
   
-  /** Converts a fixed geometry, total activity, DRF to a far-field measurement.
-   
-   @param diameter The detector diameter.
-   @param distance The distance the current efficiency is at.
-   @param correct_for_air_atten Wether air attenuation, for #distance, should be backed out.
-          Only valid if this DRF is from energy-efficiency pairs (e.g., from CSV or .ECC), or functional efficiency form.
-   @returns The new detector response function.
-   
-   Throws exception if:
-   - this DRF is not a `EffGeometryType::FixedGeomTotalAct`
-   - If air attenuation is asked to be corrected for, but `efficiencyFcnType() == kExpOfLogPowerSeries`.
-   - this DRF is not valid, or diameter is zero or less, or distance is less than zero.
-   */
-  std::shared_ptr<DetectorPeakResponse> convertFixedGeometryToFarField( const double diameter,
-                                                          const double distance,
-                                                          const bool correct_for_air_atten ) const;
-  
   /** Converts between the fixed geometry types of EffGeometryType.
    
    @param quantity Either the surface area or mass (in units of PhysicalUnits), depending on value to `to_type`.
@@ -504,6 +518,35 @@ public:
    */
   std::shared_ptr<DetectorPeakResponse> convertFixedGeometryType( const double quantity,
                                                              const EffGeometryType to_type ) const;
+  
+  
+  /** Converts how the efficiencies are interpreted from the current geometry type, to a far field detector.
+   Efficiency coefficients, energy pair, or functional form will be translated to the intrinsic efficiency equivalent values, that will give the same
+   
+   This is useful if you read in a efficiency function using `fromEnergyEfficiencyCsv(...)` or `parseEccFile(...)`, but the efficiency in
+   the file was actually an absolute efficiency at a given distance.
+   
+   @param detector_diameter The diameter of the detector
+   @param distance The distance from the source to the detector face that the original coefficients give the efficiency is for.
+   @param correct_for_air_atten When creating the intrinsic efficiency from the current efficiency, divide original efficiency by `(1-air_atten)`
+   @returns A valid detector that can be used as a far-field detector.
+   
+   Throws exception if:
+   - `*this` is not valid
+   - Detector diameter or distance less than or equal to zero
+   - Another error condition is encountered
+   */
+  std::shared_ptr<DetectorPeakResponse> reinterpretAsFarFieldAbsEfficiency( const double detector_diameter,
+                                                                        const double distance,
+                                                                        const bool correct_for_air_atten ) const;
+  
+  std::shared_ptr<DetectorPeakResponse> reinterpretAsFarFieldIntrinsicEfficiency( const double detector_diameter ) const;
+  
+  /** Discards diameter and distance information and sets efficiency type to `FixedGeomTotalAct` so the efficiencncies will be interpreted as this type.
+   
+   Throws exception if not valid, or type is not a fixed geometry.
+   */
+  std::shared_ptr<DetectorPeakResponse> reinterpretAsFixedGeom( const EffGeometryType to_type ) const;
   
   /**
    if form==kGadrasResolutionFcn then coefs must have 3 entries
@@ -604,6 +647,7 @@ public:
   
   //Simple accessors
   float detectorDiameter() const;
+  double absoluteEfficiencyDistance() const;
   const std::string &efficiencyFormula() const;
   const std::string &name() const;
   const std::string &description() const;
@@ -630,8 +674,14 @@ public:
   //Simple setters (all recompute hash value)
   void setName( const std::string &name );
   void setDescription( const std::string &descrip );
+  
+  /** Throws exception if this is a fixed geometry detector, or if diameter is negative or zero. Recomputes hash. */
+  void setDetectorDiameter( const float diameter );
+  
+  /** Throws exception if this is not a FarFieldAbsolute detector, or if diameter is negative or zero. Recomputes hash. */
+  void setAbsoluteEfficiencyDistance( const double distance );
 
-  //Search for: setFwhmCoefficients, fromGadrasDirectory, fromGadrasDefinition, setIntrinsicEfficiencyFormula, fromEnergyEfficiencyCsv, fromExpOfLogPowerSeriesAbsEff
+  //Search for: setFwhmCoefficients, fromGadrasDirectory, fromGadrasDefinition, setIntrinsicEfficiencyFormula, fromEnergyEfficiencyCsv, fromExpOfLogPowerSeries
   //  And maybe consider making them take a DrfSource argument
   void setDrfSource( const DrfSource source );
   
@@ -769,7 +819,19 @@ protected:
   float intrinsicEfficiencyFromPairs( float energy ) const;
   float intrinsicEfficiencyFromFcn( float energy ) const;
   float intrinsicEfficiencyFromExpLnEqn( float energy ) const;
-  
+
+  /** Returns the multiplication factor to convert from absolute to intrinsic efficiency.
+
+   This function computes the factor to multiply absolute efficiency by to get intrinsic efficiency.
+   The factor includes:
+   - Geometric correction: 1 / fractionalSolidAngle(m_detectorDiameter, m_absoluteEfficiencyDistance)
+   - Air attenuation correction (if m_absEffCorrectForAirAtten is true): 1 / exp(-μ·distance)
+
+   @param energy Energy in keV (with PhysicalUnits)
+   @returns Multiplication factor. Returns 1.0 if m_geomType != EffGeometryType::FarFieldAbsolute
+   */
+  float absoluteToIntrinsicMultiple( const float energy ) const;
+
   std::string m_name;
   std::string m_description;
 
@@ -839,11 +901,15 @@ protected:
   //   detectors in InterSpec)
   uint64_t m_parentHash;
   
-  /** Not currently used, but in place for future upgrades, so DB schema wont
-   have to be changed.
-   
+  /** Bit flags for various DRF properties.
+
    20230917: now used when serializing to DB, to denote if `m_fixedGeometry` is true.
    20231011: updated from boolean `m_fixedGeometry`, to cover `m_geomType`
+   20251130: bit 60 now used for m_absEffCorrectForAirAtten (FarFieldAbsolute geometry type)
+
+   Bit 60 (0x1000000000000000): m_absEffCorrectForAirAtten - whether to correct for air
+                                 attenuation when converting from absolute to intrinsic
+                                 efficiency (FarFieldAbsolute only)
    */
   uint64_t m_flags;
   
@@ -864,13 +930,34 @@ protected:
   int64_t m_lastUsedUtc;
   
   /** Sets the geometry type this DRF describes.
-   
+
    Default is far-field, but may also be one of the fixed-geometry types.
    */
   EffGeometryType m_geomType;
-  
+
+  /** Distance (in cm) at which absolute efficiency was measured.
+
+   Only valid when m_geomType == EffGeometryType::FarFieldAbsolute.
+   When >= 0, intrinsic efficiency evaluation functions will divide out
+   the solid angle effect for this distance.
+
+   Stored as the last element of m_expOfLogPowerSeriesUncerts for database persistence.
+   */
+  double m_absoluteEfficiencyDistance;
+
+  /** Whether to correct for air attenuation when evaluating intrinsic efficiency from absolute efficiency.
+
+   Only applies when m_geomType == EffGeometryType::FarFieldAbsolute && m_absoluteEfficiencyDistance >= 0.
+
+   Defaults to true. When true, intrinsic efficiency calculations will divide out air attenuation
+   over the distance m_absoluteEfficiencyDistance.
+
+   Stored in bit 60 of m_flags for database persistence.
+   */
+  bool m_absEffCorrectForAirAtten;
+
   /** On 20230916 updated from version 0 to 1, to account for `m_fixedGeometry` - will still write version 0 if
-   `m_geomType == EffGeometryType::FarField`.
+   `m_geomType == EffGeometryType::FarFieldIntrinsic`.
    
    On 20240410 updated from 1 to 2, to account for `ResolutionFnctForm::kConstantPlusSqrtEnergy` type of FWHM
    being added.  However, will only write 2 if `m_resolutionForm == ResolutionFnctForm::kConstantPlusSqrtEnergy`.
@@ -1008,26 +1095,29 @@ public:
     //  20230916: We'll store `m_fixedGeometry` as a bit in `m_flags`, to avoid
     //            bothering to change the schema
     //  20231010: Updating fixed geometry from a bool to an enum, `m_geomType`
+    //  20251130: Bit 60 now stores m_absEffCorrectForAirAtten for FarFieldAbsolute
     //const uint64_t fixed_geom_bit = 0x80000000;
     const uint64_t fixed_geom_bits =  0xF80000000;
-    
+    const uint64_t abs_eff_air_atten_bit = 0x1000000000000000;  // Bit 60
+
     int64_t hash = 0, parentHash = 0, flags = 0;
     if( a.getsValue() )
     {
       hash = reinterpret_cast<int64_t&>(m_hash);
       parentHash = reinterpret_cast<int64_t&>(m_parentHash);
-      
+
       //uint64_t flags_tmp = (m_flags | (m_fixedGeometry ? fixed_geom_bit : uint64_t(0)));
-      
+
       // A sanity check to check development consistency
       static_assert( (static_cast<uint64_t>(EffGeometryType::FixedGeomTotalAct) << 31) == 0x80000000, "" );
-      
+
       uint64_t geom_flags = static_cast<uint64_t>( m_geomType );
       geom_flags = (geom_flags << 31);  //31 bits, because the equivalent of EffGeometryType::FixedGeomTotalAct was set to this during development
       assert( geom_flags == (geom_flags & fixed_geom_bits) );
-      assert( (m_geomType == EffGeometryType::FarField) || (geom_flags != 0) );
-      
-      uint64_t flags_tmp = (m_flags | geom_flags);
+      assert( (m_geomType == EffGeometryType::FarFieldIntrinsic) || (m_geomType == EffGeometryType::FarFieldAbsolute) || (geom_flags != 0) );
+
+      const uint64_t air_atten_flag = m_absEffCorrectForAirAtten ? abs_eff_air_atten_bit : uint64_t(0);
+      uint64_t flags_tmp = (m_flags | geom_flags | air_atten_flag);
       flags = reinterpret_cast<int64_t&>(flags_tmp);
     }//if( a.getsValue() )
     
@@ -1041,23 +1131,30 @@ public:
       m_hash = reinterpret_cast<uint64_t&>(hash);
       m_parentHash = reinterpret_cast<uint64_t&>(parentHash);
       m_flags = reinterpret_cast<uint64_t&>(flags);
-      
+
       //m_fixedGeometry = (m_flags & fixed_geom_bit);
       //m_flags &= ~fixed_geom_bit; //clear fixed
-      
+
       const uint64_t geom_flags = ((reinterpret_cast<uint64_t&>(flags) & fixed_geom_bits) >> 31);
       const EffGeometryType geom_type = static_cast<EffGeometryType>( geom_flags );
-      m_flags &= ~fixed_geom_bits; //clear fixed
+
+      // Read air attenuation correction flag (bit 60)
+      m_absEffCorrectForAirAtten = (m_flags & abs_eff_air_atten_bit) != 0;
+
+      m_flags &= ~fixed_geom_bits; //clear fixed geometry flags
+      m_flags &= ~abs_eff_air_atten_bit; //clear air atten flag
       
       if( !a.isSchema() )
       {
-        assert( (geom_type == EffGeometryType::FarField)
+        assert( (geom_type == EffGeometryType::FarFieldIntrinsic)
+               || (geom_type == EffGeometryType::FarFieldAbsolute)
                || (geom_type == EffGeometryType::FixedGeomTotalAct)
                || (geom_type == EffGeometryType::FixedGeomActPerCm2)
                || (geom_type == EffGeometryType::FixedGeomActPerM2)
                || (geom_type == EffGeometryType::FixedGeomActPerGram) );
-        
-        if( (geom_type != EffGeometryType::FarField)
+
+        if( (geom_type != EffGeometryType::FarFieldIntrinsic)
+           && (geom_type != EffGeometryType::FarFieldAbsolute)
            && (geom_type != EffGeometryType::FixedGeomTotalAct)
            && (geom_type != EffGeometryType::FixedGeomActPerCm2)
            && (geom_type != EffGeometryType::FixedGeomActPerM2)
@@ -1070,7 +1167,8 @@ public:
       
       switch( geom_type )
       {
-        case EffGeometryType::FarField:
+        case EffGeometryType::FarFieldIntrinsic:
+        case EffGeometryType::FarFieldAbsolute:
         case EffGeometryType::FixedGeomTotalAct:
         case EffGeometryType::FixedGeomActPerCm2:
         case EffGeometryType::FixedGeomActPerM2:
@@ -1081,10 +1179,28 @@ public:
       
     }//if( a.setsValue() || a.isSchema() )
 
+    // For FarFieldAbsolute, we append m_absoluteEfficiencyDistance to the uncerts vector
+    //  to avoid changing the DB schema (added 20251130)
     if( a.getsValue() )
-      saveFloatVectorToDB(m_expOfLogPowerSeriesUncerts, "m_expOfLogPowerSeriesUncerts", a);
+    {
+      std::vector<float> uncerts_to_save = m_expOfLogPowerSeriesUncerts;
+      if( m_geomType == EffGeometryType::FarFieldAbsolute )
+        uncerts_to_save.push_back( static_cast<float>(m_absoluteEfficiencyDistance) );
+      saveFloatVectorToDB(uncerts_to_save, "m_expOfLogPowerSeriesUncerts", a);
+    }
     if( a.setsValue() || a.isSchema() )
+    {
       loadDBToFloatVector(m_expOfLogPowerSeriesUncerts, "m_expOfLogPowerSeriesUncerts", a);
+      // If FarFieldAbsolute, extract m_absoluteEfficiencyDistance from last element
+      if( !a.isSchema() && (m_geomType == EffGeometryType::FarFieldAbsolute) )
+      {
+        assert( !m_expOfLogPowerSeriesUncerts.empty() );
+        if( m_expOfLogPowerSeriesUncerts.empty() )
+          throw std::runtime_error( "DetectorPeakResponse: FarFieldAbsolute must have m_expOfLogPowerSeriesUncerts" );
+        m_absoluteEfficiencyDistance = static_cast<double>(m_expOfLogPowerSeriesUncerts.back());
+        m_expOfLogPowerSeriesUncerts.pop_back();
+      }
+    }
     
     if( a.getsValue() )
       saveFloatVectorToDB(m_resolutionUncerts, "m_resolutionUncerts", a);
