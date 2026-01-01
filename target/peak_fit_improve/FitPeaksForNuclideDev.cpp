@@ -127,7 +127,17 @@ struct PeakFitResult
   RelActCalcAuto::RelActAutoSolution::Status status;
   std::string error_message;
   std::vector<std::string> warnings;  // warnings that don't prevent success
-  std::vector<PeakDef> fit_peaks;  // from m_peaks_without_back_sub
+
+  // Peaks after combining overlapping peaks within ROIs.
+  // Peaks that are close together (within 1.5 sigma) or where a smaller peak
+  // is not statistically distinguishable from a larger peak's tail are merged
+  // into a single peak with combined properties.
+  std::vector<PeakDef> fit_peaks;
+
+  // Original uncombined peaks from the fit - preserves all individual peak information.
+  // This is the raw output from RelActAuto before peak combination.
+  std::vector<PeakDef> uncombined_fit_peaks;
+
   RelActCalcAuto::RelActAutoSolution solution;  // only valid if status == Success
 };//struct PeakFitResult
 
@@ -188,6 +198,44 @@ struct PeakFitForNuclideConfig
   double auto_rel_eff_sol_min_fwhm_roi = 1.0;
   double auto_rel_eff_sol_min_fwhm_quad_cont = 8.0;
 
+
+  // RelActAuto relative efficiency model parameters
+  RelActCalc::RelEffEqnForm rel_eff_eqn_type = RelActCalc::RelEffEqnForm::LnXLnY;
+  size_t rel_eff_eqn_order = 2;
+
+  // Physical model shielding (empty vectors mean no shielding)
+  std::vector<std::shared_ptr<RelActCalc::PhysicalModelShieldInput>> phys_model_self_atten;
+  std::vector<std::shared_ptr<RelActCalc::PhysicalModelShieldInput>> phys_model_external_atten;
+
+  // Physical model options (only used when rel_eff_eqn_type == FramPhysicalModel)
+  bool nucs_of_el_same_age = true;
+  bool phys_model_use_hoerl = true;
+
+  // Fields for RelActAuto options configuration
+  bool fit_energy_cal = true;
+  std::vector<RelActCalcAuto::NucInputInfo> base_nuclides;  // Set from outside
+
+  // ROI significance threshold for iterative refinement
+  // Minimum total chi2 reduction required for peaks in a ROI to be considered significant
+  // The chi2 with peaks must be at least this much lower than chi2 with continuum-only
+  double roi_significance_min_chi2_reduction = 10.0;
+
+  // Minimum peak significance (peak_area / sqrt(continuum)) for a peak to be considered significant
+  // If any peak in a ROI has significance above this threshold, the ROI is considered significant
+  // (alternative to chi2 reduction test - ROI passes if EITHER test passes)
+  double roi_significance_min_peak_sig = 3.5;
+
+  // Step continuum decision parameters
+  // Minimum peak area (counts) to consider checking for step continuum
+  double step_cont_min_peak_area = 1000.0;
+  // Minimum peak significance (peak_area / sqrt(data_area)) to consider step continuum
+  double step_cont_min_peak_significance = 30.0;
+  // How many sigma higher the left side must be than the right side to use step continuum
+  double step_cont_left_right_nsigma = 3.0;
+
+
+
+
   // Get GammaClusteringSettings for manual RelEff stage
   GammaClusteringSettings get_manual_clustering_settings() const
   {
@@ -225,41 +273,268 @@ struct PeakFitForNuclideConfig
     settings.step_cont_left_right_nsigma = step_cont_left_right_nsigma;
     return settings;
   }
-
-  // RelActAuto relative efficiency model parameters
-  RelActCalc::RelEffEqnForm rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
-  size_t rel_eff_eqn_order = 0;
-
-  // Physical model shielding (empty vectors mean no shielding)
-  std::vector<std::shared_ptr<RelActCalc::PhysicalModelShieldInput>> phys_model_self_atten;
-  std::vector<std::shared_ptr<RelActCalc::PhysicalModelShieldInput>> phys_model_external_atten;
-
-  // Physical model options (only used when rel_eff_eqn_type == FramPhysicalModel)
-  bool nucs_of_el_same_age = true;
-  bool phys_model_use_hoerl = true;
-
-  // Fields for RelActAuto options configuration
-  bool fit_energy_cal = true;
-  std::vector<RelActCalcAuto::NucInputInfo> base_nuclides;  // Set from outside
-
-  // ROI significance threshold for iterative refinement
-  // Minimum total chi2 reduction required for peaks in a ROI to be considered significant
-  // The chi2 with peaks must be at least this much lower than chi2 with continuum-only
-  double roi_significance_min_chi2_reduction = 10.0;
-
-  // Minimum peak significance (peak_area / sqrt(continuum)) for a peak to be considered significant
-  // If any peak in a ROI has significance above this threshold, the ROI is considered significant
-  // (alternative to chi2 reduction test - ROI passes if EITHER test passes)
-  double roi_significance_min_peak_sig = 3.5;
-
-  // Step continuum decision parameters
-  // Minimum peak area (counts) to consider checking for step continuum
-  double step_cont_min_peak_area = 1000.0;
-  // Minimum peak significance (peak_area / sqrt(data_area)) to consider step continuum
-  double step_cont_min_peak_significance = 30.0;
-  // How many sigma higher the left side must be than the right side to use step continuum
-  double step_cont_left_right_nsigma = 3.0;
 };//struct PeakFitForNuclideConfig
+
+
+/** Determines if two peaks should be combined based on proximity and relative contribution.
+
+Peaks are combined if:
+1. They are within `always_combine_nsigma` sigma of each other (using larger peak's sigma), OR
+2. The smaller peak is not statistically distinguishable from the larger peak's tail
+   (smaller peak area < 4 * sqrt(larger peak contribution at smaller peak's location))
+
+@param larger_peak The peak with larger area (must have >= area of smaller_peak)
+@param smaller_peak The peak with smaller area
+@param always_combine_nsigma Peaks within this many sigma are always combined (default 1.5)
+@return true if peaks should be combined, false otherwise
+*/
+bool should_combine_peaks( const PeakDef &larger_peak,
+                           const PeakDef &smaller_peak,
+                           const double always_combine_nsigma = 1.5 )
+{
+  assert( larger_peak.peakArea() >= smaller_peak.peakArea() );
+
+  const double dist = std::fabs( larger_peak.mean() - smaller_peak.mean() );
+  const double sigma_large = larger_peak.sigma();
+
+  // Criterion 1: Always combine if within threshold sigma
+  if( dist < always_combine_nsigma * sigma_large )
+    return true;
+
+  // Criterion 2: Check if smaller peak is overwhelmed by larger peak's contribution
+  // Calculate larger peak's contribution at smaller peak's location
+  const double sigma_small = smaller_peak.sigma();
+  const double mean_small = smaller_peak.mean();
+
+  // Integrate larger peak over +/- 0.5 sigma of smaller peak's mean
+  const double x0 = mean_small - 0.5 * sigma_small;
+  const double x1 = mean_small + 0.5 * sigma_small;
+  const double contribution = larger_peak.gauss_integral( x0, x1 );
+
+  // If smaller peak area < 4 * sqrt(contribution), combine
+  // This means the smaller peak is not statistically distinguishable from the tail of the larger peak
+  const double smaller_area = smaller_peak.peakArea();
+  if( contribution > 0.0 && smaller_area < 4.0 * std::sqrt( contribution ) )
+    return true;
+
+  return false;
+}//should_combine_peaks
+
+
+/** Combines multiple peaks into a single peak using area-weighted averaging.
+
+Creates a new peak with:
+- Mean: area-weighted average of input peak means
+- Sigma: area-weighted average of input peak sigmas
+- Area: sum of input peak areas
+- Uncertainty: quadrature sum of input peak uncertainties
+- Source assignment: from the peak with largest area (dominant peak)
+- Continuum: shared from input peaks (must all share same continuum)
+
+@param peaks_to_combine Vector of peaks to combine (must share same continuum, must not be empty)
+@return Combined peak
+@throws std::invalid_argument if peaks vector is empty or peaks dont share continuum
+*/
+PeakDef combine_peaks( const std::vector<const PeakDef *> &peaks_to_combine )
+{
+  assert( !peaks_to_combine.empty() );
+  if( peaks_to_combine.empty() )
+    throw std::invalid_argument( "combine_peaks: empty peaks vector" );
+
+  // Find dominant peak (largest area) and verify all share same continuum
+  const PeakDef *dominant = peaks_to_combine[0];
+  const std::shared_ptr<const PeakContinuum> cont = peaks_to_combine[0]->continuum();
+
+  double total_area = 0.0;
+  double sum_area_mean = 0.0;
+  double sum_area_sigma = 0.0;
+  double sum_uncert_sq = 0.0;
+
+  for( const PeakDef *peak : peaks_to_combine )
+  {
+    assert( peak->continuum() == cont );
+    if( peak->continuum() != cont )
+      throw std::invalid_argument( "combine_peaks: peaks must share same continuum" );
+
+    const double area = peak->peakArea();
+    const double uncert = peak->peakAreaUncert();
+
+    total_area += area;
+    sum_area_mean += area * peak->mean();
+    sum_area_sigma += area * peak->sigma();
+    sum_uncert_sq += uncert * uncert;
+
+    if( area > dominant->peakArea() )
+      dominant = peak;
+  }//for( const PeakDef *peak : peaks_to_combine )
+
+  // Start with a copy of the dominant peak - this copies the continuum, source assignment,
+  // skew type, line color, and other settings
+  PeakDef combined = *dominant;
+
+  // Update the gaussian parameters to the combined values
+  combined.setMean( sum_area_mean / total_area );
+  combined.setSigma( sum_area_sigma / total_area );
+  combined.setPeakArea( total_area );
+  combined.setPeakAreaUncert( std::sqrt( sum_uncert_sq ) );
+
+  return combined;
+}//combine_peaks
+
+
+/** Combines overlapping peaks within each ROI based on proximity and contribution criteria.
+
+For each ROI (group of peaks sharing a continuum):
+1. Identifies peaks that should be combined using proximity and contribution checks
+2. Uses transitive closure (Union-Find) to group connected peaks
+3. Creates combined peaks with area-weighted properties
+
+@param uncombined_peaks The original fit peaks, potentially with multiple peaks per ROI
+@return Vector of peaks with overlapping peaks combined within each ROI
+*/
+std::vector<PeakDef> combine_overlapping_peaks_in_rois(
+    const std::vector<PeakDef> &uncombined_peaks )
+{
+  if( uncombined_peaks.empty() )
+    return {};
+
+  // Phase 1: Group peaks by continuum (ROI)
+  std::map<std::shared_ptr<const PeakContinuum>, std::vector<size_t>> continuum_to_peak_indices;
+  for( size_t i = 0; i < uncombined_peaks.size(); ++i )
+  {
+    const std::shared_ptr<const PeakContinuum> cont = uncombined_peaks[i].continuum();
+    continuum_to_peak_indices[cont].push_back( i );
+  }
+
+  std::vector<PeakDef> combined_peaks;
+  combined_peaks.reserve( uncombined_peaks.size() );
+
+  if( PeakFitImprove::debug_printout )
+  {
+    cout << "combine_overlapping_peaks_in_rois: " << continuum_to_peak_indices.size()
+         << " unique ROIs from " << uncombined_peaks.size() << " peaks" << endl;
+  }
+
+  // Phase 2 & 3: Process each ROI independently
+  for( const auto &roi_entry : continuum_to_peak_indices )
+  {
+    const std::vector<size_t> &peak_indices = roi_entry.second;
+
+    if( peak_indices.size() == 1 )
+    {
+      // Single peak in ROI - no combination needed
+      combined_peaks.push_back( uncombined_peaks[peak_indices[0]] );
+      continue;
+    }
+
+    if( PeakFitImprove::debug_printout )
+    {
+      cout << "  ROI with " << peak_indices.size() << " peaks at energies:";
+      for( size_t idx : peak_indices )
+        cout << " " << uncombined_peaks[idx].mean();
+      cout << endl;
+    }
+
+    // Sort indices by peak area (descending) - we'll process largest peaks first
+    std::vector<size_t> sorted_indices = peak_indices;
+    std::sort( sorted_indices.begin(), sorted_indices.end(),
+      [&uncombined_peaks]( size_t a, size_t b ) {
+        return uncombined_peaks[a].peakArea() > uncombined_peaks[b].peakArea();
+      });
+
+    // Greedy clustering: start with largest peak, cluster nearby peaks into it,
+    // then move to next largest unclustered peak
+    std::set<size_t> clustered;  // Tracks which indices have been assigned to a cluster
+    std::vector<std::vector<const PeakDef *>> clusters;
+
+    for( size_t i = 0; i < sorted_indices.size(); ++i )
+    {
+      const size_t idx_i = sorted_indices[i];
+
+      // Skip if this peak has already been clustered with a larger peak
+      if( clustered.count( idx_i ) )
+        continue;
+
+      // Start a new cluster with this peak (the largest remaining unclustered peak)
+      const PeakDef &anchor_peak = uncombined_peaks[idx_i];
+      std::vector<const PeakDef *> cluster;
+      cluster.push_back( &anchor_peak );
+      clustered.insert( idx_i );
+
+      // Find all smaller peaks that should be combined with this anchor peak
+      for( size_t j = i + 1; j < sorted_indices.size(); ++j )
+      {
+        const size_t idx_j = sorted_indices[j];
+
+        // Skip if already in another cluster
+        if( clustered.count( idx_j ) )
+          continue;
+
+        const PeakDef &candidate_peak = uncombined_peaks[idx_j];
+
+        // Check if this smaller peak should be combined with the anchor peak
+        if( should_combine_peaks( anchor_peak, candidate_peak, 1.5 ) )
+        {
+          cluster.push_back( &candidate_peak );
+          clustered.insert( idx_j );
+        }
+      }//for( size_t j = i + 1; j < sorted_indices.size(); ++j )
+
+      clusters.push_back( std::move( cluster ) );
+    }//for( size_t i = 0; i < sorted_indices.size(); ++i )
+
+    if( PeakFitImprove::debug_printout )
+    {
+      cout << "    -> " << clusters.size() << " clusters after greedy clustering" << endl;
+    }
+
+    // Create combined peaks for each cluster
+    std::vector<PeakDef> roi_peaks;  // Peaks for this ROI
+    for( const std::vector<const PeakDef *> &cluster : clusters )
+    {
+      if( cluster.size() == 1 )
+      {
+        roi_peaks.push_back( *cluster[0] );
+      }
+      else
+      {
+        if( PeakFitImprove::debug_printout )
+        {
+          cout << "    Combining " << cluster.size() << " peaks at energies:";
+          for( const PeakDef *p : cluster )
+            cout << " " << p->mean();
+          cout << endl;
+        }
+        roi_peaks.push_back( combine_peaks( cluster ) );
+      }
+    }//for( const std::vector<const PeakDef *> &cluster : clusters )
+
+    // Make all peaks in this ROI share a new continuum
+    if( !roi_peaks.empty() )
+    {
+      auto roi_continuum = make_shared<PeakContinuum>( *roi_peaks.front().continuum() );
+      for( PeakDef &peak : roi_peaks )
+        peak.setContinuum( roi_continuum );
+    }
+
+    // Add this ROI's peaks to the combined output
+    combined_peaks.insert( combined_peaks.end(), roi_peaks.begin(), roi_peaks.end() );
+  }//for( const auto &roi_entry : continuum_to_peak_indices )
+
+  // Sort combined peaks by mean energy
+  std::sort( combined_peaks.begin(), combined_peaks.end(),
+    []( const PeakDef &lhs, const PeakDef &rhs ) {
+      return lhs.mean() < rhs.mean();
+    });
+
+  if( PeakFitImprove::debug_printout )
+  {
+    cout << "combine_overlapping_peaks_in_rois: " << uncombined_peaks.size()
+         << " input peaks -> " << combined_peaks.size() << " output peaks" << endl;
+  }
+
+  return combined_peaks;
+}//combine_overlapping_peaks_in_rois
 
 
 // Helper to check if two ROI sets are similar enough to stop iterating
@@ -842,6 +1117,17 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     }
 
     result.solution = std::move( solution );
+
+    // Combine overlapping peaks within ROIs
+    // First, preserve the uncombined peaks, then create combined version
+    result.uncombined_fit_peaks = result.fit_peaks;
+    result.fit_peaks = combine_overlapping_peaks_in_rois( result.uncombined_fit_peaks );
+
+    if( PeakFitImprove::debug_printout && (result.fit_peaks.size() != result.uncombined_fit_peaks.size()) )
+    {
+      cout << "Combined " << result.uncombined_fit_peaks.size() << " peaks into "
+           << result.fit_peaks.size() << " peaks" << endl;
+    }
 
   }catch( const std::exception &e )
   {
@@ -2768,8 +3054,8 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
 
       // Try LnX
       PeakFitForNuclideConfig config_lnx = config;
-      config_lnx.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::LnXLnY;
-      config_lnx.rel_eff_eqn_order = 3;
+      config_lnx.rel_eff_eqn_type = config.rel_eff_eqn_type;
+      config_lnx.rel_eff_eqn_order = config.rel_eff_eqn_order;
       config_lnx.phys_model_self_atten.clear();
       config_lnx.phys_model_external_atten.clear();
       curve_results.push_back( fit_peaks_for_nuclides(
@@ -2856,365 +3142,6 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
       cout << "Best RelEff curve type solution (" << solution.m_options.rel_eff_curves.front().name << ") selected with chi2/dof="
            << solution.m_chi2 << "/" << solution.m_dof << endl;
 
-      // Old manually-inlined code was here - now using fit_peaks_for_nuclides()
-      /*
-      DetectorPeakResponse::ResolutionFnctForm fwhmFnctnlForm = config.fwhm_functional_form;
-      double lower_fwhm_energy = -1.0, upper_fwhm_energy = -1.0;
-      vector<float> fwhm_coefficients, fwhm_uncerts;
-      if( !drf || !drf->isValid() || !drf->hasResolutionInfo() || (auto_search_peaks.size() > 6) )
-      {
-        const int num_auto_peaks = static_cast<int>(auto_search_peaks.size());
-        int sqrtEqnOrder = (std::min)( 6, num_auto_peaks / (1 + (num_auto_peaks > 3)) );
-        if( auto_search_peaks.size() < 3 )
-          sqrtEqnOrder = static_cast<int>( auto_search_peaks.size() );
-
-        auto auto_search_peaks_dq
-          = make_shared<const deque<shared_ptr<const PeakDef>>>( begin(auto_search_peaks) , end(auto_search_peaks) );
-
-        MakeDrfFit::performResolutionFit( auto_search_peaks_dq, fwhmFnctnlForm, sqrtEqnOrder, fwhm_coefficients, fwhm_uncerts );
-        auto_search_peaks_dq = MakeDrfFit::removeOutlyingWidthPeaks( auto_search_peaks_dq, fwhmFnctnlForm, fwhm_coefficients );
-        MakeDrfFit::performResolutionFit( auto_search_peaks_dq, fwhmFnctnlForm, sqrtEqnOrder, fwhm_coefficients, fwhm_uncerts );
-
-        // Set energy range based on peaks used for FWHM fit
-        if( !auto_search_peaks_dq->empty() )
-        {
-          lower_fwhm_energy = auto_search_peaks_dq->front()->mean();
-          upper_fwhm_energy = auto_search_peaks_dq->back()->mean();
-        }
-      }else
-      {
-        fwhmFnctnlForm = drf->resolutionFcnType();
-        fwhm_coefficients = drf->resolutionFcnCoefficients();
-
-        // Get energy range from detector response function
-        lower_fwhm_energy = drf->lowerEnergy();
-        upper_fwhm_energy = drf->upperEnergy();
-      }//if( we will fit FWHM functional form from auto-fit peaks ) / else (use detector eff FWHM )
-
-      // Validate that we have valid FWHM coefficients
-      if( fwhm_coefficients.empty() )
-      {
-        throw std::runtime_error( "Failed to determine FWHM coefficients - unable to proceed with peak fitting" );
-      }
-
-      // Check that coefficients are finite
-      for( size_t i = 0; i < fwhm_coefficients.size(); ++i )
-      {
-        if( !std::isfinite( fwhm_coefficients[i] ) )
-        {
-          throw std::runtime_error( "FWHM coefficient[" + std::to_string(i) + "] is not finite (value="
-                                   + std::to_string(fwhm_coefficients[i]) + ")" );
-        }
-      }
-
-      if( PeakFitImprove::debug_printout )
-      {
-        cout << "FWHM function form: " << static_cast<int>(fwhmFnctnlForm) << ", coefficients: [";
-        for( size_t i = 0; i < fwhm_coefficients.size(); ++i )
-          cout << (i > 0 ? ", " : "") << fwhm_coefficients[i];
-        cout << "]" << endl;
-      }
-
-      double highest_energy_gamma = 0.0, lowest_energy_gamma = std::numeric_limits<double>::max();
-      
-      vector<RelActCalcAuto::NucInputInfo> base_nuclides;
-      for( const SandiaDecay::Nuclide *nuc : source_nuclides )
-      {
-        RelActCalcAuto::NucInputInfo nuc_info;
-        nuc_info.source = nuc;
-        nuc_info.age = PeakDef::defaultDecayTime(nuc);
-        nuc_info.fit_age = false; // Don't fit age by default
-        base_nuclides.push_back(nuc_info);
-        
-        SandiaDecay::NuclideMixture mix;
-        mix.addAgedNuclideByActivity( nuc, GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_activityUnits, nuc_info.age );
-        const vector<SandiaDecay::EnergyRatePair> photons = mix.photons( 0.0 );
-        for( const SandiaDecay::EnergyRatePair &photon : photons )
-        {
-          highest_energy_gamma = (std::max)( highest_energy_gamma, photon.energy );
-          lowest_energy_gamma = (std::min)( lowest_energy_gamma, photon.energy );
-        }
-      }//for( const SandiaDecay::Nuclide *nuc : source_nuclides )
-
-      lowest_energy_gamma = (std::max)( lowest_energy_gamma - (isHPGe ? 5 : 25), (double)foreground->gamma_energy_min() );
-      highest_energy_gamma = (std::min)( highest_energy_gamma + (isHPGe ? 5 : 25), (double)foreground->gamma_energy_max() );
-    
-      vector<RelActCalcManual::GenericPeakInfo> rel_act_manual_peaks;
-      
-      for( const shared_ptr<const PeakDef> &peak : auto_search_peaks )
-      {
-        assert( peak && peak->gausPeak() );
-        if( !peak || !peak->gausPeak() )
-          continue;
-        
-        RelActCalcManual::GenericPeakInfo peak_info;
-        peak_info.m_energy = peak_info.m_mean = peak->mean();
-        peak_info.m_fwhm = peak->fwhm();
-        peak_info.m_counts = peak->amplitude();
-        peak_info.m_counts_uncert = peak->amplitudeUncert();
-        peak_info.m_base_rel_eff_uncert = config.rel_eff_manual_base_rel_eff_uncert;
-        // peak_info.m_source_gammas = std::vector<GenericLineInfo>{}; // `fill_in_nuclide_info(...)` will fill this in
-        
-        rel_act_manual_peaks.push_back( peak_info );
-      }//for( const shared_ptr<const PeakDef> &peak : auto_search_peaks )
-      
-      vector<RelActCalcManual::PeakCsvInput::NucAndAge> rel_act_manual_srcs;
-      for( const SandiaDecay::Nuclide *nuc : source_nuclides )
-        rel_act_manual_srcs.emplace_back( nuc->symbol, -1.0, false );
-      
-      const std::vector<std::pair<float,float>> energy_ranges{};
-      const std::vector<float> excluded_peak_energies{};
-      const float real_time = foreground->real_time();
-      
-      const RelActCalcManual::PeakCsvInput::NucMatchResults peak_match_results
-       = RelActCalcManual::PeakCsvInput::fill_in_nuclide_info( rel_act_manual_peaks,
-                                                              RelActCalcManual::PeakCsvInput::NucDataSrc::SandiaDecay,
-                                                              energy_ranges,
-                                                              rel_act_manual_srcs,
-                                                              config.initial_nuc_match_cluster_num_sigma, excluded_peak_energies,
-                                                              real_time );
-      
-      vector<RelActCalcManual::GenericPeakInfo> peaks_matched = peak_match_results.peaks_matched;
-      std::sort( begin(peaks_matched), end(peaks_matched),
-        []( const RelActCalcManual::GenericPeakInfo &lhs, const RelActCalcManual::GenericPeakInfo &rhs ){
-          return lhs.m_energy < rhs.m_energy;
-      });
-      //const vector<RelActCalcManual::GenericPeakInfo> &peaks_not_matched = peak_match_results.peaks_not_matched;
-      if( PeakFitImprove::debug_printout )
-      {
-        const vector<string> &used_isotopes = peak_match_results.used_isotopes;
-        const vector<string> &unused_isotopes = peak_match_results.unused_isotopes;
-        if( unused_isotopes.empty() )
-          cout << "Matched up all source nuclides to initial peak fit" << endl;
-        cout << "Failed to match up nuclides: {";
-        for( const string &nuc : unused_isotopes )
-          cout << nuc << ", ";
-        cout << "} to initial auto-fit peaks" << endl;
-        if( !used_isotopes.empty() )
-        {
-          cout << "Matched up nuclides: {";
-          for( const string &nuc : used_isotopes )
-            cout << nuc << ", ";
-          cout << "} to initial auto-fit peaks to a total of " << peaks_matched.size() << " peaks." << endl;
-        }
-      }//if( PeakFitImprove::debug_printout )
-      
-      
-      vector<RelActCalcAuto::RoiRange> initial_rois;
-      
-      // If we matched any peaks, we will do a manual rel-eff fit to roughly get the scale of what peaks we should look for
-      if( !peaks_matched.empty() )
-      {
-        RelActCalcManual::RelEffInput manual_input;
-        manual_input.peaks = peaks_matched;
-        
-        manual_input.eqn_order = 0;
-        manual_input.use_ceres_to_fit_eqn = false;
-        manual_input.phys_model_use_hoerl = false;
-        if( peaks_matched.size() == 1 )
-        {
-          manual_input.eqn_order = config.initial_manual_relEff_1peak_eqn_order;
-          manual_input.eqn_form = config.initial_manual_relEff_1peak_form;
-          if( manual_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
-          {
-            manual_input.eqn_order = 0;
-            manual_input.use_ceres_to_fit_eqn = true;
-          }
-        }else if( peaks_matched.size() == 2 )
-        {
-          manual_input.eqn_order = config.initial_manual_relEff_2peak_eqn_order;
-          manual_input.eqn_form = config.initial_manual_relEff_2peak_form;
-          if( manual_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
-          {
-            manual_input.eqn_order = 0;
-            manual_input.use_ceres_to_fit_eqn = true;
-          }
-        }else if( peaks_matched.size() == 3 )
-        {
-          manual_input.eqn_order = config.initial_manual_relEff_3peak_eqn_order;
-          manual_input.eqn_form = config.initial_manual_relEff_3peak_form;
-          if( manual_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
-          {
-            manual_input.eqn_order = 0;
-            manual_input.use_ceres_to_fit_eqn = true;
-          }
-        }else if( peaks_matched.size() == 4 )
-        {
-          manual_input.eqn_order = config.initial_manual_relEff_4peak_eqn_order;
-          manual_input.eqn_form = config.initial_manual_relEff_4peak_form;
-          if( manual_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
-          {
-            manual_input.eqn_order = 0;
-            manual_input.use_ceres_to_fit_eqn = true;
-            manual_input.phys_model_use_hoerl = config.initial_manual_relEff_4peak_physical_use_hoerl;
-          }
-        }else
-        {
-          assert( peaks_matched.size() > 4 );
-          manual_input.eqn_order = config.initial_manual_relEff_many_peak_eqn_order;
-          manual_input.eqn_form = config.initial_manual_relEff_manypeak_form;
-          if( manual_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
-          {
-            manual_input.eqn_order = 0;
-            manual_input.use_ceres_to_fit_eqn = true;
-            manual_input.phys_model_use_hoerl = config.initial_manual_relEff_many_peak_physical_use_hoerl;
-          }
-        }
-        
-        if( manual_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
-        {
-          manual_input.phys_model_detector = drf;
-          if( !manual_input.phys_model_detector )
-          {
-            if( isHPGe )
-              manual_input.phys_model_detector = DetectorPeakResponse::getGenericHPGeDetector();
-            else
-              manual_input.phys_model_detector = DetectorPeakResponse::getGenericNaIDetector();
-            
-            // Other generic detectors we could use:
-            //DetectorPeakResponse::getGenericLaBrDetector();
-            //DetectorPeakResponse::getGenericCZTGeneralDetector();
-            //DetectorPeakResponse::getGenericCZTGoodDetector();
-          }//if( !manual_input.phys_model_detector )
-          
-          manual_input.phys_model_self_atten = shared_ptr<const RelActCalc::PhysicalModelShieldInput>{};
-          manual_input.phys_model_external_attens = vector<shared_ptr<const RelActCalc::PhysicalModelShieldInput>>{};
-        }//if( manual_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
-        
-        try
-        {
-          const RelActCalcManual::RelEffSolution manual_solution
-              = RelActCalcManual::solve_relative_efficiency( manual_input );
-
-          if( manual_solution.m_status == RelActCalcManual::ManualSolutionStatus::Success )
-          {
-            cout << "Successfully fitted initial RelActCalcManual::RelEffSolution: chi2/dof="
-            << manual_solution.m_chi2 << "/" << manual_solution.m_dof << "="
-            << manual_solution.m_chi2 / manual_solution.m_dof
-            << " using " << peak_match_results.peaks_matched.size() << " peaks"
-            << endl;
-            cout << endl;
-
-            // Create rel_eff lambda from manual solution - handles extrapolation clamping
-            const auto manual_rel_eff = [&manual_solution, &peaks_matched]( double energy ) -> double {
-              // Extrapolation is terrible for rel-eff, so clamp to the lowest/highest peak energy
-              if( energy < peaks_matched.front().m_energy )
-                return manual_solution.relative_efficiency( peaks_matched.front().m_energy );
-              else if( energy > peaks_matched.back().m_energy )
-                return manual_solution.relative_efficiency( peaks_matched.back().m_energy );
-              else
-                return manual_solution.relative_efficiency( energy );
-            };
-
-            // Collect nuclides and activities from the manual solution
-            vector<pair<const SandiaDecay::Nuclide *, double>> nucs_and_acts;
-            for( const RelActCalcManual::IsotopeRelativeActivity &rel_act : manual_solution.m_rel_activities )
-            {
-              const SandiaDecay::Nuclide * const nuc = db->nuclide( rel_act.m_isotope );
-              assert( nuc );
-              if( !nuc )
-                throw std::logic_error( "Failed to get nuclide from RelAct nuc '" + rel_act.m_isotope + "'" );
-              nucs_and_acts.emplace_back( nuc, manual_solution.relative_activity( rel_act.m_isotope ) );
-            }
-
-            // Use the reusable clustering function to create ROIs
-            initial_rois = cluster_gammas_to_rois( manual_rel_eff, nucs_and_acts, foreground,
-                                                   fwhmFnctnlForm, fwhm_coefficients,
-                                                   lower_fwhm_energy, upper_fwhm_energy,
-                                                   lowest_energy_gamma, highest_energy_gamma,
-                                                   manual_settings );
-
-            cout << "Initial ROIs from RelActManual: ";
-            for( const auto &roi : initial_rois )
-              cout << "[" << roi.lower_energy << ", " << roi.upper_energy << "], ";
-            cout << endl;
-          }else
-          {
-            cout << "Failed to fit initial RelActCalcManual::RelEffSolution: " << manual_solution.m_error_message << endl;
-            cout << endl;
-          }
-        }catch( std::exception &e )
-        {
-          cerr << "Error trying to fit initial manual rel-eff solution: " << e.what() << endl;
-          cerr << endl;
-        }
-      }//if( !peaks_matched.empty() )
-
-      // Populate config fields needed for options creation
-      //  Convert source_nuclides to NucInputInfo for base_nuclides
-      config.base_nuclides.clear();
-      for( const SandiaDecay::Nuclide *nuc : source_nuclides )
-      {
-        RelActCalcAuto::NucInputInfo nuc_info;
-        nuc_info.source = nuc;
-        nuc_info.age = PeakDef::defaultDecayTime( nuc );
-        nuc_info.fit_age = false;
-        config.base_nuclides.push_back( nuc_info );
-      }
-      // initial_rois is now passed as parameter to create_*_options() methods
-
-      // Create source variant for the first nuclide
-      // (for now we only support single-nuclide sources)
-      RelActCalcAuto::SrcVariant source_variant = source_nuclides.front();
-
-      // Define skew types to try
-      std::vector<PeakDef::SkewType> skew_types = { PeakDef::SkewType::NoSkew };
-
-      // Try three configurations and collect results
-      std::vector<PeakFitResult> results;
-      for( PeakDef::SkewType skew_type : skew_types )
-      {
-        results.push_back( fit_peaks_for_nuclide_relactauto(
-          auto_search_peaks, foreground, source_variant,
-          config.create_lnx_options( skew_type, initial_rois ), long_background, drf, config ) );
-
-        results.push_back( fit_peaks_for_nuclide_relactauto(
-          auto_search_peaks, foreground, source_variant,
-          config.create_aluminum_options( skew_type, initial_rois ), long_background, drf, config ) );
-
-        results.push_back( fit_peaks_for_nuclide_relactauto(
-          auto_search_peaks, foreground, source_variant,
-          config.create_lead_options( skew_type, initial_rois ), long_background, drf, config ) );
-      }
-
-      // Find best solution by chi2
-      PeakFitResult best_result;
-      double best_chi2 = std::numeric_limits<double>::max();
-      bool found_valid = false;
-      std::string last_error;
-
-      for( size_t i = 0; i < results.size(); ++i )
-      {
-        const PeakFitResult &result = results[i];
-
-        cout << "RelActAuto trial " << i << " status=" << static_cast<int>(result.status);
-        if( result.status == RelActCalcAuto::RelActAutoSolution::Status::Success )
-          cout << " chi2/dof=" << result.solution.m_chi2 << "/" << result.solution.m_dof << endl;
-        else
-          cout << " error: " << result.error_message << endl;
-
-        if( result.status == RelActCalcAuto::RelActAutoSolution::Status::Success
-            && result.solution.m_chi2 < best_chi2 )
-        {
-          best_chi2 = result.solution.m_chi2;
-          best_result = result;
-          found_valid = true;
-        } else if( result.status != RelActCalcAuto::RelActAutoSolution::Status::Success )
-        {
-          last_error = result.error_message;
-        }
-      }
-
-      if( !found_valid )
-        throw std::runtime_error( "RelActAuto failed for all configs: " + last_error );
-
-      // Use best result (OLD CODE - now handled above)
-      const RelActCalcAuto::RelActAutoSolution &solution = best_result.solution;
-      const std::vector<PeakDef> &fit_peaks = best_result.fit_peaks;
-
-      cout << "Best solution (" << solution.m_options.rel_eff_curves.front().name << ") selected" << endl;
-      */
-      // End of old code
 
       // Score the fit results using only signal photopeaks
       FinalFit_GA::FinalFitScore fit_score;
