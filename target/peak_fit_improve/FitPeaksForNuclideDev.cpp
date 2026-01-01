@@ -26,6 +26,7 @@
 #include <chrono>
 #include <string>
 #include <fstream>
+#include <numeric>
 #include <iostream>
 
 #include <boost/asio/thread_pool.hpp>
@@ -40,6 +41,7 @@
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
+#include "InterSpec/PeakDists.h"
 #include "InterSpec/PeakFitLM.h"
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/PeakFitUtils.h"
@@ -62,7 +64,8 @@ namespace FitPeaksForNuclideDev
 struct ClusteredGammaInfo {
   double lower;
   double upper;
-  vector<pair<double,double>> gamma_lines; // (energy, amplitude)
+  vector<double> gamma_energies;    // energies of gamma lines in this cluster
+  vector<double> gamma_amplitudes;  // expected peak areas/amplitudes
 };
 
 
@@ -78,6 +81,18 @@ struct GammaClusteringSettings {
   double max_fwhm_width;            // Maximum ROI width in FWHM before breaking up
   double min_fwhm_roi;              // Minimum ROI width in FWHM to keep
   double min_fwhm_quad_cont;        // Width threshold to use quadratic continuum
+
+  // Parameters for synthetic spectrum-based ROI breaking
+  // Region around minimum/maximum to compute significance (in FWHM units)
+  double break_check_fwhm_fraction = 0.5;
+
+  // Threshold for considering a peak "significant" between breakpoints (sigma)
+  // Must have a peak exceeding this between any two breakpoints (or ROI edge and breakpoint)
+  double break_peak_significance_threshold = 2.0;
+
+  // When multiple breakpoint candidates have similar significance, use depth_score as tiebreaker
+  // This defines "similar" - candidates within this sigma of each other are considered tied
+  double break_significance_tie_threshold = 0.5;
 };
 
 
@@ -120,21 +135,21 @@ struct PeakFitForNuclideConfig
 
   // RelActManual equation form and order based on number of matched peaks
   size_t initial_manual_relEff_1peak_eqn_order = 0;
-  RelActCalc::RelEffEqnForm initial_manual_relEff_1peak_form = RelActCalc::RelEffEqnForm::LnX;
+  RelActCalc::RelEffEqnForm initial_manual_relEff_1peak_form = RelActCalc::RelEffEqnForm::LnXLnY;
 
   size_t initial_manual_relEff_2peak_eqn_order = 0;
-  RelActCalc::RelEffEqnForm initial_manual_relEff_2peak_form = RelActCalc::RelEffEqnForm::LnX;
+  RelActCalc::RelEffEqnForm initial_manual_relEff_2peak_form = RelActCalc::RelEffEqnForm::LnXLnY;
 
   size_t initial_manual_relEff_3peak_eqn_order = 1;
-  RelActCalc::RelEffEqnForm initial_manual_relEff_3peak_form = RelActCalc::RelEffEqnForm::LnX;
+  RelActCalc::RelEffEqnForm initial_manual_relEff_3peak_form = RelActCalc::RelEffEqnForm::LnXLnY;
 
   bool initial_manual_relEff_4peak_physical_use_hoerl = false;
   size_t initial_manual_relEff_4peak_eqn_order = 2;
-  RelActCalc::RelEffEqnForm initial_manual_relEff_4peak_form = RelActCalc::RelEffEqnForm::LnX;
+  RelActCalc::RelEffEqnForm initial_manual_relEff_4peak_form = RelActCalc::RelEffEqnForm::LnXLnY;
 
   bool initial_manual_relEff_many_peak_physical_use_hoerl = false;
   size_t initial_manual_relEff_many_peak_eqn_order = 3;
-  RelActCalc::RelEffEqnForm initial_manual_relEff_manypeak_form = RelActCalc::RelEffEqnForm::LnX;
+  RelActCalc::RelEffEqnForm initial_manual_relEff_manypeak_form = RelActCalc::RelEffEqnForm::LnXLnY;
 
   // ROI clustering thresholds for manual RelEff stage
   double manual_rel_eff_sol_min_data_area_keep = 10.0;
@@ -214,6 +229,11 @@ struct PeakFitForNuclideConfig
   // Minimum total chi2 reduction required for peaks in a ROI to be considered significant
   // The chi2 with peaks must be at least this much lower than chi2 with continuum-only
   double roi_significance_min_chi2_reduction = 10.0;
+
+  // Minimum peak significance (peak_area / sqrt(continuum)) for a peak to be considered significant
+  // If any peak in a ROI has significance above this threshold, the ROI is considered significant
+  // (alternative to chi2 reduction test - ROI passes if EITHER test passes)
+  double roi_significance_min_peak_sig = 3.5;
 };//struct PeakFitForNuclideConfig
 
 
@@ -243,8 +263,11 @@ struct RoiSignificanceResult
   double chi2_with_peaks = 0.0;
   double chi2_continuum_only = 0.0;
   double chi2_reduction = 0.0;  // chi2_continuum_only - chi2_with_peaks
+  double max_peak_significance = 0.0;  // Maximum peak_area / sqrt(continuum) for any peak
   size_t num_channels = 0;
-  bool has_significant_peaks = false;
+  bool passes_chi2_test = false;       // chi2_reduction >= threshold
+  bool passes_peak_sig_test = false;   // max_peak_significance >= threshold
+  bool has_significant_peaks = false;  // passes_chi2_test OR passes_peak_sig_test
 };//struct RoiSignificanceResult
 
 
@@ -255,19 +278,22 @@ struct RoiSignificanceResult
  2. Computes chi2 with those peaks using chi2_for_region()
  3. Fits a continuum-only model using fit_amp_and_offset()
  4. Computes total chi2 reduction
- 5. Determines if peaks are significant based on threshold
+ 5. Computes peak significance (peak_area / sqrt(continuum)) for each peak
+ 6. Determines if peaks are significant based on either threshold
 
  @param roi The ROI range to evaluate
  @param all_peaks All peaks in the solution
  @param data The spectrum measurement
  @param min_chi2_reduction Minimum chi2 reduction to consider peaks significant
+ @param min_peak_significance Minimum peak significance to consider a peak significant
  @return RoiSignificanceResult with chi2 values and significance determination
  */
 RoiSignificanceResult compute_roi_chi2_significance(
   const RelActCalcAuto::RoiRange &roi,
   const std::vector<PeakDef> &all_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &data,
-  const double min_chi2_reduction )
+  const double min_chi2_reduction,
+  const double min_peak_significance )
 {
   RoiSignificanceResult result;
 
@@ -358,9 +384,42 @@ RoiSignificanceResult compute_roi_chi2_significance(
     continuum_uncerts
   );
 
-  // Compute chi2 reduction and determine significance
+  // Compute chi2 reduction
   result.chi2_reduction = result.chi2_continuum_only - result.chi2_with_peaks;
-  result.has_significant_peaks = (result.chi2_reduction >= min_chi2_reduction);
+  result.passes_chi2_test = (result.chi2_reduction >= min_chi2_reduction);
+
+  // Compute peak significance for each peak: peak_area / sqrt(continuum)
+  // For each peak, integrate the continuum between mean ± 1 FWHM
+  // Peak amplitude in this range is ~97.93% of total (for a Gaussian, erf(2.355/sqrt(2)) ≈ 0.9793)
+  const double fwhm_coverage_fraction = 0.9793;
+
+  for( const std::shared_ptr<const PeakDef> &peak : peaks_in_roi )
+  {
+    const double peak_mean = peak->mean();
+    const double peak_fwhm = peak->fwhm();
+    const double peak_lower = peak_mean - peak_fwhm;
+    const double peak_upper = peak_mean + peak_fwhm;
+
+    // Integrate continuum between peak_lower and peak_upper
+    const std::shared_ptr<const PeakContinuum> peak_cont = peak->continuum();
+    if( !peak_cont )
+      continue;
+
+    // Continuum integral, with a minimum of 1.0 to avoid division issues
+    const double continuum_integral = std::max( 1.0, peak_cont->offset_integral( peak_lower, peak_upper, data ) );
+
+    // Peak amplitude in the ±1 FWHM range
+    const double peak_amp_in_range = peak->amplitude() * fwhm_coverage_fraction;
+
+    // Significance = peak_area / sqrt(continuum)
+    const double peak_sig = peak_amp_in_range / std::sqrt( continuum_integral );
+
+    if( peak_sig > result.max_peak_significance )
+      result.max_peak_significance = peak_sig;
+  }//for( loop over peaks in ROI )
+
+  result.passes_peak_sig_test = (result.max_peak_significance >= min_peak_significance);
+  result.has_significant_peaks = (result.passes_chi2_test || result.passes_peak_sig_test);
 
   return result;
 }//compute_roi_chi2_significance
@@ -374,6 +433,7 @@ RoiSignificanceResult compute_roi_chi2_significance(
  @param solution The RelActAuto solution containing ROIs and peaks
  @param data The spectrum measurement
  @param min_chi2_reduction Minimum chi2 reduction for ROI to be significant
+ @param min_peak_significance Minimum peak significance for ROI to be significant
  @param insignificant_roi_indices Output vector of ROI indices that were insignificant
  @return Chi2/DOF considering only significant ROIs
  */
@@ -381,6 +441,7 @@ double compute_filtered_chi2_dof(
   const RelActCalcAuto::RelActAutoSolution &solution,
   const std::shared_ptr<const SpecUtils::Measurement> &data,
   const double min_chi2_reduction,
+  const double min_peak_significance,
   std::vector<size_t> &insignificant_roi_indices )
 {
   insignificant_roi_indices.clear();
@@ -393,7 +454,7 @@ double compute_filtered_chi2_dof(
     const RelActCalcAuto::RoiRange &roi = solution.m_final_roi_ranges[roi_idx];
 
     const RoiSignificanceResult sig_result = compute_roi_chi2_significance(
-      roi, solution.m_peaks_without_back_sub, data, min_chi2_reduction );
+      roi, solution.m_peaks_without_back_sub, data, min_chi2_reduction, min_peak_significance );
 
     if( sig_result.has_significant_peaks )
     {
@@ -403,8 +464,10 @@ double compute_filtered_chi2_dof(
       if( PeakFitImprove::debug_printout )
       {
         cout << "  Significant ROI " << roi_idx << " [" << roi.lower_energy << ", " << roi.upper_energy << "] keV: "
-             << "chi2_reduction=" << sig_result.chi2_reduction
-             << " (threshold=" << min_chi2_reduction << ")" << endl;
+             << "chi2_test=" << (sig_result.passes_chi2_test ? "PASS" : "fail")
+             << " (reduction=" << sig_result.chi2_reduction << ", thresh=" << min_chi2_reduction << "), "
+             << "peak_sig_test=" << (sig_result.passes_peak_sig_test ? "PASS" : "fail")
+             << " (max_sig=" << sig_result.max_peak_significance << ", thresh=" << min_peak_significance << ")" << endl;
 
         // Print peaks in this ROI
         for( const PeakDef &peak : solution.m_peaks_without_back_sub )
@@ -426,8 +489,10 @@ double compute_filtered_chi2_dof(
       if( PeakFitImprove::debug_printout )
       {
         cout << "  Insignificant ROI " << roi_idx << " [" << roi.lower_energy << ", " << roi.upper_energy << "] keV: "
-             << "chi2_reduction=" << sig_result.chi2_reduction
-             << " (threshold=" << min_chi2_reduction << ")" << endl;
+             << "chi2_test=" << (sig_result.passes_chi2_test ? "PASS" : "fail")
+             << " (reduction=" << sig_result.chi2_reduction << ", thresh=" << min_chi2_reduction << "), "
+             << "peak_sig_test=" << (sig_result.passes_peak_sig_test ? "PASS" : "fail")
+             << " (max_sig=" << sig_result.max_peak_significance << ", thresh=" << min_peak_significance << ")" << endl;
 
         // Print peaks in this ROI
         for( const PeakDef &peak : solution.m_peaks_without_back_sub )
@@ -621,9 +686,11 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         // would artificially reduce chi2/dof.
         std::vector<size_t> old_insignificant_rois, new_insignificant_rois;
         const double old_chi2_dof = compute_filtered_chi2_dof(
-          solution, foreground, config.roi_significance_min_chi2_reduction, old_insignificant_rois );
+          solution, foreground, config.roi_significance_min_chi2_reduction,
+          config.roi_significance_min_peak_sig, old_insignificant_rois );
         const double new_chi2_dof = compute_filtered_chi2_dof(
-          refined_solution, foreground, config.roi_significance_min_chi2_reduction, new_insignificant_rois );
+          refined_solution, foreground, config.roi_significance_min_chi2_reduction,
+          config.roi_significance_min_peak_sig, new_insignificant_rois );
 
         // Check if chi2/dof improved
         if( new_chi2_dof >= old_chi2_dof )
@@ -674,7 +741,8 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     // Identify ROIs without significant peaks for filtering
     std::vector<size_t> final_insignificant_rois;
     compute_filtered_chi2_dof( solution, foreground,
-      config.roi_significance_min_chi2_reduction, final_insignificant_rois );
+      config.roi_significance_min_chi2_reduction, config.roi_significance_min_peak_sig,
+      final_insignificant_rois );
 
     // Build set of insignificant ROI ranges for filtering
     std::vector<std::pair<double,double>> insignificant_roi_ranges;
@@ -1369,6 +1437,300 @@ PeakFitResult fit_peaks_for_nuclides(
 }//fit_peaks_for_nuclides
 
 
+// Struct to hold local minimum info for ROI breakpoint selection
+struct LocalMinimum {
+  size_t channel;                  // Absolute channel number of minimum
+  double synthetic_value;
+  double depth_score;              // For tiebreaking (higher = better)
+  double statistical_significance; // Primary criterion (lower = better breakpoint)
+};
+
+
+/** Build a synthetic spectrum from expected Gaussian peak shapes.
+
+ Uses PeakDists::photopeak_function_integral() for consistency with other peak calculations.
+ The synthetic spectrum uses the same binning as the actual data.
+
+ @param gamma_energies Energies of gamma lines
+ @param gamma_amplitudes Expected peak areas/amplitudes
+ @param fwhm_at_energy Function returning FWHM at a given energy
+ @param channel_energies Pointer to channel energy edges from data->channel_energies()->data()
+ @param start_channel The starting channel for the synthetic spectrum
+ @param num_channels Number of channels to compute
+ @return Vector of synthetic counts for each channel
+ */
+vector<double> build_synthetic_spectrum(
+  const vector<double> &gamma_energies,
+  const vector<double> &gamma_amplitudes,
+  const function<double(double)> &fwhm_at_energy,
+  const float *channel_energies,
+  size_t start_channel,
+  size_t num_channels )
+{
+  assert( gamma_energies.size() == gamma_amplitudes.size() );
+
+  // Zero-initialize the synthetic spectrum (same binning as data)
+  vector<double> synthetic( num_channels, 0.0 );
+
+  // Add each gamma line's Gaussian contribution using photopeak_function_integral
+  for( size_t g = 0; g < gamma_energies.size(); ++g )
+  {
+    const double mean = gamma_energies[g];
+    const double amplitude = gamma_amplitudes[g];
+    const double sigma = fwhm_at_energy( mean ) / 2.35482;  // FWHM to sigma
+
+    // photopeak_function_integral adds the peak contribution to synthetic[]
+    // Pass pointer to channel energies starting at start_channel
+    PeakDists::photopeak_function_integral<double>(
+      mean,
+      sigma,
+      amplitude,
+      PeakDef::SkewType::NoSkew,  // No skew for synthetic spectrum
+      nullptr,                     // No skew parameters
+      num_channels,
+      &channel_energies[start_channel],
+      synthetic.data()
+    );
+  }
+
+  return synthetic;
+}//build_synthetic_spectrum
+
+
+/** Computes how significant the peak in the synthetic spectrum is compared to the noise level in the data.
+
+ This metric checks whether the expected peak counts (from the synthetic spectrum)
+ would be detectable above the statistical noise in the actual data.
+ Significance = sum(synthetic) / sqrt(sum(data))
+ This is analogous to signal / noise.
+
+ @param synthetic Pre-computed synthetic spectrum, starting at start_channel
+ @param start_channel The channel that synthetic[0] corresponds to
+ @param check_start_ch First channel to check (absolute)
+ @param check_end_ch One past last channel to check (absolute)
+ @param data The spectrum measurement to compare against
+ @return Significance metric: sum(synthetic) / sqrt(sum(data))
+ */
+double compute_significance_in_region(
+  const vector<double> &synthetic,
+  size_t start_channel,
+  size_t check_start_ch,
+  size_t check_end_ch,
+  const shared_ptr<const SpecUtils::Measurement> &data )
+{
+  if( check_end_ch <= check_start_ch )
+    return 0.0;  // Too few channels, return neutral
+
+  // Ensure check range is within synthetic range
+  if( check_start_ch < start_channel )
+    check_start_ch = start_channel;
+  if( check_end_ch > start_channel + synthetic.size() )
+    check_end_ch = start_channel + synthetic.size();
+
+  if( check_end_ch <= check_start_ch )
+    return 0.0;
+
+  // Sum the expected peak counts from synthetic and the data counts
+  double sum_synthetic = 0.0;
+  double sum_data = 0.0;
+
+  for( size_t ch = check_start_ch; ch < check_end_ch; ++ch )
+  {
+    const size_t syn_idx = ch - start_channel;
+    sum_synthetic += synthetic[syn_idx];
+    sum_data += data->gamma_channel_content( ch );
+  }
+
+  // Significance = expected_signal / noise
+  // where noise = sqrt(data_counts) (Poisson statistics)
+  if( sum_data <= 0.0 )
+    return 0.0;
+
+  return sum_synthetic / std::sqrt( sum_data );
+}//compute_significance_in_region
+
+
+/** Checks if there's a statistically significant local maximum in the synthetic spectrum.
+
+ Uses the pre-computed synthetic spectrum and compares to actual data.
+
+ @param lower_channel Search range start (absolute channel)
+ @param upper_channel Search range end (absolute channel)
+ @param synthetic Pre-computed synthetic spectrum
+ @param start_channel Channel that synthetic[0] corresponds to
+ @param data Spectrum measurement to compare against
+ @param channel_energies Pointer to channel energy edges
+ @param fwhm_at_energy Function returning FWHM at a given energy
+ @param check_fwhm_fraction Fraction of FWHM to use for check region
+ @param significance_threshold Minimum significance to consider a peak significant
+ @return true if a significant peak exists between the channels
+ */
+bool has_significant_peak_between(
+  size_t lower_channel,
+  size_t upper_channel,
+  const vector<double> &synthetic,
+  size_t start_channel,
+  const shared_ptr<const SpecUtils::Measurement> &data,
+  const float *channel_energies,
+  const function<double(double)> &fwhm_at_energy,
+  double check_fwhm_fraction,
+  double significance_threshold )
+{
+  const size_t num_channels = synthetic.size();
+
+  // Convert to indices within synthetic
+  if( lower_channel < start_channel )
+    lower_channel = start_channel;
+  if( upper_channel > start_channel + num_channels )
+    upper_channel = start_channel + num_channels;
+
+  // Find local maxima in synthetic between lower_channel and upper_channel
+  size_t num_local_max = 0;
+  double max_significance = 0.0;
+
+  for( size_t ch = lower_channel; ch < upper_channel; ++ch )
+  {
+    const size_t i = ch - start_channel;
+    if( i == 0 || i >= num_channels - 1 )
+      continue;
+
+    // Check if this is a local maximum in the synthetic spectrum
+    if( synthetic[i] > synthetic[i-1] && synthetic[i] > synthetic[i+1] )
+    {
+      num_local_max++;
+
+      // Get energy at this channel for FWHM calculation
+      const double ch_energy = 0.5 * (channel_energies[ch] + channel_energies[ch + 1]);
+      const double fwhm = fwhm_at_energy( ch_energy );
+
+      // Convert FWHM fraction to channel range for significance check
+      const double half_width = check_fwhm_fraction * fwhm;
+      const size_t check_start = data->find_gamma_channel( static_cast<float>(ch_energy - half_width) );
+      const size_t check_end = data->find_gamma_channel( static_cast<float>(ch_energy + half_width) );
+
+      const double significance = compute_significance_in_region(
+        synthetic, start_channel, check_start, check_end, data );
+
+      if( significance > max_significance )
+        max_significance = significance;
+
+      if( significance >= significance_threshold )
+        return true;  // Found a significant peak
+    }
+  }
+
+  // Debug output - only print occasionally to avoid overwhelming output
+  static size_t call_count = 0;
+  if( PeakFitImprove::debug_printout && (call_count++ % 10 == 0) )
+  {
+    const double lower_energy = channel_energies[lower_channel];
+    const double upper_energy = channel_energies[upper_channel];
+    cerr << "  has_significant_peak_between [" << lower_energy << ", " << upper_energy
+         << "] keV: found " << num_local_max << " local maxima, max_sig=" << max_significance
+         << ", threshold=" << significance_threshold;
+
+    // Also show sample synthetic and data values
+    double max_synth = 0.0;
+    double data_at_max_synth = 0.0;
+    for( size_t ch = lower_channel; ch < upper_channel; ++ch )
+    {
+      const size_t i = ch - start_channel;
+      if( i >= num_channels )
+        break;
+      if( synthetic[i] > max_synth )
+      {
+        max_synth = synthetic[i];
+        data_at_max_synth = data->gamma_channel_content( ch );
+      }
+    }
+    cerr << ", max_synth=" << max_synth << ", data_at_max_synth=" << data_at_max_synth << endl;
+  }
+
+  return false;  // No significant peak found
+}//has_significant_peak_between
+
+
+/** Finds local minima in the synthetic spectrum and computes their significance.
+
+ Computes both depth_score (tiebreaker) and statistical significance (primary criterion).
+ Uses the pre-computed synthetic spectrum for all calculations.
+
+ @param synthetic Pre-computed synthetic spectrum
+ @param start_channel Channel that synthetic[0] corresponds to
+ @param data Spectrum measurement to compare against
+ @param channel_energies Pointer to channel energy edges
+ @param fwhm_at_energy Function returning FWHM at a given energy
+ @param check_fwhm_fraction Fraction of FWHM to use for check region
+ @return Vector of LocalMinimum structs for each local minimum found
+ */
+vector<LocalMinimum> find_synthetic_minima(
+  const vector<double> &synthetic,
+  size_t start_channel,
+  const shared_ptr<const SpecUtils::Measurement> &data,
+  const float *channel_energies,
+  const function<double(double)> &fwhm_at_energy,
+  double check_fwhm_fraction )
+{
+  vector<LocalMinimum> minima;
+  const size_t num_channels = synthetic.size();
+
+  for( size_t i = 1; i < num_channels - 1; ++i )
+  {
+    // Check if this is a local minimum
+    if( synthetic[i] < synthetic[i-1] && synthetic[i] < synthetic[i+1] )
+    {
+      const double min_value = synthetic[i];
+      const size_t abs_channel = start_channel + i;
+
+      // Find left maximum (scan left until we find a local max or boundary)
+      double left_max = min_value;
+      for( size_t j = i; j > 0; --j )
+      {
+        if( synthetic[j] > left_max )
+          left_max = synthetic[j];
+        if( j > 0 && synthetic[j] > synthetic[j-1] && synthetic[j] > synthetic[j+1] )
+          break;  // Found left local maximum
+      }
+
+      // Find right maximum
+      double right_max = min_value;
+      for( size_t j = i; j < num_channels - 1; ++j )
+      {
+        if( synthetic[j] > right_max )
+          right_max = synthetic[j];
+        if( synthetic[j] > synthetic[j-1] && synthetic[j] > synthetic[j+1] )
+          break;  // Found right local maximum
+      }
+
+      // Compute relative depth score (for tiebreaking)
+      const double smaller_max = min( left_max, right_max );
+      const double larger_max = max( left_max, right_max );
+      const double depth = smaller_max - min_value;
+      const double depth_score = (larger_max > 0) ? depth / larger_max : 0.0;
+
+      // Get energy at this channel for FWHM-based check region
+      const double ch_energy = 0.5 * (channel_energies[abs_channel] + channel_energies[abs_channel + 1]);
+      const double fwhm = fwhm_at_energy( ch_energy );
+      const double half_width = check_fwhm_fraction * fwhm;
+      const size_t check_start = data->find_gamma_channel( static_cast<float>(ch_energy - half_width) );
+      const size_t check_end = data->find_gamma_channel( static_cast<float>(ch_energy + half_width) );
+
+      const double significance = compute_significance_in_region(
+        synthetic, start_channel, check_start, check_end, data );
+
+      LocalMinimum lm;
+      lm.channel = abs_channel;
+      lm.synthetic_value = min_value;
+      lm.depth_score = depth_score;
+      lm.statistical_significance = significance;
+      minima.push_back( lm );
+    }
+  }
+
+  return minima;
+}//find_synthetic_minima
+
+
 /** Clusters gamma lines and creates ROIs based on a relative efficiency function.
 
  This function takes gamma lines from the specified nuclides, estimates their relative
@@ -1424,10 +1786,33 @@ vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
 
     const double age = PeakDef::defaultDecayTime( nuc );
 
+    if( PeakFitImprove::debug_printout )
+    {
+      cerr << "cluster_gammas_to_rois: Nuclide " << nuc->symbol << ", activity=" << activity
+           << ", age=" << (age / PhysicalUnits::second) << " seconds ("
+           << (age / PhysicalUnits::year) << " years)" << endl;
+    }
+
     SandiaDecay::NuclideMixture mix;
     mix.addAgedNuclideByActivity( nuc, activity, age );
     const vector<SandiaDecay::EnergyRatePair> photons
         = mix.photons( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy );
+
+    if( PeakFitImprove::debug_printout )
+    {
+      cerr << "  " << photons.size() << " photons from " << nuc->symbol << ", energy range ["
+           << lowest_energy << ", " << highest_energy << "] keV" << endl;
+      // Show photons near 807 keV
+      for( const SandiaDecay::EnergyRatePair &photon : photons )
+      {
+        if( photon.energy >= 800.0 && photon.energy <= 820.0 )
+        {
+          const double rel_eff = rel_eff_fcn( photon.energy );
+          cerr << "    *** Photon near 807 keV: " << photon.energy << " keV, rate=" << photon.numPerSecond
+               << " /s, rel_eff=" << rel_eff << ", est_counts=" << (photon.numPerSecond * rel_eff) << endl;
+        }
+      }
+    }
 
     for( const SandiaDecay::EnergyRatePair &photon : photons )
     {
@@ -1462,6 +1847,21 @@ vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
       return lhs.second > rhs.second;
   } );
 
+  if( PeakFitImprove::debug_printout )
+  {
+    cerr << "cluster_gammas_to_rois: Input gammas (" << gammas_by_counts.size() << " total):" << endl;
+    for( const auto &gc : gammas_by_energy )
+    {
+      // Show all gammas, but highlight those in 800-820 keV range
+      if( gc.first >= 800.0 && gc.first <= 820.0 )
+        cerr << "  *** " << gc.first << " keV, est_counts=" << gc.second << " ***" << endl;
+    }
+    // Also show top 10 by counts
+    cerr << "  Top 10 by expected counts:" << endl;
+    for( size_t i = 0; i < std::min( gammas_by_counts.size(), size_t(10) ); ++i )
+      cerr << "    " << gammas_by_counts[i].first << " keV, est_counts=" << gammas_by_counts[i].second << endl;
+  }
+
   // Cluster gamma lines
   vector<ClusteredGammaInfo> clustered_gammas;
 
@@ -1476,7 +1876,15 @@ vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
       continue;
 
     if( ene_pos->first != energy_counts.first )
-      continue; // Already removed from gammas_by_energy
+    {
+      // Already removed from gammas_by_energy (absorbed into another cluster)
+      if( PeakFitImprove::debug_printout && (energy_counts.first >= 800.0) && (energy_counts.first <= 820.0) )
+      {
+        cerr << "cluster_gammas_to_rois: Gamma at " << energy_counts.first
+             << " keV already absorbed into another cluster" << endl;
+      }
+      continue;
+    }
 
     const double energy = energy_counts.first;
     const double counts = energy_counts.second;
@@ -1513,8 +1921,14 @@ vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
           return sum + el.second;
     } );
 
-    // Capture the gamma lines before erasing them
-    vector<pair<double,double>> gamma_lines_in_cluster( start_remove, end_remove );
+    // Capture the gamma lines before erasing them - as separate energy and amplitude arrays
+    vector<double> gamma_energies_in_cluster;
+    vector<double> gamma_amplitudes_in_cluster;
+    for( auto it = start_remove; it != end_remove; ++it )
+    {
+      gamma_energies_in_cluster.push_back( it->first );
+      gamma_amplitudes_in_cluster.push_back( it->second );
+    }
 
     const double data_area = foreground->gamma_integral( static_cast<float>(lower), static_cast<float>(upper) );
 
@@ -1530,15 +1944,31 @@ vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
       continue;
     }
 
-    if( (data_area > settings.min_data_area_keep)
-       && (counts_in_region > settings.min_est_peak_area_keep)
-       && (signif > settings.min_est_significance_keep) )
+    const bool passes_data_area = (data_area > settings.min_data_area_keep);
+    const bool passes_counts = (counts_in_region > settings.min_est_peak_area_keep);
+    const bool passes_signif = (signif > settings.min_est_significance_keep);
+
+    if( passes_data_area && passes_counts && passes_signif )
     {
       ClusteredGammaInfo cluster_info;
       cluster_info.lower = lower;
       cluster_info.upper = upper;
-      cluster_info.gamma_lines = std::move( gamma_lines_in_cluster );
+      cluster_info.gamma_energies = std::move( gamma_energies_in_cluster );
+      cluster_info.gamma_amplitudes = std::move( gamma_amplitudes_in_cluster );
       clustered_gammas.push_back( std::move( cluster_info ) );
+    }
+    else if( PeakFitImprove::debug_printout )
+    {
+      // Print why this cluster was rejected
+      cerr << "cluster_gammas_to_rois: Rejected cluster [" << lower << ", " << upper << "] keV (energy="
+           << energy << " keV): ";
+      if( !passes_data_area )
+        cerr << "data_area=" << data_area << " < " << settings.min_data_area_keep << "; ";
+      if( !passes_counts )
+        cerr << "est_counts=" << counts_in_region << " < " << settings.min_est_peak_area_keep << "; ";
+      if( !passes_signif )
+        cerr << "signif=" << signif << " < " << settings.min_est_significance_keep << "; ";
+      cerr << endl;
     }
   }//for( const pair<double,double> &energy_counts : gammas_by_counts )
 
@@ -1548,6 +1978,108 @@ vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
       return lhs.lower < rhs.lower;
   } );
 
+  if( PeakFitImprove::debug_printout )
+  {
+    cerr << "cluster_gammas_to_rois: Initial " << clustered_gammas.size() << " clustered ROIs:" << endl;
+    for( size_t i = 0; i < clustered_gammas.size(); ++i )
+    {
+      const ClusteredGammaInfo &c = clustered_gammas[i];
+      cerr << "  [" << i << "] range=[" << c.lower << ", " << c.upper << "] keV, "
+           << c.gamma_energies.size() << " gammas: ";
+      for( size_t j = 0; j < std::min( c.gamma_energies.size(), size_t(5) ); ++j )
+        cerr << c.gamma_energies[j] << (j + 1 < c.gamma_energies.size() ? ", " : "");
+      if( c.gamma_energies.size() > 5 )
+        cerr << "... (" << c.gamma_energies.size() - 5 << " more)";
+      cerr << endl;
+    }
+  }
+
+  // At this point we have significant peaks, roughly as would be observed (the dominant peak, and then any smaller
+  // peaks within cluster_num_sigma of the dominant peak).
+  // After merging overlapping clusters and breaking up overly-wide clusters, we calculate weighted mean and effective
+  // FWHM (accounting for both individual peak widths and the spread of gamma energies), then set the final ROI bounds.
+
+  
+  // Update cluster bounds based on weighted mean and effective FWHM
+  // The effective FWHM accounts for both individual peak widths and the spread of gamma line energies
+  // Uses the law of total variance for a mixture of Gaussians:
+  //   σ²_total = (weighted avg of individual variances) + (weighted variance of the means)
+  for( ClusteredGammaInfo &cluster : clustered_gammas )
+  {
+    if( cluster.gamma_energies.empty() )
+      continue;
+    
+    // Calculate weighted mean energy (weighted by expected amplitude)
+    double sum_weighted_energy = 0.0;
+    double sum_weights = 0.0;
+    for( size_t i = 0; i < cluster.gamma_energies.size(); ++i )
+    {
+      sum_weighted_energy += cluster.gamma_energies[i] * cluster.gamma_amplitudes[i];
+      sum_weights += cluster.gamma_amplitudes[i];
+    }
+    
+    if( sum_weights <= 0.0 )
+      continue;
+    
+    const double weighted_mean = sum_weighted_energy / sum_weights;
+    
+    // Calculate effective variance using law of total variance for mixture of Gaussians
+    // σ²_total = E[Var(X|I)] + Var(E[X|I])
+    //          = (weighted avg of individual σ²) + (weighted variance of means)
+    double sum_weighted_var = 0.0;        // For E[Var(X|I)] - weighted average of individual variances
+    double sum_weighted_sq_dev = 0.0;     // For Var(E[X|I]) - weighted variance of the means
+    
+    for( size_t i = 0; i < cluster.gamma_energies.size(); ++i )
+    {
+      const double energy = cluster.gamma_energies[i];
+      const double amplitude = cluster.gamma_amplitudes[i];
+      
+      // Calculate FWHM at this gamma energy (clamped to valid range)
+      const double energy_clamped = have_fwhm_range
+      ? std::clamp( energy, fwhm_lower_energy, fwhm_upper_energy )
+      : energy;
+      const double fwhm_i = DetectorPeakResponse::peakResolutionFWHM(
+                                                                     static_cast<float>(energy_clamped), fwhm_form, fwhm_coefficients );
+      
+      if( !std::isfinite(fwhm_i) || (fwhm_i <= 0.0) )
+        continue;
+      
+      const double sigma_i = fwhm_i / PhysicalUnits::fwhm_nsigma;
+      const double var_i = sigma_i * sigma_i;
+      
+      // Weighted average of individual variances
+      sum_weighted_var += amplitude * var_i;
+      
+      // Weighted squared deviation from weighted mean
+      const double dev = energy - weighted_mean;
+      sum_weighted_sq_dev += amplitude * dev * dev;
+    }
+    
+    // Total variance = weighted avg variance + weighted variance of means
+    const double total_var = (sum_weighted_var + sum_weighted_sq_dev) / sum_weights;
+    const double effective_sigma = std::sqrt( total_var );
+    const double effective_fwhm = effective_sigma * PhysicalUnits::fwhm_nsigma;
+    
+    if( !std::isfinite(effective_fwhm) || (effective_fwhm <= 0.0) )
+      continue;
+    
+    // Set new bounds based on weighted mean and effective FWHM
+    const double old_lower = cluster.lower;
+    const double old_upper = cluster.upper;
+    cluster.lower = weighted_mean - settings.roi_width_num_fwhm_lower * effective_fwhm;
+    cluster.upper = weighted_mean + settings.roi_width_num_fwhm_upper * effective_fwhm;
+    
+    if( PeakFitImprove::debug_printout )
+    {
+      cerr << "cluster_gammas_to_rois: Setting effective FWHM bounds for cluster with "
+      << cluster.gamma_energies.size() << " gammas:" << endl
+      << "  weighted_mean=" << weighted_mean << " keV, effective_fwhm=" << effective_fwhm << " keV" << endl
+      << "  old range=[" << old_lower << ", " << old_upper << "] keV"
+      << " -> new range=[" << cluster.lower << ", " << cluster.upper << "] keV" << endl;
+    }
+  }//for( ClusteredGammaInfo &cluster : final_clusters )
+  
+  
   // Merge overlapping clusters
   vector<ClusteredGammaInfo> merged_clusters;
   for( const ClusteredGammaInfo &cluster : clustered_gammas )
@@ -1558,11 +2090,23 @@ vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
     }
     else
     {
+      if( PeakFitImprove::debug_printout )
+      {
+        cerr << "cluster_gammas_to_rois: Merging cluster [" << cluster.lower << ", " << cluster.upper
+             << "] into [" << merged_clusters.back().lower << ", " << merged_clusters.back().upper << "]"
+             << " -> new upper=" << std::max( merged_clusters.back().upper, cluster.upper ) << endl;
+      }
+
       merged_clusters.back().upper = std::max( merged_clusters.back().upper, cluster.upper );
-      merged_clusters.back().gamma_lines.insert(
-        end(merged_clusters.back().gamma_lines),
-        begin(cluster.gamma_lines),
-        end(cluster.gamma_lines)
+      merged_clusters.back().gamma_energies.insert(
+        end(merged_clusters.back().gamma_energies),
+        begin(cluster.gamma_energies),
+        end(cluster.gamma_energies)
+      );
+      merged_clusters.back().gamma_amplitudes.insert(
+        end(merged_clusters.back().gamma_amplitudes),
+        begin(cluster.gamma_amplitudes),
+        end(cluster.gamma_amplitudes)
       );
     }
   }//for( const ClusteredGammaInfo &cluster : clustered_gammas )
@@ -1578,6 +2122,17 @@ vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
       } ),
     end(merged_clusters)
   );
+
+  if( PeakFitImprove::debug_printout )
+  {
+    cerr << "cluster_gammas_to_rois: After merging, " << merged_clusters.size() << " clusters:" << endl;
+    for( size_t i = 0; i < merged_clusters.size(); ++i )
+    {
+      const ClusteredGammaInfo &c = merged_clusters[i];
+      cerr << "  [" << i << "] range=[" << c.lower << ", " << c.upper << "] keV ("
+           << (c.upper - c.lower) << " keV wide), " << c.gamma_energies.size() << " gammas" << endl;
+    }
+  }
 
   // Break up ROIs that are too wide
   vector<ClusteredGammaInfo> final_clusters;
@@ -1595,167 +2150,281 @@ vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
     const double max_width = settings.max_fwhm_width * mid_fwhm;
     const double current_width = cluster.upper - cluster.lower;
 
+    if( PeakFitImprove::debug_printout )
+    {
+      cerr << "cluster_gammas_to_rois: Cluster [" << cluster.lower << ", " << cluster.upper
+           << "] keV: width=" << current_width << " keV, mid_fwhm=" << mid_fwhm
+           << " keV, max_fwhm_width=" << settings.max_fwhm_width
+           << ", max_width=" << max_width << " keV, "
+           << (current_width <= max_width ? "NOT breaking" : "NEEDS breaking") << endl;
+    }
+
     if( current_width <= max_width )
     {
       final_clusters.push_back( std::move( cluster ) );
       continue;
     }
 
-    // Need to break up this cluster - sort gamma lines by energy first
-    std::sort( begin(cluster.gamma_lines), end(cluster.gamma_lines),
-      []( const pair<double,double> &a, const pair<double,double> &b ) {
-        return a.first < b.first;
-    } );
+    // Need to break up this cluster using synthetic spectrum-based breakpoint selection
+    // Sort gamma energies and amplitudes together by energy
+    {
+      // Create index array for sorting
+      vector<size_t> indices( cluster.gamma_energies.size() );
+      std::iota( begin(indices), end(indices), 0 );
+      std::sort( begin(indices), end(indices),
+        [&cluster]( size_t a, size_t b ) {
+          return cluster.gamma_energies[a] < cluster.gamma_energies[b];
+        } );
 
-    if( cluster.gamma_lines.size() <= 1 )
+      // Reorder both arrays based on sorted indices
+      vector<double> sorted_energies( cluster.gamma_energies.size() );
+      vector<double> sorted_amplitudes( cluster.gamma_amplitudes.size() );
+      for( size_t i = 0; i < indices.size(); ++i )
+      {
+        sorted_energies[i] = cluster.gamma_energies[indices[i]];
+        sorted_amplitudes[i] = cluster.gamma_amplitudes[indices[i]];
+      }
+      cluster.gamma_energies = std::move( sorted_energies );
+      cluster.gamma_amplitudes = std::move( sorted_amplitudes );
+    }
+
+    if( cluster.gamma_energies.size() <= 1 )
     {
       final_clusters.push_back( std::move( cluster ) );
       continue;
     }
 
-    // Calculate potential breakpoints between consecutive gamma lines
-    // See algorithm description in the comments near line 607-627
-    struct BreakpointInfo {
-      double gap_center;
-      double score;
-      size_t left_index;
+    // Get channel range for this cluster
+    const size_t start_channel = foreground->find_gamma_channel( static_cast<float>(cluster.lower) );
+    const size_t end_channel = foreground->find_gamma_channel( static_cast<float>(cluster.upper) );
+    const size_t num_channels = end_channel - start_channel;
+
+    if( num_channels < 3 )
+    {
+      final_clusters.push_back( std::move( cluster ) );
+      continue;
+    }
+
+    const float *channel_energies = foreground->channel_energies()->data();
+
+    // Create fwhm_at_energy lambda for the helper functions
+    const auto fwhm_at_energy = [&]( double energy ) -> double {
+      const double clamped_energy = have_fwhm_range
+        ? std::clamp( energy, fwhm_lower_energy, fwhm_upper_energy )
+        : energy;
+      return DetectorPeakResponse::peakResolutionFWHM(
+        static_cast<float>(clamped_energy), fwhm_form, fwhm_coefficients );
     };
-    vector<BreakpointInfo> potential_breaks;
 
-    const double min_distance = 0.1; // Minimum distance to avoid division by zero (0.1 keV)
+    // Build synthetic spectrum from expected Gaussians (same binning as data)
+    vector<double> synthetic = build_synthetic_spectrum(
+      cluster.gamma_energies,
+      cluster.gamma_amplitudes,
+      fwhm_at_energy,
+      channel_energies,
+      start_channel,
+      num_channels );
 
-    for( size_t i = 0; i < cluster.gamma_lines.size() - 1; ++i )
+    // Find local minima in synthetic spectrum (with significance computed)
+    const double start_energy = channel_energies[start_channel];
+    const double end_energy = channel_energies[end_channel];
+    const bool debug_this_cluster = PeakFitImprove::debug_printout &&
+      ((start_energy >= 60.0 && end_energy <= 140.0) ||
+       (start_energy >= 140.0 && start_energy <= 160.0));
+
+    if( debug_this_cluster )
     {
-      const double left_energy = cluster.gamma_lines[i].first;
-      const double right_energy = cluster.gamma_lines[i+1].first;
+      cerr << "DEBUG: Breaking cluster [" << cluster.lower << ", " << cluster.upper
+           << "] keV: start_channel=" << start_channel
+           << ", end_channel=" << end_channel
+           << ", num_channels=" << num_channels << endl;
+    }
 
-      const double gap_center = 0.5 * (left_energy + right_energy);
-      const double gap_width = right_energy - left_energy;
+    vector<LocalMinimum> minima = find_synthetic_minima(
+      synthetic,
+      start_channel,
+      foreground,
+      channel_energies,
+      fwhm_at_energy,
+      settings.break_check_fwhm_fraction );
 
-      // Calculate weighted sum for left side (inverse distance weighting, quadrature sum)
-      double left_weight_sq_sum = 0.0;
-      for( size_t j = 0; j <= i; ++j )
-      {
-        const double gamma_energy = cluster.gamma_lines[j].first;
-        const double gamma_amp = cluster.gamma_lines[j].second;
-        const double distance = std::max( min_distance, std::abs(gap_center - gamma_energy) );
-        const double weighted_amp = gamma_amp / distance;
-        left_weight_sq_sum += weighted_amp * weighted_amp;
-      }
-      const double left_weight = std::sqrt( left_weight_sq_sum );
-
-      // Calculate weighted sum for right side
-      double right_weight_sq_sum = 0.0;
-      for( size_t j = i + 1; j < cluster.gamma_lines.size(); ++j )
-      {
-        const double gamma_energy = cluster.gamma_lines[j].first;
-        const double gamma_amp = cluster.gamma_lines[j].second;
-        const double distance = std::max( min_distance, std::abs(gap_center - gamma_energy) );
-        const double weighted_amp = gamma_amp / distance;
-        right_weight_sq_sum += weighted_amp * weighted_amp;
-      }
-      const double right_weight = std::sqrt( right_weight_sq_sum );
-
-      const double score = gap_width / (left_weight + right_weight);
-      potential_breaks.push_back( { gap_center, score, i } );
-    }//for( size_t i = 0; i < cluster.gamma_lines.size() - 1; ++i )
-
-    // Sort by score descending (best breakpoints first)
-    std::sort( begin(potential_breaks), end(potential_breaks),
-      []( const BreakpointInfo &a, const BreakpointInfo &b ) {
-        return a.score > b.score;
-    } );
-
-    // Greedily select breakpoints to ensure no sub-ROI exceeds max width
-    vector<size_t> selected_break_indices;
-
-    for( const BreakpointInfo &bp : potential_breaks )
+    if( debug_this_cluster )
     {
-      selected_break_indices.push_back( bp.left_index );
-      std::sort( begin(selected_break_indices), end(selected_break_indices) );
-
-      // Check if all sub-ROIs are now within max width
-      bool all_ok = true;
-      double seg_start = cluster.lower;
-
-      for( size_t break_idx : selected_break_indices )
+      cerr << "DEBUG: Found " << minima.size() << " minima in cluster ["
+           << cluster.lower << ", " << cluster.upper << "] keV:" << endl;
+      for( size_t i = 0; i < minima.size(); ++i )
       {
-        const double seg_end_energy = 0.5 * (cluster.gamma_lines[break_idx].first
-                                            + cluster.gamma_lines[break_idx + 1].first);
-        const double seg_mid = 0.5 * (seg_start + seg_end_energy);
-        const double seg_mid_clamped = have_fwhm_range
-            ? std::clamp( seg_mid, fwhm_lower_energy, fwhm_upper_energy )
-            : seg_mid;
-        const double seg_fwhm = DetectorPeakResponse::peakResolutionFWHM(
-            static_cast<float>(seg_mid_clamped), fwhm_form, fwhm_coefficients );
-        const double seg_max = settings.max_fwhm_width * seg_fwhm;
+        const LocalMinimum &m = minima[i];
+        cerr << "  [" << i << "] channel=" << m.channel
+             << ", energy=" << channel_energies[m.channel] << " keV"
+             << ", synthetic_value=" << m.synthetic_value
+             << ", depth_score=" << m.depth_score
+             << ", stat_sig=" << m.statistical_significance << endl;
+      }
+    }
 
-        if( (seg_end_energy - seg_start) > seg_max )
+    // If no minima found, don't break the ROI
+    if( minima.empty() )
+    {
+      final_clusters.push_back( std::move( cluster ) );
+      continue;
+    }
+
+    //Currently debugging the 150.1 keV ROI - maybe things are fixed so that it wont be split badly, but maybe not - extending the clusters lower/upper according to effective mean and FWHM not tested, and breaking up large ROIs also totally untested.
+    
+    // Sort by statistical_significance (ascending - least significant first)
+    // Use depth_score as tiebreaker (descending - deepest first)
+    // Note: We cannot use a threshold-based tie because it violates strict weak ordering
+    //       (transitivity of equivalence fails when A~B and B~C but A!~C)
+    std::sort( begin(minima), end(minima),
+      []( const LocalMinimum &a, const LocalMinimum &b ) {
+        if( a.statistical_significance != b.statistical_significance )
+          return a.statistical_significance < b.statistical_significance;
+        return a.depth_score > b.depth_score;
+      });
+
+    // Select breakpoints, validating significant peaks exist between them
+    vector<size_t> selected_breakpoint_channels;
+    size_t current_lower_ch = start_channel;
+
+    for( const LocalMinimum &candidate : minima )
+    {
+      // Check if significant peak exists between current_lower_ch and this candidate
+      const bool has_left_peak = has_significant_peak_between(
+        current_lower_ch,
+        candidate.channel,
+        synthetic,
+        start_channel,
+        foreground,
+        channel_energies,
+        fwhm_at_energy,
+        settings.break_check_fwhm_fraction,
+        settings.break_peak_significance_threshold );
+
+      // Check if significant peak exists between this candidate and ROI upper
+      const bool has_right_peak = has_significant_peak_between(
+        candidate.channel,
+        end_channel,
+        synthetic,
+        start_channel,
+        foreground,
+        channel_energies,
+        fwhm_at_energy,
+        settings.break_check_fwhm_fraction,
+        settings.break_peak_significance_threshold );
+
+      if( debug_this_cluster )
+      {
+        cerr << "DEBUG: Evaluating breakpoint candidate at channel " << candidate.channel
+             << " (" << channel_energies[candidate.channel] << " keV): "
+             << "has_left_peak=" << (has_left_peak ? "YES" : "NO")
+             << ", has_right_peak=" << (has_right_peak ? "YES" : "NO")
+             << ", accepted=" << ((has_left_peak && has_right_peak) ? "YES" : "NO") << endl;
+      }
+
+      if( has_left_peak && has_right_peak )
+      {
+        selected_breakpoint_channels.push_back( candidate.channel );
+        current_lower_ch = candidate.channel;
+
+        // Check if we've satisfied the max_fwhm_width constraint for all sub-ROIs
+        bool all_rois_ok = true;
+        size_t prev_ch = start_channel;
+        for( size_t bp_ch : selected_breakpoint_channels )
         {
-          all_ok = false;
-          break;
+          const double sub_lower = channel_energies[prev_ch];
+          const double sub_upper = channel_energies[bp_ch];
+          const double sub_width = sub_upper - sub_lower;
+          const double sub_center = 0.5 * (sub_lower + sub_upper);
+          const double sub_fwhm = fwhm_at_energy( sub_center );
+          if( sub_width > settings.max_fwhm_width * sub_fwhm )
+            all_rois_ok = false;
+          prev_ch = bp_ch;
         }
-        seg_start = seg_end_energy;
+        // Check last sub-ROI
+        {
+          const double sub_lower = channel_energies[prev_ch];
+          const double sub_upper = channel_energies[end_channel];
+          const double sub_width = sub_upper - sub_lower;
+          const double sub_center = 0.5 * (sub_lower + sub_upper);
+          const double sub_fwhm = fwhm_at_energy( sub_center );
+          if( sub_width > settings.max_fwhm_width * sub_fwhm )
+            all_rois_ok = false;
+        }
+
+        if( all_rois_ok )
+          break;
       }
+    }//for( const LocalMinimum &candidate : minima )
 
-      // Check the last segment
-      if( all_ok )
-      {
-        const double seg_mid = 0.5 * (seg_start + cluster.upper);
-        const double seg_mid_clamped = have_fwhm_range
-            ? std::clamp( seg_mid, fwhm_lower_energy, fwhm_upper_energy )
-            : seg_mid;
-        const double seg_fwhm = DetectorPeakResponse::peakResolutionFWHM(
-            static_cast<float>(seg_mid_clamped), fwhm_form, fwhm_coefficients );
-        const double seg_max = settings.max_fwhm_width * seg_fwhm;
-
-        if( (cluster.upper - seg_start) > seg_max )
-          all_ok = false;
-      }
-
-      if( all_ok )
-        break;
-    }//for( const BreakpointInfo &bp : potential_breaks )
-
-    // Create sub-clusters based on selected breakpoints
-    if( selected_break_indices.empty() )
+    // Create sub-clusters based on selected breakpoint channels
+    if( selected_breakpoint_channels.empty() )
     {
       final_clusters.push_back( std::move( cluster ) );
     }
     else
     {
-      std::sort( begin(selected_break_indices), end(selected_break_indices) );
+      std::sort( begin(selected_breakpoint_channels), end(selected_breakpoint_channels) );
+
+      // Convert breakpoint channels to energies
+      vector<double> breakpoint_energies;
+      for( size_t bp_ch : selected_breakpoint_channels )
+        breakpoint_energies.push_back( channel_energies[bp_ch] );
+
+      if( PeakFitImprove::debug_printout )
+      {
+        cerr << "cluster_gammas_to_rois: Breaking up cluster [" << cluster.lower << ", " << cluster.upper
+             << "] at " << breakpoint_energies.size() << " breakpoints: ";
+        for( size_t i = 0; i < breakpoint_energies.size(); ++i )
+          cerr << breakpoint_energies[i] << (i + 1 < breakpoint_energies.size() ? ", " : "");
+        cerr << " keV" << endl;
+      }
 
       double seg_start = cluster.lower;
       size_t gamma_start_idx = 0;
 
-      for( size_t break_idx : selected_break_indices )
+      for( const double bp_energy : breakpoint_energies )
       {
-        const double seg_end = 0.5 * (cluster.gamma_lines[break_idx].first
-                                     + cluster.gamma_lines[break_idx + 1].first);
-
         ClusteredGammaInfo sub_cluster;
         sub_cluster.lower = seg_start;
-        sub_cluster.upper = seg_end;
-        for( size_t j = gamma_start_idx; j <= break_idx; ++j )
-          sub_cluster.gamma_lines.push_back( cluster.gamma_lines[j] );
+        sub_cluster.upper = bp_energy;
 
-        final_clusters.push_back( std::move( sub_cluster ) );
+        // Add gamma lines that fall within this segment
+        for( size_t j = gamma_start_idx; j < cluster.gamma_energies.size(); ++j )
+        {
+          if( cluster.gamma_energies[j] >= bp_energy )
+          {
+            gamma_start_idx = j;
+            break;
+          }
+          sub_cluster.gamma_energies.push_back( cluster.gamma_energies[j] );
+          sub_cluster.gamma_amplitudes.push_back( cluster.gamma_amplitudes[j] );
+          if( j == cluster.gamma_energies.size() - 1 )
+            gamma_start_idx = j + 1;
+        }
 
-        seg_start = seg_end;
-        gamma_start_idx = break_idx + 1;
+        if( !sub_cluster.gamma_energies.empty() )
+          final_clusters.push_back( std::move( sub_cluster ) );
+
+        seg_start = bp_energy;
       }
 
       // Add the last segment
       ClusteredGammaInfo sub_cluster;
       sub_cluster.lower = seg_start;
       sub_cluster.upper = cluster.upper;
-      for( size_t j = gamma_start_idx; j < cluster.gamma_lines.size(); ++j )
-        sub_cluster.gamma_lines.push_back( cluster.gamma_lines[j] );
+      for( size_t j = gamma_start_idx; j < cluster.gamma_energies.size(); ++j )
+      {
+        sub_cluster.gamma_energies.push_back( cluster.gamma_energies[j] );
+        sub_cluster.gamma_amplitudes.push_back( cluster.gamma_amplitudes[j] );
+      }
 
-      final_clusters.push_back( std::move( sub_cluster ) );
+      if( !sub_cluster.gamma_energies.empty() )
+        final_clusters.push_back( std::move( sub_cluster ) );
     }
   }//for( ClusteredGammaInfo &cluster : merged_clusters )
+
+  
 
   // Create ROIs from final clusters
   double previous_roi_upper = 0.0;
@@ -1764,43 +2433,10 @@ vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
   {
     RelActCalcAuto::RoiRange roi;
 
-    if( cluster.gamma_lines.empty() )
-    {
-      roi.lower_energy = cluster.lower;
-      roi.upper_energy = cluster.upper;
-    }
-    else
-    {
-      // Find min/max gamma energies in this cluster
-      double min_gamma_energy = cluster.gamma_lines.front().first;
-      double max_gamma_energy = cluster.gamma_lines.front().first;
-      for( const pair<double,double> &gamma : cluster.gamma_lines )
-      {
-        min_gamma_energy = std::min( min_gamma_energy, gamma.first );
-        max_gamma_energy = std::max( max_gamma_energy, gamma.first );
-      }
-
-      // Calculate FWHM at the min and max gamma energies (clamp to valid range)
-      const double min_gamma_clamped = have_fwhm_range
-          ? std::clamp( min_gamma_energy, fwhm_lower_energy, fwhm_upper_energy )
-          : min_gamma_energy;
-      const double max_gamma_clamped = have_fwhm_range
-          ? std::clamp( max_gamma_energy, fwhm_lower_energy, fwhm_upper_energy )
-          : max_gamma_energy;
-
-      const double fwhm_at_lower = DetectorPeakResponse::peakResolutionFWHM(
-          static_cast<float>(min_gamma_clamped), fwhm_form, fwhm_coefficients );
-      const double fwhm_at_upper = DetectorPeakResponse::peakResolutionFWHM(
-          static_cast<float>(max_gamma_clamped), fwhm_form, fwhm_coefficients );
-
-      // Calculate desired ROI bounds based on FWHM distance from outer gamma lines
-      const double desired_lower = min_gamma_energy - settings.roi_width_num_fwhm_lower * fwhm_at_lower;
-      const double desired_upper = max_gamma_energy + settings.roi_width_num_fwhm_upper * fwhm_at_upper;
-
-      // Constrain lower bound to not overlap with previous ROI
-      roi.lower_energy = std::max( desired_lower, previous_roi_upper );
-      roi.upper_energy = desired_upper;
-    }
+    // Use the pre-calculated bounds from cluster (based on weighted mean and effective FWHM)
+    // Constrain lower bound to not overlap with previous ROI
+    roi.lower_energy = std::max( cluster.lower, previous_roi_upper );
+    roi.upper_energy = cluster.upper;
 
     const double mid_energy = 0.5 * (roi.upper_energy + roi.lower_energy);
     const double mid_energy_clamped = have_fwhm_range
@@ -1811,7 +2447,14 @@ vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
     const double num_fwhm_wide = (roi.upper_energy - roi.lower_energy) / mid_fwhm;
 
     if( num_fwhm_wide < settings.min_fwhm_roi )
+    {
+      if( PeakFitImprove::debug_printout )
+      {
+        cerr << "cluster_gammas_to_rois: Rejected ROI [" << roi.lower_energy << ", " << roi.upper_energy
+             << "] keV: too narrow (" << num_fwhm_wide << " FWHM < " << settings.min_fwhm_roi << " min)" << endl;
+      }
       continue;
+    }
 
     roi.continuum_type = PeakContinuum::OffsetType::Linear;
     roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
@@ -1821,6 +2464,24 @@ vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
     result_rois.push_back( roi );
     previous_roi_upper = roi.upper_energy;
   }//for( const ClusteredGammaInfo &cluster : final_clusters )
+
+  if( PeakFitImprove::debug_printout )
+  {
+    cerr << "cluster_gammas_to_rois: Final " << result_rois.size() << " ROIs:" << endl;
+    for( size_t i = 0; i < result_rois.size(); ++i )
+    {
+      const RelActCalcAuto::RoiRange &roi = result_rois[i];
+      const double width = roi.upper_energy - roi.lower_energy;
+      const double mid = 0.5 * (roi.lower_energy + roi.upper_energy);
+      const double mid_clamped = have_fwhm_range
+          ? std::clamp( mid, fwhm_lower_energy, fwhm_upper_energy ) : mid;
+      const double fwhm = DetectorPeakResponse::peakResolutionFWHM(
+          static_cast<float>(mid_clamped), fwhm_form, fwhm_coefficients );
+      cerr << "  [" << i << "] range=[" << roi.lower_energy << ", " << roi.upper_energy << "] keV ("
+           << width << " keV, " << (width / fwhm) << " FWHM), cont="
+           << (roi.continuum_type == PeakContinuum::OffsetType::Linear ? "Linear" : "Quadratic") << endl;
+    }
+  }
 
   return result_rois;
 }//cluster_gammas_to_rois
@@ -1974,8 +2635,8 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
       al_shield->upper_fit_areal_density = 10.0 * PhysicalUnits::g_per_cm2;
       config_aluminum.phys_model_external_atten.push_back( al_shield );
 
-      curve_results.push_back( fit_peaks_for_nuclides(
-        auto_search_peaks, foreground, source_nuclides, long_background, drf, config_aluminum, isHPGe ) );
+      //curve_results.push_back( fit_peaks_for_nuclides(
+      //  auto_search_peaks, foreground, source_nuclides, long_background, drf, config_aluminum, isHPGe ) );
 
       // Try Lead shielding
       PeakFitForNuclideConfig config_lead = config;
@@ -1994,8 +2655,8 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
       pb_shield->upper_fit_areal_density = 10.0 * PhysicalUnits::g_per_cm2;
       config_lead.phys_model_external_atten.push_back( pb_shield );
 
-      curve_results.push_back( fit_peaks_for_nuclides(
-        auto_search_peaks, foreground, source_nuclides, long_background, drf, config_lead, isHPGe ) );
+      //curve_results.push_back( fit_peaks_for_nuclides(
+      //  auto_search_peaks, foreground, source_nuclides, long_background, drf, config_lead, isHPGe ) );
 
       // Select best result based on chi2
       PeakFitResult best_result;
