@@ -743,7 +743,7 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
     const double average_upper_sum = upper_sum / num_channels_to_use;
     const double average_lower_uncert = sqrt( average_lower_sum );
     const double average_upper_uncert = sqrt( average_upper_sum );
-    const double average_uncert = sqrt( average_lower_sum*average_lower_sum + average_upper_sum*average_upper_sum );
+    const double average_uncert = sqrt( average_lower_sum + average_upper_sum );
     if( average_uncert > 0.0 )
     {
       const double average_nsigma = (average_lower_sum - average_upper_sum) / average_uncert;
