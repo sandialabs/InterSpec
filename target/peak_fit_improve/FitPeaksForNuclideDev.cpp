@@ -24,9 +24,12 @@
 #include "InterSpec_config.h"
 
 #include <chrono>
+#include <random>
 #include <string>
 #include <fstream>
+#include <iomanip>
 #include <numeric>
+#include <sstream>
 #include <iostream>
 
 #include <boost/asio/thread_pool.hpp>
@@ -93,6 +96,14 @@ struct GammaClusteringSettings {
   // When multiple breakpoint candidates have similar significance, use depth_score as tiebreaker
   // This defines "similar" - candidates within this sigma of each other are considered tied
   double break_significance_tie_threshold = 0.5;
+
+  // Step continuum decision thresholds
+  // Minimum peak area (counts) to consider checking for step continuum
+  double step_cont_min_peak_area = 1000.0;
+  // Minimum peak significance (peak_area / sqrt(data_area)) to consider step continuum
+  double step_cont_min_peak_significance = 30.0;
+  // How many sigma higher the left side must be than the right side to use step continuum
+  double step_cont_left_right_nsigma = 3.0;
 };
 
 
@@ -190,6 +201,9 @@ struct PeakFitForNuclideConfig
     settings.max_fwhm_width = manual_rel_eff_sol_max_fwhm;
     settings.min_fwhm_roi = manual_rel_eff_sol_min_fwhm_roi;
     settings.min_fwhm_quad_cont = manual_rel_eff_sol_min_fwhm_quad_cont;
+    settings.step_cont_min_peak_area = step_cont_min_peak_area;
+    settings.step_cont_min_peak_significance = step_cont_min_peak_significance;
+    settings.step_cont_left_right_nsigma = step_cont_left_right_nsigma;
     return settings;
   }
 
@@ -206,6 +220,9 @@ struct PeakFitForNuclideConfig
     settings.max_fwhm_width = auto_rel_eff_sol_max_fwhm;
     settings.min_fwhm_roi = auto_rel_eff_sol_min_fwhm_roi;
     settings.min_fwhm_quad_cont = auto_rel_eff_sol_min_fwhm_quad_cont;
+    settings.step_cont_min_peak_area = step_cont_min_peak_area;
+    settings.step_cont_min_peak_significance = step_cont_min_peak_significance;
+    settings.step_cont_left_right_nsigma = step_cont_left_right_nsigma;
     return settings;
   }
 
@@ -234,6 +251,14 @@ struct PeakFitForNuclideConfig
   // If any peak in a ROI has significance above this threshold, the ROI is considered significant
   // (alternative to chi2 reduction test - ROI passes if EITHER test passes)
   double roi_significance_min_peak_sig = 3.5;
+
+  // Step continuum decision parameters
+  // Minimum peak area (counts) to consider checking for step continuum
+  double step_cont_min_peak_area = 1000.0;
+  // Minimum peak significance (peak_area / sqrt(data_area)) to consider step continuum
+  double step_cont_min_peak_significance = 30.0;
+  // How many sigma higher the left side must be than the right side to use step continuum
+  double step_cont_left_right_nsigma = 3.0;
 };//struct PeakFitForNuclideConfig
 
 
@@ -1731,6 +1756,101 @@ vector<LocalMinimum> find_synthetic_minima(
 }//find_synthetic_minima
 
 
+/** Determines if a step continuum should be used for a ROI based on left/right continuum comparison.
+
+ The decision is made by:
+ 1. Finding the gamma line with the largest amplitude (largest BR * eff * activity) in the ROI
+ 2. Integrating data 1.5 FWHM away from this reference gamma on each side (0.25 FWHM width)
+ 3. Comparing left vs right using statistical significance
+
+ @param cluster The clustered gamma info containing gamma energies and amplitudes
+ @param foreground The spectrum measurement data
+ @param fwhm_form The FWHM functional form
+ @param fwhm_coefficients FWHM coefficients
+ @param fwhm_lower_energy Lower energy bound for FWHM clamping (-1 if no limit)
+ @param fwhm_upper_energy Upper energy bound for FWHM clamping (-1 if no limit)
+ @param roi_lower Lower energy of the ROI
+ @param roi_upper Upper energy of the ROI
+ @param step_cont_left_right_nsigma Threshold for left/right difference (in sigma)
+ @return true if step continuum should be used, false otherwise
+ */
+bool should_use_step_continuum(
+  const ClusteredGammaInfo &cluster,
+  const shared_ptr<const SpecUtils::Measurement> &foreground,
+  const DetectorPeakResponse::ResolutionFnctForm fwhm_form,
+  const vector<float> &fwhm_coefficients,
+  const double fwhm_lower_energy,
+  const double fwhm_upper_energy,
+  const double roi_lower,
+  const double roi_upper,
+  const double step_cont_left_right_nsigma )
+{
+  // Fixed integration parameters
+  static constexpr double INTEGRATION_OFFSET_FWHM = 1.5;
+  static constexpr double INTEGRATION_WIDTH_FWHM = 0.25;
+
+  if( cluster.gamma_amplitudes.empty() || !foreground )
+    return false;
+
+  // Find the gamma with the largest amplitude (which corresponds to largest BR * eff * activity)
+  const auto max_it = max_element( begin(cluster.gamma_amplitudes), end(cluster.gamma_amplitudes) );
+  const size_t max_idx = static_cast<size_t>( distance( begin(cluster.gamma_amplitudes), max_it ) );
+  const double ref_gamma_energy = cluster.gamma_energies[max_idx];
+
+  // Check for valid FWHM range
+  const bool have_fwhm_range = (fwhm_lower_energy > 0.0) && (fwhm_upper_energy > 0.0);
+  double fwhm_eval_energy = ref_gamma_energy;
+  if( have_fwhm_range )
+    fwhm_eval_energy = std::max( fwhm_lower_energy, std::min( fwhm_upper_energy, ref_gamma_energy ) );
+
+  const float fwhm = DetectorPeakResponse::peakResolutionFWHM(
+      static_cast<float>(fwhm_eval_energy), fwhm_form, fwhm_coefficients );
+
+  if( !std::isfinite(fwhm) || (fwhm <= 0.0f) )
+    return false;
+
+  // Calculate integration regions
+  // Left side: 1.5 FWHM below reference gamma, with 0.25 FWHM width
+  const double left_center = ref_gamma_energy - INTEGRATION_OFFSET_FWHM * fwhm;
+  const double left_lower = left_center - 0.5 * INTEGRATION_WIDTH_FWHM * fwhm;
+  const double left_upper = left_center + 0.5 * INTEGRATION_WIDTH_FWHM * fwhm;
+
+  // Right side: 1.5 FWHM above reference gamma, with 0.25 FWHM width
+  const double right_center = ref_gamma_energy + INTEGRATION_OFFSET_FWHM * fwhm;
+  const double right_lower = right_center - 0.5 * INTEGRATION_WIDTH_FWHM * fwhm;
+  const double right_upper = right_center + 0.5 * INTEGRATION_WIDTH_FWHM * fwhm;
+
+  // Ensure integration regions are within the ROI
+  if( (left_lower < roi_lower) || (right_upper > roi_upper) )
+    return false;  // Integration regions extend beyond ROI, cannot determine
+
+  // Sum counts in each region
+  const double left_sum = foreground->gamma_integral( static_cast<float>(left_lower),
+                                                       static_cast<float>(left_upper) );
+  const double right_sum = foreground->gamma_integral( static_cast<float>(right_lower),
+                                                        static_cast<float>(right_upper) );
+
+  // Correct Poisson uncertainty for difference: sigma = sqrt(left + right)
+  const double combined_uncert = std::sqrt( left_sum + right_sum );
+
+  if( combined_uncert <= 0.0 )
+    return false;
+
+  const double nsigma = (left_sum - right_sum) / combined_uncert;
+
+  if( PeakFitImprove::debug_printout )
+  {
+    cerr << "should_use_step_continuum: ref_gamma=" << ref_gamma_energy << " keV, "
+         << "left_sum=" << left_sum << ", right_sum=" << right_sum
+         << ", nsigma=" << nsigma
+         << " (threshold=" << step_cont_left_right_nsigma << ")" << endl;
+  }
+
+  // If left side is significantly higher than right side, suggest step continuum
+  return (nsigma >= step_cont_left_right_nsigma);
+}//should_use_step_continuum
+
+
 /** Clusters gamma lines and creates ROIs based on a relative efficiency function.
 
  This function takes gamma lines from the specified nuclides, estimates their relative
@@ -2461,6 +2581,35 @@ vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
     if( num_fwhm_wide > settings.min_fwhm_quad_cont )
       roi.continuum_type = PeakContinuum::OffsetType::Quadratic;
 
+    // Check if step continuum should be used based on peak area, significance, and left/right comparison
+    if( !cluster.gamma_amplitudes.empty() )
+    {
+      const double max_amplitude = *max_element( begin(cluster.gamma_amplitudes),
+                                                  end(cluster.gamma_amplitudes) );
+      const double data_area = foreground->gamma_integral( static_cast<float>(roi.lower_energy),
+                                                            static_cast<float>(roi.upper_energy) );
+      const double est_significance = (data_area > 0.0)
+          ? (max_amplitude / sqrt(data_area))
+          : 0.0;
+
+      // Must pass both area and significance thresholds before checking left/right comparison
+      if( (max_amplitude >= settings.step_cont_min_peak_area)
+          && (est_significance >= settings.step_cont_min_peak_significance) )
+      {
+        if( should_use_step_continuum( cluster, foreground, fwhm_form, fwhm_coefficients,
+                                        fwhm_lower_energy, fwhm_upper_energy,
+                                        roi.lower_energy, roi.upper_energy,
+                                        settings.step_cont_left_right_nsigma ) )
+        {
+          // Use FlatStep for narrower ROIs, LinearStep for wider ones
+          if( num_fwhm_wide > settings.min_fwhm_quad_cont )
+            roi.continuum_type = PeakContinuum::OffsetType::LinearStep;
+          else
+            roi.continuum_type = PeakContinuum::OffsetType::FlatStep;
+        }
+      }
+    }//if( !cluster.gamma_amplitudes.empty() )
+
     result_rois.push_back( roi );
     previous_roi_upper = roi.upper_energy;
   }//for( const ClusteredGammaInfo &cluster : final_clusters )
@@ -2477,9 +2626,17 @@ vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
           ? std::clamp( mid, fwhm_lower_energy, fwhm_upper_energy ) : mid;
       const double fwhm = DetectorPeakResponse::peakResolutionFWHM(
           static_cast<float>(mid_clamped), fwhm_form, fwhm_coefficients );
+      const char *cont_str = "Unknown";
+      switch( roi.continuum_type )
+      {
+        case PeakContinuum::OffsetType::Linear:     cont_str = "Linear";     break;
+        case PeakContinuum::OffsetType::Quadratic:  cont_str = "Quadratic";  break;
+        case PeakContinuum::OffsetType::FlatStep:   cont_str = "FlatStep";   break;
+        case PeakContinuum::OffsetType::LinearStep: cont_str = "LinearStep"; break;
+        default: break;
+      }
       cerr << "  [" << i << "] range=[" << roi.lower_energy << ", " << roi.upper_energy << "] keV ("
-           << width << " keV, " << (width / fwhm) << " FWHM), cont="
-           << (roi.continuum_type == PeakContinuum::OffsetType::Linear ? "Linear" : "Quadratic") << endl;
+           << width << " keV, " << (width / fwhm) << " FWHM), cont=" << cont_str << endl;
     }
   }
 
@@ -2611,7 +2768,7 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
 
       // Try LnX
       PeakFitForNuclideConfig config_lnx = config;
-      config_lnx.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::LnX;
+      config_lnx.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::LnXLnY;
       config_lnx.rel_eff_eqn_order = 3;
       config_lnx.phys_model_self_atten.clear();
       config_lnx.phys_model_external_atten.clear();
@@ -3165,6 +3322,22 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
         const string out_n42 = SpecUtils::append_path( outdir, src.src_name ) + "_relactauto_fit.n42";
 
         SpecMeas output;
+
+        // Generate a unique UUID based on current time + random component
+        {
+          const auto now_time = std::chrono::system_clock::now();
+          const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+              now_time.time_since_epoch() ).count();
+          std::random_device rd;
+          std::mt19937 gen( rd() );
+          std::uniform_int_distribution<uint32_t> dis( 0, 0xFFFFFFFF );
+          std::ostringstream uuid_oss;
+          uuid_oss << std::hex << std::setfill('0')
+                   << std::setw(12) << now_ms << "-"
+                   << std::setw(8) << dis(gen) << "-"
+                   << std::setw(8) << dis(gen);
+          output.set_uuid( uuid_oss.str() );
+        }
 
         output.add_remark( fit_score.print( "fit_score" ) );
         output.add_remark( "RelActAuto solution chi2/dof=" + std::to_string( solution.m_chi2 ) + "/" + std::to_string( solution.m_dof ) );
