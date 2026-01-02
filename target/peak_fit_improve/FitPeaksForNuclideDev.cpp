@@ -138,6 +138,13 @@ struct PeakFitResult
   // This is the raw output from RelActAuto before peak combination.
   std::vector<PeakDef> uncombined_fit_peaks;
 
+  // Peaks that are statistically observable in the spectrum.
+  // Computed from fit_peaks by:
+  // 1. Removing peaks with initial significance < threshold (using raw data area)
+  // 2. Refitting each ROI with PeakFitLM::refitPeaksThatShareROI_LM (SmallRefinementOnly)
+  // 3. Iteratively removing peaks with final significance < threshold and refitting
+  std::vector<PeakDef> observable_peaks;
+
   RelActCalcAuto::RelActAutoSolution solution;  // only valid if status == Success
 };//struct PeakFitResult
 
@@ -224,6 +231,15 @@ struct PeakFitForNuclideConfig
   // If any peak in a ROI has significance above this threshold, the ROI is considered significant
   // (alternative to chi2 reduction test - ROI passes if EITHER test passes)
   double roi_significance_min_peak_sig = 3.5;
+
+  // Threshold for initial peak significance filter before refitting for observable_peaks.
+  // Significance = (peak_amplitude * 0.7607) / sqrt(data_area_in_pm_1_fwhm)
+  // 0.7607 is fraction of Gaussian area within +/-1 FWHM
+  double observable_peak_initial_significance_threshold = 2.25;
+
+  // Threshold for final peak significance after refitting for observable_peaks.
+  // Significance = peak_area / peak_area_uncertainty
+  double observable_peak_final_significance_threshold = 2.0;
 
   // Step continuum decision parameters
   // Minimum peak area (counts) to consider checking for step continuum
@@ -535,6 +551,247 @@ std::vector<PeakDef> combine_overlapping_peaks_in_rois(
 
   return combined_peaks;
 }//combine_overlapping_peaks_in_rois
+
+
+/** Computes observable peaks from fit_peaks by filtering for significance and refitting.
+
+Algorithm:
+1. Initial filter: Remove peaks where (amplitude * 0.7607) / sqrt(data_area_pm_1_fwhm) < initial_threshold
+   - 0.7607 = fraction of Gaussian within +/-1 FWHM
+   - data_area = total spectrum counts in [mean - fwhm, mean + fwhm]
+2. Adjust ROI bounds if edge peaks were removed, create new continuum for affected ROIs
+3. Group remaining peaks by shared PeakContinuum (ROI)
+4. For each ROI (in parallel):
+   a. Refit using PeakFitLM::refitPeaksThatShareROI_LM with SmallRefinementOnly option
+   b. Check each peak: significance = area / area_uncertainty
+   c. Remove peaks with significance < final_threshold
+   d. If edge peaks removed, adjust ROI bounds and create new continuum
+   e. If any peaks removed, repeat from (a) until all remaining peaks are significant
+5. Return all peaks that passed filtering
+
+@param fit_peaks Input peaks from RelActAuto fit
+@param foreground The spectrum measurement
+@param config Configuration containing thresholds and ROI width settings
+@return Vector of observable peaks
+*/
+std::vector<PeakDef> compute_observable_peaks(
+  const std::vector<PeakDef> &fit_peaks,
+  const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+  const PeakFitForNuclideConfig &config )
+{
+  // Fraction of Gaussian area within +/-1 FWHM
+  // erf(sqrt(ln(2))) = 0.7607
+  const double fwhm_fraction = 0.7607;
+  const double initial_significance_threshold = config.observable_peak_initial_significance_threshold;
+  const double final_significance_threshold = config.observable_peak_final_significance_threshold;
+  const double roi_width_num_fwhm_lower = config.auto_rel_eff_roi_width_num_fwhm_lower;
+  const double roi_width_num_fwhm_upper = config.auto_rel_eff_roi_width_num_fwhm_upper;
+
+  // Lambda to adjust ROI bounds when edge peaks are removed.
+  // Returns true if bounds were adjusted, false otherwise.
+  // Takes peaks sorted by mean energy.
+  const auto adjust_roi_bounds_if_needed = [roi_width_num_fwhm_lower, roi_width_num_fwhm_upper](
+    std::vector<PeakDef> &peaks,
+    const double orig_left_mean,
+    const double orig_right_mean ) -> bool
+  {
+    if( peaks.empty() )
+      return false;
+
+    // Sort peaks by mean for edge detection
+    std::sort( begin(peaks), end(peaks), &PeakDef::lessThanByMean );
+
+    const double new_left_mean = peaks.front().mean();
+    const double new_right_mean = peaks.back().mean();
+    const bool left_edge_changed = (fabs(new_left_mean - orig_left_mean) > 0.1);
+    const bool right_edge_changed = (fabs(new_right_mean - orig_right_mean) > 0.1);
+
+    if( !left_edge_changed && !right_edge_changed )
+      return false;
+
+    // Get current continuum from first peak
+    std::shared_ptr<const PeakContinuum> old_continuum = peaks.front().continuum();
+
+    // Calculate new ROI bounds based on new edge peaks
+    const double new_left_fwhm = peaks.front().fwhm();
+    const double new_right_fwhm = peaks.back().fwhm();
+    const double new_lower_energy = new_left_mean - roi_width_num_fwhm_lower * new_left_fwhm;
+    const double new_upper_energy = new_right_mean + roi_width_num_fwhm_upper * new_right_fwhm;
+
+    // Create new continuum as copy with updated energy range
+    std::shared_ptr<PeakContinuum> new_continuum = std::make_shared<PeakContinuum>( *old_continuum );
+    new_continuum->setRange( new_lower_energy, new_upper_energy );
+
+    // Set new continuum to all peaks
+    for( PeakDef &p : peaks )
+      p.setContinuum( new_continuum );
+
+    if( PeakFitImprove::debug_printout )
+    {
+      cout << "  Observable filter: adjusted ROI bounds from ["
+           << old_continuum->lowerEnergy() << ", " << old_continuum->upperEnergy()
+           << "] to [" << new_lower_energy << ", " << new_upper_energy << "] keV" << endl;
+    }
+
+    return true;
+  };//adjust_roi_bounds_if_needed lambda
+
+  // Step 1: Group input peaks by ROI (shared continuum)
+  std::map<std::shared_ptr<const PeakContinuum>, std::vector<PeakDef>> input_rois;
+  for( const PeakDef &peak : fit_peaks )
+    input_rois[peak.continuum()].push_back( peak );
+
+  // Step 2: Initial significance filter and ROI adjustment per ROI
+  std::vector<PeakDef> filtered_peaks;
+  for( auto &roi_entry : input_rois )
+  {
+    std::vector<PeakDef> &roi_peaks = roi_entry.second;
+
+    // Sort by mean for edge tracking
+    std::sort( begin(roi_peaks), end(roi_peaks), &PeakDef::lessThanByMean );
+
+    const double orig_left_mean = roi_peaks.front().mean();
+    const double orig_right_mean = roi_peaks.back().mean();
+
+    // Filter peaks by initial significance
+    std::vector<PeakDef> kept_peaks;
+    for( const PeakDef &peak : roi_peaks )
+    {
+      const double mean = peak.mean();
+      const double fwhm = peak.fwhm();
+      const double lower_energy = mean - fwhm;
+      const double upper_energy = mean + fwhm;
+
+      // Get total data counts in +/-1 FWHM range
+      const double data_area = foreground->gamma_integral( lower_energy, upper_energy );
+
+      // Calculate initial significance
+      const double peak_contrib = peak.amplitude() * fwhm_fraction;
+      const double significance = peak_contrib / std::sqrt( std::max(data_area, 1.0) );
+
+      if( significance >= initial_significance_threshold )
+      {
+        kept_peaks.push_back( peak );
+      }
+      else if( PeakFitImprove::debug_printout )
+      {
+        cout << "  Observable filter (initial sig=" << significance << " < " << initial_significance_threshold
+             << "): peak at " << mean << " keV" << endl;
+      }
+    }//for( const PeakDef &peak : roi_peaks )
+
+    // Adjust ROI bounds if edge peaks were removed
+    if( !kept_peaks.empty() )
+    {
+      adjust_roi_bounds_if_needed( kept_peaks, orig_left_mean, orig_right_mean );
+      filtered_peaks.insert( end(filtered_peaks), begin(kept_peaks), end(kept_peaks) );
+    }
+  }//for( auto &roi_entry : input_rois )
+
+  if( filtered_peaks.empty() )
+    return filtered_peaks;
+
+  // Step 3: Group peaks by shared continuum (ROI) - may have new continuums from adjustment
+  std::map<std::shared_ptr<const PeakContinuum>, std::vector<PeakDef>> rois;
+  for( const PeakDef &peak : filtered_peaks )
+    rois[peak.continuum()].push_back( peak );
+
+  // Step 4: Iteratively refit each ROI and remove insignificant peaks - in parallel
+  const size_t num_rois = rois.size();
+  std::vector<std::vector<PeakDef>> roi_results( num_rois );
+
+  // Copy ROI data to vector for parallel processing
+  std::vector<std::pair<std::shared_ptr<const PeakContinuum>, std::vector<PeakDef>>> roi_vec( rois.begin(), rois.end() );
+
+  SpecUtilsAsync::ThreadPool pool;
+
+  for( size_t roi_index = 0; roi_index < num_rois; ++roi_index )
+  {
+    pool.post( [roi_index, &roi_vec, &roi_results, &foreground,
+                final_significance_threshold, &adjust_roi_bounds_if_needed]()
+    {
+      std::vector<PeakDef> roi_peaks = roi_vec[roi_index].second;
+
+      // Sort peaks by mean energy for edge detection
+      std::sort( begin(roi_peaks), end(roi_peaks), &PeakDef::lessThanByMean );
+
+      const size_t max_iterations = 3;
+      size_t iteration = 0;
+      bool changed = true;
+      while( changed && !roi_peaks.empty() && (iteration < max_iterations) )
+      {
+        changed = false;
+
+        // Track original edge peaks before filtering
+        const double orig_left_mean = roi_peaks.front().mean();
+        const double orig_right_mean = roi_peaks.back().mean();
+
+        // Convert to shared_ptr for refitPeaksThatShareROI_LM
+        std::vector<std::shared_ptr<const PeakDef>> input_peaks;
+        for( const PeakDef &p : roi_peaks )
+          input_peaks.push_back( std::make_shared<PeakDef>(p) );
+
+        // Refit with SmallRefinementOnly option
+        std::vector<std::shared_ptr<const PeakDef>> refit_result =
+          PeakFitLM::refitPeaksThatShareROI_LM( foreground, nullptr, input_peaks,
+            PeakFitLM::PeakFitLMOptions::SmallRefinementOnly );
+
+        // If refit failed, keep original peaks
+        if( refit_result.empty() )
+          break;
+
+        // Check significance and remove insignificant peaks
+        std::vector<PeakDef> kept_peaks;
+        for( const std::shared_ptr<const PeakDef> &peak : refit_result )
+        {
+          const double mean = peak->mean();
+          const double area = peak->peakArea();
+          const double area_uncert = peak->peakAreaUncert();
+          const double final_sig = (area_uncert > 0.0) ? (area / area_uncert) : 0.0;
+
+          if( final_sig >= final_significance_threshold )
+          {
+            kept_peaks.push_back( *peak );
+          }
+          else
+          {
+            changed = true;
+            if( PeakFitImprove::debug_printout )
+            {
+              cout << "  Observable filter post-refit (final sig=" << final_sig << " < " << final_significance_threshold
+                   << "): peak at " << mean << " keV" << endl;
+            }
+          }
+        }//for( const std::shared_ptr<const PeakDef> &peak : refit_result )
+
+        // Adjust ROI bounds if edge peaks were removed
+        if( !kept_peaks.empty() )
+        {
+          const bool bounds_adjusted = adjust_roi_bounds_if_needed( kept_peaks, orig_left_mean, orig_right_mean );
+          if( bounds_adjusted )
+            changed = true;  // Need to refit with new continuum bounds
+        }
+
+        roi_peaks = std::move( kept_peaks );
+        iteration += 1;
+      }//while( changed && !roi_peaks.empty() && (iteration < max_iterations) )
+
+      roi_results[roi_index] = std::move( roi_peaks );
+    });//pool.post lambda
+  }//for( size_t roi_index = 0; roi_index < num_rois; ++roi_index )
+
+  pool.join();
+
+  // Collect all results
+  std::vector<PeakDef> observable_peaks;
+  for( const std::vector<PeakDef> &roi_result : roi_results )
+    observable_peaks.insert( end(observable_peaks), begin(roi_result), end(roi_result) );
+
+  // Sort by energy
+  std::sort( begin(observable_peaks), end(observable_peaks), &PeakDef::lessThanByMean );
+
+  return observable_peaks;
+}//compute_observable_peaks
 
 
 // Helper to check if two ROI sets are similar enough to stop iterating
@@ -1127,6 +1384,15 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     {
       cout << "Combined " << result.uncombined_fit_peaks.size() << " peaks into "
            << result.fit_peaks.size() << " peaks" << endl;
+    }
+
+    // Compute observable peaks - peaks that users can visually see in the spectrum
+    result.observable_peaks = compute_observable_peaks( result.fit_peaks, foreground, config );
+
+    if( PeakFitImprove::debug_printout && (result.observable_peaks.size() != result.fit_peaks.size()) )
+    {
+      cout << "Observable peaks: " << result.observable_peaks.size() << " of "
+           << result.fit_peaks.size() << " fit_peaks" << endl;
     }
 
   }catch( const std::exception &e )
@@ -3137,7 +3403,7 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
       }
 
       const RelActCalcAuto::RelActAutoSolution &solution = best_result.solution;
-      const std::vector<PeakDef> &fit_peaks = best_result.fit_peaks;
+      const std::vector<PeakDef> &fit_peaks = best_result.observable_peaks;
 
       cout << "Best RelEff curve type solution (" << solution.m_options.rel_eff_curves.front().name << ") selected with chi2/dof="
            << solution.m_chi2 << "/" << solution.m_dof << endl;
