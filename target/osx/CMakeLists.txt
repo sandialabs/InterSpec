@@ -22,6 +22,8 @@ add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../../ InterSpecLib )
 
 SET(MACOSX_BUNDLE_INFO_STRING   "InterSpec - Sandia National Lab, Will Johnson")
 SET(MACOSX_BUNDLE_ICON_FILE InterSpec)
+set(MACOSX_BUNDLE_ICON_FILE "InterSpec.icns") # Legacy fallback
+set(MACOSX_BUNDLE_ICON_NAME "InterSpec")      # Modern Liquid Glass name
 SET(MACOSX_BUNDLE_LONG_VERSION_STRING "" )
 SET(MACOSX_BUNDLE_BUNDLE_NAME "InterSpec" )
 SET(MACOSX_BUNDLE_SHORT_VERSION_STRING "InterSpec" )
@@ -40,10 +42,14 @@ MARK_AS_ADVANCED( WEBKIT_LIBRARY )
 
 set(app_sources main.m AppDelegate.mm AppDelegate.h en.lproj/MainMenu.xib )
 if (XCODE_VERSION VERSION_GREATER_EQUAL 26)
-  list(APPEND app_sources "${CMAKE_CURRENT_SOURCE_DIR}/InterSpec.icon")
+  set(APP_ICONS 
+    "${CMAKE_CURRENT_SOURCE_DIR}/app_icon/InterSpec.icns"
+    "${CMAKE_CURRENT_SOURCE_DIR}/app_icon/Assets.car"
+  )
 else()
-  list(APPEND app_sources InterSpec.icns)
+  set( APP_ICONS "${CMAKE_CURRENT_SOURCE_DIR}/app_icon/InterSpec.icns" )
 endif()
+set_source_files_properties(${APP_ICONS} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
 
 
 set( CMAKE_INSTALL_RPATH "@executable_path/../Frameworks" )
@@ -110,7 +116,7 @@ add_custom_command(
     COMMENT "Compiling MainMenu.xib"
 )
 
-ADD_EXECUTABLE( InterSpecApp MACOSX_BUNDLE ${app_sources}
+ADD_EXECUTABLE( InterSpecApp MACOSX_BUNDLE ${app_sources} ${APP_ICONS}
     ${DATA_RES_SOURCES} ${WT_RES_SOURCES} ${INTERSPEC_RES_SOURCES} ${EXAMPLE_RES_SOURCES} ${EN_LOCALIZATION_FILES}
     "${CMAKE_CURRENT_BINARY_DIR}/MainMenu.nib"
     "${CMAKE_CURRENT_BINARY_DIR}/SpecFilePreview/SpecFilePreview.qlgenerator"
