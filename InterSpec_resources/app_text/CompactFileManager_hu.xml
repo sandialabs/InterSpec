@@ -50,4 +50,5 @@
   <message id='cfm-tt-swap-back-with-foreground-btn'>Az előtér és háttér spektrumok cseréje</message>
   <message id='cfm-swap-secondary-with-foreground-btn'>előtér↔másodlagos</message>
   <message id='cfm-tt-swap-secondary-with-foreground-btn'>Az előtér és másodlagos spektrumok cseréje</message>
+  <message id='cfm-title-with-name'>Cím: {1}</message>
 </messages>

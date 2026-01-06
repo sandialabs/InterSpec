@@ -40,7 +40,7 @@
   <message id="dlt-detected-activity-tt">Észlelt aktivitás, csak ezt az Érdeklődési Régiót használva,
     és a megfigyelt számlálások többletét, valamint a
     statisztikai megbízhatósági intervallumot.</message>
-  <message id="dlt-limit-lt-zero">Határ: &lt; 0{1}</message>
+  <message id="dlt-limit-lt-zero"><![CDATA[Határ: < 0{1}]]></message>
   <message id="dlt-sig-fewer-counts">(jelentősen kevesebb számlálás ROI-ban, mint előrejelzett)</message>
   <message id="dlt-fewer-counts-tt">Jelentősen kevesebb számlálást figyeltek meg az
     Érdeklődési Régióban, mint amit a szomszédos csatornák előre jeleztek.</message>
@@ -53,8 +53,6 @@
   <message id="dlt-large-deficit">Nagy számlálás hiány a ROI-ban</message>
   
   <!-- DetectionLimitTool main class strings -->
-  <message id="dlt-nuclide-label">Nuklid:&nbsp;&nbsp;</message>
-  <message id="dlt-age-label">Kor:</message>
   <message id="dlt-tt-age-edit">
     <div>A nuklid kora.</div>
     <br />
@@ -62,8 +60,6 @@
     (azaz beírt) nuklid aktivitásai mindig a mérés időpontjára vonatkoznak.
     </div>
   </message>
-  <message id="dlt-distance-label">Távolság:</message>
-  <message id="dlt-activity-label">Aktivitás:</message>
   <message id="dlt-attenuate-for-air">Csillapítás levegőre</message>
   <message id="dlt-shield-empty-text">pajzsoló anyag</message>
   <message id="dlt-activity-limit">Aktivitás határ</message>
@@ -84,8 +80,8 @@
   <message id="dlt-log">Log</message>
   <message id="dlt-lin">Lin</message>
   <message id="dlt-below-lc">(L<sub>c</sub> alatt)</message>
-  <message id="dlt-lt-zero-counts">&lt; 0 számlálás</message>
-  <message id="dlt-lt-zero-activity">&lt; {1}</message>
+  <message id="dlt-lt-zero-counts"><![CDATA[< 0 számlálás]]></message>
+  <message id="dlt-lt-zero-activity"><![CDATA[< {1}]]></message>
   
   <!-- Error messages -->
   <message id="dlt-err-no-data">Nincs betöltött adat</message>
@@ -178,7 +174,7 @@
   <message id="dlt-chart-x-axis-activity">Aktivitás ({1})</message>
   <message id="dlt-chart-title-estimated-activity">Becsült aktivitás {1}.</message>
   <message id="dlt-chart-title-excess-counts">Többlet számlálások {1}.</message>
-  <message id="dlt-chart-title-activity-lt-zero">Aktivitás &lt; 0 {1}</message>
+  <message id="dlt-chart-title-activity-lt-zero"><![CDATA[Aktivitás < 0 {1}]]></message>
   <message id="dlt-chart-title-data-peak">Adatok + csúcs {1}</message>
   <message id="dlt-chart-title-peak-upper-bound">Csúcs felső határhoz {1} @{2} CL</message>
   <message id="dlt-currie-info-dialog-title">{1}{2} keV Info</message>
@@ -188,7 +184,7 @@
   <message id="dlt-no-foreground-spectrum">Nincs előtér spektrum</message>
   <message id="dlt-no-drf-loaded">Nincs betöltött DRF</message>
   <message id="dlt-drf-not-valid">A DRF nem érvényes vagy nincs FWHM információja.</message>
-  <message id="dlt-err-max-distance-too-large">A maximális távolság túl nagy (&gt;100km)</message>
+  <message id="dlt-err-max-distance-too-large"><![CDATA[A maximális távolság túl nagy (>100km)]]></message>
   <message id="dlt-err-upper-limit-negative">A számlálások felső határa kisebb, mint nulla, de a megfigyelt számlálások nagyobbak, mint L_d.</message>
   <message id="dlt-err-activity-zero-negative">Az aktivitás nem lehet nulla vagy negatív</message>
   <message id="dlt-err-distance-zero-negative">A távolság nem lehet nulla vagy negatív</message>

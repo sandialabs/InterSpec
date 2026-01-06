@@ -40,7 +40,7 @@
   <message id="dlt-detected-activity-tt">Обнаруженная активность, используя только эту Область Интереса,
     и наблюдаемый избыток отсчётов, а также
     статистический доверительный интервал.</message>
-  <message id="dlt-limit-lt-zero">Предел: &lt; 0{1}</message>
+  <message id="dlt-limit-lt-zero"><![CDATA[Предел: < 0{1}]]></message>
   <message id="dlt-sig-fewer-counts">(значительно меньше отсчётов в ROI, чем предсказано)</message>
   <message id="dlt-fewer-counts-tt">Значительно меньше отсчётов было наблюдено в
     Области Интереса, чем предсказано соседними каналами.</message>
@@ -53,8 +53,6 @@
   <message id="dlt-large-deficit">Большой дефицит отсчётов в ROI</message>
   
   <!-- DetectionLimitTool main class strings -->
-  <message id="dlt-nuclide-label">Нуклид:&nbsp;&nbsp;</message>
-  <message id="dlt-age-label">Возраст:</message>
   <message id="dlt-tt-age-edit">
     <div>Возраст нуклида.</div>
     <br />
@@ -62,8 +60,6 @@
     (т.е., введённого) нуклида всегда указываются на момент измерения.
     </div>
   </message>
-  <message id="dlt-distance-label">Расстояние:</message>
-  <message id="dlt-activity-label">Активность:</message>
   <message id="dlt-attenuate-for-air">Ослабление для воздуха</message>
   <message id="dlt-shield-empty-text">материал экранирования</message>
   <message id="dlt-activity-limit">Предел активности</message>
@@ -84,8 +80,8 @@
   <message id="dlt-log">Лог</message>
   <message id="dlt-lin">Лин</message>
   <message id="dlt-below-lc">(ниже L<sub>c</sub>)</message>
-  <message id="dlt-lt-zero-counts">&lt; 0 отсчётов</message>
-  <message id="dlt-lt-zero-activity">&lt; {1}</message>
+  <message id="dlt-lt-zero-counts"><![CDATA[< 0 отсчётов]]></message>
+  <message id="dlt-lt-zero-activity"><![CDATA[< {1}]]></message>
   
   <!-- Error messages -->
   <message id="dlt-err-no-data">Нет загруженных данных</message>
@@ -178,7 +174,7 @@
   <message id="dlt-chart-x-axis-activity">Активность ({1})</message>
   <message id="dlt-chart-title-estimated-activity">Оценённая активность {1}.</message>
   <message id="dlt-chart-title-excess-counts">Избыточные отсчёты {1}.</message>
-  <message id="dlt-chart-title-activity-lt-zero">Активность &lt; 0 {1}</message>
+  <message id="dlt-chart-title-activity-lt-zero"><![CDATA[Активность < 0 {1}]]></message>
   <message id="dlt-chart-title-data-peak">Данные + пик для {1}</message>
   <message id="dlt-chart-title-peak-upper-bound">Пик для верхней границы {1} @{2} УД</message>
   <message id="dlt-currie-info-dialog-title">{1}{2} кэВ Инфо</message>
@@ -188,7 +184,7 @@
   <message id="dlt-no-foreground-spectrum">Нет спектра переднего плана</message>
   <message id="dlt-no-drf-loaded">Нет загруженного DRF</message>
   <message id="dlt-drf-not-valid">DRF некорректен или не имеет информации FWHM.</message>
-  <message id="dlt-err-max-distance-too-large">Максимальное расстояние слишком большое (&gt;100км)</message>
+  <message id="dlt-err-max-distance-too-large"><![CDATA[Максимальное расстояние слишком большое (>100км)]]></message>
   <message id="dlt-err-upper-limit-negative">Верхний предел отсчётов меньше нуля, но наблюдаемые отсчёты больше L_d.</message>
   <message id="dlt-err-activity-zero-negative">Активность не может быть нулём или отрицательной</message>
   <message id="dlt-err-distance-zero-negative">Расстояние не может быть нулём или отрицательным</message>

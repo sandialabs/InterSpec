@@ -40,7 +40,7 @@
   <message id="dlt-detected-activity-tt">Detected activity, using just this Region Of Interests,
     and the observed excess of counts, as well as the
     statistical confidence interval.</message>
-  <message id="dlt-limit-lt-zero">Limit: &lt; 0{1}</message>
+  <message id="dlt-limit-lt-zero"><![CDATA[Limit: < 0{1}]]></message>
   <message id="dlt-sig-fewer-counts">(sig. fewer counts in ROI than predicted)</message>
   <message id="dlt-fewer-counts-tt">Significantly fewer counts were observed in the
     Region Of Interest, than predicted by the neighboring channels.</message>
@@ -53,8 +53,6 @@
   <message id="dlt-large-deficit">Large deficit of counts in ROI</message>
   
   <!-- DetectionLimitTool main class strings -->
-  <message id="dlt-nuclide-label">Nuclide:&nbsp;&nbsp;</message>
-  <message id="dlt-age-label">Age:</message>
   <message id="dlt-tt-age-edit">
     <div>The age of the nuclide.</div>
     <br />
@@ -62,8 +60,6 @@
     (i.e., entered) nuclide are always reported for at the time of measurement.
     </div>
   </message>
-  <message id="dlt-distance-label">Distance:</message>
-  <message id="dlt-activity-label">Activity:</message>
   <message id="dlt-attenuate-for-air">Attenuate for air</message>
   <message id="dlt-shield-empty-text">shielding material</message>
   <message id="dlt-activity-limit">Activity Limit</message>
@@ -84,8 +80,8 @@
   <message id="dlt-log">Log</message>
   <message id="dlt-lin">Lin</message>
   <message id="dlt-below-lc">(below L<sub>c</sub>)</message>
-  <message id="dlt-lt-zero-counts">&lt; 0 counts</message>
-  <message id="dlt-lt-zero-activity">&lt; {1}</message>
+  <message id="dlt-lt-zero-counts"><![CDATA[< 0 counts]]></message>
+  <message id="dlt-lt-zero-activity"><![CDATA[< {1}]]></message>
   
   <!-- Error messages -->
   <message id="dlt-err-no-data">No Data Loaded</message>
@@ -178,7 +174,7 @@
   <message id="dlt-chart-x-axis-activity">Activity ({1})</message>
   <message id="dlt-chart-title-estimated-activity">Estimated activity of {1}.</message>
   <message id="dlt-chart-title-excess-counts">Excess counts of {1}.</message>
-  <message id="dlt-chart-title-activity-lt-zero">Activity &lt; 0 {1}</message>
+  <message id="dlt-chart-title-activity-lt-zero"><![CDATA[Activity < 0 {1}]]></message>
   <message id="dlt-chart-title-data-peak">Data + peak for {1}</message>
   <message id="dlt-chart-title-peak-upper-bound">Peak for upper bound of {1} @{2} CL</message>
   <message id="dlt-currie-info-dialog-title">{1}{2} keV Info</message>
@@ -188,7 +184,7 @@
   <message id="dlt-no-foreground-spectrum">No foreground spectrum</message>
   <message id="dlt-no-drf-loaded">No DRF loaded</message>
   <message id="dlt-drf-not-valid">DRF not valid or doesnt have FWHM info.</message>
-  <message id="dlt-err-max-distance-too-large">Maximum distance to large (&gt;100km)</message>
+  <message id="dlt-err-max-distance-too-large"><![CDATA[Maximum distance to large (>100km)]]></message>
   <message id="dlt-err-upper-limit-negative">Upper limit of counts is less than zero, but counts observed is greater than L_d.</message>
   <message id="dlt-err-activity-zero-negative">Activity cant be zero or negative</message>
   <message id="dlt-err-distance-zero-negative">Distance cant be zero or negative</message>

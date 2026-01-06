@@ -40,7 +40,7 @@
   <message id="dlt-detected-activity-tt">Atividade detectada, usando apenas esta Região de Interesse,
     e o excesso observado de contagens, bem como o
     intervalo de confiança estatístico.</message>
-  <message id="dlt-limit-lt-zero">Limite: &lt; 0{1}</message>
+  <message id="dlt-limit-lt-zero"><![CDATA[Limite: < 0{1}]]></message>
   <message id="dlt-sig-fewer-counts">(muito menos contagens no ROI do que previsto)</message>
   <message id="dlt-fewer-counts-tt">Muito menos contagens foram observadas na
     Região de Interesse, do que previsto pelos canais vizinhos.</message>
@@ -53,8 +53,6 @@
   <message id="dlt-large-deficit">Grande déficit de contagens no ROI</message>
   
   <!-- DetectionLimitTool main class strings -->
-  <message id="dlt-nuclide-label">Nuclídeo:&nbsp;&nbsp;</message>
-  <message id="dlt-age-label">Idade:</message>
   <message id="dlt-tt-age-edit">
     <div>A idade do nuclídeo.</div>
     <br />
@@ -62,8 +60,6 @@
     (ou seja, inserido) são sempre relatadas no momento da medição.
     </div>
   </message>
-  <message id="dlt-distance-label">Distância:</message>
-  <message id="dlt-activity-label">Atividade:</message>
   <message id="dlt-attenuate-for-air">Atenuar para ar</message>
   <message id="dlt-shield-empty-text">material de blindagem</message>
   <message id="dlt-activity-limit">Limite de Atividade</message>
@@ -84,8 +80,8 @@
   <message id="dlt-log">Log</message>
   <message id="dlt-lin">Lin</message>
   <message id="dlt-below-lc">(abaixo de L<sub>c</sub>)</message>
-  <message id="dlt-lt-zero-counts">&lt; 0 contagens</message>
-  <message id="dlt-lt-zero-activity">&lt; {1}</message>
+  <message id="dlt-lt-zero-counts"><![CDATA[< 0 contagens]]></message>
+  <message id="dlt-lt-zero-activity"><![CDATA[< {1}]]></message>
   
   <!-- Error messages -->
   <message id="dlt-err-no-data">Nenhum Dado Carregado</message>
@@ -178,7 +174,7 @@
   <message id="dlt-chart-x-axis-activity">Atividade ({1})</message>
   <message id="dlt-chart-title-estimated-activity">Atividade estimada de {1}.</message>
   <message id="dlt-chart-title-excess-counts">Contagens excessivas de {1}.</message>
-  <message id="dlt-chart-title-activity-lt-zero">Atividade &lt; 0 {1}</message>
+  <message id="dlt-chart-title-activity-lt-zero"><![CDATA[Atividade < 0 {1}]]></message>
   <message id="dlt-chart-title-data-peak">Dados + pico para {1}</message>
   <message id="dlt-chart-title-peak-upper-bound">Pico para limite superior de {1} @{2} CL</message>
   <message id="dlt-currie-info-dialog-title">{1}{2} keV Info</message>
@@ -188,7 +184,7 @@
   <message id="dlt-no-foreground-spectrum">Nenhum espectro de primeiro plano</message>
   <message id="dlt-no-drf-loaded">Nenhum DRF Carregado</message>
   <message id="dlt-drf-not-valid">DRF não válido ou não tem informação FWHM.</message>
-  <message id="dlt-err-max-distance-too-large">Distância máxima muito grande (&gt;100km)</message>
+  <message id="dlt-err-max-distance-too-large"><![CDATA[Distância máxima muito grande (>100km)]]></message>
   <message id="dlt-err-upper-limit-negative">O limite superior de contagens é menor que zero, mas as contagens observadas são maiores que L_d.</message>
   <message id="dlt-err-activity-zero-negative">A atividade não pode ser zero ou negativa</message>
   <message id="dlt-err-distance-zero-negative">A distância não pode ser zero ou negativa</message>

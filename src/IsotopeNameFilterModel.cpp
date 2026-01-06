@@ -30,8 +30,11 @@
 #include <boost/any.hpp>
 
 #include <Wt/WString>
+#include <Wt/WLineEdit>
+#include <Wt/WApplication>
 #include <Wt/WSuggestionPopup>
 #include <Wt/WAbstractItemModel>
+#include <Wt/WJavaScriptPreamble>
 
 #include "InterSpec/PeakDef.h"
 #include "SpecUtils/StringAlgo.h"
@@ -392,7 +395,7 @@ void IsotopeNameFilterModel::filter( const Wt::WString &text )
   //      and is probably pretty ineffiecnt
   //Should also be seperated out into its own funciton
   vector<const ReactionGamma::Reaction *> suggest_reactions;
-  if( m_includeReactions && metalevel==0 )
+  if( m_includeReactions && (metalevel == 0) && numericstrs.empty() )
     suggest_reactions = suggestReactions( text, suggestions, candidate_elements );
 
   //if user has entered something like "Fe(...", they only want the reactions
@@ -724,10 +727,6 @@ void IsotopeNameFilterModel::nuclideNameMatcherJs( std::string &js )
       {
       if( !edit )
         return function(){return { match : false, suggestion : "" };};
-      if( !edit.value )
-        return function(){return { match : false, suggestion : "" };};
-      
-      var value = edit.value;
       
       return function( suggestion )
       {
@@ -735,21 +734,35 @@ void IsotopeNameFilterModel::nuclideNameMatcherJs( std::string &js )
         //suggestion: what the potential suggestion in the
         try
         {
+          // Always allow input - never prevent characters from being entered
+          if( !edit )
+            return { match : false, suggestion : "" };
+          
+          // If no value yet, still allow matching (empty string is valid)
+          if( !edit.value )
+            return { match : true, suggestion : suggestion || "" };
+          
           if( !suggestion )
-            return value;
+            return edit.value;
+          
+          // Get the current value from the edit element each time (don't capture it)
+          var value = edit.value;
           
           //XXX - TODO - right now the below ignores the case of meta-stable elements
           //             and could possibly cause results like <b><b>M</b>g13<b>m</b></b>
           //             ex. Co60m, U235m, etc
           //XXX - TODO - right now the gamma lines in parenthesis, are also
           //             matched in the regex, this should be avoided
-          //replace the special characters the user may have typed in
+          //replace the special characters the user may have typed in (but keep parentheses)
           //value = value.replace(/[.*+?|()\\[\\]{}\\\\$^]/g, "\\$&");
-          value = value.replace(/[.*+?|\\[\\]{}\\\\$^]/g, "");
+          // Remove special regex characters but keep parentheses for reactions like Br(a,a)
+          // Create a copy for regex processing, but preserve original for matching
+          var valueForRegex = value;
+          valueForRegex = valueForRegex.replace(/[.*+?|\\[\\]{}\\\\$^]/g, "");
 
           //Highlight the matching numeric parts of the answer
           var numericregex = new RegExp('(\\d+)');
-          var numericmatch = numericregex.exec(value);
+          var numericmatch = numericregex.exec(valueForRegex);
           if( numericmatch && numericmatch.length > 1 )
            for( var i = 1; i < numericmatch.length; ++i )
            {
@@ -759,7 +772,7 @@ void IsotopeNameFilterModel::nuclideNameMatcherJs( std::string &js )
 
           //Highlight the matching alpha parts of the answer
           var alpharegex = new RegExp('([a-zA-Z]+)');
-          var alphamatch = alpharegex.exec(value);
+          var alphamatch = alpharegex.exec(valueForRegex);
           if( alphamatch && alphamatch.length > 1 )
             for( var i = 1; i < alphamatch.length; ++i )
               if( (alphamatch[i] != 'm' && alphamatch[i] != 'M')
@@ -810,10 +823,8 @@ void IsotopeNameFilterModel::replacerJs( std::string &js )
 
 void IsotopeNameFilterModel::setQuickTypeFixHackjs( Wt::WSuggestionPopup *popup )
 {
-#if( WT_SERIES > 3 || (WT_SERIES==3 && WT_MAJOR>3) || (WT_SERIES==3 && WT_MAJOR==3 && WT_MINOR>4) )
-#ifndef _WIN32
-#warning "You can probably remove IsotopeNameFilterModel::setQuickTypeFixHackjs(...), but you should check this"
-#endif
+#if( WT_SERIES > 3 || (WT_SERIES==3 && WT_MAJOR>7) || (WT_SERIES==3 && WT_MAJOR==7 && WT_MINOR>1) )
+#pragma message("You can probably remove IsotopeNameFilterModel::setQuickTypeFixHackjs(...), but you should check this")
 #endif
   
   string js = INLINE_JAVASCRIPT(
@@ -837,3 +848,639 @@ void IsotopeNameFilterModel::setQuickTypeFixHackjs( Wt::WSuggestionPopup *popup 
   
   popup->doJavaScript( js + " addTryCatch('" + popup->id() + "');" );
 }//void setQuickTypeFixHackjs( Wt::WSuggestionPopup *popup )
+
+
+// Declare the JavaScript function once at file scope using WT_DECLARE_WT_MEMBER
+// This function will be available as Wt.WT.SetupEnterKeyMatchFix and can be called
+// multiple times without re-defining the JavaScript code
+WT_DECLARE_WT_MEMBER(SetupEnterKeyMatchFix, Wt::JavaScriptFunction, "SetupEnterKeyMatchFix",
+  function( popupElId, editElId ){
+  
+    var doSetup = function( popupElId, editElId ){
+      var popupEl = Wt.WT.getElement( popupElId );
+      var editEl = Wt.WT.getElement( editElId );
+      var popupObj = popupEl ? jQuery.data( popupEl, 'obj' ) : null;
+      if( !popupObj ) popupObj = popupEl ? popupEl.wtObj : null; //Wt 3.7.1
+      
+      if( !popupObj || !editEl ){
+        setTimeout( function(){ doSetup( popupElId, editElId ); }, 100 );
+        return;
+      }
+      
+      // Helper function to hide popup
+      var hidePopup = function(){
+        if( popupObj && popupObj.hide ){
+          try{
+            popupObj.hide();
+          }catch( e ){}
+        }
+        if( popupEl ){
+          try{
+            popupEl.style.display = 'none';
+            popupEl.style.visibility = 'hidden';
+          }catch( e ){}
+        }
+      };
+      
+      // Ensure special characters like "(" can be entered by preventing WSuggestionPopup
+      // from interfering with input events for non-alphanumeric characters
+      if( editEl && popupObj ){
+        // Override refilter to handle special characters gracefully
+        var oldRefilter = popupObj.refilter;
+        var isClickingSuggestion = false;
+        if( oldRefilter ){
+          popupObj.refilter = function( value ){
+            try{
+              // Always allow refilter to proceed - don't block it
+              // The special character handling is done elsewhere
+              // This ensures clicks work properly
+              return oldRefilter.call( this, value );
+            }catch( e ){
+              // If refilter fails, don't prevent input
+              return;
+            }
+          };
+        }
+        
+        // Monitor input to detect special characters and hide popup
+        // But don't hide if we're in the middle of applying a suggestion (click)
+        editEl.addEventListener( "input", function( event ){
+          var value = editEl.value || "";
+          // If value contains special characters, hide popup immediately
+          // But only if we're not clicking a suggestion (let clicks work)
+          if( /[()[\]{}]/.test( value ) && !isClickingSuggestion ){
+            if( popupObj && popupObj.hide ){
+              try{
+                popupObj.hide();
+              }catch( e ){}
+            }
+            if( popupEl ){
+              try{
+                popupEl.style.display = 'none';
+                popupEl.style.visibility = 'hidden';
+              }catch( e ){}
+            }
+          }
+        }, false );
+        
+        // Helper function to scroll selected item into view
+        var scrollSelectedIntoView = function(){
+          try{
+            if( !popupEl ) return;
+            
+            // Find the currently selected/highlighted item
+            var allItems = popupEl.querySelectorAll ? popupEl.querySelectorAll( 'li' ) : null;
+            if( !allItems || allItems.length === 0 ){
+              allItems = popupEl.getElementsByTagName ? popupEl.getElementsByTagName( 'li' ) : null;
+            }
+            if( !allItems || allItems.length === 0 ){
+              allItems = popupEl.querySelectorAll ? popupEl.querySelectorAll( '.Wt-suggest-item' ) : null;
+            }
+            
+            if( !allItems || allItems.length === 0 ) return;
+            
+            var selectedItem = null;
+            
+            // Find the active/selected item
+            for( var i = 0; i < allItems.length; ++i ){
+              var item = allItems[i];
+              var isActive = false;
+              
+              if( item.classList ){
+                isActive = item.classList.contains( 'active' ) ||
+                            item.classList.contains( 'selected' ) ||
+                            item.classList.contains( 'highlighted' ) ||
+                            item.classList.contains( 'Wt-suggest-item-selected' );
+              }
+              
+              if( !isActive && item.className ){
+                var className = item.className.toString();
+                isActive = className.indexOf( 'active' ) >= 0 ||
+                            className.indexOf( 'selected' ) >= 0 ||
+                            className.indexOf( 'highlighted' ) >= 0;
+              }
+              
+              if( !isActive ){
+                try{
+                  var style = window.getComputedStyle ? window.getComputedStyle( item ) : item.style;
+                  if( style ){
+                    var bgColor = style.backgroundColor;
+                    if( bgColor && bgColor !== 'transparent' && bgColor !== 'rgba(0, 0, 0, 0)' ){
+                      var parent = item.parentElement;
+                      if( parent ){
+                        var parentStyle = window.getComputedStyle ? window.getComputedStyle( parent ) : parent.style;
+                        if( parentStyle && parentStyle.backgroundColor !== bgColor ){
+                          isActive = true;
+                        }
+                      }
+                    }
+                  }
+                }catch( e ){}
+              }
+              
+              if( !isActive && item.getAttribute ){
+                var ariaSelected = item.getAttribute( 'aria-selected' );
+                if( ariaSelected === 'true' ){
+                  isActive = true;
+                }
+              }
+              
+              if( isActive ){
+                selectedItem = item;
+                break;
+              }
+            }
+            
+            // Fallback: use selectedIndex from popupObj
+            if( !selectedItem && popupObj ){
+              try{
+                var selectedIndex = popupObj.selectedIndex !== undefined ? popupObj.selectedIndex : 
+                                   (popupObj.currentIndex !== undefined ? popupObj.currentIndex : -1);
+                if( selectedIndex >= 0 && selectedIndex < allItems.length ){
+                  selectedItem = allItems[selectedIndex];
+                }
+              }catch( e ){}
+            }
+            
+            // Scroll the selected item into view
+            if( selectedItem ){
+              // Use scrollIntoView if available
+              if( selectedItem.scrollIntoView ){
+                try{
+                  selectedItem.scrollIntoView( { behavior: 'smooth', block: 'nearest' } );
+                }catch( e ){
+                  // Fallback for older browsers
+                  try{
+                    selectedItem.scrollIntoView( false );
+                  }catch( e2 ){}
+                }
+              }else{
+                // Manual scroll calculation
+                try{
+                  var container = popupEl;
+                  while( container && container !== document.body ){
+                    if( container.scrollHeight > container.clientHeight ){
+                      var itemTop = selectedItem.offsetTop;
+                      var itemBottom = itemTop + selectedItem.offsetHeight;
+                      var containerTop = container.scrollTop;
+                      var containerBottom = containerTop + container.clientHeight;
+                      
+                      if( itemTop < containerTop ){
+                        container.scrollTop = itemTop;
+                      }else if( itemBottom > containerBottom ){
+                        container.scrollTop = itemBottom - container.clientHeight;
+                      }
+                    }
+                    container = container.parentElement;
+                  }
+                }catch( e ){}
+              }
+            }
+          }catch( e ){}
+        };
+        
+        // Also intercept keydown to hide popup before special characters are processed
+        editEl.addEventListener( 'keydown', function( event ){
+          var key = event.key || String.fromCharCode( event.keyCode || event.which );
+          var keyCode = event.keyCode || event.which;
+          
+          // Handle arrow key navigation - scroll selected item into view
+          var isArrowKey = keyCode === 38 || keyCode === 40; // Up/Down arrows
+          
+          if( isArrowKey ){
+            // After WSuggestionPopup processes the arrow key, scroll selected item into view
+            setTimeout( function(){
+              scrollSelectedIntoView();
+            }, 10 );
+            // Allow navigation keys to work normally - don't hide popup
+            return;
+          }
+          
+          // Don't interfere with other navigation keys (Left/Right arrows, Enter, Escape, Tab, etc.)
+          var isNavigationKey = keyCode === 37 || keyCode === 39 || // Left/Right arrows
+                               keyCode === 13 || keyCode === 27 || // Enter/Escape
+                               keyCode === 9 || keyCode === 16 || // Tab/Shift
+                               event.ctrlKey || event.metaKey || event.altKey;
+          
+          if( isNavigationKey ){
+            // Allow navigation keys to work normally - don't hide popup
+            return;
+          }
+          
+          // Detect special characters (parentheses, brackets, etc.)
+          // Note: keyCode 40 is Down arrow, so we need to check the actual character
+          var isSpecialChar = (keyCode === 57 || keyCode === 48) && event.shiftKey || // Shift+9/0 = ()
+                              keyCode === 219 || keyCode === 221 || // [ ]
+                              (key && /[()[\]{}]/.test( key ) && !isNavigationKey);
+          
+          if( isSpecialChar ){
+            // Hide popup immediately when special character is detected
+            // This prevents WSuggestionPopup from interfering
+            if( popupObj && popupObj.hide ){
+              try{
+                popupObj.hide();
+              }catch( e ){}
+            }
+            if( popupEl ){
+              try{
+                popupEl.style.display = 'none';
+                popupEl.style.visibility = 'hidden';
+              }catch( e ){}
+            }
+          }
+        }, true ); // Capture phase to intercept early
+      }
+      
+      // Override editKeyDown - this is where Enter key is handled in Wt
+      var oldEditKeyDown = popupObj.editKeyDown;
+      
+      if( oldEditKeyDown ){
+        popupObj.editKeyDown = function( editElement, event ){
+          // For non-Enter keys, immediately call original to avoid any interference
+          if( !event || (event.key !== 'Enter' && event.keyCode !== 13) ){
+            if( oldEditKeyDown ){
+              return oldEditKeyDown.call( this, editElement, event );
+            }
+            return true; // Allow default behavior
+          }
+          
+          var currentText = editElement ? (editElement.value || "") : "";
+          
+          // This is an Enter key press - handle it
+          {
+            // Get all suggestions and find the active/highlighted one
+            var allSuggestions = [];
+            var firstSuggestion = null;
+            var activeSuggestion = null;
+            
+            try{
+              if( popupEl ){
+                var allItems = popupEl.querySelectorAll ? popupEl.querySelectorAll( 'li' ) : null;
+                if( !allItems || allItems.length === 0 ){
+                  allItems = popupEl.getElementsByTagName ? popupEl.getElementsByTagName( 'li' ) : null;
+                }
+                if( !allItems || allItems.length === 0 ){
+                  allItems = popupEl.querySelectorAll ? popupEl.querySelectorAll( '.Wt-suggest-item' ) : null;
+                }
+                
+                if( allItems && allItems.length > 0 ){
+                  for( var i = 0; i < allItems.length; ++i ){
+                    var item = allItems[i];
+                    
+                    var itemText = null;
+                    var span = item.querySelector ? item.querySelector( 'span[sug]' ) : null;
+                    if( span && span.getAttribute ){
+                      itemText = span.getAttribute( 'sug' );
+                    }
+                    if( !itemText ){
+                      itemText = item.textContent || item.innerText || "";
+                    }
+                    itemText = itemText ? itemText.trim() : "";
+                    
+                    if( itemText && itemText !== "" ){
+                      allSuggestions.push( itemText );
+                      if( i === 0 ) firstSuggestion = itemText;
+                      
+                      // Check if this item is active/highlighted
+                      var isActive = false;
+                      
+                      if( item.classList ){
+                        isActive = item.classList.contains( 'active' ) ||
+                                    item.classList.contains( 'selected' ) ||
+                                    item.classList.contains( 'highlighted' ) ||
+                                    item.classList.contains( 'Wt-suggest-item-selected' );
+                      }
+                      
+                      if( !isActive && item.className ){
+                        var className = item.className.toString();
+                        isActive = className.indexOf( 'active' ) >= 0 ||
+                                    className.indexOf( 'selected' ) >= 0 ||
+                                    className.indexOf( 'highlighted' ) >= 0;
+                      }
+                      
+                      if( !isActive ){
+                        try{
+                          var style = window.getComputedStyle ? window.getComputedStyle( item ) : item.style;
+                          if( style ){
+                            var bgColor = style.backgroundColor;
+                            if( bgColor && bgColor !== 'transparent' && bgColor !== 'rgba(0, 0, 0, 0)' ){
+                              var parent = item.parentElement;
+                              if( parent ){
+                                var parentStyle = window.getComputedStyle ? window.getComputedStyle( parent ) : parent.style;
+                                if( parentStyle && parentStyle.backgroundColor !== bgColor ){
+                                  isActive = true;
+                                }
+                              }
+                            }
+                          }
+                        }catch( e ){}
+                      }
+                      
+                      if( !isActive && item.getAttribute ){
+                        var ariaSelected = item.getAttribute( 'aria-selected' );
+                        if( ariaSelected === 'true' ){
+                          isActive = true;
+                        }
+                      }
+                      
+                      if( isActive ){
+                        activeSuggestion = itemText;
+                      }
+                    }
+                  }
+                }
+                
+                // Fallback: If no active suggestion found, try to get it from popup object
+                if( !activeSuggestion && allSuggestions.length > 0 && popupObj ){
+                  try{
+                    var selectedIndex = popupObj.selectedIndex !== undefined ? popupObj.selectedIndex : 
+                                       (popupObj.currentIndex !== undefined ? popupObj.currentIndex : -1);
+                    
+                    if( selectedIndex >= 0 && selectedIndex < allSuggestions.length ){
+                      activeSuggestion = allSuggestions[selectedIndex];
+                    }else if( allSuggestions.length > 0 ){
+                      activeSuggestion = firstSuggestion;
+                    }
+                  }catch( e ){}
+                }
+              }
+            }catch( e ){}
+            
+            // Logic: prioritize active suggestion (arrow key navigation) unless typed text is more specific
+            if( currentText && allSuggestions.length > 0 ){
+              var currentTextLower = currentText.toLowerCase().trim();
+              
+              var matchingSuggestion = null;
+              for( var i = 0; i < allSuggestions.length; ++i ){
+                if( allSuggestions[i].toLowerCase().trim() === currentTextLower ){
+                  matchingSuggestion = allSuggestions[i];
+                  break;
+                }
+              }
+              
+              var firstLower = firstSuggestion ? firstSuggestion.toLowerCase().trim() : "";
+              var activeLower = activeSuggestion ? activeSuggestion.toLowerCase().trim() : "";
+              var suggestionToUse = null;
+              
+              if( activeSuggestion ){
+                // Active suggestion exists - user likely navigated with arrow keys
+                var typedIsMoreSpecific = false;
+                
+                if( matchingSuggestion ){
+                  if( currentTextLower.length > activeLower.length && currentTextLower.indexOf( activeLower ) !== 0 ){
+                    typedIsMoreSpecific = true;
+                  }else if( currentTextLower.length === activeLower.length && currentTextLower !== activeLower ){
+                    if( activeLower.indexOf( currentTextLower ) !== 0 ){
+                      typedIsMoreSpecific = true;
+                    }
+                  }
+                }
+                
+                if( typedIsMoreSpecific ){
+                  suggestionToUse = matchingSuggestion;
+                }else{
+                  suggestionToUse = activeSuggestion;
+                }
+              }else if( matchingSuggestion ){
+                if( matchingSuggestion.toLowerCase().trim() !== firstLower && currentTextLower.length >= firstLower.length ){
+                  suggestionToUse = matchingSuggestion;
+                }
+              }
+              
+              // Apply the selected suggestion
+              if( suggestionToUse ){
+                hidePopup();
+                
+                editElement.value = suggestionToUse;
+                if( editElement.selectionStart !== undefined ){
+                  editElement.selectionStart = editElement.selectionEnd = suggestionToUse.length;
+                }
+                
+                // Reset WSuggestionPopup state to ensure it doesn't interfere with future input
+                if( popupObj && popupObj.refilter ){
+                  try{
+                    // Trigger a refilter with the new value to reset popup state
+                    setTimeout( function(){
+                      if( popupObj && popupObj.refilter ){
+                        try{
+                          popupObj.refilter( suggestionToUse );
+                        }catch( e ){}
+                      }
+                    }, 10 );
+                  }catch( e ){}
+                }
+                
+                setTimeout( hidePopup, 50 );
+                
+                if( editElement.dispatchEvent ){
+                  var changeEvent = document.createEvent( 'HTMLEvents' );
+                  changeEvent.initEvent( 'change', true, true );
+                  editElement.dispatchEvent( changeEvent );
+                }
+                
+                if( event.preventDefault ) event.preventDefault();
+                if( event.stopPropagation ) event.stopPropagation();
+                return false;
+              }else{
+                hidePopup();
+                setTimeout( hidePopup, 50 );
+              }
+            }else if( currentText && allSuggestions.length === 0 ){
+              hidePopup();
+              editElement.value = currentText;
+              if( editElement.selectionStart !== undefined ){
+                editElement.selectionStart = editElement.selectionEnd = currentText.length;
+              }
+              if( editElement.dispatchEvent ){
+                var changeEvent = document.createEvent( 'HTMLEvents' );
+                changeEvent.initEvent( 'change', true, true );
+                editElement.dispatchEvent( changeEvent );
+              }
+              if( event.preventDefault ) event.preventDefault();
+              if( event.stopPropagation ) event.stopPropagation();
+              return false;
+            }
+          }
+        };
+      }
+      
+      // Track when a suggestion is being applied via mouse click to prevent premature change events
+      var isApplyingSuggestion = false;
+      var pendingSuggestionValue = null;
+      var valueBeforeSuggestionClick = null;
+      
+      // Intercept change events and suppress them if we're applying a suggestion
+      // But only suppress premature events, not the actual suggestion application
+      if( editEl ){
+        editEl.addEventListener( "change", function( event ){
+          var currentValue = editEl.value || "";
+          
+          // Only suppress if we're tracking a suggestion click AND the value matches the old value
+          // This prevents the premature change event with the old typed text
+          if( isApplyingSuggestion && pendingSuggestionValue ){
+            var currentLower = currentValue.toLowerCase().trim();
+            var pendingLower = pendingSuggestionValue.toLowerCase().trim();
+            var valueBeforeLower = valueBeforeSuggestionClick ? valueBeforeSuggestionClick.toLowerCase().trim() : "";
+            
+            // If current value matches the old value (before click), suppress this premature event
+            if( currentLower === valueBeforeLower && currentLower !== pendingLower ){
+              event.stopImmediatePropagation();
+              event.preventDefault();
+              return false;
+            }else if( currentLower === pendingLower ){
+              // The suggestion has been applied - allow this change event and reset tracking
+              isApplyingSuggestion = false;
+              pendingSuggestionValue = null;
+              valueBeforeSuggestionClick = null;
+              isClickingSuggestion = false;
+              // Hide popup after click completes
+              hidePopup();
+              setTimeout( hidePopup, 100 );
+              // Don't prevent the change event - let it propagate normally
+              return;
+            }else{
+              // Value changed to something else - reset tracking
+              isApplyingSuggestion = false;
+              pendingSuggestionValue = null;
+              valueBeforeSuggestionClick = null;
+              isClickingSuggestion = false;
+            }
+          }
+          
+          // For all other change events, hide popup normally
+          hidePopup();
+          setTimeout( hidePopup, 100 );
+        }, true );
+      }
+      
+      // Track when suggestions are clicked by monitoring value changes
+      // When a suggestion is clicked, the value changes instantly to the full suggestion text
+      // This is different from typing, which happens character by character
+      if( editEl ){
+        var lastKnownValue = editEl.value || "";
+        var lastChangeTime = Date.now();
+        var isUserTyping = false;
+        var typingTimeout = null;
+        
+        // Monitor keydown to detect when user is actively typing
+        editEl.addEventListener( 'keydown', function( event ){
+          var keyCode = event.keyCode || event.which;
+          // If it's a printable character key (not navigation), user is typing
+          if( keyCode >= 32 && keyCode <= 126 && 
+              keyCode !== 13 && keyCode !== 27 && keyCode !== 9 ){
+            isUserTyping = true;
+            // Clear typing flag after a delay
+            if( typingTimeout ) clearTimeout( typingTimeout );
+            typingTimeout = setTimeout( function(){
+              isUserTyping = false;
+            }, 200 );
+          }
+        }, false );
+        
+        // Monitor input events to detect suggestion clicks
+        var inputMonitor = function( event ){
+          var currentValue = editEl.value || "";
+          var now = Date.now();
+          var timeSinceLastChange = now - lastChangeTime;
+          
+          // If value changed by more than 1 character very quickly (< 50ms) and user wasn't typing,
+          // it's likely a suggestion click
+          if( currentValue !== lastKnownValue ){
+            var lengthDiff = Math.abs( currentValue.length - lastKnownValue.length );
+            
+            // Detect suggestion clicks: value changes by multiple characters instantly
+            // Also check if the new value matches a common pattern (like "Ba133" from "Ba")
+            if( lengthDiff > 1 && timeSinceLastChange < 100 && !isUserTyping ){
+              // This looks like a suggestion was clicked - track it
+              valueBeforeSuggestionClick = lastKnownValue;
+              isApplyingSuggestion = true;
+              pendingSuggestionValue = currentValue;
+              isClickingSuggestion = true;
+              
+              // Reset flags after a delay
+              setTimeout( function(){
+                isClickingSuggestion = false;
+                if( isApplyingSuggestion ){
+                  isApplyingSuggestion = false;
+                  pendingSuggestionValue = null;
+                  valueBeforeSuggestionClick = null;
+                }
+              }, 1000 );
+            }else if( lengthDiff === 1 ){
+              // Single character change - user is typing, update tracked value
+              lastKnownValue = currentValue;
+              lastChangeTime = now;
+            }else{
+              // Update tracked value for other changes
+              lastKnownValue = currentValue;
+              lastChangeTime = now;
+            }
+          }
+        };
+        
+        // Add input monitor in bubble phase so it doesn't interfere
+        editEl.addEventListener( 'input', inputMonitor, false );
+      }
+      
+      // Ensure mouse clicks on popup items work - detect them early via mouse events
+      if( popupEl ){
+        // Listen for mousedown on popup items to detect clicks early
+        // This allows us to set isClickingSuggestion before the value changes
+        popupEl.addEventListener( 'mousedown', function( event ){
+          var target = event.target || event.srcElement;
+          var li = target;
+          while( li && li.tagName !== 'LI' && li.parentElement ){
+            li = li.parentElement;
+          }
+          
+          if( li ){
+            // A suggestion item was clicked - set flags early
+            var suggestionText = null;
+            var span = li.querySelector ? li.querySelector( "span[sug]" ) : null;
+            if( span && span.getAttribute ){
+              suggestionText = span.getAttribute( "sug" );
+            }
+            if( !suggestionText ){
+              suggestionText = li.textContent || li.innerText || "";
+            }
+            suggestionText = suggestionText ? suggestionText.trim() : "";
+            
+            if( suggestionText && editEl ){
+              // Track the click early - before WSuggestionPopup processes it
+              valueBeforeSuggestionClick = editEl.value || "";
+              isApplyingSuggestion = true;
+              pendingSuggestionValue = suggestionText;
+              isClickingSuggestion = true;
+              
+              // Reset after a delay
+              setTimeout( function(){
+                isClickingSuggestion = false;
+                if( isApplyingSuggestion ){
+                  isApplyingSuggestion = false;
+                  pendingSuggestionValue = null;
+                  valueBeforeSuggestionClick = null;
+                }
+              }, 1000 );
+            }
+          }
+          // Don't prevent default - let WSuggestionPopup handle the click
+        }, false ); // Bubble phase - don't interfere with WSuggestionPopup's handling
+      }
+    };
+    
+    doSetup( popupElId, editElId );
+  }
+);
+
+
+void IsotopeNameFilterModel::setEnterKeyMatchFixJs( Wt::WSuggestionPopup *popup, Wt::WLineEdit *edit )
+{
+  const string popupId = popup->id();
+  const string editId = edit->id();
+  
+  LOAD_JAVASCRIPT(wApp, "IsotopeNameFilterModel.cpp", "IsotopeNameFilterModel", wtjsSetupEnterKeyMatchFix);
+
+  // Call the JavaScript function declared with WT_DECLARE_WT_MEMBER
+  // This function is defined once and can be called multiple times
+  popup->doJavaScript( "Wt.WT.SetupEnterKeyMatchFix('" + popupId + "', '" + editId + "');" );
+}//void setEnterKeyMatchFixJs( Wt::WSuggestionPopup *popup, Wt::WLineEdit *edit )

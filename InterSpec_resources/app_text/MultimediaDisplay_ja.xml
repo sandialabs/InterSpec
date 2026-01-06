@@ -13,6 +13,9 @@
   <message id="smmd-err-not-image">マルチメディアコンテンツタイプが画像タイプでないか、判定できませんでした。</message>
   <message id="smmd-image-index">{2}中の画像{1}</message>
   <message id="smmd-Time">時刻</message>
+  <message id="smmd-time-label">時刻: {1}</message>
+  <message id="smmd-remark-label">備考: {1}</message>
+  <message id="smmd-desc-label">Desc.: {1}</message>
   <message id="smmd-window-title-single">スペクトルファイルの画像</message>
   <message id="smmd-window-title-multiple">スペクトルファイルの画像</message>
 </messages>

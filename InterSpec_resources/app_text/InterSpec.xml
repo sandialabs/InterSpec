@@ -32,6 +32,17 @@
   <message id="Detector">Detector</message>
   <message id="Distance">Distance</message>
   <message id="Activity">Activity</message>
+  <message id="nuclide-label">Nuclide:</message>
+  <message id="age-label">Age:</message>
+  <message id="distance-label">Distance:</message>
+  <message id="activity-label">Activity:</message>
+  <message id="dose-label">Dose:</message>
+  <message id="shielding-label">Shielding:</message>
+  <message id="detector-label">Detector:</message>
+  <message id="energy-label">Energy:</message>
+  <message id="foreground-label">Foreground:</message>
+  <message id="background-label">Background:</message>
+  <message id="secondary-label">Secondary:</message>
   <message id="Remark">Remark</message>
   <message id="Tap">Tap</message>
   <message id="Click">Click</message>

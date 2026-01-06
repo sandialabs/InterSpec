@@ -90,15 +90,14 @@ NuclideSourceEnterController::NuclideSourceEnterController( Wt::WLineEdit *nucli
   PhotopeakDelegate::EditWidget::replacerJs( replacerJs );
   PhotopeakDelegate::EditWidget::nuclideNameMatcherJs( matcherJs );
     
-  WSuggestionPopup *suggestions = new WSuggestionPopup( matcherJs, replacerJs );
+  WSuggestionPopup *suggestions = new WSuggestionPopup( matcherJs, replacerJs, this );
 #if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
   suggestions->setJavaScriptMember("wtNoReparent", "true");
 #endif
     
-  suggestions->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
-  suggestions->setWidth( WLength(70, Wt::WLength::Unit::Pixel) );
+  suggestions->addStyleClass( "nuclide-suggest" );
   suggestions->forEdit( m_nuclideEdit, WSuggestionPopup::Editing | WSuggestionPopup::DropDownIcon );
-    
+
     
   IsotopeNameFilterModel *filterModel = new IsotopeNameFilterModel( this );
     
@@ -116,6 +115,9 @@ NuclideSourceEnterController::NuclideSourceEnterController( Wt::WLineEdit *nucli
   m_nuclideEdit->enterPressed().connect( this, &NuclideSourceEnterController::handleNuclideUserInput );
 //    m_nuclideEdit->blurred().connect( this, &NuclideSourceEnterController::handleNuclideUserInput );
     
+  IsotopeNameFilterModel::setQuickTypeFixHackjs( suggestions );
+  IsotopeNameFilterModel::setEnterKeyMatchFixJs( suggestions, m_nuclideEdit );
+  
   WRegExpValidator *validator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex(), this );
   validator->setFlags(Wt::MatchCaseInsensitive);
   m_nuclideAgeEdit->setValidator(validator);
@@ -381,13 +383,13 @@ NuclideSourceEnter::NuclideSourceEnter( const bool showHalfLife, const bool show
   wApp->useStyleSheet( "InterSpec_resources/NuclideSourceEnter.css" );
   addStyleClass( "NuclideSourceEnter" );
   
-  WLabel *nucLabel = new WLabel( WString("{1}:").arg(WString::tr("Nuclide")) );
+  WLabel *nucLabel = new WLabel( WString::tr("nuclide-label") );
   m_nuclideEdit = new WLineEdit();
   
   m_nuclideEdit->setMinimumSize( 30, WLength::Auto );
   nucLabel->setBuddy( m_nuclideEdit );
   
-  WLabel *ageLabel = new WLabel( WString("{1}:").arg(WString::tr("Age")) );
+  WLabel *ageLabel = new WLabel( WString::tr("age-label") );
   m_nuclideAgeEdit = new WLineEdit();
   m_nuclideAgeEdit->setMinimumSize( 30, WLength::Auto );
   m_nuclideAgeEdit->setPlaceholderText( WString::tr("N/A") );

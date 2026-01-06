@@ -54,6 +54,10 @@
   <message id="ds-manual-det-desc">由数学公式定义的探测器效率，给定能量x；
      或者您可以输入标准方程形式的系数。点击问号图标了解更多信息。
   </message>
+  <message id="ds-manual-det-desc-label">由数学公式定义的探测器效率，给定能量x；
+     或者您可以输入标准方程形式的系数。点击问号图标了解更多信息。：</message>
+  <message id="ds-description-label">描述：</message>
+  <message id="ds-name-label">名称：</message>
   <message id="ds-manual-det-name-label">探测器名称</message>
   <message id="ds-manual-det-name-empty-txt">唯一探测器名称</message>
   <message id="ds-manual-function-label">效率f(x) = </message>

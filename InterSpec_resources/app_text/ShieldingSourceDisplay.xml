@@ -25,6 +25,7 @@
     sources in the center.
   </message>
   <message id="ssd-add-shield-label">Add Shielding:</message>
+  <message id="ssd-geometry-label">Geometry:</message>
   <message id="ssd-tt-add-shield">Choose from a library of predefined common shielding materials.</message>
   <message id="ssd-generic-btn">Generic</message>
   <message id="ssd-tt-generic">Allows you to define and fit for atomic number and areal density.</message>

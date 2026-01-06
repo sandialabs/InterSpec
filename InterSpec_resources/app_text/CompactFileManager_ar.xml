@@ -50,4 +50,5 @@
   <message id='cfm-tt-swap-back-with-foreground-btn'>تبديل أطياف المقدمة والخلفية</message>
   <message id='cfm-swap-secondary-with-foreground-btn'>المقدمة↔الثانوي</message>
   <message id='cfm-tt-swap-secondary-with-foreground-btn'>تبديل أطياف المقدمة والثانوي</message>
+  <message id='cfm-title-with-name'>العنوان: {1}</message>
 </messages>

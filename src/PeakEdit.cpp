@@ -439,9 +439,8 @@ void PeakEdit::init()
   m_suggestions->setJavaScriptMember("wtNoReparent", "true");
 #endif
   
-  m_suggestions->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
-  m_suggestions->forEdit( m_nuclide,
-                  WSuggestionPopup::Editing | WSuggestionPopup::DropDownIcon );
+  m_suggestions->addStyleClass( "nuclide-suggest" );
+  m_suggestions->forEdit( m_nuclide, WSuggestionPopup::Editing | WSuggestionPopup::DropDownIcon );
 
   
 //  std::shared_ptr<const PeakDef> dummypeak;
@@ -450,9 +449,11 @@ void PeakEdit::init()
   m_filterModel->filter( "" );
   m_suggestions->setFilterLength( -1 );
   m_suggestions->setModel( m_filterModel );
-  m_suggestions->setWidth( WLength(70, Wt::WLength::Unit::Pixel) );
 //  m_suggestions->filterModel().connect( m_filterModel, &PeakIsotopeNameFilterModel::filter );
   m_suggestions->filterModel().connect( m_filterModel, &IsotopeNameFilterModel::filter );
+  
+  IsotopeNameFilterModel::setQuickTypeFixHackjs( m_suggestions );
+  IsotopeNameFilterModel::setEnterKeyMatchFixJs( m_suggestions, m_nuclide );
   
   m_nuclide->enterPressed().connect( this, &PeakEdit::isotopeChanged );
   m_nuclide->blurred().connect( this, &PeakEdit::isotopeChanged );

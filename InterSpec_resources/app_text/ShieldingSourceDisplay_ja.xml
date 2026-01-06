@@ -25,6 +25,7 @@
     線源として扱われます。
   </message>
   <message id="ssd-add-shield-label">遮蔽追加:</message>
+  <message id="ssd-geometry-label">幾何学:</message>
   <message id="ssd-tt-add-shield">事前定義された一般的な遮蔽材料のライブラリから選択。</message>
   <message id="ssd-generic-btn">汎用</message>
   <message id="ssd-tt-generic">原子番号と面密度を定義してフィットできます。</message>
@@ -54,7 +55,6 @@
   <message id="ssd-distance-label">距離:</message>
   <message id="ssd-activity-label">放射能:</message>
   <message id="ssd-age-label">年数:</message>
-  <message id="ssd-geometry-label">ジオメトリ:</message>
   <message id="ssd-source-label">線源:</message>
   <message id="ssd-shielding-label">遮蔽:</message>
   <message id="ssd-material-label">材料:</message>

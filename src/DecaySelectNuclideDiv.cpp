@@ -337,12 +337,12 @@ void DecaySelectNuclide::init()
   layout->addWidget( m_elementSelection,        0, 0, 1, 1 );
   layout->addWidget( m_massSelection,           0, 1, 1, 1 );
   
-  label = new WLabel( WString("{1}: ").arg(WString::tr("Nuclide")) );
+  label = new WLabel( WString::tr("nuclide-label") );
   layout->addWidget( label, 1, 0, 1, 1 );
   layout->addWidget( m_isotopeSearch, 1, 1, 1, 1 );
   layout->addWidget( m_selectedIsotopeHalfLife, 2, 0, 1, 2, Wt::AlignCenter );
   
-  label = new WLabel( WString("{1}: ").arg(WString::tr("Activity")) );
+  label = new WLabel( WString::tr("activity-label") );
   layout->addWidget( label,                      3, 0, 1, 1 );
   layout->addWidget( m_nuclideActivityEdit,      3, 1, 1, 1 );
   

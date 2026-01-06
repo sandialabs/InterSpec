@@ -50,6 +50,7 @@
   <message id='cfm-tt-swap-back-with-foreground-btn'>Intercambiar los espectros de primer plano y fondo</message>
   <message id='cfm-swap-secondary-with-foreground-btn'>primer plano↔secundario</message>
   <message id='cfm-tt-swap-secondary-with-foreground-btn'>Intercambiar los espectros de primer plano y secundario</message>
+  <message id='cfm-title-with-name'>Título: {1}</message>
 </messages>
 
 

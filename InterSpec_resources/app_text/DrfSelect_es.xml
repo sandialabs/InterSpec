@@ -54,6 +54,10 @@
   <message id="ds-manual-det-desc">Eficiencia del detector definida por una fórmula matemática, dada la energía x;
      o puede ingresar los coeficientes para la forma de ecuación estándar. Hacer clic en el ícono de signo de interrogación para más información.
   </message>
+  <message id="ds-manual-det-desc-label">Eficiencia del detector definida por una fórmula matemática, dada la energía x;
+     o puede ingresar los coeficientes para la forma de ecuación estándar. Hacer clic en el ícono de signo de interrogación para más información.:</message>
+  <message id="ds-description-label">Descripción:</message>
+  <message id="ds-name-label">Nombre:</message>
   <message id="ds-manual-det-name-label">Nombre del detector </message>
   <message id="ds-manual-det-name-empty-txt">Nombre único del detector</message>
   <message id="ds-manual-function-label">Eficiencia f(x) = </message>

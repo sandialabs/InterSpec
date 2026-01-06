@@ -54,6 +54,10 @@
   <message id="ds-manual-det-desc">エネルギーxを与えられた数式で定義される検出器効率。
      または標準式形式の係数を入力できます。詳細は疑問符アイコンをクリックしてください。
   </message>
+  <message id="ds-manual-det-desc-label">エネルギーxを与えられた数式で定義される検出器効率。
+     または標準式形式の係数を入力できます。詳細は疑問符アイコンをクリックしてください。:</message>
+  <message id="ds-description-label">説明:</message>
+  <message id="ds-name-label">名前:</message>
   <message id="ds-manual-det-name-label">検出器名 </message>
   <message id="ds-manual-det-name-empty-txt">一意の検出器名</message>
   <message id="ds-manual-function-label">効率 f(x) = </message>

@@ -10,6 +10,7 @@
   <message id="dls-roi-upper-label">ROI上限:</message>
   <message id="dls-num-side-channel-label">サイドチャンネル数:</message>
   <message id="dls-fwhm-label">FWHM:</message>
+  <message id="dls-gamma-label">ガンマ:</message>
   <message id="dls-decon-cont-norm-label">コンティニューア正規化:</message>
   <message id="dls-is-background-spectrum-cb">バックグラウンドスペクトル</message>
   <message id="dls-is-background-spectrum-tt">

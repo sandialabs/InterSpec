@@ -31,5 +31,6 @@
   <message id="pid-csv-copy-full">复制完整峰CSV</message>
   <message id="pid-csv-copy-no-hdr">复制不带标题</message>
   <message id="pid-csv-copy-compact">复制拟合峰信息</message>
+  <message id="pid-peak-label">峰： </message>
 </messages>
 

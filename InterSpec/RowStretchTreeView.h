@@ -83,6 +83,11 @@ protected:
   //Called when rows are removed from the model.
   void rowsRemovedCallback( Wt::WModelIndex index, int first, int last );
   
+  /** Override default version of this function due to bug in Wt 3.7.1, where selecting from the last entry, up through the first, when there are children nodes,
+   can cause an inifinite loop.
+   */
+  virtual void selectRange(const Wt::WModelIndex& first, const Wt::WModelIndex& last);
+  
 protected:
   //m_nominalWidth: width of the columns; if they add up to more that rendered
   //  table width, columns will be as sepcified; if hte table is wider than this

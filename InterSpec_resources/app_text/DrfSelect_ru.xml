@@ -54,6 +54,10 @@
   <message id="ds-manual-det-desc">Эффективность детектора, определенная математической формулой для энергии x;
      или вы можете ввести коэффициенты для стандартной формы уравнения. Нажмите иконку вопроса для дополнительной информации.
   </message>
+  <message id="ds-manual-det-desc-label">Эффективность детектора, определенная математической формулой для энергии x;
+     или вы можете ввести коэффициенты для стандартной формы уравнения. Нажмите иконку вопроса для дополнительной информации.:</message>
+  <message id="ds-description-label">Описание:</message>
+  <message id="ds-name-label">Имя:</message>
   <message id="ds-manual-det-name-label">Имя детектора </message>
   <message id="ds-manual-det-name-empty-txt">Уникальное имя детектора</message>
   <message id="ds-manual-function-label">Эффективность f(x) = </message>

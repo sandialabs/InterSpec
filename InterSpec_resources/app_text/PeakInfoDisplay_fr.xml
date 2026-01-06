@@ -29,4 +29,5 @@
   <message id="pid-csv-copy-full">Copier le CSV complet des pics</message>
   <message id="pid-csv-copy-no-hdr">Copier sans en-têtes</message>
   <message id="pid-csv-copy-compact">Copier les infos d'ajustement des pics</message>
+  <message id="pid-peak-label">Pic : </message>
 </messages>

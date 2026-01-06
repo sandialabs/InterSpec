@@ -10,6 +10,7 @@
   <message id="dls-roi-upper-label">ROI উচ্চ:</message>
   <message id="dls-num-side-channel-label">পার্শ্ব চ্যান সংখ্যা:</message>
   <message id="dls-fwhm-label">FWHM:</message>
+  <message id="dls-gamma-label">গামা:</message>
   <message id="dls-decon-cont-norm-label">কন্টিনিউয়াম নরম:</message>
   <message id="dls-is-background-spectrum-cb">ব্যাকগ্রাউন্ড স্পেকট্রাম</message>
   <message id="dls-is-background-spectrum-tt">
