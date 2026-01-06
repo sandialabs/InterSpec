@@ -4718,11 +4718,53 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
       if( !input.phys_model_detector || !input.phys_model_detector->isValid() )
         throw runtime_error( "You must specify a detector for the Physical Model." );
       
-      // TODO: instead look at number of nuclides, and number of fit parameters, and use that to decide
-      //       if we are okay - because maybe we want to use a single peak to get a curve, but not
-      //       actually fit anything
-      if( peak_infos.size() < 2 )
-        throw runtime_error( "You must specify at least two peaks for the Physical Model." );
+      // Count the number of parameters being fit to ensure we have enough peaks
+      // Count unique nuclides in peaks
+      std::set<std::string> unique_nuclides;
+      for( const GenericPeakInfo &peak : peak_infos )
+      {
+        for( const GenericLineInfo &line : peak.m_source_gammas )
+          unique_nuclides.insert( line.m_isotope );
+      }
+
+      size_t num_fit_parameters = unique_nuclides.size();
+
+      // Count self-attenuation parameters
+      if( input.phys_model_self_atten )
+      {
+        if( input.phys_model_self_atten->fit_areal_density )
+          num_fit_parameters += 1; // atomic number
+        if( !input.phys_model_self_atten->material && input.phys_model_self_atten->fit_atomic_number )
+          num_fit_parameters += 1; 
+      }
+
+      // Count external attenuation parameters
+      for( const std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> &ext_atten : input.phys_model_external_attens )
+      {
+        if( ext_atten )
+        {
+          if( ext_atten->fit_areal_density )
+            num_fit_parameters += 1; // atomic number
+          if( !ext_atten->material && ext_atten->fit_atomic_number )
+            num_fit_parameters += 1;
+        }
+      }
+
+      // Count Hoerl equation parameters (b and c)
+      if( input.phys_model_use_hoerl )
+        num_fit_parameters += 2;
+
+      // Ensure we have at least as many peaks as parameters being fit
+      if( peak_infos.size() < num_fit_parameters )
+      {
+        string msg = "You must specify at least " + std::to_string(num_fit_parameters) + " peak"
+          + string(num_fit_parameters > 1 ? "s" : "")
+          + " for the Physical Model (currently have " + std::to_string(peak_infos.size())
+          + "), since you are fitting " + std::to_string(num_fit_parameters) + " parameter"
+          + string(num_fit_parameters > 1 ? "s" : "")
+          + ".";
+        throw runtime_error( msg );
+      }
 
       if( !input.use_ceres_to_fit_eqn )
         throw logic_error( "You must specify to use Ceres to fit Rel. Eff. equation for the Physical Model." );

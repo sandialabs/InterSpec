@@ -1137,14 +1137,14 @@ int main( int argc, char **argv )
   std::mutex score_mutex;
   auto eval_candidate_settings_fcn = [&]( const FindCandidateSettings settings, const vector<DataSrcInfo> &input_srcs, const bool write_n42 ){
 
-    const tuple<double,size_t,size_t,size_t,size_t,size_t> result = CandidatePeak_GA::eval_candidate_settings( settings, input_srcs, write_n42 );
+    const CandidatePeak_GA::CandidatePeakScore result = CandidatePeak_GA::eval_candidate_settings( settings, input_srcs, write_n42 );
 
-    const double score = std::get<0>(result);
-    const size_t num_peaks_found = std::get<1>(result);
-    const size_t num_def_wanted_not_found = std::get<2>(result);
-    const size_t def_wanted_peaks_found = std::get<3>(result);
-    const size_t num_possibly_accepted_peaks_not_found = std::get<4>(result);
-    const size_t num_extra_peaks = std::get<5>(result);
+    const double score = result.score;
+    const size_t num_peaks_found = result.num_peaks_found;
+    const size_t num_def_wanted_not_found = result.num_def_wanted_not_found;
+    const size_t def_wanted_peaks_found = result.num_def_wanted_peaks_found;
+    const size_t num_possibly_accepted_peaks_not_found = result.num_possibly_accepted_peaks_not_found;
+    const size_t num_extra_peaks = result.num_extra_peaks;
     
     std::lock_guard<std::mutex> lock( score_mutex );
     
@@ -1191,8 +1191,8 @@ int main( int argc, char **argv )
     {
       // code to run candidate peak optimization
       const auto ga_eval = [&input_srcs](const FindCandidateSettings &settings) -> double {
-        const tuple<double,size_t,size_t,size_t,size_t,size_t> score = CandidatePeak_GA::eval_candidate_settings( settings, input_srcs, false );
-        return get<0>( score );
+        const CandidatePeak_GA::CandidatePeakScore score = CandidatePeak_GA::eval_candidate_settings( settings, input_srcs, false );
+        return score.score;
       };
       
       best_settings = CandidatePeak_GA::do_ga_eval( ga_eval );

@@ -868,7 +868,132 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
 
 
 //<score, num_peaks_found, num_possibly_accepted_peaks_not_found, num_extra_peaks>
-tuple<double,size_t,size_t,size_t,size_t,size_t> eval_candidate_settings( const FindCandidateSettings settings, const vector<DataSrcInfo> &input_srcs, const bool write_n42 )
+CandidatePeakScore calculate_candidate_peak_score_for_source( const vector<PeakDef> &detected_peaks,
+                                                              const vector<ExpectedPhotopeakInfo> &expected_photopeaks )
+{
+  vector<tuple<float,float,float>> detected_peaks_tuples; //{mean, sigma, amplitude}
+  for( const PeakDef &p : detected_peaks )
+    detected_peaks_tuples.emplace_back( p.mean(), p.sigma(), p.amplitude() );
+
+  double score = 0.0;
+  size_t num_detected_expected = 0, num_detected_not_expected = 0;
+  size_t num_possibly_accepted_but_not_detected = 0, num_def_wanted_but_not_detected = 0;
+  size_t num_def_wanted_detected = 0;
+
+  // First, go through expected peaks, and match up to candidates
+  vector<ExpectedPhotopeakInfo> possibly_expected_but_not_detected, expected_and_was_detected, def_expected_but_not_detected;
+  possibly_expected_but_not_detected.reserve( expected_photopeaks.size() );
+  def_expected_but_not_detected.reserve( expected_photopeaks.size() );
+  expected_and_was_detected.reserve( expected_photopeaks.size() );
+
+  vector<bool> detected_matched_to_expected( detected_peaks_tuples.size(), false );
+
+  for( size_t expected_index = 0; expected_index < expected_photopeaks.size(); ++expected_index )
+  {
+    const ExpectedPhotopeakInfo &expected = expected_photopeaks[expected_index];
+
+    vector<pair<tuple<float,float,float>,size_t>> detected_matching_expected; //{mean, sigma, amplitude}
+    for( size_t det_index = 0; det_index < detected_peaks_tuples.size(); ++det_index )
+    {
+      const tuple<float,float,float> &det_peak = detected_peaks_tuples[det_index];
+      const float mean = get<0>(det_peak);
+
+      if( (mean > expected.roi_lower) && (mean < expected.roi_upper) )
+      {
+        detected_matching_expected.push_back( make_pair(det_peak,det_index) );
+        detected_matched_to_expected[det_index] = true;
+      }
+    }//for( size_t det_index = 0; det_index < detected_peaks_tuples.size(); ++det_index )
+
+    if( detected_matching_expected.empty() )
+    {
+      num_possibly_accepted_but_not_detected += 1;
+
+      if( (expected.nsigma_over_background > JudgmentFactors::def_want_nsigma)
+         && (expected.peak_area > JudgmentFactors::min_def_wanted_counts) )
+      {
+        num_def_wanted_but_not_detected += 1;
+        def_expected_but_not_detected.push_back( expected );
+        if( PeakFitImprove::debug_printout )
+          cerr << "Def. wanted m=" << expected.effective_energy << ", nsigma=" << expected.nsigma_over_background << ", but didnt find." << endl;
+      }else
+      {
+        possibly_expected_but_not_detected.push_back( expected );
+      }
+    }else
+    {
+      // we got a match
+      num_detected_expected += 1;
+      expected_and_was_detected.push_back( expected );
+
+      if( (expected.nsigma_over_background > JudgmentFactors::def_want_nsigma)
+         && (expected.peak_area > JudgmentFactors::min_def_wanted_counts) )
+      {
+        num_def_wanted_detected += 1;
+      }
+
+      if( expected.nsigma_over_background > JudgmentFactors::def_want_nsigma )
+      {
+        score += 1.0;
+      }else if( expected.nsigma_over_background > JudgmentFactors::lower_want_nsigma )
+      {
+        const double amount_short = JudgmentFactors::def_want_nsigma - expected.nsigma_over_background;
+        const double fraction_short = amount_short / (JudgmentFactors::def_want_nsigma - JudgmentFactors::lower_want_nsigma);
+        assert( (fraction_short >= 0.0) && (fraction_short <= 1.0) );
+        score += (1 - fraction_short);
+      }else
+      {
+        score += 0.0; //No punishment, but no reward.
+      }
+    }//if( detected_matching_expected.empty() ) / else
+  }//for( loop over expected_photopeaks )
+
+  assert( expected_and_was_detected.size() == num_detected_expected );
+
+  vector<tuple<float,float,float>> detected_expected, detected_not_expected;
+  detected_expected.reserve( expected_photopeaks.size() );
+  detected_not_expected.reserve( detected_peaks_tuples.size() );
+
+  for( size_t i = 0; i < detected_matched_to_expected.size(); ++i )
+  {
+    if( detected_matched_to_expected[i] )
+      detected_expected.push_back( detected_peaks_tuples[i] );
+    else
+      detected_not_expected.push_back( detected_peaks_tuples[i] );
+  }//for( size_t i = 0; i < detected_matched_to_expected.size(); ++i )
+
+  num_detected_not_expected = detected_not_expected.size();
+
+  // The 511 Annih. line isnt in our truth line, unless the source makes them, so lets
+  //  remove this one from the score
+  for( const auto &p : detected_not_expected )
+  {
+    if( (get<0>(p) > 508) && (get<0>(p) < 514) )
+    {
+      num_detected_not_expected -= 1;
+      break;
+    }
+  }
+
+  score -= JudgmentFactors::found_extra_punishment * num_detected_not_expected;
+
+  CandidatePeakScore result;
+  result.score = score;
+  result.num_peaks_found = num_detected_expected;
+  result.num_def_wanted_not_found = num_def_wanted_but_not_detected;
+  result.num_def_wanted_peaks_found = num_def_wanted_detected;
+  result.num_possibly_accepted_peaks_not_found = num_possibly_accepted_but_not_detected;
+  result.num_extra_peaks = num_detected_not_expected;
+  result.detected_expected = std::move(detected_expected);
+  result.detected_not_expected = std::move(detected_not_expected);
+  result.possibly_expected_but_not_detected = std::move(possibly_expected_but_not_detected);
+  result.expected_and_was_detected = std::move(expected_and_was_detected);
+  result.def_expected_but_not_detected = std::move(def_expected_but_not_detected);
+  return result;
+}//calculate_candidate_peak_score_for_source
+
+
+CandidatePeakScore eval_candidate_settings( const FindCandidateSettings settings, const vector<DataSrcInfo> &input_srcs, const bool write_n42 )
 {
   double sum_score = 0.0;
   size_t num_possibly_accepted_peaks_not_found = 0, num_def_wanted_not_found = 0;
@@ -880,147 +1005,30 @@ tuple<double,size_t,size_t,size_t,size_t,size_t> eval_candidate_settings( const 
     shared_ptr<const SpecUtils::Measurement> src_spectrum = info.src_info.src_spectra.front();
     const vector<PeakDef> peaks = CandidatePeak_GA::find_candidate_peaks( src_spectrum, 0, 0, settings );
 
+    // Use the refactored helper function to calculate score for this source
+    const CandidatePeakScore source_score = calculate_candidate_peak_score_for_source( peaks, info.expected_photopeaks );
+
+    // Accumulate scores and counts across all sources
+    sum_score += source_score.score;
+    num_peaks_found += source_score.num_peaks_found;
+    num_possibly_accepted_peaks_not_found += source_score.num_possibly_accepted_peaks_not_found;
+    num_def_wanted_not_found += source_score.num_def_wanted_not_found;
+    num_def_wanted_peaks_found += source_score.num_def_wanted_peaks_found;
+    num_extra_peaks += source_score.num_extra_peaks;
+
+    // For N42 output, use the vectors from source_score (already computed by helper function)
+    const vector<tuple<float,float,float>> &detected_expected = source_score.detected_expected;
+    const vector<tuple<float,float,float>> &detected_not_expected = source_score.detected_not_expected;
+    const vector<ExpectedPhotopeakInfo> &possibly_expected_but_not_detected = source_score.possibly_expected_but_not_detected;
+    const vector<ExpectedPhotopeakInfo> &expected_and_was_detected = source_score.expected_and_was_detected;
+    const vector<ExpectedPhotopeakInfo> &def_expected_but_not_detected = source_score.def_expected_but_not_detected;
+
+    // For N42 output, we also need all detected peaks as tuples for visualization
     vector<tuple<float,float,float>> detected_peaks; //{mean, sigma, amplitude}
     for( const PeakDef &p : peaks )
       detected_peaks.emplace_back( p.mean(), p.sigma(), p.amplitude() );
 
     const vector<tuple<float,float,float>> orig_peak_candidates = detected_peaks;
-
-    double score = 0.0;
-    size_t num_detected_expected = 0, num_detected_not_expected = 0;
-    size_t num_possibly_accepted_but_not_detected = 0, num_def_wanted_but_not_detected = 0;
-    size_t num_def_wanted_detected = 0;
-
-    // First, go through expected peaks, and match up to candidates
-    vector<ExpectedPhotopeakInfo> possibly_expected_but_not_detected, expected_and_was_detected, def_expected_but_not_detected;
-    possibly_expected_but_not_detected.reserve( info.expected_photopeaks.size() );
-    def_expected_but_not_detected.reserve( info.expected_photopeaks.size() );
-    expected_and_was_detected.reserve( info.expected_photopeaks.size() );
-
-    vector<bool> detected_matched_to_expected( detected_peaks.size(), false );
-
-    for( size_t expected_index = 0; expected_index < info.expected_photopeaks.size(); ++expected_index )
-    {
-      const ExpectedPhotopeakInfo &expected = info.expected_photopeaks[expected_index];
-      //cout << "Expected: mean=" << expected.effective_energy << ", range=[" << expected.roi_lower << ", " << expected.roi_upper << "], "
-      //<< "FWHM=" << expected.effective_fwhm << ", area=" << expected.peak_area << ", nsigma=" << expected.nsigma_over_background << endl;
-
-      vector<pair<tuple<float,float,float>,size_t>> detected_matching_expected; //{mean, sigma, amplitude}
-      for( size_t det_index = 0; det_index < detected_peaks.size(); ++det_index )
-      {
-        const tuple<float,float,float> &det_peak = detected_peaks[det_index];
-        const float mean = get<0>(det_peak);
-        //const float sigma = get<1>(det_peak);
-        //const float amp = get<1>(det_peak);
-
-        if( (mean > expected.roi_lower) && (mean < expected.roi_upper) )
-        {
-          detected_matching_expected.push_back( make_pair(det_peak,det_index) );
-          detected_matched_to_expected[det_index] = true;
-        }
-      }//for( size_t det_index = 0; det_index < detected_peaks.size(); ++i )
-
-      if( detected_matching_expected.empty() )
-      {
-        num_possibly_accepted_but_not_detected += 1;
-
-        if( (expected.nsigma_over_background > JudgmentFactors::def_want_nsigma)
-           && (expected.peak_area > JudgmentFactors::min_def_wanted_counts) )
-        {
-          num_def_wanted_but_not_detected += 1;
-          def_expected_but_not_detected.push_back( expected );
-          if( PeakFitImprove::debug_printout )
-            cerr << "Def. wanted m=" << expected.effective_energy << ", nsigma=" << expected.nsigma_over_background << ", but didnt find." << endl;
-        }else
-        {
-          possibly_expected_but_not_detected.push_back( expected );
-        }
-
-        /*
-         if( expected.nsigma_over_background < JudgmentFactors::lower_want_nsigma )
-         score -= 0; //No punishment
-         else if( expected.nsigma_over_background < JudgmentFactors::def_want_nsigma )
-         score -= ( (JudgmentFactors::def_want_nsigma - expected.nsigma_over_background) / (expected.nsigma_over_background - JudgmentFactors::lower_want_nsigma) );
-         else
-         score -= 1;
-         */
-      }else
-      {
-        // we got a match
-        num_detected_expected += 1;
-        expected_and_was_detected.push_back( expected );
-
-        if( (expected.nsigma_over_background > JudgmentFactors::def_want_nsigma)
-           && (expected.peak_area > JudgmentFactors::min_def_wanted_counts) )
-        {
-          num_def_wanted_detected += 1;
-        }
-
-        if( expected.nsigma_over_background > JudgmentFactors::def_want_nsigma )
-        {
-          score += 1.0;
-        }else if( expected.nsigma_over_background > JudgmentFactors::lower_want_nsigma )
-        {
-          const double amount_short = JudgmentFactors::def_want_nsigma - expected.nsigma_over_background;
-          const double fraction_short = amount_short / (JudgmentFactors::def_want_nsigma - JudgmentFactors::lower_want_nsigma);
-          assert( (fraction_short >= 0.0) && (fraction_short <= 1.0) );
-          score += (1 - fraction_short);
-        }else
-        {
-          score += 0.0; //No punishment, but no reward.
-        }
-      }//if( detected_matching_expected.empty() ) / else
-    }//for( loop over expected_photopeaks )
-
-    assert( expected_and_was_detected.size() == num_detected_expected );
-
-    vector<tuple<float,float,float>> detected_expected, detected_not_expected;
-    detected_expected.reserve( info.expected_photopeaks.size() );
-    detected_not_expected.reserve( detected_peaks.size() );
-
-    for( size_t i = 0; i < detected_matched_to_expected.size(); ++i )
-    {
-      if( detected_matched_to_expected[i] )
-        detected_expected.push_back( detected_peaks[i] );
-      else
-        detected_not_expected.push_back( detected_peaks[i] );
-    }//for( size_t i = 0; i < detected_matched_to_expected.size(); ++i )
-
-    num_detected_not_expected = detected_not_expected.size();
-
-    // The 511 Annih. line isnt in our truth line, unless the source makes them, so lets
-    //  remove this one from the score
-    for( const auto &p : detected_not_expected )
-    {
-      if( (get<0>(p) > 508) && (get<0>(p) < 514) )
-      {
-        num_detected_not_expected -= 1;
-        break;
-      }
-    }
-
-
-    score -= JudgmentFactors::found_extra_punishment * num_detected_not_expected;
-
-    /*
-    cout << "For " << info.src_info.file_base_path
-    //<< info.src_info.src_name
-    //<< "/" << info.detector_name
-    //<< "/" << info.location_name
-    //<< "/" << info.live_time_name
-    << ":\n"
-    << "\tnum_detected_expected=" << num_detected_expected
-    << ", num_detected_not_expected=" << num_detected_not_expected
-    << ", num_possibly_accepted_but_not_detected=" << num_possibly_accepted_but_not_detected
-    << ", score=" << score << endl;
-    */
-
-    sum_score += score;
-    num_peaks_found += num_detected_expected;
-    num_possibly_accepted_peaks_not_found += num_possibly_accepted_but_not_detected;
-    num_def_wanted_not_found += num_def_wanted_but_not_detected;
-    num_def_wanted_peaks_found += num_def_wanted_detected;
-    num_extra_peaks += num_detected_not_expected;
 
     if( write_n42 )
     {
@@ -1046,9 +1054,9 @@ tuple<double,size_t,size_t,size_t,size_t,size_t> eval_candidate_settings( const 
 
       SpecMeas output;
 
-      output.add_remark( "Failed to find " + std::to_string(num_possibly_accepted_but_not_detected) + " peaks that are possibly accepted." );
-      output.add_remark( "Found " + std::to_string(num_detected_expected) + " peaks that were expected." );
-      output.add_remark( "Found " + std::to_string(num_detected_not_expected) + " peaks that were NOT expected." );
+      output.add_remark( "Failed to find " + std::to_string(possibly_expected_but_not_detected.size() + def_expected_but_not_detected.size()) + " peaks that are possibly accepted." );
+      output.add_remark( "Found " + std::to_string(detected_expected.size()) + " peaks that were expected." );
+      output.add_remark( "Found " + std::to_string(detected_not_expected.size()) + " peaks that were NOT expected." );
       output.add_remark( settings.print("settings") );
       output.set_instrument_model( info.detector_name );
       if( SpecUtils::icontains(info.detector_name, "Detective" ) )
@@ -1221,7 +1229,14 @@ tuple<double,size_t,size_t,size_t,size_t,size_t> eval_candidate_settings( const 
 
   //cout << "Avrg score: " << sum_score/input_srcs.size() << endl;
 
-  return {sum_score / input_srcs.size(), num_peaks_found, num_def_wanted_not_found, num_def_wanted_peaks_found, num_possibly_accepted_peaks_not_found, num_extra_peaks};
+  CandidatePeakScore result;
+  result.score = sum_score / input_srcs.size();
+  result.num_peaks_found = num_peaks_found;
+  result.num_def_wanted_not_found = num_def_wanted_not_found;
+  result.num_def_wanted_peaks_found = num_def_wanted_peaks_found;
+  result.num_possibly_accepted_peaks_not_found = num_possibly_accepted_peaks_not_found;
+  result.num_extra_peaks = num_extra_peaks;
+  return result;
 };//eval_candidate_settings lambda
 
 

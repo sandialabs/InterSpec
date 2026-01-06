@@ -1320,6 +1320,161 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
 }//vector<PeakDef> initial_peak_find_and_fit(...)
 
 
+PeakFindAndFitWeights calculate_peak_find_weights(
+  const std::vector<PeakDef> &fit_peaks,
+  const std::vector<ExpectedPhotopeakInfo> &expected_photopeaks,
+  const double num_sigma_contribution )
+{
+  using namespace std;
+
+  vector<PeakDef> found_not_expected;
+  map<const ExpectedPhotopeakInfo *,vector<PeakDef>> found_maybe_wanted, found_def_wanted;
+
+  // Match found peaks to expected photopeaks
+  for( const PeakDef &found_peak : fit_peaks )
+  {
+    const double found_energy = found_peak.mean();
+    const double found_sigma = found_peak.sigma();
+    const double peak_lower_contrib = found_energy - num_sigma_contribution*found_sigma;
+    const double peak_upper_contrib = found_energy + num_sigma_contribution*found_sigma;
+
+    const ExpectedPhotopeakInfo *nearest_expected_peak = nullptr;
+    for( const ExpectedPhotopeakInfo &expected_peak : expected_photopeaks )
+    {
+      const double expected_energy = expected_peak.effective_energy;
+
+      if( (expected_energy >= peak_lower_contrib) && (expected_energy <= peak_upper_contrib) )
+      {
+        if( !nearest_expected_peak
+           || fabs(nearest_expected_peak->effective_energy - found_energy) > fabs(expected_energy - found_energy) )
+        {
+          nearest_expected_peak = &expected_peak;
+        }
+      }
+    }//for( const ExpectedPhotopeakInfo &expected_peak : expected_photopeaks )
+
+    if( nearest_expected_peak )
+    {
+      if( (nearest_expected_peak->nsigma_over_background >= JudgmentFactors::def_want_nsigma)
+         && (nearest_expected_peak->peak_area > JudgmentFactors::min_def_wanted_counts) )
+      {
+        found_def_wanted[nearest_expected_peak].push_back( found_peak );
+      }else
+      {
+        found_maybe_wanted[nearest_expected_peak].push_back( found_peak );
+      }
+    }else
+    {
+      found_not_expected.push_back( found_peak );
+    }//if( nearest_expected_peak )
+  }//for( const PeakDef &found_peak : fit_peaks )
+
+  // Calculate find_weight score
+  double score = static_cast<double>( found_def_wanted.size() );
+
+  // Add partial credit for maybe_wanted peaks
+  for( const auto &pp : found_maybe_wanted )
+  {
+    const ExpectedPhotopeakInfo * epi = pp.first;
+    if( epi->nsigma_over_background > JudgmentFactors::lower_want_nsigma )
+    {
+      if( epi->peak_area > JudgmentFactors::min_def_wanted_counts )
+      {
+        const double amount_short = JudgmentFactors::def_want_nsigma - epi->nsigma_over_background;
+        const double fraction_short = amount_short / (JudgmentFactors::def_want_nsigma - JudgmentFactors::lower_want_nsigma);
+        assert( (fraction_short >= 0.0) && (fraction_short <= 1.0) );
+        score += JudgmentFactors::min_initial_fit_maybe_want_score + (1.0 - JudgmentFactors::min_initial_fit_maybe_want_score)*(1 - fraction_short);
+      }else
+      {
+        const double fraction_short = 1.0 - (epi->peak_area / JudgmentFactors::min_def_wanted_counts);
+        assert( (fraction_short >= 0.0) && (fraction_short <= 1.0) );
+        score += JudgmentFactors::min_initial_fit_maybe_want_score + (1.0 - JudgmentFactors::min_initial_fit_maybe_want_score)*(1 - fraction_short);
+      }
+    }else
+    {
+      score += 0.0; //No punishment, but no reward.
+    }
+  }//for( const ExpectedPhotopeakInfo * epi : found_maybe_wanted )
+
+  size_t num_found_not_expected = found_not_expected.size();
+
+  // Remove annihilation and escape peaks from unexpected peak penalty
+  for( const auto &p : found_not_expected )
+  {
+    if( SpecUtils::icontains(p.userLabel(), "S.E.")
+             || SpecUtils::icontains(p.userLabel(), "D.E.")
+             || SpecUtils::icontains(p.userLabel(), "Annih.") )
+    {
+      if( num_found_not_expected > 0 )
+        num_found_not_expected -= 1;
+    }
+  }
+
+  score -= JudgmentFactors::initial_fit_extra_peak_punishment * num_found_not_expected;
+
+  // Calculate area weights (mean and median)
+  const auto sum_area_weight = []( const map<const ExpectedPhotopeakInfo *,vector<PeakDef>> &data ) -> pair<double,double> {
+    if( data.empty() )
+      return {numeric_limits<double>::max(), numeric_limits<double>::max()};
+
+    vector<double> weights;
+    weights.reserve( data.size() );
+
+    double area_weight = 0;
+    for( const auto &pp : data )
+    {
+      const ExpectedPhotopeakInfo * epi = pp.first;
+      double fit_area = 0;
+      for( const PeakDef &p : pp.second )
+        fit_area += p.amplitude();
+      const double sigma = (epi->peak_area < 10000.0) ? sqrt(epi->peak_area) : 0.01*epi->peak_area;
+      const double weight = fabs(epi->peak_area - fit_area) / sigma;
+      area_weight += weight;
+      weights.push_back(weight);
+    }
+
+    std::sort( begin(weights), end(weights) );
+
+    return {area_weight / data.size(), weights[weights.size()/2] };
+  };//sum_area_weight lambda
+
+  vector<double> not_wanted_area_weights;
+  double not_wanted_area_weight = 0.0;
+  for( const PeakDef &p : found_not_expected )
+  {
+    if( ((p.peakAreaUncert() > 0.001) && (p.amplitude() < 10.0*p.peakAreaUncert())) || (p.amplitude() > 25) )
+    {
+      not_wanted_area_weights.push_back( sqrt(p.peakArea()) );
+      not_wanted_area_weight += sqrt( p.peakArea() );
+    }
+  }
+
+  // Build result
+  PeakFindAndFitWeights answer;
+  answer.find_weight = score;
+
+  const pair<double,double> def_want_weights = sum_area_weight( found_def_wanted );
+  answer.def_wanted_area_weight = def_want_weights.first;
+  answer.def_wanted_area_median_weight = def_want_weights.second;
+
+  const pair<double,double> maybe_want_weights = sum_area_weight( found_maybe_wanted );
+  answer.maybe_wanted_area_weight = maybe_want_weights.first;
+  answer.maybe_wanted_area_median_weight = maybe_want_weights.second;
+
+  if( not_wanted_area_weights.size() )
+  {
+    answer.not_wanted_area_weight = not_wanted_area_weight;
+    answer.not_wanted_area_median_weight = not_wanted_area_weights[not_wanted_area_weights.size()/2];
+  }else
+  {
+    answer.not_wanted_area_weight = 0.0;
+    answer.not_wanted_area_median_weight = 0.0;
+  }
+
+  return answer;
+}//calculate_peak_find_weights(...)
+
+
 PeakFindAndFitWeights eval_initial_peak_find_and_fit( const InitialPeakFindSettings &fit_settings,
                                       const FindCandidateSettings &candidate_settings,
                                       const DataSrcInfo &src_info,

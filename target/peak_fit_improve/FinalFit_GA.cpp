@@ -1468,6 +1468,79 @@ vector<PeakDef> final_peak_fit( const vector<PeakDef> &pre_fit_peaks,
   return answer;
 }//vector<PeakDef> final_peak_fit
 
+FinalFitScore calculate_final_fit_score(
+  const std::vector<PeakDef> &fit_peaks,
+  const std::vector<ExpectedPhotopeakInfo> &expected_photopeaks,
+  const double num_sigma_contribution )
+{
+  using namespace std;
+
+  FinalFitScore score;
+
+  for( const PeakDef &found_peak : fit_peaks )
+  {
+    const double found_energy = found_peak.mean();
+    const double found_fwhm = found_peak.fwhm();
+    const double peak_lower_contrib = found_energy - num_sigma_contribution*found_peak.sigma();
+    const double peak_upper_contrib = found_energy + num_sigma_contribution*found_peak.sigma();
+
+    //Note that ExpectedPhotopeakInfo cooresponds to a grouping of gamma lines we expect to
+    // detect as a single peak.
+    const ExpectedPhotopeakInfo * nearest_expected_peak = nullptr;
+
+    for( const ExpectedPhotopeakInfo &expected_peak : expected_photopeaks )
+    {
+      const double expected_energy = expected_peak.effective_energy;
+
+      if( (expected_energy >= peak_lower_contrib) && (expected_energy <= peak_upper_contrib) )
+      {
+        if( !nearest_expected_peak || (fabs(expected_energy - found_energy) < fabs(nearest_expected_peak->effective_energy - found_energy)) )
+          nearest_expected_peak = &expected_peak;
+      }
+    }//for( const ExpectedPhotopeakInfo &expected_peak : expected_photopeaks )
+
+    if( nearest_expected_peak )
+    {
+      score.num_peaks_used += 1;
+
+      const double expected_energy = nearest_expected_peak->effective_energy;
+      const double expected_fwhm = nearest_expected_peak->effective_fwhm;
+      const double expected_sigma = expected_fwhm/2.35482;
+      const double expected_area = nearest_expected_peak->peak_area;
+
+      const double area_diff = fabs(found_peak.amplitude() - expected_area);
+      const double area_score = area_diff / sqrt( (expected_area < 1.0) ? 1.0 : expected_area );
+      const double width_score = fabs( expected_fwhm - found_fwhm ) / expected_sigma;
+      const double position_score = fabs(found_energy - expected_energy) / expected_sigma;
+
+      score.area_score += std::min( area_score, 20.0 );
+      score.width_score += std::min( width_score, 1.0 );
+      score.position_score += std::min( position_score, 1.5 );
+    }else
+    {
+      // Found an extra peak we didn't expect
+      if( found_peak.amplitude() < 1.0 ) //Not a real peak, so ignore it
+        continue;
+
+      const double sqrt_area = sqrt( found_peak.amplitude() );
+      const double area_uncert = found_peak.amplitudeUncert() > 0.0 ? (std::max)(found_peak.amplitudeUncert(), sqrt_area) : sqrt_area;
+
+      // If this is a significant peak that we didn't expect, count it
+      // (Note: In eval_final_peak_fit, escape peaks are excluded, but here we don't have that info)
+      score.ignored_unexpected_peaks += 1;
+      score.unexpected_peaks_sum_significance += std::min( 7.5, found_peak.amplitude() / area_uncert ); //Cap at 7.5 sigma (arbitrary)
+    }//if( nearest_expected_peak ) / else
+  }//for( const PeakDef &found_peak : fit_peaks )
+
+  // Calculate total weight for scoring
+  if( score.num_peaks_used <= 1 )
+    score.total_weight = score.area_score;
+  else
+    score.total_weight = score.area_score / score.num_peaks_used;
+
+  return score;
+}//calculate_final_fit_score(...)
+
 
 FinalFitScore eval_final_peak_fit( const FinalPeakFitSettings &final_fit_settings,
                            const DataSrcInfo &src_info,

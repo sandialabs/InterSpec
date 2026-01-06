@@ -2125,6 +2125,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       if( (foreground->live_time() < 0.01) || (foreground->real_time() < 0.01) )
         throw runtime_error( "Foreground must have non-zero live and real times." );
 
+      if( options.rois.empty() )
+        throw runtime_error( "No ROIs are defined." );
+      
       const auto check_rel_eff_form = [&]( const RelActCalcAuto::RelEffCurveInput &rel_eff_curve ){
         switch( rel_eff_curve.rel_eff_eqn_type )
         {
@@ -2253,6 +2256,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           const double aditional_factor = (r.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::CanExpandForFwhm) ? 2.0 : 1.5;
           float min_sigma, max_sigma;
           expected_peak_width_limits( static_cast<float>(r.lower_energy), highres, spectrum, min_sigma, max_sigma );
+          
+          // Note that `bersteinPeakResolutionFWHM(...)` will clamp energies to this range, if above/below lowest_fwhm_energy/highest_fwhm_energy
           lowest_fwhm_energy = std::min( lowest_fwhm_energy, r.lower_energy - aditional_factor*DEFAULT_PEAK_HALF_WIDTH_SIGMA*max_sigma );
           lowest_fwhm_energy = std::max( lowest_fwhm_energy, 10.0 );
             
@@ -2269,6 +2274,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                               starting_fwhm_paramaters, solution.m_warnings );
       }catch( std::exception &e )
       {
+        cerr << "Failed to get initial FWHM: " << e.what() << "." << endl;
         throw runtime_error( "Failed to get initial FWHM: " + string(e.what()) + "." );
       }//try / catch (getting initial FWHM parameters)
 
@@ -2456,7 +2462,28 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       const double lowest_energy = cost_functor->m_energy_ranges.front().lower_energy;
       const double highest_energy = cost_functor->m_energy_ranges.back().upper_energy;
-      
+
+      // Estimate FWHM at lowest, highest, and midpoint energies
+      const double midpoint_energy = 0.5 * (lowest_energy + highest_energy);
+      double fwhm_at_lowest = 10.0, fwhm_at_highest = 10.0, fwhm_at_midpoint = 10.0;
+      if( solution.m_drf && solution.m_drf->hasResolutionInfo() )
+      {
+        fwhm_at_lowest = solution.m_drf->peakResolutionFWHM( static_cast<float>(lowest_energy) );
+        fwhm_at_highest = solution.m_drf->peakResolutionFWHM( static_cast<float>(highest_energy) );
+        fwhm_at_midpoint = solution.m_drf->peakResolutionFWHM( static_cast<float>(midpoint_energy) );
+      }else
+      {
+        float min_sigma, max_sigma;
+        expected_peak_width_limits( static_cast<float>(lowest_energy), highres, spectrum, min_sigma, max_sigma );
+        fwhm_at_lowest = max_sigma;
+
+        expected_peak_width_limits( static_cast<float>(highest_energy), highres, spectrum, min_sigma, max_sigma );
+        fwhm_at_highest = max_sigma;
+
+        expected_peak_width_limits( static_cast<float>(midpoint_energy), highres, spectrum, min_sigma, max_sigma );
+        fwhm_at_midpoint = max_sigma;
+      }
+
       // Completely arbitrary
       if( ((lowest_energy < 250) && (highest_energy > 650))
          || ((lowest_energy < 120) && (highest_energy > 250)) )
@@ -2476,11 +2503,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       if( solution.m_fit_energy_cal[0] )
       {
         constexpr double offset = RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset;
-        constexpr double limit = RelActCalcAuto::RelActAutoSolution::sm_energy_offset_range_keV;
         constexpr double cal_mult = RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
+        const double limit_by_fwhm = fwhm_at_lowest * RelActCalcAuto::RelActAutoSolution::sm_energy_offset_range_fwhm * PhysicalUnits::fwhm_nsigma;
+        const double offset_limit = (std::min)( RelActCalcAuto::RelActAutoSolution::sm_energy_offset_range_keV, limit_by_fwhm );
         
-        lower_bounds[0] = offset - (limit/cal_mult);
-        upper_bounds[0] = offset + (limit/cal_mult);
+        lower_bounds[0] = offset - (offset_limit/cal_mult);
+        upper_bounds[0] = offset + (offset_limit/cal_mult);
       }else
       {
         constant_parameters.push_back( 0 );
@@ -2490,8 +2518,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       if( solution.m_fit_energy_cal[1] )
       {
         constexpr double offset = RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset;
-        constexpr double gain_limit = RelActCalcAuto::RelActAutoSolution::sm_energy_gain_range_keV;
         constexpr double cal_mult = RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
+        const double limit_by_fwhm = fwhm_at_midpoint * RelActCalcAuto::RelActAutoSolution::sm_energy_gain_range_fwhm * PhysicalUnits::fwhm_nsigma;
+        double gain_limit = (std::min)( RelActCalcAuto::RelActAutoSolution::sm_energy_gain_range_keV, limit_by_fwhm );
         
         lower_bounds[1] = offset - (gain_limit/cal_mult);
         upper_bounds[1] = offset + (gain_limit/cal_mult);
@@ -2606,6 +2635,30 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             max_fwhm_keV = std::max( max_fwhm_keV, max_fwhm );
           }
           
+          // Find the lowest energy ROI to compute its average channel width
+          double lowest_roi_energy = std::numeric_limits<double>::max();
+          double lowest_roi_upper_energy = std::numeric_limits<double>::max();
+          for( const RelActCalcAuto::RoiRange &roi : energy_ranges )
+          {
+            if( roi.lower_energy < lowest_roi_energy )
+            {
+              lowest_roi_energy = roi.lower_energy;
+              lowest_roi_upper_energy = roi.upper_energy;
+            }
+          }
+
+          // Calculate average channel width of the lowest energy ROI
+          float min_channel_width_constraint = 0.0f;
+          if( lowest_roi_energy < std::numeric_limits<double>::max() )
+          {
+            const size_t lower_channel = spectrum->find_gamma_channel( lowest_roi_energy );
+            const size_t upper_channel = spectrum->find_gamma_channel( lowest_roi_upper_energy );
+            const float lower_energy = spectrum->gamma_channel_lower( lower_channel );
+            const float upper_energy = spectrum->gamma_channel_upper( upper_channel );
+            const double avg_channel_width = (upper_energy - lower_energy) / (upper_channel - lower_channel + 1);
+            min_channel_width_constraint = static_cast<float>(1.25 * avg_channel_width);
+          }
+
           // For high-res detectors, set lower bound to 1.5 times mean channel width
           if( highres )
           {
@@ -2620,17 +2673,24 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             {
               float min_peak_fwhm = std::numeric_limits<float>::max();
               float max_peak_fwhm = std::numeric_limits<float>::lowest();
-              
+
               for( const auto &peak : all_peaks )
               {
                 const float fwhm = peak->fwhm();
                 min_peak_fwhm = std::min( min_peak_fwhm, fwhm );
                 max_peak_fwhm = std::max( max_peak_fwhm, fwhm );
               }
-              
+
               min_fwhm_keV = std::min( min_fwhm_keV, 0.5f * min_peak_fwhm );
               max_fwhm_keV = std::max( max_fwhm_keV, 1.5f * max_peak_fwhm );
             }
+          }
+
+          // Ensure min_fwhm_keV and max_fwhm_keV are at least 1.25 times the average channel width of the lowest energy ROI
+          if( min_channel_width_constraint > 0.0f )
+          {
+            min_fwhm_keV = std::max( min_fwhm_keV, min_channel_width_constraint );
+            max_fwhm_keV = std::max( max_fwhm_keV, min_channel_width_constraint );
           }
           
           // Set bounds for each Berstein coefficient - setting all these coeffiecients bounds
@@ -2830,6 +2890,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         //   and assigning of gammas to peaks, then use that to first solve for relative activity and
         //   relative efficiency
         bool succesfully_estimated_re_and_ra = false;
+        vector<RelActCalcManual::GenericPeakInfo> peaks_with_sources;
         try
         {
           // Lets do an initial setup of parameters, but we'll (hopefully) override this using estimates from
@@ -2922,9 +2983,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           // TODO: For cbnm9375, fill_in_nuclide_info() and add_nuclides_to_peaks() produce nearly identical results (like tiny rounding errors on yields), but this causes a notable difference in the final "auto" solution, although this manual solution apears the same - really should figure this out - and then get rid of add_nuclides_to_peaks(...) - maybe this is all a testimate to how brittle somethign else is... (20250211: should rechech this, since a number of instabilities have been corrected)
           const double cluster_num_sigma = 1.5;
           const auto peaks_with_nucs = add_nuclides_to_peaks( peaks_in_range, nuc_sources, real_time, cluster_num_sigma );
-          
-          
-          vector<RelActCalcManual::GenericPeakInfo> peaks_with_sources;
+
+
+          peaks_with_sources.clear();
           for( const RelActCalcManual::GenericPeakInfo &p : peaks_with_nucs )
           {
             bool is_floater_peak = false;
@@ -3648,7 +3709,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             //
             //  To avoid fitting peaks, and hassles that come along, lets try (2) out, and also, we will
             //  only do the simplest of peak area estimations
-            vector<tuple<double,double,double>> top_energy_to_rel_act; //{energy, br, rel. act.}
+            vector<tuple<double,double,double,double,bool>> top_energy_to_rel_act; //{energy, br, rel. act., data_count, has_matching_peak}
             
             vector<SandiaDecay::EnergyRatePair> gammas;
             
@@ -3676,15 +3737,15 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             
             for( const RelActCalcAuto::RoiRange &erange : energy_ranges )
             {
-              vector<tuple<double,double,double>> energy_to_rel_act; //{energy, br, rel. act.}
+              vector<tuple<double,double,double,double,bool>> energy_to_rel_act; //{energy, br, rel. act., data_count, has_matching_peak}
               for( const SandiaDecay::EnergyRatePair &er : gammas )
               {
                 if( er.numPerSecond <= std::numeric_limits<float>::min() ) //1.17549e-38
                   continue;
-                
+
                 if( (er.energy < erange.lower_energy) || (er.energy > erange.upper_energy) )
                   continue;
-                
+
                 const double det_fwhm = cost_functor->fwhm( er.energy, parameters );
                 double data_count = foreground->gamma_integral(er.energy - 0.5*det_fwhm, er.energy + 0.5*det_fwhm);
                 if( background )
@@ -3693,13 +3754,38 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                   data_count -= backarea * foreground->live_time() / background->live_time();
                   data_count = std::max( 0.0, data_count );
                 }//
-                
+
                 const double yield = er.numPerSecond / ns_decay_act_mult;
-                
+
+                // Check if there is a peak that matches this gamma for this source
+                bool has_matching_peak = false;
+                const std::string src_name = nuc.name();
+                for( const RelActCalcManual::GenericPeakInfo &peak : peaks_with_sources )
+                {
+                  // Check if peak energy matches gamma energy (within FWHM)
+                  if( fabs(peak.m_energy - er.energy) < det_fwhm )
+                  {
+                    // Check if peak has this source
+                    for( const RelActCalcManual::GenericLineInfo &line : peak.m_source_gammas )
+                    {
+                      if( line.m_isotope == src_name )
+                      {
+                        has_matching_peak = true;
+                        // Use the actual peak area instead of the coarse approximation
+                        data_count = peak.m_counts;
+                        break;
+                      }
+                    }//for( line : peak.m_source_gammas )
+
+                    if( has_matching_peak )
+                      break;
+                  }//if( peak energy matches gamma energy )
+                }//for( peak : peaks_with_sources )
+
                 // The FWHM area covers about 76% of gaussian area
                 const double rel_act = data_count / yield / foreground->live_time() / 0.76;
-                
-                energy_to_rel_act.emplace_back( er.energy, yield, rel_act );
+
+                energy_to_rel_act.emplace_back( er.energy, yield, rel_act, data_count, has_matching_peak );
               }//for( const SandiaDecay::EnergyRatePair &er : gammas )
               
               std::sort( begin(energy_to_rel_act), end(energy_to_rel_act),
@@ -3714,9 +3800,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               }//for( const auto &l : energy_to_rel_act )
             }//for( const auto &erange : energy_ranges )
             
+            // Sort by data_count (index 3), largest first
             std::sort( begin(top_energy_to_rel_act), end(top_energy_to_rel_act),
                       []( const auto &lhs, const auto &rhs) -> bool{
-              return get<1>(lhs) > get<1>(rhs);
+              return get<3>(lhs) > get<3>(rhs);
             } );
             
 
@@ -3769,19 +3856,39 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               rel_act_mult = nuc.starting_rel_act.value();
             }else if( !top_energy_to_rel_act.empty() )
             {
-              // Use mid BR
-              //const tuple<double,double,double> &representative_act = top_energy_to_rel_act[top_energy_to_rel_act.size()/2]; //{energy, br, rel. act.}
-              //rel_act_mult = std::get<2>( representative_act );
-              
-              // Use highest BR
-              const tuple<double,double,double> &representative_act = top_energy_to_rel_act.front(); //{energy, br, rel. act.}
-              rel_act_mult = std::get<2>( representative_act );
+              // Check if we have any entries with matching peaks; if so, prefer to use those
+              // Count how many entries have matching peaks
+              size_t num_with_matching_peak = 0;
+              for( const auto &entry : top_energy_to_rel_act )
+              {
+                if( std::get<4>(entry) ) // has_matching_peak
+                  num_with_matching_peak++;
+              }
+
+              // If exactly one entry has a matching peak, use it; otherwise fall back to highest data_count
+              const tuple<double,double,double,double,bool> *representative_act = nullptr;
+              if( num_with_matching_peak == 1 )
+              {
+                // Find the entry with the matching peak
+                for( size_t i = 0; !representative_act && (i < top_energy_to_rel_act.size()); ++i )
+                {
+                  if( std::get<4>(top_energy_to_rel_act[i]) ) // has_matching_peak
+                    representative_act = &(top_energy_to_rel_act[i]);
+                }
+              }else
+              {
+                // Use highest data_count (first entry, since sorted by data_count descending)
+                representative_act = &top_energy_to_rel_act.front();
+              }
+
+              assert( representative_act );
+              rel_act_mult = std::get<2>( *representative_act );
 
               // For physical model, our efficiency may be way smaller than one, so we will correct
               //  for this; the other Rel Eff equations we will assume a starting flat line at 1.0.
               if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
               {
-                const double energy = std::get<0>( representative_act );
+                const double energy = std::get<0>( *representative_act );
                 const double rel_eff = cost_functor->relative_eff( energy, re_eff_index, parameters );
                 assert( !IsNan(rel_eff) && !IsInf(rel_eff) );
                 if( !IsNan(rel_eff) && !IsInf(rel_eff) && (rel_eff > 0.0) )
@@ -4511,7 +4618,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         case ceres::USER_SUCCESS:
           cout << "Pre-fit correction was successful with FinalCost="
           << summary.final_cost << " (InitialCost=" << summary.initial_cost << ")."
-          << "  Previous best_cost_val=" << best_cost_val
+          << "  Previous best_cost_val=" << ((best_cost_val == std::numeric_limits<double>::max()) ? string("N/A") : SpecUtils::printCompact(best_cost_val, 6))
           << endl;
           solution_is_better = (summary.final_cost < best_cost_val);
           break;
@@ -5384,8 +5491,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     try
     {
+      const RelActCalcAutoImp::RelActAutoCostFcn * const_cost_functor = cost_functor.get();
       solution.m_obs_eff_for_each_curve
-           = RelActCalcAuto::RelActAutoSolution::fit_free_peak_amplitudes( options, cost_functor.get(), parameters, solution );
+           = RelActCalcAuto::RelActAutoSolution::fit_free_peak_amplitudes( options, const_cost_functor, parameters, solution );
     }catch( std::exception &e )
     {
       assert( 0 );
@@ -7583,7 +7691,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
 
     // Throws lambda if any peak quantities are NaN or Inf
-    auto check_peak_reasonable = [this,&x]( const RelActCalcAuto::PeakDefImp<T> &peak, const double gamma_energy ){
+    auto check_peak_reasonable = [this,&x,&range]( const RelActCalcAuto::PeakDefImp<T> &peak, const double gamma_energy ){
       const T &peak_sigma = peak.m_sigma;
 
       double fwhm;
@@ -7613,10 +7721,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         throw runtime_error( msg.str() );
       }//if( IsInf(peak_sigma) || IsNan(peak_sigma) )
 
-      // Do a sanity check to make sure peak isnt getting too narrow
+      // Do a sanity check to make sure peak isnt getting too narrow - require FWHM to be at least 1.15 channels in
+      //  the ROI, and even for peaks below the ROI, something positive
       const double nchannel = m_energy_cal->channel_for_energy(gamma_energy + 0.5*fwhm)
                                        - m_energy_cal->channel_for_energy(gamma_energy - 0.5*fwhm);
-      if( nchannel < 1.25 )
+      if( ((gamma_energy >= range.lower_energy) && (nchannel < 1.15))
+         || (nchannel < 0.5) )
         throw runtime_error( "peaks_for_energy_range_imp: for peak at " + std::to_string(gamma_energy)
                             + " keV, FWHM=" + std::to_string(fwhm) + " which is only "
                             + std::to_string(nchannel) + " channels - too small." );
@@ -7638,7 +7748,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
     };//auto check_peak_reasonable
 
-    // We will accept peaks outdide the ROI range, if they will still effect the ROI, so here we will define
+    // We will accept peaks outside the ROI range, if they will still effect the ROI, so here we will define
     //  a peak for the lower and upper edges of the ROI, and use thier extent to approximate peaks
     //  above and below the ROI (in principle we should search around, but its not too important).
     //
@@ -9279,41 +9389,35 @@ T bersteinPeakResolutionFWHM( T energy, const T * const pars, const size_t num_p
   const T max_energy = pars[num_berstein_coeffs + 1];
   
   // Check energy bounds and clamp if necessary
-  if( energy < (min_energy - 10.0) )
+  if( energy < min_energy )
   {
-#ifndef NDEBUG
     // This can happen for really large skew peaks so there are peaks from well outside the ROI range
     //  contributing to the peak.
+    //  Here we will clamp the value of the scalar, but keep the derivative information, which creates a derivative 
+    //  discontinuity at the boundary, but this should be small and rare.
     //  TODO: We could probably do a little better job of preventing this from happening, but its not the biggest fish to fry atm
     if constexpr ( std::is_same_v<T, double> )
     {
-      //std::cerr << "Warning: bersteinPeakResolutionFWHM() - energy " << energy
-      //<< " below minimum " << min_energy << ", clamping to minimum: " << min_energy << std::endl;
+      energy = min_energy;
     }else
     {
-      //std::cerr << "Warning: bersteinPeakResolutionFWHM() - energy " << energy.a
-      //<< " below minimum " << min_energy.a << ", clamping to minimum: " << min_energy.a << std::endl;
+      energy.a = min_energy.a;
     }
-#endif
-
-    energy = min_energy;
   }
   
-  if( energy > (max_energy + 10.0) )
+  if( energy > max_energy )
   {
 #ifndef NDEBUG
     if constexpr ( std::is_same_v<T, double> )
     {
-      //std::cerr << "Warning: bersteinPeakResolutionFWHM() - energy " << energy
-      //<< " above maximum " << max_energy << ", clamping to maximum: " << max_energy << std::endl;
+      energy = max_energy;
     }else
     {
-      //std::cerr << "Warning: bersteinPeakResolutionFWHM() - energy " << energy.a
-      //<< " above maximum " << max_energy.a << ", clamping to maximum: " << max_energy.a << std::endl;
+      energy.a = max_energy.a;
     }
 #endif
 
-    energy = max_energy;
+    
   }
   
   // Normalize energy to [0, 1] for Berstein polynomial

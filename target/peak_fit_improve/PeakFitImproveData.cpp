@@ -540,11 +540,27 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
           if( PeakFitImprove::debug_printout )
           {
             const vector<string> wanted_sources{
-              "Ac225_Unsh",
-              "Eu152_Sh",
-              "Fe59_Phant",
-              "Am241_Unsh",
-              "Ho166m_Unsh"
+              //"Ac225_Unsh",
+              //"Eu152_Sh",
+              //"Fe59_Phant",
+              //"Ho166m_Unsh",
+              //"Cs137_Sh",
+              //"Cs137_Unsh",
+              //"I131_Phantom",
+              //"I131_Sh",
+              //"Ir192_Sh",
+              //"Ir192_Unsh",
+              //"Am241_Unsh",
+              //"Br76_Sh",
+              //"Am241_Sh",
+              // Below here still not working great
+              "Br76_Unsh",
+              "Pu238_Sh",
+              "Pu238_Unsh",
+              "Pu239_Sh",
+              "Cd109_Unsh",
+              "Pu238", //All Pu238
+              "Pu239", //All Pu239
             };
             bool wanted = wanted_sources.empty();
             for( const string &src : wanted_sources )

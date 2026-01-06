@@ -72,6 +72,22 @@ struct PeakFindAndFitWeights
 };//struct PeakFindAndFitWeights
 
 
+/** Helper function to calculate PeakFindAndFitWeights from fit peaks and expected photopeaks.
+
+ This function matches found peaks to expected photopeaks and calculates peak finding metrics.
+
+ @param fit_peaks The fitted peaks to evaluate
+ @param expected_photopeaks The expected photopeaks to match against
+ @param num_sigma_contribution How many sigma around a peak to consider for matching (default 1.5)
+ @return PeakFindAndFitWeights structure with all peak finding metrics populated
+ */
+PeakFindAndFitWeights calculate_peak_find_weights(
+  const std::vector<PeakDef> &fit_peaks,
+  const std::vector<ExpectedPhotopeakInfo> &expected_photopeaks,
+  const double num_sigma_contribution = 1.5
+);
+
+
 PeakFindAndFitWeights eval_initial_peak_find_and_fit( const InitialPeakFindSettings &fit_settings,
                                                      const FindCandidateSettings &candidate_settings,
                                                      const DataSrcInfo &src_info,

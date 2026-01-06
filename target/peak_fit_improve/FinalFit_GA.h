@@ -78,6 +78,22 @@ struct FinalFitScore
 };//struct FinalFitScore
 
 
+/** Helper function to calculate FinalFitScore from fit peaks and expected photopeaks.
+
+ This function matches found peaks to expected photopeaks and calculates scoring metrics.
+
+ @param fit_peaks The fitted peaks to evaluate
+ @param expected_photopeaks The expected photopeaks to match against
+ @param num_sigma_contribution How many sigma around a peak to consider for matching (default 1.5)
+ @return FinalFitScore structure with all scoring metrics populated
+ */
+FinalFitScore calculate_final_fit_score(
+  const std::vector<PeakDef> &fit_peaks,
+  const std::vector<ExpectedPhotopeakInfo> &expected_photopeaks,
+  const double num_sigma_contribution = 1.5
+);
+
+
 FinalFitScore eval_final_peak_fit( const FinalPeakFitSettings &final_fit_settings,
                                   const DataSrcInfo &src_info,
                                   const std::vector<PeakDef> &intial_peaks,

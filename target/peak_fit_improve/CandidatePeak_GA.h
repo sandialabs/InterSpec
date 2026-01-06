@@ -47,7 +47,39 @@ namespace CandidatePeak_GA
                                             const FindCandidateSettings &settings );
 
 
-  std::tuple<double,size_t,size_t,size_t,size_t,size_t> //<score, num_peaks_found, num_possibly_accepted_peaks_not_found, num_extra_peaks>
+  struct CandidatePeakScore
+  {
+    double score;
+    size_t num_peaks_found;
+    size_t num_def_wanted_not_found;
+    size_t num_def_wanted_peaks_found;
+    size_t num_possibly_accepted_peaks_not_found;
+    size_t num_extra_peaks;
+    
+    // Peak tuples for visualization (only populated when needed for N42 output)
+    std::vector<std::tuple<float,float,float>> detected_expected;    //{mean, sigma, amplitude}
+    std::vector<std::tuple<float,float,float>> detected_not_expected; //{mean, sigma, amplitude}
+    
+    // Expected peak categorization for visualization (only populated when needed for N42 output)
+    std::vector<ExpectedPhotopeakInfo> possibly_expected_but_not_detected;
+    std::vector<ExpectedPhotopeakInfo> expected_and_was_detected;
+    std::vector<ExpectedPhotopeakInfo> def_expected_but_not_detected;
+  };//struct CandidatePeakScore
+
+  /** Calculates candidate peak score for a single source.
+   * 
+   * This function compares detected peaks against expected peaks and calculates
+   * a score based on how well the detected peaks match expectations.
+   * 
+   * @param detected_peaks The peaks that were detected/found
+   * @param expected_photopeaks The expected peaks to match against
+   * @return CandidatePeakScore with score and statistics for this source
+   */
+  CandidatePeakScore
+  calculate_candidate_peak_score_for_source( const std::vector<PeakDef> &detected_peaks,
+                                             const std::vector<ExpectedPhotopeakInfo> &expected_photopeaks );
+
+  CandidatePeakScore
   eval_candidate_settings( const FindCandidateSettings settings, const std::vector<DataSrcInfo> &input_srcs, const bool write_n42 );
 
 

@@ -3633,7 +3633,7 @@ void RelActAutoGui::startApplyFitEnergyCalToSpecFile()
   if( fit_offset )
   {
     double offset = -(m_solution->m_energy_cal_adjustments[0]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
-                      * RelActCalcAuto::RelActAutoSolution::sm_energy_offset_range_keV;
+                      * RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
     adjustments += WString::tr("raag-add-energy-offset").arg(formatNumber(offset, 2));
     printed_some = true;
   }
@@ -3641,7 +3641,7 @@ void RelActAutoGui::startApplyFitEnergyCalToSpecFile()
   if( fit_gain )
   {
     double gain = -(m_solution->m_energy_cal_adjustments[1]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
-                      * RelActCalcAuto::RelActAutoSolution::sm_energy_gain_range_keV;
+                      * RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
     adjustments += WString::tr(printed_some ? "raag-increase-gain-additional" : "raag-increase-gain-first")
                    .arg(formatNumber(gain, 5));
     printed_some = true;
@@ -3650,7 +3650,7 @@ void RelActAutoGui::startApplyFitEnergyCalToSpecFile()
   if( m_solution && (m_solution->m_fit_energy_cal.size() > 2) && m_solution->m_fit_energy_cal[2] )
   {
     double quad = -(m_solution->m_energy_cal_adjustments[2]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
-                      * RelActCalcAuto::RelActAutoSolution::sm_energy_quad_range_keV;
+                      * RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
     adjustments += WString::tr(printed_some ? "raag-increase-quad-additional" : "raag-increase-quad-first")
                    .arg(formatNumber(quad, 5));
     printed_some = true;

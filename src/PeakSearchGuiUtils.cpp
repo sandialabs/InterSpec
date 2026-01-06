@@ -2841,8 +2841,8 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
 #endif
   }//try / catch
 
-  assert( 0 );
-  throw runtime_error( "Need to implement search for peaks worker." );
+  //assert( 0 );
+  //throw runtime_error( "Need to implement search for peaks worker." );
 
   if( results && !results->empty() )
   {

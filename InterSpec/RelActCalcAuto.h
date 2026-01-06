@@ -1174,14 +1174,16 @@ struct RelActAutoSolution
    */
   constexpr static double sm_energy_par_offset = 1.0;
   
-  /** We will allow the energy offset to vary by +-55 keV. This is arbitrarily chosen. */
+  /** We will allow the energy offset to vary by the minimum of +-15 keV or `sm_energy_offset_range_fwhm` times lower energy FWHM . This is arbitrarily chosen. */
   constexpr static double sm_energy_offset_range_keV = 15.0;  // Allow +-15 keV offset adjust
+  /** If we are off by more than 1 FWHM on the offset, we are likely to be falling into some false minima - this has not been investigated. */
+  constexpr static double sm_energy_offset_range_fwhm = 1.0;
   
-  /** We will allow the energy gain to vary by +-20 keV, at the right side of the spectrum.
-   This is arbitrarily chosen, and non ideal, because it doesnt account for different energy ranges of the spectrum (e.g., a 400 keV
-   spectrum can get a lot larger of a relative adjust, than a 8 MeV spectrum).
+  /** We will allow the energy gain to vary by +-20 keV, or 4 FWHM - whichever is less, at the right side of the spectrum.
+   This is arbitrarily chosen.
    */
-  constexpr static double sm_energy_gain_range_keV   = 20.0; // Allow 20 keV energy range gain adjust
+  constexpr static double sm_energy_gain_range_keV   = 20.0; // Allow up to 20 keV energy range gain adjust
+  constexpr static double sm_energy_gain_range_fwhm  = 4.0; //Allow up to 4 FWHM range gain adjust
   
   /** If `sm_num_energy_cal_pars == 3` we will allow up to 5 keV adjustment to quadratic energy range, at the right-hand
    side of the spectrum.
