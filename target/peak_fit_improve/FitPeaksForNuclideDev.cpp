@@ -35,10 +35,13 @@
 #include <boost/asio/thread_pool.hpp>
 #include <boost/asio/post.hpp> // For boost::asio::post
 
+#include <Wt/WColor>
+
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/SpecUtilsAsync.h"
+#include "SpecUtils/D3SpectrumExport.h"
 #include "SpecUtils/EnergyCalibration.h"
 
 #include "InterSpec/PeakDef.h"
@@ -49,9 +52,12 @@
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/RelActCalcAuto.h"
+#include "InterSpec/ReferenceLineInfo.h"
 #include "InterSpec/RelActCalcManual.h"
+#include "InterSpec/RelActCalc.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/MaterialDB.h"
 #include "InterSpec/GammaInteractionCalc.h"
 
 #include "FinalFit_GA.h"
@@ -147,6 +153,57 @@ struct PeakFitResult
 
   RelActCalcAuto::RelActAutoSolution solution;  // only valid if status == Success
 };//struct PeakFitResult
+
+
+/** Combined scoring struct that evaluates both final fit quality and peak finding completeness.
+
+ This struct provides a comprehensive assessment by combining:
+ - FinalFitScore: Area, width, and position accuracy metrics
+ - PeakFindAndFitWeights: Peak detection completeness and area accuracy
+ - final_weight: Combined score (simple sum of find_weight + total_weight)
+ */
+struct CombinedPeakFitScore
+{
+  FinalFit_GA::FinalFitScore final_fit_score;
+  InitialFit_GA::PeakFindAndFitWeights initial_fit_weights;
+  CandidatePeak_GA::CandidatePeakScore candidate_peak_score;
+
+  /** Combined weight score (find_weight + total_weight).
+   * find_weight: higher is better (more correct peaks found)
+   * total_weight: lower is better (more accurate areas)
+   */
+  double final_weight = 0.0;
+
+  std::string print( const std::string &varname ) const
+  {
+    std::string answer;
+
+    answer += "=== " + varname + " - Final Fit Metrics ===\n";
+    answer += final_fit_score.print( varname + ".final_fit_score" );
+
+    answer += "\n=== " + varname + " - Peak Finding Metrics ===\n";
+    answer += varname + ".initial_fit_weights.find_weight =                     " + std::to_string(initial_fit_weights.find_weight) + "\n";
+    answer += varname + ".initial_fit_weights.def_wanted_area_weight =          " + std::to_string(initial_fit_weights.def_wanted_area_weight) + "\n";
+    answer += varname + ".initial_fit_weights.maybe_wanted_area_weight =        " + std::to_string(initial_fit_weights.maybe_wanted_area_weight) + "\n";
+    answer += varname + ".initial_fit_weights.not_wanted_area_weight =          " + std::to_string(initial_fit_weights.not_wanted_area_weight) + "\n";
+    answer += varname + ".initial_fit_weights.def_wanted_area_median_weight =   " + std::to_string(initial_fit_weights.def_wanted_area_median_weight) + "\n";
+    answer += varname + ".initial_fit_weights.maybe_wanted_area_median_weight = " + std::to_string(initial_fit_weights.maybe_wanted_area_median_weight) + "\n";
+    answer += varname + ".initial_fit_weights.not_wanted_area_median_weight =   " + std::to_string(initial_fit_weights.not_wanted_area_median_weight) + "\n";
+
+    answer += "\n=== " + varname + " - Candidate Peak Metrics ===\n";
+    answer += varname + ".candidate_peak_score.score =                           " + std::to_string(candidate_peak_score.score) + "\n";
+    answer += varname + ".candidate_peak_score.num_peaks_found =                 " + std::to_string(candidate_peak_score.num_peaks_found) + "\n";
+    answer += varname + ".candidate_peak_score.num_def_wanted_not_found =         " + std::to_string(candidate_peak_score.num_def_wanted_not_found) + "\n";
+    answer += varname + ".candidate_peak_score.num_def_wanted_peaks_found =      " + std::to_string(candidate_peak_score.num_def_wanted_peaks_found) + "\n";
+    answer += varname + ".candidate_peak_score.num_possibly_accepted_peaks_not_found = " + std::to_string(candidate_peak_score.num_possibly_accepted_peaks_not_found) + "\n";
+    answer += varname + ".candidate_peak_score.num_extra_peaks =                " + std::to_string(candidate_peak_score.num_extra_peaks) + "\n";
+
+    answer += "\n=== " + varname + " - Combined Metrics ===\n";
+    answer += varname + ".final_weight = " + std::to_string(final_weight) + "\n";
+
+    return answer;
+  }//print(...)
+};//struct CombinedPeakFitScore
 
 
 // Configuration parameters for peak fitting for nuclides
@@ -793,6 +850,167 @@ std::vector<PeakDef> compute_observable_peaks(
   return observable_peaks;
 }//compute_observable_peaks
 
+  
+/** Finds the valid energy range of a foreground spectrum based on spectroscopic extent
+   
+   @param foreground The spectrum to analyze
+   
+   @return A pair of (min_valid_energy, max_valid_energy). Returns (0.0, 0.0) if foreground is
+   null or has no data.
+*/
+pair<double,double> find_valid_energy_range( const shared_ptr<const SpecUtils::Measurement> &meas )
+{
+  // This implementation is an updated implementation of `find_spectroscopic_extent(...)`,
+  //  and that function should probably be updated
+  if( !meas 
+    || !meas->energy_calibration() 
+    || !meas->energy_calibration()->valid()
+    || (meas->num_gamma_channels() < 7) )
+  {
+    return {0.0, 0.0};
+  }
+  
+  size_t lower_channel = 0, upper_channel = 0;
+
+  const vector<float> &channel_counts = *meas->gamma_counts();
+  const size_t nbin = channel_counts.size();
+  
+  //First detect where spectrum begins
+  const int side_bins = 3;
+  const int order = 2;
+  const int derivative = 2;
+  vector<float> smoothed_2nd, smoothed_2nd_variance;
+  SavitzyGolayCoeffs sgcoeffs( side_bins, side_bins, order, derivative );
+  sgcoeffs.smooth_with_variance( channel_counts, smoothed_2nd, smoothed_2nd_variance );
+
+  // Find where spectrum begins by looking for significant negative curvature (detector turn-on)
+  // followed by the curvature leveling off, using variance to set thresholds
+  size_t channel = 0;
+
+  // First, find where we have significant negative curvature (downturn after detector turn-on)
+  // Use variance to set a threshold - we're looking for a signal that's statistically significant
+  while( channel < nbin )
+  {
+    const float sigma = (smoothed_2nd_variance[channel] > 0.0f) ? std::sqrt(smoothed_2nd_variance[channel]) : 1.0f;
+    // Look for curvature more negative than -2 sigma (statistically significant downturn)
+    if( smoothed_2nd[channel] < -2.0f * sigma )
+      break;
+    ++channel;
+  }
+
+  // Now find where the curvature levels off (spectrum becomes relatively flat/linear)
+  // Again use variance to determine when we're close enough to zero
+  while( channel < nbin )
+  {
+    const float sigma = (smoothed_2nd_variance[channel] > 0.0f) ? std::sqrt(smoothed_2nd_variance[channel]) : 1.0f;
+    // Look for curvature within 1 sigma of zero (spectrum has leveled off)
+    if( std::abs(smoothed_2nd[channel]) < sigma )
+      break;
+    ++channel;
+  }
+  
+  lower_channel = std::min(channel-0,smoothed_2nd.size()-1);
+  
+  // Find the upper energy limit by looking for the last channel with meaningful signal
+  // Start from the end and work backwards
+  size_t upperlastchannel = nbin - 1;
+
+  // First, skip trailing channels with very low counts (< 3 counts)
+  while( (upperlastchannel > 0) && (channel_counts[upperlastchannel] < 3.0f) )
+    --upperlastchannel;
+
+  // Search backwards from the end to find the last peak-like structure
+  // Look for significant negative curvature, then find where it becomes positive on the right side
+  size_t lastchannel = upperlastchannel;
+
+  bool found_last_signal = false;
+  for( size_t i = upperlastchannel; i > lower_channel; --i )
+  {
+    // Look for statistically significant negative curvature (peak shape)
+    if( i >= smoothed_2nd.size() || smoothed_2nd_variance[i] <= 0.0f )
+      continue;
+
+    const float sigma_2nd = std::sqrt( smoothed_2nd_variance[i] );
+    if( smoothed_2nd[i] < -2.0f * sigma_2nd )
+    {
+      // Found significant negative curvature - this is a potential peak
+      // Now find where the second derivative becomes positive on the right side
+      size_t right_extent = i;
+      for( size_t j = i + 1; j < smoothed_2nd.size(); ++j )
+      {
+        if( smoothed_2nd[j] > 0.0f )
+        {
+          right_extent = j;
+          break;
+        }
+      }
+
+      // Calculate peak width and add ~25% buffer
+      const size_t peak_width = (right_extent > i) ? (right_extent - i) : 1;
+      const size_t buffer = std::max( size_t(4), peak_width / 4 );
+      lastchannel = std::min( right_extent + buffer, nbin - 1 );
+      found_last_signal = true;
+      break;
+    }
+  }
+
+  // If we didn't find peak structure in the backwards search, use the simple upperlastchannel
+  if( !found_last_signal )
+    lastchannel = upperlastchannel;
+
+  // If the sophisticated detection failed, fall back to a simple algorithm
+  if( (lower_channel > (nbin/3)) || (lastchannel <= lower_channel) )
+  {
+    // Find first channel where this channel and the next three all have non-zero counts
+    size_t first_nonzero = 0;
+    while( first_nonzero + 3 < nbin )
+    {
+      if( (channel_counts[first_nonzero] > 0.0f)
+         && (channel_counts[first_nonzero + 1] > 0.0f)
+         && (channel_counts[first_nonzero + 2] > 0.0f)
+         && (channel_counts[first_nonzero + 3] > 0.0f) )
+      {
+        break;
+      }
+      ++first_nonzero;
+    }
+
+    // Find last channel where this channel and the previous channel both have non-zero counts
+    size_t last_nonzero = nbin - 1;
+    while( last_nonzero > 0 )
+    {
+      if( (channel_counts[last_nonzero] > 0.0f) && (channel_counts[last_nonzero - 1] > 0.0f) )
+        break;
+      --last_nonzero;
+    }
+
+    // Make sure we found valid channels
+    if( first_nonzero < nbin && last_nonzero > first_nonzero )
+    {
+      lower_channel = first_nonzero;
+      upper_channel = last_nonzero;
+    }
+    else
+    {
+      // Ultimate fallback - use entire spectrum
+      lower_channel = 0;
+      upper_channel = nbin - 1;
+    }
+
+    return { meas->gamma_channel_lower(lower_channel), meas->gamma_channel_upper(upper_channel) };
+  }//
+
+  // Add some buffer beyond the last detected signal to ensure we don't cut off peak tails
+  const size_t buffer_channels = std::max( size_t(5), size_t(0.005 * nbin) );
+  upper_channel = std::min( lastchannel + buffer_channels, nbin - 1 );
+
+  // Make sure we don't cut off too early - at minimum use upperlastchannel
+  upper_channel = std::max( upper_channel, upperlastchannel );
+  upper_channel = std::min( upper_channel, nbin - 1 );
+
+  return { meas->gamma_channel_lower(lower_channel), meas->gamma_channel_upper(upper_channel) };
+}//find_valid_energy_range
+  
 
 // Helper to check if two ROI sets are similar enough to stop iterating
 bool rois_are_similar( const vector<RelActCalcAuto::RoiRange> &a,
@@ -970,7 +1188,7 @@ RoiSignificanceResult compute_roi_chi2_significance(
 
     // Significance = peak_area / sqrt(continuum)
     const double peak_sig = peak_amp_in_range / std::sqrt( continuum_integral );
-
+    
     if( peak_sig > result.max_peak_significance )
       result.max_peak_significance = peak_sig;
   }//for( loop over peaks in ROI )
@@ -1120,12 +1338,55 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     }
   }
 
+  // Find valid energy range based on contiguous channels with data
+  const auto [min_valid_energy, max_valid_energy] = find_valid_energy_range( foreground );
+
   try
   {
     // Call RelActAuto::solve with provided options
     RelActCalcAuto::RelActAutoSolution solution = RelActCalcAuto::solve(
       options, foreground, long_background, drf, auto_search_peaks
     );
+
+    // As of 20260103, energy calibration adjustments may cause failure to fit the correct solution sometimes,
+    //  so if our current solution failed, or is really bad, we'll try without fitting energy cal
+    if( options.fit_energy_cal
+      && ((solution.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success)
+        || ((solution.m_chi2 / solution.m_dof) > 10.0)) ) //10.0 arbitrary - and un-explored
+    {
+      RelActCalcAuto::Options no_ecal_opts = options;
+      no_ecal_opts.fit_energy_cal = false;
+
+      RelActCalcAuto::RelActAutoSolution trial_solution = RelActCalcAuto::solve(
+        no_ecal_opts, foreground, long_background, drf, auto_search_peaks
+      );
+      
+      // If the solution is still really bad - we'll try a plain Physical Model solution, with no attenuation
+      if( (trial_solution.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success)
+          || ((solution.m_chi2 / solution.m_dof) > 10.0) )
+      {
+        RelActCalcAuto::Options desperation_opts = options;
+        RelActCalcAuto::RelEffCurveInput &curve = desperation_opts.rel_eff_curves.front();
+        curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
+        curve.rel_eff_eqn_order = 0;
+        curve.phys_model_self_atten = nullptr;
+        curve.phys_model_external_atten.clear();
+        curve.phys_model_use_hoerl = (options.rois.size() > 2);
+        
+        trial_solution = RelActCalcAuto::solve(
+          desperation_opts, foreground, long_background, drf, auto_search_peaks
+        );
+      }//If( still a bad solution )
+      
+      if( (trial_solution.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success)
+        && ( (solution.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success)
+            || ((solution.m_chi2 / solution.m_dof) > (trial_solution.m_chi2 / trial_solution.m_dof)) ) )
+      {
+        if( PeakFitImprove::debug_printout )
+          cerr << "Abandoning fitting e-cal for nuclide" << endl;
+        solution = trial_solution;
+      }
+    }
 
     // Check if initial solve failed
     if( solution.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success )
@@ -1137,7 +1398,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 
     cout << "Initial RelActAuto solution (" << options.rel_eff_curves.front().name << "):" << endl;
     solution.print_summary( std::cout );
-    cout << endl;
+    cout << "Chi2/DOF = " << solution.m_chi2 << "/" << solution.m_dof << " = " << (solution.m_chi2 / solution.m_dof) << endl;
 
     // Iteratively refine ROIs using RelActAuto solutions
     // The idea is that each iteration provides a better relative efficiency estimate,
@@ -1186,10 +1447,6 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         // or DRF in fit_peaks_for_nuclides), rather than relying on solution.m_drf which may
         // not have valid FWHM info or may have incorrect values
 
-        // Get energy range from foreground
-        const double lowest_energy_gamma = foreground->gamma_energy_min();
-        const double highest_energy_gamma = foreground->gamma_energy_max();
-
         // Get auto clustering settings from config
         const GammaClusteringSettings auto_settings = config.get_auto_clustering_settings();
 
@@ -1198,9 +1455,16 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             auto_rel_eff, nucs_and_acts, foreground,
             fwhm_form, fwhm_coefficients,
             fwhm_lower_energy, fwhm_upper_energy,
-            lowest_energy_gamma, highest_energy_gamma,
+            min_valid_energy, max_valid_energy,
             auto_settings );
-
+        
+        if( refined_rois.empty() )
+        {
+          result.warnings.push_back( "Lost all ROIs while iterationing to refine solution - stopped early." );
+          cerr << "Have lost all ROIs!  Halting iterations to refine solution." << endl;
+          break;
+        }//if( refined_rois.empty() )
+        
         // Debug output: print refined ROIs with expected counts
         if( PeakFitImprove::debug_printout )
         {
@@ -1426,8 +1690,6 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_fallback(
   const std::vector<float> &fwhm_coefficients,
   const double lower_fwhm_energy,
   const double upper_fwhm_energy,
-  const double lowest_energy_gamma,
-  const double highest_energy_gamma,
   const GammaClusteringSettings &settings )
 {
   // Step 1: Get or create valid DRF
@@ -1445,6 +1707,9 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_fallback(
   const double live_time = foreground->live_time();
   if( live_time <= 0.0 )
     return {};
+
+  // Find valid energy range based on contiguous channels with data
+  const auto [min_valid_energy, max_valid_energy] = find_valid_energy_range( foreground );
 
   // Step 2: Estimate activity for each nuclide
   std::vector<std::pair<const SandiaDecay::Nuclide *, double>> nucs_and_acts;
@@ -1469,7 +1734,7 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_fallback(
 
     for( const SandiaDecay::EnergyRatePair &photon : photons )
     {
-      if( photon.energy < lowest_energy_gamma || photon.energy > highest_energy_gamma )
+      if( photon.energy < min_valid_energy || photon.energy > max_valid_energy )
         continue;
 
       const double br = photon.numPerSecond;  // BR since we used unit activity
@@ -1564,8 +1829,8 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_fallback(
     fwhm_coefficients,
     lower_fwhm_energy,
     upper_fwhm_energy,
-    lowest_energy_gamma,
-    highest_energy_gamma,
+    min_valid_energy,
+    max_valid_energy,
     settings
   );
 }//estimate_initial_rois_fallback
@@ -1680,6 +1945,9 @@ PeakFitResult fit_peaks_for_nuclides(
       cout << "]" << endl;
     }
 
+    // Find valid energy range based on contiguous channels with data
+    const auto [min_valid_energy, max_valid_energy] = find_valid_energy_range( foreground );
+
     // Determine energy range for gamma lines
     double highest_energy_gamma = 0.0, lowest_energy_gamma = std::numeric_limits<double>::max();
 
@@ -1762,6 +2030,18 @@ PeakFitResult fit_peaks_for_nuclides(
         for( const string &nuc : used_isotopes )
           cout << nuc << ", ";
         cout << "} to initial auto-fit peaks to a total of " << peaks_matched.size() << " peaks." << endl;
+        
+        if( !peaks_matched.empty() )
+        {
+          cout << "Matched peak energies (keV): {";
+          for( size_t i = 0; i < peaks_matched.size(); ++i )
+          {
+            cout << peaks_matched[i].m_energy;
+            if( i < peaks_matched.size() - 1 )
+              cout << ", ";
+          }
+          cout << "}" << endl;
+        }
       }
     }
 
@@ -1864,19 +2144,178 @@ PeakFitResult fit_peaks_for_nuclides(
 
       try
       {
-        const RelActCalcManual::RelEffSolution manual_solution
+        RelActCalcManual::RelEffSolution manual_solution
             = RelActCalcManual::solve_relative_efficiency( manual_input );
 
+        double chi2_dof = manual_solution.m_chi2 / (std::max)(manual_solution.m_dof, 1);
+        
+        if( (manual_solution.m_status != RelActCalcManual::ManualSolutionStatus::Success)
+           || (chi2_dof > 20.0) )
+        {
+          if( PeakFitImprove::debug_printout )
+          {
+            cout << "Initial manual solution failed: status=";
+            switch( manual_solution.m_status )
+            {
+              case RelActCalcManual::ManualSolutionStatus::NotInitialized:
+                cout << "NotInitialized";
+                break;
+              case RelActCalcManual::ManualSolutionStatus::ErrorInitializing:
+                cout << "ErrorInitializing";
+                break;
+              case RelActCalcManual::ManualSolutionStatus::ErrorFindingSolution:
+                cout << "ErrorFindingSolution";
+                break;
+              case RelActCalcManual::ManualSolutionStatus::ErrorGettingSolution:
+                cout << "ErrorGettingSolution";
+                break;
+              case RelActCalcManual::ManualSolutionStatus::Success:
+                cout << "Success";
+                break;
+            }
+            cout << ", form=" << RelActCalc::to_str( manual_solution.m_input.eqn_form )
+                 << ", order=" << manual_solution.m_input.eqn_order
+                 << ", chi2=" << manual_solution.m_chi2
+                 << ", dof=" << manual_solution.m_dof
+                 << ", chi2/dof=" << chi2_dof;
+            if( !manual_solution.m_error_message.empty() )
+              cout << ", error: " << manual_solution.m_error_message;
+            cout << endl;
+          }//if( PeakFitImprove::debug_printout )
+          RelActCalcManual::RelEffInput retry_input = manual_input;
+          retry_input.eqn_form = RelActCalc::RelEffEqnForm::FramPhysicalModel;
+          retry_input.phys_model_use_hoerl = (manual_input.peaks.size() > 3);
+          retry_input.use_ceres_to_fit_eqn = true;
+          retry_input.eqn_order = 0;
+          if( isHPGe )  
+            retry_input.phys_model_detector = DetectorPeakResponse::getGenericHPGeDetector();
+          else
+            retry_input.phys_model_detector = DetectorPeakResponse::getGenericNaIDetector();
+          
+          if( auto_search_peaks.size() > 3 )
+          {
+            
+          }
+          
+          RelActCalcManual::RelEffSolution retry_solution
+            = RelActCalcManual::solve_relative_efficiency( retry_input );
+        
+          double retry_chi2_dof = retry_solution.m_chi2 / (std::max)(retry_solution.m_dof, 1);
+          
+          if( PeakFitImprove::debug_printout )
+          {
+            cout << "Retry manual solution fit comparison:" << endl;
+            cout << "  Original: form=" << RelActCalc::to_str( manual_solution.m_input.eqn_form )
+            << ", order=" << manual_solution.m_input.eqn_order
+            << ", chi2/dof=" << manual_solution.m_chi2 << "/" << manual_solution.m_dof
+            << "=" << chi2_dof 
+            << ", success=" << (manual_solution.m_status == RelActCalcManual::ManualSolutionStatus::Success) 
+            << endl;
+            if( manual_solution.m_status != RelActCalcManual::ManualSolutionStatus::Success )
+              cout << "  Original error: " << manual_solution.m_error_message << endl;
+            cout << "  Retry:    form=" << RelActCalc::to_str( retry_solution.m_input.eqn_form )
+            << ", order=" << retry_solution.m_input.eqn_order
+            << ", chi2/dof=" << retry_solution.m_chi2 << "/" << retry_solution.m_dof
+            << "=" << retry_chi2_dof 
+            << ", success=" << (retry_solution.m_status == RelActCalcManual::ManualSolutionStatus::Success) 
+            << endl;
+            if( retry_solution.m_status != RelActCalcManual::ManualSolutionStatus::Success )
+              cout << "  Retry error: " << retry_solution.m_error_message << endl;
+            
+            if( retry_solution.m_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+            {
+              cout << "  Retry shielding:";
+              if( retry_solution.m_input.phys_model_self_atten )
+              {
+                const auto &self = retry_solution.m_input.phys_model_self_atten;
+                if( self->material )
+                  cout << " self-atten=" << self->material->name;
+                else
+                  cout << " self-atten AN=" << self->atomic_number << " AD=" << self->areal_density;
+              }
+              else
+              {
+                cout << " no self-atten";
+              }
+              
+              if( !retry_solution.m_input.phys_model_external_attens.empty() )
+              {
+                cout << ", external-atten=" << retry_solution.m_input.phys_model_external_attens.size();
+                for( size_t i = 0; i < retry_solution.m_input.phys_model_external_attens.size(); ++i )
+                {
+                  const auto &ext = retry_solution.m_input.phys_model_external_attens[i];
+                  if( ext->material )
+                    cout << "[" << i << "]=" << ext->material->name;
+                  else
+                    cout << "[" << i << "] AN=" << ext->atomic_number << " AD=" << ext->areal_density;
+                }
+              }
+              else
+              {
+                cout << ", no external-atten";
+              }
+              cout << ", use_hoerl=" << (retry_solution.m_input.phys_model_use_hoerl ? "true" : "false") << endl;
+            }
+            cout << endl;
+          }
+          
+          
+          if( (retry_solution.m_status == RelActCalcManual::ManualSolutionStatus::Success)
+             && (retry_chi2_dof < chi2_dof) )
+          {
+            if( PeakFitImprove::debug_printout )
+              cout << "Will use retry solution!" << endl;
+            chi2_dof = retry_chi2_dof;
+            manual_solution = std::move(retry_solution);
+          }else
+          {
+            if( PeakFitImprove::debug_printout )
+              cout << "Will use original solution!" << endl;
+          }
+        }
+        
+        
         if( manual_solution.m_status != RelActCalcManual::ManualSolutionStatus::Success )
           throw std::runtime_error( "Failed to fit initial RelActCalcManual::RelEffSolution: " + manual_solution.m_error_message );
         
-        
-        cout << "Successfully fitted initial RelActCalcManual::RelEffSolution: chi2/dof="
-        << manual_solution.m_chi2 << "/" << manual_solution.m_dof << "="
-        << manual_solution.m_chi2 / manual_solution.m_dof
-        << " using " << peak_match_results.peaks_matched.size() << " peaks"
-        << endl;
-        cout << endl;
+        if( PeakFitImprove::debug_printout )
+        {
+          cout << "Successfully fitted initial RelActCalcManual::RelEffSolution: chi2/dof="
+          << manual_solution.m_chi2 << "/" << manual_solution.m_dof << "="
+          << manual_solution.m_chi2 / manual_solution.m_dof
+          << " using " << peak_match_results.peaks_matched.size() << " peaks"
+          << endl;
+          cout << endl;
+          
+          // Print expected vs observed peak areas and efficiency for each peak
+          cout << "Peak areas and efficiency:" << endl;
+          cout << "Energy(keV)  Observed    Expected    Efficiency  Obs/Exp" << endl;
+          cout << "--------------------------------------------------------" << endl;
+          for( const RelActCalcManual::GenericPeakInfo &peak : manual_solution.m_input.peaks )
+          {
+            const double efficiency = manual_solution.relative_efficiency( peak.m_energy );
+            
+            // Calculate expected source counts from relative activities and yields
+            double expected_src_counts = 0.0;
+            for( const RelActCalcManual::GenericLineInfo &line : peak.m_source_gammas )
+            {
+              const double rel_activity = manual_solution.relative_activity( line.m_isotope );
+              expected_src_counts += rel_activity * line.m_yield;
+            }
+            
+            const double expected_counts = expected_src_counts * efficiency;
+            const double obs_over_exp = (expected_counts > 0.0) ? (peak.m_counts / expected_counts) : 0.0;
+            
+            cout << fixed;
+            cout << setw(10) << setprecision(2) << peak.m_energy
+                 << setw(12) << setprecision(1) << peak.m_counts
+                 << setw(12) << setprecision(1) << expected_counts
+                 << setw(12) << setprecision(4) << efficiency
+                 << setw(10) << setprecision(3) << obs_over_exp
+                 << endl;
+          }
+          cout << endl;
+        }//if( PeakFitImprove::debug_printout )
         
         // Create rel_eff lambda from manual solution - handles extrapolation clamping
         const auto manual_rel_eff = [&manual_solution, &peaks_matched]( double energy ) -> double {
@@ -1904,13 +2343,16 @@ PeakFitResult fit_peaks_for_nuclides(
         initial_rois = cluster_gammas_to_rois( manual_rel_eff, nucs_and_acts, foreground,
                                               fwhmFnctnlForm, fwhm_coefficients,
                                               lower_fwhm_energy, upper_fwhm_energy,
-                                              lowest_energy_gamma, highest_energy_gamma,
+                                              min_valid_energy, max_valid_energy,
                                               manual_settings );
         
-        cout << "Initial ROIs from RelActManual: ";
-        for( const auto &roi : initial_rois )
-          cout << "[" << roi.lower_energy << ", " << roi.upper_energy << "], ";
-        cout << endl;
+        if( PeakFitImprove::debug_printout )
+        {
+          cout << "Initial ROIs from RelActManual: ";
+          for( const auto &roi : initial_rois )
+            cout << "[" << roi.lower_energy << ", " << roi.upper_energy << "], ";
+          cout << endl;
+        }
       }catch( std::exception &e )
       {
         cerr << "Error trying to fit initial manual rel-eff solution: " << e.what() << endl;
@@ -1919,7 +2361,7 @@ PeakFitResult fit_peaks_for_nuclides(
         initial_rois = estimate_initial_rois_fallback(
           auto_search_peaks, foreground, source_nuclides, drf, isHPGe,
           fwhmFnctnlForm, fwhm_coefficients, lower_fwhm_energy, upper_fwhm_energy,
-          lowest_energy_gamma, highest_energy_gamma, manual_settings );
+          manual_settings );
 
         fallback_warning = "RelActManual fitting failed (" + std::string(e.what())
                          + "); used simplified activity estimation fallback";
@@ -1993,14 +2435,50 @@ PeakFitResult fit_peaks_for_nuclides(
     options.skew_type = skew_type;
     options.additional_br_uncert = config.rel_eff_auto_base_rel_eff_uncert;
 
+    /*
+    // If we only have a couple ROIs, lets not try to fit higher-order FWHM coefficients, unless one of the ROIs is
+    //  really wide (here using 100 keV - which is fairly arbitrary)
+    // Not tested - so leaving commented out
+    if( !options.rois.empty()
+       && (options.rois.size() <= 2)
+       && ((options.rois.front().upper_energy - options.rois.front().lower_energy) < 100.0)
+       && ((options.rois.back().upper_energy - options.rois.back().lower_energy) < 100.0) )
+    {
+      switch( options.fwhm_form )
+      {
+        case RelActCalcAuto::FwhmForm::Gadras:
+        case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:
+        case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy:
+        case RelActCalcAuto::FwhmForm::Polynomial_2:
+        case RelActCalcAuto::FwhmForm::Berstein_2:
+        case RelActCalcAuto::FwhmForm::NotApplicable:
+          // No change - keep original form
+          break;
+          
+        case RelActCalcAuto::FwhmForm::Polynomial_3:
+        case RelActCalcAuto::FwhmForm::Polynomial_4:
+        case RelActCalcAuto::FwhmForm::Polynomial_5:
+        case RelActCalcAuto::FwhmForm::Polynomial_6:
+          options.fwhm_form = RelActCalcAuto::FwhmForm::Polynomial_2;
+          break;
+          
+        case RelActCalcAuto::FwhmForm::Berstein_3:
+        case RelActCalcAuto::FwhmForm::Berstein_4:
+        case RelActCalcAuto::FwhmForm::Berstein_5:
+        case RelActCalcAuto::FwhmForm::Berstein_6:
+          options.fwhm_form = RelActCalcAuto::FwhmForm::Berstein_2;
+          break;
+      }//switch( m_options.fwhm_form )
+    }//if( we shouldnt fit a higher-order FWHM )
+     */
+    
     // Call RelActAuto with the configured options
     result = fit_peaks_for_nuclide_relactauto(
       auto_search_peaks, foreground, source_nuclides,
       options, long_background, drf, config_with_nucs,
       fwhmFnctnlForm, fwhm_coefficients, lower_fwhm_energy, upper_fwhm_energy );
 
-  }
-  catch( const std::exception &e )
+  }catch( const std::exception &e )
   {
     result.status = RelActCalcAuto::RelActAutoSolution::Status::FailToSolveProblem;
     result.error_message = e.what();
@@ -2403,6 +2881,7 @@ bool should_use_step_continuum(
 }//should_use_step_continuum
 
 
+
 /** Clusters gamma lines and creates ROIs based on a relative efficiency function.
 
  This function takes gamma lines from the specified nuclides, estimates their relative
@@ -2477,12 +2956,12 @@ vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
       // Show photons near 807 keV
       for( const SandiaDecay::EnergyRatePair &photon : photons )
       {
-        if( photon.energy >= 800.0 && photon.energy <= 820.0 )
-        {
-          const double rel_eff = rel_eff_fcn( photon.energy );
-          cerr << "    *** Photon near 807 keV: " << photon.energy << " keV, rate=" << photon.numPerSecond
-               << " /s, rel_eff=" << rel_eff << ", est_counts=" << (photon.numPerSecond * rel_eff) << endl;
-        }
+        //if( photon.energy >= 800.0 && photon.energy <= 820.0 )
+        //{
+        //  const double rel_eff = rel_eff_fcn( photon.energy );
+        //  cerr << "    *** Photon near 807 keV: " << photon.energy << " keV, rate=" << photon.numPerSecond
+        //       << " /s, rel_eff=" << rel_eff << ", est_counts=" << (photon.numPerSecond * rel_eff) << endl;
+        //}
       }
     }
 
@@ -2522,15 +3001,15 @@ vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
   if( PeakFitImprove::debug_printout )
   {
     cerr << "cluster_gammas_to_rois: Input gammas (" << gammas_by_counts.size() << " total):" << endl;
-    for( const auto &gc : gammas_by_energy )
-    {
+    //for( const auto &gc : gammas_by_energy )
+    //{
       // Show all gammas, but highlight those in 800-820 keV range
-      if( gc.first >= 800.0 && gc.first <= 820.0 )
-        cerr << "  *** " << gc.first << " keV, est_counts=" << gc.second << " ***" << endl;
-    }
+    //  if( gc.first >= 800.0 && gc.first <= 820.0 )
+    //    cerr << "  *** " << gc.first << " keV, est_counts=" << gc.second << " ***" << endl;
+    //}
     // Also show top 10 by counts
-    cerr << "  Top 10 by expected counts:" << endl;
-    for( size_t i = 0; i < std::min( gammas_by_counts.size(), size_t(10) ); ++i )
+    cerr << "  Top 20 by expected counts:" << endl;
+    for( size_t i = 0; i < std::min( gammas_by_counts.size(), size_t(20) ); ++i )
       cerr << "    " << gammas_by_counts[i].first << " keV, est_counts=" << gammas_by_counts[i].second << endl;
   }
 
@@ -2579,8 +3058,8 @@ vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
 
     const double sigma = fwhm / PhysicalUnits::fwhm_nsigma;
 
-    const double lower = energy - settings.cluster_num_sigma * sigma;
-    const double upper = energy + settings.cluster_num_sigma * sigma;
+    const double lower = std::max( lowest_energy, energy - settings.cluster_num_sigma * sigma );
+    const double upper = std::min( highest_energy, energy + settings.cluster_num_sigma * sigma );
 
     // Find all gammas in this range
     const auto start_remove = std::lower_bound( begin(gammas_by_energy), end(gammas_by_energy),
@@ -2629,18 +3108,17 @@ vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
       cluster_info.gamma_amplitudes = std::move( gamma_amplitudes_in_cluster );
       clustered_gammas.push_back( std::move( cluster_info ) );
     }
-    else if( PeakFitImprove::debug_printout )
+    
+    if( PeakFitImprove::debug_printout )
     {
+      const string status_str = (passes_data_area && passes_counts && passes_signif) ? "Accepted" : "Rejected";
       // Print why this cluster was rejected
-      cerr << "cluster_gammas_to_rois: Rejected cluster [" << lower << ", " << upper << "] keV (energy="
-           << energy << " keV): ";
-      if( !passes_data_area )
-        cerr << "data_area=" << data_area << " < " << settings.min_data_area_keep << "; ";
-      if( !passes_counts )
-        cerr << "est_counts=" << counts_in_region << " < " << settings.min_est_peak_area_keep << "; ";
-      if( !passes_signif )
-        cerr << "signif=" << signif << " < " << settings.min_est_significance_keep << "; ";
-      cerr << endl;
+      cerr << "cluster_gammas_to_rois: " << status_str << " [" << std::fixed << std::setprecision(1) << lower << ", " << upper << "] keV (e="
+           << energy << " keV): "
+           << "data=" << data_area << (passes_data_area ? " > " : " < ") << settings.min_data_area_keep << "; "
+           << "est_counts=" << counts_in_region << (passes_counts ? " > " : " < ") << settings.min_est_peak_area_keep << "; "
+         << "sig=" << signif << (passes_signif ? " > " : " < ") << settings.min_est_significance_keep << "; "
+         << endl;
     }
   }//for( const pair<double,double> &energy_counts : gammas_by_counts )
 
@@ -2738,8 +3216,8 @@ vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
     // Set new bounds based on weighted mean and effective FWHM
     const double old_lower = cluster.lower;
     const double old_upper = cluster.upper;
-    cluster.lower = weighted_mean - settings.roi_width_num_fwhm_lower * effective_fwhm;
-    cluster.upper = weighted_mean + settings.roi_width_num_fwhm_upper * effective_fwhm;
+    cluster.lower = std::max( lowest_energy, weighted_mean - settings.roi_width_num_fwhm_lower * effective_fwhm );
+    cluster.upper = std::min( highest_energy, weighted_mean + settings.roi_width_num_fwhm_upper * effective_fwhm );
     
     if( PeakFitImprove::debug_printout )
     {
@@ -2769,7 +3247,7 @@ vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
              << " -> new upper=" << std::max( merged_clusters.back().upper, cluster.upper ) << endl;
       }
 
-      merged_clusters.back().upper = std::max( merged_clusters.back().upper, cluster.upper );
+      merged_clusters.back().upper = std::min( highest_energy, std::max( merged_clusters.back().upper, cluster.upper ) );
       merged_clusters.back().gamma_energies.insert(
         end(merged_clusters.back().gamma_energies),
         begin(cluster.gamma_energies),
@@ -3058,8 +3536,8 @@ vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
       for( const double bp_energy : breakpoint_energies )
       {
         ClusteredGammaInfo sub_cluster;
-        sub_cluster.lower = seg_start;
-        sub_cluster.upper = bp_energy;
+        sub_cluster.lower = std::max( lowest_energy, seg_start );
+        sub_cluster.upper = std::min( highest_energy, bp_energy );
 
         // Add gamma lines that fall within this segment
         for( size_t j = gamma_start_idx; j < cluster.gamma_energies.size(); ++j )
@@ -3083,8 +3561,8 @@ vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
 
       // Add the last segment
       ClusteredGammaInfo sub_cluster;
-      sub_cluster.lower = seg_start;
-      sub_cluster.upper = cluster.upper;
+      sub_cluster.lower = std::max( lowest_energy, seg_start );
+      sub_cluster.upper = std::min( highest_energy, cluster.upper );
       for( size_t j = gamma_start_idx; j < cluster.gamma_energies.size(); ++j )
       {
         sub_cluster.gamma_energies.push_back( cluster.gamma_energies[j] );
@@ -3106,9 +3584,9 @@ vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
     RelActCalcAuto::RoiRange roi;
 
     // Use the pre-calculated bounds from cluster (based on weighted mean and effective FWHM)
-    // Constrain lower bound to not overlap with previous ROI
-    roi.lower_energy = std::max( cluster.lower, previous_roi_upper );
-    roi.upper_energy = cluster.upper;
+    // Constrain lower bound to not overlap with previous ROI, and clamp to valid energy range
+    roi.lower_energy = std::max( lowest_energy, std::max( cluster.lower, previous_roi_upper ) );
+    roi.upper_energy = std::min( highest_energy, cluster.upper );
 
     const double mid_energy = 0.5 * (roi.upper_energy + roi.lower_energy);
     const double mid_energy_clamped = have_fwhm_range
@@ -3245,6 +3723,33 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
 
   double total_score = 0.0;
 
+  const bool write_n42 = true;
+
+  // Initialize HTML output file (only if we're writing N42 files)
+  std::unique_ptr<ofstream> html_output;
+  size_t chart_counter = 0;  // For unique div IDs
+
+  if( write_n42 )
+  {
+    html_output = std::make_unique<ofstream>( "relact_auto_peakfit_dev.html" );
+    try
+    {
+      D3SpectrumExport::write_html_page_header( *html_output, "RelActAuto Peak Fits", "InterSpec_resources" );
+    }catch( std::exception &e )
+    {
+      cerr << "\n\nError: " << e.what() << endl;
+      cerr << "You probably need to symbolically link InterSpec_resources to your CWD." << endl;
+      exit(1);
+    }
+
+    *html_output << "<body>" << endl;
+    *html_output << "<style>"
+      << ".TopLinesTable{ margin-top: 25px; margin-left: auto; margin-right: auto; border-collapse: collapse; border: 1px solid black; }" << endl
+      << "table, th, td{ border: 1px solid black; }" << endl
+      << "fieldset{width: 90vw; margin-left: auto; margin-right: auto; margin-top: 20px;}" << endl
+      << "</style>" << endl;
+  }
+
   for( const DataSrcInfo &src_info : srcs_info )
   {
     const InjectSourceInfo &src = src_info.src_info;
@@ -3276,11 +3781,45 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
     {
       source_nuclides.push_back( db->nuclide("Tl201"));
       source_nuclides.push_back( db->nuclide("Tl202"));
+    }else if( src_name == "Tl201" )
+    {
+      source_nuclides.push_back( db->nuclide("Tl201"));
+      source_nuclides.push_back( db->nuclide("Tl202"));
+    }else if( src_name == "U233" )
+    {
+      // Need to add U x-ray
+      source_nuclides.push_back( db->nuclide("U232"));
+      source_nuclides.push_back( db->nuclide("U233"));
+    }else if( src_name == "Pu238" )
+    {
+      // Need to add Pu x-ray
+      source_nuclides.push_back( db->nuclide("Pu238"));
+      source_nuclides.push_back( db->nuclide("Pu239"));
+      source_nuclides.push_back( db->nuclide("Pu241"));
+    }else if( src_name == "Pu239" )
+    {
+      // Need to add Pu x-ray
+      source_nuclides.push_back( db->nuclide("Pu239"));
+      source_nuclides.push_back( db->nuclide("Pu241"));
     }else if( src_name == "Uore" )
     {
       source_nuclides.push_back( db->nuclide("U235") );
       source_nuclides.push_back( db->nuclide("U238") );
       source_nuclides.push_back( db->nuclide("Ra226") );
+    }else if( src_name == "U235" )
+    {
+      // Need to add U x-ray
+      source_nuclides.push_back( db->nuclide("U235") );
+      source_nuclides.push_back( db->nuclide("U238") );
+    }else if( src_name == "Xe133" )
+    {
+      source_nuclides.push_back( db->nuclide("Xe133") );
+      source_nuclides.push_back( db->nuclide("Xe133m") );
+    }else if( src_name == "Cf252" )
+    {
+      //source_nuclides.push_back( db->nuclide("Cf252") );
+      //source_nuclides.push_back( <"H(n,g)"> );
+      continue;
     }else if( src_name == "Am241Li" )
     {
       continue;
@@ -3410,91 +3949,53 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
 
 
       // Score the fit results using only signal photopeaks
-      FinalFit_GA::FinalFitScore fit_score;
+      CombinedPeakFitScore combined_score;
 
-      for( const PeakDef &found_peak : fit_peaks )
-      {
-        const double found_energy = found_peak.mean();
-        const double found_fwhm = found_peak.fwhm();
-        const double peak_lower_contrib = found_energy - config.num_sigma_contribution * found_peak.sigma();
-        const double peak_upper_contrib = found_energy + config.num_sigma_contribution * found_peak.sigma();
+      // Calculate FinalFitScore using refactored helper
+      combined_score.final_fit_score = FinalFit_GA::calculate_final_fit_score(
+        fit_peaks,
+        src_info.expected_signal_photopeaks,
+        config.num_sigma_contribution
+      );
 
-        // Find the nearest expected peak from signal-only photopeaks
-        const ExpectedPhotopeakInfo *nearest_signal_peak = nullptr;
+      // Calculate PeakFindAndFitWeights using refactored helper
+      combined_score.initial_fit_weights = InitialFit_GA::calculate_peak_find_weights(
+        fit_peaks,
+        src_info.expected_signal_photopeaks,
+        config.num_sigma_contribution
+      );
 
-        for( const ExpectedPhotopeakInfo &expected_peak : src_info.expected_signal_photopeaks )
-        {
-          const double expected_energy = expected_peak.effective_energy;
+      // Calculate CandidatePeakScore using refactored helper
+      combined_score.candidate_peak_score = CandidatePeak_GA::calculate_candidate_peak_score_for_source(
+        fit_peaks,
+        src_info.expected_signal_photopeaks
+      );
 
-          if( (expected_energy >= peak_lower_contrib) && (expected_energy <= peak_upper_contrib) )
-          {
-            if( !nearest_signal_peak || (fabs(expected_energy - found_energy) < fabs(nearest_signal_peak->effective_energy - found_energy)) )
-              nearest_signal_peak = &expected_peak;
-          }
-        }//for( const ExpectedPhotopeakInfo &expected_peak : src_info.expected_signal_photopeaks )
+      // Correct score to exclude escape peaks from penalty counts
+      CandidatePeak_GA::correct_score_for_escape_peaks(
+        combined_score.candidate_peak_score,
+        src_info.expected_signal_photopeaks
+      );
 
-        if( nearest_signal_peak )
-        {
-          fit_score.num_peaks_used += 1;
-
-          const double expected_energy = nearest_signal_peak->effective_energy;
-          const double expected_fwhm = nearest_signal_peak->effective_fwhm;
-          const double expected_sigma = expected_fwhm / 2.35482;
-          const double expected_area = nearest_signal_peak->peak_area;
-
-          const double area_diff = fabs( found_peak.amplitude() - expected_area );
-          const double area_score = area_diff / sqrt( (expected_area < 1.0) ? 1.0 : expected_area );
-          const double width_score = fabs( expected_fwhm - found_fwhm ) / expected_sigma;
-          const double position_score = fabs( found_energy - expected_energy ) / expected_sigma;
-
-          fit_score.area_score += std::min( area_score, 20.0 );
-          fit_score.width_score += std::min( width_score, 1.0 );
-          fit_score.position_score += std::min( position_score, 1.5 );
-        }else
-        {
-          // Found an extra peak we didn't expect
-          if( found_peak.amplitude() < 1.0 ) //Not a real peak, so ignore it
-            continue;
-
-          const double sqrt_area = sqrt( found_peak.amplitude() ); //The uncertainty that comes from the RelEff fit may be way small
-          const double area_uncert = found_peak.amplitudeUncert() > 0.0 ? (std::max)(found_peak.amplitudeUncert(), sqrt_area) : sqrt_area;
-
-          // If this is a significant peak that we didn't expect, penalize - the 8.0 is arbitrary - and we dont really ever expect to encounter having to assign this penalty
-          if( found_peak.amplitude() > 8.0 * area_uncert )
-          {
-            if( PeakFitImprove::debug_printout )
-              cout << "Found unexpected peak {mean: " << found_peak.mean()
-                   << ", fwhm: " << found_peak.fwhm()
-                   << ", area: " << found_peak.amplitude()
-                   << ", area_uncert: " << found_peak.amplitudeUncert() << "}" << endl;
-          }
-
-          fit_score.ignored_unexpected_peaks += 1;
-          fit_score.unexpected_peaks_sum_significance += std::min( 7.5, found_peak.amplitude() / area_uncert ); //Cap at 7.5 sigma (arbitrary)
-        }//if( nearest_signal_peak ) / else
-      }//for( const PeakDef &found_peak : fit_peaks )
-
-      // Calculate total weight for scoring
-      if( fit_score.num_peaks_used <= 1 )
-        fit_score.total_weight = fit_score.area_score;
-      else
-        fit_score.total_weight = fit_score.area_score / fit_score.num_peaks_used;
+      // Calculate combined final weight (simple sum)
+      combined_score.final_weight = combined_score.initial_fit_weights.find_weight
+                                    + combined_score.final_fit_score.total_weight 
+                                    + combined_score.candidate_peak_score.score;
 
       // Add to cumulative total score
-      total_score += fit_score.total_weight;
+      total_score += combined_score.final_weight;
 
       if( PeakFitImprove::debug_printout )
       {
-        cout << "Fit score for " << src.src_name << ":" << endl;
-        cout << fit_score.print( "fit_score" ) << endl;
+        cout << "Combined score for " << src.src_name << ":" << endl;
+        cout << combined_score.print( "combined_score" ) << endl;
       }
 
       // Write N42 file with foreground, background, and fit peaks (only if fit succeeded)
       if( best_result.status == RelActCalcAuto::RelActAutoSolution::Status::Success )
       {
-        const bool write_n42 = true;
         if( write_n42 )
-      {
+        {
         string outdir = "output_n42_relactauto";
         if( !SpecUtils::is_directory( outdir ) && !SpecUtils::create_directory( outdir ) )
           cerr << "Failed to create directory '" << outdir << "'" << endl;
@@ -3515,6 +4016,13 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
         const string out_n42 = SpecUtils::append_path( outdir, src.src_name ) + "_relactauto_fit.n42";
 
         SpecMeas output;
+        output.set_manufacturer( src.spec_file->manufacturer() );
+        output.set_detector_type( src.spec_file->detector_type() );
+        output.set_instrument_model( src.spec_file->instrument_model() );
+        output.set_instrument_type( src.spec_file->instrument_type() );
+        output.set_filename( src.spec_file->filename() );
+
+        output.remove_measurements( output.measurements() );
 
         // Generate a unique UUID based on current time + random component
         {
@@ -3532,7 +4040,7 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
           output.set_uuid( uuid_oss.str() );
         }
 
-        output.add_remark( fit_score.print( "fit_score" ) );
+        output.add_remark( combined_score.print( "combined_score" ) );
         output.add_remark( "RelActAuto solution chi2/dof=" + std::to_string( solution.m_chi2 ) + "/" + std::to_string( solution.m_dof ) );
 
         output.set_instrument_model( "RelActAuto Fit Test" );
@@ -3591,6 +4099,357 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
 
         if( PeakFitImprove::debug_printout )
           cout << "Wrote N42 file: " << out_n42 << endl;
+
+        // Generate reference lines for the nuclides that were fit
+        std::map<std::string, std::string> reference_lines_json;
+
+        // Define colors to rotate through for different nuclides
+        const std::vector<Wt::WColor> colors = {
+          Wt::WColor(0, 0, 139),      // darkBlue
+          Wt::WColor(139, 0, 0),      // darkRed
+          Wt::WColor(0, 100, 0),      // darkGreen
+          Wt::WColor(139, 0, 139),    // darkMagenta
+          Wt::WColor(0, 139, 139),    // darkCyan
+          Wt::WColor(255, 140, 0),    // darkOrange
+        };
+
+        size_t color_index = 0;
+
+        for( size_t rel_eff_index = 0; rel_eff_index < solution.m_rel_activities.size(); ++rel_eff_index )
+        {
+          const std::vector<RelActCalcAuto::NuclideRelAct> &nuclides = solution.m_rel_activities[rel_eff_index];
+
+          for( const RelActCalcAuto::NuclideRelAct &nuc_info : nuclides )
+          {
+            const std::string nuc_name = nuc_info.name();
+
+            // Create RefLineInput for this nuclide
+            RefLineInput input;
+            input.m_input_txt = nuc_name;
+
+            // Set age if it was fit
+            if( nuc_info.age_was_fit && nuc_info.age > 0 )
+            {
+              input.m_age = std::to_string(nuc_info.age) + " s";
+            }
+
+            // Rotate through colors
+            input.m_color = colors[color_index % colors.size()];
+            color_index++;
+
+            input.m_showGammas = true;
+            input.m_showXrays = true;
+            input.m_showAlphas = false;
+            input.m_showBetas = false;
+            input.m_promptLinesOnly = false;
+            input.m_lower_br_cutt_off = 0.0; // Only show lines with BR > 1%
+
+            // Generate reference line info
+            std::shared_ptr<ReferenceLineInfo> ref_info = ReferenceLineInfo::generateRefLineInfo( input );
+
+            if( ref_info && ref_info->m_validity == ReferenceLineInfo::InputValidity::Valid )
+            {
+              std::string ref_json;
+              ref_info->toJson( ref_json );
+              reference_lines_json[nuc_name] = ref_json;
+            }
+          }
+        }
+
+        // Add reference lines for valid energy range
+        {
+          const auto [min_valid_energy, max_valid_energy] = find_valid_energy_range( foreground );
+
+          if( (min_valid_energy > 0.0) && (max_valid_energy > min_valid_energy) )
+          {
+            // Create RefLineInput for minimum energy
+            RefLineInput min_input;
+            min_input.m_input_txt = std::to_string(min_valid_energy) + " keV";
+            min_input.m_color = Wt::WColor(255, 165, 0); // Orange
+            min_input.m_showGammas = true;
+            min_input.m_showXrays = false;
+            min_input.m_showAlphas = false;
+            min_input.m_showBetas = false;
+            min_input.m_promptLinesOnly = false;
+            min_input.m_lower_br_cutt_off = 0.0;
+
+            std::shared_ptr<ReferenceLineInfo> min_ref_info = ReferenceLineInfo::generateRefLineInfo( min_input );
+            if( min_ref_info && min_ref_info->m_validity == ReferenceLineInfo::InputValidity::Valid )
+            {
+              std::string min_ref_json;
+              min_ref_info->toJson( min_ref_json );
+              reference_lines_json["Valid Range Min"] = min_ref_json;
+            }
+
+            // Create RefLineInput for maximum energy
+            RefLineInput max_input;
+            max_input.m_input_txt = std::to_string(max_valid_energy) + " keV";
+            max_input.m_color = Wt::WColor(255, 165, 0); // Orange
+            max_input.m_showGammas = true;
+            max_input.m_showXrays = false;
+            max_input.m_showAlphas = false;
+            max_input.m_showBetas = false;
+            max_input.m_promptLinesOnly = false;
+            max_input.m_lower_br_cutt_off = 0.0;
+
+            std::shared_ptr<ReferenceLineInfo> max_ref_info = ReferenceLineInfo::generateRefLineInfo( max_input );
+            if( max_ref_info && max_ref_info->m_validity == ReferenceLineInfo::InputValidity::Valid )
+            {
+              std::string max_ref_json;
+              max_ref_info->toJson( max_ref_json );
+              reference_lines_json["Valid Range Max"] = max_ref_json;
+            }
+          }
+        }
+
+        // Setup chart options
+        std::string title = src_name + " - RelActAuto Fit";
+        std::string dataTitle = "";
+        bool useLogYAxis = true;
+        bool showVerticalGridLines = false;
+        bool showHorizontalGridLines = false;
+        bool legendEnabled = true;
+        bool compactXAxis = true;
+        bool showPeakUserLabels = false;
+        bool showPeakEnergyLabels = false;
+        bool showPeakNuclideLabels = false;
+        bool showPeakNuclideEnergyLabels = false;
+        bool showEscapePeakMarker = false;
+        bool showComptonPeakMarker = false;
+        bool showComptonEdgeMarker = false;
+        bool showSumPeakMarker = false;
+        bool backgroundSubtract = false;
+
+        // Set energy range
+        float xMin = 0.0f;
+        float xMax = 3000.0f;
+        if( !solution.m_final_roi_ranges.empty() )
+        {
+          xMin = static_cast<float>( solution.m_final_roi_ranges.front().lower_energy );
+          xMax = static_cast<float>( solution.m_final_roi_ranges.back().upper_energy );
+        }
+        else if( foreground )
+        {
+          xMin = static_cast<float>( foreground->gamma_energy_min() );
+          xMax = static_cast<float>( foreground->gamma_energy_max() );
+        }
+
+        D3SpectrumExport::D3SpectrumChartOptions options(
+          title, "Energy (keV)", "Counts/Channel",
+          dataTitle, useLogYAxis,
+          showVerticalGridLines, showHorizontalGridLines,
+          legendEnabled, compactXAxis,
+          showPeakUserLabels, showPeakEnergyLabels, showPeakNuclideLabels,
+          showPeakNuclideEnergyLabels, showEscapePeakMarker, showComptonPeakMarker,
+          showComptonEdgeMarker, showSumPeakMarker, backgroundSubtract,
+          xMin, xMax, reference_lines_json
+        );
+
+        // Setup spectrum data with peaks
+        D3SpectrumExport::D3SpectrumOptions foreground_opts;
+        foreground_opts.line_color = "black";
+        foreground_opts.title = src_name;
+        foreground_opts.display_scale_factor = 1.0;
+        foreground_opts.spectrum_type = SpecUtils::SpectrumType::Foreground;
+
+        // Convert fit_peaks to shared_ptr vector for peak_json
+        vector<shared_ptr<const PeakDef>> fit_peaks_ptrs;
+        for( const PeakDef &p : fit_peaks )
+          fit_peaks_ptrs.push_back( make_shared<PeakDef>( p ) );
+
+        foreground_opts.peaks_json = PeakDef::peak_json( fit_peaks_ptrs, foreground, Wt::WColor(), false );
+
+        // Create unique div ID
+        const string div_id = "chart_" + std::to_string(chart_counter);
+        chart_counter++;
+
+        // Write HTML fieldset and div
+        *html_output << "<fieldset style=\"\">" << endl
+          << "<legend>" << src_name << " (chi2/dof=" << solution.m_chi2 << "/" << solution.m_dof << ")</legend>" << endl;
+        *html_output << "<div id=\"" << div_id << "\" class=\"chart\" oncontextmenu=\"return false;\"></div>" << endl;
+        *html_output << "<script>" << endl;
+
+        // Initialize chart
+        D3SpectrumExport::write_js_for_chart( *html_output, div_id, options.m_dataTitle, options.m_xAxisTitle, options.m_yAxisTitle );
+
+        // Set spectrum data
+        std::vector< std::pair<const SpecUtils::Measurement *,D3SpectrumExport::D3SpectrumOptions> > measurements;
+        measurements.emplace_back( foreground.get(), foreground_opts );
+
+        // Add background if present
+        if( long_background )
+        {
+          D3SpectrumExport::D3SpectrumOptions background_opts;
+          background_opts.line_color = "steelblue";
+          background_opts.title = "Background";
+          background_opts.display_scale_factor = foreground->live_time() / long_background->live_time();
+          background_opts.spectrum_type = SpecUtils::SpectrumType::Background;
+          measurements.emplace_back( long_background.get(), background_opts );
+        }
+
+        D3SpectrumExport::write_and_set_data_for_chart( *html_output, div_id, measurements );
+
+        // Write resize handler
+        *html_output << R"delim(
+const resizeChart)delim" << chart_counter-1 << R"delim( = function(){
+  let height = window.innerHeight;
+  let width = document.documentElement.clientWidth;
+  let el = spec_chart_)delim" << div_id << R"delim(.chart;
+  el.style.width = 0.8*width + "px";
+  el.style.height = Math.min(500,Math.max(250, Math.min(0.4*width,height-175))) + "px";
+  el.style.marginLeft = 0.05*width + "px";
+  el.style.marginRight = 0.05*width + "px";
+  )delim"
+          << "  spec_chart_" << div_id << R"delim(.handleResize();
+};
+
+window.addEventListener('resize', resizeChart)delim" << chart_counter-1 << R"delim();
+)delim" << endl;
+
+        // Set chart options (this creates reference_lines_<div_id> variable)
+        D3SpectrumExport::write_set_options_for_chart( *html_output, div_id, options );
+
+        // Apply reference lines
+        *html_output << "spec_chart_" << div_id << ".setReferenceLines( reference_lines_" << div_id << " );" << endl;
+
+        // Trigger initial resize
+        *html_output << "resizeChart" << chart_counter-1 << "();" << endl;
+        *html_output << "</script>" << endl;
+
+        // Add fit score information with three sections
+        *html_output << "<div style=\"margin: 10px auto; max-width: 800px;\">" << endl;
+        *html_output << "<h4>Fit Quality Metrics</h4>" << endl;
+
+        // === Combined Score (prominent display) ===
+        *html_output << "<div style=\"background: #f0f8ff; padding: 10px; margin-bottom: 15px; border: 2px solid #4682b4; border-radius: 5px;\">" << endl;
+        *html_output << "<h5 style=\"margin: 0 0 10px 0;\">Combined Score</h5>" << endl;
+        *html_output << "<table style=\"width: 100%; border-collapse: collapse; font-size: 0.9em;\">" << endl;
+        *html_output << "<tr><th style=\"text-align: left; padding: 5px;\">Metric</th>"
+                     << "<th style=\"text-align: right; padding: 5px;\">Value</th></tr>" << endl;
+        *html_output << "<tr><td style=\"padding: 5px;\"><strong>Final Weight (Combined)</strong></td>"
+                     << "<td style=\"text-align: right; padding: 5px;\"><strong>"
+                     << combined_score.final_weight << "</strong></td></tr>" << endl;
+        *html_output << "<tr><td style=\"padding: 5px;\">Component 0: Peak Find Score</td>"
+                     << "<td style=\"text-align: right; padding: 5px;\">"
+                     << combined_score.candidate_peak_score.score << "</td></tr>" << endl;
+        *html_output << "<tr><td style=\"padding: 5px;\">Component 1: Find Weight</td>"
+                     << "<td style=\"text-align: right; padding: 5px;\">"
+                     << combined_score.initial_fit_weights.find_weight << "</td></tr>" << endl;
+        *html_output << "<tr><td style=\"padding: 5px;\">Component 2: Total Weight (Avrg nsigma off)</td>"
+                     << "<td style=\"text-align: right; padding: 5px;\">"
+                     << combined_score.final_fit_score.total_weight << "</td></tr>" << endl;
+        *html_output << "</table>" << endl;
+        *html_output << "</div>" << endl;
+
+        // === Final Fit Metrics (collapsible) ===
+        *html_output << "<details>" << endl;
+        *html_output << "<summary style=\"cursor: pointer; font-weight: bold; padding: 5px; background: #f5f5f5; border: 1px solid #ddd;\">"
+                     << "Final Fit Quality Metrics</summary>" << endl;
+        *html_output << "<table style=\"width: 100%; border-collapse: collapse; font-size: 0.9em; margin-top: 5px;\">" << endl;
+        *html_output << "<tr><th style=\"text-align: left; padding: 5px; border: 1px solid #ddd;\">Metric</th>"
+                     << "<th style=\"text-align: right; padding: 5px; border: 1px solid #ddd;\">Value</th></tr>" << endl;
+        *html_output << "<tr><td style=\"padding: 5px; border: 1px solid #ddd;\">Area Score</td>"
+                     << "<td style=\"text-align: right; padding: 5px; border: 1px solid #ddd;\">"
+                     << combined_score.final_fit_score.area_score << "</td></tr>" << endl;
+        *html_output << "<tr><td style=\"padding: 5px; border: 1px solid #ddd;\">Width Score</td>"
+                     << "<td style=\"text-align: right; padding: 5px; border: 1px solid #ddd;\">"
+                     << combined_score.final_fit_score.width_score << "</td></tr>" << endl;
+        *html_output << "<tr><td style=\"padding: 5px; border: 1px solid #ddd;\">Position Score</td>"
+                     << "<td style=\"text-align: right; padding: 5px; border: 1px solid #ddd;\">"
+                     << combined_score.final_fit_score.position_score << "</td></tr>" << endl;
+        *html_output << "<tr><td style=\"padding: 5px; border: 1px solid #ddd;\">Ignored Unexpected Peaks</td>"
+                     << "<td style=\"text-align: right; padding: 5px; border: 1px solid #ddd;\">"
+                     << combined_score.final_fit_score.ignored_unexpected_peaks << "</td></tr>" << endl;
+        *html_output << "<tr><td style=\"padding: 5px; border: 1px solid #ddd;\">Unexpected Peaks Sum Significance</td>"
+                     << "<td style=\"text-align: right; padding: 5px; border: 1px solid #ddd;\">"
+                     << combined_score.final_fit_score.unexpected_peaks_sum_significance << "</td></tr>" << endl;
+        *html_output << "<tr><td style=\"padding: 5px; border: 1px solid #ddd;\">Number of Peaks Used</td>"
+                     << "<td style=\"text-align: right; padding: 5px; border: 1px solid #ddd;\">"
+                     << combined_score.final_fit_score.num_peaks_used << "</td></tr>" << endl;
+        *html_output << "<tr><td style=\"padding: 5px; border: 1px solid #ddd;\">Total Weight (Area)</td>"
+                     << "<td style=\"text-align: right; padding: 5px; border: 1px solid #ddd;\">"
+                     << combined_score.final_fit_score.total_weight << "</td></tr>" << endl;
+        *html_output << "</table>" << endl;
+        *html_output << "</details>" << endl;
+
+        // === Peak Finding Metrics (collapsible) ===
+        *html_output << "<details style=\"margin-top: 10px;\">" << endl;
+        *html_output << "<summary style=\"cursor: pointer; font-weight: bold; padding: 5px; background: #f5f5f5; border: 1px solid #ddd;\">"
+                     << "Peak Finding & Area Accuracy Metrics</summary>" << endl;
+        *html_output << "<table style=\"width: 100%; border-collapse: collapse; font-size: 0.9em; margin-top: 5px;\">" << endl;
+        *html_output << "<tr><th style=\"text-align: left; padding: 5px; border: 1px solid #ddd;\">Metric</th>"
+                     << "<th style=\"text-align: right; padding: 5px; border: 1px solid #ddd;\">Value</th></tr>" << endl;
+        *html_output << "<tr><td style=\"padding: 5px; border: 1px solid #ddd;\">Find Weight (Score)</td>"
+                     << "<td style=\"text-align: right; padding: 5px; border: 1px solid #ddd;\">"
+                     << combined_score.initial_fit_weights.find_weight << "</td></tr>" << endl;
+        *html_output << "<tr><td style=\"padding: 5px; border: 1px solid #ddd;\">Def Wanted Area Weight (Mean)</td>"
+                     << "<td style=\"text-align: right; padding: 5px; border: 1px solid #ddd;\">"
+                     << combined_score.initial_fit_weights.def_wanted_area_weight << "</td></tr>" << endl;
+        *html_output << "<tr><td style=\"padding: 5px; border: 1px solid #ddd;\">Def Wanted Area Weight (Median)</td>"
+                     << "<td style=\"text-align: right; padding: 5px; border: 1px solid #ddd;\">"
+                     << combined_score.initial_fit_weights.def_wanted_area_median_weight << "</td></tr>" << endl;
+        *html_output << "<tr><td style=\"padding: 5px; border: 1px solid #ddd;\">Maybe Wanted Area Weight (Mean)</td>"
+                     << "<td style=\"text-align: right; padding: 5px; border: 1px solid #ddd;\">"
+                     << combined_score.initial_fit_weights.maybe_wanted_area_weight << "</td></tr>" << endl;
+        *html_output << "<tr><td style=\"padding: 5px; border: 1px solid #ddd;\">Maybe Wanted Area Weight (Median)</td>"
+                     << "<td style=\"text-align: right; padding: 5px; border: 1px solid #ddd;\">"
+                     << combined_score.initial_fit_weights.maybe_wanted_area_median_weight << "</td></tr>" << endl;
+        *html_output << "<tr><td style=\"padding: 5px; border: 1px solid #ddd;\">Not Wanted Area Weight (Mean)</td>"
+                     << "<td style=\"text-align: right; padding: 5px; border: 1px solid #ddd;\">"
+                     << combined_score.initial_fit_weights.not_wanted_area_weight << "</td></tr>" << endl;
+        *html_output << "<tr><td style=\"padding: 5px; border: 1px solid #ddd;\">Not Wanted Area Weight (Median)</td>"
+                     << "<td style=\"text-align: right; padding: 5px; border: 1px solid #ddd;\">"
+                     << combined_score.initial_fit_weights.not_wanted_area_median_weight << "</td></tr>" << endl;
+        *html_output << "</table>" << endl;
+        *html_output << "</details>" << endl;
+
+        // === Candidate Peak Metrics (collapsible) ===
+        *html_output << "<details style=\"margin-top: 10px;\">" << endl;
+        *html_output << "<summary style=\"cursor: pointer; font-weight: bold; padding: 5px; background: #f5f5f5; border: 1px solid #ddd;\">"
+                     << "Candidate Peak Detection Metrics</summary>" << endl;
+        *html_output << "<table style=\"width: 100%; border-collapse: collapse; font-size: 0.9em; margin-top: 5px;\">" << endl;
+        *html_output << "<tr><th style=\"text-align: left; padding: 5px; border: 1px solid #ddd;\">Metric</th>"
+                     << "<th style=\"text-align: right; padding: 5px; border: 1px solid #ddd;\">Value</th></tr>" << endl;
+        *html_output << "<tr><td style=\"padding: 5px; border: 1px solid #ddd;\">Score</td>"
+                     << "<td style=\"text-align: right; padding: 5px; border: 1px solid #ddd;\">"
+                     << combined_score.candidate_peak_score.score << "</td></tr>" << endl;
+        *html_output << "<tr><td style=\"padding: 5px; border: 1px solid #ddd;\">Number of Peaks Found</td>"
+                     << "<td style=\"text-align: right; padding: 5px; border: 1px solid #ddd;\">"
+                     << combined_score.candidate_peak_score.num_peaks_found << "</td></tr>" << endl;
+        *html_output << "<tr><td style=\"padding: 5px; border: 1px solid #ddd;\">Definitely Wanted Peaks Not Found</td>"
+                     << "<td style=\"text-align: right; padding: 5px; border: 1px solid #ddd;\">"
+                     << combined_score.candidate_peak_score.num_def_wanted_not_found << "</td></tr>" << endl;
+        if( !combined_score.candidate_peak_score.def_expected_but_not_detected.empty() )
+        {
+          *html_output << "<tr><td style=\"padding: 5px; border: 1px solid #ddd;\">Definitely Wanted Peaks Not Found (Energies)</td>"
+                       << "<td style=\"text-align: left; padding: 5px; border: 1px solid #ddd;\">";
+          for( size_t i = 0; i < combined_score.candidate_peak_score.def_expected_but_not_detected.size(); ++i )
+          {
+            if( i > 0 )
+              *html_output << ", ";
+            *html_output << std::fixed << std::setprecision(2) 
+                         << combined_score.candidate_peak_score.def_expected_but_not_detected[i].effective_energy << " keV";
+          }
+          *html_output << "</td></tr>" << endl;
+        }
+        *html_output << "<tr><td style=\"padding: 5px; border: 1px solid #ddd;\">Definitely Wanted Peaks Found</td>"
+                     << "<td style=\"text-align: right; padding: 5px; border: 1px solid #ddd;\">"
+                     << combined_score.candidate_peak_score.num_def_wanted_peaks_found << "</td></tr>" << endl;
+        *html_output << "<tr><td style=\"padding: 5px; border: 1px solid #ddd;\">Possibly Accepted Peaks Not Found</td>"
+                     << "<td style=\"text-align: right; padding: 5px; border: 1px solid #ddd;\">"
+                     << combined_score.candidate_peak_score.num_possibly_accepted_peaks_not_found << "</td></tr>" << endl;
+        *html_output << "<tr><td style=\"padding: 5px; border: 1px solid #ddd;\">Extra Peaks (Not Expected)</td>"
+                     << "<td style=\"text-align: right; padding: 5px; border: 1px solid #ddd;\">"
+                     << combined_score.candidate_peak_score.num_extra_peaks << "</td></tr>" << endl;
+        *html_output << "</table>" << endl;
+        *html_output << "</details>" << endl;
+        
+        *html_output << "<p>Definitely Wanted Peaks Not Found: "
+                     << combined_score.candidate_peak_score.num_def_wanted_not_found << "</p>" << endl;
+
+        *html_output << "</div>" << endl;
+
+        *html_output << "</fieldset>" << endl;
         }//if( write_n42 )
       }//if( best_result.status == Success )
 
@@ -3605,6 +4464,17 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
   cout << endl << "========================================" << endl;
   cout << "Total score across all " << srcs_info.size() << " sources: " << total_score << endl;
   cout << "========================================" << endl << endl;
+
+  // Close HTML file
+  if( html_output )
+  {
+    *html_output << "</body>" << endl;
+    *html_output << "</html>" << endl;
+    html_output->close();
+
+    if( PeakFitImprove::debug_printout )
+      cout << "Wrote HTML file: relact_auto_peakfit_dev.html with " << chart_counter << " charts" << endl;
+  }
 }//void eval_peaks_for_nuclide( const DataSrcInfo &src_info )
 
 

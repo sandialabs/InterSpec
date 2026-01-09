@@ -79,6 +79,19 @@ namespace CandidatePeak_GA
   calculate_candidate_peak_score_for_source( const std::vector<PeakDef> &detected_peaks,
                                              const std::vector<ExpectedPhotopeakInfo> &expected_photopeaks );
 
+  /** Corrects CandidatePeakScore fields to exclude escape peaks.
+   *
+   * Escape peaks (S.E. at 511 keV below parent, D.E. at 1022 keV below parent) are
+   * typically not fit and should not penalize the score. This function identifies
+   * escape peaks in def_expected_but_not_detected by checking if a much larger
+   * parent peak exists at +511 or +1022 keV in the expected photopeaks list.
+   *
+   * @param score The CandidatePeakScore to correct (modified in place)
+   * @param expected_photopeaks The expected peaks to check for parent peaks
+   */
+  void correct_score_for_escape_peaks( CandidatePeakScore &score,
+                                       const std::vector<ExpectedPhotopeakInfo> &expected_photopeaks );
+
   CandidatePeakScore
   eval_candidate_settings( const FindCandidateSettings settings, const std::vector<DataSrcInfo> &input_srcs, const bool write_n42 );
 

@@ -993,6 +993,96 @@ CandidatePeakScore calculate_candidate_peak_score_for_source( const vector<PeakD
 }//calculate_candidate_peak_score_for_source
 
 
+void correct_score_for_escape_peaks( CandidatePeakScore &score,
+                                     const vector<ExpectedPhotopeakInfo> &expected_photopeaks )
+{
+  // Single and double escape energies (electron rest mass energy)
+  const double single_escape_offset = 510.9989; // keV
+  const double double_escape_offset = 2.0 * single_escape_offset; // 1021.9978 keV
+
+  // Tolerance for matching escape peak to parent
+  const double energy_tolerance = 1.0; // keV
+
+  // Minimum parent-to-escape area ratio to consider it a likely escape peak (under a few MeV, anyway)
+  const double min_parent_ratio = 2.0;
+
+  // Iterate through def_expected_but_not_detected to find escape peaks
+  vector<ExpectedPhotopeakInfo> corrected_def_expected;
+  corrected_def_expected.reserve( score.def_expected_but_not_detected.size() );
+
+  size_t num_escape_peaks_removed = 0;
+
+  for( const ExpectedPhotopeakInfo &not_found : score.def_expected_but_not_detected )
+  {
+    const double escape_energy = not_found.effective_energy;
+    bool is_escape_peak = false;
+
+    // Check for single escape (parent at +511 keV)
+    const double se_parent_energy = escape_energy + single_escape_offset;
+    for( const ExpectedPhotopeakInfo &potential_parent : expected_photopeaks )
+    {
+      if( fabs(potential_parent.effective_energy - se_parent_energy) < energy_tolerance )
+      {
+        // Check if parent peak is significantly larger
+        if( potential_parent.peak_area > (min_parent_ratio * not_found.peak_area) )
+        {
+          is_escape_peak = true;
+          if( PeakFitImprove::debug_printout )
+          {
+            cerr << "Identified S.E. peak at " << escape_energy << " keV "
+                 << "(parent at " << potential_parent.effective_energy << " keV)" << endl;
+          }
+          break;
+        }
+      }
+    }
+
+    // Check for double escape (parent at +1022 keV) if not already identified as S.E.
+    if( !is_escape_peak )
+    {
+      const double de_parent_energy = escape_energy + double_escape_offset;
+      for( const ExpectedPhotopeakInfo &potential_parent : expected_photopeaks )
+      {
+        if( fabs(potential_parent.effective_energy - de_parent_energy) < energy_tolerance )
+        {
+          // Check if parent peak is significantly larger
+          if( potential_parent.peak_area > (min_parent_ratio * not_found.peak_area) )
+          {
+            is_escape_peak = true;
+            if( PeakFitImprove::debug_printout )
+            {
+              cerr << "Identified D.E. peak at " << escape_energy << " keV "
+                   << "(parent at " << potential_parent.effective_energy << " keV)" << endl;
+            }
+            break;
+          }
+        }
+      }
+    }
+
+    // Only keep non-escape peaks in the corrected list
+    if( !is_escape_peak )
+    {
+      corrected_def_expected.push_back( not_found );
+    }
+    else
+    {
+      num_escape_peaks_removed++;
+    }
+  }
+
+  // Update the score structure
+  score.def_expected_but_not_detected = std::move(corrected_def_expected);
+  score.num_def_wanted_not_found -= num_escape_peaks_removed;
+
+  if( PeakFitImprove::debug_printout && (num_escape_peaks_removed > 0) )
+  {
+    cerr << "Removed " << num_escape_peaks_removed
+         << " escape peak(s) from def_wanted_not_found count" << endl;
+  }
+}//correct_score_for_escape_peaks
+
+
 CandidatePeakScore eval_candidate_settings( const FindCandidateSettings settings, const vector<DataSrcInfo> &input_srcs, const bool write_n42 )
 {
   double sum_score = 0.0;
