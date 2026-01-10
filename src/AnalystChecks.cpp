@@ -857,6 +857,7 @@ namespace AnalystChecks
   
   FitPeaksForNuclideStatus fit_peaks_for_nuclides( const FitPeaksForNuclideOptions &options, InterSpec *interspec )
   {
+    // NOTE: this function will eventually be replaced or powered by FitPeaksForNuclideDev::fit_peaks_for_nuclides(...)
     // TODO: This function tries a few different RelActAuto configuration, and chooses the one with the best Chi2. It should actually be Chi2/DOF, and then maybe also take into account what peaks are chosen
     // TODO: The order of Ln(x) equation used should be based on how many peaks, and the energy range - should do something more inteligently
     // TODO: Should split range up - e.g. above and below 120 keV, if nuclide has peaks on both sides

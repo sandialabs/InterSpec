@@ -3004,7 +3004,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             {
               cout << "Peak at {" << p.m_energy << ", " << p.m_fwhm << ", " << p.m_counts << "} keV has sources: ";
               for( const auto s : p.m_source_gammas )
-                cout << "{" << s.m_isotope << ", " << s.m_yield << "}, ";
+                cout << "{" << s.m_isotope << ", " << std::scientific << s.m_yield << "}, ";
               cout << endl;
               peaks_with_sources.push_back( p );
             }

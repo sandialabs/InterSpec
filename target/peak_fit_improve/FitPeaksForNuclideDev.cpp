@@ -113,10 +113,182 @@ struct GammaClusteringSettings {
 };
 
 
+namespace
+{
+  /** Get photon energies and intensities for a source at a given age.
+
+   For nuclides: Uses NuclideMixture with the specified age
+   For elements: Returns xrays (age parameter ignored)
+   For reactions: Returns gammas (age parameter ignored)
+
+   \param src The source variant
+   \param activity Activity in becquerels (for nuclides) or scaling factor (for elements/reactions)
+   \param age Age in PhysicalUnits seconds (for nuclides only, ignored for others)
+   \return Vector of EnergyRatePair with photon energies and rates
+   \throws runtime_error if source is null or invalid
+   */
+  std::vector<SandiaDecay::EnergyRatePair> get_source_photons(
+    const RelActCalcAuto::SrcVariant &src,
+    const double activity,
+    const double age )
+  {
+    std::vector<SandiaDecay::EnergyRatePair> result;
+
+    const SandiaDecay::Nuclide *nuc = RelActCalcAuto::nuclide( src );
+    if( nuc )
+    {
+      // Use NuclideMixture for nuclides
+      SandiaDecay::NuclideMixture mix;
+      mix.addAgedNuclideByActivity( nuc, activity, age );
+      result = mix.photons( 0.0, SandiaDecay::NuclideMixture::OrderByEnergy );
+      return result;
+    }
+
+    const SandiaDecay::Element *el = RelActCalcAuto::element( src );
+    if( el )
+    {
+      // Convert xrays to EnergyRatePair format
+      // Xrays have relative intensities, scale by activity for consistency
+      for( const SandiaDecay::EnergyIntensityPair &xray : el->xrays )
+      {
+        // intensity is relative to strongest line (1.0 = strongest)
+        // Scale by activity to get rate
+        result.emplace_back( activity * xray.intensity, xray.energy );
+      }
+
+      return result;
+    }
+
+    const ReactionGamma::Reaction *rxn = RelActCalcAuto::reaction( src );
+    if( rxn )
+    {
+      // Convert reaction gammas to EnergyRatePair format
+      for( const ReactionGamma::Reaction::EnergyYield &gamma : rxn->gammas )
+      {
+        // abundance is yield per reaction
+        // Scale by activity to get rate
+        result.emplace_back( activity * gamma.abundance, gamma.energy );
+      }
+
+      return result;
+    }
+
+    throw runtime_error( "get_source_photons: invalid or null source" );
+  }//get_source_photons(...)
+
+
+  /** Get appropriate age for a source.
+
+   For nuclides: Returns PeakDef::defaultDecayTime() if age < 0, else returns age
+   For elements/reactions: Returns 0.0 (age not applicable)
+
+   \param src The source variant
+   \param age_input User-specified age (negative means use default for nuclides)
+   \return Age in PhysicalUnits seconds
+   */
+  double get_source_age( const RelActCalcAuto::SrcVariant &src, const double age_input )
+  {
+    const SandiaDecay::Nuclide *nuc = RelActCalcAuto::nuclide( src );
+    if( nuc )
+    {
+      if( age_input >= 0.0 )
+        return age_input;
+
+      return PeakDef::defaultDecayTime( nuc );
+    }
+
+    // Elements and reactions don't have age
+    return 0.0;
+  }//get_source_age(...)
+
+
+  /** Determines if external shielding should be used for desperation Physical Model attempts.
+
+   Shielding is disabled if:
+   - Atomic number is invalid (0, < 1, or > 98)
+   - There are fewer than 2 ROIs
+   - Energy range is too small (< 60 keV if any ROI extends below 120 keV, otherwise < 100 keV)
+
+   @param atomic_number The configured atomic number for desperation shielding
+   @param rois The vector of ROI ranges to check
+   @return true if shielding should be used, false otherwise
+   */
+  bool should_use_desperation_shielding( const double atomic_number,
+                                         const std::vector<RelActCalcAuto::RoiRange> &rois )
+  {
+    // Check 1: Valid atomic number
+    if( atomic_number < 1.0 || atomic_number > 98.0 )
+      return false;
+
+    // Check 2: At least 2 ROIs required
+    if( rois.size() < 2 )
+      return false;
+
+    // Check 3: Sufficient energy range
+    // Find min lower_energy and max upper_energy across all ROIs
+    double min_lower = std::numeric_limits<double>::max();
+    double max_upper = std::numeric_limits<double>::lowest();
+    bool has_low_energy_roi = false;
+
+    for( const RelActCalcAuto::RoiRange &roi : rois )
+    {
+      min_lower = std::min( min_lower, roi.lower_energy );
+      max_upper = std::max( max_upper, roi.upper_energy );
+
+      if( roi.lower_energy < 120.0 )
+        has_low_energy_roi = true;
+    }
+
+    const double energy_range = max_upper - min_lower;
+    const double required_range = has_low_energy_roi ? 60.0 : 100.0;
+
+    if( energy_range < required_range )
+      return false;
+
+    return true;
+  }//should_use_desperation_shielding(...)
+
+
+  /** Creates a PhysicalModelShieldInput for desperation attempts with the specified atomic number.
+
+   @param atomic_number The atomic number to use (must be in range 1-98)
+   @param starting_areal_density The starting areal density in g/cm2
+   @return Shared pointer to configured PhysicalModelShieldInput
+   @throws std::invalid_argument if atomic_number is out of valid range
+   */
+  std::shared_ptr<RelActCalc::PhysicalModelShieldInput>
+  create_desperation_shielding( const double atomic_number, const double starting_areal_density )
+  {
+    if( atomic_number < 1.0 || atomic_number > 98.0 )
+      throw std::invalid_argument( "create_desperation_shielding: atomic_number must be in range [1, 98]" );
+
+    std::shared_ptr<RelActCalc::PhysicalModelShieldInput> shield
+      = std::make_shared<RelActCalc::PhysicalModelShieldInput>();
+
+    // Configure as generic element (not material)
+    shield->atomic_number = atomic_number;
+    shield->material = nullptr;
+
+    // Set starting areal density (convert from g/cm2 to PhysicalUnits)
+    shield->areal_density = starting_areal_density * PhysicalUnits::g_per_cm2;
+
+    // Do NOT fit atomic number - only fit areal density
+    shield->fit_atomic_number = false;
+
+    // Configure areal density fitting with reasonable bounds
+    shield->fit_areal_density = true;
+    shield->lower_fit_areal_density = 0.1 * PhysicalUnits::g_per_cm2;
+    shield->upper_fit_areal_density = 10.0 * PhysicalUnits::g_per_cm2;
+
+    return shield;
+  }//create_desperation_shielding(...)
+}//namespace
+
+
 // Forward declaration
 vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
   const function<double(double)> &rel_eff_fcn,
-  const vector<pair<const SandiaDecay::Nuclide *, double>> &nuclides_and_activities,
+  const vector<pair<RelActCalcAuto::SrcVariant, double>> &sources_and_activities,
   const shared_ptr<const SpecUtils::Measurement> &foreground,
   const DetectorPeakResponse::ResolutionFnctForm fwhm_form,
   const vector<float> &fwhm_coefficients,
@@ -270,6 +442,13 @@ struct PeakFitForNuclideConfig
   // Physical model shielding (empty vectors mean no shielding)
   std::vector<std::shared_ptr<RelActCalc::PhysicalModelShieldInput>> phys_model_self_atten;
   std::vector<std::shared_ptr<RelActCalc::PhysicalModelShieldInput>> phys_model_external_atten;
+
+  // Desperation Physical Model shielding configuration
+  // Atomic number for desperation external shielding (0 = don't use, 1-98 = valid elements)
+  double desperation_phys_model_atomic_number = 26.0;  // Default: iron
+
+  // Areal density starting value for desperation external shielding (in g/cm2)
+  double desperation_phys_model_areal_density_g_per_cm2 = 1.0;  // Default: 1.0 g/cm2
 
   // Physical model options (only used when rel_eff_eqn_type == FramPhysicalModel)
   bool nucs_of_el_same_age = true;
@@ -1308,8 +1487,8 @@ double compute_filtered_chi2_dof(
 PeakFitResult fit_peaks_for_nuclide_relactauto(
   const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,
-  const std::vector<const SandiaDecay::Nuclide *> &sources,
-  const RelActCalcAuto::Options &options,
+  const std::vector<RelActCalcAuto::SrcVariant> &sources,
+  const std::vector<RelActCalcAuto::RoiRange> &initial_rois,
   const std::shared_ptr<const SpecUtils::Measurement> &long_background,
   const std::shared_ptr<const DetectorPeakResponse> &drf,
   const PeakFitForNuclideConfig &config,
@@ -1324,19 +1503,87 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   if( sources.empty() )
   {
     result.status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
-    result.error_message = "No source nuclides provided";
+    result.error_message = "No sources provided";
     return result;
   }
 
-  for( const SandiaDecay::Nuclide *nuc : sources )
+  for( const RelActCalcAuto::SrcVariant &src : sources )
   {
-    if( !nuc )
+    if( RelActCalcAuto::is_null( src ) )
     {
       result.status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
-      result.error_message = "Null nuclide in sources vector";
+      result.error_message = "Null source in sources vector";
       return result;
     }
   }
+
+  // Build base_nuclides from sources
+  std::vector<RelActCalcAuto::NucInputInfo> base_nuclides;
+  for( const RelActCalcAuto::SrcVariant &src : sources )
+  {
+    RelActCalcAuto::NucInputInfo nuc_info;
+    nuc_info.source = src;
+    nuc_info.age = get_source_age( src, -1.0 );
+    nuc_info.fit_age = false;
+    base_nuclides.push_back( nuc_info );
+  }
+
+  // Define skew type to use
+  const PeakDef::SkewType skew_type = PeakDef::SkewType::NoSkew;
+
+  // Create RelActAuto options from config
+  RelActCalcAuto::Options options;
+
+  // Create relative efficiency curve from config parameters
+  RelActCalcAuto::RelEffCurveInput rel_eff_curve;
+  rel_eff_curve.rel_eff_eqn_type = config.rel_eff_eqn_type;
+  rel_eff_curve.rel_eff_eqn_order = config.rel_eff_eqn_order;
+
+  // FramPhysicalModel requires rel_eff_eqn_order to be 0
+  assert( (config.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel)
+         || (rel_eff_curve.rel_eff_eqn_order == 0) );
+  if( config.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    rel_eff_curve.rel_eff_eqn_order = 0;
+
+  rel_eff_curve.nucs_of_el_same_age = config.nucs_of_el_same_age;
+  rel_eff_curve.phys_model_use_hoerl = config.phys_model_use_hoerl;
+  rel_eff_curve.nuclides = base_nuclides;
+
+  // Copy shielding inputs from config (converting to const shared_ptr)
+  if( !config.phys_model_self_atten.empty() )
+    rel_eff_curve.phys_model_self_atten = config.phys_model_self_atten.front();
+
+  rel_eff_curve.phys_model_external_atten.clear();
+  for( const auto &shield : config.phys_model_external_atten )
+    rel_eff_curve.phys_model_external_atten.push_back( shield );
+
+  // Generate name based on equation type and shielding (just for informational purposes)
+  if( config.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+  {
+    rel_eff_curve.name = "Physical Model";
+    if( config.phys_model_external_atten.empty() )
+    {
+      rel_eff_curve.name += " (no shielding) Peak Fit";
+    }else
+    {
+      const int z = static_cast<int>( config.phys_model_external_atten.front()->atomic_number + 0.5 );
+      const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+      const SandiaDecay::Element *el = db->element(z);
+      assert( el );
+      rel_eff_curve.name += " " + (el ? el->symbol : ("z=" + std::to_string(z)) ) + string(" Peak Fit");
+    }
+  }else
+  {
+    rel_eff_curve.name = RelActCalc::to_str(config.rel_eff_eqn_type) + std::string(" Peak Fit");
+  }
+
+  options.rel_eff_curves.push_back( rel_eff_curve );
+  options.rois = initial_rois;
+  options.fit_energy_cal = config.fit_energy_cal;
+  options.fwhm_form = config.fwhm_form;
+  options.fwhm_estimation_method = RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum;
+  options.skew_type = skew_type;
+  options.additional_br_uncert = config.rel_eff_auto_base_rel_eff_uncert;
 
   // Find valid energy range based on contiguous channels with data
   const auto [min_valid_energy, max_valid_energy] = find_valid_energy_range( foreground );
@@ -1361,7 +1608,8 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         no_ecal_opts, foreground, long_background, drf, auto_search_peaks
       );
       
-      // If the solution is still really bad - we'll try a plain Physical Model solution, with no attenuation
+      // If the solution is still really bad - we'll try a Physical Model solution
+      // Optionally with external shielding if configured
       if( (trial_solution.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success)
           || ((solution.m_chi2 / solution.m_dof) > 10.0) )
       {
@@ -1371,8 +1619,40 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         curve.rel_eff_eqn_order = 0;
         curve.phys_model_self_atten = nullptr;
         curve.phys_model_external_atten.clear();
+
+        // Apply external shielding if conditions are met
+        if( should_use_desperation_shielding( config.desperation_phys_model_atomic_number, options.rois ) )
+        {
+          try
+          {
+            std::shared_ptr<RelActCalc::PhysicalModelShieldInput> shield
+              = create_desperation_shielding( config.desperation_phys_model_atomic_number,
+                                              config.desperation_phys_model_areal_density_g_per_cm2 );
+            curve.phys_model_external_atten.push_back( shield );
+
+            if( PeakFitImprove::debug_printout )
+            {
+              std::cerr << "First desperation attempt: using external shielding with AN="
+                        << config.desperation_phys_model_atomic_number
+                        << ", starting AD=" << config.desperation_phys_model_areal_density_g_per_cm2
+                        << " g/cm2" << std::endl;
+            }
+          }
+          catch( const std::exception &e )
+          {
+            if( PeakFitImprove::debug_printout )
+              std::cerr << "Failed to create desperation shielding: " << e.what() << std::endl;
+            // Continue without shielding
+          }
+        }
+        else
+        {
+          if( PeakFitImprove::debug_printout )
+            std::cerr << "First desperation attempt: not using external shielding" << std::endl;
+        }
+
         curve.phys_model_use_hoerl = (options.rois.size() > 2);
-        
+
         trial_solution = RelActCalcAuto::solve(
           desperation_opts, foreground, long_background, drf, auto_search_peaks
         );
@@ -1405,7 +1685,8 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     // which allows us to better identify significant gamma lines and create better ROIs.
     {
       const size_t max_iterations = 3;
-      for( size_t iter = 0; iter < max_iterations; ++iter )
+      size_t num_extra_allowed = 0; //If we switch to our "desperation" model type retry - we will increment this to 1.
+      for( size_t iter = 0; iter < (max_iterations + num_extra_allowed); ++iter )
       {
         // Use the first rel-eff curve (index 0)
         const size_t rel_eff_index = 0;
@@ -1415,31 +1696,29 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
           return solution.relative_efficiency( energy, rel_eff_index );
         };
 
-        // Collect nuclides and activities from the current solution
-        // m_rel_activities is a 2D vector: [rel_eff_curve_index][nuclide_index]
-        vector<pair<const SandiaDecay::Nuclide *, double>> nucs_and_acts;
+        // Collect sources and activities from the current solution
+        // m_rel_activities is a 2D vector: [rel_eff_curve_index][source_index]
+        vector<pair<RelActCalcAuto::SrcVariant, double>> sources_and_acts;
         if( rel_eff_index < solution.m_rel_activities.size() )
         {
           if( PeakFitImprove::debug_printout )
-            cout << "Collecting " << solution.m_rel_activities[rel_eff_index].size() << " nuclides from RelActAuto solution:" << endl;
+            cout << "Collecting " << solution.m_rel_activities[rel_eff_index].size() << " sources from RelActAuto solution:" << endl;
 
           for( const RelActCalcAuto::NuclideRelAct &nuc_act : solution.m_rel_activities[rel_eff_index] )
           {
-            // source is a SrcVariant which can be a nuclide or element
-            const SandiaDecay::Nuclide * const * nuc_ptr_local = std::get_if<const SandiaDecay::Nuclide *>( &nuc_act.source );
-            if( nuc_ptr_local && *nuc_ptr_local )
-            {
-              const double live_time_seconds = foreground->live_time();
-              // RelActAuto's rel_activity is per second, need to multiply by live time for clustering
-              const double activity_for_clustering = nuc_act.rel_activity * live_time_seconds;
+            if( RelActCalcAuto::is_null( nuc_act.source ) )
+              continue;
 
-              if( PeakFitImprove::debug_printout )
-                cout << "  " << nuc_act.name() << ": rel_activity=" << nuc_act.rel_activity
-                     << ", live_time=" << live_time_seconds
-                     << "s, activity_for_clustering=" << activity_for_clustering << endl;
+            const double live_time_seconds = foreground->live_time();
+            // RelActAuto's rel_activity is per second, need to multiply by live time for clustering
+            const double activity_for_clustering = nuc_act.rel_activity * live_time_seconds;
 
-              nucs_and_acts.emplace_back( *nuc_ptr_local, activity_for_clustering );
-            }
+            if( PeakFitImprove::debug_printout )
+              cout << "  " << nuc_act.name() << ": rel_activity=" << nuc_act.rel_activity
+                   << ", live_time=" << live_time_seconds
+                   << "s, activity_for_clustering=" << activity_for_clustering << endl;
+
+            sources_and_acts.emplace_back( nuc_act.source, activity_for_clustering );
           }
         }
 
@@ -1451,8 +1730,8 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         const GammaClusteringSettings auto_settings = config.get_auto_clustering_settings();
 
         // Cluster gammas using current solution's relative efficiency
-        const vector<RelActCalcAuto::RoiRange> refined_rois = cluster_gammas_to_rois(
-            auto_rel_eff, nucs_and_acts, foreground,
+        vector<RelActCalcAuto::RoiRange> refined_rois = cluster_gammas_to_rois(
+            auto_rel_eff, sources_and_acts, foreground,
             fwhm_form, fwhm_coefficients,
             fwhm_lower_energy, fwhm_upper_energy,
             min_valid_energy, max_valid_energy,
@@ -1460,6 +1739,82 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         
         if( refined_rois.empty() )
         {
+          // If we lost all ROIs and are not already using a PhysicalModel, try re-fitting with one
+          // This is similar to the "desperation" approach used above
+          const bool using_physical_model = (solution.m_options.rel_eff_curves.front().rel_eff_eqn_type
+                                             == RelActCalc::RelEffEqnForm::FramPhysicalModel);
+
+          if( !using_physical_model )
+          {
+            if( PeakFitImprove::debug_printout )
+              cerr << "Lost all ROIs, trying PhysicalModel as desperation attempt..." << endl;
+
+            RelActCalcAuto::Options desperation_opts = options;
+            RelActCalcAuto::RelEffCurveInput &curve = desperation_opts.rel_eff_curves.front();
+            curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
+            curve.rel_eff_eqn_order = 0;
+            curve.phys_model_self_atten = nullptr;
+            curve.phys_model_external_atten.clear();
+
+            // Apply external shielding if conditions are met
+            // Note: We use desperation_opts.rois (not options.rois) since they may differ at this point
+            if( should_use_desperation_shielding( config.desperation_phys_model_atomic_number, desperation_opts.rois ) )
+            {
+              try
+              {
+                std::shared_ptr<RelActCalc::PhysicalModelShieldInput> shield
+                  = create_desperation_shielding( config.desperation_phys_model_atomic_number,
+                                                  config.desperation_phys_model_areal_density_g_per_cm2 );
+                curve.phys_model_external_atten.push_back( shield );
+
+                if( PeakFitImprove::debug_printout )
+                {
+                  std::cerr << "Second desperation attempt: using external shielding with AN="
+                            << config.desperation_phys_model_atomic_number
+                            << ", starting AD=" << config.desperation_phys_model_areal_density_g_per_cm2
+                            << " g/cm2" << std::endl;
+                }
+              }
+              catch( const std::exception &e )
+              {
+                if( PeakFitImprove::debug_printout )
+                  std::cerr << "Failed to create desperation shielding: " << e.what() << std::endl;
+                // Continue without shielding
+              }
+            }
+            else
+            {
+              if( PeakFitImprove::debug_printout )
+                std::cerr << "Second desperation attempt: not using external shielding" << std::endl;
+            }
+
+            curve.phys_model_use_hoerl = (desperation_opts.rois.size() > 2);
+
+            RelActCalcAuto::RelActAutoSolution desperation_solution = RelActCalcAuto::solve(
+              desperation_opts, foreground, long_background, drf, auto_search_peaks
+            );
+
+            if( (desperation_solution.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success)
+                && ((desperation_solution.m_chi2 / desperation_solution.m_dof)
+                    < (solution.m_chi2 / solution.m_dof)) )
+            {
+              if( PeakFitImprove::debug_printout )
+                cerr << "PhysicalModel desperation solution succeeded and improved chi2/dof" << endl;
+              
+              if( !num_extra_allowed ) //Allow an extra iteration since we changed
+                num_extra_allowed += 1;
+              
+              solution = desperation_solution;
+              // Continue with another iteration using the new solution
+              continue;
+            }
+            else
+            {
+              if( PeakFitImprove::debug_printout )
+                cerr << "PhysicalModel desperation solution did not improve result" << endl;
+            }
+          }//if( !using_physical_model )
+
           result.warnings.push_back( "Lost all ROIs while iterationing to refine solution - stopped early." );
           cerr << "Have lost all ROIs!  Halting iterations to refine solution." << endl;
           break;
@@ -1683,7 +2038,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_fallback(
   const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,
-  const std::vector<const SandiaDecay::Nuclide *> &source_nuclides,
+  const std::vector<RelActCalcAuto::SrcVariant> &sources,
   const std::shared_ptr<const DetectorPeakResponse> &drf,
   const bool isHPGe,
   const DetectorPeakResponse::ResolutionFnctForm fwhmFnctnlForm,
@@ -1711,20 +2066,17 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_fallback(
   // Find valid energy range based on contiguous channels with data
   const auto [min_valid_energy, max_valid_energy] = find_valid_energy_range( foreground );
 
-  // Step 2: Estimate activity for each nuclide
-  std::vector<std::pair<const SandiaDecay::Nuclide *, double>> nucs_and_acts;
+  // Step 2: Estimate activity for each source
+  std::vector<std::pair<RelActCalcAuto::SrcVariant, double>> sources_and_acts;
 
-  for( const SandiaDecay::Nuclide * const nuc : source_nuclides )
+  for( const RelActCalcAuto::SrcVariant &src : sources )
   {
-    if( !nuc )
+    if( RelActCalcAuto::is_null( src ) )
       continue;
 
     // Get gamma lines at default age
-    const double age = PeakDef::defaultDecayTime( nuc );
-    SandiaDecay::NuclideMixture mix;
-    mix.addAgedNuclideByActivity( nuc, 1.0, age );
-    const std::vector<SandiaDecay::EnergyRatePair> photons
-        = mix.photons( 0.0, SandiaDecay::NuclideMixture::OrderByEnergy );
+    const double age = get_source_age( src, -1.0 );
+    const std::vector<SandiaDecay::EnergyRatePair> photons = get_source_photons( src, 1.0, age );
 
     // Find gamma with largest expected yield (br * efficiency)
     double best_yield = 0.0;
@@ -1784,7 +2136,7 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_fallback(
       const double peak_area = matched_peak->peakArea();
       estimated_activity = peak_area / (best_br * best_eff);
 
-      cout << "Fallback: " << nuc->symbol << " matched peak at " << matched_peak->mean()
+      cout << "Fallback: " << RelActCalcAuto::to_name( src ) << " matched peak at " << matched_peak->mean()
            << " keV (gamma at " << best_energy << " keV), area=" << peak_area
            << ", estimated activity=" << estimated_activity << endl;
     }
@@ -1800,18 +2152,18 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_fallback(
 
       estimated_activity = estimated_peak_area / (best_br * best_eff * live_time);
 
-      cout << "Fallback: " << nuc->symbol << " no matching peak for gamma at " << best_energy
+      cout << "Fallback: " << RelActCalcAuto::to_name( src ) << " no matching peak for gamma at " << best_energy
            << " keV, integrated counts=" << total_counts << ", est. peak area=" << estimated_peak_area
            << ", estimated activity=" << estimated_activity << endl;
     }
 
     if( estimated_activity > 0.0 )
-      nucs_and_acts.emplace_back( nuc, estimated_activity );
+      sources_and_acts.emplace_back( src, estimated_activity );
   }
 
-  if( nucs_and_acts.empty() )
+  if( sources_and_acts.empty() )
   {
-    cerr << "Fallback: Could not estimate activity for any nuclide" << endl;
+    cerr << "Fallback: Could not estimate activity for any source" << endl;
     return {};
   }
 
@@ -1823,7 +2175,7 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_fallback(
   // Step 4: Call cluster_gammas_to_rois with estimated activities
   return cluster_gammas_to_rois(
     fallback_rel_eff,
-    nucs_and_acts,
+    sources_and_acts,
     foreground,
     fwhmFnctnlForm,
     fwhm_coefficients,
@@ -1839,7 +2191,7 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_fallback(
 PeakFitResult fit_peaks_for_nuclides(
   const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,
-  const std::vector<const SandiaDecay::Nuclide *> &source_nuclides,
+  const std::vector<RelActCalcAuto::SrcVariant> &sources,
   const std::shared_ptr<const SpecUtils::Measurement> &long_background,
   const std::shared_ptr<const DetectorPeakResponse> &drf_input,
   const PeakFitForNuclideConfig &config,
@@ -1856,20 +2208,20 @@ PeakFitResult fit_peaks_for_nuclides(
     return result;
   }
 
-  // Validate source nuclides
-  if( source_nuclides.empty() )
+  // Validate sources
+  if( sources.empty() )
   {
     result.status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
-    result.error_message = "No source nuclides provided";
+    result.error_message = "No sources provided";
     return result;
   }
 
-  for( const SandiaDecay::Nuclide *nuc : source_nuclides )
+  for( const RelActCalcAuto::SrcVariant &src : sources )
   {
-    if( !nuc )
+    if( RelActCalcAuto::is_null( src ) )
     {
       result.status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
-      result.error_message = "Null nuclide in source_nuclides vector";
+      result.error_message = "Null source in sources vector";
       return result;
     }
   }
@@ -1952,17 +2304,16 @@ PeakFitResult fit_peaks_for_nuclides(
     double highest_energy_gamma = 0.0, lowest_energy_gamma = std::numeric_limits<double>::max();
 
     vector<RelActCalcAuto::NucInputInfo> base_nuclides;
-    for( const SandiaDecay::Nuclide *nuc : source_nuclides )
+    for( const RelActCalcAuto::SrcVariant &src : sources )
     {
       RelActCalcAuto::NucInputInfo nuc_info;
-      nuc_info.source = nuc;
-      nuc_info.age = PeakDef::defaultDecayTime(nuc);
+      nuc_info.source = src;
+      nuc_info.age = get_source_age( src, -1.0 );
       nuc_info.fit_age = false;
       base_nuclides.push_back(nuc_info);
 
-      SandiaDecay::NuclideMixture mix;
-      mix.addAgedNuclideByActivity( nuc, GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_activityUnits, nuc_info.age );
-      const vector<SandiaDecay::EnergyRatePair> photons = mix.photons( 0.0 );
+      const vector<SandiaDecay::EnergyRatePair> photons
+          = get_source_photons( src, GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_activityUnits, nuc_info.age );
       for( const SandiaDecay::EnergyRatePair &photon : photons )
       {
         highest_energy_gamma = (std::max)( highest_energy_gamma, photon.energy );
@@ -1993,8 +2344,8 @@ PeakFitResult fit_peaks_for_nuclides(
     }
 
     vector<RelActCalcManual::PeakCsvInput::NucAndAge> rel_act_manual_srcs;
-    for( const SandiaDecay::Nuclide *nuc : source_nuclides )
-      rel_act_manual_srcs.emplace_back( nuc->symbol, -1.0, false );
+    for( const RelActCalcAuto::SrcVariant &src : sources )
+      rel_act_manual_srcs.emplace_back( RelActCalcAuto::to_name( src ), -1.0, false );
 
     const std::vector<std::pair<float,float>> energy_ranges{};
     const std::vector<float> excluded_peak_energies{};
@@ -2328,19 +2679,18 @@ PeakFitResult fit_peaks_for_nuclides(
             return manual_solution.relative_efficiency( energy );
         };
         
-        // Collect nuclides and activities from the manual solution
-        vector<pair<const SandiaDecay::Nuclide *, double>> nucs_and_acts;
+        // Collect sources and activities from the manual solution
+        vector<pair<RelActCalcAuto::SrcVariant, double>> sources_and_acts;
         for( const RelActCalcManual::IsotopeRelativeActivity &rel_act : manual_solution.m_rel_activities )
         {
-          const SandiaDecay::Nuclide * const nuc = db->nuclide( rel_act.m_isotope );
-          assert( nuc );
-          if( !nuc )
-            throw std::logic_error( "Failed to get nuclide from RelAct nuc '" + rel_act.m_isotope + "'" );
-          nucs_and_acts.emplace_back( nuc, manual_solution.relative_activity( rel_act.m_isotope ) );
+          const RelActCalcAuto::SrcVariant src = RelActCalcAuto::source_from_string( rel_act.m_isotope );
+          if( RelActCalcAuto::is_null( src ) )
+            throw std::logic_error( "Failed to get source from RelAct isotope '" + rel_act.m_isotope + "'" );
+          sources_and_acts.emplace_back( src, manual_solution.relative_activity( rel_act.m_isotope ) );
         }
-        
+
         // Use the reusable clustering function to create ROIs
-        initial_rois = cluster_gammas_to_rois( manual_rel_eff, nucs_and_acts, foreground,
+        initial_rois = cluster_gammas_to_rois( manual_rel_eff, sources_and_acts, foreground,
                                               fwhmFnctnlForm, fwhm_coefficients,
                                               lower_fwhm_energy, upper_fwhm_energy,
                                               min_valid_energy, max_valid_energy,
@@ -2359,7 +2709,7 @@ PeakFitResult fit_peaks_for_nuclides(
         cerr << "Using fallback activity estimation..." << endl;
 
         initial_rois = estimate_initial_rois_fallback(
-          auto_search_peaks, foreground, source_nuclides, drf, isHPGe,
+          auto_search_peaks, foreground, sources, drf, isHPGe,
           fwhmFnctnlForm, fwhm_coefficients, lower_fwhm_energy, upper_fwhm_energy,
           manual_settings );
 
@@ -2373,110 +2723,79 @@ PeakFitResult fit_peaks_for_nuclides(
       }
     }
 
-    // Step 5: Prepare configuration for RelActAuto
-    PeakFitForNuclideConfig config_with_nucs = config;
-    config_with_nucs.base_nuclides = base_nuclides;
-    // initial_rois is now passed as parameter to create_*_options() methods
-
-    // Define skew type to try
-    const PeakDef::SkewType skew_type = PeakDef::SkewType::NoSkew;
-
-    // Step 6: Create RelActAuto options from config
-    RelActCalcAuto::Options options;
-
-    // Create relative efficiency curve from config parameters
-    RelActCalcAuto::RelEffCurveInput rel_eff_curve;
-    rel_eff_curve.rel_eff_eqn_type = config.rel_eff_eqn_type;
-    rel_eff_curve.rel_eff_eqn_order = config.rel_eff_eqn_order;
-
-    // FramPhysicalModel requires rel_eff_eqn_order to be 0
-    assert( (config.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel)
-           || (rel_eff_curve.rel_eff_eqn_order == 0) );
-    if( config.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
-      rel_eff_curve.rel_eff_eqn_order = 0;
-
-    rel_eff_curve.nucs_of_el_same_age = config.nucs_of_el_same_age;
-    rel_eff_curve.phys_model_use_hoerl = config.phys_model_use_hoerl;
-    rel_eff_curve.nuclides = config_with_nucs.base_nuclides;
-
-    // Copy shielding inputs from config (converting to const shared_ptr)
-    if( !config.phys_model_self_atten.empty() )
-      rel_eff_curve.phys_model_self_atten = config.phys_model_self_atten.front();
-
-    rel_eff_curve.phys_model_external_atten.clear();
-    for( const auto &shield : config.phys_model_external_atten )
-      rel_eff_curve.phys_model_external_atten.push_back( shield );
-
-    // Generate name based on equation type and shielding
-    if( config.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
-    {
-      rel_eff_curve.name = "Physical Model";
-      if( !config.phys_model_external_atten.empty() )
-      {
-        const int z = static_cast<int>( config.phys_model_external_atten.front()->atomic_number + 0.5 );
-        if( z == 13 )
-          rel_eff_curve.name += " Al";
-        else if( z == 82 )
-          rel_eff_curve.name += " Pb";
-        else
-          rel_eff_curve.name += " Z=" + std::to_string(z);
-      }
-      rel_eff_curve.name += " Peak Fit";
-    }else
-    {
-      rel_eff_curve.name = RelActCalc::to_str(config.rel_eff_eqn_type) + string(" Peak Fit");
-    }
-
-    options.rel_eff_curves.push_back( rel_eff_curve );
-    options.rois = initial_rois;
-    options.fit_energy_cal = config.fit_energy_cal;
-    options.fwhm_form = config.fwhm_form;
-    options.fwhm_estimation_method = RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum;
-    options.skew_type = skew_type;
-    options.additional_br_uncert = config.rel_eff_auto_base_rel_eff_uncert;
-
-    /*
-    // If we only have a couple ROIs, lets not try to fit higher-order FWHM coefficients, unless one of the ROIs is
-    //  really wide (here using 100 keV - which is fairly arbitrary)
-    // Not tested - so leaving commented out
-    if( !options.rois.empty()
-       && (options.rois.size() <= 2)
-       && ((options.rois.front().upper_energy - options.rois.front().lower_energy) < 100.0)
-       && ((options.rois.back().upper_energy - options.rois.back().lower_energy) < 100.0) )
-    {
-      switch( options.fwhm_form )
-      {
-        case RelActCalcAuto::FwhmForm::Gadras:
-        case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:
-        case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy:
-        case RelActCalcAuto::FwhmForm::Polynomial_2:
-        case RelActCalcAuto::FwhmForm::Berstein_2:
-        case RelActCalcAuto::FwhmForm::NotApplicable:
-          // No change - keep original form
-          break;
-          
-        case RelActCalcAuto::FwhmForm::Polynomial_3:
-        case RelActCalcAuto::FwhmForm::Polynomial_4:
-        case RelActCalcAuto::FwhmForm::Polynomial_5:
-        case RelActCalcAuto::FwhmForm::Polynomial_6:
-          options.fwhm_form = RelActCalcAuto::FwhmForm::Polynomial_2;
-          break;
-          
-        case RelActCalcAuto::FwhmForm::Berstein_3:
-        case RelActCalcAuto::FwhmForm::Berstein_4:
-        case RelActCalcAuto::FwhmForm::Berstein_5:
-        case RelActCalcAuto::FwhmForm::Berstein_6:
-          options.fwhm_form = RelActCalcAuto::FwhmForm::Berstein_2;
-          break;
-      }//switch( m_options.fwhm_form )
-    }//if( we shouldnt fit a higher-order FWHM )
-     */
-    
-    // Call RelActAuto with the configured options
+    // Call RelActAuto with initial_rois
     result = fit_peaks_for_nuclide_relactauto(
-      auto_search_peaks, foreground, source_nuclides,
-      options, long_background, drf, config_with_nucs,
+      auto_search_peaks, foreground, sources,
+      initial_rois, long_background, drf, config,
       fwhmFnctnlForm, fwhm_coefficients, lower_fwhm_energy, upper_fwhm_energy );
+
+    // If RelActAuto failed completely, try a desperation Physical Model approach
+    // This is a last-ditch effort to get some result
+    if( result.status != RelActCalcAuto::RelActAutoSolution::Status::Success )
+    {
+      if( PeakFitImprove::debug_printout )
+        std::cerr << "fit_peaks_for_nuclides: RelActAuto failed, trying desperation Physical Model..." << std::endl;
+
+      // Create a new config with Physical Model settings
+      PeakFitForNuclideConfig desperation_config = config;
+      desperation_config.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
+      desperation_config.rel_eff_eqn_order = 0;
+      desperation_config.phys_model_self_atten.clear();
+      desperation_config.phys_model_external_atten.clear();
+
+      // Apply external shielding if conditions are met
+      if( should_use_desperation_shielding( config.desperation_phys_model_atomic_number, initial_rois ) )
+      {
+        try
+        {
+          std::shared_ptr<RelActCalc::PhysicalModelShieldInput> shield
+            = create_desperation_shielding( config.desperation_phys_model_atomic_number,
+                                            config.desperation_phys_model_areal_density_g_per_cm2 );
+          desperation_config.phys_model_external_atten.push_back( shield );
+
+          if( PeakFitImprove::debug_printout )
+          {
+            std::cerr << "fit_peaks_for_nuclides desperation: using external shielding with AN="
+                      << config.desperation_phys_model_atomic_number
+                      << ", starting AD=" << config.desperation_phys_model_areal_density_g_per_cm2
+                      << " g/cm2" << std::endl;
+          }
+        }
+        catch( const std::exception &e )
+        {
+          if( PeakFitImprove::debug_printout )
+            std::cerr << "Failed to create desperation shielding: " << e.what() << std::endl;
+          // Continue without shielding
+        }
+      }
+      else
+      {
+        if( PeakFitImprove::debug_printout )
+          std::cerr << "fit_peaks_for_nuclides desperation: not using external shielding" << std::endl;
+      }
+
+      desperation_config.phys_model_use_hoerl = (initial_rois.size() > 2);
+
+      PeakFitResult desperation_result = fit_peaks_for_nuclide_relactauto(
+        auto_search_peaks, foreground, sources,
+        initial_rois, long_background, drf, desperation_config,
+        fwhmFnctnlForm, fwhm_coefficients, lower_fwhm_energy, upper_fwhm_energy );
+
+      // Use desperation result if it succeeded
+      if( desperation_result.status == RelActCalcAuto::RelActAutoSolution::Status::Success )
+      {
+        if( PeakFitImprove::debug_printout )
+          std::cerr << "fit_peaks_for_nuclides: desperation Physical Model succeeded!" << std::endl;
+
+        desperation_result.warnings.push_back( "Original fit failed; used desperation Physical Model approach" );
+        result = std::move( desperation_result );
+      }
+      else
+      {
+        if( PeakFitImprove::debug_printout )
+          std::cerr << "fit_peaks_for_nuclides: desperation Physical Model also failed" << std::endl;
+      }
+    }
 
   }catch( const std::exception &e )
   {
@@ -2912,7 +3231,7 @@ bool should_use_step_continuum(
  */
 vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
     const function<double(double)> &rel_eff_fcn,
-    const vector<pair<const SandiaDecay::Nuclide *, double>> &nuclides_and_activities,
+    const vector<pair<RelActCalcAuto::SrcVariant, double>> &sources_and_activities,
     const shared_ptr<const SpecUtils::Measurement> &foreground,
     const DetectorPeakResponse::ResolutionFnctForm fwhm_form,
     const vector<float> &fwhm_coefficients,
@@ -2927,31 +3246,28 @@ vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
   // Collect all gamma lines with their expected counts
   vector<pair<double,double>> gammas_by_counts;  // (energy, expected_counts)
 
-  for( const auto &nuc_act : nuclides_and_activities )
+  for( const auto &src_act : sources_and_activities )
   {
-    const SandiaDecay::Nuclide * const nuc = nuc_act.first;
-    const double activity = nuc_act.second;
+    const RelActCalcAuto::SrcVariant src = src_act.first;
+    const double activity = src_act.second;
 
-    if( !nuc || (activity <= 0.0) )
+    if( RelActCalcAuto::is_null( src ) || (activity <= 0.0) )
       continue;
 
-    const double age = PeakDef::defaultDecayTime( nuc );
+    const double age = get_source_age( src, -1.0 );
 
     if( PeakFitImprove::debug_printout )
     {
-      cerr << "cluster_gammas_to_rois: Nuclide " << nuc->symbol << ", activity=" << activity
+      cerr << "cluster_gammas_to_rois: Source " << RelActCalcAuto::to_name( src ) << ", activity=" << activity
            << ", age=" << (age / PhysicalUnits::second) << " seconds ("
            << (age / PhysicalUnits::year) << " years)" << endl;
     }
 
-    SandiaDecay::NuclideMixture mix;
-    mix.addAgedNuclideByActivity( nuc, activity, age );
-    const vector<SandiaDecay::EnergyRatePair> photons
-        = mix.photons( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy );
+    const vector<SandiaDecay::EnergyRatePair> photons = get_source_photons( src, activity, age );
 
     if( PeakFitImprove::debug_printout )
     {
-      cerr << "  " << photons.size() << " photons from " << nuc->symbol << ", energy range ["
+      cerr << "  " << photons.size() << " photons from " << RelActCalcAuto::to_name( src ) << ", energy range ["
            << lowest_energy << ", " << highest_energy << "] keV" << endl;
       // Show photons near 807 keV
       for( const SandiaDecay::EnergyRatePair &photon : photons )
@@ -2980,7 +3296,7 @@ vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
 
       gammas_by_counts.emplace_back( photon.energy, photon.numPerSecond * rel_eff );
     }//for( const SandiaDecay::EnergyRatePair &photon : photons )
-  }//for( const auto &nuc_act : nuclides_and_activities )
+  }//for( const auto &src_act : sources_and_activities )
 
   if( gammas_by_counts.empty() )
     return result_rois;
@@ -3696,7 +4012,7 @@ vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
 PeakFitResult fit_peaks_for_nuclides(
   const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,
-  const std::vector<const SandiaDecay::Nuclide *> &source_nuclides,
+  const std::vector<RelActCalcAuto::SrcVariant> &sources,
   const std::shared_ptr<const SpecUtils::Measurement> &long_background,
   const std::shared_ptr<const DetectorPeakResponse> &drf,
   const PeakFitForNuclideConfig &config,
@@ -3773,52 +4089,66 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
       src_name = src_name.substr(0,underscore_pos);
     }//if( underscore_pos != string::npos )
 
-    vector<const SandiaDecay::Nuclide *> source_nuclides;
+    vector<RelActCalcAuto::SrcVariant> sources;
     if( src_name == "Tl201woTl202" )
     {
-      source_nuclides.push_back( db->nuclide("Tl201"));
+      sources.push_back( db->nuclide("Tl201"));
+      sources.push_back( db->nuclide("Tl202")); //I think it does actually have Tl202 in it
     }else if( src_name == "Tl201wTl202" )
     {
-      source_nuclides.push_back( db->nuclide("Tl201"));
-      source_nuclides.push_back( db->nuclide("Tl202"));
+      sources.push_back( db->nuclide("Tl201"));
+      sources.push_back( db->nuclide("Tl202"));
     }else if( src_name == "Tl201" )
     {
-      source_nuclides.push_back( db->nuclide("Tl201"));
-      source_nuclides.push_back( db->nuclide("Tl202"));
+      sources.push_back( db->nuclide("Tl201"));
+      sources.push_back( db->nuclide("Tl202"));
+    }else if( src_name == "I125" )
+    {
+      sources.push_back( db->nuclide("I125"));
+      sources.push_back( db->nuclide("I126"));
     }else if( src_name == "U233" )
     {
-      // Need to add U x-ray
-      source_nuclides.push_back( db->nuclide("U232"));
-      source_nuclides.push_back( db->nuclide("U233"));
+      sources.push_back( db->element( "U" ) );
+      sources.push_back( db->nuclide("U232"));
+      sources.push_back( db->nuclide("U233"));
     }else if( src_name == "Pu238" )
     {
-      // Need to add Pu x-ray
-      source_nuclides.push_back( db->nuclide("Pu238"));
-      source_nuclides.push_back( db->nuclide("Pu239"));
-      source_nuclides.push_back( db->nuclide("Pu241"));
+      sources.push_back( db->element( "Pu" ) );
+      sources.push_back( db->nuclide("Pu238"));
+      sources.push_back( db->nuclide("Pu239"));
+      sources.push_back( db->nuclide("Pu241"));
     }else if( src_name == "Pu239" )
     {
-      // Need to add Pu x-ray
-      source_nuclides.push_back( db->nuclide("Pu239"));
-      source_nuclides.push_back( db->nuclide("Pu241"));
+      sources.push_back( db->element( "Pu" ) );
+      sources.push_back( db->nuclide("Pu239"));
+      sources.push_back( db->nuclide("Pu241"));
     }else if( src_name == "Uore" )
     {
-      source_nuclides.push_back( db->nuclide("U235") );
-      source_nuclides.push_back( db->nuclide("U238") );
-      source_nuclides.push_back( db->nuclide("Ra226") );
+      sources.push_back( db->element( "U" ) );
+      sources.push_back( db->nuclide("U235") );
+      sources.push_back( db->nuclide("U238") );
+      sources.push_back( db->nuclide("Ra226") );
     }else if( src_name == "U235" )
     {
-      // Need to add U x-ray
-      source_nuclides.push_back( db->nuclide("U235") );
-      source_nuclides.push_back( db->nuclide("U238") );
+      sources.push_back( db->element( "U" ) );
+      sources.push_back( db->nuclide("U235") );
+      sources.push_back( db->nuclide("U238") );
     }else if( src_name == "Xe133" )
     {
-      source_nuclides.push_back( db->nuclide("Xe133") );
-      source_nuclides.push_back( db->nuclide("Xe133m") );
+      sources.push_back( db->nuclide("Xe133") );
+      sources.push_back( db->nuclide("Xe133m") );
     }else if( src_name == "Cf252" )
     {
-      //source_nuclides.push_back( db->nuclide("Cf252") );
-      //source_nuclides.push_back( <"H(n,g)"> );
+      sources.push_back( db->nuclide("Cf252") );
+      
+      const ReactionGamma * const rctn_db = ReactionGammaServer::database();
+      vector<ReactionGamma::ReactionPhotopeak> possible_rctns;
+      if( rctn_db )
+        rctn_db->gammas( "H(n,g)", possible_rctns );  //May throw exception if reaction name is invalid
+      assert( !possible_rctns.empty() );
+      if( !possible_rctns.empty() )
+        sources.push_back( possible_rctns[0].reaction );
+      
       continue;
     }else if( src_name == "Am241Li" )
     {
@@ -3831,12 +4161,12 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
         cout << "Unable to get nuclide for '" << src.src_name << "' - so will skip" << endl;
         continue;
       }
-      source_nuclides.push_back( nuc );
+      sources.push_back( nuc );
       assert( nuc->symbol == src_name );
     }
 
-    assert( !source_nuclides.empty() && source_nuclides.front() );
-    if( source_nuclides.empty() || !source_nuclides.front() )
+    assert( !sources.empty() && !RelActCalcAuto::is_null( sources.front() ) );
+    if( sources.empty() || RelActCalcAuto::is_null( sources.front() ) )
       throw runtime_error( "Failed to get a source" );
 
     const shared_ptr<SpecUtils::SpecFile> &spec_file = src.spec_file;
@@ -3854,99 +4184,17 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
       const vector<shared_ptr<const PeakDef> > auto_search_peaks
           = ExperimentalAutomatedPeakSearch::search_for_peaks( foreground, drf, dummy_origpeaks, singleThreaded, isHPGe );
 
-      // Try all three RelEff curve types
-      std::vector<PeakFitResult> curve_results;
+      const PeakFitResult curve_results = fit_peaks_for_nuclides(
+        auto_search_peaks, foreground, sources, long_background, drf, config, isHPGe );
 
-      // Try LnX
-      PeakFitForNuclideConfig config_lnx = config;
-      config_lnx.rel_eff_eqn_type = config.rel_eff_eqn_type;
-      config_lnx.rel_eff_eqn_order = config.rel_eff_eqn_order;
-      config_lnx.phys_model_self_atten.clear();
-      config_lnx.phys_model_external_atten.clear();
-      curve_results.push_back( fit_peaks_for_nuclides(
-        auto_search_peaks, foreground, source_nuclides, long_background, drf, config_lnx, isHPGe ) );
+      if( curve_results.status != RelActCalcAuto::RelActAutoSolution::Status::Success )
+        throw std::runtime_error( "fit_peaks_for_nuclides failed for all RelEff curve types: " + curve_results.error_message );
 
-      // Try Aluminum shielding
-      PeakFitForNuclideConfig config_aluminum = config;
-      config_aluminum.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
-      config_aluminum.phys_model_use_hoerl = true;
-      config_aluminum.phys_model_self_atten.clear();
-      config_aluminum.phys_model_external_atten.clear();
-
-      std::shared_ptr<RelActCalc::PhysicalModelShieldInput> al_shield
-        = std::make_shared<RelActCalc::PhysicalModelShieldInput>();
-      al_shield->atomic_number = 13.0; // Aluminum
-      al_shield->fit_atomic_number = false;
-      al_shield->areal_density = 0.1 * PhysicalUnits::g_per_cm2; // Starting value in g/cm2
-      al_shield->fit_areal_density = true;
-      al_shield->lower_fit_areal_density = 0.0;
-      al_shield->upper_fit_areal_density = 10.0 * PhysicalUnits::g_per_cm2;
-      config_aluminum.phys_model_external_atten.push_back( al_shield );
-
-      //curve_results.push_back( fit_peaks_for_nuclides(
-      //  auto_search_peaks, foreground, source_nuclides, long_background, drf, config_aluminum, isHPGe ) );
-
-      // Try Lead shielding
-      PeakFitForNuclideConfig config_lead = config;
-      config_lead.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
-      config_lead.phys_model_use_hoerl = true;
-      config_lead.phys_model_self_atten.clear();
-      config_lead.phys_model_external_atten.clear();
-
-      std::shared_ptr<RelActCalc::PhysicalModelShieldInput> pb_shield
-        = std::make_shared<RelActCalc::PhysicalModelShieldInput>();
-      pb_shield->atomic_number = 82.0; // Lead
-      pb_shield->fit_atomic_number = false;
-      pb_shield->areal_density = 0.1 * PhysicalUnits::g_per_cm2; // Starting value in g/cm2
-      pb_shield->fit_areal_density = true;
-      pb_shield->lower_fit_areal_density = 0.0;
-      pb_shield->upper_fit_areal_density = 10.0 * PhysicalUnits::g_per_cm2;
-      config_lead.phys_model_external_atten.push_back( pb_shield );
-
-      //curve_results.push_back( fit_peaks_for_nuclides(
-      //  auto_search_peaks, foreground, source_nuclides, long_background, drf, config_lead, isHPGe ) );
-
-      // Select best result based on chi2
-      PeakFitResult best_result;
-      double best_chi2 = std::numeric_limits<double>::max();
-      bool found_valid = false;
-      std::string last_error;
-      const char *curve_names[] = { "LnX", "Aluminum", "Lead" };
-
-      for( size_t i = 0; i < curve_results.size(); ++i )
-      {
-        const PeakFitResult &curve_result = curve_results[i];
-
-        cout << "RelEff curve type " << curve_names[i] << " status=" << static_cast<int>(curve_result.status);
-        if( curve_result.status == RelActCalcAuto::RelActAutoSolution::Status::Success )
-          cout << " chi2/dof=" << curve_result.solution.m_chi2 << "/" << curve_result.solution.m_dof << endl;
-        else
-          cout << " error: " << curve_result.error_message << endl;
-
-        if( curve_result.status == RelActCalcAuto::RelActAutoSolution::Status::Success
-            && curve_result.solution.m_chi2 < best_chi2 )
-        {
-          best_chi2 = curve_result.solution.m_chi2;
-          best_result = curve_result;
-          found_valid = true;
-        }
-        else if( curve_result.status != RelActCalcAuto::RelActAutoSolution::Status::Success )
-        {
-          last_error = curve_result.error_message;
-        }
-      }
-
-      if( !found_valid )
-      {
-        throw std::runtime_error( "fit_peaks_for_nuclides failed for all RelEff curve types: " + last_error );
-      }
-
-      const RelActCalcAuto::RelActAutoSolution &solution = best_result.solution;
-      const std::vector<PeakDef> &fit_peaks = best_result.observable_peaks;
+      const RelActCalcAuto::RelActAutoSolution &solution = curve_results.solution;
+      const std::vector<PeakDef> &fit_peaks = curve_results.observable_peaks;
 
       cout << "Best RelEff curve type solution (" << solution.m_options.rel_eff_curves.front().name << ") selected with chi2/dof="
            << solution.m_chi2 << "/" << solution.m_dof << endl;
-
 
       // Score the fit results using only signal photopeaks
       CombinedPeakFitScore combined_score;
@@ -3992,7 +4240,7 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
       }
 
       // Write N42 file with foreground, background, and fit peaks (only if fit succeeded)
-      if( best_result.status == RelActCalcAuto::RelActAutoSolution::Status::Success )
+      if( curve_results.status == RelActCalcAuto::RelActAutoSolution::Status::Success )
       {
         if( write_n42 )
         {
@@ -4265,7 +4513,7 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
 
         // Write HTML fieldset and div
         *html_output << "<fieldset style=\"\">" << endl
-          << "<legend>" << src_name << " (chi2/dof=" << solution.m_chi2 << "/" << solution.m_dof << ")</legend>" << endl;
+          << "<legend>" << src.src_name << " (chi2/dof=" << solution.m_chi2 << "/" << solution.m_dof << ")</legend>" << endl;
         *html_output << "<div id=\"" << div_id << "\" class=\"chart\" oncontextmenu=\"return false;\"></div>" << endl;
         *html_output << "<script>" << endl;
 
@@ -4451,7 +4699,7 @@ window.addEventListener('resize', resizeChart)delim" << chart_counter-1 << R"del
 
         *html_output << "</fieldset>" << endl;
         }//if( write_n42 )
-      }//if( best_result.status == Success )
+      }//if( curve_results.status == Success )
 
     }catch( const std::exception &e )
     {
