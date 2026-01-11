@@ -5571,7 +5571,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                           double age,
                                           const std::vector<double> &gammas_to_exclude ) const
   {
-    assert( RelActCalcAuto::nuclide(nuc_info.source) || (nuc_info.age < 0.0) );
+    assert( RelActCalcAuto::nuclide(nuc_info.source) || (nuc_info.age <= 0.0) );
     assert( !RelActCalcAuto::nuclide(nuc_info.source) || (nuc_info.age >= 0.0) );
     
     assert( !RelActCalcAuto::is_null(nuc_info.source) );

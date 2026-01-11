@@ -815,6 +815,65 @@ std::vector<PeakDef> compute_observable_peaks(
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,
   const PeakFitForNuclideConfig &config )
 {
+  
+#if( PERFORM_DEVELOPER_CHECKS )
+  // Debug: Check if input fit_peaks have overlapping ROIs
+  if( PeakFitImprove::debug_printout )
+  {
+    std::map<std::shared_ptr<const PeakContinuum>, std::vector<double>> continuum_to_peak_means_input;
+    for( const PeakDef &peak : fit_peaks )
+      continuum_to_peak_means_input[peak.continuum()].push_back( peak.mean() );
+
+    struct RoiDebugInfoInput
+    {
+      double lower_energy;
+      double upper_energy;
+      std::vector<double> peak_means;
+    };
+
+    std::vector<RoiDebugInfoInput> rois_debug_input;
+    for( const auto &entry : continuum_to_peak_means_input )
+    {
+      RoiDebugInfoInput info;
+      info.lower_energy = entry.first->lowerEnergy();
+      info.upper_energy = entry.first->upperEnergy();
+      info.peak_means = entry.second;
+      rois_debug_input.push_back( info );
+    }
+
+    std::sort( begin(rois_debug_input), end(rois_debug_input),
+      []( const RoiDebugInfoInput &a, const RoiDebugInfoInput &b ) { return a.lower_energy < b.lower_energy; } );
+
+    bool found_overlap_input = false;
+    for( size_t i = 1; i < rois_debug_input.size(); ++i )
+    {
+      const RoiDebugInfoInput &prev_roi = rois_debug_input[i - 1];
+      const RoiDebugInfoInput &curr_roi = rois_debug_input[i];
+
+      if( curr_roi.lower_energy < prev_roi.upper_energy )
+      {
+        if( !found_overlap_input )
+          cerr << "compute_observable_peaks: INPUT fit_peaks ALREADY HAVE OVERLAPPING ROIs:" << endl;
+        found_overlap_input = true;
+
+        cerr << "  ROI[" << (i-1) << "]: [" << prev_roi.lower_energy << ", " << prev_roi.upper_energy << "] keV, peaks at: ";
+        for( double mean : prev_roi.peak_means )
+          cerr << mean << " ";
+        cerr << "keV" << endl;
+
+        cerr << "  ROI[" << i << "]: [" << curr_roi.lower_energy << ", " << curr_roi.upper_energy << "] keV, peaks at: ";
+        for( double mean : curr_roi.peak_means )
+          cerr << mean << " ";
+        cerr << "keV" << endl;
+        cerr << "  OVERLAP: " << (prev_roi.upper_energy - curr_roi.lower_energy) << " keV" << endl;
+      }
+    }
+
+    if( !found_overlap_input && PeakFitImprove::debug_printout )
+      cout << "compute_observable_peaks: Input fit_peaks have no overlapping ROIs" << endl;
+  }//if( PeakFitImprove::debug_printout )
+#endif
+
   // Fraction of Gaussian area within +/-1 FWHM
   // erf(sqrt(ln(2))) = 0.7607
   const double fwhm_fraction = 0.7607;
@@ -826,7 +885,7 @@ std::vector<PeakDef> compute_observable_peaks(
   // Lambda to adjust ROI bounds when edge peaks are removed.
   // Returns true if bounds were adjusted, false otherwise.
   // Takes peaks sorted by mean energy.
-  const auto adjust_roi_bounds_if_needed = [roi_width_num_fwhm_lower, roi_width_num_fwhm_upper](
+  const auto reduce_roi_bounds_if_needed = [roi_width_num_fwhm_lower, roi_width_num_fwhm_upper](
     std::vector<PeakDef> &peaks,
     const double orig_left_mean,
     const double orig_right_mean ) -> bool
@@ -851,8 +910,15 @@ std::vector<PeakDef> compute_observable_peaks(
     // Calculate new ROI bounds based on new edge peaks
     const double new_left_fwhm = peaks.front().fwhm();
     const double new_right_fwhm = peaks.back().fwhm();
-    const double new_lower_energy = new_left_mean - roi_width_num_fwhm_lower * new_left_fwhm;
-    const double new_upper_energy = new_right_mean + roi_width_num_fwhm_upper * new_right_fwhm;
+    double new_lower_energy = new_left_mean - roi_width_num_fwhm_lower * new_left_fwhm;
+    double new_upper_energy = new_right_mean + roi_width_num_fwhm_upper * new_right_fwhm;
+
+    // Constrain new bounds to not expand beyond original ROI bounds
+    // This function is only called when edge peaks are removed, so ROI should only shrink, never expand
+    const double orig_lower = old_continuum->lowerEnergy();
+    const double orig_upper = old_continuum->upperEnergy();
+    new_lower_energy = std::max( new_lower_energy, orig_lower );
+    new_upper_energy = std::min( new_upper_energy, orig_upper );
 
     // Create new continuum as copy with updated energy range
     std::shared_ptr<PeakContinuum> new_continuum = std::make_shared<PeakContinuum>( *old_continuum );
@@ -870,7 +936,7 @@ std::vector<PeakDef> compute_observable_peaks(
     }
 
     return true;
-  };//adjust_roi_bounds_if_needed lambda
+  };//reduce_roi_bounds_if_needed lambda
 
   // Step 1: Group input peaks by ROI (shared continuum)
   std::map<std::shared_ptr<const PeakContinuum>, std::vector<PeakDef>> input_rois;
@@ -919,7 +985,7 @@ std::vector<PeakDef> compute_observable_peaks(
     // Adjust ROI bounds if edge peaks were removed
     if( !kept_peaks.empty() )
     {
-      adjust_roi_bounds_if_needed( kept_peaks, orig_left_mean, orig_right_mean );
+      reduce_roi_bounds_if_needed( kept_peaks, orig_left_mean, orig_right_mean );
       filtered_peaks.insert( end(filtered_peaks), begin(kept_peaks), end(kept_peaks) );
     }
   }//for( auto &roi_entry : input_rois )
@@ -931,6 +997,55 @@ std::vector<PeakDef> compute_observable_peaks(
   std::map<std::shared_ptr<const PeakContinuum>, std::vector<PeakDef>> rois;
   for( const PeakDef &peak : filtered_peaks )
     rois[peak.continuum()].push_back( peak );
+
+  // Debug: Check if rois already have overlaps before parallel processing
+#if( PERFORM_DEVELOPER_CHECKS )
+  if( PeakFitImprove::debug_printout )
+  {
+    struct RoiDebugInfo2
+    {
+      double lower_energy;
+      double upper_energy;
+      size_t num_peaks;
+    };
+
+    std::vector<RoiDebugInfo2> rois_debug2;
+    for( const auto &entry : rois )
+    {
+      RoiDebugInfo2 info;
+      info.lower_energy = entry.first->lowerEnergy();
+      info.upper_energy = entry.first->upperEnergy();
+      info.num_peaks = entry.second.size();
+      rois_debug2.push_back( info );
+    }
+
+    std::sort( begin(rois_debug2), end(rois_debug2),
+      []( const RoiDebugInfo2 &a, const RoiDebugInfo2 &b ) { return a.lower_energy < b.lower_energy; } );
+
+    bool found_overlap2 = false;
+    for( size_t i = 1; i < rois_debug2.size(); ++i )
+    {
+      const RoiDebugInfo2 &prev_roi = rois_debug2[i - 1];
+      const RoiDebugInfo2 &curr_roi = rois_debug2[i];
+
+      if( curr_roi.lower_energy < prev_roi.upper_energy )
+      {
+        if( !found_overlap2 )
+          cerr << "compute_observable_peaks: OVERLAPS BEFORE PARALLEL PROCESSING:" << endl;
+        found_overlap2 = true;
+
+        cerr << "  ROI[" << (i-1) << "]: [" << prev_roi.lower_energy << ", " << prev_roi.upper_energy
+             << "] keV, " << prev_roi.num_peaks << " peaks" << endl;
+        cerr << "  ROI[" << i << "]: [" << curr_roi.lower_energy << ", " << curr_roi.upper_energy
+             << "] keV, " << curr_roi.num_peaks << " peaks" << endl;
+        cerr << "  OVERLAP: " << (prev_roi.upper_energy - curr_roi.lower_energy) << " keV" << endl;
+      }
+    }
+
+    if( !found_overlap2 && PeakFitImprove::debug_printout )
+      cout << "compute_observable_peaks: No overlaps before parallel processing" << endl;
+  }
+#endif
 
   // Step 4: Iteratively refit each ROI and remove insignificant peaks - in parallel
   const size_t num_rois = rois.size();
@@ -944,7 +1059,7 @@ std::vector<PeakDef> compute_observable_peaks(
   for( size_t roi_index = 0; roi_index < num_rois; ++roi_index )
   {
     pool.post( [roi_index, &roi_vec, &roi_results, &foreground,
-                final_significance_threshold, &adjust_roi_bounds_if_needed]()
+                final_significance_threshold, &reduce_roi_bounds_if_needed]()
     {
       std::vector<PeakDef> roi_peaks = roi_vec[roi_index].second;
 
@@ -1003,7 +1118,7 @@ std::vector<PeakDef> compute_observable_peaks(
         // Adjust ROI bounds if edge peaks were removed
         if( !kept_peaks.empty() )
         {
-          const bool bounds_adjusted = adjust_roi_bounds_if_needed( kept_peaks, orig_left_mean, orig_right_mean );
+          const bool bounds_adjusted = reduce_roi_bounds_if_needed( kept_peaks, orig_left_mean, orig_right_mean );
           if( bounds_adjusted )
             changed = true;  // Need to refit with new continuum bounds
         }
@@ -1025,6 +1140,67 @@ std::vector<PeakDef> compute_observable_peaks(
 
   // Sort by energy
   std::sort( begin(observable_peaks), end(observable_peaks), &PeakDef::lessThanByMean );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  // Debug: Check for overlapping ROI bounds
+  if( PeakFitImprove::debug_printout )
+  {
+    // Group peaks by continuum to identify unique ROIs
+    std::map<std::shared_ptr<const PeakContinuum>, std::vector<double>> continuum_to_peak_means;
+    for( const PeakDef &peak : observable_peaks )
+      continuum_to_peak_means[peak.continuum()].push_back( peak.mean() );
+
+    // Extract ROIs sorted by lower energy
+    struct RoiDebugInfo
+    {
+      double lower_energy;
+      double upper_energy;
+      std::vector<double> peak_means;
+    };
+
+    std::vector<RoiDebugInfo> rois_debug;
+    for( const auto &entry : continuum_to_peak_means )
+    {
+      RoiDebugInfo info;
+      info.lower_energy = entry.first->lowerEnergy();
+      info.upper_energy = entry.first->upperEnergy();
+      info.peak_means = entry.second;
+      rois_debug.push_back( info );
+    }
+
+    std::sort( begin(rois_debug), end(rois_debug),
+      []( const RoiDebugInfo &a, const RoiDebugInfo &b ) { return a.lower_energy < b.lower_energy; } );
+
+    // Check for overlaps
+    bool found_overlap = false;
+    for( size_t i = 1; i < rois_debug.size(); ++i )
+    {
+      const RoiDebugInfo &prev_roi = rois_debug[i - 1];
+      const RoiDebugInfo &curr_roi = rois_debug[i];
+
+      if( curr_roi.lower_energy < prev_roi.upper_energy )
+      {
+        if( !found_overlap )
+          cerr << "compute_observable_peaks: FOUND OVERLAPPING ROIs:" << endl;
+        found_overlap = true;
+
+        cerr << "  ROI[" << (i-1) << "]: [" << prev_roi.lower_energy << ", " << prev_roi.upper_energy << "] keV, peaks at: ";
+        for( double mean : prev_roi.peak_means )
+          cerr << mean << " ";
+        cerr << "keV" << endl;
+
+        cerr << "  ROI[" << i << "]: [" << curr_roi.lower_energy << ", " << curr_roi.upper_energy << "] keV, peaks at: ";
+        for( double mean : curr_roi.peak_means )
+          cerr << mean << " ";
+        cerr << "keV" << endl;
+        cerr << "  OVERLAP: " << (prev_roi.upper_energy - curr_roi.lower_energy) << " keV" << endl;
+      }
+    }
+
+    if( !found_overlap && PeakFitImprove::debug_printout )
+      cout << "compute_observable_peaks: No overlapping ROIs detected" << endl;
+  }//if( PeakFitImprove::debug_printout )
+#endif
 
   return observable_peaks;
 }//compute_observable_peaks
@@ -1877,6 +2053,22 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
           break;
         }
 
+        // Developer check: Validate refined solution's final ROIs don't overlap
+#if( PERFORM_DEVELOPER_CHECKS )
+        for( size_t i = 1; i < refined_solution.m_final_roi_ranges.size(); ++i )
+        {
+          const RelActCalcAuto::RoiRange &prev_roi = refined_solution.m_final_roi_ranges[i - 1];
+          const RelActCalcAuto::RoiRange &curr_roi = refined_solution.m_final_roi_ranges[i];
+          if( curr_roi.lower_energy < prev_roi.upper_energy )
+          {
+            cerr << "ERROR: RelActAuto returned overlapping ROIs[" << (i-1) << "] and [" << i << "]: "
+                 << "[" << prev_roi.lower_energy << ", " << prev_roi.upper_energy << "] vs "
+                 << "[" << curr_roi.lower_energy << ", " << curr_roi.upper_energy << "]" << endl;
+            assert( curr_roi.lower_energy >= prev_roi.upper_energy );
+          }
+        }
+#endif
+
         // Compute filtered chi2/dof that only includes ROIs with significant peaks.
         // This avoids the problem where adding a ROI in a flat region (with no real peaks)
         // would artificially reduce chi2/dof.
@@ -2033,6 +2225,29 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
       cout << "Observable peaks: " << result.observable_peaks.size() << " of "
            << result.fit_peaks.size() << " fit_peaks" << endl;
     }
+
+    // Developer check: Look for duplicate peaks (same mean, different ROI)
+#if( PERFORM_DEVELOPER_CHECKS )
+    for( size_t i = 0; i < result.observable_peaks.size(); ++i )
+    {
+      for( size_t j = i + 1; j < result.observable_peaks.size(); ++j )
+      {
+        const PeakDef &peak_i = result.observable_peaks[i];
+        const PeakDef &peak_j = result.observable_peaks[j];
+        const double mean_diff = std::fabs( peak_i.mean() - peak_j.mean() );
+        if( mean_diff < 0.5 )  // Same energy within 0.5 keV
+        {
+          const bool same_continuum = (peak_i.continuum() == peak_j.continuum());
+          if( !same_continuum )
+          {
+            cerr << "WARNING: Duplicate peaks at " << peak_i.mean() << " keV with different ROIs: "
+                 << "[" << peak_i.continuum()->lowerEnergy() << ", " << peak_i.continuum()->upperEnergy() << "] vs "
+                 << "[" << peak_j.continuum()->lowerEnergy() << ", " << peak_j.continuum()->upperEnergy() << "]" << endl;
+          }
+        }
+      }
+    }
+#endif
 
   }catch( const std::exception &e )
   {
@@ -4523,7 +4738,22 @@ vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
     }
   }//for( ClusteredGammaInfo &cluster : merged_clusters )
 
-  
+
+  // Developer check: Validate final_clusters don't overlap
+#if( PERFORM_DEVELOPER_CHECKS )
+  for( size_t i = 1; i < final_clusters.size(); ++i )
+  {
+    const ClusteredGammaInfo &prev = final_clusters[i - 1];
+    const ClusteredGammaInfo &curr = final_clusters[i];
+    if( curr.lower < prev.upper )
+    {
+      cerr << "ERROR: final_clusters[" << (i-1) << "] and [" << i << "] overlap: "
+           << "[" << prev.lower << ", " << prev.upper << "] vs "
+           << "[" << curr.lower << ", " << curr.upper << "]" << endl;
+      assert( curr.lower >= prev.upper );
+    }
+  }
+#endif
 
   // Create ROIs from final clusters
   double previous_roi_upper = 0.0;
@@ -4552,6 +4782,7 @@ vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
         cerr << "cluster_gammas_to_rois: Rejected ROI [" << roi.lower_energy << ", " << roi.upper_energy
              << "] keV: too narrow (" << num_fwhm_wide << " FWHM < " << settings.min_fwhm_roi << " min)" << endl;
       }
+      // Don't update previous_roi_upper since we're not adding this ROI
       continue;
     }
 
@@ -4618,6 +4849,22 @@ vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
            << width << " keV, " << (width / fwhm) << " FWHM), cont=" << cont_str << endl;
     }
   }
+
+  // Developer check: Validate result ROIs don't overlap
+#if( PERFORM_DEVELOPER_CHECKS )
+  for( size_t i = 1; i < result_rois.size(); ++i )
+  {
+    const RelActCalcAuto::RoiRange &prev_roi = result_rois[i - 1];
+    const RelActCalcAuto::RoiRange &curr_roi = result_rois[i];
+    if( curr_roi.lower_energy < prev_roi.upper_energy )
+    {
+      cerr << "ERROR: result_rois[" << (i-1) << "] and [" << i << "] overlap: "
+           << "[" << prev_roi.lower_energy << ", " << prev_roi.upper_energy << "] vs "
+           << "[" << curr_roi.lower_energy << ", " << curr_roi.upper_energy << "]" << endl;
+      assert( curr_roi.lower_energy >= prev_roi.upper_energy );
+    }
+  }
+#endif
 
   return result_rois;
 }//cluster_gammas_to_rois
@@ -4766,6 +5013,10 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
       sources.push_back( db->element( "U" ) );
       sources.push_back( db->nuclide("U235") );
       sources.push_back( db->nuclide("U238") );
+    }else if( src_name == "Np237" )
+    {
+      sources.push_back( db->element( "Np" ) );
+      sources.push_back( db->nuclide("Np237") );
     }else if( src_name == "Xe133" )
     {
       sources.push_back( db->nuclide("Xe133") );
@@ -4825,6 +5076,65 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
 
       const RelActCalcAuto::RelActAutoSolution &solution = curve_results.solution;
       const std::vector<PeakDef> &fit_peaks = curve_results.observable_peaks;
+
+#if( PERFORM_DEVELOPER_CHECKS )
+      {// Begin check for overlapping ROIs in fit_peaks
+        // Collect unique continuums (ROIs) and their bounds
+        std::map<std::shared_ptr<const PeakContinuum>, std::vector<double>> continuum_to_peak_means;
+        for( const PeakDef &peak : fit_peaks )
+          continuum_to_peak_means[peak.continuum()].push_back( peak.mean() );
+
+        struct RoiCheckInfo
+        {
+          double lower_energy;
+          double upper_energy;
+          std::vector<double> peak_means;
+        };
+
+        std::vector<RoiCheckInfo> rois_to_check;
+        for( const auto &entry : continuum_to_peak_means )
+        {
+          RoiCheckInfo info;
+          info.lower_energy = entry.first->lowerEnergy();
+          info.upper_energy = entry.first->upperEnergy();
+          info.peak_means = entry.second;
+          rois_to_check.push_back( info );
+        }
+
+        // Sort ROIs by lower energy
+        std::sort( begin(rois_to_check), end(rois_to_check),
+          []( const RoiCheckInfo &a, const RoiCheckInfo &b ) { return a.lower_energy < b.lower_energy; } );
+
+        // Check for overlaps
+        bool found_overlap = false;
+        for( size_t i = 1; i < rois_to_check.size(); ++i )
+        {
+          const RoiCheckInfo &prev_roi = rois_to_check[i - 1];
+          const RoiCheckInfo &curr_roi = rois_to_check[i];
+
+          if( curr_roi.lower_energy < prev_roi.upper_energy )
+          {
+            if( !found_overlap )
+              cerr << "\n*** OVERLAPPING ROIs DETECTED in fit_peaks (observable_peaks) ***" << endl;
+            found_overlap = true;
+
+            cerr << "  ROI[" << (i-1) << "]: [" << prev_roi.lower_energy << ", " << prev_roi.upper_energy << "] keV, peaks at: ";
+            for( double mean : prev_roi.peak_means )
+              cerr << mean << " ";
+            cerr << "keV" << endl;
+
+            cerr << "  ROI[" << i << "]: [" << curr_roi.lower_energy << ", " << curr_roi.upper_energy << "] keV, peaks at: ";
+            for( double mean : curr_roi.peak_means )
+              cerr << mean << " ";
+            cerr << "keV" << endl;
+            cerr << "  OVERLAP: " << (prev_roi.upper_energy - curr_roi.lower_energy) << " keV" << endl;
+          }
+        }
+
+        if( found_overlap )
+          cerr << "*** END OVERLAPPING ROIs ***\n" << endl;
+      }// End check for overlapping ROIs in fit_peaks
+#endif
 
       cout << "Best RelEff curve type solution (" << solution.m_options.rel_eff_curves.front().name << ") selected with chi2/dof="
            << solution.m_chi2 << "/" << solution.m_dof << endl;
