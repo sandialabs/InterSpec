@@ -1531,9 +1531,6 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   // Define skew type to use
   const PeakDef::SkewType skew_type = PeakDef::SkewType::NoSkew;
 
-  // Create RelActAuto options from config
-  RelActCalcAuto::Options options;
-
   // Create relative efficiency curve from config parameters
   RelActCalcAuto::RelEffCurveInput rel_eff_curve;
   rel_eff_curve.rel_eff_eqn_type = config.rel_eff_eqn_type;
@@ -1577,6 +1574,8 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     rel_eff_curve.name = RelActCalc::to_str(config.rel_eff_eqn_type) + std::string(" Peak Fit");
   }
 
+  // Create RelActAuto options from config
+  RelActCalcAuto::Options options;
   options.rel_eff_curves.push_back( rel_eff_curve );
   options.rois = initial_rois;
   options.fit_energy_cal = config.fit_energy_cal;
@@ -2024,6 +2023,317 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 }//fit_peaks_for_nuclide_relactauto
 
 
+/** Estimate initial ROIs when no auto-search peaks matched source nuclides.
+
+ Creates ROIs directly from the highest BR*efficiency gamma lines for each source.
+ For each source, selects up to 4 gammas with highest BR*efficiency scores.
+ Each gamma defines an ROI as gamma_energy ± 2.5*FWHM.
+
+ ROIs are merged if they overlap AND the combined width doesn't exceed
+ config.auto_rel_eff_sol_max_fwhm FWHMs. If ROIs overlap but can't merge due to
+ width constraint, they are split to eliminate overlap (critical requirement).
+
+ All ROIs use Linear continuum and Fixed range limits.
+
+ @param sources Vector of source nuclides/elements/reactions to consider
+ @param drf Detector response function (may be nullptr, will use generic)
+ @param isHPGe True for HPGe detector, false for NaI
+ @param fwhmFnctnlForm FWHM functional form
+ @param fwhm_coefficients FWHM coefficients
+ @param lower_fwhm_energy Lower energy bound for FWHM validity
+ @param upper_fwhm_energy Upper energy bound for FWHM validity
+ @param min_valid_energy Minimum valid energy for spectrum
+ @param max_valid_energy Maximum valid energy for spectrum
+ @param config Configuration with merging thresholds
+ @return Vector of ROI ranges, empty if no valid ROIs created
+ */
+std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_without_peaks(
+  const std::vector<RelActCalcAuto::SrcVariant> &sources,
+  const std::shared_ptr<const DetectorPeakResponse> &drf,
+  const bool isHPGe,
+  const DetectorPeakResponse::ResolutionFnctForm fwhmFnctnlForm,
+  const std::vector<float> &fwhm_coefficients,
+  const double lower_fwhm_energy,
+  const double upper_fwhm_energy,
+  const double min_valid_energy,
+  const double max_valid_energy,
+  const PeakFitForNuclideConfig &config )
+{
+  // Step 1: Get or create valid DRF (use generic if nullptr)
+  std::shared_ptr<const DetectorPeakResponse> drf_to_use = drf;
+  if( !drf_to_use || !drf_to_use->isValid() )
+  {
+    drf_to_use = isHPGe
+        ? DetectorPeakResponse::getGenericHPGeDetector()
+        : DetectorPeakResponse::getGenericNaIDetector();
+  }
+
+  if( !drf_to_use || !drf_to_use->isValid() )
+    return {};
+
+  // Step 2: Collect top gammas per source
+  // Data structure to hold gamma info
+  struct GammaInfo
+  {
+    double energy;
+    double br_times_eff;
+    RelActCalcAuto::SrcVariant source;  // For debugging
+  };
+
+  std::vector<GammaInfo> selected_gammas;
+
+  for( const RelActCalcAuto::SrcVariant &src : sources )
+  {
+    if( RelActCalcAuto::is_null( src ) )
+      continue;
+
+    // Get source age and photons
+    const double age = get_source_age( src, -1.0 );
+    const std::vector<SandiaDecay::EnergyRatePair> photons = get_source_photons( src, 1.0, age );
+
+    // Compute BR*eff scores for valid gammas
+    std::vector<GammaInfo> candidates;
+    for( const SandiaDecay::EnergyRatePair &photon : photons )
+    {
+      if( photon.energy < min_valid_energy || photon.energy > max_valid_energy )
+        continue;
+
+      const double br = photon.numPerSecond;  // BR since we used unit activity
+      const double eff = drf_to_use->intrinsicEfficiency( static_cast<float>(photon.energy) );
+      const double score = br * eff;
+
+      if( score > 0.0 )
+        candidates.push_back( {photon.energy, score, src} );
+    }
+
+    // Sort by score (descending) and take top 4
+    std::sort( candidates.begin(), candidates.end(),
+      [](const GammaInfo &a, const GammaInfo &b) { return a.br_times_eff > b.br_times_eff; } );
+
+    const size_t num_to_take = std::min( candidates.size(), size_t(4) );
+    for( size_t i = 0; i < num_to_take; ++i )
+      selected_gammas.push_back( candidates[i] );
+
+    // Debug output
+    if( PeakFitImprove::debug_printout )
+    {
+      cerr << "estimate_initial_rois_without_peaks: Source "
+           << RelActCalcAuto::to_name( src ) << " - selected " << num_to_take << " gammas" << endl;
+      for( size_t i = 0; i < num_to_take; ++i )
+      {
+        cerr << "  " << candidates[i].energy << " keV, BR*eff=" << candidates[i].br_times_eff << endl;
+      }
+    }
+  }
+
+  if( selected_gammas.empty() )
+  {
+    if( PeakFitImprove::debug_printout )
+      cerr << "estimate_initial_rois_without_peaks: No valid gammas found" << endl;
+    return {};
+  }
+
+  // Step 3: Create initial ROIs
+  struct InitialRoi
+  {
+    RelActCalcAuto::RoiRange roi;
+    double center_energy;
+    double fwhm;
+  };
+
+  std::vector<InitialRoi> initial_rois;
+
+  for( const GammaInfo &gamma : selected_gammas )
+  {
+    // Compute FWHM
+    const double fwhm = DetectorPeakResponse::peakResolutionFWHM(
+      static_cast<float>(gamma.energy), fwhmFnctnlForm, fwhm_coefficients );
+
+    // Validate FWHM
+    if( !std::isfinite( fwhm ) || fwhm <= 0.0 )
+    {
+      if( PeakFitImprove::debug_printout )
+        cerr << "Warning: Invalid FWHM at " << gamma.energy << " keV, skipping" << endl;
+      continue;
+    }
+
+    // Create ROI: energy ± 2.5 FWHM, clamped to valid range
+    RelActCalcAuto::RoiRange roi;
+    roi.lower_energy = std::max( min_valid_energy, gamma.energy - 2.5 * fwhm );
+    roi.upper_energy = std::min( max_valid_energy, gamma.energy + 2.5 * fwhm );
+    roi.continuum_type = PeakContinuum::OffsetType::Linear;
+    roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
+
+    initial_rois.push_back( {roi, gamma.energy, fwhm} );
+  }
+
+  if( initial_rois.empty() )
+  {
+    if( PeakFitImprove::debug_printout )
+      cerr << "estimate_initial_rois_without_peaks: No valid ROIs created" << endl;
+    return {};
+  }
+
+  // Sort by lower_energy for merging
+  std::sort( initial_rois.begin(), initial_rois.end(),
+    [](const InitialRoi &a, const InitialRoi &b)
+    {
+      return a.roi.lower_energy < b.roi.lower_energy;
+    } );
+
+  // Step 4: Merge/split overlapping ROIs
+  // Critical: ensure NO overlapping ROIs in final result
+  std::vector<RelActCalcAuto::RoiRange> merged_rois;
+  std::vector<std::vector<double>> merged_centers;  // Track center energies for each merged ROI
+  std::vector<double> merged_fwhms;  // Track FWHM for validation
+
+  for( const InitialRoi &current : initial_rois )
+  {
+    if( merged_rois.empty() )
+    {
+      merged_rois.push_back( current.roi );
+      merged_centers.push_back( {current.center_energy} );
+      merged_fwhms.push_back( current.fwhm );
+      continue;
+    }
+
+    RelActCalcAuto::RoiRange &last = merged_rois.back();
+    std::vector<double> &last_centers = merged_centers.back();
+    const double last_fwhm = merged_fwhms.back();
+
+    // Check if ROIs overlap
+    const bool overlaps = (current.roi.lower_energy < last.upper_energy);
+
+    if( !overlaps )
+    {
+      // No overlap - add new ROI
+      merged_rois.push_back( current.roi );
+      merged_centers.push_back( {current.center_energy} );
+      merged_fwhms.push_back( current.fwhm );
+      continue;
+    }
+
+    // ROIs overlap - check width constraint
+    const double combined_upper = std::max( last.upper_energy, current.roi.upper_energy );
+    const double combined_width = combined_upper - last.lower_energy;
+    const double mid_energy = 0.5 * (last.lower_energy + combined_upper);
+    const double mid_fwhm = DetectorPeakResponse::peakResolutionFWHM(
+      static_cast<float>(mid_energy), fwhmFnctnlForm, fwhm_coefficients );
+
+    const bool width_ok = (combined_width <= config.auto_rel_eff_sol_max_fwhm * mid_fwhm);
+
+    if( width_ok )
+    {
+      // MERGE: Extend last ROI to encompass both
+      last.upper_energy = combined_upper;
+      last_centers.push_back( current.center_energy );
+      // Update FWHM to use the average
+      merged_fwhms.back() = 0.5 * (last_fwhm + current.fwhm);
+
+      if( PeakFitImprove::debug_printout )
+      {
+        cerr << "Merged overlapping ROI [" << current.roi.lower_energy << ", "
+             << current.roi.upper_energy << "] into [" << last.lower_energy
+             << ", " << last.upper_energy << "]" << endl;
+      }
+    }
+    else
+    {
+      // SPLIT: Width constraint prevents merge - give each ROI half the overlap
+      const double overlap = last.upper_energy - current.roi.lower_energy;
+      const double half_overlap = overlap / 2.0;
+
+      // Adjust boundaries to split overlap
+      const double original_last_upper = last.upper_energy;
+      last.upper_energy = last.upper_energy - half_overlap;
+      RelActCalcAuto::RoiRange adjusted_current = current.roi;
+      adjusted_current.lower_energy = current.roi.lower_energy + half_overlap;
+
+      // Validate adjusted last ROI still contains all its center energies and is wide enough
+      const double last_width = last.upper_energy - last.lower_energy;
+      bool last_valid = (last_width >= last_fwhm);
+      for( const double center : last_centers )
+      {
+        if( center < last.lower_energy || center > last.upper_energy )
+        {
+          last_valid = false;
+          break;
+        }
+      }
+
+      // Validate adjusted current ROI is still useful
+      const double adjusted_width = adjusted_current.upper_energy - adjusted_current.lower_energy;
+      const bool current_contains_center = (current.center_energy >= adjusted_current.lower_energy)
+                                        && (current.center_energy <= adjusted_current.upper_energy);
+      const bool current_wide_enough = (adjusted_width >= current.fwhm);
+      const bool current_valid = current_contains_center && current_wide_enough;
+
+      if( !last_valid )
+      {
+        // Last ROI is no longer valid after split - remove it and add current as-is
+        merged_rois.pop_back();
+        merged_centers.pop_back();
+        merged_fwhms.pop_back();
+
+        merged_rois.push_back( current.roi );
+        merged_centers.push_back( {current.center_energy} );
+        merged_fwhms.push_back( current.fwhm );
+
+        if( PeakFitImprove::debug_printout )
+        {
+          cerr << "Removed last ROI (invalid after split), kept current ROI at "
+               << current.center_energy << " keV" << endl;
+        }
+      }
+      else if( current_valid )
+      {
+        // Both ROIs valid - add the split current ROI
+        merged_rois.push_back( adjusted_current );
+        merged_centers.push_back( {current.center_energy} );
+        merged_fwhms.push_back( current.fwhm );
+
+        if( PeakFitImprove::debug_printout )
+        {
+          cerr << "Split overlapping ROIs (width constraint): overlap=" << overlap
+               << " keV, last=[" << last.lower_energy << ", " << last.upper_energy
+               << "], current=[" << adjusted_current.lower_energy << ", "
+               << adjusted_current.upper_energy << "]" << endl;
+        }
+      }
+      else
+      {
+        // Current ROI invalid after split, but last is valid - just keep last as adjusted
+        if( PeakFitImprove::debug_printout )
+        {
+          cerr << "Skipping adjusted current ROI at " << current.center_energy << " keV: ";
+          if( !current_contains_center )
+            cerr << "doesn't contain source energy";
+          else
+            cerr << "too narrow (" << adjusted_width << " keV < " << current.fwhm << " keV FWHM)";
+          cerr << endl;
+        }
+      }
+    }
+  }
+
+  // Validate no overlaps (developer check)
+#if( PERFORM_DEVELOPER_CHECKS )
+  for( size_t i = 1; i < merged_rois.size(); ++i )
+  {
+    assert( merged_rois[i].lower_energy >= merged_rois[i-1].upper_energy );
+  }
+#endif
+
+  if( PeakFitImprove::debug_printout )
+  {
+    cerr << "estimate_initial_rois_without_peaks: Created " << merged_rois.size()
+         << " final ROIs" << endl;
+  }
+
+  return merged_rois;
+}//estimate_initial_rois_without_peaks
+
+
 /** Fallback function to estimate initial ROIs when RelActManual fails.
 
  Uses detector efficiency and spectrum integration to estimate activities for each source nuclide,
@@ -2188,6 +2498,692 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_fallback(
 }//estimate_initial_rois_fallback
 
 
+/** Estimates initial ROIs using RelActManual with multiple fallback strategies.
+
+ This function attempts to estimate initial ROIs by:
+ 1. Converting auto_search_peaks to RelActManual format
+ 2. Matching peaks to source nuclides
+ 3. If no peaks matched -> falls back to estimate_initial_rois_without_peaks()
+ 4. Fitting a relative efficiency curve using RelActManual with matched peaks
+ 5. Extracting relative activities for each source from the solution
+ 6. Clustering gammas into ROIs using the relative efficiency and activities
+ 7. If RelActManual fails -> falls back to estimate_initial_rois_fallback()
+
+ @param auto_search_peaks Peaks found by automatic search
+ @param foreground Foreground measurement
+ @param sources Source variants to fit
+ @param drf Detector response function (may be nullptr)
+ @param isHPGe Whether detector is HPGe (vs NaI)
+ @param fwhmFnctnlForm FWHM functional form
+ @param fwhm_coefficients FWHM coefficients
+ @param lower_fwhm_energy Lower energy bound for FWHM validity
+ @param upper_fwhm_energy Upper energy bound for FWHM validity
+ @param min_valid_energy Minimum valid energy for clustering
+ @param max_valid_energy Maximum valid energy for clustering
+ @param manual_settings Clustering settings for manual mode
+ @param config Peak fitting configuration
+ @param fallback_warning Output parameter for warning message if fallback is used
+
+ @return Vector of initial ROI ranges (never empty - will use fallback if needed)
+ */
+std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
+  const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
+  const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+  const std::vector<RelActCalcAuto::SrcVariant> &sources,
+  const std::shared_ptr<const DetectorPeakResponse> &drf,
+  const bool isHPGe,
+  const DetectorPeakResponse::ResolutionFnctForm fwhmFnctnlForm,
+  const std::vector<float> &fwhm_coefficients,
+  const double lower_fwhm_energy,
+  const double upper_fwhm_energy,
+  const double min_valid_energy,
+  const double max_valid_energy,
+  const GammaClusteringSettings &manual_settings,
+  const PeakFitForNuclideConfig &config,
+  std::string &fallback_warning )
+{
+  using namespace std;
+
+  vector<RelActCalcAuto::RoiRange> initial_rois;
+
+  // Step 1: Convert auto_search_peaks to RelActManual format
+  vector<RelActCalcManual::GenericPeakInfo> rel_act_manual_peaks;
+
+  for( const shared_ptr<const PeakDef> &peak : auto_search_peaks )
+  {
+    assert( peak && peak->gausPeak() );
+    if( !peak || !peak->gausPeak() )
+      continue;
+
+    RelActCalcManual::GenericPeakInfo peak_info;
+    peak_info.m_energy = peak_info.m_mean = peak->mean();
+    peak_info.m_fwhm = peak->fwhm();
+    peak_info.m_counts = peak->amplitude();
+    peak_info.m_counts_uncert = peak->amplitudeUncert();
+    peak_info.m_base_rel_eff_uncert = config.rel_eff_manual_base_rel_eff_uncert;
+
+    rel_act_manual_peaks.push_back( peak_info );
+  }
+
+  // Step 2: Match peaks to source nuclides
+  vector<RelActCalcManual::PeakCsvInput::NucAndAge> rel_act_manual_srcs;
+  for( const RelActCalcAuto::SrcVariant &src : sources )
+    rel_act_manual_srcs.emplace_back( RelActCalcAuto::to_name( src ), -1.0, false );
+
+  const std::vector<std::pair<float,float>> energy_ranges{};
+  const std::vector<float> excluded_peak_energies{};
+  const float real_time = foreground->real_time();
+
+  const RelActCalcManual::PeakCsvInput::NucMatchResults peak_match_results
+   = RelActCalcManual::PeakCsvInput::fill_in_nuclide_info( rel_act_manual_peaks,
+                                                          RelActCalcManual::PeakCsvInput::NucDataSrc::SandiaDecay,
+                                                          energy_ranges,
+                                                          rel_act_manual_srcs,
+                                                          config.initial_nuc_match_cluster_num_sigma, excluded_peak_energies,
+                                                          real_time );
+
+  vector<RelActCalcManual::GenericPeakInfo> peaks_matched = peak_match_results.peaks_matched;
+  std::sort( begin(peaks_matched), end(peaks_matched),
+    []( const RelActCalcManual::GenericPeakInfo &lhs, const RelActCalcManual::GenericPeakInfo &rhs ){
+      return lhs.m_energy < rhs.m_energy;
+  });
+
+  if( PeakFitImprove::debug_printout )
+  {
+    const vector<string> &used_isotopes = peak_match_results.used_isotopes;
+    const vector<string> &unused_isotopes = peak_match_results.unused_isotopes;
+    if( unused_isotopes.empty() )
+      cout << "Matched up all source nuclides to initial peak fit" << endl;
+    cout << "Failed to match up nuclides: {";
+    for( const string &nuc : unused_isotopes )
+      cout << nuc << ", ";
+    cout << "} to initial auto-fit peaks" << endl;
+    if( !used_isotopes.empty() )
+    {
+      cout << "Matched up nuclides: {";
+      for( const string &nuc : used_isotopes )
+        cout << nuc << ", ";
+      cout << "} to initial auto-fit peaks to a total of " << peaks_matched.size() << " peaks." << endl;
+
+      if( !peaks_matched.empty() )
+      {
+        cout << "Matched peak energies (keV): {";
+        for( size_t i = 0; i < peaks_matched.size(); ++i )
+        {
+          cout << peaks_matched[i].m_energy;
+          if( i < peaks_matched.size() - 1 )
+            cout << ", ";
+        }
+        cout << "}" << endl;
+      }
+    }
+  }
+
+  // If no matched peaks, fall back to estimate_initial_rois_without_peaks
+  if( peaks_matched.empty() )
+  {
+    return estimate_initial_rois_without_peaks(
+      sources, drf, isHPGe,
+      fwhmFnctnlForm, fwhm_coefficients, lower_fwhm_energy, upper_fwhm_energy,
+      min_valid_energy, max_valid_energy, config );
+  }
+
+  // Step 3: Configure RelActManual input based on number of matched peaks
+  RelActCalcManual::RelEffInput manual_input;
+  manual_input.peaks = peaks_matched;
+
+  manual_input.eqn_order = 0;
+  manual_input.use_ceres_to_fit_eqn = false;
+  manual_input.phys_model_use_hoerl = false;
+
+  if( peaks_matched.size() == 1 )
+  {
+    manual_input.eqn_form = config.initial_manual_relEff_1peak_form;
+
+    // With only one peak, we can only have a zeroth order (constant) relative efficiency
+    manual_input.eqn_order = 0;
+    if( config.initial_manual_relEff_1peak_eqn_order != 0 )
+    {
+      fallback_warning = "Only 1 peak matched; forcing RelEff equation order to 0 (was "
+                       + std::to_string(config.initial_manual_relEff_1peak_eqn_order) + ")";
+    }
+
+    if( manual_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    {
+      manual_input.use_ceres_to_fit_eqn = true;
+      // With only one peak and physical model, we cannot fit any shielding parameters
+      // The shielding vectors are left empty (set to empty below in the FramPhysicalModel block)
+      if( fallback_warning.empty() )
+        fallback_warning = "Only 1 peak matched with FramPhysicalModel; shielding parameters will not be fit";
+      else
+        fallback_warning += "; shielding parameters will not be fit";
+    }
+  }
+  else if( peaks_matched.size() == 2 )
+  {
+    manual_input.eqn_order = config.initial_manual_relEff_2peak_eqn_order;
+    manual_input.eqn_form = config.initial_manual_relEff_2peak_form;
+    if( manual_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    {
+      manual_input.eqn_order = 0;
+      manual_input.use_ceres_to_fit_eqn = true;
+    }
+  }
+  else if( peaks_matched.size() == 3 )
+  {
+    manual_input.eqn_order = config.initial_manual_relEff_3peak_eqn_order;
+    manual_input.eqn_form = config.initial_manual_relEff_3peak_form;
+    if( manual_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    {
+      manual_input.eqn_order = 0;
+      manual_input.use_ceres_to_fit_eqn = true;
+    }
+  }
+  else if( peaks_matched.size() == 4 )
+  {
+    manual_input.eqn_order = config.initial_manual_relEff_4peak_eqn_order;
+    manual_input.eqn_form = config.initial_manual_relEff_4peak_form;
+    if( manual_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    {
+      manual_input.eqn_order = 0;
+      manual_input.use_ceres_to_fit_eqn = true;
+      manual_input.phys_model_use_hoerl = config.initial_manual_relEff_4peak_physical_use_hoerl;
+    }
+  }
+  else
+  {
+    assert( peaks_matched.size() > 4 );
+    manual_input.eqn_order = config.initial_manual_relEff_many_peak_eqn_order;
+    manual_input.eqn_form = config.initial_manual_relEff_manypeak_form;
+    if( manual_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    {
+      manual_input.eqn_order = 0;
+      manual_input.use_ceres_to_fit_eqn = true;
+      manual_input.phys_model_use_hoerl = config.initial_manual_relEff_many_peak_physical_use_hoerl;
+    }
+  }
+
+  if( manual_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+  {
+    manual_input.phys_model_detector = drf;
+    if( !manual_input.phys_model_detector )
+    {
+      if( isHPGe )
+        manual_input.phys_model_detector = DetectorPeakResponse::getGenericHPGeDetector();
+      else
+        manual_input.phys_model_detector = DetectorPeakResponse::getGenericNaIDetector();
+    }
+
+    manual_input.phys_model_self_atten = shared_ptr<const RelActCalc::PhysicalModelShieldInput>{};
+    manual_input.phys_model_external_attens = vector<shared_ptr<const RelActCalc::PhysicalModelShieldInput>>{};
+  }
+
+  // Step 2: Solve for relative efficiency with retry logic
+  try
+  {
+    RelActCalcManual::RelEffSolution manual_solution
+        = RelActCalcManual::solve_relative_efficiency( manual_input );
+
+    double chi2_dof = manual_solution.m_chi2 / (std::max)(manual_solution.m_dof, 1);
+
+    if( (manual_solution.m_status != RelActCalcManual::ManualSolutionStatus::Success)
+       || (chi2_dof > 20.0) )
+    {
+      if( PeakFitImprove::debug_printout )
+      {
+        cout << "Initial manual solution failed: status=";
+        switch( manual_solution.m_status )
+        {
+          case RelActCalcManual::ManualSolutionStatus::NotInitialized:
+            cout << "NotInitialized";
+            break;
+          case RelActCalcManual::ManualSolutionStatus::ErrorInitializing:
+            cout << "ErrorInitializing";
+            break;
+          case RelActCalcManual::ManualSolutionStatus::ErrorFindingSolution:
+            cout << "ErrorFindingSolution";
+            break;
+          case RelActCalcManual::ManualSolutionStatus::ErrorGettingSolution:
+            cout << "ErrorGettingSolution";
+            break;
+          case RelActCalcManual::ManualSolutionStatus::Success:
+            cout << "Success";
+            break;
+        }
+        cout << ", form=" << RelActCalc::to_str( manual_solution.m_input.eqn_form )
+             << ", order=" << manual_solution.m_input.eqn_order
+             << ", chi2=" << manual_solution.m_chi2
+             << ", dof=" << manual_solution.m_dof
+             << ", chi2/dof=" << chi2_dof;
+        if( !manual_solution.m_error_message.empty() )
+          cout << ", error: " << manual_solution.m_error_message;
+        cout << endl;
+      }//if( PeakFitImprove::debug_printout )
+      RelActCalcManual::RelEffInput retry_input = manual_input;
+      retry_input.eqn_form = RelActCalc::RelEffEqnForm::FramPhysicalModel;
+      retry_input.phys_model_use_hoerl = (manual_input.peaks.size() > 3);
+      retry_input.use_ceres_to_fit_eqn = true;
+      retry_input.eqn_order = 0;
+      if( isHPGe )
+        retry_input.phys_model_detector = DetectorPeakResponse::getGenericHPGeDetector();
+      else
+        retry_input.phys_model_detector = DetectorPeakResponse::getGenericNaIDetector();
+
+      if( auto_search_peaks.size() > 3 )
+      {
+
+      }
+
+      RelActCalcManual::RelEffSolution retry_solution
+        = RelActCalcManual::solve_relative_efficiency( retry_input );
+
+      double retry_chi2_dof = retry_solution.m_chi2 / (std::max)(retry_solution.m_dof, 1);
+
+      if( PeakFitImprove::debug_printout )
+      {
+        cout << "Retry manual solution fit comparison:" << endl;
+        cout << "  Original: form=" << RelActCalc::to_str( manual_solution.m_input.eqn_form )
+        << ", order=" << manual_solution.m_input.eqn_order
+        << ", chi2/dof=" << manual_solution.m_chi2 << "/" << manual_solution.m_dof
+        << "=" << chi2_dof
+        << ", success=" << (manual_solution.m_status == RelActCalcManual::ManualSolutionStatus::Success)
+        << endl;
+        if( manual_solution.m_status != RelActCalcManual::ManualSolutionStatus::Success )
+          cout << "  Original error: " << manual_solution.m_error_message << endl;
+        cout << "  Retry:    form=" << RelActCalc::to_str( retry_solution.m_input.eqn_form )
+        << ", order=" << retry_solution.m_input.eqn_order
+        << ", chi2/dof=" << retry_solution.m_chi2 << "/" << retry_solution.m_dof
+        << "=" << retry_chi2_dof
+        << ", success=" << (retry_solution.m_status == RelActCalcManual::ManualSolutionStatus::Success)
+        << endl;
+        if( retry_solution.m_status != RelActCalcManual::ManualSolutionStatus::Success )
+          cout << "  Retry error: " << retry_solution.m_error_message << endl;
+
+        if( retry_solution.m_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+        {
+          cout << "  Retry shielding:";
+          if( retry_solution.m_input.phys_model_self_atten )
+          {
+            const auto &self = retry_solution.m_input.phys_model_self_atten;
+            if( self->material )
+              cout << " self-atten=" << self->material->name;
+            else
+              cout << " self-atten AN=" << self->atomic_number << " AD=" << self->areal_density;
+          }
+          else
+          {
+            cout << " no self-atten";
+          }
+
+          if( !retry_solution.m_input.phys_model_external_attens.empty() )
+          {
+            cout << ", external-atten=" << retry_solution.m_input.phys_model_external_attens.size();
+            for( size_t i = 0; i < retry_solution.m_input.phys_model_external_attens.size(); ++i )
+            {
+              const auto &ext = retry_solution.m_input.phys_model_external_attens[i];
+              if( ext->material )
+                cout << "[" << i << "]=" << ext->material->name;
+              else
+                cout << "[" << i << "] AN=" << ext->atomic_number << " AD=" << ext->areal_density;
+            }
+          }
+          else
+          {
+            cout << ", no external-atten";
+          }
+          cout << ", use_hoerl=" << (retry_solution.m_input.phys_model_use_hoerl ? "true" : "false") << endl;
+        }
+        cout << endl;
+      }
+
+
+      if( (retry_solution.m_status == RelActCalcManual::ManualSolutionStatus::Success)
+         && (retry_chi2_dof < chi2_dof) )
+      {
+        if( PeakFitImprove::debug_printout )
+          cout << "Will use retry solution!" << endl;
+        chi2_dof = retry_chi2_dof;
+        manual_solution = std::move(retry_solution);
+      }else
+      {
+        if( PeakFitImprove::debug_printout )
+          cout << "Will use original solution!" << endl;
+      }
+    }
+
+
+    if( manual_solution.m_status != RelActCalcManual::ManualSolutionStatus::Success )
+      throw std::runtime_error( "Failed to fit initial RelActCalcManual::RelEffSolution: " + manual_solution.m_error_message );
+
+    if( PeakFitImprove::debug_printout )
+    {
+      cout << "Successfully fitted initial RelActCalcManual::RelEffSolution: chi2/dof="
+      << manual_solution.m_chi2 << "/" << manual_solution.m_dof << "="
+      << manual_solution.m_chi2 / manual_solution.m_dof
+      << " using " << peaks_matched.size() << " peaks"
+      << endl;
+      cout << endl;
+
+      // Print expected vs observed peak areas and efficiency for each peak
+      cout << "Peak areas and efficiency:" << endl;
+      cout << "Energy(keV)  Observed    Expected    Efficiency  Obs/Exp" << endl;
+      cout << "--------------------------------------------------------" << endl;
+      for( const RelActCalcManual::GenericPeakInfo &peak : manual_solution.m_input.peaks )
+      {
+        const double efficiency = manual_solution.relative_efficiency( peak.m_energy );
+
+        // Calculate expected source counts from relative activities and yields
+        double expected_src_counts = 0.0;
+        for( const RelActCalcManual::GenericLineInfo &line : peak.m_source_gammas )
+        {
+          const double rel_activity = manual_solution.relative_activity( line.m_isotope );
+          expected_src_counts += rel_activity * line.m_yield;
+        }
+
+        const double expected_counts = expected_src_counts * efficiency;
+        const double obs_over_exp = (expected_counts > 0.0) ? (peak.m_counts / expected_counts) : 0.0;
+
+        cout << fixed;
+        cout << setw(10) << setprecision(2) << peak.m_energy
+             << setw(12) << setprecision(1) << peak.m_counts
+             << setw(12) << setprecision(1) << expected_counts
+             << setw(12) << setprecision(4) << efficiency
+             << setw(10) << setprecision(3) << obs_over_exp
+             << endl;
+      }
+      cout << endl;
+    }//if( PeakFitImprove::debug_printout )
+
+    // Step 3: Create rel_eff lambda from manual solution - handles extrapolation clamping
+    const auto manual_rel_eff = [&manual_solution, &peaks_matched]( double energy ) -> double {
+      // Extrapolation is terrible for rel-eff, so clamp to the lowest/highest peak energy
+      if( energy < peaks_matched.front().m_energy )
+        return manual_solution.relative_efficiency( peaks_matched.front().m_energy );
+      else if( energy > peaks_matched.back().m_energy )
+        return manual_solution.relative_efficiency( peaks_matched.back().m_energy );
+      else
+        return manual_solution.relative_efficiency( energy );
+    };
+
+    // Step 4: Collect sources and activities from the manual solution
+    vector<pair<RelActCalcAuto::SrcVariant, double>> sources_and_acts;
+    for( const RelActCalcManual::IsotopeRelativeActivity &rel_act : manual_solution.m_rel_activities )
+    {
+      const RelActCalcAuto::SrcVariant src = RelActCalcAuto::source_from_string( rel_act.m_isotope );
+      if( RelActCalcAuto::is_null( src ) )
+        throw std::logic_error( "Failed to get source from RelAct isotope '" + rel_act.m_isotope + "'" );
+      sources_and_acts.emplace_back( src, manual_solution.relative_activity( rel_act.m_isotope ) );
+    }
+
+    // Step 5: Use the reusable clustering function to create ROIs
+    initial_rois = cluster_gammas_to_rois( manual_rel_eff, sources_and_acts, foreground,
+                                          fwhmFnctnlForm, fwhm_coefficients,
+                                          lower_fwhm_energy, upper_fwhm_energy,
+                                          min_valid_energy, max_valid_energy,
+                                          manual_settings );
+
+    if( PeakFitImprove::debug_printout )
+    {
+      cout << "Initial ROIs from RelActManual: ";
+      for( const auto &roi : initial_rois )
+        cout << "[" << roi.lower_energy << ", " << roi.upper_energy << "], ";
+      cout << endl;
+    }
+  }catch( std::exception &e )
+  {
+    cerr << "Error trying to fit initial manual rel-eff solution: " << e.what() << endl;
+    cerr << "Using fallback activity estimation..." << endl;
+
+    initial_rois = estimate_initial_rois_fallback(
+      auto_search_peaks, foreground, sources, drf, isHPGe,
+      fwhmFnctnlForm, fwhm_coefficients, lower_fwhm_energy, upper_fwhm_energy,
+      manual_settings );
+
+    fallback_warning = "RelActManual fitting failed (" + std::string(e.what())
+                     + "); used simplified activity estimation fallback";
+
+    cout << "Fallback ROIs: ";
+    for( const RelActCalcAuto::RoiRange &roi : initial_rois )
+      cout << "[" << roi.lower_energy << ", " << roi.upper_energy << "], ";
+    cout << endl;
+  }
+
+  return initial_rois;
+}//estimate_initial_rois_using_relactmanual
+
+
+/** Test function for estimate_initial_rois_without_peaks.
+
+ Tests the function with Pu238, Pu239, and Pu241 sources and validates:
+ - ROIs are created for each source
+ - No ROIs overlap
+ - All ROIs are at least 1 FWHM wide
+ - All ROIs contain their source gamma energies
+
+ @return true if all tests pass, false otherwise
+ */
+bool test_estimate_initial_rois_without_peaks()
+{
+  cout << "\n=== Testing estimate_initial_rois_without_peaks ===" << endl;
+
+  bool all_tests_passed = true;
+
+  try
+  {
+    // Setup test sources: Pu238, Pu239, Pu241
+    std::vector<RelActCalcAuto::SrcVariant> test_sources;
+
+    const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+    assert( db );
+    if( !db )
+    {
+      cerr << "TEST FAILED: Could not get decay database" << endl;
+      return false;
+    }
+
+    const SandiaDecay::Nuclide * const pu238 = db->nuclide( "Pu238" );
+    const SandiaDecay::Nuclide * const pu239 = db->nuclide( "Pu239" );
+    const SandiaDecay::Nuclide * const pu241 = db->nuclide( "Pu241" );
+
+    if( !pu238 || !pu239 || !pu241 )
+    {
+      cerr << "TEST FAILED: Could not find Pu238, Pu239, or Pu241 in database" << endl;
+      return false;
+    }
+
+    test_sources.push_back( pu238 );
+    test_sources.push_back( pu239 );
+    test_sources.push_back( pu241 );
+
+    // Setup test parameters
+    const bool isHPGe = true;
+    const DetectorPeakResponse::ResolutionFnctForm fwhmFnctnlForm
+        = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
+
+    // Typical HPGe FWHM coefficients: FWHM = sqrt(a + b*E + c*E^2) where E is in keV
+    const std::vector<float> fwhm_coefficients = {0.5f, 0.0f, 0.0f};  // ~0.7 keV FWHM constant
+    const double lower_fwhm_energy = 0.0;
+    const double upper_fwhm_energy = 3000.0;
+    const double min_valid_energy = 50.0;
+    const double max_valid_energy = 2000.0;
+
+    // Create test config
+    PeakFitForNuclideConfig config;
+    config.auto_rel_eff_sol_max_fwhm = 12.0;
+
+    // Get generic HPGe DRF
+    std::shared_ptr<const DetectorPeakResponse> drf = DetectorPeakResponse::getGenericHPGeDetector();
+    if( !drf || !drf->isValid() )
+    {
+      cerr << "TEST FAILED: Could not get generic HPGe detector" << endl;
+      return false;
+    }
+
+    // Call the function under test
+    const std::vector<RelActCalcAuto::RoiRange> rois = estimate_initial_rois_without_peaks(
+      test_sources, drf, isHPGe,
+      fwhmFnctnlForm, fwhm_coefficients, lower_fwhm_energy, upper_fwhm_energy,
+      min_valid_energy, max_valid_energy, config );
+
+    cout << "Created " << rois.size() << " ROIs" << endl;
+
+    // Test 1: Check that we have ROIs
+    if( rois.empty() )
+    {
+      cerr << "TEST FAILED: No ROIs created" << endl;
+      all_tests_passed = false;
+    }
+    else
+    {
+      cout << "PASS: ROIs were created" << endl;
+    }
+
+    // Test 2: Check no overlaps
+    for( size_t i = 1; i < rois.size(); ++i )
+    {
+      if( rois[i].lower_energy < rois[i-1].upper_energy )
+      {
+        cerr << "TEST FAILED: ROIs " << (i-1) << " and " << i << " overlap: "
+             << "[" << rois[i-1].lower_energy << ", " << rois[i-1].upper_energy << "] "
+             << "and [" << rois[i].lower_energy << ", " << rois[i].upper_energy << "]" << endl;
+        all_tests_passed = false;
+      }
+    }
+
+    if( all_tests_passed )
+      cout << "PASS: No overlapping ROIs" << endl;
+
+    // Test 3: Check that each ROI is at least 1 FWHM wide
+    for( size_t i = 0; i < rois.size(); ++i )
+    {
+      const double roi_width = rois[i].upper_energy - rois[i].lower_energy;
+      const double mid_energy = 0.5 * (rois[i].lower_energy + rois[i].upper_energy);
+      const double fwhm = DetectorPeakResponse::peakResolutionFWHM(
+        static_cast<float>(mid_energy), fwhmFnctnlForm, fwhm_coefficients );
+
+      if( roi_width < fwhm )
+      {
+        cerr << "TEST FAILED: ROI " << i << " is narrower than 1 FWHM: "
+             << roi_width << " keV < " << fwhm << " keV FWHM at " << mid_energy << " keV" << endl;
+        all_tests_passed = false;
+      }
+    }
+
+    if( all_tests_passed )
+      cout << "PASS: All ROIs are at least 1 FWHM wide" << endl;
+
+    // Test 4: Check that we have ROIs for each source
+    // Collect expected gamma energies for each source (top 4 by BR*eff)
+    std::map<const SandiaDecay::Nuclide*, std::vector<double>> expected_gammas;
+
+    for( const RelActCalcAuto::SrcVariant &src : test_sources )
+    {
+      const double age = get_source_age( src, -1.0 );
+      const std::vector<SandiaDecay::EnergyRatePair> photons = get_source_photons( src, 1.0, age );
+
+      struct GammaScore
+      {
+        double energy;
+        double score;
+      };
+      std::vector<GammaScore> candidates;
+
+      for( const SandiaDecay::EnergyRatePair &photon : photons )
+      {
+        if( photon.energy < min_valid_energy || photon.energy > max_valid_energy )
+          continue;
+
+        const double br = photon.numPerSecond;
+        const double eff = drf->intrinsicEfficiency( static_cast<float>(photon.energy) );
+        const double score = br * eff;
+
+        if( score > 0.0 )
+          candidates.push_back( {photon.energy, score} );
+      }
+
+      // Sort and take top 4
+      std::sort( candidates.begin(), candidates.end(),
+        [](const GammaScore &a, const GammaScore &b) { return a.score > b.score; } );
+
+      const size_t num_to_take = std::min( candidates.size(), size_t(4) );
+      const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide( src );
+
+      for( size_t i = 0; i < num_to_take; ++i )
+        expected_gammas[nuc].push_back( candidates[i].energy );
+    }
+
+    // Check that ROIs cover expected gammas
+    for( const auto &[nuc, gammas] : expected_gammas )
+    {
+      cout << "Checking " << nuc->symbol << " gammas:" << endl;
+
+      for( const double gamma_energy : gammas )
+      {
+        bool found = false;
+        for( const RelActCalcAuto::RoiRange &roi : rois )
+        {
+          if( gamma_energy >= roi.lower_energy && gamma_energy <= roi.upper_energy )
+          {
+            found = true;
+            cout << "  " << gamma_energy << " keV: FOUND in ROI [" << roi.lower_energy
+                 << ", " << roi.upper_energy << "]" << endl;
+            break;
+          }
+        }
+
+        if( !found )
+        {
+          cerr << "TEST FAILED: " << nuc->symbol << " gamma at " << gamma_energy
+               << " keV not found in any ROI" << endl;
+          all_tests_passed = false;
+        }
+      }
+    }
+
+    // Test 5: Verify all ROIs have Linear continuum type
+    for( size_t i = 0; i < rois.size(); ++i )
+    {
+      if( rois[i].continuum_type != PeakContinuum::OffsetType::Linear )
+      {
+        cerr << "TEST FAILED: ROI " << i << " does not have Linear continuum type" << endl;
+        all_tests_passed = false;
+      }
+    }
+
+    if( all_tests_passed )
+      cout << "PASS: All ROIs have Linear continuum type" << endl;
+
+    // Test 6: Verify all ROIs have Fixed range limits
+    for( size_t i = 0; i < rois.size(); ++i )
+    {
+      if( rois[i].range_limits_type != RelActCalcAuto::RoiRange::RangeLimitsType::Fixed )
+      {
+        cerr << "TEST FAILED: ROI " << i << " does not have Fixed range limits" << endl;
+        all_tests_passed = false;
+      }
+    }
+
+    if( all_tests_passed )
+      cout << "PASS: All ROIs have Fixed range limits" << endl;
+
+  }
+  catch( const std::exception &e )
+  {
+    cerr << "TEST FAILED: Exception thrown: " << e.what() << endl;
+    all_tests_passed = false;
+  }
+
+  if( all_tests_passed )
+    cout << "=== ALL TESTS PASSED ===" << endl;
+  else
+    cout << "=== SOME TESTS FAILED ===" << endl;
+
+  cout << endl;
+
+  return all_tests_passed;
+}//test_estimate_initial_rois_without_peaks
+
+
 PeakFitResult fit_peaks_for_nuclides(
   const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,
@@ -2324,404 +3320,19 @@ PeakFitResult fit_peaks_for_nuclides(
     lowest_energy_gamma = (std::max)( lowest_energy_gamma - (isHPGe ? 5 : 25), (double)foreground->gamma_energy_min() );
     highest_energy_gamma = (std::min)( highest_energy_gamma + (isHPGe ? 5 : 25), (double)foreground->gamma_energy_max() );
 
-    // Step 2: Match auto-search peaks to source nuclides
-    vector<RelActCalcManual::GenericPeakInfo> rel_act_manual_peaks;
-
-    for( const shared_ptr<const PeakDef> &peak : auto_search_peaks )
-    {
-      assert( peak && peak->gausPeak() );
-      if( !peak || !peak->gausPeak() )
-        continue;
-
-      RelActCalcManual::GenericPeakInfo peak_info;
-      peak_info.m_energy = peak_info.m_mean = peak->mean();
-      peak_info.m_fwhm = peak->fwhm();
-      peak_info.m_counts = peak->amplitude();
-      peak_info.m_counts_uncert = peak->amplitudeUncert();
-      peak_info.m_base_rel_eff_uncert = config.rel_eff_manual_base_rel_eff_uncert;
-
-      rel_act_manual_peaks.push_back( peak_info );
-    }
-
-    vector<RelActCalcManual::PeakCsvInput::NucAndAge> rel_act_manual_srcs;
-    for( const RelActCalcAuto::SrcVariant &src : sources )
-      rel_act_manual_srcs.emplace_back( RelActCalcAuto::to_name( src ), -1.0, false );
-
-    const std::vector<std::pair<float,float>> energy_ranges{};
-    const std::vector<float> excluded_peak_energies{};
-    const float real_time = foreground->real_time();
-
-    const RelActCalcManual::PeakCsvInput::NucMatchResults peak_match_results
-     = RelActCalcManual::PeakCsvInput::fill_in_nuclide_info( rel_act_manual_peaks,
-                                                            RelActCalcManual::PeakCsvInput::NucDataSrc::SandiaDecay,
-                                                            energy_ranges,
-                                                            rel_act_manual_srcs,
-                                                            config.initial_nuc_match_cluster_num_sigma, excluded_peak_energies,
-                                                            real_time );
-
-    vector<RelActCalcManual::GenericPeakInfo> peaks_matched = peak_match_results.peaks_matched;
-    std::sort( begin(peaks_matched), end(peaks_matched),
-      []( const RelActCalcManual::GenericPeakInfo &lhs, const RelActCalcManual::GenericPeakInfo &rhs ){
-        return lhs.m_energy < rhs.m_energy;
-    });
-
-    if( PeakFitImprove::debug_printout )
-    {
-      const vector<string> &used_isotopes = peak_match_results.used_isotopes;
-      const vector<string> &unused_isotopes = peak_match_results.unused_isotopes;
-      if( unused_isotopes.empty() )
-        cout << "Matched up all source nuclides to initial peak fit" << endl;
-      cout << "Failed to match up nuclides: {";
-      for( const string &nuc : unused_isotopes )
-        cout << nuc << ", ";
-      cout << "} to initial auto-fit peaks" << endl;
-      if( !used_isotopes.empty() )
-      {
-        cout << "Matched up nuclides: {";
-        for( const string &nuc : used_isotopes )
-          cout << nuc << ", ";
-        cout << "} to initial auto-fit peaks to a total of " << peaks_matched.size() << " peaks." << endl;
-        
-        if( !peaks_matched.empty() )
-        {
-          cout << "Matched peak energies (keV): {";
-          for( size_t i = 0; i < peaks_matched.size(); ++i )
-          {
-            cout << peaks_matched[i].m_energy;
-            if( i < peaks_matched.size() - 1 )
-              cout << ", ";
-          }
-          cout << "}" << endl;
-        }
-      }
-    }
-
-    // Get clustering settings from config
+    // Step 2, 3 & 4: Estimate initial ROIs using RelActManual with multiple fallbacks
+    // This function internally:
+    // - Converts auto_search_peaks to RelActManual format and matches to sources
+    // - Falls back to estimate_initial_rois_without_peaks() if no peaks match
+    // - Fits relative efficiency curve and clusters gammas into ROIs
+    // - Falls back to estimate_initial_rois_fallback() if RelActManual fails
     const GammaClusteringSettings manual_settings = config.get_manual_clustering_settings();
 
-    vector<RelActCalcAuto::RoiRange> initial_rois;
-
-    // Step 3 & 4: Perform RelActManual fit and create initial ROIs
-    if( !peaks_matched.empty() )
-    {
-      RelActCalcManual::RelEffInput manual_input;
-      manual_input.peaks = peaks_matched;
-
-      manual_input.eqn_order = 0;
-      manual_input.use_ceres_to_fit_eqn = false;
-      manual_input.phys_model_use_hoerl = false;
-
-      if( peaks_matched.size() == 1 )
-      {
-        manual_input.eqn_form = config.initial_manual_relEff_1peak_form;
-
-        // With only one peak, we can only have a zeroth order (constant) relative efficiency
-        manual_input.eqn_order = 0;
-        if( config.initial_manual_relEff_1peak_eqn_order != 0 )
-        {
-          fallback_warning = "Only 1 peak matched; forcing RelEff equation order to 0 (was "
-                           + std::to_string(config.initial_manual_relEff_1peak_eqn_order) + ")";
-        }
-
-        if( manual_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
-        {
-          manual_input.use_ceres_to_fit_eqn = true;
-          // With only one peak and physical model, we cannot fit any shielding parameters
-          // The shielding vectors are left empty (set to empty below in the FramPhysicalModel block)
-          if( fallback_warning.empty() )
-            fallback_warning = "Only 1 peak matched with FramPhysicalModel; shielding parameters will not be fit";
-          else
-            fallback_warning += "; shielding parameters will not be fit";
-        }
-      }
-      else if( peaks_matched.size() == 2 )
-      {
-        manual_input.eqn_order = config.initial_manual_relEff_2peak_eqn_order;
-        manual_input.eqn_form = config.initial_manual_relEff_2peak_form;
-        if( manual_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
-        {
-          manual_input.eqn_order = 0;
-          manual_input.use_ceres_to_fit_eqn = true;
-        }
-      }
-      else if( peaks_matched.size() == 3 )
-      {
-        manual_input.eqn_order = config.initial_manual_relEff_3peak_eqn_order;
-        manual_input.eqn_form = config.initial_manual_relEff_3peak_form;
-        if( manual_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
-        {
-          manual_input.eqn_order = 0;
-          manual_input.use_ceres_to_fit_eqn = true;
-        }
-      }
-      else if( peaks_matched.size() == 4 )
-      {
-        manual_input.eqn_order = config.initial_manual_relEff_4peak_eqn_order;
-        manual_input.eqn_form = config.initial_manual_relEff_4peak_form;
-        if( manual_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
-        {
-          manual_input.eqn_order = 0;
-          manual_input.use_ceres_to_fit_eqn = true;
-          manual_input.phys_model_use_hoerl = config.initial_manual_relEff_4peak_physical_use_hoerl;
-        }
-      }
-      else
-      {
-        assert( peaks_matched.size() > 4 );
-        manual_input.eqn_order = config.initial_manual_relEff_many_peak_eqn_order;
-        manual_input.eqn_form = config.initial_manual_relEff_manypeak_form;
-        if( manual_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
-        {
-          manual_input.eqn_order = 0;
-          manual_input.use_ceres_to_fit_eqn = true;
-          manual_input.phys_model_use_hoerl = config.initial_manual_relEff_many_peak_physical_use_hoerl;
-        }
-      }
-
-      if( manual_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
-      {
-        manual_input.phys_model_detector = drf;
-        if( !manual_input.phys_model_detector )
-        {
-          if( isHPGe )
-            manual_input.phys_model_detector = DetectorPeakResponse::getGenericHPGeDetector();
-          else
-            manual_input.phys_model_detector = DetectorPeakResponse::getGenericNaIDetector();
-        }
-
-        manual_input.phys_model_self_atten = shared_ptr<const RelActCalc::PhysicalModelShieldInput>{};
-        manual_input.phys_model_external_attens = vector<shared_ptr<const RelActCalc::PhysicalModelShieldInput>>{};
-      }
-
-      try
-      {
-        RelActCalcManual::RelEffSolution manual_solution
-            = RelActCalcManual::solve_relative_efficiency( manual_input );
-
-        double chi2_dof = manual_solution.m_chi2 / (std::max)(manual_solution.m_dof, 1);
-        
-        if( (manual_solution.m_status != RelActCalcManual::ManualSolutionStatus::Success)
-           || (chi2_dof > 20.0) )
-        {
-          if( PeakFitImprove::debug_printout )
-          {
-            cout << "Initial manual solution failed: status=";
-            switch( manual_solution.m_status )
-            {
-              case RelActCalcManual::ManualSolutionStatus::NotInitialized:
-                cout << "NotInitialized";
-                break;
-              case RelActCalcManual::ManualSolutionStatus::ErrorInitializing:
-                cout << "ErrorInitializing";
-                break;
-              case RelActCalcManual::ManualSolutionStatus::ErrorFindingSolution:
-                cout << "ErrorFindingSolution";
-                break;
-              case RelActCalcManual::ManualSolutionStatus::ErrorGettingSolution:
-                cout << "ErrorGettingSolution";
-                break;
-              case RelActCalcManual::ManualSolutionStatus::Success:
-                cout << "Success";
-                break;
-            }
-            cout << ", form=" << RelActCalc::to_str( manual_solution.m_input.eqn_form )
-                 << ", order=" << manual_solution.m_input.eqn_order
-                 << ", chi2=" << manual_solution.m_chi2
-                 << ", dof=" << manual_solution.m_dof
-                 << ", chi2/dof=" << chi2_dof;
-            if( !manual_solution.m_error_message.empty() )
-              cout << ", error: " << manual_solution.m_error_message;
-            cout << endl;
-          }//if( PeakFitImprove::debug_printout )
-          RelActCalcManual::RelEffInput retry_input = manual_input;
-          retry_input.eqn_form = RelActCalc::RelEffEqnForm::FramPhysicalModel;
-          retry_input.phys_model_use_hoerl = (manual_input.peaks.size() > 3);
-          retry_input.use_ceres_to_fit_eqn = true;
-          retry_input.eqn_order = 0;
-          if( isHPGe )  
-            retry_input.phys_model_detector = DetectorPeakResponse::getGenericHPGeDetector();
-          else
-            retry_input.phys_model_detector = DetectorPeakResponse::getGenericNaIDetector();
-          
-          if( auto_search_peaks.size() > 3 )
-          {
-            
-          }
-          
-          RelActCalcManual::RelEffSolution retry_solution
-            = RelActCalcManual::solve_relative_efficiency( retry_input );
-        
-          double retry_chi2_dof = retry_solution.m_chi2 / (std::max)(retry_solution.m_dof, 1);
-          
-          if( PeakFitImprove::debug_printout )
-          {
-            cout << "Retry manual solution fit comparison:" << endl;
-            cout << "  Original: form=" << RelActCalc::to_str( manual_solution.m_input.eqn_form )
-            << ", order=" << manual_solution.m_input.eqn_order
-            << ", chi2/dof=" << manual_solution.m_chi2 << "/" << manual_solution.m_dof
-            << "=" << chi2_dof 
-            << ", success=" << (manual_solution.m_status == RelActCalcManual::ManualSolutionStatus::Success) 
-            << endl;
-            if( manual_solution.m_status != RelActCalcManual::ManualSolutionStatus::Success )
-              cout << "  Original error: " << manual_solution.m_error_message << endl;
-            cout << "  Retry:    form=" << RelActCalc::to_str( retry_solution.m_input.eqn_form )
-            << ", order=" << retry_solution.m_input.eqn_order
-            << ", chi2/dof=" << retry_solution.m_chi2 << "/" << retry_solution.m_dof
-            << "=" << retry_chi2_dof 
-            << ", success=" << (retry_solution.m_status == RelActCalcManual::ManualSolutionStatus::Success) 
-            << endl;
-            if( retry_solution.m_status != RelActCalcManual::ManualSolutionStatus::Success )
-              cout << "  Retry error: " << retry_solution.m_error_message << endl;
-            
-            if( retry_solution.m_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
-            {
-              cout << "  Retry shielding:";
-              if( retry_solution.m_input.phys_model_self_atten )
-              {
-                const auto &self = retry_solution.m_input.phys_model_self_atten;
-                if( self->material )
-                  cout << " self-atten=" << self->material->name;
-                else
-                  cout << " self-atten AN=" << self->atomic_number << " AD=" << self->areal_density;
-              }
-              else
-              {
-                cout << " no self-atten";
-              }
-              
-              if( !retry_solution.m_input.phys_model_external_attens.empty() )
-              {
-                cout << ", external-atten=" << retry_solution.m_input.phys_model_external_attens.size();
-                for( size_t i = 0; i < retry_solution.m_input.phys_model_external_attens.size(); ++i )
-                {
-                  const auto &ext = retry_solution.m_input.phys_model_external_attens[i];
-                  if( ext->material )
-                    cout << "[" << i << "]=" << ext->material->name;
-                  else
-                    cout << "[" << i << "] AN=" << ext->atomic_number << " AD=" << ext->areal_density;
-                }
-              }
-              else
-              {
-                cout << ", no external-atten";
-              }
-              cout << ", use_hoerl=" << (retry_solution.m_input.phys_model_use_hoerl ? "true" : "false") << endl;
-            }
-            cout << endl;
-          }
-          
-          
-          if( (retry_solution.m_status == RelActCalcManual::ManualSolutionStatus::Success)
-             && (retry_chi2_dof < chi2_dof) )
-          {
-            if( PeakFitImprove::debug_printout )
-              cout << "Will use retry solution!" << endl;
-            chi2_dof = retry_chi2_dof;
-            manual_solution = std::move(retry_solution);
-          }else
-          {
-            if( PeakFitImprove::debug_printout )
-              cout << "Will use original solution!" << endl;
-          }
-        }
-        
-        
-        if( manual_solution.m_status != RelActCalcManual::ManualSolutionStatus::Success )
-          throw std::runtime_error( "Failed to fit initial RelActCalcManual::RelEffSolution: " + manual_solution.m_error_message );
-        
-        if( PeakFitImprove::debug_printout )
-        {
-          cout << "Successfully fitted initial RelActCalcManual::RelEffSolution: chi2/dof="
-          << manual_solution.m_chi2 << "/" << manual_solution.m_dof << "="
-          << manual_solution.m_chi2 / manual_solution.m_dof
-          << " using " << peak_match_results.peaks_matched.size() << " peaks"
-          << endl;
-          cout << endl;
-          
-          // Print expected vs observed peak areas and efficiency for each peak
-          cout << "Peak areas and efficiency:" << endl;
-          cout << "Energy(keV)  Observed    Expected    Efficiency  Obs/Exp" << endl;
-          cout << "--------------------------------------------------------" << endl;
-          for( const RelActCalcManual::GenericPeakInfo &peak : manual_solution.m_input.peaks )
-          {
-            const double efficiency = manual_solution.relative_efficiency( peak.m_energy );
-            
-            // Calculate expected source counts from relative activities and yields
-            double expected_src_counts = 0.0;
-            for( const RelActCalcManual::GenericLineInfo &line : peak.m_source_gammas )
-            {
-              const double rel_activity = manual_solution.relative_activity( line.m_isotope );
-              expected_src_counts += rel_activity * line.m_yield;
-            }
-            
-            const double expected_counts = expected_src_counts * efficiency;
-            const double obs_over_exp = (expected_counts > 0.0) ? (peak.m_counts / expected_counts) : 0.0;
-            
-            cout << fixed;
-            cout << setw(10) << setprecision(2) << peak.m_energy
-                 << setw(12) << setprecision(1) << peak.m_counts
-                 << setw(12) << setprecision(1) << expected_counts
-                 << setw(12) << setprecision(4) << efficiency
-                 << setw(10) << setprecision(3) << obs_over_exp
-                 << endl;
-          }
-          cout << endl;
-        }//if( PeakFitImprove::debug_printout )
-        
-        // Create rel_eff lambda from manual solution - handles extrapolation clamping
-        const auto manual_rel_eff = [&manual_solution, &peaks_matched]( double energy ) -> double {
-          // Extrapolation is terrible for rel-eff, so clamp to the lowest/highest peak energy
-          if( energy < peaks_matched.front().m_energy )
-            return manual_solution.relative_efficiency( peaks_matched.front().m_energy );
-          else if( energy > peaks_matched.back().m_energy )
-            return manual_solution.relative_efficiency( peaks_matched.back().m_energy );
-          else
-            return manual_solution.relative_efficiency( energy );
-        };
-        
-        // Collect sources and activities from the manual solution
-        vector<pair<RelActCalcAuto::SrcVariant, double>> sources_and_acts;
-        for( const RelActCalcManual::IsotopeRelativeActivity &rel_act : manual_solution.m_rel_activities )
-        {
-          const RelActCalcAuto::SrcVariant src = RelActCalcAuto::source_from_string( rel_act.m_isotope );
-          if( RelActCalcAuto::is_null( src ) )
-            throw std::logic_error( "Failed to get source from RelAct isotope '" + rel_act.m_isotope + "'" );
-          sources_and_acts.emplace_back( src, manual_solution.relative_activity( rel_act.m_isotope ) );
-        }
-
-        // Use the reusable clustering function to create ROIs
-        initial_rois = cluster_gammas_to_rois( manual_rel_eff, sources_and_acts, foreground,
-                                              fwhmFnctnlForm, fwhm_coefficients,
-                                              lower_fwhm_energy, upper_fwhm_energy,
-                                              min_valid_energy, max_valid_energy,
-                                              manual_settings );
-        
-        if( PeakFitImprove::debug_printout )
-        {
-          cout << "Initial ROIs from RelActManual: ";
-          for( const auto &roi : initial_rois )
-            cout << "[" << roi.lower_energy << ", " << roi.upper_energy << "], ";
-          cout << endl;
-        }
-      }catch( std::exception &e )
-      {
-        cerr << "Error trying to fit initial manual rel-eff solution: " << e.what() << endl;
-        cerr << "Using fallback activity estimation..." << endl;
-
-        initial_rois = estimate_initial_rois_fallback(
-          auto_search_peaks, foreground, sources, drf, isHPGe,
-          fwhmFnctnlForm, fwhm_coefficients, lower_fwhm_energy, upper_fwhm_energy,
-          manual_settings );
-
-        fallback_warning = "RelActManual fitting failed (" + std::string(e.what())
-                         + "); used simplified activity estimation fallback";
-
-        cout << "Fallback ROIs: ";
-        for( const RelActCalcAuto::RoiRange &roi : initial_rois )
-          cout << "[" << roi.lower_energy << ", " << roi.upper_energy << "], ";
-        cout << endl;
-      }
-    }
+    const vector<RelActCalcAuto::RoiRange> initial_rois = estimate_initial_rois_using_relactmanual(
+      auto_search_peaks, foreground, sources, drf, isHPGe,
+      fwhmFnctnlForm, fwhm_coefficients, lower_fwhm_energy, upper_fwhm_energy,
+      min_valid_energy, max_valid_energy, manual_settings,
+      config, fallback_warning );
 
     // Call RelActAuto with initial_rois
     result = fit_peaks_for_nuclide_relactauto(
@@ -2729,6 +3340,7 @@ PeakFitResult fit_peaks_for_nuclides(
       initial_rois, long_background, drf, config,
       fwhmFnctnlForm, fwhm_coefficients, lower_fwhm_energy, upper_fwhm_energy );
 
+    /*
     // If RelActAuto failed completely, try a desperation Physical Model approach
     // This is a last-ditch effort to get some result
     if( result.status != RelActCalcAuto::RelActAutoSolution::Status::Success )
@@ -2796,7 +3408,7 @@ PeakFitResult fit_peaks_for_nuclides(
           std::cerr << "fit_peaks_for_nuclides: desperation Physical Model also failed" << std::endl;
       }
     }
-
+     */
   }catch( const std::exception &e )
   {
     result.status = RelActCalcAuto::RelActAutoSolution::Status::FailToSolveProblem;
