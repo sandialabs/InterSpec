@@ -1098,6 +1098,27 @@ pair<double,double> find_valid_energy_range( const shared_ptr<const SpecUtils::M
   while( (upperlastchannel > 0) && (channel_counts[upperlastchannel] < 3.0f) )
     --upperlastchannel;
 
+  // Now increase upperlastchannel until we find at least two consecutive zero-count channels
+  bool found_two_zeros = false;
+  while( (upperlastchannel < nbin - 2) && !found_two_zeros )
+  {
+    ++upperlastchannel;
+
+    // Check if we have two consecutive zeros starting at upperlastchannel
+    if( (channel_counts[upperlastchannel] == 0.0f)
+        && (channel_counts[upperlastchannel + 1] == 0.0f) )
+    {
+      found_two_zeros = true;
+      ++upperlastchannel; // Set to one more than the second zero
+    }
+  }
+
+  // Ensure upperlastchannel is valid
+  upperlastchannel = std::min( upperlastchannel, nbin - 1 );
+
+
+  //  upperlastchannel = (std::min)( upperlastchannel + 5, nbin - 1 );
+  
   // Search backwards from the end to find the last peak-like structure
   // Look for significant negative curvature, then find where it becomes positive on the right side
   size_t lastchannel = upperlastchannel;
@@ -1106,11 +1127,11 @@ pair<double,double> find_valid_energy_range( const shared_ptr<const SpecUtils::M
   for( size_t i = upperlastchannel; i > lower_channel; --i )
   {
     // Look for statistically significant negative curvature (peak shape)
-    if( i >= smoothed_2nd.size() || smoothed_2nd_variance[i] <= 0.0f )
+    if( (i >= smoothed_2nd.size()) || (smoothed_2nd_variance[i] <= 0.0f) )
       continue;
 
     const float sigma_2nd = std::sqrt( smoothed_2nd_variance[i] );
-    if( smoothed_2nd[i] < -2.0f * sigma_2nd )
+    if( smoothed_2nd[i] < (-2.0f * sigma_2nd) )
     {
       // Found significant negative curvature - this is a potential peak
       // Now find where the second derivative becomes positive on the right side
@@ -1180,7 +1201,7 @@ pair<double,double> find_valid_energy_range( const shared_ptr<const SpecUtils::M
   }//
 
   // Add some buffer beyond the last detected signal to ensure we don't cut off peak tails
-  const size_t buffer_channels = std::max( size_t(5), size_t(0.005 * nbin) );
+  const size_t buffer_channels = std::max( size_t(10), size_t(0.005 * nbin) );
   upper_channel = std::min( lastchannel + buffer_channels, nbin - 1 );
 
   // Make sure we don't cut off too early - at minimum use upperlastchannel
@@ -4966,11 +4987,11 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
         // Define colors to rotate through for different nuclides
         const std::vector<Wt::WColor> colors = {
           Wt::WColor(0, 0, 139),      // darkBlue
-          Wt::WColor(139, 0, 0),      // darkRed
+          Wt::WColor(0, 139, 139),    // darkCyan
           Wt::WColor(0, 100, 0),      // darkGreen
           Wt::WColor(139, 0, 139),    // darkMagenta
-          Wt::WColor(0, 139, 139),    // darkCyan
           Wt::WColor(255, 140, 0),    // darkOrange
+          Wt::WColor(139, 0, 0),      // darkRed
         };
 
         size_t color_index = 0;
@@ -5016,8 +5037,7 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
           }
         }
 
-        // Add reference lines for valid energy range
-        {
+        {// Begin add reference lines for valid energy range
           const auto [min_valid_energy, max_valid_energy] = find_valid_energy_range( foreground );
 
           if( (min_valid_energy > 0.0) && (max_valid_energy > min_valid_energy) )
@@ -5060,7 +5080,33 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
               reference_lines_json["Valid Range Max"] = max_ref_json;
             }
           }
-        }
+        }// End add reference lines for valid energy range
+
+        {// Begin add red reference lines for each energy in `combined_score.candidate_peak_score.def_expected_but_not_detected`
+          const std::vector<ExpectedPhotopeakInfo> &not_detected = combined_score.candidate_peak_score.def_expected_but_not_detected;
+          for( size_t i = 0; i < not_detected.size(); ++i )
+          {
+            const double energy = not_detected[i].effective_energy;
+
+            RefLineInput red_line_input;
+            red_line_input.m_input_txt = std::to_string(energy) + " keV";
+            red_line_input.m_color = Wt::WColor(255, 0, 0); // Red
+            red_line_input.m_showGammas = true;
+            red_line_input.m_showXrays = false;
+            red_line_input.m_showAlphas = false;
+            red_line_input.m_showBetas = false;
+            red_line_input.m_promptLinesOnly = false;
+            red_line_input.m_lower_br_cutt_off = 0.0;
+
+            std::shared_ptr<ReferenceLineInfo> red_ref_info = ReferenceLineInfo::generateRefLineInfo( red_line_input );
+            if( red_ref_info && red_ref_info->m_validity == ReferenceLineInfo::InputValidity::Valid )
+            {
+              std::string red_ref_json;
+              red_ref_info->toJson( red_ref_json );
+              reference_lines_json["Missing Peak " + std::to_string(i+1)] = red_ref_json;
+            }
+          }
+        }// End add red reference lines for each energy in `combined_score.candidate_peak_score.def_expected_but_not_detected`
 
         // Setup chart options
         std::string title = src_name + " - RelActAuto Fit";
