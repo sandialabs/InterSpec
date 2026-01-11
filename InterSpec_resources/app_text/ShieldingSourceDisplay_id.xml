@@ -25,6 +25,7 @@
     di tengah.
   </message>
   <message id="ssd-add-shield-label">Tambah Perisai:</message>
+  <message id="ssd-geometry-label">Geometri:</message>
   <message id="ssd-tt-add-shield">Pilih dari perpustakaan bahan perisai umum yang telah ditentukan.</message>
   <message id="ssd-generic-btn">Umum</message>
   <message id="ssd-tt-generic">Memungkinkan Anda menentukan dan menyesuaikan nomor atom dan densitas areal.</message>

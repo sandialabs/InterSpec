@@ -24,6 +24,7 @@
     都被视为中心的点源。
   </message>
   <message id="ssd-add-shield-label">添加屏蔽：</message>
+  <message id="ssd-geometry-label">几何形状：</message>
   <message id="ssd-tt-add-shield">从预定义的常见屏蔽材料库中选择。</message>
   <message id="ssd-generic-btn">通用</message>
   <message id="ssd-tt-generic">允许您定义和拟合原子序数和面密度。</message>

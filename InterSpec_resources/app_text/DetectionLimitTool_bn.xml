@@ -40,7 +40,7 @@
   <message id="dlt-detected-activity-tt">সনাক্তকৃত কার্যকলাপ, শুধুমাত্র এই আগ্রহের অঞ্চল ব্যবহার করে,
     এবং পর্যবেক্ষিত গণনার অতিরিক্ত, সেইসাথে
     পরিসংখ্যানগত আস্থা ব্যবধান।</message>
-  <message id="dlt-limit-lt-zero">সীমা: &lt; 0{1}</message>
+  <message id="dlt-limit-lt-zero"><![CDATA[সীমা: < 0{1}]]></message>
   <message id="dlt-sig-fewer-counts">(ROI-এ পূর্বাভাসের চেয়ে উল্লেখযোগ্যভাবে কম গণনা)</message>
   <message id="dlt-fewer-counts-tt">আগ্রহের অঞ্চলে উল্লেখযোগ্যভাবে কম গণনা পর্যবেক্ষণ করা হয়েছিল,
     প্রতিবেশী চ্যানেল দ্বারা পূর্বাভাসিত চেয়ে।</message>
@@ -53,8 +53,6 @@
   <message id="dlt-large-deficit">ROI-এ গণনার বড় ঘাটতি</message>
   
   <!-- DetectionLimitTool main class strings -->
-  <message id="dlt-nuclide-label">নিউক্লাইড:&nbsp;&nbsp;</message>
-  <message id="dlt-age-label">বয়স:</message>
   <message id="dlt-tt-age-edit">
     <div>নিউক্লাইডের বয়স।</div>
     <br />
@@ -62,8 +60,6 @@
     (অর্থাৎ, প্রবেশ করা) নিউক্লাইড সর্বদা পরিমাপের সময়ে রিপোর্ট করা হয়।
     </div>
   </message>
-  <message id="dlt-distance-label">দূরত্ব:</message>
-  <message id="dlt-activity-label">কার্যকলাপ:</message>
   <message id="dlt-attenuate-for-air">বাতাসের জন্য হ্রাস করুন</message>
   <message id="dlt-shield-empty-text">রক্ষণাবেক্ষণ উপাদান</message>
   <message id="dlt-activity-limit">কার্যকলাপ সীমা</message>
@@ -84,8 +80,8 @@
   <message id="dlt-log">লগ</message>
   <message id="dlt-lin">লিন</message>
   <message id="dlt-below-lc">(L<sub>c</sub>-এর নিচে)</message>
-  <message id="dlt-lt-zero-counts">&lt; 0 গণনা</message>
-  <message id="dlt-lt-zero-activity">&lt; {1}</message>
+  <message id="dlt-lt-zero-counts"><![CDATA[< 0 গণনা]]></message>
+  <message id="dlt-lt-zero-activity"><![CDATA[< {1}]]></message>
   
   <!-- Error messages -->
   <message id="dlt-err-no-data">কোনও ডেটা লোড করা হয়নি</message>
@@ -178,7 +174,7 @@
   <message id="dlt-chart-x-axis-activity">কার্যকলাপ ({1})</message>
   <message id="dlt-chart-title-estimated-activity">অনুমানিত কার্যকলাপ {1}।</message>
   <message id="dlt-chart-title-excess-counts">অতিরিক্ত গণনা {1}।</message>
-  <message id="dlt-chart-title-activity-lt-zero">কার্যকলাপ &lt; 0 {1}</message>
+  <message id="dlt-chart-title-activity-lt-zero"><![CDATA[কার্যকলাপ < 0 {1}]]></message>
   <message id="dlt-chart-title-data-peak">ডেটা + পিক {1}</message>
   <message id="dlt-chart-title-peak-upper-bound">উচ্চ সীমার পিক {1} @{2} CL</message>
   <message id="dlt-currie-info-dialog-title">{1}{2} keV তথ্য</message>
@@ -188,7 +184,7 @@
   <message id="dlt-no-foreground-spectrum">কোনও ফোরগ্রাউন্ড স্পেকট্রাম নেই</message>
   <message id="dlt-no-drf-loaded">কোনও DRF লোড করা হয়নি</message>
   <message id="dlt-drf-not-valid">DRF বৈধ নয় বা FWHM তথ্য নেই।</message>
-  <message id="dlt-err-max-distance-too-large">সর্বোচ্চ দূরত্ব খুব বড় (&gt;100কিমি)</message>
+  <message id="dlt-err-max-distance-too-large"><![CDATA[সর্বোচ্চ দূরত্ব খুব বড় (>100কিমি)]]></message>
   <message id="dlt-err-upper-limit-negative">গণনার উচ্চ সীমা শূন্যের চেয়ে কম, কিন্তু পর্যবেক্ষিত গণনা L_d-এর চেয়ে বেশি।</message>
   <message id="dlt-err-activity-zero-negative">কার্যকলাপ শূন্য বা নেতিবাচক হতে পারে না</message>
   <message id="dlt-err-distance-zero-negative">দূরত্ব শূন্য বা নেতিবাচক হতে পারে না</message>

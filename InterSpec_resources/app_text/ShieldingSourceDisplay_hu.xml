@@ -25,6 +25,7 @@
     forrásként van kezelve a középen.
   </message>
   <message id="ssd-add-shield-label">Árnyékolás Hozzáadása:</message>
+  <message id="ssd-geometry-label">Geometria:</message>
   <message id="ssd-tt-add-shield">Válasszon egy előre definiált közös árnyékoló anyagok könyvtárából.</message>
   <message id="ssd-generic-btn">Általános</message>
   <message id="ssd-tt-generic">Lehetővé teszi a rendszám és felületi sűrűség definiálását és illesztését.</message>

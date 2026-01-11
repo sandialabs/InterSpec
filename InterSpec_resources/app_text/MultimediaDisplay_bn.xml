@@ -13,6 +13,9 @@
   <message id="smmd-err-not-image">মাল্টিমিডিয়া বিষয়বস্তু টাইপ হয় একটি ছবি টাইপের ছিল না, বা নির্ধারণ করা যায়নি।</message>
   <message id="smmd-image-index">ছবি {1} / {2}</message>
   <message id="smmd-Time">সময়</message>
+  <message id="smmd-time-label">সময়: {1}</message>
+  <message id="smmd-remark-label">মন্তব্য: {1}</message>
+  <message id="smmd-desc-label">Desc.: {1}</message>
   <message id="smmd-window-title-single">স্পেকট্রাম ফাইলে ছবি</message>
   <message id="smmd-window-title-multiple">স্পেকট্রাম ফাইলে ছবি</message>
 </messages>

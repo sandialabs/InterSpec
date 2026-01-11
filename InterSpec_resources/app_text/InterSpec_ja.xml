@@ -31,6 +31,17 @@
   <message id="Description">説明</message>
   <message id="Detector">検出器</message>
   <message id="Distance">距離</message>
+  <message id="nuclide-label">核種:</message>
+  <message id="age-label">年齢:</message>
+  <message id="distance-label">距離:</message>
+  <message id="activity-label">活動:</message>
+  <message id="dose-label">線量:</message>
+  <message id="shielding-label">遮蔽:</message>
+  <message id="detector-label">検出器:</message>
+  <message id="energy-label">エネルギー:</message>
+  <message id="foreground-label">前景:</message>
+  <message id="background-label">背景:</message>
+  <message id="secondary-label">二次:</message>
   <message id="Activity">放射能</message>
   <message id="Remark">備考</message>
   <message id="Tap">タップ</message>

@@ -31,4 +31,5 @@
   <message id="pid-csv-copy-full">Teljes csúcs CSV másolása</message>
   <message id="pid-csv-copy-no-hdr">Másolás fejlécek nélkül</message>
   <message id="pid-csv-copy-compact">Illesztett csúcs info másolása</message>
+  <message id="pid-peak-label">Csúcs: </message>
 </messages>

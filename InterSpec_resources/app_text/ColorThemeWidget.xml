@@ -13,7 +13,25 @@
   <message id="ctwidget-non-chart-area">Non-Chart Area</message>
   <message id="ctwidget-backdrop-theme">Backdrop Theme</message>
   <message id="ctwidget-backdrop-desc">Theme for all non-chart area</message>
-  
+  <message id="ctwidget-app-background">Background Color</message>
+  <message id="ctwidget-app-background-desc">Background color for dialogs, main app area, etc.</message>
+  <message id="ctwidget-app-text">Text Color</message>
+  <message id="ctwidget-app-text-desc">Text color for non-chart areas</message>
+  <message id="ctwidget-app-border">Border Color</message>
+  <message id="ctwidget-app-border-desc">Border color for UI elements (tabs, buttons, panels)</message>
+  <message id="ctwidget-app-link">Link Color</message>
+  <message id="ctwidget-app-link-desc">Color for links and interactive accents</message>
+  <message id="ctwidget-app-label">Label Color</message>
+  <message id="ctwidget-app-label-desc">Text color for labels, tabs, and headers</message>
+  <message id="ctwidget-app-input-bg">Input Background</message>
+  <message id="ctwidget-app-input-bg-desc">Background color for input fields</message>
+  <message id="ctwidget-app-button-bg">Button Background</message>
+  <message id="ctwidget-app-button-bg-desc">Background color for buttons</message>
+  <message id="ctwidget-app-button-border">Button Border</message>
+  <message id="ctwidget-app-button-border-desc">Border color for buttons</message>
+  <message id="ctwidget-app-button-text">Button Text</message>
+  <message id="ctwidget-app-button-text-desc">Text color for buttons</message>
+
   <!-- Chart colors section -->
   <message id="ctwidget-chart-colors">Chart Colors</message>
   

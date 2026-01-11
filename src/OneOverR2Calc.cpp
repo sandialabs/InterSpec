@@ -85,12 +85,13 @@ OneOverR2Calc::OneOverR2Calc()
 
   WTable *layoutTable = new WTable( contentDiv );
   WTableCell *cell = layoutTable->elementAt( 0, 0 );
-  WText *label = new WText( WString::tr("oor2c-near-meas-label"), cell );
-  
+  WLabel *label = new WLabel( WString::tr("oor2c-near-meas-label"), cell );
+
   //TODO:  HelpSystem::attachToolTipOn( label,Intensity can be specified using any unit of measurement (ex. <b>rem</b>, <b>millirem</b>, <b>sievert/hour, gamma counts per second) as long as it is consistent among the fields. , showToolTips );
-  
+
   cell = layoutTable->elementAt( 0, 1 );
   m_nearMeasurement = new WDoubleSpinBox( cell );
+  label->setBuddy( m_nearMeasurement );
   m_nearMeasurement->setDecimals( 2 );
   m_nearMeasurement->setMinimum( 0.0 );
   m_nearMeasurement->setMaximum( 1.0E20 );
@@ -100,10 +101,11 @@ OneOverR2Calc::OneOverR2Calc()
   m_nearMeasurement->enterPressed().connect( this, &OneOverR2Calc::doCalc );
 
   cell = layoutTable->elementAt( 1, 0 );
-  label = new WText( WString::tr("oor2c-far-meas-label"), cell );
+  label = new WLabel( WString::tr("oor2c-far-meas-label"), cell );
 
   cell = layoutTable->elementAt( 1, 1 );
   m_farMeasurement = new WDoubleSpinBox( cell );
+  label->setBuddy( m_farMeasurement );
   m_farMeasurement->setDecimals( 2 );
   m_farMeasurement->setMinimum( 0.0 );
   m_farMeasurement->setMaximum( 1.0E20 );
@@ -113,10 +115,11 @@ OneOverR2Calc::OneOverR2Calc()
   m_farMeasurement->enterPressed().connect( this, &OneOverR2Calc::doCalc );
 
   cell = layoutTable->elementAt( 2, 0 );
-  label = new WText( WString::tr("oor2c-background-intensity"), cell );
+  label = new WLabel( WString::tr("oor2c-background-intensity"), cell );
 
   cell = layoutTable->elementAt( 2, 1 );
   m_backgroundMeasurment = new WDoubleSpinBox( cell );
+  label->setBuddy( m_backgroundMeasurment );
   m_backgroundMeasurment->setDecimals( 2 );
   m_backgroundMeasurment->setMinimum( 0.0 );
   m_backgroundMeasurment->setMaximum( 1.0E20 );
@@ -126,10 +129,11 @@ OneOverR2Calc::OneOverR2Calc()
   m_backgroundMeasurment->enterPressed().connect( this, &OneOverR2Calc::doCalc );
   
   cell = layoutTable->elementAt( 3, 0 );
-  label = new WText( WString::tr("oor2c-dist-label"), cell );
-  
+  label = new WLabel( WString::tr("oor2c-dist-label"), cell );
+
   cell = layoutTable->elementAt( 3, 1 );
   m_distance = new WDoubleSpinBox( cell );
+  label->setBuddy( m_distance );
   m_distance->setDecimals( 2 );
   m_distance->setMinimum( 0.0 );
   m_distance->setMaximum( 9.99E6 );
@@ -149,7 +153,8 @@ OneOverR2Calc::OneOverR2Calc()
   powerLayout->setHorizontalSpacing( 0 );
   powerLawDiv->setLayout( powerLayout );
   m_powerLawSelect = new WComboBox();
-  label = new WText( WString::tr("oor2c-power-law-label") );
+  label = new WLabel( WString::tr("oor2c-power-law-label") );
+  label->setBuddy( m_powerLawSelect );
   powerLayout->addWidget( label, 0, 0 );
   powerLayout->addWidget( m_powerLawSelect, 0, 1 );
   m_powerLawSelect->addItem( WString::tr("oor2c-low-scatter") );
@@ -159,10 +164,11 @@ OneOverR2Calc::OneOverR2Calc()
   m_powerLawSelect->activated().connect( this, &OneOverR2Calc::powerLawSelected );
   
   cell = layoutTable->elementAt( 5, 0 );
-  label = new WText( WString::tr("oor2c-dist-to-near-label"), cell );
+  label = new WLabel( WString::tr("oor2c-dist-to-near-label"), cell );
 
   cell = layoutTable->elementAt( 5, 1 );
   m_answer  = new WLineEdit( cell );
+  label->setBuddy( m_answer );
   m_answer->setDisabled( true );
   m_answer->setAttributeValue( "ondragstart", "return false" );
 

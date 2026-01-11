@@ -13,6 +13,9 @@
   <message id="smmd-err-not-image">मल्टीमीडिया सामग्री प्रकार या तो छवि प्रकार का नहीं था, या निर्धारित नहीं किया जा सका।</message>
   <message id="smmd-image-index">{2} में से {1} छवि</message>
   <message id="smmd-Time">समय</message>
+  <message id="smmd-time-label">समय: {1}</message>
+  <message id="smmd-remark-label">टिप्पणी: {1}</message>
+  <message id="smmd-desc-label">Desc.: {1}</message>
   <message id="smmd-window-title-single">स्पेक्ट्रम फ़ाइल में छवि</message>
   <message id="smmd-window-title-multiple">स्पेक्ट्रम फ़ाइल में छवियां</message>
 </messages>

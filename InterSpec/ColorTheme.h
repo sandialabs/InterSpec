@@ -128,7 +128,52 @@ struct ColorTheme
         InterSpec_resources/themes/<theme name>/<theme name>.css
    */
   std::string nonChartAreaTheme;
-  
+
+  /** Background color for non-chart areas (dialogs, main app background, etc.).
+      Applied via CSS variable --interspec-background-color.
+   */
+  Wt::WColor appBackgroundColor;
+
+  /** Text color for non-chart areas.
+      Applied via CSS variable --interspec-text-color.
+   */
+  Wt::WColor appTextColor;
+
+  /** Border color for UI elements (tabs, buttons, panels, etc.).
+      Applied via CSS variable --interspec-border-color.
+   */
+  Wt::WColor appBorderColor;
+
+  /** Link and accent color for interactive elements.
+      Applied via CSS variable --interspec-link-color.
+   */
+  Wt::WColor appLinkColor;
+
+  /** Label text color for Wt labels, tab text, and certain headers.
+      Applied via CSS variable --interspec-label-color.
+   */
+  Wt::WColor appLabelColor;
+
+  /** Background color for input fields.
+      Applied via CSS variable --interspec-input-background.
+   */
+  Wt::WColor appInputBackground;
+
+  /** Background color for buttons.
+      Applied via CSS variable --interspec-button-background.
+   */
+  Wt::WColor appButtonBackground;
+
+  /** Border color for buttons.
+      Applied via CSS variable --interspec-button-border-color.
+   */
+  Wt::WColor appButtonBorderColor;
+
+  /** Text color for buttons.
+      Applied via CSS variable --interspec-button-text-color.
+   */
+  Wt::WColor appButtonTextColor;
+
   /** Line color of foreground spectrum. */
   Wt::WColor foregroundLine;
   

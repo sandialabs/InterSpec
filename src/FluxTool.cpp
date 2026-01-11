@@ -1102,7 +1102,7 @@ void FluxToolWidget::init()
   
   auto distCell = distDetRow->elementAt( m_narrowLayout ? 1 : 0, 0 );
   distCell->addStyleClass( "FluxDistCell" );
-  WLabel *label = new WLabel( WString("{1}:").arg(WString::tr("Distance")), distCell );
+  WLabel *label = new WLabel( WString::tr("distance-label"), distCell );
   label->addStyleClass( "FluxDistLabel" );
   
   m_prevDistance = "100 cm";

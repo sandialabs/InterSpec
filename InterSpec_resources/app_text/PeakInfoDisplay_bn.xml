@@ -31,4 +31,5 @@
   <message id="pid-csv-copy-full">সম্পূর্ণ পিক CSV কপি করুন</message>
   <message id="pid-csv-copy-no-hdr">হেডার ছাড়া কপি করুন</message>
   <message id="pid-csv-copy-compact">ফিট পিক তথ্য কপি করুন</message>
+  <message id="pid-peak-label">পিক: </message>
 </messages>

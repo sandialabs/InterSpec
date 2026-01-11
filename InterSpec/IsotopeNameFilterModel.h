@@ -44,6 +44,7 @@ namespace SandiaDecay
 
 namespace Wt
 {
+  class WLineEdit;
   class WSuggestionPopup;
 }
 
@@ -112,6 +113,19 @@ public:
   //  at least for Wt 3.3.4 (I think this wa fixed in later versions) so here
   //  we will do a hack to catch this.
   static void setQuickTypeFixHackjs( Wt::WSuggestionPopup *popup );
+  
+  //Fixes multiple issues with WSuggestionPopup:
+  //  1. Race condition: when user types quickly and hits Enter, the suggestion popup
+  //     may not have filtered yet, causing wrong suggestion to be selected. This
+  //     intercepts Enter key and checks if typed text exactly matches any suggestion,
+  //     using that match instead of the highlighted one.
+  //  2. Arrow key navigation: ensures arrow key selection works correctly when hitting Enter.
+  //  3. Mouse click handling: prevents premature change events when clicking suggestions,
+  //     ensuring only the final suggestion value triggers a change event.
+  //  4. Popup hiding: automatically hides the suggestion popup when values are entered.
+  //  5. Special character input: allows special characters like "(" to be entered without
+  //     being blocked by the suggestion popup.
+  static void setEnterKeyMatchFixJs( Wt::WSuggestionPopup *popup, Wt::WLineEdit *edit );
   
   /** By default nuclides are included in suggestions, this function allows
    * disabling/enabling this.

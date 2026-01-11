@@ -5038,6 +5038,58 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     else
       solution.m_fit_peaks_in_spectrums_cal_for_each_curve = fit_peaks_for_each_curve;
 
+    // Lambda to filter out peaks without sources from a vector of peak vectors
+    auto filter_peaks_without_sources = [cost_functor]( vector<vector<PeakDef>> &peaks_for_each_curve )
+    {
+      for( vector<PeakDef> &re_peaks : peaks_for_each_curve )
+      {
+        vector<PeakDef> removed_peaks;
+        
+        // Collect peaks without sources before removing them
+        for( const PeakDef &peak : re_peaks )
+        {
+          if( !peak.hasSourceGammaAssigned() )
+            removed_peaks.push_back( peak );
+        }
+        
+        // Remove peaks without sources
+        re_peaks.erase( std::remove_if( begin(re_peaks), end(re_peaks),
+          []( const PeakDef &peak ) -> bool {
+            return !peak.hasSourceGammaAssigned();
+          }), end(re_peaks) );
+        
+#if( PERFORM_DEVELOPER_CHECKS )
+        // Verify that removed peaks match up to free-floating peaks
+        if( !removed_peaks.empty() )
+        {
+          for( const PeakDef &removed_peak : removed_peaks )
+          {
+            bool found_matching_floating_peak = false;
+            const double removed_energy = removed_peak.mean();
+            
+            for( const RelActCalcAuto::FloatingPeak &floating_peak : cost_functor->m_options.floating_peaks )
+            {
+              // Check if the removed peak's energy is close to a floating peak's energy
+              const double energy_tolerance = 1.0; // At least 1 keV tolerance
+              const double energy_diff = std::abs( removed_energy - floating_peak.energy );
+              
+              if( energy_diff <= energy_tolerance )
+              {
+                found_matching_floating_peak = true;
+                break;
+              }
+            }//for( const RelActCalcAuto::FloatingPeak &floating_peak : cost_functor->m_options.floating_peaks )
+            
+            assert( found_matching_floating_peak && "Removed peak without source should match a free-floating peak" );
+          }//for( const PeakDef &removed_peak : removed_peaks )
+        }//if( !removed_peaks.empty() )
+#endif // PERFORM_DEVELOPER_CHECKS
+      }//for( vector<PeakDef> &re_peaks : peaks_for_each_curve )
+    };//filter_peaks_without_sources lambda
+    
+    // Filter out peaks without sources from m_fit_peaks_in_spectrums_cal_for_each_curve
+    filter_peaks_without_sources( solution.m_fit_peaks_in_spectrums_cal_for_each_curve );
+
     if( background )
     {
       // We subtracted the background from foreground before fitting peaks, so if we plot the resulting
@@ -5082,6 +5134,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       solution.m_fit_peaks_for_each_curve = vector<vector<PeakDef>>{1, fit_peaks};
     else
       solution.m_fit_peaks_for_each_curve = fit_peaks_for_each_curve;
+    
+    // Filter out peaks without sources from m_fit_peaks_for_each_curve
+    filter_peaks_without_sources( solution.m_fit_peaks_for_each_curve );
     
     assert( solution.m_fit_peaks_for_each_curve.size() == num_rel_eff_curves );
     assert( solution.m_fit_peaks_in_spectrums_cal_for_each_curve.size() == num_rel_eff_curves );
@@ -7654,7 +7709,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
   
   
-  /** Computes peaks for a ROI range, given current paramaters
+  /** Computes peaks for a ROI range, given current paramaters.
+   
+   Includes free-floating peaks.
+   
    @param range The channel range to generate peaks for
    @param x The Ceres paramaters to use to form the peaks
    @param multithread Wether to use a single, or multiple threads to compute the peaks
@@ -8286,6 +8344,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   {
     typedef ceres::Jet<double,RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size> Jet;
     
+    // `computed_peaks` will include free-floating peaks
     RelActCalcAuto::PeaksForEnergyRangeImp<double> computed_peaks = peaks_for_energy_range_imp( range, x, true );
 
     // Compute uncertainties if covariance is provided and valid
@@ -12319,9 +12378,57 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
       peak_src = el;
     else if( reaction )
       peak_src = reaction;
-    assert( !is_null(peak_src) );
+    
     if( is_null(peak_src) )
-      throw logic_error( "Peak with null src not in solution?" );
+    {
+#if( PERFORM_DEVELOPER_CHECKS )
+      // Verify that this peak corresponds to a free-floating peak
+      bool found_matching_floating_peak = false;
+      const double peak_energy = info.mean();
+      
+      for( const RelActCalcAuto::FloatingPeak &floating_peak : m_options.floating_peaks )
+      {
+        const double energy_tolerance = 1.0; // At least 1 keV tolerance
+        const double energy_diff = std::abs( peak_energy - floating_peak.energy );
+        
+        if( energy_diff <= energy_tolerance )
+        {
+          found_matching_floating_peak = true;
+          break;
+        }
+      }//for( const RelActCalcAuto::FloatingPeak &floating_peak : m_options.floating_peaks )
+      
+      assert( found_matching_floating_peak && "Peak without source should match a free-floating peak" );
+#endif // PERFORM_DEVELOPER_CHECKS
+      
+    const std::string format_str = "  <tr>"s
+                 "<td>%.2f</td>"      // energy
+                 "<td></td>"          // free-floating peak (no nuclide or element)
+                 "<td></td>"          // yield (empty for free peaks)
+                 + (have_multiple_rel_eff ? "<td></td>"s : ""s)
+                 + "<td>%1.6G</td>"   // amplitude
+                 "<td>%1.6G</td>"     // amplitude uncertainty
+                 "<td></td>"          // cps/yield (empty for free peaks)
+                 "<td></td>"          // fit rel eff
+                 "<td></td>"          // fit rel eff uncertainty
+                 "<td>%s</td>"        // continuum type
+                 "<td>%.1f-%.1f</td>" // continuum range
+                 "</tr>\n"s;
+      
+      snprintf(buffer, sizeof(buffer), format_str.c_str(),
+                 energy,
+                 info.amplitude(),
+                 info.amplitudeUncert() / info.amplitude(),
+                 Wt::WString::tr(PeakContinuum::offset_type_label_tr( info.continuum()->type() )).toUTF8().c_str(),
+                 info.continuum()->lowerEnergy(),
+                 info.continuum()->upperEnergy()
+                 );
+      results_html << buffer;
+      continue; // Move to next peak
+
+
+      continue; // Skip free-floating peaks
+    }
 
     int rel_eff_index = 0;
     if( have_multiple_rel_eff )

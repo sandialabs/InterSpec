@@ -40,7 +40,7 @@
   <message id="dlt-detected-activity-tt">检测到的活度，仅使用此感兴趣区域，
     以及观察到的计数过量，以及
     统计置信区间。</message>
-  <message id="dlt-limit-lt-zero">限值: &lt; 0{1}</message>
+  <message id="dlt-limit-lt-zero"><![CDATA[限值: < 0{1}]]></message>
   <message id="dlt-sig-fewer-counts">(ROI中的计数明显少于预测)</message>
   <message id="dlt-fewer-counts-tt">在感兴趣区域中观察到的计数
     明显少于相邻通道预测的计数。</message>
@@ -53,8 +53,6 @@
   <message id="dlt-large-deficit">ROI中计数大量不足</message>
   
   <!-- DetectionLimitTool main class strings -->
-  <message id="dlt-nuclide-label">核素:&nbsp;&nbsp;</message>
-  <message id="dlt-age-label">年龄:</message>
   <message id="dlt-tt-age-edit">
     <div>核素的年龄。</div>
     <br />
@@ -62,8 +60,6 @@
     （即输入的）核素的活度始终在测量时报告。
     </div>
   </message>
-  <message id="dlt-distance-label">距离:</message>
-  <message id="dlt-activity-label">活度:</message>
   <message id="dlt-attenuate-for-air">空气衰减</message>
   <message id="dlt-shield-empty-text">屏蔽材料</message>
   <message id="dlt-activity-limit">活度限值</message>
@@ -84,8 +80,8 @@
   <message id="dlt-log">对数</message>
   <message id="dlt-lin">线性</message>
   <message id="dlt-below-lc">(低于 L<sub>c</sub>)</message>
-  <message id="dlt-lt-zero-counts">&lt; 0 计数</message>
-  <message id="dlt-lt-zero-activity">&lt; {1}</message>
+  <message id="dlt-lt-zero-counts"><![CDATA[< 0 计数]]></message>
+  <message id="dlt-lt-zero-activity"><![CDATA[< {1}]]></message>
   
   <!-- Error messages -->
   <message id="dlt-err-no-data">未加载数据</message>
@@ -178,7 +174,7 @@
   <message id="dlt-chart-x-axis-activity">活度 ({1})</message>
   <message id="dlt-chart-title-estimated-activity">估计活度 {1}。</message>
   <message id="dlt-chart-title-excess-counts">过量计数 {1}。</message>
-  <message id="dlt-chart-title-activity-lt-zero">活度 &lt; 0 {1}</message>
+  <message id="dlt-chart-title-activity-lt-zero"><![CDATA[活度 < 0 {1}]]></message>
   <message id="dlt-chart-title-data-peak">数据 + 峰 {1}</message>
   <message id="dlt-chart-title-peak-upper-bound">上限峰 {1} @{2} CL</message>
   <message id="dlt-currie-info-dialog-title">{1}{2} keV 信息</message>
@@ -188,7 +184,7 @@
   <message id="dlt-no-foreground-spectrum">无前景谱</message>
   <message id="dlt-no-drf-loaded">未加载DRF</message>
   <message id="dlt-drf-not-valid">DRF无效或没有FWHM信息。</message>
-  <message id="dlt-err-max-distance-too-large">最大距离过大 (&gt;100km)</message>
+  <message id="dlt-err-max-distance-too-large"><![CDATA[最大距离过大 (>100km)]]></message>
   <message id="dlt-err-upper-limit-negative">计数上限小于零，但观察到的计数大于L_d。</message>
   <message id="dlt-err-activity-zero-negative">活度不能为零或负数</message>
   <message id="dlt-err-distance-zero-negative">距离不能为零或负数</message>

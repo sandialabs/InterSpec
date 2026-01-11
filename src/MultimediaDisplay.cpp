@@ -313,8 +313,7 @@ public:
     {
       have_add_info = true;
       
-      WString msg = WString("{1}: {2}")
-                     .arg( WString::tr("smmd-Time"))
+      WString msg = WString::tr("smmd-time-label")
                      .arg( SpecUtils::to_common_string(data->capture_start_time_, true) );
       m_time->setText( msg );
       m_time->show();
@@ -328,8 +327,7 @@ public:
     {
       have_add_info = true;
       m_remark->show();
-      WString msg = WString("{1}: {2}")
-                     .arg( WString::tr("Remark"))
+      WString msg = WString::tr("smmd-remark-label")
                      .arg( data->remark_ );
       m_remark->setText( msg );
     }
@@ -342,8 +340,7 @@ public:
     {
       have_add_info = true;
       m_description->show();
-      WString msg = WString("{1}: {2}")
-                     .arg( WString::tr("Desc."))
+      WString msg = WString::tr("smmd-desc-label")
                      .arg( data->descriptions_ );
       m_description->setText( msg );
     }

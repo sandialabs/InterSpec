@@ -58,8 +58,8 @@ public:
 
   Wt::Signal<> &edited();
   
-	enum SelectableColor 
-	{  
+	enum SelectableColor
+	{
 		ForegroundLine,
     BackgroundLine,
 		SecondaryLine,
@@ -84,6 +84,15 @@ public:
 		DynamicRefLineSnm,
 		DynamicRefLineCommon,
 		DynamicRefLineOther,
+		AppBackground,
+		AppText,
+		AppBorder,
+		AppLink,
+		AppLabel,
+		AppInputBackground,
+		AppButtonBackground,
+		AppButtonBorder,
+		AppButtonText,
 		NumSelectableColors
 	};//enum class EditableColor
 

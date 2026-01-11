@@ -742,8 +742,8 @@ public:
     
     WContainerWidget *currieLimitContent = new WContainerWidget( rightColumn );
     currieLimitContent->addStyleClass( "MdaRowCurrieLimitContent" );
-    
-    WText *currie_label = new WText( WString::tr("dlt-single-peak-currie-limit"), currieLimitContent );
+
+    WLabel *currie_label = new WLabel( WString::tr("dlt-single-peak-currie-limit"), currieLimitContent );
     currie_label->addStyleClass( "MdaCurrieLimitTitle" );
     
     m_poisonLimit = new WText( "&nbsp;", currieLimitContent );
@@ -1078,7 +1078,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   
   // Create nuclide label and input
-  WLabel *label = new WLabel( WString::tr("dlt-nuclide-label"), inputTable ); //The space so this will be the longest label, and not "Distance:"
+  WLabel *label = new WLabel( WString::tr("nuclide-label"), inputTable );
   label->addStyleClass( "GridFirstCol GridFirstRow GridVertCenter" );
   
   
@@ -1100,10 +1100,10 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   isoSuggestModel->excludeXrays( true );
   m_nuclideSuggest = new WSuggestionPopup( matcherJs, replacerJs, this );
   m_nuclideSuggest->setJavaScriptMember("wtNoReparent", "true");
-  m_nuclideSuggest->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
-  m_nuclideSuggest->setWidth( WLength(70, Wt::WLength::Unit::Pixel) );
+  m_nuclideSuggest->addStyleClass( "nuclide-suggest" );
   
   IsotopeNameFilterModel::setQuickTypeFixHackjs( m_nuclideSuggest );
+  IsotopeNameFilterModel::setEnterKeyMatchFixJs( m_nuclideSuggest, m_nuclideEdit );
   
   isoSuggestModel->filter( "" );
   m_nuclideSuggest->setFilterLength( -1 );
@@ -1114,7 +1114,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   
   // Create age input and time input validator
-  label = new WLabel( WString::tr("dlt-age-label"), inputTable );
+  label = new WLabel( WString::tr("age-label"), inputTable );
   label->addStyleClass( "GridFirstCol GridSecondRow GridVertCenter" );
   
   m_ageEdit = new WLineEdit( "", inputTable );
@@ -1137,7 +1137,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   
   // Create distance input
-  label = new WLabel( WString::tr("dlt-distance-label"), inputTable );
+  label = new WLabel( WString::tr("distance-label"), inputTable );
   label->addStyleClass( "GridFirstCol GridThirdRow GridVertCenter" );
   m_distanceLabel = label;
 
@@ -1154,7 +1154,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   // We will but the activity label/input right next to the distance stuff, but since we default to
   //  calculating activity limit, we'll hide the activity stuff.
-  label = new WLabel( WString::tr("dlt-activity-label"), inputTable );
+  label = new WLabel( WString::tr("activity-label"), inputTable );
   label->addStyleClass( "GridFirstCol GridThirdRow GridVertCenter" );
   m_activityLabel = label;
   label->hide();
@@ -1433,6 +1433,11 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
                                        const double gammas_per_bq,
                                        const vector<DetectionLimitTool::CurrieResultPeak> &peaks )
 {
+  InterSpec * const viewer = InterSpec::instance();
+  assert( viewer );
+  if( viewer )
+    viewer->useMessageResourceBundle( "DetectionLimitTool" );
+  
   assert( chart );
   if( !chart )
     return;
@@ -1449,7 +1454,6 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
   if( !spectrum )
     return;
   
-  InterSpec *viewer = InterSpec::instance();
   shared_ptr<const ColorTheme> theme = viewer ? viewer->getColorTheme() : nullptr;
   assert( theme );
   if( !theme )
