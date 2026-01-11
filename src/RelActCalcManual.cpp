@@ -1426,6 +1426,9 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
       
       const T curve_val = rel_eff_curve( peak.m_energy );
       
+      if( isnan(curve_val) || isinf(curve_val) )
+        throw std::runtime_error( "Perpective Rel. Eff. curve value invalid at " + std::to_string(peak.m_energy) + " keV" );
+      
       T rel_src_counts( 0.0 );
       for( const RelActCalcManual::GenericLineInfo &line : peak.m_source_gammas )
       {
@@ -1433,6 +1436,8 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
         rel_src_counts += rel_activity * line.m_yield;
       }//for( const GenericLineInfo &line : peak.m_source_gammas )
       
+      if( isnan(rel_src_counts) || isinf(rel_src_counts) )
+        throw std::runtime_error( "Perpective source counts value invalid at " + std::to_string(peak.m_energy) + " keV" );
       
 #if( USE_RESIDUAL_TO_BREAK_DEGENERACY )
       if( (index == 0) && (m_input.eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel) )
