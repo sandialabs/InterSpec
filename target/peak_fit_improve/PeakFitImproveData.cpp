@@ -553,14 +553,39 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
               //"Am241_Unsh",
               //"Br76_Sh",
               //"Am241_Sh",
+              //"Pd103_Phantom", //I think is working now
+              //"Pd103_Unsh", //Still missing 22 keV peak, but that seems reasonable
+              //"Cd109_Unsh",
+              //"I125", // Has I126 in it as well
+              //"Ac225", //Very poor quality fit,
+              //"Pd103",
+              //"Br76_Unsh",
+              //"Ir192", //missing 63 keV x-ray peak
+              //"Br76", //Just a reminder to adjust if we should "definetly see" low stat peaks in low areas - e.g., 2135.60 keV and 3603.98 keV (but our fit is just fine actually)
+              //"Tl201woTl202", //I think there is actually Tl202 in the spectrum
+              //"Sm153", //seems slightly poor quality fit - not too terrible though
+              //"Np237", 
+              
               // Below here still not working great
-              "Br76_Unsh",
-              "Pu238_Sh",
-              "Pu238_Unsh",
-              "Pu239_Sh",
-              "Cd109_Unsh",
-              "Pu238", //All Pu238
-              "Pu239", //All Pu239
+              //"Pu238_Unsh",
+              //"Pu239_Sh",
+              //"Pu238", //All Pu238 - missing 99 and 786 keV lines
+              //"Pu239", //All Pu239
+              "U235", //missing 98 and 1001 keV
+              "U235_Unsh", //missing 84.2 keV line, that looks like it should be fit
+              "Th232_Unsh", //missing 108.679 keV peak
+              "U235_Unsh_1000", //missing 1001 keV
+              "U235_Unsh_5000", //missing 1001 keV
+              "U235_Unsh_8000", //missing some x-rays
+              "U235_Unsh_6000", //missing the 105 x-ray
+              "I123_Phantom", //missing high energy gammas
+              "U233_Unsh", //SHould really have the 85.4 keV peak
+              "I123_Unsh", // I think the fitting is right, but I guess the missing 27 and 30 keV peaks technically qualify... maybe modify the "def wnated" definition
+              "Ga67_Sh", //Missing 887 keV peak, but this one is really on the edge of expecting it
+              // Should consider better ROI breakup stategy - like if more than X FWHM, then look for somewhere with esssentually zero peak contribution, and creak it there
+              //  Also, if ROIs get broken up, need to re-consider continuum type - see the ~750 keV peaks of "Pu238_Sh"
+              //"U233_Unsh", //The 85 keV x-ray region is probably missing a peak
+              //"K40", //A reminder that we need to implement background subtraction correction...
             };
             bool wanted = wanted_sources.empty();
             for( const string &src : wanted_sources )
