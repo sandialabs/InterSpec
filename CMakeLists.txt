@@ -801,6 +801,7 @@ target_include_directories( InterSpecLib
     ${CMAKE_BINARY_DIR}
     ${RAPID_XML_INC_DIR}
     external_libs
+    external_libs/VoigtDistribution
 )
 
 

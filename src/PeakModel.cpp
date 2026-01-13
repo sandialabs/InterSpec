@@ -2242,6 +2242,13 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
                     peak->coefficient(PeakDef::SkewPar2),
                    peak->coefficient(PeakDef::SkewPar3) );
           break;
+
+        case PeakDef::VoigtWithExpTail:
+          snprintf( text, sizeof(text), "%.4f, %.3f, %.3f",
+                    peak->coefficient(PeakDef::SkewPar0),
+                    peak->coefficient(PeakDef::SkewPar1),
+                    peak->coefficient(PeakDef::SkewPar2) );
+          break;
       }//switch( peak->skewType() )
       
       return WString::fromUTF8( text );

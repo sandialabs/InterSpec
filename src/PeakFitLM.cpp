@@ -1132,6 +1132,10 @@ struct PeakFitDiffCostFunction
             }//switch( ct )
             break;
           }//A Crystal Ball distribution
+
+          case PeakDef::VoigtWithExpTail:
+            // No special sanity checks needed for Voigt parameters
+            break;
         }//switch( m_skew_type )
 
         starting_value[i] = val;

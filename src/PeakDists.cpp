@@ -28,6 +28,7 @@
 
 #include <boost/math/constants/constants.hpp>
 #include <boost/math/special_functions/erf.hpp>
+//#include <boost/math/special_functions/erf_inv.hpp>
 #include <boost/math/distributions/poisson.hpp>
 
 #include "InterSpec/PeakDef.h"
@@ -291,7 +292,156 @@ namespace PeakDists
     return (0.5579090118408203125f + P_eval / Q_eval) * (exp(-z * z) / z);
     // Boost implementation has an additional minor error correction here
 }//double boost_erfc_imp( double z )
-  
+
+
+double get_xray_lorentzian_width( const int element_z, const double energy_kev,
+                                   const double tolerance_kev )
+{
+  // Lookup table for natural line widths (Lorentzian HWHM in eV) for common x-ray transitions
+  // Data from X-ray Data Booklet (LBNL), Krause & Oliver (1979), Campbell & Papp (2001)
+
+  // Structure to hold x-ray line data
+  struct XrayLine
+  {
+    int z;               // Atomic number
+    double energy_kev;   // X-ray energy in keV
+    double hwhm_ev;      // Lorentzian HWHM in eV
+    const char* label;   // X-ray line label (for documentation)
+  };
+
+  // Lookup table of x-ray line widths for common elements in gamma spectroscopy
+  // Focused on: U-238, Pu-239, Am-241, Th-232, and other common calibration/interference sources
+  static const XrayLine xray_data[] = {
+    // Uranium (Z=92) x-rays
+    { 92,  13.615,  5.2,  "U Lα1" },
+    { 92,  13.439,  5.2,  "U Lα2" },
+    { 92,  17.220,  6.6,  "U Lβ1" },
+    { 92,  17.456,  6.6,  "U Lβ2" },
+    { 92,  20.167,  7.5,  "U Lγ1" },
+    { 92,  20.945,  8.3,  "U Lγ3" },
+    { 92,  98.439, 48.0,  "U Kα1" },
+    { 92,  94.665, 48.0,  "U Kα2" },
+    { 92, 111.300, 48.0,  "U Kβ1" },
+    { 92, 114.566, 48.0,  "U Kβ2" },
+
+    // Plutonium (Z=94) x-rays
+    { 94,  14.282,  5.5,  "Pu Lα1" },
+    { 94,  14.084,  5.5,  "Pu Lα2" },
+    { 94,  17.992,  6.9,  "Pu Lβ1" },
+    { 94,  18.264,  6.9,  "Pu Lβ2" },
+    { 94,  21.175,  7.8,  "Pu Lγ1" },
+    { 94,  21.996,  8.6,  "Pu Lγ3" },
+    { 94, 103.734, 51.0,  "Pu Kα1" },
+    { 94,  99.525, 51.0,  "Pu Kα2" },
+    { 94, 117.228, 51.0,  "Pu Kβ1" },
+    { 94, 120.540, 51.0,  "Pu Kβ2" },
+
+    // Americium (Z=95) x-rays
+    { 95,  14.617,  5.6,  "Am Lα1" },
+    { 95,  14.411,  5.6,  "Am Lα2" },
+    { 95,  18.383,  7.1,  "Am Lβ1" },
+    { 95,  18.676,  7.1,  "Am Lβ2" },
+    { 95,  21.601,  7.9,  "Am Lγ1" },
+    { 95,  22.431,  8.8,  "Am Lγ3" },
+    { 95, 106.470, 52.0,  "Am Kα1" },
+    { 95, 102.030, 52.0,  "Am Kα2" },
+    { 95, 120.165, 52.0,  "Am Kβ1" },
+    { 95, 123.820, 52.0,  "Am Kβ2" },
+
+    // Thorium (Z=90) x-rays
+    { 90,  12.969,  4.8,  "Th Lα1" },
+    { 90,  12.810,  4.8,  "Th Lα2" },
+    { 90,  16.426,  6.2,  "Th Lβ1" },
+    { 90,  16.622,  6.2,  "Th Lβ2" },
+    { 90,  19.353,  7.1,  "Th Lγ1" },
+    { 90,  20.115,  7.9,  "Th Lγ3" },
+    { 90,  93.350, 45.5,  "Th Kα1" },
+    { 90,  89.957, 45.5,  "Th Kα2" },
+    { 90, 105.605, 45.5,  "Th Kβ1" },
+    { 90, 108.716, 45.5,  "Th Kβ2" },
+
+    // Neptunium (Z=93) x-rays
+    { 93,  13.946,  5.4,  "Np Lα1" },
+    { 93,  13.760,  5.4,  "Np Lα2" },
+    { 93,  17.604,  6.8,  "Np Lβ1" },
+    { 93,  17.849,  6.8,  "Np Lβ2" },
+    { 93,  20.765,  7.7,  "Np Lγ1" },
+    { 93,  21.563,  8.5,  "Np Lγ3" },
+    { 93, 101.078, 49.5,  "Np Kα1" },
+    { 93,  97.069, 49.5,  "Np Kα2" },
+    { 93, 114.240, 49.5,  "Np Kβ1" },
+    { 93, 117.623, 49.5,  "Np Kβ2" },
+
+    // Iridium (Z=77) x-rays - common calibration source
+    { 77,   9.175,  2.8,  "Ir Lα1" },
+    { 77,   9.099,  2.8,  "Ir Lα2" },
+    { 77,  10.708,  3.8,  "Ir Lβ1" },
+    { 77,  11.215,  3.8,  "Ir Lβ2" },
+    { 77,  63.287, 28.0,  "Ir Kα1" },
+    { 77,  61.486, 28.0,  "Ir Kα2" },
+    { 77,  71.413, 28.0,  "Ir Kβ1" },
+    { 77,  73.560, 28.0,  "Ir Kβ2" },
+
+    // Lead (Z=82) x-rays - common shielding material
+    { 82,  10.551,  3.4,  "Pb Lα1" },
+    { 82,  10.449,  3.4,  "Pb Lα2" },
+    { 82,  12.614,  4.5,  "Pb Lβ1" },
+    { 82,  12.622,  4.5,  "Pb Lβ2" },
+    { 82,  14.764,  5.2,  "Pb Lγ1" },
+    { 82,  15.218,  5.7,  "Pb Lγ3" },
+    { 82,  74.969, 33.5,  "Pb Kα1" },
+    { 82,  72.805, 33.5,  "Pb Kα2" },
+    { 82,  84.936, 33.5,  "Pb Kβ1" },
+    { 82,  87.300, 33.5,  "Pb Kβ2" },
+
+    // Protactinium (Z=91) x-rays
+    { 91,  13.291,  5.0,  "Pa Lα1" },
+    { 91,  13.122,  5.0,  "Pa Lα2" },
+    { 91,  16.821,  6.4,  "Pa Lβ1" },
+    { 91,  17.038,  6.4,  "Pa Lβ2" },
+    { 91,  19.755,  7.3,  "Pa Lγ1" },
+    { 91,  20.525,  8.1,  "Pa Lγ3" },
+    { 91,  95.868, 46.7,  "Pa Kα1" },
+    { 91,  92.287, 46.7,  "Pa Kα2" },
+    { 91, 108.427, 46.7,  "Pa Kβ1" },
+    { 91, 111.630, 46.7,  "Pa Kβ2" },
+
+    // Radium (Z=88) x-rays
+    { 88,  12.340,  4.4,  "Ra Lα1" },
+    { 88,  12.197,  4.4,  "Ra Lα2" },
+    { 88,  15.236,  5.8,  "Ra Lβ1" },
+    { 88,  15.421,  5.8,  "Ra Lβ2" },
+    { 88,  18.036,  6.7,  "Ra Lγ1" },
+    { 88,  18.757,  7.4,  "Ra Lγ3" },
+    { 88,  88.471, 42.7,  "Ra Kα1" },
+    { 88,  85.429, 42.7,  "Ra Kα2" },
+    { 88, 100.130, 42.7,  "Ra Kβ1" },
+    { 88, 103.088, 42.7,  "Ra Kβ2" }
+  };
+
+  constexpr size_t num_lines = sizeof(xray_data) / sizeof(XrayLine);
+
+  // Search for matching x-ray line
+  double best_match_hwhm = -1.0;
+  double best_match_diff = tolerance_kev;
+
+  for( size_t i = 0; i < num_lines; ++i )
+  {
+    if( xray_data[i].z != element_z )
+      continue;
+
+    const double energy_diff = fabs( xray_data[i].energy_kev - energy_kev );
+    if( energy_diff < best_match_diff )
+    {
+      best_match_diff = energy_diff;
+      best_match_hwhm = xray_data[i].hwhm_ev / 1000.0; // Convert eV to keV
+    }
+  }
+
+  return best_match_hwhm;
+}//double get_xray_lorentzian_width(...)
+
+
   /*
   double erf_approx( double x )
   {
@@ -1010,10 +1160,8 @@ template void photopeak_function_integral<double>( const double, const double,co
                                   const double skew,
                                   const double x )
   {
-    const double t = (x - mean) / sigma;
-    assert( t <= skew );
-    
-    return gauss_exp_norm(sigma,skew)*(sigma/skew)*std::exp((skew/sigma)*(0.5*skew*sigma - mean + x));
+    // Just call the templated version
+    return gauss_exp_tail_indefinite_template( mean, sigma, skew, x );
   }
   
   double gauss_exp_indefinite(const double mean,
@@ -1021,16 +1169,8 @@ template void photopeak_function_integral<double>( const double, const double,co
                              const double skew,
                              const double x )
   {
-    const double t = (x - mean) / sigma;
-    
-    const double root_half_pi = boost::math::constants::root_half_pi<double>();
-    static const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.707106781186547524400
-    
-    double answer = gauss_exp_tail_indefinite( mean, sigma, skew, std::min(x,-skew*sigma + mean) );
-    if( t >= -skew )
-      answer += gauss_exp_norm(sigma,skew)*sigma*root_half_pi
-                 * (boost_erf_imp(t*one_div_root_two) - boost_erf_imp(-skew*one_div_root_two) );
-    return answer;
+    // Just call the templated version
+    return gauss_exp_indefinite_template( mean, sigma, skew, x );
   }
   
   
@@ -1236,8 +1376,35 @@ template void photopeak_function_integral<double>( const double, const double,co
     return norm*answer;
   }//double_sided_crystal_ball_integral(...)
 
-  
-  
+
+// ========== Voigt with Exponential Tail Distribution Implementation ==========
+// Implementation now uses external VoigtDistribution library
+// Wrapper functions in PeakDists namespace that call the global namespace versions
+
+double voigt_exp_indefinite( const double x, const double mean, const double sigma_gauss,
+                              const double gamma_lor, const double tail_ratio, const double tail_slope )
+{
+  return ::voigt_exp_indefinite( x, mean, sigma_gauss, gamma_lor, tail_ratio, tail_slope );
+}//voigt_exp_indefinite(...)
+
+
+double voigt_exp_integral( const double peak_mean, const double sigma_gauss,
+                           const double gamma_lor, const double tail_ratio,
+                           const double tail_slope, const double x0, const double x1 )
+{
+  return ::voigt_exp_integral( peak_mean, sigma_gauss, gamma_lor, tail_ratio, tail_slope, x0, x1 );
+}//voigt_exp_integral(...)
+
+
+std::pair<double,double> voigt_exp_coverage_limits( const double mean, const double sigma_gauss,
+                                                     const double gamma_lor, const double tail_ratio,
+                                                     const double tail_slope, const double p )
+{
+  return ::voigt_exp_coverage_limits( mean, sigma_gauss, gamma_lor, tail_ratio, tail_slope, p );
+}//voigt_exp_coverage_limits(...)
+
+
+
   // Explicit instantiation definition for the `double` version of `gauss_exp_integral(...)`
   template void gauss_exp_integral<double>( const double, const double, const double,
                                       const double, const float * const, double *, const size_t );
@@ -1259,4 +1426,15 @@ template void photopeak_function_integral<double>( const double, const double,co
                                                              const double, const double, const double,
                                                              const double, const double, const float * const,
                                                              double *, const size_t );
+
+
+  // Explicit instantiation definition for the `double` version of `voigt_exp_norm(...)`
+  template double voigt_exp_norm<double>( const double, const double, const double, const double );
+
+
+  // Explicit instantiation definition for the `double` version of `voigt_exp_integral(...)`
+  template void voigt_exp_integral<double>( const double, const double, const double,
+                                            const double, const double, const double,
+                                            const float * const, double *, const size_t );
+
 }//namespace PeakDists

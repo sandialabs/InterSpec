@@ -103,7 +103,7 @@ BOOST_AUTO_TEST_CASE( GaussianDist )
     vector<double> counts( num_channels, 0.0 );
     vector<float> energies( num_channels + 1, 0.0 );
     for( size_t i = 0; i < energies.size(); ++i )
-      energies[i] = x0 + (i*(x1 - x0) / (num_channels + 1));
+      energies[i] = x0 + (i*(x1 - x0) / num_channels);
     
     gaussian_integral( mean, sigma, amplitude, &(energies[0]), &(counts[0]), num_channels );
     
@@ -142,7 +142,7 @@ BOOST_AUTO_TEST_CASE( BortelDist )
     vector<double> counts( num_channels, 0.0 );
     vector<float> energies( num_channels + 1, 0.0 );
     for( size_t i = 0; i < energies.size(); ++i )
-      energies[i] = x0 + (i*(x1 - x0) / (num_channels + 1));
+      energies[i] = x0 + (i*(x1 - x0) / num_channels);
     
     bortel_integral( mean, sigma, amplitude, skew, &(energies[0]), &(counts[0]), num_channels );
     
@@ -223,7 +223,7 @@ BOOST_AUTO_TEST_CASE( GaussExp )
     vector<double> counts( num_channels, 0.0 );
     vector<float> energies( num_channels + 1, 0.0 );
     for( size_t i = 0; i < energies.size(); ++i )
-      energies[i] = x0 + (i*(x1 - x0) / (num_channels + 1));
+      energies[i] = x0 + (i*(x1 - x0) / num_channels);
     
     //const double start_cpu = SpecUtils::get_cpu_time();
     
@@ -328,7 +328,7 @@ BOOST_AUTO_TEST_CASE( ExpGaussExp )
     vector<double> counts( num_channels, 0.0 );
     vector<float> energies( num_channels + 1, 0.0 );
     for( size_t i = 0; i < energies.size(); ++i )
-      energies[i] = x0 + (i*(x1 - x0) / (num_channels + 1));
+      energies[i] = x0 + (i*(x1 - x0) / num_channels);
     
     exp_gauss_exp_integral( mean, sigma, amplitude, skew_low, skew_high, &(energies[0]), &(counts[0]), num_channels );
     
@@ -350,7 +350,7 @@ BOOST_AUTO_TEST_CASE( ExpGaussExp )
     vector<double> counts( num_channels, 0.0 );
     vector<float> energies( num_channels + 1, 0.0 );
     for( size_t i = 0; i < energies.size(); ++i )
-      energies[i] = x0 + (i*(x1 - x0) / (num_channels + 1));
+      energies[i] = x0 + (i*(x1 - x0) / num_channels);
     
     
     double answer_sum = 0.0;
@@ -464,7 +464,7 @@ BOOST_AUTO_TEST_CASE( CrystalBall )
     vector<double> counts( num_channels, 0.0 );
     vector<float> energies( num_channels + 1, 0.0 );
     for( size_t i = 0; i < energies.size(); ++i )
-      energies[i] = x0 + (i*(x1 - x0) / (num_channels + 1));
+      energies[i] = x0 + (i*(x1 - x0) / num_channels);
     
     //const double start_cpu = SpecUtils::get_cpu_time();
     
@@ -499,7 +499,7 @@ BOOST_AUTO_TEST_CASE( CrystalBall )
     vector<double> counts( num_channels, 0.0 );
     vector<float> energies( num_channels + 1, 0.0 );
     for( size_t i = 0; i < energies.size(); ++i )
-      energies[i] = x0 + (i*(x1 - x0) / (num_channels + 1));
+      energies[i] = x0 + (i*(x1 - x0) / num_channels);
     
     
     double answer_sum = 0.0;
@@ -650,7 +650,7 @@ BOOST_AUTO_TEST_CASE( DoubleSidedCrystalBall )
     vector<double> counts( num_channels, 0.0 );
     vector<float> energies( num_channels + 1, 0.0 );
     for( size_t i = 0; i < energies.size(); ++i )
-      energies[i] = x0 + (i*(x1 - x0) / (num_channels + 1));
+      energies[i] = x0 + (i*(x1 - x0) / num_channels);
     
     //const double start_cpu = SpecUtils::get_cpu_time();
     
@@ -985,3 +985,177 @@ BOOST_AUTO_TEST_CASE( DoubleSidedCrystalBall )
     double DSCB_gauss_indefinite_non_norm_t( const double t);
    */
 }//BOOST_AUTO_TEST_CASE( DoubleSidedCrystalBall )
+
+
+BOOST_AUTO_TEST_CASE( VoigtWithExpTail )
+{
+  // Test x-ray Lorentzian width lookup
+  {
+    // U Lα1 at ~13.6 keV should return a width
+    double gamma_lor = get_xray_lorentzian_width( 92, 13.6, 0.5 );
+    BOOST_CHECK( gamma_lor > 0.0 );
+
+    // Pu Lα1 at ~14.3 keV should return a width
+    gamma_lor = get_xray_lorentzian_width( 94, 14.3, 0.5 );
+    BOOST_CHECK( gamma_lor > 0.0 );
+
+    // Unknown element should return -1
+    gamma_lor = get_xray_lorentzian_width( 50, 10.0, 0.5 );
+    BOOST_CHECK( gamma_lor < 0.0 );
+
+    // Energy too far from known transitions should return -1
+    gamma_lor = get_xray_lorentzian_width( 92, 999.0, 0.5 );
+    BOOST_CHECK( gamma_lor < 0.0 );
+  }
+
+  // Check VoigtExpTail has unit area
+  {
+    double mean = 14.0; // keV (typical x-ray energy)
+    double sigma = 0.0005; // ~1.2 eV FWHM at 14 keV
+    double gamma_lor = 0.0001; // ~0.1 eV Lorentzian HWHM (more realistic)
+    double tail_ratio = 0.15;
+    double tail_slope = 0.001; // More realistic tail parameter (1 eV scale)
+
+    // Use coverage_limits to get proper integration range that captures the tail
+    pair<double,double> limits = voigt_exp_coverage_limits( mean, sigma, gamma_lor, tail_ratio, tail_slope, 1.0E-9 );
+    double x0 = limits.first;
+    double x1 = limits.second;
+
+    double answer = voigt_exp_integral( mean, sigma, gamma_lor, tail_ratio, tail_slope, x0, x1 );
+    BOOST_CHECK_CLOSE( answer, 1.0, 1.0E-6 );
+  }
+
+  // Check fast VoigtExpTail has unit area
+  {
+    double mean = 14.0;
+    double sigma = 0.0005;
+    double gamma_lor = 0.006;
+    double tail_ratio = 0.15;
+    double tail_slope = 1.0;
+    const double amplitude = 1.23456;
+
+    // Use coverage_limits to get proper integration range that captures the tail
+    pair<double,double> limits = voigt_exp_coverage_limits( mean, sigma, gamma_lor, tail_ratio, tail_slope, 1.0E-9 );
+    double x0 = limits.first;
+    double x1 = limits.second;
+
+    size_t num_channels = 2048;
+    vector<double> counts( num_channels, 0.0 );
+    vector<float> energies( num_channels + 1, 0.0 );
+    for( size_t i = 0; i < energies.size(); ++i )
+      energies[i] = x0 + (i*(x1 - x0) / num_channels);
+
+    voigt_exp_integral( mean, sigma, amplitude, gamma_lor, tail_ratio, tail_slope,
+                        &(energies[0]), &(counts[0]), num_channels );
+
+    double answer_sum = std::accumulate( begin(counts), end(counts), 0.0 );
+    BOOST_CHECK_CLOSE( answer_sum, amplitude, amplitude*1.0E-6 );
+  }
+
+  // Check VoigtExpTail CDF reaches 1.0 (unit area test)
+  {
+    double mean = 14.0;
+    double sigma = 0.0005;
+    double gamma_lor = 0.006;
+    double tail_ratio = 0.15;
+    double tail_slope = 1.0;
+
+    // Use coverage_limits to get proper integration range that captures the tail
+    pair<double,double> limits = voigt_exp_coverage_limits( mean, sigma, gamma_lor, tail_ratio, tail_slope, 1.0E-9 );
+    double x0 = limits.first;
+    double x1 = limits.second;
+
+    double total_area = voigt_exp_integral( mean, sigma, gamma_lor, tail_ratio, tail_slope, x0, x1 );
+
+    BOOST_CHECK_CLOSE( total_area, 1.0, 1.0E-4 );
+  }
+
+  // Test limiting case: gamma_lor=0, tail_ratio=0 should produce Gaussian-like behavior
+  {
+    double mean = 100.0;
+    double sigma = 1.0;
+    double gamma_lor = 0.0;
+    double tail_ratio = 0.0;
+    double tail_slope = 1.0;
+    double x0 = mean - 10*sigma;
+    double x1 = mean + 10*sigma;
+
+    double voigt_area = voigt_exp_integral( mean, sigma, gamma_lor, tail_ratio, tail_slope, x0, x1 );
+    double gauss_area = gaussian_integral( mean, sigma, x0, x1 );
+
+    BOOST_CHECK_CLOSE( voigt_area, gauss_area, 1.0 );
+  }
+
+  // Test limiting case: gamma_lor=0 should produce GaussExp-like tail behavior
+  {
+    double mean = 14.0;
+    double sigma = 0.0005;
+    double gamma_lor = 0.0;
+    double tail_ratio = 0.2;
+    double tail_slope = 1.5;
+
+    // Use coverage_limits to get proper integration range that captures the tail
+    pair<double,double> limits = voigt_exp_coverage_limits( mean, sigma, gamma_lor, tail_ratio, tail_slope, 1.0E-9 );
+    double x0 = limits.first;
+    double x1 = limits.second;
+
+    double answer = voigt_exp_integral( mean, sigma, gamma_lor, tail_ratio, tail_slope, x0, x1 );
+    BOOST_CHECK_CLOSE( answer, 1.0, 1.0E-6 );
+  }
+
+  // Test voigt_exp_coverage_limits
+  {
+    double mean = 14.0;
+    double sigma = 0.0005;
+    double gamma_lor = 0.006;
+    double tail_ratio = 0.15;
+    double tail_slope = 1.0;
+    double prob = 0.000001;
+
+    pair<double,double> limits = voigt_exp_coverage_limits( mean, sigma, gamma_lor,
+                                                            tail_ratio, tail_slope, prob );
+    double fraction = 1.0 - voigt_exp_integral( mean, sigma, gamma_lor, tail_ratio,
+                                                tail_slope, limits.first, limits.second );
+    BOOST_CHECK_CLOSE( fraction, prob, 1.0 );
+
+    prob = 0.001;
+    limits = voigt_exp_coverage_limits( mean, sigma, gamma_lor, tail_ratio, tail_slope, prob );
+    fraction = 1.0 - voigt_exp_integral( mean, sigma, gamma_lor, tail_ratio, tail_slope,
+                                         limits.first, limits.second );
+    BOOST_CHECK_CLOSE( fraction, prob, 1.0 );
+  }
+
+  // Test array integral matches point-by-point integral
+  {
+    double mean = 14.0;
+    double sigma = 0.0005;
+    double gamma_lor = 0.006;
+    double tail_ratio = 0.15;
+    double tail_slope = 1.0;
+    const double amplitude = 1.5;
+    double x0 = mean - 30*sigma;
+    double x1 = mean + 30*sigma;
+    size_t num_channels = 512;
+    vector<double> counts( num_channels, 0.0 );
+    vector<float> energies( num_channels + 1, 0.0 );
+    for( size_t i = 0; i < energies.size(); ++i )
+      energies[i] = x0 + (i*(x1 - x0) / num_channels);
+
+    // Fill using fast array method
+    voigt_exp_integral( mean, sigma, amplitude, gamma_lor, tail_ratio, tail_slope,
+                        &(energies[0]), &(counts[0]), num_channels );
+
+    // Compare each channel against point-by-point integral
+    for( size_t i = 0; i < num_channels; ++i )
+    {
+      if( counts[i] > amplitude*1.0E-8 )
+      {
+        const double val_check = amplitude * voigt_exp_integral( mean, sigma, gamma_lor,
+                                                                 tail_ratio, tail_slope,
+                                                                 energies[i], energies[i+1] );
+        BOOST_CHECK_CLOSE( counts[i], val_check, 1.0E-4 );
+      }
+    }
+  }
+
+}//BOOST_AUTO_TEST_CASE( VoigtWithExpTail )

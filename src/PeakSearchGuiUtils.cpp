@@ -3871,6 +3871,7 @@ void change_skew_type_from_right_click( InterSpec * const interspec,
       case PeakDef::NoSkew:       case PeakDef::Bortel:
       case PeakDef::GaussExp:     case PeakDef::CrystalBall:
       case PeakDef::ExpGaussExp:  case PeakDef::DoubleSidedCrystalBall:
+      case PeakDef::VoigtWithExpTail:
         valid_offset = true;
         break;
     };//enum OffsetType

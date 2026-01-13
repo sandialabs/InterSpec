@@ -166,6 +166,41 @@ add_test( NAME TGammaInteractionCalc
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+# VoigtDistribution unit tests (requires Eigen3 and Ceres)
+find_package(Eigen3 QUIET)
+find_package(Ceres QUIET)
+find_package(Boost COMPONENTS unit_test_framework QUIET)
+
+if(Eigen3_FOUND AND Ceres_FOUND AND Boost_UNIT_TEST_FRAMEWORK_FOUND)
+    message(STATUS "Building VoigtDistribution unit tests (Eigen3, Ceres, and Boost unit_test_framework found)")
+
+    add_executable( test_VoigtDistribution
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/VoigtDistribution/unit_tests/voigt_distribution_tests.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/VoigtDistribution/unit_tests/test_faddeeva_templated.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/VoigtDistribution/unit_tests/test_voigt_exact.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/VoigtDistribution/unit_tests/exact_test_data.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/VoigtDistribution/unit_tests/3rd_party/Faddeeva_MIT/Faddeeva.cc
+    )
+
+    target_include_directories( test_VoigtDistribution PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/VoigtDistribution
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/VoigtDistribution/unit_tests/3rd_party
+        ${EIGEN3_INCLUDE_DIRS}
+    )
+
+    target_link_libraries( test_VoigtDistribution PRIVATE
+        Eigen3::Eigen
+        Ceres::ceres
+        Boost::unit_test_framework
+    )
+
+    add_test( NAME TVoigtDistribution
+        COMMAND $<TARGET_FILE:test_VoigtDistribution> ${BOOST_TEST_CL_ARGS}
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    )
+else()
+    message(STATUS "Skipping VoigtDistribution unit tests (requires Eigen3, Ceres, and Boost unit_test_framework)")
+endif()
 
 add_executable( test_SimpleActivityCalc test_SimpleActivityCalc.cpp )
 target_link_libraries( test_SimpleActivityCalc PRIVATE InterSpecLib )

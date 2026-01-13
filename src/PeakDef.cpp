@@ -62,11 +62,17 @@
 using namespace std;
 using SpecUtils::Measurement;
 
-/** Peak XML minor version  changes:
- 20231031: Minor version incremented from 1 to 2 to account for new peak skew models, and removal of Landau skew model
+/** Peak XML version changes:
+ 20260113: Major version incremented from 0 to 1 to account for VoigtWithExpTail skew model (breaking change).
+           For backward compatibility, peaks without VoigtWithExpTail still write version 0.2.
+ 20231031: Minor version incremented from 1 to 2 to account for new peak skew models, and removal of Landau skew model.
  */
-const int PeakDef::sm_xmlSerializationMajorVersion = 0;
-const int PeakDef::sm_xmlSerializationMinorVersion = 2;
+const int PeakDef::sm_xmlSerializationMajorVersion = 1;
+const int PeakDef::sm_xmlSerializationMinorVersion = 0;
+
+// For backward compatibility, peaks without VoigtWithExpTail write the pre-Voigt version
+const int pre_Voigt_serialization_major = 0;
+const int pre_Voigt_serialization_minor = 2;
 
 const bool PeakDef::sm_defaultUseForDrfIntrinsicEffFit = true;
 const bool PeakDef::sm_defaultUseForDrfFwhmFit = true;
@@ -1327,8 +1333,9 @@ const char *PeakDef::to_string( const SkewType type )
     case PeakDef::CrystalBall:            return "CrystalBall"; //Might change to "CB"
     case PeakDef::ExpGaussExp:            return "ExpGaussExp";
     case PeakDef::DoubleSidedCrystalBall: return "DoubleSidedCrystalBall"; //Might change to "DSCB"
+    case PeakDef::VoigtWithExpTail:       return "VoigtWithExpTail";
   }//switch( skew_type )
-  
+
   assert( 0 );
   throw runtime_error( "PeakDef::to_string(SkewType): invalid SkewType" );
   return "";
@@ -1345,6 +1352,7 @@ const char *PeakDef::to_label( const SkewType type )
     case PeakDef::CrystalBall:            return "Crystal Ball";
     case PeakDef::ExpGaussExp:            return "ExpGaussExp";
     case PeakDef::DoubleSidedCrystalBall: return "Double Crystal Ball";
+    case PeakDef::VoigtWithExpTail:       return "Voigt+Tail";
   }//switch( skew_type )
   
   assert( 0 );
@@ -1375,8 +1383,12 @@ PeakDef::SkewType PeakDef::skew_from_string( const string &skew_type_str )
   if( SpecUtils::iequals_ascii(skew_type_str,"DoubleSidedCrystalBall")
           || SpecUtils::iequals_ascii(skew_type_str,"DSCB") )
     return PeakDef::SkewType::DoubleSidedCrystalBall;
-  
-  
+
+  if( SpecUtils::iequals_ascii(skew_type_str,"VoigtWithExpTail")
+          || SpecUtils::iequals_ascii(skew_type_str,"VoigtExp") )
+    return PeakDef::SkewType::VoigtWithExpTail;
+
+
   throw runtime_error( "Invalid peak skew type: " + string(skew_type_str) );
   
   return PeakDef::SkewType::NoSkew;
@@ -1463,11 +1475,43 @@ bool PeakDef::skew_parameter_range( const SkewType skew_type, const CoefficientT
         default:
           return false;
       }//switch( coef )
-      
+
       break;
     }//case SkewType::ExpGaussExp: case SkewType::GaussExp:
+
+    case SkewType::VoigtWithExpTail:
+    {
+      switch( coef )
+      {
+        case CoefficientType::SkewPar0: // gamma_lor - Lorentzian HWHM in keV
+          starting_value = 0.005; // 5 eV typical for x-rays
+          step_size = 0.002;      // 2 eV steps
+          lower_value = 0.001;    // 1 eV minimum
+          upper_value = 0.1;      // 100 eV maximum
+          break;
+
+        case CoefficientType::SkewPar1: // tail_ratio - fraction in tail
+          starting_value = 0.1;   // 10% in tail is typical
+          step_size = 0.05;       // 5% steps
+          lower_value = 0.0;      // No tail
+          upper_value = 0.3;      // 30% maximum
+          break;
+
+        case CoefficientType::SkewPar2: // tail_slope - exponential decay parameter
+          starting_value = 1.0;   // Similar to GaussExp
+          step_size = 0.2;
+          lower_value = 0.15;     // Gentle tail
+          upper_value = 3.25;     // Steep tail
+          break;
+
+        default:
+          return false;
+      }//switch( coef )
+
+      break;
+    }//case SkewType::VoigtWithExpTail:
   }//switch( skew_type )
-  
+
   return true;
 }//void skew_parameter_range(...)
 
@@ -1482,8 +1526,9 @@ size_t PeakDef::num_skew_parameters( const SkewType skew_type )
     case DoubleSidedCrystalBall: return 4;
     case GaussExp:               return 1;
     case ExpGaussExp:            return 2;
+    case VoigtWithExpTail:       return 3; // gamma_lor, tail_ratio, tail_slope
   }//switch ( skew_type )
-  
+
   assert( 0 );
   throw std::logic_error( "Invalid peak skew" );
   return 0;
@@ -1515,8 +1560,13 @@ bool PeakDef::is_energy_dependent( const SkewType skew_type, const CoefficientTy
     case SkewType::ExpGaussExp:
       assert( (coef == CoefficientType::SkewPar0) || (coef == CoefficientType::SkewPar1) );
       return ((coef == CoefficientType::SkewPar0) || (coef == CoefficientType::SkewPar1));
+
+    case SkewType::VoigtWithExpTail:
+      // gamma_lor (SkewPar0) may be energy dependent if from lookup table
+      // tail_ratio (SkewPar1) and tail_slope (SkewPar2) are not energy dependent
+      return (coef == CoefficientType::SkewPar0);
   }//switch( skew_type )
-  
+
   assert( 0 );
   return false;
 }//bool is_energy_dependent( const SkewType skew_type, const CoefficientType coefficient )
@@ -1989,10 +2039,16 @@ rapidxml::xml_node<char> *PeakDef::toXml( rapidxml::xml_node<char> *parent,
   
   xml_node<char> *node = 0;
   xml_node<char> *peak_node = doc->allocate_node( node_element, "Peak" );
-  
-  snprintf( buffer, sizeof(buffer), "%i.%i",
-            PeakDef::sm_xmlSerializationMajorVersion,
-            PeakDef::sm_xmlSerializationMinorVersion );
+
+  // For backward compatibility, write version 0.2 for non-VoigtWithExpTail peaks
+  const int majorVersion = (m_skewType == SkewType::VoigtWithExpTail)
+                           ? PeakDef::sm_xmlSerializationMajorVersion
+                           : pre_Voigt_serialization_major;
+  const int minorVersion = (m_skewType == SkewType::VoigtWithExpTail)
+                           ? PeakDef::sm_xmlSerializationMinorVersion
+                           : pre_Voigt_serialization_minor;
+
+  snprintf( buffer, sizeof(buffer), "%i.%i", majorVersion, minorVersion );
   const char *val = doc->allocate_string( buffer );
   xml_attribute<char> *att = doc->allocate_attribute( "version", val );
   peak_node->append_attribute( att );
@@ -2026,8 +2082,9 @@ rapidxml::xml_node<char> *PeakDef::toXml( rapidxml::xml_node<char> *parent,
     case DoubleSidedCrystalBall: val = "DoubleSidedCrystalBall"; break;
     case GaussExp:               val = "GaussExp";               break;
     case ExpGaussExp:            val = "ExpGaussExp";            break;
+    case VoigtWithExpTail:       val = "VoigtWithExpTail";       break;
   }//switch( m_skewType )
-  
+
   node = doc->allocate_node( node_element, "Skew", val );
   peak_node->append_node( node );
   
@@ -2322,7 +2379,9 @@ void PeakDef::fromXml( const rapidxml::xml_node<char> *peak_node,
   if( sscanf( version_begin, "%i", &majorVersion ) != 1 )
     throw runtime_error( "Non integer version number" );
   
-  if( majorVersion != PeakDef::sm_xmlSerializationMajorVersion )
+  // Accept both version 0.x (pre-Voigt) and version 1.x (current)
+  if( (majorVersion != PeakDef::sm_xmlSerializationMajorVersion)
+     && (majorVersion != pre_Voigt_serialization_major) )
     throw runtime_error( "Invalid peak version" );
   
   const char *version_period = std::find( version_begin, version_end, '.' );
@@ -2372,6 +2431,9 @@ void PeakDef::fromXml( const rapidxml::xml_node<char> *peak_node,
     m_skewType = GaussExp;
   else if( compare(node->value(),node->value_size(),"ExpGaussExp",11,false) )
     m_skewType = ExpGaussExp;
+  else if( compare(node->value(),node->value_size(),"VoigtWithExpTail",16,false)
+          || compare(node->value(),node->value_size(),"VoigtExp",8,false) )
+    m_skewType = VoigtWithExpTail;
   else
     throw runtime_error( "Invalid peak skew type" );
   
@@ -3066,6 +3128,11 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
                                        p.coefficient(CoefficientType::SkewPar0),
                                        p.coefficient(CoefficientType::SkewPar1) );
         break;
+        
+      case VoigtWithExpTail:
+        answer << q << "VoigtExp" << q << ",";
+        dist_norm = 1.0;  //Distribution should already be normed
+        break;
     }//switch( p.type() )
 
     if( (p.skewType() != PeakDef::NoSkew) && (!IsNan(dist_norm) && !IsInf(dist_norm)) )
@@ -3147,8 +3214,28 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
               vis_limits.first = p.lowerX();
               vis_limits.second = p.upperX();
             }//try / catch
+            break; //case DoubleSidedCrystalBall:
             
-            break;
+            
+          case VoigtWithExpTail:
+            try
+            {
+              const double mean = p.mean();
+              const double sigma = p.sigma();
+              const double gamma_lor = p.coefficient(CoefficientType::SkewPar0);
+              const double tail_ratio = p.coefficient(CoefficientType::SkewPar1);
+              const double tail_slope = p.coefficient(CoefficientType::SkewPar2);
+
+              vis_limits = PeakDists::voigt_exp_coverage_limits( mean, sigma, gamma_lor,
+                                                                 tail_ratio, tail_slope, hidden_frac );
+            }catch( std::exception & )
+            {
+              // Voigt with exp tail dist can have really long tail, causing the coverage limits to fail,
+              //  because of unreasonable values - in this case we'll use the entire ROI.
+              vis_limits.first = p.lowerX();
+              vis_limits.second = p.upperX();
+            }//try / catch
+            break; //case VoigtWithExpTail:
         }//switch( p.skewType() )
         
         answer << q << "visRange" << q << ":[" << vis_limits.first << "," << vis_limits.second << "],";
@@ -4369,6 +4456,26 @@ double PeakDef::lowerX() const
       }
       return mean - 4.0*sigma;
     }//case ExpGaussExp:
+
+    case VoigtWithExpTail:
+    {
+      // Use coverage_limits function to find lower bound
+      const double gamma_lor = m_coefficients[PeakDef::SkewPar0];
+      const double tail_ratio = m_coefficients[PeakDef::SkewPar1];
+      const double tail_slope = m_coefficients[PeakDef::SkewPar2];
+
+      try
+      {
+        const auto limits = PeakDists::voigt_exp_coverage_limits( mean, sigma, gamma_lor,
+                                                                  tail_ratio, tail_slope, 0.05 );
+        return limits.first;
+      }
+      catch( std::exception & )
+      {
+        // Fallback if coverage_limits fails
+        return mean - (8.0*sigma + tail_ratio*tail_slope*sigma*10.0);
+      }
+    }//case VoigtWithExpTail:
   }//switch( m_skewType )
 
   assert( 0 );
@@ -4448,8 +4555,28 @@ double PeakDef::upperX() const
       return mean + 8.0*sigma;
       break;
     }//case DoubleSidedCrystalBall:, case ExpGaussExp:
+
+    case VoigtWithExpTail:
+    {
+      // Use coverage_limits function to find upper bound
+      const double gamma_lor = m_coefficients[PeakDef::SkewPar0];
+      const double tail_ratio = m_coefficients[PeakDef::SkewPar1];
+      const double tail_slope = m_coefficients[PeakDef::SkewPar2];
+
+      try
+      {
+        const auto limits = PeakDists::voigt_exp_coverage_limits( mean, sigma, gamma_lor,
+                                                                  tail_ratio, tail_slope, 0.05 );
+        return limits.second;
+      }
+      catch( std::exception & )
+      {
+        // Fallback if coverage_limits fails - Voigt has heavy tails due to Lorentzian
+        return mean + 8.0*sigma + 5.0*gamma_lor;
+      }
+    }//case VoigtWithExpTail:
   }//switch( m_skewType )
-  
+
   assert( 0 );
   return mean + 4.0*sigma;
 }//double upperX() const
@@ -4496,6 +4623,14 @@ double PeakDef::gauss_integral( const double x0, const double x1 ) const
       return amp*PeakDists::exp_gauss_exp_integral( mean, sigma,
                                              m_coefficients[CoefficientType::SkewPar0],
                                              m_coefficients[CoefficientType::SkewPar1], x0, x1 );
+      break;
+
+    case SkewType::VoigtWithExpTail:
+      return amp*PeakDists::voigt_exp_integral( mean, sigma,
+                                                m_coefficients[CoefficientType::SkewPar0],
+                                                m_coefficients[CoefficientType::SkewPar1],
+                                                m_coefficients[CoefficientType::SkewPar2],
+                                                x0, x1 );
       break;
   };//enum SkewType
 

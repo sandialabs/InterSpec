@@ -62,8 +62,39 @@ namespace PeakDists
   /** Returns `1-boost_erf_imp(z)`, however, due to rounding, is a separate implementation than erf.
    */
   double boost_erfc_imp( double z );
-  
-  
+
+  /** Helper function to look up natural line width (Lorentzian HWHM in keV) for x-ray transitions.
+
+   This function provides a lookup table of natural line widths for common elements and
+   x-ray transitions used in gamma spectroscopy. The natural line width represents the
+   Lorentzian broadening due to the finite lifetime of the atomic state (Heisenberg
+   uncertainty principle).
+
+   **Usage for VoigtWithExpTail peaks:**
+   Peak creators (e.g., RelActAuto) should call this function when creating peaks with the
+   VoigtWithExpTail distribution. If a width is found (return value >= 0), set SkewPar0 to
+   that value and mark it as fixed. If not found (return value < 0), leave SkewPar0 as a
+   fittable parameter with a reasonable starting value (~0.005 keV).
+
+   Data sources:
+   - X-ray Data Booklet (Lawrence Berkeley National Laboratory)
+   - Krause & Oliver (1979) - Natural widths of atomic K and L levels
+   - Campbell & Papp (2001) - Widths of atomic K-N7 levels
+
+   @param element_z The atomic number of the element (e.g., 92 for uranium)
+   @param energy_kev The x-ray energy in keV to find the matching transition
+   @param tolerance_kev The energy tolerance for matching transitions (default 0.5 keV)
+
+   @returns The Lorentzian HWHM (half-width at half-maximum) in keV if found, or -1.0 if
+            the element or transition is not in the lookup table.
+
+   Note: The returned value is HWHM (half-width at half-maximum), not FWHM.
+   To convert to FWHM: FWHM = 2 * HWHM
+   */
+  double get_xray_lorentzian_width( const int element_z, const double energy_kev,
+                                     const double tolerance_kev = 0.5 );
+
+
   /** Function to semi-efficiently integrate the gaussian plus optionally skew distribution over an energy range.
    
    @param mean The peak mean, in keV
@@ -485,7 +516,108 @@ extern template void photopeak_function_integral<double>( const double, const do
                                                                      const double right_n,
                                                                      const double p );
 
-    
+
+
+  // ========== Voigt with Exponential Tail Distribution Functions ==========
+
+  /** Returns the normalization for a unit-area Voigt with exponential tail distribution.
+
+   The VoigtExpTail distribution combines a Voigt profile (convolution of Gaussian and
+   Lorentzian) with an exponential low-energy tail, used for modeling x-ray peaks measured
+   with HPGe detectors where incomplete charge collection creates a tail.
+
+   @param sigma_gauss Gaussian width (from detector resolution), in keV
+   @param gamma_lor Lorentzian HWHM (from natural line width), in keV
+   @param tail_ratio Fraction of counts in the exponential tail (0 to ~0.3)
+   @param tail_slope Exponential tail slope parameter tau, similar to GaussExp skew
+
+   @returns Normalization constant so the distribution integrates to 1
+   */
+  template<typename T>
+  T voigt_exp_norm( const T sigma_gauss, const T gamma_lor, const T tail_ratio, const T tail_slope );
+
+  extern template double voigt_exp_norm<double>( const double, const double, const double, const double );
+
+
+  /** Returns the indefinite integral (from -infinity to x) of a unit-area Voigt with exponential tail.
+
+   @param x The upper limit of integration
+   @param mean The peak mean in keV
+   @param sigma_gauss Gaussian width (from detector resolution), in keV
+   @param gamma_lor Lorentzian HWHM (from natural line width), in keV
+   @param tail_ratio Fraction of counts in the exponential tail
+   @param tail_slope Exponential tail slope parameter tau
+
+   @returns Cumulative distribution value at x
+   */
+  double voigt_exp_indefinite( const double x, const double mean, const double sigma_gauss,
+                                const double gamma_lor, const double tail_ratio, const double tail_slope );
+
+
+  /** Returns the integral of a Voigt with exponential tail distribution between x0 and x1.
+
+   @param peak_mean The peak mean in keV
+   @param sigma_gauss Gaussian width (from detector resolution), in keV
+   @param gamma_lor Lorentzian HWHM (from natural line width), in keV
+   @param tail_ratio Fraction of counts in the exponential tail
+   @param tail_slope Exponential tail slope parameter tau
+   @param x0 Lower integration limit
+   @param x1 Upper integration limit
+
+   @returns Integral of the unit-area distribution from x0 to x1
+   */
+  double voigt_exp_integral( const double peak_mean, const double sigma_gauss,
+                             const double gamma_lor, const double tail_ratio,
+                             const double tail_slope, const double x0, const double x1 );
+
+
+  /** Optimized array-filling version of the Voigt with exponential tail integral.
+
+   Uses indefinite integral caching to cut the number of Voigt function evaluations in half.
+
+   @param peak_mean The peak mean in keV
+   @param sigma_gauss Gaussian width (from detector resolution), in keV
+   @param peak_amplitude The peak amplitude (use 1.0 for unit-area peak)
+   @param gamma_lor Lorentzian HWHM (from natural line width), in keV
+   @param tail_ratio Fraction of counts in the exponential tail
+   @param tail_slope Exponential tail slope parameter tau
+   @param energies Array of channel lower energies (must have nchannel+1 entries)
+   @param channels Array where distribution values will be added (must have nchannel entries)
+   @param nchannel Number of channels to integrate over
+   */
+  template<typename T>
+  void voigt_exp_integral( const T peak_mean, const T sigma_gauss,
+                           const T peak_amplitude, const T gamma_lor,
+                           const T tail_ratio, const T tail_slope,
+                           const float * const energies, T *channels,
+                           const size_t nchannel );
+
+  extern template void voigt_exp_integral<double>( const double, const double, const double,
+                                                    const double, const double, const double,
+                                                    const float * const, double *, const size_t );
+
+
+  /** Return the limits so that `1-p` of the VoigtExpTail distribution is covered.
+
+   @param mean The peak mean
+   @param sigma_gauss Gaussian width (from detector resolution), in keV
+   @param gamma_lor Lorentzian HWHM (from natural line width), in keV
+   @param tail_ratio Fraction of counts in the exponential tail
+   @param tail_slope Exponential tail slope parameter tau
+   @param p The fraction of the distribution you want to be outside of the returned range
+
+   @returns limits so that `0.5*p` of the distribution will be below the first element, and
+   `0.5*p` will be above the second element, so the fraction of the distribution between the
+   returned limits is `1 - p`.
+
+   Throws error on invalid input.
+   */
+  std::pair<double,double> voigt_exp_coverage_limits( const double mean, const double sigma_gauss,
+                                                       const double gamma_lor, const double tail_ratio,
+                                                       const double tail_slope, const double p );
+
+
+
     /** 20231109: Currently `DSCB_pdf_non_norm` yields a that can be almost 20% too low, over the entire effective range
      I'm totally not sure why - it could be an error in my integration for normalization, a bug in the indefinite integral functions,
      or likely a mis-understanding on my part, or a bug in `DSCB_pdf_non_norm` that I have just become blind to seeing.

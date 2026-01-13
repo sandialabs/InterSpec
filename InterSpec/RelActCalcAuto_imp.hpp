@@ -102,6 +102,10 @@ struct PeakDefImp
       case PeakDef::SkewType::ExpGaussExp:
         PeakDists::exp_gauss_exp_integral( m_mean, m_sigma, m_amplitude, m_skew_pars[0], m_skew_pars[1], energies, channels, nchannel );
         break;
+
+      case PeakDef::SkewType::VoigtWithExpTail:
+        PeakDists::voigt_exp_integral( m_mean, m_sigma, m_amplitude, m_skew_pars[0], m_skew_pars[1], m_skew_pars[2], energies, channels, nchannel );
+        break;
     }//switch( skew_type )
 
     check_jet_array_for_NaN( channels, nchannel );
@@ -200,6 +204,11 @@ struct PeakDefImp
         vis_limits.first  = mean - 15.0*sigma;
         vis_limits.second = mean + 15.0*sigma;
       }//try / catch
+        break;
+
+      case PeakDef::SkewType::VoigtWithExpTail:
+        vis_limits = PeakDists::voigt_exp_coverage_limits( mean, sigma, skew_pars[0],
+                                                            skew_pars[1], skew_pars[2], missing_frac );
         break;
     }//switch( m_skew_type )
 

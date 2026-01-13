@@ -523,13 +523,15 @@ void PeakEdit::init()
   m_skewType = new WComboBox( row->elementAt(1) );
   m_skewType->activated().connect( this, &PeakEdit::skewTypeChanged );
   
-  static_assert( PeakDef::DoubleSidedCrystalBall > PeakDef::ExpGaussExp, "SkewType ordering changed DSCB should be largest" );
-  static_assert( PeakDef::DoubleSidedCrystalBall > PeakDef::CrystalBall, "SkewType ordering changed DSCB should be largest" );
-  static_assert( PeakDef::DoubleSidedCrystalBall > PeakDef::GaussExp, "SkewType ordering changed DSCB should be largest" );
-  static_assert( PeakDef::DoubleSidedCrystalBall > PeakDef::Bortel, "SkewType ordering changed DSCB should be largest" );
+  static_assert( PeakDef::VoigtWithExpTail > PeakDef::ExpGaussExp, "SkewType ordering changed VoigtWithExpTail should be largest" );
+  static_assert( PeakDef::VoigtWithExpTail > PeakDef::CrystalBall, "SkewType ordering changed VoigtWithExpTail should be largest" );
+  static_assert( PeakDef::VoigtWithExpTail > PeakDef::GaussExp, "SkewType ordering changed VoigtWithExpTail should be largest" );
+  static_assert( PeakDef::VoigtWithExpTail > PeakDef::Bortel, "SkewType ordering changed VoigtWithExpTail should be largest" );
+  static_assert( PeakDef::VoigtWithExpTail > PeakDef::DoubleSidedCrystalBall, "SkewType ordering changed VoigtWithExpTail should be largest" );
+  
   
   for( PeakDef::SkewType t = PeakDef::SkewType(0);
-      t <= PeakDef::DoubleSidedCrystalBall; t = PeakDef::SkewType(t+1) )
+      t <= PeakDef::VoigtWithExpTail; t = PeakDef::SkewType(t+1) )
   {
     m_skewType->addItem( PeakDef::to_label(t) );
   }//for( loop over PeakDef::OffsetType )
@@ -1733,10 +1735,15 @@ void PeakEdit::peakTypeChanged()
           case PeakEdit::SkewPar1:
             row->setHidden( (m_currentPeak.skewType()!=PeakDef::CrystalBall)
                            && (m_currentPeak.skewType()!=PeakDef::DoubleSidedCrystalBall)
-                           && (m_currentPeak.skewType()!=PeakDef::ExpGaussExp) );
+                           && (m_currentPeak.skewType()!=PeakDef::ExpGaussExp)
+                           && (m_currentPeak.skewType()!=PeakDef::VoigtWithExpTail));
             break;
             
           case PeakEdit::SkewPar2:
+            row->setHidden( (m_currentPeak.skewType()!=PeakDef::DoubleSidedCrystalBall)
+                           && (m_currentPeak.skewType()!=PeakDef::VoigtWithExpTail) );
+            break;
+            
           case PeakEdit::SkewPar3:
             row->setHidden( (m_currentPeak.skewType()!=PeakDef::DoubleSidedCrystalBall) );
             break;
@@ -1925,6 +1932,15 @@ void PeakEdit::updateSkewParameterLabels( const PeakDef::SkewType skewType )
       if( label[1] )
         label[1]->setText( "Skew k<sub>H</sub>" );
       break;
+
+    case PeakDef::SkewType::VoigtWithExpTail:
+      if( label[0] )
+        label[0]->setText( "Lorentzian &gamma;" );
+      if( label[1] )
+        label[1]->setText( "Tail Ratio R" );
+      if( label[2] )
+        label[2]->setText( "Tail Slope &tau;" );
+      break;
   }//switch( skewType )
 }//void updateSkewParameterLabels();
 
@@ -1954,6 +1970,7 @@ void PeakEdit::skewTypeChanged()
     case PeakDef::SkewType::DoubleSidedCrystalBall:
     case PeakDef::SkewType::GaussExp:
     case PeakDef::SkewType::ExpGaussExp:
+    case PeakDef::SkewType::VoigtWithExpTail:
     {
       const int num_skew_pars = static_cast<int>(PeakDef::CoefficientType::SkewPar3)
                                 - static_cast<int>(PeakDef::CoefficientType::SkewPar0);
@@ -2531,6 +2548,8 @@ void PeakEdit::apply()
         case PeakDef::SkewType::CrystalBall:
         case PeakDef::SkewType::ExpGaussExp:
         case PeakDef::SkewType::DoubleSidedCrystalBall:
+        case PeakDef::SkewType::VoigtWithExpTail:
+          
           valid_skew = true;
           break;
       }//switch( skewType )

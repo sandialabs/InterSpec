@@ -480,26 +480,44 @@ public:
     ExpGaussExp,
     
     /** A "double-sided" version of the Crystal Ball distribution to account for high-energy skew.
-     
+
      See: Search for resonances in diphoton events at $$ \sqrt{s}=13 $$ TeV with the ATLAS detector
      Aaboud, M., G. Aad, B. Abbott, J. Abdallah, O. Abdinov, B. Abeloos, R. Aben, et al. 2016
      http://nrs.harvard.edu/urn-3:HUL.InstRepos:29362185
      Chapter 6
-     
+
      Note also that CERNs ROOT package implements this function, with likely with some consideration
      for power laws between 1 and 1.00001, that we dont currently do.  However, this implementation
      is independent of the ROOT implementation, and treats the distribution as having unit area
      when integrated over all `x`, which it doesnt appear the ROOT implementation does (but I didnt
      check)
      https://root.cern.ch/doc/master/RooCrystalBall_8cxx_source.html
-     
+
      Uses four skew parameters.
      The first is `alpha_low`, which defines the threshold, on the left side.
      The second is `n_low` which defines the power-law on the left side.
      The third is `alpha_high`, which defines the threshold, on the right side.
      The second is `n_high` which defines the power-law on the right side.
      */
-    DoubleSidedCrystalBall
+    DoubleSidedCrystalBall,
+
+    /** A Voigt profile (convolution of Gaussian and Lorentzian) with an exponential low-energy tail.
+
+     This distribution is intended for fitting x-ray peaks measured with HPGe detectors, where the
+     natural atomic line width (Lorentzian) convolves with the detector resolution (Gaussian),
+     and incomplete charge collection creates a low-energy exponential tail.
+
+     The Voigt profile is computed using the Faddeeva function adapted from the MIT Faddeeva package.
+
+     Uses 3 skew parameters:
+     - SkewPar0: `gamma_lor` - Lorentzian HWHM (atomic broadening) in keV. The peak creator
+                 (e.g., RelActAuto) should look up this value using `get_xray_lorentzian_width()`
+                 for known elements, and mark the parameter as fixed. For unknown elements or when
+                 lookup fails, this can be left as a fittable parameter with a reasonable initial value.
+     - SkewPar1: `R` - Tail ratio (fraction of counts in exponential tail), range ~0 to 0.3
+     - SkewPar2: `tau` - Tail slope (charge trapping depth parameter), similar to GaussExp skew
+     */
+    VoigtWithExpTail
   };//enum SkewType
   
   enum DefintionType

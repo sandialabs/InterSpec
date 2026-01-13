@@ -10,6 +10,7 @@
 #include <unsupported/Eigen/SpecialFunctions>
 
 #include "SpecUtils/SpecFile.h" //Needed for `offset_integral(...)`
+#include "VoigtDistribution/voigt_exp_tail.hpp" //Voigt with exponential tail distribution
 
 // Had a little trouble with the auto-derivative when using Jet - so will define some functions
 //  here to help find the issues - but make them be no-ops for non-debug builds
@@ -1362,6 +1363,11 @@ void photopeak_function_integral( const T mean,
     case PeakDef::SkewType::ExpGaussExp:
       exp_gauss_exp_integral( mean, sigma, amp, skew_parameters[0], skew_parameters[1], energies, channels, nchannel );
       break;
+
+    case PeakDef::SkewType::VoigtWithExpTail:
+      voigt_exp_integral( mean, sigma, amp, skew_parameters[0], skew_parameters[1],
+                          skew_parameters[2], energies, channels, nchannel );
+      break;
   }//switch( skew_type )
 }//void photopeak_function_integral(...)
 
@@ -1597,6 +1603,101 @@ offset_integral(const ContType& cont,
     }//case PeakContinuum::OffsetType::External:
   }//switch( cont_type )
 }//void PeakContinuum::offset_integral( ... ) const
+
+
+// ========== GaussExp Templated Helper Functions ==========
+
+// Templated version of gauss_exp_tail_indefinite for use with both double and ceres::Jet types
+template<typename T>
+T gauss_exp_tail_indefinite_template( const T mean, const T sigma, const T skew, const T x )
+{
+  const T t = (x - mean) / sigma;
+  // Note: caller should ensure t <= -skew for this tail region
+
+  return gauss_exp_norm(sigma, skew) * (sigma / skew) * exp( (skew / sigma) * (T(0.5) * skew * sigma - mean + x) );
+}
+
+
+// Templated version of gauss_exp_indefinite for use with both double and ceres::Jet types
+template<typename T>
+T gauss_exp_indefinite_template( const T mean, const T sigma, const T skew, const T x )
+{
+  const T t = (x - mean) / sigma;
+
+  const T root_half_pi = T(boost::math::constants::root_half_pi<double>());
+  const T one_div_root_two = T(boost::math::constants::one_div_root_two<double>());
+
+  // Tail contribution (for x <= mean - skew*sigma)
+  const T tail_upper_limit = -skew * sigma + mean;
+  T answer = gauss_exp_tail_indefinite_template( mean, sigma, skew, (x < tail_upper_limit) ? x : tail_upper_limit );
+
+  // Gaussian contribution (for x > mean - skew*sigma)
+  if( t >= -skew )
+  {
+    T erf_at_t, erf_at_minus_skew;
+
+    if constexpr ( std::is_same_v<T, double> )
+    {
+      erf_at_t = T(boost_erf_imp( t * one_div_root_two ));
+      erf_at_minus_skew = T(boost_erf_imp( -skew * one_div_root_two ));
+    }
+    else
+    {
+      // For Jet types, use ceres-provided erf
+      erf_at_t = erf( t * one_div_root_two );
+      erf_at_minus_skew = erf( -skew * one_div_root_two );
+    }
+
+    answer += gauss_exp_norm(sigma, skew) * sigma * root_half_pi * (erf_at_t - erf_at_minus_skew);
+  }
+
+  return answer;
+}
+
+
+// ========== Voigt with Exponential Tail Functions ==========
+// Using external VoigtDistribution library (included at top of file)
+
+// Wrapper functions that call the external library implementations in global namespace
+
+template<typename T>
+T voigt_exp_norm( const T sigma_gauss, const T gamma_lor, const T tail_ratio, const T tail_slope )
+{
+  return ::voigt_exp_norm( sigma_gauss, gamma_lor, tail_ratio, tail_slope );
+}//voigt_exp_norm(...)
+
+
+// Wrap the external voigt_exp_integral to add check_jet_for_NaN calls
+template<typename T>
+void voigt_exp_integral( const T peak_mean, const T sigma_gauss,
+                         const T peak_amplitude, const T gamma_lor,
+                         const T tail_ratio, const T tail_slope,
+                         const float * const energies, T *channels,
+                         const size_t nchannel )
+{
+  if( sigma_gauss == 0.0 )
+    return;
+
+  if constexpr ( std::is_same_v<T, double> )
+  {
+    // We dont want to return for zero-amplitude peaks if we are using a Ceres::Jet,
+    //  as we may need to take into account the derivatives at zero
+    if( peak_amplitude == 0.0 )
+      return;
+  }//if constexpr ( std::is_same_v<T, double> )
+
+  // Call the external library implementation
+  ::voigt_exp_integral( peak_mean, sigma_gauss, peak_amplitude, gamma_lor,
+                        tail_ratio, tail_slope, energies, channels, nchannel );
+
+  // Add NaN checks for debugging with Ceres Jets
+  for( size_t i = 0; i < nchannel; ++i )
+  {
+    check_jet_for_NaN( channels[i] );
+  }
+}//voigt_exp_integral(...)
+
+
 }//namespace PeakDists
 
 #endif //PeakDists_imp_h

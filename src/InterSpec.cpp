@@ -1017,7 +1017,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
         m_rightClickChangeSkewMenu = m_rightClickMenu->addPopupMenuItem( WString::tr("rclick-mi-skew-type") );
         m_rightClickMenutItems[i] = m_rightClickChangeSkewMenu->parentItem();
         for( auto type = PeakDef::SkewType(0);
-            type <= PeakDef::SkewType::DoubleSidedCrystalBall; type = PeakDef::SkewType(type+1) )
+            type <= PeakDef::SkewType::VoigtWithExpTail; type = PeakDef::SkewType(type+1) )
         {
           WMenuItem *item = m_rightClickChangeSkewMenu->addItem( PeakDef::to_label(type) );
           item->triggered().connect( boost::bind( &InterSpec::handleChangeSkewTypeFromRightClick,
