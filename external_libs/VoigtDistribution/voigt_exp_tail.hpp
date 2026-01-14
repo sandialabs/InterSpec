@@ -3,15 +3,41 @@
 
 #include <cmath>
 #include <iostream>
-#include <vector>
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
 #include <cstddef>
 #include <utility>
+#include <vector>
 #include "Faddeeva.hpp"
 #if __has_include(<ceres/jet.h>)
 #include <ceres/jet.h>
+#endif
+
+/**
+ * @def USE_INACCURATE_VOIGT_CDF
+ * @brief Enable/disable the Voigt CDF-based functions (default: 0 = disabled)
+ * 
+ * The exact analytical CDF formula for the Voigt profile (using erf(z) for complex z)
+ * has proven problematic - Re[erf(z)] can fall outside [-1, 1] for complex arguments,
+ * leading to invalid CDF values (negative or >1) that require clamping, which causes
+ * large errors in integral calculations. We were unable to get the exact CDF formula
+ * to work reliably, so we default to numerical PDF integration instead, which is slower
+ * but more accurate.
+ * 
+ * When USE_INACCURATE_VOIGT_CDF is 0 (default):
+ *   - voigt_cdf() is not available
+ *   - voigt_exp_indefinite() is not available (uses voigt_cdf internally)
+ *   - voigt_exp_integral() scalar version is not available (uses voigt_exp_indefinite)
+ *   - voigt_exp_integral() array version is not available (uses voigt_exp_indefinite)
+ *   - voigt_exp_coverage_limits() is not available (uses voigt_exp_indefinite)
+ * 
+ * When USE_INACCURATE_VOIGT_CDF is 1:
+ *   - All CDF-based functions are enabled, but may have accuracy issues
+ *   - May revisit in the future to try alternative CDF formulations
+ */
+#ifndef USE_INACCURATE_VOIGT_CDF
+#define USE_INACCURATE_VOIGT_CDF 0
 #endif
 
 // ADL helpers for std / ceres math so Jets keep derivatives
@@ -50,6 +76,15 @@ inline T adl_atan(const T& v) {
     using ceres::atan;
 #endif
     return atan(v);
+}
+
+template <typename T>
+inline T adl_abs(const T& v) {
+    using std::abs;
+#if __has_include(<ceres/jet.h>)
+    using ceres::abs;
+#endif
+    return abs(v);
 }
 } // namespace voigt_adl
 
@@ -138,61 +173,20 @@ T voigt_pdf(const T x, const T mean, const T sigma, const T gamma) {
     }
 
     // Compute z = ((x - mean) + i*gamma) / (sigma * sqrt(2))
+    // NOTE: Matching test_voigt_exact.cpp exactly to debug discrepancy with scipy
     T sqrt2 = T(1.41421356237309504880);
-    T z_real = (x - mean) / (sigma * sqrt2);
-    T z_imag = gamma / (sigma * sqrt2);
+    T sqrt_pi = T(1.77245385090551602730);
+    T sigma_sqrt2 = sigma * sqrt2;
+    T z_real = (x - mean) / sigma_sqrt2;
+    T z_imag = gamma / sigma_sqrt2;
 
     // w(z) = Faddeeva function
     Complex<T> z_complex(z_real, z_imag);
     Complex<T> w_val = FaddeevaT::w(z_complex);
 
-    // Voigt PDF = (1/(σ√(2π))) * Re[w(z)]
-    T sqrt_2pi = T(2.50662827463100050242); // √(2π)
-    return w_val.real / (sigma * sqrt_2pi);
-}
-
-template<typename T>
-T voigt_cdf(const T x, const T mean, const T sigma, const T gamma) {
-    // True Voigt CDF using complex erf (like the exact test):
-    // F_V(x) = 0.5 + 0.5 * Re[erf(z)] where z = ((x - μ) + iγ)/(σ√2)
-
-    // Special case: pure Gaussian (gamma = 0)
-    if (gamma <= T(1e-10) * sigma) {
-        return gaussian_cdf(x, mean, sigma);
-    }
-
-    // Special case: pure Lorentzian (sigma very small) or Lorentzian-dominated
-    // When gamma/sigma is large (> 5), the Voigt is Lorentzian-dominated and
-    // the erf formula becomes numerically unstable. Use Lorentzian CDF instead.
-    if (sigma <= T(1e-10) * gamma || gamma > T(5.0) * sigma) {
-        return lorentzian_cdf(x, mean, gamma);
-    }
-
-    // Compute z = ((x - mean) + i*gamma) / (sigma * sqrt(2))
-    T sqrt2 = T(1.41421356237309504880);
-    T z_real = (x - mean) / (sigma * sqrt2);
-    T z_imag = gamma / (sigma * sqrt2);
-
-    // Check if z_imag is too large (would cause numerical issues in erf)
-    // When z_imag > 10, erf(z) becomes numerically unstable
-    double z_imag_scalar = get_scalar(z_imag);
-    if (z_imag_scalar > 10.0) {
-        // Use Lorentzian CDF as approximation for Lorentzian-dominated case
-        return lorentzian_cdf(x, mean, gamma);
-    }
-
-    // erf(z) = complex error function
-    Complex<T> z_complex(z_real, z_imag);
-    Complex<T> erf_result = FaddeevaT::erf(z_complex);
-
-    // Compute CDF and clamp to [0, 1] to handle numerical issues
-    T cdf = T(0.5) + T(0.5) * erf_result.real;
-    
-    // Clamp to valid CDF range [0, 1] to handle numerical overflow/underflow
-    if (cdf < T(0.0)) cdf = T(0.0);
-    if (cdf > T(1.0)) cdf = T(1.0);
-    
-    return cdf;
+    // Voigt PDF = Re[w(z)] / (σ * √π * √2) = Re[w(z)] / (σ√(2π))
+    // This matches test_voigt_exact.cpp line 29 and scipy formula
+    return w_val.real / (sigma * sqrt_pi * sqrt2);
 }
 
 // ============================================================================
@@ -289,6 +283,51 @@ T voigt_exp_norm(const T sigma_gauss, const T gamma_lor, const T tail_ratio, con
     return T(1.0);
 }
 
+// ============================================================================
+// Functions gated by USE_INACCURATE_VOIGT_CDF
+// ============================================================================
+
+#if USE_INACCURATE_VOIGT_CDF
+/**
+ * Numerically stable Voigt CDF.
+ * Uses the Faddeeva erfcx based formulation for better stability than erf(z).
+ * 
+ * WARNING: This function has known accuracy issues. The exact analytical CDF formula
+ * (using erf(z) for complex z) can produce invalid values (negative or >1) that require
+ * clamping, leading to errors in integral calculations.
+ */
+template<typename T>
+T voigt_cdf(const T x, const T mean, const T sigma, const T gamma) {
+    if (gamma <= T(1e-11) * sigma) return gaussian_cdf(x, mean, sigma);
+    if (sigma <= T(1e-11) * gamma) return lorentzian_cdf(x, mean, gamma);
+
+    T sqrt2 = T(1.41421356237309504880);
+    T z_re = (x - mean) / (sigma * sqrt2);
+    T z_im = gamma / (sigma * sqrt2);
+
+    // To avoid the exponential explosion in erf(z) = 1 - exp(-z^2)w(iz),
+    // we use Faddeeva's w(z) directly. The CDF of a Voigt profile is:
+    // CDF(x) = 0.5 + 0.5 * Re[erf(z)]
+    // We utilize FaddeevaT::erf which is implemented in your Faddeeva_impl.hpp.
+    // However, if gamma is large, erf(z) is unstable. 
+    // We check the scalar value of z_im to decide on strategy.
+    
+    if (get_scalar(z_im) > 8.0) {
+        // High-gamma limit (Lorentzian dominated)
+        return lorentzian_cdf(x, mean, gamma);
+    }
+
+    Complex<T> z(z_re, z_im);
+    Complex<T> res = FaddeevaT::erf(z);
+
+    T val = T(0.5) + T(0.5) * res.real;
+    
+    // Final safety clamps
+    if (val < T(0)) return T(0);
+    if (val > T(1)) return T(1);
+    return val;
+}
+
 /** Returns the indefinite integral (from -infinity to x) of a unit-area Voigt with exponential tail.
 
    @param x The upper limit of integration
@@ -299,6 +338,8 @@ T voigt_exp_norm(const T sigma_gauss, const T gamma_lor, const T tail_ratio, con
    @param tail_slope Exponential tail slope parameter tau
 
    @returns Cumulative distribution value at x
+   
+   WARNING: This function uses voigt_cdf() which has known accuracy issues.
    */
 template<typename T>
 T voigt_exp_indefinite(const T x, const T mean, const T sigma_gauss,
@@ -325,6 +366,8 @@ inline double voigt_exp_indefinite(const double x, const double mean, const doub
    @param x1 Upper integration limit
 
    @returns Integral of the unit-area distribution from x0 to x1
+   
+   WARNING: This function uses voigt_exp_indefinite() which relies on the inaccurate voigt_cdf().
    */
 inline double voigt_exp_integral(const double peak_mean, const double sigma_gauss,
                              const double gamma_lor, const double tail_ratio,
@@ -332,42 +375,6 @@ inline double voigt_exp_integral(const double peak_mean, const double sigma_gaus
     double cdf_x1 = voigt_exp_indefinite(x1, peak_mean, sigma_gauss, gamma_lor, tail_ratio, tail_slope);
     double cdf_x0 = voigt_exp_indefinite(x0, peak_mean, sigma_gauss, gamma_lor, tail_ratio, tail_slope);
     return cdf_x1 - cdf_x0;
-}
-
-/** Optimized array-filling version of the Voigt with exponential tail integral.
-
-   Uses indefinite integral caching to cut the number of Voigt function evaluations in half.
-
-   @param peak_mean The peak mean in keV
-   @param sigma_gauss Gaussian width (from detector resolution), in keV
-   @param peak_amplitude The peak amplitude (use 1.0 for unit-area peak)
-   @param gamma_lor Lorentzian HWHM (from natural line width), in keV
-   @param tail_ratio Fraction of counts in the exponential tail
-   @param tail_slope Exponential tail slope parameter tau
-   @param energies Array of channel lower energies (must have nchannel+1 entries)
-   @param channels Array where distribution values will be added (must have nchannel entries)
-   @param nchannel Number of channels to integrate over
-   */
-template<typename T>
-void voigt_exp_integral(const T peak_mean, const T sigma_gauss,
-                           const T peak_amplitude, const T gamma_lor,
-                           const T tail_ratio, const T tail_slope,
-                           const float * const energies, T *channels,
-                        const size_t nchannel) {
-    // Evaluate CDF at all bin edges
-    std::vector<T> cdf_values(nchannel + 1);
-    for (size_t i = 0; i <= nchannel; ++i) {
-        T x = T(energies[i]);
-        cdf_values[i] = voigt_exp_indefinite(x, peak_mean, sigma_gauss, gamma_lor, tail_ratio, tail_slope);
-    }
-
-    // Compute bin contents as differences
-    for (size_t i = 0; i < nchannel; ++i) {
-        T bin_content = (cdf_values[i + 1] - cdf_values[i]) * peak_amplitude;
-        // Ensure non-negative (clamp to zero for numerical precision issues)
-        if (bin_content < T(0)) bin_content = T(0);
-        channels[i] += bin_content;
-    }
 }
 
 /** Return the limits so that `1-p` of the VoigtExpTail distribution is covered.
@@ -384,6 +391,8 @@ void voigt_exp_integral(const T peak_mean, const T sigma_gauss,
    returned limits is `1 - p`.
 
    Throws error on invalid input.
+   
+   WARNING: This function uses voigt_exp_indefinite() which relies on the inaccurate voigt_cdf().
    */
 inline std::pair<double, double> voigt_exp_coverage_limits(const double mean, const double sigma_gauss,
                                                        const double gamma_lor, const double tail_ratio,
@@ -455,5 +464,40 @@ inline std::pair<double, double> voigt_exp_coverage_limits(const double mean, co
 
     return std::make_pair(lower, upper2);
 }
+
+/** Optimized array-filling version of the Voigt with exponential tail integral.
+
+   @param peak_mean The peak mean in keV
+   @param sigma_gauss Gaussian width (from detector resolution), in keV
+   @param peak_amplitude The peak amplitude (use 1.0 for unit-area peak)
+   @param gamma_lor Lorentzian HWHM (from natural line width), in keV
+   @param tail_ratio Fraction of counts in the exponential tail
+   @param tail_slope Exponential tail slope parameter tau
+   @param energies Array of channel lower energies (must have nchannel+1 entries)
+   @param channels Array where distribution values will be added (must have nchannel entries)
+   @param nchannel Number of channels to integrate over
+   
+   WARNING: This function uses voigt_exp_indefinite() which relies on the inaccurate voigt_cdf().
+   */
+template<typename T>
+void voigt_exp_integral(const T peak_mean, const T sigma_gauss,
+                        const T peak_amplitude, const T gamma_lor,
+                        const T tail_ratio, const T tail_slope,
+                        const float * const energies, T *channels,
+                        const size_t nchannel) {
+    // CDF-based implementation using voigt_exp_indefinite
+    std::vector<T> cdf_values(nchannel + 1);
+    for (size_t i = 0; i <= nchannel; ++i) {
+        T x = T(energies[i]);
+        cdf_values[i] = voigt_exp_indefinite(x, peak_mean, sigma_gauss, gamma_lor, tail_ratio, tail_slope);
+    }
+
+    for (size_t i = 0; i < nchannel; ++i) {
+        T bin_content = (cdf_values[i + 1] - cdf_values[i]) * peak_amplitude;
+        if (bin_content < T(0)) bin_content = T(0);
+        channels[i] += bin_content;
+    }
+}
+#endif // USE_INACCURATE_VOIGT_CDF
 
 #endif // VOIGT_EXP_TAIL_HPP

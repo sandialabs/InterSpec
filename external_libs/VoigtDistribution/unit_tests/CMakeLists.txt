@@ -19,6 +19,7 @@ add_executable(unit_tests
     voigt_distribution_tests.cpp
     test_faddeeva_templated.cpp
     test_voigt_exact.cpp
+    test_pseudo_voigt_exp_tail.cpp
     exact_test_data.cpp
     3rd_party/Faddeeva_MIT/Faddeeva.cc
 )
