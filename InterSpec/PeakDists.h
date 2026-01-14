@@ -531,41 +531,27 @@ extern template void photopeak_function_integral<double>( const double, const do
 
   // ========== Voigt with Exponential Tail Distribution Functions ==========
 
-  /** Returns the normalization for a unit-area Voigt with exponential tail distribution.
-
-   The VoigtExpTail distribution combines a Voigt profile (convolution of Gaussian and
-   Lorentzian) with an exponential low-energy tail, used for modeling x-ray peaks measured
-   with HPGe detectors where incomplete charge collection creates a tail.
-
-   @param sigma_gauss Gaussian width (from detector resolution), in keV
-   @param gamma_lor Lorentzian HWHM (from natural line width), in keV
-   @param tail_ratio Fraction of counts in the exponential tail (0 to ~0.3)
-   @param tail_slope Exponential tail slope parameter tau, similar to GaussExp skew
-
-   @returns Normalization constant so the distribution integrates to 1
+  /** Control whether to use pseudo-Voigt or true-Voigt for VoigtWithExpTail peaks.
+   
+   The true-Voigt distribution (using Faddeeva function) does not have a CDF function
+   implemented due to accuracy issues with erf(z) for complex z. Therefore:
+   - When USE_PSEUDO_VOIGT_DISTRIBUTION=0: Uses true-Voigt PDF with Gauss-Legendre
+     quadrature for channel integrals (slower but more accurate for Voigt component)
+   - When USE_PSEUDO_VOIGT_DISTRIBUTION=1: Uses pseudo-Voigt (Thompson-Cox-Hastings
+     approximation) with analytic CDF for fast channel integrals (faster, slightly
+     less accurate for Voigt component)
+   
+   Note: voigt_exp_coverage_limits() always uses pseudo-Voigt due to CDF requirement.
    */
-  template<typename T>
-  T voigt_exp_norm( const T sigma_gauss, const T gamma_lor, const T tail_ratio, const T tail_slope );
-
-  extern template double voigt_exp_norm<double>( const double, const double, const double, const double );
-
-
-  /** Returns the indefinite integral (from -infinity to x) of a unit-area Voigt with exponential tail.
-
-   @param x The upper limit of integration
-   @param mean The peak mean in keV
-   @param sigma_gauss Gaussian width (from detector resolution), in keV
-   @param gamma_lor Lorentzian HWHM (from natural line width), in keV
-   @param tail_ratio Fraction of counts in the exponential tail
-   @param tail_slope Exponential tail slope parameter tau
-
-   @returns Cumulative distribution value at x
-   */
-  double voigt_exp_indefinite( const double x, const double mean, const double sigma_gauss,
-                                const double gamma_lor, const double tail_ratio, const double tail_slope );
-
+  #ifndef USE_PSEUDO_VOIGT_DISTRIBUTION
+  #define USE_PSEUDO_VOIGT_DISTRIBUTION 1
+  #endif
 
   /** Returns the integral of a Voigt with exponential tail distribution between x0 and x1.
+
+   Note: for `USE_PSEUDO_VOIGT_DISTRIBUTION == 0`, this function uses true-Voigt with adaptive 
+     Gauss-Kronrod quadrature (slower but more accurate for Voigt component) to get the integral
+     (this is because of the aformentioned accuracy issues with the true-Voigt CDF)
 
    @param peak_mean The peak mean in keV
    @param sigma_gauss Gaussian width (from detector resolution), in keV
@@ -620,6 +606,11 @@ extern template void photopeak_function_integral<double>( const double, const do
    @returns limits so that `0.5*p` of the distribution will be below the first element, and
    `0.5*p` will be above the second element, so the fraction of the distribution between the
    returned limits is `1 - p`.
+
+   @note This function always uses the pseudo-Voigt approximation (regardless of the
+   USE_PSEUDO_VOIGT_DISTRIBUTION setting) because it requires CDF evaluation, and the
+   true-Voigt CDF is not reliably implemented. This may introduce small accuracy differences
+   compared to the actual peak shape when USE_PSEUDO_VOIGT_DISTRIBUTION=0.
 
    Throws error on invalid input.
    */

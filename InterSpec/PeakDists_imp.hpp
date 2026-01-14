@@ -12,7 +12,12 @@
 #include <ceres/jet.h> //Just to make compile with pseudo_voigt_exp_tail.hpp
 
 #include "SpecUtils/SpecFile.h" //Needed for `offset_integral(...)`
-#include "VoigtDistribution/pseudo_voigt_exp_tail.hpp" //Pseudo-Voigt with exponential tail distribution
+
+
+#include "VoigtDistribution/pseudo_voigt_exp_tail.hpp" //Pseudo-Voigt with exponential tail distribution - we always need for `voigt_exp_coverage_limits`
+#if( !USE_PSEUDO_VOIGT_DISTRIBUTION )
+#include "VoigtDistribution/voigt_exp_tail.hpp" //True-Voigt with exponential tail distribution
+#endif
 
 // Had a little trouble with the auto-derivative when using Jet - so will define some functions
 //  here to help find the issues - but make them be no-ops for non-debug builds
@@ -1660,14 +1665,7 @@ T gauss_exp_indefinite_template( const T mean, const T sigma, const T skew, cons
 // ========== Voigt with Exponential Tail Functions ==========
 // Using external VoigtDistribution library (included at top of file)
 
-// Wrapper functions that call the external library implementations in global namespace
-
-template<typename T>
-T voigt_exp_norm( const T sigma_gauss, const T gamma_lor, const T tail_ratio, const T tail_slope )
-{
-  return pseudo_voigt::voigt_exp_norm( sigma_gauss, gamma_lor, tail_ratio, tail_slope );
-}//voigt_exp_norm(...)
-
+// Wrapper functions that call the external library implementations
 
 // Wrap the external voigt_exp_integral to add check_jet_for_NaN calls
 template<typename T>
@@ -1688,9 +1686,14 @@ void voigt_exp_integral( const T peak_mean, const T sigma_gauss,
       return;
   }//if constexpr ( std::is_same_v<T, double> )
 
-  // Call the external library implementation
+#if( USE_PSEUDO_VOIGT_DISTRIBUTION )
+  // Use pseudo-Voigt with CDF-based integration (fast)
   pseudo_voigt::voigt_exp_integral( peak_mean, sigma_gauss, peak_amplitude, gamma_lor,
-                        tail_ratio, tail_slope, energies, channels, nchannel );
+                                    tail_ratio, tail_slope, energies, channels, nchannel );
+#else
+  voigt_exp_tail::voigt_exp_integral( peak_mean, sigma_gauss, peak_amplitude, gamma_lor, 
+                                      tail_ratio, tail_slope, energies, channels, nchannel );
+#endif
 
   // Add NaN checks for debugging with Ceres Jets
   for( size_t i = 0; i < nchannel; ++i )

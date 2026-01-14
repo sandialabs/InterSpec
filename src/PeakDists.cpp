@@ -30,6 +30,7 @@
 #include <boost/math/special_functions/erf.hpp>
 //#include <boost/math/special_functions/erf_inv.hpp>
 #include <boost/math/distributions/poisson.hpp>
+#include <boost/math/quadrature/gauss_kronrod.hpp>
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakDists.h"
@@ -1253,20 +1254,33 @@ template void photopeak_function_integral<double>( const double, const double,co
 
 // ========== Voigt with Exponential Tail Distribution Implementation ==========
 // Implementation now uses external VoigtDistribution library
-// Wrapper functions in PeakDists namespace that call the global namespace versions
-
-double voigt_exp_indefinite( const double x, const double mean, const double sigma_gauss,
-                              const double gamma_lor, const double tail_ratio, const double tail_slope )
-{
-  return pseudo_voigt::voigt_exp_indefinite( x, mean, sigma_gauss, gamma_lor, tail_ratio, tail_slope );
-}//voigt_exp_indefinite(...)
-
+// Wrapper functions in PeakDists namespace that call the library implementations
 
 double voigt_exp_integral( const double peak_mean, const double sigma_gauss,
                            const double gamma_lor, const double tail_ratio,
                            const double tail_slope, const double x0, const double x1 )
 {
+#if( USE_PSEUDO_VOIGT_DISTRIBUTION )
   return pseudo_voigt::voigt_exp_integral( peak_mean, sigma_gauss, gamma_lor, tail_ratio, tail_slope, x0, x1 );
+#else
+  // Use true-Voigt with adaptive Gauss-Kronrod quadrature
+  // Define the integrand as a lambda capturing the distribution parameters
+  auto integrand = [=]( double x ) -> double {
+    return voigt_exp_tail::voigt_exp_pdf( x, peak_mean, sigma_gauss, gamma_lor, tail_ratio, tail_slope );
+  };
+  
+  // Use 15-point Gauss-Kronrod rule with error tolerance of 1.0E-6
+  // This balances accuracy and performance for typical peak shapes
+  constexpr double error_tolerance = 1.0e-6;
+  constexpr size_t max_depth = 15; // Maximum recursion depth for adaptive integration
+  
+  double error_estimate = 0.0;
+  double result = boost::math::quadrature::gauss_kronrod<double, 15>::integrate(
+    integrand, x0, x1, max_depth, error_tolerance, &error_estimate
+  );
+  
+  return result;
+#endif
 }//voigt_exp_integral(...)
 
 
@@ -1274,6 +1288,7 @@ std::pair<double,double> voigt_exp_coverage_limits( const double mean, const dou
                                                      const double gamma_lor, const double tail_ratio,
                                                      const double tail_slope, const double p )
 {
+  // Always use pseudo-Voigt for coverage limits since true-Voigt CDF is not reliable
   return pseudo_voigt::voigt_exp_coverage_limits( mean, sigma_gauss, gamma_lor, tail_ratio, tail_slope, p );
 }//voigt_exp_coverage_limits(...)
 
@@ -1300,10 +1315,6 @@ std::pair<double,double> voigt_exp_coverage_limits( const double mean, const dou
                                                              const double, const double, const double,
                                                              const double, const double, const float * const,
                                                              double *, const size_t );
-
-
-  // Explicit instantiation definition for the `double` version of `voigt_exp_norm(...)`
-  template double voigt_exp_norm<double>( const double, const double, const double, const double );
 
 
   // Explicit instantiation definition for the `double` version of `voigt_exp_integral(...)`
