@@ -230,11 +230,6 @@ inline T gaussexp_cdf(const T x, const T mean, const T sigma, const T tau) {
 // ===============================================================
 
 template<typename T>
-inline T voigt_exp_norm(const T /*sigma_gauss*/, const T /*gamma_lor*/, const T /*tail_ratio*/, const T /*tail_slope*/) {
-    return T(1); // Mixture of unit-area components
-}
-
-template<typename T>
 inline T voigt_exp_indefinite(const T x, const T mean, const T sigma_gauss,
                               const T gamma_lor, const T tail_ratio, const T tail_slope) {
     T voigt_cdf_val = voigt_cdf(x, mean, sigma_gauss, gamma_lor);
@@ -266,29 +261,48 @@ inline void voigt_exp_integral(const T peak_mean, const T sigma_gauss,
     const bool use_lorentz = (sigma_gauss <= T(1e-10) * gamma_lor);
     const auto p = voigt_pseudo_params(sigma_gauss, gamma_lor);
 
-    // Evaluate CDF at bin edges and take differences
-    std::vector<T> cdf_values(nchannel + 1);
-    for (size_t i = 0; i <= nchannel; ++i) {
-        T x = T(energies[i]);
-        // Use precomputed params for Voigt part
-        T voigt_cdf_val;
-        if (use_gauss) {
-            voigt_cdf_val = gaussian_cdf(x, peak_mean, sigma_gauss);
-        } else if (use_lorentz) {
-            voigt_cdf_val = lorentzian_cdf(x, peak_mean, gamma_lor);
-        } else {
-            voigt_cdf_val = p.eta * lorentzian_cdf(x, peak_mean, p.gamma_p) +
-                            (T(1) - p.eta) * gaussian_cdf(x, peak_mean, p.sigma_p);
-            if (voigt_cdf_val < T(0)) voigt_cdf_val = T(0);
-            if (voigt_cdf_val > T(1)) voigt_cdf_val = T(1);
-        }
-        T gaussexp_cdf_val = gaussexp_cdf(x, peak_mean, sigma_gauss, tail_slope);
-        cdf_values[i] = (T(1) - tail_ratio) * voigt_cdf_val + tail_ratio * gaussexp_cdf_val;
+    // Evaluate CDF at bin edges and take differences, avoiding vector allocation
+    // Start with CDF at lower edge of first channel
+    T x_lower = T(energies[0]);
+    T voigt_cdf_lower;
+    if (use_gauss) {
+        voigt_cdf_lower = gaussian_cdf(x_lower, peak_mean, sigma_gauss);
+    } else if (use_lorentz) {
+        voigt_cdf_lower = lorentzian_cdf(x_lower, peak_mean, gamma_lor);
+    } else {
+        voigt_cdf_lower = p.eta * lorentzian_cdf(x_lower, peak_mean, p.gamma_p) +
+                         (T(1) - p.eta) * gaussian_cdf(x_lower, peak_mean, p.sigma_p);
+        if (voigt_cdf_lower < T(0)) voigt_cdf_lower = T(0);
+        if (voigt_cdf_lower > T(1)) voigt_cdf_lower = T(1);
     }
+    T gaussexp_cdf_lower = gaussexp_cdf(x_lower, peak_mean, sigma_gauss, tail_slope);
+    T prev_cdf = (T(1) - tail_ratio) * voigt_cdf_lower + tail_ratio * gaussexp_cdf_lower;
+
+    // Process each channel
     for (size_t i = 0; i < nchannel; ++i) {
-        T bin_content = (cdf_values[i + 1] - cdf_values[i]) * peak_amplitude;
+        // Compute CDF at upper edge of this channel
+        T x_upper = T(energies[i + 1]);
+        T voigt_cdf_upper;
+        if (use_gauss) {
+            voigt_cdf_upper = gaussian_cdf(x_upper, peak_mean, sigma_gauss);
+        } else if (use_lorentz) {
+            voigt_cdf_upper = lorentzian_cdf(x_upper, peak_mean, gamma_lor);
+        } else {
+            voigt_cdf_upper = p.eta * lorentzian_cdf(x_upper, peak_mean, p.gamma_p) +
+                             (T(1) - p.eta) * gaussian_cdf(x_upper, peak_mean, p.sigma_p);
+            if (voigt_cdf_upper < T(0)) voigt_cdf_upper = T(0);
+            if (voigt_cdf_upper > T(1)) voigt_cdf_upper = T(1);
+        }
+        T gaussexp_cdf_upper = gaussexp_cdf(x_upper, peak_mean, sigma_gauss, tail_slope);
+        T current_cdf = (T(1) - tail_ratio) * voigt_cdf_upper + tail_ratio * gaussexp_cdf_upper;
+
+        // Compute bin content from CDF difference
+        T bin_content = (current_cdf - prev_cdf) * peak_amplitude;
         if (bin_content < T(0)) bin_content = T(0);
         channels[i] += bin_content;
+
+        // Update previous CDF for next iteration
+        prev_cdf = current_cdf;
     }
 }
 

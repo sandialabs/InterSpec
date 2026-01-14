@@ -15,30 +15,19 @@
 #endif
 
 /**
- * @def USE_INACCURATE_VOIGT_CDF
- * @brief Enable/disable the Voigt CDF-based functions (default: 0 = disabled)
- * 
- * The exact analytical CDF formula for the Voigt profile (using erf(z) for complex z)
- * has proven problematic - Re[erf(z)] can fall outside [-1, 1] for complex arguments,
- * leading to invalid CDF values (negative or >1) that require clamping, which causes
- * large errors in integral calculations. We were unable to get the exact CDF formula
- * to work reliably, so we default to numerical PDF integration instead, which is slower
- * but more accurate.
- * 
- * When USE_INACCURATE_VOIGT_CDF is 0 (default):
- *   - voigt_cdf() is not available
- *   - voigt_exp_indefinite() is not available (uses voigt_cdf internally)
- *   - voigt_exp_integral() scalar version is not available (uses voigt_exp_indefinite)
- *   - voigt_exp_integral() array version is not available (uses voigt_exp_indefinite)
- *   - voigt_exp_coverage_limits() is not available (uses voigt_exp_indefinite)
- * 
- * When USE_INACCURATE_VOIGT_CDF is 1:
- *   - All CDF-based functions are enabled, but may have accuracy issues
- *   - May revisit in the future to try alternative CDF formulations
+ * @brief Implements the Voigt distribution with an exponential tail (Hypermet), in a templated manner.
+  
+ Note: unlike other distributions in InterSpec, or even pseudo-Voigt distribution, this
+ implementation does NOT use the CDF to fill the array of channels. Instead, it uses the PDF,
+ with a Gauss-Legendre quadrature to integrate the PDF over each channel.  This is because 
+ implementing the symbolically integrated PDF in a numerically stanble way is not straightforward, 
+ and I couldnt get a reasonable result with the time avaiable.
+
+ A side-effect of this is this file does not yet imeplent the `voigt_exp_coverage_limits(...)`
+ function - you can use `pseudo_voigt::voigt_exp_coverage_limits(...)` as a decent approximation.
  */
-#ifndef USE_INACCURATE_VOIGT_CDF
-#define USE_INACCURATE_VOIGT_CDF 0
-#endif
+
+namespace voigt_exp_tail {
 
 // ADL helpers for std / ceres math so Jets keep derivatives
 namespace voigt_adl {
@@ -173,7 +162,6 @@ T voigt_pdf(const T x, const T mean, const T sigma, const T gamma) {
     }
 
     // Compute z = ((x - mean) + i*gamma) / (sigma * sqrt(2))
-    // NOTE: Matching test_voigt_exact.cpp exactly to debug discrepancy with scipy
     T sqrt2 = T(1.41421356237309504880);
     T sqrt_pi = T(1.77245385090551602730);
     T sigma_sqrt2 = sigma * sqrt2;
@@ -185,7 +173,7 @@ T voigt_pdf(const T x, const T mean, const T sigma, const T gamma) {
     Complex<T> w_val = FaddeevaT::w(z_complex);
 
     // Voigt PDF = Re[w(z)] / (σ * √π * √2) = Re[w(z)] / (σ√(2π))
-    // This matches test_voigt_exact.cpp line 29 and scipy formula
+    // This matches test_voigt_against_mit_imp.cpp line 29 and scipy formula
     return w_val.real / (sigma * sqrt_pi * sqrt2);
 }
 
@@ -259,213 +247,38 @@ T gaussexp_cdf(const T x, const T mean, const T sigma, const T tau) {
     return result;
 }
 
+
 // ============================================================================
 // VoigtExpTail API functions
 // ============================================================================
 
-/** Returns the normalization for a unit-area Voigt with exponential tail distribution.
+/** Returns the PDF (probability density function) of the Voigt with exponential tail distribution.
 
    The VoigtExpTail distribution combines a Voigt profile (convolution of Gaussian and
    Lorentzian) with an exponential low-energy tail, used for modeling x-ray peaks measured
    with HPGe detectors where incomplete charge collection creates a tail.
 
+   @param x Energy value at which to evaluate the PDF
+   @param mean Peak centroid energy (mean of the distribution), in keV
    @param sigma_gauss Gaussian width (from detector resolution), in keV
    @param gamma_lor Lorentzian HWHM (from natural line width), in keV
    @param tail_ratio Fraction of counts in the exponential tail (0 to ~0.3)
    @param tail_slope Exponential tail slope parameter tau, similar to GaussExp skew
 
-   @returns Normalization constant so the distribution integrates to 1
+   @returns PDF value at the given energy
    */
 template<typename T>
-T voigt_exp_norm(const T sigma_gauss, const T gamma_lor, const T tail_ratio, const T tail_slope) {
-    // Both Voigt and GaussExp are unit-area distributions, so the combination
-    // (1 - tail_ratio) * Voigt + tail_ratio * GaussExp is also unit-area
-    return T(1.0);
+T voigt_exp_pdf(const T x, const T mean, const T sigma_gauss, const T gamma_lor,
+                const T tail_ratio, const T tail_slope) {
+    // Combined PDF: (1-tail_ratio) * Voigt + tail_ratio * GaussExp
+    T voigt_pdf_val = voigt_pdf(x, mean, sigma_gauss, gamma_lor);
+    T gaussexp_pdf_val = gaussexp_pdf(x, mean, sigma_gauss, tail_slope);
+
+    return (T(1) - tail_ratio) * voigt_pdf_val + tail_ratio * gaussexp_pdf_val;
 }
 
-// ============================================================================
-// Functions gated by USE_INACCURATE_VOIGT_CDF
-// ============================================================================
-
-#if USE_INACCURATE_VOIGT_CDF
-/**
- * Numerically stable Voigt CDF.
- * Uses the Faddeeva erfcx based formulation for better stability than erf(z).
- * 
- * WARNING: This function has known accuracy issues. The exact analytical CDF formula
- * (using erf(z) for complex z) can produce invalid values (negative or >1) that require
- * clamping, leading to errors in integral calculations.
- */
-template<typename T>
-T voigt_cdf(const T x, const T mean, const T sigma, const T gamma) {
-    if (gamma <= T(1e-11) * sigma) return gaussian_cdf(x, mean, sigma);
-    if (sigma <= T(1e-11) * gamma) return lorentzian_cdf(x, mean, gamma);
-
-    T sqrt2 = T(1.41421356237309504880);
-    T z_re = (x - mean) / (sigma * sqrt2);
-    T z_im = gamma / (sigma * sqrt2);
-
-    // To avoid the exponential explosion in erf(z) = 1 - exp(-z^2)w(iz),
-    // we use Faddeeva's w(z) directly. The CDF of a Voigt profile is:
-    // CDF(x) = 0.5 + 0.5 * Re[erf(z)]
-    // We utilize FaddeevaT::erf which is implemented in your Faddeeva_impl.hpp.
-    // However, if gamma is large, erf(z) is unstable. 
-    // We check the scalar value of z_im to decide on strategy.
-    
-    if (get_scalar(z_im) > 8.0) {
-        // High-gamma limit (Lorentzian dominated)
-        return lorentzian_cdf(x, mean, gamma);
-    }
-
-    Complex<T> z(z_re, z_im);
-    Complex<T> res = FaddeevaT::erf(z);
-
-    T val = T(0.5) + T(0.5) * res.real;
-    
-    // Final safety clamps
-    if (val < T(0)) return T(0);
-    if (val > T(1)) return T(1);
-    return val;
-}
-
-/** Returns the indefinite integral (from -infinity to x) of a unit-area Voigt with exponential tail.
-
-   @param x The upper limit of integration
-   @param mean The peak mean in keV
-   @param sigma_gauss Gaussian width (from detector resolution), in keV
-   @param gamma_lor Lorentzian HWHM (from natural line width), in keV
-   @param tail_ratio Fraction of counts in the exponential tail
-   @param tail_slope Exponential tail slope parameter tau
-
-   @returns Cumulative distribution value at x
-   
-   WARNING: This function uses voigt_cdf() which has known accuracy issues.
-   */
-template<typename T>
-T voigt_exp_indefinite(const T x, const T mean, const T sigma_gauss,
-                       const T gamma_lor, const T tail_ratio, const T tail_slope) {
-    T voigt_cdf_val = voigt_cdf(x, mean, sigma_gauss, gamma_lor);
-    T gaussexp_cdf_val = gaussexp_cdf(x, mean, sigma_gauss, tail_slope);
-    return (T(1) - tail_ratio) * voigt_cdf_val + tail_ratio * gaussexp_cdf_val;
-}
-
-// Non-templated version for compatibility
-inline double voigt_exp_indefinite(const double x, const double mean, const double sigma_gauss,
-                            const double gamma_lor, const double tail_ratio, const double tail_slope) {
-    return voigt_exp_indefinite<double>(x, mean, sigma_gauss, gamma_lor, tail_ratio, tail_slope);
-}
-
-/** Returns the integral of a Voigt with exponential tail distribution between x0 and x1.
-
-   @param peak_mean The peak mean in keV
-   @param sigma_gauss Gaussian width (from detector resolution), in keV
-   @param gamma_lor Lorentzian HWHM (from natural line width), in keV
-   @param tail_ratio Fraction of counts in the exponential tail
-   @param tail_slope Exponential tail slope parameter tau
-   @param x0 Lower integration limit
-   @param x1 Upper integration limit
-
-   @returns Integral of the unit-area distribution from x0 to x1
-   
-   WARNING: This function uses voigt_exp_indefinite() which relies on the inaccurate voigt_cdf().
-   */
-inline double voigt_exp_integral(const double peak_mean, const double sigma_gauss,
-                             const double gamma_lor, const double tail_ratio,
-                          const double tail_slope, const double x0, const double x1) {
-    double cdf_x1 = voigt_exp_indefinite(x1, peak_mean, sigma_gauss, gamma_lor, tail_ratio, tail_slope);
-    double cdf_x0 = voigt_exp_indefinite(x0, peak_mean, sigma_gauss, gamma_lor, tail_ratio, tail_slope);
-    return cdf_x1 - cdf_x0;
-}
-
-/** Return the limits so that `1-p` of the VoigtExpTail distribution is covered.
-
-   @param mean The peak mean
-   @param sigma_gauss Gaussian width (from detector resolution), in keV
-   @param gamma_lor Lorentzian HWHM (from natural line width), in keV
-   @param tail_ratio Fraction of counts in the exponential tail
-   @param tail_slope Exponential tail slope parameter tau
-   @param p The fraction of the distribution you want to be outside of the returned range
-
-   @returns limits so that `0.5*p` of the distribution will be below the first element, and
-   `0.5*p` will be above the second element, so the fraction of the distribution between the
-   returned limits is `1 - p`.
-
-   Throws error on invalid input.
-   
-   WARNING: This function uses voigt_exp_indefinite() which relies on the inaccurate voigt_cdf().
-   */
-inline std::pair<double, double> voigt_exp_coverage_limits(const double mean, const double sigma_gauss,
-                                                       const double gamma_lor, const double tail_ratio,
-                                                     const double tail_slope, const double p) {
-    if (p < 0.0 || p >= 1.0) {
-        throw std::invalid_argument("p must be in [0, 1)");
-    }
-
-    double target_lower = 0.5 * p;
-    double target_upper = 1.0 - 0.5 * p;
-
-    // Binary search for lower limit
-    // Use a width that accounts for Gaussian, Lorentzian, and the exponential tail.
-    // - Gaussian: ~20*sigma covers essentially all mass
-    // - Lorentzian: heavy tails decay slowly; derive width from desired tail probability p
-    //   For a Cauchy/Lorentzian, width to leave p/2 mass in each tail is:
-    //     width = gamma * cot(pi * p / 2) ≈ 2*gamma / (pi*p) for small p
-    // - Exponential tail: ~tail_slope * log(1/p) to include tail mass
-    double tail_extent = (tail_ratio > 0.0 && tail_slope > 0.0) ? tail_slope * std::log(1.0 / p) : 0.0;
-
-    // Lorentzian-derived width for target p (guard small p with asymptotic)
-    double lorentz_width = 0.0;
-    if (gamma_lor > 0.0) {
-        if (p > 0.0 && p < 1e-3) {
-            lorentz_width = (2.0 * gamma_lor) / (M_PI * p); // asymptotic cot(pi*p/2)
-        } else if (p > 0.0) {
-            lorentz_width = gamma_lor / std::tan(0.5 * M_PI * p);
-        } else { // p == 0: impossible; choose a large multiple of gamma
-            lorentz_width = 1e6 * gamma_lor;
-        }
-        // Ensure at least 20*gamma for moderate tails
-        lorentz_width = std::max(lorentz_width, 20.0 * gamma_lor);
-    }
-
-    double search_width = std::max({20.0 * sigma_gauss, lorentz_width, tail_extent});
-
-    double lower = mean - search_width;
-    double upper = mean;
-    for (int iter = 0; iter < 100; ++iter) {
-        double mid = 0.5 * (lower + upper);
-        double cdf_mid = voigt_exp_indefinite(mid, mean, sigma_gauss, gamma_lor, tail_ratio, tail_slope);
-        if (std::abs(cdf_mid - target_lower) < 1e-10) {
-            lower = mid;
-            break;
-        }
-        if (cdf_mid < target_lower) {
-            lower = mid;
-        } else {
-            upper = mid;
-        }
-    }
-
-    // Binary search for upper limit
-    double lower2 = mean;
-    double upper2 = mean + search_width;  // consistent width for upper tail
-    for (int iter = 0; iter < 100; ++iter) {
-        double mid = 0.5 * (lower2 + upper2);
-        double cdf_mid = voigt_exp_indefinite(mid, mean, sigma_gauss, gamma_lor, tail_ratio, tail_slope);
-        if (std::abs(cdf_mid - target_upper) < 1e-10) {
-            upper2 = mid;
-            break;
-        }
-        if (cdf_mid < target_upper) {
-            lower2 = mid;
-        } else {
-            upper2 = mid;
-        }
-    }
-
-    return std::make_pair(lower, upper2);
-}
-
-/** Optimized array-filling version of the Voigt with exponential tail integral.
+/** Array-filling version of the Voigt with exponential tail integral for each channel.
+   Uses Gauss-Legendre quadrature to integrate the PDF over each channel.
 
    @param peak_mean The peak mean in keV
    @param sigma_gauss Gaussian width (from detector resolution), in keV
@@ -476,28 +289,91 @@ inline std::pair<double, double> voigt_exp_coverage_limits(const double mean, co
    @param energies Array of channel lower energies (must have nchannel+1 entries)
    @param channels Array where distribution values will be added (must have nchannel entries)
    @param nchannel Number of channels to integrate over
-   
-   WARNING: This function uses voigt_exp_indefinite() which relies on the inaccurate voigt_cdf().
    */
-template<typename T>
-void voigt_exp_integral(const T peak_mean, const T sigma_gauss,
-                        const T peak_amplitude, const T gamma_lor,
-                        const T tail_ratio, const T tail_slope,
-                        const float * const energies, T *channels,
-                        const size_t nchannel) {
-    // CDF-based implementation using voigt_exp_indefinite
-    std::vector<T> cdf_values(nchannel + 1);
-    for (size_t i = 0; i <= nchannel; ++i) {
-        T x = T(energies[i]);
-        cdf_values[i] = voigt_exp_indefinite(x, peak_mean, sigma_gauss, gamma_lor, tail_ratio, tail_slope);
-    }
+  template<typename T>
+  void voigt_exp_integral(const T peak_mean, const T sigma_gauss,
+                          const T peak_amplitude, const T gamma_lor,
+                          const T tail_ratio, const T tail_slope,
+                          const float * const energies, T *channels,
+                          const size_t nchannel) 
+  {
+      // Determine characteristic width for adaptive quadrature
+      T max_width = (sigma_gauss > gamma_lor) ? sigma_gauss : gamma_lor;
+      T threshold = T(0.25) * max_width;
 
-    for (size_t i = 0; i < nchannel; ++i) {
-        T bin_content = (cdf_values[i + 1] - cdf_values[i]) * peak_amplitude;
-        if (bin_content < T(0)) bin_content = T(0);
-        channels[i] += bin_content;
-    }
-}
-#endif // USE_INACCURATE_VOIGT_CDF
+      // 3-point Gauss-Legendre quadrature nodes and weights on [-1, 1]
+      const T gl3_nodes[3] = {
+          T(-0.77459666924148337704),  // -sqrt(3/5)
+          T(0.0),
+          T(0.77459666924148337704)    // sqrt(3/5)
+      };
+      const T gl3_weights[3] = {
+          T(0.55555555555555555556),   // 5/9
+          T(0.88888888888888888889),   // 8/9
+          T(0.55555555555555555556)    // 5/9
+      };
+
+      // 5-point Gauss-Legendre quadrature nodes and weights on [-1, 1]
+      const T gl5_nodes[5] = {
+          T(-0.90617984593866399280),  // -sqrt(5+2*sqrt(10/7))/3
+          T(-0.53846931010568309104),  // -sqrt(5-2*sqrt(10/7))/3
+          T(0.0),
+          T(0.53846931010568309104),   // sqrt(5-2*sqrt(10/7))/3
+          T(0.90617984593866399280)    // sqrt(5+2*sqrt(10/7))/3
+      };
+      const T gl5_weights[5] = {
+          T(0.23692688505618908751),   // (322-13*sqrt(70))/900
+          T(0.47862867049936646804),   // (322+13*sqrt(70))/900
+          T(0.56888888888888888889),   // 128/225
+          T(0.47862867049936646804),   // (322+13*sqrt(70))/900
+          T(0.23692688505618908751)    // (322-13*sqrt(70))/900
+      };
+
+      for (size_t i = 0; i < nchannel; ++i) {
+          T a = T(energies[i]);      // Lower edge
+          T b = T(energies[i + 1]);  // Upper edge
+          T bin_width = b - a;
+
+          // Choose number of quadrature points based on bin width
+          int npoints;
+          const T* nodes;
+          const T* weights;
+          
+          if (bin_width < threshold) {
+              // Narrow bins: use 3-point quadrature
+              npoints = 3;
+              nodes = gl3_nodes;
+              weights = gl3_weights;
+          } else {
+              // Wide bins: use 5-point quadrature
+              npoints = 5;
+              nodes = gl5_nodes;
+              weights = gl5_weights;
+          }
+
+          // Transform from [-1, 1] to [a, b]
+          // x = (b-a)/2 * xi + (a+b)/2
+          T half_width = T(0.5) * bin_width;
+          T center = T(0.5) * (a + b);
+
+          // Integrate PDF over [a, b] using Gauss-Legendre quadrature
+          T integral = T(0);
+          for (int j = 0; j < npoints; ++j) {
+              T x = half_width * nodes[j] + center;
+              T pdf_val = voigt_exp_pdf(x, peak_mean, sigma_gauss, gamma_lor, tail_ratio, tail_slope);
+              integral += weights[j] * pdf_val;
+          }
+
+          // Scale by bin width and amplitude
+          // The weights are for integration on [-1, 1], so we multiply by (b-a)/2
+          T bin_content = integral * half_width * peak_amplitude;
+          if (bin_content < T(0)) bin_content = T(0);
+          channels[i] += bin_content;
+      }
+  }
+
+
+
+} // namespace voigt_exp_tail
 
 #endif // VOIGT_EXP_TAIL_HPP

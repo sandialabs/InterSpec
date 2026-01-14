@@ -40,7 +40,7 @@ install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/
 )
 
 # Install headers with proper directory structure
-install(FILES voigt_exp_tail.hpp Faddeeva.hpp Faddeeva_impl.hpp
+install(FILES voigt_exp_tail.hpp pseudo_voigt_exp_tail.hpp Faddeeva.hpp Faddeeva_impl.hpp
     DESTINATION include/VoigtDistribution
 )
 

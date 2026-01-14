@@ -30,8 +30,10 @@ void generate_spectrum_to_csv(const std::string& filename,
     std::vector<double> channels(nchannel, 0.0);
 
     // Fill channels using the VoigtExpTail distribution
-    voigt_exp_integral<double>(peak_mean, sigma_gauss, peak_amplitude, gamma_lor,
+    // Use CDF-based integration (accurate but numerically problematic)
+    voigt_exp_tail::voigt_exp_integral<double>(peak_mean, sigma_gauss, peak_amplitude, gamma_lor,
                        tail_ratio, tail_slope, energies.data(), channels.data(), nchannel);
+
 
     // Write spectrum to CSV file
     std::ofstream csv_file(filename);

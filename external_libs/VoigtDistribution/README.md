@@ -2,6 +2,8 @@
 
 A C++ library for Voigt profile distributions with exponential low-energy tail, for gamma spectroscopy.  Computation is templated on the computation type so you can use it with either `double`, or `ceres::Jet<>` (e.g. for use with Ceres Solver, http://ceres-solver.org) types.
 
+Also implements a pseudo-Voigt distribution, for speed.
+
 ## Components
 
 - **Faddeeva functions**: High-precision implementation of the Faddeeva function w(z) and related complex error functions - the implementation is a strate-forwardly templated version of the MIT licensed code from Steven G. Johnson, avaiable at http://ab-initio.mit.edu/faddeeva/; the code was last updated 12 May 2015.
@@ -21,10 +23,18 @@ A C++ library for Voigt profile distributions with exponential low-energy tail, 
 ```cpp
 #include "VoigtDistribution/voigt_exp_tail.hpp"
 
-// Create a Voigt distribution with exponential tail
-double pdf_val = voigt_exp_indefinite(x, mean, sigma, gamma, tail_ratio, tail_slope);
+// Sample Voigt distribution with exponential tail
+double pdf_val = voigt_exp_tail::voigt_exp_pdf(x, mean, sigma, gamma, tail_ratio, tail_slope);
 ```
 
 ## Building
 
 This library is header-only and requires C++17. For Ceres Jet support, link against Ceres and Eigen.
+
+## Current Limitations
+
+Implementation of the exact Voigt CDF proved to be challenging, so instead the PDF is integrated
+using Gauss-Legendre quadrature for the `voigt_exp_tail::voigt_exp_integral(...)` functions.
+This also means a `voigt_exp_tail::voigt_exp_coverage_limits(...)` is not yet implemented.
+However, the pseudo-Voigt distribution does have a stable CDF, so these limitations are not
+applicable to it.
