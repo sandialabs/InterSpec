@@ -130,6 +130,13 @@ add_test( NAME TPeakDists
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_XRayWidthServer test_XRayWidthServer.cpp )
+target_link_libraries( test_XRayWidthServer PRIVATE InterSpecLib )
+add_test( NAME TXRayWidthServer
+  COMMAND $<TARGET_FILE:test_XRayWidthServer> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 
 add_executable( test_AppUtils test_AppUtils.cpp )
 target_link_libraries( test_AppUtils PRIVATE InterSpecLib )

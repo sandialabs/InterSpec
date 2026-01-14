@@ -279,6 +279,7 @@ set(sources
     src/PeakFitUtils.cpp
     src/PeakDef.cpp
     src/PeakDists.cpp
+    src/XRayWidthServer.cpp
     src/SpectraFileModel.cpp
     src/AuxWindow.cpp
     src/PeakFitChi2Fcn.cpp
@@ -1107,6 +1108,12 @@ endif()
 configure_file(
     ${PROJECT_SOURCE_DIR}//external_libs/SandiaDecay/sandia.decay.min.xml
     ${PROJECT_BINARY_DIR}/data/sandia.decay.xml
+    COPYONLY
+)
+
+configure_file(
+    ${PROJECT_SOURCE_DIR}/data/xray_widths.xml
+    ${PROJECT_BINARY_DIR}/data/xray_widths.xml
     COPYONLY
 )
 

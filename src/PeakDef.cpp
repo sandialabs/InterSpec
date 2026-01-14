@@ -1484,24 +1484,24 @@ bool PeakDef::skew_parameter_range( const SkewType skew_type, const CoefficientT
       switch( coef )
       {
         case CoefficientType::SkewPar0: // gamma_lor - Lorentzian HWHM in keV
-          starting_value = 0.005; // 5 eV typical for x-rays
-          step_size = 0.002;      // 2 eV steps
-          lower_value = 0.001;    // 1 eV minimum
-          upper_value = 0.1;      // 100 eV maximum
+          starting_value = 0.1; // 5 eV typical for flourescent x-rays, but decay x-rays can be like 80 eV
+          step_size = 0.02;      // 2 eV steps
+          lower_value = 0.0;    // 1 eV minimum
+          upper_value = 10.0;      // Not sure if this is valid...
           break;
 
         case CoefficientType::SkewPar1: // tail_ratio - fraction in tail
           starting_value = 0.1;   // 10% in tail is typical
           step_size = 0.05;       // 5% steps
           lower_value = 0.0;      // No tail
-          upper_value = 0.3;      // 30% maximum
+          upper_value = 0.9;      // 90% maximum
           break;
 
         case CoefficientType::SkewPar2: // tail_slope - exponential decay parameter
           starting_value = 1.0;   // Similar to GaussExp
           step_size = 0.2;
-          lower_value = 0.15;     // Gentle tail
-          upper_value = 3.25;     // Steep tail
+          lower_value = 0.01;     // Gentle tail
+          upper_value = 10;     // Steep tail
           break;
 
         default:

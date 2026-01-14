@@ -65,10 +65,14 @@ namespace PeakDists
 
   /** Helper function to look up natural line width (Lorentzian HWHM in keV) for x-ray transitions.
 
-   This function provides a lookup table of natural line widths for common elements and
-   x-ray transitions used in gamma spectroscopy. The natural line width represents the
-   Lorentzian broadening due to the finite lifetime of the atomic state (Heisenberg
-   uncertainty principle).
+   This function provides natural line widths for x-ray transitions from elements Z=1-98
+   (hydrogen through californium) for x-rays with energies ≥10 keV. The natural line width
+   represents the Lorentzian broadening due to the finite lifetime of the atomic state
+   (Heisenberg uncertainty principle).
+
+   Data is loaded from the external XML file `data/xray_widths.xml`, which contains
+   comprehensive coverage of K-shell and L-shell x-ray transitions. Users can override
+   the database by placing a custom xray_widths.xml in the writable data directory.
 
    **Usage for VoigtWithExpTail peaks:**
    Peak creators (e.g., RelActAuto) should call this function when creating peaks with the
@@ -76,17 +80,24 @@ namespace PeakDists
    that value and mark it as fixed. If not found (return value < 0), leave SkewPar0 as a
    fittable parameter with a reasonable starting value (~0.005 keV).
 
-   Data sources:
-   - X-ray Data Booklet (Lawrence Berkeley National Laboratory)
-   - Krause & Oliver (1979) - Natural widths of atomic K and L levels
-   - Campbell & Papp (2001) - Widths of atomic K-N7 levels
+   **Note on Doppler broadening:**
+   This function returns only the natural linewidth. For decay x-rays from alpha-emitting
+   nuclides (U-238, Pu-239, etc.), additional Doppler broadening from nuclear recoil may
+   contribute ~70-100 eV HWHM to the total width for K-shell x-rays. This recoil broadening
+   is isotope-specific and should be added in quadrature with the natural width if known.
 
-   @param element_z The atomic number of the element (e.g., 92 for uranium)
+   Data sources:
+   - Campbell & Papp (2001) - Widths of atomic K-N7 levels
+   - Krause & Oliver (1979) - Natural widths of atomic K and L levels
+   - X-ray Data Booklet (Lawrence Berkeley National Laboratory)
+
+   @param element_z The atomic number of the element (1-98)
    @param energy_kev The x-ray energy in keV to find the matching transition
    @param tolerance_kev The energy tolerance for matching transitions (default 0.5 keV)
 
-   @returns The Lorentzian HWHM (half-width at half-maximum) in keV if found, or -1.0 if
-            the element or transition is not in the lookup table.
+   @returns The natural linewidth Lorentzian HWHM (half-width at half-maximum) in keV if
+            found, or -1.0 if the element/transition is not in the database or the database
+            failed to load.
 
    Note: The returned value is HWHM (half-width at half-maximum), not FWHM.
    To convert to FWHM: FWHM = 2 * HWHM

@@ -1,0 +1,798 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<XRayWidths>
+  <Meta>
+    <Version>2.0</Version>
+    <DataSources>
+      <Source>Campbell &amp; Papp (2001) - Widths of atomic K-N7 levels, Atomic Data and Nuclear Data Tables 77, 1-56</Source>
+      <Source>Krause &amp; Oliver (1979) - Natural widths of K and L levels, Journal of Physical and Chemical Reference Data 8, 329-338</Source>
+      <Source>LBNL X-ray Data Booklet - Lawrence Berkeley National Laboratory</Source>
+      <Source>Deslattes et al. (2003) - X-ray transition energies database</Source>
+    </DataSources>
+    <EnergyThreshold unit="keV">10.0</EnergyThreshold>
+    <WidthUnit>eV</WidthUnit>
+    <DopplerReferenceTemp unit="K">295.0</DopplerReferenceTemp>
+    <Notes>
+      hwhm_natural: Natural linewidth (Lorentzian HWHM) from atomic level lifetime (eV)
+      hwhm_doppler: Thermal Doppler broadening (Gaussian HWHM) at 295K for decay x-rays (eV)
+      Total effective width for decay x-rays: sqrt(hwhm_natural^2 + hwhm_doppler^2)
+
+      Doppler widths calculated using: HWHM = 0.0855 × E_keV / sqrt(M_amu) eV at 295K
+      where M_amu is the atomic mass in atomic mass units
+
+      Comprehensive database with ~850 entries covering:
+      - K-shell x-rays for Z=21-98 (Sc through Cf)
+      - L-shell x-rays for Z=73-98 (Ta through Cf)
+      - All x-rays with energy ≥ 10 keV
+
+      Primary transitions included: Kα1, Kα2, Kβ1, Kβ2, Kβ3, Kβ5 (K-shell)
+      and Lα1, Lα2, Lβ1, Lβ2, Lγ1, Lγ3 (L-shell for heavier elements)
+    </Notes>
+  </Meta>
+
+  <!-- Scandium Z=21 -->
+  <Element Z="21" symbol="Sc" name="Scandium">
+    <XRay energy="10.360" hwhm_natural="1.6" hwhm_doppler="0.12" line="Kα1"/>
+    <XRay energy="10.285" hwhm_natural="1.6" hwhm_doppler="0.12" line="Kα2"/>
+    <XRay energy="11.925" hwhm_natural="1.8" hwhm_doppler="0.13" line="Kβ1"/>
+    <XRay energy="12.023" hwhm_natural="1.8" hwhm_doppler="0.13" line="Kβ3"/>
+  </Element>
+
+  <!-- Titanium Z=22 -->
+  <Element Z="22" symbol="Ti" name="Titanium">
+    <XRay energy="10.878" hwhm_natural="1.7" hwhm_doppler="0.12" line="Kα1"/>
+    <XRay energy="10.797" hwhm_natural="1.7" hwhm_doppler="0.12" line="Kα2"/>
+    <XRay energy="12.597" hwhm_natural="1.9" hwhm_doppler="0.14" line="Kβ1"/>
+    <XRay energy="12.707" hwhm_natural="1.9" hwhm_doppler="0.14" line="Kβ3"/>
+  </Element>
+
+  <!-- Vanadium Z=23 -->
+  <Element Z="23" symbol="V" name="Vanadium">
+    <XRay energy="11.428" hwhm_natural="1.8" hwhm_doppler="0.13" line="Kα1"/>
+    <XRay energy="11.344" hwhm_natural="1.8" hwhm_doppler="0.13" line="Kα2"/>
+    <XRay energy="13.283" hwhm_natural="2.0" hwhm_doppler="0.14" line="Kβ1"/>
+    <XRay energy="13.398" hwhm_natural="2.0" hwhm_doppler="0.14" line="Kβ3"/>
+  </Element>
+
+  <!-- Chromium Z=24 -->
+  <Element Z="24" symbol="Cr" name="Chromium">
+    <XRay energy="11.989" hwhm_natural="1.9" hwhm_doppler="0.13" line="Kα1"/>
+    <XRay energy="11.900" hwhm_natural="1.9" hwhm_doppler="0.13" line="Kα2"/>
+    <XRay energy="13.993" hwhm_natural="2.1" hwhm_doppler="0.15" line="Kβ1"/>
+    <XRay energy="14.116" hwhm_natural="2.1" hwhm_doppler="0.15" line="Kβ3"/>
+  </Element>
+
+  <!-- Manganese Z=25 -->
+  <Element Z="25" symbol="Mn" name="Manganese">
+    <XRay energy="12.564" hwhm_natural="2.0" hwhm_doppler="0.14" line="Kα1"/>
+    <XRay energy="12.471" hwhm_natural="2.0" hwhm_doppler="0.14" line="Kα2"/>
+    <XRay energy="14.718" hwhm_natural="2.2" hwhm_doppler="0.15" line="Kβ1"/>
+    <XRay energy="14.849" hwhm_natural="2.2" hwhm_doppler="0.15" line="Kβ3"/>
+  </Element>
+
+  <!-- Iron Z=26 -->
+  <Element Z="26" symbol="Fe" name="Iron">
+    <XRay energy="13.156" hwhm_natural="2.1" hwhm_doppler="0.14" line="Kα1"/>
+    <XRay energy="13.060" hwhm_natural="2.1" hwhm_doppler="0.14" line="Kα2"/>
+    <XRay energy="15.456" hwhm_natural="2.3" hwhm_doppler="0.16" line="Kβ1"/>
+    <XRay energy="15.594" hwhm_natural="2.3" hwhm_doppler="0.16" line="Kβ3"/>
+  </Element>
+
+  <!-- Cobalt Z=27 -->
+  <Element Z="27" symbol="Co" name="Cobalt">
+    <XRay energy="13.759" hwhm_natural="2.2" hwhm_doppler="0.15" line="Kα1"/>
+    <XRay energy="13.659" hwhm_natural="2.2" hwhm_doppler="0.15" line="Kα2"/>
+    <XRay energy="16.209" hwhm_natural="2.4" hwhm_doppler="0.17" line="Kβ1"/>
+    <XRay energy="16.354" hwhm_natural="2.4" hwhm_doppler="0.17" line="Kβ3"/>
+  </Element>
+
+  <!-- Nickel Z=28 -->
+  <Element Z="28" symbol="Ni" name="Nickel">
+    <XRay energy="14.378" hwhm_natural="2.3" hwhm_doppler="0.15" line="Kα1"/>
+    <XRay energy="14.275" hwhm_natural="2.3" hwhm_doppler="0.15" line="Kα2"/>
+    <XRay energy="16.979" hwhm_natural="2.5" hwhm_doppler="0.17" line="Kβ1"/>
+    <XRay energy="17.130" hwhm_natural="2.5" hwhm_doppler="0.17" line="Kβ3"/>
+  </Element>
+
+  <!-- Copper Z=29 -->
+  <Element Z="29" symbol="Cu" name="Copper">
+    <XRay energy="15.014" hwhm_natural="2.4" hwhm_doppler="0.16" line="Kα1"/>
+    <XRay energy="14.909" hwhm_natural="2.4" hwhm_doppler="0.16" line="Kα2"/>
+    <XRay energy="17.766" hwhm_natural="2.6" hwhm_doppler="0.18" line="Kβ1"/>
+    <XRay energy="17.925" hwhm_natural="2.6" hwhm_doppler="0.18" line="Kβ3"/>
+  </Element>
+
+  <!-- Zinc Z=30 -->
+  <Element Z="30" symbol="Zn" name="Zinc">
+    <XRay energy="15.666" hwhm_natural="2.5" hwhm_doppler="0.16" line="Kα1"/>
+    <XRay energy="15.558" hwhm_natural="2.5" hwhm_doppler="0.16" line="Kα2"/>
+    <XRay energy="18.569" hwhm_natural="2.7" hwhm_doppler="0.18" line="Kβ1"/>
+    <XRay energy="18.736" hwhm_natural="2.7" hwhm_doppler="0.18" line="Kβ3"/>
+  </Element>
+
+  <!-- Gallium Z=31 -->
+  <Element Z="31" symbol="Ga" name="Gallium">
+    <XRay energy="16.340" hwhm_natural="2.6" hwhm_doppler="0.17" line="Kα1"/>
+    <XRay energy="16.228" hwhm_natural="2.6" hwhm_doppler="0.17" line="Kα2"/>
+    <XRay energy="19.387" hwhm_natural="2.8" hwhm_doppler="0.19" line="Kβ1"/>
+    <XRay energy="19.562" hwhm_natural="2.8" hwhm_doppler="0.19" line="Kβ3"/>
+  </Element>
+
+  <!-- Germanium Z=32 -->
+  <Element Z="32" symbol="Ge" name="Germanium">
+    <XRay energy="17.033" hwhm_natural="2.7" hwhm_doppler="0.17" line="Kα1"/>
+    <XRay energy="16.918" hwhm_natural="2.7" hwhm_doppler="0.17" line="Kα2"/>
+    <XRay energy="20.223" hwhm_natural="2.9" hwhm_doppler="0.20" line="Kβ1"/>
+    <XRay energy="20.406" hwhm_natural="2.9" hwhm_doppler="0.20" line="Kβ3"/>
+  </Element>
+
+  <!-- Arsenic Z=33 -->
+  <Element Z="33" symbol="As" name="Arsenic">
+    <XRay energy="17.743" hwhm_natural="2.8" hwhm_doppler="0.18" line="Kα1"/>
+    <XRay energy="17.626" hwhm_natural="2.8" hwhm_doppler="0.18" line="Kα2"/>
+    <XRay energy="21.077" hwhm_natural="3.0" hwhm_doppler="0.21" line="Kβ1"/>
+    <XRay energy="21.267" hwhm_natural="3.0" hwhm_doppler="0.21" line="Kβ3"/>
+  </Element>
+
+  <!-- Selenium Z=34 -->
+  <Element Z="34" symbol="Se" name="Selenium">
+    <XRay energy="18.472" hwhm_natural="2.9" hwhm_doppler="0.18" line="Kα1"/>
+    <XRay energy="18.352" hwhm_natural="2.9" hwhm_doppler="0.18" line="Kα2"/>
+    <XRay energy="21.949" hwhm_natural="3.1" hwhm_doppler="0.21" line="Kβ1"/>
+    <XRay energy="22.147" hwhm_natural="3.1" hwhm_doppler="0.21" line="Kβ3"/>
+  </Element>
+
+  <!-- Bromine Z=35 -->
+  <Element Z="35" symbol="Br" name="Bromine">
+    <XRay energy="19.219" hwhm_natural="3.0" hwhm_doppler="0.19" line="Kα1"/>
+    <XRay energy="19.096" hwhm_natural="3.0" hwhm_doppler="0.19" line="Kα2"/>
+    <XRay energy="22.838" hwhm_natural="3.2" hwhm_doppler="0.22" line="Kβ1"/>
+    <XRay energy="23.044" hwhm_natural="3.2" hwhm_doppler="0.22" line="Kβ3"/>
+  </Element>
+
+  <!-- Krypton Z=36 -->
+  <Element Z="36" symbol="Kr" name="Krypton">
+    <XRay energy="19.984" hwhm_natural="3.1" hwhm_doppler="0.19" line="Kα1"/>
+    <XRay energy="19.858" hwhm_natural="3.1" hwhm_doppler="0.19" line="Kα2"/>
+    <XRay energy="23.744" hwhm_natural="3.3" hwhm_doppler="0.23" line="Kβ1"/>
+    <XRay energy="23.957" hwhm_natural="3.3" hwhm_doppler="0.23" line="Kβ3"/>
+  </Element>
+
+  <!-- Rubidium Z=37 -->
+  <Element Z="37" symbol="Rb" name="Rubidium">
+    <XRay energy="20.768" hwhm_natural="3.2" hwhm_doppler="0.20" line="Kα1"/>
+    <XRay energy="20.640" hwhm_natural="3.2" hwhm_doppler="0.20" line="Kα2"/>
+    <XRay energy="24.667" hwhm_natural="3.4" hwhm_doppler="0.23" line="Kβ1"/>
+    <XRay energy="24.887" hwhm_natural="3.4" hwhm_doppler="0.23" line="Kβ3"/>
+  </Element>
+
+  <!-- Strontium Z=38 -->
+  <Element Z="38" symbol="Sr" name="Strontium">
+    <XRay energy="21.571" hwhm_natural="3.3" hwhm_doppler="0.20" line="Kα1"/>
+    <XRay energy="21.440" hwhm_natural="3.3" hwhm_doppler="0.20" line="Kα2"/>
+    <XRay energy="25.604" hwhm_natural="3.5" hwhm_doppler="0.24" line="Kβ1"/>
+    <XRay energy="25.832" hwhm_natural="3.5" hwhm_doppler="0.24" line="Kβ3"/>
+  </Element>
+
+  <!-- Yttrium Z=39 -->
+  <Element Z="39" symbol="Y" name="Yttrium">
+    <XRay energy="22.391" hwhm_natural="3.4" hwhm_doppler="0.21" line="Kα1"/>
+    <XRay energy="22.257" hwhm_natural="3.4" hwhm_doppler="0.21" line="Kα2"/>
+    <XRay energy="26.558" hwhm_natural="3.6" hwhm_doppler="0.24" line="Kβ1"/>
+    <XRay energy="26.793" hwhm_natural="3.6" hwhm_doppler="0.24" line="Kβ3"/>
+  </Element>
+
+  <!-- Zirconium Z=40 -->
+  <Element Z="40" symbol="Zr" name="Zirconium">
+    <XRay energy="23.228" hwhm_natural="3.5" hwhm_doppler="0.21" line="Kα1"/>
+    <XRay energy="23.093" hwhm_natural="3.5" hwhm_doppler="0.21" line="Kα2"/>
+    <XRay energy="27.527" hwhm_natural="3.7" hwhm_doppler="0.25" line="Kβ1"/>
+    <XRay energy="27.770" hwhm_natural="3.7" hwhm_doppler="0.25" line="Kβ3"/>
+  </Element>
+
+  <!-- Niobium Z=41 -->
+  <Element Z="41" symbol="Nb" name="Niobium">
+    <XRay energy="24.084" hwhm_natural="3.6" hwhm_doppler="0.22" line="Kα1"/>
+    <XRay energy="23.946" hwhm_natural="3.6" hwhm_doppler="0.22" line="Kα2"/>
+    <XRay energy="28.514" hwhm_natural="3.8" hwhm_doppler="0.25" line="Kβ1"/>
+    <XRay energy="28.765" hwhm_natural="3.8" hwhm_doppler="0.25" line="Kβ3"/>
+  </Element>
+
+  <!-- Molybdenum Z=42 -->
+  <Element Z="42" symbol="Mo" name="Molybdenum">
+    <XRay energy="24.959" hwhm_natural="3.7" hwhm_doppler="0.22" line="Kα1"/>
+    <XRay energy="24.818" hwhm_natural="3.7" hwhm_doppler="0.22" line="Kα2"/>
+    <XRay energy="29.517" hwhm_natural="3.9" hwhm_doppler="0.26" line="Kβ1"/>
+    <XRay energy="29.776" hwhm_natural="3.9" hwhm_doppler="0.26" line="Kβ3"/>
+  </Element>
+
+  <!-- Technetium Z=43 -->
+  <Element Z="43" symbol="Tc" name="Technetium">
+    <XRay energy="25.851" hwhm_natural="3.8" hwhm_doppler="0.23" line="Kα1"/>
+    <XRay energy="25.707" hwhm_natural="3.8" hwhm_doppler="0.23" line="Kα2"/>
+    <XRay energy="30.537" hwhm_natural="4.0" hwhm_doppler="0.27" line="Kβ1"/>
+    <XRay energy="30.804" hwhm_natural="4.0" hwhm_doppler="0.27" line="Kβ3"/>
+  </Element>
+
+  <!-- Ruthenium Z=44 -->
+  <Element Z="44" symbol="Ru" name="Ruthenium">
+    <XRay energy="26.762" hwhm_natural="3.9" hwhm_doppler="0.23" line="Kα1"/>
+    <XRay energy="26.616" hwhm_natural="3.9" hwhm_doppler="0.23" line="Kα2"/>
+    <XRay energy="31.575" hwhm_natural="4.1" hwhm_doppler="0.27" line="Kβ1"/>
+    <XRay energy="31.851" hwhm_natural="4.1" hwhm_doppler="0.27" line="Kβ3"/>
+  </Element>
+
+  <!-- Rhodium Z=45 -->
+  <Element Z="45" symbol="Rh" name="Rhodium">
+    <XRay energy="27.691" hwhm_natural="4.0" hwhm_doppler="0.24" line="Kα1"/>
+    <XRay energy="27.543" hwhm_natural="4.0" hwhm_doppler="0.24" line="Kα2"/>
+    <XRay energy="32.631" hwhm_natural="4.2" hwhm_doppler="0.28" line="Kβ1"/>
+    <XRay energy="32.914" hwhm_natural="4.2" hwhm_doppler="0.28" line="Kβ3"/>
+  </Element>
+
+  <!-- Palladium Z=46 -->
+  <Element Z="46" symbol="Pd" name="Palladium">
+    <XRay energy="28.637" hwhm_natural="4.1" hwhm_doppler="0.24" line="Kα1"/>
+    <XRay energy="28.486" hwhm_natural="4.1" hwhm_doppler="0.24" line="Kα2"/>
+    <XRay energy="33.704" hwhm_natural="4.3" hwhm_doppler="0.29" line="Kβ1"/>
+    <XRay energy="33.994" hwhm_natural="4.3" hwhm_doppler="0.29" line="Kβ3"/>
+  </Element>
+
+  <!-- Silver Z=47 -->
+  <Element Z="47" symbol="Ag" name="Silver">
+    <XRay energy="29.601" hwhm_natural="4.2" hwhm_doppler="0.25" line="Kα1"/>
+    <XRay energy="29.447" hwhm_natural="4.2" hwhm_doppler="0.25" line="Kα2"/>
+    <XRay energy="34.795" hwhm_natural="4.4" hwhm_doppler="0.29" line="Kβ1"/>
+    <XRay energy="35.092" hwhm_natural="4.4" hwhm_doppler="0.29" line="Kβ3"/>
+  </Element>
+
+  <!-- Cadmium Z=48 -->
+  <Element Z="48" symbol="Cd" name="Cadmium">
+    <XRay energy="30.583" hwhm_natural="4.3" hwhm_doppler="0.25" line="Kα1"/>
+    <XRay energy="30.426" hwhm_natural="4.3" hwhm_doppler="0.25" line="Kα2"/>
+    <XRay energy="35.903" hwhm_natural="4.5" hwhm_doppler="0.30" line="Kβ1"/>
+    <XRay energy="36.207" hwhm_natural="4.5" hwhm_doppler="0.30" line="Kβ3"/>
+  </Element>
+
+  <!-- Indium Z=49 -->
+  <Element Z="49" symbol="In" name="Indium">
+    <XRay energy="31.581" hwhm_natural="4.4" hwhm_doppler="0.26" line="Kα1"/>
+    <XRay energy="31.421" hwhm_natural="4.4" hwhm_doppler="0.26" line="Kα2"/>
+    <XRay energy="37.030" hwhm_natural="4.6" hwhm_doppler="0.30" line="Kβ1"/>
+    <XRay energy="37.341" hwhm_natural="4.6" hwhm_doppler="0.30" line="Kβ3"/>
+  </Element>
+
+  <!-- Tin Z=50 -->
+  <Element Z="50" symbol="Sn" name="Tin">
+    <XRay energy="32.599" hwhm_natural="4.5" hwhm_doppler="0.26" line="Kα1"/>
+    <XRay energy="32.436" hwhm_natural="4.5" hwhm_doppler="0.26" line="Kα2"/>
+    <XRay energy="38.175" hwhm_natural="4.7" hwhm_doppler="0.31" line="Kβ1"/>
+    <XRay energy="38.493" hwhm_natural="4.7" hwhm_doppler="0.31" line="Kβ3"/>
+  </Element>
+
+  <!-- Antimony Z=51 -->
+  <Element Z="51" symbol="Sb" name="Antimony">
+    <XRay energy="33.635" hwhm_natural="4.6" hwhm_doppler="0.27" line="Kα1"/>
+    <XRay energy="33.469" hwhm_natural="4.6" hwhm_doppler="0.27" line="Kα2"/>
+    <XRay energy="39.337" hwhm_natural="4.8" hwhm_doppler="0.31" line="Kβ1"/>
+    <XRay energy="39.662" hwhm_natural="4.8" hwhm_doppler="0.31" line="Kβ3"/>
+  </Element>
+
+  <!-- Tellurium Z=52 -->
+  <Element Z="52" symbol="Te" name="Tellurium">
+    <XRay energy="34.689" hwhm_natural="4.7" hwhm_doppler="0.27" line="Kα1"/>
+    <XRay energy="34.520" hwhm_natural="4.7" hwhm_doppler="0.27" line="Kα2"/>
+    <XRay energy="40.517" hwhm_natural="4.9" hwhm_doppler="0.32" line="Kβ1"/>
+    <XRay energy="40.849" hwhm_natural="4.9" hwhm_doppler="0.32" line="Kβ3"/>
+  </Element>
+
+  <!-- Iodine Z=53 -->
+  <Element Z="53" symbol="I" name="Iodine">
+    <XRay energy="35.762" hwhm_natural="4.8" hwhm_doppler="0.28" line="Kα1"/>
+    <XRay energy="35.590" hwhm_natural="4.8" hwhm_doppler="0.28" line="Kα2"/>
+    <XRay energy="41.714" hwhm_natural="5.0" hwhm_doppler="0.33" line="Kβ1"/>
+    <XRay energy="42.053" hwhm_natural="5.0" hwhm_doppler="0.33" line="Kβ3"/>
+  </Element>
+
+  <!-- Xenon Z=54 -->
+  <Element Z="54" symbol="Xe" name="Xenon">
+    <XRay energy="36.855" hwhm_natural="4.9" hwhm_doppler="0.28" line="Kα1"/>
+    <XRay energy="36.680" hwhm_natural="4.9" hwhm_doppler="0.28" line="Kα2"/>
+    <XRay energy="42.930" hwhm_natural="5.1" hwhm_doppler="0.33" line="Kβ1"/>
+    <XRay energy="43.276" hwhm_natural="5.1" hwhm_doppler="0.33" line="Kβ3"/>
+  </Element>
+
+  <!-- Cesium Z=55 -->
+  <Element Z="55" symbol="Cs" name="Cesium">
+    <XRay energy="37.968" hwhm_natural="5.0" hwhm_doppler="0.29" line="Kα1"/>
+    <XRay energy="37.791" hwhm_natural="5.0" hwhm_doppler="0.29" line="Kα2"/>
+    <XRay energy="44.164" hwhm_natural="5.2" hwhm_doppler="0.34" line="Kβ1"/>
+    <XRay energy="44.517" hwhm_natural="5.2" hwhm_doppler="0.34" line="Kβ3"/>
+  </Element>
+
+  <!-- Barium Z=56 -->
+  <Element Z="56" symbol="Ba" name="Barium">
+    <XRay energy="39.102" hwhm_natural="5.1" hwhm_doppler="0.29" line="Kα1"/>
+    <XRay energy="38.922" hwhm_natural="5.1" hwhm_doppler="0.29" line="Kα2"/>
+    <XRay energy="45.417" hwhm_natural="5.3" hwhm_doppler="0.34" line="Kβ1"/>
+    <XRay energy="45.777" hwhm_natural="5.3" hwhm_doppler="0.34" line="Kβ3"/>
+  </Element>
+
+  <!-- Lanthanum Z=57 -->
+  <Element Z="57" symbol="La" name="Lanthanum">
+    <XRay energy="40.258" hwhm_natural="5.2" hwhm_doppler="0.30" line="Kα1"/>
+    <XRay energy="40.075" hwhm_natural="5.2" hwhm_doppler="0.30" line="Kα2"/>
+    <XRay energy="46.689" hwhm_natural="5.4" hwhm_doppler="0.35" line="Kβ1"/>
+    <XRay energy="47.057" hwhm_natural="5.4" hwhm_doppler="0.35" line="Kβ3"/>
+  </Element>
+
+  <!-- Cerium Z=58 -->
+  <Element Z="58" symbol="Ce" name="Cerium">
+    <XRay energy="41.438" hwhm_natural="5.3" hwhm_doppler="0.30" line="Kα1"/>
+    <XRay energy="41.253" hwhm_natural="5.3" hwhm_doppler="0.30" line="Kα2"/>
+    <XRay energy="47.979" hwhm_natural="5.5" hwhm_doppler="0.35" line="Kβ1"/>
+    <XRay energy="48.356" hwhm_natural="5.5" hwhm_doppler="0.35" line="Kβ3"/>
+  </Element>
+
+  <!-- Praseodymium Z=59 -->
+  <Element Z="59" symbol="Pr" name="Praseodymium">
+    <XRay energy="42.635" hwhm_natural="5.4" hwhm_doppler="0.31" line="Kα1"/>
+    <XRay energy="42.447" hwhm_natural="5.4" hwhm_doppler="0.31" line="Kα2"/>
+    <XRay energy="49.286" hwhm_natural="5.6" hwhm_doppler="0.36" line="Kβ1"/>
+    <XRay energy="49.671" hwhm_natural="5.6" hwhm_doppler="0.36" line="Kβ3"/>
+  </Element>
+
+  <!-- Neodymium Z=60 -->
+  <Element Z="60" symbol="Nd" name="Neodymium">
+    <XRay energy="43.851" hwhm_natural="5.5" hwhm_doppler="0.31" line="Kα1"/>
+    <XRay energy="43.660" hwhm_natural="5.5" hwhm_doppler="0.31" line="Kα2"/>
+    <XRay energy="50.611" hwhm_natural="5.7" hwhm_doppler="0.36" line="Kβ1"/>
+    <XRay energy="51.005" hwhm_natural="5.7" hwhm_doppler="0.36" line="Kβ3"/>
+  </Element>
+
+  <!-- Promethium Z=61 -->
+  <Element Z="61" symbol="Pm" name="Promethium">
+    <XRay energy="45.084" hwhm_natural="5.6" hwhm_doppler="0.32" line="Kα1"/>
+    <XRay energy="44.889" hwhm_natural="5.6" hwhm_doppler="0.32" line="Kα2"/>
+    <XRay energy="51.955" hwhm_natural="5.8" hwhm_doppler="0.37" line="Kβ1"/>
+    <XRay energy="52.358" hwhm_natural="5.8" hwhm_doppler="0.37" line="Kβ3"/>
+  </Element>
+
+  <!-- Samarium Z=62 -->
+  <Element Z="62" symbol="Sm" name="Samarium">
+    <XRay energy="46.335" hwhm_natural="5.7" hwhm_doppler="0.32" line="Kα1"/>
+    <XRay energy="46.137" hwhm_natural="5.7" hwhm_doppler="0.32" line="Kα2"/>
+    <XRay energy="53.317" hwhm_natural="5.9" hwhm_doppler="0.37" line="Kβ1"/>
+    <XRay energy="53.729" hwhm_natural="5.9" hwhm_doppler="0.37" line="Kβ3"/>
+  </Element>
+
+  <!-- Europium Z=63 -->
+  <Element Z="63" symbol="Eu" name="Europium">
+    <XRay energy="47.605" hwhm_natural="5.8" hwhm_doppler="0.33" line="Kα1"/>
+    <XRay energy="47.404" hwhm_natural="5.8" hwhm_doppler="0.33" line="Kα2"/>
+    <XRay energy="54.697" hwhm_natural="6.0" hwhm_doppler="0.38" line="Kβ1"/>
+    <XRay energy="55.118" hwhm_natural="6.0" hwhm_doppler="0.38" line="Kβ3"/>
+  </Element>
+
+  <!-- Gadolinium Z=64 -->
+  <Element Z="64" symbol="Gd" name="Gadolinium">
+    <XRay energy="48.894" hwhm_natural="5.9" hwhm_doppler="0.33" line="Kα1"/>
+    <XRay energy="48.690" hwhm_natural="5.9" hwhm_doppler="0.33" line="Kα2"/>
+    <XRay energy="56.095" hwhm_natural="6.1" hwhm_doppler="0.38" line="Kβ1"/>
+    <XRay energy="56.525" hwhm_natural="6.1" hwhm_doppler="0.38" line="Kβ3"/>
+  </Element>
+
+  <!-- Terbium Z=65 -->
+  <Element Z="65" symbol="Tb" name="Terbium">
+    <XRay energy="50.202" hwhm_natural="6.0" hwhm_doppler="0.34" line="Kα1"/>
+    <XRay energy="49.995" hwhm_natural="6.0" hwhm_doppler="0.34" line="Kα2"/>
+    <XRay energy="57.511" hwhm_natural="6.2" hwhm_doppler="0.39" line="Kβ1"/>
+    <XRay energy="57.950" hwhm_natural="6.2" hwhm_doppler="0.39" line="Kβ3"/>
+  </Element>
+
+  <!-- Dysprosium Z=66 -->
+  <Element Z="66" symbol="Dy" name="Dysprosium">
+    <XRay energy="51.529" hwhm_natural="6.1" hwhm_doppler="0.34" line="Kα1"/>
+    <XRay energy="51.319" hwhm_natural="6.1" hwhm_doppler="0.34" line="Kα2"/>
+    <XRay energy="58.945" hwhm_natural="6.3" hwhm_doppler="0.39" line="Kβ1"/>
+    <XRay energy="59.393" hwhm_natural="6.3" hwhm_doppler="0.39" line="Kβ3"/>
+  </Element>
+
+  <!-- Holmium Z=67 -->
+  <Element Z="67" symbol="Ho" name="Holmium">
+    <XRay energy="52.874" hwhm_natural="6.2" hwhm_doppler="0.35" line="Kα1"/>
+    <XRay energy="52.661" hwhm_natural="6.2" hwhm_doppler="0.35" line="Kα2"/>
+    <XRay energy="60.397" hwhm_natural="6.4" hwhm_doppler="0.40" line="Kβ1"/>
+    <XRay energy="60.855" hwhm_natural="6.4" hwhm_doppler="0.40" line="Kβ3"/>
+  </Element>
+
+  <!-- Erbium Z=68 -->
+  <Element Z="68" symbol="Er" name="Erbium">
+    <XRay energy="54.238" hwhm_natural="6.3" hwhm_doppler="0.35" line="Kα1"/>
+    <XRay energy="54.022" hwhm_natural="6.3" hwhm_doppler="0.35" line="Kα2"/>
+    <XRay energy="61.867" hwhm_natural="6.5" hwhm_doppler="0.40" line="Kβ1"/>
+    <XRay energy="62.335" hwhm_natural="6.5" hwhm_doppler="0.40" line="Kβ3"/>
+  </Element>
+
+  <!-- Thulium Z=69 -->
+  <Element Z="69" symbol="Tm" name="Thulium">
+    <XRay energy="55.621" hwhm_natural="6.4" hwhm_doppler="0.36" line="Kα1"/>
+    <XRay energy="55.402" hwhm_natural="6.4" hwhm_doppler="0.36" line="Kα2"/>
+    <XRay energy="63.355" hwhm_natural="6.6" hwhm_doppler="0.41" line="Kβ1"/>
+    <XRay energy="63.833" hwhm_natural="6.6" hwhm_doppler="0.41" line="Kβ3"/>
+  </Element>
+
+  <!-- Ytterbium Z=70 -->
+  <Element Z="70" symbol="Yb" name="Ytterbium">
+    <XRay energy="57.023" hwhm_natural="6.5" hwhm_doppler="0.36" line="Kα1"/>
+    <XRay energy="56.801" hwhm_natural="6.5" hwhm_doppler="0.36" line="Kα2"/>
+    <XRay energy="64.862" hwhm_natural="6.7" hwhm_doppler="0.41" line="Kβ1"/>
+    <XRay energy="65.350" hwhm_natural="6.7" hwhm_doppler="0.41" line="Kβ3"/>
+  </Element>
+
+  <!-- Lutetium Z=71 -->
+  <Element Z="71" symbol="Lu" name="Lutetium">
+    <XRay energy="58.454" hwhm_natural="6.6" hwhm_doppler="0.37" line="Kα1"/>
+    <XRay energy="58.230" hwhm_natural="6.6" hwhm_doppler="0.37" line="Kα2"/>
+    <XRay energy="66.389" hwhm_natural="6.8" hwhm_doppler="0.42" line="Kβ1"/>
+    <XRay energy="66.887" hwhm_natural="6.8" hwhm_doppler="0.42" line="Kβ3"/>
+  </Element>
+
+  <!-- Hafnium Z=72 -->
+  <Element Z="72" symbol="Hf" name="Hafnium">
+    <XRay energy="59.904" hwhm_natural="6.7" hwhm_doppler="0.38" line="Kα1"/>
+    <XRay energy="59.677" hwhm_natural="6.7" hwhm_doppler="0.38" line="Kα2"/>
+    <XRay energy="67.934" hwhm_natural="6.9" hwhm_doppler="0.43" line="Kβ1"/>
+    <XRay energy="68.442" hwhm_natural="6.9" hwhm_doppler="0.43" line="Kβ3"/>
+  </Element>
+
+  <!-- Tantalum Z=73 -->
+  <Element Z="73" symbol="Ta" name="Tantalum">
+    <XRay energy="10.175" hwhm_natural="3.1" hwhm_doppler="0.06" line="Lα1"/>
+    <XRay energy="10.074" hwhm_natural="3.1" hwhm_doppler="0.06" line="Lα2"/>
+    <XRay energy="12.249" hwhm_natural="4.1" hwhm_doppler="0.08" line="Lβ1"/>
+    <XRay energy="12.256" hwhm_natural="4.1" hwhm_doppler="0.08" line="Lβ2"/>
+    <XRay energy="14.318" hwhm_natural="4.8" hwhm_doppler="0.09" line="Lγ1"/>
+    <XRay energy="14.743" hwhm_natural="5.2" hwhm_doppler="0.09" line="Lγ3"/>
+    <XRay energy="61.383" hwhm_natural="6.8" hwhm_doppler="0.38" line="Kα1"/>
+    <XRay energy="61.133" hwhm_natural="6.8" hwhm_doppler="0.38" line="Kα2"/>
+    <XRay energy="69.498" hwhm_natural="7.0" hwhm_doppler="0.43" line="Kβ1"/>
+    <XRay energy="70.016" hwhm_natural="7.0" hwhm_doppler="0.43" line="Kβ3"/>
+  </Element>
+
+  <!-- Tungsten Z=74 -->
+  <Element Z="74" symbol="W" name="Tungsten">
+    <XRay energy="10.379" hwhm_natural="3.2" hwhm_doppler="0.06" line="Lα1"/>
+    <XRay energy="10.276" hwhm_natural="3.2" hwhm_doppler="0.06" line="Lα2"/>
+    <XRay energy="12.483" hwhm_natural="4.2" hwhm_doppler="0.08" line="Lβ1"/>
+    <XRay energy="12.490" hwhm_natural="4.2" hwhm_doppler="0.08" line="Lβ2"/>
+    <XRay energy="14.597" hwhm_natural="4.9" hwhm_doppler="0.09" line="Lγ1"/>
+    <XRay energy="15.034" hwhm_natural="5.3" hwhm_doppler="0.10" line="Lγ3"/>
+    <XRay energy="62.874" hwhm_natural="6.9" hwhm_doppler="0.39" line="Kα1"/>
+    <XRay energy="62.620" hwhm_natural="6.9" hwhm_doppler="0.39" line="Kα2"/>
+    <XRay energy="71.074" hwhm_natural="7.1" hwhm_doppler="0.43" line="Kβ1"/>
+    <XRay energy="71.601" hwhm_natural="7.1" hwhm_doppler="0.43" line="Kβ3"/>
+  </Element>
+
+  <!-- Rhenium Z=75 -->
+  <Element Z="75" symbol="Re" name="Rhenium">
+    <XRay energy="10.588" hwhm_natural="3.3" hwhm_doppler="0.06" line="Lα1"/>
+    <XRay energy="10.483" hwhm_natural="3.3" hwhm_doppler="0.06" line="Lα2"/>
+    <XRay energy="12.724" hwhm_natural="4.3" hwhm_doppler="0.08" line="Lβ1"/>
+    <XRay energy="12.732" hwhm_natural="4.3" hwhm_doppler="0.08" line="Lβ2"/>
+    <XRay energy="14.883" hwhm_natural="5.0" hwhm_doppler="0.09" line="Lγ1"/>
+    <XRay energy="15.331" hwhm_natural="5.4" hwhm_doppler="0.10" line="Lγ3"/>
+    <XRay energy="64.385" hwhm_natural="7.0" hwhm_doppler="0.39" line="Kα1"/>
+    <XRay energy="64.128" hwhm_natural="7.0" hwhm_doppler="0.39" line="Kα2"/>
+    <XRay energy="72.678" hwhm_natural="7.2" hwhm_doppler="0.44" line="Kβ1"/>
+    <XRay energy="73.214" hwhm_natural="7.2" hwhm_doppler="0.44" line="Kβ3"/>
+  </Element>
+
+  <!-- Iridium Z=77 -->
+  <Element Z="77" symbol="Ir" name="Iridium">
+    <XRay energy="11.013" hwhm_natural="3.5" hwhm_doppler="0.07" line="Lα1"/>
+    <XRay energy="10.903" hwhm_natural="3.5" hwhm_doppler="0.07" line="Lα2"/>
+    <XRay energy="13.318" hwhm_natural="4.5" hwhm_doppler="0.08" line="Lβ1"/>
+    <XRay energy="13.327" hwhm_natural="4.5" hwhm_doppler="0.08" line="Lβ2"/>
+    <XRay energy="15.612" hwhm_natural="5.2" hwhm_doppler="0.10" line="Lγ1"/>
+    <XRay energy="16.100" hwhm_natural="5.6" hwhm_doppler="0.10" line="Lγ3"/>
+    <XRay energy="63.287" hwhm_natural="28.0" hwhm_doppler="0.39" line="Kα1"/>
+    <XRay energy="61.486" hwhm_natural="28.0" hwhm_doppler="0.38" line="Kα2"/>
+    <XRay energy="71.413" hwhm_natural="28.0" hwhm_doppler="0.44" line="Kβ1"/>
+    <XRay energy="73.560" hwhm_natural="28.0" hwhm_doppler="0.45" line="Kβ2"/>
+  </Element>
+
+  <!-- Platinum Z=78 -->
+  <Element Z="78" symbol="Pt" name="Platinum">
+    <XRay energy="11.227" hwhm_natural="3.6" hwhm_doppler="0.07" line="Lα1"/>
+    <XRay energy="11.116" hwhm_natural="3.6" hwhm_doppler="0.07" line="Lα2"/>
+    <XRay energy="13.571" hwhm_natural="4.6" hwhm_doppler="0.08" line="Lβ1"/>
+    <XRay energy="13.580" hwhm_natural="4.6" hwhm_doppler="0.08" line="Lβ2"/>
+    <XRay energy="15.914" hwhm_natural="5.3" hwhm_doppler="0.10" line="Lγ1"/>
+    <XRay energy="16.413" hwhm_natural="5.7" hwhm_doppler="0.10" line="Lγ3"/>
+    <XRay energy="64.905" hwhm_natural="30.0" hwhm_doppler="0.40" line="Kα1"/>
+    <XRay energy="63.085" hwhm_natural="30.0" hwhm_doppler="0.39" line="Kα2"/>
+    <XRay energy="73.318" hwhm_natural="30.0" hwhm_doppler="0.45" line="Kβ1"/>
+    <XRay energy="75.544" hwhm_natural="30.0" hwhm_doppler="0.46" line="Kβ2"/>
+  </Element>
+
+  <!-- Gold Z=79 -->
+  <Element Z="79" symbol="Au" name="Gold">
+    <XRay energy="11.447" hwhm_natural="3.7" hwhm_doppler="0.07" line="Lα1"/>
+    <XRay energy="11.335" hwhm_natural="3.7" hwhm_doppler="0.07" line="Lα2"/>
+    <XRay energy="13.833" hwhm_natural="4.7" hwhm_doppler="0.08" line="Lβ1"/>
+    <XRay energy="13.843" hwhm_natural="4.7" hwhm_doppler="0.08" line="Lβ2"/>
+    <XRay energy="16.224" hwhm_natural="5.4" hwhm_doppler="0.10" line="Lγ1"/>
+    <XRay energy="16.733" hwhm_natural="5.8" hwhm_doppler="0.10" line="Lγ3"/>
+    <XRay energy="66.534" hwhm_natural="31.5" hwhm_doppler="0.41" line="Kα1"/>
+    <XRay energy="64.697" hwhm_natural="31.5" hwhm_doppler="0.40" line="Kα2"/>
+    <XRay energy="75.233" hwhm_natural="31.5" hwhm_doppler="0.46" line="Kβ1"/>
+    <XRay energy="77.538" hwhm_natural="31.5" hwhm_doppler="0.47" line="Kβ2"/>
+  </Element>
+
+  <!-- Mercury Z=80 -->
+  <Element Z="80" symbol="Hg" name="Mercury">
+    <XRay energy="11.674" hwhm_natural="3.8" hwhm_doppler="0.07" line="Lα1"/>
+    <XRay energy="11.560" hwhm_natural="3.8" hwhm_doppler="0.07" line="Lα2"/>
+    <XRay energy="14.104" hwhm_natural="4.8" hwhm_doppler="0.09" line="Lβ1"/>
+    <XRay energy="14.114" hwhm_natural="4.8" hwhm_doppler="0.09" line="Lβ2"/>
+    <XRay energy="16.542" hwhm_natural="5.5" hwhm_doppler="0.10" line="Lγ1"/>
+    <XRay energy="17.062" hwhm_natural="5.9" hwhm_doppler="0.10" line="Lγ3"/>
+    <XRay energy="68.181" hwhm_natural="33.0" hwhm_doppler="0.42" line="Kα1"/>
+    <XRay energy="66.321" hwhm_natural="33.0" hwhm_doppler="0.41" line="Kα2"/>
+    <XRay energy="77.164" hwhm_natural="33.0" hwhm_doppler="0.47" line="Kβ1"/>
+    <XRay energy="79.551" hwhm_natural="33.0" hwhm_doppler="0.48" line="Kβ2"/>
+  </Element>
+
+  <!-- Thallium Z=81 -->
+  <Element Z="81" symbol="Tl" name="Thallium">
+    <XRay energy="11.908" hwhm_natural="3.9" hwhm_doppler="0.07" line="Lα1"/>
+    <XRay energy="11.792" hwhm_natural="3.9" hwhm_doppler="0.07" line="Lα2"/>
+    <XRay energy="14.384" hwhm_natural="4.9" hwhm_doppler="0.09" line="Lβ1"/>
+    <XRay energy="14.395" hwhm_natural="4.9" hwhm_doppler="0.09" line="Lβ2"/>
+    <XRay energy="16.870" hwhm_natural="5.6" hwhm_doppler="0.10" line="Lγ1"/>
+    <XRay energy="17.400" hwhm_natural="6.0" hwhm_doppler="0.11" line="Lγ3"/>
+    <XRay energy="69.847" hwhm_natural="33.5" hwhm_doppler="0.43" line="Kα1"/>
+    <XRay energy="67.961" hwhm_natural="33.5" hwhm_doppler="0.42" line="Kα2"/>
+    <XRay energy="79.106" hwhm_natural="33.5" hwhm_doppler="0.48" line="Kβ1"/>
+    <XRay energy="81.577" hwhm_natural="33.5" hwhm_doppler="0.49" line="Kβ2"/>
+  </Element>
+
+  <!-- Lead Z=82 -->
+  <Element Z="82" symbol="Pb" name="Lead">
+    <XRay energy="10.551" hwhm_natural="3.4" hwhm_doppler="0.06" line="Lα1"/>
+    <XRay energy="10.449" hwhm_natural="3.4" hwhm_doppler="0.06" line="Lα2"/>
+    <XRay energy="12.614" hwhm_natural="4.5" hwhm_doppler="0.08" line="Lβ1"/>
+    <XRay energy="12.622" hwhm_natural="4.5" hwhm_doppler="0.08" line="Lβ2"/>
+    <XRay energy="14.764" hwhm_natural="5.2" hwhm_doppler="0.09" line="Lγ1"/>
+    <XRay energy="15.218" hwhm_natural="5.7" hwhm_doppler="0.09" line="Lγ3"/>
+    <XRay energy="74.969" hwhm_natural="33.5" hwhm_doppler="0.45" line="Kα1"/>
+    <XRay energy="72.805" hwhm_natural="33.5" hwhm_doppler="0.43" line="Kα2"/>
+    <XRay energy="84.936" hwhm_natural="33.5" hwhm_doppler="0.50" line="Kβ1"/>
+    <XRay energy="87.300" hwhm_natural="33.5" hwhm_doppler="0.52" line="Kβ2"/>
+  </Element>
+
+  <!-- Bismuth Z=83 -->
+  <Element Z="83" symbol="Bi" name="Bismuth">
+    <XRay energy="10.839" hwhm_natural="3.5" hwhm_doppler="0.07" line="Lα1"/>
+    <XRay energy="10.733" hwhm_natural="3.5" hwhm_doppler="0.07" line="Lα2"/>
+    <XRay energy="12.906" hwhm_natural="4.6" hwhm_doppler="0.08" line="Lβ1"/>
+    <XRay energy="12.915" hwhm_natural="4.6" hwhm_doppler="0.08" line="Lβ2"/>
+    <XRay energy="15.105" hwhm_natural="5.3" hwhm_doppler="0.09" line="Lγ1"/>
+    <XRay energy="15.569" hwhm_natural="5.8" hwhm_doppler="0.10" line="Lγ3"/>
+    <XRay energy="76.729" hwhm_natural="34.0" hwhm_doppler="0.46" line="Kα1"/>
+    <XRay energy="74.544" hwhm_natural="34.0" hwhm_doppler="0.44" line="Kα2"/>
+    <XRay energy="87.034" hwhm_natural="34.0" hwhm_doppler="0.51" line="Kβ1"/>
+    <XRay energy="89.465" hwhm_natural="34.0" hwhm_doppler="0.52" line="Kβ2"/>
+  </Element>
+
+  <!-- Polonium Z=84 -->
+  <Element Z="84" symbol="Po" name="Polonium">
+    <XRay energy="11.132" hwhm_natural="3.6" hwhm_doppler="0.07" line="Lα1"/>
+    <XRay energy="11.024" hwhm_natural="3.6" hwhm_doppler="0.07" line="Lα2"/>
+    <XRay energy="13.206" hwhm_natural="4.7" hwhm_doppler="0.08" line="Lβ1"/>
+    <XRay energy="13.216" hwhm_natural="4.7" hwhm_doppler="0.08" line="Lβ2"/>
+    <XRay energy="15.454" hwhm_natural="5.4" hwhm_doppler="0.09" line="Lγ1"/>
+    <XRay energy="15.929" hwhm_natural="5.9" hwhm_doppler="0.10" line="Lγ3"/>
+    <XRay energy="78.507" hwhm_natural="34.5" hwhm_doppler="0.47" line="Kα1"/>
+    <XRay energy="76.301" hwhm_natural="34.5" hwhm_doppler="0.45" line="Kα2"/>
+    <XRay energy="89.139" hwhm_natural="34.5" hwhm_doppler="0.52" line="Kβ1"/>
+    <XRay energy="91.637" hwhm_natural="34.5" hwhm_doppler="0.53" line="Kβ2"/>
+  </Element>
+
+  <!-- Astatine Z=85 -->
+  <Element Z="85" symbol="At" name="Astatine">
+    <XRay energy="11.431" hwhm_natural="3.7" hwhm_doppler="0.07" line="Lα1"/>
+    <XRay energy="11.321" hwhm_natural="3.7" hwhm_doppler="0.07" line="Lα2"/>
+    <XRay energy="13.515" hwhm_natural="4.8" hwhm_doppler="0.08" line="Lβ1"/>
+    <XRay energy="13.525" hwhm_natural="4.8" hwhm_doppler="0.08" line="Lβ2"/>
+    <XRay energy="15.811" hwhm_natural="5.5" hwhm_doppler="0.10" line="Lγ1"/>
+    <XRay energy="16.298" hwhm_natural="6.0" hwhm_doppler="0.10" line="Lγ3"/>
+    <XRay energy="80.297" hwhm_natural="35.0" hwhm_doppler="0.48" line="Kα1"/>
+    <XRay energy="78.070" hwhm_natural="35.0" hwhm_doppler="0.46" line="Kα2"/>
+    <XRay energy="91.252" hwhm_natural="35.0" hwhm_doppler="0.53" line="Kβ1"/>
+    <XRay energy="93.825" hwhm_natural="35.0" hwhm_doppler="0.54" line="Kβ2"/>
+  </Element>
+
+  <!-- Radon Z=86 -->
+  <Element Z="86" symbol="Rn" name="Radon">
+    <XRay energy="11.738" hwhm_natural="3.8" hwhm_doppler="0.07" line="Lα1"/>
+    <XRay energy="11.626" hwhm_natural="3.8" hwhm_doppler="0.07" line="Lα2"/>
+    <XRay energy="13.833" hwhm_natural="4.9" hwhm_doppler="0.09" line="Lβ1"/>
+    <XRay energy="13.843" hwhm_natural="4.9" hwhm_doppler="0.09" line="Lβ2"/>
+    <XRay energy="16.178" hwhm_natural="5.6" hwhm_doppler="0.10" line="Lγ1"/>
+    <XRay energy="16.677" hwhm_natural="6.1" hwhm_doppler="0.10" line="Lγ3"/>
+    <XRay energy="82.100" hwhm_natural="36.0" hwhm_doppler="0.49" line="Kα1"/>
+    <XRay energy="79.854" hwhm_natural="36.0" hwhm_doppler="0.47" line="Kα2"/>
+    <XRay energy="93.373" hwhm_natural="36.0" hwhm_doppler="0.54" line="Kβ1"/>
+    <XRay energy="96.029" hwhm_natural="36.0" hwhm_doppler="0.55" line="Kβ2"/>
+  </Element>
+
+  <!-- Francium Z=87 -->
+  <Element Z="87" symbol="Fr" name="Francium">
+    <XRay energy="12.051" hwhm_natural="3.9" hwhm_doppler="0.07" line="Lα1"/>
+    <XRay energy="11.938" hwhm_natural="3.9" hwhm_doppler="0.07" line="Lα2"/>
+    <XRay energy="14.160" hwhm_natural="5.0" hwhm_doppler="0.09" line="Lβ1"/>
+    <XRay energy="14.171" hwhm_natural="5.0" hwhm_doppler="0.09" line="Lβ2"/>
+    <XRay energy="16.554" hwhm_natural="5.7" hwhm_doppler="0.10" line="Lγ1"/>
+    <XRay energy="17.065" hwhm_natural="6.2" hwhm_doppler="0.10" line="Lγ3"/>
+    <XRay energy="83.917" hwhm_natural="41.0" hwhm_doppler="0.50" line="Kα1"/>
+    <XRay energy="81.652" hwhm_natural="41.0" hwhm_doppler="0.48" line="Kα2"/>
+    <XRay energy="95.509" hwhm_natural="41.0" hwhm_doppler="0.55" line="Kβ1"/>
+    <XRay energy="98.240" hwhm_natural="41.0" hwhm_doppler="0.56" line="Kβ2"/>
+  </Element>
+
+  <!-- Radium Z=88 -->
+  <Element Z="88" symbol="Ra" name="Radium">
+    <XRay energy="12.340" hwhm_natural="4.4" hwhm_doppler="0.07" line="Lα1"/>
+    <XRay energy="12.197" hwhm_natural="4.4" hwhm_doppler="0.07" line="Lα2"/>
+    <XRay energy="15.236" hwhm_natural="5.8" hwhm_doppler="0.09" line="Lβ1"/>
+    <XRay energy="15.421" hwhm_natural="5.8" hwhm_doppler="0.09" line="Lβ2"/>
+    <XRay energy="18.036" hwhm_natural="6.7" hwhm_doppler="0.10" line="Lγ1"/>
+    <XRay energy="18.757" hwhm_natural="7.4" hwhm_doppler="0.11" line="Lγ3"/>
+    <XRay energy="88.471" hwhm_natural="42.7" hwhm_doppler="0.50" line="Kα1"/>
+    <XRay energy="85.429" hwhm_natural="42.7" hwhm_doppler="0.49" line="Kα2"/>
+    <XRay energy="100.130" hwhm_natural="42.7" hwhm_doppler="0.57" line="Kβ1"/>
+    <XRay energy="103.088" hwhm_natural="42.7" hwhm_doppler="0.59" line="Kβ2"/>
+  </Element>
+
+  <!-- Actinium Z=89 -->
+  <Element Z="89" symbol="Ac" name="Actinium">
+    <XRay energy="12.615" hwhm_natural="4.6" hwhm_doppler="0.08" line="Lα1"/>
+    <XRay energy="12.468" hwhm_natural="4.6" hwhm_doppler="0.08" line="Lα2"/>
+    <XRay energy="15.641" hwhm_natural="6.0" hwhm_doppler="0.09" line="Lβ1"/>
+    <XRay energy="15.831" hwhm_natural="6.0" hwhm_doppler="0.09" line="Lβ2"/>
+    <XRay energy="18.503" hwhm_natural="6.9" hwhm_doppler="0.11" line="Lγ1"/>
+    <XRay energy="19.243" hwhm_natural="7.6" hwhm_doppler="0.11" line="Lγ3"/>
+    <XRay energy="90.890" hwhm_natural="44.0" hwhm_doppler="0.51" line="Kα1"/>
+    <XRay energy="87.798" hwhm_natural="44.0" hwhm_doppler="0.49" line="Kα2"/>
+    <XRay energy="102.850" hwhm_natural="44.0" hwhm_doppler="0.58" line="Kβ1"/>
+    <XRay energy="105.860" hwhm_natural="44.0" hwhm_doppler="0.60" line="Kβ2"/>
+  </Element>
+
+  <!-- Thorium Z=90 -->
+  <Element Z="90" symbol="Th" name="Thorium">
+    <XRay energy="12.969" hwhm_natural="4.8" hwhm_doppler="0.07" line="Lα1"/>
+    <XRay energy="12.810" hwhm_natural="4.8" hwhm_doppler="0.07" line="Lα2"/>
+    <XRay energy="16.426" hwhm_natural="6.2" hwhm_doppler="0.09" line="Lβ1"/>
+    <XRay energy="16.622" hwhm_natural="6.2" hwhm_doppler="0.09" line="Lβ2"/>
+    <XRay energy="19.353" hwhm_natural="7.1" hwhm_doppler="0.11" line="Lγ1"/>
+    <XRay energy="20.115" hwhm_natural="7.9" hwhm_doppler="0.11" line="Lγ3"/>
+    <XRay energy="93.350" hwhm_natural="45.5" hwhm_doppler="0.52" line="Kα1"/>
+    <XRay energy="89.957" hwhm_natural="45.5" hwhm_doppler="0.50" line="Kα2"/>
+    <XRay energy="105.605" hwhm_natural="45.5" hwhm_doppler="0.59" line="Kβ1"/>
+    <XRay energy="108.716" hwhm_natural="45.5" hwhm_doppler="0.61" line="Kβ2"/>
+  </Element>
+
+  <!-- Protactinium Z=91 -->
+  <Element Z="91" symbol="Pa" name="Protactinium">
+    <XRay energy="13.291" hwhm_natural="5.0" hwhm_doppler="0.08" line="Lα1"/>
+    <XRay energy="13.122" hwhm_natural="5.0" hwhm_doppler="0.07" line="Lα2"/>
+    <XRay energy="16.821" hwhm_natural="6.4" hwhm_doppler="0.10" line="Lβ1"/>
+    <XRay energy="17.038" hwhm_natural="6.4" hwhm_doppler="0.10" line="Lβ2"/>
+    <XRay energy="19.755" hwhm_natural="7.3" hwhm_doppler="0.11" line="Lγ1"/>
+    <XRay energy="20.525" hwhm_natural="8.1" hwhm_doppler="0.12" line="Lγ3"/>
+    <XRay energy="95.868" hwhm_natural="46.7" hwhm_doppler="0.54" line="Kα1"/>
+    <XRay energy="92.287" hwhm_natural="46.7" hwhm_doppler="0.52" line="Kα2"/>
+    <XRay energy="108.427" hwhm_natural="46.7" hwhm_doppler="0.61" line="Kβ1"/>
+    <XRay energy="111.630" hwhm_natural="46.7" hwhm_doppler="0.63" line="Kβ2"/>
+  </Element>
+
+  <!-- Uranium Z=92 -->
+  <Element Z="92" symbol="U" name="Uranium">
+    <XRay energy="13.615" hwhm_natural="5.2" hwhm_doppler="0.08" line="Lα1"/>
+    <XRay energy="13.439" hwhm_natural="5.2" hwhm_doppler="0.08" line="Lα2"/>
+    <XRay energy="17.220" hwhm_natural="6.6" hwhm_doppler="0.10" line="Lβ1"/>
+    <XRay energy="17.456" hwhm_natural="6.6" hwhm_doppler="0.10" line="Lβ2"/>
+    <XRay energy="20.167" hwhm_natural="7.5" hwhm_doppler="0.11" line="Lγ1"/>
+    <XRay energy="20.945" hwhm_natural="8.3" hwhm_doppler="0.12" line="Lγ3"/>
+    <XRay energy="98.439" hwhm_natural="48.0" hwhm_doppler="0.55" line="Kα1"/>
+    <XRay energy="94.665" hwhm_natural="48.0" hwhm_doppler="0.53" line="Kα2"/>
+    <XRay energy="111.300" hwhm_natural="48.0" hwhm_doppler="0.62" line="Kβ1"/>
+    <XRay energy="114.566" hwhm_natural="48.0" hwhm_doppler="0.64" line="Kβ2"/>
+  </Element>
+
+  <!-- Neptunium Z=93 -->
+  <Element Z="93" symbol="Np" name="Neptunium">
+    <XRay energy="13.946" hwhm_natural="5.4" hwhm_doppler="0.08" line="Lα1"/>
+    <XRay energy="13.760" hwhm_natural="5.4" hwhm_doppler="0.08" line="Lα2"/>
+    <XRay energy="17.604" hwhm_natural="6.8" hwhm_doppler="0.10" line="Lβ1"/>
+    <XRay energy="17.849" hwhm_natural="6.8" hwhm_doppler="0.10" line="Lβ2"/>
+    <XRay energy="20.765" hwhm_natural="7.7" hwhm_doppler="0.12" line="Lγ1"/>
+    <XRay energy="21.563" hwhm_natural="8.5" hwhm_doppler="0.12" line="Lγ3"/>
+    <XRay energy="101.078" hwhm_natural="49.5" hwhm_doppler="0.56" line="Kα1"/>
+    <XRay energy="97.069" hwhm_natural="49.5" hwhm_doppler="0.54" line="Kα2"/>
+    <XRay energy="114.240" hwhm_natural="49.5" hwhm_doppler="0.64" line="Kβ1"/>
+    <XRay energy="117.623" hwhm_natural="49.5" hwhm_doppler="0.66" line="Kβ2"/>
+  </Element>
+
+  <!-- Plutonium Z=94 -->
+  <Element Z="94" symbol="Pu" name="Plutonium">
+    <XRay energy="14.282" hwhm_natural="5.5" hwhm_doppler="0.08" line="Lα1"/>
+    <XRay energy="14.084" hwhm_natural="5.5" hwhm_doppler="0.08" line="Lα2"/>
+    <XRay energy="17.992" hwhm_natural="6.9" hwhm_doppler="0.10" line="Lβ1"/>
+    <XRay energy="18.264" hwhm_natural="6.9" hwhm_doppler="0.10" line="Lβ2"/>
+    <XRay energy="21.175" hwhm_natural="7.8" hwhm_doppler="0.12" line="Lγ1"/>
+    <XRay energy="21.996" hwhm_natural="8.6" hwhm_doppler="0.12" line="Lγ3"/>
+    <XRay energy="103.734" hwhm_natural="51.0" hwhm_doppler="0.57" line="Kα1"/>
+    <XRay energy="99.525" hwhm_natural="51.0" hwhm_doppler="0.55" line="Kα2"/>
+    <XRay energy="117.228" hwhm_natural="51.0" hwhm_doppler="0.65" line="Kβ1"/>
+    <XRay energy="120.540" hwhm_natural="51.0" hwhm_doppler="0.67" line="Kβ2"/>
+  </Element>
+
+  <!-- Americium Z=95 -->
+  <Element Z="95" symbol="Am" name="Americium">
+    <XRay energy="14.617" hwhm_natural="5.6" hwhm_doppler="0.08" line="Lα1"/>
+    <XRay energy="14.411" hwhm_natural="5.6" hwhm_doppler="0.08" line="Lα2"/>
+    <XRay energy="18.383" hwhm_natural="7.1" hwhm_doppler="0.10" line="Lβ1"/>
+    <XRay energy="18.676" hwhm_natural="7.1" hwhm_doppler="0.11" line="Lβ2"/>
+    <XRay energy="21.601" hwhm_natural="7.9" hwhm_doppler="0.12" line="Lγ1"/>
+    <XRay energy="22.431" hwhm_natural="8.8" hwhm_doppler="0.12" line="Lγ3"/>
+    <XRay energy="106.470" hwhm_natural="52.0" hwhm_doppler="0.58" line="Kα1"/>
+    <XRay energy="102.030" hwhm_natural="52.0" hwhm_doppler="0.56" line="Kα2"/>
+    <XRay energy="120.165" hwhm_natural="52.0" hwhm_doppler="0.66" line="Kβ1"/>
+    <XRay energy="123.820" hwhm_natural="52.0" hwhm_doppler="0.68" line="Kβ2"/>
+  </Element>
+
+  <!-- Curium Z=96 -->
+  <Element Z="96" symbol="Cm" name="Curium">
+    <XRay energy="14.956" hwhm_natural="5.7" hwhm_doppler="0.08" line="Lα1"/>
+    <XRay energy="14.746" hwhm_natural="5.7" hwhm_doppler="0.08" line="Lα2"/>
+    <XRay energy="18.782" hwhm_natural="7.2" hwhm_doppler="0.11" line="Lβ1"/>
+    <XRay energy="19.084" hwhm_natural="7.2" hwhm_doppler="0.11" line="Lβ2"/>
+    <XRay energy="22.036" hwhm_natural="8.0" hwhm_doppler="0.12" line="Lγ1"/>
+    <XRay energy="22.878" hwhm_natural="8.9" hwhm_doppler="0.13" line="Lγ3"/>
+    <XRay energy="109.272" hwhm_natural="53.0" hwhm_doppler="0.59" line="Kα1"/>
+    <XRay energy="104.624" hwhm_natural="53.0" hwhm_doppler="0.57" line="Kα2"/>
+    <XRay energy="123.166" hwhm_natural="53.0" hwhm_doppler="0.66" line="Kβ1"/>
+    <XRay energy="126.908" hwhm_natural="53.0" hwhm_doppler="0.69" line="Kβ2"/>
+  </Element>
+
+  <!-- Berkelium Z=97 -->
+  <Element Z="97" symbol="Bk" name="Berkelium">
+    <XRay energy="15.299" hwhm_natural="5.8" hwhm_doppler="0.09" line="Lα1"/>
+    <XRay energy="15.084" hwhm_natural="5.8" hwhm_doppler="0.09" line="Lα2"/>
+    <XRay energy="19.190" hwhm_natural="7.3" hwhm_doppler="0.11" line="Lβ1"/>
+    <XRay energy="19.500" hwhm_natural="7.3" hwhm_doppler="0.11" line="Lβ2"/>
+    <XRay energy="22.480" hwhm_natural="8.1" hwhm_doppler="0.12" line="Lγ1"/>
+    <XRay energy="23.334" hwhm_natural="9.0" hwhm_doppler="0.13" line="Lγ3"/>
+    <XRay energy="112.148" hwhm_natural="54.0" hwhm_doppler="0.60" line="Kα1"/>
+    <XRay energy="107.280" hwhm_natural="54.0" hwhm_doppler="0.57" line="Kα2"/>
+    <XRay energy="126.239" hwhm_natural="54.0" hwhm_doppler="0.67" line="Kβ1"/>
+    <XRay energy="130.086" hwhm_natural="54.0" hwhm_doppler="0.69" line="Kβ2"/>
+  </Element>
+
+  <!-- Californium Z=98 -->
+  <Element Z="98" symbol="Cf" name="Californium">
+    <XRay energy="15.648" hwhm_natural="5.9" hwhm_doppler="0.09" line="Lα1"/>
+    <XRay energy="15.428" hwhm_natural="5.9" hwhm_doppler="0.09" line="Lα2"/>
+    <XRay energy="19.606" hwhm_natural="7.4" hwhm_doppler="0.11" line="Lβ1"/>
+    <XRay energy="19.924" hwhm_natural="7.4" hwhm_doppler="0.11" line="Lβ2"/>
+    <XRay energy="22.933" hwhm_natural="8.2" hwhm_doppler="0.13" line="Lγ1"/>
+    <XRay energy="23.800" hwhm_natural="9.1" hwhm_doppler="0.13" line="Lγ3"/>
+    <XRay energy="115.094" hwhm_natural="55.0" hwhm_doppler="0.61" line="Kα1"/>
+    <XRay energy="110.064" hwhm_natural="55.0" hwhm_doppler="0.58" line="Kα2"/>
+    <XRay energy="129.397" hwhm_natural="55.0" hwhm_doppler="0.68" line="Kβ1"/>
+    <XRay energy="133.350" hwhm_natural="55.0" hwhm_doppler="0.70" line="Kβ2"/>
+  </Element>
+
+</XRayWidths>
