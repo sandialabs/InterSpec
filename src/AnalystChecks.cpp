@@ -277,6 +277,39 @@ namespace AnalystChecks
     }//if( options.nonBackgroundPeaksOnly )
 
 
+    // Apply optional energy filtering
+    const bool has_lower = options.lowerEnergy.has_value();
+    const bool has_upper = options.upperEnergy.has_value();
+
+    if( has_lower && has_upper && (*options.upperEnergy < *options.lowerEnergy) )
+    {
+      throw std::runtime_error( "upperEnergy (" + std::to_string(*options.upperEnergy)
+                                + " keV) must be greater than or equal to lowerEnergy ("
+                                + std::to_string(*options.lowerEnergy) + " keV)" );
+    }
+
+    if( has_lower || has_upper )
+    {
+      const double lower_energy = has_lower ? *options.lowerEnergy : -std::numeric_limits<double>::infinity();
+      const double upper_energy = has_upper ? *options.upperEnergy : std::numeric_limits<double>::infinity();
+
+      auto filter_peaks_in_range = [lower_energy, upper_energy]( const vector<shared_ptr<const PeakDef>> &peaks ){
+        vector<shared_ptr<const PeakDef>> filtered;
+        filtered.reserve( peaks.size() );
+
+        for( const shared_ptr<const PeakDef> &peak : peaks )
+        {
+          if( peak && (peak->mean() >= lower_energy) && (peak->mean() <= upper_energy) )
+            filtered.push_back( peak );
+        }
+
+        return filtered;
+      };
+
+      all_peaks = filter_peaks_in_range( all_peaks );
+      user_analysis_peaks = filter_peaks_in_range( user_analysis_peaks );
+    }
+
     DetectedPeakStatus result;
     result.peaks = std::move(all_peaks);
     result.analysis_peaks = std::move(user_analysis_peaks);
@@ -1134,7 +1167,7 @@ namespace AnalystChecks
         
         DetectorPeakResponse drf;
         drf.setIntrinsicEfficiencyFormula( "1.0", 2.54*PhysicalUnits::cm, PhysicalUnits::keV,
-                                               0.0f, 0.0f, DetectorPeakResponse::EffGeometryType::FarField );
+                                               0.0f, 0.0f, DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic);
         
         drf.fitResolution( peak_deque, spectrum, DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
         
@@ -1204,7 +1237,7 @@ namespace AnalystChecks
         
         DetectorPeakResponse drf;
         drf.setIntrinsicEfficiencyFormula( "1.0", 2.54*PhysicalUnits::cm, PhysicalUnits::keV,
-                                               0.0f, 0.0f, DetectorPeakResponse::EffGeometryType::FarField );
+                                               0.0f, 0.0f, DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic);
         
         drf.fitResolution( peak_deque, spectrum, DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
         

@@ -21,7 +21,7 @@ add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../../ InterSpecLib )
 
 
 SET(MACOSX_BUNDLE_INFO_STRING   "InterSpec - Sandia National Lab, Will Johnson")
-SET(MACOSX_BUNDLE_ICON_FILE InterSpec )
+SET(MACOSX_BUNDLE_ICON_FILE InterSpec)
 SET(MACOSX_BUNDLE_LONG_VERSION_STRING "" )
 SET(MACOSX_BUNDLE_BUNDLE_NAME "InterSpec" )
 SET(MACOSX_BUNDLE_SHORT_VERSION_STRING "InterSpec" )
@@ -38,7 +38,12 @@ SET( MACOSX_BUNDLE_BUNDLE_NAME "InterSpec" )
 FIND_LIBRARY(WEBKIT_LIBRARY WebKit)
 MARK_AS_ADVANCED( WEBKIT_LIBRARY )
 
-set(app_sources main.m AppDelegate.mm AppDelegate.h InterSpec.icns en.lproj/MainMenu.xib )
+set(app_sources main.m AppDelegate.mm AppDelegate.h en.lproj/MainMenu.xib )
+if (XCODE_VERSION VERSION_GREATER_EQUAL 26)
+  list(APPEND app_sources "${CMAKE_CURRENT_SOURCE_DIR}/InterSpec.icon")
+else()
+  list(APPEND app_sources InterSpec.icns)
+endif()
 
 
 set( CMAKE_INSTALL_RPATH "@executable_path/../Frameworks" )
@@ -117,9 +122,15 @@ set_target_properties(InterSpecApp PROPERTIES OUTPUT_NAME "InterSpec")
 
 target_link_libraries(InterSpecApp PUBLIC InterSpecLib ${WEBKIT_LIBRARY} )
 
-SET_SOURCE_FILES_PROPERTIES( ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec.icns 
-    PROPERTIES MACOSX_PACKAGE_LOCATION Resources
-)
+if (XCODE_VERSION VERSION_GREATER_EQUAL 26)
+  SET_SOURCE_FILES_PROPERTIES( ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec.icon
+      PROPERTIES MACOSX_PACKAGE_LOCATION Resources
+  )
+else()
+  SET_SOURCE_FILES_PROPERTIES( ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec.icns
+      PROPERTIES MACOSX_PACKAGE_LOCATION Resources
+  )
+endif()
 
 add_dependencies(InterSpecApp SpecFilePreview)
 

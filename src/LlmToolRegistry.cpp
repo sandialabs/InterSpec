@@ -38,12 +38,16 @@
 #include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/IsotopeSearchByEnergyModel.h"
 
+#include "InterSpec/DoseCalc.h"
+#include "InterSpec/GadrasSpecFunc.h"
+
 #include "InterSpec/ShieldingSourceFitCalc.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
 #include "InterSpec/RelActCalc.h"
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/LlmIsotopicsTool.h"
 #include "InterSpec/LlmActivityFitTool.h"
+#include "InterSpec/LlmRelActManualTool.h"
 
 #include "Minuit2/MnUserParameters.h"
 
@@ -299,6 +303,23 @@ namespace {
       throw std::runtime_error("Invalid spectrum type: " + specTypeStr);
     }
     p.nonBackgroundPeaksOnly = get_boolean( j, "NonBackgroundPeaksOnly", false );
+
+    // Optional energy bounds
+    p.lowerEnergy.reset();
+    p.upperEnergy.reset();
+
+    if( j.contains("lowerEnergy") && !j["lowerEnergy"].is_null() )
+      p.lowerEnergy = get_number( j, "lowerEnergy" );
+
+    if( j.contains("upperEnergy") && !j["upperEnergy"].is_null() )
+      p.upperEnergy = get_number( j, "upperEnergy" );
+
+    if( p.lowerEnergy && p.upperEnergy && (*p.upperEnergy < *p.lowerEnergy) )
+    {
+      throw std::runtime_error( "upperEnergy (" + std::to_string(*p.upperEnergy)
+                                + " keV) must be greater than or equal to lowerEnergy ("
+                                + std::to_string(*p.lowerEnergy) + " keV)" );
+    }
   }
 
   void from_json(const json& j, AnalystChecks::FitPeakOptions& p) {
@@ -908,6 +929,35 @@ namespace {
     
     return sourceCatagories;
   }//source_categories(...)
+
+
+  /** Helper function to get the GadrasScatterTable for dose calculations.
+   *  Uses a static shared pointer with mutex protection for thread-safe lazy initialization.
+   *  The scatter table is loaded from GadrasContinuum.lib in the static data directory.
+   */
+  mutex sm_dose_scatter_mutex;
+  bool sm_tried_init_dose_scatter = false;
+  shared_ptr<const GadrasScatterTable> sm_dose_scatter;
+
+  shared_ptr<const GadrasScatterTable> getDoseCalcScatterTable()
+  {
+    lock_guard<mutex> lock( sm_dose_scatter_mutex );
+    if( sm_tried_init_dose_scatter )
+      return sm_dose_scatter;
+
+    sm_tried_init_dose_scatter = true;
+
+    try
+    {
+      const string data = SpecUtils::append_path( InterSpec::staticDataDirectory(), "GadrasContinuum.lib" );
+      sm_dose_scatter = make_shared<GadrasScatterTable>( data );
+    }catch( exception &e )
+    {
+      cerr << "LlmToolRegistry: Failed to init GADRAS scatter for dose calc: " << e.what() << endl;
+    }
+
+    return sm_dose_scatter;
+  }//getDoseCalcScatterTable()
 }//namespace
 
 namespace LlmTools
@@ -1048,6 +1098,11 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
         return executeCurrieMdaCalc(params, interspec);
       };
+    }else if( toolName == "calculate_dose" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeCalculateDose(params, interspec);
+      };
     }else if( toolName == "source_photons" )
     {
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
@@ -1182,6 +1237,16 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
     {
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
         return IsotopicsTool::executeGetIsotopicsConfigSchema(params, interspec);
+      };
+    }else if( toolName == "peak_based_relative_efficiency" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return RelActManualTool::executePeakBasedRelativeEfficiency(params, interspec);
+      };
+    }else if( toolName == "get_rel_act_manual_state" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return RelActManualTool::executeGetRelActManualState(params, interspec);
       };
     }else
     {
@@ -1344,6 +1409,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     "get_counts_in_energy_range",
     "get_expected_fwhm",
     "currie_mda_calc",
+    "calculate_dose",
     "source_photons",
     "photopeak_detection_efficiency",
     "get_materials",
@@ -1369,7 +1435,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     "modify_isotopics_options",
     "modify_isotopics_rois",
     "perform_isotopics_calculation",
-    "reset_isotopics_config"
+    "reset_isotopics_config",
     "set_workflow_state",
   };
 
@@ -2631,6 +2697,145 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
 
   return result_json;
 }//nlohmann::json executeCurrieMdaCalc(const nlohmann::json& params, InterSpec* interspec)
+
+
+nlohmann::json ToolRegistry::executeCalculateDose(const nlohmann::json& params, InterSpec* interspec)
+{
+  using namespace PhysicalUnits;
+
+  // 1. Validate InterSpec instance
+  if( !interspec )
+    throw runtime_error( "No InterSpec session available." );
+
+  // 2. Parse required parameters
+  const string nuclide_str = params.at( "nuclide" ).get<string>();
+  const string distance_str = params.at( "distance" ).get<string>();
+  const string activity_str = params.at( "activity" ).get<string>();
+
+  // 3. Parse distance and activity
+  const double distance = stringToDistance( distance_str );
+  const double activity = stringToActivity( activity_str );
+
+  // 4. Get nuclide from database
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  if( !db )
+    throw runtime_error( "Nuclide database not available." );
+
+  const SandiaDecay::Nuclide * const nuc = db->nuclide( nuclide_str );
+  if( !nuc )
+    throw runtime_error( "Unknown nuclide: " + nuclide_str );
+
+  // 5. Parse optional age parameter (use default if not provided)
+  double age;
+  if( !params.contains("age") )
+  {
+    age = PeakDef::defaultDecayTime( nuc );
+  }else if( params.contains( "age" ) )
+  { 
+    if( !params["age"].is_string() )
+      throw runtime_error( "the `age` parameter must be a string." );
+    
+    const string age_str = params["age"].get<string>();
+    try
+    {
+      age = stringToTimeDuration( age_str );
+    }catch( std::runtime_error & )
+    {
+      throw runtime_error( "Can not interpret age string ('" + age_str + "') as a time duration." );
+    }
+  }
+
+  // 6. Create nuclide mixture at specified age
+  SandiaDecay::NuclideMixture mix;
+  mix.addAgedNuclideByActivity( nuc, activity, age );
+
+  // 7. Extract photon energies and intensities
+  vector<float> energies, intensities;
+  for( const auto &i : mix.photons(0) )
+  {
+    energies.push_back( i.energy );
+    intensities.push_back( i.numPerSecond );
+  }
+
+  // 8. Parse shielding (if provided)
+  float areal_density = 0.0f;
+  float atomic_number = 26.0f; // iron (doesn't matter when AD=0)
+
+  // Check if material-based shielding is provided
+  if( params.contains( "material" ) && !params["material"].is_null() )
+  {
+    const string material_name = params["material"].get<string>();
+
+    // Get material from database
+    MaterialDB * const materialDB = interspec->materialDataBase();
+    const Material * const mat = materialDB->material( material_name );
+    if( !mat )
+      throw runtime_error( "Unknown material: " + material_name );
+
+    atomic_number = static_cast<float>( mat->massWeightedAtomicNumber() );
+
+    // Check if arealDensity is specified (alternative to thickness)
+    if( params.contains( "arealDensity" ) && !params["arealDensity"].is_null() )
+    {
+      areal_density = static_cast<float>( get_number( params, "arealDensity" ) );
+      areal_density *= static_cast<float>( gram / cm2 );
+    }
+    else if( params.contains( "thickness" ) && !params["thickness"].is_null() )
+    {
+      // Parse thickness and compute areal density
+      const string thickness_str = params["thickness"].get<string>();
+      const double thickness = stringToDistance( thickness_str );
+      const double density = mat->density; // in PhysicalUnits (g/cm³)
+      areal_density = static_cast<float>( thickness * density );
+    }
+    else
+    {
+      throw runtime_error( "When material is specified, either thickness or arealDensity must be provided" );
+    }
+  }
+  // Check if direct areal density/atomic number is provided
+  else if( params.contains( "arealDensity" ) && !params["arealDensity"].is_null() )
+  {
+    areal_density = static_cast<float>( get_number( params, "arealDensity" ) );
+    areal_density *= static_cast<float>( gram / cm2 );
+    atomic_number = static_cast<float>( get_number( params, "atomicNumber" ) );
+  }
+
+  // 9. Get scatter table (using helper function)
+  shared_ptr<const GadrasScatterTable> scatter = getDoseCalcScatterTable();
+  if( !scatter )
+    throw runtime_error( "Failed to load scatter table for dose calculations." );
+
+  // 10. Calculate dose
+  const double dose = DoseCalc::gamma_dose_with_shielding(
+    energies, intensities, areal_density, atomic_number, static_cast<float>(distance), *scatter );
+
+  // 11. Format results
+  const string sv_hr = printToBestEquivalentDoseRateUnits( dose, 5, true );
+  const string rem_hr = printToBestEquivalentDoseRateUnits( dose, 5, false );
+
+  // 12. Return JSON
+  json result;
+  result["success"] = true;
+  result["dose_rate_Sv_per_hr"] = (dose / (sievert/hour));
+  result["dose_rate_si_str"] = sv_hr;
+  result["dose_rate_REM_per_hr"] = (dose / (rem/hour));
+  result["dose_rate_REM_str"] = rem_hr;
+  result["nuclide"] = nuclide_str;
+  result["distance"] = distance_str;
+  result["activity"] = activity_str;
+  result["age"] = printToBestTimeUnits( age, 4 );
+
+  if( areal_density > 0.0f )
+  {
+    const double ad_g_cm2 = areal_density * cm2 / gram;
+    result["shielding"] = json::object();
+    result["shielding"]["arealDensity_g_cm2"] = ad_g_cm2;
+    result["shielding"]["atomicNumber"] = atomic_number;
+  }
+
+  return result;
+}//nlohmann::json executeCalculateDose(const nlohmann::json& params, InterSpec* interspec)
 
 
 /** Returns a list of energy/intensity pairs associated with a nuclide, elemental fluorescence x-ray, or reaction.
@@ -4050,7 +4255,8 @@ nlohmann::json ToolRegistry::executeGetDetectorInfo(const nlohmann::json& params
 
   switch( geomType )
   {
-    case DetectorPeakResponse::EffGeometryType::FarField:
+    case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
+    case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
       geomTypeStr = "FarField";
       geomTypeDesc = "Detection efficiency varies with ~1/r²";
       break;
@@ -4074,14 +4280,14 @@ nlohmann::json ToolRegistry::executeGetDetectorInfo(const nlohmann::json& params
 
   result["geometryType"] = geomTypeStr;
   result["geometryTypeDescription"] = geomTypeDesc;
-  result["isFixedGeometry"] = (geomType != DetectorPeakResponse::EffGeometryType::FarField);
+  result["isFixedGeometry"] = (geomType != DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic) && (geomType != DetectorPeakResponse::EffGeometryType::FarFieldAbsolute);
 
   // Energy range
   result["lowerEnergy"] = drf->lowerEnergy();
   result["upperEnergy"] = drf->upperEnergy();
 
   // Detector diameter (only for far field)
-  if( geomType == DetectorPeakResponse::EffGeometryType::FarField )
+  if( (geomType == DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic) || (geomType == DetectorPeakResponse::EffGeometryType::FarFieldAbsolute) )
   {
     result["detectorDiameter"] = drf->detectorDiameter();
   }

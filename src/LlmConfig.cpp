@@ -29,7 +29,6 @@ std::string agentTypeToString( AgentType type )
   {
     case AgentType::MainAgent:       return "MainAgent";
     case AgentType::NuclideId:       return "NuclideId";
-    case AgentType::NuclideIdWorker: return "NuclideIdWorker";
     case AgentType::ActivityFit:     return "ActivityFit";
     case AgentType::Isotopics:       return "Isotopics";
   }
@@ -42,7 +41,6 @@ AgentType stringToAgentType( const std::string &name )
 {
   if( name == "MainAgent" )       return AgentType::MainAgent;
   if( name == "NuclideId" )       return AgentType::NuclideId;
-  if( name == "NuclideIdWorker" ) return AgentType::NuclideIdWorker;
   if( name == "ActivityFit" )     return AgentType::ActivityFit;
   if( name == "Isotopics" )       return AgentType::Isotopics;
 
@@ -175,6 +173,16 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
       XmlUtils::check_xml_version( llmApiNode, LlmApi::sm_xmlSerializationVersion );
 
       llmApi.enabled = XmlUtils::get_bool_node_value(llmApiNode, "Enabled");
+#if( BUILD_AS_UNIT_TEST_SUITE )
+      // The default config is to disable the LLM stuff, but we need this enabled for unit tests
+      //  (none of the unit-tests actually call out to the LLM - they just test the interfaces)
+      if( !llmApi.enabled )
+      {
+        cerr << "Warning: everridding LLM config file - enabling LLM for unit-test functions" << endl;
+        llmApi.enabled = true;
+      }
+#endif
+      
       llmApi.apiEndpoint = XmlUtils::get_string_node_value(llmApiNode, "ApiEndpoint");
       llmApi.bearerToken = XmlUtils::get_string_node_value(llmApiNode, "BearerToken");
       llmApi.model = XmlUtils::get_string_node_value(llmApiNode, "Model");

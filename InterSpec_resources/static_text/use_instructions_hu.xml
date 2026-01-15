@@ -332,38 +332,81 @@ de a menü elemek letiltásra kerülnek, ha nincs háttér vagy másodlagos spek
 
 <message id='10desktop-shortcuts-desc'>
 
+  <h3>Billentyűparancsok</h3>
   <ul>
     <li>
-      <b><code>Ctrl-s</code></b>: Átkapcsol a "<em><u>S</u>pektrum fájlok</em>" lapra, vagy
-      ha az <em>Eszköz lapok</em> rejtve vannak, megjeleníti a <em>Spektrum fájlok</em> eszközt.
+      <b><code>Ctrl-1</code></b>-től <b><code>Ctrl-7</code></b>-ig: Átkapcsol az 1-7 eszköz lapra (azaz "<code>Spektrum fájlok</code>", "<code>Csúcskezelő</code>", "<code>Hivatkozási fotocsúcsok</code>", stb. lapok), vagy
+      ha az <em>Eszköz lapok</em> rejtve vannak, megjeleníti a megfelelő eszköz ablakot.
     </li>
     <li>
-      <b><code>Ctrl-p</code></b>: Átkapcsol a "<em>Csúcske<u>z</u>elő</em>" lapra, vagy
-      megjeleníti az eszközt.
+      <b><code>Ctrl-h</code></b>: Megjeleníti az alkalmazáson belüli <em>Segítséget</em>.
     </li>
     <li>
-      <b><code>Ctrl-r</code></b>: Átkapcsol a "<em>Hivatkozási foto<u>c</u>súcsok</em>"
-      lapra, vagy megjeleníti az eszközt.
+      <b><code>Ctrl-i</code></b>: Megjeleníti az <em>Üdvözlő Információs</em> képernyőt.
     </li>
     <li>
-      <b><code>Ctrl-e</code></b>: Átkapcsol az "<em><u>E</u>nergia kalibrálás</em>"
-      lapra, vagy megjeleníti az eszközt.
+      <b><code>Ctrl-k</code></b>: Törli az összes megjelenített hivatkozási fotocsúcs vonalat.
     </li>
     <li>
-      <b><code>Ctrl-n</code></b>: Átkapcsol a "<em><u>N</u>uklid keresés</em>" lapra,
-      vagy megjeleníti az eszközt.
+      <b><code>Ctrl-l</code></b>: Átváltja a spektrum y-tengelyét logaritmikus és lineáris között.
     </li>
     <li>
-      <b><code>Ctrl-h</code></b>: Megjeleníti az alkalmazáson belüli <em><u>S</u>egítséget</em>.
+      <b><code>Ctrl-s</code></b>: Menti az alkalmazás aktuális állapotát.
     </li>
     <li>
-      <b><code>Ctrl-i</code></b>: Megjeleníti az <em>Üdvözlő <u>I</u>nformációs</em> képernyőt.
+      <b><code>Ctrl-e</code></b>: Megnyitja a spektrum fájl exportálás párbeszédablakot.
     </li>
     <li>
-      <b><code>Ctrl-l</code></b>: Átváltja a spektrum y-tengelyét <u>l</u>ogaritmikus és <u>l</u>ineáris között.
+      <b><code>Ctrl-z</code></b>: Visszavonja az utolsó műveletet.
     </li>
     <li>
-      <b><code>Ctrl-c</code></b>: <u>T</u>örli az összes megjelenített hivatkozási vonalat.
+      <b><code>Ctrl-Shift-z</code></b>: Újra végrehajtja az utolsó visszavont műveletet.
+    </li>
+  </ul>
+
+  <h3>Egér módosítók a spektrum interakciókhoz</h3>
+  Ezeken a parancsokon kívül az y-tengely címére kattintva válthat a logaritmikus/lineáris skála között; az x-tengely címére kattintva megjelenítheti/elrejtheti az áttekintő sáv diagramot.
+  <ul>
+    <li>
+      <b>Dupla kattintás</b>: Csúcsot illeszt az előtér spektrumban a kattintott helyen.
+    </li>
+    <li>
+      <b>Alt + Dupla kattintás</b>: Csúcsot illeszt a háttér spektrumban a kattintott helyen.
+    </li>
+    <li>
+      <b>Shift + Dupla kattintás</b>: Csúcsot illeszt a másodlagos spektrumban a kattintott helyen.
+    </li>
+    <li>
+      <b>Shift + Bal húzás</b>: Csúcs törlési mód - eltávolítja a csúcsokat a húzott energia tartományban.
+    </li>
+    <li>
+      <b>Alt + Shift + Bal húzás</b>: Gamma számolási mód - számolja a gamma sugarakat a húzott energia tartományban.
+    </li>
+    <li>
+      <b>Alt + Ctrl + Bal húzás</b>: Újrakalibrálási mód - újrakalibrálja az energiát a húzott tartomány használatával.
+    </li>
+    <li>
+      <b>Command + Bal húzás (Mac)</b> vagy <b>Alt + Bal húzás (Windows)</b>: Függőlegesen húzva nagyítson/kicsinyítsen az y-tengelyen.
+    </li>
+  </ul>
+
+  <h3>Egér módosítók az idődiagram interakciókhoz</h3>
+  Használja az idődiagram jobb felső sarkában lévő menüt az interakciók egyszerűsítéséhez.
+  <ul>
+    <li>
+      <b>Kattintás vagy húzás</b>: Mintákat választ ki az előtér spektrumhoz.
+    </li>
+    <li>
+      <b>Alt + Kattintás/húzás</b> vagy <b>'b' billentyű nyomva tartása</b>: Mintákat választ ki a háttér spektrumhoz.
+    </li>
+    <li>
+      <b>Meta + Kattintás/húzás</b> vagy <b>'s' billentyű nyomva tartása</b>: Mintákat választ ki a másodlagos spektrumhoz.
+    </li>
+    <li>
+      <b>Shift + Kattintás/húzás</b>: Mintákat ad hozzá az aktuális kiválasztáshoz.
+    </li>
+    <li>
+      <b>Ctrl + Kattintás/húzás</b>: Mintákat távolít el az aktuális kiválasztásból.
     </li>
   </ul>
 </message>
@@ -397,4 +440,5 @@ de a menü elemek letiltásra kerülnek, ha nincs háttér vagy másodlagos spek
         <li><b>Minden:</b> "Állapot mentése kilépéskor" ritka esetekben nem működik</li>
     </ul>
   </message>
+</messages>
 </messages>

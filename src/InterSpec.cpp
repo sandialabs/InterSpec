@@ -3578,7 +3578,7 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     if( m_detectionLimitWindow )
     {
       entry.modify()->shownDisplayFeatures |= UserState::kShowingDetectionSens;
-      entry.modify()->detectionSensitivityToolUri = m_simpleMdaWindow->tool()->encodeStateToUrl();
+      entry.modify()->detectionSensitivityToolUri = m_detectionLimitWindow->tool()->encodeStateToUrl();
     }//if( m_detectionLimitWindow )
     
     if( m_simpleMdaWindow )
@@ -9981,6 +9981,15 @@ RelActManualGui *InterSpec::createRelActManualWidget()
   
   return m_relActManualGui;
 }//RelActManualGui *createRelActManualWidget()
+
+
+RelActManualGui *InterSpec::relActManualWidget( const bool createIfNotOpen )
+{
+  if( createIfNotOpen && !m_relActManualGui )
+    return createRelActManualWidget();
+  
+  return m_relActManualGui;
+}//RelActManualGui *relActManualWidget( const bool createIfNotOpen )
 
 
 void InterSpec::handleRelActManualClose()

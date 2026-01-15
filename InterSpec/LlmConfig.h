@@ -45,7 +45,6 @@ enum class AgentType : int
 {
   MainAgent,
   NuclideId,
-  NuclideIdWorker,
   ActivityFit,
   Isotopics
 };//enum class AgentType

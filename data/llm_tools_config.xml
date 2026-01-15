@@ -25,6 +25,14 @@
           "NonBackgroundPeaksOnly": {
             "type": "boolean",
             "description": "Optional: If specified true, only peaks without a cooresponding background spectrum peak, or peaks notably elevated over the background, will be returned. May only be specified true for the 'Foreground' spectrum, and only if a background spectrum is loaded.  If not specified, all peaks for the spectrum are returned."
+          },
+          "lowerEnergy": {
+            "type": "number",
+            "description": "Optional: minimum energy (in keV) for peaks to return. If not specified, no lower bound is applied."
+          },
+          "upperEnergy": {
+            "type": "number",
+            "description": "Optional: maximum energy (in keV) for peaks to return. If not specified, no upper bound is applied."
           }
       },
       "required": ["specType"]
@@ -421,7 +429,7 @@ The 'profile_score' metric (larger = better match) is the best indicator of fit 
 
 Further investigation of top returned candidates is required to make sure they match the spectrum (e.g., the spectrum is not missing a peak it should have from that source, or the peaks in the spectrum have expected relative amplitudes, etc.)</Description>
 <Description role="NuclideId">Your primary identification tool. Search for candidate nuclides by gamma energy. Use extensively with single-energy searches. The profile_score metric (higher=better) accounts for peak heights and detector response. Prefer single-energy searches - only use 2-3 energies if desperately needed.</Description>
-<AvailableFor><Agent>MainAgent</Agent><Agent>NuclideId</Agent><Agent>NuclideIdWorker</Agent></AvailableFor>
+<AvailableFor><Agent>MainAgent</Agent><Agent>NuclideId</Agent></AvailableFor>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -448,7 +456,7 @@ Further investigation of top returned candidates is required to make sure they m
         "source_category": {
           "type": "string",
           "enum": ["Nuclides + X-rays", "Nuclides, X-rays, Reactions", "Fluorescence x-rays", "Reactions", "Medical Nuclides", "Industrial Nuclides", "SNM", "NORM", "Field Encountered Sources", "Field Encountered Nuclides", "Nuclear Reactions", "Fission Products", "Alphas", "Beta Endpoint", "Un-aged Nuclides"],
-          "description": "Category filter for source types to search. Default is 'Nuclides + X-rays'."
+          "description": "Category filter for source types to search. Default is 'Nuclides + X-rays'.  Note that 'Alphas' give the energy of the alpha particle, while 'Nuclear Reactions' is the category you want to get the gammas produced by reactions of alphas, betas, or neutrons interacting with materials."
         },
         "min_half_life": {
           "type": "string",
@@ -549,6 +557,53 @@ Further investigation of top returned candidates is required to make sure they m
       },
       "required": ["energy"]
     }</ParametersSchema>
+  </Tool>
+
+  <Tool name="calculate_dose">
+    <Description>Calculate gamma dose rate from a nuclide source at a specified distance. Computes dose using ANSI/ANS-6.1.1-1991 fluence-to-dose conversion factors (Anterior-Posterior orientation). Accounts for source activity, decay age, distance, and optional shielding. Returns dose rate in both Sv/hr and rem/hr.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+        "nuclide": {
+          "type": "string",
+          "description": "Nuclide symbol (e.g., 'Co60', 'Cs137', 'U238'). Use the exact format from the nuclide database."
+        },
+        "distance": {
+          "type": "string",
+          "description": "Distance from center of source to location of interest with units (e.g., '1 m', '3ft 5in', '100 cm'). Must be positive."
+        },
+        "activity": {
+          "type": "string",
+          "description": "Source activity with units (e.g., '1.2 kBq', '100 uCi', '1 mCi'). Supports metric prefixes (f, p, n, u, m, k, M, G, T) for both Becquerel and Curie."
+        },
+        "age": {
+          "type": "string",
+          "description": "Optional: Nuclide age with units (e.g., '0.5 y', '4y 4months', '100 days'). Strongly recomended to no be specified, unless an age of the source is explicitly known.  If not specified, and intelligent age will be used based on the nuclide."
+        },
+        "material": {
+          "type": "string",
+          "description": "Optional: Shielding material name (use with 'thickness'). Must be a valid material from get_materials tool. Example: 'Fe' (iron), 'Pb' (lead), 'concrete', etc. Cannot be used together with arealDensity/atomicNumber."
+        },
+        "thickness": {
+          "type": "string",
+          "description": "Optional: Material thickness with units (e.g., '1 cm', '5 mm', '0.25 in'). Used with 'material' parameter. Cannot be used together with arealDensity/atomicNumber."
+        },
+        "arealDensity": {
+          "type": "number",
+          "description": "Optional: Shielding areal density in g/cm² (range 0-240). Use with 'atomicNumber'. Provides an alternative to material/thickness specification. Cannot be used together with material/thickness."
+        },
+        "atomicNumber": {
+          "type": "number",
+          "description": "Optional: Shielding atomic number (range 1-98). Use with 'arealDensity'. Provides an alternative to material/thickness specification. Cannot be used together with material/thickness.",
+          "minimum": 1,
+          "maximum": 98
+        }
+      },
+      "required": ["nuclide", "distance", "activity"]
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>MainAgent</Agent>
+    </AvailableFor>
   </Tool>
 
   <Tool name="photopeak_detection_efficiency">
@@ -1073,6 +1128,7 @@ Further investigation of top returned candidates is required to make sure they m
       "required": ["state"]
     }</ParametersSchema>
     <AvailableFor>
+      <Agent>NuclideId</Agent>
       <Agent>Isotopics</Agent>
     </AvailableFor>
   </Tool>
@@ -1519,6 +1575,178 @@ This information provides detailed explanation about the meaning of fields and o
       "properties": {}
     }</ParametersSchema>
     <AvailableFor>
+      <Agent>Isotopics</Agent>
+    </AvailableFor>
+  </Tool>
+
+  <Tool name="peak_based_relative_efficiency">
+    <Description>Perform a peak-based relative efficiency calculation using existing fit peaks.
+
+This tool performs relative efficiency analysis using peaks that have already been fit and assigned to sources. It is useful for:
+- Validating nuclide identification: peaks that deviate significantly from the fit curve may not be the assigned nuclide
+- Enrichment checks for Uranium or Plutonium isotopes
+- Calculating relative activities/masses of fission products when geometry is unknown
+
+Peaks can be specified either by energy list or by source nuclide list (mutually exclusive).
+
+The output includes:
+- Activity ratios and mass ratios between sources with uncertainties
+- Per-peak information including observed vs fit efficiency
+- The residual_sigma field indicates how close each peak is to the fit curve:
+  * 0 to 5 sigma: Good - peak is consistent with the fit curve
+  * 5 to 10 sigma: Acceptable - some deviation but still reasonable  
+  * Beyond 10 sigma: Poor - peak is likely not the nuclide assigned, or there are other issues
+- Fit quality metrics (chi2, dof, chi2_per_dof)
+- Warnings about data quality or fitting issues
+
+The save_to_state option allows persisting the configuration to the app state for later retrieval.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+        "peak_energies": {
+          "type": "array",
+          "description": "Array of peak energies in keV to use for the calculation. Mutually exclusive with 'sources'.",
+          "items": {
+            "type": "number"
+          }
+        },
+        "sources": {
+          "type": "array",
+          "description": "Array of source nuclide names (e.g., 'U235', 'U238'). Uses all peaks assigned to these sources. Mutually exclusive with 'peak_energies'.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "eqn_form": {
+          "type": "string",
+          "description": "Relative efficiency equation form. Default: 'LnY'. Options: 'LnX' = polynomial in ln(energy), i.e., y = a + b*ln(x) + c*(ln(x))^2 + ...; 'LnY' = exponential of polynomial in 1/energy, i.e., y = exp(a + b*x + c/x + d/x^2 + ...); 'LnXLnY' = exponential of polynomial in ln(energy), i.e., y = exp(a + b*ln(x) + c*(ln(x))^2 + ...); 'FramEmpirical': y = exp(a + b/x^2 + c*ln(x) + d*(ln(x))^2 + e*(ln(x))^3); 'FramPhysicalModel' = detector intrinsic efficiency multiplied by shielding transmission efficiency (a default detector efficiency is used if a detector efficiency isnt loaded).",
+          "enum": ["LnX", "LnY", "LnXLnY", "FramEmpirical", "FramPhysicalModel"]
+        },
+        "eqn_order": {
+          "type": "integer",
+          "description": "Polynomial order for the rel eff equation. Default: 3. Ignored for FramPhysicalModel.",
+          "minimum": 1,
+          "maximum": 8
+        },
+        "self_atten_shielding": {
+          "type": "object",
+          "description": "Self-attenuation shielding for FramPhysicalModel. Describes the source material that gamma rays originate from and must pass through (i.e. gammas treated as trace-sources in this volume). Only used when eqn_form is 'FramPhysicalModel'.",
+          "properties": {
+            "material": {
+              "type": "string",
+              "description": "Material name (e.g., 'UO2', 'Uranium', 'Steel'). Mutually exclusive with atomic_number. When using material, can specify either 'thickness' or 'areal_density'."
+            },
+            "atomic_number": {
+              "type": "number",
+              "description": "Atomic number (1-98). Use instead of material for generic shielding. Mutually exclusive with material. Requires 'areal_density'.",
+              "minimum": 1,
+              "maximum": 98
+            },
+            "thickness": {
+              "type": "string",
+              "description": "Thickness with units (e.g., '1.5 cm', '10 mm'). Only valid when using 'material'. Mutually exclusive with 'areal_density'."
+            },
+            "areal_density": {
+              "type": "number",
+              "description": "Areal density in g/cm2. Required when using 'atomic_number'. When using 'material', can specify either this or 'thickness'.",
+              "minimum": 0
+            },
+            "fit_areal_density": {
+              "type": "boolean",
+              "description": "Whether to fit the areal density (or thickness). Default: true."
+            },
+            "fit_atomic_number": {
+              "type": "boolean",
+              "description": "Whether to fit the atomic number. Only valid when using atomic_number (not material). Default: false."
+            }
+          }
+        },
+        "external_shieldings": {
+          "type": "array",
+          "description": "External shielding layers for FramPhysicalModel. Describes shielding between source and detector. Only used when eqn_form is 'FramPhysicalModel'.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "material": {
+                "type": "string",
+                "description": "Material name (e.g., 'Iron', 'Lead', 'Aluminum'). Mutually exclusive with atomic_number. When using material, can specify either 'thickness' or 'areal_density'."
+              },
+              "atomic_number": {
+                "type": "number",
+                "description": "Atomic number (1-98). Use instead of material for generic shielding. Mutually exclusive with material. Requires 'areal_density'.",
+                "minimum": 1,
+                "maximum": 98
+              },
+              "thickness": {
+                "type": "string",
+                "description": "Thickness with units (e.g., '1.5 cm', '10 mm'). Only valid when using 'material'. Mutually exclusive with 'areal_density'."
+              },
+              "areal_density": {
+                "type": "number",
+                "description": "Areal density in g/cm2. Required when using 'atomic_number'. When using 'material', can specify either this or 'thickness'.",
+                "minimum": 0
+              },
+              "fit_areal_density": {
+                "type": "boolean",
+                "description": "Whether to fit the areal density (or thickness). Default: true."
+              },
+              "fit_atomic_number": {
+                "type": "boolean",
+                "description": "Whether to fit the atomic number. Only valid when using atomic_number (not material). Default: false."
+              }
+            }
+          }
+        },
+        "match_tolerance": {
+          "type": "number",
+          "description": "Matching tolerance (in peak sigma) for accounting for interferening gammas that contiribute to the peak beyond the assigned gamma. Default: 1.5; a value of 0 means no interferences accounted for.",
+          "minimum": 0.0
+        },
+        "background_subtract": {
+          "type": "boolean",
+          "description": "Whether to subtract background peaks that overlap with the specified signal peaks. Default: false (and usually doesnt matter unless peaks overlap with background)."
+        },
+        "additional_uncertainty": {
+          "type": "string",
+          "description": "Additional systematic uncertainty on the expected branching ratio of photopeaks. Default: 'StatOnly' (i.e., no additional uncertainty).",
+          "enum": ["Unweighted", "StatOnly", "OnePercent", "FivePercent", "TenPercent", "TwentyFivePercent", "FiftyPercent", "SeventyFivePercent", "OneHundredPercent"]
+        },
+        "nuclide_ages": {
+          "type": "object",
+          "description": "Optional object mapping nuclide names to age strings - not recommended to be specified, {'U235': '20 years', 'U238': '4.5e9 years'}. Ages can be specified with units (years, days, half-lives, etc.) - if not specified, reasonable default ages will be used.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "save_to_state": {
+          "type": "boolean",
+          "description": "If true, saves the configuration to app state for user to see, or for later retrieval. Default: false."
+        }
+      }
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>NuclideId</Agent>
+      <Agent>Isotopics</Agent>
+    </AvailableFor>
+  </Tool>
+
+  <Tool name="get_rel_act_manual_state">
+    <Description>Retrieve the current RelActManual (peak-based relative efficiency) state.
+
+Gets the current configuration state from either the GUI (if open) or from the spectrum file. This allows inspection of the current settings without performing a calculation.
+
+Returns information about:
+- Equation form and order
+- Match tolerance and background subtraction settings
+- Additional uncertainty setting
+- Nuclide ages and decay correction flags
+- Whether the state came from an open GUI or stored data</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {}
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>NuclideId</Agent>
       <Agent>Isotopics</Agent>
     </AvailableFor>
   </Tool>

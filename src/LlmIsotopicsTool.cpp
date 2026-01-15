@@ -365,11 +365,17 @@ nlohmann::json extractStateMetadata( const RelActCalcAuto::RelActAutoGuiState &s
 
 /** Helper function to get the current RelActAutoGuiState from SpecMeas XML.
 
+ Returns a copy of the state, so modifications to the returned object will not affect
+ the global state unless you explicitly save it back using saveRelActState().
+
  @param interspec InterSpec instance
- @param create_if_missing If true, creates a new empty state if none exists
- @returns Shared pointer to state, or nullptr if not found and create_if_missing is false
+ @param create_if_missing If true, creates a new empty state if none exists.
+                          If false and no state exists, throws std::runtime_error.
+ @returns RelActAutoGuiState by value (a copy of the current state)
+ @throws std::runtime_error if interspec is null, no foreground spectrum loaded,
+                            or if create_if_missing is false and no state exists
  */
-std::shared_ptr<RelActCalcAuto::RelActAutoGuiState> getOrCreateRelActState(
+RelActCalcAuto::RelActAutoGuiState getOrCreateRelActState(
   InterSpec* interspec,
   bool create_if_missing = true
 )
@@ -382,8 +388,8 @@ std::shared_ptr<RelActCalcAuto::RelActAutoGuiState> getOrCreateRelActState(
   {
     try
     {
-      auto state = make_shared<RelActCalcAuto::RelActAutoGuiState>();
-      gui->serialize( *state );
+      RelActCalcAuto::RelActAutoGuiState state;
+      gui->serialize( state );
       return state;
     }catch( std::exception &e )
     {
@@ -401,39 +407,40 @@ std::shared_ptr<RelActCalcAuto::RelActAutoGuiState> getOrCreateRelActState(
   if( !state_ptr )
   {
     if( create_if_missing )
-      return std::make_shared<RelActCalcAuto::RelActAutoGuiState>();
+      return RelActCalcAuto::RelActAutoGuiState();
     else
-      return nullptr;
+      throw std::runtime_error( "No isotopics configuration exists" );
   }
 
-  // Return as shared_ptr (make a copy since we got unique_ptr)
-  return std::make_shared<RelActCalcAuto::RelActAutoGuiState>( *state_ptr );
+  // Return by value (move from unique_ptr)
+  return std::move( *state_ptr );
 }//getOrCreateRelActState()
 
 
 /** Helper function to save RelActAutoGuiState to SpecMeas as XML.
+
+ @param interspec InterSpec instance
+ @param state The state to save
+ @throws std::runtime_error if interspec is null or no foreground spectrum loaded
  */
 void saveRelActState(
   InterSpec* interspec,
-  std::shared_ptr<RelActCalcAuto::RelActAutoGuiState> state
+  const RelActCalcAuto::RelActAutoGuiState &state
 )
 {
   if( !interspec )
     throw std::runtime_error( "InterSpec instance required" );
-
-  if( !state )
-    throw std::runtime_error( "Invalid state to save" );
 
   std::shared_ptr<SpecMeas> spec = interspec->measurment( SpecUtils::SpectrumType::Foreground );
   if( !spec )
     throw std::runtime_error( "No foreground spectrum loaded" );
 
   // Use new convenience setter
-  spec->setRelActAutoGuiState( state.get() );
+  spec->setRelActAutoGuiState( &state );
 
   RelActAutoGui *gui = interspec->relActAutoWindow(false);
   if( gui )
-    gui->deSerialize( *state );
+    gui->deSerialize( state );
 }//saveRelActState()
 
 }//namespace (anonymous)
@@ -456,33 +463,31 @@ nlohmann::json executeListIsotopicsPresets(
   // Check if there's a current configuration
   try
   {
-    shared_ptr<RelActCalcAuto::RelActAutoGuiState> state = getOrCreateRelActState( interspec, false );
-    if( state )
+    RelActCalcAuto::RelActAutoGuiState state = getOrCreateRelActState( interspec, false );
+
+    json current_preset;
+    current_preset["name"] = "Current Configuration";
+    current_preset["is_current"] = true;
+
+    // Extract metadata from current state
+    json metadata = extractStateMetadata( state );
+
+    // Append description to base string if present
+    string base_description = "Current isotopics configuration in memory";
+    if( metadata.contains("description") && !metadata["description"].get<string>().empty() )
     {
-      json current_preset;
-      current_preset["name"] = "Current Configuration";
-      current_preset["is_current"] = true;
-
-      // Extract metadata from current state
-      json metadata = extractStateMetadata( *state );
-
-      // Append description to base string if present
-      string base_description = "Current isotopics configuration in memory";
-      if( metadata.contains("description") && !metadata["description"].get<string>().empty() )
-      {
-        base_description += ": " + metadata["description"].get<string>();
-        metadata.erase("description"); // Remove from metadata since we've merged it
-      }
-      current_preset["description"] = base_description;
-
-      // Merge remaining metadata fields
-      current_preset.update(metadata);
-
-      result["presets"].push_back( current_preset );
+      base_description += ": " + metadata["description"].get<string>();
+      metadata.erase("description"); // Remove from metadata since we've merged it
     }
+    current_preset["description"] = base_description;
+
+    // Merge remaining metadata fields
+    current_preset.update(metadata);
+
+    result["presets"].push_back( current_preset );
   }catch( ... )
   {
-    // No current state - that's fine
+    // No current state - that's fine (getOrCreateRelActState throws if create_if_missing=false and no state exists)
   }
 
   // Scan both writable and static data/rel_act directories for preset files
@@ -605,23 +610,26 @@ nlohmann::json executeGetIsotopicsConfig(
 {
   using namespace std;
 
-  auto state = getOrCreateRelActState( interspec, false );
-  if( !state )
+  try
   {
+    RelActCalcAuto::RelActAutoGuiState state = getOrCreateRelActState( interspec, false );
+
+    json result;
+    result["has_config"] = true;
+
+    // Use the detailed conversion helper
+    json details = stateToJsonDetailed( state );
+    result.update( details );
+
+    return result;
+  }catch( std::exception &e )
+  {
+    // No configuration exists
     json result;
     result["has_config"] = false;
     result["message"] = "No isotopics configuration exists";
     return result;
   }
-
-  json result;
-  result["has_config"] = true;
-
-  // Use the detailed conversion helper
-  json details = stateToJsonDetailed( *state );
-  result.update( details );
-
-  return result;
 }//executeGetIsotopicsConfig()
 
 
@@ -794,15 +802,13 @@ nlohmann::json executePerformIsotopics(
   if( !interspec )
     throw runtime_error( "InterSpec instance required" );
 
-  // Get current configuration - REQUIRED
-  auto state = getOrCreateRelActState( interspec, false );
-  if( !state )
-    throw runtime_error( "No isotopics configuration loaded. Use load_isotopics_preset first." );
+  // Get current configuration - REQUIRED (throws if not present)
+  RelActCalcAuto::RelActAutoGuiState state = getOrCreateRelActState( interspec, false );
 
   json result;
 
   // Extract options from state
-  const RelActCalcAuto::Options &options = state->options;
+  const RelActCalcAuto::Options &options = state.options;
 
   // Get foreground spectrum
   shared_ptr<SpecMeas> spec = interspec->measurment( SpecUtils::SpectrumType::Foreground );
@@ -815,7 +821,7 @@ nlohmann::json executePerformIsotopics(
 
   // Get background if requested
   shared_ptr<const SpecUtils::Measurement> background;
-  if( state->background_subtract )
+  if( state.background_subtract )
   {
     background = interspec->displayedHistogram( SpecUtils::SpectrumType::Background );
     // background can be null - solve() will handle it
@@ -962,7 +968,6 @@ namespace
 {
   // Helper to get the single relative efficiency curve from the state.
   // Throws if no curves exist or if multiple curves exist.
-  // TODO: change getOrCreateRelActState to return value instead of shared_ptr (its already a mutable copy)
   RelActCalcAuto::RelEffCurveInput &getSingleCurve( RelActCalcAuto::RelActAutoGuiState &state )
   {
     if( state.options.rel_eff_curves.empty() )
@@ -1191,21 +1196,19 @@ nlohmann::json executeModifyIsotopicsNuclides(
     throw runtime_error( "InterSpec instance required" );
 
   // Get or create current state
-  shared_ptr<RelActCalcAuto::RelActAutoGuiState> state = getOrCreateRelActState( interspec, true );
-  if( !state )
-    throw runtime_error( "Failed to get or create isotopics state" );
+  RelActCalcAuto::RelActAutoGuiState state = getOrCreateRelActState( interspec, true );
 
   // If we just created the state, add a default rel eff curve
-  if( state->options.rel_eff_curves.empty() )
+  if( state.options.rel_eff_curves.empty() )
   {
     RelActCalcAuto::RelEffCurveInput default_curve;
     default_curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::LnX;
     default_curve.rel_eff_eqn_order = 3;
-    state->options.rel_eff_curves.push_back( default_curve );
+    state.options.rel_eff_curves.push_back( default_curve );
   }
 
   // Get the single curve (throws if multiple)
-  RelActCalcAuto::RelEffCurveInput &curve = getSingleCurve( *state );
+  RelActCalcAuto::RelEffCurveInput &curve = getSingleCurve( state );
 
   const string action = params.at( "action" ).get<string>();
 
@@ -1345,17 +1348,15 @@ nlohmann::json executeModifyIsotopicsRois(
   if( !interspec )
     throw runtime_error( "InterSpec instance required" );
 
-  shared_ptr<RelActCalcAuto::RelActAutoGuiState> state = getOrCreateRelActState( interspec, true );
-  if( !state )
-    throw runtime_error( "Failed to get or create isotopics state" );
+  RelActCalcAuto::RelActAutoGuiState state = getOrCreateRelActState( interspec, true );
 
   // If we just created the state, add a default rel eff curve
-  if( state->options.rel_eff_curves.empty() )
+  if( state.options.rel_eff_curves.empty() )
   {
     RelActCalcAuto::RelEffCurveInput default_curve;
     default_curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::LnX;
     default_curve.rel_eff_eqn_order = 3;
-    state->options.rel_eff_curves.push_back( default_curve );
+    state.options.rel_eff_curves.push_back( default_curve );
   }
 
   const string action = params.at( "action" ).get<string>();
@@ -1371,7 +1372,7 @@ nlohmann::json executeModifyIsotopicsRois(
     for( const auto &roi_json : params["rois"] )
     {
       RelActCalcAuto::RoiRange roi = parseRoiFromJson( roi_json );
-      state->options.rois.push_back( roi );
+      state.options.rois.push_back( roi );
 
       json roi_result;
       roi_result["lower_energy"] = roi.lower_energy;
@@ -1380,7 +1381,7 @@ nlohmann::json executeModifyIsotopicsRois(
     }
 
     // Validate no overlaps
-    validateRoisNonOverlapping( state->options.rois );
+    validateRoisNonOverlapping( state.options.rois );
   }
   else if( action == "remove" )
   {
@@ -1393,12 +1394,12 @@ nlohmann::json executeModifyIsotopicsRois(
       const double upper = roi_json.at( "upper_energy" ).get<double>();
 
       // Find ROI by energy bounds (with small tolerance)
-      auto it = std::find_if( state->options.rois.begin(), state->options.rois.end(),
+      auto it = std::find_if( state.options.rois.begin(), state.options.rois.end(),
         [lower, upper]( const RelActCalcAuto::RoiRange &roi ) {
           return (fabs( roi.lower_energy - lower ) < 0.1) && (fabs( roi.upper_energy - upper ) < 0.1);
         });
 
-      if( it == state->options.rois.end() )
+      if( it == state.options.rois.end() )
         throw runtime_error( "ROI [" + to_string( lower ) + ", " + to_string( upper ) + "] not found" );
 
       json roi_result;
@@ -1406,7 +1407,7 @@ nlohmann::json executeModifyIsotopicsRois(
       roi_result["upper_energy"] = it->upper_energy;
       result["modified"].push_back( roi_result );
 
-      state->options.rois.erase( it );
+      state.options.rois.erase( it );
     }
   }
   else if( action == "update" )
@@ -1419,12 +1420,12 @@ nlohmann::json executeModifyIsotopicsRois(
       const double lower = roi_json.at( "lower_energy" ).get<double>();
       const double upper = roi_json.at( "upper_energy" ).get<double>();
 
-      auto it = std::find_if( state->options.rois.begin(), state->options.rois.end(),
+      auto it = std::find_if( state.options.rois.begin(), state.options.rois.end(),
         [lower, upper]( const RelActCalcAuto::RoiRange &roi ) {
           return (fabs( roi.lower_energy - lower ) < 0.1) && (fabs( roi.upper_energy - upper ) < 0.1);
         });
 
-      if( it == state->options.rois.end() )
+      if( it == state.options.rois.end() )
         throw runtime_error( "ROI [" + to_string( lower ) + ", " + to_string( upper ) + "] not found" );
 
       // Update bounds if new values specified
@@ -1456,19 +1457,19 @@ nlohmann::json executeModifyIsotopicsRois(
     }
 
     // Validate no overlaps after updates
-    validateRoisNonOverlapping( state->options.rois );
+    validateRoisNonOverlapping( state.options.rois );
   }
   else if( action == "replace_all" )
   {
     if( !params.contains( "rois" ) || !params["rois"].is_array() )
       throw runtime_error( "rois array parameter is required for replace_all action" );
 
-    state->options.rois.clear();
+    state.options.rois.clear();
 
     for( const auto &roi_json : params["rois"] )
     {
       RelActCalcAuto::RoiRange roi = parseRoiFromJson( roi_json );
-      state->options.rois.push_back( roi );
+      state.options.rois.push_back( roi );
 
       json roi_result;
       roi_result["lower_energy"] = roi.lower_energy;
@@ -1477,7 +1478,7 @@ nlohmann::json executeModifyIsotopicsRois(
     }
 
     // Validate no overlaps
-    validateRoisNonOverlapping( state->options.rois );
+    validateRoisNonOverlapping( state.options.rois );
   }
   else
   {
@@ -1489,7 +1490,7 @@ nlohmann::json executeModifyIsotopicsRois(
 
   result["success"] = true;
   result["message"] = "ROIs " + action + " successful";
-  result["roi_count"] = state->options.rois.size();
+  result["roi_count"] = state.options.rois.size();
 
   return result;
 }//executeModifyIsotopicsRois()
@@ -1505,12 +1506,11 @@ nlohmann::json executeModifyIsotopicsCurveSettings(
   if( !interspec )
     throw runtime_error( "InterSpec instance required" );
 
-  shared_ptr<RelActCalcAuto::RelActAutoGuiState> state = getOrCreateRelActState( interspec, false );
-  if( !state )
-    throw runtime_error( "No isotopics configuration loaded. Use load_isotopics_preset first." );
+  // Get current configuration - REQUIRED (throws if not present)
+  RelActCalcAuto::RelActAutoGuiState state = getOrCreateRelActState( interspec, false );
 
   // Get the single curve (throws if multiple)
-  RelActCalcAuto::RelEffCurveInput &curve = getSingleCurve( *state );
+  RelActCalcAuto::RelEffCurveInput &curve = getSingleCurve( state );
 
   MaterialDB *materialDb = interspec->materialDataBase();
 
@@ -1598,7 +1598,7 @@ nlohmann::json executeModifyIsotopicsCurveSettings(
   }
 
   // Validate state after modifications
-  state->options.check_same_hoerl_and_external_shielding_specifications();
+  state.options.check_same_hoerl_and_external_shielding_specifications();
 
   // Save state back
   saveRelActState( interspec, state );
@@ -1621,9 +1621,8 @@ nlohmann::json executeModifyIsotopicsOptions(
   if( !interspec )
     throw runtime_error( "InterSpec instance required" );
 
-  shared_ptr<RelActCalcAuto::RelActAutoGuiState> state = getOrCreateRelActState( interspec, false );
-  if( !state )
-    throw runtime_error( "No isotopics configuration loaded. Use load_isotopics_preset first." );
+  // Get current configuration - REQUIRED (throws if not present)
+  RelActCalcAuto::RelActAutoGuiState state = getOrCreateRelActState( interspec, false );
 
   json result;
   json changes = json::array();
@@ -1631,8 +1630,8 @@ nlohmann::json executeModifyIsotopicsOptions(
   // Handle fit_energy_cal
   if( params.contains( "fit_energy_cal" ) )
   {
-    state->options.fit_energy_cal = params.at( "fit_energy_cal" ).get<bool>();
-    changes.push_back( string( "fit_energy_cal=" ) + (state->options.fit_energy_cal ? "true" : "false") );
+    state.options.fit_energy_cal = params.at( "fit_energy_cal" ).get<bool>();
+    changes.push_back( string( "fit_energy_cal=" ) + (state.options.fit_energy_cal ? "true" : "false") );
   }
 
   // Handle fwhm_form - map Polynomial_X to Berstein_X internally
@@ -1646,7 +1645,7 @@ nlohmann::json executeModifyIsotopicsOptions(
       fwhm_str = "Berstein_" + fwhm_str.substr( 11 ); // Replace "Polynomial_" with "Berstein_"
     }
 
-    state->options.fwhm_form = RelActCalcAuto::fwhm_form_from_str( fwhm_str.c_str() );
+    state.options.fwhm_form = RelActCalcAuto::fwhm_form_from_str( fwhm_str.c_str() );
     changes.push_back( "fwhm_form=" + fwhm_str );
   }
 
@@ -1654,7 +1653,7 @@ nlohmann::json executeModifyIsotopicsOptions(
   if( params.contains( "fwhm_estimation_method" ) )
   {
     const string method_str = params.at( "fwhm_estimation_method" ).get<string>();
-    state->options.fwhm_estimation_method = RelActCalcAuto::fwhm_estimation_method_from_str( method_str.c_str() );
+    state.options.fwhm_estimation_method = RelActCalcAuto::fwhm_estimation_method_from_str( method_str.c_str() );
     changes.push_back( "fwhm_estimation_method=" + method_str );
   }
 
@@ -1662,7 +1661,7 @@ nlohmann::json executeModifyIsotopicsOptions(
   if( params.contains( "skew_type" ) )
   {
     const string skew_str = params.at( "skew_type" ).get<string>();
-    state->options.skew_type = PeakDef::skew_from_string( skew_str.c_str() );
+    state.options.skew_type = PeakDef::skew_from_string( skew_str.c_str() );
     changes.push_back( "skew_type=" + skew_str );
   }
 
@@ -1680,36 +1679,36 @@ nlohmann::json executeModifyIsotopicsOptions(
         throw runtime_error( "background_subtract=true requires a background spectrum to be loaded" );
     }
 
-    state->background_subtract = bg_sub;
+    state.background_subtract = bg_sub;
     changes.push_back( string( "background_subtract=" ) + (bg_sub ? "true" : "false") );
   }
 
   // Handle note
   if( params.contains( "note" ) )
   {
-    state->note = params.at( "note" ).get<string>();
+    state.note = params.at( "note" ).get<string>();
     changes.push_back( "note updated" );
   }
 
   // Handle description
   if( params.contains( "description" ) )
   {
-    state->description = params.at( "description" ).get<string>();
+    state.description = params.at( "description" ).get<string>();
     changes.push_back( "description updated" );
   }
 
   // Handle show_ref_lines
   if( params.contains( "show_ref_lines" ) )
   {
-    state->show_ref_lines = params.at( "show_ref_lines" ).get<bool>();
-    changes.push_back( string( "show_ref_lines=" ) + (state->show_ref_lines ? "true" : "false") );
+    state.show_ref_lines = params.at( "show_ref_lines" ).get<bool>();
+    changes.push_back( string( "show_ref_lines=" ) + (state.show_ref_lines ? "true" : "false") );
   }
 
   // Handle additional_br_uncert
   if( params.contains( "additional_br_uncert" ) )
   {
-    state->options.additional_br_uncert = params.at( "additional_br_uncert" ).get<double>();
-    changes.push_back( "additional_br_uncert=" + to_string( state->options.additional_br_uncert ) );
+    state.options.additional_br_uncert = params.at( "additional_br_uncert" ).get<double>();
+    changes.push_back( "additional_br_uncert=" + to_string( state.options.additional_br_uncert ) );
   }
 
   // Save state back
@@ -1732,12 +1731,11 @@ nlohmann::json executeModifyIsotopicsConstraints(
   if( !interspec )
     throw runtime_error( "InterSpec instance required" );
 
-  shared_ptr<RelActCalcAuto::RelActAutoGuiState> state = getOrCreateRelActState( interspec, false );
-  if( !state )
-    throw runtime_error( "No isotopics configuration loaded. Use load_isotopics_preset first." );
+  // Get current configuration - REQUIRED (throws if not present)
+  RelActCalcAuto::RelActAutoGuiState state = getOrCreateRelActState( interspec, false );
 
   // Get the single curve (throws if multiple)
-  RelActCalcAuto::RelEffCurveInput &curve = getSingleCurve( *state );
+  RelActCalcAuto::RelEffCurveInput &curve = getSingleCurve( state );
 
   const string action = params.at( "action" ).get<string>();
   const string constraint_type = params.at( "constraint_type" ).get<string>();

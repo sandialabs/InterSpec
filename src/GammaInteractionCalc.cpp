@@ -6437,11 +6437,6 @@ void ShieldingSourceChi2Fcn::log_shield_info( const vector<double> &params,
 {
   const ShieldingSourceChi2Fcn * const chi2Fcn = this;
   
-  const shared_ptr<const DetectorPeakResponse> &det = chi2Fcn->detector();
-  
-  const DetectorPeakResponse::EffGeometryType detType = (det && det->isValid())
-                                                  ? det->geometryType()
-                                                  : DetectorPeakResponse::EffGeometryType::FarField;
   try
   {
     double shield_outer_rad = 0.0;

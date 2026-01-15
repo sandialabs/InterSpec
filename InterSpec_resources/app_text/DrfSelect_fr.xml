@@ -33,22 +33,15 @@
   <message id="reds-recursive-no-drfs-in-dir">Aucune DRF valide dans le répertoire, ou ses sous-répertoires.</message>
   <message id="ds-csv-upload-desc">
     <div style="white-space:nowrap;">
-      Fichier CSV d'efficacité intrinsèque :
+      Téléchargement de fichier d'efficacité :
     </div>
     <div>
-      La première colonne est l'énergie en keV.
-      La deuxième colonne est le % d'efficacité (de 0 à 100) pour les gammas à cette
-      énergie, incidents sur le détecteur, à enregistrer dans le photopic.
+      Pour l'efficacité CSV, la première colonne est l'énergie en keV ; la seconde est l'efficacité en % (0 à 100).
     </div>
     <div>
-      Vous devrez également télécharger un fichier Detector.dat GADRAS, ou entrer le
-      diamètre des détecteurs, après avoir téléchargé le fichier d'efficacité.
-    </div>
-    <div>
-      Vous pouvez également télécharger un fichier CSV exporté depuis l'outil <em>Créer une réponse du détecteur</em>.
+      Intrinsèque est l'efficacité pour les gammas frappant la surface du détecteur, tandis qu'Absolue est à une distance donnée.
     </div>
   </message>
-  <message id="ds-enter-gad-det-diam">Entrez le diamètre du détecteur ou téléchargez le fichier Detector.dat :</message>
   <message id="ds-det-diam">Diamètre du détecteur :</message>
   <message id="ds-fixed-geom">Géométrie fixe</message>
   <message id="ds-gad-det-file-label">Fichier Detector.Dat GADRAS :</message>

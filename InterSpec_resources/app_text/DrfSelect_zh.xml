@@ -37,20 +37,15 @@
   <message id="reds-recursive-no-drfs-in-dir">目录或其子目录中无有效DRF。</message>
   <message id="ds-csv-upload-desc">
     <div style="white-space:nowrap;">
-      本征效率CSV文件：
+      效率文件上传：
     </div>
     <div>
-      第一列是keV为单位的能量。
-      第二列是在该能量下入射到探测器上的伽马在全能峰中记录的效率（0到100）。
+      对于效率CSV，第一列是keV单位的能量；第二列是效率百分比（0到100）。
     </div>
     <div>
-      您还需要上传GADRAS Detector.dat文件，或在上传效率文件后输入探测器直径。
-    </div>
-    <div>
-      您还可以上传从<em>制作探测器响应</em>工具导出的CSV。
+      本征是伽马射中探测器表面的效率，而绝对是在给定距离处的效率。
     </div>
   </message>
-  <message id="ds-enter-gad-det-diam">输入探测器直径或上传Detector.dat文件：</message>
   <message id="ds-det-diam">探测器直径：</message>
   <message id="ds-fixed-geom">固定几何</message>
   <message id="ds-gad-det-file-label">GADRAS Detector.Dat文件：</message>
