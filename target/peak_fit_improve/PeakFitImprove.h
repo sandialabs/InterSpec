@@ -39,7 +39,7 @@ namespace SpecUtils
 
 namespace PeakFitImprove
 {
-const bool debug_printout = false;
+const bool debug_printout = true;
 
 const double debug_lower_energy = 250;
 const double debug_upper_energy = 240;
