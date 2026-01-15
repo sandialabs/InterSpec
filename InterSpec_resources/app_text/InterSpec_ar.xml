@@ -344,6 +344,7 @@
   <message id="app-mi-help-pref-show-tt"> إظهار التلميحات</message>
   <message id="app-mi-help-pref-prop-peak"> اسأل عن نشر القمم</message>
   <message id="app-mi-help-pref-preserve-ene-cal"> اسأل عن الاحتفاظ بمعايرة الطاقة.</message>
+  <message id="app-mi-help-pref-auto-accept-fit-sources"> قبول نتائج الملاءمة تلقائيًا</message>
   <message id="app-mi-help-pref-disp-bq"> العرض بالبيكريل</message>
   <message id="app-mi-help-pref-def-drfs"> استخدام DRFs الافتراضية</message>
   <message id="app-mi-help-pref-desktop"> واجهة سطح المكتب</message>
@@ -359,6 +360,7 @@
   <message id="app-mi-tt-help-pref-show-tt">إظهار التلميحات بعد التمرير فوق عنصر لمدة نصف ثانية.</message>
   <message id="app-mi-tt-help-pref-prop-peak">عند تحميل الأطياف من نفس الكاشف، اسأل إذا كان يجب إعادة ملائمة نفس القمم للطيف الجديد. ينطبق فقط إذا لم يكن للطيف الجديد أي قمم، لكن المقدمة السابقة كان لديها.</message>
   <message id="app-mi-tt-help-pref-preserve-ene-cal">عند تحميل الأطياف من نفس الكاشف، وعندما تكون معايرة الطاقة للملف الجديد مختلفة عن الملف القديم، اسأل إذا كان يجب تطبيق معايرة الطاقة للملف القديم على الملف الجديد.</message>
+  <message id="app-mi-tt-help-pref-auto-accept-fit-sources">عند ملاءمة القمم من خطوط فوتوبيك المرجعية، أضف القمم المُلاءمة تلقائيًا دون إظهار مربع حوار التأكيد.</message>
   <message id="app-mi-tt-help-pref-disp-bq">عرض النشاط بوحدات البيكريل بدلاً من الكوري.</message>
   <message id="app-mi-tt-help-def-drfs">عند تحميل طيف، وإذا لم تكن قد ربطت سابقًا دالة استجابة كاشف بنموذج الكاشف الذي جاء منه الطيف، ما إذا كان يجب محاولة العثور على DRF افتراضي وتحميله تلقائيًا.</message>
   <message id="app-mi-tt-help-desktop">يختار استخدام واجهة تطبيق أكثر ملاءمة للجوال أو سطح المكتب. الفرق الأساسي هو استخدام قائمة نمط "هامبرغر" أو شريط قوائم.

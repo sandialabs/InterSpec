@@ -2263,7 +2263,7 @@ std::vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
 }//cluster_gammas_to_rois
 
 std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_without_peaks(
-  const std::vector<RelActCalcAuto::SrcVariant> &sources,
+  const std::vector<RelActCalcAuto::NucInputInfo> &sources,
   const std::shared_ptr<const DetectorPeakResponse> &drf,
   const bool isHPGe,
   const DetectorPeakResponse::ResolutionFnctForm fwhmFnctnlForm,
@@ -2297,14 +2297,14 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_without_peaks(
 
   std::vector<GammaInfo> selected_gammas;
 
-  for( const RelActCalcAuto::SrcVariant &src : sources )
+  for( const RelActCalcAuto::NucInputInfo &src : sources )
   {
-    if( RelActCalcAuto::is_null( src ) )
+    if( RelActCalcAuto::is_null( src.source ) )
       continue;
 
     // Get source age and photons
-    const double age = get_source_age( src, -1.0 );
-    const std::vector<SandiaDecay::EnergyRatePair> photons = get_source_photons( src, 1.0, age );
+    const double age = src.age;
+    const std::vector<SandiaDecay::EnergyRatePair> photons = get_source_photons( src.source, 1.0, age );
 
     // Compute BR*eff scores for valid gammas
     std::vector<GammaInfo> candidates;
@@ -2318,7 +2318,7 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_without_peaks(
       const double score = br * eff;
 
       if( score > 0.0 )
-        candidates.push_back( {photon.energy, score, src} );
+        candidates.push_back( {photon.energy, score, src.source} );
     }
 
     // Sort by score (descending) and take top 4
@@ -2333,7 +2333,7 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_without_peaks(
     if( should_debug_print() )
     {
       std::cerr << "estimate_initial_rois_without_peaks: Source "
-           << RelActCalcAuto::to_name( src ) << " - selected " << num_to_take << " gammas" << std::endl;
+           << RelActCalcAuto::to_name( src.source ) << " - selected " << num_to_take << " gammas" << std::endl;
       for( size_t i = 0; i < num_to_take; ++i )
       {
         std::cerr << "  " << candidates[i].energy << " keV, BR*eff=" << candidates[i].br_times_eff << std::endl;
@@ -2551,7 +2551,7 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_without_peaks(
 std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_fallback(
   const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,
-  const std::vector<RelActCalcAuto::SrcVariant> &sources,
+  const std::vector<RelActCalcAuto::NucInputInfo> &sources,
   const std::shared_ptr<const DetectorPeakResponse> &drf,
   const bool isHPGe,
   const DetectorPeakResponse::ResolutionFnctForm fwhmFnctnlForm,
@@ -2582,14 +2582,14 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_fallback(
   // Step 2: Estimate activity for each source
   std::vector<std::pair<RelActCalcAuto::SrcVariant, double>> sources_and_acts;
 
-  for( const RelActCalcAuto::SrcVariant &src : sources )
+  for( const RelActCalcAuto::NucInputInfo &src : sources )
   {
-    if( RelActCalcAuto::is_null( src ) )
+    if( RelActCalcAuto::is_null( src.source ) )
       continue;
 
     // Get gamma lines at default age
-    const double age = get_source_age( src, -1.0 );
-    const std::vector<SandiaDecay::EnergyRatePair> photons = get_source_photons( src, 1.0, age );
+    const double age = src.age;
+    const std::vector<SandiaDecay::EnergyRatePair> photons = get_source_photons( src.source, 1.0, age );
 
     // Find gamma with largest expected yield (br * efficiency)
     double best_yield = 0.0;
@@ -2649,7 +2649,7 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_fallback(
       const double peak_area = matched_peak->peakArea();
       estimated_activity = peak_area / (best_br * best_eff);
 
-      std::cout << "Fallback: " << RelActCalcAuto::to_name( src ) << " matched peak at " << matched_peak->mean()
+      std::cout << "Fallback: " << RelActCalcAuto::to_name( src.source ) << " matched peak at " << matched_peak->mean()
            << " keV (gamma at " << best_energy << " keV), area=" << peak_area
            << ", estimated activity=" << estimated_activity << std::endl;
     }
@@ -2665,13 +2665,13 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_fallback(
 
       estimated_activity = estimated_peak_area / (best_br * best_eff * live_time);
 
-      std::cout << "Fallback: " << RelActCalcAuto::to_name( src ) << " no matching peak for gamma at " << best_energy
+      std::cout << "Fallback: " << RelActCalcAuto::to_name( src.source ) << " no matching peak for gamma at " << best_energy
            << " keV, integrated counts=" << total_counts << ", est. peak area=" << estimated_peak_area
            << ", estimated activity=" << estimated_activity << std::endl;
     }
 
     if( estimated_activity > 0.0 )
-      sources_and_acts.emplace_back( src, estimated_activity );
+      sources_and_acts.emplace_back( src.source, estimated_activity );
   }
 
   if( sources_and_acts.empty() )
@@ -2703,7 +2703,7 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_fallback(
 std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
   const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,
-  const std::vector<RelActCalcAuto::SrcVariant> &sources,
+  const std::vector<RelActCalcAuto::NucInputInfo> &sources,
   const std::shared_ptr<const DetectorPeakResponse> &drf,
   const bool isHPGe,
   const DetectorPeakResponse::ResolutionFnctForm fwhmFnctnlForm,
@@ -2739,8 +2739,8 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
 
   // Step 2: Match peaks to source nuclides
   std::vector<RelActCalcManual::PeakCsvInput::NucAndAge> rel_act_manual_srcs;
-  for( const RelActCalcAuto::SrcVariant &src : sources )
-    rel_act_manual_srcs.emplace_back( RelActCalcAuto::to_name( src ), -1.0, false );
+  for( const RelActCalcAuto::NucInputInfo &src : sources )
+    rel_act_manual_srcs.emplace_back( RelActCalcAuto::to_name( src.source ), -1.0, false );
 
   const std::vector<std::pair<float,float>> energy_ranges{};
   const std::vector<float> excluded_peak_energies{};
@@ -3055,7 +3055,7 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
 PeakFitResult fit_peaks_for_nuclide_relactauto(
   const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,
-  const std::vector<RelActCalcAuto::SrcVariant> &sources,
+  const std::vector<RelActCalcAuto::NucInputInfo> &sources,
   const std::vector<RelActCalcAuto::RoiRange> &initial_rois,
   const std::shared_ptr<const SpecUtils::Measurement> &long_background,
   const std::shared_ptr<const DetectorPeakResponse> &drf,
@@ -3075,9 +3075,9 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     return result;
   }
 
-  for( const RelActCalcAuto::SrcVariant &src : sources )
+  for( const RelActCalcAuto::NucInputInfo &src : sources )
   {
-    if( RelActCalcAuto::is_null( src ) )
+    if( RelActCalcAuto::is_null( src.source ) )
     {
       result.status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
       result.error_message = "Null source in sources vector";
@@ -3085,16 +3085,6 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     }
   }
 
-  // Build base_nuclides from sources
-  std::vector<RelActCalcAuto::NucInputInfo> base_nuclides;
-  for( const RelActCalcAuto::SrcVariant &src : sources )
-  {
-    RelActCalcAuto::NucInputInfo nuc_info;
-    nuc_info.source = src;
-    nuc_info.age = get_source_age( src, -1.0 );
-    nuc_info.fit_age = false;
-    base_nuclides.push_back( nuc_info );
-  }
 
   // Define skew type to use
   const PeakDef::SkewType skew_type = PeakDef::SkewType::NoSkew;
@@ -3112,7 +3102,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 
   rel_eff_curve.nucs_of_el_same_age = config.nucs_of_el_same_age;
   rel_eff_curve.phys_model_use_hoerl = config.phys_model_use_hoerl;
-  rel_eff_curve.nuclides = base_nuclides;
+  rel_eff_curve.nuclides = sources;
 
   // Copy shielding inputs from config (converting to const shared_ptr)
   if( !config.phys_model_self_atten.empty() )
@@ -3629,10 +3619,38 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   return result;
 }//fit_peaks_for_nuclide_relactauto
 
+  
 PeakFitResult fit_peaks_for_nuclides(
   const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,
   const std::vector<RelActCalcAuto::SrcVariant> &sources,
+  const std::shared_ptr<const SpecUtils::Measurement> &long_background,
+  const std::shared_ptr<const DetectorPeakResponse> &drf_input,
+  const PeakFitForNuclideConfig &config,
+  const bool isHPGe )
+{
+  
+  std::vector<RelActCalcAuto::NucInputInfo> base_nuclides;
+  base_nuclides.reserve( sources.size() );
+  
+  for( const RelActCalcAuto::SrcVariant &src : sources )
+  {
+    RelActCalcAuto::NucInputInfo nuc_info;
+    nuc_info.age = get_source_age( src, -1.0 );
+    nuc_info.source = src;
+    nuc_info.fit_age = false;  // not currently exposed in UI
+    base_nuclides.push_back( nuc_info );
+  }
+  
+  return fit_peaks_for_nuclides( auto_search_peaks, foreground, base_nuclides,
+                                long_background, drf_input, config, isHPGe );
+}
+  
+  
+PeakFitResult fit_peaks_for_nuclides(
+  const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
+  const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+  const std::vector<RelActCalcAuto::NucInputInfo> &sources,
   const std::shared_ptr<const SpecUtils::Measurement> &long_background,
   const std::shared_ptr<const DetectorPeakResponse> &drf_input,
   const PeakFitForNuclideConfig &config,
@@ -3657,9 +3675,9 @@ PeakFitResult fit_peaks_for_nuclides(
     return result;
   }
 
-  for( const RelActCalcAuto::SrcVariant &src : sources )
+  for( const RelActCalcAuto::NucInputInfo &src : sources )
   {
-    if( RelActCalcAuto::is_null( src ) )
+    if( RelActCalcAuto::is_null( src.source ) )
     {
       result.status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
       result.error_message = "Null source in sources vector";
@@ -3681,24 +3699,44 @@ PeakFitResult fit_peaks_for_nuclides(
 
     if( !drf || !drf->isValid() || !drf->hasResolutionInfo() || (auto_search_peaks.size() > 6) )
     {
-      const int num_auto_peaks = static_cast<int>(auto_search_peaks.size());
-      int sqrtEqnOrder = (std::min)( 6, num_auto_peaks / (1 + (num_auto_peaks > 3)) );
-      if( auto_search_peaks.size() < 3 )
-        sqrtEqnOrder = static_cast<int>( auto_search_peaks.size() );
-
-      std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> auto_search_peaks_dq
-        = std::make_shared<const std::deque<std::shared_ptr<const PeakDef>>>( begin(auto_search_peaks), end(auto_search_peaks) );
-
-      MakeDrfFit::performResolutionFit( auto_search_peaks_dq, fwhmFnctnlForm, sqrtEqnOrder, fwhm_coefficients, fwhm_uncerts );
-      auto_search_peaks_dq = MakeDrfFit::removeOutlyingWidthPeaks( auto_search_peaks_dq, fwhmFnctnlForm, fwhm_coefficients );
-      MakeDrfFit::performResolutionFit( auto_search_peaks_dq, fwhmFnctnlForm, sqrtEqnOrder, fwhm_coefficients, fwhm_uncerts );
-
-      // Set energy range based on peaks used for FWHM fit
-      if( !auto_search_peaks_dq->empty() )
+      // If we have peaks, estimate FWHM from peak widths. Otherwise fall back to a generic detector.
+      if( !auto_search_peaks.empty() )
       {
-        lower_fwhm_energy = auto_search_peaks_dq->front()->mean();
-        upper_fwhm_energy = auto_search_peaks_dq->back()->mean();
-      }
+        const int num_auto_peaks = static_cast<int>(auto_search_peaks.size());
+        int sqrtEqnOrder = (std::min)( 6, num_auto_peaks / (1 + (num_auto_peaks > 3)) );
+        if( auto_search_peaks.size() < 3 )
+          sqrtEqnOrder = static_cast<int>( auto_search_peaks.size() );
+
+        std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> auto_search_peaks_dq
+          = std::make_shared<const std::deque<std::shared_ptr<const PeakDef>>>( begin(auto_search_peaks), end(auto_search_peaks) );
+
+        MakeDrfFit::performResolutionFit( auto_search_peaks_dq, fwhmFnctnlForm, sqrtEqnOrder, fwhm_coefficients, fwhm_uncerts );
+        auto_search_peaks_dq = MakeDrfFit::removeOutlyingWidthPeaks( auto_search_peaks_dq, fwhmFnctnlForm, fwhm_coefficients );
+        MakeDrfFit::performResolutionFit( auto_search_peaks_dq, fwhmFnctnlForm, sqrtEqnOrder, fwhm_coefficients, fwhm_uncerts );
+
+        // Set energy range based on peaks used for FWHM fit
+        if( !auto_search_peaks_dq->empty() )
+        {
+          lower_fwhm_energy = auto_search_peaks_dq->front()->mean();
+          upper_fwhm_energy = auto_search_peaks_dq->back()->mean();
+        }
+      }else
+      {
+        // With no peaks and no DRF resolution info, use generic detector resolution coefficients.
+        if( isHPGe )
+          drf = DetectorPeakResponse::getGenericHPGeDetector();
+        else
+          drf = DetectorPeakResponse::getGenericNaIDetector();
+
+        if( drf && drf->isValid() && drf->hasResolutionInfo() )
+        {
+          fwhmFnctnlForm = drf->resolutionFcnType();
+          fwhm_coefficients = drf->resolutionFcnCoefficients();
+          lower_fwhm_energy = drf->lowerEnergy();
+          upper_fwhm_energy = drf->upperEnergy();
+          fallback_warning = "No peaks were available to estimate resolution; using generic detector FWHM parameters.";
+        }
+      }//if( !auto_search_peaks.empty() ) / else
     }
     else
     {
@@ -3736,17 +3774,12 @@ PeakFitResult fit_peaks_for_nuclides(
     // Determine energy range for gamma lines
     double highest_energy_gamma = 0.0, lowest_energy_gamma = std::numeric_limits<double>::max();
 
-    std::vector<RelActCalcAuto::NucInputInfo> base_nuclides;
-    for( const RelActCalcAuto::SrcVariant &src : sources )
+    
+    for( const RelActCalcAuto::NucInputInfo &src : sources )
     {
-      RelActCalcAuto::NucInputInfo nuc_info;
-      nuc_info.source = src;
-      nuc_info.age = get_source_age( src, -1.0 );
-      nuc_info.fit_age = false;
-      base_nuclides.push_back(nuc_info);
 
       const std::vector<SandiaDecay::EnergyRatePair> photons
-          = get_source_photons( src, GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_activityUnits, nuc_info.age );
+          = get_source_photons( src.source, GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_activityUnits, src.age );
       for( const SandiaDecay::EnergyRatePair &photon : photons )
       {
         highest_energy_gamma = (std::max)( highest_energy_gamma, photon.energy );

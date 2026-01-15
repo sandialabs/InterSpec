@@ -183,7 +183,6 @@ struct PeakFitForNuclideConfig
 
   // Fields for RelActAuto options configuration
   bool fit_energy_cal = true;
-  std::vector<RelActCalcAuto::NucInputInfo> base_nuclides;  // Set from outside
 
   // ROI significance threshold for iterative refinement
   // Minimum total chi2 reduction required for peaks in a ROI to be considered significant
@@ -273,6 +272,16 @@ struct PeakFitForNuclideConfig
  @param isHPGe Whether this is an HPGe detector
  @return PeakFitResult with status, error message, fit peaks, and solution
  */
+  
+PeakFitResult fit_peaks_for_nuclides(
+  const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
+  const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+  const std::vector<RelActCalcAuto::NucInputInfo> &sources,
+  const std::shared_ptr<const SpecUtils::Measurement> &long_background,
+  const std::shared_ptr<const DetectorPeakResponse> &drf_input,
+  const PeakFitForNuclideConfig &config,
+  const bool isHPGe );
+  
 PeakFitResult fit_peaks_for_nuclides(
   const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,
@@ -281,10 +290,11 @@ PeakFitResult fit_peaks_for_nuclides(
   const std::shared_ptr<const DetectorPeakResponse> &drf_input,
   const PeakFitForNuclideConfig &config,
   const bool isHPGe );
+  
 
 // Helper function for estimating initial ROIs when no peaks are available
 std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_without_peaks(
-  const std::vector<RelActCalcAuto::SrcVariant> &sources,
+  const std::vector<RelActCalcAuto::NucInputInfo> &sources,
   const std::shared_ptr<const DetectorPeakResponse> &drf,
   const bool isHPGe,
   const DetectorPeakResponse::ResolutionFnctForm fwhmFnctnlForm,

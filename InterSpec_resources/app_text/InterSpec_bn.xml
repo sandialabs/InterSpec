@@ -352,6 +352,7 @@
   <message id="app-mi-help-pref-show-tt"> টুলটিপ দেখান</message>
   <message id="app-mi-help-pref-prop-peak"> পিক প্রচার করতে জিজ্ঞাসা করুন</message>
   <message id="app-mi-help-pref-preserve-ene-cal"> শক্তি ক্যাল রাখতে জিজ্ঞাসা করুন।</message>
+  <message id="app-mi-help-pref-auto-accept-fit-sources"> ফিট ফলাফল স্বয়ংক্রিয়ভাবে গ্রহণ করুন</message>
   <message id="app-mi-help-pref-disp-bq"> বেকেরেলে প্রদর্শন করুন</message>
   <message id="app-mi-help-pref-def-drfs"> ডিফল্ট DRF ব্যবহার করুন</message>
   <message id="app-mi-help-pref-desktop"> ডেস্কটপ ইন্টারফেস</message>
@@ -374,6 +375,7 @@
     ক্যালিব্রেশন পুরাতন ফাইল থেকে ভিন্ন হলে, পুরাতন ফাইলের শক্তি ক্যালিব্রেশন নতুন ফাইলে
     প্রয়োগ করা উচিত কিনা জিজ্ঞাসা করুন।
   </message>
+  <message id="app-mi-tt-help-pref-auto-accept-fit-sources">রেফারেন্স ফটোপিক লাইন থেকে পিক ফিট করার সময়, নিশ্চিতকরণ ডায়ালগ না দেখিয়ে ফিট করা পিকগুলি স্বয়ংক্রিয়ভাবে যোগ করুন।</message>
   <message id="app-mi-tt-help-pref-disp-bq">কিউরির পরিবর্তে বেকেরেল একক কার্যকলাপ প্রদর্শন করুন।</message>
   <message id="app-mi-tt-help-def-drfs">যখন একটি স্পেকট্রাম লোড করা হয়, এবং আপনি পূর্বে যে মডেলের ডিটেক্টর থেকে স্পেকট্রাম এসেছে তার সাথে একটি ডিটেক্টর রেসপন্স ফাংশন সংযুক্ত করেননি, তাহলে একটি ডিফল্ট DRF খুঁজে বের করে স্বয়ংক্রিয়ভাবে লোড করার চেষ্টা করা উচিত কিনা।
   </message>

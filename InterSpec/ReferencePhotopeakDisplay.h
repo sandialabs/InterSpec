@@ -44,6 +44,7 @@ class SpectrumChart;
 class ShieldingSelect;
 class FeatureMarkerWidget;
 class MoreNuclideInfoWindow;
+class SimpleDialog;
 
 namespace SandiaDecay
 {
@@ -72,6 +73,7 @@ namespace Wt
   class WGridLayout;
   class WPushButton;
   class WDoubleSpinBox;
+  class WSplitButton;
   class WSuggestionPopup;
 }//namespace Wt
 
@@ -371,6 +373,11 @@ public:
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
+  void updateFitSourcesButtonState();
+  void startFitSources( const bool from_advanced_dialog );
+  void showFitSourcesAdvancedDialog();
+  void programmaticallyCloseFitSourcesAdvancedDialog();
+  
   
   void addUndoRedoPoint( const ReferenceLineInfo &starting_showing,
                         const std::vector<ReferenceLineInfo> &starting_persisted,
@@ -453,6 +460,9 @@ protected:
   Wt::WPushButton *m_persistLines;
   Wt::WPushButton *m_clearLines;
   //Wt::WPushButton *m_fitPeaks;
+  
+  Wt::WSplitButton *m_fitSourcesBtn;
+  SimpleDialog *m_fitSourcesAdvancedDialog;
 
   Wt::WPushButton *m_options_icon;
   Wt::WContainerWidget *m_options;

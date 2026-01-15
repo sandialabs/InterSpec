@@ -67,4 +67,29 @@
   <message id="rpd-tbl-hdr-tt-trans-mode">Mode de désintégration du nucléide parent, qui a produit cette particule.</message>
   <message id="rpd-tbl-hdr-tt-type">Le type de particule produite</message>
   <message id="rpd-tbl-hdr-tt-"></message>
+
+  <!-- Fit Sources (peak fitting from displayed reference lines) -->
+  <message id="rpd-fit-source">Ajuster la source</message>
+  <message id="rpd-fit-sources">Ajuster les sources</message>
+  <message id="rpd-fit-sources-menu-auto">Automatique</message>
+  <message id="rpd-fit-sources-menu-advanced">Avancé</message>
+  
+  <message id="rpd-fit-sources-adv-title">Ajuster les sources (Avancé)</message>
+  <message id="rpd-fit-sources-adv-content">Options avancées non implémentées</message>
+  <message id="rpd-fit-peaks">Ajuster les pics</message>
+  
+  <message id="rpd-fit-sources-no-data">Il n'y a pas de spectre de premier plan pour ajuster les pics.</message>
+  <message id="rpd-fit-sources-wait-title">Ajustement des pics</message>
+  <message id="rpd-fit-sources-wait-content">Cela peut prendre une minute. Vous pouvez continuer à utiliser l'application.</message>
+  <message id="rpd-fit-sources-stale">Le spectre a changé avant la fin de l'ajustement ; résultats rejetés.</message>
+  
+  <message id="rpd-fit-sources-error-title">Ajustement échoué</message>
+  <message id="rpd-fit-sources-error-content">Erreur : {1}</message>
+  
+  <message id="rpd-fit-sources-result-title">Résultats de l'ajustement</message>
+  <message id="rpd-fit-sources-no-peaks">Aucun pic n'a été ajusté pour la(les) source(s) sélectionnée(s).</message>
+  <message id="rpd-fit-sources-summary">Ajusté {1} pic(s) pour {2} source(s).</message>
+  <message id="rpd-fit-sources-warnings-header">Avertissements :</message>
+  <message id="rpd-fit-sources-auto-accept">Accepter automatiquement les résultats d'ajustement</message>
+  <message id="rpd-fit-sources-auto-accepted">Les résultats de l'ajustement ont été automatiquement acceptés.</message>
 </messages>

@@ -85,6 +85,31 @@
   <message id="rpd-tbl-hdr-tt-type">Jenis partikel yang dihasilkan</message>
   <message id="rpd-tbl-hdr-tt-"></message>
 
+  <!-- Fit Sources (peak fitting from displayed reference lines) -->
+  <message id="rpd-fit-source">Sesuaikan Sumber</message>
+  <message id="rpd-fit-sources">Sesuaikan Sumber</message>
+  <message id="rpd-fit-sources-menu-auto">Otomatis</message>
+  <message id="rpd-fit-sources-menu-advanced">Lanjutan</message>
+  
+  <message id="rpd-fit-sources-adv-title">Sesuaikan Sumber (Lanjutan)</message>
+  <message id="rpd-fit-sources-adv-content">Opsi lanjutan tidak diimplementasikan</message>
+  <message id="rpd-fit-peaks">Sesuaikan Puncak</message>
+  
+  <message id="rpd-fit-sources-no-data">Tidak ada spektrum latar depan untuk menyesuaikan puncak.</message>
+  <message id="rpd-fit-sources-wait-title">Menyesuaikan puncak</message>
+  <message id="rpd-fit-sources-wait-content">Ini mungkin memakan waktu satu menit. Anda dapat melanjutkan menggunakan aplikasi.</message>
+  <message id="rpd-fit-sources-stale">Spektrum berubah sebelum penyesuaian selesai; membuang hasil.</message>
+  
+  <message id="rpd-fit-sources-error-title">Penyesuaian gagal</message>
+  <message id="rpd-fit-sources-error-content">Kesalahan: {1}</message>
+  
+  <message id="rpd-fit-sources-result-title">Hasil penyesuaian</message>
+  <message id="rpd-fit-sources-no-peaks">Tidak ada puncak yang disesuaikan untuk sumber yang dipilih.</message>
+  <message id="rpd-fit-sources-summary">Disesuaikan {1} puncak untuk {2} sumber.</message>
+  <message id="rpd-fit-sources-warnings-header">Peringatan:</message>
+  <message id="rpd-fit-sources-auto-accept">Terima hasil penyesuaian secara otomatis</message>
+  <message id="rpd-fit-sources-auto-accepted">Hasil penyesuaian telah diterima secara otomatis.</message>
+
 
 </messages>
 

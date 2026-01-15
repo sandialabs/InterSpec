@@ -8172,6 +8172,15 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   }//end add "AskPropagatePeaks" to menu
 
 
+  {//begin add "AutoAcceptFitSourcesPeaks"
+    WCheckBox *checkbox = new WCheckBox( WString::tr("app-mi-help-pref-auto-accept-fit-sources") );
+    UserPreferences::associateWidget( "AutoAcceptFitSourcesPeaks", checkbox, this );
+    item = subPopup->addWidget( checkbox );
+    HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-auto-accept-fit-sources"),
+                                 showToolTips, HelpSystem::ToolTipPosition::Right );
+  }//end add "AutoAcceptFitSourcesPeaks"
+
+
   {//begin add "DisplayBecquerel"
     WCheckBox *checkbox = new WCheckBox( WString::tr("app-mi-help-pref-disp-bq") );
     UserPreferences::associateWidget( "DisplayBecquerel", checkbox, this );

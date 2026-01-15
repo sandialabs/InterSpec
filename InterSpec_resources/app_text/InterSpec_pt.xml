@@ -363,6 +363,7 @@
   <message id="app-mi-help-pref-show-tt"> Mostrar dicas</message>
   <message id="app-mi-help-pref-prop-peak"> Perguntar para Propagar Picos</message>
   <message id="app-mi-help-pref-preserve-ene-cal"> Perguntar para manter cal. de energia.</message>
+  <message id="app-mi-help-pref-auto-accept-fit-sources"> Aceitar automaticamente resultados de ajuste</message>
   <message id="app-mi-help-pref-disp-bq"> Exibir em Becquerel</message>
   <message id="app-mi-help-pref-def-drfs"> Usar DRFs padrão</message>
   <message id="app-mi-help-pref-desktop"> Interface de Desktop</message>
@@ -391,6 +392,7 @@
     do novo arquivo é diferente do arquivo antigo, perguntar se a calibração de energia do arquivo antigo deve
     ser aplicada ao novo arquivo.
   </message>
+  <message id="app-mi-tt-help-pref-auto-accept-fit-sources">Ao ajustar picos a partir de linhas de fotopico de referência, adicionar automaticamente os picos ajustados sem mostrar uma caixa de diálogo de confirmação.</message>
   <message id="app-mi-tt-help-pref-disp-bq">Exibir atividade em unidades de becquerel, em vez de curie.</message>
   <message id="app-mi-tt-help-def-drfs">Quando um espectro é carregado e você não associou anteriormente
     uma função de resposta do detector com o modelo do

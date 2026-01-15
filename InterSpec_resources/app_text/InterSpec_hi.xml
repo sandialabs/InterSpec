@@ -362,6 +362,7 @@
   <message id="app-mi-help-pref-show-tt"> टूलटिप्स दिखाएं</message>
   <message id="app-mi-help-pref-prop-peak"> पीक प्रचार के लिए पूछें</message>
   <message id="app-mi-help-pref-preserve-ene-cal"> ऊर्जा कैल. रखने के लिए पूछें।</message>
+  <message id="app-mi-help-pref-auto-accept-fit-sources"> फिट परिणाम स्वचालित रूप से स्वीकार करें</message>
   <message id="app-mi-help-pref-disp-bq"> बेकेरेल में प्रदर्शित करें</message>
   <message id="app-mi-help-pref-def-drfs"> डिफ़ॉल्ट DRF का उपयोग करें</message>
   <message id="app-mi-help-pref-desktop"> डेस्कटॉप इंटरफ़ेस</message>
@@ -391,6 +392,7 @@
     अंशांकन पुरानी फ़ाइल से अलग है, पूछें कि क्या पुरानी फ़ाइल के ऊर्जा अंशांकन को
     नई फ़ाइल पर लागू किया जाना चाहिए।
   </message>
+  <message id="app-mi-tt-help-pref-auto-accept-fit-sources">संदर्भ फोटोपीक लाइनों से पीक फिट करते समय, पुष्टिकरण संवाद दिखाए बिना फिट किए गए पीक को स्वचालित रूप से जोड़ें।</message>
   <message id="app-mi-tt-help-pref-disp-bq">क्यूरी के बजाय बेकेरेल की इकाइयों में गतिविधि प्रदर्शित करें।</message>
   <message id="app-mi-tt-help-def-drfs">जब स्पेक्ट्रम लोड होता है, और आपने पहले
     डिटेक्टर के मॉडल के साथ डिटेक्टर प्रतिक्रिया फ़ंक्शन को संबद्ध नहीं किया है

@@ -365,6 +365,7 @@
   <message id="app-mi-help-pref-show-tt"> Afficher les infobulles</message>
   <message id="app-mi-help-pref-prop-peak"> Demander de propager les pics</message>
   <message id="app-mi-help-pref-preserve-ene-cal"> Demander de conserver l'étal. d'énergie.</message>
+  <message id="app-mi-help-pref-auto-accept-fit-sources"> Accepter automatiquement les résultats d'ajustement</message>
   <message id="app-mi-help-pref-disp-bq"> Afficher en becquerel</message>
   <message id="app-mi-help-pref-def-drfs"> Utiliser DRF par défaut</message>
   <message id="app-mi-help-pref-desktop"> Interface bureau</message>
@@ -393,6 +394,7 @@
     du nouveau fichier est différent de l'ancien fichier, demander si l'étalonnage d'énergie de l'ancien fichier doit
     être appliqué au nouveau fichier.
   </message>
+  <message id="app-mi-tt-help-pref-auto-accept-fit-sources">Lors de l'ajustement de pics à partir de lignes de photopic de référence, ajouter automatiquement les pics ajustés sans afficher de dialogue de confirmation.</message>
   <message id="app-mi-tt-help-pref-disp-bq">Afficher l'activité en unités de becquerel, plutôt qu'en curie.</message>
   <message id="app-mi-tt-help-def-drfs">Quand un spectre est chargé, et vous n'avez pas précédemment
     associé une fonction de réponse détecteur avec le modèle de
