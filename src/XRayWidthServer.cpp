@@ -462,137 +462,190 @@ size_t XRayWidthDatabase::num_entries() const
 }//num_entries()
 
 
-double compute_alpha_recoil_doppler_hwhm( const std::string &nuclide_symbol,
-                                           const double xray_energy_kev,
-                                           const double alpha_energy_kev )
+double get_xray_lorentzian_width( const SandiaDecay::Element *element, const double energy_kev,
+                                   const double tolerance_kev )
 {
-  // Get SandiaDecay database
-  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  // Look up natural linewidth (Lorentzian HWHM) from external XML database
+  // Data loaded from xray_widths.xml (Campbell & Papp 2001, Krause & Oliver 1979, LBNL)
+  // This function is for fluorescent x-rays only (XRF, synchrotron, electron beam)
+
+  if( !element )
+  {
+    #if( PERFORM_DEVELOPER_CHECKS )
+      log_developer_error( __func__, "get_xray_lorentzian_width called with nullptr element" );
+    #endif
+    return -1.0;
+  }
+
+  const std::shared_ptr<const XRayWidthDatabase> db =
+    XRayWidthDatabase::instance();
+
   if( !db )
   {
-    cerr << "compute_alpha_recoil_doppler_hwhm: SandiaDecay database not available" << endl;
+    #if( PERFORM_DEVELOPER_CHECKS )
+      log_developer_error( __func__, "XRayWidthDatabase failed to load - xray_widths.xml missing or invalid" );
+    #endif
     return -1.0;
   }
 
-  // Look up parent nuclide
-  const SandiaDecay::Nuclide * const parent = db->nuclide( nuclide_symbol );
-  if( !parent )
+  return db->get_natural_width_hwhm_kev( element->atomicNumber, energy_kev, tolerance_kev );
+}//double get_xray_lorentzian_width(...)
+
+
+double get_xray_total_width_for_decay( const SandiaDecay::Transition *transition,
+                                       const double xray_energy_kev )
+{
+  // Returns total x-ray linewidth (natural + alpha recoil Doppler) for decay x-rays
+  // Accounts for both natural linewidth and nuclear recoil from alpha decay
+
+  if( !transition )
   {
-    cerr << "compute_alpha_recoil_doppler_hwhm: Nuclide '" << nuclide_symbol << "' not found" << endl;
+    #if( PERFORM_DEVELOPER_CHECKS )
+      log_developer_error( __func__, "get_xray_total_width_for_decay called with nullptr transition" );
+    #endif
     return -1.0;
   }
 
-  // Find all alpha decay transitions and collect alpha particles with their intensities
-  struct AlphaInfo
+  // Find the x-ray particle in the transition
+  const SandiaDecay::RadParticle *xray_particle = nullptr;
+  const double energy_tolerance = 0.5; // keV tolerance for energy matching
+
+  for( const SandiaDecay::RadParticle &particle : transition->products )
   {
-    double energy_kev;
-    double intensity;  // Relative intensity (branch ratio × alpha intensity)
-    const SandiaDecay::Nuclide *daughter;
-  };
-
-  std::vector<AlphaInfo> alpha_list;
-  double total_alpha_intensity = 0.0;
-
-  for( const SandiaDecay::Transition *transition : parent->decaysToChildren )
-  {
-    if( !transition )
-      continue;
-
-    // Check if this is an alpha decay
-    if( transition->mode != SandiaDecay::AlphaDecay &&
-        transition->mode != SandiaDecay::BetaAndAlphaDecay &&
-        transition->mode != SandiaDecay::ElectronCaptureAndAlphaDecay &&
-        transition->mode != SandiaDecay::BetaPlusAndAlphaDecay )
-      continue;
-
-    const SandiaDecay::Nuclide * const daughter = transition->child;
-    if( !daughter )
-      continue;
-
-    const double branch_ratio = transition->branchRatio;
-
-    // Find alpha particles in this transition
-    for( const SandiaDecay::RadParticle &particle : transition->products )
+    if( particle.type == SandiaDecay::XrayParticle
+        && fabs( particle.energy - xray_energy_kev ) < energy_tolerance )
     {
-      if( particle.type != SandiaDecay::AlphaParticle )
-        continue;
-
-      const double this_alpha_energy = particle.energy;
-      const double this_alpha_intensity = particle.intensity;
-
-      // If user specified alpha energy, only include matching alphas (within 10 keV tolerance)
-      if( alpha_energy_kev > 0.0 )
-      {
-        if( fabs( this_alpha_energy - alpha_energy_kev ) > 10.0 )
-          continue;
-      }
-
-      // Add this alpha to the list
-      AlphaInfo info;
-      info.energy_kev = this_alpha_energy;
-      info.intensity = branch_ratio * this_alpha_intensity;
-      info.daughter = daughter;
-
-      alpha_list.push_back( info );
-      total_alpha_intensity += info.intensity;
+      xray_particle = &particle;
+      break;
     }
   }
 
-  if( alpha_list.empty() || total_alpha_intensity <= 0.0 )
+  if( !xray_particle )
   {
-    cerr << "compute_alpha_recoil_doppler_hwhm: No alpha decay found for " << nuclide_symbol << endl;
+    #if( PERFORM_DEVELOPER_CHECKS )
+      log_developer_error( __func__, "get_xray_total_width_for_decay: no x-ray found at specified energy in transition" );
+    #endif
     return -1.0;
   }
 
-  // Compute intensity-weighted Doppler broadening
-  // Since different alpha energies give different recoil velocities, we compute the
-  // Doppler width for each alpha and then combine them weighted by intensity
+  // Get the SandiaDecay database to look up the element
+  const SandiaDecay::SandiaDecayDataBase * const decay_db = DecayDataBaseServer::database();
+  if( !decay_db )
+  {
+    #if( PERFORM_DEVELOPER_CHECKS )
+      log_developer_error( __func__, "get_xray_total_width_for_decay: SandiaDecay database not available" );
+    #endif
+    return -1.0;
+  }
 
+  // Check if this is an alpha decay and compute recoil Doppler broadening
+  const bool is_alpha_decay = (transition->mode == SandiaDecay::AlphaDecay
+                                || transition->mode == SandiaDecay::BetaAndAlphaDecay
+                                || transition->mode == SandiaDecay::ElectronCaptureAndAlphaDecay
+                                || transition->mode == SandiaDecay::BetaPlusAndAlphaDecay);
+
+  // Determine which element emits the x-ray
+  // For most decays (alpha, beta, electron capture, etc.), the x-ray is emitted by the
+  // daughter atom after the decay process creates an atomic vacancy. The only exception
+  // is isomeric transitions where the atomic number doesn't change (parent = daughter).
+  const SandiaDecay::Nuclide *xray_emitting_nuclide = transition->child;
+  
+  // If no daughter (e.g., spontaneous fission), fall back to parent
+  // For isomeric transitions, parent and child have same atomic number, so either works
+  if( !xray_emitting_nuclide )
+  {
+    xray_emitting_nuclide = transition->parent;
+  }
+
+  if( !xray_emitting_nuclide )
+  {
+    #if( PERFORM_DEVELOPER_CHECKS )
+      log_developer_error( __func__, "get_xray_total_width_for_decay: could not determine x-ray emitting nuclide" );
+    #endif
+    return -1.0;
+  }
+
+  const SandiaDecay::Element *element = decay_db->element( xray_emitting_nuclide->atomicNumber );
+  if( !element )
+  {
+    #if( PERFORM_DEVELOPER_CHECKS )
+      log_developer_error( __func__, "get_xray_total_width_for_decay: could not find element for atomic number" );
+    #endif
+    return -1.0;
+  }
+
+  // Get natural linewidth (same for parent and daughter if same element)
+  const double natural_hwhm_kev = get_xray_lorentzian_width( element, xray_energy_kev, energy_tolerance );
+  if( natural_hwhm_kev < 0.0 )
+    return -1.0;
+
+  if( !is_alpha_decay )
+  {
+    // For non-alpha decays, return only natural width
+    return natural_hwhm_kev;
+  }
+
+  // For alpha decays, compute recoil Doppler broadening
+  // The x-ray is emitted by the daughter nucleus after recoil
+  const SandiaDecay::Nuclide *parent = transition->parent;
+  const SandiaDecay::Nuclide *daughter = transition->child;
+  
+  if( !parent || !daughter )
+  {
+    // If no parent or daughter specified, use natural width only
+    return natural_hwhm_kev;
+  }
+
+  // Compute intensity-weighted recoil Doppler broadening for all alpha energies
+  // Different alpha energies give different recoil velocities, so we compute the
+  // Doppler width for each alpha and combine them weighted by intensity
   const double alpha_mass_amu = 4.002603;  // Alpha particle mass in amu
   const double amu_to_kev = 931494.0;  // keV per amu (1 amu·c² = 931.494 MeV)
   const double sqrt_2ln2 = 1.177410022515;  // sqrt(2×ln(2))
+  const double daughter_mass_amu = daughter->massNumber;
 
   double weighted_hwhm_sum = 0.0;
+  double total_alpha_intensity = 0.0;
+  size_t num_alpha_particles = 0;
 
-  for( const AlphaInfo &alpha : alpha_list )
+  // Single loop: find alpha particles and compute their recoil Doppler contributions
+  for( const SandiaDecay::RadParticle &particle : transition->products )
   {
-    const double daughter_mass_amu = alpha.daughter->massNumber;
+    if( particle.type == SandiaDecay::AlphaParticle )
+    {
+      ++num_alpha_particles;
+      const double alpha_intensity = particle.intensity;
+      total_alpha_intensity += alpha_intensity;
 
-    // Compute recoil energy from momentum conservation
-    // E_recoil = E_alpha × (m_alpha / m_daughter)
-    const double recoil_energy_kev = alpha.energy_kev * (alpha_mass_amu / daughter_mass_amu);
+      // Compute recoil energy from momentum conservation
+      // E_recoil = E_alpha × (m_alpha / m_daughter)
+      const double recoil_energy_kev = particle.energy * (alpha_mass_amu / daughter_mass_amu);
 
-    // Compute recoil velocity: E = 0.5 × m × v²  →  v = sqrt(2 × E / m)
-    const double recoil_velocity_over_c = sqrt( 2.0 * recoil_energy_kev / (daughter_mass_amu * amu_to_kev) );
+      // Compute recoil velocity: E = 0.5 × m × v²  →  v = sqrt(2 × E / m)
+      const double recoil_velocity_over_c = sqrt( 2.0 * recoil_energy_kev / (daughter_mass_amu * amu_to_kev) );
 
-    // Compute Doppler broadening HWHM for this alpha
-    // For random recoil directions (isotropic): HWHM ≈ E × (v/c) / sqrt(2×ln2)
-    const double this_hwhm_kev = xray_energy_kev * recoil_velocity_over_c / sqrt_2ln2;
+      // Compute Doppler broadening HWHM for this alpha
+      // For random recoil directions (isotropic): HWHM ≈ E × (v/c) / sqrt(2×ln2)
+      const double this_hwhm_kev = xray_energy_kev * recoil_velocity_over_c / sqrt_2ln2;
 
-    // Weight by intensity
-    weighted_hwhm_sum += this_hwhm_kev * alpha.intensity;
+      // Weight by intensity
+      weighted_hwhm_sum += this_hwhm_kev * alpha_intensity;
+    }
   }
 
-  const double hwhm_doppler_kev = weighted_hwhm_sum / total_alpha_intensity;
+  if( num_alpha_particles == 0 || total_alpha_intensity <= 0.0 )
+  {
+    // No alpha particles found, return natural width only
+    return natural_hwhm_kev;
+  }
 
-  #if( PERFORM_DEVELOPER_CHECKS )
-    // Sanity check: for U-238 Kα (98.4 keV), expect ~70-100 eV HWHM
-    if( hwhm_doppler_kev < 0.001 || hwhm_doppler_kev > 0.300 )
-    {
-      cout << "compute_alpha_recoil_doppler_hwhm: Warning - unusual recoil Doppler width "
-           << (hwhm_doppler_kev * 1000.0) << " eV for " << nuclide_symbol
-           << " x-ray at " << xray_energy_kev << " keV" << endl;
-      cout << "  Found " << alpha_list.size() << " alpha particle(s):" << endl;
-      for( const AlphaInfo &alpha : alpha_list )
-      {
-        cout << "    E_alpha = " << alpha.energy_kev << " keV, intensity = "
-             << (alpha.intensity * 100.0 / total_alpha_intensity) << "%" << endl;
-      }
-    }
-  #endif
+  const double recoil_hwhm_kev = weighted_hwhm_sum / total_alpha_intensity;
 
-  return hwhm_doppler_kev;
-}//compute_alpha_recoil_doppler_hwhm()
+  // Combine natural and recoil widths in quadrature
+  const double total_hwhm_kev = sqrt( natural_hwhm_kev * natural_hwhm_kev + recoil_hwhm_kev * recoil_hwhm_kev );
+
+  return total_hwhm_kev;
+}//double get_xray_total_width_for_decay(...)
 
 
 }//namespace XRayWidths

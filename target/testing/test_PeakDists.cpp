@@ -989,25 +989,6 @@ BOOST_AUTO_TEST_CASE( DoubleSidedCrystalBall )
 
 BOOST_AUTO_TEST_CASE( VoigtWithExpTail )
 {
-  // Test x-ray Lorentzian width lookup
-  {
-    // U Lα1 at ~13.6 keV should return a width
-    double gamma_lor = get_xray_lorentzian_width( 92, 13.6, 0.5 );
-    BOOST_CHECK( gamma_lor > 0.0 );
-
-    // Pu Lα1 at ~14.3 keV should return a width
-    gamma_lor = get_xray_lorentzian_width( 94, 14.3, 0.5 );
-    BOOST_CHECK( gamma_lor > 0.0 );
-
-    // Unknown element should return -1
-    gamma_lor = get_xray_lorentzian_width( 50, 10.0, 0.5 );
-    BOOST_CHECK( gamma_lor < 0.0 );
-
-    // Energy too far from known transitions should return -1
-    gamma_lor = get_xray_lorentzian_width( 92, 999.0, 0.5 );
-    BOOST_CHECK( gamma_lor < 0.0 );
-  }
-
   // Check VoigtExpTail has unit area
   {
     double mean = 14.0; // keV (typical x-ray energy)

@@ -400,6 +400,7 @@ set(headers
     InterSpec/PeakDef.h
     InterSpec/PeakDists.h
     InterSpec/PeakDists_imp.hpp
+    InterSpec/XRayWidthServer.h
     InterSpec/SpectraFileModel.h
     InterSpec/AuxWindow.h
     InterSpec/PeakFitChi2Fcn.h

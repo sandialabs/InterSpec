@@ -34,7 +34,6 @@
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakDists.h"
-#include "InterSpec/XRayWidthServer.h"
 
 #include "InterSpec/PeakDists_imp.hpp"
 
@@ -294,27 +293,6 @@ namespace PeakDists
     return (0.5579090118408203125f + P_eval / Q_eval) * (exp(-z * z) / z);
     // Boost implementation has an additional minor error correction here
 }//double boost_erfc_imp( double z )
-
-
-double get_xray_lorentzian_width( const int element_z, const double energy_kev,
-                                   const double tolerance_kev )
-{
-  // Look up natural linewidth (Lorentzian HWHM) from external XML database
-  // Data loaded from xray_widths.xml (Campbell & Papp 2001, Krause & Oliver 1979, LBNL)
-
-  const std::shared_ptr<const XRayWidths::XRayWidthDatabase> db =
-    XRayWidths::XRayWidthDatabase::instance();
-
-  if( !db )
-  {
-    #if( PERFORM_DEVELOPER_CHECKS )
-      log_developer_error( __func__, "XRayWidthDatabase failed to load - xray_widths.xml missing or invalid" );
-    #endif
-    return -1.0;
-  }
-
-  return db->get_natural_width_hwhm_kev( element_z, energy_kev, tolerance_kev );
-}//double get_xray_lorentzian_width(...)
 
 
   /*

@@ -35,8 +35,8 @@
 #include "SpecUtils/StringAlgo.h"
 
 #include "InterSpec/XRayWidthServer.h"
-#include "InterSpec/PeakDists.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "SandiaDecay/SandiaDecay.h"
 
 using namespace std;
 using namespace boost::unit_test;
@@ -332,25 +332,58 @@ BOOST_AUTO_TEST_CASE( TotalWidthCalculation )
 }//BOOST_AUTO_TEST_CASE( TotalWidthCalculation )
 
 
-BOOST_AUTO_TEST_CASE( PeakDistsIntegration )
+BOOST_AUTO_TEST_CASE( GetXRayLorentzianWidth )
 {
-  // Test integration with PeakDists::get_xray_lorentzian_width()
+  // Test get_xray_lorentzian_width() function for fluorescent x-rays
+
+  // Initialize SandiaDecay database to get Element objects
+  DecayDataBaseServer::setDecayXmlFile( SpecUtils::append_path(g_data_dir, "sandia.decay.xml") );
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db != nullptr );
 
   // Test U Kα1
-  double width = PeakDists::get_xray_lorentzian_width( 92, 98.439, 0.5 );
+  const SandiaDecay::Element *u = db->element( 92 );
+  BOOST_REQUIRE( u != nullptr );
+  double width = get_xray_lorentzian_width( u, 98.439, 0.5 );
   BOOST_CHECK_GT( width, 0.0 );
   BOOST_CHECK_CLOSE( width, 0.048, 2.0 );
 
   // Test Pu Kα1
-  width = PeakDists::get_xray_lorentzian_width( 94, 103.734, 0.5 );
+  const SandiaDecay::Element *pu = db->element( 94 );
+  BOOST_REQUIRE( pu != nullptr );
+  width = get_xray_lorentzian_width( pu, 103.734, 0.5 );
   BOOST_CHECK_GT( width, 0.0 );
   BOOST_CHECK_CLOSE( width, 0.051, 2.0 );
 
   // Test Am Lα1
-  width = PeakDists::get_xray_lorentzian_width( 95, 14.617, 0.5 );
+  const SandiaDecay::Element *am = db->element( 95 );
+  BOOST_REQUIRE( am != nullptr );
+  width = get_xray_lorentzian_width( am, 14.617, 0.5 );
   BOOST_CHECK_GT( width, 0.0 );
   BOOST_CHECK_CLOSE( width, 0.0056, 2.0 );
-}//BOOST_AUTO_TEST_CASE( PeakDistsIntegration )
+
+  // Test U Lα1 at ~13.6 keV should return a width
+  width = get_xray_lorentzian_width( u, 13.6, 0.5 );
+  BOOST_CHECK( width > 0.0 );
+
+  // Test Pu Lα1 at ~14.3 keV should return a width
+  width = get_xray_lorentzian_width( pu, 14.3, 0.5 );
+  BOOST_CHECK( width > 0.0 );
+
+  // Unknown element should return -1
+  const SandiaDecay::Element *sn = db->element( 50 );
+  BOOST_REQUIRE( sn != nullptr );
+  width = get_xray_lorentzian_width( sn, 10.0, 0.5 );
+  BOOST_CHECK( width < 0.0 );
+
+  // Energy too far from known transitions should return -1
+  width = get_xray_lorentzian_width( u, 999.0, 0.5 );
+  BOOST_CHECK( width < 0.0 );
+
+  // nullptr element should return -1
+  width = get_xray_lorentzian_width( nullptr, 98.439, 0.5 );
+  BOOST_CHECK( width < 0.0 );
+}//BOOST_AUTO_TEST_CASE( GetXRayLorentzianWidth )
 
 
 BOOST_AUTO_TEST_CASE( ElementCoverage )
@@ -469,3 +502,71 @@ BOOST_AUTO_TEST_CASE( AlphaRecoilDoppler )
   const double fake_recoil = compute_alpha_recoil_doppler_hwhm( "Xx999", 100.0 );
   BOOST_CHECK_EQUAL( fake_recoil, -1.0 );  // Should fail
 }//BOOST_AUTO_TEST_CASE( AlphaRecoilDoppler )
+
+
+BOOST_AUTO_TEST_CASE( GetXRayTotalWidthForDecay )
+{
+  // Test get_xray_total_width_for_decay() function for decay x-rays
+
+  // Initialize SandiaDecay database
+  DecayDataBaseServer::setDecayXmlFile( SpecUtils::append_path(g_data_dir, "sandia.decay.xml") );
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db != nullptr );
+
+  // Test U-238 alpha decay with U Kα x-ray
+  const SandiaDecay::Nuclide *u238 = db->nuclide( "U238" );
+  BOOST_REQUIRE( u238 != nullptr );
+  BOOST_REQUIRE( !u238->decaysToChildren.empty() );
+
+  // Find an alpha decay transition
+  const SandiaDecay::Transition *alpha_transition = nullptr;
+  for( const SandiaDecay::Transition *trans : u238->decaysToChildren )
+  {
+    if( trans && (trans->mode == SandiaDecay::AlphaDecay
+                   || trans->mode == SandiaDecay::BetaAndAlphaDecay
+                   || trans->mode == SandiaDecay::ElectronCaptureAndAlphaDecay) )
+    {
+      // Check if this transition has an x-ray around 98.4 keV (U Kα1)
+      for( const SandiaDecay::RadParticle &particle : trans->products )
+      {
+        if( particle.type == SandiaDecay::XrayParticle
+            && fabs( particle.energy - 98.439 ) < 0.5 )
+        {
+          alpha_transition = trans;
+          break;
+        }
+      }
+      if( alpha_transition )
+        break;
+    }
+  }
+
+  if( alpha_transition )
+  {
+    // Test total width calculation (should include natural + recoil)
+    const double total_width = get_xray_total_width_for_decay( alpha_transition, 98.439 );
+    BOOST_CHECK_GT( total_width, 0.0 );
+
+    // Total width should be greater than natural width alone
+    const SandiaDecay::Element *u = db->element( 92 );
+    BOOST_REQUIRE( u != nullptr );
+    const double natural_width = get_xray_lorentzian_width( u, 98.439, 0.5 );
+    BOOST_CHECK_GT( total_width, natural_width );
+
+    std::cout << "U-238 decay x-ray total width (natural + recoil): "
+              << (total_width * 1000.0) << " eV HWHM" << std::endl;
+    std::cout << "  Natural width: " << (natural_width * 1000.0) << " eV HWHM" << std::endl;
+    std::cout << "  Recoil contribution: " << ((total_width - natural_width) * 1000.0) << " eV HWHM" << std::endl;
+  }
+
+  // Test error handling: nullptr transition
+  const double null_width = get_xray_total_width_for_decay( nullptr, 98.439 );
+  BOOST_CHECK_EQUAL( null_width, -1.0 );
+
+  // Test error handling: transition without x-ray at specified energy
+  if( alpha_transition )
+  {
+    const double bad_energy_width = get_xray_total_width_for_decay( alpha_transition, 999.0 );
+    BOOST_CHECK_EQUAL( bad_energy_width, -1.0 );
+  }
+}//BOOST_AUTO_TEST_CASE( GetXRayTotalWidthForDecay )
