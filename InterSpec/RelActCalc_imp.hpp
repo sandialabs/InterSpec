@@ -154,9 +154,8 @@ T eval_eqn_imp( const double energy, const RelActCalc::RelEffEqnForm eqn_form,
 }//eval_eqn(...)
     
 
-/** This function is the equivalent of `mass_attenuation_coef(...)`, but
-   I blindly *think/hope/wish* it preserve the ceres::Jet derivative information.
-   TODO: check that this is actually proper way to propagate derivate info for fitting AN
+/** This function is the equivalent of `mass_attenuation_coef(...)`, but preserves ceres::Jet
+    derivative information by linearly interpolating between floor(AN) and ceil(AN).
 */
 template<typename T>
 T get_atten_coef_for_an( const T &an, const float energy )
@@ -170,19 +169,19 @@ T get_atten_coef_for_an( const T &an, const float energy )
     an_scalar = an.a;
   else
     an_scalar = an;
-  
+
   assert( (an_scalar >= 1.0) && (an_scalar <= 98.0) );
-  
-  const int lower_an = std::max( 1, static_cast<int>( std::floor(an_scalar) ) );
-  const int sign = (lower_an < 98) ? 1 : -1;
-  const int upper_an = lower_an + sign;
+
+  // Clamp to [1, 97] so we can always interpolate to lower_an+1 without exceeding element 98
+  const int lower_an = std::clamp( static_cast<int>(std::floor(an_scalar)), 1, 97 );
+  const int upper_an = lower_an + 1;
 
   const double lower_mu = MassAttenuation::massAttenuationCoefficientElement(lower_an, energy);
   const double upper_mu = MassAttenuation::massAttenuationCoefficientElement(upper_an, energy);
-  const T anfrac = an - static_cast<double>(lower_an);  //Looks like this preserves the derivative
+  const T anfrac = an - static_cast<double>(lower_an);  //This preserves the Jet derivative
   const T mu = (1.0 - anfrac)*lower_mu + anfrac*upper_mu;
-  
-  return mu * static_cast<double>(sign);
+
+  return mu;
 }//T get_atten_coef_for_an( const T &an )
 
     
@@ -216,10 +215,17 @@ T eval_physical_model_eqn_imp( const double energy,
   {
     const T b_val = *b;
     const T c_val = *c;
-    const T b_part = pow(0.001*energy, b_val);
-    const T c_part = pow(c_val, 1000.0/energy);
-    answer = b_part * c_part;
-    
+
+    const double energy_mev = 0.001*energy;
+    // Calculating the Hoerl is niavely done as follows:
+    //const T b_part = pow(energy_mev, b_val);
+    //const T c_part = pow(c_val, 1.0/energy_mev);
+    //answer = b_part * c_part;
+    //
+    // However, in principle, and totally not verified, computing it the following way should be a little more
+    //  stable for the automatic differentiation. eh - on an example problem didnt seem to matter.
+    answer = exp( b_val*log(energy_mev) + log(c_val)/energy_mev );
+
     assert( !isnan(answer) && !isinf(answer) );
     if( isnan(answer) || isinf(answer) )
       throw std::logic_error( "hoerl_b or hoerl_c gives eqn NaN or Inf" );
@@ -240,23 +246,46 @@ T eval_physical_model_eqn_imp( const double energy,
     
     T areal_density = self_atten->areal_density;
     
-    assert( (areal_density >= -1.0E-3) && !isinf(areal_density) );
+    assert( (areal_density >= -1.0E-3) && !isinf(areal_density) ); // If using numeric-diff, and AD has value of zero, we may get negative values here during differentiation
     if( (areal_density <= -1.0E-3) || isnan(areal_density) || isinf(areal_density) )
       throw std::runtime_error( "eval_physical_model_eqn: areal density must be >= 0." );
     
     if( areal_density < 0.0 )
       areal_density = fmax(areal_density, 0.0);
-    
-    if( (mu > 0.0) && (areal_density > 0.0) )
-      answer *= (1.0 - exp(-mu * areal_density)) / (mu * self_atten->areal_density);
-    
+
+    assert( mu >= 0.0 );
+    if( mu < 0.0 )
+      mu = fmax(mu, 0.0);
+
+    assert( areal_density >= 0.0 );
+
+    //The simple computation to handel self-attenuation would be:
+    //  answer *= (1.0 - exp(-mu * areal_density)) / (mu * areal_density);
+    //But if -mu*areal_density is zero, we get NaN, and even as it goes towards zero, we will greatly lose precision
+
+    const T epsilon = T(1.0e-8);
+    const T x = mu * areal_density;
+
+    if( x < epsilon )
+    {
+      // Use the Taylor series expansion for small x.
+      // f(x) = 1 - x/2 + x^2/6
+      answer *= (T(1.0) - 0.5*x + ((x*x) / 6.0)); // + -(x*x*x)/24.0 + ...
+    }else
+    {
+      // For larger x, use the standard formula, but with expm1
+      // to avoid catastrophic cancellation near zero.
+      // 1 - exp(-x) = -expm1(-x)
+      answer *= -expm1(-x) / x;
+    }//if( (mu*areal_density) < epsilon ) / else
+
     assert( !isnan(answer) && !isinf(answer) );
   }//if( self_atten->has_value() )
   
   for( const RelActCalc::PhysModelShield<T> &ext_atten : external_attens )
   {
     // TODO: `GammaInteractionCalc::transmition_length_coefficient` can be a real bottleneck of computation - at soem point we should memoise its results
-    T mu;
+    T mu( 0.0 );
     if( ext_atten.material )
       mu = T( GammaInteractionCalc::transmition_length_coefficient( ext_atten.material.get(), energyf ) / ext_atten.material->density );
     else
@@ -270,8 +299,14 @@ T eval_physical_model_eqn_imp( const double energy,
     
     if( areal_density < 0.0 )
       areal_density = fmax(areal_density, 0.0);
-    
-    if( (mu > 0.0) && (ext_atten.areal_density > 0.0) )
+
+    assert( mu >= 0.0 );
+    if( mu < 0.0 )
+      mu = fmax(mu, 0.0);
+
+    assert( ext_atten.areal_density >= 0.0 );
+
+    if( (mu >= 0.0) && (areal_density >= 0.0) )
       answer *= exp( -mu * areal_density );
     
     assert( !isnan(answer) && !isinf(answer) );
@@ -398,25 +433,23 @@ Pu242ByCorrelationOutput<T> correct_pu_mass_fractions_for_pu242( Pu242ByCorrelat
 
   if( input.pu_age > 0.0 )
   {
-    const T pre_decay_sum_mass_frac = input.pu238_rel_mass + input.pu239_rel_mass + input.pu240_rel_mass
-                                                + input.pu241_rel_mass + answer.pu242_mass_frac;
-
     answer.pu238_mass_frac *= exp( -input.pu_age * pu238->decayConstant() );
     answer.pu239_mass_frac *= exp( -input.pu_age * pu239->decayConstant() );
     answer.pu240_mass_frac *= exp( -input.pu_age * pu240->decayConstant() );
     answer.pu241_mass_frac *= exp( -input.pu_age * pu241->decayConstant() );
     answer.pu242_mass_frac *= exp( -input.pu_age * pu242->decayConstant() );
 
+    const T norm_amount = answer.pu238_mass_frac
+                        + answer.pu239_mass_frac
+                        + answer.pu240_mass_frac
+                        + answer.pu241_mass_frac
+                        + answer.pu242_mass_frac;
 
-    const T post_decay_sum_mass_frac = input.pu238_rel_mass + input.pu239_rel_mass + input.pu240_rel_mass
-                                              + input.pu241_rel_mass + answer.pu242_mass_frac;
-
-    const T overall_decay = pre_decay_sum_mass_frac / post_decay_sum_mass_frac;
-    answer.pu238_mass_frac *= overall_decay;
-    answer.pu239_mass_frac *= overall_decay;
-    answer.pu240_mass_frac *= overall_decay;
-    answer.pu241_mass_frac *= overall_decay;
-    answer.pu242_mass_frac *= overall_decay;
+    answer.pu238_mass_frac /= norm_amount;
+    answer.pu239_mass_frac /= norm_amount;
+    answer.pu240_mass_frac /= norm_amount;
+    answer.pu241_mass_frac /= norm_amount;
+    answer.pu242_mass_frac /= norm_amount;
   }//if( input.pu_age > 0.0 )
 
   
@@ -471,7 +504,17 @@ Pu242ByCorrelationOutput<T> correct_pu_mass_fractions_for_pu242( Pu242ByCorrelat
   //  we'll throw an arbitrary factor of 2 onto the uncertainty.
   const T engineering_uncert_multiple = T(2.0);
   answer.pu242_uncert *= engineering_uncert_multiple;
-  
+
+#ifndef NDEBUG
+  const T total_pu = answer.pu238_mass_frac
+    + answer.pu239_mass_frac
+    + answer.pu240_mass_frac
+    + answer.pu241_mass_frac
+    + answer.pu242_mass_frac;
+
+  assert( (total_pu > 0.999) && (total_pu < 1.001) );
+#endif //NDEBUG
+
   return answer;
 }//correct_pu_mass_fractions_for_pu242( ... )
 

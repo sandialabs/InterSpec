@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- pid is short for PeakInfoDisplay -->
+
+  <message id="pid-dialog-peak-erase">सभी शिखर मिटाएं?</message>
+
+  <message id="pid-err-no-foreground">शिखर जोड़ने के लिए अग्रभूमि स्पेक्ट्रम लोड होना चाहिए।</message>
+
+  <message id="pid-search-peaks-btn">शिखर खोजें</message>
+  <message id="pid-tt-search-peaks-btn">स्वचालित शिखर खोज एल्गोरिथम का उपयोग करके शिखर खोजें।</message>
+  <message id="pid-clear-peaks-btn">सभी शिखर साफ़ करें</message>
+  <message id="pid-tt-clear-peaks-btn"><b>सभी</b> मौजूदा शिखरों को हटाता है।</message>
+  <message id="pid-nuc-from-ref-btn">संदर्भ से न्यूक्लाइड</message>
+  <message id="pid-tt-nuc-from-ref-btn">
+    दिखाई दे रही संदर्भ रेखाओं से शिखर न्यूक्लाइड असाइन करें। केवल उन
+    शिखरों पर लागू होता है जिनसे पहले से कोई न्यूक्लाइड संबद्ध नहीं है।
+  </message>
+
+  <message id="pid-add-peak-btn">जोड़ें...</message>
+  <message id="pid-tt-add-peak-btn">मैन्युअल रूप से नया शिखर जोड़ें।</message>
+  <message id="pid-tt-del-peaks">वर्तमान में संपादित शिखर को हटाता है।</message>
+  <message id="pid-better-editor-hint">बेहतर संपादक के लिए शिखरों पर राइट क्लिक करें</message>
+  <message id="pid-better-editor-hint-mobile">बेहतर संपादक के लिए शिखरों पर टैप करके रखें</message>
+  <message id="pid-tt-csv-export">पहचाने गए शिखरों के बारे में जानकारी अल्पविराम से अलग प्रारूप में निर्यात करें।</message>
+  <message id="pid-tt-csv-copy">शिखर CSV जानकारी को अपने पेस्टबोर्ड पर कॉपी करें।
+    <p>शिखर डेटा को स्वरूपित और सादा-पाठ दोनों रूपों में आपके पेस्टबोर्ड पर कॉपी किया जाएगा,
+      इसलिए डेटा का प्रारूप उस एप्लिकेशन पर निर्भर करेगा जिसमें आप पेस्ट कर रहे हैं।
+    </p>
+  </message>
+
+  <message id="pid-csv-copy-full">पूर्ण शिखर CSV कॉपी करें</message>
+  <message id="pid-csv-copy-no-hdr">हेडर के बिना कॉपी करें</message>
+  <message id="pid-csv-copy-compact">फिट शिखर जानकारी कॉपी करें</message>
+  <message id="pid-peak-label">शिखर: </message>
+</messages>

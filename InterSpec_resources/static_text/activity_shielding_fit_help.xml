@@ -264,10 +264,17 @@ however, sometimes this may not always be a reliable way to deterine this.
 
 
 <h2>Further Options</h2>
-The menu icon in the upper right hand corner of the tool provides access to a
-detailed calculation log that show exactly what went into calculating the final
-answer.  This menu also provides facilities to save/load/export/import model
-files.
+The menu icon in the upper right hand corner of the tool provides access to
+detailed calculation logs that show exactly what went into calculating the final
+answer.  You can add your own templates for data formatting to the log dialog
+by creating a directory named <code>act_shield_fit_templates</code>, in the
+application data directory (see "<em>About InterSpec...</em>" &rarr; "<em>Data</em>", and then user data storage directory),
+and then saving the template(s) with "<code>tmplt.</code>", "<code>template.</code>", or "<code>inja.</code>" in the filename, for example "<code>my_report.tmplt.csv</code>".
+See the documentation on batch analysis reports for more information about acceptable report format (or you can start with <code>InterSpec_resources/static_text/ShieldSourceFitLog/std_fit_log.tmplt.txt</code> or <code>InterSpec_resources/static_text/ShieldSourceFitLog/act_fit.tmplt.html</code> and modify those to get what you want).
+
+
+<p>This menu also provides facilities to save/load/export/import model files; note, if you export a model file, you can drag-n-drop this XML file back on to InterSpec to automatically open the <em>Activity/Shielding Fit</em> tool, instead of having to use this menu to import the model.</p>
+
 
 <h2>Limitations</h2>
 <ul>

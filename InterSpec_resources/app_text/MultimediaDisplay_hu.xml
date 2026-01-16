@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- smmd- is short for ShowMultiMediaDisplay -->
+  <message id="smmd-prev-btn">Előző</message>
+  <message id="smmd-next-btn">Következő</message>
+  <message id="smmd-auto-show-images-cb">Képek automatikus megjelenítése</message>
+  <message id="smmd-tt-auto-show-images">Képek automatikus megjelenítése, amikor képeket tartalmazó spektrum fájlokat töltenek be.</message>
+  <message id="smmd-tt-export-image-file">A jelenleg megjelenített kép exportálása fájlba.</message>
+  <message id="smmd-err-no-content">Nincs megjelenítendő multimédiás tartalom</message>
+  <message id="smmd-err-file-is-uri">Adat URI='{1}' fájlként kódolva</message>
+  <message id="smmd-err-no-multimedia-src">A multimédiás forrás nem tartalmazott adatokat.</message>
+  <message id="smmd-err-encoding-not-supported">A multimédiás tartalom adatkódolása nem támogatott.</message>
+  <message id="smmd-err-not-image">A multimédiás tartalom típusa nem kép típus volt, vagy nem lehetett meghatározni.</message>
+  <message id="smmd-image-index">{2} képből {1}. kép</message>
+  <message id="smmd-Time">Idő</message>
+  <message id="smmd-time-label">Idő: {1}</message>
+  <message id="smmd-remark-label">Megjegyzés: {1}</message>
+  <message id="smmd-desc-label">Desc.: {1}</message>
+  <message id="smmd-window-title-single">Kép a Spektrum Fájlban</message>
+  <message id="smmd-window-title-multiple">Képek a Spektrum Fájlban</message>
+</messages>

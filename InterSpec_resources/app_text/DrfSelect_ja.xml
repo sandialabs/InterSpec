@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ds- is short for DrfSelect
+       ref- is short for RelEffFile
+       reds- is short for RelEffDetSelect
+  -->
+  <message id="ds-default-manual-det-name">ユーザー定義検出器</message>
+
+  <message id="ref-tt-remove-drf-file">InterSpecが検出器応答関数を検索するファイルのリストからファイルを削除します。</message>
+  <message id="ref-remove-drf-window-title">検出器応答を削除しますか？</message>
+  <message id="ref-remove-drf-window-txt">これらのDRFを将来の使用からも削除しますか？</message>
+  <message id="ref-file-removed-toast">ファイル '{1}' が将来の使用から削除されました。</message>
+  <message id="ref-file-saved-for-later">'{1}' を後で使用するために保存しました。「<em>検出器応答関数選択</em>」ツールの「<em>相対効率</em>」部分で利用できます。</message>
+  <message id="ref-err-saving-drf-file">後で使用するためのDRFファイル保存エラー。申し訳ありません。</message>
+  <message id="ref-err-invalid-csv-drf">有効なTSVまたはCSV相対効率DRFファイルではありません。</message>
+  <message id="ref-save-drf-window-title">検出器応答を保存しますか？</message>
+  <message id="ref-save-drf-window-txt">これらの検出器応答を後で使用するために保存しますか？</message>
+  <message id="ref-upload-csv-file">TSV/CSVファイルをアップロードします。</message>
+  <message id="ref-dont-use-drf-in-file">ファイルに応答がありません</message>
+  <message id="ref-select-det-from-file">検出器を選択</message>
+  <message id="ref-no-drfs-in-file">ファイルに有効なDRFがありません。</message>
+  <message id="ref-couldnt-open-drf-file">DRFファイルを開けませんでした。</message>
+  <message id="ref-no-rel-eff-drfs-in-file">相対効率DRFが利用できません。</message>
+  <message id="ref-no-drfs-available">利用可能な応答がありません</message>
+  <message id="ref-file-has-no-drfs">ファイルにはDRFが含まれていません</message>
+  <message id="reds-tt-add-drf-btn">プラスボタンをクリックして追加の相対効率検出器応答関数ファイルを追加します。</message>
+  <message id="reds-tt-add-dir">プラスボタンをクリックして検出器応答関数を再帰的に検索する追加ディレクトリを追加します。</message>
+  <message id="reds-gadras-drf-info-ios">GADRAS-DRFからインポートした検出器応答関数を<b>ファイル</b>アプリ内の<code>InterSpec</code>ディレクトリに配置できます。</message>
+  <message id="reds-gadras-drf-info">これらはGADRAS-DRFからインポートした検出器応答関数です。現在、検出器寸法、絶対効率、およびFWHM分解能のみが使用されます。</message>
+  <message id="reds-failed-parse-gadras-det">GADRAS検出器の解析に失敗しました: {1}</message>
+  <message id="reds-err-saving-gad-path">ユーザー設定へのGADRASパス保存エラー: {1}</message>
+  <message id="reds-tt-remove-gad-dir">InterSpecが検出器応答関数を検索するディレクトリのリストからディレクトリを削除します。</message>
+  <message id="reds-tt-gad-set-dir">入力されたディレクトリを検出器応答関数の再帰検索用に設定します。</message>
+  <message id="reds-err-not-valid-dir">有効なディレクトリではありません。</message>
+  <message id="reds-invalid-dir">無効なディレクトリ</message>
+  <message id="reds-no-drf-in-dir">ディレクトリに応答がありません</message>
+  <message id="reds-recursive-no-drfs-in-dir">ディレクトリまたはそのサブディレクトリに有効なDRFがありません。</message>
+  <message id="ds-csv-upload-desc">
+    <div style="white-space:nowrap;">
+      効率ファイルアップロード:
+    </div>
+    <div>
+      効率CSVの場合、第1列はkeV単位のエネルギー、第2列は効率%（0〜100）です。
+    </div>
+    <div>
+      内在効率は検出器表面に当たるガンマの効率、絶対効率は一定距離での効率です。
+    </div>
+  </message>
+  <message id="ds-det-diam">検出器直径:</message>
+  <message id="ds-fixed-geom">固定ジオメトリ</message>
+  <message id="ds-gad-det-file-label">GADRAS Detector.Datファイル:</message>
+  <message id="ds-manual-det-empty-fcn">例: exp(-9.8 - 8.1*log(x) + 4.62E-02*log(x)^2 + ...)
+または同等に: -9.8 -8.1 4.62E-02 ...</message>
+  <message id="ds-manual-det-desc">エネルギーxを与えられた数式で定義される検出器効率。
+     または標準式形式の係数を入力できます。詳細は疑問符アイコンをクリックしてください。
+  </message>
+  <message id="ds-manual-det-desc-label">エネルギーxを与えられた数式で定義される検出器効率。
+     または標準式形式の係数を入力できます。詳細は疑問符アイコンをクリックしてください。:</message>
+  <message id="ds-description-label">説明:</message>
+  <message id="ds-name-label">名前:</message>
+  <message id="ds-manual-det-name-label">検出器名 </message>
+  <message id="ds-manual-det-name-empty-txt">一意の検出器名</message>
+  <message id="ds-manual-function-label">効率 f(x) = </message>
+  <message id="ds-tt-manual-energy-unit">効率式のエネルギー単位</message>
+  <message id="ds-tt-manual-desc">この検出器応答の説明</message>
+  <message id="ds-manual-det-diam-label">検出器直径</message>
+  <message id="ds-energy-range">エネルギー範囲</message>
+  <message id="ds-(optional)">(オプション)</message>
+  <message id="ds-min.">最小</message>
+  <message id="ds-max.">最大</message>
+  <message id="ds-intrinsic-eff">内在効率</message>
+  <message id="ds-abs-eff">絶対効率</message>
+  <message id="ds-fixed-geom-total">固定ジオメトリ - 総放射能</message>
+  <message id="ds-fixed-geom-cm2">固定ジオメトリ - cm²あたりの放射能</message>
+  <message id="ds-fixed-geom-m2">固定ジオメトリ - m²あたりの放射能</message>
+  <message id="ds-fixed-geom-gram">固定ジオメトリ - グラムあたりの放射能</message>
+
+  <message id="ds-tt-manual-drf-type">この効率をどう解釈すべきか。<br />
+    <br />
+    内在効率: 検出器面に衝突するX線またはガンマ線が
+    全エネルギー検出イベントを記録する確率。<br />
+    <br />
+    絶対効率: 線源からのX線またはガンマ線が
+    全エネルギー検出イベントを記録する確率。他の距離への1/r2スケーリングが
+    適切（つまり点線源用）。<br />
+    <br />
+    固定ジオメトリ - 総放射能: 線源からのX線またはガンマ線が
+    全エネルギー検出イベントを記録する確率。この効率を他の距離に
+    スケーリングするのは適切でない（例：近距離または大型拡張線源）。<br />
+    <br />
+    固定ジオメトリ - cm²あたりの放射能: 総放射能と同様だが、効率曲線は
+    平方センチメートルあたりの崩壊あたりの効率を表す（表面汚染）。<br />
+    <br />
+    固定ジオメトリ - m²あたりの放射能: cm²あたりと同様だが、平方メートルあたり。<br />
+    <br />
+    固定ジオメトリ - グラムあたりの放射能: cm²あたりと同様だが、線源のグラムあたり。
+  </message>
+  <message id="ds-dist-label">距離:</message>
+  <message id="ds-set-btn">設定</message>
+  <message id="ds-last-used">最近使用</message>
+  <message id="ds-det-type-filter-all">全て</message>
+  <message id="ds-det-type-filter-uploaded">アップロード済み</message>
+  <message id="ds-det-type-filter-formula">入力式</message>
+  <message id="ds-det-type-filter-data">データから作成</message>
+  <message id="ds-det-type-filter-N42">N42ファイルに含まれる</message>
+  <message id="ds-show-label">表示:</message>
+  <message id="ds-mi-gadras">GADRAS</message>
+  <message id="ds-mi-rel-eff">相対効率</message>
+  <message id="ds-mi-import">インポート</message>
+  <message id="ds-mi-formula">式</message>
+  <message id="ds-mi-previous">以前</message>
+  <message id="ds-use-for-serialnum-cb">SN '{1}' のデフォルトDRFとして使用</message>
+  <message id="ds-use-for-model-cb">モデル '{1}' のデフォルトDRFとして使用</message>
+  <message id="ds-no-drf-loaded">DRFが読み込まれていません</message>
+  <message id="ds-no-det-btn">検出器なし</message>
+  <message id="ds-fit-fwhm-btn">FWHMをフィット...</message>
+  <message id="ds-tt-cancel">このダイアログで行われた全ての変更または選択を削除し、ダイアログを閉じます。</message>
+  <message id="ds-tt-accept">行われた全ての変更/選択を受け入れてダイアログを閉じます。</message>
+  <message id="ds-use-det-btn">検出器を使用</message>
+  <message id="ds-use-drf">DRFを使用しますか？</message>
+  <message id="ds-select-drf">使用するDRFを選択</message>
+  <message id="ds-drf-desc">DRF説明</message>
+  <message id="ds-save-for-later-cb">後で使用するために保存しますか？</message>
+  <message id="ds-err-drf-uri-invalid">検出器応答関数URLが無効でした。</message>
+  <message id="ds-err-det-diam-pos">検出器直径は正の値である必要があります</message>
+  <message id="ds-err-det-dist-pos">絶対効率では距離は正の値である必要があります</message>
+  <message id="ds-warn-min-max-energy-swapped">検出器最小エネルギーが最大エネルギーより大きいです；エネルギー範囲を無視します。</message>
+  <message id="ds-need-det-diam">検出器の直径が必要です</message>
+</messages>

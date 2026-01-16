@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- psw- is short for PeakSelectorWindow
+  psgu- is short for PeakSearchGuiUtils, and are misc stuff
+  -->
+  <message id="psw-title-confirm-nuc-ass">Nuklid Hozzárendelés Megerősítése</message>
+  <message id="psw-title-check-search">Csúcs Keresési Eredmények Ellenőrzése</message>
+  <message id="psw-title-prev-spec">Előző Spektrumból Megtartandó Csúcsok</message>
+  <message id="psw-title-csv-import">CSV-ből importálandó csúcsok</message>
+  <message id="psw-search-instruct-adjust">Állítsa be a nuklid hozzárendeléseket, vagy a megtartandó csúcsokat.</message>
+  <message id="psw-search-instruct-unselect">Törölje a kijelölést minden csúcsról, amelyet nem szeretne megtartani.</message>
+  <message id="psw-search-instruct-assign">Ellenőrizze és javítsa ki a nuklid hozzárendeléseket.</message>
+  <message id="psw-search-instruct-keep">Válassza ki a megtartani kívánt csúcsokat.</message>
+  <message id="psw-show-all-peaks">Összes csúcs mutatása</message>
+  <message id="psw-show-prev-peaks">Előző csúcsok is mutatása</message>
+  <message id="psw-show-missing-peaks">Hiányzó csúcsok mutatása</message>
+  <message id="psw-keep-only-assigned-peaks">Csak a(z) {1}-hez rendelt új csúcsok megtartása</message>
+  <message id="psw-orig-nuc">Eredeti Nuklid</message>
+  <message id="psw-assigned-nuc">Hozzárendelt Nuklid</message>
+  <message id="psw-peak-preview">Csúcs Előnézet</message>
+  <message id="psw-not-found">Nem Található</message>
+  <message id="psw-keep-peak">Csúcs Megtartása</message>
+  <message id="psw-keep-peak-q">Csúcs Megtartása?    </message>  <!-- There are four No-Break Space characters at end -->
+  <message id="psw-dont-change">Ne változtassa meg</message>
+  <message id="psw-no-nuc-changed">Nincsenek nuklidok megváltoztatva</message>
+  <message id="psw-rel-eff-plot-title">Relatív Hatékonyság Grafikon</message>
+  <message id="psw-rel-eff-plot-y-axis-title">Rel. Csúcs Terület / BR</message>
+
+  <message id="psgu-peaks-not-updated-no-change-msg">Csúcsok nem frissítve, spektrum megváltozott.</message>
+  <message id="psgu-peaks-updated-msg">Csúcsok frissítve.</message>
+
+  <message id="psgu-search-wait-title">Csak néhány pillanat</message>
+  <message id="psgu-search-wait-content">
+    <div style="text-align: left; white-space: nowrap;">
+      <div>Csúcsokat keres - ez eltarthat egy ideig.</div>
+      <div>Bezárhatja ezt a párbeszédet, és amikor a keresés elkészül,</div>
+      értesítést kap
+    </div>
+  </message>
+
+
+  <message id="psgu-fwhm-info-needed-title">FWHM információ szükséges</message>
+  <message id="psgu-fwhm-info-needed-has-det-eff">
+    <div>A jelenlegi detektor válasz nem tartalmaz FWHM információt.</div>
+    <div>Szeretné illeszteni a FWHM információt a jelenlegi spektrumból?</div>
+  </message>
+  <message id="psgu-fwhm-info-needed-no-det-eff">
+    <div>Nincs detektor válasz kiválasztva.</div>
+    <div>Szeretné illeszteni a FWHM információt a jelenlegi spektrumból?</div>
+  </message>
+  <message id="psgu-fwhm-fit-fail">Csúcs újraillesztése sikertelen (jelentéktelenné vált), {1}-ről {2} csúcsra</message>
+
+
+  <message id="psgu-no-peak-near-right-click-msg">Nem volt csúcs a gamma energia beállításához</message>
+  <message id="psgu-no-ref-line-near-peak-msg">Nem volt referencia gamma energia a csúcs átlagának beállításához.</message>
+  <message id="psgu-failed-refit-after-fixing-mean">
+    Csúcs újraillesztése sikertelen az átlag referencia fotocsúcsra rögzítése után.
+    Egy csúcs jelentéktelenné vált; {1}-ről {2} csúcsra.
+  </message>
+  <message id="psgu-failed-change-cont-type">
+  A kontinuum típus {1}-re változtatása {2} csúcsot jelentéktelenné tett.<br />
+  Kérjük, használja a <b>Csúcs Szerkesztőt</b> ennek a változtatásnak az elvégzéséhez.
+  </message>
+  <message id="psgu-failed-change-cont-singular">a</message>  <!-- this or next message will be substituted for {2} of previous message -->
+  <message id="psgu-failed-change-cont-plural">legalább egy</message>
+  <message id="psgu-failed-change-cont-insig-msg">
+  A kontinuum típus naiv módon {1}-re változtatása a csúcsot jelentéktelenné tette.<br />
+  Kérjük, használja a <b>Csúcs Szerkesztőt</b> ennek a változtatásnak az elvégzéséhez.
+  </message>
+  <message id="psgu-change-skew-not-gaus">A csúcs a ROI-ban {1} keV-nél nem Gauss definiált - kérjük, változtassa meg a <b>Csúcs Szerkesztőben</b> a ferdítési típus beállítása előtt.</message>
+  <message id="psgu-change-skew-make-insig">
+    A ferdítési típus {1}-re változtatása {2} csúcsot jelentéktelenné tett.<br />
+    Kérjük, használja a <b>Csúcs Szerkesztőt</b> ennek a változtatásnak az elvégzéséhez.
+  </message>
+  <message id="psgu-failed-change-skew-insig-msg">
+  A ferdítési típus naiv módon {1}-re változtatása a csúcsot jelentéktelenné tette.<br />
+  Kérjük, használja a <b>Csúcs Szerkesztőt</b> ennek a változtatásnak az elvégzéséhez.
+  </message>
+  
+</messages>

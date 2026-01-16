@@ -48,6 +48,12 @@ using namespace std;
 using namespace Wt;
 
 const char * const ColorTheme::sm_color_theme_json_version = "1";
+const char * const ColorTheme::sm_dynamic_ref_line_medical_color = "#FF0000";
+const char * const ColorTheme::sm_dynamic_ref_line_industrial_color = "#7e7e80";
+const char * const ColorTheme::sm_dynamic_ref_line_norm_color = "#39a004";
+const char * const ColorTheme::sm_dynamic_ref_line_snm_color = "#ff7600";
+const char * const ColorTheme::sm_dynamic_ref_line_common_color = "#0033ff";
+const char * const ColorTheme::sm_dynamic_ref_line_other_color = "#8055ef";
 
 namespace
 {
@@ -101,16 +107,31 @@ std::unique_ptr<ColorTheme> ColorTheme::predefinedTheme( const PredefinedColorTh
         "description" : "Dark InterSpec color scheme.",
         "modified" : "2018-12-26T02:58:03+0000",
         "name" : "Dark",
-        "nonChartArea": { "cssTheme" : "dark" },
+        "nonChartArea": {
+          "cssTheme" : "dark",
+          "backgroundColor": "rgb(44,45,48)",
+          "textColor": "white",
+          "borderColor": "rgb(136,136,136)",
+          "linkColor": "rgb(18,101,200)",
+          "labelColor": "rgb(197,198,201)",
+          "inputBackground": "rgb(59,60,63)",
+          "buttonBackground": "rgb(86,88,90)",
+          "buttonBorderColor": "rgb(106,107,109)",
+          "buttonTextColor": "rgb(230,230,230)"
+        },
         "peaksTakeOnReferenceLineColor" : true,
         "referenceLines" : {
           "lineColors" : ["#c0c0c0", "#ffff99", "#b8d9f0", "#9933FF", "#FF66FF", "#CC3333", "#FF6633", "#FFFF99", "#CCFFCC", "#0000CC", "#666666", "#003333"],
           "specificSources" : {
-            "Ba133" : "rgb(192,192,192)",
-            "Th232" : "#4abfb9",
-            "U235" : "rgb(128,0,128)",
+            "Ba131" : "rgb(192,192,192)",
             "background" : "#967f55"
-          }
+          },
+          "dynamicRefLineMedicalColor" : "#FF0000",
+          "dynamicRefLineIndustrialColor" : "#D7D7DA", 
+          "dynamicRefLineNormColor" : "#39a004",
+          "dynamicRefLineSnmColor" : "#ff7600",
+          "dynamicRefLineCommonColor" : "#9da2f2",
+          "dynamicRefLineOtherColor" : "#8055ef"
         },
         "spectrum" : {
           "axisLines" : "#cfced2",
@@ -178,7 +199,7 @@ ColorTheme::ColorTheme()
   timeHistoryBackgroundHighlight = Wt::WColor( 0, 255, 255, 75 );
   timeHistorySecondaryHighlight = Wt::WColor( 0, 128, 0, 75 );
   
-  defaultPeakLine = WColor( 0, 51, 255, 155 );
+  defaultPeakLine = WColor( 0, 51, 255 );
   
   spectrumAxisLines = WColor( GlobalColor::black );
   spectrumChartBackground = WColor();
@@ -215,8 +236,15 @@ ColorTheme::ColorTheme()
     {"#003333"}
   };
   
-  referenceLineColorForSources["U235"] = WColor( "#800080" );
+  referenceLineColorForSources["Ba131"] = WColor( "#800080" ); //Just an example
   referenceLineColorForSources["background"] = WColor( "#967f55" );  //brownish
+  
+  dynamicRefLineMedicalColor = WColor( sm_dynamic_ref_line_medical_color );
+  dynamicRefLineIndustrialColor = WColor( sm_dynamic_ref_line_industrial_color );
+  dynamicRefLineNormColor = WColor( sm_dynamic_ref_line_norm_color );
+  dynamicRefLineSnmColor = WColor( sm_dynamic_ref_line_snm_color );
+  dynamicRefLineCommonColor = WColor( sm_dynamic_ref_line_common_color );
+  dynamicRefLineOtherColor = WColor( sm_dynamic_ref_line_other_color );
 }//ColorTheme() constructor
 
 
@@ -235,7 +263,25 @@ std::string ColorTheme::toJson( const ColorTheme &info )
     nonChartArea["cssTheme"] = WString("default");
   else
     nonChartArea["cssTheme"] = WString( info.nonChartAreaTheme );
-  
+  if( !info.appBackgroundColor.isDefault() )
+    nonChartArea["backgroundColor"] = WString( info.appBackgroundColor.cssText(false) );
+  if( !info.appTextColor.isDefault() )
+    nonChartArea["textColor"] = WString( info.appTextColor.cssText(false) );
+  if( !info.appBorderColor.isDefault() )
+    nonChartArea["borderColor"] = WString( info.appBorderColor.cssText(false) );
+  if( !info.appLinkColor.isDefault() )
+    nonChartArea["linkColor"] = WString( info.appLinkColor.cssText(false) );
+  if( !info.appLabelColor.isDefault() )
+    nonChartArea["labelColor"] = WString( info.appLabelColor.cssText(false) );
+  if( !info.appInputBackground.isDefault() )
+    nonChartArea["inputBackground"] = WString( info.appInputBackground.cssText(false) );
+  if( !info.appButtonBackground.isDefault() )
+    nonChartArea["buttonBackground"] = WString( info.appButtonBackground.cssText(false) );
+  if( !info.appButtonBorderColor.isDefault() )
+    nonChartArea["buttonBorderColor"] = WString( info.appButtonBorderColor.cssText(false) );
+  if( !info.appButtonTextColor.isDefault() )
+    nonChartArea["buttonTextColor"] = WString( info.appButtonTextColor.cssText(false) );
+
   Json::Object &spectrum = base["spectrum"] = Json::Value(Json::ObjectType);
   if( !info.foregroundLine.isDefault() )
     spectrum["foregroundColor"] = WString( info.foregroundLine.cssText(false) );
@@ -285,10 +331,22 @@ std::string ColorTheme::toJson( const ColorTheme &info )
   if( !info.defaultPeakLine.isDefault() )
     base["defaultPeakLineColor"] = WString( info.defaultPeakLine.cssText(false) );
   
-  if( info.referenceLineColor.empty() && info.referenceLineColorForSources.empty() )
-    return Json::serialize( base );
-  
+  // Always create the referenceLines object since we may need it for dynamic ref line colors
   Json::Object &refLines = base["referenceLines"] = Json::Value(Json::ObjectType);
+  
+  // Add dynamic reference line colors to the referenceLines section
+  if( !info.dynamicRefLineMedicalColor.isDefault() )
+    refLines["dynamicRefLineMedicalColor"] = WString( info.dynamicRefLineMedicalColor.cssText(false) );
+  if( !info.dynamicRefLineIndustrialColor.isDefault() )
+    refLines["dynamicRefLineIndustrialColor"] = WString( info.dynamicRefLineIndustrialColor.cssText(false) );
+  if( !info.dynamicRefLineNormColor.isDefault() )
+    refLines["dynamicRefLineNormColor"] = WString( info.dynamicRefLineNormColor.cssText(false) );
+  if( !info.dynamicRefLineSnmColor.isDefault() )
+    refLines["dynamicRefLineSnmColor"] = WString( info.dynamicRefLineSnmColor.cssText(false) );
+  if( !info.dynamicRefLineCommonColor.isDefault() )
+    refLines["dynamicRefLineCommonColor"] = WString( info.dynamicRefLineCommonColor.cssText(false) );
+  if( !info.dynamicRefLineOtherColor.isDefault() )
+    refLines["dynamicRefLineOtherColor"] = WString( info.dynamicRefLineOtherColor.cssText(false) );
   
   if( info.referenceLineColor.size() )
   {
@@ -355,7 +413,7 @@ void ColorTheme::fromJson( const std::string &json, ColorTheme &info )
   {
     const Json::Object &nonChartAreaObj = nonChartArea;
     const Json::Value &cssThemeVal = nonChartAreaObj.get("cssTheme");
-    
+
     string val;
     if( cssThemeVal.type() == Wt::Json::StringType )
     {
@@ -367,11 +425,76 @@ void ColorTheme::fromJson( const std::string &json, ColorTheme &info )
         cout << "Json type is not string" << endl;
     }else
       cout << "CssThemeVal is type " << cssThemeVal.type() << endl;
-    
+
     if( SpecUtils::iequals_ascii(info.nonChartAreaTheme, "default") )
       val = "";
-    
+
     info.nonChartAreaTheme = val;
+
+    // Set defaults based on nonChartAreaTheme if not specified in JSON
+    if( nonChartAreaObj.contains("backgroundColor") )
+      info.appBackgroundColor = WColor( static_cast<const WString &>(nonChartAreaObj.get("backgroundColor")) );
+    else
+    {
+      // Default based on theme
+      if( info.nonChartAreaTheme == "dark" )
+        info.appBackgroundColor = WColor("rgb(44,45,48)");
+      else
+        info.appBackgroundColor = WColor("#ffffff");
+    }
+
+    if( nonChartAreaObj.contains("textColor") )
+      info.appTextColor = WColor( static_cast<const WString &>(nonChartAreaObj.get("textColor")) );
+    else
+    {
+      // Default based on theme
+      if( info.nonChartAreaTheme == "dark" )
+        info.appTextColor = WColor("white");
+      else
+        info.appTextColor = WColor(); // Browser default (empty)
+    }
+
+    // Border color
+    if( nonChartAreaObj.contains("borderColor") )
+      info.appBorderColor = WColor( static_cast<const WString &>(nonChartAreaObj.get("borderColor")) );
+    else
+      info.appBorderColor = WColor( info.nonChartAreaTheme == "dark" ? "rgb(136,136,136)" : "#e1e1e1" );
+
+    // Link color
+    if( nonChartAreaObj.contains("linkColor") )
+      info.appLinkColor = WColor( static_cast<const WString &>(nonChartAreaObj.get("linkColor")) );
+    else
+      info.appLinkColor = WColor( info.nonChartAreaTheme == "dark" ? "rgb(18,101,200)" : "blue" );
+
+    // Label text color
+    if( nonChartAreaObj.contains("labelColor") )
+      info.appLabelColor = WColor( static_cast<const WString &>(nonChartAreaObj.get("labelColor")) );
+    else
+      info.appLabelColor = WColor( info.nonChartAreaTheme == "dark" ? "rgb(197,198,201)" : "black" );
+
+    // Input background
+    if( nonChartAreaObj.contains("inputBackground") )
+      info.appInputBackground = WColor( static_cast<const WString &>(nonChartAreaObj.get("inputBackground")) );
+    else
+      info.appInputBackground = WColor( info.nonChartAreaTheme == "dark" ? "rgb(59,60,63)" : "white" );
+
+    // Button background
+    if( nonChartAreaObj.contains("buttonBackground") )
+      info.appButtonBackground = WColor( static_cast<const WString &>(nonChartAreaObj.get("buttonBackground")) );
+    else
+      info.appButtonBackground = WColor( info.nonChartAreaTheme == "dark" ? "rgb(86,88,90)" : "#888888" );
+
+    // Button border color
+    if( nonChartAreaObj.contains("buttonBorderColor") )
+      info.appButtonBorderColor = WColor( static_cast<const WString &>(nonChartAreaObj.get("buttonBorderColor")) );
+    else
+      info.appButtonBorderColor = WColor( info.nonChartAreaTheme == "dark" ? "rgb(106,107,109)" : "#e1e1e1" );
+
+    // Button text color
+    if( nonChartAreaObj.contains("buttonTextColor") )
+      info.appButtonTextColor = WColor( static_cast<const WString &>(nonChartAreaObj.get("buttonTextColor")) );
+    else
+      info.appButtonTextColor = WColor( info.nonChartAreaTheme == "dark" ? "rgb(230,230,230)" : "white" );
   }
   
   if( base.contains("spectrum") /*&& base["spectrum"].type()==Json::ObjectType*/ )
@@ -435,9 +558,31 @@ void ColorTheme::fromJson( const std::string &json, ColorTheme &info )
   if( base.contains("defaultPeakLineColor") )
     info.defaultPeakLine = WColor( static_cast<const WString &>(base["defaultPeakLineColor"]) );
   
+  // Set default values for dynamic reference line colors
+  info.dynamicRefLineMedicalColor = WColor( sm_dynamic_ref_line_medical_color );
+  info.dynamicRefLineIndustrialColor = WColor( sm_dynamic_ref_line_industrial_color );
+  info.dynamicRefLineNormColor = WColor( sm_dynamic_ref_line_norm_color );
+  info.dynamicRefLineSnmColor = WColor( sm_dynamic_ref_line_snm_color );
+  info.dynamicRefLineCommonColor = WColor( sm_dynamic_ref_line_common_color );
+  info.dynamicRefLineOtherColor = WColor( sm_dynamic_ref_line_other_color );
+  
   if( base.contains("referenceLines") )
   {
     Json::Object &refLines = base["referenceLines"];
+    
+    // Check for dynamic reference line colors
+    if( refLines.contains("dynamicRefLineMedicalColor") )
+      info.dynamicRefLineMedicalColor = WColor( static_cast<const WString &>(refLines["dynamicRefLineMedicalColor"]) );
+    if( refLines.contains("dynamicRefLineIndustrialColor") )
+      info.dynamicRefLineIndustrialColor = WColor( static_cast<const WString &>(refLines["dynamicRefLineIndustrialColor"]) );
+    if( refLines.contains("dynamicRefLineNormColor") )
+      info.dynamicRefLineNormColor = WColor( static_cast<const WString &>(refLines["dynamicRefLineNormColor"]) );
+    if( refLines.contains("dynamicRefLineSnmColor") )
+      info.dynamicRefLineSnmColor = WColor( static_cast<const WString &>(refLines["dynamicRefLineSnmColor"]) );
+    if( refLines.contains("dynamicRefLineCommonColor") )
+      info.dynamicRefLineCommonColor = WColor( static_cast<const WString &>(refLines["dynamicRefLineCommonColor"]) );
+    if( refLines.contains("dynamicRefLineOtherColor") )
+      info.dynamicRefLineOtherColor = WColor( static_cast<const WString &>(refLines["dynamicRefLineOtherColor"]) );
     
     if( refLines.contains("lineColors") )
     {

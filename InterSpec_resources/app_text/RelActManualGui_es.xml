@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ramrr- short for RelActManualReportResource
+       mrend- short for ManRelEffNucDisp
+       ramg-  short for RelActManualGui
+  -->
+
+  <!-- Messages when creating HTML report -->
+  <message id="ramrr-no-solution-title">Sin solución de actividad rel. disponible</message>
+  <message id="ramrr-no-solution-text"></message>
+  <message id="ramrr-err-report">Error obteniendo archivo de espectro actualmente mostrado: {1}</message>
+  
+  <!-- Messages in the nuclide component of the GUI -->
+  <message id="mrend-spec-act">Act. esp.</message>
+  <message id="mrend-X(a,n)">Alfas en {1} creando neutrones</message>
+  <message id="mrend-X(n,a)">Neutrones en {1} creando alfas</message>
+  <message id="mrend-X(a,p)">Alfas en {1} creando protones</message>
+  <message id="mrend-X(n,g)">Neutrones lentos en {1} siendo capturados</message>
+  <message id="mrend-X(n,n)">Neutrones rápidos dispersándose inelásticamente de {1}</message>
+  <message id="mrend-X(a,a)">Dispersión alfa inelástica de {1}</message>
+  <message id="mrend-annih">Rayos gamma de aniquilación</message>
+  <message id="mrend-unknown-rxctn">Reacción desconocida</message>
+  <message id="mrend-X(,)"></message>
+  <message id="mrend-cb-decay-during-meas">Desintegración durante med.</message>
+  <message id="mrend-tt-decay-during-meas">Cuando está marcado, la desintegración de nucleídos durante la medición será contabilizada, con la actividad relativa citada siendo la actividad al inicio de la medición.</message>
+  
+  <!-- Message on the general GUI interface -->
+  <message id="ramg-eqn-form-label">Forma ecu.</message>
+  <message id="ramg-options-label">Opciones</message>
+  <message id="ramg-tt-eqn-form">
+    La forma funcional a usar para la curva de eficiencia relativa.
+    <br />
+    Las opciones son:
+    <table style="margin-left: 10px;">
+      <tr><th>Log(energía):</th>               <th>y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...</th></tr>
+      <tr><th>Log(ef. rel.):</th>            <th>y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )</th></tr>
+      <tr><th>Log(energía)Log(ef. rel.):</th> <th>y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )</th></tr>
+      <tr><th>FRAM empírico:</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr>
+      <tr><th>FRAM físico:</th>             <th>
+        y = <span style="display: inline-block; vertical-align: middle;">
+              <span style="display: block; text-align: center;">
+               (1 - exp(-AD<sub>0</sub>*μ<sub>0</sub>))
+              </span>
+              <span style="display: block; border-top: 1px solid black; text-align: center;">
+                (AD<sub>0</sub>*μ<sub>0</sub>)
+              </span>
+            </span>
+             * [exp(-AD<sub>1</sub>*μ<sub>1</sub>) * exp(-AD<sub>2</sub>*μ<sub>2</sub>) + ...]
+             * [Ef. det.]
+             * [E<sup>b</sup> * C<sup>1/E</sup>]
+        </th></tr>
+    </table>
+  </message>
+  <message id="ramg-eqn-order-label">Orden ecu.</message>
+  <message id="ramg-tt-eqn-order">El orden (cuántos términos dependientes de energía) de ecuación de eficiencia relativa a usar.</message>
+  <message id="ramg-phys-model-use-hoerl">Usar fcn. corr.</message>
+  <message id="ramg-tt-phys-model-use-hoerl">Cuando está marcado, el factor de corrección Hoerl modificado (es decir, E<sup>b</sup> * C<sup>1/E</sup>) se usa para contabilizar diferencias entre el modelo físico y/o eficiencia del detector, y datos observados.</message>
+  <message id="ramg-yield-info-label">Info rendimiento</message>
+  <message id="ramg-tt-data-src">La fuente de datos nucleares para razones de ramificación gamma.</message>
+  <message id="ramg-match-tol-label">Tol. coincidencia</message>
+  <message id="ramg-tt-match-tol">
+    El número de FWHM, desde la media del pico, para incluir rayos gamma fuente como contribuyendo al área de un pico.
+    <br />
+    Para algunos fotopicos de algunos nucleídos múltiples rayos gamma que están cerca en energía pueden contribuir
+    a crear un área de pico detectada. Esta tolerancia de coincidencia especifica cuántos FWHM desde la
+    media del pico observado los rayos gamma fuente deben sumarse para determinar la razón de ramificación a usar.
+    <br />
+    Especificar un valor de cero causará que solo la energía gamma asignada a un pico se
+    use, incluso si hay otros rayos gamma muy cercanos.
+  </message>
+  <message id="ramg-add-uncert-label">Incert. adic.</message>
+  <message id="ramg-tt-add-uncert">
+    Una incertidumbre adicional para añadir a la línea de eficiencia relativa, para cada fotopico ajustado.
+    <br />
+    Pequeñas desviaciones en eficiencia de detección para uno o unos pocos picos de alta estadística pueden causar que la
+    curva de eficiencia se desvíe notablemente de los otros puntos si solo se usan incertidumbres estadísticas;
+    cuando se añade una incertidumbre adicional la eficiencia relativa entonces hará un mejor trabajo
+    de pasar visiblemente por todos los puntos de datos, y de pruebas limitadas producir resultados más precisos.
+    Puede pensar en esto como añadir una incertidumbre sistemática a cada fotopico detectado,
+    que no está correlacionada entre picos. De pruebas limitadas el valor usado no es enormemente
+    importante, solo mientras haya algo. También puede elegir usar un ajuste no ponderado,
+    donde cada pico contribuirá al ajuste igualmente, sin importar su incertidumbre estadística.
+  </message>
+  <message id="ramg-unweighted-label">No ponderado</message>
+  <message id="ramg-stat-only-label">Solo est.</message>
+  <message id="ramg-back-sub-cb">Sustracción de fondo</message>
+  <message id="ramg-html-export-label">Reporte HTML</message>
+  <message id="ramg-nucs-label">Nucleídos</message>
+  <message id="ramg-nucs-shield-label">Blindajes/nucs</message>
+  <message id="ramg-peaks-to-use-label">Picos a usar</message>
+  <message id="ramg-results-label">Resultados</message>
+  <message id="ramg-mi-results">Tabla</message>
+  <message id="ramg-mi-chart">Gráfico</message>
+  <message id="ramg-back-sub-neg">Después de sustracción de fondo, el pico en {1} keV tuvo cuentas negativas así que no se usó.</message>
+  <message id="ramg-warn-reaction">Usar fotopicos de reacción probablemente no es válido, a menos que los rayos gamma se emitan homogéneamente desde un objeto único.</message>
+  <message id="ramg-warn-no-bkg-sub-used">Se seleccionó sustracción de picos de fondo, pero ningún pico de fondo coincidió con los picos de primer plano seleccionados.</message>
+  <message id="ramg-warn-rel-eff-u/pu-xray">La curva de eficiencia relativa no contabiliza bordes de absorción de rayos X - usar picos bajo 120 keV para problemas de U o Pu no es recomendado.</message>
+  <message id="ramg-warn-rel-eff-other-xray">La curva de eficiencia relativa no contabiliza bordes de absorción de rayos X de ningún blindaje potencial - por favor asegúrese de que los picos usados no se extiendan a través de bordes de absorción de ningún blindaje.</message>
+  <message id="ramg-warn-match-outside-tol">Los rayos gamma asignados{1} de {2} keV están fuera de la tolerancia de coincidencia con los picos{1} de {3}; note que la energía gamma asignada se usa para compensar por rayos gamma cercanos, y no la media del pico ajustado.</message>
+  <message id="ramg-warn-failed-match">Error al coincidir nucleído{1} con cualquier pico: {2}</message>
+  <message id="ramg-err-setting-up-calc">Error configurando cálculo de eficiencia relativa: {1}</message>
+  <message id="ramg-err-performing-calc">Error realizando cálculo de eficiencia relativa: {1}</message>
+  <message id="ramg-no-results-available">Sin resultados disponibles.</message>
+  <message id="ramg-result-error-msg">Error: {1}</message>
+  <message id="ramg-result-warn-msg">Advertencia: {1}</message>
+  <message id="ramg-and-there-were">y había</message>
+  <message id="ramg-dof">GDL</message> <!-- Degrees of freedom -->
+  <message id="ramg-fit-unweighted-txt">El ajuste no fue ponderado; las incertidumbres pueden no tener sentido.</message>
+  <message id="ramg-fit-stat-only">Las incertidumbres son solo estadísticas.</message>
+  <message id="ramg-fit-uncert-increased">Incertidumbres artificialmente aumentadas por "Incert. adic.".</message>
+  <message id="ramg-consider-add-uncert-u">Puede querer considerar añadir "Incert. adic." para problemas de uranio.</message>
+  <message id="ramg-you-using-add-uncert-u">Está añadiendo "Incert. adic." - interprete las incertidumbres calculadas con cuidado.</message>
+  <message id="ramg-you-using-add-uncert-non-u">Actualmente está añadiendo "Incert. adic.", lo que causará que las incertidumbres calculadas no sean correctas.</message>
+  <message id="ramg-chart-info-title">χ²/gdl = {1}/{2}{3}{4}</message>
+  <message id="ramg-pval"> (pval={1})</message>
+  <message id="ramg-1-pval"> (1-pval={1})</message>
+</messages>
+
+

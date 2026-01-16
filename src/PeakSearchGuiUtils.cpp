@@ -61,6 +61,7 @@
 #include "InterSpec/SpectrumChart.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/MakeFwhmForDrf.h"
+#include "InterSpec/RefLineDynamic.h"
 #include "InterSpec/PeakInfoDisplay.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/SpectrumDataModel.h"
@@ -172,7 +173,7 @@ public:
                       const vector<PeakDef> &final_peaks,
                       const vector<ReferenceLineInfo> &displayed )
   : AuxWindow( "Dummy",
-               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::TabletNotFullScreen | AuxWindowProperties::DisableCollapse) ),
+               (AuxWindowProperties::IsModal | AuxWindowProperties::TabletNotFullScreen | AuxWindowProperties::DisableCollapse) ),
     m_viewer( viewer ),
     m_table( nullptr ),
     m_previewChartColumn( -1 ),
@@ -1445,6 +1446,13 @@ public:
       case PeakModel::SetGammaSource::NoSourceChange:
         //Shouldnt ever happen, but JIC...
         passMessage( "Trouble making change to nuclide - not applying, sorry!<br />"
+                    "Please report error, including selected nuclides to interspec@sandia.gov", 2 );
+        populateNuclideSelects();
+        break;
+        
+      case PeakModel::SetGammaSource::FailedSourceChange:
+        //Shouldnt ever happen, but JIC...
+        passMessage( "Failed changing to nuclide - not applying, sorry!<br />"
                      "Please report error, including selected nuclides to interspec@sandia.gov", 2 );
         populateNuclideSelects();
         break;
@@ -1783,359 +1791,6 @@ public:
   
 };//class PeakSelectorWindow
 
-  
-  
-/** Assigns the passed in peak to a reference line if reasonable.  If this
- assignment would cause one of the already existing peaks to change assignment
- (most likely if two peaks of diff amp, but same nuc, are right next to each
- other) then the peak that should be changed, along with the string of the
- assignment it should be changed to.
- 
- TODO: I dont think the return value is what is claimed, or at least not handled correctly; this should all be improved
- */
-std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
-      assign_nuc_from_ref_lines( PeakDef &peak,
-                                 std::shared_ptr<const deque< PeakModel::PeakShrdPtr > > previouspeaks,
-                                 const std::shared_ptr<const SpecUtils::Measurement> &data,
-                                 const vector<ReferenceLineInfo> &displayed,
-                                 const bool colorPeaksBasedOnReferenceLines,
-                                 const bool showingEscapePeakFeature )
-{
-  std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>> other_change;
-  
-  if( !data || !previouspeaks || displayed.empty() )
-    return other_change;
-    
-
-  //There is a fairly common situation (especially for HPGe) where there is a
-  //  small peak, next to a much larger peak, where if the user first
-  //  identifies the large peak, the correct gamma-ray association gets made,
-  //  but then whe the second one is identified, it also gets assigned the
-  //  same gamma-ray association as the larger peak, which is incoorect.  To
-  //  avoid this, we will use previouspeaks and prevpeak to check, and correct
-  //  for this condition.
-  
-  double prevPeakDist = DBL_MAX, prevIntensity = DBL_MAX;
-  double thisIntensity = DBL_MAX;
-  PeakDef::SourceGammaType thisGammaType = PeakDef::SourceGammaType::NormalGamma;
-  
-  PeakModel::PeakShrdPtr prevpeak;
-  
-  
-  //The efficiency of S.E. and D.E. peaks, relative to F.E. peak, for the 20% Generic GADRAS DRF
-  //  included in InterSpec, is given pretty well by the following (energy in keV):
-  const auto single_escape_sf = []( const double x ) -> double {
-    return std::max( 0.0, (1.8768E-11 *x*x*x) - (9.1467E-08 *x*x) + (2.1565E-04 *x) - 0.16367 );
-  };
-  
-  const auto double_escape_sf = []( const double x ) -> double {
-    return std::max( 0.0, (1.8575E-11 *x*x*x) - (9.0329E-08 *x*x) + (2.1302E-04 *x) - 0.16176 );
-  };
-  
-  
-  try
-  {
-    // We will also check if single or double escape peak.
-    //  We will only check for escape peaks if HPGe, or user is showing escape peak features,
-    //    or if the energy is above 4 MeV (arbitrarily chosen).
-    //  We will assume a generic 20% HPGe detector to get S.E. and D.E. efficiencies.
-    //  And on top of all those assumptions, we will apply an arbitrary amplitude factor of 0.5
-    //    to reactions if we arent showing escape peak features, and 0.2 for xrays
-    const float pair_prod_thresh = 1255.0f; //The single_escape_sf and double_escape_sf give negative values below 1255.
-    const float always_check_escape_thresh = 4000.0f;
-    const float escape_suppression_factor = 0.5;
-    const float xray_suppression_factor = 0.2;
-    
-    // We will consider escape peaks if it is likely a HPGe detector.
-    //  We'll judge this off the current peak width
-    vector<std::shared_ptr<const PeakDef>> peakv( 1, make_shared<const PeakDef>(peak) );
-    const PeakFitUtils::CoarseResolutionType resolutionType
-                              = PeakFitUtils::coarse_resolution_from_peaks( peakv );
-    bool isHPGe = (resolutionType == PeakFitUtils::CoarseResolutionType::High);
-    if( !isHPGe && data && (data->num_gamma_channels() > 1024) && InterSpec::instance() )
-      isHPGe = PeakFitUtils::is_likely_high_res( InterSpec::instance() );
-    
-    
-    double mindist = 99999999.9;
-    double nearestEnergy = -999.9;
-    
-    const double minx = peak.lowerX();
-    const double maxx = peak.upperX();
-    
-    const SandiaDecay::Nuclide *nuclide = NULL;
-    const SandiaDecay::Element *element = NULL;
-    const ReactionGamma::Reaction *reaction = NULL;
-    
-    const double mean = peak.mean();
-    const double sigma = peak.gausPeak() ? peak.sigma() : peak.roiWidth();
-    
-    Wt::WColor color;
-    
-    for( const ReferenceLineInfo &nuc : displayed )
-    {
-      // Make sure the source is a type we can potentially assign to a peak
-      switch( nuc.m_source_type )
-      {
-        case ReferenceLineInfo::SourceType::Nuclide:
-        case ReferenceLineInfo::SourceType::FluorescenceXray:
-        case ReferenceLineInfo::SourceType::Reaction:
-        case ReferenceLineInfo::SourceType::Background:
-        case ReferenceLineInfo::SourceType::NuclideMixture:
-        case ReferenceLineInfo::SourceType::OneOffSrcLines:
-        case ReferenceLineInfo::SourceType::FissionRefLines:
-          break;
-          
-        case ReferenceLineInfo::SourceType::CustomEnergy:
-        case ReferenceLineInfo::SourceType::None:
-          continue;
-          break;
-      }//switch( nuc.m_source_type )
-      
-      
-      for( const ReferenceLineInfo::RefLine &line : nuc.m_ref_lines )
-      {
-        double energy = line.m_energy;
-        PeakDef::SourceGammaType gammaType = PeakDef::SourceGammaType::NormalGamma;
-        
-        switch( line.m_source_type )
-        {
-          case ReferenceLineInfo::RefLine::RefGammaType::SingleEscape:
-            energy += 510.998950;
-            gammaType = PeakDef::SourceGammaType::SingleEscapeGamma;
-            break;
-            
-          case ReferenceLineInfo::RefLine::RefGammaType::DoubleEscape:
-            energy += 2.0*510.998950;
-            gammaType = PeakDef::SourceGammaType::DoubleEscapeGamma;
-            break;
-            
-          case ReferenceLineInfo::RefLine::RefGammaType::Annihilation:
-            gammaType = PeakDef::SourceGammaType::AnnihilationGamma;
-            break;
-            
-          case ReferenceLineInfo::RefLine::RefGammaType::Normal:
-          case ReferenceLineInfo::RefLine::RefGammaType::SumGammaPeak:
-          case ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak:
-            gammaType = PeakDef::SourceGammaType::NormalGamma;
-            break;
-        }//switch( line.m_source_type )
-        
-        
-        double expectedPhotoPeakEnergy = energy;
-        double intensity = line.m_normalized_intensity;
-        
-        switch( line.m_particle_type )
-        {
-          case ReferenceLineInfo::RefLine::Particle::Gamma:
-            break;
-            
-          case ReferenceLineInfo::RefLine::Particle::Xray:
-            intensity *= xray_suppression_factor;
-            gammaType = PeakDef::SourceGammaType::XrayGamma;
-            break;
-            
-          case ReferenceLineInfo::RefLine::Particle::Alpha:
-          case ReferenceLineInfo::RefLine::Particle::Beta:
-            continue;
-            break;
-        }//switch( line.m_particle_type )
-        
-        if( IsInf(intensity) || IsNan(intensity) || (intensity < numeric_limits<float>::min()) )
-          continue;
-        
-        const double delta_e = fabs( mean - energy );
-        double dist = (0.25*sigma + delta_e) / intensity;
-        
-        if( (line.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::Normal)
-           && ( ((isHPGe || showingEscapePeakFeature) && (energy > pair_prod_thresh))
-               || (energy > always_check_escape_thresh) ) )
-        {
-          const double suppress_sf = showingEscapePeakFeature ? 1.0 : escape_suppression_factor;
-          
-          double se_abundance = intensity * single_escape_sf(energy) * suppress_sf;
-          const double se_delta_e = fabs( mean + 510.9989 - energy );
-          const double se_dist = (0.25*sigma + se_delta_e) / se_abundance;
-          
-          double de_abundance = intensity * double_escape_sf(energy) * suppress_sf;
-          const double de_delta_e = fabs( mean + (2*510.9989) - energy );
-          const double de_dist = (0.25*sigma + de_delta_e) / de_abundance;
-          
-          if( se_dist < dist )
-          {
-            dist = se_dist;
-            intensity = se_abundance;
-            expectedPhotoPeakEnergy = energy - 510.9989;
-            gammaType = PeakDef::SourceGammaType::SingleEscapeGamma;
-          }
-          
-          if( de_dist < dist )
-          {
-            dist = de_dist;
-            intensity = de_abundance;
-            expectedPhotoPeakEnergy = energy - 2*510.9989;
-            gammaType = PeakDef::SourceGammaType::DoubleEscapeGamma;
-          }
-        }//if( check for S.E. or D.E. )
-        
-        
-        if( (dist < mindist)
-           && (expectedPhotoPeakEnergy >= minx) && (expectedPhotoPeakEnergy <= maxx) )
-        {
-          bool currentlyused = false;
-          for( const PeakModel::PeakShrdPtr &pp : *previouspeaks )
-          {
-            const bool sameNuc = (line.m_parent_nuclide
-                                  && pp->decayParticle()
-                                  && (pp->parentNuclide() == line.m_parent_nuclide)
-                                  && (fabs(pp->decayParticle()->energy - energy) < 0.01)
-                                  && (pp->sourceGammaType() == gammaType));
-            const bool sameXray = ((line.m_particle_type == ReferenceLineInfo::RefLine::Particle::Xray)
-                                   && line.m_element
-                                   && (pp->xrayElement() == line.m_element)
-                                   && (fabs(pp->xrayEnergy() - energy) < 0.01)
-                                   && (pp->sourceGammaType() == gammaType));
-            
-            if( sameNuc || sameXray )
-            {
-              currentlyused = true;
-              if( dist < prevPeakDist )
-              {
-                prevpeak = pp;
-                prevPeakDist = dist;
-                prevIntensity = intensity;
-              }
-              break;
-            }//if( pp->reaction() == rpp.reaction )
-          }//for( const PeakModel::PeakShrdPtr &pp : *previouspeaks )
-          
-          if( !currentlyused )
-          {
-            prevpeak.reset();
-            mindist = dist;
-            color = line.m_color.isDefault() ? nuc.m_input.m_color : line.m_color;
-            nuclide = line.m_parent_nuclide;
-            element = line.m_element;
-            reaction = line.m_reaction;
-            nearestEnergy = energy;
-            thisIntensity = intensity;
-            thisGammaType = gammaType;
-          }//if( !currentlyused )
-        }//if( we should possible associate this peak with this line )
-      }//for( const double energy : nuc.energies )
-    }//if( nuc.nuclide )
-    
-    
-    if( nuclide || reaction || element )
-    {
-      assert( mindist >= 0.0 );
-      
-      string src;
-      char nuclide_label[128];
-      
-      const char *prefix = "", *postfix = "";
-      switch( thisGammaType )
-      {
-        case PeakDef::NormalGamma:       break;
-        case PeakDef::AnnihilationGamma: break;
-        case PeakDef::SingleEscapeGamma: prefix  = "S.E. "; break;
-        case PeakDef::DoubleEscapeGamma: prefix  = "D.E. "; break;
-        case PeakDef::XrayGamma:         postfix = " xray"; break;
-      }//switch( thisGammaType )
-      
-      
-      if( !!prevpeak )
-      {
-#ifdef _MSC_VER
-#pragma message("Need to clean up setting peak source, and also verify S.E., and D.E., are actually all correct")
-#else
-#warning "Need to clean up setting peak source, and also verify S.E., and D.E., are actually all correct"
-#endif
-
-        //There is an already existing peak, whos nuclide/xray/reaction gamma was
-        //  "closer" (in terms of the distance metric used) than the
-        //  nuclide/xray/reaction actually assigned to this new peak.  We need
-        //  to check that we shouldnt swap them, based on relative intensities.
-        //
-        //  TODO: Havent fully verified this logic when a S.E. or D.E. peak is involved
-        const bool prevAmpSmaller = (prevpeak->amplitude()<peak.amplitude());
-        const bool prevIntenitySmaller = (prevIntensity < thisIntensity);
-        if( prevAmpSmaller != prevIntenitySmaller )
-        {
-          double prevEnergy = 0.0;
-          const SandiaDecay::Nuclide *prevnuclide = prevpeak->parentNuclide();
-          const SandiaDecay::Element *prevelement = prevpeak->xrayElement();
-          const ReactionGamma::Reaction *prevreaction = prevpeak->reaction();
-          
-          if( prevnuclide && prevpeak->parentNuclide() && prevpeak->decayParticle() )
-          {
-            prevEnergy = prevpeak->decayParticle()->energy;
-            src = prevpeak->parentNuclide()->symbol;
-          }else if( prevelement && prevpeak->xrayElement() )
-          {
-            prevEnergy = prevpeak->xrayEnergy();
-            src = prevpeak->xrayElement()->symbol;
-          }else if( prevreaction && prevpeak->reaction() )
-          {
-            prevEnergy = prevpeak->reactionEnergy();
-            src = prevpeak->reaction()->name();
-          }else
-          {
-            throw std::logic_error( "InterSpec::addPeak(): bad logic "
-                                   "checking previous peak gamma assignment" );
-          }
-          
-          snprintf( nuclide_label, sizeof(nuclide_label),
-                   "%s%s%s %.6f keV", prefix, postfix, src.c_str(), nearestEnergy );
-          
-          
-          other_change.reset( new std::pair<PeakModel::PeakShrdPtr,std::string>(prevpeak,nuclide_label) );
-          
-          nuclide = prevnuclide;
-          reaction = prevreaction;
-          element = prevelement;
-          nearestEnergy = prevEnergy;
-        }//if( we need to swap things )
-      }//if( !!prevpeak )
-      
-      if( nuclide )
-      {
-        assert( thisGammaType == PeakDef::NormalGamma
-               || thisGammaType == PeakDef::SingleEscapeGamma
-               || thisGammaType == PeakDef::DoubleEscapeGamma
-               || thisGammaType == PeakDef::XrayGamma
-               || thisGammaType == PeakDef::AnnihilationGamma );
-        
-        src = nuclide->symbol;
-      }else if( reaction )
-      {
-        assert( thisGammaType == PeakDef::NormalGamma
-               || thisGammaType == PeakDef::SingleEscapeGamma
-               || thisGammaType == PeakDef::DoubleEscapeGamma );
-        
-        src = reaction->name();
-      }else if( element )
-      {
-        assert( thisGammaType == PeakDef::XrayGamma );
-        src = element->symbol;
-      }
-      
-      snprintf( nuclide_label, sizeof(nuclide_label),
-               "%s%s%s %.6f keV", prefix, src.c_str(), postfix, nearestEnergy );
-      
-      // TODO: do we really need to use #PeakModel::setNuclideXrayReaction ?  We should be able to just directly set information
-      PeakModel::setNuclideXrayReaction( peak, nuclide_label, -1.0 );
-      
-      if( colorPeaksBasedOnReferenceLines /* && peak.lineColor().isDefault() */ )
-        peak.setLineColor( color );
-    }//if( nuclide || reaction || element )
-  }catch( std::exception &e )
-  {
-    passMessage( "Unexpected error searching for isotope for peak: " + string(e.what()),
-                WarningWidget::WarningMsgHigh );
-  }
-  
-  return other_change;
-}//void assignNuclideFromReferenceLines( PeakDef &peak )
 
   
   
@@ -2265,7 +1920,7 @@ namespace PeakSearchGuiUtils
     chart->setModel( dataModel );
     chart->setPeakModel( peakmodel );
     peakmodel->setForeground( meas );
-    peakmodel->setPeakFromSpecMeas( specmeas, specmeas->sample_numbers() );
+    peakmodel->setPeakFromSpecMeas( specmeas, specmeas->sample_numbers(), SpecUtils::SpectrumType::Foreground );
     
     dataModel->setDataHistogram( meas );
     
@@ -2375,76 +2030,43 @@ namespace PeakSearchGuiUtils
     
     return img;
   }//renderChartToSvg(...)
-
-std::vector<std::shared_ptr<const PeakDef>>
-  improve_initial_peak_fit( InterSpec *interspec, shared_ptr<const DetectorPeakResponse> det,
-                           const std::pair<std::vector<std::shared_ptr<const PeakDef>>,
-                                          std::vector<std::shared_ptr<const PeakDef>>> &inital_fit )
-{
-  const vector<shared_ptr<const PeakDef>> initial_fit_peaks = inital_fit.first;
-  const vector<shared_ptr<const PeakDef>> before_fit_peaks_to_rm = inital_fit.second;
-  
-  // Check we are the simplest case, right now
-  assert( initial_fit_peaks.size() == 1 );
-  assert( before_fit_peaks_to_rm.empty() );
-  if( initial_fit_peaks.size() != 1 || !before_fit_peaks_to_rm.empty() )
-    throw runtime_error( "improve_initial_peak_fit not implemented for all but simplest case" );
-  
-  shared_ptr<const SpecUtils::Measurement> data = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
-  if( !data )
-    return inital_fit.first;
-    
-  // Check ROI range, and limit it to a specified number of FWHM
-  
-  // Try a few different continuums - including flat and linear step - but first check if worthwhile
-  
-  // See if worth trying some skew
-  
-  //vector<shared_ptr<const PeakDef>> linear_cont = initial_fit_peaks;
-  //vector<shared_ptr<const PeakDef>> quadratic_cont = initial_fit_peaks;
-  //vector<shared_ptr<const PeakDef>> flat_step_cont = initial_fit_peaks;
-    // blah blah blah go through and set some value
-  
-    
-  //Pick best peak, but consider adding systematic uncertainty to peak area
-  
-    //vector<shared_ptr<const PeakDef>>
-    //    refitPeaksThatShareROI( data, det,
-    //                            const std::vector< std::shared_ptr<const PeakDef> > &inpeaks,
-    //                            -1.0 );
-    
-    
-  return inital_fit.first;
-}//improve_initial_peak_fit(...)
-
   
   
 void fit_peak_from_double_click( InterSpec *interspec, const double x, const double pixPerKeV,
-                                shared_ptr<const DetectorPeakResponse> det )
+                                shared_ptr<const DetectorPeakResponse> det,
+                                std::string ref_line_name,
+                                const SpecUtils::SpectrumType spec_type )
 {
   PeakModel *pmodel = interspec ? interspec->peakModel() : nullptr;
   assert( pmodel );
   if( !pmodel )
     return;
-  
-  shared_ptr<const SpecUtils::Measurement> data = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+
+  shared_ptr<const SpecUtils::Measurement> data = interspec->displayedHistogram(spec_type);
   if( !data )
     return;
-  
+
   const bool isHPGe = PeakFitUtils::is_likely_high_res( interspec );
-  
+
+  // Get the appropriate SpecMeas and sample numbers for the spectrum type
+  shared_ptr<SpecMeas> meas = interspec->measurment( spec_type );
+  const std::set<int> sample_nums = interspec->displayedSamples( spec_type );
+
   vector< PeakModel::PeakShrdPtr > origPeaks;
-  if( !!pmodel->peaks() )
+
+  // Get peaks from the appropriate SpecMeas for the given spectrum type
+  shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> orig_peaks = meas ?   meas->peaks( sample_nums ) : nullptr;
+  if( orig_peaks )
   {
-    for( const PeakModel::PeakShrdPtr &p : *pmodel->peaks() )
+    for( const std::shared_ptr<const PeakDef> &p : *orig_peaks )
     {
       origPeaks.push_back( p );
-      
+
       //Avoid fitting a peak in the same area a data defined peak is.
       if( !p->gausPeak() && (x >= p->lowerX()) && (x <= p->upperX()) )
         return;
     }
-  }//if( pmodel->peaks() )
+  }//
   
   pair< PeakShrdVec, PeakShrdVec > foundPeaks;
   foundPeaks = searchForPeakFromUser( x, pixPerKeV, data, origPeaks, det, isHPGe );
@@ -2462,24 +2084,20 @@ void fit_peak_from_double_click( InterSpec *interspec, const double x, const dou
   }//if( foundPeaks.first.empty() )
   
   
-  // Check if we found a single peak, that is its own new ROI
-  //  20231209: right now, starting development for this simple case, and will expand later
-  if( (foundPeaks.first.size() == 1) && foundPeaks.second.empty() )
-    foundPeaks.first = improve_initial_peak_fit( interspec, det, foundPeaks );
-  
-  
-  for( const PeakModel::PeakShrdPtr &p : foundPeaks.second )
-    pmodel->removePeak( p );
-
-  
   //We want to add all of the previously found peaks back into the model, before
   //  adding the new peak.
-  PeakShrdVec peakstoadd( foundPeaks.first.begin(), foundPeaks.first.end() );
-  PeakShrdVec existingpeaks( foundPeaks.second.begin(), foundPeaks.second.end() );
+  vector<shared_ptr<const PeakDef>> peakstoadd( foundPeaks.first.begin(), foundPeaks.first.end() );
+  vector<shared_ptr<const PeakDef>> existingpeaks( foundPeaks.second.begin(), foundPeaks.second.end() );
+  
+  // For ROIs that will now have multiple peaks, we need to match up the previous peak(s) with the new peaks.
+  // We know that the newly added peak wont have a source associated with it.
+  // We will remove peaks from `peakstoadd`, and put them into `replacement_peaks`.
+  vector<shared_ptr<const PeakDef>> replacement_peaks;
+
   
   //First add all the new peaks that have a nuclide/reaction/xray associated
   //  with them, since we know they are existing peaks
-  for( const PeakModel::PeakShrdPtr &p : foundPeaks.first )
+  for( const PeakModel::PeakShrdPtr &p : foundPeaks.first ) //note, not looping over `peakstoadd`, as we are modifying that vector.
   {
     if( p->parentNuclide() || p->reaction() || p->xrayElement() )
     {
@@ -2507,13 +2125,12 @@ void fit_peak_from_double_click( InterSpec *interspec, const double x, const dou
       
       if( nearest >= 0 )
       {
-        pmodel->addNewPeak( *p );
+        replacement_peaks.push_back( p );
         existingpeaks.erase( existingpeaks.begin() + nearest );
         peakstoadd.erase( std::find(peakstoadd.begin(), peakstoadd.end(), p) );
       }//if( nearest >= 0 )
     }//if( p->parentNuclide() || p->reaction() || p->xrayElement() )
   }//for( const PeakModel::PeakShrdPtr &p : peakstoadd )
-  
   
   //Now go through and add the new versions of the previously existing peaks,
   //  using energy to match the previous to current peak.
@@ -2532,23 +2149,50 @@ void fit_peak_from_double_click( InterSpec *interspec, const double x, const dou
     }
     
     std::shared_ptr<const PeakDef> peakToAdd = peakstoadd[nearest];
-    peakstoadd.erase( peakstoadd.begin() + nearest );
-    pmodel->addNewPeak( *peakToAdd );
+    peakstoadd.erase( begin(peakstoadd) + nearest );
+    replacement_peaks.push_back( peakToAdd );
   }//for( const PeakModel::PeakShrdPtr &p : existingpeaks )
   
-  //Just in case we messed up the associations between the existing peak an
-  //  their respective new version, we'll add all peaks that have a
-  //  nuclide/reaction/xray associated with them, since they must be previously
-  //  existing
-  for( const PeakModel::PeakShrdPtr &p : peakstoadd )
-    if( p->parentNuclide() || p->reaction() || p->xrayElement() )
-      pmodel->addNewPeak( *p );
   
-  //Finally, in principle we will add the new peak here
+  //We'll check that we didnt mess up the associations between the existing peak an
+  //  their respective new version, for all peaks with a source associated with them
   for( const PeakModel::PeakShrdPtr &p : peakstoadd )
   {
-    if( !p->parentNuclide() && !p->reaction() && !p->xrayElement() )
-      interspec->addPeak( *p, true );
+    assert( !p->parentNuclide() && !p->reaction() && !p->xrayElement() );
+  }
+  
+  // Now check we added exactly one new peak, and it doesnt yet hav a source associated with it
+  assert( (peakstoadd.size() == 1) && !peakstoadd.front()->hasSourceGammaAssigned() );
+  
+
+  if( spec_type != SpecUtils::SpectrumType::Foreground )
+  {
+    auto updated_peaks = make_shared<deque<std::shared_ptr<const PeakDef>>>();
+    if( orig_peaks )
+      updated_peaks->insert( end(*updated_peaks), begin(*orig_peaks), end(*orig_peaks) );
+
+    // Erase any peaks from `existingpeaks` that are in `updated_peaks`
+    updated_peaks->erase( std::remove_if( begin(*updated_peaks), end(*updated_peaks),
+      [&foundPeaks](const std::shared_ptr<const PeakDef> &peak) {
+        return (std::find( begin(foundPeaks.second), end(foundPeaks.second), peak ) != end(foundPeaks.second));
+    } ), end(*updated_peaks) );
+
+    // Insert peaks from `peakstoadd` to `updated_peaks`
+    updated_peaks->insert( end(*updated_peaks), begin(replacement_peaks), end(replacement_peaks) );
+    std::sort( begin(*updated_peaks), end(*updated_peaks), &PeakDef::lessThanByMeanShrdPtr );
+    
+    interspec->setPeaks( spec_type, updated_peaks );
+  }else
+  {
+    pmodel->removePeaks( {begin(foundPeaks.second), end(foundPeaks.second)} );
+    pmodel->addPeaks( replacement_peaks );
+  }//if( spec_type != SpecUtils::SpectrumType::Foreground ) / else
+  
+  for( shared_ptr<const PeakDef> p : peakstoadd )
+  {
+    assert( !p->parentNuclide() && !p->reaction() && !p->xrayElement() );
+     
+    interspec->addPeak( *p, true, spec_type, ref_line_name );
   }
 }//void fit_peak_from_double_click(...)
 
@@ -2645,8 +2289,360 @@ void automated_search_for_peaks( InterSpec *viewer,
   } ) );
 }//void automated_search_for_peaks( InterSpec *interspec, const bool keep_old_peaks )
 
-  
-  
+
+/** Assigns the passed in peak to a reference line if reasonable.  If this
+ assignment would cause one of the already existing peaks to change assignment
+ (most likely if two peaks of diff amp, but same nuc, are right next to each
+ other) then the peak that should be changed, along with the string of the
+ assignment it should be changed to.
+
+ TODO: I dont think the return value is what is claimed, or at least not handled correctly; this should all be improved
+ */
+std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
+      assign_nuc_from_ref_lines( PeakDef &peak,
+                                 std::shared_ptr<const deque< PeakModel::PeakShrdPtr > > previouspeaks,
+                                 const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                 const vector<ReferenceLineInfo> &displayed,
+                                 const bool colorPeaksBasedOnReferenceLines,
+                                 const bool showingEscapePeakFeature )
+{
+  std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>> other_change;
+
+  if( !data || !previouspeaks || displayed.empty() )
+    return other_change;
+
+
+  //There is a fairly common situation (especially for HPGe) where there is a
+  //  small peak, next to a much larger peak, where if the user first
+  //  identifies the large peak, the correct gamma-ray association gets made,
+  //  but then whe the second one is identified, it also gets assigned the
+  //  same gamma-ray association as the larger peak, which is incoorect.  To
+  //  avoid this, we will use previouspeaks and prevpeak to check, and correct
+  //  for this condition.
+
+  double prevPeakDist = DBL_MAX, prevIntensity = DBL_MAX;
+  double thisIntensity = DBL_MAX;
+  PeakDef::SourceGammaType thisGammaType = PeakDef::SourceGammaType::NormalGamma;
+
+  PeakModel::PeakShrdPtr prevpeak;
+
+
+  //The efficiency of S.E. and D.E. peaks, relative to F.E. peak, for the 20% Generic GADRAS DRF
+  //  included in InterSpec, is given pretty well by the following (energy in keV):
+  const auto single_escape_sf = []( const double x ) -> double {
+    return std::max( 0.0, (1.8768E-11 *x*x*x) - (9.1467E-08 *x*x) + (2.1565E-04 *x) - 0.16367 );
+  };
+
+  const auto double_escape_sf = []( const double x ) -> double {
+    return std::max( 0.0, (1.8575E-11 *x*x*x) - (9.0329E-08 *x*x) + (2.1302E-04 *x) - 0.16176 );
+  };
+
+
+  try
+  {
+    // We will also check if single or double escape peak.
+    //  We will only check for escape peaks if HPGe, or user is showing escape peak features,
+    //    or if the energy is above 4 MeV (arbitrarily chosen).
+    //  We will assume a generic 20% HPGe detector to get S.E. and D.E. efficiencies.
+    //  And on top of all those assumptions, we will apply an arbitrary amplitude factor of 0.5
+    //    to reactions if we arent showing escape peak features, and 0.2 for xrays
+    const float pair_prod_thresh = 1255.0f; //The single_escape_sf and double_escape_sf give negative values below 1255.
+    const float always_check_escape_thresh = 4000.0f;
+    const float escape_suppression_factor = 0.5;
+    const float xray_suppression_factor = 0.2;
+
+    // We will consider escape peaks if it is likely a HPGe detector.
+    //  We'll judge this off the current peak width
+    vector<std::shared_ptr<const PeakDef>> peakv( 1, make_shared<const PeakDef>(peak) );
+    const PeakFitUtils::CoarseResolutionType resolutionType
+                              = PeakFitUtils::coarse_resolution_from_peaks( peakv );
+    bool isHPGe = (resolutionType == PeakFitUtils::CoarseResolutionType::High);
+    if( !isHPGe && data && (data->num_gamma_channels() > 1024) && InterSpec::instance() )
+      isHPGe = PeakFitUtils::is_likely_high_res( InterSpec::instance() );
+
+
+    double mindist = 99999999.9;
+    double nearestEnergy = -999.9;
+
+    const double minx = peak.lowerX();
+    const double maxx = peak.upperX();
+
+    const SandiaDecay::Nuclide *nuclide = NULL;
+    const SandiaDecay::Element *element = NULL;
+    const ReactionGamma::Reaction *reaction = NULL;
+
+    const double mean = peak.mean();
+    const double sigma = peak.gausPeak() ? peak.sigma() : peak.roiWidth();
+
+    Wt::WColor color;
+
+    for( const ReferenceLineInfo &nuc : displayed )
+    {
+      // Make sure the source is a type we can potentially assign to a peak
+      switch( nuc.m_source_type )
+      {
+        case ReferenceLineInfo::SourceType::Nuclide:
+        case ReferenceLineInfo::SourceType::FluorescenceXray:
+        case ReferenceLineInfo::SourceType::Reaction:
+        case ReferenceLineInfo::SourceType::Background:
+        case ReferenceLineInfo::SourceType::NuclideMixture:
+        case ReferenceLineInfo::SourceType::OneOffSrcLines:
+        case ReferenceLineInfo::SourceType::FissionRefLines:
+          break;
+
+        case ReferenceLineInfo::SourceType::CustomEnergy:
+        case ReferenceLineInfo::SourceType::None:
+          continue;
+          break;
+      }//switch( nuc.m_source_type )
+
+
+      for( const ReferenceLineInfo::RefLine &line : nuc.m_ref_lines )
+      {
+        double energy = line.m_energy;
+        PeakDef::SourceGammaType gammaType = PeakDef::SourceGammaType::NormalGamma;
+
+        switch( line.m_source_type )
+        {
+          case ReferenceLineInfo::RefLine::RefGammaType::SingleEscape:
+            energy += 510.998950;
+            gammaType = PeakDef::SourceGammaType::SingleEscapeGamma;
+            break;
+
+          case ReferenceLineInfo::RefLine::RefGammaType::DoubleEscape:
+            energy += 2.0*510.998950;
+            gammaType = PeakDef::SourceGammaType::DoubleEscapeGamma;
+            break;
+
+          case ReferenceLineInfo::RefLine::RefGammaType::Annihilation:
+            gammaType = PeakDef::SourceGammaType::AnnihilationGamma;
+            break;
+
+          case ReferenceLineInfo::RefLine::RefGammaType::Normal:
+          case ReferenceLineInfo::RefLine::RefGammaType::SumGammaPeak:
+          case ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak:
+            gammaType = PeakDef::SourceGammaType::NormalGamma;
+            break;
+        }//switch( line.m_source_type )
+
+
+        double expectedPhotoPeakEnergy = energy;
+        double intensity = line.m_normalized_intensity;
+
+        switch( line.m_particle_type )
+        {
+          case ReferenceLineInfo::RefLine::Particle::Gamma:
+            break;
+
+          case ReferenceLineInfo::RefLine::Particle::Xray:
+            intensity *= xray_suppression_factor;
+            gammaType = PeakDef::SourceGammaType::XrayGamma;
+            break;
+
+          case ReferenceLineInfo::RefLine::Particle::Alpha:
+          case ReferenceLineInfo::RefLine::Particle::Beta:
+            continue;
+            break;
+        }//switch( line.m_particle_type )
+
+        if( IsInf(intensity) || IsNan(intensity) || (intensity < numeric_limits<float>::min()) )
+          continue;
+
+        const double delta_e = fabs( mean - energy );
+        double dist = (0.25*sigma + delta_e) / intensity;
+
+        if( (line.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::Normal)
+           && ( ((isHPGe || showingEscapePeakFeature) && (energy > pair_prod_thresh))
+               || (energy > always_check_escape_thresh) ) )
+        {
+          const double suppress_sf = showingEscapePeakFeature ? 1.0 : escape_suppression_factor;
+
+          double se_abundance = intensity * single_escape_sf(energy) * suppress_sf;
+          const double se_delta_e = fabs( mean + 510.9989 - energy );
+          const double se_dist = (0.25*sigma + se_delta_e) / se_abundance;
+
+          double de_abundance = intensity * double_escape_sf(energy) * suppress_sf;
+          const double de_delta_e = fabs( mean + (2*510.9989) - energy );
+          const double de_dist = (0.25*sigma + de_delta_e) / de_abundance;
+
+          if( se_dist < dist )
+          {
+            dist = se_dist;
+            intensity = se_abundance;
+            expectedPhotoPeakEnergy = energy - 510.9989;
+            gammaType = PeakDef::SourceGammaType::SingleEscapeGamma;
+          }
+
+          if( de_dist < dist )
+          {
+            dist = de_dist;
+            intensity = de_abundance;
+            expectedPhotoPeakEnergy = energy - 2*510.9989;
+            gammaType = PeakDef::SourceGammaType::DoubleEscapeGamma;
+          }
+        }//if( check for S.E. or D.E. )
+
+
+        if( (dist < mindist)
+           && (expectedPhotoPeakEnergy >= minx) && (expectedPhotoPeakEnergy <= maxx) )
+        {
+          bool currentlyused = false;
+          for( const PeakModel::PeakShrdPtr &pp : *previouspeaks )
+          {
+            const bool sameNuc = (line.m_parent_nuclide
+                                  && pp->decayParticle()
+                                  && (pp->parentNuclide() == line.m_parent_nuclide)
+                                  && (fabs(pp->decayParticle()->energy - energy) < 0.01)
+                                  && (pp->sourceGammaType() == gammaType));
+            const bool sameXray = ((line.m_particle_type == ReferenceLineInfo::RefLine::Particle::Xray)
+                                   && line.m_element
+                                   && (pp->xrayElement() == line.m_element)
+                                   && (fabs(pp->xrayEnergy() - energy) < 0.01)
+                                   && (pp->sourceGammaType() == gammaType));
+
+            if( sameNuc || sameXray )
+            {
+              currentlyused = true;
+              if( dist < prevPeakDist )
+              {
+                prevpeak = pp;
+                prevPeakDist = dist;
+                prevIntensity = intensity;
+              }
+              break;
+            }//if( pp->reaction() == rpp.reaction )
+          }//for( const PeakModel::PeakShrdPtr &pp : *previouspeaks )
+
+          if( !currentlyused )
+          {
+            prevpeak.reset();
+            mindist = dist;
+            color = line.m_color.isDefault() ? nuc.m_input.m_color : line.m_color;
+            nuclide = line.m_parent_nuclide;
+            element = line.m_element;
+            reaction = line.m_reaction;
+            nearestEnergy = energy;
+            thisIntensity = intensity;
+            thisGammaType = gammaType;
+          }//if( !currentlyused )
+        }//if( we should possible associate this peak with this line )
+      }//for( const double energy : nuc.energies )
+    }//if( nuc.nuclide )
+
+
+    if( nuclide || reaction || element )
+    {
+      assert( mindist >= 0.0 );
+
+      string src;
+      char nuclide_label[128];
+
+      const char *prefix = "", *postfix = "";
+      switch( thisGammaType )
+      {
+        case PeakDef::NormalGamma:       break;
+        case PeakDef::AnnihilationGamma: break;
+        case PeakDef::SingleEscapeGamma: prefix  = "S.E. "; break;
+        case PeakDef::DoubleEscapeGamma: prefix  = "D.E. "; break;
+        case PeakDef::XrayGamma:         postfix = " xray"; break;
+      }//switch( thisGammaType )
+
+
+      if( !!prevpeak )
+      {
+#ifdef _MSC_VER
+#pragma message("Need to clean up setting peak source, and also verify S.E., and D.E., are actually all correct")
+#else
+#warning "Need to clean up setting peak source, and also verify S.E., and D.E., are actually all correct"
+#endif
+
+        //There is an already existing peak, whos nuclide/xray/reaction gamma was
+        //  "closer" (in terms of the distance metric used) than the
+        //  nuclide/xray/reaction actually assigned to this new peak.  We need
+        //  to check that we shouldnt swap them, based on relative intensities.
+        //
+        //  TODO: Havent fully verified this logic when a S.E. or D.E. peak is involved
+        const bool prevAmpSmaller = (prevpeak->amplitude()<peak.amplitude());
+        const bool prevIntenitySmaller = (prevIntensity < thisIntensity);
+        if( prevAmpSmaller != prevIntenitySmaller )
+        {
+          double prevEnergy = 0.0;
+          const SandiaDecay::Nuclide *prevnuclide = prevpeak->parentNuclide();
+          const SandiaDecay::Element *prevelement = prevpeak->xrayElement();
+          const ReactionGamma::Reaction *prevreaction = prevpeak->reaction();
+
+          if( prevnuclide && prevpeak->parentNuclide() && prevpeak->decayParticle() )
+          {
+            prevEnergy = prevpeak->decayParticle()->energy;
+            src = prevpeak->parentNuclide()->symbol;
+          }else if( prevelement && prevpeak->xrayElement() )
+          {
+            prevEnergy = prevpeak->xrayEnergy();
+            src = prevpeak->xrayElement()->symbol;
+          }else if( prevreaction && prevpeak->reaction() )
+          {
+            prevEnergy = prevpeak->reactionEnergy();
+            src = prevpeak->reaction()->name();
+          }else
+          {
+            throw std::logic_error( "InterSpec::addPeak(): bad logic "
+                                   "checking previous peak gamma assignment" );
+          }
+
+          snprintf( nuclide_label, sizeof(nuclide_label),
+                   "%s%s%s %.6f keV", prefix, postfix, src.c_str(), nearestEnergy );
+
+
+          other_change.reset( new std::pair<PeakModel::PeakShrdPtr,std::string>(prevpeak,nuclide_label) );
+
+          nuclide = prevnuclide;
+          reaction = prevreaction;
+          element = prevelement;
+          nearestEnergy = prevEnergy;
+        }//if( we need to swap things )
+      }//if( !!prevpeak )
+
+      if( nuclide )
+      {
+        assert( thisGammaType == PeakDef::NormalGamma
+               || thisGammaType == PeakDef::SingleEscapeGamma
+               || thisGammaType == PeakDef::DoubleEscapeGamma
+               || thisGammaType == PeakDef::XrayGamma
+               || thisGammaType == PeakDef::AnnihilationGamma );
+
+        src = nuclide->symbol;
+      }else if( reaction )
+      {
+        assert( thisGammaType == PeakDef::NormalGamma
+               || thisGammaType == PeakDef::SingleEscapeGamma
+               || thisGammaType == PeakDef::DoubleEscapeGamma );
+
+        src = reaction->name();
+      }else if( element )
+      {
+        assert( thisGammaType == PeakDef::XrayGamma );
+        src = element->symbol;
+      }
+
+      snprintf( nuclide_label, sizeof(nuclide_label),
+               "%s%s%s %.6f keV", prefix, src.c_str(), postfix, nearestEnergy );
+
+      // TODO: do we really need to use #PeakModel::setNuclideXrayReaction ?  We should be able to just directly set information
+      PeakModel::setNuclideXrayReaction( peak, nuclide_label, -1.0 );
+
+      if( colorPeaksBasedOnReferenceLines /* && peak.lineColor().isDefault() */ )
+        peak.setLineColor( color );
+    }//if( nuclide || reaction || element )
+  }catch( std::exception &e )
+  {
+    passMessage( "Unexpected error searching for isotope for peak: " + string(e.what()),
+                WarningWidget::WarningMsgHigh );
+  }
+
+  return other_change;
+}//void assignNuclideFromReferenceLines( PeakDef &peak )
+
+
   
 void assign_peak_nuclides_from_reference_lines( InterSpec *viewer,
                                                const bool only_peaks_with_no_src,
@@ -2818,12 +2814,13 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
     server->post( sessionID, callback );
     return;
   }
-  
+
+  auto results = make_shared<vector<shared_ptr<const PeakDef>>>();
+
   try
   {
-    *resultpeaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, drf, existingPeaks, singleThread, isHPGe );
-    
-    *resultpeaks = assign_srcs_from_ref_lines( data, *resultpeaks, displayed, setColor, false, true );
+    *results = ExperimentalAutomatedPeakSearch::search_for_peaks( data, drf, existingPeaks, singleThread, isHPGe );
+    *results = assign_srcs_from_ref_lines( data, *results, displayed, setColor, false, true );
   }catch( std::exception &e )
   {
     string msg = "InterSpec::search_for_peaks_worker(): caught exception: '";
@@ -2838,7 +2835,11 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
   }//try / catch
   
   
-  server->post( sessionID, callback );
+  server->post( sessionID, [callback,results,resultpeaks](){
+    if( resultpeaks )
+      *resultpeaks = *results;
+    callback();
+  } );
 }//void search_for_peaks_worker(...)
 
   
@@ -2912,7 +2913,7 @@ vector<shared_ptr<const PeakDef>> assign_srcs_from_ref_lines( const std::shared_
         
         PeakModel::SetGammaSource res = PeakModel::setNuclideXrayReaction( *moddedOldPeak, addswap->second, 1.0 );
         oldpeak = moddedOldPeak;
-        if( res == PeakModel::NoSourceChange )
+        if( (res == PeakModel::SetGammaSource::NoSourceChange) || (res == PeakModel::SetGammaSource::FailedSourceChange) )
         {
 #if( PERFORM_DEVELOPER_CHECKS )
           log_developer_error( __func__, "A suggested change to a peak did not result in a change - prob shouldnt have happened." );
@@ -3267,11 +3268,10 @@ void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightC
   
 std::pair<std::unique_ptr<ReferenceLineInfo>,int> reference_line_near_peak( InterSpec * const interspec,
                                           const PeakDef &peak,
-                                          const bool only_nuclide )
+                                          const bool only_nuclide,
+                                          const std::string &ref_line_hint )
 {
   auto refLineTool = interspec->referenceLinesWidget();
-  if( !refLineTool )
-    return pair<unique_ptr<ReferenceLineInfo>,int>( nullptr, -1 );
   
   const double mean  = peak.gausPeak() ? peak.mean()
                                        : (((peak.mean() > peak.lowerX()) && (peak.mean() < peak.upperX()))
@@ -3282,7 +3282,39 @@ std::pair<std::unique_ptr<ReferenceLineInfo>,int> reference_line_near_peak( Inte
     
   double largest_w = -9999, best_energy = -1.0f;
   
-  const vector<ReferenceLineInfo> showingNucs = refLineTool->showingNuclides();
+  vector<ReferenceLineInfo> showingNucs;
+  
+  string parent = ref_line_hint;
+  
+  const RefLineDynamic * const dynamicRefLineTool = interspec->refLineDynamic();
+  if( !parent.empty() && dynamicRefLineTool && dynamicRefLineTool->isActive() )
+  {
+    const size_t pos = parent.find(';');
+    if( pos != string::npos )
+      parent = parent.substr(0,pos);
+    SpecUtils::trim(parent);
+    
+    const shared_ptr<vector<pair<double,ReferenceLineInfo>>> dynamic_ref_lines = dynamicRefLineTool->current_lines();
+    if( dynamic_ref_lines )
+    {
+      for( size_t i = 0; showingNucs.empty() && (i < dynamic_ref_lines->size()); ++i )
+      {
+        const ReferenceLineInfo &ref_line = (*dynamic_ref_lines)[i].second;
+        if( SpecUtils::iequals_ascii(ref_line.m_input.m_input_txt, parent) )
+          showingNucs.push_back( ref_line );
+      }//
+    }//if( dynamic_ref_lines )
+  }//if( check kinetic ref lines )
+  
+  if( refLineTool )
+  {
+    vector<ReferenceLineInfo> user_lines = refLineTool->showingNuclides();
+    if( showingNucs.empty() )
+      showingNucs = std::move(user_lines);
+    else
+      showingNucs.insert( end(showingNucs), begin(user_lines), end(user_lines) );
+  }//if( refLineTool )
+  
   size_t best_info_index = showingNucs.size();
   size_t best_line_index = 0;
   
@@ -3314,7 +3346,12 @@ std::pair<std::unique_ptr<ReferenceLineInfo>,int> reference_line_near_peak( Inte
         best_line_index = line_index;
       }//if( best candidate so far )
     }//for( const ReferenceLineInfo::RefLine &line : info.m_ref_lines )
-  }//for( const ReferenceLineInfo &info : m_referencePhotopeakLines->showingNuclides() )
+    
+    // If we have a source reference line info from the UI, and we found a matching candidate from that set
+    //   of lines, we will use that.
+    if( !parent.empty() && (best_info_index == info_index) && SpecUtils::iequals_ascii(info.m_input.m_input_txt, parent) )
+      break;
+  }//for( size_t info_index = 0; info_index < showingNucs.size(); ++info_index )
     
   if( (largest_w > 0) && (best_energy > 0) && (best_info_index < showingNucs.size()) )
   {
@@ -3328,7 +3365,8 @@ std::pair<std::unique_ptr<ReferenceLineInfo>,int> reference_line_near_peak( Inte
 }//reference_line_near_peak(...)
   
 
-float reference_line_energy_near_peak( InterSpec * const interspec, const PeakDef &peak )
+float source_or_reference_line_near_peak_energy( InterSpec * const interspec, const PeakDef &peak,
+                                                const std::string &ref_line_hint )
 {
   if( !interspec )
     return -999.9f;
@@ -3342,7 +3380,7 @@ float reference_line_energy_near_peak( InterSpec * const interspec, const PeakDe
   
   const bool only_nucs = false;
   pair<unique_ptr<ReferenceLineInfo>,int> refline
-                              = reference_line_near_peak( interspec, peak, only_nucs );
+                              = reference_line_near_peak( interspec, peak, only_nucs, ref_line_hint );
   
   if( !refline.first || refline.second < 0 )
     return -999.9f;
@@ -3350,12 +3388,12 @@ float reference_line_energy_near_peak( InterSpec * const interspec, const PeakDe
   const ReferenceLineInfo::RefLine &line = refline.first->m_ref_lines[refline.second];
   
   return static_cast<float>( line.m_energy );
-}//float reference_line_energy_near_peak( InterSpec * const interspec, const PeakDef &peak )
+}//float source_or_reference_line_near_peak_energy( InterSpec * const interspec, const PeakDef &peak )
 
   
   
 tuple<const SandiaDecay::Nuclide *, double, float>
-    nuclide_reference_line_near( InterSpec *viewer, const float energy )
+    nuclide_reference_line_near( InterSpec *viewer, const float energy, const std::string &hint_parent )
 {
   double sigma = estimate_FWHM_of_foreground( energy );
   
@@ -3387,7 +3425,7 @@ tuple<const SandiaDecay::Nuclide *, double, float>
   PeakDef tmppeak( energy, std::max(sigma,0.1), 100.0 );
   
   const pair<unique_ptr<ReferenceLineInfo>,int> refline
-        = reference_line_near_peak( viewer, tmppeak, true );
+        = reference_line_near_peak( viewer, tmppeak, true, hint_parent );
   
   if( !refline.first || (refline.second < 0) )
     return tuple<const SandiaDecay::Nuclide *, double, float>( nullptr, 0.0, 0.0f );
@@ -3512,7 +3550,9 @@ float estimate_FWHM_of_foreground( const float energy )
 }//float estimate_FWHM_of_foreground( const float energy )
   
   
-void refit_peak_with_photopeak_mean( InterSpec * const interspec, const double rightClickEnergy )
+void refit_peak_with_photopeak_mean( InterSpec * const interspec,
+                                    const double rightClickEnergy,
+                                    const string &ref_line_hint )
 {
   try
   {
@@ -3529,7 +3569,7 @@ void refit_peak_with_photopeak_mean( InterSpec * const interspec, const double r
       return;
     }
     
-    const float energy = reference_line_energy_near_peak( interspec, *peak );
+    const float energy = source_or_reference_line_near_peak_energy( interspec, *peak, ref_line_hint );
     if( energy < 10 )
     {
       passMessage( WString::tr("psgu-no-ref-line-near-peak-msg"), WarningWidget::WarningMsgInfo );
@@ -4319,7 +4359,10 @@ void prepare_and_add_gadras_peaks( std::shared_ptr<const SpecUtils::Measurement>
   } );
 }//void prepare_and_add_gadras_peaks(...)
 
-void add_peak_from_right_click( InterSpec * const interspec, const double rightClickEnergy )
+
+void add_peak_from_right_click( InterSpec * const interspec,
+                               const double rightClickEnergy,
+                               const std::string &ref_line_hint )
 {
   if( !interspec )
     return;
@@ -4507,7 +4550,7 @@ void add_peak_from_right_click( InterSpec * const interspec, const double rightC
   for( size_t i = 0; i < answer.size(); ++i )
   {
     const bool isNew = !new_to_orig_peaks.count(answer[i]);
-    interspec->addPeak( *answer[i], isNew );
+    interspec->addPeak( *answer[i], isNew, SpecUtils::SpectrumType::Foreground, (isNew ? ref_line_hint : "") );
   }
 }//void add_peak_from_right_click()
 

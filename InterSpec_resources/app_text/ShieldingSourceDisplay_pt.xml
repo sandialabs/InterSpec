@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- This file applies to ShieldingSourceDisplay.cpp
+    ssd- is short for ShieldingSourceDisplay, and is basically the GUI component
+    sfm- is short for SourceFitModel
+    x2g- is short for ShieldingSourceDisplay::Chi2Graphic - e.g., the chart on this page
+  -->
+  <message id="ssd-tt-distance">
+    Distância do centro da fonte à face do detector. O número deve ser
+    seguido por unidades; unidades válidas são: meters, m, cm, mm, km, feet,
+    ft, ', in, inches, ou ". Você também pode adicionar múltiplas distâncias,
+    como '3ft 4in', ou '3.6E-2 m 12 cm' que são equivalentes a
+    40 polegadas e 15,6cm respectivamente.
+  </message>
+  <message id="ssd-geom-point">Pontual/Esférica</message>
+  <message id="ssd-geom-cyl-end">Cilíndrica: de frente</message>
+  <message id="ssd-geom-cyl-side">Cilíndrica: de lado</message>
+  <message id="ssd-rectangular">Retangular</message>
+  <message id="ssd-fixed-geom-notification">Usando DRF de geometria fixa</message>
+  <message id="ssd-tt-shieldings">
+    Blindagens são tratadas como cascas com a casca
+    mais interna sendo a primeira que você adiciona (a do topo nesta caixa), e
+    as blindagens subsequentes em camadas ao redor dela. Quaisquer fontes
+    não atribuídas como componentes de blindagens são tratadas como fontes
+    pontuais no centro.
+  </message>
+  <message id="ssd-add-shield-label">Adicionar Blindagem:</message>
+  <message id="ssd-geometry-label">Geometria:</message>
+  <message id="ssd-tt-add-shield">Escolha de uma biblioteca de materiais de blindagem comuns predefinidos.</message>
+  <message id="ssd-generic-btn">Genérica</message>
+  <message id="ssd-tt-generic">Permite que você defina e ajuste número atômico e densidade areolar.</message>
+  <message id="ssd-perform-fit-btn">Realizar Ajuste do Modelo</message>
+  <message id="ssd-cancel-fit">Cancelar Ajuste do Modelo</message>
+  <message id="ssd-mi-calc-log">Log de Cálculo</message>
+  <message id="ssd-mi-import-model">Importar Modelo...</message>
+  <message id="ssd-mi-export-model">Exportar Modelo</message>
+  <message id="ssd-mi-from-db">Abrir do Banco de Dados...</message>
+  <message id="ssd-mi-save-to-db">Salvar no Banco de Dados...</message>
+  <message id="ssd-mi-clone-db-entry">Clonar no Banco de Dados...</message>
+  <message id="ssd-to-small-for-chart">(aumente a janela para mostrar χ<sup>2</sup>)</message>
+  <message id="ssd-tt-chi2-switch">Mostrar o Qui de cada pico para o modelo atual no gráfico, ou o múltiplo de área de pico relativa entre o modelo atual e o pico observado.</message>
+  <message id="ssd-cb-all-peaks">Todos os Picos</message>
+  <message id="ssd-multi-iso-per-peak">Correção de interferência</message>
+  <message id="ssd-options-title">Opções</message>
+  <message id="ssd-tt-multi-iso-per-peak">Marcar esta opção permitirá que outros nuclídeos sendo ajustados, além daquele atribuído a um pico, contribuam para as contagens esperadas em um pico observado. Isso poderia, por exemplo, ser útil ao ajustar tanto Ho166m quanto U235 que ambos têm um pico próximo a 185 keV.</message>
+  <message id="ssd-cluster-width-label">Largura de interferência (num σ):</message>
+  <message id="ssd-tt-cluster-width">O número de sigma de distância da média do pico que linhas gama,
+    de qualquer nuclídeo, serão somadas e atribuídas ao pico. O valor padrão é 1,25 sigma, mas se o pico é
+    obviamente alargado devido a interferências, ou é um ajuste ruim, você pode desejar aumentar este valor.
+    Diminuí-lo para 0,0 causará que apenas os gamas associados ao pico sejam usados
+    (o mesmo que desmarcar \"Múltiplos nuclídeos contribuem para o pico\").
+  </message>
+  <message id="ssd-cb-atten-for-air">Atenuar para ar</message>
+  <message id="ssd-tt-atten-for-air">Quando marcado, a atenuação devido ao ar entre a fonte, ou blindagem externa, e o detector será considerada nos cálculos.</message>
+  <message id="ssd-cb-sub-back-peaks">Subtrair picos de fundo</message>
+  <message id="ssd-tt-sub-back-peaks">Isto força os isótopos de um elemento a todos terem a mesma idade no ajuste.</message>
+  <message id="ssd-cb-same-el-same-age">Mesmo Z mesma idade</message>
+  <message id="ssd-tt-same-el-same-age">Impor que isótopos para o mesmo elemento devem todos ter a mesma idade.</message>
+  <message id="ssd-cb-corr-for-decay">Corrigir para decaimento durante med.</message>
+  <message id="ssd-tt-corr-for-decay">Corrige para efeitos de decaimento e crescimento que acontecem durante o tempo em que a medição está sendo feita. Atividades resultantes correspondem ao tempo de início da medição. Pode levar tempo de computação adicional para encontrar solução.</message>
+  <message id="ssd-tt-geometry">Geometria a usar para modelar fontes "traço", ou fontes auto-atenuantes.
+    <br />
+    <br />
+    Por padrão, todas as fontes são fontes pontuais à distância especificada do detector, para todas as geometrias.
+    <br />
+    No entanto, se você tornar um nuclídeo uma fonte "traço" (clicando no botão "<em>Adicionar Fonte Traço</em>" de uma blindagem no canto inferior direito da blindagem), ou uma fonte auto-atenuante (selecionando a
+    caixa de seleção "<em>Fonte para:</em>" quando uma blindagem tem o mesmo elemento que um nuclídeo que você está
+    ajustando), então o isótopo fonte será modelado como distribuído por toda a blindagem,
+    e rastreamento de raios será usado para contabilizar diferentes atenuações em cada local dentro
+    da blindagem.
+    <br />
+    <br />
+    Para manter as coisas simples, escolha geometria "Pontual/Esférica" a menos que você realize um ajuste para uma
+    fonte "traço" ou auto-atenuante.
+  </message>
+  <message id="ssd-phone-tab-source-peaks">Picos da Fonte</message>
+  <message id="ssd-phone-tab-source-isotopes">Isótopos da Fonte</message>
+  <message id="ssd-phone-tab-shielding">Blindagem</message>
+  <message id="ssd-warn-no-back-peaks">Não há picos de fundo definidos, não subtraindo-os</message>
+  <message id="ssd-warn-no-back-spec">Não há espectro de fundo carregado, então não é possível subtrair áreas de picos de fundo do primeiro plano.</message>
+  <message id="ssd-warn-no-back-peaks-toggle">
+    O espectro de fundo não tem nenhum pico identificado. Você deve carregar o espectro de fundo como
+    o primeiro plano, identificar os picos a serem potencialmente subtraídos, e então voltar para sua
+    combinação atual de primeiro plano/fundo.
+  </message>
+  <message id="ssd-update-dim-to-be-min">Dimensão de blindagem atualizada para ser uma espessura mínima.</message>
+  <message id="ssd-scaled-shield-to-be-less-dist">Espessuras de blindagem foram escaladas para serem menores que a distância do detector.</message>
+  <message id="ssd-err-fit-only-one-an">Você pode apenas ajustar o número atômico de uma blindagem genérica por vez.</message>
+  <message id="ssd-warn-invalid-chi2-for-energy">Um qui2 inválido foi calculado para {1} keV, outros resultados podem ser inválidos</message>
+  <message id="ssd-calc-log-window-title">Log de Cálculo</message>
+  <message id="ssd-calc-log-export-txt">Arquivo TXT</message>
+  <message id="ssd-err-opening-import-model">Erro ao abrir Modelo de Ajuste de Blindagem de Fonte enviado: {1}</message>
+  <message id="ssd-import-model-window-title">Importar Modelo XML de Blindagem de Fonte</message>
+  <message id="ssd-err-opening-db-model">Erro ao abrir Modelo de Ajuste de Blindagem de Fonte do banco de dados: {1}</message>
+  <message id="ssd-err-loading-model">Não foi possível carregar o modelo selecionado - desculpe :(</message>
+  <message id="ssd-prev-saved-window-title">Modelos Salvos Anteriormente</message>
+  <message id="ssd-models-prev-for-fore">Modelos usados anteriormente com este primeiro plano:</message>
+  <message id="ssd-models-prev-saved">Modelos que você salvou anteriormente:</message>
+  <message id="ssd-model-desc">Descrição do Modelo:</message>
+  <message id="ssd-cb-allow-del">Permitir excluir</message>
+  <message id="ssd-no-model-in-db">Não há modelos no banco de dados para você</message>
+  <message id="ssd-err-creating-db-browser">Erro ao criar navegador de modelo de banco de dados</message>
+  <message id="ssd-save-model-to-db-window-title">Salvar modelo de Atividade/Blindagem no banco de dados</message>
+  <message id="ssd-save-to-db-name">Insira o nome do modelo:</message>
+  <message id="ssd-save-to-db-desc">Insira a descrição do modelo (opcional):</message>
+  <message id="ssd-must-enter-name">Você deve inserir um nome</message>
+  <message id="ssd-err-saving-to-db">Erro ao salvar no banco de dados</message>
+  <message id="ssd-Best">Melhor</message>
+  <message id="ssd-fit-failed">Ajuste ao modelo falhou</message>
+  <message id="ssd-using-fit-anyway">Usando solução de ajuste de qualquer forma.</message>
+  <message id="ssd-err-fit-not-performed">
+    {1}
+    <br />
+    Ajuste não realizado.
+  </message>
+  <message id="ssd-err-before-fit">
+    {1}
+    <br />
+    Antes do ajuste.
+  </message>
+  <message id="ssd-err-couldnt-make-chi2-fcn">
+    {1}
+    <br />
+    Ajuste não realizado (não foi possível criar Chi2Fcn).
+  </message>
+  <message id="ssd-error-create-tool">Erro ao criar visualização de ajuste de Atividade/Blindagem: {1}</message>
+  <message id="ssd-shield-source-diagram">Diagrama Blindagem/Fonte</message>
+  <message id="ssd-show-model-diagram">Mostrar Diagrama do Modelo</message>
+
+  <!-- SourceFitModel quantities -->
+  <message id="sfm-tt-header-isotope">Nuclídeos são adicionados ou removidos de acordo com os fotopicos usados para este ajuste, portanto não podem ser editados nesta tabela</message>
+  <message id="sfm-tt-header-activity">Atividade do nuclídeo. Inserir um valor inicial razoável pode ajudar o ajuste, ou a atividade não precisa ser ajustada. Valores podem ser inseridos em formatos semelhantes a '12.4 kBq', '1.0mCi', '55.3uCi', '15.82Mbq'</message>
+  <message id="sfm-tt-header-age">Idade do nuclídeo. Valores podem ser inseridos em formato semelhante a: '23.3s' '2 hl' - (hl significa meias-vidas), '5.23y', '23:14:21.343', '19min', etc. Note que nuclídeos que decaem para filhos estáveis não podem ser envelhecidos.</message>
+  <message id="sfm-tt-header-fit-act">Deve o ajuste tentar encontrar a atividade do nuclídeo também, ou assumir que o valor inserido está correto?</message>
+  <message id="sfm-tt-header-fit-age">Deve o ajuste tentar encontrar a idade do nuclídeo também, ou apenas assumir que o valor inserido está correto? Esta opção não está disponível para nuclídeos que decaem apenas para filhos estáveis.</message>
+  <message id="sfm-tt-header-iso-mass">Esta é a massa do nuclídeo puro assumindo a atividade listada.</message>
+  <message id="sfm-tt-header-act-uncert">Esta é a incerteza na atividade do ajuste.</message>
+  <message id="sfm-tt-header-age-uncert">Esta é a incerteza na idade do ajuste.</message>
+  <message id="sfm-header-fit-act">Ajustar Ativ.</message>
+  <message id="sfm-header-fit-age">Ajustar Idade</message>
+  <message id="sfm-header-act-uncert">Incert. Ativ.</message>
+  <message id="sfm-header-age-uncert">Incert. Idade</message>
+  <message id="sfm-tt-aging-not-allowed">Filhos de nuclídeos são estáveis então envelhecimento não é permitido porque não afeta o espectro gama.</message>
+
+  <!-- Chi2Graphic -->
+  <message id="x2g-yaxis-title-chi">(observado-modelo)/incert</message>
+  <message id="x2g-yaxis-title-mult">Múlt. do Modelo</message>
+  <message id="x2g-">O eixo Y é as contagens de área do pico, menos o número esperado de contagens dos valores de"
+    " fonte e blindagem atualmente exibidos, todos divididos pela incerteza estatística. O quadrado disto"
+    " é o que é usado para otimizar a blindagem e as fontes.</message>
+  <message id="x2g-tt-chi-axis">O eixo Y é as contagens de área do pico, menos o número esperado de contagens dos valores de fonte e blindagem atualmente exibidos, todos divididos pela incerteza estatística. O quadrado disto é o que é usado para otimizar a blindagem e as fontes.</message>
+  <message id="x2g-tt-scale-axis">O eixo Y é o múltiplo de contagens de pico observadas, relativo ao que seria esperado dos valores atuais de fonte e blindagem.</message>
+</messages>

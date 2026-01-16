@@ -26,6 +26,7 @@
 #include <fstream>
 #include <iostream>
 #include <filesystem>
+#include <algorithm>
 
 #include <Wt/WText>
 #include <Wt/WLabel>
@@ -62,6 +63,10 @@
 
 #if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
 #include "InterSpec/DirectorySelector.h"
+#endif
+
+#if BUILD_AS_OSX_APP
+#include "target/osx/macOsUtils.h"
 #endif
 
 using namespace Wt;
@@ -215,6 +220,7 @@ RefSpectraWidget::RefSpectraWidget( Wt::WContainerWidget *parent )
   m_dirInfoContainer( nullptr ),
   m_showCurrentForeground( nullptr ),
   m_refBackground( nullptr ),
+  m_loadBackground( nullptr ),
 #if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
   m_addDirButton( nullptr ),
   m_deleteDirButton( nullptr ),
@@ -314,6 +320,15 @@ void RefSpectraWidget::selectLastSelectedPath()
 RefSpectraWidget::~RefSpectraWidget()
 {
   storeLastSelectedPath();
+  
+#if BUILD_AS_OSX_APP
+  // Stop accessing all security scoped resources
+  std::vector<std::string> bookmarkKeys = macOsUtils::getSecurityScopedBookmarkKeys("SecBookmark_RefSpectra_");
+  for( const auto &key : bookmarkKeys )
+  {
+    macOsUtils::stopAccessingSecurityScopedBookmark(key);
+  }
+#endif
 }//~RefSpectraWidget()
 
 
@@ -401,7 +416,6 @@ void RefSpectraWidget::setupUI()
   // Set up the spectrum display, making it compact, and match current color theme and log y setting
   const bool wasLogY = UserPreferences::preferenceValue<bool>( "LogY", interspec );
   m_spectrum->setCompactAxis( true );
-  m_spectrum->applyColorTheme( interspec->getColorTheme() );
   m_spectrum->setXAxisTitle( "" );
   m_spectrum->setYAxisTitle( "", "" );
   m_spectrum->disableLegend();
@@ -409,7 +423,6 @@ void RefSpectraWidget::setupUI()
   //m_spectrum->showYAxisScalers( true );
   //m_spectrum->setShowPeakLabel( 0, true ); //SpectrumChart::PeakLabels::kShowPeakUserLabel
   //m_spectrum->setReferncePhotoPeakLines( ReferenceLineInfo() );
-  interspec->colorThemeChanged().connect( boost::bind( &D3SpectrumDisplayDiv::applyColorTheme, m_spectrum, boost::placeholders::_1 ) );
 
   m_stack->addWidget( m_spectrum );
   
@@ -450,22 +463,26 @@ void RefSpectraWidget::setupUI()
   HelpSystem::attachToolTipOn( m_deleteDirButton, WString::tr("rs-tt-delete-dir-btn"), showToolTips );
 #endif // !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT
 
-
-  m_showCurrentForeground = new Wt::WCheckBox( WString::tr("rs-show-foreground"), stackOptions );
+  m_showCurrentForeground = new Wt::WCheckBox( WString::tr(portrait ? "rs-show-foreground-portrait" : "rs-show-foreground"), stackOptions );
   m_showCurrentForeground->addStyleClass( "CbNoLineBreak" );
   m_showCurrentForeground->changed().connect( this, &RefSpectraWidget::updatePreview );
   
 
-  m_refBackground = new Wt::WCheckBox( WString::tr("rs-show-background"), stackOptions );
+  m_refBackground = new Wt::WCheckBox( WString::tr(portrait ? "rs-show-background-portrait" : "rs-show-background"), stackOptions );
   m_refBackground->addStyleClass( "CbNoLineBreak" );
   m_refBackground->changed().connect( this, &RefSpectraWidget::updatePreview );
-  m_refBackground->setHiddenKeepsGeometry( true );
   m_refBackground->setHidden( true );
+  
+  m_loadBackground = new Wt::WCheckBox( WString::tr(portrait ? "rs-load-background-portrait" : "rs-load-background"), stackOptions );
+  m_loadBackground->addStyleClass( "CbNoLineBreak" );
+  m_loadBackground->changed().connect( this, &RefSpectraWidget::updatePreview );
+  m_loadBackground->setHidden( true );
   
   if( portrait )
   {
-    mainLayout->setRowStretch( 0, 1 );
-    mainLayout->setRowStretch( 1, 1 );
+    //mainLayout->setRowStretch( 0, 1 );
+    //mainLayout->setRowStretch( 1, 1 );
+    mainLayout->setRowResizable( 0, true, WLength(50,WLength::Percentage) ); //This is just to make the tree-view and chart-area split the heiht 50/50
   }else
   {
     mainLayout->setRowStretch( 0, 1 );
@@ -520,6 +537,9 @@ void RefSpectraWidget::setupUI()
   static_assert( ns_spectrum_types_size == 3, "ns_spectrum_types must have 3 elements" );
   m_showAsComboBox->setCurrentIndex( 2 );
   m_showAsComboBox->setFocus( true );
+  // Order of hooking the signals up is important here:
+  m_showAsComboBox->activated().connect( this, &RefSpectraWidget::updatePreview );            // Will be called after `updateCheckboxVisibility`
+  m_showAsComboBox->activated().connect( this, &RefSpectraWidget::updateCheckboxVisibility ); // Will be called before `updatePreview`
 }//void setupUI();
 
 #if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
@@ -573,6 +593,59 @@ void RefSpectraWidget::addDirectory( const std::string &path )
       normed_path = path;
     }
 
+#if BUILD_AS_OSX_APP
+    // For macOS, create and store a security scoped bookmark
+    // Use a deterministic key based on the normalized path (replacing path separators)
+    std::string pathKey = normed_path;
+    std::replace(pathKey.begin(), pathKey.end(), '/', '_');
+    std::replace(pathKey.begin(), pathKey.end(), '\\', '_');
+    std::replace(pathKey.begin(), pathKey.end(), ':', '_');
+    std::string bookmarkKey = "SecBookmark_RefSpectra_" + pathKey;
+    
+    // Check if we already have a bookmark for this path
+    std::vector<std::string> existingKeys = macOsUtils::getSecurityScopedBookmarkKeys("SecBookmark_RefSpectra_");
+    bool bookmarkExists = false;
+    for( const auto &key : existingKeys )
+    {
+      std::string existingPath;
+      if( macOsUtils::resolveAndStartAccessingSecurityScopedBookmark(key, existingPath) )
+      {
+        macOsUtils::stopAccessingSecurityScopedBookmark(key); // Just checking, so stop immediately
+        std::string normedExisting;
+        try
+        {
+          normedExisting = SpecUtils::lexically_normalize_path( existingPath );
+        }catch( const std::exception &e )
+        {
+          normedExisting = existingPath;
+        }
+        
+        if( normedExisting == normed_path )
+        {
+          bookmarkExists = true;
+          break;
+        }
+      }
+    }
+    
+    if( bookmarkExists )
+    {
+      passMessage( WString::tr("rs-duplicate-dir-path").arg( path ), WarningWidget::WarningMsgMedium );
+      return;
+    }
+    
+    // Create the security scoped bookmark
+    if( !macOsUtils::createAndStoreSecurityScopedBookmark(normed_path, bookmarkKey) )
+    {
+      passMessage( WString::tr("rs-error-bookmark-failed").arg( path ), WarningWidget::WarningMsgHigh );
+      std::cerr << "RefSpectraWidget::addDirectory() - Failed to create security scoped bookmark for: " << path << std::endl;
+      return;
+    }
+    
+    passMessage( WString::tr("rs-dir-added-successfully").arg( path ), WarningWidget::WarningMsgInfo );
+    
+#else
+    // For non-macOS platforms, use the old method
     const std::string ref_spectra_dirs = UserPreferences::preferenceValue<std::string>( "RefSpectraDirs", interspec );
     
     std::vector<std::string> base_dirs;
@@ -617,8 +690,9 @@ void RefSpectraWidget::addDirectory( const std::string &path )
     }else
     {
       passMessage( WString::tr("rs-duplicate-dir-path").arg( path ), WarningWidget::WarningMsgMedium );
-      std::cerr << "RefSpectraWidget::addDirectory() - Invalid directory: " << path << std::endl;
+      std::cerr << "RefSpectraWidget::addDirectory() - Duplicate directory: " << path << std::endl;
     }
+#endif
   }else
   {
     passMessage( WString::tr("rs-invalid-dir-path").arg( path ), WarningWidget::WarningMsgHigh );
@@ -664,6 +738,46 @@ void RefSpectraWidget::removeCurrentlySelectedDirectory()
     return path;
   })();
 
+#if BUILD_AS_OSX_APP
+  // For macOS, find and remove the security scoped bookmark
+  std::vector<std::string> bookmarkKeys = macOsUtils::getSecurityScopedBookmarkKeys("SecBookmark_RefSpectra_");
+  bool foundBookmark = false;
+  
+  for( const auto &key : bookmarkKeys )
+  {
+    std::string bookmarkPath;
+    if( macOsUtils::resolveAndStartAccessingSecurityScopedBookmark(key, bookmarkPath) )
+    {
+      macOsUtils::stopAccessingSecurityScopedBookmark(key); // Just checking, so stop immediately
+      std::string normedBookmarkPath;
+      try
+      {
+        normedBookmarkPath = SpecUtils::lexically_normalize_path( bookmarkPath );
+      }catch( const std::exception &e )
+      {
+        normedBookmarkPath = bookmarkPath;
+      }
+      
+      if( normedBookmarkPath == normed_path )
+      {
+        macOsUtils::removeSecurityScopedBookmark(key);
+        foundBookmark = true;
+        break;
+      }
+    }
+  }
+  
+  if( !foundBookmark )
+  {
+    passMessage( WString::tr("rs-dir-not-found").arg( path ), WarningWidget::WarningMsgHigh );
+    std::cerr << "RefSpectraWidget::removeCurrentlySelectedDirectory() - Directory bookmark not found: " << path << std::endl;
+    return;
+  }
+  
+  passMessage( WString::tr("rs-dir-removed-successfully").arg( path ), WarningWidget::WarningMsgInfo );
+  
+#else
+  // For non-macOS platforms, use the old method
   bool found_path_to_exclude = false;
   std::vector<std::string> new_base_dirs;
   std::vector<std::string> old_base_dirs;
@@ -712,6 +826,7 @@ void RefSpectraWidget::removeCurrentlySelectedDirectory()
     std::cerr << "RefSpectraWidget::removeCurrentlySelectedDirectory() - Error setting preferences: " << e.what() << std::endl;
     assert( 0 );
   }
+#endif
 }//void RefSpectraWidget::removeCurrentlySelectedDirectory()
 #endif // !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT
 
@@ -738,6 +853,7 @@ void RefSpectraWidget::handleSelectionChanged()
     m_showInExplorerButton->setHidden( true );
 #endif
     m_refBackground->setHidden( true );
+    m_loadBackground->setHidden( true );
     m_showCurrentForeground->setHidden( true );
     //m_showAsComboBox->setHidden( true );
     m_stack->setCurrentIndex( 0 );
@@ -800,6 +916,7 @@ void RefSpectraWidget::handleSelectionChanged()
 #endif // !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT
 
     m_refBackground->setHidden( true );
+    m_loadBackground->setHidden( true );
     m_showCurrentForeground->setHidden( true );
     //m_showAsComboBox->setHidden( true );
 
@@ -871,7 +988,7 @@ void RefSpectraWidget::handleSelectionChanged()
 
   m_lastCollapsedIndex = WModelIndex();
 
-  m_refBackground->setHidden( true );
+  // Visibility will be updated by updatePreview() which calls updateCheckboxVisibility()
 #if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
   m_deleteDirButton->setHidden( true );
   m_showInExplorerButton->setHidden( false );
@@ -990,7 +1107,7 @@ void RefSpectraWidget::updatePreview()
   const string extension = SpecUtils::file_extension( filename );
   const vector<string> background_files = SpecUtils::ls_files_in_directory( parent_path,
     []( const std::string &fname, void *userdata ) -> bool{
-      return SpecUtils::starts_with( SpecUtils::filename(fname), "background." );
+      return SpecUtils::istarts_with( SpecUtils::filename(fname), "background." );
   }, nullptr );
 
   SpecMeas infile;
@@ -1031,10 +1148,25 @@ void RefSpectraWidget::updatePreview()
       background_meas = background_infile.measurements().front();
   }//if( !background_meas && !background_files.empty() )
   
-  m_refBackground->setHidden( !background_meas );
+  updateCheckboxVisibility();
 
-  if( !m_refBackground->isChecked() )
-    background_meas = nullptr;
+  const int current_index = m_showAsComboBox->currentIndex();
+  if( (current_index >= 0) && (current_index < static_cast<int>( ns_spectrum_types_size )) )
+  {
+    const SpecUtils::SpectrumType type = ns_spectrum_types[current_index];
+    if( type == SpecUtils::SpectrumType::Foreground )
+    {
+      // When loading as Foreground, m_loadBackground controls preview
+      if( !m_loadBackground->isChecked() )
+        background_meas = nullptr;
+    }
+    else
+    {
+      // When loading as Background or Secondary, m_refBackground controls preview
+      if( !m_refBackground->isChecked() )
+        background_meas = nullptr;
+    }
+  }
 
   m_spectrum->setData( foreground_meas, false );
   m_spectrum->setBackground( background_meas );
@@ -1057,12 +1189,56 @@ void RefSpectraWidget::setLoadSpectrumType( SpecUtils::SpectrumType type )
     if( ns_spectrum_types[i] == type )
     {
       m_showAsComboBox->setCurrentIndex( static_cast<int>( i ) );
+      updateCheckboxVisibility();
       return;
     }
   }//for( size_t i = 0; i < ns_spectrum_types_size; ++i )
 
   assert( 0 ); //shouldnt ever happen
 }//void setLoadSpectrumType( SpecUtils::SpectrumType type )
+
+
+void RefSpectraWidget::updateCheckboxVisibility()
+{
+  const int current_index = m_showAsComboBox->currentIndex();
+  assert( (current_index >= 0) && (current_index < static_cast<int>( ns_spectrum_types_size )) );
+  
+  if( (current_index < 0) || (current_index >= static_cast<int>( ns_spectrum_types_size )) )
+    return;
+  
+  const SpecUtils::SpectrumType type = ns_spectrum_types[current_index];
+  
+  // Check if there's a background file available
+  bool background_available = false;
+  const WModelIndexSet selectedIndexes = m_treeView->selectedIndexes();
+  if( !selectedIndexes.empty() )
+  {
+    const WModelIndex index = *selectedIndexes.begin();
+    if( index.isValid() && !m_treeModel->isDirectory( index ) )
+    {
+      const std::string filePath = m_treeModel->getFilePath( index );
+      const string parent_path = SpecUtils::parent_path( filePath );
+      const vector<string> background_files = SpecUtils::ls_files_in_directory( parent_path,
+        []( const std::string &fname, void *userdata ) -> bool{
+          return SpecUtils::starts_with( SpecUtils::filename(fname), "background." );
+      }, nullptr );
+      background_available = !background_files.empty();
+    }
+  }
+  
+  if( type == SpecUtils::SpectrumType::Foreground )
+  {
+    // When loading as Foreground, show Load Background checkbox
+    m_loadBackground->setHidden( !background_available );
+    m_refBackground->setHidden( true );
+  }
+  else
+  {
+    // When loading as Background or Secondary, show Show Background checkbox
+    m_loadBackground->setHidden( true );
+    m_refBackground->setHidden( !background_available );
+  }
+}//void updateCheckboxVisibility()
 
 
 //void RefSpectraWidget::selectSimilarToForeground()
@@ -1137,6 +1313,37 @@ void RefSpectraWidget::loadSelectedSpectrum()
   interspec->fileManager()->displayFile( row, meas, type, 
                checkIfPreviouslyOpened, doPreviousEnergyRangeCheck,
                SpecMeasManager::VariantChecksToDo::None );
+  
+  // If loading as Foreground and Load Background is checked, also load the background file
+  if( (type == SpecUtils::SpectrumType::Foreground) && m_loadBackground->isChecked() )
+  {
+    const string parent_path = SpecUtils::parent_path( filePath );
+    const vector<string> background_files = SpecUtils::ls_files_in_directory( parent_path,
+      []( const std::string &fname, void *userdata ) -> bool{
+        return SpecUtils::istarts_with( SpecUtils::filename(fname), "background." );
+    }, nullptr );
+    
+    if( !background_files.empty() )
+    {
+      const string background_file = background_files.front();
+      const string background_displayName = SpecUtils::filename( background_file );
+      const string background_extension = SpecUtils::file_extension( background_file );
+      
+      auto background_meas = make_shared<SpecMeas>();
+      const bool background_success = background_meas->load_file( background_file, SpecUtils::ParserType::Auto, background_extension );
+      
+      if( background_success )
+      {
+        shared_ptr<SpectraFileHeader> background_header = std::make_shared<SpectraFileHeader>( true, interspec );
+        background_header->setFile( background_displayName, background_meas );
+        const int background_row = fileModel->addRow( background_header );
+        
+        interspec->fileManager()->displayFile( background_row, background_meas, SpecUtils::SpectrumType::Background,
+                     checkIfPreviouslyOpened, doPreviousEnergyRangeCheck,
+                     SpecMeasManager::VariantChecksToDo::None );
+      }
+    }
+  }
 }//void loadSelectedSpectrum()
 
 
@@ -1217,6 +1424,49 @@ void RefSpectraWidget::initBaseDirs()
   InterSpec *interspec = InterSpec::instance();
   assert( interspec );
   
+#if BUILD_AS_OSX_APP
+  // For macOS, resolve security scoped bookmarks
+  std::vector<std::string> bookmarkKeys = macOsUtils::getSecurityScopedBookmarkKeys("SecBookmark_RefSpectra_");
+  std::vector<std::string> failedBookmarks;
+  
+  for( const auto &key : bookmarkKeys )
+  {
+    std::string resolvedPath;
+    if( macOsUtils::resolveAndStartAccessingSecurityScopedBookmark(key, resolvedPath) )
+    {
+      if( SpecUtils::is_directory( resolvedPath ) )
+      {
+        m_treeModel->addBaseDirectory( resolvedPath );
+        // Note: We keep the security scoped resource access active during the app session
+      }
+      else
+      {
+        std::cerr << "RefSpectraWidget::initBaseDirs() - Resolved bookmark path is not a directory: " << resolvedPath << std::endl;
+        macOsUtils::stopAccessingSecurityScopedBookmark(key);
+        failedBookmarks.push_back(key);
+      }
+    }
+    else
+    {
+      std::cerr << "RefSpectraWidget::initBaseDirs() - Failed to resolve security scoped bookmark: " << key << std::endl;
+      failedBookmarks.push_back(key);
+    }
+  }
+  
+  // Clean up failed bookmarks
+  for( const auto &key : failedBookmarks )
+  {
+    macOsUtils::removeSecurityScopedBookmark(key);
+  }
+  
+  if( !failedBookmarks.empty() )
+  {
+    const int numdir = static_cast<int>( failedBookmarks.size() );
+    passMessage( WString::tr("rs-some-dirs-removed").arg(numdir), WarningWidget::WarningMsgMedium );
+  }
+  
+#else
+  // For non-macOS platforms, use the old method
   const std::string ref_spectra_dirs = UserPreferences::preferenceValue<std::string>( "RefSpectraDirs", interspec );
   if( !ref_spectra_dirs.empty() )
   {
@@ -1230,6 +1480,7 @@ void RefSpectraWidget::initBaseDirs()
         std::cerr << "RefSpectraWidget::initBaseDirs() - Invalid directory: " << dir << std::endl;
     }
   }
+#endif
 #endif // !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT
 
   // Sort it so things are in alphabetical order

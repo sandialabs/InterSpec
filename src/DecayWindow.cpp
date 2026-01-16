@@ -59,8 +59,8 @@ using namespace std;
 
 DecayWindow::DecayWindow( InterSpec *viewer )
 : AuxWindow( WString::tr("window-title-nuc-decay"),
-             //(Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::DisableCollapse) ),
-            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::DisableCollapse) 
+             //(AuxWindowProperties::IsModal | AuxWindowProperties::DisableCollapse) ),
+            (AuxWindowProperties::DisableCollapse
              | AuxWindowProperties::EnableResize
              | AuxWindowProperties::SetCloseable) ),
   m_activityDiv( 0 )

@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ctwidget- is short for ColorThemeWidget -->
+  
+  <!-- Basic fields -->
+  <message id="ctwidget-theme-name">Theme Name</message>
+  <message id="ctwidget-description">Description</message>
+  <message id="ctwidget-title-placeholder">Title not assigned</message>
+  <message id="ctwidget-desc-placeholder">Desc not assigned</message>
+  <message id="ctwidget-empty">(empty)</message>
+  
+  <!-- Non-chart area -->
+  <message id="ctwidget-non-chart-area">Non-Chart Area</message>
+  <message id="ctwidget-backdrop-theme">Backdrop Theme</message>
+  <message id="ctwidget-backdrop-desc">Theme for all non-chart area</message>
+  <message id="ctwidget-app-background">Background Color</message>
+  <message id="ctwidget-app-background-desc">Background color for dialogs, main app area, etc.</message>
+  <message id="ctwidget-app-text">Text Color</message>
+  <message id="ctwidget-app-text-desc">Text color for non-chart areas</message>
+  <message id="ctwidget-app-border">Border Color</message>
+  <message id="ctwidget-app-border-desc">Border color for UI elements (tabs, buttons, panels)</message>
+  <message id="ctwidget-app-link">Link Color</message>
+  <message id="ctwidget-app-link-desc">Color for links and interactive accents</message>
+  <message id="ctwidget-app-label">Label Color</message>
+  <message id="ctwidget-app-label-desc">Text color for labels, tabs, and headers</message>
+  <message id="ctwidget-app-input-bg">Input Background</message>
+  <message id="ctwidget-app-input-bg-desc">Background color for input fields</message>
+  <message id="ctwidget-app-button-bg">Button Background</message>
+  <message id="ctwidget-app-button-bg-desc">Background color for buttons</message>
+  <message id="ctwidget-app-button-border">Button Border</message>
+  <message id="ctwidget-app-button-border-desc">Border color for buttons</message>
+  <message id="ctwidget-app-button-text">Button Text</message>
+  <message id="ctwidget-app-button-text-desc">Text color for buttons</message>
+
+  <!-- Chart colors section -->
+  <message id="ctwidget-chart-colors">Chart Colors</message>
+  
+  <!-- Spectrum colors -->
+  <message id="ctwidget-spec-foreground">Spec. Foreground</message>
+  <message id="ctwidget-spec-foreground-desc">Line color for the foreground spectrum</message>
+  <message id="ctwidget-spec-background">Spec. Background</message>
+  <message id="ctwidget-spec-background-desc">Line color for the background spectrum</message>
+  <message id="ctwidget-spec-secondary">Spec. Secondary</message>
+  <message id="ctwidget-spec-secondary-desc">Line color for the secondary spectrum</message>
+  
+  <!-- Peak options -->
+  <message id="ctwidget-peaks-use-ref-color">Peaks Use Reference Line Color</message>
+  <message id="ctwidget-peaks-use-ref-desc">Determines if newly fitted peaks take on color of reference line for that peak.</message>
+  <message id="ctwidget-default-peak-color">Default Peak Color</message>
+  <message id="ctwidget-default-peak-desc">Color used for peaks that dont have an assigned color</message>
+  
+  <!-- Spectrum chart -->
+  <message id="ctwidget-spectrum-axis">Spectrum Chart Axis</message>
+  <message id="ctwidget-spectrum-axis-desc">Line color for spectrum X and Y axis</message>
+  <message id="ctwidget-spectrum-text">Spectrum Chart Text</message>
+  <message id="ctwidget-spectrum-text-desc">Spectrum chart text (y and x axis labels) color</message>
+  <message id="ctwidget-spectrum-area">Spectrum Area</message>
+  <message id="ctwidget-spectrum-area-desc">Background color for spectrum chart</message>
+  <message id="ctwidget-spectrum-margin">Spectrum Chart Bckgrnd</message>
+  <message id="ctwidget-spectrum-margin-desc">Color for spectrum chart margins</message>
+  <message id="ctwidget-same-as-spectrum">Same as spectrum area</message>
+  
+  <!-- Time chart -->
+  <message id="ctwidget-time-gamma">Time Chart Gamma Counts</message>
+  <message id="ctwidget-time-gamma-desc">Line color for the gamma counts in time chart</message>
+  <message id="ctwidget-time-neutron">Time Chart Neutron Counts</message>
+  <message id="ctwidget-time-neutron-desc">Line color for the neutron counts in time chart</message>
+  <message id="ctwidget-time-axis">Time Chart Axis</message>
+  <message id="ctwidget-time-axis-desc">Line color for time chart X and Y axis</message>
+  <message id="ctwidget-time-background">Time Chart Background</message>
+  <message id="ctwidget-time-background-desc">Background color for time chart</message>
+  <message id="ctwidget-time-margins">Time Chart Margins</message>
+  <message id="ctwidget-time-margins-desc">Color for spectrum chart margins</message>
+  <message id="ctwidget-same-as-background">Same as background</message>
+  <message id="ctwidget-time-text">Time Chart Text</message>
+  <message id="ctwidget-time-text-desc">Text color for time chart (x and y-axis labels)</message>
+  
+  <!-- Occupancy and highlights -->
+  <message id="ctwidget-occ-lines">Occ. Indicator Lines</message>
+  <message id="ctwidget-occ-lines-desc">Lines that indicate the beginning and end of an occupancy (portal data) or time period of interest (search mode data)</message>
+  <message id="ctwidget-time-fore-highlight">Time foreground highlight</message>
+  <message id="ctwidget-time-fore-highlight-desc">Color used to indicate on the time chart, which segments of time are being summed for the foreground spectrum.</message>
+  <message id="ctwidget-time-back-highlight">Time background highlight</message>
+  <message id="ctwidget-time-back-highlight-desc">Color used to indicate on the time chart, which segments of time are being summed for the background spectrum.</message>
+  <message id="ctwidget-time-sec-highlight">Time secondary highlight</message>
+  <message id="ctwidget-time-sec-highlight-desc">Color used to indicate on the time chart, which segments of time are being summed for the secondary spectrum.</message>
+  
+  <!-- Reference lines -->
+  <message id="ctwidget-ref-line-colors">Reference Line Colors</message>
+  <message id="ctwidget-ref-line-colors-desc">The ordered colors to use for reference lines</message>
+  <message id="ctwidget-specific-ref-colors">Specific Source Reference Line Colors</message>
+  <message id="ctwidget-specific-ref-desc">The colors to use for reference lines for given sources</message>
+  <message id="ctwidget-dynamic-ref-lines">Dynamic Reference Lines</message>
+  <message id="ctwidget-dynamic-ref-desc">The colors to use, based on a nuclides type</message>
+  
+  <!-- Dynamic reference categories -->
+  <message id="ctwidget-medical">Medical</message>
+  <message id="ctwidget-industrial">Industrial</message>
+  <message id="ctwidget-norm">NORM</message>
+  <message id="ctwidget-snm">SNM</message>
+  <message id="ctwidget-common">Common</message>
+  <message id="ctwidget-other">Other</message>
+  
+  <!-- Other options -->
+  <message id="ctwidget-other-options">Other Options</message>
+  <message id="ctwidget-peak-label-size">Peak label size</message>
+  <message id="ctwidget-peak-label-size-desc">Specifies font-size of peak labels</message>
+  <message id="ctwidget-peak-label-angle">Peak label angle</message>
+  <message id="ctwidget-peak-label-angle-desc">Rotation, in degrees, of peak labels</message>
+  <message id="ctwidget-log-y-min">Log-Y minimum</message>
+  <message id="ctwidget-log-y-min-desc">The minimum value displayed on the logarithmic y-axis, when there is a channel with zero or negative counts in the displayed x-range.</message>
+</messages>

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- SimpleActivityCalc widget text resources -->
+  <message id="simple-activity-calc-title">Simple Activity Calculator</message>
+  <message id="simple-activity-calc-menu">Simple Act. Calc.</message>
+  
+  <message id="sac-peak-label">Peak:</message>
+  <message id="sac-background-subtract-label">background subtract</message>
+  
+  <message id="sac-distance-label">Distance:</message>
+  <message id="sac-age-label">Age:</message>
+  <message id="sac-shielding-label">Shielding:</message>
+  <message id="sac-geometry-label">Geometry:</message>
+  <message id="sac-result-label">Activity:</message>
+  <message id="sac-advanced-btn">Advanced act/shield fit</message>
+  
+  <message id="sac-geometry-point">Point Source</message>
+  <message id="sac-geometry-plane">Infinite Plane</message>
+  <message id="sac-geometry-self-atten">Self-Attenuating Sphere</message>
+  <message id="sac-geometry-trace-src">Trace Source</message>
+  
+  <message id="sac-error-no-peak">No peak selected</message>
+  <message id="sac-error-no-detector">No detector response loaded</message>
+  <message id="sac-error-invalid-distance">Invalid distance entered</message>
+  
+  <message id="sac-error-no-background-peak">
+    <p>There does not appear to be a peak in the background at the same location as this peak.</p>
+    <p>If you think there is, please swap the foreground and background spectra, fit the peak in the background spectrum, and then swap them back.</p>
+  </message>
+  
+  
+  <message id="sac-use-fit-background-peak">Would you like to use the automatically fit background peak?</message>
+  
+  <message id="sac-error-fitting-background-peak">
+    <p>There was an error attempting to fit a peak to the background spectrum:</p>
+    <p style="SimpleActPeakFitErrorTxt">{1}</p>
+  </message>
+  
+  
+  <message id="sac-qr-tool-state-title">Simple Activity Calc Tool State</message>
+  <message id="sac-qr-tool-state-txt">Current state of simple activity calc tool.</message>
+</messages>

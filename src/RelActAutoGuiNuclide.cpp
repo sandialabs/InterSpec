@@ -110,6 +110,9 @@ public:
     m_remove( this ),
     m_changed( this )
   {
+    InterSpecApp *app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
+    if( app )
+      app->useMessageResourceBundle( "RelActAutoGuiNuclide" );
     addStyleClass( "RelActAutoGuiNuclideConstraint" );
 
     const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
@@ -134,7 +137,7 @@ public:
         case NucConstraintType::None:
         {
           //m_constraint_type->addItem( "None" );
-          WLabel *label = new WLabel( "Select a constraint type.", container );
+          WLabel *label = new WLabel( WString::tr("raagn-select-constraint-type"), container );
           label->setInline( false );
           break;
         }
@@ -142,7 +145,7 @@ public:
         case NucConstraintType::RelActRange:
         {
           //m_constraint_type->addItem( "Rel. Act" );
-          WLabel *label = new WLabel( "min:", container );
+          WLabel *label = new WLabel( WString::tr("raagn-min"), container );
           m_min_rel_act_edit = new NativeFloatSpinBox( container );
           label->setBuddy( m_min_rel_act_edit );
           m_min_rel_act_edit->setSpinnerHidden( true );
@@ -150,7 +153,7 @@ public:
           m_min_rel_act_edit->setWidth( WLength(35.0, WLength::Pixel) );
           m_min_rel_act_edit->valueChanged().connect( this, &RelActAutoGuiNuclideConstraint::handleRelActRangeChange );
 
-          label = new WLabel( "max:", container );
+          label = new WLabel( WString::tr("raagn-max"), container );
           m_max_rel_act_edit = new NativeFloatSpinBox( container );
           label->setBuddy( m_max_rel_act_edit );
           m_max_rel_act_edit->setSpinnerHidden( true );
@@ -163,7 +166,7 @@ public:
         case NucConstraintType::MassFraction:
         {
           //m_constraint_type->addItem( "Mass Frac." );
-          WLabel *label = new WLabel( "min:", container );
+          WLabel *label = new WLabel( WString::tr("raagn-min"), container );
           m_min_mass_frac_edit = new NativeFloatSpinBox( container );
           label->setBuddy( m_min_mass_frac_edit );
           m_min_mass_frac_edit->setSpinnerHidden( true );
@@ -172,7 +175,7 @@ public:
           m_min_mass_frac_edit->setValue( 0.0f );
           m_min_mass_frac_edit->valueChanged().connect( this, &RelActAutoGuiNuclideConstraint::handleMassFractionChange );
 
-          label = new WLabel( "max:", container );
+          label = new WLabel( WString::tr("raagn-max"), container );
           m_max_mass_frac_edit = new NativeFloatSpinBox( container );
           label->setBuddy( m_max_mass_frac_edit );
           m_max_mass_frac_edit->setSpinnerHidden( true );
@@ -186,13 +189,13 @@ public:
         case NucConstraintType::ActRatio:
         {
           //m_constraint_type->addItem( "Act Ratio" );
-          WLabel *label = new WLabel( "src:", container );
+          WLabel *label = new WLabel( WString::tr("raagn-src"), container );
           m_act_control_nuc_combo = new WComboBox( container );
           label->setBuddy( m_act_control_nuc_combo );
           m_act_control_nuc_combo->setMaximumSize( WLength(60, WLength::Pixel), WLength::Auto );
           m_act_control_nuc_combo->changed().connect( this, &RelActAutoGuiNuclideConstraint::handleActivityRatioChange );
           
-          label = new WLabel( "val:", container );
+          label = new WLabel( WString::tr("raagn-val"), container );
           m_activity_ratio_edit = new NativeFloatSpinBox( container );
           label->setBuddy( m_activity_ratio_edit );
           m_activity_ratio_edit->setSpinnerHidden( true );
@@ -221,7 +224,7 @@ public:
     removeBtn->setIcon( "InterSpec_resources/images/minus_min_black.svg" );
     removeBtn->clicked().connect( this, &RelActAutoGuiNuclideConstraint::handleRemove );
 
-    HelpSystem::attachToolTipOn( removeBtn, "Remove this constraint", showToolTips );
+    HelpSystem::attachToolTipOn( removeBtn, WString::tr("raagn-remove-constraint-tt"), showToolTips );
 
     updateAllowedConstraints();
   }//RelActAutoGuiNuclideConstraint
@@ -245,30 +248,30 @@ public:
     {
       const int model_row = m_constraint_type->count();
 
-      const char *title = nullptr;
+      WString title;
       switch( type )
       {
         case NucConstraintType::None:
         {
-          title = "None";
+          title = WString::tr("raagn-constraint-none");
           break;
         }
         
         case NucConstraintType::RelActRange:
         {
-          title = "Rel. Act";
+          title = WString::tr("raagn-constraint-rel-act");
           break;
         }//case NucConstraintType::MassFraction
         
         case NucConstraintType::ActRatio:
         {
-          title = "Act Ratio";
+          title = WString::tr("raagn-constraint-act-ratio");
           break;
         }//case NucConstraintType::ActRatio
         
         case NucConstraintType::MassFraction:
         {
-          title = "Mass Frac.";
+          title = WString::tr("raagn-constraint-mass-frac");
           break;
         }//case NucConstraintType::MassFraction
         
@@ -277,11 +280,11 @@ public:
           break;
       }//switch( type )
 
-      assert( title );
-      if( !title )
+      assert( !title.empty() );
+      if( title.empty() )
         throw runtime_error( "RelActAutoGuiNuclideConstraint::setAvailableConstraintTypes() called when no title is available" );
 
-      m_constraint_type->addItem( WString::fromUTF8(title) );
+      m_constraint_type->addItem( title );
       
       if( type == current_type )
         m_constraint_type->setCurrentIndex( model_row );
@@ -688,6 +691,9 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui, WContainerWidget
   m_age_changed( this ),
   m_src_info( std::monostate() )
 {
+  InterSpecApp *app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
+  if( app )
+    app->useMessageResourceBundle( "RelActAutoGuiNuclide" );
   addStyleClass( "RelActAutoGuiNuclide" );
   
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
@@ -696,7 +702,7 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui, WContainerWidget
   upper_container->setStyleClass( "UpperRow" );
 
 
-  WLabel *label = new WLabel( "Nuclide:", upper_container );
+  WLabel *label = new WLabel( WString::tr("raagn-nuclide"), upper_container );
   m_nuclide_edit = new WLineEdit( "", upper_container );
   
   m_nuclide_edit->setAutoComplete( false );
@@ -719,10 +725,7 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui, WContainerWidget
   "}";
   m_nuclide_edit->keyWentDown().connect( keyDownJs );
   
-  const char *tooltip = "ex. <b>U235</b>, <b>235 Uranium</b>"
-  ", <b>U-235m</b> (meta stable state)"
-  ", <b>Cs137</b>, Pb, Fe(n,n), etc.";
-  HelpSystem::attachToolTipOn( m_nuclide_edit, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( m_nuclide_edit, WString::tr("raagn-nuclide-tt"), showToolTips );
   
   string replacerJs, matcherJs;
   IsotopeNameFilterModel::replacerJs( replacerJs );
@@ -736,10 +739,12 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui, WContainerWidget
 #if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
   nuclideSuggest->setJavaScriptMember("wtNoReparent", "true");
 #endif
+  nuclideSuggest->addStyleClass( "nuclide-suggest" );
   nuclideSuggest->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
-  nuclideSuggest->setWidth( WLength(70, Wt::WLength::Unit::Pixel) );
+  // Width is set via CSS on the <li> elements in InterSpec.css (.nuclide-suggest li)
   
   IsotopeNameFilterModel::setQuickTypeFixHackjs( nuclideSuggest );
+  IsotopeNameFilterModel::setEnterKeyMatchFixJs( nuclideSuggest, m_nuclide_edit );
   
   isoSuggestModel->filter( "" );
   nuclideSuggest->setFilterLength( -1 );
@@ -750,7 +755,7 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui, WContainerWidget
   m_age_container = new WContainerWidget( upper_container );
   m_age_container->setStyleClass( "RelActAutoGuiNuclideAgeContainer" );
   
-  label = new WLabel( "Age:", m_age_container );
+  label = new WLabel( WString::tr("raagn-age"), m_age_container );
   m_age_edit = new WLineEdit( "", m_age_container );
   m_age_edit->setWidth( WLength(70.0, WLength::Pixel) );
   label->setBuddy( m_age_edit );
@@ -763,7 +768,7 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui, WContainerWidget
   m_age_edit->changed().connect( this, &RelActAutoGuiNuclide::handleAgeChange );
   m_age_edit->enterPressed().connect( this, &RelActAutoGuiNuclide::handleAgeChange );
   
-  m_fit_age = new WCheckBox( "Fit Age", m_age_container );
+  m_fit_age = new WCheckBox( WString::tr("raagn-fit-age"), m_age_container );
   m_fit_age->addStyleClass( "CbNoLineBreak" );
   m_fit_age->setWordWrap( false );
   m_fit_age->checked().connect( this, &RelActAutoGuiNuclide::handleFitAgeChange );
@@ -792,10 +797,10 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui, WContainerWidget
   m_lower_container = new WContainerWidget( this );
   m_lower_container->setStyleClass( "LowerRow" );
 
-  m_add_constraint_btn = new WPushButton( "Add Constraint", m_lower_container );
+  m_add_constraint_btn = new WPushButton( WString::tr("raagn-add-constraint"), m_lower_container );
   m_add_constraint_btn->addStyleClass( "LinkBtn AddConstraintBtn" );
   m_add_constraint_btn->clicked().connect( this, &RelActAutoGuiNuclide::handleAddConstraint );
-  HelpSystem::attachToolTipOn( m_add_constraint_btn, "Add a constraint to this nuclide", showToolTips );
+  HelpSystem::attachToolTipOn( m_add_constraint_btn, WString::tr("raagn-add-constraint-tt"), showToolTips );
   
   
   m_constraint = new RelActAutoGuiNuclideConstraint( m_gui, this, m_lower_container );
@@ -810,7 +815,7 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui, WContainerWidget
   WRegExpValidator *min_max_validator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex(), upper_container );
   min_max_validator->setFlags(Wt::MatchCaseInsensitive);
 
-  label = new WLabel( "Min Age:", m_age_range_container );
+  label = new WLabel( WString::tr("raagn-min-age"), m_age_range_container );
   m_fit_age_min_edit = new WLineEdit( m_age_range_container );
   label->setBuddy( m_fit_age_min_edit );
   m_fit_age_min_edit->setWidth( WLength(40.0, WLength::Pixel) );
@@ -821,7 +826,7 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui, WContainerWidget
   m_fit_age_min_edit->enterPressed().connect( this, &RelActAutoGuiNuclide::handleAgeRangeChange );
 
 
-  label = new WLabel( "Max Age:", m_age_range_container );
+  label = new WLabel( WString::tr("raagn-max-age"), m_age_range_container );
   m_fit_age_max_edit = new WLineEdit( m_age_range_container );
   label->setBuddy( m_fit_age_max_edit );
   m_fit_age_max_edit->setWidth( WLength(40.0, WLength::Pixel) );
@@ -1008,7 +1013,7 @@ void RelActAutoGuiNuclide::handleIsotopeChange()
     
     const string nucstr = m_nuclide_edit->text().toUTF8();
     if( !nucstr.empty() && std::holds_alternative<std::monostate>(nuc_input) )
-      passMessage( nucstr + " is not a valid nuclide, x-ray, or reaction.", WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("raagn-invalid-nuclide").arg(nucstr), WarningWidget::WarningMsgHigh );
   };//hide_age_stuff
   
   if( nuc_input != prev_src_info )
@@ -1038,7 +1043,7 @@ void RelActAutoGuiNuclide::handleIsotopeChange()
     if( IsInf(nuc->halfLife) )
     {
       const string nucstr = m_nuclide_edit->text().toUTF8();
-      passMessage( nucstr + " is a stable nuclide.", WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("raagn-stable-nuclide").arg(nucstr), WarningWidget::WarningMsgHigh );
       
       m_nuclide_edit->setText( "" );
       m_nuclide_edit->validate();
@@ -1324,6 +1329,9 @@ void RelActAutoGuiNuclide::handleColorChange()
 std::variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> RelActAutoGuiNuclide::source() const
 {
   const string nucstr = m_nuclide_edit->text().toUTF8();
+  if( nucstr.empty() )
+    return std::monostate{};
+  
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   assert( db );
   if( !db )

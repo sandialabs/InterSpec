@@ -81,3 +81,12 @@
   border: solid 1px red; 
   background-color: #f0f0f0;
 }
+
+
+.BatchGuiWidget .BatchGuiInputSpectrumFile .InputFilePreview .PreviewSkip
+{
+  border: solid 1px #e1e1e1;
+  background-color: #f0f0f0;
+  margin-top: 35px;
+  display: inline-block;
+}

@@ -739,7 +739,7 @@ void PeakInfoDisplay::createNewPeak()
   
   const float initialEnergy = 0.5f*(xmin + xmax);
   
-  AddNewPeakDialog *window = new AddNewPeakDialog( initialEnergy );
+  AddNewPeakDialog *window = new AddNewPeakDialog( initialEnergy, "" );
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   
   // We'll make it so "undo" will close the window.
@@ -1011,7 +1011,7 @@ void PeakInfoDisplay::init()
   
 
   
-  m_peakAddRemoveLabel = new WLabel( WString("{1}: ").arg( WString::tr("Peak") ), buttonsDiv);
+  m_peakAddRemoveLabel = new WLabel( WString::tr("pid-peak-label"), buttonsDiv);
   m_peakAddRemoveLabel->addStyleClass("buttonSeparator");
   m_peakAddRemoveLabel->setMargin(WLength(10),Wt::Left);
   

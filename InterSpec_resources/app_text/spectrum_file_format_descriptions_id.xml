@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <message id="N42-2012">
+    Menyimpan data ke format data ANSI N42.42-2012.
+    
+    Semua informasi yang di-parse dari file spektrum asli, serta informasi yang ditambahkan oleh InterSpec, seperti puncak yang cocok, kalibrasi energi yang diperbarui, informasi pencocokan sumber, informasi respons detektor, dll., akan disertakan dalam file keluaran.
+    
+    Ini adalah format file spektrum yang direkomendasikan untuk digunakan, jika Anda ingin bekerja dengan data dalam InterSpec lagi di lain waktu.
+        
+    Format N42.42-2012 telah diperbarui ke N42.42-2020, namun format yang diperbarui pada dasarnya identik dengan versi 2012, dengan perubahan terutama berupa klarifikasi pada dokumentasi.
+    
+    Silakan lihat https://www.nist.gov/pml/radiation-physics/ansiieee-n4242-2020-version, atau https://www.nist.gov/programs-projects/documentary-standards-ansiieee-n4242-standard untuk informasi lebih lanjut.
+        
+    Catatan: file N42-2012 yang diproduksi oleh InterSpec berisi elemen &lt;DHS:InterSpec&gt;&lt;/DHS:InterSpec&gt;, yang melanggar spesifikasi, dan yang mungkin menyebabkan masalah pada beberapa parser XML; mungkin juga ada penyimpangan kecil lainnya dari spesifikasi - masalah ini diketahui, dan dimaksudkan untuk diperbaiki di masa mendatang.
+  </message>
+
+  <message id="N42-2006">
+    Menyimpan ke format XML N42 2006.
+    
+    Sebagian besar informasi relevan dari sebagian besar file spektrum masukan akan disertakan dalam file keluaran, serta informasi yang Anda tambahkan di InterSpec; namun, tidak semua program spektroskopi dapat mengekstrak semua bidang, atau membaca semua variasi file N42.
+
+    Disarankan untuk menggunakan format data N42.42-2012 daripada format ini, kecuali Anda mengekspor data untuk digunakan dengan aplikasi lama.
+  </message>
+
+  <message id="CHN">
+    Opsi ini menghasilkan file CHN biner bilangan bulat.
+    
+    Format ini menyimpan satu spektrum, waktu mulai pengukuran, judul spektrum (hingga 63 karakter), deskripsi detektor, dan kalibrasi energi saat ini. 
+    
+    Pasangan deviasi energi, hitungan neutron, informasi spesifik InterSpec (DRF, pencocokan aktivitas, dll), serta informasi meta lainnya, tidak akan disertakan dalam file keluaran.
+  </message>
+
+  <message id="IAEA SPE">
+    File SPE berbasis ASCII, file spektrum tunggal yang umum untuk bertukar data antar program. 
+    
+    Menyimpan ke format ini mempertahankan hitungan neutron, waktu mulai, waktu hidup, waktu nyata, kalibrasi energi, komentar, dan judul.
+    
+    Pasangan deviasi, GPS, model, informasi spesifik InterSpec (DRF, pencocokan aktivitas, dll), dan informasi meta lainnya tidak akan disertakan dalam file keluaran.
+  </message>
+
+  <message id="CSV">
+    Opsi ini menghasilkan file nilai yang dipisahkan koma (CSV), yang mungkin menyertakan beberapa spektrum gamma.
+    
+    Spektrum ditulis dalam format dua kolom (dipisahkan dengan koma); kolom pertama adalah energi tepi bawah kanal gamma (dalam keV), kolom kedua adalah hitungan kanal. Setiap spektrum dalam file ditulis secara bersebelahan dan dipisahkan oleh header yang berbunyi "Energy, Data".
+    Akhiran baris gaya Windows digunakan (\\n\\r).
+    
+    Format ini kehilangan semua informasi non-spektral, termasuk waktu hidup dan nyata, dan dimaksudkan sebagai cara mudah untuk mengimpor informasi spektral ke program lain seperti Excel.
+  </message>
+
+  <message id="TXT">
+    Spektrum akan ditulis ke file teks ASCII.
+  
+    Di awal file, nama file asli, total waktu hidup dan nyata, jumlah hitungan gamma, jumlah hitungan neutron, nomor seri (jika ada), dan catatan tingkat file apa pun akan ditulis pada baris terpisah yang diberi label.
+    Kemudian setelah dua baris kosong, setiap spektrum dalam file saat ini akan ditulis, dipisahkan oleh dua baris kosong. Setiap spektrum akan berisi semua catatan, waktu mulai pengukuran (jika valid), waktu hidup dan nyata, nomor sampel, nama detektor, jenis detektor, koordinat/waktu GPS (jika valid), jenis kalibrasi energi dan nilai koefisien, dan hitungan neutron (jika valid); nomor kanal, energi bawah kanal, dan hitungan kanal kemudian disediakan dengan setiap kanal ditempatkan pada baris terpisah dan setiap bidang dipisahkan oleh spasi.
+  
+    Analisis yang disediakan detektor apa pun dalam program asli, serta produsen, UUID, pasangan deviasi, informasi jalur, nama lokasi, atau judul spektrum hilang.
+    Konvensi akhiran baris Windows digunakan (\\n\\r).
+  
+    Ini bukan format standar yang umum dibaca oleh program lain, dan dimaksudkan sebagai ringkasan informasi file spektrum yang dapat dibaca manusia; tidak semua informasi yang ditulis akan dibaca oleh InterSpec jika Anda memuat file yang dihasilkan kembali ke program.
+  </message>
+  
+  <message id="PCF">
+    Format PCF adalah format asli biner GADRAS.
+    
+    Menyimpan ke format ini akan menyebabkan hilangnya beberapa informasi. Namun, Kalibrasi, latar depan/latar belakang, kecepatan, sampel, dan judul spektrum (hingga 60 karakter) akan dipertahankan bersama dengan informasi spektral dan hitungan neutron.
+
+    Format ini paling umum digunakan untuk mengimpor data ke GADRAS.
+  </message>
+
+  <message id="CNF">
+    File CNF Mirion/Canberra adalah file spektrum tunggal biner.
+
+    Menyimpan ke format ini mempertahankan waktu mulai, waktu hidup, waktu nyata, kalibrasi energi, judul, dan koordinat GPS. 
+    Hitungan neutron, pasangan deviasi, model, hasil RIID, informasi spesifik InterSpec (DRF, puncak yang cocok, aktivitas yang cocok, dll), dan informasi meta lainnya akan hilang.
+
+    Hanya subset bidang file CAM yang didukung untuk ekspor, dan beberapa bidang mungkin belum benar.
+  </message>
+
+  <message id="SPC (int)">
+    Opsi ini menghasilkan file SPC biner berbasis bilangan bulat spektrum tunggal.
+    
+    Format ini menyertakan spektrum gamma, hitungan neutron, info GPS, waktu mulai pengukuran, nomor seri detektor, dan kalibrasi energi.  
+    
+    Pasangan deviasi energi, hasil analisis, informasi spesifik InterSpec (DRF, puncak yang cocok, aktivitas yang cocok, dll), dan informasi meta lainnya tidak akan disertakan.
+  </message>
+
+  <message id="SPC (float)">
+    Opsi ini menghasilkan file SPC biner berbasis float spektrum tunggal.
+    
+    Format ini menyertakan spektrum gamma, hitungan neutron, info GPS, waktu mulai pengukuran, nomor seri detektor, dan kalibrasi energi.  
+    
+    Pasangan deviasi energi, hasil analisis, informasi spesifik InterSpec (DRF, puncak yang cocok, aktivitas yang cocok, dll), dan informasi meta lainnya tidak akan disertakan.
+  </message>
+
+  <message id="SPC (ascii)">
+    Opsi ini menghasilkan file SPC ASCII spektrum tunggal.  
+    
+    Format ini menyertakan spektrum gamma, hitungan neutron, info GPS, waktu mulai pengukuran, nomor seri detektor, kalibrasi energi, beberapa informasi analisis detektor, produsen, dan informasi model.
+    
+    Pasangan deviasi energi, beberapa hasil informasi analisis, informasi spesifik InterSpec (DRF, puncak yang cocok, aktivitas yang cocok, dll), dan mungkin beberapa, tetapi tidak semua, informasi meta tidak akan disertakan.
+  </message>
+
+  <message id="TKA">
+    File Toolkit Canberra.
+
+    Menyimpan ke format ini akan menyertakan satu spektrum gamma, waktu hidup, dan waktu nyata.
+    
+    Semua informasi lainnya akan hilang.
+  </message>
+
+  <message id="GR-130">
+    Format GR130 adalah format asli biner untuk detektor Exploranium GR130.  
+    
+    Menyimpan ke format ini akan menyebabkan data di-rebin menjadi 256 kanal, mempertahankan waktu mulai dan hidup, tetapi kalibrasi energi dan informasi neutron akan hilang, bersama dengan semua informasi meta seperti komentar, GPS, dll. 
+    
+    Beberapa spektrum dapat ditulis ke satu file, dengan rekaman diurutkan berdasarkan nomor sampel kemudian nomor detektor.
+  </message>
+
+  <message id="GR-135">
+    Format GR135 adalah format asli biner untuk detektor Exploranium GR135v2.
+    
+    Menyimpan ke format ini akan menyebabkan data di-rebin menjadi 1024 kanal, mempertahankan waktu mulai dan hidup, hitungan neutron, kalibrasi energi, dan nomor seri numerik.
+    
+    Pasangan deviasi, komentar, judul, GPS, dan informasi meta lainnya akan hilang. 
+    
+    Beberapa spektrum dapat ditulis ke satu file, dengan rekaman diurutkan berdasarkan nomor sampel kemudian nomor detektor.
+  </message>
+
+  <message id="HTML">
+    File HTML mandiri diproduksi dengan grafik spektrum interaktif.  
+    
+    File dapat menyertakan spektrum latar depan dan latar belakang, garis referensi gamma, dan akan memiliki beberapa opsi tampilan dasar.
+
+    Format file ini hanya dapat dibaca dan ditampilkan oleh browser web yang telah mengaktifkan JavaScript dan mendukung gambar SVG.
+  </message>
+
+  <message id="QR-code/URL">
+    Spektrum akan dikodekan menjadi kode QR dan/atau URI.
+
+    Kode QR atau URI mungkin berisi spektrum latar depan dan latar belakang, jika mereka muat.
+
+    Spektrum gamma, hitungan neutron, koordinat GPS, kalibrasi energi, dan informasi detektor akan disertakan, jika tersedia.
+
+    Semua informasi meta lainnya, dan informasi spesifik InterSpec (DRF, puncak yang cocok, aktivitas yang cocok, dll) tidak akan disertakan.
+
+    Spektrum HPGe mungkin memerlukan beberapa kode QR untuk mewakili satu spektrum, dalam hal ini spektrum latar belakang dan latar depan harus dikodekan secara terpisah.
+  </message>
+</messages>
+

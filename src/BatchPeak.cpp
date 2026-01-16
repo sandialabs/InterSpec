@@ -28,6 +28,9 @@
 #include <fstream>
 #include <iostream>
 #include <exception>
+#include <chrono>
+#include <iomanip>
+#include <sstream>
 
 #include "external_libs/SpecUtils/3rdparty/inja/inja.hpp"
 
@@ -376,7 +379,8 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
   const vector<pair<string,string>> spec_chart_js_and_css = BatchInfoLog::load_spectrum_chart_js_and_css();
   
   // Load report templates, and setup inja::environment
-  inja::Environment env = BatchInfoLog::get_default_inja_env( options );
+  const string tmplt_dir = BatchInfoLog::template_include_dir( options );
+  inja::Environment env = BatchInfoLog::get_default_inja_env( tmplt_dir );
   
   
   nlohmann::json summary_json;
@@ -657,6 +661,85 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
   if( !options.output_dir.empty() && options.create_json_output )
     BatchInfoLog::write_json( options, warnings, "", summary_json );
   
+  // Create concatenated N42 file if requested
+  if( options.concatenate_to_n42 && !options.output_dir.empty() && results )
+  {
+    try
+    {
+      auto concatenated_spec = make_shared<SpecMeas>();
+      int current_sample = 0;
+      
+      // Add remarks to indicate when this file was created
+      auto now = chrono::system_clock::now();
+      auto time_t = chrono::system_clock::to_time_t(now);
+      stringstream time_str;
+      time_str << put_time(localtime(&time_t), "%Y-%m-%d %H:%M:%S");
+      concatenated_spec->add_remark("Concatenated N42 file created on " + time_str.str());
+      
+      for( const auto &fit_result : results->file_results )
+      {
+        if( !fit_result.success || !fit_result.spectrum )
+          continue;
+          
+        // Create a copy of the spectrum measurement
+        auto new_meas = make_shared<SpecUtils::Measurement>( *fit_result.spectrum );
+        current_sample += 1;
+        new_meas->set_sample_number( current_sample );
+        
+        // Add source file name to the measurement title
+        string source_filename = SpecUtils::filename( fit_result.file_path );
+        string original_title = new_meas->title();
+        if( original_title.empty() )
+        {
+          new_meas->set_title( source_filename );
+        }
+        else
+        {
+          new_meas->set_title( source_filename + " - " + original_title );
+        }
+        
+        // Add the measurement to the concatenated SpecMeas
+        concatenated_spec->add_measurement( new_meas, false );
+        
+        // Add the peaks for this measurement
+        if( !fit_result.fit_peaks.empty() )
+        {
+          set<int> sample_nums = { current_sample };
+          deque<shared_ptr<const PeakDef>> peaks_copy;
+          for( const auto &peak : fit_result.fit_peaks )
+            peaks_copy.push_back( peak );
+          concatenated_spec->setPeaks( peaks_copy, sample_nums );
+        }
+      }
+
+      // Clean up the SpecMeas after adding all measurements
+      concatenated_spec->cleanup_after_load( SpecUtils::SpecFile::ReorderSamplesByTime ); 
+
+      // Save the concatenated file
+      const string concatenated_file = SpecUtils::append_path( options.output_dir, "concatenated.n42" );
+      
+      if( SpecUtils::is_file( concatenated_file ) && !options.overwrite_output_files )
+      {
+        warnings.push_back( "Not writing '" + concatenated_file + "', as it would overwrite a file."
+                           " See the '--overwrite-output-files' option to force writing." );
+      }
+      else
+      {
+        if( !concatenated_spec->save2012N42File( concatenated_file ) )
+          warnings.push_back( "Failed to write concatenated N42 file '" + concatenated_file + "'." );
+        else
+          cout << "Have written concatenated N42 file '" << concatenated_file << "'" << endl;
+      }
+      
+      // Store the concatenated results
+      results->concatenated_results = concatenated_spec;
+    }
+    catch( const std::exception &e )
+    {
+      warnings.push_back( "Error creating concatenated N42 file: " + string(e.what()) );
+    }
+  }
+  
   if( !warnings.empty() )
     cerr << endl << endl;
   for( const auto warn : warnings )
@@ -812,7 +895,10 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
         
     if( !exemplar_is_n42 && (options.use_exemplar_energy_cal || options.use_exemplar_energy_cal_for_background) )
       throw runtime_error( "Exemplar file wasnt an N42 file, but using its energy cal was specified - not allowed." );
-    
+
+    if( exemplar_is_n42 )
+      
+
     if( exemplar_is_n42 )
       exemplar_n42 = exemplar;
   }//if( !cached_exemplar_n42 )
@@ -857,7 +943,7 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
   }//if( exemplar_is_n42 )
 
   BatchPeakFitResult results;
-  results.file_path = exemplar_filename;
+  results.file_path = filename;
   results.options = options;
   results.exemplar = exemplar_n42;
   results.exemplar_sample_nums = exemplar_sample_nums;
@@ -878,8 +964,11 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
       const bool loaded = specfile->load_file( filename, SpecUtils::ParserType::Auto, filename );
       if( !loaded || !specfile->num_measurements() )
       {
-        results.warnings.push_back( "Couldnt read in '" + filename + "' as a spectrum file -- skipping." );
-        
+        if( SpecUtils::is_file(filename) )
+          results.warnings.push_back( "Couldnt read in '" + filename + "' as a spectrum file -- skipping." );
+        else
+          results.warnings.push_back( "Could not access '" + filename + "' -- skipping." );
+
         return results;
       }//if( !loaded )
     }//if( cached_spectrum ) / else
@@ -1080,8 +1169,10 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
         const bool no_neg = true;
         const bool do_round = false;
         
-        const bool sf = spec->live_time() / results.background->live_time();
-        
+        double sf = spec->live_time() / results.background->live_time();
+        if( IsInf(sf) || IsNan(sf) )
+          sf = 1.0; //e.g., if we dont have live-time
+
         shared_ptr<const vector<float>> fore_counts = spec->gamma_counts();
         shared_ptr<const vector<float>> back_counts = results.background->gamma_counts();
         
@@ -1286,7 +1377,7 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
       if( options.refit_energy_cal )
       {
         // We will refit the energy calibration - maybe a few times - to really hone in on things
-        for( size_t i = 0; i < 5; ++i )
+        for( size_t i = 0; i < 4; ++i )
         {
           vector<PeakDef> energy_cal_peaks = candidate_peaks;
           for( auto &peak : energy_cal_peaks )
@@ -1299,6 +1390,7 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
           vector<PeakDef> peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
                                                   stat_threshold, hypothesis_threshold,
                                                   energy_cal_peaks, spec, {}, isRefit );
+
           try
           {
             fit_energy_cal_from_fit_peaks( spec, peaks );
@@ -1335,13 +1427,20 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
                                                   stat_threshold, hypothesis_threshold,
                                                   candidate_peaks, spec, {}, isRefit );
 
-      // Could re-fit the peaks again...
+#if( !USE_LM_PEAK_FIT )
+      // will re-fit the peaks again to make sure have the best solution.
+      //  Note: the Ceres/LM-based fitting does not need this - it seems to always fit the best solution on first try
       for( size_t i = 0; i < 3; ++i )
       {
+        const vector<PeakDef> prev_peaks = fit_peaks;
         fit_peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
                                     stat_threshold, hypothesis_threshold,
                                     fit_peaks, spec, {}, true );
+
+        if( fit_peaks.size() != prev_peaks.size() )
+          fit_peaks = prev_peaks;
       }
+#endif // !USE_LM_PEAK_FIT
 
       //cout << "Fit for the following " << fit_peaks.size() << " peaks (the exemplar file had "
       //<< starting_peaks.size() <<  ") from the raw spectrum:"
@@ -1358,10 +1457,32 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
           const double exemplar_mean = exemplar->mean();
 
           const double energy_diff = fabs( fit_mean - exemplar_mean );
-          // We will require the fit peak to be within 0.5 FWHM (arbitrarily chosen distance)
+
+          // Calculate the overlap fraction of the ROI
+          auto overlap_frac_fcn = []( const shared_ptr<const PeakDef> &peak_1, const PeakDef &p_2 ) -> double {
+            const double overlapLow = std::max(peak_1->lowerX(), p_2.lowerX());
+            const double overlapHigh = std::min(peak_1->upperX(), p_2.upperX() );
+            const double intersection = std::max(0.0, overlapHigh - overlapLow);
+            if( intersection <= 0.0 )
+              return 0.0;
+            const double length1 = peak_1->upperX() - peak_1->lowerX();
+            const double length2 = p_2.upperX() - p_2.lowerX();
+            const double unionLength = length1 + length2 - intersection;
+            if( unionLength <= 0.0 )
+              return unionLength;
+            return intersection / unionLength;
+          };
+
+          const double overlap_frac = overlap_frac_fcn( exemplar, p );
+
+          // We will require the fit peak to be within 1.5 FWHM (arbitrarily chosen distance)
           //  of the exemplar peak, and we will use the exemplar peak closest in energy to the
           //  fit peak
-          if( ((energy_diff < 0.5*p.fwhm()) || (energy_diff < 0.5*exemplar->fwhm()))
+          const double fwhm_match_multiple = 1.5;
+          const double min_overlap_frac = 0.75; //arbitrary
+          if( ((energy_diff < fwhm_match_multiple*p.fwhm())
+               || (energy_diff < fwhm_match_multiple*exemplar->fwhm())
+               || (overlap_frac > min_overlap_frac) )
              && (!exemplar_parent || (energy_diff < fabs(exemplar_parent->mean() - fit_mean))) )
           {
             exemplar_parent = exemplar;

@@ -169,9 +169,9 @@ namespace
 
 SpecFileSummary::SpecFileSummary( const SpecUtils::SpectrumType type, InterSpec *specViewer )
   : AuxWindow( WString::tr("window-title-file-parameters"),
-              Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+              (AuxWindowProperties::IsModal
               | AuxWindowProperties::SetCloseable
-              | AuxWindowProperties::DisableCollapse ),
+              | AuxWindowProperties::DisableCollapse) ),
     m_specViewer( specViewer ),
     m_allowEditGroup( NULL ),
     m_displaySampleDiv( NULL ),
@@ -1040,7 +1040,7 @@ void SpecFileSummary::handleFieldUpdate( EditableFields field )
 
   if( !sample || !meas )
   {
-    passMessage( "No spectrum to update", WarningWidget::WarningMsgInfo );
+    passMessage( WString::tr("sfs-no-spectrum-to-update"), WarningWidget::WarningMsgInfo );
     return;
   }//if( !sample )
 

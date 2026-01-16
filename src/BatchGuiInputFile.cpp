@@ -126,11 +126,13 @@ Wt::Signal<BatchGuiInputFile *> &BatchGuiInputFile::remove_self_request()
 BatchGuiInputSpectrumFile::BatchGuiInputSpectrumFile( const std::string display_name,
                                                       const std::string path_to_file,
                                                       const bool should_cleanup,
+                                                      const BatchGuiInputSpectrumFile::ShowPreviewOption preview,
                                                       Wt::WContainerWidget *parent )
 : Wt::WContainerWidget( parent ),
   m_filename( path_to_file ),
   m_display_name( display_name ),
   m_should_cleanup( should_cleanup ),
+  m_show_preview( preview ),
   m_preview_container( nullptr ),
   m_spectrum( nullptr ),
   m_preview_created( false ),
@@ -296,7 +298,12 @@ void BatchGuiInputSpectrumFile::set_spectrum( std::shared_ptr<SpecMeas> spec_mea
         preview_meas = first_back;
     }// if( spec_meas->passthrough() ) / else
 
-    if( preview_meas )
+    if( preview_meas && (m_show_preview == ShowPreviewOption::DontShow) )
+    {
+      WText *preview = new WText( m_preview_container );
+      preview->setText( WString::tr( "bgw-preview-skip" ) );
+      preview->setStyleClass( "PreviewSkip" );
+    }else if( preview_meas )
     {
       if( !m_spectrum )
       {

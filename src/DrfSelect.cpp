@@ -71,10 +71,9 @@
 #include <Wt/WContainerWidget>
 #include <Wt/WStandardItemModel>
 
-
 #include "rapidxml/rapidxml.hpp"
 #include "rapidxml/rapidxml_print.hpp"
-
+#include "rapidxml/rapidxml_utils.hpp"
 
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/SpecFile.h"
@@ -481,10 +480,6 @@ namespace
    trialpath = SpecUtils::lexically_normalize_path( SpecUtils::append_path( trialpath, "..") );
    trial_paths.push_back( trialpath );
    
-   trialpath = SpecUtils::append_path( SpecUtils::append_path( trialpath, ".."), "data_ouo" );
-   trialpath = SpecUtils::lexically_normalize_path( trialpath );
-   trial_paths.push_back( trialpath );
-   
    
    for( const string &p : trial_paths )
    {
@@ -516,20 +511,23 @@ namespace
     
     const string drfsdir = SpecUtils::append_path( base_dir, "drfs" );
     
-    const vector<string> drf_files = SpecUtils::recursive_ls( drfsdir );
-    for( const auto &p : drf_files )
+    if( SpecUtils::is_directory(drfsdir) )
     {
-      const string fname = SpecUtils::filename(p);
-      if( SpecUtils::iequals_ascii( fname, "Efficiency.csv") )
-        continue;
-      
-      const string type = SpecUtils::file_extension(fname);
-      if( !SpecUtils::iequals_ascii( type, ".csv") && !SpecUtils::iequals_ascii( type, ".tsv") )
-        continue;
-      
-      // Note that this next line will cause duplicate TSV entries - we'll remove them later
-      potential_paths.push_back( p );
-    }//for( const auto &p : drf_files )
+      const vector<string> drf_files = SpecUtils::recursive_ls( drfsdir );
+      for( const auto &p : drf_files )
+      {
+        const string fname = SpecUtils::filename(p);
+        if( SpecUtils::iequals_ascii( fname, "Efficiency.csv") )
+          continue;
+        
+        const string type = SpecUtils::file_extension(fname);
+        if( !SpecUtils::iequals_ascii( type, ".csv") && !SpecUtils::iequals_ascii( type, ".tsv") )
+          continue;
+        
+        // Note that this next line will cause duplicate TSV entries - we'll remove them later
+        potential_paths.push_back( p );
+      }//for( const auto &p : drf_files )
+    }//if( SpecUtils::is_directory(drfsdir) )
   }//potential_rel_eff_files(..)
 
 /*
@@ -1346,38 +1344,7 @@ void RelEffDetSelect::docreate()
   addIcon->clicked().connect( this, &RelEffDetSelect::addFile );
 #endif
   
-  vector<string> user_data_paths;
-
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
-  try
-  {
-    const string userDir = InterSpec::writableDataDirectory();
-    potential_rel_eff_files( userDir, user_data_paths );
-  }catch( std::exception & )
-  {
-    cerr << "Couldnt call into InterSpec::writableDataDirectory()" << endl;
-  }
-#endif
-  
-  try
-  {
-    const string dataDir = InterSpec::staticDataDirectory();
-    potential_rel_eff_files( dataDir, user_data_paths );
-  }catch( std::exception & )
-  {
-    cerr << "Couldnt call into InterSpec::staticDataDirectory()" << endl;
-  }
-
-  
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
-  if( !InterSpecApp::isPrimaryWindowInstance() )
-  {
-    // TODO: decide if we want to do anything here
-  }//if( InterSpecApp::isPrimaryWindowInstance() )
-#endif
-
-  
-  remove_duplicate_paths( user_data_paths );
+  vector<string> user_data_paths = DrfSelect::potential_rel_eff_det_files();
   
   size_t num_user = 0;
   for( const string &path : user_data_paths )
@@ -1472,66 +1439,7 @@ void GadrasDetSelect::docreate()
   addIcon->clicked().connect( this, &GadrasDetSelect::addDirectory );
 #endif
   
-  string pathstr;
-  vector<string> paths;
-#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
-  try
-  {
-    if( m_interspec )
-      pathstr = UserPreferences::preferenceValue<string>( "GadrasDRFPath", m_interspec );
-  }catch( std::exception & )
-  {
-    passMessage( "Error retrieving 'GadrasDRFPath' preference.", WarningWidget::WarningMsgHigh );
-  }
-#endif
-
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
-  try
-  {
-    //ToDo: do more testing and use only the Android implementation
-#if( ANDROID )
-    const string basestr = InterSpec::writableDataDirectory();
-    const vector<string> subdirs = SpecUtils::ls_directories_in_directory( basestr );
-    for( const string &subdirpath : subdirs )
-    {
-      auto subsubdirs = GadrasDirectory::recursive_list_gadras_drfs(subdirpath);
-      if( subsubdirs.size() )
-        pathstr += (pathstr.empty() ? "" : ";") + subdirpath;
-    }//for( const string &subdir : subdirs )
-#else
-    using namespace boost::filesystem;
-    auto itr = directory_iterator( InterSpec::writableDataDirectory() );
-    
-    for( ; itr != directory_iterator(); ++itr )
-    {
-      const boost::filesystem::path &p = itr->path();
-      const string pstr = p.string<string>();
-      if( SpecUtils::is_directory( pstr ) )
-      {
-        auto subdirs = GadrasDirectory::recursive_list_gadras_drfs(pstr);
-        if( subdirs.size() )
-          pathstr += (pathstr.empty() ? "" : ";") + pstr;
-      }
-    }//for( loop over
-#endif //if ANDROID / else
-  }catch( std::exception &e )
-  {
-    cerr << "Got exception looking for GADRAS DRFs in user document dir: " << e.what() << endl;
-  }//try / catch
-#endif
-  
-  SpecUtils::split( paths, pathstr, "\r\n;" );
-  
-  //Make sure we always at least have the default generic detectors available.
-  bool hasGeneric = false;
-  for( size_t i = 0; !hasGeneric && (i < paths.size()); ++i )
-    hasGeneric = (paths[i].find("GenericGadrasDetectors") != string::npos);
-  
-  if( !hasGeneric )
-  {
-    const string drfpaths = SpecUtils::append_path( InterSpec::staticDataDirectory(), "GenericGadrasDetectors" );
-    paths.push_back( drfpaths );
-  }
+  vector<string> paths = DrfSelect::potential_gadras_det_dirs( m_interspec );
   
     
   for( const string &path : paths )
@@ -2005,51 +1913,7 @@ std::shared_ptr<DetectorPeakResponse> GadrasDirectory::parseDetector( string pat
 
 vector<string> GadrasDirectory::recursive_list_gadras_drfs( const string &sourcedir )
 {
-  vector<string> files;
-  if( !SpecUtils::is_directory( sourcedir ) )
-    return files;
-  
-  const string csv_file = SpecUtils::append_path( sourcedir, "Efficiency.csv");
-  const string dat_file = SpecUtils::append_path( sourcedir, "Detector.dat");
-  
-  if( SpecUtils::is_file(csv_file) && SpecUtils::is_file(dat_file) )
-    files.push_back( sourcedir );
-  
-  //ToDo: Maybe we should use the Android implemenatation always.
-#if( ANDROID )
-  const vector<string> subdirs = SpecUtils::ls_directories_in_directory( sourcedir );
-  for( const string &subdirpath : subdirs )
-  {
-    auto subsubdirs = recursive_list_gadras_drfs( subdirpath );
-    files.insert( end(files), begin(subsubdirs), end(subsubdirs) );
-  }//for( const string &subdir : subdirs )
-#else
-using namespace boost::filesystem;
-  directory_iterator end_itr; // default construction yields past-the-end
-  
-  directory_iterator itr;
-  try
-  {
-    itr = directory_iterator( sourcedir );
-  }catch( std::exception & )
-  {
-    //ex: boost::filesystem::filesystem_error: boost::filesystem::directory_iterator::construct: Permission denied: "..."
-    return files;
-  }
-  
-  for( ; itr != end_itr; ++itr )
-  {
-    const boost::filesystem::path &p = itr->path();
-    const string pstr = p.string<string>();
-    if( SpecUtils::is_directory( pstr ) )
-    {
-      auto subdirs = recursive_list_gadras_drfs(pstr);
-      files.insert( end(files), begin(subdirs), end(subdirs) );
-    }
-  }//for( loop over
-#endif //if ANDROID / else
-  
-  return files;
+  return DrfSelect::recursive_list_gadras_drfs( sourcedir );
 }//vector<string> recursive_list_gadras_drfs( const string &sourcedir )
 
 
@@ -2203,7 +2067,7 @@ DetectorDisplay::DetectorDisplay( InterSpec *specViewer,
   addStyleClass( "DetectorDisplay" );  //In InterSpec.css since this widget is loaded almost always at initial load time anyway
 
   new WImage( "InterSpec_resources/images/detector_small_white.png", this );
-  new WText( WString("{1}:").arg(WString::tr("Detector") ), this );
+  new WLabel( WString::tr("detector-label"), this );
   const bool isMobile = (m_interspec && m_interspec->isMobile());
   
   WString txt = WString("<font style=\"font-weight:100;color:#CFCFCF;\">&lt;{1}&gt;</font>")
@@ -2293,7 +2157,9 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_efficiencyCsvUpload( nullptr ),
     m_detectrDotDatDiv( nullptr ),
     m_detectorDotDatUpload( nullptr ),
-    m_fixedGeometryCb( nullptr ),
+    m_efficiencyType( nullptr ),
+    m_detectorDistanceDiv( nullptr ),
+    m_detectorDistance( nullptr ),
     m_acceptButton( nullptr ),
     m_cancelButton( nullptr ),
     m_noDrfButton( nullptr ),
@@ -2459,27 +2325,39 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
 
   
   WContainerWidget *uploadDetTab = new WContainerWidget();
+  uploadDetTab->addStyleClass( "DetUploadDiv" );
   
   WText *descrip = new WText( WString::tr("ds-csv-upload-desc"), uploadDetTab );
-  descrip->setInline( false );
   descrip->setStyleClass("DetectorLabel");
-  descrip->setInline( false );
   
   
   m_efficiencyCsvUpload = new WFileUpload( uploadDetTab );
   m_efficiencyCsvUpload->setInline( false );
-  m_efficiencyCsvUpload->uploaded().connect( boost::bind( &DrfSelect::fileUploadedCallback, this, UploadCallbackReason::EfficiencyCsvUploaded ) );
-  m_efficiencyCsvUpload->fileTooLarge().connect( boost::bind(&SpecMeasManager::fileTooLarge,
-                                                             boost::placeholders::_1) );
+  m_efficiencyCsvUpload->uploaded().connect( this, &DrfSelect::handleEfficiencyCsvUpload );
+  m_efficiencyCsvUpload->fileTooLarge().connect( boost::bind(&SpecMeasManager::fileTooLarge, boost::placeholders::_1) );
   m_efficiencyCsvUpload->changed().connect( m_efficiencyCsvUpload, &WFileUpload::upload );
   m_efficiencyCsvUpload->setInline( false );
  
+  m_efficiencyType = new WComboBox( uploadDetTab );
+  m_efficiencyType->setInline( false );
+  m_efficiencyType->addStyleClass( "EfficiencyType" );
+  m_efficiencyType->addItem( WString::tr("ds-eff-type-intrinsic") );
+  m_efficiencyType->addItem( WString::tr("ds-eff-type-farfield") );
+  m_efficiencyType->addItem( WString::tr("ds-eff-type-gadras") );
+  m_efficiencyType->addItem( WString::tr("ds-fixed-geom-total") );
+  m_efficiencyType->addItem( WString::tr("ds-fixed-geom-cm2") );
+  m_efficiencyType->addItem( WString::tr("ds-fixed-geom-m2") );
+  m_efficiencyType->addItem( WString::tr("ds-fixed-geom-gram") );
+  m_efficiencyType->setCurrentIndex( 0 );
+  m_efficiencyType->hide();
+  m_efficiencyType->changed().connect( this, &DrfSelect::handleEfficiencyTypeChange );
+  
+  
+  
   m_detectrDiameterDiv = new WContainerWidget( uploadDetTab );
   m_detectrDiameterDiv->addStyleClass( "DetectorDiamDiv" );
-  WLabel *label = new WLabel( WString::tr("ds-enter-gad-det-diam"), m_detectrDiameterDiv );
-  label->setInline( false );
 
-  label = new WLabel( WString::tr("ds-det-diam"), m_detectrDiameterDiv );
+  WLabel *label = new WLabel( WString::tr("ds-det-diam"), m_detectrDiameterDiv );
   m_detectorDiameter = new WLineEdit( "0 cm", m_detectrDiameterDiv );
   label->setBuddy( m_detectorDiameter );
 
@@ -2491,20 +2369,33 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   m_detectorDiameter->setValidator( distValidator );
   m_detectorDiameter->setTextSize( 10 );
-  m_detectorDiameter->changed().connect( boost::bind( &DrfSelect::fileUploadedCallback, this, UploadCallbackReason::DetectorDiameterChanged ) );
-  m_detectorDiameter->enterPressed().connect( boost::bind( &DrfSelect::fileUploadedCallback, this, UploadCallbackReason::DetectorDiameterChanged ) );
-  m_detectorDiameter->blurred().connect( boost::bind( &DrfSelect::fileUploadedCallback, this, UploadCallbackReason::DetectorDiameterChanged ) );
+  m_detectorDiameter->changed().connect( this, &DrfSelect::handleDetectorDiameterOrDistanceChanged );
+  m_detectorDiameter->enterPressed().connect( this, &DrfSelect::handleDetectorDiameterOrDistanceChanged );
+  m_detectorDiameter->blurred().connect( this, &DrfSelect::handleDetectorDiameterOrDistanceChanged );
 
-  m_fixedGeometryCb = new WCheckBox( WString::tr("ds-fixed-geom"), uploadDetTab );
-  m_fixedGeometryCb->setInline( false );
-  m_fixedGeometryCb->addStyleClass( "FixedGeometry" );
-  m_fixedGeometryCb->hide();
-  m_fixedGeometryCb->checked().connect( boost::bind( &DrfSelect::fileUploadedCallback, this, UploadCallbackReason::FixedGeometryChanged ) );
-  m_fixedGeometryCb->unChecked().connect( boost::bind( &DrfSelect::fileUploadedCallback, this, UploadCallbackReason::FixedGeometryChanged ) );
+  m_detectorDistanceDiv = new WContainerWidget( uploadDetTab );
+  m_detectorDistanceDiv->addStyleClass( "DetectorDistanceDiv" );
+  label = new WLabel( WString::tr("ds-dist-label"), m_detectorDistanceDiv );
+  m_detectorDistance = new WLineEdit( "25 cm", m_detectorDistanceDiv );
+  label->setBuddy( m_detectorDistance );
+
+  m_detectorDistance->setAttributeValue( "ondragstart", "return false" );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_detectorDistance->setAttributeValue( "autocorrect", "off" );
+  m_detectorDistance->setAttributeValue( "spellcheck", "off" );
+#endif
   
+  m_detectorDistance->setValidator( distValidator );
+  m_detectorDistance->setTextSize( 10 );
+  m_detectorDistance->changed().connect( this, &DrfSelect::handleDetectorDiameterOrDistanceChanged );
+  m_detectorDistance->enterPressed().connect( this, &DrfSelect::handleDetectorDiameterOrDistanceChanged );
+  m_detectorDistance->blurred().connect( this, &DrfSelect::handleDetectorDiameterOrDistanceChanged );
+  m_detectorDistanceDiv->hide();
+  m_detectorDistanceDiv->setHiddenKeepsGeometry( true );
+
   
-  m_uploadedDetNameDiv = new WContainerWidget( m_detectrDiameterDiv );
-  label = new WLabel( WString("{1}:").arg( WString::tr("Name") ), m_uploadedDetNameDiv );
+  m_uploadedDetNameDiv = new WContainerWidget( uploadDetTab );
+  label = new WLabel( WString::tr("ds-name-label"), m_uploadedDetNameDiv );
   m_uploadedDetName = new WLineEdit( m_uploadedDetNameDiv );
   label->setBuddy( m_uploadedDetName );
   
@@ -2516,6 +2407,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   m_uploadedDetName->textInput().connect( this, &DrfSelect::handleUserChangedUploadedDrfName );
   m_uploadedDetName->setTextSize( 30 );
+  m_uploadedDetNameDiv->hide();
   
   m_detectrDotDatDiv = new WContainerWidget( m_detectrDiameterDiv );
   m_detectrDotDatDiv->addStyleClass( "DetectorDotDatDiv" );
@@ -2524,9 +2416,8 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   label->setInline( false );
   m_detectorDotDatUpload = new WFileUpload( m_detectrDotDatDiv );
   m_detectorDotDatUpload->setInline( false );
-  m_detectorDotDatUpload->uploaded().connect( boost::bind( &DrfSelect::fileUploadedCallback, this, UploadCallbackReason::DetectorDotDatUploaded ) );
-  m_detectorDotDatUpload->fileTooLarge().connect( boost::bind(&SpecMeasManager::fileTooLarge,
-                                                              boost::placeholders::_1) );
+  m_detectorDotDatUpload->uploaded().connect( boost::bind( &DrfSelect::handleGadrasDetectorDotDatUpload, this ) );
+  m_detectorDotDatUpload->fileTooLarge().connect( boost::bind(&SpecMeasManager::fileTooLarge, boost::placeholders::_1) );
   m_detectorDotDatUpload->changed().connect( m_detectorDotDatUpload, &WFileUpload::upload );
   m_detectrDiameterDiv->hide();
   m_detectrDiameterDiv->setHiddenKeepsGeometry( true );
@@ -2539,9 +2430,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   const char *const diamtxt = "2.2 cm";
     
   WContainerWidget *formulaDiv = new WContainerWidget();
-  WString nameLabel = WString::tr("ds-manual-det-desc");
-  if( narrow_layout )
-    nameLabel = WString("{1}:").arg(nameLabel);
+  WString nameLabel = narrow_layout ? WString::tr("ds-manual-det-desc-label") : WString::tr("ds-manual-det-desc");
   
   WText *selfDefineLabel = new WText( nameLabel, formulaDiv );
   selfDefineLabel->setInline( false );
@@ -2631,9 +2520,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
 
   cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
   
-  WString descLabel = WString::tr("Description");
-  if( narrow_layout )
-    descLabel = WString("{1}:").arg(descLabel);
+  WString descLabel = narrow_layout ? WString::tr("ds-description-label") : WString::tr("Description");
   
   label = new WLabel( descLabel, cell );
   if( narrow_layout )
@@ -3668,11 +3555,11 @@ void DrfSelect::verifyManualDefinition()
   assert( (static_cast<int>(is_intrinsic)
            + static_cast<int>(is_absolute)
            + static_cast<int>(is_fixed_geom)) == 1 );
-  DetectorPeakResponse::EffGeometryType geom_type = DetectorPeakResponse::EffGeometryType::FarField;
+  DetectorPeakResponse::EffGeometryType geom_type = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
   switch( m_drfType->currentIndex() )
   {
-    case 0:  geom_type = DetectorPeakResponse::EffGeometryType::FarField; break;
-    case 1:  geom_type = DetectorPeakResponse::EffGeometryType::FarField; break;
+    case 0:  geom_type = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic; break;
+    case 1:  geom_type = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic; break;
     case 2:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct; break;
     case 3:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2; break;
     case 4:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2; break;
@@ -3797,11 +3684,11 @@ void DrfSelect::setFormulaDefineDetector()
   assert( (static_cast<int>(is_intrinsic)
            + static_cast<int>(is_absolute)
            + static_cast<int>(is_fixed_geom)) == 1 );
-  DetectorPeakResponse::EffGeometryType geom_type = DetectorPeakResponse::EffGeometryType::FarField;
+  DetectorPeakResponse::EffGeometryType geom_type = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
   switch( m_drfType->currentIndex() )
   {
-    case 0:  geom_type = DetectorPeakResponse::EffGeometryType::FarField; break;
-    case 1:  geom_type = DetectorPeakResponse::EffGeometryType::FarField; break;
+    case 0:  geom_type = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic; break;
+    case 1:  geom_type = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic; break;
     case 2:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct; break;
     case 3:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2; break;
     case 4:  geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2; break;
@@ -3935,7 +3822,7 @@ void DrfSelect::selectButton( WStackedWidget *stack,
         break;
         
       case 2:
-        fileUploadedCallback( UploadCallbackReason::ImportTabChosen );
+        handleUploadTabSelected();
         break;
         
       case 3:
@@ -3958,7 +3845,198 @@ void DrfSelect::updateChart()
 } //DrfSelect::updateChart()
 
 
-std::shared_ptr<DetectorPeakResponse> DrfSelect::parseRelEffCsvFile( const std::string filename )
+std::vector<std::string> DrfSelect::potential_rel_eff_det_files()
+{
+  vector<string> user_data_paths;
+
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
+  try
+  {
+    const string userDir = InterSpec::writableDataDirectory();
+    potential_rel_eff_files( userDir, user_data_paths );
+  }catch( std::exception & )
+  {
+    cerr << "Couldnt call into InterSpec::writableDataDirectory()" << endl;
+  }
+#endif
+
+  try
+  {
+    const string dataDir = InterSpec::staticDataDirectory();
+    potential_rel_eff_files( dataDir, user_data_paths );
+  }catch( std::exception & )
+  {
+    cerr << "Couldnt call into InterSpec::staticDataDirectory()" << endl;
+  }
+
+
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || ANDROID || IOS )
+  if( !InterSpecApp::isPrimaryWindowInstance() )
+  {
+    // TODO: decide if we want to do anything here
+  }//if( InterSpecApp::isPrimaryWindowInstance() )
+#endif
+
+
+  remove_duplicate_paths( user_data_paths );
+
+  return user_data_paths;
+}//DrfSelect::potential_rel_eff_det_files()
+
+
+std::vector<std::string> DrfSelect::recursive_list_gadras_drfs( const std::string &sourcedir )
+{
+  vector<string> files;
+  if( !SpecUtils::is_directory( sourcedir ) )
+    return files;
+
+  const string csv_file = SpecUtils::append_path( sourcedir, "Efficiency.csv");
+  const string dat_file = SpecUtils::append_path( sourcedir, "Detector.dat");
+
+  if( SpecUtils::is_file(csv_file) && SpecUtils::is_file(dat_file) )
+    files.push_back( sourcedir );
+
+  //ToDo: Maybe we should use the Android implemenatation always.
+#if( ANDROID )
+  const vector<string> subdirs = SpecUtils::ls_directories_in_directory( sourcedir );
+  for( const string &subdirpath : subdirs )
+  {
+    auto subsubdirs = recursive_list_gadras_drfs( subdirpath );
+    files.insert( end(files), begin(subsubdirs), end(subsubdirs) );
+  }//for( const string &subdir : subdirs )
+#else
+  using namespace boost::filesystem;
+  directory_iterator end_itr; // default construction yields past-the-end
+
+  directory_iterator itr;
+  try
+  {
+    itr = directory_iterator( sourcedir );
+  }catch( std::exception & )
+  {
+    //ex: boost::filesystem::filesystem_error: boost::filesystem::directory_iterator::construct: Permission denied: "..."
+    return files;
+  }
+
+  for( ; itr != end_itr; ++itr )
+  {
+    const boost::filesystem::path &p = itr->path();
+    const string pstr = p.string<string>();
+    if( SpecUtils::is_directory( pstr ) )
+    {
+      auto subdirs = recursive_list_gadras_drfs(pstr);
+      files.insert( end(files), begin(subdirs), end(subdirs) );
+    }
+  }//for( loop over
+#endif //if ANDROID / else
+
+  return files;
+}//DrfSelect::recursive_list_gadras_drfs()
+
+
+std::vector<std::string> DrfSelect::potential_gadras_det_dirs( InterSpec *interspec )
+{
+  string pathstr;
+  vector<string> paths;
+
+#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
+  try
+  {
+    if( interspec )
+      pathstr = UserPreferences::preferenceValue<string>( "GadrasDRFPath", interspec );
+  }catch( std::exception & )
+  {
+    if( interspec )
+      passMessage( "Error retrieving 'GadrasDRFPath' preference.", WarningWidget::WarningMsgHigh );
+  }
+#endif
+
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
+  try
+  {
+    //ToDo: do more testing and use only the Android implementation
+#if( ANDROID )
+    const string basestr = InterSpec::writableDataDirectory();
+    const vector<string> subdirs = SpecUtils::ls_directories_in_directory( basestr );
+    for( const string &subdirpath : subdirs )
+    {
+      auto subsubdirs = DrfSelect::recursive_list_gadras_drfs(subdirpath);
+      if( subsubdirs.size() )
+        pathstr += (pathstr.empty() ? "" : ";") + subdirpath;
+    }//for( const string &subdir : subdirs )
+#else
+    using namespace boost::filesystem;
+    auto itr = directory_iterator( InterSpec::writableDataDirectory() );
+
+    for( ; itr != directory_iterator(); ++itr )
+    {
+      const boost::filesystem::path &p = itr->path();
+      const string pstr = p.string<string>();
+      if( SpecUtils::is_directory( pstr ) )
+      {
+        auto subdirs = DrfSelect::recursive_list_gadras_drfs(pstr);
+        if( subdirs.size() )
+          pathstr += (pathstr.empty() ? "" : ";") + pstr;
+      }
+    }//for( loop over
+#endif //if ANDROID / else
+  }catch( std::exception &e )
+  {
+    cerr << "Got exception looking for GADRAS DRFs in user document dir: " << e.what() << endl;
+  }//try / catch
+#endif
+
+  SpecUtils::split( paths, pathstr, "\r\n;" );
+
+  //Make sure we always at least have the default generic detectors available.
+  bool hasGeneric = false;
+  for( size_t i = 0; !hasGeneric && (i < paths.size()); ++i )
+    hasGeneric = (paths[i].find("GenericGadrasDetectors") != string::npos);
+
+  if( !hasGeneric )
+  {
+    const string drfpaths = SpecUtils::append_path( InterSpec::staticDataDirectory(), "GenericGadrasDetectors" );
+    paths.push_back( drfpaths );
+  }
+
+  return paths;
+}//DrfSelect::potential_gadras_det_dirs()
+
+
+
+static bool isGadrasCsvFile( const std::string &filename )
+{
+  // Check if CSV file is a GADRAS file by looking for PCOM and PTOT in first few lines
+#ifdef _WIN32
+  const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
+  ifstream csvfile( wfilename.c_str(), ios_base::binary | ios_base::in );
+#else
+  ifstream csvfile( filename.c_str(), ios_base::binary | ios_base::in );
+#endif
+  
+  if( !csvfile.is_open() )
+    return false;
+  
+  string line;
+  int lines_checked = 0;
+  bool found_pcom = false;
+  bool found_ptot = false;
+  
+  while( SpecUtils::safe_get_line( csvfile, line, 2048 ) && (++lines_checked < 10) )
+  {
+    SpecUtils::trim( line );
+    found_pcom |= SpecUtils::icontains( line, "PCOM" );
+    found_ptot |= SpecUtils::icontains( line, "PTOT" );
+    
+    if( found_pcom && found_ptot )
+      return true;
+  }
+  
+  return false;
+}//isGadrasCsvFile
+
+
+std::shared_ptr<DetectorPeakResponse> DrfSelect::parseInterSpecRelEffCsvFile( const std::string filename )
 {
 #ifdef _WIN32
   const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
@@ -4081,13 +4159,13 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::parseRelEffCsvFile( const std::
         }
       }//if( we got another line we'll check if its the uncertainties )
       
-      DetectorPeakResponse::EffGeometryType geom_type = DetectorPeakResponse::EffGeometryType::FarField;
+      DetectorPeakResponse::EffGeometryType geom_type = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
       if( fixed_geometry )
         geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2;
       
       auto det = std::make_shared<DetectorPeakResponse>( fields[0], drfdescrip );
       
-      det->fromExpOfLogPowerSeriesAbsEff( coefs, coef_uncerts, dist, 2.0f*radius, energUnits,
+      det->fromExpOfLogPowerSeries( coefs, coef_uncerts, dist, 2.0f*radius, energUnits,
                                           lowerEnergy, upperEnergy, geom_type );
       
       //Look for the line that gives the appropriate energy range.
@@ -4156,187 +4234,698 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::parseRelEffCsvFile( const std::
   }//while( more lines )
   
   return nullptr;
-}//parseRelEffCsvFile(...)
+}//parseInterSpecRelEffCsvFile(...)
 
 
-
-void DrfSelect::fileUploadedCallback( const UploadCallbackReason context )
+void DrfSelect::showWidgetsForCurrentEfficiencyType()
 {
-  auto updateUserName = [this](){
-    
-    string userDrfFilename = m_efficiencyCsvUpload->clientFileName().toUTF8();
-    if( SpecUtils::iends_with( userDrfFilename, ".csv" ) )
-      userDrfFilename = userDrfFilename.substr(0, userDrfFilename.size()-4);
-    if( userDrfFilename.empty() )
-      userDrfFilename = "Uploaded";
-    
-    // Efficiency.csv is a really common name, as is a few other short names; lets
-    //  add current date/time to these short names as *some* type of differentiator.
-    //  Its something.
-    if( userDrfFilename.size() < 15 )
-    {
-      const int offset = wApp->environment().timeZoneOffset();
-      auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
-      now += chrono::seconds(60*offset);
-      userDrfFilename += " " + SpecUtils::to_vax_string(now);
-    }
-    
-    if( m_detector && m_uploadedDetName )
-    {
-      m_detector->setName( userDrfFilename );
-      m_uploadedDetName->setText( WString::fromUTF8(userDrfFilename) );
-    }
-  };//updateUserName(...)
-  
-  bool is_fixed_geometry = false;
-  m_uploadedDetName->setValueText( "" );
-  if( !m_efficiencyCsvUpload->empty() )
+  const int eff_type_index = m_efficiencyType->currentIndex();
+  if( eff_type_index >= 3 && eff_type_index <= 6 )
   {
-    m_detectrDiameterDiv->show();
-  }else
-  {
+    // Fixed Geometry options (indices 3-6): Hide diameter, distance, and GADRAS upload
+    m_detectorDiameter->hide();
+    m_detectorDistanceDiv->hide();
     m_detectrDiameterDiv->hide();
-  }
-
-  switch( context )
+    m_detectrDotDatDiv->hide();
+  }else if( eff_type_index == 2 )
   {
-    case UploadCallbackReason::ImportTabChosen:
-      break;
-      
-    case UploadCallbackReason::DetectorDiameterChanged:
-      break;
-      
-    case UploadCallbackReason::FixedGeometryChanged:
-      m_detectorDiameter->setHidden( m_fixedGeometryCb->isChecked() );
-      break;
-      
-    case UploadCallbackReason::DetectorDotDatUploaded:
-      break;
-      
-    case UploadCallbackReason::EfficiencyCsvUploaded:
-      if( !m_efficiencyCsvUpload->empty() )
-      {
-        const string filename = m_efficiencyCsvUpload->spoolFileName();
-        auto det = DrfSelect::parseRelEffCsvFile( filename );
-        
-        if( det )
-        {
-          auto detDiamStr = PhysicalUnits::printToBestLengthUnits( det->detectorDiameter() );
-          m_detectorDiameter->setText( detDiamStr );
-          m_detectrDotDatDiv->hide();
-          m_detectorDiameter->disable();
-          m_detector = det;
-          
-          const bool fixed_geometry = det->isFixedGeometry();
-          m_fixedGeometryCb->show();
-          m_fixedGeometryCb->setChecked( fixed_geometry );
-          m_fixedGeometryCb->disable();
-          m_detectrDiameterDiv->setHidden( fixed_geometry );
-          
-          setAcceptButtonEnabled( true );
-          updateUserName();
-          emitChangedSignal();
-          return;
-        }else
-        {
-          m_detectrDotDatDiv->show();
-          m_detectrDiameterDiv->show();
-          m_fixedGeometryCb->hide();
-          m_fixedGeometryCb->setChecked( false );
-          m_detectorDiameter->enable();
-        }//if( det )
-      }//if( we have a file to test )
-      break;
-  }//switch( context )
+    // GADRAS (index 2): Show GADRAS Detector.dat upload, hide diameter and distance
+    m_detectorDiameter->show();
+    m_detectrDiameterDiv->show();
+    
+    m_detectrDotDatDiv->show();
+    
+    m_detectorDistanceDiv->hide();
+  }else if( eff_type_index == 0 )
+  {
+    // Intrinsic Efficiency (index 0): Show detector diameter, hide distance and GADRAS upload
+    m_detectorDiameter->show();
+    m_detectrDiameterDiv->show();
+    
+    m_detectorDistanceDiv->hide();
+    m_detectrDotDatDiv->hide();
+    m_detectorDiameter->enable();
+  }else if( eff_type_index == 1 )
+  {
+    // Far-Field Efficiency (index 1): Show detector diameter AND distance field, hide GADRAS upload
+    m_detectorDiameter->show();
+    m_detectrDiameterDiv->show();
+    
+    m_detectorDistanceDiv->show();
+    m_detectrDotDatDiv->hide();
+    m_detectorDiameter->enable();
+  }
+}//void showWidgetsForCurrentEfficiencyType()
 
-  const bool isGadrasDet = (!m_efficiencyCsvUpload->empty()
-                            && !m_detectorDotDatUpload->empty()
-                            && m_efficiencyCsvUpload->spoolFileName().size()
-                            && m_detectorDotDatUpload->spoolFileName().size());
 
-  const bool fixed_geometry = (m_fixedGeometryCb->isVisible() && m_fixedGeometryCb->isChecked());
+void DrfSelect::updateUserNameFromCurrentDetEff()
+{
+  string userDrfFilename = m_efficiencyCsvUpload->clientFileName().toUTF8();
+  if( SpecUtils::iends_with( userDrfFilename, ".csv" ) )
+    userDrfFilename = userDrfFilename.substr(0, userDrfFilename.size()-4);
+  if( userDrfFilename.empty() )
+    userDrfFilename = "Uploaded";
+  
+  // Efficiency.csv is a really common name, as is a few other short names; lets
+  //  add current date/time to these short names as *some* type of differentiator.
+  //  Its something.
+  if( userDrfFilename.size() < 15 )
+  {
+    const int offset = wApp->environment().timeZoneOffset();
+    auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
+    now += chrono::seconds(60*offset);
+    userDrfFilename += " " + SpecUtils::to_vax_string(now);
+  }
+  
+  if( m_detector && m_uploadedDetName )
+  {
+    m_detector->setName( userDrfFilename );
+    m_uploadedDetName->setText( WString::fromUTF8(userDrfFilename) );
+  }
+}//void updateUserNameFromCurrentDetEff()
+
+
+void DrfSelect::handleGadrasDetectorDotDatUpload()
+{
+  try
+  {
+    const string csv_spool = m_efficiencyCsvUpload->spoolFileName();
+    const string dat_spool = m_detectorDotDatUpload->spoolFileName();
+    
+#ifdef _WIN32
+    const std::wstring wcsv_spool = SpecUtils::convert_from_utf8_to_utf16(csv_spool);
+    ifstream csvfile( wcsv_spool.c_str(), ios_base::binary | ios_base::in );
+    
+    const std::wstring wdat_spool = SpecUtils::convert_from_utf8_to_utf16(dat_spool);
+    ifstream datfile( wdat_spool.c_str(), ios_base::binary|ios_base::in );
+#else
+    ifstream csvfile( csv_spool.c_str(), ios_base::binary|ios_base::in );
+    
+    ifstream datfile( dat_spool.c_str(), ios_base::binary|ios_base::in );
+#endif
+    
+    if( !csvfile.is_open() || !datfile.is_open() )
+      throw runtime_error( "Failed to open an input file." );
+    
+    shared_ptr<DetectorPeakResponse> det = make_shared<DetectorPeakResponse>();
+    det->fromGadrasDefinition( csvfile, datfile ); //Throws exception on error
+    det->setDrfSource( DetectorPeakResponse::DrfSource::UserImportedGadrasDrf );
+    m_detectorDiameter->setText( PhysicalUnits::printToBestLengthUnits(det->detectorDiameter()) );
+    m_detectorDiameter->setEnabled( false );
+    
+    m_detector = det;
+    
+    m_detectorDiameter->setText( PhysicalUnits::printToBestLengthUnits(det->detectorDiameter(), 4) );
+    
+    setAcceptButtonEnabled( true );
+    updateUserNameFromCurrentDetEff();
+    emitChangedSignal();
+  }catch( std::exception &e )
+  {
+    passMessage( WString::tr("ds-err-parsing-gadras").arg(e.what()), WarningWidget::WarningMsgHigh );
+    
+    handleEfficiencyCsvUpload();
+  }
+}//void handleGadrasDetectorDotDatUpload()
+
+
+std::shared_ptr<DetectorPeakResponse> DrfSelect::detectorFromEffUpload() const
+{
+  if( m_efficiencyCsvUpload->empty() )
+    return nullptr;
+  
   
   float diameter = -1.0f;
-  if( !fixed_geometry )
+  if( !m_detectrDiameterDiv->isHidden() )
   {
     try
     {
-      diameter = static_cast<float>( PhysicalUnits::stringToDistance( m_detectorDiameter->text().toUTF8() ) );
-      if( diameter < float(0.001*PhysicalUnits::cm) )
-        diameter = 0.0f;
+      const double dist = PhysicalUnits::stringToDistance( m_detectorDiameter->text().toUTF8() );
+      if( dist > 0.0 )
+        diameter = static_cast<float>( dist );
     }catch(...)
     {
-      m_detectorDiameter->setText( "" );
     }
-  }//if( !fixed_geometry )
+  }//if( !m_detectrDiameterDiv->isHidden() )
   
-  const bool isDiamDet = (!m_efficiencyCsvUpload->empty()
-                          && diameter>0.0
-                          && !fixed_geometry
-                          && m_efficiencyCsvUpload->spoolFileName().size() );
-
-  if( !isGadrasDet && !isDiamDet && !fixed_geometry )
+  double abs_eff_dist = -1.0;
+  if( !m_detectorDistanceDiv->isHidden() )
   {
-    if( diameter > 0.0 )
-      passMessage( WString::tr("ds-need-det-diam"), WarningWidget::WarningMsgHigh );
-    return;
-  }//if( !isGadrasDet && !isDiamDet )
-
-  const string csvFileName = m_efficiencyCsvUpload->spoolFileName();
-
-#ifdef _WIN32
-  const std::wstring wcsvFileName = SpecUtils::convert_from_utf8_to_utf16(csvFileName);
-  ifstream csvfile( wcsvFileName.c_str(), ios_base::binary | ios_base::in );
-#else
-  ifstream csvfile( csvFileName.c_str(), ios_base::binary|ios_base::in );
-#endif
-  
-  if( !csvfile.is_open() )
-    return;
-
-  auto det = std::make_shared<DetectorPeakResponse>();
-  try
-  {
-    if( isGadrasDet )
+    try
     {
-      const string dotDatFileName = m_detectorDotDatUpload->spoolFileName();
+      abs_eff_dist = PhysicalUnits::stringToDistance( m_detectorDistance->text().toUTF8() );
+    }catch(...)
+    {
+    }
+  }//if( !m_detectorDistanceDiv->isHidden() )
+  
+  
+  if( (m_efficiencyType->currentIndex() == 2) && !m_detectorDotDatUpload->empty() ) //GADRAS
+  {
+    try
+    {
+      const string csv_spool = m_efficiencyCsvUpload->spoolFileName();
+      const string dat_spool = m_detectorDotDatUpload->spoolFileName();
+      
 #ifdef _WIN32
-      const std::wstring wdotDatFileName = SpecUtils::convert_from_utf8_to_utf16(dotDatFileName);
-      ifstream datfile( wdotDatFileName.c_str(), ios_base::binary|ios_base::in );
+      const std::wstring wcsv_spool = SpecUtils::convert_from_utf8_to_utf16(csv_spool);
+      const std::wstring wdat_spool = SpecUtils::convert_from_utf8_to_utf16(dat_spool);
+      ifstream csvfile( wcsv_spool.c_str(), ios_base::binary | ios_base::in );
+      ifstream datfile( wdat_spool.c_str(), ios_base::binary|ios_base::in );
 #else
-      ifstream datfile( dotDatFileName.c_str(), ios_base::binary|ios_base::in );
+      ifstream csvfile( csv_spool.c_str(), ios_base::binary|ios_base::in );
+      ifstream datfile( dat_spool.c_str(), ios_base::binary|ios_base::in );
 #endif
-      if( !datfile.is_open() )
-        return;
-      det->fromGadrasDefinition( csvfile, datfile );
+      
+      shared_ptr<DetectorPeakResponse> det = make_shared<DetectorPeakResponse>();
+      det->fromGadrasDefinition( csvfile, datfile ); //Throws exception on error
       det->setDrfSource( DetectorPeakResponse::DrfSource::UserImportedGadrasDrf );
-      if( context == UploadCallbackReason::DetectorDotDatUploaded )
-        m_detectorDiameter->setText( PhysicalUnits::printToBestLengthUnits(det->detectorDiameter()) );
+      if( !m_uploadedDetName->text().empty() )
+        det->setName( m_uploadedDetName->text().toUTF8() );
+      return det;
+    }catch( std::exception &e )
+    {
+    }
+    
+    return nullptr;
+  }//if( m_efficiencyType->currentIndex() == 2 )
+  
+  
+  const string filename = m_efficiencyCsvUpload->spoolFileName();
+  shared_ptr<DetectorPeakResponse> det = DrfSelect::parseInterSpecRelEffCsvFile( filename );
+  
+  if( det && (diameter <= 0.0f) )
+    diameter = det->detectorDiameter();
+  
+  if( !det )
+  {
+    try
+    {
+#ifdef _WIN32
+      const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
+      ifstream csvfile( wfilename.c_str(), ios_base::binary | ios_base::in );
+#else
+      ifstream csvfile( filename.c_str(), ios_base::binary|ios_base::in );
+#endif
+      
+      auto [trial_det,source_area,source_mass] = DetectorPeakResponse::parseEccFile( csvfile );
+      
+      if( trial_det && trial_det->isValid() )
+      {
+        det = trial_det;
+        
+        if( m_efficiencyType->currentIndex() == 0 )
+        {
+          if( (diameter > 0.0) && (abs_eff_dist > 0) )
+            det = trial_det->reinterpretAsFarFieldAbsEfficiency( diameter, abs_eff_dist, true );
+          else if( diameter > 0.0 )
+            det = trial_det->reinterpretAsFarFieldIntrinsicEfficiency( diameter );
+          else
+            return nullptr;
+        }else if( m_efficiencyType->currentIndex() == 1 )
+        {
+          if( (diameter > 0.0) && (abs_eff_dist > 0) )
+            det = trial_det->reinterpretAsFarFieldAbsEfficiency( diameter, abs_eff_dist, true );
+          else
+            return nullptr;
+        }if( m_efficiencyType->currentIndex() == 2 )
+        {
+          if( diameter > 0.0 )
+            det = trial_det;
+          else
+            return nullptr;
+        }else if( m_efficiencyType->currentIndex() == 3 )
+        {
+          det = trial_det;
+        }else if( m_efficiencyType->currentIndex() == 4 )
+        {
+          det = trial_det->convertFixedGeometryType( source_area, DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2 );
+        }else if( m_efficiencyType->currentIndex() == 5 )
+        {
+          det = trial_det->convertFixedGeometryType( source_area, DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2 );
+        }else if( m_efficiencyType->currentIndex() == 6 )
+        {
+          det = trial_det->convertFixedGeometryType( source_area, DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram );
+        }else
+        {
+          assert( 0 );
+          return nullptr;
+        }
+      }//if( trial_det && trial_det->isValid() )
+    }catch( std::exception & )
+    {
+    }
+  }//if( !det )
+  
+  if( !det )
+  {
+#ifdef _WIN32
+    const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
+    ifstream csvfile( wfilename.c_str(), ios_base::binary | ios_base::in );
+#else
+    ifstream csvfile( filename.c_str(), ios_base::binary|ios_base::in );
+#endif
+    
+    DetectorPeakResponse::EffGeometryType eff_type = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
+    if( (m_efficiencyType->currentIndex() == 0) || (m_efficiencyType->currentIndex() == 2) )
+    {
+      eff_type = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
+      if( diameter <= 0.0 )
+        return nullptr;
+    }else if( m_efficiencyType->currentIndex() == 1 )
+    {
+      if( (diameter <= 0.0) || (abs_eff_dist < 0.0) )
+        return nullptr;
+      eff_type = DetectorPeakResponse::EffGeometryType::FarFieldAbsolute;
     }else
     {
-      det->fromEnergyEfficiencyCsv( csvfile, diameter, float(PhysicalUnits::keV), DetectorPeakResponse::EffGeometryType::FarField );
-      det->setDrfSource( DetectorPeakResponse::DrfSource::UserImportedIntrisicEfficiencyDrf );
-      
-      m_fixedGeometryCb->show();
-      m_fixedGeometryCb->enable();
-    }//if( isGadrasDet ) / else
-  }catch( std::exception &e )
-  {
-    setAcceptButtonEnabled( false );
-    passMessage( e.what(), WarningWidget::WarningMsgHigh );
-    return;
-  }//try / catch
+      diameter = 2.54*3*PhysicalUnits::cm;
+      eff_type = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
+    }
+    
+    try
+    {
+      shared_ptr<DetectorPeakResponse> trial_det = make_shared<DetectorPeakResponse>();
+      trial_det->fromEnergyEfficiencyCsv( csvfile, diameter, abs_eff_dist, float(PhysicalUnits::keV), eff_type );
+      if( trial_det->isValid() )
+        det = trial_det;
+    }catch( std::exception & )
+    {
+    }
+  }//if( !det )
   
-//#if( PERFORM_DEVELOPER_CHECKS )
-//  check_url_serialization( det );
-//#endif
+  if( !det )
+  {
+    try
+    {
+#ifdef _WIN32
+      const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
+      ifstream infile( wfilename.c_str(), ios_base::binary | ios_base::in );
+#else
+      ifstream infile( filename.c_str(), ios_base::binary|ios_base::in );
+#endif
+      rapidxml::file<char> input_file( infile );
+      
+      rapidxml::xml_document<char> doc;
+      doc.parse<rapidxml::parse_default>( input_file.data() );
+      auto *node = doc.first_node( "DetectorPeakResponse" );
+      if( !node )
+        throw runtime_error( "No DetectorPeakResponse node" );
+      
+      shared_ptr<DetectorPeakResponse> xml_det = make_shared<DetectorPeakResponse>();
+      xml_det->fromXml( node );
+      
+      if( (diameter > 0.0) && (fabs(diameter - xml_det->detectorDiameter()) > 0.001*std::max(diameter,xml_det->detectorDiameter())) )
+        xml_det->setDetectorDiameter( diameter );
+      
+      if( (xml_det->geometryType() == DetectorPeakResponse::EffGeometryType::FarFieldAbsolute)
+         && (abs_eff_dist >= 0.0)
+         && (fabs(abs_eff_dist - xml_det->absoluteEfficiencyDistance()) > 0.001*std::max(abs_eff_dist,xml_det->absoluteEfficiencyDistance())) )
+      {
+        xml_det->setAbsoluteEfficiencyDistance( abs_eff_dist );
+      }
+      
+      if( xml_det->isValid() )
+        det = xml_det;
+    }catch( std::exception & )
+    {
+    }
+  }//if( !det )
+  
+  if( !det )
+    return nullptr;
+  
+  if( !m_uploadedDetName->text().empty() )
+    det->setName( m_uploadedDetName->text().toUTF8() );
+  
+  try
+  {
+    if( (m_efficiencyType->currentIndex() == 0) || (m_efficiencyType->currentIndex() == 2) )
+    {
+      switch( det->geometryType() )
+      {
+        case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
+          return det;
+          
+        case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
+        case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
+          return det->reinterpretAsFarFieldIntrinsicEfficiency( diameter );
+      }
+      assert( 0 );
+      return nullptr;
+    }//if( m_efficiencyType->currentIndex() == 0 )
+    
+    
+    if( m_efficiencyType->currentIndex() == 1 )
+    {
+      switch( det->geometryType() )
+      {
+        case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
+          return det;
+          
+        case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
+        case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
+          if( (diameter <= 0.0f) || (abs_eff_dist < 0.0) )
+            return nullptr;
+          return det->reinterpretAsFarFieldAbsEfficiency( diameter, abs_eff_dist, true );
+      }
+      assert( 0 );
+      return nullptr;
+    }//if( m_efficiencyType->currentIndex() == 1 )
+    
+    
+    DetectorPeakResponse::EffGeometryType geom_type_wanted = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct;
+    if( m_efficiencyType->currentIndex() == 3 )
+      geom_type_wanted = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct;
+    else if( m_efficiencyType->currentIndex() == 4 )
+      geom_type_wanted = DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2;
+    else if( m_efficiencyType->currentIndex() == 5 )
+      geom_type_wanted = DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2;
+    else if( m_efficiencyType->currentIndex() == 6 )
+      geom_type_wanted = DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram;
+    else
+    {
+      assert( 0 );
+      return nullptr;
+    }
+    
+    if( det->geometryType() == geom_type_wanted )
+      return det;
+    
+    return det->reinterpretAsFixedGeom(geom_type_wanted);
+  }catch( std::exception & )
+  {
+  }
+  
+  return nullptr;
+}//std::shared_ptr<DetectorPeakResponse> DrfSelect::detectorFromEffUpload() const
 
+
+void DrfSelect::handleEfficiencyCsvUpload()
+{
+  m_detectrDiameterDiv->enable();
+  if( m_efficiencyCsvUpload->empty() )
+  {
+    m_efficiencyType->hide();
+    m_detectrDiameterDiv->hide();
+    m_detectrDotDatDiv->hide();
+    passMessage( WString::tr("ds-err-invalid-csv-format"), WarningWidget::WarningMsgHigh );
+    setAcceptButtonEnabled( false );
+    return;
+  }//if( m_efficiencyCsvUpload->empty() )
+  
+  
+  const string filename = m_efficiencyCsvUpload->spoolFileName();
+  shared_ptr<DetectorPeakResponse> det = DrfSelect::parseInterSpecRelEffCsvFile( filename );
+  
+  if( det )
+  {
+    m_efficiencyType->show();
+    m_uploadedDetNameDiv->show();
+    m_detector = det;
+    m_detectorDiameter->setText( PhysicalUnits::printToBestLengthUnits(det->detectorDiameter(), 6) );
+    setAcceptButtonEnabled( true );
+    updateUserNameFromCurrentDetEff();
+    m_efficiencyType->setCurrentIndex( 0 );
+    showWidgetsForCurrentEfficiencyType();
+    emitChangedSignal();
+    return;
+  }//if( det )
+  
+  
+  try
+  {
+#ifdef _WIN32
+    const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
+    ifstream csvfile( wfilename.c_str(), ios_base::binary | ios_base::in );
+#else
+    ifstream csvfile( filename.c_str(), ios_base::binary|ios_base::in );
+#endif
+    
+    auto [trial_det,surface_area,mass] = DetectorPeakResponse::parseEccFile( csvfile );
+    if( trial_det && trial_det->isValid() )
+      det = trial_det->reinterpretAsFixedGeom( DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct );
+  }catch( std::exception & )
+  {
+  }
+  
+  
+  const bool fixed_geometry = (det && det->isFixedGeometry());
+  bool can_accept = fixed_geometry;
+  
+  if( !det )
+  {
+    try
+    {
+#ifdef _WIN32
+      const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
+      ifstream csvfile( wfilename.c_str(), ios_base::binary | ios_base::in );
+#else
+      ifstream csvfile( filename.c_str(), ios_base::binary|ios_base::in );
+#endif
+      
+      if( !csvfile.is_open() )
+        throw runtime_error( "Failed to open uploaded file." );
+      
+      float diameter = -1.0f;
+      if( !m_detectrDiameterDiv->isHidden()
+         && ((m_efficiencyType->currentIndex() == 0) || (m_efficiencyType->currentIndex() == 1)) )
+      {
+        try
+        {
+          const double dist = PhysicalUnits::stringToDistance( m_detectorDiameter->text().toUTF8() );
+          if( dist < (0.001*PhysicalUnits::cm) )
+            throw runtime_error( "Negative or near zero diameter" );
+          diameter = static_cast<float>( dist );
+        }catch(...)
+        {
+          m_detectorDiameter->setText( "" );
+        }
+      }//if( !m_detectrDiameterDiv->isHidden() && (m_efficiencyType->currentIndex() == 1) )
+      
+      double abs_eff_dist = -1.0;
+      if( !m_detectorDistanceDiv->isHidden() && (m_efficiencyType->currentIndex() == 1) )
+      {
+        try
+        {
+          abs_eff_dist = PhysicalUnits::stringToDistance( m_detectorDistance->text().toUTF8() );
+          if( abs_eff_dist < 0.0 )
+            throw runtime_error( "Negative or near zero diameter" );
+        }catch(...)
+        {
+          m_detectorDistance->setText( "" );
+        }
+      }
+      
+      const DetectorPeakResponse::EffGeometryType eff_type = (abs_eff_dist >= 0.0f) ? DetectorPeakResponse::EffGeometryType::FarFieldAbsolute
+                                                                              : DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
+      
+      can_accept = ((diameter > 0.0f) && ((m_efficiencyType->currentIndex() == 0) || (abs_eff_dist >= 0.0)));
+      if( diameter < 0.0f )
+        diameter = 2.53*3*PhysicalUnits::cm;
+      if( (m_efficiencyType->currentIndex() == 1) && (abs_eff_dist < 0.0f) )
+        abs_eff_dist = 1.0*PhysicalUnits::m;
+      
+      shared_ptr<DetectorPeakResponse> trial_det = make_shared<DetectorPeakResponse>();
+      trial_det->fromEnergyEfficiencyCsv( csvfile, diameter, abs_eff_dist, float(PhysicalUnits::keV), eff_type );
+      if( trial_det->isValid() )
+        det = trial_det;
+      else
+        can_accept = false;
+    }catch( std::exception & )
+    {
+    }
+  }//if( !det )
+  
+  if( !det )
+  {
+    try
+    {
+#ifdef _WIN32
+      const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
+      ifstream infile( wfilename.c_str(), ios_base::binary | ios_base::in );
+#else
+      ifstream infile( filename.c_str(), ios_base::binary|ios_base::in );
+#endif
+      rapidxml::file<char> input_file( infile );
+      
+      rapidxml::xml_document<char> doc;
+      doc.parse<rapidxml::parse_default>( input_file.data() );
+      auto *node = doc.first_node( "DetectorPeakResponse" );
+      if( !node )
+        throw runtime_error( "No DetectorPeakResponse node" );
+      
+      shared_ptr<DetectorPeakResponse> xml_det = make_shared<DetectorPeakResponse>();
+      xml_det->fromXml( node );
+      m_uploadedDetName->setText( WString::fromUTF8( xml_det->name() ) );
+      switch( xml_det->geometryType() )
+      {
+        case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
+          m_efficiencyType->setCurrentIndex( 0 );
+          m_detectorDiameter->setText( PhysicalUnits::printToBestLengthUnits(xml_det->detectorDiameter(), 6) );
+          break;
+        case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
+          m_efficiencyType->setCurrentIndex( 1 );
+          m_detectorDiameter->setText( PhysicalUnits::printToBestLengthUnits(xml_det->detectorDiameter(), 6) );
+          m_detectorDistance->setText( PhysicalUnits::printToBestLengthUnits(xml_det->absoluteEfficiencyDistance(), 6) );
+          break;
+        case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
+          m_efficiencyType->setCurrentIndex( 3 );
+          break;
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
+          m_efficiencyType->setCurrentIndex( 4 );
+          break;
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
+          m_efficiencyType->setCurrentIndex( 5 );
+          break;
+        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
+          m_efficiencyType->setCurrentIndex( 6 );
+          break;
+      }//switch( xml_det->geometryType() )
+      
+      det = xml_det;
+      can_accept = true;
+    }catch( std::exception & )
+    {
+    }
+  }//if( !det )
+    
+  if( !det )
+  {
+    passMessage( WString::tr("ds-err-invalid-csv-format"), WarningWidget::WarningMsgHigh );
+    
+    m_efficiencyType->hide();
+    m_detectrDiameterDiv->hide();
+    m_detectrDotDatDiv->hide();
+    setAcceptButtonEnabled( false );
+    m_uploadedDetNameDiv->hide();
+    return;
+  }
+  
+  m_uploadedDetNameDiv->show();
+  m_efficiencyType->show();
+  
+  switch( det->geometryType() )
+  {
+    case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
+    case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
+    {
+      if( isGadrasCsvFile(filename) )
+      {
+        m_efficiencyType->setCurrentIndex( 2 ); //GADRAS
+      }else
+      {
+        if( m_efficiencyType->currentIndex() > 1 )
+        {
+          const float eff_120 = det->intrinsicEfficiency( 120.0 );
+          const bool is_far_field = ((eff_120 >= 0.0f) && (eff_120 < 0.1f)); // Less than 10%
+          m_efficiencyType->setCurrentIndex( is_far_field ? 1 : 0 ); // Far-Field Efficiency
+        }
+      }
+      break;
+    }//case FarFieldIntrinsic or FarFieldAbsolute
+      
+    case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
+    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
+    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
+    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
+      if( m_efficiencyType->currentIndex() < 3 )
+        m_efficiencyType->setCurrentIndex( 3 ); //FixedGeomTotalAct
+      break;
+  }//switch( det->geometryType() )
+  
+  
+  showWidgetsForCurrentEfficiencyType();
+  
+  det = detectorFromEffUpload();
+  const bool det_changed = (m_detector != det);
   
   m_detector = det;
-  setAcceptButtonEnabled( true );
-  updateUserName();
-  emitChangedSignal();
-}//void fileUploadedCallback();
+  setAcceptButtonEnabled( !!m_detector );
+  
+  if( det_changed )
+  {
+    updateUserNameFromCurrentDetEff();
+    emitChangedSignal();
+  }
+}//void handleEfficiencyCsvUpload()
+
+
+void DrfSelect::handleEfficiencyTypeChange()
+{
+  if( m_efficiencyCsvUpload->empty() )
+  {
+    m_detectrDotDatDiv->hide();
+    m_detectorDistanceDiv->hide();
+    m_detectrDiameterDiv->hide();
+    m_uploadedDetNameDiv->hide();
+    m_efficiencyType->hide();
+    return;
+  }//if( m_efficiencyCsvUpload->empty() )
+  
+  
+  showWidgetsForCurrentEfficiencyType();
+  
+  if( (m_efficiencyType->currentIndex() == 2) && !m_detectorDotDatUpload->empty() )
+  {
+    handleGadrasDetectorDotDatUpload();
+    return;
+  }
+
+  
+  std::shared_ptr<DetectorPeakResponse> det = detectorFromEffUpload();
+  
+  if( det )
+    updateUserNameFromCurrentDetEff();
+  setAcceptButtonEnabled( !det );
+  
+  if( m_detector != det )
+  {
+    m_detector = det;
+    emitChangedSignal();
+  }//if( m_detector != det )
+}//void handleEfficiencyTypeChange()
+
+
+void DrfSelect::handleDetectorDiameterOrDistanceChanged()
+{
+  std::shared_ptr<DetectorPeakResponse> det = detectorFromEffUpload();
+  
+  setAcceptButtonEnabled( (det && det->isValid()) );
+  
+  if( det != m_detector )
+  {
+    m_detector = det;
+    emitChangedSignal();
+  }
+}//void handleDetectorDiameterOrDistanceChanged()
+
+
+void DrfSelect::handleUploadTabSelected()
+{
+  m_efficiencyType->setHidden( m_efficiencyCsvUpload->empty() );
+  if( m_efficiencyCsvUpload->empty() )
+  {
+    m_detectrDiameterDiv->hide();
+    m_efficiencyType->hide();
+    m_detectorDistanceDiv->hide();
+  }
+  
+  std::shared_ptr<DetectorPeakResponse> det = detectorFromEffUpload();
+  setAcceptButtonEnabled( (det && det->isValid()) );
+  
+  if( det != m_detector )
+  {
+    m_detector = det;
+    emitChangedSignal();
+  }
+}//void handleUploadTabSelected();
 
 
 void DrfSelect::relEffDetectorSelectCallback()
@@ -4627,7 +5216,7 @@ void DrfSelect::finishWithNoDetector()
 }//void finishWithNoDetector()
 
 
-vector<pair<string,string>> DrfSelect::avaliableGadrasDetectors() const
+vector<pair<string,string>> DrfSelect::avaliableGadrasDetectors( InterSpec *viewer )
 {
   vector<pair<string,string>> answer;
 
@@ -4636,10 +5225,9 @@ vector<pair<string,string>> DrfSelect::avaliableGadrasDetectors() const
   
 #if( BUILD_FOR_WEB_DEPLOYMENT )
   const string datadir = InterSpec::staticDataDirectory();
-  const string drfpaths = SpecUtils::append_path( datadir, "GenericGadrasDetectors" )
-                          + ";" + SpecUtils::append_path( datadir, "OUO_GadrasDetectors" );
+  const string drfpaths = SpecUtils::append_path( datadir, "GenericGadrasDetectors" );
 #else
-  const string drfpaths = UserPreferences::preferenceValue<string>( "GadrasDRFPath", m_interspec );
+  const string drfpaths = UserPreferences::preferenceValue<string>( "GadrasDRFPath", viewer );
 #endif
   
   vector<string> paths;
@@ -4838,8 +5426,16 @@ shared_ptr<DetectorPeakResponse> DrfSelect::initARelEffDetector( const SpecUtils
       case SpecUtils::DetectorType::KromekGR1:
         return { "GR1", "Kromek GR1", "Kromek-GR1" };
 
-      case SpecUtils::DetectorType::RadiaCode:
-        return { "Radiacode 102", "Radiacode", "Radiacode 101" };
+      case SpecUtils::DetectorType::RadiaCodeCsI10:
+        return { "Radiacode 102", "Radiacode", "Radiacode 101", "Radiacode 103" };
+        break;
+
+      case SpecUtils::DetectorType::RadiaCodeCsI14:
+        return { "Radiacode 110" };
+        break;
+
+      case SpecUtils::DetectorType::RadiaCodeGAGG10:
+        return { "Radiacode 103G" };
         break;
 
       case SpecUtils::DetectorType::Raysid:
@@ -5046,9 +5642,8 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector(
     case SpecUtils::DetectorType::KromekD3S:       name = "D3S"; break;
     case SpecUtils::DetectorType::KromekD5:        name = "Kromek-D5"; break;
     case SpecUtils::DetectorType::KromekGR1:       name = "Kromek-GR1-CZT"; break;
-
-    case SpecUtils::DetectorType::Raysid:       name = "Raysid"; break;
-      
+    case SpecUtils::DetectorType::Raysid:          name = "Raysid"; break;
+    case SpecUtils::DetectorType::RadiaCodeCsI10:  name = "Radiacode 102"; break;
     case DetectorType::Fulcrum40h:                 name = "Fulcrum40h"; break;
     case DetectorType::IdentiFinderR425NaI: 	     name = "IdentiFINDER-R425"; break;
     case DetectorType::Sam950:                     name = "SAM-950GN-N30"; break;
@@ -5064,7 +5659,8 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector(
     case DetectorType::RIIDEyeLaBr:
     case DetectorType::Fulcrum:
     case DetectorType::IdentiFinderR425LaBr:
-    case SpecUtils::DetectorType::RadiaCode:
+    case SpecUtils::DetectorType::RadiaCodeCsI14:
+    case SpecUtils::DetectorType::RadiaCodeGAGG10:
       // \TODO: fill in these names
       break;
   }//switch( type )
@@ -5319,7 +5915,7 @@ Wt::Signal<> &DrfSelect::done()
 
 DrfSelectWindow::DrfSelectWindow( InterSpec *viewer )
   : AuxWindow( WString::tr("window-title-select-det-eff-fcn"),
-              Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+              AuxWindowProperties::IsModal
                    | AuxWindowProperties::TabletNotFullScreen
                    | AuxWindowProperties::DisableCollapse
                    | AuxWindowProperties::EnableResize

@@ -35,6 +35,7 @@
 #include <Wt/WSuggestionPopup>
 #include <Wt/WContainerWidget>
 
+#include "InterSpec/InterSpec.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/ColorSelect.h"
 #include "InterSpec/ColorThemeWidget.h"
@@ -66,6 +67,7 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
   m_specificRefLineName{ nullptr },
   m_specificRefLineColor{ nullptr }
 {
+  InterSpec::instance()->useMessageResourceBundle( "ColorThemeWidget" );
   wApp->useStyleSheet( "InterSpec_resources/ColorThemeWidget.css" );
   
   addStyleClass( "ColorThemeWidget" );
@@ -77,20 +79,20 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
   
 	int row = 0;
 	WTableCell *cell = table->elementAt(row, 0);
-	WLabel *label = new WLabel("Theme Name", cell);
+	WLabel *label = new WLabel(WString::tr("ctwidget-theme-name"), cell);
 	cell = table->elementAt(row, 1);
 	cell->setColumnSpan(2);
-	m_themeTitle = new WLineEdit("Title not assigned", cell);
+	m_themeTitle = new WLineEdit(WString::tr("ctwidget-title-placeholder"), cell);
   m_themeTitle->setAttributeValue( "ondragstart", "return false" );
 	label->setBuddy(m_themeTitle);
 	m_themeTitle->setWidth(WLength(95, WLength::Percentage));
 
 	++row;
 	cell = table->elementAt(row, 0);
-	label = new WLabel("Description",cell);
+	label = new WLabel(WString::tr("ctwidget-description"),cell);
 	cell = table->elementAt(row, 1);
 	cell->setColumnSpan(2);
-  m_themeDescription = new WLineEdit("Desc not assigned", cell);
+  m_themeDescription = new WLineEdit(WString::tr("ctwidget-desc-placeholder"), cell);
   m_themeDescription->setAttributeValue( "ondragstart", "return false" );
 	label->setBuddy(m_themeDescription);
 	m_themeDescription->setWidth(WLength(95, WLength::Percentage));
@@ -101,13 +103,13 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
   cell->setColumnSpan(3);
   cell->setContentAlignment(Wt::AlignmentFlag::AlignCenter);
   cell->addStyleClass( "ThemeColorsTitle" );
-  new WText("Non-Chart Area", cell);
+  new WText(WString::tr("ctwidget-non-chart-area"), cell);
   
   
   ++row;
   cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-  new WLabel("Backdrop Theme", cell);
+  new WLabel(WString::tr("ctwidget-backdrop-theme"), cell);
   cell = table->elementAt(row, 1);
   
   //ToDo: right m_nonChartAreaCssTheme only lists names given by ColorTheme::predefinedThemeName(),
@@ -124,257 +126,354 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
   
   cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
-  new WText("Theme for all non-chart area", cell);
-  
+  new WText(WString::tr("ctwidget-backdrop-desc"), cell);
+
+  ++row;
+  cell = table->elementAt(row, 0);
+  cell->addStyleClass( "CTRowLabel" );
+  new WLabel(WString::tr("ctwidget-app-background"), cell);
+  cell = table->elementAt(row, 1);
+  cell->addStyleClass( "CTSelect" );
+  m_colorSelects[AppBackground] = new ColorSelect(0, cell);
+  cell = table->elementAt(row, 2);
+  cell->addStyleClass( "CTRowDesc" );
+  new WText(WString::tr("ctwidget-app-background-desc"), cell);
+
+  ++row;
+  cell = table->elementAt(row, 0);
+  cell->addStyleClass( "CTRowLabel" );
+  new WLabel(WString::tr("ctwidget-app-text"), cell);
+  cell = table->elementAt(row, 1);
+  cell->addStyleClass( "CTSelect" );
+  m_colorSelects[AppText] = new ColorSelect(0, cell);
+  cell = table->elementAt(row, 2);
+  cell->addStyleClass( "CTRowDesc" );
+  new WText(WString::tr("ctwidget-app-text-desc"), cell);
+
+  ++row;
+  cell = table->elementAt(row, 0);
+  cell->addStyleClass( "CTRowLabel" );
+  new WLabel(WString::tr("ctwidget-app-border"), cell);
+  cell = table->elementAt(row, 1);
+  cell->addStyleClass( "CTSelect" );
+  m_colorSelects[AppBorder] = new ColorSelect(0, cell);
+  cell = table->elementAt(row, 2);
+  cell->addStyleClass( "CTRowDesc" );
+  new WText(WString::tr("ctwidget-app-border-desc"), cell);
+
+  ++row;
+  cell = table->elementAt(row, 0);
+  cell->addStyleClass( "CTRowLabel" );
+  new WLabel(WString::tr("ctwidget-app-link"), cell);
+  cell = table->elementAt(row, 1);
+  cell->addStyleClass( "CTSelect" );
+  m_colorSelects[AppLink] = new ColorSelect(0, cell);
+  cell = table->elementAt(row, 2);
+  cell->addStyleClass( "CTRowDesc" );
+  new WText(WString::tr("ctwidget-app-link-desc"), cell);
+
+  ++row;
+  cell = table->elementAt(row, 0);
+  cell->addStyleClass( "CTRowLabel" );
+  new WLabel(WString::tr("ctwidget-app-label"), cell);
+  cell = table->elementAt(row, 1);
+  cell->addStyleClass( "CTSelect" );
+  m_colorSelects[AppLabel] = new ColorSelect(0, cell);
+  cell = table->elementAt(row, 2);
+  cell->addStyleClass( "CTRowDesc" );
+  new WText(WString::tr("ctwidget-app-label-desc"), cell);
+
+  ++row;
+  cell = table->elementAt(row, 0);
+  cell->addStyleClass( "CTRowLabel" );
+  new WLabel(WString::tr("ctwidget-app-input-bg"), cell);
+  cell = table->elementAt(row, 1);
+  cell->addStyleClass( "CTSelect" );
+  m_colorSelects[AppInputBackground] = new ColorSelect(0, cell);
+  cell = table->elementAt(row, 2);
+  cell->addStyleClass( "CTRowDesc" );
+  new WText(WString::tr("ctwidget-app-input-bg-desc"), cell);
+
+  ++row;
+  cell = table->elementAt(row, 0);
+  cell->addStyleClass( "CTRowLabel" );
+  new WLabel(WString::tr("ctwidget-app-button-bg"), cell);
+  cell = table->elementAt(row, 1);
+  cell->addStyleClass( "CTSelect" );
+  m_colorSelects[AppButtonBackground] = new ColorSelect(0, cell);
+  cell = table->elementAt(row, 2);
+  cell->addStyleClass( "CTRowDesc" );
+  new WText(WString::tr("ctwidget-app-button-bg-desc"), cell);
+
+  ++row;
+  cell = table->elementAt(row, 0);
+  cell->addStyleClass( "CTRowLabel" );
+  new WLabel(WString::tr("ctwidget-app-button-border"), cell);
+  cell = table->elementAt(row, 1);
+  cell->addStyleClass( "CTSelect" );
+  m_colorSelects[AppButtonBorder] = new ColorSelect(0, cell);
+  cell = table->elementAt(row, 2);
+  cell->addStyleClass( "CTRowDesc" );
+  new WText(WString::tr("ctwidget-app-button-border-desc"), cell);
+
+  ++row;
+  cell = table->elementAt(row, 0);
+  cell->addStyleClass( "CTRowLabel" );
+  new WLabel(WString::tr("ctwidget-app-button-text"), cell);
+  cell = table->elementAt(row, 1);
+  cell->addStyleClass( "CTSelect" );
+  m_colorSelects[AppButtonText] = new ColorSelect(0, cell);
+  cell = table->elementAt(row, 2);
+  cell->addStyleClass( "CTRowDesc" );
+  new WText(WString::tr("ctwidget-app-button-text-desc"), cell);
 
 	++row;
 	cell = table->elementAt(row, 0);
 	cell->setColumnSpan(3);
 	cell->setContentAlignment(Wt::AlignmentFlag::AlignCenter);
   cell->addStyleClass( "ThemeColorsTitle" );
-	new WText("Chart Colors", cell);
+	new WText(WString::tr("ctwidget-chart-colors"), cell);
   
 
 	++row;
 	cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Spec. Foreground", cell);
+	new WLabel(WString::tr("ctwidget-spec-foreground"), cell);
 	cell = table->elementAt(row, 1);
   cell->addStyleClass( "CTSelect" );
 	m_colorSelects[ForegroundLine] = new ColorSelect(0,cell); 
 	cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
-	new WText("Line color for the foreground spectrum", cell);
+	new WText(WString::tr("ctwidget-spec-foreground-desc"), cell);
   
 	++row;
 	cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Spec. Background", cell);
+	new WLabel(WString::tr("ctwidget-spec-background"), cell);
 	cell = table->elementAt(row, 1);
   cell->addStyleClass( "CTSelect" );
 	m_colorSelects[BackgroundLine] = new ColorSelect(0,cell);
 	cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
-	new WText("Line color for the background spectrum", cell);
+	new WText(WString::tr("ctwidget-spec-background-desc"), cell);
 
 	++row;
 	cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Spec. Secondary", cell);
+	new WLabel(WString::tr("ctwidget-spec-secondary"), cell);
 	cell = table->elementAt(row, 1);
   cell->addStyleClass( "CTSelect" );
 	m_colorSelects[SecondaryLine] = new ColorSelect(0,cell);
 	cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
-	new WText("Line color for the secondary spectrum", cell);
+	new WText(WString::tr("ctwidget-spec-secondary-desc"), cell);
 	
 
 
 	++row;
 	cell = table->elementAt(row, 0);
 	cell->setColumnSpan(2);
-	m_peaksTakeRefLineColor = new WCheckBox("Peaks Use Reference Line Color", cell);
+	m_peaksTakeRefLineColor = new WCheckBox(WString::tr("ctwidget-peaks-use-ref-color"), cell);
 	cell = table->elementAt(row, 2);
-	new WText("Determines if newly fitted peaks take on color of reference line for that peak.", cell);
+	new WText(WString::tr("ctwidget-peaks-use-ref-desc"), cell);
 
 
 	++row;
 	cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Default Peak Color", cell);
+	new WLabel(WString::tr("ctwidget-default-peak-color"), cell);
 	cell = table->elementAt(row, 1);
   cell->addStyleClass( "CTSelect" );
 	m_colorSelects[DefaultPeakLine] = new ColorSelect(0,cell);
 	cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
-	new WText("Color used for peaks that dont have an assigned color", cell);
-	
+	new WText(WString::tr("ctwidget-default-peak-desc"), cell);
 
 	++row;
 	cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Spectrum Chart Axis", cell);
+	new WLabel(WString::tr("ctwidget-spectrum-axis"), cell);
 	cell = table->elementAt(row, 1);
   cell->addStyleClass( "CTSelect" );
 	m_colorSelects[SpectrumAxis] = new ColorSelect(0,cell);
 	cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
-	new WText("Line color for spectrum X and Y axis", cell);
+	new WText(WString::tr("ctwidget-spectrum-axis-desc"), cell);
 
 	++row;
 	cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Spectrum Chart Text", cell);
+	new WLabel(WString::tr("ctwidget-spectrum-text"), cell);
 	cell = table->elementAt(row, 1);
   cell->addStyleClass( "CTSelect" );
 	m_colorSelects[SpectrumChartText] = new ColorSelect(0,cell);
 	cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
-	new WText("Spectrum chart text (y and x axis labels) color", cell);
+	new WText(WString::tr("ctwidget-spectrum-text-desc"), cell);
 
 	++row;
 	cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Spectrum Area", cell);
+	new WLabel(WString::tr("ctwidget-spectrum-area"), cell);
 	cell = table->elementAt(row, 1);
   
   if( nativeColorSelect )
   {
-    m_noSpectrumBackground = new WCheckBox( "None", cell );
+    m_noSpectrumBackground = new WCheckBox( WString::tr("None"), cell );
     m_noSpectrumBackground->setInline( false );
   }
   cell->addStyleClass( "CTSelect" );
 	m_colorSelects[SpectrumChartBackground] = new ColorSelect(ColorSelect::AllowNoColor,cell);
 	cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
-	new WText("Background color for spectrum chart", cell);
+	new WText(WString::tr("ctwidget-spectrum-area-desc"), cell);
     
 	++row;
 	cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Spectrum Chart Bckgrnd", cell);
+	new WLabel(WString::tr("ctwidget-spectrum-margin"), cell);
 	cell = table->elementAt(row, 1);
   cell->addStyleClass( "CTSelect" );
   if( nativeColorSelect )
   {
-    m_noSpectrumMargin = new WCheckBox( "None", cell );
+    m_noSpectrumMargin = new WCheckBox( WString::tr("None"), cell );
     m_noSpectrumMargin->setInline( false );
   }
 	m_colorSelects[SpectrumChartMargins] = new ColorSelect(ColorSelect::AllowNoColor,cell);
 	cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
-	new WText("Color for spectrum chart margins", cell);
-	m_specMarginSameAsBackground = new WCheckBox("Same as spectrum area", cell);
+	new WText(WString::tr("ctwidget-spectrum-margin-desc"), cell);
+	m_specMarginSameAsBackground = new WCheckBox(WString::tr("ctwidget-same-as-spectrum"), cell);
 	m_specMarginSameAsBackground->setInline(false);
 
 
   ++row;
   cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-  new WLabel("Time Chart Gamma Counts", cell);
+  new WLabel(WString::tr("ctwidget-time-gamma"), cell);
   cell = table->elementAt(row, 1);
   cell->addStyleClass( "CTSelect" );
   m_colorSelects[TimeChartGammas] = new ColorSelect(0,cell);
   cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
-  new WText("Line color for the gamma counts in time chart", cell);
+  new WText(WString::tr("ctwidget-time-gamma-desc"), cell);
   
   ++row;
   cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-  new WLabel("Time Chart Neutron Counts", cell);
+  new WLabel(WString::tr("ctwidget-time-neutron"), cell);
   cell = table->elementAt(row, 1);
   cell->addStyleClass( "CTSelect" );
   m_colorSelects[TimeChartNeutrons] = new ColorSelect(0,cell);
   cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
-  new WText("Line color for the neutron counts in time chart", cell);
+  new WText(WString::tr("ctwidget-time-neutron-desc"), cell);
   
   
 	++row;
 	cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Time Chart Axis", cell);
+	new WLabel(WString::tr("ctwidget-time-axis"), cell);
 	cell = table->elementAt(row, 1);
   cell->addStyleClass( "CTSelect" );
 	m_colorSelects[TimeAxisLines] = new ColorSelect(0,cell);
 	cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
-	new WText("Line color for time chart X and Y axis", cell);
+	new WText(WString::tr("ctwidget-time-axis-desc"), cell);
 
   
 	++row;
 	cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Time Chart Background", cell);
+	new WLabel(WString::tr("ctwidget-time-background"), cell);
 	cell = table->elementAt(row, 1);
   cell->addStyleClass( "CTSelect" );
   if( nativeColorSelect )
   {
-    m_noTimeBackground = new WCheckBox( "None", cell );
+    m_noTimeBackground = new WCheckBox( WString::tr("None"), cell );
     m_noTimeBackground->setInline( false );
   }
   m_colorSelects[TimeChartBackground] = new ColorSelect(ColorSelect::AllowNoColor,cell);
 	cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
-	new WText("Background color for time chart", cell);
+	new WText(WString::tr("ctwidget-time-background-desc"), cell);
   
 
 	++row;
 	cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Time Chart Margins", cell);
+	new WLabel(WString::tr("ctwidget-time-margins"), cell);
 	cell = table->elementAt(row, 1);
   cell->addStyleClass( "CTSelect" );
   if( nativeColorSelect )
   {
-    m_noTimeMargin = new WCheckBox( "None", cell );
+    m_noTimeMargin = new WCheckBox( WString::tr("None"), cell );
     m_noTimeMargin->setInline( false );
   }
   m_colorSelects[TimeChartMargins] = new ColorSelect(ColorSelect::AllowNoColor,cell);
 	cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
-	new WText("Color for spectrum chart margins", cell);
-	m_timeMarginSameAsBackground = new WCheckBox("Same as background", cell);
+	new WText(WString::tr("ctwidget-time-margins-desc"), cell);
+	m_timeMarginSameAsBackground = new WCheckBox(WString::tr("ctwidget-same-as-background"), cell);
 	m_timeMarginSameAsBackground->setInline(false);
   
   
 	++row;
 	cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Time Chart Text", cell);
+	new WLabel(WString::tr("ctwidget-time-text"), cell);
 	cell = table->elementAt(row, 1);
   cell->addStyleClass( "CTSelect" );
 	m_colorSelects[TimeChartText] = new ColorSelect(0,cell);
 	cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
-	new WText("Text color for time chart (x and y-axis labels)", cell);
+	new WText(WString::tr("ctwidget-time-text-desc"), cell);
 
   
 	++row;
 	cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Occ. Indicator Lines", cell);
+	new WLabel(WString::tr("ctwidget-occ-lines"), cell);
 	cell = table->elementAt(row, 1);
   cell->addStyleClass( "CTSelect" );
 	m_colorSelects[OccupancyIndicatorLines] = new ColorSelect(0,cell);
 	cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
-	new WText("Lines that indicate the beginning and end of an occupancy (portal data) or time period of interest (search mode data)", cell);
+	new WText(WString::tr("ctwidget-occ-lines-desc"), cell);
 
 	
 	++row;
 	cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Time foreground highlight", cell);
+	new WLabel(WString::tr("ctwidget-time-fore-highlight"), cell);
 	cell = table->elementAt(row, 1);
   cell->addStyleClass( "CTSelect" );
 	m_colorSelects[TimeHistoryForegroundHighlight] = new ColorSelect(0,cell);
 	cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
-	new WText("Color used to indicate on the time chart, which segments of time are being summed for the foreground spectrum.", cell);
+	new WText(WString::tr("ctwidget-time-fore-highlight-desc"), cell);
 
 	++row;
 	cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Time background highlight", cell);
+	new WLabel(WString::tr("ctwidget-time-back-highlight"), cell);
 	cell = table->elementAt(row, 1);
   cell->addStyleClass( "CTSelect" );
 	m_colorSelects[TimeHistoryBackgroundHighlight] = new ColorSelect(0,cell);
 	cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
-	new WText("Color used to indicate on the time chart, which segments of time are being summed for the background spectrum.", cell);
+	new WText(WString::tr("ctwidget-time-back-highlight-desc"), cell);
 		
 	++row;
 	cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Time secondary highlight", cell);
+	new WLabel(WString::tr("ctwidget-time-sec-highlight"), cell);
 	cell = table->elementAt(row, 1);
   cell->addStyleClass( "CTSelect" );
 	m_colorSelects[TimeHistorySecondaryHighlight] = new ColorSelect(0,cell);
 	cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
-	new WText("Color used to indicate on the time chart, which segments of time are being summed for the secondary spectrum.", cell);
+	new WText(WString::tr("ctwidget-time-sec-highlight-desc"), cell);
 	
   
   WContainerWidget *refLineContainer = new WContainerWidget( this );
@@ -389,11 +488,11 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
   genericRef->addStyleClass( "GenericRefLineColors" );
   refLayout->addWidget( genericRef, 0, 0 );
   
-  WText *genericTitle = new WText( "Reference Line Colors", genericRef );
+  WText *genericTitle = new WText( WString::tr("ctwidget-ref-line-colors"), genericRef );
   genericTitle->addStyleClass( "ColorRefLineTitle" );
   genericTitle->setInline( false );
   
-  WText *genericDesc = new WText( "The ordered colors to use for reference lines", genericRef );
+  WText *genericDesc = new WText( WString::tr("ctwidget-ref-line-colors-desc"), genericRef );
   genericDesc->addStyleClass( "ColorRefLineDesc" );
   genericDesc->setInline( false );
   
@@ -413,11 +512,11 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
   specificRef->addStyleClass( "SpecificRefLineColors" );
   refLayout->addWidget( specificRef, 0, 1 );
   
-  WText *specificTitle = new WText( "Specific Source Reference Line Colors", specificRef );
+  WText *specificTitle = new WText( WString::tr("ctwidget-specific-ref-colors"), specificRef );
   specificTitle->addStyleClass( "ColorRefLineTitle" );
   specificTitle->setInline( false );
   
-  WText *specificDesc = new WText( "The colors to use for reference lines for given sources", specificRef );
+  WText *specificDesc = new WText( WString::tr("ctwidget-specific-ref-desc"), specificRef );
   specificDesc->addStyleClass( "ColorRefLineDesc" );
   specificDesc->setInline( false );
   
@@ -430,25 +529,9 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
 #if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
   nuclideSuggest->setJavaScriptMember("wtNoReparent", "true");
 #endif
-  nuclideSuggest->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
-  nuclideSuggest->setWidth( WLength(70, Wt::WLength::Unit::Pixel) );
+  nuclideSuggest->addStyleClass( "nuclide-suggest" );
 
-  //See ReferencePhotopeakDisplay.cpp for note on this next hack section of code
-  string js = INLINE_JAVASCRIPT(
-    var addTryCatch = function( elid ){
-      var dofix = function(elid){
-        var el = Wt.WT.getElement(elid);
-        var self = el ? jQuery.data(el, 'obj') : null;
-        if( !self ) self = el ? el.wtObj : null;; //Wt 3.7.1
-        if( !self ){ setTimeout( function(){dofix(elid);}, 100 ); return; }
-        var oldfcn = self.refilter;
-        self.refilter = function(value){ try{ oldfcn(value); }catch(e){ console.log('My refilter caught: ' + e ); } };
-      };
-      dofix(elid);
-    };
-  );
-  
-  nuclideSuggest->doJavaScript( js + " addTryCatch('" + nuclideSuggest->id() + "');" );
+  IsotopeNameFilterModel::setQuickTypeFixHackjs( nuclideSuggest );
   
   isoSuggestModel->filter( "" );
   nuclideSuggest->setFilterLength( -1 );
@@ -464,6 +547,7 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
     m_specificRefLineName[i] = new WLineEdit( cell );
     m_specificRefLineName[i]->setAttributeValue( "ondragstart", "return false" );
     nuclideSuggest->forEdit( m_specificRefLineName[i], WSuggestionPopup::Editing );
+    IsotopeNameFilterModel::setEnterKeyMatchFixJs( nuclideSuggest, m_specificRefLineName[i] );
     m_specificRefLineName[i]->changed().connect( boost::bind( &ColorThemeWidget::specificRefLineSourceChangedCallback, this, i ) );
     m_specificRefLineName[i]->enterPressed().connect( boost::bind( &ColorThemeWidget::specificRefLineSourceChangedCallback, this, i ) );
     
@@ -477,6 +561,74 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
   
   
   
+  {
+    WContainerWidget *dynamicRefCats = new WContainerWidget();
+    dynamicRefCats->addStyleClass( "DynamicRefLineColors" );
+    refLayout->addWidget( dynamicRefCats, 1, 0 );
+    
+    WText *dynamicTitle = new WText( WString::tr("ctwidget-dynamic-ref-lines"), dynamicRefCats );
+    dynamicTitle->addStyleClass( "ColorRefLineTitle" );
+    dynamicTitle->setInline( false );
+    
+    WText *genericDesc = new WText( WString::tr("ctwidget-dynamic-ref-desc"), dynamicRefCats );
+    genericDesc->addStyleClass( "ColorRefLineDesc" );
+    genericDesc->setInline( false );
+    
+    table = new WTable( dynamicRefCats );
+    table->addStyleClass( "ReferenceLinColorTable" );
+    
+    int dynamic_ref_row = table->rowCount();
+    cell = table->elementAt(dynamic_ref_row, 0);
+    cell->addStyleClass( "CTRowLabel" );
+    new WLabel(WString::tr("ctwidget-medical"), cell);
+    cell = table->elementAt(dynamic_ref_row, 1);
+    cell->addStyleClass( "CTSelect" );
+    m_colorSelects[DynamicRefLineMedical] = new ColorSelect(0,cell);
+    
+    
+    dynamic_ref_row = table->rowCount();
+    cell = table->elementAt(dynamic_ref_row, 0);
+    cell->addStyleClass( "CTRowLabel" );
+    new WLabel(WString::tr("ctwidget-industrial"), cell);
+    cell = table->elementAt(dynamic_ref_row, 1);
+    cell->addStyleClass( "CTSelect" );
+    m_colorSelects[DynamicRefLineIndustrial] = new ColorSelect(0,cell);
+    
+    
+    dynamic_ref_row = table->rowCount();
+    cell = table->elementAt(dynamic_ref_row, 0);
+    cell->addStyleClass( "CTRowLabel" );
+    new WLabel(WString::tr("ctwidget-norm"), cell);
+    cell = table->elementAt(dynamic_ref_row, 1);
+    cell->addStyleClass( "CTSelect" );
+    m_colorSelects[DynamicRefLineNorm] = new ColorSelect(0,cell);
+    
+    dynamic_ref_row = table->rowCount();
+    cell = table->elementAt(dynamic_ref_row, 0);
+    cell->addStyleClass( "CTRowLabel" );
+    new WLabel(WString::tr("ctwidget-snm"), cell);
+    cell = table->elementAt(dynamic_ref_row, 1);
+    cell->addStyleClass( "CTSelect" );
+    m_colorSelects[DynamicRefLineSnm] = new ColorSelect(0,cell);
+    
+    dynamic_ref_row = table->rowCount();
+    cell = table->elementAt(dynamic_ref_row, 0);
+    cell->addStyleClass( "CTRowLabel" );
+    new WLabel(WString::tr("ctwidget-common"), cell);
+    cell = table->elementAt(dynamic_ref_row, 1);
+    cell->addStyleClass( "CTSelect" );
+    m_colorSelects[DynamicRefLineCommon] = new ColorSelect(0,cell);
+    
+    dynamic_ref_row = table->rowCount();
+    cell = table->elementAt(dynamic_ref_row, 0);
+    cell->addStyleClass( "CTRowLabel" );
+    new WLabel(WString::tr("ctwidget-other"), cell);
+    cell = table->elementAt(dynamic_ref_row, 1);
+    cell->addStyleClass( "CTSelect" );
+    m_colorSelects[DynamicRefLineOther] = new ColorSelect(0,cell);
+  }
+  
+  
   
   row = 0;
   table = new WTable( this );
@@ -486,16 +638,16 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
   cell->setColumnSpan(3);
   cell->setContentAlignment(Wt::AlignmentFlag::AlignCenter);
   cell->addStyleClass( "ThemePeakLabelTitle" );
-  new WText("Other Options", cell);
+  new WText(WString::tr("ctwidget-other-options"), cell);
   
   ++row;
   cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-  new WLabel("Peak label size", cell);
+  new WLabel(WString::tr("ctwidget-peak-label-size"), cell);
   cell = table->elementAt(row, 1);
   cell->addStyleClass( "CTSelect" );
   m_peakLabelFontSize = new WComboBox( cell);
-  m_peakLabelFontSize->addItem( "Default" );
+  m_peakLabelFontSize->addItem( WString::tr("Default") );
   m_peakLabelFontSize->addItem( "smaller" );
   m_peakLabelFontSize->addItem( "larger" );
   m_peakLabelFontSize->addItem( "xx-small" );
@@ -506,13 +658,13 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
   m_peakLabelFontSize->addItem( "x-large" );
   cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
-  new WText("Specifies font-size of peak labels", cell);
+  new WText(WString::tr("ctwidget-peak-label-size-desc"), cell);
   
   
   ++row;
   cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-  new WLabel("Peak label angle", cell);
+  new WLabel(WString::tr("ctwidget-peak-label-angle"), cell);
   cell = table->elementAt(row, 1);
   cell->addStyleClass( "CTSelect" );
   m_peakLabelAngle = new NativeFloatSpinBox( cell);
@@ -521,13 +673,13 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
   m_peakLabelAngle->setWidth( 50 );
   cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
-  new WText("Rotation, in degrees, of peak labels", cell);
+  new WText(WString::tr("ctwidget-peak-label-angle-desc"), cell);
   
   
   ++row;
   cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-  new WLabel("Log-Y minimum", cell);
+  new WLabel(WString::tr("ctwidget-log-y-min"), cell);
   cell = table->elementAt(row, 1);
   cell->addStyleClass( "CTSelect" );
   m_logYAxisMin = new NativeFloatSpinBox( cell);
@@ -536,8 +688,7 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
   m_logYAxisMin->setWidth( 50 );
   cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
-  new WText("The minimum value displayed on the logarithmic y-axis, when there is a channel"
-            " with zero or negative counts in the displayed x-range.", cell);
+  new WText(WString::tr("ctwidget-log-y-min-desc"), cell);
   
   
   m_themeTitle->changed().connect( boost::bind( &ColorThemeWidget::titleChangedCallback, this ) );
@@ -598,7 +749,7 @@ void ColorThemeWidget::setTheme(const ColorTheme *theme, const bool modifieable)
 
 	if( !theme )
 	{
-		m_themeTitle->setText("(empty)");
+		m_themeTitle->setText(WString::tr("ctwidget-empty"));
 		m_themeDescription->setText("");
 		m_origTheme.reset();
     setDisabled( true );
@@ -727,8 +878,35 @@ void ColorThemeWidget::setTheme(const ColorTheme *theme, const bool modifieable)
 	m_colorSelects[TimeHistoryForegroundHighlight]->setColor(theme->timeHistoryForegroundHighlight);
 	m_colorSelects[TimeHistoryBackgroundHighlight]->setColor(theme->timeHistoryBackgroundHighlight);
 	m_colorSelects[TimeHistorySecondaryHighlight]->setColor(theme->timeHistorySecondaryHighlight);
-  
-  
+	m_colorSelects[DynamicRefLineMedical]->setColor( theme->dynamicRefLineMedicalColor.isDefault() ? 
+                                                    Wt::WColor( ColorTheme::sm_dynamic_ref_line_medical_color ) : 
+                                                    theme->dynamicRefLineMedicalColor );
+	m_colorSelects[DynamicRefLineIndustrial]->setColor( theme->dynamicRefLineIndustrialColor.isDefault() ? 
+                                                       Wt::WColor( ColorTheme::sm_dynamic_ref_line_industrial_color ) : 
+                                                       theme->dynamicRefLineIndustrialColor );
+	m_colorSelects[DynamicRefLineNorm]->setColor( theme->dynamicRefLineNormColor.isDefault() ? 
+                                                 Wt::WColor( ColorTheme::sm_dynamic_ref_line_norm_color ) : 
+                                                 theme->dynamicRefLineNormColor );
+	m_colorSelects[DynamicRefLineSnm]->setColor( theme->dynamicRefLineSnmColor.isDefault() ? 
+                                                Wt::WColor( ColorTheme::sm_dynamic_ref_line_snm_color ) : 
+                                                theme->dynamicRefLineSnmColor );
+	m_colorSelects[DynamicRefLineCommon]->setColor( theme->dynamicRefLineCommonColor.isDefault() ? 
+                                                   Wt::WColor( ColorTheme::sm_dynamic_ref_line_common_color ) : 
+                                                   theme->dynamicRefLineCommonColor );
+	m_colorSelects[DynamicRefLineOther]->setColor( theme->dynamicRefLineOtherColor.isDefault() ?
+                                                  Wt::WColor( ColorTheme::sm_dynamic_ref_line_other_color ) :
+                                                  theme->dynamicRefLineOtherColor );
+
+  m_colorSelects[AppBackground]->setColor( theme->appBackgroundColor );
+  m_colorSelects[AppText]->setColor( theme->appTextColor );
+  m_colorSelects[AppBorder]->setColor( theme->appBorderColor );
+  m_colorSelects[AppLink]->setColor( theme->appLinkColor );
+  m_colorSelects[AppLabel]->setColor( theme->appLabelColor );
+  m_colorSelects[AppInputBackground]->setColor( theme->appInputBackground );
+  m_colorSelects[AppButtonBackground]->setColor( theme->appButtonBackground );
+  m_colorSelects[AppButtonBorder]->setColor( theme->appButtonBorderColor );
+  m_colorSelects[AppButtonText]->setColor( theme->appButtonTextColor );
+
   for( int i = 0; i < sm_numRefLineColors; ++i )
   {
     m_referenceLineColor[i]->setColor( WColor() );
@@ -908,6 +1086,66 @@ void ColorThemeWidget::newColorSelectedCallback(const ColorThemeWidget::Selectab
       m_currentTheme->timeHistorySecondaryHighlight = m_colorSelects[color]->color();
       break;
       
+	  case DynamicRefLineMedical:
+      m_currentTheme->dynamicRefLineMedicalColor = m_colorSelects[color]->color();
+      break;
+      
+	  case DynamicRefLineIndustrial:
+      m_currentTheme->dynamicRefLineIndustrialColor = m_colorSelects[color]->color();
+      break;
+      
+	  case DynamicRefLineNorm:
+      m_currentTheme->dynamicRefLineNormColor = m_colorSelects[color]->color();
+      break;
+      
+	  case DynamicRefLineSnm:
+      m_currentTheme->dynamicRefLineSnmColor = m_colorSelects[color]->color();
+      break;
+      
+	  case DynamicRefLineCommon:
+      m_currentTheme->dynamicRefLineCommonColor = m_colorSelects[color]->color();
+      break;
+      
+	  case DynamicRefLineOther:
+      m_currentTheme->dynamicRefLineOtherColor = m_colorSelects[color]->color();
+      break;
+
+    case AppBackground:
+      m_currentTheme->appBackgroundColor = m_colorSelects[color]->color();
+      break;
+
+    case AppText:
+      m_currentTheme->appTextColor = m_colorSelects[color]->color();
+      break;
+
+    case AppBorder:
+      m_currentTheme->appBorderColor = m_colorSelects[color]->color();
+      break;
+
+    case AppLink:
+      m_currentTheme->appLinkColor = m_colorSelects[color]->color();
+      break;
+
+    case AppLabel:
+      m_currentTheme->appLabelColor = m_colorSelects[color]->color();
+      break;
+
+    case AppInputBackground:
+      m_currentTheme->appInputBackground = m_colorSelects[color]->color();
+      break;
+
+    case AppButtonBackground:
+      m_currentTheme->appButtonBackground = m_colorSelects[color]->color();
+      break;
+
+    case AppButtonBorder:
+      m_currentTheme->appButtonBorderColor = m_colorSelects[color]->color();
+      break;
+
+    case AppButtonText:
+      m_currentTheme->appButtonTextColor = m_colorSelects[color]->color();
+      break;
+
 	  case NumSelectableColors:
 		  break;
 	}//switch (color)

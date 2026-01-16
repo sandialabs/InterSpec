@@ -93,6 +93,7 @@
 .BatchGuiWidget .TypeSelectContainer ul.AnaTypeMenu.VerticalNavMenu
 {
   width: 55px;
+  min-width: 25px; /* The width doesnt seem to work well, bu min-width does... not sure why */
   height: 100%;
   overflow-x: hidden;
 

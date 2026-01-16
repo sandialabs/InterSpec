@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- smmd- is short for ShowMultiMediaDisplay -->
+  <message id="smmd-prev-btn">Ant.</message>
+  <message id="smmd-next-btn">Sig.</message>
+  <message id="smmd-auto-show-images-cb">Mostrar imágenes auto</message>
+  <message id="smmd-tt-auto-show-images">Mostrar automáticamente imágenes cuando se cargan archivos de espectro que las tienen.</message>
+  <message id="smmd-tt-export-image-file">Exportar la imagen actualmente mostrada a un archivo.</message>
+  <message id="smmd-err-no-content">Sin contenido multimedia para mostrar</message>
+  <message id="smmd-err-file-is-uri">Datos codificados como archivo en URI='{1}'</message>
+  <message id="smmd-err-no-multimedia-src">La fuente multimedia no contenía datos.</message>
+  <message id="smmd-err-encoding-not-supported">La codificación del contenido multimedia de datos no es compatible.</message>
+  <message id="smmd-err-not-image">El tipo de contenido multimedia no era de tipo imagen, o no se pudo determinar.</message>
+  <message id="smmd-image-index">Imagen {1} de {2}</message>
+  <message id="smmd-Time">Tiempo</message>
+  <message id="smmd-time-label">Tiempo: {1}</message>
+  <message id="smmd-remark-label">Observación: {1}</message>
+  <message id="smmd-desc-label">Desc.: {1}</message>
+  <message id="smmd-window-title-single">Imagen en archivo de espectro</message>
+  <message id="smmd-window-title-multiple">Imágenes en archivo de espectro</message>
+</messages>
+
+

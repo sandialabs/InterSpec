@@ -25,12 +25,14 @@
     sources in the center.
   </message>
   <message id="ssd-add-shield-label">Add Shielding:</message>
+  <message id="ssd-geometry-label">Geometry:</message>
   <message id="ssd-tt-add-shield">Choose from a library of predefined common shielding materials.</message>
   <message id="ssd-generic-btn">Generic</message>
   <message id="ssd-tt-generic">Allows you to define and fit for atomic number and areal density.</message>
   <message id="ssd-perform-fit-btn">Perform Model Fit</message>
   <message id="ssd-cancel-fit">Cancel Model Fit</message>
   <message id="ssd-mi-calc-log">Calculation Log</message>
+  <message id="ssd-mi-calc-log-html">Calculation Log (HTML)</message>
   <message id="ssd-mi-import-model">Import Model...</message>
   <message id="ssd-mi-export-model">Export Model</message>
   <message id="ssd-mi-from-db">Open From Database...</message>
@@ -88,6 +90,12 @@
   <message id="ssd-warn-invalid-chi2-for-energy">An invalid chi2 was calculated for {1} keV, other results may be invalid</message>
   <message id="ssd-calc-log-window-title">Calculation Log</message>
   <message id="ssd-calc-log-export-txt">TXT file</message>
+  <message id="ssd-calc-log-html-title">Calculation Log</message>
+  <message id="ssd-template-text-log">Standard Log (Text)</message>
+  <message id="ssd-template-html-report">Activity Fit Report (HTML)</message>
+  <message id="ssd-template-deprecated-txt">Deprecated Txt</message>
+  <message id="ssd-no-fit-results">No fit results available to display.</message>
+  <message id="ssd-error-creating-html-log">Error creating HTML calculation log: {1}</message>
   <message id="ssd-err-opening-import-model">Error opening uploaded Source Shielding Fit Model: {1}</message>
   <message id="ssd-import-model-window-title">Import Source Shielding XML Model</message>
   <message id="ssd-err-opening-db-model">Error opening Source Shielding Fit Model from database: {1}</message>
@@ -123,6 +131,8 @@
     Fit not performed (couldnt make Chi2Fcn).
   </message>
   <message id="ssd-error-create-tool">Error creating Activity/Shielding fit display: {1}</message>
+  <message id="ssd-shield-source-diagram">Shielding/Source Diagram</message>
+  <message id="ssd-show-model-diagram">Show Model Diagram</message>
 
   <!-- SourceFitModel quantities -->
   <message id="sfm-tt-header-isotope">Nuclides are added or removed according to the photopeaks used for this fit, thus may not be edited in this table</message>

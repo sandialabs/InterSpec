@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- pid is short for PeakInfoDisplay -->
+
+  <message id="pid-dialog-peak-erase">擦除所有峰？</message>
+
+  <message id="pid-err-no-foreground">必须加载前景谱才能添加峰。</message>
+
+  <message id="pid-search-peaks-btn">搜索峰</message>
+  <message id="pid-tt-search-peaks-btn">使用自动峰查找算法搜索峰。</message>
+  <message id="pid-clear-peaks-btn">清除所有峰</message>
+  <message id="pid-tt-clear-peaks-btn">删除<b>所有</b>现有峰。</message>
+  <message id="pid-nuc-from-ref-btn">来自参考的核素</message>
+  <message id="pid-tt-nuc-from-ref-btn">
+    从显示的参考线指定峰核素。仅适用于
+    尚未与核素关联的峰。
+  </message>
+
+  <message id="pid-add-peak-btn">添加...</message>
+  <message id="pid-tt-add-peak-btn">手动添加新峰。</message>
+  <message id="pid-tt-del-peaks">删除当前正在编辑的峰。</message>
+  <message id="pid-better-editor-hint">右键单击峰以获取更好的编辑器</message>
+  <message id="pid-better-editor-hint-mobile">轻触并按住峰以获取更好的编辑器</message>
+  <message id="pid-tt-csv-export">将已识别峰的信息导出为逗号分隔格式。</message>
+  <message id="pid-tt-csv-copy">将峰CSV信息复制到您的粘贴板。
+    <p>峰数据将以格式化和纯文本变体复制到您的粘贴板，
+      因此数据的格式将取决于您粘贴到的应用程序。
+    </p>
+  </message>
+
+  <message id="pid-csv-copy-full">复制完整峰CSV</message>
+  <message id="pid-csv-copy-no-hdr">复制不带标题</message>
+  <message id="pid-csv-copy-compact">复制拟合峰信息</message>
+  <message id="pid-peak-label">峰： </message>
+</messages>
+

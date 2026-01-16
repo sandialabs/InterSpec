@@ -38,7 +38,7 @@
 
 #include "target/electron/ElectronUtils.h"
 
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_CLI_TOOLS )
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
 
@@ -525,7 +525,7 @@ namespace InterSpecAddOn
     return Napi::Boolean::New( env, success );
   }//void sendMessageToRenderer( const Napi::CallbackInfo &info )
 
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_CLI_TOOLS )
   Napi::Number runBatchAnalysis( const Napi::CallbackInfo &info )
   {
     Napi::Env env = info.Env();
@@ -699,7 +699,7 @@ Napi::Object InitAll(Napi::Env env, Napi::Object exports) {
   
   exports.Set( "sendMessageToRenderer", Napi::Function::New(env, InterSpecAddOn::sendMessageToRenderer));
   
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_CLI_TOOLS )
   exports.Set( "runBatchAnalysis", Napi::Function::New(env, InterSpecAddOn::runBatchAnalysis));
 #endif
 

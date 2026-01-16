@@ -7,8 +7,9 @@
   <message id="dls-roi-lower-label">ROI inférieure :</message>
   <message id="dls-roi-upper-label">ROI supérieure :</message>
   <message id="dls-num-side-channel-label">Nb de canaux latéraux :</message>
-  <message id="dls-fwhm-label">FWHM :</message>
-  <message id="dls-decon-cont-norm-label">Norm. du cont. :</message>
+  <message id="dls-fwhm-label">FWHM :</message>
+  <message id="dls-gamma-label">Gamma :</message>
+  <message id="dls-decon-cont-norm-label">Norm. du cont. :</message>
   <message id="dls-is-background-spectrum-cb">Spectre d'arrière-plan</message>
   <message id="dls-is-background-spectrum-tt">
     Cocher cette option affirme qu'il n'y a pas de signal présent dans ce spectre.

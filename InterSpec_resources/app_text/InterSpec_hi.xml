@@ -1,0 +1,631 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- Text labels for general buttons/prompts, and one-off words around the app.  Note the capitalization. -->
+  <message id="Cancel">रद्द करें</message>
+  <message id="Yes">हाँ</message>
+  <message id="No">नहीं</message>
+  <message id="Close">बंद करें</message>
+  <message id="Continue">जारी रखें</message>
+  <message id="Save">सहेजें</message>
+  <message id="Name">नाम</message>
+  <message id="Desc.">विवरण</message>
+  <message id="Back">पीछे</message>
+  <message id="Create">बनाएं</message>
+  <message id="Energy">ऊर्जा</message>
+  <message id="Counts">गणनाएं</message>
+  <message id="Apply">लागू करें</message>
+  <message id="Accept">स्वीकार करें</message>
+  <message id="Okay">ठीक है</message>
+  <message id="Foreground">अग्रभूमि</message>
+  <message id="Background">पृष्ठभूमि</message>
+  <message id="Secondary">द्वितीयक</message>
+  <message id="second-foreground">दूसरी अग्रभूमि</message>
+  <message id="foreground" comment="For use in middle of sentence">अग्रभूमि</message>
+  <message id="background" comment="For use in middle of sentence">पृष्ठभूमि</message>
+  <message id="secondary" comment="For use in middle of sentence">द्वितीयक</message>
+  <message id="Exit">बाहर निकलें</message>
+  <message id="Enter">दर्ज करें</message>
+  <message id="show-lines">रेखाएं दिखाएं</message>
+  <message id="Default">डिफ़ॉल्ट</message>
+  <message id="Error">त्रुटि</message>
+  <message id="Description">विवरण</message>
+  <message id="Detector">डिटेक्टर</message>
+  <message id="Distance">दूरी</message>
+  <message id="Activity">गतिविधि</message>
+  <message id="nuclide-label">न्यूक्लाइड:</message>
+  <message id="age-label">आयु:</message>
+  <message id="distance-label">दूरी:</message>
+  <message id="activity-label">गतिविधि:</message>
+  <message id="dose-label">खुराक:</message>
+  <message id="shielding-label">परिरक्षण:</message>
+  <message id="detector-label">डिटेक्टर:</message>
+  <message id="energy-label">ऊर्जा:</message>
+  <message id="foreground-label">अग्रभूमि:</message>
+  <message id="background-label">पृष्ठभूमि:</message>
+  <message id="secondary-label">द्वितीयक:</message>
+  <message id="Remark">टिप्पणी</message>
+  <message id="Tap">टैप करें</message>
+  <message id="Click">क्लिक करें</message>
+  <message id="tap">टैप करें</message>
+  <message id="click">क्लिक करें</message>
+
+
+  <!-- Words not used in InterSpec.cpp, but at least a few places throughout the app -->
+  <message id="Continuum">सतत</message>
+  <message id="cont-type">सतत प्रकार</message>
+  <message id="Title">शीर्षक</message>
+  <message id="Fit">फिट</message>
+  <message id="Use">उपयोग करें</message>
+  <message id="Mean">माध्य</message>
+  <message id="FWHM">FWHM</message>
+  <message id="Amp.">आयाम</message>
+  <message id="Area">क्षेत्र</message>
+  <message id="Age">आयु</message>
+  <message id="Add">जोड़ें</message>
+  <message id="Peak">पीक</message>
+  <message id="Delete">हटाएं</message>
+  <message id="Photopeak">Photopeak</message>
+  <message id="Nuclide">न्यूक्लाइड</message>
+  <message id="Nuc.">न्यू.</message>
+  <message id="Skew">विषमता</message>
+  <message id="CPS">CPS</message>
+  <message id="CSV">CSV</message>
+  <message id="True">सत्य</message>
+  <message id="False">असत्य</message>
+  <message id="Remove">हटाएं</message>
+  <message id="RemoveAll">सभी हटाएं</message>
+  <message id="Clear">साफ़ करें</message>
+  <message id="ClearAll">सभी साफ़ करें</message>
+  <message id="T1/2">T½</message>
+  <message id="Gamma">गामा</message>
+  <message id="X-rays">X-rays</message>
+  <message id="x-ray">x-ray</message>
+  <message id="Live Time">लाइव समय</message>
+  <message id="Real Time">वास्तविक समय</message>
+  <message id="Geometry">ज्यामिति</message>
+  <message id="Load">लोड करें</message>
+  <message id="Mass">द्रव्यमान</message>
+  <message id="Material">सामग्री</message>
+  <message id="NA">NA</message>
+  <message id="n/a">लागू नहीं</message>
+  <message id="N/A">लागू नहीं</message>
+  <message id="Min.">न्यूनतम</message>
+  <message id="Max.">अधिकतम</message>
+  <message id="QR Code">QR कोड</message>
+  <message id="Dose">खुराक</message>
+  <message id="Shielding">परिरक्षण</message>
+  <message id="app-qr-err">QR कोड बनाने में त्रुटि: {1}</message>
+  <message id="intrinsic-activity">आंतरिक गतिविधि</message>
+  <message id="Calibration">अंशांकन</message>
+  <message id="Unknown">अज्ञात</message>
+  <message id="keV">keV</message>
+  <message id="Energy (keV)">ऊर्जा (keV)</message>
+  <message id="Efficiency">दक्षता</message>
+  <message id="stable">स्थिर</message>
+
+  <!-- Units the user may use to write time duration.
+    Note that we dont have very good changing case (i.e., from lower to upper, or upper to lower)
+    in the C++ code, so to be sure the matching works, you should include common capitalization
+    schemes here - sorry.
+
+    It is important that the | character is used, with no spaces, to seperate the different possible
+    units (this is because this string will become part of a regular-expression).
+
+    These 'units-labels-*' string also MUST NOT be empty, or regex validation inputs will fail.
+    (you can leave the whole element out, to default to English, but if you put in a localized
+    element, the node must hav a value)
+  -->
+  <message id="units-labels-second">seconds|second|sec|s|SECONDS|SECOND|SEC|S</message>
+  <message id="units-labels-minute">minute|minutes|min|m</message>
+  <message id="units-labels-hours">hours|hour|hrs|h</message>
+  <message id="units-labels-days">days|day|d</message>
+  <message id="units-labels-year">years|year|yr|y</message>
+  <message id="units-labels-half-lives">hl|halflife|halflives|half-life|half-lives|half lives|half life</message>
+  <!-- Units to use when writing a time duration out -->
+  <message id="units-label-seconds-short">s</message>
+  <message id="units-label-minutes-short">m</message>
+  <message id="units-label-hours-short">h</message>
+  <message id="units-label-days-short">d</message>
+  <message id="units-label-years-short">y</message>
+
+
+  <!-- The dialog when the user selects "Clear Session..." from the File menu -->
+  <message id="clear-session">सत्र साफ़ करें?</message>
+  <message id="clear-session-msg">क्या आप वाकई एक साफ सत्र शुरू करना चाहते हैं?</message>
+
+  <message id="window-title-spec-file-query">स्पेक्ट्रम फ़ाइल क्वेरी उपकरण</message>
+  <message id="window-title-notification-log">सूचना लॉग</message>
+  <message id="notification-log-clear">सूचनाएं साफ़ करें</message>
+  <message id="window-title-peak-manager">पीक प्रबंधक</message>
+  <message id="window-title-store-state-as">स्थिति इस रूप में सहेजें</message>
+  <message id="window-title-tag-state">वर्तमान स्थिति टैग करें</message>
+  <message id="window-title-create-snapshot">स्नैपशॉट बनाएं</message>
+  <message id="window-title-energy-cal">ऊर्जा अंशांकन</message>
+  <message id="window-title-hard-back-sub">हार्ड पृष्ठभूमि घटाव करें?</message>
+  <message id="window-title-3d">3D डेटा दृश्य</message>
+  <message id="window-title-peak-rel-eff">उपयोगकर्ता-फिट पीक से आइसोटोपिक्स</message>
+  <message id="window-title-compact-file">प्रदर्शित करने के लिए खुले स्पेक्ट्रा चुनें</message>
+  <message id="window-title-feature-markers">विशेषता मार्कर</message>
+  <message id="window-title-act-shield-fit">गतिविधि/परिरक्षण फिट</message>
+  <message id="window-title-xs-calc">गामा XS गणना</message>
+  <message id="window-title-dose-calc">खुराक गणना</message>
+  <message id="window-title-1/r2-calc">1/r<sup>2</sup> कैलकुलेटर</message>
+  <message id="window-title-units-convert">इकाई परिवर्तक</message>
+  <message id="window-title-flux-tool">फ्लक्स उपकरण</message>
+  <message id="window-title-nuc-decay">न्यूक्लाइड क्षय जानकारी</message>
+  <message id="window-title-select-det-eff-fcn">डिटेक्टर प्रतिक्रिया फ़ंक्शन चयन</message>
+  <message id="window-title-add-fwhm">डिटेक्टर प्रतिक्रिया फ़ंक्शन में FWHM जोड़ें</message>
+  <message id="window-title-create-drf">डिटेक्टर प्रतिक्रिया फ़ंक्शन बनाएं</message>
+  <message id="window-title-file-parameters">फ़ाइल पैरामीटर</message>
+  <message id="window-title-energy-range-sum">ऊर्जा सीमा योग</message>
+  <message id="window-title-external-rid">बाहरी RID</message>
+  <message id="window-title-license-credit">अस्वीकरण, लाइसेंस, क्रेडिट और संपर्क</message>
+  <message id="window-title-help">InterSpec सहायता</message>
+  <message id="window-title-simple-mda">सरल न्यूनतम पता लगाने योग्य गतिविधि गणना</message>
+  <message id="window-title-peak-editor">पीक संपादक</message>
+
+
+  <!-- The names of the tool-tabs at the bottom of the app -->
+  <message id="app-tab-peak-manager">पीक प्रबंधक</message>
+  <message id="app-tab-ref-photopeak">संदर्भ Photopeaks</message>
+  <message id="app-tab-energy-cal">ऊर्जा अंशांकन</message>
+  <message id="app-tab-nuc-search">न्यूक्लाइड खोज</message>
+  <message id="app-tab-spec-files">स्पेक्ट्रम फ़ाइलें</message>
+  <message id="app-tab-terminal">टर्मिनल</message>
+  <message id="app-tab-isotopics">आइसोटोपिक्स</message>
+
+  <message id="app-tab-tt-ref-photopeak">उपयोगकर्ता को x-rays,
+    गामा, या नाभिकीय प्रतिक्रियाओं से संदर्भ photopeak रेखाएं प्रदर्शित करने की अनुमति देता है।
+    <br />
+    न्यूक्लाइड आयु, लागू परिरक्षण, और उपयोग की गई डिटेक्टर दक्षता को संपादित किया जा सकता है।
+    <br />
+    विस्तारित जानकारी मेनू में, आप कैस्केड क्षय योग, अल्फा ऊर्जा, या बीटा समापन बिंदु भी दिखा सकते हैं।
+    <br />
+    आप न्यूक्लाइड जानकारी के साथ CSV फ़ाइल भी निर्यात कर सकते हैं।
+  </message>
+  <message id="app-tab-tt-peak-manager">फिट पीक की जानकारी को संपादन योग्य और सॉर्ट करने योग्य तालिका में प्रदर्शित करता है,
+    पीक जानकारी का CSV निर्यात करने की अनुमति देता है, साथ ही पीक की स्वचालित खोज और पीक जोड़ने और हटाने के लिए उपयोगिताएं।
+  </message>
+  <message id="app-tab-tt-energy-cal">उपयोगकर्ता को ऊर्जा अंशांकन पदों और गैर-रैखिक विचलन जोड़ी को संशोधित या फिट करने की अनुमति देता है।
+    <br />
+    स्पेक्ट्रम को रैखिक करने, ऊर्जा अंशांकन प्रकार बदलने, ऊर्जा सीमा को काटने, या चैनल संयोजित करने के विकल्प भी हैं।
+    <br />
+    ऊर्जा अंशांकन को ग्राफिक रूप से राइट-क्लिक ड्रैग करके मूल से संशोधित ऊर्जा में भी किया जा सकता है
+    (जैसे, डेटा पीक को उपयुक्त संदर्भ रेखा पर ड्रैग करें)।
+  </message>
+  <message id="app-tab-tt-nuc-search">ऊर्जा, शाखा अनुपात और अर्ध-जीवन पर बाधाओं के साथ न्यूक्लाइड खोजें।</message>
+  <message id="app-tab-tt-auto-search">ऑटो पीक खोज</message>
+  <message id="app-tab-tt-terminal">संख्यात्मक, बीजगणितीय और टेक्स्ट-आधारित स्पेक्ट्रम इंटरैक्शन टर्मिनल।</message>
+  <message id="app-tab-tt-rel-eff">सापेक्ष दक्षता विश्लेषण, आपके द्वारा फिट की गई पीक से।</message>
+
+
+  <!-- App-level menu names -->
+  <message id="app-menu-file">फ़ाइल</message>
+  <message id="app-menu-spectra">स्पेक्ट्रा</message>
+  <message id="app-menu-edit">संपादित करें</message>
+  <message id="app-menu-view">देखें</message>
+  <message id="app-menu-help">सहायता</message>
+  <message id="app-menu-tools">उपकरण</message>
+
+
+  <!--
+    Menu item text for the app-level menus.
+    They are in the form of "app-mi-{menu}-item-desc", or for tool tips "app-mi-tt-{menu}-item-desc"
+  -->
+  <message id="app-mi-file-about">InterSpec के बारे में</message>
+  <message id="app-mi-file-open">फ़ाइल खोलें...</message>
+  <message id="app-mi-file-loaded-spec">लोड किए गए स्पेक्ट्रा...</message>
+  <message id="app-mi-file-manager">प्रबंधक...</message>
+  <message id="app-mi-tt-file-manager">लोड किए गए स्पेक्ट्रा प्रबंधित करें। स्पेक्ट्रा जोड़ें, स्पेक्ट्रा को विभिन्न फ़ाइलों में संयोजित करें, प्रदर्शित करें, ...</message>
+  <message id="app-mi-file-store">सहेजें</message>
+  <message id="app-mi-tt-file-store">वर्तमान ऐप स्थिति को InterSpec के डेटाबेस में सहेजता है</message>
+  <message id="app-mi-file-store-as">इस रूप में सहेजें...</message>
+  <message id="app-mi-tt-file-store-as">वर्तमान ऐप स्थिति को InterSpec के डेटाबेस में नई सूची में सहेजता है</message>
+  <message id="app-mi-file-tag">टैग...</message>
+  <message id="app-mi-tt-file-tag">वर्तमान InterSpec स्थिति को टैग करता है ताकि आप
+   बाद में वापस लौट सकें। ऐप स्थिति लोड करते समय,
+   आप या तो सबसे हाल की सेव चुन सकते हैं, या पिछले टैग किए गए संस्करण चुन सकते हैं।
+  </message>
+  <message id="app-mi-file-prev">पिछला...</message>
+  <message id="app-mi-tt-file-prev">पहले सहेजी गई स्थितियां या स्पेक्ट्रा खोलता है।</message>
+  <message id="app-mi-file-clear">सत्र साफ़ करें...</message>
+  <message id="app-mi-tt-file-clear">बिना स्पेक्ट्रा लोड किए एक साफ ऐप स्थिति शुरू करता है</message>
+  <message id="app-mi-samples">नमूने</message>
+  <message id="app-mi-tt-file-open">आपकी फ़ाइल सिस्टम पर स्पेक्ट्रम फ़ाइल ब्राउज़ करने के लिए एक संवाद बनाता है।
+    त्वरित विकल्प के रूप में फ़ाइल को सीधे ऐप विंडो में ड्रैग और ड्रॉप करें।
+  </message>
+  <message id="app-mi-export-file">फ़ाइल निर्यात करें...</message>
+
+  <message id="app-mi-samples-ba133">Ba-133 (16k channel)</message>
+  <message id="app-mi-samples-passthrough-mobile">Passthrough (16k channel)</message>
+  <message id="app-mi-samples-passthrough">Passthrough (16k bin ICD1, 8 det., 133 samples)</message>
+  <message id="app-mi-samples-background">Background (16k bin N42)</message>
+  <message id="app-mi-samples-reference">संदर्भ स्पेक्ट्रा...</message>
+
+  <!-- Items in the "Edit" menu -->
+  <message id="app-mi-edit-undo">पूर्ववत करें</message>
+  <message id="app-mi-edit-redo">फिर से करें</message>
+  <message id="app-mi-edit-save-png">स्पेक्ट्रम को PNG के रूप में सहेजें</message>
+  <message id="app-mi-edit-save-svg">स्पेक्ट्रम को SVG के रूप में सहेजें</message>
+  <message id="app-mi-edit-enter-url">URL दर्ज करें</message>
+
+  <!-- Items in the "View" menu -->
+  <message id="app-mi-view-show-tabs">उपकरण टैब दिखाएं</message>
+  <message id="app-mi-view-hide-tabs">उपकरण टैब छिपाएं</message>
+  <message id="app-mi-view-chart-opts">चार्ट विकल्प</message>
+  <message id="app-mi-view-logy">Log Y स्केल</message>
+  <message id="app-mi-view-liny">रैखिक Y स्केल</message>
+  <message id="app-mi-view-show-vert">ऊर्ध्वाधर रेखाएं दिखाएं</message>
+  <message id="app-mi-view-hide-vert">ऊर्ध्वाधर रेखाएं छिपाएं</message>
+  <message id="app-mi-view-show-horz">क्षैतिज रेखाएं दिखाएं</message>
+  <message id="app-mi-view-hide-horz">क्षैतिज रेखाएं छिपाएं</message>
+  <message id="app-mi-view-compact-x">संक्षिप्त X-अक्ष</message>
+  <message id="app-mi-view-normal-x">सामान्य X-अक्ष</message>
+  <message id="app-mi-view-show-leg">स्पेक्ट्रम लीजेंड दिखाएं</message>
+  <message id="app-mi-view-show-slider">ऊर्जा स्लाइडर दिखाएं</message>
+  <message id="app-mi-view-hide-slider">ऊर्जा स्लाइडर छिपाएं</message>
+  <message id="app-mi-view-show-scaler">Y-अक्ष स्केलर दिखाएं</message>
+  <message id="app-mi-view-hide-scaler">Y-अक्ष स्केलर छिपाएं</message>
+  <message id="app-mi-view-back-sub">पृष्ठभूमि घटाएं</message>
+  <message id="app-mi-view-back-unsub">पृष्ठभूमि घटाव रद्द करें</message>
+  <message id="app-mi-view-hard-sub">हार्ड पृष्ठभूमि घटाव...</message>
+  <message id="app-mi-view-map">मानचित्र</message>
+  <message id="app-mi-tt-view-map">मानचित्र पर माप स्थान दिखाएं। केवल तभी सक्षम होता है जब GPS निर्देशांक उपलब्ध हों।</message>
+  <message id="app-mi-view-3d">3D दृश्य दिखाएं</message>
+  <message id="app-mi-tt-view-3d">खोज मोड या RPM डेटा के लिए समय बनाम ऊर्जा बनाम गणना दृश्य दिखाता है।</message>
+  <message id="app-mi-view-rid">ID परिणाम दिखाएं</message>
+  <message id="app-mi-tt-view-rid">स्पेक्ट्रम फ़ाइल में शामिल डिटेक्टर ID विश्लेषण परिणाम दिखाता है।</message>
+  <message id="app-mi-view-img">छवियां दिखाएं</message>
+  <message id="app-mi-tt-view-img">स्पेक्ट्रम फ़ाइल में शामिल छवियां दिखाता है।</message>
+  <message id="app-mi-view-feature-markers">विशेषता मार्कर...</message>
+  <message id="app-mi-view-hide-feature-markers">विशेषता मार्कर छिपाएं</message>
+  <message id="app-mi-view-enable-dynamic-ref-lines">गतिशील संदर्भ रेखाएं दिखाएं</message>
+  <message id="app-mi-view-disable-dynamic-ref-lines">गतिशील संदर्भ रेखाएं छिपाएं</message>
+  <message id="app-mi-tt-view-feature-markers">एकल/दोहरी पलायन पीक, Compton पीक, Compton किनारा और योग पीक दिखाने का उपकरण।</message>
+  <message id="app-mi-view-new-win">नई ऐप विंडो</message>
+  <message id="app-mi-view-webbrowser">बाहरी ब्राउज़र में उपयोग करें</message>
+  <message id="app-mi-view-full">पूर्ण स्क्रीन टॉगल करें</message>
+  <message id="app-mi-view-act-size">वास्तविक आकार</message>
+  <message id="app-mi-view-zin">ज़ूम इन</message>
+  <message id="app-mi-view-zout">ज़ूम आउट</message>
+  <message id="app-mi-view-dev-tool">डेव उपकरण टॉगल करें</message>
+  <message id="app-mi-view-dets">डिटेक्टर</message>
+  <message id="app-mi-view-peak-labels">पीक लेबल</message>
+  <message id="app-mi-view-lbl-usr">उपयोगकर्ता लेबल दिखाएं</message>
+  <message id="app-mi-view-lbl-peak-en">पीक ऊर्जा दिखाएं</message>
+  <message id="app-mi-view-lbl-nuc-nm">न्यूक्लाइड नाम दिखाएं</message>
+  <message id="app-mi-view-lbl-nuc-en">न्यूक्लाइड ऊर्जा दिखाएं</message>
+
+  <!-- The Detectors sub-menu under View -->
+  <message id="app-mi-det-no-name">डिटेक्टर {1} ({2})</message>
+  <message id="app-mi-det-with-name">डिटेक्टर {1}</message>
+
+
+  <!-- Items in the "Tools" menu -->
+  <message id="app-mi-tools-act-fit">गतिविधि/परिरक्षण फिट</message>
+  <message id="app-mi-tt-tools-act-fit">स्पेक्ट्रम में न्यूक्लाइड की गतिविधि और परिरक्षण के लिए फिट करने का उपकरण।
+    <br />
+    न्यूक्लाइड आयु, संदूषण सांद्रता या संवर्धन निर्धारित करने की क्षमताएं भी शामिल हैं।
+  </message>
+  <message id="app-mi-tools-iso-by-nuc">न्यूक्लाइड द्वारा आइसोटोपिक्स</message>
+  <message id="app-mi-tt-tools-iso-by-nuc">
+    स्वचालित रूप से न्यूक्लाइड पीक को फिट करता है ताकि
+    न्यूक्लाइड की सापेक्ष गतिविधियों का निर्धारण किया जा सके। डिटेक्टर
+   प्रतिक्रिया या परिरक्षण जानकारी जानने की आवश्यकता नहीं है।
+  </message>
+  <message id="app-mi-tools-iso-by-peak">पीक से आइसोटोपिक्स</message>
+  <message id="app-mi-tt-tools-iso-by-peak">आपके द्वारा फिट की गई पीक का उपयोग न्यूक्लाइड की सापेक्ष गतिविधियों का निर्धारण करने के लिए करता है। डिटेक्टर प्रतिक्रिया या परिरक्षण जानकारी जानने की आवश्यकता नहीं है। </message>
+  <message id="app-mi-tools-xs-calc">गामा XS गणना</message>
+  <message id="app-mi-tt-tools-xs-calc">उपयोगकर्ता को मनमानी
+    ऊर्जा के गामा के लिए <code>InterSpec</code> की लाइब्रेरी में किसी भी सामग्री के माध्यम से क्रॉस सेक्शन निर्धारित करने की अनुमति देता है। पूर्ण ऊर्जा पीक के अंदर गामा किरणों के संसूचन के लिए दक्षता अनुमान
+    और गामा किरणों का अंश जो बिना इसके साथ इंटरैक्ट किए सामग्री के माध्यम से निकल जाएगी, को
+    अतिरिक्त जानकारी के इनपुट के साथ प्रदान किया जा सकता है।
+  </message>
+  <message id="app-mi-tools-dose-calc">खुराक गणना</message>
+  <message id="app-mi-tt-tools-dose-calc">जानकारी के अन्य टुकड़ों को देखते हुए आपको खुराक, गतिविधि, परिरक्षण,
+    या दूरी की गणना करने की अनुमति देता है।
+  </message>
+  <message id="app-mi-tools-1r2">1/r<sup>2</sup> कैलकुलेटर</message>
+  <message id="app-mi-tt-tools-1r2">उपयोगकर्ता को स्रोत से विभिन्न दूरी पर लिए गए दो खुराक माप का उपयोग करके निकट माप से स्रोत की पूर्ण दूरी निर्धारित करने की अनुमति देता है।</message>
+  <message id="app-mi-tools-unit">इकाई परिवर्तक</message>
+  <message id="app-mi-tt-tools-unit">विकिरण-संबंधित इकाइयों को परिवर्तित करें।</message>
+  <message id="app-mi-tools-flux">फ्लक्स उपकरण</message>
+  <message id="app-mi-tt-tools-flux">पता लगाई गई पीक गणनाओं को स्रोत द्वारा उत्सर्जित गामा में परिवर्तित करता है।</message>
+  <message id="app-mi-tools-nuc-decay">न्यूक्लाइड क्षय जानकारी</message>
+  <message id="app-mi-tt-tools-nuc-decay">उपयोगकर्ता को गतिविधियों, गामा/अल्फा/बीटा उत्पादन दरों, क्षय श्रृंखला और वंशज न्यूक्लाइड के बारे में उन्नत जानकारी प्राप्त करने की अनुमति देता है।</message>
+  <message id="app-mi-tools-mda">संसूचन विश्वास उपकरण</message>
+  <message id="app-mi-tt-tools-mda">न्यूक्लाइड के लिए ऊपरी गतिविधि अनुमान प्रदान करता है</message>
+  <message id="app-mi-tools-select-drf">डिटेक्टर प्रतिक्रिया चयन</message>
+  <message id="app-mi-tt-tools-select-drf">उपयोगकर्ता को डिटेक्टर प्रतिक्रिया फ़ंक्शन बदलने की अनुमति देता है।</message>
+  <message id="app-mi-tools-make-drf">डिटेक्टर प्रतिक्रिया बनाएं</message>
+  <message id="app-mi-tt-tools-make-drf">विशेषता डेटा से डिटेक्टर प्रतिक्रिया फ़ंक्शन बनाएं।</message>
+  <message id="app-mi-tools-file-par">फ़ाइल पैरामीटर</message>
+  <message id="app-mi-tt-tools-file-par">उपयोगकर्ता को फ़ाइल पैरामीटर देखने/संपादित करने की अनुमति देता है। यदि कभी एप्लिकेशन गतिविधि गणना को प्रस्तुत करने में असमर्थ है, तो उन पैरामीटर प्रदान करने के लिए इस उपकरण का उपयोग करें जो मूल फ़ाइल प्रदान नहीं करती थी; <code>InterSpec</code> को गतिविधि गणना के लिए सभी पैरामीटर की आवश्यकता है।</message>
+  <message id="app-mi-tools-en-sum">ऊर्जा सीमा योग</message>
+  <message id="app-mi-tt-tools-en-sum">रुचि के क्षेत्र (ROI) में गामा की संख्या जोड़ता है। <kbd><b>ALT</b></kbd> और <kbd><b>SHIFT</b></kbd> दोनों कुंजियों को दबाकर ROI पर बाएं-क्लिक ड्रैग करके भी एक्सेस किया जा सकता है।</message>
+  <message id="app-mi-tools-query">फ़ाइल क्वेरी उपकरण</message>
+  <message id="app-mi-tt-tools-query">निर्दिष्ट शर्तों से मेल खाने वाली स्पेक्ट्रम फ़ाइलों के लिए निर्देशिका (पुनरावर्ती) के माध्यम से खोजता है।</message>
+  <message id="app-mi-tools-math">गणित/कमांड टर्मिनल</message>
+  <message id="app-mi-tt-tools-math">एक टर्मिनल बनाता है जो संख्यात्मक और बीजगणितीय गणनाएं प्रदान करता है, साथ ही स्पेक्ट्रा के साथ कुछ टेक्स्ट आधारित इंटरैक्शन की अनुमति देता है।</message>
+ <message id="app-mi-tools-ext-rid">बाहरी RID</message>
+ <message id="app-mi-tt-tools-ext-rid">आपके स्पेक्ट्रम पर न्यूक्लाइड पहचान करने के लिए{1} रिमोट URL का उपयोग करता है।</message>
+ <!-- This next sentence fragment _may_ get substituted into the previous message, where there is a {1} in it -->
+ <message id="app-mi-tt-tools-ext-rid-exe"> बाहरी प्रोग्राम या</message>
+
+  <!-- Items in the "Help" menu -->
+  <message id="app-mi-help-welcome">स्वागत...</message>
+  <message id="app-mi-help-contents">सहायता सामग्री...</message>
+  <message id="app-mi-help-notif-log">सूचना लॉग</message>
+  <message id="app-mi-help-opts">विकल्प</message>
+  <message id="app-mi-help-pref-auto-store"> आपके काम को स्वतः सहेजें</message>
+  <message id="app-mi-help-pref-check-prev"> पिछले काम की जांच करें</message>
+  <message id="app-mi-help-pref-show-tt"> टूलटिप्स दिखाएं</message>
+  <message id="app-mi-help-pref-prop-peak"> पीक प्रचार के लिए पूछें</message>
+  <message id="app-mi-help-pref-preserve-ene-cal"> ऊर्जा कैल. रखने के लिए पूछें।</message>
+  <message id="app-mi-help-pref-disp-bq"> बेकेरेल में प्रदर्शित करें</message>
+  <message id="app-mi-help-pref-def-drfs"> डिफ़ॉल्ट DRF का उपयोग करें</message>
+  <message id="app-mi-help-pref-desktop"> डेस्कटॉप इंटरफ़ेस</message>
+  <message id="app-mi-help-pref-auto-dark"> स्वतः "गहरा" थीम लागू करें</message>
+  <message id="app-mi-help-pref-theme">रंग थीम...</message>
+  <message id="app-mi-help-pref-prompt-prev">पिछली स्थिति लोड करने के लिए संकेत दें</message>
+  <message id="app-mi-help-pref-load-prev">प्रारंभ पर पिछली स्थिति लोड करें</message>
+  <message id="app-mi-help-language">भाषा</message>
+  <message id="app-mi-help-about">InterSpec के बारे में...</message>
+
+  <message id="app-mi-tt-help-pref-auto-store">यदि आप किसी
+    सहेजी गई स्थिति में काम कर रहे हैं तो स्वचालित रूप से ऐप स्थिति सहेजता है,
+    या यदि आप नहीं हैं, तो यह आपके स्पेक्ट्रा
+    और आपके काम (जैसे, पीक फिट, ऊर्जा अंशांकन परिवर्तन, आदि) को
+    InterSpec के आंतरिक डेटाबेस में सहेजेगा और संकेत देगा कि क्या आप अगली बार
+    उसी स्पेक्ट्रम को लोड करते समय जहां छोड़ा था वहीं से फिर से शुरू करना चाहते हैं।
+  </message>
+  <message id="app-mi-tt-help-pref-check-prev"> जब स्पेक्ट्रम फ़ाइल लोड होती है, तो जांचें कि क्या काम (पीक फिट,
+    गतिविधि फिट, आदि) पहले उसी फ़ाइल पर किया गया है।
+  </message>
+  <message id="app-mi-tt-help-pref-show-tt">आधे सेकंड के लिए किसी तत्व पर होवर करने के बाद टूलटिप्स दिखाएं।</message>
+  <message id="app-mi-tt-help-pref-prop-peak">उसी डिटेक्टर से स्पेक्ट्रा लोड करते समय,
+    पूछें कि क्या नए स्पेक्ट्रम के लिए समान पीक को फिर से फिट करना चाहिए। केवल तभी लागू होता है जब नए स्पेक्ट्रम में कोई पीक नहीं है, लेकिन पिछली
+    अग्रभूमि में था।
+  </message>
+  <message id="app-mi-tt-help-pref-preserve-ene-cal">उसी डिटेक्टर से स्पेक्ट्रा लोड करते समय, और नई फ़ाइल का ऊर्जा
+    अंशांकन पुरानी फ़ाइल से अलग है, पूछें कि क्या पुरानी फ़ाइल के ऊर्जा अंशांकन को
+    नई फ़ाइल पर लागू किया जाना चाहिए।
+  </message>
+  <message id="app-mi-tt-help-pref-disp-bq">क्यूरी के बजाय बेकेरेल की इकाइयों में गतिविधि प्रदर्शित करें।</message>
+  <message id="app-mi-tt-help-def-drfs">जब स्पेक्ट्रम लोड होता है, और आपने पहले
+    डिटेक्टर के मॉडल के साथ डिटेक्टर प्रतिक्रिया फ़ंक्शन को संबद्ध नहीं किया है
+    जिससे स्पेक्ट्रम है, तो क्या डिफ़ॉल्ट DRF को
+    स्वचालित रूप से खोजने और लोड करने का प्रयास करना चाहिए।
+  </message>
+  <message id="app-mi-tt-help-desktop">या तो अधिक मोबाइल या डेस्कटॉप शैली
+    एप्लिकेशन इंटरफ़ेस का उपयोग करने के लिए चुनता है। प्राथमिक अंतर
+    "हैम्बर्गर" शैली मेनू या मेनू बार का उपयोग है।
+
+    यह प्राथमिकता ऐप के
+    पुनरारंभ होने तक, या "सत्र साफ़ करें..." विकल्प चुने जाने तक प्रभावी नहीं होगी।
+  </message>
+  <message id="app-mi-tt-help-auto-dark">ऑपरेटिंग सिस्टम के वर्तमान मान के अनुसार,
+    या जब यह संक्रमण करता है, "गहरा" रंग थीम स्वचालित रूप से लागू करता है।
+  </message>
+  <message id="app-mi-tt-help-pref-prompt-prev">एप्लिकेशन प्रारंभ पर, पिछली स्थिति लोड करने के लिए पूछें।</message>
+  <message id="app-mi-tt-help-pref-load-prev">एप्लिकेशन प्रारंभ पर, यदि संकेत दिए जाने के लिए सेट नहीं है, तो स्वचालित रूप से पिछली स्थिति लोड करें।</message>
+  <message id="warn-desktop-disp-switch">परिवर्तन ऐप के पुनरारंभ या रिफ्रेश होने तक प्रभावी नहीं होंगे।</message>
+  <message id="warn-desktop-disp-switch-refresh">सत्र रिफ्रेश करें</message>
+  <message id="warn-language-restart">सभी फ़ील्ड नई भाषा के साथ अपडेट नहीं होंगे - कुल अपडेट के लिए एप्लिकेशन को पुनरारंभ करें।</message>
+
+
+
+  <!-- Menu item text for when you right-click on a peak. The "_mi" is menu item, and "_tt" is tool-tip -->
+  <message id="rclick-mi-peak-editor">पीक संपादक...</message>
+  <message id="rclick-mi-refit-peak">पीक फिर से फिट करें</message>
+  <message id="rclick-mi-use-drf-fwhm">DRF FWHM का उपयोग करें</message>
+  <message id="rclick-mi-tt-use-drf-fwhm">पीक FWHM को डिटेक्टर प्रतिक्रिया फ़ंक्शन की भविष्यवाणी के अनुसार ठीक करता है, और फिर पीक को फिर से फिट करता है।</message>
+  <message id="rclick-mi-fix-mean">माध्य को photopeak पर सेट करें</message>
+  <message id="rclick-mi-tt-fix-mean">पीक सेंट्रॉइड को असाइन की गई गामा ऊर्जा पर ठीक करता है, या यदि कोई स्रोत असाइन नहीं किया गया है, तो संभावित संदर्भ photopeak रेखा पर। सेंट्रॉइड सेट करने के बाद, अन्य पीक पैरामीटर फिर से फिट किए जाएंगे</message>
+
+
+  <message id="rclick-mi-refit-roi">ROI फिर से फिट करें</message>
+  <message id="rclick-mi-tt-refit-roi">सभी FWHM के लिए जो निश्चित नहीं हैं, ROI में FWHM के लिए उचित रैखिक संबंध लागू करते हुए ROI को फिर से फिट करता है।</message>
+  <message id="rclick-mi-refit-roi-aggressive">ROI फिर से फिट करें (आक्रामक)</message>
+  <message id="rclick-mi-tt-refit-roi-aggressive">ROI को फिर से फिट करता है, प्रत्येक पीक के FWHM को स्वतंत्र रूप से भिन्न होने की अनुमति देता है, जब तक कि उन्हें <em>पीक संपादक</em> में निश्चित नहीं किया गया है</message>
+  <message id="rclick-mi-delete-peak">पीक हटाएं</message>
+  <message id="rclick-mi-change-nuc">न्यूक्लाइड बदलें</message>
+  <message id="rclick-mi-change-cont">सतत बदलें</message>
+  <message id="rclick-mi-skew-type">विषमता प्रकार बदलें</message>
+  <message id="rclick-mi-add-peak">पीक जोड़ें</message>
+  <message id="rclick-mi-combine-cont-left">बाएं सतत संयोजित करें</message>
+  <message id="rclick-mi-combine-cont-right">दाएं सतत संयोजित करें</message>
+  <message id="rclick-mi-own-cont">अपनी सतत</message>
+  <message id="rclick-mi-calc-status">...गणना कर रहे हैं...</message>
+  <message id="rclick-mi-fix-energy">{1} keV पर ठीक करें</message>
+  <message id="rclick-mi-no-nuc-suggestions">कोई सुझाव नहीं</message>
+  <message id="rclick-mi-fit-new-peak">{1} keV के पास पीक फिट करें</message>
+  <message id="rclick-mi-add-new-peak">पीक जोड़ें...</message>
+  <message id="rclick-mi-search-energy">{1} keV के पास खोजें</message>
+  <message id="rclick-simple-mda">त्वरित MDA {1}...</message>
+  <message id="rclick-simple-activity-calc">त्वरित {1} गतिविधि...</message>
+
+
+  <!-- Error messages, the user probably wont see -->
+  <message id="err-save-sate-to-db">
+    मुझे खेद है कि डेटाबेस में आपकी उपयोगकर्ता स्थिति को सहेजने में एक तकनीकी त्रुटि थी।
+    <p style="font-size: x-small;">{1}</p>
+  </message>
+  <message id="err-save-to-large-for-db">फ़ाइल डेटाबेस में सहेजने की अनुमति से बड़ी है ({1} kb है, {2} kb की अनुमति है)।</message>
+  <message id="err-no-roi-to-add-peak">पीक जोड़ने के लिए कोई ROI नहीं था।</message>
+  <message id="err-no-add-peak-to-data-roi">क्षमा करें, डेटा परिभाषित पीक वाले ROI में पीक नहीं जोड़ सकते।</message>
+  <message id="err-add-peak-no-improve">पीक जोड़ने से समग्र ROI फिट में सुधार नहीं हुआ - एक नहीं जोड़ रहे।</message>
+  <message id="err-no-peak-to-del">हटाने के लिए कोई पीक नहीं थी।</message>
+  <message id="err-no-foreground">पृष्ठभूमि या दूसरा अग्रभूमि स्पेक्ट्रम देखने से पहले आपको अग्रभूमि स्पेक्ट्रम लोड करना होगा।</message>
+  <message id="err-invalid-language">चयनित भाषा, {1}, किसी तरह उपलब्ध नहीं है।</message>
+
+
+  <!-- Messages for saving/updating/deleting from internal state DB -->
+  <message id="db-new-tag">स्नैपशॉट '{2}' के तहत नया टैग '{1}' बनाया गया।</message>
+  <message id="db-new-snapshot">नया स्नैपशॉट '{1}' बनाया गया।</message>
+  <message id="db-error-no-name">आपको एक नाम निर्दिष्ट करना होगा</message>
+  <message id="db-name-empty-txt">(जिस नाम के तहत सहेजें)</message>
+  <message id="db-dec-empty-txt">(वैकल्पिक विवरण)</message>
+  <message id="db-dec-export-msg">
+    यह वर्तमान ऐप स्थिति को डेटाबेस में सहेजेगा - निर्यात करने के लिए
+    <br />
+    अलग फ़ाइल के रूप में, &quot;फ़ाइल निर्यात करें&quot; मेनू विकल्प का उपयोग करें
+  </message>
+  <message id="db-Tag">टैग</message>
+  <message id="db-saved-state-msg">स्थिति '{1}' सहेजी गई</message>
+
+
+
+  <!-- Peak continuum types, returned by `PeakContinuum::offset_type_label_tr(...)` in src/PeakDef.cpp -->
+  <message id="pct-none">कोई नहीं</message>
+  <message id="pct-constant">स्थिर</message>
+  <message id="pct-linear">रैखिक</message>
+  <message id="pct-quadratic">द्विघात</message>
+  <message id="pct-cubic">घन</message>
+  <message id="pct-flat-step">समतल चरण</message>
+  <message id="pct-linear-step">रैखिक चरण</message>
+  <message id="pct-bilinear-step">द्वि-रैखिक चरण</message>
+  <message id="pct-global">वैश्विक सतत</message>
+
+  <!-- populateNuclideSelects() in PeakSearchGuiUtils.cpp -->
+  <message id="psd-no-source">कोई स्रोत नहीं</message>
+
+
+  <message id="window-content-hard-back-sub">
+    <div style="text-align: left;">
+      <p>
+        सामान्य पृष्ठभूमि घटाव विकल्प केवल डेटा के प्रदर्शन को प्रभावित करता है,
+        पीक-फिटिंग या डेटा निर्यात जैसी क्रियाएं पूर्ण-सांख्यिकी मूल अग्रभूमि
+        स्पेक्ट्रम पर की जाती हैं।
+      </p>
+      <p>
+        "हार्ड पृष्ठभूमि घटाव" अग्रभूमि से पृष्ठभूमि का बिन-दर-बिन
+        घटाव करके संशोधित अग्रभूमि बनाता है।
+      </p>
+
+      हार्ड पृष्ठभूमि घटाव करने के दुष्प्रभावों में शामिल हैं:
+      <ul style="list-style-type: square; margin-top: 4px;">
+        <li>विचरण, यानी प्रत्येक चैनल की सांख्यिकीय अनिश्चितता, अब सही नहीं होगी।</li>
+        <li>स्पेक्ट्रा के बीच छोटे ऊर्जा अंशांकन अंतर डेटा में कृत्रिम विशेषताएं बना सकते हैं।</li>
+        <li>
+          यदि अग्रभूमि में एक पीक पृष्ठभूमि में एक पीक के साथ ओवरलैप करती है, तो फिट अग्रभूमि पीक की सांख्यिकीय अनिश्चितता अब सही नहीं होगी
+        </li>
+      </ul>
+
+      सामान्य प्रदर्शन पृष्ठभूमि घटाव पर हार्ड पृष्ठभूमि घटाव चुनने के प्राथमिक कारण हैं:
+      <ul style="list-style-type: square; margin-top: 4px;">
+        <li>फिट पीक सतत पर कलाकृतियों से बचना।</li>
+        <li><b>गतिविधि/परिरक्षण फिट</b> उपकरण में पृष्ठभूमि पीक घटाव को सरल बनाना।</li>
+        <li>आपको इससे होने वाली सूक्ष्मताओं की परवाह नहीं है (जो व्यवहार में न्यूनतम हैं)।</li>
+      </ul>
+    </div>
+    <br />
+    <div style="text-align: center;"><b><em>क्या आप आगे बढ़ना चाहेंगे?</em></b></div>
+  </message>
+  <message id="window-hard-back-sub-truncate">ऋणात्मक बिन को शून्य पर काटें</message>
+  <message id="window-hard-back-sub-round">चैनल गणनाओं को निकटतम पूर्णांक तक गोल करें</message>
+
+  <message id="info-user-default-drf">डिटेक्टर प्रतिक्रिया फ़ंक्शन का उपयोग कर रहे हैं जिसे आपने इस डिटेक्टर के लिए डिफ़ॉल्ट के रूप में उपयोग करने के लिए निर्दिष्ट किया था।</message>
+  <message id="info-app-default-drf">इस संसूचन प्रणाली के लिए डिफ़ॉल्ट डिटेक्टर प्रतिक्रिया फ़ंक्शन लोड किया है।</message>
+  <message id="info-recal-tab-selected">आप ग्राफिक रूप से पुनः अंशांकित भी कर सकते हैं राइट-क्लिक करके और स्पेक्ट्रम को जहां चाहते हैं वहां ड्रैग करके।</message>
+
+
+  <!-- Toast message shown to user when they load a spectrum that has GPS coordinates -->
+  <message id="info-has-gps-txt">फ़ाइल में GPS निर्देशांक शामिल हैं।</message>
+  <message id="info-has-gps-btn">मानचित्र पर दिखाएं</message>
+
+  <!-- Toast message shown to user when they load a spectrum that has results from the onboard-rid -->
+  <message id="info-has-rid-txt">फ़ाइल में ऑन-बोर्ड RID परिणाम शामिल थे</message>
+  <message id="info-has-rid-btn">पूर्ण ID परिणाम दिखाएं</message>
+
+  <!-- Toast message shown to user when they load a spectrum that has an embedded image -->
+  <message id="info-has-img-txt">स्पेक्ट्रम फ़ाइल में एम्बेडेड छवियां शामिल थीं</message>
+  <message id="info-has-img-btn">छवियां दिखाएं</message>
+
+
+  <message id="warn-no-energy-cal">चेतावनी, चयनित नमूनों के लिए कोई ऊर्जा अंशांकन नहीं</message>
+
+  <message id="prompt-how-open">यह फ़ाइल वर्तमान अग्रभूमि के समान डिटेक्टर से लगती है।
+    <p>आप इस स्पेक्ट्रम फ़ाइल को कैसे खोलना चाहेंगे?</p>
+  </message>
+
+
+  <!-- Error message when the selected foreground cant be plotted (inexistent, no energy calibration, no gamma spectra selected, etc)-->
+  <message id="err-no-fore-sn">
+    <p>स्पेक्ट्रम फ़ाइल में वर्तमान नमूना संख्याओं के साथ कोई स्पेक्ट्रा नहीं था।</p>
+    <p>कृपया विभिन्न/अधिक नमूना संख्याएं चुनें।</p>
+  </message>
+  <message id="err-no-fore-det-sn">
+    <p>स्पेक्ट्रम फ़ाइल में वर्तमान नमूना संख्याओं और डिटेक्टर नामों के साथ कोई स्पेक्ट्रा नहीं था। </p>
+    <p>कृपया अधिक डिटेक्टर या नमूना संख्याएं चुनें।</p>
+  </message>
+  <message id="err-no-fore-all-neut">
+    <p>वर्तमान नमूना संख्या और डिटेक्टर नामों में केवल न्यूट्रॉन डेटा है।</p>
+    <p>कृपया वर्णक्रमीय डेटा शामिल करने वाले नमूने चुनें।</p>
+  </message>
+  <message id="err-no-fore-no-spec">
+    <p>वर्तमान नमूना संख्या और डिटेक्टर नामों में कोई वर्णक्रमीय माप शामिल नहीं है।</p>
+    <p>कृपया वर्णक्रमीय डेटा शामिल करने वाले नमूने चुनें।</p>
+  </message>
+  <message id="err-no-fore-no-ecal-1spec">
+    <p>मैं स्पेक्ट्रम को प्रदर्शित करने के लिए बिनिंग निर्धारित नहीं कर सका।</p>
+  </message>
+  <message id="err-no-fore-no-ecal-g1spec">
+    <p>मैं स्पेक्ट्रम को प्रदर्शित करने के लिए बिनिंग निर्धारित नहीं कर सका।</p>
+    <p>
+      आप <b>फ़ाइल प्रबंधक</b> में प्रदर्शित करने के लिए केवल एक ही स्पेक्ट्रा चुनने का प्रयास कर सकते हैं,
+      या गामा गणनाओं वाला नमूना।
+    </p>
+  </message>
+
+  <!-- The detector display.  Defined here so we dont have to load a whole new XML file for just these few entries. -->
+  <message id="app-tt-det-disp">वर्तमान में चयनित डिटेक्टर। एक अलग डिटेक्टर चुनने के लिए क्लिक करें, या इसे संशोधित करें।</message>
+  <message id="app-det-select-txt">चुनने के लिए क्लिक करें</message>
+  <message id="app-det-select-txt-mobile">चुनने के लिए टैप करें</message>
+  <message id="app-default-manual-det-name">उपयोगकर्ता परिभाषित डिटेक्टर</message>
+
+
+  <!-- An incomplete list of possible languages - mapping the two letter code we receive as
+    part of the locale, to their native name - mostly picked by LLM result.
+
+    A more complete listing of languages and countries can be found in commit e28dbb39.
+
+    You do not need to, and shouldnt, include these, or countries, into translations of this file.
+  -->
+  <message id="lang-en">English</message>
+  <message id="lang-fr">Français</message>
+  <message id="lang-es">Español</message>
+  <message id="lang-de">Deutsch</message>
+  <message id="lang-ja">日本語</message>
+  <message id="lang-zh">中文</message>
+  <message id="lang-pt">Português</message>
+  <message id="lang-ru">Русский</message>
+  <message id="lang-it">Italiano</message>
+  <message id="lang-ko">한국어</message>
+  <message id="lang-vi">Tiếng Việt</message>
+  <message id="lang-tr">Türkçe</message>
+  <message id="lang-ar">العربية</message>
+  <message id="lang-hu">Magyar</message>
+
+
+  <!-- An incomplete list of possible countries - mapping the two letter code we receive as part of
+  the locale, to their names to display.
+  -->
+  <message id="country-US">United States</message>
+  <message id="country-GB">United Kingdom</message>
+  <message id="country-AU">Australia</message>
+  <message id="country-CA">Canada</message>
+  <message id="country-FR">France</message>
+  <message id="country-ES">España</message>
+  <message id="country-MX">México</message>
+  <message id="country-DE">Deutschland</message>
+  <message id="country-JP">日本</message>
+  <message id="country-CN">中国</message>
+  <message id="country-TW">台灣</message>
+  <message id="country-BR">Brasil</message>
+  <message id="country-PT">Portugal</message>
+  <message id="country-RU">Россия</message>
+  <message id="country-IT">Italia</message>
+  <message id="country-KR">대한민국</message>
+  <message id="country-TR">Türkiye</message>
+</messages>

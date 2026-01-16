@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- This file applies to ShieldingSourceDisplay.cpp
+    ssd- is short for ShieldingSourceDisplay, and is basically the GUI component
+    sfm- is short for SourceFitModel
+    x2g- is short for ShieldingSourceDisplay::Chi2Graphic - e.g., the chart on this page
+  -->
+  <message id="ssd-tt-distance">
+    स्रोत के केंद्र से डिटेक्टर के फलक तक की दूरी। संख्या के बाद
+    इकाइयां होनी चाहिए; मान्य इकाइयां हैं: meters, m, cm, mm, km, feet,
+    ft, ', in, inches, या "। आप कई दूरियां भी जोड़ सकते हैं,
+    जैसे '3ft 4in', या '3.6E-2 m 12 cm' जो क्रमशः
+    40inches और 15.6cm के बराबर हैं।
+  </message>
+  <message id="ssd-geom-point">बिंदु/गोलाकार</message>
+  <message id="ssd-geom-cyl-end">बेलनाकार: अंत-पर</message>
+  <message id="ssd-geom-cyl-side">बेलनाकार: साइड-पर</message>
+  <message id="ssd-rectangular">आयताकार</message>
+  <message id="ssd-fixed-geom-notification">निश्चित ज्यामिति DRF उपयोग कर रहा है</message>
+  <message id="ssd-tt-shieldings">
+    परिरक्षणों को खोल के रूप में माना जाता है जिसमें सबसे अंदर का
+    खोल वह पहला होता है जिसे आप जोड़ते हैं (इस बॉक्स में सबसे ऊपर), और
+    बाद के परिरक्षण उसके चारों ओर परत में होते हैं। कोई भी स्रोत
+    जो परिरक्षण के घटक के रूप में नहीं माना जाता है, उसे बिंदु
+    स्रोत के रूप में केंद्र में माना जाता है।
+  </message>
+  <message id="ssd-add-shield-label">परिरक्षण जोड़ें:</message>
+  <message id="ssd-geometry-label">ज्यामिति:</message>
+  <message id="ssd-tt-add-shield">पूर्वनिर्धारित सामान्य परिरक्षण सामग्री की लाइब्रेरी से चुनें।</message>
+  <message id="ssd-generic-btn">सामान्य</message>
+  <message id="ssd-tt-generic">आपको परमाणु संख्या और क्षेत्रीय घनत्व को परिभाषित और फिट करने की अनुमति देता है।</message>
+  <message id="ssd-perform-fit-btn">मॉडल फिट करें</message>
+  <message id="ssd-cancel-fit">मॉडल फिट रद्द करें</message>
+  <message id="ssd-mi-calc-log">गणना लॉग</message>
+  <message id="ssd-mi-import-model">मॉडल आयात करें...</message>
+  <message id="ssd-mi-export-model">मॉडल निर्यात करें</message>
+  <message id="ssd-mi-from-db">डेटाबेस से खोलें...</message>
+  <message id="ssd-mi-save-to-db">डेटाबेस में सहेजें...</message>
+  <message id="ssd-mi-clone-db-entry">डेटाबेस में क्लोन करें...</message>
+  <message id="ssd-to-small-for-chart">(χ<sup>2</sup> दिखाने के लिए विंडो लंबी करें)</message>
+  <message id="ssd-tt-chi2-switch">चार्ट पर वर्तमान मॉडल के लिए प्रत्येक शिखर का Chi दिखाएं, या वर्तमान मॉडल और देखे गए शिखर के बीच सापेक्ष शिखर क्षेत्र गुणक।</message>
+  <message id="ssd-cb-all-peaks">सभी शिखर</message>
+  <message id="ssd-multi-iso-per-peak">हस्तक्षेप सही करें</message>
+  <message id="ssd-options-title">विकल्प</message>
+  <message id="ssd-tt-multi-iso-per-peak">इस विकल्प को चेक करने से अन्य न्यूक्लाइड जो फिट किए जा रहे हैं, शिखर को असाइन किए गए के अलावा, देखे गए शिखर में अपेक्षित गणना में योगदान करने की अनुमति देगा। यह उदाहरण के लिए Ho166m और U235 दोनों के लिए फिटिंग करते समय उपयोगी हो सकता है जो दोनों के पास 185 keV के पास एक शिखर है।</message>
+  <message id="ssd-cluster-width-label">हस्तक्षेप चौड़ाई (num σ):</message>
+  <message id="ssd-tt-cluster-width">शिखर के औसत से सिग्मा की संख्या जो गामा रेखाएं,
+    किसी भी न्यूक्लाइड से, जोड़ी जाएंगी और शिखर को जिम्मेदार ठहराई जाएंगी। डिफ़ॉल्ट मान 1.25 सिग्मा है, लेकिन यदि शिखर
+    स्पष्ट रूप से हस्तक्षेप के कारण चौड़ा है, या यह खराब फिट है, तो आप इस मान को बढ़ाना चाह सकते हैं।
+    इसे 0.0 तक घटाने से केवल शिखर से संबद्ध गामा का उपयोग किया जाएगा
+    (\"एकाधिक न्यूक्लाइड शिखर में योगदान करते हैं\" को अनचेक करने के समान)।
+  </message>
+  <message id="ssd-cb-atten-for-air">वायु के लिए क्षीणन</message>
+  <message id="ssd-tt-atten-for-air">जब चेक किया जाता है तो स्रोत, या बाहरी परिरक्षण, और डिटेक्टर के बीच वायु के कारण क्षीणन को गणना में ध्यान में रखा जाएगा।</message>
+  <message id="ssd-cb-sub-back-peaks">पृष्ठभूमि शिखर घटाएं</message>
+  <message id="ssd-tt-sub-back-peaks">यह एक तत्व के समस्थानिकों को फिट में सभी एक ही आयु के होने के लिए मजबूर करता है।</message>
+  <message id="ssd-cb-same-el-same-age">समान Z समान आयु</message>
+  <message id="ssd-tt-same-el-same-age">लागू करें कि एक ही तत्व के लिए समस्थानिक सभी एक ही आयु के होने चाहिए।</message>
+  <message id="ssd-cb-corr-for-decay">माप के दौरान क्षय के लिए सही करें।</message>
+  <message id="ssd-tt-corr-for-decay">माप लिए जाने के समय के दौरान होने वाले क्षय और वृद्धि प्रभावों के लिए सही करता है। परिणामी सक्रियताएं माप के प्रारंभ समय से मेल खाती हैं। समाधान खोजने के लिए अतिरिक्त गणना समय लग सकता है।</message>
+  <message id="ssd-tt-geometry">"ट्रेस" स्रोतों, या स्व-क्षीण स्रोतों को मॉडलिंग करने के लिए उपयोग की जाने वाली ज्यामिति।
+    <br />
+    <br />
+    डिफ़ॉल्ट रूप से, सभी स्रोत सभी ज्यामितियों के लिए डिटेक्टर से निर्दिष्ट दूरी पर बिंदु स्रोत हैं।
+    <br />
+    हालांकि, यदि आप किसी न्यूक्लाइड को "ट्रेस" स्रोत बनाते हैं (परिरक्षण के निचले दाएं कोने में "<em>ट्रेस स्रोत जोड़ें</em>" बटन पर क्लिक करके), या स्व-क्षीण स्रोत (जब परिरक्षण में एक न्यूक्लाइड के समान तत्व हो जिसे आप
+    फिट कर रहे हैं तो <em>स्रोत के लिए:</em>" चेकबॉक्स का चयन करके), तो स्रोत समस्थानिक को पूरे परिरक्षण में वितरित के रूप में मॉडल किया जाएगा,
+    और रे-ट्रेसिंग का उपयोग परिरक्षण के भीतर प्रत्येक स्थान पर विभिन्न क्षीणन के लिए किया जाएगा।
+    <br />
+    <br />
+    चीजों को सरल रखने के लिए, "बिंदु/गोलाकार" ज्यामिति चुनें जब तक कि आप "ट्रेस" या स्व-क्षीण स्रोत के लिए फिट नहीं करेंगे।
+  </message>
+  <message id="ssd-phone-tab-source-peaks">स्रोत शिखर</message>
+  <message id="ssd-phone-tab-source-isotopes">स्रोत समस्थानिक</message>
+  <message id="ssd-phone-tab-shielding">परिरक्षण</message>
+  <message id="ssd-warn-no-back-peaks">कोई पृष्ठभूमि शिखर परिभाषित नहीं है, उन्हें नहीं घटा रहा</message>
+  <message id="ssd-warn-no-back-spec">कोई पृष्ठभूमि स्पेक्ट्रम लोड नहीं है, इसलिए अग्रभूमि से पृष्ठभूमि शिखर क्षेत्र नहीं घटा सकता।</message>
+  <message id="ssd-warn-no-back-peaks-toggle">
+    पृष्ठभूमि स्पेक्ट्रम में कोई शिखर पहचाना नहीं गया है। आपको पृष्ठभूमि स्पेक्ट्रम को
+    अग्रभूमि के रूप में लोड करना चाहिए, संभावित रूप से घटाए जाने वाले शिखरों की पहचान करनी चाहिए, और फिर अपने वर्तमान
+    अग्रभूमि/पृष्ठभूमि संयोजन में वापस स्विच करना चाहिए।
+  </message>
+  <message id="ssd-update-dim-to-be-min">परिरक्षण आयाम को न्यूनतम मोटाई होने के लिए अपडेट किया गया।</message>
+  <message id="ssd-scaled-shield-to-be-less-dist">परिरक्षण मोटाई को डिटेक्टर दूरी से कम होने के लिए स्केल किया गया है।</message>
+  <message id="ssd-err-fit-only-one-an">आप एक समय में केवल एक सामान्य परिरक्षण की परमाणु संख्या के लिए फिट कर सकते हैं।</message>
+  <message id="ssd-warn-invalid-chi2-for-energy">{1} keV के लिए एक अमान्य chi2 की गणना की गई थी, अन्य परिणाम अमान्य हो सकते हैं</message>
+  <message id="ssd-calc-log-window-title">गणना लॉग</message>
+  <message id="ssd-calc-log-export-txt">TXT फ़ाइल</message>
+  <message id="ssd-err-opening-import-model">अपलोड किए गए स्रोत परिरक्षण फिट मॉडल को खोलने में त्रुटि: {1}</message>
+  <message id="ssd-import-model-window-title">स्रोत परिरक्षण XML मॉडल आयात करें</message>
+  <message id="ssd-err-opening-db-model">डेटाबेस से स्रोत परिरक्षण फिट मॉडल खोलने में त्रुटि: {1}</message>
+  <message id="ssd-err-loading-model">चयनित मॉडल लोड करने में असमर्थ - क्षमा करें :(</message>
+  <message id="ssd-prev-saved-window-title">पहले सहेजे गए मॉडल</message>
+  <message id="ssd-models-prev-for-fore">इस अग्रभूमि के साथ पहले उपयोग किए गए मॉडल:</message>
+  <message id="ssd-models-prev-saved">आपके द्वारा पहले सहेजे गए मॉडल:</message>
+  <message id="ssd-model-desc">मॉडल विवरण:</message>
+  <message id="ssd-cb-allow-del">हटाने की अनुमति दें</message>
+  <message id="ssd-no-model-in-db">आपके लिए डेटाबेस में कोई मॉडल नहीं है</message>
+  <message id="ssd-err-creating-db-browser">डेटाबेस मॉडल ब्राउज़र बनाने में त्रुटि</message>
+  <message id="ssd-save-model-to-db-window-title">डेटाबेस में सक्रियता/परिरक्षण मॉडल सहेजें</message>
+  <message id="ssd-save-to-db-name">मॉडल नाम दर्ज करें:</message>
+  <message id="ssd-save-to-db-desc">मॉडल विवरण दर्ज करें (वैकल्पिक):</message>
+  <message id="ssd-must-enter-name">आपको एक नाम दर्ज करना होगा</message>
+  <message id="ssd-err-saving-to-db">डेटाबेस में सहेजने में त्रुटि</message>
+  <message id="ssd-Best">सर्वश्रेष्ठ</message>
+  <message id="ssd-fit-failed">मॉडल के लिए फिट विफल</message>
+  <message id="ssd-using-fit-anyway">वैसे भी फिट समाधान का उपयोग कर रहा है।</message>
+  <message id="ssd-err-fit-not-performed">
+    {1}
+    <br />
+    फिट नहीं किया गया।
+  </message>
+  <message id="ssd-err-before-fit">
+    {1}
+    <br />
+    फिट से पहले।
+  </message>
+  <message id="ssd-err-couldnt-make-chi2-fcn">
+    {1}
+    <br />
+    फिट नहीं किया गया (Chi2Fcn नहीं बना सका)।
+  </message>
+  <message id="ssd-error-create-tool">सक्रियता/परिरक्षण फिट प्रदर्शन बनाने में त्रुटि: {1}</message>
+  <message id="ssd-shield-source-diagram">परिरक्षण/स्रोत आरेख</message>
+  <message id="ssd-show-model-diagram">मॉडल आरेख दिखाएं</message>
+
+  <!-- SourceFitModel quantities -->
+  <message id="sfm-tt-header-isotope">न्यूक्लाइड को इस फिट के लिए उपयोग किए गए फोटोपीक के अनुसार जोड़ा या हटाया जाता है, इसलिए इस तालिका में संपादित नहीं किया जा सकता है</message>
+  <message id="sfm-tt-header-activity">न्यूक्लाइड की सक्रियता। उचित प्रारंभिक मान दर्ज करने से फिट में मदद मिल सकती है, या सक्रियता के लिए फिट करना आवश्यक नहीं है। मान '12.4 kBq', '1.0mCi', '55.3uCi', '15.82Mbq' के समान प्रारूपों में दर्ज किए जा सकते हैं</message>
+  <message id="sfm-tt-header-age">न्यूक्लाइड की आयु। मान प्रारूप में दर्ज किए जा सकते हैं: '23.3s' '2 hl' - (hl आधे जीवन के लिए है), '5.23y', '23:14:21.343', '19min', आदि। ध्यान दें कि स्थिर बच्चों में क्षय होने वाले न्यूक्लाइड की आयु नहीं हो सकती है।</message>
+  <message id="sfm-tt-header-fit-act">क्या फिट को न्यूक्लाइड सक्रियता भी खोजने का प्रयास करना चाहिए, या दर्ज किए गए मान को सही मान लेना चाहिए?</message>
+  <message id="sfm-tt-header-fit-age">क्या फिट को न्यूक्लाइड आयु भी खोजने का प्रयास करना चाहिए, या बस दर्ज किए गए मान को सही मान लेना चाहिए? यह विकल्प उन न्यूक्लाइड के लिए उपलब्ध नहीं है जो केवल स्थिर बच्चों में क्षय होते हैं।</message>
+  <message id="sfm-tt-header-iso-mass">यह सूचीबद्ध सक्रियता को मानते हुए नग्न न्यूक्लाइड का द्रव्यमान है।</message>
+  <message id="sfm-tt-header-act-uncert">यह फिट से सक्रियता में अनिश्चितता है।</message>
+  <message id="sfm-tt-header-age-uncert">यह फिट से आयु में अनिश्चितता है।</message>
+  <message id="sfm-header-fit-act">सक्रियता फिट करें</message>
+  <message id="sfm-header-fit-age">आयु फिट करें</message>
+  <message id="sfm-header-act-uncert">सक्रियता अनिश्चितता</message>
+  <message id="sfm-header-age-uncert">आयु अनिश्चितता</message>
+  <message id="sfm-tt-aging-not-allowed">न्यूक्लाइड बच्चे स्थिर हैं इसलिए आयु की अनुमति नहीं है क्योंकि यह गामा स्पेक्ट्रम को प्रभावित नहीं करता है।</message>
+
+  <!-- Chi2Graphic -->
+  <message id="x2g-yaxis-title-chi">(देखा-मॉडल)/अनिश्चितता</message>
+  <message id="x2g-yaxis-title-mult">मॉडल का गुणक</message>
+  <message id="x2g-">Y-अक्ष शिखर क्षेत्र गणना है, वर्तमान में प्रदर्शित स्रोत और परिरक्षण मूल्यों से अपेक्षित गणना की संख्या घटाकर, सभी को सांख्यिकीय अनिश्चितता से विभाजित किया गया है। इसका वर्ग परिरक्षण और स्रोतों को अनुकूलित करने के लिए उपयोग किया जाता है।</message>
+  <message id="x2g-tt-chi-axis">Y-अक्ष शिखर क्षेत्र गणना है, वर्तमान में प्रदर्शित स्रोत और परिरक्षण मूल्यों से अपेक्षित गणना की संख्या घटाकर, सभी को सांख्यिकीय अनिश्चितता से विभाजित किया गया है। इसका वर्ग परिरक्षण और स्रोतों को अनुकूलित करने के लिए उपयोग किया जाता है।</message>
+  <message id="x2g-tt-scale-axis">Y-अक्ष देखी गई शिखर गणना का गुणक है, वर्तमान स्रोत और परिरक्षण मूल्यों से क्या अपेक्षित होगा की तुलना में।</message>
+</messages>

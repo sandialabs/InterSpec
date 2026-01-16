@@ -222,7 +222,7 @@ DoseCalcWindow::DoseCalcWindow( MaterialDB *materialDB,
                                 Wt::WSuggestionPopup *materialSuggestion,
                                 InterSpec *viewer )
 : AuxWindow( WString::tr("window-title-dose-calc"),
-            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+            (AuxWindowProperties::TabletNotFullScreen
              | AuxWindowProperties::SetCloseable
              | AuxWindowProperties::DisableCollapse) )
 {
@@ -475,9 +475,9 @@ void DoseCalcWidget::init()
     
     if( !isPhone )
     {
-      txt = new WText( WString::tr("dcw-source-label"), sourcDiv );
-      txt->addStyleClass( "DoseEnterInd" );
-      txt->setInline( false );
+      WLabel *sourceLabel = new WLabel( WString::tr("dcw-source-label"), sourcDiv );
+      sourceLabel->addStyleClass( "DoseEnterInd" );
+      sourceLabel->setInline( false );
     }//if( !isPhone )
     
     m_sourceType = new WButtonGroup( sourcDiv );
@@ -543,15 +543,15 @@ void DoseCalcWidget::init()
     {
       case Dose:
       {
-        txt = new WText( WString("{1}:").arg(WString::tr("Dose")), m_enterWidgets[i] );
-        txt->addStyleClass( "DoseEnterInd" );
+        WLabel *doseLabel = new WLabel( WString::tr("dose-label"), m_enterWidgets[i] );
+        doseLabel->addStyleClass( "DoseEnterInd" );
         if( !isPhone )
-          txt->setInline( false );
+          doseLabel->setInline( false );
         else
-          txt->setAttributeValue( "style", "display: inline-block; width: 45px;" );
+          doseLabel->setAttributeValue( "style", "display: inline-block; width: 45px;" );
         
         WContainerWidget *unitdiv = new WContainerWidget( m_answerWidgets[i] );
-        WLabel *label = new WLabel( "units: ", unitdiv );
+        WLabel *label = new WLabel( WString::tr("dcw-units-label"), unitdiv );
         m_doseAnswerUnits = new WComboBox( unitdiv );
         label->setBuddy( m_doseAnswerUnits );
         
@@ -564,9 +564,10 @@ void DoseCalcWidget::init()
         m_doseAnswerUnits->addItem( "rem/hr" );
         m_doseAnswerUnits->addItem( "sievert/hr" );
 
-        
+
         m_doseEnter = new WLineEdit( m_enterWidgets[i] );
-        
+        doseLabel->setBuddy( m_doseEnter );
+
         m_doseEnter->setAutoComplete( false );
         m_doseEnter->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
@@ -603,21 +604,22 @@ void DoseCalcWidget::init()
         
       case Activity:
       {
-        txt = new WText( WString("{1}:").arg(WString::tr("Activity")) );
-        txt->addStyleClass( "DoseEnterInd" );
+        WLabel *activityLabel = new WLabel( WString::tr("activity-label") );
+        activityLabel->addStyleClass( "DoseEnterInd" );
         if( !isPhone )
-          txt->setInline( false );
+          activityLabel->setInline( false );
         else
-          txt->setAttributeValue( "style", "display: inline-block; width: 45px;" );
-        
-        m_enterWidgets[i]->addWidget( txt );
-        
+          activityLabel->setAttributeValue( "style", "display: inline-block; width: 45px;" );
+
+        m_enterWidgets[i]->addWidget( activityLabel );
+
         WContainerWidget *unitdiv = new WContainerWidget( m_answerWidgets[i] );
-        WLabel *label = new WLabel( "units: ", unitdiv );
+        WLabel *label = new WLabel( WString::tr("dcw-units-label"), unitdiv );
         m_activityAnswerUnits = new WComboBox( unitdiv );
         label->setBuddy( m_activityAnswerUnits );
-        
+
         m_activityEnter = new WLineEdit( m_enterWidgets[i] );
+        activityLabel->setBuddy( m_activityEnter );
         m_activityEnter->addStyleClass( "DoseEnterTxt" );
         
         m_activityEnter->setAutoComplete( false );
@@ -678,24 +680,25 @@ void DoseCalcWidget::init()
         
       case Distance:
       {
-        txt = new WText( WString("{1}:").arg(WString::tr("Distance")) );
-        txt->addStyleClass( "DoseEnterInd" );
+        WLabel *distanceLabel = new WLabel( WString::tr("distance-label") );
+        distanceLabel->addStyleClass( "DoseEnterInd" );
         if( !isPhone )
-          txt->setInline( false );
+          distanceLabel->setInline( false );
         else
-          txt->setAttributeValue( "style", "display: inline-block; width: 45px;" );
-        
-        m_enterWidgets[i]->addWidget( txt );
-        
+          distanceLabel->setAttributeValue( "style", "display: inline-block; width: 45px;" );
+
+        m_enterWidgets[i]->addWidget( distanceLabel );
+
         m_distanceAnswer = new WText();
         m_distanceAnswer->setInline( false );
         m_distanceAnswer->addStyleClass( "DoseAnswerTxt" );
         m_distanceAnswer->addStyleClass( "DoseDistanceAnswer" );
         m_answerWidgets[i]->addWidget( m_distanceAnswer );
-    
-        
+
+
         m_distanceEnter = new WLineEdit( "100 cm" );
-        
+        distanceLabel->setBuddy( m_distanceEnter );
+
         m_distanceEnter->setAutoComplete( false );
         m_distanceEnter->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
@@ -725,10 +728,10 @@ void DoseCalcWidget::init()
       {
         if( !isPhone )
         {
-          txt = new WText( WString("{1}:").arg(WString::tr("Shielding")) );
-          txt->addStyleClass( "DoseEnterInd" );
-          txt->setInline( false );
-          m_enterWidgets[i]->addWidget( txt );
+          WLabel *shieldingLabel = new WLabel( WString::tr("shielding-label") );
+          shieldingLabel->addStyleClass( "DoseEnterInd" );
+          shieldingLabel->setInline( false );
+          m_enterWidgets[i]->addWidget( shieldingLabel );
         }
         
         m_enterShieldingSelect = new ShieldingSelect( m_materialDB, m_materialSuggest );

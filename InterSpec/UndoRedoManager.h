@@ -137,6 +137,7 @@ public:
   
   /** A struct that will insert a single peak-change undo/redo step, for all changes between the construction of
    the first `PeakModelChange` and the  last `PeakModelChange` destructed, for an InterSpec session.
+   Includes changes for foreground, background, and secondary spectra peaks.
    */
   struct PeakModelChange
   {
@@ -257,6 +258,8 @@ protected:
   
   size_t m_PeakModelChange_counter;
   std::vector<std::shared_ptr<const PeakDef>> m_PeakModelChange_starting_peaks;
+  std::vector<std::shared_ptr<const PeakDef>> m_PeakModelChange_starting_background_peaks;
+  std::vector<std::shared_ptr<const PeakDef>> m_PeakModelChange_starting_secondary_peaks;
   
   /** A counter, only ever changed by #BlockUndoRedoInserts, that if it is not zero, then no undo/redo steps
    will be added by #addUndoRedoStep.

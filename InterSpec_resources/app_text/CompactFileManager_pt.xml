@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- cfm is short for CompactFileManager -->
+  <message id='cfm-tt-sample-num'>
+    Insira o número da amostra que você gostaria de exibir aqui.
+    Você pode inserir uma faixa de números de amostra semelhante a '33-39' ou '33 to 39';
+    ou números de amostra CSV como '34,39,84'.
+  </message>
+  <message id='cfm-scale-factor-label'>Fator de Escala: </message>
+  <message id='cfm-tt-scale-factor'>
+    Fator para escalar o espectro. Inserir uma string vazia fará com que
+    o espectro seja normalizado por tempo vivo ao espectro de primeiro plano.
+  </message>
+
+  <message id='cfm-norm-btn'>Normalizar</message>
+  <message id='cfm-more-info-btn'>mais info</message>
+  <message id='cfm-show-rid-result-btn'>resultados RID</message>
+  <message id='cfm-show-image-btn'>imagem incorporada</message>
+
+  <message id='cfm-db-spec'>Espectros Salvos Anteriormente</message>
+  <message id='cfm-ref-spectra-btn'>Espectros de Referência...</message>
+  <message id='cfm-err-invalid-sample-num'>Número de amostra solicitado não existe.</message>
+  <message id='cfm-err-no-meas'>Não é possível alterar números de amostra, não há medição atual.</message>
+  <message id='cfm-err-missing-sample-num'>Um dos números de amostra solicitados não existe.</message>
+  <message id='cfm-err-sample-num-doesnt-exist'>Número de amostra {1} não existe.</message>
+  <message id='cfm-err-sample-num-doesnt-exist-2'>Número de amostra {1} não existe na medição.</message>
+  <message id='cfm-err-general-1'>Erro ao mudar para número(s) de amostra solicitado(s)</message>
+  <message id='cfm-err-advancing'>Erro ao avançar espectro</message>
+  <message id='cfm-no-spectra'>Nenhum espectro carregado/disponível.</message>
+
+  <message id='cfm-no-fore'>Sem primeiro plano</message>
+  <message id='cfm-no-back'>Sem plano de fundo</message>
+  <message id='cfm-no-second'>Sem segundo primeiro plano</message>
+
+  <message id='cfm-date'>Data</message>
+  <message id='cfm-start-time'>Hora de Início</message>
+  <message id='cfm-gamma-cps'>CPS Gama</message>
+  <message id='cfm-neut-live-time'>T.V. Nêutrons</message>
+  <message id='cfm-neut-counts'>Contagens Nêutrons</message>
+  <message id='cfm-neut-cps'>CPS Nêutrons</message>
+  <message id='cfm-gps'>lat/lon</message>
+  <message id='cfm-manufacturer'>Fabricante</message>
+  <message id='cfm-model'>Modelo</message>
+  <message id='cfm-meas-type'>Tipo Reg.</message>
+  <message id='cfm-tt-meas-type'>O tipo de registro gravado dentro do arquivo de espectro.</message>
+
+  <message id='cfm-tt-clear-spectrum'>Limpa o espectro atual.</message>
+
+  <message id='cfm-swap-back-with-foreground-btn'>primeiro plano↔fundo</message>
+  <message id='cfm-tt-swap-back-with-foreground-btn'>Trocar os espectros de primeiro plano e plano de fundo</message>
+  <message id='cfm-swap-secondary-with-foreground-btn'>primeiro plano↔secundário</message>
+  <message id='cfm-tt-swap-secondary-with-foreground-btn'>Trocar os espectros de primeiro plano e secundário</message>
+  <message id='cfm-title-with-name'>Título: {1}</message>
+</messages>

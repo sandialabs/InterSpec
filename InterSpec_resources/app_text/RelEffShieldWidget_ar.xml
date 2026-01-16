@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- resw- is short for RelEffShieldWidget
+  -->
+  <message id="resw-self-atten-title">الامتصاص الذاتي</message>
+  <message id="resw-ext-atten-title">الامتصاص الخارجي</message>
+  <message id="resw-thickness-label">السماكة</message>
+  <message id="resw-atomic-number-label">العدد الذري</message>
+  <message id="resw-areal-density-label">الكثافة المساحية</message>
+  <message id="resw-material-frame-label">المادة</message>
+  <message id="resw-generic-frame-label">عام</message>
+  <message id="resw-areal-density-placeholder">جرام/سم^2</message>
+</messages>

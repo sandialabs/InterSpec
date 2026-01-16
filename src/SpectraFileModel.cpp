@@ -2010,16 +2010,16 @@ boost::any SpectraFileModel::headerData( int section, Orientation orientation, i
     const DisplayFields field = DisplayFields( section );
     switch( field )
     {
-      case kDisplayName:     return boost::any( WString("File") );
-      case kNumMeasurements: return boost::any( WString("N-Samples") );
-      case kLiveTime:        return boost::any( WString("Live Time (s)") );
-      case kRealTime:        return boost::any( WString("Real Time (s)") );
-      case kGammaCounts:     return boost::any( WString("Gam. Count") );
-      case kNeutronCounts:   return boost::any( WString("Neut. Count") );
-      case kSpectrumTime:    return boost::any( WString("Time Taken") );
-      case kNumDetectors:    return boost::any( WString("N-Dets.") );
-      case kUploadTime:      return boost::any( WString("Loaded") );
-      case kRiidResult:      return boost::any( WString("File RID") );
+      case kDisplayName:     return boost::any( WString::tr("sfm-col-file") );
+      case kNumMeasurements: return boost::any( WString::tr("sfm-col-n-samples") );
+      case kLiveTime:        return boost::any( WString::tr("sfm-col-live-time") );
+      case kRealTime:        return boost::any( WString::tr("sfm-col-real-time") );
+      case kGammaCounts:     return boost::any( WString::tr("sfm-col-gam-count") );
+      case kNeutronCounts:   return boost::any( WString::tr("sfm-col-neut-count") );
+      case kSpectrumTime:    return boost::any( WString::tr("sfm-col-time-taken") );
+      case kNumDetectors:    return boost::any( WString::tr("sfm-col-n-dets") );
+      case kUploadTime:      return boost::any( WString::tr("sfm-col-loaded") );
+      case kRiidResult:      return boost::any( WString::tr("sfm-col-file-rid") );
       case NumDisplayFields: break;
     };//switch( field )
 
@@ -2134,8 +2134,6 @@ void *SpectraFileModel::toRawIndex( const Wt::WModelIndex &index ) const
   try
   {
     const SpectraFileHeader &header = *(m_spectra.at(index.parent().row()).get());
-    if( row > 1 )
-      return NULL;
     if( static_cast<size_t>(row) >= header.m_samples.size() )
       return NULL;
 
@@ -2164,55 +2162,76 @@ void *SpectraFileModel::toRawIndex( const Wt::WModelIndex &index ) const
 
 WModelIndex SpectraFileModel::fromRawIndex( void *rawIndex ) const
 {
-  for( int row = 0; row < static_cast<int>(m_spectra.size()); ++row )
+  WModelIndex result;
+
+  for( int row = 0; !result.isValid() && (row < static_cast<int>(m_spectra.size())); ++row )
   {
     const SpectraFileHeader &header = *(m_spectra[row].get());
     if( rawIndex == &(header.m_displayName) )
-      return index( row, kDisplayName );
-    if( rawIndex == &(header.m_uploadTime) )
-      return index( row, kUploadTime );
-    if( rawIndex == &(header.m_riidSummary) )
-      return index( row, kRiidResult );
-    if( rawIndex == &(header.m_numSamples) )
-      return index( row, kNumMeasurements );
-    if( rawIndex == &(header.m_numDetectors) )
-      return index( row, kNumDetectors );
-    if( rawIndex == &(header.m_totalLiveTime) )
-      return index( row, kLiveTime );
-    if( rawIndex == &(header.m_totalRealTime) )
-      return index( row, kRealTime );
-    if( rawIndex == &(header.m_totalGammaCounts) )
-      return index( row, kGammaCounts );
-    if( rawIndex == &(header.m_totalNeutronCounts) )
-      return index( row, kNeutronCounts );
-    if( rawIndex == &(header.m_spectrumTime) )
-      return index( row, kSpectrumTime );
-  }//for( loop over rows to check...)
+      result = index( row, kDisplayName );
+    else if( rawIndex == &(header.m_uploadTime) )
+      result = index( row, kUploadTime );
+    else if( rawIndex == &(header.m_riidSummary) )
+      result = index( row, kRiidResult );
+    else if( rawIndex == &(header.m_numSamples) )
+      result = index( row, kNumMeasurements );
+    else if( rawIndex == &(header.m_numDetectors) )
+      result = index( row, kNumDetectors );
+    else if( rawIndex == &(header.m_totalLiveTime) )
+      result = index( row, kLiveTime );
+    else if( rawIndex == &(header.m_totalRealTime) )
+      result = index( row, kRealTime );
+    else if( rawIndex == &(header.m_totalGammaCounts) )
+      result = index( row, kGammaCounts );
+    else if( rawIndex == &(header.m_totalNeutronCounts) )
+      result = index( row, kNeutronCounts );
+    else if( rawIndex == &(header.m_spectrumTime) )
+      result = index( row, kSpectrumTime );
+  }//for( loop over file headers... )
 
-  for( size_t i = 0; i < m_spectra.size(); ++i )
+  for( size_t i = 0; !result.isValid() && (i < m_spectra.size()); ++i )
   {
     const SpectraFileHeader &spectra = *(m_spectra[i].get());
     const int nsamples = static_cast<int>( spectra.m_samples.size() );
 
-    for( int row = 0; row < nsamples; ++row )
+    for( int row = 0; !result.isValid() && (row < nsamples); ++row )
     {
       const SpectraHeader &header = spectra.m_samples[row];
       if( rawIndex == &(header.live_time) )
-        return createIndex( 0, kLiveTime,      (void *)&spectra );
-      if( rawIndex == &(header.real_time) )
-        return createIndex( 0, kRealTime,      (void *)&spectra );
-      if( rawIndex == &(header.gamma_counts_) )
-        return createIndex( 0, kGammaCounts,   (void *)&spectra );
-      if( rawIndex == &(header.neutron_counts_) )
-        return createIndex( 0, kNeutronCounts, (void *)&spectra );
-      if( rawIndex == &(header.start_time) )
-        return createIndex( 0, kSpectrumTime,  (void *)&spectra );
-    }//for( int row = 0; row < nmeas; ++row )
-  }//for( loop over rows to check...)
+        result = createIndex( row, kLiveTime,      (void *)&spectra );
+      else if( rawIndex == &(header.real_time) )
+        result = createIndex( row, kRealTime,      (void *)&spectra );
+      else if( rawIndex == &(header.gamma_counts_) )
+        result = createIndex( row, kGammaCounts,   (void *)&spectra );
+      else if( rawIndex == &(header.neutron_counts_) )
+        result = createIndex( row, kNeutronCounts, (void *)&spectra );
+      else if( rawIndex == &(header.start_time) )
+        result = createIndex( row, kSpectrumTime,  (void *)&spectra );
+    }//for( int row = 0; row < nsamples; ++row )
+  }//for( loop over sample-level items... )
 
-  cerr << "Failed to find WModelIndex for void*=" << rawIndex << endl;
+  if( !result.isValid() )
+  {
+    cerr << "SpectraFileModel::fromRawIndex: Failed to find WModelIndex for void*=" << rawIndex << endl;
+  }
 
-  return WModelIndex();
+#if( PERFORM_DEVELOPER_CHECKS )
+  // Verify round-trip: toRawIndex(fromRawIndex(ptr)) should equal ptr
+  if( result.isValid() )
+  {
+    void *roundTrip = toRawIndex( result );
+    if( roundTrip != rawIndex )
+    {
+      char errormsg[512];
+      snprintf( errormsg, sizeof(errormsg),
+                "fromRawIndex/toRawIndex round-trip failed: input=%p, result index=(%d,%d), "
+                "round-trip=%p", rawIndex, result.row(), result.column(), roundTrip );
+      log_developer_error( __func__, errormsg );
+    }
+  }
+#endif
+
+  return result;
 }//WModelIndex fromRawIndex( void *rawIndex ) const
 
 

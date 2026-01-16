@@ -24,4 +24,18 @@
   <message id="lrm-displayed-as">Displayed as</message>
   <message id="lrm-measurements-as">measurements as</message>
   <message id="lrm-load-meas-as-short">Load as</message>
+  <message id="lrm-filter-label">Filter</message>
+  <message id="lrm-filter-none">None</message>
+  <message id="lrm-filter-energy-range">Energy Range</message>
+  <message id="lrm-filter-peaks-in-range">Peaks in Range</message>
+  <message id="lrm-lower-energy">Lower Energy</message>
+  <message id="lrm-upper-energy">Upper Energy</message>
+  <message id="lrm-energy-filter-help">
+    Applying an energy range filter will change how and potentially what data is displayed on the map.
+    <ul>
+    <li><b>None</b>: No filtering applied - colors and CPS text are based on full-spectrum count rate.</li>
+    <li><b>Energy Range</b>: Filter gamma counts within specified energy range.</li>
+    <li><b>Peaks in Range</b>: Show only sample numbers that have peaks within the energy range with the marker colors and CPS being based on the peaks count rate.</li>
+    </ul>
+  </message>
 </messages>

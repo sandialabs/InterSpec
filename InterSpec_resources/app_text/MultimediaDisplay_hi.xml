@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- smmd- is short for ShowMultiMediaDisplay -->
+  <message id="smmd-prev-btn">पिछला</message>
+  <message id="smmd-next-btn">अगला</message>
+  <message id="smmd-auto-show-images-cb">छवियां स्वतः दिखाएं</message>
+  <message id="smmd-tt-auto-show-images">जब स्पेक्ट्रम फ़ाइलें जिनमें छवियां हैं लोड की जाती हैं तो स्वचालित रूप से छवियां दिखाएं।</message>
+  <message id="smmd-tt-export-image-file">वर्तमान में दिखाई जा रही छवि को फ़ाइल में निर्यात करें।</message>
+  <message id="smmd-err-no-content">प्रदर्शित करने के लिए कोई मल्टीमीडिया सामग्री नहीं</message>
+  <message id="smmd-err-file-is-uri">डेटा URI='{1}' पर फ़ाइल के रूप में एन्कोड किया गया</message>
+  <message id="smmd-err-no-multimedia-src">मल्टीमीडिया स्रोत में कोई डेटा नहीं था।</message>
+  <message id="smmd-err-encoding-not-supported">डेटा की मल्टीमीडिया सामग्री एन्कोडिंग समर्थित नहीं है।</message>
+  <message id="smmd-err-not-image">मल्टीमीडिया सामग्री प्रकार या तो छवि प्रकार का नहीं था, या निर्धारित नहीं किया जा सका।</message>
+  <message id="smmd-image-index">{2} में से {1} छवि</message>
+  <message id="smmd-Time">समय</message>
+  <message id="smmd-time-label">समय: {1}</message>
+  <message id="smmd-remark-label">टिप्पणी: {1}</message>
+  <message id="smmd-desc-label">Desc.: {1}</message>
+  <message id="smmd-window-title-single">स्पेक्ट्रम फ़ाइल में छवि</message>
+  <message id="smmd-window-title-multiple">स्पेक्ट्रम फ़ाइल में छवियां</message>
+</messages>

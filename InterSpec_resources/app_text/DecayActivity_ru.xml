@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dw- short for DecayWindow.cpp, 
+       dad- short for DecayActivityDiv
+       dcc- short for DecayChainChart
+       dcn- DecaySelectNuclide
+  -->
+  <message id="dw-qr-window-title">Состояние инструмента распада</message>
+  <message id="dw-qr-window-text">Текущее состояние инструмента распада.</message>
+  <message id="dad-units-label">Единицы отображения:</message>
+  <message id="dad-units-label-phone">Единицы:</message>
+  <message id="dad-logy-cb">Лог-Y шкала</message>
+  <message id="dad-grid-cb">Линии сетки</message>
+  <message id="dad-add-nucs">Добавить нуклид...</message>
+  <message id="dad-remove-all">Удалить все</message>
+  <message id="dad-sel-nuc-window-title">Выберите нуклид для добавления</message>
+  <message id="dad-mi-act-chart">График активности</message>
+  <message id="dad-mi-decay-chain">Цепь распада</message>
+  <message id="dad-mi-calc">Калькулятор</message>
+  <message id="dad-arbitrary">Произвольный</message>
+  <message id="dad-time-span-label">Временной интервал:</message>
+  <message id="dad-tt-age">
+    <div>
+      Возраст можно указать, используя комбинацию временных единиц, например '<b>5.3y 8d 22m</b>' или в периодах полураспада, например '<b>2.5 HL</b>'.
+    </div>
+    <div>
+      Допустимые единицы времени: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>,
+      <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, или
+      можно указать период времени как <b>hh:mm:ss</b>. Единицы периода полураспада можно
+      указать, используя <b>hl</b>, <b>halflife</b>, <b>halflives</b>, <b>half-life</b>, <b>half-lives</b>,
+      <b>half lives</b>, или <b>half life</b>.
+    </div>
+    <div>
+      Единицы периода полураспада или периоды времени не могут смешиваться с
+      другими единицами, и если указано несколько нуклидов, предполагается первый. Когда указано несколько периодов времени,
+      они суммируются, напр. '1y6months 3m' интерпретируется как
+      18 месяцев и 3 минуты
+    </div>
+  </message>
+  <message id="dad-yaxis-label-phone">Ось Y:</message>
+  <message id="dad-yaxis-label">Тип оси Y:</message>
+  <message id="dad-gamma-rate">Скорость гамма</message>
+  <message id="dad-beta-rate">Скорость бета</message>
+  <message id="dad-alpha-rate">Скорость альфа</message>
+  <message id="dad-click-for-more-info">Щёлкните для подробной информации</message>
+  <message id="dad-tt-double-click">Дважды щёлкните для редактирования этого исходного нуклида. Один щелчок, чтобы отобразить цепь распада для этого нуклида</message>
+  <message id="dad-summary-at-time">Сводка в t={1}</message>
+  <message id="dad-hdr-date">Дата ({1})</message>
+  <message id="dad-hdr-total-act">Общая активность</message>
+  <message id="dad-hdr-total-gammas">Общие гаммы</message>
+  <message id="dad-yaxis-title-total-gammas">Гаммы/секунда</message>
+  <message id="dad-hdr-total-betas">Общие беты</message>
+  <message id="dad-yaxis-title-total-betas">Беты/секунда</message>
+  <message id="dad-hdr-total-alphas">Общие альфы</message>
+  <message id="dad-yaxis-title-total-alphas">Альфы/секунда</message>
+  <message id="dad-chart-click-more-info">Щёлкните для подробной информации - {1} {2} после T0 у нас есть:</message>
+
+  <message id="dcc-window-title-decay-chain">Цепь распада {1}</message>
+  <message id="dcc-window-title-decay-through">Распады через {1}</message>
+  <message id="dcc-nuc-info-protons">Протоны: {1}</message>
+  <message id="dcc-nuc-info-mass">Масса: {1} Да</message>
+  <message id="dcc-nuc-info-hl-stable">Период полураспада: стабильный</message>
+  <message id="dcc-nuc-info-hl">Период полураспада: {1}</message>
+  <message id="dcc-nuc-info-br-from">В.Р. от {1}: {2}</message>
+  <message id="dcc-nuc-info-br-through">В.Р. через {1}: {2}</message>
+  <message id="dcc-nuc-info-specific-act">Удельная активность: {1}</message>
+  <message id="dcc-nuc-info-decay-mode">{1} распадается в {2}, В.Р. {3}</message>
+  <message id="dcc-particle-window-title">Энергии частиц распада</message>
+  <message id="dcc-particles-from">Частицы от {1}</message>
+  <message id="dcc-nuc-has-no-particles">Этот нуклид не имеет частиц от распада</message>
+  <message id="dcc-particle">Частица</message>
+  <message id="dcc-intensity">Интенсивность</message>
+  <message id="dcc-decay-through-window-title">Распады через {1}</message>
+
+  <!-- The following variables are for the decay chain chart, and will be passed to the JavScript as part of a string, so cant have any single quote (') characters! -->
+  <message id="dcc-xAxisTitle">Убывающая атомная масса</message>
+  <message id="dcc-yAxisTitle">Возрастающий атомный номер</message>
+  <message id="dcc-clickNucTxt">Щёлкните нуклид для подробной информации.</message>
+  <message id="dcc-clickNucMoreInfoTxt2">Щёлкните другой исходный нуклид выше, чтобы</message>
+  <message id="dcc-clickNucMoreInfoTxt3">изменить отображаемую цепь распада.</message>
+  <message id="dcc-clickNucMblTxt">Нажмите нуклид для подробной информации.</message>
+  <message id="dcc-clickNucMblMoreInfoTxt2">Щёлкните другой исходный нуклид выше, чтобы</message>
+  <message id="dcc-clickNucMblMoreInfoTxt3">изменить отображаемую цепь распада.</message>
+  <message id="dcc-show-decay-products">Показать продукты распада {nuclide}</message>
+  <message id="dcc-show-decays-through">Показать распады через {nuclide}</message>
+
+
+  <message id="dcn-initial-age">Начальный возраст: </message>
+
+</messages>

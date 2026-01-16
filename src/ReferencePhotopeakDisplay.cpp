@@ -36,6 +36,7 @@
 #include <Wt/WLabel>
 #include <Wt/WServer>
 #include <Wt/WCheckBox>
+#include <Wt/WComboBox>
 #include <Wt/WLineEdit>
 #include <Wt/WIOService>
 #include <Wt/WGridLayout>
@@ -842,10 +843,12 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_showPrevNucs( NULL ),
     m_showAssocNucs( NULL ),
     m_showFeatureMarkers( nullptr ),
+    m_refLineThickness( nullptr ),
+    m_refLineVerbosity( nullptr ),
     m_otherNucsColumn( nullptr ),
     m_otherNucs( nullptr ),
     m_prevNucs{},
-    m_external_ids{},
+    m_external_results{},
     m_featureMarkerColumn( nullptr ),
     m_detectorDisplay( NULL ),
     m_materialDB( materialDB ),
@@ -896,13 +899,16 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   
   const WLength labelWidth(3.5,WLength::FontEm), fieldWidth(4,WLength::FontEm);
   
-  WLabel *nucInputLabel = new WLabel( WString("{1}:").arg( WString::tr("Nuclide") ) );
+  WLabel *nucInputLabel = new WLabel( WString::tr("nuclide-label") );
   nucInputLabel->setMinimumSize( labelWidth, WLength::Auto );
   m_nuclideEdit = new WLineEdit( "" );
   m_nuclideEdit->setMargin( 1 );
   m_nuclideEdit->setMargin( 2, Wt::Side::Top );
 //  m_nuclideEdit->setMinimumSize( WLength(10,WLength::FontEx), WLength::Auto );
   m_nuclideEdit->setMinimumSize( fieldWidth, WLength::Auto );
+  m_nuclideEdit->doJavaScript( m_nuclideEdit->jsRef() + ".addEventListener('keydown', function(event) {"
+  "if (event.key === 'ArrowUp' || event.key === 'ArrowDown') return true;"
+  "} );" );
   
   m_nuclideEdit->setAutoComplete( false );
   m_nuclideEdit->setAttributeValue( "ondragstart", "return false" );
@@ -953,10 +959,10 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
 #if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
   m_nuclideSuggest->setJavaScriptMember("wtNoReparent", "true");
 #endif
-  m_nuclideSuggest->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
-  m_nuclideSuggest->setWidth( WLength(70, Wt::WLength::Unit::Pixel) );
+  m_nuclideSuggest->addStyleClass( "nuclide-suggest" );
 
   IsotopeNameFilterModel::setQuickTypeFixHackjs( m_nuclideSuggest );
+  IsotopeNameFilterModel::setEnterKeyMatchFixJs( m_nuclideSuggest, m_nuclideEdit );
   
   isoSuggestModel->filter( "" );
   m_nuclideSuggest->setFilterLength( -1 );
@@ -965,7 +971,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_nuclideSuggest->forEdit( m_nuclideEdit, WSuggestionPopup::Editing );  // | WSuggestionPopup::DropDownIcon
 
 
-  WLabel *ageInputLabel = new WLabel( WString("{1}:").arg( WString::tr("Age") ) );
+  WLabel *ageInputLabel = new WLabel( WString::tr("age-label") );
   m_ageEdit = new WLineEdit( "" );
   WRegExpValidator *validator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex(), this );
   validator->setFlags(Wt::MatchCaseInsensitive);
@@ -1167,12 +1173,44 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_showFeatureMarkers->checked().connect( this, &ReferencePhotopeakDisplay::featureMarkerCbToggled );
   m_showFeatureMarkers->unChecked().connect( this, &ReferencePhotopeakDisplay::featureMarkerCbToggled );
       
+  // Add reference line thickness combo box
+  m_refLineThickness = new WComboBox( m_optionsContent );
+  m_refLineThickness->addStyleClass( "RefLineThicknessCombo" );
+  m_refLineThickness->addItem( WString::tr("rpd-line-thick-light") );   // 0: {0.5, 1}
+  m_refLineThickness->addItem( WString::tr("rpd-line-thick-normal") );  // 1: {1, 2}
+  m_refLineThickness->addItem( WString::tr("rpd-line-thick-thick") );   // 2: {2, 3}
+  m_refLineThickness->addItem( WString::tr("rpd-line-thick-thicker") ); // 3: {3, 5}
+  
+  // Set from user preference
+  const int thicknessPref = UserPreferences::preferenceValue<int>( "RefLineThickness", specViewer );
+  m_refLineThickness->setCurrentIndex( std::max(0, std::min(3, thicknessPref)) );
+  
+  // Add reference line verbosity combo box
+  m_refLineVerbosity = new WComboBox( m_optionsContent );
+  m_refLineVerbosity->addStyleClass( "RefLineVerbosityCombo" );
+  m_refLineVerbosity->addItem( WString::tr("rpd-line-verb-none") );     // 0: No extension lines
+  m_refLineVerbosity->addItem( WString::tr("rpd-line-verb-hover") );    // 1: Extension lines on hover only
+  m_refLineVerbosity->addItem( WString::tr("rpd-line-verb-major") );    // 2: Major lines always + hover for all
+  
+  // Set from user preference
+  const int verbosityPref = UserPreferences::preferenceValue<int>( "RefLineVerbosity", specViewer );
+  m_refLineVerbosity->setCurrentIndex( std::max(0, std::min(2, verbosityPref)) );
 
   //const bool showToolTips = UserPreferences::preferenceValue<bool>("ShowTooltips", this);
   //HelpSystem::attachToolTipOn(m_showPrevNucs, "Show ", showToolTips);
   UserPreferences::associateWidget( "RefLineShowPrev", m_showPrevNucs, specViewer );
   UserPreferences::associateWidget( "RefLineShowRiid", m_showRiidNucs, specViewer );
   UserPreferences::associateWidget( "RefLineShowAssoc", m_showAssocNucs, specViewer );
+  
+  // Connect combo box change signal
+  m_refLineThickness->sactivated().connect( this, &ReferencePhotopeakDisplay::refLineThicknessChanged );
+  m_refLineVerbosity->sactivated().connect( this, &ReferencePhotopeakDisplay::refLineVerbosityChanged );
+  
+  // Set up preference change listener for updating the combo box
+  specViewer->preferences()->addIntCallbackWhenChanged( "RefLineThickness", this,
+      &ReferencePhotopeakDisplay::refLineThicknessPreferenceChangedCallback );
+  specViewer->preferences()->addIntCallbackWhenChanged( "RefLineVerbosity", this,
+      &ReferencePhotopeakDisplay::refLineVerbosityPreferenceChangedCallback );
 
 
   //HelpSystem::attachToolTipOn(m_options, "If checked, selection will be shown.",
@@ -1580,7 +1618,7 @@ void ReferencePhotopeakDisplay::handleSpectrumChange(SpecUtils::SpectrumType typ
   //  automatically use a web-service on spectrum load).
   if( type == SpecUtils::SpectrumType::Foreground )
   {
-    m_external_ids.clear();
+    m_external_results.reset();
     updateOtherNucsDisplay();
   }
 }//handleSpectrumChange();
@@ -1636,7 +1674,7 @@ void ReferencePhotopeakDisplay::updateAssociatedNuclides()
     //  button clickable to display; otherwise we'll show the text, but
     //  disable the button.
     const SandiaDecay::Nuclide *const nuc = db->nuclide( nucstr );
-    const SandiaDecay::Element *const el = nuc ? nullptr : db->element( nucstr );
+    const SandiaDecay::Element *el = nuc ? nullptr : db->element( nucstr );
 
     std::vector<ReactionGamma::ReactionPhotopeak> reactions;
     if( !nuc && !el )
@@ -1651,6 +1689,19 @@ void ReferencePhotopeakDisplay::updateAssociatedNuclides()
       }
     }//if( !nuc && !el )
 
+    if( !nuc && !el && reactions.empty() && (nucstr.find_first_of("0123456789") == string::npos)
+       && (SpecUtils::icontains(nucstr,"xray") || SpecUtils::icontains(nucstr,"x-ray")) )
+    {
+      string elstr = nucstr;
+      size_t pos = SpecUtils::ifind_substr_ascii( elstr, "xray");
+      if( pos == string::npos )
+        pos = SpecUtils::ifind_substr_ascii( elstr, "x-ray");
+      if( pos != string::npos )
+        elstr = elstr.substr(0,pos);
+      SpecUtils::ireplace_all( elstr, "-_\t ,", "" );
+      el = db->element( elstr );
+    }//if( it might be an x-ray )
+    
     if( nuc || el || !reactions.empty() )
     {
       RefLineInput input = userInput();
@@ -1805,6 +1856,7 @@ void ReferencePhotopeakDisplay::setShowBetaLines( const bool show )
   updateDisplayChange();
 }
 
+
 FeatureMarkerWidget *ReferencePhotopeakDisplay::featureMarkerTool()
 {
   return m_featureMarkers;
@@ -1859,6 +1911,66 @@ void ReferencePhotopeakDisplay::featureMarkerCbToggled()
   //  state, and also update its menu items, and handle undo/redo.
   m_spectrumViewer->displayFeatureMarkerWindow( m_showFeatureMarkers->isChecked() );
 }//void featureMarkerCbToggled()
+
+
+void ReferencePhotopeakDisplay::refLineThicknessChanged()
+{
+  const int selectedIndex = m_refLineThickness->currentIndex();
+  
+  // Update user preference - D3SpectrumDisplayDiv will automatically react to this change
+  UserPreferences::setPreferenceValue<int>( "RefLineThickness", selectedIndex, m_spectrumViewer );
+}//void refLineThicknessChanged()
+
+
+void ReferencePhotopeakDisplay::refLineThicknessPreferenceChanged()
+{
+  const int thicknessPref = UserPreferences::preferenceValue<int>( "RefLineThickness", m_spectrumViewer );
+  const int clampedIndex = std::max(0, std::min(3, thicknessPref));
+  
+  // Update combobox if it's different - D3SpectrumDisplayDiv handles the line width changes
+  if( m_refLineThickness->currentIndex() != clampedIndex )
+    m_refLineThickness->setCurrentIndex( clampedIndex );
+}//void refLineThicknessPreferenceChanged()
+
+
+void ReferencePhotopeakDisplay::refLineThicknessPreferenceChangedCallback( int thickness )
+{
+  const int clampedIndex = std::max(0, std::min(3, thickness));
+  
+  // Update combobox if it's different - D3SpectrumDisplayDiv handles the line width changes
+  if( m_refLineThickness->currentIndex() != clampedIndex )
+    m_refLineThickness->setCurrentIndex( clampedIndex );
+}//void refLineThicknessPreferenceChangedCallback( int thickness )
+
+
+void ReferencePhotopeakDisplay::refLineVerbosityChanged()
+{
+  const int selectedIndex = m_refLineVerbosity->currentIndex();
+  
+  // Update user preference - D3SpectrumDisplayDiv will automatically react to this change
+  UserPreferences::setPreferenceValue<int>( "RefLineVerbosity", selectedIndex, m_spectrumViewer );
+}//void refLineVerbosityChanged()
+
+
+void ReferencePhotopeakDisplay::refLineVerbosityPreferenceChanged()
+{
+  const int verbosityPref = UserPreferences::preferenceValue<int>( "RefLineVerbosity", m_spectrumViewer );
+  const int clampedIndex = std::max(0, std::min(2, verbosityPref));
+  
+  // Update combobox if it's different - D3SpectrumDisplayDiv handles the verbosity changes
+  if( m_refLineVerbosity->currentIndex() != clampedIndex )
+    m_refLineVerbosity->setCurrentIndex( clampedIndex );
+}//void refLineVerbosityPreferenceChanged()
+
+
+void ReferencePhotopeakDisplay::refLineVerbosityPreferenceChangedCallback( int verbosity )
+{
+  const int clampedIndex = std::max(0, std::min(2, verbosity));
+  
+  // Update combobox if it's different - D3SpectrumDisplayDiv handles the verbosity changes
+  if( m_refLineVerbosity->currentIndex() != clampedIndex )
+    m_refLineVerbosity->setCurrentIndex( clampedIndex );
+}//void refLineVerbosityPreferenceChangedCallback( int verbosity )
 
 
 void ReferencePhotopeakDisplay::emphasizeFeatureMarker()
@@ -1982,7 +2094,7 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
   }//if( showPrev )
 
 
-  vector<pair<string, string>> riid_nucs;  //<description, nuclide>
+  vector<ExternalRidIsotope> riid_nucs;
   shared_ptr<const SpecUtils::DetectorAnalysis> riid_ana;
   shared_ptr<const SpecMeas> m = m_spectrumViewer->measurment(SpecUtils::SpectrumType::Foreground);
   if( m )
@@ -1999,7 +2111,7 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
 
       bool already_have = false;
       for( const auto &v : riid_nucs )
-        already_have |= (v.first == res.nuclide_);
+        already_have |= (v.name == res.nuclide_);
       if( already_have )
         continue;
 
@@ -2021,10 +2133,16 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
         }//for( const auto &v : fields )
       }//if( !nuc )
 
+      ExternalRidIsotope result;
+      result.name = res.nuclide_;
+      result.confidenceStr = "";
+      result.countRate = 0.0;
+      result.confidence = 0.0;
       if( nuc )
-        riid_nucs.push_back( {nuc->symbol, res.nuclide_} );
-      else 
-        riid_nucs.push_back( {res.nuclide_, ""} );
+        result.source = nuc;
+      result.init();
+      
+      riid_nucs.push_back( result );
     }//for( loop over RIID results )
   }//if( riid_ana )
 
@@ -2075,7 +2193,7 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
 
   // TODO: Need to deal the "more info" button
 
-  auto displayDetectorOrExternal = [this]( const WString &title, vector<pair<string,string>> nucs ){
+  auto displayDetectorOrExternal = [this]( const WString &title, vector<ExternalRidIsotope> nucs ){
     if( nucs.empty() )
       return;
     
@@ -2087,15 +2205,15 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
     WText *header = new WText( title, m_otherNucs);
     header->addStyleClass("OtherNucTypeHeader");
     
-    for( const auto &riid : nucs )
+    for( const ExternalRidIsotope &riid : nucs )
     {
-      WPushButton *btn = new WPushButton(riid.first, m_otherNucs);
+      WPushButton *btn = new WPushButton(riid.name, m_otherNucs);
       btn->addStyleClass( "LinkBtn" );
       
-      if( !riid.second.empty() )
+      if( !riid.is_null() )
       {
         RefLineInput input = userInput();
-        input.m_input_txt = riid.first;
+        input.m_input_txt = riid.source_name();
         
         btn->clicked().connect(boost::bind(&ReferencePhotopeakDisplay::updateDisplayFromInput, this, input));
       }else
@@ -2108,11 +2226,12 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
   if( !riid_nucs.empty() )
     displayDetectorOrExternal( WString::tr("rpd-det-id"), riid_nucs );
   
-  if( !m_external_ids.empty() )
+  if( m_external_results && !m_external_results->isotopes.empty() )
   {
-    WString name = m_external_algo_name.empty() ? WString::tr("rpd-ext-rid") : WString::fromUTF8(m_external_algo_name);
-    displayDetectorOrExternal( name, m_external_ids );
-  }//if( !m_external_ids.empty() )
+    WString name = m_external_results->algorithmName.empty() ? WString::tr("rpd-ext-rid")
+                                                             : WString::fromUTF8(m_external_results->algorithmName);
+    displayDetectorOrExternal( name, m_external_results->isotopes );
+  }//if( m_external_results && !m_external_results->isotopes.empty() )
   
   
   if( !prev_nucs.empty() )
@@ -2312,6 +2431,41 @@ Wt::WColor ReferencePhotopeakDisplay::suggestColorForSource( const std::string &
 }//Wt::WColor suggestColorForSource( const std::string &src ) const;
 
 
+Wt::WColor ReferencePhotopeakDisplay::nextGenericSourceColor() const
+{
+  vector<Wt::WColor> colorcopy = m_lineColors;
+  const map<string,vector<WColor>> usedColors = currentlyUsedPeakColors();
+
+  for( const auto &p : usedColors )
+  {
+    for( const auto &c : p.second )
+    {
+      auto pos = std::find_if( begin(colorcopy), end(colorcopy), [&c]( const WColor &rhs ){
+        return ((c.red() == rhs.red()) && (c.green() == rhs.green()) && (c.blue() == rhs.blue()) );
+      } );
+      if( pos != end(colorcopy) )
+        colorcopy.erase(pos);
+    }
+  }//for( loop over colors used for peaks already )
+
+  for( const auto &p : m_persisted )
+  {
+    const WColor &c = p.m_input.m_color;
+    auto pos = std::find_if( begin(colorcopy), end(colorcopy), [&c]( const WColor &rhs ){
+      return ((c.red() == rhs.red()) && (c.green() == rhs.green()) && (c.blue() == rhs.blue()) );
+    } );
+
+    if( pos != end(colorcopy) )
+      colorcopy.erase(pos);
+  }//for( const auto &p : m_persisted )
+
+  if( colorcopy.empty() )
+    return m_lineColors[m_persisted.size() % m_lineColors.size()];
+
+  return colorcopy[0];
+}//Wt::WColor nextGenericSourceColor() const
+
+
 Wt::WColor ReferencePhotopeakDisplay::colorForNewSource( const std::string &src )
 {
   WColor color = m_colorSelect->color();
@@ -2358,38 +2512,7 @@ Wt::WColor ReferencePhotopeakDisplay::colorForNewSource( const std::string &src 
       //cout << "Source " << isotxt << " has a specific color, " << color.cssText() << ", in the ColorTheme" << endl;
     }else
     {
-      auto colorcopy = m_lineColors;
-      for( const auto &p : usedColors )
-      {
-        for( const auto &c : p.second )
-        {
-          auto pos = std::find_if( begin(colorcopy), end(colorcopy), [&c]( const WColor &rhs ){
-            return ((c.red() == rhs.red()) && (c.green() == rhs.green()) && (c.blue() == rhs.blue()) );
-          } );
-          if( pos != end(colorcopy) )
-            colorcopy.erase(pos);
-        }
-      }//for( loop over colors used for peaks already )
-      
-      for( const auto &p : m_persisted )
-      {
-        const WColor &c = p.m_input.m_color;
-        auto pos = std::find_if( begin(colorcopy), end(colorcopy), [&c]( const WColor &rhs ){
-          return ((c.red() == rhs.red()) && (c.green() == rhs.green()) && (c.blue() == rhs.blue()) );
-        } );
-
-
-        if( pos != end(colorcopy) )
-          colorcopy.erase(pos);
-      }//for( const auto &p : m_persisted )
-      
-      if( colorcopy.empty() )
-        color = m_lineColors[m_persisted.size() % m_lineColors.size()];
-      else
-        color = colorcopy[0];
-      //cout << "Source " << isotxt << " will select color, " << color.cssText()
-      //     << ", from default list (len=" << colorcopy.size() << " of "
-      //     << m_lineColors.size() << ")" << endl;
+      color = nextGenericSourceColor();
     }//if( src has been seen ) / else (user picked color previously)
   }else
   {
@@ -2920,15 +3043,19 @@ void ReferencePhotopeakDisplay::setPeaksGetAssignedRefLineColor( const bool they
 }
 
 
-void ReferencePhotopeakDisplay::setExternalRidResults( const string &algo_name,
-                                                      const vector<pair<string,string>> &nucs )
+void ReferencePhotopeakDisplay::setExternalRidResults( std::shared_ptr<const ExternalRidResults> results )
 {
-  const bool is_diff = (nucs != m_external_ids);
-  m_external_ids = nucs;
-  m_external_algo_name = algo_name;
+  const bool is_diff = (results != m_external_results);
+  m_external_results = results;
   if( is_diff )
     updateOtherNucsDisplay();
-}//void setExternalRidResults( const std::vector<std::string> &isotopes );
+}//void setExternalRidResults( std::shared_ptr<const ExternalRidResults> results );
+
+
+std::shared_ptr<const ExternalRidResults> ReferencePhotopeakDisplay::currentExternalRidResults() const
+{
+  return m_external_results;
+}//std::shared_ptr<const ExternalRidResults> currentExternalRidResults() const
 
 
 Wt::Signal<> &ReferencePhotopeakDisplay::displayingNuclide()

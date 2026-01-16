@@ -43,7 +43,7 @@
 #include "target/osx/macOsUtils.h"
 #endif
 
-static_assert( USE_BATCH_TOOLS, "You must have USE_BATCH_TOOLS enabled to build this code" );
+static_assert( USE_BATCH_CLI_TOOLS, "You must have USE_BATCH_CLI_TOOLS enabled to build this code" );
 
 
 #ifdef _WIN32

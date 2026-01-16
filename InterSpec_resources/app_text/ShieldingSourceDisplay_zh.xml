@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- This file applies to ShieldingSourceDisplay.cpp
+    ssd- is short for ShieldingSourceDisplay, and is basically the GUI component
+    sfm- is short for SourceFitModel
+    x2g- is short for ShieldingSourceDisplay::Chi2Graphic - e.g., the chart on this page
+  -->
+  <message id="ssd-tt-distance">
+    从源中心到探测器面的距离。数字必须
+    后跟单位；有效单位包括：meters、m、cm、mm、km、feet、
+    ft、'、in、inches或"。您还可以添加多个距离，
+    例如'3ft 4in'或'3.6E-2 m 12 cm'，分别相当于
+    40英寸和15.6厘米。
+  </message>
+  <message id="ssd-geom-point">点/球形</message>
+  <message id="ssd-geom-cyl-end">圆柱形：端面</message>
+  <message id="ssd-geom-cyl-side">圆柱形：侧面</message>
+  <message id="ssd-rectangular">矩形</message>
+  <message id="ssd-fixed-geom-notification">使用固定几何DRF</message>
+  <message id="ssd-tt-shieldings">
+    屏蔽被视为壳层，最内层
+    壳层是您添加的第一个（此框中的顶部），
+    后续屏蔽层层围绕它。任何未归因于屏蔽成分的源
+    都被视为中心的点源。
+  </message>
+  <message id="ssd-add-shield-label">添加屏蔽：</message>
+  <message id="ssd-geometry-label">几何形状：</message>
+  <message id="ssd-tt-add-shield">从预定义的常见屏蔽材料库中选择。</message>
+  <message id="ssd-generic-btn">通用</message>
+  <message id="ssd-tt-generic">允许您定义和拟合原子序数和面密度。</message>
+  <message id="ssd-perform-fit-btn">执行模型拟合</message>
+  <message id="ssd-cancel-fit">取消模型拟合</message>
+  <message id="ssd-mi-calc-log">计算日志</message>
+  <message id="ssd-mi-import-model">导入模型...</message>
+  <message id="ssd-mi-export-model">导出模型</message>
+  <message id="ssd-mi-from-db">从数据库打开...</message>
+  <message id="ssd-mi-save-to-db">保存到数据库...</message>
+  <message id="ssd-mi-clone-db-entry">在数据库中克隆...</message>
+  <message id="ssd-to-small-for-chart">（使窗口变高以显示χ<sup>2</sup>）</message>
+  <message id="ssd-tt-chi2-switch">在图表上显示当前模型每个峰的Chi，或当前模型与观察峰之间的相对峰面积倍数。</message>
+  <message id="ssd-cb-all-peaks">所有峰</message>
+  <message id="ssd-multi-iso-per-peak">干扰校正</message>
+  <message id="ssd-options-title">选项</message>
+  <message id="ssd-tt-multi-iso-per-peak">选中此选项将允许正在拟合的其他核素（不是分配给峰的核素）贡献到观察峰的预期计数。例如，当同时拟合Ho166m和U235时，这可能很有用，因为它们都在185 keV附近有峰。</message>
+  <message id="ssd-cluster-width-label">干扰宽度（σ数）：</message>
+  <message id="ssd-tt-cluster-width">从峰均值开始的σ数，来自
+    任何核素的伽马线将被求和并归因于峰。默认值为1.25 σ，但如果峰
+    明显由于干扰而变宽，或拟合不佳，您可能希望增加此值。
+    将其降至0.0将导致仅使用与峰关联的伽马
+    （与取消选中"多个核素贡献于峰"相同）。
+  </message>
+  <message id="ssd-cb-atten-for-air">空气衰减</message>
+  <message id="ssd-tt-atten-for-air">选中时，计算中将考虑源或外部屏蔽与探测器之间空气的衰减。</message>
+  <message id="ssd-cb-sub-back-peaks">减除本底峰</message>
+  <message id="ssd-tt-sub-back-peaks">这将强制元素的同位素在拟合中都具有相同年龄。</message>
+  <message id="ssd-cb-same-el-same-age">相同Z相同年龄</message>
+  <message id="ssd-tt-same-el-same-age">强制同一元素的同位素都应具有相同年龄。</message>
+  <message id="ssd-cb-corr-for-decay">测量期间衰变校正</message>
+  <message id="ssd-tt-corr-for-decay">校正测量期间发生的衰变和增长效应。结果活度对应于测量的开始时间。可能需要额外的计算时间来找到解决方案。</message>
+  <message id="ssd-tt-geometry">用于建模"微量"源或自衰减源的几何。
+    <br />
+    <br />
+    默认情况下，对于所有几何，所有源都是距探测器指定距离处的点源。
+    <br />
+    但是，如果您将核素设置为"微量"源（通过单击屏蔽右下角的"<em>添加微量源</em>"按钮），或自衰减源（通过在屏蔽具有与您正在拟合的核素相同的元素时选择
+    <em>源为：</em>"复选框），那么源同位素将被建模为分布在整个屏蔽中，
+    并且将使用射线追踪来解释屏蔽内每个位置的不同衰减。
+    <br />
+    <br />
+    为了保持简单，除非您要对"微量"或自衰减源执行拟合，否则选择"点/球形"几何。
+  </message>
+  <message id="ssd-phone-tab-source-peaks">源峰</message>
+  <message id="ssd-phone-tab-source-isotopes">源同位素</message>
+  <message id="ssd-phone-tab-shielding">屏蔽</message>
+  <message id="ssd-warn-no-back-peaks">没有定义本底峰，不减除它们</message>
+  <message id="ssd-warn-no-back-spec">没有加载本底谱，因此无法从前景减除本底峰面积。</message>
+  <message id="ssd-warn-no-back-peaks-toggle">
+    本底谱没有识别任何峰。您应该将本底谱加载为
+    前景，识别可能要减除的峰，然后切换回当前的
+    前景/本底组合。
+  </message>
+  <message id="ssd-update-dim-to-be-min">已将屏蔽尺寸更新为最小厚度。</message>
+  <message id="ssd-scaled-shield-to-be-less-dist">屏蔽厚度已缩放为小于探测器距离。</message>
+  <message id="ssd-err-fit-only-one-an">您一次只能拟合一个通用屏蔽的原子序数。</message>
+  <message id="ssd-warn-invalid-chi2-for-energy">为{1} keV计算了无效的chi2，其他结果可能无效</message>
+  <message id="ssd-calc-log-window-title">计算日志</message>
+  <message id="ssd-calc-log-export-txt">TXT文件</message>
+  <message id="ssd-err-opening-import-model">打开上传的源屏蔽拟合模型时出错：{1}</message>
+  <message id="ssd-import-model-window-title">导入源屏蔽XML模型</message>
+  <message id="ssd-err-opening-db-model">从数据库打开源屏蔽拟合模型时出错：{1}</message>
+  <message id="ssd-err-loading-model">无法加载所选模型 - 抱歉 :(</message>
+  <message id="ssd-prev-saved-window-title">先前保存的模型</message>
+  <message id="ssd-models-prev-for-fore">先前与此前景一起使用的模型：</message>
+  <message id="ssd-models-prev-saved">您先前保存的模型：</message>
+  <message id="ssd-model-desc">模型描述：</message>
+  <message id="ssd-cb-allow-del">允许删除</message>
+  <message id="ssd-no-model-in-db">数据库中没有您的模型</message>
+  <message id="ssd-err-creating-db-browser">创建数据库模型浏览器时出错</message>
+  <message id="ssd-save-model-to-db-window-title">将活度/屏蔽模型保存到数据库</message>
+  <message id="ssd-save-to-db-name">输入模型名称：</message>
+  <message id="ssd-save-to-db-desc">输入模型描述（可选）：</message>
+  <message id="ssd-must-enter-name">您必须输入名称</message>
+  <message id="ssd-err-saving-to-db">保存到数据库时出错</message>
+  <message id="ssd-Best">最佳</message>
+  <message id="ssd-fit-failed">模型拟合失败</message>
+  <message id="ssd-using-fit-anyway">仍然使用拟合解决方案。</message>
+  <message id="ssd-err-fit-not-performed">
+    {1}
+    <br />
+    未执行拟合。
+  </message>
+  <message id="ssd-err-before-fit">
+    {1}
+    <br />
+    拟合之前。
+  </message>
+  <message id="ssd-err-couldnt-make-chi2-fcn">
+    {1}
+    <br />
+    未执行拟合（无法创建Chi2Fcn）。
+  </message>
+  <message id="ssd-error-create-tool">创建活度/屏蔽拟合显示时出错：{1}</message>
+  <message id="ssd-shield-source-diagram">屏蔽/源图</message>
+  <message id="ssd-show-model-diagram">显示模型图</message>
+
+  <!-- SourceFitModel quantities -->
+  <message id="sfm-tt-header-isotope">核素根据用于此拟合的光峰添加或删除，因此不能在此表中编辑</message>
+  <message id="sfm-tt-header-activity">核素的活度。输入合理的起始值可能有助于拟合，或者活度不必拟合。值可以以类似于'12.4 kBq'、'1.0mCi'、'55.3uCi'、'15.82Mbq'的格式输入</message>
+  <message id="sfm-tt-header-age">核素的年龄。值可以以类似于：'23.3s' '2 hl' -（hl代表半衰期）、'5.23y'、'23:14:21.343'、'19min'等格式输入。请注意，衰变为稳定子体的核素不能老化。</message>
+  <message id="sfm-tt-header-fit-act">拟合是否应该尝试找到核素活度，还是假设输入的值正确？</message>
+  <message id="sfm-tt-header-fit-age">拟合是否应该尝试找到核素年龄，还是只假设输入的值正确？此选项不适用于仅衰变为稳定子体的核素。</message>
+  <message id="sfm-tt-header-iso-mass">这是假设列出的活度的裸核素质量。</message>
+  <message id="sfm-tt-header-act-uncert">这是拟合的活度不确定度。</message>
+  <message id="sfm-tt-header-age-uncert">这是拟合的年龄不确定度。</message>
+  <message id="sfm-header-fit-act">拟合活度</message>
+  <message id="sfm-header-fit-age">拟合年龄</message>
+  <message id="sfm-header-act-uncert">活度不确定度</message>
+  <message id="sfm-header-age-uncert">年龄不确定度</message>
+  <message id="sfm-tt-aging-not-allowed">核素子体是稳定的，因此不允许老化，因为它不影响伽马谱。</message>
+
+  <!-- Chi2Graphic -->
+  <message id="x2g-yaxis-title-chi">（观察-模型）/不确定度</message>
+  <message id="x2g-yaxis-title-mult">模型倍数</message>
+  <message id="x2g-">Y轴是峰面积计数，减去当前显示的"源和屏蔽值的预期计数数量，全部除以统计不确定度。这的平方"用于优化屏蔽和源。</message>
+  <message id="x2g-tt-chi-axis">Y轴是峰面积计数，减去当前显示的源和屏蔽值的预期计数数量，全部除以统计不确定度。这的平方用于优化屏蔽和源。</message>
+  <message id="x2g-tt-scale-axis">Y轴是观察峰计数的倍数，相对于当前源和屏蔽值的预期值。</message>
+</messages>
+

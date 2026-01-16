@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dls- is short for DetectionLimitSimple
+  -->
+  <message id="dls-fit-fwhm-btn">FWHMをフィット...</message>
+  <message id="dls-select-drf-btn">検出器を選択...</message>
+  <message id="dls-further-details-link">詳細...</message>
+  <message id="dls-conf-level-label">信頼水準:</message>
+  <message id="dls-roi-lower-label">ROI下限:</message>
+  <message id="dls-roi-upper-label">ROI上限:</message>
+  <message id="dls-num-side-channel-label">サイドチャンネル数:</message>
+  <message id="dls-fwhm-label">FWHM:</message>
+  <message id="dls-gamma-label">ガンマ:</message>
+  <message id="dls-decon-cont-norm-label">コンティニューア正規化:</message>
+  <message id="dls-is-background-spectrum-cb">バックグラウンドスペクトル</message>
+  <message id="dls-is-background-spectrum-tt">
+    このオプションをチェックすると、このスペクトルに信号が存在しないことを表明します。
+    <p>
+      ピーク領域自体が期待されるバックグラウンドの推定に使用されます。
+      ピーク領域に隣接するサイドチャンネルを選択するオプションは関係なくなるため、非表示になります。
+    </p>
+  </message>
+  <message id="dls-cont-norm-unknown">フローティング</message>
+  <message id="dls-cont-norm-not-present">信号なしとして</message>
+  <message id="dls-cont-norm-fixed-by-sides">サイドから</message>
+  <message id="dls-roi-changed-no-gamma">ROIの変更により主要ガンマが除外されました - 変更しません</message>
+  <message id="dls-suggest-fwhm">検出器FWHM: {1} keV</message>
+  <message id="dls-rough-est-fwhm">概算FWHM: {1} keV</message>
+  <message id="dls-calc-method">計算方法:</message>
+  <message id="dls-currie-tab-title">Currie</message>
+  <message id="dls-decon-tab-title">逆畳み込み</message>
+  <message id="dls-err-no-input">入力が入力されていません - 核種を入力し、ガンマエネルギーを選択し、距離を入力してください。</message>
+  <message id="dls-err-calculating">答えの計算エラー: {1}</message>
+  <message id="dls-currie-desc">Currie法は総カウントを周囲チャンネルの予測と比較します</message>
+  <message id="dls-decon-desc">逆畳み込みはピーク形状とデータ分布を考慮します</message>
+  <message id="dls-qr-tool-state-title">簡易MDAツール状態</message>
+  <message id="dls-qr-tool-state-txt">簡易MDAツールの現在の状態。</message>
+
+  <message id="dls-det-act-with-range">検出: {1}, 範囲 [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-no-result">すみません、結果がありません</message>
+  <message id="dls-det-counts-with-range">過剰カウント: {1}, 範囲 [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-act-less-zero">放射能 &lt; 0 {1} （期待値より有意に少ないカウントが観測されました）。</message>
+  <message id="dls-det-counts-less-zero">過剰カウント &lt; 0 {2} （期待値より有意に少ないカウントが観測されました）。</message>
+  <message id="dls-det-upper-bound">{1}未満が@{2} CLで存在。</message>
+  <message id="dls-min-detectable-act">最小確実検出可能放射能: {1}。</message>
+  <message id="dls-min-detectable-counts">最小確実検出可能過剰カウント: {1}</message>
+  <message id="dls-error-computing-results">結果計算エラー</message>
+  <message id="dls-chart-title-estimated-counts">{1}の推定カウント。</message>
+  <message id="dls-results-txt-estimated-counts">
+    {1}の検出カウント。
+    <br/>
+    範囲: [{2}, {3}] @{4} CL
+  </message>
+  <message id="dls-chart-title-estimated-act">{1}の推定放射能。</message>
+  <message id="dls-results-txt-estimated-act">
+    {1}の検出放射能。
+    <br/>
+    範囲: [{2}, {3}] @{4} CL
+  </message>
+  <message id="dls-chart-title-upper-bound-act">{1} @{2} CLの上限ピーク</message>
+  <message id="dls-results-txt-upper-bound-act">{1}未満 @{2} CL</message>
+  <message id="dls-chart-title-upper-bound-counts">{1}カウント @{2} CLの上限ピーク</message>
+  <message id="dls-results-txt-upper-bound-counts">{1}信号カウント未満が@{2} CLで存在</message>
+  <message id="dls-err-no-meas">利用可能な測定がありません</message>
+  
+  <message id="dls-Info">情報</message>
+  <message id="dls-assumed-br=1">（放射能はBR=1.0を仮定）</message>
+  <message id="dls-Limit">限界</message>
+  <message id="dls-continuum-area">コンティニューア面積</message>
+  <message id="dls-DOF" remark="Degrees of freedom abbreviation">DOF</message>
+  <message id="dls-Upper">上限</message>
+  <message id="dls-Lower">下限</message>
+  <message id="dls-Best">最適</message>
+  <message id="dls-ROI-range-label">ROI範囲 (keV)</message>
+  <message id="dls-ROI-Channels-label">ROIチャンネル</message>
+  <message id="dls-ROI-Width">ROI幅</message>
+  <message id="dls-det-intrinsic-eff">検出器内在効率</message>
+  <message id="dls-solid-angle-frac">立体角比</message>
+  <message id="dls-air-trans">空気透過率</message>
+  <message id="dls-gamma-intensity">ガンマ強度</message>
+  <message id="dls-err-more-info-title">限界計算エラー...</message>
+  <message id="dls-err-more-info-content">限界情報計算エラー: {1}</message>
+  <message id="dls-err-select-det">検出器効率関数を選択してください。</message>
+  <message id="dls-err-neg-distance">距離は負にできません。</message>
+  <message id="dls-err-no-fwhm-info">検出器効率関数にはFWHM情報がありません - FWHMをフィットするか、検出器を変更してください。</message>
+  <message id="dls-"></message>
+  <message id="dls-"></message>
+  <message id="dls-"></message>
+</messages>

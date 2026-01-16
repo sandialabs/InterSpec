@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ds- is short for DrfSelect
+       ref- is short for RelEffFile
+       reds- is short for RelEffDetSelect
+  -->
+  <message id="ds-default-manual-det-name">Felhasználó által definiált detektor</message>
+
+  <message id="ref-tt-remove-drf-file">Fájl eltávolítása azon fájlok listájából, amelyekben az InterSpec detektor válaszfüggvényeket keres.</message>
+  <message id="ref-remove-drf-window-title">Detektor válaszok eltávolítása?</message>
+  <message id="ref-remove-drf-window-txt">Szeretné eltávolítani ezeket a DRF-eket a jövőbeli használatból is?</message>
+  <message id="ref-file-removed-toast">'{1}' fájl eltávolítva a jövőbeli használatból.</message>
+  <message id="ref-file-saved-for-later">'{1}' elmentve későbbi használatra, és elérhető lesz a "<em>Rel. Hat.</em>" részben a "<em>Detektor válaszfüggvény kiválasztás</em>" eszközben.</message>
+  <message id="ref-err-saving-drf-file">Hiba a DRF fájl későbbi használatra történő mentésében; sajnáljuk.</message>
+  <message id="ref-err-invalid-csv-drf">Nem érvényes TSV vagy CSV relatív-hatékonyság DRF fájl.</message>
+  <message id="ref-save-drf-window-title">Detektor válaszok mentése?</message>
+  <message id="ref-save-drf-window-txt">Szeretné elmenteni ezeket a detektor válaszokat későbbi használatra?</message>
+  <message id="ref-upload-csv-file">TSV/CSV fájl feltöltése.</message>
+  <message id="ref-dont-use-drf-in-file">nincsenek válaszok a fájlban</message>
+  <message id="ref-select-det-from-file">detektor kiválasztása</message>
+  <message id="ref-no-drfs-in-file">Nincsenek érvényes DRF-ek a fájlban.</message>
+  <message id="ref-couldnt-open-drf-file">Nem sikerült megnyitni a DRF fájlt.</message>
+  <message id="ref-no-rel-eff-drfs-in-file">Nincsenek Rel. Hat. DRF-ek elérhetők.</message>
+  <message id="ref-no-drfs-available">nincsenek válaszok elérhetők</message>
+  <message id="ref-file-has-no-drfs">A fájl nem tartalmaz DRF-eket</message>
+  <message id="reds-tt-add-drf-btn">Kattintson a plusz gombra további relatív hatékonyság detektor válaszfüggvény fájl hozzáadásához.</message>
+  <message id="reds-tt-add-dir">Kattintson a plusz gombra további könyvtár hozzáadásához, ahol rekurzívan keresni fog detektor válaszfüggvényeket.</message>
+  <message id="reds-gadras-drf-info-ios">A GADRAS-DRF-ből importált detektor válaszfüggvényeket az <code>InterSpec</code> könyvtárába helyezheti a <b>Fájlok</b> alkalmazásban.</message>
+  <message id="reds-gadras-drf-info">Ezek a GADRAS-DRF-ből importált detektor válaszfüggvények. Jelenleg csak a detektor méretek, abszolút hatékonyságok és FWHM felbontások vannak használva.</message>
+  <message id="reds-failed-parse-gadras-det">Nem sikerült feldolgozni a GADRAS detektort: {1}</message>
+  <message id="reds-err-saving-gad-path">Hiba a GADRAS útvonal felhasználói beállításokba történő mentésében: {1}</message>
+  <message id="reds-tt-remove-gad-dir">Könyvtár eltávolítása azon könyvtárak listájából, amelyekben az InterSpec detektor válaszfüggvényeket keres.</message>
+  <message id="reds-tt-gad-set-dir">A megadott könyvtár beállítása detektor válaszfüggvények rekurzív kereséséhez.</message>
+  <message id="reds-err-not-valid-dir">Nem érvényes könyvtár.</message>
+  <message id="reds-invalid-dir">érvénytelen könyvtár</message>
+  <message id="reds-no-drf-in-dir">nincsenek válaszok a könyvtárban</message>
+  <message id="reds-recursive-no-drfs-in-dir">Nincsenek érvényes DRF-ek a könyvtárban vagy annak alkönyvtáraiban.</message>
+  <message id="ds-csv-upload-desc">
+    <div style="white-space:nowrap;">
+      Hatékonysági fájl feltöltése:
+    </div>
+    <div>
+      Hatékonysági CSV esetén az első oszlop az energia keV-ben; a második a % hatékonyság (0-tól 100-ig).
+    </div>
+    <div>
+      A belső a detektor felületére ütköző gammák hatékonysága, míg az abszolút egy adott távolságban van.
+    </div>
+  </message>
+  <message id="ds-det-diam">Detektor átmérő:</message>
+  <message id="ds-fixed-geom">Rögzített geometria</message>
+  <message id="ds-gad-det-file-label">GADRAS Detector.Dat fájl:</message>
+  <message id="ds-manual-det-empty-fcn">Példa: exp(-9.8 - 8.1*log(x) + 4.62E-02*log(x)^2 + ...)
+    Vagy egyenértékűen: -9.8 -8.1 4.62E-02 ...</message>
+  <message id="ds-manual-det-desc">Detektor hatékonyság matematikai képlettel definiálva, x energia megadásával;
+     vagy megadhatja a koefficienseket a standard egyenlet formához. Kattintson a kérdőjel ikonra további információért.
+  </message>
+  <message id="ds-manual-det-desc-label">Detektor hatékonyság matematikai képlettel definiálva, x energia megadásával;
+     vagy megadhatja a koefficienseket a standard egyenlet formához. Kattintson a kérdőjel ikonra további információért.:</message>
+  <message id="ds-description-label">Leírás:</message>
+  <message id="ds-name-label">Név:</message>
+  <message id="ds-manual-det-name-label">Detektor neve </message>
+  <message id="ds-manual-det-name-empty-txt">Egyedi detektor név</message>
+  <message id="ds-manual-function-label">Hatékonyság f(x) = </message>
+  <message id="ds-tt-manual-energy-unit">Energia egység a hatékonysági képlethez</message>
+  <message id="ds-tt-manual-desc">Ennek a detektor válasznak a leírása</message>
+  <message id="ds-manual-det-diam-label">Detektor átmérő</message>
+  <message id="ds-energy-range">Energia tartomány</message>
+  <message id="ds-(optional)">(opcionális)</message>
+  <message id="ds-min.">Min.</message>
+  <message id="ds-max.">Max.</message>
+  <message id="ds-intrinsic-eff">Belső hatékonyság</message>
+  <message id="ds-abs-eff">Abszolút hatékonyság</message>
+  <message id="ds-fixed-geom-total">Rögzített geometria - teljes aktivitás</message>
+  <message id="ds-fixed-geom-cm2">Rögzített geometria - aktivitás cm²-enként</message>
+  <message id="ds-fixed-geom-m2">Rögzített geometria - aktivitás m²-enként</message>
+  <message id="ds-fixed-geom-gram">Rögzített geometria - aktivitás grammonként</message>
+
+  <message id="ds-tt-manual-drf-type">Hogyan kell értelmezni ezt a hatékonyságot.<br />
+    <br />
+    Belső hatékonyság: annak a valószínűsége, hogy egy x-sugár vagy gamma, amely a
+    detektor felületére esik, teljes energiájú detektálási eseményt regisztráljon.<br />
+    <br />
+    Abszolút hatékonyság: annak a valószínűsége, hogy egy x-sugár vagy gamma a forrásból
+    teljes energiájú detektálási eseményt regisztráljon, és megfelelő ezt a hatékonyságot
+    1/r2-tel skálázni más távolságokra (pl. pontforráshoz).<br />
+    <br />
+    Rögzített geometria - teljes aktivitás: annak a valószínűsége, hogy egy x-sugár vagy gamma a forrásból
+    teljes energiájú detektálási eseményt regisztráljon, és nem megfelelő ezt a hatékonyságot
+    más távolságokra skálázni (pl. közeli vagy nagy kiterjedt forráshoz).<br />
+    <br />
+    Rögzített geometria - aktivitás cm2-enként: hasonló a teljes aktivitáshoz, de a hatékonysági görbe
+    bomlásankénti, négyzetcentiméterenkénti hatékonyságot jelent (pl. felületi szennyeződés).<br />
+    <br />
+    Rögzített geometria - aktivitás m2-enként: hasonló a cm2-enkéntihez, de négyzetméterenkénti.<br />
+    <br />
+    Rögzített geometria - aktivitás g-onként: hasonló a cm2-enkéntihez, de forrás grammonként.
+  </message>
+  <message id="ds-dist-label">Táv:</message>
+  <message id="ds-set-btn">Beállítás</message>
+  <message id="ds-last-used">Utoljára használt</message>
+  <message id="ds-det-type-filter-all">Összes</message>
+  <message id="ds-det-type-filter-uploaded">Feltöltött</message>
+  <message id="ds-det-type-filter-formula">Megadott képlet</message>
+  <message id="ds-det-type-filter-data">Adatokból készített</message>
+  <message id="ds-det-type-filter-N42">N42 fájlban tartalmezett</message>
+  <message id="ds-show-label">Megjelenítés:</message>
+  <message id="ds-mi-gadras">GADRAS</message>
+  <message id="ds-mi-rel-eff">Rel. Hat.</message>
+  <message id="ds-mi-import">Import</message>
+  <message id="ds-mi-formula">Képlet</message>
+  <message id="ds-mi-previous">Előző</message>
+  <message id="ds-use-for-serialnum-cb">Használat alapértelmezett DRF-ként a '{1}' SN-hez</message>
+  <message id="ds-use-for-model-cb">Használat alapértelmezett DRF-ként a '{1}' modellhez</message>
+  <message id="ds-no-drf-loaded">Nincs DRF betöltve</message>
+  <message id="ds-no-det-btn">Nincs detektor</message>
+  <message id="ds-fit-fwhm-btn">FWHM illesztése...</message>
+  <message id="ds-tt-cancel">Minden változtatás vagy kiválasztás eltávolítása ezen párbeszédpanel által, és a párbeszédpanel bezárása.</message>
+  <message id="ds-tt-accept">Minden változtatás/kiválasztás elfogadása és a párbeszédpanel bezárása.</message>
+  <message id="ds-use-det-btn">Detektor használata</message>
+  <message id="ds-use-drf">DRF használata?</message>
+  <message id="ds-select-drf">Használandó DRF kiválasztása</message>
+  <message id="ds-drf-desc">DRF leírás</message>
+  <message id="ds-save-for-later-cb">Mentés későbbi használatra?</message>
+  <message id="ds-err-drf-uri-invalid">A detektor válaszfüggvény URL érvénytelen volt.</message>
+  <message id="ds-err-det-diam-pos">A detektor átmérőjének pozitívnak kell lennie</message>
+  <message id="ds-err-det-dist-pos">A távolságnak pozitívnak kell lennie abszolút hatékonyságokhoz</message>
+  <message id="ds-warn-min-max-energy-swapped">A detektor min. energiája nagyobb volt, mint a max. energia; figyelmen kívül hagyja az energia tartományt.</message>
+  <message id="ds-need-det-diam">Szükséges a detektor átmérője</message>
+</messages>

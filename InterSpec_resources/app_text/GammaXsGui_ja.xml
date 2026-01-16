@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- gxsg- is short for GammaXsGui -->
+  <message id="gxsg-material-formula">材料/式</message>
+  <message id="gxsg-tt-material">
+    事前定義された材料または元素の名前を入力するか（フォームテキストをクリアして
+    フォーム右側の矢印をクリックして全ての事前定義オプションを表示）、または
+    'H0.112 O0.88'のような化学式を入力できます。数値は
+    g/cm3での密度（または質量比と密度フィールドを使用）で、
+    前の元素のものです。
+  </message>
+  <message id="gxsg-total-atten-xs">総減衰断面積</message>
+  <message id="gxsg-compton-label">コンプトン</message>
+  <message id="gxsg-rayleigh-label">レイリー</message>
+  <message id="gxsg-photoelec-label">光電効果</message>
+  <message id="gxsg-pp-label">対生成</message>
+  <message id="gxsg-mass-avrg-an">質量平均原子番号</message>
+  <message id="gxsg-opt-atten">減衰（オプション）:</message>
+  <message id="gxsg-density-label">密度:</message>
+  <message id="gxsg-thickness-label">厚さ:</message>
+  <message id="gxsg-tt-thickness">減衰器の厚さ。</message>
+  <message id="gxsg-trans-frac-label">透過率</message>
+  <message id="gxsg-tt-trans-frac">指定された遮蔽を通過するガンマ線の比率。</message>
+  <message id="gxsg-tt-distance">線源中心から検出器までの距離。</message>
+  <message id="gxsg-intrinsic-eff-label">内在効率</message>
+  <message id="gxsg-tt-intrinsic-eff">内在効率（検出器面に衝突するガンマ線のピーク内検出効率）。</message>
+  <message id="gxsg-solid-angle-frac-label">立体角比</message>
+  <message id="gxsg-tt-solid-angle-frac">指定距離での選択された検出器の立体角比。</message>
+  <message id="gxsg-det-eff-label">検出効率</message>
+  <message id="gxsg-tt-det-eff">内在効率×立体角比。例：遮蔽から出て検出されるガンマ線の比率。減衰は含まない。</message>
+  <message id="gxsg-total-eff-label">総効率</message>
+  <message id="gxsg-tt-total-eff">透過率×検出効率。例：線源から放出され検出されるガンマ線の比率。</message>
+  <message id="gxsg-warn-suspect">XS計算が疑わしい可能性: {1}</message>
+  <message id="gxsg-tool-state-title">ガンマXSツール状態</message>
+  <message id="gxsg-tool-state-text">xsツールの現在の状態。</message>
+</messages>

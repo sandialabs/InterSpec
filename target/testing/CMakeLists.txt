@@ -44,10 +44,8 @@ set(USE_DB_TO_STORE_SPECTRA ON CACHE BOOL "")
 set(PERFORM_DEVELOPER_CHECKS ON CACHE BOOL "")
 set(SpecUtils_ENABLE_EQUALITY_CHECKS ON CACHE BOOL "")
 set(USE_SPECRUM_FILE_QUERY_WIDGET ON CACHE BOOL "")
-
-# We dont currently export all functions tested when making a DLL for LibInterSpec, 
-#  so we'll disable batch analysis, so a static library will be made.
-set(USE_BATCH_TOOLS OFF CACHE INTERNAL "")
+set(USE_BATCH_CLI_TOOLS OFF CACHE INTERNAL "")
+set(USE_BATCH_GUI_TOOLS ON CACHE INTERNAL "")
 
 set(TEST_SUITE_BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/test_data"
     CACHE STRING
@@ -167,6 +165,87 @@ add_test( NAME TGammaInteractionCalc
   COMMAND $<TARGET_FILE:test_GammaInteractionCalc> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
+
+
+add_executable( test_SimpleActivityCalc test_SimpleActivityCalc.cpp )
+target_link_libraries( test_SimpleActivityCalc PRIVATE InterSpecLib )
+add_test( NAME TSimpleActivityCalc
+  COMMAND $<TARGET_FILE:test_SimpleActivityCalc> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_BersteinPolynomial test_BersteinPolynomial.cpp )
+target_link_libraries( test_BersteinPolynomial PRIVATE InterSpecLib )
+add_test( NAME TBersteinPolynomial
+  COMMAND $<TARGET_FILE:test_BersteinPolynomial> ${BOOST_TEST_CL_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_MakeDrfFit test_MakeDrfFit.cpp )
+target_link_libraries( test_MakeDrfFit PRIVATE InterSpecLib )
+add_test( NAME TMakeDrfFit
+  COMMAND $<TARGET_FILE:test_MakeDrfFit> ${BOOST_TEST_CL_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_EnergyCal test_EnergyCal.cpp )
+target_link_libraries( test_EnergyCal PRIVATE InterSpecLib )
+add_test( NAME TEnergyCal
+  COMMAND $<TARGET_FILE:test_EnergyCal> ${BOOST_TEST_CL_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_PeakModel test_PeakModel.cpp )
+target_link_libraries( test_PeakModel PRIVATE InterSpecLib )
+add_test( NAME TPeakModel
+  COMMAND $<TARGET_FILE:test_PeakModel> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+if( USE_LLM_INTERFACE )
+  add_executable( test_LlmToolRegistry test_LlmToolRegistry.cpp )
+  target_link_libraries( test_LlmToolRegistry PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TLlmToolRegistry
+    COMMAND $<TARGET_FILE:test_LlmToolRegistry> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
+  add_executable( test_LlmIsotopicsTool test_LlmIsotopicsTool.cpp )
+  target_link_libraries( test_LlmIsotopicsTool PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TLlmIsotopicsTool
+    COMMAND $<TARGET_FILE:test_LlmIsotopicsTool> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
+  add_executable( test_LlmActivityFitTool test_LlmActivityFitTool.cpp )
+  target_link_libraries( test_LlmActivityFitTool PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TLlmActivityFitTool
+    COMMAND $<TARGET_FILE:test_LlmActivityFitTool> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
+  add_executable( test_LlmInterface test_LlmInterface.cpp )
+  target_link_libraries( test_LlmInterface PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TLlmInterface
+    COMMAND $<TARGET_FILE:test_LlmInterface> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
+  add_executable( test_AnalystChecks test_AnalystChecks.cpp )
+  target_link_libraries( test_AnalystChecks PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TAnalystChecks
+    COMMAND $<TARGET_FILE:test_AnalystChecks> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+endif( USE_LLM_INTERFACE )
+
+add_executable( test_DetectorPeakResponse test_DetectorPeakResponse.cpp )
+target_link_libraries( test_DetectorPeakResponse PRIVATE InterSpecLib )
+add_test( NAME TDetectorPeakResponse
+  COMMAND $<TARGET_FILE:test_DetectorPeakResponse> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 
 # ./test_offlineAnalysis.cpp
 #target_link_libraries(test_offlineAnalysis PUBLIC 

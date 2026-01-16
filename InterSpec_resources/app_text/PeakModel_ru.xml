@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- Strings from PeakModel - e.g., tables that display peak info.
+  pm- is short for PeakModel
+  -->
+  <message id="pm-tt-use-for-cal">Должен ли этот пик использоваться для калибровки по энергии.
+    У пика должен быть назначен нуклид, ядерная реакция или рентгеновское излучение, и средняя энергия не должна быть зафиксирована в редакторе пиков.</message>
+  <message id="pm-gaussian">Гауссов</message>
+  <message id="pm-region">Область</message>
+  <message id="pm-err-use-fit-no-nuc">Необходимо связать нуклид с пиком перед использованием его для подгонки источник/экранирование.</message>
+  <message id="pm-err-use-cal-no-nuc">Необходимо связать нуклид, рентгеновское излучение или реакцию с пиком перед использованием его для калибровки.</message>
+  <message id="pm-err-use-rel-act-no-nuc">Только пики, связанные с гамма-излучением нуклидов, могут использоваться для анализа относительной активности.</message>
+  <message id="pm-warn-use-xray-fit">Предупреждение: использование рентгеновских лучей для подгонки источников нуклидов обычно не очень хорошая идея, поэтому будьте осторожны.</message>
+  
+  <message id="pm-hdr-diff">Разность</message>
+  <message id="pm-hdr-cal-peak">Калибр. пик</message>
+  <message id="pm-hdr-rel-act">Отн. акт.</message>
+  <message id="pm-hdr-label">Метка</message>
+  <message id="pm-hdr-color">Цвет</message>
+  <message id="pm-hdr-skew-amp">Амп. асимм.</message>
+  <message id="pm-hdr-peak-type">Тип пика</message>
+  <message id="pm-hdr-low-energy">Нижняя энергия</message>
+  <message id="pm-hdr-up-energy">Верхняя энергия</message>
+  <message id="pm-hdr-roi-counts">Отсчёты ROI</message>
+  
+  
+  <message id="pm-hdr-tt-mean">Средняя энергия</message>
+  <message id="pm-hdr-tt-fwhm">Полная ширина на полувысоте</message>
+  <message id="pm-hdr-tt-amp">Площадь пика</message>
+  <message id="pm-hdr-tt-cps">Отсчёты пика в секунду</message>
+  <message id="pm-hdr-tt-photopeak-energy">Энергия фотопика</message>
+  <message id="pm-hdr-tt-diff">Разность между энергией фотопика и средней энергией</message>
+  <message id="pm-hdr-tt-man-rel-eff">Использовать для анализа "Изотопики по пикам".</message>
+  <message id="pm-hdr-tt-color">Цвет пика</message>
+  <message id="pm-hdr-tt-label">Метка, заданная пользователем</message>
+  <message id="pm-hdr-tt-roi-counts">Интеграл гамма-отсчётов в области интереса</message>
+  <message id="pm-hdr-tt-"></message>
+
+</messages>

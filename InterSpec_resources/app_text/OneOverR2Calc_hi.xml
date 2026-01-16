@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- oor2c- short for OneOverR2Calc
+  -->
+  <message id="oor2c-instructions">अनदेखे स्रोत की दूरी पता लगाने के लिए विभिन्न स्थानों पर दो मापों का उपयोग करें। उदा. जब स्रोत दीवार के पीछे हो।</message>
+  <message id="oor2c-near-meas-label">निकट माप तीव्रता:</message>
+  <message id="oor2c-far-meas-label">दूर माप तीव्रता:</message>
+  <message id="oor2c-background-intensity">Background तीव्रता (वैकल्पिक):</message>
+  <message id="oor2c-dist-label">मापों के बीच दूरी:</message>
+  <message id="oor2c-power-law-label">घात नियम</message>
+  <message id="oor2c-low-scatter">कम प्रकीर्णन या पीक क्षेत्र उपयोग, 1/r^2</message>
+  <message id="oor2c-mid-scatter">मध्य प्रकीर्णन डोज दर, 1/r^1.85</message>
+  <message id="oor2c-high-scatter">उच्च प्रकीर्णन डोज दर, 1/r^1.65</message>
+  <message id="oor2c-dist-to-near-label">निकट माप से स्रोत की दूरी:</message>
+  <message id="oor2c-bottom-message">निकट, background, और दूर
+    मापों के लिए समान इकाइयों का उपयोग करें। परिणाम
+    मापों के बीच दूरी के लिए उपयोग की गई समान इकाइयों में हैं।
+  </message>
+  <message id="oor2c-qr-state-title">1/r2 कैलकुलेटर स्थिति</message>
+  <message id="oor2c-qr-state-txt">1/r<sup>2</sup> कैलकुलेटर टूल की वर्तमान स्थिति।</message>
+  <message id="oor2c-invalid-near">अमान्य निकट माप</message>
+  <message id="oor2c-invalid-far">अमान्य दूर माप</message>
+  <message id="oor2c-invalid-dist">अमान्य दूरी</message>
+  <message id="oor2c-far-larger-than-near">दूर माप निकट वाले से कम होना चाहिए</message>
+  <message id="oor2c-back-larger-than-far">Background दूर वाले से कम होना चाहिए</message>
+  <message id="oor2c-near-is-zero">निकट माप गैर-शून्य होना चाहिए</message>
+  <message id="oor2c-far-is-zero">दूर माप गैर-शून्य होना चाहिए</message>
+  <message id="oor2c-dist-is-zero">मापों के बीच दूरी गैर-शून्य होनी चाहिए</message>
+</messages>

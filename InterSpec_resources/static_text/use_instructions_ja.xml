@@ -1,0 +1,443 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+
+  <!--When you add a video to the content, you should use a template placeholder 
+      in the content (e.x. ${myvideobinding}) to allow the C++ to bind this 
+      video to a video playing widget in the WTemplate widget.  However since we 
+      dont want to have to hard code the bind placeholder name, and which video 
+      it points to in the C++, this next videoinfo message section encodes what
+      placeholder names the C++ templating code should look for, as well as
+      the actual video files and titles the placeholder name cooresponds to.
+      The below JSON object is indexed by keys that have the same value
+      as the 'id' for the message they coorespond to; the key cooresponds to an
+      array of objects that each have at least a "key" and "file" member, but
+      may also have an optional "title" member.
+  -->
+  <message id="videoinfo">
+  {
+    "1intro-video":
+      [ 
+        {   "key":"video1",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpecMouseIntro.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpecMouseIntro.ogv",
+            "title":"マウス入門"
+        }
+      ],
+    "3gamma-lines-video":
+       [
+        {   "key":"video2",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_GammaLines.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_GammaLines.ogv",
+            "title":"ガンマ線"
+        }
+       ],
+    "4calibration-video":
+       [
+        {   "key":"video3",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_calibration.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_calibration.ogv",
+            "title":"較正"
+        }
+       ],
+    "2nuclide-peak-association-video":
+       [
+        {   "key":"video4",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_AssociatePeaksWithNuclides.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_AssociatePeaksWithNuclides.ogv",
+            "title":"ピーク同定"
+        }
+       ],
+    "5activity-shielding-fit-video":
+       [
+        {   "key":"video5",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_activityShieldingFit.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_activityShieldingFit.ogv",
+            "title":"放射能遮蔽"
+        }
+       ]
+  }
+  </message>
+
+  <message id='mobile-mouse-interactions'>
+	   <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">ズームイン</div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_zoom_in.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         スペクトラムの特定の部分をズームインするには、
+         2本の指を<u>押し広げて</u>ください。
+      </div>
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">ズームアウト</div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_zoom_out.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         ズームアウトするには、
+         2本の指を<u>つまんで</u>近づけてください。
+      </div>
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">エネルギー範囲の変更</div>
+    <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	    <img src="InterSpec_resources/static_text/images/touch_energy_pan.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         グラフのx軸（エネルギー）に沿って移動するには、
+         チャートに指を置き、左右に動かして表示エネルギーを変更してください。
+      </div>
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+      <div class="UseInstructionHeader">ピークフィット</div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center"><h3><b>方法1</b></h3></div>
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_fit_peak.png" style="width:70%" />
+	  </div>
+    <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+      ピークをフィットしたい場所のスペクトラムを<u>ダブルタップ</u>してください。
+    </div>
+	   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_multipeak_fit.png" style="width:70%" />
+	  </div>
+	  <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+        既存のピーク近くで再度<u>ダブルタップ</u>すると、さらにピークがフィットされます。
+    </div>
+	  <div style="padding-top: 10px" align="center"><h3><b>方法2</b></h3></div>
+	  <div style="padding-top: 10px" align="center">
+	    <img src="InterSpec_resources/static_text/images/mobile_multipeak.jpg" style="width:70%" />
+	  </div>
+	  <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+      関心領域で決まった数のピークを強制的にフィットしたい場合：
+      関心領域上で水平に並べた2本の指を<u>ドラッグ</u>してください。
+      指を<u>離して</u>、識別したいピークの数を<u>選択</u>してください。
+    </div>
+	  <div style="padding-top: 10px" align="center"><h3><b>その他の方法</b></h3>
+      <em>メニュー</em>&rarr;<em>ツール</em>&rarr;<em>ピークマネージャー</em>で
+      <img src="InterSpec_resources/static_text/images/mobil_search_for_peaks.png" style="height:1.25em;" />ボタンを使用して
+      スペクトラム内のすべてのピークを自動的にフィットできます。
+      この自動ピーク検索を使用する前に核種参照線を表示することをお勧めします。
+      そうすればピークがピークを作成する核種と自動的に関連付けられます。
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+      <div class="UseInstructionHeader">ピークエディター起動</div>
+         ピークを再フィットしたり手動で調整したい場合は、ピークに約1秒間指を押し続けることで
+         <em>ピークエディター</em>を使用でき、メニューがポップアップして
+         行いたい操作を選択できます。
+         <div style="padding-top: 1px" align="center">
+           <img src="InterSpec_resources/static_text/images/mobile_right_click.png"  class="imageBorder" style="width:75%;" />
+         </div>
+	    </div>
+    </div>
+	  <div class="UseInstructionSection">
+      <div class="UseInstructionHeader">ピーク削除</div>
+      <p>
+        ピークを削除する最も簡単な方法は、約1秒間指を押し続けることです。
+        メニューがポップアップしてピークを削除することを選択できます。
+        <div style="padding-top: 1px" align="center">
+          <img src="InterSpec_resources/static_text/images/mobile_right_click.png"  class="imageBorder" style="width:75%;" />
+        </div>
+      </p>
+
+      <p>
+        削除したいピークのエネルギー範囲をまたぐ2本の指を画面に置き、上に動かすこともできます。
+        指の間にセントロイドがあるピークはすべて完全に削除されます。ピークのセントロイドが
+        指の間に落ちない限り、同じジェスチャーを使用してピークのエネルギー範囲を減らすこともできます。
+        <div style="padding-top: 1px" align="center">
+          <img src="InterSpec_resources/static_text/images/mobile_delete_peaks.jpg"  class="imageBorder" style="width:75%;" />
+        </div>
+      </p>
+
+      <p>
+        <em>ピークマネージャー</em>（<b>メニュー</b>&rarr;<b>ツール</b>&rarr;<b>ピークマネージャー</b>）と
+        <em>ピークエディター</em>（ピークに1秒間指を押し続け、<b>ピークエディター</b>を選択）でもピークを削除できます。
+      </p>
+    </div>
+  </message>
+
+
+<!--
+For the desktop-mouse-interactions-info each JSON object should have a 'title',
+a 'img' and a optional 'desc_message_id' field.  If 'desc_message_id' is
+specified then this field refers to the id of a <message> element that contains
+the XHTML message for that entry.
+-->
+<message id='desktop-mouse-interactions-info'>
+{
+  "01desktop-mouse-interactions-zoominout": {
+    "title": "ズームイン/アウト",
+    "img": "InterSpec_resources/images/ZoomInOut.gif",
+    "desc_message_id": "01desktop-mouse-interactions-zoominout-desc"
+  },
+  "02desktop-mouse-interactions-shiftenergyrange": {
+    "title": "エネルギーパン",
+    "img": "InterSpec_resources/images/ERShift.gif",
+    "desc_message_id": "02desktop-mouse-interactions-shiftenergyrange-desc"
+  },
+  "03desktop-mouse-interactions-energyslider": {
+    "title": "エネルギースライダー",
+    "img": "InterSpec_resources/images/energy_slider.gif",
+    "desc_message_id": "03desktop-mouse-interactions-energyslider-desc"
+  },
+  "04desktop-mouse-interactions-identifypeaks": {
+    "title": "ピークフィット",
+    "img": "InterSpec_resources/images/PeakFit.gif",
+    "desc_message_id": "04desktop-mouse-interactions-identifypeaks-desc"
+  },
+  "04desktop-mouse-interactions-multipeaks": {
+    "title": "ROIフィット",
+    "img": "InterSpec_resources/images/multi_peak_fit.gif",
+    "desc_message_id": "04desktop-mouse-interactions-multipeaks-desc"
+  },
+  "07desktop-mouse-interactions-deletepeaks": {
+    "title": "ピーク削除",
+    "img": "InterSpec_resources/images/DeletePeaks.gif",
+    "desc_message_id": "07desktop-mouse-interactions-deletepeaks-desc"
+  },
+  "06desktop-mouse-interactions-visualcalibration": {
+    "title": "エネルギー較正",
+    "img": "InterSpec_resources/images/VisRecalib.gif",
+    "desc_message_id": "06desktop-mouse-interactions-visualcalibration-desc"
+  },
+  "05desktop-mouse-interactions-peakeditor": {
+    "title": "ピークエディター",
+    "img": "InterSpec_resources/images/PeakEdit.gif",
+    "message-id": "05desktop-mouse-interactions-peakeditor-desc"
+  },
+  "08desktop-mouse-interactions-adjustROI": {
+    "title": "ROI調整",
+    "img": "InterSpec_resources/images/roi_range_adjust.gif",
+    "desc_message_id": "08desktop-mouse-interactions-adjustROI-desc"
+  },
+  "08desktop-mouse-interactions-scale-y": {
+    "title": "Yスケール",
+    "img": "InterSpec_resources/images/yscale.gif",
+    "desc_message_id": "08desktop-mouse-interactions-scale-y-desc"
+  },
+  "09desktop-mouse-interactions-countgamma": {
+    "title": "ガンマカウント",
+    "img": "InterSpec_resources/images/ERCount.gif",
+    "desc_message_id": "09desktop-mouse-interactions-countgamma-desc"
+  },
+  "10desktop-shortcuts" : {
+    "title": "キーボードショートカット",
+    "desc_message_id": "10desktop-shortcuts-desc"
+  }
+}
+</message>
+
+<message id='01desktop-mouse-interactions-zoominout-desc'>
+<div><center>左クリックドラッグで<b>右</b>にズームイン。</center></div>
+<div><center>左クリックドラッグで<b>左</b>にズームアウト。</center></div>
+</message>
+
+<message id='02desktop-mouse-interactions-shiftenergyrange-desc'>
+<center>右クリックドラッグ</center>
+</message>
+
+
+<message id='03desktop-mouse-interactions-energyslider-desc'>
+<center><b>表示</b>メニューから「<b>エネルギースライダー表示</b>」を選択。</center>
+<div>これはスペクトラムのエネルギー範囲を調整する簡単な方法です。</div>
+<div><b>InterSpec</b>はエネルギースライダーチャートを表示するかどうかを記憶します。</div>
+</message>
+
+<message id='04desktop-mouse-interactions-identifypeaks-desc'>
+<center>
+<p style="font-size: 14px">ピークをフィットする方法は以下を含めいくつかあります： </p>
+</center>
+<ol>
+  <li>ダブル左クリック。同じピーク近くで再度ダブルクリックして別のピークを追加できます。</li>
+  <li><b><kbd>CTRL</kbd></b> + 左クリックドラッグ &rarr; 左クリック（「ROIフィット」参照） </li>
+  <li>「<b>ピークマネージャー</b>」タブから「<b>追加</b>」をクリック &rarr; 希望する値にテーブルのパラメータを調整できます。</li>
+  <li>「<b>ピークマネージャー</b>」タブから「<b>ピーク検索</b>」をクリックしてスペクトラムのすべてのピークを検出します。</li>
+<li>既存のピークを右クリックして「<b>ピーク追加</b>」を選択し、同じROIにピークを追加します。</li>
+</ol>
+
+<p>ヒント：ピークをフィットする前に、それを担当する核種の参照線を表示することが有用です。
+そうすればピークがフィットされた時にその核種と関連付けられます。この情報は
+エネルギー較正、検出器応答、放射能、遮蔽量のフィットに使用されます。
+</p>
+</message>
+
+
+<message id='04desktop-mouse-interactions-multipeaks-desc'>
+<div>関心領域（ROI）で決まった数のピークをフィットするには：</div>
+<center>
+<b><kbd>CTRL</kbd></b> + 左クリックドラッグ &rarr; そしてピーク数を選択。
+</center>
+</message>
+
+<message id='07desktop-mouse-interactions-deletepeaks-desc'>
+<ol>
+<li>右クリック &rarr; 「<b>ピーク削除</b>」</li>
+<li>右クリック &rarr; 「<b>ピークエディター</b>」 &rarr; 「<b>削除</b>」</li>
+<li><b><kbd>SHIFT</kbd></b> + 左クリックドラッグ</li>
+<li>左クリック「<b>すべてのピークをクリア</b>」 &rarr; 左クリック「<b>はい</b>」</li>
+<li>ROIの一方の端を他方の端を越えてドラッグ。</li>
+</ol>
+</message>
+
+<message id='06desktop-mouse-interactions-visualcalibration-desc'>
+<div>エネルギー較正をグラフィカルに調整するには：</div>
+<center> <kbd>CTRL</kbd> + <kbd>ALT</kbd> + 左クリックドラッグ &rarr; <u>オプション</u>：量を調整 &rarr; 「<b>受け入れ</b>」</center>
+<div>注：この動作を再度行う場合、例えば最初に高エネルギーピークで、次に低エネルギーピークで（またはその逆）行うと、ポップアップするダイアログで
+オフセットとゲインの両方を調整して両方の動作を保持するオプションが提供され、両方のピークがドラッグした先のエネルギーに留まります。
+</div>
+<p>「エネルギー較正」タブでも、エネルギー較正係数を手動で調整するか、
+ピークに関連付けられた核種を使用してフィットすることができます。
+</p>
+</message>
+
+<message id='05desktop-mouse-interactions-peakeditor-desc'>
+<div><center>右クリック &rarr; 「ピークエディター」</center></div>
+</message>
+
+
+
+<message id='08desktop-mouse-interactions-adjustROI-desc'>
+<center><div>関心領域（ROI）の端近くにマウスを置いてドラッグ。</div></center>
+<div>マウスはピークのy範囲内にあり、ROIの端から10ピクセル以内にある必要があります。</div>
+</message>
+
+
+<message id='08desktop-mouse-interactions-scale-y-desc'>
+<center><b>表示</b> &rarr; 「<b>Y軸スケーラー表示</b>」を選択して
+バックグラウンドおよび/またはセカンダリスペクトラムの振幅をフォアグラウンドに対してスケールします。
+</center>
+<p>バックグラウンドまたはセカンダリスペクトラムをライブタイム正規化に復元するには、「スペクトラムファイル」タブの「正規化」ボタンをクリックしてください。</p>
+<p><b>InterSpec</b>はバックグラウンドまたはセカンダリスペクトラムがある時にこれらのスライダーを表示するかどうかを記憶しますが、
+バックグラウンドまたはセカンダリスペクトラムが読み込まれていない場合はメニュー項目が無効になります。</p>
+</message>
+
+
+<message id='09desktop-mouse-interactions-countgamma-desc'>
+  <center>
+    <ol>
+      <li><b><kbd>SHIFT</kbd></b> + <b><kbd>ALT</kbd></b> + 左クリックドラッグ &rarr; <u>オプション</u>：量を調整</li>
+      <li><b>ツール</b> &rarr; <b>エネルギー範囲合計</b></li>
+    </ol>
+  </center>
+</message>
+
+<message id='10desktop-shortcuts-desc'>
+
+  <h3>キーボードショートカット</h3>
+  <ul>
+    <li>
+      <b><code>Ctrl-1</code></b>から<b><code>Ctrl-7</code></b>：ツールタブ1-7に切り替え（つまり、「<code>スペクトラムファイル</code>」、「<code>ピークマネージャー</code>」、「<code>参照フォトピーク</code>」などのタブ）、または
+      <em>ツールタブ</em>が隠れている場合は対応するツールウィンドウを表示。
+    </li>
+    <li>
+      <b><code>Ctrl-h</code></b>：アプリ内<em>ヘルプ</em>を表示。
+    </li>
+    <li>
+      <b><code>Ctrl-i</code></b>：<em>ようこそ情報</em>画面を表示。
+    </li>
+    <li>
+      <b><code>Ctrl-k</code></b>：表示されているすべての参照フォトピーク線をクリア。
+    </li>
+    <li>
+      <b><code>Ctrl-l</code></b>：スペクトラムのy軸を対数と線形で切り替え。
+    </li>
+    <li>
+      <b><code>Ctrl-s</code></b>：現在のアプリケーション状態を保存。
+    </li>
+    <li>
+      <b><code>Ctrl-e</code></b>：スペクトラムファイルのエクスポートダイアログを開く。
+    </li>
+    <li>
+      <b><code>Ctrl-z</code></b>：最後の操作を元に戻す。
+    </li>
+    <li>
+      <b><code>Ctrl-Shift-z</code></b>：最後に元に戻した操作をやり直す。
+    </li>
+  </ul>
+
+  <h3>スペクトラム操作のマウス修飾キー</h3>
+  これらのショートカットに加えて、y軸のタイトルをクリックして対数/線形スケールを切り替えることができます。x軸のタイトルをクリックすると、概要ストリップチャートの表示/非表示を切り替えます。
+  <ul>
+    <li>
+      <b>ダブルクリック</b>：クリックした位置でフォアグラウンドスペクトラムにピークをフィット。
+    </li>
+    <li>
+      <b>Alt + ダブルクリック</b>：クリックした位置でバックグラウンドスペクトラムにピークをフィット。
+    </li>
+    <li>
+      <b>Shift + ダブルクリック</b>：クリックした位置でセカンダリスペクトラムにピークをフィット。
+    </li>
+    <li>
+      <b>Shift + 左ドラッグ</b>：ピーク削除モード - ドラッグしたエネルギー範囲のピークを削除。
+    </li>
+    <li>
+      <b>Alt + Shift + 左ドラッグ</b>：ガンマカウントモード - ドラッグしたエネルギー範囲のガンマ線をカウント。
+    </li>
+    <li>
+      <b>Alt + Ctrl + 左ドラッグ</b>：再較正モード - ドラッグした範囲を使用してエネルギーを再較正。
+    </li>
+    <li>
+      <b>Command + 左ドラッグ (Mac)</b>または<b>Alt + 左ドラッグ (Windows)</b>：垂直にドラッグしてy軸をズームイン/アウト。
+    </li>
+  </ul>
+
+  <h3>タイムチャート操作のマウス修飾キー</h3>
+  タイムチャートの右上隅のメニューを使用して、操作を簡素化します。
+  <ul>
+    <li>
+      <b>クリックまたはドラッグ</b>：フォアグラウンドスペクトラムのサンプルを選択。
+    </li>
+    <li>
+      <b>Alt + クリック/ドラッグ</b>または<b>'b'キーを押し続ける</b>：バックグラウンドスペクトラムのサンプルを選択。
+    </li>
+    <li>
+      <b>Meta + クリック/ドラッグ</b>または<b>'s'キーを押し続ける</b>：セカンダリスペクトラムのサンプルを選択。
+    </li>
+    <li>
+      <b>Shift + クリック/ドラッグ</b>：現在の選択にサンプルを追加。
+    </li>
+    <li>
+      <b>Ctrl + クリック/ドラッグ</b>：現在の選択からサンプルを削除。
+    </li>
+  </ul>
+</message>
+
+
+  <message id='1intro-video'>
+     <center>${video1}</center>
+  </message>
+
+  <message id='3gamma-lines-video'>
+     <center>${video2}</center>
+  </message>
+
+  <message id='4calibration-video'>
+     <center>${video3}</center>
+  </message>
+
+  <message id='2nuclide-peak-association-video'>
+     <center>${video4}</center>
+  </message>
+
+  <message id='5activity-shielding-fit-video'>
+     <center>${video5}</center>
+  </message>
+
+
+  <message id="known-issues">
+    現在の既知の問題：
+    <ul>
+<li><b>すべて:</b> （ピークマネージャー）「ID核種」がまれに動作しない </li>
+        <li><b>すべて:</b> 「終了時に状態を保存」がまれに動作しない</li>
+    </ul>
+  </message>
+</messages>
+</messages>

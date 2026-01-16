@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- pid is short for PeakInfoDisplay -->
+
+  <message id="pid-dialog-peak-erase">সব পিক মুছবেন?</message>
+
+  <message id="pid-err-no-foreground">পিক যোগ করতে একটি ফোরগ্রাউন্ড স্পেকট্রাম লোড করা আবশ্যক।</message>
+
+  <message id="pid-search-peaks-btn">পিক অনুসন্ধান করুন</message>
+  <message id="pid-tt-search-peaks-btn">স্বয়ংক্রিয় পিক খোঁজার অ্যালগরিদম ব্যবহার করে পিক অনুসন্ধান করুন।</message>
+  <message id="pid-clear-peaks-btn">সব পিক মুছুন</message>
+  <message id="pid-tt-clear-peaks-btn"><b>সমস্ত</b> বিদ্যমান পিক সরিয়ে দেয়।</message>
+  <message id="pid-nuc-from-ref-btn">রেফ থেকে নিউক</message>
+  <message id="pid-tt-nuc-from-ref-btn">
+    প্রদর্শিত রেফারেন্স লাইন থেকে পিক নিউক্লাইড বরাদ্দ করুন। শুধুমাত্র সেই
+    পিকগুলিতে প্রযোজ্য যেগুলির সাথে ইতিমধ্যে কোনো নিউক্লাইড সংযুক্ত নেই।
+  </message>
+
+  <message id="pid-add-peak-btn">যোগ করুন...</message>
+  <message id="pid-tt-add-peak-btn">ম্যানুয়ালি একটি নতুন পিক যোগ করুন।</message>
+  <message id="pid-tt-del-peaks">বর্তমানে সম্পাদনা করা পিক মুছে দেয়।</message>
+  <message id="pid-better-editor-hint">উন্নত এডিটরের জন্য পিকে রাইট ক্লিক করুন</message>
+  <message id="pid-better-editor-hint-mobile">উন্নত এডিটরের জন্য পিক ট্যাপ করুন এবং ধরে রাখুন</message>
+  <message id="pid-tt-csv-export">সনাক্ত করা পিক সম্পর্কে তথ্য কমা দ্বারা পৃথক বিন্যাসে রপ্তানি করুন।</message>
+  <message id="pid-tt-csv-copy">পিক CSV তথ্য আপনার পেস্টবোর্ডে কপি করুন।
+    <p>পিক ডেটা আপনার পেস্টবোর্ডে ফরম্যাট করা এবং প্লেইন-টেক্সট উভয় ভ্যারিয়েন্টে কপি করা হবে,
+      তাই ডেটার ফরম্যাট আপনি যে অ্যাপ্লিকেশনে পেস্ট করছেন তার উপর নির্ভর করবে।
+    </p>
+  </message>
+
+  <message id="pid-csv-copy-full">সম্পূর্ণ পিক CSV কপি করুন</message>
+  <message id="pid-csv-copy-no-hdr">হেডার ছাড়া কপি করুন</message>
+  <message id="pid-csv-copy-compact">ফিট পিক তথ্য কপি করুন</message>
+  <message id="pid-peak-label">পিক: </message>
+</messages>

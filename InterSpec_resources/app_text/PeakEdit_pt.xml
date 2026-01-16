@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- pe- is short for PeakEdit -->
+  <message id="pe-value">Valor</message>
+  <message id="pe-uncertainty">Incerteza</message>
+  <message id="pe-parameter">Parâmetro</message>
+  <message id="pe-label">Rótulo</message>
+  <message id="pe-peak-type">Tipo de Pico</message>
+  <message id="pe-peak-model-gaussian">Gaussiano</message>
+  <message id="pe-peak-model-data">Região de Dados</message>
+  <message id="pe-skew-type">Tipo de Assimetria</message>
+  <message id="pe-btn-refit">Reajustar</message>
+  <message id="pe-btn-refit-roi-standard">Reajustar ROI: FWHMs relacionados</message>
+  <message id="pe-btn-refit-roi-independent">Reajustar ROI: FWHMs independentes</message>
+  <message id="pe-btn-refit-roi-fine">Reajustar ROI: refinamentos pequenos</message>
+  <message id="pe-btn-refit-roi-independent-fine">Reajustar ROI: refinar com FWHMs indep.</message>
+
+  <message id="pe-label-centroid">Centróide</message>
+  <message id="pe-label-drf-fwhm">FWHM Prev. DRF</message>
+  <message id="pe-label-amp">Amplitude</message>
+  <message id="pe-label-skew0">Assimetria 0</message>
+  <message id="pe-label-skew1">Assimetria 1</message>
+  <message id="pe-label-skew2">Assimetria 2</message>
+  <message id="pe-label-skew3">Assimetria 3</message>
+  <message id="pe-label-cont-p0">Cont. P0</message>
+  <message id="pe-label-cont-p1">Cont. P1</message>
+  <message id="pe-label-cont-p2">Cont. P2</message>
+  <message id="pe-label-cont-p3">Cont. P3</message>
+  <message id="pe-label-cont-p4">Cont. P4</message>
+  <message id="pe-label-roi-start">Início ROI (keV)</message>
+  <message id="pe-label-roi-end">Fim ROI (keV)</message>
+  <message id="pe-label-chi2-dof">𝜒²/DOF</message>
+  <message id="pe-label-peak-color">Cor do Pico</message>
+
+  <message id="pe-multipeak-in-roi">Pico {1} de {2} na ROI</message>
+  <message id="pe-apply-all-of-type">Todos os {1} picos</message>
+  <message id="pe-drf-predict-fwhm-txt">DRF prevê FWHM de {1} keV</message>
+  <message id="pe-btn-cont-to-linear">Estimar contínuo linear</message>
+  <message id="pe-tt-btn-cont-to-linear">Usa os canais à direita e à esquerda da ROI para estimar um contínuo de linha reta.</message>
+  <message id="pe-failed-refit-insig">Falha ao reajustar pico (tornou-se insignificante), então não fazendo nada</message>
+
+  <message id="pe-est-lin-cont-no-data">Por favor, carregue um espectro de primeiro plano antes de estimar o contínuo.</message>
+  <message id="pe-failed-est-lin-cont">Falha ao estimar contínuo das bordas da ROI: {1}</message>
+
+
+
+</messages>

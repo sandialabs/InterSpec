@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages nplurals="2" plural="n==1 ? 0 : 1">
+  <!-- 
+    This file contains the localizations for both IsotopeSearchByEnergy.cpp and IsotopeSearchByEnergyModel.cpp - e.g., the "Nuclide Search" tab.
+    (there wasnt enough content in IsotopeSearchByEnergyModel to justify the performance hit of adding in an extra localization file)
+
+    isbe- is short for IsotopeSearchByEnergy
+    isbem- is short for IsotopeSearchByEnergyModel
+  -->
+  <message id="isbe-clear-ref">清除参考光峰</message>
+  <message id="isbe-cb-gammas">伽马</message>
+
+  <message id="isbe-cb-rxnts">反应</message>
+  <message id="isbe-min-br">最小相对BR</message>
+  <message id="isbe-tt-min-br">相对于衰变链的最大强度伽马所需的最小强度。</message>
+  <message id="isbe-min-hl">最小T½</message>
+  <message id="isbe-tt-min-hl">
+    要搜索的核素的最小半衰期。
+    <br />
+    <div>
+      年龄可以使用时间单位的组合来指定，类似于'<b>5.3y 8d 22m</b>'。
+    </div>
+    <div>
+      可接受的时间单位：<b>year</b>、<b>yr</b>、<b>y</b>、<b>day</b>、<b>d</b>、<b>hrs</b>、<b>hour</b>、<b>h</b>、<b>minute</b>、
+      <b>min</b>、<b>m</b>、<b>second</b>、<b>s</b>、<b>ms</b>、<b>microseconds</b>、<b>us</b>、<b>nanoseconds</b>、<b>ns</b>，或
+      您可以通过<b>hh:mm:ss</b>指定时间段。
+    </div>
+    <div>
+      指定多个时间段时，它们会求和，例如'1y6months 3m'被解释为18个月加3分钟
+    </div>
+  </message>
+  <message id="isbe-searching">搜索中</message>
+  <message id="isbe-assign-to-btn">
+    <plural case="0">将峰指定给{1}</plural>
+    <plural case="1">将峰指定给{1}</plural>  <!-- Two or more peaks -->
+  </message>
+  <message id="isbe-assign-searched-energies">
+    <plural case="0">将搜索的能量指定给{1}</plural>
+    <plural case="1">将搜索的能量指定给{1}</plural>  <!-- Two or more peaks -->
+  </message>
+  <message id="isbe-assign-matching-peaks-no-id">将无ID的匹配峰指定给{1}...</message>
+  <message id="isbe-assign-all-matching-peaks">将所有匹配峰指定给{1}...</message>
+
+  <!-- Messages for IsotopeSearchByEnergyModel are below here; i.e. the table headers -->
+  <message id="isbem-parent-nuc">核素</message>
+  <message id="isbem-diff">差异</message>
+  <message id="isbem-rel-br">相对B.R.</message>
+  <message id="isbem-profile">轮廓</message>
+  <message id="isbem-decay">衰变</message>
+  <message id="isbem-part-hl">母体T½</message>
+  <message id="isbem-assumed-age">假设年龄</message>
+  <message id="isbem-tt-parent-nuc">衰变链的母体核素。</message>
+  <message id="isbem-tt-diff">所选核素能级与搜索能级之间的差异</message>
+  <message id="isbem-tt-energy">真实伽马/X射线能量</message>
+  <message id="isbem-tt-rel-bre">相对于核素最大产额伽马的分支比
+    （即，1.0表示最丰富的伽马，而不是每次衰变一个伽马）
+  </message>
+  <message id="isbem-tt-profile">观察到的谱在具有所选源的预期峰方面接近程度的粗略指标。
+    数字越高越好，值为1.0是最高的 - 建议按此列排序进行核素ID。
+    有关此数量的更完整描述，请参阅此工具的帮助。
+  </message>
+  <message id="isbem-tt-parent-hl">母体半衰期</message>
+  <message id="isbem-tt-assumed-age">核素的假设年龄</message>
+  
+  <!-- Categories int the drop-down-->
+  <message id="isbe-category-nuc-xray">核素+X射线</message>
+  <message id="isbe-category-nuc-xray-desc">核素+X射线</message>
+  <message id="isbe-category-nuc-xray-rctn">核素、X射线、反应</message>
+  <message id="isbe-category-nuc-xray-rctn-desc">所有核素、X射线（衰变和荧光）和反应</message>
+  <message id="isbe-category-xray">荧光X射线</message>
+  <message id="isbe-category-xray-desc">仅荧光X射线</message>
+  <message id="isbe-category-reactions">反应</message>
+  <message id="isbe-category-reactions-desc">仅反应</message>
+  <message id="isbe-category-medical">医用核素</message>
+  <message id="isbe-category-medical-desc">常见医用核素</message>
+  <message id="isbe-category-industrial">工业核素</message>
+  <message id="isbe-category-industrial-desc">常见工业核素</message>
+  <message id="isbe-category-snm">SNM</message>
+  <message id="isbe-category-snm-desc">SNM核素</message>
+  <message id="isbe-category-norm">NORM</message>
+  <message id="isbe-category-norm-desc">天然存在的放射性核素</message>
+  <message id="isbe-category-common">现场遇到的源</message>
+  <message id="isbe-category-common-desc">现场收集谱中遇到的常见核素和反应</message>
+  <message id="isbe-category-common-nuc">现场遇到的核素</message>
+  <message id="isbe-category-common-nuc-desc">现场收集谱中遇到的常见核素（无中子或反应）</message>
+  <message id="isbe-category-reactions">核反应</message>
+  <message id="isbe-category-reactions-desc">核反应</message>
+  <message id="isbe-category-fission">裂变产物</message>
+  <message id="isbe-category-fission-desc">您可能在伽马谱中看到的裂变产物（绝不是完整列表）</message>
+  <message id="isbe-category-alphas">阿尔法</message>
+  <message id="isbe-category-alphas-desc">按阿尔法粒子能量搜索。</message>
+  <message id="isbe-category-betas">贝塔端点</message>
+  <message id="isbe-category-betas-desc">按贝塔粒子端点能量搜索。</message>
+  <message id="isbe-category-no-progeny">未老化核素</message>
+  <message id="isbe-category-no-progeny-desc">不包括核素的后代。匹配伽马或衰变X射线。</message>
+</messages>
+

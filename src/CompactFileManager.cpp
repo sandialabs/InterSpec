@@ -182,20 +182,20 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     {
       case 0:
         type = SpecUtils::SpectrumType::Foreground;
-        txtKey = "Foreground";
+        txtKey = "foreground-label";
         style = "Foreground";
       break;
       
       case 1:
         type = SpecUtils::SpectrumType::Background;
         style = "Background";
-        txtKey = "Background";
+        txtKey = "background-label";
       break;
       
       case 2:
         type = SpecUtils::SpectrumType::SecondForeground;
         style = "Secondary";
-        txtKey = "second-foreground";
+        txtKey = "secondary-label";
       break;
     }//switch( i )
     
@@ -205,7 +205,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     WContainerWidget *titleRow = new WContainerWidget( wrapper );
     titleRow->addStyleClass( "TitleRow" );
     
-    label = new WLabel( WString("{1}:").arg( WString::tr(txtKey) ), titleRow );
+    label = new WLabel( WString::tr(txtKey), titleRow );
     
     const string svg_style = "CompactFMSpecLine" + string(style);
     const string svg_content =
@@ -901,7 +901,7 @@ void CompactFileManager::handleDisplayChange( SpecUtils::SpectrumType spectrum_t
         m_titles[typeindex]->setText( WString() );
     }else
     {
-      WString titleTxt = WString("{1}: {2}").arg( WString::tr("Title") ).arg( title );
+      WString titleTxt = WString::tr("cfm-title-with-name").arg( title );
       m_titles[typeindex]->setText( titleTxt );
       m_titles[typeindex]->show();
     }
@@ -999,21 +999,23 @@ void CompactFileManager::updateSummaryTable( SpecUtils::SpectrumType type,
   WTableCell *cell = table->elementAt( table_pos / num_info_col, 2*(table_pos % num_info_col) );
   new WText( live_time_label, cell );
   cell = table->elementAt(table_pos / num_info_col, 1 + 2*(table_pos % num_info_col) );
-  WText *valTxt = new WText( PhysicalUnits::printToBestTimeUnits(live_time, 4), cell );
+  const string live_time_str = PhysicalUnits::printToBestTimeUnits(live_time, 4);
+  WText *valTxt = new WText( live_time_str, cell );
   
   // Set tool-tip to be in number of seconds, jic its useful
   snprintf( buffer, sizeof(buffer), "%.3f", live_time );
-  valTxt->setToolTip( WString("{1}: {2} {3}").arg(live_time).arg(buffer).arg(second_label) );
+  valTxt->setToolTip( WString("{1}: {2} {3}").arg(live_time_str).arg(buffer).arg(second_label) );
   
   table_pos += 1;
   cell = table->elementAt(table_pos / num_info_col, 2*(table_pos % num_info_col) );
   new WText( real_time_label, cell );
   cell = table->elementAt(table_pos / num_info_col, 1 + 2*(table_pos % num_info_col) );
-  valTxt = new WText( PhysicalUnits::printToBestTimeUnits(real_time, 4), cell );
+  const string real_time_str = PhysicalUnits::printToBestTimeUnits(real_time, 4);
+  valTxt = new WText( real_time_str, cell );
   
   // Set tool-tip to be in number of seconds, jic its useful
   snprintf( buffer, sizeof(buffer), "%.3f", real_time );
-  valTxt->setToolTip( WString("{1}: {2} {3}").arg(real_time).arg(buffer).arg(second_label) );
+  valTxt->setToolTip( WString("{1}: {2} {3}").arg(real_time_str).arg(buffer).arg(second_label) );
   
   table_pos += 1;
   const double dead_time = 100*(real_time - live_time) / real_time;
@@ -1152,7 +1154,7 @@ void CompactFileManager::updateSummaryTable( SpecUtils::SpectrumType type,
   {
     table_pos += 1;
     cell = table->elementAt(table_pos / num_info_col, 2*(table_pos % num_info_col) );
-    WText *label = new WText( WString::tr("cfm-meas-type"), cell );
+    WLabel *label = new WLabel( WString::tr("cfm-meas-type"), cell );
     
     
     WString spec_type;
@@ -1332,7 +1334,7 @@ void CompactFileManager::handleSwapWithForeground( const SpecUtils::SpectrumType
     return;
   
   const shared_ptr<SpecMeas> meas = m_interspec->measurment(type);
-  const set<int> &samples = m_interspec->displayedSamples(type);
+  const set<int> samples = m_interspec->displayedSamples(type);
   const vector<string> detectors = m_interspec->detectorsToDisplay(type);
 
   // When we set the foreground, the background or secondary may get cleared, so we'll re-set that.
@@ -1340,11 +1342,11 @@ void CompactFileManager::handleSwapWithForeground( const SpecUtils::SpectrumType
                                                ? SpecUtils::SpectrumType::SecondForeground 
                                                : SpecUtils::SpectrumType::Background;
   const shared_ptr<SpecMeas> other_meas = m_interspec->measurment(other_type);
-  const set<int> &other_samples = m_interspec->displayedSamples(other_type);
+  const set<int> other_samples = m_interspec->displayedSamples(other_type);
   const vector<string> other_detectors = m_interspec->detectorsToDisplay(other_type);
   
   const shared_ptr<SpecMeas> foreground_meas = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
-  const set<int> &foreground_samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Foreground);
+  const set<int> foreground_samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Foreground);
   const vector<string> foreground_detectors = m_interspec->detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
   
   const Wt::WModelIndex index = m_files->index(meas);

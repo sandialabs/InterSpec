@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- gxsg- is short for GammaXsGui -->
+  <message id="gxsg-material-formula">Материал/Формула</message>
+  <message id="gxsg-tt-material">
+    Вы можете либо ввести название предопределённого материала или элемента (очистить текст формы
+    и щёлкнуть стрелку справа от формы, чтобы увидеть все предопределённые опции), либо вы можете
+    ввести химическую формулу, например 'H0.112 O0.88', где числа - это
+    плотность в г/см3 (или использовать массовую долю и поле плотности) предшествующего элемента.
+  </message>
+  <message id="gxsg-total-atten-xs">Полное сечение ослабления</message>
+  <message id="gxsg-compton-label">Комптон</message>
+  <message id="gxsg-rayleigh-label">Рэлей</message>
+  <message id="gxsg-photoelec-label">Фотоэлектр.</message>
+  <message id="gxsg-pp-label">Образование пар</message>
+  <message id="gxsg-mass-avrg-an">Средний атомный номер по массе</message>
+  <message id="gxsg-opt-atten">Ослабление (дополнительно):</message>
+  <message id="gxsg-density-label">Плотность:</message>
+  <message id="gxsg-thickness-label">Толщина:</message>
+  <message id="gxsg-tt-thickness">Толщина ослабителя.</message>
+  <message id="gxsg-trans-frac-label">Доля пропуск.</message>
+  <message id="gxsg-tt-trans-frac">Это доля гамм, которые пройдут через указанное экранирование.</message>
+  <message id="gxsg-tt-distance">Это расстояние от центра источника до детектора.</message>
+  <message id="gxsg-intrinsic-eff-label">Собственная эффективность</message>
+  <message id="gxsg-tt-intrinsic-eff">Собственная эффективность (эффективность обнаружения в пике гамм, попадающих на поверхность детектора).</message>
+  <message id="gxsg-solid-angle-frac-label">Доля телесного угла</message>
+  <message id="gxsg-tt-solid-angle-frac">Дробная часть телесного угла выбранного детектора на указанном расстоянии.</message>
+  <message id="gxsg-det-eff-label">Эффективность обнаружения</message>
+  <message id="gxsg-tt-det-eff">Собственная эффективность, умноженная на долю телесного угла. Т.е. доля гамм, выходящих из экранирования, которые будут обнаружены. Не включает ослабление.</message>
+  <message id="gxsg-total-eff-label">Общая эффективность</message>
+  <message id="gxsg-tt-total-eff">Доля пропускания, умноженная на эффективность обнаружения. Т.е. доля гамм, излучаемых из источника, которые будут обнаружены.</message>
+  <message id="gxsg-warn-suspect">Расчёт XS может быть подозрительным: {1}</message>
+  <message id="gxsg-tool-state-title">Состояние инструмента гамма XS</message>
+  <message id="gxsg-tool-state-text">Текущее состояние инструмента xs.</message>
+</messages>

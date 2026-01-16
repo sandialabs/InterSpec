@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- smmd- is short for ShowMultiMediaDisplay -->
+  <message id="smmd-prev-btn">前へ</message>
+  <message id="smmd-next-btn">次へ</message>
+  <message id="smmd-auto-show-images-cb">画像を自動表示</message>
+  <message id="smmd-tt-auto-show-images">画像を含むスペクトルファイルが読み込まれた時に自動的に画像を表示します。</message>
+  <message id="smmd-tt-export-image-file">現在表示している画像をファイルにエクスポートします。</message>
+  <message id="smmd-err-no-content">表示するマルチメディアコンテンツがありません</message>
+  <message id="smmd-err-file-is-uri">データはURI='{1}'のファイルとしてエンコードされています</message>
+  <message id="smmd-err-no-multimedia-src">マルチメディアソースにデータが含まれていませんでした。</message>
+  <message id="smmd-err-encoding-not-supported">マルチメディアコンテンツのデータエンコーディングはサポートされていません。</message>
+  <message id="smmd-err-not-image">マルチメディアコンテンツタイプが画像タイプでないか、判定できませんでした。</message>
+  <message id="smmd-image-index">{2}中の画像{1}</message>
+  <message id="smmd-Time">時刻</message>
+  <message id="smmd-time-label">時刻: {1}</message>
+  <message id="smmd-remark-label">備考: {1}</message>
+  <message id="smmd-desc-label">Desc.: {1}</message>
+  <message id="smmd-window-title-single">スペクトルファイルの画像</message>
+  <message id="smmd-window-title-multiple">スペクトルファイルの画像</message>
+</messages>

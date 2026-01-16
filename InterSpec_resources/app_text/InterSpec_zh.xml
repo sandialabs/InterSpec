@@ -1,0 +1,628 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- Text labels for general buttons/prompts, and one-off words around the app.  Note the capitalization. -->
+  <message id="Cancel">取消</message>
+  <message id="Yes">是</message>
+  <message id="No">否</message>
+  <message id="Close">关闭</message>
+  <message id="Continue">继续</message>
+  <message id="Save">保存</message>
+  <message id="Name">名称</message>
+  <message id="Desc.">描述</message>
+  <message id="Back">返回</message>
+  <message id="Create">创建</message>
+  <message id="Energy">能量</message>
+  <message id="Counts">计数</message>
+  <message id="Apply">应用</message>
+  <message id="Accept">接受</message>
+  <message id="Okay">确定</message>
+  <message id="Foreground">前景</message>
+  <message id="Background">本底</message>
+  <message id="Secondary">次要</message>
+  <message id="second-foreground">第二前景</message>
+  <message id="foreground" comment="For use in middle of sentence">前景</message>
+  <message id="background" comment="For use in middle of sentence">本底</message>
+  <message id="secondary" comment="For use in middle of sentence">次要</message>
+  <message id="Exit">退出</message>
+  <message id="Enter">输入</message>
+  <message id="show-lines">显示线</message>
+  <message id="Default">默认</message>
+  <message id="Error">错误</message>
+  <message id="Description">描述</message>
+  <message id="Detector">探测器</message>
+  <message id="Distance">距离</message>
+  <message id="Activity">活度</message>
+  <message id="nuclide-label">核素:</message>
+  <message id="age-label">年龄:</message>
+  <message id="distance-label">距离:</message>
+  <message id="activity-label">活度:</message>
+  <message id="dose-label">剂量:</message>
+  <message id="shielding-label">屏蔽:</message>
+  <message id="detector-label">探测器:</message>
+  <message id="energy-label">能量:</message>
+  <message id="foreground-label">前景:</message>
+  <message id="background-label">背景:</message>
+  <message id="secondary-label">次要:</message>
+  <message id="Remark">备注</message>
+  <message id="Tap">轻触</message>
+  <message id="Click">点击</message>
+  <message id="tap">轻触</message>
+  <message id="click">点击</message>
+
+
+  <!-- Words not used in InterSpec.cpp, but at least a few places throughout the app --> 
+  <message id="Continuum">连续谱</message>
+  <message id="cont-type">连续类型</message>
+  <message id="Title">标题</message>
+  <message id="Fit">拟合</message>
+  <message id="Use">使用</message>
+  <message id="Mean">均值</message>
+  <message id="FWHM">FWHM</message>
+  <message id="Amp.">幅度</message>
+  <message id="Area">面积</message>
+  <message id="Age">年龄</message>
+  <message id="Add">添加</message>
+  <message id="Peak">峰</message>
+  <message id="Delete">删除</message>
+  <message id="Photopeak">光峰</message>
+  <message id="Nuclide">核素</message>
+  <message id="Nuc.">核素</message>
+  <message id="Skew">偏斜</message>
+  <message id="CPS">CPS</message>
+  <message id="CSV">CSV</message>
+  <message id="True">真</message>
+  <message id="False">假</message>
+  <message id="Remove">删除</message>
+  <message id="RemoveAll">全部删除</message>
+  <message id="Clear">清除</message>
+  <message id="ClearAll">全部清除</message>
+  <message id="T1/2">T½</message>
+  <message id="Gamma">伽马</message>
+  <message id="X-rays">X射线</message>
+  <message id="x-ray">X射线</message>
+  <message id="Live Time">活时间</message>
+  <message id="Real Time">实时间</message>
+  <message id="Geometry">几何</message>
+  <message id="Load">加载</message>
+  <message id="Mass">质量</message>
+  <message id="Material">材料</message>
+  <message id="NA">NA</message>
+  <message id="n/a">不适用</message>
+  <message id="N/A">不适用</message>
+  <message id="Min.">最小</message>
+  <message id="Max.">最大</message>
+  <message id="QR Code">二维码</message>
+  <message id="Dose">剂量</message>
+  <message id="Shielding">屏蔽</message>
+  <message id="app-qr-err">创建二维码时出错：{1}</message>
+  <message id="intrinsic-activity">本征活度</message>
+  <message id="Calibration">刻度</message>
+  <message id="Unknown">未知</message>
+  <message id="keV">keV</message>
+  <message id="Energy (keV)">能量（keV）</message>
+  <message id="Efficiency">效率</message>
+  <message id="stable">稳定</message>
+
+  <!-- Units the user may use to write time duration.
+    Note that we dont have very good changing case (i.e., from lower to upper, or upper to lower)
+    in the C++ code, so to be sure the matching works, you should include common capitalization
+    schemes here - sorry.
+
+    It is important that the | character is used, with no spaces, to seperate the different possible
+    units (this is because this string will become part of a regular-expression).
+    
+    These 'units-labels-*' string also MUST NOT be empty, or regex validation inputs will fail.
+    (you can leave the whole element out, to default to English, but if you put in a localized
+    element, the node must hav a value)
+  -->
+  <message id="units-labels-second">秒|秒钟|sec|s|SECONDS|SECOND|SEC|S</message>
+  <message id="units-labels-minute">分钟|分|min|m</message>
+  <message id="units-labels-hours">小时|时|hrs|h</message>
+  <message id="units-labels-days">天|日|d</message>
+  <message id="units-labels-year">年|yr|y</message>
+  <message id="units-labels-half-lives">hl|半衰期|halflives|half-life|half-lives|half lives|half life</message>
+  <!-- Units to use when writing a time duration out -->
+  <message id="units-label-seconds-short">秒</message>
+  <message id="units-label-minutes-short">分</message>
+  <message id="units-label-hours-short">时</message>
+  <message id="units-label-days-short">天</message>
+  <message id="units-label-years-short">年</message>
+
+
+  <!-- The dialog when the user selects "Clear Session..." from the File menu -->
+  <message id="clear-session">清除会话？</message>
+  <message id="clear-session-msg">您确定要开始新会话吗？</message>
+
+  <message id="window-title-spec-file-query">谱文件查询工具</message>
+  <message id="window-title-notification-log">通知日志</message>
+  <message id="notification-log-clear">清除通知</message>
+  <message id="window-title-peak-manager">峰管理器</message>
+  <message id="window-title-store-state-as">将状态存储为</message>
+  <message id="window-title-tag-state">标记当前状态</message>
+  <message id="window-title-create-snapshot">创建快照</message>
+  <message id="window-title-energy-cal">能量刻度</message>
+  <message id="window-title-hard-back-sub">执行硬本底减除？</message>
+  <message id="window-title-3d">3D数据视图</message>
+  <message id="window-title-peak-rel-eff">来自用户拟合峰的同位素分析</message>
+  <message id="window-title-compact-file">选择要显示的已打开谱</message>
+  <message id="window-title-feature-markers">特征标记</message>
+  <message id="window-title-act-shield-fit">活度/屏蔽拟合</message>
+  <message id="window-title-xs-calc">伽马XS计算</message>
+  <message id="window-title-dose-calc">剂量计算</message>
+  <message id="window-title-1/r2-calc">1/r<sup>2</sup>计算器</message>
+  <message id="window-title-units-convert">单位转换器</message>
+  <message id="window-title-flux-tool">通量工具</message>
+  <message id="window-title-nuc-decay">核素衰变信息</message>
+  <message id="window-title-select-det-eff-fcn">探测器响应函数选择</message>
+  <message id="window-title-add-fwhm">向探测器响应函数添加FWHM</message>
+  <message id="window-title-create-drf">创建探测器响应函数</message>
+  <message id="window-title-file-parameters">文件参数</message>
+  <message id="window-title-energy-range-sum">能量范围求和</message>
+  <message id="window-title-external-rid">外部RID</message>
+  <message id="window-title-license-credit">免责声明、许可、致谢和联系方式</message>
+  <message id="window-title-help">InterSpec帮助</message>
+  <message id="window-title-simple-mda">简单最小可检测活度计算</message>
+  <message id="window-title-peak-editor">峰编辑器</message>
+  
+
+  <!-- The names of the tool-tabs at the bottom of the app -->
+  <message id="app-tab-peak-manager">峰管理器</message>
+  <message id="app-tab-ref-photopeak">参考光峰</message>
+  <message id="app-tab-energy-cal">能量刻度</message>
+  <message id="app-tab-nuc-search">核素搜索</message>
+  <message id="app-tab-spec-files">谱文件</message>
+  <message id="app-tab-terminal">终端</message>
+  <message id="app-tab-isotopics">同位素分析</message>
+
+  <message id="app-tab-tt-ref-photopeak">允许用户显示来自X射线、
+    伽马或核反应的参考光峰线。
+    <br />
+    可以编辑核素年龄、应用的屏蔽和使用的探测器效率。
+    <br />
+    在扩展信息菜单中，您还可以显示级联衰变和、阿尔法能量或贝塔端点。
+    <br />
+    您还可以导出包含核素信息的CSV文件。
+  </message>
+  <message id="app-tab-tt-peak-manager">在可编辑和可排序的表中显示拟合峰的信息，
+    允许导出峰信息的CSV，以及用于自动搜索峰、添加和删除峰的实用程序。
+  </message>
+  <message id="app-tab-tt-energy-cal">允许用户修改或拟合能量刻度项和非线性偏差对。
+    <br />
+    还有选项可以线性化谱、更改能量刻度类型、截断能量范围或合并道。
+    <br />
+    还可以通过右键单击拖动谱从原始能量到修改后的能量来图形化进行能量刻度
+    （例如，将数据峰拖动到适当的参考线）。
+  </message>
+  <message id="app-tab-tt-nuc-search">搜索具有能量、分支比和半衰期约束的核素。</message>
+  <message id="app-tab-tt-auto-search">自动峰搜索</message>
+  <message id="app-tab-tt-terminal">数字、代数和基于文本的谱交互终端。</message>
+  <message id="app-tab-tt-rel-eff">来自您拟合的峰的相对效率分析。</message>
+
+
+  <!-- App-level menu names -->
+  <message id="app-menu-file">文件</message>
+  <message id="app-menu-spectra">谱</message>
+  <message id="app-menu-edit">编辑</message>
+  <message id="app-menu-view">查看</message>
+  <message id="app-menu-help">帮助</message>
+  <message id="app-menu-tools">工具</message>
+  
+
+  <!-- 
+    Menu item text for the app-level menus.
+    They are in the form of "app-mi-{menu}-item-desc", or for tool tips "app-mi-tt-{menu}-item-desc"
+  -->
+  <message id="app-mi-file-about">关于InterSpec</message>
+  <message id="app-mi-file-open">打开文件...</message>
+  <message id="app-mi-file-loaded-spec">已加载谱...</message>
+  <message id="app-mi-file-manager">管理器...</message>
+  <message id="app-mi-tt-file-manager">管理已加载的谱。求和谱、将谱合并为不同文件、显示...</message>
+  <message id="app-mi-file-store">存储</message>
+  <message id="app-mi-tt-file-store">将当前应用状态保存到InterSpec数据库</message>
+  <message id="app-mi-file-store-as">存储为...</message>
+  <message id="app-mi-tt-file-store-as">将当前应用状态保存到InterSpec数据库中的新列表</message>
+  <message id="app-mi-file-tag">标记...</message>
+  <message id="app-mi-tt-file-tag">标记当前Interspec状态，以便
+   您以后可以恢复。加载应用状态时，
+   您可以选择最近的保存，或选择过去标记的版本。
+  </message>
+  <message id="app-mi-file-prev">先前...</message>
+  <message id="app-mi-tt-file-prev">打开先前保存的状态或谱。</message>
+  <message id="app-mi-file-clear">清除会话...</message>
+  <message id="app-mi-tt-file-clear">开始没有加载谱的清洁应用状态</message>
+  <message id="app-mi-samples">样本</message>
+  <message id="app-mi-tt-file-open">创建一个对话框以浏览文件系统上的谱文件。
+    将文件直接拖放到应用窗口作为更快的替代方案。
+  </message>
+  <message id="app-mi-export-file">导出文件...</message>
+
+  <message id="app-mi-samples-ba133">Ba-133（16k道）</message>
+  <message id="app-mi-samples-passthrough-mobile">Passthrough（16k道）</message>
+  <message id="app-mi-samples-passthrough">Passthrough（16k bin ICD1，8探测器，133样本）</message>
+  <message id="app-mi-samples-background">本底（16k bin N42）</message>
+  <message id="app-mi-samples-reference">参考谱...</message>
+
+  <!-- Items in the "Edit" menu -->
+  <message id="app-mi-edit-undo">撤消</message>
+  <message id="app-mi-edit-redo">重做</message>
+  <message id="app-mi-edit-save-png">将谱保存为PNG</message>
+  <message id="app-mi-edit-save-svg">将谱保存为SVG</message>
+  <message id="app-mi-edit-enter-url">输入URL</message>
+
+  <!-- Items in the "View" menu -->
+  <message id="app-mi-view-show-tabs">显示工具选项卡</message>
+  <message id="app-mi-view-hide-tabs">隐藏工具选项卡</message>
+  <message id="app-mi-view-chart-opts">图表选项</message>
+  <message id="app-mi-view-logy">对数Y刻度</message>
+  <message id="app-mi-view-liny">线性Y刻度</message>
+  <message id="app-mi-view-show-vert">显示垂直线</message>
+  <message id="app-mi-view-hide-vert">隐藏垂直线</message>
+  <message id="app-mi-view-show-horz">显示水平线</message>
+  <message id="app-mi-view-hide-horz">隐藏水平线</message>
+  <message id="app-mi-view-compact-x">紧凑X轴</message>
+  <message id="app-mi-view-normal-x">正常X轴</message>
+  <message id="app-mi-view-show-leg">显示谱图例</message>
+  <message id="app-mi-view-show-slider">显示能量滑块</message>
+  <message id="app-mi-view-hide-slider">隐藏能量滑块</message>
+  <message id="app-mi-view-show-scaler">显示Y轴缩放器</message>
+  <message id="app-mi-view-hide-scaler">隐藏Y轴缩放器</message>
+  <message id="app-mi-view-back-sub">本底减除</message>
+  <message id="app-mi-view-back-unsub">取消本底减除</message>
+  <message id="app-mi-view-hard-sub">硬本底减除...</message>
+  <message id="app-mi-view-map">地图</message>
+  <message id="app-mi-tt-view-map">在地图上显示测量位置。仅在GPS坐标可用时启用。</message>
+  <message id="app-mi-view-3d">显示3D视图</message>
+  <message id="app-mi-tt-view-3d">显示搜索模式或RPM数据的时间vs.能量vs.计数视图。</message>
+  <message id="app-mi-view-rid">显示ID结果</message>
+  <message id="app-mi-tt-view-rid">显示谱文件中包含的探测器ID分析结果。</message>
+  <message id="app-mi-view-img">显示图像</message>
+  <message id="app-mi-tt-view-img">显示谱文件中包含的图像。</message>
+  <message id="app-mi-view-feature-markers">特征标记...</message>
+  <message id="app-mi-view-hide-feature-markers">隐藏特征标记</message>
+  <message id="app-mi-view-enable-dynamic-ref-lines">显示动态参考线</message>
+  <message id="app-mi-view-disable-dynamic-ref-lines">隐藏动态参考线</message>
+  <message id="app-mi-tt-view-feature-markers">显示单/双逃逸峰、康普顿峰、康普顿边缘和求和峰的工具。</message>
+  <message id="app-mi-view-new-win">新应用窗口</message>
+  <message id="app-mi-view-webbrowser">在外部浏览器中使用</message>
+  <message id="app-mi-view-full">切换全屏</message>
+  <message id="app-mi-view-act-size">实际大小</message>
+  <message id="app-mi-view-zin">放大</message>
+  <message id="app-mi-view-zout">缩小</message>
+  <message id="app-mi-view-dev-tool">切换开发工具</message>
+  <message id="app-mi-view-dets">探测器</message>
+  <message id="app-mi-view-peak-labels">峰标签</message>
+  <message id="app-mi-view-lbl-usr">显示用户标签</message>
+  <message id="app-mi-view-lbl-peak-en">显示峰能量</message>
+  <message id="app-mi-view-lbl-nuc-nm">显示核素名称</message>
+  <message id="app-mi-view-lbl-nuc-en">显示核素能量</message>
+
+  <!-- The Detectors sub-menu under View -->
+  <message id="app-mi-det-no-name">探测器{1}（{2}）</message>
+  <message id="app-mi-det-with-name">探测器{1}</message>
+
+  
+  <!-- Items in the "Tools" menu -->
+  <message id="app-mi-tools-act-fit">活度/屏蔽拟合</message>
+  <message id="app-mi-tt-tools-act-fit">拟合谱中核素的活度和屏蔽的工具。
+    <br />
+    还包含确定核素年龄、污染浓度或富集度的功能。
+  </message>
+  <message id="app-mi-tools-iso-by-nuc">按核素分析同位素</message>
+  <message id="app-mi-tt-tools-iso-by-nuc">
+    自动拟合核素峰以允许确定核素的相对
+    活度。不需要知道探测器
+   响应或屏蔽信息。
+  </message>
+  <message id="app-mi-tools-iso-by-peak">从峰分析同位素</message>
+  <message id="app-mi-tt-tools-iso-by-peak">使用您拟合的峰来确定核素的相对活度。不需要知道探测器响应或屏蔽信息。</message>
+  <message id="app-mi-tools-xs-calc">伽马XS计算</message>
+  <message id="app-mi-tt-tools-xs-calc">允许用户确定任意能量的伽马通过<code>InterSpec</code>库中的任何材料的截面。如果输入额外信息，可以提供全能峰内检测伽马射线的效率估计以及将通过材料而不与之相互作用的伽马射线的分数。
+  </message>
+  <message id="app-mi-tools-dose-calc">剂量计算</message>
+  <message id="app-mi-tt-tools-dose-calc">允许您在给定其他信息的情况下计算剂量、活度、屏蔽或距离。
+  </message>
+  <message id="app-mi-tools-1r2">1/r<sup>2</sup>计算器</message>
+  <message id="app-mi-tt-tools-1r2">允许用户使用在距源不同距离处进行的两次剂量测量来确定从较近测量到源的绝对距离。</message>
+  <message id="app-mi-tools-unit">单位转换器</message>
+  <message id="app-mi-tt-tools-unit">转换辐射相关单位。</message>
+  <message id="app-mi-tools-flux">通量工具</message>
+  <message id="app-mi-tt-tools-flux">将检测到的峰计数转换为源发出的伽马。</message>
+  <message id="app-mi-tools-nuc-decay">核素衰变信息</message>
+  <message id="app-mi-tt-tools-nuc-decay">允许用户获取有关活度、伽马/阿尔法/贝塔产生率、衰变链和后代核素的高级信息。</message>
+  <message id="app-mi-tools-mda">检测置信度工具</message>
+  <message id="app-mi-tt-tools-mda">提供核素的上限活度估计</message>
+  <message id="app-mi-tools-select-drf">探测器响应选择</message>
+  <message id="app-mi-tt-tools-select-drf">允许用户更改探测器响应函数。</message>
+  <message id="app-mi-tools-make-drf">制作探测器响应</message>
+  <message id="app-mi-tt-tools-make-drf">从表征数据创建探测器响应函数。</message>
+  <message id="app-mi-tools-file-par">文件参数</message>
+  <message id="app-mi-tt-tools-file-par">允许用户查看/编辑文件参数。如果应用程序无法呈现活度计算，请使用此工具提供原始文件未提供的参数；<code>InterSpec</code>需要所有参数进行活度计算。</message>
+  <message id="app-mi-tools-en-sum">能量范围求和</message>
+  <message id="app-mi-tt-tools-en-sum">对感兴趣区域（ROI）中的伽马数求和。也可以通过在按住<kbd><b>ALT</b></kbd>和<kbd><b>SHIFT</b></kbd>键的同时在ROI上左键拖动来访问。</message>
+  <message id="app-mi-tools-query">文件查询工具</message>
+  <message id="app-mi-tt-tools-query">（递归地）搜索目录以查找与指定条件匹配的谱文件。</message>
+  <message id="app-mi-tools-math">数学/命令终端</message>
+  <message id="app-mi-tt-tools-math">创建提供数字和代数计算的终端，以及允许与谱进行一些基于文本的交互。</message>
+ <message id="app-mi-tools-ext-rid">外部RID</message>
+ <message id="app-mi-tt-tools-ext-rid">使用{1}远程URL对您的谱执行核素识别。</message>
+ <!-- This next sentence fragment _may_ get substituted into the previous message, where there is a {1} in it -->
+ <message id="app-mi-tt-tools-ext-rid-exe">外部程序或</message>
+
+  <!-- Items in the "Help" menu -->
+  <message id="app-mi-help-welcome">欢迎...</message>
+  <message id="app-mi-help-contents">帮助内容...</message>
+  <message id="app-mi-help-notif-log">通知日志</message>
+  <message id="app-mi-help-opts">选项</message>
+  <message id="app-mi-help-pref-auto-store">自动存储您的工作</message>
+  <message id="app-mi-help-pref-check-prev">检查先前工作</message>
+  <message id="app-mi-help-pref-show-tt">显示工具提示</message>
+  <message id="app-mi-help-pref-prop-peak">询问传播峰</message>
+  <message id="app-mi-help-pref-preserve-ene-cal">询问保留能量校准。</message>
+  <message id="app-mi-help-pref-disp-bq">以贝克勒尔显示</message>
+  <message id="app-mi-help-pref-def-drfs">使用默认DRF</message>
+  <message id="app-mi-help-pref-desktop">桌面界面</message>
+  <message id="app-mi-help-pref-auto-dark">自动应用"深色"主题</message>
+  <message id="app-mi-help-pref-theme">颜色主题...</message>
+  <message id="app-mi-help-pref-prompt-prev">提示加载先前状态</message>
+  <message id="app-mi-help-pref-load-prev">启动时加载先前状态</message>
+  <message id="app-mi-help-language">语言</message>
+  <message id="app-mi-help-about">关于InterSpec...</message>
+
+  <message id="app-mi-tt-help-pref-auto-store">如果您在
+    存储状态下工作，则自动存储应用状态，或者如果您不在，它将将您的谱
+    和您的工作（例如，拟合峰、能量刻度更改等）存储到
+    InterSpec内部数据库中，并在您下次加载相同谱时提示您是否要恢复
+    上次离开的地方。
+  </message>
+  <message id="app-mi-tt-help-pref-check-prev">加载谱文件时，检查是否先前
+    对同一文件进行了工作（峰拟合、
+    活度拟合等）。
+  </message>
+  <message id="app-mi-tt-help-pref-show-tt">在元素上悬停半秒后显示工具提示。</message>
+  <message id="app-mi-tt-help-pref-prop-peak">从同一探测器加载谱时，
+    询问是否应为新谱重新拟合相同的峰。仅在新谱没有任何峰但先前
+    前景有峰时适用。
+  </message>
+  <message id="app-mi-tt-help-pref-preserve-ene-cal">从同一探测器加载谱时，且新文件的能量
+    校准与旧文件不同时，询问是否应将旧文件的能量校准
+    应用于新文件。
+  </message>
+  <message id="app-mi-tt-help-pref-disp-bq">以贝克勒尔而不是居里显示活度。</message>
+  <message id="app-mi-tt-help-def-drfs">加载谱时，如果您先前没有
+    将探测器响应函数与
+    谱所来自的探测器型号关联，是否应尝试
+    自动查找和加载默认DRF。
+  </message>
+  <message id="app-mi-tt-help-desktop">选择使用更偏移动设备或桌面风格的
+    应用界面。主要区别是使用
+    "汉堡包"风格菜单或菜单栏。
+
+    更改此首选项在应用
+    重新启动或选择"清除会话..."选项之前不会生效。
+  </message>
+  <message id="app-mi-tt-help-auto-dark">根据
+    操作系统的当前值或切换时自动应用"深色"颜色主题。
+  </message>
+  <message id="app-mi-tt-help-pref-prompt-prev">在应用启动时，询问是否加载先前状态。</message>
+  <message id="app-mi-tt-help-pref-load-prev">在应用启动时，如果未设置为提示，则自动加载先前状态。</message>
+  <message id="warn-desktop-disp-switch">更改在应用重新启动或刷新之前不会生效。</message>
+  <message id="warn-desktop-disp-switch-refresh">刷新会话</message>
+  <message id="warn-language-restart">并非所有字段都会使用新语言更新 - 重新启动应用程序以完全更新。</message>
+
+
+
+  <!-- Menu item text for when you right-click on a peak. The "_mi" is menu item, and "_tt" is tool-tip -->
+  <message id="rclick-mi-peak-editor">峰编辑器...</message>
+  <message id="rclick-mi-refit-peak">重新拟合峰</message>
+  <message id="rclick-mi-use-drf-fwhm">使用DRF FWHM</message>
+  <message id="rclick-mi-tt-use-drf-fwhm">将峰的FWHM固定为探测器响应函数预测的值，然后重新拟合峰。</message>
+  <message id="rclick-mi-fix-mean">将均值设置为光峰</message>
+  <message id="rclick-mi-tt-fix-mean">将峰质心固定为指定的伽马能量，或者如果未指定源，则固定为可能的参考光峰线。设置质心后，将重新拟合其他峰参数</message>
+  
+  
+  <message id="rclick-mi-refit-roi">重新拟合ROI</message>
+  <message id="rclick-mi-tt-refit-roi">重新拟合ROI，对ROI中所有未固定的FWHM强制执行合理的线性关系。</message>
+  <message id="rclick-mi-refit-roi-aggressive">重新拟合ROI（激进）</message>
+  <message id="rclick-mi-tt-refit-roi-aggressive">重新拟合ROI，允许每个峰的FWHM独立变化，除非它们已在<em>峰编辑器</em>中固定</message>
+  <message id="rclick-mi-delete-peak">删除峰</message>
+  <message id="rclick-mi-change-nuc">更改核素</message>
+  <message id="rclick-mi-change-cont">更改连续谱</message>
+  <message id="rclick-mi-skew-type">更改偏斜类型</message>
+  <message id="rclick-mi-add-peak">添加峰</message>
+  <message id="rclick-mi-combine-cont-left">左合并连续谱</message>
+  <message id="rclick-mi-combine-cont-right">右合并连续谱</message>
+  <message id="rclick-mi-own-cont">自己的连续谱</message>
+  <message id="rclick-mi-calc-status">...正在计算...</message>
+  <message id="rclick-mi-fix-energy">固定为{1} keV</message>
+  <message id="rclick-mi-no-nuc-suggestions">无建议</message>
+  <message id="rclick-mi-fit-new-peak">在{1} keV附近拟合峰</message>
+  <message id="rclick-mi-add-new-peak">添加峰...</message>
+  <message id="rclick-mi-search-energy">在{1} keV附近搜索</message>
+  <message id="rclick-simple-mda">快速MDA {1}...</message>
+  <message id="rclick-simple-activity-calc">快速{1}活度...</message>
+
+
+  <!-- Error messages, the user probably wont see -->
+  <message id="err-save-sate-to-db">
+    很抱歉，将您的用户状态保存到数据库时出现技术错误。
+    <p style="font-size: x-small;">{1}</p>
+  </message>
+  <message id="err-save-to-large-for-db">文件大于允许保存到数据库的大小（为{1} kb，允许{2} kb）。</message>
+  <message id="err-no-roi-to-add-peak">没有要添加峰的ROI。</message>
+  <message id="err-no-add-peak-to-data-roi">抱歉，无法向具有数据定义峰的ROI添加峰。</message>
+  <message id="err-add-peak-no-improve">添加峰不会改善整体ROI拟合 - 不添加峰。</message>
+  <message id="err-no-peak-to-del">没有要删除的峰。</message>
+  <message id="err-no-foreground">在查看本底或第二前景谱之前，您必须加载前景谱。</message>
+  <message id="err-invalid-language">所选语言{1}不知何故不可用。</message>
+
+
+  <!-- Messages for saving/updating/deleting from internal state DB -->
+  <message id="db-new-tag">在快照'{2}'下创建了新标记'{1}'。</message>
+  <message id="db-new-snapshot">创建了新快照'{1}'。</message>
+  <message id="db-error-no-name">您必须指定名称</message>
+  <message id="db-name-empty-txt">（存储的名称）</message>
+  <message id="db-dec-empty-txt">（可选描述）</message>
+  <message id="db-dec-export-msg">
+    这将把当前应用状态保存到数据库 - 要导出
+    <br />
+    作为单独的文件，请使用&quot;导出文件&quot;菜单选项
+  </message>
+  <message id="db-Tag">标记</message>
+  <message id="db-saved-state-msg">已保存状态'{1}'</message>
+
+
+
+  <!-- Peak continuum types, returned by `PeakContinuum::offset_type_label_tr(...)` in src/PeakDef.cpp -->
+  <message id="pct-none">无</message>
+  <message id="pct-constant">常数</message>
+  <message id="pct-linear">线性</message>
+  <message id="pct-quadratic">二次</message>
+  <message id="pct-cubic">三次</message>
+  <message id="pct-flat-step">平坦阶跃</message>
+  <message id="pct-linear-step">线性阶跃</message>
+  <message id="pct-bilinear-step">双线性阶跃</message>
+  <message id="pct-global">全局连续谱</message>
+
+  <!-- populateNuclideSelects() in PeakSearchGuiUtils.cpp -->
+  <message id="psd-no-source">无源</message>
+
+
+  <message id="window-content-hard-back-sub">
+    <div style="text-align: left;">
+      <p>
+        正常的本底减除选项仅影响数据的显示，对像峰拟合或导出数据这样的操作
+        是在全统计的原始前景
+        谱上完成的。
+      </p>
+      <p>
+        "硬本底减除"通过从前景逐道减除
+        本底来创建修改后的前景。
+      </p>
+
+      执行硬本底减除的副作用包括：
+      <ul style="list-style-type: square; margin-top: 4px;">
+        <li>方差，即每道的统计不确定度，将不再正确。</li>
+        <li>谱之间的小能量刻度差异可能会在数据中创建人为特征。</li>
+        <li>
+          如果前景中的峰与本底中的峰重叠，则拟合前景峰的统计不确定度将不再正确
+        </li>
+      </ul>
+
+      选择硬本底减除而不是正常显示本底减除的主要原因是：
+      <ul style="list-style-type: square; margin-top: 4px;">
+        <li>避免拟合峰连续谱上的伪影。</li>
+        <li>简化<b>活度/屏蔽拟合</b>工具中的本底峰减除。</li>
+        <li>您不关心这会导致的微妙之处（在实践中是最小的）。</li>
+      </ul>
+    </div>
+    <br />
+    <div style="text-align: center;"><b><em>您想继续吗？</em></b></div>
+  </message>
+  <message id="window-hard-back-sub-truncate">将负道截断为零</message>
+  <message id="window-hard-back-sub-round">将道计数四舍五入到最接近的整数</message>
+
+  <message id="info-user-default-drf">使用您指定用作此探测器默认值的探测器响应函数。</message>
+  <message id="info-app-default-drf">已为此检测系统加载默认探测器响应函数。</message>
+  <message id="info-recal-tab-selected">您还可以通过右键单击并将谱拖动到您想要的位置来图形化重新刻度。</message>
+
+
+  <!-- Toast message shown to user when they load a spectrum that has GPS coordinates -->
+  <message id="info-has-gps-txt">文件包含GPS坐标。</message>
+  <message id="info-has-gps-btn">在地图上显示</message>
+
+  <!-- Toast message shown to user when they load a spectrum that has results from the onboard-rid -->
+  <message id="info-has-rid-txt">文件包含板载RID结果</message>
+  <message id="info-has-rid-btn">显示完整ID结果</message>
+
+  <!-- Toast message shown to user when they load a spectrum that has an embedded image -->
+  <message id="info-has-img-txt">谱文件包含嵌入图像</message>
+  <message id="info-has-img-btn">显示图像</message>
+
+
+  <message id="warn-no-energy-cal">警告，所选样本无能量刻度</message>
+
+  <message id="prompt-how-open">此文件看起来与当前前景来自同一探测器。
+    <p>您想如何打开此谱文件？</p>
+  </message>
+
+
+  <!-- Error message when the selected foreground cant be plotted (inexistent, no energy calibration, no gamma spectra selected, etc)-->
+  <message id="err-no-fore-sn">
+    <p>谱文件不包含具有当前样本编号的任何谱。</p>
+    <p>请选择不同/更多样本编号。</p>
+  </message>
+  <message id="err-no-fore-det-sn">
+    <p>谱文件不包含具有当前样本编号和探测器名称的任何谱。</p>
+    <p>请选择更多探测器或样本编号。</p>
+  </message>
+  <message id="err-no-fore-all-neut">
+    <p>当前样本编号和探测器名称仅包含中子数据。</p>
+    <p>请选择包含谱数据的样本。</p>
+  </message>
+  <message id="err-no-fore-no-spec">
+    <p>当前样本编号和探测器名称不包含任何谱测量。</p>
+    <p>请选择包含谱数据的样本。</p>
+  </message>
+  <message id="err-no-fore-no-ecal-1spec">
+    <p>我无法确定显示谱的分箱。</p>
+  </message>
+  <message id="err-no-fore-no-ecal-g1spec">
+    <p>我无法确定显示谱的分箱。</p>
+    <p>
+      您可以尝试在
+      <b>文件管理器</b>中仅选择单个谱进行显示，或选择具有伽马计数的样本。
+    </p>
+  </message>
+
+  <!-- The detector display.  Defined here so we dont have to load a whole new XML file for just these few entries. -->
+  <message id="app-tt-det-disp">当前选定的探测器。点击选择不同的探测器或修改此探测器。</message>
+  <message id="app-det-select-txt">点击选择</message>
+  <message id="app-det-select-txt-mobile">轻触选择</message>
+  <message id="app-default-manual-det-name">用户定义的探测器</message>
+
+
+  <!-- An incomplete list of possible languages - mapping the two letter code we receive as
+    part of the locale, to their native name - mostly picked by LLM result.
+    
+    A more complete listing of languages and countries can be found in commit e28dbb39.
+
+    You do not need to, and shouldnt, include these, or countries, into translations of this file.
+  -->
+  <message id="lang-en">English</message>
+  <message id="lang-fr">Français</message>
+  <message id="lang-es">Español</message>
+  <message id="lang-de">Deutsch</message>
+  <message id="lang-ja">日本語</message>
+  <message id="lang-zh">中文</message>
+  <message id="lang-pt">Português</message>
+  <message id="lang-ru">Русский</message>
+  <message id="lang-it">Italiano</message>
+  <message id="lang-ko">한국어</message>
+  <message id="lang-vi">Tiếng Việt</message>
+  <message id="lang-tr">Türkçe</message>
+  <message id="lang-ar">العربية</message>
+  <message id="lang-hu">Magyar</message>
+
+
+  <!-- An incomplete list of possible countries - mapping the two letter code we receive as part of
+  the locale, to their names to display.
+  -->
+  <message id="country-US">United States</message>
+  <message id="country-GB">United Kingdom</message>
+  <message id="country-AU">Australia</message>
+  <message id="country-CA">Canada</message>
+  <message id="country-FR">France</message>
+  <message id="country-ES">España</message>
+  <message id="country-MX">México</message>
+  <message id="country-DE">Deutschland</message>
+  <message id="country-JP">日本</message>
+  <message id="country-CN">中国</message>
+  <message id="country-TW">台灣</message>
+  <message id="country-BR">Brasil</message>
+  <message id="country-PT">Portugal</message>
+  <message id="country-RU">Россия</message>
+  <message id="country-IT">Italia</message>
+  <message id="country-KR">대한민국</message>
+  <message id="country-TR">Türkiye</message>
+</messages>
+

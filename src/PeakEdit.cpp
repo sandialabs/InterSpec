@@ -86,7 +86,7 @@ namespace
 PeakEditWindow::PeakEditWindow( const double energy,
                                 PeakModel *peakmodel,
                                 InterSpec *viewer )
-  : AuxWindow( WString::tr("window-title-peak-editor"), WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen) | AuxWindowProperties::DisableCollapse  )
+  : AuxWindow( WString::tr("window-title-peak-editor"), AuxWindowProperties::PhoneNotFullScreen | AuxWindowProperties::DisableCollapse  )
 {
   wApp->useStyleSheet( "InterSpec_resources/PeakEdit.css" );
   
@@ -439,9 +439,8 @@ void PeakEdit::init()
   m_suggestions->setJavaScriptMember("wtNoReparent", "true");
 #endif
   
-  m_suggestions->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
-  m_suggestions->forEdit( m_nuclide,
-                  WSuggestionPopup::Editing | WSuggestionPopup::DropDownIcon );
+  m_suggestions->addStyleClass( "nuclide-suggest" );
+  m_suggestions->forEdit( m_nuclide, WSuggestionPopup::Editing | WSuggestionPopup::DropDownIcon );
 
   
 //  std::shared_ptr<const PeakDef> dummypeak;
@@ -450,9 +449,11 @@ void PeakEdit::init()
   m_filterModel->filter( "" );
   m_suggestions->setFilterLength( -1 );
   m_suggestions->setModel( m_filterModel );
-  m_suggestions->setWidth( WLength(70, Wt::WLength::Unit::Pixel) );
 //  m_suggestions->filterModel().connect( m_filterModel, &PeakIsotopeNameFilterModel::filter );
   m_suggestions->filterModel().connect( m_filterModel, &IsotopeNameFilterModel::filter );
+  
+  IsotopeNameFilterModel::setQuickTypeFixHackjs( m_suggestions );
+  IsotopeNameFilterModel::setEnterKeyMatchFixJs( m_suggestions, m_nuclide );
   
   m_nuclide->enterPressed().connect( this, &PeakEdit::isotopeChanged );
   m_nuclide->blurred().connect( this, &PeakEdit::isotopeChanged );
@@ -551,7 +552,7 @@ void PeakEdit::init()
   
   
   
-  m_cancel = m_aux->addCloseButtonToFooter( WString::tr("Cancel"), false, m_footer );//new WPushButton( "Cancel", m_footer );
+  m_cancel = m_aux->addCloseButtonToFooter( WString::tr("Cancel"), false, m_footer );
   m_refit  = new WSplitButton( WString::tr("pe-btn-refit"), m_footer );
   m_apply  = new WPushButton( WString::tr("Apply"),  m_footer );
   m_accept = new WPushButton( WString::tr("Accept"), m_footer );
@@ -2914,7 +2915,7 @@ void PeakEdit::apply()
     }else
     {
       m_peakModel->removePeak( m_peakIndex );
-      m_peakIndex = m_viewer->addPeak( m_currentPeak, false );
+      m_peakIndex = m_viewer->addPeak( m_currentPeak, false, SpecUtils::SpectrumType::Foreground );
       m_currentPeak = *m_peakModel->peak( m_peakIndex );
     }//if( orig_continuum != *m_currentPeak.continuum() )
     
@@ -2960,7 +2961,7 @@ void PeakEdit::apply()
     
     if( orig_peak_ptr )
     {
-      m_peakIndex = m_viewer->addPeak( revertPeak, false );
+      m_peakIndex = m_viewer->addPeak( revertPeak, false , SpecUtils::SpectrumType::Foreground);
       m_currentPeak = *m_peakModel->peak( m_peakIndex );
       m_energy = m_currentPeak.mean();
     }//if( orig_peak_ptr )

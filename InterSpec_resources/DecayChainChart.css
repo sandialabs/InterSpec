@@ -104,6 +104,16 @@ rect.DecayChartNuc.MousedOver
   cursor: pointer;
 }
 
+.ShowDecayProductsTxt
+{
+  cursor: pointer;
+}
+
+.ShowDecayProductsRect
+{
+  cursor: pointer;
+}
+
 .DecayChainDnldBtn
 {
   position: absolute;

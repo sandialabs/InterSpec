@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- smmd- is short for ShowMultiMediaDisplay -->
+  <message id="smmd-prev-btn">Пред</message>
+  <message id="smmd-next-btn">След</message>
+  <message id="smmd-auto-show-images-cb">Автопоказ изображений</message>
+  <message id="smmd-tt-auto-show-images">Автоматически показывать изображения при загрузке файлов спектра, которые их содержат.</message>
+  <message id="smmd-tt-export-image-file">Экспортировать текущее изображение в файл.</message>
+  <message id="smmd-err-no-content">Нет мультимедийного содержимого для отображения</message>
+  <message id="smmd-err-file-is-uri">Данные закодированы как файл по URI='{1}'</message>
+  <message id="smmd-err-no-multimedia-src">Источник мультимедиа не содержал данных.</message>
+  <message id="smmd-err-encoding-not-supported">Кодировка мультимедийного содержимого не поддерживается.</message>
+  <message id="smmd-err-not-image">Тип мультимедийного содержимого не был типом изображения или не удалось определить.</message>
+  <message id="smmd-image-index">Изображение {1} из {2}</message>
+  <message id="smmd-Time">Время</message>
+  <message id="smmd-time-label">Время: {1}</message>
+  <message id="smmd-remark-label">Примечание: {1}</message>
+  <message id="smmd-desc-label">Desc.: {1}</message>
+  <message id="smmd-window-title-single">Изображение в файле спектра</message>
+  <message id="smmd-window-title-multiple">Изображения в файле спектра</message>
+</messages>

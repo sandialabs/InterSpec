@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- anpd is short for AddNewPeakDialog -->
+  <message id="anpd-dialog-add-peak-title">পিক যোগ করুন</message>
+  <message id="anpd-err-no-foreground">পিক যোগ করতে একটি ফোরগ্রাউন্ড স্পেকট্রাম লোড করা আবশ্যক।</message>
+  <message id="anpd-err-no-foreground-1">কোনো ফোরগ্রাউন্ড স্পেকট্রাম নেই</message>
+  <message id="anpd-peak-mean">পিক মিন</message>
+  <message id="anpd-peak-fwhm">পিক FWHM</message>
+  <message id="anpd-peak-amp">পিক অ্যাম্প।</message>
+  <message id="anpd-roi-lower">ROI নিম্ন</message>
+  <message id="anpd-roi-upper">ROI উচ্চ</message>
+  <message id="anpd-tt-more-adv">আরও উন্নত বিকল্পের জন্য, যোগ করার পরে <em>পিক এডিটর</em> দেখুন।</message>
+  <message id="anpd-screen-to-small">প্রিভিউয়ের জন্য স্ক্রিন ছোট।</message>
+  <message id="anpd-err-preview">প্রিভিউ রেন্ডারিং ত্রুটি</message>
+  <message id="anpd-err-fit-failed">ফিট ব্যর্থ।</message>
+  <message id="anpd-associate-with">{1} এর সাথে সংযুক্ত করুন</message>
+</messages>

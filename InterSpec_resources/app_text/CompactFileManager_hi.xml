@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- cfm is short for CompactFileManager -->
+  <message id='cfm-tt-sample-num'>
+    वह नमूना संख्या दर्ज करें जिसे आप यहां प्रदर्शित करना चाहते हैं।
+    आप '33-39' या '33 to 39' के समान नमूना संख्याओं की एक सीमा दर्ज कर सकते हैं;
+    या '34,39,84' जैसे CSV नमूना संख्याएं दर्ज कर सकते हैं।
+  </message>
+  <message id='cfm-scale-factor-label'>स्केल फैक्टर: </message>
+  <message id='cfm-tt-scale-factor'>
+    स्पेक्ट्रम को स्केल करने के लिए फैक्टर। एक खाली स्ट्रिंग दर्ज करने से
+    स्पेक्ट्रम foreground स्पेक्ट्रम के लिए लाइव टाइम सामान्यीकृत हो जाएगा।
+  </message>
+
+  <message id='cfm-norm-btn'>सामान्यीकृत करें</message>
+  <message id='cfm-more-info-btn'>अधिक जानकारी</message>
+  <message id='cfm-show-rid-result-btn'>RID परिणाम</message>
+  <message id='cfm-show-image-btn'>एम्बेडेड छवि</message>
+
+  <message id='cfm-db-spec'>पूर्व सहेजे गए स्पेक्ट्रा</message>
+  <message id='cfm-ref-spectra-btn'>संदर्भ स्पेक्ट्रा...</message>
+  <message id='cfm-err-invalid-sample-num'>अनुरोधित नमूना संख्या मौजूद नहीं है।</message>
+  <message id='cfm-err-no-meas'>नमूना संख्या बदल नहीं सकते, कोई वर्तमान माप नहीं है।</message>
+  <message id='cfm-err-missing-sample-num'>अनुरोधित नमूना संख्याओं में से एक मौजूद नहीं है।</message>
+  <message id='cfm-err-sample-num-doesnt-exist'>नमूना संख्या {1} मौजूद नहीं है।</message>
+  <message id='cfm-err-sample-num-doesnt-exist-2'>नमूना संख्या {1} माप में मौजूद नहीं है।</message>
+  <message id='cfm-err-general-1'>अनुरोधित नमूना संख्या(ओं) में बदलने में त्रुटि</message>
+  <message id='cfm-err-advancing'>स्पेक्ट्रम आगे बढ़ाने में त्रुटि</message>
+  <message id='cfm-no-spectra'>कोई लोड/उपलब्ध स्पेक्ट्रा नहीं।</message>
+
+  <message id='cfm-no-fore'>कोई foreground नहीं</message>
+  <message id='cfm-no-back'>कोई background नहीं</message>
+  <message id='cfm-no-second'>कोई द्वितीय foreground नहीं</message>
+
+  <message id='cfm-date'>तारीख</message>
+  <message id='cfm-start-time'>प्रारंभ समय</message>
+  <message id='cfm-gamma-cps'>Gamma CPS</message>
+  <message id='cfm-neut-live-time'>Neutron L.T.</message>
+  <message id='cfm-neut-counts'>Neut. गणना</message>
+  <message id='cfm-neut-cps'>Neut. CPS</message>
+  <message id='cfm-gps'>अक्षांश/देशांतर</message>
+  <message id='cfm-manufacturer'>निर्माता</message>
+  <message id='cfm-model'>मॉडल</message>
+  <message id='cfm-meas-type'>रिकॉर्ड प्रकार</message>
+  <message id='cfm-tt-meas-type'>स्पेक्ट्रम फ़ाइल के भीतर रिकॉर्ड किया गया रिकॉर्ड प्रकार।</message>
+
+  <message id='cfm-tt-clear-spectrum'>वर्तमान स्पेक्ट्रम साफ़ करता है।</message>
+
+  <message id='cfm-swap-back-with-foreground-btn'>foreground↔background</message>
+  <message id='cfm-tt-swap-back-with-foreground-btn'>Foreground और background स्पेक्ट्रा स्वैप करें</message>
+  <message id='cfm-swap-secondary-with-foreground-btn'>foreground↔secondary</message>
+  <message id='cfm-tt-swap-secondary-with-foreground-btn'>Foreground और secondary स्पेक्ट्रा स्वैप करें</message>
+  <message id='cfm-title-with-name'>शीर्षक: {1}</message>
+</messages>

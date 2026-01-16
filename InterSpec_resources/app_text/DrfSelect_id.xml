@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ds- is short for DrfSelect
+       ref- is short for RelEffFile
+       reds- is short for RelEffDetSelect
+  -->
+  <message id="ds-default-manual-det-name">Detektor Ditentukan Pengguna</message>
+
+  <message id="ref-tt-remove-drf-file">Hapus file dari daftar file yang akan dicari InterSpec untuk fungsi respons detektor.</message>
+  <message id="ref-remove-drf-window-title">Hapus Respons Detektor?</message>
+  <message id="ref-remove-drf-window-txt">Apakah Anda ingin menghapus DRF ini dari penggunaan di masa mendatang juga?</message>
+  <message id="ref-file-removed-toast">File '{1}' dihapus dari penggunaan di masa mendatang.</message>
+  <message id="ref-file-saved-for-later">Disimpan '{1}' untuk penggunaan nanti, dan akan tersedia di bagian "<em>Rel. Eff.</em>" dari alat "<em>Detector Response Function Select</em>".</message>
+  <message id="ref-err-saving-drf-file">Kesalahan menyimpan file DRF untuk penggunaan nanti; maaf.</message>
+  <message id="ref-err-invalid-csv-drf">Bukan file DRF efisiensi-relatif TSV atau CSV yang valid.</message>
+  <message id="ref-save-drf-window-title">Simpan Respons Detektor?</message>
+  <message id="ref-save-drf-window-txt">Apakah Anda ingin menyimpan respons detektor ini untuk penggunaan nanti?</message>
+  <message id="ref-upload-csv-file">Unggah file TSV/CSV.</message>
+  <message id="ref-dont-use-drf-in-file">tidak ada respons dalam file</message>
+  <message id="ref-select-det-from-file">pilih detektor</message>
+  <message id="ref-no-drfs-in-file">Tidak ada DRF valid dalam file.</message>
+  <message id="ref-couldnt-open-drf-file">Tidak dapat membuka file DRF.</message>
+  <message id="ref-no-rel-eff-drfs-in-file">Tidak ada DRF Rel. Eff. yang tersedia.</message>
+  <message id="ref-no-drfs-available">tidak ada respons tersedia</message>
+  <message id="ref-file-has-no-drfs">File tidak berisi DRF apa pun</message>
+  <message id="reds-tt-add-drf-btn">Klik tombol plus untuk menambahkan file fungsi respons detektor efisiensi relatif tambahan.</message>
+  <message id="reds-tt-add-dir">Klik tombol plus untuk menambahkan direktori tambahan untuk mencari fungsi respons detektor secara rekursif.</message>
+  <message id="reds-gadras-drf-info-ios">Anda dapat menempatkan fungsi respons detektor yang diimpor dari GADRAS-DRF ke dalam direktori <code>InterSpec</code> dalam aplikasi <b>Files</b>.</message>
+  <message id="reds-gadras-drf-info">Ini adalah fungsi respons detektor yang diimpor dari GADRAS-DRF. Saat ini hanya dimensi detektor, efisiensi absolut, dan resolusi FWHM yang digunakan.</message>
+  <message id="reds-failed-parse-gadras-det">Gagal mem-parse detektor GADRAS: {1}</message>
+  <message id="reds-err-saving-gad-path">Kesalahan menyimpan path GADRAS ke preferensi pengguna: {1}</message>
+  <message id="reds-tt-remove-gad-dir">Hapus direktori dari daftar direktori yang akan dicari InterSpec untuk fungsi respons detektor.</message>
+  <message id="reds-tt-gad-set-dir">Atur direktori yang dimasukkan untuk mencari fungsi respons detektor secara rekursif.</message>
+  <message id="reds-err-not-valid-dir">Bukan direktori yang valid.</message>
+  <message id="reds-invalid-dir">direktori tidak valid</message>
+  <message id="reds-no-drf-in-dir">tidak ada respons dalam direktori</message>
+  <message id="reds-recursive-no-drfs-in-dir">Tidak ada DRF valid dalam direktori, atau subdirektorinya.</message>
+  <message id="ds-csv-upload-desc">
+    <div style="white-space:nowrap;">
+      Unggah File Efisiensi:
+    </div>
+    <div>
+      Untuk CSV efisiensi, kolom pertama adalah energi dalam keV; kedua adalah % efisiensi (0 hingga 100).
+    </div>
+    <div>
+      Intrinsik adalah efisiensi untuk gamma yang mengenai permukaan detektor, sedangkan Absolut adalah pada jarak tertentu.
+    </div>
+  </message>
+  <message id="ds-det-diam">Diameter Detektor:</message>
+  <message id="ds-fixed-geom">Geometri Tetap</message>
+  <message id="ds-gad-det-file-label">File Detector.Dat GADRAS:</message>
+  <message id="ds-manual-det-empty-fcn">Contoh: exp(-9.8 - 8.1*log(x) + 4.62E-02*log(x)^2 + ...)\n
+    Atau setara: -9.8 -8.1 4.62E-02 ...</message>
+  <message id="ds-manual-det-desc">Efisiensi detektor didefinisikan oleh formula matematika, diberikan energi x;
+     atau Anda dapat memasukkan koefisien untuk bentuk persamaan standar. Klik ikon tanda tanya untuk info lebih lanjut.
+  </message>
+  <message id="ds-manual-det-desc-label">Efisiensi detektor didefinisikan oleh formula matematika, diberikan energi x;
+     atau Anda dapat memasukkan koefisien untuk bentuk persamaan standar. Klik ikon tanda tanya untuk info lebih lanjut.:</message>
+  <message id="ds-description-label">Deskripsi:</message>
+  <message id="ds-name-label">Nama:</message>
+  <message id="ds-manual-det-name-label">Nama detektor </message>
+  <message id="ds-manual-det-name-empty-txt">Nama Detektor Unik</message>
+  <message id="ds-manual-function-label">Efisiensi f(x) = </message>
+  <message id="ds-tt-manual-energy-unit">Satuan energi untuk formula efisiensi</message>
+  <message id="ds-tt-manual-desc">Deskripsi respons detektor ini</message>
+  <message id="ds-manual-det-diam-label">Diameter det.</message>
+  <message id="ds-energy-range">Rentang Energi</message>
+  <message id="ds-(optional)">(opsional)</message>
+  <message id="ds-min.">Min.</message>
+  <message id="ds-max.">Maks.</message>
+  <message id="ds-intrinsic-eff">Efisiensi Intrinsik</message>
+  <message id="ds-abs-eff">Efisiensi Absolut</message>
+  <message id="ds-fixed-geom-total">Geometri Tetap - aktivitas total</message>
+  <message id="ds-fixed-geom-cm2">Geometri Tetap - aktivitas per cm²</message>
+  <message id="ds-fixed-geom-m2">Geometri Tetap - aktivitas per m²</message>
+  <message id="ds-fixed-geom-gram">Geometri Tetap - aktivitas per gram</message>
+  <message id="ds-tt-manual-drf-type">Bagaimana efisiensi ini harus diinterpretasikan.<br />
+    <br />
+    Efisiensi Intrinsik: probabilitas untuk sinar-x atau gamma yang mengenai muka 
+    detektor, untuk mencatat event deteksi energi penuh.<br />
+    <br />
+    Efisiensi Absolut: probabilitas untuk sinar-x atau gamma dari sumber
+    untuk mencatat event deteksi energi penuh, dengan tepat untuk
+    memungkinkan penskalaan efisiensi ini dengan 1/r2 ke jarak lain (yaitu, untuk sumber titik).<br />
+    <br />
+    Geometri Tetap - aktivitas total: probabilitas untuk sinar-x atau gamma dari sumber
+    untuk mencatat event deteksi energi penuh, dan tidak tepat untuk memungkinkan penskalaan
+    efisiensi ini ke jarak lain (mis., untuk sumber dekat, atau sumber luas yang besar).<br />
+    <br />
+    Geometri Tetap - aktivitas per cm2: mirip dengan aktivitas total, tetapi kurva efisiensi
+    mewakili efisiensi per peluruhan, per sentimeter persegi (yaitu, kontaminasi permukaan).<br />
+    <br />
+    Geometri Tetap - aktivitas per m2: mirip dengan per cm2, tetapi untuk per meter persegi.<br />
+    <br />
+    Geometri Tetap - aktivitas per g: mirip dengan per cm2, tetapi untuk per gram sumber.
+  </message>
+  <message id="ds-dist-label">Jarak:</message>
+  <message id="ds-set-btn">Atur</message>
+  <message id="ds-last-used">Terakhir Digunakan</message>
+  <message id="ds-det-type-filter-all">Semua</message>
+  <message id="ds-det-type-filter-uploaded">Diunggah</message>
+  <message id="ds-det-type-filter-formula">Formula yang Dimasukkan</message>
+  <message id="ds-det-type-filter-data">Dibuat Dari Data</message>
+  <message id="ds-det-type-filter-N42">Disertakan Dalam File N42</message>
+  <message id="ds-show-label">Tampilkan:</message>
+  <message id="ds-mi-gadras">GADRAS</message>
+  <message id="ds-mi-rel-eff">Rel. Eff.</message>
+  <message id="ds-mi-import">Impor</message>
+  <message id="ds-mi-formula">Formula</message>
+  <message id="ds-mi-previous">Sebelumnya</message>
+  <message id="ds-use-for-serialnum-cb">Gunakan sebagai DRF default untuk SN '{1}'</message>
+  <message id="ds-use-for-model-cb">Gunakan sebagai DRF default untuk model '{1}'</message>
+  <message id="ds-no-drf-loaded">Tidak ada DRF yang dimuat</message>
+  <message id="ds-no-det-btn">Tanpa Detektor</message>
+  <message id="ds-fit-fwhm-btn">Fit FWHM...</message>
+  <message id="ds-tt-cancel">Hapus semua perubahan atau pemilihan yang dibuat oleh dialog ini, dan tutup dialog.</message>
+  <message id="ds-tt-accept">Terima semua perubahan/pemilihan yang dibuat dan tutup dialog.</message>
+  <message id="ds-use-det-btn">Gunakan Detektor</message>
+  <message id="ds-use-drf">Gunakan DRF?</message>
+  <message id="ds-select-drf">Pilih DRF Untuk Digunakan</message>
+  <message id="ds-drf-desc">Deskripsi DRF</message>
+  <message id="ds-save-for-later-cb">Simpan untuk penggunaan nanti?</message>
+  <message id="ds-err-drf-uri-invalid">URL fungsi respons detektor tidak valid.</message>
+  <message id="ds-err-det-diam-pos">Diameter detektor harus positif</message>
+  <message id="ds-err-det-dist-pos">Jarak harus positif untuk efisiensi absolut</message>
+  <message id="ds-warn-min-max-energy-swapped">Energi min. detektor lebih besar dari energi maks.; mengabaikan rentang energi.</message>
+  <message id="ds-need-det-diam">Memerlukan diameter detektor</message>
+</messages>
+

@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ctwidget- is short for ColorThemeWidget -->
+  
+  <!-- Basic fields -->
+  <message id="ctwidget-theme-name">Название Темы</message>
+  <message id="ctwidget-description">Описание</message>
+  <message id="ctwidget-title-placeholder">Заголовок не назначен</message>
+  <message id="ctwidget-desc-placeholder">Описание не назначено</message>
+  <message id="ctwidget-empty">(пусто)</message>
+  
+  <!-- Non-chart area -->
+  <message id="ctwidget-non-chart-area">Область Не-Диаграммы</message>
+  <message id="ctwidget-backdrop-theme">Тема Фона</message>
+  <message id="ctwidget-backdrop-desc">Тема для всей области не-диаграммы</message>
+  
+  <!-- Chart colors section -->
+  <message id="ctwidget-chart-colors">Цвета Диаграммы</message>
+  
+  <!-- Spectrum colors -->
+  <message id="ctwidget-spec-foreground">Спектр. Передний План</message>
+  <message id="ctwidget-spec-foreground-desc">Цвет линии для спектра переднего плана</message>
+  <message id="ctwidget-spec-background">Спектр. Фон</message>
+  <message id="ctwidget-spec-background-desc">Цвет линии для фонового спектра</message>
+  <message id="ctwidget-spec-secondary">Спектр. Вторичный</message>
+  <message id="ctwidget-spec-secondary-desc">Цвет линии для вторичного спектра</message>
+  
+  <!-- Peak options -->
+  <message id="ctwidget-peaks-use-ref-color">Пики Используют Цвет Опорной Линии</message>
+  <message id="ctwidget-peaks-use-ref-desc">Определяет, принимают ли недавно подобранные пики цвет опорной линии для этого пика.</message>
+  <message id="ctwidget-default-peak-color">Цвет Пика По Умолчанию</message>
+  <message id="ctwidget-default-peak-desc">Цвет используемый для пиков без назначенного цвета</message>
+  
+  <!-- Spectrum chart -->
+  <message id="ctwidget-spectrum-axis">Ось Диаграммы Спектра</message>
+  <message id="ctwidget-spectrum-axis-desc">Цвет линии для осей X и Y спектра</message>
+  <message id="ctwidget-spectrum-text">Текст Диаграммы Спектра</message>
+  <message id="ctwidget-spectrum-text-desc">Цвет текста диаграммы спектра (метки осей y и x)</message>
+  <message id="ctwidget-spectrum-area">Область Спектра</message>
+  <message id="ctwidget-spectrum-area-desc">Цвет фона для диаграммы спектра</message>
+  <message id="ctwidget-spectrum-margin">Фон Диаграммы Спектра</message>
+  <message id="ctwidget-spectrum-margin-desc">Цвет для полей диаграммы спектра</message>
+  <message id="ctwidget-same-as-spectrum">То же что область спектра</message>
+  
+  <!-- Time chart -->
+  <message id="ctwidget-time-gamma">Подсчет Гамма Времени</message>
+  <message id="ctwidget-time-gamma-desc">Цвет линии для подсчета гамма в диаграмме времени</message>
+  <message id="ctwidget-time-neutron">Подсчет Нейтронов Времени</message>
+  <message id="ctwidget-time-neutron-desc">Цвет линии для подсчета нейтронов в диаграмме времени</message>
+  <message id="ctwidget-time-axis">Ось Диаграммы Времени</message>
+  <message id="ctwidget-time-axis-desc">Цвет линии для осей X и Y диаграммы времени</message>
+  <message id="ctwidget-time-background">Фон Диаграммы Времени</message>
+  <message id="ctwidget-time-background-desc">Цвет фона для диаграммы времени</message>
+  <message id="ctwidget-time-margins">Поля Диаграммы Времени</message>
+  <message id="ctwidget-time-margins-desc">Цвет для полей диаграммы спектра</message>
+  <message id="ctwidget-same-as-background">То же что фон</message>
+  <message id="ctwidget-time-text">Текст Диаграммы Времени</message>
+  <message id="ctwidget-time-text-desc">Цвет текста для диаграммы времени (метки осей x и y)</message>
+  
+  <!-- Occupancy and highlights -->
+  <message id="ctwidget-occ-lines">Линии Индикатора Занятости</message>
+  <message id="ctwidget-occ-lines-desc">Линии указывающие начало и конец занятости (данные портала) или период интереса (данные режима поиска)</message>
+  <message id="ctwidget-time-fore-highlight">Выделение переднего плана времени</message>
+  <message id="ctwidget-time-fore-highlight-desc">Цвет используемый для указания на диаграмме времени, какие сегменты времени суммируются для спектра переднего плана.</message>
+  <message id="ctwidget-time-back-highlight">Выделение фона времени</message>
+  <message id="ctwidget-time-back-highlight-desc">Цвет используемый для указания на диаграмме времени, какие сегменты времени суммируются для фонового спектра.</message>
+  <message id="ctwidget-time-sec-highlight">Выделение вторичное времени</message>
+  <message id="ctwidget-time-sec-highlight-desc">Цвет используемый для указания на диаграмме времени, какие сегменты времени суммируются для вторичного спектра.</message>
+  
+  <!-- Reference lines -->
+  <message id="ctwidget-ref-line-colors">Цвета Опорных Линий</message>
+  <message id="ctwidget-ref-line-colors-desc">Упорядоченные цвета для опорных линий</message>
+  <message id="ctwidget-specific-ref-colors">Цвета Опорных Линий Конкретного Источника</message>
+  <message id="ctwidget-specific-ref-desc">Цвета для опорных линий данных источников</message>
+  <message id="ctwidget-dynamic-ref-lines">Динамические Опорные Линии</message>
+  <message id="ctwidget-dynamic-ref-desc">Цвета для использования, основанные на типе нуклидов</message>
+  
+  <!-- Dynamic reference categories -->
+  <message id="ctwidget-medical">Медицинский</message>
+  <message id="ctwidget-industrial">Промышленный</message>
+  <message id="ctwidget-norm">NORM</message>
+  <message id="ctwidget-snm">SNM</message>
+  <message id="ctwidget-common">Общий</message>
+  <message id="ctwidget-other">Другой</message>
+  
+  <!-- Other options -->
+  <message id="ctwidget-other-options">Другие Опции</message>
+  <message id="ctwidget-peak-label-size">Размер метки пика</message>
+  <message id="ctwidget-peak-label-size-desc">Указывает размер шрифта меток пика</message>
+  <message id="ctwidget-peak-label-angle">Угол метки пика</message>
+  <message id="ctwidget-peak-label-angle-desc">Поворот, в градусах, меток пика</message>
+  <message id="ctwidget-log-y-min">Минимум Log-Y</message>
+  <message id="ctwidget-log-y-min-desc">Минимальное значение отображаемое на логарифмической оси y, когда есть канал с нулевым или отрицательным подсчетом в отображаемом диапазоне x.</message>
+</messages>

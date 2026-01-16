@@ -97,14 +97,16 @@ public:
     const int secondsOffset = 60 * wApp->environment().timeZoneOffset();
     Wt::WDateTime uploadTime = dbentry->uploadTime.addSecs(secondsOffset);
     
-    string msg = "Loaded: " + uploadTime.toString( DATE_TIME_FORMAT_STR ).toUTF8();
+    WString msg;
     if( dbentry->userHasModified )
-      msg += ", was modified";
+      msg = WString::tr("sb-loaded-modified-label").arg( uploadTime.toString( DATE_TIME_FORMAT_STR ) );
+    else
+      msg = WString::tr("sb-loaded-label").arg( uploadTime.toString( DATE_TIME_FORMAT_STR ) );
     
     WText *txt = new WText( msg, this );
     txt->addStyleClass( "DbSpecFileItemTxt" );
     
-    WPushButton *button = new WPushButton( "Resume From", this );
+    WPushButton *button = new WPushButton( WString::tr("sb-resume-from-btn"), this );
     button->addStyleClass( "DbSpecFileItemButton" );
     button->clicked().connect( this, &DbSpecFileItem::dorevert );
     button->setFocus();
@@ -151,7 +153,7 @@ public:
       }catch( exception &e )
       {
         cerr << "\n\nDbSpecFileItem::dorevert()\n\tCaught: " << e.what() << "\n\n";
-        passMessage( "Error displaying previous measurement, things may not be as expected" ,
+        passMessage( WString::tr("sb-err-displaying-measurement"),
                     WarningWidget::WarningMsgHigh );
       }//try / catch
     }else
@@ -195,9 +197,9 @@ DbFileBrowser::DbFileBrowser( SpecMeasManager *manager,
                               InterSpec *viewer,
                               std::shared_ptr<SpectraFileHeader> header)
 : AuxWindow( WString::tr("smm-prev-states-window-title"),
-            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::DisableCollapse)
-                                             | AuxWindowProperties::EnableResize
-                                             | AuxWindowProperties::SetCloseable) ),
+            (AuxWindowProperties::DisableCollapse
+            | AuxWindowProperties::EnableResize
+            | AuxWindowProperties::SetCloseable) ),
   m_factory( nullptr )
 {
   wApp->useStyleSheet( "InterSpec_resources/DbFileBrowser.css" );
@@ -214,12 +216,11 @@ DbFileBrowser::DbFileBrowser( SpecMeasManager *manager,
   }catch( std::exception &e )
   {
     m_factory = nullptr;
-    WText *tt = new WText( "<b>Error creating SnapshotBrowser</b> - sorry :("
-                          "<br />Error: " + string(e.what()) );
+    WText *tt = new WText( WString::tr("sb-err-creating-browser").arg(e.what()) );
     layout->addWidget( tt, 0, 0 );
   }catch( ... )
   {
-    WText *tt = new WText( "<b>Unexpected issue creating SnapshotBrowser</b> - sorry :(" );
+    WText *tt = new WText( WString::tr("sb-unexpected-issue") );
     layout->addWidget( tt, 0, 0 );
   }
   
@@ -907,22 +908,19 @@ void SnapshotBrowser::startDeleteSelected()
     return;
   }//if( selection.size() != 1 )
   
-  const char *title = "Confirm Delete";
+  WString title = WString::tr("sb-confirm-delete-title");
   
   WTreeNode *node = *begin(selection);
   WText *label = node->label();
   const string name = label ? label->text().toUTF8() : string("");
   
-  const string msg =
-  "<div>Are you sure you want to delete:</div>"
-  "<div style=\"white-space: nowrap; text-align: center; text-overflow: ellipsis; overflow: hidden; font-weight: bold; max-width:98%;\">" + name + "</div>"
-  "<div>?</div>";
+  WString msg = WString::tr("sb-confirm-delete-msg").arg(name);
   
   // We will rely on the SimpleDialog covering everything else to know that the selection didnt change or anything...
   SimpleDialog *dialog = new SimpleDialog( title, msg );
   
-  dialog->addButton( "No" );
-  WPushButton *yes = dialog->addButton( "Yes" );
+  dialog->addButton( WString::tr("No") );
+  WPushButton *yes = dialog->addButton( WString::tr("Yes") );
   yes->clicked().connect( this, &SnapshotBrowser::deleteSelected );
   
   //Need to update text when selection changes, currently relying on modal underlay to protect against this.
@@ -934,7 +932,7 @@ void SnapshotBrowser::startEditSelected()
 {
   if( !m_session )
   {
-    passMessage( "No active database session", WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("sb-no-active-db-session"), WarningWidget::WarningMsgHigh );
     return;
   }
   
@@ -957,7 +955,7 @@ void SnapshotBrowser::startEditSelected()
   
   if( !state )  //shouldnt ever happend
   {
-    passMessage( "Invalid state selected", WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("sb-invalid-state-selected"), WarningWidget::WarningMsgHigh );
     return;
   }
   
@@ -974,17 +972,17 @@ void SnapshotBrowser::startEditSelected()
   
   WGridLayout *layout = m_editWindow->stretcher();
   
-  WLabel *label = new WLabel( "Name" );
+  WLabel *label = new WLabel( WString::tr("sb-edit-name-label") );
   WLineEdit *nameEdit = new WLineEdit();
   nameEdit->setAttributeValue( "ondragstart", "return false" );
-  nameEdit->setEmptyText( "(Name to store under)" );
+  nameEdit->setEmptyText( WString::tr("sb-edit-name-placeholder") );
   nameEdit->setText( state->name );
   layout->addWidget( label, 0, 0 );
   layout->addWidget( nameEdit,  0, 1 );
   
-  label = new WLabel( "Desc." );
+  label = new WLabel( WString::tr("sb-edit-desc-label") );
   WTextArea *description = new WTextArea();
-  description->setEmptyText( "(Optional description)" );
+  description->setEmptyText( WString::tr("sb-edit-desc-placeholder") );
   description->setText( state->description );
   layout->addWidget( label, 1, 0 );
   layout->addWidget( description, 1, 1 );
@@ -994,11 +992,11 @@ void SnapshotBrowser::startEditSelected()
   
   WContainerWidget *foot = m_editWindow->footer();
   
-  WPushButton *cancel = new WPushButton( "Cancel", foot );
+  WPushButton *cancel = new WPushButton( WString::tr("Cancel"), foot );
   cancel->addStyleClass( "DialogClose" );
   cancel->setFloatSide( Wt::Side::Right );
   
-  WPushButton *yes = new WPushButton( "Accept", foot );
+  WPushButton *yes = new WPushButton( WString::tr("Accept"), foot );
   yes->addStyleClass( "DialogClose" );
   yes->setFloatSide( Wt::Side::Right );
   
@@ -1006,7 +1004,7 @@ void SnapshotBrowser::startEditSelected()
   yes->clicked().connect( std::bind([this, nameEdit, state, description, node](){
     if( nameEdit->text().toUTF8().empty() ) //should happen
     {
-      passMessage( "You must enter a name", WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("sb-must-enter-name"), WarningWidget::WarningMsgHigh );
       return;
     }
     
@@ -1021,7 +1019,7 @@ void SnapshotBrowser::startEditSelected()
       m_descriptionLabel->setText( "<i>" + description->text().toUTF8() + "</i>" );
     }catch( ... )
     {
-      passMessage( "Error modifying state - probably not changed", WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("sb-err-modifying-state"), WarningWidget::WarningMsgHigh );
     }//try /catch
     
     m_editWindow->hide();
@@ -1071,7 +1069,7 @@ std::shared_ptr<SpecMeas> SnapshotBrowser::retrieveMeas( const int dbid )
     {
       cerr << "retrieveMeas() caught (while trying to load snaphot): "
       << e.what() << endl;
-      passMessage( "Sorry, couldnt load requested snapshot", WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("sb-couldnt-load-snapshot"), WarningWidget::WarningMsgHigh );
     }//try / catch
     
     return snapshotmeas;
@@ -1083,7 +1081,7 @@ void SnapshotBrowser::deleteSelected()
   const set<WTreeNode *> &selection = m_snapshotTable->selectedNodes();
   if( selection.empty() )
   {
-    passMessage( "No state selected to delete", WarningWidget::WarningMsgMedium );
+    passMessage( WString::tr("sb-no-state-selected"), WarningWidget::WarningMsgMedium );
     return;
   }//if( !indices.size() )
   
@@ -1097,7 +1095,7 @@ void SnapshotBrowser::deleteSelected()
   
   if( !state )
   {
-    passMessage( "Invalid state selected", WarningWidget::WarningMsgMedium );
+    passMessage( WString::tr("sb-invalid-state-selected"), WarningWidget::WarningMsgMedium );
     return;
   }
   
@@ -1116,10 +1114,10 @@ void SnapshotBrowser::deleteSelected()
     m_snapshotTable->treeRoot()->removeChildNode(node);
     m_nrows -= 1;
     
-    passMessage( "Snapshot '" + name + "' removed from database.", WarningWidget::WarningMsgInfo );
+    passMessage( WString::tr("sb-snapshot-removed").arg(name), WarningWidget::WarningMsgInfo );
   }catch( ... )
   {
-    passMessage( "Error removing snapshot from database.", WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("sb-err-removing-snapshot"), WarningWidget::WarningMsgHigh );
   }
   
   if( m_editWindow )
@@ -1163,7 +1161,7 @@ void SnapshotBrowser::loadSnapshotSelected()
   
   if( !dbstate || dbstate.id() < 0 )
   {
-    passMessage( "Error loading from the database", WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("sb-err-loading-from-db"), WarningWidget::WarningMsgHigh );
     m_finished.emit();
     return;
   }//if( !selected )
@@ -1179,7 +1177,7 @@ void SnapshotBrowser::loadSnapshotSelected()
     passMessage( msg.toUTF8(), WarningWidget::WarningMsgInfo );
   }catch( std::exception &e )
   {
-    passMessage( "Failed to load state", WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("sb-failed-to-load-state"), WarningWidget::WarningMsgHigh );
     cerr << "SnapshotBrowser::loadSelected() caught: " << e.what() << endl;
   }//try / catch
   
@@ -1215,7 +1213,7 @@ void SnapshotBrowser::loadSpectraSelected()
     
     if( !dbfile || dbfile.id() < 0 )
     {
-        passMessage( "Error loading from the database", WarningWidget::WarningMsgHigh );
+        passMessage( WString::tr("sb-err-loading-from-db"), WarningWidget::WarningMsgHigh );
         m_finished.emit();
         return;
     }//if( !selected )
@@ -1258,7 +1256,7 @@ void SnapshotBrowser::loadSpectraSelected()
                         }//if( meas )
                     }//if( snapshot_id )
                     
-                    passMessage("Already opened", WarningWidget::WarningMsgInfo);
+                    passMessage(WString::tr("sb-already-opened"), WarningWidget::WarningMsgInfo);
                     m_finished.emit();
                     return;
                 } //measurement == m_viewer->measurment(type)
@@ -1312,8 +1310,7 @@ void SnapshotBrowser::loadSpectraSelected()
             }catch( exception &e )
             {
                 cerr << "\n\nSnapshotModel\n\tCaught: " << e.what() << "\n\n";
-                passMessage( "Error displaying previous measurment, things may not"
-                            " be as expected" , WarningWidget::WarningMsgHigh );
+                passMessage( WString::tr("sb-err-displaying-measurement"), WarningWidget::WarningMsgHigh );
             }//try / catch
         }else
         {

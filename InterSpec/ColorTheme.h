@@ -56,6 +56,14 @@ struct ColorTheme
    */
   static const char * const sm_color_theme_json_version;  //Currently "1"
   
+  /** Default colors for dynamic reference lines by category. */
+  static const char * const sm_dynamic_ref_line_medical_color;
+  static const char * const sm_dynamic_ref_line_industrial_color;
+  static const char * const sm_dynamic_ref_line_norm_color;
+  static const char * const sm_dynamic_ref_line_snm_color;
+  static const char * const sm_dynamic_ref_line_common_color;
+  static const char * const sm_dynamic_ref_line_other_color;
+  
   /** A listing of the predifeined color themes.
       Note that a userPreference for "ColorThemeIndex" that has a negative value
       indicates to use one of these predifined values, where the absolute value
@@ -120,7 +128,52 @@ struct ColorTheme
         InterSpec_resources/themes/<theme name>/<theme name>.css
    */
   std::string nonChartAreaTheme;
-  
+
+  /** Background color for non-chart areas (dialogs, main app background, etc.).
+      Applied via CSS variable --interspec-background-color.
+   */
+  Wt::WColor appBackgroundColor;
+
+  /** Text color for non-chart areas.
+      Applied via CSS variable --interspec-text-color.
+   */
+  Wt::WColor appTextColor;
+
+  /** Border color for UI elements (tabs, buttons, panels, etc.).
+      Applied via CSS variable --interspec-border-color.
+   */
+  Wt::WColor appBorderColor;
+
+  /** Link and accent color for interactive elements.
+      Applied via CSS variable --interspec-link-color.
+   */
+  Wt::WColor appLinkColor;
+
+  /** Label text color for Wt labels, tab text, and certain headers.
+      Applied via CSS variable --interspec-label-color.
+   */
+  Wt::WColor appLabelColor;
+
+  /** Background color for input fields.
+      Applied via CSS variable --interspec-input-background.
+   */
+  Wt::WColor appInputBackground;
+
+  /** Background color for buttons.
+      Applied via CSS variable --interspec-button-background.
+   */
+  Wt::WColor appButtonBackground;
+
+  /** Border color for buttons.
+      Applied via CSS variable --interspec-button-border-color.
+   */
+  Wt::WColor appButtonBorderColor;
+
+  /** Text color for buttons.
+      Applied via CSS variable --interspec-button-text-color.
+   */
+  Wt::WColor appButtonTextColor;
+
   /** Line color of foreground spectrum. */
   Wt::WColor foregroundLine;
   
@@ -235,6 +288,14 @@ struct ColorTheme
       The key will be something like 'U235', 'Co65', 'Fe', etc.,
    */
   std::map<std::string,Wt::WColor> referenceLineColorForSources;
+  
+  /** Dynamic reference line colors for specific categories. */
+  Wt::WColor dynamicRefLineMedicalColor;
+  Wt::WColor dynamicRefLineIndustrialColor;
+  Wt::WColor dynamicRefLineNormColor;
+  Wt::WColor dynamicRefLineSnmColor;
+  Wt::WColor dynamicRefLineCommonColor;
+  Wt::WColor dynamicRefLineOtherColor;
 };//struct ColorTheme
 
 

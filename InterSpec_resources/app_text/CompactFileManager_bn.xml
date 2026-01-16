@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- cfm is short for CompactFileManager -->
+  <message id='cfm-tt-sample-num'>
+    এখানে প্রদর্শিত করতে চান এমন নমুনা নম্বর লিখুন।
+    আপনি '33-39' বা '33 to 39'-এর মতো নমুনা নম্বরের একটি পরিসর লিখতে পারেন;
+    বা '34,39,84'-এর মতো CSV নমুনা নম্বর লিখতে পারেন।
+  </message>
+  <message id='cfm-scale-factor-label'>স্কেল ফ্যাক্টর: </message>
+  <message id='cfm-tt-scale-factor'>
+    স্পেকট্রাম স্কেল করার জন্য ফ্যাক্টর। একটি খালি স্ট্রিং লিখলে
+    স্পেকট্রাম ফোরগ্রাউন্ড স্পেকট্রামের সাথে লাইভ টাইম নরমালাইজড হবে।
+  </message>
+
+  <message id='cfm-norm-btn'>নরমালাইজ করুন</message>
+  <message id='cfm-more-info-btn'>আরও তথ্য</message>
+  <message id='cfm-show-rid-result-btn'>RID ফলাফল</message>
+  <message id='cfm-show-image-btn'>এম্বেডেড ছবি</message>
+
+  <message id='cfm-db-spec'>পূর্ববর্তী সংরক্ষিত স্পেকট্রা</message>
+  <message id='cfm-ref-spectra-btn'>রেফারেন্স স্পেকট্রা...</message>
+  <message id='cfm-err-invalid-sample-num'>অনুরোধ করা নমুনা নম্বর বিদ্যমান নেই।</message>
+  <message id='cfm-err-no-meas'>নমুনা নম্বর পরিবর্তন করতে পারবেন না, কোনো বর্তমান পরিমাপ নেই।</message>
+  <message id='cfm-err-missing-sample-num'>অনুরোধ করা নমুনা নম্বরগুলির একটি বিদ্যমান নেই।</message>
+  <message id='cfm-err-sample-num-doesnt-exist'>নমুনা নম্বর {1} বিদ্যমান নেই।</message>
+  <message id='cfm-err-sample-num-doesnt-exist-2'>নমুনা নম্বর {1} পরিমাপে বিদ্যমান নেই।</message>
+  <message id='cfm-err-general-1'>অনুরোধ করা নমুনা নম্বর(গুলিতে) পরিবর্তন করতে ত্রুটি</message>
+  <message id='cfm-err-advancing'>স্পেকট্রাম অগ্রসর করতে ত্রুটি</message>
+  <message id='cfm-no-spectra'>কোনো লোড করা/উপলব্ধ স্পেকট্রা নেই।</message>
+
+  <message id='cfm-no-fore'>কোনো ফোরগ্রাউন্ড নেই</message>
+  <message id='cfm-no-back'>কোনো ব্যাকগ্রাউন্ড নেই</message>
+  <message id='cfm-no-second'>কোনো দ্বিতীয় ফোরগ্রাউন্ড নেই</message>
+
+  <message id='cfm-date'>তারিখ</message>
+  <message id='cfm-start-time'>শুরুর সময়</message>
+  <message id='cfm-gamma-cps'>গামা CPS</message>
+  <message id='cfm-neut-live-time'>নিউট্রন L.T.</message>
+  <message id='cfm-neut-counts'>নিউট কাউন্ট</message>
+  <message id='cfm-neut-cps'>নিউট CPS</message>
+  <message id='cfm-gps'>অক্ষাংশ/দ্রাঘিমাংশ</message>
+  <message id='cfm-manufacturer'>প্রস্তুতকারক</message>
+  <message id='cfm-model'>মডেল</message>
+  <message id='cfm-meas-type'>রেকর্ড টাইপ</message>
+  <message id='cfm-tt-meas-type'>স্পেকট্রাম ফাইলের মধ্যে রেকর্ডের রেকর্ডকৃত টাইপ।</message>
+
+  <message id='cfm-tt-clear-spectrum'>বর্তমান স্পেকট্রাম মুছে দেয়।</message>
+
+  <message id='cfm-swap-back-with-foreground-btn'>ফোরগ্রাউন্ড↔ব্যাকগ্রাউন্ড</message>
+  <message id='cfm-tt-swap-back-with-foreground-btn'>ফোরগ্রাউন্ড এবং ব্যাকগ্রাউন্ড স্পেকট্রা অদলবদল করুন</message>
+  <message id='cfm-swap-secondary-with-foreground-btn'>ফোরগ্রাউন্ড↔সেকেন্ডারি</message>
+  <message id='cfm-tt-swap-secondary-with-foreground-btn'>ফোরগ্রাউন্ড এবং সেকেন্ডারি স্পেকট্রা অদলবদল করুন</message>
+  <message id='cfm-title-with-name'>শিরোনাম: {1}</message>
+</messages>

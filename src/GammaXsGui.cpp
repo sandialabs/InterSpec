@@ -126,7 +126,7 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   m_energyEdit->blurred().connect( this, &GammaXsGui::calculateCrossSections );
 
   int row = 0;
-  WLabel *label = new WLabel( WString("{1}:").arg( WString::tr("Energy")) );
+  WLabel *label = new WLabel( WString::tr("energy-label") );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_layout->addWidget( m_energyEdit, row, 1, 1, 1 );
   label = new WLabel( "keV" );
@@ -134,7 +134,7 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
 
   ++row;
   
-  label = new WLabel( "Material/mass-formula" );
+  label = new WLabel( WString::tr("gxsg-material-formula") );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_materialEdit = new WLineEdit( "C0.5H0.2Ni0.3" );
   
@@ -842,7 +842,7 @@ GammaXsWindow::GammaXsWindow( MaterialDB *materialDB,
                               Wt::WSuggestionPopup *materialSuggestion ,
                               InterSpec* viewer)
   : AuxWindow( WString::tr("window-title-xs-calc"),
-              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen)
+              (AuxWindowProperties::PhoneNotFullScreen
                | AuxWindowProperties::SetCloseable
                | AuxWindowProperties::DisableCollapse) ),
   m_tool( nullptr )

@@ -53,11 +53,19 @@ namespace SpecUtils
 
 class BatchGuiInputSpectrumFile : public Wt::WContainerWidget
 {
+public:
+  enum class ShowPreviewOption
+  {
+    Show,
+    DontShow
+  };
+
 protected:
   const std::string m_filename;
   const std::string m_display_name;
   const bool m_should_cleanup;
-  
+  const ShowPreviewOption m_show_preview;
+
   Wt::WContainerWidget *m_preview_container;
   D3SpectrumDisplayDiv *m_spectrum;
   
@@ -73,6 +81,7 @@ public:
   BatchGuiInputSpectrumFile( const std::string display_name,
                   const std::string path_to_file,
                   const bool should_cleanup,
+                  const ShowPreviewOption preview,
                   Wt::WContainerWidget *parent );
   
   void set_spectrum( std::shared_ptr<SpecMeas> spec_meas, std::shared_ptr<int> status_ptr );

@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dlt- is short for DetectionLimitTool
+  -->
+  <message id="dlt-window-title">检测置信度工具</message>
+  
+  <!-- MdaPeakRow strings -->
+  <message id="dlt-use-for-multi-peak">用于多峰</message>
+  <message id="dlt-roi-lower-label">ROI 下限:</message>
+  <message id="dlt-roi-upper-label">ROI 上限:</message>
+  <message id="dlt-continuum-label">连续谱</message>
+  <message id="dlt-cont-norm-label">连续谱归一化</message>
+  <message id="dlt-cont-norm-floating">浮动</message>
+  <message id="dlt-cont-norm-fixed-edges">边缘固定</message>
+  <message id="dlt-cont-norm-fixed-full-roi">完整ROI固定</message>
+  <message id="dlt-cont-norm-tt">
+    应如何确定连续谱归一化：
+    <ul><li><b>浮动</b>：多项式连续谱在每个给定活度下进行拟合 -
+    活度影响连续谱。</li>
+    <li><b>边缘固定</b>：使用ROI两侧的通道来确定
+    固定的线性连续谱，不受核素活度的影响。</li>
+    <li><b>完整ROI固定</b>：使用ROI的整个能量范围拟合连续谱，
+    假设高斯幅度为零；随后，峰的高斯分量将
+    位于此固定连续谱之上。<br/>
+    这实际上是在断言您知道数据中不存在信号峰。
+    连续谱不会受到核素活度值的影响，并且高斯
+    峰分量在评估时将位于此固定连续谱之上
+    &chi;<sup>2</sup>。</li>
+    </ul>
+  </message>
+  <message id="dlt-single-peak-currie-limit">单峰柯里限值</message>
+  <message id="dlt-num-side-channels-label">侧通道数</message>
+  <message id="dlt-further-details-link">更多详情...</message>
+  <message id="dlt-err-computing-info">计算错误 {1}, {2} keV 信息</message>
+  <message id="dlt-err-computing-currie-info">计算柯里限值信息错误: {1}</message>
+  
+  <!-- MdaPeakRow setSimplePoisonTxt strings -->
+  <message id="dlt-nominal">标称:</message>
+  <message id="dlt-range">范围:</message>
+  <message id="dlt-detected-activity-tt">检测到的活度，仅使用此感兴趣区域，
+    以及观察到的计数过量，以及
+    统计置信区间。</message>
+  <message id="dlt-limit-lt-zero"><![CDATA[限值: < 0{1}]]></message>
+  <message id="dlt-sig-fewer-counts">(ROI中的计数明显少于预测)</message>
+  <message id="dlt-fewer-counts-tt">在感兴趣区域中观察到的计数
+    明显少于相邻通道预测的计数。</message>
+  <message id="dlt-upper-limit">上限:</message>
+  <message id="dlt-critical-limit">临界限值:</message>
+  <message id="dlt-limit-tt">上限是给定CL下存在的最大活度，
+    考虑ROI中观察到的计数数量。
+    临界限值是信号可被可靠检测的活度。
+    两个数字均使用柯里方法计算。</message>
+  <message id="dlt-large-deficit">ROI中计数大量不足</message>
+  
+  <!-- DetectionLimitTool main class strings -->
+  <message id="dlt-tt-age-edit">
+    <div>核素的年龄。</div>
+    <br />
+    <div>年龄控制子体增长量；父核素
+    （即输入的）核素的活度始终在测量时报告。
+    </div>
+  </message>
+  <message id="dlt-attenuate-for-air">空气衰减</message>
+  <message id="dlt-shield-empty-text">屏蔽材料</message>
+  <message id="dlt-activity-limit">活度限值</message>
+  <message id="dlt-distance-limit">距离限值</message>
+  <message id="dlt-peaks-disp-act-label">峰显示 活度:</message>
+  <message id="dlt-peaks-disp-dist-label">峰显示 距离:</message>
+  <message id="dlt-conf-level-label">置信水平:</message>
+  <message id="dlt-conf-95">95%</message>
+  <message id="dlt-conf-99">99%</message>
+  <message id="dlt-conf-1sigma">1σ (68.2%)</message>
+  <message id="dlt-conf-2sigma">2σ (95.4%)</message>
+  <message id="dlt-conf-3sigma">3σ (99.7%)</message>
+  <message id="dlt-conf-4sigma">4σ</message>
+  <message id="dlt-conf-5sigma">5σ</message>
+  <message id="dlt-gamma-lines-to-use">要使用的伽马线</message>
+  <message id="dlt-min-rel-intensity-label">最小相对强度:</message>
+  <message id="dlt-fit-fwhm-btn">拟合FWHM...</message>
+  <message id="dlt-log">对数</message>
+  <message id="dlt-lin">线性</message>
+  <message id="dlt-below-lc">(低于 L<sub>c</sub>)</message>
+  <message id="dlt-lt-zero-counts"><![CDATA[< 0 计数]]></message>
+  <message id="dlt-lt-zero-activity"><![CDATA[< {1}]]></message>
+  
+  <!-- Error messages -->
+  <message id="dlt-err-no-data">未加载数据</message>
+  <message id="dlt-err-no-drf">未加载DRF</message>
+  <message id="dlt-err-no-fwhm">DRF没有FWHM信息 - 请拟合FWHM，或更改DRF。</message>
+  <message id="dlt-err-no-nuclide">无效核素</message>
+  <message id="dlt-err-activity-invalid">活度无效</message>
+  <message id="dlt-err-distance-invalid">距离无效</message>
+  <message id="dlt-err-min-rel-intensity">要显示的最小相对强度无效。</message>
+  <message id="dlt-err-shielding">计算屏蔽效果错误</message>
+  <message id="dlt-err-gamma-yields">伽马产额错误 - 所有强度为零。</message>
+  <message id="dlt-err-no-peaks-selected">未选择峰</message>
+  <message id="dlt-err-calculating-chi2">计算Chi2错误: {1}</message>
+  <message id="dlt-err-calculating-limit">计算限值错误: {1}</message>
+  
+  <!-- createCurrieRoiMoreInfoWindow strings -->
+  <message id="dlt-observed-activity">观察到的活度</message>
+  <message id="dlt-observed-counts">观察到的计数</message>
+  <message id="dlt-activity-range">活度范围</message>
+  <message id="dlt-counts-range">计数范围</message>
+  <message id="dlt-activity-le-zero">活度 &le; 0 {1}</message>
+  <message id="dlt-counts-le-zero">计数 &le; 0</message>
+  <message id="dlt-activity-upper-bound">活度上限</message>
+  <message id="dlt-counts-upper-bound">计数上限</message>
+  <message id="dlt-distance-not-supported">距离暂不支持附加信息</message>
+  <message id="dlt-lower-region-channels">下部区域通道</message>
+  <message id="dlt-lower-region-counts">下部区域计数</message>
+  <message id="dlt-upper-region-channels">上部区域通道</message>
+  <message id="dlt-upper-region-counts">上部区域计数</message>
+  <message id="dlt-using-roi-as-background">使用ROI区域作为背景估计</message>
+  <message id="dlt-roi-area-channels">ROI区域通道</message>
+  <message id="dlt-peak-area-channels">峰区域通道</message>
+  <message id="dlt-roi-region-counts">ROI区域计数</message>
+  <message id="dlt-peak-region-counts">峰区域计数</message>
+  <message id="dlt-roi-region-null-est">ROI区域零估计</message>
+  <message id="dlt-peak-region-null-est">峰区域零估计</message>
+  <message id="dlt-peak-critical-limit">峰临界限值 <span style="font-size: smaller;">(L<sub>c</sub>)</span></message>
+  <message id="dlt-peak-detection-limit">峰检测限值 <span style="font-size: smaller;">(L<sub>d</sub>)</span></message>
+  <message id="dlt-detector-intrinsic-eff">探测器本征效率</message>
+  <message id="dlt-solid-angle-fraction">立体角分数</message>
+  <message id="dlt-shielding-transmission">屏蔽透射率</message>
+  <message id="dlt-air-transmission">空气透射率</message>
+  <message id="dlt-nuclide-branching-ratio">核素分支比</message>
+  
+  <!-- Tooltip strings for createCurrieRoiMoreInfoWindow -->
+  <message id="dlt-tt-greater-than-lc">大于&quot;临界水平&quot;，L<sub>c</sub>，
+    在峰区域中观察到计数。</message>
+  <message id="dlt-tt-activity-range">信号活度范围估计，达到{1}置信水平。</message>
+  <message id="dlt-tt-counts-range">信号计数范围估计，达到{1}置信水平。</message>
+  <message id="dlt-tt-fewer-than-predicted">在峰区域中观察到的计数明显少于
+    相邻区域预测的计数。</message>
+  <message id="dlt-tt-upper-bound">可能存在的活度上限，达到
+    {1}置信水平。</message>
+  <message id="dlt-tt-lower-region-channels">能量上高于峰的区域，用于
+    估计峰区域中的预期连续谱计数；
+    对应于{1}到{2} keV</message>
+  <message id="dlt-tt-lower-region-counts">在峰区域下方的区域中观察到的计数数量，
+    用于估计预期峰区域预期计数</message>
+  <message id="dlt-tt-upper-region-channels">能量上高于峰的区域，用于
+    估计峰区域中的预期连续谱计数；
+    对应于{1}到{2} keV</message>
+  <message id="dlt-tt-upper-region-counts">在峰区域上方的区域中观察到的计数数量，
+    用于估计预期峰区域预期计数</message>
+  <message id="dlt-tt-peak-area-channels">假设峰所在的区域；
+    对应于{1}到{2} keV</message>
+  <message id="dlt-tt-peak-region-counts">在峰区域中观察到的计数数量</message>
+  <message id="dlt-tt-peak-region-null-est">如果假设没有信号存在，则
+    峰区域中预期计数数量的估计。</message>
+  <message id="dlt-tt-critical-limit">对应于柯里的&quot;临界水平&quot;，L<sub>c</sub>，
+    这是净信号水平（仪器响应），超过该水平
+    观察到的信号可以被可靠地识别为&quot;已检测&quot;。</message>
+  <message id="dlt-tt-detection-limit">对应于柯里的&quot;检测限值&quot;，L<sub>d</sub>，
+    这是<i>先验</i>可能
+    导致检测的&quot;真实&quot;净信号水平。</message>
+  <message id="dlt-tt-detector-intrinsic-eff">伽马击中探测器表面的效率，
+    在全能峰中被检测到。</message>
+  <message id="dlt-tt-solid-angle-fraction">在指定距离处，探测器表面占据的立体角分数。</message>
+  <message id="dlt-tt-shielding-transmission">在此能量下，将穿过屏蔽而不发生相互作用的伽马分数。</message>
+  <message id="dlt-tt-air-transmission">在此能量下，将穿过空气（假设海平面）而不发生相互作用的伽马分数。</message>
+  <message id="dlt-tt-branching-ratio">在此能量下发射的伽马射线数量，来自放射性
+    源，在任何屏蔽之前，但考虑核素年龄，
+    每个父核素衰变。</message>
+  <message id="dlt-tt-below-lc-counts">观察到的信号计数小于&quot;临界水平&quot;，L<sub>c</sub>，
+    因此不能声明检测，但这是超过预期计数的过量。</message>
+  <message id="dlt-tt-below-lc-activity">观察到的信号活度小于&quot;临界水平&quot;，L<sub>c</sub>，
+    因此不能声明检测，但这是超过预期计数的过量。</message>
+  
+  <!-- Chart strings -->
+  <message id="dlt-chart-x-axis-distance">距离 ({1})</message>
+  <message id="dlt-chart-x-axis-activity">活度 ({1})</message>
+  <message id="dlt-chart-title-estimated-activity">估计活度 {1}。</message>
+  <message id="dlt-chart-title-excess-counts">过量计数 {1}。</message>
+  <message id="dlt-chart-title-activity-lt-zero"><![CDATA[活度 < 0 {1}]]></message>
+  <message id="dlt-chart-title-data-peak">数据 + 峰 {1}</message>
+  <message id="dlt-chart-title-peak-upper-bound">上限峰 {1} @{2} CL</message>
+  <message id="dlt-currie-info-dialog-title">{1}{2} keV 信息</message>
+  
+  <!-- Additional error/status messages -->
+  <message id="dlt-no-foreground-file">无前景文件</message>
+  <message id="dlt-no-foreground-spectrum">无前景谱</message>
+  <message id="dlt-no-drf-loaded">未加载DRF</message>
+  <message id="dlt-drf-not-valid">DRF无效或没有FWHM信息。</message>
+  <message id="dlt-err-max-distance-too-large"><![CDATA[最大距离过大 (>100km)]]></message>
+  <message id="dlt-err-upper-limit-negative">计数上限小于零，但观察到的计数大于L_d。</message>
+  <message id="dlt-err-activity-zero-negative">活度不能为零或负数</message>
+  <message id="dlt-err-distance-zero-negative">距离不能为零或负数</message>
+</messages>

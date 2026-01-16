@@ -22,6 +22,7 @@
 {
   display: block; 
   margin-top: 10px;
+  overflow: hidden;
 }
 
 .DataLocationSection .DataLocation
@@ -33,6 +34,7 @@
   padding: 4px 5px 4px 10px;
   overflow-x: auto;
   user-select: all;
+  -webkit-user-select: all;
 }
 
 .LicenseAndDisclaimersWindow .ShowDataLocationBtn

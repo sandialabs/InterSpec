@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- uiw- is short for UseInfoWindow -->
+  
+  <!-- Button text -->
+  <message id="uiw-load-btn">Muat</message>
+  
+  <!-- File handling -->
+  <message id="uiw-file-too-large"><![CDATA[<span style="color: red;">File terlalu besar.</span>]]></message>
+  
+  <!-- Cheat sheet -->
+  <message id="uiw-cheat-sheet">Lembar Contekan (PDF)</message>
+  <message id="uiw-cheat-sheet-desc">Cetak lembar contekan ini (format PDF) untuk mereferensikan dengan cepat tindakan, tombol pintasan dan pemecahan masalah.</message>
+  
+  <!-- Settings -->
+  <message id="uiw-show-at-start-cb">tampilkan saat mulai ketika tidak ada spektrum</message>
+  
+  <!-- Tooltips -->
+  <message id="uiw-back-to-top">Kembali ke atas</message>
+  
+  <!-- Error messages -->
+  <message id="uiw-error-loading-faq">Kesalahan memuat topik FAQ: {1}</message>
+  
+  <!-- Welcome messages - Mobile -->
+  <message id="uiw-mobile-start-example"><![CDATA[Anda dapat memulai dengan membuka spektrum contoh di bawah ini, atau Anda dapat menggunakan tab <em>Impor Spektrum</em> untuk memuat file eksternal.<br />]]></message>
+  <message id="uiw-mobile-saved-spectra"><![CDATA[<p>Spektrum Anda yang disimpan sebelumnya ditampilkan di bawah ini. Anda dapat menggunakan tab lain untuk membuka spektrum contoh, atau untuk mengimpor file spektral eksternal.<br />Anda juga dapat membuka spektrum yang dilampirkan pada email, atau aplikasi penyimpanan cloud.</p>]]></message>
+  <message id="uiw-mobile-select-example"><![CDATA[<p>Anda dapat memilih file spektrum contoh di bawah ini, atau menggunakan tab impor untuk membuka satu dari iCloud, Dropbox, Google Drive, dll.<br />Anda juga dapat membuka file spektrum yang dilampirkan pada email.</p>]]></message>
+  
+  <!-- Welcome messages - Desktop -->
+  <message id="uiw-desktop-welcome-title"><![CDATA[<h1 align="center">Selamat Datang di <code>InterSpec</code></h1><div align="left">]]></message>
+  <message id="uiw-desktop-welcome-text"><![CDATA[<p>Anda dapat menggunakan referensi di kiri untuk menjadi lebih familiar dengan <code>InterSpec</code>, atau Anda dapat melanjutkan dari sesi atau spektrum sebelumnya di bawah ini.]]></message>
+  <message id="uiw-desktop-drag-drop"><![CDATA[ Atau, Anda juga dapat menyeret dan melepaskan file spektrum Anda sendiri ke <code>InterSpec</code>.</p>]]></message>
+  
+  <!-- Mobile postscript -->
+  <message id="uiw-mobile-phone-postscript"><![CDATA[<p>Ketuk ikon <img src="InterSpec_resources/images/phone_tips.png" width=12 height=12 alt="information icon" class="WhiteIcon" /> di kiri untuk dasar-dasar berinteraksi dengan grafik dan fitting untuk puncak. Ketuk ikon <img src="InterSpec_resources/images/help_mobile.svg" width=12 height=12 alt="help icon" class="WhiteIcon" /> untuk informasi terperinci tentang alat dan fitur <code>InterSpec</code>.</p>]]></message>
+  <message id="uiw-mobile-tablet-postscript"><![CDATA[<p>Ketuk tombol <b>Info Penggunaan</b> di kiri untuk dasar-dasar berinteraksi dengan grafik dan fitting untuk puncak. Ketuk ikon <img src="InterSpec_resources/images/help_mobile.svg" width=12 height=12 alt="help icon" class="WhiteIcon" /> untuk informasi terperinci tentang alat dan fitur <code>InterSpec</code>.</p>]]></message>
+  
+  <!-- File import instructions -->
+  <message id="uiw-tap-choose-file"><![CDATA[<p>Ketuk <em>Pilih File</em> untuk menelusuri file yang ingin Anda buka.</p>]]></message>
+  <message id="uiw-open-file-instructions"><![CDATA[<p>Anda juga dapat membuka file spektrum dengan memilih <em>Buka File</em> di submenu <code>InterSpec</code> setelah keluar dari layar ini.<br />Untuk lampiran email, atau file di aplikasi seperti <code>Files</code>, <code>Dropbox</code>, <code>Google Drive</code>, dll., Anda dapat membuka file spektrum di <code>InterSpec</code> dengan memilih "Salin Ke InterSpec"</p>]]></message>
+  
+  <!-- Tab titles -->
+  <message id="uiw-tab-saved-states">Status Tersimpan</message>
+  <message id="uiw-tab-example-spectra">Spektrum Contoh</message>
+  <message id="uiw-tab-import-spectra">Impor Spektrum</message>
+  
+  <!-- Welcome section -->
+  <message id="uiw-welcome">Selamat Datang</message>
+  <message id="uiw-controls">Kontrol</message>
+  
+  <!-- Anchor links -->
+  <message id="uiw-license-and-terms">Lisensi dan Ketentuan</message>
+  <message id="uiw-more-info">Informasi lebih mendalam</message>
+</messages>
+

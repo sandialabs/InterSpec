@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dlt- is short for DetectionLimitTool
+  -->
+  <message id="dlt-window-title">Alat Kepercayaan Deteksi</message>
+  
+  <!-- MdaPeakRow strings -->
+  <message id="dlt-use-for-multi-peak">Gunakan untuk multi-puncak</message>
+  <message id="dlt-roi-lower-label">ROI Bawah:</message>
+  <message id="dlt-roi-upper-label">ROI Atas:</message>
+  <message id="dlt-continuum-label">Kontinuum</message>
+  <message id="dlt-cont-norm-label">Norm. Kont.</message>
+  <message id="dlt-cont-norm-floating">Mengambang</message>
+  <message id="dlt-cont-norm-fixed-edges">Tetap di tepi</message>
+  <message id="dlt-cont-norm-fixed-full-roi">Tetap ROI penuh</message>
+  <message id="dlt-cont-norm-tt">
+    Bagaimana normalisasi kontinuum harus ditentukan:
+    <ul><li><b>Mengambang</b>: Kontinuum polinomial disesuaikan, pada setiap aktivitas yang diberikan -
+    aktivitas mempengaruhi kontinuum.</li>
+    <li><b>Tetap di tepi</b>: Saluran di kedua sisi ROI digunakan untuk menentukan
+    kontinuum linier yang tetap, dan tidak terpengaruh oleh aktivitas nuklida.</li>
+    <li><b>Tetap ROI penuh</b>: Kontinuum disesuaikan menggunakan seluruh rentang energi ROI,
+    dengan asumsi amplitudo Gaussian nol; kemudian, komponen Gaussian dari puncak akan
+    berada di atas kontinuum tetap ini.<br/>
+    Ini secara efektif menyatakan bahwa Anda tahu tidak ada puncak sinyal yang ada dalam data.
+    Kontinuum tidak akan terpengaruh oleh nilai aktivitas nuklida, dan komponen
+    Gaussian dari puncak akan berada di atas kontinuum tetap ini saat mengevaluasi
+    &chi;<sup>2</sup>.</li>
+    </ul>
+  </message>
+  <message id="dlt-single-peak-currie-limit">Batas Currie Puncak Tunggal</message>
+  <message id="dlt-num-side-channels-label">Jumlah Saluran Samping</message>
+  <message id="dlt-further-details-link">detail lebih lanjut...</message>
+  <message id="dlt-err-computing-info">Kesalahan komputasi {1}, {2} keV Info</message>
+  <message id="dlt-err-computing-currie-info">Kesalahan komputasi informasi batas Currie: {1}</message>
+  
+  <!-- MdaPeakRow setSimplePoisonTxt strings -->
+  <message id="dlt-nominal">Nominal:</message>
+  <message id="dlt-range">Rentang:</message>
+  <message id="dlt-detected-activity-tt">Aktivitas terdeteksi, hanya menggunakan Daerah Minat ini,
+    dan kelebihan hitungan yang diamati, serta
+    interval kepercayaan statistik.</message>
+  <message id="dlt-limit-lt-zero"><![CDATA[Batas: < 0{1}]]></message>
+  <message id="dlt-sig-fewer-counts">(jauh lebih sedikit hitungan di ROI daripada yang diprediksi)</message>
+  <message id="dlt-fewer-counts-tt">Jauh lebih sedikit hitungan yang diamati di
+    Daerah Minat, daripada yang diprediksi oleh saluran tetangga.</message>
+  <message id="dlt-upper-limit">Batas Atas:</message>
+  <message id="dlt-critical-limit">Batas Kritis:</message>
+  <message id="dlt-limit-tt">Batas atas adalah aktivitas maksimum yang ada, untuk CL yang diberikan,
+    mengingat jumlah hitungan yang diamati di ROI.
+    Batas kritis adalah aktivitas di mana sinyal akan terdeteksi secara andal.
+    Kedua angka dihitung menggunakan metode Currie.</message>
+  <message id="dlt-large-deficit">Defisit besar hitungan di ROI</message>
+  
+  <!-- DetectionLimitTool main class strings -->
+  <message id="dlt-tt-age-edit">
+    <div>Usia nuklida.</div>
+    <br />
+    <div>Usia mengontrol jumlah pertumbuhan keturunan; aktivitas nuklida induk
+    (yaitu, dimasukkan) selalu dilaporkan pada saat pengukuran.
+    </div>
+  </message>
+  <message id="dlt-attenuate-for-air">Attenuasi untuk udara</message>
+  <message id="dlt-shield-empty-text">bahan perisai</message>
+  <message id="dlt-activity-limit">Batas Aktivitas</message>
+  <message id="dlt-distance-limit">Batas Jarak</message>
+  <message id="dlt-peaks-disp-act-label">Puncak tampil. akt.:</message>
+  <message id="dlt-peaks-disp-dist-label">Puncak tampil. jarak:</message>
+  <message id="dlt-conf-level-label">Tingkat Kepercayaan:</message>
+  <message id="dlt-conf-95">95%</message>
+  <message id="dlt-conf-99">99%</message>
+  <message id="dlt-conf-1sigma">1σ (68,2%)</message>
+  <message id="dlt-conf-2sigma">2σ (95,4%)</message>
+  <message id="dlt-conf-3sigma">3σ (99,7%)</message>
+  <message id="dlt-conf-4sigma">4σ</message>
+  <message id="dlt-conf-5sigma">5σ</message>
+  <message id="dlt-gamma-lines-to-use">Garis gamma yang akan digunakan</message>
+  <message id="dlt-min-rel-intensity-label">Intensitas relatif min.:</message>
+  <message id="dlt-fit-fwhm-btn">Sesuaikan FWHM...</message>
+  <message id="dlt-log">Log</message>
+  <message id="dlt-lin">Lin</message>
+  <message id="dlt-below-lc">(di bawah L<sub>c</sub>)</message>
+  <message id="dlt-lt-zero-counts"><![CDATA[< 0 hitungan]]></message>
+  <message id="dlt-lt-zero-activity"><![CDATA[< {1}]]></message>
+  
+  <!-- Error messages -->
+  <message id="dlt-err-no-data">Tidak Ada Data Dimuat</message>
+  <message id="dlt-err-no-drf">Tidak Ada DRF Dimuat</message>
+  <message id="dlt-err-no-fwhm">DRF tidak memiliki info FWHM - harap sesuaikan untuk FWHM, atau ubah DRF.</message>
+  <message id="dlt-err-no-nuclide">Tidak ada nuklida yang valid</message>
+  <message id="dlt-err-activity-invalid">Aktivitas tidak valid</message>
+  <message id="dlt-err-distance-invalid">Jarak tidak valid</message>
+  <message id="dlt-err-min-rel-intensity">Intensitas relatif minimum untuk ditampilkan tidak valid.</message>
+  <message id="dlt-err-shielding">Kesalahan Menghitung efek perisai</message>
+  <message id="dlt-err-gamma-yields">Kesalahan hasil gamma - semua intensitas adalah nol.</message>
+  <message id="dlt-err-no-peaks-selected">Tidak ada puncak yang dipilih</message>
+  <message id="dlt-err-calculating-chi2">Kesalahan menghitung Chi2: {1}</message>
+  <message id="dlt-err-calculating-limit">Kesalahan menghitung batas: {1}</message>
+  
+  <!-- createCurrieRoiMoreInfoWindow strings -->
+  <message id="dlt-observed-activity">Aktivitas yang diamati</message>
+  <message id="dlt-observed-counts">Hitungan yang diamati</message>
+  <message id="dlt-activity-range">Rentang aktivitas</message>
+  <message id="dlt-counts-range">Rentang hitungan</message>
+  <message id="dlt-activity-le-zero">Aktivitas &le; 0 {1}</message>
+  <message id="dlt-counts-le-zero">Hitungan &le; 0</message>
+  <message id="dlt-activity-upper-bound">Batas atas aktivitas</message>
+  <message id="dlt-counts-upper-bound">Batas atas hitungan</message>
+  <message id="dlt-distance-not-supported">Jarak belum didukung untuk info tambahan</message>
+  <message id="dlt-lower-region-channels">Saluran wilayah bawah</message>
+  <message id="dlt-lower-region-counts">Hitungan wilayah bawah</message>
+  <message id="dlt-upper-region-channels">Saluran wilayah atas</message>
+  <message id="dlt-upper-region-counts">Hitungan wilayah atas</message>
+  <message id="dlt-using-roi-as-background">Menggunakan area ROI sebagai estimasi latar belakang</message>
+  <message id="dlt-roi-area-channels">Saluran area ROI</message>
+  <message id="dlt-peak-area-channels">Saluran area puncak</message>
+  <message id="dlt-roi-region-counts">Hitungan wilayah ROI</message>
+  <message id="dlt-peak-region-counts">Hitungan wilayah puncak</message>
+  <message id="dlt-roi-region-null-est">Estimasi null wilayah ROI</message>
+  <message id="dlt-peak-region-null-est">Estimasi null wilayah puncak</message>
+  <message id="dlt-peak-critical-limit">Batas kritis puncak <span style="font-size: smaller;">(L<sub>c</sub>)</span></message>
+  <message id="dlt-peak-detection-limit">Batas deteksi puncak <span style="font-size: smaller;">(L<sub>d</sub>)</span></message>
+  <message id="dlt-detector-intrinsic-eff">Efisiensi Intrinsik Detektor</message>
+  <message id="dlt-solid-angle-fraction">Fraksi sudut padat</message>
+  <message id="dlt-shielding-transmission">Transmisi perisai</message>
+  <message id="dlt-air-transmission">Transmisi udara</message>
+  <message id="dlt-nuclide-branching-ratio">Rasio percabangan nuklida</message>
+  
+  <!-- Tooltip strings for createCurrieRoiMoreInfoWindow -->
+  <message id="dlt-tt-greater-than-lc">Lebih besar dari &quot;tingkat kritis&quot;, L<sub>c</sub>,
+    hitungan diamati di wilayah puncak.</message>
+  <message id="dlt-tt-activity-range">Estimasi rentang aktivitas sinyal, hingga tingkat kepercayaan {1}.</message>
+  <message id="dlt-tt-counts-range">Estimasi rentang hitungan sinyal, hingga tingkat kepercayaan {1}.</message>
+  <message id="dlt-tt-fewer-than-predicted">Jauh lebih sedikit hitungan di wilayah puncak yang diamati,
+    daripada yang diprediksi oleh wilayah tetangga.</message>
+  <message id="dlt-tt-upper-bound">Batas atas pada berapa banyak aktivitas yang bisa ada, hingga
+    tingkat kepercayaan {1}.</message>
+  <message id="dlt-tt-lower-region-channels">Wilayah di atas puncak dalam energi, yang digunakan
+    untuk memperkirakan hitungan kontinuum yang diharapkan di wilayah puncak;
+    sesuai dengan {1} hingga {2} keV</message>
+  <message id="dlt-tt-lower-region-counts">Jumlah hitungan yang diamati di wilayah di bawah wilayah puncak,
+    yang digunakan untuk memperkirakan hitungan wilayah puncak yang diharapkan</message>
+  <message id="dlt-tt-upper-region-channels">Wilayah di atas puncak dalam energi, yang digunakan
+    untuk memperkirakan hitungan kontinuum yang diharapkan di wilayah puncak;
+    sesuai dengan {1} hingga {2} keV</message>
+  <message id="dlt-tt-upper-region-counts">Jumlah hitungan yang diamati di wilayah di atas wilayah puncak,
+    yang digunakan untuk memperkirakan hitungan wilayah puncak yang diharapkan</message>
+  <message id="dlt-tt-peak-area-channels">Wilayah di mana puncak diasumsikan berada;
+    sesuai dengan {1} hingga {2} keV</message>
+  <message id="dlt-tt-peak-region-counts">Jumlah hitungan yang diamati di wilayah puncak</message>
+  <message id="dlt-tt-peak-region-null-est">Estimasi jumlah hitungan yang diharapkan, di wilayah puncak, jika
+    diasumsikan tidak ada sinyal yang ada.</message>
+  <message id="dlt-tt-critical-limit">Sesuai dengan &quot;tingkat kritis&quot; Currie, L<sub>c</sub>,
+    yang merupakan tingkat sinyal bersih (respons instrumen) di atasnya
+    sinyal yang diamati dapat diakui secara andal sebagai &quot;terdeteksi&quot;.</message>
+  <message id="dlt-tt-detection-limit">Sesuai dengan &quot;batas deteksi&quot; Currie, L<sub>d</sub>,
+    yang merupakan tingkat sinyal bersih &quot;sejati&quot; yang mungkin, <i>a priori</i>,
+    diharapkan mengarah pada deteksi.</message>
+  <message id="dlt-tt-detector-intrinsic-eff">Efisiensi untuk gamma yang mengenai permukaan detektor,
+    untuk dideteksi dalam puncak energi penuh.</message>
+  <message id="dlt-tt-solid-angle-fraction">Fraksi sudut padat, yang ditempati permukaan detektor, pada jarak yang ditentukan.</message>
+  <message id="dlt-tt-shielding-transmission">Fraksi gamma, pada energi ini, yang akan melewati perisai tanpa berinteraksi.</message>
+  <message id="dlt-tt-air-transmission">Fraksi gamma, pada energi ini, yang akan melewati udara (dengan asumsi permukaan laut) tanpa berinteraksi.</message>
+  <message id="dlt-tt-branching-ratio">Jumlah sinar gamma yang dipancarkan pada energi ini, dari sumber
+    radioaktif sebelum perisai apa pun, tetapi memperhitungkan usia nuklida,
+    per peluruhan nuklida induk.</message>
+  <message id="dlt-tt-below-lc-counts">Hitungan sinyal yang diamati kurang dari &quot;tingkat kritis&quot;, L<sub>c</sub>,
+    jadi deteksi tidak dapat dinyatakan, tetapi ini adalah kelebihan di atas hitungan yang diharapkan.</message>
+  <message id="dlt-tt-below-lc-activity">Aktivitas sinyal yang diamati kurang dari &quot;tingkat kritis&quot;, L<sub>c</sub>,
+    jadi deteksi tidak dapat dinyatakan, tetapi ini adalah kelebihan di atas hitungan yang diharapkan.</message>
+  
+  <!-- Chart strings -->
+  <message id="dlt-chart-x-axis-distance">Jarak ({1})</message>
+  <message id="dlt-chart-x-axis-activity">Aktivitas ({1})</message>
+  <message id="dlt-chart-title-estimated-activity">Aktivitas yang diperkirakan {1}.</message>
+  <message id="dlt-chart-title-excess-counts">Hitungan berlebih {1}.</message>
+  <message id="dlt-chart-title-activity-lt-zero"><![CDATA[Aktivitas < 0 {1}]]></message>
+  <message id="dlt-chart-title-data-peak">Data + puncak {1}</message>
+  <message id="dlt-chart-title-peak-upper-bound">Puncak untuk batas atas {1} @{2} CL</message>
+  <message id="dlt-currie-info-dialog-title">{1}{2} keV Info</message>
+  
+  <!-- Additional error/status messages -->
+  <message id="dlt-no-foreground-file">Tidak Ada File Latar Depan</message>
+  <message id="dlt-no-foreground-spectrum">Tidak ada spektrum latar depan</message>
+  <message id="dlt-no-drf-loaded">Tidak Ada DRF Dimuat</message>
+  <message id="dlt-drf-not-valid">DRF tidak valid atau tidak memiliki info FWHM.</message>
+  <message id="dlt-err-max-distance-too-large"><![CDATA[Jarak maksimum terlalu besar (>100km)]]></message>
+  <message id="dlt-err-upper-limit-negative">Batas atas hitungan kurang dari nol, tetapi hitungan yang diamati lebih besar dari L_d.</message>
+  <message id="dlt-err-activity-zero-negative">Aktivitas tidak boleh nol atau negatif</message>
+  <message id="dlt-err-distance-zero-negative">Jarak tidak boleh nol atau negatif</message>
+</messages>

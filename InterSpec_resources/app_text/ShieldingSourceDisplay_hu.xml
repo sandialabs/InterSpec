@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- This file applies to ShieldingSourceDisplay.cpp
+    ssd- is short for ShieldingSourceDisplay, and is basically the GUI component
+    sfm- is short for SourceFitModel
+    x2g- is short for ShieldingSourceDisplay::Chi2Graphic - e.g., the chart on this page
+  -->
+  <message id="ssd-tt-distance">
+    Távolság a forrás középpontjától a detektor felületéig. A számot egységnek
+    kell követnie; érvényes egységek: meters, m, cm, mm, km, feet,
+    ft, ', in, inches, vagy ". Több távolságot is hozzáadhat,
+    mint például '3ft 4in', vagy '3.6E-2 m 12 cm', amelyek egyenértékűek
+    40inch-csel és 15.6cm-rel.
+  </message>
+  <message id="ssd-geom-point">Pont/Gömbölyű</message>
+  <message id="ssd-geom-cyl-end">Hengeres: végéről</message>
+  <message id="ssd-geom-cyl-side">Hengeres: oldalról</message>
+  <message id="ssd-rectangular">Téglalap alakú</message>
+  <message id="ssd-fixed-geom-notification">Fix geometria DRF használata</message>
+  <message id="ssd-tt-shieldings">
+    Az árnyékolások héjakként vannak kezelve, a legbelső
+    héj az első, amelyet hozzáad (a legfelső ebben a dobozban), és a
+    következő árnyékolások annak köré rétegezve. Minden forrás,
+    amely nincs árnyékolások komponenseként hozzárendelve, pont
+    forrásként van kezelve a középen.
+  </message>
+  <message id="ssd-add-shield-label">Árnyékolás Hozzáadása:</message>
+  <message id="ssd-geometry-label">Geometria:</message>
+  <message id="ssd-tt-add-shield">Válasszon egy előre definiált közös árnyékoló anyagok könyvtárából.</message>
+  <message id="ssd-generic-btn">Általános</message>
+  <message id="ssd-tt-generic">Lehetővé teszi a rendszám és felületi sűrűség definiálását és illesztését.</message>
+  <message id="ssd-perform-fit-btn">Modell Illesztés Végrehajtása</message>
+  <message id="ssd-cancel-fit">Modell Illesztés Törlése</message>
+  <message id="ssd-mi-calc-log">Számítási Napló</message>
+  <message id="ssd-mi-import-model">Modell Importálása...</message>
+  <message id="ssd-mi-export-model">Modell Exportálása</message>
+  <message id="ssd-mi-from-db">Megnyitás Adatbázisból...</message>
+  <message id="ssd-mi-save-to-db">Mentés Adatbázisba...</message>
+  <message id="ssd-mi-clone-db-entry">Klónozás Adatbázisban...</message>
+  <message id="ssd-to-small-for-chart">(tegye magasabbra az ablakot a χ<sup>2</sup> megjelenítéséhez)</message>
+  <message id="ssd-tt-chi2-switch">A jelenlegi modell minden csúcsának Chi értékének megjelenítése a grafikonon, vagy a jelenlegi modell és megfigyelt csúcs közötti relatív csúcs terület többszörösének.</message>
+  <message id="ssd-cb-all-peaks">Összes Csúcs</message>
+  <message id="ssd-multi-iso-per-peak">Interferencia korrekció</message>
+  <message id="ssd-options-title">Opciók</message>
+  <message id="ssd-tt-multi-iso-per-peak">Ennek az opciónak a bejelölése lehetővé teszi, hogy más nuklidok, amelyekre illesztést végeznek, ne csak a csúcshoz rendelt, hozzájáruljanak a várható impulzusok számához egy megfigyelt csúcsban. Ez hasznos lehet például Ho166m és U235 illesztésekor, amelyek mindketten csúccsal rendelkeznek 185 keV közelében.</message>
+  <message id="ssd-cluster-width-label">Interferencia szélesség (sigma szám):</message>
+  <message id="ssd-tt-cluster-width">A csúcs átlagától számított sigma szám, amelyen belül bármely nuklidból származó gamma vonalak
+    összegzésre és a csúcshoz rendelésre kerülnek. Az alapértelmezett érték 1.25 sigma, de ha a csúcs
+    nyilvánvalóan kiszélesedett interferenciák miatt, vagy rossz az illesztés, növelni érdemes ezt az értéket.
+    0.0-ra csökkentve csak a csúcshoz társított gammák kerülnek felhasználásra
+    (ugyanaz, mint a "Több nuklid hozzájárul a csúcshoz" kikapcsolása).
+  </message>
+  <message id="ssd-cb-atten-for-air">Levegő csillapítása</message>
+  <message id="ssd-tt-atten-for-air">Ha be van jelölve, a forrás vagy külső árnyékolás és detektor közötti levegő miatti csillapítás figyelembe lesz véve a számításokban.</message>
+  <message id="ssd-cb-sub-back-peaks">Háttér csúcsok kivonása</message>
+  <message id="ssd-tt-sub-back-peaks">Ez arra kényszeríti az elem izotópjait, hogy mind ugyanakkora korúak legyenek az illesztésben.</message>
+  <message id="ssd-cb-same-el-same-age">Ugyanaz a Z ugyanaz a kor</message>
+  <message id="ssd-tt-same-el-same-age">Kényszerítés, hogy az ugyanazon elem izotópjainak mindegyike ugyanakkora korú legyen.</message>
+  <message id="ssd-cb-corr-for-decay">Bomlás korrekció mérés alatt</message>
+  <message id="ssd-tt-corr-for-decay">Korrigálja a bomlást és benövési hatásokat, amelyek a mérés ideje alatt történnek. Az eredményező aktivitások a mérés kezdő időpontjának felelnek meg. További számítási időt igényelhet a megoldás megtalálásához.</message>
+  <message id="ssd-tt-geometry">A "nyom" források vagy saját-csillapító források modellezéséhez használandó geometria.
+    <br />
+    <br />
+    Alapértelmezés szerint minden forrás pont forrás a megadott távolságban a detektortól, minden geometriánál.
+    <br />
+    Azonban, ha egy nuklidot "nyom" forrássa tesz (egy árnyékolás "<em>Nyomforrás Hozzáadása</em>" gombjára kattintva a jobb alsó sarokban), vagy saját-csillapító forrássa (a
+    <em>Forrás ehhez:</em>" jelölőnégyzet kiválasztásával, amikor egy árnyékolás ugyanazzal az elemmel rendelkezik, mint a nuklid, amelyre
+    illesztést végez), akkor a forrás izotóp az árnyékoláson keresztül elosztottként lesz modellezve,
+    és sugárkövetés kerül felhasználásra a különböző csillapítások figyelembevételére az árnyékoláson belüli minden helyen.
+    <br />
+    <br />
+    A dolgok egyszerű tartása érdekében válassza a "Pont/Gömbölyű" geometriát, kivéve ha "nyom" vagy saját-csillapító forrásra illesztést fog végezni.
+  </message>
+  <message id="ssd-phone-tab-source-peaks">Forrás Csúcsok</message>
+  <message id="ssd-phone-tab-source-isotopes">Forrás Izotópok</message>
+  <message id="ssd-phone-tab-shielding">Árnyékolás</message>
+  <message id="ssd-warn-no-back-peaks">Nincsenek háttér csúcsok definiálva, nem vonjuk ki őket</message>
+  <message id="ssd-warn-no-back-spec">Nincs háttér spektrum betöltve, így nem lehet kivonni a háttér csúcs területeket az előtérből.</message>
+  <message id="ssd-warn-no-back-peaks-toggle">
+    A háttér spektrumnak nincsenek azonosított csúcsai. Be kell töltenie a háttér spektrumot előtérként,
+    azonosítania a potenciálisan kivonandó csúcsokat, majd vissza kell váltania a jelenlegi
+    előtér/háttér kombinációra.
+  </message>
+  <message id="ssd-update-dim-to-be-min">Árnyékolás dimenzió frissítve minimális vastagságra.</message>
+  <message id="ssd-scaled-shield-to-be-less-dist">Az árnyékolási vastagságok skálázva lettek, hogy kisebbek legyenek a detektor távolságnál.</message>
+  <message id="ssd-err-fit-only-one-an">Egyszerre csak egy általános árnyékolás rendszámára illeszthet.</message>
+  <message id="ssd-warn-invalid-chi2-for-energy">Érvénytelen chi2 lett kiszámítva {1} keV-re, más eredmények is érvénytelenek lehetnek</message>
+  <message id="ssd-calc-log-window-title">Számítási Napló</message>
+  <message id="ssd-calc-log-export-txt">TXT fájl</message>
+  <message id="ssd-err-opening-import-model">Hiba a feltöltött Forrás Árnyékolás Illesztési Modell megnyitásakor: {1}</message>
+  <message id="ssd-import-model-window-title">Forrás Árnyékolás XML Modell Importálása</message>
+  <message id="ssd-err-opening-db-model">Hiba a Forrás Árnyékolás Illesztési Modell adatbázisból való megnyitásakor: {1}</message>
+  <message id="ssd-err-loading-model">Nem sikerült betölteni a kiválasztott modellt - sajnáljuk :(</message>
+  <message id="ssd-prev-saved-window-title">Korábban Mentett Modellek</message>
+  <message id="ssd-models-prev-for-fore">Ezzel az előtérrel korábban használt modellek:</message>
+  <message id="ssd-models-prev-saved">Korábban mentett modellek:</message>
+  <message id="ssd-model-desc">Modell Leírás:</message>
+  <message id="ssd-cb-allow-del">Törlés engedélyezése</message>
+  <message id="ssd-no-model-in-db">Nincsenek modellek az adatbázisban Ön számára</message>
+  <message id="ssd-err-creating-db-browser">Hiba az adatbázis modell böngésző létrehozásakor</message>
+  <message id="ssd-save-model-to-db-window-title">Aktivitás/Árnyékolás modell mentése adatbázisba</message>
+  <message id="ssd-save-to-db-name">Adja meg a modell nevét:</message>
+  <message id="ssd-save-to-db-desc">Adja meg a modell leírását (opcionális):</message>
+  <message id="ssd-must-enter-name">Meg kell adnia egy nevet</message>
+  <message id="ssd-err-saving-to-db">Hiba az adatbázisba mentéskor</message>
+  <message id="ssd-Best">Legjobb</message>
+  <message id="ssd-fit-failed">Modell illesztése sikertelen</message>
+  <message id="ssd-using-fit-anyway">Illesztési megoldás használata mindenképpen.</message>
+  <message id="ssd-err-fit-not-performed">
+    {1}
+    <br />
+    Illesztés nem került végrehajtásra.
+  </message>
+  <message id="ssd-err-before-fit">
+    {1}
+    <br />
+    Az illesztés előtt.
+  </message>
+  <message id="ssd-err-couldnt-make-chi2-fcn">
+    {1}
+    <br />
+    Illesztés nem került végrehajtásra (nem lehetett Chi2Fcn-t létrehozni).
+  </message>
+  <message id="ssd-error-create-tool">Hiba az Aktivitás/Árnyékolás illesztési megjelenítő létrehozásakor: {1}</message>
+  <message id="ssd-shield-source-diagram">Árnyékolás/Forrás Diagram</message>
+  <message id="ssd-show-model-diagram">Modell Diagram Megjelenítése</message>
+
+  <!-- SourceFitModel quantities -->
+  <message id="sfm-tt-header-isotope">Nuklidok hozzáadása vagy eltávolítása az ehhez az illesztéshez használt fotocsúcsok szerint történik, így ebben a táblázatban nem szerkeszthetők</message>
+  <message id="sfm-tt-header-activity">A nuklid aktivitása. Ésszerű kezdőérték megadása segíthet az illesztésben, vagy az aktivitást nem kell illeszteni. Értékek hasonló formátumokban adhatók meg: '12.4 kBq', '1.0mCi', '55.3uCi', '15.82Mbq'</message>
+  <message id="sfm-tt-header-age">A nuklid kora. Értékek hasonló formátumban adhatók meg: '23.3s' '2 hl' - (hl felezési időt jelent), '5.23y', '23:14:21.343', '19min', stb. Vegye figyelembe, hogy a stabil gyermekekké bomló nuklidokat nem lehet öregíteni.</message>
+  <message id="sfm-tt-header-fit-act">Az illesztésnek meg kell próbálnia megtalálni a nuklid aktivitását is, vagy feltételezze, hogy a megadott érték helyes?</message>
+  <message id="sfm-tt-header-fit-age">Az illesztésnek meg kell próbálnia megtalálni a nuklid korát is, vagy csak feltételezze, hogy a megadott érték helyes? Ez az opció nem elérhető olyan nuklidoknál, amelyek csak stabil gyermekekké bomlanak.</message>
+  <message id="sfm-tt-header-iso-mass">Ez a csupasz nuklid tömege a listázott aktivitás feltételezésével.</message>
+  <message id="sfm-tt-header-act-uncert">Ez az aktivitás bizonytalansága az illesztésből.</message>
+  <message id="sfm-tt-header-age-uncert">Ez a kor bizonytalansága az illesztésből.</message>
+  <message id="sfm-header-fit-act">Akt. Illesztése</message>
+  <message id="sfm-header-fit-age">Kor Illesztése</message>
+  <message id="sfm-header-act-uncert">Akt. Bizonytalanság</message>
+  <message id="sfm-header-age-uncert">Kor Bizonytalanság</message>
+  <message id="sfm-tt-aging-not-allowed">A nuklidok gyermekei stabilak, így az öregítés nem engedélyezett, mert nem befolyásolja a gamma spektrumot.</message>
+
+  <!-- Chi2Graphic -->
+  <message id="x2g-yaxis-title-chi">(megfigyelt-modell)/bizonytalanság</message>
+  <message id="x2g-yaxis-title-mult">Modell Többszöröse</message>
+  <message id="x2g-">Az Y-tengely a csúcs terület impulzusok, mínusz a jelenleg megjelenített"
+    " forrás és árnyékolási értékekből várható impulzusok száma, mindezt elosztva a statisztikai bizonytalansággal. Ennek"
+    " négyzete kerül felhasználásra az árnyékolás és források optimalizálására.</message>
+  <message id="x2g-tt-chi-axis">Az Y-tengely a csúcs terület impulzusok, mínusz a jelenleg megjelenített forrás és árnyékolási értékekből várható impulzusok száma, mindezt elosztva a statisztikai bizonytalansággal. Ennek négyzete kerül felhasználásra az árnyékolás és források optimalizálására.</message>
+  <message id="x2g-tt-scale-axis">Az Y-tengely a megfigyelt csúcs impulzusok többszöröse a jelenlegi forrás és árnyékolási értékekből várhatóhoz képest.</message>
+</messages>

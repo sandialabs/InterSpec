@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- d3sdd- is short for D3SpectrumDisplayDiv
+
+    The part of the id coming after "d3sdd-", directly corresponds to the javascript variable name, the element value gets put into.
+
+    The JS 'xAxisTitle' variable is localized using the "Energy (keV)" key
+    The JS 'fwhm' variable is localized using the "FWHM" key
+  -->
+  <message id="d3sdd-yAxisTitle">计数</message>
+  <message id="d3sdd-yAxisTitleMulti">每{1}道的计数</message>
+  <message id="d3sdd-realTime">实时间</message>
+  <message id="d3sdd-liveTime">活时间</message>
+  <message id="d3sdd-deadTime">死时间</message>
+  <message id="d3sdd-scaledBy">缩放倍数</message>
+  <message id="d3sdd-zoomIn">放大</message>
+  <message id="d3sdd-neutrons">中子</message>
+  <message id="d3sdd-Neutrons">中子</message>
+  <message id="d3sdd-cps">cps</message>
+  <message id="d3sdd-roiCounts">ROI计数</message>
+  <message id="d3sdd-gammaCounts">伽马计数</message>
+  <message id="d3sdd-contArea">连续区面积</message>
+  <message id="d3sdd-peakCps">峰cps</message>
+  <message id="d3sdd-peakArea">峰面积</message>
+  <message id="d3sdd-mean">均值</message>
+  <message id="d3sdd-spectrum">谱</message>
+  <message id="d3sdd-comptonEdge">康普顿边缘</message>
+  <message id="d3sdd-sumPeak">求和峰</message>
+  <message id="d3sdd-firstEnergyClick">单击设置求和峰第一能量。</message>
+  <message id="d3sdd-singleEscape">单逃逸</message>
+  <message id="d3sdd-doubleEscape">双逃逸</message>
+  <message id="d3sdd-eraseInRange">将擦除范围内的峰</message>
+  <message id="d3sdd-zoomInY">Y轴放大</message>
+  <message id="d3sdd-zoomOutY">Y轴缩小</message>
+  <message id="d3sdd-touchDefineRoi">向右移动2个手指以定义ROI</message>
+  <message id="d3sdd-foreNSigmaBelowBack">前景比本底低{1}σ。</message>
+  <message id="d3sdd-foreNSigmaAboveBack">前景比本底高{1}σ。</message>
+  <message id="d3sdd-backSubCounts">计数（本底扣除）</message>
+  <message id="d3sdd-afterScalingBy">缩放后</message>
+  <message id="d3sdd-clickedPeak">已点击峰</message>
+  <message id="d3sdd-recalFromTo">重新刻度数据从{1}到{2} keV</message>
+  <message id="d3sdd-sumFromTo">{1}到{2} keV</message>
+  <message id="d3sdd-comptonPeakAngle">{1}°康普顿峰</message>
+  <message id="d3sdd-yaxis-lower-upper-equal">下限和上限计数相等。</message>
+  <message id="d3sdd-yaxis-no-spectrum">未显示谱。</message>
+  <message id="d3sdd-yaxis-upper-counts-below-zero">上限范围等于或低于零。</message>
+  <message id="d3sdd-yaxis-lower-counts-below-zero">下限范围等于或低于零。</message>
+  <message id="d3sdd-yaxis-below-min-non-zero">上限范围小于显示的最小非零值。</message>
+  <message id="d3sdd-candidates">候选：</message>
+  <message id="d3sdd-use-arrows-to-select">（使用↑和↓选择）</message>
+</messages>
+

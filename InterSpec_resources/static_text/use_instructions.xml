@@ -332,26 +332,11 @@ but menu items will be disabled if no background or secondary spectrum is loaded
 
 <message id='10desktop-shortcuts-desc'>
 
+  <h3>Keyboard Shortcuts</h3>
   <ul>
     <li>
-      <b><code>Ctrl-s</code></b>: Switches to the &quot;<em><u>S</u>pectrum Files</em>&quot; tab, or
-      if <em>Tool Tabs</em> are hidden, shows the <em>Spectrum Files</em> tool.
-    </li>
-    <li>
-      <b><code>Ctrl-p</code></b>: Switches to the &quot;<em><u>P</u>eak Manager</em>&quot; tab, or
-      shows the tool.
-    </li>
-    <li>
-      <b><code>Ctrl-r</code></b>: Switches to the &quot;<em><u>R</u>eference Photopeaks</em>&quot;
-      tab, or shows the tool.
-    </li>
-    <li>
-      <b><code>Ctrl-e</code></b>: Switches to the &quot;<em><u>E</u>nergy Calibration</em>&quot;
-      tab, or shows the tool.
-    </li>
-    <li>
-      <b><code>Ctrl-n</code></b>: Switches to the &quot;<em><u>N</u>uclide Search</em>&quot; tab,
-      or shows the tool.
+      <b><code>Ctrl-1</code></b> through <b><code>Ctrl-7</code></b>: Switches to the tool tab 1-7 (i.e., "<code>Spectrum Files</code>", "<code>Peak Manager</code>", "<code>Reference Photopeaks</code>", etc. tabs), or
+      if <em>Tool Tabs</em> are hidden, shows the corresponding tool window.
     </li>
     <li>
       <b><code>Ctrl-h</code></b>: Shows the in-app <em><u>H</u>elp</em>.
@@ -360,10 +345,68 @@ but menu items will be disabled if no background or secondary spectrum is loaded
       <b><code>Ctrl-i</code></b>: Shows the <em>Welcome <u>I</u>nformation</em> screen.
     </li>
     <li>
+      <b><code>Ctrl-k</code></b>: Clears all showing reference photopea<u>k</u> lines.
+    </li>
+    <li>
       <b><code>Ctrl-l</code></b>: Switches spectrum y-axis between <u>l</u>og and <u>l</u>inear.
     </li>
     <li>
-      <b><code>Ctrl-c</code></b>: <u>C</u>lears all showing reference lines.
+      <b><code>Ctrl-s</code></b>: <u>S</u>aves the current application state.
+    </li>
+    <li>
+      <b><code>Ctrl-e</code></b>: Opens the <u>E</u>xport spectrum file dialog.
+    </li>
+    <li>
+      <b><code>Ctrl-z</code></b>: Undo the last action.
+    </li>
+    <li>
+      <b><code>Ctrl-Shift-z</code></b>: Redo the last undone action.
+    </li>
+  </ul>
+
+  <h3>Mouse Modifiers for Spectrum Interactions</h3>
+  In addition to these short-cuts, you can click on the y-axis title to toggle log/linear scale; clicking on the x-axis title will show/hide the overview strip chart.
+  <ul>
+    <li>
+      <b>Double-click</b>: Fits a peak in the foreground spectrum at the clicked location.
+    </li>
+    <li>
+      <b>Alt + Double-click</b>: Fits a peak in the background spectrum at the clicked location.
+    </li>
+    <li>
+      <b>Shift + Double-click</b>: Fits a peak in the secondary spectrum at the clicked location.
+    </li>
+    <li>
+      <b>Shift + Left-drag</b>: Delete peaks mode - removes peaks in the dragged energy range.
+    </li>
+    <li>
+      <b>Alt + Shift + Left-drag</b>: Count gammas mode - counts gamma rays in the dragged energy range.
+    </li>
+    <li>
+      <b>Alt + Ctrl + Left-drag</b>: Recalibration mode - recalibrates energy using the dragged range.
+    </li>
+    <li>
+      <b>Command + Left-drag (Mac)</b> or <b>Alt + Left-drag (Windows)</b>: Drag vertically to zoom in/out on the y-axis.
+    </li>
+  </ul>
+
+  <h3>Mouse Modifiers for Time-Chart Interactions</h3>
+  Use the menu in upper-right corner of time chart to simplify interactions.
+  <ul>
+    <li>
+      <b>Click or drag</b>: Selects samples for the foreground spectrum.
+    </li>
+    <li>
+      <b>Alt + Click/drag</b> or <b>hold 'b' key</b>: Selects samples for the <u>b</u>ackground spectrum.
+    </li>
+    <li>
+      <b>Meta + Click/drag</b> or <b>hold 's' key</b>: Selects samples for the <u>s</u>econdary spectrum.
+    </li>
+    <li>
+      <b>Shift + Click/drag</b>: Adds samples to the current selection.
+    </li>
+    <li>
+      <b>Ctrl + Click/drag</b>: Removes samples from the current selection.
     </li>
   </ul>
 </message>

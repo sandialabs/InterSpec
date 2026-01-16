@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- This file applies to ShieldingSourceDisplay.cpp
+    ssd- is short for ShieldingSourceDisplay, and is basically the GUI component
+    sfm- is short for SourceFitModel
+    x2g- is short for ShieldingSourceDisplay::Chi2Graphic - e.g., the chart on this page
+  -->
+  <message id="ssd-tt-distance">
+    Jarak dari pusat sumber ke permukaan detektor. Angka harus
+    diikuti dengan satuan; satuan yang valid adalah: meters, m, cm, mm, km, feet,
+    ft, ', in, inches, atau ". Anda juga dapat menambahkan beberapa jarak,
+    seperti '3ft 4in', atau '3.6E-2 m 12 cm' yang setara dengan
+    40 inci dan 15,6 cm masing-masing.
+  </message>
+  <message id="ssd-geom-point">Titik/Bola</message>
+  <message id="ssd-geom-cyl-end">Silinder: ujung</message>
+  <message id="ssd-geom-cyl-side">Silinder: samping</message>
+  <message id="ssd-rectangular">Persegi Panjang</message>
+  <message id="ssd-fixed-geom-notification">Menggunakan DRF geometri tetap</message>
+  <message id="ssd-tt-shieldings">
+    Perisai diperlakukan sebagai cangkang dengan cangkang
+    paling dalam menjadi yang pertama Anda tambahkan (yang paling atas dalam kotak ini), dan
+    perisai berikutnya berlapis di sekitarnya. Sumber apa pun
+    yang tidak diatribusikan sebagai komponen perisai diperlakukan sebagai sumber titik
+    di tengah.
+  </message>
+  <message id="ssd-add-shield-label">Tambah Perisai:</message>
+  <message id="ssd-geometry-label">Geometri:</message>
+  <message id="ssd-tt-add-shield">Pilih dari perpustakaan bahan perisai umum yang telah ditentukan.</message>
+  <message id="ssd-generic-btn">Umum</message>
+  <message id="ssd-tt-generic">Memungkinkan Anda menentukan dan menyesuaikan nomor atom dan densitas areal.</message>
+  <message id="ssd-perform-fit-btn">Lakukan Pencocokan Model</message>
+  <message id="ssd-cancel-fit">Batalkan Pencocokan Model</message>
+  <message id="ssd-mi-calc-log">Log Perhitungan</message>
+  <message id="ssd-mi-import-model">Impor Model...</message>
+  <message id="ssd-mi-export-model">Ekspor Model</message>
+  <message id="ssd-mi-from-db">Buka Dari Database...</message>
+  <message id="ssd-mi-save-to-db">Simpan Ke Database...</message>
+  <message id="ssd-mi-clone-db-entry">Klon Di Database...</message>
+  <message id="ssd-to-small-for-chart">(perbesar jendela untuk menampilkan χ<sup>2</sup>)</message>
+  <message id="ssd-tt-chi2-switch">Tampilkan Chi dari setiap puncak untuk model saat ini pada grafik, atau kelipatan area puncak relatif antara model saat ini dan puncak yang diamati.</message>
+  <message id="ssd-cb-all-peaks">Semua Puncak</message>
+  <message id="ssd-multi-iso-per-peak">Koreksi interferensi</message>
+  <message id="ssd-options-title">Opsi</message>
+  <message id="ssd-tt-multi-iso-per-peak">Mencentang opsi ini akan memungkinkan nuklida lain yang sedang disesuaikan, selain yang ditugaskan ke puncak, untuk berkontribusi pada hitungan yang diharapkan dalam puncak yang diamati. Ini misalnya bisa berguna saat menyesuaikan Ho166m dan U235 yang keduanya memiliki puncak di dekat 185 keV.</message>
+  <message id="ssd-cluster-width-label">Lebar interferensi (jumlah σ):</message>
+  <message id="ssd-tt-cluster-width">Jumlah sigma jauh dari rerata puncak yang garis gamma,
+    dari nuklida apa pun, akan dijumlahkan dan diatribusikan ke puncak. Nilai default adalah 1,25 sigma, tetapi jika puncak
+    jelas melebar karena interferensi, atau pencocokannya buruk, Anda mungkin ingin meningkatkan nilai ini.
+    Menguranginya menjadi 0,0 akan menyebabkan hanya gamma yang terkait dengan puncak yang digunakan
+    (sama dengan tidak mencentang \"Beberapa nuklida berkontribusi pada puncak\").
+  </message>
+  <message id="ssd-cb-atten-for-air">Atenuasi untuk udara</message>
+  <message id="ssd-tt-atten-for-air">Ketika dicentang, atenuasi karena udara antara sumber, atau perisai luar, dan detektor akan diperhitungkan dalam perhitungan.</message>
+  <message id="ssd-cb-sub-back-peaks">Kurangi puncak latar belakang</message>
+  <message id="ssd-tt-sub-back-peaks">Ini memaksa isotop dari suatu unsur untuk semua memiliki usia yang sama dalam pencocokan.</message>
+  <message id="ssd-cb-same-el-same-age">Z sama usia sama</message>
+  <message id="ssd-tt-same-el-same-age">Terapkan isotop untuk unsur yang sama semuanya harus memiliki usia yang sama.</message>
+  <message id="ssd-cb-corr-for-decay">Koreksi untuk peluruhan selama pengukuran</message>
+  <message id="ssd-tt-corr-for-decay">Memperbaiki efek peluruhan dan pertumbuhan yang terjadi selama waktu pengukuran dilakukan. Aktivitas yang dihasilkan sesuai dengan waktu mulai pengukuran. Mungkin memerlukan waktu komputasi tambahan untuk menemukan solusi.</message>
+  <message id="ssd-tt-geometry">Geometri yang digunakan untuk memodelkan sumber "jejak", atau sumber yang mengalami atenuasi sendiri.
+    <br />
+    <br />
+    Secara default, semua sumber adalah sumber titik pada jarak yang ditentukan dari detektor, untuk semua geometri.
+    <br />
+    Namun, jika Anda menjadikan nuklida sebagai sumber "jejak" (dengan mengklik tombol "<em>Tambah Sumber Jejak</em>" perisai di sudut kanan bawah perisai), atau sumber yang mengalami atenuasi sendiri (dengan memilih
+    kotak centang <em>Sumber untuk:</em>" ketika perisai memiliki unsur yang sama dengan nuklida yang Anda
+    cocokkan), maka isotop sumber akan dimodelkan sebagai tersebar di seluruh perisai,
+    dan ray-tracing akan digunakan untuk memperhitungkan atenuasi yang berbeda di setiap lokasi dalam
+    perisai.
+    <br />
+    <br />
+    Untuk menjaga agar tetap sederhana, pilih geometri "Titik/Bola" kecuali Anda akan melakukan pencocokan ke
+    sumber "jejak" atau yang mengalami atenuasi sendiri.
+  </message>
+  <message id="ssd-phone-tab-source-peaks">Puncak Sumber</message>
+  <message id="ssd-phone-tab-source-isotopes">Isotop Sumber</message>
+  <message id="ssd-phone-tab-shielding">Perisai</message>
+  <message id="ssd-warn-no-back-peaks">Tidak ada puncak latar belakang yang didefinisikan, tidak menguranginya</message>
+  <message id="ssd-warn-no-back-spec">Tidak ada spektrum latar belakang yang dimuat, jadi tidak dapat mengurangi area puncak latar belakang dari latar depan.</message>
+  <message id="ssd-warn-no-back-peaks-toggle">
+    Spektrum latar belakang tidak memiliki puncak yang teridentifikasi. Anda harus memuat spektrum latar belakang sebagai
+    latar depan, identifikasi puncak yang berpotensi dikurangkan, lalu beralih kembali ke kombinasi
+    latar depan/latar belakang Anda saat ini.
+  </message>
+  <message id="ssd-update-dim-to-be-min">Memperbarui dimensi perisai menjadi ketebalan minimum.</message>
+  <message id="ssd-scaled-shield-to-be-less-dist">Ketebalan perisai telah diskalakan agar kurang dari jarak detektor.</message>
+  <message id="ssd-err-fit-only-one-an">Anda hanya dapat menyesuaikan nomor atom dari satu perisai umum pada satu waktu.</message>
+  <message id="ssd-warn-invalid-chi2-for-energy">Chi2 yang tidak valid dihitung untuk {1} keV, hasil lain mungkin tidak valid</message>
+  <message id="ssd-calc-log-window-title">Log Perhitungan</message>
+  <message id="ssd-calc-log-export-txt">File TXT</message>
+  <message id="ssd-err-opening-import-model">Kesalahan membuka Model Pencocokan Perisai Sumber yang diunggah: {1}</message>
+  <message id="ssd-import-model-window-title">Impor Model XML Perisai Sumber</message>
+  <message id="ssd-err-opening-db-model">Kesalahan membuka Model Pencocokan Perisai Sumber dari database: {1}</message>
+  <message id="ssd-err-loading-model">Tidak dapat memuat model yang dipilih - maaf :(</message>
+  <message id="ssd-prev-saved-window-title">Model yang Disimpan Sebelumnya</message>
+  <message id="ssd-models-prev-for-fore">Model yang sebelumnya digunakan dengan latar depan ini:</message>
+  <message id="ssd-models-prev-saved">Model yang sebelumnya Anda simpan:</message>
+  <message id="ssd-model-desc">Deskripsi Model:</message>
+  <message id="ssd-cb-allow-del">Izinkan hapus</message>
+  <message id="ssd-no-model-in-db">Tidak ada model dalam database untuk Anda</message>
+  <message id="ssd-err-creating-db-browser">Kesalahan membuat peramban model database</message>
+  <message id="ssd-save-model-to-db-window-title">Simpan model Aktivitas/Perisai ke database</message>
+  <message id="ssd-save-to-db-name">Masukkan nama model:</message>
+  <message id="ssd-save-to-db-desc">Masukkan deskripsi model (opsional):</message>
+  <message id="ssd-must-enter-name">Anda harus memasukkan nama</message>
+  <message id="ssd-err-saving-to-db">Kesalahan menyimpan ke database</message>
+  <message id="ssd-Best">Terbaik</message>
+  <message id="ssd-fit-failed">Pencocokan ke model gagal</message>
+  <message id="ssd-using-fit-anyway">Menggunakan solusi pencocokan tetap saja.</message>
+  <message id="ssd-err-fit-not-performed">
+    {1}
+    <br />
+    Pencocokan tidak dilakukan.
+  </message>
+  <message id="ssd-err-before-fit">
+    {1}
+    <br />
+    Sebelum pencocokan.
+  </message>
+  <message id="ssd-err-couldnt-make-chi2-fcn">
+    {1}
+    <br />
+    Pencocokan tidak dilakukan (tidak dapat membuat Chi2Fcn).
+  </message>
+  <message id="ssd-error-create-tool">Kesalahan membuat tampilan pencocokan Aktivitas/Perisai: {1}</message>
+  <message id="ssd-shield-source-diagram">Diagram Perisai/Sumber</message>
+  <message id="ssd-show-model-diagram">Tampilkan Diagram Model</message>
+
+  <!-- SourceFitModel quantities -->
+  <message id="sfm-tt-header-isotope">Nuklida ditambahkan atau dihapus sesuai dengan fotopeak yang digunakan untuk pencocokan ini, sehingga mungkin tidak diedit dalam tabel ini</message>
+  <message id="sfm-tt-header-activity">Aktivitas nuklida. Memasukkan nilai awal yang masuk akal dapat membantu pencocokan, atau aktivitas tidak harus disesuaikan. Nilai dapat dimasukkan dalam format serupa dengan '12,4 kBq', '1,0mCi', '55,3uCi', '15,82Mbq'</message>
+  <message id="sfm-tt-header-age">Usia nuklida. Nilai dapat dimasukkan dalam format serupa dengan: '23,3s' '2 hl' - (hl adalah waktu paruh), '5,23y', '23:14:21.343', '19min', dll. Perhatikan bahwa nuklida yang meluruh menjadi anak yang stabil tidak dapat diusia.</message>
+  <message id="sfm-tt-header-fit-act">Haruskah pencocokan mencoba menemukan aktivitas nuklida juga, atau menganggap nilai yang dimasukkan benar?</message>
+  <message id="sfm-tt-header-fit-age">Haruskah pencocokan mencoba menemukan usia nuklida juga, atau hanya menganggap nilai yang dimasukkan benar? Opsi ini tidak tersedia untuk nuklida yang meluruh hanya ke anak yang stabil.</message>
+  <message id="sfm-tt-header-iso-mass">Ini adalah massa nuklida murni dengan asumsi aktivitas yang tercantum.</message>
+  <message id="sfm-tt-header-act-uncert">Ini adalah ketidakpastian dalam aktivitas dari pencocokan.</message>
+  <message id="sfm-tt-header-age-uncert">Ini adalah ketidakpastian dalam usia dari pencocokan.</message>
+  <message id="sfm-header-fit-act">Sesuaikan Akt.</message>
+  <message id="sfm-header-fit-age">Sesuaikan Usia</message>
+  <message id="sfm-header-act-uncert">Ketidakpast. Akt.</message>
+  <message id="sfm-header-age-uncert">Ketidakpast. Usia</message>
+  <message id="sfm-tt-aging-not-allowed">Anak nuklida stabil jadi penuaan tidak diizinkan karena tidak mempengaruhi spektrum gamma.</message>
+
+  <!-- Chi2Graphic -->
+  <message id="x2g-yaxis-title-chi">(diamati-model)/ketidakpast</message>
+  <message id="x2g-yaxis-title-mult">Kelipatan Model</message>
+  <message id="x2g-">Sumbu-Y adalah hitungan area puncak, dikurangi jumlah hitungan yang diharapkan dari sumber yang ditampilkan saat ini dan nilai perisai, semuanya dibagi dengan ketidakpastian statistik. Kuadrat dari ini digunakan untuk mengoptimalkan perisai dan sumber.</message>
+  <message id="x2g-tt-chi-axis">Sumbu-Y adalah hitungan area puncak, dikurangi jumlah hitungan yang diharapkan dari nilai sumber dan perisai yang ditampilkan saat ini, semuanya dibagi dengan ketidakpastian statistik. Kuadrat dari ini digunakan untuk mengoptimalkan perisai dan sumber.</message>
+  <message id="x2g-tt-scale-axis">Sumbu-Y adalah kelipatan hitungan puncak yang diamati, relatif terhadap apa yang diharapkan dari nilai sumber dan perisai saat ini.</message>
+</messages>
+

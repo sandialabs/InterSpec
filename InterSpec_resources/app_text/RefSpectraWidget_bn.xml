@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- rs- is short for Reference Spectra -->
+  <message id="rs-dialog-title">রেফারেন্স স্পেকট্রা</message>
+  <message id="rs-show-foreground">ফোরগ্রাউন্ড তুলনা করুন</message>
+  <message id="rs-show-foreground-portrait">তুলনা</message>
+  <message id="rs-show-background">ব্যাকগ্রাউন্ড দেখান</message>
+  <message id="rs-show-background-portrait">ব্যাকগ্রাউন্ড</message>
+  <message id="rs-load-background">ব্যাকগ্রাউন্ড লোড করুন</message>
+  <message id="rs-load-background-portrait">+ব্যাকগ্রাউন্ড</message>
+  <message id="rs-tt-add-dir-btn">রেফারেন্স স্পেকট্রা খোলার জন্য ডিরেক্টরি যোগ করুন।</message>
+  <message id="rs-tt-delete-dir-btn">রেফারেন্স স্পেকট্রা দেখানোর জায়গার তালিকা থেকে বর্তমানে নির্বাচিত ডিরেক্টরি সরিয়ে দেয়।</message>
+  <message id="rs-no-dir-selected-desktop">
+    লোড করার জন্য একটি রেফারেন্স স্পেকট্রাম নির্বাচন করুন। <br />
+    <br />
+    রেফারেন্স স্পেকট্রা ডিরেক্টরি যোগ করুন
+    <img src="InterSpec_resources/images/plus_min_black.svg" style="width: 12px; height: 12px; display: inline-block; vertical-align: middle;"/> আইকন ব্যবহার করে।
+    </message>
+  <message id="rs-no-dir-selected-mobile">
+    লোড করার জন্য একটি রেফারেন্স স্পেকট্রাম নির্বাচন করুন। <br />
+    <div style="font-size: smaller;">
+      (আপনি <em>InterSpec</em>-এর ডেটা ডিরেক্টরিতে (ফাইল অ্যাপ ব্যবহার করে) একটি "reference_spectra" ডিরেক্টরি তৈরি করে
+      নিজের রেফারেন্স স্পেকট্রা ডিরেক্টরি যোগ করতে পারেন, এবং তারপর
+      আপনার স্পেকট্রা সহ আরও সাব-ডিরেক্টরি যোগ করতে পারেন)
+    </div>
+  </message>
+  <message id="rs-some-dirs-removed">{1} ডিরেক্টরি আর উপলব্ধ নেই, এবং সরানো হয়েছে।</message>
+  <message id="rs-dir-added-successfully">পথ '{1}' যোগ করা হয়েছে।</message>
+  <message id="rs-show-as">হিসাবে লোড করুন</message>
+  <message id="rs-add-dir-dialog-title">রেফারেন্স স্পেকট্রা ডিরেক্টরি যোগ করুন</message>
+  <message id="rs-duplicate-dir-path">ডিরেক্টরি ইতিমধ্যে নির্বাচিত: '{1}'</message>
+  <message id="rs-dir-not-found">ডিরেক্টরি পাওয়া যায়নি, তাই পছন্দ থেকে সরানো হয়নি: '{1}'</message>
+  <message id="rs-dir-info-only-spectra">ডিরেক্টরিতে {1} স্পেকট্রা ফাইল রয়েছে<br /></message>
+  <message id="rs-dir-info-only-subdir">ডিরেক্টরিতে {1} সাব-ডিরেক্টরি রয়েছে<br /></message>
+  <message id="rs-dir-info-with-subdir-spectra">ডিরেক্টরিতে {1} স্পেকট্রা ফাইল এবং {2} সাব-ডিরেক্টরি রয়েছে<br /></message>
+  <message id="rs-error-loading-file">ফাইল লোড করতে ত্রুটি: '{1}'</message>
+  <message id="rs-show-in-explorer">এক্সপ্লোরারে দেখান</message>
+  <message id="rs-show-in-finder">ফাইন্ডারে দেখান</message>
+  <message id="rs-show-in-linux-file-manager">ফাইল ম্যানেজারে দেখান</message>
+  <message id="rs-error-invalid-file">অবৈধ স্পেকট্রাম ফাইল: '{1}'।</message>
+  <message id="rs-error-invalid-type-selected">অবৈধ স্পেকট্রাম টাইপ নির্বাচিত।</message>
+  </messages>
+
+

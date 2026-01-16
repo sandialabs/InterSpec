@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- mnid- is short for MoreNuclideInfoDisplay -->
+  <message id="mnid-show-decay-chain">显示衰变链</message>
+  <message id="mnid-show-decays-through">显示通过的衰变</message>
+</messages>
+

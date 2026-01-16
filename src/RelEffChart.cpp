@@ -152,11 +152,10 @@ void RelEffChart::setData(const RelEffChart::ReCurveInfo &info)
 std::string RelEffChart::jsonForData(const std::vector<ReCurveInfo> &infoSets)
 {
   std::vector<RelEffChartDataset> datasets;
-  
   for(const ReCurveInfo &info : infoSets)
   {
     const double live_time = info.live_time;
-    const vector<PeakDef> &fit_peaks = info.fit_peaks;
+    const vector<RelActCalcAuto::RelActAutoSolution::ObsEff> &obs_eff_data = info.obs_eff_data;
     const std::vector<RelActCalcAuto::NuclideRelAct> &rel_acts = info.rel_acts;
     const std::string &relEffEqn = info.js_rel_eff_eqn;
     const std::string &relEffUncertEqn = info.js_rel_eff_uncert_eqn;
@@ -171,90 +170,76 @@ std::string RelEffChart::jsonForData(const std::vector<ReCurveInfo> &infoSets)
     std::vector<RelActCalcManual::GenericPeakInfo> peaks;
     map<string,pair<double,string>> relActsColors;
     
-    for(const PeakDef &p : fit_peaks)
+    for(const RelActCalcAuto::RelActAutoSolution::ObsEff &obsEff : obs_eff_data)
     {
-      RelActCalcAuto::SrcVariant peak_src;
-      
-      {//Begin block to set peak_src
-        const SandiaDecay::Nuclide *nuc = p.parentNuclide();
-        const SandiaDecay::Element *el = p.xrayElement();
-        const ReactionGamma::Reaction *rctn = p.reaction();
-        
-        if(nuc)
-          peak_src = nuc;
-        else if(el)
-          peak_src = el;
-        else if(rctn)
-          peak_src = rctn;
-        else
-          continue; // A free-floating peak wont have a nuclide associated, so we skip it
-      }//End block to set peak_src
-    
+      // Create a GenericPeakInfo from the ObsEff data
       RelActCalcManual::GenericPeakInfo peak;
-      peak.m_energy = p.mean();
-      peak.m_mean = peak.m_energy;
-      peak.m_fwhm = p.fwhm();
-      peak.m_counts = p.amplitude();
-      
-      // Amplitude uncertainties arent accurate/relevant, so set to zero.
-      peak.m_counts_uncert = 0.0; //p.amplitudeUncert();
-      //peak.m_base_rel_eff_uncert = ...;
-      
-      RelActCalcManual::GenericLineInfo line;
-      line.m_isotope = RelActCalcAuto::to_name(peak_src);
-      line.m_yield = 0.0;
-      
-      const RelActCalcAuto::NuclideRelAct *nuc_info = nullptr;
-      for(const RelActCalcAuto::NuclideRelAct &rel_act : rel_acts)
-        nuc_info = (rel_act.source == peak_src) ? &rel_act : nuc_info;
-      
-      assert(nuc_info);
-      if(!nuc_info)
-        continue;
-        
-      const RelActCalcAuto::SrcVariant &src = nuc_info->source;
-      const SandiaDecay::Nuclide * const src_nuc = RelActCalcAuto::nuclide(src);
-      const SandiaDecay::Element * const src_ele = RelActCalcAuto::element(src);
-      const ReactionGamma::Reaction * const src_rct = RelActCalcAuto::reaction(src);
-       
-      for(const pair<double,double> &energy_br : nuc_info->gamma_energy_br)
+      peak.m_energy = obsEff.energy;
+      peak.m_mean = obsEff.energy;
+      peak.m_fwhm = 2.35482 * obsEff.effective_sigma; // Convert sigma to FWHM
+      peak.m_counts = 0.0;
+
+      const double frac_uncert = obsEff.fit_clustered_peak_amplitude_uncert / obsEff.fit_clustered_peak_amplitude;
+
+      // Process all peaks in this ObsEff to create GenericLineInfo entries
+      for(const PeakDef &p : obsEff.fit_peaks)
       {
-        // We need to match the fit peak, to the source gamma/x-ray; to do this we'll
-        //  match in energy - we need the energy difference to be small enough to uniquely
-        //  match, but not too small so we hit rounding error, or wahtever.  1E-6 is too small
-        //  (we fail to match U-xrays), but 1E5 seems to work, but we dont know gamma energies
-        //  better than about 1E-3, so we'll just fo with 1E-4.
-        const double match_distance = 1.0E-4;
-         
-        if((p.parentNuclide() != src_nuc)
-           || (p.xrayElement() != src_ele)
-           || (p.reaction() != src_rct))
+        RelActCalcAuto::SrcVariant peak_src;
+        
+        {//Begin block to set peak_src
+          if( const SandiaDecay::Nuclide *nuc = p.parentNuclide() )
+            peak_src = nuc;
+          else if( const SandiaDecay::Element *el = p.xrayElement() )
+            peak_src = el;
+          else if( const ReactionGamma::Reaction *rctn = p.reaction() )
+            peak_src = rctn;
+          else
+            continue; // Skip free-floating peaks, although I dont think they should be here
+        }//End block to set peak_src
+        
+        // Find corresponding NuclideRelAct
+        const RelActCalcAuto::NuclideRelAct *nuc_info = nullptr;
+        for( size_t i = 0; !nuc_info && (i < rel_acts.size()); ++i )
         {
-          continue;
+          if( rel_acts[i].source == peak_src )
+            nuc_info = &(rel_acts[i]);
         }
-         
-        if(fabs(energy_br.first - p.gammaParticleEnergy()) < match_distance)
-          line.m_yield += live_time * energy_br.second;
-      }
-      
-      if(line.m_yield < std::numeric_limits<double>::epsilon())
-      {
-        cerr << "Warning: line at " << p.gammaParticleEnergy() << " for " << line.m_isotope << " has yeild=" << line.m_yield << endl;
-      }
-      
-      peak.m_source_gammas.push_back(line);
-      
-      const string src_name = RelActCalcAuto::to_name(peak_src);
-      const auto pos = relActsColors.find(src_name);
-      if(pos == std::end(relActsColors))
-      {
-        const string css_color = p.lineColor().isDefault() ? string() : p.lineColor().cssText();
-        relActsColors[src_name] = std::make_pair(nuc_info->rel_activity, css_color);
-      }
         
-      peaks.push_back(peak);
-    }//for(const PeakDef &p : fit_peaks)
-    
+        assert( nuc_info );
+        if( !nuc_info )
+          continue;
+        
+        RelActCalcManual::GenericLineInfo line;
+        line.m_isotope = RelActCalcAuto::to_name(peak_src);
+        
+        // Calculate m_yield = amplitude / (observed_efficiency * nuclide_activity)
+        if( (obsEff.observed_efficiency > 0.0) && (nuc_info->rel_activity > 0.0) )
+        {
+          line.m_yield = p.amplitude() / (obsEff.observed_efficiency * nuc_info->rel_activity);
+        }else
+        {
+          line.m_yield = 0.0;
+          cerr << "Warning: Invalid observed_efficiency (" << obsEff.observed_efficiency
+               << ") or rel_activity (" << nuc_info->rel_activity
+               << ") for " << line.m_isotope << " at " << obsEff.energy << " keV" << endl;
+        }
+        peak.m_source_gammas.push_back(line);
+
+        // Set up color mapping - all peaks for this source get same color as primary peak
+        const string src_name = RelActCalcAuto::to_name(peak_src);
+        const auto pos = relActsColors.find(src_name);
+        if( !p.lineColor().isDefault() && (pos == std::end(relActsColors)) )
+          relActsColors[src_name] = std::make_pair(nuc_info->rel_activity, p.lineColor().cssText());
+
+        peak.m_counts += p.amplitude();
+      }//for(const PeakDef &p : obsEff.fit_peaks)
+
+      peak.m_counts_uncert = frac_uncert * peak.m_counts;
+
+      peaks.push_back( std::move(peak) );
+    }//for(const RelActAutoSolution::ObsEff &obsEff : obs_eff_data)
+
+
     dataset.peaks = peaks;
     dataset.relActsColors = relActsColors;
     

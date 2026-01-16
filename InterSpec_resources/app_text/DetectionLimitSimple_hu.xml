@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dls- is short for DetectionLimitSimple
+  -->
+  <message id="dls-fit-fwhm-btn">FWHM illesztése...</message>
+  <message id="dls-select-drf-btn">Detektor kiválasztása...</message>
+  <message id="dls-further-details-link">további részletek...</message>
+  <message id="dls-conf-level-label">Megbízhatósági szint:</message>
+  <message id="dls-roi-lower-label">ROI alsó:</message>
+  <message id="dls-roi-upper-label">ROI felső:</message>
+  <message id="dls-num-side-channel-label">Oldal csatornák száma:</message>
+  <message id="dls-fwhm-label">FWHM:</message>
+  <message id="dls-gamma-label">Gamma:</message>
+  <message id="dls-decon-cont-norm-label">Kont. norm:</message>
+  <message id="dls-is-background-spectrum-cb">Háttér spektrum</message>
+  <message id="dls-is-background-spectrum-tt">
+    Ennek az opciónak a bejelölése azt állítja, hogy nincs jel jelen ebben a spektrumban.
+    <p>
+      A csúcs-terület maga lesz használva a várható háttér becslésére.
+      Az opció a csúcs-területhez szomszédos oldal-csatornák választására már nem lesz releváns, így el lesz rejtve.
+    </p>
+  </message>
+  <message id="dls-cont-norm-unknown">Lebegő</message>
+  <message id="dls-cont-norm-not-present">Mint nincs jel</message>
+  <message id="dls-cont-norm-fixed-by-sides">Oldalakból</message>
+  <message id="dls-roi-changed-no-gamma">Az ROI megváltoztatása kizárta az elsődleges gammát - nem változtatunk</message>
+  <message id="dls-suggest-fwhm">Detektor FWHM: {1} keV</message>
+  <message id="dls-rough-est-fwhm">Durva becslés FWHM: {1} keV</message>
+  <message id="dls-calc-method">Számítási módszer:</message>
+  <message id="dls-currie-tab-title">Currie</message>
+  <message id="dls-decon-tab-title">Dekonvolúció</message>
+  <message id="dls-err-no-input">Nincs bemenet megadva - kérjük adjon meg nuklidot, válasszon gamma energiát és adja meg a távolságot.</message>
+  <message id="dls-err-calculating">Hiba a válasz számításában: {1}</message>
+  <message id="dls-currie-desc">A Currie módszer összehasonlítja a bruttó impulzusokat a környező csatornák előrejelzésével</message>
+  <message id="dls-decon-desc">A dekonvolúció figyelembe veszi a csúcs alakját és az adatok eloszlását</message>
+  <message id="dls-qr-tool-state-title">Egyszerű MDA eszköz állapota</message>
+  <message id="dls-qr-tool-state-txt">Az egyszerű MDA eszköz jelenlegi állapota.</message>
+
+  <message id="dls-det-act-with-range">Észlelt: {1}, tartomány [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-no-result">Sajnos, nincs eredmény</message>
+  <message id="dls-det-counts-with-range">Többlet impulzusok: {1}, tartomány [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-act-less-zero">Aktivitás &lt; 0 {1} (lényegesen kevesebb impulzust figyeltünk meg, mint várható).</message>
+  <message id="dls-det-counts-less-zero">Többlet impulzusok &lt; 0 {2} (lényegesen kevesebb impulzust figyeltünk meg, mint várható).</message>
+  <message id="dls-det-upper-bound">Kevesebb mint {1} van jelen @{2} CL.</message>
+  <message id="dls-min-detectable-act">Minimális megbízhatóan észlelhető aktivitás: {1}.</message>
+  <message id="dls-min-detectable-counts">Minimális megbízhatóan észlelhető többlet impulzusok: {1}</message>
+  <message id="dls-error-computing-results">Hiba az eredmény számításában</message>
+  <message id="dls-chart-title-estimated-counts">{1} becsült impulzusai.</message>
+  <message id="dls-results-txt-estimated-counts">
+    {1} észlelt impulzusai.
+    <br/>
+    Tartomány: [{2}, {3}] @{4} CL
+  </message>
+  <message id="dls-chart-title-estimated-act">{1} becsült aktivitása.</message>
+  <message id="dls-results-txt-estimated-act">
+    {1} észlelt aktivitása.
+    <br/>
+    Tartomány: [{2}, {3}] @{4} CL
+  </message>
+  <message id="dls-chart-title-upper-bound-act">Csúcs {1} felső határához @{2} CL</message>
+  <message id="dls-results-txt-upper-bound-act">Kevesebb mint {1} @{2} CL</message>
+  <message id="dls-chart-title-upper-bound-counts">Csúcs {1} impulzus felső határához @{2} CL</message>
+  <message id="dls-results-txt-upper-bound-counts">Kevesebb mint {1} jel impulzus van jelen @{2} CL</message>
+  <message id="dls-err-no-meas">Nincs elérhető mérés</message>
+  
+  <message id="dls-Info">Info</message>
+  <message id="dls-assumed-br=1">(az aktivitás BR=1.0 feltételezésével)</message>
+  <message id="dls-Limit">Határ</message>
+  <message id="dls-continuum-area">Kont. terület</message>
+  <message id="dls-DOF" remark="Degrees of freedom abbreviation">DOF</message>
+  <message id="dls-Upper">Felső</message>
+  <message id="dls-Lower">Alsó</message>
+  <message id="dls-Best">Legjobb</message>
+  <message id="dls-ROI-range-label">ROI tartomány (keV)</message>
+  <message id="dls-ROI-Channels-label">ROI csatornák</message>
+  <message id="dls-ROI-Width">ROI szélesség</message>
+  <message id="dls-det-intrinsic-eff">Det. belső hatékonyság</message>
+  <message id="dls-solid-angle-frac">Térszög tört</message>
+  <message id="dls-air-trans">Levegő áteresztés</message>
+  <message id="dls-gamma-intensity">Gamma intenzitás</message>
+  <message id="dls-err-more-info-title">Hiba a határ számításában...</message>
+  <message id="dls-err-more-info-content">Hiba a határ információ számításában: {1}</message>
+  <message id="dls-err-select-det">Kérjük válasszon detektor hatékonysági függvényt.</message>
+  <message id="dls-err-neg-distance">A távolság nem lehet negatív.</message>
+  <message id="dls-err-no-fwhm-info">A detektor hatékonysági függvény nem rendelkezik FWHM információval - kérjük illeszsze a FWHM-t, vagy változtassa meg a detektort.</message>
+  <message id="dls-"></message>
+  <message id="dls-"></message>
+  <message id="dls-"></message>
+</messages>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- srria- is short for ShowRiidIntrumentAna -->
+  <message id="srria-algo-info-label">معلومات الخوارزمية:</message>
+  <message id="srria-creator">المنشئ</message>
+  <message id="srria-version">الإصدار</message>
+  <message id="srria-remarks">ملاحظات</message>
+  <message id="srria-category">الفئة</message>
+  <message id="srria-confidence">الثقة</message>
+  <message id="srria-no-id-provided">لم يتم توفير تحديد للنواة.</message>
+  <message id="srria-algo-results">نتائج الخوارزمية</message>
+  <message id="srria-no-algo-results">لا توجد نتائج خوارزمية متاحة.</message>
+  <message id="srria-no-nucs">لا توجد نوى محددة.</message>
+  <message id="srria-inst-ana-window-title">نتائج تحديد الكاشف</message>
+</messages>

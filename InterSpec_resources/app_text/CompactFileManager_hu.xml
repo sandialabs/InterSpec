@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- cfm is short for CompactFileManager -->
+  <message id='cfm-tt-sample-num'>
+    Adja meg az itt megjeleníteni kívánt minta számot. 
+    Megadhat minta szám tartományt, mint '33-39' vagy '33 to 39'; 
+    vagy CSV minta számokat, mint '34,39,84'.
+  </message>
+  <message id='cfm-scale-factor-label'>Skálázási tényező: </message>
+  <message id='cfm-tt-scale-factor'>
+    A spektrum skálázási tényezője. Üres string megadása esetén 
+    a spektrum élő idő normalizálva lesz az előtér spektrumhoz.
+  </message>
+
+  <message id='cfm-norm-btn'>Normalizálás</message>
+  <message id='cfm-more-info-btn'>további info</message>
+  <message id='cfm-show-rid-result-btn'>RID eredmények</message>
+  <message id='cfm-show-image-btn'>beágyazott kép</message>
+
+  <message id='cfm-db-spec'>Korábban mentett spektrumok</message>
+  <message id='cfm-ref-spectra-btn'>Referencia spektrumok...</message>
+  <message id='cfm-err-invalid-sample-num'>A kért minta szám nem létezik.</message>
+  <message id='cfm-err-no-meas'>Nem lehet megváltoztatni a minta számokat, nincs jelenlegi mérés.</message>
+  <message id='cfm-err-missing-sample-num'>Az egyik kért minta szám nem létezik.</message>
+  <message id='cfm-err-sample-num-doesnt-exist'>A(z) {1} minta szám nem létezik.</message>
+  <message id='cfm-err-sample-num-doesnt-exist-2'>A(z) {1} minta szám nem létezik a mérésben.</message>
+  <message id='cfm-err-general-1'>Hiba a kért minta szám(ok)ra váltáskor</message>
+  <message id='cfm-err-advancing'>Hiba a spektrum léptetésében</message>
+  <message id='cfm-no-spectra'>Nincsenek betöltött/elérhető spektrumok.</message>
+
+  <message id='cfm-no-fore'>Nincs előtér</message>
+  <message id='cfm-no-back'>Nincs háttér</message>
+  <message id='cfm-no-second'>Nincs második előtér</message>
+
+  <message id='cfm-date'>Dátum</message>
+  <message id='cfm-start-time'>Kezdési idő</message>
+  <message id='cfm-gamma-cps'>Gamma CPS</message>
+  <message id='cfm-neut-live-time'>Neutron É.I.</message>
+  <message id='cfm-neut-counts'>Neut. impulzusok</message>
+  <message id='cfm-neut-cps'>Neut. CPS</message>
+  <message id='cfm-gps'>szél./hossz.</message>
+  <message id='cfm-manufacturer'>Gyártó</message>
+  <message id='cfm-model'>Modell</message>
+  <message id='cfm-meas-type'>Rek. típus</message>
+  <message id='cfm-tt-meas-type'>A spektrum fájlban rögzített rekordok típusa.</message>
+
+  <message id='cfm-tt-clear-spectrum'>Törli a jelenlegi spektrumot.</message>
+  
+  <message id='cfm-swap-back-with-foreground-btn'>előtér↔háttér</message>
+  <message id='cfm-tt-swap-back-with-foreground-btn'>Az előtér és háttér spektrumok cseréje</message>
+  <message id='cfm-swap-secondary-with-foreground-btn'>előtér↔másodlagos</message>
+  <message id='cfm-tt-swap-secondary-with-foreground-btn'>Az előtér és másodlagos spektrumok cseréje</message>
+  <message id='cfm-title-with-name'>Cím: {1}</message>
+</messages>

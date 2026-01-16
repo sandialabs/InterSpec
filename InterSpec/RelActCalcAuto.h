@@ -141,15 +141,44 @@ struct RoiRange
    TODO: Allow setting to #PeakContinuum::OffsetType::External to auto-choose this.
    */
   PeakContinuum::OffsetType continuum_type = PeakContinuum::OffsetType::Quadratic;
-  
-  /** Dont allow cutting range down based on peaks not being anywhere reasonably near edge. */
-  bool force_full_range = false;
-  
-  /** If we have a peak right-on the edge, allow the ROI to extend out to a few FWHM.
-   If #force_full_range is true, this value must be false.
+
+  /** Specifies how the energy range limits should be interpreted during fitting.
+
+   This controls whether the ROI boundaries are strictly enforced, can expand to accommodate
+   peaks at the edges, or can be broken into smaller ranges based on peak locations.
    */
-  bool allow_expand_for_peak_width = false;
-  
+  enum class RangeLimitsType : int
+  {
+    /** The lower and upper energies are strictly enforced - the ROI will not be
+     adjusted or broken up based on peak locations.
+     */
+    Fixed = 0,
+
+    /** The lower and upper energy values can be expanded to accommodate the FWHM of peaks
+     at or near the ROI edges. Not well tested yet.
+     */
+    CanExpandForFwhm = 1,
+
+    /** The ROI can be broken up into multiple smaller ROIs based on expected significant peaks.
+     The range may be subdivided to optimize fitting.
+     */
+    CanBeBrokenUp = 2
+  };//enum class RangeLimitsType
+
+  /** Specifies how the ROI limits should be interpreted. */
+  RangeLimitsType range_limits_type = RangeLimitsType::CanBeBrokenUp;
+
+  /** Returns string representation of the RangeLimitsType.
+   String returned is a static string, so do not delete it.
+   */
+  static const char *to_str( const RangeLimitsType type );
+
+  /** Converts from the string representation of RangeLimitsType to enumerated value.
+
+   Throws exception if invalid string (i.e., any string not returned by to_str(RangeLimitsType) ).
+   */
+  static RangeLimitsType range_limits_type_from_str( const char *str );
+
   static const int sm_xmlSerializationVersion = 0;
   void toXml( ::rapidxml::xml_node<char> *parent ) const;
   void fromXml( const ::rapidxml::xml_node<char> *parent );
@@ -315,6 +344,21 @@ enum class FwhmForm : int
   Polynomial_4,
   Polynomial_5,
   Polynomial_6,
+  
+  /** Berstein polynomial with 2 coefficients (order 1) */
+  Berstein_2,
+  
+  /** Berstein polynomial with 3 coefficients (order 2) */
+  Berstein_3,
+  
+  /** Berstein polynomial with 4 coefficients (order 3) */
+  Berstein_4,
+  
+  /** Berstein polynomial with 5 coefficients (order 4) */
+  Berstein_5,
+  
+  /** Berstein polynomial with 6 coefficients (order 5) */
+  Berstein_6,
 
   /** Do not fit the FWHM equation - use the FWHM from the detector efficiency function.
    
@@ -388,9 +432,6 @@ const char *to_str( const FwhmEstimationMethod form );
  */
 FwhmEstimationMethod fwhm_estimation_method_from_str( const char *str );
 
-
-/** Evaluates the FWHM equation for the input energy, returning the FWHM. */
-float eval_fwhm( const float energy, const FwhmForm form, const std::vector<float> &coeffs );
 
 size_t num_parameters( const FwhmForm eqn_form );
 
@@ -723,7 +764,12 @@ struct FloatingPeakResult
 struct RelActAutoGuiState
 {
   RelActAutoGuiState();
-  
+
+  std::string note;
+
+  /** Description field for this configuration. Not currently exposed in GUI. */
+  std::string description;
+
   RelActCalcAuto::Options options;
   
     
@@ -745,6 +791,8 @@ struct RelActAutoGuiState
   
 struct RelActAutoSolution
 {
+  struct ObsEff; //forward decleration
+  
   RelActAutoSolution();
   
   std::ostream &print_summary( std::ostream &strm ) const;
@@ -871,6 +919,12 @@ struct RelActAutoSolution
    */
   std::shared_ptr<SpecUtils::EnergyCalibration> get_adjusted_energy_cal() const;
   
+  static std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
+  fit_free_peak_amplitudes( const RelActCalcAuto::Options &options,
+                            const RelActCalcAutoImp::RelActAutoCostFcn *cost_functor,
+                            const std::vector<double> &parameters,
+                           const RelActCalcAuto::RelActAutoSolution &solution );
+  
   enum class Status : int
   {
     Success,
@@ -984,6 +1038,8 @@ struct RelActAutoSolution
    If energy calibration fitting was selected, these peaks will have been adjusted back to "true" energy.
    
    You would use these peaks for `m_spectrum`.
+   
+   Will include free-floating peaks (they will have nullptr sources).
    */
   std::vector<PeakDef> m_fit_peaks;
   
@@ -996,12 +1052,74 @@ struct RelActAutoSolution
    if you are not updating the displayed spectrum for the adjusted energy cal).
    
    You would use these peaks for `m_foreground`.
+
+   Note: if background subtraction is used, and you want to display the peaks on 
+     non-background-subtracted data, please use `m_peaks_without_back_sub`.
+   You would use these peaks for `m_foreground - m_background` (i.e., if you do background subtraction, then the continuums would not be correct,
+   unless you background subtract from `m_foreground`).
    */
   std::vector<PeakDef> m_fit_peaks_in_spectrums_cal;
   
   /** Same as `m_fit_peaks_in_spectrums_cal`, but seperated by rel eff curve, and not including free-floating peaks. */
   std::vector<std::vector<PeakDef>> m_fit_peaks_in_spectrums_cal_for_each_curve;
   
+  /** The fit peaks, in the spectrums cal, but with the continuums adjusted to display the peaks in 
+   non-background-subtracted data.  If background subtraction wasnt used to do the fit, then these
+   peaks will be the same as `m_fit_peaks_in_spectrums_cal`.
+  */
+  std::vector<PeakDef> m_peaks_without_back_sub;
+
+  /** The measured rel. eff. for a energy; these are determined after the fit finishes, peaks are clustered (peaks within 1.5 sigma of
+   each other are combined), then holding all other things (FWHM, energy cal, etc) constant, the amplitudes are allowed to freely float;
+   then the relative efficieciency is determined from this.
+   */
+  struct ObsEff
+  {
+    /** The effective mean of all the peaks clutered. */
+    double energy;
+    /** The relative efficiency, as determined by the full solution to the problem. */
+    double orig_solution_eff;
+    /** The relative efficiency from the amplitude-unconstrained fit. */
+    double observed_efficiency;
+    double observed_efficiency_uncert;
+    /** The scale factor to multiply the peak amplitude fit in the solution, to get what was freely fit for. */
+    double observed_scale_factor;
+    /** The unconstrained fit peak area, over its uncertainty.  Should be about 4, before we bother showing on chart */
+    double num_sigma_significance;
+    double cluster_lower_energy, cluster_upper_energy;
+    double roi_lower_energy, roi_upper_energy;
+    /** The unconstrained fit peak amplitude.  This amplitude includes contributions from all peaks, and all relative efficiency curves. */
+    double fit_clustered_peak_amplitude;
+    double fit_clustered_peak_amplitude_uncert;
+    /** The starting amiplit*/
+    double initial_clustered_peak_amplitude;
+    /** The effective sigma, after clustering all the input peaks together that are within 1.5 sigma of each other. */
+    double effective_sigma;
+    double fraction_roi_counts;
+    /* The mean +- 1-sigma is fully within the ROI */
+    bool within_roi;
+
+    /** The peaks, who have had their amplitudes scaled to the unconstrined fit value, who where clustered together.
+     Ordered by largest peak first.
+     */
+    std::vector<PeakDef> fit_peaks;
+  };//struct ObsEff
+
+  /** The fit efficiencies for the peaks fit to data, allowing the amplitudes to freely float.
+   Each `ObsEff` may be from one to a number of peaks that have been clustered together because they were effectively
+   indistiguishable (means within 1.5 sigma is the criteria used).
+
+   Peaks are clustered together (e.g., peaks less than 1.5 sigma from each other are combined), then the amplitudes and continuums
+   are re-fit to the data, with all other parameters fixed at thier final fit values.  These peaks give a measure of how far off from the
+   relative efficiency curve the data is from the actual solution.
+
+   Will be empty if re-fitting process fails.
+
+   These peaks are seperated by rel eff curve, do not include free-floating peaks, an are in "true" energy calibration of the spectrum.
+   */
+  std::vector<std::vector<ObsEff>> m_obs_eff_for_each_curve;
+
+
   /** When a ROI is #RoiRange::force_full_range is false, independent energy ranges will
    be assessed based on peak localities and expected counts; this variable holds the ROI
    ranges that were assessed and used to compute final answer.
@@ -1112,7 +1230,7 @@ struct RelActAutoSolution
   
   /** The number of degrees of freedom in the fit for equation parameters.
    
-   Note: this is currently just a
+   Note: this is the number data channels used, minus the number of (estimated effective) fit paramaters.
    */
   size_t m_dof;
   
@@ -1179,7 +1297,6 @@ RelActAutoSolution solve( const Options options,
                          std::vector<std::shared_ptr<const PeakDef>> all_peaks,
                          std::shared_ptr<std::atomic_bool> cancel_calc = nullptr
                          );
-
 
 }//namespace RelActCalcAuto
 

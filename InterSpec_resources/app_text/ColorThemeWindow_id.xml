@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ctw- is short for ColorThemeWindow -->
+  
+  <!-- Window and main UI -->
+  <message id="ctw-window-title">Tema Warna</message>
+  
+  <!-- Button tooltips -->
+  <message id="ctw-remove-tooltip">Menghapus tema yang saat ini dipilih.</message>
+  <message id="ctw-clone-tooltip">Membuat tema warna baru berdasarkan tema yang saat ini dipilih.</message>
+  <message id="ctw-upload-tooltip">Mengimpor file JSON tema warna untuk digunakan.</message>
+  <message id="ctw-download-tooltip">Mengekspor tema yang saat ini dipilih ke file JSON.</message>
+  
+  <!-- Auto dark mode -->
+  <message id="ctw-auto-dark-cb">Otomatis terapkan "Gelap" dari OS</message>
+  <message id="ctw-auto-dark-tooltip">Terapkan tema warna "Gelap" secara otomatis sesuai nilai saat ini sistem operasi, atau saat transisi.</message>
+  
+  <!-- Clone theme -->
+  <message id="ctw-cloned-name">{1} (kloning)</message>
+  
+  <!-- Delete confirmation dialog -->
+  <message id="ctw-delete-confirm-title">Hapus {1}?</message>
+  <message id="ctw-delete-confirm-text"><![CDATA[<span style="white-space: nowrap;">Apakah Anda yakin ingin menghapus <em>{1}</em>?</span>]]></message>
+  
+  <!-- Upload dialog -->
+  <message id="ctw-upload-title">Unggah JSON Tema Warna</message>
+  <message id="ctw-upload-error-open">Kesalahan membuka file yang diunggah.</message>
+  <message id="ctw-upload-error-empty">File yang diunggah kosong.</message>
+  <message id="ctw-upload-error-large">File yang diunggah terlalu besar; ukuran maks 64kb.</message>
+  <message id="ctw-upload-error-read">Tidak dapat membaca file yang diunggah.</message>
+  <message id="ctw-upload-error-json">JSON tidak valid, atau informasi yang diperlukan tidak ada.</message>
+  <message id="ctw-upload-too-large">File terlalu besar.</message>
+  <message id="ctw-import-confirm"><![CDATA[Apakah Anda ingin mengimpor <em>{1}</em>?]]></message>
+  
+  <!-- Save changes dialog -->
+  <message id="ctw-save-changes-title">Simpan Perubahan?</message>
+  <message id="ctw-save-changes-text"><![CDATA[<span style="white-space: nowrap;">Simpan perubahan ke <em>{1}</em>?</span>]]></message>
+  <message id="ctw-discard-btn">Buang</message>
+</messages>
+

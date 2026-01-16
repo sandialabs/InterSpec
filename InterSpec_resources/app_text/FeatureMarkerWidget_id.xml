@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- fmw- is short for FeatureMarkerWidget
+  -->
+  <message id="fmw-escape-peaks">Puncak Pelolosan</message>
+  <message id="fmw-compton-peak">Puncak Compton</message>
+  <message id="fmw-angle">Sudut</message>
+  <message id="fmw-compton-edge">Tepi Compton</message>
+  <message id="fmw-sum-peak">Puncak Jumlah</message>
+</messages>
+

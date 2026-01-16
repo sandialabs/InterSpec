@@ -215,7 +215,8 @@ struct MassFractionConstraint
 /** Adds the `GenericLineInfo` info (e.g. nuclides and their BR) to input `peaks` by clustering gamma lines of
  provided nuclides.
  
- @param peaks Input peaks, with all info except `GenericPeakInfo::m_source_gammas` filled out
+ @param peaks Input peaks, with all info except `GenericPeakInfo::m_source_gammas` filled out.
+        Note: there must not be any duplicate energies, or else an exception will be thrown, as assignment would be ambigious..
  @param nuclides The input nuclides to cluster and assign to peaks
  @param real_time The real time of the measurement - only used if correcting for the nuclides decay during measurement
         \sa `SandiaDecayNuc::correct_for_decay_during_meas`
@@ -356,8 +357,6 @@ struct IsotopeRelativeActivity
   /** The uncertainty of the activity; this value is just the sqrt of the diagonal of the relative
    activity covariance matrix.  I.e., it doesnt account for uncertainty of the relative efficiency;
    correlations between isotope activities could also be important, and not taken into account here.
-   
-   TODO: check correlations between isotopes to see if we need to take this into account to have a reasonable uncertainty
    */
   double m_rel_activity_uncert;
 };//struct IsotopeRelativeActivity
@@ -643,7 +642,13 @@ struct RelEffSolution
    Throws std::exception if an invalid nuclide.
    */
   double relative_activity( const std::string &nuclide ) const;
-  
+
+  /** Returns the uncertainty of a nuclide.
+
+      Will throw exception if covariances were not computed, or invlaid nuclide.
+   */
+  double relative_activity_uncertainty( const std::string &nuclide ) const;
+
   /** The fit relative efficiency curve value; the curve is shifted so its centered around 1
    over all your input points.
    */

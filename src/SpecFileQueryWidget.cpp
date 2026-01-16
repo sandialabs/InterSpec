@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <mutex>
+#include <list>
 #include <atomic>
 #include <cerrno>
 #include <limits>
@@ -64,6 +65,7 @@
 #include <Wt/Json/Serializer>
 #include <Wt/WContainerWidget>
 #include <Wt/WStandardItemModel>
+#include <Wt/WSvgImage>
 
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/StringAlgo.h"
@@ -87,6 +89,8 @@
 #include "InterSpec/SpecFileQueryWidget.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/SpecFileQueryDbCache.h"
+#include "InterSpec/PeakSearchGuiUtils.h"
+#include "InterSpec/ColorTheme.h"
 
 #include "js/SpecFileQueryWidget.js"
 
@@ -277,16 +281,18 @@ namespace
                 case 35: val = static_cast<int>(SpecUtils::DetectorType::VerifinderNaI); break;
                 case 36: val = static_cast<int>(SpecUtils::DetectorType::VerifinderLaBr); break;
                 case 37: val = static_cast<int>(SpecUtils::DetectorType::KromekD3S); break;
-                case 38: val = static_cast<int>(SpecUtils::DetectorType::RadiaCode); break;
-                case 39: val = static_cast<int>(SpecUtils::DetectorType::Fulcrum); break;
-                case 40: val = static_cast<int>(SpecUtils::DetectorType::Fulcrum40h); break;
-                case 41: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinderR425NaI); break;
-                case 42: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinderR425LaBr); break;
-                case 43: val = static_cast<int>(SpecUtils::DetectorType::Sam950); break;
-                case 44: val = static_cast<int>(SpecUtils::DetectorType::KromekD5); break;
-                case 45: val = static_cast<int>(SpecUtils::DetectorType::KromekGR1); break;
-                case 46: val = static_cast<int>(SpecUtils::DetectorType::Raysid); break;
-                case 47: val = static_cast<int>(SpecUtils::DetectorType::Unknown); break;
+                case 38: val = static_cast<int>(SpecUtils::DetectorType::RadiaCodeCsI10); break;
+                case 39: val = static_cast<int>(SpecUtils::DetectorType::RadiaCodeCsI14); break;
+                case 40: val = static_cast<int>(SpecUtils::DetectorType::RadiaCodeGAGG10); break;
+                case 41: val = static_cast<int>(SpecUtils::DetectorType::Fulcrum); break;
+                case 42: val = static_cast<int>(SpecUtils::DetectorType::Fulcrum40h); break;
+                case 43: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinderR425NaI); break;
+                case 44: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinderR425LaBr); break;
+                case 45: val = static_cast<int>(SpecUtils::DetectorType::Sam950); break;
+                case 46: val = static_cast<int>(SpecUtils::DetectorType::KromekD5); break;
+                case 47: val = static_cast<int>(SpecUtils::DetectorType::KromekGR1); break;
+                case 48: val = static_cast<int>(SpecUtils::DetectorType::Raysid); break;
+                case 49: val = static_cast<int>(SpecUtils::DetectorType::Unknown); break;
 
                 default:
                   throw runtime_error( "Unknown DetectionSystemType value type" );
@@ -1017,6 +1023,18 @@ protected:
   boost::any m_summary;
   std::vector<std::string> m_eventXmlColNames;
   
+  // LRU cache for parsed spectrum files (max 20 entries)
+  struct LruCacheEntry
+  {
+    std::shared_ptr<SpecMeas> spec_meas;
+    std::list<std::string>::iterator access_order_it;
+  };
+  mutable std::map<std::string, LruCacheEntry> m_preview_cache;
+  mutable std::list<std::string> m_preview_cache_access_order;
+  static const size_t MAX_PREVIEW_CACHE_SIZE = 20;
+  
+  std::string generatePreviewSvg( const std::string &filepath ) const;
+  
   
   struct row_less_than_t
   {
@@ -1274,6 +1292,16 @@ public:
     return WModelIndex();
   }
   
+  virtual WFlags<ItemFlag> flags( const WModelIndex &index ) const
+  {
+    if( !index.isValid() )
+      return WFlags<ItemFlag>();
+
+    if( (index.column() == FileDataField::Filename) || (index.column() == FileDataField::ParentPath) )
+      return ItemFlag::ItemHasDeferredTooltip | ItemFlag::ItemIsXHTMLText | ItemFlag::ItemIsSelectable;
+
+    return ItemFlag::ItemIsSelectable;
+  }
   
   virtual boost::any data( const WModelIndex &index, int role = DisplayRole ) const
   {
@@ -1296,23 +1324,30 @@ public:
     
     const vector<string> &fields = (*m_result)[row];
     
-    if( col == FileDataField::Filename )
-    {
-      if( role == DisplayRole )
-        return WString::fromUTF8(SpecUtils::filename(fields[col]));
-      if( role == UserRole )
-        return WString::fromUTF8(fields[col]);
-      return boost::any();
-    }
-    
-    if( role != DisplayRole )
-      return boost::any();
-    
     if( col >= static_cast<int>(fields.size()) )
     {
 #if( PERFORM_DEVELOPER_CHECKS )
       log_developer_error( __func__, "Unexpected (to large of) column requested we dont have data for" );
 #endif
+      return boost::any();
+    }
+
+    if( (role == ToolTipRole ) && ((col == FileDataField::Filename) || (col == FileDataField::ParentPath)) )
+    {
+      // Get file path from Filename column (UserRole returns full path)
+      const std::string filepath = fields[FileDataField::Filename];
+      const std::string svg_html = generatePreviewSvg( filepath );
+      
+      return WString::fromUTF8( svg_html );
+    }else if( role != DisplayRole )
+    {
+      if( col == FileDataField::Filename )
+      {
+        if( role == UserRole )
+          return WString::fromUTF8(fields[col]);
+        else if( role == DisplayRole )
+          return WString::fromUTF8(SpecUtils::filename(fields[col]));
+      }
       return boost::any();
     }
     
@@ -1481,6 +1516,7 @@ SpecFileQueryWidget::~SpecFileQueryWidget()
 void SpecFileQueryWidget::init()
 {
   wApp->useStyleSheet( "InterSpec_resources/SpecFileQueryWidget.css" );
+  m_viewer->useMessageResourceBundle( "SpecFileQueryWidget" );
   
   wApp->useStyleSheet( "InterSpec_resources/assets/js/QueryBuilder2.5.2/css/query-builder.default.min.css" );
   wApp->useStyleSheet( "InterSpec_resources/assets/js/QueryBuilder2.5.2/css/QueryBuilderFakeBootstrap.css" );
@@ -1534,11 +1570,11 @@ void SpecFileQueryWidget::init()
   
   m_baseLocation->pathChanged().connect( this, &SpecFileQueryWidget::basePathChanged );  
   
-  m_optionsBtn = new WPushButton( "Options" );
+  m_optionsBtn = new WPushButton( WString::tr("sfqw-options") );
   m_optionsBtn->addStyleClass( "SpecFileQueryOptionsBtn" );
   
   m_optionsMenu = new PopupDivMenu( m_optionsBtn, PopupDivMenu::MenuType::TransientMenu );
-  linelayout->addWidget( m_optionsBtn, 0, 1 );
+  linelayout->addWidget( m_optionsBtn, 0, 1, AlignMiddle );
   
   auto item = m_optionsMenu->addMenuItem( "recursive" );
   item->setCheckable( true );
@@ -1666,12 +1702,12 @@ void SpecFileQueryWidget::init()
   
   
   
-  m_cancelUpdate = new WPushButton( "Cancel" );
+  m_cancelUpdate = new WPushButton( WString::tr("Cancel") );
   m_cancelUpdate->setHidden( true );
   linelayout->addWidget( m_cancelUpdate, 0, linelayout->columnCount() );
   m_cancelUpdate->clicked().connect( this, &SpecFileQueryWidget::cancelUpdate );
   
-  m_update = new WPushButton( "Update" );
+  m_update = new WPushButton( WString::tr("sfqw-update") );
   m_update->clicked().connect(
   "function(){"
     "var result = $('#" + m_conditions->id() + "').queryBuilder('getRules',{ allow_invalid: true });"
@@ -1747,7 +1783,7 @@ void SpecFileQueryWidget::init()
   m_csv->setStyleClass( "LinkBtn" );
   m_csv->disable();
   
-  m_loadSelectedFile = new WPushButton( "Load Selected" );
+  m_loadSelectedFile = new WPushButton( WString::tr("sfqw-load-selected") );
   linelayout->addWidget( m_loadSelectedFile, 0, linelayout->columnCount(), AlignRight );
   m_loadSelectedFile->clicked().connect( this, &SpecFileQueryWidget::loadSelected );
   m_loadSelectedFile->disable();
@@ -2989,4 +3025,331 @@ void SpecFileQueryWidget::loadSelected()
   if( !loaded )
     passMessage( "Sorry, '" + filenameandy + "' can not be displayed", WarningWidget::WarningMsgHigh );
 }//loadSelected()
+
+
+std::string ResultTableModel::generatePreviewSvg( const std::string &filepath ) const
+{
+  if( !SpecUtils::is_file(filepath) )
+  {
+    return "<div style=\"padding: 10px;\">File not found: " + Wt::Utils::htmlEncode(filepath) + "</div>";
+  }
+  
+  // Check cache first
+  std::shared_ptr<SpecMeas> spec_meas;
+  auto cache_it = m_preview_cache.find( filepath );
+  if( cache_it != m_preview_cache.end() )
+  {
+    // Found in cache, move to end of access order (most recently used)
+    spec_meas = cache_it->second.spec_meas;
+    m_preview_cache_access_order.erase( cache_it->second.access_order_it );
+    m_preview_cache_access_order.push_back( filepath );
+    cache_it->second.access_order_it = --m_preview_cache_access_order.end();
+  }else
+  {
+    // Not in cache, load file
+    spec_meas = std::make_shared<SpecMeas>();
+    const bool loaded = spec_meas->load_file( filepath, SpecUtils::ParserType::Auto, filepath );
+    
+    if( !loaded || spec_meas->num_measurements() == 0 )
+    {
+      return "<div style=\"padding: 10px;\">Could not load spectrum file: " + Wt::Utils::htmlEncode(SpecUtils::filename(filepath)) + "</div>";
+    }
+    
+    // Add to cache
+    if( m_preview_cache.size() >= MAX_PREVIEW_CACHE_SIZE )
+    {
+      // Remove least recently used
+      const std::string lru_path = m_preview_cache_access_order.front();
+      m_preview_cache_access_order.pop_front();
+      m_preview_cache.erase( lru_path );
+    }
+    
+    m_preview_cache_access_order.push_back( filepath );
+    LruCacheEntry entry;
+    entry.spec_meas = spec_meas;
+    entry.access_order_it = --m_preview_cache_access_order.end();
+    m_preview_cache[filepath] = entry;
+  }
+  
+  //TODO:
+  // - see if we can find foreground/background from file, and potentually display both
+  // - Apply color theme to tool tip background
+  // - Simplify the cache
+  
+  // Get color theme and window dimensions
+  InterSpec *interspec = InterSpec::instance();
+  std::shared_ptr<const ColorTheme> theme = interspec ? interspec->getColorTheme() : nullptr;
+  
+  // Find the appropriate measurement(s) to display, similar to SpecMeasManager::displayFile
+  std::shared_ptr<const SpecUtils::Measurement> measurement;
+  const bool passthrough = spec_meas->passthrough();
+  
+  if( passthrough )
+  {
+    // For passthrough spectra, sum all foreground measurements together
+    std::set<int> foreground_samples;
+    const std::set<int> &all_samples = spec_meas->sample_numbers();
+    const std::vector<std::string> &det_names = spec_meas->detector_names();
+    
+    // Find all foreground sample numbers (exclude background and calibration)
+    for( const int sample_num : all_samples )
+    {
+      bool is_foreground = false;
+      for( const std::string &det : det_names )
+      {
+        const std::shared_ptr<const SpecUtils::Measurement> m = spec_meas->measurement( sample_num, det );
+        if( !m )
+          continue;
+        
+        const SpecUtils::SourceType src_type = m->source_type();
+        if( (src_type == SpecUtils::SourceType::Foreground)
+            || (src_type == SpecUtils::SourceType::Unknown) )
+        {
+          is_foreground = true;
+          break;
+        }
+        else if( (src_type == SpecUtils::SourceType::Background)
+                 || (src_type == SpecUtils::SourceType::Calibration)
+                 || (src_type == SpecUtils::SourceType::IntrinsicActivity) )
+        {
+          // Skip background, calibration, and intrinsic activity
+          break;
+        }
+      }//for( const std::string &det : det_names )
+      
+      if( is_foreground )
+        foreground_samples.insert( sample_num );
+    }//for( const int sample_num : all_samples )
+    
+    // Sum all foreground measurements
+    if( !foreground_samples.empty() && !det_names.empty() )
+    {
+      try
+      {
+        measurement = spec_meas->sum_measurements( foreground_samples, det_names, nullptr );
+      }
+      catch( std::exception &e )
+      {
+        return "<div style=\"padding: 10px;\">Error summing passthrough measurements: "
+               + Wt::Utils::htmlEncode( string(e.what()) ) + "</div>";
+      }
+    }
+    
+    // If no foreground samples found, try summing all non-background/calibration samples
+    if( !measurement )
+    {
+      std::set<int> non_background_samples;
+      for( const int sample_num : all_samples )
+      {
+        bool skip_sample = false;
+        for( const std::string &det : det_names )
+        {
+          const std::shared_ptr<const SpecUtils::Measurement> m = spec_meas->measurement( sample_num, det );
+          if( !m )
+            continue;
+          
+          const SpecUtils::SourceType src_type = m->source_type();
+          if( (src_type == SpecUtils::SourceType::Background)
+              || (src_type == SpecUtils::SourceType::Calibration) )
+          {
+            skip_sample = true;
+            break;
+          }
+        }//for( const std::string &det : det_names )
+        
+        if( !skip_sample )
+          non_background_samples.insert( sample_num );
+      }//for( const int sample_num : all_samples )
+      
+      if( !non_background_samples.empty() && !det_names.empty() )
+      {
+        try
+        {
+          measurement = spec_meas->sum_measurements( non_background_samples, det_names, nullptr );
+        }
+        catch( std::exception &e )
+        {
+          return "<div style=\"padding: 10px;\">Error summing passthrough measurements: "
+                 + Wt::Utils::htmlEncode( string(e.what()) ) + "</div>";
+        }
+      }
+    }
+  }
+  else
+  {
+    // For non-passthrough spectra, find the first foreground measurement
+    // Priority: Foreground > Unknown > Background
+    std::shared_ptr<const SpecUtils::Measurement> first_fore, first_unk, first_back;
+    const std::set<int> &all_samples = spec_meas->sample_numbers();
+    const std::vector<std::string> &det_names = spec_meas->detector_names();
+    
+    for( const int sample_num : all_samples )
+    {
+      if( first_fore )
+        break; // Found foreground, no need to continue
+      
+      std::shared_ptr<const SpecUtils::Measurement> sample_meas;
+      try
+      {
+        if( det_names.size() == 1 )
+        {
+          sample_meas = spec_meas->measurement( sample_num, det_names.front() );
+        }
+        else
+        {
+          sample_meas = spec_meas->sum_measurements( {sample_num}, det_names, nullptr );
+        }
+      }
+      catch( std::exception & )
+      {
+        continue;
+      }
+      
+      if( !sample_meas )
+        continue;
+      
+      switch( sample_meas->source_type() )
+      {
+        case SpecUtils::SourceType::IntrinsicActivity:
+        case SpecUtils::SourceType::Calibration:
+          break;
+        
+        case SpecUtils::SourceType::Background:
+          if( !first_back )
+            first_back = sample_meas;
+          break;
+        
+        case SpecUtils::SourceType::Foreground:
+          if( !first_fore )
+            first_fore = sample_meas;
+          break;
+        
+        case SpecUtils::SourceType::Unknown:
+          if( !first_unk )
+            first_unk = sample_meas;
+          break;
+      }//switch( sample_meas->source_type() )
+    }//for( const int sample_num : all_samples )
+    
+    // Use first foreground, or first unknown, or first background
+    if( first_fore )
+      measurement = first_fore;
+    else if( first_unk )
+      measurement = first_unk;
+    else if( first_back )
+      measurement = first_back;
+  }
+  
+  // Fallback to first measurement if we couldn't find anything
+  if( !measurement )
+  {
+    const std::vector<std::shared_ptr<const SpecUtils::Measurement>> &measurements = spec_meas->measurements();
+    if( measurements.empty() )
+    {
+      return "<div style=\"padding: 10px;\">No measurements found in file</div>";
+    }
+    measurement = measurements[0];
+  }
+  
+  if( !measurement )
+  {
+    return "<div style=\"padding: 10px;\">Invalid measurement data</div>";
+  }
+  
+  // Get energy range (use full range if measurement has valid calibration)
+  double lower_energy = 0.0;
+  double upper_energy = 0.0;
+  const std::shared_ptr<const std::vector<float>> channel_energies = measurement->channel_energies();
+  if( channel_energies && !channel_energies->empty() )
+  {
+    lower_energy = channel_energies->front();
+    upper_energy = channel_energies->back();
+  }
+  
+  // If no valid energy range, use 0,0 which will render full range
+  if( lower_energy >= upper_energy )
+  {
+    lower_energy = 0.0;
+    upper_energy = 0.0;
+  }
+  
+  // Render to SVG - scale dimensions based on window size
+  // Maintain 1.5:1 width:height ratio
+  int width_px = 450;
+  int height_px = 300;
+  
+  if( interspec )
+  {
+    const int window_width = interspec->renderedWidth();
+    const int window_height = interspec->renderedHeight();
+    
+    // Scale tooltip to be reasonable size relative to window
+    // Use up to 50% of window width, 40% of height, but cap at max 450x300
+    // Maintain 1.5:1 width:height ratio
+    if( window_width > 100 && window_height > 100 )
+    {
+      // Start with width based on window
+      width_px = std::min( 450, std::max( 300, window_width / 2 ) );
+      
+      // Calculate height to maintain 1.5:1 ratio
+      height_px = static_cast<int>( width_px / 1.5 );
+      
+      // Check if height exceeds window constraints
+      const int max_height_from_window = std::min( 300, window_height * 2 / 5 );
+      if( height_px > max_height_from_window )
+      {
+        // Recalculate width to maintain ratio while respecting height constraint
+        height_px = std::max( 200, max_height_from_window );
+        width_px = static_cast<int>( height_px * 1.5 );
+        // Ensure width doesn't exceed max
+        width_px = std::min( 450, width_px );
+      }
+    }
+  }
+  
+  const bool compact = true;
+  
+  std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> empty_peaks( nullptr );
+  std::vector<std::shared_ptr<const ReferenceLineInfo>> empty_reflines;
+  
+  std::shared_ptr<Wt::WSvgImage> svg = PeakSearchGuiUtils::renderChartToSvg(
+    measurement,
+    empty_peaks,
+    empty_reflines,
+    lower_energy,
+    upper_energy,
+    width_px,
+    height_px,
+    theme,
+    compact
+  );
+  
+  if( !svg )
+  {
+    return "<div style=\"padding: 10px;\">Failed to generate spectrum preview</div>";
+  }
+  
+  // Write SVG to string
+  std::stringstream strm;
+  svg->write( strm );
+  const std::string svg_str = strm.str();
+  
+  // Wrap in a container with the filename as a title above the chart
+  const std::string filename_only = SpecUtils::filename( filepath );
+  const std::string safe_title = Wt::Utils::htmlEncode( filename_only );
+  
+  std::ostringstream html;
+  html << "<div class=\"specfile-preview-tooltip\" "
+          "style=\"max-width:100%;padding:4px 6px;box-sizing:border-box;"
+          "background-color:var(--interspec-background-color);\">"
+       << "<div class=\"specfile-preview-title\" "
+          "style=\"font-size:11px;font-weight:bold;margin-bottom:4px;white-space:nowrap;"
+             "overflow:hidden;text-overflow:ellipsis;\">"
+       << safe_title
+       << "</div>"
+       << svg_str
+       << "</div>";
+  
+  return html.str();
+}//generatePreviewSvg(...)
   

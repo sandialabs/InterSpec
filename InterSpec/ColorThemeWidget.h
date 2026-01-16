@@ -58,8 +58,8 @@ public:
 
   Wt::Signal<> &edited();
   
-	enum SelectableColor 
-	{  
+	enum SelectableColor
+	{
 		ForegroundLine,
     BackgroundLine,
 		SecondaryLine,
@@ -78,6 +78,21 @@ public:
 		TimeHistoryForegroundHighlight,
 		TimeHistoryBackgroundHighlight,
 		TimeHistorySecondaryHighlight,
+		DynamicRefLineMedical,
+		DynamicRefLineIndustrial,
+		DynamicRefLineNorm,
+		DynamicRefLineSnm,
+		DynamicRefLineCommon,
+		DynamicRefLineOther,
+		AppBackground,
+		AppText,
+		AppBorder,
+		AppLink,
+		AppLabel,
+		AppInputBackground,
+		AppButtonBackground,
+		AppButtonBorder,
+		AppButtonText,
 		NumSelectableColors
 	};//enum class EditableColor
 

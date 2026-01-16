@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages nplurals="2" plural="n==1 ? 0 : 1">
+  <!-- 
+    This file contains the localizations for both IsotopeSearchByEnergy.cpp and IsotopeSearchByEnergyModel.cpp - e.g., the "Nuclide Search" tab.
+    (there wasnt enough content in IsotopeSearchByEnergyModel to justify the performance hit of adding in an extra localization file)
+
+    isbe- is short for IsotopeSearchByEnergy
+    isbem- is short for IsotopeSearchByEnergyModel
+  -->
+  <message id="isbe-clear-ref">Hapus Fotopuncak Ref.</message>
+  <message id="isbe-cb-gammas">Gamma</message>
+
+  <message id="isbe-cb-rxnts">Reaksi</message>
+  <message id="isbe-min-br">BR Rel. Min.</message>
+  <message id="isbe-tt-min-br">Intensitas minimum yang diperlukan, relatif terhadap gamma intensitas maksimum dari rantai peluruhan.</message>
+  <message id="isbe-min-hl">T½ Min.</message>
+  <message id="isbe-tt-min-hl">
+    Waktu paruh minimum nuklida yang akan dicari.
+    <br />
+    <div>
+      Usia dapat ditentukan menggunakan kombinasi satuan waktu, serupa dengan '<b>5.3y 8d 22m</b>'.
+    </div>
+    <div>
+      Satuan waktu yang dapat diterima: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>,
+      <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, atau
+      Anda dapat menentukan periode waktu dengan <b>hh:mm:ss</b>.
+    </div>
+    <div>
+      Ketika beberapa periode waktu ditentukan, mereka dijumlahkan, mis. '1y6months 3m' diinterpretasikan sebagai 18 bulan dan 3 menit
+    </div>
+  </message>
+  <message id="isbe-searching">Mencari</message>
+  <message id="isbe-assign-to-btn">
+    <plural case="0">Tetapkan puncak ke {1}</plural>
+    <plural case="1">Tetapkan puncak ke {1}</plural>  <!-- Two or more peaks -->
+  </message>
+  <message id="isbe-assign-searched-energies">
+    <plural case="0">Tetapkan energi yang dicari ke {1}</plural>
+    <plural case="1">Tetapkan energi yang dicari ke {1}</plural>  <!-- Two or more peaks -->
+  </message>
+  <message id="isbe-assign-matching-peaks-no-id">Tetapkan puncak yang cocok tanpa ID ke {1}...</message>
+  <message id="isbe-assign-all-matching-peaks">Tetapkan semua puncak yang cocok ke {1}...</message>
+
+  <!-- Messages for IsotopeSearchByEnergyModel are below here; i.e. the table headers -->
+  <message id="isbem-parent-nuc">Nuklida</message>
+  <message id="isbem-diff">Selisih</message>
+  <message id="isbem-rel-br">B.R. Rel.</message>
+  <message id="isbem-profile">Profil</message>
+  <message id="isbem-decay">Peluruhan</message>
+  <message id="isbem-part-hl">T½ Induk</message>
+  <message id="isbem-assumed-age">Usia yang Diasumsikan</message>
+  <message id="isbem-tt-parent-nuc">Nuklida induk dari rantai peluruhan.</message>
+  <message id="isbem-tt-diff">Perbedaan antara tingkat energi nuklida yang dipilih dan tingkat energi yang dicari</message>
+  <message id="isbem-tt-energy">Energi gamma/sinar-x sebenarnya</message>
+  <message id="isbem-tt-rel-bre">Rasio percabangan, relatif terhadap yield gamma terbesar nuklida
+    (yaitu, 1.0 menunjukkan gamma paling melimpah, bukan satu gamma per peluruhan)
+  </message>
+  <message id="isbem-tt-profile">Metrik kasar untuk seberapa dekat spektrum yang diamati dengan memiliki puncak yang diharapkan untuk sumber yang dipilih.
+    Angka yang lebih tinggi lebih baik, dengan nilai 1.0 menjadi yang tertinggi - disarankan untuk mengurutkan berdasarkan kolom ini untuk ID nuklida.  
+    Lihat bantuan untuk alat ini untuk deskripsi lebih lengkap dari kuantitas ini.
+  </message>
+  <message id="isbem-tt-parent-hl">Waktu paruh induk</message>
+  <message id="isbem-tt-assumed-age">Usia yang diasumsikan dari nuklida</message>
+  
+  <!-- Categories int the drop-down-->
+  <message id="isbe-category-nuc-xray">Nuklida + Sinar-X</message>
+  <message id="isbe-category-nuc-xray-desc">Nuklida + Sinar-X</message>
+  <message id="isbe-category-nuc-xray-rctn">Nuklida, Sinar-X, Reaksi</message>
+  <message id="isbe-category-nuc-xray-rctn-desc">Semua nuklida, sinar-x (peluruhan dan fluoresensi), dan reaksi</message>
+  <message id="isbe-category-xray">Sinar-x fluoresensi</message>
+  <message id="isbe-category-xray-desc">Hanya sinar-x fluoresensi</message>
+  <message id="isbe-category-reactions">Reaksi</message>
+  <message id="isbe-category-reactions-desc">Hanya Reaksi</message>
+  <message id="isbe-category-medical">Nuklida Medis</message>
+  <message id="isbe-category-medical-desc">Nuklida medis umum</message>
+  <message id="isbe-category-industrial">Nuklida Industri</message>
+  <message id="isbe-category-industrial-desc">Nuklida industri umum</message>
+  <message id="isbe-category-snm">SNM</message>
+  <message id="isbe-category-snm-desc">Nuklida SNM</message>
+  <message id="isbe-category-norm">NORM</message>
+  <message id="isbe-category-norm-desc">Radio-nuklida yang terjadi secara alami</message>
+  <message id="isbe-category-common">Sumber yang Ditemui di Lapangan</message>
+  <message id="isbe-category-common-desc">Nuklida dan reaksi umum yang ditemui dalam spektrum yang dikumpulkan di lapangan</message>
+  <message id="isbe-category-common-nuc">Nuklida yang Ditemui di Lapangan</message>
+  <message id="isbe-category-common-nuc-desc">Nuklida umum yang ditemui dalam spektrum yang dikumpulkan di lapangan (tanpa neutron atau reaksi)</message>
+  <message id="isbe-category-reactions">Reaksi Nuklir</message>
+  <message id="isbe-category-reactions-desc">Reaksi Nuklir</message>
+  <message id="isbe-category-fission">Produk Fisi</message>
+  <message id="isbe-category-fission-desc">Produk fisi yang mungkin Anda lihat dalam spektrum gamma (bukan daftar lengkap)</message>
+  <message id="isbe-category-alphas">Alfa</message>
+  <message id="isbe-category-alphas-desc">Cari berdasarkan energi partikel Alfa.</message>
+  <message id="isbe-category-betas">Endpoint Beta</message>
+  <message id="isbe-category-betas-desc">Cari berdasarkan energi end-point partikel beta.</message>
+  <message id="isbe-category-no-progeny">Nuklida Tidak Berusia</message>
+  <message id="isbe-category-no-progeny-desc">Jangan sertakan keturunan nuklida. Cocokkan gamma atau sinar-x peluruhan.</message>
+</messages>
+

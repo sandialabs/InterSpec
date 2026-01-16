@@ -44,6 +44,7 @@ using namespace std;
 string ReactionGammaServer::sm_xmlFileLocation = "data/sandia.reactiongamma.xml";
 std::mutex ReactionGammaServer::sm_dataBaseMutex;
 std::unique_ptr<ReactionGamma> ReactionGammaServer::sm_dataBase;
+std::unique_ptr<std::string> ReactionGammaServer::sm_init_error;
 
 /*
 void print_reaction( std::string name )
@@ -82,12 +83,29 @@ const ReactionGamma *ReactionGammaServer::database()
   if( sm_dataBase )
     return sm_dataBase.get();
 
-  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-
-  sm_dataBase.reset( new ReactionGamma( sm_xmlFileLocation, db ) );
+  try
+  {
+    const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+    
+    sm_dataBase.reset( new ReactionGamma( sm_xmlFileLocation, db ) );
+  }catch( std::exception &e )
+  {
+    if( !ReactionGammaServer::sm_init_error.get() )
+    {
+      string msg = "ReactionGamma DB couldnt be instantiated: " + string(e.what());
+      sm_init_error = make_unique<std::string>( std::move(msg) );
+    }
+  }//try / catch
 
   return sm_dataBase.get();
 }//database()
+
+
+const char *ReactionGammaServer::init_error()
+{
+  std::unique_lock<std::mutex> lock( sm_dataBaseMutex );
+  return sm_init_error.get() ? sm_init_error->c_str() : nullptr;
+}
 
 
 ReactionGammaServer::ReactionGammaServer()
@@ -655,6 +673,7 @@ void ReactionGamma::populate_reaction( const rapidxml::xml_node<char> *parent,
     }//for( loop over targets )
   }catch( exception &e )
   {
+    cerr << e.what() << endl;
     for( size_t i = 0; i < results.size(); ++i )
       delete results[i];
     results.clear();

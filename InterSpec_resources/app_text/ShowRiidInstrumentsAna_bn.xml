@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- srria- is short for ShowRiidIntrumentAna -->
+  <message id="srria-algo-info-label">অ্যালগরিদম তথ্য:</message>
+  <message id="srria-creator">সৃষ্টিকর্তা</message>
+  <message id="srria-version">সংস্করণ</message>
+  <message id="srria-remarks">মন্তব্য</message>
+  <message id="srria-category">শ্রেণী</message>
+  <message id="srria-confidence">আত্মবিশ্বাস</message>
+  <message id="srria-no-id-provided">কোনো নিউক্লাইড সনাক্তকরণ প্রদান করা হয়নি।</message>
+  <message id="srria-algo-results">অ্যালগরিদম ফলাফল</message>
+  <message id="srria-no-algo-results">কোনো অ্যালগরিদম ফলাফল উপলব্ধ নেই।</message>
+  <message id="srria-no-nucs">কোনো নিউক্লাইড সনাক্ত করা হয়নি।</message>
+  <message id="srria-inst-ana-window-title">ডিটেক্টরের ID ফলাফল</message>
+</messages>

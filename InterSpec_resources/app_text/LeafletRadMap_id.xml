@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- lrm- is short for LeafletRadMap
+  -->
+  <message id="lrm-pre-warn-title">Sebelum Melanjutkan</message>
+  <message id="lrm-pre-warn-content">
+    Ubin peta akan diminta dari <a href="https://arcgis.com" target="_blank">https://arcgis.com</a>.
+    Tidak ada data radiasi yang akan meninggalkan perangkat Anda, tetapi permintaan untuk
+    ubin peta yang mencakup pengukuran akan dibuat ke layanan ini.
+    {1}
+  </message>
+  <message id="lrm-pre-warn-user-key">
+    <p>Kunci arcgis kustom Anda yang dimulai dengan '{1}' akan digunakan untuk meminta ubin peta.</p>
+  </message>
+  <message id="lrm-pre-warn-invalid-user-key">
+    <p>Kunci arcgis yang tidak valid ditentukan dalam arcgis_key.txt, jadi kunci bawaan akan digunakan.</p>
+  </message>
+  <message id="lrm-pre-warn-dont-ask">Jangan tanya lagi</message>
+  <message id="lrm-pre-warn-proceed-btn">Lanjutkan</message>
+  <message id="lrm-window-title">Alat Peta</message>
+  <message id="lrm-will-use-user-key">Akan menggunakan kunci arcgis yang ditentukan pengguna, dimulai dengan '{1}' untuk meminta peta.</message>
+  <message id="lrm-user-key-invalid">Ada file arcgis_key.txt, tetapi tidak berisi kunci yang valid</message>
+  <message id="lrm-err-loading-samples">Kesalahan memuat sampel yang dipilih peta: {1}</message>
+  <message id="lrm-displayed-as">Ditampilkan sebagai</message>
+  <message id="lrm-measurements-as">pengukuran sebagai</message>
+  <message id="lrm-load-meas-as-short">Muat sebagai</message>
+
+  <message id="lrm-filter-label">Filter</message>
+  <message id="lrm-filter-none">Tidak ada</message>
+  <message id="lrm-filter-energy-range">Rentang energi</message>
+  <message id="lrm-filter-peaks-in-range">Puncak dalam rentang</message>
+  <message id="lrm-lower-energy">Energi bawah</message>
+  <message id="lrm-upper-energy">Energi atas</message>
+  <message id="lrm-energy-filter-help">Menerapkan filter rentang energi akan mengubah bagaimana dan berpotensi data apa yang ditampilkan di peta.
+<ul>
+<li><b>Tidak ada</b>: Tidak ada penyaringan yang diterapkan - warna dan teks CPS didasarkan pada laju hitung spektrum penuh.</li>
+<li><b>Rentang energi</b>: Saring hitungan gamma dalam rentang energi yang ditentukan.</li>
+<li><b>Puncak dalam rentang</b>: Tampilkan hanya nomor sampel yang memiliki puncak dalam rentang energi dengan warna penanda dan CPS berdasarkan laju hitung puncak.</li>
+</ul></message>
+</messages>
+

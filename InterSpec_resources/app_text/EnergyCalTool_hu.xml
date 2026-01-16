@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ect- is short for EnergyCalTool -->
+  <message id="ect-no-spec">Nincs spektrum betöltve</message>
+  <message id="ect-more-act">További műveletek</message>
+  <message id="ect-linearize">Linearizálás...</message>
+  <message id="ect-tt-linearize">Linearizálja a spektrumokat, hogy minden energia csatorna ugyanolyan széles legyen.</message>
+  <message id="ect-truncate">Energia csonkítása...</message>
+  <message id="ect-tt-truncate">Csonkítja a spektrum energia tartományát adatcsatornák eldobásával.</message>
+  <message id="ect-combine">Csatornák kombinálása...</message>
+  <message id="ect-tt-combine">Energia csatornákat kombinál össze, így a spektrumnak kevesebb adatcsatornája lesz</message>
+  <message id="ect-to-frf">FRF-re...</message>
+  <message id="ect-tt-to-frf">Konvertálja az energia kalibrálás típusát Teljes Tartomány Törtre</message>
+  <message id="ect-to-poly">Polinomra...</message>
+  <message id="ect-tt-to-poly">Konvertálja az energia kalibrálás típusát polinomra.</message>
+  <message id="ect-multi-file">Több fájl kal...</message>
+  <message id="ect-tt-multi-file">
+    Lehetővé teszi több spektrum használatát illesztett csúcsokkal, egy vagy több spektrum fájlból,
+    energia kalibrálás végrehajtásához. Különösen hasznos lehet
+    alacsonyabb felbontású detektorokhoz, ahol minden spektrumnak más teszt forrása van
+  </message>
+  <message id="ect-tt-CALp">Töltsön le egy .CALp fájlt, amely a jelenlegi energia kalibrálást tartalmazza.
+    Ezt a fájlt később visszahúzhatja az InterSpec-re ennek az energia kalibrálásnak az újrafelhasználásához.
+    Ez különösen hasznos, ha gyakran használ adatokat olyan detektorból, amelynek kalibrálását
+    következetesen módosítani kell.
+  </message>
+  <message id="ect-export-CALp-msg">Ezt a CALp fájlt később alkalmazhatja egy másik spektrumra a CALp fájl húzásával az InterSpec-re.</message>
+  <message id="ect-fit-coeff-btn">Koeff. illesztés</message>
+  <message id="ect-tt-fit-coeff-btn">
+    Az illesztett csúcsokhoz társított fotocsúcsok várható energiáját használja az energia koefficiensek illesztéséhez.
+    Ez a gomb le van tiltva, ha nincs kiválasztott koefficiens az illesztéshez, vagy kevesebb csúcs van kiválasztva, mint koefficiens.
+  </message>
+  <message id="ect-apply-changes-to">Változtatások alkalmazása</message>
+  <message id="ect-disp-dets">Megjelenített detektorok</message>
+  <message id="ect-all-dets">Összes detektor</message>
+  <message id="ect-disp-samples">Megjelenített minták</message>
+  <message id="ect-all-samples">Összes minta</message>
+  <message id="ect-calib-coeffs">Kalibrálási koefficiensek</message>
+  <message id="ect-cal-peaks">Kalibrálási csúcsok</message>
+  <message id="ect-CALp-no-meas">Nincs mérés megjelenítve {1}-hez</message>
+  <message id="ect-CALp-not-applic-det">A kalibrálási változás nem alkalmazható {1} egyetlen detektorára sem</message>
+  <message id="ect-CALp-not-applic-sample">A kalibrálási változás nem alkalmazható {1} egyetlen mintájára sem</message>
+  <message id="ect-CALp-invalid-input">Érvénytelen bemeneti energia kalibrálás</message>
+  <message id="ect-CALp-num-channel-mismatch">Az új kalibrálási csatornák száma ({1}) nem egyezik a régi kalibrálással ({2}).</message>
+  <message id="ect-CALp-missing-det">A CALp fájlból hiányzik a kalibrálás a detektorokhoz: {1}.{2}</message>
+  <message id="ect-CALp-extra-det">  Voltak extra kalibrálások nem létező detektorokhoz: {1}.</message>
+  <message id="ect-CALp-named-vs-unamed">Minden kalibrálás a CALp fájlban megad egy detektor nevet, de a jelenlegi spektrum detektor névtelen.</message>
+  <message id="ect-CALp-no-cal-for-det">"Nincs elérhető kalibrálás a '{1}' detektorhoz"</message>
+  <message id="ect-CALp-no-prev-for-det">Nem sikerült azonosítani a '{1}' detektorhoz használandó korábbi kalibrálást.</message>
+  <message id="ect-CALp-nchannel-mismatch-det">Az új kalibrálási csatornák száma ({1}) nem egyezik a régi kalibrálással ({2}) a '{3}' detektorhoz.</message>
+  <message id="ect-import-CALp">CALp fájl importálása</message>
+  <message id="ect-select-CALp"><p>Válassza ki a használandó CALp fájlt</p></message>
+  <message id="ect-upload-CALp-to-large">A fájl túl nagy a feltöltéshez</message>
+  <message id="ect-invalid-CALp">Nem érvényes CALp fájl</message>
+  <message id="ect-CALp-drag-n-drop-note"><p style="font-size: small;">Megjegyzés: CALp fájlokat is húzhat az InterSpec-re<br /></p></message>
+  <message id="ect-change-made-invalid">A kalibrálási változás érvénytelenné tett egy energia kalibrálást{1}. Hiba: {2}</message>
+  <message id="ect-for-the-fore"> az előtérhez</message>
+  <message id="ect-for-the-back"> a háttérhez</message>
+  <message id="ect-for-the-sec"> a másodlagos spektrumhoz</message>
+  <message id="ect-set-cal-invalid-nchan">{1} minta, '{2}' detektor {3} csatornával rendelkezik, de a beállítandó kalibrálás {4}-vel.</message>
+  <message id="ect-error-setting-cal">Hiba az új energia kalibrálás beállításában: {1}</message>
+  <message id="ect-add-dev-pair-made-invalid">Az eltérési pár hozzáadása érvénytelenné tette az energia kalibrálást{1}. Hiba: {2}</message>
+  <message id="ect-unexpected-error-prev-coefs">Váratlan hiba a korábbi kalibrálási koefficiensek lekérésében - nem alkalmazza a változtatásokat</message>
+  <message id="ect-changed-cal-not-selected">Úgy tűnik, hogy a módosított energia kalibrálás nincs megjelölve a változtatások alkalmazásához; kérjük, javítsa ki ezt.</message>
+  <message id="ect-dev-pair-change-invalid">Az eltérési pár megváltoztatása érvénytelenné tette az energia kalibrálást. Hiba: {1}</message>
+  <message id="ect-set-dev-pair-err">Hiba történt az eltérési párok beállításában ehhez a detektorhoz.</message>
+  <message id="ect-dev-applied-dets-samples">Az eltérési párok csak a '{1}' detektorra lettek alkalmazva, de minden minta számra{2}.</message>
+  <message id="ect-dev-applied-to-samples">Az eltérési párok minden minta számra lettek alkalmazva{1}.</message>
+  <message id="ect-of-the-fore"> az előtérből.</message>
+  <message id="ect-of-the-sec"> a másodlagosból.</message>
+  <message id="ect-of-the-back"> a háttérből.</message>
+  <message id="ect-err-not-enough-peaks">Most nem lehet illeszteni a kalibrálási koefficienseket. Legalább annyi csúcsot kell kiválasztania az illesztéshez, mint ahány koefficienst kiválasztott az illesztéshez.</message>
+  <message id="ect-no-peaks">Nincsenek elérhető csúcsok.</message>
+  <message id="ect-select-cal-of-disp-det">Kérjük, válassza ki egy megjelenített detektor kalibrálását</message>
+  <message id="ect-not-enough-channel">Nincs elég csatorna az adatokban.</message>
+  <message id="ect-no-coeff-selected">Legalább egy koefficienst ki kell választania az illesztéshez.</message>
+  <message id="ect-fail-min">Hibaüzenet: Nem sikerült illeszteni az energia kalibrálást sem mátrix, sem iteratív megközelítéssel</message>
+  <message id="ect-fit-successful">Az energia kalibrálás frissítve lett az illesztésből.</message>
+  <message id="ect-fail-fit">Sikertelen kalibrálás a csúcs középpontok illesztésével. {1}</message>
+  <message id="ect-del-graphical-msg">Ha újra kalibrál ALT+CTRL+HÚZÁSSAL a spektrum egy másik részén, lehetősége lesz ennek a kalibrálásnak a hatásait is megőrizni.</message>
+  <message id="ect-lc-disp-dets">megjelenített detektorok</message>
+  <message id="ect-lc-all-dets">összes detektor</message>
+  <message id="ect-lc-all-samples">összes minta</message>
+  <message id="ect-lc-disp-samples">megjelenített minták</message>
+  <message id="ect-short-fore">Előt.</message>
+  <message id="ect-short-back">Hátt</message>
+  <message id="ect-short-secondary">Másodl.</message>
+  
+  <message id="ect-offset-label">Eltolás</message>
+  <message id="ect-linear-label">Lineáris</message>
+  <message id="ect-quad-label">Négyzetes</message>
+  <message id="ect-cubic-label">Köbös</message>
+  <message id="ect-nth-label">{1}. rendű</message>
+  
+  <!-- Energy calibration types -->
+  <message id="ect-cal-type-lower-channel">Alsó csatorna energia</message>
+  <message id="ect-cal-type-not-defined">Nincs meghatározva</message>
+  <message id="ect-cal-type-polynomial">Polinomiális</message>
+  <message id="ect-cal-type-default-poly">Alapértelmezett polinomiális</message>
+  <message id="ect-cal-type-frf">Teljes tartomány törtje</message>
+  <message id="ect-convert-to-poly-msg">Kérjük, konvertáljon polinomiális kalibrációra a szerkesztéshez</message>
+  <message id="ect-deviation-pairs">Eltérési párok</message>
+</messages>

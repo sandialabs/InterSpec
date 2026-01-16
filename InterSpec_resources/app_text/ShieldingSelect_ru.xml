@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ss- is short for ShieldingSelect
+  -->
+  <message id="ss-tt-shield-type-toggle">Переключение между материальной и общей защитой</message>
+  <message id="ss-tt-material-name">
+    Вы можете либо ввести название предопределенного материала или элемента здесь
+    (очистите текст формы и нажмите стрелку справа от формы, чтобы увидеть все предопределенные
+    опции), или вы можете указать атомный состав материала, похожий
+    на C0.5H0.2Ni0.6, где числа - это плотность в г/см3
+    предшествующего элемента в материале, так что пример будет иметь общую
+    плотность 0.5+0.2+0.6=1.3 г/см3.
+    Для ввода материалов с изотопными компонентами, вы должны взять в одинарные или двойные
+    кавычки нуклид, например: 'U238'0.2'U235'0.8
+  </message>
+  <message id="ss-tt-material-name-fit">
+  Примечание: если используется как самоослабляющий источник, материал, как определено, будет использован для
+  целей ослабления, но указанная массовая доля исходных нуклидов может не соответствовать этому
+  ослаблению...
+  </message>
+  <message id="ss-tt-areal-density">Поверхностная плотность защиты в г/см2</message>
+  <message id="ss-areal-density-empty-txt">Поверхностная плотность</message>
+  <message id="ss-tt-atomic-number">Атомный номер защиты</message>
+  <message id="ss-atomic-number-empty-txt">Атомный номер</message>
+  <message id="ss-source-for-cb">
+    Когда эти нуклиды используются как источники, они
+    рассматриваются как равномерно распределенные в материале
+    (который предполагается сферическим), поэтому самоослабление
+    и другие факторы учитываются.
+  </message>
+  <message id="ss-fit-mass-fractions-cb">Фитировать массовые доли</message>
+  <message id="ss-thickness">Толщина</message>
+  <message id="ss-radius">Радиус</message>
+  <message id="ss-radial-thickness">Радиальная толщина</message>
+  <message id="ss-half-length">Полудлина</message>
+  <message id="ss-length-thickness">Толщина по длине</message>
+  <message id="ss-half-width">Полуширина</message>
+  <message id="ss-width-thickness">Толщина по ширине</message>
+  <message id="ss-half-height">Полувысота</message>
+  <message id="ss-height-thickness">Толщина по высоте</message>
+  <message id="ss-half-depth">Полуглубина</message>
+  <message id="ss-depth-thickness">Толщина по глубине</message>
+  <message id="ss-tt-fit-mass-frac">Если массовые доли фитируются, их дробная сумма останется постоянной в фите.</message>
+  <message id="ss-fixed-non-src-frac">Предполагая {1}{2}% других {3} изотопов</message>
+  <message id="ss-fixed">фиксированные </message> <!-- Note: trailing space is Nbsp character -->
+  <message id="ss-generic">Общий</message>
+  <message id="ss-consists-of-mass-frac">состоит из (массовая доля, элемент)</message>
+  <message id="ss-err-invalid-material">{1} не является действительным материалом</message>
+  <message id="ss-invalid-mat">недейств. мат.</message>
+  <message id="ss-src-mass-frac-label">массовая доля {1}:</message>
+  <message id="ss-non-src-frac">Доля неисточника</message>
+  <message id="ss-add-shield-before">Добавить защиту перед</message>
+  <message id="ss-add-shield-after">Добавить защиту после</message>
+  <message id="ss-add-trace-src">Добавить следовой источник</message>
+  <message id="ss-non-src-frac-el">другие {1}:</message>
+  <message id="ss-tt-with-uncert">{1}</message>
+  <message id="ss-tt-without"></message>
+  <message id="ss-warning-only-one-src-frac">Для фитирования массовых долей выберите как минимум два компонента {1} для фитирования.</message>
+  
+  <!-- TraceSrcDisplay labels -->
+  <message id="ss-trace-source-title">Трассировочный Источник</message>
+  <message id="ss-select-option">Выбрать</message>
+  <message id="ss-fit-activity-cb">Подгонка значения активности</message>
+  <message id="ss-total-activity">Всего</message>
+</messages>

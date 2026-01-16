@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- oor2c- short for OneOverR2Calc
+  -->
+  <message id="oor2c-instructions">Используйте два измерения в разных местах для определения расстояния до невидимого источника. Например, когда источник находится за стеной.</message>
+  <message id="oor2c-near-meas-label">Интенсивность ближнего измерения:</message>
+  <message id="oor2c-far-meas-label">Интенсивность дальнего измерения:</message>
+  <message id="oor2c-background-intensity">Интенсивность фона (необязательно):</message>
+  <message id="oor2c-dist-label">Расстояние между измерениями:</message>
+  <message id="oor2c-power-law-label">Степенной закон</message>
+  <message id="oor2c-low-scatter">Низкое рассеяние или площадь пика, 1/r^2</message>
+  <message id="oor2c-mid-scatter">Среднее рассеяние мощности дозы, 1/r^1.85</message>
+  <message id="oor2c-high-scatter">Высокое рассеяние мощности дозы, 1/r^1.65</message>
+  <message id="oor2c-dist-to-near-label">Расст. ближнего измерения до источника:</message>
+  <message id="oor2c-bottom-message">Используйте одинаковые единицы для ближнего, фонового и дальнего
+    измерений. Результаты в тех же единицах, что используются для
+    расстояния между измерениями.
+  </message>
+  <message id="oor2c-qr-state-title">Состояние калькулятора 1/r2</message>
+  <message id="oor2c-qr-state-txt">Текущее состояние инструмента калькулятора 1/r<sup>2</sup>.</message>
+  <message id="oor2c-invalid-near">Недействительное ближнее измерение</message>
+  <message id="oor2c-invalid-far">Недействительное дальнее измерение</message>
+  <message id="oor2c-invalid-dist">Недействительное расстояние</message>
+  <message id="oor2c-far-larger-than-near">Дальнее измерение должно быть меньше ближнего</message>
+  <message id="oor2c-back-larger-than-far">Фон должен быть меньше дальнего</message>
+  <message id="oor2c-near-is-zero">Ближнее измерение должно быть ненулевым</message>
+  <message id="oor2c-far-is-zero">Дальнее измерение должно быть ненулевым</message>
+  <message id="oor2c-dist-is-zero">Расстояние между измерениями должно быть ненулевым</message>
+</messages>

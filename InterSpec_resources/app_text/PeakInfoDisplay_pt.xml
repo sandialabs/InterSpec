@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- pid is short for PeakInfoDisplay -->
+
+  <message id="pid-dialog-peak-erase">Apagar Todos os Picos?</message>
+
+  <message id="pid-err-no-foreground">Um espectro de primeiro plano deve ser carregado para adicionar um pico.</message>
+
+  <message id="pid-search-peaks-btn">Buscar Picos</message>
+  <message id="pid-tt-search-peaks-btn">Buscar picos usando o algoritmo automatizado de localização de picos.</message>
+  <message id="pid-clear-peaks-btn">Limpar todos os Picos</message>
+  <message id="pid-tt-clear-peaks-btn">Remove <b>todos</b> os picos existentes.</message>
+  <message id="pid-nuc-from-ref-btn">Nucl. de Ref.</message>
+  <message id="pid-tt-nuc-from-ref-btn">
+    Atribuir nuclídeos de picos a partir de linhas de referência exibidas. Aplica-se apenas a
+    picos que ainda não têm um nuclídeo associado a eles.
+  </message>
+
+  <message id="pid-add-peak-btn">Adicionar...</message>
+  <message id="pid-tt-add-peak-btn">Adicionar manualmente um novo pico.</message>
+  <message id="pid-tt-del-peaks">Exclui o pico atualmente sendo editado.</message>
+  <message id="pid-better-editor-hint">Clique com o botão direito nos picos para um editor melhor</message>
+  <message id="pid-better-editor-hint-mobile">Toque e segure nos picos para um editor melhor</message>
+  <message id="pid-tt-csv-export">Exportar informações sobre os picos identificados para um formato separado por vírgulas.</message>
+  <message id="pid-tt-csv-copy">Copiar informações CSV do pico para sua área de transferência.
+    <p>Os dados do pico serão copiados para sua área de transferência nas variantes formatada e texto simples,
+      então o formato dos dados dependerá do aplicativo para o qual você está colando.
+    </p>
+  </message>
+
+  <message id="pid-csv-copy-full">Copiar CSV completo do pico</message>
+  <message id="pid-csv-copy-no-hdr">Copiar sem cabeçalhos</message>
+  <message id="pid-csv-copy-compact">Copiar info de pico ajustado</message>
+  <message id="pid-peak-label">Pico: </message>
+</messages>

@@ -94,6 +94,18 @@ cursor: default;
   border-radius: 8px;
 }
 
+.displayOptionsDiv .LowerOptions
+{
+  display: flex;
+  align-items: center;
+}
+
+.displayOptionsDiv .LowerOptions .LowerOptionsSpacer
+{
+  flex-grow: 1;
+  flex-shrink: 1;
+}
+
 .m_parentNuclidesDiv
 {
   border: 1px solid #888888;

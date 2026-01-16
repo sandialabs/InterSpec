@@ -170,8 +170,8 @@ public:
     InterSpec::instance()->useMessageResourceBundle( "ShowRiidInstrumentsAna" );
     
     addStyleClass( "AnaResultDisplay" );
-    
-    WText *algoInfo = new WText( WString::tr("srria-algo-info-label"), this );
+
+    WLabel *algoInfo = new WLabel( WString::tr("srria-algo-info-label"), this );
     algoInfo->addStyleClass( "AlgoInfoTitle" );
     algoInfo->setInline( false );
     

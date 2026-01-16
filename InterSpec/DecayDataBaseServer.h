@@ -83,7 +83,7 @@ public:
   //  so you may wish to call DecayDataBaseServer::setDecayXmlFile(...) or
   //  DecayDataBaseServer::setDecayXmlFile(...) before calling energyToNuclide()
   //  - otherwise will always return a valid pointer
-  static const std::shared_ptr< const EnergyNuclidePairVec > &energyToNuclide();
+  static const std::shared_ptr< const EnergyNuclidePairVec > energyToNuclide();
 
   static bool initialized();
 

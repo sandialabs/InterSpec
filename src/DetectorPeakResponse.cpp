@@ -37,6 +37,8 @@
 #include <sstream>
 #include <numeric>
 #include <stdexcept>
+#include <iostream>
+#include <iomanip>
 
 #include <boost/tokenizer.hpp>
 #include <boost/functional/hash.hpp>
@@ -55,6 +57,7 @@
 #include "SpecUtils/RapidXmlUtils.hpp"
 
 #include "InterSpec/AppUtils.h"
+#include "InterSpec/XmlUtils.hpp"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/PeakFitUtils.h"
@@ -66,10 +69,15 @@
 using namespace std;
 using SpecUtils::Measurement;
 
-const int DetectorPeakResponse::sm_xmlSerializationVersion = 2;
+const int DetectorPeakResponse::sm_xmlSerializationVersion = 3;
 
 namespace
 {
+  /** Mutex to protect the "generic" detectors, returned by like `DetectorPeakResponse::getGenericHPGeDetector()` */
+  std::mutex s_generic_det_mutex;
+  
+  
+  
   //calcA(...) is for use from DetectorPeakResponse::akimaInterpolate(...).
   //  This function does not to any error checking that the input is valid.
   float calcA( const size_t i,
@@ -486,7 +494,8 @@ const std::string &DetectorPeakResponse::det_eff_geom_type_postfix( const Detect
   static const string s_empty{}, s_cm2{"/cm2"}, s_m2{"/m2"}, s_gram{"/g"};
   switch( type )
   {
-    case DetectorPeakResponse::EffGeometryType::FarField:
+    case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
+    case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
     case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
       return s_empty;
     case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
@@ -516,7 +525,9 @@ DetectorPeakResponse::DetectorPeakResponse()
     m_upperEnergy( 0.0 ),
     m_createdUtc( 0 ),
     m_lastUsedUtc( 0 ),
-    m_geomType(EffGeometryType::FarField)
+    m_geomType( EffGeometryType::FarFieldIntrinsic ),
+    m_absoluteEfficiencyDistance( -1.0 ),
+    m_absEffCorrectForAirAtten( true )
 {
 } //DetectorPeakResponse()
 
@@ -537,7 +548,9 @@ DetectorPeakResponse::DetectorPeakResponse( const std::string &name,
     m_upperEnergy( 0.0 ),
     m_createdUtc( 0 ),
     m_lastUsedUtc( 0 ),
-    m_geomType(EffGeometryType::FarField)
+    m_geomType( EffGeometryType::FarFieldIntrinsic ),
+    m_absoluteEfficiencyDistance( -1.0 ),
+    m_absEffCorrectForAirAtten( true )
 {
 }//DetectorPeakResponse( const std::string &name, const std::string &descrip )
 
@@ -603,9 +616,27 @@ void DetectorPeakResponse::computeHash()
   }
   
   //Dont hash based on m_createdUtc or m_lastUsed
-  
-  if( m_geomType != EffGeometryType::FarField )
+
+  if( m_geomType != EffGeometryType::FarFieldIntrinsic )
     boost::hash_combine( seed, m_geomType );
+  
+  switch( m_geomType )
+  {
+    case EffGeometryType::FarFieldIntrinsic:
+      break;
+      
+    case EffGeometryType::FarFieldAbsolute:
+      boost::hash_combine( seed, m_absoluteEfficiencyDistance );
+      boost::hash_combine( seed, m_absEffCorrectForAirAtten );
+      break;
+    
+    case EffGeometryType::FixedGeomTotalAct:
+    case EffGeometryType::FixedGeomActPerCm2:
+    case EffGeometryType::FixedGeomActPerM2:
+    case EffGeometryType::FixedGeomActPerGram:
+      break;
+  }//switch( m_geomType )
+  
   
   m_hash = seed;
 }//void computeHash()
@@ -669,7 +700,7 @@ void DetectorPeakResponse::reset()
   m_lowerEnergy = m_upperEnergy = 0.0;
   m_efficiencySource = DrfSource::UnknownDrfSource;
   m_createdUtc = m_lastUsedUtc = 0;
-  m_geomType = EffGeometryType::FarField;
+  m_geomType = EffGeometryType::FarFieldIntrinsic;
   
 /*
   m_name = "Flat";
@@ -752,7 +783,7 @@ double DetectorPeakResponse::upperEnergy() const
 
 bool DetectorPeakResponse::isFixedGeometry() const
 {
-  return (m_geomType != EffGeometryType::FarField);
+  return (m_geomType != EffGeometryType::FarFieldIntrinsic) && (m_geomType != EffGeometryType::FarFieldAbsolute);
 }//bool isFixedGeometry() const;
 
 
@@ -770,14 +801,16 @@ void DetectorPeakResponse::updateLastUsedTimeToNow()
 
 void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
                                     const float detectorDiameter,
+                                    const double characterizationDist,
                                     const float energyUnits,
-                                    //const bool is_fixed_geometry
                                     const EffGeometryType geometry_type )
 {
-  if( // !is_fixed_geometry
-     (geometry_type == EffGeometryType::FarField)
+  if( ((geometry_type == EffGeometryType::FarFieldIntrinsic) || (geometry_type == EffGeometryType::FarFieldAbsolute))
      && ((detectorDiameter <= 0.0) || IsInf(detectorDiameter) || IsNan(detectorDiameter)) )
     throw runtime_error( "Detector diameter must be greater than 0.0" );
+  
+  if( (geometry_type == EffGeometryType::FarFieldAbsolute) && (characterizationDist <= 0.0) )
+    throw runtime_error( "Distance for absolute efficency must be greater than zero" );
   
   if( energyUnits <= 0.0 || IsInf(energyUnits) || IsNan(energyUnits) )
     throw runtime_error( "Energy units must be greater than 0.0" );
@@ -806,8 +839,7 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
     }//if( !isdigit(line[0]) )
 
     vector<float> fields;
-    const bool ok = SpecUtils::split_to_floats( line.c_str(),
-                                                       line.size(), fields );
+    const bool ok = SpecUtils::split_to_floats( line.c_str(), line.size(), fields );
     
     if( (fields.size() < 2) || !ok )
     {
@@ -887,9 +919,74 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
   m_lastUsedUtc = m_createdUtc = std::time(nullptr);
   m_geomType = geometry_type;
   
+  if( geometry_type == EffGeometryType::FarFieldAbsolute )
+  {
+    m_absoluteEfficiencyDistance = characterizationDist;
+    m_absEffCorrectForAirAtten = true;
+  }else
+  {
+    m_absoluteEfficiencyDistance = 0.0;
+    m_absEffCorrectForAirAtten = true;
+  }
+  
   computeHash();
 }//void fromEnergyEfficiencyCsv(...)
 
+
+void DetectorPeakResponse::setEfficiencyPoints( const std::vector<DetectorPeakResponse::EnergyEffPoint> &efficiencies,
+                         const float detectorDiameter,
+                         const double absoluteEffDistance,
+                         const EffGeometryType geometry_type )
+{
+  if( ((geometry_type == EffGeometryType::FarFieldIntrinsic) || (geometry_type == EffGeometryType::FarFieldAbsolute))
+     && ((detectorDiameter <= 0.0) || IsInf(detectorDiameter) || IsNan(detectorDiameter)) )
+    throw runtime_error( "Detector diameter must be greater than 0.0" );
+
+  if( (geometry_type == EffGeometryType::FarFieldAbsolute) && (absoluteEffDistance <= 0.0) )
+    throw runtime_error( "Abs eff distance must be greater than 0.0" );
+  
+  if( efficiencies.size() < 2 )
+    throw runtime_error( "DetectorPeakResponse::setEfficiencyPoints(): need at least two efficiency points." );
+
+  m_energyEfficiencies.clear();
+  for( const EnergyEffPoint &p : efficiencies )
+  {
+    if( p.energy < 0.0 || p.efficiency < 0.0 )
+      throw runtime_error( "Energy and efficiency musst be >= 0" );
+
+    EnergyEfficiencyPair eep;
+    eep.energy = p.energy;
+    eep.efficiency = p.efficiency;
+
+    m_energyEfficiencies.push_back( std::move(eep) );
+  }//for( const EnergyEffPoint &p : efficiencies )
+
+  std::sort( begin(m_energyEfficiencies), end(m_energyEfficiencies) );
+
+  m_detectorDiameter = detectorDiameter;
+  m_efficiencyEnergyUnits = static_cast<float>(PhysicalUnits::keV);
+
+  m_efficiencyForm = kEnergyEfficiencyPairs;
+  m_flags = 0;
+
+  m_lowerEnergy = m_energyEfficiencies.front().energy;
+  m_upperEnergy = m_energyEfficiencies.back().energy;
+
+  m_lastUsedUtc = m_createdUtc = std::time(nullptr);
+  m_geomType = geometry_type;
+  
+  if( geometry_type == EffGeometryType::FarFieldAbsolute )
+  {
+    m_absoluteEfficiencyDistance = absoluteEffDistance;
+    m_absEffCorrectForAirAtten = true;
+  }else
+  {
+    m_absoluteEfficiencyDistance = -1.0;
+    m_absEffCorrectForAirAtten = true;
+  }
+
+  computeHash();
+}//void setEfficiencyPoints(...)
 
 
 void DetectorPeakResponse::setIntrinsicEfficiencyFormula( const string &fcnstr,
@@ -1050,8 +1147,8 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
   const float diam = 2.0f*sqrt(surfaceArea/3.14159265359f) * static_cast<float>(PhysicalUnits::cm);
   
   //const bool fixed_geom = false;
-  const EffGeometryType geometry_type = EffGeometryType::FarField;
-  fromEnergyEfficiencyCsv( csvFile, diam, static_cast<float>(PhysicalUnits::keV), geometry_type );
+  const EffGeometryType geometry_type = EffGeometryType::FarFieldIntrinsic;
+  fromEnergyEfficiencyCsv( csvFile, diam, -1.0, static_cast<float>(PhysicalUnits::keV), geometry_type );
   
   m_flags = 0;
   
@@ -1111,10 +1208,10 @@ void DetectorPeakResponse::fromGadrasDirectory( const std::string &dir )
 }//void fromGadrasDirectory( const std::string &dir )
 
 
-void DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff(
+void DetectorPeakResponse::fromExpOfLogPowerSeries(
                                    const std::vector<float> &coefs,
                                    const std::vector<float> &uncerts,
-                                   const float charactDist,
+                                   const double charactDist,
                                    const float det_diam,
                                    const float equationEnergyUnits,
                                    const float lowerEnergy,
@@ -1124,11 +1221,14 @@ void DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff(
 )
 {
   if( coefs.empty() )
-    throw runtime_error( "fromExpOfLogPowerSeriesAbsEff(...): invalid input" );
+    throw runtime_error( "fromExpOfLogPowerSeries(...): invalid input" );
   
   if( !uncerts.empty() && (uncerts.size() != coefs.size()) )
-    throw runtime_error( "DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff: uncertainties"
+    throw runtime_error( "DetectorPeakResponse::fromExpOfLogPowerSeries: uncertainties"
                         " must either be empty, or same size as coefficients." );
+  
+  if( (geometry_type == EffGeometryType::FarFieldAbsolute) && (charactDist <= 0.0) )
+    throw runtime_error( "DetectorPeakResponse::fromExpOfLogPowerSeries: For FarFieldAbsolute, you must provide a positive distance" );
   
   m_energyEfficiencies.clear();
   m_expOfLogPowerSeriesCoeffs.clear();
@@ -1144,12 +1244,10 @@ void DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff(
   m_expOfLogPowerSeriesUncerts = uncerts;
   
   //now we need to account for characterizationDist
-  if( (charactDist > 0.0f) && (geometry_type == EffGeometryType::FarField) )
+  if( geometry_type == EffGeometryType::FarFieldAbsolute )
   {
-    //x^n * x^m = x^(n+m)
-    const float gfactor = fractionalSolidAngle( det_diam, charactDist );
-    // TODO: Note that this does not account for attenuation in the air, which is something like 2.2% at 59 keV
-    m_expOfLogPowerSeriesCoeffs[0] += log( 1.0f/gfactor );
+    m_absoluteEfficiencyDistance = charactDist;
+    m_absEffCorrectForAirAtten = true;
   }//if( characterizationDist > 0.0f )
   
   m_flags = 0;
@@ -1163,7 +1261,7 @@ void DetectorPeakResponse::fromExpOfLogPowerSeriesAbsEff(
   m_geomType = geometry_type;
   
   computeHash();
-}//void fromExpOfLogPowerSeriesAbsEff
+}//void fromExpOfLogPowerSeries
 
 
 std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseSingleCsvLineRelEffDrf( std::string &line )
@@ -1223,7 +1321,7 @@ std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseSingleCsvLineRe
     SpecUtils::ireplace_all( description, "%20", " " );
     SpecUtils::trim( description );
     det.reset( new DetectorPeakResponse( name, description ) );
-    det->fromExpOfLogPowerSeriesAbsEff( coefs, {}, dist, diam, eunits, 0.0f, 0.0f, EffGeometryType::FarField );
+    det->fromExpOfLogPowerSeries( coefs, {}, dist, diam, eunits, 0.0f, 0.0f, EffGeometryType::FarFieldAbsolute );
     det->setDrfSource( DetectorPeakResponse::DrfSource::UserAddedRelativeEfficiencyDrf );
   }catch( std::exception &e )
   {
@@ -1526,8 +1624,8 @@ void DetectorPeakResponse::parseGammaQuantRelEffDrfCsv( std::istream &input,
       }
       
       coef_values.resize( last_non_zero_coef + 1 );
-      
-      EffGeometryType geometry_type = EffGeometryType::FarField;
+
+      EffGeometryType geometry_type = EffGeometryType::FarFieldAbsolute;
       if( is_fixed_geom )
       {
         if( SpecUtils::icontains(name, "Bq-cm2") )
@@ -1549,7 +1647,7 @@ void DetectorPeakResponse::parseGammaQuantRelEffDrfCsv( std::istream &input,
       try
       {
         auto det = make_shared<DetectorPeakResponse>();
-        det->fromExpOfLogPowerSeriesAbsEff( coef_values, {}, src_to_det_face, 2*det_rad,
+        det->fromExpOfLogPowerSeries( coef_values, {}, src_to_det_face, 2*det_rad,
                                            energy_units, low_energy, up_energy, geometry_type );
         if( !det->isValid() )
           throw runtime_error( "Not valid" );
@@ -1616,17 +1714,19 @@ std::string DetectorPeakResponse::toAppUrl() const
   
   if( !isValid() )
     throw runtime_error( "Invalid DRF." );
-  
+
   map<string,string> parts;
-  parts["VER"] = "1";
-  
+
+  // Use VER=2 for FarFieldAbsolute to indicate new absolute efficiency fields
+  parts["VER"] = (m_geomType == EffGeometryType::FarFieldAbsolute) ? "2" : "1";
+
   if( !m_name.empty() )
     parts["NAME"] = url_encode( m_name, "", false );
   
   if( !m_description.empty() )
     parts["DESC"] = url_encode( m_description, "", false );
-  
-  if( (m_geomType == EffGeometryType::FarField) || (m_detectorDiameter > 0.0) )
+
+  if( (m_geomType == EffGeometryType::FarFieldIntrinsic) || (m_geomType == EffGeometryType::FarFieldAbsolute) || (m_detectorDiameter > 0.0) )
     parts["DIAM"] = SpecUtils::printCompact( m_detectorDiameter, 5 );
   
   // We'll assume units are MeV, unless stated otherwise.
@@ -1729,24 +1829,31 @@ std::string DetectorPeakResponse::toAppUrl() const
   
   switch( m_geomType )
   {
-    case EffGeometryType::FarField:
-      // We wont note this, but if decide to in the future, use "FAR-FIELD"
-      //parts["GEOM"] = "FAR-FIELD";
+    case EffGeometryType::FarFieldIntrinsic:
+      // We wont note this to keep backward compatibility
       break;
-      
+
+    case EffGeometryType::FarFieldAbsolute:
+      parts["GEOM"] = "FAR-FIELD-ABSOLUTE";
+      parts["ABDIST"] = SpecUtils::printCompact( m_absoluteEfficiencyDistance, 5 );
+      // Only include air attenuation flag if false (true is default)
+      if( !m_absEffCorrectForAirAtten )
+        parts["ABAIR"] = "0";
+      break;
+
     case EffGeometryType::FixedGeomTotalAct:
       parts["GEOM"] = "FIXED-TOTAL";
       parts["FIXGEOM"] = "1"; //Left-over from when fixed geometry was just a boolean - can be removed probably
       break;
-      
+
     case EffGeometryType::FixedGeomActPerCm2:
       parts["GEOM"] = "FIXED-PER-CM2";
       break;
-      
+
     case EffGeometryType::FixedGeomActPerM2:
       parts["GEOM"] = "FIXED-PER-M2";
       break;
-      
+
     case EffGeometryType::FixedGeomActPerGram:
       parts["GEOM"] = "FIXED-PER-GRAM";
       break;
@@ -1848,9 +1955,13 @@ std::string DetectorPeakResponse::toAppUrl() const
 void DetectorPeakResponse::fromAppUrl( std::string url_query )
 {
   map<string,string> parts = AppUtils::query_str_key_values( url_query );
-  
-  if( !parts.count("VER") || (parts["VER"] != "1") )
-    throw runtime_error( "fromAppUrl: missing or invalid 'VER'" );
+
+  if( !parts.count("VER") )
+    throw runtime_error( "fromAppUrl: missing 'VER'" );
+
+  const string &ver = parts["VER"];
+  if( (ver != "1") && (ver != "2") )
+    throw runtime_error( "fromAppUrl: invalid 'VER' (expected 1 or 2, got '" + ver + "')" );
   
   string name, desc, eqn;
   float detectorDiameter = 0.0, efficiencyEnergyUnits = 1.0;
@@ -1865,7 +1976,9 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
   int64_t createdUtc = 0, lastUsedUtc = 0;
   double lowerEnergy = 0.0, upperEnergy = 0.0;
   //bool fixedGeometry = false;
-  EffGeometryType geom_type = EffGeometryType::FarField;
+  EffGeometryType geom_type = EffGeometryType::FarFieldIntrinsic;
+  double absoluteEfficiencyDistance = 0.0;
+  bool absEffCorrectForAirAtten = true;
   
   if( parts.count("NAME") )
     name = parts["NAME"];
@@ -1897,7 +2010,9 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
   {
     const string &v = parts["GEOM"];
     if( SpecUtils::iequals_ascii(v, "FAR-FIELD") )
-      geom_type = EffGeometryType::FarField;
+      geom_type = EffGeometryType::FarFieldIntrinsic;
+    else if( SpecUtils::iequals_ascii(v, "FAR-FIELD-ABSOLUTE") )
+      geom_type = EffGeometryType::FarFieldAbsolute;
     else if( SpecUtils::iequals_ascii(v, "FIXED-TOTAL") )
       geom_type = EffGeometryType::FixedGeomTotalAct;
     else if( SpecUtils::iequals_ascii(v, "FIXED-PER-CM2") )
@@ -1909,9 +2024,31 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
     else
       throw runtime_error( "fromAppUrl: invalid GEOM field: '" + v + "'" );
   }//if( parts.count("GEOM") )
-  
+
+  // Parse absolute efficiency parameters if applicable
+  if( geom_type == EffGeometryType::FarFieldAbsolute )
+  {
+    if( !parts.count("ABDIST") )
+      throw runtime_error( "fromAppUrl: missing required ABDIST component for FAR-FIELD-ABSOLUTE" );
+
+    if( !(stringstream(parts["ABDIST"]) >> absoluteEfficiencyDistance) || (absoluteEfficiencyDistance < 0.0) )
+      throw runtime_error( "fromAppUrl: invalid ABDIST component (must be >= 0)" );
+
+    // ABAIR defaults to true (1), only present if false (0)
+    if( parts.count("ABAIR") )
+    {
+      const string &v = parts["ABAIR"];
+      if( (v == "0") || SpecUtils::iequals_ascii(v, "false") )
+        absEffCorrectForAirAtten = false;
+      else if( (v == "1") || SpecUtils::iequals_ascii(v, "true") )
+        absEffCorrectForAirAtten = true;
+      else
+        throw runtime_error( "fromAppUrl: invalid ABAIR component: '" + v + "'" );
+    }
+  }//if( geom_type == EffGeometryType::FarFieldAbsolute )
+
   //if( !parts.count("DIAM") && !fixedGeometry )
-  if( !parts.count("DIAM") && (geom_type == EffGeometryType::FarField) )
+  if( !parts.count("DIAM") && ((geom_type == EffGeometryType::FarFieldIntrinsic) || (geom_type == EffGeometryType::FarFieldAbsolute)) )
     throw runtime_error( "fromAppUrl: missing required DIAM component" );
   
   if( parts.count("DIAM") )
@@ -2147,9 +2284,11 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
        
   m_lowerEnergy = lowerEnergy;
   m_upperEnergy = upperEnergy;
-  
+
   m_geomType = geom_type;
-  
+  m_absoluteEfficiencyDistance = absoluteEfficiencyDistance;
+  m_absEffCorrectForAirAtten = absEffCorrectForAirAtten;
+
   if( !isValid() )
     throw runtime_error( "fromAppUrl: DRF is invalid - even though it shouldnt be - logic error in this function." );
 }//void fromAppUrl( std::string url_query )
@@ -2330,130 +2469,13 @@ tuple<shared_ptr<DetectorPeakResponse>,double,double>
 }//shared_ptr<DetectorPeakResponse> parseEccFile( std::istream &input )
 
 
-shared_ptr<DetectorPeakResponse> DetectorPeakResponse::convertFixedGeometryToFarField(
-                                                        const double diameter,
-                                                        const double distance,
-                                                        const bool correct_for_air_atten ) const
-{
-  if( !isValid() )
-    throw runtime_error( "DetectorPeakResponse::convertFixedGeometryToFarField: Invalid input DRF" );
-  
-  if( m_geomType != EffGeometryType::FixedGeomTotalAct )
-    throw runtime_error( "DetectorPeakResponse::convertFixedGeometryToFarField:"
-                        " Input DRF not fixed-geometry" );
-  
-  if( (distance < 0.0) || IsInf(distance) || IsNan(distance) )
-    throw runtime_error( "DetectorPeakResponse::convertFixedGeometryToFarField: Invalid distance" );
-  
-  if( (diameter <= 0.0) || IsInf(diameter) || IsNan(diameter) )
-    throw runtime_error( "DetectorPeakResponse::convertFixedGeometryToFarField: Invalid diameter" );
-  
-  if( correct_for_air_atten &&
-     ( (m_efficiencyForm != EfficiencyFnctForm::kEnergyEfficiencyPairs)
-      && (m_efficiencyForm != EfficiencyFnctForm::kFunctialEfficienyForm)) )
-    throw runtime_error( "DetectorPeakResponse::convertFixedGeometryToFarField: air attenuation"
-                        " correction only allowed if DRF defined using energy-efficiency pairs"
-                        " or a functional efficiency form" );
-  
-  
-  shared_ptr<DetectorPeakResponse> answer = make_shared<DetectorPeakResponse>(*this);
-  answer->m_geomType = EffGeometryType::FarField;
-  answer->m_detectorDiameter = diameter;
-  
-  const double energy_units = answer->m_efficiencyEnergyUnits;
-  const float distancef = static_cast<float>( distance );
-  
-  
-  const double frac_angle = fractionalSolidAngle( diameter, distance );
-  if( (frac_angle <= 0.0) || IsInf(frac_angle) || IsNan(frac_angle) )
-    throw runtime_error( "DetectorPeakResponse::convertFixedGeometryToFarField: invalid"
-                         " fractional solid angle" );
-  
-  switch( answer->m_efficiencyForm )
-  {
-    case kEnergyEfficiencyPairs:
-    {
-      for( EnergyEfficiencyPair &ene_eff : answer->m_energyEfficiencies )
-      {
-        ene_eff.efficiency /= frac_angle;
-        
-        if( correct_for_air_atten && (ene_eff.efficiency > 0.0) )
-        {
-          const float energy = static_cast<float>( energy_units * ene_eff.energy );
-          const double mu = GammaInteractionCalc::transmission_coefficient_air( energy, distancef );
-          const double transmission_frac = exp( -mu );
-          if( (transmission_frac <= 0.0) || IsInf(transmission_frac) || IsNan(transmission_frac) )
-            throw runtime_error( "DetectorPeakResponse::convertFixedGeometryToFarField: air"
-                                " attenuation correction at "
-                                + std::to_string(floor(100*energy + 0.5)/100.0)
-                                + " keV was not possible." );
-          
-          ene_eff.efficiency /= transmission_frac;
-        }//if( correct_for_air_atten )
-      }//for( loop over answer->m_energyEfficiencies )
-      
-      break;
-    }//case kEnergyEfficiencyPairs:
-    
-      
-    case kFunctialEfficienyForm:
-    {
-      if( !answer->m_efficiencyFcn )
-        throw runtime_error( "DetectorPeakResponse::convertFixedGeometryToFarField: "
-                            "no function defined, which is unexpected." );
-      function<float(float)> old_fnctn = answer->m_efficiencyFcn;
-      
-      answer->m_efficiencyFcn
-      = [old_fnctn, frac_angle, correct_for_air_atten, distancef]( float energy ) -> float {
-        const float fixed_geom_eff = old_fnctn( energy );
-        double eff = fixed_geom_eff / frac_angle;
-        if( correct_for_air_atten && (eff > 0.0) ){
-          const double mu = GammaInteractionCalc::transmission_coefficient_air( energy, distancef );
-          const double transmission_frac = exp( -mu );
-          // We should probably check `transmission_frac` is not zero - but I guess we'll have to
-          //  look for this NaN later...
-          eff /= transmission_frac;
-        }
-        
-        return static_cast<float>( eff );
-      };//answer->m_efficiencyFcn lambda defintion
-      
-      break;
-    }//case kFunctialEfficienyForm:
-      
-    case kExpOfLogPowerSeries:
-    {
-      assert( !correct_for_air_atten );
-      if( m_expOfLogPowerSeriesCoeffs.empty() )
-        throw runtime_error( "DetectorPeakResponse::convertFixedGeometryToFarField: "
-                            "no coefficients defined, which is unexpected." );
-      
-      answer->m_expOfLogPowerSeriesCoeffs[0] += static_cast<float>( log(1.0 / frac_angle) );
-      
-      // TODO: if correct_for_air_atten is true, we could try to re-fit for the equation, or something...
-      
-      break;
-    }//case kExpOfLogPowerSeries:
-      
-    case kNumEfficiencyFnctForms:
-      assert( 0 );
-      throw runtime_error( "DetectorPeakResponse::convertFixedGeometryToFarField: invalid function form" );
-      break;
-  }//switch( m_efficiencyForm )
-  
-  answer->computeHash();
-
-  return answer;
-}//shared_ptr<DetectorPeakResponse> convertFixedGeometryToFarField(...)
-
-
 shared_ptr<DetectorPeakResponse> DetectorPeakResponse::convertFixedGeometryType( const double quantity,
                                                             const EffGeometryType to_type ) const
 {
   if( !isValid() )
     throw runtime_error( "DetectorPeakResponse::convertFixedGeometryType: Invalid input DRF" );
-  
-  if( m_geomType == EffGeometryType::FarField )
+
+  if( (m_geomType == EffGeometryType::FarFieldIntrinsic) || (m_geomType == EffGeometryType::FarFieldAbsolute) )
     throw runtime_error( "DetectorPeakResponse::convertFixedGeometryType:"
                         " Input DRF not fixed-geometry" );
   
@@ -2469,14 +2491,16 @@ shared_ptr<DetectorPeakResponse> DetectorPeakResponse::convertFixedGeometryType(
   double correction = quantity;
   switch( to_type )
   {
-    case EffGeometryType::FarField:
+    case EffGeometryType::FarFieldIntrinsic:
+    case EffGeometryType::FarFieldAbsolute:
       assert( 0 );
       break;
-      
+
     case EffGeometryType::FixedGeomTotalAct:
       switch( answer->m_geomType )
       {
-        case EffGeometryType::FarField:
+        case EffGeometryType::FarFieldIntrinsic:
+        case EffGeometryType::FarFieldAbsolute:
         case EffGeometryType::FixedGeomTotalAct:
           assert( 0 );
           break;
@@ -2565,6 +2589,93 @@ shared_ptr<DetectorPeakResponse> DetectorPeakResponse::convertFixedGeometryType(
 }//std::shared_ptr<DetectorPeakResponse> convertFixedGeometryType( const double quanitity, const EffGeometryType to_type ) const;
 
 
+std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::reinterpretAsFarFieldAbsEfficiency( const double diameter,
+                                                                      const double distance,
+                                                                      const bool correct_for_air_atten ) const
+{
+  if( !isValid() )
+    throw runtime_error( "DetectorPeakResponse::reinterpretAsFarFieldAbsEfficiency: Invalid input DRF" );
+
+  if( (distance < 0.0) || IsInf(distance) || IsNan(distance) )
+    throw runtime_error( "DetectorPeakResponse::reinterpretAsFarFieldAbsEfficiency: Invalid distance" );
+
+  if( (diameter <= 0.0) || IsInf(diameter) || IsNan(diameter) )
+    throw runtime_error( "DetectorPeakResponse::reinterpretAsFarFieldAbsEfficiency: Invalid diameter" );
+
+  // Create a copy of this DRF
+  shared_ptr<DetectorPeakResponse> answer = make_shared<DetectorPeakResponse>( *this );
+
+  // Set to FarFieldAbsolute with correction parameters
+  // The efficiency data remains unchanged; corrections are applied at runtime in intrinsic efficiency functions
+  answer->m_geomType = EffGeometryType::FarFieldAbsolute;
+  answer->m_absoluteEfficiencyDistance = distance;
+  answer->m_absEffCorrectForAirAtten = correct_for_air_atten;
+  answer->m_detectorDiameter = diameter;
+
+  answer->computeHash();
+
+  return answer;
+}//reinterpretAsFarFieldAbsEfficiency(...)
+
+
+std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::reinterpretAsFarFieldIntrinsicEfficiency( const double diameter ) const
+{
+  if( !isValid() )
+    throw runtime_error( "DetectorPeakResponse::reinterpretAsFarFieldAbsEfficiency: Invalid input DRF" );
+  
+  if( (diameter <= 0.0) || IsInf(diameter) || IsNan(diameter) )
+    throw runtime_error( "DetectorPeakResponse::reinterpretAsFarFieldAbsEfficiency: Invalid diameter" );
+  
+  // Create a copy of this DRF
+  shared_ptr<DetectorPeakResponse> answer = make_shared<DetectorPeakResponse>( *this );
+  
+  // Set to FarFieldAbsolute with correction parameters
+  // The efficiency data remains unchanged; corrections are applied at runtime in intrinsic efficiency functions
+  answer->m_geomType = EffGeometryType::FarFieldIntrinsic;
+  answer->m_absoluteEfficiencyDistance = -1.0;
+  answer->m_absEffCorrectForAirAtten = true;
+  answer->m_detectorDiameter = diameter;
+  
+  answer->computeHash();
+  
+  return answer;
+}//std::shared_ptr<DetectorPeakResponse> reinterpretAsFarFieldIntrinsicEfficiency( const double detector_diameter ) const;
+
+
+std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::reinterpretAsFixedGeom( const EffGeometryType to_type ) const
+{
+  if( !isValid() )
+    throw runtime_error( "DetectorPeakResponse::reinterpretAsFixedGeom: Invalid input DRF" );
+  
+  switch( to_type )
+  {
+    case EffGeometryType::FarFieldIntrinsic:
+    case EffGeometryType::FarFieldAbsolute:
+      throw runtime_error( "DetectorPeakResponse::reinterpretAsFixedGeom: Invalid convert to type" );
+      break;
+    case EffGeometryType::FixedGeomTotalAct:
+    case EffGeometryType::FixedGeomActPerCm2:
+    case EffGeometryType::FixedGeomActPerM2:
+    case EffGeometryType::FixedGeomActPerGram:
+      break;
+  }//switch( to_type )
+  
+  // Create a copy of this DRF
+  shared_ptr<DetectorPeakResponse> answer = make_shared<DetectorPeakResponse>( *this );
+  
+  // Set to FarFieldAbsolute with correction parameters
+  // The efficiency data remains unchanged; corrections are applied at runtime in intrinsic efficiency functions
+  answer->m_geomType = to_type;
+  answer->m_absoluteEfficiencyDistance = -1.0;
+  answer->m_absEffCorrectForAirAtten = true;
+  answer->m_detectorDiameter = -1.0f;
+  
+  answer->computeHash();
+  
+  return answer;
+}//std::shared_ptr<DetectorPeakResponse> reinterpretAsFixedGeom() const
+
+
 void DetectorPeakResponse::setFwhmCoefficients( const std::vector<float> &coefs,
                          const ResolutionFnctForm form )
 {
@@ -2613,16 +2724,31 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
   xml_node<char> *base_node = doc->allocate_node( node_element, "DetectorPeakResponse" );
   parent->append_node( base_node );
   
-  // We will write XML version 0, if m_geomType is not far-field (this was only change between 0 and 1)
-  static_assert( sm_xmlSerializationVersion == 2, "Update DetectorPeakResponse sm_xmlSerializationVersion");
-  
-  if( m_resolutionForm == ResolutionFnctForm::kConstantPlusSqrtEnergy )
+  // Version history:
+  // - Version 0: Original, no geometry type
+  // - Version 1: Added geometry type (20230916)
+  // - Version 2: Added kConstantPlusSqrtEnergy resolution form (20240410)
+  // - Version 3: Added FarFieldAbsolute geometry type with absolute efficiency parameters (20251130)
+  static_assert( sm_xmlSerializationVersion == 3, "Update DetectorPeakResponse sm_xmlSerializationVersion");
+
+  int version_to_write = 0;
+
+  if( m_geomType == EffGeometryType::FarFieldAbsolute )
   {
-    snprintf( buffer, sizeof(buffer), "%i", sm_xmlSerializationVersion );
-  }else
+    // FarFieldAbsolute requires version 3
+    version_to_write = 3;
+  }else if( m_resolutionForm == ResolutionFnctForm::kConstantPlusSqrtEnergy )
   {
-    snprintf( buffer, sizeof(buffer), "%i", ((m_geomType != EffGeometryType::FarField) ? 1 : 0) );
+    // kConstantPlusSqrtEnergy requires version 2
+    version_to_write = 2;
+  }else if( m_geomType != EffGeometryType::FarFieldIntrinsic )
+  {
+    // Fixed geometry types require version 1
+    version_to_write = 1;
   }
+  // else: FarFieldIntrinsic can use version 0
+
+  snprintf( buffer, sizeof(buffer), "%i", version_to_write );
   
   const char *value = doc->allocate_string( buffer );
   xml_attribute<char> *attr = doc->allocate_attribute( "version", value );
@@ -2636,13 +2762,13 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
   node = doc->allocate_node( node_element, "Description", val );
   base_node->append_node( node );
   
-  if( (m_geomType == EffGeometryType::FarField) || (m_detectorDiameter > 0.0) )
+  if( (m_geomType == EffGeometryType::FarFieldIntrinsic) || (m_geomType == EffGeometryType::FarFieldAbsolute) || (m_detectorDiameter > 0.0) )
   {
     snprintf( buffer, sizeof(buffer), "%1.8E", m_detectorDiameter );
     val = doc->allocate_string( buffer );
     node = doc->allocate_node( node_element, "DetectorDiameter", val );
     base_node->append_node( node );
-  }//if( (m_geomType == EffGeometryType::FarField) || (m_detectorDiameter > 0.0) )
+  }//if( (m_geomType == EffGeometryType::FarFieldIntrinsic) || (m_geomType == EffGeometryType::FarFieldAbsolute) || (m_detectorDiameter > 0.0) )
   
   val = "UnknownDrfSource";
   switch( m_efficiencySource )
@@ -2788,17 +2914,32 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
   const char *geom_type_str = "FAR-FIELD";
   switch( m_geomType )
   {
-    case EffGeometryType::FarField:            break;
-    case EffGeometryType::FixedGeomTotalAct:   geom_type_str = "FIXED-TOTAL";    break;
-    case EffGeometryType::FixedGeomActPerCm2:  geom_type_str = "FIXED-PER-CM2";  break;
-    case EffGeometryType::FixedGeomActPerM2:   geom_type_str = "FIXED-PER-M2";   break;
-    case EffGeometryType::FixedGeomActPerGram: geom_type_str = "FIXED-PER-GRAM"; break;
+    case EffGeometryType::FarFieldIntrinsic:   break;  // Keep as "FAR-FIELD" for backward compatibility
+    case EffGeometryType::FarFieldAbsolute:    geom_type_str = "FAR-FIELD-ABSOLUTE";  break;
+    case EffGeometryType::FixedGeomTotalAct:   geom_type_str = "FIXED-TOTAL";         break;
+    case EffGeometryType::FixedGeomActPerCm2:  geom_type_str = "FIXED-PER-CM2";       break;
+    case EffGeometryType::FixedGeomActPerM2:   geom_type_str = "FIXED-PER-M2";        break;
+    case EffGeometryType::FixedGeomActPerGram: geom_type_str = "FIXED-PER-GRAM";      break;
   }//switch( m_geomType )
-  
+
   node = doc->allocate_node( node_element, "Geometry", geom_type_str );
   base_node->append_node( node );
-  
-  
+
+  // Serialize absolute efficiency parameters if applicable
+  if( m_geomType == EffGeometryType::FarFieldAbsolute )
+  {
+    snprintf( buffer, sizeof(buffer), "%1.8E", m_absoluteEfficiencyDistance );
+    val = doc->allocate_string( buffer );
+    node = doc->allocate_node( node_element, "AbsoluteEfficiencyDistance", val );
+    base_node->append_node( node );
+
+    snprintf( buffer, sizeof(buffer), "%i", m_absEffCorrectForAirAtten ? 1 : 0 );
+    val = doc->allocate_string( buffer );
+    node = doc->allocate_node( node_element, "AbsEffCorrectForAirAtten", val );
+    base_node->append_node( node );
+  }//if( m_geomType == EffGeometryType::FarFieldAbsolute )
+
+
   if( m_createdUtc )
   {
     stringstream strm;
@@ -2850,9 +2991,10 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
     throw runtime_error( "DetectorPeakResponse missing Description node" );
   m_description = node->value();
   
-  
-  m_geomType = EffGeometryType::FarField;
-  
+
+
+  m_geomType = EffGeometryType::FarFieldIntrinsic;
+
   node = parent->first_node( "FixedGeometry", 13 );
   if( node )
   {
@@ -2878,7 +3020,9 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   if( node )
   {
     if( compare(node->value(), node->value_size(), "FAR-FIELD", 9, false) )
-      m_geomType = EffGeometryType::FarField;
+      m_geomType = EffGeometryType::FarFieldIntrinsic;
+    else if( compare(node->value(), node->value_size(), "FAR-FIELD-ABSOLUTE", 18, false) )
+      m_geomType = EffGeometryType::FarFieldAbsolute;
     else if( compare(node->value(), node->value_size(), "FIXED-TOTAL", 11, false) )
       m_geomType = EffGeometryType::FixedGeomTotalAct;
     else if( compare(node->value(), node->value_size(), "FIXED-PER-CM2", 13, false) )
@@ -2891,9 +3035,31 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
       throw runtime_error( "DetectorPeakResponse has Geometry value: "
                           + string(node->value(), node->value() + node->value_size()) );
   }//if( node )
-  
+
+  // Parse absolute efficiency parameters if applicable
+  if( m_geomType == EffGeometryType::FarFieldAbsolute )
+  {
+    m_absoluteEfficiencyDistance = XmlUtils::get_float_node_value( parent, "AbsoluteEfficiencyDistance" );
+
+    if( m_absoluteEfficiencyDistance < 0.0 )
+      throw runtime_error( "DetectorPeakResponse AbsoluteEfficiencyDistance must be >= 0 for FAR-FIELD-ABSOLUTE geometry" );
+
+    // Try to get air attenuation correction flag; default to true if not present
+    try
+    {
+      m_absEffCorrectForAirAtten = XmlUtils::get_bool_node_value( parent, "AbsEffCorrectForAirAtten" );
+    }catch( ... )
+    {
+      m_absEffCorrectForAirAtten = true;  // Default value
+    }
+  }else
+  {
+    m_absoluteEfficiencyDistance = -1.0;
+    m_absEffCorrectForAirAtten = true;
+  }
+
   node = parent->first_node( "DetectorDiameter", 16 );
-  if( (!node || !node->value()) && (m_geomType == EffGeometryType::FarField) )
+  if( (!node || !node->value()) && ((m_geomType == EffGeometryType::FarFieldIntrinsic) || (m_geomType == EffGeometryType::FarFieldAbsolute)) )
     throw runtime_error( "DetectorPeakResponse missing DetectorDiameter node" );
   if( node && node->value() )
     m_detectorDiameter = atof( node->value() );
@@ -3411,14 +3577,55 @@ const vector<DetectorPeakResponse::EnergyEfficiencyPair> &DetectorPeakResponse::
 }//std::vector<EnergyEfficiencyPair> DetectorPeakResponse::getEnergyEfficiencyPair()
 
 
+float DetectorPeakResponse::absoluteToIntrinsicMultiple( const float energy ) const
+{
+  // Only apply corrections for FarFieldAbsolute geometry type
+  if( (m_geomType != EffGeometryType::FarFieldAbsolute)
+      || (m_absoluteEfficiencyDistance < 0.0) )
+    return 1.0f;
+
+  // Calculate geometric correction factor
+  const double frac_angle = fractionalSolidAngle( m_detectorDiameter, m_absoluteEfficiencyDistance );
+  double factor = 1.0 / frac_angle;
+
+  // Apply air attenuation correction if requested
+  if( m_absEffCorrectForAirAtten )
+  {
+    const double mu = GammaInteractionCalc::transmission_coefficient_air( energy, m_absoluteEfficiencyDistance );
+    const double transmission_frac = exp( -mu );
+
+    if( transmission_frac > 1.0e-10 )
+    {
+      factor /= transmission_frac;
+    }else
+    {
+      // Essentially total attenuation
+      factor = std::numeric_limits<float>::max();
+    }
+  }
+
+  return static_cast<float>( factor );
+}//absoluteToIntrinsicMultiple(...)
+
+
 float DetectorPeakResponse::intrinsicEfficiencyFromPairs( float energy ) const
 {
   energy /= m_efficiencyEnergyUnits;
-  
+
   if( m_energyEfficiencies.size() < 2 )
     throw runtime_error("DetectorPeakResponse objects must be initialized "
                         "before calling intrinsicEfficiencyFromPairs(...)");
-  return akimaInterpolate( energy, m_energyEfficiencies );
+
+  float eff = akimaInterpolate( energy, m_energyEfficiencies );
+
+  // Apply absolute-to-intrinsic correction if needed
+  if( m_geomType == EffGeometryType::FarFieldAbsolute )
+  {
+    const float energy_with_units = energy * m_efficiencyEnergyUnits;
+    eff *= absoluteToIntrinsicMultiple( energy_with_units );
+  }
+
+  return eff;
 }//double DetectorPeakResponse::absoluteEfficiencyFromPairs( const float energy ) const
 
 
@@ -3465,11 +3672,21 @@ float DetectorPeakResponse::akimaInterpolate( const float z,
 float DetectorPeakResponse::intrinsicEfficiencyFromFcn( float energy ) const
 {
   energy /= m_efficiencyEnergyUnits;
-  
+
   if( !m_efficiencyFcn )
     throw runtime_error( "DetectorPeakResponse objects must be initialized "
                          "before calling intrinsicEfficiencyFromFcn(...)" );
-  return m_efficiencyFcn( energy );
+
+  float eff = m_efficiencyFcn( energy );
+
+  // Apply absolute-to-intrinsic correction if needed
+  if( m_geomType == EffGeometryType::FarFieldAbsolute )
+  {
+    const float energy_with_units = energy * m_efficiencyEnergyUnits;
+    eff *= absoluteToIntrinsicMultiple( energy_with_units );
+  }
+
+  return eff;
 }//double intrinsicEfficiencyFromFcn( const float energy ) const
 
 
@@ -3478,20 +3695,31 @@ float DetectorPeakResponse::intrinsicEfficiencyFromExpLnEqn( float energy ) cons
   if( m_expOfLogPowerSeriesCoeffs.empty() )
     throw runtime_error( "DetectorPeakResponse objects must be initialized "
                          "before calling intrinsicEfficiencyFromExpLnEqn(...)" );
- 
+
   energy /= m_efficiencyEnergyUnits;
-  return expOfLogPowerSeriesEfficiency( energy, m_expOfLogPowerSeriesCoeffs );
+
+  float eff = expOfLogPowerSeriesEfficiency( energy, m_expOfLogPowerSeriesCoeffs );
+
+  // Apply absolute-to-intrinsic correction if needed
+  if( m_geomType == EffGeometryType::FarFieldAbsolute )
+  {
+    const float energy_with_units = energy * m_efficiencyEnergyUnits;
+    eff *= absoluteToIntrinsicMultiple( energy_with_units );
+  }
+
+  return eff;
 }//float intrinsicEfficiencyFromExpLnEqn( float energy ) const
 
 
 float DetectorPeakResponse::expOfLogPowerSeriesEfficiency( const float energy,
                                            const std::vector<float> &coefs )
 {
-  float exparg = 0.0f;
-  const float x = log( energy );
+  double exparg = 0.0;
+  const double x = log( static_cast<double>(energy) );
   for( size_t i = 0; i < coefs.size(); ++i )
-    exparg += coefs[i] * pow(x,static_cast<float>(i));
-  return exp( exparg );
+    exparg += coefs[i] * pow(x,static_cast<double>(i));
+  const double answer = exp( exparg );
+  return (answer >= 0.0) ? static_cast<float>(answer) : 0.0f;
 }//float expOfLogPowerSeriesEfficiency(...)
 
 
@@ -3523,6 +3751,8 @@ float DetectorPeakResponse::intrinsicEfficiency( const float energy ) const
 std::function<float( float )> DetectorPeakResponse::intrinsicEfficiencyFcn() const
 {
   const double energy_units = m_efficiencyEnergyUnits;
+  const double lowerEnergy = m_lowerEnergy;
+  const double upperEnergy = m_upperEnergy;
 
   switch( m_efficiencyForm )
   {
@@ -3544,7 +3774,12 @@ std::function<float( float )> DetectorPeakResponse::intrinsicEfficiencyFcn() con
       if( !eff_fcnt )
         return nullptr;
 
-      return [energy_units, eff_fcnt]( float energy ) -> float {
+      return [energy_units, eff_fcnt, lowerEnergy, upperEnergy]( float energy ) -> float {
+        if( (lowerEnergy > 10.0) && (energy < lowerEnergy) )
+          return eff_fcnt( lowerEnergy / energy_units );
+        if( (upperEnergy > 10.0) && (energy > upperEnergy) )
+          return eff_fcnt( upperEnergy / energy_units );
+        
         return eff_fcnt( energy / energy_units );
       };
     }//case kFunctialEfficienyForm:
@@ -3556,7 +3791,11 @@ std::function<float( float )> DetectorPeakResponse::intrinsicEfficiencyFcn() con
         return nullptr;
 
       const vector<float> coeffs = m_expOfLogPowerSeriesCoeffs;
-      return [energy_units, coeffs]( float energy ) -> float {
+      return [energy_units, coeffs, lowerEnergy, upperEnergy]( float energy ) -> float {
+        if( (lowerEnergy > 10.0) && (energy < lowerEnergy) )
+          return expOfLogPowerSeriesEfficiency( lowerEnergy / energy_units, coeffs );
+        if( (upperEnergy > 10.0) && (energy > upperEnergy) )
+          return expOfLogPowerSeriesEfficiency( upperEnergy / energy_units, coeffs );
         return expOfLogPowerSeriesEfficiency( energy / energy_units, coeffs );
       };
     }//case kExpOfLogPowerSeries:
@@ -3582,8 +3821,7 @@ float DetectorPeakResponse::peakResolutionFWHM( float energy,
       if( pars.size() != 3 )
         throw std::runtime_error( "DetectorPeakResponse::peakResolutionSigma():"
                                  " pars not defined" );
-      
-      energy /= PhysicalUnits::keV;
+      assert( PhysicalUnits::keV == 1.0 );
       
       /*
        // 20231223: a updated straight-forward translation from the fortran is:
@@ -3605,26 +3843,24 @@ float DetectorPeakResponse::peakResolutionFWHM( float energy,
        return 6.61f * resolution661 * std::pow(std::max(30.0f,energy)/661.0f, p );
        */
       
-      const float &a = pars[0];
-      const float &b = pars[1];
-      const float &c = pars[2];
-      
-      
+      const double a = pars[0];
+      const double b = pars[1];
+      const double c = pars[2];
       
       if( energy >= 661.0f || fabs(a)<float(1.0E-6) )
-        return 6.61f * b * pow(energy/661.0f, c);
-      
+        return static_cast<float>( 6.61 * b * pow(energy/661.0, c) );
+
       if( a < 0.0 )
       {
-        const float p = pow( c, float(1.0f/log(1.0f-a)) );
-        return 6.61f * b * pow(energy/661.0f, p);
+        const double p = pow( c, 1.0/log(1.0-a) );
+        return static_cast<float>( 6.61 * b * pow(energy/661.0, p) );
       }//if( a < 0.0 )
       
-      if( a > 6.61f*b )
-        return a;
-      
-      const float A7 = sqrt( pow(float(6.61f*b), float(2.0f))-a*a )/6.61f;
-      return sqrt(a*a + pow(float(6.61f * A7 * pow(energy/661.0f, c)), 2.0f));
+      if( a > 6.61*b )
+        return static_cast<float>( a );
+
+      const double A7 = sqrt( pow( 6.61*b, 2.0) - a*a ) / 6.61;
+      return static_cast<float>( sqrt(a*a + pow( 6.61 * A7 * pow(energy/661.0, c), 2.0)) );
     }//case kGadrasResolutionFcn:
     
     case kSqrtEnergyPlusInverse:
@@ -3704,10 +3940,458 @@ float DetectorPeakResponse::peakResolutionSigma( const float energy ) const
 }//double peakResolutionSigma( float energy ) const
 
 
+std::string DetectorPeakResponse::javaScriptFwhmFunction() const
+{
+  if( !hasResolutionInfo() )
+  {
+    throw std::runtime_error( "DetectorPeakResponse::javaScriptFwhmFunction(): "
+                              "detector does not have resolution information" );
+  }
+  
+  return javaScriptFwhmFunction( m_resolutionCoeffs, m_resolutionForm );
+}//std::string javaScriptFwhmFunction() const
+
+
+std::string DetectorPeakResponse::javaScriptFwhmFunction( const std::vector<float> &coeffs,
+                                                          const ResolutionFnctForm form )
+{
+  std::string js_fwhm_fcn;
+  
+  switch( form )
+  {
+    case kGadrasResolutionFcn:
+      if( coeffs.size() >= 3 )
+      {
+        js_fwhm_fcn = "function(e) { var a=" + std::to_string(coeffs[0]) +
+        ", b=" + std::to_string(coeffs[1]) +
+        ", c=" + std::to_string(coeffs[2]) +
+        "; e = Math.max(1.0, e);" +
+        " if(e > 661.0) return 6.61 * b * Math.pow(e/661.0, c);" +
+        " if(a >= 0.0) { var ZeroLimit = Math.max(0.0, Math.abs(a)*(661.0-e)/661.0);" +
+        " var FWHM = 6.61 * b * Math.pow(e/661.0, c);" +
+        " return Math.sqrt(ZeroLimit*ZeroLimit + FWHM*FWHM); }" +
+        " if(a > 6.61*b) return a;" +
+        " var A7 = Math.sqrt(Math.pow(6.61*b, 2.0) - a*a) / 6.61;" +
+        " return Math.sqrt(a*a + Math.pow(6.61 * A7 * Math.pow(e/661.0, c), 2.0)); }";
+      }
+      break;
+      
+    case kSqrtEnergyPlusInverse:
+      if( coeffs.size() >= 3 )
+      {
+        js_fwhm_fcn = "function(e) { return Math.sqrt(" + std::to_string(coeffs[0]) +
+        " + " + std::to_string(coeffs[1]) + "*e + " + std::to_string(coeffs[2]) + "/e); }";
+      }
+      break;
+      
+    case kConstantPlusSqrtEnergy:
+      if( coeffs.size() >= 2 )
+      {
+        js_fwhm_fcn = "function(e) { return " + std::to_string(coeffs[0]) +
+        " + " + std::to_string(coeffs[1]) + "*Math.sqrt(e); }";
+      }
+      break;
+      
+    case kSqrtPolynomial:
+      if( !coeffs.empty() )
+      {
+        js_fwhm_fcn = "function(e) { e = e/1000.0; var val = " + std::to_string(coeffs.back()) + ";";
+        for( int i = static_cast<int>(coeffs.size()) - 2; i >= 0; i-- )
+        {
+          js_fwhm_fcn += " val = val * e + " + std::to_string(coeffs[i]) + ";";
+        }
+        js_fwhm_fcn += " return Math.sqrt(val); }";
+      }
+      break;
+      
+    case kNumResolutionFnctForm:
+      break;
+  }
+  
+  if( js_fwhm_fcn.empty() )
+  {
+    throw std::runtime_error( "DetectorPeakResponse::javaScriptFwhmFunction(): "
+                              "unable to generate JavaScript function for resolution form" );
+  }
+  
+  return js_fwhm_fcn;
+}//static std::string javaScriptFwhmFunction(...)
+
+
 float DetectorPeakResponse::detectorDiameter() const
 {
   return m_detectorDiameter;
 }
+
+
+double DetectorPeakResponse::absoluteEfficiencyDistance() const
+{
+  return m_absoluteEfficiencyDistance;
+}
+
+void DetectorPeakResponse::printDetectorParameterizationToStdout() const
+{
+  using std::cout;
+  using std::endl;
+  
+  cout << "\n========== DETECTOR PARAMETERIZATION ===========" << endl;
+  cout << "// Copy and paste this into hardcoded detector creation code" << endl;
+  cout << "Name: \"" << m_name << "\"" << endl;
+  cout << "Description: \"" << m_description << "\"" << endl;
+  
+  // Detector diameter
+  if( m_detectorDiameter > 0.0 )
+  {
+    const std::string diam_str = PhysicalUnits::printToBestLengthUnits( m_detectorDiameter );
+    cout << "Detector Diameter: " << diam_str << " (" << m_detectorDiameter << " mm)" << endl;
+  }
+  
+  // Geometry type
+  cout << "Geometry Type: ";
+  switch( m_geomType )
+  {
+    case EffGeometryType::FarFieldIntrinsic: cout << "FarFieldIntrinsic"; break;
+    case EffGeometryType::FarFieldAbsolute: cout << "FarFieldAbsolute"; break;
+    case EffGeometryType::FixedGeomTotalAct: cout << "FixedGeomTotalAct"; break;
+    case EffGeometryType::FixedGeomActPerCm2: cout << "FixedGeomActPerCm2"; break;
+    case EffGeometryType::FixedGeomActPerM2: cout << "FixedGeomActPerM2"; break;
+    default: cout << "Unknown(" << static_cast<int>(m_geomType) << ")"; break;
+  }
+  cout << endl;
+  
+  // Efficiency information
+  cout << "\n--- EFFICIENCY ---" << endl;
+  cout << "Efficiency Function Type: ";
+  switch( m_efficiencyForm )
+  {
+    case kEnergyEfficiencyPairs: cout << "EnergyEfficiencyPairs"; break;
+    case kFunctialEfficienyForm: cout << "FunctionalEfficiencyForm"; break;
+    case kExpOfLogPowerSeries: cout << "ExpOfLogPowerSeries"; break;
+    case kNumEfficiencyFnctForms: cout << "NumEfficiencyFnctForms"; break;
+  }
+  cout << endl;
+  
+  cout << "Energy Units: " << m_efficiencyEnergyUnits;
+  if( std::abs(m_efficiencyEnergyUnits - static_cast<float>(PhysicalUnits::keV)) < 0.001 )
+    cout << " (keV)";
+  else if( std::abs(m_efficiencyEnergyUnits - static_cast<float>(PhysicalUnits::MeV)) < 0.001 )
+    cout << " (MeV)";
+  cout << endl;
+  
+  if( m_efficiencyForm == kExpOfLogPowerSeries && !m_expOfLogPowerSeriesCoeffs.empty() )
+  {
+    cout << "ExpOfLogPowerSeries Coefficients: {";
+    for( size_t i = 0; i < m_expOfLogPowerSeriesCoeffs.size(); ++i )
+    {
+      if( i > 0 ) cout << ", ";
+      cout << std::scientific << std::setprecision(8) << m_expOfLogPowerSeriesCoeffs[i];
+    }
+    cout << "}" << endl;
+    
+    if( !m_expOfLogPowerSeriesUncerts.empty() )
+    {
+      cout << "ExpOfLogPowerSeries Uncertainties: {";
+      for( size_t i = 0; i < m_expOfLogPowerSeriesUncerts.size(); ++i )
+      {
+        if( i > 0 ) cout << ", ";
+        cout << std::scientific << std::setprecision(8) << m_expOfLogPowerSeriesUncerts[i];
+      }
+      cout << "}" << endl;
+    }
+  }
+  
+  if( m_efficiencyForm == kFunctialEfficienyForm && !m_efficiencyFormula.empty() )
+  {
+    cout << "Efficiency Formula: \"" << m_efficiencyFormula << "\"" << endl;
+  }
+  
+  if( m_efficiencyForm == kEnergyEfficiencyPairs && !m_energyEfficiencies.empty() )
+  {
+    cout << "Energy-Efficiency Pairs (" << m_energyEfficiencies.size() << " points):" << endl;
+    for( size_t i = 0; i < std::min(size_t(10), m_energyEfficiencies.size()); ++i )
+    {
+      cout << "  {" << m_energyEfficiencies[i].energy << ", " 
+           << std::scientific << std::setprecision(6) << m_energyEfficiencies[i].efficiency << "}";
+      if( i + 1 < std::min(size_t(10), m_energyEfficiencies.size()) ) cout << ",";
+      cout << endl;
+    }
+    if( m_energyEfficiencies.size() > 10 )
+      cout << "  ... (" << (m_energyEfficiencies.size() - 10) << " more points)" << endl;
+    
+    
+    const int fcnOrder = 6;
+    std::vector<float> fit_pars, fit_pars_incert;
+    std::vector<MakeDrfFit::DetEffDataPoint> eff_points;
+    for( const EnergyEfficiencyPair &eff : m_energyEfficiencies )
+    {
+      if( eff.energy < 45 || eff.energy > 3000 )
+        continue;
+      
+      MakeDrfFit::DetEffDataPoint p;
+      p.energy = eff.energy / 1000.0;
+      p.efficiency = eff.efficiency;
+      p.efficiency_uncert = 0.01*eff.efficiency;
+      eff_points.push_back( p );
+    }
+    const double chi2 = MakeDrfFit::performEfficiencyFit( eff_points, fcnOrder, fit_pars, fit_pars_incert );
+    
+    cout << "ExpOfLogPowerSeries (chi2/dof=" << chi2 << "/" << (eff_points.size() - fcnOrder) << ") equivalent Coefficients: {";
+    for( size_t i = 0; i < fit_pars.size(); ++i )
+    {
+      if( i > 0 ) cout << ", ";
+      cout << std::scientific << std::setprecision(8) << fit_pars[i];
+    }
+    cout << "}" << endl;
+    
+    cout << "\n\nComparison to original:" << endl;
+    double max_error = 0.0, min_error = 100000, average_error = 0.0, num_points = 0;
+    for( const EnergyEfficiencyPair &eff : m_energyEfficiencies )
+    {
+      const double fit_eff = expOfLogPowerSeriesEfficiency( 0.001*eff.energy, fit_pars);
+      const double percent_error = (100.0*fabs(eff.efficiency - fit_eff)/eff.efficiency);
+      if( eff.energy >= 49 && eff.energy < 2650.0 )
+      {
+        num_points += 1;
+        max_error = std::max( max_error, percent_error );
+        min_error = std::min( min_error, percent_error );
+        average_error += percent_error;
+      }
+      
+      cout << "\tEnergy: " << std::fixed << eff.energy << " keV, OrigEff: " << std::scientific << eff.efficiency
+      << ", FitEff: " << fit_eff
+      << ", error: " << std::fixed << percent_error << "%" << endl;
+    }
+    average_error /= num_points;
+    cout << "Between 50 and 2600 keV, average error is " << average_error << "%, with max error " << max_error << "%" << endl;
+    cout << "----" << endl;
+  }
+  
+  // Resolution (FWHM) information
+  if( hasResolutionInfo() )
+  {
+    cout << "\n--- RESOLUTION (FWHM) ---" << endl;
+    cout << "Resolution Function Type: ";
+    switch( m_resolutionForm )
+    {
+      case kGadrasResolutionFcn: cout << "GadrasResolutionFcn"; break;
+      case kSqrtPolynomial: cout << "SqrtPolynomial"; break;
+      case kSqrtEnergyPlusInverse: cout << "SqrtEnergyPlusInverse"; break;
+      default: cout << "Unknown(" << static_cast<int>(m_resolutionForm) << ")"; break;
+    }
+    cout << endl;
+    
+    if( !m_resolutionCoeffs.empty() )
+    {
+      cout << "Resolution Coefficients: {";
+      for( size_t i = 0; i < m_resolutionCoeffs.size(); ++i )
+      {
+        if( i > 0 ) cout << ", ";
+        cout << std::scientific << std::setprecision(8) << m_resolutionCoeffs[i];
+      }
+      cout << "}" << endl;
+      
+      if( !m_resolutionUncerts.empty() )
+      {
+        cout << "Resolution Uncertainties: {";
+        for( size_t i = 0; i < m_resolutionUncerts.size(); ++i )
+        {
+          if( i > 0 ) cout << ", ";
+          cout << std::scientific << std::setprecision(8) << m_resolutionUncerts[i];
+        }
+        cout << "}" << endl;
+      }
+    }
+  }
+  else
+  {
+    cout << "\n--- RESOLUTION (FWHM) ---" << endl;
+    cout << "No resolution information available" << endl;
+  }
+  
+  cout << "\n--- EXAMPLE CODE ---" << endl;
+  cout << "// Create detector like this:" << endl;
+  cout << "auto detector = std::make_shared<DetectorPeakResponse>(\"" << m_name << "\", \"" << m_description << "\");" << endl;
+  
+  if( m_efficiencyForm == kExpOfLogPowerSeries && !m_expOfLogPowerSeriesCoeffs.empty() )
+  {
+    cout << "std::vector<float> eff_coeffs = {";
+    for( size_t i = 0; i < m_expOfLogPowerSeriesCoeffs.size(); ++i )
+    {
+      if( i > 0 ) cout << ", ";
+      cout << m_expOfLogPowerSeriesCoeffs[i] << "f";
+    }
+    cout << "};" << endl;
+    cout << "detector->fromExpOfLogPowerSeries(eff_coeffs, {}, 0.0f, "
+         << m_detectorDiameter << "f, " << m_efficiencyEnergyUnits << "f, 0.0f, 0.0f, "
+         << "DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic);" << endl;
+  }
+  
+  if( hasResolutionInfo() && !m_resolutionCoeffs.empty() )
+  {
+    cout << "std::vector<float> res_coeffs = {";
+    for( size_t i = 0; i < m_resolutionCoeffs.size(); ++i )
+    {
+      if( i > 0 ) cout << ", ";
+      cout << m_resolutionCoeffs[i] << "f";
+    }
+    cout << "};" << endl;
+    cout << "detector->setResolutionFunctionCoeffs(res_coeffs, DetectorPeakResponse::";
+    switch( m_resolutionForm )
+    {
+      case kGadrasResolutionFcn: cout << "kGadrasResolutionFcn"; break;
+      case kSqrtPolynomial: cout << "kSqrtPolynomial"; break;
+      case kSqrtEnergyPlusInverse: cout << "kSqrtEnergyPlusInverse"; break;
+      default: cout << "kGadrasResolutionFcn"; break;
+    }
+    cout << ");" << endl;
+  }
+  
+  cout << "=================================================" << endl << endl;
+}
+
+
+
+std::shared_ptr<const DetectorPeakResponse> DetectorPeakResponse::getGenericHPGeDetector()
+{
+  static std::shared_ptr<const DetectorPeakResponse> s_detector;
+  
+  std::lock_guard<std::mutex> lock( s_generic_det_mutex );
+  
+  if( !s_detector )
+  {
+    auto detector = std::make_shared<DetectorPeakResponse>( "Generic HPGe", "" );
+    
+    // Eff coefficients from "ORTEC Detective-X_LANL_100cm (59%)"
+    std::vector<float> eff_coeffs = {-1.58287716e+00, -7.39438057e-01, 3.77921872e-02, -4.59978022e-02, -4.18332592e-02};
+    detector->fromExpOfLogPowerSeries( eff_coeffs, {}, 0.0f, 6.50*PhysicalUnits::cm, PhysicalUnits::MeV,
+                                            55.0f, 3000.0f, EffGeometryType::FarFieldIntrinsic );
+    
+    // Use FWHM from the generic 40% HPGe GADRAS detector included with InterSpec
+    std::vector<float> res_coeffs = {1.54999995e+00, 2.50000000e-01, 3.49999994e-01};
+    
+    detector->setFwhmCoefficients( res_coeffs, kGadrasResolutionFcn );
+    detector->setDrfSource( DrfSource::UnknownDrfSource );
+    
+    s_detector = std::const_pointer_cast<const DetectorPeakResponse>( detector );
+  }//if( !s_detector )
+  
+  return s_detector;
+}
+
+
+std::shared_ptr<const DetectorPeakResponse> DetectorPeakResponse::getGenericNaIDetector()
+{
+  static std::shared_ptr<const DetectorPeakResponse> s_detector;
+  
+  std::lock_guard<std::mutex> lock( s_generic_det_mutex );
+  
+  if( !s_detector )
+  {
+    auto detector = std::make_shared<DetectorPeakResponse>( "Generic NaI(Tl)", "12% Efficiency, 6.9% FWHM @661 keV" );
+    
+    // From "Canberra Inspector 1000 (12%)"
+    vector<float> eff_coeffs = {-2.22847652e+00f, -1.89709997e+00f, -1.02779996e+00f, -4.63600010e-01f, -1.06799997e-01f};
+    detector->fromExpOfLogPowerSeries(eff_coeffs, {}, 0.0f, 5.08*PhysicalUnits::cm, PhysicalUnits::MeV,
+                                            45.0f, 3000.0f, DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+    
+    // FWHM from "RadSeeker-NaI"
+    std::vector<float> res_coeffs = {-8.18999958e+00, 6.94000006e+00, 5.64000010e-01};
+    
+    detector->setFwhmCoefficients( res_coeffs, kGadrasResolutionFcn );
+    detector->setDrfSource( DrfSource::UnknownDrfSource );
+    
+    s_detector = std::const_pointer_cast<const DetectorPeakResponse>( detector );
+  }
+  
+  return s_detector;
+}
+
+
+std::shared_ptr<const DetectorPeakResponse> DetectorPeakResponse::getGenericLaBrDetector()
+{
+  static std::shared_ptr<const DetectorPeakResponse> s_detector;
+  
+  std::lock_guard<std::mutex> lock( s_generic_det_mutex );
+  
+  if( !s_detector )
+  {
+    auto detector = std::make_shared<DetectorPeakResponse>( "Generic LaBr3(Ce)", "" );
+    
+    // Fit to GADRAS efficiency of Sam-Eagle-LaBr
+    // Between 50 and 2600 keV, average error is 1.40918552%, with max error 3.70071643%
+    std::vector<float> eff_coeffs = {-1.66245103e+00, -1.07331991e+00, 9.46287289e-02, 3.29341553e-02, -7.69617930e-02, -1.86134428e-02};
+    detector->fromExpOfLogPowerSeries( eff_coeffs, {}, 0.0f, 3.70*PhysicalUnits::cm, PhysicalUnits::MeV,
+                                            50.0f, 2650.0f, EffGeometryType::FarFieldIntrinsic );
+    
+    // From GADRAS Sam-Eagle-LaBr
+    std::vector<float> res_coeffs = {7.0, 2.6e+00, 5.2e-01};
+    
+    detector->setFwhmCoefficients( res_coeffs, kGadrasResolutionFcn /* TODO: verify resolution function type */ );
+    detector->setDrfSource( DrfSource::UnknownDrfSource );
+    
+    s_detector = std::const_pointer_cast<const DetectorPeakResponse>( detector );
+  }
+  
+  return s_detector;
+}
+
+
+std::shared_ptr<const DetectorPeakResponse> DetectorPeakResponse::getGenericCZTGeneralDetector()
+{
+  static std::shared_ptr<const DetectorPeakResponse> s_detector;
+  
+  std::lock_guard<std::mutex> lock( s_generic_det_mutex );
+  
+  if( !s_detector )
+  {
+    auto detector = std::make_shared<DetectorPeakResponse>( "Generic CZT", "" );
+    
+    // Fit to the GADRAS efficiencies between 45 and 3000 of the Kromek GR1 detector included with InterSpec
+    //Between 50 and 2600 keV, average error is 1.36569567%, with max error 4.19282222%
+    std::vector<float> eff_coeffs = {-3.36118150e+00, -1.55648577e+00, 2.62750953e-01, -2.36228734e-01, -2.88489103e-01, -5.32837957e-02};
+    detector->fromExpOfLogPowerSeries( eff_coeffs, {}, 0.0f, 1.07*PhysicalUnits::cm, PhysicalUnits::MeV,
+                                            50.0f, 2650.0f, EffGeometryType::FarFieldIntrinsic );
+    
+    // FWHM from "Kromek GR1"
+    std::vector<float> res_coeffs = {8.94999981e+00f, 2.39000010e+00f, 3.44000012e-01f};
+    
+    detector->setFwhmCoefficients( res_coeffs, kGadrasResolutionFcn );
+    detector->setDrfSource( DrfSource::UnknownDrfSource );
+    
+    s_detector = std::const_pointer_cast<const DetectorPeakResponse>( detector );
+  }
+  
+  return s_detector;
+}
+
+
+std::shared_ptr<const DetectorPeakResponse> DetectorPeakResponse::getGenericCZTGoodDetector()
+{
+  static std::shared_ptr<const DetectorPeakResponse> s_detector;
+  
+  std::lock_guard<std::mutex> lock( s_generic_det_mutex );
+  
+  if( !s_detector )
+  {
+    auto detector = std::make_shared<DetectorPeakResponse>( "Generic CZT High-Quality", "" );
+    
+    // A fit to a GADRAS eff points for a M400
+    // Between 50 and 2600 keV, average error is 1.50666823%, with max error 3.77653729%
+    vector<float> eff_coeffs = {-3.35549235e+00, -1.39031291e+00, 2.49679491e-01, -2.98282117e-01, -2.85447180e-01, -4.70053926e-02};
+    detector->fromExpOfLogPowerSeries( eff_coeffs, {}, 0.0f, 2.20*PhysicalUnits::cm, PhysicalUnits::MeV,
+                                            50.0f, 2650.0f, EffGeometryType::FarFieldIntrinsic );
+    // From M400 CZT
+    vector<float> res_coeffs = {2.7, 0.699, 0.753};
+    
+    detector->setFwhmCoefficients( res_coeffs, kGadrasResolutionFcn /* TODO: verify resolution function type */ );
+    detector->setDrfSource( DrfSource::DefaultGadrasDrf );
+    
+    s_detector = std::const_pointer_cast<const DetectorPeakResponse>( detector );
+  }
+  
+  return s_detector;
+}
+
 
 const std::string &DetectorPeakResponse::efficiencyFormula() const
 {
@@ -3737,6 +4421,38 @@ void DetectorPeakResponse::setDescription( const std::string &descrip )
 }
 
 
+void DetectorPeakResponse::setDetectorDiameter( const float diameter )
+{
+  if( isFixedGeometry() )
+  {
+    if( diameter > 0.0f )
+      throw runtime_error( "You cant set detector diameter for fixed-geometry detector efficiency" );
+    return;
+  }
+  
+  if( (diameter <= 0.0f) || IsInf(diameter) || IsNan(diameter) )
+    throw runtime_error( "Detector diameter must be greater than zero" );
+  
+  m_detectorDiameter = diameter;
+  computeHash();
+}
+
+
+void DetectorPeakResponse::setAbsoluteEfficiencyDistance( const double distance )
+{
+  if( m_geomType != DetectorPeakResponse::EffGeometryType::FarFieldAbsolute )
+  {
+    if( distance > 0.0f )
+      throw runtime_error( "You cant set abs det distance for non-FarFieldAbsolute detector" );
+    return;
+  }
+  
+  if( (distance <= 0.0f) || IsInf(distance) || IsNan(distance) )
+    throw runtime_error( "Absolute Efficiency distance must not be negative" );
+  
+  m_absoluteEfficiencyDistance = distance;
+  computeHash();
+}//void setAbsoluteEfficiencyDistance( const double distance );
 
 void DetectorPeakResponse::fitResolution( DetectorPeakResponse::PeakInput_t peaks,
                     const std::shared_ptr<const Measurement> meas,

@@ -43,8 +43,6 @@
 #include <Wt/WApplication>
 #include <Wt/WRegExpValidator>
 #include <Wt/WSuggestionPopup>
-#include <Wt/WStandardItemModel>
-#include <Wt/Chart/WCartesianChart>
 
 #include <Wt/Json/Array>
 #include <Wt/Json/Value>
@@ -241,19 +239,23 @@ protected:
             //     << ", leading to nominal activity " << nomstr
             //     << endl;
             
-            m_poisonLimit->setText( "<table><tr><td style=\"padding-right:5px\">Nominal:</td><td>" + nomstr + "</td></tr>"
-                                   "<tr><td>Range:</td><td>[" + lowerstr + ", " + upperstr + "]</td></tr></table>" );
-            m_poisonLimit->setToolTip( "Detected activity, using just this Region Of Interests,"
-                                      " and the observed excess of counts, as well as the"
-                                      " statistical confidence interval." );
+            m_poisonLimit->setText( WString("<table><tr><td style=\"padding-right:5px\">{1}</td><td>{2}</td></tr>"
+                                   "<tr><td>{3}</td><td>[{4}, {5}]</td></tr></table>")
+                                   .arg(WString::tr("dlt-nominal"))
+                                   .arg(nomstr)
+                                   .arg(WString::tr("dlt-range"))
+                                   .arg(lowerstr)
+                                   .arg(upperstr) );
+            m_poisonLimit->setToolTip( WString::tr("dlt-detected-activity-tt") );
           }else if( result.upper_limit < 0 )
           {
             // This can happen when there are a lot fewer counts in the peak region than predicted
             //  from the sides - since this is non-sensical, we'll just say zero.
             const string unitstr = (useCuries ? "Ci" : "Bq") + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
-            m_poisonLimit->setText( "<div>Limit: &lt; 0" + unitstr + "</div><div>(sig. fewer counts in ROI than predicted)</div>" );
-            m_poisonLimit->setToolTip( "Significantly fewer counts were observed in the"
-                                      " Region Of Interest, than predicted by the neighboring channels." );
+            m_poisonLimit->setText( WString("<div>{1}</div><div>{2}</div>")
+                                   .arg(WString::tr("dlt-limit-lt-zero").arg(unitstr))
+                                   .arg(WString::tr("dlt-sig-fewer-counts")) );
+            m_poisonLimit->setToolTip( WString::tr("dlt-fewer-counts-tt") );
           }else
           {
             // We will provide the upper bound on activity.
@@ -265,15 +267,15 @@ protected:
             const string det_limit_str = PhysicalUnits::printToBestActivityUnits( det_limit, 2, useCuries )
             + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
            
-            string txt = "<table><tr><td style=\"padding-right: 5px\">Upper Limit:</td><td>" + mdastr + "</td></tr>"
-            "<tr><td style=\"padding-right: 5px\">Critical Limit:</td><td>" + det_limit_str + "</td></tr></table>";
+            const WString txt = WString("<table><tr><td style=\"padding-right: 5px\">{1}</td><td>{2}</td></tr>"
+            "<tr><td style=\"padding-right: 5px\">{3}</td><td>{4}</td></tr></table>")
+            .arg(WString::tr("dlt-upper-limit"))
+            .arg(mdastr)
+            .arg(WString::tr("dlt-critical-limit"))
+            .arg(det_limit_str);
             
             m_poisonLimit->setText( txt );
-            m_poisonLimit->setToolTip( "The upper limit is the maximum activity present, for the given CL,"
-                                      " given the observed number of counts in the ROI.\n"
-                                      "The critical limit is the activity where the signal would reliably be detected.\n"
-                                      "Both numbers calculated using the Currie method."
-                                      );
+            m_poisonLimit->setToolTip( WString::tr("dlt-limit-tt") );
           }
           
           break;
@@ -353,7 +355,7 @@ protected:
             }
             
             if( counts_at_distance(max_distance) >= result.upper_limit )
-              throw runtime_error( "Maximum distance to large (>100km)" );
+              throw runtime_error( WString::tr("dlt-err-max-distance-too-large").toUTF8() );
             
             auto lower_limit_dist = [&]( double dist ) -> double {
               return fabs( counts_at_distance(dist) - result.lower_limit );
@@ -425,17 +427,18 @@ protected:
             //snprintf( buffer, sizeof(buffer),
             //         "<div>Nominal distance %s</div><div>%.1f%% CL range [%s, %s]</div>",
             //         nomstr.c_str(), rnd_cl_percent, upperstr.c_str(), lowerstr.c_str() );
-            char buffer[384];
-            snprintf( buffer, sizeof(buffer),
-                     "<table><tr><td style=\"padding-right:5px\">Nominal:</td><td>%s</td></tr><tr><td>Range:</td><td>[%s, %s]</td></tr></table>",
-                     nomstr.c_str(), upperstr.c_str(), lowerstr.c_str() );
-            
-            m_poisonLimit->setText( buffer );
+            m_poisonLimit->setText( WString("<table><tr><td style=\"padding-right:5px\">{1}</td><td>{2}</td></tr>"
+                                   "<tr><td>{3}</td><td>[{4}, {5}]</td></tr></table>")
+                                   .arg(WString::tr("dlt-nominal"))
+                                   .arg(nomstr)
+                                   .arg(WString::tr("dlt-range"))
+                                   .arg(lowerstr)
+                                   .arg(upperstr) );
           }else if( result.upper_limit < 0 )
           {
             // This can happen when there are a lot fewer counts in the peak region than predicted
             //  from the sides - since this is non-sensical ...
-            m_poisonLimit->setText( "Large deficit of counts in ROI" );
+            m_poisonLimit->setText( WString::tr("dlt-large-deficit") );
           }else
           {
             // We will provide a "Distance >=X meters at 95% CL" answer
@@ -448,7 +451,7 @@ protected:
             //  source
             
             if( result.upper_limit < 0.0 )
-              throw runtime_error( "Upper limit of counts is less than zero, but counts observed is greater than L_d." );
+              throw runtime_error( WString::tr("dlt-err-upper-limit-negative").toUTF8() );
             
             double max_distance = 1.0*PhysicalUnits::meter;
             
@@ -490,7 +493,7 @@ protected:
       
     }catch( std::exception &e )
     {
-      m_poisonLimit->setText( "Error calculating limit: " + string(e.what()) );
+      m_poisonLimit->setText( WString::tr("dlt-err-calculating-limit").arg(e.what()) );
     }
   }//void setSimplePoisonTxt()
   
@@ -677,12 +680,12 @@ public:
     m_title_info->addStyleClass( "MdaRowDetInfo" );
     
     
-    m_use_for_likelihood = new SwitchCheckbox( "Use for multi-peak", leftColumn );
+    m_use_for_likelihood = new SwitchCheckbox( WString::tr("dlt-use-for-multi-peak"), leftColumn );
     m_use_for_likelihood->setChecked( input.use_for_likelihood );
     m_use_for_likelihood->addStyleClass( "GridFirstCol GridSecondRow GridSpanTwoCol UseForLiklihood" );
     
     
-    WLabel *label = new WLabel( "ROI Lower:", leftColumn );
+    WLabel *label = new WLabel( WString::tr("dlt-roi-lower-label"), leftColumn );
     label->addStyleClass( "GridFirstCol GridThirdRow" );
     m_roi_start = new NativeFloatSpinBox( leftColumn );
     m_roi_start->addStyleClass( "GridSecondCol GridThirdRow MdaRoiInput" );
@@ -690,7 +693,7 @@ public:
     m_roi_start->setFormatString( "%.2f" );
     label->setBuddy( m_roi_start );
     
-    label = new WLabel( "ROI Upper:", leftColumn );
+    label = new WLabel( WString::tr("dlt-roi-upper-label"), leftColumn );
     label->addStyleClass( "GridFirstCol GridFourthRow" );
     m_roi_end = new NativeFloatSpinBox( leftColumn );
     m_roi_end->addStyleClass( "GridSecondCol GridFourthRow MdaRoiInput" );
@@ -698,17 +701,17 @@ public:
     m_roi_end->setFormatString( "%.2f" );
     label->setBuddy( m_roi_end );
     
-    label = new WLabel( "Continuum", leftColumn );
+    label = new WLabel( WString::tr("dlt-continuum-label"), leftColumn );
     label->addStyleClass( "GridFirstCol GridFifthRow" );
     m_continuum = new WComboBox( leftColumn );
     m_continuum->addStyleClass( "GridSecondCol GridFifthRow" );
-    m_continuum->addItem( "Linear" );
-    m_continuum->addItem( "Quadratic" );
+    m_continuum->addItem( WString::tr( PeakContinuum::offset_type_label_tr(PeakContinuum::OffsetType::Linear) ) );
+    m_continuum->addItem( WString::tr( PeakContinuum::offset_type_label_tr(PeakContinuum::OffsetType::Quadratic) ) );
     m_continuum->setCurrentIndex( 0 );
     label->setBuddy( m_continuum );
     
     
-    label = new WLabel( "Cont. Norm", leftColumn );
+    label = new WLabel( WString::tr("dlt-cont-norm-label"), leftColumn );
     label->addStyleClass( "GridFirstCol GridSixthRow" );
     m_decon_cont_norm_method = new WComboBox( leftColumn );
     m_decon_cont_norm_method->addStyleClass( "GridSecondCol GridSixthRow" );
@@ -716,25 +719,13 @@ public:
     static_assert( static_cast<int>(DetectionLimitCalc::DeconContinuumNorm::Floating) == 0, "DeconContinuumNorm out of date" );
     static_assert( static_cast<int>(DetectionLimitCalc::DeconContinuumNorm::FixedByEdges) == 1, "DeconContinuumNorm out of date" );
     static_assert( static_cast<int>(DetectionLimitCalc::DeconContinuumNorm::FixedByFullRange) == 2, "DeconContinuumNorm out of date" );
-    m_decon_cont_norm_method->addItem( "Floating" );
-    m_decon_cont_norm_method->addItem( "Fixed at edges" );
-    m_decon_cont_norm_method->addItem( "Fixed full ROI" );
+    m_decon_cont_norm_method->addItem( WString::tr("dlt-cont-norm-floating") );
+    m_decon_cont_norm_method->addItem( WString::tr("dlt-cont-norm-fixed-edges") );
+    m_decon_cont_norm_method->addItem( WString::tr("dlt-cont-norm-fixed-full-roi") );
     m_decon_cont_norm_method->setCurrentIndex( static_cast<int>(m_input.decon_cont_norm_method) );
     
     const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
-    const char *tooltip = "How the continuum normalization should be determined:"
-    "<ul><li><b>Floating</b>: The polynomial continuum is fit for, at each given activity -"
-    " the activity affects the continuum.</li>"
-    "<li><b>Fixed at edges</b>: The channels on either side of the ROI are used to determine a"
-    " linear continuum that is fixed, and not affected by the nuclides activity.</li>"
-    "<li><b>Fixed full ROI</b>: The continuum is fit using the entire energy range of the ROI,"
-    " assuming a Gaussian amplitude of zero; later, the Gaussian component of the peak will "
-    " sit on top of this fixed continuum.<br/>"
-    "This is effectively asserting that you know there is no signal peak present in the data."
-    "  The continuum will not be affected by the nuclide activity value, and the Gaussian"
-    " component of the peak will sit on top of this fixed continuum when evaluating the"
-    " &chi;<sup>2</sup>.</li>"
-    "</ul>";
+    const WString tooltip = WString::tr("dlt-cont-norm-tt");
     
     HelpSystem::attachToolTipOn( {label, m_decon_cont_norm_method},
                                 tooltip, showToolTips, HelpSystem::ToolTipPosition::Right,
@@ -771,8 +762,8 @@ public:
     
     WContainerWidget *currieLimitContent = new WContainerWidget( rightColumn );
     currieLimitContent->addStyleClass( "MdaRowCurrieLimitContent" );
-    
-    WText *currie_label = new WText( "Single peak Currie Limit", currieLimitContent );
+
+    WLabel *currie_label = new WLabel( WString::tr("dlt-single-peak-currie-limit"), currieLimitContent );
     currie_label->addStyleClass( "MdaCurrieLimitTitle" );
     
     m_poisonLimit = new WText( "&nbsp;", currieLimitContent );
@@ -780,7 +771,7 @@ public:
     
     WContainerWidget *num_side_chan_row = new WContainerWidget( currieLimitContent );
     num_side_chan_row->addStyleClass( "CurrieNSideChanRow" );
-    label = new WLabel( "Num Side Channels", num_side_chan_row );
+    label = new WLabel( WString::tr("dlt-num-side-channels-label"), num_side_chan_row );
     m_num_side_channels = new NativeFloatSpinBox( num_side_chan_row );
     m_num_side_channels->setFormatString( "%.0f" );
     m_num_side_channels->setSingleStep( 1.0 );
@@ -793,7 +784,7 @@ public:
       case DetectionLimitTool::LimitType::Activity:
       {
         WPushButton *moreInfoButton = new WPushButton( currieLimitContent );
-        moreInfoButton->setText( "further details..." );
+        moreInfoButton->setText( WString::tr("dlt-further-details-link") );
         moreInfoButton->setStyleClass( "LinkBtn CurrieMoreInfoBtn" );
         moreInfoButton->clicked().connect( this, &MdaPeakRow::createMoreInfoWindow );
         
@@ -947,13 +938,11 @@ public:
                                  m_input.shield_transmission );
     }catch( std::exception &e )
     {
-      char buffer[256];
-      snprintf( buffer, sizeof(buffer), "Error computing %s, %.2f keV Info",
-               (m_nuclide ? m_nuclide->symbol.c_str() : "null"), m_input.energy );
-      
-      SimpleDialog *dialog = new SimpleDialog( buffer,
-                                              WString("Error computing Currie limit information: {1}").arg(e.what()) );
-      dialog->addButton( "Close" );
+      const string nuc_str = (m_nuclide ? m_nuclide->symbol : "null");
+      SimpleDialog *dialog = new SimpleDialog( 
+                                              WString::tr("dlt-err-computing-info").arg(nuc_str).arg(m_input.energy),
+                                              WString::tr("dlt-err-computing-currie-info").arg(e.what()) );
+      dialog->addButton( WString::tr("Close") );
     }//try / catch
   }//void createMoreInfoWindow()
   
@@ -965,8 +954,8 @@ public:
 DetectionLimitWindow::DetectionLimitWindow( InterSpec *viewer,
                                                      MaterialDB *materialDB,
                                                      WSuggestionPopup *materialSuggest )
-: AuxWindow( "Detection Confidence Tool",
-  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+: AuxWindow( WString::tr("dlt-window-title"),
+  (AuxWindowProperties::TabletNotFullScreen
    | AuxWindowProperties::SetCloseable
    | AuxWindowProperties::DisableCollapse) ),
   m_tool( nullptr )
@@ -1055,6 +1044,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   assert( app );
   
   app->useStyleSheet( "InterSpec_resources/DetectionLimitTool.css" );
+  viewer->useMessageResourceBundle( "DetectionLimitTool" );
   app->require( "InterSpec_resources/d3.v3.min.js", "d3.v3.js" );
   app->require( "InterSpec_resources/DetectionLimitTool.js" );
   
@@ -1096,10 +1086,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   m_chart->setCompactAxis( true );
   m_chart->disableLegend();
   m_chart->showHistogramIntegralsInLegend( true );
-  
-  m_chart->applyColorTheme( m_interspec->getColorTheme() );
-  m_interspec->colorThemeChanged().connect( m_chart, &D3SpectrumDisplayDiv::applyColorTheme );
-  
+
   //m_chart->xAxisSliderShown().connect(...)
   
   m_peakModel = new PeakModel( this );
@@ -1111,7 +1098,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   
   // Create nuclide label and input
-  WLabel *label = new WLabel( "Nuclide:&nbsp;&nbsp;", inputTable ); //The space so this will be the longest label, and not "Distance:"
+  WLabel *label = new WLabel( WString::tr("nuclide-label"), inputTable );
   label->addStyleClass( "GridFirstCol GridFirstRow GridVertCenter" );
   
   
@@ -1133,10 +1120,10 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   isoSuggestModel->excludeXrays( true );
   m_nuclideSuggest = new WSuggestionPopup( matcherJs, replacerJs, this );
   m_nuclideSuggest->setJavaScriptMember("wtNoReparent", "true");
-  m_nuclideSuggest->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
-  m_nuclideSuggest->setWidth( WLength(70, Wt::WLength::Unit::Pixel) );
+  m_nuclideSuggest->addStyleClass( "nuclide-suggest" );
   
   IsotopeNameFilterModel::setQuickTypeFixHackjs( m_nuclideSuggest );
+  IsotopeNameFilterModel::setEnterKeyMatchFixJs( m_nuclideSuggest, m_nuclideEdit );
   
   isoSuggestModel->filter( "" );
   m_nuclideSuggest->setFilterLength( -1 );
@@ -1147,7 +1134,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   
   // Create age input and time input validator
-  label = new WLabel( "Age:", inputTable );
+  label = new WLabel( WString::tr("age-label"), inputTable );
   label->addStyleClass( "GridFirstCol GridSecondRow GridVertCenter" );
   
   m_ageEdit = new WLineEdit( "", inputTable );
@@ -1159,14 +1146,8 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   label->setBuddy( m_ageEdit );
   
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
-  const char *tooltip =
-  "<div>The age of the nuclide.</div>"
-  "<br />"
-  "<div>The age controls the amount of progeny in-growth; the activities of the parent"
-  " (i.e., entered) nuclide are always reported for at the time of measurement."
-  ".</div>";
   HelpSystem::attachToolTipOn( {label, m_ageEdit},
-                              tooltip, showToolTips, HelpSystem::ToolTipPosition::Right,
+                              WString::tr("dlt-tt-age-edit"), showToolTips, HelpSystem::ToolTipPosition::Right,
                               HelpSystem::ToolTipPrefOverride::RespectPreference );
   
   m_ageEdit->changed().connect( this, &DetectionLimitTool::handleUserAgeChange );
@@ -1176,7 +1157,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   
   // Create distance input
-  label = new WLabel( "Distance:", inputTable );
+  label = new WLabel( WString::tr("distance-label"), inputTable );
   label->addStyleClass( "GridFirstCol GridThirdRow GridVertCenter" );
   m_distanceLabel = label;
 
@@ -1193,7 +1174,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   // We will but the activity label/input right next to the distance stuff, but since we default to
   //  calculating activity limit, we'll hide the activity stuff.
-  label = new WLabel( "Activity:", inputTable );
+  label = new WLabel( WString::tr("activity-label"), inputTable );
   label->addStyleClass( "GridFirstCol GridThirdRow GridVertCenter" );
   m_activityLabel = label;
   label->hide();
@@ -1220,33 +1201,36 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   m_shieldingSelect = new ShieldingSelect( m_materialDB, m_materialSuggest, inputTable );
   m_shieldingSelect->addStyleClass( "GridThirdCol GridSecondRow GridSpanTwoRows" );
-  m_shieldingSelect->materialEdit()->setEmptyText( "<shielding material>" );
+  m_shieldingSelect->materialEdit()->setEmptyText( WString("<{1}>").arg( WString::tr("dlt-shield-empty-text") ) );
+
+  
+
   m_shieldingSelect->materialChanged().connect( this, &DetectionLimitTool::handleInputChange );
   m_shieldingSelect->materialModified().connect( this, &DetectionLimitTool::handleInputChange );
   m_shieldingSelect->setMinimumSize( WLength(250), WLength::Auto );
   
   
-  SwitchCheckbox *loglin = new SwitchCheckbox( "Log", "Lin", inputTable );
+  SwitchCheckbox *loglin = new SwitchCheckbox( WString::tr("dlt-log"), WString::tr("dlt-lin"), inputTable );
   loglin->addStyleClass( "MdaChartLogLin GridFourthCol GridFirstRow GridSpanTwoCol" );
   loglin->unChecked().connect( boost::bind( &D3SpectrumDisplayDiv::setYAxisLog, m_chart, true ) );
   loglin->checked().connect( boost::bind( &D3SpectrumDisplayDiv::setYAxisLog, m_chart, false ) );
   m_chart->yAxisLogLinChanged().connect( boost::bind( &SwitchCheckbox::setUnChecked, loglin, boost::placeholders::_1 ) );
   
-  m_attenuateForAir = new WCheckBox( "Attenuate for air", inputTable );
+  m_attenuateForAir = new WCheckBox( WString::tr("dlt-attenuate-for-air"), inputTable );
   m_attenuateForAir->addStyleClass( "GridFourthCol GridSecondRow GridSpanTwoCol" );
   m_attenuateForAir->setChecked( true );
   m_attenuateForAir->checked().connect(this, &DetectionLimitTool::handleUserChangedUseAirAttenuate );
   m_attenuateForAir->unChecked().connect(this, &DetectionLimitTool::handleUserChangedUseAirAttenuate );
   
   
-  m_distOrActivity = new SwitchCheckbox( "Activity Limit", "Distance Limit", inputTable );
+  m_distOrActivity = new SwitchCheckbox( WString::tr("dlt-activity-limit"), WString::tr("dlt-distance-limit"), inputTable );
   m_distOrActivity->addStyleClass( "GridFourthCol GridThirdRow GridSpanTwoCol" );
 
   m_distOrActivity->checked().connect( this, &DetectionLimitTool::handleUserChangedToComputeActOrDist );
   m_distOrActivity->unChecked().connect( this, &DetectionLimitTool::handleUserChangedToComputeActOrDist );
   
   
-  label = new WLabel( "Peaks disp. act.:", inputTable );
+  label = new WLabel( WString::tr("dlt-peaks-disp-act-label"), inputTable );
   label->addStyleClass( "GridSixthCol GridFirstRow GridVertCenter" );
   m_displayActivityLabel = label;
   
@@ -1263,7 +1247,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   // Like with user input, we will put the put the display distance stuff right next to activity,
   //  and hide the display distance stuff
-  label = new WLabel( "Peaks disp. dist.:", inputTable );
+  label = new WLabel( WString::tr("dlt-peaks-disp-dist-label"), inputTable );
   label->addStyleClass( "GridSixthCol GridFirstRow GridVertCenter" );
   m_displayDistanceLabel = label;
   
@@ -1281,24 +1265,23 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   m_displayDistance->hide();
   
   
-  label = new WLabel( "Confidence Level:", inputTable );
+  label = new WLabel( WString::tr("dlt-conf-level-label"), inputTable );
   label->addStyleClass( "GridSixthCol GridSecondRow GridVertCenter" );
   m_confidenceLevel = new WComboBox( inputTable );
   m_confidenceLevel->addStyleClass( "GridSeventhCol GridSecondRow GridVertCenter" );
   
   for( auto cl = ConfidenceLevel(0); cl < NumConfidenceLevel; cl = ConfidenceLevel(cl+1) )
   {
-    const char *txt = "";
-    
+    WString txt;
     switch( cl )
     {
-      case ConfidenceLevel::NinetyFivePercent: txt = "95%";        break;
-      case ConfidenceLevel::NinetyNinePercent: txt = "99%";        break;
-      case ConfidenceLevel::OneSigma:          txt = "1σ (68.2%)"; break;
-      case ConfidenceLevel::TwoSigma:          txt = "2σ (95.4%)"; break;
-      case ConfidenceLevel::ThreeSigma:        txt = "3σ (99.7%)"; break;
-      case ConfidenceLevel::FourSigma:         txt = "4σ";         break;
-      case ConfidenceLevel::FiveSigma:         txt = "5σ";         break;
+      case ConfidenceLevel::NinetyFivePercent: txt = WString::tr("dlt-conf-95");        break;
+      case ConfidenceLevel::NinetyNinePercent: txt = WString::tr("dlt-conf-99");        break;
+      case ConfidenceLevel::OneSigma:          txt = WString::tr("dlt-conf-1sigma"); break;
+      case ConfidenceLevel::TwoSigma:          txt = WString::tr("dlt-conf-2sigma"); break;
+      case ConfidenceLevel::ThreeSigma:        txt = WString::tr("dlt-conf-3sigma"); break;
+      case ConfidenceLevel::FourSigma:         txt = WString::tr("dlt-conf-4sigma");         break;
+      case ConfidenceLevel::FiveSigma:         txt = WString::tr("dlt-conf-5sigma");         break;
       case ConfidenceLevel::NumConfidenceLevel: break;
     }//switch( cl )
     
@@ -1321,7 +1304,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
     m_our_meas = make_shared<SpecMeas>();
     m_our_meas->setDetector( primaryMeas->detector() );
     m_our_meas->add_measurement( ourspec, true );
-    m_peakModel->setPeakFromSpecMeas( m_our_meas, {ourspec->sample_number()} );
+    m_peakModel->setPeakFromSpecMeas( m_our_meas, {ourspec->sample_number()}, SpecUtils::SpectrumType::Foreground );
     m_chart->setData( ourspec, false );
   }//if( spec )
 
@@ -1345,7 +1328,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   m_errorMsg->addStyleClass( "MdaErrMsg" );
   m_errorMsg->hide();
   
-  m_fitFwhmBtn = new WPushButton( "Fit FWHM...", this );
+  m_fitFwhmBtn = new WPushButton( WString::tr("dlt-fit-fwhm-btn"), this );
   m_fitFwhmBtn->addStyleClass( "MdaFitFwhm LightButton" );
   m_fitFwhmBtn->clicked().connect( this, &DetectionLimitTool::handleFitFwhmRequested );
   m_fitFwhmBtn->hide();
@@ -1356,12 +1339,12 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   WContainerWidget *titleBar = new WContainerWidget( peaksHolder );
   titleBar->addStyleClass( "MdaPeaksTitleBar" );
   
-  WText *peaksTitle = new WText( "Gamma lines to use", titleBar );
+  WText *peaksTitle = new WText( WString::tr("dlt-gamma-lines-to-use"), titleBar );
   peaksTitle->addStyleClass( "MdaPeaksTitle" );
   
   WContainerWidget *filterDiv = new WContainerWidget( titleBar );
   filterDiv->addStyleClass( "MdaPeaksFilter" );
-  label = new WLabel( "Min relative intensity:", filterDiv );
+  label = new WLabel( WString::tr("dlt-min-rel-intensity-label"), filterDiv );
   label->addStyleClass( "GridFourthCol GridSecondRow" );
   m_minRelIntensity = new NativeFloatSpinBox( filterDiv );
   m_minRelIntensity->addStyleClass( "GridFifthCol GridSecondRow" );
@@ -1470,6 +1453,11 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
                                        const double gammas_per_bq,
                                        const vector<DetectionLimitTool::CurrieResultPeak> &peaks )
 {
+  InterSpec * const viewer = InterSpec::instance();
+  assert( viewer );
+  if( viewer )
+    viewer->useMessageResourceBundle( "DetectionLimitTool" );
+  
   assert( chart );
   if( !chart )
     return;
@@ -1486,7 +1474,6 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
   if( !spectrum )
     return;
   
-  InterSpec *viewer = InterSpec::instance();
   shared_ptr<const ColorTheme> theme = viewer ? viewer->getColorTheme() : nullptr;
   assert( theme );
   if( !theme )
@@ -1632,7 +1619,7 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
                                 ? drf->peakResolutionSigma(input.gamma_energy)
                                 : 0.25*(lower_upper_energy - upper_lower_energy);
       
-      const DetectorPeakResponse::EffGeometryType det_geom = drf ? drf->geometryType() : DetectorPeakResponse::EffGeometryType::FarField;
+      const DetectorPeakResponse::EffGeometryType det_geom = drf ? drf->geometryType() : DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
       
       PeakDef generic_peak( input.gamma_energy, peak_sigma, 0.0 );
       generic_peak.continuum()->setRange( upper_lower_energy, lower_upper_energy );
@@ -1684,14 +1671,14 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
               nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries )
               + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
               
-              chart_title = "Estimated activity of " + nomstr + ".";
+              chart_title = WString::tr("dlt-chart-title-estimated-activity").arg(nomstr);
             }else
             {
               lowerstr = SpecUtils::printCompact(result->lower_limit, 4);
               upperstr = SpecUtils::printCompact(result->upper_limit, 4);
               nomstr = SpecUtils::printCompact(result->source_counts, 4);
               
-              chart_title = "Excess counts of " + nomstr + ".";
+              chart_title = WString::tr("dlt-chart-title-excess-counts").arg(nomstr);
             }
             
             //const string cl_str = SpecUtils::printCompact( 100.0*confidence_level, 3 );
@@ -1711,7 +1698,7 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
             //  from the sides - since this is non-sensical, we'll just say zero.
             const string unitstr = useCuries ? "Ci" : "Bq";
             
-            chart_title = "Activity < 0 " + unitstr;
+            chart_title = WString::tr("dlt-chart-title-activity-lt-zero").arg(unitstr);
             
             generic_peak.setPeakArea( 0.0 );
             for( size_t i = 0; i < peaks.size(); ++i )
@@ -1732,7 +1719,7 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
                 mdastr = SpecUtils::printCompact( result->detection_limit, 4 ) + " counts";
               }
               
-              chart_title = "Data + peak for " + mdastr;
+              chart_title = WString::tr("dlt-chart-title-data-peak").arg(mdastr);
               
               generic_peak.setPeakArea( result->detection_limit );
               for( size_t i = 0; i < peaks.size(); ++i )
@@ -1754,7 +1741,7 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
                 mdastr = SpecUtils::printCompact( result->upper_limit, 4 ) + " counts";
               }
               
-              chart_title = "Peak for upper bound of " + mdastr + " @" + cl_str + " CL";
+              chart_title = WString::tr("dlt-chart-title-peak-upper-bound").arg(mdastr).arg(cl_str);
               
               generic_peak.setPeakArea( result->upper_limit );
               for( size_t i = 0; i < peaks.size(); ++i )
@@ -1815,12 +1802,13 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
   if( (shield_transmission <= 0.0) || (shield_transmission > 1.0) )
     shield_transmission = 1.0;
   
-  char buffer[256];
-  snprintf( buffer, sizeof(buffer), "%s%.2f keV Info",
-           (nuclide ? (nuclide->symbol + " ").c_str() : ""), energy );
+  char buffer[32] = {'\0'};
+  snprintf(buffer, sizeof(buffer), "%.2f", energy);
+  const string energy_str = buffer;
   
-  SimpleDialog *dialog = new SimpleDialog( buffer );
-  dialog->addButton( "Close" );
+  const string nuc_str = (nuclide ? (nuclide->symbol + " ") : "");
+  SimpleDialog *dialog = new SimpleDialog( WString::tr("dlt-currie-info-dialog-title").arg(nuc_str).arg(energy_str) );
+  dialog->addButton( WString::tr("Close") );
   
   if( drf && !drf->isValid() )
     drf.reset();
@@ -1832,6 +1820,11 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
   {
     wApp->useStyleSheet( "InterSpec_resources/DetectionLimitTool.css" ); // JIC
     
+    InterSpec * const viewer = InterSpec::instance();
+    assert( viewer );
+    viewer->useMessageResourceBundle( "DetectionLimitTool" );
+    
+    
     if( !input.spectrum )
       throw runtime_error( "No measurement" );
       
@@ -1840,7 +1833,7 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     const bool useCuries = use_curie_units();
     const bool fixed_geom = drf ? drf->isFixedGeometry() : false;
     const DetectorPeakResponse::EffGeometryType det_geom = drf ? drf->geometryType()
-                                                : DetectorPeakResponse::EffGeometryType::FarField;
+                                                : DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
     const bool air_atten = (do_air_attenuation && !fixed_geom && (distance > 0.0));
     const double intrinsic_eff = drf ? drf->intrinsicEfficiency( energy ) : 1.0f;
     const double geom_eff = (drf && (distance >= 0.0)) ? drf->fractionalSolidAngle( drf->detectorDiameter(), distance ) : 1.0;
@@ -1859,6 +1852,7 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     
     const double gammas_per_bq = counts_4pi * det_eff;
     
+    char buffer[256];
     if( conf_level < 0.999 )
       snprintf( buffer, sizeof(buffer), "%.1f%%", 100.0*conf_level );
     else
@@ -1874,8 +1868,6 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     const double upper_upper_energy = assertedNoSignal ? upper_lower_energy : input.spectrum->gamma_channel_upper( result.last_upper_continuum_channel );
     
     // Add chart
-    InterSpec *viewer = InterSpec::instance();
-    assert( viewer );
     D3SpectrumDisplayDiv *chart = new D3SpectrumDisplayDiv( dialog->contents() );
     chart->addStyleClass( "MdaCurrieChart" );
     chart->setXAxisTitle( "" );
@@ -1883,8 +1875,6 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     shared_ptr<const SpecUtils::Measurement> hist = viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
     chart->setData( hist, true );
     chart->setYAxisLog( false );
-    chart->applyColorTheme( viewer->getColorTheme() );
-    viewer->colorThemeChanged().connect( boost::bind( &D3SpectrumDisplayDiv::applyColorTheme, chart, boost::placeholders::_1 ) );
     chart->disableLegend();
     const double dx = upper_upper_energy - lower_lower_energy;
     chart->setXAxisRange( lower_lower_energy - 0.5*dx, upper_upper_energy + 0.5*dx );
@@ -1909,7 +1899,7 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     WTableCell *cell = nullptr;
     
     /** A helper lambda to add tool tips to both columns of the most recently created row of the table */
-    auto addTooltipToRow = [table]( const string &tt ){
+    auto addTooltipToRow = [table]( const WString &tt ){
       WTableCell *cell = table->elementAt( table->rowCount() - 1, 2 );
       
       WImage *img = new WImage( cell );
@@ -1932,46 +1922,58 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
           
           // There is enough excess counts that we would reliably detect this activity, so we will
           //  give the activity range.
-          WString obs_label, range_label;
-          string lowerstr, upperstr, nomstr;
           if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
           {
-            obs_label = "Observed activity";
-            range_label = "Activity range";
-            
-            const float lower_act = result.lower_limit / gammas_per_bq;
-            const float upper_act = result.upper_limit / gammas_per_bq;
-            const float nominal_act = result.source_counts / gammas_per_bq;
-            
-            lowerstr = PhysicalUnits::printToBestActivityUnits( lower_act, 2, useCuries )
-                        + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
-            upperstr = PhysicalUnits::printToBestActivityUnits( upper_act, 2, useCuries )
-                        + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
-            nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries )
-                      + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
-          }else
+            WString obs_label = WString::tr("dlt-observed-activity");
+            const double nominal_act = result.source_counts / gammas_per_bq;
+            const string nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries )
+                                  + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+
+            cell = table->elementAt( table->rowCount(), 0 );
+            new WText( obs_label, cell );
+            cell = table->elementAt( table->rowCount() - 1, 1 );
+            new WText( nomstr, cell );
+            addTooltipToRow( WString::tr("dlt-tt-greater-than-lc") );
+          }
+
           {
-            obs_label = "Observed counts";
-            range_label = "Counts range";
-            
-            lowerstr = SpecUtils::printCompact(result.lower_limit, 4);
-            upperstr = SpecUtils::printCompact(result.upper_limit, 4);
-            nomstr = SpecUtils::printCompact(result.source_counts, 4);
+            WString obs_label = WString::tr("dlt-observed-counts");
+            const string nomstr = SpecUtils::printCompact(result.source_counts, 4);
+
+            cell = table->elementAt( table->rowCount(), 0 );
+            new WText( obs_label, cell );
+            cell = table->elementAt( table->rowCount() - 1, 1 );
+            new WText( nomstr, cell );
+            addTooltipToRow( WString::tr("dlt-tt-greater-than-lc") );
+          }
+
+
+          if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
+          {
+            WString range_label = WString::tr("dlt-activity-range");
+            const double lower_act = result.lower_limit / gammas_per_bq;
+            const double upper_act = result.upper_limit / gammas_per_bq;
+            const string lowerstr = PhysicalUnits::printToBestActivityUnits( lower_act, 2, useCuries )
+                        + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+            const string upperstr = PhysicalUnits::printToBestActivityUnits( upper_act, 2, useCuries )
+                        + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+            cell = table->elementAt( table->rowCount(), 0 );
+            new WText( range_label, cell );
+            cell = table->elementAt( table->rowCount() - 1, 1 );
+            new WText( "[" + lowerstr + ", " + upperstr + "]", cell );
+            addTooltipToRow( WString::tr("dlt-tt-activity-range").arg(confidence_level) );
+          }
+
+          {
+            WString range_label = WString::tr("dlt-counts-range");
+            const string lowerstr = SpecUtils::printCompact(result.lower_limit, 4);
+            const string upperstr = SpecUtils::printCompact(result.upper_limit, 4);
+            cell = table->elementAt( table->rowCount(), 0 );
+            new WText( range_label, cell );
+            cell = table->elementAt( table->rowCount() - 1, 1 );
+            new WText( "[" + lowerstr + ", " + upperstr + "]", cell );
+            addTooltipToRow( WString::tr("dlt-tt-counts-range").arg(confidence_level) );
           }//if( drf ) / else
-          
-          
-          cell = table->elementAt( table->rowCount(), 0 );
-          new WText( obs_label, cell );
-          cell = table->elementAt( table->rowCount() - 1, 1 );
-          new WText( nomstr, cell );
-          addTooltipToRow( "Greater than the &quot;critical level&quot;, L<sub>c</sub>,"
-                          " counts were observed in the peak region." );
-          
-          cell = table->elementAt( table->rowCount(), 0 );
-          new WText( range_label, cell );
-          cell = table->elementAt( table->rowCount() - 1, 1 );
-          new WText( "[" + lowerstr + ", " + upperstr + "]", cell );
-          addTooltipToRow( "The activity range estimate, to the " + confidence_level + " confidence level." );
         }else if( result.upper_limit < 0 )
         {
           assert( !assertedNoSignal );
@@ -1983,39 +1985,46 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
           cell->setColumnSpan( 2 );
           if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
           {
-            new WText( "Activity &le; 0 " + unitstr, cell );
+            new WText( WString::tr("dlt-activity-le-zero").arg(unitstr), cell );
           }else
           {
-            new WText( "Counts &le; 0", cell );
+            new WText( WString::tr("dlt-counts-le-zero"), cell );
           }
           
-          addTooltipToRow( "Significantly fewer counts in peak region were observed,"
-                          " than predicted by the neighboring regions." );
+          addTooltipToRow( WString::tr("dlt-tt-fewer-than-predicted") );
         }else
         {
           // We will provide the upper bound on activity.
-          string mdastr;
-          WString label_txt;
           if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
           {
-            label_txt = "Activity upper bound";
-            
+            WString label_txt = WString::tr("dlt-activity-upper-bound");
+
             const double simple_mda = result.upper_limit / gammas_per_bq;
-            mdastr = PhysicalUnits::printToBestActivityUnits( simple_mda, 2, useCuries )
+            const string mdastr = PhysicalUnits::printToBestActivityUnits( simple_mda, 2, useCuries )
                       + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
-          }else
+
+            cell = table->elementAt( table->rowCount(), 0 );
+            new WText( label_txt, cell );
+            cell = table->elementAt( table->rowCount() - 1, 1 );
+            new WText( mdastr , cell);
+
+            addTooltipToRow( WString::tr("dlt-tt-upper-bound").arg(confidence_level) );
+          }
+
+
           {
-            label_txt = "Counts upper bound";
-            mdastr = SpecUtils::printCompact( result.upper_limit, 4 ) + " counts";
+            WString label_txt = WString::tr("dlt-counts-upper-bound");
+            const string mdastr = SpecUtils::printCompact( result.upper_limit, 4 ) + " counts";
+
+            cell = table->elementAt( table->rowCount(), 0 );
+            new WText( label_txt, cell );
+            cell = table->elementAt( table->rowCount() - 1, 1 );
+            new WText( mdastr , cell);
+
+            addTooltipToRow( WString::tr("dlt-tt-upper-bound").arg(confidence_level) );
           }
           
-          cell = table->elementAt( table->rowCount(), 0 );
-          new WText( label_txt, cell );
-          cell = table->elementAt( table->rowCount() - 1, 1 );
-          new WText( mdastr , cell);
-          
-          addTooltipToRow( "The upper limit on how much activity could be present, to the "
-                          + confidence_level + " confidence level." );
+
         }
         
         break;
@@ -2023,7 +2032,7 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
         
       case DetectionLimitTool::LimitType::Distance:
       {
-        WText *msg = new WText( "Distance not supported for additional info yet", dialog->contents() );
+        WText *msg = new WText( WString::tr("dlt-distance-not-supported"), dialog->contents() );
         msg->addStyleClass( "content" );
         msg->setInline( false );
         break;
@@ -2038,54 +2047,46 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     if( !assertedNoSignal )
     {
       cell = table->elementAt( table->rowCount(), 0 );
-      txt = new WText( "Lower region channels", cell );
+      txt = new WText( WString::tr("dlt-lower-region-channels"), cell );
       val = "[" + std::to_string(result.first_lower_continuum_channel) + ", "
             + std::to_string(result.last_lower_continuum_channel) + "]";
       cell = table->elementAt( table->rowCount() - 1, 1 );
       txt = new WText( val, cell );
       
       
-      snprintf( buffer, sizeof(buffer), "The region above the peak in energy, that is being used"
-               " to estimate the expected continuum counts in the peak region;"
-               " corresponds to %.2f to %.2f keV", lower_lower_energy, lower_upper_energy );
-      addTooltipToRow( buffer );
+      addTooltipToRow( WString::tr("dlt-tt-lower-region-channels").arg(lower_lower_energy).arg(lower_upper_energy) );
       
       
       cell = table->elementAt( table->rowCount(), 0 );
-      txt = new WText( "Lower region counts", cell );
+      txt = new WText( WString::tr("dlt-lower-region-counts"), cell );
       val = SpecUtils::printCompact( result.lower_continuum_counts_sum, 5 );
       cell = table->elementAt( table->rowCount() - 1, 1 );
       txt = new WText( val, cell );
-      addTooltipToRow( "The number of counts observed in the region below the peak region,"
-                      " that is being used to estimate expected peak-region expected counts" );
+      addTooltipToRow( WString::tr("dlt-tt-lower-region-counts") );
       
       cell = table->elementAt( table->rowCount(), 0 );
-      txt = new WText( "Upper region channels", cell );
+      txt = new WText( WString::tr("dlt-upper-region-channels"), cell );
       val = "[" + std::to_string(result.first_upper_continuum_channel) + ", "
       + std::to_string(result.last_upper_continuum_channel) + "]";
       cell = table->elementAt( table->rowCount() - 1, 1 );
       txt = new WText( val, cell );
-      snprintf( buffer, sizeof(buffer), "The region above the peak in energy, that is being used"
-               " to estimate the expected continuum counts in the peak region;"
-               " corresponds to %.2f to %.2f keV", upper_lower_energy, upper_upper_energy );
-      addTooltipToRow( buffer );
+      addTooltipToRow( WString::tr("dlt-tt-upper-region-channels").arg(upper_lower_energy).arg(upper_upper_energy) );
       
       cell = table->elementAt( table->rowCount(), 0 );
-      txt = new WText( "Upper region counts", cell );
+      txt = new WText( WString::tr("dlt-upper-region-counts"), cell );
       val = SpecUtils::printCompact( result.upper_continuum_counts_sum, 5 );
       cell = table->elementAt( table->rowCount() - 1, 1 );
       txt = new WText( val, cell );
-      addTooltipToRow( "The number of counts observed in the region above the peak region,"
-                      " that is being used to estimate expected peak-region expected counts" );
+      addTooltipToRow( WString::tr("dlt-tt-upper-region-counts") );
     }else
     {
       cell = table->elementAt( table->rowCount(), 0 );
       cell->setColumnSpan( 2 );
-      txt = new WText( "Using ROI area as background estimate", cell );
+      txt = new WText( WString::tr("dlt-using-roi-as-background"), cell );
     }//if( !assertedNoSignal ) / else
     
     cell = table->elementAt( table->rowCount(), 0 );
-    txt = new WText( assertedNoSignal ? "ROI area channels" : "Peak area channels", cell );
+    txt = new WText( assertedNoSignal ? WString::tr("dlt-roi-area-channels") : WString::tr("dlt-peak-area-channels"), cell );
     val = "[" + std::to_string(result.first_peak_region_channel) + ", "
                   + std::to_string(result.last_peak_region_channel) + "]";
     cell = table->elementAt( table->rowCount() - 1, 1 );
@@ -2093,32 +2094,29 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     
     const double peak_lower_energy = input.spectrum->gamma_channel_lower( result.first_peak_region_channel );
     const double peak_upper_energy = input.spectrum->gamma_channel_upper( result.last_peak_region_channel );
-    snprintf( buffer, sizeof(buffer), "The region the peak is being assumed to be within;"
-             " corresponds to %.2f to %.2f keV", peak_lower_energy, peak_upper_energy );
-    addTooltipToRow( buffer );
+    addTooltipToRow( WString::tr("dlt-tt-peak-area-channels").arg(peak_lower_energy).arg(peak_upper_energy) );
     
     
     cell = table->elementAt( table->rowCount(), 0 );
-    txt = new WText( assertedNoSignal ? "ROI region counts" : "Peak region counts", cell );
+    txt = new WText( assertedNoSignal ? WString::tr("dlt-roi-region-counts") : WString::tr("dlt-peak-region-counts"), cell );
     val = SpecUtils::printCompact( result.peak_region_counts_sum, 5 );
     cell = table->elementAt( table->rowCount() - 1, 1 );
     txt = new WText( val, cell );
-    addTooltipToRow( "The observed number of counts in the peak region" );
+    addTooltipToRow( WString::tr("dlt-tt-peak-region-counts") );
     
     cell = table->elementAt( table->rowCount(), 0 );
-    txt = new WText( assertedNoSignal ? "ROI region null est.": "Peak region null est.", cell );
+    txt = new WText( assertedNoSignal ? WString::tr("dlt-roi-region-null-est") : WString::tr("dlt-peak-region-null-est"), cell );
     val = SpecUtils::printCompact( result.estimated_peak_continuum_counts, 5 )
           + " &plusmn; " + SpecUtils::printCompact( result.estimated_peak_continuum_uncert, 5 );
     cell = table->elementAt( table->rowCount() - 1, 1 );
     txt = new WText( val, TextFormat::XHTMLText, cell );
-    addTooltipToRow( "An estimate of the expected number of counts, in the peak region, if it"
-                    " is assumed that no signal is present.");
+    addTooltipToRow( WString::tr("dlt-tt-peak-region-null-est") );
     
     // I believe this quantity corresponds to Currie's "critical level" ( L_c ),
     //   the net signal level (instrument response) above which an observed signal may be
     //   reliably recognized as "detected"
     cell = table->elementAt( table->rowCount(), 0 );
-    txt = new WText( "Peak critical limit <span style=\"font-size: smaller;\">(L<sub>c</sub>)</span>", cell );
+    txt = new WText( WString::tr("dlt-peak-critical-limit"), cell );
     if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
     {
       const double decision_threshold_act = result.decision_threshold / gammas_per_bq;
@@ -2134,15 +2132,13 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     
     cell = table->elementAt( table->rowCount() - 1, 1 );
     txt = new WText( val, cell );
-    addTooltipToRow( "Corresponds to Currie's &quot;critical level&quot;, L<sub>c</sub>,"
-                    " that is the net signal level (instrument response) above which an"
-                    " observed signal may be reliably recognized as &quot;detected&quot;." );
+    addTooltipToRow( WString::tr("dlt-tt-critical-limit") );
     
     
     // Note: I believe this quantity corresponds to Currie's "detection limit" (L_d) that
     //       is the “true” net signal level which may be a priori expected to lead to detection.
     cell = table->elementAt( table->rowCount(), 0 );
-    txt = new WText( "Peak detection limit <span style=\"font-size: smaller;\">(L<sub>d</sub>)</span>", cell );
+    txt = new WText( WString::tr("dlt-peak-detection-limit"), cell );
     
     if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
     {
@@ -2159,9 +2155,7 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     
     cell = table->elementAt( table->rowCount() - 1, 1 );
     txt = new WText( val, cell );
-    addTooltipToRow( "Corresponds to Currie's &quot;detection limit&quot;, L<sub>d</sub>,"
-                    " that is the &quot;true&quot; net signal level which may be, <i>a priori</i>."
-                    " expected to lead to detection." );
+    addTooltipToRow( WString::tr("dlt-tt-detection-limit") );
     
     
     switch( limitType )
@@ -2172,37 +2166,38 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
         {
           // There is NOT enough excess counts that we would reliably detect this activity, so we
           //  didnt give nominal activity above, so we'll do that here
-          WString obs_label;
-          string lowerstr, upperstr, nomstr;
-          if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
-          {
-            obs_label = "Activity";
-            const float nominal_act = result.source_counts / gammas_per_bq;
-            
-            nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries )
-                      + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
-            if( nominal_act < 0 )
-              nomstr = "&lt; " + PhysicalUnits::printToBestActivityUnits( 0.0, 2, useCuries )
-                        + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
-          }else
-          {
-            obs_label = "Observed counts";
-            nomstr = SpecUtils::printCompact(result.source_counts, 4);
-            
-            if( result.source_counts < 0 )
-              nomstr = "&lt; 0 counts";
-          }//if( drf ) / else
-          
           if( !assertedNoSignal )
           {
-            nomstr += " <span style=\"font-size: smaller;\">(below L<sub>c</sub>)</span>";
-            
+            WString obs_counts_label = WString::tr("dlt-observed-counts");
+            string nom_counts_str = SpecUtils::printCompact(result.source_counts, 4);
+            if( result.source_counts < 0 )
+              nom_counts_str = WString::tr("dlt-lt-zero-counts").toUTF8();
+
+            nom_counts_str += " <span style=\"font-size: smaller;\">" + WString::tr("dlt-below-lc").toUTF8() + "</span>";
             cell = table->elementAt( table->rowCount(), 0 );
-            new WText( obs_label, cell );
+            new WText( obs_counts_label, cell );
             cell = table->elementAt( table->rowCount() - 1, 1 );
-            new WText( nomstr, cell );
-            addTooltipToRow( "The observed signal counts is less than the &quot;critical level&quot;, L<sub>c</sub>,"
-                            " so a detection can not be declared, but this is the excess over expected counts/activity." );
+            new WText( WString::fromUTF8(nom_counts_str), cell );
+            addTooltipToRow( WString::tr("dlt-tt-below-lc-counts") );
+
+            if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
+            {
+              WString obs_act_label = WString::tr("Activity");
+              const float nominal_act = result.source_counts / gammas_per_bq;
+
+              string nom_act_str = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries )
+                        + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+              if( nominal_act < 0 )
+                nom_act_str = WString::tr("dlt-lt-zero-activity").arg(PhysicalUnits::printToBestActivityUnits( 0.0, 2, useCuries )
+                          + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom )).toUTF8();
+
+              nom_act_str += " <span style=\"font-size: smaller;\">" + WString::tr("dlt-below-lc").toUTF8() + "</span>";
+              cell = table->elementAt( table->rowCount(), 0 );
+              new WText( obs_act_label, cell );
+              cell = table->elementAt( table->rowCount() - 1, 1 );
+              new WText( WString::fromUTF8(nom_act_str), cell );
+              addTooltipToRow( WString::tr("dlt-tt-below-lc-activity") );
+            }//if( !nom_act_str.empty() )
           }//if( !assertedNoSignal )
         }//if( result.source_counts <= result.decision_threshold )
       }//case DetectionLimitTool::LimitType::Activity:
@@ -2218,21 +2213,20 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     if( drf )
     {
       cell = table->elementAt( table->rowCount(), 0 );
-      txt = new WText( "Detector Intrinsic Eff.", cell );
+      txt = new WText( WString::tr("dlt-detector-intrinsic-eff"), cell );
       val = SpecUtils::printCompact( intrinsic_eff, 5 );
       cell = table->elementAt( table->rowCount() - 1, 1 );
       txt = new WText( val, cell );
-      addTooltipToRow( "The efficiency for a gamma hitting the detector face,"
-                      " to be detected in the full-energy peak." );
+      addTooltipToRow( WString::tr("dlt-tt-detector-intrinsic-eff") );
       
       if( distance >= 0.0 )
       {
         cell = table->elementAt( table->rowCount(), 0 );
-        txt = new WText( "Solid angle fraction", cell );
+        txt = new WText( WString::tr("dlt-solid-angle-fraction"), cell );
         val = SpecUtils::printCompact( geom_eff, 5 );
         cell = table->elementAt( table->rowCount() - 1, 1 );
         txt = new WText( val, cell );
-        addTooltipToRow( "The fraction of the solid angle, the detector face takes up, at the specified distance." );
+        addTooltipToRow( WString::tr("dlt-tt-solid-angle-fraction") );
       }//if( distance >= 0.0 )
     }//if( drf )
     
@@ -2240,39 +2234,37 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     {
       const double shield_trans = gammas_per_bq_into_4pi / branch_ratio / input.spectrum->live_time();
       cell = table->elementAt( table->rowCount(), 0 );
-      txt = new WText( "Shielding transmission", cell );
+      txt = new WText( WString::tr("dlt-shielding-transmission"), cell );
       val = SpecUtils::printCompact( shield_transmission, 5 );
       cell = table->elementAt( table->rowCount() - 1, 1 );
       txt = new WText( val, cell );
-      addTooltipToRow( "The fraction of gammas, at this energy, that will make it through the shielding without interacting." );
+      addTooltipToRow( WString::tr("dlt-tt-shielding-transmission") );
     }//if( branch_ratio != counts_per_bq_into_4pi )
     
     if( air_atten )
     {
       const double air_trans = gammas_per_bq_into_4pi_with_air / gammas_per_bq_into_4pi;
       cell = table->elementAt( table->rowCount(), 0 );
-      txt = new WText( "Air transmission", cell );
+      txt = new WText( WString::tr("dlt-air-transmission"), cell );
       val = SpecUtils::printCompact( air_trans, 5 );
       cell = table->elementAt( table->rowCount() - 1, 1 );
       txt = new WText( val, cell );
-      addTooltipToRow( "The fraction of gammas, at this energy, that will make it through the air (assuming sea level) without interacting." );
+      addTooltipToRow( WString::tr("dlt-tt-air-transmission") );
     }//if( air_atten )
     
     if( branch_ratio > 0.0 )
     {
       cell = table->elementAt( table->rowCount(), 0 );
-      txt = new WText( "Nuclide branching ratio", cell );
+      txt = new WText( WString::tr("dlt-nuclide-branching-ratio"), cell );
       val = SpecUtils::printCompact( branch_ratio, 5 );
       cell = table->elementAt( table->rowCount() - 1, 1 );
       txt = new WText( val, cell );
-      addTooltipToRow( "The number of gamma rays emitted at this energy, from the radioactive"
-                      " source before any shielding, but accounting for nuclide age,"
-                      " per decay of the parent nuclide." );
+      addTooltipToRow( WString::tr("dlt-tt-branching-ratio") );
     }//if( branch_ratio > 0.0 )
   }catch( std::exception &e )
   {
     cerr << "Error computing Currie limit information: " << e.what() << endl;
-    WText *msg = new WText( "Error computing Currie limit information", dialog->contents() );
+    WText *msg = new WText( WString::tr("dlt-err-computing-currie-info").arg(e.what()), dialog->contents() );
     msg->addStyleClass( "content" );
     msg->setInline( false );
   }//try / catch
@@ -2339,7 +2331,8 @@ Wt::Json::Object DetectionLimitTool::generateChartJson( const DetectionLimitCalc
   
   string unit_str = units.first;
   SpecUtils::ireplace_all( unit_str, "&mu;", MU_CHARACTER );
-  json["xtitle"] = WString::fromUTF8( (is_dist_limit ? "Distance (" : "Activity (") + unit_str + ")");
+  WString xaxis_prefix = is_dist_limit ? WString::tr("dlt-chart-x-axis-distance") : WString::tr("dlt-chart-x-axis-activity");
+  json["xtitle"] = xaxis_prefix.arg(unit_str);
   json["ytitle"] = WString::fromUTF8( "\xCF\x87\xC2\xB2" ); //chi^2
   
   double xstart = (chi2s.front().first/units.second);
@@ -2405,11 +2398,11 @@ void DetectionLimitTool::initChi2Chart()
 
 
 void DetectionLimitTool::roiDraggedCallback( double new_roi_lower_energy,
-                                                  double new_roi_upper_energy,
-                                                  double new_roi_lower_px,
-                                                  double new_roi_upper_px,
-                                                  double original_lower_energy,
-                                                  bool is_final_range )
+                                            double new_roi_upper_energy,
+                                            double new_roi_px,
+                                            double original_lower_energy,
+                                            const std::string &spectrum_type,
+                                            bool is_final_range )
 {
   if( !is_final_range )
     return;
@@ -2839,7 +2832,7 @@ void DetectionLimitTool::handleInputChange()
   auto spec = m_chart->data();
   if( !m_our_meas || !spec )
   {
-    m_errorMsg->setText( "No Data Loaded" );
+    m_errorMsg->setText( WString::tr("dlt-err-no-data") );
     m_errorMsg->show();
     return;
   }
@@ -2849,14 +2842,14 @@ void DetectionLimitTool::handleInputChange()
   
   if( !drf )
   {
-    m_errorMsg->setText( "No DRF Loaded" );
+    m_errorMsg->setText( WString::tr("dlt-err-no-drf") );
     m_errorMsg->show();
     return;
   }
   
   if( !drf->hasResolutionInfo() || !drf->isValid() )
   {
-    m_errorMsg->setText( "DRF does not have FWHM info - please fit for FWHM, or change DRF." );
+    m_errorMsg->setText( WString::tr("dlt-err-no-fwhm") );
     m_errorMsg->show();
     m_fitFwhmBtn->show();
     return;
@@ -2865,7 +2858,7 @@ void DetectionLimitTool::handleInputChange()
 
   if( !m_currentNuclide )
   {
-    m_errorMsg->setText( "No valid nuclide" );
+    m_errorMsg->setText( WString::tr("dlt-err-no-nuclide") );
     m_errorMsg->show();
     return;
   }
@@ -2908,10 +2901,10 @@ void DetectionLimitTool::handleInputChange()
         activity = PhysicalUnits::stringToActivity(acttxt);
         
         if( activity <= 0.0 )
-          throw runtime_error( "Activity cant be zero or negative" );
+          throw runtime_error( WString::tr("dlt-err-activity-zero-negative").toUTF8() );
       }catch( std::exception & )
       {
-        m_errorMsg->setText( "Activity not valid" );
+        m_errorMsg->setText( WString::tr("dlt-err-activity-invalid") );
         m_errorMsg->show();
         return;
       }//try / catch
@@ -2928,10 +2921,10 @@ void DetectionLimitTool::handleInputChange()
         distance = PhysicalUnits::stringToDistance(disttxt);
         
         if( distance <= 0.0 )
-          throw runtime_error( "Distance cant be zero or negative" );
+          throw runtime_error( WString::tr("dlt-err-distance-zero-negative").toUTF8() );
       }catch( std::exception & )
       {
-        m_errorMsg->setText( "Distance not valid" );
+        m_errorMsg->setText( WString::tr("dlt-err-distance-invalid") );
         m_errorMsg->show();
         return;
       }//try / catch
@@ -2946,7 +2939,7 @@ void DetectionLimitTool::handleInputChange()
   if( IsNan(minDisplayIntensity) || IsInf(minDisplayIntensity)
      || (minDisplayIntensity < 0.0f) || (minDisplayIntensity > 1.0f) )
   {
-    m_errorMsg->setText( "Min relative intensity to show is invalid." );
+    m_errorMsg->setText( WString::tr("dlt-err-min-rel-intensity") );
     m_errorMsg->show();
     return;
   }
@@ -2961,7 +2954,7 @@ void DetectionLimitTool::handleInputChange()
     lines = gammaLines();
   }catch(...)
   {
-    m_errorMsg->setText( "Error Calculating effects of shielding" );
+    m_errorMsg->setText( WString::tr("dlt-err-shielding") );
     m_errorMsg->show();
     return;
   }// try / catch
@@ -2981,7 +2974,7 @@ void DetectionLimitTool::handleInputChange()
   
   if( maxLineIntensity <= 0.0 || IsInf(maxLineIntensity) || IsNan(maxLineIntensity) )
   {
-    m_errorMsg->setText( "Error gamma yields - all intensities are zero." );
+    m_errorMsg->setText( WString::tr("dlt-err-gamma-yields") );
     m_errorMsg->show();
     return;
   }
@@ -3168,7 +3161,7 @@ void DetectionLimitTool::doCalc()
     double min_search_quantity = std::numeric_limits<double>::infinity(), max_search_quantity = 0.0;
   
     int nused = 0;
-    DetectorPeakResponse::EffGeometryType det_geom = DetectorPeakResponse::EffGeometryType::FarField;
+    DetectorPeakResponse::EffGeometryType det_geom = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
     
     for( auto w : m_peaks->children() )
     {
@@ -3232,7 +3225,7 @@ void DetectionLimitTool::doCalc()
       m_results->hide();
       if( m_errorMsg->isHidden() || m_errorMsg->text().empty() )
       {
-        m_errorMsg->setText( "No peaks are selected" );
+        m_errorMsg->setText( WString::tr("dlt-err-no-peaks-selected") );
         m_errorMsg->show();
       }
       m_peakModel->setPeaks( vector<shared_ptr<const PeakDef>>{} );
@@ -3313,7 +3306,7 @@ void DetectionLimitTool::doCalc()
     m_upperLimit->setText( "" );
     m_results->hide();
     m_peakModel->setPeaks( vector<shared_ptr<const PeakDef>>{} );
-    m_errorMsg->setText( "Error calculating Chi2: " + string(e.what()) );
+    m_errorMsg->setText( WString::tr("dlt-err-calculating-chi2").arg(e.what()) );
     
     const string jsgraph = m_chi2Chart->jsRef() + ".chart";
     m_chi2Chart->doJavaScript( jsgraph + ".setData(null);" );
@@ -3640,27 +3633,27 @@ void DetectionLimitTool::do_development()
   auto specfile = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
   if( !specfile )
   {
-    new WLabel( "No Foreground File", this );
+    new WLabel( WString::tr("dlt-no-foreground-file"), this );
     return;
   }
   
   auto spec = m_interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
   if( !spec )
   {
-    new WLabel( "No foreground spectrum", this );
+    new WLabel( WString::tr("dlt-no-foreground-spectrum"), this );
     return;
   }
   
   std::shared_ptr<DetectorPeakResponse> drf = specfile->detector();
   if( !drf )
   {
-    new WLabel( "No DRF loaded", this );
+    new WLabel( WString::tr("dlt-no-drf-loaded"), this );
     return;
   }
   
   if( !drf->hasResolutionInfo() || !drf->isValid() )
   {
-    new WLabel( "DRF not valid or doesnt have FWHM info.", this );
+    new WLabel( WString::tr("dlt-drf-not-valid"), this );
     return;
   }
   

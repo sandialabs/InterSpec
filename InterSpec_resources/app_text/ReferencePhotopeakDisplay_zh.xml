@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- rpd- is short for ReferencePhotopeakDisplay -->
+  <message id="rpd-add-another-btn">添加另一个</message>
+  <message id="rpd-add-another-btn-narrow">添加</message>
+  <message id="rpd-tt-add-another-btn">保留当前显示的线并添加新的核素/源以显示。</message>
+  <message id="rpd-tt-nuc-edit">例如<b>U235</b>、<b>235 Uranium</b>、<b>U</b>（仅X射线）、<b>Uranium</b>（X射线）、<b>U-235m</b>（亚稳态）、<b>Cs137</b>、<b>background</b>、<b>H(n,g)</b>等。</message>
+  <message id="rpd-tt-age">
+    <div>
+      年龄可以使用时间单位的组合来指定，类似于'<b>5.3y 8d 22m</b>'或半衰期，如'<b>2.5 HL</b>'。
+    </div>
+    <div>
+      可接受的时间单位：<b>year</b>、<b>yr</b>、<b>y</b>、<b>day</b>、<b>d</b>、<b>hrs</b>、<b>hour</b>、<b>h</b>、<b>minute</b>、
+      <b>min</b>、<b>m</b>、<b>second</b>、<b>s</b>、<b>ms</b>、<b>microseconds</b>、<b>us</b>、<b>nanoseconds</b>、<b>ns</b>，或
+      您可以通过<b>hh:mm:ss</b>指定时间段。半衰期单位可以
+      使用<b>hl</b>、<b>halflife</b>、<b>halflives</b>、<b>half-life</b>、<b>half-lives</b>、
+      <b>half lives</b>或<b>half life</b>指定。
+    </div>
+    <div>
+      半衰期单位或时间段不能与其他单位混合。指定多个时间段时，
+      它们会求和，例如'1y6months 3m'被解释为18个月加3分钟。
+    </div>
+  </message>
+  <message id="rpd-tt-clear">清除所有持久化的线以及当前非持久化的线。</message>
+  <message id="rpd-more-info">更多信息</message>
+  <message id="rpd-shield-mat">屏蔽材料</message>
+  <message id="rpd-options">选项</message>
+  <message id="rpd-opt-prompt">仅提示</message>
+  <message id="rpd-opt-tt-prompt">
+    仅来自原始核素的伽马，以及后代直到其中一个
+    半衰期比原始核素长；
+    直到那时衰变链处于平衡状态。
+  </message>
+  <message id="rpd-opt-gamma">显示伽马</message>
+  <message id="rpd-opt-xray">显示X射线</message>
+  <message id="rpd-opt-alphas">显示阿尔法</message>
+  <message id="rpd-opt-betas">显示贝塔</message>
+  <message id="rpd-opt-cascade">级联和</message>
+  <message id="rpd-opt-escapes">逃逸峰</message>
+  <message id="rpd-prev-nucs">先前核素</message>
+  <message id="rpd-det-nucs">探测器RID核素</message>
+  <message id="rpd-assoc-nucs">关联核素</message>
+  <message id="rpd-suggestions">建议</message>
+  <message id="rpd-feature-markers">特征标记</message>
+
+  <!-- Reference line thickness options -->
+  <message id="rpd-line-thick-light">窄线</message>
+  <message id="rpd-line-thick-normal">标准厚度</message>
+  <message id="rpd-line-thick-thick">粗线</message>
+  <message id="rpd-line-thick-thicker">更粗线</message>
+  
+  <!-- Reference lines visual verbosity options. -->
+  <message id="rpd-line-verb-none">最小线</message>
+  <message id="rpd-line-verb-hover">引导参考线</message>
+  <message id="rpd-line-verb-major">完整主要线</message>
+  
+  <message id="rpd-csv-export-msg">"核素衰变信息"工具提供了将核素、衰变产物和衰变信息导出到CSV文件的附加功能。</message>
+  <message id="rpd-changed-age">将{1}的年龄从'{2}'更改为更合理的值'{3}'</message>
+  <message id="rpd-changed-age-fission">将年龄更改为{1}，以使其有效。</message>
+  <message id="rpd-det-id">探测器ID</message>
+  <message id="rpd-ext-rid">外部RID</message>
+  <message id="rpd-prev">先前</message>
+  <message id="rpd-warn-cascade-xrays">X射线不包括在级联中</message>
+
+  <!-- Values in the table on this tool -->
+  <message id="rpd-tbl-iso">异构</message>  <!-- a.k.a meta-stable state of nuclide -->
+  <message id="rpd-tbl-el-cap">电子俘获</message> <!-- a.k.a electron capture -->
+  <message id="rpd-tbl-proton">质子</message>
+  <message id="rpd-tbl-spont-fis">自发裂变</message> <!-- Spontaneous Fission-->
+  <message id="rpd-tbl-xray">X射线</message>
+  <message id="rpd-tbl-reaction">反应</message>
+  <message id="rpd-tbl-norm">NORM</message>
+  <message id="rpd-tbl-cascade-sum">级联和</message>
+
+  <message id="rpd-tbl-hdr-energy">能量(keV)</message>
+  <message id="rpd-tbl-hdr-br">分支比</message> <!-- branching ratio -->
+  <message id="rpd-tbl-hdr-parent">母体</message>
+  <message id="rpd-tbl-hdr-mode">模式</message>
+  <message id="rpd-tbl-hdr-particle">粒子</message>
+  <message id="rpd-tbl-hdr-tt-energy">产生的粒子能量</message>
+  <message id="rpd-tbl-hdr-tt-br">每秒每Bq母体核素的粒子数。</message>
+  <message id="rpd-tbl-hdr-tt-trans">衰变产生此粒子的实际核素。</message>
+  <message id="rpd-tbl-hdr-tt-trans-mode">产生此粒子的母体核素的衰变模式。</message>
+  <message id="rpd-tbl-hdr-tt-type">产生的粒子类型</message>
+  <message id="rpd-tbl-hdr-tt-"></message>
+
+
+</messages>

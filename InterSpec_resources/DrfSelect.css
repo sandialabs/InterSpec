@@ -3,7 +3,7 @@
   font-size: x-small;
 }
 
-.DetectorLabel
+.DetUploadDiv .DetectorLabel
 {
   font-size: 12px;
   font-style: italic;
@@ -67,6 +67,19 @@ table.FormulaDrfTbl label
   flex-wrap: nowrap;
   justify-content: space-between;
   align-items: center;
+}
+
+.DetUploadDiv
+{
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.DetUploadDiv .EfficiencyType
+{
+  
 }
 
 .DetectorDiamDiv

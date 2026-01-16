@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dlt- is short for DetectionLimitTool
+  -->
+  <message id="dlt-window-title">সনাক্তকরণ আস্থা সরঞ্জাম</message>
+  
+  <!-- MdaPeakRow strings -->
+  <message id="dlt-use-for-multi-peak">মাল্টি-পিকের জন্য ব্যবহার করুন</message>
+  <message id="dlt-roi-lower-label">ROI নিম্ন:</message>
+  <message id="dlt-roi-upper-label">ROI উচ্চ:</message>
+  <message id="dlt-continuum-label">কন্টিনুয়াম</message>
+  <message id="dlt-cont-norm-label">কন্ট. নর্ম</message>
+  <message id="dlt-cont-norm-floating">ভাসমান</message>
+  <message id="dlt-cont-norm-fixed-edges">প্রান্তে স্থির</message>
+  <message id="dlt-cont-norm-fixed-full-roi">সম্পূর্ণ ROI স্থির</message>
+  <message id="dlt-cont-norm-tt">
+    কন্টিনুয়াম স্বাভাবিকীকরণ কীভাবে নির্ধারণ করা উচিত:
+    <ul><li><b>ভাসমান</b>: বহুপদী কন্টিনুয়াম প্রতিটি প্রদত্ত কার্যকলাপের জন্য ফিট করা হয় -
+    কার্যকলাপ কন্টিনুয়ামকে প্রভাবিত করে।</li>
+    <li><b>প্রান্তে স্থির</b>: ROI-এর উভয় পাশের চ্যানেলগুলি একটি
+    রৈখিক কন্টিনুয়াম নির্ধারণ করতে ব্যবহৃত হয় যা স্থির, এবং নিউক্লাইডের কার্যকলাপ দ্বারা প্রভাবিত হয় না।</li>
+    <li><b>সম্পূর্ণ ROI স্থির</b>: কন্টিনুয়াম ROI-এর সম্পূর্ণ শক্তি পরিসর ব্যবহার করে ফিট করা হয়,
+    শূন্য গাউসিয়ান প্রশস্ততা ধরে নিয়ে; পরে, পিকের গাউসিয়ান উপাদান
+    এই স্থির কন্টিনুয়ামের উপরে বসবে।<br/>
+    এটি কার্যকরভাবে দাবি করছে যে আপনি জানেন যে ডেটায় কোনও সংকেত পিক নেই।
+    কন্টিনুয়াম নিউক্লাইড কার্যকলাপ মান দ্বারা প্রভাবিত হবে না, এবং গাউসিয়ান
+    পিকের উপাদান মূল্যায়ন করার সময় এই স্থির কন্টিনুয়ামের উপরে বসবে
+    &chi;<sup>2</sup>।</li>
+    </ul>
+  </message>
+  <message id="dlt-single-peak-currie-limit">একক পিক কারি সীমা</message>
+  <message id="dlt-num-side-channels-label">পার্শ্ব চ্যানেল সংখ্যা</message>
+  <message id="dlt-further-details-link">আরও বিবরণ...</message>
+  <message id="dlt-err-computing-info">গণনা ত্রুটি {1}, {2} keV তথ্য</message>
+  <message id="dlt-err-computing-currie-info">কারি সীমা তথ্য গণনা ত্রুটি: {1}</message>
+  
+  <!-- MdaPeakRow setSimplePoisonTxt strings -->
+  <message id="dlt-nominal">নামমাত্র:</message>
+  <message id="dlt-range">পরিসর:</message>
+  <message id="dlt-detected-activity-tt">সনাক্তকৃত কার্যকলাপ, শুধুমাত্র এই আগ্রহের অঞ্চল ব্যবহার করে,
+    এবং পর্যবেক্ষিত গণনার অতিরিক্ত, সেইসাথে
+    পরিসংখ্যানগত আস্থা ব্যবধান।</message>
+  <message id="dlt-limit-lt-zero"><![CDATA[সীমা: < 0{1}]]></message>
+  <message id="dlt-sig-fewer-counts">(ROI-এ পূর্বাভাসের চেয়ে উল্লেখযোগ্যভাবে কম গণনা)</message>
+  <message id="dlt-fewer-counts-tt">আগ্রহের অঞ্চলে উল্লেখযোগ্যভাবে কম গণনা পর্যবেক্ষণ করা হয়েছিল,
+    প্রতিবেশী চ্যানেল দ্বারা পূর্বাভাসিত চেয়ে।</message>
+  <message id="dlt-upper-limit">উচ্চ সীমা:</message>
+  <message id="dlt-critical-limit">সমালোচনামূলক সীমা:</message>
+  <message id="dlt-limit-tt">উচ্চ সীমা হল প্রদত্ত CL-এর জন্য উপস্থিত সর্বোচ্চ কার্যকলাপ,
+    ROI-এ পর্যবেক্ষিত গণনার সংখ্যা দেওয়া হয়েছে।
+    সমালোচনামূলক সীমা হল কার্যকলাপ যেখানে সংকেত নির্ভরযোগ্যভাবে সনাক্ত করা হবে।
+    উভয় সংখ্যা কারি পদ্ধতি ব্যবহার করে গণনা করা হয়েছে।</message>
+  <message id="dlt-large-deficit">ROI-এ গণনার বড় ঘাটতি</message>
+  
+  <!-- DetectionLimitTool main class strings -->
+  <message id="dlt-tt-age-edit">
+    <div>নিউক্লাইডের বয়স।</div>
+    <br />
+    <div>বয়স সন্তানের বৃদ্ধির পরিমাণ নিয়ন্ত্রণ করে; পিতামাতার কার্যকলাপ
+    (অর্থাৎ, প্রবেশ করা) নিউক্লাইড সর্বদা পরিমাপের সময়ে রিপোর্ট করা হয়।
+    </div>
+  </message>
+  <message id="dlt-attenuate-for-air">বাতাসের জন্য হ্রাস করুন</message>
+  <message id="dlt-shield-empty-text">রক্ষণাবেক্ষণ উপাদান</message>
+  <message id="dlt-activity-limit">কার্যকলাপ সীমা</message>
+  <message id="dlt-distance-limit">দূরত্ব সীমা</message>
+  <message id="dlt-peaks-disp-act-label">পিক প্রদর্শন কার্যকলাপ:</message>
+  <message id="dlt-peaks-disp-dist-label">পিক প্রদর্শন দূরত্ব:</message>
+  <message id="dlt-conf-level-label">আস্থা স্তর:</message>
+  <message id="dlt-conf-95">95%</message>
+  <message id="dlt-conf-99">99%</message>
+  <message id="dlt-conf-1sigma">1σ (68.2%)</message>
+  <message id="dlt-conf-2sigma">2σ (95.4%)</message>
+  <message id="dlt-conf-3sigma">3σ (99.7%)</message>
+  <message id="dlt-conf-4sigma">4σ</message>
+  <message id="dlt-conf-5sigma">5σ</message>
+  <message id="dlt-gamma-lines-to-use">ব্যবহারের জন্য গামা লাইন</message>
+  <message id="dlt-min-rel-intensity-label">ন্যূনতম আপেক্ষিক তীব্রতা:</message>
+  <message id="dlt-fit-fwhm-btn">FWHM ফিট করুন...</message>
+  <message id="dlt-log">লগ</message>
+  <message id="dlt-lin">লিন</message>
+  <message id="dlt-below-lc">(L<sub>c</sub>-এর নিচে)</message>
+  <message id="dlt-lt-zero-counts"><![CDATA[< 0 গণনা]]></message>
+  <message id="dlt-lt-zero-activity"><![CDATA[< {1}]]></message>
+  
+  <!-- Error messages -->
+  <message id="dlt-err-no-data">কোনও ডেটা লোড করা হয়নি</message>
+  <message id="dlt-err-no-drf">কোনও DRF লোড করা হয়নি</message>
+  <message id="dlt-err-no-fwhm">DRF-এ FWHM তথ্য নেই - অনুগ্রহ করে FWHM-এর জন্য ফিট করুন, বা DRF পরিবর্তন করুন।</message>
+  <message id="dlt-err-no-nuclide">বৈধ নিউক্লাইড নেই</message>
+  <message id="dlt-err-activity-invalid">কার্যকলাপ বৈধ নয়</message>
+  <message id="dlt-err-distance-invalid">দূরত্ব বৈধ নয়</message>
+  <message id="dlt-err-min-rel-intensity">প্রদর্শনের জন্য ন্যূনতম আপেক্ষিক তীব্রতা অবৈধ।</message>
+  <message id="dlt-err-shielding">রক্ষণাবেক্ষণের প্রভাব গণনা ত্রুটি</message>
+  <message id="dlt-err-gamma-yields">গামা ফলন ত্রুটি - সমস্ত তীব্রতা শূন্য।</message>
+  <message id="dlt-err-no-peaks-selected">কোনও পিক নির্বাচিত নেই</message>
+  <message id="dlt-err-calculating-chi2">Chi2 গণনা ত্রুটি: {1}</message>
+  <message id="dlt-err-calculating-limit">সীমা গণনা ত্রুটি: {1}</message>
+  
+  <!-- createCurrieRoiMoreInfoWindow strings -->
+  <message id="dlt-observed-activity">পর্যবেক্ষিত কার্যকলাপ</message>
+  <message id="dlt-observed-counts">পর্যবেক্ষিত গণনা</message>
+  <message id="dlt-activity-range">কার্যকলাপ পরিসর</message>
+  <message id="dlt-counts-range">গণনা পরিসর</message>
+  <message id="dlt-activity-le-zero">কার্যকলাপ &le; 0 {1}</message>
+  <message id="dlt-counts-le-zero">গণনা &le; 0</message>
+  <message id="dlt-activity-upper-bound">কার্যকলাপ উচ্চ সীমা</message>
+  <message id="dlt-counts-upper-bound">গণনা উচ্চ সীমা</message>
+  <message id="dlt-distance-not-supported">অতিরিক্ত তথ্যের জন্য দূরত্ব এখনও সমর্থিত নয়</message>
+  <message id="dlt-lower-region-channels">নিম্ন অঞ্চল চ্যানেল</message>
+  <message id="dlt-lower-region-counts">নিম্ন অঞ্চল গণনা</message>
+  <message id="dlt-upper-region-channels">উচ্চ অঞ্চল চ্যানেল</message>
+  <message id="dlt-upper-region-counts">উচ্চ অঞ্চল গণনা</message>
+  <message id="dlt-using-roi-as-background">পটভূমি অনুমান হিসাবে ROI অঞ্চল ব্যবহার করা হচ্ছে</message>
+  <message id="dlt-roi-area-channels">ROI অঞ্চল চ্যানেল</message>
+  <message id="dlt-peak-area-channels">পিক অঞ্চল চ্যানেল</message>
+  <message id="dlt-roi-region-counts">ROI অঞ্চল গণনা</message>
+  <message id="dlt-peak-region-counts">পিক অঞ্চল গণনা</message>
+  <message id="dlt-roi-region-null-est">ROI অঞ্চল নাল অনুমান</message>
+  <message id="dlt-peak-region-null-est">পিক অঞ্চল নাল অনুমান</message>
+  <message id="dlt-peak-critical-limit">পিক সমালোচনামূলক সীমা <span style="font-size: smaller;">(L<sub>c</sub>)</span></message>
+  <message id="dlt-peak-detection-limit">পিক সনাক্তকরণ সীমা <span style="font-size: smaller;">(L<sub>d</sub>)</span></message>
+  <message id="dlt-detector-intrinsic-eff">ডিটেক্টর অন্তর্নিহিত দক্ষতা</message>
+  <message id="dlt-solid-angle-fraction">কঠিন কোণ ভগ্নাংশ</message>
+  <message id="dlt-shielding-transmission">রক্ষণাবেক্ষণ ট্রান্সমিশন</message>
+  <message id="dlt-air-transmission">বায়ু ট্রান্সমিশন</message>
+  <message id="dlt-nuclide-branching-ratio">নিউক্লাইড শাখা অনুপাত</message>
+  
+  <!-- Tooltip strings for createCurrieRoiMoreInfoWindow -->
+  <message id="dlt-tt-greater-than-lc">&quot;সমালোচনামূলক স্তর&quot;, L<sub>c</sub>-এর চেয়ে বেশি,
+    পিক অঞ্চলে গণনা পর্যবেক্ষণ করা হয়েছিল।</message>
+  <message id="dlt-tt-activity-range">সংকেত কার্যকলাপ পরিসর অনুমান, {1} আস্থা স্তরে।</message>
+  <message id="dlt-tt-counts-range">সংকেত গণনা পরিসর অনুমান, {1} আস্থা স্তরে।</message>
+  <message id="dlt-tt-fewer-than-predicted">পিক অঞ্চলে উল্লেখযোগ্যভাবে কম গণনা পর্যবেক্ষণ করা হয়েছিল,
+    প্রতিবেশী অঞ্চল দ্বারা পূর্বাভাসিত চেয়ে।</message>
+  <message id="dlt-tt-upper-bound">কতটা কার্যকলাপ উপস্থিত হতে পারে তার উচ্চ সীমা,
+    {1} আস্থা স্তরে।</message>
+  <message id="dlt-tt-lower-region-channels">শক্তিতে পিকের উপরের অঞ্চল, যা ব্যবহার করা হচ্ছে
+    পিক অঞ্চলে প্রত্যাশিত কন্টিনুয়াম গণনা অনুমান করতে;
+    {1} থেকে {2} keV-এর সাথে মিলে যায়</message>
+  <message id="dlt-tt-lower-region-counts">পিক অঞ্চলের নিচের অঞ্চলে পর্যবেক্ষিত গণনার সংখ্যা,
+    যা প্রত্যাশিত পিক-অঞ্চল প্রত্যাশিত গণনা অনুমান করতে ব্যবহৃত হয়</message>
+  <message id="dlt-tt-upper-region-channels">শক্তিতে পিকের উপরের অঞ্চল, যা ব্যবহার করা হচ্ছে
+    পিক অঞ্চলে প্রত্যাশিত কন্টিনুয়াম গণনা অনুমান করতে;
+    {1} থেকে {2} keV-এর সাথে মিলে যায়</message>
+  <message id="dlt-tt-upper-region-counts">পিক অঞ্চলের উপরের অঞ্চলে পর্যবেক্ষিত গণনার সংখ্যা,
+    যা প্রত্যাশিত পিক-অঞ্চল প্রত্যাশিত গণনা অনুমান করতে ব্যবহৃত হয়</message>
+  <message id="dlt-tt-peak-area-channels">অঞ্চল যেখানে পিক থাকবে বলে ধারণা করা হচ্ছে;
+    {1} থেকে {2} keV-এর সাথে মিলে যায়</message>
+  <message id="dlt-tt-peak-region-counts">পিক অঞ্চলে পর্যবেক্ষিত গণনার সংখ্যা</message>
+  <message id="dlt-tt-peak-region-null-est">প্রত্যাশিত গণনার সংখ্যার একটি অনুমান, পিক অঞ্চলে, যদি
+    ধরে নেওয়া হয় যে কোনও সংকেত নেই।</message>
+  <message id="dlt-tt-critical-limit">কারির &quot;সমালোচনামূলক স্তর&quot;, L<sub>c</sub>-এর সাথে মিলে যায়,
+    যা নেট সংকেত স্তর (যন্ত্র প্রতিক্রিয়া) যার উপরে একটি
+    পর্যবেক্ষিত সংকেত নির্ভরযোগ্যভাবে &quot;সনাক্তকৃত&quot; হিসাবে স্বীকৃত হতে পারে।</message>
+  <message id="dlt-tt-detection-limit">কারির &quot;সনাক্তকরণ সীমা&quot;, L<sub>d</sub>-এর সাথে মিলে যায়,
+    যা &quot;সত্য&quot; নেট সংকেত স্তর যা হতে পারে, <i>অগ্রিম</i>,
+    সনাক্তকরণের দিকে নিয়ে যাওয়ার প্রত্যাশিত।</message>
+  <message id="dlt-tt-detector-intrinsic-eff">ডিটেক্টর মুখে আঘাতকারী গামার জন্য দক্ষতা,
+    সম্পূর্ণ-শক্তি পিকে সনাক্ত করা হবে।</message>
+  <message id="dlt-tt-solid-angle-fraction">কঠিন কোণের ভগ্নাংশ, ডিটেক্টর মুখটি নির্দিষ্ট দূরত্বে দখল করে।</message>
+  <message id="dlt-tt-shielding-transmission">গামার ভগ্নাংশ, এই শক্তিতে, যা রক্ষণাবেক্ষণের মধ্য দিয়ে যাবে কোনও মিথস্ক্রিয়া ছাড়াই।</message>
+  <message id="dlt-tt-air-transmission">গামার ভগ্নাংশ, এই শক্তিতে, যা বাতাসের মধ্য দিয়ে যাবে (সমুদ্রপৃষ্ঠ ধরে নিয়ে) কোনও মিথস্ক্রিয়া ছাড়াই।</message>
+  <message id="dlt-tt-branching-ratio">এই শক্তিতে নির্গত গামা রশ্মির সংখ্যা, তেজস্ক্রিয়
+    উৎস থেকে যেকোনো রক্ষণাবেক্ষণের আগে, কিন্তু নিউক্লাইড বয়স বিবেচনা করে,
+    পিতামাতা নিউক্লাইডের প্রতি ক্ষয়।</message>
+  <message id="dlt-tt-below-lc-counts">পর্যবেক্ষিত সংকেত গণনা &quot;সমালোচনামূলক স্তর&quot;, L<sub>c</sub>-এর চেয়ে কম,
+    তাই সনাক্তকরণ ঘোষণা করা যায় না, কিন্তু এটি প্রত্যাশিত গণনার উপর অতিরিক্ত।</message>
+  <message id="dlt-tt-below-lc-activity">পর্যবেক্ষিত সংকেত কার্যকলাপ &quot;সমালোচনামূলক স্তর&quot;, L<sub>c</sub>-এর চেয়ে কম,
+    তাই সনাক্তকরণ ঘোষণা করা যায় না, কিন্তু এটি প্রত্যাশিত গণনার উপর অতিরিক্ত।</message>
+  
+  <!-- Chart strings -->
+  <message id="dlt-chart-x-axis-distance">দূরত্ব ({1})</message>
+  <message id="dlt-chart-x-axis-activity">কার্যকলাপ ({1})</message>
+  <message id="dlt-chart-title-estimated-activity">অনুমানিত কার্যকলাপ {1}।</message>
+  <message id="dlt-chart-title-excess-counts">অতিরিক্ত গণনা {1}।</message>
+  <message id="dlt-chart-title-activity-lt-zero"><![CDATA[কার্যকলাপ < 0 {1}]]></message>
+  <message id="dlt-chart-title-data-peak">ডেটা + পিক {1}</message>
+  <message id="dlt-chart-title-peak-upper-bound">উচ্চ সীমার পিক {1} @{2} CL</message>
+  <message id="dlt-currie-info-dialog-title">{1}{2} keV তথ্য</message>
+  
+  <!-- Additional error/status messages -->
+  <message id="dlt-no-foreground-file">কোনও ফোরগ্রাউন্ড ফাইল নেই</message>
+  <message id="dlt-no-foreground-spectrum">কোনও ফোরগ্রাউন্ড স্পেকট্রাম নেই</message>
+  <message id="dlt-no-drf-loaded">কোনও DRF লোড করা হয়নি</message>
+  <message id="dlt-drf-not-valid">DRF বৈধ নয় বা FWHM তথ্য নেই।</message>
+  <message id="dlt-err-max-distance-too-large"><![CDATA[সর্বোচ্চ দূরত্ব খুব বড় (>100কিমি)]]></message>
+  <message id="dlt-err-upper-limit-negative">গণনার উচ্চ সীমা শূন্যের চেয়ে কম, কিন্তু পর্যবেক্ষিত গণনা L_d-এর চেয়ে বেশি।</message>
+  <message id="dlt-err-activity-zero-negative">কার্যকলাপ শূন্য বা নেতিবাচক হতে পারে না</message>
+  <message id="dlt-err-distance-zero-negative">দূরত্ব শূন্য বা নেতিবাচক হতে পারে না</message>
+</messages>

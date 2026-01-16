@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dlt- is short for DetectionLimitTool
+  -->
+  <message id="dlt-window-title">Észlelési megbízhatósági eszköz</message>
+  
+  <!-- MdaPeakRow strings -->
+  <message id="dlt-use-for-multi-peak">Használat többcsúcs esetén</message>
+  <message id="dlt-roi-lower-label">ROI Alsó:</message>
+  <message id="dlt-roi-upper-label">ROI Felső:</message>
+  <message id="dlt-continuum-label">Kontinuum</message>
+  <message id="dlt-cont-norm-label">Kont. Norm.</message>
+  <message id="dlt-cont-norm-floating">Lebegő</message>
+  <message id="dlt-cont-norm-fixed-edges">Rögzített a széleken</message>
+  <message id="dlt-cont-norm-fixed-full-roi">Rögzített teljes ROI</message>
+  <message id="dlt-cont-norm-tt">
+    A kontinuum normalizálás meghatározása:
+    <ul><li><b>Lebegő</b>: A polinomiális kontinuum minden adott aktivitásnál illesztve van -
+    az aktivitás befolyásolja a kontinuumot.</li>
+    <li><b>Rögzített a széleken</b>: A ROI mindkét oldalán lévő csatornákat használjuk egy
+    lineáris kontinuum meghatározásához, amely rögzített, és nem érinti a nuklidok aktivitása.</li>
+    <li><b>Rögzített teljes ROI</b>: A kontinuum a ROI teljes energiatartományát használva van illesztve,
+    nulla Gauss-amplitúdót feltételezve; később a csúcs Gauss-komponense
+    e rögzített kontinuum tetején helyezkedik el.<br/>
+    Ez gyakorlatilag azt állítja, hogy tudod, hogy nincs jelszint jelen az adatokban.
+    A kontinuumot nem érinti a nuklid aktivitás értéke, és a Gauss
+    csúcs komponens értékeléskor e rögzített kontinuum tetején helyezkedik el
+    &chi;<sup>2</sup>.</li>
+    </ul>
+  </message>
+  <message id="dlt-single-peak-currie-limit">Egyetlen csúcs Currie határ</message>
+  <message id="dlt-num-side-channels-label">Oldalsó csatornák száma</message>
+  <message id="dlt-further-details-link">további részletek...</message>
+  <message id="dlt-err-computing-info">Számítási hiba {1}, {2} keV Info</message>
+  <message id="dlt-err-computing-currie-info">Currie határ információ számítási hiba: {1}</message>
+  
+  <!-- MdaPeakRow setSimplePoisonTxt strings -->
+  <message id="dlt-nominal">Névleges:</message>
+  <message id="dlt-range">Tartomány:</message>
+  <message id="dlt-detected-activity-tt">Észlelt aktivitás, csak ezt az Érdeklődési Régiót használva,
+    és a megfigyelt számlálások többletét, valamint a
+    statisztikai megbízhatósági intervallumot.</message>
+  <message id="dlt-limit-lt-zero"><![CDATA[Határ: < 0{1}]]></message>
+  <message id="dlt-sig-fewer-counts">(jelentősen kevesebb számlálás ROI-ban, mint előrejelzett)</message>
+  <message id="dlt-fewer-counts-tt">Jelentősen kevesebb számlálást figyeltek meg az
+    Érdeklődési Régióban, mint amit a szomszédos csatornák előre jeleztek.</message>
+  <message id="dlt-upper-limit">Felső határ:</message>
+  <message id="dlt-critical-limit">Kritikus határ:</message>
+  <message id="dlt-limit-tt">A felső határ a jelenlévő maximális aktivitás, az adott CL-hez,
+    figyelembe véve a ROI-ban megfigyelt számlálások számát.
+    A kritikus határ az az aktivitás, ahol a jel megbízhatóan észlelhető lenne.
+    Mindkét szám a Currie módszerrel számítva.</message>
+  <message id="dlt-large-deficit">Nagy számlálás hiány a ROI-ban</message>
+  
+  <!-- DetectionLimitTool main class strings -->
+  <message id="dlt-tt-age-edit">
+    <div>A nuklid kora.</div>
+    <br />
+    <div>A kor szabályozza az utódok növekedésének mennyiségét; a szülő
+    (azaz beírt) nuklid aktivitásai mindig a mérés időpontjára vonatkoznak.
+    </div>
+  </message>
+  <message id="dlt-attenuate-for-air">Csillapítás levegőre</message>
+  <message id="dlt-shield-empty-text">pajzsoló anyag</message>
+  <message id="dlt-activity-limit">Aktivitás határ</message>
+  <message id="dlt-distance-limit">Távolság határ</message>
+  <message id="dlt-peaks-disp-act-label">Csúcsok megj. akt.:</message>
+  <message id="dlt-peaks-disp-dist-label">Csúcsok megj. távolság:</message>
+  <message id="dlt-conf-level-label">Megbízhatósági szint:</message>
+  <message id="dlt-conf-95">95%</message>
+  <message id="dlt-conf-99">99%</message>
+  <message id="dlt-conf-1sigma">1σ (68,2%)</message>
+  <message id="dlt-conf-2sigma">2σ (95,4%)</message>
+  <message id="dlt-conf-3sigma">3σ (99,7%)</message>
+  <message id="dlt-conf-4sigma">4σ</message>
+  <message id="dlt-conf-5sigma">5σ</message>
+  <message id="dlt-gamma-lines-to-use">Használandó gamma vonalak</message>
+  <message id="dlt-min-rel-intensity-label">Min relatív intenzitás:</message>
+  <message id="dlt-fit-fwhm-btn">FWHM illesztés...</message>
+  <message id="dlt-log">Log</message>
+  <message id="dlt-lin">Lin</message>
+  <message id="dlt-below-lc">(L<sub>c</sub> alatt)</message>
+  <message id="dlt-lt-zero-counts"><![CDATA[< 0 számlálás]]></message>
+  <message id="dlt-lt-zero-activity"><![CDATA[< {1}]]></message>
+  
+  <!-- Error messages -->
+  <message id="dlt-err-no-data">Nincs betöltött adat</message>
+  <message id="dlt-err-no-drf">Nincs betöltött DRF</message>
+  <message id="dlt-err-no-fwhm">A DRF-nek nincs FWHM információja - kérjük, illesszen FWHM-re, vagy változtassa meg a DRF-t.</message>
+  <message id="dlt-err-no-nuclide">Nincs érvényes nuklid</message>
+  <message id="dlt-err-activity-invalid">Az aktivitás nem érvényes</message>
+  <message id="dlt-err-distance-invalid">A távolság nem érvényes</message>
+  <message id="dlt-err-min-rel-intensity">A megjelenítendő minimális relatív intenzitás érvénytelen.</message>
+  <message id="dlt-err-shielding">Hiba a pajzsolás hatásainak számításánál</message>
+  <message id="dlt-err-gamma-yields">Hiba gamma hozamok - minden intenzitás nulla.</message>
+  <message id="dlt-err-no-peaks-selected">Nincsenek kiválasztott csúcsok</message>
+  <message id="dlt-err-calculating-chi2">Hiba Chi2 számításánál: {1}</message>
+  <message id="dlt-err-calculating-limit">Hiba határ számításánál: {1}</message>
+  
+  <!-- createCurrieRoiMoreInfoWindow strings -->
+  <message id="dlt-observed-activity">Megfigyelt aktivitás</message>
+  <message id="dlt-observed-counts">Megfigyelt számlálások</message>
+  <message id="dlt-activity-range">Aktivitás tartomány</message>
+  <message id="dlt-counts-range">Számlálások tartomány</message>
+  <message id="dlt-activity-le-zero">Aktivitás &le; 0 {1}</message>
+  <message id="dlt-counts-le-zero">Számlálások &le; 0</message>
+  <message id="dlt-activity-upper-bound">Aktivitás felső határ</message>
+  <message id="dlt-counts-upper-bound">Számlálások felső határ</message>
+  <message id="dlt-distance-not-supported">A távolság még nem támogatott további információkhoz</message>
+  <message id="dlt-lower-region-channels">Alsó régió csatornák</message>
+  <message id="dlt-lower-region-counts">Alsó régió számlálások</message>
+  <message id="dlt-upper-region-channels">Felső régió csatornák</message>
+  <message id="dlt-upper-region-counts">Felső régió számlálások</message>
+  <message id="dlt-using-roi-as-background">ROI terület használata háttér becslésként</message>
+  <message id="dlt-roi-area-channels">ROI terület csatornák</message>
+  <message id="dlt-peak-area-channels">Csúcs terület csatornák</message>
+  <message id="dlt-roi-region-counts">ROI régió számlálások</message>
+  <message id="dlt-peak-region-counts">Csúcs régió számlálások</message>
+  <message id="dlt-roi-region-null-est">ROI régió null becslés</message>
+  <message id="dlt-peak-region-null-est">Csúcs régió null becslés</message>
+  <message id="dlt-peak-critical-limit">Csúcs kritikus határ <span style="font-size: smaller;">(L<sub>c</sub>)</span></message>
+  <message id="dlt-peak-detection-limit">Csúcs észlelési határ <span style="font-size: smaller;">(L<sub>d</sub>)</span></message>
+  <message id="dlt-detector-intrinsic-eff">Detektor belső hatékonyság</message>
+  <message id="dlt-solid-angle-fraction">Térszög tört</message>
+  <message id="dlt-shielding-transmission">Pajzsolás átvitel</message>
+  <message id="dlt-air-transmission">Levegő átvitel</message>
+  <message id="dlt-nuclide-branching-ratio">Nuklid elágazási arány</message>
+  
+  <!-- Tooltip strings for createCurrieRoiMoreInfoWindow -->
+  <message id="dlt-tt-greater-than-lc">A &quot;kritikus szint&quot; felett, L<sub>c</sub>,
+    számlálásokat figyeltek meg a csúcs régióban.</message>
+  <message id="dlt-tt-activity-range">A jel aktivitás tartomány becslése, a {1} megbízhatósági szintig.</message>
+  <message id="dlt-tt-counts-range">A jel számlálások tartomány becslése, a {1} megbízhatósági szintig.</message>
+  <message id="dlt-tt-fewer-than-predicted">Jelentősen kevesebb számlálást figyeltek meg a csúcs régióban,
+    mint amit a szomszédos régiók előre jeleztek.</message>
+  <message id="dlt-tt-upper-bound">A felső határ arra, hogy mennyi aktivitás lehet jelen, a
+    {1} megbízhatósági szintig.</message>
+  <message id="dlt-tt-lower-region-channels">A csúcs feletti régió energiában, amelyet használnak
+    a csúcs régióban várható kontinuum számlálások becsléséhez;
+    {1} és {2} keV-nek felel meg</message>
+  <message id="dlt-tt-lower-region-counts">A csúcs régió alatt lévő régióban megfigyelt számlálások száma,
+    amelyet a várható csúcs-régió várható számlálások becsléséhez használnak</message>
+  <message id="dlt-tt-upper-region-channels">A csúcs feletti régió energiában, amelyet használnak
+    a csúcs régióban várható kontinuum számlálások becsléséhez;
+    {1} és {2} keV-nek felel meg</message>
+  <message id="dlt-tt-upper-region-counts">A csúcs régió feletti régióban megfigyelt számlálások száma,
+    amelyet a várható csúcs-régió várható számlálások becsléséhez használnak</message>
+  <message id="dlt-tt-peak-area-channels">A régió, amelyben a csúcs feltételezett;
+    {1} és {2} keV-nek felel meg</message>
+  <message id="dlt-tt-peak-region-counts">A csúcs régióban megfigyelt számlálások száma</message>
+  <message id="dlt-tt-peak-region-null-est">A várható számlálások számának becslése, a csúcs régióban, ha
+    feltételezzük, hogy nincs jelen jel.</message>
+  <message id="dlt-tt-critical-limit">Currie &quot;kritikus szintjének&quot; felel meg, L<sub>c</sub>,
+    amely a nettó jel szintje (műszer válasz), amely felett egy
+    megfigyelt jel megbízhatóan felismerhető &quot;észleltként&quot;.</message>
+  <message id="dlt-tt-detection-limit">Currie &quot;észlelési határának&quot; felel meg, L<sub>d</sub>,
+    amely a &quot;valódi&quot; nettó jel szintje, amely lehet, <i>a priori</i>,
+    várhatóan észlelést eredményez.</message>
+  <message id="dlt-tt-detector-intrinsic-eff">A hatékonyság egy gamma számára, amely a detektor felületét éri,
+    teljes energiájú csúcsban észlelni.</message>
+  <message id="dlt-tt-solid-angle-fraction">A térszög törtje, amelyet a detektor felülete elfoglal, a megadott távolságban.</message>
+  <message id="dlt-tt-shielding-transmission">A gamma-ok törtje, ezen az energián, amelyek a pajzsoláson keresztül mennek interakció nélkül.</message>
+  <message id="dlt-tt-air-transmission">A gamma-ok törtje, ezen az energián, amelyek a levegőn keresztül mennek (tengerszintet feltételezve) interakció nélkül.</message>
+  <message id="dlt-tt-branching-ratio">Az ezen az energián kibocsátott gamma sugarak száma, a radioaktív
+    forrásból bármilyen pajzsolás előtt, de figyelembe véve a nuklid korát,
+    a szülő nuklid bomlásánként.</message>
+  <message id="dlt-tt-below-lc-counts">A megfigyelt jel számlálások kevesebb, mint a &quot;kritikus szint&quot;, L<sub>c</sub>,
+    így nem lehet észlelést kijelenteni, de ez a többlet a várható számlálások felett.</message>
+  <message id="dlt-tt-below-lc-activity">A megfigyelt jel aktivitás kevesebb, mint a &quot;kritikus szint&quot;, L<sub>c</sub>,
+    így nem lehet észlelést kijelenteni, de ez a többlet a várható számlálások felett.</message>
+  
+  <!-- Chart strings -->
+  <message id="dlt-chart-x-axis-distance">Távolság ({1})</message>
+  <message id="dlt-chart-x-axis-activity">Aktivitás ({1})</message>
+  <message id="dlt-chart-title-estimated-activity">Becsült aktivitás {1}.</message>
+  <message id="dlt-chart-title-excess-counts">Többlet számlálások {1}.</message>
+  <message id="dlt-chart-title-activity-lt-zero"><![CDATA[Aktivitás < 0 {1}]]></message>
+  <message id="dlt-chart-title-data-peak">Adatok + csúcs {1}</message>
+  <message id="dlt-chart-title-peak-upper-bound">Csúcs felső határhoz {1} @{2} CL</message>
+  <message id="dlt-currie-info-dialog-title">{1}{2} keV Info</message>
+  
+  <!-- Additional error/status messages -->
+  <message id="dlt-no-foreground-file">Nincs előtér fájl</message>
+  <message id="dlt-no-foreground-spectrum">Nincs előtér spektrum</message>
+  <message id="dlt-no-drf-loaded">Nincs betöltött DRF</message>
+  <message id="dlt-drf-not-valid">A DRF nem érvényes vagy nincs FWHM információja.</message>
+  <message id="dlt-err-max-distance-too-large"><![CDATA[A maximális távolság túl nagy (>100km)]]></message>
+  <message id="dlt-err-upper-limit-negative">A számlálások felső határa kisebb, mint nulla, de a megfigyelt számlálások nagyobbak, mint L_d.</message>
+  <message id="dlt-err-activity-zero-negative">Az aktivitás nem lehet nulla vagy negatív</message>
+  <message id="dlt-err-distance-zero-negative">A távolság nem lehet nulla vagy negatív</message>
+</messages>

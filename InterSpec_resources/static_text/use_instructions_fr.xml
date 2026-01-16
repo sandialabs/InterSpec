@@ -1,0 +1,444 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+
+  <!--When you add a video to the content, you should use a template placeholder
+      in the content (e.x. ${myvideobinding}) to allow the C++ to bind this
+      video to a video playing widget in the WTemplate widget.  However since we
+      dont want to have to hard code the bind placeholder name, and which video
+      it points to in the C++, this next videoinfo message section encodes what
+      placeholder names the C++ templating code should look for, as well as
+      the actual video files and titles the placeholder name cooresponds to.
+      The below JSON object is indexed by keys that have the same value
+      as the 'id' for the message they coorespond to; the key cooresponds to an
+      array of objects that each have at least a "key" and "file" member, but
+      may also have an optional "title" member.
+  -->
+  <message id="videoinfo">
+  {
+    "1intro-video":
+      [
+        {   "key":"video1",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpecMouseIntro.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpecMouseIntro.ogv",
+            "title":"Introduction à la souris"
+        }
+      ],
+    "3gamma-lines-video":
+       [
+        {   "key":"video2",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_GammaLines.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_GammaLines.ogv",
+            "title":"Raies gamma"
+        }
+       ],
+    "4calibration-video":
+       [
+        {   "key":"video3",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_calibration.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_calibration.ogv",
+            "title":"Calibration"
+        }
+       ],
+    "2nuclide-peak-association-video":
+       [
+        {   "key":"video4",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_AssociatePeaksWithNuclides.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_AssociatePeaksWithNuclides.ogv",
+            "title":"Identification des pics"
+        }
+       ],
+    "5activity-shielding-fit-video":
+       [
+        {   "key":"video5",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_activityShieldingFit.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_activityShieldingFit.ogv",
+            "title":"Activité et blindage"
+        }
+       ]
+  }
+  </message>
+
+  <message id='mobile-mouse-interactions'>
+	   <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">Zoom avant</div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_zoom_in.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         Pour effectuer un zoom avant sur une portion spécifique du spectre,
+         <u>écartez</u> deux doigts l'un de l'autre.
+      </div>
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">Zoom arrière</div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_zoom_out.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         Pour effectuer un zoom arrière,
+         <u>pincez</u> deux doigts l'un vers l'autre.
+      </div>
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">Changer la plage d'énergie</div>
+    <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	    <img src="InterSpec_resources/static_text/images/touch_energy_pan.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         Pour vous déplacer le long de l'axe x (énergie) du graphique,
+         placez un doigt sur le graphique et déplacez-le vers la gauche ou la droite pour changer l'énergie affichée.
+      </div>
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+      <div class="UseInstructionHeader">Ajuster le(s) pic(s)</div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center"><h3><b>Méthode 1</b></h3></div>
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_fit_peak.png" style="width:70%" />
+	  </div>
+    <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+      <u>Appuyez deux fois</u> sur le spectre où vous souhaitez ajuster un pic.
+    </div>
+	   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_multipeak_fit.png" style="width:70%" />
+	  </div>
+	  <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+        <u>Appuyer deux fois</u> à nouveau près d'un pic existant ajustera davantage de pics.
+    </div>
+	  <div style="padding-top: 10px" align="center"><h3><b>Méthode 2</b></h3></div>
+	  <div style="padding-top: 10px" align="center">
+	    <img src="InterSpec_resources/static_text/images/mobile_multipeak.jpg" style="width:70%" />
+	  </div>
+	  <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+      Si vous souhaitez forcer un nombre défini de pics dans une région d'intérêt :
+      <u>faites glisser</u> deux doigts alignés horizontalement sur la région d'intérêt.
+      <u>Retirez</u> vos doigts et <u>sélectionnez</u> le nombre de pics que vous souhaitez identifier.
+    </div>
+	  <div style="padding-top: 10px" align="center"><h3><b>Autres méthodes</b></h3>
+      Dans le <em>Menu</em>&rarr;<em>Outils</em>&rarr;<em>Gestionnaire de pics</em>, vous pouvez ajuster automatiquement
+      tous les pics d'un spectre en utilisant le
+      bouton <img src="InterSpec_resources/static_text/images/mobil_search_for_peaks.png" style="height:1.25em;" />.
+      Il est recommandé d'afficher les raies de référence des nucléides avant d'utiliser cette
+      recherche automatique de pics afin que les pics soient automatiquement associés aux nucléides
+      responsables de la création du pic.
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+      <div class="UseInstructionHeader">Lancer l'éditeur de pics</div>
+         Si vous souhaitez réajuster ou modifier manuellement un pic, utilisez l'<em>Éditeur de pics</em>
+         en maintenant votre doigt appuyé sur un pic pendant environ une seconde, et un menu apparaîtra
+         pour vous permettre de choisir ce que vous souhaitez faire.
+         <div style="padding-top: 1px" align="center">
+           <img src="InterSpec_resources/static_text/images/mobile_right_click.png"  class="imageBorder" style="width:75%;" />
+         </div>
+	    </div>
+    </div>
+	  <div class="UseInstructionSection">
+      <div class="UseInstructionHeader">Supprimer le(s) pic(s)</div>
+      <p>
+        Le moyen le plus simple de supprimer un pic est de maintenir votre doigt appuyé dessus pendant environ une seconde,
+        et un menu apparaîtra où vous pourrez choisir de supprimer le pic.
+        <div style="padding-top: 1px" align="center">
+          <img src="InterSpec_resources/static_text/images/mobile_right_click.png"  class="imageBorder" style="width:75%;" />
+        </div>
+      </p>
+
+      <p>
+        Vous pouvez également placer deux doigts qui couvrent la plage d'énergie des pics que vous souhaitez supprimer sur l'écran, et les déplacer vers le haut.
+        Tous les pics dont les centroïdes se trouvent entre vos doigts seront complètement supprimés ; vous pouvez également réduire la plage d'énergie des pics
+        en utilisant le même geste, tant que le centroïde du pic ne tombe pas entre vos doigts.
+        <div style="padding-top: 1px" align="center">
+          <img src="InterSpec_resources/static_text/images/mobile_delete_peaks.jpg"  class="imageBorder" style="width:75%;" />
+        </div>
+      </p>
+
+      <p>
+        Le <em>Gestionnaire de pics</em> (<b>Menu</b>&rarr;<b>Outils</b>&rarr;<b>Gestionnaire de pics</b>) et
+        l'<em>Éditeur de pics</em> (maintenez le doigt sur le pic pendant une seconde, sélectionnez <b>Éditeur de pics</b>) peuvent également supprimer des pics.
+      </p>
+    </div>
+  </message>
+
+
+<!--
+For the desktop-mouse-interactions-info each JSON object should have a 'title',
+a 'img' and a optional 'desc_message_id' field.  If 'desc_message_id' is
+specified then this field refers to the id of a <message> element that contains
+the XHTML message for that entry.
+-->
+<message id='desktop-mouse-interactions-info'>
+{
+  "01desktop-mouse-interactions-zoominout": {
+    "title": "Zoom avant/arrière",
+    "img": "InterSpec_resources/images/ZoomInOut.gif",
+    "desc_message_id": "01desktop-mouse-interactions-zoominout-desc"
+  },
+  "02desktop-mouse-interactions-shiftenergyrange": {
+    "title": "Déplacer l'énergie",
+    "img": "InterSpec_resources/images/ERShift.gif",
+    "desc_message_id": "02desktop-mouse-interactions-shiftenergyrange-desc"
+  },
+  "03desktop-mouse-interactions-energyslider": {
+    "title": "Curseur d'énergie",
+    "img": "InterSpec_resources/images/energy_slider.gif",
+    "desc_message_id": "03desktop-mouse-interactions-energyslider-desc"
+  },
+  "04desktop-mouse-interactions-identifypeaks": {
+    "title": "Ajustement de pic",
+    "img": "InterSpec_resources/images/PeakFit.gif",
+    "desc_message_id": "04desktop-mouse-interactions-identifypeaks-desc"
+  },
+  "04desktop-mouse-interactions-multipeaks": {
+    "title": "Ajustement de ROI",
+    "img": "InterSpec_resources/images/multi_peak_fit.gif",
+    "desc_message_id": "04desktop-mouse-interactions-multipeaks-desc"
+  },
+  "07desktop-mouse-interactions-deletepeaks": {
+    "title": "Supprimer le pic",
+    "img": "InterSpec_resources/images/DeletePeaks.gif",
+    "desc_message_id": "07desktop-mouse-interactions-deletepeaks-desc"
+  },
+  "06desktop-mouse-interactions-visualcalibration": {
+    "title": "Calibration en énergie",
+    "img": "InterSpec_resources/images/VisRecalib.gif",
+    "desc_message_id": "06desktop-mouse-interactions-visualcalibration-desc"
+  },
+  "05desktop-mouse-interactions-peakeditor": {
+    "title": "Éditeur de pics",
+    "img": "InterSpec_resources/images/PeakEdit.gif",
+    "message-id": "05desktop-mouse-interactions-peakeditor-desc"
+  },
+  "08desktop-mouse-interactions-adjustROI": {
+    "title": "Ajuster la ROI",
+    "img": "InterSpec_resources/images/roi_range_adjust.gif",
+    "desc_message_id": "08desktop-mouse-interactions-adjustROI-desc"
+  },
+  "08desktop-mouse-interactions-scale-y": {
+    "title": "Échelle Y",
+    "img": "InterSpec_resources/images/yscale.gif",
+    "desc_message_id": "08desktop-mouse-interactions-scale-y-desc"
+  },
+  "09desktop-mouse-interactions-countgamma": {
+    "title": "Compter les gammas",
+    "img": "InterSpec_resources/images/ERCount.gif",
+    "desc_message_id": "09desktop-mouse-interactions-countgamma-desc"
+  },
+  "10desktop-shortcuts" : {
+    "title": "Raccourcis clavier",
+    "desc_message_id": "10desktop-shortcuts-desc"
+  }
+}
+</message>
+
+<message id='01desktop-mouse-interactions-zoominout-desc'>
+<div><center>Clic gauche et glisser vers la <b>droite</b> pour zoomer.</center></div>
+<div><center>Clic gauche et glisser vers la <b>gauche</b> pour dézoomer.</center></div>
+</message>
+
+<message id='02desktop-mouse-interactions-shiftenergyrange-desc'>
+<center>Clic droit et glisser</center>
+</message>
+
+
+<message id='03desktop-mouse-interactions-energyslider-desc'>
+<center> Dans le menu <b>Affichage</b>, sélectionnez &quot;<b>Afficher le curseur d'énergie</b>&quot;.</center>
+<div>C'est un moyen facile à utiliser pour ajuster la plage d'énergie du spectre.</div>
+<div><b>InterSpec</b> se souviendra si vous souhaitez afficher le curseur d'énergie.</div>
+</message>
+
+<message id='04desktop-mouse-interactions-identifypeaks-desc'>
+<center>
+<p style="font-size: 14px">Il existe plusieurs façons d'ajuster les pics, notamment : </p>
+</center>
+<ol>
+  <li>Double-clic gauche. Vous pouvez double-cliquer à nouveau près du même pic pour en ajouter un autre.</li>
+  <li><b><kbd>CTRL</kbd></b> + Clic gauche et glisser &rarr; Clic gauche (voir &quot;Ajustement de ROI&quot;) </li>
+  <li>Dans l'onglet &quot;<b>Gestionnaire de pics</b>&quot;, cliquez sur &quot;<b>Ajouter</b>&quot; &rarr;. Vous pouvez ensuite ajuster les paramètres dans le tableau aux valeurs souhaitées.</li>
+  <li>Dans l'onglet &quot;<b>Gestionnaire de pics</b>&quot;, cliquez sur &quot;<b>Rechercher les pics</b>&quot; pour ajuster tous les pics du spectre.</li>
+<li>Clic droit sur un pic existant et sélectionnez &quot;<b>Ajouter un pic</b>&quot; pour ajouter un pic à la même ROI.</li>
+</ol>
+
+<p>Conseil : avant d'ajuster un pic, il est utile d'afficher les raies de référence du
+nucléide responsable, afin que lorsque le pic est ajusté, il soit associé
+à ce nucléide. Cette information est utilisée pour ajuster la calibration en énergie, la réponse du détecteur, l'activité et les quantités de blindage.
+</p>
+</message>
+
+
+<message id='04desktop-mouse-interactions-multipeaks-desc'>
+<div>Pour ajuster un nombre défini de pics dans une région d'intérêt (ROI) :</div>
+<center>
+<b><kbd>CTRL</kbd></b> + Clic gauche et glisser &rarr; puis sélectionnez le nombre de pics.
+</center>
+</message>
+
+<message id='07desktop-mouse-interactions-deletepeaks-desc'>
+<ol>
+<li>Clic droit &rarr; &quot;<b>Supprimer le pic</b>&quot;</li>
+<li>Clic droit &rarr; &quot;<b>Éditeur de pics</b>&quot; &rarr; &quot;<b>Supprimer</b>&quot;</li>
+<li><b><kbd>SHIFT</kbd></b> + Clic gauche et glisser</li>
+<li>Clic gauche sur &quot;<b>Effacer tous les pics</b>&quot; &rarr; Clic gauche sur &quot;<b>Oui</b>&quot;</li>
+<li>Faites glisser un côté de la ROI au-delà de l'autre côté.</li>
+</ol>
+</message>
+
+<message id='06desktop-mouse-interactions-visualcalibration-desc'>
+<div>Pour ajuster graphiquement la calibration en énergie :</div>
+<center> <kbd>CTRL</kbd> + <kbd>ALT</kbd> + Clic gauche et glisser &rarr; <u>Optionnel</u> : Ajuster les quantités &rarr; &quot;<b>Accepter</b>&quot;</center>
+<div>Remarque : si vous effectuez à nouveau cette action, par exemple d'abord sur un pic de haute énergie, puis sur un pic de basse énergie (ou vice versa), la boîte de dialogue qui apparaît vous
+donnera l'option de préserver les deux actions en ajustant à la fois le décalage et le gain afin que les deux pics restent aux énergies auxquelles vous les avez déplacés.
+</div>
+<p>L'onglet &quot;Calibration en énergie&quot; vous permet également d'ajuster manuellement
+les coefficients de calibration en énergie, ou de les ajuster en utilisant les nucléides associés aux pics.
+</p>
+</message>
+
+<message id='05desktop-mouse-interactions-peakeditor-desc'>
+<div><center>Clic droit &rarr; &quot;Éditeur de pics&quot;</center></div>
+</message>
+
+
+
+<message id='08desktop-mouse-interactions-adjustROI-desc'>
+<center><div>Placez la souris près du bord de la région d'intérêt (ROI) et faites glisser.</div></center>
+<div>La souris doit être dans la plage y du pic, et à moins de 10 pixels du bord de la ROI.</div>
+</message>
+
+
+<message id='08desktop-mouse-interactions-scale-y-desc'>
+<center>Mettre à l'échelle l'amplitude du fond et/ou des spectres secondaires par rapport au premier plan
+en sélectionnant <b>Affichage</b> &rarr; &quot;<b>Afficher les curseurs d'axe Y</b>&quot;.
+</center>
+<p>Pour restaurer le spectre de fond ou secondaire à la normalisation du temps réel, cliquez sur le bouton &quot;Normaliser&quot; dans l'onglet &quot;Fichiers de spectre&quot;.</p>
+<p><b>InterSpec</b> se souviendra si vous souhaitez afficher ces curseurs lorsqu'il y a un spectre de fond ou secondaire,
+mais les éléments de menu seront désactivés si aucun spectre de fond ou secondaire n'est chargé.</p>
+</message>
+
+
+<message id='09desktop-mouse-interactions-countgamma-desc'>
+  <center>
+    <ol>
+      <li><b><kbd>SHIFT</kbd></b> + <b><kbd>ALT</kbd></b> + Clic gauche et glisser &rarr; <u>Optionnel</u> : Ajuster les quantités</li>
+      <li><b>Outils</b> &rarr; <b>Somme de plage d'énergie</b></li>
+    </ol>
+  </center>
+</message>
+
+<message id='10desktop-shortcuts-desc'>
+
+  <h3>Raccourcis Clavier</h3>
+  <ul>
+    <li>
+      <b><code>Ctrl-1</code></b> à <b><code>Ctrl-7</code></b> : Bascule vers l'onglet d'outil 1-7 (c'est-à-dire, onglets &quot;<code>Fichiers de spectre</code>&quot;, &quot;<code>Gestionnaire de pics</code>&quot;, &quot;<code>Photopeaks de référence</code>&quot;, etc.), ou
+      si les <em>Onglets d'outils</em> sont masqués, affiche la fenêtre d'outil correspondante.
+    </li>
+    <li>
+      <b><code>Ctrl-h</code></b> : Affiche l'<em>aide</em> dans l'application.
+    </li>
+    <li>
+      <b><code>Ctrl-i</code></b> : Affiche l'écran d'<em>informations de bienvenue</em>.
+    </li>
+    <li>
+      <b><code>Ctrl-k</code></b> : Efface toutes les raies de photopeaks de référence affichées.
+    </li>
+    <li>
+      <b><code>Ctrl-l</code></b> : Bascule l'axe y du spectre entre logarithmique et linéaire.
+    </li>
+    <li>
+      <b><code>Ctrl-s</code></b> : Enregistre l'état actuel de l'application.
+    </li>
+    <li>
+      <b><code>Ctrl-e</code></b> : Ouvre la boîte de dialogue d'exportation du fichier de spectre.
+    </li>
+    <li>
+      <b><code>Ctrl-z</code></b> : Annuler la dernière action.
+    </li>
+    <li>
+      <b><code>Ctrl-Shift-z</code></b> : Rétablir la dernière action annulée.
+    </li>
+  </ul>
+
+  <h3>Modificateurs de Souris pour les Interactions du Spectre</h3>
+  En plus de ces raccourcis, vous pouvez cliquer sur le titre de l'axe y pour basculer entre l'échelle logarithmique/linéaire ; cliquer sur le titre de l'axe x affichera/masquera le graphique de bande d'aperçu.
+  <ul>
+    <li>
+      <b>Double-clic</b> : Ajuste un pic dans le spectre de premier plan à l'emplacement cliqué.
+    </li>
+    <li>
+      <b>Alt + Double-clic</b> : Ajuste un pic dans le spectre d'arrière-plan à l'emplacement cliqué.
+    </li>
+    <li>
+      <b>Shift + Double-clic</b> : Ajuste un pic dans le spectre secondaire à l'emplacement cliqué.
+    </li>
+    <li>
+      <b>Shift + Glisser gauche</b> : Mode suppression de pics - supprime les pics dans la plage d'énergie glissée.
+    </li>
+    <li>
+      <b>Alt + Shift + Glisser gauche</b> : Mode comptage des gammas - compte les rayons gamma dans la plage d'énergie glissée.
+    </li>
+    <li>
+      <b>Alt + Ctrl + Glisser gauche</b> : Mode recalibration - recalibre l'énergie en utilisant la plage glissée.
+    </li>
+    <li>
+      <b>Command + Glisser gauche (Mac)</b> ou <b>Alt + Glisser gauche (Windows)</b> : Glissez verticalement pour zoomer dans/hors de l'axe y.
+    </li>
+  </ul>
+
+  <h3>Modificateurs de Souris pour les Interactions du Graphique Temporel</h3>
+  Utilisez le menu dans le coin supérieur droit du graphique temporel pour simplifier les interactions.
+  <ul>
+    <li>
+      <b>Clic ou glissement</b> : Sélectionne des échantillons pour le spectre de premier plan.
+    </li>
+    <li>
+      <b>Alt + Clic/glissement</b> ou <b>maintenir la touche 'b'</b> : Sélectionne des échantillons pour le spectre d'arrière-plan.
+    </li>
+    <li>
+      <b>Meta + Clic/glissement</b> ou <b>maintenir la touche 's'</b> : Sélectionne des échantillons pour le spectre secondaire.
+    </li>
+    <li>
+      <b>Shift + Clic/glissement</b> : Ajoute des échantillons à la sélection actuelle.
+    </li>
+    <li>
+      <b>Ctrl + Clic/glissement</b> : Supprime des échantillons de la sélection actuelle.
+    </li>
+  </ul>
+</message>
+
+
+  <message id='1intro-video'>
+     <center>${video1}</center>
+  </message>
+
+  <message id='3gamma-lines-video'>
+     <center>${video2}</center>
+  </message>
+
+  <message id='4calibration-video'>
+     <center>${video3}</center>
+  </message>
+
+  <message id='2nuclide-peak-association-video'>
+     <center>${video4}</center>
+  </message>
+
+  <message id='5activity-shielding-fit-video'>
+     <center>${video5}</center>
+  </message>
+
+
+  <message id="known-issues">
+    Problèmes connus actuels :
+    <ul>
+<li><b>Tous :</b> (Gestionnaire de pics) &quot;Identifier le nucléide&quot; ne fonctionne pas dans de rares cas </li>
+        <li><b>Tous :</b> &quot;Enregistrer l'état à la sortie&quot; ne fonctionne pas dans de rares cas</li>
+    </ul>
+  </message>
+</messages>
+

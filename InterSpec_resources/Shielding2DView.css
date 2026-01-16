@@ -1,0 +1,73 @@
+.Shielding2DView {
+  width: 100%;
+  height: 100%;
+  min-width: 600px;
+  min-height: 400px;
+  position: relative;
+  overflow: hidden;
+  background: var(--d3spec-background-color, none);
+}
+
+.Shielding2DView svg {
+  width: 100%;
+  height: 100%;
+  background: var(--d3spec-background-color, none);
+}
+
+.shielding-tooltip {
+  position: absolute;
+  text-align: left;
+  padding: 8px;
+  font: 0.85em sans-serif;
+  background: #ffffcc;
+  border: 1px solid #444422;
+  border-radius: 4px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+  z-index: 1000;
+  box-shadow: 2px 2px 6px rgba(0,0,0,0.3);
+  color: black;
+}
+
+.detector-shape.detector-rect text {
+  fill: black !important;
+}
+
+.shielding-controls {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 5px;
+  z-index: 100;
+  background: rgba(245,245,245,0.5);
+  border: 1px solid rgba(185,185,185,0.80);
+  font-size: 1em;
+}
+
+.shielding-controls label {
+  display: block;
+  margin: 2px 0;
+  cursor: pointer;
+}
+
+.axis-line {
+  stroke: var(--d3spec-axis-color, black);
+  stroke-width: 2px;
+}
+
+.generic-layer-line {
+    fill: none;
+    stroke-width: 2px;
+}
+
+.label-text {
+    font-family: sans-serif;
+    font-size: 12px;
+    fill: var(--d3spec-text-color, black);
+}
+
+.label-line {
+    stroke: var(--d3spec-text-color, black);
+    stroke-width: 1px;
+}

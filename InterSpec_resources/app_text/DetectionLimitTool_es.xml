@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dlt- is short for DetectionLimitTool
+  -->
+  <message id="dlt-window-title">Herramienta de confianza de detección</message>
+  
+  <!-- MdaPeakRow strings -->
+  <message id="dlt-use-for-multi-peak">Usar para multi-pico</message>
+  <message id="dlt-roi-lower-label">ROI Inferior:</message>
+  <message id="dlt-roi-upper-label">ROI Superior:</message>
+  <message id="dlt-continuum-label">Continuo</message>
+  <message id="dlt-cont-norm-label">Norm. Cont.</message>
+  <message id="dlt-cont-norm-floating">Flotante</message>
+  <message id="dlt-cont-norm-fixed-edges">Fijo en bordes</message>
+  <message id="dlt-cont-norm-fixed-full-roi">Fijo ROI completo</message>
+  <message id="dlt-cont-norm-tt">
+    Cómo debe determinarse la normalización del continuo:
+    <ul><li><b>Flotante</b>: El continuo polinomial se ajusta, para cada actividad dada -
+    la actividad afecta el continuo.</li>
+    <li><b>Fijo en bordes</b>: Los canales a cada lado del ROI se usan para determinar un
+    continuo lineal que está fijo, y no se ve afectado por la actividad de los nucleidos.</li>
+    <li><b>Fijo ROI completo</b>: El continuo se ajusta usando todo el rango de energía del ROI,
+    asumiendo una amplitud gaussiana de cero; más tarde, el componente gaussiano del pico
+    se sentará sobre este continuo fijo.<br/>
+    Esto efectivamente afirma que sabes que no hay un pico de señal presente en los datos.
+    El continuo no se verá afectado por el valor de actividad del nucleido, y el componente
+    gaussiano del pico se sentará sobre este continuo fijo al evaluar el
+    &chi;<sup>2</sup>.</li>
+    </ul>
+  </message>
+  <message id="dlt-single-peak-currie-limit">Límite Currie pico único</message>
+  <message id="dlt-num-side-channels-label">Núm. canales laterales</message>
+  <message id="dlt-further-details-link">más detalles...</message>
+  <message id="dlt-err-computing-info">Error calculando {1}, {2} keV Info</message>
+  <message id="dlt-err-computing-currie-info">Error calculando información límite Currie: {1}</message>
+  
+  <!-- MdaPeakRow setSimplePoisonTxt strings -->
+  <message id="dlt-nominal">Nominal:</message>
+  <message id="dlt-range">Rango:</message>
+  <message id="dlt-detected-activity-tt">Actividad detectada, usando solo esta Región de Interés,
+    y el exceso observado de conteos, así como el
+    intervalo de confianza estadístico.</message>
+  <message id="dlt-limit-lt-zero"><![CDATA[Límite: < 0{1}]]></message>
+  <message id="dlt-sig-fewer-counts">(muchos menos conteos en ROI que predicho)</message>
+  <message id="dlt-fewer-counts-tt">Se observaron significativamente menos conteos en la
+    Región de Interés, que los predichos por los canales vecinos.</message>
+  <message id="dlt-upper-limit">Límite superior:</message>
+  <message id="dlt-critical-limit">Límite crítico:</message>
+  <message id="dlt-limit-tt">El límite superior es la actividad máxima presente, para el CL dado,
+    dado el número observado de conteos en el ROI.
+    El límite crítico es la actividad donde la señal sería detectada de manera confiable.
+    Ambos números calculados usando el método de Currie.</message>
+  <message id="dlt-large-deficit">Gran déficit de conteos en ROI</message>
+  
+  <!-- DetectionLimitTool main class strings -->
+  <message id="dlt-tt-age-edit">
+    <div>La edad del nucleido.</div>
+    <br />
+    <div>La edad controla la cantidad de crecimiento de progenie; las actividades del nucleido padre
+    (es decir, ingresado) siempre se reportan en el momento de la medición.
+    </div>
+  </message>
+  <message id="dlt-attenuate-for-air">Atenuar para aire</message>
+  <message id="dlt-shield-empty-text">material de blindaje</message>
+  <message id="dlt-activity-limit">Límite de actividad</message>
+  <message id="dlt-distance-limit">Límite de distancia</message>
+  <message id="dlt-peaks-disp-act-label">Picos disp. act.:</message>
+  <message id="dlt-peaks-disp-dist-label">Picos disp. dist.:</message>
+  <message id="dlt-conf-level-label">Nivel de confianza:</message>
+  <message id="dlt-conf-95">95%</message>
+  <message id="dlt-conf-99">99%</message>
+  <message id="dlt-conf-1sigma">1σ (68,2%)</message>
+  <message id="dlt-conf-2sigma">2σ (95,4%)</message>
+  <message id="dlt-conf-3sigma">3σ (99,7%)</message>
+  <message id="dlt-conf-4sigma">4σ</message>
+  <message id="dlt-conf-5sigma">5σ</message>
+  <message id="dlt-gamma-lines-to-use">Líneas gamma a usar</message>
+  <message id="dlt-min-rel-intensity-label">Intensidad relativa mín.:</message>
+  <message id="dlt-fit-fwhm-btn">Ajustar FWHM...</message>
+  <message id="dlt-log">Log</message>
+  <message id="dlt-lin">Lin</message>
+  <message id="dlt-below-lc">(debajo de L<sub>c</sub>)</message>
+  <message id="dlt-lt-zero-counts"><![CDATA[< 0 conteos]]></message>
+  <message id="dlt-lt-zero-activity"><![CDATA[< {1}]]></message>
+  
+  <!-- Error messages -->
+  <message id="dlt-err-no-data">No hay datos cargados</message>
+  <message id="dlt-err-no-drf">No hay DRF cargado</message>
+  <message id="dlt-err-no-fwhm">El DRF no tiene información FWHM - por favor ajuste para FWHM, o cambie el DRF.</message>
+  <message id="dlt-err-no-nuclide">Nucleido no válido</message>
+  <message id="dlt-err-activity-invalid">Actividad no válida</message>
+  <message id="dlt-err-distance-invalid">Distancia no válida</message>
+  <message id="dlt-err-min-rel-intensity">La intensidad relativa mínima a mostrar es inválida.</message>
+  <message id="dlt-err-shielding">Error calculando efectos del blindaje</message>
+  <message id="dlt-err-gamma-yields">Error rendimientos gamma - todas las intensidades son cero.</message>
+  <message id="dlt-err-no-peaks-selected">No hay picos seleccionados</message>
+  <message id="dlt-err-calculating-chi2">Error calculando Chi2: {1}</message>
+  <message id="dlt-err-calculating-limit">Error calculando límite: {1}</message>
+  
+  <!-- createCurrieRoiMoreInfoWindow strings -->
+  <message id="dlt-observed-activity">Actividad observada</message>
+  <message id="dlt-observed-counts">Conteos observados</message>
+  <message id="dlt-activity-range">Rango de actividad</message>
+  <message id="dlt-counts-range">Rango de conteos</message>
+  <message id="dlt-activity-le-zero">Actividad &le; 0 {1}</message>
+  <message id="dlt-counts-le-zero">Conteos &le; 0</message>
+  <message id="dlt-activity-upper-bound">Límite superior de actividad</message>
+  <message id="dlt-counts-upper-bound">Límite superior de conteos</message>
+  <message id="dlt-distance-not-supported">Distancia no soportada para información adicional aún</message>
+  <message id="dlt-lower-region-channels">Canales región inferior</message>
+  <message id="dlt-lower-region-counts">Conteos región inferior</message>
+  <message id="dlt-upper-region-channels">Canales región superior</message>
+  <message id="dlt-upper-region-counts">Conteos región superior</message>
+  <message id="dlt-using-roi-as-background">Usando área ROI como estimación de fondo</message>
+  <message id="dlt-roi-area-channels">Canales área ROI</message>
+  <message id="dlt-peak-area-channels">Canales área pico</message>
+  <message id="dlt-roi-region-counts">Conteos región ROI</message>
+  <message id="dlt-peak-region-counts">Conteos región pico</message>
+  <message id="dlt-roi-region-null-est">Est. nulo región ROI</message>
+  <message id="dlt-peak-region-null-est">Est. nulo región pico</message>
+  <message id="dlt-peak-critical-limit">Límite crítico pico <span style="font-size: smaller;">(L<sub>c</sub>)</span></message>
+  <message id="dlt-peak-detection-limit">Límite de detección pico <span style="font-size: smaller;">(L<sub>d</sub>)</span></message>
+  <message id="dlt-detector-intrinsic-eff">Eficiencia intrínseca detector</message>
+  <message id="dlt-solid-angle-fraction">Fracción de ángulo sólido</message>
+  <message id="dlt-shielding-transmission">Transmisión blindaje</message>
+  <message id="dlt-air-transmission">Transmisión aire</message>
+  <message id="dlt-nuclide-branching-ratio">Relación de ramificación nucleido</message>
+  
+  <!-- Tooltip strings for createCurrieRoiMoreInfoWindow -->
+  <message id="dlt-tt-greater-than-lc">Mayor que el &quot;nivel crítico&quot;, L<sub>c</sub>,
+    se observaron conteos en la región del pico.</message>
+  <message id="dlt-tt-activity-range">La estimación del rango de actividad de la señal, al nivel de confianza {1}.</message>
+  <message id="dlt-tt-counts-range">La estimación del rango de conteos de la señal, al nivel de confianza {1}.</message>
+  <message id="dlt-tt-fewer-than-predicted">Se observaron significativamente menos conteos en la región del pico,
+    que los predichos por las regiones vecinas.</message>
+  <message id="dlt-tt-upper-bound">El límite superior sobre cuánta actividad podría estar presente, al
+    nivel de confianza {1}.</message>
+  <message id="dlt-tt-lower-region-channels">La región por encima del pico en energía, que se está usando
+    para estimar los conteos de continuo esperados en la región del pico;
+    corresponde a {1} a {2} keV</message>
+  <message id="dlt-tt-lower-region-counts">El número de conteos observados en la región por debajo de la región del pico,
+    que se está usando para estimar los conteos esperados de la región del pico</message>
+  <message id="dlt-tt-upper-region-channels">La región por encima del pico en energía, que se está usando
+    para estimar los conteos de continuo esperados en la región del pico;
+    corresponde a {1} a {2} keV</message>
+  <message id="dlt-tt-upper-region-counts">El número de conteos observados en la región por encima de la región del pico,
+    que se está usando para estimar los conteos esperados de la región del pico</message>
+  <message id="dlt-tt-peak-area-channels">La región en la que se asume que está el pico;
+    corresponde a {1} a {2} keV</message>
+  <message id="dlt-tt-peak-region-counts">El número observado de conteos en la región del pico</message>
+  <message id="dlt-tt-peak-region-null-est">Una estimación del número esperado de conteos, en la región del pico, si se
+    asume que no hay señal presente.</message>
+  <message id="dlt-tt-critical-limit">Corresponde al &quot;nivel crítico&quot; de Currie, L<sub>c</sub>,
+    que es el nivel de señal neta (respuesta del instrumento) por encima del cual una
+    señal observada puede ser reconocida de manera confiable como &quot;detectada&quot;.</message>
+  <message id="dlt-tt-detection-limit">Corresponde a la &quot;límite de detección&quot; de Currie, L<sub>d</sub>,
+    que es el nivel de señal neta &quot;verdadero&quot; que puede ser, <i>a priori</i>,
+    esperado para conducir a la detección.</message>
+  <message id="dlt-tt-detector-intrinsic-eff">La eficiencia para que un gamma que golpea la cara del detector,
+    sea detectado en el pico de energía total.</message>
+  <message id="dlt-tt-solid-angle-fraction">La fracción del ángulo sólido, que la cara del detector ocupa, a la distancia especificada.</message>
+  <message id="dlt-tt-shielding-transmission">La fracción de gammas, a esta energía, que pasarán a través del blindaje sin interactuar.</message>
+  <message id="dlt-tt-air-transmission">La fracción de gammas, a esta energía, que pasarán a través del aire (asumiendo nivel del mar) sin interactuar.</message>
+  <message id="dlt-tt-branching-ratio">El número de rayos gamma emitidos a esta energía, desde la fuente
+    radiactiva antes de cualquier blindaje, pero teniendo en cuenta la edad del nucleido,
+    por desintegración del nucleido padre.</message>
+  <message id="dlt-tt-below-lc-counts">Los conteos de señal observados son menores que el &quot;nivel crítico&quot;, L<sub>c</sub>,
+    por lo que no se puede declarar una detección, pero este es el exceso sobre los conteos esperados.</message>
+  <message id="dlt-tt-below-lc-activity">La actividad de señal observada es menor que el &quot;nivel crítico&quot;, L<sub>c</sub>,
+    por lo que no se puede declarar una detección, pero este es el exceso sobre los conteos esperados.</message>
+  
+  <!-- Chart strings -->
+  <message id="dlt-chart-x-axis-distance">Distancia ({1})</message>
+  <message id="dlt-chart-x-axis-activity">Actividad ({1})</message>
+  <message id="dlt-chart-title-estimated-activity">Actividad estimada de {1}.</message>
+  <message id="dlt-chart-title-excess-counts">Conteos excesivos de {1}.</message>
+  <message id="dlt-chart-title-activity-lt-zero"><![CDATA[Actividad < 0 {1}]]></message>
+  <message id="dlt-chart-title-data-peak">Datos + pico para {1}</message>
+  <message id="dlt-chart-title-peak-upper-bound">Pico para límite superior de {1} @{2} CL</message>
+  <message id="dlt-currie-info-dialog-title">{1}{2} keV Info</message>
+  
+  <!-- Additional error/status messages -->
+  <message id="dlt-no-foreground-file">No hay archivo primer plano</message>
+  <message id="dlt-no-foreground-spectrum">No hay espectro primer plano</message>
+  <message id="dlt-no-drf-loaded">No hay DRF cargado</message>
+  <message id="dlt-drf-not-valid">DRF no válido o no tiene información FWHM.</message>
+  <message id="dlt-err-max-distance-too-large"><![CDATA[Distancia máxima demasiado grande (>100km)]]></message>
+  <message id="dlt-err-upper-limit-negative">El límite superior de conteos es menor que cero, pero los conteos observados son mayores que L_d.</message>
+  <message id="dlt-err-activity-zero-negative">La actividad no puede ser cero o negativa</message>
+  <message id="dlt-err-distance-zero-negative">La distancia no puede ser cero o negativa</message>
+</messages>

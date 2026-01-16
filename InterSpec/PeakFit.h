@@ -190,8 +190,6 @@ void find_roi_for_2nd_deriv_candidate( double &lowerEnengy, double &upperEnergy,
 //  the chi2_significance_test(..) function
 //The fixedpeaks passed in are not included in the results, and are taken as
 //  fixed in the fit, and will not be deleted even if they are not significant.
-//If isRefit==true, then tighter restrictions are made on the mean and widths
-//  of the peaks; see kRefitPeakParameters notes above.
 //Results includes all the 'all_peaks' passed in, with the ones in the specified
 //  range having been refit.
 // isHPGe is only used if a peak doesnt have its ROI range already defined.
@@ -435,11 +433,11 @@ double chi2_for_region( const PeakShrdVec &peaks,
 //                      is actually the ratio of the null hypothesis chi2
 //                      to the test hypothesis chi2.  A reasonable value for
 //                      this seems to be 4.
-bool chi2_significance_test( PeakDef peak,
+bool chi2_significance_test( const PeakDef &peak,
                              const double stat_threshold,  //this is how large the chi2 without the peak must be, inorder for peak to be necessary - the higher the number this is, the further away from the background the data must be before a peak becomes necaassary
                              const double hypothesis_threshold,  //this says roughly how good a gaussian explains the excess of data over background - higher the number input, the more closer to a gaussian the shape has to be
                              std::vector<PeakDef> other_peaks,
-                             std::shared_ptr<const SpecUtils::Measurement> data );
+                             const std::shared_ptr<const SpecUtils::Measurement> &data );
 
 
 namespace ExperimentalAutomatedPeakSearch

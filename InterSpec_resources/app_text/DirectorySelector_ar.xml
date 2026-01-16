@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ds- is short for DirectorySelector -->
+  <message id="ds-path-label">المسار:</message>
+  <message id="ds-txt-input-placeholder">اكتب مسار الدليل...</message>
+  <message id="ds-native-select-path-button">اختيار المسار</message>
+  <message id="ds-native-no-path-placeholder">(لم يتم اختيار مسار)</message>
+</messages>

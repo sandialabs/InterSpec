@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dlt- is short for DetectionLimitTool
+  -->
+  <message id="dlt-window-title">पता लगाने का विश्वास उपकरण</message>
+  
+  <!-- MdaPeakRow strings -->
+  <message id="dlt-use-for-multi-peak">मल्टी-पीक के लिए उपयोग करें</message>
+  <message id="dlt-roi-lower-label">ROI निचला:</message>
+  <message id="dlt-roi-upper-label">ROI ऊपरी:</message>
+  <message id="dlt-continuum-label">कंटीन्यूअम</message>
+  <message id="dlt-cont-norm-label">कंट. नॉर्म</message>
+  <message id="dlt-cont-norm-floating">फ्लोटिंग</message>
+  <message id="dlt-cont-norm-fixed-edges">किनारों पर निश्चित</message>
+  <message id="dlt-cont-norm-fixed-full-roi">पूर्ण ROI निश्चित</message>
+  <message id="dlt-cont-norm-tt">
+    कंटीन्यूअम सामान्यीकरण कैसे निर्धारित किया जाना चाहिए:
+    <ul><li><b>फ्लोटिंग</b>: बहुपदीय कंटीन्यूअम प्रत्येक दी गई गतिविधि के लिए फिट किया जाता है -
+    गतिविधि कंटीन्यूअम को प्रभावित करती है।</li>
+    <li><b>किनारों पर निश्चित</b>: ROI के दोनों ओर के चैनलों का उपयोग एक
+    रैखिक कंटीन्यूअम निर्धारित करने के लिए किया जाता है जो निश्चित है, और न्यूक्लाइड की गतिविधि से प्रभावित नहीं होता है।</li>
+    <li><b>पूर्ण ROI निश्चित</b>: कंटीन्यूअम ROI की पूरी ऊर्जा सीमा का उपयोग करके फिट किया जाता है,
+    शून्य गाउसियन आयाम मानते हुए; बाद में, पीक का गाउसियन घटक
+    इस निश्चित कंटीन्यूअम के शीर्ष पर बैठेगा।<br/>
+    यह प्रभावी रूप से दावा कर रहा है कि आप जानते हैं कि डेटा में कोई सिग्नल पीक मौजूद नहीं है।
+    कंटीन्यूअम न्यूक्लाइड गतिविधि मान से प्रभावित नहीं होगा, और गाउसियन
+    पीक का घटक मूल्यांकन करते समय इस निश्चित कंटीन्यूअम के शीर्ष पर बैठेगा
+    &chi;<sup>2</sup>।</li>
+    </ul>
+  </message>
+  <message id="dlt-single-peak-currie-limit">एकल पीक क्यूरी सीमा</message>
+  <message id="dlt-num-side-channels-label">पार्श्व चैनल संख्या</message>
+  <message id="dlt-further-details-link">अधिक विवरण...</message>
+  <message id="dlt-err-computing-info">गणना त्रुटि {1}, {2} keV जानकारी</message>
+  <message id="dlt-err-computing-currie-info">क्यूरी सीमा जानकारी गणना त्रुटि: {1}</message>
+  
+  <!-- MdaPeakRow setSimplePoisonTxt strings -->
+  <message id="dlt-nominal">नाममात्र:</message>
+  <message id="dlt-range">सीमा:</message>
+  <message id="dlt-detected-activity-tt">पता चली गतिविधि, केवल इस रुचि क्षेत्र का उपयोग करके,
+    और देखे गए काउंट्स की अधिकता, साथ ही
+    सांख्यिकीय आत्मविश्वास अंतराल।</message>
+  <message id="dlt-limit-lt-zero"><![CDATA[सीमा: < 0{1}]]></message>
+  <message id="dlt-sig-fewer-counts">(ROI में पूर्वानुमान से काफी कम काउंट्स)</message>
+  <message id="dlt-fewer-counts-tt">रुचि क्षेत्र में काफी कम काउंट्स देखे गए,
+    पड़ोसी चैनलों द्वारा पूर्वानुमानित से।</message>
+  <message id="dlt-upper-limit">ऊपरी सीमा:</message>
+  <message id="dlt-critical-limit">महत्वपूर्ण सीमा:</message>
+  <message id="dlt-limit-tt">ऊपरी सीमा दिए गए CL के लिए मौजूद अधिकतम गतिविधि है,
+    ROI में देखे गए काउंट्स की संख्या दी गई है।
+    महत्वपूर्ण सीमा वह गतिविधि है जहां सिग्नल विश्वसनीय रूप से पता लगाया जाएगा।
+    दोनों संख्याएं क्यूरी विधि का उपयोग करके गणना की गई हैं।</message>
+  <message id="dlt-large-deficit">ROI में काउंट्स की बड़ी कमी</message>
+  
+  <!-- DetectionLimitTool main class strings -->
+  <message id="dlt-tt-age-edit">
+    <div>न्यूक्लाइड की आयु।</div>
+    <br />
+    <div>आयु संतति वृद्धि की मात्रा को नियंत्रित करती है; माता-पिता की गतिविधियां
+    (अर्थात, दर्ज) न्यूक्लाइड हमेशा माप के समय के लिए रिपोर्ट की जाती हैं।
+    </div>
+  </message>
+  <message id="dlt-attenuate-for-air">हवा के लिए कम करें</message>
+  <message id="dlt-shield-empty-text">सुरक्षा सामग्री</message>
+  <message id="dlt-activity-limit">गतिविधि सीमा</message>
+  <message id="dlt-distance-limit">दूरी सीमा</message>
+  <message id="dlt-peaks-disp-act-label">पीक प्रदर्शन गतिविधि:</message>
+  <message id="dlt-peaks-disp-dist-label">पीक प्रदर्शन दूरी:</message>
+  <message id="dlt-conf-level-label">आत्मविश्वास स्तर:</message>
+  <message id="dlt-conf-95">95%</message>
+  <message id="dlt-conf-99">99%</message>
+  <message id="dlt-conf-1sigma">1σ (68.2%)</message>
+  <message id="dlt-conf-2sigma">2σ (95.4%)</message>
+  <message id="dlt-conf-3sigma">3σ (99.7%)</message>
+  <message id="dlt-conf-4sigma">4σ</message>
+  <message id="dlt-conf-5sigma">5σ</message>
+  <message id="dlt-gamma-lines-to-use">उपयोग करने के लिए गामा लाइनें</message>
+  <message id="dlt-min-rel-intensity-label">न्यूनतम सापेक्ष तीव्रता:</message>
+  <message id="dlt-fit-fwhm-btn">FWHM फिट करें...</message>
+  <message id="dlt-log">लॉग</message>
+  <message id="dlt-lin">लिन</message>
+  <message id="dlt-below-lc">(L<sub>c</sub> के नीचे)</message>
+  <message id="dlt-lt-zero-counts"><![CDATA[< 0 काउंट्स]]></message>
+  <message id="dlt-lt-zero-activity"><![CDATA[< {1}]]></message>
+  
+  <!-- Error messages -->
+  <message id="dlt-err-no-data">कोई डेटा लोड नहीं किया गया</message>
+  <message id="dlt-err-no-drf">कोई DRF लोड नहीं किया गया</message>
+  <message id="dlt-err-no-fwhm">DRF में FWHM जानकारी नहीं है - कृपया FWHM के लिए फिट करें, या DRF बदलें।</message>
+  <message id="dlt-err-no-nuclide">कोई वैध न्यूक्लाइड नहीं</message>
+  <message id="dlt-err-activity-invalid">गतिविधि वैध नहीं है</message>
+  <message id="dlt-err-distance-invalid">दूरी वैध नहीं है</message>
+  <message id="dlt-err-min-rel-intensity">दिखाने के लिए न्यूनतम सापेक्ष तीव्रता अमान्य है।</message>
+  <message id="dlt-err-shielding">सुरक्षा के प्रभावों की गणना त्रुटि</message>
+  <message id="dlt-err-gamma-yields">गामा उपज त्रुटि - सभी तीव्रताएं शून्य हैं।</message>
+  <message id="dlt-err-no-peaks-selected">कोई पीक चयनित नहीं हैं</message>
+  <message id="dlt-err-calculating-chi2">Chi2 गणना त्रुटि: {1}</message>
+  <message id="dlt-err-calculating-limit">सीमा गणना त्रुटि: {1}</message>
+  
+  <!-- createCurrieRoiMoreInfoWindow strings -->
+  <message id="dlt-observed-activity">देखी गई गतिविधि</message>
+  <message id="dlt-observed-counts">देखे गए काउंट्स</message>
+  <message id="dlt-activity-range">गतिविधि सीमा</message>
+  <message id="dlt-counts-range">काउंट्स सीमा</message>
+  <message id="dlt-activity-le-zero">गतिविधि &le; 0 {1}</message>
+  <message id="dlt-counts-le-zero">काउंट्स &le; 0</message>
+  <message id="dlt-activity-upper-bound">गतिविधि ऊपरी सीमा</message>
+  <message id="dlt-counts-upper-bound">काउंट्स ऊपरी सीमा</message>
+  <message id="dlt-distance-not-supported">अतिरिक्त जानकारी के लिए दूरी अभी तक समर्थित नहीं है</message>
+  <message id="dlt-lower-region-channels">निचला क्षेत्र चैनल</message>
+  <message id="dlt-lower-region-counts">निचला क्षेत्र काउंट्स</message>
+  <message id="dlt-upper-region-channels">ऊपरी क्षेत्र चैनल</message>
+  <message id="dlt-upper-region-counts">ऊपरी क्षेत्र काउंट्स</message>
+  <message id="dlt-using-roi-as-background">पृष्ठभूमि अनुमान के रूप में ROI क्षेत्र का उपयोग करना</message>
+  <message id="dlt-roi-area-channels">ROI क्षेत्र चैनल</message>
+  <message id="dlt-peak-area-channels">पीक क्षेत्र चैनल</message>
+  <message id="dlt-roi-region-counts">ROI क्षेत्र काउंट्स</message>
+  <message id="dlt-peak-region-counts">पीक क्षेत्र काउंट्स</message>
+  <message id="dlt-roi-region-null-est">ROI क्षेत्र शून्य अनुमान</message>
+  <message id="dlt-peak-region-null-est">पीक क्षेत्र शून्य अनुमान</message>
+  <message id="dlt-peak-critical-limit">पीक महत्वपूर्ण सीमा <span style="font-size: smaller;">(L<sub>c</sub>)</span></message>
+  <message id="dlt-peak-detection-limit">पीक पता लगाने की सीमा <span style="font-size: smaller;">(L<sub>d</sub>)</span></message>
+  <message id="dlt-detector-intrinsic-eff">डिटेक्टर आंतरिक दक्षता</message>
+  <message id="dlt-solid-angle-fraction">ठोस कोण अंश</message>
+  <message id="dlt-shielding-transmission">सुरक्षा संचरण</message>
+  <message id="dlt-air-transmission">हवा संचरण</message>
+  <message id="dlt-nuclide-branching-ratio">न्यूक्लाइड शाखा अनुपात</message>
+  
+  <!-- Tooltip strings for createCurrieRoiMoreInfoWindow -->
+  <message id="dlt-tt-greater-than-lc">&quot;महत्वपूर्ण स्तर&quot;, L<sub>c</sub> से अधिक,
+    पीक क्षेत्र में काउंट्स देखे गए।</message>
+  <message id="dlt-tt-activity-range">सिग्नल गतिविधि सीमा अनुमान, {1} आत्मविश्वास स्तर तक।</message>
+  <message id="dlt-tt-counts-range">सिग्नल काउंट्स सीमा अनुमान, {1} आत्मविश्वास स्तर तक।</message>
+  <message id="dlt-tt-fewer-than-predicted">पीक क्षेत्र में काफी कम काउंट्स देखे गए,
+    पड़ोसी क्षेत्रों द्वारा पूर्वानुमानित से।</message>
+  <message id="dlt-tt-upper-bound">कितनी गतिविधि मौजूद हो सकती है इसकी ऊपरी सीमा,
+    {1} आत्मविश्वास स्तर तक।</message>
+  <message id="dlt-tt-lower-region-channels">ऊर्जा में पीक के ऊपर का क्षेत्र, जिसका उपयोग किया जा रहा है
+    पीक क्षेत्र में अपेक्षित कंटीन्यूअम काउंट्स का अनुमान लगाने के लिए;
+    {1} से {2} keV से मेल खाता है</message>
+  <message id="dlt-tt-lower-region-counts">पीक क्षेत्र के नीचे के क्षेत्र में देखे गए काउंट्स की संख्या,
+    जिसका उपयोग अपेक्षित पीक-क्षेत्र अपेक्षित काउंट्स का अनुमान लगाने के लिए किया जा रहा है</message>
+  <message id="dlt-tt-upper-region-channels">ऊर्जा में पीक के ऊपर का क्षेत्र, जिसका उपयोग किया जा रहा है
+    पीक क्षेत्र में अपेक्षित कंटीन्यूअम काउंट्स का अनुमान लगाने के लिए;
+    {1} से {2} keV से मेल खाता है</message>
+  <message id="dlt-tt-upper-region-counts">पीक क्षेत्र के ऊपर के क्षेत्र में देखे गए काउंट्स की संख्या,
+    जिसका उपयोग अपेक्षित पीक-क्षेत्र अपेक्षित काउंट्स का अनुमान लगाने के लिए किया जा रहा है</message>
+  <message id="dlt-tt-peak-area-channels">क्षेत्र जिसमें पीक होने का अनुमान लगाया जा रहा है;
+    {1} से {2} keV से मेल खाता है</message>
+  <message id="dlt-tt-peak-region-counts">पीक क्षेत्र में देखे गए काउंट्स की संख्या</message>
+  <message id="dlt-tt-peak-region-null-est">अपेक्षित काउंट्स की संख्या का अनुमान, पीक क्षेत्र में, यदि
+    यह माना जाता है कि कोई सिग्नल मौजूद नहीं है।</message>
+  <message id="dlt-tt-critical-limit">क्यूरी के &quot;महत्वपूर्ण स्तर&quot;, L<sub>c</sub> से मेल खाता है,
+    जो शुद्ध सिग्नल स्तर (उपकरण प्रतिक्रिया) है जिसके ऊपर एक
+    देखा गया सिग्नल विश्वसनीय रूप से &quot;पता लगाया गया&quot; के रूप में पहचाना जा सकता है।</message>
+  <message id="dlt-tt-detection-limit">क्यूरी के &quot;पता लगाने की सीमा&quot;, L<sub>d</sub> से मेल खाता है,
+    जो &quot;सच्चा&quot; शुद्ध सिग्नल स्तर है जो हो सकता है, <i>पूर्व</i>,
+    पता लगाने की ओर ले जाने की अपेक्षा की जाती है।</message>
+  <message id="dlt-tt-detector-intrinsic-eff">डिटेक्टर चेहरे पर टकराने वाले गामा के लिए दक्षता,
+    पूर्ण-ऊर्जा पीक में पता लगाया जाना है।</message>
+  <message id="dlt-tt-solid-angle-fraction">ठोस कोण का अंश, डिटेक्टर चेहरा निर्दिष्ट दूरी पर लेता है।</message>
+  <message id="dlt-tt-shielding-transmission">गामा का अंश, इस ऊर्जा पर, जो सुरक्षा के माध्यम से बिना बातचीत के गुजरेगा।</message>
+  <message id="dlt-tt-air-transmission">गामा का अंश, इस ऊर्जा पर, जो हवा के माध्यम से (समुद्र तल मानते हुए) बिना बातचीत के गुजरेगा।</message>
+  <message id="dlt-tt-branching-ratio">इस ऊर्जा पर उत्सर्जित गामा किरणों की संख्या, रेडियोधर्मी
+    स्रोत से किसी भी सुरक्षा से पहले, लेकिन न्यूक्लाइड आयु को ध्यान में रखते हुए,
+    माता-पिता न्यूक्लाइड के प्रति क्षय।</message>
+  <message id="dlt-tt-below-lc-counts">देखा गया सिग्नल काउंट्स &quot;महत्वपूर्ण स्तर&quot;, L<sub>c</sub> से कम है,
+    इसलिए पता लगाने की घोषणा नहीं की जा सकती, लेकिन यह अपेक्षित काउंट्स पर अधिक है।</message>
+  <message id="dlt-tt-below-lc-activity">देखी गई सिग्नल गतिविधि &quot;महत्वपूर्ण स्तर&quot;, L<sub>c</sub> से कम है,
+    इसलिए पता लगाने की घोषणा नहीं की जा सकती, लेकिन यह अपेक्षित काउंट्स पर अधिक है।</message>
+  
+  <!-- Chart strings -->
+  <message id="dlt-chart-x-axis-distance">दूरी ({1})</message>
+  <message id="dlt-chart-x-axis-activity">गतिविधि ({1})</message>
+  <message id="dlt-chart-title-estimated-activity">अनुमानित गतिविधि {1}।</message>
+  <message id="dlt-chart-title-excess-counts">अतिरिक्त काउंट्स {1}।</message>
+  <message id="dlt-chart-title-activity-lt-zero"><![CDATA[गतिविधि < 0 {1}]]></message>
+  <message id="dlt-chart-title-data-peak">डेटा + पीक {1}</message>
+  <message id="dlt-chart-title-peak-upper-bound">ऊपरी सीमा का पीक {1} @{2} CL</message>
+  <message id="dlt-currie-info-dialog-title">{1}{2} keV जानकारी</message>
+  
+  <!-- Additional error/status messages -->
+  <message id="dlt-no-foreground-file">कोई फोरग्राउंड फ़ाइल नहीं</message>
+  <message id="dlt-no-foreground-spectrum">कोई फोरग्राउंड स्पेक्ट्रम नहीं</message>
+  <message id="dlt-no-drf-loaded">कोई DRF लोड नहीं किया गया</message>
+  <message id="dlt-drf-not-valid">DRF वैध नहीं है या FWHM जानकारी नहीं है।</message>
+  <message id="dlt-err-max-distance-too-large"><![CDATA[अधिकतम दूरी बहुत बड़ी है (>100किमी)]]></message>
+  <message id="dlt-err-upper-limit-negative">काउंट्स की ऊपरी सीमा शून्य से कम है, लेकिन देखे गए काउंट्स L_d से अधिक हैं।</message>
+  <message id="dlt-err-activity-zero-negative">गतिविधि शून्य या नकारात्मक नहीं हो सकती</message>
+  <message id="dlt-err-distance-zero-negative">दूरी शून्य या नकारात्मक नहीं हो सकती</message>
+</messages>

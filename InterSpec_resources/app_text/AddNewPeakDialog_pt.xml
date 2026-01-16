@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- anpd is short for AddNewPeakDialog -->
+  <message id="anpd-dialog-add-peak-title">Adicionar Pico</message>
+  <message id="anpd-err-no-foreground">Um espectro de primeiro plano deve ser carregado para adicionar um pico.</message>
+  <message id="anpd-err-no-foreground-1">Nenhum espectro de primeiro plano</message>
+  <message id="anpd-peak-mean">Média do Pico</message>
+  <message id="anpd-peak-fwhm">FWHM do Pico</message>
+  <message id="anpd-peak-amp">Amp. do Pico</message>
+  <message id="anpd-roi-lower">ROI Inferior</message>
+  <message id="anpd-roi-upper">ROI Superior</message>
+  <message id="anpd-tt-more-adv">Para opções mais avançadas, veja o <em>Editor de Picos</em> após adicionar.</message>
+  <message id="anpd-screen-to-small">Tela muito pequena para visualização.</message>
+  <message id="anpd-err-preview">Erro ao renderizar visualização</message>
+  <message id="anpd-err-fit-failed">Ajuste Falhou.</message>
+  <message id="anpd-associate-with">Associar com {1}</message>
+</messages>

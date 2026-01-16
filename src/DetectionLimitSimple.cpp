@@ -105,7 +105,7 @@ DetectionLimitSimpleWindow::DetectionLimitSimpleWindow( MaterialDB *materialDB,
                                 Wt::WSuggestionPopup *materialSuggestion,
                                 InterSpec *viewer )
 : AuxWindow( WString::tr("window-title-simple-mda"),
-            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+            (AuxWindowProperties::TabletNotFullScreen
              | AuxWindowProperties::SetCloseable
              | AuxWindowProperties::DisableCollapse) )
 {
@@ -270,8 +270,6 @@ void DetectionLimitSimple::init()
   m_spectrum->setXAxisTitle( "" );
   m_spectrum->setYAxisTitle( "", "" );
   m_spectrum->setYAxisLog( false );
-  m_spectrum->applyColorTheme( m_viewer->getColorTheme() );
-  m_viewer->colorThemeChanged().connect( boost::bind( &D3SpectrumDisplayDiv::applyColorTheme, m_spectrum, boost::placeholders::_1 ) );
   m_spectrum->disableLegend();
   m_spectrum->setShowPeakLabel( SpectrumChart::PeakLabels::kShowPeakUserLabel, true );
   
@@ -307,13 +305,13 @@ void DetectionLimitSimple::init()
   generalInput->addStyleClass( "GeneralInput" );
   
   
-  WLabel *nucLabel = new WLabel( WString("{1}:").arg(WString::tr("Nuclide")), generalInput );
+  WLabel *nucLabel = new WLabel( WString::tr("nuclide-label"), generalInput );
   m_nuclideEdit = new WLineEdit( generalInput );
   
   m_nuclideEdit->setMinimumSize( 30, WLength::Auto );
   nucLabel->setBuddy( m_nuclideEdit );
   
-  WLabel *ageLabel = new WLabel( WString("{1}:").arg(WString::tr("Age")), generalInput );
+  WLabel *ageLabel = new WLabel( WString::tr("age-label"), generalInput );
   m_nuclideAgeEdit = new WLineEdit( generalInput );
   m_nuclideAgeEdit->setMinimumSize( 30, WLength::Auto );
   m_nuclideAgeEdit->setPlaceholderText( WString::tr("N/A") );
@@ -342,7 +340,7 @@ void DetectionLimitSimple::init()
                               WString::tr("dcw-tt-age-edit"), showToolTips );
   
   
-  WLabel *gammaLabel = new WLabel( WString("{1}:").arg(WString::tr("Gamma")), generalInput );
+  WLabel *gammaLabel = new WLabel( WString::tr("dls-gamma-label"), generalInput );
   gammaLabel->addStyleClass( "GridFirstCol GridThirdRow GridVertCenter" );
   
   
@@ -355,7 +353,7 @@ void DetectionLimitSimple::init()
   
   
   // Add Distance input
-  WLabel *distanceLabel = new WLabel( WString("{1}:").arg(WString::tr("Distance")), generalInput );
+  WLabel *distanceLabel = new WLabel( WString::tr("distance-label"), generalInput );
   distanceLabel->addStyleClass( "GridFourthCol GridFirstRow GridVertCenter" );
   
   m_prevDistance = "100 cm";
@@ -541,9 +539,9 @@ void DetectionLimitSimple::init()
 
 void DetectionLimitSimple::roiDraggedCallback( double new_roi_lower_energy,
                  double new_roi_upper_energy,
-                 double new_roi_lower_px,
-                 double new_roi_upper_px,
+                 double new_roi_px,
                  double original_roi_lower_energy,
+                 const std::string &spec_type,
                  bool is_final_range )
 {
   if( !is_final_range )
@@ -1330,7 +1328,7 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
       
       WString result_txt;
       const bool use_curie = use_curie_units();
-      const DetectorPeakResponse::EffGeometryType det_geom = drf ? drf->geometryType() : DetectorPeakResponse::EffGeometryType::FarField;
+      const DetectorPeakResponse::EffGeometryType det_geom = drf ? drf->geometryType() : DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
       
       assert( !result
              || (result->input.num_lower_side_channels != 0)
@@ -1821,7 +1819,7 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
   
   
   if( (distance > 0.0)
-     && (!drf || (drf->geometryType() == DetectorPeakResponse::EffGeometryType::FarField) ) 
+     && (!drf || !drf->isFixedGeometry()) 
      && result.baseInput.include_air_attenuation )
   {
     const double air_atten_coef = GammaInteractionCalc::transmission_coefficient_air( energy, distance );
@@ -2248,8 +2246,8 @@ void DetectionLimitSimple::updateResult()
         //  to definitely cover the entire possible activity range, so we will exaggerate the
         //  expected range from Currie-style limit
         //  The value of 5 is totally arbitrary, and I dont know what is actually a good range yet
-        const double diff_multiple = 5.0;
-        
+        const double diff_multiple = 50.0;
+
         if( currie_result.source_counts > currie_result.decision_threshold )
         {
           // There is enough excess counts to reliably detect this activity

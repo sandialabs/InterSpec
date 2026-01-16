@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- bgw- is short for BatchGuiWidget, strings used by BatchGuiAnaWidget -->
+  <message id="bgw-peaks-csv-txt">पीक CSV फ़ाइल</message>
+  <message id="bgw-not-spec-preview">स्पेक्ट्रम फ़ाइल नहीं</message>
+  <message id="bgw-passthrough-sum-error">Passthrough त्रुटि</message>
+  <message id="bgw-preview-error">पूर्वावलोकन रेंडरिंग में त्रुटि</message>
+</messages>

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- pe- is short for PeakEdit -->
+  <message id="pe-value">मान</message>
+  <message id="pe-uncertainty">अनिश्चितता</message>
+  <message id="pe-parameter">पैरामीटर</message>
+  <message id="pe-label">लेबल</message>
+  <message id="pe-peak-type">शिखर प्रकार</message>
+  <message id="pe-peak-model-gaussian">गाउसियन</message>
+  <message id="pe-peak-model-data">डेटा क्षेत्र</message>
+  <message id="pe-skew-type">विषमता प्रकार</message>
+  <message id="pe-btn-refit">पुनः फिट करें</message>
+  <message id="pe-btn-refit-roi-standard">ROI पुनः फिट: संबंधित FWHM</message>
+  <message id="pe-btn-refit-roi-independent">ROI पुनः फिट: स्वतंत्र FWHM</message>
+  <message id="pe-btn-refit-roi-fine">ROI पुनः फिट: छोटे परिष्करण</message>
+  <message id="pe-btn-refit-roi-independent-fine">ROI पुनः फिट: स्वतंत्र FWHM के साथ परिष्कृत</message>
+
+  <message id="pe-label-centroid">केंद्रक</message>
+  <message id="pe-label-drf-fwhm">DRF अनुमानित FWHM</message>
+  <message id="pe-label-amp">आयाम</message>
+  <message id="pe-label-skew0">विषमता 0</message>
+  <message id="pe-label-skew1">विषमता 1</message>
+  <message id="pe-label-skew2">विषमता 2</message>
+  <message id="pe-label-skew3">विषमता 3</message>
+  <message id="pe-label-cont-p0">निरंतरता P0</message>
+  <message id="pe-label-cont-p1">निरंतरता P1</message>
+  <message id="pe-label-cont-p2">निरंतरता P2</message>
+  <message id="pe-label-cont-p3">निरंतरता P3</message>
+  <message id="pe-label-cont-p4">निरंतरता P4</message>
+  <message id="pe-label-roi-start">ROI प्रारंभ (keV)</message>
+  <message id="pe-label-roi-end">ROI समाप्ति (keV)</message>
+  <message id="pe-label-chi2-dof">𝜒²/DOF</message>
+  <message id="pe-label-peak-color">शिखर रंग</message>
+
+  <message id="pe-multipeak-in-roi">ROI में {2} का शिखर {1}</message>
+  <message id="pe-apply-all-of-type">सभी {1} शिखर</message>
+  <message id="pe-drf-predict-fwhm-txt">DRF {1} keV का FWHM अनुमानित करता है</message>
+  <message id="pe-btn-cont-to-linear">रैखिक निरंतरता का अनुमान लगाएं</message>
+  <message id="pe-tt-btn-cont-to-linear">सीधी-रेखा निरंतरता का अनुमान लगाने के लिए ROI के दाएं और बाएं चैनलों का उपयोग करता है।</message>
+  <message id="pe-failed-refit-insig">शिखर को पुनः फिट करने में विफल (अनावश्यक हो गया), इसलिए कुछ नहीं कर रहा</message>
+
+  <message id="pe-est-lin-cont-no-data">कृपया निरंतरता का अनुमान लगाने से पहले अग्रभूमि स्पेक्ट्रम लोड करें।</message>
+  <message id="pe-failed-est-lin-cont">ROI के किनारों से निरंतरता का अनुमान लगाने में विफल: {1}</message>
+
+
+
+</messages>

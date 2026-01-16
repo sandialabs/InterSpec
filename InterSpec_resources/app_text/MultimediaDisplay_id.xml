@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- smmd- is short for ShowMultiMediaDisplay -->
+  <message id="smmd-prev-btn">Sebelumnya</message>
+  <message id="smmd-next-btn">Berikutnya</message>
+  <message id="smmd-auto-show-images-cb">Otomatis tampilkan gambar</message>
+  <message id="smmd-tt-auto-show-images">Secara otomatis menampilkan gambar ketika file spektrum yang memilikinya dimuat.</message>
+  <message id="smmd-tt-export-image-file">Ekspor gambar yang saat ini ditampilkan ke file.</message>
+  <message id="smmd-err-no-content">Tidak ada konten multimedia untuk ditampilkan</message>
+  <message id="smmd-err-file-is-uri">Data dikodekan sebagai file di URI='{1}'</message>
+  <message id="smmd-err-no-multimedia-src">Sumber multimedia tidak berisi data apa pun.</message>
+  <message id="smmd-err-encoding-not-supported">Pengkodean konten multimedia data tidak didukung.</message>
+  <message id="smmd-err-not-image">Tipe konten multimedia bukan tipe gambar, atau tidak dapat ditentukan.</message>
+  <message id="smmd-image-index">Gambar {1} dari {2}</message>
+  <message id="smmd-Time">Waktu</message>
+  <message id="smmd-time-label">Waktu: {1}</message>
+  <message id="smmd-remark-label">Catatan: {1}</message>
+  <message id="smmd-desc-label">Desc.: {1}</message>
+  <message id="smmd-window-title-single">Gambar dalam File Spektrum</message>
+  <message id="smmd-window-title-multiple">Gambar dalam File Spektrum</message>
+</messages>
+

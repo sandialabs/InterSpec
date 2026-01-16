@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- mnid- is short for MoreNuclideInfoDisplay -->
+  <message id="mnid-show-decay-chain">Tampilkan Rantai Peluruhan</message>
+  <message id="mnid-show-decays-through">Tampilkan Peluruhan Melalui</message>
+</messages>
+

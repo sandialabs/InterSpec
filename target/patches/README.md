@@ -13,7 +13,7 @@ git clone --recursive https://github.com/sandialabs/interspec/ InterSpec
 cd InterSpec
 mdkir build_fetch
 cd build_fetch
-cmake -DInterSpec_FETCH_DEPENDENCIES=ON -DBUILD_AS_LOCAL_SERVER=ON -DUSE_BATCH_TOOLS=OFF ..
+cmake -DInterSpec_FETCH_DEPENDENCIES=ON -DBUILD_AS_LOCAL_SERVER=ON -DUSE_BATCH_CLI_TOOLS=OFF -DUSE_BATCH_GUI_TOOLS=OFF ..
 cmake --build . -j4
 ./bin/InterSpec.exe --docroot . --http-address 127.0.0.1 --http-port 8080 -c ./data/config/wt_config_localweb.xml
 ```
@@ -133,7 +133,7 @@ cd interspec
 ./InterSpec/target/patches/dep_build_linux.sh . /tmp/interspec_prefix_build ~/development/InterSpec_prefix
 mkdir build; cd build
 
-cmake -DCMAKE_PREFIX_PATH=~/development/InterSpec_prefix -DBUILD_AS_LOCAL_SERVER=ON -DUSE_BATCH_TOOLS=OFF ..
+cmake -DCMAKE_PREFIX_PATH=~/development/InterSpec_prefix -DBUILD_AS_LOCAL_SERVER=ON -DUSE_BATCH_CLI_TOOLS=OFF -DUSE_BATCH_GUI_TOOLS=OFF ..
 make -j8
 
 

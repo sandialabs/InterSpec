@@ -1,0 +1,632 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- Text labels for general buttons/prompts, and one-off words around the app.  Note the capitalization. -->
+  <message id="Cancel">Отмена</message>
+  <message id="Yes">Да</message>
+  <message id="No">Нет</message>
+  <message id="Close">Закрыть</message>
+  <message id="Continue">Продолжить</message>
+  <message id="Save">Сохранить</message>
+  <message id="Name">Имя</message>
+  <message id="Desc.">Опис.</message>
+  <message id="Back">Назад</message>
+  <message id="Create">Создать</message>
+  <message id="Energy">Энергия</message>
+  <message id="Counts">Отсчёты</message>
+  <message id="Apply">Применить</message>
+  <message id="Accept">Принять</message>
+  <message id="Okay">ОК</message>
+  <message id="Foreground">Фон</message>
+  <message id="Background">Фон</message>
+  <message id="Secondary">Вторичный</message>
+  <message id="second-foreground">Второй основной</message>
+  <message id="foreground" comment="For use in middle of sentence">основной</message>
+  <message id="background" comment="For use in middle of sentence">фон</message>
+  <message id="secondary" comment="For use in middle of sentence">вторичный</message>
+  <message id="Exit">Выход</message>
+  <message id="Enter">Ввести</message>
+  <message id="show-lines">Показать линии</message>
+  <message id="Default">По умолчанию</message>
+  <message id="Error">Ошибка</message>
+  <message id="Description">Описание</message>
+  <message id="Detector">Детектор</message>
+  <message id="Distance">Расстояние</message>
+  <message id="Activity">Активность</message>
+  <message id="nuclide-label">Нуклид:</message>
+  <message id="age-label">Возраст:</message>
+  <message id="distance-label">Расстояние:</message>
+  <message id="activity-label">Активность:</message>
+  <message id="dose-label">Доза:</message>
+  <message id="shielding-label">Защита:</message>
+  <message id="detector-label">Детектор:</message>
+  <message id="energy-label">Энергия:</message>
+  <message id="foreground-label">Передний план:</message>
+  <message id="background-label">Фон:</message>
+  <message id="secondary-label">Вторичный:</message>
+  <message id="Remark">Примечание</message>
+  <message id="Tap">Коснуться</message>
+  <message id="Click">Щёлкнуть</message>
+  <message id="tap">коснуться</message>
+  <message id="click">щёлкнуть</message>
+
+
+  <!-- Words not used in InterSpec.cpp, but at least a few places throughout the app --> 
+  <message id="Continuum">Континуум</message>
+  <message id="cont-type">Тип конт.</message>
+  <message id="Title">Заголовок</message>
+  <message id="Fit">Подгонка</message>
+  <message id="Use">Использовать</message>
+  <message id="Energy">Энергия</message>
+  <message id="Mean">Среднее</message>
+  <message id="FWHM">FWHM</message>
+  <message id="Amp.">Ампл.</message>
+  <message id="Area">Площадь</message>
+  <message id="Age">Возраст</message>
+  <message id="Add">Добавить</message>
+  <message id="Peak">Пик</message>
+  <message id="Delete">Удалить</message>
+  <message id="Photopeak">Фотопик</message>
+  <message id="Nuclide">Нуклид</message>
+  <message id="Nuc.">Нукл.</message>
+  <message id="Skew">Асимметрия</message>
+  <message id="CPS">CPS</message>
+  <message id="CSV">CSV</message>
+  <message id="True">Истина</message>
+  <message id="False">Ложь</message>
+  <message id="Remove">Удалить</message>
+  <message id="RemoveAll">Удалить всё</message>
+  <message id="Clear">Очистить</message>
+  <message id="ClearAll">Очистить всё</message>
+  <message id="T1/2">T½</message>
+  <message id="Gamma">Гамма</message>
+  <message id="X-rays">Рентген</message>
+  <message id="x-ray">рентген</message>
+  <message id="Live Time">Живое время</message>
+  <message id="Real Time">Реальное время</message>
+  <message id="Geometry">Геометрия</message>
+  <message id="Load">Загрузить</message>
+  <message id="Mass">Масса</message>
+  <message id="Material">Материал</message>
+  <message id="NA">НД</message>
+  <message id="n/a">нд</message>
+  <message id="N/A">Н/Д</message>
+  <message id="Min.">Мин.</message>
+  <message id="Max.">Макс.</message>
+  <message id="QR Code">QR-код</message>
+  <message id="Accept">Принять</message>
+  <message id="Dose">Доза</message>
+  <message id="Shielding">Экранирование</message>
+  <message id="app-qr-err">Ошибка создания QR-кода: {1}</message>
+  <message id="intrinsic-activity">Внутренняя активность</message>
+  <message id="Calibration">Калибровка</message>
+  <message id="Unknown">Неизвестно</message>
+  <message id="keV">кэВ</message>
+  <message id="Energy (keV)">Энергия (кэВ)</message>
+  <message id="Efficiency">Эффективность</message>
+  <message id="stable">стабильный</message>
+
+  <!-- Units the user may use to write time duration.
+    Note that we dont have very good changing case (i.e., from lower to upper, or upper to lower)
+    in the C++ code, so to be sure the matching works, you should include common capitalization
+    schemes here - sorry.
+
+    It is important that the | character is used, with no spaces, to seperate the different possible
+    units (this is because this string will become part of a regular-expression).
+    
+    These 'units-labels-*' string also MUST NOT be empty, or regex validation inputs will fail.
+    (you can leave the whole element out, to default to English, but if you put in a localized
+    element, the node must hav a value)
+  -->
+  <message id="units-labels-second">секунды|секунда|сек|с|СЕКУНДЫ|СЕКУНДА|СЕК|С</message>
+  <message id="units-labels-minute">минута|минуты|мин|м</message>
+  <message id="units-labels-hours">часы|час|ч</message>
+  <message id="units-labels-days">дни|день|д</message>
+  <message id="units-labels-year">годы|год|г</message>
+  <message id="units-labels-half-lives">пж|полупериод|полупериоды|период полураспада|периоды полураспада</message>
+  <!-- Units to use when writing a time duration out -->
+  <message id="units-label-seconds-short">с</message>
+  <message id="units-label-minutes-short">м</message>
+  <message id="units-label-hours-short">ч</message>
+  <message id="units-label-days-short">д</message>
+  <message id="units-label-years-short">г</message>
+
+
+  <!-- The dialog when the user selects "Clear Session..." from the File menu -->
+  <message id="clear-session">Очистить сессию?</message>
+  <message id="clear-session-msg">Вы уверены, что хотите начать новую сессию?</message>
+
+  <message id="window-title-spec-file-query">Поиск файлов спектров</message>
+  <message id="window-title-notification-log">Журнал уведомлений</message>
+  <message id="notification-log-clear">Очистить уведомления</message>
+  <message id="window-title-peak-manager">Менеджер пиков</message>
+  <message id="window-title-store-state-as">Сохранить состояние как</message>
+  <message id="window-title-tag-state">Отметить текущее состояние</message>
+  <message id="window-title-create-snapshot">Создать снимок</message>
+  <message id="window-title-energy-cal">Калибровка энергии</message>
+  <message id="window-title-hard-back-sub">Выполнить жёсткое вычитание фона?</message>
+  <message id="window-title-3d">3D-просмотр данных</message>
+  <message id="window-title-peak-rel-eff">Изотопика из пиков пользователя</message>
+  <message id="window-title-compact-file">Выбрать открытые спектры для отображения</message>
+  <message id="window-title-feature-markers">Маркеры особенностей</message>
+  <message id="window-title-act-shield-fit">Подгонка активности/экранирования</message>
+  <message id="window-title-xs-calc">Расчёт сечения гамма</message>
+  <message id="window-title-dose-calc">Расчёт дозы</message>
+  <message id="window-title-1/r2-calc">Калькулятор 1/r<sup>2</sup></message>
+  <message id="window-title-units-convert">Конвертер единиц</message>
+  <message id="window-title-flux-tool">Инструмент потока</message>
+  <message id="window-title-nuc-decay">Информация о распаде нуклидов</message>
+  <message id="window-title-select-det-eff-fcn">Выбор функции отклика детектора</message>
+  <message id="window-title-add-fwhm">Добавить FWHM к функции отклика детектора</message>
+  <message id="window-title-create-drf">Создать функцию отклика детектора</message>
+  <message id="window-title-file-parameters">Параметры файла</message>
+  <message id="window-title-energy-range-sum">Сумма по диапазону энергий</message>
+  <message id="window-title-external-rid">Внешний RID</message>
+  <message id="window-title-license-credit">Отказы от ответственности, лицензии, авторы и контакты</message>
+  <message id="window-title-help">Справка InterSpec</message>
+  <message id="window-title-simple-mda">Простой расчёт минимально детектируемой активности</message>
+  <message id="window-title-peak-editor">Редактор пиков</message>
+  
+
+  <!-- The names of the tool-tabs at the bottom of the app -->
+  <message id="app-tab-peak-manager">Менеджер пиков</message>
+  <message id="app-tab-ref-photopeak">Реф. фотопики</message>
+  <message id="app-tab-energy-cal">Калибровка энергии</message>
+  <message id="app-tab-nuc-search">Поиск нуклидов</message>
+  <message id="app-tab-spec-files">Файлы спектров</message>
+  <message id="app-tab-terminal">Терминал</message>
+  <message id="app-tab-isotopics">Изотопика</message>
+
+  <message id="app-tab-tt-ref-photopeak">Позволяет пользователю отображать референсные линии фотопиков от рентгеновского излучения,
+    гамма-лучей или ядерных реакций.  
+    <br />
+    Возраст нуклидов, применённое экранирование и используемая эффективность детектора могут быть изменены.
+    <br />
+    В меню расширенной информации также можно показать каскадные суммы распада, энергии альфа или конечные точки бета.
+    <br />
+    Вы также можете экспортировать CSV-файл с информацией о нуклидах.
+  </message>
+  <message id="app-tab-tt-peak-manager">Отображает информацию о подогнанных пиках в редактируемой и сортируемой таблице,
+    позволяет экспортировать CSV с информацией о пиках, а также утилиты для автоматического поиска пиков и добавления и удаления пиков.
+  </message>
+  <message id="app-tab-tt-energy-cal">Позволяет пользователю изменять или подгонять коэффициенты калибровки энергии и пары нелинейных отклонений.
+    <br />
+    Также есть опции для линеаризации спектра, изменения типа калибровки энергии, обрезки диапазона энергий или объединения каналов.
+    <br />
+    Калибровка энергии также может быть выполнена графически путём перетаскивания спектра правой кнопкой мыши от исходной к изменённой энергии
+    (например, перетащите пик данных к соответствующей референсной линии).
+  </message>
+  <message id="app-tab-tt-nuc-search">Поиск нуклидов с ограничениями по энергии, коэффициенту ветвления и периоду полураспада.</message>
+  <message id="app-tab-tt-auto-search">Автопоиск пиков</message>
+  <message id="app-tab-tt-terminal">Числовой, алгебраический и текстовый терминал взаимодействия со спектром.</message>
+  <message id="app-tab-tt-rel-eff">Анализ относительной эффективности из подогнанных вами пиков.</message>
+
+
+  <!-- App-level menu names -->
+  <message id="app-menu-file">Файл</message>
+  <message id="app-menu-spectra">Спектры</message>
+  <message id="app-menu-edit">Правка</message>
+  <message id="app-menu-view">Вид</message>
+  <message id="app-menu-help">Справка</message>
+  <message id="app-menu-tools">Инструменты</message>
+  
+
+  <!-- 
+    Menu item text for the app-level menus.
+    They are in the form of "app-mi-{menu}-item-desc", or for tool tips "app-mi-tt-{menu}-item-desc"
+  -->
+  <message id="app-mi-file-about">О программе InterSpec</message>
+  <message id="app-mi-file-open">Открыть файл...</message>
+  <message id="app-mi-file-loaded-spec">Загруженные спектры...</message>
+  <message id="app-mi-file-manager">Менеджер...</message>
+  <message id="app-mi-tt-file-manager">Управление загруженными спектрами. Суммирование спектров, объединение спектров в разные файлы, отображение, ...</message>
+  <message id="app-mi-file-store">Сохранить</message>
+  <message id="app-mi-tt-file-store">Сохраняет текущее состояние приложения в базу данных InterSpec</message>
+  <message id="app-mi-file-store-as">Сохранить как...</message>
+  <message id="app-mi-tt-file-store-as">Сохраняет текущее состояние приложения в новую запись в базе данных InterSpec</message>
+  <message id="app-mi-file-tag">Отметить...</message>
+  <message id="app-mi-tt-file-tag">Отмечает текущее состояние InterSpec, чтобы вы
+   могли вернуться к нему позже. При загрузке состояния приложения
+   вы можете выбрать либо последнее сохранение, либо выбрать прошлые отмеченные версии.
+  </message>
+  <message id="app-mi-file-prev">Предыдущие...</message>
+  <message id="app-mi-tt-file-prev">Открывает ранее сохранённые состояния или спектры.</message>
+  <message id="app-mi-file-clear">Очистить сессию...</message>
+  <message id="app-mi-tt-file-clear">Запускает чистое состояние приложения без загруженных спектров</message>
+  <message id="app-mi-samples">Образцы</message>
+  <message id="app-mi-tt-file-open">Создаёт диалог для просмотра файла спектра в вашей файловой системе.
+    Перетащите файл прямо в окно приложения как более быструю альтернативу.
+  </message>
+  <message id="app-mi-export-file">Экспорт файла...</message>
+
+  <message id="app-mi-samples-ba133">Ba-133 (16k каналов)</message>
+  <message id="app-mi-samples-passthrough-mobile">Сквозной (16k каналов)</message>
+  <message id="app-mi-samples-passthrough">Сквозной (16k bin ICD1, 8 дет., 133 образца)</message>
+  <message id="app-mi-samples-background">Фон (16k bin N42)</message>
+  <message id="app-mi-samples-reference">Референсные спектры...</message>
+
+  <!-- Items in the "Edit" menu -->
+  <message id="app-mi-edit-undo">Отменить</message>
+  <message id="app-mi-edit-redo">Повторить</message>
+  <message id="app-mi-edit-save-png">Сохранить спектр как PNG</message>
+  <message id="app-mi-edit-save-svg">Сохранить спектр как SVG</message>
+  <message id="app-mi-edit-enter-url">Ввести URL</message>
+
+  <!-- Items in the "View" menu -->
+  <message id="app-mi-view-show-tabs">Показать вкладки инструментов</message>
+  <message id="app-mi-view-hide-tabs">Скрыть вкладки инструментов</message>
+  <message id="app-mi-view-chart-opts">Опции диаграммы</message>
+  <message id="app-mi-view-logy">Логарифмическая шкала Y</message>
+  <message id="app-mi-view-liny">Линейная шкала Y</message>
+  <message id="app-mi-view-show-vert">Показать вертикальные линии</message>
+  <message id="app-mi-view-hide-vert">Скрыть вертикальные линии</message>
+  <message id="app-mi-view-show-horz">Показать горизонтальные линии</message>
+  <message id="app-mi-view-hide-horz">Скрыть горизонтальные линии</message>
+  <message id="app-mi-view-compact-x">Компактная ось X</message>
+  <message id="app-mi-view-normal-x">Обычная ось X</message>
+  <message id="app-mi-view-show-leg">Показать легенду спектра</message>
+  <message id="app-mi-view-show-slider">Показать ползунок энергии</message>
+  <message id="app-mi-view-hide-slider">Скрыть ползунок энергии</message>
+  <message id="app-mi-view-show-scaler">Показать масштабировщики оси Y</message>
+  <message id="app-mi-view-hide-scaler">Скрыть масштабировщики оси Y</message>
+  <message id="app-mi-view-back-sub">Вычитание фона</message>
+  <message id="app-mi-view-back-unsub">Отмена вычитания фона</message>
+  <message id="app-mi-view-hard-sub">Жёсткое вычитание фона...</message>
+  <message id="app-mi-view-map">Карта</message>
+  <message id="app-mi-tt-view-map">Показать местоположение измерения(й) на карте. Включается только при наличии GPS-координат.</message>
+  <message id="app-mi-view-3d">Показать 3D-вид</message>
+  <message id="app-mi-tt-view-3d">Показывает вид Время vs. Энергия vs. Отсчёты для данных поискового режима или RPM.</message>
+  <message id="app-mi-view-rid">Показать результаты ID</message>
+  <message id="app-mi-tt-view-rid">Показывает результаты ID-анализа детектора, включённые в файл спектра.</message>
+  <message id="app-mi-view-img">Показать изображения</message>
+  <message id="app-mi-tt-view-img">Показывает изображения, включённые в файл спектра.</message>
+  <message id="app-mi-view-feature-markers">Маркеры особенностей...</message>
+  <message id="app-mi-view-hide-feature-markers">Скрыть маркеры особенностей</message>
+  <message id="app-mi-view-enable-dynamic-ref-lines">Показать динамические референсные линии</message>
+  <message id="app-mi-view-disable-dynamic-ref-lines">Скрыть динамические референсные линии</message>
+  <message id="app-mi-tt-view-feature-markers">Инструмент для показа одиночных/двойных пиков убегания, комптоновского пика, комптоновского края и суммарных пиков.</message>
+  <message id="app-mi-view-new-win">Новое окно приложения</message>
+  <message id="app-mi-view-webbrowser">Использовать во внешнем браузере</message>
+  <message id="app-mi-view-full">Переключить полноэкранный режим</message>
+  <message id="app-mi-view-act-size">Фактический размер</message>
+  <message id="app-mi-view-zin">Увеличить</message>
+  <message id="app-mi-view-zout">Уменьшить</message>
+  <message id="app-mi-view-dev-tool">Переключить инструменты разработчика</message>
+  <message id="app-mi-view-dets">Детекторы</message>
+  <message id="app-mi-view-peak-labels">Метки пиков</message>
+  <message id="app-mi-view-lbl-usr">Показать пользовательские метки</message>
+  <message id="app-mi-view-lbl-peak-en">Показать энергии пиков</message>
+  <message id="app-mi-view-lbl-nuc-nm">Показать названия нуклидов</message>
+  <message id="app-mi-view-lbl-nuc-en">Показать энергии нуклидов</message>
+
+  <!-- The Detectors sub-menu under View -->
+  <message id="app-mi-det-no-name">Дет. {1} ({2})</message>
+  <message id="app-mi-det-with-name">Дет. {1}</message>
+
+  
+  <!-- Items in the "Tools" menu -->
+  <message id="app-mi-tools-act-fit">Подгонка активности/экранирования</message>
+  <message id="app-mi-tt-tools-act-fit">Инструмент для подгонки активности и экранирования нуклидов в спектре.
+    <br />
+    Также содержит возможности для определения возраста нуклидов, концентраций загрязнений или обогащения.
+  </message>
+  <message id="app-mi-tools-iso-by-nuc">Изотопика по нуклидам</message>
+  <message id="app-mi-tt-tools-iso-by-nuc">
+    Автоматически подгоняет пики нуклидов для определения относительных
+    активностей нуклидов. Не требует знания отклика детектора
+   или информации об экранировании.
+  </message>
+  <message id="app-mi-tools-iso-by-peak">Изотопика из пиков</message>
+  <message id="app-mi-tt-tools-iso-by-peak">Использует подогнанные вами пики для определения относительных активностей нуклидов. Не требует знания отклика детектора или информации об экранировании. </message>
+  <message id="app-mi-tools-xs-calc">Расчёт сечения гамма</message>
+  <message id="app-mi-tt-tools-xs-calc">Позволяет пользователю определить сечение для гамма-лучей
+    произвольной энергии через любой материал в библиотеке <code>InterSpec</code>. Оценки эффективности
+    для детектирования гамма-лучей внутри полного энергетического пика и доли гамма-лучей, которые
+    пройдут через материал без взаимодействия с ним, могут быть предоставлены при вводе
+    дополнительной информации.
+  </message>
+  <message id="app-mi-tools-dose-calc">Расчёт дозы</message>
+  <message id="app-mi-tt-tools-dose-calc">Позволяет вычислить дозу, активность, экранирование
+    или расстояние, учитывая другие части информации.
+  </message>
+  <message id="app-mi-tools-1r2">Калькулятор 1/r<sup>2</sup></message>
+  <message id="app-mi-tt-tools-1r2">Позволяет пользователю использовать два измерения дозы, сделанные на разных расстояниях от источника, для определения абсолютного расстояния до источника от ближнего измерения.</message>
+  <message id="app-mi-tools-unit">Конвертер единиц</message>
+  <message id="app-mi-tt-tools-unit">Конвертирование единиц, связанных с радиацией.</message>
+  <message id="app-mi-tools-flux">Инструмент потока</message>
+  <message id="app-mi-tt-tools-flux">Преобразует обнаруженные отсчёты пиков в гамма-лучи, испущенные источником.</message>
+  <message id="app-mi-tools-nuc-decay">Информация о распаде нуклидов</message>
+  <message id="app-mi-tt-tools-nuc-decay">Позволяет пользователю получить расширенную информацию об активностях, скоростях производства гамма/альфа/бета, цепи распада и дочерних нуклидах.</message>
+  <message id="app-mi-tools-mda">Инструмент доверительной детекции</message>
+  <message id="app-mi-tt-tools-mda">Предоставляет верхнюю оценку активности для нуклидов</message>
+  <message id="app-mi-tools-select-drf">Выбор отклика детектора</message>
+  <message id="app-mi-tt-tools-select-drf">Позволяет пользователю изменить функцию отклика детектора.</message>
+  <message id="app-mi-tools-make-drf">Создать отклик детектора</message>
+  <message id="app-mi-tt-tools-make-drf">Создать функцию отклика детектора из данных характеризации.</message>
+  <message id="app-mi-tools-file-par">Параметры файла</message>
+  <message id="app-mi-tt-tools-file-par">Позволяет пользователю просматривать/редактировать параметры файла. Если приложение не может выполнить расчёт активности, используйте этот инструмент для предоставления параметров, которые исходный файл не предоставил; <code>InterSpec</code> нуждается во всех параметрах для расчёта активности.</message>
+  <message id="app-mi-tools-en-sum">Сумма по диапазону энергий</message>
+  <message id="app-mi-tt-tools-en-sum">Суммирует количество гамма-лучей в области интереса (ROI). Также доступно щелчком левой кнопкой и перетаскиванием по ROI, удерживая клавиши <kbd><b>ALT</b></kbd> и <kbd><b>SHIFT</b></kbd>.</message>
+  <message id="app-mi-tools-query">Инструмент поиска файлов</message>
+  <message id="app-mi-tt-tools-query">Поиск в директории (рекурсивно) файлов спектров, которые соответствуют заданным условиям.</message>
+  <message id="app-mi-tools-math">Математический/командный терминал</message>
+  <message id="app-mi-tt-tools-math">Создаёт терминал, который предоставляет числовые и алгебраические вычисления, а также позволяет некоторые текстовые взаимодействия со спектрами.</message>
+ <message id="app-mi-tools-ext-rid">Внешний RID</message>
+ <message id="app-mi-tt-tools-ext-rid">Использует{1} удалённый URL для выполнения идентификации нуклидов вашего спектра.</message>
+ <!-- This next sentence fragment _may_ get substituted into the previous message, where there is a {1} in it -->
+ <message id="app-mi-tt-tools-ext-rid-exe"> внешнюю программу или</message>
+
+  <!-- Items in the "Help" menu -->
+  <message id="app-mi-help-welcome">Добро пожаловать...</message>
+  <message id="app-mi-help-contents">Содержание справки...</message>
+  <message id="app-mi-help-notif-log">Журнал уведомлений</message>
+  <message id="app-mi-help-opts">Опции</message>
+  <message id="app-mi-help-pref-auto-store"> Автосохранение работы</message>
+  <message id="app-mi-help-pref-check-prev"> Проверять предыдущую работу</message>
+  <message id="app-mi-help-pref-show-tt"> Показывать подсказки</message>
+  <message id="app-mi-help-pref-prop-peak"> Спрашивать о распространении пиков</message>
+  <message id="app-mi-help-pref-preserve-ene-cal"> Спрашивать о сохранении калибр. энергии.</message>
+  <message id="app-mi-help-pref-disp-bq"> Отображать в беккерелях</message>
+  <message id="app-mi-help-pref-def-drfs"> Использовать DRF по умолчанию</message>
+  <message id="app-mi-help-pref-desktop"> Интерфейс рабочего стола</message>
+  <message id="app-mi-help-pref-auto-dark"> Автоприменение тёмной темы</message>
+  <message id="app-mi-help-pref-theme">Цветовые темы...</message>
+  <message id="app-mi-help-pref-prompt-prev">Предлагать загрузку предыдущего состояния</message>
+  <message id="app-mi-help-pref-load-prev">Загружать предыдущее состояние при запуске</message>
+  <message id="app-mi-help-language">Язык</message>
+  <message id="app-mi-help-about">О программе InterSpec...</message>
+
+  <message id="app-mi-tt-help-pref-auto-store">Автоматически сохраняет состояние приложения, если вы работаете в
+    сохранённом состоянии, или иначе, если не работаете, сохранит ваши спектры
+    и вашу работу (например, подогнанные пики, изменения калибровки энергии и т.д.) во
+    внутреннюю базу данных InterSpec и предложит, хотите ли вы продолжить
+    с того места, где остановились, в следующий раз при загрузке того же спектра.
+  </message>
+  <message id="app-mi-tt-help-pref-check-prev"> При загрузке файла спектра проверять, выполнялась ли ранее работа (подгонка пиков,
+    подгонка активности и т.д.) с тем же файлом.
+  </message>
+  <message id="app-mi-tt-help-pref-show-tt">Показывать подсказки после наведения на элемент на полсекунды.</message>
+  <message id="app-mi-tt-help-pref-prop-peak">При загрузке спектров с того же детектора
+    спрашивать, следует ли повторно подогнать те же пики для нового спектра. Применяется только если новый спектр не имеет пиков, но предыдущий
+    основной спектр имел.
+  </message>
+  <message id="app-mi-tt-help-pref-preserve-ene-cal">При загрузке спектров с того же детектора, и калибровка энергии
+    нового файла отличается от старого файла, спрашивать, следует ли применить калибровку энергии старого файла
+    к новому файлу.
+  </message>
+  <message id="app-mi-tt-help-pref-disp-bq">Отображать активность в единицах беккереля, а не кюри.</message>
+  <message id="app-mi-tt-help-def-drfs">При загрузке спектра, и если вы ранее не
+    связывали функцию отклика детектора с моделью
+    детектора, из которого поступает спектр, следует ли попытаться
+    найти и загрузить DRF по умолчанию автоматически.
+  </message>
+  <message id="app-mi-tt-help-desktop">Выбирает использование либо более мобильного, либо настольного стиля
+    интерфейса приложения. Основное различие - использование
+    меню стиля "Гамбургер" или панели меню.
+
+    Изменение этой настройки не вступит в силу до перезапуска приложения
+    или выбора опции "Очистить сессию...".
+  </message>
+  <message id="app-mi-tt-help-auto-dark">Применяет цветовую тему "Тёмная" автоматически согласно
+    текущему значению операционной системы или при её переключении.
+  </message>
+  <message id="app-mi-tt-help-pref-prompt-prev">При запуске приложения спрашивать о загрузке предыдущего состояния.</message>
+  <message id="app-mi-tt-help-pref-load-prev">При запуске приложения автоматически загружать предыдущее состояние, если не установлено предложение.</message>
+  <message id="warn-desktop-disp-switch">Изменения не вступят в силу до перезапуска или обновления приложения.</message>
+  <message id="warn-desktop-disp-switch-refresh">Обновить сессию</message>
+  <message id="warn-language-restart">Не все поля будут обновлены с новым языком - перезапустите приложение для полного обновления.</message>
+
+
+
+  <!-- Menu item text for when you right-click on a peak. The "_mi" is menu item, and "_tt" is tool-tip -->
+  <message id="rclick-mi-peak-editor">Редактор пиков...</message>
+  <message id="rclick-mi-refit-peak">Переподогнать пик</message>
+  <message id="rclick-mi-use-drf-fwhm">Использовать DRF FWHM</message>
+  <message id="rclick-mi-tt-use-drf-fwhm">Фиксирует FWHM пика к тому, что предсказывает функция отклика детектора, а затем переподгоняет пик.</message>
+  <message id="rclick-mi-fix-mean">Установить среднее к фотопику</message>
+  <message id="rclick-mi-tt-fix-mean">Фиксирует центроид пика к назначенной энергии гамма-лучей, или если источник не назначен, к вероятной референсной линии фотопика. После установки центроида другие параметры пика будут переподогнаны</message>
+  
+  
+  <message id="rclick-mi-refit-roi">Переподогнать ROI</message>
+  <message id="rclick-mi-tt-refit-roi">Переподгоняет ROI, обеспечивая разумную линейную связь для FWHM по ROI, для всех FWHM, которые не зафиксированы.</message>
+  <message id="rclick-mi-refit-roi-aggressive">Переподогнать ROI (агрессивно)</message>
+  <message id="rclick-mi-tt-refit-roi-aggressive">Переподгоняет ROI, позволяя FWHM каждого пика независимо варьироваться, если они не были зафиксированы в <em>Редакторе пиков</em></message>
+  <message id="rclick-mi-delete-peak">Удалить пик</message>
+  <message id="rclick-mi-change-nuc">Изменить нуклид</message>
+  <message id="rclick-mi-change-cont">Изменить континуум</message>
+  <message id="rclick-mi-skew-type">Изменить тип асимметрии</message>
+  <message id="rclick-mi-add-peak">Добавить пик</message>
+  <message id="rclick-mi-combine-cont-left">Объединить конт. слева</message>
+  <message id="rclick-mi-combine-cont-right">Объединить конт. справа</message>
+  <message id="rclick-mi-own-cont">Собственный континуум</message>
+  <message id="rclick-mi-calc-status">...вычисляем...</message>
+  <message id="rclick-mi-fix-energy">Зафиксировать к {1} кэВ</message>
+  <message id="rclick-mi-no-nuc-suggestions">Нет предложений</message>
+  <message id="rclick-mi-fit-new-peak">Подогнать пик около {1} кэВ</message>
+  <message id="rclick-mi-add-new-peak">Добавить пик...</message>
+  <message id="rclick-mi-search-energy">Поиск около {1} кэВ</message>
+  <message id="rclick-simple-mda">Быстрый МДА {1}...</message>
+  <message id="rclick-simple-activity-calc">Быстрая активность {1}...</message>
+
+
+  <!-- Error messages, the user probably wont see -->
+  <message id="err-save-sate-to-db">
+    Извините, произошла техническая ошибка при сохранении состояния пользователя в базу данных.
+    <p style="font-size: x-small;">{1}</p>
+  </message>
+  <message id="err-save-to-large-for-db">Файл больше разрешённого для сохранения в базу данных (составляет {1} кб, разрешено {2} кб).</message>
+  <message id="err-no-roi-to-add-peak">Не было ROI для добавления пика.</message>
+  <message id="err-no-add-peak-to-data-roi">Извините, нельзя добавлять пики в ROI с пиком, определённым данными.</message>
+  <message id="err-add-peak-no-improve">Добавление пика не улучшило общую подгонку ROI - не добавляем.</message>
+  <message id="err-no-peak-to-del">Не было пика для удаления.</message>
+  <message id="err-no-foreground">Вы должны загрузить основной спектр перед просмотром фона или второго основного спектра.</message>
+  <message id="err-invalid-language">Выбранный язык, {1}, почему-то недоступен.</message>
+
+
+  <!-- Messages for saving/updating/deleting from internal state DB -->
+  <message id="db-new-tag">Создана новая метка '{1}' под снимком '{2}'.</message>
+  <message id="db-new-snapshot">Создан новый снимок '{1}'.</message>
+  <message id="db-error-no-name">Вы должны указать имя</message>
+  <message id="db-name-empty-txt">(Имя для сохранения)</message>
+  <message id="db-dec-empty-txt">(Необязательное описание)</message>
+  <message id="db-dec-export-msg">
+    Это сохранит текущее состояние приложения в базу данных - для экспорта
+    <br />
+    как отдельный файл используйте опцию меню &quot;Экспорт файла&quot;
+  </message>
+  <message id="db-Tag">Метка</message>
+  <message id="db-saved-state-msg">Сохранено состояние '{1}'</message>
+
+
+
+  <!-- Peak continuum types, returned by `PeakContinuum::offset_type_label_tr(...)` in src/PeakDef.cpp -->
+  <message id="pct-none">Нет</message>
+  <message id="pct-constant">Постоянный</message>
+  <message id="pct-linear">Линейный</message>
+  <message id="pct-quadratic">Квадратичный</message>
+  <message id="pct-cubic">Кубический</message>
+  <message id="pct-flat-step">Плоская ступень</message>
+  <message id="pct-linear-step">Линейная ступень</message>
+  <message id="pct-bilinear-step">Билинейная ступень</message>
+  <message id="pct-global">Глобальный конт.</message>
+
+  <!-- populateNuclideSelects() in PeakSearchGuiUtils.cpp -->
+  <message id="psd-no-source">Нет источника</message>
+
+
+  <message id="window-content-hard-back-sub">
+    <div style="text-align: left;">
+      <p>
+        Обычная опция вычитания фона влияет только на отображение данных, при этом операции
+        вроде подгонки пиков или экспорта данных выполняются на исходном основном спектре
+        с полной статистикой.
+      </p>
+      <p>
+        "Жёсткое вычитание фона" создаёт изменённый основной спектр путём выполнения покаланного
+        вычитания фона из основного спектра.
+      </p>
+
+      Побочные эффекты выполнения жёсткого вычитания фона включают:
+      <ul style="list-style-type: square; margin-top: 4px;">
+        <li>Дисперсии, т.е. статистическая неопределённость каждого канала, больше не будут корректными.</li>
+        <li>Небольшие различия в калибровке энергии между спектрами могут создать искусственные особенности в данных.</li>
+        <li>
+          Если пик в основном спектре перекрывается с пиком в фоне, статистическая неопределённость подогнанных основных пиков больше не будет корректной
+        </li>
+      </ul>
+
+      Основные причины выбрать жёсткое вычитание фона вместо обычного отображения с вычитанием фона:
+      <ul style="list-style-type: square; margin-top: 4px;">
+        <li>Избежание артефактов на континуумах подогнанных пиков.</li>
+        <li>Упрощение вычитания фоновых пиков в инструменте <b>Подгонка активности/экранирования</b>.</li>
+        <li>Вас не волнуют тонкости, которые это вызывает (что на практике минимально).</li>
+      </ul>
+    </div>
+    <br />
+    <div style="text-align: center;"><b><em>Хотите ли вы продолжить?</em></b></div>
+  </message>
+  <message id="window-hard-back-sub-truncate">Обрезать отрицательные каналы до нуля</message>
+  <message id="window-hard-back-sub-round">Округлить отсчёты каналов до ближайшего целого</message>
+
+  <message id="info-user-default-drf">Используется функция отклика детектора, которую вы указали использовать по умолчанию для этого детектора.</message>
+  <message id="info-app-default-drf">Загружена функция отклика детектора по умолчанию для этой системы детектирования.</message>
+  <message id="info-recal-tab-selected">Вы также можете перекалибровать графически, щёлкнув правой кнопкой и перетащив спектр туда, куда хотите.</message>
+
+
+  <!-- Toast message shown to user when they load a spectrum that has GPS coordinates -->
+  <message id="info-has-gps-txt">Файл содержит GPS-координаты.</message>
+  <message id="info-has-gps-btn">Показать на карте</message>
+
+  <!-- Toast message shown to user when they load a spectrum that has results from the onboard-rid -->
+  <message id="info-has-rid-txt">Файл содержал встроенные результаты RID</message>
+  <message id="info-has-rid-btn">Показать полные результаты ID</message>
+
+  <!-- Toast message shown to user when they load a spectrum that has an embedded image -->
+  <message id="info-has-img-txt">Файл спектра содержал встроенные изображения</message>
+  <message id="info-has-img-btn">Показать изображения</message>
+
+
+  <message id="warn-no-energy-cal">Предупреждение, нет калибровки энергии для выбранных образцов</message>
+
+  <message id="prompt-how-open">Этот файл выглядит как с того же детектора, что и текущий основной.
+    <p>Как вы хотите открыть этот файл спектра?</p>
+  </message>
+
+
+  <!-- Error message when the selected foreground cant be plotted (inexistent, no energy calibration, no gamma spectra selected, etc)-->
+  <message id="err-no-fore-sn">
+    <p>Файл спектра не содержал спектров с текущими номерами образцов.</p>
+    <p>Пожалуйста, выберите другие/больше номеров образцов.</p>
+  </message>
+  <message id="err-no-fore-det-sn">
+    <p>Файл спектра не содержал спектров с текущими номерами образцов и именами детекторов. </p>
+    <p>Пожалуйста, выберите больше детекторов или номеров образцов.</p>
+  </message>
+  <message id="err-no-fore-all-neut">
+    <p>Текущие номера образцов и имена детекторов содержат только нейтронные данные.</p>
+    <p>Пожалуйста, выберите образцы, включающие спектроскопические данные.</p>
+  </message>
+  <message id="err-no-fore-no-spec">
+    <p>Текущие номера образцов и имена детекторов не включают спектроскопических измерений.</p>
+    <p>Пожалуйста, выберите образцы, включающие спектроскопические данные.</p>
+  </message>
+  <message id="err-no-fore-no-ecal-1spec">
+    <p>Не удалось определить разбиение для отображения спектра.</p>
+  </message>
+  <message id="err-no-fore-no-ecal-g1spec">
+    <p>Не удалось определить разбиение для отображения спектра.</p>
+    <p>
+      Вы можете попробовать выбрать только один спектр для отображения в
+      <b>Менеджере файлов</b>, или образец с гамма-отсчётами.
+    </p>
+  </message>
+
+  <!-- The detector display.  Defined here so we dont have to load a whole new XML file for just these few entries. -->
+  <message id="app-tt-det-disp">Текущий выбранный детектор. Щёлкните для выбора другого детектора или изменения этого.</message>
+  <message id="app-det-select-txt">щёлкните для выбора</message>
+  <message id="app-det-select-txt-mobile">коснитесь для выбора</message>
+  <message id="app-default-manual-det-name">Пользовательский детектор</message>
+
+
+  <!-- An incomplete list of possible languages - mapping the two letter code we receive as
+    part of the locale, to their native name - mostly picked by LLM result.
+    
+    A more complete listing of languages and countries can be found in commit e28dbb39.
+
+    You do not need to, and shouldnt, include these, or countries, into translations of this file.
+  -->
+  <message id="lang-en">English</message>
+  <message id="lang-fr">Français</message>
+  <message id="lang-es">Español</message>
+  <message id="lang-de">Deutsch</message>
+  <message id="lang-ja">日本語</message>
+  <message id="lang-zh">中文</message>
+  <message id="lang-pt">Português</message>
+  <message id="lang-ru">Русский</message>
+  <message id="lang-it">Italiano</message>
+  <message id="lang-ko">한국어</message>
+  <message id="lang-vi">Tiếng Việt</message>
+  <message id="lang-tr">Türkçe</message>
+  <message id="lang-ar">العربية</message>
+
+
+  <!-- An incomplete list of possible countries - mapping the two letter code we receive as part of
+  the locale, to their names to display.
+  -->
+  <message id="country-US">United States</message>
+  <message id="country-GB">United Kingdom</message>
+  <message id="country-AU">Australia</message>
+  <message id="country-CA">Canada</message>
+  <message id="country-FR">France</message>
+  <message id="country-ES">España</message>
+  <message id="country-MX">México</message>
+  <message id="country-DE">Deutschland</message>
+  <message id="country-JP">日本</message>
+  <message id="country-CN">中国</message>
+  <message id="country-TW">台灣</message>
+  <message id="country-BR">Brasil</message>
+  <message id="country-PT">Portugal</message>
+  <message id="country-RU">Россия</message>
+  <message id="country-IT">Italia</message>
+  <message id="country-KR">대한민국</message>
+  <message id="country-TR">Türkiye</message>
+</messages>

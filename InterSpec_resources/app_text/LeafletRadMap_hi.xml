@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- lrm- is short for LeafletRadMap
+  -->
+  <message id="lrm-pre-warn-title">आगे बढ़ने से पहले</message>
+  <message id="lrm-pre-warn-content">
+    मानचित्र टाइलें <a href="https://arcgis.com" target="_blank">https://arcgis.com</a> से अनुरोध की जाएंगी।
+    कोई विकिरण डेटा आपके डिवाइस से नहीं जाएगा, लेकिन
+    मापों को शामिल करने वाली मानचित्र टाइलों के लिए अनुरोध इस सेवा से किए जाएंगे।
+    {1}
+  </message>
+  <message id="lrm-pre-warn-user-key">
+    <p>मानचित्र टाइलों का अनुरोध करने के लिए आपकी कस्टम arcgis कुंजी जो '{1}' से शुरू होती है, का उपयोग किया जाएगा।</p>
+  </message>
+  <message id="lrm-pre-warn-invalid-user-key">
+    <p>arcgis_key.txt में एक अमान्य arcgis कुंजी निर्दिष्ट की गई थी, इसलिए अंतर्निहित कुंजी का उपयोग किया जाएगा।</p>
+  </message>
+  <message id="lrm-pre-warn-dont-ask">फिर से न पूछें</message>
+  <message id="lrm-pre-warn-proceed-btn">आगे बढ़ें</message>
+  <message id="lrm-window-title">मानचित्र टूल</message>
+  <message id="lrm-will-use-user-key">'{1}' से शुरू होने वाली उपयोगकर्ता-निर्दिष्ट arcgis कुंजी का उपयोग मानचित्र अनुरोध के लिए किया जाएगा।</message>
+  <message id="lrm-user-key-invalid">एक arcgis_key.txt फ़ाइल थी, लेकिन इसमें मान्य कुंजी नहीं थी</message>
+  <message id="lrm-err-loading-samples">मानचित्र-चयनित नमूने लोड करने में त्रुटि: {1}</message>
+  <message id="lrm-displayed-as">के रूप में प्रदर्शित</message>
+  <message id="lrm-measurements-as">मापों को इस रूप में</message>
+  <message id="lrm-load-meas-as-short">इस रूप में लोड करें</message>
+
+  <message id="lrm-filter-label">फिल्टर</message>
+  <message id="lrm-filter-none">कुछ नहीं</message>
+  <message id="lrm-filter-energy-range">ऊर्जा सीमा</message>
+  <message id="lrm-filter-peaks-in-range">सीमा में चोटियां</message>
+  <message id="lrm-lower-energy">निम्न ऊर्जा</message>
+  <message id="lrm-upper-energy">उच्च ऊर्जा</message>
+  <message id="lrm-energy-filter-help">एक ऊर्जा सीमा फिल्टर लागू करना बदल देगा कि मानचित्र पर डेटा कैसे और संभावित रूप से क्या प्रदर्शित होता है।
+<ul>
+<li><b>कुछ नहीं</b>: कोई फिल्टरिंग लागू नहीं - रंग और CPS टेक्स्ट पूर्ण स्पेक्ट्रम गिनती दर पर आधारित।</li>
+<li><b>ऊर्जा सीमा</b>: निर्दिष्ट ऊर्जा सीमा के भीतर गामा गिनती को फिल्टर करें।</li>
+<li><b>सीमा में चोटियां</b>: केवल उन नमूना संख्याओं को दिखाएं जिनमें ऊर्जा सीमा में चोटियां हैं, मार्कर रंग और CPS चोटियों की गिनती दर पर आधारित।</li>
+</ul></message>
+</messages>

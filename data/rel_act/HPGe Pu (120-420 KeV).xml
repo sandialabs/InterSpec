@@ -1,0 +1,176 @@
+<RelActCalcAuto version="0">
+	<Description>Performs plutonium isotopics over the  lower energy range (120 to 420 keV) - this is a good preset to start with if your spectrum has a limited energy, or the ~610 keV to ~780 keV range doesn't have a well defined peak structure.  
+Uses the 'Physical' model for the relative efficiency curve, meaning it takes into account the currently loaded detector efficiency (or will use a default one if not loaded), and the attenuation of the plutonium and external shielding.
+Requires HPGe data.</Description>
+	<Options version="2">
+		<FitEnergyCal>true</FitEnergyCal>
+		<FwhmForm remark="Possible values: Gadras, Polynomial_2, Polynomial_3, Polynomial_4, Polynomial_5, Polynomial_6">Polynomial_5</FwhmForm>
+		<FwhmEstimationMethod remark="Possible values: StartFromDetEffOrPeaksInSpectrum, StartingFromAllPeaksInSpectrum, FixedToAllPeaksInSpectrum, StartingFromDetectorEfficiency, FixedToDetectorEfficiency">StartFromDetEffOrPeaksInSpectrum</FwhmEstimationMethod>
+		<Title>Foreground</Title>
+		<SkewType>GaussExp</SkewType>
+		<AddUncert>0.00000000e+00</AddUncert>
+		<RelEffCurveInputs>
+			<RelEffCurveInput version="0">
+				<Name>Curve 0</Name>
+				<NucInputInfoList>
+					<NucInputInfo version="0">
+						<Nuclide>Pu238</Nuclide>
+						<Age>30.9880000000 y</Age>
+						<FitAge>true</FitAge>
+						<PeakColorCss>#0000FF</PeakColorCss>
+					</NucInputInfo>
+					<NucInputInfo version="0">
+						<Nuclide>Pu239</Nuclide>
+						<Age>30.9880000000 y</Age>
+						<FitAge>true</FitAge>
+						<PeakColorCss>#FF4500</PeakColorCss>
+					</NucInputInfo>
+					<NucInputInfo version="0">
+						<Nuclide>Pu240</Nuclide>
+						<Age>30.9880000000 y</Age>
+						<FitAge>true</FitAge>
+						<PeakColorCss>#228B22</PeakColorCss>
+					</NucInputInfo>
+					<NucInputInfo version="0">
+						<Nuclide>Pu241</Nuclide>
+						<Age>30.9880000000 y</Age>
+						<FitAge>true</FitAge>
+						<PeakColorCss>#CCCC00</PeakColorCss>
+					</NucInputInfo>
+				</NucInputInfoList>
+				<NucsOfElSameAge>true</NucsOfElSameAge>
+				<RelEffEqnType remark='Possible values: Possible values: LnX, LnY, LnXLnY, "FRAM Empirical", "FRAM Physical"'>FRAM Physical</RelEffEqnType>
+				<PhysicalModelOptions>
+					<SelfAtten>
+						<PhysicalModelShield version="0">
+							<AtomicNumber>0.00000000e+00</AtomicNumber>
+							<Material>plutonium_dioxide</Material>
+							<ArealDensity>1.25000000e+00</ArealDensity>
+							<FitAtomicNumber>false</FitAtomicNumber>
+							<LowerFitAtomicNumber>1.00000000e+00</LowerFitAtomicNumber>
+							<UpperFitAtomicNumber>9.80000000e+01</UpperFitAtomicNumber>
+							<FitArealDensity>true</FitArealDensity>
+							<LowerFitArealDensity>0.00000000e+00</LowerFitArealDensity>
+							<UpperFitArealDensity>0.00000000e+00</UpperFitArealDensity>
+						</PhysicalModelShield>
+					</SelfAtten>
+					<ExtAtten>
+						<PhysicalModelShield version="0">
+							<AtomicNumber>0.00000000e+00</AtomicNumber>
+							<Material>Fe (iron)</Material>
+							<ArealDensity>1.25000000e+00</ArealDensity>
+							<FitAtomicNumber>false</FitAtomicNumber>
+							<LowerFitAtomicNumber>1.00000000e+00</LowerFitAtomicNumber>
+							<UpperFitAtomicNumber>9.80000000e+01</UpperFitAtomicNumber>
+							<FitArealDensity>true</FitArealDensity>
+							<LowerFitArealDensity>0.00000000e+00</LowerFitArealDensity>
+							<UpperFitArealDensity>0.00000000e+00</UpperFitArealDensity>
+						</PhysicalModelShield>
+					</ExtAtten>
+					<PhysModelUseHoerl>true</PhysModelUseHoerl>
+				</PhysicalModelOptions>
+				<Pu242CorrMethod>ByPu239Only</Pu242CorrMethod>
+			</RelEffCurveInput>
+		</RelEffCurveInputs>
+		<SameHoerlForAllRelEffCurves>false</SameHoerlForAllRelEffCurves>
+		<SameExternalShieldingForAllRelEffCurves>false</SameExternalShieldingForAllRelEffCurves>
+		<RoiRangeList>
+			<RoiRange version="0">
+				<LowerEnergy>1.24199997e+02</LowerEnergy>
+				<UpperEnergy>1.31800003e+02</UpperEnergy>
+				<ContinuumType>Quardratic</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>1.41911011e+02</LowerEnergy>
+				<UpperEnergy>1.51136002e+02</UpperEnergy>
+				<ContinuumType>Quardratic</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>1.51470154e+02</LowerEnergy>
+				<UpperEnergy>1.54037994e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>1.57679001e+02</LowerEnergy>
+				<UpperEnergy>1.67233505e+02</UpperEnergy>
+				<ContinuumType>Quardratic</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>2.23100006e+02</LowerEnergy>
+				<UpperEnergy>2.30399994e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>2.00994003e+02</LowerEnergy>
+				<UpperEnergy>2.11571350e+02</UpperEnergy>
+				<ContinuumType>FlatStep</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>2.53100006e+02</LowerEnergy>
+				<UpperEnergy>2.57100006e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>3.09500000e+02</LowerEnergy>
+				<UpperEnergy>3.14299988e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>3.39682434e+02</LowerEnergy>
+				<UpperEnergy>3.48764008e+02</UpperEnergy>
+				<ContinuumType>FlatStep</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>3.29204987e+02</LowerEnergy>
+				<UpperEnergy>3.38575714e+02</UpperEnergy>
+				<ContinuumType>FlatStep</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>3.63200012e+02</LowerEnergy>
+				<UpperEnergy>3.86399994e+02</UpperEnergy>
+				<ContinuumType>FlatStep</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>3.89006012e+02</LowerEnergy>
+				<UpperEnergy>3.96630005e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>4.08531006e+02</LowerEnergy>
+				<UpperEnergy>4.18192566e+02</UpperEnergy>
+				<ContinuumType>FlatStep</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+		</RoiRangeList>
+		<BackgroundSubtract>true</BackgroundSubtract>
+		<ShowRefGammaLines>true</ShowRefGammaLines>
+		<LowerDisplayEnergy>180.305125</LowerDisplayEnergy>
+		<UpperDisplayEnergy>618.923683</UpperDisplayEnergy>
+	</Options>
+</RelActCalcAuto>
+
