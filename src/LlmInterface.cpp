@@ -872,7 +872,10 @@ void LlmInterface::handleApiResponse( const std::string &response,
        && !responseJson["tool_calls"].is_null()
        && !responseJson["tool_calls"].empty() )
     {
-      number_tool_calls += executeToolCallsAndSendResults( responseJson["tool_calls"], conversation, requestId, response, promptTokens, completionTokens );
+      pair<shared_ptr<LlmToolRequest>,shared_ptr<LlmToolResults>> call_interactions;
+      call_interactions = executeToolCallsAndSendResults( responseJson["tool_calls"], conversation, requestId, response, promptTokens, completionTokens );
+      if( call_interactions.first )
+        number_tool_calls += call_interactions.first->toolCalls().size();
     }//if( responseJson.contains("choices") && !responseJson["choices"].empty() )
 
     // Lets check for Ask Sage style message to the `/server/query` endpoint
