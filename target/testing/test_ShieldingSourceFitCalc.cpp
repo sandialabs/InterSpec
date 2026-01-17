@@ -1148,7 +1148,7 @@ BOOST_AUTO_TEST_CASE( FitAnalystTraceSource )
   GammaInteractionCalc::ShieldSourceConfig parsed_config;
   BOOST_REQUIRE_NO_THROW( parsed_config.deSerialize( base_node, &matdb ) );
 
-  BOOST_CHECK_SMALL( fabs(parsed_config.distance - distance), 1e-9 * std::max(1.0, fabs(distance)) );
+  BOOST_CHECK_SMALL( fabs(parsed_config.distance - distance), 1e-9 * (std::max)(1.0, fabs(distance)) );
   BOOST_CHECK_EQUAL( static_cast<int>(parsed_config.geometry), static_cast<int>(geometry) );
   BOOST_CHECK_EQUAL( parsed_config.shieldings.size(), shield_definitions.size() );
   std::vector<ShieldingSourceFitCalc::SourceFitDef> parsed_source_defs = parsed_config.sources;
@@ -1170,7 +1170,7 @@ BOOST_AUTO_TEST_CASE( FitAnalystTraceSource )
   GammaInteractionCalc::ShieldSourceConfig reparsed_config;
   BOOST_REQUIRE_NO_THROW( reparsed_config.deSerialize( round_root, &matdb ) );
 
-  BOOST_CHECK_SMALL( fabs(reparsed_config.distance - parsed_config.distance), 1e-9 * std::max(1.0, fabs(parsed_config.distance)) );
+  BOOST_CHECK_SMALL( fabs(reparsed_config.distance - parsed_config.distance), 1e-9 * (std::max)(1.0, fabs(parsed_config.distance)) );
   BOOST_CHECK_EQUAL( static_cast<int>(reparsed_config.geometry), static_cast<int>(parsed_config.geometry) );
   BOOST_CHECK_EQUAL( reparsed_config.shieldings.size(), parsed_config.shieldings.size() );
   std::vector<ShieldingSourceFitCalc::SourceFitDef> reparsed_source_defs = reparsed_config.sources;
@@ -1535,7 +1535,7 @@ BOOST_AUTO_TEST_CASE( FitAnalystShieldingSourcecases )
     GammaInteractionCalc::ShieldSourceConfig parsed_config;
     BOOST_CHECK_NO_THROW( parsed_config.deSerialize( base_node, &matdb ) );
 
-    BOOST_CHECK_SMALL( fabs(parsed_config.distance - distance), 1e-9 * std::max(1.0, fabs(distance)) );
+    BOOST_CHECK_SMALL( fabs(parsed_config.distance - distance), 1e-9 * (std::max)(1.0, fabs(distance)) );
     BOOST_CHECK_EQUAL( static_cast<int>(parsed_config.geometry), static_cast<int>(geometry) );
     BOOST_CHECK_EQUAL( parsed_config.shieldings.size(), shield_definitions.size() );
     std::vector<ShieldingSourceFitCalc::SourceFitDef> parsed_source_defs = parsed_config.sources;
@@ -1557,7 +1557,7 @@ BOOST_AUTO_TEST_CASE( FitAnalystShieldingSourcecases )
     GammaInteractionCalc::ShieldSourceConfig reparsed_config;
     BOOST_CHECK_NO_THROW( reparsed_config.deSerialize( round_root, &matdb ) );
 
-    BOOST_CHECK_SMALL( fabs(reparsed_config.distance - parsed_config.distance), 1e-9 * std::max(1.0, fabs(parsed_config.distance)) );
+    BOOST_CHECK_SMALL( fabs(reparsed_config.distance - parsed_config.distance), 1e-9 * (std::max)(1.0, fabs(parsed_config.distance)) );
     BOOST_CHECK_EQUAL( static_cast<int>(reparsed_config.geometry), static_cast<int>(parsed_config.geometry) );
     BOOST_CHECK_EQUAL( reparsed_config.shieldings.size(), parsed_config.shieldings.size() );
   std::vector<ShieldingSourceFitCalc::SourceFitDef> reparsed_source_defs = reparsed_config.sources;
@@ -1717,7 +1717,7 @@ BOOST_AUTO_TEST_CASE( ShieldingSourceDisplayGuiRoundTrip )
     
     // Compare basic properties with detailed error messages
     const double distance_diff = fabs(gui_config.distance - original_config.distance);
-    const double distance_tolerance = 1e-6 * std::max(1.0, fabs(original_config.distance));
+    const double distance_tolerance = 1e-6 * (std::max)(1.0, fabs(original_config.distance));
     BOOST_CHECK_MESSAGE( distance_diff < distance_tolerance,
                         "Distance mismatch for '" << n42_filename << "': original=" 
                         << PhysicalUnits::printToBestLengthUnits(original_config.distance, 6) << " (" << original_config.distance << ")"
@@ -1787,7 +1787,7 @@ BOOST_AUTO_TEST_CASE( ShieldingSourceDisplayGuiRoundTrip )
         
         // Compare activity - allow 1% difference for self-attenuating sources
         const double act_diff = fabs(orig_src.activity - gui_src.activity);
-        const double max_act = std::max(fabs(orig_src.activity), fabs(gui_src.activity));
+        const double max_act = (std::max)(fabs(orig_src.activity), fabs(gui_src.activity));
         const bool is_self_attenuating = (orig_src.sourceType == ShieldingSourceFitCalc::ModelSourceType::Intrinsic);
         const double activity_tolerance = is_self_attenuating ? 0.01 * max_act : 1.0E-6 * max_act;
         
@@ -1800,8 +1800,8 @@ BOOST_AUTO_TEST_CASE( ShieldingSourceDisplayGuiRoundTrip )
         
         // Compare age
         const double age_diff = fabs(orig_src.age - gui_src.age);
-        const double max_age = std::max(fabs(orig_src.age), fabs(gui_src.age));
-        const double age_tolerance = 1.0E-6 * std::max(1.0, max_age);
+        const double max_age = (std::max)(fabs(orig_src.age), fabs(gui_src.age));
+        const double age_tolerance = 1.0E-6 * (std::max)(1.0, max_age);
         BOOST_CHECK_MESSAGE( age_diff <= age_tolerance,
                             "Source " << i << " age mismatch for '" << n42_filename << "': original="
                             << orig_src.age << ", GUI=" << gui_src.age

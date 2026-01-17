@@ -31,4 +31,5 @@
   <message id="pid-csv-copy-full">完全ピークCSVコピー</message>
   <message id="pid-csv-copy-no-hdr">ヘッダーなしコピー</message>
   <message id="pid-csv-copy-compact">フィットピーク情報コピー</message>
+  <message id="pid-peak-label">ピーク: </message>
 </messages>

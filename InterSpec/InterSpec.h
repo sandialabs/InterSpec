@@ -192,7 +192,7 @@ public:
    
       Alls sets appropriate files or directories for DecayDataBaseServer,
       ReactionGammaServer, and MassAttenuation.  Other tools call
-      InterSpec::dataDirectory() to find the appropriate directory.
+      InterSpec::staticDataDirectory() to find the appropriate directory.
    */
   static InterSpec_API void setStaticDataDirectory( const std::string &dir );
  

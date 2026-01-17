@@ -50,4 +50,5 @@
   <message id='cfm-tt-swap-back-with-foreground-btn'>Foreground और background स्पेक्ट्रा स्वैप करें</message>
   <message id='cfm-swap-secondary-with-foreground-btn'>foreground↔secondary</message>
   <message id='cfm-tt-swap-secondary-with-foreground-btn'>Foreground और secondary स्पेक्ट्रा स्वैप करें</message>
+  <message id='cfm-title-with-name'>शीर्षक: {1}</message>
 </messages>

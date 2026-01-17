@@ -32,6 +32,17 @@
   <message id="Detector">Détecteur</message>
   <message id="Distance">Distance</message>
   <message id="Activity">Activité</message>
+  <message id="nuclide-label">Nucléide :</message>
+  <message id="age-label">Âge :</message>
+  <message id="distance-label">Distance :</message>
+  <message id="activity-label">Activité :</message>
+  <message id="dose-label">Dose :</message>
+  <message id="shielding-label">Blindage :</message>
+  <message id="detector-label">Détecteur :</message>
+  <message id="energy-label">Énergie :</message>
+  <message id="foreground-label">Premier plan :</message>
+  <message id="background-label">Arrière-plan :</message>
+  <message id="secondary-label">Secondaire :</message>
   <message id="Remark">Remarque</message>
   <message id="Tap">Toucher</message>
   <message id="Click">Cliquer</message>
@@ -354,6 +365,7 @@
   <message id="app-mi-help-pref-show-tt"> Afficher les infobulles</message>
   <message id="app-mi-help-pref-prop-peak"> Demander de propager les pics</message>
   <message id="app-mi-help-pref-preserve-ene-cal"> Demander de conserver l'étal. d'énergie.</message>
+  <message id="app-mi-help-pref-auto-accept-fit-sources"> Accepter automatiquement les résultats d'ajustement</message>
   <message id="app-mi-help-pref-disp-bq"> Afficher en becquerel</message>
   <message id="app-mi-help-pref-def-drfs"> Utiliser DRF par défaut</message>
   <message id="app-mi-help-pref-desktop"> Interface bureau</message>
@@ -382,6 +394,7 @@
     du nouveau fichier est différent de l'ancien fichier, demander si l'étalonnage d'énergie de l'ancien fichier doit
     être appliqué au nouveau fichier.
   </message>
+  <message id="app-mi-tt-help-pref-auto-accept-fit-sources">Lors de l'ajustement de pics à partir de lignes de photopic de référence, ajouter automatiquement les pics ajustés sans afficher de dialogue de confirmation.</message>
   <message id="app-mi-tt-help-pref-disp-bq">Afficher l'activité en unités de becquerel, plutôt qu'en curie.</message>
   <message id="app-mi-tt-help-def-drfs">Quand un spectre est chargé, et vous n'avez pas précédemment
     associé une fonction de réponse détecteur avec le modèle de

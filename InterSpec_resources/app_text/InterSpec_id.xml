@@ -32,6 +32,17 @@
   <message id="Detector">Detektor</message>
   <message id="Distance">Jarak</message>
   <message id="Activity">Aktivitas</message>
+  <message id="nuclide-label">Nuklida:</message>
+  <message id="age-label">Usia:</message>
+  <message id="distance-label">Jarak:</message>
+  <message id="activity-label">Aktivitas:</message>
+  <message id="dose-label">Dosis:</message>
+  <message id="shielding-label">Perisai:</message>
+  <message id="detector-label">Detektor:</message>
+  <message id="energy-label">Energi:</message>
+  <message id="foreground-label">Latar depan:</message>
+  <message id="background-label">Latar belakang:</message>
+  <message id="secondary-label">Sekunder:</message>
   <message id="Remark">Catatan</message>
   <message id="Tap">Ketuk</message>
   <message id="Click">Klik</message>
@@ -352,6 +363,7 @@
   <message id="app-mi-help-pref-show-tt"> Tampilkan tooltip</message>
   <message id="app-mi-help-pref-prop-peak"> Tanya untuk Propagasi Puncak</message>
   <message id="app-mi-help-pref-preserve-ene-cal"> Tanya untuk mempertahankan kal. energi.</message>
+  <message id="app-mi-help-pref-auto-accept-fit-sources"> Terima hasil fit secara otomatis</message>
   <message id="app-mi-help-pref-disp-bq"> Tampilkan dalam Becquerel</message>
   <message id="app-mi-help-pref-def-drfs"> Gunakan DRF default</message>
   <message id="app-mi-help-pref-desktop"> Antarmuka Desktop</message>
@@ -380,6 +392,7 @@
     dari berkas baru berbeda dari berkas lama, tanya apakah kalibrasi energi dari berkas lama harus
     diterapkan ke berkas baru.
   </message>
+  <message id="app-mi-tt-help-pref-auto-accept-fit-sources">Saat menyesuaikan puncak dari garis fotopik referensi, tambahkan puncak yang disesuaikan secara otomatis tanpa menampilkan dialog konfirmasi.</message>
   <message id="app-mi-tt-help-pref-disp-bq">Tampilkan aktivitas dalam satuan becquerel, bukan curie.</message>
   <message id="app-mi-tt-help-def-drfs">Ketika spektrum dimuat, dan Anda belum sebelumnya
     mengasosiasikan fungsi respons detektor dengan model

@@ -42,13 +42,57 @@ namespace SpecUtils
 namespace CandidatePeak_GA
 {
   std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils::Measurement> data,
-                          size_t start_channel,
-                          size_t end_channel,
-                          std::vector< std::tuple<float,float,float> > &results,
-                                          const FindCandidateSettings &settings );
+                                            size_t start_channel,
+                                            size_t end_channel,
+                                            const FindCandidateSettings &settings );
 
 
-  std::tuple<double,size_t,size_t,size_t,size_t,size_t> //<score, num_peaks_found, num_possibly_accepted_peaks_not_found, num_extra_peaks>
+  struct CandidatePeakScore
+  {
+    double score;
+    size_t num_peaks_found;
+    size_t num_def_wanted_not_found;
+    size_t num_def_wanted_peaks_found;
+    size_t num_possibly_accepted_peaks_not_found;
+    size_t num_extra_peaks;
+    
+    // Peak tuples for visualization (only populated when needed for N42 output)
+    std::vector<std::tuple<float,float,float>> detected_expected;    //{mean, sigma, amplitude}
+    std::vector<std::tuple<float,float,float>> detected_not_expected; //{mean, sigma, amplitude}
+    
+    // Expected peak categorization for visualization (only populated when needed for N42 output)
+    std::vector<ExpectedPhotopeakInfo> possibly_expected_but_not_detected;
+    std::vector<ExpectedPhotopeakInfo> expected_and_was_detected;
+    std::vector<ExpectedPhotopeakInfo> def_expected_but_not_detected;
+  };//struct CandidatePeakScore
+
+  /** Calculates candidate peak score for a single source.
+   * 
+   * This function compares detected peaks against expected peaks and calculates
+   * a score based on how well the detected peaks match expectations.
+   * 
+   * @param detected_peaks The peaks that were detected/found
+   * @param expected_photopeaks The expected peaks to match against
+   * @return CandidatePeakScore with score and statistics for this source
+   */
+  CandidatePeakScore
+  calculate_candidate_peak_score_for_source( const std::vector<PeakDef> &detected_peaks,
+                                             const std::vector<ExpectedPhotopeakInfo> &expected_photopeaks );
+
+  /** Corrects CandidatePeakScore fields to exclude escape peaks.
+   *
+   * Escape peaks (S.E. at 511 keV below parent, D.E. at 1022 keV below parent) are
+   * typically not fit and should not penalize the score. This function identifies
+   * escape peaks in def_expected_but_not_detected by checking if a much larger
+   * parent peak exists at +511 or +1022 keV in the expected photopeaks list.
+   *
+   * @param score The CandidatePeakScore to correct (modified in place)
+   * @param expected_photopeaks The expected peaks to check for parent peaks
+   */
+  void correct_score_for_escape_peaks( CandidatePeakScore &score,
+                                       const std::vector<ExpectedPhotopeakInfo> &expected_photopeaks );
+
+  CandidatePeakScore
   eval_candidate_settings( const FindCandidateSettings settings, const std::vector<DataSrcInfo> &input_srcs, const bool write_n42 );
 
 

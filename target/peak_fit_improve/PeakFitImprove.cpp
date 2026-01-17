@@ -35,6 +35,7 @@
 #include <fstream>
 #include <numeric>
 #include <iostream>
+#include <thread>
 
 #include <boost/program_options.hpp>
 #include <boost/math/constants/constants.hpp>
@@ -72,11 +73,23 @@
 #include "CandidatePeak_GA.h"
 #include "FinalFit_GA.h"
 #include "PeakFitImproveData.h"
+#include "FitPeaksForNuclideDev.h"
 
 using namespace std;
 
-
-
+namespace PeakFitImprove
+{
+  size_t sm_num_optimization_threads = 8; // Will be set by command line or default calculation
+  size_t sm_num_threads_per_individual = 1;
+  size_t sm_ga_population = 1000;
+  size_t sm_ga_generation_max = 100;
+  size_t sm_ga_best_stall_max = 10;
+  size_t sm_ga_elite_count = 10;
+  double sm_ga_crossover_fraction = 0.7;
+  double sm_ga_mutation_rate = 0.4;
+  double sm_ga_mutate_threshold = 0.15;
+  double sm_ga_crossover_threshold = -1.0; // Will be set based on action if not specified
+}
 
 
 
@@ -153,10 +166,6 @@ std::string FindCandidateSettings::to_json() const
 //    - Determine ROI left and right widths for single peak ROIs
 //      Have a base-width, and then add/subtract based off some multiple.
 //      The multiple can be peak-area within +-1 FWHM, and continuum-area in +- 1 FWHM
-//      Have an int to select subtract type, maybe, linear, sqrt, exp, and log
-//      "roi_extent_low_num_fwhm_base", "roi_extent_high_num_fwhm_base"
-//      "roi_extent_mult_type" (linear, sqrt),
-//      "roi_extent_low_stat_multiple", "roi_extent_high_stat_multiple"
 //    - Determine ROI left and right widths for multiple peak ROIs
 //      Use single peak peak value for starting, then have an additional add/subtract on each side
 //      "multi_roi_extent_low_fwhm_mult", "multi_roi_extent_high_fwhm_mult"
@@ -187,7 +196,7 @@ std::string InitialPeakFindSettings::print( const string &var_name ) const
   + var_name + ".initial_max_nsigma_roi = "       + std::to_string(initial_max_nsigma_roi)       + ";\n"
   + var_name + ".fwhm_fcn_form_string = "         + fwhm_fcn_form_string                         + ";\n"
   + var_name + ".search_roi_nsigma_deficit = "    + std::to_string(search_roi_nsigma_deficit)    + ";\n"
-  + var_name + ".search_stat_threshold = "        + std::to_string(search_stat_threshold)        + ";\n"
+  //+ var_name + ".search_stat_threshold = "        + std::to_string(search_stat_threshold)        + ";\n"
   + var_name + ".search_hypothesis_threshold = "  + std::to_string(search_hypothesis_threshold)  + ";\n"
   + var_name + ".search_stat_significance = "     + std::to_string(search_stat_significance)     + ";\n"
   + var_name + ".ROI_add_nsigma_required = "      + std::to_string(ROI_add_nsigma_required)      + ";\n"
@@ -198,7 +207,8 @@ std::string InitialPeakFindSettings::print( const string &var_name ) const
 
 std::string FinalPeakFitSettings::print( const string &var_name ) const
 {
-  return var_name + ".combine_nsigma_near = "                    + std::to_string(combine_nsigma_near)                         + ";\n"
+  return var_name + ".require_combine_num_fwhm_near = "          + std::to_string(require_combine_num_fwhm_near)               + ";\n"
+  + var_name + ".not_allow_combine_num_fwhm_near = "             + std::to_string(not_allow_combine_num_fwhm_near)             + ";\n"
  // + var_name + ".combine_ROI_overlap_frac = "                    + std::to_string(combine_ROI_overlap_frac)                    + ";\n"
   + var_name + ".cont_type_peak_nsigma_threshold = "             + std::to_string(cont_type_peak_nsigma_threshold)             + ";\n"
   + var_name + ".cont_type_left_right_nsigma = "                 + std::to_string(cont_type_left_right_nsigma)                 + ";\n"
@@ -210,14 +220,17 @@ std::string FinalPeakFitSettings::print( const string &var_name ) const
   + var_name + ".left_residual_sum_min_to_try_skew = "           + std::to_string(left_residual_sum_min_to_try_skew)           + ";\n"
   + var_name + ".right_residual_sum_min_to_try_skew = "          + std::to_string(right_residual_sum_min_to_try_skew)          + ";\n"
   + var_name + ".skew_improve_chi2_dof_threshold = "             + std::to_string(skew_improve_chi2_dof_threshold)             + ";\n"
-  + var_name + ".roi_extent_low_num_fwhm_base = "                + std::to_string(roi_extent_low_num_fwhm_base)                + ";\n"
-  + var_name + ".roi_extent_high_num_fwhm_base = "               + std::to_string(roi_extent_high_num_fwhm_base)               + ";\n"
-  + var_name + ".roi_extent_mult_type = "                        + std::string((roi_extent_mult_type == RoiExtentMultType::Linear)
-                                                                               ? "RoiExtentMultType::Linear" : "RoiExtentMultType::Sqrt") + ";\n"
-  + var_name + ".roi_extent_lower_side_stat_multiple = "         + std::to_string(roi_extent_lower_side_stat_multiple)         + ";\n"
-  + var_name + ".roi_extent_upper_side_stat_multiple = "         + std::to_string(roi_extent_upper_side_stat_multiple)         + ";\n"
-  + var_name + ".multi_roi_extent_lower_side_fwhm_mult = "       + std::to_string(multi_roi_extent_lower_side_fwhm_mult)       + ";\n"
-  + var_name + ".multi_roi_extent_upper_side_fwhm_mult = "       + std::to_string(multi_roi_extent_upper_side_fwhm_mult)       + ";\n";
+  + var_name + ".roi_extent_low_num_fwhm_base_highstat = "       + std::to_string(roi_extent_low_num_fwhm_base_highstat)       + ";\n"
+  + var_name + ".roi_extent_high_num_fwhm_base_highstat = "      + std::to_string(roi_extent_high_num_fwhm_base_highstat)      + ";\n"
+  + var_name + ".roi_extent_low_num_fwhm_base_lowstat = "        + std::to_string(roi_extent_low_num_fwhm_base_lowstat)        + ";\n"
+  + var_name + ".roi_extent_high_num_fwhm_base_lowstat = "       + std::to_string(roi_extent_high_num_fwhm_base_lowstat)       + ";\n"
+  + var_name + ".high_stat_threshold = "               + std::to_string(high_stat_threshold)                                   + ";\n"
+  + var_name + ".roi_extent_low_num_fwhm_extra = "               + std::to_string(roi_extent_low_num_fwhm_extra)               + ";\n"
+  + var_name + ".roi_extent_high_num_fwhm_extra = "              + std::to_string(roi_extent_high_num_fwhm_extra)              + ";\n"
+  + var_name + ".roi_end_second_deriv_thresh = "                 + std::to_string(roi_end_second_deriv_thresh)                 + ";\n"
+  + var_name + ".break_multi_roi_up_continuum_away_sigma = "     + std::to_string(break_multi_roi_up_continuum_away_sigma)     + ";\n"
+  + var_name + ".break_multi_roi_up_required_chi2dof_improve = "     + std::to_string(break_multi_roi_up_required_chi2dof_improve)     + ";\n"
+  ;
 }//std::string print( const string &var_name ) const
 
 
@@ -262,8 +275,606 @@ PeakTruthInfo::PeakTruthInfo( const std::string &line )
 }//PeakTruthInfo(...)
 
 
+void create_n42_peak_fits_for_dir( const string &dir )
+{
+  const bool isHPGe = true;
+
+  //Generation [48], Best=-19.7537, Average=-19.7535, Best genes:
+  //Using all live time and HPGe detectors, and cities - 20250912
+  const FindCandidateSettings hpge_candidate_settings = ([](){
+    FindCandidateSettings settings;
+    settings.num_smooth_side_channels = 3;
+    settings.smooth_polynomial_order = 2;
+    settings.threshold_FOM = 1.25;
+    settings.more_scrutiny_FOM_threshold = 2.5;
+    settings.pos_sum_threshold_sf = 0.119178;
+    settings.num_chan_fluctuate = 1;
+    settings.more_scrutiny_coarser_FOM = 3.001943;
+    settings.more_scrutiny_min_dev_from_line = 6.816465;
+    settings.amp_to_apply_line_test_below = 6.000000;
+    return settings;
+  })();
+
+  const InitialPeakFindSettings hpge_initial_fit_settings = ([](){
+    InitialPeakFindSettings settings;
+    settings.initial_stat_threshold = 3.5;
+    settings.initial_hypothesis_threshold = 0.5;
+    settings.initial_min_nsigma_roi = 2.246770;
+    settings.initial_max_nsigma_roi = 6.378162;
+    settings.fwhm_fcn_form = InitialPeakFindSettings::FwhmFcnForm::SqrtPolynomialTwoCoefs;
+    settings.search_roi_nsigma_deficit = 4.241748;
+    //settings.search_stat_threshold = 8.051485;
+    settings.search_hypothesis_threshold= 3.342207;
+    settings.search_stat_significance = 2.025582;
+    settings.ROI_add_nsigma_required = 3.526017;
+    settings.ROI_add_chi2dof_improve = 0.45;
+    return settings;
+  })();
+
+  // Not final settings
+  const FinalPeakFitSettings hpge_final_fit_settings = ([](){
+    FinalPeakFitSettings settings;
+
+    settings.require_combine_num_fwhm_near = 2.0;
+    settings.not_allow_combine_num_fwhm_near = 4.0;
+    settings.cont_type_peak_nsigma_threshold = 40.450658;
+    settings.cont_type_left_right_nsigma = 8.423588;
+    settings.cont_poly_order_increase_chi2dof_required = 0.671733;
+    settings.cont_step_type_increase_chi2dof_required = 0.312514;
+    settings.skew_nsigma = 8.359958;
+    settings.left_residual_sum_min_to_try_skew = 2.878255;
+    settings.right_residual_sum_min_to_try_skew = 0.158640;
+    settings.skew_improve_chi2_dof_threshold = 1.016935;
+    settings.roi_extent_low_num_fwhm_base_highstat = 1.5;
+    settings.roi_extent_high_num_fwhm_base_highstat = 1.5;
+    settings.roi_extent_low_num_fwhm_base_lowstat = 1.5;
+    settings.roi_extent_high_num_fwhm_base_lowstat = 1.5;
+    settings.high_stat_threshold = 15.0;
+    settings.roi_extent_low_num_fwhm_extra = 1.5;
+    settings.roi_extent_high_num_fwhm_extra = 1.5;
+    settings.roi_end_second_deriv_thresh = 3.5;
+    settings.break_multi_roi_up_continuum_away_sigma = 5;
+    settings.break_multi_roi_up_required_chi2dof_improve = 0.5;
+
+    return settings;
+  })();
 
 
+
+  auto do_fit_peaks = [&hpge_candidate_settings, &hpge_initial_fit_settings, &hpge_final_fit_settings, isHPGe]
+                        ( const shared_ptr<const SpecUtils::Measurement> &spectrum )
+                      -> vector<PeakDef>
+  {
+    const bool multithread = true;
+    size_t num_add_candidates_fit_for = 0, num_add_candidates_accepted = 0; //Only for eval purposes
+    const vector<PeakDef> initial_peaks = InitialFit_GA::initial_peak_find_and_fit( hpge_initial_fit_settings,
+                                                                                   hpge_candidate_settings,
+                                                                                   spectrum,
+                                                                                   multithread,
+                                                                                   num_add_candidates_fit_for,
+                                                                                   num_add_candidates_accepted);
+    //return initial_peaks;
+
+    cout << "Input into final_peak_fit:" << endl;
+    for( const PeakDef &p : initial_peaks )
+      cout << "    {" << p.mean() << ", " << p.fwhm() << ", " << p.lowerX() << "-" << p.upperX() << "}" << endl;
+    cout << endl;
+
+    const vector<PeakDef> fit_peaks = FinalFit_GA::final_peak_fit( initial_peaks, hpge_final_fit_settings, isHPGe,
+                                                                  spectrum, multithread );
+
+    return fit_peaks;
+  };//do_fit_peaks
+
+
+  ofstream output( dir + "/peak_fits.html" );
+
+  // Lu177m_Unsh is probably the best test of settings...
+
+  D3SpectrumExport::write_html_page_header( output, "Peak Fits", "InterSpec_resources" );
+
+  output << "<body>" << endl;
+
+  //Hack putting <style></style> block in HTML body, but wahtever, seems ot work
+  output <<"<style>"
+  << ".TopLinesTable{ margin-top: 25px; margin-left: auto; margin-right: auto; border-collapse: collapse; border: 1px solid black; }" << endl
+  << "table, th, td{ border: 1px solid black; }" << endl
+  << "fieldset{width: 90vw; margin-left: auto; margin-right: auto; margin-top: 20px;}" << endl
+  << "</style>" << endl;
+
+  vector<string> files = SpecUtils::recursive_ls( dir, ".csv" );
+
+  for( size_t i = 0; i < files.size(); ++i )
+  {
+    const string filename = files[i];
+
+    if( SpecUtils::icontains(filename, ".peaks.CSV") )
+      continue;
+
+    //if( !SpecUtils::icontains(filename, "spec_8h.csv") )
+    //  continue;
+
+
+    SpecMeas meas;
+    const bool loaded = meas.load_file(filename, SpecUtils::ParserType::Auto );
+    if( !loaded || (meas.num_measurements() != 1) )
+    {
+      cerr << "Failed to load '" << filename << "'" << endl;
+      exit(1);
+    }
+
+    const shared_ptr<const SpecUtils::Measurement> spectrum_orig = meas.measurement_at_index( 0 );
+    assert( spectrum_orig );
+    //meas.set_live_time( 1.0, spectrum );
+    //meas.set_real_time( 1.0, spectrum );
+
+    const shared_ptr<const vector<float>> &counts_ptr = spectrum_orig->gamma_channel_contents();
+    const vector<float> &counts_orig = *counts_ptr;
+    float min_counts = 1.0E8;
+    for( const float &c : counts_orig )
+    {
+      if( c > 0.5f )
+        min_counts = std::min( min_counts, c );
+    }
+    shared_ptr<vector<float>> scaled_cnts = make_unique<vector<float>>( counts_orig );
+    for( float &c : *scaled_cnts )
+      c /= min_counts;
+
+    shared_ptr<SpecUtils::Measurement> spectrum = make_shared<SpecUtils::Measurement>( *spectrum_orig );
+    spectrum->set_gamma_counts( scaled_cnts, 1.0f, 1.0f );
+
+    meas.remove_measurement( spectrum_orig, false );
+    meas.add_measurement( spectrum, true );
+
+
+    const vector<PeakDef> fit_peaks = do_fit_peaks( spectrum );
+    vector<shared_ptr<const PeakDef>> fit_peaks_ptrs;
+    std::deque<std::shared_ptr<const PeakDef>> peaks_dq;
+    for( const PeakDef &p : fit_peaks )
+    {
+      auto np = make_shared<PeakDef>(p);
+      fit_peaks_ptrs.push_back( np );
+      peaks_dq.push_back( np );
+    }
+
+
+    meas.setPeaks( peaks_dq, {spectrum->sample_number()} );
+
+    meas.save2012N42File( filename + ".n42" );
+
+
+    {
+      ofstream peak_out( (filename + ".peaks.CSV").c_str(), ios::out | ios::binary );
+      PeakModel::write_peak_csv( peak_out, SpecUtils::filename(filename), PeakModel::PeakCsvType::Full, peaks_dq, spectrum );
+    }
+
+
+    string ref_line_json;
+    std::string title = "";
+    std::string dataTitle = "";
+    bool useLogYAxis = true, showVerticalGridLines = false, showHorizontalGridLines = false;
+    bool legendEnabled = true, compactXAxis = true;
+    bool showPeakUserLabels = false, showPeakEnergyLabels = false, showPeakNuclideLabels = false, showPeakNuclideEnergyLabels = false;
+    bool showEscapePeakMarker = false, showComptonPeakMarker = false, showComptonEdgeMarker = false, showSumPeakMarker = false;
+    bool backgroundSubtract = false;
+    float xMin = 0, xMax = 3000;
+    std::map<std::string,std::string> refernce_lines_json;
+    refernce_lines_json["TruthPeaks"] = ref_line_json;
+
+    D3SpectrumExport::D3SpectrumChartOptions options( title, "Energy (keV)", "Counts/Channel",
+                                                     dataTitle, useLogYAxis,
+                                                     showVerticalGridLines, showHorizontalGridLines,
+                                                     legendEnabled, compactXAxis,
+                                                     showPeakUserLabels, showPeakEnergyLabels, showPeakNuclideLabels,
+                                                     showPeakNuclideEnergyLabels, showEscapePeakMarker, showComptonPeakMarker,
+                                                     showComptonEdgeMarker, showSumPeakMarker, backgroundSubtract,
+                                                     xMin, xMax, refernce_lines_json );
+
+    D3SpectrumExport::D3SpectrumOptions foreground_opts;
+    foreground_opts.line_color = "black";
+    foreground_opts.title = SpecUtils::filename(filename);
+    foreground_opts.display_scale_factor = 1.0;
+    foreground_opts.spectrum_type = SpecUtils::SpectrumType::Foreground;
+    foreground_opts.peaks_json = PeakDef::peak_json( fit_peaks_ptrs, spectrum, Wt::WColor(), false );
+
+    const string div_id = "chart_" + std::to_string(i);
+
+
+    output << "<fieldset style=\"\">" << endl
+    << "<legend>" << SpecUtils::filename(filename) << "</legend>" << endl;
+
+    output << "<div id=\"" << div_id << "\" class=\"chart\" oncontextmenu=\"return false;\"></div>" << endl;  // Adding the main chart div
+
+
+    output << "<script>" << endl;
+
+    D3SpectrumExport::write_js_for_chart( output, div_id, options.m_dataTitle, options.m_xAxisTitle, options.m_yAxisTitle );
+
+    std::vector< std::pair<const SpecUtils::Measurement *,D3SpectrumExport::D3SpectrumOptions> > measurements;
+    measurements.emplace_back( spectrum.get(), foreground_opts );
+
+    write_and_set_data_for_chart( output, div_id, measurements );
+
+
+    output << R"delim(
+    const resizeChart)delim" << i << R"delim( = function(){
+      let height = window.innerHeight;
+      let width = document.documentElement.clientWidth;
+      let el = spec_chart_)delim" << div_id << R"delim(.chart;
+      el.style.width = 0.8*width + "px";
+      el.style.height = Math.min(500,Math.max(250, Math.min(0.4*width,height-175))) + "px";
+      el.style.marginLeft = 0.05*width + "px";
+      el.style.marginRight = 0.05*width + "px";
+      
+    )delim"
+    << "  spec_chart_" << div_id << R"delim(.handleResize();
+    };
+    
+    window.addEventListener('resize', resizeChart)delim" << i << R"delim();
+    )delim" << endl;
+
+    write_set_options_for_chart( output, div_id, options );
+
+    output << "spec_chart_" << div_id << ".setReferenceLines( reference_lines_" << div_id << " );" << endl;
+
+    output << "resizeChart" << i << "();" << endl;
+    output << "</script>" << endl;
+
+
+
+    output << "<table class=\"TopLinesTable\" style=\"\">" << endl;
+    output << "<tr><th>Fit Energy (keV)</th><th>Fit Area</th><th>FitAreaUncert</th><th>ROI Lower</th><th>ROI Upper</th></tr>" << endl;
+    output << "<caption>Top gamma lines in spectrum</caption>" << endl;
+    for( size_t i = 0; i < fit_peaks.size(); ++i )
+    {
+      const PeakDef &p = fit_peaks[i];
+
+      output << "<tr>"
+      << "<td>" << p.mean() << "</td>"
+      << "<td>" << p.amplitude() << "</td>"
+      << "<td>" << p.amplitudeUncert() << "</td>"
+      << "<td>" << p.lowerX() << "</td>"
+      << "<td>" << p.upperX() << "</td>"
+      << "</tr>"
+      << endl;
+    }
+
+    output << "</table>" << endl;
+
+    output << "</fieldset>" << endl;
+  }//for( size_t i = 0; i < src_info.size(); ++i )
+
+  output << "</body>" << endl;
+  output << "</html>" << endl;
+
+  cout << "Done" << endl;
+}//void create_n42_peak_fits_for_dir()
+
+
+void create_n42_peak_fits( const vector<DetectorInjectSet> &inject_sets, const vector<DataSrcInfo> &input_srcs )
+{
+  const bool isHPGe = true;
+
+  //Generation [48], Best=-19.7537, Average=-19.7535, Best genes:
+  //Using all live time and HPGe detectors, and cities - 20250912
+  const FindCandidateSettings hpge_candidate_settings = ([](){
+    FindCandidateSettings settings;
+    settings.num_smooth_side_channels = 9;
+    settings.smooth_polynomial_order = 2;
+    settings.threshold_FOM = 0.758621;
+    settings.more_scrutiny_FOM_threshold = 1.598265;
+    settings.pos_sum_threshold_sf = 0.119178;
+    settings.num_chan_fluctuate = 1;
+    settings.more_scrutiny_coarser_FOM = 3.001943;
+    settings.more_scrutiny_min_dev_from_line = 6.816465;
+    settings.amp_to_apply_line_test_below = 6.000000;
+    return settings;
+  })();
+
+  const InitialPeakFindSettings hpge_initial_fit_settings = ([](){;
+    //Generation [138], Best=-36152.8, Average=-36151.4, - from optimization in Sep. 2025
+    InitialPeakFindSettings settings;
+    settings.initial_stat_threshold = 1.951264;
+    settings.initial_hypothesis_threshold = 0.673169;
+    settings.initial_min_nsigma_roi = 2.246770;
+    settings.initial_max_nsigma_roi = 6.378162;
+    settings.fwhm_fcn_form = InitialPeakFindSettings::FwhmFcnForm::SqrtPolynomialTwoCoefs;
+    settings.search_roi_nsigma_deficit = 4.241748;
+    //settings.search_stat_threshold = 8.051485;
+    settings.search_hypothesis_threshold= 3.342207;
+    settings.search_stat_significance = 3.0;
+    settings.ROI_add_nsigma_required = 3.526017;
+    settings.ROI_add_chi2dof_improve = 0.45;
+    return settings;
+  })();
+
+  // Not final settings
+  const FinalPeakFitSettings hpge_final_fit_settings = ([](){
+    FinalPeakFitSettings settings;
+
+    settings.require_combine_num_fwhm_near = 2.0;
+    settings.not_allow_combine_num_fwhm_near = 4.0;
+    settings.cont_type_peak_nsigma_threshold = 40.450658;
+    settings.cont_type_left_right_nsigma = 8.423588;
+    settings.cont_poly_order_increase_chi2dof_required = 0.671733;
+    settings.cont_step_type_increase_chi2dof_required = 0.6;
+    settings.skew_nsigma = 8.359958;
+    settings.left_residual_sum_min_to_try_skew = 2.878255;
+    settings.right_residual_sum_min_to_try_skew = 0.158640;
+    settings.skew_improve_chi2_dof_threshold = 1.016935;
+    settings.roi_extent_low_num_fwhm_base_highstat = 1.5;
+    settings.roi_extent_high_num_fwhm_base_highstat = 1.5;
+    settings.roi_extent_low_num_fwhm_base_lowstat = 1.5;
+    settings.roi_extent_high_num_fwhm_base_lowstat = 1.5;
+    settings.high_stat_threshold = 15.0;
+    settings.roi_extent_low_num_fwhm_extra = 1.5;
+    settings.roi_extent_high_num_fwhm_extra = 1.5;
+    settings.roi_end_second_deriv_thresh = 3.5;
+    settings.break_multi_roi_up_continuum_away_sigma = 5;
+    settings.break_multi_roi_up_required_chi2dof_improve = 0.5;
+
+    return settings;
+  })();
+
+  FinalFit_GA::FinalFitScore sum_score;
+
+
+  auto do_fit_peaks = [&hpge_candidate_settings, &hpge_initial_fit_settings, &hpge_final_fit_settings, isHPGe, &sum_score]
+                        ( const shared_ptr<const SpecUtils::Measurement> &spectrum, const DataSrcInfo &info )
+                      -> vector<PeakDef>
+  {
+    const bool multithread = true;
+    size_t num_add_candidates_fit_for = 0, num_add_candidates_accepted = 0; //Only for eval purposes
+    const vector<PeakDef> initial_peaks = InitialFit_GA::initial_peak_find_and_fit( hpge_initial_fit_settings,
+                                                                                   hpge_candidate_settings,
+                                                                                   spectrum,
+                                                                                   multithread,
+                                                                                   num_add_candidates_fit_for,
+                                                                                   num_add_candidates_accepted);
+    //return initial_peaks;
+
+    cout << "Input into final_peak_fit:" << endl;
+    for( const PeakDef &p : initial_peaks )
+      cout << "    {" << p.mean() << ", " << p.fwhm() << ", " << p.lowerX() << "-" << p.upperX() << "}" << endl;
+    cout << endl;
+
+    const vector<PeakDef> fit_peaks = FinalFit_GA::final_peak_fit( initial_peaks, hpge_final_fit_settings, isHPGe,
+                                                                  spectrum, multithread );
+
+    
+    const FinalFit_GA::FinalFitScore score = FinalFit_GA::eval_final_peak_fit( hpge_final_fit_settings, info, initial_peaks, false );
+
+
+    sum_score.area_score += score.area_score;
+    sum_score.width_score += score.width_score;
+    sum_score.position_score += score.position_score;
+    sum_score.ignored_unexpected_peaks += score.ignored_unexpected_peaks;
+    sum_score.unexpected_peaks_sum_significance += score.unexpected_peaks_sum_significance;
+    sum_score.total_weight += score.total_weight;
+    sum_score.num_peaks_used += score.num_peaks_used;
+
+    //cout << info.location_name << "/"<< info.detector_name << "/" << info.live_time_name << "/"
+    //<< info.src_info.src_name << "\n-> " << score.print( "score" ) << "--------" << endl << endl;
+
+
+    return fit_peaks;
+  };//do_fit_peaks
+
+
+  ofstream output( "peak_fits.html" );
+
+  // Lu177m_Unsh is probably the best test of settings...
+
+  D3SpectrumExport::write_html_page_header( output, "Peak Fits", "InterSpec_resources" );
+
+  output << "<body>" << endl;
+
+  //Hack putting <style></style> block in HTML body, but wahtever, seems ot work
+  output <<"<style>"
+  << ".TopLinesTable{ margin-top: 25px; margin-left: auto; margin-right: auto; border-collapse: collapse; border: 1px solid black; }" << endl
+  << "table, th, td{ border: 1px solid black; }" << endl
+  << "fieldset{width: 90vw; margin-left: auto; margin-right: auto; margin-top: 20px;}" << endl
+  << "</style>" << endl;
+
+
+  for( size_t i = 0; i < input_srcs.size(); ++i )
+  {
+    const DataSrcInfo &info = input_srcs[i];
+    const InjectSourceInfo &src_info = info.src_info;
+
+    const string &detector_name = info.detector_name;
+    const string &location_name = info.location_name;
+    const string &live_time_name = info.live_time_name;
+
+    //if( !SpecUtils::icontains( info.src_info.src_name, "Lu177m_Unsh") )
+    //  continue;
+
+
+    const vector<PeakTruthInfo> &source_lines = src_info.source_lines;
+    const vector<PeakTruthInfo> &background_lines = src_info.background_lines;
+    //src_info.spec_file;
+    const vector<shared_ptr<const SpecUtils::Measurement>> &src_spectra = src_info.src_spectra;
+    assert( !src_spectra.empty() );
+    const shared_ptr<const SpecUtils::Measurement> &spectrum = src_spectra.front(); //We'll just plot the first spectrum only
+    const shared_ptr<const SpecUtils::Measurement> &short_background = src_info.short_background;
+    const shared_ptr<const SpecUtils::Measurement> &long_background = src_info.long_background;
+    //src_info.src_no_poisson;
+    //src_info.background_no_poisson;
+
+    const vector<ExpectedPhotopeakInfo> &expected_photopeaks = info.expected_photopeaks;
+
+    const vector<PeakDef> fit_peaks = do_fit_peaks( spectrum, info );
+    vector<shared_ptr<const PeakDef>> fit_peaks_ptrs;
+    for( const PeakDef &p : fit_peaks )
+      fit_peaks_ptrs.push_back( make_shared<PeakDef>(p) );
+
+    ReferenceLineInfo ref_line_info;
+    ref_line_info.m_validity = ReferenceLineInfo::InputValidity::Valid;
+    ref_line_info.m_source_type = ReferenceLineInfo::SourceType::OneOffSrcLines;
+    ref_line_info.m_has_coincidences = false;
+
+    double max_peak_area = 0.0;
+    for( const ExpectedPhotopeakInfo &line : expected_photopeaks )
+    {
+      if( line.nsigma_over_background < 0.5 ) //Dont show 1-sigma peaks
+        continue;
+
+      ReferenceLineInfo::RefLine ref_line;
+      ref_line.m_energy = line.effective_energy;
+      ref_line.m_normalized_intensity = line.peak_area;
+      max_peak_area = std::max( max_peak_area, line.peak_area );
+      ref_line.m_drf_factor = 1.0;
+      ref_line.m_shield_atten = 1.0;
+      ref_line.m_particle_sf_applied = 1.0;
+      ref_line.m_color = Wt::WColor( Wt::GlobalColor::darkBlue );
+      ref_line.m_decay_intensity = line.peak_area;
+      ref_line.m_particle_type = ReferenceLineInfo::RefLine::Particle::Gamma;
+      ref_line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::Normal;
+      ref_line.m_attenuation_applies = false;
+
+      ref_line_info.m_ref_lines.push_back( ref_line );
+    }//for( const ExpectedPhotopeakInfo &line : expected_photopeaks )
+
+    if( max_peak_area > 1.0 )
+    {
+      for( auto &p : ref_line_info.m_ref_lines )
+        p.m_normalized_intensity /= max_peak_area;
+    }
+
+    string ref_line_json;
+    ref_line_info.toJson( ref_line_json );
+
+    std::string title = "";
+    std::string dataTitle = "";
+    bool useLogYAxis = true, showVerticalGridLines = false, showHorizontalGridLines = false;
+    bool legendEnabled = true, compactXAxis = true;
+    bool showPeakUserLabels = false, showPeakEnergyLabels = false, showPeakNuclideLabels = false, showPeakNuclideEnergyLabels = false;
+    bool showEscapePeakMarker = false, showComptonPeakMarker = false, showComptonEdgeMarker = false, showSumPeakMarker = false;
+    bool backgroundSubtract = false;
+    float xMin = 0, xMax = 3000;
+    std::map<std::string,std::string> refernce_lines_json;
+    refernce_lines_json["TruthPeaks"] = ref_line_json;
+
+    D3SpectrumExport::D3SpectrumChartOptions options( title, "Energy (keV)", "Counts/Channel",
+                                                     dataTitle, useLogYAxis,
+                                                     showVerticalGridLines, showHorizontalGridLines,
+                                                     legendEnabled, compactXAxis,
+                                                     showPeakUserLabels, showPeakEnergyLabels, showPeakNuclideLabels,
+                                                     showPeakNuclideEnergyLabels, showEscapePeakMarker, showComptonPeakMarker,
+                                                     showComptonEdgeMarker, showSumPeakMarker, backgroundSubtract,
+                                                     xMin, xMax, refernce_lines_json );
+
+    D3SpectrumExport::D3SpectrumOptions foreground_opts, background_opts;
+    foreground_opts.line_color = "black";
+    background_opts.line_color = "steelblue";
+    foreground_opts.title = src_info.src_name;
+    background_opts.title = "Background";
+    foreground_opts.display_scale_factor = 1.0;
+    background_opts.display_scale_factor = spectrum->live_time() / long_background->live_time();
+    foreground_opts.spectrum_type = SpecUtils::SpectrumType::Foreground;
+    background_opts.spectrum_type = SpecUtils::SpectrumType::Background;
+    foreground_opts.peaks_json = PeakDef::peak_json( fit_peaks_ptrs, spectrum, Wt::WColor(), false );
+
+    const string div_id = "chart_" + std::to_string(i);
+
+
+    output << "<fieldset style=\"\">" << endl
+    << "<legend>" << info.location_name << "/" << info.detector_name << "/" << info.live_time_name << "/" << src_info.src_name << "</legend>" << endl;
+
+    output << "<div id=\"" << div_id << "\" class=\"chart\" oncontextmenu=\"return false;\"></div>" << endl;  // Adding the main chart div
+
+
+    output << "<script>" << endl;
+
+    D3SpectrumExport::write_js_for_chart( output, div_id, options.m_dataTitle, options.m_xAxisTitle, options.m_yAxisTitle );
+
+    std::vector< std::pair<const SpecUtils::Measurement *,D3SpectrumExport::D3SpectrumOptions> > measurements;
+    measurements.emplace_back( spectrum.get(), foreground_opts );
+    measurements.emplace_back( long_background.get(), background_opts );
+
+    write_and_set_data_for_chart( output, div_id, measurements );
+
+
+    output << R"delim(
+    const resizeChart)delim" << i << R"delim( = function(){
+      let height = window.innerHeight;
+      let width = document.documentElement.clientWidth;
+      let el = spec_chart_)delim" << div_id << R"delim(.chart;
+      el.style.width = 0.8*width + "px";
+      el.style.height = Math.min(500,Math.max(250, Math.min(0.4*width,height-175))) + "px";
+      el.style.marginLeft = 0.05*width + "px";
+      el.style.marginRight = 0.05*width + "px";
+      
+    )delim"
+    << "  spec_chart_" << div_id << R"delim(.handleResize();
+    };
+    
+    window.addEventListener('resize', resizeChart)delim" << i << R"delim();
+    )delim" << endl;
+
+    write_set_options_for_chart( output, div_id, options );
+
+    output << "spec_chart_" << div_id << ".setReferenceLines( reference_lines_" << div_id << " );" << endl;
+
+    output << "resizeChart" << i << "();" << endl;
+    output << "</script>" << endl;
+
+    vector<ExpectedPhotopeakInfo> photopeaks = expected_photopeaks;
+    std::sort( begin(photopeaks), end(photopeaks), [](const ExpectedPhotopeakInfo &lhs, const ExpectedPhotopeakInfo &rhs ){
+      return lhs.peak_area > rhs.peak_area;
+    });
+
+    output << "<table class=\"TopLinesTable\" style=\"\">" << endl;
+    output << "<tr><th>Energy (keV)</th><th>Fit Mean</th><th>Truth Area</th><th>Fit Area</th><th>Truth CPS</th><th>Fit CPS</th><th>FitAreaUncert</th><th># sigma off</th><th>ROI Lower</th><th>ROI Upper</th><th>Continuum Area</th></tr>" << endl;
+    output << "<caption>Top gamma lines in spectrum</caption>" << endl;
+    for( size_t i = 0; (i < photopeaks.size()) && (i < 20); ++i )
+    {
+      const ExpectedPhotopeakInfo &p = photopeaks[i];
+
+
+      double nearest_energy = 1.0E6;
+      const PeakDef *nearest_fit = nullptr;
+      for( const PeakDef &peak : fit_peaks )
+      {
+        const double de = fabs(p.effective_energy - peak.mean());
+        if( (de < p.effective_fwhm) && (de < nearest_energy) )
+        {
+          nearest_energy = de;
+          nearest_fit = &peak;
+        }
+      }
+
+
+      output << "<tr>"
+      << "<td>" << p.effective_energy << "</td>"
+      << "<td>" << (nearest_fit ? nearest_fit->mean() : 0.0) << "</td>"
+      << "<td>" << p.peak_area << "</td>"
+      << "<td>" << (nearest_fit ? nearest_fit->peakArea() : -999.9) << "</td>"
+      << "<td>" << p.peak_area / spectrum->live_time() << "</td>"
+      << "<td>" << (nearest_fit ? (nearest_fit->peakArea() / spectrum->live_time()) : -999.9) << "</td>"
+      << "<td>" << (nearest_fit ? nearest_fit->peakAreaUncert() : -999.9) << "</td>"
+      << "<td>" << (nearest_fit ? (fabs(nearest_fit->peakArea() - p.peak_area) / nearest_fit->peakAreaUncert()) : -999.9) << "</td>"
+      << "<td>" << p.roi_lower << "</td>"
+      << "<td>" << p.roi_upper << "</td>"
+      << "<td>" << p.continuum_area << "</td>"
+      << "</tr>"
+      << endl;
+    }
+
+    if( photopeaks.size() > 20 )
+      output << "<tr><td colspan=\"6\">Plus " << (photopeaks.size() - 20) << " more peaks</td></tr>" << endl;
+
+    output << "</table>" << endl;
+
+    output << "</fieldset>" << endl;
+  }//for( size_t i = 0; i < src_info.size(); ++i )
+
+  output << "</body>" << endl;
+  output << "</html>" << endl;
+
+
+  cout << sum_score.print( "sum_score" ) << "--------" << endl << endl;
+}//void create_n42_peak_fits()
 
 
 
@@ -273,7 +884,143 @@ int main( int argc, char **argv )
   const double start_wall = SpecUtils::get_wall_time();
   const double start_cpu = SpecUtils::get_cpu_time();
   
-  string datadir;
+  // Command line argument parsing
+  namespace po = boost::program_options;
+  
+  //string data_base_dir = "/Users/wcjohns/rad_ana/peak_area_optimization/peak_fit_accuracy_inject/";
+  string data_base_dir = "/Users/wcjohns/coding/InterSpec_peak_fit_improve/peak_fit_accuracy_inject";
+  string static_data_dir;
+  PeakFitImprove::sm_num_optimization_threads = std::max( 8u, std::thread::hardware_concurrency() > 2 ? std::thread::hardware_concurrency() - 2 : 1 );
+  size_t number_threads_per_individual = 1;
+  string action_str = "PeaksForNuclide"; // "PeaksForNuclide"; //"CodeDev"; // "FinalFit"; //"InitialFit"; //"Candidate";
+  bool debug_printout_arg = false;
+  size_t ga_population = 1500;
+  size_t ga_generation_max = 250;
+  size_t ga_best_stall_max = 15;
+  size_t ga_elite_count = 10;
+  double ga_crossover_fraction = 0.7;
+  double ga_mutation_rate = 0.4;
+  double ga_mutate_threshold = 0.15;
+  double ga_crossover_threshold = -1.0; // Will be set based on action if not specified
+  
+  po::options_description desc( "Allowed options" );
+  desc.add_options()
+    ("help,h", "produce help message")
+    ("data-base-dir", po::value<string>( &data_base_dir )->default_value( data_base_dir ), "base directory for input data")
+    ("number-threads", po::value<size_t>( &PeakFitImprove::sm_num_optimization_threads )->default_value( PeakFitImprove::sm_num_optimization_threads ), "number of individuals evaluated at the same time")
+    ("num-threads-per-individual", po::value<size_t>( &PeakFitImprove::sm_num_threads_per_individual )->default_value( PeakFitImprove::sm_num_threads_per_individual ), "number of threads each individual can use")
+    ("action", po::value<string>( &action_str )->default_value( action_str ), "optimization action: Candidate, InitialFit, FinalFit, CodeDev, AccuracyFromCsvsStudy")
+    ("debug-printout", po::bool_switch( &debug_printout_arg ), "enable debug printout")
+    ("static-data-dir", po::value<string>( &static_data_dir ), "static data directory (optional)")
+    ("ga-population", po::value<size_t>( &ga_population )->default_value( ga_population ), "genetic algorithm population size")
+    ("ga-generation-max", po::value<size_t>( &ga_generation_max )->default_value( ga_generation_max ), "genetic algorithm maximum generations")
+    ("ga-best-stall-max", po::value<size_t>( &ga_best_stall_max )->default_value( ga_best_stall_max ), "genetic algorithm best stall maximum")
+    ("ga-elite-count", po::value<size_t>( &ga_elite_count )->default_value( ga_elite_count ), "genetic algorithm elite count")
+    ("ga-crossover-fraction", po::value<double>( &ga_crossover_fraction )->default_value( ga_crossover_fraction ), "Fraction of individuals that will have crossover applied to them every generation")
+    ("ga-mutation-rate", po::value<double>( &ga_mutation_rate )->default_value( ga_mutation_rate ), "Fraction of individuals that will have mutation applied to them every generation")
+    ("ga-mutate-threshold", po::value<double>( &ga_mutate_threshold )->default_value( ga_mutate_threshold ), "The fraction of genes that will be mutated.")
+    ("ga-crossover-threshold", po::value<double>( &ga_crossover_threshold ), "The fraction of genes that will be crossed over (default depends on action: Candidate/InitialFit=0.25, FinalFit=0.15)");
+  
+  po::variables_map vm;
+  
+  try
+  {
+    po::store( po::parse_command_line( argc, argv, desc ), vm );
+    po::notify( vm );
+  }catch( const po::error &e )
+  {
+    cerr << "Error parsing command line: " << e.what() << endl;
+    return -1;
+  }
+  
+  if( vm.count( "help" ) )
+  {
+    cout << desc << endl;
+    return 0;
+  }
+  
+  // Validate and set up directories
+  if( !SpecUtils::is_directory( data_base_dir ) )
+  {
+    cerr << "Error: data-base-dir '" << data_base_dir << "' does not exist or is not a directory." << endl;
+    return -2;
+  }
+  
+  if( !static_data_dir.empty() && !SpecUtils::is_directory( static_data_dir ) )
+  {
+    cerr << "Error: static-data-dir '" << static_data_dir << "' does not exist or is not a directory." << endl;
+    return -3;
+  }
+  
+  // Set crossover_threshold default based on action if not specified by user
+  if( ga_crossover_threshold < 0.0 )
+  {
+    if( action_str == "FinalFit" )
+      ga_crossover_threshold = 0.15;
+    else  // Candidate, InitialFit, CodeDev, AccuracyFromCsvsStudy
+      ga_crossover_threshold = 0.25;
+  }
+  
+  // Set the optimization configuration
+  PeakFitImprove::sm_ga_population = ga_population;
+  PeakFitImprove::sm_ga_generation_max = ga_generation_max;
+  PeakFitImprove::sm_ga_best_stall_max = ga_best_stall_max;
+  PeakFitImprove::sm_ga_elite_count = ga_elite_count;
+  PeakFitImprove::sm_ga_crossover_fraction = ga_crossover_fraction;
+  PeakFitImprove::sm_ga_mutation_rate = ga_mutation_rate;
+  PeakFitImprove::sm_ga_mutate_threshold = ga_mutate_threshold;
+  PeakFitImprove::sm_ga_crossover_threshold = ga_crossover_threshold;
+  
+  // Parse action enum
+  enum class OptimizationAction : int
+  {
+    Candidate,
+    InitialFit,
+    FinalFit,
+    CodeDev,
+    AccuracyFromCsvsStudy,
+    PeaksForNuclide
+  };//enum class OptimizationAction : int
+  
+  OptimizationAction action;
+  if( action_str == "Candidate" )
+    action = OptimizationAction::Candidate;
+  else if( action_str == "InitialFit" )
+    action = OptimizationAction::InitialFit;
+  else if( action_str == "FinalFit" )
+    action = OptimizationAction::FinalFit;
+  else if( action_str == "CodeDev" )
+    action = OptimizationAction::CodeDev;
+  else if( action_str == "AccuracyFromCsvsStudy" )
+    action = OptimizationAction::AccuracyFromCsvsStudy;
+  else if( action_str == "PeaksForNuclide" )
+    action = OptimizationAction::PeaksForNuclide;
+  else
+  {
+    cerr << "Error: invalid action '" << action_str << "'. Valid actions are: Candidate, InitialFit, FinalFit, CodeDev, AccuracyFromCsvsStudy, PeaksForNuclide" << endl;
+    return -4;
+  }
+  
+  cout << "Using " << PeakFitImprove::sm_num_optimization_threads
+  << " threads for individual evaluation, with each individual using up to " << PeakFitImprove::sm_num_threads_per_individual
+  << " threads for optimization."
+  << endl;
+  cout << "Data base directory: " << data_base_dir << endl;
+  if( !static_data_dir.empty() )
+    cout << "Static data directory: " << static_data_dir << endl;
+  cout << "Debug printout: " << ( debug_printout_arg ? "enabled" : "disabled" ) << endl;
+  cout << "Action: " << action_str << endl;
+  cout << "GA configuration:" << endl;
+  cout << "  Population: " << ga_population << endl;
+  cout << "  Max generations: " << ga_generation_max << endl;
+  cout << "  Best stall max: " << ga_best_stall_max << endl;
+  cout << "  Elite count: " << ga_elite_count << endl;
+  cout << "  Crossover fraction: " << ga_crossover_fraction << endl;
+  cout << "  Mutation rate: " << ga_mutation_rate << endl;
+  cout << "  Mutate threshold: " << ga_mutate_threshold << endl;
+  cout << "  Crossover threshold: " << ga_crossover_threshold << endl;
+  
+  string datadir = static_data_dir;
   if( datadir.empty() )
   {
     string targetfile = "data/CharacteristicGammas.txt";
@@ -289,7 +1036,21 @@ int main( int argc, char **argv )
   assert( SpecUtils::is_directory(datadir) );
   
   InterSpec::setStaticDataDirectory( datadir );
-  
+
+
+#if( defined(SpecUtils_USE_WT_THREADPOOL) )
+  // We need to start the WServer so we can populat the thread pool.
+  const string docroot = ".";
+  const string wt_config = "data/config/wt_config_localweb.xml";
+  const int rval = InterSpecServer::start_server( argv[0], "user_data",
+                                                   docroot.c_str(),
+                                                   wt_config.c_str(),
+                                                   static_cast<short int>(0) );
+
+  //cout << "ThreadPool will have " << Wt::WServer::instance()->ioService().threadCount() << " threads." << endl;
+#endif //#if( defined(SpecUtils_USE_WT_THREADPOOL) )
+
+
   /*
    Known issues with "truth" CSV files
    - The truth lines are before random-summing, so the observed peaks will be smaller than the CSV says
@@ -299,7 +1060,7 @@ int main( int argc, char **argv )
    - I dont think sum lines are accounted for
    */
 
-  const string base_dir = "/Users/wcjohns/rad_ana/peak_area_optimization/peak_fit_accuracy_inject/";
+  const string base_dir = data_base_dir;
 
   vector<string> hpges {
     "Detective-X",
@@ -311,7 +1072,7 @@ int main( int argc, char **argv )
     //"HPGe_Planar_50%"
   };
 
-  if( PeakFitImprove::debug_printout )
+  if( debug_printout_arg )
     hpges = vector<string>{ "Detective-X" };
 
 #if( WRITE_ALL_SPEC_TO_HTML )
@@ -320,18 +1081,24 @@ int main( int argc, char **argv )
 
 
   vector<string> live_times{
-    "30_seconds",
+    //"30_seconds",
     "300_seconds",
-    "1800_seconds"
+    //"1800_seconds"
   };
 
 #if( WRITE_ALL_SPEC_TO_HTML )
   live_times = {"300_seconds"};
 #endif
 
+  vector<string> wanted_cities{
+    "Livermore"
+    //, "Baltimore",
+    //"Denver"
+  };
+
 
   const std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> &loaded_data
-      = PeakFitImproveData::load_inject_data_with_truth_info( base_dir, hpges, live_times );
+      = PeakFitImproveData::load_inject_data_with_truth_info( base_dir, hpges, live_times, wanted_cities );
 
   const vector<DetectorInjectSet> &inject_sets = std::get<0>(loaded_data);
   const vector<DataSrcInfo> &input_srcs = std::get<1>(loaded_data);
@@ -342,8 +1109,6 @@ int main( int argc, char **argv )
   PeakFitImproveData::write_html_summary( input_srcs );
   return 1;
 #endif
-
-
   
   
   /**
@@ -372,14 +1137,14 @@ int main( int argc, char **argv )
   std::mutex score_mutex;
   auto eval_candidate_settings_fcn = [&]( const FindCandidateSettings settings, const vector<DataSrcInfo> &input_srcs, const bool write_n42 ){
 
-    const tuple<double,size_t,size_t,size_t,size_t,size_t> result = CandidatePeak_GA::eval_candidate_settings( settings, input_srcs, write_n42 );
+    const CandidatePeak_GA::CandidatePeakScore result = CandidatePeak_GA::eval_candidate_settings( settings, input_srcs, write_n42 );
 
-    const double score = std::get<0>(result);
-    const size_t num_peaks_found = std::get<1>(result);
-    const size_t num_def_wanted_not_found = std::get<2>(result);
-    const size_t def_wanted_peaks_found = std::get<3>(result);
-    const size_t num_possibly_accepted_peaks_not_found = std::get<4>(result);
-    const size_t num_extra_peaks = std::get<5>(result);
+    const double score = result.score;
+    const size_t num_peaks_found = result.num_peaks_found;
+    const size_t num_def_wanted_not_found = result.num_def_wanted_not_found;
+    const size_t def_wanted_peaks_found = result.num_def_wanted_peaks_found;
+    const size_t num_possibly_accepted_peaks_not_found = result.num_possibly_accepted_peaks_not_found;
+    const size_t num_extra_peaks = result.num_extra_peaks;
     
     std::lock_guard<std::mutex> lock( score_mutex );
     
@@ -419,16 +1184,6 @@ int main( int argc, char **argv )
   //eval_candidate_settings_fcn( best_settings, input_srcs, false );
 
   
-  enum class OptimizationAction : int
-  {
-    Candidate,
-    InitialFit,
-    FinalFit,
-    CodeDev,
-    AccuracyFromCsvsStudy
-  };//enum class OptimizationAction : int
-  
-  const OptimizationAction action = OptimizationAction::FinalFit; // OptimizationAction::CodeDev; //OptimizationAction::InitialFit;
 
   switch( action )
   {
@@ -436,8 +1191,8 @@ int main( int argc, char **argv )
     {
       // code to run candidate peak optimization
       const auto ga_eval = [&input_srcs](const FindCandidateSettings &settings) -> double {
-        const tuple<double,size_t,size_t,size_t,size_t,size_t> score = CandidatePeak_GA::eval_candidate_settings( settings, input_srcs, false );
-        return get<0>( score );
+        const CandidatePeak_GA::CandidatePeakScore score = CandidatePeak_GA::eval_candidate_settings( settings, input_srcs, false );
+        return score.score;
       };
       
       best_settings = CandidatePeak_GA::do_ga_eval( ga_eval );
@@ -550,22 +1305,37 @@ int main( int argc, char **argv )
     case OptimizationAction::InitialFit:
     {
       // FindCandidateSettings:
+      /*
       //   Apply best settings found; Generation 491, population best score: -18.1076, population average score: -14.9656
       best_settings.num_smooth_side_channels = 9;
       best_settings.smooth_polynomial_order = 2;
-      best_settings.threshold_FOM = 1.127040;
-      best_settings.more_scrutiny_FOM_threshold = best_settings.threshold_FOM + 0.498290;
-      best_settings.pos_sum_threshold_sf = 0.081751;
+      best_settings.threshold_FOM = 0.758621;
+      best_settings.more_scrutiny_FOM_threshold = 1.598265;
+      best_settings.pos_sum_threshold_sf = 0.119178;
       best_settings.num_chan_fluctuate = 1;
       best_settings.more_scrutiny_coarser_FOM = best_settings.threshold_FOM + 1.451548;
       best_settings.more_scrutiny_min_dev_from_line = 5.866464;
       best_settings.amp_to_apply_line_test_below = 6;
-      
+       */
+
+      //Generation [48], Best=-19.7537, Average=-19.7535, Best genes:
+      //Using all live time and HPGe detectors, and cities - 20250912
+      best_settings.num_smooth_side_channels = 9;
+      best_settings.smooth_polynomial_order = 2;
+      best_settings.threshold_FOM = 0.758621;
+      best_settings.more_scrutiny_FOM_threshold = 1.598265;
+      best_settings.pos_sum_threshold_sf = 0.119178;
+      best_settings.num_chan_fluctuate = 1;
+      best_settings.more_scrutiny_coarser_FOM = 3.001943;
+      best_settings.more_scrutiny_min_dev_from_line = 6.816465;
+      best_settings.amp_to_apply_line_test_below = 6.000000;
+
       std::function<double( const InitialPeakFindSettings &)> ga_eval_fcn 
             = [best_settings, &input_srcs]( const InitialPeakFindSettings &settings ) -> double {
         double score_sum = 0.0;
         for( const DataSrcInfo &info : input_srcs )
         {
+          const bool multithread = (PeakFitImprove::sm_num_threads_per_individual > 1);
           const double score = InitialFit_GA::eval_initial_peak_find_and_fit( settings, best_settings, info, false ).find_weight;
           score_sum += score;
         }
@@ -611,37 +1381,41 @@ int main( int argc, char **argv )
       FindCandidateSettings candidate_settings;
       candidate_settings.num_smooth_side_channels = 9;
       candidate_settings.smooth_polynomial_order = 2;
-      candidate_settings.threshold_FOM = 1.127040;
-      candidate_settings.more_scrutiny_FOM_threshold = best_settings.threshold_FOM + 0.498290;
-      candidate_settings.pos_sum_threshold_sf = 0.081751;
+      candidate_settings.threshold_FOM = 0.758621;
+      candidate_settings.more_scrutiny_FOM_threshold = 1.598265;
+      candidate_settings.pos_sum_threshold_sf = 0.119178;
       candidate_settings.num_chan_fluctuate = 1;
-      candidate_settings.more_scrutiny_coarser_FOM = best_settings.threshold_FOM + 1.451548;
-      candidate_settings.more_scrutiny_min_dev_from_line = 5.866464;
-      candidate_settings.amp_to_apply_line_test_below = 6;
+      candidate_settings.more_scrutiny_coarser_FOM = 3.001943;
+      candidate_settings.more_scrutiny_min_dev_from_line = 6.816465;
+      candidate_settings.amp_to_apply_line_test_below = 6.000000;
       best_settings = candidate_settings;
-      
-      
+
+
       InitialPeakFindSettings initial_fit_settings;
-      //20240806: Generation [84], Best=-62960.8, Average=-58257.3, , Best generation yet
-      initial_fit_settings.initial_stat_threshold = 2.890059;
-      initial_fit_settings.initial_hypothesis_threshold = 0.746688;
-      initial_fit_settings.initial_min_nsigma_roi = 3.801792;
-      initial_fit_settings.initial_max_nsigma_roi = 7.315852;
+      //Generation [138], Best=-36152.8, Average=-36151.4, - from optimization in Sep. 2025
+      initial_fit_settings.initial_stat_threshold = 1.951264;
+      initial_fit_settings.initial_hypothesis_threshold = 0.673169;
+      initial_fit_settings.initial_min_nsigma_roi = 2.246770;
+      initial_fit_settings.initial_max_nsigma_roi = 6.378162;
       initial_fit_settings.fwhm_fcn_form = InitialPeakFindSettings::FwhmFcnForm::SqrtPolynomialTwoCoefs;
-      initial_fit_settings.search_roi_nsigma_deficit = 5.642556;
-      initial_fit_settings.search_stat_threshold = 2.951359;
-      initial_fit_settings.search_hypothesis_threshold= 4.328742;
-      initial_fit_settings.search_stat_significance = 1.814627;
-      initial_fit_settings.ROI_add_nsigma_required = 3.654512;
-      initial_fit_settings.ROI_add_chi2dof_improve = 0.374546;
-      
-      
+      initial_fit_settings.search_roi_nsigma_deficit = 4.241748;
+      //initial_fit_settings.search_stat_threshold = 8.051485;
+      initial_fit_settings.search_hypothesis_threshold= 3.342207;
+      initial_fit_settings.search_stat_significance = 2.025582;
+      initial_fit_settings.ROI_add_nsigma_required = 3.526017;
+      initial_fit_settings.ROI_add_chi2dof_improve = 0.516229;
+
       FinalFit_GA::do_final_peak_fit_ga_optimization( candidate_settings, initial_fit_settings, input_srcs );
       
       break;
     }//case OptimizationAction::FinalFit
-      
-      
+
+    case OptimizationAction::PeaksForNuclide:
+    {
+      FitPeaksForNuclideDev::eval_peaks_for_nuclide( input_srcs );
+      break;
+    }//case OptimizationAction::PeaksForNuclide:
+
     case OptimizationAction::AccuracyFromCsvsStudy:
     {
       const string result_base_path = "/Users/wcjohns/rad_ana/InterSpec/target/peak_fit_improve/build_xcode/PeakSearchCsvs";
@@ -727,8 +1501,7 @@ int main( int argc, char **argv )
           g2k_peaks.emplace_back( p.Energy, p.FWHM/PhysicalUnits::fwhm_nsigma, p.NetPeakArea );
           g2k_peaks.back().setAmplitudeUncert( p.NetAreaError ); //We get 2-sigma errors from G2k
         }
-        // As of 20250418, `search_for_peaks(...)` still partially uses Minuit2 based peak-fitting,
-        //  even when USE_CERES_PEAK_FITTING is true.
+        
         vector<shared_ptr<const PeakDef> > interspec_peaks_initial
             = ExperimentalAutomatedPeakSearch::search_for_peaks( data, drf, nullptr, false, true );
         vector<PeakDef> interspec_peaks;
@@ -881,7 +1654,7 @@ int main( int argc, char **argv )
       cout << "GADRAS 4-sigma, " << gad4s_num_found << ", " << (total_num_expected - gad4s_num_found) << ", " << gad4s_num_extra << endl;
       cout << "GADRAS 5-sigma, " << gad5s_num_found << ", " << (total_num_expected - gad5s_num_found)<< ", " << gad5s_num_extra << endl;
       cout << "PeakEasy 5.21, " << peak_easy_num_found << ", " << (total_num_expected - peak_easy_num_found)<< ", " << peak_easy_num_extra << endl;
-      cout << "InterSpec 1.0.12, " << interspec_num_found << ", " << (total_num_expected - interspec_num_found)<< ", " << interspec_num_extra << endl;
+      cout << "InterSpec 1.0.dev, " << interspec_num_found << ", " << (total_num_expected - interspec_num_found)<< ", " << interspec_num_extra << endl;
       cout << "Genie 2k, " << g2k_num_found << ", " << (total_num_expected - g2k_num_found) << ", " << g2k_num_extra << endl;
       
       
@@ -930,6 +1703,41 @@ int main( int argc, char **argv )
       
     case OptimizationAction::CodeDev:
     {
+      //create_n42_peak_fits_for_dir( "/Users/wcjohns/Downloads/spec 2" );
+      //create_n42_peak_fits( inject_sets, input_srcs );
+
+      {
+        FindCandidateSettings settings;
+        settings.num_smooth_side_channels = 11;
+        settings.smooth_polynomial_order = 2;
+        settings.threshold_FOM = 1.618534;
+        settings.more_scrutiny_FOM_threshold = 3.164526;
+        settings.pos_sum_threshold_sf = 0.106967;
+        settings.num_chan_fluctuate = 1;
+        settings.more_scrutiny_coarser_FOM = 2.2;
+        settings.more_scrutiny_min_dev_from_line = 5.781510;
+        settings.amp_to_apply_line_test_below = 76.000000;
+
+        //found_extra_punishment = 0.25
+        //Best settings had score 18.5294, with values:
+        //  num_peaks_found:89647
+        //  def_wanted_peaks_found:68281
+        //  def_wanted_peaks_not_found:10499
+        //  num_possibly_accepted_peaks_not_found:82919
+        //  num_extra_peaks:21296
+
+        //vector<DataSrcInfo> filtered;
+        //for( const DataSrcInfo &data : input_srcs )
+        //{
+        //  if(  data.src_info.src_name.find("Ho166m_Unsh") != string::npos  )
+        //    filtered.push_back( data );
+        //}
+
+        CandidatePeak_GA::eval_candidate_settings( settings, input_srcs, true );
+      }//if( make N42 files )
+
+      break;
+
       cerr << "Setting best_settings instead of actually finding them!" << endl;
       // Some non-optimal settings, to use for just development.
       best_settings.num_smooth_side_channels = 9;
@@ -951,8 +1759,7 @@ int main( int argc, char **argv )
           
           for( size_t i = 0; i < 5000; ++i )
           {
-            std::vector< std::tuple<float,float,float> > results;
-            CandidatePeak_GA::find_candidate_peaks( info.src_info.src_spectra[0], 0, 0, results, best_settings );
+            CandidatePeak_GA::find_candidate_peaks( info.src_info.src_spectra[0], 0, 0, best_settings );
           }
           
           const double end_wall = SpecUtils::get_wall_time();
@@ -968,9 +1775,8 @@ int main( int argc, char **argv )
         for( const DataSrcInfo &info : input_srcs )
         {
           const shared_ptr<const SpecUtils::Measurement> &data = info.src_info.src_spectra.front();
-          
-          vector<tuple<float,float,float>> dummy;
-          vector<PeakDef> candidate_peaks = CandidatePeak_GA::find_candidate_peaks( data, 0, 0, dummy, best_settings );
+
+          vector<PeakDef> candidate_peaks = CandidatePeak_GA::find_candidate_peaks( data, 0, 0, best_settings );
 
           for( PeakDef &p : candidate_peaks )
           {
@@ -1002,7 +1808,7 @@ int main( int argc, char **argv )
               //  `refitPeaksThatShareROI(...)` and `refit_for_new_roi(...)` and `fit_peak_for_user_click(...)`
               //And also could try using Ceres to see if it works better than Minuit.
               vector<PeakDef> peaks;
-#if( USE_CERES_PEAK_FITTING )
+#if( USE_LM_PEAK_FIT )
               vector<shared_ptr<const PeakDef>> results_tmp, input_peaks_tmp;
               for( const auto &p : candidate_peaks )
                 input_peaks_tmp.push_back( make_shared<PeakDef>(p) );
@@ -1040,7 +1846,7 @@ int main( int argc, char **argv )
       fit_settings.initial_max_nsigma_roi = 12;
       fit_settings.fwhm_fcn_form = InitialPeakFindSettings::FwhmFcnForm::SqrtPolynomialTwoCoefs;
       fit_settings.search_roi_nsigma_deficit = 2;//Reasonable search range of 1 to 10.
-      fit_settings.search_stat_threshold = 3;//Reasonable search range of 0 and 8.
+      //fit_settings.search_stat_threshold = 3;//Reasonable search range of 0 and 8.
       fit_settings.search_hypothesis_threshold = 2;//Reasonable search range of 0 and 8. -0.1 and 10.
       fit_settings.search_stat_significance = 2.5;
       
@@ -1061,7 +1867,7 @@ int main( int argc, char **argv )
         num_posted += 1;
 
         auto worker = [&](){
-          if( PeakFitImprove::debug_printout )
+          if( debug_printout_arg )
           {
             std::lock_guard<std::mutex> lock( score_mutex );
             cout << "Evaluating " << info.location_name << "/" << info.live_time_name << "/" << info.detector_name << "/" << info.src_info.src_name << endl;
@@ -1078,12 +1884,12 @@ int main( int argc, char **argv )
           sum_maybe_wanted_area_median_weight += weight.maybe_wanted_area_median_weight;
           sum_not_wanted_area_median_weight += weight.not_wanted_area_median_weight;
 
-          if( PeakFitImprove::debug_printout )
+          if( debug_printout_arg )
             cout << "For " << info.location_name << "/" << info.live_time_name << "/" << info.detector_name << "/" << info.src_info.src_name
             << ", got weight=" << sum_find_weight << endl;
         };
 
-        if( PeakFitImprove::debug_printout )
+        if( debug_printout_arg )
         {
           worker();
         }else
@@ -1120,7 +1926,10 @@ int main( int argc, char **argv )
     }//case OptimizationAction::CodeDev:
   }//switch( action )
 
-  
+#if( defined(SpecUtils_USE_WT_THREADPOOL) )
+  InterSpecServer::killServer();
+#endif
+
   return EXIT_SUCCESS;
 }//int main( int argc, const char * argv[] )
 

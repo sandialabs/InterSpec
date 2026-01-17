@@ -1,4 +1,5 @@
 #Project and CMake specific files
+peak_fit_accuracy_inject/
 data/sandia.decay.xml
 InterSpec/InterSpec.entitlements
 #target/ios/InterSpec/InterSpec.xcodeproj

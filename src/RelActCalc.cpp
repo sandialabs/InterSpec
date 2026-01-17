@@ -1095,19 +1095,19 @@ std::vector<PeakDef> refit_roi_continuums( const std::vector<PeakDef> &solution_
     vector<double> continuum_coeffs(num_polynomial_terms);
     vector<double> peak_counts(roi_channels);
     
-    try {
+    try
+    {
       // Refit the continuum using PeakFit::fit_continuum
       PeakFit::fit_continuum( roi_energies, roi_data, roi_uncerts, roi_channels,
                              num_polynomial_terms, is_step_continuum, ref_energy,
                              roi_peaks, false, continuum_coeffs.data(), peak_counts.data() );
+    
+      auto new_continuum = make_shared<PeakContinuum>(*continuum);
+      new_continuum->setParameters( lower_energy, continuum_coeffs, {} );
       
       // Update all peaks with the new continuum coefficients
       for( size_t idx : peak_indices )
-      {
-        auto new_continuum = make_shared<PeakContinuum>(*continuum);
-        new_continuum->setParameters( lower_energy, continuum_coeffs, {} );
         result_peaks[idx].setContinuum(new_continuum);
-      }
     } catch( const exception &e ) {
       // If fitting fails, silently continue with original continuum
     }

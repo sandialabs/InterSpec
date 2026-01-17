@@ -89,6 +89,10 @@ struct SavitzyGolayCoeffs
                std::vector<float> &output ) const;
   void smooth( const float *input, const int nSamples,
                std::vector<float> &output ) const;
+
+  void smooth_with_variance( const std::vector<float> &input,
+                             std::vector<float> &output,
+                            std::vector<float> &variance ) const;
 };//struct SavitzyGolayCoeffs
 
 
@@ -263,11 +267,12 @@ void get_candidate_peak_estimates_for_user_click(
 //  If pixelPerKev <= 0.0 is specified, then it is assumed this is an automated
 //  search, and tougher quality requirements will be placed on the fit peaks.
 std::pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
-                                           double pixelPerKev,
-                                           const std::shared_ptr<const SpecUtils::Measurement> &data,
-                                           const PeakShrdVec &existing_peaks,
-                                           std::shared_ptr<const DetectorPeakResponse> drf,
-                                                            const bool isHPGe );
+                            double pixelPerKev,
+                            const std::shared_ptr<const SpecUtils::Measurement> &data,
+                            const std::vector<std::shared_ptr<const PeakDef>> &existing_peaks,
+                            std::shared_ptr<const DetectorPeakResponse> drf,
+                            const std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> &auto_search_peaks,
+                            const bool isHPGe );
 
 //refitPeaksThatShareROI: intended to refit peaks fit for by
 //  searchForPeakFromUser(...), for instance when you modify the ROI range.

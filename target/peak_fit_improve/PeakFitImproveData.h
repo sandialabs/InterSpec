@@ -62,7 +62,8 @@ ExpectedPhotopeakInfo create_expected_photopeak( const InjectSourceInfo &info, c
  `base_name + "_gamma_lines.csv"`
  to exist.
  */
-InjectSourceInfo parse_inject_source_files( const std::string &base_name );
+InjectSourceInfo parse_inject_source_files( const std::string &base_name,
+                                           const std::vector<std::pair<float,float>> &deviation_pairs );
 
 
 /**
@@ -71,7 +72,8 @@ InjectSourceInfo parse_inject_source_files( const std::string &base_name );
 std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>>
  load_inject_data_with_truth_info( const std::string &base_dir,
                                   const std::vector<std::string> &wanted_detectors,
-                                  const std::vector<std::string> &live_times );
+                                  const std::vector<std::string> &live_times,
+                                  const std::vector<std::string> &wanted_cities );
 
 
 #if( WRITE_ALL_SPEC_TO_HTML ) //Defined in PeakFitImprove.h

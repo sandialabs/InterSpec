@@ -40,7 +40,7 @@
   <message id="dlt-detected-activity-tt">検出された活動、この関心領域のみを使用し、
     観測された過剰カウント、および
     統計的信頼区間。</message>
-  <message id="dlt-limit-lt-zero">限界: &lt; 0{1}</message>
+  <message id="dlt-limit-lt-zero"><![CDATA[限界: < 0{1}]]></message>
   <message id="dlt-sig-fewer-counts">(ROIのカウントが予測より大幅に少ない)</message>
   <message id="dlt-fewer-counts-tt">関心領域で観測されたカウントが
     隣接チャンネルによって予測されたよりも大幅に少ない。</message>
@@ -53,8 +53,6 @@
   <message id="dlt-large-deficit">ROIのカウントの大きな不足</message>
   
   <!-- DetectionLimitTool main class strings -->
-  <message id="dlt-nuclide-label">核種:&nbsp;&nbsp;</message>
-  <message id="dlt-age-label">年齢:</message>
   <message id="dlt-tt-age-edit">
     <div>核種の年齢。</div>
     <br />
@@ -62,8 +60,6 @@
     （つまり、入力された）核種の活動は、常に測定時点で報告されます。
     </div>
   </message>
-  <message id="dlt-distance-label">距離:</message>
-  <message id="dlt-activity-label">活動:</message>
   <message id="dlt-attenuate-for-air">空気で減衰</message>
   <message id="dlt-shield-empty-text">遮蔽材</message>
   <message id="dlt-activity-limit">活動限界</message>
@@ -84,8 +80,8 @@
   <message id="dlt-log">対数</message>
   <message id="dlt-lin">線形</message>
   <message id="dlt-below-lc">(L<sub>c</sub>以下)</message>
-  <message id="dlt-lt-zero-counts">&lt; 0 カウント</message>
-  <message id="dlt-lt-zero-activity">&lt; {1}</message>
+  <message id="dlt-lt-zero-counts"><![CDATA[< 0 カウント]]></message>
+  <message id="dlt-lt-zero-activity"><![CDATA[< {1}]]></message>
   
   <!-- Error messages -->
   <message id="dlt-err-no-data">データが読み込まれていません</message>
@@ -178,7 +174,7 @@
   <message id="dlt-chart-x-axis-activity">活動 ({1})</message>
   <message id="dlt-chart-title-estimated-activity">推定活動 {1}。</message>
   <message id="dlt-chart-title-excess-counts">過剰カウント {1}。</message>
-  <message id="dlt-chart-title-activity-lt-zero">活動 &lt; 0 {1}</message>
+  <message id="dlt-chart-title-activity-lt-zero"><![CDATA[活動 < 0 {1}]]></message>
   <message id="dlt-chart-title-data-peak">データ + ピーク {1}</message>
   <message id="dlt-chart-title-peak-upper-bound">上限のピーク {1} @{2} CL</message>
   <message id="dlt-currie-info-dialog-title">{1}{2} keV 情報</message>
@@ -188,7 +184,7 @@
   <message id="dlt-no-foreground-spectrum">前景スペクトルがありません</message>
   <message id="dlt-no-drf-loaded">DRFが読み込まれていません</message>
   <message id="dlt-drf-not-valid">DRFが無効であるか、FWHM情報がありません。</message>
-  <message id="dlt-err-max-distance-too-large">最大距離が大きすぎます (&gt;100km)</message>
+  <message id="dlt-err-max-distance-too-large"><![CDATA[最大距離が大きすぎます (>100km)]]></message>
   <message id="dlt-err-upper-limit-negative">カウントの上限がゼロ未満ですが、観測されたカウントはL_dより大きいです。</message>
   <message id="dlt-err-activity-zero-negative">活動はゼロまたは負の値にできません</message>
   <message id="dlt-err-distance-zero-negative">距離はゼロまたは負の値にできません</message>

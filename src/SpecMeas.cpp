@@ -2287,7 +2287,7 @@ bool SpecMeas::load_N42_from_data( char *data, char *data_end )
 
   // Some times a bunch of null characters can get appended to the end
   //  of the file - lets remove them, or rapidxml::parse will fail.
-  //  TODO: bet yet, we should look for the last '>' character, or even better, the last valid closing tag
+  //  TODO: better yet, we should look for the last '>' character, or even better, the last valid closing tag
   while( ((data_end - data) > 2) && ((*(data_end - 1)) == '\0') )
     --data_end;
 

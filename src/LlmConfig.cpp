@@ -56,9 +56,13 @@ std::shared_ptr<LlmConfig> LlmConfig::load()
   // User files override default files
   
   auto get_config_file_path = []( const string &filename ){
+
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
     const string user_data_dir = ([](){ try{ return InterSpec::writableDataDirectory(); }catch(...){ return ""s; } })();
     if( !user_data_dir.empty() && SpecUtils::is_file(SpecUtils::append_path(user_data_dir,filename)) )
       return SpecUtils::append_path(user_data_dir,filename);
+#endif
+
     const string static_data_dir = InterSpec::staticDataDirectory();
     return SpecUtils::append_path(static_data_dir,filename);
   };

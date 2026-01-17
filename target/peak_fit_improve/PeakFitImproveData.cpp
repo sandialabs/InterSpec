@@ -245,7 +245,7 @@ ExpectedPhotopeakInfo create_expected_photopeak( const InjectSourceInfo &info, c
 }//ExpectedPhotopeakInfo create_expected_photopeak(...)
 
 
-InjectSourceInfo parse_inject_source_files( const string &base_name )
+InjectSourceInfo parse_inject_source_files( const string &base_name, const std::vector<std::pair<float,float>> &deviation_pairs )
 {
   /*
   CSV file is ordered as:
@@ -279,7 +279,7 @@ InjectSourceInfo parse_inject_source_files( const string &base_name )
 
   auto spec_file = make_shared<SpecUtils::SpecFile>();
   const bool loaded_pcf = spec_file->load_pcf_file( pcf_filename );
-  assert( loaded_pcf );
+  //assert( loaded_pcf );
   if( !loaded_pcf )
     throw runtime_error( "failed to load " + pcf_filename );
 
@@ -287,6 +287,41 @@ InjectSourceInfo parse_inject_source_files( const string &base_name )
   assert( meass.size() == 16 );
   if( meass.size() != 16 )
     throw runtime_error( "Unexpected number of measurements in " + pcf_filename );
+
+
+  // The PCF files dont contain the nonlinear deviation pairs that GADRAS created the spectrum files with, so we will
+  //  add them in here - if we have them.
+  if( !deviation_pairs.empty() )
+  {
+    map<shared_ptr<const SpecUtils::EnergyCalibration>,shared_ptr<const SpecUtils::EnergyCalibration>> updated_cals;
+    for( const shared_ptr<const SpecUtils::Measurement> &m : meass )
+    {
+      shared_ptr<const SpecUtils::EnergyCalibration> orig_cal = m ? m->energy_calibration() : nullptr;
+      assert( orig_cal && orig_cal->valid() );
+      if( !orig_cal || !orig_cal->valid() )
+        continue;
+
+      const auto prev_pos = updated_cals.find(orig_cal);
+      if( prev_pos != end(updated_cals) )
+      {
+        spec_file->set_energy_calibration( prev_pos->second, m );
+        continue;
+      }
+
+      assert( orig_cal->deviation_pairs().empty() );
+
+      assert( orig_cal->type() == SpecUtils::EnergyCalType::FullRangeFraction );
+      if( orig_cal->type() != SpecUtils::EnergyCalType::FullRangeFraction )
+        throw runtime_error( "unexpected energy cal type!" );
+
+      auto new_cal = make_shared<SpecUtils::EnergyCalibration>();
+      new_cal->set_full_range_fraction( orig_cal->num_channels(), orig_cal->coefficients(), deviation_pairs );
+
+      updated_cals[orig_cal] = new_cal;
+      spec_file->set_energy_calibration( new_cal, m );
+    }//for( const shared_ptr<const SpecUtils::Measurement> &m : meass )
+  }//if( !deviation_pairs.empty() )
+
 
   InjectSourceInfo info;
   info.file_base_path = base_name;
@@ -370,9 +405,12 @@ InjectSourceInfo parse_inject_source_files( const string &base_name )
 std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_data_with_truth_info(
                                                                         const std::string &base_dir,
                                                                         const std::vector<std::string> &wanted_detectors,
-                                                                        const std::vector<std::string> &live_times )
+                                                                        const std::vector<std::string> &live_times,
+                                                                        const std::vector<std::string> &wanted_cities )
 {
   vector<DetectorInjectSet> inject_sets;
+
+  std::mutex input_srcs_mutex;
   vector<DataSrcInfo> input_srcs;
   vector<bool> used_detector( wanted_detectors.size(), false ), used_live_times( live_times.size(), false );
 
@@ -412,7 +450,8 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
       const boost::filesystem::path city_path = city_itr->path();
       cout << "In city directory: " << city_path.filename() << endl;
 
-      if( city_path.filename() != "Livermore" )
+      const auto wanted_pos = std::find(begin(wanted_cities), end(wanted_cities), city_path.filename() );
+      if( !wanted_cities.empty() && (wanted_pos == end(wanted_cities)) )
       {
         cout << "Skipping city " << city_itr->path().filename() << endl;
         continue;
@@ -448,6 +487,31 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
         }//if( PeakFitImprove::debug_printout )
 
         //cout << "In livetime: " << livetime_path << endl;
+        const boost::filesystem::path deviation_path = livetime_path / "Deviation.gadras";
+
+        vector<pair<float,float>> deviation_pairs;
+        if( boost::filesystem::is_regular_file(deviation_path) )
+        {
+          const string dev_path_str = deviation_path.string();
+          std::ifstream file( dev_path_str.c_str(), ios::in | ios::binary );
+          assert( file.is_open() );
+          if( !file.is_open() )
+            std::runtime_error( "Error: Could not open file " + dev_path_str );
+          string line;
+          while( SpecUtils::safe_get_line(file, line, 1024) )
+          {
+            SpecUtils::trim(line);
+            if( line.empty() || !isnumber(line[0]) )
+              continue;
+            std::istringstream iss(line);
+            float first, second;
+            if (iss >> first >> second)
+              deviation_pairs.emplace_back(first, second);
+            else
+              throw runtime_error( "Failed to parse Deviation.gadras" );
+          }
+        }//if( boost::filesystem::is_regular_file(deviation_path) )
+
 
         // Now loop over PCF files
         vector<string> files_to_load_basenames;
@@ -479,7 +543,49 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
               //"Ac225_Unsh",
               //"Eu152_Sh",
               //"Fe59_Phant",
-              //"Am241_Unsh"
+              //"Ho166m_Unsh",
+              //"Cs137_Sh",
+              //"Cs137_Unsh",
+              //"I131_Phantom",
+              //"I131_Sh",
+              //"Ir192_Sh",
+              //"Ir192_Unsh",
+              //"Am241_Unsh",
+              //"Br76_Sh",
+              //"Am241_Sh",
+              //"Pd103_Phantom", //I think is working now
+              //"Pd103_Unsh", //Still missing 22 keV peak, but that seems reasonable
+              //"Cd109_Unsh",
+              //"I125", // Has I126 in it as well
+              //"Ac225", //Very poor quality fit,
+              //"Pd103",
+              //"Br76_Unsh",
+              //"Ir192", //missing 63 keV x-ray peak
+              //"Br76", //Just a reminder to adjust if we should "definetly see" low stat peaks in low areas - e.g., 2135.60 keV and 3603.98 keV (but our fit is just fine actually)
+              //"Tl201woTl202", //I think there is actually Tl202 in the spectrum
+              //"Sm153", //seems slightly poor quality fit - not too terrible though
+              //"Np237", 
+              
+              // Below here still not working great
+              //"Pu238_Unsh",
+              //"Pu239_Sh",
+              //"Pu238", //All Pu238 - missing 99 and 786 keV lines
+              //"Pu239", //All Pu239
+              "U235", //missing 98 and 1001 keV
+              "U235_Unsh", //missing 84.2 keV line, that looks like it should be fit
+              "Th232_Unsh", //missing 108.679 keV peak
+              "U235_Unsh_1000", //missing 1001 keV
+              "U235_Unsh_5000", //missing 1001 keV
+              "U235_Unsh_8000", //missing some x-rays
+              "U235_Unsh_6000", //missing the 105 x-ray
+              "I123_Phantom", //missing high energy gammas
+              "U233_Unsh", //SHould really have the 85.4 keV peak
+              "I123_Unsh", // I think the fitting is right, but I guess the missing 27 and 30 keV peaks technically qualify... maybe modify the "def wnated" definition
+              "Ga67_Sh", //Missing 887 keV peak, but this one is really on the edge of expecting it
+              // Should consider better ROI breakup stategy - like if more than X FWHM, then look for somewhere with esssentually zero peak contribution, and creak it there
+              //  Also, if ROIs get broken up, need to re-consider continuum type - see the ~750 keV peaks of "Pu238_Sh"
+              //"U233_Unsh", //The 85 keV x-ray region is probably missing a peak
+              //"K40", //A reminder that we need to implement background subtraction correction...
             };
             bool wanted = wanted_sources.empty();
             for( const string &src : wanted_sources )
@@ -499,7 +605,6 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
         const size_t num_srcs = files_to_load_basenames.size();
 
         inject_sets.push_back( DetectorInjectSet{} );
-
         DetectorInjectSet &injects = inject_sets.back();
         injects.detector_name = detector_path.filename().string();
         injects.location_name = city_path.filename().string();
@@ -513,185 +618,253 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
           InjectSourceInfo *info = &(injects.source_infos[file_index]);
           const string base_name = files_to_load_basenames[file_index];
 
-          pool.post( [info,base_name](){
-            *info = PeakFitImproveData::parse_inject_source_files( base_name );
+          pool.post( [info,base_name,deviation_pairs](){
+            try
+            {
+              *info = PeakFitImproveData::parse_inject_source_files( base_name, deviation_pairs );
+            }catch( std::exception &e )
+            {
+              //Baltimore/1800_seconds/Re188_Sh.pcf doesnt load
+              cerr << "Failed to load file: " << e.what() << endl;
+            }
           } );
         }//for( loop over files to parse )
 
         pool.join();
 
-        // A smoke check to make sure nothing got messed up
+        //injects.source_infos.erase( std::remove_if( begin(injects.source_infos), end(injects.source_infos),
+        // []( const InjectSourceInfo &info ){
+        //  return !info.spec_file;
+        //}), end(injects.source_infos) );
+
+        // A smoke check to make sure nothing got messed up - let 5 files not parse though
         assert( injects.source_infos.size() == num_srcs );
+        size_t num_sucess = 0;
         for( size_t index = 0; index < num_srcs; ++index )
         {
+          if( !injects.source_infos[index].spec_file )
+            continue;
+
           assert( !injects.source_infos[index].source_lines.empty() );
           assert( !injects.source_infos[index].background_lines.empty() );
           assert( injects.source_infos[index].file_base_path == files_to_load_basenames[index] );
           assert( !injects.source_infos[index].src_spectra.empty() );
           assert( injects.source_infos[index].src_spectra[0]->title() == SpecUtils::filename(files_to_load_basenames[index]) );
-        }//for( size_t index = 0; index < injects.source_infos.size(); ++index )
 
-        cout << "Parsed " << injects.source_infos.size() << " sources" << endl;
+          num_sucess += 1;
+        }//for( size_t index = 0; index < injects.source_infos.size(); ++index )
+        assert( (num_sucess + 5) >= num_srcs );
+
+        cout << "Parsed " << num_sucess << " sources" << endl;
       }//for( loop over live-time directories, livetime_itr )
     }//for( loop over cities, city_itr )
   }//for( loop over detector types )
 
-  size_t num_inputs = 0, num_accepted_inputs = 0;
+  std::atomic<size_t> num_inputs = 0, num_accepted_inputs = 0;
+
+  size_t num_queued = 0;
+  SpecUtilsAsync::ThreadPool pool;
   for( const DetectorInjectSet &inject_set : inject_sets )
   {
     for( const InjectSourceInfo &info : inject_set.source_infos )
     {
-      // For the moment, we'll look for visible lines on the first Poisson varied source
-      //cout << "For " << inject_set.detector_name << "/"
-      //<< inject_set.live_time_name << "/" << inject_set.location_name
-      //<< " source " << info.src_name << ": ";
-      //cout << "For '" << info.file_base_path << "':" << endl;
+      const auto create_DataSrcInfo = [&num_inputs, &num_accepted_inputs, &inject_set, &input_srcs_mutex, &input_srcs]( const InjectSourceInfo &info ){
+        // For the moment, we'll look for visible lines on the first Poisson varied source
+        //cout << "For " << inject_set.detector_name << "/"
+        //<< inject_set.live_time_name << "/" << inject_set.location_name
+        //<< " source " << info.src_name << ": ";
+        //cout << "For '" << info.file_base_path << "':" << endl;
 
-      num_inputs += 1;
+        num_inputs += 1;
 
-      // The "truth" lines are all before random-summing, so the observed peaks will be smaller
-      //  in area than the truth CSV says, but if we keep dead-time low, this wont be noticeable.
-      //  Right now have chosen 2%, fairly arbitrarily
-      //  For EX-100
-      //   1%: Lose 14 out of 223 files
-      //   2%: Lose  8 out of 223 files
-      //   5%: Lose  4 out of 223 files
-      //  10%: Lose  4 out of 223 files
+        // The "truth" lines are all before random-summing, so the observed peaks will be smaller
+        //  in area than the truth CSV says, but if we keep dead-time low, this wont be noticeable.
+        //  Right now have chosen 2%, fairly arbitrarily
+        //  For EX-100
+        //   1%: Lose 14 out of 223 files
+        //   2%: Lose  8 out of 223 files
+        //   5%: Lose  4 out of 223 files
+        //  10%: Lose  4 out of 223 files
 
-//#if( !RETURN_PeakDef_Candidates )
+        if( !info.spec_file || !info.src_no_poisson || info.src_spectra.empty() || !info.short_background )
+        {
+          cerr << "load_inject_data_with_truth_info: Skipping '" << info.src_name << "' - as it looks like it didnt read in" << endl;
+          return;
+        }
+
+        //#if( !RETURN_PeakDef_Candidates )
 #if( !WRITE_ALL_SPEC_TO_HTML )
 #warning "Only using <2% dead-time files"
-      if( info.src_no_poisson->live_time() < 0.98*info.src_no_poisson->real_time() )
-      {
-        continue;
-      }
+        if( info.src_no_poisson->live_time() < 0.98*info.src_no_poisson->real_time() )
+        {
+          return;
+        }
 #endif //#if( !WRITE_ALL_SPEC_TO_HTML )
-//#else
-//#warning "Using all Live-Times for peak search"
-//#endif
+        //#else
+        //#warning "Using all Live-Times for peak search"
+        //#endif
 
-      const shared_ptr<const SpecUtils::Measurement> meas = info.src_spectra[0];
-      vector<PeakTruthInfo> lines = info.source_lines;
-      lines.insert( end(lines), begin(info.background_lines), end(info.background_lines) );
+        const shared_ptr<const SpecUtils::Measurement> meas = info.src_spectra[0];
 
-      //for( const PeakTruthInfo &line : lines )
-      //  cout << "Source line: " << line.energy << " keV, area=" << line.area << endl;
+        // Helper lambda to perform clustering on a given set of lines
+        const auto cluster_lines = [&info]( vector<PeakTruthInfo> input_lines ) -> vector<ExpectedPhotopeakInfo> {
+          vector<PeakTruthInfo> lines = input_lines;
 
-      /**
-       - Sort lines from largest area to smallest.
-       - cluster, using `~0.75*FWHM`
-       - See what is hit, and whats not
-       */
+          //for( const PeakTruthInfo &line : lines )
+          //  cout << "Source line: " << line.energy << " keV, area=" << line.area << endl;
 
-      std::sort( begin(lines), end(lines), []( const PeakTruthInfo &lhs, const PeakTruthInfo &rhs ){
-        return (lhs.area < rhs.area);
-      } );
+          /**
+           - Sort lines from largest area to smallest.
+           - cluster, using `~0.75*FWHM`
+           - See what is hit, and whats not
+           */
+
+          std::sort( begin(lines), end(lines), []( const PeakTruthInfo &lhs, const PeakTruthInfo &rhs ){
+            return (lhs.area < rhs.area);
+          } );
 
 
-      const double cluster_fwhm_multiple = 0.5;
-      vector<vector<PeakTruthInfo>> clustered_lines;
-      while( !lines.empty() )
-      {
-        const PeakTruthInfo main_line = std::move( lines.back() );
-        lines.resize( lines.size() - 1 ); //remove the line we just grabbed
-
-        vector<PeakTruthInfo> cluster;
-        cluster.push_back( main_line );
-
-        // Look all through `lines` for lines within `cluster_fwhm_multiple` of main_line
-        deque<size_t> index_to_remove;
-        for( size_t i = 0; i < lines.size(); ++i )
-        {
-          if( fabs(lines[i].energy - main_line.energy) < cluster_fwhm_multiple*main_line.fwhm )
+          const double cluster_fwhm_multiple = 0.5;
+          vector<vector<PeakTruthInfo>> clustered_lines;
+          while( !lines.empty() )
           {
-            index_to_remove.push_back( i );
-            cluster.push_back( lines[i] );
-          }
-        }//for( loop over lines to cluster )
+            const PeakTruthInfo main_line = std::move( lines.back() );
+            lines.resize( lines.size() - 1 ); //remove the line we just grabbed
 
-        for( auto iter = std::rbegin(index_to_remove); iter != std::rend(index_to_remove); ++iter )
+            vector<PeakTruthInfo> cluster;
+            cluster.push_back( main_line );
+
+            // Look all through `lines` for lines within `cluster_fwhm_multiple` of main_line
+            deque<size_t> index_to_remove;
+            for( size_t i = 0; i < lines.size(); ++i )
+            {
+              if( fabs(lines[i].energy - main_line.energy) < cluster_fwhm_multiple*main_line.fwhm )
+              {
+                index_to_remove.push_back( i );
+                cluster.push_back( lines[i] );
+              }
+            }//for( loop over lines to cluster )
+
+            for( auto iter = std::rbegin(index_to_remove); iter != std::rend(index_to_remove); ++iter )
+            {
+              //          cout << "Removing " << *iter << ", which has energy " << lines[*iter].energy
+              //          << ", main line=" << main_line.energy << endl;
+              lines.erase( begin(lines) + (*iter) );
+            }
+
+            clustered_lines.push_back( cluster );
+          }//while( !lines.empty() )
+
+
+
+          vector<ExpectedPhotopeakInfo> detectable_clusters;
+          for( const vector<PeakTruthInfo> &cluster : clustered_lines )
+          {
+
+            assert( !cluster.empty() );
+            if( cluster.empty() )
+              continue;
+
+            const PeakTruthInfo &main_line = cluster.front();
+            if( (main_line.area < 4.0)  // Let be realistic, and require something
+               || (fabs(main_line.energy - 478.0) < 1.2)  // Avoid Alpha-Li reaction
+               || (fabs(main_line.energy - 511.0) < 1.0 ) // Avoid D.B. 511
+               // Shouldn't there be some other broadened reaction lines here???
+               || ((main_line.energy + 0.5*main_line.full_width) > info.src_no_poisson->gamma_energy_max()) // Make sure not off upper-end
+               || ((main_line.energy - 0.5*main_line.full_width) < info.src_no_poisson->gamma_energy_min()) // Make sure not below lower-end
+               || ((main_line.energy - 0.5*main_line.full_width) < 5.0) //eh, kinda arbitrary, maybe shouldnt limit?
+               )
+            {
+              //cout << "Skipping cluster at " << main_line.energy << endl;
+              continue;
+            }
+
+            ExpectedPhotopeakInfo roi_info = PeakFitImproveData::create_expected_photopeak( info, cluster );
+
+            if( (roi_info.peak_area > JudgmentFactors::min_truth_peak_area)
+               && (roi_info.nsigma_over_background > JudgmentFactors::min_truth_nsigma) )
+              detectable_clusters.push_back( std::move(roi_info) );
+            //else
+            //  cout << "Discarding undetectable cluster at " << roi_info.effective_energy << endl;
+          }//for( const vector<PeakTruthInfo> &cluster : clustered_lines )
+
+          std::sort( begin(detectable_clusters), end(detectable_clusters),
+                    []( const ExpectedPhotopeakInfo &lhs, const ExpectedPhotopeakInfo &rhs ) -> bool {
+            return lhs.effective_energy < rhs.effective_energy;
+          } );
+
+          return detectable_clusters;
+        };//cluster_lines lambda
+
+        // Perform clustering 3 separate times:
+        // 1. Combined (source + background) - for backward compatibility
+        vector<PeakTruthInfo> combined_lines = info.source_lines;
+        combined_lines.insert( end(combined_lines), begin(info.background_lines), end(info.background_lines) );
+        vector<ExpectedPhotopeakInfo> combined_detectable_clusters = cluster_lines( combined_lines );
+
+        // 2. Signal only
+        vector<ExpectedPhotopeakInfo> signal_detectable_clusters = cluster_lines( info.source_lines );
+
+        // 3. Background only
+        vector<ExpectedPhotopeakInfo> background_detectable_clusters = cluster_lines( info.background_lines );
+
+        if( PeakFitImprove::debug_printout )
         {
-//          cout << "Removing " << *iter << ", which has energy " << lines[*iter].energy
-//          << ", main line=" << main_line.energy << endl;
-          lines.erase( begin(lines) + (*iter) );
-        }
+          /*
+           for( const ExpectedPhotopeakInfo &roi_info : combined_detectable_clusters )
+           {
+           cout << "Expected ROI: {energy: " << roi_info.effective_energy
+           << ", fwhm: " << roi_info.gamma_lines.front().fwhm
+           << ", PeakArea: " << roi_info.peak_area
+           << ", ContinuumArea: " << roi_info.continuum_area
+           << ", NSigma: " << roi_info.nsigma_over_background
+           << ", ROI: [" << roi_info.roi_lower << ", " << roi_info.roi_upper << "]"
+           << "}"
+           << endl;
 
-        clustered_lines.push_back( cluster );
-      }//while( !lines.empty() )
+           //cout << "cluster: {";
+           //for( const auto &c : cluster )
+           //  cout << "{" << c.energy << "," << c.area << "}, ";
+           //cout << "}" << endl;
+           }//for( const ExpectedPhotopeakInfo &roi_info : combined_detectable_clusters )
+           */
+        }//if( PeakFitImprove::debug_printout )
 
 
+        if( !combined_detectable_clusters.empty() )
+        {
+          num_accepted_inputs += 1;
+          DataSrcInfo src_info;
+          src_info.detector_name = inject_set.detector_name;
+          src_info.location_name = inject_set.location_name;
+          src_info.live_time_name = inject_set.live_time_name;
 
-      vector<ExpectedPhotopeakInfo> detectable_clusters;
-      for( const vector<PeakTruthInfo> &cluster : clustered_lines )
+          src_info.src_info = info;
+          src_info.expected_photopeaks = combined_detectable_clusters;
+          src_info.expected_signal_photopeaks = signal_detectable_clusters;
+          src_info.expected_background_photopeaks = background_detectable_clusters;
+
+          std::lock_guard<std::mutex> lock( input_srcs_mutex );
+
+          input_srcs.push_back( src_info );
+        }//if( !combined_detectable_clusters.empty() )
+      };//create_DataSrcInfo lambda
+
+      num_queued += 1;
+      if( num_queued > 100 )
       {
+        pool.join();
+        num_queued = 0;
+      }
 
-        assert( !cluster.empty() );
-        if( cluster.empty() )
-          continue;
-
-        const PeakTruthInfo &main_line = cluster.front();
-        if( (main_line.area < 5.0)  // Let be realistic, and require something
-           || (fabs(main_line.energy - 478.0) < 1.2)  // Avoid Alpha-Li reaction
-           || (fabs(main_line.energy - 511.0) < 1.0 ) // Avoid D.B. 511
-              // Shouldn't there be some other broadened reaction lines here???
-           || ((main_line.energy + 0.5*main_line.full_width) > info.src_no_poisson->gamma_energy_max()) // Make sure not off upper-end
-           || ((main_line.energy - 0.5*main_line.full_width) < info.src_no_poisson->gamma_energy_min()) // Make sure not below lower-end
-           || ((main_line.energy - 0.5*main_line.full_width) < 50.0) //eh, kinda arbitrary, maybe shouldnt limit?
-           )
-        {
-          continue;
-        }
-
-        ExpectedPhotopeakInfo roi_info = PeakFitImproveData::create_expected_photopeak( info, cluster );
-
-        if( (roi_info.peak_area > JudgmentFactors::min_truth_peak_area)
-           && (roi_info.nsigma_over_background > JudgmentFactors::min_truth_nsigma) )
-          detectable_clusters.push_back( std::move(roi_info) );
-      }//for( const vector<PeakTruthInfo> &cluster : clustered_lines )
-
-      std::sort( begin(detectable_clusters), end(detectable_clusters),
-                []( const ExpectedPhotopeakInfo &lhs, const ExpectedPhotopeakInfo &rhs ) -> bool {
-        return lhs.effective_energy < rhs.effective_energy;
+      pool.post( [&](){
+        create_DataSrcInfo( info );
       } );
-
-      if( PeakFitImprove::debug_printout )
-      {
-        /*
-        for( const ExpectedPhotopeakInfo &roi_info : detectable_clusters )
-        {
-          cout << "Expected ROI: {energy: " << roi_info.effective_energy
-          << ", fwhm: " << roi_info.gamma_lines.front().fwhm
-          << ", PeakArea: " << roi_info.peak_area
-          << ", ContinuumArea: " << roi_info.continuum_area
-          << ", NSigma: " << roi_info.nsigma_over_background
-          << ", ROI: [" << roi_info.roi_lower << ", " << roi_info.roi_upper << "]"
-          << "}"
-          << endl;
-
-          //cout << "cluster: {";
-          //for( const auto &c : cluster )
-          //  cout << "{" << c.energy << "," << c.area << "}, ";
-          //cout << "}" << endl;
-        }//for( const ExpectedPhotopeakInfo &roi_info : detectable_clusters )
-         */
-      }//if( PeakFitImprove::debug_printout )
-
-
-      if( !detectable_clusters.empty() )
-      {
-        num_accepted_inputs += 1;
-        DataSrcInfo src_info;
-        src_info.detector_name = inject_set.detector_name;
-        src_info.location_name = inject_set.location_name;
-        src_info.live_time_name = inject_set.live_time_name;
-
-        src_info.src_info = info;
-        src_info.expected_photopeaks = detectable_clusters;
-
-        input_srcs.push_back( src_info );
-      }//if( !detectable_clusters.empty() )
-    }//for( const InjectSourceInfo &src : source_infos )
+    }//for( const InjectSourceInfo &info : source_infos )
   }//for( const DetectorInjectSet &inject_set : inject_sets )
+
+  pool.join();
+
 
   for( size_t i = 0; i < wanted_detectors.size(); ++i )
   {
@@ -711,7 +884,9 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
     }
   }
 
-  cout << "Used " << num_accepted_inputs << " of total " << num_inputs << " input files." << endl;
+  cout << "Used " << num_accepted_inputs.load() << " of total " << num_inputs.load() << " input files." << endl;
+
+  std::lock_guard<std::mutex> lock( input_srcs_mutex ); //dont really need, I dont think
 
   return tuple<vector<DetectorInjectSet>,vector<DataSrcInfo>>{ std::move(inject_sets), std::move(input_srcs) };
 }//std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_data_with_truth_info( )

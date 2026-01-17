@@ -193,6 +193,26 @@
     bottom: 0px;
 }
 
+.RefGammaBottomRow {
+  position: relative;
+  height: 18px;
+}
+
+.RefGammaBottomRow .RefGammaFitSources.LightButton {
+  position: absolute;
+  left: 50%;
+  bottom: 0px;
+  transform: translateX(-50%);
+  
+  height: 18px;
+  font-size: 10px;
+}
+
+.RefGammaBottomRow .RefGammaFitSources button.Wt-btn.LightButton {
+  height: 18px;
+  font-size: 10px;
+}
+
 .RefGammaCsv
 {
   position: absolute;
@@ -208,4 +228,41 @@
 .RefLineVerbosityCombo
 {
   margin-top: 2px;
+}
+
+.simple-dialog.FitSourcesResultDialog
+{
+  max-width: 85vw;
+}
+
+.simple-dialog.FitSourcesResultDialog .body.NonSpecDialogBody
+{
+  padding-bottom: 8px;
+  overflow-y: visible;
+}
+
+.simple-dialog.FitSourcesResultDialog .FitSourcesResultContents
+{
+  overflow-y: visible;
+  max-height: none;
+}
+
+.FitSourcesSummary
+{
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+
+.rpd-fit-sources-warnings-header
+{
+  font-weight: bold;
+  margin-top: 8px;
+  margin-bottom: 4px;
+}
+
+.rpd-fit-sources-warning
+{
+  margin-left: 12px;
+  margin-bottom: 2px;
+  font-size: 0.9em;
 }

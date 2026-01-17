@@ -32,6 +32,17 @@
   <message id="Detector">探测器</message>
   <message id="Distance">距离</message>
   <message id="Activity">活度</message>
+  <message id="nuclide-label">核素:</message>
+  <message id="age-label">年龄:</message>
+  <message id="distance-label">距离:</message>
+  <message id="activity-label">活度:</message>
+  <message id="dose-label">剂量:</message>
+  <message id="shielding-label">屏蔽:</message>
+  <message id="detector-label">探测器:</message>
+  <message id="energy-label">能量:</message>
+  <message id="foreground-label">前景:</message>
+  <message id="background-label">背景:</message>
+  <message id="secondary-label">次要:</message>
   <message id="Remark">备注</message>
   <message id="Tap">轻触</message>
   <message id="Click">点击</message>
@@ -347,6 +358,7 @@
   <message id="app-mi-help-pref-show-tt">显示工具提示</message>
   <message id="app-mi-help-pref-prop-peak">询问传播峰</message>
   <message id="app-mi-help-pref-preserve-ene-cal">询问保留能量校准。</message>
+  <message id="app-mi-help-pref-auto-accept-fit-sources">自动接受拟合结果</message>
   <message id="app-mi-help-pref-disp-bq">以贝克勒尔显示</message>
   <message id="app-mi-help-pref-def-drfs">使用默认DRF</message>
   <message id="app-mi-help-pref-desktop">桌面界面</message>
@@ -376,6 +388,7 @@
     校准与旧文件不同时，询问是否应将旧文件的能量校准
     应用于新文件。
   </message>
+  <message id="app-mi-tt-help-pref-auto-accept-fit-sources">从参考光峰线拟合峰时，自动添加拟合的峰而不显示确认对话框。</message>
   <message id="app-mi-tt-help-pref-disp-bq">以贝克勒尔而不是居里显示活度。</message>
   <message id="app-mi-tt-help-def-drfs">加载谱时，如果您先前没有
     将探测器响应函数与

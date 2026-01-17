@@ -31,4 +31,5 @@
   <message id="pid-csv-copy-full">Копировать полный CSV пиков</message>
   <message id="pid-csv-copy-no-hdr">Копировать без заголовков</message>
   <message id="pid-csv-copy-compact">Копировать инф. о фитинге пиков</message>
+  <message id="pid-peak-label">Пик: </message>
 </messages>

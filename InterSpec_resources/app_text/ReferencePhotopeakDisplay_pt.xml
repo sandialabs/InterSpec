@@ -85,5 +85,30 @@
   <message id="rpd-tbl-hdr-tt-type">O tipo de partícula produzida</message>
   <message id="rpd-tbl-hdr-tt-"></message>
 
+  <!-- Fit Sources (peak fitting from displayed reference lines) -->
+  <message id="rpd-fit-source">Ajustar Fonte</message>
+  <message id="rpd-fit-sources">Ajustar Fontes</message>
+  <message id="rpd-fit-sources-menu-auto">Automático</message>
+  <message id="rpd-fit-sources-menu-advanced">Avançado</message>
+  
+  <message id="rpd-fit-sources-adv-title">Ajustar Fontes (Avançado)</message>
+  <message id="rpd-fit-sources-adv-content">Opções avançadas não implementadas</message>
+  <message id="rpd-fit-peaks">Ajustar Picos</message>
+  
+  <message id="rpd-fit-sources-no-data">Não há espectro de primeiro plano para ajustar picos.</message>
+  <message id="rpd-fit-sources-wait-title">Ajustando picos</message>
+  <message id="rpd-fit-sources-wait-content">Isso pode levar um minuto. Você pode continuar usando o aplicativo.</message>
+  <message id="rpd-fit-sources-stale">O espectro mudou antes que o ajuste fosse concluído; descartando resultados.</message>
+  
+  <message id="rpd-fit-sources-error-title">Ajuste falhou</message>
+  <message id="rpd-fit-sources-error-content">Erro: {1}</message>
+  
+  <message id="rpd-fit-sources-result-title">Resultados do ajuste</message>
+  <message id="rpd-fit-sources-no-peaks">Nenhum pico foi ajustado para a(s) fonte(s) selecionada(s).</message>
+  <message id="rpd-fit-sources-summary">Ajustados {1} pico(s) para {2} fonte(s).</message>
+  <message id="rpd-fit-sources-warnings-header">Avisos:</message>
+  <message id="rpd-fit-sources-auto-accept">Aceitar automaticamente resultados de ajuste</message>
+  <message id="rpd-fit-sources-auto-accepted">Os resultados do ajuste foram automaticamente aceitos.</message>
+
 
 </messages>

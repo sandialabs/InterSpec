@@ -162,8 +162,6 @@ public:
   
   virtual ~DetectionLimitTool();
   
-  void do_development();
-  
   void setRefLinesAndGetLineInfo();
   
   void scheduleCalcUpdate();

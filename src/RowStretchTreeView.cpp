@@ -367,3 +367,216 @@ void RowStretchTreeView::layoutSizeChanged( int width, int height )
       WTreeView::setColumnWidth( col, WLength(w,WLength::Pixel) );
   }
 }//void layoutSizeChanged (const int width, const int height)
+
+
+void RowStretchTreeView::selectRange( const Wt::WModelIndex &first, const Wt::WModelIndex &last )
+{
+  // Override of Wt::WTreeView::selectRange to fix an infinite loop bug in the original Wt 3.7.1
+  // implementation. The original algorithm has no termination condition when backtracking past
+  // the root of the tree - when the selection range ends at the last visible item, it would
+  // wrap around to the first item and loop forever.
+  //
+  // We use WAbstractItemView::select() instead of internalSelect() since internalSelect is not
+  // accessible. We block the selectionChanged() signal during batch selection.
+
+  struct SignalBlocker
+  {
+    Wt::Signal<> &m_signal;
+    const bool m_was_blocked;
+    SignalBlocker( Wt::Signal<> &ref )
+      : m_signal( ref ), m_was_blocked( ref.isBlocked() ){ m_signal.setBlocked( true ); }
+    ~SignalBlocker(){ m_signal.setBlocked( m_was_blocked ); }
+  };//struct SignalBlocker
+
+  SignalBlocker blocker( selectionChanged() );
+
+  // Helper to promote a child index to its parent if the parent is collapsed.
+  // This ensures we use visible row positions for range endpoints when children
+  // of a collapsed node are selected (e.g., user selects samples, then collapses file).
+  auto promoteToVisibleAncestor = [this]( const WModelIndex &idx ) -> WModelIndex {
+    if( !idx.isValid() )
+      return idx;
+
+    WModelIndex current = idx;
+
+    // Walk up the parent chain, checking if any ancestor is collapsed
+    while( current.parent().isValid() )
+    {
+      const WModelIndex parentCol0 = model()->index( current.parent().row(), 0, current.parent().parent() );
+      if( !isExpanded( parentCol0 ) )
+        current = current.parent(); // Parent is collapsed - promote to parent level
+      else
+        break; // Parent is expanded - this level is visible
+    }//
+
+    return current;
+  };//promoteToVisibleAncestor lambda
+
+  // Promote endpoints to visible ancestors if they're children of collapsed nodes
+  const WModelIndex visibleFirst = promoteToVisibleAncestor( first );
+  const WModelIndex visibleLast = promoteToVisibleAncestor( last );
+
+  // Helper to compare indices in tree traversal order.
+  // Returns true if 'a' comes before 'b' in depth-first traversal.
+  auto indexComesBefore = []( const WModelIndex &a, const WModelIndex &b ) -> bool {
+    if( !a.isValid() || !b.isValid() )
+      return a.isValid(); // valid comes before invalid
+
+    // Build ancestor chains (from index up to root)
+    std::vector<WModelIndex> chainA, chainB;
+    for( WModelIndex idx = a; idx.isValid(); idx = idx.parent() )
+      chainA.push_back( idx );
+    for( WModelIndex idx = b; idx.isValid(); idx = idx.parent() )
+      chainB.push_back( idx );
+
+    // Compare from root down (reverse order since we built bottom-up)
+    const size_t minDepth = std::min( chainA.size(), chainB.size() );
+    for( size_t i = 0; i < minDepth; ++i )
+    {
+      const WModelIndex &idxA = chainA[chainA.size() - 1 - i];
+      const WModelIndex &idxB = chainB[chainB.size() - 1 - i];
+
+      if( idxA.row() != idxB.row() )
+        return idxA.row() < idxB.row();
+      // Same row at this level - if same parent, compare columns
+      if( idxA.column() != idxB.column() )
+        return idxA.column() < idxB.column();
+    }
+
+    // One is ancestor of the other - the shorter chain (ancestor) comes first
+    return chainA.size() < chainB.size();
+  };
+
+  // Ensure we traverse from earlier to later in tree order (using visible endpoints)
+  const WModelIndex &startIdx = indexComesBefore( visibleFirst, visibleLast ) ? visibleFirst : visibleLast;
+  const WModelIndex &endIdx = indexComesBefore( visibleFirst, visibleLast ) ? visibleLast : visibleFirst;
+
+  // Determine column range - handle case where first and last columns may be in either order
+  const int minCol = std::min( visibleFirst.column(), visibleLast.column() );
+  const int maxCol = std::max( visibleFirst.column(), visibleLast.column() );
+
+  // Safety limit to prevent infinite loops from model inconsistencies
+  const int maxIterations = 10000;
+  int iterations = 0;
+
+  WModelIndex index = startIdx;
+
+  // Helper to check if two indices refer to the same tree position
+  // (maybe a bit overkill over operator==, )
+  auto sameTreePosition = []( const WModelIndex &a, const WModelIndex &b ) -> bool {
+    if( a.row() != b.row() )
+      return false;
+
+    // Compare full parent chains for arbitrary tree depth
+    WModelIndex pa = a.parent();
+    WModelIndex pb = b.parent();
+
+    while( pa.isValid() && pb.isValid() )
+    {
+      if( pa.row() != pb.row() )
+        return false;
+      pa = pa.parent();
+      pb = pb.parent();
+    }
+
+    // Both should be invalid (reached root) at the same time for same position
+    return !pa.isValid() && !pb.isValid();
+  };
+
+  while( iterations++ < maxIterations )
+  {
+    // Check if we've reached the target row before selecting
+    const bool atLastRow = sameTreePosition( index, endIdx );
+
+    // Select all columns in current row
+    for( int c = minCol; c <= maxCol; ++c )
+    {
+      const WModelIndex ic = model()->index( index.row(), c, index.parent() );
+      if( !ic.isValid() )
+        continue;
+
+      WAbstractItemView::select( ic, Select );
+
+      // Check both exact match and position match (in case indices differ in representation)
+      if( ic == endIdx || sameTreePosition( ic, endIdx ) )
+        return;
+    }//for( int c = minCol; c <= maxCol; ++c )
+
+    // If we were at the last row but didn't find exact match, we're done
+    if( atLastRow )
+      return;
+
+    // Additional safety: check if we're at or past the target row (ignoring column)
+    // This catches cases where position comparison fails due to index representation differences
+    {
+      const bool indexParentValid = index.parent().isValid();
+      const bool endParentValid = endIdx.parent().isValid();
+
+      if( indexParentValid == endParentValid )
+      {
+        if( !indexParentValid )
+        {
+          // Both root level - compare rows directly
+          if( index.row() >= endIdx.row() )
+            return;
+        }else
+        {
+          // Both children - compare parent rows, then child rows
+          const int indexParentRow = index.parent().row();
+          const int endParentRow = endIdx.parent().row();
+          if( indexParentRow > endParentRow )
+            return;
+          if( (indexParentRow == endParentRow) && (index.row() >= endIdx.row()) )
+            return;
+        }//if( !indexParentValid ) / else
+      }else if( indexParentValid && !endParentValid )
+      {
+        // index is a child, endIdx is root - index comes after if parent row >= endIdx row
+        if( index.parent().row() >= endIdx.row() )
+          return;
+      }
+      // If index is root and endIdx is child, index always comes before (no action needed)
+    }
+
+    // Try to descend into expanded children
+    const WModelIndex indexc0 = (index.column() == 0)
+                                ? index
+                                : model()->index( index.row(), 0, index.parent() );
+
+    if( isExpanded( indexc0 ) && model()->hasChildren( indexc0 ) )
+    {
+      index = model()->index( 0, minCol, indexc0 );
+      if( index.isValid() )
+        continue;
+    }
+
+    // Find next row: try siblings, then backtrack to parent's sibling
+    bool foundNext = false;
+    WModelIndex current = index;
+
+    while( !foundNext )
+    {
+      const WModelIndex parent = current.parent();
+      const int nextRow = current.row() + 1;
+
+      if( nextRow < model()->rowCount( parent ) )
+      {
+        index = model()->index( nextRow, minCol, parent ); // Found a next sibling
+        foundNext = true;
+      }else if( parent.isValid() )
+      {
+        current = parent; // Backtrack to parent level
+      }
+      else
+      {
+        // Reached root with no more items - we're done
+        return;
+      }
+    }//while( !foundNext )
+  }//while( iterations++ < maxIterations )
+
+  // If we hit max iterations, log a warning (developer check)
+#if( PERFORM_DEVELOPER_CHECKS )
+  log_developer_error( __func__, "selectRange hit max iteration limit - possible model issue" );
+#endif
+}//void selectRange( const Wt::WModelIndex &first, const Wt::WModelIndex &last )

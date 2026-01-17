@@ -85,5 +85,30 @@
   <message id="rpd-tbl-hdr-tt-type">A termelt részecske típusa</message>
   <message id="rpd-tbl-hdr-tt-"></message>
 
+  <!-- Fit Sources (peak fitting from displayed reference lines) -->
+  <message id="rpd-fit-source">Forrás Illesztése</message>
+  <message id="rpd-fit-sources">Források Illesztése</message>
+  <message id="rpd-fit-sources-menu-auto">Automatikus</message>
+  <message id="rpd-fit-sources-menu-advanced">Haladó</message>
+  
+  <message id="rpd-fit-sources-adv-title">Források Illesztése (Haladó)</message>
+  <message id="rpd-fit-sources-adv-content">A haladó opciók nincsenek implementálva</message>
+  <message id="rpd-fit-peaks">Csúcsok Illesztése</message>
+  
+  <message id="rpd-fit-sources-no-data">Nincs előtér spektrum a csúcsok illesztéséhez.</message>
+  <message id="rpd-fit-sources-wait-title">Csúcsok illesztése</message>
+  <message id="rpd-fit-sources-wait-content">Ez eltarthat egy percig. Folytathatja az alkalmazás használatát.</message>
+  <message id="rpd-fit-sources-stale">A spektrum megváltozott az illesztés befejezése előtt; az eredmények elvetése.</message>
+  
+  <message id="rpd-fit-sources-error-title">Az illesztés sikertelen</message>
+  <message id="rpd-fit-sources-error-content">Hiba: {1}</message>
+  
+  <message id="rpd-fit-sources-result-title">Illesztési eredmények</message>
+  <message id="rpd-fit-sources-no-peaks">Nem illesztettek csúcsokat a kiválasztott forrás(ok)hoz.</message>
+  <message id="rpd-fit-sources-summary">{1} csúcs illesztve {2} forráshoz.</message>
+  <message id="rpd-fit-sources-warnings-header">Figyelmeztetések:</message>
+  <message id="rpd-fit-sources-auto-accept">Illesztési eredmények automatikus elfogadása</message>
+  <message id="rpd-fit-sources-auto-accepted">Az illesztési eredményeket automatikusan elfogadták.</message>
+
 
 </messages>

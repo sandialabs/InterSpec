@@ -10,6 +10,7 @@
   <message id="dls-roi-upper-label">ROI Superior:</message>
   <message id="dls-num-side-channel-label">Núm. Canais Lat.:</message>
   <message id="dls-fwhm-label">FWHM:</message>
+  <message id="dls-gamma-label">Gama:</message>
   <message id="dls-decon-cont-norm-label">Norm. Cont.:</message>
   <message id="dls-is-background-spectrum-cb">Espectro de fundo</message>
   <message id="dls-is-background-spectrum-tt">

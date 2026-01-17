@@ -83,5 +83,30 @@
   <message id="rpd-tbl-hdr-tt-type">उत्पादित कण का प्रकार</message>
   <message id="rpd-tbl-hdr-tt-"></message>
 
+  <!-- Fit Sources (peak fitting from displayed reference lines) -->
+  <message id="rpd-fit-source">स्रोत फिट करें</message>
+  <message id="rpd-fit-sources">स्रोत फिट करें</message>
+  <message id="rpd-fit-sources-menu-auto">स्वचालित</message>
+  <message id="rpd-fit-sources-menu-advanced">उन्नत</message>
+  
+  <message id="rpd-fit-sources-adv-title">स्रोत फिट करें (उन्नत)</message>
+  <message id="rpd-fit-sources-adv-content">उन्नत विकल्प लागू नहीं किए गए</message>
+  <message id="rpd-fit-peaks">शिखर फिट करें</message>
+  
+  <message id="rpd-fit-sources-no-data">शिखर फिट करने के लिए कोई फोरग्राउंड स्पेक्ट्रम नहीं है।</message>
+  <message id="rpd-fit-sources-wait-title">शिखर फिट किया जा रहा है</message>
+  <message id="rpd-fit-sources-wait-content">इसमें एक मिनट लग सकता है। आप एप्लिकेशन का उपयोग जारी रख सकते हैं।</message>
+  <message id="rpd-fit-sources-stale">फिट पूरा होने से पहले स्पेक्ट्रम बदल गया; परिणाम हटाए जा रहे हैं।</message>
+  
+  <message id="rpd-fit-sources-error-title">फिट विफल</message>
+  <message id="rpd-fit-sources-error-content">त्रुटि: {1}</message>
+  
+  <message id="rpd-fit-sources-result-title">फिट परिणाम</message>
+  <message id="rpd-fit-sources-no-peaks">चयनित स्रोत(ों) के लिए कोई शिखर फिट नहीं किया गया।</message>
+  <message id="rpd-fit-sources-summary">{2} स्रोत(ों) के लिए {1} शिखर फिट किए गए।</message>
+  <message id="rpd-fit-sources-warnings-header">चेतावनियाँ:</message>
+  <message id="rpd-fit-sources-auto-accept">फिट परिणाम स्वचालित रूप से स्वीकार करें</message>
+  <message id="rpd-fit-sources-auto-accepted">फिट परिणाम स्वचालित रूप से स्वीकार किए गए।</message>
+
 
 </messages>

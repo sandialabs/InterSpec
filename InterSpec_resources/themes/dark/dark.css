@@ -1,18 +1,18 @@
 .Wt-domRoot, .dialog-layout, .Wt-panel .body, textarea {
-  background: rgb(44,45,48) !important; 
-  color: white;
+  background: var(--interspec-background-color, rgb(44,45,48)) !important;
+  color: var(--interspec-text-color, white);
 }
 
 /* On Safari if we out .Wt-domRoot:fullscreen in with the list of the above, it makes the statement
  fail for some reason, so we'll keep it separate, even though the contents are identical to above.
  */
 .Wt-domRoot:fullscreen {
-  background: rgb(44,45,48) !important;
-  color: white;
+  background: var(--interspec-background-color, rgb(44,45,48)) !important;
+  color: var(--interspec-text-color, white);
 }
 
 h1 {
-  color: white;
+  color: var(--interspec-text-color, white);
 }
 
 select {
@@ -20,11 +20,7 @@ select {
   background: rgb(86,88,90) !important;
 }
 
-.Wt-btn { 
-  background-color: rgb(86,88,90); 
-  border-color: rgb(106,107,109); 
-  color: rgb(230,230,230); 
-}
+/* .Wt-btn styling now handled by CSS variables in InterSpec.css */
 
 button[disabled] {
   color: rgb(160,160,160); 
@@ -34,22 +30,16 @@ button[disabled] {
   filter: grayscale(0%);
 }
 
-button.Wt-btn.with-label.LightButton,
-  button.Wt-btn.dropdown-toggle,
-  .btn-group.LightButton
-{
-  border-color: rgb(106,107,109);
-  color: rgb(18,101,200);
-}
+/* LightButton link color now handled by --interspec-link-color CSS variable */
 
 /* The `:not(.pm-textarea)` below is so this styling wont apply to text annotaions on the Leaflet maps. */
-input[type="text"], input[type="number"], numbertextarea, textarea :not(.pm-textarea) {
-  background-color: rgb(59,60,63) !important; 
+input[type="text"], input[type="number"], textarea :not(.pm-textarea) {
+  background-color: var(--interspec-input-background, rgb(59,60,63)) !important; 
   border-top: solid 1px rgb(61,62,64) !important; 
   border-left: none !important; 
   border-right: none !important; 
   border-bottom: solid 1px rgb(75,76,78) !important; 
-  color: white;
+  color: var(--interspec-text-color, white);
 }
 
 
@@ -63,12 +53,7 @@ input[type="text"], input[type="number"], numbertextarea, textarea :not(.pm-text
   color: white;
 }
 
-a, .InfoLink {
-  color: rgb(18,101,200);
-}
-a:hover, .InfoLink:hover {
-  color: rgb(99, 161, 236);
-}
+/* Link colors now handled by --interspec-link-color CSS variable */
 
 .InfoLink, .InfoLink:hover {
   border: none;
@@ -131,23 +116,7 @@ ul.Wt-popupmenu > li.Wt-disabled > a > span > span {
 
 
 
-/* Still need work to make the lines of the tabs work out*/
-.Wt-tabs {
-  border-bottom: 1px solid rgb(136, 136, 136);
-}
-
-.Wt-tabs .itemselected a, .Wt-tabs .itemselected a:hover {
-  border-color: rgb(136, 136, 136) rgb(136, 136, 136) rgb(44,45,48) rgb(136, 136, 136);
-}
-
-.Wt-popup .Wt-tabs .itemselected a, .Wt-tabs .itemselected a:hover {
-  /* Fix for the white-line when in a AuxWindow */
-  border-color: rgb(136, 136, 136) rgb(136, 136, 136) rgb(44,45,48) rgb(136, 136, 136);
-}
-
-.Wt-tabs a {
-  color: rgb(197,198,201); 
-}
+/* Tab borders and secondary text colors now handled by CSS variables */
 
 
 
@@ -167,9 +136,7 @@ ul.Wt-tv-root > li:nth-child(odd) {
   color: white;
 }
 
-.Wt-label{
-  color: rgb(197,198,201);
-}
+/* .Wt-label and secondary text colors now handled by --interspec-secondary-text-color CSS variable */
 
 .Wt-itemview .Wt-headerdiv, .Wt-itemview .Wt-headerdiv .Wt-tv-rowc, .Wt-itemview th, .DevPairTitle, .CalDisplay .CalType, .DetHdr, .ReferencePhotopeakDisplay .OtherNucs .OtherNucTypeHeader {
   background-color: rgb( 80, 81, 94 );
@@ -204,23 +171,13 @@ ul.HeavyNavMenu > li.item:hover  {
 
 
 .DetectorDisplay{
-  background: rgb(70,70,77); 
-  border-color: rgb(136, 136, 136);
+  background: rgb(70,70,77);
+  /* border-color now handled by --interspec-border-color CSS variable */
 }
 
-.ShieldingSelect {
-  border-width: 1px;
-  border-style: solid;
-  border-color: rgb(136, 136, 136);
-}
+/* ShieldingSelect and ToolTabSection border-color now handled by CSS variables */
 
-.ToolTabSection {
-    border-color: rgb(136, 136, 136);
-}
-
-.DevPairTitle, .DevPairEnergyHeader, .DevPairOffsetHeader, .ReferencePhotopeakDisplay .OtherNucs .OtherNucTypeHeader {
-  color: rgb(197,198,201);
-}
+/* DevPairTitle and related secondary text colors now handled by --interspec-secondary-text-color CSS variable */
 
 .LinkBtn {
   color: black;

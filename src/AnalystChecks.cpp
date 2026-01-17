@@ -350,8 +350,9 @@ namespace AnalystChecks
     assert( meas_peaks );
     if( !meas_peaks )
       throw runtime_error( "Unexpected error getting existing peak list" );
-    
-    
+
+    shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_search_peaks = meas->automatedSearchPeaks(sample_nums);
+
     const bool isHPGe = PeakFitUtils::is_likely_high_res( interspec );
     
     vector<shared_ptr<const PeakDef>> origPeaks;
@@ -367,8 +368,8 @@ namespace AnalystChecks
     
     double pixelPerKev = -1.0; //This triggers an "automed" peak fit, which has higher thresholds for keeping peak.
     pair<vector<shared_ptr<const PeakDef>>, vector<shared_ptr<const PeakDef>>> foundPeaks;
-    foundPeaks = searchForPeakFromUser( options.energy, pixelPerKev, data, origPeaks, det, isHPGe );
-    
+    foundPeaks = searchForPeakFromUser( options.energy, pixelPerKev, data, origPeaks, det, auto_search_peaks, isHPGe );
+
     vector<shared_ptr<const PeakDef>> &peaks_to_add_in = foundPeaks.first;
     const vector<shared_ptr<const PeakDef>> &peaks_to_remove = foundPeaks.second;
     
@@ -889,6 +890,7 @@ namespace AnalystChecks
   
   FitPeaksForNuclideStatus fit_peaks_for_nuclides( const FitPeaksForNuclideOptions &options, InterSpec *interspec )
   {
+    // NOTE: this function will eventually be replaced or powered by FitPeaksForNuclideDev::fit_peaks_for_nuclides(...)
     // TODO: This function tries a few different RelActAuto configuration, and chooses the one with the best Chi2. It should actually be Chi2/DOF, and then maybe also take into account what peaks are chosen
     // TODO: The order of Ln(x) equation used should be based on how many peaks, and the energy range - should do something more inteligently
     // TODO: Should split range up - e.g. above and below 120 keV, if nuclide has peaks on both sides

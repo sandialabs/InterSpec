@@ -220,6 +220,7 @@ void RefLineDynamic::start_init_always_sources()
     // TODO: move this to being done in a background thread
     m_has_inited = true;
     
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
     string always_defs_file;
     
     try
@@ -232,6 +233,9 @@ void RefLineDynamic::start_init_always_sources()
     
     if( always_defs_file.empty() || !SpecUtils::is_file(always_defs_file) )
       always_defs_file = SpecUtils::append_path(InterSpec::staticDataDirectory(), "dynamic_ref_lines.xml");
+#else
+    const string always_defs_file = SpecUtils::append_path(InterSpec::staticDataDirectory(), "dynamic_ref_lines.xml");
+#endif
     
     map<string,ReferenceLinePredef::NucMix> nuc_mixes;
     map<string,ReferenceLinePredef::CustomSrcLines> custom_lines;

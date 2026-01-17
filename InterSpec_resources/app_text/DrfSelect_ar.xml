@@ -54,6 +54,10 @@
   <message id="ds-manual-det-desc">كفاءة الكاشف محددة بصيغة رياضية، بإعطاء الطاقة x؛
      أو يمكنك إدخال المعاملات لشكل المعادلة القياسية. انقر على أيقونة علامة الاستفهام للمزيد من المعلومات.
   </message>
+  <message id="ds-manual-det-desc-label">كفاءة الكاشف محددة بصيغة رياضية، بإعطاء الطاقة x؛
+     أو يمكنك إدخال المعاملات لشكل المعادلة القياسية. انقر على أيقونة علامة الاستفهام للمزيد من المعلومات.:</message>
+  <message id="ds-description-label">الوصف:</message>
+  <message id="ds-name-label">الاسم:</message>
   <message id="ds-manual-det-name-label">اسم الكاشف </message>
   <message id="ds-manual-det-name-empty-txt">اسم كاشف فريد</message>
   <message id="ds-manual-function-label">الكفاءة f(x) = </message>

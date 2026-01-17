@@ -50,4 +50,5 @@
   <message id='cfm-tt-swap-back-with-foreground-btn'>Поменять местами основной и фоновый спектры</message>
   <message id='cfm-swap-secondary-with-foreground-btn'>основной↔вторичный</message>
   <message id='cfm-tt-swap-secondary-with-foreground-btn'>Поменять местами основной и вторичный спектры</message>
+  <message id='cfm-title-with-name'>Название: {1}</message>
 </messages>

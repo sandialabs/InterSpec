@@ -330,6 +330,7 @@ set(sources
     src/EnergyCalAddActions.cpp
     src/EnergyCalPreserveWindow.cpp
     src/EnergyCalMultiFile.cpp
+    src/FitPeaksForNuclides.cpp
     src/SimpleDialog.cpp
     src/FeatureMarkerWidget.cpp
     src/ShowRiidInstrumentsAna.cpp
@@ -450,6 +451,7 @@ set(headers
     InterSpec/EnergyCalAddActions.h
     InterSpec/EnergyCalPreserveWindow.h
     InterSpec/EnergyCalMultiFile.h
+    InterSpec/FitPeaksForNuclides.h
     InterSpec/SimpleDialog.h
     InterSpec/FeatureMarkerWidget.h
     InterSpec/ShowRiidInstrumentsAna.h
@@ -759,27 +761,6 @@ if(WIN32)
   endif()
 endif(WIN32)
 
-target_link_libraries(
-    InterSpecLib
-    PUBLIC
-    Threads::Threads
-    SpecUtils
-    SandiaDecay
-    Minuit2::Minuit2
-    Cuba-3.0
-    muparserx
-    Boost::thread
-    Boost::date_time
-    Boost::system
-    Boost::filesystem
-    Boost::program_options
-    Boost::regex
-    Boost::random
-    ZLIB::ZLIB
-    Eigen3::Eigen
-    Ceres::ceres
-    ${CMAKE_DL_LIBS}
-)
 
 if( USE_SPECRUM_FILE_QUERY_WIDGET )
     add_subdirectory(external_libs/pugixml-1.9)
@@ -853,6 +834,29 @@ else(WIN32)
   target_link_libraries(InterSpecLib PUBLIC ${Wt_LIBRARY} ${Wt_DBO_LIBRARY} ${Wt_DBOSQLITE3_LIBRARY} )
 endif(WIN32)
 
+
+
+target_link_libraries(
+    InterSpecLib
+    PUBLIC
+    Threads::Threads
+    SpecUtils
+    SandiaDecay
+    Minuit2::Minuit2
+    Cuba-3.0
+    muparserx
+    Boost::thread
+    Boost::date_time
+    Boost::system
+    Boost::filesystem
+    Boost::program_options
+    Boost::regex
+    Boost::random
+    ZLIB::ZLIB
+    Eigen3::Eigen
+    Ceres::ceres
+    ${CMAKE_DL_LIBS}
+)
 
 
 if( BUILD_AS_OSX_APP )

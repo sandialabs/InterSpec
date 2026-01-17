@@ -25,6 +25,7 @@
     источники в центре.
   </message>
   <message id="ssd-add-shield-label">Добавить экранирование:</message>
+  <message id="ssd-geometry-label">Геометрия:</message>
   <message id="ssd-tt-add-shield">Выберите из библиотеки предопределённых распространённых материалов экранирования.</message>
   <message id="ssd-generic-btn">Общий</message>
   <message id="ssd-tt-generic">Позволяет определить и подогнать атомный номер и поверхностную плотность.</message>

@@ -32,6 +32,7 @@
  <pref name="CompactXAxis" type="Boolean">false</pref>
  <pref name="ShowYAxisScalers" type="Boolean">true</pref>
  <pref name="AskPropagatePeaks" type="Boolean">false</pref>
+ <pref name="AutoAcceptFitSourcesPeaks" type="Boolean">false</pref>
  <pref name="DisplayBecquerel" type="Boolean">false</pref>
  <pref name="LoadDefaultDrf" type="Boolean">true</pref>
  <pref name="ExternalRidWarn" type="Boolean">true</pref>

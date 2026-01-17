@@ -54,6 +54,10 @@
   <message id="ds-manual-det-desc">गणितीय सूत्र द्वारा परिभाषित डिटेक्टर दक्षता, ऊर्जा x दिए जाने पर;
      या आप मानक समीकरण रूप के लिए गुणांक दर्ज कर सकते हैं। अधिक जानकारी के लिए प्रश्न चिह्न आइकन पर क्लिक करें।
   </message>
+  <message id="ds-manual-det-desc-label">गणितीय सूत्र द्वारा परिभाषित डिटेक्टर दक्षता, ऊर्जा x दिए जाने पर;
+     या आप मानक समीकरण रूप के लिए गुणांक दर्ज कर सकते हैं। अधिक जानकारी के लिए प्रश्न चिह्न आइकन पर क्लिक करें।:</message>
+  <message id="ds-description-label">विवरण:</message>
+  <message id="ds-name-label">नाम:</message>
   <message id="ds-manual-det-name-label">डिटेक्टर नाम </message>
   <message id="ds-manual-det-name-empty-txt">अद्वितीय डिटेक्टर नाम</message>
   <message id="ds-manual-function-label">दक्षता f(x) = </message>

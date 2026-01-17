@@ -194,7 +194,7 @@ std::vector<std::shared_ptr<const PeakDef>> assign_srcs_from_ref_lines( const st
 
  TODO: I dont think the return value is what is claimed, or at least not handled correctly; this should all be improved
  */
-std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
+std::unique_ptr<std::pair<std::shared_ptr<const PeakDef>,std::string>>
       assign_nuc_from_ref_lines( PeakDef &peak,
                                  std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> previouspeaks,
                                  const std::shared_ptr<const SpecUtils::Measurement> &data,

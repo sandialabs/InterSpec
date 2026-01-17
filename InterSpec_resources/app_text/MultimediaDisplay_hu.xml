@@ -13,6 +13,9 @@
   <message id="smmd-err-not-image">A multimédiás tartalom típusa nem kép típus volt, vagy nem lehetett meghatározni.</message>
   <message id="smmd-image-index">{2} képből {1}. kép</message>
   <message id="smmd-Time">Idő</message>
+  <message id="smmd-time-label">Idő: {1}</message>
+  <message id="smmd-remark-label">Megjegyzés: {1}</message>
+  <message id="smmd-desc-label">Desc.: {1}</message>
   <message id="smmd-window-title-single">Kép a Spektrum Fájlban</message>
   <message id="smmd-window-title-multiple">Képek a Spektrum Fájlban</message>
 </messages>

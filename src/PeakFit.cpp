@@ -151,7 +151,7 @@ void do_peak_automated_searchfit( const double x,
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
     DebugLog(cout) << "Will try fitting peak clicked on at " << x << "\n";
 #endif
-    answer = searchForPeakFromUser( x, -1.0, meas, inpeaks, drf, isHPGe );
+    answer = searchForPeakFromUser( x, -1.0, meas, inpeaks, drf, nullptr, isHPGe );
   }catch( std::exception &e )
   {
     cerr << "do_peak_searchfit(...): caught unexpected exception: '" << e.what()
@@ -285,8 +285,8 @@ std::vector<std::shared_ptr<const PeakDef> > filter_anomolous_width_peaks_highre
 
         PeakShrdVec onepeak( 1, input[i] );
         pair< PeakShrdVec, PeakShrdVec > twoPeaksPlus, twoPeaksMinus;
-        twoPeaksPlus = searchForPeakFromUser( m + s, -1.0, meas, onepeak, nullptr, true );
-        twoPeaksMinus = searchForPeakFromUser( m - s, -1.0, meas, onepeak, nullptr, true );
+        twoPeaksPlus = searchForPeakFromUser( m + s, -1.0, meas, onepeak, nullptr, nullptr, true );
+        twoPeaksMinus = searchForPeakFromUser( m - s, -1.0, meas, onepeak, nullptr, nullptr, true );
         
         if( twoPeaksPlus.first.size() == 2 && twoPeaksMinus.first.size() == 2 )
         {
@@ -789,6 +789,51 @@ void SavitzyGolayCoeffs::smooth( const float *input,
     output[pos] = sum;
   }//for( loop over input points )
 }//SavitzyGolayCoeffs::smooth(...)
+
+
+void SavitzyGolayCoeffs::smooth_with_variance( const std::vector<float> &input,
+                                               std::vector<float> &output,
+                                               std::vector<float> &variance ) const
+{
+  const int nSamples = static_cast<int>( input.size() );
+  const int nCoeffs = static_cast<int>( coeffs.size() );
+
+  if( nSamples < nCoeffs || nSamples == 0 )
+    throw std::runtime_error( "SavitzyGolayCoeffs::smooth_with_variance(...)\n\tInvalid input size" );
+
+  output.clear();
+  output.resize( nSamples );
+  variance.clear();
+  variance.resize( nSamples );
+
+  for( int pos = 0; pos < nSamples; ++pos )
+  {
+    double sum = 0.0;
+    double var = 0.0;
+
+    for( int coeff = 0; coeff < nCoeffs; ++coeff )
+    {
+      int dataInd = pos - num_left + coeff;
+      if( dataInd < 0 )
+        dataInd = 0;
+      else if( dataInd >= nSamples )
+        dataInd = nSamples - 1;
+
+      const double c = coeffs[coeff];
+      const float N = input[dataInd];
+
+      // Smoothed value
+      sum += c * N;
+
+      // Variance propagation for Poisson data: σ²(N) = N
+      // For linear filter: σ²(output) = Σ c² × σ²(input) = Σ c² × N
+      var += c * c * N;
+    }
+
+    output[pos] = sum;
+    variance[pos] = var;
+  }
+}
 
 std::vector< std::vector<std::shared_ptr<const PeakDef> > >
 causilyDisconnectedPeaks(  const double ncausality,
@@ -4869,6 +4914,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
                                                         const std::shared_ptr<const Measurement> &dataH,
                                                         const PeakShrdVec &inpeaks,
                                                         std::shared_ptr<const DetectorPeakResponse> drf,
+                                                       const std::shared_ptr<const std::deque<shared_ptr<const PeakDef>>> &auto_search_peaks,
                                                        const bool isHPGe )
 {
   typedef std::shared_ptr<const PeakDef> PeakDefShrdPtr;
@@ -7032,7 +7078,6 @@ bool chi2_significance_test( const PeakDef &peak,
 
   if( without_peak_chi2 < 5 )
     noRatioRequired = true;
-
   //Dont require the ratio test to apply if peaks share a continuum
   std::shared_ptr<const PeakContinuum> continuum = peak.continuum();
   for( const PeakDef &p : other_peaks )
@@ -7055,7 +7100,6 @@ bool chi2_significance_test( const PeakDef &peak,
   //       << " peak.amplitude()=" << peak.amplitude()
   //       << endl << endl;
   //}
-
 
   return ((noRatioRequired || (chi2Ratio >= chi2ratioRequired))
           && (noDeltaRequired || (deltaChi2 > withoutPeakDSigma)));

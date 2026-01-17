@@ -320,9 +320,9 @@ public:
             for( size_t i = 0; i < m_displayed.size(); ++i )
             {
               if( i && ((i+1) == m_displayed.size()) )
-                srcs + " or ";
+                srcs += " or ";
               else if( i )
-                srcs + ", ";
+                srcs += ", ";
               srcs += m_displayed[i]->m_input.m_input_txt;
             }
             WString msg = WString::tr("psw-keep-only-assigned-peaks").arg(srcs);
@@ -2052,24 +2052,31 @@ void fit_peak_from_double_click( InterSpec *interspec, const double x, const dou
   shared_ptr<SpecMeas> meas = interspec->measurment( spec_type );
   const std::set<int> sample_nums = interspec->displayedSamples( spec_type );
 
-  vector< PeakModel::PeakShrdPtr > origPeaks;
+  vector<shared_ptr<const PeakDef>> origPeaks, nearbyOrigPeaks;
 
   // Get peaks from the appropriate SpecMeas for the given spectrum type
-  shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> orig_peaks = meas ?   meas->peaks( sample_nums ) : nullptr;
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> orig_peaks = meas ? meas->peaks(sample_nums) : nullptr;
   if( orig_peaks )
   {
     for( const std::shared_ptr<const PeakDef> &p : *orig_peaks )
     {
       origPeaks.push_back( p );
 
+      if( ((x >= p->lowerX()) && (x <= p->upperX())) || (fabs(x - p->mean()) < 3.0*p->fwhm()) )
+        nearbyOrigPeaks.push_back( p );
+
       //Avoid fitting a peak in the same area a data defined peak is.
       if( !p->gausPeak() && (x >= p->lowerX()) && (x <= p->upperX()) )
         return;
     }
-  }//
-  
+  }//if( orig_peaks )
+
+  shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_peaks = meas ? meas->automatedSearchPeaks(sample_nums) : nullptr;
+
+  // Get an estimated peak FWHM
+
   pair< PeakShrdVec, PeakShrdVec > foundPeaks;
-  foundPeaks = searchForPeakFromUser( x, pixPerKeV, data, origPeaks, det, isHPGe );
+  foundPeaks = searchForPeakFromUser( x, pixPerKeV, data, origPeaks, det, auto_peaks, isHPGe );
   
   //cerr << "Found " << foundPeaks.first.size() << " peaks to add, and "
   //     << foundPeaks.second.size() << " peaks to remove" << endl;
@@ -2833,8 +2840,26 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
     cerr << msg << endl;
 #endif
   }//try / catch
-  
-  
+
+  //assert( 0 );
+  //throw runtime_error( "Need to implement search for peaks worker." );
+
+  if( results && !results->empty() )
+  {
+    try
+    {
+      //DetectorPeakResponse::ResolutionFnctForm fwhm_type = ...;
+      //const int sqrtEqnOrder = ...;
+      //auto peaks_deque = make_shared<deque<shared_ptr<const PeakDef>>>( begin(*results), end(*results) );
+
+      //vector<float> result, uncerts;
+      //const double chi2 = MakeDrfFit::performResolutionFit( peaks_deque, fwhm_type, sqrtEqnOrder, result, uncerts );
+    }catch( std::exception &e )
+    {
+
+    }
+  }
+
   server->post( sessionID, [callback,results,resultpeaks](){
     if( resultpeaks )
       *resultpeaks = *results;

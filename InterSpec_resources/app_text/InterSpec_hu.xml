@@ -32,6 +32,17 @@
   <message id="Detector">Detektor</message>
   <message id="Distance">Távolság</message>
   <message id="Activity">Aktivitás</message>
+  <message id="nuclide-label">Nuklid:</message>
+  <message id="age-label">Kor:</message>
+  <message id="distance-label">Távolság:</message>
+  <message id="activity-label">Aktivitás:</message>
+  <message id="dose-label">Dózis:</message>
+  <message id="shielding-label">Árnyékolás:</message>
+  <message id="detector-label">Detektor:</message>
+  <message id="energy-label">Energia:</message>
+  <message id="foreground-label">Előtér:</message>
+  <message id="background-label">Háttér:</message>
+  <message id="secondary-label">Másodlagos:</message>
   <message id="Remark">Megjegyzés</message>
   <message id="Tap">Érintés</message>
   <message id="Click">Kattintás</message>
@@ -352,6 +363,7 @@
   <message id="app-mi-help-pref-show-tt"> Eszköztippek megjelenítése</message>
   <message id="app-mi-help-pref-prop-peak"> Csúcsok propagálására kérdez</message>
   <message id="app-mi-help-pref-preserve-ene-cal"> Energia kal. megtartására kérdez.</message>
+  <message id="app-mi-help-pref-auto-accept-fit-sources"> Illesztési eredmények automatikus elfogadása</message>
   <message id="app-mi-help-pref-disp-bq"> Becquerel-ben megjelenítés</message>
   <message id="app-mi-help-pref-def-drfs"> Alapértelmezett DRF-ek használata</message>
   <message id="app-mi-help-pref-desktop"> Asztali felület</message>
@@ -380,6 +392,7 @@
     kalibráció az új fájlban eltér a régi fájltól, megkérdezi, hogy a régi fájl energia kalibrációját alkalmazni kell-e
     az új fájlra.
   </message>
+  <message id="app-mi-tt-help-pref-auto-accept-fit-sources">Referencia fotópik vonalakból csúcsok illesztésekor automatikusan adja hozzá az illesztett csúcsokat megerősítő párbeszédpanel megjelenítése nélkül.</message>
   <message id="app-mi-tt-help-pref-disp-bq">Aktivitás megjelenítése becquerel egységekben, curie helyett.</message>
   <message id="app-mi-tt-help-def-drfs">Spektrum betöltésekor, és ha korábban nem
     társított detektor válaszfüggvényt a detektor modelljéhez

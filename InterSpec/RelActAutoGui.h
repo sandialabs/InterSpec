@@ -244,7 +244,13 @@ protected:
                            const bool is_final_range );
   
   void handleShiftDrag( const double lower_energy, const double upper_energy );
-  void handleDoubleLeftClick( const double energy, const double counts );
+
+  /** Callback for when user double-clicks on the spectrum - currently only energy argument is used. */
+  void handleDoubleLeftClick( const double energy, const double counts,
+                             const std::string &ref_line_name,
+                             const Wt::WFlags<Wt::KeyboardModifier> modifiers );
+
+
   void handleRightClick( const double energy, const double counts,
                         const int page_x_px, const int page_y_px );
   

@@ -32,6 +32,17 @@
   <message id="Detector">Детектор</message>
   <message id="Distance">Расстояние</message>
   <message id="Activity">Активность</message>
+  <message id="nuclide-label">Нуклид:</message>
+  <message id="age-label">Возраст:</message>
+  <message id="distance-label">Расстояние:</message>
+  <message id="activity-label">Активность:</message>
+  <message id="dose-label">Доза:</message>
+  <message id="shielding-label">Защита:</message>
+  <message id="detector-label">Детектор:</message>
+  <message id="energy-label">Энергия:</message>
+  <message id="foreground-label">Передний план:</message>
+  <message id="background-label">Фон:</message>
+  <message id="secondary-label">Вторичный:</message>
   <message id="Remark">Примечание</message>
   <message id="Tap">Коснуться</message>
   <message id="Click">Щёлкнуть</message>
@@ -354,6 +365,7 @@
   <message id="app-mi-help-pref-show-tt"> Показывать подсказки</message>
   <message id="app-mi-help-pref-prop-peak"> Спрашивать о распространении пиков</message>
   <message id="app-mi-help-pref-preserve-ene-cal"> Спрашивать о сохранении калибр. энергии.</message>
+  <message id="app-mi-help-pref-auto-accept-fit-sources"> Автоматически принимать результаты подгонки</message>
   <message id="app-mi-help-pref-disp-bq"> Отображать в беккерелях</message>
   <message id="app-mi-help-pref-def-drfs"> Использовать DRF по умолчанию</message>
   <message id="app-mi-help-pref-desktop"> Интерфейс рабочего стола</message>
@@ -382,6 +394,7 @@
     нового файла отличается от старого файла, спрашивать, следует ли применить калибровку энергии старого файла
     к новому файлу.
   </message>
+  <message id="app-mi-tt-help-pref-auto-accept-fit-sources">При подгонке пиков из опорных линий фотопика автоматически добавлять подогнанные пики без показа диалога подтверждения.</message>
   <message id="app-mi-tt-help-pref-disp-bq">Отображать активность в единицах беккереля, а не кюри.</message>
   <message id="app-mi-tt-help-def-drfs">При загрузке спектра, и если вы ранее не
     связывали функцию отклика детектора с моделью
