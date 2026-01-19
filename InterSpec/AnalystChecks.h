@@ -116,12 +116,13 @@ namespace AnalystChecks
   InterSpec_API std::vector<std::string> get_identified_sources( const SpecUtils::SpectrumType specType, InterSpec *interspec );
 
   struct FitPeaksForNuclideOptions {
-    std::vector<std::string> nuclides;
+    std::vector<std::string> sources;
     bool doNotAddPeaksToUserSession;
   };
   
   struct FitPeaksForNuclideStatus {
     std::vector<std::shared_ptr<const PeakDef>> fitPeaks;
+    std::vector<std::string> warnings;
   };
   
   InterSpec_API FitPeaksForNuclideStatus fit_peaks_for_nuclides( const FitPeaksForNuclideOptions &options, InterSpec *interspec );

@@ -1837,7 +1837,9 @@ void ReferencePhotopeakDisplay::startFitSources( const bool /*from_advanced_dial
   std::shared_ptr<const DetectorPeakResponse> drf_input = fg_meas ? fg_meas->detector() : nullptr;
   
   FitPeaksForNuclides::PeakFitForNuclideConfig config;
-  
+
+  // TODO: we will need to update `config` from default in the future
+
   // Let user continue using app while fitting.
   SimpleDialog *wait_dlg = new SimpleDialog( WString::tr("rpd-fit-sources-wait-title"),
                                              WString::tr("rpd-fit-sources-wait-content") );

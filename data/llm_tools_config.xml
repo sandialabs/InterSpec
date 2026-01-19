@@ -195,28 +195,32 @@
     }</ParametersSchema>
   </Tool>
 
-<!--
+
   <Tool name="add_analysis_peaks_for_source">
-    <Description>Fits peaks for the one or more specified nuclide(s). Returns the peaks that were fit.</Description>
+    <Description>Fits all detectable peaks for the one or more specified nuclide(s). 
+    For sources with multiple peaks, will very likely do a much better job than individually fitting peaks for a source, and will do it much more efficiently and with a single tool call.
+    If you want to fit peaks for a source that has multiple gamma or x-ray energies, use this function.
+    Returns the peaks that were fit. 
+    </Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
-        "nuclide": {
+        "source": {
           "anyOf": [
             {"type": "string"},
             {"type": "array", "items": {"type": "string"}}
           ],
-          "description": "The nuclide or array of nuclides to fit peaks for (ex U235, I131, Ba133)."
+          "description": "The nuclide, x-ray elemement, or reaction, or array of these values, to fit peaks for (ex `'U235'`, `'I131'`, `['U235','U','Mn(a,a)']`)."
         },
         "doNotAddPeaksToUserSession": {
           "type": "boolean",
           "description": "Optional: if true, fitted peaks will not be added to the user's peak collection; defaults to false."
         }
       },
-      "required": ["nuclide"]
+      "required": ["source"]
     }</ParametersSchema>
   </Tool>
- -->
+ 
 
   <!-- Spectrum Information Tools -->
 

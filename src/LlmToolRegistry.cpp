@@ -594,13 +594,13 @@ namespace {
   }
 
   void from_json(const json& j, AnalystChecks::FitPeaksForNuclideOptions& p) {
-    const json& nuclideParam = j.at("nuclide");
-    if (nuclideParam.is_string()) {
-      p.nuclides = {nuclideParam.get<std::string>()};
-    } else if (nuclideParam.is_array()) {
-      p.nuclides = nuclideParam.get<std::vector<std::string>>();
+    const json& sourcesParam = j.at("source");
+    if (sourcesParam.is_string()) {
+      p.sources = {sourcesParam.get<std::string>()};
+    } else if (sourcesParam.is_array()) {
+      p.sources = sourcesParam.get<std::vector<std::string>>();
     } else {
-      throw std::runtime_error("Invalid nuclide parameter: must be string or array of strings");
+      throw std::runtime_error("Invalid sources parameter: must be string or array of strings");
     }
 
     p.doNotAddPeaksToUserSession = get_boolean( j, "doNotAddPeaksToUserSession", false );
@@ -891,6 +891,8 @@ namespace {
     to_json( peak_rois, p.fitPeaks, meas );
     
     j = json{{"rois", peak_rois}};
+    if( !p.warnings.empty() )
+      j["warnings"] = p.warnings;
   }
   
   /** Returns a `nlohmann::json::array` containing the source catagories (Medical, Industrial, NORM, etc) that a source (Nuclide, Element, or Reaction),
@@ -1073,17 +1075,12 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
         return executeGetLoadedSpectra(params, interspec);
       };
-    }
-  /*
-   // Not using `add_analysis_peaks_for_source` until we get it working properly...
-    else if( toolName == "add_analysis_peaks_for_source" )
+    }else if( toolName == "add_analysis_peaks_for_source" )
     {
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
         return executeFitPeaksForNuclide(params, interspec);
       };
-    }
-    */
-    else if( toolName == "get_counts_in_energy_range" )
+    }else if( toolName == "get_counts_in_energy_range" )
     {
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
         return executeGetCountsInEnergyRange(params, interspec);
@@ -1405,7 +1402,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     "nuclide_decay_chain",
     "automated_source_id_results",
     "loaded_spectra",
-    //"add_analysis_peaks_for_source",
+    "add_analysis_peaks_for_source",
     "get_counts_in_energy_range",
     "get_expected_fwhm",
     "currie_mda_calc",
@@ -2323,6 +2320,7 @@ nlohmann::json ToolRegistry::executeFitPeaksForNuclide(const nlohmann::json& par
   
   return result_json;
 }//nlohmann::json executeFitPeaksForNuclide(const nlohmann::json& params, InterSpec* interspec)
+
 
 nlohmann::json ToolRegistry::executeGetCountsInEnergyRange(const nlohmann::json& params, InterSpec* interspec)
 {
@@ -4766,8 +4764,8 @@ nlohmann::json ToolRegistry::executeSetWorkflowState(
   result["description"] = state_def.description;
   result["allowed_next_states"] = state_def.allowed_transitions;
 
-  if( !state_def.required_tools.empty() )
-    result["required_tools"] = state_def.required_tools;
+  if( !state_def.suggested_tools.empty() )
+    result["suggested_tools"] = state_def.suggested_tools;
 
   result["is_final_state"] = state_def.is_final;
 

@@ -514,7 +514,7 @@ void AgentStateMachine::fromXml( const rapidxml::xml_node<char> *state_machine_n
     }
 
     // Get required tools
-    const rapidxml::xml_node<char> *tools_node = XML_FIRST_NODE( state_node, "RequiredTools" );
+    const rapidxml::xml_node<char> *tools_node = XML_FIRST_NODE( state_node, "SuggestedTools" );
     if( tools_node )
     {
       for( const rapidxml::xml_node<char> *tool_node = XML_FIRST_NODE( tools_node, "Tool" );
@@ -524,7 +524,7 @@ void AgentStateMachine::fromXml( const rapidxml::xml_node<char> *state_machine_n
         string tool_name = xml_value_str( tool_node );
         SpecUtils::trim( tool_name );
         if( !tool_name.empty() )
-          state_def.required_tools.push_back( tool_name );
+          state_def.suggested_tools.push_back( tool_name );
       }
     }
 

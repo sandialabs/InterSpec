@@ -78,7 +78,7 @@ public:
     std::string name;                           // State name (e.g., "ANALYZE_REQUEST")
     std::string description;                    // Human-readable description
     std::vector<std::string> allowed_transitions; // States this can transition to
-    std::vector<std::string> required_tools;    // Tools typically used in this state
+    std::vector<std::string> suggested_tools;    // Tools typically used in this state
     std::string prompt_guidance;                // Guidance text for the agent
     bool is_final = false;                      // True if this is a terminal state
   };//struct StateDefinition
