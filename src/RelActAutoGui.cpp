@@ -776,8 +776,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_skew_type->activated().connect( this, &RelActAutoGui::handleSkewTypeChanged );
   tooltip = WString::tr("raag-tt-skew-type");
   HelpSystem::attachToolTipOn( {label,m_skew_type}, tooltip, showToolTips );
-  for( auto st = PeakDef::SkewType(0); st <= PeakDef::SkewType::DoubleSidedCrystalBall;
-      st = PeakDef::SkewType(st + 1) )
+  for( auto st = PeakDef::SkewType(0); st <= PeakDef::SkewType::NumSkewType; st = PeakDef::SkewType(st + 1) )
   {
     const char *label = PeakDef::to_label(st);
     m_skew_type->addItem( label );
@@ -1175,7 +1174,7 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
   
   options.skew_type = PeakDef::SkewType::NoSkew;
   const int skew_index = m_skew_type->currentIndex();
-  if( (skew_index >= 0) && (skew_index <= PeakDef::SkewType::DoubleSidedCrystalBall) )
+  if( (skew_index >= 0) && (skew_index < PeakDef::SkewType::NumSkewType) )
     options.skew_type = PeakDef::SkewType( m_skew_type->currentIndex() );
   
   options.additional_br_uncert = -1.0;

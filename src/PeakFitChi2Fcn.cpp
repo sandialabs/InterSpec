@@ -361,13 +361,20 @@ size_t PeakFitChi2Fcn::parametersToPeaks( std::vector<PeakDef> &peaks,
     bool valid_skew_type = false;
     switch( skew_type_t )
     {
+      case PeakDef::NumSkewType:
+        assert( 0 );
+        valid_skew_type = false;
+        break;
+
       case PeakDef::NoSkew:
       case PeakDef::Bortel:
-      case PeakDef::CrystalBall:
-      case PeakDef::DoubleSidedCrystalBall:
+      case PeakDef::DoubleBortel:
+      case PeakDef::GaussPlusBortel:
       case PeakDef::GaussExp:
+      case PeakDef::CrystalBall:
       case PeakDef::ExpGaussExp:
-      case PeakDef::VoigtWithExpTail:
+      case PeakDef::DoubleSidedCrystalBall:
+      case PeakDef::VoigtPlusBortel:
         valid_skew_type = true;
         break;
     }//switch( skew_type_t )
@@ -1988,7 +1995,13 @@ void LinearProblemSubSolveChi2Fcn::addSkewParameters( ROOT::Minuit2::MnUserParam
       //  so lets try to avoid this
       switch( skew_type )
       {
+        case PeakDef::NumSkewType:
+          assert( 0 );
+          //throw runtime_error( "PeakFitChi2Fcn sanity check: NumSkewType is not a valid skew type" );
+          // Fall through to NoSkew for non-debug builds
+
         case PeakDef::NoSkew:   case PeakDef::Bortel:
+        case PeakDef::DoubleBortel: case PeakDef::GaussPlusBortel:
         case PeakDef::GaussExp: case PeakDef::ExpGaussExp:
           break;
           
@@ -2016,9 +2029,9 @@ void LinearProblemSubSolveChi2Fcn::addSkewParameters( ROOT::Minuit2::MnUserParam
           break;
         }//A Crystal Ball distribution
 
-        case PeakDef::VoigtWithExpTail:
-          // No special sanity checks needed for Voigt parameters
-          // gamma_lor, tail_ratio, and tail_slope are bounded by their ranges
+        case PeakDef::VoigtPlusBortel:
+          // No special sanity checks needed for these parameters
+          // Parameters are bounded by their ranges
           break;
       }//switch( skew_type )
       

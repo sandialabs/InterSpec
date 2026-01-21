@@ -182,10 +182,11 @@ if(Eigen3_FOUND AND Ceres_FOUND AND Boost_UNIT_TEST_FRAMEWORK_FOUND)
     message(STATUS "Building VoigtDistribution unit tests (Eigen3, Ceres, and Boost unit_test_framework found)")
 
     add_executable( test_VoigtDistribution
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/VoigtDistribution/unit_tests/voigt_distribution_tests.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/VoigtDistribution/unit_tests/test_pseudo_voigt_exp_tail.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/VoigtDistribution/unit_tests/test_faddeeva_templated.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/VoigtDistribution/unit_tests/test_voigt_exact.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/VoigtDistribution/unit_tests/exact_test_data.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/VoigtDistribution/unit_tests/test_voigt_against_mit_imp.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/VoigtDistribution/unit_tests/voigt_cdf_reference.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/VoigtDistribution/unit_tests/voigt_distribution_tests.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/VoigtDistribution/unit_tests/3rd_party/Faddeeva_MIT/Faddeeva.cc
     )
 

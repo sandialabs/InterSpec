@@ -1016,13 +1016,12 @@ InterSpec::InterSpec( WContainerWidget *parent )
       {
         m_rightClickChangeSkewMenu = m_rightClickMenu->addPopupMenuItem( WString::tr("rclick-mi-skew-type") );
         m_rightClickMenutItems[i] = m_rightClickChangeSkewMenu->parentItem();
-        for( auto type = PeakDef::SkewType(0);
-            type <= PeakDef::SkewType::VoigtWithExpTail; type = PeakDef::SkewType(type+1) )
+        for( auto type = PeakDef::SkewType(0); type < PeakDef::NumSkewType; type = PeakDef::SkewType(type+1) )
         {
           WMenuItem *item = m_rightClickChangeSkewMenu->addItem( PeakDef::to_label(type) );
           item->triggered().connect( boost::bind( &InterSpec::handleChangeSkewTypeFromRightClick,
                                                  this, static_cast<int>(type) ) );
-        }//for( loop over PeakContinuum::OffsetTypes )
+        }//for( loop over PeakDef::SkewType )
         break;
       }
         

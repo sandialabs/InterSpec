@@ -523,18 +523,20 @@ void PeakEdit::init()
   m_skewType = new WComboBox( row->elementAt(1) );
   m_skewType->activated().connect( this, &PeakEdit::skewTypeChanged );
   
-  static_assert( PeakDef::VoigtWithExpTail > PeakDef::ExpGaussExp, "SkewType ordering changed VoigtWithExpTail should be largest" );
-  static_assert( PeakDef::VoigtWithExpTail > PeakDef::CrystalBall, "SkewType ordering changed VoigtWithExpTail should be largest" );
-  static_assert( PeakDef::VoigtWithExpTail > PeakDef::GaussExp, "SkewType ordering changed VoigtWithExpTail should be largest" );
-  static_assert( PeakDef::VoigtWithExpTail > PeakDef::Bortel, "SkewType ordering changed VoigtWithExpTail should be largest" );
-  static_assert( PeakDef::VoigtWithExpTail > PeakDef::DoubleSidedCrystalBall, "SkewType ordering changed VoigtWithExpTail should be largest" );
-  
-  
-  for( PeakDef::SkewType t = PeakDef::SkewType(0);
-      t <= PeakDef::VoigtWithExpTail; t = PeakDef::SkewType(t+1) )
+  static_assert( PeakDef::DoubleBortel > PeakDef::ExpGaussExp, "SkewType ordering changed DoubleBortel should be largest" );
+  static_assert( PeakDef::DoubleBortel > PeakDef::CrystalBall, "SkewType ordering changed DoubleBortel should be largest" );
+  static_assert( PeakDef::DoubleBortel > PeakDef::GaussExp, "SkewType ordering changed DoubleBortel should be largest" );
+  static_assert( PeakDef::DoubleBortel > PeakDef::Bortel, "SkewType ordering changed DoubleBortel should be largest" );
+  static_assert( PeakDef::NumSkewType > PeakDef::DoubleBortel, "SkewType ordering changed - NumSkewType should be largest" );
+  static_assert( PeakDef::NumSkewType > PeakDef::DoubleSidedCrystalBall, "SkewType ordering changed - NumSkewType should be largest" );
+  static_assert( PeakDef::NumSkewType > PeakDef::VoigtPlusBortel, "SkewType ordering changed - NumSkewType should be largest" );
+  static_assert( PeakDef::NumSkewType > PeakDef::GaussPlusBortel, "SkewType ordering changed - NumSkewType should be largest" );
+
+
+  for( PeakDef::SkewType t = PeakDef::SkewType(0); t < PeakDef::NumSkewType; t = PeakDef::SkewType(t+1) )
   {
     m_skewType->addItem( PeakDef::to_label(t) );
-  }//for( loop over PeakDef::OffsetType )
+  }//for( loop over PeakDef::SkewType )
   
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+8 );
   row->elementAt(0)->setColumnSpan(4);
@@ -1736,12 +1738,15 @@ void PeakEdit::peakTypeChanged()
             row->setHidden( (m_currentPeak.skewType()!=PeakDef::CrystalBall)
                            && (m_currentPeak.skewType()!=PeakDef::DoubleSidedCrystalBall)
                            && (m_currentPeak.skewType()!=PeakDef::ExpGaussExp)
-                           && (m_currentPeak.skewType()!=PeakDef::VoigtWithExpTail));
+                           && (m_currentPeak.skewType()!=PeakDef::VoigtPlusBortel)
+                           && (m_currentPeak.skewType()!=PeakDef::GaussPlusBortel)
+                           && (m_currentPeak.skewType()!=PeakDef::DoubleBortel) );
             break;
-            
+
           case PeakEdit::SkewPar2:
             row->setHidden( (m_currentPeak.skewType()!=PeakDef::DoubleSidedCrystalBall)
-                           && (m_currentPeak.skewType()!=PeakDef::VoigtWithExpTail) );
+                           && (m_currentPeak.skewType()!=PeakDef::VoigtPlusBortel)
+                           && (m_currentPeak.skewType()!=PeakDef::DoubleBortel) );
             break;
             
           case PeakEdit::SkewPar3:
@@ -1879,67 +1884,158 @@ void PeakEdit::contnuumTypeChanged()
 
 void PeakEdit::updateSkewParameterLabels( const PeakDef::SkewType skewType )
 {
-  
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer );
+
   WLabel *label[4] = { nullptr, nullptr, nullptr, nullptr };
+  WTableCell *cell[4][4] = { { nullptr, nullptr, nullptr, nullptr },
+                              { nullptr, nullptr, nullptr, nullptr },
+                              { nullptr, nullptr, nullptr, nullptr },
+                              { nullptr, nullptr, nullptr, nullptr } };
+
   for( int i = 0; i < 4; ++i )
   {
-    WTableCell *cell = m_valueTable->elementAt(1+PeakEdit::SkewPar0+i, 0 );
-    assert( cell && (cell->children().size() == 1) );
-    if( !cell || cell->children().empty() )
+    // Get all cells in this row (parameter label, value, uncertainty, fit checkbox)
+    for( int col = 0; col < 4; ++col )
+      cell[i][col] = m_valueTable->elementAt( 1 + PeakEdit::SkewPar0 + i, col );
+
+    WTableCell *labelCell = cell[i][0];
+    assert( labelCell && (labelCell->children().size() == 1) );
+    if( !labelCell || labelCell->children().empty() )
       continue;
-    
-    label[i] = dynamic_cast<WLabel *>( cell->children()[0] );
+
+    label[i] = dynamic_cast<WLabel *>( labelCell->children()[0] );
     assert( label[i] );
   }//for( int i = 0; i < 4; ++i )
+
   
-  
+  auto removeRowTooltips = [&cell]( const int row_index ){
+    if( row_index < 0 || row_index >= 4 )
+      return;
+    for( int col = 0; col < 4; ++col )
+      HelpSystem::removeToolTipOn( cell[row_index][col] );
+  };//removeRowTooltips lambda
+
+  auto attachRowTooltip = [&cell, showToolTips]( const int row_index, const WString &tooltipText ){
+    if( row_index >= 0 && row_index < 4 )
+      HelpSystem::attachToolTipOn( { cell[row_index][0], cell[row_index][1],
+                                    cell[row_index][2], cell[row_index][3] },
+                                tooltipText, showToolTips,
+                                HelpSystem::ToolTipPosition::Right );
+  };//attachRowTooltip lambda
+
+
   switch( skewType )
   {
+    case PeakDef::NumSkewType:
+      assert( 0 );
+      //throw runtime_error( "PeakEdit::updateSkewParameterLabels: NumSkewType is not a valid skew type" );
+      // Fall through to NoSkew for non-debug builds
+
     case PeakDef::NoSkew:
       return;
-      
+
     case PeakDef::SkewType::Bortel:
       if( label[0] )
-        label[0]->setText( "Skew &alpha;" );
-      break;
-      
-    case PeakDef::SkewType::CrystalBall:
-      if( label[0] )
-        label[0]->setText( "Skew &alpha;" );
-      if( label[1] )
-        label[1]->setText( "Skew n" );
-      break;
-      
-    case PeakDef::SkewType::DoubleSidedCrystalBall:
-      if( label[0] )
-        label[0]->setText( "Skew &alpha;<sub>low</sub>" );
-      if( label[1] )
-        label[1]->setText( "Skew n<sub>low</sub>" );
-      if( label[2] )
-        label[2]->setText( "Skew &alpha;<sub>high</sub>" );
-      if( label[3] )
-        label[3]->setText( "Skew n<sub>high</sub>" );
-      break;
-      
-    case PeakDef::SkewType::GaussExp:
-      if( label[0] )
-        label[0]->setText( "Skew k" );
-      break;
-      
-    case PeakDef::SkewType::ExpGaussExp:
-      if( label[0] )
-        label[0]->setText( "Skew k<sub>L</sub>" );
-      if( label[1] )
-        label[1]->setText( "Skew k<sub>H</sub>" );
+        label[0]->setText( WString::tr("pe-label-skew-bortel-tau") );
+
+      removeRowTooltips( 0 );
+      attachRowTooltip( 0, WString::tr("pe-tt-skew-bortel-tau") );
       break;
 
-    case PeakDef::SkewType::VoigtWithExpTail:
+    case PeakDef::SkewType::CrystalBall:
       if( label[0] )
-        label[0]->setText( "Lorentzian &gamma;" );
+        label[0]->setText( WString::tr("pe-label-skew-crystalball-alpha") );
       if( label[1] )
-        label[1]->setText( "Tail Ratio R" );
+        label[1]->setText( WString::tr("pe-label-skew-crystalball-n") );
+
+      removeRowTooltips( 0 );
+      attachRowTooltip( 0, WString::tr("pe-tt-skew-crystalball-alpha") );
+      removeRowTooltips( 1 );
+      attachRowTooltip( 1, WString::tr("pe-tt-skew-crystalball-n") );
+      break;
+
+    case PeakDef::SkewType::DoubleSidedCrystalBall:
+      if( label[0] )
+        label[0]->setText( WString::tr("pe-label-skew-dscb-alphalow") );
+      if( label[1] )
+        label[1]->setText( WString::tr("pe-label-skew-dscb-nlow") );
       if( label[2] )
-        label[2]->setText( "Tail Slope &tau;" );
+        label[2]->setText( WString::tr("pe-label-skew-dscb-alphahigh") );
+      if( label[3] )
+        label[3]->setText( WString::tr("pe-label-skew-dscb-nhigh") );
+
+      removeRowTooltips( 0 );
+      attachRowTooltip( 0, WString::tr("pe-tt-skew-dscb-alphalow") );
+      removeRowTooltips( 1 );
+      attachRowTooltip( 1, WString::tr("pe-tt-skew-dscb-nlow") );
+      removeRowTooltips( 2 );
+      attachRowTooltip( 2, WString::tr("pe-tt-skew-dscb-alphahigh") );
+      removeRowTooltips( 3 );
+      attachRowTooltip( 3, WString::tr("pe-tt-skew-dscb-nhigh") );
+      break;
+
+    case PeakDef::SkewType::GaussExp:
+      if( label[0] )
+        label[0]->setText( WString::tr("pe-label-skew-gaussexp-k") );
+
+      removeRowTooltips( 0 );
+      attachRowTooltip( 0, WString::tr("pe-tt-skew-gaussexp-k") );
+      break;
+
+    case PeakDef::SkewType::ExpGaussExp:
+      if( label[0] )
+        label[0]->setText( WString::tr("pe-label-skew-expgaussexp-kl") );
+      if( label[1] )
+        label[1]->setText( WString::tr("pe-label-skew-expgaussexp-kh") );
+
+      removeRowTooltips( 0 );
+      attachRowTooltip( 0, WString::tr("pe-tt-skew-expgaussexp-kl") );
+      removeRowTooltips( 1 );
+      attachRowTooltip( 1, WString::tr("pe-tt-skew-expgaussexp-kh") );
+      break;
+
+    case PeakDef::SkewType::VoigtPlusBortel:
+      if( label[0] )
+        label[0]->setText( WString::tr("pe-label-skew-voigtplusbortel-gamma") );
+      if( label[1] )
+        label[1]->setText( WString::tr("pe-label-skew-voigtplusbortel-r") );
+      if( label[2] )
+        label[2]->setText( WString::tr("pe-label-skew-voigtplusbortel-tau") );
+
+      removeRowTooltips( 0 );
+      attachRowTooltip( 0, WString::tr("pe-tt-skew-voigtplusbortel-gamma") );
+      removeRowTooltips( 1 );
+      attachRowTooltip( 1, WString::tr("pe-tt-skew-voigtplusbortel-r") );
+      removeRowTooltips( 2 );
+      attachRowTooltip( 2, WString::tr("pe-tt-skew-voigtplusbortel-tau") );
+      break;
+
+    case PeakDef::SkewType::GaussPlusBortel:
+      if( label[0] )
+        label[0]->setText( WString::tr("pe-label-skew-gaussplusbortel-r") );
+      if( label[1] )
+        label[1]->setText( WString::tr("pe-label-skew-gaussplusbortel-tau") );
+
+      removeRowTooltips( 0 );
+      attachRowTooltip( 0, WString::tr("pe-tt-skew-gaussplusbortel-r") );
+      removeRowTooltips( 1 );
+      attachRowTooltip( 1, WString::tr("pe-tt-skew-gaussplusbortel-tau") );
+      break;
+
+    case PeakDef::SkewType::DoubleBortel:
+      if( label[0] )
+        label[0]->setText( WString::tr("pe-label-skew-doublebortel-tau1") );
+      if( label[1] )
+        label[1]->setText( WString::tr("pe-label-skew-doublebortel-deltatau2") );
+      if( label[2] )
+        label[2]->setText( WString::tr("pe-label-skew-doublebortel-eta") );
+
+      removeRowTooltips( 0 );
+      attachRowTooltip( 0, WString::tr("pe-tt-skew-doublebortel-tau1") );
+      removeRowTooltips( 1 );
+      attachRowTooltip( 1, WString::tr("pe-tt-skew-doublebortel-deltatau2") );
+      removeRowTooltips( 2 );
+      attachRowTooltip( 2, WString::tr("pe-tt-skew-doublebortel-eta") );
       break;
   }//switch( skewType )
 }//void updateSkewParameterLabels();
@@ -1958,6 +2054,10 @@ void PeakEdit::skewTypeChanged()
   
   switch( type )
   {
+    case PeakDef::NumSkewType:
+      assert( 0 );
+      //Let fall through in non-debug builds.
+      
     case PeakDef::NoSkew:
       m_valueTable->rowAt(1+PeakEdit::SkewPar0)->setHidden( true );
       m_valueTable->rowAt(1+PeakEdit::SkewPar1)->setHidden( true );
@@ -1970,7 +2070,9 @@ void PeakEdit::skewTypeChanged()
     case PeakDef::SkewType::DoubleSidedCrystalBall:
     case PeakDef::SkewType::GaussExp:
     case PeakDef::SkewType::ExpGaussExp:
-    case PeakDef::SkewType::VoigtWithExpTail:
+    case PeakDef::SkewType::VoigtPlusBortel:
+    case PeakDef::SkewType::GaussPlusBortel:
+    case PeakDef::SkewType::DoubleBortel:
     {
       const int num_skew_pars = static_cast<int>(PeakDef::CoefficientType::SkewPar3)
                                 - static_cast<int>(PeakDef::CoefficientType::SkewPar0);
@@ -2542,14 +2644,20 @@ void PeakEdit::apply()
       bool valid_skew = false;
       switch( skewType )
       {
+        case PeakDef::NumSkewType:
+          assert( 0 );
+          valid_skew = false;
+          break;
+
         case PeakDef::SkewType::NoSkew:
         case PeakDef::SkewType::Bortel:
+        case PeakDef::SkewType::DoubleBortel:
+        case PeakDef::SkewType::GaussPlusBortel:
         case PeakDef::SkewType::GaussExp:
         case PeakDef::SkewType::CrystalBall:
         case PeakDef::SkewType::ExpGaussExp:
         case PeakDef::SkewType::DoubleSidedCrystalBall:
-        case PeakDef::SkewType::VoigtWithExpTail:
-          
+        case PeakDef::SkewType::VoigtPlusBortel:
           valid_skew = true;
           break;
       }//switch( skewType )

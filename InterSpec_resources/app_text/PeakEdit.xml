@@ -41,7 +41,76 @@
 
   <message id="pe-est-lin-cont-no-data">Please load a foreground spectrum before estimating continuum.</message>
   <message id="pe-failed-est-lin-cont">Failed to estimate continuum from edges of ROI: {1}</message>
-  
-  
-  
+
+  <!-- Skew parameter labels for Bortel (Exp*Gauss) -->
+  <message id="pe-label-skew-bortel-tau">Skew &alpha;</message>
+
+  <!-- Skew parameter labels for DoubleBortel -->
+  <message id="pe-label-skew-doublebortel-tau1">&tau;<sub>1</sub></message>
+  <message id="pe-label-skew-doublebortel-deltatau2">&Delta;&tau;<sub>2</sub></message>
+  <message id="pe-label-skew-doublebortel-eta">&eta;</message>
+
+  <!-- Skew parameter labels for GaussPlusBortel -->
+  <message id="pe-label-skew-gaussplusbortel-r">Mix Ratio R</message>
+  <message id="pe-label-skew-gaussplusbortel-tau">Bortel &tau;</message>
+
+  <!-- Skew parameter labels for GaussExp -->
+  <message id="pe-label-skew-gaussexp-k">Skew k</message>
+
+  <!-- Skew parameter labels for CrystalBall -->
+  <message id="pe-label-skew-crystalball-alpha">Skew &alpha;</message>
+  <message id="pe-label-skew-crystalball-n">Skew n</message>
+
+  <!-- Skew parameter labels for ExpGaussExp -->
+  <message id="pe-label-skew-expgaussexp-kl">Skew k<sub>L</sub></message>
+  <message id="pe-label-skew-expgaussexp-kh">Skew k<sub>H</sub></message>
+
+  <!-- Skew parameter labels for DoubleSidedCrystalBall -->
+  <message id="pe-label-skew-dscb-alphalow">Skew &alpha;<sub>low</sub></message>
+  <message id="pe-label-skew-dscb-nlow">Skew n<sub>low</sub></message>
+  <message id="pe-label-skew-dscb-alphahigh">Skew &alpha;<sub>high</sub></message>
+  <message id="pe-label-skew-dscb-nhigh">Skew n<sub>high</sub></message>
+
+  <!-- Skew parameter labels for VoigtPlusBortel -->
+  <message id="pe-label-skew-voigtplusbortel-gamma">Lorentzian &gamma;</message>
+  <message id="pe-label-skew-voigtplusbortel-r">Mix Ratio R</message>
+  <message id="pe-label-skew-voigtplusbortel-tau">Bortel &tau;</message>
+
+  <!-- Tooltips for skew parameters -->
+  <message id="pe-tt-skew-bortel-tau">Exponential decay constant for Exp*Gauss (Exponentially Modified Gaussian). Represents the characteristic length scale of the low-energy tail. Valid range: 0.0-15 σ, typical values: 0.5-3 σ.</message>
+
+  <message id="pe-tt-skew-doublebortel-tau1">First exponential decay constant, typically close to σ. Controls the primary low-energy tail component. Valid range: 0.01-15 σ.</message>
+
+  <message id="pe-tt-skew-doublebortel-deltatau2">Additional decay for second exponential: τ₂ = τ₁ + Δτ₂. Controls the extended tail component. Valid range: 0.0-10 σ.</message>
+
+  <message id="pe-tt-skew-doublebortel-eta">Weight of second exponential component. η=0 gives single Exp*Gauss(τ₁), η=1 gives pure Exp*Gauss(τ₂). Valid range: 0.0-1.0.</message>
+
+  <message id="pe-tt-skew-gaussplusbortel-r">Mixing ratio between Gaussian and Exp*Gauss. R=0 is pure Gaussian, R=1 is pure Exp*Gauss. Valid range: 0.0-1.0, typical: 0.2-0.8.</message>
+
+  <message id="pe-tt-skew-gaussplusbortel-tau">Exponential decay constant for the Exp*Gauss component in the mixture. Valid range: 0.01-15 σ, typical values: 0.5-3 σ.</message>
+
+  <message id="pe-tt-skew-gaussexp-k">Controls both the threshold (μ - k·σ) where the exponential tail begins and the decay rate. Valid range: 0.15-3.25, typical: 0.5-2.0.</message>
+
+  <message id="pe-tt-skew-crystalball-alpha">Threshold in units of σ where the power-law tail begins: x = μ - α·σ. Valid range: 0.5-4.0, typical: 1.0-3.0.</message>
+
+  <message id="pe-tt-skew-crystalball-n">Power-law exponent for the low-energy tail: (x - μ + α·σ)^(-n). Larger n creates steeper falloff. Valid range: 1.05-100, typical: 2-10.</message>
+
+  <message id="pe-tt-skew-expgaussexp-kl">Controls the lower (left) energy tail threshold and decay. Valid range: 0.15-3.25, typical: 0.5-2.0.</message>
+
+  <message id="pe-tt-skew-expgaussexp-kh">Controls the upper (right) energy tail threshold and decay. Valid range: 0.15-3.25, typical: 0.5-2.0.</message>
+
+  <message id="pe-tt-skew-dscb-alphalow">Lower threshold in units of σ where the low-energy power-law tail begins. Valid range: 0.5-4.0, typical: 1.0-3.0.</message>
+
+  <message id="pe-tt-skew-dscb-nlow">Power-law exponent for the low-energy tail. Valid range: 1.05-100, typical: 2-10.</message>
+
+  <message id="pe-tt-skew-dscb-alphahigh">Upper threshold in units of σ where the high-energy power-law tail begins. Valid range: 0.5-4.0, typical: 1.0-3.0.</message>
+
+  <message id="pe-tt-skew-dscb-nhigh">Power-law exponent for the high-energy tail. Valid range: 1.05-100, typical: 2-10.</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-gamma">Lorentzian HWHM (half-width at half-maximum) representing natural x-ray linewidth. Valid range: 0.0-10.0 keV, typical for x-rays: 0.01-0.5 keV.</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-r">Mixing ratio between Voigt profile and Exp*Gauss. R=0 is pure Voigt (natural linewidth only), R=1 is pure Exp*Gauss (detector tail only). Valid range: 0.0-1.0.</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-tau">Exponential decay constant for the Exp*Gauss component, representing incomplete charge collection tail. Valid range: 0.01-10 σ.</message>
+
 </messages>

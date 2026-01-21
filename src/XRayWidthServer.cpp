@@ -54,6 +54,19 @@ namespace
   XRayWidths::LoadStatus sm_status = XRayWidths::LoadStatus::NotLoaded;
   std::shared_ptr<const XRayWidths::XRayWidthDatabase> sm_database;
 
+  constexpr double sm_doppler_reference_temperature_k = 295.0;
+
+  /** Doppler HWHM (Gaussian) in eV at 295 K.
+   Formula: hwhm_eV = 0.0855 * ( E_keV / sqrt( M_amu ) )
+   */
+  double doppler_hwhm_ev_at_reference_temp( const double energy_kev, const double atomic_mass_amu )
+  {
+    if( energy_kev <= 0.0 || atomic_mass_amu <= 0.0 )
+      return -1.0;
+
+    return 0.0855 * ( energy_kev / sqrt( atomic_mass_amu ) );
+  }
+
 }//namespace
 
 
@@ -67,8 +80,11 @@ namespace XRayWidths
 XRayWidthEntry::XRayWidthEntry()
   : atomic_number( 0 ),
     energy_kev( 0.0 ),
-    hwhm_natural_ev( 0.0 ),
-    hwhm_doppler_ev( 0.0 ),
+    vacancy_shell(),
+    hwhm_natural_ev( -1.0 ),
+    hwhm_doppler_ev( -1.0 ),
+    source_id( -1 ),
+    rad_rate( -1.0 ),
     line_label()
 {
 }
@@ -76,11 +92,17 @@ XRayWidthEntry::XRayWidthEntry()
 
 XRayWidthEntry::XRayWidthEntry( const int z, const double energy,
                                 const double natural, const double doppler,
+                                const int src_id,
+                                const std::string &vacancy_shell_,
+                                const double rad_rate_,
                                 const std::string &label )
   : atomic_number( z ),
     energy_kev( energy ),
+    vacancy_shell( vacancy_shell_ ),
     hwhm_natural_ev( natural ),
     hwhm_doppler_ev( doppler ),
+    source_id( src_id ),
+    rad_rate( rad_rate_ ),
     line_label( label )
 {
 }
@@ -235,7 +257,44 @@ void XRayWidthDatabase::init()
   if( !base_node )
     throw runtime_error( "XRayWidthDatabase::init: Could not find root <XRayWidths> node in '" + filename + "'" );
 
-  // Parse all <Element> nodes
+  // Resolve energy threshold (default 10 keV if missing)
+  double energy_threshold_kev = 10.0;
+  const rapidxml::xml_node<char> *meta_node = base_node->first_node( "Meta", 4 );
+  if( meta_node )
+  {
+    const rapidxml::xml_node<char> *threshold_node = meta_node->first_node( "EnergyThreshold", 15 );
+    if( threshold_node && threshold_node->value() && threshold_node->value_size() )
+    {
+      double parsed_threshold = 0.0;
+      if( SpecUtils::parse_double( threshold_node->value(), threshold_node->value_size(), parsed_threshold )
+          && parsed_threshold > 0.0 )
+      {
+        energy_threshold_kev = parsed_threshold;
+      }
+    }
+  }
+
+  // We compute Doppler widths in code using SandiaDecay element atomic masses.
+  // If SandiaDecay is not available, we still load natural widths, but Doppler
+  // and total widths will be unavailable.
+  const SandiaDecay::SandiaDecayDataBase *decay_db = nullptr;
+  try
+  {
+    decay_db = DecayDataBaseServer::database();
+  }
+  catch( std::exception &e )
+  {
+    cerr << "Warning: XRayWidthDatabase - SandiaDecay database not available ("
+         << e.what() << "); Doppler widths will be unavailable" << endl;
+  }
+
+  // Parse all <Element> nodes.
+  //
+  // XML fields of interest:
+  // - `vs`: vacancy shell (destination shell of the transition); correct grouping key for shell-amplitude fitting.
+  // - `rr`: xraylib "RadRate", a radiative branching ratio among radiative decays within that vacancy shell (dimensionless).
+  // - `hwhm`: Lorentzian HWHM (eV). Missing `hwhm` means width unavailable.
+  // - Missing `rr` means unknown / not provided.
   XML_FOREACH_CHILD( element_node, base_node, "Element" )
   {
     // Parse Z attribute
@@ -253,13 +312,25 @@ void XRayWidthDatabase::init()
       continue;
     }
 
+    // Element atomic mass (amu) for Doppler computation
+    const SandiaDecay::Element *sd_element = decay_db ? decay_db->element( z ) : nullptr;
+    if( !sd_element )
+    {
+      cerr << "Warning: XRayWidthDatabase - SandiaDecay element missing for Z=" << z
+           << ", Doppler widths will be unavailable" << endl;
+    }
+
+    const double atomic_mass_amu = sd_element ? sd_element->atomicMass() : -1.0;
+
     // Parse all <XRay> child nodes
     XML_FOREACH_CHILD( xray_node, element_node, "XRay" )
     {
       try
       {
-        // Parse energy attribute
-        const rapidxml::xml_attribute<char> *energy_attr = xray_node->first_attribute( "energy", 6 );
+        // Parse energy attribute (new: "e", old: "energy")
+        const rapidxml::xml_attribute<char> *energy_attr = xray_node->first_attribute( "e", 1 );
+        if( !energy_attr )
+          energy_attr = xray_node->first_attribute( "energy", 6 );
         if( !energy_attr )
         {
           cerr << "Warning: XRayWidthDatabase - <XRay> missing energy attribute for Z=" << z << ", skipping" << endl;
@@ -273,70 +344,85 @@ void XRayWidthDatabase::init()
           continue;
         }
 
-        // Validate energy threshold (≥10 keV)
-        if( energy_kev < 10.0 )
+        // Validate energy threshold (≥ EnergyThreshold keV)
+        if( energy_kev < energy_threshold_kev )
         {
           cerr << "Warning: XRayWidthDatabase - energy " << energy_kev
-               << " keV below 10 keV threshold for Z=" << z << ", skipping" << endl;
+               << " keV below " << energy_threshold_kev << " keV threshold for Z=" << z << ", skipping" << endl;
           continue;
         }
 
-        // Parse hwhm_natural attribute
-        const rapidxml::xml_attribute<char> *natural_attr = xray_node->first_attribute( "hwhm_natural", 12 );
-        if( !natural_attr )
+        // Parse optional width attribute (new: "hwhm", old: "hwhm_natural")
+        const rapidxml::xml_attribute<char> *hwhm_attr = xray_node->first_attribute( "hwhm", 4 );
+        if( !hwhm_attr )
+          hwhm_attr = xray_node->first_attribute( "hwhm_natural", 12 );
+
+        double hwhm_natural_ev = -1.0;
+        double hwhm_doppler_ev = -1.0;
+        int src_id = -1;
+        double rr = -1.0;
+
+        // Parse optional vacancy shell (destination shell), `vs`
+        std::string vacancy_shell;
+        const rapidxml::xml_attribute<char> *vs_attr = xray_node->first_attribute( "vs", 2 );
+        if( vs_attr )
+          vacancy_shell = SpecUtils::xml_value_str( vs_attr );
+
+        // Parse optional radiative branching ratio within that vacancy shell, `rr`
+        const rapidxml::xml_attribute<char> *rr_attr = xray_node->first_attribute( "rr", 2 );
+        if( rr_attr )
         {
-          cerr << "Warning: XRayWidthDatabase - <XRay> missing hwhm_natural for Z=" << z
-               << " at " << energy_kev << " keV, skipping" << endl;
-          continue;
+          double parsed_rr = -1.0;
+          if( SpecUtils::parse_double( rr_attr->value(), rr_attr->value_size(), parsed_rr ) )
+          {
+            if( parsed_rr >= 0.0 )
+              rr = parsed_rr;
+          }
         }
 
-        double hwhm_natural_ev = 0.0;
-        if( !SpecUtils::parse_double( natural_attr->value(), natural_attr->value_size(), hwhm_natural_ev ) )
+        if( hwhm_attr )
         {
-          cerr << "Warning: XRayWidthDatabase - invalid hwhm_natural for Z=" << z << ", skipping" << endl;
-          continue;
+          double parsed_hwhm = 0.0;
+          if( !SpecUtils::parse_double( hwhm_attr->value(), hwhm_attr->value_size(), parsed_hwhm ) )
+          {
+            cerr << "Warning: XRayWidthDatabase - invalid hwhm for Z=" << z << " at "
+                 << energy_kev << " keV, treating width as unavailable" << endl;
+          }
+          else if( parsed_hwhm <= 0.0 || parsed_hwhm > 2000.0 )
+          {
+            cerr << "Warning: XRayWidthDatabase - unreasonable hwhm " << parsed_hwhm
+                 << " eV for Z=" << z << " at " << energy_kev
+                 << " keV, treating width as unavailable" << endl;
+          }
+          else
+          {
+            hwhm_natural_ev = parsed_hwhm;
+
+            if( atomic_mass_amu > 0.0 )
+              hwhm_doppler_ev = doppler_hwhm_ev_at_reference_temp( energy_kev, atomic_mass_amu );
+
+            // Parse optional provenance source id (only meaningful when width exists)
+            const rapidxml::xml_attribute<char> *src_attr = xray_node->first_attribute( "src", 3 );
+            if( src_attr )
+            {
+              int parsed_src_id = -1;
+              if( SpecUtils::parse_int( src_attr->value(), src_attr->value_size(), parsed_src_id ) )
+                src_id = parsed_src_id;
+            }
+          }
         }
 
-        // Validate natural width range (0.1-200 eV)
-        if( hwhm_natural_ev < 0.1 || hwhm_natural_ev > 200.0 )
-        {
-          cerr << "Warning: XRayWidthDatabase - unreasonable natural width " << hwhm_natural_ev
-               << " eV for Z=" << z << " at " << energy_kev << " keV, skipping" << endl;
-          continue;
-        }
-
-        // Parse hwhm_doppler attribute
-        const rapidxml::xml_attribute<char> *doppler_attr = xray_node->first_attribute( "hwhm_doppler", 12 );
-        if( !doppler_attr )
-        {
-          cerr << "Warning: XRayWidthDatabase - <XRay> missing hwhm_doppler for Z=" << z
-               << " at " << energy_kev << " keV, skipping" << endl;
-          continue;
-        }
-
-        double hwhm_doppler_ev = 0.0;
-        if( !SpecUtils::parse_double( doppler_attr->value(), doppler_attr->value_size(), hwhm_doppler_ev ) )
-        {
-          cerr << "Warning: XRayWidthDatabase - invalid hwhm_doppler for Z=" << z << ", skipping" << endl;
-          continue;
-        }
-
-        // Validate Doppler width range (0.01-5 eV at 295K)
-        if( hwhm_doppler_ev < 0.01 || hwhm_doppler_ev > 5.0 )
-        {
-          cerr << "Warning: XRayWidthDatabase - unreasonable Doppler width " << hwhm_doppler_ev
-               << " eV for Z=" << z << " at " << energy_kev << " keV, skipping" << endl;
-          continue;
-        }
-
-        // Parse optional line label
+        // Parse optional line label (new: "l", old: "line")
         string line_label;
-        const rapidxml::xml_attribute<char> *line_attr = xray_node->first_attribute( "line", 4 );
+        const rapidxml::xml_attribute<char> *line_attr = xray_node->first_attribute( "l", 1 );
+        if( !line_attr )
+          line_attr = xray_node->first_attribute( "line", 4 );
         if( line_attr )
           line_label = SpecUtils::xml_value_str( line_attr );
 
         // Create entry and add to database
-        XRayWidthEntry entry( z, energy_kev, hwhm_natural_ev, hwhm_doppler_ev, line_label );
+        XRayWidthEntry entry( z, energy_kev, hwhm_natural_ev, hwhm_doppler_ev, src_id,
+                              vacancy_shell, rr, line_label );
         m_widths_by_element[z].push_back( entry );
 
       }
@@ -371,18 +457,39 @@ const XRayWidthEntry * XRayWidthDatabase::find_best_match( const int z,
   if( entries.empty() )
     return nullptr;
 
+  // If the XML explicitly contains a line at the requested energy but without
+  // width data, we must treat that as "no width" and not substitute a nearby line.
+  constexpr double exact_match_eps_kev = 0.001; // 1 eV
+
   const XRayWidthEntry *best_match = nullptr;
   double best_diff = tolerance_kev;
+  const XRayWidthEntry *missing_exact_match = nullptr;
 
   for( const XRayWidthEntry &entry : entries )
   {
     const double energy_diff = fabs( entry.energy_kev - energy_kev );
+
+    if( energy_diff <= exact_match_eps_kev )
+    {
+      if( entry.has_width_data() )
+        return &entry;
+
+      missing_exact_match = &entry;
+      continue;
+    }
+
+    if( !entry.has_width_data() )
+      continue;
+
     if( energy_diff < best_diff )
     {
       best_diff = energy_diff;
       best_match = &entry;
     }
   }
+
+  if( missing_exact_match )
+    return missing_exact_match;
 
   return best_match;
 }//find_best_match()
@@ -393,7 +500,7 @@ double XRayWidthDatabase::get_natural_width_hwhm_kev( const int z,
                                                        const double tolerance_kev ) const
 {
   const XRayWidthEntry *entry = find_best_match( z, energy_kev, tolerance_kev );
-  if( !entry )
+  if( !entry || !entry->has_width_data() )
     return -1.0;
 
   // Convert eV to keV
@@ -407,12 +514,12 @@ double XRayWidthDatabase::get_doppler_width_hwhm_kev( const int z,
                                                        const double temperature_k ) const
 {
   const XRayWidthEntry *entry = find_best_match( z, energy_kev, tolerance_kev );
-  if( !entry )
+  if( !entry || !entry->has_width_data() || entry->hwhm_doppler_ev < 0.0 )
     return -1.0;
 
   // Scale Doppler width with temperature: HWHM ∝ sqrt(T)
-  // Database stores width at 295K
-  const double temperature_scale = sqrt( temperature_k / 295.0 );
+  // Database stores width at reference temperature
+  const double temperature_scale = sqrt( temperature_k / sm_doppler_reference_temperature_k );
   const double hwhm_doppler_ev = entry->hwhm_doppler_ev * temperature_scale;
 
   // Convert eV to keV
@@ -426,11 +533,11 @@ double XRayWidthDatabase::get_total_width_hwhm_kev( const int z,
                                                      const double temperature_k ) const
 {
   const XRayWidthEntry *entry = find_best_match( z, energy_kev, tolerance_kev );
-  if( !entry )
+  if( !entry || !entry->has_width_data() || entry->hwhm_doppler_ev < 0.0 )
     return -1.0;
 
   // Scale Doppler width with temperature
-  const double temperature_scale = sqrt( temperature_k / 295.0 );
+  const double temperature_scale = sqrt( temperature_k / sm_doppler_reference_temperature_k );
   const double hwhm_doppler_ev = entry->hwhm_doppler_ev * temperature_scale;
 
   // Combine in quadrature: total² = natural² + doppler²

@@ -1344,6 +1344,11 @@ void photopeak_function_integral( const T mean,
 
   switch( skew_type )
   {
+    case PeakDef::NumSkewType:
+      assert( 0 );
+      //throw runtime_error( "PeakDists photopeak_function_integral: NumSkewType is not a valid skew type" );
+      // Fall through to NoSkew for non-debug builds
+
     case PeakDef::SkewType::NoSkew:
       gaussian_integral( mean, sigma, amp, energies, channels, nchannel );
       break;
@@ -1371,9 +1376,19 @@ void photopeak_function_integral( const T mean,
       exp_gauss_exp_integral( mean, sigma, amp, skew_parameters[0], skew_parameters[1], energies, channels, nchannel );
       break;
 
-    case PeakDef::SkewType::VoigtWithExpTail:
+    case PeakDef::SkewType::VoigtPlusBortel:
       voigt_exp_integral( mean, sigma, amp, skew_parameters[0], skew_parameters[1],
                           skew_parameters[2], energies, channels, nchannel );
+      break;
+
+    case PeakDef::SkewType::GaussPlusBortel:
+      gauss_plus_bortel_integral( mean, sigma, amp, skew_parameters[0], skew_parameters[1],
+                                  energies, channels, nchannel );
+      break;
+
+    case PeakDef::SkewType::DoubleBortel:
+      double_bortel_integral( mean, sigma, amp, skew_parameters[0], skew_parameters[1],
+                              skew_parameters[2], energies, channels, nchannel );
       break;
   }//switch( skew_type )
 }//void photopeak_function_integral(...)
@@ -1701,6 +1716,147 @@ void voigt_exp_integral( const T peak_mean, const T sigma_gauss,
     check_jet_for_NaN( channels[i] );
   }
 }//voigt_exp_integral(...)
+
+
+// ========== Gauss Plus Bortel Functions ==========
+
+template<typename T>
+void gauss_plus_bortel_integral( const T peak_mean, const T sigma,
+                                 const T peak_amplitude, const T R, const T tau,
+                                 const float * const energies, T *channels,
+                                 const size_t nchannel )
+{
+  if( sigma == 0.0 )
+    return;
+
+  if constexpr ( std::is_same_v<T, double> )
+  {
+    // We dont want to return for zero-amplitude peaks if we are using a Ceres::Jet,
+    //  as we may need to take into account the derivatives at zero
+    if( peak_amplitude == 0.0 )
+      return;
+  }//if constexpr ( std::is_same_v<T, double> )
+
+  // For GaussPlusBortel: PDF(x) = (1-R)*Gaussian(x) + R*Bortel(x)
+
+  // Determine energy range to process
+  // The Bortel component has an exponential tail extending far to the left
+  // Use a generous multiplier on tau to ensure we capture the full tail
+  const double zero_amp_point_nsigma_lower = 12.0;
+  const double zero_amp_point_nsigma_upper = 8.0;
+  const T start_energy = peak_mean - (zero_amp_point_nsigma_lower + 20.0*tau) * sigma;
+  const T stop_energy = peak_mean + zero_amp_point_nsigma_upper * sigma;
+
+  size_t channel = 0;
+  while( (channel < nchannel) && (static_cast<double>(energies[channel + 1]) < start_energy) )
+    channel += 1;
+
+  if( channel == nchannel )
+    return;
+
+  // For Gaussian: integral from -inf to x is 0.5*(1 + erf((x-mean)/(sigma*sqrt(2))))
+  // So integral from x0 to x1 is 0.5*(erf((x1-mean)/(sigma*sqrt2)) - erf((x0-mean)/(sigma*sqrt2)))
+  const double sqrt2 = boost::math::constants::root_two<double>();
+  const T sqrt2sigma = sqrt2 * sigma;
+  const T one_minus_R = T(1.0) - R;
+  const T half_one_minus_R = T(0.5) * one_minus_R;
+
+  // Cache the lower energy indefinite integrals
+  T erfarg_low = ( static_cast<double>(energies[channel]) - peak_mean ) / sqrt2sigma;
+  T erf_low = erf( erfarg_low );
+  T bortel_val_low = bortel_indefinite_integral( static_cast<double>(energies[channel]), peak_mean, sigma, tau );
+
+  while( (channel < nchannel) && (energies[channel] < stop_energy) )
+  {
+    const T erfarg_high = ( static_cast<double>(energies[channel + 1]) - peak_mean ) / sqrt2sigma;
+    const T erf_high = erf( erfarg_high );
+    const T bortel_val_high = bortel_indefinite_integral( static_cast<double>(energies[channel + 1]), peak_mean, sigma, tau );
+
+    // Gaussian integral: 0.5 * (erf_high - erf_low)
+    const T gauss_part = half_one_minus_R * ( erf_high - erf_low );
+    // Bortel integral: bortel_val_high - bortel_val_low (bortel_indefinite_integral is already normalized)
+    const T bortel_part = R * ( bortel_val_high - bortel_val_low );
+    const T val = peak_amplitude * ( gauss_part + bortel_part );
+
+    channels[channel] += val;
+
+    erf_low = erf_high;
+    bortel_val_low = bortel_val_high;
+    channel += 1;
+  }//while( (channel < nchannel) && (energies[channel] < stop_energy) )
+
+  // Add NaN checks for debugging with Ceres Jets
+  for( size_t i = 0; i < nchannel; ++i )
+    check_jet_for_NaN( channels[i] );
+}//gauss_plus_bortel_integral(...)
+
+
+// ========== Double Bortel Functions ==========
+
+template<typename T>
+void double_bortel_integral( const T peak_mean, const T sigma,
+                             const T peak_amplitude,
+                             const T tau1, const T tau2_delta, const T eta,
+                             const float * const energies, T *channels,
+                             const size_t nchannel )
+{
+  if( sigma == 0.0 )
+    return;
+
+  if constexpr ( std::is_same_v<T, double> )
+  {
+    // We dont want to return for zero-amplitude peaks if we are using a Ceres::Jet,
+    //  as we may need to take into account the derivatives at zero
+    if( peak_amplitude == 0.0 )
+      return;
+  }//if constexpr ( std::is_same_v<T, double> )
+
+  // DoubleBortel from Bortels & Collaers 1987:
+  // PDF(x) = (1-eta)*Bortel(tau1) + eta*Bortel(tau2)
+  const T tau2 = tau1 + tau2_delta;
+
+  // Determine energy range to process - use larger tau for the tail extent
+  // The Bortel component has an exponential tail extending far to the left
+  // Use a generous multiplier on the larger tau to ensure we capture the full tail
+  const double zero_amp_point_nsigma_base = 12.0;
+  const double zero_amp_point_nsigma_upper = 8.0;
+  const T max_tau = (tau2 > tau1) ? tau2 : tau1;
+  const T start_energy = peak_mean - ( zero_amp_point_nsigma_base + 20.0*max_tau ) * sigma;
+  const T stop_energy = peak_mean + zero_amp_point_nsigma_upper * sigma;
+
+  size_t channel = 0;
+  while( (channel < nchannel) && (static_cast<double>(energies[channel + 1]) < start_energy) )
+    channel += 1;
+
+  if( channel == nchannel )
+    return;
+
+  const T one_minus_eta = T(1.0) - eta;
+
+  // Cache the lower energy indefinite integrals
+  T bortel1_val_low = bortel_indefinite_integral( static_cast<double>(energies[channel]), peak_mean, sigma, tau1 );
+  T bortel2_val_low = bortel_indefinite_integral( static_cast<double>(energies[channel]), peak_mean, sigma, tau2 );
+
+  while( (channel < nchannel) && (energies[channel] < stop_energy) )
+  {
+    const T bortel1_val_high = bortel_indefinite_integral( static_cast<double>(energies[channel + 1]), peak_mean, sigma, tau1 );
+    const T bortel2_val_high = bortel_indefinite_integral( static_cast<double>(energies[channel + 1]), peak_mean, sigma, tau2 );
+
+    const T bortel1_part = one_minus_eta * ( bortel1_val_high - bortel1_val_low );
+    const T bortel2_part = eta * ( bortel2_val_high - bortel2_val_low );
+    const T val = peak_amplitude * ( bortel1_part + bortel2_part );
+
+    channels[channel] += val;
+
+    bortel1_val_low = bortel1_val_high;
+    bortel2_val_low = bortel2_val_high;
+    channel += 1;
+  }//while( (channel < nchannel) && (energies[channel] < stop_energy) )
+
+  // Add NaN checks for debugging with Ceres Jets
+  for( size_t i = 0; i < nchannel; ++i )
+    check_jet_for_NaN( channels[i] );
+}//double_bortel_integral(...)
 
 
 }//namespace PeakDists

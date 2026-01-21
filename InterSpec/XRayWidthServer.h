@@ -70,13 +70,48 @@ struct XRayWidthEntry
 {
   int atomic_number;         // Atomic number (Z)
   double energy_kev;         // X-ray energy in keV
-  double hwhm_natural_ev;    // Natural linewidth (Lorentzian HWHM) in eV
-  double hwhm_doppler_ev;    // Doppler width at 295K (Gaussian HWHM) in eV
+
+  /** Vacancy shell (destination shell of the transition), from XML `vs` attribute.
+   This is the correct grouping key for shell-amplitude fitting (i.e., to group all
+   radiative decays that fill the same vacancy shell).
+   Empty means unknown / not provided.
+   */
+  std::string vacancy_shell;
+
+  /** Natural linewidth (Lorentzian HWHM) in eV.
+   If negative, then the width was not available for this line in the XML file.
+   */
+  double hwhm_natural_ev;
+
+  /** Thermal Doppler broadening (Gaussian HWHM) in eV at \( T_{ref} = 295 \) K.
+   Computed in code from `energy_kev` and element atomic mass.
+   If negative, then the width was not available for this line in the XML file.
+   */
+  double hwhm_doppler_ev;
+
+  /** Width provenance source id (from XML `src` attribute).
+   Only meaningful when `hwhm_natural_ev >= 0`.
+   Negative means "not present / unknown".
+   */
+  int source_id;
+
+  /** xraylib "RadRate" radiative branching ratio within the vacancy shell (dimensionless),
+   from XML `rr` attribute.
+   Missing `rr` means unknown / not provided.
+   Negative means unknown / not present.
+   */
+  double rad_rate;
+
   std::string line_label;    // X-ray transition label (e.g., "Kα1", "Lβ2")
 
   XRayWidthEntry();
   XRayWidthEntry( const int z, const double energy, const double natural,
-                  const double doppler, const std::string &label );
+                  const double doppler, const int source_id,
+                  const std::string &vacancy_shell, const double rad_rate,
+                  const std::string &label );
+
+  bool has_width_data() const { return ( hwhm_natural_ev >= 0.0 ); }
+  bool has_rad_rate() const { return ( rad_rate >= 0.0 ); }
 };//struct XRayWidthEntry
 
 
@@ -92,7 +127,7 @@ struct XRayWidthEntry
    if( db )
    {
      const double width_kev = db->get_natural_width_hwhm_kev( 92, 98.4 );
-     // Use for VoigtWithExpTail peak fitting...
+     // Use for VoigtPlusBortel peak fitting...
    }
  @endcode
  */
@@ -259,9 +294,9 @@ private:
  comprehensive coverage of K-shell and L-shell x-ray transitions. Users can override
  the database by placing a custom xray_widths.xml in the writable data directory.
 
- **Usage for VoigtWithExpTail peaks:**
+ **Usage for VoigtPlusBortel peaks:**
  Peak creators (e.g., RelActAuto) should call this function when creating peaks for fluorescent
- x-rays with the VoigtWithExpTail distribution. If a width is found (return value >= 0), set
+ x-rays with the VoigtPlusBortel distribution. If a width is found (return value >= 0), set
  SkewPar0 to that value and mark it as fixed. If not found (return value < 0), leave SkewPar0
  as a fittable parameter with a reasonable starting value (~0.005 keV).
 
