@@ -329,9 +329,9 @@ inline std::pair<double, double> voigt_exp_coverage_limits(const double mean, co
     double lorentz_width = 0.0;
     if (gamma_lor > 0.0) {
         if (p > 0.0 && p < 1e-3) {
-            lorentz_width = (2.0 * gamma_lor) / (M_PI * p); // asymptotic cot(pi*p/2)
+            lorentz_width = (2.0 * gamma_lor) / (3.14159265358979323846264338327950288 * p); // asymptotic cot(pi*p/2)
         } else if (p > 0.0) {
-            lorentz_width = gamma_lor / std::tan(0.5 * M_PI * p);
+            lorentz_width = gamma_lor / std::tan(0.5 * 3.14159265358979323846264338327950288 * p);
         } else { // p == 0: impossible; choose a large multiple of gamma
             lorentz_width = 1e6 * gamma_lor;
         }

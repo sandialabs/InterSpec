@@ -548,7 +548,7 @@ BOOST_AUTO_TEST_CASE(TestEdgeCases) {
     double x_test = mean + 1.0;
 
     // For Lorentzian, PDF should be gamma/(pi * (x-mean)^2 + gamma^2)
-    double expected_lorentz = gamma_test / (M_PI * (gamma_test * gamma_test));
+    double expected_lorentz = gamma_test / (3.14159265358979323846264338327950288 * (gamma_test * gamma_test));
     double pdf_small_sigma = voigt_pdf<double>(mean, mean, sigma_small, gamma_test);
     BOOST_CHECK_CLOSE(pdf_small_sigma, expected_lorentz, 1e-3);
 
