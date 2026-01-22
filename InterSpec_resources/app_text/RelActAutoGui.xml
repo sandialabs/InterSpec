@@ -20,6 +20,7 @@
   <message id="raag-fwhm-est">FWHM Est.</message>
   <message id="raag-fwhm-form">FWHM Form</message>
   <message id="raag-peak-skew">Peak Skew</message>
+  <message id="raag-lorentzian-xrays">Lorentzian X-rays</message>
   <message id="raag-add-uncert">Add. Uncert</message>
   <message id="raag-yield-info">Yield Info</message>
   
@@ -59,6 +60,7 @@
   <!-- Tooltips -->
   <message id="raag-tt-fwhm-form">The equation type used to model peak FWHM as a function of energy.</message>
   <message id="raag-tt-skew-type">The type of skew to apply to the peaks; skew parameters will be fit.</message>
+  <message id="raag-tt-lorentzian-xrays">When checked, x-ray peaks will use a Voigt profile with the Lorentzian width set to the natural x-ray linewidth. This accounts for the intrinsic Lorentzian shape of x-ray lines. Only compatible with NoSkew or GaussPlusBortel peak skew types.</message>
   <message id="raag-tt-u-pu-data-source">The nuclear data source for gamma branching ratios of uranium and plutonium.</message>
   <message id="raag-tt-add-source">Add a source.</message>
   <message id="raag-tt-add-energy-range">Add an energy range.</message>

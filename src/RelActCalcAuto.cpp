@@ -85,9 +85,10 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/RelActCalcAuto.h"
+#include "InterSpec/XRayWidthServer.h"
 #include "InterSpec/RelActCalcManual.h"
-#include "InterSpec/BersteinPolynomial.hpp"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/BersteinPolynomial.hpp"
 #include "InterSpec/DetectorPeakResponse.h"
 
 
@@ -7943,6 +7944,54 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           }
           
           set_peak_skew( peak, x );
+          
+          // Add in Lorentzian widths for X-rays
+          if( m_options.lorentzian_xrays
+             && (gamma_type == PeakDef::SourceGammaType::XrayGamma)
+             && ((m_options.skew_type == PeakDef::SkewType::NoSkew)
+                 || (m_options.skew_type == PeakDef::SkewType::GaussPlusBortel)) )
+          {
+            double width = -1.0;
+            if( nuc )
+            {
+              assert( transition );
+              if( transition )
+                width = XRayWidths::get_xray_total_width_for_decay( transition, gamma.energy );
+            }else if( el )
+            {
+              width = XRayWidths::get_xray_lorentzian_width( el, gamma.energy, 0.5 );
+            }else
+            {
+              assert( 0 );
+            }
+            
+            if( width >= 0.0 )
+            {
+              // R=0 gives pure Voigt; `tau` is Exp*Gauss exponential decay constant
+              // The skew parameters were already set by set_peak_skew() above
+              T skew_R(0.0), skew_tau(0.0);
+              if( m_options.skew_type == PeakDef::SkewType::GaussPlusBortel )
+              {
+                // GaussPlusBortel uses skew_pars[0]=R, skew_pars[1]=tau
+                skew_R = peak.m_skew_pars[0];
+                skew_tau = peak.m_skew_pars[1];
+              }
+
+              peak.setSkewType( PeakDef::SkewType::VoigtPlusBortel );
+              // VoigtPlusBortel uses: skew_pars[0]=gamma_lor (Lorentzian HWHM),
+              //                       skew_pars[1]=R, skew_pars[2]=tau
+              peak.set_coefficient( T(width), PeakDef::CoefficientType::SkewPar0 );
+              peak.set_coefficient( skew_R, PeakDef::CoefficientType::SkewPar1 );
+              peak.set_coefficient( skew_tau, PeakDef::CoefficientType::SkewPar2 );
+            }else
+            {
+#if( PERFORM_DEVELOPER_CHECKS )
+              cerr << "Failed to get Lorentzian width for " << gamma.energy << " keV." << endl;//temporary for debug
+#endif
+            }
+          }//if( make x-rays Lorentzian )
+          
+          
           peak.m_rel_eff_index = rel_eff_index;
 
           check_peak_reasonable( peak, gamma.energy );
@@ -9814,6 +9863,14 @@ void FloatingPeak::fromXml( const ::rapidxml::xml_node<char> *parent )
 
 void Options::check_same_hoerl_and_external_shielding_specifications() const
 {
+  // Validate lorentzian_xrays compatibility with skew_type
+  if( lorentzian_xrays
+     && (skew_type != PeakDef::SkewType::NoSkew)
+     && (skew_type != PeakDef::SkewType::GaussPlusBortel) )
+  {
+    throw logic_error( "Lorentzian x-rays can only be used with NoSkew or GaussPlusBortel skew types." );
+  }
+
   if( !same_hoerl_for_all_rel_eff_curves && !same_external_shielding_for_all_rel_eff_curves )
     return;
 
@@ -10003,7 +10060,8 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
   append_string_node( base_node, "Title", spectrum_title );
   
   append_string_node( base_node, "SkewType", PeakDef::to_string(skew_type) );
-  
+  append_bool_node( base_node, "LorentzianXrays", lorentzian_xrays );
+
   append_float_node( base_node, "AddUncert", additional_br_uncert );
   
   
@@ -10077,7 +10135,17 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *mat
     const string skew_str = SpecUtils::xml_value_str( skew_node );
     if( !skew_str.empty() )
       skew_type = PeakDef::skew_from_string( skew_str );
-    
+
+    // lorentzian_xrays added 20260121; optional, defaults to false
+    lorentzian_xrays = false;
+    try
+    {
+      lorentzian_xrays = get_bool_node_value( parent, "LorentzianXrays" );
+    }catch( ... )
+    {
+      lorentzian_xrays = false;
+    }
+
     // Additional uncertainty added 202250125, so we'll allow it to be missing.
     try
     {
@@ -11069,8 +11137,13 @@ Options::Options()
   fwhm_estimation_method( FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum ),
   spectrum_title( "" ),
   skew_type( PeakDef::SkewType::NoSkew ),
+  lorentzian_xrays( false ),
   additional_br_uncert( 0.0 ),
-  rel_eff_curves{}
+  rel_eff_curves{},
+  rois{},
+  floating_peaks{},
+  same_hoerl_for_all_rel_eff_curves( false ),
+  same_external_shielding_for_all_rel_eff_curves( false )
 {
 }
   
@@ -14807,7 +14880,10 @@ void Options::equalEnough( const Options &lhs, const Options &rhs )
   
   if( lhs.skew_type != rhs.skew_type )
     throw std::runtime_error( "Skew type in lhs and rhs are not the same" );
-  
+
+  if( lhs.lorentzian_xrays != rhs.lorentzian_xrays )
+    throw std::runtime_error( "Lorentzian xrays in lhs and rhs are not the same" );
+
   if( fabs(lhs.additional_br_uncert - rhs.additional_br_uncert) > 1.0e-5
     && ((lhs.additional_br_uncert > 0.0) || (rhs.additional_br_uncert > 0.0)) )
     throw std::runtime_error( "Additional BR uncertanty in lhs and rhs are not the same" );

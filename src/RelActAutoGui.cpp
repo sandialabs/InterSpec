@@ -51,6 +51,8 @@
 #include <Wt/Http/Response>
 #include <Wt/WStackedWidget>
 #include <Wt/WContainerWidget>
+#include <Wt/WStandardItem>
+#include <Wt/WStandardItemModel>
 #include <Wt/WRegExpValidator>
 #include <Wt/WSuggestionPopup>
 
@@ -455,6 +457,8 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_same_z_age( nullptr ),
   m_skew_type( nullptr ),
   m_add_uncert( nullptr ),
+  m_lorentzian_xrays_enabled( false ),
+  m_lorentzian_xrays( nullptr ),
   m_more_options_menu( nullptr ),
   m_apply_energy_cal_item( nullptr ),
   m_show_ref_lines_item( nullptr ),
@@ -776,14 +780,21 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_skew_type->activated().connect( this, &RelActAutoGui::handleSkewTypeChanged );
   tooltip = WString::tr("raag-tt-skew-type");
   HelpSystem::attachToolTipOn( {label,m_skew_type}, tooltip, showToolTips );
-  for( auto st = PeakDef::SkewType(0); st <= PeakDef::SkewType::NumSkewType; st = PeakDef::SkewType(st + 1) )
-  {
-    const char *label = PeakDef::to_label(st);
-    m_skew_type->addItem( label );
-  }//for( loop over SkewTypes )
-    
-  m_skew_type->setCurrentIndex( 0 );
-  
+
+  // Use WStandardItemModel to store enum values with each item
+  WStandardItemModel *skew_model = new WStandardItemModel( m_skew_type );
+  m_skew_type->setModel( skew_model );
+  populateSkewTypeComboBox( false ); // false = show all skew types
+
+  // Lorentzian X-rays checkbox - initially hidden, shown when x-rays present in ROIs
+  m_lorentzian_xrays = new WCheckBox( WString::tr("raag-lorentzian-xrays"), generalOptionsDiv );
+  m_lorentzian_xrays->addStyleClass( "LorentzianXraysCb CbNoLineBreak" );
+  m_lorentzian_xrays->setHidden( true );
+  m_lorentzian_xrays->checked().connect( this, &RelActAutoGui::handleLorentzianXraysChanged );
+  m_lorentzian_xrays->unChecked().connect( this, &RelActAutoGui::handleLorentzianXraysChanged );
+  tooltip = WString::tr("raag-tt-lorentzian-xrays");
+  HelpSystem::attachToolTipOn( m_lorentzian_xrays, tooltip, showToolTips );
+
   WContainerWidget *addUncertDiv = new WContainerWidget( generalOptionsDiv );
   addUncertDiv->addStyleClass( "RelActAutoAddUncertDiv" );
   label = new WLabel( WString::tr("raag-add-uncert"), addUncertDiv );
@@ -1073,7 +1084,14 @@ void RelActAutoGui::render( Wt::WFlags<Wt::RenderFlag> flags )
     updateDuringRenderForEnergyRangeChange();
     m_render_flags |= RenderActions::UpdateCalculations;
   }
-  
+
+  if( m_render_flags.testFlag(RenderActions::UpdateXRaysInRois)
+     || m_render_flags.testFlag(RenderActions::UpdateNuclidesPresent)
+     || m_render_flags.testFlag(RenderActions::UpdateEnergyRanges) )
+  {
+    updateDuringRenderForXRaysInRois();
+  }
+
   if( m_render_flags.testFlag(RenderActions::ChartToDefaultRange) )
   {
     updateSpectrumToDefaultEnergyRange();
@@ -1172,11 +1190,12 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
   else if( meas && !meas->filename().empty() )
     options.spectrum_title = meas->filename();
   
-  options.skew_type = PeakDef::SkewType::NoSkew;
-  const int skew_index = m_skew_type->currentIndex();
-  if( (skew_index >= 0) && (skew_index < PeakDef::SkewType::NumSkewType) )
-    options.skew_type = PeakDef::SkewType( m_skew_type->currentIndex() );
-  
+  options.skew_type = currentSkewType();
+  options.lorentzian_xrays = (m_lorentzian_xrays_enabled && m_lorentzian_xrays->isChecked());
+  assert( !options.lorentzian_xrays
+         || (options.skew_type == PeakDef::SkewType::NoSkew)
+         || (options.skew_type == PeakDef::SkewType::GaussPlusBortel) );
+
   options.additional_br_uncert = -1.0;
   const auto add_uncert = RelActAutoGui::AddUncert(m_add_uncert->currentIndex());
   switch( add_uncert )
@@ -1924,8 +1943,11 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   if( !fixed_to_det_eff && (options.fwhm_form != RelActCalcAuto::FwhmForm::NotApplicable) )
     setFwhmFormFromCombo( options.fwhm_form );
   
-  m_skew_type->setCurrentIndex( static_cast<int>(options.skew_type) );
-  
+  // First update lorentzian checkbox (before populating skew combo)
+  m_lorentzian_xrays->setChecked( options.lorentzian_xrays );
+  populateSkewTypeComboBox( options.lorentzian_xrays );
+  setCurrentSkewType( options.skew_type );
+
   // We'll just round add-uncert to the nearest-ish value we allow in the GUI
   RelActAutoGui::AddUncert add_uncert = AddUncert::NumAddUncert;
   if( options.additional_br_uncert <= 0.00005 )
@@ -2784,6 +2806,197 @@ void RelActAutoGui::handleSkewTypeChanged()
   scheduleRender();
 }
 
+
+void RelActAutoGui::populateSkewTypeComboBox( const bool lorentzian_mode )
+{
+  WStandardItemModel *model = dynamic_cast<WStandardItemModel *>( m_skew_type->model() );
+  assert( model );
+  if( !model )
+    return;
+
+  // Check if model already has correct entries for this mode to avoid unnecessary updates
+  const int expected_count = lorentzian_mode ? 2 : static_cast<int>(PeakDef::SkewType::NumSkewType);
+  if( model->rowCount() == expected_count )
+    return;
+
+  // Remember current selection if possible
+  PeakDef::SkewType current_skew = PeakDef::SkewType::NoSkew;
+  if( m_skew_type->currentIndex() >= 0 )
+  {
+    const int row = m_skew_type->currentIndex();
+    if( row < model->rowCount() )
+    {
+      const boost::any data = model->data( model->index(row, 0), Wt::UserRole );
+      if( !data.empty() )
+        current_skew = boost::any_cast<PeakDef::SkewType>( data );
+    }
+  }
+
+  model->clear();
+
+  for( PeakDef::SkewType st = PeakDef::SkewType(0);
+       st < PeakDef::SkewType::NumSkewType;
+       st = PeakDef::SkewType(static_cast<int>(st) + 1) )
+  {
+    // In lorentzian mode, only show NoSkew and GaussPlusBortel
+    if( lorentzian_mode
+       && (st != PeakDef::SkewType::NoSkew)
+       && (st != PeakDef::SkewType::GaussPlusBortel) )
+      continue;
+
+    WStandardItem *item = new WStandardItem( PeakDef::to_label(st) );
+    item->setData( st, Wt::UserRole );
+    model->appendRow( item );
+  }
+
+  // Restore selection or adjust to compatible type
+  int new_index = 0;
+  for( int row = 0; row < model->rowCount(); ++row )
+  {
+    const boost::any data = model->data( model->index(row, 0), Wt::UserRole );
+    if( !data.empty() && (boost::any_cast<PeakDef::SkewType>(data) == current_skew) )
+    {
+      new_index = row;
+      break;
+    }
+  }
+
+  // If lorentzian mode and current was something other than NoSkew/GaussPlusBortel, switch to GaussPlusBortel
+  if( lorentzian_mode
+     && (current_skew != PeakDef::SkewType::NoSkew)
+     && (current_skew != PeakDef::SkewType::GaussPlusBortel) )
+  {
+    for( int row = 0; row < model->rowCount(); ++row )
+    {
+      const boost::any data = model->data( model->index(row, 0), Wt::UserRole );
+      if( !data.empty() && (boost::any_cast<PeakDef::SkewType>(data) == PeakDef::SkewType::GaussPlusBortel) )
+      {
+        new_index = row;
+        break;
+      }
+    }
+  }
+
+  m_skew_type->setCurrentIndex( new_index );
+}//void RelActAutoGui::populateSkewTypeComboBox( const bool lorentzian_mode )
+
+
+void RelActAutoGui::handleLorentzianXraysChanged()
+{
+  checkIfInUserConfigOrCreateOne( false );
+
+  const bool lorentzian_checked = m_lorentzian_xrays->isChecked();
+  populateSkewTypeComboBox( lorentzian_checked );
+
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}//void RelActAutoGui::handleLorentzianXraysChanged()
+
+
+PeakDef::SkewType RelActAutoGui::currentSkewType() const
+{
+  WStandardItemModel *model = dynamic_cast<WStandardItemModel *>( m_skew_type->model() );
+  if( !model || (m_skew_type->currentIndex() < 0) )
+    return PeakDef::SkewType::NoSkew;
+
+  const int row = m_skew_type->currentIndex();
+  if( row >= model->rowCount() )
+    return PeakDef::SkewType::NoSkew;
+
+  const boost::any data = model->data( model->index(row, 0), Wt::UserRole );
+  if( data.empty() )
+    return PeakDef::SkewType::NoSkew;
+
+  return boost::any_cast<PeakDef::SkewType>( data );
+}//PeakDef::SkewType RelActAutoGui::currentSkewType() const
+
+
+void RelActAutoGui::setCurrentSkewType( const PeakDef::SkewType skew_type )
+{
+  WStandardItemModel *model = dynamic_cast<WStandardItemModel *>( m_skew_type->model() );
+  if( !model )
+    return;
+
+  for( int row = 0; row < model->rowCount(); ++row )
+  {
+    const boost::any data = model->data( model->index(row, 0), Wt::UserRole );
+    if( !data.empty() && (boost::any_cast<PeakDef::SkewType>(data) == skew_type) )
+    {
+      m_skew_type->setCurrentIndex( row );
+      return;
+    }
+  }
+}//void RelActAutoGui::setCurrentSkewType( const PeakDef::SkewType skew_type )
+
+
+bool RelActAutoGui::hasXraysInRois() const
+{
+  const int num_rel_eff_curves = m_rel_eff_opts_menu->count();
+  const vector<RelActCalcAuto::RoiRange> rois = getRoiRanges();
+
+  for( int rel_eff_curve_index = 0; rel_eff_curve_index < num_rel_eff_curves; ++rel_eff_curve_index )
+  {
+    const vector<RelActCalcAuto::NucInputInfo> nuclides = getNucInputInfo( rel_eff_curve_index );
+    for( const RelActCalcAuto::NucInputInfo &src : nuclides )
+    {
+      const SandiaDecay::Nuclide *nuc = RelActCalcAuto::nuclide( src.source );
+      const SandiaDecay::Element *el = RelActCalcAuto::element( src.source );
+
+      // Elements are x-ray sources by definition
+      if( el )
+      {
+        // Check if element x-rays fall within any ROI
+        for( const SandiaDecay::EnergyIntensityPair &xray : el->xrays )
+        {
+          for( const RelActCalcAuto::RoiRange &roi : rois )
+          {
+            if( (xray.energy >= roi.lower_energy) && (xray.energy <= roi.upper_energy) )
+              return true;
+          }
+        }
+      }
+      else if( nuc )
+      {
+        // Check if nuclide decay produces x-rays in any ROI
+        SandiaDecay::NuclideMixture mixture;
+        mixture.addNuclide( SandiaDecay::NuclideActivityPair(nuc, 1.0) );
+        const double age = std::max( 0.0, src.age );
+        const vector<SandiaDecay::EnergyRatePair> xrays = mixture.xrays( age );
+
+        for( const SandiaDecay::EnergyRatePair &xray : xrays )
+        {
+          for( const RelActCalcAuto::RoiRange &roi : rois )
+          {
+            if( (xray.energy >= roi.lower_energy) && (xray.energy <= roi.upper_energy) )
+              return true;
+          }
+        }
+      }
+    }//for( const RelActCalcAuto::NucInputInfo &src : nuclides )
+  }//for( int rel_eff_curve_index = 0; rel_eff_curve_index < num_rel_eff_curves; ++rel_eff_curve_index )
+
+  return false;
+}//bool RelActAutoGui::hasXraysInRois() const
+
+
+void RelActAutoGui::updateDuringRenderForXRaysInRois()
+{
+  const bool has_xrays_in_rois = hasXraysInRois();
+
+  // Update lorentzian x-rays checkbox visibility
+  if( (m_lorentzian_xrays->isVisible() != has_xrays_in_rois) || (m_lorentzian_xrays_enabled != has_xrays_in_rois) )
+  {
+    m_lorentzian_xrays_enabled = has_xrays_in_rois;
+    m_lorentzian_xrays->setHidden( !has_xrays_in_rois );
+    if( !has_xrays_in_rois )
+    {
+      m_lorentzian_xrays->setChecked( false );
+      populateSkewTypeComboBox( false ); // Restore full skew type list
+    }
+  }
+}//void RelActAutoGui::updateDuringRenderForXRaysInRois()
+
+
 void RelActAutoGui::handleNucDataSrcChanged()
 {
   checkIfInUserConfigOrCreateOne( false );
@@ -2983,6 +3196,7 @@ void RelActAutoGui::handleEnergyRangeChange()
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateEnergyRanges;
   m_render_flags |= RenderActions::UpdateCalculations;
+  
   scheduleRender();
 }//void handleEnergyRangeChange()
 
@@ -4764,6 +4978,7 @@ void RelActAutoGui::updateDuringRenderForNuclideChange()
     if( !has_multiple_nucs_of_z )
       m_same_z_age->setChecked( false );
   }
+
 }//void updateDuringRenderForNuclideChange()
 
 

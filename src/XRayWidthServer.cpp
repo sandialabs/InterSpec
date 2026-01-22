@@ -616,14 +616,19 @@ double get_xray_total_width_for_decay( const SandiaDecay::Transition *transition
   // Find the x-ray particle in the transition
   const SandiaDecay::RadParticle *xray_particle = nullptr;
   const double energy_tolerance = 0.5; // keV tolerance for energy matching
+  double best_energy_diff = 0.0;
 
   for( const SandiaDecay::RadParticle &particle : transition->products )
   {
-    if( particle.type == SandiaDecay::XrayParticle
-        && fabs( particle.energy - xray_energy_kev ) < energy_tolerance )
+    if( particle.type != SandiaDecay::XrayParticle )
+      continue;
+
+    const double energy_diff = fabs( particle.energy - xray_energy_kev );
+    if( energy_diff <= energy_tolerance
+        && ( !xray_particle || (energy_diff < best_energy_diff) ) )
     {
       xray_particle = &particle;
-      break;
+      best_energy_diff = energy_diff;
     }
   }
 
@@ -660,15 +665,13 @@ double get_xray_total_width_for_decay( const SandiaDecay::Transition *transition
   // If no daughter (e.g., spontaneous fission), fall back to parent
   // For isomeric transitions, parent and child have same atomic number, so either works
   if( !xray_emitting_nuclide )
-  {
     xray_emitting_nuclide = transition->parent;
-  }
 
   if( !xray_emitting_nuclide )
   {
-    #if( PERFORM_DEVELOPER_CHECKS )
+#if( PERFORM_DEVELOPER_CHECKS )
       log_developer_error( __func__, "get_xray_total_width_for_decay: could not determine x-ray emitting nuclide" );
-    #endif
+#endif
     return -1.0;
   }
 
