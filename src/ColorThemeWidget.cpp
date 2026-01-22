@@ -127,7 +127,105 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
   cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
   new WText(WString::tr("ctwidget-backdrop-desc"), cell);
-  
+
+  ++row;
+  cell = table->elementAt(row, 0);
+  cell->addStyleClass( "CTRowLabel" );
+  new WLabel(WString::tr("ctwidget-app-background"), cell);
+  cell = table->elementAt(row, 1);
+  cell->addStyleClass( "CTSelect" );
+  m_colorSelects[AppBackground] = new ColorSelect(0, cell);
+  cell = table->elementAt(row, 2);
+  cell->addStyleClass( "CTRowDesc" );
+  new WText(WString::tr("ctwidget-app-background-desc"), cell);
+
+  ++row;
+  cell = table->elementAt(row, 0);
+  cell->addStyleClass( "CTRowLabel" );
+  new WLabel(WString::tr("ctwidget-app-text"), cell);
+  cell = table->elementAt(row, 1);
+  cell->addStyleClass( "CTSelect" );
+  m_colorSelects[AppText] = new ColorSelect(0, cell);
+  cell = table->elementAt(row, 2);
+  cell->addStyleClass( "CTRowDesc" );
+  new WText(WString::tr("ctwidget-app-text-desc"), cell);
+
+  ++row;
+  cell = table->elementAt(row, 0);
+  cell->addStyleClass( "CTRowLabel" );
+  new WLabel(WString::tr("ctwidget-app-border"), cell);
+  cell = table->elementAt(row, 1);
+  cell->addStyleClass( "CTSelect" );
+  m_colorSelects[AppBorder] = new ColorSelect(0, cell);
+  cell = table->elementAt(row, 2);
+  cell->addStyleClass( "CTRowDesc" );
+  new WText(WString::tr("ctwidget-app-border-desc"), cell);
+
+  ++row;
+  cell = table->elementAt(row, 0);
+  cell->addStyleClass( "CTRowLabel" );
+  new WLabel(WString::tr("ctwidget-app-link"), cell);
+  cell = table->elementAt(row, 1);
+  cell->addStyleClass( "CTSelect" );
+  m_colorSelects[AppLink] = new ColorSelect(0, cell);
+  cell = table->elementAt(row, 2);
+  cell->addStyleClass( "CTRowDesc" );
+  new WText(WString::tr("ctwidget-app-link-desc"), cell);
+
+  ++row;
+  cell = table->elementAt(row, 0);
+  cell->addStyleClass( "CTRowLabel" );
+  new WLabel(WString::tr("ctwidget-app-label"), cell);
+  cell = table->elementAt(row, 1);
+  cell->addStyleClass( "CTSelect" );
+  m_colorSelects[AppLabel] = new ColorSelect(0, cell);
+  cell = table->elementAt(row, 2);
+  cell->addStyleClass( "CTRowDesc" );
+  new WText(WString::tr("ctwidget-app-label-desc"), cell);
+
+  ++row;
+  cell = table->elementAt(row, 0);
+  cell->addStyleClass( "CTRowLabel" );
+  new WLabel(WString::tr("ctwidget-app-input-bg"), cell);
+  cell = table->elementAt(row, 1);
+  cell->addStyleClass( "CTSelect" );
+  m_colorSelects[AppInputBackground] = new ColorSelect(0, cell);
+  cell = table->elementAt(row, 2);
+  cell->addStyleClass( "CTRowDesc" );
+  new WText(WString::tr("ctwidget-app-input-bg-desc"), cell);
+
+  ++row;
+  cell = table->elementAt(row, 0);
+  cell->addStyleClass( "CTRowLabel" );
+  new WLabel(WString::tr("ctwidget-app-button-bg"), cell);
+  cell = table->elementAt(row, 1);
+  cell->addStyleClass( "CTSelect" );
+  m_colorSelects[AppButtonBackground] = new ColorSelect(0, cell);
+  cell = table->elementAt(row, 2);
+  cell->addStyleClass( "CTRowDesc" );
+  new WText(WString::tr("ctwidget-app-button-bg-desc"), cell);
+
+  ++row;
+  cell = table->elementAt(row, 0);
+  cell->addStyleClass( "CTRowLabel" );
+  new WLabel(WString::tr("ctwidget-app-button-border"), cell);
+  cell = table->elementAt(row, 1);
+  cell->addStyleClass( "CTSelect" );
+  m_colorSelects[AppButtonBorder] = new ColorSelect(0, cell);
+  cell = table->elementAt(row, 2);
+  cell->addStyleClass( "CTRowDesc" );
+  new WText(WString::tr("ctwidget-app-button-border-desc"), cell);
+
+  ++row;
+  cell = table->elementAt(row, 0);
+  cell->addStyleClass( "CTRowLabel" );
+  new WLabel(WString::tr("ctwidget-app-button-text"), cell);
+  cell = table->elementAt(row, 1);
+  cell->addStyleClass( "CTSelect" );
+  m_colorSelects[AppButtonText] = new ColorSelect(0, cell);
+  cell = table->elementAt(row, 2);
+  cell->addStyleClass( "CTRowDesc" );
+  new WText(WString::tr("ctwidget-app-button-text-desc"), cell);
 
 	++row;
 	cell = table->elementAt(row, 0);
@@ -431,25 +529,9 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
 #if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
   nuclideSuggest->setJavaScriptMember("wtNoReparent", "true");
 #endif
-  nuclideSuggest->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
-  nuclideSuggest->setWidth( WLength(70, Wt::WLength::Unit::Pixel) );
+  nuclideSuggest->addStyleClass( "nuclide-suggest" );
 
-  //See ReferencePhotopeakDisplay.cpp for note on this next hack section of code
-  string js = INLINE_JAVASCRIPT(
-    var addTryCatch = function( elid ){
-      var dofix = function(elid){
-        var el = Wt.WT.getElement(elid);
-        var self = el ? jQuery.data(el, 'obj') : null;
-        if( !self ) self = el ? el.wtObj : null;; //Wt 3.7.1
-        if( !self ){ setTimeout( function(){dofix(elid);}, 100 ); return; }
-        var oldfcn = self.refilter;
-        self.refilter = function(value){ try{ oldfcn(value); }catch(e){ console.log('My refilter caught: ' + e ); } };
-      };
-      dofix(elid);
-    };
-  );
-  
-  nuclideSuggest->doJavaScript( js + " addTryCatch('" + nuclideSuggest->id() + "');" );
+  IsotopeNameFilterModel::setQuickTypeFixHackjs( nuclideSuggest );
   
   isoSuggestModel->filter( "" );
   nuclideSuggest->setFilterLength( -1 );
@@ -465,6 +547,7 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
     m_specificRefLineName[i] = new WLineEdit( cell );
     m_specificRefLineName[i]->setAttributeValue( "ondragstart", "return false" );
     nuclideSuggest->forEdit( m_specificRefLineName[i], WSuggestionPopup::Editing );
+    IsotopeNameFilterModel::setEnterKeyMatchFixJs( nuclideSuggest, m_specificRefLineName[i] );
     m_specificRefLineName[i]->changed().connect( boost::bind( &ColorThemeWidget::specificRefLineSourceChangedCallback, this, i ) );
     m_specificRefLineName[i]->enterPressed().connect( boost::bind( &ColorThemeWidget::specificRefLineSourceChangedCallback, this, i ) );
     
@@ -810,11 +893,20 @@ void ColorThemeWidget::setTheme(const ColorTheme *theme, const bool modifieable)
 	m_colorSelects[DynamicRefLineCommon]->setColor( theme->dynamicRefLineCommonColor.isDefault() ? 
                                                    Wt::WColor( ColorTheme::sm_dynamic_ref_line_common_color ) : 
                                                    theme->dynamicRefLineCommonColor );
-	m_colorSelects[DynamicRefLineOther]->setColor( theme->dynamicRefLineOtherColor.isDefault() ? 
-                                                  Wt::WColor( ColorTheme::sm_dynamic_ref_line_other_color ) : 
+	m_colorSelects[DynamicRefLineOther]->setColor( theme->dynamicRefLineOtherColor.isDefault() ?
+                                                  Wt::WColor( ColorTheme::sm_dynamic_ref_line_other_color ) :
                                                   theme->dynamicRefLineOtherColor );
-  
-  
+
+  m_colorSelects[AppBackground]->setColor( theme->appBackgroundColor );
+  m_colorSelects[AppText]->setColor( theme->appTextColor );
+  m_colorSelects[AppBorder]->setColor( theme->appBorderColor );
+  m_colorSelects[AppLink]->setColor( theme->appLinkColor );
+  m_colorSelects[AppLabel]->setColor( theme->appLabelColor );
+  m_colorSelects[AppInputBackground]->setColor( theme->appInputBackground );
+  m_colorSelects[AppButtonBackground]->setColor( theme->appButtonBackground );
+  m_colorSelects[AppButtonBorder]->setColor( theme->appButtonBorderColor );
+  m_colorSelects[AppButtonText]->setColor( theme->appButtonTextColor );
+
   for( int i = 0; i < sm_numRefLineColors; ++i )
   {
     m_referenceLineColor[i]->setColor( WColor() );
@@ -1017,7 +1109,43 @@ void ColorThemeWidget::newColorSelectedCallback(const ColorThemeWidget::Selectab
 	  case DynamicRefLineOther:
       m_currentTheme->dynamicRefLineOtherColor = m_colorSelects[color]->color();
       break;
-      
+
+    case AppBackground:
+      m_currentTheme->appBackgroundColor = m_colorSelects[color]->color();
+      break;
+
+    case AppText:
+      m_currentTheme->appTextColor = m_colorSelects[color]->color();
+      break;
+
+    case AppBorder:
+      m_currentTheme->appBorderColor = m_colorSelects[color]->color();
+      break;
+
+    case AppLink:
+      m_currentTheme->appLinkColor = m_colorSelects[color]->color();
+      break;
+
+    case AppLabel:
+      m_currentTheme->appLabelColor = m_colorSelects[color]->color();
+      break;
+
+    case AppInputBackground:
+      m_currentTheme->appInputBackground = m_colorSelects[color]->color();
+      break;
+
+    case AppButtonBackground:
+      m_currentTheme->appButtonBackground = m_colorSelects[color]->color();
+      break;
+
+    case AppButtonBorder:
+      m_currentTheme->appButtonBorderColor = m_colorSelects[color]->color();
+      break;
+
+    case AppButtonText:
+      m_currentTheme->appButtonTextColor = m_colorSelects[color]->color();
+      break;
+
 	  case NumSelectableColors:
 		  break;
 	}//switch (color)

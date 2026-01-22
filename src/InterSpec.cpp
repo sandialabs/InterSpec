@@ -4664,6 +4664,37 @@ void InterSpec::applyColorTheme( shared_ptr<const ColorTheme> theme )
 
   m_timeSeries->applyColorTheme( theme );
 
+  // Apply non-chart area colors via CSS variables
+  InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
+  if( app )
+  {
+    auto setNonChartCssVar = [app]( const string &var_name, const WColor &color ) {
+      const string rulename = "global_interspec_" + var_name;
+
+      if( color.isDefault() )
+      {
+        app->removeGlobalCssRule( rulename );
+      }else
+      {
+        app->setGlobalCssRule(
+          rulename,
+          ":root",
+          "--interspec-" + var_name + ": " + color.cssText() + ";"
+        );
+      }
+    };
+
+    setNonChartCssVar( "background-color", theme->appBackgroundColor );
+    setNonChartCssVar( "text-color", theme->appTextColor );
+    setNonChartCssVar( "border-color", theme->appBorderColor );
+    setNonChartCssVar( "link-color", theme->appLinkColor );
+    setNonChartCssVar( "label-color", theme->appLabelColor );
+    setNonChartCssVar( "input-background", theme->appInputBackground );
+    setNonChartCssVar( "button-background", theme->appButtonBackground );
+    setNonChartCssVar( "button-border-color", theme->appButtonBorderColor );
+    setNonChartCssVar( "button-text-color", theme->appButtonTextColor );
+  }
+
   setReferenceLineColors( theme );
   
   string cssfile;
@@ -5765,15 +5796,17 @@ void InterSpec::startStoreTestState()
   edit->setAttributeValue( "spellcheck", "off" );
 #endif
   
-  WText *label = new WText( WString::tr("Name") );
+  WLabel *label = new WLabel( WString::tr("Name") );
   layout->addWidget( label, 0, 0 );
   layout->addWidget( edit,  0, 1 );
-  
+  label->setBuddy( edit );
+
   if( !!m_dataMeasurement && m_dataMeasurement->filename().size() )
     edit->setText( m_dataMeasurement->filename() );
-  
+
   WTextArea *summary = new WTextArea();
-  label = new WText( WString::tr("Desc.") );
+  label = new WLabel( WString::tr("Desc.") );
+  label->setBuddy( summary );
   summary->setEmptyText( WString::tr("db-dec-empty-txt") );
   layout->addWidget( label, 1, 0 );
   layout->addWidget( summary, 1, 1 );

@@ -1371,21 +1371,21 @@ public:
     WGridLayout *layout = new Wt::WGridLayout();
     contents()->setLayout(layout);
     
-    WText *uploadText = new WText( WString("{1}: ").arg( WString::tr("Foreground") ) );
+    WLabel *uploadText = new WLabel( WString::tr("foreground-label") );
     WFileUpload *m_fileUpload = new WFileUpload(  );
     m_fileUpload->changed().connect( m_fileUpload, &Wt::WFileUpload::upload );
     m_fileUpload->uploaded().connect( boost::bind( &SpecMeasManager::dataUploaded2, m_manager, m_fileUpload, SpectrumType::Foreground));
     m_fileUpload->fileTooLarge().connect( boost::bind( &SpecMeasManager::fileTooLarge,
                                                       boost::placeholders::_1 ) );
 
-    WText *uploadText2 = new WText( WString("{1}: ").arg( WString::tr("Background") ) );
+    WLabel *uploadText2 = new WLabel( WString::tr("background-label") );
     WFileUpload *m_fileUpload2 = new WFileUpload(  );
     m_fileUpload2->changed().connect( m_fileUpload2, &Wt::WFileUpload::upload );
     m_fileUpload2->uploaded().connect( boost::bind( &SpecMeasManager::dataUploaded2, m_manager, m_fileUpload2, SpectrumType::Background));
     m_fileUpload2->fileTooLarge().connect( boost::bind( &SpecMeasManager::fileTooLarge,
                                                        boost::placeholders::_1 ) );
     
-    WText *uploadText3 = new WText( WString("{1}: ").arg( WString::tr("second-foreground") ) );
+    WLabel *uploadText3 = new WLabel( WString::tr("secondary-label") );
     WFileUpload *m_fileUpload3 = new WFileUpload(  );
     m_fileUpload3->changed().connect( m_fileUpload3, &Wt::WFileUpload::upload );
     m_fileUpload3->uploaded().connect( boost::bind( &SpecMeasManager::dataUploaded2, m_manager, m_fileUpload3, SpectrumType::SecondForeground));
@@ -5774,7 +5774,7 @@ WContainerWidget *SpecMeasManager::createButtonBar()
   WContainerWidget *m_newDiv = new WContainerWidget( );
   buttonAlignment->addWidget( m_newDiv, 1, 0 );
   m_newDiv->setStyleClass( "LoadSpectrumUploadDiv" );
-  new WText( WString::tr("smm-selected-spec-label"), m_newDiv );
+  new WLabel( WString::tr("smm-selected-spec-label"), m_newDiv );
   
   m_setButton = new WPushButton( WString::tr("smm-disp-as-btn"), m_newDiv);
   m_setButton->setIcon( "InterSpec_resources/images/bullet_arrow_down.png" );
@@ -5829,9 +5829,9 @@ WContainerWidget *SpecMeasManager::createButtonBar()
   WContainerWidget *m_newDiv2 = new WContainerWidget( );
   buttonAlignment->addWidget( m_newDiv2, 2, 0);
   m_newDiv2->setStyleClass( "LoadSpectrumUploadDiv" );
-  
-  //WText *text =
-  new WText( WString::tr("smm-unassign-label"), m_newDiv2 );
+
+  //WLabel *text =
+  new WLabel( WString::tr("smm-unassign-label"), m_newDiv2 );
   
   m_removeForeButton = new WPushButton( WString::tr("Foreground"), m_newDiv2 );
 //      m_removeForeButton->setIcon( "InterSpec_resources/images/minus_min.png" );

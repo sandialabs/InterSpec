@@ -32,6 +32,17 @@
   <message id="Detector">الكاشف</message>
   <message id="Distance">المسافة</message>
   <message id="Activity">النشاط</message>
+  <message id="nuclide-label">النويدة:</message>
+  <message id="age-label">العمر:</message>
+  <message id="distance-label">المسافة:</message>
+  <message id="activity-label">النشاط:</message>
+  <message id="dose-label">الجرعة:</message>
+  <message id="shielding-label">التدريع:</message>
+  <message id="detector-label">الكاشف:</message>
+  <message id="energy-label">الطاقة:</message>
+  <message id="foreground-label">المقدمة:</message>
+  <message id="background-label">الخلفية:</message>
+  <message id="secondary-label">الثانوي:</message>
   <message id="Remark">ملاحظة</message>
   <message id="Tap">اضغط</message>
   <message id="Click">انقر</message>

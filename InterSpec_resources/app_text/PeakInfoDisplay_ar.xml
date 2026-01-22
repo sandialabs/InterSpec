@@ -29,4 +29,5 @@
   <message id="pid-csv-copy-full">نسخ CSV الكامل للذروة</message>
   <message id="pid-csv-copy-no-hdr">نسخ بدون رؤوس</message>
   <message id="pid-csv-copy-compact">نسخ معلومات ملائمة الذروة</message>
+  <message id="pid-peak-label">الذروة: </message>
 </messages>

@@ -743,9 +743,10 @@ void SimpleActivityCalc::init()
   // Peak selection row
   WContainerWidget *peakRow = new WContainerWidget( this );
   peakRow->addStyleClass( "row" );
-  WText *peakLabel = new WText( WString::tr("sac-peak-label"), peakRow );
+  WLabel *peakLabel = new WLabel( WString::tr("sac-peak-label"), peakRow );
   peakLabel->addStyleClass( "label" );
   m_peakSelect = new WComboBox( peakRow );
+  peakLabel->setBuddy( m_peakSelect );
   m_peakSelect->addStyleClass( "input" );
   m_peakSelect->changed().connect( this, &SimpleActivityCalc::handlePeakChanged );
   
@@ -756,9 +757,10 @@ void SimpleActivityCalc::init()
   // Age row (hidden if not appropriate for the nuclide)
   m_ageRow = new WContainerWidget( this );
   m_ageRow->addStyleClass( "row" );
-  WText *ageLabel = new WText( WString::tr("sac-age-label"), m_ageRow );
+  WLabel *ageLabel = new WLabel( WString::tr("sac-age-label"), m_ageRow );
   ageLabel->addStyleClass( "label" );
   m_ageEdit = new WLineEdit( m_ageRow );
+  ageLabel->setBuddy( m_ageEdit );
   m_ageEdit->addStyleClass( "input" );
   m_ageEdit->changed().connect( this, &SimpleActivityCalc::handleAgeChanged );
   m_ageRow->hide(); // Initially hidden
@@ -772,7 +774,7 @@ void SimpleActivityCalc::init()
   // Shielding row
   WContainerWidget *shieldingRow = new WContainerWidget( this );
   shieldingRow->addStyleClass( "row" );
-  WText *shieldingLabel = new WText( WString::tr("sac-shielding-label"), shieldingRow );
+  WLabel *shieldingLabel = new WLabel( WString::tr("sac-shielding-label"), shieldingRow );
   shieldingLabel->addStyleClass( "label" );
   m_shieldingSelect = new ShieldingSelect( m_materialDB, m_materialSuggest, shieldingRow );
   //m_shieldingSelect->addStyleClass( "input" );
@@ -782,9 +784,10 @@ void SimpleActivityCalc::init()
   // Geometry row (hidden if fixed geometry detector)
   m_geometryRow = new WContainerWidget( this );
   m_geometryRow->addStyleClass( "row" );
-  WText *geometryLabel = new WText( WString::tr("sac-geometry-label"), m_geometryRow );
+  WLabel *geometryLabel = new WLabel( WString::tr("sac-geometry-label"), m_geometryRow );
   geometryLabel->addStyleClass( "label" );
   m_geometrySelect = new WComboBox( m_geometryRow );
+  geometryLabel->setBuddy( m_geometrySelect );
   m_geometrySelect->addStyleClass( "input" );
   m_geometrySelect->addItem( WString::tr("sac-geometry-point") );
   m_geometrySelect->changed().connect( this, &SimpleActivityCalc::handleGeometryChanged );
@@ -793,9 +796,10 @@ void SimpleActivityCalc::init()
   // Distance row (hidden if fixed geometry)
   m_distanceRow = new WContainerWidget( this );
   m_distanceRow->addStyleClass( "row" );
-  WText *distanceLabel = new WText( WString::tr("sac-distance-label"), m_distanceRow );
+  WLabel *distanceLabel = new WLabel( WString::tr("sac-distance-label"), m_distanceRow );
   distanceLabel->addStyleClass( "label" );
   m_distanceEdit = new WLineEdit( m_distanceRow );
+  distanceLabel->setBuddy( m_distanceEdit );
   m_distanceEdit->addStyleClass( "input" );
   m_distanceEdit->setText( "1 m" );
   m_distanceEdit->setValidator( new WRegExpValidator( PhysicalUnits::sm_distanceRegex ) );
@@ -2090,7 +2094,7 @@ SimpleActivityCalcResult SimpleActivityCalc::performCalculation( const SimpleAct
     // Set up the data structures required by the framework
     ShieldingSourceFitCalc::ShieldingSourceFitOptions fit_options;
     fit_options.multiple_nucs_contribute_to_peaks = true;
-    fit_options.attenuate_for_air = true;
+    fit_options.attenuate_for_air = (!input.detector || !input.detector->isValid() || !input.detector->isFixedGeometry());
     fit_options.account_for_decay_during_meas = false;
     fit_options.photopeak_cluster_sigma = 1.25;
     fit_options.background_peak_subtract = !!input.background_peak;

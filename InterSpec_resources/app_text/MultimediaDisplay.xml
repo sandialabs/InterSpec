@@ -13,6 +13,9 @@
   <message id="smmd-err-not-image">Multimedia content type was either not of an image type, or could not be determined.</message>
   <message id="smmd-image-index">Image {1} of {2}</message>
   <message id="smmd-Time">Time</message>
+  <message id="smmd-time-label">Time: {1}</message>
+  <message id="smmd-remark-label">Remark: {1}</message>
+  <message id="smmd-desc-label">Desc.: {1}</message>
   <message id="smmd-window-title-single">Image in Spectrum File</message>
   <message id="smmd-window-title-multiple">Images in Spectrum File</message>
 </messages>

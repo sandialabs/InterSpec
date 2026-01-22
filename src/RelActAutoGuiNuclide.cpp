@@ -739,10 +739,12 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui, WContainerWidget
 #if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
   nuclideSuggest->setJavaScriptMember("wtNoReparent", "true");
 #endif
+  nuclideSuggest->addStyleClass( "nuclide-suggest" );
   nuclideSuggest->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
-  nuclideSuggest->setWidth( WLength(70, Wt::WLength::Unit::Pixel) );
+  // Width is set via CSS on the <li> elements in InterSpec.css (.nuclide-suggest li)
   
   IsotopeNameFilterModel::setQuickTypeFixHackjs( nuclideSuggest );
+  IsotopeNameFilterModel::setEnterKeyMatchFixJs( nuclideSuggest, m_nuclide_edit );
   
   isoSuggestModel->filter( "" );
   nuclideSuggest->setFilterLength( -1 );

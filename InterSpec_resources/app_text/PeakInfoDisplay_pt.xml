@@ -31,4 +31,5 @@
   <message id="pid-csv-copy-full">Copiar CSV completo do pico</message>
   <message id="pid-csv-copy-no-hdr">Copiar sem cabeçalhos</message>
   <message id="pid-csv-copy-compact">Copiar info de pico ajustado</message>
+  <message id="pid-peak-label">Pico: </message>
 </messages>

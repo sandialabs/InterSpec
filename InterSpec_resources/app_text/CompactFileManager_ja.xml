@@ -50,4 +50,5 @@
   <message id='cfm-tt-swap-back-with-foreground-btn'>フォアグラウンドとバックグラウンドのスペクトルを交換</message>
   <message id='cfm-swap-secondary-with-foreground-btn'>フォアグラウンド↔セカンダリ</message>
   <message id='cfm-tt-swap-secondary-with-foreground-btn'>フォアグラウンドとセカンダリのスペクトルを交換</message>
+  <message id='cfm-title-with-name'>タイトル: {1}</message>
 </messages>

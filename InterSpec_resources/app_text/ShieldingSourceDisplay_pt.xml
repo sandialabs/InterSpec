@@ -25,6 +25,7 @@
     pontuais no centro.
   </message>
   <message id="ssd-add-shield-label">Adicionar Blindagem:</message>
+  <message id="ssd-geometry-label">Geometria:</message>
   <message id="ssd-tt-add-shield">Escolha de uma biblioteca de materiais de blindagem comuns predefinidos.</message>
   <message id="ssd-generic-btn">Genérica</message>
   <message id="ssd-tt-generic">Permite que você defina e ajuste número atômico e densidade areolar.</message>

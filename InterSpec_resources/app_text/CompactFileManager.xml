@@ -48,6 +48,7 @@
   
   <message id='cfm-swap-back-with-foreground-btn'>foreground↔background</message>
   <message id='cfm-tt-swap-back-with-foreground-btn'>Swap the foreground and background spectra</message>
+  <message id='cfm-title-with-name'>Title: {1}</message>
   <message id='cfm-swap-secondary-with-foreground-btn'>foreground↔secondary</message>
   <message id='cfm-tt-swap-secondary-with-foreground-btn'>Swap the foreground and secondary spectra</message>
 </messages>

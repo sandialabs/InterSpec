@@ -1050,6 +1050,8 @@ struct RelActAutoSolution
    If energy calibration fitting was selected, these peaks will have been adjusted back to "true" energy.
    
    You would use these peaks for `m_spectrum`.
+   
+   Will include free-floating peaks (they will have nullptr sources).
    */
   std::vector<PeakDef> m_fit_peaks;
   

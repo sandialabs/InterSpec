@@ -40,7 +40,7 @@
   <message id="dlt-detected-activity-tt">النشاط المكتشف، باستخدام منطقة الاهتمام هذه فقط،
     والزيادة المرصودة في العد، بالإضافة إلى
     فترة الثقة الإحصائية.</message>
-  <message id="dlt-limit-lt-zero">الحد: &lt; 0{1}</message>
+  <message id="dlt-limit-lt-zero"><![CDATA[الحد: < 0{1}]]></message>
   <message id="dlt-sig-fewer-counts">(عدد العد في ROI أقل بكثير من المتوقع)</message>
   <message id="dlt-fewer-counts-tt">لوحظ عدد عد أقل بكثير في
     منطقة الاهتمام، مما تنبأت به القنوات المجاورة.</message>
@@ -53,8 +53,6 @@
   <message id="dlt-large-deficit">نقص كبير في العد في ROI</message>
   
   <!-- DetectionLimitTool main class strings -->
-  <message id="dlt-nuclide-label">النويدة:&nbsp;&nbsp;</message>
-  <message id="dlt-age-label">العمر:</message>
   <message id="dlt-tt-age-edit">
     <div>عمر النويدة.</div>
     <br />
@@ -62,8 +60,6 @@
     (أي المدخلة) يتم الإبلاغ عنها دائماً في وقت القياس.
     </div>
   </message>
-  <message id="dlt-distance-label">المسافة:</message>
-  <message id="dlt-activity-label">النشاط:</message>
   <message id="dlt-attenuate-for-air">التوهين للهواء</message>
   <message id="dlt-shield-empty-text">مادة التدريع</message>
   <message id="dlt-activity-limit">حد النشاط</message>
@@ -84,8 +80,8 @@
   <message id="dlt-log">لوغاريتم</message>
   <message id="dlt-lin">خطي</message>
   <message id="dlt-below-lc">(أقل من L<sub>c</sub>)</message>
-  <message id="dlt-lt-zero-counts">&lt; 0 عد</message>
-  <message id="dlt-lt-zero-activity">&lt; {1}</message>
+  <message id="dlt-lt-zero-counts"><![CDATA[< 0 عد]]></message>
+  <message id="dlt-lt-zero-activity"><![CDATA[< {1}]]></message>
   
   <!-- Error messages -->
   <message id="dlt-err-no-data">لا توجد بيانات محملة</message>
@@ -178,7 +174,7 @@
   <message id="dlt-chart-x-axis-activity">النشاط ({1})</message>
   <message id="dlt-chart-title-estimated-activity">النشاط المقدر {1}.</message>
   <message id="dlt-chart-title-excess-counts">العد الزائد {1}.</message>
-  <message id="dlt-chart-title-activity-lt-zero">النشاط &lt; 0 {1}</message>
+  <message id="dlt-chart-title-activity-lt-zero"><![CDATA[النشاط < 0 {1}]]></message>
   <message id="dlt-chart-title-data-peak">البيانات + الذروة {1}</message>
   <message id="dlt-chart-title-peak-upper-bound">الذروة للحد الأعلى {1} @{2} CL</message>
   <message id="dlt-currie-info-dialog-title">{1}{2} كيلو إلكترون فولت معلومات</message>
@@ -188,7 +184,7 @@
   <message id="dlt-no-foreground-spectrum">لا يوجد طيف المقدمة</message>
   <message id="dlt-no-drf-loaded">لا يوجد DRF محمل</message>
   <message id="dlt-drf-not-valid">DRF غير صالح أو لا يحتوي على معلومات FWHM.</message>
-  <message id="dlt-err-max-distance-too-large">المسافة القصوى كبيرة جداً (&gt;100كم)</message>
+  <message id="dlt-err-max-distance-too-large"><![CDATA[المسافة القصوى كبيرة جداً (>100كم)]]></message>
   <message id="dlt-err-upper-limit-negative">الحد الأعلى للعد أقل من الصفر، لكن العد المرصود أكبر من L_d.</message>
   <message id="dlt-err-activity-zero-negative">لا يمكن أن يكون النشاط صفراً أو سالباً</message>
   <message id="dlt-err-distance-zero-negative">لا يمكن أن تكون المسافة صفراً أو سالبة</message>

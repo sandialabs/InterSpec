@@ -50,4 +50,5 @@
   <message id='cfm-tt-swap-back-with-foreground-btn'>ফোরগ্রাউন্ড এবং ব্যাকগ্রাউন্ড স্পেকট্রা অদলবদল করুন</message>
   <message id='cfm-swap-secondary-with-foreground-btn'>ফোরগ্রাউন্ড↔সেকেন্ডারি</message>
   <message id='cfm-tt-swap-secondary-with-foreground-btn'>ফোরগ্রাউন্ড এবং সেকেন্ডারি স্পেকট্রা অদলবদল করুন</message>
+  <message id='cfm-title-with-name'>শিরোনাম: {1}</message>
 </messages>

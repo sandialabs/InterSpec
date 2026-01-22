@@ -32,6 +32,17 @@
   <message id="Detector">探测器</message>
   <message id="Distance">距离</message>
   <message id="Activity">活度</message>
+  <message id="nuclide-label">核素:</message>
+  <message id="age-label">年龄:</message>
+  <message id="distance-label">距离:</message>
+  <message id="activity-label">活度:</message>
+  <message id="dose-label">剂量:</message>
+  <message id="shielding-label">屏蔽:</message>
+  <message id="detector-label">探测器:</message>
+  <message id="energy-label">能量:</message>
+  <message id="foreground-label">前景:</message>
+  <message id="background-label">背景:</message>
+  <message id="secondary-label">次要:</message>
   <message id="Remark">备注</message>
   <message id="Tap">轻触</message>
   <message id="Click">点击</message>

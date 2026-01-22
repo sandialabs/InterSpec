@@ -2871,7 +2871,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   //this validates floating point numbers followed by a distance unit
   WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );
   distValidator->setFlags( Wt::MatchCaseInsensitive );
-  m_distanceLabel = new WLabel( WString("{1}:").arg(WString::tr("Distance")) );
+  m_distanceLabel = new WLabel( WString::tr("distance-label") );
   
   m_distanceEdit = new WLineEdit( "100 cm" );
   
@@ -2886,7 +2886,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_distanceEdit->setValidator( distValidator );
   HelpSystem::attachToolTipOn( m_distanceEdit, WString::tr("ssd-tt-distance"), showToolTips );
 
-  m_geometryLabel = new WLabel( WString("{1}:").arg(WString::tr("Geometry")) );
+  m_geometryLabel = new WLabel( WString::tr("ssd-geometry-label") );
   m_geometrySelect = new WComboBox();
   
   // We want the current index of m_geometrySelect to correspond to the GeometryType enum value
@@ -2994,7 +2994,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_showChi2Text->hide();
 
   m_chi2Plot = new ShieldingSourceFitPlot();
-
+  m_chi2Plot->setContentMargins( 5, 5, 13, 5 ); //top, right, bottom, left
+      
   // Connect to display mode change signal to update m_showChiOnChart
   m_chi2Plot->displayModeChanged().connect( boost::bind( &ShieldingSourceDisplay::handleChi2ChartDisplayModeChanged, this, boost::placeholders::_1 ) );
 

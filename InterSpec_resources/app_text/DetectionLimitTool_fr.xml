@@ -53,8 +53,6 @@
   <message id="dlt-large-deficit">Grand déficit de comptages dans ROI</message>
   
   <!-- DetectionLimitTool main class strings -->
-  <message id="dlt-nuclide-label">Nucludé :&nbsp;&nbsp;</message>
-  <message id="dlt-age-label">Âge :</message>
   <message id="dlt-tt-age-edit">
     <div>L'âge du nucléide.</div>
     <br />
@@ -62,8 +60,6 @@
     (c'est-à-dire, entré) sont toujours rapportées au moment de la mesure.
     </div>
   </message>
-  <message id="dlt-distance-label">Distance :</message>
-  <message id="dlt-activity-label">Activité :</message>
   <message id="dlt-attenuate-for-air">Atténuer pour l'air</message>
   <message id="dlt-shield-empty-text">matériau de blindage</message>
   <message id="dlt-activity-limit">Limite d'activité</message>

@@ -54,6 +54,10 @@
   <message id="ds-manual-det-desc">Detektor hatékonyság matematikai képlettel definiálva, x energia megadásával;
      vagy megadhatja a koefficienseket a standard egyenlet formához. Kattintson a kérdőjel ikonra további információért.
   </message>
+  <message id="ds-manual-det-desc-label">Detektor hatékonyság matematikai képlettel definiálva, x energia megadásával;
+     vagy megadhatja a koefficienseket a standard egyenlet formához. Kattintson a kérdőjel ikonra további információért.:</message>
+  <message id="ds-description-label">Leírás:</message>
+  <message id="ds-name-label">Név:</message>
   <message id="ds-manual-det-name-label">Detektor neve </message>
   <message id="ds-manual-det-name-empty-txt">Egyedi detektor név</message>
   <message id="ds-manual-function-label">Hatékonyság f(x) = </message>

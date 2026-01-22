@@ -32,6 +32,17 @@
   <message id="Detector">डिटेक्टर</message>
   <message id="Distance">दूरी</message>
   <message id="Activity">गतिविधि</message>
+  <message id="nuclide-label">न्यूक्लाइड:</message>
+  <message id="age-label">आयु:</message>
+  <message id="distance-label">दूरी:</message>
+  <message id="activity-label">गतिविधि:</message>
+  <message id="dose-label">खुराक:</message>
+  <message id="shielding-label">परिरक्षण:</message>
+  <message id="detector-label">डिटेक्टर:</message>
+  <message id="energy-label">ऊर्जा:</message>
+  <message id="foreground-label">अग्रभूमि:</message>
+  <message id="background-label">पृष्ठभूमि:</message>
+  <message id="secondary-label">द्वितीयक:</message>
   <message id="Remark">टिप्पणी</message>
   <message id="Tap">टैप करें</message>
   <message id="Click">क्लिक करें</message>

@@ -50,5 +50,6 @@
   <message id='cfm-tt-swap-back-with-foreground-btn'>Tukar spektrum latar depan dan latar belakang</message>
   <message id='cfm-swap-secondary-with-foreground-btn'>latar depan↔sekunder</message>
   <message id='cfm-tt-swap-secondary-with-foreground-btn'>Tukar spektrum latar depan dan sekunder</message>
+  <message id='cfm-title-with-name'>Judul: {1}</message>
 </messages>
 

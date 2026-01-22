@@ -32,6 +32,17 @@
   <message id="Detector">Detektor</message>
   <message id="Distance">Távolság</message>
   <message id="Activity">Aktivitás</message>
+  <message id="nuclide-label">Nuklid:</message>
+  <message id="age-label">Kor:</message>
+  <message id="distance-label">Távolság:</message>
+  <message id="activity-label">Aktivitás:</message>
+  <message id="dose-label">Dózis:</message>
+  <message id="shielding-label">Árnyékolás:</message>
+  <message id="detector-label">Detektor:</message>
+  <message id="energy-label">Energia:</message>
+  <message id="foreground-label">Előtér:</message>
+  <message id="background-label">Háttér:</message>
+  <message id="secondary-label">Másodlagos:</message>
   <message id="Remark">Megjegyzés</message>
   <message id="Tap">Érintés</message>
   <message id="Click">Kattintás</message>

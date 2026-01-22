@@ -50,5 +50,6 @@
   <message id='cfm-tt-swap-back-with-foreground-btn'>交换前景和本底谱</message>
   <message id='cfm-swap-secondary-with-foreground-btn'>前景↔次要</message>
   <message id='cfm-tt-swap-secondary-with-foreground-btn'>交换前景和次要谱</message>
+  <message id='cfm-title-with-name'>标题：{1}</message>
 </messages>
 

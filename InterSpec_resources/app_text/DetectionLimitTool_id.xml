@@ -40,7 +40,7 @@
   <message id="dlt-detected-activity-tt">Aktivitas terdeteksi, hanya menggunakan Daerah Minat ini,
     dan kelebihan hitungan yang diamati, serta
     interval kepercayaan statistik.</message>
-  <message id="dlt-limit-lt-zero">Batas: &lt; 0{1}</message>
+  <message id="dlt-limit-lt-zero"><![CDATA[Batas: < 0{1}]]></message>
   <message id="dlt-sig-fewer-counts">(jauh lebih sedikit hitungan di ROI daripada yang diprediksi)</message>
   <message id="dlt-fewer-counts-tt">Jauh lebih sedikit hitungan yang diamati di
     Daerah Minat, daripada yang diprediksi oleh saluran tetangga.</message>
@@ -53,8 +53,6 @@
   <message id="dlt-large-deficit">Defisit besar hitungan di ROI</message>
   
   <!-- DetectionLimitTool main class strings -->
-  <message id="dlt-nuclide-label">Nuklida:&nbsp;&nbsp;</message>
-  <message id="dlt-age-label">Usia:</message>
   <message id="dlt-tt-age-edit">
     <div>Usia nuklida.</div>
     <br />
@@ -62,8 +60,6 @@
     (yaitu, dimasukkan) selalu dilaporkan pada saat pengukuran.
     </div>
   </message>
-  <message id="dlt-distance-label">Jarak:</message>
-  <message id="dlt-activity-label">Aktivitas:</message>
   <message id="dlt-attenuate-for-air">Attenuasi untuk udara</message>
   <message id="dlt-shield-empty-text">bahan perisai</message>
   <message id="dlt-activity-limit">Batas Aktivitas</message>
@@ -84,8 +80,8 @@
   <message id="dlt-log">Log</message>
   <message id="dlt-lin">Lin</message>
   <message id="dlt-below-lc">(di bawah L<sub>c</sub>)</message>
-  <message id="dlt-lt-zero-counts">&lt; 0 hitungan</message>
-  <message id="dlt-lt-zero-activity">&lt; {1}</message>
+  <message id="dlt-lt-zero-counts"><![CDATA[< 0 hitungan]]></message>
+  <message id="dlt-lt-zero-activity"><![CDATA[< {1}]]></message>
   
   <!-- Error messages -->
   <message id="dlt-err-no-data">Tidak Ada Data Dimuat</message>
@@ -178,7 +174,7 @@
   <message id="dlt-chart-x-axis-activity">Aktivitas ({1})</message>
   <message id="dlt-chart-title-estimated-activity">Aktivitas yang diperkirakan {1}.</message>
   <message id="dlt-chart-title-excess-counts">Hitungan berlebih {1}.</message>
-  <message id="dlt-chart-title-activity-lt-zero">Aktivitas &lt; 0 {1}</message>
+  <message id="dlt-chart-title-activity-lt-zero"><![CDATA[Aktivitas < 0 {1}]]></message>
   <message id="dlt-chart-title-data-peak">Data + puncak {1}</message>
   <message id="dlt-chart-title-peak-upper-bound">Puncak untuk batas atas {1} @{2} CL</message>
   <message id="dlt-currie-info-dialog-title">{1}{2} keV Info</message>
@@ -188,7 +184,7 @@
   <message id="dlt-no-foreground-spectrum">Tidak ada spektrum latar depan</message>
   <message id="dlt-no-drf-loaded">Tidak Ada DRF Dimuat</message>
   <message id="dlt-drf-not-valid">DRF tidak valid atau tidak memiliki info FWHM.</message>
-  <message id="dlt-err-max-distance-too-large">Jarak maksimum terlalu besar (&gt;100km)</message>
+  <message id="dlt-err-max-distance-too-large"><![CDATA[Jarak maksimum terlalu besar (>100km)]]></message>
   <message id="dlt-err-upper-limit-negative">Batas atas hitungan kurang dari nol, tetapi hitungan yang diamati lebih besar dari L_d.</message>
   <message id="dlt-err-activity-zero-negative">Aktivitas tidak boleh nol atau negatif</message>
   <message id="dlt-err-distance-zero-negative">Jarak tidak boleh nol atau negatif</message>
