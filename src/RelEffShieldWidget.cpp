@@ -442,7 +442,7 @@ void RelEffShieldWidget::setState(const RelEffShieldState& s)
     setFitAtomicNumber(s.fitAtomicNumber);
   }
   
-  if( !s.materialSelected || (s.fitArealDensity >= 0.0) )
+  if( !s.materialSelected || (s.arealDensity >= 0.0) )
   {
     setArealDensity(s.arealDensity);
     setFitArealDensity(s.fitArealDensity);

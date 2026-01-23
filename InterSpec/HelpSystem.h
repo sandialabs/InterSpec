@@ -132,7 +132,7 @@ namespace HelpSystem
                                             = HelpSystem::ToolTipPrefOverride::RespectPreference );
   
   /** Same as above, but attaches the same tooltip to multiple elements.
-   
+
    The lifetime of the tooltip is governed by the first element in the list.
    */
   void attachToolTipOn( std::initializer_list<Wt::WWebWidget*> widgets,
@@ -141,6 +141,16 @@ namespace HelpSystem
                         const ToolTipPosition pos = HelpSystem::ToolTipPosition::Right,
                         const ToolTipPrefOverride forceShowing
                                   = HelpSystem::ToolTipPrefOverride::RespectPreference );
-  
+
+  /** Removes tooltip previously attached to a widget.
+
+   Searches the widget's children for an RmHelpFromDom object and deletes it,
+   which triggers tooltip cleanup in the DOM via the RmHelpFromDom destructor.
+   Only removes first tooltip encountered.
+
+   \param widget The widget to remove tooltips from
+   */
+  void removeToolTipOn( Wt::WWebWidget* widget );
+
 } //namespace HelpSystem
 #endif //HelpSystem_h

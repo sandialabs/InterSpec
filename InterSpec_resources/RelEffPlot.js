@@ -95,6 +95,8 @@ RelEffPlot = function (elem,options) {
     .style("fill", "rgba(0, 0, 255, 0.1)")
     .style("stroke", "none")
     .style("pointer-events", "none");
+    .style("stroke", "none")
+    .style("pointer-events", "none");
 
   // Add the valueline path.
   this.path = this.plotGroup.append("path")    // Add the valueline path.
@@ -121,14 +123,16 @@ RelEffPlot = function (elem,options) {
   // Initialize mouse interaction variables for zoom
   this.leftMouseDown = null;
   this.zooming = false;
+  
+  // Setup mouse interactions for zoom functionality
+  this.setupMouseInteractions();
 }//RelEffPlot constructor
 
 
 RelEffPlot.prototype.setupMouseInteractions = function() {
   const self = this;
   
-  // Add mouse interaction rect to the chart area - positioned before plotGroup so it's behind data points
-  // This allows mouse events to reach data points for tooltips while still capturing zoom gestures
+  // Add mouse interaction rect to the chart area - will be positioned later in setRelEffData
   this.mouseCapture = this.chartArea.append("rect")
     .attr("class", "mouse-capture")
     .style("fill", "none")
@@ -395,8 +399,8 @@ RelEffPlot.prototype.redrawData = function() {
   });
   
   // Redraw paths with new data
-  this.plotGroup.selectAll("path.line").remove();
-  this.plotGroup.selectAll("path.RelEffPlotErrorBounds").remove();
+  this.chartArea.selectAll("path.line").remove();
+  this.chartArea.selectAll("path.RelEffPlotErrorBounds").remove();
   
   // Redraw fit lines and uncertainty bounds
   this.datasets.forEach(function(dataset, index) {
@@ -406,11 +410,10 @@ RelEffPlot.prototype.redrawData = function() {
         .x(function(d) { return self.xScale(d.energy); })
         .y(function(d) { return self.yScale(d.eff); });
         
-      const path = self.plotGroup.append("path")
+      const path = self.chartArea.append("path")
         .attr("class", "line dataset-" + index)
         .attr("d", valueline(dataset.fit_eqn_points))
-        .style("stroke", self.getDatasetColor(index))
-        .style("pointer-events", "none");
+        .style("stroke", self.getDatasetColor(index));
         
       // Create path for uncertainty bounds if available
       if (dataset.fit_uncert_fcn) {
@@ -419,7 +422,7 @@ RelEffPlot.prototype.redrawData = function() {
           .y0(function(d) { return d.eff_uncert !== null ? self.yScale(d.eff - 2*d.eff_uncert) : null; })
           .y1(function(d) { return d.eff_uncert !== null ? self.yScale(d.eff + 2*d.eff_uncert) : null; });
           
-        const path_uncert = self.plotGroup.append("path")
+        const path_uncert = self.chartArea.append("path")
           .attr("class", "RelEffPlotErrorBounds dataset-" + index)
           .attr("d", area(dataset.fit_eqn_points))
           .style("fill", self.getDatasetColor(index, 0.1))
@@ -430,7 +433,7 @@ RelEffPlot.prototype.redrawData = function() {
   });
   
   // Update data points positions
-  this.plotGroup.selectAll("circle")
+  this.chartArea.selectAll("circle")
     .attr("cx", function(d) { return self.xScale(d.energy); })
     .attr("cy", function(d) { 
       const val = self.yScale(d.eff);
@@ -438,7 +441,7 @@ RelEffPlot.prototype.redrawData = function() {
     });
     
   // Update error bars positions
-  this.plotGroup.selectAll("line.errorbar")
+  this.chartArea.selectAll("line.errorbar")
     .attr('x1', function(d) { return self.xScale(d.energy); })
     .attr('x2', function(d) { return self.xScale(d.energy); })
     .attr('y1', function(d) {

@@ -62,8 +62,7 @@ namespace PeakDists
   /** Returns `1-boost_erf_imp(z)`, however, due to rounding, is a separate implementation than erf.
    */
   double boost_erfc_imp( double z );
-  
-  
+
   /** Function to semi-efficiently integrate the gaussian plus optionally skew distribution over an energy range.
    
    @param mean The peak mean, in keV
@@ -194,7 +193,7 @@ extern template void photopeak_function_integral<double>( const double, const do
    @param sigma The peak width
    @param skew The Bortel skew of the peak (between 0 and 10)
    @param The fraction of the distribution you want to be outside of the returned range; must
-          be between 1.0E-11and 0.999.
+          be between 1.0E-11 and 0.999.
    
    @returns limits so that `0.5*p` of the distribution will be below the first element, and
    `0.5*p` will be above the second element, so the fraction of the distribution between the
@@ -485,7 +484,237 @@ extern template void photopeak_function_integral<double>( const double, const do
                                                                      const double right_n,
                                                                      const double p );
 
-    
+
+
+  // ========== Voigt Plus Bortel Distribution Functions ==========
+
+  /** Control whether to use pseudo-Voigt or true-Voigt for VoigtPlusBortel peaks.
+   
+   The true-Voigt distribution (using Faddeeva function) does not have a CDF function
+   implemented due to accuracy issues with erf(z) for complex z. Therefore:
+   - When USE_PSEUDO_VOIGT_DISTRIBUTION=0: Uses true-Voigt PDF with Gauss-Legendre
+     quadrature for channel integrals (slower but more accurate for Voigt component)
+   - When USE_PSEUDO_VOIGT_DISTRIBUTION=1: Uses pseudo-Voigt (Thompson-Cox-Hastings
+     approximation) with analytic CDF for fast channel integrals (faster, slightly
+     less accurate for Voigt component)
+   
+   Note: voigt_exp_coverage_limits() always uses pseudo-Voigt due to CDF requirement.
+   */
+  #ifndef USE_PSEUDO_VOIGT_DISTRIBUTION
+  #define USE_PSEUDO_VOIGT_DISTRIBUTION 1
+  #endif
+
+  /** Returns the integral of a Voigt with exponential tail distribution between x0 and x1.
+
+   Note: for `USE_PSEUDO_VOIGT_DISTRIBUTION == 0`, this function uses true-Voigt with adaptive 
+     Gauss-Kronrod quadrature (slower but more accurate for Voigt component) to get the integral
+     (this is because of the aformentioned accuracy issues with the true-Voigt CDF)
+
+   @param peak_mean The peak mean in keV
+   @param sigma_gauss Gaussian width (from detector resolution), in keV
+   @param gamma_lor Lorentzian HWHM (from natural line width), in keV
+   @param tail_ratio Fraction of counts in the exponential tail
+   @param tail_slope Exponential tail slope parameter tau
+   @param x0 Lower integration limit
+   @param x1 Upper integration limit
+
+   @returns Integral of the unit-area distribution from x0 to x1
+   */
+  double voigt_exp_integral( const double peak_mean, const double sigma_gauss,
+                             const double gamma_lor, const double tail_ratio,
+                             const double tail_slope, const double x0, const double x1 );
+
+
+  /** Optimized array-filling version of the Voigt with exponential tail integral.
+
+   Uses indefinite integral caching to cut the number of Voigt function evaluations in half.
+
+   @param peak_mean The peak mean in keV
+   @param sigma_gauss Gaussian width (from detector resolution), in keV
+   @param peak_amplitude The peak amplitude (use 1.0 for unit-area peak)
+   @param gamma_lor Lorentzian HWHM (from natural line width), in keV
+   @param tail_ratio Fraction of counts in the exponential tail
+   @param tail_slope Exponential tail slope parameter tau
+   @param energies Array of channel lower energies (must have nchannel+1 entries)
+   @param channels Array where distribution values will be added (must have nchannel entries)
+   @param nchannel Number of channels to integrate over
+   */
+  template<typename T>
+  void voigt_exp_integral( const T peak_mean, const T sigma_gauss,
+                           const T peak_amplitude, const T gamma_lor,
+                           const T tail_ratio, const T tail_slope,
+                           const float * const energies, T *channels,
+                           const size_t nchannel );
+
+  extern template void voigt_exp_integral<double>( const double, const double, const double,
+                                                    const double, const double, const double,
+                                                    const float * const, double *, const size_t );
+
+
+  /** Return the limits so that `1-p` of the VoigtExpTail distribution is covered.
+
+   @param mean The peak mean
+   @param sigma_gauss Gaussian width (from detector resolution), in keV
+   @param gamma_lor Lorentzian HWHM (from natural line width), in keV
+   @param tail_ratio Fraction of counts in the exponential tail
+   @param tail_slope Exponential tail slope parameter tau
+   @param p The fraction of the distribution you want to be outside of the returned range
+
+   @returns limits so that `0.5*p` of the distribution will be below the first element, and
+   `0.5*p` will be above the second element, so the fraction of the distribution between the
+   returned limits is `1 - p`.
+
+   @note This function always uses the pseudo-Voigt approximation (regardless of the
+   USE_PSEUDO_VOIGT_DISTRIBUTION setting) because it requires CDF evaluation, and the
+   true-Voigt CDF is not reliably implemented. This may introduce small accuracy differences
+   compared to the actual peak shape when USE_PSEUDO_VOIGT_DISTRIBUTION=0.
+
+   Throws error on invalid input.
+   */
+  std::pair<double,double> voigt_exp_coverage_limits( const double mean, const double sigma_gauss,
+                                                       const double gamma_lor, const double tail_ratio,
+                                                       const double tail_slope, const double p );
+
+
+  // ========== Gauss Plus Bortel Distribution Functions ==========
+
+  /** Returns the integral of a Gauss+Bortel distribution between x0 and x1.
+
+   This is a weighted mixture of Gaussian and Bortel distributions:
+   PDF(x) = (1-R) * Gaussian(x) + R * Bortel(x)
+
+   When R=0, this equals a pure Gaussian.
+   When R=1, this equals a pure Bortel.
+   This distribution should match VoigtPlusBortel when gamma_lor=0.
+
+   @param peak_mean The peak mean in keV
+   @param sigma Gaussian width (detector resolution), in keV
+   @param R Mixing ratio (0=pure Gaussian, 1=pure Bortel)
+   @param tau Bortel skew parameter (exponential tail decay constant, in units of sigma)
+   @param x0 Lower integration limit
+   @param x1 Upper integration limit
+
+   @returns Integral of the unit-area distribution from x0 to x1
+   */
+  double gauss_plus_bortel_integral( const double peak_mean, const double sigma,
+                                     const double R, const double tau,
+                                     const double x0, const double x1 );
+
+
+  /** Optimized array-filling version of the Gauss+Bortel integral.
+
+   @param peak_mean The peak mean in keV
+   @param sigma Gaussian width (detector resolution), in keV
+   @param peak_amplitude The peak amplitude (use 1.0 for unit-area peak)
+   @param R Mixing ratio (0=pure Gaussian, 1=pure Bortel)
+   @param tau Bortel skew parameter
+   @param energies Array of channel lower energies (must have nchannel+1 entries)
+   @param channels Array where distribution values will be added (must have nchannel entries)
+   @param nchannel Number of channels to integrate over
+   */
+  template<typename T>
+  void gauss_plus_bortel_integral( const T peak_mean, const T sigma,
+                                   const T peak_amplitude, const T R, const T tau,
+                                   const float * const energies, T *channels,
+                                   const size_t nchannel );
+
+  extern template void gauss_plus_bortel_integral<double>( const double, const double, const double,
+                                                           const double, const double,
+                                                           const float * const, double *, const size_t );
+
+
+  /** Return the limits so that `1-p` of the Gauss+Bortel distribution is covered.
+
+   @param mean The peak mean
+   @param sigma Gaussian width (detector resolution), in keV
+   @param R Mixing ratio (0=pure Gaussian, 1=pure Bortel)
+   @param tau Bortel skew parameter
+   @param p The fraction of the distribution you want to be outside of the returned range
+
+   @returns limits so that `0.5*p` of the distribution will be below the first element, and
+   `0.5*p` will be above the second element, so the fraction of the distribution between the
+   returned limits is `1 - p`.
+
+   Throws error on invalid input.
+   */
+  std::pair<double,double> gauss_plus_bortel_coverage_limits( const double mean, const double sigma,
+                                                               const double R, const double tau,
+                                                               const double p );
+
+
+  // ========== Double Bortel Distribution Functions ==========
+
+  /** Returns the integral of a DoubleBortel distribution between x0 and x1.
+
+   From Bortels & Collaers 1987 (Eq. 11), this is a weighted sum of two Bortel distributions:
+   PDF(x) = (1-eta) * Bortel(mean, sigma, tau1, x) + eta * Bortel(mean, sigma, tau2, x)
+
+   Where tau2 = tau1 + tau2_delta, ensuring tau2 >= tau1.
+
+   When tau2_delta=0, this reduces to a single Bortel distribution (regardless of eta).
+   When eta=0, this equals Bortel with tau1.
+   When eta=1, this equals Bortel with tau2.
+
+   @param peak_mean The peak mean in keV
+   @param sigma Gaussian width (detector resolution), in keV
+   @param tau1 First exponential decay constant (in units of sigma)
+   @param tau2_delta Non-negative delta so tau2 = tau1 + tau2_delta
+   @param eta Weight of second exponential (0 to 1)
+   @param x0 Lower integration limit
+   @param x1 Upper integration limit
+
+   @returns Integral of the unit-area distribution from x0 to x1
+   */
+  double double_bortel_integral( const double peak_mean, const double sigma,
+                                 const double tau1, const double tau2_delta,
+                                 const double eta,
+                                 const double x0, const double x1 );
+
+
+  /** Optimized array-filling version of the DoubleBortel integral.
+
+   @param peak_mean The peak mean in keV
+   @param sigma Gaussian width (detector resolution), in keV
+   @param peak_amplitude The peak amplitude (use 1.0 for unit-area peak)
+   @param tau1 First exponential decay constant
+   @param tau2_delta Non-negative delta so tau2 = tau1 + tau2_delta
+   @param eta Weight of second exponential (0 to 1)
+   @param energies Array of channel lower energies (must have nchannel+1 entries)
+   @param channels Array where distribution values will be added (must have nchannel entries)
+   @param nchannel Number of channels to integrate over
+   */
+  template<typename T>
+  void double_bortel_integral( const T peak_mean, const T sigma,
+                               const T peak_amplitude,
+                               const T tau1, const T tau2_delta, const T eta,
+                               const float * const energies, T *channels,
+                               const size_t nchannel );
+
+  extern template void double_bortel_integral<double>( const double, const double, const double,
+                                                       const double, const double, const double,
+                                                       const float * const, double *, const size_t );
+
+
+  /** Return the limits so that `1-p` of the DoubleBortel distribution is covered.
+
+   @param mean The peak mean
+   @param sigma Gaussian width (detector resolution), in keV
+   @param tau1 First exponential decay constant
+   @param tau2_delta Non-negative delta so tau2 = tau1 + tau2_delta
+   @param eta Weight of second exponential (0 to 1)
+   @param p The fraction of the distribution you want to be outside of the returned range
+
+   @returns limits so that `0.5*p` of the distribution will be below the first element, and
+   `0.5*p` will be above the second element, so the fraction of the distribution between the
+   returned limits is `1 - p`.
+
+   Throws error on invalid input.
+   */
+  std::pair<double,double> double_bortel_coverage_limits( const double mean, const double sigma,
+                                                           const double tau1, const double tau2_delta,
+                                                           const double eta, const double p );
+
+
     /** 20231109: Currently `DSCB_pdf_non_norm` yields a that can be almost 20% too low, over the entire effective range
      I'm totally not sure why - it could be an error in my integration for normalization, a bug in the indefinite integral functions,
      or likely a mis-understanding on my part, or a bug in `DSCB_pdf_non_norm` that I have just become blind to seeing.

@@ -2219,6 +2219,11 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
       
       switch( peak->skewType() )
       {
+        case PeakDef::NumSkewType:
+          assert( 0 );
+          //throw runtime_error( "PeakModel::data: NumSkewType is not a valid skew type" );
+          // Fall through to NoSkew for non-debug builds
+
         case PeakDef::NoSkew:
           snprintf( text, sizeof(text), "NA" );
           break;
@@ -2241,6 +2246,26 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
                     peak->coefficient(PeakDef::SkewPar1),
                     peak->coefficient(PeakDef::SkewPar2),
                    peak->coefficient(PeakDef::SkewPar3) );
+          break;
+
+        case PeakDef::VoigtPlusBortel:
+          snprintf( text, sizeof(text), "%.4f, %.3f, %.3f",
+                    peak->coefficient(PeakDef::SkewPar0),
+                    peak->coefficient(PeakDef::SkewPar1),
+                    peak->coefficient(PeakDef::SkewPar2) );
+          break;
+
+        case PeakDef::GaussPlusBortel:
+          snprintf( text, sizeof(text), "%.3f, %.3f",
+                    peak->coefficient(PeakDef::SkewPar0),
+                    peak->coefficient(PeakDef::SkewPar1) );
+          break;
+
+        case PeakDef::DoubleBortel:
+          snprintf( text, sizeof(text), "%.3f, %.3f, %.3f",
+                    peak->coefficient(PeakDef::SkewPar0),
+                    peak->coefficient(PeakDef::SkewPar1),
+                    peak->coefficient(PeakDef::SkewPar2) );
           break;
       }//switch( peak->skewType() )
       

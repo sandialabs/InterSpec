@@ -2038,12 +2038,12 @@ nlohmann::json ToolRegistry::executeGetSourceInfo(const nlohmann::json& params, 
   {
     const ReactionGamma * const rctn_db = ReactionGammaServer::database();
     
-    std::vector<ReactionGamma::ReactionPhotopeak> possible_rctns;
-    if( rctn_db )
-      rctn_db->gammas( nuclide, possible_rctns );
-    
     try
     {
+      std::vector<ReactionGamma::ReactionPhotopeak> possible_rctns;
+      if( rctn_db )
+        rctn_db->gammas( nuclide, possible_rctns );
+      
       if( !possible_rctns.empty() && possible_rctns[0].reaction ) // Take the first reaction found
         rctn = possible_rctns[0].reaction;
     }catch( std::exception & )
