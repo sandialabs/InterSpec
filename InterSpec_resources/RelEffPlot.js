@@ -94,7 +94,7 @@ RelEffPlot = function (elem,options) {
     .attr("class", "RelEffPlotErrorBounds") //Applying in CSS doesnt seem to work for some reason
     .style("fill", "rgba(0, 0, 255, 0.1)")
     .style("stroke", "none")
-    .style("pointer-events", "none");
+    .style("pointer-events", "none")
     .style("stroke", "none")
     .style("pointer-events", "none");
 

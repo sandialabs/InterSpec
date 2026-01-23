@@ -1986,9 +1986,14 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
                  <= 0.00001*std::max(fit->m_areal_density,input->areal_density) );
           
           const double dx = w->thickness() - thickness;
-          assert( fabs(dx) <= 0.00001*std::max(w->thickness(),thickness) );
+          //assert( fabs(dx) <= 0.00001*std::max(w->thickness(),thickness) );
           if( fabs(dx) > 0.00001*std::max(w->thickness(),thickness) )
+          {
+            cerr << "RelEffShieldWidget thickness (" << w->thickness()/PhysicalUnits::cm << " cm)"
+            << " does not match solution (" << thickness/PhysicalUnits::cm << ")" << endl;
+
             w->setThickness( thickness );
+          }
         }//if( input->fit_areal_density ) / else
         
 
@@ -2042,22 +2047,17 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
     //  but we'll go ahead and implement it anyway, incase something odd changed while 
     //  computation was happening.
     assert( m_extAttenShields );
+    int num_empty_shields = 0;
     vector<RelEffShieldWidget *> ext_shields;
     vector<WWidget *> ext_kids = m_extAttenShields ? m_extAttenShields->children() : vector<WWidget *>{};
     for( auto w : ext_kids )
     {
       const auto shield = dynamic_cast<RelEffShieldWidget *>(w);
-      if( shield && ((ext_shields.size() < solution.m_phys_model_external_atten_shields.size()) || shield->nonEmpty()) )
-      {
+      if( shield )
         ext_shields.push_back( shield );
-      }else if( shield && !shield->nonEmpty() )
-      {
-        assert( !shield->nonEmpty() );
-        delete shield;
-      }
     }//for( auto w : ext_kids )
 
-    assert( ext_shields.size() == solution.m_phys_model_external_atten_shields.size() ); //Again, should be the right size
+    //assert( ext_shields.size() == solution.m_phys_model_external_atten_shields.size() ); //Again, should be the right size
     // We shouldnt need to add any more shields, but we'll go ahead and implement doing this
     while( ext_shields.size() < solution.m_phys_model_external_atten_shields.size() )
     {
@@ -2066,14 +2066,14 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
       ext_shields.push_back( shield );
     }
 
-    assert( ext_shields.size() == input.phys_model_external_attens.size() );
-    assert( ext_shields.size() == solution.m_phys_model_external_atten_shields.size() );
+    assert( ext_shields.size() >= input.phys_model_external_attens.size() );
+    assert( ext_shields.size() >= solution.m_phys_model_external_atten_shields.size() );
     
     for( size_t i = 0; i < std::max(ext_shields.size(), solution.m_phys_model_external_atten_shields.size()); ++i )
     {
       if( i >= solution.m_phys_model_external_atten_shields.size() )
       {
-        ext_shields[i]->resetState();
+        ext_shields[i]->resetMaterialEntryState();
         continue;
       }
       const auto &fit_val = solution.m_phys_model_external_atten_shields[i];
@@ -2083,6 +2083,12 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
       if( i < ext_shields.size() )
         update_shield( ext_shields[i], fit_val, in_shield );
     }//for( loop over external shields )
+
+    for( size_t i = (solution.m_phys_model_external_atten_shields.size() + 1); i < ext_shields.size(); ++i )
+    {
+      delete ext_shields[i];
+      ext_shields[i] = nullptr;
+    }
 
     ext_kids = m_extAttenShields ? m_extAttenShields->children() : vector<WWidget *>{};
     if( ext_kids.empty() )
