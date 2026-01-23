@@ -44,7 +44,7 @@ BOOST_AUTO_TEST_CASE(TestPureVoigt) {
 
     // Test at mean
     double pdf_at_mean = voigt_pdf<double>(mean, mean, sigma, gamma);
-    double expected_gaussian = 1.0 / (sigma * std::sqrt(2.0 * M_PI));
+    double expected_gaussian = 1.0 / (sigma * std::sqrt(2.0 * 3.14159265358979323846264338327950288));
 
     BOOST_CHECK_CLOSE(pdf_at_mean, expected_gaussian, 1e-6);
 }
@@ -74,7 +74,7 @@ BOOST_AUTO_TEST_CASE(TestPureGaussian) {
 
     // Test PDF at mean
     double pdf_at_mean = voigt_pdf<double>(mean, mean, sigma, gamma);
-    double expected_gaussian = 1.0 / (sigma * std::sqrt(2.0 * M_PI));
+    double expected_gaussian = 1.0 / (sigma * std::sqrt(2.0 * 3.14159265358979323846264338327950288));
 
     BOOST_CHECK_CLOSE(pdf_at_mean, expected_gaussian, 1e-6);
 
