@@ -58,6 +58,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/XRayWidthServer.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/IsotopeSelectionAids.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -2105,6 +2106,26 @@ void PeakEdit::skewTypeChanged()
       break;
     }//case Bortel, CrystalBall, DoubleSidedCrystalBall, GaussExp, ExpGaussExp
   }//switch( type )
+
+  if( (type == PeakDef::SkewType::VoigtPlusBortel)
+      && (m_currentPeak.xrayElement() 
+          || (m_currentPeak.nuclearTransition() 
+              && (m_currentPeak.sourceGammaType() == PeakDef::SourceGammaType::XrayGamma))) )
+  {
+    double width = -1.0;
+    const double energy = m_currentPeak.gammaParticleEnergy();
+    if( m_currentPeak.xrayElement() )
+      width = XRayWidths::get_xray_lorentzian_width( m_currentPeak.xrayElement(), energy, 0.25 );
+    else
+      width = XRayWidths::get_xray_total_width_for_decay( m_currentPeak.nuclearTransition(), energy );
+
+    if( width > 0.0 )
+    {
+      m_values[PeakEdit::PeakPars::SkewPar0]->setText( SpecUtils::printCompact(width, 5) );
+      m_fitFors[PeakEdit::PeakPars::SkewPar0]->setChecked( false );
+    }
+  }//if( type == PeakDef::SkewType::VoigtPlusBortel )
+
   
   updateSkewParameterLabels( type );
   setSkewInputValueRanges( type );
