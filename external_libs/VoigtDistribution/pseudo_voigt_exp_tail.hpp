@@ -10,53 +10,50 @@
 #include <algorithm>
 #include <stdexcept>
 
-namespace pseudo_voigt {
+namespace ceres
+{
+  // dummy namespace to allow saying using `namespace ceres`,
+  //  even if we arent using `ceres::Jet<>`
+}
+
+namespace pseudo_voigt
+{
 
 // ADL helpers for std / ceres math so Jets keep derivatives
 namespace pseudo_voigt_adl {
 template <typename T>
 inline T adl_exp(const T& v) {
-    using std::exp;
-#if __has_include(<ceres/jet.h>)
-    using ceres::exp;
-#endif
-    return exp(v);
+  using std::exp;
+  using namespace ceres;
+  return exp(v);
 }
 
 template <typename T>
 inline T adl_sqrt(const T& v) {
-    using std::sqrt;
-#if __has_include(<ceres/jet.h>)
-    using ceres::sqrt;
-#endif
-    return sqrt(v);
+  using std::sqrt;
+  using namespace ceres;
+  return sqrt(v);
 }
 
 template <typename T, typename U>
 inline auto adl_pow(const T& a, const U& b) {
-    using std::pow;
-#if __has_include(<ceres/jet.h>)
-    using ceres::pow;
-#endif
-    return pow(a, b);
+  using std::pow;
+  using namespace ceres;
+  return pow(a, b);
 }
 
 template <typename T>
 inline T adl_erf(const T& v) {
-    using std::erf;
-#if __has_include(<ceres/jet.h>)
-    using ceres::erf;
-#endif
-    return erf(v);
+  using std::erf;
+  using namespace ceres;
+  return erf(v);
 }
 
 template <typename T>
 inline T adl_erfc(const T& v) {
-    using std::erfc;
-#if __has_include(<ceres/jet.h>)
-    using ceres::erfc;
-#endif
-    return erfc(v);
+  using std::erfc;
+  using namespace ceres;
+  return erfc(v);
 }
 } // namespace pseudo_voigt_adl
 

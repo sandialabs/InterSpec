@@ -9,8 +9,6 @@
 #include <boost/math/constants/constants.hpp>
 #include <unsupported/Eigen/SpecialFunctions>
 
-#include <ceres/jet.h> //Just to make compile with pseudo_voigt_exp_tail.hpp
-
 #include "SpecUtils/SpecFile.h" //Needed for `offset_integral(...)`
 
 
