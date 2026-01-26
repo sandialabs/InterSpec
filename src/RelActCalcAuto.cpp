@@ -92,6 +92,8 @@
 #include "InterSpec/DetectorPeakResponse.h"
 
 
+#include "Eigen/Dense"
+
 #include "InterSpec/PeakFit_imp.hpp"
 #include "InterSpec/RelActCalc_imp.hpp"
 #include "InterSpec/RelActCalcAuto_imp.hpp"
@@ -123,6 +125,247 @@ using namespace XmlUtils;
 
 namespace
 {
+
+// ============================================================================
+// Templated cubic spline for deviation pair energy calibration correction.
+// This supports both double and ceres::Jet<> types for automatic differentiation.
+// ============================================================================
+
+/** Templated cubic spline node.
+
+ The x-coordinate (energy) is always double, but the y-coordinate (offset)
+ and polynomial coefficients can be either double or ceres::Jet<> for
+ automatic differentiation support.
+ */
+template<typename T>
+struct CubicSplineNodeT
+{
+  double x;  // Anchor x-value (energy) - always double since these are fixed
+  T y;       // Value at anchor (can be Jet type for auto-diff)
+  T a, b, c; // Polynomial coefficients: f(h) = a*h^3 + b*h^2 + c*h + y, where h = x - node.x
+};
+
+
+/** Create a natural cubic spline from deviation pair anchors and their offsets.
+
+ The spline uses natural boundary conditions (second derivative = 0 at endpoints).
+
+ @param anchor_energies The x-coordinates of the spline nodes (sorted by energy)
+ @param offsets The y-coordinates (template type T, can be Jet for auto-diff)
+ @returns Vector of spline nodes for interpolation
+ */
+template<typename T>
+std::vector<CubicSplineNodeT<T>> create_cubic_spline_templated(
+  const std::vector<double> &anchor_energies,
+  const std::vector<T> &offsets )
+{
+  assert( anchor_energies.size() == offsets.size() );
+  const size_t n = anchor_energies.size();
+
+  if( n < 2 )
+    return std::vector<CubicSplineNodeT<T>>{};
+
+  // Verify sorted
+#ifndef NDEBUG
+  for( size_t i = 1; i < n; ++i )
+    assert( anchor_energies[i] > anchor_energies[i-1] );
+#endif
+
+  // Build the tri-diagonal system to solve for second derivatives (b values)
+  // Using natural spline boundary conditions (second derivative = 0 at ends)
+  //
+  // The matrix elements depend only on x-coordinates (doubles)
+  // But the RHS and solution depend on y-coordinates (template type T)
+  //
+  // We use Eigen to build and invert the tri-diagonal matrix (all doubles),
+  // then manually multiply the inverse by the RHS vector (type T) to get the solution.
+
+  Eigen::MatrixXd A = Eigen::MatrixXd::Zero( n, n );
+  std::vector<T> rhs( n );
+
+  // Interior points
+  for( size_t i = 1; i < n - 1; ++i )
+  {
+    const double h_prev = anchor_energies[i] - anchor_energies[i-1];
+    const double h_next = anchor_energies[i+1] - anchor_energies[i];
+
+    A( i, i - 1 ) = h_prev / 3.0;             // lower diagonal
+    A( i, i )     = (h_prev + h_next) / 1.5;  // diagonal
+    A( i, i + 1 ) = h_next / 3.0;             // upper diagonal
+
+    rhs[i] = (offsets[i+1] - offsets[i]) / h_next - (offsets[i] - offsets[i-1]) / h_prev;
+  }
+
+  // Natural boundary conditions: second derivative = 0 at endpoints
+  A( 0, 0 ) = 2.0;
+  rhs[0] = T( 0.0 );
+
+  A( n - 1, n - 1 ) = 2.0;
+  rhs[n - 1] = T( 0.0 );
+
+  // Compute the inverse of A using Eigen's partial-pivot LU decomposition
+  const Eigen::MatrixXd A_inv = A.partialPivLu().inverse();
+
+  // Multiply A_inv (double) by rhs (type T) to get b_vals (type T)
+  // We do this manually to support ceres::Jet<> types
+  std::vector<T> b_vals( n, T(0.0) );
+  for( size_t i = 0; i < n; ++i )
+  {
+    for( size_t j = 0; j < n; ++j )
+      b_vals[i] += A_inv( i, j ) * rhs[j];
+  }
+
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  // Verify against old manual implementation from SpecUtils
+  std::vector<std::array<double, 4>> A_matrix_old( n, {0.0, 0.0, 0.0, 0.0} );
+  std::vector<T> rhs_old( n );
+
+  for( size_t i = 1; i < n - 1; ++i )
+  {
+    const double h_prev = anchor_energies[i] - anchor_energies[i-1];
+    const double h_next = anchor_energies[i+1] - anchor_energies[i];
+    A_matrix_old[i][0] = h_prev / 3.0;
+    A_matrix_old[i][1] = (h_prev + h_next) / 1.5;
+    A_matrix_old[i][2] = h_next / 3.0;
+    rhs_old[i] = (offsets[i+1] - offsets[i]) / h_next - (offsets[i] - offsets[i-1]) / h_prev;
+  }
+
+  A_matrix_old[0][1] = 2.0;
+  A_matrix_old[0][2] = 0.0;
+  rhs_old[0] = T(0.0);
+  A_matrix_old[n-1][1] = 2.0;
+  A_matrix_old[n-1][0] = 0.0;
+  rhs_old[n-1] = T(0.0);
+
+  for( size_t i = 0; i < n; ++i )
+  {
+    assert( A_matrix_old[i][1] != 0.0 );
+    A_matrix_old[i][3] = 1.0 / A_matrix_old[i][1];
+    A_matrix_old[i][0] *= A_matrix_old[i][3];
+    A_matrix_old[i][2] *= A_matrix_old[i][3];
+    A_matrix_old[i][1] = 1.0;
+  }
+
+  for( size_t k = 0; k < n - 1; ++k )
+  {
+    const double x_factor = -A_matrix_old[k+1][0] / A_matrix_old[k][1];
+    A_matrix_old[k+1][0] = -x_factor;
+    A_matrix_old[k+1][1] = A_matrix_old[k+1][1] + x_factor * A_matrix_old[k][2];
+  }
+
+  std::vector<T> y_vec_old( n );
+  y_vec_old[0] = rhs_old[0] * A_matrix_old[0][3];
+  for( size_t i = 1; i < n; ++i )
+    y_vec_old[i] = (rhs_old[i] * A_matrix_old[i][3]) - A_matrix_old[i][0] * y_vec_old[i-1];
+
+  std::vector<T> b_vals_old( n );
+  b_vals_old[n-1] = y_vec_old[n-1] / A_matrix_old[n-1][1];
+  for( size_t i = n - 1; i > 0; --i )
+    b_vals_old[i-1] = (y_vec_old[i-1] - A_matrix_old[i-1][2] * b_vals_old[i]) / A_matrix_old[i-1][1];
+
+  // Compare results - use if constexpr to extract scalar value from T
+  // (T can be either double or ceres::Jet<double,N>)
+  for( size_t i = 0; i < n; ++i )
+  {
+    double new_val, old_val;
+    if constexpr( std::is_same_v<T, double> )
+    {
+      new_val = b_vals[i];
+      old_val = b_vals_old[i];
+    }
+    else
+    {
+      // For ceres::Jet<>, .a is the scalar part
+      new_val = b_vals[i].a;
+      old_val = b_vals_old[i].a;
+    }
+
+    const double diff = std::fabs( new_val - old_val );
+    const double rel_diff = (old_val != 0.0) ? (diff / std::fabs(old_val)) : diff;
+
+    if( (diff > 1.0E-9) && (rel_diff > 1.0E-6) )
+    {
+      char buffer[512];
+      snprintf( buffer, sizeof(buffer),
+        "create_cubic_spline_templated: b_vals mismatch at index %zu: Eigen=%.12g, old=%.12g, diff=%.3g",
+        i, new_val, old_val, diff );
+      log_developer_error( __func__, buffer );
+    }
+  }
+#endif // PERFORM_DEVELOPER_CHECKS
+
+
+  // Calculate spline coefficients a, b, c for each interval
+  std::vector<CubicSplineNodeT<T>> nodes( n );
+
+  for( size_t i = 0; i < n - 1; ++i )
+  {
+    const double h = anchor_energies[i+1] - anchor_energies[i];
+
+    nodes[i].x = anchor_energies[i];
+    nodes[i].y = offsets[i];
+    nodes[i].a = (b_vals[i+1] - b_vals[i]) / (3.0 * h);
+    nodes[i].b = b_vals[i];
+    nodes[i].c = (offsets[i+1] - offsets[i]) / h - (2.0 * b_vals[i] + b_vals[i+1]) * h / 3.0;
+  }
+
+  // Last node (for extrapolation - just store position, coefficients are zero)
+  nodes[n-1].x = anchor_energies[n-1];
+  nodes[n-1].y = offsets[n-1];
+  nodes[n-1].a = T(0.0);
+  nodes[n-1].b = T(0.0);
+  nodes[n-1].c = T(0.0);
+
+  return nodes;
+}//create_cubic_spline_templated(...)
+
+
+/** Evaluate the templated cubic spline at a given energy.
+
+ @param energy The energy to evaluate at (always double)
+ @param nodes The spline nodes from create_cubic_spline_templated
+ @returns The interpolated value (template type T)
+ */
+template<typename T>
+T eval_cubic_spline_templated( const T energy, const std::vector<CubicSplineNodeT<T>> &nodes )
+{
+  
+  double lookup_energy;
+  if constexpr ( std::is_same_v<T, double> )
+    lookup_energy = energy;
+  else
+    lookup_energy = energy.a;  // Extract constant part from Jet
+
+  
+  if( nodes.empty() )
+    return T(0.0);
+
+  // Find the interval using binary search on x values
+  const auto it = std::upper_bound( nodes.begin(), nodes.end(), lookup_energy,
+    []( double e, const CubicSplineNodeT<T> &node ) { return e < node.x; } );
+
+  // Clamp to first/last values for extrapolation
+  if( it == nodes.begin() )
+    return nodes.front().y;
+
+  if( it == nodes.end() )
+    return nodes.back().y;
+
+  // Evaluate the cubic polynomial in the interval
+  const CubicSplineNodeT<T> &node = *(it - 1);
+  const T h = energy - node.x;
+
+  // f(h) = ((a*h + b)*h + c)*h + y
+  return ((node.a * h + node.b) * h + node.c) * h + node.y;
+}//eval_cubic_spline_templated(...)
+
+
+// ============================================================================
+// End of templated cubic spline implementation
+// ============================================================================
+
+
 void sort_rois_by_energy( vector<RelActCalcAuto::RoiRange> &rois )
 {
   std::sort( begin(rois), end(rois), []( const RelActCalcAuto::RoiRange &lhs,
@@ -1227,6 +1470,45 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
 };//get_fwhm_coefficients(...)
 
 
+/** Struct to hold information about a deviation pair anchor point for energy calibration.
+
+ Each ROI that will have a deviation pair correction gets one or more anchors.  The anchor energy
+ is typically the mean of the largest peak in the ROI, or the ROI midpoint if no peaks.
+ */
+struct DeviationPairAnchor
+{
+  /** The energy position of this deviation pair anchor point (keV). */
+  double anchor_energy;
+
+  /** Index of the ROI this anchor belongs to in the sorted (by energy) ROI list. */
+  size_t sorted_roi_index;
+
+  /** Whether this anchor's offset is fitted.
+   False for first/last ROIs (which use initial_offset as their fixed value).
+   */
+  bool is_fitted;
+
+  /** The parameter index within the deviation pair parameter block.
+   Only meaningful if `is_fitted` is true.
+   */
+  size_t param_index;
+
+  /** Upper limit on the offset magnitude (keV).
+   Calculated as min(15% of distance to adjacent ROI anchors, FWHM at anchor energy).
+   */
+  double offset_limit;
+
+  /** The offset from original deviation pairs in the energy calibration at this anchor energy.
+
+   If the original energy calibration has no deviation pairs, this is 0.0.
+   If it does, this is the value of SpecUtils::deviation_pair_correction at anchor_energy.
+
+   For fitted anchors, the total offset = initial_offset + fitted_parameter.
+   For non-fitted (first/last) anchors, the offset is fixed to initial_offset.
+   */
+  double initial_offset;
+};//struct DeviationPairAnchor
+
 
 struct RoiRangeChannels : public RelActCalcAuto::RoiRange
 {
@@ -1585,6 +1867,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
    it probably makes sense to start using at some point.
    */
   size_t m_energy_cal_par_start_index;
+  size_t m_dev_pair_par_start_index;
   size_t m_fwhm_par_start_index;
   size_t m_rel_eff_par_start_index;
   size_t m_acts_par_start_index;
@@ -1602,6 +1885,23 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   This variable defines the lower and upper energy of each peak range.
    */
   std::vector<std::pair<double,double>> m_peak_ranges_with_uncert;
+
+  /** Deviation pair anchor points for non-linear energy calibration correction.
+
+   Each anchor defines an energy point where a deviation offset can be applied.  The first and last
+   anchors (by energy) have their offsets fixed to 0.  Middle anchors have fitted offsets.
+   Sorted by anchor_energy.
+
+   Only populated if `m_options.energy_cal_type == RelActCalcAuto::EnergyCalFitType::NonLinearFit` and there are
+   at least 3 ROIs.
+   */
+  std::vector<DeviationPairAnchor> m_dev_pair_anchors;
+
+  /** Number of deviation pair parameters that are actually fitted (excludes fixed first/last anchors). */
+  size_t m_num_fitted_dev_pair_params;
+
+  /** The peaks passed to the constructor, used to determine anchor energies. */
+  std::vector<std::shared_ptr<const PeakDef>> m_all_peaks;
 
   /** We will use a Ceres paramater to scale the yield of each peak-range.
    The Ceres paramater is defined like:
@@ -1713,6 +2013,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   m_rel_eff_anchor_enhancement( 1000.0 ),
   m_drf( nullptr ),
   m_energy_cal_par_start_index( std::numeric_limits<size_t>::max() ),
+  m_dev_pair_par_start_index( std::numeric_limits<size_t>::max() ),
   m_fwhm_par_start_index( std::numeric_limits<size_t>::max() ),
   m_rel_eff_par_start_index( std::numeric_limits<size_t>::max() ),
   m_acts_par_start_index( std::numeric_limits<size_t>::max() ),
@@ -1724,6 +2025,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   m_skip_skew( false ), // 20250324 HACK to test fitting peak skew
 #endif
   m_peak_ranges_with_uncert{},
+  m_dev_pair_anchors{},
+  m_num_fitted_dev_pair_params( 0 ),
+  m_all_peaks( all_peaks ),
   m_aged_gammas_cache_mutex{},
   m_aged_gammas_cache{},
   m_free_peak_area_multiples{},
@@ -1975,10 +2279,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     m_rel_eff_anchor_enhancement = (m_rel_eff_anchor_enhancement > 1.0) ? sqrt(m_rel_eff_anchor_enhancement) : 1.0;
 
     
+    // Setup deviation pair anchors if enabled
+    setup_deviation_pair_anchors();
+
     // Start assigning where we expect to see each 'type' of parameter in Ceres par vectr
     m_energy_cal_par_start_index = 0;
-    m_fwhm_par_start_index = RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars;
-    
+    m_dev_pair_par_start_index = RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars;
+    m_fwhm_par_start_index = m_dev_pair_par_start_index + m_num_fitted_dev_pair_params;
+
     const size_t num_fwhm_pars = num_parameters( options.fwhm_form );
     m_rel_eff_par_start_index = m_fwhm_par_start_index + num_fwhm_pars;
     
@@ -2008,13 +2316,19 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     size_t num_pars = 0;
     assert( (m_energy_cal_par_start_index == std::numeric_limits<size_t>::max())
            || m_energy_cal_par_start_index == num_pars );
-    
+
     // Energy calibration; we will always have these, even if fixed values
     num_pars += RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars;
-    
+
+    assert( (m_dev_pair_par_start_index == std::numeric_limits<size_t>::max())
+           || m_dev_pair_par_start_index == num_pars );
+
+    // Deviation pair offsets (only the fitted ones, not the fixed first/last)
+    num_pars += m_num_fitted_dev_pair_params;
+
     assert( (m_fwhm_par_start_index == std::numeric_limits<size_t>::max())
            || m_fwhm_par_start_index == num_pars );
-    
+
     // The FWHM equation
     num_pars += num_parameters( m_options.fwhm_form );
     
@@ -2072,7 +2386,229 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     return num_resids;
   }//size_t number_residuals() const
-  
+
+
+  /** Find the anchor energy for a ROI.
+
+   Returns the mean of the largest peak (by area) in the ROI from m_all_peaks,
+   or the ROI midpoint if no peaks are in the ROI.
+   */
+  double find_anchor_energy_for_roi( const double lower_energy, const double upper_energy ) const
+  {
+    double largest_area = 0.0;
+    double anchor_energy = 0.5 * (lower_energy + upper_energy);
+
+    for( const std::shared_ptr<const PeakDef> &peak : m_all_peaks )
+    {
+      const double mean = peak->mean();
+      if( (mean >= lower_energy) && (mean <= upper_energy) )
+      {
+        const double area = peak->peakArea();
+        if( area > largest_area )
+        {
+          largest_area = area;
+          anchor_energy = mean;
+        }
+      }
+    }//for( loop over peaks )
+
+    return anchor_energy;
+  }//find_anchor_energy_for_roi(...)
+
+
+  /** Find multiple anchor energies for a large ROI (>50 keV).
+
+   Divides the ROI into ~50 keV sub-regions and finds an anchor in each.
+   */
+  std::vector<double> find_anchors_for_large_roi( const double lower_energy,
+                                                  const double upper_energy ) const
+  {
+    const double roi_width = upper_energy - lower_energy;
+    assert( roi_width > 50.0 );
+
+    // Determine number of sub-regions (each ~50 keV)
+    const size_t num_subregions = std::max( size_t(2), static_cast<size_t>( std::ceil(roi_width / 50.0) ) );
+    const double subregion_width = roi_width / num_subregions;
+
+    std::vector<double> anchors;
+    anchors.reserve( num_subregions );
+
+    for( size_t i = 0; i < num_subregions; ++i )
+    {
+      const double sub_lower = lower_energy + i * subregion_width;
+      const double sub_upper = lower_energy + (i + 1) * subregion_width;
+      anchors.push_back( find_anchor_energy_for_roi( sub_lower, sub_upper ) );
+    }
+
+    return anchors;
+  }//find_anchors_for_large_roi(...)
+
+
+  /** Setup deviation pair anchors for non-linear energy calibration correction.
+
+   Called from constructor.  Populates m_dev_pair_anchors and sets m_num_fitted_dev_pair_params.
+
+   Only sets up anchors if:
+   - m_options.energy_cal_type is RelActCalcAuto::EnergyCalFitType::NonLinearFit
+   - There are at least 3 ROIs (so at least 1 can be fitted, since first/last are fixed)
+   */
+  void setup_deviation_pair_anchors()
+  {
+    m_dev_pair_anchors.clear();
+    m_num_fitted_dev_pair_params = 0;
+
+    // Check if deviation pairs should be used
+    if( m_options.energy_cal_type != RelActCalcAuto::EnergyCalFitType::NonLinearFit )
+      return;
+
+    // Need at least 3 ROIs for deviation pairs to be useful
+    //  (first and last have fixed offsets, so need at least one in the middle)
+    if( m_energy_ranges.size() < 3 )
+      return;
+
+    // Create a sorted list of ROI indices (by energy)
+    std::vector<size_t> sorted_roi_indices( m_energy_ranges.size() );
+    std::iota( sorted_roi_indices.begin(), sorted_roi_indices.end(), 0 );
+    std::sort( sorted_roi_indices.begin(), sorted_roi_indices.end(),
+      [this]( size_t a, size_t b ) {
+        return m_energy_ranges[a].lower_energy < m_energy_ranges[b].lower_energy;
+      } );
+
+    // Filter out ROIs that will be broken up (they shouldn't get deviation pairs)
+    std::vector<size_t> usable_roi_indices;
+    usable_roi_indices.reserve( sorted_roi_indices.size() );
+    for( const size_t idx : sorted_roi_indices )
+    {
+      if( m_energy_ranges[idx].range_limits_type != RelActCalcAuto::RoiRange::RangeLimitsType::CanBeBrokenUp )
+        usable_roi_indices.push_back( idx );
+    }
+
+    // Need at least 3 usable ROIs
+    if( usable_roi_indices.size() < 3 )
+      return;
+
+    // Collect all anchors with their ROI indices
+    struct AnchorInfo
+    {
+      double energy;
+      size_t sorted_roi_index;  // Index within usable_roi_indices
+    };
+    std::vector<AnchorInfo> all_anchors;
+
+    for( size_t i = 0; i < usable_roi_indices.size(); ++i )
+    {
+      const size_t roi_idx = usable_roi_indices[i];
+      const RoiRangeChannels &roi = m_energy_ranges[roi_idx];
+      const double roi_width = roi.upper_energy - roi.lower_energy;
+
+      if( roi_width > 50.0 )
+      {
+        // Large ROI: multiple anchors
+        const std::vector<double> anchors = find_anchors_for_large_roi( roi.lower_energy, roi.upper_energy );
+        for( const double anchor : anchors )
+          all_anchors.push_back( { anchor, i } );
+      }
+      else
+      {
+        // Normal ROI: single anchor
+        const double anchor = find_anchor_energy_for_roi( roi.lower_energy, roi.upper_energy );
+        all_anchors.push_back( { anchor, i } );
+      }
+    }//for( loop over usable ROIs )
+
+    // Sort anchors by energy
+    std::sort( all_anchors.begin(), all_anchors.end(),
+      []( const AnchorInfo &a, const AnchorInfo &b ) { return a.energy < b.energy; } );
+
+    // Now create DeviationPairAnchor objects
+    // First and last anchors (by energy) have fixed offset (not fitted)
+    size_t fitted_param_index = 0;
+
+    // Get original deviation pairs from energy calibration to compute initial_offset
+    const std::vector<std::pair<float,float>> &orig_dev_pairs = m_energy_cal->deviation_pairs();
+
+    for( size_t i = 0; i < all_anchors.size(); ++i )
+    {
+      const AnchorInfo &info = all_anchors[i];
+
+      DeviationPairAnchor dpa;
+      dpa.anchor_energy = info.energy;
+      dpa.sorted_roi_index = info.sorted_roi_index;
+
+      // First and last anchors are fixed
+      const bool is_first = (i == 0);
+      const bool is_last = (i == all_anchors.size() - 1);
+      dpa.is_fitted = !(is_first || is_last);
+
+      if( dpa.is_fitted )
+      {
+        dpa.param_index = fitted_param_index++;
+
+        // Calculate offset limit: min(15% of distance to adjacent anchors, FWHM at energy)
+        double dist_limit = std::numeric_limits<double>::max();
+
+        // Distance to previous anchor
+        if( i > 0 )
+          dist_limit = std::min( dist_limit, 0.15 * (info.energy - all_anchors[i-1].energy) );
+
+        // Distance to next anchor
+        if( i < all_anchors.size() - 1 )
+          dist_limit = std::min( dist_limit, 0.15 * (all_anchors[i+1].energy - info.energy) );
+
+        // FWHM at this energy (if DRF is available)
+        double fwhm_limit = std::numeric_limits<double>::max();
+        if( m_drf && m_drf->hasResolutionInfo() )
+          fwhm_limit = m_drf->peakResolutionFWHM( static_cast<float>(info.energy) );
+
+        dpa.offset_limit = std::min( dist_limit, fwhm_limit );
+
+        // Ensure a reasonable minimum limit
+        dpa.offset_limit = std::max( dpa.offset_limit, 0.1 );
+      }
+      else
+      {
+        dpa.param_index = std::numeric_limits<size_t>::max();
+        dpa.offset_limit = 0.0;
+      }
+
+      // Compute initial_offset from original deviation pairs in the energy calibration
+      if( !orig_dev_pairs.empty() )
+        dpa.initial_offset = SpecUtils::deviation_pair_correction( static_cast<float>(dpa.anchor_energy), orig_dev_pairs );
+      else
+        dpa.initial_offset = 0.0;
+
+      m_dev_pair_anchors.push_back( dpa );
+    }//for( loop over all anchors )
+
+    m_num_fitted_dev_pair_params = fitted_param_index;
+
+#if( PERFORM_DEVELOPER_CHECKS )
+    // Verify anchors are sorted by energy
+    for( size_t i = 1; i < m_dev_pair_anchors.size(); ++i )
+      assert( m_dev_pair_anchors[i].anchor_energy >= m_dev_pair_anchors[i-1].anchor_energy );
+
+    // Verify first and last are not fitted
+    if( !m_dev_pair_anchors.empty() )
+    {
+      assert( !m_dev_pair_anchors.front().is_fitted );
+      assert( !m_dev_pair_anchors.back().is_fitted );
+    }
+
+    // Verify param_index values are consecutive for fitted anchors
+    size_t expected_idx = 0;
+    for( const auto &anchor : m_dev_pair_anchors )
+    {
+      if( anchor.is_fitted )
+      {
+        assert( anchor.param_index == expected_idx );
+        ++expected_idx;
+      }
+    }
+    assert( expected_idx == m_num_fitted_dev_pair_params );
+#endif
+  }//setup_deviation_pair_anchors(...)
+
+
   /** Solve the problem, using the Ceres optimizer. */
   static RelActCalcAuto::RelActAutoSolution solve_ceres( RelActCalcAuto::Options options,
                                                         std::shared_ptr<const SpecUtils::Measurement> foreground,
@@ -2429,7 +2965,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     for( size_t i = 0; i < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars; ++i )
       parameters[i] = RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset;
     
-    if( options.fit_energy_cal )
+    const bool fit_energy_cal = (options.energy_cal_type != RelActCalcAuto::EnergyCalFitType::NoFit);
+    if( fit_energy_cal )
     {
       static_assert( ((RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars == 2)
                       || (RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars == 3)),
@@ -2531,7 +3068,25 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       for( size_t i = 0; i < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars; ++i )
         constant_parameters.push_back( static_cast<int>(i) );
     }
-    
+
+    // Initialize deviation pair parameters (non-linear energy cal correction)
+    // Parameters are initialized to 0 (no correction) with bounds based on offset_limit
+    if( cost_functor->m_num_fitted_dev_pair_params > 0 )
+    {
+      for( const DeviationPairAnchor &anchor : cost_functor->m_dev_pair_anchors )
+      {
+        if( anchor.is_fitted )
+        {
+          const size_t par_idx = cost_functor->m_dev_pair_par_start_index + anchor.param_index;
+          assert( par_idx < num_pars_initial );
+
+          parameters[par_idx] = 0.0;  // Start with no correction
+          lower_bounds[par_idx] = -anchor.offset_limit;
+          upper_bounds[par_idx] = anchor.offset_limit;
+        }
+      }//for( loop over anchors )
+    }//if( deviation pairs are being fitted )
+
 #ifndef NDEBUG
     {// Begin some dev checks
       size_t num_rel_eff_par = 0;
@@ -2542,13 +3097,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         else
           num_rel_eff_par += rel_eff_curve.rel_eff_eqn_order + 1;
       }//for( const auto &rel_eff_curve : options.rel_eff_curves )
-      
+
       size_t num_acts_par = 0;
       for( const auto &rel_eff_curve : options.rel_eff_curves )
         num_acts_par += 2*rel_eff_curve.nuclides.size();
-      
+
       assert( cost_functor->m_energy_cal_par_start_index == 0 );
-      assert( cost_functor->m_fwhm_par_start_index == RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars );
+      assert( cost_functor->m_dev_pair_par_start_index == RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars );
+      assert( cost_functor->m_fwhm_par_start_index == (cost_functor->m_dev_pair_par_start_index + cost_functor->m_num_fitted_dev_pair_params) );
       assert( cost_functor->m_rel_eff_par_start_index == (cost_functor->m_fwhm_par_start_index + num_parameters(options.fwhm_form)) );
       assert( cost_functor->m_acts_par_start_index == (cost_functor->m_rel_eff_par_start_index + num_rel_eff_par) );
       assert( cost_functor->m_free_peak_par_start_index == (cost_functor->m_acts_par_start_index + num_acts_par) );
@@ -4451,7 +5007,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
     // Get the applicable energy cal paramaters we will fix
     vector<size_t> ene_cal_pars_indexes;
-    if( options.fit_energy_cal )
+    if( fit_energy_cal )
     {
       for( size_t index = cost_functor->m_energy_cal_par_start_index;
           index < cost_functor->m_fwhm_par_start_index;
@@ -4463,7 +5019,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }
 
     vector<size_t> fwhm_par_indexes;
-    if( options.fit_energy_cal )
+    
+    if( (options.fwhm_estimation_method != RelActCalcAuto::FwhmEstimationMethod::FixedToAllPeaksInSpectrum)
+       || (options.fwhm_estimation_method != RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency) )
     {
       for( size_t index = cost_functor->m_fwhm_par_start_index;
           index < cost_functor->m_rel_eff_par_start_index;
@@ -4472,7 +5030,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         if( !already_fixed(index) )
           fwhm_par_indexes.push_back( index );
       }
-    }
+    }//if( we are fitting for FWHM )
 
     /** lambda to evaluate the problems, holding a number of paramaters constant.
      Will update `parameters` if solution is better than previous best solution, otherwise leaves them alone.
@@ -4875,16 +5433,31 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
     for( size_t i = 0; i < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars; ++i )
       solution.m_energy_cal_adjustments[i] = parameters[i];
-    
+
+    // Extract deviation pair offsets
+    // Store total offset = initial_offset + fitted_adjustment for each anchor
+    solution.m_deviation_pair_offsets.clear();
+    if( !cost_functor->m_dev_pair_anchors.empty() )
+    {
+      for( const DeviationPairAnchor &anchor : cost_functor->m_dev_pair_anchors )
+      {
+        double total_offset = anchor.initial_offset;
+        if( anchor.is_fitted )
+          total_offset += parameters[cost_functor->m_dev_pair_par_start_index + anchor.param_index];
+
+        solution.m_deviation_pair_offsets.emplace_back( anchor.anchor_energy, total_offset );
+      }
+    }//if( deviation pairs were used )
+
     // We will use `new_cal` to move peaks from their true energy, to the spectrums original
     //  energy calibration - so we will un-apply the energy calibration correction
     shared_ptr<const SpecUtils::EnergyCalibration> new_cal = solution.m_foreground->energy_calibration();
-    if( success && options.fit_energy_cal )
+    if( success && fit_energy_cal )
     {
       shared_ptr<SpecUtils::EnergyCalibration> modified_new_cal = solution.get_adjusted_energy_cal();
       solution.m_spectrum->set_energy_calibration( modified_new_cal );
       new_cal = modified_new_cal;
-    }//if( options.fit_energy_cal )
+    }//if( fit_energy_cal )
     
     if( options.additional_br_uncert > 0.0 )
     {
@@ -5226,7 +5799,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     for( const RelActCalcAutoImp::RoiRangeChannels &roi : cost_functor->m_energy_ranges )
     {
       RelActCalcAuto::RoiRange roi_range = roi;
-      if( options.fit_energy_cal )
+      if( fit_energy_cal )
       {
         roi_range.lower_energy = cost_functor->apply_energy_cal_adjustment( roi_range.lower_energy, parameters );
         roi_range.upper_energy = cost_functor->apply_energy_cal_adjustment( roi_range.upper_energy, parameters ); 
@@ -5887,15 +6460,16 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   template<typename T>
   T fwhm( const T energy, const std::vector<T> &x ) const
   {
-    const auto drf_start = x.data() + RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars;
-    assert( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars == m_fwhm_par_start_index );
+    const auto drf_start = x.data() + m_fwhm_par_start_index;
     const size_t num_drf_par = num_parameters(m_options.fwhm_form);
+    assert( (m_dev_pair_par_start_index + m_num_fitted_dev_pair_params) == m_fwhm_par_start_index );
+    assert( (m_fwhm_par_start_index + num_drf_par) == m_rel_eff_par_start_index );
     
 #ifndef NDEBUG
     // Make sure the scale factors are 1.0 for all FWHM parameters that are not FWHM parameters
     for( size_t i = 0; i < num_drf_par; ++i )
     {
-      const double scale_factor = this->parameter_scale_factor( i + RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars );
+      const double scale_factor = this->parameter_scale_factor( i + m_fwhm_par_start_index );
       assert( scale_factor == 1.0 );
     }
 #endif
@@ -5908,6 +6482,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   void set_peak_skew( P &peak, const std::vector<T> &x ) const
   {
     const size_t skew_start = RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars
+                              + m_num_fitted_dev_pair_params
                               + num_parameters(m_options.fwhm_form)
                               + num_total_rel_eff_coefs()
                               + num_total_act_coefs()
@@ -6042,7 +6617,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       throw runtime_error( "Invalid relative efficiency curve index." );
     
     size_t rel_eff_start_index = RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars
-                                       + num_parameters(m_options.fwhm_form);
+                                  + m_num_fitted_dev_pair_params
+                                  + num_parameters(m_options.fwhm_form);
+    assert( rel_eff_start_index == m_rel_eff_par_start_index );
+    
     for( size_t i = 0; i < rel_eff_index; ++i )
     {
       const auto &rel_eff_curve = m_options.rel_eff_curves[i];
@@ -6098,7 +6676,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   std::string parameter_name( const size_t index ) const
   {
     // We'll try to return 12 character, or less names.
-    assert( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars == m_fwhm_par_start_index );
+    assert( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars == m_dev_pair_par_start_index );
     
     if( index < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars )
     {
@@ -6113,6 +6691,21 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       return "Unknown";
     }//if( index < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars )
     
+    if( index < m_fwhm_par_start_index )
+    {
+      assert( index >= m_dev_pair_par_start_index );
+      const size_t dev_num = index - m_dev_pair_par_start_index;
+      assert( m_dev_pair_anchors.size() > dev_num );
+      assert( (m_num_fitted_dev_pair_params + 2) == m_dev_pair_anchors.size() );
+      assert( m_dev_pair_anchors[0].is_fitted == false );
+      assert( m_dev_pair_anchors.back().is_fitted == false );
+      assert( m_dev_pair_anchors[dev_num + 1].is_fitted == true );
+      
+      char buffer[32] = {'\0'};
+      snprintf( buffer, sizeof(buffer), "Dev_%.1f", m_dev_pair_anchors[dev_num + 1].anchor_energy );
+      
+      return buffer;
+    }//if( index < m_fwhm_par_start_index )
     
     if( index < m_rel_eff_par_start_index )
     {
@@ -6241,7 +6834,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
   double parameter_scale_factor( const size_t index ) const
   {
-    assert( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars == m_fwhm_par_start_index );
+    assert( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars == m_dev_pair_par_start_index );
+    assert( (RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars + m_num_fitted_dev_pair_params) == m_fwhm_par_start_index );
     
     if( index < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars )
     {
@@ -6250,6 +6844,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       return RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple / RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset;
     }//if( index < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars )
     
+    if( index < m_fwhm_par_start_index )
+    {
+      // Its a deviation pair parameter
+      return 1.0;  // No scale factor for deviation pair parameters currently
+    }
     
     if( index < m_rel_eff_par_start_index )
     {
@@ -6957,6 +7556,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }
     
     const size_t act_start_index = RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars
+                                   + m_num_fitted_dev_pair_params
                                    + num_parameters(m_options.fwhm_form)
                                    + num_total_rel_eff_coefs();
     assert( act_start_index == m_acts_par_start_index );
@@ -7303,23 +7903,73 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   }//
   
   
+  /** Apply fitted deviation pair correction to an adjusted energy value.
+
+   This interpolates the fitted deviation pair offsets using a cubic spline
+   and adds the correction to the input energy.
+
+   @param val The energy value after offset/gain adjustment
+   @param x The parameter vector containing deviation pair offsets
+   @returns The corrected energy value
+   */
+  template<typename T>
+  T apply_fitted_deviation_pairs( const T &val, const std::vector<T> &x ) const
+  {
+    if( (m_options.energy_cal_type != RelActCalcAuto::EnergyCalFitType::NonLinearFit) || m_dev_pair_anchors.empty() )
+      return val;
+
+    // Build vectors of anchor energies and offsets for the spline
+    std::vector<double> anchor_energies;
+    std::vector<T> offsets;
+    anchor_energies.reserve( m_dev_pair_anchors.size() );
+    offsets.reserve( m_dev_pair_anchors.size() );
+
+    for( const DeviationPairAnchor &anchor : m_dev_pair_anchors )
+    {
+      anchor_energies.push_back( anchor.anchor_energy );
+
+      if( anchor.is_fitted )
+      {
+        // Total offset = initial_offset (from original cal) + fitted adjustment
+        offsets.push_back( T(anchor.initial_offset) + x[m_dev_pair_par_start_index + anchor.param_index] );
+      }
+      else
+      {
+        // First and last anchors use initial_offset (from original deviation pairs)
+        offsets.push_back( T(anchor.initial_offset) );
+      }
+    }//for( loop over anchors )
+
+    // Create spline and evaluate at the current energy
+    const std::vector<CubicSplineNodeT<T>> spline_nodes =
+        create_cubic_spline_templated( anchor_energies, offsets );
+
+    if( spline_nodes.empty() )
+      return val;
+
+    const T correction = eval_cubic_spline_templated( val, spline_nodes );
+
+    return val + correction;
+  }//apply_fitted_deviation_pairs(...)
+
+
   /** Translates from a "true" energy (e.g., that of a gamma, or ROI bounds), to the energy
    of m_energy_cal.
    */
   template<typename T>
   T apply_energy_cal_adjustment( double energy, const std::vector<T> &x ) const
-  { 
-    assert( x.size() > RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars );
+  {
+    assert( x.size() > (RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars + m_num_fitted_dev_pair_params) );
     assert( 0 == m_energy_cal_par_start_index );
     
-    if( !m_options.fit_energy_cal )
+    if( m_options.energy_cal_type == RelActCalcAuto::EnergyCalFitType::NoFit )
     {
       if constexpr ( !std::is_same_v<T, double> )
       {
         assert( abs(x[0] - RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) < 1.0E-5 );
         assert( abs(x[1] - RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) < 1.0E-5 );
       }
-      
+
       return T(energy);
     }//if( we arent fitting energy cal )
 
@@ -7410,11 +8060,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           else
             val += SpecUtils::deviation_pair_correction( static_cast<float>(val), dev_pairs );
         }//if( !dev_pairs.empty() )
-        
-        return val;
+
+        // Apply fitted deviation pair correction (non-linear energy cal adjustment)
+        return apply_fitted_deviation_pairs( val, x );
       }//case polynomial or FRF
-      
-        
+
+
       case SpecUtils::EnergyCalType::FullRangeFraction:
       {
         const double num_channel = static_cast<double>( m_energy_cal->num_channels() );
@@ -7450,7 +8101,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         
         if( coefs.size() > 4 )
           val += coefs[4] / (1.0 + 60.0*frac_chan);
-          
+
         if( !dev_pairs.empty() )
         {
           if constexpr ( !std::is_same_v<T, double> )
@@ -7458,23 +8109,25 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           else
             val += SpecUtils::deviation_pair_correction( static_cast<float>(val), dev_pairs );
         }//if( !dev_pairs.empty() )
-        
-        return val;
+
+        // Apply fitted deviation pair correction (non-linear energy cal adjustment)
+        return apply_fitted_deviation_pairs( val, x );
       }//case polynomial or FRF
-      
-        
+
+
       case SpecUtils::EnergyCalType::LowerChannelEdge:
       {
         const double lower_energy = m_energy_cal->lower_energy();
         const double range = m_energy_cal->upper_energy() - lower_energy;
         const double range_frac = (energy - lower_energy) / range;
-        
+
         T new_energy = energy + offest_adj + (range_frac*gain_adj);
         assert( quad_adj == 0.0 );
         //if( quad_adj != 0.0 )
         //  new_energy += quad_adj*range_frac*range_frac;
-        
-        return new_energy;
+
+        // Apply fitted deviation pair correction (non-linear energy cal adjustment)
+        return apply_fitted_deviation_pairs( new_energy, x );
       }//case LowerChannelEdge:
         
       case SpecUtils::EnergyCalType::InvalidEquationType:
@@ -7495,11 +8148,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   {
     assert( x.size() > 2 );
     
-    if( !m_options.fit_energy_cal )
+    if( m_options.energy_cal_type == RelActCalcAuto::EnergyCalFitType::NoFit )
     {
       assert( fabs(x[0] - RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) < 1.0E-5 );
       assert( fabs(x[1] - RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) < 1.0E-5 );
-      
+
       return adjusted_energy;
     }//if( we arent fitting energy cal )
     
@@ -9237,6 +9890,39 @@ FwhmEstimationMethod fwhm_estimation_method_from_str( const char *str )
 }//FwhmEstimationMethod fwhm_estimation_method_from_str(str)
 
 
+const char *to_str( const EnergyCalFitType type )
+{
+  switch( type )
+  {
+    case RelActCalcAuto::EnergyCalFitType::NoFit:        return "NoFit";
+    case RelActCalcAuto::EnergyCalFitType::LinearFit:    return "LinearFit";
+    case RelActCalcAuto::EnergyCalFitType::NonLinearFit: return "NonLinearFit";
+  }
+
+  assert( 0 );
+  return "InvalidEnergyCalFitType";
+}//to_str( const EnergyCalFitType type )
+
+
+EnergyCalFitType energy_cal_fit_type_from_str( const char *str )
+{
+  const size_t str_len = strlen(str);
+
+  for( int itype = 0; itype <= static_cast<int>(RelActCalcAuto::EnergyCalFitType::NonLinearFit); itype += 1 )
+  {
+    const EnergyCalFitType x = EnergyCalFitType(itype);
+    const char *type_str = to_str( x );
+    const bool case_sensitive = false;
+    const size_t type_str_len = strlen(type_str);
+    if( rapidxml::internal::compare(str, str_len, type_str, type_str_len, case_sensitive) )
+      return x;
+  }
+
+  throw runtime_error( "energy_cal_fit_type_from_str(...): invalid input string '" + std::string(str) + "'" );
+  return RelActCalcAuto::EnergyCalFitType::NoFit;
+}//EnergyCalFitType energy_cal_fit_type_from_str(str)
+
+
 const char *RoiRange::to_str( const RangeLimitsType type )
 {
   switch( type )
@@ -10106,8 +10792,15 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
   parent->append_node( base_node );
   
   append_version_attrib( base_node, Options::sm_xmlSerializationVersion );
-  append_bool_node( base_node, "FitEnergyCal", fit_energy_cal );
-  
+
+  // Write "FitEnergyCal" for backwards compatibility
+  const bool fit_any_energy_cal = (energy_cal_type != RelActCalcAuto::EnergyCalFitType::NoFit);
+  append_bool_node( base_node, "FitEnergyCal", fit_any_energy_cal );
+
+  const char *energy_cal_type_str = to_str( energy_cal_type );
+  auto energy_cal_type_node = append_string_node( base_node, "EnergyCalFitType", energy_cal_type_str );
+  append_attrib( energy_cal_type_node, "remark", "Possible values: NoFit, LinearFit, NonLinearFit" );
+
   const char *fwhm_form_str = to_str( fwhm_form );
   auto fwhm_node = append_string_node( base_node, "FwhmForm", fwhm_form_str );
   append_attrib( fwhm_node, "remark", "Possible values: Gadras, Polynomial_2, Polynomial_3, Polynomial_4, Polynomial_5, Polynomial_6, Berstein_2, Berstein_3, Berstein_4, Berstein_5, Berstein_6" );
@@ -10168,9 +10861,28 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *mat
                   "needs to be updated for new serialization version." );
     
     check_xml_version( parent, Options::sm_xmlSerializationVersion );
-    
-    fit_energy_cal = get_bool_node_value( parent, "FitEnergyCal" );
-    
+
+    // Try to read the new EnergyCalFitType field first (added 20260126)
+    const rapidxml::xml_node<char> *energy_cal_type_node = XML_FIRST_NODE( parent, "EnergyCalFitType" );
+    if( energy_cal_type_node )
+    {
+      const string type_str = SpecUtils::xml_value_str( energy_cal_type_node );
+      energy_cal_type = energy_cal_fit_type_from_str( type_str.c_str() );
+    }else
+    {
+      // Fall back to old fields for backwards compatibility
+      energy_cal_type = RelActCalcAuto::EnergyCalFitType::NoFit;
+      try
+      {
+        const bool fit_energy_cal = get_bool_node_value( parent, "FitEnergyCal" );
+        if( fit_energy_cal )
+          energy_cal_type = RelActCalcAuto::EnergyCalFitType::LinearFit;
+      }catch(...)
+      {
+        
+      }
+    }//
+
     const rapidxml::xml_node<char> *fwhm_node = XML_FIRST_NODE( parent, "FwhmForm" );
     const string fwhm_str = SpecUtils::xml_value_str( fwhm_node );
     fwhm_form = fwhm_form_from_str( fwhm_str.c_str() );
@@ -11191,7 +11903,7 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent, Materi
   
 
 Options::Options()
-: fit_energy_cal( false ),
+: energy_cal_type( RelActCalcAuto::EnergyCalFitType::NonLinearFit ),
   fwhm_form( FwhmForm::Polynomial_2 ),
   fwhm_estimation_method( FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum ),
   spectrum_title( "" ),
@@ -11532,7 +12244,19 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
       }
     }//for( loop over energy cal ish )
     
+    if( !m_deviation_pair_offsets.empty() )
+    {
+      out << ". DevPairs=[";
+      for( size_t i = 0; i < m_deviation_pair_offsets.size(); ++i )
+      {
+        const pair<double, double> &dev = m_deviation_pair_offsets[i];
+        snprintf( buffer, sizeof(buffer), "{%.1f,%.2f}", dev.first, dev.second );
+        out << (i ? ", " : "") << buffer;
+      }
+    }//if( !m_deviation_pair_offsets.empty() )
+    
     out << "\n";
+    
   }//if( m_fit_energy_cal[0] || m_fit_energy_cal[1] )
   
   
@@ -12542,6 +13266,18 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
       
       results_html << ".\n";
       
+      if( !m_deviation_pair_offsets.empty() )
+      {
+        results_html << "<div>\n  DevPairs=[";
+        for( size_t i = 0; i < m_deviation_pair_offsets.size(); ++i )
+        {
+          const pair<double, double> &dev = m_deviation_pair_offsets[i];
+          snprintf( buffer, sizeof(buffer), "{%.1f,%.2f}", dev.first, dev.second );
+          results_html << (i ? ", " : "") << buffer;
+        }
+        results_html << ".\n</div>\n";
+      }//if( !m_deviation_pair_offsets.empty() )
+      
       results_html << "</div>\n";
     }//if( m_fit_energy_cal[0] || m_fit_energy_cal[1] )
     
@@ -12559,7 +13295,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     results_html << "<div class=\"anacommand\">\n";
     results_html << "<table class=\"optionstable\">\n";
     results_html << "  <caption>Options used for analysis.</caption>\n";
-    results_html << "  <tr><th scope=\"row\">fit_energy_cal</th><td><code>" << m_options.fit_energy_cal << "</code></td></tr>\n";
+    results_html << "  <tr><th scope=\"row\">energy_cal_type</th><td><code>" << to_str(m_options.energy_cal_type) << "</code></td></tr>\n";
 
     for( size_t rel_eff_index = 0; rel_eff_index < m_rel_eff_forms.size(); ++rel_eff_index )
     {
@@ -13233,6 +13969,11 @@ size_t RelActAutoSolution::fit_parameters_index_for_source( const SrcVariant &sr
   // Calculate the starting index of activity parameters for this rel_eff_index
   // This follows the same structure as in the RelActAutoCostFcn class
   size_t acts_start_index = RelActAutoSolution::sm_num_energy_cal_pars; // Energy cal parameters
+  
+  // Add deviation parameters
+  if( (m_options.energy_cal_type == RelActCalcAuto::EnergyCalFitType::NonLinearFit)
+      && (m_deviation_pair_offsets.size() > 2) )
+    acts_start_index += (m_deviation_pair_offsets.size() - 2);
   
   // Add FWHM parameters
   acts_start_index += num_parameters( m_options.fwhm_form );
@@ -14030,8 +14771,43 @@ string RelActAutoSolution::rel_eff_eqn_js_uncert_fcn( const size_t rel_eff_index
   
   return fcn;
 }//string RelActAutoSolution::rel_eff_eqn_js_uncert_fcn(i)
-  
-  
+
+
+#if( BUILD_AS_UNIT_TEST_SUITE )
+std::vector<std::pair<float,float>> combine_deviation_pairs_for_calibration(
+  const std::vector<std::pair<float,float>> &orig_dev_pairs,
+  const std::vector<std::pair<double,double>> &fitted_offsets )
+{
+  if( fitted_offsets.empty() )
+    return orig_dev_pairs;
+
+  std::vector<std::pair<float,float>> result;
+
+  // Determine the anchor range
+  const double min_anchor = fitted_offsets.front().first;
+  const double max_anchor = fitted_offsets.back().first;
+  const double epsilon = 0.1;  // keV tolerance for overlap detection
+
+  // Keep original deviation pairs OUTSIDE the anchor range
+  for( const auto &dp : orig_dev_pairs )
+  {
+    if( (dp.first < (min_anchor - epsilon)) || (dp.first > (max_anchor + epsilon)) )
+      result.push_back( dp );
+  }
+
+  // Add fitted deviation pairs (NEGATED for inverse transformation)
+  for( const auto &dev : fitted_offsets )
+    result.emplace_back( static_cast<float>(dev.first), -static_cast<float>(dev.second) );
+
+  // Sort by energy
+  std::sort( result.begin(), result.end(),
+    []( const std::pair<float,float> &a, const std::pair<float,float> &b ) { return a.first < b.first; } );
+
+  return result;
+}//combine_deviation_pairs_for_calibration(...)
+#endif // BUILD_AS_UNIT_TEST_SUITE
+
+
 std::shared_ptr<SpecUtils::EnergyCalibration> RelActAutoSolution::get_adjusted_energy_cal() const
 {
   shared_ptr<const SpecUtils::EnergyCalibration> orig_cal = m_foreground ? m_foreground->energy_calibration() : nullptr;
@@ -14039,8 +14815,8 @@ std::shared_ptr<SpecUtils::EnergyCalibration> RelActAutoSolution::get_adjusted_e
     return nullptr;
   
   auto new_cal = make_shared<SpecUtils::EnergyCalibration>( *orig_cal );
-  
-  if( !m_options.fit_energy_cal )
+
+  if( m_options.energy_cal_type == RelActCalcAuto::EnergyCalFitType::NoFit )
     return new_cal;
   
   assert( m_energy_cal_adjustments.size() == RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars );
@@ -14060,6 +14836,38 @@ std::shared_ptr<SpecUtils::EnergyCalibration> RelActAutoSolution::get_adjusted_e
                               * RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple)
                       : 0.0;
     
+  vector<pair<float,float>> dev_pairs = orig_cal->deviation_pairs();
+
+  // Combine original and fitted deviation pairs:
+  // - Keep original deviation pairs OUTSIDE the fitted anchor range
+  // - Replace deviation pairs INSIDE the anchor range with fitted ones (negated for inverse transform)
+  if( !m_deviation_pair_offsets.empty() )
+  {
+    const double min_anchor = m_deviation_pair_offsets.front().first;
+    const double max_anchor = m_deviation_pair_offsets.back().first;
+    const double epsilon = 0.1;  // keV tolerance for overlap detection
+
+    // Keep original deviation pairs OUTSIDE our anchor range
+    vector<pair<float,float>> new_dev_pairs;
+    for( const auto &dp : dev_pairs )
+    {
+      if( (dp.first < (min_anchor - epsilon)) || (dp.first > (max_anchor + epsilon)) )
+        new_dev_pairs.push_back( dp );
+    }
+
+    // Add fitted deviation pairs (NEGATED for inverse transformation)
+    // m_deviation_pair_offsets stores (anchor_energy, total_offset)
+    // where total_offset = initial_offset + fitted_adjustment
+    for( const auto &dev : m_deviation_pair_offsets )
+      new_dev_pairs.emplace_back( static_cast<float>(dev.first), -static_cast<float>(dev.second) );
+
+    // Sort by energy
+    std::sort( new_dev_pairs.begin(), new_dev_pairs.end(),
+      []( const pair<float,float> &a, const pair<float,float> &b ) { return a.first < b.first; } );
+
+    dev_pairs = std::move( new_dev_pairs );
+  }
+  
   switch( energy_cal_type )
   {
     case SpecUtils::EnergyCalType::Polynomial:
@@ -14078,7 +14886,6 @@ std::shared_ptr<SpecUtils::EnergyCalibration> RelActAutoSolution::get_adjusted_e
           coefs.push_back( -quad_adj / (num_channel*num_channel) );
       }//if( quad_adj != 0.0 )
         
-      const auto &dev_pairs = orig_cal->deviation_pairs();
       new_cal->set_polynomial( num_channel, coefs, dev_pairs );
       break;
     }//case polynomial
@@ -14098,7 +14905,6 @@ std::shared_ptr<SpecUtils::EnergyCalibration> RelActAutoSolution::get_adjusted_e
           coefs.push_back( -quad_adj );
       }//if( quad_adj != 0.0 )
       
-      const auto &dev_pairs = orig_cal->deviation_pairs();
       new_cal->set_full_range_fraction( num_channel, coefs, dev_pairs );
       break;
     }//case FullRangeFraction:
@@ -14973,9 +15779,9 @@ void RelEffCurveInput::equalEnough( const RelEffCurveInput &lhs, const RelEffCur
 
 void Options::equalEnough( const Options &lhs, const Options &rhs )
 {
-  if( lhs.fit_energy_cal != rhs.fit_energy_cal )
-    throw std::runtime_error( "Fit energy calibration in lhs and rhs are not the same" );
-  
+  if( lhs.energy_cal_type != rhs.energy_cal_type )
+    throw std::runtime_error( "Energy calibration type in lhs and rhs are not the same" );
+
   if( lhs.fwhm_form != rhs.fwhm_form )
     throw std::runtime_error( "FWHM form in lhs and rhs are not the same" );
   

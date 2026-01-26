@@ -307,7 +307,8 @@ padding-bottom: 1px;
 }
 
 
-.RelActAutoGui .RelActAutoFwhmEstDiv, 
+.RelActAutoGui .RelActAutoEnergyCalDiv,
+.RelActAutoGui .RelActAutoFwhmEstDiv,
 .RelActAutoGui .RelActAutoFwhmFormDiv,
 .RelActAutoGui .RelActAutoSkewDiv,
 .RelActAutoGui .RelActAutoAddUncertDiv

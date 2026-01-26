@@ -433,6 +433,43 @@ const char *to_str( const FwhmEstimationMethod form );
 FwhmEstimationMethod fwhm_estimation_method_from_str( const char *str );
 
 
+/** Type of energy calibration fitting to perform.
+
+ Controls whether and how energy calibration is adjusted during the fit.
+ */
+enum class EnergyCalFitType : int
+{
+  /** Do not fit any energy calibration corrections. */
+  NoFit,
+
+  /** Fit linear energy calibration corrections (offset and gain adjustments). */
+  LinearFit,
+
+  /** Fit non-linear energy calibration corrections using deviation pairs.
+
+   Requires at least 3 ROIs; if less than 3 ROIs, will use linear fit instead.
+   Each ROI gets an anchor point at its largest peak (or midpoint 
+   if no peaks).  The first and last ROIs have their deviation offsets fixed to zero.  Middle
+   ROIs have their deviation offsets fitted.  The deviation pairs are interpolated using a
+   cubic spline to provide smooth energy corrections.
+   */
+  NonLinearFit
+};//enum class EnergyCalFitType
+
+
+/** Returns string representation of the #EnergyCalFitType.
+ String returned is a static string, so do not delete it.
+ */
+const char *to_str( const EnergyCalFitType type );
+
+
+/** Converts from the string representation of #EnergyCalFitType to enumerated value.
+
+ Throws exception if invalid string (i.e., any string not returned by #to_str(EnergyCalFitType) ).
+ */
+EnergyCalFitType energy_cal_fit_type_from_str( const char *str );
+
+
 size_t num_parameters( const FwhmForm eqn_form );
 
 
@@ -627,13 +664,13 @@ struct RelEffCurveInput
 struct Options
 {
   Options();
-   
-  /** Whether to allow making small adjustments to the gain and/or offset of the energy calibration.
-   
-   Which coefficients are fit will be determined based on energy ranges used.
+
+  /** Type of energy calibration fitting to perform.
+
+   Controls whether and how energy calibration is adjusted during the fit.
    */
-  bool fit_energy_cal;
-  
+  EnergyCalFitType energy_cal_type;
+
   /** The functional form of the FWHM equation to use.  The coefficients of this equation will
    be fit for across all energy ranges.
    */
@@ -1222,7 +1259,16 @@ struct RelActAutoSolution
    Which parameters are fit are subject to number and energy range of ROIs.
    */
   std::array<bool,sm_num_energy_cal_pars> m_fit_energy_cal;
-  
+
+  /** The fitted deviation pair offsets for non-linear energy calibration.
+
+   Each entry is (anchor_energy_keV, offset_keV).  The offset at lower and upper ROIs is fixed to 0.
+   Entries are sorted by anchor energy.
+
+   Only valid if `Options::energy_cal_type` is `EnergyCalFitType::NonLinearFit`.
+   */
+  std::vector<std::pair<double, double>> m_deviation_pair_offsets;
+
   /** The index of the first parameter that will be used to adjust the peak amplitude. 
    
    Will be valid only if `m_options.additional_br_uncert > 0.0`.
@@ -1309,6 +1355,25 @@ RelActAutoSolution solve( const Options options,
                          std::vector<std::shared_ptr<const PeakDef>> all_peaks,
                          std::shared_ptr<std::atomic_bool> cancel_calc = nullptr
                          );
+
+
+#if( BUILD_AS_UNIT_TEST_SUITE )
+/** Combines original deviation pairs with fitted deviation pair offsets.
+
+ This function is exposed for unit testing purposes.
+
+ @param orig_dev_pairs The original deviation pairs from the energy calibration
+ @param fitted_offsets The fitted deviation pair offsets (anchor_energy, total_offset)
+        where total_offset = initial_offset + fitted_adjustment
+ @returns Combined deviation pairs suitable for use in the final energy calibration.
+          Original pairs outside the fitted anchor range are preserved.
+          Fitted pairs replace original pairs within the anchor range.
+          Fitted offsets are NEGATED for the inverse transformation.
+ */
+std::vector<std::pair<float,float>> combine_deviation_pairs_for_calibration(
+  const std::vector<std::pair<float,float>> &orig_dev_pairs,
+  const std::vector<std::pair<double,double>> &fitted_offsets );
+#endif // BUILD_AS_UNIT_TEST_SUITE
 
 }//namespace RelActCalcAuto
 
