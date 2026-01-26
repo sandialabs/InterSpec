@@ -113,19 +113,16 @@ RelEffPlot = function (elem,options) {
   this.chartArea.append("g")
     .attr("class", "yAxis")
     .call(this.yAxis);
-      
+
   if( this.options.xAxisTitle )
     this.setXAxisTitle( this.options.xAxisTitle, true );
-    
+
   if( this.options.yAxisTitle )
     this.setYAxisTitle( this.options.yAxisTitle, true );
-    
+
   // Initialize mouse interaction variables for zoom
   this.leftMouseDown = null;
   this.zooming = false;
-  
-  // Setup mouse interactions for zoom functionality
-  this.setupMouseInteractions();
 }//RelEffPlot constructor
 
 
