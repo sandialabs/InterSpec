@@ -1075,7 +1075,8 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
     vector<float> fwhm_paramatersf, uncerts;
     auto peaks_deque = make_shared<deque<shared_ptr<const PeakDef>>>(begin(all_peaks), end(all_peaks));
     MakeDrfFit::performResolutionFit( peaks_deque, form_to_fit, fit_order, fwhm_paramatersf, uncerts );
-      
+    assert( fwhm_paramatersf.size() == static_cast<size_t>(fit_order) );
+
     vector<pair<double,shared_ptr<const PeakDef>>> distances;
     for( const auto &p : *peaks_deque )
     {
@@ -1137,10 +1138,47 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
     fill_in_default_start_fwhm_pars( paramaters, 0, highres, fwhm_form, lowest_energy, highest_energy );
     warnings.push_back( "Failed to estimate FWHM from data: " + string(e.what()) + ".  Using default FWHM parameters." );
   }
-  
+
   vector<float> fwhm_pars_float( paramaters.size() );
   for( size_t i = 0; i < paramaters.size(); ++i )
     fwhm_pars_float[i] = static_cast<float>( paramaters[i] );
+
+  bool valid_whole_range = true;
+  float min_expected_sigma = 1.0E16f, max_expected_sigma = -1.0E16f;
+  const double check_delta_energy = 0.01*(highest_energy - lowest_energy);
+  for( double energy = lowest_energy; valid_whole_range && (energy <= highest_energy); energy += check_delta_energy )
+  {
+    try
+    {
+      const float fwhm = DetectorPeakResponse::peakResolutionFWHM( (float)energy, form_to_fit, fwhm_pars_float );
+      const float sigma = fwhm / PhysicalUnits::fwhm_nsigma;
+
+      float min_sigma, max_sigma;
+      expected_peak_width_limits( energy, highres, nullptr, min_sigma, max_sigma );
+      assert( min_sigma > 0 );
+
+      min_expected_sigma = (std::min)( min_expected_sigma, min_sigma );
+      max_expected_sigma = (std::max)( max_expected_sigma, max_sigma );
+
+      valid_whole_range = (!IsInf(sigma) && !IsNan(sigma) && (sigma >= min_sigma) && (sigma <= max_sigma));
+    }catch( ... )
+    {
+      valid_whole_range = false;
+    }
+  }//for( loop over energy range to check if FWHM fit is reasonable )
+
+  if( !valid_whole_range )
+  {
+    cerr << "Fit FWHM is not valid for the energy range wanted - will just use default." << endl;
+    warnings.push_back( "Failed to estimate FWHM from data: not a large enough span of peaks.  Using default FWHM parameters." );
+    fill_in_default_start_fwhm_pars( paramaters, 0, highres, fwhm_form, lowest_energy, highest_energy );
+    assert( paramaters.size() == fwhm_pars_float.size() );
+    fwhm_pars_float.clear();
+    fwhm_pars_float.resize( paramaters.size(), 0.0f );
+    for( size_t i = 0; i < paramaters.size(); ++i )
+      fwhm_pars_float[i] = static_cast<float>( paramaters[i] );
+  }//if( !valid_whole_range )
+
 
   shared_ptr<DetectorPeakResponse> new_drf;
   if( input_drf )
@@ -1214,6 +1252,57 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
       vector<double> poly_coeffs( begin(paramaters), end(paramaters) );
       paramaters = BersteinPolynomial::power_series_to_bernstein( poly_coeffs.data(), poly_coeffs.size(),
                                                                  lowest_energy/1000.0, highest_energy/1000.0 );
+
+      // Note: The Bernstein coefficients may be outside the y-value range of the initial function - the Bernstein
+      //       coefficients being in a given range is sufficient to say that the function will be within that range,
+      //       but it is not necassary for the Bernstein coefficients to only be in the range of the data.
+
+
+      // For polynomial, we will check if the function is concave up - and if so, reduce the order intil it is not
+      switch( fwhm_form )
+      {
+        case RelActCalcAuto::FwhmForm::Gadras:        case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy:
+        case RelActCalcAuto::FwhmForm::NotApplicable: case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:
+        case RelActCalcAuto::FwhmForm::Polynomial_2:  case RelActCalcAuto::FwhmForm::Berstein_2:
+          break;
+
+        case RelActCalcAuto::FwhmForm::Polynomial_3: case RelActCalcAuto::FwhmForm::Polynomial_4:
+        case RelActCalcAuto::FwhmForm::Polynomial_6: case RelActCalcAuto::FwhmForm::Polynomial_5:
+        case RelActCalcAuto::FwhmForm::Berstein_3:   case RelActCalcAuto::FwhmForm::Berstein_4:
+        case RelActCalcAuto::FwhmForm::Berstein_5:   case RelActCalcAuto::FwhmForm::Berstein_6:
+        {
+          bool paramater_outside = false;
+          for( size_t i = 0; !paramater_outside && (i < paramaters.size()); ++i )
+            paramater_outside = ((paramaters[i] < min_expected_sigma) || (paramaters[i] > max_expected_sigma));
+
+          if( paramater_outside )
+          {
+            // We could try repeatedly reducing the number of coefficients by one each time, but for the moment, we'll
+            //  just gi down to 2.
+            try
+            {
+              vector<float> new_result, new_result_uncerts;
+              auto peaks_deque = make_shared<deque<shared_ptr<const PeakDef>>>(begin(all_peaks), end(all_peaks));
+              MakeDrfFit::performResolutionFit( peaks_deque, form_to_fit, 2, new_result, new_result_uncerts );
+              new_result.resize(fit_order , 0.0f);
+              new_result_uncerts.resize(fit_order , 0.0f);
+
+              poly_coeffs.clear();
+              for( const float v : new_result )
+                poly_coeffs.push_back( v );
+
+              paramaters = BersteinPolynomial::power_series_to_bernstein( poly_coeffs.data(), poly_coeffs.size(),
+                                                                         lowest_energy/1000.0, highest_energy/1000.0 );
+            }catch( std::exception &e )
+            {
+              cout << "Failed to try and refit FWHM to keep the Bernstein coefficients in a reasonable range: " << e.what() << endl;
+            }
+          }//if( paramater_outside )
+
+          break;
+        }
+      }//switch( fwhm_form )
+
       paramaters.push_back( lowest_energy );
       paramaters.push_back( highest_energy );
       break;
