@@ -1260,6 +1260,8 @@ struct RelActAutoSolution
    */
   std::array<bool,sm_num_energy_cal_pars> m_fit_energy_cal;
 
+  size_t m_num_deviations_fit = 0;
+  
   /** The fitted deviation pair offsets for non-linear energy calibration.
 
    Each entry is (anchor_energy_keV, offset_keV).  The offset at lower and upper ROIs is fixed to 0.
@@ -1357,23 +1359,6 @@ RelActAutoSolution solve( const Options options,
                          );
 
 
-#if( BUILD_AS_UNIT_TEST_SUITE )
-/** Combines original deviation pairs with fitted deviation pair offsets.
-
- This function is exposed for unit testing purposes.
-
- @param orig_dev_pairs The original deviation pairs from the energy calibration
- @param fitted_offsets The fitted deviation pair offsets (anchor_energy, total_offset)
-        where total_offset = initial_offset + fitted_adjustment
- @returns Combined deviation pairs suitable for use in the final energy calibration.
-          Original pairs outside the fitted anchor range are preserved.
-          Fitted pairs replace original pairs within the anchor range.
-          Fitted offsets are NEGATED for the inverse transformation.
- */
-std::vector<std::pair<float,float>> combine_deviation_pairs_for_calibration(
-  const std::vector<std::pair<float,float>> &orig_dev_pairs,
-  const std::vector<std::pair<double,double>> &fitted_offsets );
-#endif // BUILD_AS_UNIT_TEST_SUITE
 
 }//namespace RelActCalcAuto
 

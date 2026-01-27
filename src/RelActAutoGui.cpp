@@ -5294,6 +5294,21 @@ void RelActAutoGui::startUpdatingCalculation()
   
   vector<shared_ptr<const PeakDef>> cached_all_peaks = m_cached_all_peaks;
   
+#if( !defined(NDEBUG) && PERFORM_DEVELOPER_CHECKS )
+  if( cached_all_peaks.empty() )
+  {
+    // Debug builds are crazy slow to fit all the p
+    std::shared_ptr<const SpecMeas> m = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
+    const set<int> &samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Foreground);
+    shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_peaks = m ? m->automatedSearchPeaks(samples) : nullptr;
+    if( auto_peaks && !auto_peaks->empty() )
+    {
+      cached_all_peaks.insert( end(cached_all_peaks), begin(*auto_peaks), end(*auto_peaks) );
+      cerr << "\n\nUsing auto search peaks to send to `RelActCalcAuto::solve(...)` to save time on the debug build!" << endl;
+    }
+  }//if( cached_all_peaks.empty() )
+#endif
+  
   auto solution = make_shared<RelActCalcAuto::RelActAutoSolution>();
   auto error_msg = make_shared<string>();
   

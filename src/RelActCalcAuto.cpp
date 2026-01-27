@@ -98,6 +98,7 @@
 #include "InterSpec/RelActCalc_imp.hpp"
 #include "InterSpec/RelActCalcAuto_imp.hpp"
 #include "InterSpec/RelActCalc_CeresJetTraits.hpp"
+#include "InterSpec/RelActCalcAuto_EnergyCal_imp.hpp"
 
 #ifdef _MSC_VER
 #undef isinf
@@ -127,243 +128,11 @@ namespace
 {
 
 // ============================================================================
-// Templated cubic spline for deviation pair energy calibration correction.
-// This supports both double and ceres::Jet<> types for automatic differentiation.
+// Templated energy calibration functions
+// Moved to InterSpec/RelActCalcAuto_EnergyCal_imp.hpp for reusability
 // ============================================================================
 
-/** Templated cubic spline node.
-
- The x-coordinate (energy) is always double, but the y-coordinate (offset)
- and polynomial coefficients can be either double or ceres::Jet<> for
- automatic differentiation support.
- */
-template<typename T>
-struct CubicSplineNodeT
-{
-  double x;  // Anchor x-value (energy) - always double since these are fixed
-  T y;       // Value at anchor (can be Jet type for auto-diff)
-  T a, b, c; // Polynomial coefficients: f(h) = a*h^3 + b*h^2 + c*h + y, where h = x - node.x
-};
-
-
-/** Create a natural cubic spline from deviation pair anchors and their offsets.
-
- The spline uses natural boundary conditions (second derivative = 0 at endpoints).
-
- @param anchor_energies The x-coordinates of the spline nodes (sorted by energy)
- @param offsets The y-coordinates (template type T, can be Jet for auto-diff)
- @returns Vector of spline nodes for interpolation
- */
-template<typename T>
-std::vector<CubicSplineNodeT<T>> create_cubic_spline_templated(
-  const std::vector<double> &anchor_energies,
-  const std::vector<T> &offsets )
-{
-  assert( anchor_energies.size() == offsets.size() );
-  const size_t n = anchor_energies.size();
-
-  if( n < 2 )
-    return std::vector<CubicSplineNodeT<T>>{};
-
-  // Verify sorted
-#ifndef NDEBUG
-  for( size_t i = 1; i < n; ++i )
-    assert( anchor_energies[i] > anchor_energies[i-1] );
-#endif
-
-  // Build the tri-diagonal system to solve for second derivatives (b values)
-  // Using natural spline boundary conditions (second derivative = 0 at ends)
-  //
-  // The matrix elements depend only on x-coordinates (doubles)
-  // But the RHS and solution depend on y-coordinates (template type T)
-  //
-  // We use Eigen to build and invert the tri-diagonal matrix (all doubles),
-  // then manually multiply the inverse by the RHS vector (type T) to get the solution.
-
-  Eigen::MatrixXd A = Eigen::MatrixXd::Zero( n, n );
-  std::vector<T> rhs( n );
-
-  // Interior points
-  for( size_t i = 1; i < n - 1; ++i )
-  {
-    const double h_prev = anchor_energies[i] - anchor_energies[i-1];
-    const double h_next = anchor_energies[i+1] - anchor_energies[i];
-
-    A( i, i - 1 ) = h_prev / 3.0;             // lower diagonal
-    A( i, i )     = (h_prev + h_next) / 1.5;  // diagonal
-    A( i, i + 1 ) = h_next / 3.0;             // upper diagonal
-
-    rhs[i] = (offsets[i+1] - offsets[i]) / h_next - (offsets[i] - offsets[i-1]) / h_prev;
-  }
-
-  // Natural boundary conditions: second derivative = 0 at endpoints
-  A( 0, 0 ) = 2.0;
-  rhs[0] = T( 0.0 );
-
-  A( n - 1, n - 1 ) = 2.0;
-  rhs[n - 1] = T( 0.0 );
-
-  // Compute the inverse of A using Eigen's partial-pivot LU decomposition
-  const Eigen::MatrixXd A_inv = A.partialPivLu().inverse();
-
-  // Multiply A_inv (double) by rhs (type T) to get b_vals (type T)
-  // We do this manually to support ceres::Jet<> types
-  std::vector<T> b_vals( n, T(0.0) );
-  for( size_t i = 0; i < n; ++i )
-  {
-    for( size_t j = 0; j < n; ++j )
-      b_vals[i] += A_inv( i, j ) * rhs[j];
-  }
-
-
-#if( PERFORM_DEVELOPER_CHECKS )
-  // Verify against old manual implementation from SpecUtils
-  std::vector<std::array<double, 4>> A_matrix_old( n, {0.0, 0.0, 0.0, 0.0} );
-  std::vector<T> rhs_old( n );
-
-  for( size_t i = 1; i < n - 1; ++i )
-  {
-    const double h_prev = anchor_energies[i] - anchor_energies[i-1];
-    const double h_next = anchor_energies[i+1] - anchor_energies[i];
-    A_matrix_old[i][0] = h_prev / 3.0;
-    A_matrix_old[i][1] = (h_prev + h_next) / 1.5;
-    A_matrix_old[i][2] = h_next / 3.0;
-    rhs_old[i] = (offsets[i+1] - offsets[i]) / h_next - (offsets[i] - offsets[i-1]) / h_prev;
-  }
-
-  A_matrix_old[0][1] = 2.0;
-  A_matrix_old[0][2] = 0.0;
-  rhs_old[0] = T(0.0);
-  A_matrix_old[n-1][1] = 2.0;
-  A_matrix_old[n-1][0] = 0.0;
-  rhs_old[n-1] = T(0.0);
-
-  for( size_t i = 0; i < n; ++i )
-  {
-    assert( A_matrix_old[i][1] != 0.0 );
-    A_matrix_old[i][3] = 1.0 / A_matrix_old[i][1];
-    A_matrix_old[i][0] *= A_matrix_old[i][3];
-    A_matrix_old[i][2] *= A_matrix_old[i][3];
-    A_matrix_old[i][1] = 1.0;
-  }
-
-  for( size_t k = 0; k < n - 1; ++k )
-  {
-    const double x_factor = -A_matrix_old[k+1][0] / A_matrix_old[k][1];
-    A_matrix_old[k+1][0] = -x_factor;
-    A_matrix_old[k+1][1] = A_matrix_old[k+1][1] + x_factor * A_matrix_old[k][2];
-  }
-
-  std::vector<T> y_vec_old( n );
-  y_vec_old[0] = rhs_old[0] * A_matrix_old[0][3];
-  for( size_t i = 1; i < n; ++i )
-    y_vec_old[i] = (rhs_old[i] * A_matrix_old[i][3]) - A_matrix_old[i][0] * y_vec_old[i-1];
-
-  std::vector<T> b_vals_old( n );
-  b_vals_old[n-1] = y_vec_old[n-1] / A_matrix_old[n-1][1];
-  for( size_t i = n - 1; i > 0; --i )
-    b_vals_old[i-1] = (y_vec_old[i-1] - A_matrix_old[i-1][2] * b_vals_old[i]) / A_matrix_old[i-1][1];
-
-  // Compare results - use if constexpr to extract scalar value from T
-  // (T can be either double or ceres::Jet<double,N>)
-  for( size_t i = 0; i < n; ++i )
-  {
-    double new_val, old_val;
-    if constexpr( std::is_same_v<T, double> )
-    {
-      new_val = b_vals[i];
-      old_val = b_vals_old[i];
-    }
-    else
-    {
-      // For ceres::Jet<>, .a is the scalar part
-      new_val = b_vals[i].a;
-      old_val = b_vals_old[i].a;
-    }
-
-    const double diff = std::fabs( new_val - old_val );
-    const double rel_diff = (old_val != 0.0) ? (diff / std::fabs(old_val)) : diff;
-
-    if( (diff > 1.0E-9) && (rel_diff > 1.0E-6) )
-    {
-      char buffer[512];
-      snprintf( buffer, sizeof(buffer),
-        "create_cubic_spline_templated: b_vals mismatch at index %zu: Eigen=%.12g, old=%.12g, diff=%.3g",
-        i, new_val, old_val, diff );
-      log_developer_error( __func__, buffer );
-    }
-  }
-#endif // PERFORM_DEVELOPER_CHECKS
-
-
-  // Calculate spline coefficients a, b, c for each interval
-  std::vector<CubicSplineNodeT<T>> nodes( n );
-
-  for( size_t i = 0; i < n - 1; ++i )
-  {
-    const double h = anchor_energies[i+1] - anchor_energies[i];
-
-    nodes[i].x = anchor_energies[i];
-    nodes[i].y = offsets[i];
-    nodes[i].a = (b_vals[i+1] - b_vals[i]) / (3.0 * h);
-    nodes[i].b = b_vals[i];
-    nodes[i].c = (offsets[i+1] - offsets[i]) / h - (2.0 * b_vals[i] + b_vals[i+1]) * h / 3.0;
-  }
-
-  // Last node (for extrapolation - just store position, coefficients are zero)
-  nodes[n-1].x = anchor_energies[n-1];
-  nodes[n-1].y = offsets[n-1];
-  nodes[n-1].a = T(0.0);
-  nodes[n-1].b = T(0.0);
-  nodes[n-1].c = T(0.0);
-
-  return nodes;
-}//create_cubic_spline_templated(...)
-
-
-/** Evaluate the templated cubic spline at a given energy.
-
- @param energy The energy to evaluate at (always double)
- @param nodes The spline nodes from create_cubic_spline_templated
- @returns The interpolated value (template type T)
- */
-template<typename T>
-T eval_cubic_spline_templated( const T energy, const std::vector<CubicSplineNodeT<T>> &nodes )
-{
-  
-  double lookup_energy;
-  if constexpr ( std::is_same_v<T, double> )
-    lookup_energy = energy;
-  else
-    lookup_energy = energy.a;  // Extract constant part from Jet
-
-  
-  if( nodes.empty() )
-    return T(0.0);
-
-  // Find the interval using binary search on x values
-  const auto it = std::upper_bound( nodes.begin(), nodes.end(), lookup_energy,
-    []( double e, const CubicSplineNodeT<T> &node ) { return e < node.x; } );
-
-  // Clamp to first/last values for extrapolation
-  if( it == nodes.begin() )
-    return nodes.front().y;
-
-  if( it == nodes.end() )
-    return nodes.back().y;
-
-  // Evaluate the cubic polynomial in the interval
-  const CubicSplineNodeT<T> &node = *(it - 1);
-  const T h = energy - node.x;
-
-  // f(h) = ((a*h + b)*h + c)*h + y
-  return ((node.a * h + node.b) * h + node.c) * h + node.y;
-}//eval_cubic_spline_templated(...)
-
-
-// ============================================================================
-// End of templated cubic spline implementation
-// ============================================================================
+using namespace RelActCalcAutoImp;
 
 
 void sort_rois_by_energy( vector<RelActCalcAuto::RoiRange> &rois )
@@ -2520,12 +2289,54 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     std::sort( all_anchors.begin(), all_anchors.end(),
       []( const AnchorInfo &a, const AnchorInfo &b ) { return a.energy < b.energy; } );
 
-    // Now create DeviationPairAnchor objects
-    // First and last anchors (by energy) have fixed offset (not fitted)
-    size_t fitted_param_index = 0;
-
-    // Get original deviation pairs from energy calibration to compute initial_offset
+    // Get original deviation pairs from energy calibration
     const std::vector<std::pair<float,float>> &orig_dev_pairs = m_energy_cal->deviation_pairs();
+
+    // Add boundary anchors from original deviation pairs OUTSIDE the ROI range
+    // This preserves the original calibration behavior at boundaries
+    if( !orig_dev_pairs.empty() && !all_anchors.empty() )
+    {
+      const double min_roi_energy = all_anchors.front().energy;
+      const double max_roi_energy = all_anchors.back().energy;
+      const double tolerance = 0.1;  // keV
+
+      // Create extended anchor list with boundary anchors
+      std::vector<AnchorInfo> extended_anchors;
+
+      // Add lower boundary anchors (below min ROI energy)
+      for( const auto &dp : orig_dev_pairs )
+      {
+        if( dp.first < min_roi_energy - tolerance )
+        {
+          AnchorInfo boundary_anchor;
+          boundary_anchor.energy = dp.first;
+          boundary_anchor.sorted_roi_index = std::numeric_limits<size_t>::max();  // Mark as boundary
+          extended_anchors.push_back( boundary_anchor );
+        }
+      }
+
+      // Add ROI anchors
+      extended_anchors.insert( extended_anchors.end(), all_anchors.begin(), all_anchors.end() );
+
+      // Add upper boundary anchors (above max ROI energy)
+      for( const auto &dp : orig_dev_pairs )
+      {
+        if( dp.first > max_roi_energy + tolerance )
+        {
+          AnchorInfo boundary_anchor;
+          boundary_anchor.energy = dp.first;
+          boundary_anchor.sorted_roi_index = std::numeric_limits<size_t>::max();  // Mark as boundary
+          extended_anchors.push_back( boundary_anchor );
+        }
+      }
+
+      // Replace all_anchors with extended list
+      all_anchors = std::move( extended_anchors );
+    }//if( add boundary anchors )
+
+    // Now create DeviationPairAnchor objects
+    // Boundary anchors and first/last ROI anchors have fixed offset (not fitted)
+    size_t fitted_param_index = 0;
 
     for( size_t i = 0; i < all_anchors.size(); ++i )
     {
@@ -2535,10 +2346,38 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       dpa.anchor_energy = info.energy;
       dpa.sorted_roi_index = info.sorted_roi_index;
 
-      // First and last anchors are fixed
-      const bool is_first = (i == 0);
-      const bool is_last = (i == all_anchors.size() - 1);
-      dpa.is_fitted = !(is_first || is_last);
+      // Determine if this anchor should be fitted
+      // Fixed anchors: boundary anchors, first ROI anchor, last ROI anchor
+      const bool is_boundary_anchor = (info.sorted_roi_index == std::numeric_limits<size_t>::max());
+
+      // Check if this is the first or last ROI anchor (not boundary)
+      bool is_first_roi = false;
+      bool is_last_roi = false;
+
+      if( !is_boundary_anchor )
+      {
+        // Find the first non-boundary anchor
+        for( size_t j = 0; j < all_anchors.size(); ++j )
+        {
+          if( all_anchors[j].sorted_roi_index != std::numeric_limits<size_t>::max() )
+          {
+            is_first_roi = (i == j);
+            break;
+          }
+        }
+
+        // Find the last non-boundary anchor
+        for( size_t j = all_anchors.size(); j > 0; --j )
+        {
+          if( all_anchors[j-1].sorted_roi_index != std::numeric_limits<size_t>::max() )
+          {
+            is_last_roi = (i == (j - 1));
+            break;
+          }
+        }
+      }
+
+      dpa.is_fitted = !(is_boundary_anchor || is_first_roi || is_last_roi);
 
       if( dpa.is_fitted )
       {
@@ -2572,10 +2411,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       }
 
       // Compute initial_offset from original deviation pairs in the energy calibration
+      dpa.initial_offset = 0.0;
       if( !orig_dev_pairs.empty() )
-        dpa.initial_offset = SpecUtils::deviation_pair_correction( static_cast<float>(dpa.anchor_energy), orig_dev_pairs );
-      else
-        dpa.initial_offset = 0.0;
+      {
+        dpa.initial_offset = SpecUtils::correction_due_to_dev_pairs( static_cast<float>(dpa.anchor_energy), orig_dev_pairs );
+        //dpa.initial_offset = SpecUtils::deviation_pair_correction( static_cast<float>(dpa.anchor_energy), orig_dev_pairs );
+      }
 
       m_dev_pair_anchors.push_back( dpa );
     }//for( loop over all anchors )
@@ -5437,14 +5278,16 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     // Extract deviation pair offsets
     // Store total offset = initial_offset + fitted_adjustment for each anchor
     solution.m_deviation_pair_offsets.clear();
+    solution.m_num_deviations_fit = 0;
     if( !cost_functor->m_dev_pair_anchors.empty() )
     {
+      solution.m_num_deviations_fit = cost_functor->m_num_fitted_dev_pair_params;
+      
       for( const DeviationPairAnchor &anchor : cost_functor->m_dev_pair_anchors )
       {
         double total_offset = anchor.initial_offset;
         if( anchor.is_fitted )
           total_offset += parameters[cost_functor->m_dev_pair_par_start_index + anchor.param_index];
-
         solution.m_deviation_pair_offsets.emplace_back( anchor.anchor_energy, total_offset );
       }
     }//if( deviation pairs were used )
@@ -6693,18 +6536,28 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     if( index < m_fwhm_par_start_index )
     {
+      assert( m_dev_pair_anchors.size() > 2 );
       assert( index >= m_dev_pair_par_start_index );
-      const size_t dev_num = index - m_dev_pair_par_start_index;
-      assert( m_dev_pair_anchors.size() > dev_num );
-      assert( (m_num_fitted_dev_pair_params + 2) == m_dev_pair_anchors.size() );
       assert( m_dev_pair_anchors[0].is_fitted == false );
       assert( m_dev_pair_anchors.back().is_fitted == false );
-      assert( m_dev_pair_anchors[dev_num + 1].is_fitted == true );
       
-      char buffer[32] = {'\0'};
-      snprintf( buffer, sizeof(buffer), "Dev_%.1f", m_dev_pair_anchors[dev_num + 1].anchor_energy );
+      for( size_t dev_num = 0; dev_num < m_dev_pair_anchors.size(); ++dev_num )
+      {
+        const DeviationPairAnchor &anchor = m_dev_pair_anchors[dev_num];
+        assert( (anchor.param_index == std::numeric_limits<size_t>::max()) != anchor.is_fitted );
+        
+        if( (anchor.param_index + m_dev_pair_par_start_index) == index )
+        {
+          assert( anchor.is_fitted );
+          
+          char buffer[32] = {'\0'};
+          snprintf( buffer, sizeof(buffer), "Dev_%.1f", m_dev_pair_anchors[dev_num + 1].anchor_energy );
+          return buffer;
+        }
+      }//for( size_t dev_num = 0; dev_num < m_dev_pair_anchors.size(); ++dev_num )
       
-      return buffer;
+      assert( 0 );
+      return "Dev_invalid";
     }//if( index < m_fwhm_par_start_index )
     
     if( index < m_rel_eff_par_start_index )
@@ -7908,6 +7761,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
    This interpolates the fitted deviation pair offsets using a cubic spline
    and adds the correction to the input energy.
 
+   This function should return
+   
    @param val The energy value after offset/gain adjustment
    @param x The parameter vector containing deviation pair offsets
    @returns The corrected energy value
@@ -7918,38 +7773,88 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     if( (m_options.energy_cal_type != RelActCalcAuto::EnergyCalFitType::NonLinearFit) || m_dev_pair_anchors.empty() )
       return val;
 
-    // Build vectors of anchor energies and offsets for the spline
-    std::vector<double> anchor_energies;
-    std::vector<T> offsets;
-    anchor_energies.reserve( m_dev_pair_anchors.size() );
-    offsets.reserve( m_dev_pair_anchors.size() );
+    // Build deviation pair vector with ADDITIONAL offsets for the fitted spline
+    // Note: The fitted parameters represent ADDITIONAL corrections on top of the original deviation pairs
+    // (which are already applied in apply_energy_cal_adjustment). Boundary anchors have 0.0 offset.
+    std::vector<std::pair<double,T>> deviation_pairs;
+    deviation_pairs.reserve( m_dev_pair_anchors.size() );
 
     for( const DeviationPairAnchor &anchor : m_dev_pair_anchors )
     {
-      anchor_energies.push_back( anchor.anchor_energy );
-
+      T offset;
       if( anchor.is_fitted )
-      {
-        // Total offset = initial_offset (from original cal) + fitted adjustment
-        offsets.push_back( T(anchor.initial_offset) + x[m_dev_pair_par_start_index + anchor.param_index] );
-      }
+        offset = x[m_dev_pair_par_start_index + anchor.param_index] + anchor.initial_offset;
       else
-      {
-        // First and last anchors use initial_offset (from original deviation pairs)
-        offsets.push_back( T(anchor.initial_offset) );
-      }
+        offset = T(anchor.initial_offset);
+
+      deviation_pairs.emplace_back( anchor.anchor_energy, offset );
     }//for( loop over anchors )
 
+
     // Create spline and evaluate at the current energy
-    const std::vector<CubicSplineNodeT<T>> spline_nodes =
-        create_cubic_spline_templated( anchor_energies, offsets );
+    const std::vector<CubicSplineNodeT<T>> spline_nodes = create_cubic_spline( deviation_pairs );
 
     if( spline_nodes.empty() )
       return val;
 
-    const T correction = eval_cubic_spline_templated( val, spline_nodes );
+    // Use the inverse correction: given true_energy (val), find the offset that was applied
+    // This is analogous to SpecUtils::correction_due_to_dev_pairs
+    //const T correction = correction_due_to_deviation_pairs( val, spline_nodes );
+    const T correction = eval_cubic_spline( val, spline_nodes );
+    
+#if( PERFORM_DEVELOPER_CHECKS )
+    // Verify that our implementation matches SpecUtils::correction_due_to_dev_pairs
+    vector<pair<float,float>> debug_dev_pairs;
+    debug_dev_pairs.reserve( m_dev_pair_anchors.size() );
 
-    return val + correction;
+    for( const DeviationPairAnchor &anchor : m_dev_pair_anchors )
+    {
+      double total_offset = anchor.initial_offset;
+      if( anchor.is_fitted )
+      {
+        // Extract the scalar value from the fitted parameter
+        if constexpr ( std::is_same_v<T, double> )
+          total_offset += x[m_dev_pair_par_start_index + anchor.param_index];
+        else
+          total_offset += x[m_dev_pair_par_start_index + anchor.param_index].a;
+      }
+
+      debug_dev_pairs.emplace_back( static_cast<float>(anchor.anchor_energy), static_cast<float>(total_offset) );
+    }
+
+    double lookup_energy;
+    if constexpr ( std::is_same_v<T, double> )
+      lookup_energy = val;
+    else
+      lookup_energy = val.a;
+
+    //const double specutils_correction = SpecUtils::correction_due_to_dev_pairs( static_cast<float>(lookup_energy), debug_dev_pairs );
+    const double specutils_correction = SpecUtils::deviation_pair_correction( static_cast<float>(lookup_energy), debug_dev_pairs );
+    
+    
+    double our_correction;
+    if constexpr ( std::is_same_v<T, double> )
+      our_correction = correction;
+    else
+      our_correction = correction.a;
+
+    const double diff = std::fabs( specutils_correction - our_correction );
+    const double tolerance = 1.0e-4;  // 0.1 eV tolerance, same as SpecUtils
+
+    if( diff > tolerance )
+    {
+      char buffer[512];
+      snprintf( buffer, sizeof(buffer),
+        "apply_fitted_deviation_pairs: SpecUtils correction (%.9g) differs from our correction (%.9g) by %.3g keV at energy %.6f keV",
+        specutils_correction, our_correction, diff, lookup_energy );
+      log_developer_error( __func__, buffer );
+    }
+#endif
+
+    // Apply the inverse deviation pair correction
+    // Note: when fitting deviations, original deviation pairs are NOT applied (see check in apply_energy_cal_adjustment)
+    // The fitted correction includes initial_offset (from original dev pairs) + fitted adjustment
+    return val - correction;
   }//apply_fitted_deviation_pairs(...)
 
 
@@ -7961,6 +7866,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   {
     assert( x.size() > (RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars + m_num_fitted_dev_pair_params) );
     assert( 0 == m_energy_cal_par_start_index );
+    
+    const bool fitting_deviations = ((m_options.energy_cal_type == RelActCalcAuto::EnergyCalFitType::NonLinearFit)
+                                     && !m_dev_pair_anchors.empty());
     
     if( m_options.energy_cal_type == RelActCalcAuto::EnergyCalFitType::NoFit )
     {
@@ -7982,7 +7890,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       if( (x[0] == RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset)
          && (x[1] == RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset)
          && ((RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars <= 2)
-             || (x[2] == RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset)) )
+             || (x[2] == RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset))
+         && !fitting_deviations )
       {
         return T(energy);
       }
@@ -8044,7 +7953,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             coefs.push_back( quad_adj / (num_channel*num_channel) );
         }//if( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars > 2 )
 
-        const auto &dev_pairs = m_energy_cal->deviation_pairs();
         const double channel = m_energy_cal->channel_for_energy( energy );
         
         //return SpecUtils::polynomial_energy( channel, coefs, dev_pairs );
@@ -8053,17 +7961,28 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         for( size_t i = 1; i < coefs.size(); ++i )
           val += coefs[i] * pow( channel, static_cast<double>(i) );
         
-        if( !dev_pairs.empty() )
+        if( !fitting_deviations )
         {
-          if constexpr ( !std::is_same_v<T, double> )
-            val += T(SpecUtils::deviation_pair_correction( static_cast<float>(val.a), dev_pairs ));
-          else
-            val += SpecUtils::deviation_pair_correction( static_cast<float>(val), dev_pairs );
-        }//if( !dev_pairs.empty() )
-
+          const auto &dev_pairs = m_energy_cal->deviation_pairs();
+          if( !dev_pairs.empty() )
+          {
+            if constexpr ( !std::is_same_v<T, double> )
+              val += T(SpecUtils::deviation_pair_correction( static_cast<float>(val.a), dev_pairs ));
+            else
+              val += SpecUtils::deviation_pair_correction( static_cast<float>(val), dev_pairs );
+            
+            //if constexpr ( !std::is_same_v<T, double> )
+            //  val += T(SpecUtils::correction_due_to_dev_pairs( static_cast<float>(val.a), dev_pairs ));
+            //else
+            //  val += T(SpecUtils::correction_due_to_dev_pairs( static_cast<float>(val), dev_pairs ));
+          }//if( !dev_pairs.empty() )
+          
+          return val;
+        }//if( (m_options.energy_cal_type != RelActCalcAuto::EnergyCalFitType::NonLinearFit) || m_dev_pair_anchors.empty() )
+        
         // Apply fitted deviation pair correction (non-linear energy cal adjustment)
         return apply_fitted_deviation_pairs( val, x );
-      }//case polynomial or FRF
+      }//case polynomial
 
 
       case SpecUtils::EnergyCalType::FullRangeFraction:
@@ -8087,7 +8006,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             coefs.push_back( quad_adj );
         }//if( quad_adj != 0.0 )
         
-        const auto &dev_pairs = m_energy_cal->deviation_pairs();
         const double channel = m_energy_cal->channel_for_energy( energy );
         
         //return SpecUtils::fullrangefraction_energy( channel, coefs, num_channel, dev_pairs );
@@ -8102,13 +8020,19 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         if( coefs.size() > 4 )
           val += coefs[4] / (1.0 + 60.0*frac_chan);
 
-        if( !dev_pairs.empty() )
+        if( !fitting_deviations )
         {
-          if constexpr ( !std::is_same_v<T, double> )
-            val += T(SpecUtils::deviation_pair_correction( static_cast<float>(val.a), dev_pairs ));
-          else
-            val += SpecUtils::deviation_pair_correction( static_cast<float>(val), dev_pairs );
-        }//if( !dev_pairs.empty() )
+          const auto &dev_pairs = m_energy_cal->deviation_pairs();
+          if( !dev_pairs.empty() )
+          {
+            if constexpr ( !std::is_same_v<T, double> )
+              val += T(SpecUtils::deviation_pair_correction( static_cast<float>(val.a), dev_pairs ));
+            else
+              val += SpecUtils::deviation_pair_correction( static_cast<float>(val), dev_pairs );
+          }//if( !dev_pairs.empty() )
+          
+          return val;
+        }//if( (m_options.energy_cal_type != RelActCalcAuto::EnergyCalFitType::NonLinearFit) || m_dev_pair_anchors.empty() )
 
         // Apply fitted deviation pair correction (non-linear energy cal adjustment)
         return apply_fitted_deviation_pairs( val, x );
@@ -8126,6 +8050,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         //if( quad_adj != 0.0 )
         //  new_energy += quad_adj*range_frac*range_frac;
 
+        if( !fitting_deviations )
+          return new_energy;
+        
         // Apply fitted deviation pair correction (non-linear energy cal adjustment)
         return apply_fitted_deviation_pairs( new_energy, x );
       }//case LowerChannelEdge:
@@ -8147,7 +8074,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   double un_apply_energy_cal_adjustment( double adjusted_energy, const std::vector<double> &x ) const
   {
     assert( x.size() > 2 );
-    
+
     if( m_options.energy_cal_type == RelActCalcAuto::EnergyCalFitType::NoFit )
     {
       assert( fabs(x[0] - RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) < 1.0E-5 );
@@ -8155,14 +8082,33 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
       return adjusted_energy;
     }//if( we arent fitting energy cal )
-    
+
     if( (x[0] == 0.0) && (x[1] == 1.0) )
       return adjusted_energy;
-    
-    // Check adjustments are near the limits we placed (which was [-5,5], and [0.985,1.015])
-    assert( fabs(x[0]) <= 5.1 );
-    assert( (x[1] >= 0.984) && (x[1] <= 1.016) );
-    
+
+    // Check adjustments are near the limits we placed
+    // Offset: sm_energy_par_offset ± (sm_energy_offset_range_keV/sm_energy_cal_multiple) = 1.0 ± 0.15 = [0.85, 1.15]
+    // Gain: sm_energy_par_offset ± (sm_energy_gain_range_keV/sm_energy_cal_multiple) = 1.0 ± 0.20 = [0.80, 1.20]
+    // Quadratic: same as gain = [0.80, 1.20]
+    constexpr double offset_lower = RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset
+                                    - (RelActCalcAuto::RelActAutoSolution::sm_energy_offset_range_keV
+                                       / RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple);
+    constexpr double offset_upper = RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset
+                                    + (RelActCalcAuto::RelActAutoSolution::sm_energy_offset_range_keV
+                                       / RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple);
+    constexpr double gain_lower = RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset
+                                  - (RelActCalcAuto::RelActAutoSolution::sm_energy_gain_range_keV
+                                     / RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple);
+    constexpr double gain_upper = RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset
+                                  + (RelActCalcAuto::RelActAutoSolution::sm_energy_gain_range_keV
+                                     / RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple);
+    constexpr double tolerance = 0.01;  // Small tolerance for numerical precision
+
+    assert( (x[0] >= offset_lower - tolerance) && (x[0] <= offset_upper + tolerance) );
+    assert( (x[1] >= gain_lower - tolerance) && (x[1] <= gain_upper + tolerance) );
+    if( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars > 2 )
+      assert( (x[2] >= gain_lower - tolerance) && (x[2] <= gain_upper + tolerance) );
+
     const double offset_adj = (x[0]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
                               * RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
     const double gain_adj = (x[1]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
@@ -8171,7 +8117,24 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                       ? ((x[2]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
                          * RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple)
                       : 0.0;
-    
+
+    // Build fitted deviation pairs if non-linear energy cal is being used
+    vector<pair<float,float>> dev_pairs;
+    const bool fit_deviations = ((m_options.energy_cal_type == RelActCalcAuto::EnergyCalFitType::NonLinearFit) && !m_dev_pair_anchors.empty());
+    if( fit_deviations )
+    {
+      for( const DeviationPairAnchor &anchor : m_dev_pair_anchors )
+      {
+        double total_offset = anchor.initial_offset;
+        if( anchor.is_fitted )
+          total_offset += x[m_dev_pair_par_start_index + anchor.param_index];
+        dev_pairs.emplace_back( static_cast<float>(anchor.anchor_energy), static_cast<float>(total_offset) );
+      }
+    }else
+    {
+      dev_pairs = m_energy_cal->deviation_pairs();
+    }
+
     switch( m_energy_cal->type() )
     {
       case SpecUtils::EnergyCalType::Polynomial:
@@ -8182,7 +8145,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         assert( coefs.size() >= 2 );
         coefs[0] += offset_adj;
         coefs[1] += (gain_adj / num_channel);
-        
+
         if( quad_adj != 0.0 )
         {
           if( coefs.size() > 2 )
@@ -8190,16 +8153,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           else
             coefs.push_back( quad_adj / (num_channel*num_channel) );
         }//if( quad_adj != 0.0 )
-        
-        const auto &dev_pairs = m_energy_cal->deviation_pairs();
-        
-        // TODO: is there a cheaper way to do this?
+
+        // Use fitted deviation pairs (or original if not fitting)
         const double channel = SpecUtils::find_polynomial_channel( adjusted_energy, coefs, num_channel, dev_pairs );
-        
         return m_energy_cal->energy_for_channel( channel );
       }//case polynomial
-        
-        
+
+
       case SpecUtils::EnergyCalType::FullRangeFraction:
       {
         const size_t num_channel = m_energy_cal->num_channels();
@@ -8207,7 +8167,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         assert( coefs.size() >= 2 );
         coefs[0] += offset_adj;
         coefs[1] += gain_adj;
-        
+
         if( quad_adj != 0.0 )
         {
           if( coefs.size() > 2 )
@@ -8215,12 +8175,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           else
             coefs.push_back( quad_adj );
         }//if( quad_adj != 0.0 )
-        
-        const auto &dev_pairs = m_energy_cal->deviation_pairs();
-        
-        // TODO: is there a cheaper way to do this?
+
+        // Use fitted deviation pairs (or original if not fitting)
         const double channel = SpecUtils::find_fullrangefraction_channel( adjusted_energy, coefs, num_channel, dev_pairs );
-        
+
         return m_energy_cal->energy_for_channel( channel );
       }//case FRF
         
@@ -8229,9 +8187,16 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       {
         const double lower_energy = m_energy_cal->lower_energy();
         const double range = m_energy_cal->upper_energy() - lower_energy;
-        
+
         assert( quad_adj == 0.0 );
-        return (adjusted_energy - offset_adj + gain_adj*lower_energy/range)/(1 + gain_adj/range);
+
+        // First, remove the fitted deviation pair correction (if any) using SpecUtils
+        double energy_without_dev_pairs = adjusted_energy;
+        if( fit_deviations && !dev_pairs.empty() )
+          energy_without_dev_pairs -= SpecUtils::correction_due_to_dev_pairs( adjusted_energy, dev_pairs );
+
+        // Now apply the inverse algebraic formula
+        return (energy_without_dev_pairs - offset_adj + gain_adj*lower_energy/range)/(1 + gain_adj/range);
       }//case LowerChannelEdge:
         
       case SpecUtils::EnergyCalType::InvalidEquationType:
@@ -13971,9 +13936,8 @@ size_t RelActAutoSolution::fit_parameters_index_for_source( const SrcVariant &sr
   size_t acts_start_index = RelActAutoSolution::sm_num_energy_cal_pars; // Energy cal parameters
   
   // Add deviation parameters
-  if( (m_options.energy_cal_type == RelActCalcAuto::EnergyCalFitType::NonLinearFit)
-      && (m_deviation_pair_offsets.size() > 2) )
-    acts_start_index += (m_deviation_pair_offsets.size() - 2);
+  if( m_options.energy_cal_type == RelActCalcAuto::EnergyCalFitType::NonLinearFit )
+    acts_start_index += m_num_deviations_fit;
   
   // Add FWHM parameters
   acts_start_index += num_parameters( m_options.fwhm_form );
@@ -14773,41 +14737,6 @@ string RelActAutoSolution::rel_eff_eqn_js_uncert_fcn( const size_t rel_eff_index
 }//string RelActAutoSolution::rel_eff_eqn_js_uncert_fcn(i)
 
 
-#if( BUILD_AS_UNIT_TEST_SUITE )
-std::vector<std::pair<float,float>> combine_deviation_pairs_for_calibration(
-  const std::vector<std::pair<float,float>> &orig_dev_pairs,
-  const std::vector<std::pair<double,double>> &fitted_offsets )
-{
-  if( fitted_offsets.empty() )
-    return orig_dev_pairs;
-
-  std::vector<std::pair<float,float>> result;
-
-  // Determine the anchor range
-  const double min_anchor = fitted_offsets.front().first;
-  const double max_anchor = fitted_offsets.back().first;
-  const double epsilon = 0.1;  // keV tolerance for overlap detection
-
-  // Keep original deviation pairs OUTSIDE the anchor range
-  for( const auto &dp : orig_dev_pairs )
-  {
-    if( (dp.first < (min_anchor - epsilon)) || (dp.first > (max_anchor + epsilon)) )
-      result.push_back( dp );
-  }
-
-  // Add fitted deviation pairs (NEGATED for inverse transformation)
-  for( const auto &dev : fitted_offsets )
-    result.emplace_back( static_cast<float>(dev.first), -static_cast<float>(dev.second) );
-
-  // Sort by energy
-  std::sort( result.begin(), result.end(),
-    []( const std::pair<float,float> &a, const std::pair<float,float> &b ) { return a.first < b.first; } );
-
-  return result;
-}//combine_deviation_pairs_for_calibration(...)
-#endif // BUILD_AS_UNIT_TEST_SUITE
-
-
 std::shared_ptr<SpecUtils::EnergyCalibration> RelActAutoSolution::get_adjusted_energy_cal() const
 {
   shared_ptr<const SpecUtils::EnergyCalibration> orig_cal = m_foreground ? m_foreground->energy_calibration() : nullptr;
@@ -14836,36 +14765,30 @@ std::shared_ptr<SpecUtils::EnergyCalibration> RelActAutoSolution::get_adjusted_e
                               * RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple)
                       : 0.0;
     
-  vector<pair<float,float>> dev_pairs = orig_cal->deviation_pairs();
+  vector<pair<float,float>> dev_pairs;
 
-  // Combine original and fitted deviation pairs:
-  // - Keep original deviation pairs OUTSIDE the fitted anchor range
-  // - Replace deviation pairs INSIDE the anchor range with fitted ones (negated for inverse transform)
+  // Use fitted deviation pairs if available, otherwise keep original
   if( !m_deviation_pair_offsets.empty() )
   {
-    const double min_anchor = m_deviation_pair_offsets.front().first;
-    const double max_anchor = m_deviation_pair_offsets.back().first;
-    const double epsilon = 0.1;  // keV tolerance for overlap detection
+    // The m_deviation_pair_offsets contain (anchor_energy, initial_offset + fitted_adjustment)
+    // where the offset is in FORWARD transform direction (offset to ADD to polynomial energy).
+    //
+    // But SpecUtils::EnergyCalibration uses INVERSE transform (spectrum → true energy),
+    // so we need to NEGATE the offsets when storing them in the final calibration.
+    //
+    // This matches SpecUtils convention: if forward offset is +10 keV (polynomial 1450 → spectrum 1460),
+    // then inverse offset is -10 keV (spectrum 1460 → true 1450).
 
-    // Keep original deviation pairs OUTSIDE our anchor range
-    vector<pair<float,float>> new_dev_pairs;
-    for( const auto &dp : dev_pairs )
-    {
-      if( (dp.first < (min_anchor - epsilon)) || (dp.first > (max_anchor + epsilon)) )
-        new_dev_pairs.push_back( dp );
-    }
+    for( const auto &fitted_dp : m_deviation_pair_offsets )
+      dev_pairs.emplace_back( static_cast<float>(fitted_dp.first), static_cast<float>(fitted_dp.second) );
 
-    // Add fitted deviation pairs (NEGATED for inverse transformation)
-    // m_deviation_pair_offsets stores (anchor_energy, total_offset)
-    // where total_offset = initial_offset + fitted_adjustment
-    for( const auto &dev : m_deviation_pair_offsets )
-      new_dev_pairs.emplace_back( static_cast<float>(dev.first), -static_cast<float>(dev.second) );
-
-    // Sort by energy
-    std::sort( new_dev_pairs.begin(), new_dev_pairs.end(),
+    // Sort by energy (should already be sorted, but be safe)
+    std::sort( dev_pairs.begin(), dev_pairs.end(),
       []( const pair<float,float> &a, const pair<float,float> &b ) { return a.first < b.first; } );
-
-    dev_pairs = std::move( new_dev_pairs );
+  }else
+  {
+    // No fitted deviation pairs - keep original
+    dev_pairs = orig_cal->deviation_pairs();
   }
   
   switch( energy_cal_type )
@@ -14969,8 +14892,12 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
         break;
     }//switch( roi.continuum_type )
     
-    const pair<size_t,size_t> channel_range
-    = roi.channel_range( roi.lower_energy, roi.upper_energy, roi.num_channels, solution.m_spectrum->energy_calibration() );
+    // Blah blah blah
+    // The peak means of `solution.m_fit_peaks_for_each_curve` have been corrected back to "true" energy; however, the
+    //  peak ROI edges have have been corrected back to the energy range used for the ROI, which is not the same
+    //  as `roi` is used, so we actually have to un-apply the correction to get back to near true energy to match `roi`
+    double lower_energy = roi.lower_energy;
+    double upper_energy = roi.upper_energy;
     
     shared_ptr<const PeakContinuum> continuum;
     
@@ -14986,8 +14913,8 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
         assert( p.hasSourceGammaAssigned() );
         if( !p.hasSourceGammaAssigned() || (p.continuum() == continuum) )
           continue;
-        const double lower_diff = fabs(roi.lower_energy - p.continuum()->lowerEnergy());
-        const double upper_diff = fabs(roi.upper_energy - p.continuum()->upperEnergy());
+        const double lower_diff = fabs(lower_energy - p.continuum()->lowerEnergy());
+        const double upper_diff = fabs(upper_energy - p.continuum()->upperEnergy());
         const double diff = lower_diff + upper_diff;
         if( (diff < nearest_dist) /*&& (diff < 1.0)*/ )
         {
@@ -14998,7 +14925,7 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
       }//for( size_t peak_index = 0; peak_index < peaks.size(); ++peak_index )
     }//for( size_t rel_eff_index = 0; rel_eff_index < solution.m_fit_peaks_for_each_curve.size(); ++rel_eff_index )
     
-    assert( nearest_dist < 1.1 );
+    //assert( nearest_dist < 1.1 );
     if( !continuum || (nearest_dist > 10.0) )
       continue;
     
@@ -15117,6 +15044,10 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
       throw runtime_error( "Spectrum energy cal num channel mismatch." );
     
     const shared_ptr<const vector<float>> channel_energies_ptr = energy_cal->channel_energies();
+    
+    const pair<size_t,size_t> channel_range
+      = roi.channel_range( roi.lower_energy, roi.upper_energy, roi.num_channels,
+                          solution.m_spectrum->energy_calibration() );
     
     if( !channel_energies_ptr
        || (channel_range.first >= channel_energies_ptr->size())
