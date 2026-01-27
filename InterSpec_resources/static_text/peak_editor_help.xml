@@ -59,51 +59,114 @@ The <b>Accept</b> button applies any changes you have made, and closes the dialo
 
 
 <h3>Peak Skew Descriptions</h3>
-There are currently three skew distributions that modify the lower energy tail of Gaussian peaks,
-and two skew distributions that modify both the lower and upper energy tails of the Gaussians.
+There are currently eight skew distributions that can modify the shape of Gaussian peaks to better match observed spectral features,
+particularly for HPGe detectors measuring x-rays and low-energy gamma rays.
+
+<h4>Single-Sided Tail Distributions</h4>
+<p>These distributions modify only the lower energy tail of the Gaussian peak:</p>
 
 <ul>
   <li>
-    <b>Exp*Gauss</b>: Convolution of Gaussian with an left-hand exponential multiplied by a
-    step function that goes to zero above the peak mean.<br />
+    <b>Exp*Gauss</b>: Convolution of Gaussian with left-sided exponential (also known as Exponentially Modified Gaussian or EMG).<br />
+    <b>Formula:</b> PDF(x) = (1/(2τ)) exp((x-μ)/τ + σ²/(2τ²)) erfc[1/√2 · ((x-μ)/σ + σ/τ)]<br />
+    <b>Parameters:</b><br />
+    &nbsp;&nbsp;&nbsp;&nbsp;• <b>τ</b> (Skew): Exponential decay constant (range: 0.01-15 σ)<br />
+    <br />
     See:<br/>
     &nbsp;&nbsp;&nbsp;&nbsp;Analytical function for fitting peaks in alpha-particle spectra from Si detectors<br/>
+    &nbsp;&nbsp;&nbsp;&nbsp;G. Bortels and P. Collaers (1987)<br/>
     &nbsp;&nbsp;&nbsp;&nbsp;International Journal of Radiation Applications and Instrumentation. Part A. Applied Radiation and Isotopes<br/>
     &nbsp;&nbsp;&nbsp;&nbsp;Volume 38, Issue 10, 1987, Pages 831-837<br/>
     &nbsp;&nbsp;&nbsp;&nbsp;<a href="https://doi.org/10.1016/0883-2889(87)90180-8" target="_blank">https://doi.org/10.1016/0883-2889(87)90180-8</a><br/>
-    <br/>
-    Although in the paper two exponentials are used, for gamma-spectroscopy a single exponential
-    appears to usually be sufficient, so <em>InterSpec</em> only implements a single exponential.
   </li>
+
   <li>
-    <b>GaussExp</b>: An exponential tail stitched to a Gaussian core.<br />
+    <b>Double Exp*Gauss</b>: Weighted sum of two Exp*Gauss distributions with different decay constants.<br />
+    <b>Formula:</b> PDF(x) = (1-η)·Exp*Gauss(τ₁) + η·Exp*Gauss(τ₂) where τ₂ = τ₁ + Δτ₂<br />
+    <b>Parameters:</b><br />
+    &nbsp;&nbsp;&nbsp;&nbsp;• <b>τ₁</b>: First exponential decay constant, typically close to σ (range: 0.01-15 σ)<br />
+    &nbsp;&nbsp;&nbsp;&nbsp;• <b>Δτ₂</b>: Additional decay for second exponential, τ₂ = τ₁ + Δτ₂ (range: 0.0-10 σ)<br />
+    &nbsp;&nbsp;&nbsp;&nbsp;• <b>η</b> (Weight): Weight of second exponential, where η=0 gives single Exp*Gauss(τ₁) (range: 0.0-1.0)<br />
+    <br />
+    From Bortels & Collaers 1987 (Eq. 11). Provides additional flexibility for complex tail shapes by combining
+    a short exponential (representing one physical process) with a longer exponential (representing another process).
+  </li>
+
+  <li>
+    <b>Gauss+Exp*Gauss</b>: Weighted mixture of Gaussian and Exp*Gauss distributions.<br />
+    <b>Formula:</b> PDF(x) = (1-R)·Gaussian(x) + R·Exp*Gauss(x)<br />
+    <b>Parameters:</b><br />
+    &nbsp;&nbsp;&nbsp;&nbsp;• <b>R</b> (Mix Ratio): Mixing ratio where R=0 is pure Gaussian, R=1 is pure Exp*Gauss (range: 0.0-1.0)<br />
+    &nbsp;&nbsp;&nbsp;&nbsp;• <b>τ</b> (Exp*Gauss τ): Exponential decay constant for Exp*Gauss component (range: 0.01-15 σ)<br />
+    <br />
+    Useful for spectra where the tail is less prominent than pure Exp*Gauss would predict.
+  </li>
+
+  <li>
+    <b>GaussExp</b>: An exponential tail stitched to a Gaussian core at a threshold.<br />
+    <b>Formula:</b> Gaussian for x > μ - α·σ, exponential continuation for x ≤ μ - α·σ<br />
+    <b>Parameters:</b><br />
+    &nbsp;&nbsp;&nbsp;&nbsp;• <b>Skew</b>: Controls both threshold and decay rate (range: 0.01-15)<br />
+    <br />
     See:<br />
-    &nbsp;&nbsp;&nbsp;&nbsp;A simple alternative to the Crystal Ball function.<br />
+    &nbsp;&nbsp;&nbsp;&nbsp;A simple alternative to the Crystal Ball function<br />
     &nbsp;&nbsp;&nbsp;&nbsp;Souvik Das, arXiv:1603.08591<br />
     &nbsp;&nbsp;&nbsp;&nbsp;<a href="https://arxiv.org/abs/1603.08591" target="_blank">https://arxiv.org/abs/1603.08591</a>
   </li>
+
   <li>
-    <b>Crystal Ball</b>: A Gaussian core portion and a power-law low-end tail, below a threshold.<br />
+    <b>Crystal Ball</b>: A Gaussian core with a power-law low-end tail below a threshold.<br />
+    <b>Formula:</b> Gaussian for x > μ - α·σ, power-law (x - μ + α·σ)<sup>-n</sup> for x ≤ μ - α·σ<br />
+    <b>Parameters:</b><br />
+    &nbsp;&nbsp;&nbsp;&nbsp;• <b>α</b>: Threshold in units of σ where tail begins (range: 0.1-10)<br />
+    &nbsp;&nbsp;&nbsp;&nbsp;• <b>n</b>: Power-law exponent (range: 0.1-50)<br />
+    <br />
     See:<br />
     &nbsp;&nbsp;&nbsp;&nbsp;<a href="https://en.wikipedia.org/wiki/Crystal_Ball_function" target="_blank">https://en.wikipedia.org/wiki/Crystal_Ball_function</a><br/>
-    <br/>
-    Uses two skew parameters.<br/>
-    <ol>
-      <li><b>&alpha;</b>: defines the threshold (how many gaussian sigma away from the mean for the modified-tail to start).</li>
-      <li><b>n</b>: defines the power-law.
-    </ol>
   </li>
+</ul>
+
+<h4>Double-Sided Tail Distributions</h4>
+<p>These distributions modify both the lower and upper energy tails:</p>
+
+<ul>
   <li>
-    <b>ExpGaussExp</b>: A double-sided version of the <em>GaussExp</em> distribution, with separate parameters for the lower and upper tails.
+    <b>ExpGaussExp</b>: A double-sided version of the <em>GaussExp</em> distribution.<br />
+    <b>Parameters:</b><br />
+    &nbsp;&nbsp;&nbsp;&nbsp;• <b>Lower Skew</b>: Controls left tail threshold and decay (range: 0.01-15)<br />
+    &nbsp;&nbsp;&nbsp;&nbsp;• <b>Upper Skew</b>: Controls right tail threshold and decay (range: 0.01-15)<br />
   </li>
+
   <li>
-    <b>Double Sided Crystal Ball</b>: A double-sided version of the <em>Crystal Ball</em> distribution, with separate <b>&alpha;</b> and <b>n</b> for the lower and upper tails.
+    <b>Double Sided Crystal Ball</b>: A double-sided version of the <em>Crystal Ball</em> distribution.<br />
+    <b>Parameters:</b><br />
+    &nbsp;&nbsp;&nbsp;&nbsp;• <b>α<sub>low</sub></b>: Lower threshold in units of σ (range: 0.1-10)<br />
+    &nbsp;&nbsp;&nbsp;&nbsp;• <b>n<sub>low</sub></b>: Lower power-law exponent (range: 0.1-50)<br />
+    &nbsp;&nbsp;&nbsp;&nbsp;• <b>α<sub>high</sub></b>: Upper threshold in units of σ (range: 0.1-10)<br />
+    &nbsp;&nbsp;&nbsp;&nbsp;• <b>n<sub>high</sub></b>: Upper power-law exponent (range: 0.1-50)<br />
+  </li>
+</ul>
+
+<h4>Mixed Distributions (Special Cases)</h4>
+<p>These distributions combine multiple profile types for specialized applications:</p>
+
+<ul>
+  <li>
+    <b>Voigt+Exp*Gauss</b>: Weighted mixture of Voigt profile and Exp*Gauss distribution.<br />
+    <b>Formula:</b> PDF(x) = (1-R)·Voigt(x,γ) + R·Exp*Gauss(x,τ)<br />
+    <b>Parameters:</b><br />
+    &nbsp;&nbsp;&nbsp;&nbsp;• <b>γ<sub>L</sub></b> (Lorentzian γ): Lorentzian HWHM for natural linewidth (range: 0.001-0.5 keV)<br />
+    &nbsp;&nbsp;&nbsp;&nbsp;• <b>R</b> (Mix Ratio): Mixing ratio where R=0 is pure Voigt, R=1 is pure Exp*Gauss (range: 0.0-1.0)<br />
+    &nbsp;&nbsp;&nbsp;&nbsp;• <b>τ</b> (Exp*Gauss τ): Exponential decay constant for Exp*Gauss component (range: 0.01-10 σ)<br />
+    <br />
+    Particularly useful for x-ray peaks where both natural linewidth (Lorentzian) and detector effects (exponential tail) are significant.
+    The Lorentzian component represents the natural x-ray linewidth, while the Exp*Gauss tail accounts for incomplete charge collection.
   </li>
 </ul>
 
 
 <p>
-An example showing each of the distributions to the same data is:
+An example showing some of the distributions fit to the same data is:
 
 <table style="border: 1px solid black; border-collapse: collapse; table-layout: fixed">
   <tr>

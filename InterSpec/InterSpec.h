@@ -865,6 +865,11 @@ public:
   void handleRelActAutoClose();
   
   RelActManualGui *createRelActManualWidget();
+  
+  /** Returns the RelActManualGui widget if it exists, otherwise returns nullptr.
+   *  If createIfNotOpen is true, creates the widget if it doesn't exist.
+   */
+  RelActManualGui *relActManualWidget( const bool createIfNotOpen = false );
   void handleRelActManualClose();
   
   void saveRelActManualStateToForegroundSpecMeas();
