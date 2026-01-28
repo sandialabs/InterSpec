@@ -933,27 +933,12 @@ namespace AnalystChecks
 
       for( const string &src : options.sources )
       {
-        if( const SandiaDecay::Nuclide * const nuc = db->nuclide(src) )
-        {
-          sources.push_back( nuc );
-          continue;
-        }
-
-        if( const SandiaDecay::Element * const el = db->element(src) )
-        {
-          sources.push_back( el );
-          continue;
-        }
-
-        const ReactionGamma * const rctnDb = ReactionGammaServer::database();
-        vector<ReactionGamma::ReactionPhotopeak> reactions;
-
-        if( rctnDb )
-          rctnDb->gammas( src, reactions );
-        if( reactions.empty() )
+        RelActCalcAuto::SrcVariant source = RelActCalcAuto::source_from_string(src);
+        
+        if( RelActCalcAuto::is_null(source) )
           throw runtime_error( "Unrecognized source '" + src + "'" );
-
-        sources.push_back( reactions.front().reaction );
+        
+        sources.push_back( source );
       }//for( const string &src : options.sources )
 
       if( sources.empty() )
