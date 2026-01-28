@@ -15021,6 +15021,7 @@ std::shared_ptr<SpecUtils::EnergyCalibration> RelActAutoSolution::get_adjusted_e
               "get_adjusted_energy_cal: un_apply_energy_cal_adjustment mismatch (channel=%.3f, expected=%.9g, actual=%.9g, diff=%.3g keV)",
               channel, expected_energy, actual_energy, diff );
             log_developer_error( __func__, buffer );
+            assert( 0 );
             break;
           }
         }
