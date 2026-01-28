@@ -29,6 +29,8 @@
 #include <utility>
 #include <iostream>
 
+#include <ceres/jet.h>
+
 #define BOOST_TEST_MODULE RelActCalcAuto_EnergyCal_imp_suite
 #include <boost/test/included/unit_test.hpp>
 
@@ -235,6 +237,82 @@ BOOST_AUTO_TEST_CASE( PolynomialChannel_WithDeviationPairs )
 }
 
 
+BOOST_AUTO_TEST_CASE( PolynomialChannel_LowOrderDeviationPairs_Inversion )
+{
+  // Low-order polynomial with deviation pairs should invert consistently
+  const size_t nchannel = 2048;
+  std::vector<double> coeffs = { 15.0, 2.5 };
+  std::vector<pair<double,double>> dev_pairs = {
+    {250.0, 0.8},
+    {750.0, 1.2},
+    {1250.0, 0.6},
+    {1750.0, 0.2}
+  };
+
+  const std::vector<CubicSplineNodeT<double>> dev_pair_spline = create_cubic_spline( dev_pairs );
+
+  for( double ch = 0.0; ch < static_cast<double>(nchannel); ch += 137.0 )
+  {
+    const double energy = polynomial_energy( ch, coeffs, dev_pair_spline );
+    const double solved_ch = find_polynomial_channel( energy, coeffs, nchannel, dev_pairs );
+
+    BOOST_CHECK_SMALL( std::fabs( solved_ch - ch ), 0.01 );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( PolynomialChannel_DeviationPairs_JetDerivative )
+{
+  using Jet1 = ceres::Jet<double,1>;
+
+  const size_t nchannel = 2048;
+  std::vector<double> coeffs = { 0.0, 3.0 };
+  std::vector<pair<double,double>> dev_pairs = {
+    {500.0, 1.5},
+    {1000.0, 2.0},
+    {1500.0, 1.0},
+    {2000.0, 0.5}
+  };
+
+  std::vector<Jet1> coeffs_jet;
+  coeffs_jet.reserve( coeffs.size() );
+  for( size_t i = 0; i < coeffs.size(); ++i )
+  {
+    Jet1 coef;
+    coef.a = coeffs[i];
+    coef.v[0] = 0.0;
+    coeffs_jet.push_back( coef );
+  }
+
+  std::vector<pair<double,Jet1>> dev_pairs_jet;
+  dev_pairs_jet.reserve( dev_pairs.size() );
+  for( size_t i = 0; i < dev_pairs.size(); ++i )
+  {
+    Jet1 offset;
+    offset.a = dev_pairs[i].second;
+    offset.v[0] = 0.0;
+    dev_pairs_jet.emplace_back( dev_pairs[i].first, offset );
+  }
+
+  const double energy = 1200.0;
+  const double eps = 1.0e-3;
+
+  const double ch_plus = find_polynomial_channel( energy + eps, coeffs, nchannel, dev_pairs );
+  const double ch_minus = find_polynomial_channel( energy - eps, coeffs, nchannel, dev_pairs );
+  const double fd_deriv = (ch_plus - ch_minus) / (2.0 * eps);
+
+  Jet1 jet_energy;
+  jet_energy.a = energy;
+  jet_energy.v[0] = 1.0;
+
+  const Jet1 jet_channel = find_polynomial_channel( jet_energy, coeffs_jet, nchannel, dev_pairs_jet );
+  const double ch_val = find_polynomial_channel( energy, coeffs, nchannel, dev_pairs );
+
+  BOOST_CHECK_SMALL( std::fabs( jet_channel.a - ch_val ), 1.0e-6 );
+  BOOST_CHECK_SMALL( std::fabs( jet_channel.v[0] - fd_deriv ), 1.0e-3 );
+}
+
+
 BOOST_AUTO_TEST_CASE( PolynomialChannel_ManyDeviationPairs )
 {
   // Test with many deviation pairs
@@ -349,6 +427,83 @@ BOOST_AUTO_TEST_CASE( FullRangeFraction_WithDeviationPairs )
 
     BOOST_CHECK_SMALL( std::fabs(our_bin - specutils_bin), 0.01 );
   }
+}
+
+
+BOOST_AUTO_TEST_CASE( FullRangeFraction_LowOrderDeviationPairs_Inversion )
+{
+  // Low-order FRF with deviation pairs should invert consistently
+  const size_t nchannel = 1024;
+  std::vector<double> coeffs = { 5.0, 2800.0 };
+  std::vector<pair<double,double>> dev_pairs = {
+    {400.0, 1.2},
+    {900.0, 1.8},
+    {1500.0, 1.0},
+    {2200.0, 0.4}
+  };
+
+  const std::vector<CubicSplineNodeT<double>> dev_pair_spline = create_cubic_spline( dev_pairs );
+
+  for( double bin = 0.0; bin < static_cast<double>(nchannel); bin += 101.0 )
+  {
+    const double energy = fullrangefraction_energy( bin, coeffs, nchannel, dev_pair_spline );
+    const double solved_bin = find_fullrangefraction_channel( energy, coeffs, nchannel, dev_pairs );
+
+    BOOST_CHECK_SMALL( std::fabs( solved_bin - bin ), 0.01 );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( FullRangeFraction_DeviationPairs_JetDerivative )
+{
+  using Jet1 = ceres::Jet<double,1>;
+
+  const size_t nchannel = 1024;
+  std::vector<double> coeffs = { 0.0, 3000.0 };
+  std::vector<pair<double,double>> dev_pairs = {
+    {500.0, 2.0},
+    {1000.0, 3.0},
+    {1500.0, 2.5},
+    {2000.0, 1.5},
+    {2500.0, 0.5}
+  };
+
+  std::vector<Jet1> coeffs_jet;
+  coeffs_jet.reserve( coeffs.size() );
+  for( size_t i = 0; i < coeffs.size(); ++i )
+  {
+    Jet1 coef;
+    coef.a = coeffs[i];
+    coef.v[0] = 0.0;
+    coeffs_jet.push_back( coef );
+  }
+
+  std::vector<pair<double,Jet1>> dev_pairs_jet;
+  dev_pairs_jet.reserve( dev_pairs.size() );
+  for( size_t i = 0; i < dev_pairs.size(); ++i )
+  {
+    Jet1 offset;
+    offset.a = dev_pairs[i].second;
+    offset.v[0] = 0.0;
+    dev_pairs_jet.emplace_back( dev_pairs[i].first, offset );
+  }
+
+  const double energy = 1500.0;
+  const double eps = 1.0e-3;
+
+  const double bin_plus = find_fullrangefraction_channel( energy + eps, coeffs, nchannel, dev_pairs );
+  const double bin_minus = find_fullrangefraction_channel( energy - eps, coeffs, nchannel, dev_pairs );
+  const double fd_deriv = (bin_plus - bin_minus) / (2.0 * eps);
+
+  Jet1 jet_energy;
+  jet_energy.a = energy;
+  jet_energy.v[0] = 1.0;
+
+  const Jet1 jet_bin = find_fullrangefraction_channel( jet_energy, coeffs_jet, nchannel, dev_pairs_jet );
+  const double bin_val = find_fullrangefraction_channel( energy, coeffs, nchannel, dev_pairs );
+
+  BOOST_CHECK_SMALL( std::fabs( jet_bin.a - bin_val ), 1.0e-6 );
+  BOOST_CHECK_SMALL( std::fabs( jet_bin.v[0] - fd_deriv ), 1.0e-3 );
 }
 
 
