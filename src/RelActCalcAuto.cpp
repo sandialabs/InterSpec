@@ -7898,7 +7898,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     assert( x.size() > (RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars + m_num_fitted_dev_pair_params) );
     assert( 0 == m_energy_cal_par_start_index );
     
-    const bool fitting_deviations = ((m_options.energy_cal_type == RelActCalcAuto::EnergyCalFitType::NonLinearFit)
+    const bool using_paramaterized_deviations = ((m_options.energy_cal_type == RelActCalcAuto::EnergyCalFitType::NonLinearFit)
                                      && !m_dev_pair_anchors.empty());
     
     if( m_options.energy_cal_type == RelActCalcAuto::EnergyCalFitType::NoFit )
@@ -7922,7 +7922,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
          && (x[1] == RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset)
          && ((RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars <= 2)
              || (x[2] == RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset))
-         && !fitting_deviations )
+         && !using_paramaterized_deviations )
       {
         return T(energy);
       }
@@ -7977,7 +7977,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
     // Build adjusted calibration deviation pairs (for inverse: true -> channel).
     std::vector<std::pair<double,T>> adjusted_dev_pairs;
-    if( fitting_deviations )
+    if( using_paramaterized_deviations )
     {
       adjusted_dev_pairs.reserve( m_dev_pair_anchors.size() );
       for( const DeviationPairAnchor &anchor : m_dev_pair_anchors )
@@ -8061,7 +8061,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
         if constexpr ( !std::is_same_v<T, double> )
         {
-          if( fitting_deviations )
+          bool dev_pair_deriv_active = using_paramaterized_deviations;
+
+          if( using_paramaterized_deviations )
           {
             double max_dev_offset_deriv = 0.0;
             for( const DeviationPairAnchor &anchor : m_dev_pair_anchors )
@@ -8074,20 +8076,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 max_dev_offset_deriv = std::max( max_dev_offset_deriv, std::fabs( par.v[i] ) );
             }
 
-            static int s_logged_dev_offset_inactive = 0;
-            if( (max_dev_offset_deriv < 1.0e-16) && (s_logged_dev_offset_inactive < 100) )
-            {
-              char buffer[256];
-              snprintf( buffer, sizeof(buffer),
-                "apply_energy_cal_adjustment: fitted dev-pair offsets inactive in this Jet block (max_dev_offset_deriv=%.3e)",
-                max_dev_offset_deriv );
-              log_developer_error( __func__, buffer );
-              s_logged_dev_offset_inactive += 1;
-              assert( 0 );
-            }
+            // I think if the deviation pair offsets are fixed, then there wont have a derivative component, so we'll
+            //  check for this.
+            dev_pair_deriv_active = (max_dev_offset_deriv > 1.0e-16);
 
             static int s_logged_energy_out_of_range = 0;
-            if( s_logged_energy_out_of_range < 50 )
+            if( dev_pair_deriv_active && (s_logged_energy_out_of_range < 50) )
             {
               const std::vector<CubicSplineNodeT<T>> adj_dev_spline =
                 adjusted_dev_pairs.empty() ? std::vector<CubicSplineNodeT<T>>{} : create_cubic_spline( adjusted_dev_pairs );
@@ -8106,13 +8100,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 assert( 0 );
               }
             }
-          }
+          }//if( using_paramaterized_deviations )
 
           double max_derivative = 0.0;
           for( size_t i = 0; i < sm_auto_diff_stride_size; ++i )
             max_derivative = std::max( max_derivative, std::fabs( val.v[i] ) );
           static int s_logged_zero_derivative = 0;
-          if( (max_derivative < 1.0e-12) && (s_logged_zero_derivative < 100) )
+          if( dev_pair_deriv_active && (max_derivative < 1.0e-12) && (s_logged_zero_derivative < 100) )
           {
             char buffer[256];
             snprintf( buffer, sizeof(buffer),
@@ -8122,7 +8116,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             s_logged_zero_derivative += 1;
             assert( 0 );
           }
-        }
+        }//if constexpr ( !std::is_same_v<T, double> )
 #endif
 
         return val;
