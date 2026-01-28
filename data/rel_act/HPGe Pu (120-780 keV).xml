@@ -3,7 +3,8 @@
 Uses the 'Physical' model for the relative efficiency curve, meaning it takes into account the currently loaded detector efficiency (or will use a default one if not loaded), and the attenuation of the plutonium and external shielding. 
 Requires HPGe data with high statistics, and preferably strong plutonium peak structures in the ~610 keV to ~780 keV range.</Description>
 	<Options version="2">
-		<FitEnergyCal>true</FitEnergyCal>
+    <FitEnergyCal remark="For backwards compat">true</FitEnergyCal>
+    <EnergyCalFitType remark="Possible values: NoFit, LinearFit, NonLinearFit">NonLinearFit</EnergyCalFitType>
 		<FwhmForm remark="Possible values: Gadras, Polynomial_2, Polynomial_3, Polynomial_4, Polynomial_5, Polynomial_6">Polynomial_4</FwhmForm>
 		<FwhmEstimationMethod remark="Possible values: StartFromDetEffOrPeaksInSpectrum, StartingFromAllPeaksInSpectrum, FixedToAllPeaksInSpectrum, StartingFromDetectorEfficiency, FixedToDetectorEfficiency">StartFromDetEffOrPeaksInSpectrum</FwhmEstimationMethod>
 		<Title>Foreground</Title>

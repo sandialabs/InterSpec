@@ -712,6 +712,8 @@ struct PeakFitDiffCostFunction
         const PeakDef::CoefficientType coeff_num = static_cast<PeakDef::CoefficientType>( PeakDef::CoefficientType::SkewPar0 + static_cast<int>(skew_index) );
         const T skew_coef = params[num_fit_continuum_pars + skew_index];
         peak.set_coefficient( skew_coef, coeff_num );
+        if( uncertainties && (uncertainties[num_fit_continuum_pars + skew_index] > 0.0) )
+          peak.set_uncertainty( uncertainties[num_fit_continuum_pars + skew_index], coeff_num );
       }
 
       if( uncertainties )
@@ -1203,7 +1205,13 @@ struct PeakFitDiffCostFunction
         //  so lets try to avoid this
         switch( m_skew_type )
         {
+          case PeakDef::NumSkewType:
+            assert( 0 );
+            //throw runtime_error( "PeakFitLM sanity check: NumSkewType is not a valid skew type" );
+            // Fall through to NoSkew for non-debug builds
+
           case PeakDef::NoSkew:   case PeakDef::Bortel:
+          case PeakDef::DoubleBortel: case PeakDef::GaussPlusBortel:
           case PeakDef::GaussExp: case PeakDef::ExpGaussExp:
             break;
 
@@ -1230,6 +1238,10 @@ struct PeakFitDiffCostFunction
             }//switch( ct )
             break;
           }//A Crystal Ball distribution
+
+          case PeakDef::VoigtPlusBortel:
+            // No special sanity checks needed for these parameters
+            break;
         }//switch( m_skew_type )
 
         starting_value[i] = val;
@@ -1931,7 +1943,7 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
           if( covariance_matrix[i][i] > 0.0 )
             uncertainties[i] = sqrt( covariance_matrix[i][i] );
         }
-      }else
+      }else 
       {
         uncertainties_ptr = nullptr;
       }//

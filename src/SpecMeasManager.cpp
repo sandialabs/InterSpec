@@ -3167,29 +3167,6 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   chart->resize( chartw, charth );
   chart->updateChart( det );
   
-  auto set_chart_y_range = [=]( shared_ptr<DetectorPeakResponse> drf ){
-    // We will override the auto y-axis limits, since it does badly with really small
-    //  numbers we might encounter.
-    double ymax = -999.0;
-    double lower_x = drf->lowerEnergy();
-    double upper_x = drf->upperEnergy();
-    if( lower_x >= upper_x )
-    {
-      lower_x = 45;
-      upper_x = 3000;
-    }
-    
-    for( double energy = lower_x; energy <= upper_x; energy += 10 )
-    {
-      const double val = drf->intrinsicEfficiency( energy );
-      ymax = std::max( ymax, val );
-    }
-    if( ymax > 0.0 )
-      chart->axis(Chart::Y1Axis).setRange( 0.0, 1.2*ymax );
-  };
-  
-  set_chart_y_range( det );
-  
   const string name = Wt::Utils::htmlEncode( det->name() );
   const string desc = Wt::Utils::htmlEncode( det->description() );
     
@@ -3331,7 +3308,6 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
       }//switch( geom_type )
         
       chart->updateChart( new_drf );
-      set_chart_y_range( new_drf );
       accept->enable();
     }catch( std::exception & )
     {

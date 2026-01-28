@@ -15,7 +15,10 @@
   <!-- General options -->
   <message id="raag-spectrum-peak-options">स्पेक्ट्रम और शिखर विकल्प</message>
   <message id="raag-rel-eff-curve-options">सापेक्ष दक्षता वक्र विकल्प</message>
-  <message id="raag-fit-energy-cal">ऊर्जा अंशांकन फिट करें</message>
+  <message id="raag-energy-cal-label">ऊर्जा अंशांकन</message>
+  <message id="raag-energy-cal-nofit">कोई नहीं</message>
+  <message id="raag-energy-cal-linear">रैखिक</message>
+  <message id="raag-energy-cal-nonlinear">गैर-रैखिक</message>
   <message id="raag-back-sub">पृष्ठभूमि घटाव</message>
   <message id="raag-fwhm-est">FWHM अनुमान</message>
   <message id="raag-fwhm-form">FWHM रूप</message>
@@ -57,6 +60,13 @@
   <message id="raag-combine-roi-right">दाएं ROI के साथ संयोजित करें</message>
 
   <!-- Tooltips -->
+  <message id="raag-tt-energy-cal-type">निर्दिष्ट करता है कि ऊर्जा अंशांकन में समायोजन फिट किए जाएँ या नहीं।
+    <ul>
+      <li><b>कोई नहीं</b>: मौजूदा ऊर्जा अंशांकन को बिना बदलाव के उपयोग करें।</li>
+      <li><b>रैखिक</b>: ऊर्जा अंशांकन में रैखिक समायोजन (ऑफ़सेट और गेन) फिट करें।</li>
+      <li><b>गैर-रैखिक</b>: रैखिक पदों के अतिरिक्त, प्रत्येक ROI के लिए विचलन युग्म (क्यूबिक स्प्लाइन) का उपयोग करके गैर-रैखिक समायोजन फिट करें। प्रत्येक ROI में सबसे बड़े पता लगे शिखर को विचलन युग्म ऊर्जा के रूप में उपयोग करता है, या यदि कोई न मिले तो ROI का मध्य-बिंदु उपयोग करता है; बड़े ROI को कई विचलन युग्म दिए जा सकते हैं।</li>
+    </ul>
+  </message>
   <message id="raag-tt-fwhm-form">समीकरण प्रकार जो शिखर FWHM को ऊर्जा के फ़ंक्शन के रूप में मॉडल करने के लिए उपयोग किया जाता है।</message>
   <message id="raag-tt-skew-type">शिखरों पर लागू करने के लिए विषमता का प्रकार; विषमता पैरामीटर फिट किए जाएंगे।</message>
   <message id="raag-tt-u-pu-data-source">यूरेनियम और प्लूटोनियम के गामा शाखा अनुपात के लिए परमाणु डेटा स्रोत।</message>
@@ -113,6 +123,8 @@
   <message id="raag-increase-gain-additional"> और लाभ को {1} से बढ़ाएं</message>
   <message id="raag-increase-quad-first"> द्विघातीय को {1} से बढ़ाएं</message>
   <message id="raag-increase-quad-additional"> और द्विघातीय को {1} से बढ़ाएं</message>
+  <message id="raag-dev-pairs-first"> विचलन युग्म {1} जोड़ें</message>
+  <message id="raag-dev-pairs-additional"> और विचलन युग्म {1} जोड़ें</message>
 
   <!-- Energy calibration application messages -->
   <message id="raag-apply-energy-cal-msg">यह प्राथमिक अग्रभूमि{1}{2}{3} के लिए{1} करेगा।<br />क्या आप यह करना चाहते हैं?</message>

@@ -62,11 +62,18 @@
 using namespace std;
 using SpecUtils::Measurement;
 
-/** Peak XML minor version  changes:
- 20231031: Minor version incremented from 1 to 2 to account for new peak skew models, and removal of Landau skew model
+/** Peak XML version changes:
+ 20260120: Added GaussPlusBortel and DoubleBortel skew models. Renamed VoigtWithExpTail to VoigtPlusBortel.
+ 20260113: Major version incremented from 0 to 1 to account for VoigtPlusBortel skew model (breaking change).
+           For backward compatibility, peaks without VoigtPlusBortel/GaussPlusBortel/DoubleBortel still write version 0.2.
+ 20231031: Minor version incremented from 1 to 2 to account for new peak skew models, and removal of Landau skew model.
  */
-const int PeakDef::sm_xmlSerializationMajorVersion = 0;
-const int PeakDef::sm_xmlSerializationMinorVersion = 2;
+const int PeakDef::sm_xmlSerializationMajorVersion = 1;
+const int PeakDef::sm_xmlSerializationMinorVersion = 1;
+
+// For backward compatibility, peaks without VoigtPlusBortel/GaussPlusBortel/DoubleBortel write the pre-Voigt version
+const int pre_Voigt_serialization_major = 0;
+const int pre_Voigt_serialization_minor = 2;
 
 const bool PeakDef::sm_defaultUseForDrfIntrinsicEffFit = true;
 const bool PeakDef::sm_defaultUseForDrfFwhmFit = true;
@@ -1321,14 +1328,22 @@ const char *PeakDef::to_string( const SkewType type )
 {
   switch( type )
   {
+    case PeakDef::NumSkewType:
+      assert( 0 );
+      //throw runtime_error( "PeakDef::to_string(SkewType): NumSkewType is not a valid skew type" );
+      // Fall through to NoSkew for non-debug builds
+
     case PeakDef::NoSkew:                 return "NoSkew";
-    case PeakDef::Bortel:                 return "ExGauss"; //Could instead use "Bortel"
+    case PeakDef::Bortel:                 return "ExGauss";
+    case PeakDef::DoubleBortel:           return "DoubleExGauss";
+    case PeakDef::GaussPlusBortel:        return "GaussPlusExGauss";
     case PeakDef::GaussExp:               return "GaussExp";
-    case PeakDef::CrystalBall:            return "CrystalBall"; //Might change to "CB"
+    case PeakDef::CrystalBall:            return "CrystalBall";
     case PeakDef::ExpGaussExp:            return "ExpGaussExp";
-    case PeakDef::DoubleSidedCrystalBall: return "DoubleSidedCrystalBall"; //Might change to "DSCB"
+    case PeakDef::DoubleSidedCrystalBall: return "DoubleSidedCrystalBall";
+    case PeakDef::VoigtPlusBortel:        return "VoigtPlusExGauss";
   }//switch( skew_type )
-  
+
   assert( 0 );
   throw runtime_error( "PeakDef::to_string(SkewType): invalid SkewType" );
   return "";
@@ -1339,16 +1354,24 @@ const char *PeakDef::to_label( const SkewType type )
 {
   switch( type )
   {
+    case PeakDef::NumSkewType:
+      assert( 0 );
+      //throw runtime_error( "PeakDef::to_label(SkewType): NumSkewType is not a valid skew type" );
+      // Fall through to NoSkew for non-debug builds
+
     case PeakDef::NoSkew:                 return "None";
     case PeakDef::Bortel:                 return "Exp*Gauss";
+    case PeakDef::DoubleBortel:           return "Double Exp*Gauss";
+    case PeakDef::GaussPlusBortel:        return "Gauss+Exp*Gauss";
     case PeakDef::GaussExp:               return "GaussExp";
     case PeakDef::CrystalBall:            return "Crystal Ball";
     case PeakDef::ExpGaussExp:            return "ExpGaussExp";
     case PeakDef::DoubleSidedCrystalBall: return "Double Crystal Ball";
+    case PeakDef::VoigtPlusBortel:        return "Voigt+Exp*Gauss";
   }//switch( skew_type )
-  
+
   assert( 0 );
-  throw runtime_error( "PeakDef::to_string(SkewType): invalid SkewType" );
+  throw runtime_error( "PeakDef::to_label(SkewType): invalid SkewType" );
   return "";
 }//const char *to_label( const SkewType type );
 
@@ -1357,28 +1380,50 @@ PeakDef::SkewType PeakDef::skew_from_string( const string &skew_type_str )
 {
   if( SpecUtils::iequals_ascii(skew_type_str,"NoSkew") )
     return PeakDef::SkewType::NoSkew;
-  
-  if( SpecUtils::iequals_ascii(skew_type_str,"Bortel")
-          || SpecUtils::iequals_ascii(skew_type_str,"ExGauss")  )
+
+  // Exp*Gauss (Bortel) - accept multiple aliases
+  if( SpecUtils::iequals_ascii(skew_type_str,"ExGauss")
+          || SpecUtils::iequals_ascii(skew_type_str,"Bortel")
+          || SpecUtils::iequals_ascii(skew_type_str,"EMG")
+          || SpecUtils::iequals_ascii(skew_type_str,"ExpGauss") )
     return PeakDef::SkewType::Bortel;
-  
+
+  // Double Exp*Gauss (DoubleBortel) - accept aliases
+  if( SpecUtils::iequals_ascii(skew_type_str,"DoubleExGauss")
+          || SpecUtils::iequals_ascii(skew_type_str,"DoubleBortel") )
+    return PeakDef::SkewType::DoubleBortel;
+
+  // Gauss+Exp*Gauss (GaussPlusBortel) - accept aliases
+  if( SpecUtils::iequals_ascii(skew_type_str,"GaussPlusExGauss")
+          || SpecUtils::iequals_ascii(skew_type_str,"GaussPlusBortel")
+          || SpecUtils::iequals_ascii(skew_type_str,"GaussBortel") )
+    return PeakDef::SkewType::GaussPlusBortel;
+
   if( SpecUtils::iequals_ascii(skew_type_str,"GaussExp") )
     return PeakDef::SkewType::GaussExp;
-  
+
   if( SpecUtils::iequals_ascii(skew_type_str,"CrystalBall")
           || SpecUtils::iequals_ascii(skew_type_str,"CB") )
     return PeakDef::SkewType::CrystalBall;
-  
+
   if( SpecUtils::iequals_ascii(skew_type_str,"ExpGaussExp") )
     return PeakDef::SkewType::ExpGaussExp;
-  
+
   if( SpecUtils::iequals_ascii(skew_type_str,"DoubleSidedCrystalBall")
           || SpecUtils::iequals_ascii(skew_type_str,"DSCB") )
     return PeakDef::SkewType::DoubleSidedCrystalBall;
-  
-  
+
+  // Voigt+Exp*Gauss (VoigtPlusBortel) - accept old names for backward compatibility
+  if( SpecUtils::iequals_ascii(skew_type_str,"VoigtPlusExGauss")
+          || SpecUtils::iequals_ascii(skew_type_str,"VoigtPlusBortel")
+          || SpecUtils::iequals_ascii(skew_type_str,"VoigtWithExpTail")
+          || SpecUtils::iequals_ascii(skew_type_str,"VoigtExp")
+          || SpecUtils::iequals_ascii(skew_type_str,"VoigtBortel") )
+    return PeakDef::SkewType::VoigtPlusBortel;
+
+
   throw runtime_error( "Invalid peak skew type: " + string(skew_type_str) );
-  
+
   return PeakDef::SkewType::NoSkew;
 }//SkewType skew_from_string( const char *skew_str )
 
@@ -1391,6 +1436,11 @@ bool PeakDef::skew_parameter_range( const SkewType skew_type, const CoefficientT
   
   switch( skew_type )
   {
+    case NumSkewType:
+      assert( 0 );
+      //throw runtime_error( "PeakDef::skew_parameter_range: NumSkewType is not a valid skew type" );
+      // Fall through to NoSkew for non-debug builds
+
     case NoSkew:
       return false;
       
@@ -1463,11 +1513,100 @@ bool PeakDef::skew_parameter_range( const SkewType skew_type, const CoefficientT
         default:
           return false;
       }//switch( coef )
-      
+
       break;
     }//case SkewType::ExpGaussExp: case SkewType::GaussExp:
+
+    case SkewType::VoigtPlusBortel:
+    {
+      switch( coef )
+      {
+        case CoefficientType::SkewPar0: // gamma_lor - Lorentzian HWHM in keV
+          starting_value = 0.1; // 5 eV typical for flourescent x-rays, but decay x-rays can be like 80 eV
+          step_size = 0.02;      // 2 eV steps
+          lower_value = 0.0;    // 1 eV minimum
+          upper_value = 10.0;      // Not sure if this is valid...
+          break;
+
+        case CoefficientType::SkewPar1: // R - mixing ratio (0=Voigt, 1=Bortel)
+          starting_value = 0.1;   // 10% Bortel is typical
+          step_size = 0.05;       // 5% steps
+          lower_value = 0.0;      // Pure Voigt
+          upper_value = 1.0;      // Pure Bortel
+          break;
+
+        case CoefficientType::SkewPar2: // tau - Bortel skew parameter
+          starting_value = 1.0;   // Similar to Bortel skew
+          step_size = 0.2;
+          lower_value = 0.01;     // Gentle tail
+          upper_value = 10;       // Steep tail
+          break;
+
+        default:
+          return false;
+      }//switch( coef )
+
+      break;
+    }//case SkewType::VoigtPlusBortel:
+
+    case SkewType::GaussPlusBortel:
+    {
+      switch( coef )
+      {
+        case CoefficientType::SkewPar0: // R - mixing ratio (0=Gaussian, 1=Bortel)
+          starting_value = 0.5;   // 50% mix
+          step_size = 0.1;
+          lower_value = 0.0;      // Pure Gaussian
+          upper_value = 1.0;      // Pure Bortel
+          break;
+
+        case CoefficientType::SkewPar1: // tau - Bortel skew parameter
+          starting_value = 0.5;
+          step_size = 1.0;
+          lower_value = 0.01;
+          upper_value = 15.0;
+          break;
+
+        default:
+          return false;
+      }//switch( coef )
+
+      break;
+    }//case SkewType::GaussPlusBortel:
+
+    case SkewType::DoubleBortel:
+    {
+      switch( coef )
+      {
+        case CoefficientType::SkewPar0: // tau1 - first exponential decay constant
+          starting_value = 0.5;
+          step_size = 1.0;
+          lower_value = 0.01;
+          upper_value = 15.0;
+          break;
+
+        case CoefficientType::SkewPar1: // tau2_delta - positive delta (tau2 = tau1 + tau2_delta)
+          starting_value = 1.0;
+          step_size = 0.5;
+          lower_value = 0.0;      // When 0, reduces to single Bortel
+          upper_value = 10.0;
+          break;
+
+        case CoefficientType::SkewPar2: // eta - weight of second exponential
+          starting_value = 0.5;
+          step_size = 0.1;
+          lower_value = 0.0;      // Only first exponential (tau1)
+          upper_value = 1.0;      // Only second exponential (tau2)
+          break;
+
+        default:
+          return false;
+      }//switch( coef )
+
+      break;
+    }//case SkewType::DoubleBortel:
   }//switch( skew_type )
-  
+
   return true;
 }//void skew_parameter_range(...)
 
@@ -1476,14 +1615,22 @@ size_t PeakDef::num_skew_parameters( const SkewType skew_type )
 {
   switch ( skew_type )
   {
+    case NumSkewType:
+      assert( 0 );
+      //throw std::logic_error( "NumSkewType is not a valid skew type" );
+      // Fall through to NoSkew for non-debug builds
+
     case NoSkew:                 return 0;
     case Bortel:                 return 1;
-    case CrystalBall:            return 2;
-    case DoubleSidedCrystalBall: return 4;
+    case DoubleBortel:           return 3; // tau1, tau2_delta, eta
+    case GaussPlusBortel:        return 2; // R, tau
     case GaussExp:               return 1;
+    case CrystalBall:            return 2;
     case ExpGaussExp:            return 2;
+    case DoubleSidedCrystalBall: return 4;
+    case VoigtPlusBortel:        return 3; // gamma_lor, R, tau
   }//switch ( skew_type )
-  
+
   assert( 0 );
   throw std::logic_error( "Invalid peak skew" );
   return 0;
@@ -1494,29 +1641,49 @@ bool PeakDef::is_energy_dependent( const SkewType skew_type, const CoefficientTy
 {
   switch( skew_type )
   {
+    case NumSkewType:
+      assert( 0 );
+      //throw std::logic_error( "NumSkewType is not a valid skew type" );
+      // Fall through to NoSkew for non-debug builds
+
     case NoSkew:
       return false;
-      
+
     case SkewType::Bortel:
       assert( coef == CoefficientType::SkewPar0 );
       return (coef == CoefficientType::SkewPar0);
-      
-    case SkewType::CrystalBall:
-      assert( (coef == CoefficientType::SkewPar0) || (coef == CoefficientType::SkewPar1) );
-      return (coef == CoefficientType::SkewPar0);
-      
-    case SkewType::DoubleSidedCrystalBall:
-      return ((coef == CoefficientType::SkewPar0) || (coef == CoefficientType::SkewPar2));
-      
+
+    case SkewType::DoubleBortel:
+      // tau1 (SkewPar0) and tau2_delta (SkewPar1) are energy dependent
+      // eta (SkewPar2) may or may not be energy dependent
+      return ((coef == CoefficientType::SkewPar0) || (coef == CoefficientType::SkewPar1));
+
+    case SkewType::GaussPlusBortel:
+      // Both R (SkewPar0) and tau (SkewPar1) are energy dependent
+      return ((coef == CoefficientType::SkewPar0) || (coef == CoefficientType::SkewPar1));
+
     case SkewType::GaussExp:
       assert( coef == CoefficientType::SkewPar0 );
       return (coef == CoefficientType::SkewPar0);
-      
+
+    case SkewType::CrystalBall:
+      assert( (coef == CoefficientType::SkewPar0) || (coef == CoefficientType::SkewPar1) );
+      return (coef == CoefficientType::SkewPar0);
+
     case SkewType::ExpGaussExp:
       assert( (coef == CoefficientType::SkewPar0) || (coef == CoefficientType::SkewPar1) );
       return ((coef == CoefficientType::SkewPar0) || (coef == CoefficientType::SkewPar1));
+
+    case SkewType::DoubleSidedCrystalBall:
+      return ((coef == CoefficientType::SkewPar0) || (coef == CoefficientType::SkewPar2));
+
+    case SkewType::VoigtPlusBortel:
+      // gamma_lor (SkewPar0) may be energy dependent if from lookup table
+      // R (SkewPar1) and tau (SkewPar2) are energy dependent for RelActAuto
+      return ((coef == CoefficientType::SkewPar0) || (coef == CoefficientType::SkewPar1)
+              || (coef == CoefficientType::SkewPar2));
   }//switch( skew_type )
-  
+
   assert( 0 );
   return false;
 }//bool is_energy_dependent( const SkewType skew_type, const CoefficientType coefficient )
@@ -1989,10 +2156,17 @@ rapidxml::xml_node<char> *PeakDef::toXml( rapidxml::xml_node<char> *parent,
   
   xml_node<char> *node = 0;
   xml_node<char> *peak_node = doc->allocate_node( node_element, "Peak" );
-  
-  snprintf( buffer, sizeof(buffer), "%i.%i",
-            PeakDef::sm_xmlSerializationMajorVersion,
-            PeakDef::sm_xmlSerializationMinorVersion );
+
+  // For backward compatibility, write version 0.2 for peaks without newer skew types
+  const bool uses_new_skew = (m_skewType == SkewType::VoigtPlusBortel)
+                             || (m_skewType == SkewType::GaussPlusBortel)
+                             || (m_skewType == SkewType::DoubleBortel);
+  const int majorVersion = uses_new_skew ? PeakDef::sm_xmlSerializationMajorVersion
+                                         : pre_Voigt_serialization_major;
+  const int minorVersion = uses_new_skew ? PeakDef::sm_xmlSerializationMinorVersion
+                                         : pre_Voigt_serialization_minor;
+
+  snprintf( buffer, sizeof(buffer), "%i.%i", majorVersion, minorVersion );
   const char *val = doc->allocate_string( buffer );
   xml_attribute<char> *att = doc->allocate_attribute( "version", val );
   peak_node->append_attribute( att );
@@ -2019,15 +2193,23 @@ rapidxml::xml_node<char> *PeakDef::toXml( rapidxml::xml_node<char> *parent,
   
   switch( m_skewType )
   {
+    case NumSkewType:
+      assert( 0 );
+      //throw runtime_error( "PeakDef::toXml: NumSkewType is not a valid skew type" );
+      // Fall through to NoSkew for non-debug builds
+
     case NoSkew:                 val = "NoSkew";                 break;
     case Bortel:                 val = "ExGauss";                break;
+    case DoubleBortel:           val = "DoubleBortel";           break;
+    case GaussPlusBortel:        val = "GaussPlusBortel";        break;
     //case Doniach:                val = "Doniach";                break;
-    case CrystalBall:            val = "CrystalBall";            break;
-    case DoubleSidedCrystalBall: val = "DoubleSidedCrystalBall"; break;
     case GaussExp:               val = "GaussExp";               break;
+    case CrystalBall:            val = "CrystalBall";            break;
     case ExpGaussExp:            val = "ExpGaussExp";            break;
+    case DoubleSidedCrystalBall: val = "DoubleSidedCrystalBall"; break;
+    case VoigtPlusBortel:        val = "VoigtPlusBortel";        break;
   }//switch( m_skewType )
-  
+
   node = doc->allocate_node( node_element, "Skew", val );
   peak_node->append_node( node );
   
@@ -2060,19 +2242,24 @@ rapidxml::xml_node<char> *PeakDef::toXml( rapidxml::xml_node<char> *parent,
           extra_label = "LandauMode";
         if( (m_skewType != CrystalBall)
            && (m_skewType != DoubleSidedCrystalBall)
-           && (m_skewType != ExpGaussExp) )
+           && (m_skewType != ExpGaussExp)
+           && (m_skewType != VoigtPlusBortel)
+           && (m_skewType != GaussPlusBortel)
+           && (m_skewType != DoubleBortel) )
         {
           label = nullptr;
         }
         break;
-        
+
       case SkewPar2:
         if( (m_skewType == NoSkew) )
           extra_label = "LandauSigma";
-        if( m_skewType != DoubleSidedCrystalBall )
+        if( (m_skewType != DoubleSidedCrystalBall)
+           && (m_skewType != VoigtPlusBortel)
+           && (m_skewType != DoubleBortel) )
           label = nullptr;
         break;
-        
+
       case SkewPar3:
         if( m_skewType != DoubleSidedCrystalBall )
           label = nullptr;
@@ -2322,7 +2509,9 @@ void PeakDef::fromXml( const rapidxml::xml_node<char> *peak_node,
   if( sscanf( version_begin, "%i", &majorVersion ) != 1 )
     throw runtime_error( "Non integer version number" );
   
-  if( majorVersion != PeakDef::sm_xmlSerializationMajorVersion )
+  // Accept both version 0.x (pre-Voigt) and version 1.x (current)
+  if( (majorVersion != PeakDef::sm_xmlSerializationMajorVersion)
+     && (majorVersion != pre_Voigt_serialization_major) )
     throw runtime_error( "Invalid peak version" );
   
   const char *version_period = std::find( version_begin, version_end, '.' );
@@ -2372,6 +2561,16 @@ void PeakDef::fromXml( const rapidxml::xml_node<char> *peak_node,
     m_skewType = GaussExp;
   else if( compare(node->value(),node->value_size(),"ExpGaussExp",11,false) )
     m_skewType = ExpGaussExp;
+  else if( compare(node->value(),node->value_size(),"VoigtPlusBortel",15,false)
+          || compare(node->value(),node->value_size(),"VoigtWithExpTail",16,false)
+          || compare(node->value(),node->value_size(),"VoigtExp",8,false)
+          || compare(node->value(),node->value_size(),"VoigtBortel",11,false) )
+    m_skewType = VoigtPlusBortel;
+  else if( compare(node->value(),node->value_size(),"GaussPlusBortel",15,false)
+          || compare(node->value(),node->value_size(),"GaussBortel",11,false) )
+    m_skewType = GaussPlusBortel;
+  else if( compare(node->value(),node->value_size(),"DoubleBortel",12,false) )
+    m_skewType = DoubleBortel;
   else
     throw runtime_error( "Invalid peak skew type" );
   
@@ -2392,10 +2591,17 @@ void PeakDef::fromXml( const rapidxml::xml_node<char> *peak_node,
         break;
         
       case SkewPar1:
-        want_par = ((m_skewType == CrystalBall) || (m_skewType == DoubleSidedCrystalBall));
+        want_par = ((m_skewType == CrystalBall) || (m_skewType == DoubleSidedCrystalBall)
+                    || (m_skewType == ExpGaussExp)
+                    || (m_skewType == VoigtPlusBortel) || (m_skewType == GaussPlusBortel)
+                    || (m_skewType == DoubleBortel));
         break;
-        
+
       case SkewPar2:
+        want_par = ((m_skewType == DoubleSidedCrystalBall)
+                    || (m_skewType == VoigtPlusBortel) || (m_skewType == DoubleBortel));
+        break;
+
       case SkewPar3:
         want_par = (m_skewType == DoubleSidedCrystalBall);
         break;
@@ -3030,6 +3236,11 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
     
     switch( p.skewType() )
     {
+      case NumSkewType:
+        assert( 0 );
+        //throw runtime_error( "PeakDef JSON serialization: NumSkewType is not a valid skew type" );
+        // Fall through to NoSkew for non-debug builds
+
       case PeakDef::NoSkew:
         answer << q << "NoSkew" << q << ",";
         break;
@@ -3066,6 +3277,21 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
                                        p.coefficient(CoefficientType::SkewPar0),
                                        p.coefficient(CoefficientType::SkewPar1) );
         break;
+        
+      case VoigtPlusBortel:
+        answer << q << "VoigtBortel" << q << ",";
+        dist_norm = 1.0;  //Distribution should already be normed
+        break;
+
+      case GaussPlusBortel:
+        answer << q << "GaussBortel" << q << ",";
+        dist_norm = 1.0;  //Distribution should already be normed
+        break;
+
+      case DoubleBortel:
+        answer << q << "DoubleBortel" << q << ",";
+        dist_norm = 1.0;  //Distribution should already be normed
+        break;
     }//switch( p.type() )
 
     if( (p.skewType() != PeakDef::NoSkew) && (!IsNan(dist_norm) && !IsInf(dist_norm)) )
@@ -3081,6 +3307,11 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         
         switch( p.skewType() )
         {
+          case NumSkewType:
+            assert( 0 );
+            //throw runtime_error( "PeakDef coverage limits: NumSkewType is not a valid skew type" );
+            // Fall through to NoSkew for non-debug builds
+
           case NoSkew:
             vis_limits.first = p.mean() - 5.0*p.sigma();
             vis_limits.second = p.mean() + 5.0*p.sigma();
@@ -3147,8 +3378,61 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
               vis_limits.first = p.lowerX();
               vis_limits.second = p.upperX();
             }//try / catch
+            break; //case DoubleSidedCrystalBall:
             
-            break;
+            
+          case VoigtPlusBortel:
+            try
+            {
+              const double mean = p.mean();
+              const double sigma = p.sigma();
+              const double gamma_lor = p.coefficient(CoefficientType::SkewPar0);
+              const double R = p.coefficient(CoefficientType::SkewPar1);
+              const double tau = p.coefficient(CoefficientType::SkewPar2);
+
+              vis_limits = PeakDists::voigt_exp_coverage_limits( mean, sigma, gamma_lor,
+                                                                 R, tau, hidden_frac );
+            }catch( std::exception & )
+            {
+              // Voigt plus Bortel dist can have really long tail, causing the coverage limits to fail,
+              //  because of unreasonable values - in this case we'll use the entire ROI.
+              vis_limits.first = p.lowerX();
+              vis_limits.second = p.upperX();
+            }//try / catch
+            break; //case VoigtPlusBortel:
+
+          case GaussPlusBortel:
+            try
+            {
+              const double mean = p.mean();
+              const double sigma = p.sigma();
+              const double R = p.coefficient(CoefficientType::SkewPar0);
+              const double tau = p.coefficient(CoefficientType::SkewPar1);
+
+              vis_limits = PeakDists::gauss_plus_bortel_coverage_limits( mean, sigma, R, tau, hidden_frac );
+            }catch( std::exception & )
+            {
+              vis_limits.first = p.lowerX();
+              vis_limits.second = p.upperX();
+            }//try / catch
+            break; //case GaussPlusBortel:
+
+          case DoubleBortel:
+            try
+            {
+              const double mean = p.mean();
+              const double sigma = p.sigma();
+              const double tau1 = p.coefficient(CoefficientType::SkewPar0);
+              const double tau2_delta = p.coefficient(CoefficientType::SkewPar1);
+              const double eta = p.coefficient(CoefficientType::SkewPar2);
+
+              vis_limits = PeakDists::double_bortel_coverage_limits( mean, sigma, tau1, tau2_delta, eta, hidden_frac );
+            }catch( std::exception & )
+            {
+              vis_limits.first = p.lowerX();
+              vis_limits.second = p.upperX();
+            }//try / catch
+            break; //case DoubleBortel:
         }//switch( p.skewType() )
         
         answer << q << "visRange" << q << ":[" << vis_limits.first << "," << vis_limits.second << "],";
@@ -4270,6 +4554,11 @@ double PeakDef::lowerX() const
   
   switch( m_skewType )
   {
+    case NumSkewType:
+      assert( 0 );
+      //throw runtime_error( "PeakDef::lowerX: NumSkewType is not a valid skew type" );
+      // Fall through to NoSkew for non-debug builds
+
     case NoSkew:
       return mean - 4.0*sigma;
       
@@ -4369,6 +4658,60 @@ double PeakDef::lowerX() const
       }
       return mean - 4.0*sigma;
     }//case ExpGaussExp:
+
+    case VoigtPlusBortel:
+    {
+      // Use coverage_limits function to find lower bound
+      const double gamma_lor = m_coefficients[PeakDef::SkewPar0];
+      const double R = m_coefficients[PeakDef::SkewPar1];
+      const double tau = m_coefficients[PeakDef::SkewPar2];
+
+      try
+      {
+        const auto limits = PeakDists::voigt_exp_coverage_limits( mean, sigma, gamma_lor,
+                                                                  R, tau, 0.05 );
+        return limits.first;
+      }
+      catch( std::exception & )
+      {
+        // Fallback if coverage_limits fails
+        return mean - (8.0*sigma + R*tau*sigma*10.0);
+      }
+    }//case VoigtPlusBortel:
+
+    case GaussPlusBortel:
+    {
+      const double R = m_coefficients[PeakDef::SkewPar0];
+      const double tau = m_coefficients[PeakDef::SkewPar1];
+
+      try
+      {
+        const auto limits = PeakDists::gauss_plus_bortel_coverage_limits( mean, sigma, R, tau, 0.05 );
+        return limits.first;
+      }
+      catch( std::exception & )
+      {
+        return mean - (8.0*sigma + R*tau*sigma*10.0);
+      }
+    }//case GaussPlusBortel:
+
+    case DoubleBortel:
+    {
+      const double tau1 = m_coefficients[PeakDef::SkewPar0];
+      const double tau2_delta = m_coefficients[PeakDef::SkewPar1];
+      const double eta = m_coefficients[PeakDef::SkewPar2];
+
+      try
+      {
+        const auto limits = PeakDists::double_bortel_coverage_limits( mean, sigma, tau1, tau2_delta, eta, 0.05 );
+        return limits.first;
+      }
+      catch( std::exception & )
+      {
+        const double tau2 = tau1 + tau2_delta;
+        return mean - (8.0*sigma + std::max(tau1, tau2)*sigma*10.0);
+      }
+    }//case DoubleBortel:
   }//switch( m_skewType )
 
   assert( 0 );
@@ -4386,6 +4729,11 @@ double PeakDef::upperX() const
   
   switch( m_skewType )
   {
+    case NumSkewType:
+      assert( 0 );
+      //throw runtime_error( "PeakDef::upperX: NumSkewType is not a valid skew type" );
+      // Fall through to NoSkew for non-debug builds
+
     case NoSkew:
     case GaussExp:
     case Bortel:
@@ -4448,8 +4796,61 @@ double PeakDef::upperX() const
       return mean + 8.0*sigma;
       break;
     }//case DoubleSidedCrystalBall:, case ExpGaussExp:
+
+    case VoigtPlusBortel:
+    {
+      // Use coverage_limits function to find upper bound
+      const double gamma_lor = m_coefficients[PeakDef::SkewPar0];
+      const double R = m_coefficients[PeakDef::SkewPar1];
+      const double tau = m_coefficients[PeakDef::SkewPar2];
+
+      try
+      {
+        const auto limits = PeakDists::voigt_exp_coverage_limits( mean, sigma, gamma_lor,
+                                                                  R, tau, 0.05 );
+        return limits.second;
+      }
+      catch( std::exception & )
+      {
+        // Fallback if coverage_limits fails - Voigt has heavy tails due to Lorentzian
+        return mean + 8.0*sigma + 5.0*gamma_lor;
+      }
+    }//case VoigtPlusBortel:
+
+    case GaussPlusBortel:
+    {
+      const double R = m_coefficients[PeakDef::SkewPar0];
+      const double tau = m_coefficients[PeakDef::SkewPar1];
+
+      try
+      {
+        const auto limits = PeakDists::gauss_plus_bortel_coverage_limits( mean, sigma, R, tau, 0.05 );
+        return limits.second;
+      }
+      catch( std::exception & )
+      {
+        return mean + 8.0*sigma;
+      }
+    }//case GaussPlusBortel:
+
+    case DoubleBortel:
+    {
+      const double tau1 = m_coefficients[PeakDef::SkewPar0];
+      const double tau2_delta = m_coefficients[PeakDef::SkewPar1];
+      const double eta = m_coefficients[PeakDef::SkewPar2];
+
+      try
+      {
+        const auto limits = PeakDists::double_bortel_coverage_limits( mean, sigma, tau1, tau2_delta, eta, 0.05 );
+        return limits.second;
+      }
+      catch( std::exception & )
+      {
+        return mean + 8.0*sigma;
+      }
+    }//case DoubleBortel:
   }//switch( m_skewType )
-  
+
   assert( 0 );
   return mean + 4.0*sigma;
 }//double upperX() const
@@ -4463,6 +4864,11 @@ double PeakDef::gauss_integral( const double x0, const double x1 ) const
   
   switch( m_skewType )
   {
+    case NumSkewType:
+      assert( 0 );
+      //throw runtime_error( "PeakDef::gauss_integral: NumSkewType is not a valid skew type" );
+      // Fall through to NoSkew for non-debug builds
+
     case SkewType::NoSkew:
       return amp*PeakDists::gaussian_integral( mean, sigma, x0, x1 );
           
@@ -4496,6 +4902,29 @@ double PeakDef::gauss_integral( const double x0, const double x1 ) const
       return amp*PeakDists::exp_gauss_exp_integral( mean, sigma,
                                              m_coefficients[CoefficientType::SkewPar0],
                                              m_coefficients[CoefficientType::SkewPar1], x0, x1 );
+      break;
+
+    case SkewType::VoigtPlusBortel:
+      return amp*PeakDists::voigt_exp_integral( mean, sigma,
+                                                m_coefficients[CoefficientType::SkewPar0],
+                                                m_coefficients[CoefficientType::SkewPar1],
+                                                m_coefficients[CoefficientType::SkewPar2],
+                                                x0, x1 );
+      break;
+
+    case SkewType::GaussPlusBortel:
+      return amp*PeakDists::gauss_plus_bortel_integral( mean, sigma,
+                                                        m_coefficients[CoefficientType::SkewPar0],
+                                                        m_coefficients[CoefficientType::SkewPar1],
+                                                        x0, x1 );
+      break;
+
+    case SkewType::DoubleBortel:
+      return amp*PeakDists::double_bortel_integral( mean, sigma,
+                                                    m_coefficients[CoefficientType::SkewPar0],
+                                                    m_coefficients[CoefficientType::SkewPar1],
+                                                    m_coefficients[CoefficientType::SkewPar2],
+                                                    x0, x1 );
       break;
   };//enum SkewType
 

@@ -70,12 +70,22 @@ struct PeakDefImp
     m_skew_pars[index] = val;
   }
 
+  inline void set_uncertainty( T val, const PeakDef::CoefficientType &coef )
+  {
+    // Dummy so `PeakFitDiffCostFunction::parametersToPeaks(...)` can set uncertainties and compile.
+  }
+  
   void gauss_integral( const float *energies, T *channels, const size_t nchannel ) const
   {
     check_jet_array_for_NaN( channels, nchannel );
 
     switch( m_skew_type )
     {
+      case PeakDef::NumSkewType:
+        assert( 0 );
+        //throw runtime_error( "RelActCalcAuto gauss_integral: NumSkewType is not a valid skew type" );
+        // Fall through to NoSkew for non-debug builds
+
       case PeakDef::SkewType::NoSkew:
         PeakDists::gaussian_integral( m_mean, m_sigma, m_amplitude, energies, channels, nchannel );
         break;
@@ -101,6 +111,18 @@ struct PeakDefImp
 
       case PeakDef::SkewType::ExpGaussExp:
         PeakDists::exp_gauss_exp_integral( m_mean, m_sigma, m_amplitude, m_skew_pars[0], m_skew_pars[1], energies, channels, nchannel );
+        break;
+
+      case PeakDef::SkewType::VoigtPlusBortel:
+        PeakDists::voigt_exp_integral( m_mean, m_sigma, m_amplitude, m_skew_pars[0], m_skew_pars[1], m_skew_pars[2], energies, channels, nchannel );
+        break;
+
+      case PeakDef::SkewType::GaussPlusBortel:
+        PeakDists::gauss_plus_bortel_integral( m_mean, m_sigma, m_amplitude, m_skew_pars[0], m_skew_pars[1], energies, channels, nchannel );
+        break;
+
+      case PeakDef::SkewType::DoubleBortel:
+        PeakDists::double_bortel_integral( m_mean, m_sigma, m_amplitude, m_skew_pars[0], m_skew_pars[1], m_skew_pars[2], energies, channels, nchannel );
         break;
     }//switch( skew_type )
 
@@ -152,6 +174,11 @@ struct PeakDefImp
 
     switch( m_skew_type )
     {
+      case PeakDef::NumSkewType:
+        assert( 0 );
+        //throw runtime_error( "RelActCalcAuto coverage_limits: NumSkewType is not a valid skew type" );
+        // Fall through to NoSkew for non-debug builds
+
       case PeakDef::SkewType::NoSkew:
       {
         const boost::math::normal_distribution gaus_dist( 1.0 );
@@ -200,6 +227,21 @@ struct PeakDefImp
         vis_limits.first  = mean - 15.0*sigma;
         vis_limits.second = mean + 15.0*sigma;
       }//try / catch
+        break;
+
+      case PeakDef::SkewType::VoigtPlusBortel:
+        vis_limits = PeakDists::voigt_exp_coverage_limits( mean, sigma, skew_pars[0],
+                                                            skew_pars[1], skew_pars[2], missing_frac );
+        break;
+
+      case PeakDef::SkewType::GaussPlusBortel:
+        vis_limits = PeakDists::gauss_plus_bortel_coverage_limits( mean, sigma, skew_pars[0],
+                                                                    skew_pars[1], missing_frac );
+        break;
+
+      case PeakDef::SkewType::DoubleBortel:
+        vis_limits = PeakDists::double_bortel_coverage_limits( mean, sigma, skew_pars[0],
+                                                                skew_pars[1], skew_pars[2], missing_frac );
         break;
     }//switch( m_skew_type )
 

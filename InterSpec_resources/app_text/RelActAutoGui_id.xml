@@ -15,7 +15,10 @@
   <!-- General options -->
   <message id="raag-spectrum-peak-options">Opsi Spektrum dan Puncak</message>
   <message id="raag-rel-eff-curve-options">Opsi Kurva Efisiensi Relatif</message>
-  <message id="raag-fit-energy-cal">Sesuaikan Kal. Energi</message>
+  <message id="raag-energy-cal-label">Kalibrasi Energi</message>
+  <message id="raag-energy-cal-nofit">Tidak ada</message>
+  <message id="raag-energy-cal-linear">Linier</message>
+  <message id="raag-energy-cal-nonlinear">Nonlinier</message>
   <message id="raag-back-sub">Kurangi Lat. Bel.</message>
   <message id="raag-fwhm-est">Estimasi FWHM</message>
   <message id="raag-fwhm-form">Bentuk FWHM</message>
@@ -57,6 +60,13 @@
   <message id="raag-combine-roi-right">Gabungkan dengan ROI di kanan</message>
   
   <!-- Tooltips -->
+  <message id="raag-tt-energy-cal-type">Menentukan apakah penyesuaian pada kalibrasi energi akan di-fit.
+    <ul>
+      <li><b>Tidak ada</b>: Gunakan kalibrasi energi yang ada tanpa perubahan.</li>
+      <li><b>Linier</b>: Fit penyesuaian linier (offset dan gain) pada kalibrasi energi.</li>
+      <li><b>Nonlinier</b>: Fit penyesuaian nonlinier menggunakan pasangan deviasi (spline kubik) untuk setiap ROI, selain istilah linier. Menggunakan puncak terdeteksi terbesar di setiap ROI sebagai energi pasangan deviasi, atau jika tidak ada yang terdeteksi, menggunakan titik tengah ROI; ROI besar dapat diberi beberapa pasangan deviasi.</li>
+    </ul>
+  </message>
   <message id="raag-tt-fwhm-form">Jenis persamaan yang digunakan untuk memodelkan FWHM puncak sebagai fungsi energi.</message>
   <message id="raag-tt-skew-type">Jenis kemiring untuk diterapkan pada puncak; parameter kemiring akan disesuaikan.</message>
   <message id="raag-tt-u-pu-data-source">Sumber data nuklir untuk rasio percabangan gamma uranium dan plutonium.</message>
@@ -113,6 +123,8 @@
   <message id="raag-increase-gain-additional"> dan tingkatkan gain sebesar {1}</message>
   <message id="raag-increase-quad-first"> tingkatkan kuadrat sebesar {1}</message>
   <message id="raag-increase-quad-additional"> dan tingkatkan kuadrat sebesar {1}</message>
+  <message id="raag-dev-pairs-first"> tambahkan pasangan deviasi {1}</message>
+  <message id="raag-dev-pairs-additional"> dan tambahkan pasangan deviasi {1}</message>
 
   <!-- Energy calibration application messages -->
   <message id="raag-apply-energy-cal-msg">Ini akan{1} untuk latar depan primer{2}{3}.<br />Apakah Anda ingin melakukan ini?</message>

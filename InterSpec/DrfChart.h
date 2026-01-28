@@ -27,34 +27,50 @@
 
 #include <memory>
 
-#include <Wt/WColor>
+#include <map>
+#include <vector>
+
 #include <Wt/WContainerWidget>
-#include <Wt/Chart/WCartesianChart>
 
 struct ColorTheme;
 class DetectorPeakResponse;
 
 namespace Wt
 {
-  class WStandardItemModel;
+  class WColor;
+  class WCssTextRule;
 }
 
-class DrfChart : public Wt::Chart::WCartesianChart
+class DrfChart : public Wt::WContainerWidget
 {
 protected:
-  Wt::WColor m_chartEnergyLineColor;
-  Wt::WColor m_chartFwhmLineColor;
-  Wt::WStandardItemModel* m_efficiencyModel;
+  void defineJavaScript();
+  virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
   std::shared_ptr<const DetectorPeakResponse> m_detector;
+  
+  /** The javascript variable name used to refer to the DrfChart object.
+   Currently is `jsRef() + ".chart"`.
+   */
+  const std::string m_jsgraph;
+  
+  /** JS calls requested before the widget has been rendered, so wouldnt have
+     ended up doing anything are saved here, and then executed once the widget
+     is rendered.
+   */
+  std::vector<std::string> m_pendingJs;
+  
+  std::map<std::string,Wt::WCssTextRule *> m_cssRules;
 
   
 public:
   DrfChart( Wt::WContainerWidget *parent = 0 );
-  
-  void handleColorThemeChange( std::shared_ptr<const ColorTheme> theme );
+  virtual ~DrfChart();
   
   void updateChart( std::shared_ptr<const DetectorPeakResponse> det );
+  
+  /** Set the x-axis range from C++ */
+  void setXAxisRange( double minEnergy, double maxEnergy );
 };//class DrfChart
 
 #endif //DrfChart_h

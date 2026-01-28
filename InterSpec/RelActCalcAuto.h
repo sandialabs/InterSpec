@@ -433,6 +433,43 @@ const char *to_str( const FwhmEstimationMethod form );
 FwhmEstimationMethod fwhm_estimation_method_from_str( const char *str );
 
 
+/** Type of energy calibration fitting to perform.
+
+ Controls whether and how energy calibration is adjusted during the fit.
+ */
+enum class EnergyCalFitType : int
+{
+  /** Do not fit any energy calibration corrections. */
+  NoFit,
+
+  /** Fit linear energy calibration corrections (offset and gain adjustments). */
+  LinearFit,
+
+  /** Fit non-linear energy calibration corrections using deviation pairs.
+
+   Requires at least 3 ROIs; if less than 3 ROIs, will use linear fit instead.
+   Each ROI gets an anchor point at its largest peak (or midpoint 
+   if no peaks).  The first and last ROIs have their deviation offsets fixed to zero.  Middle
+   ROIs have their deviation offsets fitted.  The deviation pairs are interpolated using a
+   cubic spline to provide smooth energy corrections.
+   */
+  NonLinearFit
+};//enum class EnergyCalFitType
+
+
+/** Returns string representation of the #EnergyCalFitType.
+ String returned is a static string, so do not delete it.
+ */
+const char *to_str( const EnergyCalFitType type );
+
+
+/** Converts from the string representation of #EnergyCalFitType to enumerated value.
+
+ Throws exception if invalid string (i.e., any string not returned by #to_str(EnergyCalFitType) ).
+ */
+EnergyCalFitType energy_cal_fit_type_from_str( const char *str );
+
+
 size_t num_parameters( const FwhmForm eqn_form );
 
 
@@ -627,13 +664,13 @@ struct RelEffCurveInput
 struct Options
 {
   Options();
-   
-  /** Whether to allow making small adjustments to the gain and/or offset of the energy calibration.
-   
-   Which coefficients are fit will be determined based on energy ranges used.
+
+  /** Type of energy calibration fitting to perform.
+
+   Controls whether and how energy calibration is adjusted during the fit.
    */
-  bool fit_energy_cal;
-  
+  EnergyCalFitType energy_cal_type;
+
   /** The functional form of the FWHM equation to use.  The coefficients of this equation will
    be fit for across all energy ranges.
    */
@@ -649,12 +686,24 @@ struct Options
   /** Peak skew to apply to the entire spectrum.
    
    Under development: currently, if total energy range being fit is less than 100 keV, then all peaks will share the same skew.
-   Otherwise a linear energy dependance will be assumed, where the fitting parameters will be for the spectrums lower
+   Otherwise a linear energy dependence will be assumed, where the fitting parameters will be for the spectrums lower
    energy, and the spectrums upper energy; not all skew parameters are allowed to vary with energy; e.g., the Crystal Ball
    power law is not allowed to have an energy dependence (see `PeakDef::is_energy_dependent(...)`).
    */
   PeakDef::SkewType skew_type;
-  
+
+  /** Whether to use Lorentzian (Voigt) peak shapes for x-ray peaks.
+   *
+   * When true, x-ray peaks will use VoigtPlusBortel skew type with the
+   * Lorentzian HWHM set to the natural x-ray linewidth (plus thermal/recoil
+   * Doppler broadening for decay x-rays).
+   *
+   * Only compatible with skew_type == NoSkew or skew_type == GaussPlusBortel.
+   * If set to true with an incompatible skew_type, then the problem will fail to setup (an exception
+   * in `check_same_hoerl_and_external_shielding_specifications()` will be thrown)
+   */
+  bool lorentzian_xrays;
+
   /** An additional uncertainty applied to each roughly independent peak.
    * 
    * Contributing gammas are clustered into roughly independent peaks based on their energy and the 
@@ -685,7 +734,7 @@ struct Options
    * if true, and you do not have multiple physical models with `RelEffCurveInput::phys_model_use_hoerl`
    * set to true, then an exception will be thrown.
    */
-  bool same_hoerl_for_all_rel_eff_curves = false;
+  bool same_hoerl_for_all_rel_eff_curves;
 
   /** If true, use the same external shielding for all relative efficiency curves.
    *
@@ -697,7 +746,7 @@ struct Options
    * the ManualRelEff method, then the first RelEffCurveInput estimate will be what is 
    * used.
    */
-  bool same_external_shielding_for_all_rel_eff_curves = false;
+  bool same_external_shielding_for_all_rel_eff_curves;
 
   /** If using the same Hoerl function, or external shielding for all relative efficiency curves,
    * this will check that the specifications are consistent.
@@ -1212,7 +1261,18 @@ struct RelActAutoSolution
    Which parameters are fit are subject to number and energy range of ROIs.
    */
   std::array<bool,sm_num_energy_cal_pars> m_fit_energy_cal;
+
+  size_t m_num_deviations_fit = 0;
   
+  /** The fitted deviation pair offsets for non-linear energy calibration.
+
+   Each entry is (anchor_energy_keV, offset_keV).  The offset at lower and upper ROIs is fixed to 0.
+   Entries are sorted by anchor energy.
+
+   Only valid if `Options::energy_cal_type` is `EnergyCalFitType::NonLinearFit`.
+   */
+  std::vector<std::pair<double, double>> m_deviation_pair_offsets;
+
   /** The index of the first parameter that will be used to adjust the peak amplitude. 
    
    Will be valid only if `m_options.additional_br_uncert > 0.0`.
@@ -1299,6 +1359,8 @@ RelActAutoSolution solve( const Options options,
                          std::vector<std::shared_ptr<const PeakDef>> all_peaks,
                          std::shared_ptr<std::atomic_bool> cancel_calc = nullptr
                          );
+
+
 
 }//namespace RelActCalcAuto
 

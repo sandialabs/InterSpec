@@ -361,12 +361,20 @@ size_t PeakFitChi2Fcn::parametersToPeaks( std::vector<PeakDef> &peaks,
     bool valid_skew_type = false;
     switch( skew_type_t )
     {
+      case PeakDef::NumSkewType:
+        assert( 0 );
+        valid_skew_type = false;
+        break;
+
       case PeakDef::NoSkew:
       case PeakDef::Bortel:
-      case PeakDef::CrystalBall:
-      case PeakDef::DoubleSidedCrystalBall:
+      case PeakDef::DoubleBortel:
+      case PeakDef::GaussPlusBortel:
       case PeakDef::GaussExp:
+      case PeakDef::CrystalBall:
       case PeakDef::ExpGaussExp:
+      case PeakDef::DoubleSidedCrystalBall:
+      case PeakDef::VoigtPlusBortel:
         valid_skew_type = true;
         break;
     }//switch( skew_type_t )
@@ -1987,7 +1995,13 @@ void LinearProblemSubSolveChi2Fcn::addSkewParameters( ROOT::Minuit2::MnUserParam
       //  so lets try to avoid this
       switch( skew_type )
       {
+        case PeakDef::NumSkewType:
+          assert( 0 );
+          //throw runtime_error( "PeakFitChi2Fcn sanity check: NumSkewType is not a valid skew type" );
+          // Fall through to NoSkew for non-debug builds
+
         case PeakDef::NoSkew:   case PeakDef::Bortel:
+        case PeakDef::DoubleBortel: case PeakDef::GaussPlusBortel:
         case PeakDef::GaussExp: case PeakDef::ExpGaussExp:
           break;
           
@@ -1999,13 +2013,13 @@ void LinearProblemSubSolveChi2Fcn::addSkewParameters( ROOT::Minuit2::MnUserParam
             case PeakDef::Mean:           case PeakDef::Sigma:
             case PeakDef::GaussAmplitude: case PeakDef::NumCoefficientTypes:
             case PeakDef::Chi2DOF:
-              
+
             case PeakDef::SkewPar0:
             case PeakDef::SkewPar2:
               if( (val > 3.0) && fit_parameter[i] )
                 val = starting_value[i];
               break;
-              
+
             case PeakDef::SkewPar1:
             case PeakDef::SkewPar3:
               if( (val > 6.0) && fit_parameter[i] )
@@ -2014,6 +2028,11 @@ void LinearProblemSubSolveChi2Fcn::addSkewParameters( ROOT::Minuit2::MnUserParam
           }//switch( ct )
           break;
         }//A Crystal Ball distribution
+
+        case PeakDef::VoigtPlusBortel:
+          // No special sanity checks needed for these parameters
+          // Parameters are bounded by their ranges
+          break;
       }//switch( skew_type )
       
       starting_value[i] = val;
