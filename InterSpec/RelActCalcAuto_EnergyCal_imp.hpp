@@ -416,12 +416,16 @@ T find_polynomial_channel( const T energy,
     deviation_pairs.empty() ? std::vector<CubicSplineNodeT<T>>{} : create_cubic_spline( deviation_pairs );
 
   // For low-order polynomials, use analytical solutions
-  if( ncoefs < 4 && dev_pair_spline.empty() )
+  if( ncoefs < 4 )
   {
+    T polyenergy = energy;
+    if( !dev_pair_spline.empty() )
+      polyenergy -= correction_due_to_deviation_pairs( energy, dev_pair_spline );
+
     // Linear case
     if( ncoefs == 2 )
     {
-      return (energy - coeffs[0]) / coeffs[1];
+      return (polyenergy - coeffs[0]) / coeffs[1];
     }
 
     // Quadratic case: solve C₀ + C₁*ch + C₂*ch² = energy
@@ -429,7 +433,7 @@ T find_polynomial_channel( const T energy,
     {
       const T a = coeffs[2];
       const T b = coeffs[1];
-      const T c = coeffs[0] - energy;
+      const T c = coeffs[0] - polyenergy;
 
       const T discriminant = b*b - T(4.0)*a*c;
 
@@ -465,7 +469,7 @@ T find_polynomial_channel( const T energy,
       // Both valid - choose the one closer to linear solution
       if( root1_valid && root2_valid )
       {
-        const T linear_sol = (energy - coeffs[0]) / coeffs[1];
+        const T linear_sol = (polyenergy - coeffs[0]) / coeffs[1];
         double linear_val;
         if constexpr ( std::is_same_v<T, double> )
           linear_val = linear_sol;
@@ -675,14 +679,18 @@ T find_fullrangefraction_channel( const T energy,
   const std::vector<CubicSplineNodeT<T>> dev_pair_spline =
     deviation_pairs.empty() ? std::vector<CubicSplineNodeT<T>>{} : create_cubic_spline( deviation_pairs );
 
-  // For low-order FRF without deviation pairs, use analytical solutions
-  if( ncoefs < 4 && dev_pair_spline.empty() )
+  // For low-order FRF, use analytical solutions
+  if( ncoefs < 4 )
   {
+    T frf_energy = energy;
+    if( !dev_pair_spline.empty() )
+      frf_energy -= correction_due_to_deviation_pairs( energy, dev_pair_spline );
+
     // Linear case: E = C₀ + x*C₁, where x = bin/nchannel
     // Solve: bin = nchannel * (E - C₀) / C₁
     if( ncoefs == 2 )
     {
-      return T(static_cast<double>(nchannel)) * (energy - coeffs[0]) / coeffs[1];
+      return T(static_cast<double>(nchannel)) * (frf_energy - coeffs[0]) / coeffs[1];
     }
 
     // Quadratic case: E = C₀ + x*C₁ + x²*C₂
@@ -691,7 +699,7 @@ T find_fullrangefraction_channel( const T energy,
     {
       const T a = coeffs[2];
       const T b = coeffs[1];
-      const T c = coeffs[0] - energy;
+      const T c = coeffs[0] - frf_energy;
 
       const T discriminant = b*b - T(4.0)*a*c;
 
@@ -718,7 +726,7 @@ T find_fullrangefraction_channel( const T energy,
       // Both valid - choose closer to linear solution
       if( bin1_valid && bin2_valid )
       {
-        const T linear_sol = T(static_cast<double>(nchannel)) * (energy - coeffs[0]) / coeffs[1];
+        const T linear_sol = T(static_cast<double>(nchannel)) * (frf_energy - coeffs[0]) / coeffs[1];
         const T dist1 = abs( bin1 - linear_sol );
         const T dist2 = abs( bin2 - linear_sol );
 
