@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 #include <utility>
@@ -563,6 +564,124 @@ BOOST_AUTO_TEST_CASE( RoundTrip_FullRangeFraction )
 
     // Should match within accuracy
     BOOST_CHECK_SMALL( std::fabs(energy - energy_back), 0.01 );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( ApplyUnapplyRoundTrip_Polynomial )
+{
+  // Simulate apply_energy_cal_adjustment (true -> spectrum) and un_apply (spectrum -> true)
+  // using the same flow: channel = find_*(E, cal); E_out = cal_energy(channel).
+  const size_t nchannel = 2048;
+  const double num_channel = static_cast<double>( nchannel );
+  const double offset_adj = 3.0;
+  const double gain_adj = 5.0;
+  const double quad_adj = 0.5;
+
+  std::vector<double> orig_coeffs = { 5.0, 2.0, 0.001 };
+  std::vector<pair<double,double>> dev_pairs = { {500.0, 0.8}, {1500.0, 1.2}, {2500.0, 0.6} };
+  const auto orig_spline = create_cubic_spline( dev_pairs );
+
+  std::vector<double> adj_coeffs = orig_coeffs;
+  adj_coeffs[0] += offset_adj;
+  adj_coeffs[1] += gain_adj / num_channel;
+  if( adj_coeffs.size() < 3 )
+    adj_coeffs.resize( 3, 0.0 );
+  adj_coeffs[2] += quad_adj / (num_channel * num_channel);
+
+  for( double E_true = 200.0; E_true < 3500.0; E_true += 100.0 )
+  {
+    const double channel = find_polynomial_channel( E_true, adj_coeffs, nchannel, dev_pairs );
+    const double E_spec = polynomial_energy( channel, orig_coeffs, orig_spline );
+
+    const double ch2 = find_polynomial_channel( E_spec, orig_coeffs, nchannel, dev_pairs );
+    const double E_true_back = polynomial_energy( ch2, adj_coeffs, orig_spline );
+
+    BOOST_CHECK_SMALL( std::fabs( E_true_back - E_true ), 0.05 );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( ApplyUnapplyRoundTrip_FullRangeFraction )
+{
+  const size_t nchannel = 1024;
+  const double offset_adj = 2.0;
+  const double gain_adj = -10.0;
+  const double quad_adj = 1.0;
+
+  std::vector<double> orig_coeffs = { 0.0, 2800.0, 150.0 };
+  std::vector<pair<double,double>> dev_pairs = { {600.0, 1.5}, {1400.0, 2.0}, {2200.0, 1.0} };
+  const auto orig_spline = create_cubic_spline( dev_pairs );
+
+  std::vector<double> adj_coeffs = orig_coeffs;
+  if( adj_coeffs.size() < 3 )
+    adj_coeffs.resize( 3, 0.0 );
+  adj_coeffs[0] += offset_adj;
+  adj_coeffs[1] += gain_adj;
+  adj_coeffs[2] += quad_adj;
+
+  for( double E_true = 100.0; E_true < 2700.0; E_true += 80.0 )
+  {
+    const double channel = find_fullrangefraction_channel( E_true, adj_coeffs, nchannel, dev_pairs );
+    const double E_spec = fullrangefraction_energy( channel, orig_coeffs, nchannel, orig_spline );
+
+    const double ch2 = find_fullrangefraction_channel( E_spec, orig_coeffs, nchannel, dev_pairs );
+    const double E_true_back = fullrangefraction_energy( ch2, adj_coeffs, nchannel, orig_spline );
+
+    BOOST_CHECK_SMALL( std::fabs( E_true_back - E_true ), 0.05 );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( ApplyUnapplyRoundTrip_LowerChannelEdge )
+{
+  const size_t nchannel = 512;
+  std::vector<float> ch_energies;
+  ch_energies.reserve( nchannel + 1 );
+  for( size_t i = 0; i <= nchannel; ++i )
+    ch_energies.push_back( static_cast<float>( i * 6.0 ) );  // 0 to 3072 keV
+
+  const double lower_energy = static_cast<double>( ch_energies[0] );
+  const double upper_energy = static_cast<double>( ch_energies[nchannel] );
+  const double range = upper_energy - lower_energy;
+
+  const double offset_adj = 4.0;
+  const double gain_adj = 8.0;
+  std::vector<pair<double,double>> dev_pairs = { {500.0, 0.5}, {1500.0, 1.0}, {2500.0, 0.5} };
+  const auto orig_spline = create_cubic_spline( dev_pairs );
+  const auto adj_spline = create_cubic_spline( dev_pairs );
+
+  auto orig_energy_at_channel = [&]( double ch ) -> double {
+    if( ch < 0.0 ) ch = 0.0;
+    const size_t low = std::min( static_cast<size_t>( std::floor( ch ) ), nchannel - 1 );
+    const double e_low = static_cast<double>( ch_energies[low] );
+    const double e_high = static_cast<double>( ch_energies[low + 1] );
+    const double frac = ch - static_cast<double>( low );
+    const double base = e_low + (e_high - e_low) * frac;
+    return base + eval_cubic_spline( base, orig_spline );
+  };
+
+  auto adj_energy_at_channel = [&]( double ch ) -> double {
+    if( ch < 0.0 ) ch = 0.0;
+    const size_t low = std::min( static_cast<size_t>( std::floor( ch ) ), nchannel - 1 );
+    const double e_low = static_cast<double>( ch_energies[low] );
+    const double e_high = static_cast<double>( ch_energies[low + 1] );
+    const double frac = ch - static_cast<double>( low );
+    const double e_base = e_low + (e_high - e_low) * frac;
+    const double range_frac = (range > 0.0) ? ((e_base - lower_energy) / range) : 0.0;
+    const double e_adj = e_base + offset_adj + range_frac * gain_adj;
+    return e_adj + eval_cubic_spline( e_adj, adj_spline );
+  };
+
+  for( double E_true = 100.0; E_true < 3000.0; E_true += 120.0 )
+  {
+    const double channel = find_lowerchannel_channel( E_true, ch_energies, dev_pairs, offset_adj, gain_adj );
+    const double E_spec = orig_energy_at_channel( channel );
+
+    const double ch2 = find_lowerchannel_channel( E_spec, ch_energies, dev_pairs );
+    const double E_true_back = adj_energy_at_channel( ch2 );
+
+    BOOST_CHECK_SMALL( std::fabs( E_true_back - E_true ), 0.1 );
   }
 }
 

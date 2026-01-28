@@ -372,6 +372,8 @@ T fullrangefraction_energy( const T bin,
  Templated version of SpecUtils::find_polynomial_channel that supports automatic differentiation.
  Uses analytical solutions for low-order polynomials (order <= 2) and binary search for higher orders.
 
+ TODO: when there are deviation pairs - the keeping derivatives around in `ceres::Jet<>` is kidna a hack; it seems to work, but it could likely be done better in some way
+ 
  @param energy The energy in keV to find the channel for
  @param coeffs The polynomial coefficients (E = C₀ + C₁*ch + C₂*ch² + ...)
  @param nchannel Number of channels in the spectrum
@@ -510,41 +512,115 @@ T find_polynomial_channel( const T energy,
     }
   }
 
-  // Binary search
-  T low_ch(0.0);
-  T high_ch( static_cast<double>(nchannel - 1) );
-
-  const int max_iterations = 1000;
-  int niter = 0;
-
-  while( (high_ch - low_ch) > 1.0e-6 && niter < max_iterations )
+  // Binary search (and derivative-preserving implicit update for Jet types)
+  if constexpr ( std::is_same_v<T, double> )
   {
-    const T mid_ch = 0.5 * (low_ch + high_ch);
-    const T e_mid = polynomial_energy( T(mid_ch), coeffs, dev_pair_spline );
+    T low_ch(0.0);
+    T high_ch( static_cast<double>(nchannel - 1) );
 
-    double e_mid_val;
-    if constexpr ( std::is_same_v<T, double> )
-      e_mid_val = e_mid;
-    else
-      e_mid_val = e_mid.a;
+    const int max_iterations = 1000;
+    int niter = 0;
 
-    if( abs(e_mid_val - energy) < accuracy )
-      return T(mid_ch);
-
-    if( (e_mid < energy && e_low < e_high) ||
-        (e_mid > energy && e_low > e_high) )
+    while( (high_ch - low_ch) > 1.0e-6 && niter < max_iterations )
     {
-      low_ch = mid_ch;
-    }
-    else
-    {
-      high_ch = mid_ch;
+      const T mid_ch = 0.5 * (low_ch + high_ch);
+      const T e_mid = polynomial_energy( T(mid_ch), coeffs, dev_pair_spline );
+
+      if( abs(e_mid - energy) < accuracy )
+        return T(mid_ch);
+
+      if( (e_mid < energy && e_low < e_high) ||
+          (e_mid > energy && e_low > e_high) )
+      {
+        low_ch = mid_ch;
+      }
+      else
+      {
+        high_ch = mid_ch;
+      }
+
+      ++niter;
     }
 
-    ++niter;
+    return T(0.5 * (low_ch + high_ch));
+  }else
+  {
+    // Scalar binary search for the channel value.
+    std::vector<double> coeffs_scalar( coeffs.size(), 0.0 );
+    for( size_t i = 0; i < coeffs.size(); ++i )
+      coeffs_scalar[i] = coeffs[i].a;
+
+    std::vector<std::pair<double,double>> dev_pairs_scalar;
+    dev_pairs_scalar.reserve( deviation_pairs.size() );
+    for( const auto &pair : deviation_pairs )
+      dev_pairs_scalar.emplace_back( pair.first, pair.second.a );
+
+    const std::vector<CubicSplineNodeT<double>> dev_pair_spline_scalar =
+      dev_pairs_scalar.empty() ? std::vector<CubicSplineNodeT<double>>{} : create_cubic_spline( dev_pairs_scalar );
+
+    auto energy_at = [&coeffs_scalar,&dev_pair_spline_scalar]( const double ch ) -> double {
+      return polynomial_energy( ch, coeffs_scalar, dev_pair_spline_scalar );
+    };
+
+    const double e_low_val = energy_at( 0.0 );
+    const double e_high_val = energy_at( static_cast<double>(nchannel - 1) );
+    const double energy_val = energy.a;
+
+    double low = 0.0;
+    double high = static_cast<double>(nchannel - 1);
+    const int max_iterations = 1000;
+    int niter = 0;
+    while( ((high - low) > 1.0e-6) && (niter < max_iterations) )
+    {
+      const double mid = 0.5 * (low + high);
+      const double e_mid_val = energy_at( mid );
+      if( std::fabs( e_mid_val - energy_val ) < accuracy )
+      {
+        low = mid;
+        high = mid;
+        break;
+      }
+
+      if( ((e_mid_val < energy_val) && (e_low_val < e_high_val))
+          || ((e_mid_val > energy_val) && (e_low_val > e_high_val)) )
+      {
+        low = mid;
+      }else
+      {
+        high = mid;
+      }
+
+      ++niter;
+    }
+
+    double ch_val = 0.5 * (low + high);
+
+    const double eps = 1.0e-3;
+    double df_dch = (energy_at( ch_val + eps ) - energy_at( ch_val - eps )) / (2.0 * eps);
+
+
+#if( PERFORM_DEVELOPER_CHECKS )
+    static int s_logged_small_df_dch = 0;
+    if( (std::fabs( df_dch ) < 1.0e-14) && (s_logged_small_df_dch < 50) )
+    {
+      char buffer[256];
+      snprintf( buffer, sizeof(buffer),
+        "find_polynomial_channel: df_dch small (%.3e) at ch=%.6f energy=%.6f",
+        df_dch, ch_val, energy.a );
+      log_developer_error( __func__, buffer );
+      s_logged_small_df_dch += 1;
+    }
+#endif
+
+    const T f = polynomial_energy( T(ch_val), coeffs, dev_pair_spline ) - energy;
+    T answer = T( ch_val );
+    if( std::fabs( df_dch ) > 1.0e-14 )
+    {
+      for( size_t i = 0; i < static_cast<size_t>(T::DIMENSION); ++i )
+        answer.v[i] = -f.v[i] / df_dch;
+    }
+    return answer;
   }
-
-  return T(0.5 * (low_ch + high_ch));
 }//find_polynomial_channel(...)
 
 
@@ -553,6 +629,8 @@ T find_polynomial_channel( const T energy,
  Templated version of SpecUtils::find_fullrangefraction_channel that supports automatic differentiation.
  Uses analytical solutions for low-order equations and binary search for higher orders.
 
+ TODO: when there are deviation pairs - the keeping derivatives around in `ceres::Jet<>` is kidna a hack; it seems to work, but it could likely be done better in some way
+ 
  @param energy The energy in keV to find the channel for
  @param coeffs The FRF coefficients
  @param nchannel Number of channels in the spectrum
@@ -678,35 +756,114 @@ T find_fullrangefraction_channel( const T energy,
     }
   }
 
-  // Binary search
-  T low_bin( 0.0 );
-  T high_bin( static_cast<double>(nchannel - 1) );
-
-  const int max_iterations = 1000;
-  int niter = 0;
-
-  while( ((high_bin - low_bin) > 1.0e-6) && niter < max_iterations )
+  // Binary search (and derivative-preserving implicit update for Jet types)
+  if constexpr ( std::is_same_v<T, double> )
   {
-    const T mid_bin = 0.5 * (low_bin + high_bin);
-    const T e_mid = fullrangefraction_energy( mid_bin, coeffs, nchannel, dev_pair_spline );
+    T low_bin( 0.0 );
+    T high_bin( static_cast<double>(nchannel - 1) );
 
-    if( abs(e_mid - energy) < accuracy )
-      return T(mid_bin);
+    const int max_iterations = 1000;
+    int niter = 0;
 
-    if( ((e_mid < energy) && (e_low < e_high))
-        || ((e_mid > energy) && (e_low > e_high)) )
+    while( ((high_bin - low_bin) > 1.0e-6) && niter < max_iterations )
     {
-      low_bin = mid_bin;
-    }
-    else
-    {
-      high_bin = mid_bin;
+      const T mid_bin = 0.5 * (low_bin + high_bin);
+      const T e_mid = fullrangefraction_energy( mid_bin, coeffs, nchannel, dev_pair_spline );
+
+      if( abs(e_mid - energy) < accuracy )
+        return T(mid_bin);
+
+      if( ((e_mid < energy) && (e_low < e_high))
+          || ((e_mid > energy) && (e_low > e_high)) )
+      {
+        low_bin = mid_bin;
+      }
+      else
+      {
+        high_bin = mid_bin;
+      }
+
+      ++niter;
     }
 
-    ++niter;
+    return T(0.5 * (low_bin + high_bin));
+  }else
+  {
+    std::vector<double> coeffs_scalar( coeffs.size(), 0.0 );
+    for( size_t i = 0; i < coeffs.size(); ++i )
+      coeffs_scalar[i] = coeffs[i].a;
+
+    std::vector<std::pair<double,double>> dev_pairs_scalar;
+    dev_pairs_scalar.reserve( deviation_pairs.size() );
+    for( const auto &pair : deviation_pairs )
+      dev_pairs_scalar.emplace_back( pair.first, pair.second.a );
+
+    const std::vector<CubicSplineNodeT<double>> dev_pair_spline_scalar =
+      dev_pairs_scalar.empty() ? std::vector<CubicSplineNodeT<double>>{} : create_cubic_spline( dev_pairs_scalar );
+
+    auto energy_at = [&coeffs_scalar,nchannel,&dev_pair_spline_scalar]( const double bin ) -> double {
+      return fullrangefraction_energy( bin, coeffs_scalar, nchannel, dev_pair_spline_scalar );
+    };
+
+    const double e_low_val = energy_at( 0.0 );
+    const double e_high_val = energy_at( static_cast<double>(nchannel - 1) );
+    const double energy_val = energy.a;
+
+    double low = 0.0;
+    double high = static_cast<double>(nchannel - 1);
+    const int max_iterations = 1000;
+    int niter = 0;
+    while( ((high - low) > 1.0e-6) && (niter < max_iterations) )
+    {
+      const double mid = 0.5 * (low + high);
+      const double e_mid_val = energy_at( mid );
+      if( std::fabs( e_mid_val - energy_val ) < accuracy )
+      {
+        low = mid;
+        high = mid;
+        break;
+      }
+
+      if( ((e_mid_val < energy_val) && (e_low_val < e_high_val))
+          || ((e_mid_val > energy_val) && (e_low_val > e_high_val)) )
+      {
+        low = mid;
+      }else
+      {
+        high = mid;
+      }
+
+      ++niter;
+    }
+
+    double bin_val = 0.5 * (low + high);
+
+    const double eps = 1.0e-3;
+    double df_dch = (energy_at( bin_val + eps ) - energy_at( bin_val - eps )) / (2.0 * eps);
+
+
+#if( PERFORM_DEVELOPER_CHECKS )
+    static int s_logged_small_df_dch = 0;
+    if( (std::fabs( df_dch ) < 1.0e-14) && (s_logged_small_df_dch < 50) )
+    {
+      char buffer[256];
+      snprintf( buffer, sizeof(buffer),
+        "find_fullrangefraction_channel: df_dch small (%.3e) at bin=%.6f energy=%.6f",
+        df_dch, bin_val, energy.a );
+      log_developer_error( __func__, buffer );
+      s_logged_small_df_dch += 1;
+    }
+#endif
+
+    const T f = fullrangefraction_energy( T(bin_val), coeffs, nchannel, dev_pair_spline ) - energy;
+    T answer = T( bin_val );
+    if( std::fabs( df_dch ) > 1.0e-14 )
+    {
+      for( size_t i = 0; i < static_cast<size_t>(T::DIMENSION); ++i )
+        answer.v[i] = -f.v[i] / df_dch;
+    }
+    return answer;
   }
-
-  return T(0.5 * (low_bin + high_bin));
 }//find_fullrangefraction_channel(...)
 
 

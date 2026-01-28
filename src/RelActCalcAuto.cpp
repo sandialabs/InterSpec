@@ -1257,7 +1257,7 @@ struct DeviationPairAnchor
    */
   bool is_fitted;
 
-  /** The parameter index within the deviation pair parameter block.
+  /** The parameter index within the deviation pair parameter block (e.g., relative to `RelActAutoCostFcn::m_dev_pair_par_start_index`).
    Only meaningful if `is_fitted` is true.
    */
   size_t param_index;
@@ -5292,8 +5292,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       }
     }//if( deviation pairs were used )
 
-    // We will use `new_cal` to move peaks from their true energy, to the spectrums original
-    //  energy calibration - so we will un-apply the energy calibration correction
+    // Use `new_cal` to apply the fitted calibration correction to the spectrum energy scale.
     shared_ptr<const SpecUtils::EnergyCalibration> new_cal = solution.m_foreground->energy_calibration();
     if( success && fit_energy_cal )
     {
@@ -7767,6 +7766,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
    @param x The parameter vector containing deviation pair offsets
    @returns The corrected energy value
    */
+  /*
   template<typename T>
   T apply_fitted_deviation_pairs( const T &val, const std::vector<T> &x ) const
   {
@@ -7856,7 +7856,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     // The fitted correction includes initial_offset (from original dev pairs) + fitted adjustment
     return val - correction;
   }//apply_fitted_deviation_pairs(...)
-
+*/
 
   /** Translates from a "true" energy (e.g., that of a gamma, or ROI bounds), to the energy
    of m_energy_cal.
@@ -7931,132 +7931,237 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     //if( (fabs(x[0]) < 1.0E-9 ) && (fabs(x[1]) < 1.0E-12) )
     //  return energy;
     
+    // Build original calibration representation for channel -> spectrum energy.
+    const vector<float> &orig_coeffs = m_energy_cal->coefficients();
+    const size_t nchannel = m_energy_cal->num_channels();
+    const double num_channel = static_cast<double>( nchannel );
+
+    std::vector<std::pair<double,T>> orig_dev_pairs;
+    const auto &orig_dev_ref = m_energy_cal->deviation_pairs();
+    orig_dev_pairs.reserve( orig_dev_ref.size() );
+    for( const auto &p : orig_dev_ref )
+      orig_dev_pairs.emplace_back( static_cast<double>(p.first), T( static_cast<double>(p.second) ) );
+    const std::vector<CubicSplineNodeT<T>> orig_dev_spline =
+      orig_dev_pairs.empty() ? std::vector<CubicSplineNodeT<T>>{} : create_cubic_spline( orig_dev_pairs );
+
+    // Build adjusted calibration deviation pairs (for inverse: true -> channel).
+    std::vector<std::pair<double,T>> adjusted_dev_pairs;
+    if( fitting_deviations )
+    {
+      adjusted_dev_pairs.reserve( m_dev_pair_anchors.size() );
+      for( const DeviationPairAnchor &anchor : m_dev_pair_anchors )
+      {
+        const T offset = anchor.is_fitted
+          ? (x[m_dev_pair_par_start_index + anchor.param_index] + T(anchor.initial_offset))
+          : T(anchor.initial_offset);
+        adjusted_dev_pairs.emplace_back( anchor.anchor_energy, offset );
+      }
+    }else
+    {
+      adjusted_dev_pairs = orig_dev_pairs;
+    }
+
     switch( m_energy_cal->type() )
     {
       case SpecUtils::EnergyCalType::Polynomial:
       case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
       {
-        const double num_channel = static_cast<double>( m_energy_cal->num_channels() );
-        const vector<float> &orig_coeffs = m_energy_cal->coefficients();
-        vector<T> coefs( orig_coeffs.size() );
+        vector<T> adj_coefs( orig_coeffs.size() );
         for( size_t i = 0; i < orig_coeffs.size(); ++i )
-          coefs[i] = T( orig_coeffs[i] );
-        
-        assert( coefs.size() >= 2 );
-        coefs[0] += offest_adj;
-        coefs[1] += (gain_adj / num_channel);
+          adj_coefs[i] = T( orig_coeffs[i] );
+        assert( adj_coefs.size() >= 2 );
+        adj_coefs[0] += offest_adj;
+        adj_coefs[1] += (gain_adj / num_channel);
         if( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars > 2 )
         {
-          if( coefs.size() > 2 )
-            coefs[2] += (quad_adj / (num_channel*num_channel));
+          if( adj_coefs.size() > 2 )
+            adj_coefs[2] += (quad_adj / (num_channel*num_channel));
           else
-            coefs.push_back( quad_adj / (num_channel*num_channel) );
-        }//if( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars > 2 )
+            adj_coefs.push_back( quad_adj / (num_channel*num_channel) );
+        }
 
-        const double channel = m_energy_cal->channel_for_energy( energy );
-        
-        //return SpecUtils::polynomial_energy( channel, coefs, dev_pairs );
-        
-        T val = coefs[0];
-        for( size_t i = 1; i < coefs.size(); ++i )
-          val += coefs[i] * pow( channel, static_cast<double>(i) );
-        
-        if( !fitting_deviations )
+        const T channel = find_polynomial_channel( T(energy), adj_coefs, nchannel, adjusted_dev_pairs );
+
+        vector<T> ocoefs( orig_coeffs.size() );
+        for( size_t i = 0; i < orig_coeffs.size(); ++i )
+          ocoefs[i] = T( orig_coeffs[i] );
+        const T val = polynomial_energy( channel, ocoefs, orig_dev_spline );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+        static int s_logged_zero_channel_derivative = 0;
+        if constexpr ( !std::is_same_v<T, double> )
         {
-          const auto &dev_pairs = m_energy_cal->deviation_pairs();
-          if( !dev_pairs.empty() )
+          double max_channel_derivative = 0.0;
+          for( size_t i = 0; i < sm_auto_diff_stride_size; ++i )
+            max_channel_derivative = std::max( max_channel_derivative, std::fabs( channel.v[i] ) );
+
+          double max_energy_par_derivative = 0.0;
+          for( size_t i = 0; i < sm_auto_diff_stride_size; ++i )
           {
-            if constexpr ( !std::is_same_v<T, double> )
-              val += T(SpecUtils::deviation_pair_correction( static_cast<float>(val.a), dev_pairs ));
-            else
-              val += SpecUtils::deviation_pair_correction( static_cast<float>(val), dev_pairs );
-            
-            //if constexpr ( !std::is_same_v<T, double> )
-            //  val += T(SpecUtils::correction_due_to_dev_pairs( static_cast<float>(val.a), dev_pairs ));
-            //else
-            //  val += T(SpecUtils::correction_due_to_dev_pairs( static_cast<float>(val), dev_pairs ));
-          }//if( !dev_pairs.empty() )
-          
-          return val;
-        }//if( (m_options.energy_cal_type != RelActCalcAuto::EnergyCalFitType::NonLinearFit) || m_dev_pair_anchors.empty() )
-        
-        // Apply fitted deviation pair correction (non-linear energy cal adjustment)
-        return apply_fitted_deviation_pairs( val, x );
+            max_energy_par_derivative = std::max( max_energy_par_derivative, std::fabs( offest_adj.v[i] ) );
+            max_energy_par_derivative = std::max( max_energy_par_derivative, std::fabs( gain_adj.v[i] ) );
+            if( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars > 2 )
+              max_energy_par_derivative = std::max( max_energy_par_derivative, std::fabs( quad_adj.v[i] ) );
+          }
+
+          if( (max_channel_derivative < 1.0e-16) && (max_energy_par_derivative > 1.0e-16)
+             && (s_logged_zero_channel_derivative < 50) )
+          {
+            char buffer[256];
+            snprintf( buffer, sizeof(buffer),
+              "apply_energy_cal_adjustment: channel derivatives near zero while energy-cal params active (channel=%.6f)",
+              channel.a );
+            log_developer_error( __func__, buffer );
+            s_logged_zero_channel_derivative += 1;
+            assert( 0 );
+          }
+        }
+
+        double max_dev_offset = 0.0;
+        for( const auto &pair : adjusted_dev_pairs )
+        {
+          double offset_val = 0.0;
+          if constexpr ( std::is_same_v<T, double> )
+            offset_val = pair.second;
+          else
+            offset_val = pair.second.a;
+          max_dev_offset = std::max( max_dev_offset, std::fabs( offset_val ) );
+        }
+
+        //static bool s_logged_large_dev_offset = false;
+        //if( (max_dev_offset > 0.01) && !s_logged_large_dev_offset )
+        //{
+        //  char buffer[256];
+        //  snprintf( buffer, sizeof(buffer),
+        //    "apply_energy_cal_adjustment: max dev-pair offset %.6f keV (fitting=%s)",
+        //    max_dev_offset, fitting_deviations ? "true" : "false" );
+        //  log_developer_error( __func__, buffer );
+        //  s_logged_large_dev_offset = true;
+        //}
+
+        if constexpr ( !std::is_same_v<T, double> )
+        {
+          if( fitting_deviations )
+          {
+            double max_dev_offset_deriv = 0.0;
+            for( const DeviationPairAnchor &anchor : m_dev_pair_anchors )
+            {
+              if( !anchor.is_fitted )
+                continue;
+              const size_t par_index = m_dev_pair_par_start_index + anchor.param_index;
+              const T &par = x[par_index];
+              for( size_t i = 0; i < sm_auto_diff_stride_size; ++i )
+                max_dev_offset_deriv = std::max( max_dev_offset_deriv, std::fabs( par.v[i] ) );
+            }
+
+            static int s_logged_dev_offset_inactive = 0;
+            if( (max_dev_offset_deriv < 1.0e-16) && (s_logged_dev_offset_inactive < 100) )
+            {
+              char buffer[256];
+              snprintf( buffer, sizeof(buffer),
+                "apply_energy_cal_adjustment: fitted dev-pair offsets inactive in this Jet block (max_dev_offset_deriv=%.3e)",
+                max_dev_offset_deriv );
+              log_developer_error( __func__, buffer );
+              s_logged_dev_offset_inactive += 1;
+              assert( 0 );
+            }
+
+            static int s_logged_energy_out_of_range = 0;
+            if( s_logged_energy_out_of_range < 50 )
+            {
+              const std::vector<CubicSplineNodeT<T>> adj_dev_spline =
+                adjusted_dev_pairs.empty() ? std::vector<CubicSplineNodeT<T>>{} : create_cubic_spline( adjusted_dev_pairs );
+              const T e_low = polynomial_energy( T(0.0), adj_coefs, adj_dev_spline );
+              const T e_high = polynomial_energy( T(static_cast<double>(nchannel - 1)), adj_coefs, adj_dev_spline );
+              const double e_low_val = e_low.a;
+              const double e_high_val = e_high.a;
+              if( (energy < std::min( e_low_val, e_high_val )) || (energy > std::max( e_low_val, e_high_val )) )
+              {
+                char buffer[256];
+                snprintf( buffer, sizeof(buffer),
+                  "apply_energy_cal_adjustment: energy %.6f outside adjusted range [%.6f, %.6f]",
+                  energy, std::min( e_low_val, e_high_val ), std::max( e_low_val, e_high_val ) );
+                log_developer_error( __func__, buffer );
+                s_logged_energy_out_of_range += 1;
+                assert( 0 );
+              }
+            }
+          }
+
+          double max_derivative = 0.0;
+          for( size_t i = 0; i < sm_auto_diff_stride_size; ++i )
+            max_derivative = std::max( max_derivative, std::fabs( val.v[i] ) );
+          static int s_logged_zero_derivative = 0;
+          if( (max_derivative < 1.0e-12) && (s_logged_zero_derivative < 100) )
+          {
+            char buffer[256];
+            snprintf( buffer, sizeof(buffer),
+              "apply_energy_cal_adjustment: polynomial result has near-zero derivatives (val=%.6f - max_derivative=%.6f)",
+              val.a, max_derivative );
+            log_developer_error( __func__, buffer );
+            s_logged_zero_derivative += 1;
+            assert( 0 );
+          }
+        }
+#endif
+
+        return val;
       }//case polynomial
 
 
       case SpecUtils::EnergyCalType::FullRangeFraction:
       {
-        const double num_channel = static_cast<double>( m_energy_cal->num_channels() );
-        const vector<float> &orig_coeffs = m_energy_cal->coefficients();
         const size_t ncoeffs = std::min( orig_coeffs.size(), size_t(4) );
         assert( ncoeffs >= 2 );
-        vector<T> coefs( ncoeffs );
+        vector<T> adj_coefs( ncoeffs );
         for( size_t i = 0; i < ncoeffs; ++i )
-          coefs[i] = T( orig_coeffs[i] );
-        
-        coefs[0] += offest_adj;
-        coefs[1] += gain_adj;
-        
+          adj_coefs[i] = T( orig_coeffs[i] );
+        adj_coefs[0] += offest_adj;
+        adj_coefs[1] += gain_adj;
         if( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars > 2 )
         {
-          if( coefs.size() > 2 )
-            coefs[2] += quad_adj;
+          if( adj_coefs.size() > 2 )
+            adj_coefs[2] += quad_adj;
           else
-            coefs.push_back( quad_adj );
-        }//if( quad_adj != 0.0 )
-        
-        const double channel = m_energy_cal->channel_for_energy( energy );
-        
-        //return SpecUtils::fullrangefraction_energy( channel, coefs, num_channel, dev_pairs );
-        
-        const double frac_chan = channel / num_channel;
-          
+            adj_coefs.push_back( quad_adj );
+        }
 
-        T val = coefs[0];
-        for( size_t c = 1; c < ncoeffs; ++c )
-          val += coefs[c] * pow( frac_chan, static_cast<double>(c) );
-        
-        if( coefs.size() > 4 )
-          val += coefs[4] / (1.0 + 60.0*frac_chan);
+        const T channel = find_fullrangefraction_channel( T(energy), adj_coefs, nchannel, adjusted_dev_pairs );
 
-        if( !fitting_deviations )
-        {
-          const auto &dev_pairs = m_energy_cal->deviation_pairs();
-          if( !dev_pairs.empty() )
-          {
-            if constexpr ( !std::is_same_v<T, double> )
-              val += T(SpecUtils::deviation_pair_correction( static_cast<float>(val.a), dev_pairs ));
-            else
-              val += SpecUtils::deviation_pair_correction( static_cast<float>(val), dev_pairs );
-          }//if( !dev_pairs.empty() )
-          
-          return val;
-        }//if( (m_options.energy_cal_type != RelActCalcAuto::EnergyCalFitType::NonLinearFit) || m_dev_pair_anchors.empty() )
-
-        // Apply fitted deviation pair correction (non-linear energy cal adjustment)
-        return apply_fitted_deviation_pairs( val, x );
-      }//case polynomial or FRF
+        vector<T> ocoefs( orig_coeffs.size() );
+        for( size_t i = 0; i < orig_coeffs.size(); ++i )
+          ocoefs[i] = T( orig_coeffs[i] );
+        return fullrangefraction_energy( channel, ocoefs, nchannel, orig_dev_spline );
+      }//case FullRangeFraction
 
 
       case SpecUtils::EnergyCalType::LowerChannelEdge:
       {
-        const double lower_energy = m_energy_cal->lower_energy();
-        const double range = m_energy_cal->upper_energy() - lower_energy;
-        const double range_frac = (energy - lower_energy) / range;
+        assert( quad_adj == T(0.0) );
+        assert( m_energy_cal->channel_energies() && !m_energy_cal->channel_energies()->empty() );
+        const std::vector<float> &ch_energies = *m_energy_cal->channel_energies();
+        const T channel = find_lowerchannel_channel( T(energy), ch_energies, adjusted_dev_pairs, offest_adj, gain_adj );
 
-        T new_energy = energy + offest_adj + (range_frac*gain_adj);
-        assert( quad_adj == 0.0 );
-        //if( quad_adj != 0.0 )
-        //  new_energy += quad_adj*range_frac*range_frac;
+        double ch_val;
+        if constexpr ( std::is_same_v<T, double> )
+          ch_val = channel;
+        else
+          ch_val = channel.a;
+        if( ch_val < 0.0 )
+        {
+          const double e0 = static_cast<double>( ch_energies[0] );
+          return T(e0) + eval_cubic_spline( T(e0), orig_dev_spline );
+        }
+        size_t low = static_cast<size_t>( std::floor( ch_val ) );
+        if( low >= nchannel )
+          low = nchannel - 1;
+        const double e_low = static_cast<double>( ch_energies[low] );
+        const double e_high = static_cast<double>( ch_energies[low + 1] );
+        const T fraction = channel - T( static_cast<double>(low) );
+        const T base = T(e_low) + T(e_high - e_low) * fraction;
+        return base + eval_cubic_spline( base, orig_dev_spline );
+      }//case LowerChannelEdge
 
-        if( !fitting_deviations )
-          return new_energy;
-        
-        // Apply fitted deviation pair correction (non-linear energy cal adjustment)
-        return apply_fitted_deviation_pairs( new_energy, x );
-      }//case LowerChannelEdge:
-        
       case SpecUtils::EnergyCalType::InvalidEquationType:
         break;
     }//switch( m_energy_cal->type() )
@@ -8118,87 +8223,116 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                          * RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple)
                       : 0.0;
 
-    // Build fitted deviation pairs if non-linear energy cal is being used
-    vector<pair<float,float>> dev_pairs;
+    // Build original calibration (spectrum) deviation pairs for channel lookup.
+    std::vector<std::pair<double,double>> orig_dev_pairs;
+    const auto &orig_dev_ref = m_energy_cal->deviation_pairs();
+    orig_dev_pairs.reserve( orig_dev_ref.size() );
+    for( const auto &p : orig_dev_ref )
+      orig_dev_pairs.emplace_back( static_cast<double>(p.first), static_cast<double>(p.second) );
+
+    // Build adjusted calibration deviation pairs for channel -> true energy.
+    std::vector<std::pair<double,double>> adj_dev_pairs;
     const bool fit_deviations = ((m_options.energy_cal_type == RelActCalcAuto::EnergyCalFitType::NonLinearFit) && !m_dev_pair_anchors.empty());
     if( fit_deviations )
     {
+      adj_dev_pairs.reserve( m_dev_pair_anchors.size() );
       for( const DeviationPairAnchor &anchor : m_dev_pair_anchors )
       {
-        double total_offset = anchor.initial_offset;
+        double offset = anchor.initial_offset;
         if( anchor.is_fitted )
-          total_offset += x[m_dev_pair_par_start_index + anchor.param_index];
-        dev_pairs.emplace_back( static_cast<float>(anchor.anchor_energy), static_cast<float>(total_offset) );
+          offset += x[m_dev_pair_par_start_index + anchor.param_index];
+        adj_dev_pairs.emplace_back( anchor.anchor_energy, offset );
       }
     }else
     {
-      dev_pairs = m_energy_cal->deviation_pairs();
+      adj_dev_pairs = orig_dev_pairs;
     }
+    const std::vector<CubicSplineNodeT<double>> adj_dev_spline =
+      adj_dev_pairs.empty() ? std::vector<CubicSplineNodeT<double>>{} : create_cubic_spline( adj_dev_pairs );
+
+    const size_t nchannel = m_energy_cal->num_channels();
+    const double num_channel = static_cast<double>( nchannel );
+    const vector<float> &orig_coeffs = m_energy_cal->coefficients();
 
     switch( m_energy_cal->type() )
     {
       case SpecUtils::EnergyCalType::Polynomial:
       case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
       {
-        const size_t num_channel = m_energy_cal->num_channels();
-        vector<float> coefs = m_energy_cal->coefficients();
-        assert( coefs.size() >= 2 );
-        coefs[0] += offset_adj;
-        coefs[1] += (gain_adj / num_channel);
+        vector<double> ocoefs( orig_coeffs.size() );
+        for( size_t i = 0; i < orig_coeffs.size(); ++i )
+          ocoefs[i] = static_cast<double>( orig_coeffs[i] );
+        const double channel = find_polynomial_channel( adjusted_energy, ocoefs, nchannel, orig_dev_pairs );
 
+        vector<double> acoefs( orig_coeffs.size() );
+        for( size_t i = 0; i < orig_coeffs.size(); ++i )
+          acoefs[i] = static_cast<double>( orig_coeffs[i] );
+        assert( acoefs.size() >= 2 );
+        acoefs[0] += offset_adj;
+        acoefs[1] += (gain_adj / num_channel);
         if( quad_adj != 0.0 )
         {
-          if( coefs.size() > 2 )
-            coefs[2] += (quad_adj / (num_channel*num_channel));
+          if( acoefs.size() > 2 )
+            acoefs[2] += (quad_adj / (num_channel*num_channel));
           else
-            coefs.push_back( quad_adj / (num_channel*num_channel) );
-        }//if( quad_adj != 0.0 )
-
-        // Use fitted deviation pairs (or original if not fitting)
-        const double channel = SpecUtils::find_polynomial_channel( adjusted_energy, coefs, num_channel, dev_pairs );
-        return m_energy_cal->energy_for_channel( channel );
+            acoefs.push_back( quad_adj / (num_channel*num_channel) );
+        }
+        return polynomial_energy( channel, acoefs, adj_dev_spline );
       }//case polynomial
 
 
       case SpecUtils::EnergyCalType::FullRangeFraction:
       {
-        const size_t num_channel = m_energy_cal->num_channels();
-        vector<float> coefs = m_energy_cal->coefficients();
-        assert( coefs.size() >= 2 );
-        coefs[0] += offset_adj;
-        coefs[1] += gain_adj;
+        const size_t ncoeffs = std::min( orig_coeffs.size(), size_t(4) );
+        assert( ncoeffs >= 2 );
+        vector<double> ocoefs( orig_coeffs.size() );
+        for( size_t i = 0; i < orig_coeffs.size(); ++i )
+          ocoefs[i] = static_cast<double>( orig_coeffs[i] );
+        const double channel = find_fullrangefraction_channel( adjusted_energy, ocoefs, nchannel, orig_dev_pairs );
 
+        vector<double> acoefs( orig_coeffs.size() );
+        for( size_t i = 0; i < orig_coeffs.size(); ++i )
+          acoefs[i] = static_cast<double>( orig_coeffs[i] );
+        assert( acoefs.size() >= 2 );
+        acoefs[0] += offset_adj;
+        acoefs[1] += gain_adj;
         if( quad_adj != 0.0 )
         {
-          if( coefs.size() > 2 )
-            coefs[2] += quad_adj;
+          if( acoefs.size() > 2 )
+            acoefs[2] += quad_adj;
           else
-            coefs.push_back( quad_adj );
-        }//if( quad_adj != 0.0 )
-
-        // Use fitted deviation pairs (or original if not fitting)
-        const double channel = SpecUtils::find_fullrangefraction_channel( adjusted_energy, coefs, num_channel, dev_pairs );
-
-        return m_energy_cal->energy_for_channel( channel );
+            acoefs.push_back( quad_adj );
+        }
+        return fullrangefraction_energy( channel, acoefs, nchannel, adj_dev_spline );
       }//case FRF
-        
-        
+
+
       case SpecUtils::EnergyCalType::LowerChannelEdge:
       {
-        const double lower_energy = m_energy_cal->lower_energy();
-        const double range = m_energy_cal->upper_energy() - lower_energy;
-
         assert( quad_adj == 0.0 );
+        assert( m_energy_cal->channel_energies() && !m_energy_cal->channel_energies()->empty() );
+        const std::vector<float> &ch_energies = *m_energy_cal->channel_energies();
+        const double lower_energy = static_cast<double>( ch_energies[0] );
+        const double upper_energy = static_cast<double>( ch_energies[ch_energies.size() - 1] );
+        const double range = upper_energy - lower_energy;
 
-        // First, remove the fitted deviation pair correction (if any) using SpecUtils
-        double energy_without_dev_pairs = adjusted_energy;
-        if( fit_deviations && !dev_pairs.empty() )
-          energy_without_dev_pairs -= SpecUtils::correction_due_to_dev_pairs( adjusted_energy, dev_pairs );
+        const double channel = find_lowerchannel_channel( adjusted_energy, ch_energies, orig_dev_pairs );
 
-        // Now apply the inverse algebraic formula
-        return (energy_without_dev_pairs - offset_adj + gain_adj*lower_energy/range)/(1 + gain_adj/range);
-      }//case LowerChannelEdge:
-        
+        double ch_val = channel;
+        if( ch_val < 0.0 )
+          ch_val = 0.0;
+        size_t low = static_cast<size_t>( std::floor( ch_val ) );
+        if( low >= nchannel )
+          low = nchannel - 1;
+        const double e_low = static_cast<double>( ch_energies[low] );
+        const double e_high = static_cast<double>( ch_energies[low + 1] );
+        const double fraction = channel - static_cast<double>( low );
+        const double e_base = e_low + (e_high - e_low) * fraction;
+        const double range_frac = (range > 0.0) ? ((e_base - lower_energy) / range) : 0.0;
+        const double e_with_adj = e_base + offset_adj + range_frac * gain_adj;
+        return e_with_adj + eval_cubic_spline( e_with_adj, adj_dev_spline );
+      }//case LowerChannelEdge
+
       case SpecUtils::EnergyCalType::InvalidEquationType:
         break;
     }//switch( m_energy_cal->type() )
@@ -14767,18 +14901,10 @@ std::shared_ptr<SpecUtils::EnergyCalibration> RelActAutoSolution::get_adjusted_e
     
   vector<pair<float,float>> dev_pairs;
 
-  // Use fitted deviation pairs if available, otherwise keep original
+  // Use fitted deviation pairs if available, otherwise keep original.
+  // m_deviation_pair_offsets are already in the SpecUtils (spectrum -> true) convention.
   if( !m_deviation_pair_offsets.empty() )
   {
-    // The m_deviation_pair_offsets contain (anchor_energy, initial_offset + fitted_adjustment)
-    // where the offset is in FORWARD transform direction (offset to ADD to polynomial energy).
-    //
-    // But SpecUtils::EnergyCalibration uses INVERSE transform (spectrum → true energy),
-    // so we need to NEGATE the offsets when storing them in the final calibration.
-    //
-    // This matches SpecUtils convention: if forward offset is +10 keV (polynomial 1450 → spectrum 1460),
-    // then inverse offset is -10 keV (spectrum 1460 → true 1450).
-
     for( const auto &fitted_dp : m_deviation_pair_offsets )
       dev_pairs.emplace_back( static_cast<float>(fitted_dp.first), static_cast<float>(fitted_dp.second) );
 
@@ -14798,15 +14924,15 @@ std::shared_ptr<SpecUtils::EnergyCalibration> RelActAutoSolution::get_adjusted_e
     {
       vector<float> coefs = orig_cal->coefficients();
       assert( coefs.size() >= 2 );
-      coefs[0] -= offset_adj;
-      coefs[1] -= (gain_adj / num_channel);
+      coefs[0] += offset_adj;
+      coefs[1] += (gain_adj / num_channel);
         
       if( quad_adj != 0.0 )
       {
         if( coefs.size() > 2 )
-          coefs[2] -= (quad_adj / (num_channel*num_channel));
+          coefs[2] += (quad_adj / (num_channel*num_channel));
         else
-          coefs.push_back( -quad_adj / (num_channel*num_channel) );
+          coefs.push_back( quad_adj / (num_channel*num_channel) );
       }//if( quad_adj != 0.0 )
         
       new_cal->set_polynomial( num_channel, coefs, dev_pairs );
@@ -14817,15 +14943,15 @@ std::shared_ptr<SpecUtils::EnergyCalibration> RelActAutoSolution::get_adjusted_e
     {
       vector<float> coefs = orig_cal->coefficients();
       assert( coefs.size() >= 2 );
-      coefs[0] -= offset_adj;
-      coefs[1] -= gain_adj;
+      coefs[0] += offset_adj;
+      coefs[1] += gain_adj;
         
       if( quad_adj != 0.0 )
       {
         if( coefs.size() > 2 )
-          coefs[2] -= quad_adj;
+          coefs[2] += quad_adj;
         else
-          coefs.push_back( -quad_adj );
+          coefs.push_back( quad_adj );
       }//if( quad_adj != 0.0 )
       
       new_cal->set_full_range_fraction( num_channel, coefs, dev_pairs );
@@ -14846,7 +14972,8 @@ std::shared_ptr<SpecUtils::EnergyCalibration> RelActAutoSolution::get_adjusted_e
       for( size_t i = 0; i < lower_energies.size(); ++i )
       {
         const float low_e = lower_energies[i];
-        lower_energies[i] = (low_e - offset_adj + gain_adj*lower_energy/range)/(1 + gain_adj/range);
+        const double range_frac = (range > 0.0) ? ((low_e - lower_energy) / range) : 0.0;
+        lower_energies[i] = static_cast<float>( low_e + offset_adj + range_frac * gain_adj );
       }
         
       new_cal->set_lower_channel_energy( num_channel, std::move(lower_energies) );
@@ -14856,7 +14983,56 @@ std::shared_ptr<SpecUtils::EnergyCalibration> RelActAutoSolution::get_adjusted_e
     case SpecUtils::EnergyCalType::InvalidEquationType:
       break;
   }//switch( m_energy_cal->type() )
-  
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  if( m_cost_functor && !m_final_parameters.empty() )
+  {
+    try
+    {
+      const size_t nchannel = orig_cal->num_channels();
+      if( nchannel > 1 )
+      {
+        const std::vector<double> sample_channels = {
+          0.0,
+          0.5,
+          1.0,
+          0.25 * static_cast<double>(nchannel - 1),
+          0.5 * static_cast<double>(nchannel - 1),
+          0.75 * static_cast<double>(nchannel - 1),
+          static_cast<double>(nchannel - 1) - 0.5,
+          static_cast<double>(nchannel - 1)
+        };
+
+        for( const double channel : sample_channels )
+        {
+          if( (channel < 0.0) || (channel > static_cast<double>(nchannel)) )
+            continue;
+
+          const double adjusted_energy = orig_cal->energy_for_channel( channel );
+          const double expected_energy = m_cost_functor->un_apply_energy_cal_adjustment( adjusted_energy, m_final_parameters );
+          const double actual_energy = new_cal->energy_for_channel( channel );
+          const double diff = std::fabs( expected_energy - actual_energy );
+          const double tolerance = 1.0e-3; // 1 eV
+
+          if( diff > tolerance )
+          {
+            char buffer[512];
+            snprintf( buffer, sizeof(buffer),
+              "get_adjusted_energy_cal: un_apply_energy_cal_adjustment mismatch (channel=%.3f, expected=%.9g, actual=%.9g, diff=%.3g keV)",
+              channel, expected_energy, actual_energy, diff );
+            log_developer_error( __func__, buffer );
+            break;
+          }
+        }
+      }
+    }catch( std::exception &e )
+    {
+      const std::string msg = std::string("get_adjusted_energy_cal: dev check failed: ") + e.what();
+      log_developer_error( __func__, msg.c_str() );
+    }
+  }
+#endif
+
   return new_cal;
 }//std::shared_ptr<SpecUtils::EnergyCalibration> get_adjusted_energy_cal() const
   
@@ -14925,7 +15101,7 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
       }//for( size_t peak_index = 0; peak_index < peaks.size(); ++peak_index )
     }//for( size_t rel_eff_index = 0; rel_eff_index < solution.m_fit_peaks_for_each_curve.size(); ++rel_eff_index )
     
-    //assert( nearest_dist < 1.1 );
+    assert( nearest_dist < 1.1 );
     if( !continuum || (nearest_dist > 10.0) )
       continue;
     
