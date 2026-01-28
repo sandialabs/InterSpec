@@ -1305,7 +1305,7 @@ struct RoiRangeChannels : public RelActCalcAuto::RoiRange
     
     if( upper_energy <= lower_energy )
       throw runtime_error( "RoiRangeChannels: energy range invalid." );
-    
+
     const size_t nchannel = cal->num_channels();
     
     if( wanted_nchan > nchannel )
@@ -1697,7 +1697,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
    Note that this is usefull when fitting ages.
    */
   mutable std::map<std::pair<const void *,float>,std::shared_ptr<const std::vector<NucInputGamma::EnergyYield>>> m_aged_gammas_cache;
-  
+
+  std::vector<std::string> m_setup_warnings;
 
   /** The initial estimate of the area of each free peak.
 
@@ -1806,9 +1807,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   m_ncalls( 0 ),
   m_nanoseconds_spent_in_eval( size_t(0) )
   {
-    if( !spectrum || (spectrum->num_gamma_channels() < 128) )
+    if( !spectrum )
       throw runtime_error( "RelActAutoCostFcn: invalid spectrum." );
-    
+
+    if( spectrum->num_gamma_channels() < 128 )
+      throw runtime_error( "Spectrum must have at least 128 channels - not "
+                          + std::to_string(spectrum->num_gamma_channels()) );
+
     if( !m_energy_cal || !m_energy_cal->valid() )
       throw runtime_error( "RelActAutoCostFcn: invalid energy calibration." );
     
@@ -1879,16 +1884,23 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     for( size_t roi_index = 0; roi_index < m_options.rois.size(); ++roi_index )
     {
       const RelActCalcAuto::RoiRange &roi_range = m_options.rois[roi_index];
-      
-      if( (roi_range.lower_energy >= roi_range.upper_energy)
-         || (roi_range.lower_energy < 0.0) )
-        throw runtime_error( "RelActAutoCostFcn: mal-formed energy range" );
-      
+
+      if( roi_range.lower_energy >= roi_range.upper_energy )
+        throw runtime_error( "Energy range lower value (" + SpecUtils::printCompact(roi_range.lower_energy, 3)
+                            + " keV) is larger or equal to upper value ("
+                            + SpecUtils::printCompact(roi_range.upper_energy, 3) + " keV)" );
+
+      if( roi_range.lower_energy < 0.0 )
+        throw runtime_error( "Energy range, ["  + SpecUtils::printCompact(roi_range.lower_energy, 3)
+                            + " - " + SpecUtils::printCompact(roi_range.upper_energy, 3)
+                            + "], extends below zero keV.");
+
+
       // We'll check the ranges dont overlap (but they can touch)
       for( size_t other_roi = roi_index + 1; other_roi < m_options.rois.size(); ++other_roi )
       {
         const RelActCalcAuto::RoiRange &other_roi_range = m_options.rois[other_roi];
-        
+
         if( (roi_range.lower_energy < other_roi_range.upper_energy)
            && (other_roi_range.lower_energy < roi_range.upper_energy) )
         {
@@ -1901,8 +1913,22 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         }
       }//for( loop over ROIs that come after roi_range )
 
+      const double mid_energy = 0.5*(roi_range.lower_energy + roi_range.upper_energy);
+      if( (mid_energy < spectrum->gamma_energy_min())
+         || (mid_energy > spectrum->gamma_energy_max()) )
+      {
+        m_setup_warnings.push_back( "Not using the [" + SpecUtils::printCompact(roi_range.lower_energy, 3)
+                                   + " - " + SpecUtils::printCompact(roi_range.upper_energy, 3) + "] ROI because over"
+                                   + " half of it is not within the spectrums energy range ("
+                                   + SpecUtils::printCompact(spectrum->gamma_energy_min(), 3)
+                                   + " - " + SpecUtils::printCompact(spectrum->gamma_energy_max(), 3)
+                                   + " keV)." );
+        continue;
+      }
+
       if( roi_range.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed )
       {
+        // TODO: we could check that the ROI has any gammas/x-rays/fixed-peaks in it at all, and if not, skip it
         m_energy_ranges.emplace_back( m_energy_cal, roi_range );
         continue;
       }//if( roi_range.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed )
@@ -1910,7 +1936,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       if( cancel_calc && cancel_calc->load() )
         throw runtime_error( "User cancelled calculation." );
       
-      //We'll try to limit/break-up energy ranges
+      //Below here in this loop - we'll try to limit/break-up energy ranges
       const double min_br = numeric_limits<double>::min();  //arbitrary
       const double num_sigma_half_roi = DEFAULT_PEAK_HALF_WIDTH_SIGMA;
       
@@ -1975,7 +2001,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       }//for( const auto &peak : m_options.floating_peaks )
       
       std::sort( begin(gammas_in_range), end(gammas_in_range) );
-      
+
+      assert( roi_range.range_limits_type != RelActCalcAuto::RoiRange::RangeLimitsType::Fixed );
+
       for( size_t index = 0; index < gammas_in_range.size();  )
       {
         const size_t start_index = index;
@@ -2783,7 +2811,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::FailToSolveProblem;
     solution.m_drf = cost_functor->m_drf;
     solution.m_spectrum = make_shared<SpecUtils::Measurement>( *spectrum );
-    
+
+    solution.m_warnings.insert(end(solution.m_warnings),
+                               begin(cost_functor->m_setup_warnings), end(cost_functor->m_setup_warnings) );
+
     solution.m_final_roi_ranges.clear();
     for( const RelActCalcAutoImp::RoiRangeChannels &roi : cost_functor->m_energy_ranges )
       solution.m_final_roi_ranges.push_back( roi );
@@ -7984,7 +8015,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     assert( x.size() > (RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars + m_num_fitted_dev_pair_params) );
     assert( 0 == m_energy_cal_par_start_index );
     
-    const bool fitting_deviations = ((m_options.energy_cal_type == RelActCalcAuto::EnergyCalFitType::NonLinearFit)
+    const bool using_paramaterized_deviations = ((m_options.energy_cal_type == RelActCalcAuto::EnergyCalFitType::NonLinearFit)
                                      && !m_dev_pair_anchors.empty());
     
     if( m_options.energy_cal_type == RelActCalcAuto::EnergyCalFitType::NoFit )
@@ -8008,7 +8039,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
          && (x[1] == RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset)
          && ((RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars <= 2)
              || (x[2] == RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset))
-         && !fitting_deviations )
+         && !using_paramaterized_deviations )
       {
         return T(energy);
       }
@@ -8063,7 +8094,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
     // Build adjusted calibration deviation pairs (for inverse: true -> channel).
     std::vector<std::pair<double,T>> adjusted_dev_pairs;
-    if( fitting_deviations )
+    if( using_paramaterized_deviations )
     {
       adjusted_dev_pairs.reserve( m_dev_pair_anchors.size() );
       for( const DeviationPairAnchor &anchor : m_dev_pair_anchors )
@@ -8145,20 +8176,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           max_dev_offset = std::max( max_dev_offset, std::fabs( offset_val ) );
         }
 
-        //static bool s_logged_large_dev_offset = false;
-        //if( (max_dev_offset > 0.01) && !s_logged_large_dev_offset )
-        //{
-        //  char buffer[256];
-        //  snprintf( buffer, sizeof(buffer),
-        //    "apply_energy_cal_adjustment: max dev-pair offset %.6f keV (fitting=%s)",
-        //    max_dev_offset, fitting_deviations ? "true" : "false" );
-        //  log_developer_error( __func__, buffer );
-        //  s_logged_large_dev_offset = true;
-        //}
-
         if constexpr ( !std::is_same_v<T, double> )
         {
-          if( fitting_deviations )
+          bool dev_pair_deriv_active = using_paramaterized_deviations;
+
+          if( using_paramaterized_deviations )
           {
             double max_dev_offset_deriv = 0.0;
             for( const DeviationPairAnchor &anchor : m_dev_pair_anchors )
@@ -8171,20 +8193,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 max_dev_offset_deriv = std::max( max_dev_offset_deriv, std::fabs( par.v[i] ) );
             }
 
-            static int s_logged_dev_offset_inactive = 0;
-            if( (max_dev_offset_deriv < 1.0e-16) && (s_logged_dev_offset_inactive < 100) )
-            {
-              char buffer[256];
-              snprintf( buffer, sizeof(buffer),
-                "apply_energy_cal_adjustment: fitted dev-pair offsets inactive in this Jet block (max_dev_offset_deriv=%.3e)",
-                max_dev_offset_deriv );
-              log_developer_error( __func__, buffer );
-              s_logged_dev_offset_inactive += 1;
-              assert( 0 );
-            }
+            // I think if the deviation pair offsets are fixed, then there wont have a derivative component, so we'll
+            //  check for this.
+            dev_pair_deriv_active = (max_dev_offset_deriv > 1.0e-16);
 
             static int s_logged_energy_out_of_range = 0;
-            if( s_logged_energy_out_of_range < 50 )
+            if( dev_pair_deriv_active && (s_logged_energy_out_of_range < 50) )
             {
               const std::vector<CubicSplineNodeT<T>> adj_dev_spline =
                 adjusted_dev_pairs.empty() ? std::vector<CubicSplineNodeT<T>>{} : create_cubic_spline( adjusted_dev_pairs );
@@ -8203,13 +8217,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 assert( 0 );
               }
             }
-          }
+          }//if( using_paramaterized_deviations )
 
           double max_derivative = 0.0;
           for( size_t i = 0; i < sm_auto_diff_stride_size; ++i )
             max_derivative = std::max( max_derivative, std::fabs( val.v[i] ) );
           static int s_logged_zero_derivative = 0;
-          if( (max_derivative < 1.0e-12) && (s_logged_zero_derivative < 100) )
+          if( dev_pair_deriv_active && (max_derivative < 1.0e-12) && (s_logged_zero_derivative < 100) )
           {
             char buffer[256];
             snprintf( buffer, sizeof(buffer),
@@ -8219,7 +8233,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             s_logged_zero_derivative += 1;
             assert( 0 );
           }
-        }
+        }//if constexpr ( !std::is_same_v<T, double> )
 #endif
 
         return val;
