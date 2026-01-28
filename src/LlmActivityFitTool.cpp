@@ -2079,7 +2079,7 @@ nlohmann::json executeActivityFit(
   // Trigger the fit - doModelFit returns results when fit completes
   std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> fit_results = display->doModelFit( false );
 
-  result["status"] = "success";
+  result["success"] = true;
   result["gui_displayed"] = true;
 
   // If we got results back, format and return them using the helper function
@@ -2685,7 +2685,7 @@ nlohmann::json executeActivityFitOneOff(
   );
 
   // Format results using the comprehensive JSON function
-  result["status"] = "success";
+  result["success"] = true;
 
   // Get user preference for Bq vs Ci
   InterSpec *interspec_inst = InterSpec::instance();

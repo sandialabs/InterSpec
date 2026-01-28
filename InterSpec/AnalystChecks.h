@@ -120,7 +120,8 @@ namespace AnalystChecks
     bool doNotAddPeaksToUserSession;
   };
   
-  struct FitPeaksForNuclideStatus {
+  struct FitPeaksForNuclideStatus
+  {
     std::vector<std::shared_ptr<const PeakDef>> fitPeaks;
     std::vector<std::string> warnings;
   };

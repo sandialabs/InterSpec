@@ -29,6 +29,7 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include <optional>
 
 #include <nlohmann/json.hpp>
 
@@ -162,6 +163,7 @@ public:
     std::string model;          // Example: "gpt-4"
     int maxTokens = 0;          // Example: 4000
     int contextLengthLimit = 0; // Example: 128000;
+    std::optional<double> temperature;  // Optional: valid range 0.0-2.0
   };//struct LlmApi
 
 

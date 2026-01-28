@@ -890,7 +890,7 @@ namespace {
     json peak_rois;
     to_json( peak_rois, p.fitPeaks, meas );
     
-    j = json{{"rois", peak_rois}};
+    j = json{{"rois_added", peak_rois}};
     if( !p.warnings.empty() )
       j["warnings"] = p.warnings;
   }
@@ -1900,7 +1900,10 @@ nlohmann::json ToolRegistry::executeGetLoadedSpectra( const nlohmann::json& para
   if( interspec->displayedHistogram( SpecUtils::SpectrumType::SecondForeground ) )
     loadedSpectra.push_back("Secondary");
   
-  return json(loadedSpectra);
+  nlohmann::json result;
+  result["spectra"] = json(loadedSpectra);
+  
+  return result;
 }
   
 nlohmann::json ToolRegistry::executeGetNuclidesWithCharacteristicsInEnergyRange( const nlohmann::json& params, InterSpec* interspec )
@@ -3038,13 +3041,18 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
   for( const pair<double,double> &val : result )
     json_array.push_back({val.first, val.second});
   
+  nlohmann::json answer = nlohmann::json::object();
+  answer["photons"] = std::move(json_array);
+  if( nuc )
+    answer["photonsDescription"] = "Photons emmitted per Bq of parent activity.";
+  else if( el )
+    answer["photonsDescription"] = "Fluorescent x-rays, and relative intensities, emmitted by " + el->name + ".";
+  else if( rctn )
+    answer["photonsDescription"] = "Gammas emmitted by the " + rctn->name() + " reaction.";
+    
   
   if( nuc && cascade )
   {
-    nlohmann::json answer = nlohmann::json::object();
-    answer["photons"] = std::move(json_array);
-    answer["photonsDescription"] = "Photons emmitted per Bq of parent activity.";
-    
     nlohmann::json cascades_array = nlohmann::json::array();
     
     //double max_coinc_amp = 1.0;
@@ -3075,7 +3083,7 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
   }//if( nuc && cascade )
   
 
-  return json_array;
+  return answer;
 }//nlohmann::json executeGetSourcePhotons(const nlohmann::json& params, InterSpec* interspec)
 
 

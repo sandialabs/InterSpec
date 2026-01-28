@@ -313,6 +313,7 @@ void LlmConversationHistory::addConversationToLlmApiHistory( const LlmInteractio
           break;
         }
         responseMsg["role"] = "assistant";
+        responseMsg["content"] = nlohmann::json::value_t::null; //Some LLM providers need this, notably asksage.
         responseMsg["tool_calls"] = json::array();
 
         // Iterate through all tool calls in this response (batched tool calls)
