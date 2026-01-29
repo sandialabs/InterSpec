@@ -4213,7 +4213,7 @@ nlohmann::json ToolRegistry::executeGetDetectorInfo(const nlohmann::json& params
   std::shared_ptr<DetectorPeakResponse> drf;
 
   // Check if a specific detector name was requested
-  if( params.contains("name") && params["name"].is_string() )
+  if( params.contains("name") && params["name"].is_string() && !params["name"].get<std::string>().empty() )
   {
     const std::string name = params["name"].get<std::string>();
     std::string loadedFrom;
