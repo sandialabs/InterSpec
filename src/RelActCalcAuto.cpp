@@ -5543,16 +5543,24 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       // peaks, they will be abit below the actual data.  So here we will adjust the continuum to best
       // value we can, without changing the rest of the peak
       solution.m_peaks_without_back_sub = RelActCalc::refit_roi_continuums( solution.m_fit_peaks_in_spectrums_cal, foreground );
+      
+      if( !solution.m_peaks_without_back_sub.empty() )
+        set_chi2_dof( foreground, solution.m_peaks_without_back_sub, 0, solution.m_peaks_without_back_sub.size() );
+      
+      if( !solution.m_fit_peaks_in_spectrums_cal.empty() )
+      {
+        const vector<float> &channel_count_uncerts = cost_functor->m_channel_count_uncerts;
+        set_chi2_dof( solution.m_spectrum, solution.m_fit_peaks_in_spectrums_cal,
+                     0, solution.m_fit_peaks_in_spectrums_cal.size(), &channel_count_uncerts );
+      }
     }else
     {
+      // Calculate and set Chi2/DOF for the peaks
+      if( !solution.m_fit_peaks_in_spectrums_cal.empty() )
+        set_chi2_dof( foreground, solution.m_fit_peaks_in_spectrums_cal, 0, solution.m_fit_peaks_in_spectrums_cal.size() );
       solution.m_peaks_without_back_sub = solution.m_fit_peaks_in_spectrums_cal;
     }
 
-    // Calculate and set Chi2/DOF for the peaks
-    if( !solution.m_peaks_without_back_sub.empty() )
-    {
-      set_chi2_dof( foreground, solution.m_peaks_without_back_sub, 0, solution.m_peaks_without_back_sub.size() );
-    }
 
     // \c fit_peaks are in the original energy calibration of the spectrum, we may need to adjust
     //  them to match the new energy calibration
@@ -8163,23 +8171,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             s_logged_zero_channel_derivative += 1;
             assert( 0 );
           }
-        }
-
-        double max_dev_offset = 0.0;
-        for( const auto &pair : adjusted_dev_pairs )
-        {
-          double offset_val = 0.0;
-          if constexpr ( std::is_same_v<T, double> )
-            offset_val = pair.second;
-          else
-            offset_val = pair.second.a;
-          max_dev_offset = std::max( max_dev_offset, std::fabs( offset_val ) );
-        }
-
-        if constexpr ( !std::is_same_v<T, double> )
-        {
+        
           bool dev_pair_deriv_active = using_paramaterized_deviations;
-
           if( using_paramaterized_deviations )
           {
             double max_dev_offset_deriv = 0.0;
@@ -8231,7 +8224,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               val.a, max_derivative );
             log_developer_error( __func__, buffer );
             s_logged_zero_derivative += 1;
-            assert( 0 );
+            assert( sm_auto_diff_stride_size < x.size() );
           }
         }//if constexpr ( !std::is_same_v<T, double> )
 #endif
@@ -9531,7 +9524,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 #ifndef NDEBUG
     for( size_t i = 0; i < residual_index; ++i )
     {
-      assert( !isnan(residuals[i]) && !isinf(residuals[i]) );
+      if( isnan(residuals[i]) || isinf(residuals[i]) )
+      {
+        //throw runtime_error( "Residual " + std::to_string(i) + " of " + std::to_string(residual_index)
+        //                    + " has inf or nan." );
+        assert( !isnan(residuals[i]) && !isinf(residuals[i]) );
+      }
     }
 #endif
   }//void eval( const std::vector<double> &x, double *residuals ) const

@@ -1642,41 +1642,60 @@ LlmInterface::parseContentForToolCallsAndSendResults( const std::string &content
           string toolCallJson = match[1].str();
           cout << "Found JSON tool call: " << toolCallJson << " -- and about to parse" << endl;
 
-          json toolCallObj = parseLenientJson( toolCallJson );
+          json toolCallObj = lenientlyParseJson( toolCallJson );
           cout << "Done parsing tool call JSON" << endl;
-          
+
           if( toolCallObj.contains("name") )
             toolName = toolCallObj["name"];
           else
             throw std::runtime_error( "Invalid tool call JSON format - missing name" );
-          
+
           if( toolCallObj.contains("arguments") )
             arguments = toolCallObj["arguments"];
         }else
         {
           assert( match.size() >= 3 );
-          
+
           // Two capture groups - tool name and arguments separately
           toolName = match[1].str();
           string argumentsStr = match[2].str();
-          
+
           // Parse arguments JSON
           if( !argumentsStr.empty() && (argumentsStr != "{}") )
           {
             cout << "About to parse alone tool call JSON" << endl;
 
-            arguments = parseLenientJson( argumentsStr );
+            arguments = lenientlyParseJson( argumentsStr );
 
             cout << "Done parsing alone tool call JSON" << endl;
           }
         }
-        
+
         cout << "Found text-based tool call: " << toolName << " with args: " << arguments.dump() << endl;
       }catch( const std::exception &e )
       {
         cout << "Error parsing text-based tool call: " << e.what() << endl;
+
+        // Try to extract tool name from the matched content as a fallback
         if( toolName.empty() )
-          toolName = match[0];
+        {
+          // Try to extract name from JSON-like content in the match
+          // Pattern: look for "name": "tool_name" or \"name\": \"tool_name\"
+          const string matchStr = match[0].str();
+          std::regex namePattern( R"(["']?name["']?\s*:\s*["']([^"']+)["'])" );
+          std::smatch nameMatch;
+
+          if( std::regex_search( matchStr, nameMatch, namePattern ) && nameMatch.size() > 1 )
+          {
+            toolName = nameMatch[1].str();
+            cout << "Extracted tool name from fallback pattern: " << toolName << endl;
+          }else
+          {
+            // Last resort - use a descriptive error placeholder
+            toolName = "unknown_tool_parse_error";
+            cerr << "Failed to extract tool name from match, using placeholder: " << toolName << endl;
+          }
+        }
       }//try / catch
       
       
@@ -1684,9 +1703,12 @@ LlmInterface::parseContentForToolCallsAndSendResults( const std::string &content
       // { "id": "call_abc123", "type": "function", "function": { "name": "get_gamma_spectrum", "arguments": "{...}" }
       // (note, adding function call, even if we got an exception extracting the tool call - we will let
       //  `executeToolCallsAndSendResults(...)` deal with errors).
+      //
+      // IMPORTANT: arguments must be stored as a STRING (JSON serialized), not as a JSON object,
+      // because executeToolCallsAndSendResults expects to parse it from a string
       nlohmann::json function_def = nlohmann::json::object();
       function_def["name"] = toolName;
-      function_def["arguments"] = std::move(arguments);
+      function_def["arguments"] = arguments.dump();  // Serialize to string, not move as object
       
       nlohmann::json call_def = nlohmann::json::object();
       call_def["id"] = invocationId;
@@ -2208,7 +2230,11 @@ void LlmInterface::setupJavaScriptBridge() {
 
       if (bearerToken && bearerToken.trim() !== '') {
         headers['Authorization'] = 'Bearer ' + bearerToken;
-        headers['x-access-tokens'] = bearerToken;
+        
+        // Some providers will reject the message if x-access-tokens is set, so only set it for the one I know needs it 
+        if (endpoint.indexOf('.ai/server/query') !== -1) {
+          headers['x-access-tokens'] = bearerToken;
+        }
       }
 
       // Create AbortController for timeout handling
@@ -2595,7 +2621,7 @@ int LlmInterface::sendToolResultsToLLM( std::shared_ptr<LlmInteraction> convo )
               }
             }
 
-            if( allMatch )
+            if( allMatch || (requestCalls.size() == 1) )
             {
               // Store the JSON that's being sent to the LLM
               (*it)->setRawContent( followupRequest.dump() );

@@ -1140,7 +1140,7 @@ struct RelActAutoSolution
     /** The unconstrained fit peak amplitude.  This amplitude includes contributions from all peaks, and all relative efficiency curves. */
     double fit_clustered_peak_amplitude;
     double fit_clustered_peak_amplitude_uncert;
-    /** The starting amiplit*/
+    /** The starting amplitude */
     double initial_clustered_peak_amplitude;
     /** The effective sigma, after clustering all the input peaks together that are within 1.5 sigma of each other. */
     double effective_sigma;

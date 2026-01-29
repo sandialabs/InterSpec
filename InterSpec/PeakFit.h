@@ -409,18 +409,30 @@ double fit_amp_and_offset( const float *energies, const float *data, const size_
 
 /** Get the chi2 and degrees of freedom for a peaks that share a ROI.
  All peaks in 'peaks' _must_ share the same continuum (or else assert will happen).
+
+ @param channel_count_uncerts Optional pointer to channel uncertainties (standard deviations).
+        If provided, must have same size as data channel count, and all values must be > 0.
+        Values will be squared to get variance for chi2 calculation.
+        If nullptr (default), uses Poisson variance: max(ndata, 1.0)
  */
 void get_chi2_and_dof_for_roi( double &chi2, double &dof,
                                const std::shared_ptr<const SpecUtils::Measurement> &data,
-                               const std::vector<PeakDef *> &peaks );
+                               const std::vector<PeakDef *> &peaks,
+                               const std::vector<float> *channel_count_uncerts = nullptr );
 
 //set_chi2_dof(): computes and sets the Chi2/Dof for gaussian peaks with index
 // 'startpeakindex' through 'startpeakindex + npeaks'.
 //  Takes into account sharing of ROI between peaks.
 //  returns the total number of degrees of freed, of all ROIs
+//
+// @param channel_count_uncerts Optional pointer to channel uncertainties (standard deviations).
+//        If provided, must have same size as data channel count, and all values must be > 0.
+//        Values will be squared to get variance for chi2 calculation.
+//        If nullptr (default), uses Poisson variance: max(ndata, 1.0)
 double set_chi2_dof( std::shared_ptr<const SpecUtils::Measurement> data,
                    std::vector<PeakDef> &fitpeaks,
-                   const size_t startpeakindex, const size_t npeaks );
+                   const size_t startpeakindex, const size_t npeaks,
+                   const std::vector<float> *channel_count_uncerts = nullptr );
 
 //chi2_for_region(...): gives the chi2 or a region of data, given
 //  the input peaks.

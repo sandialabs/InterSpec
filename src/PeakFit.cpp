@@ -5883,11 +5883,34 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std
 
 void get_chi2_and_dof_for_roi( double &chi2, double &dof,
                               const std::shared_ptr<const SpecUtils::Measurement> &data,
-                              const vector<PeakDef *> &peaks )
+                              const vector<PeakDef *> &peaks,
+                              const vector<float> *channel_count_uncerts )
 {
   dof = chi2 = 0.0;
   if( peaks.empty() || !data || !data->channel_energies() || data->channel_energies()->empty() )
     return;
+
+  if( channel_count_uncerts )
+  {
+    const size_t num_channels = data->num_gamma_channels();
+    if( channel_count_uncerts->size() != num_channels )
+      throw std::runtime_error( "get_chi2_and_dof_for_roi: channel_count_uncerts size doesn't match data" );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+    for( size_t i = 0; i < num_channels; ++i )
+    {
+      const float uncert = (*channel_count_uncerts)[i];
+      if( uncert <= 0.0f || std::isnan(uncert) || std::isinf(uncert) )
+      {
+        char buffer[256];
+        snprintf( buffer, sizeof(buffer),
+                  "get_chi2_and_dof_for_roi: invalid uncertainty at channel %zu: %g",
+                  i, uncert );
+        throw std::runtime_error( buffer );
+      }
+    }
+#endif
+  }
   
   assert( peaks[0] );
   const std::shared_ptr<const PeakContinuum> continuum = peaks[0]->continuum();
@@ -5918,11 +5941,23 @@ void get_chi2_and_dof_for_roi( double &chi2, double &dof,
     const double xbinlow = energies[channel];
     const double xbinup  = energies[channel+1];
     double nfitpeak = gauss_counts[i];
-    
+
     const double ndata = data->gamma_channel_content( channel );
     const double ncontinuim = continuum->offset_integral( xbinlow, xbinup, data );
-    
-    const double datauncert = std::max( ndata, 1.0 );
+
+    // datauncert is variance (σ²), not standard deviation
+    const double datauncert = channel_count_uncerts
+                              ? static_cast<double>((*channel_count_uncerts)[channel] * (*channel_count_uncerts)[channel])
+                              : std::max( ndata, 1.0 );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+    if( channel_count_uncerts )
+    {
+      assert( datauncert > 0.0 );
+      assert( !std::isnan(datauncert) && !std::isinf(datauncert) );
+    }
+#endif
+
     const double nabove = (ndata - ncontinuim - nfitpeak);
     chi2 += nabove*nabove / datauncert;
   }//for( size_t i = 0; i < numchannel; ++i )
@@ -5966,8 +6001,18 @@ void get_chi2_and_dof_for_roi( double &chi2, double &dof,
 
 double set_chi2_dof( std::shared_ptr<const Measurement> data,
                     std::vector<PeakDef> &fitpeaks,
-                    const size_t startpeak, const size_t npeaks )
+                    const size_t startpeak, const size_t npeaks,
+                    const vector<float> *channel_count_uncerts )
 {
+  if( channel_count_uncerts && data )
+  {
+    const size_t num_channels = data->num_gamma_channels();
+    if( channel_count_uncerts->size() != num_channels )
+      throw std::runtime_error( "set_chi2_dof: channel_count_uncerts size doesn't match data" );
+
+    // Uncertainty validation will be done in get_chi2_and_dof_for_roi
+  }
+
   double totalDOF = 0;
   //It would be nice to use chi2_for_region(...) to actually compute the chi2
   //  for the region
@@ -5983,10 +6028,10 @@ double set_chi2_dof( std::shared_ptr<const Measurement> data,
   {
     const vector<PeakDef *> &peakptrs = i->second;
     assert( peakptrs.size() );
-    
+
     double chi2, dof;
-    get_chi2_and_dof_for_roi( chi2, dof, data, peakptrs );
-    
+    get_chi2_and_dof_for_roi( chi2, dof, data, peakptrs, channel_count_uncerts );
+
     totalDOF += dof;
     const double chi2Dof = chi2 / dof;
     
