@@ -25,6 +25,7 @@
 #include <string>
 #include <iostream>
 
+#include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/RelActCalcAuto_imp.hpp"
 
 #include "rapidxml/rapidxml.hpp"
@@ -269,4 +270,87 @@ BOOST_AUTO_TEST_CASE( test_pu242_by_correlation )
   BOOST_CHECK( fabs(output.pu242_mass_frac - 0.0406335) < 0.0001 );
   BOOST_CHECK( fabs(output.pu242_uncert - 0.06) < 0.0001 );
 }//BOOST_AUTO_TEST_CASE( test_pu242_by_correlation )
+
+
+// ============================================================================
+// Tests for deviation pair energy calibration corrections
+// ============================================================================
+
+
+BOOST_AUTO_TEST_CASE( test_deviation_pair_xml_serialization )
+{
+  // Test that energy_cal_type is properly serialized and deserialized
+  using namespace RelActCalcAuto;
+
+  Options opts_orig;
+  opts_orig.energy_cal_type = EnergyCalFitType::NonLinearFit;
+  opts_orig.fwhm_form = FwhmForm::Polynomial_2;
+
+  // Add a dummy ROI and nuclide to make XML valid
+  RoiRange roi;
+  roi.lower_energy = 100.0;
+  roi.upper_energy = 200.0;
+  opts_orig.rois.push_back( roi );
+
+  RelEffCurveInput curve;
+  curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::LnX;
+  curve.rel_eff_eqn_order = 3;
+
+  NucInputInfo nuc_info;
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  if( db )
+  {
+    nuc_info.source = db->nuclide("Co60");
+    curve.nuclides.push_back( nuc_info );
+    opts_orig.rel_eff_curves.push_back( curve );
+  }
+
+  // Serialize to XML
+  rapidxml::xml_document<char> doc;
+  rapidxml::xml_node<char> *root = doc.allocate_node( rapidxml::node_element, "Root" );
+  doc.append_node( root );
+
+  opts_orig.toXml( root );
+
+  // Deserialize from XML
+  Options opts_loaded;
+  const rapidxml::xml_node<char> *opts_node = root->first_node( "Options" );
+  BOOST_REQUIRE( opts_node );
+
+  opts_loaded.fromXml( opts_node, nullptr );
+
+  BOOST_CHECK( opts_loaded.energy_cal_type == opts_orig.energy_cal_type );
+}//BOOST_AUTO_TEST_CASE( test_deviation_pair_xml_serialization )
+
+
+
+BOOST_AUTO_TEST_CASE( test_options_equal_enough_with_deviation_pairs )
+{
+#if( PERFORM_DEVELOPER_CHECKS )
+  // Test that Options::equalEnough properly checks fit_deviation_pairs
+  using namespace RelActCalcAuto;
+
+  Options opts1, opts2;
+
+  // Both NoFit - should be equal
+  opts1.energy_cal_type = RelActCalcAuto::EnergyCalFitType::NoFit;
+  opts2.energy_cal_type = RelActCalcAuto::EnergyCalFitType::NoFit;
+  BOOST_CHECK_NO_THROW( Options::equalEnough( opts1, opts2 ) );
+
+  // Both LinearFit - should be equal
+  opts1.energy_cal_type = RelActCalcAuto::EnergyCalFitType::LinearFit;
+  opts2.energy_cal_type = RelActCalcAuto::EnergyCalFitType::LinearFit;
+  BOOST_CHECK_NO_THROW( Options::equalEnough( opts1, opts2 ) );
+
+  // Both NonLinearFit - should be equal
+  opts1.energy_cal_type = RelActCalcAuto::EnergyCalFitType::NonLinearFit;
+  opts2.energy_cal_type = RelActCalcAuto::EnergyCalFitType::NonLinearFit;
+  BOOST_CHECK_NO_THROW( Options::equalEnough( opts1, opts2 ) );
+
+  // Different - should throw
+  opts1.energy_cal_type = RelActCalcAuto::EnergyCalFitType::LinearFit;
+  opts2.energy_cal_type = RelActCalcAuto::EnergyCalFitType::NoFit;
+  BOOST_CHECK_THROW( Options::equalEnough( opts1, opts2 ), std::runtime_error );
+#endif
+}//BOOST_AUTO_TEST_CASE( test_options_equal_enough_with_deviation_pairs )
 

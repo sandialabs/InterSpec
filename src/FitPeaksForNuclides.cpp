@@ -3136,7 +3136,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   RelActCalcAuto::Options options;
   options.rel_eff_curves.push_back( rel_eff_curve );
   options.rois = initial_rois;
-  options.fit_energy_cal = config.fit_energy_cal;
+  options.energy_cal_type = config.energy_cal_type;
   options.fwhm_form = config.fwhm_form;
   options.fwhm_estimation_method = RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum;
   options.skew_type = skew_type;
@@ -3154,12 +3154,12 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 
     // As of 20260103, energy calibration adjustments may cause failure to fit the correct solution sometimes,
     //  so if our current solution failed, or is really bad, we'll try without fitting energy cal
-    if( options.fit_energy_cal
+    if( (options.energy_cal_type != RelActCalcAuto::EnergyCalFitType::NoFit)
       && ((solution.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success)
         || ((solution.m_chi2 / solution.m_dof) > 10.0)) ) //10.0 arbitrary - and un-explored
     {
       RelActCalcAuto::Options no_ecal_opts = options;
-      no_ecal_opts.fit_energy_cal = false;
+      no_ecal_opts.energy_cal_type = RelActCalcAuto::EnergyCalFitType::NoFit;
 
       RelActCalcAuto::RelActAutoSolution trial_solution = RelActCalcAuto::solve(
         no_ecal_opts, foreground, long_background, drf, auto_search_peaks

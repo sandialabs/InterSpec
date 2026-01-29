@@ -2,7 +2,8 @@
     <Description>Uses two relative efficiency curves to detect when there are two differently enriched objects present in view of the detector, but not one U object shielded by another.  Requires HPGe data with high statistics.</Description>
 	<Note>Separate U objects in FOV; use background/good-stats/Det.Eff. - adjust shielding, ROIs, and U232 presence</Note>
 	<Options version="2">
-		<FitEnergyCal>true</FitEnergyCal>
+    <FitEnergyCal remark="For backwards compat">true</FitEnergyCal>
+    <EnergyCalFitType remark="Possible values: NoFit, LinearFit, NonLinearFit">NonLinearFit</EnergyCalFitType>
 		<FwhmForm remark="Possible values: Gadras, Polynomial_2, Polynomial_3, Polynomial_4, Polynomial_5, Polynomial_6">SqrtEnergyPlusInverse</FwhmForm>
 		<FwhmEstimationMethod remark="Possible values: StartFromDetEffOrPeaksInSpectrum, StartingFromAllPeaksInSpectrum, FixedToAllPeaksInSpectrum, StartingFromDetectorEfficiency, FixedToDetectorEfficiency">StartFromDetEffOrPeaksInSpectrum</FwhmEstimationMethod>
 		<Title>Multiple U Objects</Title>

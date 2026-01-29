@@ -4435,3 +4435,202 @@ void DetectorPeakResponse::fitResolution( DetectorPeakResponse::PeakInput_t peak
 }//void fitResolution(...)
 
 
+std::string DetectorPeakResponse::toJSON() const
+{
+  // Use default energy range
+  float minEnergy = 50.0f, maxEnergy = 3000.0f;
+  
+  // Try to get a better range from efficiency pairs if available
+  if( m_efficiencyForm == kEnergyEfficiencyPairs && !m_energyEfficiencies.empty() )
+  {
+    minEnergy = m_energyEfficiencies[0].energy;
+    maxEnergy = m_energyEfficiencies[0].energy;
+    for( const auto& pair : m_energyEfficiencies )
+    {
+      minEnergy = std::min(minEnergy, pair.energy);
+      maxEnergy = std::max(maxEnergy, pair.energy);
+    }
+  }
+  
+  // Use detector range if available and reasonable
+  if( upperEnergy() > (lowerEnergy() + 100.0) )
+  {
+    minEnergy = std::max(minEnergy, static_cast<float>(lowerEnergy()));
+    maxEnergy = std::min(maxEnergy, static_cast<float>(upperEnergy()));
+  }
+  
+  return toJSON(minEnergy, maxEnergy);
+}//std::string DetectorPeakResponse::toJSON()
+
+
+std::string DetectorPeakResponse::toJSON(float minEnergy, float maxEnergy) const
+{
+  if( !isValid() )
+    return "null";
+    
+  std::stringstream json;
+  json << "{";
+  
+  // Add common energy extent
+  json << "\"extent\":[" << minEnergy << "," << maxEnergy << "]";
+  
+  // Add efficiency data
+  json << ",\"efficiency\":";
+  if( m_efficiencyForm == kFunctialEfficienyForm )
+  {
+    // For functional form, generate 100 points and send as kEnergyEfficiencyPairs with energyUnits=1
+    json << "{\"form\":\"kEnergyEfficiencyPairs\",\"energyUnits\":1,\"pairs\":[";
+    bool first = true;
+    for( int i = 0; i < 100; ++i )
+    {
+      const float energy = minEnergy + (float(i)/99.0f) * (maxEnergy-minEnergy);
+      const float efficiency = static_cast<float>( intrinsicEfficiency( energy ) );
+      
+      // Skip invalid efficiency values
+      if( IsNan(efficiency) || IsInf(efficiency) || efficiency < 0.0f )
+        continue;
+        
+      if( !first )
+        json << ",";
+      first = false;
+      json << "{\"energy\":" << energy << ",\"efficiency\":" << efficiency << "}";
+    }
+    json << "]}";
+  }
+  else if( m_efficiencyForm == kEnergyEfficiencyPairs )
+  {
+    json << "{\"form\":\"kEnergyEfficiencyPairs\",\"energyUnits\":" << m_efficiencyEnergyUnits << ",\"pairs\":[";
+    for( size_t i = 0; i < m_energyEfficiencies.size(); ++i )
+    {
+      if( i > 0 )
+        json << ",";
+      json << "{\"energy\":" << m_energyEfficiencies[i].energy << ",\"efficiency\":" << m_energyEfficiencies[i].efficiency << "}";
+    }
+    json << "]}";
+  }
+  else if( m_efficiencyForm == kExpOfLogPowerSeries )
+  {
+    json << "{\"form\":\"kExpOfLogPowerSeries\",\"energyUnits\":" << m_efficiencyEnergyUnits << ",\"coefficients\":[";
+    for( size_t i = 0; i < m_expOfLogPowerSeriesCoeffs.size(); ++i )
+    {
+      if( i > 0 )
+        json << ",";
+      json << m_expOfLogPowerSeriesCoeffs[i];
+    }
+    json << "]}";
+  }
+  else
+  {
+    json << "null";
+  }
+  
+  // Add FWHM data if available
+  json << ",\"fwhm\":";
+  if( hasResolutionInfo() )
+  {
+    json << "{\"form\":\"";
+    switch( m_resolutionForm )
+    {
+      case kGadrasResolutionFcn:
+        json << "kGadrasResolutionFcn";
+        break;
+      case kSqrtEnergyPlusInverse:
+        json << "kSqrtEnergyPlusInverse";
+        break;
+      case kConstantPlusSqrtEnergy:
+        json << "kConstantPlusSqrtEnergy";
+        break;
+      case kSqrtPolynomial:
+        json << "kSqrtPolynomial";
+        break;
+      case kNumResolutionFnctForm:
+        json << "unknown";
+        break;
+    }
+    json << "\",\"coefficients\":[";
+    for( size_t i = 0; i < m_resolutionCoeffs.size(); ++i )
+    {
+      if( i > 0 )
+        json << ",";
+      json << m_resolutionCoeffs[i];
+    }
+    json << "]}";
+  }
+  else
+  {
+    json << "null";
+  }
+  
+#ifdef PERFORM_DEVELOPER_CHECKS
+  // Add validation data for JavaScript testing
+  json << ",\"validation\":{";
+  json << "\"energies\":[";
+  
+  // Test energies in keV: some common gamma energies
+  const std::vector<float> testEnergies = {59.5f, 122.0f, 356.0f, 511.0f, 661.7f, 1173.2f, 1332.5f, 2614.5f};
+  
+  for( size_t i = 0; i < testEnergies.size(); ++i )
+  {
+    if( i > 0 )
+      json << ",";
+    json << testEnergies[i];
+  }
+  json << "],\"efficiencies\":[";
+  
+  // Calculate efficiency values in C++
+  for( size_t i = 0; i < testEnergies.size(); ++i )
+  {
+    if( i > 0 )
+      json << ",";
+    
+    if( m_efficiencyForm == kFunctialEfficienyForm || 
+        m_efficiencyForm == kEnergyEfficiencyPairs || 
+        m_efficiencyForm == kExpOfLogPowerSeries )
+    {
+      const double efficiency = intrinsicEfficiency( testEnergies[i] );
+      if( IsNan(efficiency) || IsInf(efficiency) || efficiency < 0.0 )
+        json << "null";
+      else
+        json << efficiency;
+    }
+    else
+    {
+      json << "null";
+    }
+  }
+  json << "],\"fwhms\":[";
+  
+  // Calculate FWHM values in C++
+  for( size_t i = 0; i < testEnergies.size(); ++i )
+  {
+    if( i > 0 )
+      json << ",";
+    
+    if( hasResolutionInfo() )
+    {
+      try
+      {
+        const double fwhm = peakResolutionFWHM( testEnergies[i] );
+        if( IsNan(fwhm) || IsInf(fwhm) || fwhm < 0.0 || fwhm >= 9999.9 )
+          json << "null";
+        else
+          json << fwhm;
+      }
+      catch( ... )
+      {
+        json << "null";
+      }
+    }
+    else
+    {
+      json << "null";
+    }
+  }
+  json << "]}";
+#endif // PERFORM_DEVELOPER_CHECKS
+  
+  json << "}";
+  return json.str();
+}//std::string DetectorPeakResponse::toJSON(...)
+
+

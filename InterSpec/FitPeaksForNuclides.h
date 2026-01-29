@@ -182,8 +182,8 @@ struct PeakFitForNuclideConfig
   bool phys_model_use_hoerl = true;
 
   // Fields for RelActAuto options configuration
-  bool fit_energy_cal = true;
-
+  RelActCalcAuto::EnergyCalFitType energy_cal_type = RelActCalcAuto::EnergyCalFitType::NonLinearFit;
+  
   // ROI significance threshold for iterative refinement
   // Minimum total chi2 reduction required for peaks in a ROI to be considered significant
   // The chi2 with peaks must be at least this much lower than chi2 with continuum-only

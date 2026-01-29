@@ -15,7 +15,10 @@
   <!-- General options -->
   <message id="raag-spectrum-peak-options">Spektrum és Csúcs Opciók</message>
   <message id="raag-rel-eff-curve-options">Relatív Hatékonyság Görbe Opciók</message>
-  <message id="raag-fit-energy-cal">Energia Kal. Illesztése</message>
+  <message id="raag-energy-cal-label">Energia kalibráció</message>
+  <message id="raag-energy-cal-nofit">Nincs</message>
+  <message id="raag-energy-cal-linear">Lineáris</message>
+  <message id="raag-energy-cal-nonlinear">Nem lineáris</message>
   <message id="raag-back-sub">Háttér Kivonás</message>
   <message id="raag-fwhm-est">FWHM Becslés</message>
   <message id="raag-fwhm-form">FWHM Forma</message>
@@ -57,6 +60,13 @@
   <message id="raag-combine-roi-right">Egyesítés jobb oldali ROI-val</message>
   
   <!-- Tooltips -->
+  <message id="raag-tt-energy-cal-type">Meghatározza, hogy az energia kalibrációhoz illesszünk-e korrekciókat.
+    <ul>
+      <li><b>Nincs</b>: A meglévő energia kalibráció használata módosítás nélkül.</li>
+      <li><b>Lineáris</b>: Lineáris korrekció (eltolás és erősítés) illesztése az energia kalibrációhoz.</li>
+      <li><b>Nem lineáris</b>: Nem lineáris korrekciók illesztése eltérési párok (köbös spline) segítségével minden ROI-hoz, a lineáris tagok mellett. Az egyes ROI-kban a legnagyobb detektált csúcs energiáját használja eltérési pár energiaként, vagy ha nincs, a ROI középpontját; nagy ROI-k több eltérési párt is kaphatnak.</li>
+    </ul>
+  </message>
   <message id="raag-tt-fwhm-form">Az egyenlettípus, amely a csúcs FWHM-et az energia függvényében modellezi.</message>
   <message id="raag-tt-skew-type">A csúcsokra alkalmazott ferdeség típusa; ferdeség paraméterek illesztésre kerülnek.</message>
   <message id="raag-tt-u-pu-data-source">Nukleáris adatforrás az urán és plutónium gamma elágazási arányokhoz.</message>
@@ -113,6 +123,8 @@
   <message id="raag-increase-gain-additional"> és erősítés növelése {1}-gyel</message>
   <message id="raag-increase-quad-first"> másodfokú növelése {1}-gyel</message>
   <message id="raag-increase-quad-additional"> és másodfokú növelése {1}-gyel</message>
+  <message id="raag-dev-pairs-first"> eltérési párok hozzáadása {1}</message>
+  <message id="raag-dev-pairs-additional"> és eltérési párok hozzáadása {1}</message>
 
   <!-- Energy calibration application messages -->
   <message id="raag-apply-energy-cal-msg">Ez {1} fog az elsődleges előtér{2}{3} számára.<br />Szeretné ezt megtenni?</message>

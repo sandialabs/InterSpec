@@ -890,7 +890,7 @@ namespace {
     json peak_rois;
     to_json( peak_rois, p.fitPeaks, meas );
     
-    j = json{{"rois", peak_rois}};
+    j = json{{"rois_added", peak_rois}};
     if( !p.warnings.empty() )
       j["warnings"] = p.warnings;
   }
@@ -1900,7 +1900,10 @@ nlohmann::json ToolRegistry::executeGetLoadedSpectra( const nlohmann::json& para
   if( interspec->displayedHistogram( SpecUtils::SpectrumType::SecondForeground ) )
     loadedSpectra.push_back("Secondary");
   
-  return json(loadedSpectra);
+  nlohmann::json result;
+  result["spectra"] = json(loadedSpectra);
+  
+  return result;
 }
   
 nlohmann::json ToolRegistry::executeGetNuclidesWithCharacteristicsInEnergyRange( const nlohmann::json& params, InterSpec* interspec )
@@ -2031,7 +2034,12 @@ nlohmann::json ToolRegistry::executeGetSourceInfo(const nlohmann::json& params, 
   
   if( !nuc )
   {
-    el = db->element( nuclide );
+    string xray_str = nuclide;
+    SpecUtils::ireplace_all(xray_str, "x-ray", "");
+    SpecUtils::ireplace_all(xray_str, "xray", "");
+    SpecUtils::trim(xray_str);
+    
+    el = db->element( xray_str );
     if( el )
     {
       result["type"] = "x-ray";
@@ -2041,6 +2049,9 @@ nlohmann::json ToolRegistry::executeGetSourceInfo(const nlohmann::json& params, 
       result["atomicNumber"] = static_cast<int>(el->atomicNumber);
       result["atomicMass"] = el->atomicMass();
 
+      if( xray_str.size() != nuclide.size() )
+        result["note"] = "When specifying a x-ray source, only use the atomic symbol (ex Fe, Pb, Cd, etc), and dont include 'x-ray', 'xray', etc.";
+      
       // We wont add x-rays so this way it keeps things consistent for the LLM to have to call "source_photons" for this info
       //nlohmann::json xraysArray = nlohmann::json::array();
       //for( const SandiaDecay::EnergyIntensityPair &xray : el->xrays )
@@ -2069,12 +2080,12 @@ nlohmann::json ToolRegistry::executeGetSourceInfo(const nlohmann::json& params, 
   {
     const ReactionGamma * const rctn_db = ReactionGammaServer::database();
     
-    std::vector<ReactionGamma::ReactionPhotopeak> possible_rctns;
-    if( rctn_db )
-      rctn_db->gammas( nuclide, possible_rctns );
-    
     try
     {
+      std::vector<ReactionGamma::ReactionPhotopeak> possible_rctns;
+      if( rctn_db )
+        rctn_db->gammas( nuclide, possible_rctns );
+      
       if( !possible_rctns.empty() && possible_rctns[0].reaction ) // Take the first reaction found
         rctn = possible_rctns[0].reaction;
     }catch( std::exception & )
@@ -3038,13 +3049,18 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
   for( const pair<double,double> &val : result )
     json_array.push_back({val.first, val.second});
   
+  nlohmann::json answer = nlohmann::json::object();
+  answer["photons"] = std::move(json_array);
+  if( nuc )
+    answer["photonsDescription"] = "Photons emmitted per Bq of parent activity.";
+  else if( el )
+    answer["photonsDescription"] = "Fluorescent x-rays, and relative intensities, emmitted by " + el->name + ".";
+  else if( rctn )
+    answer["photonsDescription"] = "Gammas emmitted by the " + rctn->name() + " reaction.";
+    
   
   if( nuc && cascade )
   {
-    nlohmann::json answer = nlohmann::json::object();
-    answer["photons"] = std::move(json_array);
-    answer["photonsDescription"] = "Photons emmitted per Bq of parent activity.";
-    
     nlohmann::json cascades_array = nlohmann::json::array();
     
     //double max_coinc_amp = 1.0;
@@ -3075,7 +3091,7 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
   }//if( nuc && cascade )
   
 
-  return json_array;
+  return answer;
 }//nlohmann::json executeGetSourcePhotons(const nlohmann::json& params, InterSpec* interspec)
 
 

@@ -571,6 +571,7 @@ static std::string serializeRequestForCaching( const nlohmann::json &requestJson
 
     // Add fields in priority order for caching (these should stay stable across requests)
     addField( "model" );
+    addField( "temperature" );
     addField( "max_completion_tokens" );
     addField( "max_tokens" );
     addField( "tools" );
@@ -582,7 +583,8 @@ static std::string serializeRequestForCaching( const nlohmann::json &requestJson
       const std::string &key = it.key();
 
       // Skip fields we already added
-      if( key == "model" || key == "max_completion_tokens" || key == "max_tokens" ||
+      if( key == "model" || key == "temperature" ||
+          key == "max_completion_tokens" || key == "max_tokens" ||
           key == "tools" || key == "tool_choice" )
         continue;
 
@@ -1364,6 +1366,49 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
         const auto exec_end = std::chrono::steady_clock::now();
         const auto exec_duration = std::chrono::duration_cast<std::chrono::milliseconds>(exec_end - exec_start);
 
+        switch( result.type() )
+        {
+          case nlohmann::detail::value_t::object:
+            // We're good, nothing to do here
+            break;
+            
+            
+          case nlohmann::detail::value_t::null:
+          case nlohmann::detail::value_t::discarded:
+            result = nlohmann::json::object();
+            assert( 0 ); //for development to help ID tool calls where this is the case
+            break;
+          
+          case nlohmann::detail::value_t::boolean:
+          case nlohmann::detail::value_t::array:
+          case nlohmann::detail::value_t::string:
+          case nlohmann::detail::value_t::number_integer:
+          case nlohmann::detail::value_t::number_unsigned:
+          case nlohmann::detail::value_t::number_float:
+          case nlohmann::detail::value_t::binary:
+          {
+            auto result_copy = result;
+            result = nlohmann::json::object();
+            result["value"] = std::move(result_copy);
+            assert( 0 ); //for development to help ID tool calls where this is the case
+            break;
+          }
+        }//switch( result.type() )
+        
+        assert( result.type() == nlohmann::detail::value_t::object );
+        
+        // Add in an indicator, if it isnt already present, that the tool call was succesful - some LLMs or providers
+        //  relly on at least `result["status"] = true;`, or they will keep doing the tool calls multiple times
+        if( !result.contains("success") && !result.contains("Success") )
+          result["success"] = true;
+        
+        if( result.contains("status") || result.contains("Status") )
+        {
+          cout << "Tool call result contains 'status'" << endl;
+        }
+        //if( !result.contains("status") && !result.contains("Status") )
+        //  result["status"] = "Success";
+        
         // Create tool result entry
         LlmToolCall toolResult( toolName, callId, arguments );
         toolResult.status = LlmToolCall::CallStatus::Success;
@@ -1373,7 +1418,7 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
       }
     }catch( const json::parse_error &e )
     {
-      cout << "Tool execution JSON error: " << e.what() << endl;
+      cout << "Tool execution JSON parse error: " << e.what() << endl;
 
 #if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
       {
@@ -1403,6 +1448,48 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
       json result;
       result["error"] = "Tool call failed due to JSON parsing: " + string(e.what());
 
+      result["success"] = false;
+      
+      // Create error tool result entry
+      LlmToolCall toolResult( toolName, callId, arguments );
+      toolResult.status = LlmToolCall::CallStatus::Error;
+      toolResult.content = result.dump();
+      toolCallResults.push_back( std::move(toolResult) );
+    }catch( const json::exception &e )
+    {
+      //Will catch: json::exception, json::invalid_iterator, json::type_error, json::out_of_range, and json::other_error here
+      cout << "Tool execution JSON error: " << e.what() << endl;
+      
+#if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
+      {
+        const auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
+        const string now_str = SpecUtils::to_iso_string( now );
+        const string debug_name = "llm_toolcall_json_error_" + now_str + ".json";
+#ifdef _WIN32
+        const std::wstring wdebug_name = SpecUtils::convert_from_utf8_to_utf16(debug_name);
+        std::ofstream output_request_json( wdebug_name.c_str(), ios::binary | ios::out );
+#else
+        std::ofstream output_request_json( debug_name.c_str(), ios::binary | ios::out);
+#endif
+        output_request_json << rawResponseContent;
+        
+        cerr << "Wrote message content to '" << debug_name << "'" << endl;
+      }
+#endif
+      
+      // Create placeholder arguments with error info for tracking
+      json arguments = json::object();
+      arguments["_raw"] = rawArguments;
+      arguments["_json_error"] = e.what();
+      
+      // Note: Do NOT add to toolCallRequests here - it was already added before execution
+      // (line 1104 for sub-agents, line 1384 for normal tools)
+      
+      json result;
+      result["error"] = "Tool call failed due to JSON parsing: " + string(e.what());
+      
+      result["success"] = false;
+      
       // Create error tool result entry
       LlmToolCall toolResult( toolName, callId, arguments );
       toolResult.status = LlmToolCall::CallStatus::Error;
@@ -1441,6 +1528,8 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
       json result;
       result["error"] = "Tool call failed: " + string(e.what());
 
+      result["success"] = false;
+      
       // Create error tool result entry
       LlmToolCall toolResult( toolName, callId, arguments );
       toolResult.status = LlmToolCall::CallStatus::Error;
@@ -1553,41 +1642,60 @@ LlmInterface::parseContentForToolCallsAndSendResults( const std::string &content
           string toolCallJson = match[1].str();
           cout << "Found JSON tool call: " << toolCallJson << " -- and about to parse" << endl;
 
-          json toolCallObj = parseLenientJson( toolCallJson );
+          json toolCallObj = lenientlyParseJson( toolCallJson );
           cout << "Done parsing tool call JSON" << endl;
-          
+
           if( toolCallObj.contains("name") )
             toolName = toolCallObj["name"];
           else
             throw std::runtime_error( "Invalid tool call JSON format - missing name" );
-          
+
           if( toolCallObj.contains("arguments") )
             arguments = toolCallObj["arguments"];
         }else
         {
           assert( match.size() >= 3 );
-          
+
           // Two capture groups - tool name and arguments separately
           toolName = match[1].str();
           string argumentsStr = match[2].str();
-          
+
           // Parse arguments JSON
           if( !argumentsStr.empty() && (argumentsStr != "{}") )
           {
             cout << "About to parse alone tool call JSON" << endl;
 
-            arguments = parseLenientJson( argumentsStr );
+            arguments = lenientlyParseJson( argumentsStr );
 
             cout << "Done parsing alone tool call JSON" << endl;
           }
         }
-        
+
         cout << "Found text-based tool call: " << toolName << " with args: " << arguments.dump() << endl;
       }catch( const std::exception &e )
       {
         cout << "Error parsing text-based tool call: " << e.what() << endl;
+
+        // Try to extract tool name from the matched content as a fallback
         if( toolName.empty() )
-          toolName = match[0];
+        {
+          // Try to extract name from JSON-like content in the match
+          // Pattern: look for "name": "tool_name" or \"name\": \"tool_name\"
+          const string matchStr = match[0].str();
+          std::regex namePattern( R"(["']?name["']?\s*:\s*["']([^"']+)["'])" );
+          std::smatch nameMatch;
+
+          if( std::regex_search( matchStr, nameMatch, namePattern ) && nameMatch.size() > 1 )
+          {
+            toolName = nameMatch[1].str();
+            cout << "Extracted tool name from fallback pattern: " << toolName << endl;
+          }else
+          {
+            // Last resort - use a descriptive error placeholder
+            toolName = "unknown_tool_parse_error";
+            cerr << "Failed to extract tool name from match, using placeholder: " << toolName << endl;
+          }
+        }
       }//try / catch
       
       
@@ -1595,9 +1703,12 @@ LlmInterface::parseContentForToolCallsAndSendResults( const std::string &content
       // { "id": "call_abc123", "type": "function", "function": { "name": "get_gamma_spectrum", "arguments": "{...}" }
       // (note, adding function call, even if we got an exception extracting the tool call - we will let
       //  `executeToolCallsAndSendResults(...)` deal with errors).
+      //
+      // IMPORTANT: arguments must be stored as a STRING (JSON serialized), not as a JSON object,
+      // because executeToolCallsAndSendResults expects to parse it from a string
       nlohmann::json function_def = nlohmann::json::object();
       function_def["name"] = toolName;
-      function_def["arguments"] = std::move(arguments);
+      function_def["arguments"] = arguments.dump();  // Serialize to string, not move as object
       
       nlohmann::json call_def = nlohmann::json::object();
       call_def["id"] = invocationId;
@@ -1933,13 +2044,19 @@ nlohmann::json LlmInterface::buildMessagesArray( const std::shared_ptr<LlmIntera
   
   // Use max_completion_tokens for newer OpenAI models, max_tokens for others
   string modelName = m_config->llmApi.model;
-  if (modelName.find("gpt-4") != string::npos || modelName.find("gpt-3.5") != string::npos || 
+  if (modelName.find("gpt-4") != string::npos || modelName.find("gpt-3.5") != string::npos ||
       modelName.find("o1") != string::npos || modelName.find("gpt-5") != string::npos) {
     request["max_completion_tokens"] = m_config->llmApi.maxTokens;
   } else {
     request["max_tokens"] = m_config->llmApi.maxTokens;
   }
-  
+
+  // Add optional temperature parameter if configured
+  if( m_config->llmApi.temperature.has_value() )
+  {
+    request["temperature"] = m_config->llmApi.temperature.value();
+  }
+
   json messages = json::array();
 
   // Add system prompt with optional state machine guidance
@@ -2113,7 +2230,11 @@ void LlmInterface::setupJavaScriptBridge() {
 
       if (bearerToken && bearerToken.trim() !== '') {
         headers['Authorization'] = 'Bearer ' + bearerToken;
-        headers['x-access-tokens'] = bearerToken;
+        
+        // Some providers will reject the message if x-access-tokens is set, so only set it for the one I know needs it 
+        if (endpoint.indexOf('.ai/server/query') !== -1) {
+          headers['x-access-tokens'] = bearerToken;
+        }
       }
 
       // Create AbortController for timeout handling
@@ -2500,7 +2621,7 @@ int LlmInterface::sendToolResultsToLLM( std::shared_ptr<LlmInteraction> convo )
               }
             }
 
-            if( allMatch )
+            if( allMatch || (requestCalls.size() == 1) )
             {
               // Store the JSON that's being sent to the LLM
               (*it)->setRawContent( followupRequest.dump() );

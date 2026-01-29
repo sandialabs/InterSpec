@@ -91,7 +91,7 @@ nlohmann::json stateToJsonSummary( const RelActCalcAuto::RelActAutoGuiState &sta
   result["rel_eff_curve_count"] = options.rel_eff_curves.size();
 
   // Basic options
-  result["fit_energy_cal"] = options.fit_energy_cal;
+  result["energy_cal_type"] = RelActCalcAuto::to_str(options.energy_cal_type);
   result["fwhm_form"] = RelActCalcAuto::to_str(options.fwhm_form);
   result["background_subtract"] = state.background_subtract;
 
@@ -246,7 +246,7 @@ nlohmann::json stateToJsonDetailed( const RelActCalcAuto::RelActAutoGuiState &st
   }
 
   // All options
-  result["fit_energy_cal"] = opts.fit_energy_cal;
+  result["energy_cal_type"] = RelActCalcAuto::to_str(opts.energy_cal_type);
   result["fwhm_form"] = RelActCalcAuto::to_str(opts.fwhm_form);
   result["fwhm_estimation_method"] = RelActCalcAuto::to_str(opts.fwhm_estimation_method);
   result["skew_type"] = PeakDef::to_string(opts.skew_type);
@@ -442,6 +442,207 @@ void saveRelActState(
   if( gui )
     gui->deSerialize( state );
 }//saveRelActState()
+
+
+/** Build JSON object with ROI information from fitted peaks.
+
+ Groups peaks by shared PeakContinuum, sorts by energy, and creates a JSON structure
+ with energy ranges, chi²/dof, and peak details for each ROI.
+
+ @param peaks Vector of fitted peaks (typically from solution.m_fit_peaks_in_spectrums_cal)
+ @returns JSON object with "description" and "rois" array
+ */
+nlohmann::json buildRoiInfo( const std::vector<PeakDef> &peaks )
+{
+  using namespace std;
+
+  // Group peaks by shared PeakContinuum
+  map<shared_ptr<const PeakContinuum>, vector<const PeakDef *>> roi_groups;
+
+  for( const PeakDef &peak : peaks )
+  {
+    shared_ptr<const PeakContinuum> continuum = peak.continuum();
+    if( continuum )
+      roi_groups[continuum].push_back( &peak );
+  }
+
+  // Build array of ROI objects, sorted by lower energy
+  vector<pair<double, json>> rois_with_energy;
+
+  for( const auto &roi_pair : roi_groups )
+  {
+    const shared_ptr<const PeakContinuum> &continuum = roi_pair.first;
+    const vector<const PeakDef *> &roi_peaks = roi_pair.second;
+
+    if( roi_peaks.empty() )
+      continue;
+
+    json roi_obj;
+    roi_obj["lower_energy_kev"] = continuum->lowerEnergy();
+    roi_obj["upper_energy_kev"] = continuum->upperEnergy();
+
+    // Get chi²/dof from any peak (all peaks in ROI share this value)
+    if( roi_peaks[0]->chi2Defined() )
+      roi_obj["chi2_per_dof"] = roi_peaks[0]->chi2dof();
+
+    // Calculate sum of peak areas in ROI
+    double total_area = 0.0;
+    for( const PeakDef *peak : roi_peaks )
+      total_area += peak->amplitude();
+    roi_obj["total_peak_area"] = total_area;
+
+    // Group peaks by source and calculate counts per source
+    map<string, double> source_areas;
+    for( const PeakDef *peak : roi_peaks )
+    {
+      if( peak->hasSourceGammaAssigned() )
+      {
+        const string source_name = peak->sourceName();
+        if( !source_name.empty() )
+          source_areas[source_name] += peak->amplitude();
+      }
+    }
+
+    // Build source_counts array (sorted by source name via map)
+    json source_counts_array = json::array();
+    for( const auto &source_pair : source_areas )
+    {
+      json source_obj;
+      source_obj["source_name"] = source_pair.first;
+      source_obj["source_sum_area_in_roi"] = source_pair.second;
+      source_counts_array.push_back( source_obj );
+    }
+    roi_obj["source_counts"] = source_counts_array;
+
+    // Build peaks array
+    json peaks_array = json::array();
+    for( const PeakDef *peak : roi_peaks )
+    {
+      json peak_obj;
+      peak_obj["energy_kev"] = peak->mean();
+      peak_obj["amplitude"] = peak->amplitude();
+      peak_obj["amplitude_uncert"] = peak->amplitudeUncert();
+      if( peak->gausPeak() )
+        peak_obj["fwhm_kev"] = peak->fwhm();
+      peaks_array.push_back( peak_obj );
+    }
+
+    roi_obj["peaks"] = peaks_array;
+
+    rois_with_energy.push_back( make_pair( continuum->lowerEnergy(), roi_obj ) );
+  }//for( const auto &roi_pair : roi_groups )
+
+  // Sort by lower energy
+  sort( rois_with_energy.begin(), rois_with_energy.end(),
+       []( const pair<double,json> &lhs, const pair<double,json> &rhs ) {
+         return lhs.first < rhs.first;
+       } );
+
+  // Extract just the JSON objects
+  json rois_array = json::array();
+  for( const auto &pair : rois_with_energy )
+    rois_array.push_back( pair.second );
+
+  json roi_info;
+  roi_info["description"] = "The bounds, chi-squared per degree of freedom, total area of fit peaks, and fit areas/means of individual peaks in ROIs used."
+                            " This may be useful to help identify significant, poorly fitting";
+  roi_info["rois"] = rois_array;
+
+  return roi_info;
+}//buildRoiInfo()
+
+
+/** Build JSON array of observed efficiencies from ObsEff vector.
+
+ Filters ObsEff objects to include only statistically significant measurements
+ (using RelEffChart display criteria), and renames fields to be LLM-friendly.
+
+ @param obs_effs Vector of ObsEff objects from solution
+ @returns JSON array of efficiency objects with descriptive field names
+ */
+nlohmann::json buildObsEffArray( const std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff> &obs_effs )
+{
+  using namespace std;
+
+  json effs_array = json::array();
+
+  for( const RelActCalcAuto::RelActAutoSolution::ObsEff &obs_eff : obs_effs )
+  {
+    // Apply RelEffChart filtering criteria
+    if( (obs_eff.observed_efficiency <= 0.0)
+       || (obs_eff.num_sigma_significance <= 2.5)
+       || (obs_eff.fraction_roi_counts <= 0.05)
+       || !obs_eff.within_roi )
+    {
+      continue;
+    }
+
+    json eff_obj;
+    eff_obj["energy_kev"] = obs_eff.energy;
+
+    eff_obj["solution_rel_eff"] = obs_eff.orig_solution_eff;
+    eff_obj["observed_rel_eff"] = obs_eff.observed_efficiency;
+    //eff_obj["observed_rel_eff_uncert"] = obs_eff.observed_efficiency_uncert;
+    eff_obj["fit_amp_over_solution_amp"] = obs_eff.observed_scale_factor;
+    eff_obj["significance_num_sigma"] = obs_eff.num_sigma_significance;
+    eff_obj["fit_amplitude"] = obs_eff.fit_clustered_peak_amplitude;
+    eff_obj["fit_amplitude_uncert"] = obs_eff.fit_clustered_peak_amplitude_uncert;
+    eff_obj["fraction_of_roi"] = obs_eff.fraction_roi_counts;
+
+    // Calculate how many sigma the observed amplitude differs from the solution amplitude
+    // This shows the deviation between the freely-fit peak area and the rel-eff solution peak area
+    if( obs_eff.fit_clustered_peak_amplitude_uncert > 0.0 )
+    {
+      const double amplitude_diff = obs_eff.fit_clustered_peak_amplitude - obs_eff.initial_clustered_peak_amplitude;
+      const double deviation_sigma = amplitude_diff / obs_eff.fit_clustered_peak_amplitude_uncert;
+      eff_obj["deviation_from_solution_sigma"] = deviation_sigma;
+    }
+
+    // Calculate fractional source contributions from the fit_peaks
+    // Group by source and sum amplitudes, then express as fractions
+    map<string, double> source_contributions;
+    double total_amplitude = 0.0;
+
+    for( const PeakDef &peak : obs_eff.fit_peaks )
+    {
+      if( peak.hasSourceGammaAssigned() )
+      {
+        const string source_name = peak.sourceName();
+        if( !source_name.empty() )
+        {
+          const double amplitude = peak.amplitude();
+          source_contributions[source_name] += amplitude;
+          total_amplitude += amplitude;
+        }
+      }
+    }
+
+    // Build array of fractional contributions (only include sources >= 5%)
+    if( total_amplitude > 0.0 )
+    {
+      json source_fractions = json::array();
+      for( const auto &source_pair : source_contributions )
+      {
+        const double fraction = source_pair.second / total_amplitude;
+        if( fraction >= 0.05 )  // Only include contributions >= 5%
+        {
+          json frac_obj;
+          frac_obj[source_pair.first] = fraction;
+          source_fractions.push_back( frac_obj );
+        }
+      }
+
+      if( !source_fractions.empty() )
+        eff_obj["source_contributions"] = source_fractions;
+    }
+
+
+    effs_array.push_back( eff_obj );
+  }
+
+  return effs_array;
+}//buildObsEffArray()
+
 
 }//namespace (anonymous)
 
@@ -955,6 +1156,38 @@ nlohmann::json executePerformIsotopics(
     // Warnings
     if( !solution.m_warnings.empty() )
       result["warnings"] = solution.m_warnings;
+
+    // Add ROI information with chi²/dof for each ROI
+    if( !solution.m_fit_peaks_in_spectrums_cal.empty() )
+      result["roi_info"] = buildRoiInfo( solution.m_fit_peaks_in_spectrums_cal );
+
+    // Add observed efficiency information
+    json obs_eff_obj;
+    obs_eff_obj["description"] = "Measured relative efficiency points; the ratio of "
+      "observed peak amplitude to expected amplitude from fit relative efficiency. "
+      "You can use deviation_from_solution_sigma to judge how well the fit relative efficiency solution "
+      "matches to a freely-fit peak at that energy; this field gives the number of statistical sigma this disagreement is. "
+      "This comparison is statistical only, and not systematic, so values may be a little larger than a strict interpretation (e.g., 4 or 5 sigma off is not that big of a deal). "
+      "Sometimes peaks that are only a fraction of the ROI total peak area (see the fraction_of_roi field) can be hugely off from expected "
+      "without indicating a catastrophic issue; this can be caused for reasons like peak tailing not being modeled correctly - so a very large peak next to the given peak can throw it off. "
+      "However, peaks that are a substantial portion of the ROI peak area (fraction_of_roi values closer to 1) are much more important for judging quality of solution.";
+
+    if( solution.m_obs_eff_for_each_curve.size() == 1 )
+    {
+      // Single curve case: create flat array
+      obs_eff_obj["efficiencies"] = buildObsEffArray( solution.m_obs_eff_for_each_curve[0] );
+      result["observed_efficiencies"] = obs_eff_obj;
+    }else if( solution.m_obs_eff_for_each_curve.size() > 1 )
+    {
+      // Multiple curves case: create object with array for each curve
+      for( size_t i = 0; i < solution.m_obs_eff_for_each_curve.size(); ++i )
+      {
+        const string curve_name = "rel_eff_curve_" + to_string( i );
+        obs_eff_obj[curve_name] = buildObsEffArray( solution.m_obs_eff_for_each_curve[i] );
+      }
+
+      result["observed_efficiencies"] = obs_eff_obj;
+    }//if( solution.m_obs_eff_for_each_curve.size() == 1 ) / else
 
     // Save updated state back to SpecMeas
     saveRelActState( interspec, state );
@@ -1633,11 +1866,11 @@ nlohmann::json executeModifyIsotopicsOptions(
   json result;
   json changes = json::array();
 
-  // Handle fit_energy_cal
-  if( params.contains( "fit_energy_cal" ) )
+  if( params.contains( "energy_cal_type" ) )
   {
-    state.options.fit_energy_cal = params.at( "fit_energy_cal" ).get<bool>();
-    changes.push_back( string( "fit_energy_cal=" ) + (state.options.fit_energy_cal ? "true" : "false") );
+    const string type_str = params.at( "energy_cal_type" ).get<string>();
+    state.options.energy_cal_type = RelActCalcAuto::energy_cal_fit_type_from_str( type_str.c_str() );
+    changes.push_back( string( "energy_cal_type=" ) + RelActCalcAuto::to_str(state.options.energy_cal_type) );
   }
 
   // Handle fwhm_form - map Polynomial_X to Berstein_X internally
@@ -1980,7 +2213,7 @@ nlohmann::json executeGetIsotopicsConfigSchema(
     "1) 'rel_eff_curve' - relative efficiency curve settings (equation type, shielding for physical model), "
     "2) 'nuclides' - list of nuclides/sources to analyze with ages and constraints, "
     "3) 'rois' - energy regions of interest to fit, "
-    "4) Global options (fwhm_form, skew_type, fit_energy_cal, etc.). "
+    "4) Global options (fwhm_form, skew_type, energy_cal_type, etc.). "
     "Use get_isotopics_config to see the current configuration structure.";
 
   // ============================================================================
@@ -2066,7 +2299,7 @@ nlohmann::json executeGetIsotopicsConfigSchema(
   result["global_options"]["description"] = "Settings that apply to the entire analysis.";
 
   result["global_options"]["fields"] = json::object();
-  result["global_options"]["fields"]["fit_energy_cal"] = "If true, energy calibration is refined during fitting.";
+  result["global_options"]["fields"]["energy_cal_type"] = "Energy calibration fitting mode during analysis (NoFit, LinearFit, NonLinearFit). NonLinearFit is default and recommended.";
   result["global_options"]["fields"]["fwhm_form"] = "Functional form for peak FWHM vs energy.";
   result["global_options"]["fields"]["fwhm_estimation_method"] = "How initial FWHM parameters are determined.";
   result["global_options"]["fields"]["skew_type"] = "Peak shape skew model (asymmetry).";
@@ -2143,8 +2376,6 @@ nlohmann::json executeGetIsotopicsConfigSchema(
   result["shielding"]["fields"]["fit_areal_density"] = "If true, areal density will be fitted during analysis.";
   result["shielding"]["fields"]["fit_atomic_number"] = "If true, atomic number will be fitted. Only valid with 'atomic_number', not 'material'. "
     "Usually not recommended - prefer fitting areal_density instead.";
-
-  result["success"] = true;
 
   return result;
 }//executeGetIsotopicsConfigSchema()

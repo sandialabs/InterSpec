@@ -270,6 +270,12 @@ of additional open-source libraries.
         <ul style="list-style-type: none; margin-left: 1em; padding: 0; font-size: small;">
            <li><a href="https://www.nndc.bnl.gov/ensdf/" target="_blank">Evaluated Nuclear Structure Data File (ENSDF)</a>: used to derive nuclear decay information and gamma cross sections.</li>
            <li><a href="http://geant4.web.cern.ch/" target="_blank">Geant4</a>: Used to extract gamma cross section data from ENSDF to a custom format for InterSpec.  Also used to validate physics calculations.</li>
+           <li><b>X-ray atomic transition data</b> (used to generate <code>xray_widths.xml</code>):
+             <ul style="margin-left: 1.5em; margin-top: 0.2em;">
+               <li><a href="https://github.com/tschoonj/xraylib/wiki" target="_blank">xraylib: a library for interactions of X-rays with matter</a> (see Schoonjans et al., Spectrochimica Acta Part B 66 (2011) 776-784, DOI: <a href="https://doi.org/10.1016/j.sab.2011.09.011" target="_blank">10.1016/j.sab.2011.09.011</a>).</li>
+               <li><a href="https://zenodo.org/records/16114067" target="_blank">X-ray DB: X-ray Reference Data in SQLite</a> (project home: <a href="https://xraypy.github.io/XrayDB/" target="_blank">https://xraypy.github.io/XrayDB/</a>).</li>
+             </ul>
+           </li>
            <li>A number of build tools, including: <a href="https://cmake.org/" target="_blank">CMake</a>,
                <a href="https://gcc.gnu.org/" target="_blank">GCC</a>,
                <a href="https://clang.llvm.org/" target="_blank">Clang/LLVM</a>,

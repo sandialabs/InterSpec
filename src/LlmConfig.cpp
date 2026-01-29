@@ -192,6 +192,25 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
       llmApi.model = XmlUtils::get_string_node_value(llmApiNode, "Model");
       llmApi.maxTokens = XmlUtils::get_int_node_value(llmApiNode, "MaxTokens");
       llmApi.contextLengthLimit = XmlUtils::get_int_node_value(llmApiNode, "ContextLengthLimit");
+
+      // Load optional ModelTemperature (if not present, remains unset)
+      const rapidxml::xml_node<char> * const tempNode = XML_FIRST_NODE(llmApiNode, "ModelTemperature");
+      string value_str = SpecUtils::xml_value_str( tempNode );
+      SpecUtils::trim( value_str );
+      if( !value_str.empty() )
+      {
+        double temp;
+        if( SpecUtils::parse_double(value_str.c_str(), value_str.size(), temp) )
+        {
+          if( (temp >= 0.0) && (temp <= 2.0) )
+            llmApi.temperature = temp;
+          else
+            cerr << "Warning: ModelTemperature value " << temp << " outside valid range [0.0, 2.0], ignoring" << endl;
+        }else
+        {
+          cerr << "Warning: Invalid ModelTemperature value ('" << value_str <<"'), ignoring" << endl;
+        }
+      }
     }// End load LLM API settings
 
     {// Begin load MCP server settings
@@ -239,6 +258,8 @@ bool LlmConfig::saveToFile( const LlmConfig &config, const std::string &filename
     XmlUtils::append_string_node( llmApi, "Model",              config.llmApi.model );
     XmlUtils::append_int_node(    llmApi, "MaxTokens",          config.llmApi.maxTokens );
     XmlUtils::append_int_node(    llmApi, "ContextLengthLimit", config.llmApi.contextLengthLimit );
+    if( config.llmApi.temperature.has_value() )
+      XmlUtils::append_float_node( llmApi, "ModelTemperature", config.llmApi.temperature.value() );
 
     // NOTE: Agents and tools are now saved separately in llm_agents.xml and llm_tools_config.xml,
     // not in llm_config.xml

@@ -359,6 +359,10 @@ namespace {
 
     std::shared_ptr<const PeakDef> found_peak;
 
+    std::shared_ptr<const PeakDef> second_best_peak;
+    double best_distance = std::numeric_limits<double>::max();
+    double second_best_distance = std::numeric_limits<double>::max();
+
     for( const auto &peak : *peaks )
     {
       if( !peak )
@@ -366,20 +370,42 @@ namespace {
 
       const double peak_energy = peak->mean();
       const double tolerance = std::max( peak->fwhm(), 1.0 );
+      const double distance = fabs( energy - peak_energy );
 
-      if( fabs(energy - peak_energy) <= tolerance )
+      if( distance <= tolerance )
       {
-        if( found_peak )
+        if( distance < best_distance )
         {
-          // Multiple peaks match - ambiguous
-          string msg = "Multiple peaks found near " + std::to_string(energy) + " keV";
-          if( !context_msg.empty() )
-            msg += " (" + context_msg + ")";
-          msg += ". Found peaks at " + std::to_string(found_peak->mean())
-                + " keV and " + std::to_string(peak_energy) + " keV.";
-          throw runtime_error( msg );
+          // New best match - demote previous best to second best
+          second_best_peak = found_peak;
+          second_best_distance = best_distance;
+          found_peak = peak;
+          best_distance = distance;
         }
-        found_peak = peak;
+        else if( distance < second_best_distance )
+        {
+          // New second best match
+          second_best_peak = peak;
+          second_best_distance = distance;
+        }
+      }
+    }
+
+    // Check if we have an ambiguous match
+    if( found_peak && second_best_peak )
+    {
+      const double fwhm_threshold = 0.15 * found_peak->fwhm();
+      const double distance_difference = second_best_distance - best_distance;
+
+      if( distance_difference < fwhm_threshold )
+      {
+        // Multiple peaks are ambiguously close
+        string msg = "Multiple peaks found near " + std::to_string(energy) + " keV";
+        if( !context_msg.empty() )
+          msg += " (" + context_msg + ")";
+        msg += ". Found peaks at " + std::to_string(found_peak->mean())
+              + " keV and " + std::to_string(second_best_peak->mean()) + " keV.";
+        throw runtime_error( msg );
       }
     }
 
@@ -2079,7 +2105,7 @@ nlohmann::json executeActivityFit(
   // Trigger the fit - doModelFit returns results when fit completes
   std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> fit_results = display->doModelFit( false );
 
-  result["status"] = "success";
+  result["success"] = true;
   result["gui_displayed"] = true;
 
   // If we got results back, format and return them using the helper function
@@ -2685,7 +2711,7 @@ nlohmann::json executeActivityFitOneOff(
   );
 
   // Format results using the comprehensive JSON function
-  result["status"] = "success";
+  result["success"] = true;
 
   // Get user preference for Bq vs Ci
   InterSpec *interspec_inst = InterSpec::instance();

@@ -977,7 +977,7 @@ BOOST_AUTO_TEST_CASE( test_executeModifyIsotopicsOptions )
 
   // Modify options
   json params;
-  params["fit_energy_cal"] = true;
+  params["energy_cal_type"] = "NonLinearFit";
   params["fwhm_form"] = "Gadras";
   params["skew_type"] = "NoSkew";
   params["note"] = "Test configuration";
@@ -994,7 +994,7 @@ BOOST_AUTO_TEST_CASE( test_executeModifyIsotopicsOptions )
   json config;
   BOOST_REQUIRE_NO_THROW( config = registry.executeTool( "get_isotopics_config", json::object(), fixture.m_interspec ) );
 
-  BOOST_CHECK( config["fit_energy_cal"].get<bool>() == true );
+  BOOST_CHECK( config["energy_cal_type"].get<string>() == "NonLinearFit" );
   BOOST_CHECK( config["skew_type"].get<string>() == "NoSkew" );
 
   cout << "Modified options successfully: " << result["changes"].size() << " changes" << endl;
@@ -1460,7 +1460,7 @@ BOOST_AUTO_TEST_CASE( test_executeIsotopics_Br82_EndToEnd )
 
   // Step 4: Configure global options
   json options_params;
-  options_params["fit_energy_cal"] = true;
+  params["energy_cal_type"] = "NonLinearFit";
   options_params["fwhm_form"] = "Polynomial_4";
   options_params["skew_type"] = "NoSkew";
   BOOST_REQUIRE_NO_THROW( registry.executeTool( "modify_isotopics_options", options_params, fixture.m_interspec ) );

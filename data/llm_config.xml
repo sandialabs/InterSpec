@@ -32,6 +32,13 @@ Changes to this file will not take effect until you quit all currently open inst
     <Model>gpt-5-mini</Model>
     <MaxTokens>62565</MaxTokens>
     <ContextLengthLimit>131072</ContextLengthLimit>
+    
+    <!-- Optional model temperature
+      0.0 (Deterministic): The model will be very focused and usually give the same answer every time.
+      0.2 - 0.5 (Balanced): Recommended; provides "creativity", while remaining grounded in your spectroscopy tools.
+      0.7 (Creative): More creative, but increases risk of the model hallucinating tool arguments that don't exist.
+    -->
+    <ModelTemperature>0.2</ModelTemperature>
   </LlmApi>
   
   <!-- MCP Server Settings - this is for InterSpec to create a MCP server you can use with other applications.

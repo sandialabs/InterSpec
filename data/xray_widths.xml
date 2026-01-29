@@ -1,0 +1,2914 @@
+<?xml version='1.0' encoding='utf-8'?>
+<XRayWidths>
+  <Meta>
+    <Version>xraylib-generated-1.0</Version>
+    <EnergyThreshold unit="keV">10</EnergyThreshold>
+    <WidthUnit>eV</WidthUnit>
+    <Sources>
+      <Source id="1" project="xraylib" url="https://github.com/tschoonj/xraylib/wiki" doi="10.1016/j.sab.2011.09.011">xraylib 4.2.1 (LineEnergy, AtomicLevelWidth)</Source>
+      <Source id="2" project="xraydb" url="https://xraypy.github.io/XrayDB/" zenodo="https://zenodo.org/records/16114067" doi="10.5281/zenodo.16114067">xraydb 4.5.8 (core_width)</Source>
+    </Sources>
+    <Fields>
+      <Field id="e" unit="keV">Line energy.</Field>
+      <Field id="l">Line label (e.g. Kα1, Kβ1, K-M4, Lα1).</Field>
+      <Field id="vs">Vacancy shell (destination shell): K, L1, L2, L3, M1...</Field>
+      <Field id="hwhm" unit="eV">Natural Lorentzian HWHM. Computed as 0.5*(Γ_dest+Γ_src) from level widths (FWHM).</Field>
+      <Field id="src">Width source id (see Sources). Only present when hwhm is present.</Field>
+      <Field id="rr">xraylib RadRate: radiative branching ratio within the vacancy shell. May be absent if not provided.</Field>
+    </Fields>
+    <Notes>Lines with energy &gt;= EnergyThreshold only. Fields: e(keV), l(label), vs(vacancy shell), hwhm(eV), src(width source id), rr(xraylib RadRate). hwhm: Lorentzian HWHM (eV), 0.5*(Γ_dest+Γ_src) from level widths (FWHM). If hwhm is missing, width data was unavailable. If rr is missing, xraylib did not provide a value for that line.</Notes>
+  </Meta>
+  <Element Z="31" symbol="Ga" name="Ga">
+    <XRay e="10.209" l="K-M1" vs="K" hwhm="1.88" src="1" />
+    <XRay e="10.2603" l="K-M2" vs="K" rr="0.04165" hwhm="2.005" src="1" />
+    <XRay e="10.2642" l="Kβ1" vs="K" rr="0.08155" hwhm="2.03" src="1" />
+    <XRay e="10.3497" l="K-M4" vs="K" hwhm="0.886" src="1" />
+    <XRay e="10.3497" l="K-M5" vs="K" hwhm="0.932" src="2" />
+    <XRay e="10.3656" l="K-N1" vs="K" hwhm="0.9112" src="2" />
+    <XRay e="10.3663" l="K-N2" vs="K" hwhm="0.9105" src="2" />
+    <XRay e="10.3663" l="K-N3" vs="K" hwhm="0.9105" src="2" />
+  </Element>
+  <Element Z="32" symbol="Ge" name="Ge">
+    <XRay e="10.9231" l="K-M1" vs="K" hwhm="2.01" src="1" />
+    <XRay e="10.9752" l="K-M2" vs="K" rr="0.04222" hwhm="2.11" src="1" />
+    <XRay e="10.9823" l="Kβ1" vs="K" rr="0.08272" hwhm="2.11" src="1" />
+    <XRay e="11.0744" l="K-M4" vs="K" hwhm="0.9825" src="1" />
+    <XRay e="11.0744" l="K-M5" vs="K" hwhm="0.982" src="1" />
+    <XRay e="11.0981" l="K-N1" vs="K" hwhm="0.98285" src="2" />
+    <XRay e="11.1008" l="K-N2" vs="K" rr="0.00093" hwhm="0.9805" src="2" />
+    <XRay e="11.1008" l="K-N3" vs="K" rr="0.00179" hwhm="0.9805" src="2" />
+  </Element>
+  <Element Z="33" symbol="As" name="As">
+    <XRay e="10.3402" l="K-L1" vs="K" hwhm="2.945" src="1" />
+    <XRay e="10.5081" l="Kα2" vs="K" rr="0.29527" hwhm="1.52" src="1" />
+    <XRay e="10.5436" l="Kα1" vs="K" rr="0.57297" hwhm="1.515" src="1" />
+    <XRay e="11.6632" l="K-M1" vs="K" hwhm="2.245" src="1" />
+    <XRay e="11.7203" l="K-M2" vs="K" rr="0.04299" hwhm="2.17" src="1" />
+    <XRay e="11.7262" l="Kβ1" vs="K" rr="0.08406" hwhm="2.17" src="1" />
+    <XRay e="11.8255" l="K-M4" vs="K" hwhm="1.074" src="1" />
+    <XRay e="11.8255" l="K-M5" vs="K" hwhm="1.075" src="1" />
+    <XRay e="11.8582" l="K-N1" vs="K" hwhm="1.07685" src="2" />
+    <XRay e="11.8642" l="K-N2" vs="K" rr="0.00161" hwhm="1.0705" src="2" />
+    <XRay e="11.8642" l="K-N3" vs="K" rr="0.00309" hwhm="1.0705" src="2" />
+  </Element>
+  <Element Z="34" symbol="Se" name="Se">
+    <XRay e="11.0039" l="K-L1" vs="K" hwhm="3.04" src="1" />
+    <XRay e="11.1816" l="Kα2" vs="K" rr="0.2939" hwhm="1.665" src="1" />
+    <XRay e="11.222" l="Kα1" vs="K" rr="0.56948" hwhm="1.65" src="1" />
+    <XRay e="12.4263" l="K-M1" vs="K" hwhm="2.54" src="1" />
+    <XRay e="12.4896" l="K-M2" vs="K" rr="0.04383" hwhm="2.24" src="1" />
+    <XRay e="12.4959" l="Kβ1" vs="K" rr="0.08568" hwhm="2.24" src="1" />
+    <XRay e="12.6011" l="K-M4" vs="K" hwhm="1.1725" src="1" />
+    <XRay e="12.6011" l="K-M5" vs="K" hwhm="1.173" src="1" />
+    <XRay e="12.6458" l="K-N1" vs="K" hwhm="1.18145" src="2" />
+    <XRay e="12.6522" l="K-N2" vs="K" rr="0.00242" hwhm="1.1655" src="2" />
+    <XRay e="12.6522" l="K-N3" vs="K" rr="0.00469" hwhm="1.1655" src="2" />
+  </Element>
+  <Element Z="35" symbol="Br" name="Br">
+    <XRay e="11.6917" l="K-L1" vs="K" hwhm="3.145" src="1" />
+    <XRay e="11.8777" l="Kα2" vs="K" rr="0.29324" hwhm="1.815" src="1" />
+    <XRay e="11.9238" l="Kα1" vs="K" rr="0.56582" hwhm="1.8" src="1" />
+    <XRay e="13.2172" l="K-M1" vs="K" hwhm="2.845" src="1" />
+    <XRay e="13.2844" l="K-M2" vs="K" rr="0.04437" hwhm="2.295" src="1" />
+    <XRay e="13.2922" l="Kβ1" vs="K" rr="0.08668" hwhm="2.32" src="1" />
+    <XRay e="13.4036" l="K-M4" vs="K" hwhm="1.279" src="1" />
+    <XRay e="13.4047" l="K-M5" vs="K" hwhm="1.28" src="1" />
+    <XRay e="13.4464" l="K-N1" vs="K" hwhm="1.29935" src="2" />
+    <XRay e="13.4685" l="K-N2" vs="K" rr="0.00336" hwhm="1.2605" src="2" />
+    <XRay e="13.4691" l="K-N3" vs="K" rr="0.00652" hwhm="1.2605" src="2" />
+  </Element>
+  <Element Z="36" symbol="Kr" name="Kr">
+    <XRay e="12.4046" l="K-L1" vs="K" hwhm="3.23" src="1" />
+    <XRay e="12.5984" l="Kα2" vs="K" rr="0.29222" hwhm="1.98" src="1" />
+    <XRay e="12.6507" l="Kα1" vs="K" rr="0.56389" hwhm="1.95" src="1" />
+    <XRay e="14.0335" l="K-M1" vs="K" hwhm="3.105" src="1" />
+    <XRay e="14.1038" l="K-M2" vs="K" rr="0.04429" hwhm="2.155" src="1" />
+    <XRay e="14.1111" l="Kβ1" vs="K" rr="0.08664" hwhm="1.905" src="1" />
+    <XRay e="14.2306" l="K-M4" vs="K" hwhm="1.39" src="1" />
+    <XRay e="14.2318" l="K-M5" vs="K" hwhm="1.391" src="1" />
+    <XRay e="14.2981" l="K-N1" vs="K" hwhm="1.555" src="1" />
+    <XRay e="14.3109" l="K-N2" vs="K" rr="0.00439" hwhm="1.3755" src="2" />
+    <XRay e="14.3116" l="K-N3" vs="K" rr="0.00856" hwhm="1.3755" src="2" />
+  </Element>
+  <Element Z="37" symbol="Rb" name="Rb">
+    <XRay e="13.1346" l="K-L1" vs="K" hwhm="3.355" src="1" />
+    <XRay e="13.3358" l="Kα2" vs="K" rr="0.29132" hwhm="2.15" src="1" />
+    <XRay e="13.3953" l="Kα1" vs="K" rr="0.56089" hwhm="2.115" src="1" />
+    <XRay e="14.8776" l="K-M1" vs="K" hwhm="3.48" src="1" />
+    <XRay e="14.9523" l="K-M2" vs="K" rr="0.04486" hwhm="2.43" src="1" />
+    <XRay e="14.9612" l="Kβ1" vs="K" rr="0.08775" hwhm="2.455" src="1" />
+    <XRay e="15.0879" l="K-M4" vs="K" hwhm="1.5135" src="1" />
+    <XRay e="15.0894" l="K-M5" vs="K" hwhm="1.5145" src="1" />
+    <XRay e="15.1704" l="K-N1" vs="K" hwhm="2.08" src="1" />
+    <XRay e="15.1849" l="K-N2" vs="K" rr="0.00516" hwhm="1.4955" src="2" />
+    <XRay e="15.1857" l="K-N3" vs="K" rr="0.01001" hwhm="1.4955" src="2" />
+  </Element>
+  <Element Z="38" symbol="Sr" name="Sr">
+    <XRay e="13.8883" l="K-L1" vs="K" hwhm="3.49" src="1" />
+    <XRay e="14.0978" l="Kα2" vs="K" rr="0.29049" hwhm="2.33" src="1" />
+    <XRay e="14.165" l="Kα1" vs="K" rr="0.55805" hwhm="2.29" src="1" />
+    <XRay e="15.7471" l="K-M1" vs="K" hwhm="3.815" src="1" />
+    <XRay e="15.8248" l="K-M2" vs="K" rr="0.04542" hwhm="2.565" src="1" />
+    <XRay e="15.8355" l="Kβ1" vs="K" rr="0.08881" hwhm="2.565" src="1" />
+    <XRay e="15.9696" l="K-M4" vs="K" hwhm="1.6455" src="1" />
+    <XRay e="15.9715" l="K-M5" vs="K" hwhm="1.647" src="1" />
+    <XRay e="16.0669" l="K-N1" vs="K" hwhm="2.415" src="1" />
+    <XRay e="16.0847" l="K-N2" vs="K" rr="0.00585" hwhm="1.815" src="1" />
+    <XRay e="16.0847" l="K-N3" vs="K" rr="0.01138" hwhm="1.6255" src="2" />
+  </Element>
+  <Element Z="39" symbol="Y" name="Y">
+    <XRay e="14.6659" l="K-L1" vs="K" hwhm="3.63" src="1" />
+    <XRay e="14.8829" l="Kα2" vs="K" rr="0.28973" hwhm="2.52" src="1" />
+    <XRay e="14.9584" l="Kα1" vs="K" rr="0.55549" hwhm="2.47" src="1" />
+    <XRay e="16.6448" l="K-M1" vs="K" hwhm="4.205" src="1" />
+    <XRay e="16.726" l="K-M2" vs="K" rr="0.0461" hwhm="2.73" src="1" />
+    <XRay e="16.7381" l="Kβ1" vs="K" rr="0.09008" hwhm="2.73" src="1" />
+    <XRay e="16.8788" l="K-M4" vs="K" hwhm="1.786" src="1" />
+    <XRay e="16.881" l="K-M5" vs="K" hwhm="1.788" src="1" />
+    <XRay e="16.993" l="K-N1" vs="K" hwhm="2.755" src="1" />
+    <XRay e="17.0128" l="K-N2" vs="K" rr="0.00631" hwhm="2.155" src="1" />
+    <XRay e="17.0128" l="K-N3" vs="K" rr="0.01229" hwhm="1.905" src="1" />
+    <XRay e="17.036" l="K-N4" vs="K" />
+    <XRay e="17.036" l="K-N5" vs="K" />
+  </Element>
+  <Element Z="40" symbol="Zr" name="Zr">
+    <XRay e="15.466" l="K-L1" vs="K" hwhm="3.79" src="1" />
+    <XRay e="15.6909" l="Kα2" vs="K" rr="0.28913" hwhm="2.73" src="1" />
+    <XRay e="15.7753" l="Kα1" vs="K" rr="0.55344" hwhm="2.67" src="1" />
+    <XRay e="17.5673" l="K-M1" vs="K" hwhm="4.615" src="1" />
+    <XRay e="17.6534" l="K-M2" vs="K" rr="0.04664" hwhm="2.915" src="1" />
+    <XRay e="17.6671" l="Kβ1" vs="K" rr="0.09109" hwhm="2.915" src="1" />
+    <XRay e="17.8152" l="K-M4" vs="K" hwhm="1.95" src="1" />
+    <XRay e="17.8176" l="K-M5" vs="K" hwhm="1.952" src="1" />
+    <XRay e="17.9463" l="K-N1" vs="K" hwhm="3.115" src="1" />
+    <XRay e="17.9689" l="K-N2" vs="K" rr="0.00669" hwhm="2.515" src="1" />
+    <XRay e="17.9689" l="K-N3" vs="K" rr="0.01302" hwhm="2.215" src="1" />
+    <XRay e="17.9946" l="K-N4" vs="K" />
+    <XRay e="17.9946" l="K-N5" vs="K" />
+  </Element>
+  <Element Z="41" symbol="Nb" name="Nb">
+    <XRay e="16.2879" l="K-L1" vs="K" hwhm="3.98" src="1" />
+    <XRay e="16.5209" l="Kα2" vs="K" rr="0.28862" hwhm="2.945" src="1" />
+    <XRay e="16.6151" l="Kα1" vs="K" rr="0.55134" hwhm="2.88" src="1" />
+    <XRay e="18.5172" l="K-M1" vs="K" hwhm="4.98" src="1" />
+    <XRay e="18.6072" l="K-M2" vs="K" rr="0.04725" hwhm="3.105" src="1" />
+    <XRay e="18.6226" l="Kβ1" vs="K" rr="0.09223" hwhm="3.105" src="1" />
+    <XRay e="18.7782" l="K-M4" vs="K" hwhm="2.126" src="1" />
+    <XRay e="18.781" l="K-M5" vs="K" hwhm="2.1275" src="1" />
+    <XRay e="18.9275" l="K-N1" vs="K" hwhm="3.48" src="1" />
+    <XRay e="18.9517" l="K-N2" vs="K" rr="0.00698" hwhm="2.83" src="1" />
+    <XRay e="18.9517" l="K-N3" vs="K" rr="0.01358" hwhm="2.58" src="1" />
+    <XRay e="18.9824" l="K-N4" vs="K" />
+    <XRay e="18.9824" l="K-N5" vs="K" />
+  </Element>
+  <Element Z="42" symbol="Mo" name="Mo">
+    <XRay e="17.134" l="K-L1" vs="K" hwhm="4.16" src="1" />
+    <XRay e="17.3744" l="Kα2" vs="K" rr="0.28821" hwhm="3.175" src="1" />
+    <XRay e="17.4793" l="Kα1" vs="K" rr="0.54964" hwhm="3.105" src="1" />
+    <XRay e="19.4949" l="K-M1" vs="K" hwhm="5.41" src="1" />
+    <XRay e="19.5898" l="K-M2" vs="K" rr="0.04774" hwhm="3.31" src="1" />
+    <XRay e="19.6072" l="Kβ1" vs="K" rr="0.09316" hwhm="3.31" src="1" />
+    <XRay e="19.7692" l="K-M4" vs="K" hwhm="2.37" src="1" />
+    <XRay e="19.7725" l="K-M5" vs="K" hwhm="2.32" src="1" />
+    <XRay e="19.9377" l="K-N1" vs="K" hwhm="3.86" src="1" />
+    <XRay e="19.9647" l="K-N2" vs="K" rr="0.00722" hwhm="3.36" src="1" />
+    <XRay e="19.9647" l="K-N3" vs="K" rr="0.01403" hwhm="3.06" src="1" />
+    <XRay e="19.9977" l="K-N4" vs="K" />
+    <XRay e="19.9977" l="K-N5" vs="K" />
+  </Element>
+  <Element Z="43" symbol="Tc" name="Tc">
+    <XRay e="18.0015" l="K-L1" vs="K" hwhm="4.355" src="1" />
+    <XRay e="18.2508" l="Kα2" vs="K" rr="0.28772" hwhm="3.42" src="1" />
+    <XRay e="18.3671" l="Kα1" vs="K" rr="0.54717" hwhm="3.345" src="1" />
+    <XRay e="20.5" l="K-M1" vs="K" hwhm="5.805" src="1" />
+    <XRay e="20.5991" l="K-M2" vs="K" rr="0.04839" hwhm="3.53" src="1" />
+    <XRay e="20.619" l="Kβ1" vs="K" rr="0.09435" hwhm="3.53" src="1" />
+    <XRay e="20.7876" l="K-M4" vs="K" hwhm="2.705" src="1" />
+    <XRay e="20.7911" l="K-M5" vs="K" hwhm="2.525" src="1" />
+    <XRay e="20.976" l="K-N1" vs="K" hwhm="4.205" src="1" />
+    <XRay e="21.0051" l="K-N2" vs="K" rr="0.0076" hwhm="3.805" src="1" />
+    <XRay e="21.0051" l="K-N3" vs="K" rr="0.01477" hwhm="3.555" src="1" />
+    <XRay e="21.042" l="K-N4" vs="K" />
+    <XRay e="21.042" l="K-N5" vs="K" />
+  </Element>
+  <Element Z="44" symbol="Ru" name="Ru">
+    <XRay e="18.8932" l="K-L1" vs="K" hwhm="4.615" src="1" />
+    <XRay e="19.1503" l="Kα2" vs="K" rr="0.28732" hwhm="3.68" src="1" />
+    <XRay e="19.2793" l="Kα1" vs="K" rr="0.5452" hwhm="3.6" src="1" />
+    <XRay e="21.5322" l="K-M1" vs="K" hwhm="6.265" src="1" />
+    <XRay e="21.6344" l="K-M2" vs="K" rr="0.0489" hwhm="3.765" src="1" />
+    <XRay e="21.6566" l="Kβ1" vs="K" rr="0.09531" hwhm="3.765" src="1" />
+    <XRay e="21.8336" l="K-M4" vs="K" hwhm="2.96" src="1" />
+    <XRay e="21.8378" l="K-M5" vs="K" hwhm="2.75" src="1" />
+    <XRay e="22.0423" l="K-N1" vs="K" hwhm="4.615" src="1" />
+    <XRay e="22.0741" l="K-N2" vs="K" rr="0.00791" hwhm="4.265" src="1" />
+    <XRay e="22.0741" l="K-N3" vs="K" rr="0.01535" hwhm="4.065" src="1" />
+    <XRay e="22.1152" l="K-N4" vs="K" />
+    <XRay e="22.1152" l="K-N5" vs="K" />
+  </Element>
+  <Element Z="45" symbol="Rh" name="Rh">
+    <XRay e="19.808" l="K-L1" vs="K" hwhm="4.885" src="1" />
+    <XRay e="20.0738" l="Kα2" vs="K" rr="0.287" hwhm="3.95" src="1" />
+    <XRay e="20.2161" l="Kα1" vs="K" rr="0.54359" hwhm="3.865" src="1" />
+    <XRay e="22.5928" l="K-M1" vs="K" hwhm="6.685" src="1" />
+    <XRay e="22.6989" l="K-M2" vs="K" rr="0.04932" hwhm="4.01" src="1" />
+    <XRay e="22.7237" l="Kβ1" vs="K" rr="0.09609" hwhm="4.01" src="1" />
+    <XRay e="22.9082" l="K-M4" vs="K" hwhm="3.19" src="1" />
+    <XRay e="22.9129" l="K-M5" vs="K" hwhm="2.99" src="1" />
+    <XRay e="23.1389" l="K-N1" vs="K" hwhm="4.985" src="1" />
+    <XRay e="23.172" l="K-N2" vs="K" rr="0.00816" hwhm="4.985" src="1" />
+    <XRay e="23.172" l="K-N3" vs="K" rr="0.01583" hwhm="4.785" src="1" />
+    <XRay e="23.2174" l="K-N4" vs="K" hwhm="2.8911" src="2" />
+    <XRay e="23.2174" l="K-N5" vs="K" hwhm="2.8911" src="2" />
+  </Element>
+  <Element Z="46" symbol="Pd" name="Pd">
+    <XRay e="20.746" l="K-L1" vs="K" hwhm="5.075" src="1" />
+    <XRay e="21.02" l="Kα2" vs="K" rr="0.28673" hwhm="4.24" src="1" />
+    <XRay e="21.177" l="Kα1" vs="K" rr="0.54225" hwhm="4.15" src="1" />
+    <XRay e="23.6804" l="K-M1" vs="K" hwhm="7.125" src="1" />
+    <XRay e="23.7912" l="K-M2" vs="K" rr="0.04968" hwhm="4.3" src="1" />
+    <XRay e="23.8188" l="Kβ1" vs="K" rr="0.09674" hwhm="4.3" src="1" />
+    <XRay e="24.0103" l="K-M4" vs="K" hwhm="3.255" src="1" />
+    <XRay e="24.0156" l="K-M5" vs="K" hwhm="3.255" src="1" />
+    <XRay e="24.2639" l="K-N1" vs="K" hwhm="5.3" src="1" />
+    <XRay e="24.2992" l="K-N2" vs="K" rr="0.00837" hwhm="6.325" src="1" />
+    <XRay e="24.2992" l="K-N3" vs="K" rr="0.01623" hwhm="5.925" src="1" />
+    <XRay e="24.3488" l="K-N4" vs="K" hwhm="3.1301" src="2" />
+    <XRay e="24.3488" l="K-N5" vs="K" hwhm="3.1301" src="2" />
+  </Element>
+  <Element Z="47" symbol="Ag" name="Ag">
+    <XRay e="21.7082" l="K-L1" vs="K" hwhm="5.28" src="1" />
+    <XRay e="21.9903" l="Kα2" vs="K" rr="0.2865" hwhm="4.54" src="1" />
+    <XRay e="22.1629" l="Kα1" vs="K" rr="0.54111" hwhm="4.455" src="1" />
+    <XRay e="24.7965" l="K-M1" vs="K" hwhm="7.58" src="1" />
+    <XRay e="24.9116" l="K-M2" vs="K" rr="0.04997" hwhm="4.605" src="1" />
+    <XRay e="24.9426" l="Kβ1" vs="K" rr="0.09729" hwhm="4.655" src="1" />
+    <XRay e="25.1412" l="K-M4" vs="K" hwhm="3.53" src="1" />
+    <XRay e="25.1473" l="K-M5" vs="K" hwhm="3.535" src="1" />
+    <XRay e="25.4188" l="K-N1" vs="K" hwhm="5.58" src="1" />
+    <XRay e="25.4514" l="K-N2" vs="K" rr="0.00855" hwhm="7.58" src="1" />
+    <XRay e="25.4581" l="K-N3" vs="K" rr="0.01657" hwhm="7.38" src="1" />
+    <XRay e="25.5107" l="K-N4" vs="K" hwhm="3.3917" src="2" />
+    <XRay e="25.5107" l="K-N5" vs="K" hwhm="3.3917" src="2" />
+  </Element>
+  <Element Z="48" symbol="Cd" name="Cd">
+    <XRay e="22.6932" l="K-L1" vs="K" hwhm="5.41" src="1" />
+    <XRay e="22.9842" l="Kα2" vs="K" rr="0.28636" hwhm="4.87" src="1" />
+    <XRay e="23.1737" l="Kα1" vs="K" rr="0.53875" hwhm="4.78" src="1" />
+    <XRay e="25.941" l="K-M1" vs="K" hwhm="8.06" src="1" />
+    <XRay e="26.0605" l="K-M2" vs="K" rr="0.05045" hwhm="4.935" src="1" />
+    <XRay e="26.0947" l="Kβ1" vs="K" rr="0.09809" hwhm="5.06" src="1" />
+    <XRay e="26.3007" l="K-M4" vs="K" hwhm="3.83" src="1" />
+    <XRay e="26.3075" l="K-M5" vs="K" hwhm="3.835" src="1" />
+    <XRay e="26.6036" l="K-N1" vs="K" hwhm="5.86" src="1" />
+    <XRay e="26.6443" l="K-N2" vs="K" rr="0.00896" hwhm="9.06" src="1" />
+    <XRay e="26.6443" l="K-N3" vs="K" rr="0.01739" hwhm="8.91" src="1" />
+    <XRay e="26.7019" l="K-N4" vs="K" hwhm="3.66755" src="2" />
+    <XRay e="26.7019" l="K-N5" vs="K" hwhm="3.66755" src="2" />
+    <XRay e="26.709" l="K-O1" vs="K" />
+    <XRay e="26.709" l="K-O2" vs="K" />
+    <XRay e="26.709" l="K-O3" vs="K" />
+  </Element>
+  <Element Z="49" symbol="In" name="In">
+    <XRay e="23.7024" l="K-L1" vs="K" hwhm="5.45" src="1" />
+    <XRay e="24.0019" l="Kα2" vs="K" rr="0.28624" hwhm="5.215" src="1" />
+    <XRay e="24.2098" l="Kα1" vs="K" rr="0.53679" hwhm="5.12" src="1" />
+    <XRay e="27.1143" l="K-M1" vs="K" hwhm="8.55" src="1" />
+    <XRay e="27.2377" l="K-M2" vs="K" rr="0.05084" hwhm="5.3" src="1" />
+    <XRay e="27.2756" l="Kβ1" vs="K" rr="0.09876" hwhm="5.475" src="1" />
+    <XRay e="27.4891" l="K-M4" vs="K" hwhm="4.14" src="1" />
+    <XRay e="27.4968" l="K-M5" vs="K" hwhm="4.145" src="1" />
+    <XRay e="27.818" l="K-N1" vs="K" hwhm="6.05" src="1" />
+    <XRay e="27.8625" l="K-N2" vs="K" rr="0.0093" hwhm="10.55" src="1" />
+    <XRay e="27.8625" l="K-N3" vs="K" rr="0.01808" hwhm="10.95" src="1" />
+    <XRay e="27.9237" l="K-N4" vs="K" hwhm="4.00045" src="2" />
+    <XRay e="27.9237" l="K-N5" vs="K" hwhm="4.00045" src="2" />
+    <XRay e="27.9398" l="K-O1" vs="K" />
+    <XRay e="27.9391" l="K-O2" vs="K" />
+    <XRay e="27.9391" l="K-O3" vs="K" />
+  </Element>
+  <Element Z="50" symbol="Sn" name="Sn">
+    <XRay e="24.7354" l="K-L1" vs="K" hwhm="5.465" src="1" />
+    <XRay e="25.044" l="Kα2" vs="K" rr="0.2859" hwhm="5.585" src="1" />
+    <XRay e="25.2713" l="Kα1" vs="K" rr="0.53469" hwhm="5.48" src="1" />
+    <XRay e="28.3163" l="K-M1" vs="K" hwhm="9.065" src="1" />
+    <XRay e="28.4437" l="K-M2" vs="K" rr="0.05113" hwhm="5.69" src="1" />
+    <XRay e="28.4857" l="Kβ1" vs="K" rr="0.09924" hwhm="5.915" src="1" />
+    <XRay e="28.7068" l="K-M4" vs="K" hwhm="4.48" src="1" />
+    <XRay e="28.7153" l="K-M5" vs="K" hwhm="4.485" src="1" />
+    <XRay e="29.0636" l="K-N1" vs="K" hwhm="5.965" src="1" />
+    <XRay e="29.1115" l="K-N2" vs="K" rr="0.00958" hwhm="12.765" src="1" />
+    <XRay e="29.1115" l="K-N3" vs="K" rr="0.01864" hwhm="12.765" src="1" />
+    <XRay e="29.1762" l="K-N4" vs="K" hwhm="4.305" src="1" />
+    <XRay e="29.1762" l="K-N5" vs="K" hwhm="4.305" src="1" />
+    <XRay e="29.1992" l="K-O1" vs="K" />
+    <XRay e="29.199" l="K-O2" vs="K" />
+    <XRay e="29.199" l="K-O3" vs="K" />
+  </Element>
+  <Element Z="51" symbol="Sb" name="Sb">
+    <XRay e="25.7929" l="K-L1" vs="K" hwhm="5.75" src="1" />
+    <XRay e="26.1108" l="Kα2" vs="K" rr="0.28563" hwhm="5.97" src="1" />
+    <XRay e="26.359" l="Kα1" vs="K" rr="0.53264" hwhm="5.865" src="1" />
+    <XRay e="29.5475" l="K-M1" vs="K" hwhm="9.6" src="1" />
+    <XRay e="29.6793" l="K-M2" vs="K" rr="0.05137" hwhm="6.1" src="1" />
+    <XRay e="29.7256" l="Kβ1" vs="K" rr="0.09971" hwhm="6.4" src="1" />
+    <XRay e="29.9543" l="K-M4" vs="K" hwhm="4.835" src="1" />
+    <XRay e="29.9637" l="K-M5" vs="K" hwhm="4.84" src="1" />
+    <XRay e="30.3392" l="K-N1" vs="K" hwhm="5.9" src="1" />
+    <XRay e="30.3928" l="K-N2" vs="K" rr="0.00991" hwhm="8.50635" src="2" />
+    <XRay e="30.3928" l="K-N3" vs="K" rr="0.0193" hwhm="8.50635" src="2" />
+    <XRay e="30.4598" l="K-N4" vs="K" hwhm="4.67" src="1" />
+    <XRay e="30.4598" l="K-N5" vs="K" hwhm="4.67" src="1" />
+    <XRay e="30.4845" l="K-O1" vs="K" hwhm="4.63" src="2" />
+    <XRay e="30.4891" l="K-O2" vs="K" hwhm="4.63" src="2" />
+    <XRay e="30.4891" l="K-O3" vs="K" hwhm="4.63" src="2" />
+  </Element>
+  <Element Z="52" symbol="Te" name="Te">
+    <XRay e="26.8746" l="K-L1" vs="K" hwhm="6.055" src="1" />
+    <XRay e="27.2018" l="Kα2" vs="K" rr="0.28524" hwhm="6.375" src="1" />
+    <XRay e="27.4724" l="Kα1" vs="K" rr="0.53051" hwhm="6.265" src="1" />
+    <XRay e="30.8078" l="K-M1" vs="K" hwhm="10.055" src="1" />
+    <XRay e="30.9441" l="K-M2" vs="K" rr="0.05163" hwhm="6.555" src="1" />
+    <XRay e="30.9951" l="Kβ1" vs="K" rr="0.10017" hwhm="6.905" src="1" />
+    <XRay e="31.2313" l="K-M4" vs="K" hwhm="5.215" src="1" />
+    <XRay e="31.2417" l="K-M5" vs="K" hwhm="5.215" src="1" />
+    <XRay e="31.6455" l="K-N1" vs="K" hwhm="6.155" src="1" />
+    <XRay e="31.7036" l="K-N2" vs="K" rr="0.01018" hwhm="7.69565" src="2" />
+    <XRay e="31.7036" l="K-N3" vs="K" rr="0.01986" hwhm="7.69565" src="2" />
+    <XRay e="31.774" l="K-N4" vs="K" hwhm="5.04" src="1" />
+    <XRay e="31.774" l="K-N5" vs="K" hwhm="5.055" src="1" />
+    <XRay e="31.8022" l="K-O1" vs="K" hwhm="4.995" src="2" />
+    <XRay e="31.8115" l="K-O2" vs="K" hwhm="4.995" src="2" />
+    <XRay e="31.8115" l="K-O3" vs="K" hwhm="4.995" src="2" />
+  </Element>
+  <Element Z="53" symbol="I" name="I">
+    <XRay e="27.9813" l="K-L1" vs="K" hwhm="6.4" src="1" />
+    <XRay e="28.3173" l="Kα2" vs="K" rr="0.28491" hwhm="6.825" src="1" />
+    <XRay e="28.6123" l="Kα1" vs="K" rr="0.52872" hwhm="6.71" src="1" />
+    <XRay e="32.0973" l="K-M1" vs="K" hwhm="10.55" src="1" />
+    <XRay e="32.2389" l="K-M2" vs="K" rr="0.05184" hwhm="7.025" src="1" />
+    <XRay e="32.2948" l="Kβ1" vs="K" rr="0.10056" hwhm="7.5" src="1" />
+    <XRay e="32.5381" l="K-M4" vs="K" hwhm="5.63" src="1" />
+    <XRay e="32.55" l="K-M5" vs="K" hwhm="5.63" src="1" />
+    <XRay e="32.983" l="K-N1" vs="K" hwhm="6.55" src="1" />
+    <XRay e="33.0467" l="K-N2" vs="K" rr="0.0104" hwhm="7.227" src="2" />
+    <XRay e="33.0467" l="K-N3" vs="K" rr="0.02033" hwhm="7.227" src="2" />
+    <XRay e="33.1198" l="K-N4" vs="K" hwhm="5.405" src="1" />
+    <XRay e="33.1198" l="K-N5" vs="K" hwhm="5.41" src="1" />
+    <XRay e="33.1558" l="K-O1" vs="K" hwhm="5.35" src="2" />
+    <XRay e="33.1661" l="K-O2" vs="K" hwhm="5.35" src="2" />
+    <XRay e="33.1661" l="K-O3" vs="K" hwhm="5.35" src="2" />
+  </Element>
+  <Element Z="54" symbol="Xe" name="Xe">
+    <XRay e="29.1116" l="K-L1" vs="K" hwhm="6.75" src="1" />
+    <XRay e="29.4607" l="Kα2" vs="K" rr="0.28462" hwhm="7.275" src="1" />
+    <XRay e="29.7822" l="Kα1" vs="K" rr="0.52719" hwhm="7.16" src="1" />
+    <XRay e="33.4157" l="K-M1" vs="K" hwhm="11.05" src="1" />
+    <XRay e="33.5623" l="K-M2" vs="K" rr="0.05203" hwhm="7.5" src="1" />
+    <XRay e="33.6238" l="Kβ1" vs="K" rr="0.1009" hwhm="8.1" src="1" />
+    <XRay e="33.875" l="K-M4" vs="K" hwhm="6.05" src="1" />
+    <XRay e="33.8877" l="K-M5" vs="K" hwhm="6.05" src="1" />
+    <XRay e="34.3511" l="K-N1" vs="K" hwhm="7.05" src="1" />
+    <XRay e="34.4189" l="K-N2" vs="K" rr="0.01059" hwhm="7.05" src="2" />
+    <XRay e="34.4189" l="K-N3" vs="K" rr="0.02073" hwhm="7.05" src="2" />
+    <XRay e="34.4949" l="K-N4" vs="K" hwhm="5.8" src="1" />
+    <XRay e="34.4969" l="K-N5" vs="K" hwhm="5.79" src="1" />
+    <XRay e="34.541" l="K-O1" vs="K" hwhm="5.75" src="2" />
+    <XRay e="34.551" l="K-O2" vs="K" hwhm="5.75" src="2" />
+    <XRay e="34.5523" l="K-O3" vs="K" hwhm="5.75" src="2" />
+  </Element>
+  <Element Z="55" symbol="Cs" name="Cs">
+    <XRay e="30.2703" l="K-L1" vs="K" hwhm="7.15" src="1" />
+    <XRay e="30.6252" l="Kα2" vs="K" rr="0.28421" hwhm="7.725" src="1" />
+    <XRay e="30.9727" l="Kα1" vs="K" rr="0.52535" hwhm="7.61" src="1" />
+    <XRay e="34.7675" l="K-M1" vs="K" hwhm="11.55" src="1" />
+    <XRay e="34.9196" l="K-M2" vs="K" rr="0.05226" hwhm="8" src="1" />
+    <XRay e="34.987" l="Kβ1" vs="K" rr="0.10134" hwhm="8.65" src="1" />
+    <XRay e="35.2451" l="K-M4" vs="K" hwhm="6.465" src="1" />
+    <XRay e="35.2591" l="K-M5" vs="K" hwhm="6.465" src="1" />
+    <XRay e="35.7538" l="K-N1" vs="K" hwhm="7.55" src="1" />
+    <XRay e="35.8123" l="K-N2" vs="K" rr="0.01088" hwhm="7.63935" src="2" />
+    <XRay e="35.823" l="K-N3" vs="K" rr="0.02131" hwhm="7.63935" src="2" />
+    <XRay e="35.9058" l="K-N4" vs="K" hwhm="6.19" src="1" />
+    <XRay e="35.9081" l="K-N5" vs="K" hwhm="6.19" src="1" />
+    <XRay e="35.9619" l="K-O1" vs="K" hwhm="6.2" src="2" />
+    <XRay e="35.9715" l="K-O2" vs="K" hwhm="6.2" src="2" />
+    <XRay e="35.9732" l="K-O3" vs="K" hwhm="6.2" src="2" />
+  </Element>
+  <Element Z="56" symbol="Ba" name="Ba">
+    <XRay e="31.4518" l="K-L1" vs="K" hwhm="7.65" src="1" />
+    <XRay e="31.817" l="Kα2" vs="K" rr="0.28386" hwhm="8.225" src="1" />
+    <XRay e="32.1936" l="Kα1" vs="K" rr="0.52378" hwhm="8.11" src="1" />
+    <XRay e="36.1478" l="K-M1" vs="K" hwhm="12.15" src="1" />
+    <XRay e="36.3039" l="K-M2" vs="K" rr="0.05246" hwhm="8.55" src="1" />
+    <XRay e="36.3784" l="Kβ1" vs="K" rr="0.10171" hwhm="9.3" src="1" />
+    <XRay e="36.6445" l="K-M4" vs="K" hwhm="6.935" src="1" />
+    <XRay e="36.6599" l="K-M5" vs="K" hwhm="6.935" src="1" />
+    <XRay e="37.1876" l="K-N1" vs="K" hwhm="8.15" src="1" />
+    <XRay e="37.2488" l="K-N2" vs="K" rr="0.01113" hwhm="9.1" src="1" />
+    <XRay e="37.2609" l="K-N3" vs="K" rr="0.0218" hwhm="7.25" src="1" />
+    <XRay e="37.3481" l="K-N4" vs="K" hwhm="6.64" src="1" />
+    <XRay e="37.3507" l="K-N5" vs="K" hwhm="6.64" src="1" />
+    <XRay e="37.4115" l="K-O1" vs="K" hwhm="6.65" src="2" />
+    <XRay e="37.424" l="K-O2" vs="K" hwhm="6.65" src="2" />
+    <XRay e="37.426" l="K-O3" vs="K" hwhm="6.65" src="2" />
+  </Element>
+  <Element Z="57" symbol="La" name="La">
+    <XRay e="32.6583" l="K-L1" vs="K" hwhm="8.2" src="1" />
+    <XRay e="33.034" l="Kα2" vs="K" rr="0.28418" hwhm="8.775" src="1" />
+    <XRay e="33.4419" l="Kα1" vs="K" rr="0.52219" hwhm="8.66" src="1" />
+    <XRay e="37.5633" l="K-M1" vs="K" hwhm="12.8" src="1" />
+    <XRay e="37.7202" l="K-M2" vs="K" rr="0.05274" hwhm="9.15" src="1" />
+    <XRay e="37.8012" l="Kβ1" vs="K" rr="0.10222" hwhm="10" src="1" />
+    <XRay e="38.0761" l="K-M4" vs="K" hwhm="7.45" src="1" />
+    <XRay e="38.0929" l="K-M5" vs="K" hwhm="7.45" src="1" />
+    <XRay e="38.6542" l="K-N1" vs="K" hwhm="8.75" src="1" />
+    <XRay e="38.7188" l="K-N2" vs="K" rr="0.01131" hwhm="9.615" src="1" />
+    <XRay e="38.7332" l="K-N3" vs="K" rr="0.02215" hwhm="7.825" src="1" />
+    <XRay e="38.8257" l="K-N4" vs="K" hwhm="7.145" src="1" />
+    <XRay e="38.8257" l="K-N5" vs="K" hwhm="7.15" src="1" />
+    <XRay e="38.8923" l="K-O1" vs="K" hwhm="7.1" src="2" />
+    <XRay e="38.9102" l="K-O2" vs="K" hwhm="7.1" src="2" />
+    <XRay e="38.9102" l="K-O3" vs="K" hwhm="7.1" src="2" />
+  </Element>
+  <Element Z="58" symbol="Ce" name="Ce">
+    <XRay e="33.8942" l="K-L1" vs="K" hwhm="8.85" src="1" />
+    <XRay e="34.2788" l="Kα2" vs="K" rr="0.28445" hwhm="9.305" src="1" />
+    <XRay e="34.7196" l="Kα1" vs="K" rr="0.52083" hwhm="9.195" src="1" />
+    <XRay e="39.0084" l="K-M1" vs="K" hwhm="13.4" src="1" />
+    <XRay e="39.1702" l="K-M2" vs="K" rr="0.05299" hwhm="9.75" src="1" />
+    <XRay e="39.2576" l="Kβ1" vs="K" rr="0.10265" hwhm="10.7" src="1" />
+    <XRay e="39.5417" l="K-M4" vs="K" hwhm="7.96" src="1" />
+    <XRay e="39.5597" l="K-M5" vs="K" hwhm="7.96" src="1" />
+    <XRay e="40.1534" l="K-N1" vs="K" hwhm="9.35" src="1" />
+    <XRay e="40.2197" l="K-N2" vs="K" rr="0.01147" hwhm="10.13" src="1" />
+    <XRay e="40.2358" l="K-N3" vs="K" rr="0.02245" hwhm="8.4" src="1" />
+    <XRay e="40.333" l="K-N4" vs="K" hwhm="7.905" src="1" />
+    <XRay e="40.333" l="K-N5" vs="K" hwhm="7.76" src="1" />
+    <XRay e="40.4429" l="K-N6" vs="K" hwhm="7.5505" src="2" />
+    <XRay e="40.4429" l="K-N7" vs="K" hwhm="7.5505" src="2" />
+    <XRay e="40.4052" l="K-O1" vs="K" hwhm="7.6" src="2" />
+    <XRay e="40.4232" l="K-O2" vs="K" hwhm="7.6" src="2" />
+    <XRay e="40.4232" l="K-O3" vs="K" hwhm="7.6" src="2" />
+  </Element>
+  <Element Z="59" symbol="Pr" name="Pr">
+    <XRay e="35.1558" l="K-L1" vs="K" hwhm="9.45" src="1" />
+    <XRay e="35.5502" l="Kα2" vs="K" rr="0.28469" hwhm="9.84" src="1" />
+    <XRay e="36.0263" l="Kα1" vs="K" rr="0.51965" hwhm="9.735" src="1" />
+    <XRay e="40.4796" l="K-M1" vs="K" hwhm="14" src="1" />
+    <XRay e="40.6532" l="K-M2" vs="K" rr="0.0532" hwhm="10.35" src="1" />
+    <XRay e="40.7484" l="Kβ1" vs="K" rr="0.10302" hwhm="11.45" src="1" />
+    <XRay e="41.0395" l="K-M4" vs="K" hwhm="8.475" src="1" />
+    <XRay e="41.0596" l="K-M5" vs="K" hwhm="8.475" src="1" />
+    <XRay e="41.6861" l="K-N1" vs="K" hwhm="9.95" src="1" />
+    <XRay e="41.7543" l="K-N2" vs="K" rr="0.01161" hwhm="10.64" src="1" />
+    <XRay e="41.773" l="K-N3" vs="K" rr="0.02271" hwhm="8.975" src="1" />
+    <XRay e="41.8774" l="K-N4" vs="K" hwhm="8.49" src="1" />
+    <XRay e="41.8774" l="K-N5" vs="K" hwhm="8.365" src="1" />
+    <XRay e="41.9886" l="K-N6" vs="K" hwhm="8.1005" src="2" />
+    <XRay e="41.9886" l="K-N7" vs="K" hwhm="8.1005" src="2" />
+    <XRay e="41.9532" l="K-O1" vs="K" hwhm="8.15" src="2" />
+    <XRay e="41.9683" l="K-O2" vs="K" hwhm="8.15" src="2" />
+    <XRay e="41.9683" l="K-O3" vs="K" hwhm="8.15" src="2" />
+  </Element>
+  <Element Z="60" symbol="Nd" name="Nd">
+    <XRay e="36.4429" l="K-L1" vs="K" hwhm="10.15" src="1" />
+    <XRay e="36.8474" l="Kα2" vs="K" rr="0.28489" hwhm="10.475" src="1" />
+    <XRay e="37.361" l="Kα1" vs="K" rr="0.51862" hwhm="10.38" src="1" />
+    <XRay e="41.9936" l="K-M1" vs="K" hwhm="14.7" src="1" />
+    <XRay e="42.1661" l="K-M2" vs="K" rr="0.05338" hwhm="11.05" src="1" />
+    <XRay e="42.2715" l="Kβ1" vs="K" rr="0.10335" hwhm="12.35" src="1" />
+    <XRay e="42.569" l="K-M4" vs="K" hwhm="9.09" src="1" />
+    <XRay e="42.5912" l="K-M5" vs="K" hwhm="9.09" src="1" />
+    <XRay e="43.2537" l="K-N1" vs="K" hwhm="10.7" src="1" />
+    <XRay e="43.3256" l="K-N2" vs="K" rr="0.01173" hwhm="11.25" src="1" />
+    <XRay e="43.3443" l="K-N3" vs="K" rr="0.02293" hwhm="9.65" src="1" />
+    <XRay e="43.4514" l="K-N4" vs="K" hwhm="9.225" src="1" />
+    <XRay e="43.4514" l="K-N5" vs="K" hwhm="9.1" src="1" />
+    <XRay e="43.5674" l="K-N6" vs="K" hwhm="8.6505" src="2" />
+    <XRay e="43.5674" l="K-N7" vs="K" hwhm="8.6505" src="2" />
+    <XRay e="43.5314" l="K-O1" vs="K" hwhm="8.7" src="2" />
+    <XRay e="43.5478" l="K-O2" vs="K" hwhm="8.7" src="2" />
+    <XRay e="43.5478" l="K-O3" vs="K" hwhm="8.7" src="2" />
+  </Element>
+  <Element Z="61" symbol="Pm" name="Pm">
+    <XRay e="37.7561" l="K-L1" vs="K" hwhm="10.8" src="1" />
+    <XRay e="38.1712" l="Kα2" vs="K" rr="0.28509" hwhm="11.065" src="1" />
+    <XRay e="38.7247" l="Kα1" vs="K" rr="0.51732" hwhm="10.97" src="1" />
+    <XRay e="43.534" l="K-M1" vs="K" hwhm="15.35" src="1" />
+    <XRay e="43.7126" l="K-M2" vs="K" rr="0.05365" hwhm="11.75" src="1" />
+    <XRay e="43.8271" l="Kβ1" vs="K" rr="0.10384" hwhm="13.15" src="1" />
+    <XRay e="44.1325" l="K-M4" vs="K" hwhm="9.66" src="1" />
+    <XRay e="44.1571" l="K-M5" vs="K" hwhm="9.66" src="1" />
+    <XRay e="44.853" l="K-N1" vs="K" hwhm="11.35" src="1" />
+    <XRay e="44.942" l="K-N2" vs="K" rr="0.01186" hwhm="11.815" src="1" />
+    <XRay e="44.942" l="K-N3" vs="K" rr="0.02318" hwhm="10.275" src="1" />
+    <XRay e="45.0636" l="K-N4" vs="K" hwhm="9.94" src="1" />
+    <XRay e="45.0636" l="K-N5" vs="K" hwhm="9.805" src="1" />
+    <XRay e="45.18" l="K-N6" vs="K" hwhm="9.2505" src="2" />
+    <XRay e="45.18" l="K-N7" vs="K" hwhm="9.2505" src="2" />
+    <XRay e="45.146" l="K-O1" vs="K" hwhm="9.3" src="2" />
+    <XRay e="45.162" l="K-O2" vs="K" hwhm="9.3" src="2" />
+    <XRay e="45.162" l="K-O3" vs="K" hwhm="9.3" src="2" />
+  </Element>
+  <Element Z="62" symbol="Sm" name="Sm">
+    <XRay e="39.0974" l="K-L1" vs="K" hwhm="11.55" src="1" />
+    <XRay e="39.5224" l="Kα2" vs="K" rr="0.28526" hwhm="11.75" src="1" />
+    <XRay e="40.118" l="Kα1" vs="K" rr="0.51618" hwhm="11.665" src="1" />
+    <XRay e="45.1114" l="K-M1" vs="K" hwhm="16.1" src="1" />
+    <XRay e="45.2935" l="K-M2" vs="K" rr="0.05389" hwhm="12.5" src="1" />
+    <XRay e="45.4144" l="Kβ1" vs="K" rr="0.10426" hwhm="13.95" src="1" />
+    <XRay e="45.7282" l="K-M4" vs="K" hwhm="10.33" src="1" />
+    <XRay e="45.754" l="K-M5" vs="K" hwhm="10.33" src="1" />
+    <XRay e="46.4885" l="K-N1" vs="K" hwhm="12.1" src="1" />
+    <XRay e="46.5686" l="K-N2" vs="K" rr="0.01198" hwhm="12.48" src="1" />
+    <XRay e="46.5868" l="K-N3" vs="K" rr="0.0234" hwhm="11" src="1" />
+    <XRay e="46.7052" l="K-N4" vs="K" hwhm="10.79" src="1" />
+    <XRay e="46.7052" l="K-N5" vs="K" hwhm="10.64" src="1" />
+    <XRay e="46.8287" l="K-N6" vs="K" hwhm="9.8505" src="2" />
+    <XRay e="46.8287" l="K-N7" vs="K" hwhm="9.8505" src="2" />
+    <XRay e="46.7968" l="K-O1" vs="K" hwhm="9.9" src="2" />
+    <XRay e="46.8129" l="K-O2" vs="K" hwhm="9.9" src="2" />
+    <XRay e="46.8129" l="K-O3" vs="K" hwhm="9.9" src="2" />
+  </Element>
+  <Element Z="63" symbol="Eu" name="Eu">
+    <XRay e="40.467" l="K-L1" vs="K" hwhm="12.35" src="1" />
+    <XRay e="40.9019" l="Kα2" vs="K" rr="0.28542" hwhm="12.435" src="1" />
+    <XRay e="41.5421" l="Kα1" vs="K" rr="0.51519" hwhm="12.36" src="1" />
+    <XRay e="46.719" l="K-M1" vs="K" hwhm="16.85" src="1" />
+    <XRay e="46.9051" l="K-M2" vs="K" rr="0.05409" hwhm="13.25" src="1" />
+    <XRay e="47.0384" l="Kβ1" vs="K" rr="0.10464" hwhm="14.65" src="1" />
+    <XRay e="47.3584" l="K-M4" vs="K" hwhm="11" src="1" />
+    <XRay e="47.3881" l="K-M5" vs="K" hwhm="11" src="1" />
+    <XRay e="48.1588" l="K-N1" vs="K" hwhm="12.85" src="1" />
+    <XRay e="48.2351" l="K-N2" vs="K" rr="0.01208" hwhm="13.15" src="1" />
+    <XRay e="48.2624" l="K-N3" vs="K" rr="0.0236" hwhm="11.725" src="1" />
+    <XRay e="48.3858" l="K-N4" vs="K" hwhm="11.65" src="1" />
+    <XRay e="48.3858" l="K-N5" vs="K" hwhm="11.5" src="1" />
+    <XRay e="48.4872" l="K-O1" vs="K" hwhm="10.55" src="2" />
+    <XRay e="48.497" l="K-O2" vs="K" hwhm="10.55" src="2" />
+    <XRay e="48.497" l="K-O3" vs="K" hwhm="10.55" src="2" />
+  </Element>
+  <Element Z="64" symbol="Gd" name="Gd">
+    <XRay e="41.8635" l="K-L1" vs="K" hwhm="13.1" src="1" />
+    <XRay e="42.3088" l="Kα2" vs="K" rr="0.28571" hwhm="13.135" src="1" />
+    <XRay e="42.9963" l="Kα1" vs="K" rr="0.5136" hwhm="13.06" src="1" />
+    <XRay e="48.3583" l="K-M1" vs="K" hwhm="17.6" src="1" />
+    <XRay e="48.5508" l="K-M2" vs="K" rr="0.0543" hwhm="14" src="1" />
+    <XRay e="48.6951" l="Kβ1" vs="K" rr="0.10494" hwhm="15.35" src="1" />
+    <XRay e="49.0219" l="K-M4" vs="K" hwhm="11.675" src="1" />
+    <XRay e="49.0539" l="K-M5" vs="K" hwhm="11.675" src="1" />
+    <XRay e="49.8633" l="K-N1" vs="K" hwhm="13.65" src="1" />
+    <XRay e="49.9506" l="K-N2" vs="K" rr="0.01222" hwhm="13.815" src="1" />
+    <XRay e="49.9682" l="K-N3" vs="K" rr="0.0239" hwhm="12.45" src="1" />
+    <XRay e="50.0986" l="K-N4" vs="K" hwhm="12.425" src="1" />
+    <XRay e="50.0986" l="K-N5" vs="K" hwhm="12.3" src="1" />
+    <XRay e="50.239" l="K-N6" vs="K" hwhm="11.1505" src="2" />
+    <XRay e="50.239" l="K-N7" vs="K" hwhm="11.1505" src="2" />
+    <XRay e="50.203" l="K-O1" vs="K" hwhm="11.2" src="2" />
+    <XRay e="50.2188" l="K-O2" vs="K" hwhm="11.2" src="2" />
+    <XRay e="50.2188" l="K-O3" vs="K" hwhm="11.2" src="2" />
+  </Element>
+  <Element Z="65" symbol="Tb" name="Tb">
+    <XRay e="43.2877" l="K-L1" vs="K" hwhm="13.9" src="1" />
+    <XRay e="43.7441" l="Kα2" vs="K" rr="0.2861" hwhm="13.865" src="1" />
+    <XRay e="44.4817" l="Kα1" vs="K" rr="0.51299" hwhm="13.8" src="1" />
+    <XRay e="50.0282" l="K-M1" vs="K" hwhm="18.4" src="1" />
+    <XRay e="50.228" l="K-M2" vs="K" rr="0.05446" hwhm="14.8" src="1" />
+    <XRay e="50.3844" l="Kβ1" vs="K" rr="0.10535" hwhm="16" src="1" />
+    <XRay e="50.7207" l="K-M4" vs="K" hwhm="12.405" src="1" />
+    <XRay e="50.7545" l="K-M5" vs="K" hwhm="12.405" src="1" />
+    <XRay e="51.5978" l="K-N1" vs="K" hwhm="14.45" src="1" />
+    <XRay e="51.6855" l="K-N2" vs="K" rr="0.01226" hwhm="14.53" src="1" />
+    <XRay e="51.7107" l="K-N3" vs="K" rr="0.02391" hwhm="13.225" src="1" />
+    <XRay e="51.8487" l="K-N4" vs="K" hwhm="13.25" src="1" />
+    <XRay e="51.8487" l="K-N5" vs="K" hwhm="13.1" src="1" />
+    <XRay e="51.9931" l="K-N6" vs="K" hwhm="11.9005" src="2" />
+    <XRay e="51.9931" l="K-N7" vs="K" hwhm="11.9005" src="2" />
+    <XRay e="51.9567" l="K-O1" vs="K" hwhm="11.95" src="2" />
+    <XRay e="51.9703" l="K-O2" vs="K" hwhm="11.95" src="2" />
+    <XRay e="51.9703" l="K-O3" vs="K" hwhm="11.95" src="2" />
+  </Element>
+  <Element Z="66" symbol="Dy" name="Dy">
+    <XRay e="44.7427" l="K-L1" vs="K" hwhm="14.8" src="1" />
+    <XRay e="45.2079" l="Kα2" vs="K" rr="0.28643" hwhm="14.655" src="1" />
+    <XRay e="45.9984" l="Kα1" vs="K" rr="0.51182" hwhm="14.6" src="1" />
+    <XRay e="51.7417" l="K-M1" vs="K" hwhm="19.25" src="1" />
+    <XRay e="51.9467" l="K-M2" vs="K" rr="0.05468" hwhm="15.65" src="1" />
+    <XRay e="52.1129" l="Kβ1" vs="K" rr="0.10575" hwhm="16.65" src="1" />
+    <XRay e="52.456" l="K-M4" vs="K" hwhm="13.1825" src="1" />
+    <XRay e="52.4936" l="K-M5" vs="K" hwhm="13.1825" src="1" />
+    <XRay e="53.3722" l="K-N1" vs="K" hwhm="15.35" src="1" />
+    <XRay e="53.4567" l="K-N2" vs="K" rr="0.01235" hwhm="15.3" src="1" />
+    <XRay e="53.4956" l="K-N3" vs="K" rr="0.02409" hwhm="14.05" src="1" />
+    <XRay e="53.6343" l="K-N4" vs="K" hwhm="14.125" src="1" />
+    <XRay e="53.6343" l="K-N5" vs="K" hwhm="13.95" src="1" />
+    <XRay e="53.7843" l="K-N6" vs="K" hwhm="12.6005" src="2" />
+    <XRay e="53.7843" l="K-N7" vs="K" hwhm="12.6005" src="2" />
+    <XRay e="53.7256" l="K-O1" vs="K" hwhm="12.65" src="2" />
+    <XRay e="53.7622" l="K-O2" vs="K" hwhm="12.65" src="2" />
+    <XRay e="53.7622" l="K-O3" vs="K" hwhm="12.65" src="2" />
+  </Element>
+  <Element Z="67" symbol="Ho" name="Ho">
+    <XRay e="46.2235" l="K-L1" vs="K" hwhm="15.7" src="1" />
+    <XRay e="46.6999" l="Kα2" vs="K" rr="0.28672" hwhm="15.495" src="1" />
+    <XRay e="47.5466" l="Kα1" vs="K" rr="0.51079" hwhm="15.45" src="1" />
+    <XRay e="53.4894" l="K-M1" vs="K" hwhm="20.15" src="1" />
+    <XRay e="53.6949" l="K-M2" vs="K" rr="0.05487" hwhm="16.6" src="1" />
+    <XRay e="53.8765" l="Kβ1" vs="K" rr="0.10609" hwhm="17.35" src="1" />
+    <XRay e="54.2262" l="K-M4" vs="K" hwhm="14.015" src="1" />
+    <XRay e="54.2663" l="K-M5" vs="K" hwhm="14.015" src="1" />
+    <XRay e="55.182" l="K-N1" vs="K" hwhm="16.25" src="1" />
+    <XRay e="55.2742" l="K-N2" vs="K" rr="0.01244" hwhm="16.115" src="1" />
+    <XRay e="55.3111" l="K-N3" vs="K" rr="0.02425" hwhm="14.925" src="1" />
+    <XRay e="55.4567" l="K-N4" vs="K" hwhm="15.025" src="1" />
+    <XRay e="55.4567" l="K-N5" vs="K" hwhm="14.85" src="1" />
+    <XRay e="55.614" l="K-N6" vs="K" hwhm="13.4005" src="2" />
+    <XRay e="55.614" l="K-N7" vs="K" hwhm="13.4005" src="2" />
+    <XRay e="55.5665" l="K-O1" vs="K" hwhm="13.45" src="2" />
+    <XRay e="55.5974" l="K-O2" vs="K" hwhm="13.45" src="2" />
+    <XRay e="55.5974" l="K-O3" vs="K" hwhm="13.45" src="2" />
+  </Element>
+  <Element Z="68" symbol="Er" name="Er">
+    <XRay e="47.7342" l="K-L1" vs="K" hwhm="16.6" src="1" />
+    <XRay e="48.2212" l="Kα2" vs="K" rr="0.28697" hwhm="16.34" src="1" />
+    <XRay e="49.1276" l="Kα1" vs="K" rr="0.50988" hwhm="16.3" src="1" />
+    <XRay e="55.279" l="K-M1" vs="K" hwhm="21.05" src="1" />
+    <XRay e="55.4797" l="K-M2" vs="K" rr="0.05503" hwhm="17.55" src="1" />
+    <XRay e="55.6737" l="Kβ1" vs="K" rr="0.1064" hwhm="18" src="1" />
+    <XRay e="56.0322" l="K-M4" vs="K" hwhm="14.85" src="1" />
+    <XRay e="56.0762" l="K-M5" vs="K" hwhm="14.85" src="1" />
+    <XRay e="57.0364" l="K-N1" vs="K" hwhm="17.15" src="1" />
+    <XRay e="57.1193" l="K-N2" vs="K" rr="0.01251" hwhm="16.93" src="1" />
+    <XRay e="57.1655" l="K-N3" vs="K" rr="0.02439" hwhm="15.825" src="1" />
+    <XRay e="57.3088" l="K-N4" vs="K" hwhm="15.925" src="1" />
+    <XRay e="57.3179" l="K-N5" vs="K" hwhm="15.725" src="1" />
+    <XRay e="57.4812" l="K-N6" vs="K" hwhm="14.2005" src="2" />
+    <XRay e="57.4812" l="K-N7" vs="K" hwhm="14.2005" src="2" />
+    <XRay e="57.4257" l="K-O1" vs="K" hwhm="14.25" src="2" />
+    <XRay e="57.4561" l="K-O2" vs="K" hwhm="14.25" src="2" />
+    <XRay e="57.4561" l="K-O3" vs="K" hwhm="14.25" src="2" />
+  </Element>
+  <Element Z="69" symbol="Tm" name="Tm">
+    <XRay e="49.2739" l="K-L1" vs="K" hwhm="17.55" src="1" />
+    <XRay e="49.7727" l="Kα2" vs="K" rr="0.28753" hwhm="17.23" src="1" />
+    <XRay e="50.7416" l="Kα1" vs="K" rr="0.50868" hwhm="17.2" src="1" />
+    <XRay e="57.0828" l="K-M1" vs="K" hwhm="22" src="1" />
+    <XRay e="57.2998" l="K-M2" vs="K" rr="0.0552" hwhm="18.525" src="1" />
+    <XRay e="57.5051" l="Kβ1" vs="K" rr="0.1067" hwhm="18.65" src="1" />
+    <XRay e="57.875" l="K-M4" vs="K" hwhm="15.735" src="1" />
+    <XRay e="57.9219" l="K-M5" vs="K" hwhm="15.735" src="1" />
+    <XRay e="58.9179" l="K-N1" vs="K" hwhm="18.15" src="1" />
+    <XRay e="59.0037" l="K-N2" vs="K" rr="0.01259" hwhm="17.8" src="1" />
+    <XRay e="59.053" l="K-N3" vs="K" rr="0.02453" hwhm="16.75" src="1" />
+    <XRay e="59.21" l="K-N4" vs="K" hwhm="16.875" src="1" />
+    <XRay e="59.21" l="K-N5" vs="K" hwhm="16.65" src="1" />
+    <XRay e="59.3843" l="K-N6" vs="K" hwhm="15.0505" src="2" />
+    <XRay e="59.3843" l="K-N7" vs="K" hwhm="15.0505" src="2" />
+    <XRay e="59.3364" l="K-O1" vs="K" hwhm="15.1" src="2" />
+    <XRay e="59.3573" l="K-O2" vs="K" hwhm="15.1" src="2" />
+    <XRay e="59.3573" l="K-O3" vs="K" hwhm="15.1" src="2" />
+    <XRay e="10.1104" l="L1-N6" vs="L1" hwhm="2.7355" src="2" />
+    <XRay e="10.1104" l="L1-N7" vs="L1" hwhm="2.7355" src="2" />
+    <XRay e="10.0625" l="L1-O1" vs="L1" rr="0.00000017" hwhm="2.785" src="2" />
+    <XRay e="10.0834" l="L1-O2" vs="L1" rr="0.010135" hwhm="2.785" src="2" />
+    <XRay e="10.0834" l="L1-O3" vs="L1" rr="0.01366" hwhm="2.785" src="2" />
+  </Element>
+  <Element Z="70" symbol="Yb" name="Yb">
+    <XRay e="50.8459" l="K-L1" vs="K" hwhm="18.6" src="1" />
+    <XRay e="51.3541" l="Kα2" vs="K" rr="0.28802" hwhm="18.18" src="1" />
+    <XRay e="52.3887" l="Kα1" vs="K" rr="0.50761" hwhm="18.155" src="1" />
+    <XRay e="58.9342" l="K-M1" vs="K" hwhm="22.95" src="1" />
+    <XRay e="59.1593" l="K-M2" vs="K" rr="0.05535" hwhm="19.55" src="1" />
+    <XRay e="59.3825" l="Kβ1" vs="K" rr="0.10697" hwhm="19.35" src="1" />
+    <XRay e="59.756" l="K-M4" vs="K" hwhm="16.675" src="1" />
+    <XRay e="59.8045" l="K-M5" vs="K" hwhm="16.675" src="1" />
+    <XRay e="60.8451" l="K-N1" vs="K" hwhm="19.15" src="1" />
+    <XRay e="60.9356" l="K-N2" vs="K" rr="0.01266" hwhm="18.75" src="1" />
+    <XRay e="60.9888" l="K-N3" vs="K" rr="0.02465" hwhm="17.75" src="1" />
+    <XRay e="61.1342" l="K-N4" vs="K" hwhm="17.85" src="1" />
+    <XRay e="61.1474" l="K-N5" vs="K" hwhm="17.6" src="1" />
+    <XRay e="61.326" l="K-N6" vs="K" hwhm="16.015" src="1" />
+    <XRay e="61.326" l="K-N7" vs="K" hwhm="16.015" src="1" />
+    <XRay e="61.2782" l="K-O1" vs="K" hwhm="16" src="2" />
+    <XRay e="61.3089" l="K-O2" vs="K" hwhm="16" src="2" />
+    <XRay e="61.3089" l="K-O3" vs="K" hwhm="16" src="2" />
+    <XRay e="10.0897" l="L1-N2" vs="L1" rr="0.077541" hwhm="5.35" src="1" />
+    <XRay e="10.1429" l="L1-N3" vs="L1" rr="0.10777" hwhm="4.35" src="1" />
+    <XRay e="10.2883" l="L1-N4" vs="L1" rr="0.0011368" hwhm="4.45" src="1" />
+    <XRay e="10.3015" l="L1-N5" vs="L1" rr="0.0017627" hwhm="4.2" src="1" />
+    <XRay e="10.4801" l="L1-N6" vs="L1" hwhm="2.615" src="1" />
+    <XRay e="10.4801" l="L1-N7" vs="L1" hwhm="2.615" src="1" />
+    <XRay e="10.4323" l="L1-O1" vs="L1" rr="0.00000019" hwhm="2.815" src="2" />
+    <XRay e="10.463" l="L1-O2" vs="L1" rr="0.01012" hwhm="2.815" src="2" />
+    <XRay e="10.463" l="L1-O3" vs="L1" rr="0.013438" hwhm="2.815" src="2" />
+  </Element>
+  <Element Z="71" symbol="Lu" name="Lu">
+    <XRay e="52.4434" l="K-L1" vs="K" hwhm="19.65" src="1" />
+    <XRay e="52.9652" l="Kα2" vs="K" rr="0.28835" hwhm="19.18" src="1" />
+    <XRay e="54.0697" l="Kα1" vs="K" rr="0.50618" hwhm="19.165" src="1" />
+    <XRay e="60.8226" l="K-M1" vs="K" hwhm="24" src="1" />
+    <XRay e="61.0503" l="K-M2" vs="K" rr="0.05551" hwhm="20.6" src="1" />
+    <XRay e="61.2902" l="Kβ1" vs="K" rr="0.10727" hwhm="19.95" src="1" />
+    <XRay e="61.6744" l="K-M4" vs="K" hwhm="17.665" src="1" />
+    <XRay e="61.7253" l="K-M5" vs="K" hwhm="17.665" src="1" />
+    <XRay e="62.8076" l="K-N1" vs="K" hwhm="20.25" src="1" />
+    <XRay e="62.9037" l="K-N2" vs="K" rr="0.01276" hwhm="19.7" src="1" />
+    <XRay e="62.9545" l="K-N3" vs="K" rr="0.02488" hwhm="18.775" src="1" />
+    <XRay e="63.109" l="K-N4" vs="K" hwhm="18.85" src="1" />
+    <XRay e="63.1188" l="K-N5" vs="K" hwhm="18.6" src="1" />
+    <XRay e="63.3069" l="K-N6" vs="K" hwhm="16.965" src="1" />
+    <XRay e="63.3069" l="K-N7" vs="K" hwhm="16.965" src="1" />
+    <XRay e="63.257" l="K-O1" vs="K" hwhm="16.9" src="2" />
+    <XRay e="63.2858" l="K-O2" vs="K" hwhm="16.9" src="2" />
+    <XRay e="63.2858" l="K-O3" vs="K" hwhm="16.9" src="2" />
+    <XRay e="63.3092" l="K-O4" vs="K" />
+    <XRay e="63.3092" l="K-O5" vs="K" />
+    <XRay e="10.3642" l="L1-N1" vs="L1" rr="0.00000117" hwhm="6" src="1" />
+    <XRay e="10.4603" l="L1-N2" vs="L1" rr="0.078163" hwhm="5.45" src="1" />
+    <XRay e="10.5111" l="L1-N3" vs="L1" rr="0.10753" hwhm="4.525" src="1" />
+    <XRay e="10.6656" l="L1-N4" vs="L1" rr="0.0011854" hwhm="4.6" src="1" />
+    <XRay e="10.6754" l="L1-N5" vs="L1" rr="0.0018401" hwhm="4.35" src="1" />
+    <XRay e="10.8635" l="L1-N6" vs="L1" hwhm="2.715" src="1" />
+    <XRay e="10.8635" l="L1-N7" vs="L1" hwhm="2.715" src="1" />
+    <XRay e="10.8136" l="L1-O1" vs="L1" rr="0.00000021" hwhm="2.82" src="2" />
+    <XRay e="10.8424" l="L1-O2" vs="L1" rr="0.010707" hwhm="2.82" src="2" />
+    <XRay e="10.8424" l="L1-O3" vs="L1" rr="0.014118" hwhm="2.82" src="2" />
+    <XRay e="10.8658" l="L1-O4" vs="L1" />
+    <XRay e="10.8658" l="L1-O5" vs="L1" />
+    <XRay e="10.1438" l="L2-N4" vs="L2" rr="0.14784" hwhm="4.13" src="1" />
+    <XRay e="10.1536" l="L2-N5" vs="L2" rr="0.00000524" hwhm="3.88" src="1" />
+    <XRay e="10.3417" l="L2-N6" vs="L2" rr="0.00030435" hwhm="2.245" src="1" />
+    <XRay e="10.3417" l="L2-N7" vs="L2" hwhm="2.245" src="1" />
+    <XRay e="10.2918" l="L2-O1" vs="L2" rr="0.00088917" hwhm="2.51" src="2" />
+    <XRay e="10.3206" l="L2-O2" vs="L2" rr="0.00000002" hwhm="2.51" src="2" />
+    <XRay e="10.3206" l="L2-O3" vs="L2" rr="0.00002203" hwhm="2.51" src="2" />
+    <XRay e="10.344" l="L2-O4" vs="L2" rr="0.00064852" />
+    <XRay e="10.344" l="L2-O5" vs="L2" />
+  </Element>
+  <Element Z="72" symbol="Hf" name="Hf">
+    <XRay e="54.0801" l="K-L1" vs="K" hwhm="20.8" src="1" />
+    <XRay e="54.6114" l="Kα2" vs="K" rr="0.28865" hwhm="20.235" src="1" />
+    <XRay e="55.7901" l="Kα1" vs="K" rr="0.50491" hwhm="20.225" src="1" />
+    <XRay e="62.7499" l="K-M1" vs="K" hwhm="25.05" src="1" />
+    <XRay e="62.9854" l="K-M2" vs="K" rr="0.05566" hwhm="21.7" src="1" />
+    <XRay e="63.2432" l="Kβ1" vs="K" rr="0.10754" hwhm="20.75" src="1" />
+    <XRay e="63.6344" l="K-M4" vs="K" hwhm="18.71" src="1" />
+    <XRay e="63.6891" l="K-M5" vs="K" hwhm="18.71" src="1" />
+    <XRay e="64.8127" l="K-N1" vs="K" hwhm="21.35" src="1" />
+    <XRay e="64.9138" l="K-N2" vs="K" rr="0.01285" hwhm="20.75" src="1" />
+    <XRay e="64.9704" l="K-N3" vs="K" rr="0.02508" hwhm="19.875" src="1" />
+    <XRay e="65.127" l="K-N4" vs="K" hwhm="19.9" src="1" />
+    <XRay e="65.1371" l="K-N5" vs="K" hwhm="19.7" src="1" />
+    <XRay e="65.3337" l="K-N6" vs="K" hwhm="17.985" src="1" />
+    <XRay e="65.3337" l="K-N7" vs="K" hwhm="17.965" src="1" />
+    <XRay e="65.2859" l="K-O1" vs="K" hwhm="17.9" src="2" />
+    <XRay e="65.3127" l="K-O2" vs="K" hwhm="17.9" src="2" />
+    <XRay e="65.3202" l="K-O3" vs="K" hwhm="17.9" src="2" />
+    <XRay e="65.3442" l="K-O4" vs="K" />
+    <XRay e="65.3442" l="K-O5" vs="K" />
+    <XRay e="10.7326" l="L1-N1" vs="L1" rr="0.0000013" hwhm="6.25" src="1" />
+    <XRay e="10.8337" l="L1-N2" vs="L1" rr="0.078982" hwhm="5.65" src="1" />
+    <XRay e="10.8903" l="L1-N3" vs="L1" rr="0.10721" hwhm="4.775" src="1" />
+    <XRay e="11.0469" l="L1-N4" vs="L1" rr="0.0012346" hwhm="4.8" src="1" />
+    <XRay e="11.057" l="L1-N5" vs="L1" rr="0.0019218" hwhm="4.6" src="1" />
+    <XRay e="11.2536" l="L1-N6" vs="L1" hwhm="2.885" src="1" />
+    <XRay e="11.2536" l="L1-N7" vs="L1" hwhm="2.865" src="1" />
+    <XRay e="11.2058" l="L1-O1" vs="L1" rr="0.00000025" hwhm="2.865" src="2" />
+    <XRay e="11.2326" l="L1-O2" vs="L1" rr="0.011291" hwhm="2.865" src="2" />
+    <XRay e="11.2401" l="L1-O3" vs="L1" rr="0.014784" hwhm="2.865" src="2" />
+    <XRay e="11.2641" l="L1-O4" vs="L1" />
+    <XRay e="11.2641" l="L1-O5" vs="L1" />
+    <XRay e="10.2013" l="L2-N1" vs="L2" rr="0.0053819" hwhm="5.685" src="1" />
+    <XRay e="10.3024" l="L2-N2" vs="L2" rr="0.00000018" hwhm="5.085" src="1" />
+    <XRay e="10.359" l="L2-N3" vs="L2" rr="0.0001739" hwhm="4.21" src="1" />
+    <XRay e="10.5156" l="L2-N4" vs="L2" rr="0.14918" hwhm="4.235" src="1" />
+    <XRay e="10.5257" l="L2-N5" vs="L2" rr="0.00000568" hwhm="4.035" src="1" />
+    <XRay e="10.7223" l="L2-N6" vs="L2" rr="0.00033544" hwhm="2.32" src="1" />
+    <XRay e="10.7223" l="L2-N7" vs="L2" hwhm="2.3" src="1" />
+    <XRay e="10.6745" l="L2-O1" vs="L2" rr="0.00091979" hwhm="2.56" src="2" />
+    <XRay e="10.7013" l="L2-O2" vs="L2" rr="0.00000003" hwhm="2.56" src="2" />
+    <XRay e="10.7088" l="L2-O3" vs="L2" rr="0.00002398" hwhm="2.56" src="2" />
+    <XRay e="10.7328" l="L2-O4" vs="L2" rr="0.001594" />
+    <XRay e="10.7328" l="L2-O5" vs="L2" />
+  </Element>
+  <Element Z="73" symbol="Ta" name="Ta">
+    <XRay e="55.7349" l="K-L1" vs="K" hwhm="21.95" src="1" />
+    <XRay e="56.2803" l="Kα2" vs="K" rr="0.28897" hwhm="21.295" src="1" />
+    <XRay e="57.5353" l="Kα1" vs="K" rr="0.50375" hwhm="21.29" src="1" />
+    <XRay e="64.7084" l="K-M1" vs="K" hwhm="26.1" src="1" />
+    <XRay e="64.9477" l="K-M2" vs="K" rr="0.05579" hwhm="22.85" src="1" />
+    <XRay e="65.2224" l="Kβ1" vs="K" rr="0.10767" hwhm="21.8" src="1" />
+    <XRay e="65.6232" l="K-M4" vs="K" hwhm="19.755" src="1" />
+    <XRay e="65.6813" l="K-M5" vs="K" hwhm="19.755" src="1" />
+    <XRay e="66.8509" l="K-N1" vs="K" hwhm="22.45" src="1" />
+    <XRay e="66.9516" l="K-N2" vs="K" rr="0.01294" hwhm="21.8" src="1" />
+    <XRay e="67.0119" l="K-N3" vs="K" rr="0.0253" hwhm="20.95" src="1" />
+    <XRay e="67.1751" l="K-N4" vs="K" hwhm="20.95" src="1" />
+    <XRay e="67.1871" l="K-N5" vs="K" hwhm="20.775" src="1" />
+    <XRay e="67.3889" l="K-N6" vs="K" hwhm="18.99" src="1" />
+    <XRay e="67.3908" l="K-N7" vs="K" hwhm="18.97" src="1" />
+    <XRay e="67.3453" l="K-O1" vs="K" hwhm="18.9" src="2" />
+    <XRay e="67.3715" l="K-O2" vs="K" hwhm="18.9" src="2" />
+    <XRay e="67.38" l="K-O3" vs="K" hwhm="18.9" src="2" />
+    <XRay e="67.4107" l="K-O4" vs="K" />
+    <XRay e="67.4107" l="K-O5" vs="K" />
+    <XRay e="11.116" l="L1-N1" vs="L1" rr="0.00000145" hwhm="6.5" src="1" />
+    <XRay e="11.2167" l="L1-N2" vs="L1" rr="0.079652" hwhm="5.85" src="1" />
+    <XRay e="11.277" l="L1-N3" vs="L1" rr="0.10691" hwhm="5" src="1" />
+    <XRay e="11.4402" l="L1-N4" vs="L1" rr="0.0012872" hwhm="5" src="1" />
+    <XRay e="11.4522" l="L1-N5" vs="L1" rr="0.0020066" hwhm="4.825" src="1" />
+    <XRay e="11.654" l="L1-N6" vs="L1" hwhm="3.04" src="1" />
+    <XRay e="11.6559" l="L1-N7" vs="L1" hwhm="3.02" src="1" />
+    <XRay e="11.6104" l="L1-O1" vs="L1" rr="0.00000028" hwhm="2.84" src="2" />
+    <XRay e="11.6366" l="L1-O2" vs="L1" rr="0.011861" hwhm="2.84" src="2" />
+    <XRay e="11.6451" l="L1-O3" vs="L1" rr="0.015399" hwhm="2.84" src="2" />
+    <XRay e="11.6758" l="L1-O4" vs="L1" />
+    <XRay e="11.6758" l="L1-O5" vs="L1" />
+    <XRay e="10.5706" l="L2-N1" vs="L2" rr="0.0053867" hwhm="5.845" src="1" />
+    <XRay e="10.6713" l="L2-N2" vs="L2" rr="0.0000002" hwhm="5.195" src="1" />
+    <XRay e="10.7316" l="L2-N3" vs="L2" rr="0.00018017" hwhm="4.345" src="1" />
+    <XRay e="10.8948" l="L2-N4" vs="L2" rr="0.15032" hwhm="4.345" src="1" />
+    <XRay e="10.9068" l="L2-N5" vs="L2" rr="0.00000613" hwhm="4.17" src="1" />
+    <XRay e="11.1086" l="L2-N6" vs="L2" rr="0.00036679" hwhm="2.385" src="1" />
+    <XRay e="11.1105" l="L2-N7" vs="L2" hwhm="2.365" src="1" />
+    <XRay e="11.065" l="L2-O1" vs="L2" rr="0.00094843" hwhm="2.625" src="2" />
+    <XRay e="11.0912" l="L2-O2" vs="L2" rr="0.00000003" hwhm="2.625" src="2" />
+    <XRay e="11.0997" l="L2-O3" vs="L2" rr="0.00002594" hwhm="2.625" src="2" />
+    <XRay e="11.1304" l="L2-O4" vs="L2" rr="0.0027778" />
+    <XRay e="11.1304" l="L2-O5" vs="L2" />
+  </Element>
+  <Element Z="74" symbol="W" name="W">
+    <XRay e="57.4252" l="K-L1" vs="K" hwhm="23.2" src="1" />
+    <XRay e="57.981" l="Kα2" vs="K" rr="0.28917" hwhm="22.46" src="1" />
+    <XRay e="59.3182" l="Kα1" vs="K" rr="0.50243" hwhm="22.455" src="1" />
+    <XRay e="66.7054" l="K-M1" vs="K" hwhm="27.3" src="1" />
+    <XRay e="66.9501" l="K-M2" vs="K" rr="0.05588" hwhm="24.1" src="1" />
+    <XRay e="67.244" l="Kβ1" vs="K" rr="0.10808" hwhm="23.25" src="1" />
+    <XRay e="67.6534" l="K-M4" vs="K" hwhm="20.9" src="1" />
+    <XRay e="67.7158" l="K-M5" vs="K" hwhm="20.9" src="1" />
+    <XRay e="68.93" l="K-N1" vs="K" hwhm="23.7" src="1" />
+    <XRay e="69.0334" l="K-N2" vs="K" rr="0.01305" hwhm="22.95" src="1" />
+    <XRay e="69.0997" l="K-N3" vs="K" rr="0.02554" hwhm="22.15" src="1" />
+    <XRay e="69.2662" l="K-N4" vs="K" hwhm="22.1" src="1" />
+    <XRay e="69.2796" l="K-N5" vs="K" hwhm="21.95" src="1" />
+    <XRay e="69.4871" l="K-N6" vs="K" hwhm="20.1" src="1" />
+    <XRay e="69.4892" l="K-N7" vs="K" hwhm="20.08" src="1" />
+    <XRay e="69.4479" l="K-O1" vs="K" hwhm="20" src="2" />
+    <XRay e="69.4782" l="K-O2" vs="K" hwhm="20" src="2" />
+    <XRay e="69.4894" l="K-O3" vs="K" hwhm="20" src="2" />
+    <XRay e="69.5189" l="K-O4" vs="K" />
+    <XRay e="69.5189" l="K-O5" vs="K" />
+    <XRay e="10.2282" l="L1-M4" vs="L1" rr="0.0095044" hwhm="4" src="1" />
+    <XRay e="10.2906" l="L1-M5" vs="L1" rr="0.014226" hwhm="4" src="1" />
+    <XRay e="11.5048" l="L1-N1" vs="L1" rr="0.00000162" hwhm="6.8" src="1" />
+    <XRay e="11.6082" l="L1-N2" vs="L1" rr="0.080384" hwhm="6.05" src="1" />
+    <XRay e="11.6745" l="L1-N3" vs="L1" rr="0.1066" hwhm="5.25" src="1" />
+    <XRay e="11.841" l="L1-N4" vs="L1" rr="0.0013443" hwhm="5.2" src="1" />
+    <XRay e="11.8544" l="L1-N5" vs="L1" rr="0.0020972" hwhm="5.05" src="1" />
+    <XRay e="12.0619" l="L1-N6" vs="L1" hwhm="3.2" src="1" />
+    <XRay e="12.064" l="L1-N7" vs="L1" hwhm="3.18" src="1" />
+    <XRay e="12.0227" l="L1-O1" vs="L1" rr="0.00000032" hwhm="2.855" src="2" />
+    <XRay e="12.053" l="L1-O2" vs="L1" rr="0.012449" hwhm="2.855" src="2" />
+    <XRay e="12.0642" l="L1-O3" vs="L1" rr="0.016002" hwhm="2.855" src="2" />
+    <XRay e="12.0937" l="L1-O4" vs="L1" />
+    <XRay e="12.0937" l="L1-O5" vs="L1" />
+    <XRay e="10.949" l="L2-N1" vs="L2" rr="0.0054035" hwhm="6.06" src="1" />
+    <XRay e="11.0524" l="L2-N2" vs="L2" rr="0.00000023" hwhm="5.31" src="1" />
+    <XRay e="11.1187" l="L2-N3" vs="L2" rr="0.0001868" hwhm="4.51" src="1" />
+    <XRay e="11.2852" l="L2-N4" vs="L2" rr="0.15158" hwhm="4.46" src="1" />
+    <XRay e="11.2986" l="L2-N5" vs="L2" rr="0.00000663" hwhm="4.31" src="1" />
+    <XRay e="11.5061" l="L2-N6" vs="L2" rr="0.00040007" hwhm="2.46" src="1" />
+    <XRay e="11.5082" l="L2-N7" vs="L2" hwhm="2.44" src="1" />
+    <XRay e="11.4669" l="L2-O1" vs="L2" rr="0.00097835" hwhm="2.715" src="2" />
+    <XRay e="11.4972" l="L2-O2" vs="L2" rr="0.00000004" hwhm="2.715" src="2" />
+    <XRay e="11.5084" l="L2-O3" vs="L2" rr="0.00002798" hwhm="2.715" src="2" />
+    <XRay e="11.5379" l="L2-O4" vs="L2" rr="0.004194" />
+    <XRay e="11.5379" l="L2-O5" vs="L2" />
+    <XRay e="10.1689" l="L3-N6" vs="L3" rr="0.00006659" hwhm="2.455" src="1" />
+    <XRay e="10.171" l="L3-N7" vs="L3" rr="0.00037396" hwhm="2.435" src="1" />
+    <XRay e="10.1297" l="L3-O1" vs="L3" rr="0.0016197" hwhm="2.54" src="2" />
+    <XRay e="10.16" l="L3-O2" vs="L3" rr="0.00001327" hwhm="2.54" src="2" />
+    <XRay e="10.1712" l="L3-O3" vs="L3" rr="0.00001271" hwhm="2.54" src="2" />
+    <XRay e="10.2007" l="L3-O4" vs="L3" />
+    <XRay e="10.2007" l="L3-O5" vs="L3" />
+  </Element>
+  <Element Z="75" symbol="Re" name="Re">
+    <XRay e="59.1497" l="K-L1" vs="K" hwhm="24.45" src="1" />
+    <XRay e="59.7177" l="Kα2" vs="K" rr="0.28965" hwhm="23.575" src="1" />
+    <XRay e="61.1411" l="Kα1" vs="K" rr="0.50095" hwhm="23.575" src="1" />
+    <XRay e="68.7447" l="K-M1" vs="K" hwhm="28.4" src="1" />
+    <XRay e="68.9948" l="K-M2" vs="K" rr="0.056" hwhm="25.3" src="1" />
+    <XRay e="69.3091" l="Kβ1" vs="K" rr="0.10829" hwhm="24.55" src="1" />
+    <XRay e="69.7275" l="K-M4" vs="K" hwhm="21.995" src="1" />
+    <XRay e="69.7935" l="K-M5" vs="K" hwhm="21.995" src="1" />
+    <XRay e="71.0514" l="K-N1" vs="K" hwhm="24.85" src="1" />
+    <XRay e="71.1585" l="K-N2" vs="K" rr="0.01318" hwhm="24.05" src="1" />
+    <XRay e="71.232" l="K-N3" vs="K" rr="0.02583" hwhm="23.3" src="1" />
+    <XRay e="71.4027" l="K-N4" vs="K" hwhm="23.15" src="1" />
+    <XRay e="71.4162" l="K-N5" vs="K" hwhm="23.05" src="1" />
+    <XRay e="71.6283" l="K-N6" vs="K" hwhm="21.175" src="1" />
+    <XRay e="71.6307" l="K-N7" vs="K" hwhm="21.155" src="1" />
+    <XRay e="71.5936" l="K-O1" vs="K" hwhm="21.1" src="2" />
+    <XRay e="71.6308" l="K-O2" vs="K" hwhm="21.1" src="2" />
+    <XRay e="71.6418" l="K-O3" vs="K" hwhm="21.1" src="2" />
+    <XRay e="71.6729" l="K-O4" vs="K" />
+    <XRay e="71.6729" l="K-O5" vs="K" />
+    <XRay e="10.1594" l="L1-M3" vs="L1" rr="0.40521" hwhm="6.8" src="1" />
+    <XRay e="10.5778" l="L1-M4" vs="L1" rr="0.009811" hwhm="4.245" src="1" />
+    <XRay e="10.6438" l="L1-M5" vs="L1" rr="0.014687" hwhm="4.245" src="1" />
+    <XRay e="11.9017" l="L1-N1" vs="L1" rr="0.00000179" hwhm="7.1" src="1" />
+    <XRay e="12.0088" l="L1-N2" vs="L1" rr="0.081158" hwhm="6.3" src="1" />
+    <XRay e="12.0823" l="L1-N3" vs="L1" rr="0.10635" hwhm="5.55" src="1" />
+    <XRay e="12.253" l="L1-N4" vs="L1" rr="0.0014014" hwhm="5.4" src="1" />
+    <XRay e="12.2665" l="L1-N5" vs="L1" rr="0.0021909" hwhm="5.3" src="1" />
+    <XRay e="12.4786" l="L1-N6" vs="L1" hwhm="3.425" src="1" />
+    <XRay e="12.481" l="L1-N7" vs="L1" hwhm="3.405" src="1" />
+    <XRay e="12.4439" l="L1-O1" vs="L1" rr="0.00000037" hwhm="3.14" src="2" />
+    <XRay e="12.4811" l="L1-O2" vs="L1" rr="0.013016" hwhm="3.14" src="2" />
+    <XRay e="12.4921" l="L1-O3" vs="L1" rr="0.016557" hwhm="3.14" src="2" />
+    <XRay e="12.5232" l="L1-O4" vs="L1" />
+    <XRay e="12.5232" l="L1-O5" vs="L1" />
+    <XRay e="10.0098" l="Lβ1" vs="L2" rr="0.81182" hwhm="3.37" src="1" />
+    <XRay e="10.0758" l="L2-M5" vs="L2" rr="0.00003428" hwhm="3.37" src="1" />
+    <XRay e="11.3337" l="L2-N1" vs="L2" rr="0.0054188" hwhm="6.225" src="1" />
+    <XRay e="11.4408" l="L2-N2" vs="L2" rr="0.00000025" hwhm="5.425" src="1" />
+    <XRay e="11.5143" l="L2-N3" vs="L2" rr="0.00019357" hwhm="4.675" src="1" />
+    <XRay e="11.685" l="L2-N4" vs="L2" rr="0.15294" hwhm="4.525" src="1" />
+    <XRay e="11.6985" l="L2-N5" vs="L2" rr="0.00000715" hwhm="4.425" src="1" />
+    <XRay e="11.9106" l="L2-N6" vs="L2" rr="0.00043297" hwhm="2.55" src="1" />
+    <XRay e="11.913" l="L2-N7" vs="L2" hwhm="2.53" src="1" />
+    <XRay e="11.8759" l="L2-O1" vs="L2" rr="0.0010076" hwhm="2.79" src="2" />
+    <XRay e="11.9131" l="L2-O2" vs="L2" rr="0.00000004" hwhm="2.79" src="2" />
+    <XRay e="11.9241" l="L2-O3" vs="L2" rr="0.00003013" hwhm="2.79" src="2" />
+    <XRay e="11.9552" l="L2-O4" vs="L2" rr="0.0058064" />
+    <XRay e="11.9552" l="L2-O5" vs="L2" />
+    <XRay e="10.0174" l="L3-N2" vs="L3" rr="0.00008964" hwhm="5.425" src="1" />
+    <XRay e="10.0909" l="L3-N3" vs="L3" rr="0.00008866" hwhm="4.675" src="1" />
+    <XRay e="10.2616" l="L3-N4" vs="L3" rr="0.01436" hwhm="4.525" src="1" />
+    <XRay e="10.2751" l="L3-N5" vs="L3" rr="0.12892" hwhm="4.425" src="1" />
+    <XRay e="10.4872" l="L3-N6" vs="L3" rr="0.0000724" hwhm="2.55" src="1" />
+    <XRay e="10.4896" l="L3-N7" vs="L3" rr="0.00040641" hwhm="2.53" src="1" />
+    <XRay e="10.4525" l="L3-O1" vs="L3" rr="0.0016866" hwhm="2.57" src="2" />
+    <XRay e="10.4897" l="L3-O2" vs="L3" rr="0.00001415" hwhm="2.57" src="2" />
+    <XRay e="10.5007" l="L3-O3" vs="L3" rr="0.00001362" hwhm="2.57" src="2" />
+    <XRay e="10.5318" l="L3-O4" vs="L3" />
+    <XRay e="10.5318" l="L3-O5" vs="L3" />
+  </Element>
+  <Element Z="76" symbol="Os" name="Os">
+    <XRay e="60.9028" l="K-L1" vs="K" hwhm="25.9" src="1" />
+    <XRay e="61.4858" l="Kα2" vs="K" rr="0.29007" hwhm="24.845" src="1" />
+    <XRay e="62.9999" l="Kα1" vs="K" rr="0.49964" hwhm="24.845" src="1" />
+    <XRay e="70.8223" l="K-M1" vs="K" hwhm="29.65" src="1" />
+    <XRay e="71.0786" l="K-M2" vs="K" rr="0.0561" hwhm="26.6" src="1" />
+    <XRay e="71.4136" l="Kβ1" vs="K" rr="0.10848" hwhm="26.05" src="1" />
+    <XRay e="71.84" l="K-M4" vs="K" hwhm="23.245" src="1" />
+    <XRay e="71.9107" l="K-M5" vs="K" hwhm="23.245" src="1" />
+    <XRay e="73.2165" l="K-N1" vs="K" hwhm="26.15" src="1" />
+    <XRay e="73.3243" l="K-N2" vs="K" rr="0.01329" hwhm="25.3" src="1" />
+    <XRay e="73.4026" l="K-N3" vs="K" rr="0.02608" hwhm="24.6" src="1" />
+    <XRay e="73.5814" l="K-N4" vs="K" hwhm="24.35" src="1" />
+    <XRay e="73.598" l="K-N5" vs="K" hwhm="24.25" src="1" />
+    <XRay e="73.817" l="K-N6" vs="K" hwhm="22.41" src="1" />
+    <XRay e="73.8198" l="K-N7" vs="K" hwhm="22.39" src="1" />
+    <XRay e="73.7871" l="K-O1" vs="K" hwhm="22.25" src="2" />
+    <XRay e="73.8128" l="K-O2" vs="K" hwhm="22.25" src="2" />
+    <XRay e="73.8254" l="K-O3" vs="K" hwhm="22.25" src="2" />
+    <XRay e="10.1758" l="L1-M2" vs="L1" rr="0.33029" hwhm="7.9" src="1" />
+    <XRay e="10.5108" l="L1-M3" vs="L1" rr="0.39982" hwhm="7.35" src="1" />
+    <XRay e="10.9372" l="L1-M4" vs="L1" rr="0.010126" hwhm="4.545" src="1" />
+    <XRay e="11.0079" l="L1-M5" vs="L1" rr="0.015156" hwhm="4.545" src="1" />
+    <XRay e="12.3137" l="L1-N1" vs="L1" rr="0.00000199" hwhm="7.45" src="1" />
+    <XRay e="12.4215" l="L1-N2" vs="L1" rr="0.08192" hwhm="6.6" src="1" />
+    <XRay e="12.4998" l="L1-N3" vs="L1" rr="0.10604" hwhm="5.9" src="1" />
+    <XRay e="12.6786" l="L1-N4" vs="L1" rr="0.0014613" hwhm="5.65" src="1" />
+    <XRay e="12.6952" l="L1-N5" vs="L1" rr="0.0022892" hwhm="5.55" src="1" />
+    <XRay e="12.9142" l="L1-N6" vs="L1" hwhm="3.71" src="1" />
+    <XRay e="12.917" l="L1-N7" vs="L1" hwhm="3.69" src="1" />
+    <XRay e="12.8843" l="L1-O1" vs="L1" rr="0.00000042" hwhm="3.675" src="2" />
+    <XRay e="12.91" l="L1-O2" vs="L1" rr="0.013581" hwhm="3.675" src="2" />
+    <XRay e="12.9226" l="L1-O3" vs="L1" rr="0.017069" hwhm="3.675" src="2" />
+    <XRay e="10.3542" l="Lβ1" vs="L2" rr="0.8084" hwhm="3.49" src="1" />
+    <XRay e="10.4249" l="L2-M5" vs="L2" rr="0.00003649" hwhm="3.49" src="1" />
+    <XRay e="11.7307" l="L2-N1" vs="L2" rr="0.005433" hwhm="6.395" src="1" />
+    <XRay e="11.8385" l="L2-N2" vs="L2" rr="0.00000028" hwhm="5.545" src="1" />
+    <XRay e="11.9168" l="L2-N3" vs="L2" rr="0.00020023" hwhm="4.845" src="1" />
+    <XRay e="12.0956" l="L2-N4" vs="L2" rr="0.15413" hwhm="4.595" src="1" />
+    <XRay e="12.1122" l="L2-N5" vs="L2" rr="0.00000773" hwhm="4.495" src="1" />
+    <XRay e="12.3312" l="L2-N6" vs="L2" rr="0.00046658" hwhm="2.655" src="1" />
+    <XRay e="12.334" l="L2-N7" vs="L2" hwhm="2.635" src="1" />
+    <XRay e="12.3013" l="L2-O1" vs="L2" rr="0.0010355" hwhm="2.845" src="2" />
+    <XRay e="12.327" l="L2-O2" vs="L2" rr="0.00000005" hwhm="2.845" src="2" />
+    <XRay e="12.3396" l="L2-O3" vs="L2" rr="0.00003225" hwhm="2.845" src="2" />
+    <XRay e="10.2166" l="L3-N1" vs="L3" rr="0.0092611" hwhm="6.395" src="1" />
+    <XRay e="10.3244" l="L3-N2" vs="L3" rr="0.00009226" hwhm="5.545" src="1" />
+    <XRay e="10.4027" l="L3-N3" vs="L3" rr="0.00009162" hwhm="4.845" src="1" />
+    <XRay e="10.5815" l="L3-N4" vs="L3" rr="0.014438" hwhm="4.595" src="1" />
+    <XRay e="10.5981" l="L3-N5" vs="L3" rr="0.12978" hwhm="4.495" src="1" />
+    <XRay e="10.8171" l="L3-N6" vs="L3" rr="0.00007843" hwhm="2.655" src="1" />
+    <XRay e="10.8199" l="L3-N7" vs="L3" rr="0.00044013" hwhm="2.635" src="1" />
+    <XRay e="10.7872" l="L3-O1" vs="L3" rr="0.0017542" hwhm="2.63" src="2" />
+    <XRay e="10.8129" l="L3-O2" vs="L3" rr="0.00001502" hwhm="2.63" src="2" />
+    <XRay e="10.8255" l="L3-O3" vs="L3" rr="0.0000146" hwhm="2.63" src="2" />
+  </Element>
+  <Element Z="77" symbol="Ir" name="Ir">
+    <XRay e="62.6925" l="K-L1" vs="K" hwhm="27.45" src="1" />
+    <XRay e="63.2869" l="Kα2" vs="K" rr="0.29045" hwhm="26.115" src="1" />
+    <XRay e="64.8958" l="Kα1" vs="K" rr="0.49846" hwhm="26.12" src="1" />
+    <XRay e="72.9373" l="K-M1" vs="K" hwhm="30.9" src="1" />
+    <XRay e="73.2023" l="K-M2" vs="K" rr="0.05619" hwhm="27.95" src="1" />
+    <XRay e="73.5603" l="Kβ1" vs="K" rr="0.10866" hwhm="27.5" src="1" />
+    <XRay e="73.9949" l="K-M4" vs="K" hwhm="24.495" src="1" />
+    <XRay e="74.0706" l="K-M5" vs="K" hwhm="24.495" src="1" />
+    <XRay e="75.4209" l="K-N1" vs="K" hwhm="27.5" src="1" />
+    <XRay e="75.5339" l="K-N2" vs="K" rr="0.0134" hwhm="26.55" src="1" />
+    <XRay e="75.6167" l="K-N3" vs="K" rr="0.02631" hwhm="25.875" src="1" />
+    <XRay e="75.7996" l="K-N4" vs="K" hwhm="25.55" src="1" />
+    <XRay e="75.8161" l="K-N5" vs="K" hwhm="25.5" src="1" />
+    <XRay e="76.047" l="K-N6" vs="K" hwhm="23.655" src="1" />
+    <XRay e="76.05" l="K-N7" vs="K" hwhm="23.635" src="1" />
+    <XRay e="76.0158" l="K-O1" vs="K" hwhm="23.45" src="2" />
+    <XRay e="76.048" l="K-O2" vs="K" hwhm="23.45" src="2" />
+    <XRay e="76.0605" l="K-O3" vs="K" hwhm="23.45" src="2" />
+    <XRay e="76.1072" l="K-O4" vs="K" />
+    <XRay e="76.1072" l="K-O5" vs="K" />
+    <XRay e="10.2448" l="L1-M1" vs="L1" rr="0.00000522" hwhm="11.35" src="1" />
+    <XRay e="10.5098" l="L1-M2" vs="L1" rr="0.33114" hwhm="8.4" src="1" />
+    <XRay e="10.8678" l="L1-M3" vs="L1" rr="0.39533" hwhm="7.95" src="1" />
+    <XRay e="11.3024" l="L1-M4" vs="L1" rr="0.010464" hwhm="4.945" src="1" />
+    <XRay e="11.3781" l="L1-M5" vs="L1" rr="0.01567" hwhm="4.945" src="1" />
+    <XRay e="12.7284" l="L1-N1" vs="L1" rr="0.00000221" hwhm="7.95" src="1" />
+    <XRay e="12.8414" l="L1-N2" vs="L1" rr="0.082835" hwhm="7" src="1" />
+    <XRay e="12.9242" l="L1-N3" vs="L1" rr="0.10586" hwhm="6.325" src="1" />
+    <XRay e="13.1071" l="L1-N4" vs="L1" rr="0.0015263" hwhm="6" src="1" />
+    <XRay e="13.1236" l="L1-N5" vs="L1" rr="0.0023944" hwhm="5.95" src="1" />
+    <XRay e="13.3545" l="L1-N6" vs="L1" hwhm="4.105" src="1" />
+    <XRay e="13.3575" l="L1-N7" vs="L1" hwhm="4.085" src="1" />
+    <XRay e="13.3233" l="L1-O1" vs="L1" rr="0.00000048" hwhm="4.2" src="2" />
+    <XRay e="13.3555" l="L1-O2" vs="L1" rr="0.013959" hwhm="4.2" src="2" />
+    <XRay e="13.368" l="L1-O3" vs="L1" rr="0.017229" hwhm="4.2" src="2" />
+    <XRay e="13.4147" l="L1-O4" vs="L1" />
+    <XRay e="13.4147" l="L1-O5" vs="L1" />
+    <XRay e="10.2734" l="L2-M3" vs="L2" rr="0.00077925" hwhm="6.615" src="1" />
+    <XRay e="10.708" l="Lβ1" vs="L2" rr="0.80428" hwhm="3.61" src="1" />
+    <XRay e="10.7837" l="L2-M5" vs="L2" rr="0.00003882" hwhm="3.61" src="1" />
+    <XRay e="12.134" l="L2-N1" vs="L2" rr="0.0054414" hwhm="6.615" src="1" />
+    <XRay e="12.247" l="L2-N2" vs="L2" rr="0.00000031" hwhm="5.665" src="1" />
+    <XRay e="12.3298" l="L2-N3" vs="L2" rr="0.00020718" hwhm="4.99" src="1" />
+    <XRay e="12.5127" l="L2-N4" vs="L2" rr="0.15509" hwhm="4.665" src="1" />
+    <XRay e="12.5292" l="L2-N5" vs="L2" rr="0.00000832" hwhm="4.615" src="1" />
+    <XRay e="12.7601" l="L2-N6" vs="L2" rr="0.00049933" hwhm="2.77" src="1" />
+    <XRay e="12.7631" l="L2-N7" vs="L2" hwhm="2.75" src="1" />
+    <XRay e="12.7289" l="L2-O1" vs="L2" rr="0.0010528" hwhm="2.895" src="2" />
+    <XRay e="12.7611" l="L2-O2" vs="L2" rr="0.00000006" hwhm="2.895" src="2" />
+    <XRay e="12.7736" l="L2-O3" vs="L2" rr="0.00003364" hwhm="2.895" src="2" />
+    <XRay e="12.8203" l="L2-O4" vs="L2" rr="0.0109" />
+    <XRay e="12.8203" l="L2-O5" vs="L2" />
+    <XRay e="10.5251" l="L3-N1" vs="L3" rr="0.0093935" hwhm="6.62" src="1" />
+    <XRay e="10.6381" l="L3-N2" vs="L3" rr="0.00009479" hwhm="5.67" src="1" />
+    <XRay e="10.7209" l="L3-N3" vs="L3" rr="0.0000946" hwhm="4.995" src="1" />
+    <XRay e="10.9038" l="L3-N4" vs="L3" rr="0.01451" hwhm="4.67" src="1" />
+    <XRay e="10.9203" l="L3-N5" vs="L3" rr="0.13056" hwhm="4.62" src="1" />
+    <XRay e="11.1512" l="L3-N6" vs="L3" rr="0.00008448" hwhm="2.775" src="1" />
+    <XRay e="11.1542" l="L3-N7" vs="L3" rr="0.00047397" hwhm="2.755" src="1" />
+    <XRay e="11.12" l="L3-O1" vs="L3" rr="0.0018066" hwhm="2.675" src="2" />
+    <XRay e="11.1522" l="L3-O2" vs="L3" rr="0.00001567" hwhm="2.675" src="2" />
+    <XRay e="11.1647" l="L3-O3" vs="L3" rr="0.0000152" hwhm="2.675" src="2" />
+    <XRay e="11.2114" l="L3-O4" vs="L3" />
+    <XRay e="11.2114" l="L3-O5" vs="L3" />
+  </Element>
+  <Element Z="78" symbol="Pt" name="Pt">
+    <XRay e="64.5143" l="K-L1" vs="K" hwhm="29.15" src="1" />
+    <XRay e="65.1222" l="Kα2" vs="K" rr="0.2908" hwhm="27.44" src="1" />
+    <XRay e="66.831" l="Kα1" vs="K" rr="0.49739" hwhm="27.445" src="1" />
+    <XRay e="75.0972" l="K-M1" vs="K" hwhm="32.2" src="1" />
+    <XRay e="75.3678" l="K-M2" vs="K" rr="0.05627" hwhm="29.35" src="1" />
+    <XRay e="75.7495" l="Kβ1" vs="K" rr="0.10881" hwhm="28.9" src="1" />
+    <XRay e="76.1933" l="K-M4" vs="K" hwhm="25.79" src="1" />
+    <XRay e="76.2737" l="K-M5" vs="K" hwhm="25.79" src="1" />
+    <XRay e="77.6708" l="K-N1" vs="K" hwhm="28.875" src="1" />
+    <XRay e="77.7872" l="K-N2" vs="K" rr="0.01349" hwhm="27.875" src="1" />
+    <XRay e="77.8757" l="K-N3" vs="K" rr="0.02651" hwhm="27.2" src="1" />
+    <XRay e="78.0641" l="K-N4" vs="K" hwhm="26.8" src="1" />
+    <XRay e="78.081" l="K-N5" vs="K" hwhm="26.725" src="1" />
+    <XRay e="78.3203" l="K-N6" vs="K" hwhm="24.925" src="1" />
+    <XRay e="78.3237" l="K-N7" vs="K" hwhm="24.905" src="1" />
+    <XRay e="78.2931" l="K-O1" vs="K" hwhm="24.7" src="2" />
+    <XRay e="78.3295" l="K-O2" vs="K" hwhm="24.7" src="2" />
+    <XRay e="78.3438" l="K-O3" vs="K" hwhm="24.7" src="2" />
+    <XRay e="78.3927" l="K-O4" vs="K" />
+    <XRay e="78.3927" l="K-O5" vs="K" />
+    <XRay e="10.5829" l="L1-M1" vs="L1" rr="0.00000575" hwhm="11.85" src="1" />
+    <XRay e="10.8535" l="L1-M2" vs="L1" rr="0.33219" hwhm="9" src="1" />
+    <XRay e="11.2352" l="L1-M3" vs="L1" rr="0.39041" hwhm="8.55" src="1" />
+    <XRay e="11.679" l="L1-M4" vs="L1" rr="0.010786" hwhm="5.44" src="1" />
+    <XRay e="11.7594" l="L1-M5" vs="L1" rr="0.016151" hwhm="5.44" src="1" />
+    <XRay e="13.1565" l="L1-N1" vs="L1" rr="0.00000244" hwhm="8.525" src="1" />
+    <XRay e="13.2729" l="L1-N2" vs="L1" rr="0.083619" hwhm="7.525" src="1" />
+    <XRay e="13.3614" l="L1-N3" vs="L1" rr="0.10538" hwhm="6.85" src="1" />
+    <XRay e="13.5498" l="L1-N4" vs="L1" rr="0.0015903" hwhm="6.45" src="1" />
+    <XRay e="13.5667" l="L1-N5" vs="L1" rr="0.0025" hwhm="6.375" src="1" />
+    <XRay e="13.806" l="L1-N6" vs="L1" hwhm="4.575" src="1" />
+    <XRay e="13.8094" l="L1-N7" vs="L1" hwhm="4.555" src="1" />
+    <XRay e="13.7788" l="L1-O1" vs="L1" rr="0.00000054" hwhm="4.745" src="2" />
+    <XRay e="13.8152" l="L1-O2" vs="L1" rr="0.014586" hwhm="4.745" src="2" />
+    <XRay e="13.8295" l="L1-O3" vs="L1" rr="0.017822" hwhm="4.745" src="2" />
+    <XRay e="13.8784" l="L1-O4" vs="L1" />
+    <XRay e="13.8784" l="L1-O5" vs="L1" />
+    <XRay e="10.2456" l="L2-M2" vs="L2" rr="0.0000009" hwhm="7.29" src="1" />
+    <XRay e="10.6273" l="L2-M3" vs="L2" rr="0.00079962" hwhm="6.84" src="1" />
+    <XRay e="11.0711" l="Lβ1" vs="L2" rr="0.80125" hwhm="3.73" src="1" />
+    <XRay e="11.1515" l="L2-M5" vs="L2" rr="0.00004134" hwhm="3.73" src="1" />
+    <XRay e="12.5486" l="L2-N1" vs="L2" rr="0.0054633" hwhm="6.815" src="1" />
+    <XRay e="12.665" l="L2-N2" vs="L2" rr="0.00000034" hwhm="5.815" src="1" />
+    <XRay e="12.7535" l="L2-N3" vs="L2" rr="0.00021407" hwhm="5.14" src="1" />
+    <XRay e="12.9419" l="L2-N4" vs="L2" rr="0.15638" hwhm="4.74" src="1" />
+    <XRay e="12.9588" l="L2-N5" vs="L2" rr="0.00000899" hwhm="4.665" src="1" />
+    <XRay e="13.1981" l="L2-N6" vs="L2" rr="0.0005349" hwhm="2.865" src="1" />
+    <XRay e="13.2015" l="L2-N7" vs="L2" hwhm="2.845" src="1" />
+    <XRay e="13.1709" l="L2-O1" vs="L2" rr="0.0010834" hwhm="2.98" src="2" />
+    <XRay e="13.2073" l="L2-O2" vs="L2" rr="0.00000006" hwhm="2.98" src="2" />
+    <XRay e="13.2216" l="L2-O3" vs="L2" rr="0.00003617" hwhm="2.98" src="2" />
+    <XRay e="13.2705" l="L2-O4" vs="L2" rr="0.01249" />
+    <XRay e="13.2705" l="L2-O5" vs="L2" />
+    <XRay e="10.8398" l="L3-N1" vs="L3" rr="0.0095327" hwhm="6.82" src="1" />
+    <XRay e="10.9562" l="L3-N2" vs="L3" rr="0.00009737" hwhm="5.82" src="1" />
+    <XRay e="11.0447" l="L3-N3" vs="L3" rr="0.00009762" hwhm="5.145" src="1" />
+    <XRay e="11.2331" l="L3-N4" vs="L3" rr="0.014581" hwhm="4.745" src="1" />
+    <XRay e="11.25" l="L3-N5" vs="L3" rr="0.1313" hwhm="4.67" src="1" />
+    <XRay e="11.4893" l="L3-N6" vs="L3" rr="0.00009074" hwhm="2.87" src="1" />
+    <XRay e="11.4927" l="L3-N7" vs="L3" rr="0.00050857" hwhm="2.85" src="1" />
+    <XRay e="11.4621" l="L3-O1" vs="L3" rr="0.0018792" hwhm="2.705" src="2" />
+    <XRay e="11.4985" l="L3-O2" vs="L3" rr="0.00001662" hwhm="2.705" src="2" />
+    <XRay e="11.5128" l="L3-O3" vs="L3" rr="0.00001625" hwhm="2.705" src="2" />
+    <XRay e="11.5617" l="L3-O4" vs="L3" />
+    <XRay e="11.5617" l="L3-O5" vs="L3" />
+  </Element>
+  <Element Z="79" symbol="Au" name="Au">
+    <XRay e="66.3721" l="K-L1" vs="K" hwhm="30.95" src="1" />
+    <XRay e="66.9913" l="Kα2" vs="K" rr="0.29147" hwhm="28.815" src="1" />
+    <XRay e="68.8062" l="Kα1" vs="K" rr="0.49597" hwhm="28.82" src="1" />
+    <XRay e="77.3" l="K-M1" vs="K" hwhm="33.55" src="1" />
+    <XRay e="77.5771" l="K-M2" vs="K" rr="0.05636" hwhm="30.8" src="1" />
+    <XRay e="77.9819" l="Kβ1" vs="K" rr="0.1089" hwhm="30.3" src="1" />
+    <XRay e="78.4338" l="K-M4" vs="K" hwhm="27.14" src="1" />
+    <XRay e="78.5192" l="K-M5" vs="K" hwhm="27.14" src="1" />
+    <XRay e="79.9661" l="K-N1" vs="K" hwhm="30.3" src="1" />
+    <XRay e="80.0812" l="K-N2" vs="K" rr="0.01359" hwhm="29.25" src="1" />
+    <XRay e="80.1795" l="K-N3" vs="K" rr="0.02677" hwhm="28.575" src="1" />
+    <XRay e="80.3729" l="K-N4" vs="K" hwhm="28.1" src="1" />
+    <XRay e="80.391" l="K-N5" vs="K" hwhm="28" src="1" />
+    <XRay e="80.6371" l="K-N6" vs="K" hwhm="26.235" src="1" />
+    <XRay e="80.6408" l="K-N7" vs="K" hwhm="26.215" src="1" />
+    <XRay e="80.6171" l="K-O1" vs="K" hwhm="26.05" src="2" />
+    <XRay e="80.6532" l="K-O2" vs="K" hwhm="26.05" src="2" />
+    <XRay e="80.6662" l="K-O3" vs="K" hwhm="26.05" src="2" />
+    <XRay e="80.7224" l="K-O4" vs="K" hwhm="26.05" src="2" />
+    <XRay e="80.7224" l="K-O5" vs="K" hwhm="26.05" src="2" />
+    <XRay e="10.9279" l="L1-M1" vs="L1" rr="0.00000631" hwhm="12.4" src="1" />
+    <XRay e="11.205" l="L1-M2" vs="L1" rr="0.33387" hwhm="9.65" src="1" />
+    <XRay e="11.6098" l="L1-M3" vs="L1" rr="0.38489" hwhm="9.15" src="1" />
+    <XRay e="12.0617" l="L1-M4" vs="L1" rr="0.011126" hwhm="5.99" src="1" />
+    <XRay e="12.1471" l="L1-M5" vs="L1" rr="0.016658" hwhm="5.99" src="1" />
+    <XRay e="13.594" l="L1-N1" vs="L1" rr="0.00000271" hwhm="9.15" src="1" />
+    <XRay e="13.7091" l="L1-N2" vs="L1" rr="0.084408" hwhm="8.1" src="1" />
+    <XRay e="13.8074" l="L1-N3" vs="L1" rr="0.105" hwhm="7.425" src="1" />
+    <XRay e="14.0008" l="L1-N4" vs="L1" rr="0.0016568" hwhm="6.95" src="1" />
+    <XRay e="14.0189" l="L1-N5" vs="L1" rr="0.0026092" hwhm="6.85" src="1" />
+    <XRay e="14.265" l="L1-N6" vs="L1" hwhm="5.085" src="1" />
+    <XRay e="14.2687" l="L1-N7" vs="L1" hwhm="5.065" src="1" />
+    <XRay e="14.245" l="L1-O1" vs="L1" rr="0.00000061" hwhm="5.3" src="2" />
+    <XRay e="14.2811" l="L1-O2" vs="L1" rr="0.015109" hwhm="5.3" src="2" />
+    <XRay e="14.2941" l="L1-O3" vs="L1" rr="0.018224" hwhm="5.3" src="2" />
+    <XRay e="14.3503" l="L1-O4" vs="L1" hwhm="5.3" src="2" />
+    <XRay e="14.3503" l="L1-O5" vs="L1" hwhm="5.3" src="2" />
+    <XRay e="10.3087" l="L2-M1" vs="L2" rr="0.021563" hwhm="10.265" src="1" />
+    <XRay e="10.5858" l="L2-M2" vs="L2" rr="0.00000099" hwhm="7.515" src="1" />
+    <XRay e="10.9906" l="L2-M3" vs="L2" rr="0.00081614" hwhm="7.015" src="1" />
+    <XRay e="11.4425" l="Lβ1" vs="L2" rr="0.79778" hwhm="3.855" src="1" />
+    <XRay e="11.5279" l="L2-M5" vs="L2" rr="0.00004394" hwhm="3.855" src="1" />
+    <XRay e="12.9748" l="L2-N1" vs="L2" rr="0.00548" hwhm="7.015" src="1" />
+    <XRay e="13.0899" l="L2-N2" vs="L2" rr="0.00000038" hwhm="5.965" src="1" />
+    <XRay e="13.1882" l="L2-N3" vs="L2" rr="0.00022175" hwhm="5.29" src="1" />
+    <XRay e="13.3816" l="L2-N4" vs="L2" rr="0.15752" hwhm="4.815" src="1" />
+    <XRay e="13.3997" l="L2-N5" vs="L2" rr="0.00000969" hwhm="4.715" src="1" />
+    <XRay e="13.6458" l="L2-N6" vs="L2" rr="0.00056992" hwhm="2.95" src="1" />
+    <XRay e="13.6495" l="L2-N7" vs="L2" hwhm="2.93" src="1" />
+    <XRay e="13.6258" l="L2-O1" vs="L2" rr="0.0010787" hwhm="3.05" src="2" />
+    <XRay e="13.6619" l="L2-O2" vs="L2" rr="0.00000007" hwhm="3.05" src="2" />
+    <XRay e="13.6749" l="L2-O3" vs="L2" rr="0.00003844" hwhm="3.05" src="2" />
+    <XRay e="13.7311" l="L2-O4" vs="L2" rr="0.014809" hwhm="3.05" src="2" />
+    <XRay e="13.7311" l="L2-O5" vs="L2" hwhm="3.05" src="2" />
+    <XRay e="11.1599" l="L3-N1" vs="L3" rr="0.0096675" hwhm="7.02" src="1" />
+    <XRay e="11.275" l="L3-N2" vs="L3" rr="0.00009988" hwhm="5.97" src="1" />
+    <XRay e="11.3733" l="L3-N3" vs="L3" rr="0.00010064" hwhm="5.295" src="1" />
+    <XRay e="11.5667" l="L3-N4" vs="L3" rr="0.014647" hwhm="4.82" src="1" />
+    <XRay e="11.5848" l="L3-N5" vs="L3" rr="0.13203" hwhm="4.72" src="1" />
+    <XRay e="11.8309" l="L3-N6" vs="L3" rr="0.00009714" hwhm="2.955" src="1" />
+    <XRay e="11.8346" l="L3-N7" vs="L3" rr="0.00054395" hwhm="2.935" src="1" />
+    <XRay e="11.8109" l="L3-O1" vs="L3" rr="0.0019452" hwhm="2.755" src="2" />
+    <XRay e="11.847" l="L3-O2" vs="L3" rr="0.00001747" hwhm="2.755" src="2" />
+    <XRay e="11.86" l="L3-O3" vs="L3" rr="0.00001724" hwhm="2.755" src="2" />
+    <XRay e="11.9162" l="L3-O4" vs="L3" hwhm="2.755" src="2" />
+    <XRay e="11.9162" l="L3-O5" vs="L3" hwhm="2.755" src="2" />
+  </Element>
+  <Element Z="80" symbol="Hg" name="Hg">
+    <XRay e="68.263" l="K-L1" vs="K" hwhm="32.65" src="1" />
+    <XRay e="68.8936" l="Kα2" vs="K" rr="0.29185" hwhm="30.245" src="1" />
+    <XRay e="70.8184" l="Kα1" vs="K" rr="0.49464" hwhm="30.255" src="1" />
+    <XRay e="79.5407" l="K-M1" vs="K" hwhm="34.95" src="1" />
+    <XRay e="79.8238" l="K-M2" vs="K" rr="0.05642" hwhm="32.3" src="1" />
+    <XRay e="80.2552" l="Kβ1" vs="K" rr="0.10913" hwhm="31.7" src="1" />
+    <XRay e="80.7174" l="K-M4" vs="K" hwhm="28.54" src="1" />
+    <XRay e="80.8074" l="K-M5" vs="K" hwhm="28.54" src="1" />
+    <XRay e="82.2993" l="K-N1" vs="K" hwhm="31.8" src="1" />
+    <XRay e="82.4213" l="K-N2" vs="K" rr="0.01368" hwhm="30.675" src="1" />
+    <XRay e="82.5254" l="K-N3" vs="K" rr="0.02701" hwhm="30.05" src="1" />
+    <XRay e="82.7238" l="K-N4" vs="K" hwhm="29.4" src="1" />
+    <XRay e="82.743" l="K-N5" vs="K" hwhm="29.325" src="1" />
+    <XRay e="82.9983" l="K-N6" vs="K" hwhm="27.565" src="1" />
+    <XRay e="83.0024" l="K-N7" vs="K" hwhm="27.555" src="1" />
+    <XRay e="82.982" l="K-O1" vs="K" hwhm="27.35" src="2" />
+    <XRay e="83.0183" l="K-O2" vs="K" hwhm="27.35" src="2" />
+    <XRay e="83.0373" l="K-O3" vs="K" hwhm="27.35" src="2" />
+    <XRay e="83.0925" l="K-O4" vs="K" hwhm="27.35" src="2" />
+    <XRay e="83.0945" l="K-O5" vs="K" hwhm="27.35" src="2" />
+    <XRay e="11.2777" l="L1-M1" vs="L1" rr="0.00000694" hwhm="12.8" src="1" />
+    <XRay e="11.5608" l="L1-M2" vs="L1" rr="0.33509" hwhm="10.15" src="1" />
+    <XRay e="11.9922" l="L1-M3" vs="L1" rr="0.3796" hwhm="9.55" src="1" />
+    <XRay e="12.4544" l="L1-M4" vs="L1" rr="0.011472" hwhm="6.39" src="1" />
+    <XRay e="12.5444" l="L1-M5" vs="L1" rr="0.017166" hwhm="6.39" src="1" />
+    <XRay e="14.0363" l="L1-N1" vs="L1" rr="0.000003" hwhm="9.65" src="1" />
+    <XRay e="14.1583" l="L1-N2" vs="L1" rr="0.085241" hwhm="8.525" src="1" />
+    <XRay e="14.2624" l="L1-N3" vs="L1" rr="0.10447" hwhm="7.9" src="1" />
+    <XRay e="14.4608" l="L1-N4" vs="L1" rr="0.0017258" hwhm="7.25" src="1" />
+    <XRay e="14.48" l="L1-N5" vs="L1" rr="0.002721" hwhm="7.175" src="1" />
+    <XRay e="14.7353" l="L1-N6" vs="L1" hwhm="5.415" src="1" />
+    <XRay e="14.7394" l="L1-N7" vs="L1" hwhm="5.405" src="1" />
+    <XRay e="14.719" l="L1-O1" vs="L1" rr="0.0000007" hwhm="5.7" src="2" />
+    <XRay e="14.7553" l="L1-O2" vs="L1" rr="0.015738" hwhm="5.7" src="2" />
+    <XRay e="14.7743" l="L1-O3" vs="L1" rr="0.018787" hwhm="5.7" src="2" />
+    <XRay e="14.8295" l="L1-O4" vs="L1" hwhm="5.7" src="2" />
+    <XRay e="14.8315" l="L1-O5" vs="L1" hwhm="5.7" src="2" />
+    <XRay e="10.6471" l="L2-M1" vs="L2" rr="0.021543" hwhm="10.395" src="1" />
+    <XRay e="10.9302" l="L2-M2" vs="L2" rr="0.00000109" hwhm="7.745" src="1" />
+    <XRay e="11.3616" l="L2-M3" vs="L2" rr="0.00083927" hwhm="7.145" src="1" />
+    <XRay e="11.8238" l="Lβ1" vs="L2" rr="0.79485" hwhm="3.985" src="1" />
+    <XRay e="11.9138" l="L2-M5" vs="L2" rr="0.00004672" hwhm="3.985" src="1" />
+    <XRay e="13.4057" l="L2-N1" vs="L2" rr="0.005498" hwhm="7.245" src="1" />
+    <XRay e="13.5277" l="L2-N2" vs="L2" rr="0.00000042" hwhm="6.12" src="1" />
+    <XRay e="13.6318" l="L2-N3" vs="L2" rr="0.00022881" hwhm="5.495" src="1" />
+    <XRay e="13.8302" l="L2-N4" vs="L2" rr="0.15859" hwhm="4.845" src="1" />
+    <XRay e="13.8494" l="L2-N5" vs="L2" rr="0.00001041" hwhm="4.77" src="1" />
+    <XRay e="14.1047" l="L2-N6" vs="L2" rr="0.00060569" hwhm="3.01" src="1" />
+    <XRay e="14.1088" l="L2-N7" vs="L2" hwhm="3" src="1" />
+    <XRay e="14.0884" l="L2-O1" vs="L2" rr="0.0011393" hwhm="3.135" src="2" />
+    <XRay e="14.1247" l="L2-O2" vs="L2" rr="0.00000008" hwhm="3.135" src="2" />
+    <XRay e="14.1437" l="L2-O3" vs="L2" rr="0.00004113" hwhm="3.135" src="2" />
+    <XRay e="14.1989" l="L2-O4" vs="L2" rr="0.01648" hwhm="3.135" src="2" />
+    <XRay e="14.2009" l="L2-O5" vs="L2" hwhm="3.135" src="2" />
+    <XRay e="11.4809" l="L3-N1" vs="L3" rr="0.0098227" hwhm="7.255" src="1" />
+    <XRay e="11.6029" l="L3-N2" vs="L3" rr="0.00010255" hwhm="6.13" src="1" />
+    <XRay e="11.707" l="L3-N3" vs="L3" rr="0.00010387" hwhm="5.505" src="1" />
+    <XRay e="11.9054" l="L3-N4" vs="L3" rr="0.01472" hwhm="4.855" src="1" />
+    <XRay e="11.9246" l="L3-N5" vs="L3" rr="0.13285" hwhm="4.78" src="1" />
+    <XRay e="12.1799" l="L3-N6" vs="L3" rr="0.00010387" hwhm="3.02" src="1" />
+    <XRay e="12.184" l="L3-N7" vs="L3" rr="0.00058071" hwhm="3.01" src="1" />
+    <XRay e="12.1636" l="L3-O1" vs="L3" rr="0.0020215" hwhm="2.8" src="2" />
+    <XRay e="12.1999" l="L3-O2" vs="L3" rr="0.00001846" hwhm="2.8" src="2" />
+    <XRay e="12.2189" l="L3-O3" vs="L3" rr="0.00001841" hwhm="2.8" src="2" />
+    <XRay e="12.2741" l="L3-O4" vs="L3" hwhm="2.8" src="2" />
+    <XRay e="12.2761" l="L3-O5" vs="L3" hwhm="2.8" src="2" />
+  </Element>
+  <Element Z="81" symbol="Tl" name="Tl">
+    <XRay e="70.1837" l="K-L1" vs="K" hwhm="34.35" src="1" />
+    <XRay e="70.8325" l="Kα2" vs="K" rr="0.29227" hwhm="31.735" src="1" />
+    <XRay e="72.8729" l="Kα1" vs="K" rr="0.49336" hwhm="31.745" src="1" />
+    <XRay e="81.8263" l="K-M1" vs="K" hwhm="36.35" src="1" />
+    <XRay e="82.1147" l="K-M2" vs="K" rr="0.05649" hwhm="33.85" src="1" />
+    <XRay e="82.5738" l="Kβ1" vs="K" rr="0.10917" hwhm="33.15" src="1" />
+    <XRay e="83.0453" l="K-M4" vs="K" hwhm="29.99" src="1" />
+    <XRay e="83.1411" l="K-M5" vs="K" hwhm="29.99" src="1" />
+    <XRay e="84.6849" l="K-N1" vs="K" hwhm="33.35" src="1" />
+    <XRay e="84.8091" l="K-N2" vs="K" rr="0.01379" hwhm="32.15" src="1" />
+    <XRay e="84.9214" l="K-N3" vs="K" rr="0.02723" hwhm="31.6" src="1" />
+    <XRay e="85.1238" l="K-N4" vs="K" hwhm="30.75" src="1" />
+    <XRay e="85.1442" l="K-N5" vs="K" hwhm="30.7" src="1" />
+    <XRay e="85.4073" l="K-N6" vs="K" hwhm="28.945" src="1" />
+    <XRay e="85.4116" l="K-N7" vs="K" hwhm="28.935" src="1" />
+    <XRay e="85.3941" l="K-O1" vs="K" hwhm="28.75" src="2" />
+    <XRay e="85.4308" l="K-O2" vs="K" hwhm="28.75" src="2" />
+    <XRay e="85.4574" l="K-O3" vs="K" hwhm="28.75" src="2" />
+    <XRay e="85.5151" l="K-O4" vs="K" hwhm="28.75" src="2" />
+    <XRay e="85.5173" l="K-O5" vs="K" hwhm="28.75" src="2" />
+    <XRay e="11.6426" l="L1-M1" vs="L1" rr="0.00000762" hwhm="13.1" src="1" />
+    <XRay e="11.931" l="L1-M2" vs="L1" rr="0.33611" hwhm="10.6" src="1" />
+    <XRay e="12.3901" l="L1-M3" vs="L1" rr="0.37398" hwhm="9.9" src="1" />
+    <XRay e="12.8616" l="L1-M4" vs="L1" rr="0.011827" hwhm="6.74" src="1" />
+    <XRay e="12.9574" l="L1-M5" vs="L1" rr="0.017697" hwhm="6.74" src="1" />
+    <XRay e="14.5012" l="L1-N1" vs="L1" rr="0.00000331" hwhm="10.1" src="1" />
+    <XRay e="14.6254" l="L1-N2" vs="L1" rr="0.086" hwhm="8.9" src="1" />
+    <XRay e="14.7377" l="L1-N3" vs="L1" rr="0.10399" hwhm="8.35" src="1" />
+    <XRay e="14.9401" l="L1-N4" vs="L1" rr="0.0017981" hwhm="7.5" src="1" />
+    <XRay e="14.9605" l="L1-N5" vs="L1" rr="0.0028404" hwhm="7.45" src="1" />
+    <XRay e="15.2236" l="L1-N6" vs="L1" hwhm="5.695" src="1" />
+    <XRay e="15.2279" l="L1-N7" vs="L1" hwhm="5.685" src="1" />
+    <XRay e="15.2104" l="L1-O1" vs="L1" rr="0.00000079" hwhm="6.05" src="2" />
+    <XRay e="15.2471" l="L1-O2" vs="L1" rr="0.016372" hwhm="6.05" src="2" />
+    <XRay e="15.2737" l="L1-O3" vs="L1" rr="0.019346" hwhm="6.05" src="2" />
+    <XRay e="15.3314" l="L1-O4" vs="L1" hwhm="6.05" src="2" />
+    <XRay e="15.3336" l="L1-O5" vs="L1" hwhm="6.05" src="2" />
+    <XRay e="10.9938" l="L2-M1" vs="L2" rr="0.02151" hwhm="10.485" src="1" />
+    <XRay e="11.2822" l="L2-M2" vs="L2" rr="0.0000012" hwhm="7.985" src="1" />
+    <XRay e="11.7413" l="L2-M3" vs="L2" rr="0.00086041" hwhm="7.285" src="1" />
+    <XRay e="12.2128" l="Lβ1" vs="L2" rr="0.79185" hwhm="4.125" src="1" />
+    <XRay e="12.3086" l="L2-M5" vs="L2" rr="0.00004965" hwhm="4.125" src="1" />
+    <XRay e="13.8524" l="L2-N1" vs="L2" rr="0.0055165" hwhm="7.485" src="1" />
+    <XRay e="13.9766" l="L2-N2" vs="L2" rr="0.00000046" hwhm="6.285" src="1" />
+    <XRay e="14.0889" l="L2-N3" vs="L2" rr="0.00023661" hwhm="5.735" src="1" />
+    <XRay e="14.2913" l="L2-N4" vs="L2" rr="0.15998" hwhm="4.885" src="1" />
+    <XRay e="14.3117" l="L2-N5" vs="L2" rr="0.00001116" hwhm="4.835" src="1" />
+    <XRay e="14.5748" l="L2-N6" vs="L2" rr="0.00064217" hwhm="3.08" src="1" />
+    <XRay e="14.5791" l="L2-N7" vs="L2" hwhm="3.07" src="1" />
+    <XRay e="14.5616" l="L2-O1" vs="L2" rr="0.0011692" hwhm="3.21" src="2" />
+    <XRay e="14.5983" l="L2-O2" vs="L2" rr="0.0000001" hwhm="3.21" src="2" />
+    <XRay e="14.6249" l="L2-O3" vs="L2" rr="0.00004396" hwhm="3.21" src="2" />
+    <XRay e="14.6826" l="L2-O4" vs="L2" rr="0.01797" hwhm="3.21" src="2" />
+    <XRay e="14.6848" l="L2-O5" vs="L2" hwhm="3.21" src="2" />
+    <XRay e="10.1724" l="Lα2" vs="L3" rr="0.079596" hwhm="4.135" src="1" />
+    <XRay e="10.2682" l="Lα1" vs="L3" rr="0.70111" hwhm="4.135" src="1" />
+    <XRay e="11.812" l="L3-N1" vs="L3" rr="0.0099702" hwhm="7.495" src="1" />
+    <XRay e="11.9362" l="L3-N2" vs="L3" rr="0.00010511" hwhm="6.295" src="1" />
+    <XRay e="12.0485" l="L3-N3" vs="L3" rr="0.00010707" hwhm="5.745" src="1" />
+    <XRay e="12.2509" l="L3-N4" vs="L3" rr="0.01479" hwhm="4.895" src="1" />
+    <XRay e="12.2713" l="L3-N5" vs="L3" rr="0.13357" hwhm="4.845" src="1" />
+    <XRay e="12.5344" l="L3-N6" vs="L3" rr="0.00011068" hwhm="3.09" src="1" />
+    <XRay e="12.5387" l="L3-N7" vs="L3" rr="0.00061862" hwhm="3.08" src="1" />
+    <XRay e="12.5212" l="L3-O1" vs="L3" rr="0.0020982" hwhm="2.875" src="2" />
+    <XRay e="12.5579" l="L3-O2" vs="L3" rr="0.00001949" hwhm="2.875" src="2" />
+    <XRay e="12.5845" l="L3-O3" vs="L3" rr="0.00001959" hwhm="2.875" src="2" />
+    <XRay e="12.6422" l="L3-O4" vs="L3" hwhm="2.875" src="2" />
+    <XRay e="12.6444" l="L3-O5" vs="L3" hwhm="2.875" src="2" />
+  </Element>
+  <Element Z="82" symbol="Pb" name="Pb">
+    <XRay e="72.1437" l="K-L1" vs="K" hwhm="36.2" src="1" />
+    <XRay e="72.8045" l="Kα2" vs="K" rr="0.29266" hwhm="32.82" src="1" />
+    <XRay e="74.9693" l="Kα1" vs="K" rr="0.49192" hwhm="33.335" src="1" />
+    <XRay e="84.1538" l="K-M1" vs="K" hwhm="37.9" src="1" />
+    <XRay e="84.4503" l="K-M2" vs="K" rr="0.05646" hwhm="35.5" src="1" />
+    <XRay e="84.9381" l="Kβ1" vs="K" rr="0.10947" hwhm="34.65" src="1" />
+    <XRay e="85.4189" l="K-M4" vs="K" hwhm="31.54" src="1" />
+    <XRay e="85.5205" l="K-M5" vs="K" hwhm="31.54" src="1" />
+    <XRay e="87.1109" l="K-N1" vs="K" hwhm="34.975" src="1" />
+    <XRay e="87.2406" l="K-N2" vs="K" rr="0.01386" hwhm="33.75" src="1" />
+    <XRay e="87.36" l="K-N3" vs="K" rr="0.02747" hwhm="33.2" src="1" />
+    <XRay e="87.5693" l="K-N4" vs="K" hwhm="32.2" src="1" />
+    <XRay e="87.5916" l="K-N5" vs="K" hwhm="32.2" src="1" />
+    <XRay e="87.8633" l="K-N6" vs="K" hwhm="30.43" src="1" />
+    <XRay e="87.8682" l="K-N7" vs="K" hwhm="30.415" src="1" />
+    <XRay e="87.8572" l="K-O1" vs="K" hwhm="30.25" src="2" />
+    <XRay e="87.8997" l="K-O2" vs="K" hwhm="30.25" src="2" />
+    <XRay e="87.9215" l="K-O3" vs="K" hwhm="30.25" src="2" />
+    <XRay e="87.9827" l="K-O4" vs="K" hwhm="30.25" src="2" />
+    <XRay e="87.9853" l="K-O5" vs="K" hwhm="30.25" src="2" />
+    <XRay e="88.0014" l="K-P1" vs="K" hwhm="30.25" src="2" />
+    <XRay e="88.0038" l="K-P2" vs="K" hwhm="30.25" src="2" />
+    <XRay e="88.0038" l="K-P3" vs="K" hwhm="30.25" src="2" />
+    <XRay e="12.0101" l="L1-M1" vs="L1" rr="0.00000837" hwhm="13.5" src="1" />
+    <XRay e="12.3066" l="L1-M2" vs="L1" rr="0.33718" hwhm="11.1" src="1" />
+    <XRay e="12.7944" l="L1-M3" vs="L1" rr="0.36831" hwhm="10.25" src="1" />
+    <XRay e="13.2752" l="L1-M4" vs="L1" rr="0.012176" hwhm="7.14" src="1" />
+    <XRay e="13.3768" l="L1-M5" vs="L1" rr="0.018223" hwhm="7.14" src="1" />
+    <XRay e="14.9672" l="L1-N1" vs="L1" rr="0.00000365" hwhm="10.575" src="1" />
+    <XRay e="15.0969" l="L1-N2" vs="L1" rr="0.086778" hwhm="9.35" src="1" />
+    <XRay e="15.2163" l="L1-N3" vs="L1" rr="0.1033" hwhm="8.8" src="1" />
+    <XRay e="15.4256" l="L1-N4" vs="L1" rr="0.0018712" hwhm="7.8" src="1" />
+    <XRay e="15.4479" l="L1-N5" vs="L1" rr="0.0029568" hwhm="7.8" src="1" />
+    <XRay e="15.7196" l="L1-N6" vs="L1" hwhm="6.03" src="1" />
+    <XRay e="15.7245" l="L1-N7" vs="L1" hwhm="6.015" src="1" />
+    <XRay e="15.7135" l="L1-O1" vs="L1" rr="0.00000089" hwhm="6.15" src="2" />
+    <XRay e="15.756" l="L1-O2" vs="L1" rr="0.017" hwhm="6.15" src="2" />
+    <XRay e="15.7778" l="L1-O3" vs="L1" rr="0.019883" hwhm="6.15" src="2" />
+    <XRay e="15.839" l="L1-O4" vs="L1" hwhm="6.15" src="2" />
+    <XRay e="15.8416" l="L1-O5" vs="L1" hwhm="6.15" src="2" />
+    <XRay e="15.8577" l="L1-P1" vs="L1" hwhm="6.15" src="2" />
+    <XRay e="15.8601" l="L1-P2" vs="L1" hwhm="6.15" src="2" />
+    <XRay e="15.8601" l="L1-P3" vs="L1" hwhm="6.15" src="2" />
+    <XRay e="11.3493" l="L2-M1" vs="L2" rr="0.021506" hwhm="10.12" src="1" />
+    <XRay e="11.6458" l="L2-M2" vs="L2" rr="0.00000131" hwhm="7.72" src="1" />
+    <XRay e="12.1336" l="L2-M3" vs="L2" rr="0.00088302" hwhm="6.87" src="1" />
+    <XRay e="12.6144" l="Lβ1" vs="L2" rr="0.79067" hwhm="3.76" src="1" />
+    <XRay e="12.716" l="L2-M5" vs="L2" rr="0.00005284" hwhm="3.76" src="1" />
+    <XRay e="14.3064" l="L2-N1" vs="L2" rr="0.0055536" hwhm="7.195" src="1" />
+    <XRay e="14.4361" l="L2-N2" vs="L2" rr="0.00000051" hwhm="5.97" src="1" />
+    <XRay e="14.5555" l="L2-N3" vs="L2" rr="0.00024542" hwhm="5.42" src="1" />
+    <XRay e="14.7648" l="L2-N4" vs="L2" rr="0.16151" hwhm="4.42" src="1" />
+    <XRay e="14.7871" l="L2-N5" vs="L2" rr="0.00001206" hwhm="4.42" src="1" />
+    <XRay e="15.0588" l="L2-N6" vs="L2" rr="0.00068103" hwhm="2.65" src="1" />
+    <XRay e="15.0637" l="L2-N7" vs="L2" hwhm="2.635" src="1" />
+    <XRay e="15.0527" l="L2-O1" vs="L2" rr="0.0012031" hwhm="3.29" src="2" />
+    <XRay e="15.0952" l="L2-O2" vs="L2" rr="0.00000011" hwhm="3.29" src="2" />
+    <XRay e="15.117" l="L2-O3" vs="L2" rr="0.00004685" hwhm="3.29" src="2" />
+    <XRay e="15.1782" l="L2-O4" vs="L2" rr="0.017458" hwhm="3.29" src="2" />
+    <XRay e="15.1808" l="L2-O5" vs="L2" hwhm="3.29" src="2" />
+    <XRay e="15.1969" l="L2-P1" vs="L2" rr="0.00015392" hwhm="3.29" src="2" />
+    <XRay e="15.1993" l="L2-P2" vs="L2" hwhm="3.29" src="2" />
+    <XRay e="15.1993" l="L2-P3" vs="L2" hwhm="3.29" src="2" />
+    <XRay e="10.4496" l="Lα2" vs="L3" rr="0.079283" hwhm="4.275" src="1" />
+    <XRay e="10.5512" l="Lα1" vs="L3" rr="0.69816" hwhm="4.275" src="1" />
+    <XRay e="12.1416" l="L3-N1" vs="L3" rr="0.010123" hwhm="7.71" src="1" />
+    <XRay e="12.2713" l="L3-N2" vs="L3" rr="0.00010769" hwhm="6.485" src="1" />
+    <XRay e="12.3907" l="L3-N3" vs="L3" rr="0.00011036" hwhm="5.935" src="1" />
+    <XRay e="12.6" l="L3-N4" vs="L3" rr="0.014857" hwhm="4.935" src="1" />
+    <XRay e="12.6223" l="L3-N5" vs="L3" rr="0.13434" hwhm="4.935" src="1" />
+    <XRay e="12.894" l="L3-N6" vs="L3" rr="0.00011764" hwhm="3.165" src="1" />
+    <XRay e="12.8989" l="L3-N7" vs="L3" rr="0.00065689" hwhm="3.15" src="1" />
+    <XRay e="12.8879" l="L3-O1" vs="L3" rr="0.0021751" hwhm="2.955" src="2" />
+    <XRay e="12.9304" l="L3-O2" vs="L3" rr="0.00002054" hwhm="2.955" src="2" />
+    <XRay e="12.9522" l="L3-O3" vs="L3" rr="0.00002088" hwhm="2.955" src="2" />
+    <XRay e="13.0134" l="L3-O4" vs="L3" hwhm="2.955" src="2" />
+    <XRay e="13.016" l="L3-O5" vs="L3" hwhm="2.955" src="2" />
+    <XRay e="13.0321" l="L3-P1" vs="L3" rr="0.00027771" hwhm="2.955" src="2" />
+    <XRay e="13.0345" l="L3-P2" vs="L3" hwhm="2.955" src="2" />
+    <XRay e="13.0345" l="L3-P3" vs="L3" hwhm="2.955" src="2" />
+  </Element>
+  <Element Z="83" symbol="Bi" name="Bi">
+    <XRay e="74.1384" l="K-L1" vs="K" hwhm="37.95" src="1" />
+    <XRay e="74.8148" l="Kα2" vs="K" rr="0.29322" hwhm="34.91" src="1" />
+    <XRay e="77.1073" l="Kα1" vs="K" rr="0.49034" hwhm="34.935" src="1" />
+    <XRay e="86.5268" l="K-M1" vs="K" hwhm="39.4" src="1" />
+    <XRay e="86.8296" l="K-M2" vs="K" rr="0.05652" hwhm="37.15" src="1" />
+    <XRay e="87.349" l="Kβ1" vs="K" rr="0.10955" hwhm="36.1" src="1" />
+    <XRay e="87.8383" l="K-M4" vs="K" hwhm="33.09" src="1" />
+    <XRay e="87.9463" l="K-M5" vs="K" hwhm="33.09" src="1" />
+    <XRay e="89.5877" l="K-N1" vs="K" hwhm="36.6" src="1" />
+    <XRay e="89.7206" l="K-N2" vs="K" rr="0.01395" hwhm="35.4" src="1" />
+    <XRay e="89.847" l="K-N3" vs="K" rr="0.02769" hwhm="34.775" src="1" />
+    <XRay e="90.0623" l="K-N4" vs="K" hwhm="33.7" src="1" />
+    <XRay e="90.0859" l="K-N5" vs="K" hwhm="33.7" src="1" />
+    <XRay e="90.3635" l="K-N6" vs="K" hwhm="31.91" src="1" />
+    <XRay e="90.3688" l="K-N7" vs="K" hwhm="31.9" src="1" />
+    <XRay e="90.3666" l="K-O1" vs="K" hwhm="31.75" src="2" />
+    <XRay e="90.4091" l="K-O2" vs="K" hwhm="31.75" src="2" />
+    <XRay e="90.4329" l="K-O3" vs="K" hwhm="31.75" src="2" />
+    <XRay e="90.4994" l="K-O4" vs="K" hwhm="31.75" src="2" />
+    <XRay e="90.5015" l="K-O5" vs="K" hwhm="31.75" src="2" />
+    <XRay e="90.5179" l="K-P1" vs="K" hwhm="31.75" src="2" />
+    <XRay e="90.5232" l="K-P2" vs="K" hwhm="31.75" src="2" />
+    <XRay e="90.5232" l="K-P3" vs="K" hwhm="31.75" src="2" />
+    <XRay e="12.3884" l="L1-M1" vs="L1" rr="0.00000912" hwhm="13.75" src="1" />
+    <XRay e="12.6912" l="L1-M2" vs="L1" rr="0.33842" hwhm="11.5" src="1" />
+    <XRay e="13.2106" l="L1-M3" vs="L1" rr="0.36209" hwhm="10.45" src="1" />
+    <XRay e="13.6999" l="L1-M4" vs="L1" rr="0.012534" hwhm="7.44" src="1" />
+    <XRay e="13.8079" l="L1-M5" vs="L1" rr="0.018752" hwhm="7.44" src="1" />
+    <XRay e="15.4493" l="L1-N1" vs="L1" rr="0.00000403" hwhm="10.95" src="1" />
+    <XRay e="15.5822" l="L1-N2" vs="L1" rr="0.087528" hwhm="9.75" src="1" />
+    <XRay e="15.7086" l="L1-N3" vs="L1" rr="0.10264" hwhm="9.125" src="1" />
+    <XRay e="15.9239" l="L1-N4" vs="L1" rr="0.0019462" hwhm="8.05" src="1" />
+    <XRay e="15.9475" l="L1-N5" vs="L1" rr="0.0030847" hwhm="8.05" src="1" />
+    <XRay e="16.2251" l="L1-N6" vs="L1" hwhm="6.26" src="1" />
+    <XRay e="16.2304" l="L1-N7" vs="L1" hwhm="6.25" src="1" />
+    <XRay e="16.2282" l="L1-O1" vs="L1" rr="0.000001" hwhm="6.25" src="2" />
+    <XRay e="16.2707" l="L1-O2" vs="L1" rr="0.017631" hwhm="6.25" src="2" />
+    <XRay e="16.2945" l="L1-O3" vs="L1" rr="0.020388" hwhm="6.25" src="2" />
+    <XRay e="16.361" l="L1-O4" vs="L1" hwhm="6.25" src="2" />
+    <XRay e="16.3631" l="L1-O5" vs="L1" hwhm="6.25" src="2" />
+    <XRay e="16.3795" l="L1-P1" vs="L1" hwhm="6.25" src="2" />
+    <XRay e="16.3848" l="L1-P2" vs="L1" hwhm="6.25" src="2" />
+    <XRay e="16.3848" l="L1-P3" vs="L1" hwhm="6.25" src="2" />
+    <XRay e="11.712" l="L2-M1" vs="L2" rr="0.021449" hwhm="10.71" src="1" />
+    <XRay e="12.0148" l="L2-M2" vs="L2" rr="0.00000143" hwhm="8.46" src="1" />
+    <XRay e="12.5342" l="L2-M3" vs="L2" rr="0.00090179" hwhm="7.41" src="1" />
+    <XRay e="13.0235" l="Lβ1" vs="L2" rr="0.78566" hwhm="4.4" src="1" />
+    <XRay e="13.1315" l="L2-M5" vs="L2" rr="0.00005593" hwhm="4.4" src="1" />
+    <XRay e="14.7729" l="L2-N1" vs="L2" rr="0.0055616" hwhm="7.91" src="1" />
+    <XRay e="14.9058" l="L2-N2" vs="L2" rr="0.00000056" hwhm="6.71" src="1" />
+    <XRay e="15.0322" l="L2-N3" vs="L2" rr="0.00025241" hwhm="6.085" src="1" />
+    <XRay e="15.2475" l="L2-N4" vs="L2" rr="0.16235" hwhm="5.01" src="1" />
+    <XRay e="15.2711" l="L2-N5" vs="L2" rr="0.00001288" hwhm="5.01" src="1" />
+    <XRay e="15.5487" l="L2-N6" vs="L2" rr="0.00071653" hwhm="3.22" src="1" />
+    <XRay e="15.554" l="L2-N7" vs="L2" hwhm="3.21" src="1" />
+    <XRay e="15.5518" l="L2-O1" vs="L2" rr="0.0012285" hwhm="3.385" src="2" />
+    <XRay e="15.5943" l="L2-O2" vs="L2" rr="0.00000012" hwhm="3.385" src="2" />
+    <XRay e="15.6181" l="L2-O3" vs="L2" rr="0.00004981" hwhm="3.385" src="2" />
+    <XRay e="15.6846" l="L2-O4" vs="L2" rr="0.021567" hwhm="3.385" src="2" />
+    <XRay e="15.6867" l="L2-O5" vs="L2" hwhm="3.385" src="2" />
+    <XRay e="15.7031" l="L2-P1" vs="L2" rr="0.00017064" hwhm="3.385" src="2" />
+    <XRay e="15.7084" l="L2-P2" vs="L2" hwhm="3.385" src="2" />
+    <XRay e="15.7084" l="L2-P3" vs="L2" hwhm="3.385" src="2" />
+    <XRay e="10.2417" l="L3-M3" vs="L3" rr="0.00044127" hwhm="7.435" src="1" />
+    <XRay e="10.731" l="Lα2" vs="L3" rr="0.079008" hwhm="4.425" src="1" />
+    <XRay e="10.839" l="Lα1" vs="L3" rr="0.69532" hwhm="4.425" src="1" />
+    <XRay e="12.4804" l="L3-N1" vs="L3" rr="0.010286" hwhm="7.935" src="1" />
+    <XRay e="12.6133" l="L3-N2" vs="L3" rr="0.00011027" hwhm="6.735" src="1" />
+    <XRay e="12.7397" l="L3-N3" vs="L3" rr="0.00011371" hwhm="6.11" src="1" />
+    <XRay e="12.955" l="L3-N4" vs="L3" rr="0.014923" hwhm="5.035" src="1" />
+    <XRay e="12.9786" l="L3-N5" vs="L3" rr="0.13508" hwhm="5.035" src="1" />
+    <XRay e="13.2562" l="L3-N6" vs="L3" rr="0.00012483" hwhm="3.245" src="1" />
+    <XRay e="13.2615" l="L3-N7" vs="L3" rr="0.00069624" hwhm="3.235" src="1" />
+    <XRay e="13.2593" l="L3-O1" vs="L3" rr="0.0022567" hwhm="3.04" src="2" />
+    <XRay e="13.3018" l="L3-O2" vs="L3" rr="0.00002161" hwhm="3.04" src="2" />
+    <XRay e="13.3256" l="L3-O3" vs="L3" rr="0.0000222" hwhm="3.04" src="2" />
+    <XRay e="13.3921" l="L3-O4" vs="L3" hwhm="3.04" src="2" />
+    <XRay e="13.3942" l="L3-O5" vs="L3" hwhm="3.04" src="2" />
+    <XRay e="13.4106" l="L3-P1" vs="L3" rr="0.00031264" hwhm="3.04" src="2" />
+    <XRay e="13.4159" l="L3-P2" vs="L3" hwhm="3.04" src="2" />
+    <XRay e="13.4159" l="L3-P3" vs="L3" hwhm="3.04" src="2" />
+  </Element>
+  <Element Z="84" symbol="Po" name="Po">
+    <XRay e="76.172" l="K-L1" vs="K" hwhm="39.75" src="1" />
+    <XRay e="76.863" l="Kα2" vs="K" rr="0.29372" hwhm="36.605" src="1" />
+    <XRay e="79.29" l="Kα1" vs="K" rr="0.48891" hwhm="36.63" src="1" />
+    <XRay e="88.948" l="K-M1" vs="K" hwhm="41.05" src="1" />
+    <XRay e="89.256" l="K-M2" vs="K" rr="0.05658" hwhm="38.95" src="1" />
+    <XRay e="89.807" l="Kβ1" vs="K" rr="0.10962" hwhm="37.65" src="1" />
+    <XRay e="90.306" l="K-M4" vs="K" hwhm="34.74" src="1" />
+    <XRay e="90.42" l="K-M5" vs="K" hwhm="34.74" src="1" />
+    <XRay e="92.113" l="K-N1" vs="K" hwhm="38.35" src="1" />
+    <XRay e="92.249" l="K-N2" vs="K" rr="0.01403" hwhm="37.075" src="1" />
+    <XRay e="92.385" l="K-N3" vs="K" rr="0.02788" hwhm="36.5" src="1" />
+    <XRay e="92.605" l="K-N4" vs="K" hwhm="35.35" src="1" />
+    <XRay e="92.631" l="K-N5" vs="K" hwhm="35.3" src="1" />
+    <XRay e="92.916" l="K-N6" vs="K" hwhm="33.495" src="1" />
+    <XRay e="92.922" l="K-N7" vs="K" hwhm="33.49" src="1" />
+    <XRay e="92.924" l="K-O1" vs="K" hwhm="33.35" src="2" />
+    <XRay e="92.968" l="K-O2" vs="K" hwhm="33.35" src="2" />
+    <XRay e="92.998" l="K-O3" vs="K" hwhm="33.35" src="2" />
+    <XRay e="93.066" l="K-O4" vs="K" hwhm="33.35" src="2" />
+    <XRay e="93.07" l="K-O5" vs="K" hwhm="33.35" src="2" />
+    <XRay e="93.091" l="K-P1" vs="K" hwhm="33.35" src="2" />
+    <XRay e="93.096" l="K-P2" vs="K" hwhm="33.35" src="2" />
+    <XRay e="93.099" l="K-P3" vs="K" hwhm="33.35" src="2" />
+    <XRay e="12.776" l="L1-M1" vs="L1" rr="0.00001002" hwhm="14" src="1" />
+    <XRay e="13.084" l="L1-M2" vs="L1" rr="0.33917" hwhm="11.9" src="1" />
+    <XRay e="13.635" l="L1-M3" vs="L1" rr="0.35619" hwhm="10.6" src="1" />
+    <XRay e="14.134" l="L1-M4" vs="L1" rr="0.012899" hwhm="7.69" src="1" />
+    <XRay e="14.248" l="L1-M5" vs="L1" rr="0.019296" hwhm="7.69" src="1" />
+    <XRay e="15.941" l="L1-N1" vs="L1" rr="0.00000444" hwhm="11.3" src="1" />
+    <XRay e="16.077" l="L1-N2" vs="L1" rr="0.088328" hwhm="10.025" src="1" />
+    <XRay e="16.213" l="L1-N3" vs="L1" rr="0.10188" hwhm="9.45" src="1" />
+    <XRay e="16.433" l="L1-N4" vs="L1" rr="0.0020232" hwhm="8.3" src="1" />
+    <XRay e="16.459" l="L1-N5" vs="L1" rr="0.0032149" hwhm="8.25" src="1" />
+    <XRay e="16.744" l="L1-N6" vs="L1" hwhm="6.445" src="1" />
+    <XRay e="16.75" l="L1-N7" vs="L1" hwhm="6.44" src="1" />
+    <XRay e="16.752" l="L1-O1" vs="L1" rr="0.00000113" hwhm="6.35" src="2" />
+    <XRay e="16.796" l="L1-O2" vs="L1" rr="0.018255" hwhm="6.35" src="2" />
+    <XRay e="16.826" l="L1-O3" vs="L1" rr="0.020887" hwhm="6.35" src="2" />
+    <XRay e="16.894" l="L1-O4" vs="L1" hwhm="6.35" src="2" />
+    <XRay e="16.898" l="L1-O5" vs="L1" hwhm="6.35" src="2" />
+    <XRay e="16.919" l="L1-P1" vs="L1" hwhm="6.35" src="2" />
+    <XRay e="16.924" l="L1-P2" vs="L1" hwhm="6.35" src="2" />
+    <XRay e="16.927" l="L1-P3" vs="L1" hwhm="6.35" src="2" />
+    <XRay e="12.085" l="L2-M1" vs="L2" rr="0.021402" hwhm="10.855" src="1" />
+    <XRay e="12.393" l="L2-M2" vs="L2" rr="0.00000157" hwhm="8.755" src="1" />
+    <XRay e="12.944" l="L2-M3" vs="L2" rr="0.00092331" hwhm="7.455" src="1" />
+    <XRay e="13.443" l="Lβ1" vs="L2" rr="0.78286" hwhm="4.545" src="1" />
+    <XRay e="13.557" l="L2-M5" vs="L2" rr="0.00005937" hwhm="4.545" src="1" />
+    <XRay e="15.25" l="L2-N1" vs="L2" rr="0.0055882" hwhm="8.155" src="1" />
+    <XRay e="15.386" l="L2-N2" vs="L2" rr="0.00000062" hwhm="6.88" src="1" />
+    <XRay e="15.522" l="L2-N3" vs="L2" rr="0.00026083" hwhm="6.305" src="1" />
+    <XRay e="15.742" l="L2-N4" vs="L2" rr="0.16348" hwhm="5.155" src="1" />
+    <XRay e="15.768" l="L2-N5" vs="L2" rr="0.00001386" hwhm="5.105" src="1" />
+    <XRay e="16.053" l="L2-N6" vs="L2" rr="0.000755" hwhm="3.3" src="1" />
+    <XRay e="16.059" l="L2-N7" vs="L2" hwhm="3.295" src="1" />
+    <XRay e="16.061" l="L2-O1" vs="L2" rr="0.0012596" hwhm="3.465" src="2" />
+    <XRay e="16.105" l="L2-O2" vs="L2" rr="0.00000014" hwhm="3.465" src="2" />
+    <XRay e="16.135" l="L2-O3" vs="L2" rr="0.00005328" hwhm="3.465" src="2" />
+    <XRay e="16.203" l="L2-O4" vs="L2" rr="0.023111" hwhm="3.465" src="2" />
+    <XRay e="16.207" l="L2-O5" vs="L2" hwhm="3.465" src="2" />
+    <XRay e="16.228" l="L2-P1" vs="L2" rr="0.00018726" hwhm="3.465" src="2" />
+    <XRay e="16.233" l="L2-P2" vs="L2" hwhm="3.465" src="2" />
+    <XRay e="16.236" l="L2-P3" vs="L2" hwhm="3.465" src="2" />
+    <XRay e="10.517" l="L3-M3" vs="L3" rr="0.00045135" hwhm="7.48" src="1" />
+    <XRay e="11.016" l="Lα2" vs="L3" rr="0.078695" hwhm="4.57" src="1" />
+    <XRay e="11.13" l="Lα1" vs="L3" rr="0.69279" hwhm="4.57" src="1" />
+    <XRay e="12.823" l="L3-N1" vs="L3" rr="0.010448" hwhm="8.18" src="1" />
+    <XRay e="12.959" l="L3-N2" vs="L3" rr="0.00011282" hwhm="6.905" src="1" />
+    <XRay e="13.095" l="L3-N3" vs="L3" rr="0.00011714" hwhm="6.33" src="1" />
+    <XRay e="13.315" l="L3-N4" vs="L3" rr="0.014988" hwhm="5.18" src="1" />
+    <XRay e="13.341" l="L3-N5" vs="L3" rr="0.13562" hwhm="5.13" src="1" />
+    <XRay e="13.626" l="L3-N6" vs="L3" rr="0.00013217" hwhm="3.325" src="1" />
+    <XRay e="13.632" l="L3-N7" vs="L3" rr="0.00073642" hwhm="3.32" src="1" />
+    <XRay e="13.634" l="L3-O1" vs="L3" rr="0.0023367" hwhm="3.115" src="2" />
+    <XRay e="13.678" l="L3-O2" vs="L3" rr="0.00002263" hwhm="3.115" src="2" />
+    <XRay e="13.708" l="L3-O3" vs="L3" rr="0.00002354" hwhm="3.115" src="2" />
+    <XRay e="13.776" l="L3-O4" vs="L3" hwhm="3.115" src="2" />
+    <XRay e="13.78" l="L3-O5" vs="L3" hwhm="3.115" src="2" />
+    <XRay e="13.801" l="L3-P1" vs="L3" rr="0.00034683" hwhm="3.115" src="2" />
+    <XRay e="13.806" l="L3-P2" vs="L3" hwhm="3.115" src="2" />
+    <XRay e="13.809" l="L3-P3" vs="L3" hwhm="3.115" src="2" />
+  </Element>
+  <Element Z="85" symbol="At" name="At">
+    <XRay e="78.242" l="K-L1" vs="K" hwhm="41.5" src="1" />
+    <XRay e="78.948" l="Kα2" vs="K" rr="0.29418" hwhm="38.3" src="1" />
+    <XRay e="81.517" l="Kα1" vs="K" rr="0.48761" hwhm="38.33" src="1" />
+    <XRay e="91.414" l="K-M1" vs="K" hwhm="42.65" src="1" />
+    <XRay e="91.73" l="K-M2" vs="K" rr="0.05663" hwhm="40.7" src="1" />
+    <XRay e="92.315" l="Kβ1" vs="K" rr="0.10968" hwhm="39.2" src="1" />
+    <XRay e="92.823" l="K-M4" vs="K" hwhm="36.39" src="1" />
+    <XRay e="92.943" l="K-M5" vs="K" hwhm="36.39" src="1" />
+    <XRay e="94.686" l="K-N1" vs="K" hwhm="40.05" src="1" />
+    <XRay e="94.827" l="K-N2" vs="K" rr="0.0141" hwhm="38.8" src="1" />
+    <XRay e="94.973" l="K-N3" vs="K" rr="0.02806" hwhm="38.2" src="1" />
+    <XRay e="95.197" l="K-N4" vs="K" hwhm="36.95" src="1" />
+    <XRay e="95.225" l="K-N5" vs="K" hwhm="36.925" src="1" />
+    <XRay e="95.518" l="K-N6" vs="K" hwhm="35.085" src="1" />
+    <XRay e="95.525" l="K-N7" vs="K" hwhm="35.08" src="1" />
+    <XRay e="95.532" l="K-O1" vs="K" hwhm="34.95" src="2" />
+    <XRay e="95.58" l="K-O2" vs="K" hwhm="34.95" src="2" />
+    <XRay e="95.611" l="K-O3" vs="K" hwhm="34.95" src="2" />
+    <XRay e="95.683" l="K-O4" vs="K" hwhm="34.95" src="2" />
+    <XRay e="95.687" l="K-O5" vs="K" hwhm="34.95" src="2" />
+    <XRay e="95.711" l="K-P1" vs="K" hwhm="34.95" src="2" />
+    <XRay e="95.718" l="K-P2" vs="K" hwhm="34.95" src="2" />
+    <XRay e="95.723" l="K-P3" vs="K" hwhm="34.95" src="2" />
+    <XRay e="13.172" l="L1-M1" vs="L1" rr="0.00001096" hwhm="14.15" src="1" />
+    <XRay e="13.488" l="L1-M2" vs="L1" rr="0.34049" hwhm="12.2" src="1" />
+    <XRay e="14.073" l="L1-M3" vs="L1" rr="0.34973" hwhm="10.7" src="1" />
+    <XRay e="14.581" l="L1-M4" vs="L1" rr="0.013269" hwhm="7.89" src="1" />
+    <XRay e="14.701" l="L1-M5" vs="L1" rr="0.019826" hwhm="7.89" src="1" />
+    <XRay e="16.444" l="L1-N1" vs="L1" rr="0.00000489" hwhm="11.55" src="1" />
+    <XRay e="16.585" l="L1-N2" vs="L1" rr="0.088971" hwhm="10.3" src="1" />
+    <XRay e="16.731" l="L1-N3" vs="L1" rr="0.10104" hwhm="9.7" src="1" />
+    <XRay e="16.955" l="L1-N4" vs="L1" rr="0.0021058" hwhm="8.45" src="1" />
+    <XRay e="16.983" l="L1-N5" vs="L1" rr="0.0033433" hwhm="8.425" src="1" />
+    <XRay e="17.276" l="L1-N6" vs="L1" hwhm="6.585" src="1" />
+    <XRay e="17.283" l="L1-N7" vs="L1" hwhm="6.58" src="1" />
+    <XRay e="17.29" l="L1-O1" vs="L1" rr="0.00000127" hwhm="6.45" src="2" />
+    <XRay e="17.338" l="L1-O2" vs="L1" rr="0.018841" hwhm="6.45" src="2" />
+    <XRay e="17.369" l="L1-O3" vs="L1" rr="0.021304" hwhm="6.45" src="2" />
+    <XRay e="17.441" l="L1-O4" vs="L1" hwhm="6.45" src="2" />
+    <XRay e="17.445" l="L1-O5" vs="L1" hwhm="6.45" src="2" />
+    <XRay e="17.469" l="L1-P1" vs="L1" hwhm="6.45" src="2" />
+    <XRay e="17.476" l="L1-P2" vs="L1" hwhm="6.45" src="2" />
+    <XRay e="17.481" l="L1-P3" vs="L1" hwhm="6.45" src="2" />
+    <XRay e="12.466" l="L2-M1" vs="L2" rr="0.021397" hwhm="10.95" src="1" />
+    <XRay e="12.782" l="L2-M2" vs="L2" rr="0.00000172" hwhm="9" src="1" />
+    <XRay e="13.367" l="L2-M3" vs="L2" rr="0.00094468" hwhm="7.5" src="1" />
+    <XRay e="13.875" l="Lβ1" vs="L2" rr="0.78001" hwhm="4.69" src="1" />
+    <XRay e="13.995" l="L2-M5" vs="L2" rr="0.00006297" hwhm="4.69" src="1" />
+    <XRay e="15.738" l="L2-N1" vs="L2" rr="0.0056115" hwhm="8.35" src="1" />
+    <XRay e="15.879" l="L2-N2" vs="L2" rr="0.00000069" hwhm="7.1" src="1" />
+    <XRay e="16.025" l="L2-N3" vs="L2" rr="0.00026921" hwhm="6.5" src="1" />
+    <XRay e="16.249" l="L2-N4" vs="L2" rr="0.16467" hwhm="5.25" src="1" />
+    <XRay e="16.277" l="L2-N5" vs="L2" rr="0.00001486" hwhm="5.225" src="1" />
+    <XRay e="16.57" l="L2-N6" vs="L2" rr="0.00077267" hwhm="3.385" src="1" />
+    <XRay e="16.577" l="L2-N7" vs="L2" hwhm="3.38" src="1" />
+    <XRay e="16.584" l="L2-O1" vs="L2" rr="0.0012901" hwhm="3.555" src="2" />
+    <XRay e="16.632" l="L2-O2" vs="L2" rr="0.00000016" hwhm="3.555" src="2" />
+    <XRay e="16.663" l="L2-O3" vs="L2" rr="0.0000566" hwhm="3.555" src="2" />
+    <XRay e="16.735" l="L2-O4" vs="L2" rr="0.024648" hwhm="3.555" src="2" />
+    <XRay e="16.739" l="L2-O5" vs="L2" hwhm="3.555" src="2" />
+    <XRay e="16.763" l="L2-P1" vs="L2" rr="0.00020348" hwhm="3.555" src="2" />
+    <XRay e="16.77" l="L2-P2" vs="L2" hwhm="3.555" src="2" />
+    <XRay e="16.775" l="L2-P3" vs="L2" hwhm="3.555" src="2" />
+    <XRay e="10.213" l="L3-M2" vs="L3" rr="0.00051086" hwhm="9.03" src="1" />
+    <XRay e="10.798" l="L3-M3" vs="L3" rr="0.00046193" hwhm="7.53" src="1" />
+    <XRay e="11.306" l="Lα2" vs="L3" rr="0.078402" hwhm="4.72" src="1" />
+    <XRay e="11.426" l="Lα1" vs="L3" rr="0.68984" hwhm="4.72" src="1" />
+    <XRay e="13.169" l="L3-N1" vs="L3" rr="0.010609" hwhm="8.38" src="1" />
+    <XRay e="13.31" l="L3-N2" vs="L3" rr="0.0001153" hwhm="7.13" src="1" />
+    <XRay e="13.456" l="L3-N3" vs="L3" rr="0.0001206" hwhm="6.53" src="1" />
+    <XRay e="13.68" l="L3-N4" vs="L3" rr="0.015044" hwhm="5.28" src="1" />
+    <XRay e="13.708" l="L3-N5" vs="L3" rr="0.13658" hwhm="5.255" src="1" />
+    <XRay e="14.001" l="L3-N6" vs="L3" rr="0.00013984" hwhm="3.415" src="1" />
+    <XRay e="14.008" l="L3-N7" vs="L3" rr="0.0007775" hwhm="3.41" src="1" />
+    <XRay e="14.015" l="L3-O1" vs="L3" rr="0.0024218" hwhm="3.195" src="2" />
+    <XRay e="14.063" l="L3-O2" vs="L3" rr="0.00002369" hwhm="3.195" src="2" />
+    <XRay e="14.094" l="L3-O3" vs="L3" rr="0.00002491" hwhm="3.195" src="2" />
+    <XRay e="14.166" l="L3-O4" vs="L3" hwhm="3.195" src="2" />
+    <XRay e="14.17" l="L3-O5" vs="L3" hwhm="3.195" src="2" />
+    <XRay e="14.194" l="L3-P1" vs="L3" rr="0.0003808" hwhm="3.195" src="2" />
+    <XRay e="14.201" l="L3-P2" vs="L3" hwhm="3.195" src="2" />
+    <XRay e="14.206" l="L3-P3" vs="L3" hwhm="3.195" src="2" />
+  </Element>
+  <Element Z="86" symbol="Rn" name="Rn">
+    <XRay e="80.349" l="K-L1" vs="K" hwhm="43.3" src="1" />
+    <XRay e="81.069" l="Kα2" vs="K" rr="0.29486" hwhm="40.105" src="1" />
+    <XRay e="83.787" l="Kα1" vs="K" rr="0.4859" hwhm="40.135" src="1" />
+    <XRay e="93.924" l="K-M1" vs="K" hwhm="44.35" src="1" />
+    <XRay e="94.247" l="K-M2" vs="K" rr="0.05662" hwhm="42.55" src="1" />
+    <XRay e="94.868" l="Kβ1" vs="K" rr="0.10983" hwhm="40.85" src="1" />
+    <XRay e="95.385" l="K-M4" vs="K" hwhm="38.14" src="1" />
+    <XRay e="95.513" l="K-M5" vs="K" hwhm="38.14" src="1" />
+    <XRay e="97.307" l="K-N1" vs="K" hwhm="41.9" src="1" />
+    <XRay e="97.453" l="K-N2" vs="K" rr="0.01418" hwhm="40.6" src="1" />
+    <XRay e="97.607" l="K-N3" vs="K" rr="0.02833" hwhm="40" src="1" />
+    <XRay e="97.839" l="K-N4" vs="K" hwhm="38.7" src="1" />
+    <XRay e="97.867" l="K-N5" vs="K" hwhm="38.65" src="1" />
+    <XRay e="98.168" l="K-N6" vs="K" hwhm="36.78" src="1" />
+    <XRay e="98.175" l="K-N7" vs="K" hwhm="36.78" src="1" />
+    <XRay e="98.189" l="K-O1" vs="K" hwhm="36.7" src="2" />
+    <XRay e="98.239" l="K-O2" vs="K" hwhm="36.7" src="2" />
+    <XRay e="98.274" l="K-O3" vs="K" hwhm="36.7" src="2" />
+    <XRay e="98.349" l="K-O4" vs="K" hwhm="36.7" src="2" />
+    <XRay e="98.354" l="K-O5" vs="K" hwhm="36.7" src="2" />
+    <XRay e="98.381" l="K-P1" vs="K" hwhm="36.7" src="2" />
+    <XRay e="98.389" l="K-P2" vs="K" hwhm="36.7" src="2" />
+    <XRay e="98.395" l="K-P3" vs="K" hwhm="36.7" src="2" />
+    <XRay e="13.575" l="L1-M1" vs="L1" rr="0.000012" hwhm="14.25" src="1" />
+    <XRay e="13.898" l="L1-M2" vs="L1" rr="0.34146" hwhm="12.45" src="1" />
+    <XRay e="14.519" l="L1-M3" vs="L1" rr="0.3432" hwhm="10.75" src="1" />
+    <XRay e="15.036" l="L1-M4" vs="L1" rr="0.013653" hwhm="8.04" src="1" />
+    <XRay e="15.164" l="L1-M5" vs="L1" rr="0.020406" hwhm="8.04" src="1" />
+    <XRay e="16.958" l="L1-N1" vs="L1" rr="0.00000537" hwhm="11.8" src="1" />
+    <XRay e="17.104" l="L1-N2" vs="L1" rr="0.089741" hwhm="10.5" src="1" />
+    <XRay e="17.258" l="L1-N3" vs="L1" rr="0.10018" hwhm="9.9" src="1" />
+    <XRay e="17.49" l="L1-N4" vs="L1" rr="0.0021856" hwhm="8.6" src="1" />
+    <XRay e="17.518" l="L1-N5" vs="L1" rr="0.0034783" hwhm="8.55" src="1" />
+    <XRay e="17.819" l="L1-N6" vs="L1" hwhm="6.68" src="1" />
+    <XRay e="17.826" l="L1-N7" vs="L1" hwhm="6.68" src="1" />
+    <XRay e="17.84" l="L1-O1" vs="L1" rr="0.00000142" hwhm="6.6" src="2" />
+    <XRay e="17.89" l="L1-O2" vs="L1" rr="0.019479" hwhm="6.6" src="2" />
+    <XRay e="17.925" l="L1-O3" vs="L1" rr="0.021682" hwhm="6.6" src="2" />
+    <XRay e="18" l="L1-O4" vs="L1" hwhm="6.6" src="2" />
+    <XRay e="18.005" l="L1-O5" vs="L1" hwhm="6.6" src="2" />
+    <XRay e="18.032" l="L1-P1" vs="L1" hwhm="6.6" src="2" />
+    <XRay e="18.04" l="L1-P2" vs="L1" hwhm="6.6" src="2" />
+    <XRay e="18.046" l="L1-P3" vs="L1" hwhm="6.6" src="2" />
+    <XRay e="12.855" l="L2-M1" vs="L2" rr="0.021396" hwhm="11.055" src="1" />
+    <XRay e="13.178" l="L2-M2" vs="L2" rr="0.00000188" hwhm="9.255" src="1" />
+    <XRay e="13.799" l="L2-M3" vs="L2" rr="0.00096642" hwhm="7.555" src="1" />
+    <XRay e="14.316" l="Lβ1" vs="L2" rr="0.77715" hwhm="4.845" src="1" />
+    <XRay e="14.444" l="L2-M5" vs="L2" rr="0.00006672" hwhm="4.845" src="1" />
+    <XRay e="16.238" l="L2-N1" vs="L2" rr="0.0056386" hwhm="8.605" src="1" />
+    <XRay e="16.384" l="L2-N2" vs="L2" rr="0.00000075" hwhm="7.305" src="1" />
+    <XRay e="16.538" l="L2-N3" vs="L2" rr="0.00027781" hwhm="6.705" src="1" />
+    <XRay e="16.77" l="L2-N4" vs="L2" rr="0.1659" hwhm="5.405" src="1" />
+    <XRay e="16.798" l="L2-N5" vs="L2" rr="0.00001593" hwhm="5.355" src="1" />
+    <XRay e="17.099" l="L2-N6" vs="L2" rr="0.00083245" hwhm="3.485" src="1" />
+    <XRay e="17.106" l="L2-N7" vs="L2" hwhm="3.485" src="1" />
+    <XRay e="17.12" l="L2-O1" vs="L2" rr="0.0013232" hwhm="3.65" src="2" />
+    <XRay e="17.17" l="L2-O2" vs="L2" rr="0.00000018" hwhm="3.65" src="2" />
+    <XRay e="17.205" l="L2-O3" vs="L2" rr="0.00005997" hwhm="3.65" src="2" />
+    <XRay e="17.28" l="L2-O4" vs="L2" rr="0.026103" hwhm="3.65" src="2" />
+    <XRay e="17.285" l="L2-O5" vs="L2" hwhm="3.65" src="2" />
+    <XRay e="17.312" l="L2-P1" vs="L2" rr="0.00021922" hwhm="3.65" src="2" />
+    <XRay e="17.32" l="L2-P2" vs="L2" hwhm="3.65" src="2" />
+    <XRay e="17.326" l="L2-P3" vs="L2" hwhm="3.65" src="2" />
+    <XRay e="10.137" l="L3-M1" vs="L3" rr="0.042975" hwhm="11.085" src="1" />
+    <XRay e="10.46" l="L3-M2" vs="L3" rr="0.00052264" hwhm="9.285" src="1" />
+    <XRay e="11.081" l="L3-M3" vs="L3" rr="0.00047292" hwhm="7.585" src="1" />
+    <XRay e="11.598" l="Lα2" vs="L3" rr="0.078126" hwhm="4.875" src="1" />
+    <XRay e="11.726" l="Lα1" vs="L3" rr="0.68722" hwhm="4.875" src="1" />
+    <XRay e="13.52" l="L3-N1" vs="L3" rr="0.01078" hwhm="8.635" src="1" />
+    <XRay e="13.666" l="L3-N2" vs="L3" rr="0.00011794" hwhm="7.335" src="1" />
+    <XRay e="13.82" l="L3-N3" vs="L3" rr="0.00012411" hwhm="6.735" src="1" />
+    <XRay e="14.052" l="L3-N4" vs="L3" rr="0.015109" hwhm="5.435" src="1" />
+    <XRay e="14.08" l="L3-N5" vs="L3" rr="0.13721" hwhm="5.385" src="1" />
+    <XRay e="14.381" l="L3-N6" vs="L3" rr="0.00014762" hwhm="3.515" src="1" />
+    <XRay e="14.388" l="L3-N7" vs="L3" rr="0.00081981" hwhm="3.515" src="1" />
+    <XRay e="14.402" l="L3-O1" vs="L3" rr="0.0025053" hwhm="3.255" src="2" />
+    <XRay e="14.452" l="L3-O2" vs="L3" rr="0.00002475" hwhm="3.255" src="2" />
+    <XRay e="14.487" l="L3-O3" vs="L3" rr="0.00002632" hwhm="3.255" src="2" />
+    <XRay e="14.562" l="L3-O4" vs="L3" hwhm="3.255" src="2" />
+    <XRay e="14.567" l="L3-O5" vs="L3" hwhm="3.255" src="2" />
+    <XRay e="14.594" l="L3-P1" vs="L3" rr="0.00041472" hwhm="3.255" src="2" />
+    <XRay e="14.602" l="L3-P2" vs="L3" hwhm="3.255" src="2" />
+    <XRay e="14.608" l="L3-P3" vs="L3" hwhm="3.255" src="2" />
+  </Element>
+  <Element Z="87" symbol="Fr" name="Fr">
+    <XRay e="82.496" l="K-L1" vs="K" hwhm="45.2" src="1" />
+    <XRay e="83.231" l="Kα2" vs="K" rr="0.29549" hwhm="41.96" src="1" />
+    <XRay e="86.105" l="Kα1" vs="K" rr="0.48435" hwhm="41.99" src="1" />
+    <XRay e="96.486" l="K-M1" vs="K" hwhm="46.15" src="1" />
+    <XRay e="96.815" l="K-M2" vs="K" rr="0.0566" hwhm="44.5" src="1" />
+    <XRay e="97.474" l="Kβ1" vs="K" rr="0.10997" hwhm="42.55" src="1" />
+    <XRay e="98.001" l="K-M4" vs="K" hwhm="39.94" src="1" />
+    <XRay e="98.136" l="K-M5" vs="K" hwhm="39.94" src="1" />
+    <XRay e="99.982" l="K-N1" vs="K" hwhm="43.8" src="1" />
+    <XRay e="100.131" l="K-N2" vs="K" rr="0.01425" hwhm="42.5" src="1" />
+    <XRay e="100.296" l="K-N3" vs="K" rr="0.02856" hwhm="41.85" src="1" />
+    <XRay e="100.533" l="K-N4" vs="K" hwhm="40.5" src="1" />
+    <XRay e="100.563" l="K-N5" vs="K" hwhm="40.425" src="1" />
+    <XRay e="100.872" l="K-N6" vs="K" hwhm="38.525" src="1" />
+    <XRay e="100.881" l="K-N7" vs="K" hwhm="38.525" src="1" />
+    <XRay e="100.901" l="K-O1" vs="K" hwhm="38.45" src="2" />
+    <XRay e="100.952" l="K-O2" vs="K" hwhm="38.45" src="2" />
+    <XRay e="100.992" l="K-O3" vs="K" hwhm="38.45" src="2" />
+    <XRay e="101.07" l="K-O4" vs="K" hwhm="38.45" src="2" />
+    <XRay e="101.075" l="K-O5" vs="K" hwhm="38.45" src="2" />
+    <XRay e="101.106" l="K-P1" vs="K" hwhm="38.45" src="2" />
+    <XRay e="101.116" l="K-P2" vs="K" hwhm="38.45" src="2" />
+    <XRay e="101.123" l="K-P3" vs="K" hwhm="38.45" src="2" />
+    <XRay e="101.126" l="K-P5" vs="K" />
+    <XRay e="13.99" l="L1-M1" vs="L1" rr="0.00001311" hwhm="14.45" src="1" />
+    <XRay e="14.319" l="L1-M2" vs="L1" rr="0.34237" hwhm="12.8" src="1" />
+    <XRay e="14.978" l="L1-M3" vs="L1" rr="0.33691" hwhm="10.85" src="1" />
+    <XRay e="15.505" l="L1-M4" vs="L1" rr="0.014039" hwhm="8.24" src="1" />
+    <XRay e="15.64" l="L1-M5" vs="L1" rr="0.020968" hwhm="8.24" src="1" />
+    <XRay e="17.486" l="L1-N1" vs="L1" rr="0.0000059" hwhm="12.1" src="1" />
+    <XRay e="17.635" l="L1-N2" vs="L1" rr="0.090533" hwhm="10.8" src="1" />
+    <XRay e="17.8" l="L1-N3" vs="L1" rr="0.09927" hwhm="10.15" src="1" />
+    <XRay e="18.037" l="L1-N4" vs="L1" rr="0.0022715" hwhm="8.8" src="1" />
+    <XRay e="18.067" l="L1-N5" vs="L1" rr="0.0036202" hwhm="8.725" src="1" />
+    <XRay e="18.376" l="L1-N6" vs="L1" hwhm="6.825" src="1" />
+    <XRay e="18.385" l="L1-N7" vs="L1" hwhm="6.825" src="1" />
+    <XRay e="18.405" l="L1-O1" vs="L1" rr="0.00000159" hwhm="6.7" src="2" />
+    <XRay e="18.456" l="L1-O2" vs="L1" rr="0.020094" hwhm="6.7" src="2" />
+    <XRay e="18.496" l="L1-O3" vs="L1" rr="0.02206" hwhm="6.7" src="2" />
+    <XRay e="18.574" l="L1-O4" vs="L1" hwhm="6.7" src="2" />
+    <XRay e="18.579" l="L1-O5" vs="L1" hwhm="6.7" src="2" />
+    <XRay e="18.61" l="L1-P1" vs="L1" hwhm="6.7" src="2" />
+    <XRay e="18.62" l="L1-P2" vs="L1" hwhm="6.7" src="2" />
+    <XRay e="18.627" l="L1-P3" vs="L1" hwhm="6.7" src="2" />
+    <XRay e="18.6302" l="L1-P5" vs="L1" />
+    <XRay e="13.255" l="L2-M1" vs="L2" rr="0.021379" hwhm="11.21" src="1" />
+    <XRay e="13.584" l="L2-M2" vs="L2" rr="0.00000205" hwhm="9.56" src="1" />
+    <XRay e="14.243" l="L2-M3" vs="L2" rr="0.00098985" hwhm="7.61" src="1" />
+    <XRay e="14.77" l="Lβ1" vs="L2" rr="0.7745" hwhm="5" src="1" />
+    <XRay e="14.905" l="L2-M5" vs="L2" rr="0.00007075" hwhm="5" src="1" />
+    <XRay e="16.751" l="L2-N1" vs="L2" rr="0.005666" hwhm="8.86" src="1" />
+    <XRay e="16.9" l="L2-N2" vs="L2" rr="0.00000083" hwhm="7.56" src="1" />
+    <XRay e="17.065" l="L2-N3" vs="L2" rr="0.00028671" hwhm="6.91" src="1" />
+    <XRay e="17.302" l="L2-N4" vs="L2" rr="0.16694" hwhm="5.56" src="1" />
+    <XRay e="17.332" l="L2-N5" vs="L2" rr="0.00001707" hwhm="5.485" src="1" />
+    <XRay e="17.641" l="L2-N6" vs="L2" rr="0.00087225" hwhm="3.585" src="1" />
+    <XRay e="17.65" l="L2-N7" vs="L2" hwhm="3.585" src="1" />
+    <XRay e="17.67" l="L2-O1" vs="L2" rr="0.0013529" hwhm="3.785" src="2" />
+    <XRay e="17.721" l="L2-O2" vs="L2" rr="0.0000002" hwhm="3.785" src="2" />
+    <XRay e="17.761" l="L2-O3" vs="L2" rr="0.00006333" hwhm="3.785" src="2" />
+    <XRay e="17.839" l="L2-O4" vs="L2" rr="0.027554" hwhm="3.785" src="2" />
+    <XRay e="17.844" l="L2-O5" vs="L2" hwhm="3.785" src="2" />
+    <XRay e="17.875" l="L2-P1" vs="L2" rr="0.00024141" hwhm="3.785" src="2" />
+    <XRay e="17.885" l="L2-P2" vs="L2" hwhm="3.785" src="2" />
+    <XRay e="17.892" l="L2-P3" vs="L2" hwhm="3.785" src="2" />
+    <XRay e="17.8952" l="L2-P5" vs="L2" />
+    <XRay e="10.381" l="L3-M1" vs="L3" rr="0.043528" hwhm="11.24" src="1" />
+    <XRay e="10.71" l="L3-M2" vs="L3" rr="0.00053408" hwhm="9.59" src="1" />
+    <XRay e="11.369" l="L3-M3" vs="L3" rr="0.00048377" hwhm="7.64" src="1" />
+    <XRay e="11.896" l="Lα2" vs="L3" rr="0.077833" hwhm="5.03" src="1" />
+    <XRay e="12.031" l="Lα1" vs="L3" rr="0.68464" hwhm="5.03" src="1" />
+    <XRay e="13.877" l="L3-N1" vs="L3" rr="0.010937" hwhm="8.89" src="1" />
+    <XRay e="14.026" l="L3-N2" vs="L3" rr="0.0001203" hwhm="7.59" src="1" />
+    <XRay e="14.191" l="L3-N3" vs="L3" rr="0.0001276" hwhm="6.94" src="1" />
+    <XRay e="14.428" l="L3-N4" vs="L3" rr="0.015166" hwhm="5.59" src="1" />
+    <XRay e="14.458" l="L3-N5" vs="L3" rr="0.1378" hwhm="5.515" src="1" />
+    <XRay e="14.767" l="L3-N6" vs="L3" rr="0.0001553" hwhm="3.615" src="1" />
+    <XRay e="14.776" l="L3-N7" vs="L3" rr="0.00086255" hwhm="3.615" src="1" />
+    <XRay e="14.796" l="L3-O1" vs="L3" rr="0.0025884" hwhm="3.375" src="2" />
+    <XRay e="14.847" l="L3-O2" vs="L3" rr="0.00002577" hwhm="3.375" src="2" />
+    <XRay e="14.887" l="L3-O3" vs="L3" rr="0.00002778" hwhm="3.375" src="2" />
+    <XRay e="14.965" l="L3-O4" vs="L3" hwhm="3.375" src="2" />
+    <XRay e="14.97" l="L3-O5" vs="L3" hwhm="3.375" src="2" />
+    <XRay e="15.001" l="L3-P1" vs="L3" rr="0.00046117" hwhm="3.375" src="2" />
+    <XRay e="15.011" l="L3-P2" vs="L3" hwhm="3.375" src="2" />
+    <XRay e="15.018" l="L3-P3" vs="L3" hwhm="3.375" src="2" />
+    <XRay e="15.0212" l="L3-P5" vs="L3" />
+  </Element>
+  <Element Z="88" symbol="Ra" name="Ra">
+    <XRay e="84.683" l="K-L1" vs="K" hwhm="47.15" src="1" />
+    <XRay e="85.431" l="Kα2" vs="K" rr="0.29605" hwhm="44.05" src="1" />
+    <XRay e="88.471" l="Kα1" vs="K" rr="0.48294" hwhm="43.945" src="1" />
+    <XRay e="99.093" l="K-M1" vs="K" hwhm="48" src="1" />
+    <XRay e="99.432" l="K-M2" vs="K" rr="0.05659" hwhm="46.55" src="1" />
+    <XRay e="100.13" l="Kβ1" vs="K" rr="0.1101" hwhm="44.4" src="1" />
+    <XRay e="100.667" l="K-M4" vs="K" hwhm="41.84" src="1" />
+    <XRay e="100.81" l="K-M5" vs="K" hwhm="41.84" src="1" />
+    <XRay e="102.707" l="K-N1" vs="K" hwhm="45.775" src="1" />
+    <XRay e="102.86" l="K-N2" vs="K" rr="0.01431" hwhm="44.45" src="1" />
+    <XRay e="103.036" l="K-N3" vs="K" rr="0.02878" hwhm="43.8" src="1" />
+    <XRay e="103.279" l="K-N4" vs="K" hwhm="42.375" src="1" />
+    <XRay e="103.312" l="K-N5" vs="K" hwhm="42.3" src="1" />
+    <XRay e="103.628" l="K-N6" vs="K" hwhm="40.375" src="1" />
+    <XRay e="103.636" l="K-N7" vs="K" hwhm="40.38" src="1" />
+    <XRay e="103.664" l="K-O1" vs="K" hwhm="40.25" src="2" />
+    <XRay e="103.718" l="K-O2" vs="K" hwhm="40.25" src="2" />
+    <XRay e="103.762" l="K-O3" vs="K" hwhm="40.25" src="2" />
+    <XRay e="103.843" l="K-O4" vs="K" hwhm="40.25" src="2" />
+    <XRay e="103.849" l="K-O5" vs="K" hwhm="40.25" src="2" />
+    <XRay e="103.884" l="K-P1" vs="K" hwhm="40.25" src="2" />
+    <XRay e="103.895" l="K-P2" vs="K" hwhm="40.25" src="2" />
+    <XRay e="103.903" l="K-P3" vs="K" hwhm="40.25" src="2" />
+    <XRay e="103.91" l="K-P5" vs="K" />
+    <XRay e="14.41" l="L1-M1" vs="L1" rr="0.0000143" hwhm="14.55" src="1" />
+    <XRay e="14.749" l="L1-M2" vs="L1" rr="0.34373" hwhm="13.1" src="1" />
+    <XRay e="15.447" l="L1-M3" vs="L1" rr="0.33035" hwhm="10.95" src="1" />
+    <XRay e="15.984" l="L1-M4" vs="L1" rr="0.014439" hwhm="8.39" src="1" />
+    <XRay e="16.127" l="L1-M5" vs="L1" rr="0.02156" hwhm="8.39" src="1" />
+    <XRay e="18.024" l="L1-N1" vs="L1" rr="0.00000648" hwhm="12.325" src="1" />
+    <XRay e="18.177" l="L1-N2" vs="L1" rr="0.091233" hwhm="11" src="1" />
+    <XRay e="18.353" l="L1-N3" vs="L1" rr="0.098282" hwhm="10.35" src="1" />
+    <XRay e="18.596" l="L1-N4" vs="L1" rr="0.0023619" hwhm="8.925" src="1" />
+    <XRay e="18.629" l="L1-N5" vs="L1" rr="0.0037666" hwhm="8.85" src="1" />
+    <XRay e="18.945" l="L1-N6" vs="L1" hwhm="6.925" src="1" />
+    <XRay e="18.953" l="L1-N7" vs="L1" hwhm="6.93" src="1" />
+    <XRay e="18.981" l="L1-O1" vs="L1" rr="0.00000179" hwhm="6.75" src="2" />
+    <XRay e="19.035" l="L1-O2" vs="L1" rr="0.020686" hwhm="6.75" src="2" />
+    <XRay e="19.079" l="L1-O3" vs="L1" rr="0.022384" hwhm="6.75" src="2" />
+    <XRay e="19.16" l="L1-O4" vs="L1" hwhm="6.75" src="2" />
+    <XRay e="19.166" l="L1-O5" vs="L1" hwhm="6.75" src="2" />
+    <XRay e="19.201" l="L1-P1" vs="L1" hwhm="6.75" src="2" />
+    <XRay e="19.212" l="L1-P2" vs="L1" hwhm="6.75" src="2" />
+    <XRay e="19.22" l="L1-P3" vs="L1" hwhm="6.75" src="2" />
+    <XRay e="19.2273" l="L1-P5" vs="L1" />
+    <XRay e="13.662" l="L2-M1" vs="L2" rr="0.021388" hwhm="11.45" src="1" />
+    <XRay e="14.001" l="L2-M2" vs="L2" rr="0.00000224" hwhm="10" src="1" />
+    <XRay e="14.699" l="L2-M3" vs="L2" rr="0.0010094" hwhm="7.85" src="1" />
+    <XRay e="15.236" l="Lβ1" vs="L2" rr="0.77186" hwhm="5.29" src="1" />
+    <XRay e="15.379" l="L2-M5" vs="L2" rr="0.00007496" hwhm="5.29" src="1" />
+    <XRay e="17.276" l="L2-N1" vs="L2" rr="0.0056938" hwhm="9.225" src="1" />
+    <XRay e="17.429" l="L2-N2" vs="L2" rr="0.00000091" hwhm="7.9" src="1" />
+    <XRay e="17.605" l="L2-N3" vs="L2" rr="0.00029552" hwhm="7.25" src="1" />
+    <XRay e="17.848" l="L2-N4" vs="L2" rr="0.16795" hwhm="5.825" src="1" />
+    <XRay e="17.881" l="L2-N5" vs="L2" rr="0.00001829" hwhm="5.75" src="1" />
+    <XRay e="18.197" l="L2-N6" vs="L2" rr="0.00091289" hwhm="3.825" src="1" />
+    <XRay e="18.205" l="L2-N7" vs="L2" hwhm="3.83" src="1" />
+    <XRay e="18.233" l="L2-O1" vs="L2" rr="0.001384" hwhm="3.89" src="2" />
+    <XRay e="18.287" l="L2-O2" vs="L2" rr="0.00000023" hwhm="3.89" src="2" />
+    <XRay e="18.331" l="L2-O3" vs="L2" rr="0.00006715" hwhm="3.89" src="2" />
+    <XRay e="18.412" l="L2-O4" vs="L2" rr="0.028996" hwhm="3.89" src="2" />
+    <XRay e="18.418" l="L2-O5" vs="L2" hwhm="3.89" src="2" />
+    <XRay e="18.453" l="L2-P1" vs="L2" rr="0.00026333" hwhm="3.89" src="2" />
+    <XRay e="18.464" l="L2-P2" vs="L2" hwhm="3.89" src="2" />
+    <XRay e="18.472" l="L2-P3" vs="L2" hwhm="3.89" src="2" />
+    <XRay e="18.4793" l="L2-P5" vs="L2" />
+    <XRay e="10.622" l="L3-M1" vs="L3" rr="0.044042" hwhm="11.345" src="1" />
+    <XRay e="10.961" l="L3-M2" vs="L3" rr="0.00054561" hwhm="9.895" src="1" />
+    <XRay e="11.659" l="L3-M3" vs="L3" rr="0.00049422" hwhm="7.745" src="1" />
+    <XRay e="12.196" l="Lα2" vs="L3" rr="0.07753" hwhm="5.185" src="1" />
+    <XRay e="12.339" l="Lα1" vs="L3" rr="0.68184" hwhm="5.185" src="1" />
+    <XRay e="14.236" l="L3-N1" vs="L3" rr="0.01114" hwhm="9.12" src="1" />
+    <XRay e="14.389" l="L3-N2" vs="L3" rr="0.00012278" hwhm="7.795" src="1" />
+    <XRay e="14.565" l="L3-N3" vs="L3" rr="0.0001314" hwhm="7.145" src="1" />
+    <XRay e="14.808" l="L3-N4" vs="L3" rr="0.015209" hwhm="5.72" src="1" />
+    <XRay e="14.841" l="L3-N5" vs="L3" rr="0.13864" hwhm="5.645" src="1" />
+    <XRay e="15.157" l="L3-N6" vs="L3" rr="0.00016348" hwhm="3.72" src="1" />
+    <XRay e="15.165" l="L3-N7" vs="L3" rr="0.00090567" hwhm="3.725" src="1" />
+    <XRay e="15.193" l="L3-O1" vs="L3" rr="0.0026729" hwhm="3.46" src="2" />
+    <XRay e="15.247" l="L3-O2" vs="L3" rr="0.0000268" hwhm="3.46" src="2" />
+    <XRay e="15.291" l="L3-O3" vs="L3" rr="0.00002925" hwhm="3.46" src="2" />
+    <XRay e="15.372" l="L3-O4" vs="L3" hwhm="3.46" src="2" />
+    <XRay e="15.378" l="L3-O5" vs="L3" hwhm="3.46" src="2" />
+    <XRay e="15.413" l="L3-P1" vs="L3" rr="0.00050836" hwhm="3.46" src="2" />
+    <XRay e="15.424" l="L3-P2" vs="L3" hwhm="3.46" src="2" />
+    <XRay e="15.432" l="L3-P3" vs="L3" hwhm="3.46" src="2" />
+    <XRay e="15.4393" l="L3-P5" vs="L3" />
+  </Element>
+  <Element Z="89" symbol="Ac" name="Ac">
+    <XRay e="86.91" l="K-L1" vs="K" hwhm="49.2" src="1" />
+    <XRay e="87.675" l="Kα2" vs="K" rr="0.29657" hwhm="46.2" src="1" />
+    <XRay e="90.886" l="Kα1" vs="K" rr="0.48165" hwhm="45.955" src="1" />
+    <XRay e="101.757" l="K-M1" vs="K" hwhm="49.9" src="1" />
+    <XRay e="102.101" l="K-M2" vs="K" rr="0.05658" hwhm="48.65" src="1" />
+    <XRay e="102.841" l="Kβ1" vs="K" rr="0.11021" hwhm="46.2" src="1" />
+    <XRay e="103.386" l="K-M4" vs="K" hwhm="43.79" src="1" />
+    <XRay e="103.537" l="K-M5" vs="K" hwhm="43.79" src="1" />
+    <XRay e="105.487" l="K-N1" vs="K" hwhm="47.8" src="1" />
+    <XRay e="105.644" l="K-N2" vs="K" rr="0.01437" hwhm="46.45" src="1" />
+    <XRay e="105.832" l="K-N3" vs="K" rr="0.02898" hwhm="45.825" src="1" />
+    <XRay e="106.08" l="K-N4" vs="K" hwhm="44.3" src="1" />
+    <XRay e="106.116" l="K-N5" vs="K" hwhm="44.225" src="1" />
+    <XRay e="106.44" l="K-N6" vs="K" hwhm="42.275" src="1" />
+    <XRay e="106.449" l="K-N7" vs="K" hwhm="42.285" src="1" />
+    <XRay e="106.484" l="K-O1" vs="K" hwhm="42.1" src="2" />
+    <XRay e="106.539" l="K-O2" vs="K" hwhm="42.1" src="2" />
+    <XRay e="106.588" l="K-O3" vs="K" hwhm="42.1" src="2" />
+    <XRay e="106.672" l="K-O4" vs="K" hwhm="42.1" src="2" />
+    <XRay e="106.68" l="K-O5" vs="K" hwhm="42.1" src="2" />
+    <XRay e="106.719" l="K-P1" vs="K" hwhm="42.1" src="2" />
+    <XRay e="106.732" l="K-P2" vs="K" hwhm="42.1" src="2" />
+    <XRay e="106.741" l="K-P3" vs="K" hwhm="42.1" src="2" />
+    <XRay e="106.752" l="K-P4" vs="K" />
+    <XRay e="106.751" l="K-P5" vs="K" />
+    <XRay e="14.847" l="L1-M1" vs="L1" rr="0.00001563" hwhm="14.7" src="1" />
+    <XRay e="15.191" l="L1-M2" vs="L1" rr="0.34504" hwhm="13.45" src="1" />
+    <XRay e="15.931" l="L1-M3" vs="L1" rr="0.32369" hwhm="11" src="1" />
+    <XRay e="16.476" l="L1-M4" vs="L1" rr="0.01485" hwhm="8.59" src="1" />
+    <XRay e="16.627" l="L1-M5" vs="L1" rr="0.022178" hwhm="8.59" src="1" />
+    <XRay e="18.577" l="L1-N1" vs="L1" rr="0.00000713" hwhm="12.6" src="1" />
+    <XRay e="18.734" l="L1-N2" vs="L1" rr="0.09201" hwhm="11.25" src="1" />
+    <XRay e="18.922" l="L1-N3" vs="L1" rr="0.0973" hwhm="10.625" src="1" />
+    <XRay e="19.17" l="L1-N4" vs="L1" rr="0.0024507" hwhm="9.1" src="1" />
+    <XRay e="19.206" l="L1-N5" vs="L1" rr="0.0039211" hwhm="9.025" src="1" />
+    <XRay e="19.53" l="L1-N6" vs="L1" hwhm="7.075" src="1" />
+    <XRay e="19.539" l="L1-N7" vs="L1" hwhm="7.085" src="1" />
+    <XRay e="19.574" l="L1-O1" vs="L1" rr="0.00000199" hwhm="6.85" src="2" />
+    <XRay e="19.629" l="L1-O2" vs="L1" rr="0.021256" hwhm="6.85" src="2" />
+    <XRay e="19.678" l="L1-O3" vs="L1" rr="0.022711" hwhm="6.85" src="2" />
+    <XRay e="19.762" l="L1-O4" vs="L1" hwhm="6.85" src="2" />
+    <XRay e="19.77" l="L1-O5" vs="L1" hwhm="6.85" src="2" />
+    <XRay e="19.809" l="L1-P1" vs="L1" hwhm="6.85" src="2" />
+    <XRay e="19.822" l="L1-P2" vs="L1" hwhm="6.85" src="2" />
+    <XRay e="19.831" l="L1-P3" vs="L1" hwhm="6.85" src="2" />
+    <XRay e="19.8416" l="L1-P4" vs="L1" />
+    <XRay e="19.8406" l="L1-P5" vs="L1" />
+    <XRay e="14.082" l="L2-M1" vs="L2" rr="0.021393" hwhm="11.7" src="1" />
+    <XRay e="14.426" l="L2-M2" vs="L2" rr="0.00000245" hwhm="10.45" src="1" />
+    <XRay e="15.166" l="L2-M3" vs="L2" rr="0.0010324" hwhm="8" src="1" />
+    <XRay e="15.711" l="Lβ1" vs="L2" rr="0.76878" hwhm="5.59" src="1" />
+    <XRay e="15.862" l="L2-M5" vs="L2" rr="0.00007936" hwhm="5.59" src="1" />
+    <XRay e="17.812" l="L2-N1" vs="L2" rr="0.0057224" hwhm="9.6" src="1" />
+    <XRay e="17.969" l="L2-N2" vs="L2" rr="0.000001" hwhm="8.25" src="1" />
+    <XRay e="18.157" l="L2-N3" vs="L2" rr="0.00030475" hwhm="7.625" src="1" />
+    <XRay e="18.405" l="L2-N4" vs="L2" rr="0.16921" hwhm="6.1" src="1" />
+    <XRay e="18.441" l="L2-N5" vs="L2" rr="0.00001957" hwhm="6.025" src="1" />
+    <XRay e="18.765" l="L2-N6" vs="L2" rr="0.00095235" hwhm="4.075" src="1" />
+    <XRay e="18.774" l="L2-N7" vs="L2" hwhm="4.085" src="1" />
+    <XRay e="18.809" l="L2-O1" vs="L2" rr="0.0014133" hwhm="4.025" src="2" />
+    <XRay e="18.864" l="L2-O2" vs="L2" rr="0.00000026" hwhm="4.025" src="2" />
+    <XRay e="18.913" l="L2-O3" vs="L2" rr="0.00007069" hwhm="4.025" src="2" />
+    <XRay e="18.997" l="L2-O4" vs="L2" rr="0.030392" hwhm="4.025" src="2" />
+    <XRay e="19.005" l="L2-O5" vs="L2" hwhm="4.025" src="2" />
+    <XRay e="19.044" l="L2-P1" vs="L2" rr="0.0002835" hwhm="4.025" src="2" />
+    <XRay e="19.057" l="L2-P2" vs="L2" hwhm="4.025" src="2" />
+    <XRay e="19.066" l="L2-P3" vs="L2" hwhm="4.025" src="2" />
+    <XRay e="19.0766" l="L2-P4" vs="L2" rr="0.00023712" />
+    <XRay e="19.0756" l="L2-P5" vs="L2" />
+    <XRay e="10.871" l="L3-M1" vs="L3" rr="0.044627" hwhm="11.455" src="1" />
+    <XRay e="11.215" l="L3-M2" vs="L3" rr="0.00055767" hwhm="10.205" src="1" />
+    <XRay e="11.955" l="L3-M3" vs="L3" rr="0.0005054" hwhm="7.755" src="1" />
+    <XRay e="12.5" l="Lα2" vs="L3" rr="0.077264" hwhm="5.345" src="1" />
+    <XRay e="12.651" l="Lα1" vs="L3" rr="0.6792" hwhm="5.345" src="1" />
+    <XRay e="14.601" l="L3-N1" vs="L3" rr="0.011304" hwhm="9.355" src="1" />
+    <XRay e="14.758" l="L3-N2" vs="L3" rr="0.00012512" hwhm="8.005" src="1" />
+    <XRay e="14.946" l="L3-N3" vs="L3" rr="0.00013525" hwhm="7.38" src="1" />
+    <XRay e="15.194" l="L3-N4" vs="L3" rr="0.015257" hwhm="5.855" src="1" />
+    <XRay e="15.23" l="L3-N5" vs="L3" rr="0.13917" hwhm="5.78" src="1" />
+    <XRay e="15.554" l="L3-N6" vs="L3" rr="0.00017152" hwhm="3.83" src="1" />
+    <XRay e="15.563" l="L3-N7" vs="L3" rr="0.00094905" hwhm="3.84" src="1" />
+    <XRay e="15.598" l="L3-O1" vs="L3" rr="0.0027606" hwhm="3.54" src="2" />
+    <XRay e="15.653" l="L3-O2" vs="L3" rr="0.00002784" hwhm="3.54" src="2" />
+    <XRay e="15.702" l="L3-O3" vs="L3" rr="0.00003078" hwhm="3.54" src="2" />
+    <XRay e="15.786" l="L3-O4" vs="L3" hwhm="3.54" src="2" />
+    <XRay e="15.794" l="L3-O5" vs="L3" hwhm="3.54" src="2" />
+    <XRay e="15.833" l="L3-P1" vs="L3" rr="0.00055277" hwhm="3.54" src="2" />
+    <XRay e="15.846" l="L3-P2" vs="L3" hwhm="3.54" src="2" />
+    <XRay e="15.855" l="L3-P3" vs="L3" hwhm="3.54" src="2" />
+    <XRay e="15.8656" l="L3-P4" vs="L3" />
+    <XRay e="15.8646" l="L3-P5" vs="L3" />
+  </Element>
+  <Element Z="90" symbol="Th" name="Th">
+    <XRay e="89.178" l="K-L1" vs="K" hwhm="51.25" src="1" />
+    <XRay e="89.957" l="Kα2" vs="K" rr="0.29705" hwhm="48.35" src="1" />
+    <XRay e="93.35" l="Kα1" vs="K" rr="0.48047" hwhm="47.97" src="1" />
+    <XRay e="104.468" l="K-M1" vs="K" hwhm="51.85" src="1" />
+    <XRay e="104.819" l="K-M2" vs="K" rr="0.05657" hwhm="50.7" src="1" />
+    <XRay e="105.604" l="Kβ1" vs="K" rr="0.11031" hwhm="48.1" src="1" />
+    <XRay e="106.159" l="K-M4" vs="K" hwhm="45.74" src="1" />
+    <XRay e="106.318" l="K-M5" vs="K" hwhm="45.74" src="1" />
+    <XRay e="108.32" l="K-N1" vs="K" hwhm="49.85" src="1" />
+    <XRay e="108.482" l="K-N2" vs="K" rr="0.01442" hwhm="48.475" src="1" />
+    <XRay e="108.683" l="K-N3" vs="K" rr="0.02916" hwhm="47.85" src="1" />
+    <XRay e="108.937" l="K-N4" vs="K" hwhm="46.25" src="1" />
+    <XRay e="108.973" l="K-N5" vs="K" hwhm="46.15" src="1" />
+    <XRay e="109.306" l="K-N6" vs="K" hwhm="44.175" src="1" />
+    <XRay e="109.315" l="K-N7" vs="K" hwhm="44.19" src="1" />
+    <XRay e="109.36" l="K-O1" vs="K" hwhm="44.05" src="2" />
+    <XRay e="109.414" l="K-O2" vs="K" hwhm="44.05" src="2" />
+    <XRay e="109.47" l="K-O3" vs="K" hwhm="44.05" src="2" />
+    <XRay e="109.556" l="K-O4" vs="K" hwhm="44.05" src="2" />
+    <XRay e="109.563" l="K-O5" vs="K" hwhm="44.05" src="2" />
+    <XRay e="109.609" l="K-P1" vs="K" hwhm="44.05" src="2" />
+    <XRay e="109.626" l="K-P2" vs="K" hwhm="44.05" src="2" />
+    <XRay e="109.633" l="K-P3" vs="K" hwhm="44.05" src="2" />
+    <XRay e="109.645" l="K-P4" vs="K" />
+    <XRay e="109.644" l="K-P5" vs="K" />
+    <XRay e="15.29" l="L1-M1" vs="L1" rr="0.00001704" hwhm="14.9" src="1" />
+    <XRay e="15.641" l="L1-M2" vs="L1" rr="0.34631" hwhm="13.75" src="1" />
+    <XRay e="16.426" l="L1-M3" vs="L1" rr="0.317" hwhm="11.15" src="1" />
+    <XRay e="16.981" l="L1-M4" vs="L1" rr="0.015254" hwhm="8.79" src="1" />
+    <XRay e="17.14" l="L1-M5" vs="L1" rr="0.022767" hwhm="8.79" src="1" />
+    <XRay e="19.142" l="L1-N1" vs="L1" rr="0.00000783" hwhm="12.9" src="1" />
+    <XRay e="19.304" l="L1-N2" vs="L1" rr="0.092809" hwhm="11.525" src="1" />
+    <XRay e="19.505" l="L1-N3" vs="L1" rr="0.096244" hwhm="10.9" src="1" />
+    <XRay e="19.759" l="L1-N4" vs="L1" rr="0.002547" hwhm="9.3" src="1" />
+    <XRay e="19.795" l="L1-N5" vs="L1" rr="0.004077" hwhm="9.2" src="1" />
+    <XRay e="20.128" l="L1-N6" vs="L1" hwhm="7.225" src="1" />
+    <XRay e="20.137" l="L1-N7" vs="L1" hwhm="7.24" src="1" />
+    <XRay e="20.182" l="L1-O1" vs="L1" rr="0.00000223" hwhm="6.9" src="2" />
+    <XRay e="20.236" l="L1-O2" vs="L1" rr="0.021897" hwhm="6.9" src="2" />
+    <XRay e="20.292" l="L1-O3" vs="L1" rr="0.022996" hwhm="6.9" src="2" />
+    <XRay e="20.378" l="L1-O4" vs="L1" hwhm="6.9" src="2" />
+    <XRay e="20.385" l="L1-O5" vs="L1" hwhm="6.9" src="2" />
+    <XRay e="20.431" l="L1-P1" vs="L1" hwhm="6.9" src="2" />
+    <XRay e="20.448" l="L1-P2" vs="L1" hwhm="6.9" src="2" />
+    <XRay e="20.455" l="L1-P3" vs="L1" hwhm="6.9" src="2" />
+    <XRay e="20.4665" l="L1-P4" vs="L1" />
+    <XRay e="20.4661" l="L1-P5" vs="L1" />
+    <XRay e="14.511" l="L2-M1" vs="L2" rr="0.021396" hwhm="12" src="1" />
+    <XRay e="14.862" l="L2-M2" vs="L2" rr="0.00000268" hwhm="10.85" src="1" />
+    <XRay e="15.647" l="L2-M3" vs="L2" rr="0.0010555" hwhm="8.25" src="1" />
+    <XRay e="16.202" l="Lβ1" vs="L2" rr="0.76594" hwhm="5.89" src="1" />
+    <XRay e="16.361" l="L2-M5" vs="L2" rr="0.00008392" hwhm="5.89" src="1" />
+    <XRay e="18.363" l="L2-N1" vs="L2" rr="0.0057491" hwhm="10" src="1" />
+    <XRay e="18.525" l="L2-N2" vs="L2" rr="0.00000111" hwhm="8.625" src="1" />
+    <XRay e="18.726" l="L2-N3" vs="L2" rr="0.00031378" hwhm="8" src="1" />
+    <XRay e="18.98" l="L2-N4" vs="L2" rr="0.17018" hwhm="6.4" src="1" />
+    <XRay e="19.016" l="L2-N5" vs="L2" rr="0.00002093" hwhm="6.3" src="1" />
+    <XRay e="19.349" l="L2-N6" vs="L2" rr="0.00099294" hwhm="4.325" src="1" />
+    <XRay e="19.358" l="L2-N7" vs="L2" hwhm="4.34" src="1" />
+    <XRay e="19.403" l="L2-O1" vs="L2" rr="0.0014412" hwhm="4.14" src="2" />
+    <XRay e="19.457" l="L2-O2" vs="L2" rr="0.00000029" hwhm="4.14" src="2" />
+    <XRay e="19.513" l="L2-O3" vs="L2" rr="0.00007467" hwhm="4.14" src="2" />
+    <XRay e="19.599" l="L2-O4" vs="L2" rr="0.031743" hwhm="4.14" src="2" />
+    <XRay e="19.606" l="L2-O5" vs="L2" hwhm="4.14" src="2" />
+    <XRay e="19.652" l="L2-P1" vs="L2" rr="0.00030231" hwhm="4.14" src="2" />
+    <XRay e="19.669" l="L2-P2" vs="L2" hwhm="4.14" src="2" />
+    <XRay e="19.676" l="L2-P3" vs="L2" hwhm="4.14" src="2" />
+    <XRay e="19.6875" l="L2-P4" vs="L2" rr="0.00058586" />
+    <XRay e="19.6871" l="L2-P5" vs="L2" />
+    <XRay e="11.118" l="L3-M1" vs="L3" rr="0.04519" hwhm="11.62" src="1" />
+    <XRay e="11.469" l="L3-M2" vs="L3" rr="0.0005692" hwhm="10.47" src="1" />
+    <XRay e="12.254" l="L3-M3" vs="L3" rr="0.00051659" hwhm="7.87" src="1" />
+    <XRay e="12.809" l="Lα2" vs="L3" rr="0.076977" hwhm="5.51" src="1" />
+    <XRay e="12.968" l="Lα1" vs="L3" rr="0.67661" hwhm="5.51" src="1" />
+    <XRay e="14.97" l="L3-N1" vs="L3" rr="0.011483" hwhm="9.62" src="1" />
+    <XRay e="15.132" l="L3-N2" vs="L3" rr="0.00012752" hwhm="8.245" src="1" />
+    <XRay e="15.333" l="L3-N3" vs="L3" rr="0.00013897" hwhm="7.62" src="1" />
+    <XRay e="15.587" l="L3-N4" vs="L3" rr="0.01529" hwhm="6.02" src="1" />
+    <XRay e="15.623" l="L3-N5" vs="L3" rr="0.13959" hwhm="5.92" src="1" />
+    <XRay e="15.956" l="L3-N6" vs="L3" rr="0.00017983" hwhm="3.945" src="1" />
+    <XRay e="15.965" l="L3-N7" vs="L3" rr="0.00099665" hwhm="3.96" src="1" />
+    <XRay e="16.01" l="L3-O1" vs="L3" rr="0.0028476" hwhm="3.615" src="2" />
+    <XRay e="16.064" l="L3-O2" vs="L3" rr="0.00002885" hwhm="3.615" src="2" />
+    <XRay e="16.12" l="L3-O3" vs="L3" rr="0.00003231" hwhm="3.615" src="2" />
+    <XRay e="16.206" l="L3-O4" vs="L3" hwhm="3.615" src="2" />
+    <XRay e="16.213" l="L3-O5" vs="L3" hwhm="3.615" src="2" />
+    <XRay e="16.259" l="L3-P1" vs="L3" rr="0.00059551" hwhm="3.615" src="2" />
+    <XRay e="16.276" l="L3-P2" vs="L3" hwhm="3.615" src="2" />
+    <XRay e="16.283" l="L3-P3" vs="L3" hwhm="3.615" src="2" />
+    <XRay e="16.2945" l="L3-P4" vs="L3" />
+    <XRay e="16.2941" l="L3-P5" vs="L3" />
+  </Element>
+  <Element Z="91" symbol="Pa" name="Pa">
+    <XRay e="91.491" l="K-L1" vs="K" hwhm="53.4" src="1" />
+    <XRay e="92.282" l="Kα2" vs="K" rr="0.29784" hwhm="50.6" src="1" />
+    <XRay e="95.863" l="Kα1" vs="K" rr="0.4791" hwhm="50.035" src="1" />
+    <XRay e="107.235" l="K-M1" vs="K" hwhm="53.8" src="1" />
+    <XRay e="107.595" l="K-M2" vs="K" rr="0.05656" hwhm="52.85" src="1" />
+    <XRay e="108.422" l="Kβ1" vs="K" rr="0.11042" hwhm="50" src="1" />
+    <XRay e="108.99" l="K-M4" vs="K" hwhm="47.745" src="1" />
+    <XRay e="109.154" l="K-M5" vs="K" hwhm="47.745" src="1" />
+    <XRay e="111.213" l="K-N1" vs="K" hwhm="51.85" src="1" />
+    <XRay e="111.379" l="K-N2" vs="K" rr="0.01447" hwhm="50.65" src="1" />
+    <XRay e="111.592" l="K-N3" vs="K" rr="0.02938" hwhm="49.925" src="1" />
+    <XRay e="111.853" l="K-N4" vs="K" hwhm="48.25" src="1" />
+    <XRay e="111.888" l="K-N5" vs="K" hwhm="48.15" src="1" />
+    <XRay e="112.23" l="K-N6" vs="K" hwhm="46.195" src="1" />
+    <XRay e="112.241" l="K-N7" vs="K" hwhm="46.175" src="1" />
+    <XRay e="112.291" l="K-O1" vs="K" hwhm="46" src="2" />
+    <XRay e="112.351" l="K-O2" vs="K" hwhm="46" src="2" />
+    <XRay e="112.408" l="K-O3" vs="K" hwhm="46" src="2" />
+    <XRay e="112.499" l="K-O4" vs="K" hwhm="46" src="2" />
+    <XRay e="112.506" l="K-O5" vs="K" hwhm="46" src="2" />
+    <XRay e="112.589" l="K-O6" vs="K" />
+    <XRay e="112.553" l="K-P1" vs="K" hwhm="46" src="2" />
+    <XRay e="112.569" l="K-P2" vs="K" hwhm="46" src="2" />
+    <XRay e="112.579" l="K-P3" vs="K" hwhm="46" src="2" />
+    <XRay e="112.591" l="K-P4" vs="K" />
+    <XRay e="112.59" l="K-P5" vs="K" />
+    <XRay e="15.744" l="L1-M1" vs="L1" rr="0.00001861" hwhm="15.1" src="1" />
+    <XRay e="16.104" l="L1-M2" vs="L1" rr="0.34802" hwhm="14.15" src="1" />
+    <XRay e="16.931" l="L1-M3" vs="L1" rr="0.31079" hwhm="11.3" src="1" />
+    <XRay e="17.499" l="L1-M4" vs="L1" rr="0.015713" hwhm="9.045" src="1" />
+    <XRay e="17.663" l="L1-M5" vs="L1" rr="0.023418" hwhm="9.045" src="1" />
+    <XRay e="19.722" l="L1-N1" vs="L1" rr="0.00000857" hwhm="13.15" src="1" />
+    <XRay e="19.888" l="L1-N2" vs="L1" rr="0.09367" hwhm="11.95" src="1" />
+    <XRay e="20.101" l="L1-N3" vs="L1" rr="0.095185" hwhm="11.225" src="1" />
+    <XRay e="20.362" l="L1-N4" vs="L1" rr="0.0026491" hwhm="9.55" src="1" />
+    <XRay e="20.397" l="L1-N5" vs="L1" rr="0.004242" hwhm="9.45" src="1" />
+    <XRay e="20.739" l="L1-N6" vs="L1" hwhm="7.495" src="1" />
+    <XRay e="20.75" l="L1-N7" vs="L1" hwhm="7.475" src="1" />
+    <XRay e="20.8" l="L1-O1" vs="L1" rr="0.00000247" hwhm="7.2" src="2" />
+    <XRay e="20.86" l="L1-O2" vs="L1" rr="0.022379" hwhm="7.2" src="2" />
+    <XRay e="20.917" l="L1-O3" vs="L1" rr="0.023028" hwhm="7.2" src="2" />
+    <XRay e="21.008" l="L1-O4" vs="L1" hwhm="7.2" src="2" />
+    <XRay e="21.015" l="L1-O5" vs="L1" hwhm="7.2" src="2" />
+    <XRay e="21.0977" l="L1-O6" vs="L1" />
+    <XRay e="21.062" l="L1-P1" vs="L1" hwhm="7.2" src="2" />
+    <XRay e="21.078" l="L1-P2" vs="L1" hwhm="7.2" src="2" />
+    <XRay e="21.088" l="L1-P3" vs="L1" hwhm="7.2" src="2" />
+    <XRay e="21.1004" l="L1-P4" vs="L1" />
+    <XRay e="21.0994" l="L1-P5" vs="L1" />
+    <XRay e="14.953" l="L2-M1" vs="L2" rr="0.021417" hwhm="12.3" src="1" />
+    <XRay e="15.313" l="L2-M2" vs="L2" rr="0.00000293" hwhm="11.35" src="1" />
+    <XRay e="16.14" l="L2-M3" vs="L2" rr="0.0010795" hwhm="8.5" src="1" />
+    <XRay e="16.708" l="Lβ1" vs="L2" rr="0.76402" hwhm="6.245" src="1" />
+    <XRay e="16.872" l="L2-M5" vs="L2" rr="0.00008897" hwhm="6.245" src="1" />
+    <XRay e="18.931" l="L2-N1" vs="L2" rr="0.0057843" hwhm="10.35" src="1" />
+    <XRay e="19.097" l="L2-N2" vs="L2" rr="0.00000122" hwhm="9.15" src="1" />
+    <XRay e="19.31" l="L2-N3" vs="L2" rr="0.0003236" hwhm="8.425" src="1" />
+    <XRay e="19.571" l="L2-N4" vs="L2" rr="0.17153" hwhm="6.75" src="1" />
+    <XRay e="19.606" l="L2-N5" vs="L2" rr="0.00002238" hwhm="6.65" src="1" />
+    <XRay e="19.948" l="L2-N6" vs="L2" rr="0.0010327" hwhm="4.695" src="1" />
+    <XRay e="19.959" l="L2-N7" vs="L2" hwhm="4.675" src="1" />
+    <XRay e="20.009" l="L2-O1" vs="L2" rr="0.0014664" hwhm="4.425" src="2" />
+    <XRay e="20.069" l="L2-O2" vs="L2" rr="0.00000032" hwhm="4.425" src="2" />
+    <XRay e="20.126" l="L2-O3" vs="L2" rr="0.00007788" hwhm="4.425" src="2" />
+    <XRay e="20.217" l="L2-O4" vs="L2" rr="0.032483" hwhm="4.425" src="2" />
+    <XRay e="20.224" l="L2-O5" vs="L2" hwhm="4.425" src="2" />
+    <XRay e="20.3067" l="L2-O6" vs="L2" />
+    <XRay e="20.271" l="L2-P1" vs="L2" rr="0.00030068" hwhm="4.425" src="2" />
+    <XRay e="20.287" l="L2-P2" vs="L2" hwhm="4.425" src="2" />
+    <XRay e="20.297" l="L2-P3" vs="L2" hwhm="4.425" src="2" />
+    <XRay e="20.3094" l="L2-P4" vs="L2" rr="0.00025213" />
+    <XRay e="20.3084" l="L2-P5" vs="L2" />
+    <XRay e="11.372" l="L3-M1" vs="L3" rr="0.045834" hwhm="11.735" src="1" />
+    <XRay e="11.732" l="L3-M2" vs="L3" rr="0.00058145" hwhm="10.785" src="1" />
+    <XRay e="12.559" l="L3-M3" vs="L3" rr="0.00052827" hwhm="7.935" src="1" />
+    <XRay e="13.127" l="Lα2" vs="L3" rr="0.076772" hwhm="5.68" src="1" />
+    <XRay e="13.291" l="Lα1" vs="L3" rr="0.67459" hwhm="5.68" src="1" />
+    <XRay e="15.35" l="L3-N1" vs="L3" rr="0.011664" hwhm="9.785" src="1" />
+    <XRay e="15.516" l="L3-N2" vs="L3" rr="0.00012986" hwhm="8.585" src="1" />
+    <XRay e="15.729" l="L3-N3" vs="L3" rr="0.00014279" hwhm="7.86" src="1" />
+    <XRay e="15.99" l="L3-N4" vs="L3" rr="0.015366" hwhm="6.185" src="1" />
+    <XRay e="16.025" l="L3-N5" vs="L3" rr="0.14044" hwhm="6.085" src="1" />
+    <XRay e="16.367" l="L3-N6" vs="L3" rr="0.00018833" hwhm="4.13" src="1" />
+    <XRay e="16.378" l="L3-N7" vs="L3" rr="0.0010401" hwhm="4.11" src="1" />
+    <XRay e="16.428" l="L3-O1" vs="L3" rr="0.0029263" hwhm="3.715" src="2" />
+    <XRay e="16.488" l="L3-O2" vs="L3" rr="0.0000297" hwhm="3.715" src="2" />
+    <XRay e="16.545" l="L3-O3" vs="L3" rr="0.00003364" hwhm="3.715" src="2" />
+    <XRay e="16.636" l="L3-O4" vs="L3" hwhm="3.715" src="2" />
+    <XRay e="16.643" l="L3-O5" vs="L3" hwhm="3.715" src="2" />
+    <XRay e="16.7257" l="L3-O6" vs="L3" />
+    <XRay e="16.69" l="L3-P1" vs="L3" rr="0.0005979" hwhm="3.715" src="2" />
+    <XRay e="16.706" l="L3-P2" vs="L3" hwhm="3.715" src="2" />
+    <XRay e="16.716" l="L3-P3" vs="L3" hwhm="3.715" src="2" />
+    <XRay e="16.7284" l="L3-P4" vs="L3" />
+    <XRay e="16.7274" l="L3-P5" vs="L3" />
+  </Element>
+  <Element Z="92" symbol="U" name="U">
+    <XRay e="93.844" l="K-L1" vs="K" hwhm="56.15" src="1" />
+    <XRay e="94.654" l="Kα2" vs="K" rr="0.29856" hwhm="53.15" src="1" />
+    <XRay e="98.434" l="Kα1" vs="K" rr="0.47785" hwhm="52.25" src="1" />
+    <XRay e="110.054" l="K-M1" vs="K" hwhm="55.9" src="1" />
+    <XRay e="110.421" l="K-M2" vs="K" rr="0.05655" hwhm="55.2" src="1" />
+    <XRay e="111.298" l="Kβ1" vs="K" rr="0.11051" hwhm="52.1" src="1" />
+    <XRay e="111.876" l="K-M4" vs="K" hwhm="49.9" src="1" />
+    <XRay e="112.052" l="K-M5" vs="K" hwhm="49.9" src="1" />
+    <XRay e="114.161" l="K-N1" vs="K" hwhm="54.25" src="1" />
+    <XRay e="114.331" l="K-N2" vs="K" rr="0.01452" hwhm="52.95" src="1" />
+    <XRay e="114.559" l="K-N3" vs="K" rr="0.02959" hwhm="52.15" src="1" />
+    <XRay e="114.823" l="K-N4" vs="K" hwhm="50.4" src="1" />
+    <XRay e="114.865" l="K-N5" vs="K" hwhm="50.275" src="1" />
+    <XRay e="115.213" l="K-N6" vs="K" hwhm="48.335" src="1" />
+    <XRay e="115.223" l="K-N7" vs="K" hwhm="48.305" src="1" />
+    <XRay e="115.278" l="K-O1" vs="K" hwhm="48.1" src="2" />
+    <XRay e="115.345" l="K-O2" vs="K" hwhm="48.1" src="2" />
+    <XRay e="115.408" l="K-O3" vs="K" hwhm="48.1" src="2" />
+    <XRay e="115.498" l="K-O4" vs="K" hwhm="48.1" src="2" />
+    <XRay e="115.507" l="K-O5" vs="K" hwhm="48.1" src="2" />
+    <XRay e="115.594" l="K-O6" vs="K" />
+    <XRay e="115.558" l="K-P1" vs="K" hwhm="48.1" src="2" />
+    <XRay e="115.575" l="K-P2" vs="K" hwhm="48.1" src="2" />
+    <XRay e="115.585" l="K-P3" vs="K" hwhm="48.1" src="2" />
+    <XRay e="115.597" l="K-P4" vs="K" />
+    <XRay e="115.596" l="K-P5" vs="K" />
+    <XRay e="16.21" l="L1-M1" vs="L1" rr="0.00002033" hwhm="15.75" src="1" />
+    <XRay e="16.577" l="L1-M2" vs="L1" rr="0.34977" hwhm="15.05" src="1" />
+    <XRay e="17.454" l="L1-M3" vs="L1" rr="0.30395" hwhm="11.95" src="1" />
+    <XRay e="18.032" l="L1-M4" vs="L1" rr="0.016159" hwhm="9.75" src="1" />
+    <XRay e="18.208" l="L1-M5" vs="L1" rr="0.024095" hwhm="9.75" src="1" />
+    <XRay e="20.317" l="L1-N1" vs="L1" rr="0.00000941" hwhm="14.1" src="1" />
+    <XRay e="20.487" l="L1-N2" vs="L1" rr="0.0945" hwhm="12.8" src="1" />
+    <XRay e="20.715" l="L1-N3" vs="L1" rr="0.09405" hwhm="12" src="1" />
+    <XRay e="20.979" l="L1-N4" vs="L1" rr="0.0027532" hwhm="10.25" src="1" />
+    <XRay e="21.021" l="L1-N5" vs="L1" rr="0.00441" hwhm="10.125" src="1" />
+    <XRay e="21.369" l="L1-N6" vs="L1" hwhm="8.185" src="1" />
+    <XRay e="21.379" l="L1-N7" vs="L1" hwhm="8.155" src="1" />
+    <XRay e="21.434" l="L1-O1" vs="L1" rr="0.00000275" hwhm="7.05" src="2" />
+    <XRay e="21.501" l="L1-O2" vs="L1" rr="0.022909" hwhm="7.05" src="2" />
+    <XRay e="21.564" l="L1-O3" vs="L1" rr="0.023114" hwhm="7.05" src="2" />
+    <XRay e="21.654" l="L1-O4" vs="L1" hwhm="7.05" src="2" />
+    <XRay e="21.663" l="L1-O5" vs="L1" hwhm="7.05" src="2" />
+    <XRay e="21.7495" l="L1-O6" vs="L1" />
+    <XRay e="21.714" l="L1-P1" vs="L1" hwhm="7.05" src="2" />
+    <XRay e="21.731" l="L1-P2" vs="L1" hwhm="7.05" src="2" />
+    <XRay e="21.741" l="L1-P3" vs="L1" hwhm="7.05" src="2" />
+    <XRay e="21.7534" l="L1-P4" vs="L1" />
+    <XRay e="21.7523" l="L1-P5" vs="L1" />
+    <XRay e="15.4" l="L2-M1" vs="L2" rr="0.021454" hwhm="12.75" src="1" />
+    <XRay e="15.767" l="L2-M2" vs="L2" rr="0.00000319" hwhm="12.05" src="1" />
+    <XRay e="16.644" l="L2-M3" vs="L2" rr="0.001103" hwhm="8.95" src="1" />
+    <XRay e="17.222" l="Lβ1" vs="L2" rr="0.76185" hwhm="6.75" src="1" />
+    <XRay e="17.398" l="L2-M5" vs="L2" rr="0.00009421" hwhm="6.75" src="1" />
+    <XRay e="19.507" l="L2-N1" vs="L2" rr="0.0058182" hwhm="11.1" src="1" />
+    <XRay e="19.677" l="L2-N2" vs="L2" rr="0.00000133" hwhm="9.8" src="1" />
+    <XRay e="19.905" l="L2-N3" vs="L2" rr="0.00033347" hwhm="9" src="1" />
+    <XRay e="20.169" l="L2-N4" vs="L2" rr="0.17256" hwhm="7.25" src="1" />
+    <XRay e="20.211" l="L2-N5" vs="L2" rr="0.00002393" hwhm="7.125" src="1" />
+    <XRay e="20.559" l="L2-N6" vs="L2" rr="0.0010727" hwhm="5.185" src="1" />
+    <XRay e="20.569" l="L2-N7" vs="L2" hwhm="5.155" src="1" />
+    <XRay e="20.624" l="L2-O1" vs="L2" rr="0.0014948" hwhm="4.71" src="2" />
+    <XRay e="20.691" l="L2-O2" vs="L2" rr="0.00000036" hwhm="4.71" src="2" />
+    <XRay e="20.754" l="L2-O3" vs="L2" rr="0.00008162" hwhm="4.71" src="2" />
+    <XRay e="20.844" l="L2-O4" vs="L2" rr="0.033417" hwhm="4.71" src="2" />
+    <XRay e="20.853" l="L2-O5" vs="L2" hwhm="4.71" src="2" />
+    <XRay e="20.9395" l="L2-O6" vs="L2" />
+    <XRay e="20.904" l="L2-P1" vs="L2" rr="0.00030782" hwhm="4.71" src="2" />
+    <XRay e="20.921" l="L2-P2" vs="L2" hwhm="4.71" src="2" />
+    <XRay e="20.931" l="L2-P3" vs="L2" hwhm="4.71" src="2" />
+    <XRay e="20.9434" l="L2-P4" vs="L2" rr="0.00025488" />
+    <XRay e="20.9423" l="L2-P5" vs="L2" />
+    <XRay e="11.62" l="L3-M1" vs="L3" rr="0.046435" hwhm="11.85" src="1" />
+    <XRay e="11.987" l="L3-M2" vs="L3" rr="0.00059348" hwhm="11.15" src="1" />
+    <XRay e="12.864" l="L3-M3" vs="L3" rr="0.00053993" hwhm="8.05" src="1" />
+    <XRay e="13.442" l="Lα2" vs="L3" rr="0.076528" hwhm="5.85" src="1" />
+    <XRay e="13.618" l="Lα1" vs="L3" rr="0.67241" hwhm="5.85" src="1" />
+    <XRay e="15.727" l="L3-N1" vs="L3" rr="0.011853" hwhm="10.2" src="1" />
+    <XRay e="15.897" l="L3-N2" vs="L3" rr="0.00013192" hwhm="8.9" src="1" />
+    <XRay e="16.125" l="L3-N3" vs="L3" rr="0.0001467" hwhm="8.1" src="1" />
+    <XRay e="16.389" l="L3-N4" vs="L3" rr="0.015395" hwhm="6.35" src="1" />
+    <XRay e="16.431" l="L3-N5" vs="L3" rr="0.14112" hwhm="6.225" src="1" />
+    <XRay e="16.779" l="L3-N6" vs="L3" rr="0.00019718" hwhm="4.285" src="1" />
+    <XRay e="16.789" l="L3-N7" vs="L3" rr="0.0010877" hwhm="4.255" src="1" />
+    <XRay e="16.844" l="L3-O1" vs="L3" rr="0.0030064" hwhm="3.765" src="2" />
+    <XRay e="16.911" l="L3-O2" vs="L3" rr="0.00003059" hwhm="3.765" src="2" />
+    <XRay e="16.974" l="L3-O3" vs="L3" rr="0.00003506" hwhm="3.765" src="2" />
+    <XRay e="17.064" l="L3-O4" vs="L3" hwhm="3.765" src="2" />
+    <XRay e="17.073" l="L3-O5" vs="L3" hwhm="3.765" src="2" />
+    <XRay e="17.1595" l="L3-O6" vs="L3" />
+    <XRay e="17.124" l="L3-P1" vs="L3" rr="0.00061774" hwhm="3.765" src="2" />
+    <XRay e="17.141" l="L3-P2" vs="L3" hwhm="3.765" src="2" />
+    <XRay e="17.151" l="L3-P3" vs="L3" hwhm="3.765" src="2" />
+    <XRay e="17.1634" l="L3-P4" vs="L3" />
+    <XRay e="17.1623" l="L3-P5" vs="L3" />
+  </Element>
+  <Element Z="93" symbol="Np" name="Np">
+    <XRay e="96.242" l="K-L1" vs="K" hwhm="57" src="2" />
+    <XRay e="97.069" l="Kα2" vs="K" rr="0.29947" hwhm="54.955" src="2" />
+    <XRay e="101.059" l="Kα1" vs="K" rr="0.47631" hwhm="53.795" src="2" />
+    <XRay e="112.93" l="K-M1" vs="K" hwhm="61" src="2" />
+    <XRay e="113.303" l="K-M2" vs="K" rr="0.05654" hwhm="57.9285" src="2" />
+    <XRay e="114.234" l="Kβ1" vs="K" rr="0.11064" hwhm="55" src="2" />
+    <XRay e="114.82" l="K-M4" vs="K" hwhm="52.1861" src="2" />
+    <XRay e="115.005" l="K-M5" vs="K" hwhm="52.00315" src="2" />
+    <XRay e="117.168" l="K-N1" vs="K" hwhm="56.69045" src="2" />
+    <XRay e="117.341" l="K-N2" vs="K" rr="0.01457" hwhm="54.53655" src="2" />
+    <XRay e="117.584" l="K-N3" vs="K" rr="0.02981" hwhm="54.53655" src="2" />
+    <XRay e="117.853" l="K-N4" vs="K" hwhm="52.68125" src="2" />
+    <XRay e="117.898" l="K-N5" vs="K" hwhm="52.68125" src="2" />
+    <XRay e="118.255" l="K-N6" vs="K" hwhm="50.1585" src="2" />
+    <XRay e="118.266" l="K-N7" vs="K" hwhm="50.1585" src="2" />
+    <XRay e="118.331" l="K-O1" vs="K" hwhm="50.05" src="2" />
+    <XRay e="118.395" l="K-O2" vs="K" hwhm="50.05" src="2" />
+    <XRay e="118.463" l="K-O3" vs="K" hwhm="50.05" src="2" />
+    <XRay e="118.56" l="K-O4" vs="K" hwhm="50.05" src="2" />
+    <XRay e="118.568" l="K-O5" vs="K" hwhm="50.05" src="2" />
+    <XRay e="118.659" l="K-O6" vs="K" />
+    <XRay e="118.622" l="K-P1" vs="K" hwhm="50.05" src="2" />
+    <XRay e="118.64" l="K-P2" vs="K" hwhm="50.05" src="2" />
+    <XRay e="118.651" l="K-P3" vs="K" hwhm="50.05" src="2" />
+    <XRay e="118.664" l="K-P4" vs="K" />
+    <XRay e="118.663" l="K-P5" vs="K" />
+    <XRay e="16.688" l="L1-M1" vs="L1" rr="0.00002217" hwhm="18" src="2" />
+    <XRay e="17.061" l="L1-M2" vs="L1" rr="0.35133" hwhm="14.9285" src="2" />
+    <XRay e="17.992" l="L1-M3" vs="L1" rr="0.29716" hwhm="12" src="2" />
+    <XRay e="18.578" l="L1-M4" vs="L1" rr="0.016638" hwhm="9.1861" src="2" />
+    <XRay e="18.763" l="L1-M5" vs="L1" rr="0.024763" hwhm="9.00315" src="2" />
+    <XRay e="20.926" l="L1-N1" vs="L1" rr="0.00001033" hwhm="13.69045" src="2" />
+    <XRay e="21.099" l="L1-N2" vs="L1" rr="0.095339" hwhm="11.53655" src="2" />
+    <XRay e="21.342" l="L1-N3" vs="L1" rr="0.092901" hwhm="11.53655" src="2" />
+    <XRay e="21.611" l="L1-N4" vs="L1" rr="0.0028594" hwhm="9.68125" src="2" />
+    <XRay e="21.656" l="L1-N5" vs="L1" rr="0.0045889" hwhm="9.68125" src="2" />
+    <XRay e="22.013" l="L1-N6" vs="L1" hwhm="7.1585" src="2" />
+    <XRay e="22.024" l="L1-N7" vs="L1" hwhm="7.1585" src="2" />
+    <XRay e="22.089" l="L1-O1" vs="L1" rr="0.00000305" hwhm="7.05" src="2" />
+    <XRay e="22.153" l="L1-O2" vs="L1" rr="0.023409" hwhm="7.05" src="2" />
+    <XRay e="22.221" l="L1-O3" vs="L1" rr="0.023138" hwhm="7.05" src="2" />
+    <XRay e="22.318" l="L1-O4" vs="L1" hwhm="7.05" src="2" />
+    <XRay e="22.326" l="L1-O5" vs="L1" hwhm="7.05" src="2" />
+    <XRay e="22.4173" l="L1-O6" vs="L1" />
+    <XRay e="22.38" l="L1-P1" vs="L1" hwhm="7.05" src="2" />
+    <XRay e="22.398" l="L1-P2" vs="L1" hwhm="7.05" src="2" />
+    <XRay e="22.409" l="L1-P3" vs="L1" hwhm="7.05" src="2" />
+    <XRay e="22.4224" l="L1-P4" vs="L1" />
+    <XRay e="22.4212" l="L1-P5" vs="L1" />
+    <XRay e="15.861" l="L2-M1" vs="L2" rr="0.021479" hwhm="15.955" src="2" />
+    <XRay e="16.234" l="L2-M2" vs="L2" rr="0.00000349" hwhm="12.8835" src="2" />
+    <XRay e="17.165" l="L2-M3" vs="L2" rr="0.001128" hwhm="9.955" src="2" />
+    <XRay e="17.751" l="Lβ1" vs="L2" rr="0.75961" hwhm="7.1411" src="2" />
+    <XRay e="17.936" l="L2-M5" vs="L2" rr="0.00009978" hwhm="6.95815" src="2" />
+    <XRay e="20.099" l="L2-N1" vs="L2" rr="0.0058543" hwhm="11.64545" src="2" />
+    <XRay e="20.272" l="L2-N2" vs="L2" rr="0.00000147" hwhm="9.49155" src="2" />
+    <XRay e="20.515" l="L2-N3" vs="L2" rr="0.00034349" hwhm="9.49155" src="2" />
+    <XRay e="20.784" l="L2-N4" vs="L2" rr="0.17373" hwhm="7.63625" src="2" />
+    <XRay e="20.829" l="L2-N5" vs="L2" rr="0.00002558" hwhm="7.63625" src="2" />
+    <XRay e="21.186" l="L2-N6" vs="L2" rr="0.0011126" hwhm="5.1135" src="2" />
+    <XRay e="21.197" l="L2-N7" vs="L2" hwhm="5.1135" src="2" />
+    <XRay e="21.262" l="L2-O1" vs="L2" rr="0.001521" hwhm="5.005" src="2" />
+    <XRay e="21.326" l="L2-O2" vs="L2" rr="0.0000004" hwhm="5.005" src="2" />
+    <XRay e="21.394" l="L2-O3" vs="L2" rr="0.00008521" hwhm="5.005" src="2" />
+    <XRay e="21.491" l="L2-O4" vs="L2" rr="0.034305" hwhm="5.005" src="2" />
+    <XRay e="21.499" l="L2-O5" vs="L2" hwhm="5.005" src="2" />
+    <XRay e="21.5903" l="L2-O6" vs="L2" />
+    <XRay e="21.553" l="L2-P1" vs="L2" rr="0.00031413" hwhm="5.005" src="2" />
+    <XRay e="21.571" l="L2-P2" vs="L2" hwhm="5.005" src="2" />
+    <XRay e="21.582" l="L2-P3" vs="L2" hwhm="5.005" src="2" />
+    <XRay e="21.5954" l="L2-P4" vs="L2" rr="0.00025585" />
+    <XRay e="21.5942" l="L2-P5" vs="L2" />
+    <XRay e="11.871" l="L3-M1" vs="L3" rr="0.047102" hwhm="14.795" src="2" />
+    <XRay e="12.244" l="L3-M2" vs="L3" rr="0.00060567" hwhm="11.7235" src="2" />
+    <XRay e="13.175" l="L3-M3" vs="L3" rr="0.00055212" hwhm="8.795" src="2" />
+    <XRay e="13.761" l="Lα2" vs="L3" rr="0.076338" hwhm="5.9811" src="2" />
+    <XRay e="13.946" l="Lα1" vs="L3" rr="0.67034" hwhm="5.79815" src="2" />
+    <XRay e="16.109" l="L3-N1" vs="L3" rr="0.01206" hwhm="10.48545" src="2" />
+    <XRay e="16.282" l="L3-N2" vs="L3" rr="0.00013412" hwhm="8.33155" src="2" />
+    <XRay e="16.525" l="L3-N3" vs="L3" rr="0.00015082" hwhm="8.33155" src="2" />
+    <XRay e="16.794" l="L3-N4" vs="L3" rr="0.015453" hwhm="6.47625" src="2" />
+    <XRay e="16.839" l="L3-N5" vs="L3" rr="0.14154" hwhm="6.47625" src="2" />
+    <XRay e="17.196" l="L3-N6" vs="L3" rr="0.00020595" hwhm="3.9535" src="2" />
+    <XRay e="17.207" l="L3-N7" vs="L3" rr="0.0011345" hwhm="3.9535" src="2" />
+    <XRay e="17.272" l="L3-O1" vs="L3" rr="0.0030906" hwhm="3.845" src="2" />
+    <XRay e="17.336" l="L3-O2" vs="L3" rr="0.00003146" hwhm="3.845" src="2" />
+    <XRay e="17.404" l="L3-O3" vs="L3" rr="0.00003653" hwhm="3.845" src="2" />
+    <XRay e="17.501" l="L3-O4" vs="L3" hwhm="3.845" src="2" />
+    <XRay e="17.509" l="L3-O5" vs="L3" hwhm="3.845" src="2" />
+    <XRay e="17.6003" l="L3-O6" vs="L3" />
+    <XRay e="17.563" l="L3-P1" vs="L3" rr="0.00063668" hwhm="3.845" src="2" />
+    <XRay e="17.581" l="L3-P2" vs="L3" hwhm="3.845" src="2" />
+    <XRay e="17.592" l="L3-P3" vs="L3" hwhm="3.845" src="2" />
+    <XRay e="17.6054" l="L3-P4" vs="L3" />
+    <XRay e="17.6042" l="L3-P5" vs="L3" />
+  </Element>
+  <Element Z="94" symbol="Pu" name="Pu">
+    <XRay e="98.687" l="K-L1" vs="K" hwhm="59.25" src="2" />
+    <XRay e="99.525" l="Kα2" vs="K" rr="0.30031" hwhm="57.75" src="2" />
+    <XRay e="103.734" l="Kα1" vs="K" rr="0.47491" hwhm="56.41" src="2" />
+    <XRay e="115.858" l="K-M1" vs="K" hwhm="63.5" src="2" />
+    <XRay e="116.244" l="K-M2" vs="K" rr="0.05652" hwhm="60.4625" src="2" />
+    <XRay e="117.228" l="Kβ1" vs="K" rr="0.11076" hwhm="57.5" src="2" />
+    <XRay e="117.821" l="K-M4" vs="K" hwhm="54.76265" src="2" />
+    <XRay e="118.016" l="K-M5" vs="K" hwhm="54.5718" src="2" />
+    <XRay e="120.232" l="K-N1" vs="K" hwhm="59.09905" src="2" />
+    <XRay e="120.411" l="K-N2" vs="K" rr="0.01461" hwhm="56.7726" src="2" />
+    <XRay e="120.668" l="K-N3" vs="K" rr="0.03002" hwhm="56.7726" src="2" />
+    <XRay e="120.945" l="K-N4" vs="K" hwhm="55.09335" src="2" />
+    <XRay e="120.993" l="K-N5" vs="K" hwhm="55.09335" src="2" />
+    <XRay e="121.355" l="K-N6" vs="K" hwhm="52.69905" src="2" />
+    <XRay e="121.367" l="K-N7" vs="K" hwhm="52.69905" src="2" />
+    <XRay e="121.441" l="K-O1" vs="K" hwhm="52.55" src="2" />
+    <XRay e="121.508" l="K-O2" vs="K" hwhm="52.55" src="2" />
+    <XRay e="121.578" l="K-O3" vs="K" hwhm="52.55" src="2" />
+    <XRay e="121.678" l="K-O4" vs="K" hwhm="52.55" src="2" />
+    <XRay e="121.689" l="K-O5" vs="K" hwhm="52.55" src="2" />
+    <XRay e="121.784" l="K-O6" vs="K" />
+    <XRay e="121.745" l="K-P1" vs="K" hwhm="52.55" src="2" />
+    <XRay e="121.762" l="K-P2" vs="K" hwhm="52.55" src="2" />
+    <XRay e="121.775" l="K-P3" vs="K" hwhm="52.55" src="2" />
+    <XRay e="121.786" l="K-P5" vs="K" />
+    <XRay e="17.171" l="L1-M1" vs="L1" rr="0.0000242" hwhm="17.75" src="2" />
+    <XRay e="17.557" l="L1-M2" vs="L1" rr="0.35332" hwhm="14.7125" src="2" />
+    <XRay e="18.541" l="L1-M3" vs="L1" rr="0.29035" hwhm="11.75" src="2" />
+    <XRay e="19.134" l="L1-M4" vs="L1" rr="0.017099" hwhm="9.01265" src="2" />
+    <XRay e="19.329" l="L1-M5" vs="L1" rr="0.025447" hwhm="8.8218" src="2" />
+    <XRay e="21.545" l="L1-N1" vs="L1" rr="0.00001131" hwhm="13.34905" src="2" />
+    <XRay e="21.724" l="L1-N2" vs="L1" rr="0.096184" hwhm="11.0226" src="2" />
+    <XRay e="21.981" l="L1-N3" vs="L1" rr="0.091644" hwhm="11.0226" src="2" />
+    <XRay e="22.258" l="L1-N4" vs="L1" rr="0.0029694" hwhm="9.34335" src="2" />
+    <XRay e="22.306" l="L1-N5" vs="L1" rr="0.0047708" hwhm="9.34335" src="2" />
+    <XRay e="22.668" l="L1-N6" vs="L1" hwhm="6.94905" src="2" />
+    <XRay e="22.68" l="L1-N7" vs="L1" hwhm="6.94905" src="2" />
+    <XRay e="22.754" l="L1-O1" vs="L1" rr="0.00000338" hwhm="6.8" src="2" />
+    <XRay e="22.821" l="L1-O2" vs="L1" rr="0.023872" hwhm="6.8" src="2" />
+    <XRay e="22.891" l="L1-O3" vs="L1" rr="0.023103" hwhm="6.8" src="2" />
+    <XRay e="22.991" l="L1-O4" vs="L1" hwhm="6.8" src="2" />
+    <XRay e="23.002" l="L1-O5" vs="L1" hwhm="6.8" src="2" />
+    <XRay e="23.097" l="L1-O6" vs="L1" />
+    <XRay e="23.058" l="L1-P1" vs="L1" hwhm="6.8" src="2" />
+    <XRay e="23.075" l="L1-P2" vs="L1" hwhm="6.8" src="2" />
+    <XRay e="23.088" l="L1-P3" vs="L1" hwhm="6.8" src="2" />
+    <XRay e="23.0986" l="L1-P5" vs="L1" />
+    <XRay e="16.333" l="L2-M1" vs="L2" rr="0.021525" hwhm="16.25" src="2" />
+    <XRay e="16.719" l="L2-M2" vs="L2" rr="0.00000381" hwhm="13.2125" src="2" />
+    <XRay e="17.703" l="L2-M3" vs="L2" rr="0.0011526" hwhm="10.25" src="2" />
+    <XRay e="18.296" l="Lβ1" vs="L2" rr="0.75787" hwhm="7.51265" src="2" />
+    <XRay e="18.491" l="L2-M5" vs="L2" rr="0.00010564" hwhm="7.3218" src="2" />
+    <XRay e="20.707" l="L2-N1" vs="L2" rr="0.0058927" hwhm="11.84905" src="2" />
+    <XRay e="20.886" l="L2-N2" vs="L2" rr="0.00000161" hwhm="9.5226" src="2" />
+    <XRay e="21.143" l="L2-N3" vs="L2" rr="0.00035394" hwhm="9.5226" src="2" />
+    <XRay e="21.42" l="L2-N4" vs="L2" rr="0.17488" hwhm="7.84335" src="2" />
+    <XRay e="21.468" l="L2-N5" vs="L2" rr="0.00002734" hwhm="7.84335" src="2" />
+    <XRay e="21.83" l="L2-N6" vs="L2" rr="0.0011547" hwhm="5.44905" src="2" />
+    <XRay e="21.842" l="L2-N7" vs="L2" hwhm="5.44905" src="2" />
+    <XRay e="21.916" l="L2-O1" vs="L2" rr="0.0015459" hwhm="5.3" src="2" />
+    <XRay e="21.983" l="L2-O2" vs="L2" rr="0.00000044" hwhm="5.3" src="2" />
+    <XRay e="22.053" l="L2-O3" vs="L2" rr="0.00008869" hwhm="5.3" src="2" />
+    <XRay e="22.153" l="L2-O4" vs="L2" rr="0.034954" hwhm="5.3" src="2" />
+    <XRay e="22.164" l="L2-O5" vs="L2" hwhm="5.3" src="2" />
+    <XRay e="22.259" l="L2-O6" vs="L2" />
+    <XRay e="22.22" l="L2-P1" vs="L2" rr="0.00031126" hwhm="5.3" src="2" />
+    <XRay e="22.237" l="L2-P2" vs="L2" hwhm="5.3" src="2" />
+    <XRay e="22.25" l="L2-P3" vs="L2" hwhm="5.3" src="2" />
+    <XRay e="22.2606" l="L2-P5" vs="L2" />
+    <XRay e="12.124" l="L3-M1" vs="L3" rr="0.047776" hwhm="14.91" src="2" />
+    <XRay e="12.51" l="L3-M2" vs="L3" rr="0.00061819" hwhm="11.8725" src="2" />
+    <XRay e="13.494" l="L3-M3" vs="L3" rr="0.00056449" hwhm="8.91" src="2" />
+    <XRay e="14.087" l="Lα2" vs="L3" rr="0.076139" hwhm="6.17265" src="2" />
+    <XRay e="14.282" l="Lα1" vs="L3" rr="0.66861" hwhm="5.9818" src="2" />
+    <XRay e="16.498" l="L3-N1" vs="L3" rr="0.012253" hwhm="10.50905" src="2" />
+    <XRay e="16.677" l="L3-N2" vs="L3" rr="0.00013639" hwhm="8.1826" src="2" />
+    <XRay e="16.934" l="L3-N3" vs="L3" rr="0.0001548" hwhm="8.1826" src="2" />
+    <XRay e="17.211" l="L3-N4" vs="L3" rr="0.015505" hwhm="6.50335" src="2" />
+    <XRay e="17.259" l="L3-N5" vs="L3" rr="0.14219" hwhm="6.50335" src="2" />
+    <XRay e="17.621" l="L3-N6" vs="L3" rr="0.00021505" hwhm="4.10905" src="2" />
+    <XRay e="17.633" l="L3-N7" vs="L3" rr="0.0011824" hwhm="4.10905" src="2" />
+    <XRay e="17.707" l="L3-O1" vs="L3" rr="0.0031691" hwhm="3.96" src="2" />
+    <XRay e="17.774" l="L3-O2" vs="L3" rr="0.00003225" hwhm="3.96" src="2" />
+    <XRay e="17.844" l="L3-O3" vs="L3" rr="0.00003787" hwhm="3.96" src="2" />
+    <XRay e="17.944" l="L3-O4" vs="L3" hwhm="3.96" src="2" />
+    <XRay e="17.955" l="L3-O5" vs="L3" hwhm="3.96" src="2" />
+    <XRay e="18.05" l="L3-O6" vs="L3" />
+    <XRay e="18.011" l="L3-P1" vs="L3" rr="0.00063634" hwhm="3.96" src="2" />
+    <XRay e="18.028" l="L3-P2" vs="L3" hwhm="3.96" src="2" />
+    <XRay e="18.041" l="L3-P3" vs="L3" hwhm="3.96" src="2" />
+    <XRay e="18.0516" l="L3-P5" vs="L3" />
+  </Element>
+  <Element Z="95" symbol="Am" name="Am">
+    <XRay e="101.174" l="K-L1" vs="K" hwhm="61.15" src="2" />
+    <XRay e="102.03" l="Kα2" vs="K" rr="0.30107" hwhm="59.95" src="2" />
+    <XRay e="106.472" l="Kα1" vs="K" rr="0.47362" hwhm="58.52" src="2" />
+    <XRay e="118.849" l="K-M1" vs="K" hwhm="65.5" src="2" />
+    <XRay e="119.243" l="K-M2" vs="K" rr="0.0565" hwhm="62.4966" src="2" />
+    <XRay e="120.284" l="Kβ1" vs="K" rr="0.11087" hwhm="59.5" src="2" />
+    <XRay e="120.886" l="K-M4" vs="K" hwhm="56.8419" src="2" />
+    <XRay e="121.092" l="K-M5" vs="K" hwhm="56.64275" src="2" />
+    <XRay e="123.362" l="K-N1" vs="K" hwhm="61.00895" src="2" />
+    <XRay e="123.544" l="K-N2" vs="K" rr="0.01465" hwhm="58.52405" src="2" />
+    <XRay e="123.817" l="K-N3" vs="K" rr="0.03021" hwhm="58.52405" src="2" />
+    <XRay e="124.102" l="K-N4" vs="K" hwhm="57.00835" src="2" />
+    <XRay e="124.153" l="K-N5" vs="K" hwhm="57.00835" src="2" />
+    <XRay e="124.521" l="K-N6" vs="K" hwhm="54.75" src="2" />
+    <XRay e="124.536" l="K-N7" vs="K" hwhm="54.75" src="2" />
+    <XRay e="124.617" l="K-O1" vs="K" hwhm="54.55" src="2" />
+    <XRay e="124.684" l="K-O2" vs="K" hwhm="54.55" src="2" />
+    <XRay e="124.763" l="K-O3" vs="K" hwhm="54.55" src="2" />
+    <XRay e="124.866" l="K-O4" vs="K" hwhm="54.55" src="2" />
+    <XRay e="124.876" l="K-O5" vs="K" hwhm="54.55" src="2" />
+    <XRay e="124.974" l="K-O6" vs="K" />
+    <XRay e="124.975" l="K-O7" vs="K" />
+    <XRay e="124.934" l="K-P1" vs="K" hwhm="54.55" src="2" />
+    <XRay e="124.953" l="K-P2" vs="K" hwhm="54.55" src="2" />
+    <XRay e="124.966" l="K-P3" vs="K" hwhm="54.55" src="2" />
+    <XRay e="124.976" l="K-P5" vs="K" />
+    <XRay e="17.675" l="L1-M1" vs="L1" rr="0.00002636" hwhm="17.65" src="2" />
+    <XRay e="18.069" l="L1-M2" vs="L1" rr="0.35508" hwhm="14.6466" src="2" />
+    <XRay e="19.11" l="L1-M3" vs="L1" rr="0.28337" hwhm="11.65" src="2" />
+    <XRay e="19.712" l="L1-M4" vs="L1" rr="0.017563" hwhm="8.9919" src="2" />
+    <XRay e="19.918" l="L1-M5" vs="L1" rr="0.026154" hwhm="8.79275" src="2" />
+    <XRay e="22.188" l="L1-N1" vs="L1" rr="0.0000124" hwhm="13.15895" src="2" />
+    <XRay e="22.37" l="L1-N2" vs="L1" rr="0.096962" hwhm="10.67405" src="2" />
+    <XRay e="22.643" l="L1-N3" vs="L1" rr="0.090276" hwhm="10.67405" src="2" />
+    <XRay e="22.928" l="L1-N4" vs="L1" rr="0.0030831" hwhm="9.15835" src="2" />
+    <XRay e="22.979" l="L1-N5" vs="L1" rr="0.0049537" hwhm="9.15835" src="2" />
+    <XRay e="23.347" l="L1-N6" vs="L1" hwhm="6.9" src="2" />
+    <XRay e="23.362" l="L1-N7" vs="L1" hwhm="6.9" src="2" />
+    <XRay e="23.443" l="L1-O1" vs="L1" rr="0.00000374" hwhm="6.7" src="2" />
+    <XRay e="23.51" l="L1-O2" vs="L1" rr="0.024353" hwhm="6.7" src="2" />
+    <XRay e="23.589" l="L1-O3" vs="L1" rr="0.023037" hwhm="6.7" src="2" />
+    <XRay e="23.692" l="L1-O4" vs="L1" hwhm="6.7" src="2" />
+    <XRay e="23.702" l="L1-O5" vs="L1" hwhm="6.7" src="2" />
+    <XRay e="23.8001" l="L1-O6" vs="L1" />
+    <XRay e="23.8014" l="L1-O7" vs="L1" />
+    <XRay e="23.76" l="L1-P1" vs="L1" hwhm="6.7" src="2" />
+    <XRay e="23.779" l="L1-P2" vs="L1" hwhm="6.7" src="2" />
+    <XRay e="23.792" l="L1-P3" vs="L1" hwhm="6.7" src="2" />
+    <XRay e="23.8025" l="L1-P5" vs="L1" />
+    <XRay e="16.819" l="L2-M1" vs="L2" rr="0.021573" hwhm="16.45" src="2" />
+    <XRay e="17.213" l="L2-M2" vs="L2" rr="0.00000416" hwhm="13.4466" src="2" />
+    <XRay e="18.254" l="L2-M3" vs="L2" rr="0.0011778" hwhm="10.45" src="2" />
+    <XRay e="18.856" l="Lβ1" vs="L2" rr="0.75586" hwhm="7.7919" src="2" />
+    <XRay e="19.062" l="L2-M5" vs="L2" rr="0.00011183" hwhm="7.59275" src="2" />
+    <XRay e="21.332" l="L2-N1" vs="L2" rr="0.0059307" hwhm="11.95895" src="2" />
+    <XRay e="21.514" l="L2-N2" vs="L2" rr="0.00000177" hwhm="9.47405" src="2" />
+    <XRay e="21.787" l="L2-N3" vs="L2" rr="0.00036444" hwhm="9.47405" src="2" />
+    <XRay e="22.072" l="L2-N4" vs="L2" rr="0.17588" hwhm="7.95835" src="2" />
+    <XRay e="22.123" l="L2-N5" vs="L2" rr="0.00002919" hwhm="7.95835" src="2" />
+    <XRay e="22.491" l="L2-N6" vs="L2" rr="0.0011956" hwhm="5.7" src="2" />
+    <XRay e="22.506" l="L2-N7" vs="L2" hwhm="5.7" src="2" />
+    <XRay e="22.587" l="L2-O1" vs="L2" rr="0.0015704" hwhm="5.5" src="2" />
+    <XRay e="22.654" l="L2-O2" vs="L2" rr="0.00000049" hwhm="5.5" src="2" />
+    <XRay e="22.733" l="L2-O3" vs="L2" rr="0.0000924" hwhm="5.5" src="2" />
+    <XRay e="22.836" l="L2-O4" vs="L2" rr="0.03575" hwhm="5.5" src="2" />
+    <XRay e="22.846" l="L2-O5" vs="L2" hwhm="5.5" src="2" />
+    <XRay e="22.9441" l="L2-O6" vs="L2" />
+    <XRay e="22.9454" l="L2-O7" vs="L2" />
+    <XRay e="22.904" l="L2-P1" vs="L2" rr="0.00031666" hwhm="5.5" src="2" />
+    <XRay e="22.923" l="L2-P2" vs="L2" hwhm="5.5" src="2" />
+    <XRay e="22.936" l="L2-P3" vs="L2" hwhm="5.5" src="2" />
+    <XRay e="22.9465" l="L2-P5" vs="L2" />
+    <XRay e="12.377" l="L3-M1" vs="L3" rr="0.048435" hwhm="15.02" src="2" />
+    <XRay e="12.771" l="L3-M2" vs="L3" rr="0.00063014" hwhm="12.0166" src="2" />
+    <XRay e="13.812" l="L3-M3" vs="L3" rr="0.00057643" hwhm="9.02" src="2" />
+    <XRay e="14.414" l="Lα2" vs="L3" rr="0.07601" hwhm="6.3619" src="2" />
+    <XRay e="14.62" l="Lα1" vs="L3" rr="0.66659" hwhm="6.16275" src="2" />
+    <XRay e="16.89" l="L3-N1" vs="L3" rr="0.012445" hwhm="10.52895" src="2" />
+    <XRay e="17.072" l="L3-N2" vs="L3" rr="0.00013835" hwhm="8.04405" src="2" />
+    <XRay e="17.345" l="L3-N3" vs="L3" rr="0.00015897" hwhm="8.04405" src="2" />
+    <XRay e="17.63" l="L3-N4" vs="L3" rr="0.015538" hwhm="6.52835" src="2" />
+    <XRay e="17.681" l="L3-N5" vs="L3" rr="0.14267" hwhm="6.52835" src="2" />
+    <XRay e="18.049" l="L3-N6" vs="L3" rr="0.00022395" hwhm="4.27" src="2" />
+    <XRay e="18.064" l="L3-N7" vs="L3" rr="0.0012301" hwhm="4.27" src="2" />
+    <XRay e="18.145" l="L3-O1" vs="L3" rr="0.003249" hwhm="4.07" src="2" />
+    <XRay e="18.212" l="L3-O2" vs="L3" rr="0.00003302" hwhm="4.07" src="2" />
+    <XRay e="18.291" l="L3-O3" vs="L3" rr="0.0000393" hwhm="4.07" src="2" />
+    <XRay e="18.394" l="L3-O4" vs="L3" hwhm="4.07" src="2" />
+    <XRay e="18.404" l="L3-O5" vs="L3" hwhm="4.07" src="2" />
+    <XRay e="18.5021" l="L3-O6" vs="L3" />
+    <XRay e="18.5034" l="L3-O7" vs="L3" />
+    <XRay e="18.462" l="L3-P1" vs="L3" rr="0.00065316" hwhm="4.07" src="2" />
+    <XRay e="18.481" l="L3-P2" vs="L3" hwhm="4.07" src="2" />
+    <XRay e="18.494" l="L3-P3" vs="L3" hwhm="4.07" src="2" />
+    <XRay e="18.5045" l="L3-P5" vs="L3" />
+  </Element>
+  <Element Z="96" symbol="Cm" name="Cm">
+    <XRay e="103.715" l="K-L1" vs="K" hwhm="63.8" src="2" />
+    <XRay e="104.59" l="Kα2" vs="K" rr="0.30178" hwhm="62.7" src="2" />
+    <XRay e="109.271" l="Kα1" vs="K" rr="0.47243" hwhm="61.13" src="2" />
+    <XRay e="121.904" l="K-M1" vs="K" hwhm="68" src="2" />
+    <XRay e="122.304" l="K-M2" vs="K" rr="0.05649" hwhm="65" src="2" />
+    <XRay e="123.403" l="Kβ1" vs="K" rr="0.11097" hwhm="62" src="2" />
+    <XRay e="124.017" l="K-M4" vs="K" hwhm="59.35" src="2" />
+    <XRay e="124.232" l="K-M5" vs="K" hwhm="59.15" src="2" />
+    <XRay e="126.557" l="K-N1" vs="K" hwhm="63.5" src="2" />
+    <XRay e="126.743" l="K-N2" vs="K" rr="0.01469" hwhm="61" src="2" />
+    <XRay e="127.034" l="K-N3" vs="K" rr="0.03039" hwhm="61" src="2" />
+    <XRay e="127.325" l="K-N4" vs="K" hwhm="59.5" src="2" />
+    <XRay e="127.379" l="K-N5" vs="K" hwhm="59.5" src="2" />
+    <XRay e="127.757" l="K-N6" vs="K" hwhm="57.2812" src="2" />
+    <XRay e="127.771" l="K-N7" vs="K" hwhm="57.2812" src="2" />
+    <XRay e="127.858" l="K-O1" vs="K" hwhm="57.05" src="2" />
+    <XRay e="127.928" l="K-O2" vs="K" hwhm="57.05" src="2" />
+    <XRay e="128.012" l="K-O3" vs="K" hwhm="57.05" src="2" />
+    <XRay e="128.117" l="K-O4" vs="K" hwhm="57.05" src="2" />
+    <XRay e="128.131" l="K-O5" vs="K" hwhm="57.05" src="2" />
+    <XRay e="128.228" l="K-O6" vs="K" />
+    <XRay e="128.23" l="K-O7" vs="K" />
+    <XRay e="128.191" l="K-P1" vs="K" hwhm="57.05" src="2" />
+    <XRay e="128.211" l="K-P2" vs="K" hwhm="57.05" src="2" />
+    <XRay e="128.225" l="K-P3" vs="K" hwhm="57.05" src="2" />
+    <XRay e="128.236" l="K-P4" vs="K" />
+    <XRay e="128.235" l="K-P5" vs="K" />
+    <XRay e="18.189" l="L1-M1" vs="L1" rr="0.00002871" hwhm="17.8" src="2" />
+    <XRay e="18.589" l="L1-M2" vs="L1" rr="0.35663" hwhm="14.8" src="2" />
+    <XRay e="19.688" l="L1-M3" vs="L1" rr="0.27599" hwhm="11.8" src="2" />
+    <XRay e="20.302" l="L1-M4" vs="L1" rr="0.018061" hwhm="9.15" src="2" />
+    <XRay e="20.517" l="L1-M5" vs="L1" rr="0.026845" hwhm="8.95" src="2" />
+    <XRay e="22.842" l="L1-N1" vs="L1" rr="0.00001357" hwhm="13.3" src="2" />
+    <XRay e="23.028" l="L1-N2" vs="L1" rr="0.097745" hwhm="10.8" src="2" />
+    <XRay e="23.319" l="L1-N3" vs="L1" rr="0.088829" hwhm="10.8" src="2" />
+    <XRay e="23.61" l="L1-N4" vs="L1" rr="0.0031959" hwhm="9.3" src="2" />
+    <XRay e="23.664" l="L1-N5" vs="L1" rr="0.0051462" hwhm="9.3" src="2" />
+    <XRay e="24.042" l="L1-N6" vs="L1" hwhm="7.0812" src="2" />
+    <XRay e="24.056" l="L1-N7" vs="L1" hwhm="7.0812" src="2" />
+    <XRay e="24.143" l="L1-O1" vs="L1" rr="0.00000413" hwhm="6.85" src="2" />
+    <XRay e="24.213" l="L1-O2" vs="L1" rr="0.024846" hwhm="6.85" src="2" />
+    <XRay e="24.297" l="L1-O3" vs="L1" rr="0.022978" hwhm="6.85" src="2" />
+    <XRay e="24.402" l="L1-O4" vs="L1" hwhm="6.85" src="2" />
+    <XRay e="24.416" l="L1-O5" vs="L1" hwhm="6.85" src="2" />
+    <XRay e="24.5131" l="L1-O6" vs="L1" />
+    <XRay e="24.5147" l="L1-O7" vs="L1" />
+    <XRay e="24.476" l="L1-P1" vs="L1" hwhm="6.85" src="2" />
+    <XRay e="24.496" l="L1-P2" vs="L1" hwhm="6.85" src="2" />
+    <XRay e="24.51" l="L1-P3" vs="L1" hwhm="6.85" src="2" />
+    <XRay e="24.5215" l="L1-P4" vs="L1" />
+    <XRay e="24.5199" l="L1-P5" vs="L1" />
+    <XRay e="17.314" l="L2-M1" vs="L2" rr="0.021617" hwhm="16.7" src="2" />
+    <XRay e="17.714" l="L2-M2" vs="L2" rr="0.00000455" hwhm="13.7" src="2" />
+    <XRay e="18.813" l="L2-M3" vs="L2" rr="0.001203" hwhm="10.7" src="2" />
+    <XRay e="19.427" l="Lβ1" vs="L2" rr="0.7534" hwhm="8.05" src="2" />
+    <XRay e="19.642" l="L2-M5" vs="L2" rr="0.00011824" hwhm="7.85" src="2" />
+    <XRay e="21.967" l="L2-N1" vs="L2" rr="0.0059588" hwhm="12.2" src="2" />
+    <XRay e="22.153" l="L2-N2" vs="L2" rr="0.00000194" hwhm="9.7" src="2" />
+    <XRay e="22.444" l="L2-N3" vs="L2" rr="0.00037482" hwhm="9.7" src="2" />
+    <XRay e="22.735" l="L2-N4" vs="L2" rr="0.17688" hwhm="8.2" src="2" />
+    <XRay e="22.789" l="L2-N5" vs="L2" rr="0.00003115" hwhm="8.2" src="2" />
+    <XRay e="23.167" l="L2-N6" vs="L2" rr="0.001235" hwhm="5.9812" src="2" />
+    <XRay e="23.181" l="L2-N7" vs="L2" hwhm="5.9812" src="2" />
+    <XRay e="23.268" l="L2-O1" vs="L2" rr="0.0015978" hwhm="5.75" src="2" />
+    <XRay e="23.338" l="L2-O2" vs="L2" rr="0.00000055" hwhm="5.75" src="2" />
+    <XRay e="23.422" l="L2-O3" vs="L2" rr="0.00009643" hwhm="5.75" src="2" />
+    <XRay e="23.527" l="L2-O4" vs="L2" rr="0.03673" hwhm="5.75" src="2" />
+    <XRay e="23.541" l="L2-O5" vs="L2" hwhm="5.75" src="2" />
+    <XRay e="23.6381" l="L2-O6" vs="L2" />
+    <XRay e="23.6397" l="L2-O7" vs="L2" />
+    <XRay e="23.601" l="L2-P1" vs="L2" rr="0.00033102" hwhm="5.75" src="2" />
+    <XRay e="23.621" l="L2-P2" vs="L2" hwhm="5.75" src="2" />
+    <XRay e="23.635" l="L2-P3" vs="L2" hwhm="5.75" src="2" />
+    <XRay e="23.6465" l="L2-P4" vs="L2" rr="0.00025076" />
+    <XRay e="23.6449" l="L2-P5" vs="L2" />
+    <XRay e="12.633" l="L3-M1" vs="L3" rr="0.049102" hwhm="15.13" src="2" />
+    <XRay e="13.033" l="L3-M2" vs="L3" rr="0.00064207" hwhm="12.13" src="2" />
+    <XRay e="14.132" l="L3-M3" vs="L3" rr="0.00058867" hwhm="9.13" src="2" />
+    <XRay e="14.746" l="Lα2" vs="L3" rr="0.075752" hwhm="6.48" src="2" />
+    <XRay e="14.961" l="Lα1" vs="L3" rr="0.6642" hwhm="6.28" src="2" />
+    <XRay e="17.286" l="L3-N1" vs="L3" rr="0.012618" hwhm="10.63" src="2" />
+    <XRay e="17.472" l="L3-N2" vs="L3" rr="0.0001401" hwhm="8.13" src="2" />
+    <XRay e="17.763" l="L3-N3" vs="L3" rr="0.00016314" hwhm="8.13" src="2" />
+    <XRay e="18.054" l="L3-N4" vs="L3" rr="0.015561" hwhm="6.63" src="2" />
+    <XRay e="18.108" l="L3-N5" vs="L3" rr="0.14329" hwhm="6.63" src="2" />
+    <XRay e="18.486" l="L3-N6" vs="L3" rr="0.00023319" hwhm="4.4112" src="2" />
+    <XRay e="18.5" l="L3-N7" vs="L3" rr="0.00128" hwhm="4.4112" src="2" />
+    <XRay e="18.587" l="L3-O1" vs="L3" rr="0.0033335" hwhm="4.18" src="2" />
+    <XRay e="18.657" l="L3-O2" vs="L3" rr="0.00003379" hwhm="4.18" src="2" />
+    <XRay e="18.741" l="L3-O3" vs="L3" rr="0.00004084" hwhm="4.18" src="2" />
+    <XRay e="18.846" l="L3-O4" vs="L3" hwhm="4.18" src="2" />
+    <XRay e="18.86" l="L3-O5" vs="L3" hwhm="4.18" src="2" />
+    <XRay e="18.9571" l="L3-O6" vs="L3" />
+    <XRay e="18.9587" l="L3-O7" vs="L3" />
+    <XRay e="18.92" l="L3-P1" vs="L3" rr="0.00068907" hwhm="4.18" src="2" />
+    <XRay e="18.94" l="L3-P2" vs="L3" hwhm="4.18" src="2" />
+    <XRay e="18.954" l="L3-P3" vs="L3" hwhm="4.18" src="2" />
+    <XRay e="18.9655" l="L3-P4" vs="L3" />
+    <XRay e="18.9639" l="L3-P5" vs="L3" />
+  </Element>
+  <Element Z="97" symbol="Bk" name="Bk">
+    <XRay e="106.3" l="K-L1" vs="K" hwhm="66.4" src="2" />
+    <XRay e="107.185" l="Kα2" vs="K" rr="0.3027" hwhm="65.4" src="2" />
+    <XRay e="112.121" l="Kα1" vs="K" rr="0.47106" hwhm="63.775" src="2" />
+    <XRay e="125.011" l="K-M1" vs="K" hwhm="70.5" src="2" />
+    <XRay e="125.418" l="K-M2" vs="K" rr="0.05643" hwhm="67.5" src="2" />
+    <XRay e="126.58" l="Kβ1" vs="K" rr="0.1111" hwhm="64.5" src="2" />
+    <XRay e="127.203" l="K-M4" vs="K" hwhm="61.85" src="2" />
+    <XRay e="127.429" l="K-M5" vs="K" hwhm="61.65" src="2" />
+    <XRay e="129.808" l="K-N1" vs="K" hwhm="66" src="2" />
+    <XRay e="129.998" l="K-N2" vs="K" rr="0.01472" hwhm="63.5" src="2" />
+    <XRay e="130.307" l="K-N3" vs="K" rr="0.0306" hwhm="63.5" src="2" />
+    <XRay e="130.601" l="K-N4" vs="K" hwhm="62" src="2" />
+    <XRay e="130.658" l="K-N5" vs="K" hwhm="62" src="2" />
+    <XRay e="131.045" l="K-N6" vs="K" hwhm="59.81625" src="2" />
+    <XRay e="131.061" l="K-N7" vs="K" hwhm="59.81625" src="2" />
+    <XRay e="131.157" l="K-O1" vs="K" hwhm="59.55" src="2" />
+    <XRay e="131.23" l="K-O2" vs="K" hwhm="59.55" src="2" />
+    <XRay e="131.319" l="K-O3" vs="K" hwhm="59.55" src="2" />
+    <XRay e="131.426" l="K-O4" vs="K" hwhm="59.55" src="2" />
+    <XRay e="131.439" l="K-O5" vs="K" hwhm="59.55" src="2" />
+    <XRay e="131.542" l="K-O6" vs="K" />
+    <XRay e="131.544" l="K-O7" vs="K" />
+    <XRay e="131.504" l="K-P1" vs="K" hwhm="59.55" src="2" />
+    <XRay e="131.524" l="K-P2" vs="K" hwhm="59.55" src="2" />
+    <XRay e="131.54" l="K-P3" vs="K" hwhm="59.55" src="2" />
+    <XRay e="131.552" l="K-P4" vs="K" />
+    <XRay e="131.55" l="K-P5" vs="K" />
+    <XRay e="18.711" l="L1-M1" vs="L1" rr="0.00003129" hwhm="17.9" src="2" />
+    <XRay e="19.118" l="L1-M2" vs="L1" rr="0.35826" hwhm="14.9" src="2" />
+    <XRay e="20.28" l="L1-M3" vs="L1" rr="0.26854" hwhm="11.9" src="2" />
+    <XRay e="20.903" l="L1-M4" vs="L1" rr="0.018565" hwhm="9.25" src="2" />
+    <XRay e="21.129" l="L1-M5" vs="L1" rr="0.027568" hwhm="9.05" src="2" />
+    <XRay e="23.508" l="L1-N1" vs="L1" rr="0.00001484" hwhm="13.4" src="2" />
+    <XRay e="23.698" l="L1-N2" vs="L1" rr="0.098723" hwhm="10.9" src="2" />
+    <XRay e="24.007" l="L1-N3" vs="L1" rr="0.08733" hwhm="10.9" src="2" />
+    <XRay e="24.301" l="L1-N4" vs="L1" rr="0.0033187" hwhm="9.4" src="2" />
+    <XRay e="24.358" l="L1-N5" vs="L1" rr="0.0053428" hwhm="9.4" src="2" />
+    <XRay e="24.745" l="L1-N6" vs="L1" hwhm="7.21625" src="2" />
+    <XRay e="24.761" l="L1-N7" vs="L1" hwhm="7.21625" src="2" />
+    <XRay e="24.857" l="L1-O1" vs="L1" rr="0.00000456" hwhm="6.95" src="2" />
+    <XRay e="24.93" l="L1-O2" vs="L1" rr="0.025302" hwhm="6.95" src="2" />
+    <XRay e="25.019" l="L1-O3" vs="L1" rr="0.022849" hwhm="6.95" src="2" />
+    <XRay e="25.126" l="L1-O4" vs="L1" hwhm="6.95" src="2" />
+    <XRay e="25.139" l="L1-O5" vs="L1" hwhm="6.95" src="2" />
+    <XRay e="25.242" l="L1-O6" vs="L1" />
+    <XRay e="25.2438" l="L1-O7" vs="L1" />
+    <XRay e="25.204" l="L1-P1" vs="L1" hwhm="6.95" src="2" />
+    <XRay e="25.224" l="L1-P2" vs="L1" hwhm="6.95" src="2" />
+    <XRay e="25.24" l="L1-P3" vs="L1" hwhm="6.95" src="2" />
+    <XRay e="25.2516" l="L1-P4" vs="L1" />
+    <XRay e="25.2498" l="L1-P5" vs="L1" />
+    <XRay e="17.826" l="L2-M1" vs="L2" rr="0.021672" hwhm="16.9" src="2" />
+    <XRay e="18.233" l="L2-M2" vs="L2" rr="0.00000496" hwhm="13.9" src="2" />
+    <XRay e="19.395" l="L2-M3" vs="L2" rr="0.0012272" hwhm="10.9" src="2" />
+    <XRay e="20.018" l="Lβ1" vs="L2" rr="0.75131" hwhm="8.25" src="2" />
+    <XRay e="20.244" l="L2-M5" vs="L2" rr="0.00012504" hwhm="8.05" src="2" />
+    <XRay e="22.623" l="L2-N1" vs="L2" rr="0.0060112" hwhm="12.4" src="2" />
+    <XRay e="22.813" l="L2-N2" vs="L2" rr="0.00000212" hwhm="9.9" src="2" />
+    <XRay e="23.122" l="L2-N3" vs="L2" rr="0.00038564" hwhm="9.9" src="2" />
+    <XRay e="23.416" l="L2-N4" vs="L2" rr="0.17802" hwhm="8.4" src="2" />
+    <XRay e="23.473" l="L2-N5" vs="L2" rr="0.00003323" hwhm="8.4" src="2" />
+    <XRay e="23.86" l="L2-N6" vs="L2" rr="0.0012754" hwhm="6.21625" src="2" />
+    <XRay e="23.876" l="L2-N7" vs="L2" hwhm="6.21625" src="2" />
+    <XRay e="23.972" l="L2-O1" vs="L2" rr="0.0016214" hwhm="5.95" src="2" />
+    <XRay e="24.045" l="L2-O2" vs="L2" rr="0.00000061" hwhm="5.95" src="2" />
+    <XRay e="24.134" l="L2-O3" vs="L2" rr="0.00010025" hwhm="5.95" src="2" />
+    <XRay e="24.241" l="L2-O4" vs="L2" rr="0.037458" hwhm="5.95" src="2" />
+    <XRay e="24.254" l="L2-O5" vs="L2" hwhm="5.95" src="2" />
+    <XRay e="24.357" l="L2-O6" vs="L2" />
+    <XRay e="24.3588" l="L2-O7" vs="L2" />
+    <XRay e="24.319" l="L2-P1" vs="L2" rr="0.00033588" hwhm="5.95" src="2" />
+    <XRay e="24.339" l="L2-P2" vs="L2" hwhm="5.95" src="2" />
+    <XRay e="24.355" l="L2-P3" vs="L2" hwhm="5.95" src="2" />
+    <XRay e="24.3666" l="L2-P4" vs="L2" rr="0.0002474" />
+    <XRay e="24.3648" l="L2-P5" vs="L2" />
+    <XRay e="12.89" l="L3-M1" vs="L3" rr="0.049797" hwhm="15.275" src="2" />
+    <XRay e="13.297" l="L3-M2" vs="L3" rr="0.00065425" hwhm="12.275" src="2" />
+    <XRay e="14.459" l="L3-M3" vs="L3" rr="0.00060122" hwhm="9.275" src="2" />
+    <XRay e="15.082" l="Lα2" vs="L3" rr="0.075424" hwhm="6.625" src="2" />
+    <XRay e="15.308" l="Lα1" vs="L3" rr="0.66229" hwhm="6.425" src="2" />
+    <XRay e="17.687" l="L3-N1" vs="L3" rr="0.012824" hwhm="10.775" src="2" />
+    <XRay e="17.877" l="L3-N2" vs="L3" rr="0.00014194" hwhm="8.275" src="2" />
+    <XRay e="18.186" l="L3-N3" vs="L3" rr="0.00016737" hwhm="8.275" src="2" />
+    <XRay e="18.48" l="L3-N4" vs="L3" rr="0.015585" hwhm="6.775" src="2" />
+    <XRay e="18.537" l="L3-N5" vs="L3" rr="0.14389" hwhm="6.775" src="2" />
+    <XRay e="18.924" l="L3-N6" vs="L3" rr="0.00024257" hwhm="4.59125" src="2" />
+    <XRay e="18.94" l="L3-N7" vs="L3" rr="0.0013281" hwhm="4.59125" src="2" />
+    <XRay e="19.036" l="L3-O1" vs="L3" rr="0.0034125" hwhm="4.325" src="2" />
+    <XRay e="19.109" l="L3-O2" vs="L3" rr="0.0000345" hwhm="4.325" src="2" />
+    <XRay e="19.198" l="L3-O3" vs="L3" rr="0.00004232" hwhm="4.325" src="2" />
+    <XRay e="19.305" l="L3-O4" vs="L3" hwhm="4.325" src="2" />
+    <XRay e="19.318" l="L3-O5" vs="L3" hwhm="4.325" src="2" />
+    <XRay e="19.421" l="L3-O6" vs="L3" />
+    <XRay e="19.4228" l="L3-O7" vs="L3" />
+    <XRay e="19.383" l="L3-P1" vs="L3" rr="0.00070424" hwhm="4.325" src="2" />
+    <XRay e="19.403" l="L3-P2" vs="L3" hwhm="4.325" src="2" />
+    <XRay e="19.419" l="L3-P3" vs="L3" hwhm="4.325" src="2" />
+    <XRay e="19.4306" l="L3-P4" vs="L3" />
+    <XRay e="19.4288" l="L3-P5" vs="L3" />
+  </Element>
+  <Element Z="98" symbol="Cf" name="Cf">
+    <XRay e="108.929" l="K-L1" vs="K" hwhm="69" src="2" />
+    <XRay e="109.831" l="Kα2" vs="K" rr="0.30355" hwhm="68.1" src="2" />
+    <XRay e="115.032" l="Kα1" vs="K" rr="0.4698" hwhm="66.375" src="2" />
+    <XRay e="128.178" l="K-M1" vs="K" hwhm="73" src="2" />
+    <XRay e="128.594" l="K-M2" vs="K" rr="0.05637" hwhm="70" src="2" />
+    <XRay e="129.823" l="Kβ1" vs="K" rr="0.11122" hwhm="67" src="2" />
+    <XRay e="130.455" l="K-M4" vs="K" hwhm="64.35" src="2" />
+    <XRay e="130.692" l="K-M5" vs="K" hwhm="64.15" src="2" />
+    <XRay e="133.126" l="K-N1" vs="K" hwhm="68.5" src="2" />
+    <XRay e="133.319" l="K-N2" vs="K" rr="0.01475" hwhm="66" src="2" />
+    <XRay e="133.647" l="K-N3" vs="K" rr="0.03079" hwhm="66" src="2" />
+    <XRay e="133.948" l="K-N4" vs="K" hwhm="64.5" src="2" />
+    <XRay e="134.009" l="K-N5" vs="K" hwhm="64.5" src="2" />
+    <XRay e="134.401" l="K-N6" vs="K" hwhm="62.3557" src="2" />
+    <XRay e="134.419" l="K-N7" vs="K" hwhm="62.3557" src="2" />
+    <XRay e="134.523" l="K-O1" vs="K" hwhm="62.05" src="2" />
+    <XRay e="134.598" l="K-O2" vs="K" hwhm="62.05" src="2" />
+    <XRay e="134.694" l="K-O3" vs="K" hwhm="62.05" src="2" />
+    <XRay e="134.802" l="K-O4" vs="K" hwhm="62.05" src="2" />
+    <XRay e="134.817" l="K-O5" vs="K" hwhm="62.05" src="2" />
+    <XRay e="134.928" l="K-O6" vs="K" />
+    <XRay e="134.93" l="K-O7" vs="K" />
+    <XRay e="134.885" l="K-P1" vs="K" hwhm="62.05" src="2" />
+    <XRay e="134.906" l="K-P2" vs="K" hwhm="62.05" src="2" />
+    <XRay e="134.922" l="K-P3" vs="K" hwhm="62.05" src="2" />
+    <XRay e="134.933" l="K-P5" vs="K" />
+    <XRay e="19.249" l="L1-M1" vs="L1" rr="0.00003406" hwhm="18" src="2" />
+    <XRay e="19.665" l="L1-M2" vs="L1" rr="0.36033" hwhm="15" src="2" />
+    <XRay e="20.894" l="L1-M3" vs="L1" rr="0.2612" hwhm="12" src="2" />
+    <XRay e="21.526" l="L1-M4" vs="L1" rr="0.01909" hwhm="9.35" src="2" />
+    <XRay e="21.763" l="L1-M5" vs="L1" rr="0.028297" hwhm="9.15" src="2" />
+    <XRay e="24.197" l="L1-N1" vs="L1" rr="0.00001621" hwhm="13.5" src="2" />
+    <XRay e="24.39" l="L1-N2" vs="L1" rr="0.099421" hwhm="11" src="2" />
+    <XRay e="24.718" l="L1-N3" vs="L1" rr="0.085802" hwhm="11" src="2" />
+    <XRay e="25.019" l="L1-N4" vs="L1" rr="0.0034444" hwhm="9.5" src="2" />
+    <XRay e="25.08" l="L1-N5" vs="L1" rr="0.0055475" hwhm="9.5" src="2" />
+    <XRay e="25.472" l="L1-N6" vs="L1" hwhm="7.3557" src="2" />
+    <XRay e="25.49" l="L1-N7" vs="L1" hwhm="7.3557" src="2" />
+    <XRay e="25.594" l="L1-O1" vs="L1" rr="0.00000503" hwhm="7.05" src="2" />
+    <XRay e="25.669" l="L1-O2" vs="L1" rr="0.025738" hwhm="7.05" src="2" />
+    <XRay e="25.765" l="L1-O3" vs="L1" rr="0.02262" hwhm="7.05" src="2" />
+    <XRay e="25.873" l="L1-O4" vs="L1" hwhm="7.05" src="2" />
+    <XRay e="25.888" l="L1-O5" vs="L1" hwhm="7.05" src="2" />
+    <XRay e="25.9995" l="L1-O6" vs="L1" />
+    <XRay e="26.0013" l="L1-O7" vs="L1" />
+    <XRay e="25.956" l="L1-P1" vs="L1" hwhm="7.05" src="2" />
+    <XRay e="25.977" l="L1-P2" vs="L1" hwhm="7.05" src="2" />
+    <XRay e="25.993" l="L1-P3" vs="L1" hwhm="7.05" src="2" />
+    <XRay e="26.0043" l="L1-P5" vs="L1" />
+    <XRay e="18.347" l="L2-M1" vs="L2" rr="0.021742" hwhm="17.1" src="2" />
+    <XRay e="18.763" l="L2-M2" vs="L2" rr="0.00000541" hwhm="14.1" src="2" />
+    <XRay e="19.992" l="L2-M3" vs="L2" rr="0.001254" hwhm="11.1" src="2" />
+    <XRay e="20.624" l="Lβ1" vs="L2" rr="0.74969" hwhm="8.45" src="2" />
+    <XRay e="20.861" l="L2-M5" vs="L2" rr="0.00013218" hwhm="8.25" src="2" />
+    <XRay e="23.295" l="L2-N1" vs="L2" rr="0.0060497" hwhm="12.6" src="2" />
+    <XRay e="23.488" l="L2-N2" vs="L2" rr="0.00000234" hwhm="10.1" src="2" />
+    <XRay e="23.816" l="L2-N3" vs="L2" rr="0.00039704" hwhm="10.1" src="2" />
+    <XRay e="24.117" l="L2-N4" vs="L2" rr="0.17912" hwhm="8.6" src="2" />
+    <XRay e="24.178" l="L2-N5" vs="L2" rr="0.00003547" hwhm="8.6" src="2" />
+    <XRay e="24.57" l="L2-N6" vs="L2" rr="0.001315" hwhm="6.4557" src="2" />
+    <XRay e="24.588" l="L2-N7" vs="L2" hwhm="6.4557" src="2" />
+    <XRay e="24.692" l="L2-O1" vs="L2" rr="0.0016455" hwhm="6.15" src="2" />
+    <XRay e="24.767" l="L2-O2" vs="L2" rr="0.00000067" hwhm="6.15" src="2" />
+    <XRay e="24.863" l="L2-O3" vs="L2" rr="0.00010388" hwhm="6.15" src="2" />
+    <XRay e="24.971" l="L2-O4" vs="L2" rr="0.037993" hwhm="6.15" src="2" />
+    <XRay e="24.986" l="L2-O5" vs="L2" hwhm="6.15" src="2" />
+    <XRay e="25.0975" l="L2-O6" vs="L2" />
+    <XRay e="25.0993" l="L2-O7" vs="L2" />
+    <XRay e="25.054" l="L2-P1" vs="L2" rr="0.00033163" hwhm="6.15" src="2" />
+    <XRay e="25.075" l="L2-P2" vs="L2" hwhm="6.15" src="2" />
+    <XRay e="25.091" l="L2-P3" vs="L2" hwhm="6.15" src="2" />
+    <XRay e="25.1023" l="L2-P5" vs="L2" />
+    <XRay e="13.146" l="L3-M1" vs="L3" rr="0.050536" hwhm="15.375" src="2" />
+    <XRay e="13.562" l="L3-M2" vs="L3" rr="0.00066745" hwhm="12.375" src="2" />
+    <XRay e="14.791" l="L3-M3" vs="L3" rr="0.00061439" hwhm="9.375" src="2" />
+    <XRay e="15.423" l="Lα2" vs="L3" rr="0.075244" hwhm="6.725" src="2" />
+    <XRay e="15.66" l="Lα1" vs="L3" rr="0.66082" hwhm="6.525" src="2" />
+    <XRay e="18.094" l="L3-N1" vs="L3" rr="0.013038" hwhm="10.875" src="2" />
+    <XRay e="18.287" l="L3-N2" vs="L3" rr="0.00014385" hwhm="8.375" src="2" />
+    <XRay e="18.615" l="L3-N3" vs="L3" rr="0.00017184" hwhm="8.375" src="2" />
+    <XRay e="18.916" l="L3-N4" vs="L3" rr="0.015629" hwhm="6.875" src="2" />
+    <XRay e="18.977" l="L3-N5" vs="L3" rr="0.14427" hwhm="6.875" src="2" />
+    <XRay e="19.369" l="L3-N6" vs="L3" rr="0.00025226" hwhm="4.7307" src="2" />
+    <XRay e="19.387" l="L3-N7" vs="L3" rr="0.0013784" hwhm="4.7307" src="2" />
+    <XRay e="19.491" l="L3-O1" vs="L3" rr="0.0034927" hwhm="4.425" src="2" />
+    <XRay e="19.566" l="L3-O2" vs="L3" rr="0.00003515" hwhm="4.425" src="2" />
+    <XRay e="19.662" l="L3-O3" vs="L3" rr="0.0000437" hwhm="4.425" src="2" />
+    <XRay e="19.77" l="L3-O4" vs="L3" hwhm="4.425" src="2" />
+    <XRay e="19.785" l="L3-O5" vs="L3" hwhm="4.425" src="2" />
+    <XRay e="19.8965" l="L3-O6" vs="L3" />
+    <XRay e="19.8983" l="L3-O7" vs="L3" />
+    <XRay e="19.853" l="L3-P1" vs="L3" rr="0.00070062" hwhm="4.425" src="2" />
+    <XRay e="19.874" l="L3-P2" vs="L3" hwhm="4.425" src="2" />
+    <XRay e="19.89" l="L3-P3" vs="L3" hwhm="4.425" src="2" />
+    <XRay e="19.9013" l="L3-P5" vs="L3" />
+  </Element>
+</XRayWidths>
