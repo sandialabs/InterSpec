@@ -41,6 +41,9 @@ namespace SpecUtils
 namespace FitPeaksForNuclides
 {
 
+/** an updated implementation of `find_spectroscopic_extent(...)` - we will replace the old implementation after some more testing. */
+std::pair<double,double> find_valid_energy_range( const std::shared_ptr<const SpecUtils::Measurement> &meas );
+
 // Settings for the gamma clustering algorithm - different values may be used
 // for the initial RelActManual stage vs subsequent RelActAuto refinement stages
 struct GammaClusteringSettings

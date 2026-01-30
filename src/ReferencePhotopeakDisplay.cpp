@@ -2134,7 +2134,8 @@ void ReferencePhotopeakDisplay::startFitSources( const bool /*from_advanced_dial
         
         Wt::WPushButton *accept_btn = dlg->addButton( WString::tr("Accept") );
         dlg->addButton( WString::tr("Cancel") );
-        
+        accept_btn->setFocus();
+
         accept_btn->clicked().connect( std::bind( [viewer, result](){
           if( viewer )
           {

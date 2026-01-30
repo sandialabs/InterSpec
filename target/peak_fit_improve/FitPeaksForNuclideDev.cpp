@@ -190,7 +190,7 @@ bool test_estimate_initial_rois_without_peaks()
   try
   {
     // Setup test sources: Pu238, Pu239, Pu241
-    std::vector<RelActCalcAuto::SrcVariant> test_sources;
+    std::vector<RelActCalcAuto::NucInputInfo> test_sources;
 
     const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
     assert( db );
@@ -210,9 +210,25 @@ bool test_estimate_initial_rois_without_peaks()
       return false;
     }
 
-    test_sources.push_back( pu238 );
-    test_sources.push_back( pu239 );
-    test_sources.push_back( pu241 );
+    RelActCalcAuto::NucInputInfo pu238_input;
+    pu238_input.source = pu238;
+    pu238_input.age = 20.0*PhysicalUnits::year;
+    pu238_input.fit_age = false;
+
+    RelActCalcAuto::NucInputInfo pu239_input;
+    pu239_input.source = pu239;
+    pu239_input.age = 20.0*PhysicalUnits::year;
+    pu239_input.fit_age = false;
+
+    RelActCalcAuto::NucInputInfo pu241_input;
+    pu241_input.source = pu241;
+    pu241_input.age = 20.0*PhysicalUnits::year;
+    pu241_input.fit_age = false;
+
+
+    test_sources.push_back( pu238_input );
+    test_sources.push_back( pu239_input );
+    test_sources.push_back( pu241_input );
 
     // Setup test parameters
     const bool isHPGe = true;
@@ -295,12 +311,12 @@ bool test_estimate_initial_rois_without_peaks()
     // Collect expected gamma energies for each source (top 4 by BR*eff)
     std::map<const SandiaDecay::Nuclide*, std::vector<double>> expected_gammas;
 
-    for( const RelActCalcAuto::SrcVariant &src : test_sources )
+    for( const RelActCalcAuto::NucInputInfo &src : test_sources )
     {
       // get_source_age and get_source_photons are now in anonymous namespace in FitPeaksForNuclides.cpp
       // For test purposes, use a simple approach
-      const SandiaDecay::Nuclide *nuc = RelActCalcAuto::nuclide( src );
-      const double age = nuc ? PeakDef::defaultDecayTime( nuc ) : 0.0;
+      const SandiaDecay::Nuclide *nuc = RelActCalcAuto::nuclide( src.source );
+      const double age = nuc ? src.age : 0.0;
       SandiaDecay::NuclideMixture mix;
       if( nuc )
         mix.addAgedNuclideByActivity( nuc, 1.0, age );
@@ -331,10 +347,9 @@ bool test_estimate_initial_rois_without_peaks()
         [](const GammaScore &a, const GammaScore &b) { return a.score > b.score; } );
 
       const size_t num_to_take = std::min( candidates.size(), size_t(4) );
-      const SandiaDecay::Nuclide * const nuc_ptr = RelActCalcAuto::nuclide( src );
 
       for( size_t i = 0; i < num_to_take; ++i )
-        expected_gammas[nuc_ptr].push_back( candidates[i].energy );
+        expected_gammas[nuc].push_back( candidates[i].energy );
     }
 
     // Check that ROIs cover expected gammas
@@ -925,8 +940,9 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
         }
 
         {// Begin add reference lines for valid energy range
-          const double min_valid_energy = foreground->gamma_energy_min();
-          const double max_valid_energy = foreground->gamma_energy_max();
+          const pair<double,double> valid_range = FitPeaksForNuclides::find_valid_energy_range( foreground );
+          const double min_valid_energy = valid_range.first;
+          const double max_valid_energy = valid_range.second;
 
           if( (min_valid_energy > 0.0) && (max_valid_energy > min_valid_energy) )
           {
