@@ -574,6 +574,8 @@ static std::string serializeRequestForCaching( const nlohmann::json &requestJson
     addField( "temperature" );
     addField( "max_completion_tokens" );
     addField( "max_tokens" );
+    addField( "reasoning" );
+    addField( "reasoning_effort" );
     addField( "tools" );
     addField( "tool_choice" );
 
@@ -819,50 +821,150 @@ void LlmInterface::handleApiResponse( const std::string &response,
     }//if( responseJson.contains("usage") )
     
     
-    string content, reasoning;
+    string content, reasoning, thinkingContent, thinkingSignature, reasoningContent;
     if( responseJson.contains("choices") && !responseJson["choices"].empty() )
     {
       const json &choice = responseJson["choices"][0];
-      
+
       if( choice.contains("message") )
       {
         const json &message = choice["message"];
-        string role = message.value("role", "");
-        if( message.contains("content") && message["content"].is_string() )
-          content = message["content"];
-        
+        const string role = message.value("role", "");
+
+        // Handle content field - can be string or array (Claude content blocks)
+        if( message.contains("content") )
+        {
+          if( message["content"].is_string() )
+          {
+            content = message["content"].get<string>();
+          }
+          else if( message["content"].is_array() )
+          {
+            // Claude content block array format with thinking blocks
+            for( const auto &block : message["content"] )
+            {
+              const string blockType = block.value("type", "");
+              if( blockType == "thinking" )
+              {
+                thinkingContent = block.value("thinking", "");
+                thinkingSignature = block.value("signature", "");
+              }
+              else if( blockType == "text" )
+              {
+                content += block.value("text", "");
+              }
+              // tool_use blocks are handled separately via tool_calls
+            }
+          }
+        }
+
+        // reasoning_content (some models) at message level (same level as content)
+        if( message.contains("reasoning_content") && message["reasoning_content"].is_string() )
+        {
+          reasoningContent = message["reasoning_content"].get<string>();
+          if( thinkingContent.empty() )
+            thinkingContent = reasoningContent;  // Also store in thinkingContent for consistency
+        }
+
+        // OpenAI o1/o3: reasoning field (older Chat Completions format)
         if( message.contains("reasoning") && message["reasoning"].is_string() )
-          reasoning = message["reasoning"];
+        {
+          reasoning = message["reasoning"].get<string>();
+          if( thinkingContent.empty() )
+            thinkingContent = reasoning;
+        }
+
+        // OpenRouter: reasoning_details array (must be passed back unmodified)
+        string reasoningDetails;
+        if( message.contains("reasoning_details") && message["reasoning_details"].is_array() )
+        {
+          // Store the entire array as JSON string to preserve exact structure
+          reasoningDetails = message["reasoning_details"].dump();
+
+          // Also extract text content for display purposes
+          if( thinkingContent.empty() )
+          {
+            for( const auto &detail : message["reasoning_details"] )
+            {
+              if( !detail.is_object() )
+                continue;
+
+              string detailType;
+              if( detail.contains("type") && detail["type"].is_string() )
+                detailType = detail["type"].get<string>();
+
+              if( detailType == "reasoning.text" )
+              {
+                if( detail.contains("text") && detail["text"].is_string() )
+                {
+                  const string text = detail["text"].get<string>();
+                  if( !text.empty() )
+                  {
+                    if( !thinkingContent.empty() )
+                      thinkingContent += "\n";
+                    thinkingContent += text;
+                  }
+                }
+              }
+              else if( detailType == "reasoning.summary" )
+              {
+                if( detail.contains("summary") && detail["summary"].is_string() )
+                {
+                  const string summary = detail["summary"].get<string>();
+                  if( !summary.empty() )
+                  {
+                    if( !thinkingContent.empty() )
+                      thinkingContent += "\n";
+                    thinkingContent += summary;
+                  }
+                }
+              }
+            }
+          }
+        }
 
         if( role == "assistant" )
         {
-          // Extract thinking content and clean content
-          auto [cleanContent, thinkingContent] = extractThinkingAndContent(content);
+          // If we haven't already extracted thinking content from content blocks,
+          // extract <think>...</think> tags from string content
+          if( thinkingContent.empty() && !content.empty() )
+          {
+            auto [cleanContent, extractedThinking] = extractThinkingAndContent(content);
+            content = cleanContent;
+            thinkingContent = extractedThinking;
+          }
 
           // Handle structured tool calls first (OpenAI format)
           pair<shared_ptr<LlmToolRequest>,shared_ptr<LlmToolResults>> call_interactions;
           if (message.contains("tool_calls"))
           {
-            call_interactions = executeToolCallsAndSendResults( message["tool_calls"], conversation, requestId, response, promptTokens, completionTokens );
+            call_interactions = executeToolCallsAndSendResults( message["tool_calls"], conversation, requestId, response,
+              thinkingContent, thinkingSignature, reasoningContent, reasoningDetails, promptTokens, completionTokens );
           }else
           {
             // Parse content for text-based tool requests (use cleaned content)
-            call_interactions = parseContentForToolCallsAndSendResults( cleanContent, conversation, requestId, response );
+            call_interactions = parseContentForToolCallsAndSendResults( content, conversation, requestId, response,
+              thinkingContent, thinkingSignature, reasoningContent, reasoningDetails );
           }
-          
+
           request_interaction = call_interactions.first;
           response_interaction = call_interactions.second;
-          
+
           if( call_interactions.first )
             number_tool_calls += call_interactions.first->toolCalls().size();
 
-          // Add assistant message to history with thinking content and current agent name - only if there were no
-          //  tool calls - if there were tool calls `executeToolCallsAndSendResults` will add these to the
-          //  history (although we will lose the thinking content, but whatever)
-          //  TODO: add thinking content to tool call LlmConversationResponse's
+          // Add assistant message to history with thinking content - only if there were no tool calls
           if( number_tool_calls == 0 )
           {
-            request_interaction = m_history->addAssistantMessageWithThinking( cleanContent, thinkingContent, response, conversation );
+            request_interaction = m_history->addAssistantMessageWithThinking( content, thinkingContent, response, conversation );
+
+            // Store additional reasoning fields
+            if( request_interaction )
+            {
+              request_interaction->setThinkingSignature( thinkingSignature );
+              request_interaction->setReasoningContent( reasoningContent );
+              request_interaction->setReasoningDetails( reasoningDetails );
+            }
           }
         }//if( role == "assistant" )
       }//if( choice.contains("message") )
@@ -875,7 +977,8 @@ void LlmInterface::handleApiResponse( const std::string &response,
        && !responseJson["tool_calls"].empty() )
     {
       pair<shared_ptr<LlmToolRequest>,shared_ptr<LlmToolResults>> call_interactions;
-      call_interactions = executeToolCallsAndSendResults( responseJson["tool_calls"], conversation, requestId, response, promptTokens, completionTokens );
+      call_interactions = executeToolCallsAndSendResults( responseJson["tool_calls"], conversation, requestId, response,
+        "", "", "", "", promptTokens, completionTokens );
       if( call_interactions.first )
         number_tool_calls += call_interactions.first->toolCalls().size();
     }//if( responseJson.contains("choices") && !responseJson["choices"].empty() )
@@ -887,15 +990,18 @@ void LlmInterface::handleApiResponse( const std::string &response,
        && !responseJson["message"].empty() )
     {
       content = responseJson["message"];
-      auto [cleanContent, thinkingContent] = extractThinkingAndContent(content);
+      auto [cleanContent, extractedThinking] = extractThinkingAndContent(content);
+      content = cleanContent;
+      if( thinkingContent.empty() )
+        thinkingContent = extractedThinking;
 
       if( number_tool_calls == 0 )
-        m_history->addAssistantMessageWithThinking( cleanContent, thinkingContent, response, conversation );
+        m_history->addAssistantMessageWithThinking( content, thinkingContent, response, conversation );
     }
 
     // Sometimes a model might need a little prompting to continue....
     SpecUtils::trim( content );
-    if( (number_tool_calls == 0) && content.empty() && !reasoning.empty() )
+    if( (number_tool_calls == 0) && content.empty() && !thinkingContent.empty() )
     {
       // Check if the last response was already an AutoReply
       bool lastWasAutoReply = false;
@@ -966,6 +1072,10 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
                                     const std::shared_ptr<LlmInteraction> &convo,
                                     const int parentRequestId,
                                     const std::string &rawResponseContent,
+                                    const std::string &thinkingContent,
+                                    const std::string &thinkingSignature,
+                                    const std::string &reasoningContent,
+                                    const std::string &reasoningDetails,
                                     std::optional<size_t> promptTokens,
                                     std::optional<size_t> completionTokens )
 {
@@ -1267,9 +1377,7 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
 
             // Store thinking content in the parent response
             if( response )
-            {
               response->setThinkingContent( subAgentThinkingContent );
-            }
 
             // Aggregate sub-agent token usage to parent conversation
             if( sub_agent_convo->promptTokens.has_value() ||
@@ -1546,6 +1654,16 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
   if( !toolCallRequests.empty() )
   {
     tool_request = m_history->addToolCalls( std::move(toolCallRequests), rawResponseContent, convo );
+
+    // Set reasoning details on the tool request BEFORE sendToolResultsToLLM is called
+    // These must be set now so they can be included when building the messages array
+    if( tool_request )
+    {
+      tool_request->setThinkingContent( thinkingContent );
+      tool_request->setThinkingSignature( thinkingSignature );
+      tool_request->setReasoningContent( reasoningContent );
+      tool_request->setReasoningDetails( reasoningDetails );
+    }
   }
 
   // Add all tool results to history as a single batched entry (if we have any)
@@ -1590,7 +1708,11 @@ std::pair<std::shared_ptr<LlmToolRequest>, std::shared_ptr<LlmToolResults>>
 LlmInterface::parseContentForToolCallsAndSendResults( const std::string &content,
                                                             const std::shared_ptr<LlmInteraction> &convo,
                                                             const int requestId,
-                                                            const std::string &rawResponseContent )
+                                                            const std::string &rawResponseContent,
+                                                            const std::string &thinkingContent,
+                                                            const std::string &thinkingSignature,
+                                                            const std::string &reasoningContent,
+                                                            const std::string &reasoningDetails )
 {
   cout << "Parsing content for text-based tool calls..." << endl;
   
@@ -1720,9 +1842,10 @@ LlmInterface::parseContentForToolCallsAndSendResults( const std::string &content
   }//for( const auto &pattern : toolCallPatterns )
   
   cout << "=== Complete extracting " << tool_calls.size() << " text-based tool calls ===" << endl;
-  
+
   pair<shared_ptr<LlmToolRequest>,shared_ptr<LlmToolResults>> result
-        = executeToolCallsAndSendResults( tool_calls, convo, requestId, rawResponseContent );
+        = executeToolCallsAndSendResults( tool_calls, convo, requestId, rawResponseContent,
+            thinkingContent, thinkingSignature, reasoningContent, reasoningDetails );
 
   return result;
 }//parseContentForToolCallsAndSendResults
@@ -2044,18 +2167,45 @@ nlohmann::json LlmInterface::buildMessagesArray( const std::shared_ptr<LlmIntera
   
   // Use max_completion_tokens for newer OpenAI models, max_tokens for others
   string modelName = m_config->llmApi.model;
-  if (modelName.find("gpt-4") != string::npos || modelName.find("gpt-3.5") != string::npos ||
-      modelName.find("o1") != string::npos || modelName.find("gpt-5") != string::npos) {
+  if( (modelName.find("gpt-") != string::npos)
+       || (modelName.find("o1") != string::npos)
+       || (modelName.find("o3") != string::npos)
+       || (modelName.find("o4") != string::npos) )
+  {
     request["max_completion_tokens"] = m_config->llmApi.maxTokens;
-  } else {
+  } else
+  {
     request["max_tokens"] = m_config->llmApi.maxTokens;
   }
 
+  // Add reasoning configuration based on variant type
+  if( std::holds_alternative<bool>(m_config->llmApi.reasoning) )
+  {
+    // Boolean reasoning (OpenRouter style): reasoning: {enabled: true}
+    if( std::get<bool>(m_config->llmApi.reasoning) )
+      request["reasoning"]["enabled"] = true;
+  }else if( std::holds_alternative<LlmConfig::LlmApi::ReasoningEffort>(m_config->llmApi.reasoning) )
+  {
+    // Effort-level reasoning (OpenAI o1/o3 style): reasoning_effort: "low"|"medium"|"high"
+    const LlmConfig::LlmApi::ReasoningEffort effort = std::get<LlmConfig::LlmApi::ReasoningEffort>(m_config->llmApi.reasoning);
+    switch( effort )
+    {
+      case LlmConfig::LlmApi::ReasoningEffort::low:
+        request["reasoning_effort"] = "low";
+        break;
+      case LlmConfig::LlmApi::ReasoningEffort::medium:
+        request["reasoning_effort"] = "medium";
+        break;
+      case LlmConfig::LlmApi::ReasoningEffort::high:
+        request["reasoning_effort"] = "high";
+        break;
+    }
+  }//if( std::holds_alternative<bool>(m_config->llmApi.reasoning) ) / else
+
   // Add optional temperature parameter if configured
   if( m_config->llmApi.temperature.has_value() )
-  {
     request["temperature"] = m_config->llmApi.temperature.value();
-  }
+
 
   json messages = json::array();
 

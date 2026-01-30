@@ -299,7 +299,38 @@ void LlmConversationHistory::addConversationToLlmApiHistory( const LlmInteractio
           break;
         }
         responseMsg["role"] = "assistant";
-        responseMsg["content"] = llmResp->content();
+
+        const std::string &thinkingSig = llmResp->thinkingSignature();
+        const std::string &thinkingText = llmResp->thinkingContent();
+
+        if( !thinkingSig.empty() && !thinkingText.empty() )
+        {
+          // Claude extended thinking - emit content block array
+          json contentArray = json::array();
+
+          json thinkingBlock;
+          thinkingBlock["type"] = "thinking";
+          thinkingBlock["thinking"] = thinkingText;
+          thinkingBlock["signature"] = thinkingSig;
+          contentArray.push_back( thinkingBlock );
+
+          if( !llmResp->content().empty() )
+          {
+            json textBlock;
+            textBlock["type"] = "text";
+            textBlock["text"] = llmResp->content();
+            contentArray.push_back( textBlock );
+          }
+
+          responseMsg["content"] = contentArray;
+        }
+        else
+        {
+          // Standard string format
+          responseMsg["content"] = llmResp->content();
+          // Note: reasoning_details is NOT included for FinalLlmResponse - it's only needed
+          // during tool call sequences, not for final responses
+        }
         break;
       }
 
@@ -313,22 +344,106 @@ void LlmConversationHistory::addConversationToLlmApiHistory( const LlmInteractio
           break;
         }
         responseMsg["role"] = "assistant";
-        responseMsg["content"] = nlohmann::json::value_t::null; //Some LLM providers need this, notably asksage.
-        responseMsg["tool_calls"] = json::array();
 
-        // Iterate through all tool calls in this response (batched tool calls)
-        for( const LlmToolCall &toolCall : toolReq->toolCalls() )
+        const std::string &thinkingSig = toolReq->thinkingSignature();
+        const std::string &thinkingText = toolReq->thinkingContent();
+        const std::string &reasoningText = toolReq->reasoningContent();
+
+        if( !thinkingSig.empty() && !thinkingText.empty() )
         {
-          json toolCallJson;
-          // Use just the invocationId to keep within OpenAI's 40-character limit
-          toolCallJson["id"] = toolCall.invocationId;
-          toolCallJson["type"] = "function";
-          toolCallJson["function"]["name"] = toolCall.toolName;
-          toolCallJson["function"]["arguments"] = toolCall.toolParameters.dump();
-          responseMsg["tool_calls"].push_back(toolCallJson);
+          // Claude extended thinking with tool use - emit content block array
+          json contentArray = json::array();
+
+          json thinkingBlock;
+          thinkingBlock["type"] = "thinking";
+          thinkingBlock["thinking"] = thinkingText;
+          thinkingBlock["signature"] = thinkingSig;
+          contentArray.push_back( thinkingBlock );
+
+          // Add tool_use blocks to the content array (Claude format)
+          for( const LlmToolCall &toolCall : toolReq->toolCalls() )
+          {
+            json toolUseBlock;
+            toolUseBlock["type"] = "tool_use";
+            toolUseBlock["id"] = toolCall.invocationId;
+            toolUseBlock["name"] = toolCall.toolName;
+            toolUseBlock["input"] = toolCall.toolParameters;
+            contentArray.push_back( toolUseBlock );
+          }
+
+          responseMsg["content"] = contentArray;
+        }else if( !reasoningText.empty() )
+        {
+          // Some models MUST include reasoning_content during tool calls
+          // Check if this tool call is followed by a tool result (same turn)
+          // If not, we shouldn't include reasoning_content (it's a new turn)
+          // (this logic has not actually been tested using one of these models)
+          bool isFollowedByToolResult = false;
+          auto it = std::find( conv.responses.begin(), conv.responses.end(), response );
+          if( it != conv.responses.end() )
+          {
+            ++it;
+            if( it != conv.responses.end() )
+              isFollowedByToolResult = ((*it)->type() == LlmInteractionTurn::Type::ToolResult);
+          }
+
+          responseMsg["content"] = nlohmann::json::value_t::null;
+          if( isFollowedByToolResult )
+            responseMsg["reasoning_content"] = reasoningText;
+
+          responseMsg["tool_calls"] = json::array();
+          for( const LlmToolCall &toolCall : toolReq->toolCalls() )
+          {
+            json toolCallJson;
+            toolCallJson["id"] = toolCall.invocationId;
+            toolCallJson["type"] = "function";
+            toolCallJson["function"]["name"] = toolCall.toolName;
+            toolCallJson["function"]["arguments"] = toolCall.toolParameters.dump();
+            responseMsg["tool_calls"].push_back( toolCallJson );
+          }
+        }else
+        {
+          // Standard OpenAI format with tool_calls array
+          responseMsg["content"] = nlohmann::json::value_t::null; //Some LLM providers need this, notably asksage.
+          responseMsg["tool_calls"] = json::array();
+
+          // Iterate through all tool calls in this response (batched tool calls)
+          for( const LlmToolCall &toolCall : toolReq->toolCalls() )
+          {
+            json toolCallJson;
+            // Use just the invocationId to keep within OpenAI's 40-character limit
+            toolCallJson["id"] = toolCall.invocationId;
+            toolCallJson["type"] = "function";
+            toolCallJson["function"]["name"] = toolCall.toolName;
+            toolCallJson["function"]["arguments"] = toolCall.toolParameters.dump();
+            responseMsg["tool_calls"].push_back( toolCallJson );
+          }
+
+          // OpenRouter: Add reasoning_details if present, but ONLY when the conversation
+          // ends with a ToolResult (i.e., we're sending tool results back to the LLM).
+          // It should only be included on the most recent tool request, not on past ones.
+          const std::string &reasoningDetailsJson = toolReq->reasoningDetails();
+          if( !reasoningDetailsJson.empty() && !conv.responses.empty()
+            && (conv.responses.back()->type() == LlmInteractionTurn::Type::ToolResult) )
+          {
+            // Check if this ToolCall immediately precedes the final ToolResult(s)
+            auto it = std::find( conv.responses.begin(), conv.responses.end(), response );
+            if( (it != conv.responses.end()) && (++it != conv.responses.end())
+              && ((*it)->type() == LlmInteractionTurn::Type::ToolResult) )
+            {
+              try
+              {
+                responseMsg["reasoning_details"] = json::parse( reasoningDetailsJson );
+              }catch( const std::exception &e )
+              {
+                // If parsing fails, skip reasoning_details
+                cerr << "\n\nFailed to parse 'reasoning_details' - so not including in response - this shouldnt happen." << endl;
+              }
+            }
+          }
         }
         break;
-      }
+      }//case LlmInteractionTurn::Type::ToolCall:
 
       case LlmInteractionTurn::Type::ToolResult:
       {
@@ -475,6 +590,18 @@ void LlmConversationHistory::toXml( const vector<shared_ptr<LlmInteraction>> &co
       // Add thinking content (common to all types)
       if( !response->thinkingContent().empty() )
         XmlUtils::append_string_node( responseNode, "ThinkingContent", response->thinkingContent() );
+
+      // Add thinking signature (Claude extended thinking - must be passed back unmodified)
+      if( !response->thinkingSignature().empty() )
+        XmlUtils::append_string_node( responseNode, "ThinkingSignature", response->thinkingSignature() );
+
+      // Add reasoning content for models that require it MUST be passed back
+      if( !response->reasoningContent().empty() )
+        XmlUtils::append_string_node( responseNode, "ReasoningContent", response->reasoningContent() );
+
+      // Add reasoning details JSON array (OpenRouter format - must be passed back unmodified)
+      if( !response->reasoningDetails().empty() )
+        XmlUtils::append_string_node( responseNode, "ReasoningDetails", response->reasoningDetails() );
 
       // Add raw content (JSON sent to LLM or received from LLM)
       if( !response->rawContent().empty() )
@@ -697,6 +824,18 @@ void LlmConversationHistory::fromXml( const rapidxml::xml_node<char> *node, std:
         // Read thinking content (common to all types)
         if( rapidxml::xml_node<char>* thinkingContentNode = XML_FIRST_NODE(responseNode,"ThinkingContent") )
           response->setThinkingContent( SpecUtils::xml_value_str(thinkingContentNode) );
+
+        // Read thinking signature (Claude extended thinking - must be passed back unmodified)
+        if( rapidxml::xml_node<char>* thinkingSigNode = XML_FIRST_NODE(responseNode, "ThinkingSignature") )
+          response->setThinkingSignature( SpecUtils::xml_value_str(thinkingSigNode) );
+
+        // Read reasoning content for models that require it must be passed back
+        if( rapidxml::xml_node<char>* reasoningNode = XML_FIRST_NODE(responseNode, "ReasoningContent") )
+          response->setReasoningContent( SpecUtils::xml_value_str(reasoningNode) );
+
+        // Read reasoning details JSON array (OpenRouter format - must be passed back unmodified)
+        if( rapidxml::xml_node<char>* reasoningDetailsNode = XML_FIRST_NODE(responseNode, "ReasoningDetails") )
+          response->setReasoningDetails( SpecUtils::xml_value_str(reasoningDetailsNode) );
 
         // Read raw content (JSON sent to LLM or received from LLM) - also check for old "JsonSentToLlm" name for backward compatibility
         if( rapidxml::xml_node<char> *rawContentNode = XML_FIRST_NODE(responseNode, "RawContent") )

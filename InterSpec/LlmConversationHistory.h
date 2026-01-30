@@ -99,6 +99,9 @@ protected:
   std::chrono::system_clock::time_point m_timestamp;
   std::weak_ptr<LlmInteraction> m_conversation;
   std::string m_thinkingContent;  // Raw thinking content from LLM (e.g., <think>...</think>)
+  std::string m_thinkingSignature;  // Encrypted signature for Claude thinking blocks (must be passed back unmodified)
+  std::string m_reasoningContent;   // reasoning_content field (must be passed back during tool calls) - untested with models that require it
+  std::string m_reasoningDetails;   // OpenRouter reasoning_details JSON array (must be passed back unmodified)
   std::optional<std::chrono::milliseconds> m_callDuration;  // Duration of API call or tool execution
   std::string m_rawContent;  // Raw content: JSON sent to LLM for tool results, or JSON received from LLM
   bool m_exclude_from_history;  // If true, exclude this turn from conversation history sent to LLM
@@ -116,6 +119,12 @@ public:
   std::weak_ptr<LlmInteraction> conversation() const { return m_conversation; }
   const std::string& thinkingContent() const { return m_thinkingContent; }
   void setThinkingContent( const std::string &thinking ) { m_thinkingContent = thinking; }
+  const std::string& thinkingSignature() const { return m_thinkingSignature; }
+  void setThinkingSignature( const std::string &sig ) { m_thinkingSignature = sig; }
+  const std::string& reasoningContent() const { return m_reasoningContent; }
+  void setReasoningContent( const std::string &reasoning ) { m_reasoningContent = reasoning; }
+  const std::string& reasoningDetails() const { return m_reasoningDetails; }
+  void setReasoningDetails( const std::string &details ) { m_reasoningDetails = details; }
   const std::optional<std::chrono::milliseconds>& callDuration() const { return m_callDuration; }
   void setCallDuration( std::chrono::milliseconds duration ) { m_callDuration = duration; }
   const std::string& rawContent() const { return m_rawContent; }
