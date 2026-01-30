@@ -220,7 +220,7 @@ private:
   void handleApiResponse( const std::string &response, const std::shared_ptr<LlmInteraction> &convo, const int requestId );
   
   /** Execute tool calls requested by the LLM, and sends the LLM back a response with the results.
-   
+
    Returns the number of tool calls processed.
    */
   std::pair<std::shared_ptr<LlmToolRequest>, std::shared_ptr<LlmToolResults>>
@@ -228,18 +228,26 @@ private:
                                          const std::shared_ptr<LlmInteraction> &convo,
                                          const int requestId,
                                          const std::string &rawResponseContent,
+                                         const std::string &thinkingContent,
+                                         const std::string &thinkingSignature,
+                                         const std::string &reasoningContent,
+                                         const std::string &reasoningDetails,
                                          std::optional<size_t> promptTokens = std::nullopt,
                                          std::optional<size_t> completionTokens = std::nullopt );
   
   /** Parse text content for tool call requests (for models that don't support structured tool calls)
-   
+
    Returns the number of tool calls processed.
    */
   std::pair<std::shared_ptr<LlmToolRequest>, std::shared_ptr<LlmToolResults>>
   parseContentForToolCallsAndSendResults( const std::string &content,
                                                 const std::shared_ptr<LlmInteraction> &convo,
                                                 const int requestId,
-                                                const std::string &rawResponseContent );
+                                                const std::string &rawResponseContent,
+                                                const std::string &thinkingContent,
+                                                const std::string &thinkingSignature,
+                                                const std::string &reasoningContent,
+                                                const std::string &reasoningDetails );
   
   /** Strip <think>...</think> content from LLM responses */
   static std::string stripThinkingContent(const std::string& content);

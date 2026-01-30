@@ -29,10 +29,25 @@ Changes to this file will not take effect until you quit all currently open inst
     <!-- A number of providers work, including locally running LLM models -->
     <ApiEndpoint>https://api.openai.com/v1/chat/completions</ApiEndpoint>
     <BearerToken>sk-...</BearerToken>
+
+    <!-- Model specification with optional reasoning attribute
+      The reasoning attribute can be:
+      - Boolean (true/false): For OpenRouter-style reasoning (adds reasoning: {enabled: true} to requests)
+        Example: <Model reasoning="true">anthropic/claude-sonnet-4.5</Model>
+
+      - Effort level (low/medium/high): For OpenAI o1/o3-style reasoning (adds reasoning_effort to requests)
+        Example: <Model reasoning="medium">openai/o3-mini</Model>
+        - low: Faster, less thorough reasoning
+        - medium: Balanced reasoning (recommended)
+        - high: Most thorough reasoning, slower
+
+      If reasoning attribute is not specified, reasoning is disabled.
+    -->
     <Model>gpt-5-mini</Model>
+
     <MaxTokens>62565</MaxTokens>
     <ContextLengthLimit>131072</ContextLengthLimit>
-    
+
     <!-- Optional model temperature
       0.0 (Deterministic): The model will be very focused and usually give the same answer every time.
       0.2 - 0.5 (Balanced): Recommended; provides "creativity", while remaining grounded in your spectroscopy tools.

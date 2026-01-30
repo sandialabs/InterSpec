@@ -29,6 +29,7 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include <variant>
 #include <optional>
 
 #include <nlohmann/json.hpp>
@@ -157,13 +158,35 @@ public:
   {
     static const int sm_xmlSerializationVersion = 0;
 
+    /** Reasoning effort level for OpenAI-style reasoning models */
+    enum class ReasoningEffort
+    {
+      low,
+      medium,
+      high
+    };//enum class ReasoningEffort
+
     bool enabled = false;
     std::string apiEndpoint;    // Example: "https://api.openai.com/v1/chat/completions"
     std::string bearerToken;    //
     std::string model;          // Example: "gpt-4"
-    int maxTokens = 0;          // Example: 4000
+    /** The number of reasoning tokens to use.
+     For OpenAI models, it corresponds to the `"max_completion_tokens"` field; for other models its the `"max_tokens"` in the JSON sent to the LLM.
+     Example value may be 4000
+     */
+    int maxTokens = 0;
     int contextLengthLimit = 0; // Example: 128000;
     std::optional<double> temperature;  // Optional: valid range 0.0-2.0
+
+    /** Reasoning configuration for LLM requests.
+
+     Can be either:
+     - bool: If true, adds `reasoning: {enabled: true}` to requests (OpenRouter style)
+     - ReasoningEffort: Adds `reasoning_effort: "low"|"medium"|"high"` to requests (OpenAI o1/o3 style)
+
+     Default is false (no reasoning).
+     */
+    std::variant<bool, ReasoningEffort> reasoning = false;
   };//struct LlmApi
 
 

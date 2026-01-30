@@ -189,7 +189,49 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
       
       llmApi.apiEndpoint = XmlUtils::get_string_node_value(llmApiNode, "ApiEndpoint");
       llmApi.bearerToken = XmlUtils::get_string_node_value(llmApiNode, "BearerToken");
-      llmApi.model = XmlUtils::get_string_node_value(llmApiNode, "Model");
+
+      // Load Model element and its optional "reasoning" attribute
+      const rapidxml::xml_node<char> * const modelNode = XML_FIRST_NODE(llmApiNode, "Model");
+      llmApi.model = SpecUtils::xml_value_str( modelNode );
+      if( modelNode )
+      {
+        const rapidxml::xml_attribute<char> * const reasoningAttr = XML_FIRST_ATTRIB( modelNode, "reasoning" );
+        if( reasoningAttr )
+        {
+          string reasoning_str = SpecUtils::xml_value_str( reasoningAttr );
+          SpecUtils::trim( reasoning_str );
+          SpecUtils::to_lower_ascii( reasoning_str );
+
+          // Check if it's a boolean value
+          if( (reasoning_str == "true") || (reasoning_str == "1") || (reasoning_str == "yes") )
+          {
+            llmApi.reasoning = true;
+          }
+          else if( (reasoning_str == "false") || (reasoning_str == "0") || (reasoning_str == "no") )
+          {
+            llmApi.reasoning = false;
+          }
+          // Check if it's a reasoning effort level (OpenAI o1/o3 style)
+          else if( reasoning_str == "low" )
+          {
+            llmApi.reasoning = LlmApi::ReasoningEffort::low;
+          }
+          else if( reasoning_str == "medium" )
+          {
+            llmApi.reasoning = LlmApi::ReasoningEffort::medium;
+          }
+          else if( reasoning_str == "high" )
+          {
+            llmApi.reasoning = LlmApi::ReasoningEffort::high;
+          }
+          else
+          {
+            cerr << "Warning: Invalid reasoning value '" << reasoning_str << "', ignoring. "
+                 << "Valid values are: true, false, low, medium, high" << endl;
+          }
+        }
+      }
+
       llmApi.maxTokens = XmlUtils::get_int_node_value(llmApiNode, "MaxTokens");
       llmApi.contextLengthLimit = XmlUtils::get_int_node_value(llmApiNode, "ContextLengthLimit");
 
@@ -255,7 +297,37 @@ bool LlmConfig::saveToFile( const LlmConfig &config, const std::string &filename
     XmlUtils::append_bool_node(   llmApi, "Enabled",            config.llmApi.enabled );
     XmlUtils::append_string_node( llmApi, "ApiEndpoint",        config.llmApi.apiEndpoint );
     XmlUtils::append_string_node( llmApi, "BearerToken",        config.llmApi.bearerToken );
-    XmlUtils::append_string_node( llmApi, "Model",              config.llmApi.model );
+
+    // Create Model element with optional reasoning attribute
+    {
+      rapidxml::xml_document<char> &doc = *llmApi->document();
+      rapidxml::xml_node<char> *modelNode = doc.allocate_node( rapidxml::node_element, "Model" );
+      const char *model_value = doc.allocate_string( config.llmApi.model.c_str() );
+      modelNode->value( model_value );
+
+      // Handle reasoning attribute based on variant type
+      if( std::holds_alternative<bool>(config.llmApi.reasoning) )
+      {
+        if( std::get<bool>(config.llmApi.reasoning) )
+          modelNode->append_attribute( doc.allocate_attribute( "reasoning", "true" ) );
+      }
+      else if( std::holds_alternative<LlmApi::ReasoningEffort>(config.llmApi.reasoning) )
+      {
+        const LlmApi::ReasoningEffort effort = std::get<LlmApi::ReasoningEffort>(config.llmApi.reasoning);
+        const char *effort_str = nullptr;
+        switch( effort )
+        {
+          case LlmApi::ReasoningEffort::low:    effort_str = "low";    break;
+          case LlmApi::ReasoningEffort::medium: effort_str = "medium"; break;
+          case LlmApi::ReasoningEffort::high:   effort_str = "high";   break;
+        }
+        if( effort_str )
+          modelNode->append_attribute( doc.allocate_attribute( "reasoning", effort_str ) );
+      }
+
+      llmApi->append_node( modelNode );
+    }
+
     XmlUtils::append_int_node(    llmApi, "MaxTokens",          config.llmApi.maxTokens );
     XmlUtils::append_int_node(    llmApi, "ContextLengthLimit", config.llmApi.contextLengthLimit );
     if( config.llmApi.temperature.has_value() )
