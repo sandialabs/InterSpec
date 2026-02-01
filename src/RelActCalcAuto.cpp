@@ -6184,11 +6184,15 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           assert( upper_en_val > -500.0 );//should NOT have value -999.9
           
           const T val = lower_en_val + mean_frac*(upper_en_val - lower_en_val);
+          check_jet_for_NaN( val );
+          
           peak.set_coefficient( val, ct );
         }else
         {
           assert( x[skew_start + num_skew + i] < -500.0 ); //should have value -999.9, unless being numerically varies
           const T val = x[skew_start + i];
+          check_jet_for_NaN( val );
+          
           peak.set_coefficient( val, ct );
         }
       }
@@ -6199,6 +6203,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         assert( x[skew_start + num_skew + i] < -500.0 ); //should have value -999.9
         const auto ct = PeakDef::CoefficientType(PeakDef::CoefficientType::SkewPar0 + i);
         const T val = x[skew_start + i];
+        check_jet_for_NaN( val );
+        
         peak.set_coefficient( val, ct );
       }
     }//if( m_skew_has_energy_dependance )
@@ -8224,6 +8230,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           const T peak_amplitude = rel_act * static_cast<double>(m_live_time) * rel_eff * yield * br_uncert_adj;
           const T peak_fwhm = fwhm( T(gamma.energy), x );
 
+          check_jet_for_NaN( rel_act );
+          check_jet_for_NaN( rel_eff );
+          check_jet_for_NaN( yield );
+          check_jet_for_NaN( br_uncert_adj );
+          check_jet_for_NaN( peak_amplitude );
+          check_jet_for_NaN( peak_mean );
+          check_jet_for_NaN( peak_fwhm );
 
           RelActCalcAuto::PeakDefImp<T> peak;
           peak.m_mean = peak_mean;
@@ -8282,6 +8295,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 skew_tau = peak.m_skew_pars[1];
               }
 
+              check_jet_for_NaN( skew_R );
+              check_jet_for_NaN( skew_tau );
+              
               peak.setSkewType( PeakDef::SkewType::VoigtPlusBortel );
               // VoigtPlusBortel uses: skew_pars[0]=gamma_lor (Lorentzian HWHM),
               //                       skew_pars[1]=R, skew_pars[2]=tau
@@ -8351,6 +8367,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       assert( peak.release_fwhm || (abs(x[fwhm_index] + 1.0) < 1.0E-5) );
       
       num_free_peak_pars += peak.release_fwhm;
+      
+      check_jet_for_NaN( peak_mean );
+      check_jet_for_NaN( peak_fwhm );
+      check_jet_for_NaN( peak_amp );
       
       //cout << "peaks_for_energy_range_imp: free peak at " << peak.energy << " has a FWHM=" << peak_fwhm << " and AMP=" << peak_amp << endl;
       RelActCalcAuto::PeakDefImp<T> imp_peak;
@@ -8831,7 +8851,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       {
 #ifndef NDEBUG
         const size_t nresiduals = number_residuals();
-        const size_t calced_nresiduals = residual_index + m_peak_ranges_with_uncert.size();
+        const size_t calced_nresiduals = residual_index + m_peak_ranges_with_uncert.size() + 1;
         assert( (rel_eff_index != (m_options.rel_eff_curves.size() - 1)) || (calced_nresiduals == nresiduals) );
 #endif
         // Note: see `USE_RESIDUAL_TO_BREAK_DEGENERACY` in the manual solution for a slight amount more info

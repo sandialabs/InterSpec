@@ -1436,7 +1436,8 @@ void ReferenceLineInfo::reset()
   m_nuclide = nullptr;
   m_element = nullptr;
   m_reactions.clear();
-}//void ReferenceLineInfo::reset()	  
+  m_nuc_mix = nullptr;
+}//void ReferenceLineInfo::reset()
 
 
 bool ReferenceLineInfo::operator==(const ReferenceLineInfo &rhs) const
@@ -3082,6 +3083,8 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
   
   if( nuc_mix )
   {
+    answer.m_nuc_mix = nuc_mix;
+    
     for( const ReferenceLinePredef::NucMixComp &comp : nuc_mix->m_components )
     {
       assert( comp.m_nuclide );

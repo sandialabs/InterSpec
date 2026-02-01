@@ -3098,6 +3098,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   const std::vector<RelActCalcAuto::RoiRange> &input_rois,
   const std::shared_ptr<const SpecUtils::Measurement> &orig_background,
   const std::shared_ptr<const DetectorPeakResponse> &drf,
+  const Wt::WFlags<FitSrcPeaksOptions> user_options,
   const PeakFitForNuclideConfig &config,
   const DetectorPeakResponse::ResolutionFnctForm fwhm_form,
   const std::vector<float> &fwhm_coefficients,
@@ -3107,8 +3108,11 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 {
   PeakFitResult result;
 
-  const bool fit_norm_peaks = true;
-  const bool apply_energy_cal_between = config.fit_energy_cal;
+  const bool fit_norm_peaks = user_options.testFlag(FitSrcPeaksOptions::FitNormBkgrndPeaks);
+  const bool apply_energy_cal_between = config.fit_energy_cal
+                                        && !user_options.testFlag(FitSrcPeaksOptions::DoNotVaryEnergyCal)
+                                        && !user_options.testFlag(FitSrcPeaksOptions::DoNotRefineEnergyCal);
+  
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   assert( db );
 
@@ -3825,8 +3829,9 @@ PeakFitResult fit_peaks_for_nuclides(
   const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,
   const std::vector<RelActCalcAuto::SrcVariant> &sources,
-  const std::shared_ptr<const SpecUtils::Measurement> &long_background,
+  const std::shared_ptr<const SpecUtils::Measurement> &background,
   const std::shared_ptr<const DetectorPeakResponse> &drf_input,
+  const Wt::WFlags<FitSrcPeaksOptions> options,
   const PeakFitForNuclideConfig &config,
   const bool isHPGe )
 {
@@ -3844,7 +3849,7 @@ PeakFitResult fit_peaks_for_nuclides(
   }
   
   return fit_peaks_for_nuclides( auto_search_peaks, foreground, base_nuclides,
-                                long_background, drf_input, config, isHPGe );
+                                background, drf_input, options, config, isHPGe );
 }
   
   
@@ -3854,9 +3859,22 @@ PeakFitResult fit_peaks_for_nuclides(
   const std::vector<RelActCalcAuto::NucInputInfo> &sources,
   const std::shared_ptr<const SpecUtils::Measurement> &long_background,
   const std::shared_ptr<const DetectorPeakResponse> &drf_input,
+  const Wt::WFlags<FitSrcPeaksOptions> options,
   const PeakFitForNuclideConfig &config,
   const bool isHPGe )
 {
+  /* These functions needs the following options addresses/implemented from FitSrcPeaksOptions:
+   -[ ] DoNotReplaceExistingPeaksForSource = 0x01,
+   -[ ] ExistingPeaksAsFreePeak = 0x02,
+   -[ ] DoNotVaryEnergyCal = 0x04,
+   -[x] DoNotRefineEnergyCal = 0x08,
+   -[x] FitNormBkgrndPeaks = 0x10,
+   -[ ] FitNormBkgrndPeaksDontUse = 0x20
+   
+   Also need to take care of case where one of the sources is a NORM nuclide, and we're being asked to fit norm
+   */
+  
+  
   PeakFitResult result;
 
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
@@ -4008,7 +4026,7 @@ PeakFitResult fit_peaks_for_nuclides(
     // Call RelActAuto with initial_rois
     result = fit_peaks_for_nuclide_relactauto(
       auto_search_peaks, foreground, sources,
-      initial_rois, long_background, drf, config,
+      initial_rois, long_background, drf, options, config,
       fwhmFnctnlForm, fwhm_coefficients, isHPGe,
       lower_fwhm_energy, upper_fwhm_energy
     );

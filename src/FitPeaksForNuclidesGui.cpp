@@ -52,6 +52,7 @@
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/ReferenceLineInfo.h"
 #include "InterSpec/FitPeaksForNuclides.h"
+#include "InterSpec/ReferenceLinePredef.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
@@ -107,6 +108,8 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
     passMessage( WString::tr("fpn-no-data"), WarningWidget::WarningMsgInfo );
     return;
   }
+  
+  WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> options;
 
   // Collect sources (nuclide/element/reaction) from currently showing + persisted.
   std::vector<RelActCalcAuto::SrcVariant> sources;
@@ -168,6 +171,30 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
           if( rctn )
             add_src( rctn, "" );
         }
+        break;
+        
+      case ReferenceLineInfo::SourceType::NuclideMixture:
+        assert( info.m_nuc_mix );
+        if( info.m_nuc_mix )
+        {
+          for( const ReferenceLinePredef::NucMixComp &comp : info.m_nuc_mix->m_components )
+          {
+            assert( comp.m_nuclide );
+            
+            sources.push_back( comp.m_nuclide );
+            
+            RelActCalcAuto::NucInputInfo input_info;
+            input_info.source = comp.m_nuclide;
+            input_info.fit_age = false;
+            input_info.age = std::max( 0.0, info.m_nuc_mix->m_default_age - comp.m_age_offset );
+            
+            base_nucs.push_back( input_info );
+          }//for( const ReferenceLinePredef::NucMixComp &comp : info.m_nuc_mix->m_components )
+        }//if( info.m_nuc_mix )
+        break;
+        
+      case ReferenceLineInfo::SourceType::Background:
+        options |= FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaks;
         break;
 
       default:
@@ -280,7 +307,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
 
       try
       {
-        *result = FitPeaksForNuclides::fit_peaks_for_nuclides( auto_search_peaks, fg_copy, sources, bg_copy, drf_input, config, isHPGe );
+        *result = FitPeaksForNuclides::fit_peaks_for_nuclides( auto_search_peaks, fg_copy, base_nucs, bg_copy, drf_input, options, config, isHPGe );
       }catch( std::exception &e )
       {
         result->status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;

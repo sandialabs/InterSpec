@@ -1669,11 +1669,9 @@ void ReferencePhotopeakDisplay::updateFitSourcesButtonState()
       case ReferenceLineInfo::SourceType::Nuclide:
       case ReferenceLineInfo::SourceType::FluorescenceXray:
       case ReferenceLineInfo::SourceType::Reaction:
-        return true;
-      
       case ReferenceLineInfo::SourceType::Background:
       case ReferenceLineInfo::SourceType::NuclideMixture:
-        return false;
+        return true;
         
       case ReferenceLineInfo::SourceType::None:
       case ReferenceLineInfo::SourceType::CustomEnergy:

@@ -255,8 +255,38 @@ struct PeakFitForNuclideConfig
   }
 };//struct PeakFitForNuclideConfig
 
+  
+/** Options for fitting the peaks of nuclides.
+ */
+enum FitSrcPeaksOptions
+{
+  /** If the foreground currently have any peaks assigned to the source you're fitting, by default, they will be replaced,
+   with this option, those peaks will be excluded from the process
+   */
+  DoNotReplaceExistingPeaksForSource = 0x01,
+  
+  /** Notmally ROIs of source peak will try to be limited in energy range to mitigate effects of other nearby peaks; with
+   this option, the nearby peaks that will share the ROI will be left in as freely-floating peaks, and included in the results.
+   */
+  ExistingPeaksAsFreePeak = 0x02,
+  
+  /** The energy calibration stays fixed. */
+  DoNotVaryEnergyCal = 0x04,
+  
+  /** The energy calibration is varied in the fit, but the ROI extent is not updated based on the fit calibration. */
+  DoNotRefineEnergyCal = 0x08,
+  
+  /** Fit the NORM peaks, using a second relative efficiency curve. */
+  FitNormBkgrndPeaks = 0x10,
+  
+  /** Fit the NORM peaks to assist in getting FWHM functional form and energy calibration right,
+   but wont return in the solution peaks.
+   */
+  FitNormBkgrndPeaksDontUse = 0x20,
+  
+};
 
-/** Comprehensive peak fitting function for nuclides.
+/** Function to fit all the observable peaks for one or more sources.
 
  This function performs the complete peak fitting workflow:
  1. Determines FWHM functional form from auto-search peaks or DRF
@@ -269,8 +299,9 @@ struct PeakFitForNuclideConfig
  @param auto_search_peaks Initial peaks found by automatic search
  @param foreground Foreground spectrum to fit
  @param sources Vector of source nuclides to fit
- @param long_background Long background spectrum (can be nullptr)
+ @param background Background spectrum (can be nullptr)
  @param drf_input Detector response function (can be nullptr, will use generic if needed)
+ @param options Options for how the fit should be done.
  @param config Configuration for peak fitting parameters
  @param isHPGe Whether this is an HPGe detector
  @return PeakFitResult with status, error message, fit peaks, and solution
@@ -280,8 +311,9 @@ PeakFitResult fit_peaks_for_nuclides(
   const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,
   const std::vector<RelActCalcAuto::NucInputInfo> &sources,
-  const std::shared_ptr<const SpecUtils::Measurement> &long_background,
+  const std::shared_ptr<const SpecUtils::Measurement> &background,
   const std::shared_ptr<const DetectorPeakResponse> &drf_input,
+  const Wt::WFlags<FitSrcPeaksOptions> options,
   const PeakFitForNuclideConfig &config,
   const bool isHPGe );
   
@@ -289,8 +321,9 @@ PeakFitResult fit_peaks_for_nuclides(
   const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,
   const std::vector<RelActCalcAuto::SrcVariant> &sources,
-  const std::shared_ptr<const SpecUtils::Measurement> &long_background,
+  const std::shared_ptr<const SpecUtils::Measurement> &background,
   const std::shared_ptr<const DetectorPeakResponse> &drf_input,
+  const Wt::WFlags<FitSrcPeaksOptions> options,
   const PeakFitForNuclideConfig &config,
   const bool isHPGe );
   
