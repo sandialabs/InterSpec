@@ -231,28 +231,42 @@ nlohmann::json solution_to_json(const RelActCalcAuto::RelActAutoSolution& soluti
   }
   
   // Peak information
-  if (config.include_peak_details && !solution.m_fit_peaks.empty()) {
+  if( config.include_peak_details && !solution.m_fit_peaks.empty() )
+  {
     json_data["peaks"] = nlohmann::json::array();
-    
-    for (const auto& peak : solution.m_fit_peaks) {
+
+    vector<pair<PeakDef,size_t>> peak_rel_eff;
+    for( size_t rel_eff_index = 0; rel_eff_index < solution.m_fit_peaks_for_each_curve.size(); ++rel_eff_index )
+    {
+      for( const PeakDef &p : solution.m_fit_peaks_for_each_curve[rel_eff_index] )
+        peak_rel_eff.emplace_back( p, rel_eff_index );
+    }
+
+    // Now grab the free-floating peaks; we will just assign them releff index 0 for the moment
+    for( const PeakDef &peak : solution.m_fit_peaks )
+    {
+      if( !peak.parentNuclide() && !peak.xrayElement() && !peak.reaction() )
+        peak_rel_eff.emplace_back( peak, size_t(0) );
+    }
+
+    std::sort( begin(peak_rel_eff), end(peak_rel_eff), []( const pair<PeakDef,size_t> &lhs, const pair<PeakDef,size_t> &rhs ) -> bool {
+      return lhs.first.mean() < rhs.first.mean();
+    } );
+
+
+    for (const pair<PeakDef,size_t> &peak_releff_index : peak_rel_eff )
+    {
+      const PeakDef &peak = peak_releff_index.first;
+      const size_t rel_eff_index = peak_releff_index.second;
+
       nlohmann::json peak_info;
       peak_info["energy"] = peak.mean();
       peak_info["amplitude"] = peak.amplitude();
       peak_info["amplitude_uncertainty"] = peak.amplitudeUncert();
       peak_info["amplitude_uncertainty_percent"] = 
         peak.amplitude() != 0 ? 100.0 * peak.amplitudeUncert() / peak.amplitude() : 0.0;
-      
-      // Determine which rel eff curve this peak belongs to
-      int rel_eff_index = 0;
-      if ( solution.m_rel_eff_forms.size() > 1 ) {
-        string label = peak.userLabel();
-        if (SpecUtils::istarts_with(label, "RelEff ")) {
-          label = label.substr(7);
-          SpecUtils::parse_int(label.c_str(), label.size(), rel_eff_index);
-        }
-      }
-      peak_info["rel_eff_index"] = rel_eff_index;
-      
+      peak_info["rel_eff_index"] = static_cast<int>(rel_eff_index);
+
       // Nuclide information
       const SandiaDecay::Nuclide* nuc = peak.parentNuclide();
       const SandiaDecay::Element* el = peak.xrayElement();

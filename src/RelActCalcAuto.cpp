@@ -3325,9 +3325,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           {
             const bool html_format = false;
             rel_eff_eqn_str = manual_solution.rel_eff_eqn_txt( html_format );
-            
-            parameters[this_rel_eff_start + 0] = 0.0;  //Atomic number
-            parameters[this_rel_eff_start + 1] = 0.0;  //Areal density
 
             size_t manual_index = 0;
             if( rel_eff_curve.phys_model_self_atten )
@@ -3339,7 +3336,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
                 parameters[this_rel_eff_start + 0] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index); //Atomic number; note both manual and auto RelEff use RelActCalc::ns_an_ceres_mult
                 manual_index += 1;
-              }
+              }else
+              {
+                if( !self_atten.material )
+                {
+                  assert( fabs( parameters[this_rel_eff_start + 0] - (self_atten.atomic_number / RelActCalc::ns_an_ceres_mult) ) < 0.01 );  //Atomic number
+                  parameters[this_rel_eff_start + 0] = self_atten.atomic_number / RelActCalc::ns_an_ceres_mult;
+                }
+              }//if( self_atten.fit_atomic_number ) / else
 
               const int ad_index = static_cast<int>( this_rel_eff_start + 1 );
 
@@ -3371,10 +3375,21 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 }
 
                 initial_par_vals_to_restore_after_initial_fit.emplace_back( ad_index, parameters[ad_index] );
-              }//if( rel_eff_curve.phys_model_self_atten->fit_areal_density )
+              }else
+              {
+                const double ad = self_atten.areal_density / PhysicalUnits::g_per_cm2;
+                assert( fabs(parameters[ad_index] - ad) < 0.1 );  //Areal density
+                parameters[ad_index] = ad; //JIC
+              }//if( rel_eff_curve.phys_model_self_atten->fit_areal_density ) / else
 
               manual_index += 1;
-            }//if( options.phys_model_self_atten )
+            }else
+            {
+              assert( parameters[this_rel_eff_start + 0] == 0.0 );  //Atomic number
+              assert( parameters[this_rel_eff_start + 1] == 0.0 );  //Areal density
+              parameters[this_rel_eff_start + 0] = 0.0;  //Atomic number, JIC
+              parameters[this_rel_eff_start + 1] = 0.0;  //Areal density, JIC
+            }//if( options.phys_model_self_atten ) / else
 
             for( size_t i = 0; i < rel_eff_curve.phys_model_external_atten.size(); ++i )
             {
@@ -3391,13 +3406,25 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 continue;
               }
 
+              const int an_par_index = static_cast<int>( this_rel_eff_start + 2 + 2*i + 0 );
+
               if( ext_att->fit_atomic_number )
               {
                 assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
-                parameters[this_rel_eff_start + 2 + 2*i + 0] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
+                parameters[an_par_index] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
                 manual_index += 1;
-              }
-                
+              }else
+              {
+                if( !ext_att->material )
+                {
+                  assert( fabs( parameters[an_par_index] - (ext_att->atomic_number / RelActCalc::ns_an_ceres_mult) ) < 0.01 );  //Atomic number
+                  parameters[an_par_index] = ext_att->atomic_number / RelActCalc::ns_an_ceres_mult; //JIC
+                }else
+                {
+                  assert( parameters[an_par_index] == 0.0 );  //Atomic number
+                }
+              }//if( ext_att->fit_atomic_number ) / else
+
               assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
               const int ad_par_index = static_cast<int>( this_rel_eff_start + 2 + 2*i + 1 );
               double ad_par = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
@@ -3429,6 +3456,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 // For an example problem, it looks like we dont want to go back to starting paramters after initial fit
                 //if( rel_eff_curve.phys_model_self_atten && rel_eff_curve.phys_model_self_atten->fit_areal_density )
                   //initial_par_vals_to_restore_after_initial_fit.emplace_back( ad_par_index, ad_par );
+              }else
+              {
+                const double ad = ext_att->areal_density / PhysicalUnits::g_per_cm2;
+                assert( fabs(parameters[ad_par_index] - ad) < 0.1 );  //Areal density
+                parameters[ad_par_index] = ad; //JIC
               }//if( ext_att->fit_areal_density )
 
               parameters[ad_par_index] = ad_par;
@@ -7233,6 +7265,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       if( !atten.material )
       {
         atten.atomic_number = coeffs[rel_eff_start + 0] * RelActCalc::ns_an_ceres_mult;
+
+        if( !rel_eff_curve.phys_model_self_atten->fit_atomic_number )
+        {
+          assert( abs(atten.atomic_number - rel_eff_curve.phys_model_self_atten->atomic_number) < 0.1 );
+          atten.atomic_number = T(1.0*rel_eff_curve.phys_model_self_atten->atomic_number);
+        }
+
         assert( (atten.atomic_number >= 1.0) && (atten.atomic_number <= 98.0) );
         if( (atten.atomic_number < 1.0) || (atten.atomic_number > 98.0) )
           throw std::logic_error( "make_phys_eqn_input: whack self-atten AN" );
@@ -8637,11 +8676,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         if( nuc_info && !nuc_info->peak_color_css.empty() )
           peak.setLineColor( Wt::WColor( Wt::WString::fromUTF8(nuc_info->peak_color_css) ) );
       }//if( comp_peak.m_rel_eff_index < m_nuclides.size() )
-      
-      // Put in a way to label the peak with the relative efficiency index, so we can tell which
-      //  relative efficiency curve the peak came from, if there are multiple.
-      if( m_nuclides.size() > 1 )
-        peak.setUserLabel( "RelEff " + std::to_string(comp_peak.m_rel_eff_index) );
 
       answer.peaks.push_back( peak );
     }//for( size_t i = 0; i < computed_peaks.peaks.size(); ++i )
@@ -8788,7 +8822,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         assert( !isnan(this_residual[index]) && !isinf(this_residual[index]) );
       }
     }//for( loop over m_energy_ranges )
-    
 
     for( size_t rel_eff_index = 0; rel_eff_index < m_options.rel_eff_curves.size(); ++rel_eff_index )
     {
@@ -8796,9 +8829,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       if( rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
       {
-        assert( rel_eff_index
-               || ((residual_index + m_options.rel_eff_curves.size() + m_peak_ranges_with_uncert.size()) == number_residuals()) );
-
+#ifndef NDEBUG
+        const size_t nresiduals = number_residuals();
+        const size_t calced_nresiduals = residual_index + m_peak_ranges_with_uncert.size();
+        assert( (rel_eff_index != (m_options.rel_eff_curves.size() - 1)) || (calced_nresiduals == nresiduals) );
+#endif
         // Note: see `USE_RESIDUAL_TO_BREAK_DEGENERACY` in the manual solution for a slight amount more info
         //
         // Now make sure the relative efficiency curve is anchored to 1.0 (this removes the degeneracy
@@ -8832,7 +8867,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         ++residual_index;
       }//if( m_options.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
     }//for( size_t rel_eff_index = 0; rel_eff_index < m_options.rel_eff_curves.size(); ++rel_eff_index )
-    
+
     if( !m_peak_ranges_with_uncert.empty() )
     {
       assert( m_options.additional_br_uncert > 0.0 );
@@ -12525,10 +12560,32 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
   "<th scope=\"col\">Cont. Range</th>"
   "</tr></thead>\n";
   results_html << "  <tbody>\n";
-    
- 
-  for( const PeakDef &info : m_fit_peaks )
+
+
+  vector<pair<PeakDef,size_t>> peak_rel_eff;
+  for( size_t rel_eff_index = 0; rel_eff_index < m_fit_peaks_for_each_curve.size(); ++rel_eff_index )
   {
+    for( const PeakDef &p : m_fit_peaks_for_each_curve[rel_eff_index] )
+      peak_rel_eff.emplace_back( p, rel_eff_index );
+  }
+
+  // Now grab the free-floating peaks; we will just assign them releff index 0 for the moment
+  for( const PeakDef &peak : m_fit_peaks )
+  {
+    if( !peak.parentNuclide() && !peak.xrayElement() && !peak.reaction() )
+      peak_rel_eff.emplace_back( peak, size_t(0) );
+  }
+
+  std::sort( begin(peak_rel_eff), end(peak_rel_eff), []( const pair<PeakDef,size_t> &lhs, const pair<PeakDef,size_t> &rhs ) -> bool {
+    return lhs.first.mean() < rhs.first.mean();
+  } );
+
+
+  for( const pair<PeakDef,size_t> &peak_index : peak_rel_eff )
+  {
+    const PeakDef &info = peak_index.first;
+    const int rel_eff_index = static_cast<int>(peak_index.second);
+
     const double energy = info.mean();
     SrcVariant peak_src;
     const SandiaDecay::Nuclide * const nuc = info.parentNuclide();
@@ -12586,28 +12643,9 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
                  info.continuum()->upperEnergy()
                  );
       results_html << buffer;
-      continue; // Move to next peak
-
 
       continue; // Skip free-floating peaks
-    }
-
-    int rel_eff_index = 0;
-    if( have_multiple_rel_eff )
-    {
-      string label = info.userLabel();
-      const bool is_rel_eff_label = SpecUtils::istarts_with( label, "RelEff " );
-      assert( is_rel_eff_label );
-      if( is_rel_eff_label )
-      {
-        label = label.substr(7);
-        const bool ok = SpecUtils::parse_int( label.c_str(), label.size(), rel_eff_index );
-        assert( ok );
-        assert( rel_eff_index >= 0 && rel_eff_index < static_cast<int>(m_rel_eff_forms.size()) );
-        if( rel_eff_index < 0 || rel_eff_index >= static_cast<int>(m_rel_eff_forms.size()) )
-          rel_eff_index = 0;
-      }
-    }//if( have_multiple_rel_eff )
+    }//if( is_null(peak_src) )
 
     assert( (rel_eff_index >= 0) && (rel_eff_index < static_cast<int>(m_rel_eff_forms.size())) );
     const RelEffCurveInput &rel_eff = m_options.rel_eff_curves[rel_eff_index];
