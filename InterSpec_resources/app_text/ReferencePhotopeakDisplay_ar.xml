@@ -74,24 +74,6 @@
   <message id="rpd-fit-sources-menu-auto">تلقائي</message>
   <message id="rpd-fit-sources-menu-advanced">متقدم</message>
   
-  <message id="rpd-fit-sources-adv-title">ملاءمة المصادر (متقدم)</message>
-  <message id="rpd-fit-sources-adv-content">الخيارات المتقدمة غير مطبقة</message>
-  <message id="rpd-fit-peaks">ملاءمة القمم</message>
-  
-  <message id="rpd-fit-sources-no-data">لا يوجد طيف أمامي لملاءمة القمم.</message>
-  <message id="rpd-fit-sources-wait-title">جارٍ ملاءمة القمم</message>
-  <message id="rpd-fit-sources-wait-content">قد يستغرق هذا دقيقة. يمكنك متابعة استخدام التطبيق.</message>
-  <message id="rpd-fit-sources-stale">تغير الطيف قبل اكتمال الملاءمة؛ تجاهل النتائج.</message>
-  
-  <message id="rpd-fit-sources-error-title">فشلت الملاءمة</message>
-  <message id="rpd-fit-sources-error-content">خطأ: {1}</message>
-  
-  <message id="rpd-fit-sources-result-title">نتائج الملاءمة</message>
-  <message id="rpd-fit-sources-no-peaks">لم يتم ملاءمة أي قمم للمصدر(المصادر) المحدد(ة).</message>
-  <message id="rpd-fit-sources-summary">تم ملاءمة {1} قمة(قمم) لـ {2} مصدر(مصادر).</message>
-  <message id="rpd-fit-sources-warnings-header">تحذيرات:</message>
-  <message id="rpd-fit-sources-auto-accept">قبول نتائج الملاءمة تلقائيًا</message>
-  <message id="rpd-fit-sources-auto-accepted">تم قبول نتائج الملاءمة تلقائيًا.</message>
 
 
 </messages>
