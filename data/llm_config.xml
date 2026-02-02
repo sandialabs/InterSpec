@@ -54,6 +54,21 @@ Changes to this file will not take effect until you quit all currently open inst
       0.7 (Creative): More creative, but increases risk of the model hallucinating tool arguments that don't exist.
     -->
     <ModelTemperature>0.2</ModelTemperature>
+
+    <!--  A HTTP enpoint to post questions to, to do deeper research.
+     At the moment, this is a seperate service that is not distributed, so it likely will not be of use to anyone besides the primary InterSpec developer.
+
+     An example value you would fill in for this field is: "http://localhost:8000/query".
+     If this field is non-empty, then the `deep_research` tool-call will be enabled, which will cause
+     this tool call to make a shell command to have `curl` make a call like:
+     ```
+       curl -X 'POST' 'http://localhost:8000/query' -H 'accept: application/json' -H 'Content-Type: application/json' -d '{"messages": [{"content": "what is the primary use of Ba133?"}], "corpora": ["my_gamma_spec_dataset"]}'
+     ```
+
+     If you leave this field blank, the `deep_research` tool-call will not be available.
+     It is very recomended you do not put a value in this field.
+    -->
+    <DeepResearchUrl></DeepResearchUrl>
   </LlmApi>
   
   <!-- MCP Server Settings - this is for InterSpec to create a MCP server you can use with other applications.

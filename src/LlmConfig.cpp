@@ -95,6 +95,7 @@ std::shared_ptr<LlmConfig> LlmConfig::load()
   config->llmApi.model = "AnInvalidMdoel";
   config->llmApi.maxTokens = 4000;
   config->llmApi.contextLengthLimit = 128000;
+  config->llmApi.deep_research_url = "";
 #endif
 
   if( !config->llmApi.enabled && !config->mcpServer.enabled )
@@ -253,6 +254,11 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
           cerr << "Warning: Invalid ModelTemperature value ('" << value_str <<"'), ignoring" << endl;
         }
       }
+
+      const rapidxml::xml_node<char> * const deep_research_url = XML_FIRST_NODE(llmApiNode, "DeepResearchUrl");
+      value_str = SpecUtils::xml_value_str( deep_research_url );
+      SpecUtils::trim( value_str );
+      llmApi.deep_research_url = value_str;
     }// End load LLM API settings
 
     {// Begin load MCP server settings
@@ -332,6 +338,10 @@ bool LlmConfig::saveToFile( const LlmConfig &config, const std::string &filename
     XmlUtils::append_int_node(    llmApi, "ContextLengthLimit", config.llmApi.contextLengthLimit );
     if( config.llmApi.temperature.has_value() )
       XmlUtils::append_float_node( llmApi, "ModelTemperature", config.llmApi.temperature.value() );
+
+    if( !config.llmApi.deep_research_url.empty() )
+      XmlUtils::append_string_node( llmApi, "DeepResearchUrl", config.llmApi.deep_research_url );
+
 
     // NOTE: Agents and tools are now saved separately in llm_agents.xml and llm_tools_config.xml,
     // not in llm_config.xml

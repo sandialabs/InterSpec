@@ -161,6 +161,8 @@ private:
   static nlohmann::json executeGetAttenuationOfShielding(nlohmann::json params, InterSpec* interspec);
   static nlohmann::json executeGetSourcePhotons(const nlohmann::json& params);
 
+  static nlohmann::json executeDeepResearch(const nlohmann::json& params, InterSpec* interspec, const std::string &deep_research_url );
+
   static nlohmann::json executeAvailableDetectors(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeLoadDetectorEfficiency(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeGetDetectorInfo(const nlohmann::json& params, InterSpec* interspec);

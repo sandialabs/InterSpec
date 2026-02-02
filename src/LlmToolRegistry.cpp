@@ -3,10 +3,12 @@
 
 #if( USE_LLM_INTERFACE )
 
-#include <algorithm>
 #include <sstream>
 #include <iostream>
+#include <algorithm>
 #include <stdexcept>
+
+#include <boost/process.hpp>
 
 #include "rapidxml/rapidxml.hpp"
 
@@ -960,6 +962,62 @@ namespace {
 
     return sm_dose_scatter;
   }//getDoseCalcScatterTable()
+
+
+
+std::string query_deep_research_endpoint( const std::string &queryText, const std::string &deep_query_url )
+{
+  try
+  {
+    // Construct the JSON payload
+    nlohmann::json payload = {
+      {"messages", {{{"content", queryText}}}},
+      {"corpora", {"ldrd_llm_gamma_spec"}}
+    };
+    std::string jsonStr = payload.dump();
+
+    // Setup the curl command arguments
+    std::vector<std::string> args = {
+      "-X", "POST",
+      deep_query_url,
+      "-H", "accept: application/json",
+      "-H", "Content-Type: application/json",
+      "-d", jsonStr
+    };
+
+    // Execute curl and capture stdout into a stream
+    boost::process::ipstream is;
+    boost::process::child c(boost::process::search_path("curl"), args, boost::process::std_out > is);
+
+    std::string output;
+    std::string line;
+    while (std::getline(is, line)) {
+      output += line;
+    }
+
+    c.wait(); // Ensure the process finishes
+
+    if( (c.exit_code() == 6) || (c.exit_code() == 7) )
+      throw runtime_error( "The deep-research service is down - this probably means this tool-call will not be useful in the future either." );
+
+    if( c.exit_code() != 0 )
+      throw std::runtime_error( "curl command failed with exit code " + std::to_string(c.exit_code()) );
+
+    // Parse the result
+    nlohmann::json result = nlohmann::json::parse(output);
+
+    if( !result.contains("response") )
+      throw std::runtime_error( "'response' key not found in JSON output from deep-research endpoint." );
+
+    return result["response"].get<std::string>();
+  }catch (const nlohmann::json::parse_error& e)
+  {
+    throw std::runtime_error( std::string("JSON Parse Error: ") + e.what() );
+  }catch (const std::exception& e)
+  {
+    throw std::runtime_error( std::string("Error: ") + e.what() );
+  }
+}//std::string getGammaQueryResponse(const std::string& queryText)
 }//namespace
 
 namespace LlmTools
@@ -1245,6 +1303,10 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
         return RelActManualTool::executeGetRelActManualState(params, interspec);
       };
+    }else if( toolName == "deep_research" )
+    {
+      assert( 0 );
+      throw runtime_error( "The `deep_research` tool-call should not have its executor made here." );
     }else
     {
       throw std::runtime_error( "Unknown tool name: " + toolName );
@@ -1342,11 +1404,19 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
   }//for( loop over agents in config )
   
 
+  const LlmConfig::ToolConfig *deep_research_tool_config = nullptr;
+
   // Register tools from configs
   for( const LlmConfig::ToolConfig &toolConfig : config.tools )
   {
     try
     {
+      if( toolConfig.name == "deep_research" )
+      {
+        deep_research_tool_config = &toolConfig;
+        continue;
+      }
+
       // Create tool with executor
       SharedTool tool = createToolWithExecutor( toolConfig.name );
 
@@ -1356,9 +1426,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
 
       // Apply parameter schema (already parsed and validated; {} is a valid empty schema)
       if( !toolConfig.parametersSchema.is_null() )
-      {
         tool.parameters_schema = toolConfig.parametersSchema;
-      }
 
       // Apply role-specific descriptions
       tool.roleDescriptions = toolConfig.roleDescriptions;
@@ -1373,6 +1441,31 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     }
   }//for( loop over tool configs )
 
+
+  if( !config.llmApi.deep_research_url.empty() )
+  {
+    assert( deep_research_tool_config );
+
+    if( deep_research_tool_config )
+    {
+      SharedTool tool;
+      tool.name = deep_research_tool_config->name;
+      tool.description = deep_research_tool_config->defaultDescription;
+      if( !deep_research_tool_config->parametersSchema.is_null() )
+        tool.parameters_schema = deep_research_tool_config->parametersSchema;
+      tool.roleDescriptions = deep_research_tool_config->roleDescriptions;
+      tool.availableForAgents = deep_research_tool_config->availableForAgents;
+
+      const string deep_research_url = config.llmApi.deep_research_url;
+
+      tool.executor = [deep_research_url](const json& params, InterSpec* interspec) -> json {
+        return executeDeepResearch(params, interspec, deep_research_url);
+      };
+
+      registerTool(tool);
+    }//if( deep_research_tool_config )
+  }//if( !config.llmApi.deep_research_url.empty() )
+
   // NOTE: Hard-coded fallback tool definitions have been removed.
   // If no tools are loaded from XML, we throw an exception above.
   // This ensures that:
@@ -1381,7 +1474,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
   //   3. Missing configuration is caught early rather than silently using outdated hardcoded values
 
   // Runtime validation: Check that all expected tools are registered
-  const std::vector<std::string> expectedTools = {
+  std::vector<std::string> expectedTools = {
     "get_detected_peaks",
     "add_analysis_peak",
     "edit_analysis_peak",
@@ -1435,6 +1528,9 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     "reset_isotopics_config",
     "set_workflow_state",
   };
+
+  if( !config.llmApi.deep_research_url.empty() )
+    expectedTools.push_back( "deep_research" );
 
   std::vector<std::string> missingTools;
   for( const std::string &toolName : expectedTools )
@@ -3094,6 +3190,36 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
   return answer;
 }//nlohmann::json executeGetSourcePhotons(const nlohmann::json& params, InterSpec* interspec)
 
+
+
+nlohmann::json ToolRegistry::executeDeepResearch(const nlohmann::json& params, InterSpec* interspec, const std::string &deep_research_url )
+{
+  if( !params.contains("question") || !params["question"].is_string() )
+  {
+    cerr << "executeDeepResearch error: The 'question' parameter must be present, and a string; params: " << params.dump() << endl << endl;
+    throw runtime_error( "The 'question' parameter must be present, and a string." );
+  }
+
+  const string question = params["question"];
+
+  cout << "In executeDeepResearch; question: " << question << endl << endl;
+
+  nlohmann::json result;
+
+  try
+  {
+    const string query_result = query_deep_research_endpoint( question, deep_research_url );
+    cout << "executeDeepResearch answer: " << query_result << endl << endl;
+    result["success"] = true;
+    result["answer"] = query_result;
+  }catch( std::exception &e )
+  {
+    result["success"] = false;
+    result["error"] = e.what();
+  }
+
+  return result;
+}//nlohmann::json executeDeepResearch(const nlohmann::json& params, InterSpec* interspec)
 
 
 nlohmann::json ToolRegistry::executeGetAttenuationOfShielding( nlohmann::json params, InterSpec* interspec )
