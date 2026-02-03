@@ -44,11 +44,18 @@
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
+#include "InterSpec/InterSpec.h"
+#include "InterSpec/PeakDef.h"
+#include "InterSpec/SpecMeas.h"
+#include "InterSpec/DrfSelect.h"
 #include "InterSpec/SpecFileQuery.h"
-//#include "InterSpec/InterSpecApp.h" //for passMessage debugging
-#include "SpecUtils/EnergyCalibration.h"
+#include "InterSpec/FarmOptions.h"
+#include "InterSpec/FarmAnalysis.h"
+#include "InterSpec/EnrichmentResults.h"
 #include "InterSpec/SpecFileQueryDbCache.h"
+#include "SpecUtils/EnergyCalibration.h"
 
+#include <nlohmann/json.hpp>
 
 #include <boost/config.hpp>
 #include <boost/io/quoted.hpp>
@@ -983,12 +990,32 @@ void SpecFileInfoToQuery::reset()
   start_times.clear();
   
   start_time_ioi = std::time_t(0);
-  
+
   event_xml_filter_values.clear();
+
+  // FARM fields
+  farm_peaks_json.clear();
+  farm_peaks_full_json.clear();
+  gadras_rid_json.clear();
+  isotopics_result_json.clear();
+  spectrum_mean = 0.0;
+  spectrum_variance = 0.0;
+  spectrum_skewness = 0.0;
+  spectrum_kurtosis = 0.0;
+  farm_min_channel_with_data = -1;
+  farm_max_channel_with_data = -1;
+  farm_foreground_total_gamma_counts = 0.0;
+  farm_foreground_num_gamma_channels = 0;
+  farm_foreground_has_neutrons = false;
+  farm_foreground_neutron_count = 0.0;
+  farm_foreground_neutron_live_time = 0.0f;
+  farm_foreground_min_gamma_count = 0.0f;
+  farm_foreground_max_gamma_count = 0.0f;
+  farm_energy_cal_json.clear();
 }//void SpecFileInfoToQuery::reset()
 
 
-void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath )
+void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath, const Farm::FarmOptions &farm_options )
 {
   reset();
   
@@ -1341,8 +1368,398 @@ void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath )
     start_time_ioi = *begin(intrinsic_start_times);
   else if( !start_times.empty() )
     start_time_ioi = *begin(start_times);
+
+
+  // ============= Create Combined Foreground/Background for FARM Analysis =============
+  // These are needed for peak search, GADRAS, isotopics, and statistical moments
+
+  std::shared_ptr<SpecUtils::Measurement> farm_foreground;
+  std::shared_ptr<SpecUtils::Measurement> farm_background;
+
+  if( farm_options.enable_farm_analysis )
+  {
+    // Collect measurements by source type
+    std::set<int> foreground_sample_nums, background_sample_nums, unknown_sample_nums;
+
+    for( const int sample_num : meas.sample_numbers() )
+    {
+      // Get source type for this sample - check first measurement with this sample
+      SpecUtils::SourceType src_type = SpecUtils::SourceType::Unknown;
+      for( const std::shared_ptr<const SpecUtils::Measurement> &m : meas.sample_measurements(sample_num) )
+      {
+        if( m && m->num_gamma_channels() > 6 )
+        {
+          src_type = m->source_type();
+          break;
+        }
+      }
+
+      switch( src_type )
+      {
+        case SpecUtils::SourceType::Foreground:
+          foreground_sample_nums.insert( sample_num );
+          break;
+        case SpecUtils::SourceType::Background:
+          background_sample_nums.insert( sample_num );
+          break;
+        case SpecUtils::SourceType::Unknown:
+          unknown_sample_nums.insert( sample_num );
+          break;
+        default:
+          break; // Skip calibration, intrinsic, etc.
+      }
+    }//for( sample_num )
+
+    // Use unknown samples as foreground if no foreground samples exist
+    if( foreground_sample_nums.empty() )
+      foreground_sample_nums = unknown_sample_nums;
+
+    // If still no foreground, or more than one foreground sample, take just the first, for right now
+    if( foreground_sample_nums.size() > 1 )
+    {
+      const int first_sample = *foreground_sample_nums.begin();
+      foreground_sample_nums.clear();
+      foreground_sample_nums.insert( first_sample );
+    }
+
+    // Only use background if exactly one sample
+    if( background_sample_nums.size() != 1 )
+      background_sample_nums.clear();
+
+    // Sum all detectors for the selected foreground sample(s)
+    if( !foreground_sample_nums.empty() )
+    {
+      std::vector<std::shared_ptr<const SpecUtils::Measurement>> fore_meass;
+      for( const int sample_num : foreground_sample_nums )
+      {
+        for( const std::shared_ptr<const SpecUtils::Measurement> &m : meas.sample_measurements(sample_num) )
+        {
+          if( m && m->num_gamma_channels() > 6 )
+            fore_meass.push_back( m );
+        }
+      }
+
+      if( !fore_meass.empty() )
+      {
+        farm_foreground = meas.sum_measurements( foreground_sample_nums,
+                                                  meas.detector_names(),
+                                                  nullptr );
+        if( farm_foreground )
+          farm_foreground->set_source_type( SpecUtils::SourceType::Foreground );
+      }
+    }//if( !foreground_sample_nums.empty() )
+
+    // Sum all detectors for the selected background sample
+    if( !background_sample_nums.empty() )
+    {
+      farm_background = meas.sum_measurements( background_sample_nums,
+                                                meas.detector_names(),
+                                                nullptr );
+      if( farm_background )
+        farm_background->set_source_type( SpecUtils::SourceType::Background );
+    }
+  }//if( farm_options.enable_farm_analysis )
+
+  // Load a default DRF for peak search and isotopics (background-thread safe)
+  std::shared_ptr<DetectorPeakResponse> farm_drf;
+  if( farm_options.enable_farm_analysis && farm_foreground )
+  {
+    SpecUtils::DetectorType det_type = detector_type;
+    if( det_type == SpecUtils::DetectorType::Unknown )
+      det_type = SpecMeas::guessDetectorTypeFromFileName( filename );
+
+    if( !farm_drf )
+    {
+      try
+      {
+        farm_drf = DrfSelect::initARelEffDetector( det_type, manufacturer, model );
+      }catch( std::exception & )
+      {
+      }
+    }//if( !farm_drf )
+    
+    if( !farm_drf )
+    {
+      try
+      {
+        farm_drf = DrfSelect::initAGadrasDetector( det_type, nullptr ); //TODO: Doesnt have access to user "GadrasDRFPath" preference, so may not be a great search
+      }catch( std::exception & )
+      {
+      }
+    }//if( !farm_drf )
+  }//if( farm_options.enable_farm_analysis && farm_foreground )
+
+
+  // ============= Calculate Statistical Moments =============
+  if( farm_options.enable_farm_analysis
+      && farm_foreground && farm_foreground->num_gamma_channels() > 0 )
+  {
+    const std::shared_ptr<const std::vector<float>> gamma_counts = farm_foreground->gamma_counts();
+    const std::shared_ptr<const SpecUtils::EnergyCalibration> cal =
+        farm_foreground->energy_calibration();
+
+    if( cal && cal->valid() && gamma_counts && !gamma_counts->empty() )
+    {
+      const size_t num_channel = gamma_counts->size();
+
+      // First pass: calculate mean and total weight
+      double sum_w = 0.0;
+      double sum_wx = 0.0;
+
+      for( size_t i = 0; i < num_channel; ++i )
+      {
+        const double y = static_cast<double>( (*gamma_counts)[i] );
+        if( y <= 0.0 )
+          continue;
+
+        const double x = 0.5 * (cal->energy_for_channel(i) + cal->energy_for_channel(i + 1));
+        sum_w += y;
+        sum_wx += y * x;
+      }
+
+      if( sum_w > 0.0 )
+      {
+        spectrum_mean = sum_wx / sum_w;
+
+        // Second pass: calculate variance (and accumulate for higher moments)
+        double sum_diff2 = 0.0;
+        double sum_diff3 = 0.0;
+        double sum_diff4 = 0.0;
+
+        for( size_t i = 0; i < num_channel; ++i )
+        {
+          const double y = static_cast<double>( (*gamma_counts)[i] );
+          if( y <= 0.0 )
+            continue;
+
+          const double x = 0.5 * (cal->energy_for_channel(i) + cal->energy_for_channel(i + 1));
+          const double diff = x - spectrum_mean;
+          const double diff2 = diff * diff;
+          const double diff3 = diff2 * diff;
+          const double diff4 = diff2 * diff2;
+
+          sum_diff2 += y * diff2;
+          sum_diff3 += y * diff3;
+          sum_diff4 += y * diff4;
+        }
+
+        spectrum_variance = sum_diff2 / sum_w;
+
+        if( spectrum_variance > 0.0 )
+        {
+          const double std_dev = std::sqrt( spectrum_variance );
+          const double std_dev3 = std_dev * std_dev * std_dev;
+          const double std_dev4 = std_dev3 * std_dev;
+
+          spectrum_skewness = (sum_diff3 / sum_w) / std_dev3;
+          spectrum_kurtosis = (sum_diff4 / sum_w) / std_dev4 - 3.0;  // Excess kurtosis
+        }
+      }//if( sum_w > 0.0 )
+    }//if( valid calibration and counts )
+  }//if( farm_foreground )
+
+
+  // ============= FARM: Foreground Summary + Energy Cal =============
+  if( farm_options.enable_farm_analysis && farm_foreground )
+  {
+    const std::shared_ptr<const std::vector<float>> gamma_counts = farm_foreground->gamma_counts();
+    farm_foreground_num_gamma_channels = static_cast<int>( farm_foreground->num_gamma_channels() );
+    farm_foreground_total_gamma_counts = farm_foreground->gamma_count_sum();
+
+    // Channel range and min/max counts
+    if( gamma_counts && !gamma_counts->empty() )
+    {
+      float min_nonzero = std::numeric_limits<float>::max();
+      float max_count   = 0.0f;
+      int   first_ch    = -1;
+      int   last_ch     = -1;
+
+      for( size_t i = 0; i < gamma_counts->size(); ++i )
+      {
+        const float c = (*gamma_counts)[i];
+        if( c > 0.0f )
+        {
+          if( first_ch < 0 )
+            first_ch = static_cast<int>( i );
+          last_ch = static_cast<int>( i );
+          if( c < min_nonzero )
+            min_nonzero = c;
+          if( c > max_count )
+            max_count = c;
+        }
+      }
+
+      farm_min_channel_with_data  = first_ch;
+      farm_max_channel_with_data  = last_ch;
+      farm_foreground_min_gamma_count = (first_ch >= 0) ? min_nonzero : 0.0f;
+      farm_foreground_max_gamma_count = max_count;
+    }
+
+    // Neutron info
+    farm_foreground_has_neutrons = farm_foreground->contained_neutron();
+    if( farm_foreground_has_neutrons )
+    {
+      const std::vector<float> &ncounts = farm_foreground->neutron_counts();
+      double nsum = 0.0;
+      for( float v : ncounts )
+        nsum += v;
+      farm_foreground_neutron_count    = nsum;
+      farm_foreground_neutron_live_time = farm_foreground->neutron_live_time();
+    }
+
+    // Energy calibration JSON
+    const std::shared_ptr<const SpecUtils::EnergyCalibration> cal =
+        farm_foreground->energy_calibration();
+
+    if( cal && cal->valid() )
+    {
+      nlohmann::json cal_json;
+      cal_json["min_energy"] = cal->lower_energy();
+      cal_json["max_energy"] = cal->upper_energy();
+
+      const SpecUtils::EnergyCalType cal_type = cal->type();
+
+      if( cal_type == SpecUtils::EnergyCalType::Polynomial
+          || cal_type == SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial )
+      {
+        const std::vector<float> &coeffs = cal->coefficients();
+        cal_json["polynomial_energy_coeffs"] = std::vector<double>( coeffs.begin(), coeffs.end() );
+      }
+      else if( cal_type == SpecUtils::EnergyCalType::FullRangeFraction )
+      {
+        const std::vector<float> poly_coeffs =
+            SpecUtils::fullrangefraction_coef_to_polynomial( cal->coefficients(),
+                                                            cal->num_channels() );
+        cal_json["polynomial_energy_coeffs"] = std::vector<double>( poly_coeffs.begin(),
+                                                                    poly_coeffs.end() );
+      }
+      else if( cal_type == SpecUtils::EnergyCalType::LowerChannelEdge )
+      {
+        const size_t nch = cal->num_channels();
+        if( nch > 0 )
+          cal_json["average_amp_gain"] = static_cast<double>(
+              (cal->upper_energy() - cal->lower_energy()) / static_cast<float>( nch ) );
+      }
+
+      // Deviation pairs (present on Polynomial, FRF, or DefaultPolynomial)
+      const std::vector<std::pair<float,float>> &dev_pairs = cal->deviation_pairs();
+      if( !dev_pairs.empty() )
+      {
+        nlohmann::json dp_array = nlohmann::json::array();
+        for( const std::pair<float,float> &dp : dev_pairs )
+          dp_array.push_back( nlohmann::json::array( { dp.first, dp.second } ) );
+        cal_json["nonlinear_deviation_pairs"] = dp_array;
+      }
+
+      farm_energy_cal_json = cal_json.dump();
+    }//if( cal && cal->valid() )
+  }//if( farm_options.enable_farm_analysis && farm_foreground )
+
+
+  // ============= FARM: Peak Search =============
+  if( farm_options.enable_farm_analysis && farm_foreground )
+  {
+    const bool is_hpge = (detector_type == SpecUtils::DetectorType::Fulcrum
+                          || detector_type == SpecUtils::DetectorType::Fulcrum40h);
+    Farm::perform_peak_search( farm_foreground, farm_drf, is_hpge, *this );
+  }
+
+  // ============= FARM: GADRAS Full Spectrum Isotope ID =============
+  if( farm_options.enable_farm_analysis && farm_options.enable_gadras_rid
+      && !farm_options.gadras_exe_path.empty() && farm_foreground )
+  {
+    // Build a minimal SpecFile with just foreground (and optionally background) for GADRAS
+    std::shared_ptr<SpecUtils::SpecFile> gadras_spec = std::make_shared<SpecUtils::SpecFile>( meas );
+    gadras_spec->remove_measurements( gadras_spec->measurements() );
+    gadras_spec->add_measurement( farm_foreground, !farm_background );
+    if( farm_background )
+      gadras_spec->add_measurement( farm_background, true );
+
+    gadras_rid_json = Farm::run_gadras_full_spectrum_id_analysis(
+        farm_options.gadras_exe_path,
+        gadras_spec,
+        detector_type,
+        farm_options.synthesize_background_if_missing );
+  }
+
   
-}//void fill_info_from_file( const std::string filepath )
+  nlohmann::json isotopics_json = nlohmann::json::array();
+  
+  // ============= FARM: Isotopics via RelActCalcAuto =============
+  const bool do_u_enrich = Farm::should_do_uranium_isotopics( farm_peaks_json );
+  const bool do_pu_enrich = Farm::should_do_plutonium_isotopics( farm_peaks_json );
+  
+  
+  if( farm_options.enable_farm_analysis && farm_options.enable_relact_isotopics
+     && farm_foreground && (do_u_enrich || do_pu_enrich) )
+  {
+    // Uranium isotopics: requires 185.7 keV + (205.3 or 143.8 keV) peaks
+    if( do_u_enrich && !do_pu_enrich )
+    {
+      const std::string u_opts_path = SpecUtils::append_path( InterSpec::staticDataDirectory(), "rel_act/HPGe U (120-1001 keV).xml" );
+      const Farm::EnrichmentResults u_result = Farm::run_relact_isotopics(
+          farm_foreground, farm_background,
+          std::vector<std::shared_ptr<const PeakDef>>{}, u_opts_path, farm_drf );
+      isotopics_json.push_back( u_result.toJson() );
+    }else if( do_pu_enrich && !do_u_enrich )
+    {
+      const std::string pu_opts_path = SpecUtils::append_path( InterSpec::staticDataDirectory(), "rel_act/HPGe Pu (120-780 keV).xml" );
+      const Farm::EnrichmentResults pu_result = Farm::run_relact_isotopics(
+          farm_foreground, farm_background,
+          std::vector<std::shared_ptr<const PeakDef>>{}, pu_opts_path, farm_drf );
+      isotopics_json.push_back( pu_result.toJson() );
+    }else
+    {
+      cerr << "TODO: Do not have MOX implemented for RelAct" << endl;
+    }
+  }
+  
+  
+  // ============= FARM: Isotopics via FRAM =============
+  if( farm_options.enable_farm_analysis && farm_options.enable_fram_isotopics
+      && !farm_options.fram_exe_path.empty() && farm_foreground
+     && (do_u_enrich || do_pu_enrich) )
+  {
+    
+    // Write a temp N42 for FRAM input
+    const std::string fram_tmp = SpecUtils::temp_file_name( "farm_fram_", SpecUtils::temp_dir() );
+    {
+      std::ofstream fram_out( fram_tmp, std::ios::binary );
+      if( fram_out.is_open() )
+      {
+        SpecUtils::SpecFile fram_spec = meas;
+        fram_spec.remove_measurements( fram_spec.measurements() );
+        fram_spec.add_measurement( farm_foreground, !farm_background );
+        if( farm_background )
+          fram_spec.add_measurement( farm_background, true );
+        fram_spec.write_2012_N42( fram_out );
+      }
+    }
+
+    assert( SpecUtils::is_file( fram_tmp ) );
+    
+    if( SpecUtils::is_file( fram_tmp ) )
+    {
+      const Farm::EnrichmentResults fram_result = Farm::run_fram_isotopics(
+            farm_options.fram_exe_path, farm_options.fram_output_path, fram_tmp, do_u_enrich, do_pu_enrich );
+      isotopics_json.push_back( fram_result.toJson() );
+    }//if( SpecUtils::is_file( fram_tmp ) )
+    
+    SpecUtils::remove_file( fram_tmp );
+  }
+  
+  if( !isotopics_json.empty() )
+    isotopics_result_json = isotopics_json.dump();
+
+  // ============= FARM: Write Fertilized N42 =============
+  if( farm_options.enable_farm_analysis && farm_options.write_fertilized_n42 && farm_foreground )
+  {
+    SpecUtils::SpecFile output_spec = meas;
+
+    Farm::write_fertilized_n42( filepath, output_spec, *this );
+  }
+
+}//void fill_info_from_file( const std::string filepath, ... )
 
 
 void SpecFileInfoToQuery::fill_event_xml_filter_values( const std::string &filepath,
@@ -1439,7 +1856,9 @@ SpecFileQueryDbCache::SpecFileQueryDbCache( const bool use_db_caching,
   
   if( m_use_db_caching && !m_using_persist_caching )
   {
-    string db_location = SpecUtils::temp_file_name( "interspec_file_query", SpecUtils::temp_dir() );
+    const string prefix = m_farm_options.enable_farm_analysis
+                          ? "interspec_file_query_FARM" : "interspec_file_query";
+    string db_location = SpecUtils::temp_file_name( prefix, SpecUtils::temp_dir() );
     m_use_db_caching = open_db( db_location, true );
   }//if( m_use_db_caching )
 }//SpecFileQueryDbCache( constructor )
@@ -1468,13 +1887,21 @@ SpecFileQueryDbCache::~SpecFileQueryDbCache()
 }//~SpecFileQueryDbCache()
 
 
-std::string SpecFileQueryDbCache::construct_persisted_db_filename( std::string persisted_path )
+std::string SpecFileQueryDbCache::construct_persisted_db_filename() const
 {
-  SpecUtils::make_canonical_path(persisted_path);
-  
-  const auto path_hash = std::hash<std::string>()( persisted_path );
-  return SpecUtils::append_path( persisted_path, "InterSpec_file_query_cache_" + std::to_string(path_hash) + "_v2.sqlite3" );
-}//std::string construct_persisted_db_filename( std::string basepath )
+  string canonical_path = m_fs_path;
+  SpecUtils::make_canonical_path( canonical_path );
+
+  const size_t path_hash = std::hash<std::string>()( canonical_path );
+  string fname = "InterSpec_file_query_cache_" + std::to_string( path_hash );
+
+  if( m_farm_options.enable_farm_analysis )
+    fname += "_FARM";
+
+  fname += "_v3.sqlite3";
+
+  return SpecUtils::append_path( canonical_path, fname );
+}//std::string construct_persisted_db_filename()
 
 
 bool SpecFileQueryDbCache::open_db( const std::string &path, const bool create_tables )
@@ -1527,7 +1954,7 @@ bool SpecFileQueryDbCache::init_existing_persisted_db()
   //  return false;
   //}
 
-  const string persisted_path = construct_persisted_db_filename(m_fs_path);
+  const string persisted_path = construct_persisted_db_filename();
   
   if( !SpecUtils::is_file( persisted_path ) )
   {
@@ -1786,7 +2213,7 @@ void SpecFileQueryDbCache::cache_results( const std::vector<std::string> &&files
       
       auto dbinforaw = new SpecFileInfoToQuery();;
       Wt::Dbo::ptr<SpecFileInfoToQuery> dbinfo( dbinforaw );
-      dbinforaw->fill_info_from_file(filename);
+      dbinforaw->fill_info_from_file( filename, m_farm_options );
       dbinforaw->fill_event_xml_filter_values(filename,m_xmlfilters);
       
       {//begin lock on m_db_mutex
@@ -1900,7 +2327,7 @@ void SpecFileQueryDbCache::set_persist( const bool persist )
       return;
     }
     
-    const string newfilename = construct_persisted_db_filename( m_fs_path );
+    const string newfilename = construct_persisted_db_filename();
     if( SpecUtils::iends_with( newfilename, ".sqlite3" ) //JIC
         && SpecUtils::is_file(newfilename) )
       SpecUtils::remove_file(newfilename);
@@ -1999,6 +2426,70 @@ void SpecFileQueryDbCache::set_persist( const bool persist )
 }//void set_persist( const bool persist, const std::string basepath );
 
 
+void SpecFileQueryDbCache::set_farm_options( const Farm::FarmOptions &opts )
+{
+  if( m_farm_options == opts )
+    return;
+
+  m_farm_options = opts;
+
+  if( m_use_db_caching )
+    resetCache();
+}//void set_farm_options()
+
+
+void SpecFileQueryDbCache::resetCache()
+{
+  // Wait for any in-progress caching to finish, then prevent new caching
+  {
+    std::unique_lock<std::mutex> lock( m_cv_mutex );
+    m_stop_caching = true;
+    if( m_doing_caching )
+      m_cv.wait( lock, [this]() -> bool { return !m_doing_caching; } );
+  }
+
+  {
+    std::lock_guard<std::mutex> lock( m_db_mutex );
+
+    const string old_location = m_db_location;
+    m_db_session.reset();
+    m_db.reset();
+
+    // Remove the old temp DB file; persisted DBs are kept (keyed by _FARM suffix)
+    if( !m_using_persist_caching && !old_location.empty() )
+      SpecUtils::remove_file( old_location );
+
+    // Try to open an existing persisted DB at the new name
+    if( m_using_persist_caching && init_existing_persisted_db() )
+    {
+      // Re-allow caching so cache_results can proceed
+      std::lock_guard<std::mutex> cv_lock( m_cv_mutex );
+      m_stop_caching = false;
+      return;
+    }
+
+    // Otherwise create a fresh DB (persisted or temp)
+    string new_location;
+    if( m_using_persist_caching )
+      new_location = construct_persisted_db_filename();
+    else
+    {
+      const string prefix = m_farm_options.enable_farm_analysis
+                            ? "interspec_file_query_FARM" : "interspec_file_query";
+      new_location = SpecUtils::temp_file_name( prefix, SpecUtils::temp_dir() );
+    }
+
+    open_db( new_location, true );
+  }
+
+  // Re-allow caching so cache_results can proceed
+  {
+    std::lock_guard<std::mutex> lock( m_cv_mutex );
+    m_stop_caching = false;
+  }
+}//void resetCache()
+
+
 const std::vector<EventXmlFilterInfo> &SpecFileQueryDbCache::xml_filters() const
 {
   return m_xmlfilters;
@@ -2012,7 +2503,7 @@ std::unique_ptr<SpecFileInfoToQuery> SpecFileQueryDbCache::spec_file_info( const
   
   if( !m_use_db_caching )
   {
-    info->fill_info_from_file( filepath );
+    info->fill_info_from_file( filepath, m_farm_options );
     info->fill_event_xml_filter_values(filepath,m_xmlfilters);
     return info;
   }
@@ -2028,7 +2519,7 @@ std::unique_ptr<SpecFileInfoToQuery> SpecFileQueryDbCache::spec_file_info( const
       if( !m_db || !m_db_session )
       {
         //Shouldnt ever get here!
-        info->fill_info_from_file( filepath );
+        info->fill_info_from_file( filepath, m_farm_options );
         info->fill_event_xml_filter_values(filepath,m_xmlfilters);
         return info;
       }
@@ -2052,7 +2543,7 @@ std::unique_ptr<SpecFileInfoToQuery> SpecFileQueryDbCache::spec_file_info( const
     }//end check in DB
     
     //Wasnt in the database
-    info->fill_info_from_file( filepath );
+    info->fill_info_from_file( filepath, m_farm_options );
     info->fill_event_xml_filter_values( filepath, m_xmlfilters );
     
     auto dbinforaw = new SpecFileInfoToQuery();
@@ -2070,12 +2561,12 @@ std::unique_ptr<SpecFileInfoToQuery> SpecFileQueryDbCache::spec_file_info( const
   {
     cerr << "Caught Dbo::Exception in spec_file_info: '" << e.what() <<"', backend code: '"
          << e.code() << "'" << endl;
-    info->fill_info_from_file( filepath );
+    info->fill_info_from_file( filepath, m_farm_options );
     info->fill_event_xml_filter_values( filepath, m_xmlfilters );
   }catch( std::exception &e )
   {
     cerr << "Caught std::Exception in spec_file_info: " << e.what() << endl;
-    info->fill_info_from_file( filepath );
+    info->fill_info_from_file( filepath, m_farm_options );
     info->fill_event_xml_filter_values( filepath, m_xmlfilters );
   }
   

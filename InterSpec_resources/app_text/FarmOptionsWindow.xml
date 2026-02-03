@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- fow- is short for FarmOptionsWindow -->
+  <!-- FARM = Feature for Automated Remote analysis and Metrics -->
+
+  <!-- Window title -->
+  <message id="fow-window-title">FARM Analysis Options</message>
+
+  <!-- Master enable -->
+  <message id="fow-enable-farm">Enable FARM Analysis</message>
+  <message id="fow-tt-enable-farm">Enable automated analysis features including peak search, isotope identification, isotopics calculations, and statistical metrics.</message>
+
+  <!-- GADRAS section -->
+  <message id="fow-gadras-header"><![CDATA[<b>GADRAS Full Spectrum Isotope ID</b>]]></message>
+  <message id="fow-enable-gadras">Enable GADRAS Analysis</message>
+  <message id="fow-tt-enable-gadras">Run GADRAS Full Spectrum Isotope ID for automated nuclide identification.</message>
+  <message id="fow-gadras-path">GADRAS Full Spectrum Executable:</message>
+  <message id="fow-gadras-path-placeholder">Path to GADRAS Full Spectrum executable</message>
+  <message id="fow-synthesize-background">Synthesize background if missing</message>
+  <message id="fow-tt-synthesize-background">Automatically generate a synthetic background spectrum if no background measurement is present.</message>
+
+  <!-- RelActCalcAuto section -->
+  <message id="fow-relact-header"><![CDATA[<b>Isotopics via RelActCalcAuto</b>]]></message>
+  <message id="fow-enable-relact">Enable RelActCalcAuto Isotopics</message>
+  <message id="fow-tt-enable-relact">Perform uranium and plutonium isotopics analysis using RelActCalcAuto when appropriate peaks are detected.</message>
+
+  <!-- FRAM section -->
+  <message id="fow-fram-header"><![CDATA[<b>Isotopics via FRAM</b>]]></message>
+  <message id="fow-enable-fram">Enable FRAM Isotopics</message>
+  <message id="fow-tt-enable-fram">Perform isotopics analysis using the FRAM executable.</message>
+  <message id="fow-fram-path">FRAM Executable:</message>
+  <message id="fow-fram-path-placeholder">Path to FRAM executable</message>
+  <message id="fow-fram-output-path">FRAM Output:</message>
+  <message id="fow-fram-output-placeholder">Directory where FRAM writes output</message>
+
+  <!-- Output section -->
+  <message id="fow-output-header"><![CDATA[<b>Output Options</b>]]></message>
+  <message id="fow-write-fertilized">Write .farm.fertilized.n42 files</message>
+  <message id="fow-tt-write-fertilized">Write N42 files containing FARM analysis results as JSON in the remarks field.</message>
+
+</messages>

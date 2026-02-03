@@ -39,7 +39,9 @@
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/EnergyCalibration.h"
 
-//Forward declarations and Wt::Dbo::overhead ish. 
+#include "InterSpec/FarmOptions.h"
+
+//Forward declarations and Wt::Dbo::overhead ish.
 namespace Wt {
   namespace Dbo {
     class Session;
@@ -172,7 +174,7 @@ struct SpecFileInfoToQuery
 {
   SpecFileInfoToQuery();
   void reset();
-  void fill_info_from_file( const std::string filepath );
+  void fill_info_from_file( const std::string filepath, const Farm::FarmOptions &farm_options );
   void fill_event_xml_filter_values( const std::string &filepath,
                                 const std::vector<EventXmlFilterInfo> &xmlfilters );
   
@@ -230,10 +232,48 @@ struct SpecFileInfoToQuery
       18 seconds if a blanket xpath is defined for all event tag values.
    */
   std::map<std::string,std::vector<std::string>> event_xml_filter_values;
-  
+
+  // ============= FARM Analysis Fields =============
+
+  // Peaks found by automated peak search (simplified summary)
+  // JSON array: [{"mean":662.5,"fwhm":2.3,"amplitude":1000,"area":2500,"chi2dof":1.2}, ...]
+  std::string farm_peaks_json;
+
+  // Full peak JSON from PeakDef::peak_json() — ROI-grouped, includes continuum
+  // coefficients, skew parameters, colors, etc.  Same format as D3 chart receives.
+  std::string farm_peaks_full_json;
+
+  // GADRAS Full Spectrum Isotope ID results as JSON (ExternalRidResults format)
+  std::string gadras_rid_json;
+
+  // Enrichment/isotopics results — JSON array of EnrichmentResults objects
+  std::string isotopics_result_json;
+
+  // Statistical moments of foreground spectrum
+  double spectrum_mean = 0.0;      // Weighted mean energy (keV)
+  double spectrum_variance = 0.0;  // Weighted variance
+  double spectrum_skewness = 0.0;  // Third standardized moment
+  double spectrum_kurtosis = 0.0;  // Fourth standardized moment (excess kurtosis)
+
+  // Foreground channel/count summary
+  int farm_min_channel_with_data = -1;   // First channel index with nonzero counts (-1 if none)
+  int farm_max_channel_with_data = -1;   // Last channel index with nonzero counts  (-1 if none)
+  double farm_foreground_total_gamma_counts = 0.0;
+  int farm_foreground_num_gamma_channels = 0;
+  bool farm_foreground_has_neutrons = false;
+  double farm_foreground_neutron_count = 0.0;
+  float farm_foreground_neutron_live_time = 0.0f;
+  float farm_foreground_min_gamma_count = 0.0f;  // Minimum nonzero channel count
+  float farm_foreground_max_gamma_count = 0.0f;
+
+  // Energy calibration info as JSON object; empty when cal is invalid/unavailable.
+  // Contains: polynomial_energy_coeffs, average_amp_gain (LCE only),
+  //   nonlinear_deviation_pairs, min_energy, max_energy
+  std::string farm_energy_cal_json;
+
   //bool peaks_fit;
   //std::vector<std::tuple<float,float,float>> peak_info; //mean, fwhm, rate
-  
+
   template<class Action>
   void persist( Action &a )
   {
@@ -278,7 +318,27 @@ struct SpecFileInfoToQuery
     Wt::Dbo::field( a, start_time_ioi, "start_time_ioi" );
     Wt::Dbo::field( a, start_times, "start_times" );
     Wt::Dbo::field( a, event_xml_filter_values, "event_xml_filter_values" );
-    
+
+    // FARM fields
+    Wt::Dbo::field( a, farm_peaks_json, "farm_peaks_json" );
+    Wt::Dbo::field( a, farm_peaks_full_json, "farm_peaks_full_json" );
+    Wt::Dbo::field( a, gadras_rid_json, "gadras_rid_json" );
+    Wt::Dbo::field( a, isotopics_result_json, "isotopics_result_json" );
+    Wt::Dbo::field( a, spectrum_mean, "spectrum_mean" );
+    Wt::Dbo::field( a, spectrum_variance, "spectrum_variance" );
+    Wt::Dbo::field( a, spectrum_skewness, "spectrum_skewness" );
+    Wt::Dbo::field( a, spectrum_kurtosis, "spectrum_kurtosis" );
+    Wt::Dbo::field( a, farm_min_channel_with_data, "farm_min_channel_with_data" );
+    Wt::Dbo::field( a, farm_max_channel_with_data, "farm_max_channel_with_data" );
+    Wt::Dbo::field( a, farm_foreground_total_gamma_counts, "farm_foreground_total_gamma_counts" );
+    Wt::Dbo::field( a, farm_foreground_num_gamma_channels, "farm_foreground_num_gamma_channels" );
+    Wt::Dbo::field( a, farm_foreground_has_neutrons, "farm_foreground_has_neutrons" );
+    Wt::Dbo::field( a, farm_foreground_neutron_count, "farm_foreground_neutron_count" );
+    Wt::Dbo::field( a, farm_foreground_neutron_live_time, "farm_foreground_neutron_live_time" );
+    Wt::Dbo::field( a, farm_foreground_min_gamma_count, "farm_foreground_min_gamma_count" );
+    Wt::Dbo::field( a, farm_foreground_max_gamma_count, "farm_foreground_max_gamma_count" );
+    Wt::Dbo::field( a, farm_energy_cal_json, "farm_energy_cal_json" );
+
     //bool peaks_fit;
     //std::vector<std::tuple<float,float,float>> peak_info; //mean, fwhm, rate
   }//void persist( Action &a )
@@ -335,6 +395,11 @@ public:
   
   bool is_persistand() const;
   
+  /** Sets the FARM analysis options used when populating SpecFileInfoToQuery.
+   Must be called before caching/querying if FARM analysis is desired.
+   */
+  void set_farm_options( const Farm::FarmOptions &opts );
+
   /** Returns the XML filters that can be queried on.
    */
   const std::vector<EventXmlFilterInfo> &xml_filters() const;
@@ -357,9 +422,16 @@ protected:
       You should have a lock on m_db_mutex while calling this function.
    */
   bool init_existing_persisted_db();
-  
-  /** Constructs a unique file */
-  static std::string construct_persisted_db_filename( std::string basepath );
+
+  /** Constructs the persisted DB filename.  Appends "_FARM" when FARM analysis
+      is enabled so that changing FARM options naturally invalidates the cache.
+   */
+  std::string construct_persisted_db_filename() const;
+
+  /** Closes the current DB and opens a fresh one at the correct (possibly
+      renamed) path.  Call after m_farm_options changes while caching is active.
+   */
+  void resetCache();
   
 protected:
   bool m_use_db_caching;
@@ -378,6 +450,7 @@ protected:
   std::unique_ptr<Wt::Dbo::Session> m_db_session;
   
   const std::vector<EventXmlFilterInfo> m_xmlfilters;
+  Farm::FarmOptions m_farm_options;
 };//class SpecFileQueryDbCache
 
 

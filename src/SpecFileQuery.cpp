@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <cmath>
 #include <mutex>
 #include <atomic>
 #include <cerrno>
@@ -33,6 +34,7 @@
 #include <boost/regex.hpp>
 
 #include "3rdparty/date/include/date/date.h"
+#include <nlohmann/json.hpp>
 
 #include "InterSpec/SpecMeas.h"
 #include "SpecUtils/DateTime.h"
@@ -124,8 +126,9 @@ namespace SpecFileQuery
       case FileDataField::LocationName:
       case FileDataField::AnalysisResultText:
       case FileDataField::AnalysisResultNuclide:
+      case FileDataField::GadrasIdResultNuclide:
         break;
-        
+
       case FileDataField::DetectionSystemType:
       case FileDataField::SearchMode:
       case FileDataField::ContainedNuetronDetector:
@@ -147,12 +150,25 @@ namespace SpecFileQuery
       case FileDataField::GammaCountRate:
       case FileDataField::StartTimeIoI:
       case FileDataField::MeasurementsStartTimes:
+      case FileDataField::FarmPeakCount:
+      case FileDataField::FarmPeakEnergyMin:
+      case FileDataField::FarmPeakEnergyMax:
+      case FileDataField::GadrasChi2:
+      case FileDataField::RelActUIsotopics:
+      case FileDataField::RelActPuIsotopics:
+      case FileDataField::FramUIsotopics:
+      case FileDataField::FramPuIsotopics:
+      case FileDataField::SpectrumMean:
+      case FileDataField::SpectrumVariance:
+      case FileDataField::SpectrumStandardDeviation:
+      case FileDataField::SpectrumSkewness:
+      case FileDataField::SpectrumKurtosis:
       case FileDataField::NumFileDataFields:
         throw runtime_error( string("SpecTest::set_test: ")
                              + to_string(field) + " not a string field" );
         break;
     }//switch( m_searchField )
-    
+
     m_searchField = field;
     m_searchString = searchstr;
     m_stringSearchType = type;
@@ -196,12 +212,24 @@ namespace SpecFileQuery
       case FileDataField::AnalysisResultNuclide:
       case FileDataField::StartTimeIoI:
       case FileDataField::MeasurementsStartTimes:
+      case FileDataField::FarmPeakCount:
+      case FileDataField::FarmPeakEnergyMin:
+      case FileDataField::FarmPeakEnergyMax:
+      case FileDataField::GadrasIdResultNuclide:
+      case FileDataField::GadrasChi2:
+      case FileDataField::RelActUIsotopics: case FileDataField::RelActPuIsotopics:
+      case FileDataField::FramUIsotopics: case FileDataField::FramPuIsotopics:
+      case FileDataField::SpectrumMean:
+      case FileDataField::SpectrumVariance:
+      case FileDataField::SpectrumStandardDeviation:
+      case FileDataField::SpectrumSkewness:
+      case FileDataField::SpectrumKurtosis:
       case FileDataField::NumFileDataFields:
         throw runtime_error( string("SpecTest::set_test: ")
                             + to_string(field) + " not a discrete field" );
         break;
     }//switch( m_searchField )
-    
+
     m_searchField = field;
     m_discreteOption = val;
   }
@@ -215,19 +243,26 @@ namespace SpecFileQuery
       case NumberOfSamples: case NumberOfRecords: case NumberOfGammaChannels:
       case MaximumGammaEnergy: case Latitude: case Longitude:
       case NeutronCountRate: case GammaCountRate:
+      case FarmPeakCount: case FarmPeakEnergyMin: case FarmPeakEnergyMax:
+      case GadrasChi2:
+      case RelActUIsotopics: case RelActPuIsotopics:
+      case FramUIsotopics: case FramPuIsotopics:
+      case SpectrumMean: case SpectrumVariance: case SpectrumStandardDeviation:
+      case SpectrumSkewness: case SpectrumKurtosis:
         break;
-        
+
       case DetectionSystemType: case SearchMode: case ContainedNuetronDetector:
       case ContainedDeviationPairs: case HasGps: case EnergyCalibrationType:
       case ParentPath: case Filename: case DetectorName: case SerialNumber:
       case Manufacturer: case Model: case Uuid: case Remark: case LocationName:
       case AnalysisResultText: case AnalysisResultNuclide: case HasRIIDAnalysis:
+      case GadrasIdResultNuclide:
       case FileDataField::StartTimeIoI: case MeasurementsStartTimes:
       case NumFileDataFields:
         throw runtime_error( string("SpecTest::set_test: ") + to_string(field) + " not a numeric field" );
         break;
     }//switch( m_searchField )
-    
+
     m_numeric = value;
     m_searchField = field;
     m_compareType = type;
@@ -257,12 +292,20 @@ namespace SpecFileQuery
       case FileDataField::Uuid: case FileDataField::Remark:
       case FileDataField::LocationName: case FileDataField::AnalysisResultText:
       case FileDataField::AnalysisResultNuclide: case FileDataField::HasRIIDAnalysis:
+      case FileDataField::FarmPeakCount: case FileDataField::FarmPeakEnergyMin:
+      case FileDataField::FarmPeakEnergyMax: case FileDataField::GadrasIdResultNuclide:
+      case FileDataField::GadrasChi2:
+      case FileDataField::RelActUIsotopics: case FileDataField::RelActPuIsotopics:
+      case FileDataField::FramUIsotopics: case FileDataField::FramPuIsotopics:
+      case FileDataField::SpectrumMean:
+      case FileDataField::SpectrumVariance: case FileDataField::SpectrumStandardDeviation:
+      case FileDataField::SpectrumSkewness: case FileDataField::SpectrumKurtosis:
       case FileDataField::NumFileDataFields:
         throw runtime_error( string("SpecTest::set_test: ") + to_string(field) + " not a time field" );
         break;
     }//switch( m_searchField )
-    
-    
+
+
     m_searchField = field;
     m_compareType = type;
     m_time = comptime;
@@ -815,7 +858,237 @@ namespace SpecFileQuery
         }
         return false;
       }//case StartTime:
-        
+
+      case FileDataField::FarmPeakCount:
+      {
+        // Parse peaks JSON and count
+        size_t peak_count = 0;
+        if( !meas.farm_peaks_json.empty() )
+        {
+          try
+          {
+            const nlohmann::json peaks = nlohmann::json::parse( meas.farm_peaks_json );
+            if( peaks.is_array() )
+              peak_count = peaks.size();
+          }
+          catch( ... ) {}
+        }
+
+        switch( m_compareType )
+        {
+          case ValueIsExact:       return (peak_count == static_cast<size_t>(m_numeric));
+          case ValueIsNotEqual:    return (peak_count != static_cast<size_t>(m_numeric));
+          case ValueIsLessThan:    return (peak_count < static_cast<size_t>(m_numeric));
+          case ValueIsGreaterThan: return (peak_count > static_cast<size_t>(m_numeric));
+        }
+        return false;
+      }
+
+      case FileDataField::FarmPeakEnergyMin:
+      {
+        // Check if any peak has energy >= m_numeric
+        if( meas.farm_peaks_json.empty() )
+          return false;
+
+        try
+        {
+          const nlohmann::json peaks = nlohmann::json::parse( meas.farm_peaks_json );
+          if( !peaks.is_array() )
+            return false;
+
+          for( const auto &peak : peaks )
+          {
+            const double mean = peak.value( "mean", 0.0 );
+            if( mean >= m_numeric )
+              return true;
+          }
+        }
+        catch( ... ) {}
+        return false;
+      }
+
+      case FileDataField::FarmPeakEnergyMax:
+      {
+        // Check if any peak has energy <= m_numeric
+        if( meas.farm_peaks_json.empty() )
+          return false;
+
+        try
+        {
+          const nlohmann::json peaks = nlohmann::json::parse( meas.farm_peaks_json );
+          if( !peaks.is_array() )
+            return false;
+
+          for( const auto &peak : peaks )
+          {
+            const double mean = peak.value( "mean", 0.0 );
+            if( mean <= m_numeric )
+              return true;
+          }
+        }
+        catch( ... ) {}
+        return false;
+      }
+
+      case FileDataField::GadrasIdResultNuclide:
+      {
+        // Search GADRAS results for nuclide name
+        if( meas.gadras_rid_json.empty() )
+          return false;
+
+        try
+        {
+          const nlohmann::json gadras = nlohmann::json::parse( meas.gadras_rid_json );
+
+          // Check isotopeString field
+          std::string iso_str = gadras.value( "isotopeString", std::string() );
+          if( test_string( iso_str, m_stringSearchType, m_searchString ) )
+            return true;
+
+          // Check individual isotopes array
+          if( gadras.contains("isotopes") && gadras["isotopes"].is_array() )
+          {
+            for( const auto &iso : gadras["isotopes"] )
+            {
+              std::string name = iso.value( "name", std::string() );
+              if( test_string( name, m_stringSearchType, m_searchString ) )
+                return true;
+            }
+          }
+        }
+        catch( ... ) {}
+        return false;
+      }
+
+      case FileDataField::GadrasChi2:
+      {
+        double chi2 = -1.0;
+        if( !meas.gadras_rid_json.empty() )
+        {
+          try
+          {
+            const nlohmann::json gadras = nlohmann::json::parse( meas.gadras_rid_json );
+            chi2 = gadras.value( "chi2", -1.0 );
+          }
+          catch( ... ) {}
+        }
+
+        if( chi2 < 0.0 )
+          return false;
+
+        switch( m_compareType )
+        {
+          case ValueIsExact:       return (std::fabs(chi2 - m_numeric) < 0.001);
+          case ValueIsNotEqual:    return (std::fabs(chi2 - m_numeric) >= 0.001);
+          case ValueIsLessThan:    return (chi2 < m_numeric);
+          case ValueIsGreaterThan: return (chi2 > m_numeric);
+        }
+        return false;
+      }
+
+      case FileDataField::RelActUIsotopics:
+      case FileDataField::RelActPuIsotopics:
+      case FileDataField::FramUIsotopics:
+      case FileDataField::FramPuIsotopics:
+      {
+        if( meas.isotopics_result_json.empty() )
+          return false;
+        try
+        {
+          const bool is_relact = (m_searchField == FileDataField::RelActUIsotopics
+                                  || m_searchField == FileDataField::RelActPuIsotopics);
+          const std::string prog = is_relact ? "RelActCalcAuto" : "FRAM";
+          const std::string target = (m_searchField == FileDataField::RelActUIsotopics
+                                      || m_searchField == FileDataField::FramUIsotopics) ? "U235" : "Pu240";
+
+          const nlohmann::json results = nlohmann::json::parse( meas.isotopics_result_json );
+          for( const nlohmann::json &res : results )
+          {
+            if( res.value( "analysis_program", std::string() ) != prog )
+              continue;
+            if( !res.contains( "nuclide_results" ) )
+              continue;
+
+            for( const nlohmann::json &nuc : res["nuclide_results"] )
+            {
+              if( nuc.value( "nuclide", std::string() ) != target )
+                continue;
+              const double mass_pct = 100.0 * nuc.value( "mass_fraction", 0.0 );
+              switch( m_compareType )
+              {
+                case ValueIsExact:       return (std::fabs( mass_pct - m_numeric ) < 0.001);
+                case ValueIsNotEqual:    return (std::fabs( mass_pct - m_numeric ) >= 0.001);
+                case ValueIsLessThan:    return (mass_pct < m_numeric);
+                case ValueIsGreaterThan: return (mass_pct > m_numeric);
+              }
+            }
+          }
+        }
+        catch( ... ) {}
+        return false;
+      }
+
+      case FileDataField::SpectrumMean:
+      {
+        switch( m_compareType )
+        {
+          case ValueIsExact:       return (std::fabs(meas.spectrum_mean - m_numeric) < 0.001);
+          case ValueIsNotEqual:    return (std::fabs(meas.spectrum_mean - m_numeric) >= 0.001);
+          case ValueIsLessThan:    return (meas.spectrum_mean < m_numeric);
+          case ValueIsGreaterThan: return (meas.spectrum_mean > m_numeric);
+        }
+        return false;
+      }
+
+      case FileDataField::SpectrumVariance:
+      {
+        switch( m_compareType )
+        {
+          case ValueIsExact:       return (std::fabs(meas.spectrum_variance - m_numeric) < 0.001);
+          case ValueIsNotEqual:    return (std::fabs(meas.spectrum_variance - m_numeric) >= 0.001);
+          case ValueIsLessThan:    return (meas.spectrum_variance < m_numeric);
+          case ValueIsGreaterThan: return (meas.spectrum_variance > m_numeric);
+        }
+        return false;
+      }
+
+      case FileDataField::SpectrumStandardDeviation:
+      {
+        const double std_dev = std::sqrt( meas.spectrum_variance );
+        switch( m_compareType )
+        {
+          case ValueIsExact:       return (std::fabs(std_dev - m_numeric) < 0.001);
+          case ValueIsNotEqual:    return (std::fabs(std_dev - m_numeric) >= 0.001);
+          case ValueIsLessThan:    return (std_dev < m_numeric);
+          case ValueIsGreaterThan: return (std_dev > m_numeric);
+        }
+        return false;
+      }
+
+      case FileDataField::SpectrumSkewness:
+      {
+        switch( m_compareType )
+        {
+          case ValueIsExact:       return (std::fabs(meas.spectrum_skewness - m_numeric) < 0.001);
+          case ValueIsNotEqual:    return (std::fabs(meas.spectrum_skewness - m_numeric) >= 0.001);
+          case ValueIsLessThan:    return (meas.spectrum_skewness < m_numeric);
+          case ValueIsGreaterThan: return (meas.spectrum_skewness > m_numeric);
+        }
+        return false;
+      }
+
+      case FileDataField::SpectrumKurtosis:
+      {
+        switch( m_compareType )
+        {
+          case ValueIsExact:       return (std::fabs(meas.spectrum_kurtosis - m_numeric) < 0.001);
+          case ValueIsNotEqual:    return (std::fabs(meas.spectrum_kurtosis - m_numeric) >= 0.001);
+          case ValueIsLessThan:    return (meas.spectrum_kurtosis < m_numeric);
+          case ValueIsGreaterThan: return (meas.spectrum_kurtosis > m_numeric);
+        }
+        return false;
+      }
+
       case FileDataField::NumFileDataFields:
         return false;
         break;
@@ -865,7 +1138,22 @@ namespace SpecFileQuery
       case FileDataField::GammaCountRate:             return "Gamma CPS";
       case FileDataField::StartTimeIoI:               return "Start Time";
       case FileDataField::MeasurementsStartTimes:     return "Meas. Start Times";
-        
+
+      case FileDataField::FarmPeakCount:              return "FarmPeakCount";
+      case FileDataField::FarmPeakEnergyMin:          return "FarmPeakEnergyMin";
+      case FileDataField::FarmPeakEnergyMax:          return "FarmPeakEnergyMax";
+      case FileDataField::GadrasIdResultNuclide:      return "GadrasIdResultNuclide";
+      case FileDataField::GadrasChi2:                 return "GadrasChi2";
+      case FileDataField::RelActUIsotopics:           return "RelActUIsotopics";
+      case FileDataField::RelActPuIsotopics:          return "RelActPuIsotopics";
+      case FileDataField::FramUIsotopics:             return "FramUIsotopics";
+      case FileDataField::FramPuIsotopics:            return "FramPuIsotopics";
+      case FileDataField::SpectrumMean:               return "SpectrumMean";
+      case FileDataField::SpectrumVariance:           return "SpectrumVariance";
+      case FileDataField::SpectrumStandardDeviation: return "SpectrumStandardDeviation";
+      case FileDataField::SpectrumSkewness:           return "SpectrumSkewness";
+      case FileDataField::SpectrumKurtosis:           return "SpectrumKurtosis";
+
       case FileDataField::NumFileDataFields:
         break;
     }//switch( m_searchField )
@@ -994,6 +1282,7 @@ namespace SpecFileQuery
       case FileDataField::Uuid: case FileDataField::Remark:
       case FileDataField::LocationName: case FileDataField::AnalysisResultText:
       case FileDataField::AnalysisResultNuclide:
+      case FileDataField::GadrasIdResultNuclide:
         summary += string(" ") + to_string( m_stringSearchType )
         + string(" \"") + m_searchString + "\"";
         break;
@@ -1044,7 +1333,21 @@ namespace SpecFileQuery
       case FileDataField::NeutronCountRate: case FileDataField::GammaCountRate:
         summary += " is " + string(to_string(m_compareType)) + " " + PhysicalUnits::printToBestTimeUnits(m_numeric);
         break;
-        
+
+      case FileDataField::FarmPeakCount: case FileDataField::FarmPeakEnergyMin:
+      case FileDataField::FarmPeakEnergyMax: case FileDataField::GadrasChi2:
+      case FileDataField::RelActUIsotopics: case FileDataField::RelActPuIsotopics:
+      case FileDataField::FramUIsotopics: case FileDataField::FramPuIsotopics:
+      case FileDataField::SpectrumMean: case FileDataField::SpectrumVariance:
+      case FileDataField::SpectrumStandardDeviation:
+      case FileDataField::SpectrumSkewness: case FileDataField::SpectrumKurtosis:
+      {
+        char buf[32];
+        snprintf( buf, sizeof(buf), "%.4g", m_numeric );
+        summary += " is " + string(to_string(m_compareType)) + " " + string(buf);
+        break;
+      }
+
       case FileDataField::StartTimeIoI:
       case FileDataField::MeasurementsStartTimes:
         summary += " is " + string(to_string(m_compareType)) + " " + SpecUtils::to_iso_string( std::chrono::time_point_cast<std::chrono::microseconds>(to_time_point(m_time)));
@@ -1240,7 +1543,24 @@ namespace SpecFileQuery
         if( m_time.is_special() )
           throw runtime_error( "Invalid Time" );
       }
-        
+
+      // FARM fields - numeric fields validated by the query builder;
+      // string/boolean fields are always valid once set
+      case FileDataField::FarmPeakCount:
+      case FileDataField::FarmPeakEnergyMin:
+      case FileDataField::FarmPeakEnergyMax:
+      case FileDataField::GadrasIdResultNuclide:
+      case FileDataField::GadrasChi2:
+      case FileDataField::RelActUIsotopics:
+      case FileDataField::RelActPuIsotopics:
+      case FileDataField::FramUIsotopics:
+      case FileDataField::FramPuIsotopics:
+      case FileDataField::SpectrumMean:
+      case FileDataField::SpectrumVariance:
+      case FileDataField::SpectrumStandardDeviation:
+      case FileDataField::SpectrumSkewness:
+      case FileDataField::SpectrumKurtosis:
+
       case NumFileDataFields:
         break;
     }//switch( m_searchField )

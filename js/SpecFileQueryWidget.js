@@ -433,6 +433,93 @@ function( divid, parentid, additional_filters )
     label: 'Longitude',
     type: 'double',
     operators: ['greater','less','equal','not_equal']
+  },{
+    id: 'FarmPeakCount',
+    label: 'Peak Count',
+    type: 'double',
+    operators: ['greater','less','equal','not_equal']
+  },{
+    id: 'FarmPeakEnergyMin',
+    label: 'Min Peak Mean',
+    size: 65,
+    placeholder: '(Energy in keV)',
+    type: 'double',
+    operators: ['greater','less','equal','not_equal']
+  },{
+    id: 'FarmPeakEnergyMax',
+    label: 'Max Peak Mean',
+    size: 65,
+    placeholder: '(Energy in keV)',
+    type: 'double',
+    operators: ['greater','less','equal','not_equal']
+  },{
+    id: 'GadrasIdResultNuclide',
+    label: 'GADRAS ID',
+    size: 65,
+    placeholder: '(nuclide name)',
+    type: 'string',
+    operators: ['contains', 'equal', 'not equal', 'does not contain', 'begins with', 'does not begin with', 'ends with', 'does not end with', 'regex' ],
+    validation: { callback: is_valid_str }
+  },{
+    id: 'GadrasChi2',
+    label: 'GADRAS Chi2',
+    type: 'double',
+    operators: ['greater','less','equal','not_equal']
+  },{
+    id: 'RelActUIsotopics',
+    label: 'RelAct U Isotopics',
+    size: 65,
+    placeholder: '(U235 mass %)',
+    type: 'double',
+    operators: ['greater','less','equal','not_equal']
+  },{
+    id: 'RelActPuIsotopics',
+    label: 'RelAct Pu Isotopics',
+    size: 65,
+    placeholder: '(Pu240 mass %)',
+    type: 'double',
+    operators: ['greater','less','equal','not_equal']
+  },{
+    id: 'FramUIsotopics',
+    label: 'FRAM U Isotopics',
+    size: 65,
+    placeholder: '(U235 mass %)',
+    type: 'double',
+    operators: ['greater','less','equal','not_equal']
+  },{
+    id: 'FramPuIsotopics',
+    label: 'FRAM Pu Isotopics',
+    size: 65,
+    placeholder: '(Pu240 mass %)',
+    type: 'double',
+    operators: ['greater','less','equal','not_equal']
+  },{
+    id: 'SpectrumMean',
+    label: 'Spectrum Mean (keV)',
+    size: 65,
+    placeholder: '(Energy in keV)',
+    type: 'double',
+    operators: ['greater','less','equal','not_equal']
+  },{
+    id: 'SpectrumVariance',
+    label: 'Spectrum Variance',
+    type: 'double',
+    operators: ['greater','less','equal','not_equal']
+  },{
+    id: 'SpectrumStandardDeviation',
+    label: 'Spectrum Std Dev',
+    type: 'double',
+    operators: ['greater','less','equal','not_equal']
+  },{
+    id: 'SpectrumSkewness',
+    label: 'Spectrum Skewness',
+    type: 'double',
+    operators: ['greater','less','equal','not_equal']
+  },{
+    id: 'SpectrumKurtosis',
+    label: 'Spectrum Kurtosis',
+    type: 'double',
+    operators: ['greater','less','equal','not_equal']
   }];
 
 

@@ -5735,7 +5735,9 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector( const std:
   const string drfpaths = SpecUtils::append_path( datadir, "GenericGadrasDetectors" )
                           + ";" + SpecUtils::append_path( datadir, "OUO_GadrasDetectors" );
 #else
-  const string drfpaths = UserPreferences::preferenceValue<string>( "GadrasDRFPath", interspec );
+  const string drfpaths = interspec ? UserPreferences::preferenceValue<string>( "GadrasDRFPath", interspec )
+                                    : (SpecUtils::append_path( InterSpec::staticDataDirectory(), "GenericGadrasDetectors" )
+                                       + ";C:\\GADRAS\\Detecto\\Handheld;C:\\GADRAS-DRF\\Detecto\\Handheld");
 #endif
   
   

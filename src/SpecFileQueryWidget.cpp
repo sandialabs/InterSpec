@@ -23,9 +23,11 @@
 
 #include "InterSpec_config.h"
 
+#include <cmath>
 #include <mutex>
 #include <list>
 #include <atomic>
+#include <functional>
 #include <cerrno>
 #include <limits>
 #include <sstream>
@@ -90,7 +92,10 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/SpecFileQueryDbCache.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
+#include "InterSpec/FarmOptionsWindow.h"
 #include "InterSpec/ColorTheme.h"
+
+#include <nlohmann/json.hpp>
 
 #include "js/SpecFileQueryWidget.js"
 
@@ -122,6 +127,9 @@ namespace
     if( SpecUtils::file_size(path) > (*maxsize) )
       return false;
     
+    if( SpecUtils::icontains(path, ".farm.fertilized") )
+      return false;
+    
     return true;
   }
   
@@ -129,6 +137,9 @@ namespace
   {
     if( SpecUtils::likely_not_spec_file( path ) )
       return false;
+    
+    if( SpecUtils::icontains(path, ".farm.fertilized") )
+       return false;
     
     if( maxsizeptr )
       return file_smaller_than( path, maxsizeptr );
@@ -348,11 +359,24 @@ namespace
           case FileDataField::Longitude:
           case FileDataField::NeutronCountRate:
           case FileDataField::GammaCountRate:
+          case FileDataField::FarmPeakCount:
+          case FileDataField::FarmPeakEnergyMin:
+          case FileDataField::FarmPeakEnergyMax:
+          case FileDataField::GadrasChi2:
+          case FileDataField::RelActUIsotopics:
+          case FileDataField::RelActPuIsotopics:
+          case FileDataField::FramUIsotopics:
+          case FileDataField::FramPuIsotopics:
+          case FileDataField::SpectrumMean:
+          case FileDataField::SpectrumVariance:
+          case FileDataField::SpectrumStandardDeviation:
+          case FileDataField::SpectrumSkewness:
+          case FileDataField::SpectrumKurtosis:
           {
             NumericFieldMatchType matchtype;
             if( !from_string(operator_str, matchtype) ) //shouldnt ever happen!
               throw runtime_error( "Could not map '" + operator_str + "' to a NumericFieldMatchType" );
-            
+
             const double value = t.get("value");
             testitem.set_numeric_test( field, value, matchtype );
             break;
@@ -369,13 +393,14 @@ namespace
           case FileDataField::LocationName:
           case FileDataField::AnalysisResultText:
           case FileDataField::AnalysisResultNuclide:
+          case FileDataField::GadrasIdResultNuclide:
           {
             const std::string &value_str = t.get("value");
-            
+
             TextFieldSearchType type;
             if( !from_string(operator_str, type) )
               throw runtime_error( "Couldnt not map '" + operator_str + "' to a TextFieldSearchType." );
-            
+
             testitem.set_test( field, value_str, type );
             break;
           }//case( a string field )
@@ -936,12 +961,172 @@ namespace
           break;
         }
           
+        case FileDataField::FarmPeakCount:
+        {
+          if( !meas.farm_peaks_json.empty() )
+          {
+            try
+            {
+              const nlohmann::json peaks = nlohmann::json::parse( meas.farm_peaks_json );
+              if( peaks.is_array() )
+                row[f] = std::to_string( peaks.size() );
+            }
+            catch( ... ) {}
+          }
+          break;
+        }
+
+        case FileDataField::FarmPeakEnergyMin:
+        case FileDataField::FarmPeakEnergyMax:
+        {
+          if( !meas.farm_peaks_json.empty() )
+          {
+            try
+            {
+              const nlohmann::json peaks = nlohmann::json::parse( meas.farm_peaks_json );
+              if( peaks.is_array() && !peaks.empty() )
+              {
+                double val = peaks[0].value( "mean", 0.0 );
+                for( size_t i = 1; i < peaks.size(); ++i )
+                {
+                  const double mean = peaks[i].value( "mean", 0.0 );
+                  if( f == FileDataField::FarmPeakEnergyMin )
+                    val = std::min( val, mean );
+                  else
+                    val = std::max( val, mean );
+                }
+                char buff[64];
+                snprintf( buff, sizeof(buff), "%.4g", val );
+                row[f] = buff;
+              }
+            }catch( ... ) 
+            {
+              assert( 0 );
+            }
+          }
+          break;
+        }
+
+        case FileDataField::GadrasIdResultNuclide:
+        {
+          if( !meas.gadras_rid_json.empty() )
+          {
+            try
+            {
+              const nlohmann::json gadras = nlohmann::json::parse( meas.gadras_rid_json );
+              row[f] = gadras.value( "isotopeString", std::string() );
+            }
+            catch( ... ) {}
+          }
+          break;
+        }
+
+        case FileDataField::GadrasChi2:
+        {
+          if( !meas.gadras_rid_json.empty() )
+          {
+            try
+            {
+              const nlohmann::json gadras = nlohmann::json::parse( meas.gadras_rid_json );
+              const double chi2 = gadras.value( "chi2", -1.0 );
+              if( chi2 >= 0.0 )
+              {
+                char buff[64];
+                snprintf( buff, sizeof(buff), "%.4g", chi2 );
+                row[f] = buff;
+              }
+            }
+            catch( ... ) {}
+          }
+          break;
+        }
+
+        case FileDataField::RelActUIsotopics:
+        case FileDataField::RelActPuIsotopics:
+        case FileDataField::FramUIsotopics:
+        case FileDataField::FramPuIsotopics:
+        {
+          if( !meas.isotopics_result_json.empty() )
+          {
+            try
+            {
+              const bool is_relact = (f == FileDataField::RelActUIsotopics
+                                      || f == FileDataField::RelActPuIsotopics);
+              const std::string prog = is_relact ? "RelActCalcAuto" : "FRAM";
+              const std::string target = (f == FileDataField::RelActUIsotopics
+                                          || f == FileDataField::FramUIsotopics) ? "U235" : "Pu240";
+
+              const nlohmann::json results = nlohmann::json::parse( meas.isotopics_result_json );
+              for( const nlohmann::json &res : results )
+              {
+                if( res.value( "analysis_program", std::string() ) != prog )
+                  continue;
+                if( !res.contains( "nuclide_results" ) )
+                  continue;
+
+                for( const nlohmann::json &nuc : res["nuclide_results"] )
+                {
+                  if( nuc.value( "nuclide", std::string() ) != target )
+                    continue;
+                  char buff[64];
+                  snprintf( buff, sizeof(buff), "%.4g%%", 100.0 * nuc.value( "mass_fraction", 0.0 ) );
+                  row[f] = buff;
+                  break;
+                }
+                break;  // Use first matching program entry
+              }
+            }
+            catch( ... ) {}
+          }
+          break;
+        }
+
+        case FileDataField::SpectrumMean:
+        {
+          char buff[64];
+          snprintf( buff, sizeof(buff), "%.4g", meas.spectrum_mean );
+          row[f] = buff;
+          break;
+        }
+
+        case FileDataField::SpectrumVariance:
+        {
+          char buff[64];
+          snprintf( buff, sizeof(buff), "%.4g", meas.spectrum_variance );
+          row[f] = buff;
+          break;
+        }
+
+        case FileDataField::SpectrumStandardDeviation:
+        {
+          char buff[64];
+          snprintf( buff, sizeof(buff), "%.4g", std::sqrt( meas.spectrum_variance ) );
+          row[f] = buff;
+          break;
+        }
+
+        case FileDataField::SpectrumSkewness:
+        {
+          char buff[64];
+          snprintf( buff, sizeof(buff), "%.4g", meas.spectrum_skewness );
+          row[f] = buff;
+          break;
+        }
+
+        case FileDataField::SpectrumKurtosis:
+        {
+          char buff[64];
+          snprintf( buff, sizeof(buff), "%.4g", meas.spectrum_kurtosis );
+          row[f] = buff;
+          break;
+        }
+
         case FileDataField::NumFileDataFields:
           break;
       }//switch( f )
     }//for( FileDataField f = FileDataField(0); f < NumFileDataFields; f = FileDataField(f+1) )
-    
-    
+
+
     for( size_t i = 0; i < xmlfilters.size(); ++i )
     {
       const string &label = xmlfilters[i].m_label;
@@ -1179,10 +1364,39 @@ protected:
           break;
         }
           
+        case FileDataField::GadrasIdResultNuclide:
+          lesthan = (lhs[m_column] < rhs[m_column]);
+          break;
+
+        case FileDataField::RelActUIsotopics:
+        case FileDataField::RelActPuIsotopics:
+        case FileDataField::FramUIsotopics:
+        case FileDataField::FramPuIsotopics:
+        case FileDataField::FarmPeakCount:
+        case FileDataField::FarmPeakEnergyMin:
+        case FileDataField::FarmPeakEnergyMax:
+        case FileDataField::GadrasChi2:
+        case FileDataField::SpectrumMean:
+        case FileDataField::SpectrumVariance:
+        case FileDataField::SpectrumStandardDeviation:
+        case FileDataField::SpectrumSkewness:
+        case FileDataField::SpectrumKurtosis:
+        {
+          double lhsval = 0.0, rhsval = 0.0;
+          const bool pl = !!(stringstream(lhs[m_column]) >> lhsval);
+          const bool pr = !!(stringstream(rhs[m_column]) >> rhsval);
+
+          if( pl && pr )
+            lesthan = (lhsval < rhsval);
+          else
+            lesthan = (pl < pr);
+          break;
+        }
+
         case FileDataField::NumFileDataFields:
           break;
       }//switch( FileDataField(column) )
-      
+
       return ((m_order==Wt::AscendingOrder) ? lesthan : !lesthan);
     }
   };
@@ -1429,7 +1643,22 @@ public:
       case FileDataField::GammaCountRate:             return WString("Gamma CPS");
       case FileDataField::StartTimeIoI:               return WString("Start Time");
       case FileDataField::MeasurementsStartTimes:     return WString("Meas. Start Times");
-        
+
+      case FileDataField::FarmPeakCount:              return WString("Peak Count");
+      case FileDataField::FarmPeakEnergyMin:          return WString("Min Peak Mean");
+      case FileDataField::FarmPeakEnergyMax:          return WString("Max Peak Mean");
+      case FileDataField::GadrasIdResultNuclide:      return WString("GADRAS ID");
+      case FileDataField::GadrasChi2:                 return WString("GADRAS Chi2");
+      case FileDataField::RelActUIsotopics:           return WString("RelAct U Isotopics");
+      case FileDataField::RelActPuIsotopics:          return WString("RelAct Pu Isotopics");
+      case FileDataField::FramUIsotopics:             return WString("FRAM U Isotopics");
+      case FileDataField::FramPuIsotopics:            return WString("FRAM Pu Isotopics");
+      case FileDataField::SpectrumMean:               return WString("Spectrum Mean (keV)");
+      case FileDataField::SpectrumVariance:           return WString("Spectrum Variance");
+      case FileDataField::SpectrumStandardDeviation: return WString("Spectrum Std Dev");
+      case FileDataField::SpectrumSkewness:           return WString("Spectrum Skewness");
+      case FileDataField::SpectrumKurtosis:           return WString("Spectrum Kurtosis");
+
       case SpecFileQuery::NumFileDataFields: break;
     }//switch( SpecFileQuery::FileDataField(section) )
       
@@ -1699,9 +1928,30 @@ void SpecFileQueryWidget::init()
   m_persistCacheResults->setChecked( false );
   m_persistCacheResults->checked().connect( this, &SpecFileQueryWidget::doPersistCacheChanged );
   m_persistCacheResults->unChecked().connect( this, &SpecFileQueryWidget::doPersistCacheChanged );
-  
-  
-  
+
+
+  // FARM Options menu item
+  auto farmItem = m_optionsMenu->addMenuItem( WString::tr("sfqw-farm-options") );
+  farmItem->triggered().connect( std::bind( [this]()
+  {
+    FarmOptionsWindow *window = new FarmOptionsWindow( m_viewer );
+    window->optionsChanged().connect( std::bind( [this]( const Farm::FarmOptions & )
+    {
+      // FARM options changed - stop and discard all caches so they are recreated
+      // with the new options (basePathChanged loads options from UserPreferences)
+      for( auto &kv : m_path_caches )
+      {
+        if( kv.second )
+          kv.second->stop_caching();
+      }
+      m_path_caches.clear();
+      basePathChanged();
+    }, std::placeholders::_1 ) );
+    window->show();
+    window->finished().connect( std::bind( [window](){ delete window; } ) );
+  }) );
+
+
   m_cancelUpdate = new WPushButton( WString::tr("Cancel") );
   m_cancelUpdate->setHidden( true );
   linelayout->addWidget( m_cancelUpdate, 0, linelayout->columnCount() );
@@ -2206,8 +2456,15 @@ void SpecFileQueryWidget::basePathChanged()
   if( map_iter != end(m_path_caches) )
     database = map_iter->second;
   if( !database )
+  {
     database = m_path_caches[basepath] = make_shared<SpecFileQueryDbCache>( cache_in_db, basepath, m_eventXmlFilters );
-  
+    try
+    {
+      const std::string farm_json = UserPreferences::preferenceValue<std::string>( "FarmOptions", m_viewer );
+      database->set_farm_options( Farm::FarmOptions::fromJson( farm_json ) );
+    }catch( ... ) {}
+  }
+
   if( cache_in_db )
   {
     database->allow_start_caching();
@@ -2549,8 +2806,15 @@ void SpecFileQueryWidget::searchRequestedCallback( const std::string &queryJson 
       database = map_iter->second;
     
     if( !database )
+    {
       database = std::make_shared<SpecFileQueryDbCache>( false, basepath, m_eventXmlFilters );
-    
+      try
+      {
+        const std::string farm_json = UserPreferences::preferenceValue<std::string>( "FarmOptions", m_viewer );
+        database->set_farm_options( Farm::FarmOptions::fromJson( farm_json ) );
+      }catch( ... ) {}
+    }
+
     m_stopUpdate->store( false );
     WServer::instance()->ioService().boost::asio::io_service::post(
                                           boost::bind( &SpecFileQueryWidget::doSearch, this, basepath, options,

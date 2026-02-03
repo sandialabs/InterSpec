@@ -93,9 +93,25 @@ namespace SpecFileQuery
     //Time field
     StartTimeIoI,
     MeasurementsStartTimes,
-    
+
     //More complex: peak location...
-    
+
+    // FARM analysis fields
+    FarmPeakCount,           // Number of peaks found by automated search
+    FarmPeakEnergyMin,       // Query: has peak with energy >= this value
+    FarmPeakEnergyMax,       // Query: has peak with energy <= this value (use with Min for range)
+    GadrasIdResultNuclide,   // GADRAS isotope identification (like AnalysisResultNuclide)
+    GadrasChi2,              // GADRAS fit chi-squared
+    RelActUIsotopics,        // U isotopics mass fractions from RelActCalcAuto
+    RelActPuIsotopics,       // Pu isotopics mass fractions from RelActCalcAuto
+    FramUIsotopics,          // U isotopics mass fractions from FRAM
+    FramPuIsotopics,         // Pu isotopics mass fractions from FRAM
+    SpectrumMean,            // Weighted mean energy (keV)
+    SpectrumVariance,        // Weighted variance
+    SpectrumStandardDeviation, // sqrt(Weighted variance)
+    SpectrumSkewness,        // Third standardized moment
+    SpectrumKurtosis,        // Fourth standardized moment
+
     NumFileDataFields
   };//enum FileDataField
 

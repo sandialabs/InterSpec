@@ -347,6 +347,10 @@ set(sources
     src/ExportSpecFile.cpp
     src/EnterAppUrlWindow.cpp
     src/ExternalRidResult.cpp
+    src/FarmOptions.cpp
+    src/FarmAnalysis.cpp
+    src/EnrichmentResults.cpp
+    src/FarmOptionsWindow.cpp
     src/NuclideSourceEnter.cpp
     src/AddNewPeakDialog.cpp
     src/UserPreferences.cpp
@@ -466,6 +470,10 @@ set(headers
     InterSpec/BersteinPolynomial.hpp
     InterSpec/ExportSpecFile.h
     InterSpec/ExternalRidResult.h
+    InterSpec/FarmOptions.h
+    InterSpec/FarmAnalysis.h
+    InterSpec/EnrichmentResults.h
+    InterSpec/FarmOptionsWindow.h
     InterSpec/EnterAppUrlWindow.h
     InterSpec/NuclideSourceEnter.h
     InterSpec/AddNewPeakDialog.h
