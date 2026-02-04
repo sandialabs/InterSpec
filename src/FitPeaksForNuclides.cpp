@@ -39,6 +39,7 @@
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
+#include "InterSpec/EnergyCal.h"
 #include "InterSpec/PeakFitLM.h"
 #include "InterSpec/PeakDists.h"
 #include "InterSpec/MakeDrfFit.h"
@@ -3439,7 +3440,28 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
       {
         if( apply_energy_cal_between && config.fit_energy_cal )
         {
-          // TODO: Set calibration to foreground, and propogate to background
+          const shared_ptr<SpecUtils::EnergyCalibration> fitted_cal = solution.get_adjusted_energy_cal();
+          const shared_ptr<const SpecUtils::EnergyCalibration> orig_fg_cal = foreground->energy_calibration();
+
+          shared_ptr<SpecUtils::Measurement> new_foreground = make_shared<SpecUtils::Measurement>( *foreground );
+          new_foreground->set_energy_calibration( fitted_cal );
+          foreground = new_foreground;
+
+          if( background )
+          {
+            // Propagate the foreground cal change (orig_fg_cal -> fitted_cal) to
+            // the background.  propogate_energy_cal_change requires orig and new
+            // cals to be Polynomial or FRF; if LowerChannelEdge just use fitted_cal directly.
+            shared_ptr<const SpecUtils::EnergyCalibration> new_bkg_cal;
+            if( orig_fg_cal->type() == SpecUtils::EnergyCalType::LowerChannelEdge )
+              new_bkg_cal = fitted_cal;
+            else
+              new_bkg_cal = EnergyCal::propogate_energy_cal_change( orig_fg_cal, fitted_cal, background->energy_calibration() );
+
+            shared_ptr<SpecUtils::Measurement> new_background = make_shared<SpecUtils::Measurement>( *background );
+            new_background->set_energy_calibration( new_bkg_cal );
+            background = new_background;
+          }
         }//if( apply_energy_cal_between && config.fit_energy_cal )
 
 
@@ -3763,6 +3785,8 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
       std::cout << "Filtered out " << num_filtered << " peaks from "
            << insignificant_roi_ranges.size() << " ROIs without significant chi2 improvement" << std::endl;
     }
+    
+    
 
     result.solution = std::move( solution );
 
@@ -3783,7 +3807,31 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 
     if( apply_energy_cal_between && config.fit_energy_cal )
     {
-      // TODO: Set peaks from `foreground` energy calibration, to original energy calibration
+      // Peaks are currently in foreground's (fitted) energy cal; translate them
+      // back to the original foreground's energy cal for display.
+      const shared_ptr<const SpecUtils::EnergyCalibration> fitted_cal = foreground->energy_calibration();
+      const shared_ptr<const SpecUtils::EnergyCalibration> orig_cal = orig_foreground->energy_calibration();
+
+      if( fitted_cal && orig_cal && (*fitted_cal != *orig_cal) )
+      {
+        auto translate_peaks = [&fitted_cal, &orig_cal]( vector<PeakDef> &peaks )
+        {
+          deque<shared_ptr<const PeakDef>> tmp_peaks;
+          for( const PeakDef &p : peaks )
+            tmp_peaks.push_back( make_shared<const PeakDef>( p ) );
+
+          const deque<shared_ptr<const PeakDef>> translated
+              = EnergyCal::translatePeaksForCalibrationChange( tmp_peaks, fitted_cal, orig_cal );
+
+          peaks.clear();
+          for( const shared_ptr<const PeakDef> &p : translated )
+            peaks.push_back( *p );
+        };
+
+        translate_peaks( result.fit_peaks );
+        translate_peaks( result.uncombined_fit_peaks );
+        translate_peaks( result.observable_peaks );
+      }
     }//if( apply_energy_cal_between && config.fit_energy_cal )
 
     if( should_debug_print() && (result.observable_peaks.size() != result.fit_peaks.size()) )

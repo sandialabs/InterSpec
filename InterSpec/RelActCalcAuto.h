@@ -954,7 +954,10 @@ struct RelActAutoSolution
   
   std::shared_ptr<const RelActCalcAutoImp::RelActAutoCostFcn> m_cost_functor;
   
+  /** The original foreground passed into `solve_ceres(...)`. */
   std::shared_ptr<const SpecUtils::Measurement> m_foreground;
+  
+  /** The original background passed into `solve_ceres(...)`. */
   std::shared_ptr<const SpecUtils::Measurement> m_background;
   
   /** The final fit parameters. */

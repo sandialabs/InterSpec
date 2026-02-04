@@ -91,10 +91,12 @@ struct PeakFitResult
   // Peaks that are close together (within 1.5 sigma) or where a smaller peak
   // is not statistically distinguishable from a larger peak's tail are merged
   // into a single peak with combined properties.
+  // Note: even if fitting energy calibration was selected, these peaks are in the original spectrums energy cal.
   std::vector<PeakDef> fit_peaks;
 
   // Original uncombined peaks from the fit - preserves all individual peak information.
   // This is the raw output from RelActAuto before peak combination.
+  // Note: even if fitting energy calibration was selected, these peaks are in the original spectrums energy cal.
   std::vector<PeakDef> uncombined_fit_peaks;
 
   // Peaks that are statistically observable in the spectrum.
@@ -102,8 +104,13 @@ struct PeakFitResult
   // 1. Removing peaks with initial significance < threshold (using raw data area)
   // 2. Refitting each ROI with PeakFitLM::refitPeaksThatShareROI_LM (SmallRefinementOnly)
   // 3. Iteratively removing peaks with final significance < threshold and refitting
+  // Note: even if fitting energy calibration was selected, these peaks are in the original spectrums energy cal.
   std::vector<PeakDef> observable_peaks;
 
+  // The final RelActCalcAuto solution.  Note that `solution.m_foreground` and/or `solution.m_foreground`
+  // may have a different energy calibration than input foreground/background, due to iteratively finding solution.
+  // This means the various peak quantities of solution that are supposed to be in the original energy calibration,
+  // would need translating (i.e., with `EnergyCal::translatePeaksForCalibrationChange(...)`) before using.
   RelActCalcAuto::RelActAutoSolution solution;  // only valid if status == Success
 };//struct PeakFitResult
 
