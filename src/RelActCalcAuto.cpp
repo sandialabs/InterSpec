@@ -2044,7 +2044,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     const size_t num_skew = PeakDef::num_skew_parameters( m_options.skew_type );
     num_pars += 2*num_skew;
     
-    assert( (m_add_br_uncert_start_index == numeric_limits<size_t>::max()) == m_peak_ranges_with_uncert.empty() );
+    // Even if `m_options.additional_br_uncert > 0.0`, m_peak_ranges_with_uncert may still be empty (but `m_add_br_uncert_start_index!=max`)
+    //  if there were no photons to cluster from a source
+    assert( (m_add_br_uncert_start_index == numeric_limits<size_t>::max()) || (m_options.additional_br_uncert > 0.0) );
     assert( (m_add_br_uncert_start_index == std::numeric_limits<size_t>::max())
            || (num_pars == m_add_br_uncert_start_index) );
     
