@@ -32,6 +32,9 @@
 #include <stdexcept>
 
 #include <boost/process.hpp>
+#if( defined(_WIN32) )
+#include <boost/process/windows.hpp>
+#endif
 #include <boost/filesystem.hpp>
 
 #include "rapidxml/rapidxml.hpp"

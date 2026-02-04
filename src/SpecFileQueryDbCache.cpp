@@ -47,6 +47,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/SpecMeas.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/DrfSelect.h"
 #include "InterSpec/SpecFileQuery.h"
 #include "InterSpec/FarmOptions.h"
@@ -1659,9 +1660,8 @@ void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath, const
   // ============= FARM: Peak Search =============
   if( farm_options.enable_farm_analysis && farm_foreground )
   {
-    const bool is_hpge = (detector_type == SpecUtils::DetectorType::Fulcrum
-                          || detector_type == SpecUtils::DetectorType::Fulcrum40h);
-    Farm::perform_peak_search( farm_foreground, farm_drf, is_hpge, *this );
+    const bool highres = PeakFitUtils::is_high_res( farm_foreground );
+    Farm::perform_peak_search( farm_foreground, farm_drf, highres, *this );
   }
 
   // ============= FARM: GADRAS Full Spectrum Isotope ID =============
