@@ -472,12 +472,28 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
             for( const ReferenceLineInfo &ref_info : ref_lines_for_display )
             {
               bool matches = false;
+              Wt::WColor nuc_mix_comp_color;
               if( ref_info.m_nuclide && peak.parentNuclide() == ref_info.m_nuclide )
                 matches = true;
-              else if( ref_info.m_element && peak.xrayElement() == ref_info.m_element )
+              if( !matches && ref_info.m_element && peak.xrayElement() == ref_info.m_element )
                 matches = true;
-              else if( peak.reaction() && ref_info.m_reactions.count( peak.reaction() ) > 0 )
+              if( !matches && peak.reaction() && ref_info.m_reactions.count( peak.reaction() ) > 0 )
                 matches = true;
+              if( !matches
+                 && peak.parentNuclide()
+                 && (ref_info.m_source_type == ReferenceLineInfo::SourceType::NuclideMixture)
+                 && ref_info.m_nuc_mix )
+              {
+                for( const ReferenceLinePredef::NucMixComp &comp : ref_info.m_nuc_mix->m_components )
+                {
+                  if( comp.m_nuclide == peak.parentNuclide() )
+                  {
+                    matches = true;
+                    nuc_mix_comp_color = comp.m_color;
+                    break;
+                  }
+                }
+              }
 
               if( matches )
               {
@@ -494,7 +510,8 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
                     ref_src = rctn->name();
                 }
 
-                Wt::WColor color = ref_info.m_input.m_color;
+                // Per-component color from NuclideMixture takes priority
+                Wt::WColor color = nuc_mix_comp_color.isDefault() ? ref_info.m_input.m_color : nuc_mix_comp_color;
                 if( color.isDefault() && !ref_src.empty() )
                   color = disp->suggestColorForSource( ref_src );
                 if( color.isDefault() && !ref_src.empty() )
