@@ -41,6 +41,8 @@
 
 #include "InterSpec/FarmOptions.h"
 
+class MaterialDB;
+
 //Forward declarations and Wt::Dbo::overhead ish.
 namespace Wt {
   namespace Dbo {
@@ -174,7 +176,7 @@ struct SpecFileInfoToQuery
 {
   SpecFileInfoToQuery();
   void reset();
-  void fill_info_from_file( const std::string filepath, const Farm::FarmOptions &farm_options );
+  void fill_info_from_file( const std::string filepath, const Farm::FarmOptions &farm_options, MaterialDB *materialDB );
   void fill_event_xml_filter_values( const std::string &filepath,
                                 const std::vector<EventXmlFilterInfo> &xmlfilters );
   
@@ -364,8 +366,9 @@ public:
    */
   SpecFileQueryDbCache( const bool use_db_caching,
                         const std::string &base_path,
-                        const std::vector<EventXmlFilterInfo> &xmlfilters );
-  
+                        const std::vector<EventXmlFilterInfo> &xmlfilters,
+                        MaterialDB *materialDb );
+
   /** Class detructor makes sure that if #cache_results is running in another
       thread it will exit before the constructor closes.
    */
@@ -451,6 +454,8 @@ protected:
   
   const std::vector<EventXmlFilterInfo> m_xmlfilters;
   Farm::FarmOptions m_farm_options;
+
+  MaterialDB *m_materialDb;
 };//class SpecFileQueryDbCache
 
 

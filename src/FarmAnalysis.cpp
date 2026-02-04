@@ -64,7 +64,7 @@ using namespace std;
 namespace Farm
 {
 
-void perform_peak_search(
+std::vector<std::shared_ptr<const PeakDef>> perform_peak_search(
     const std::shared_ptr<const SpecUtils::Measurement> &foreground,
     const std::shared_ptr<const DetectorPeakResponse> &drf,
     const bool is_hpge,
@@ -73,7 +73,7 @@ void perform_peak_search(
   info.farm_peaks_json.clear();
 
   if( !foreground || foreground->num_gamma_channels() < 64 )
-    return;
+    return std::vector<std::shared_ptr<const PeakDef>>{};
 
   try
   {
@@ -120,6 +120,8 @@ void perform_peak_search(
     info.farm_peaks_full_json = PeakDef::peak_json( peaks, foreground,
                                                     Wt::WColor(0,51,255), 255 );
 #endif
+
+    return peaks;
   }
   catch( const std::exception &e )
   {
@@ -128,6 +130,8 @@ void perform_peak_search(
     error_obj["error"] = e.what();
     info.farm_peaks_json = error_obj.dump();
   }
+
+  return std::vector<std::shared_ptr<const PeakDef>>{};
 }//perform_peak_search(...)
 
 
@@ -194,10 +198,13 @@ std::string run_gadras_full_spectrum_id_analysis(
   //const std::string drf_name = detector_type_to_gadras_drf( detector_type );
   //arguments.push_back( drf_name );
 
-  if( synthesize_background && spec_file->num_measurements() < 2 )
-    arguments.push_back( "--synthesize-background=1" );
-  else
-    return "";
+  if( spec_file->num_measurements() < 2 )
+  {
+    if( synthesize_background )
+      arguments.push_back( "--synthesize-background=1" );
+    else
+      return "";
+  }
 
   // Create temporary N42 file
   const std::string tmpfilename = SpecUtils::temp_file_name(
@@ -345,7 +352,8 @@ EnrichmentResults run_relact_isotopics(
     const std::shared_ptr<const SpecUtils::Measurement> &background,
     const std::vector<std::shared_ptr<const PeakDef>> &peaks,
     const std::string &options_xml_path,
-    const std::shared_ptr<const DetectorPeakResponse> &drf )
+    const std::shared_ptr<const DetectorPeakResponse> &drf,
+    MaterialDB *materialDB )
 {
   EnrichmentResults result;
   result.analysis_program = "RelActCalcAuto";
@@ -386,7 +394,7 @@ EnrichmentResults run_relact_isotopics(
     }
 
     RelActCalcAuto::Options options;
-    options.fromXml( opts_node, nullptr );
+    options.fromXml( opts_node, materialDB );
 
     const RelActCalcAuto::RelActAutoSolution solution = RelActCalcAuto::solve(
         options, foreground, background, drf, peaks, nullptr );
@@ -447,7 +455,8 @@ EnrichmentResults run_relact_isotopics(
 EnrichmentResults run_fram_isotopics(
     const std::string &fram_exe_path,
     const std::string &fram_output_path,
-    const std::string &input_n42_path,
+    std::shared_ptr<const SpecUtils::SpecFile> foreground,
+    std::shared_ptr<const SpecUtils::SpecFile> background,
     const bool is_uranium,
     const bool is_plutonium )
 {
@@ -471,15 +480,150 @@ EnrichmentResults run_fram_isotopics(
     return result;
   }
 
-  // TODO: Build FRAM command line arguments
-  // TODO: Execute FRAM
-  // TODO: Parse FRAM output file from fram_output_path
-  // TODO: Populate result.nuclide_results from parsed output
+  assert( foreground && (foreground->num_measurements() == 1) );
+  if( !foreground || (foreground->num_measurements() != 1) )
+  {
+    result.warnings.push_back( "FRAM computation input not expected number of records." );
+    return result;
+  }
+
+  assert( !background || (background->num_measurements() == 1) );
+  if( background && (background->num_measurements() != 1) );
+  {
+    result.warnings.push_back( "FRAM computation input background not expected number of records." );
+    return result;
+  }
+
+
+  // Write a temp N42 for FRAM input
+  const SpecUtils::SaveSpectrumAsType output_format = SpecUtils::SaveSpectrumAsType::SpcBinaryInt;
+  const std::string fram_fore_tmp = SpecUtils::temp_file_name( "farm_fram_foreground_", SpecUtils::temp_dir() )
+                                    + string(".") + SpecUtils::suggestedNameEnding( output_format );
+
+  try
+  {
+    foreground->write_to_file( fram_fore_tmp, output_format );
+  }catch( std::exception &e )
+  {
+    result.warnings.push_back( "FRAM computation error: failed to write temporary foreground file: " + string(e.what()) );
+    return result;
+  }
+
+
+  std::string fram_back_tmp;
+  if( background )
+  {
+    fram_back_tmp = SpecUtils::temp_file_name( "farm_fram_foreground_", SpecUtils::temp_dir() )
+                    + string(".") + SpecUtils::suggestedNameEnding( output_format );
+    try
+    {
+      background->write_to_file( fram_back_tmp, output_format );
+    }catch( std::exception &e )
+    {
+      result.warnings.push_back( "FRAM computation error: failed to write temporary background file: " + string(e.what()) );
+      return result;
+    }
+  }//if( background )
+
+  assert( foreground->measurements().size() == 1 );
+  std::shared_ptr<const SpecUtils::Measurement> fore_spec = foreground->measurements()[0];
+  assert( fore_spec );
+
+  double energy_offset = 0.0, energy_gain = -9999.9;
+  const shared_ptr<const SpecUtils::EnergyCalibration> cal = fore_spec->energy_calibration();
+  if( !cal || !cal->valid() )
+  {
+    result.warnings.push_back( "FRAM computation error: energy calibration is invalid" );
+    return result;
+  }
+
+  switch( cal->type() )
+  {
+    case SpecUtils::EnergyCalType::Polynomial:
+    case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+      assert( cal->coefficients().size() >= 2 );
+      energy_offset = cal->coefficients()[0];
+      energy_gain = cal->coefficients()[1];
+      break;
+
+    case SpecUtils::EnergyCalType::FullRangeFraction:
+    {
+      const std::vector<float> poly = SpecUtils::fullrangefraction_coef_to_polynomial(cal->coefficients(), cal->num_channels());
+      assert( poly.size() >= 2 );
+      energy_offset = poly[0];
+      energy_gain = poly[1];
+      break;
+    }
+
+    case SpecUtils::EnergyCalType::LowerChannelEdge:
+      energy_offset = cal->lower_energy();
+      energy_gain = (cal->upper_energy() - cal->lower_energy()) / cal->num_channels();
+      break;
+
+    case SpecUtils::EnergyCalType::InvalidEquationType:
+      assert( 0 );
+      break;
+  }//switch( cal->type() )
+
+  // Path to foreground file: fram_fore_tmp
+  // Path to background file: fram_back_tmp (empty if no background)
+  // Energy offset: energy_offset
+  // Energy gain: energy_gain
+  // Type of isotopics: is_uranium, is_plutonium (both may be true)
 
   result.warnings.push_back( "FRAM integration not yet implemented - user to fill in details" );
 
+  // To execute the FRAM exe, a rough sketch is:
+  /*
+   std::vector<std::string> arguments;
+   arguments.push_back( "--offset=" + std::to_string(energy_gain) );
+   arguments.push_back( "--gain=" + std::to_string(energy_gain) );
+   arguments.push_back( "--foreground='" + fram_fore_tmp + "'" );
+   if( !fram_back_tmp.empty() )
+    arguments.push_back( "--background='" + fram_back_tmp + "'" );
+   //...
+
+   namespace bp = boost::process;
+
+   const boost::filesystem::path exe_parent = boost::filesystem::path(fram_exe_path).parent_path();
+   bp::ipstream proc_stdout, proc_stderr;
+
+#ifdef _WIN32
+   bp::child c( fram_exe_path, bp::args(arguments), bp::start_dir(exe_parent),
+                bp::std_out > proc_stdout, bp::std_err > proc_stderr,
+                bp::windows::create_no_window );
+#else
+   bp::child c( fram_exe_path, bp::args(arguments), bp::start_dir(exe_parent),
+                bp::std_out > proc_stdout, bp::std_err > proc_stderr );
+#endif
+
+   c.wait();
+
+   std::string output( std::istreambuf_iterator<char>(proc_stdout), {} );
+   std::string error( std::istreambuf_iterator<char>(proc_stderr), {} );
+
+   const int result_code = c.exit_code();
+
+   if( (result_code != EXIT_SUCCESS) && (!error.empty() || output.empty()) )
+   {
+     nlohmann::json err_json;
+     err_json["error"] = error.empty() ? "FRAM returned non-zero exit code" : error;
+     err_json["exit_code"] = result_code;
+     return err_json.dump();
+   }
+
+   // TODO: Populate result.nuclide_results from parsed output
+   result = ...
+   */
+
+
   //Note: NuclideResult::nuclide should be in format "U235", "Pu239", etc, for consistent search results
-  
+
+  // Clean up temp file
+  assert( SpecUtils::is_file( fram_fore_tmp ) );
+  if( !fram_back_tmp.empty() )
+    SpecUtils::remove_file( fram_back_tmp );
+
   return result;
 }//run_fram_isotopics(...)
 

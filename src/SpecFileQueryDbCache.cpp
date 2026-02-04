@@ -1016,7 +1016,7 @@ void SpecFileInfoToQuery::reset()
 }//void SpecFileInfoToQuery::reset()
 
 
-void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath, const Farm::FarmOptions &farm_options )
+void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath, const Farm::FarmOptions &farm_options, MaterialDB *materialDB )
 {
   reset();
   
@@ -1658,11 +1658,10 @@ void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath, const
 
 
   // ============= FARM: Peak Search =============
+  const bool highres = farm_foreground ? PeakFitUtils::is_high_res( farm_foreground ) : false;
+  std::vector<std::shared_ptr<const PeakDef>> foreground_peaks;
   if( farm_options.enable_farm_analysis && farm_foreground )
-  {
-    const bool highres = PeakFitUtils::is_high_res( farm_foreground );
-    Farm::perform_peak_search( farm_foreground, farm_drf, highres, *this );
-  }
+    foreground_peaks = Farm::perform_peak_search( farm_foreground, farm_drf, highres, *this );
 
   // ============= FARM: GADRAS Full Spectrum Isotope ID =============
   if( farm_options.enable_farm_analysis && farm_options.enable_gadras_rid
@@ -1686,27 +1685,25 @@ void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath, const
   nlohmann::json isotopics_json = nlohmann::json::array();
   
   // ============= FARM: Isotopics via RelActCalcAuto =============
-  const bool do_u_enrich = Farm::should_do_uranium_isotopics( farm_peaks_json );
-  const bool do_pu_enrich = Farm::should_do_plutonium_isotopics( farm_peaks_json );
-  
+  const bool do_u_enrich = Farm::should_do_uranium_isotopics( farm_peaks_json ); //TODO: use `foreground_peaks` instead of parsing JSON
+  const bool do_pu_enrich = Farm::should_do_plutonium_isotopics( farm_peaks_json ); //TODO: use `foreground_peaks` instead of parsing JSON
+
   
   if( farm_options.enable_farm_analysis && farm_options.enable_relact_isotopics
-     && farm_foreground && (do_u_enrich || do_pu_enrich) )
+     && highres && farm_foreground && (do_u_enrich || do_pu_enrich) )
   {
     // Uranium isotopics: requires 185.7 keV + (205.3 or 143.8 keV) peaks
     if( do_u_enrich && !do_pu_enrich )
     {
       const std::string u_opts_path = SpecUtils::append_path( InterSpec::staticDataDirectory(), "rel_act/HPGe U (120-1001 keV).xml" );
       const Farm::EnrichmentResults u_result = Farm::run_relact_isotopics(
-          farm_foreground, farm_background,
-          std::vector<std::shared_ptr<const PeakDef>>{}, u_opts_path, farm_drf );
+          farm_foreground, farm_background, foreground_peaks, u_opts_path, farm_drf, materialDB );
       isotopics_json.push_back( u_result.toJson() );
     }else if( do_pu_enrich && !do_u_enrich )
     {
       const std::string pu_opts_path = SpecUtils::append_path( InterSpec::staticDataDirectory(), "rel_act/HPGe Pu (120-780 keV).xml" );
       const Farm::EnrichmentResults pu_result = Farm::run_relact_isotopics(
-          farm_foreground, farm_background,
-          std::vector<std::shared_ptr<const PeakDef>>{}, pu_opts_path, farm_drf );
+          farm_foreground, farm_background, foreground_peaks, pu_opts_path, farm_drf, materialDB );
       isotopics_json.push_back( pu_result.toJson() );
     }else
     {
@@ -1718,34 +1715,23 @@ void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath, const
   // ============= FARM: Isotopics via FRAM =============
   if( farm_options.enable_farm_analysis && farm_options.enable_fram_isotopics
       && !farm_options.fram_exe_path.empty() && farm_foreground
-     && (do_u_enrich || do_pu_enrich) )
+     && highres && (do_u_enrich || do_pu_enrich) )
   {
-    
-    // Write a temp N42 for FRAM input
-    const std::string fram_tmp = SpecUtils::temp_file_name( "farm_fram_", SpecUtils::temp_dir() );
+    shared_ptr<SpecUtils::SpecFile> fram_spec = make_shared<SpecUtils::SpecFile>( meas );
+    fram_spec->remove_measurements( fram_spec->measurements() );
+    fram_spec->add_measurement( farm_foreground, true );
+
+    shared_ptr<SpecUtils::SpecFile> fram_back;
+    if( farm_background )
     {
-      std::ofstream fram_out( fram_tmp, std::ios::binary );
-      if( fram_out.is_open() )
-      {
-        SpecUtils::SpecFile fram_spec = meas;
-        fram_spec.remove_measurements( fram_spec.measurements() );
-        fram_spec.add_measurement( farm_foreground, !farm_background );
-        if( farm_background )
-          fram_spec.add_measurement( farm_background, true );
-        fram_spec.write_2012_N42( fram_out );
-      }
+      fram_back = make_shared<SpecUtils::SpecFile>( meas );
+      fram_back->remove_measurements( fram_back->measurements() );
+      fram_back->add_measurement( farm_background, true );
     }
 
-    assert( SpecUtils::is_file( fram_tmp ) );
-    
-    if( SpecUtils::is_file( fram_tmp ) )
-    {
-      const Farm::EnrichmentResults fram_result = Farm::run_fram_isotopics(
-            farm_options.fram_exe_path, farm_options.fram_output_path, fram_tmp, do_u_enrich, do_pu_enrich );
-      isotopics_json.push_back( fram_result.toJson() );
-    }//if( SpecUtils::is_file( fram_tmp ) )
-    
-    SpecUtils::remove_file( fram_tmp );
+    const Farm::EnrichmentResults fram_result = Farm::run_fram_isotopics(
+            farm_options.fram_exe_path, farm_options.fram_output_path, fram_spec, fram_back, do_u_enrich, do_pu_enrich );
+    isotopics_json.push_back( fram_result.toJson() );
   }
   
   if( !isotopics_json.empty() )
@@ -1842,11 +1828,13 @@ void SpecFileInfoToQuery::fill_event_xml_filter_values( const std::string &filep
 
 SpecFileQueryDbCache::SpecFileQueryDbCache( const bool use_db_caching,
                                             const std::string &path,
-                                            const std::vector<EventXmlFilterInfo> &xmlfilters )
+                                            const std::vector<EventXmlFilterInfo> &xmlfilters,
+                                            MaterialDB *materialDb )
   : m_use_db_caching( use_db_caching ),
     m_using_persist_caching( false ),
     m_fs_path( path ),
-    m_xmlfilters( xmlfilters )
+    m_xmlfilters( xmlfilters ),
+    m_materialDb( materialDb )
 {
   m_stop_caching = false;
   m_doing_caching = false;
@@ -2213,7 +2201,7 @@ void SpecFileQueryDbCache::cache_results( const std::vector<std::string> &&files
       
       auto dbinforaw = new SpecFileInfoToQuery();;
       Wt::Dbo::ptr<SpecFileInfoToQuery> dbinfo( dbinforaw );
-      dbinforaw->fill_info_from_file( filename, m_farm_options );
+      dbinforaw->fill_info_from_file( filename, m_farm_options, m_materialDb );
       dbinforaw->fill_event_xml_filter_values(filename,m_xmlfilters);
       
       {//begin lock on m_db_mutex
@@ -2503,7 +2491,7 @@ std::unique_ptr<SpecFileInfoToQuery> SpecFileQueryDbCache::spec_file_info( const
   
   if( !m_use_db_caching )
   {
-    info->fill_info_from_file( filepath, m_farm_options );
+    info->fill_info_from_file( filepath, m_farm_options, m_materialDb );
     info->fill_event_xml_filter_values(filepath,m_xmlfilters);
     return info;
   }
@@ -2519,7 +2507,7 @@ std::unique_ptr<SpecFileInfoToQuery> SpecFileQueryDbCache::spec_file_info( const
       if( !m_db || !m_db_session )
       {
         //Shouldnt ever get here!
-        info->fill_info_from_file( filepath, m_farm_options );
+        info->fill_info_from_file( filepath, m_farm_options, m_materialDb );
         info->fill_event_xml_filter_values(filepath,m_xmlfilters);
         return info;
       }
@@ -2543,7 +2531,7 @@ std::unique_ptr<SpecFileInfoToQuery> SpecFileQueryDbCache::spec_file_info( const
     }//end check in DB
     
     //Wasnt in the database
-    info->fill_info_from_file( filepath, m_farm_options );
+    info->fill_info_from_file( filepath, m_farm_options, m_materialDb );
     info->fill_event_xml_filter_values( filepath, m_xmlfilters );
     
     auto dbinforaw = new SpecFileInfoToQuery();
@@ -2561,12 +2549,12 @@ std::unique_ptr<SpecFileInfoToQuery> SpecFileQueryDbCache::spec_file_info( const
   {
     cerr << "Caught Dbo::Exception in spec_file_info: '" << e.what() <<"', backend code: '"
          << e.code() << "'" << endl;
-    info->fill_info_from_file( filepath, m_farm_options );
+    info->fill_info_from_file( filepath, m_farm_options, m_materialDb );
     info->fill_event_xml_filter_values( filepath, m_xmlfilters );
   }catch( std::exception &e )
   {
     cerr << "Caught std::Exception in spec_file_info: " << e.what() << endl;
-    info->fill_info_from_file( filepath, m_farm_options );
+    info->fill_info_from_file( filepath, m_farm_options, m_materialDb );
     info->fill_event_xml_filter_values( filepath, m_xmlfilters );
   }
   

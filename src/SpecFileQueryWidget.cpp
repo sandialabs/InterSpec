@@ -2457,7 +2457,8 @@ void SpecFileQueryWidget::basePathChanged()
     database = map_iter->second;
   if( !database )
   {
-    database = m_path_caches[basepath] = make_shared<SpecFileQueryDbCache>( cache_in_db, basepath, m_eventXmlFilters );
+    database = m_path_caches[basepath] = make_shared<SpecFileQueryDbCache>( cache_in_db, basepath,
+                                                                m_eventXmlFilters, m_viewer->materialDataBase() );
     try
     {
       const std::string farm_json = UserPreferences::preferenceValue<std::string>( "FarmOptions", m_viewer );
@@ -2807,7 +2808,7 @@ void SpecFileQueryWidget::searchRequestedCallback( const std::string &queryJson 
     
     if( !database )
     {
-      database = std::make_shared<SpecFileQueryDbCache>( false, basepath, m_eventXmlFilters );
+      database = std::make_shared<SpecFileQueryDbCache>( false, basepath, m_eventXmlFilters, m_viewer->materialDataBase() );
       try
       {
         const std::string farm_json = UserPreferences::preferenceValue<std::string>( "FarmOptions", m_viewer );

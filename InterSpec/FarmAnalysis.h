@@ -9,6 +9,7 @@
 
 // Forward declarations
 class PeakDef;
+class MaterialDB;
 class DetectorPeakResponse;
 struct SpecFileInfoToQuery;
 
@@ -25,7 +26,7 @@ namespace Farm
  @param is_hpge Whether this is an HPGe detector (affects peak filtering)
  @param info The SpecFileInfoToQuery to store results in (farm_peaks_json field)
  */
-void perform_peak_search(
+std::vector<std::shared_ptr<const PeakDef>> perform_peak_search(
     const std::shared_ptr<const SpecUtils::Measurement> &foreground,
     const std::shared_ptr<const DetectorPeakResponse> &drf,
     const bool is_hpge,
@@ -81,7 +82,8 @@ EnrichmentResults run_relact_isotopics(
     const std::shared_ptr<const SpecUtils::Measurement> &background,
     const std::vector<std::shared_ptr<const PeakDef>> &peaks,
     const std::string &options_xml_path,
-    const std::shared_ptr<const DetectorPeakResponse> &drf );
+    const std::shared_ptr<const DetectorPeakResponse> &drf,
+    MaterialDB *materialDB );
 
 
 /** Run FRAM executable for isotopics analysis.
@@ -98,7 +100,8 @@ EnrichmentResults run_relact_isotopics(
 EnrichmentResults run_fram_isotopics(
     const std::string &fram_exe_path,
     const std::string &fram_output_path,
-    const std::string &input_n42_path,
+    std::shared_ptr<const SpecUtils::SpecFile> foreground,
+    std::shared_ptr<const SpecUtils::SpecFile> background,
     const bool is_uranium,
     const bool is_plutonium );
 
