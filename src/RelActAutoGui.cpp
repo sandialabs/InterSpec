@@ -51,6 +51,8 @@
 #include <Wt/Http/Response>
 #include <Wt/WStackedWidget>
 #include <Wt/WContainerWidget>
+#include <Wt/WStandardItem>
+#include <Wt/WStandardItemModel>
 #include <Wt/WRegExpValidator>
 #include <Wt/WSuggestionPopup>
 
@@ -455,6 +457,8 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_same_z_age( nullptr ),
   m_skew_type( nullptr ),
   m_add_uncert( nullptr ),
+  m_lorentzian_xrays_enabled( false ),
+  m_lorentzian_xrays( nullptr ),
   m_more_options_menu( nullptr ),
   m_apply_energy_cal_item( nullptr ),
   m_show_ref_lines_item( nullptr ),
@@ -677,10 +681,36 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   WGroupBox *generalOptionsDiv = new WGroupBox( WString::tr("raag-spectrum-peak-options"), this );
   generalOptionsDiv->addStyleClass( "RelActAutoGeneralOptionsRow" );
 
-  m_fit_energy_cal = new WCheckBox( WString::tr("raag-fit-energy-cal"), generalOptionsDiv );
-  m_fit_energy_cal->checked().connect( this, &RelActAutoGui::handleFitEnergyCalChanged );
-  m_fit_energy_cal->unChecked().connect( this, &RelActAutoGui::handleFitEnergyCalChanged );
-  
+  WContainerWidget *energyCalDiv = new WContainerWidget( generalOptionsDiv );
+  energyCalDiv->addStyleClass( "RelActAutoEnergyCalDiv" );
+  label = new WLabel( WString::tr("raag-energy-cal-label"), energyCalDiv );
+  m_fit_energy_cal = new WComboBox( energyCalDiv );
+  label->setBuddy( m_fit_energy_cal );
+
+  for( int i = 0; i <= static_cast<int>(RelActCalcAuto::EnergyCalFitType::NonLinearFit); ++i )
+  {
+    WString name;
+    switch( RelActCalcAuto::EnergyCalFitType(i) )
+    {
+      case RelActCalcAuto::EnergyCalFitType::NoFit:
+        name = WString::tr( "raag-energy-cal-nofit" );
+        break;
+      case RelActCalcAuto::EnergyCalFitType::LinearFit:
+        name = WString::tr( "raag-energy-cal-linear" );
+        break;
+      case RelActCalcAuto::EnergyCalFitType::NonLinearFit:
+        name = WString::tr( "raag-energy-cal-nonlinear" );
+        break;
+    }//switch( RelActCalcAuto::EnergyCalFitType(i) )
+
+    m_fit_energy_cal->addItem( name );
+  }//for( loop over EnergyCalFitType )
+
+  m_fit_energy_cal->activated().connect( this, &RelActAutoGui::handleFitEnergyCalChanged );
+
+  WString tooltip = WString::tr("raag-tt-energy-cal-type");
+  HelpSystem::attachToolTipOn( {label, m_fit_energy_cal}, tooltip, showToolTips );
+
   m_background_subtract = new WCheckBox( WString::tr("raag-back-sub"), generalOptionsDiv );
   m_background_subtract->checked().connect( this, &RelActAutoGui::handleBackgroundSubtractChanged );
   m_background_subtract->unChecked().connect( this, &RelActAutoGui::handleBackgroundSubtractChanged );
@@ -758,8 +788,8 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
     m_fwhm_eqn_form->addItem( name );
     fwhm_eqn_form_model->setData( fwhm_eqn_form_model->index(num_rows, 0), fwhm_form, Wt::UserRole );
   }//for( loop over RelActCalcAuto::FwhmForm )
-  
-  WString tooltip = WString::tr("raag-tt-fwhm-form");
+
+  tooltip = WString::tr("raag-tt-fwhm-form");
   HelpSystem::attachToolTipOn( fwhmFormDiv, tooltip, showToolTips );
     
   // TODO: need to set m_fwhm_eqn_form based on energy ranges selected
@@ -776,15 +806,21 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_skew_type->activated().connect( this, &RelActAutoGui::handleSkewTypeChanged );
   tooltip = WString::tr("raag-tt-skew-type");
   HelpSystem::attachToolTipOn( {label,m_skew_type}, tooltip, showToolTips );
-  for( auto st = PeakDef::SkewType(0); st <= PeakDef::SkewType::DoubleSidedCrystalBall;
-      st = PeakDef::SkewType(st + 1) )
-  {
-    const char *label = PeakDef::to_label(st);
-    m_skew_type->addItem( label );
-  }//for( loop over SkewTypes )
-    
-  m_skew_type->setCurrentIndex( 0 );
-  
+
+  // Use WStandardItemModel to store enum values with each item
+  WStandardItemModel *skew_model = new WStandardItemModel( m_skew_type );
+  m_skew_type->setModel( skew_model );
+  populateSkewTypeComboBox( false ); // false = show all skew types
+
+  // Lorentzian X-rays checkbox - initially hidden, shown when x-rays present in ROIs
+  m_lorentzian_xrays = new WCheckBox( WString::tr("raag-lorentzian-xrays"), generalOptionsDiv );
+  m_lorentzian_xrays->addStyleClass( "LorentzianXraysCb CbNoLineBreak" );
+  m_lorentzian_xrays->setHidden( true );
+  m_lorentzian_xrays->checked().connect( this, &RelActAutoGui::handleLorentzianXraysChanged );
+  m_lorentzian_xrays->unChecked().connect( this, &RelActAutoGui::handleLorentzianXraysChanged );
+  tooltip = WString::tr("raag-tt-lorentzian-xrays");
+  HelpSystem::attachToolTipOn( m_lorentzian_xrays, tooltip, showToolTips );
+
   WContainerWidget *addUncertDiv = new WContainerWidget( generalOptionsDiv );
   addUncertDiv->addStyleClass( "RelActAutoAddUncertDiv" );
   label = new WLabel( WString::tr("raag-add-uncert"), addUncertDiv );
@@ -1074,7 +1110,14 @@ void RelActAutoGui::render( Wt::WFlags<Wt::RenderFlag> flags )
     updateDuringRenderForEnergyRangeChange();
     m_render_flags |= RenderActions::UpdateCalculations;
   }
-  
+
+  if( m_render_flags.testFlag(RenderActions::UpdateXRaysInRois)
+     || m_render_flags.testFlag(RenderActions::UpdateNuclidesPresent)
+     || m_render_flags.testFlag(RenderActions::UpdateEnergyRanges) )
+  {
+    updateDuringRenderForXRaysInRois();
+  }
+
   if( m_render_flags.testFlag(RenderActions::ChartToDefaultRange) )
   {
     updateSpectrumToDefaultEnergyRange();
@@ -1158,7 +1201,7 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
   RelActCalcAuto::Options options;
   
   
-  options.fit_energy_cal = m_fit_energy_cal->isChecked();
+  options.energy_cal_type = RelActCalcAuto::EnergyCalFitType( std::max( 0, m_fit_energy_cal->currentIndex() ) );
   options.fwhm_form = getFwhmFormFromCombo();
   options.fwhm_estimation_method = RelActCalcAuto::FwhmEstimationMethod( std::max(0,m_fwhm_estimation_method->currentIndex()) );
   if( options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency )
@@ -1173,11 +1216,12 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
   else if( meas && !meas->filename().empty() )
     options.spectrum_title = meas->filename();
   
-  options.skew_type = PeakDef::SkewType::NoSkew;
-  const int skew_index = m_skew_type->currentIndex();
-  if( (skew_index >= 0) && (skew_index <= PeakDef::SkewType::DoubleSidedCrystalBall) )
-    options.skew_type = PeakDef::SkewType( m_skew_type->currentIndex() );
-  
+  options.skew_type = currentSkewType();
+  options.lorentzian_xrays = (m_lorentzian_xrays_enabled && m_lorentzian_xrays->isChecked());
+  assert( !options.lorentzian_xrays
+         || (options.skew_type == PeakDef::SkewType::NoSkew)
+         || (options.skew_type == PeakDef::SkewType::GaussPlusBortel) );
+
   options.additional_br_uncert = -1.0;
   const auto add_uncert = RelActAutoGui::AddUncert(m_add_uncert->currentIndex());
   switch( add_uncert )
@@ -1914,8 +1958,8 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   if( options.rel_eff_curves.empty() )
     throw runtime_error( "RelActAutoGui::setCalcOptionsGui: for dev, must have at least one rel-eff curve." );
   
-  m_fit_energy_cal->setChecked( options.fit_energy_cal );
-  
+  m_fit_energy_cal->setCurrentIndex( static_cast<int>(options.energy_cal_type) );
+
   m_fwhm_estimation_method->setCurrentIndex( static_cast<int>(options.fwhm_estimation_method) );
   const bool fixed_to_det_eff = (options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency);
   
@@ -1925,8 +1969,11 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   if( !fixed_to_det_eff && (options.fwhm_form != RelActCalcAuto::FwhmForm::NotApplicable) )
     setFwhmFormFromCombo( options.fwhm_form );
   
-  m_skew_type->setCurrentIndex( static_cast<int>(options.skew_type) );
-  
+  // First update lorentzian checkbox (before populating skew combo)
+  m_lorentzian_xrays->setChecked( options.lorentzian_xrays );
+  populateSkewTypeComboBox( options.lorentzian_xrays );
+  setCurrentSkewType( options.skew_type );
+
   // We'll just round add-uncert to the nearest-ish value we allow in the GUI
   RelActAutoGui::AddUncert add_uncert = AddUncert::NumAddUncert;
   if( options.additional_br_uncert <= 0.00005 )
@@ -2785,6 +2832,197 @@ void RelActAutoGui::handleSkewTypeChanged()
   scheduleRender();
 }
 
+
+void RelActAutoGui::populateSkewTypeComboBox( const bool lorentzian_mode )
+{
+  WStandardItemModel *model = dynamic_cast<WStandardItemModel *>( m_skew_type->model() );
+  assert( model );
+  if( !model )
+    return;
+
+  // Check if model already has correct entries for this mode to avoid unnecessary updates
+  const int expected_count = lorentzian_mode ? 2 : static_cast<int>(PeakDef::SkewType::NumSkewType);
+  if( model->rowCount() == expected_count )
+    return;
+
+  // Remember current selection if possible
+  PeakDef::SkewType current_skew = PeakDef::SkewType::NoSkew;
+  if( m_skew_type->currentIndex() >= 0 )
+  {
+    const int row = m_skew_type->currentIndex();
+    if( row < model->rowCount() )
+    {
+      const boost::any data = model->data( model->index(row, 0), Wt::UserRole );
+      if( !data.empty() )
+        current_skew = boost::any_cast<PeakDef::SkewType>( data );
+    }
+  }
+
+  model->clear();
+
+  for( PeakDef::SkewType st = PeakDef::SkewType(0);
+       st < PeakDef::SkewType::NumSkewType;
+       st = PeakDef::SkewType(static_cast<int>(st) + 1) )
+  {
+    // In lorentzian mode, only show NoSkew and GaussPlusBortel
+    if( lorentzian_mode
+       && (st != PeakDef::SkewType::NoSkew)
+       && (st != PeakDef::SkewType::GaussPlusBortel) )
+      continue;
+
+    WStandardItem *item = new WStandardItem( PeakDef::to_label(st) );
+    item->setData( st, Wt::UserRole );
+    model->appendRow( item );
+  }
+
+  // Restore selection or adjust to compatible type
+  int new_index = 0;
+  for( int row = 0; row < model->rowCount(); ++row )
+  {
+    const boost::any data = model->data( model->index(row, 0), Wt::UserRole );
+    if( !data.empty() && (boost::any_cast<PeakDef::SkewType>(data) == current_skew) )
+    {
+      new_index = row;
+      break;
+    }
+  }
+
+  // If lorentzian mode and current was something other than NoSkew/GaussPlusBortel, switch to GaussPlusBortel
+  if( lorentzian_mode
+     && (current_skew != PeakDef::SkewType::NoSkew)
+     && (current_skew != PeakDef::SkewType::GaussPlusBortel) )
+  {
+    for( int row = 0; row < model->rowCount(); ++row )
+    {
+      const boost::any data = model->data( model->index(row, 0), Wt::UserRole );
+      if( !data.empty() && (boost::any_cast<PeakDef::SkewType>(data) == PeakDef::SkewType::GaussPlusBortel) )
+      {
+        new_index = row;
+        break;
+      }
+    }
+  }
+
+  m_skew_type->setCurrentIndex( new_index );
+}//void RelActAutoGui::populateSkewTypeComboBox( const bool lorentzian_mode )
+
+
+void RelActAutoGui::handleLorentzianXraysChanged()
+{
+  checkIfInUserConfigOrCreateOne( false );
+
+  const bool lorentzian_checked = m_lorentzian_xrays->isChecked();
+  populateSkewTypeComboBox( lorentzian_checked );
+
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}//void RelActAutoGui::handleLorentzianXraysChanged()
+
+
+PeakDef::SkewType RelActAutoGui::currentSkewType() const
+{
+  WStandardItemModel *model = dynamic_cast<WStandardItemModel *>( m_skew_type->model() );
+  if( !model || (m_skew_type->currentIndex() < 0) )
+    return PeakDef::SkewType::NoSkew;
+
+  const int row = m_skew_type->currentIndex();
+  if( row >= model->rowCount() )
+    return PeakDef::SkewType::NoSkew;
+
+  const boost::any data = model->data( model->index(row, 0), Wt::UserRole );
+  if( data.empty() )
+    return PeakDef::SkewType::NoSkew;
+
+  return boost::any_cast<PeakDef::SkewType>( data );
+}//PeakDef::SkewType RelActAutoGui::currentSkewType() const
+
+
+void RelActAutoGui::setCurrentSkewType( const PeakDef::SkewType skew_type )
+{
+  WStandardItemModel *model = dynamic_cast<WStandardItemModel *>( m_skew_type->model() );
+  if( !model )
+    return;
+
+  for( int row = 0; row < model->rowCount(); ++row )
+  {
+    const boost::any data = model->data( model->index(row, 0), Wt::UserRole );
+    if( !data.empty() && (boost::any_cast<PeakDef::SkewType>(data) == skew_type) )
+    {
+      m_skew_type->setCurrentIndex( row );
+      return;
+    }
+  }
+}//void RelActAutoGui::setCurrentSkewType( const PeakDef::SkewType skew_type )
+
+
+bool RelActAutoGui::hasXraysInRois() const
+{
+  const int num_rel_eff_curves = m_rel_eff_opts_menu->count();
+  const vector<RelActCalcAuto::RoiRange> rois = getRoiRanges();
+
+  for( int rel_eff_curve_index = 0; rel_eff_curve_index < num_rel_eff_curves; ++rel_eff_curve_index )
+  {
+    const vector<RelActCalcAuto::NucInputInfo> nuclides = getNucInputInfo( rel_eff_curve_index );
+    for( const RelActCalcAuto::NucInputInfo &src : nuclides )
+    {
+      const SandiaDecay::Nuclide *nuc = RelActCalcAuto::nuclide( src.source );
+      const SandiaDecay::Element *el = RelActCalcAuto::element( src.source );
+
+      // Elements are x-ray sources by definition
+      if( el )
+      {
+        // Check if element x-rays fall within any ROI
+        for( const SandiaDecay::EnergyIntensityPair &xray : el->xrays )
+        {
+          for( const RelActCalcAuto::RoiRange &roi : rois )
+          {
+            if( (xray.energy >= roi.lower_energy) && (xray.energy <= roi.upper_energy) )
+              return true;
+          }
+        }
+      }
+      else if( nuc )
+      {
+        // Check if nuclide decay produces x-rays in any ROI
+        SandiaDecay::NuclideMixture mixture;
+        mixture.addNuclide( SandiaDecay::NuclideActivityPair(nuc, 1.0) );
+        const double age = std::max( 0.0, src.age );
+        const vector<SandiaDecay::EnergyRatePair> xrays = mixture.xrays( age );
+
+        for( const SandiaDecay::EnergyRatePair &xray : xrays )
+        {
+          for( const RelActCalcAuto::RoiRange &roi : rois )
+          {
+            if( (xray.energy >= roi.lower_energy) && (xray.energy <= roi.upper_energy) )
+              return true;
+          }
+        }
+      }
+    }//for( const RelActCalcAuto::NucInputInfo &src : nuclides )
+  }//for( int rel_eff_curve_index = 0; rel_eff_curve_index < num_rel_eff_curves; ++rel_eff_curve_index )
+
+  return false;
+}//bool RelActAutoGui::hasXraysInRois() const
+
+
+void RelActAutoGui::updateDuringRenderForXRaysInRois()
+{
+  const bool has_xrays_in_rois = hasXraysInRois();
+
+  // Update lorentzian x-rays checkbox visibility
+  if( (m_lorentzian_xrays->isVisible() != has_xrays_in_rois) || (m_lorentzian_xrays_enabled != has_xrays_in_rois) )
+  {
+    m_lorentzian_xrays_enabled = has_xrays_in_rois;
+    m_lorentzian_xrays->setHidden( !has_xrays_in_rois );
+    if( !has_xrays_in_rois )
+    {
+      m_lorentzian_xrays->setChecked( false );
+      populateSkewTypeComboBox( false ); // Restore full skew type list
+    }
+  }
+}//void RelActAutoGui::updateDuringRenderForXRaysInRois()
+
+
 void RelActAutoGui::handleNucDataSrcChanged()
 {
   checkIfInUserConfigOrCreateOne( false );
@@ -2984,6 +3222,7 @@ void RelActAutoGui::handleEnergyRangeChange()
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateEnergyRanges;
   m_render_flags |= RenderActions::UpdateCalculations;
+  
   scheduleRender();
 }//void handleEnergyRangeChange()
 
@@ -3617,7 +3856,8 @@ void RelActAutoGui::startApplyFitEnergyCalToSpecFile()
 {
   const bool fit_offset = (m_solution && m_solution->m_fit_energy_cal[0]);
   const bool fit_gain = (m_solution && m_solution->m_fit_energy_cal[1]);
-  if( !fit_offset && !fit_gain )
+  const bool has_dev_pairs = (m_solution && !m_solution->m_deviation_pair_offsets.empty());
+  if( !fit_offset && !fit_gain && !has_dev_pairs )
     return;
   
   // Build the adjustments part of the message
@@ -3648,7 +3888,35 @@ void RelActAutoGui::startApplyFitEnergyCalToSpecFile()
                    .arg(formatNumber(quad, 5));
     printed_some = true;
   }//if( fit_gain )
-  
+
+  if( m_solution && !m_solution->m_deviation_pair_offsets.empty() )
+  {
+    const size_t num_dev_pairs = m_solution->m_deviation_pair_offsets.size();
+    const size_t num_to_print = std::min( num_dev_pairs, size_t(4) );
+
+    WString dev_pair_str = "[";
+    for( size_t i = 0; i < num_to_print; ++i )
+    {
+      const double energy = m_solution->m_deviation_pair_offsets[i].first;
+      const double offset = m_solution->m_deviation_pair_offsets[i].second;
+
+      char buffer[64];
+      snprintf( buffer, sizeof(buffer), "{%.1f,%.2f}", energy, offset );
+
+      if( i > 0 )
+        dev_pair_str += ", ";
+      dev_pair_str += buffer;
+    }
+
+    if( num_dev_pairs > 4 )
+      dev_pair_str += ",...";
+    dev_pair_str += "]";
+
+    adjustments += WString::tr( printed_some ? "raag-dev-pairs-additional" : "raag-dev-pairs-first" )
+                   .arg( dev_pair_str );
+    printed_some = true;
+  }//if( deviation pairs )
+
   // Build the complete message
   const bool has_back = !!m_interspec->displayedHistogram(SpecUtils::SpectrumType::Background);
   const WString background_part = has_back ? WString::tr("raag-and-background") : WString();
@@ -3728,7 +3996,7 @@ void RelActAutoGui::applyFitEnergyCalToSpecFile()
     const WString msg = WString::tr("raag-energy-cal-updated").arg(background_part);
     
     passMessage( msg, WarningWidget::WarningMsgInfo );
-    m_fit_energy_cal->setChecked( false );
+    m_fit_energy_cal->setCurrentIndex( static_cast<int>(RelActCalcAuto::EnergyCalFitType::NoFit) );
   }catch( std::exception &e )
   {
     passMessage( WString::tr("raag-error-applying-energy-cal").arg(e.what()), WarningWidget::WarningMsgHigh );
@@ -3854,11 +4122,11 @@ void RelActAutoGui::setPeaksToForeground()
   const vector<PeakDef> solution_peaks = m_solution->m_fit_peaks_in_spectrums_cal;
   std::shared_ptr<const DetectorPeakResponse> ana_drf = m_solution->m_drf;
   
-  if( m_solution->m_options.fit_energy_cal )
+  if( m_solution->m_options.energy_cal_type != RelActCalcAuto::EnergyCalFitType::NoFit )
   {
     // The fit peaks have already been adjusted for energy calibration, so I dont
     //  think we need to update them here
-  }//if( m_solution->m_options.fit_energy_cal )
+  }//if( fitting energy cal )
   
   yes->clicked().connect( std::bind([solution_peaks, replace_or_add, refit_peaks, previous_peaks, ana_drf](){
     const bool replace_peaks = (!replace_or_add || replace_or_add->isChecked());
@@ -4765,6 +5033,7 @@ void RelActAutoGui::updateDuringRenderForNuclideChange()
     if( !has_multiple_nucs_of_z )
       m_same_z_age->setChecked( false );
   }
+
 }//void updateDuringRenderForNuclideChange()
 
 
@@ -4873,8 +5142,8 @@ void RelActAutoGui::updateDuringRenderForFreePeakChange()
   }//for( WWidget *w : kids )
   
   
-  const bool fit_energy_cal = m_fit_energy_cal->isChecked();
-  
+  const bool fit_energy_cal = (m_fit_energy_cal->currentIndex() != static_cast<int>(RelActCalcAuto::EnergyCalFitType::NoFit));
+
   const std::vector<WWidget *> &kids = m_free_peaks->children();
   for( WWidget *w : kids )
   {
@@ -5024,6 +5293,21 @@ void RelActAutoGui::startUpdatingCalculation()
   const string sessionId = app->sessionId();
   
   vector<shared_ptr<const PeakDef>> cached_all_peaks = m_cached_all_peaks;
+  
+#if( !defined(NDEBUG) && PERFORM_DEVELOPER_CHECKS )
+  if( cached_all_peaks.empty() )
+  {
+    // Debug builds are crazy slow to fit all the p
+    std::shared_ptr<const SpecMeas> m = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
+    const set<int> &samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Foreground);
+    shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_peaks = m ? m->automatedSearchPeaks(samples) : nullptr;
+    if( auto_peaks && !auto_peaks->empty() )
+    {
+      cached_all_peaks.insert( end(cached_all_peaks), begin(*auto_peaks), end(*auto_peaks) );
+      cerr << "\n\nUsing auto search peaks to send to `RelActCalcAuto::solve(...)` to save time on the debug build!" << endl;
+    }
+  }//if( cached_all_peaks.empty() )
+#endif
   
   auto solution = make_shared<RelActCalcAuto::RelActAutoSolution>();
   auto error_msg = make_shared<string>();

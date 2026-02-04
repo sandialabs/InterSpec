@@ -417,89 +417,139 @@ public:
   enum SkewType
   {
     /** No skew - i.e., a purely Gaussian distribution. */
+    // IMPORTANT: enum numeric values are part of peak XML/backward-compat expectations.
+    // New skew types must be appended (see PeakDef.cpp version notes).
     NoSkew,
-  
-    /** The Bortel function, from the paper referenced below, is:
-     
-     Convolution of Gaussian with an left-hand exponential multiplied by a step function
-     that goes to zero above the peak mean.  The Bortel paper cited below uses two
-     exponentials, but we use only one for gamma spectroscopy.
-     
+
+    // ========== Single-sided distributions (left tail only) ==========
+
+    /** Exp*Gauss: Convolution of Gaussian with left-sided exponential.
+
+     Also known as Exponentially Modified Gaussian (EMG). This distribution models incomplete
+     charge collection in detectors, creating a low-energy exponential tail on an otherwise
+     Gaussian peak.
+
      See: Analytical function for fitting peaks in alpha-particle spectra from Si detectors
      G. Bortels, P. Collaers
      International Journal of Radiation Applications and Instrumentation. Part A. Applied Radiation and Isotopes
      Volume 38, Issue 10, 1987, Pages 831-837
      https://doi.org/10.1016/0883-2889(87)90180-8
-     
-     Uses one skew parameter.
-     
-     Maybe call exGaussian?
+
+     Uses one skew parameter (τ): the exponential decay constant (range: 0.01-15 σ).
      */
     Bortel,
-    
-    /** A model of an Doniach Sunjic asymmetric lineshape.
-     
-     Commonly use in X-ray Photoelectron Spectroscopy (XPS) peak fitting.
-     
-     See https://lmfit.github.io/lmfit-py/builtin_models.html#doniachmodel
-     
-     Uses one skew parameter.
-     
-     Not currently defined because the amplitude can be infinite for non-zero skew, meaning we need some-way to specify the reported range - likely is
-     */
-    // Doniach,
-    
+
     /** An exponential tail stitched to a Gaussian core.
-     
+
      See: A simple alternative to the Crystal Ball function.
      Souvik Das, arXiv:1603.08591
      https://arxiv.org/abs/1603.08591
-     
-     Uses one skew parameter.
+
+     Uses one skew parameter (range: 0.01-15).
      */
     GaussExp,
-    
+
     /** A Gaussian core portion and a power-law low-end tail, below a threshold.
-     
+
      See https://en.wikipedia.org/wiki/Crystal_Ball_function
-     
-     Uses two skew parameters.
-     The first is `alpha`, which defines the threshold.
-     The second is `n` which defines the power-law.
+
+     Uses two skew parameters:
+     - SkewPar0: `alpha` - Threshold (how many sigma away from mean, range: 0.1-10)
+     - SkewPar1: `n` - Power-law exponent (range: 0.1-50)
      */
     CrystalBall,
-    
-    /** The GausExp extended to a exponential tail on each side of the Gaussian.
-     
+
+    // ========== Double-sided distributions (both tails) ==========
+
+    /** The GaussExp extended to exponential tails on each side of the Gaussian.
+
      See same reference as for GaussExp.
-     
-     Uses two skew parameters.
-     The first one is the skew on the left.
-     The second one is the skew on the right.
+
+     Uses two skew parameters:
+     - SkewPar0: Lower tail skew (range: 0.01-15)
+     - SkewPar1: Upper tail skew (range: 0.01-15)
      */
     ExpGaussExp,
-    
+
     /** A "double-sided" version of the Crystal Ball distribution to account for high-energy skew.
-     
+
      See: Search for resonances in diphoton events at $$ \sqrt{s}=13 $$ TeV with the ATLAS detector
      Aaboud, M., G. Aad, B. Abbott, J. Abdallah, O. Abdinov, B. Abeloos, R. Aben, et al. 2016
      http://nrs.harvard.edu/urn-3:HUL.InstRepos:29362185
      Chapter 6
-     
+
      Note also that CERNs ROOT package implements this function, with likely with some consideration
      for power laws between 1 and 1.00001, that we dont currently do.  However, this implementation
      is independent of the ROOT implementation, and treats the distribution as having unit area
      when integrated over all `x`, which it doesnt appear the ROOT implementation does (but I didnt
      check)
      https://root.cern.ch/doc/master/RooCrystalBall_8cxx_source.html
-     
-     Uses four skew parameters.
-     The first is `alpha_low`, which defines the threshold, on the left side.
-     The second is `n_low` which defines the power-law on the left side.
-     The third is `alpha_high`, which defines the threshold, on the right side.
-     The second is `n_high` which defines the power-law on the right side.
+
+     Uses four skew parameters:
+     - SkewPar0: `alpha_low` - Lower threshold (range: 0.1-10)
+     - SkewPar1: `n_low` - Lower power-law exponent (range: 0.1-50)
+     - SkewPar2: `alpha_high` - Upper threshold (range: 0.1-10)
+     - SkewPar3: `n_high` - Upper power-law exponent (range: 0.1-50)
      */
-    DoubleSidedCrystalBall
+    DoubleSidedCrystalBall,
+
+    // ========== Mixed distributions (special cases) ==========
+
+    /** Voigt+Exp*Gauss: Voigt profile mixed with Exp*Gauss distribution.
+
+     This distribution is intended for fitting x-ray peaks measured with HPGe detectors, where the
+     natural atomic line width (Lorentzian) convolves with the detector resolution (Gaussian),
+     and incomplete charge collection creates a low-energy exponential tail (modeled by Exp*Gauss).
+
+     The Voigt profile is computed using the Faddeeva function adapted from the MIT Faddeeva package.
+
+     Uses 3 skew parameters:
+     - SkewPar0: `gamma_lor` - Lorentzian HWHM (atomic broadening) in keV (range: 0.001-0.5 keV).
+                 The peak creator (e.g., RelActAuto) should look up this value using
+                 `get_xray_lorentzian_width()` for known elements, and mark the parameter as fixed.
+                 For unknown elements or when lookup fails, this can be left as a fittable parameter.
+     - SkewPar1: `R` - Mixing ratio (range: 0.0-1.0). When R=0, the distribution is pure Voigt and `tau`
+                 has no effect. When R=1, the distribution is pure Exp*Gauss and `gamma_lor` has no effect.
+     - SkewPar2: `tau` - Exp*Gauss exponential decay constant (same as Bortel skew type, range: 0.01-15 σ).
+                 Controls the exponential tail slope from incomplete charge collection.
+     */
+    VoigtPlusBortel,
+
+    /** Gauss+Exp*Gauss: Weighted mixture of Gaussian and Exp*Gauss.
+
+     A simple weighted mixture of Gaussian and Exp*Gauss distributions. Useful when the exponential
+     tail is less prominent than pure Exp*Gauss would predict.
+
+     When R=0: pure Gaussian (equivalent to NoSkew)
+     When R=1: pure Exp*Gauss (equivalent to Bortel skew type)
+
+     Uses 2 skew parameters:
+     - SkewPar0: `R` - Mixing ratio (range: 0.0-1.0, where 0=pure Gaussian, 1=pure Exp*Gauss)
+     - SkewPar1: `tau` - Exp*Gauss exponential decay constant (same as Bortel skew type, range: 0.01-15 σ)
+     */
+    GaussPlusBortel,
+
+    /** Double Exp*Gauss: Weighted sum of two Exp*Gauss distributions.
+
+     Convolution of Gaussian with a weighted sum of two left-sided exponentials. This is the
+     original formulation from the 1987 paper for alpha-particle spectroscopy, but can also be
+     useful for gamma spectroscopy when a single exponential tail is insufficient.
+
+     See: Analytical function for fitting peaks in alpha-particle spectra from Si detectors
+     G. Bortels, P. Collaers (1987)
+     https://doi.org/10.1016/0883-2889(87)90180-8
+
+     Uses 3 skew parameters:
+     - SkewPar0: `tau1` - First exponential decay constant (typically close to sigma, range: 0.01-15 σ)
+     - SkewPar1: `tau2_delta` - Non-negative delta where tau2 = tau1 + tau2_delta (range: 0.0-10 σ).
+                 When tau2_delta=0, reduces to single Exp*Gauss.
+     - SkewPar2: `eta` - Weight of second exponential (range: 0.0-1.0). eta=0 gives pure Exp*Gauss with tau1,
+                 eta=1 gives pure Exp*Gauss with tau2.
+     */
+    DoubleBortel,
+
+    /** Sentinel value for bounds checking and iteration. Not a valid skew type. */
+    NumSkewType
   };//enum SkewType
   
   enum DefintionType

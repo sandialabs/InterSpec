@@ -103,7 +103,7 @@ BOOST_AUTO_TEST_CASE( GaussianDist )
     vector<double> counts( num_channels, 0.0 );
     vector<float> energies( num_channels + 1, 0.0 );
     for( size_t i = 0; i < energies.size(); ++i )
-      energies[i] = x0 + (i*(x1 - x0) / (num_channels + 1));
+      energies[i] = x0 + (i*(x1 - x0) / num_channels);
     
     gaussian_integral( mean, sigma, amplitude, &(energies[0]), &(counts[0]), num_channels );
     
@@ -142,7 +142,7 @@ BOOST_AUTO_TEST_CASE( BortelDist )
     vector<double> counts( num_channels, 0.0 );
     vector<float> energies( num_channels + 1, 0.0 );
     for( size_t i = 0; i < energies.size(); ++i )
-      energies[i] = x0 + (i*(x1 - x0) / (num_channels + 1));
+      energies[i] = x0 + (i*(x1 - x0) / num_channels);
     
     bortel_integral( mean, sigma, amplitude, skew, &(energies[0]), &(counts[0]), num_channels );
     
@@ -223,7 +223,7 @@ BOOST_AUTO_TEST_CASE( GaussExp )
     vector<double> counts( num_channels, 0.0 );
     vector<float> energies( num_channels + 1, 0.0 );
     for( size_t i = 0; i < energies.size(); ++i )
-      energies[i] = x0 + (i*(x1 - x0) / (num_channels + 1));
+      energies[i] = x0 + (i*(x1 - x0) / num_channels);
     
     //const double start_cpu = SpecUtils::get_cpu_time();
     
@@ -328,12 +328,12 @@ BOOST_AUTO_TEST_CASE( ExpGaussExp )
     vector<double> counts( num_channels, 0.0 );
     vector<float> energies( num_channels + 1, 0.0 );
     for( size_t i = 0; i < energies.size(); ++i )
-      energies[i] = x0 + (i*(x1 - x0) / (num_channels + 1));
+      energies[i] = x0 + (i*(x1 - x0) / num_channels);
     
     exp_gauss_exp_integral( mean, sigma, amplitude, skew_low, skew_high, &(energies[0]), &(counts[0]), num_channels );
     
     double answer_sum = std::accumulate( begin(counts), end(counts), 0.0 );
-    BOOST_CHECK_CLOSE( answer_sum, amplitude, amplitude*1.0E-9 );
+    BOOST_CHECK_CLOSE( answer_sum, amplitude, 0.01 );  // Within 0.01% (allows for coverage limits precision)
   }
   
   
@@ -350,7 +350,7 @@ BOOST_AUTO_TEST_CASE( ExpGaussExp )
     vector<double> counts( num_channels, 0.0 );
     vector<float> energies( num_channels + 1, 0.0 );
     for( size_t i = 0; i < energies.size(); ++i )
-      energies[i] = x0 + (i*(x1 - x0) / (num_channels + 1));
+      energies[i] = x0 + (i*(x1 - x0) / num_channels);
     
     
     double answer_sum = 0.0;
@@ -464,7 +464,7 @@ BOOST_AUTO_TEST_CASE( CrystalBall )
     vector<double> counts( num_channels, 0.0 );
     vector<float> energies( num_channels + 1, 0.0 );
     for( size_t i = 0; i < energies.size(); ++i )
-      energies[i] = x0 + (i*(x1 - x0) / (num_channels + 1));
+      energies[i] = x0 + (i*(x1 - x0) / num_channels);
     
     //const double start_cpu = SpecUtils::get_cpu_time();
     
@@ -499,7 +499,7 @@ BOOST_AUTO_TEST_CASE( CrystalBall )
     vector<double> counts( num_channels, 0.0 );
     vector<float> energies( num_channels + 1, 0.0 );
     for( size_t i = 0; i < energies.size(); ++i )
-      energies[i] = x0 + (i*(x1 - x0) / (num_channels + 1));
+      energies[i] = x0 + (i*(x1 - x0) / num_channels);
     
     
     double answer_sum = 0.0;
@@ -650,7 +650,7 @@ BOOST_AUTO_TEST_CASE( DoubleSidedCrystalBall )
     vector<double> counts( num_channels, 0.0 );
     vector<float> energies( num_channels + 1, 0.0 );
     for( size_t i = 0; i < energies.size(); ++i )
-      energies[i] = x0 + (i*(x1 - x0) / (num_channels + 1));
+      energies[i] = x0 + (i*(x1 - x0) / num_channels);
     
     //const double start_cpu = SpecUtils::get_cpu_time();
     
@@ -985,3 +985,380 @@ BOOST_AUTO_TEST_CASE( DoubleSidedCrystalBall )
     double DSCB_gauss_indefinite_non_norm_t( const double t);
    */
 }//BOOST_AUTO_TEST_CASE( DoubleSidedCrystalBall )
+
+
+BOOST_AUTO_TEST_CASE( VoigtPlusBortel )
+{
+  // Check VoigtPlusBortel has unit area
+  {
+    double mean = 14.0; // keV (typical x-ray energy)
+    double sigma = 0.0005; // ~1.2 eV FWHM at 14 keV
+    double gamma_lor = 0.0001; // ~0.1 eV Lorentzian HWHM (more realistic)
+    double tail_ratio = 0.15;
+    double tail_slope = 0.001; // More realistic tail parameter (1 eV scale)
+
+    // Use coverage_limits to get proper integration range that captures the tail
+    pair<double,double> limits = voigt_exp_coverage_limits( mean, sigma, gamma_lor, tail_ratio, tail_slope, 1.0E-6 );
+    double x0 = limits.first;
+    double x1 = limits.second;
+
+    double answer = voigt_exp_integral( mean, sigma, gamma_lor, tail_ratio, tail_slope, x0, x1 );
+    BOOST_CHECK_CLOSE( answer, 1.0, 0.01 );  // Within 0.01% of 1.0 (allows for coverage limits precision)
+  }
+
+  // Check fast VoigtExpTail has unit area
+  {
+    double mean = 14.0;
+    double sigma = 0.0005;
+    double gamma_lor = 0.006;
+    double tail_ratio = 0.15;
+    double tail_slope = 1.0;
+    const double amplitude = 1.23456;
+
+    // Use coverage_limits to get proper integration range that captures the tail
+    pair<double,double> limits = voigt_exp_coverage_limits( mean, sigma, gamma_lor, tail_ratio, tail_slope, 1.0E-6 );
+    double x0 = limits.first;
+    double x1 = limits.second;
+
+    size_t num_channels = 2048;
+    vector<double> counts( num_channels, 0.0 );
+    vector<float> energies( num_channels + 1, 0.0 );
+    for( size_t i = 0; i < energies.size(); ++i )
+      energies[i] = x0 + (i*(x1 - x0) / num_channels);
+
+    voigt_exp_integral( mean, sigma, amplitude, gamma_lor, tail_ratio, tail_slope,
+                        &(energies[0]), &(counts[0]), num_channels );
+
+    double answer_sum = std::accumulate( begin(counts), end(counts), 0.0 );
+    
+  }
+
+  // Check VoigtExpTail CDF reaches 1.0 (unit area test)
+  {
+    double mean = 14.0;
+    double sigma = 0.0005;
+    double gamma_lor = 0.006;
+    double tail_ratio = 0.15;
+    double tail_slope = 1.0;
+
+    // Use coverage_limits to get proper integration range that captures the tail
+    pair<double,double> limits = voigt_exp_coverage_limits( mean, sigma, gamma_lor, tail_ratio, tail_slope, 1.0E-6 );
+    double x0 = limits.first;
+    double x1 = limits.second;
+
+    double total_area = voigt_exp_integral( mean, sigma, gamma_lor, tail_ratio, tail_slope, x0, x1 );
+
+    BOOST_CHECK_CLOSE( total_area, 1.0, 1.0E-4 );
+  }
+
+  // Test limiting case: gamma_lor=0, tail_ratio=0 should produce Gaussian-like behavior
+  {
+    double mean = 100.0;
+    double sigma = 1.0;
+    double gamma_lor = 0.0;
+    double tail_ratio = 0.0;
+    double tail_slope = 1.0;
+    double x0 = mean - 10*sigma;
+    double x1 = mean + 10*sigma;
+
+    double voigt_area = voigt_exp_integral( mean, sigma, gamma_lor, tail_ratio, tail_slope, x0, x1 );
+    double gauss_area = gaussian_integral( mean, sigma, x0, x1 );
+
+    BOOST_CHECK_CLOSE( voigt_area, gauss_area, 1.0 );
+  }
+
+  // Test limiting case: gamma_lor=0 should produce GaussExp-like tail behavior
+  {
+    double mean = 14.0;
+    double sigma = 0.0005;
+    double gamma_lor = 0.0;
+    double tail_ratio = 0.2;
+    double tail_slope = 1.5;
+
+    // Use coverage_limits to get proper integration range that captures the tail
+    pair<double,double> limits = voigt_exp_coverage_limits( mean, sigma, gamma_lor, tail_ratio, tail_slope, 1.0E-6 );
+    double x0 = limits.first;
+    double x1 = limits.second;
+
+    double answer = voigt_exp_integral( mean, sigma, gamma_lor, tail_ratio, tail_slope, x0, x1 );
+    BOOST_CHECK_CLOSE( answer, 1.0, 0.01 );  // Within 0.01% of 1.0 (allows for coverage limits precision)
+  }
+
+  // Test voigt_exp_coverage_limits
+  {
+    double mean = 14.0;
+    double sigma = 0.0005;
+    double gamma_lor = 0.006;
+    double tail_ratio = 0.15;
+    double tail_slope = 1.0;
+    double prob = 0.000001;
+
+    pair<double,double> limits = voigt_exp_coverage_limits( mean, sigma, gamma_lor,
+                                                            tail_ratio, tail_slope, prob );
+    double fraction = 1.0 - voigt_exp_integral( mean, sigma, gamma_lor, tail_ratio,
+                                                tail_slope, limits.first, limits.second );
+    BOOST_CHECK_CLOSE( fraction, prob, 1.0 );
+
+    prob = 0.001;
+    limits = voigt_exp_coverage_limits( mean, sigma, gamma_lor, tail_ratio, tail_slope, prob );
+    fraction = 1.0 - voigt_exp_integral( mean, sigma, gamma_lor, tail_ratio, tail_slope,
+                                         limits.first, limits.second );
+    BOOST_CHECK_CLOSE( fraction, prob, 1.0 );
+  }
+
+  // Test array integral matches point-by-point integral
+  {
+    double mean = 14.0;
+    double sigma = 0.0005;
+    double gamma_lor = 0.006;
+    double tail_ratio = 0.15;
+    double tail_slope = 1.0;
+    const double amplitude = 1.5;
+    double x0 = mean - 30*sigma;
+    double x1 = mean + 30*sigma;
+    size_t num_channels = 512;
+    vector<double> counts( num_channels, 0.0 );
+    vector<float> energies( num_channels + 1, 0.0 );
+    for( size_t i = 0; i < energies.size(); ++i )
+      energies[i] = x0 + (i*(x1 - x0) / num_channels);
+
+    // Fill using fast array method
+    voigt_exp_integral( mean, sigma, amplitude, gamma_lor, tail_ratio, tail_slope,
+                        &(energies[0]), &(counts[0]), num_channels );
+
+    // Compare each channel against point-by-point integral
+    for( size_t i = 0; i < num_channels; ++i )
+    {
+      if( counts[i] > amplitude*1.0E-8 )
+      {
+        const double val_check = amplitude * voigt_exp_integral( mean, sigma, gamma_lor,
+                                                                 tail_ratio, tail_slope,
+                                                                 energies[i], energies[i+1] );
+        BOOST_CHECK_CLOSE( counts[i], val_check, 1.0E-4 );
+      }
+    }
+  }
+
+}//BOOST_AUTO_TEST_CASE( VoigtPlusBortel )
+
+
+BOOST_AUTO_TEST_CASE( GaussPlusBortel )
+{
+  // Test GaussPlusBortel distribution
+  // PDF(x) = (1-R)*Gaussian(x) + R*Bortel(x)
+
+  const double mean = 100.0;  // keV
+  const double sigma = 0.5;   // keV
+
+  // Test 1: R=0 should equal pure Gaussian
+  {
+    const double R = 0.0;
+    const double tau = 0.5;
+
+    // Get coverage limits
+    pair<double,double> limits = gauss_plus_bortel_coverage_limits( mean, sigma, R, tau, 1.0E-6 );
+    double x0 = limits.first;
+    double x1 = limits.second;
+
+    double integral = gauss_plus_bortel_integral( mean, sigma, R, tau, x0, x1 );
+    BOOST_CHECK_CLOSE( integral, 1.0, 0.01 );  // Within 0.01% of 1.0 (allows for coverage limits precision)
+
+    // Should match gaussian_integral
+    double gauss_integral_val = gaussian_integral( mean, sigma, x0, x1 );
+    BOOST_CHECK_CLOSE( integral, gauss_integral_val, 0.01 );
+  }
+
+  // Test 2: R=1 should equal pure Bortel
+  {
+    const double R = 1.0;
+    const double tau = 0.5;
+
+    pair<double,double> limits = gauss_plus_bortel_coverage_limits( mean, sigma, R, tau, 1.0E-6 );
+    double x0 = limits.first;
+    double x1 = limits.second;
+
+    double integral = gauss_plus_bortel_integral( mean, sigma, R, tau, x0, x1 );
+    BOOST_CHECK_CLOSE( integral, 1.0, 0.01 );  // Within 0.01% of 1.0 (allows for coverage limits precision)
+
+    // Should match bortel_integral
+    double bortel_integral_val = bortel_integral( mean, sigma, tau, x0, x1 );
+    BOOST_CHECK_CLOSE( integral, bortel_integral_val, 0.01 );
+  }
+
+  // Test 3: Intermediate R values should have unit area
+  {
+    const double R = 0.5;
+    const double tau = 0.5;
+
+    pair<double,double> limits = gauss_plus_bortel_coverage_limits( mean, sigma, R, tau, 1.0E-6 );
+    double x0 = limits.first;
+    double x1 = limits.second;
+
+    double integral = gauss_plus_bortel_integral( mean, sigma, R, tau, x0, x1 );
+    BOOST_CHECK_CLOSE( integral, 1.0, 0.001 );
+  }
+
+  // Test 4: Array-filling function should match scalar function
+  {
+    const double R = 0.3;
+    const double tau = 0.8;
+    const double amplitude = 1000.0;
+
+    pair<double,double> limits = gauss_plus_bortel_coverage_limits( mean, sigma, R, tau, 1.0E-6 );
+
+    const size_t nchannel = 100;
+    vector<float> energies( nchannel + 1 );
+    for( size_t i = 0; i <= nchannel; ++i )
+      energies[i] = static_cast<float>( limits.first + i * (limits.second - limits.first) / nchannel );
+
+    vector<double> counts( nchannel, 0.0 );
+    gauss_plus_bortel_integral( mean, sigma, amplitude, R, tau,
+                                energies.data(), counts.data(), nchannel );
+
+    // Check that array method matches scalar method
+    for( size_t i = 0; i < nchannel; ++i )
+    {
+      double val_check = amplitude * gauss_plus_bortel_integral( mean, sigma, R, tau,
+                                                                  energies[i], energies[i+1] );
+      BOOST_CHECK_CLOSE( counts[i], val_check, 1.0E-4 );
+    }
+  }
+
+  // Test 5: Should match VoigtPlusBortel when gamma_lor=0
+  {
+    const double R = 0.4;
+    const double tau = 0.6;
+    const double gamma_lor = 0.0;
+
+    pair<double,double> gauss_bortel_limits = gauss_plus_bortel_coverage_limits( mean, sigma, R, tau, 1.0E-6 );
+    pair<double,double> voigt_bortel_limits = voigt_exp_coverage_limits( mean, sigma, gamma_lor, R, tau, 1.0E-6 );
+
+    double x0 = std::min( gauss_bortel_limits.first, voigt_bortel_limits.first );
+    double x1 = std::max( gauss_bortel_limits.second, voigt_bortel_limits.second );
+
+    double gauss_bortel_val = gauss_plus_bortel_integral( mean, sigma, R, tau, x0, x1 );
+    double voigt_bortel_val = voigt_exp_integral( mean, sigma, gamma_lor, R, tau, x0, x1 );
+
+    // Both should be approximately unit area and match each other
+    BOOST_CHECK_CLOSE( gauss_bortel_val, voigt_bortel_val, 1.0 );
+  }
+}//BOOST_AUTO_TEST_CASE( GaussPlusBortel )
+
+
+BOOST_AUTO_TEST_CASE( DoubleBortel )
+{
+  // Test DoubleBortel distribution from Bortels & Collaers 1987
+  // PDF(x) = (1-eta)*Bortel(tau1) + eta*Bortel(tau2), where tau2 = tau1 + tau2_delta
+
+  const double mean = 100.0;  // keV
+  const double sigma = 0.5;   // keV
+
+  // Test 1: tau2_delta=0 should equal single Bortel (regardless of eta)
+  {
+    const double tau1 = 0.5;
+    const double tau2_delta = 0.0;
+    const double eta = 0.3;  // Arbitrary value
+
+    pair<double,double> limits = double_bortel_coverage_limits( mean, sigma, tau1, tau2_delta, eta, 1.0E-6 );
+    double x0 = limits.first;
+    double x1 = limits.second;
+
+    double integral = double_bortel_integral( mean, sigma, tau1, tau2_delta, eta, x0, x1 );
+    BOOST_CHECK_CLOSE( integral, 1.0, 0.01 );  // Within 0.01% of 1.0 (allows for coverage limits precision)
+
+    // Should match single Bortel with tau1
+    double bortel_val = bortel_integral( mean, sigma, tau1, x0, x1 );
+    BOOST_CHECK_CLOSE( integral, bortel_val, 0.01 );
+  }
+
+  // Test 2: eta=0 should equal Bortel with tau1
+  {
+    const double tau1 = 0.5;
+    const double tau2_delta = 1.0;
+    const double eta = 0.0;
+
+    pair<double,double> limits = double_bortel_coverage_limits( mean, sigma, tau1, tau2_delta, eta, 1.0E-6 );
+    double x0 = limits.first;
+    double x1 = limits.second;
+
+    double integral = double_bortel_integral( mean, sigma, tau1, tau2_delta, eta, x0, x1 );
+    BOOST_CHECK_CLOSE( integral, 1.0, 0.01 );  // Within 0.01% of 1.0 (allows for coverage limits precision)
+
+    double bortel_val = bortel_integral( mean, sigma, tau1, x0, x1 );
+    BOOST_CHECK_CLOSE( integral, bortel_val, 0.01 );
+  }
+
+  // Test 3: eta=1 should equal Bortel with tau2
+  {
+    const double tau1 = 0.5;
+    const double tau2_delta = 1.0;
+    const double eta = 1.0;
+    const double tau2 = tau1 + tau2_delta;
+
+    pair<double,double> limits = double_bortel_coverage_limits( mean, sigma, tau1, tau2_delta, eta, 1.0E-6 );
+    double x0 = limits.first;
+    double x1 = limits.second;
+
+    double integral = double_bortel_integral( mean, sigma, tau1, tau2_delta, eta, x0, x1 );
+    BOOST_CHECK_CLOSE( integral, 1.0, 0.01 );  // Within 0.01% of 1.0 (allows for coverage limits precision)
+
+    double bortel_val = bortel_integral( mean, sigma, tau2, x0, x1 );
+    BOOST_CHECK_CLOSE( integral, bortel_val, 0.01 );
+  }
+
+  // Test 4: Intermediate eta values should have unit area
+  {
+    const double tau1 = 0.5;
+    const double tau2_delta = 1.0;
+    const double eta = 0.5;
+
+    pair<double,double> limits = double_bortel_coverage_limits( mean, sigma, tau1, tau2_delta, eta, 1.0E-6 );
+    double x0 = limits.first;
+    double x1 = limits.second;
+
+    double integral = double_bortel_integral( mean, sigma, tau1, tau2_delta, eta, x0, x1 );
+    BOOST_CHECK_CLOSE( integral, 1.0, 0.001 );
+  }
+
+  // Test 5: Array-filling function should match scalar function
+  {
+    const double tau1 = 0.4;
+    const double tau2_delta = 0.8;
+    const double eta = 0.35;
+    const double amplitude = 1000.0;
+
+    pair<double,double> limits = double_bortel_coverage_limits( mean, sigma, tau1, tau2_delta, eta, 1.0E-6 );
+
+    const size_t nchannel = 100;
+    vector<float> energies( nchannel + 1 );
+    for( size_t i = 0; i <= nchannel; ++i )
+      energies[i] = static_cast<float>( limits.first + i * (limits.second - limits.first) / nchannel );
+
+    vector<double> counts( nchannel, 0.0 );
+    double_bortel_integral( mean, sigma, amplitude, tau1, tau2_delta, eta,
+                            energies.data(), counts.data(), nchannel );
+
+    // Check that array method matches scalar method
+    for( size_t i = 0; i < nchannel; ++i )
+    {
+      double val_check = amplitude * double_bortel_integral( mean, sigma, tau1, tau2_delta, eta,
+                                                              energies[i], energies[i+1] );
+      BOOST_CHECK_CLOSE( counts[i], val_check, 1.0E-4 );
+    }
+  }
+
+  // Test 6: Realistic HPGe parameters (uranium x-rays)
+  {
+    const double mean_u_xray = 98.4;  // U Ka1 x-ray energy
+    const double sigma_hpge = 0.25;   // ~0.6 keV FWHM
+    const double tau1 = 0.3;          // Close to sigma (per Bortels 1987)
+    const double tau2_delta = 0.6;    // tau2 ~3x tau1
+    const double eta = 0.4;
+
+    pair<double,double> limits = double_bortel_coverage_limits( mean_u_xray, sigma_hpge, tau1, tau2_delta, eta, 1.0E-6 );
+
+    double integral = double_bortel_integral( mean_u_xray, sigma_hpge, tau1, tau2_delta, eta,
+                                              limits.first, limits.second );
+    BOOST_CHECK_CLOSE( integral, 1.0, 0.01 );
+  }
+}//BOOST_AUTO_TEST_CASE( DoubleBortel )

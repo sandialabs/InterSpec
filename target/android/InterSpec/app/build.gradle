@@ -24,15 +24,15 @@ android {
         // Android 4 (Kit Kat) is level 19.  Android 6 (Marshmallow - e.x., Nexus 7) is level 23.
         minSdkVersion 19
         targetSdkVersion 34
-        versionCode 17
-        versionName "1.0.12"
+        versionCode 18
+        versionName "1.0.13"
  //       testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
 
         signingConfig signingConfigs.config
 
         externalNativeBuild {
             cmake {
-                arguments "-DUSE_LEAFLET_MAP=ON"
+                arguments "-DUSE_LEAFLET_MAP=ON -DLEAFLET_MAPS_KEY=AAPKab9e3ffd9d4b4e7cbe70f3c7220b13fdlpDy_YRIy2iLHFE6m9rGsgmQ85pP4Zn1fYaA54gDfCyh2BIC58BmCihxKjE6TjiZ"
             }
         }
     }

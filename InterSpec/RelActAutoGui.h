@@ -101,6 +101,11 @@ public:
   void updateDuringRenderForEnergyRangeChange();
   void updateDuringRenderForFreePeakChange();
   void updateDuringRenderForShowHideBackground();
+  void updateDuringRenderForXRaysInRois();
+
+  /** Returns true if any nuclide or element emits x-rays within any ROI energy range. */
+  bool hasXraysInRois() const;
+
   void startUpdatingCalculation();
   void updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSolution> answer,
                       std::shared_ptr<std::atomic_bool> cancel_flag,
@@ -130,6 +135,10 @@ public:
   void handleSameAgeChanged();
   void handlePuByCorrelationChanged();
   void handleSkewTypeChanged();
+  void handleLorentzianXraysChanged();
+  void populateSkewTypeComboBox( const bool lorentzian_mode );
+  PeakDef::SkewType currentSkewType() const;
+  void setCurrentSkewType( const PeakDef::SkewType skew_type );
   void handleNucDataSrcChanged();
   void handleAddNuclideForCurrentRelEffCurve();
   /** Will return nullptr of invalid `rel_eff_index` passed in; otherwise retuns created widget. */
@@ -306,7 +315,8 @@ protected:
     UpdateFreePeaks       = 0x0020,
     UpdateFitEnergyCal    = 0x0040,
     UpdateRefGammaLines   = 0x0080,
-    UpdateShowHideBack    = 0x0100
+    UpdateShowHideBack    = 0x0100,
+    UpdateXRaysInRois     = 0x0200
   };//enum D3RenderActions
   
   Wt::WFlags<RenderActions> m_render_flags;
@@ -375,8 +385,8 @@ protected:
 
   Wt::WComboBox *m_fwhm_eqn_form;
   Wt::WComboBox *m_fwhm_estimation_method;
-  
-  Wt::WCheckBox *m_fit_energy_cal;
+
+  Wt::WComboBox *m_fit_energy_cal;
   Wt::WCheckBox *m_background_subtract;
 
   /** This variable should always match the visibility state of `m_same_z_age`, but is necassary since we cant use
@@ -389,7 +399,14 @@ protected:
   
   Wt::WComboBox *m_skew_type;
   Wt::WComboBox *m_add_uncert;
-  
+
+  /** Tracks whether m_lorentzian_xrays checkbox should be visible/valid.
+   * Similar pattern to m_same_z_age_enabled - needed because isVisible() returns
+   * false when saving state while closing the RelActAuto tool.
+   */
+  bool m_lorentzian_xrays_enabled;
+  Wt::WCheckBox *m_lorentzian_xrays;
+
   // Wt::WComboBox *m_u_pu_data_source;
   PopupDivMenu *m_more_options_menu;
   PopupDivMenuItem *m_apply_energy_cal_item;

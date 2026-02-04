@@ -15,7 +15,10 @@
   <!-- General options -->
   <message id="raag-spectrum-peak-options">Параметры спектра и пиков</message>
   <message id="raag-rel-eff-curve-options">Параметры кривой относительной эффективности</message>
-  <message id="raag-fit-energy-cal">Подгонка энергокал.</message>
+  <message id="raag-energy-cal-label">Калибровка энергии</message>
+  <message id="raag-energy-cal-nofit">Нет</message>
+  <message id="raag-energy-cal-linear">Линейная</message>
+  <message id="raag-energy-cal-nonlinear">Нелинейная</message>
   <message id="raag-back-sub">Вычит. фона</message>
   <message id="raag-fwhm-est">Оценка ПШПВ</message>
   <message id="raag-fwhm-form">Форма ПШПВ</message>
@@ -57,6 +60,13 @@
   <message id="raag-combine-roi-right">Объединить с ROI справа</message>
   
   <!-- Tooltips -->
+  <message id="raag-tt-energy-cal-type">Определяет, следует ли подгонять корректировки к энергетической калибровке.
+    <ul>
+      <li><b>Нет</b>: Использовать существующую энергетическую калибровку без изменений.</li>
+      <li><b>Линейная</b>: Подогнать линейную корректировку (смещение и усиление) к энергетической калибровке.</li>
+      <li><b>Нелинейная</b>: Подогнать нелинейные корректировки, используя пары отклонений (кубический сплайн) для каждого ROI, в дополнение к линейным членам. В качестве энергии пары отклонений используется крупнейший обнаруженный пик в каждом ROI, а если пиков не обнаружено — середина ROI; большим ROI может быть задано несколько пар отклонений.</li>
+    </ul>
+  </message>
   <message id="raag-tt-fwhm-form">Тип уравнения для моделирования FWHM пика как функции энергии.</message>
   <message id="raag-tt-skew-type">Тип скоса, применяемый к пикам; параметры скоса будут подогнаны.</message>
   <message id="raag-tt-u-pu-data-source">Источник ядерных данных для коэффициентов ветвления гамма-излучения урана и плутония.</message>
@@ -113,6 +123,8 @@
   <message id="raag-increase-gain-additional"> и увеличить коэффициент усиления на {1}</message>
   <message id="raag-increase-quad-first"> увеличить квадратичный коэффициент на {1}</message>
   <message id="raag-increase-quad-additional"> и увеличить квадратичный коэффициент на {1}</message>
+  <message id="raag-dev-pairs-first"> добавить пары отклонений {1}</message>
+  <message id="raag-dev-pairs-additional"> и добавить пары отклонений {1}</message>
 
   <!-- Energy calibration application messages -->
   <message id="raag-apply-energy-cal-msg">Это{1} для первичного переднего плана{2}{3}.<br />Хотите это сделать?</message>

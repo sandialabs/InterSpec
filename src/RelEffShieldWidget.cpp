@@ -349,8 +349,8 @@ bool RelEffShieldWidget::nonEmpty() const
     if( !mat )
       return false;
     
-    if( fitThickness() )
-      return true;
+    //if( fitThickness() )
+    //  return true;
 
     //For the moment, even if AD is zero, we'll say its non-empty, as long as there is some text
     return !m_thicknessEdit->valueText().empty();
@@ -369,13 +369,19 @@ bool RelEffShieldWidget::nonEmpty() const
 
 void RelEffShieldWidget::resetState()
 {
+  resetMaterialEntryState();
+  
+  setFitThickness(true);
+  setFitAtomicNumber(false);
+  setFitArealDensity(true);
+}
+
+void RelEffShieldWidget::resetMaterialEntryState()
+{
   setMaterial("");
   setThickness(0.0);
-  setFitThickness(true);
   setAtomicNumber(26.0);
-  setFitAtomicNumber(false);
   setArealDensity(0.0);
-  setFitArealDensity(true);
 }
 
 
@@ -392,8 +398,12 @@ void RelEffShieldWidget::userUpdated()
 void RelEffShieldWidget::materialUpdated()
 { 
   const Material * const mat = material();
-  m_materialEdit->setText( mat ? mat->name : string("") );
-  
+  std::string name = mat ? mat->name : ""s;
+  m_materialEdit->setText( name );
+
+  if( !name.empty() && (m_thicknessEdit->text().empty() || (m_thicknessEdit->validate() != WValidator::State::Valid)) )
+    m_thicknessEdit->setText( "0 cm" );
+
   userUpdated();
 }
 
@@ -432,7 +442,7 @@ void RelEffShieldWidget::setState(const RelEffShieldState& s)
     setFitAtomicNumber(s.fitAtomicNumber);
   }
   
-  if( !s.materialSelected || (s.fitArealDensity >= 0.0) )
+  if( !s.materialSelected || (s.arealDensity >= 0.0) )
   {
     setArealDensity(s.arealDensity);
     setFitArealDensity(s.fitArealDensity);

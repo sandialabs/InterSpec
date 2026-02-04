@@ -15,7 +15,10 @@
   <!-- General options -->
   <message id="raag-spectrum-peak-options">スペクトルとピークオプション</message>
   <message id="raag-rel-eff-curve-options">相対効率曲線オプション</message>
-  <message id="raag-fit-energy-cal">エネルギー校正フィット</message>
+  <message id="raag-energy-cal-label">エネルギー較正</message>
+  <message id="raag-energy-cal-nofit">なし</message>
+  <message id="raag-energy-cal-linear">線形</message>
+  <message id="raag-energy-cal-nonlinear">非線形</message>
   <message id="raag-back-sub">バックグラウンド減算</message>
   <message id="raag-fwhm-est">半値幅推定</message>
   <message id="raag-fwhm-form">半値幅形式</message>
@@ -57,6 +60,13 @@
   <message id="raag-combine-roi-right">右のROIと結合</message>
   
   <!-- Tooltips -->
+  <message id="raag-tt-energy-cal-type">エネルギー較正に対する補正をフィットするかどうかを指定します。
+    <ul>
+      <li><b>なし</b>: 既存のエネルギー較正を変更せずに使用します。</li>
+      <li><b>線形</b>: エネルギー較正に線形補正（オフセットとゲイン）をフィットします。</li>
+      <li><b>非線形</b>: 線形項に加えて、各ROIに対して偏差ペア（3次スプライン）を用いた非線形補正をフィットします。各ROIで検出された最大ピークを偏差ペアのエネルギーとして使用し、検出されない場合はROIの中点を使用します。大きなROIには複数の偏差ペアが与えられることがあります。</li>
+    </ul>
+  </message>
   <message id="raag-tt-fwhm-form">エネルギーの関数としてピークFWHMをモデル化する方程式タイプ。</message>
   <message id="raag-tt-skew-type">ピークに適用するスキュータイプ；スキューパラメータがフィットされます。</message>
   <message id="raag-tt-u-pu-data-source">ウランとプルトニウムのガンマ分岐比の核データソース。</message>
@@ -113,6 +123,8 @@
   <message id="raag-increase-gain-additional">およびゲインを{1}増加</message>
   <message id="raag-increase-quad-first">二次項を{1}増加</message>
   <message id="raag-increase-quad-additional">および二次項を{1}増加</message>
+  <message id="raag-dev-pairs-first"> 偏差ペア{1}を追加</message>
+  <message id="raag-dev-pairs-additional"> および偏差ペア{1}を追加</message>
 
   <!-- Energy calibration application messages -->
   <message id="raag-apply-energy-cal-msg">これは主フォアグラウンド{2}{3}に対して{1}を行います。<br />実行しますか？</message>
