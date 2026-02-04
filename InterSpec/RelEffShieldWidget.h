@@ -101,7 +101,10 @@ public:
   void setFitArealDensity(bool fit);
 
   bool nonEmpty() const;
+  /// Resets material/AN/AD and "Fit" checkboxes
   void resetState();
+  /// Resets material/AN/AD, but not "Fit" checkboxes (incase you dont want to mess with users preferences)
+  void resetMaterialEntryState();
 
   /** For input to Rel Act shield fit.
    * 

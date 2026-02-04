@@ -649,12 +649,24 @@ struct Options
   /** Peak skew to apply to the entire spectrum.
    
    Under development: currently, if total energy range being fit is less than 100 keV, then all peaks will share the same skew.
-   Otherwise a linear energy dependance will be assumed, where the fitting parameters will be for the spectrums lower
+   Otherwise a linear energy dependence will be assumed, where the fitting parameters will be for the spectrums lower
    energy, and the spectrums upper energy; not all skew parameters are allowed to vary with energy; e.g., the Crystal Ball
    power law is not allowed to have an energy dependence (see `PeakDef::is_energy_dependent(...)`).
    */
   PeakDef::SkewType skew_type;
-  
+
+  /** Whether to use Lorentzian (Voigt) peak shapes for x-ray peaks.
+   *
+   * When true, x-ray peaks will use VoigtPlusBortel skew type with the
+   * Lorentzian HWHM set to the natural x-ray linewidth (plus thermal/recoil
+   * Doppler broadening for decay x-rays).
+   *
+   * Only compatible with skew_type == NoSkew or skew_type == GaussPlusBortel.
+   * If set to true with an incompatible skew_type, then the problem will fail to setup (an exception
+   * in `check_same_hoerl_and_external_shielding_specifications()` will be thrown)
+   */
+  bool lorentzian_xrays;
+
   /** An additional uncertainty applied to each roughly independent peak.
    * 
    * Contributing gammas are clustered into roughly independent peaks based on their energy and the 
@@ -685,7 +697,7 @@ struct Options
    * if true, and you do not have multiple physical models with `RelEffCurveInput::phys_model_use_hoerl`
    * set to true, then an exception will be thrown.
    */
-  bool same_hoerl_for_all_rel_eff_curves = false;
+  bool same_hoerl_for_all_rel_eff_curves;
 
   /** If true, use the same external shielding for all relative efficiency curves.
    *
@@ -697,7 +709,7 @@ struct Options
    * the ManualRelEff method, then the first RelEffCurveInput estimate will be what is 
    * used.
    */
-  bool same_external_shielding_for_all_rel_eff_curves = false;
+  bool same_external_shielding_for_all_rel_eff_curves;
 
   /** If using the same Hoerl function, or external shielding for all relative efficiency curves,
    * this will check that the specifications are consistent.

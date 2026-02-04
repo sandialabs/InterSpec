@@ -91,24 +91,5 @@
   <message id="rpd-fit-sources-menu-auto">Automatic</message>
   <message id="rpd-fit-sources-menu-advanced">Advanced</message>
   
-  <message id="rpd-fit-sources-adv-title">Fit Sources (Advanced)</message>
-  <message id="rpd-fit-sources-adv-content">Advanced options not implemented</message>
-  <message id="rpd-fit-peaks">Fit Peaks</message>
-  
-  <message id="rpd-fit-sources-no-data">There is no foreground spectrum to fit peaks on.</message>
-  <message id="rpd-fit-sources-wait-title">Fitting peaks</message>
-  <message id="rpd-fit-sources-wait-content">This may take a minute. You can continue using the app.</message>
-  <message id="rpd-fit-sources-stale">Spectrum changed before fit completed; discarding results.</message>
-  
-  <message id="rpd-fit-sources-error-title">Fit failed</message>
-  <message id="rpd-fit-sources-error-content">Error: {1}</message>
-  
-  <message id="rpd-fit-sources-result-title">Fit results</message>
-  <message id="rpd-fit-sources-no-peaks">No peaks were fit for the selected source(s).</message>
-  <message id="rpd-fit-sources-summary">Fit {1} peak(s) for {2} source(s).</message>
-  <message id="rpd-fit-sources-warnings-header">Warnings:</message>
-  <message id="rpd-fit-sources-auto-accept">Automatically accept fit results</message>
-  <message id="rpd-fit-sources-auto-accepted">Fit results were automatically accepted.</message>
-
 
 </messages>

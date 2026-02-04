@@ -89,25 +89,5 @@
   <message id="rpd-fit-sources">拟合源</message>
   <message id="rpd-fit-sources-menu-auto">自动</message>
   <message id="rpd-fit-sources-menu-advanced">高级</message>
-  
-  <message id="rpd-fit-sources-adv-title">拟合源（高级）</message>
-  <message id="rpd-fit-sources-adv-content">高级选项未实现</message>
-  <message id="rpd-fit-peaks">拟合峰</message>
-  
-  <message id="rpd-fit-sources-no-data">没有前景谱可以拟合峰。</message>
-  <message id="rpd-fit-sources-wait-title">正在拟合峰</message>
-  <message id="rpd-fit-sources-wait-content">这可能需要一分钟。您可以继续使用应用程序。</message>
-  <message id="rpd-fit-sources-stale">在拟合完成之前更改了谱；丢弃结果。</message>
-  
-  <message id="rpd-fit-sources-error-title">拟合失败</message>
-  <message id="rpd-fit-sources-error-content">错误：{1}</message>
-  
-  <message id="rpd-fit-sources-result-title">拟合结果</message>
-  <message id="rpd-fit-sources-no-peaks">没有为所选源拟合峰。</message>
-  <message id="rpd-fit-sources-summary">为{2}个源拟合了{1}个峰。</message>
-  <message id="rpd-fit-sources-warnings-header">警告：</message>
-  <message id="rpd-fit-sources-auto-accept">自动接受拟合结果</message>
-  <message id="rpd-fit-sources-auto-accepted">拟合结果已自动接受。</message>
-
 
 </messages>

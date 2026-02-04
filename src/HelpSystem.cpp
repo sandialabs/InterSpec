@@ -753,8 +753,6 @@ namespace HelpSystem
     if (app && app->isMobile())
        return;
     
-    Wt::WWebWidget *first_widget = *begin(widgets);
-    
 #if( USE_OSX_NATIVE_MENU )
     for( Wt::WWebWidget *w : widgets )
     {
@@ -794,8 +792,20 @@ namespace HelpSystem
     }//switch( position )
     
     string selector;
-    for( const auto w : widgets )
-      selector += (selector.empty() ? "#" : ",#") + w->id();
+    Wt::WWebWidget *first_widget = nullptr;
+    for( Wt::WWebWidget *w : widgets )
+    {
+      if( w )
+      {
+        if( !first_widget )
+          first_widget = w;
+        selector += (selector.empty() ? "#" : ",#") + w->id();
+      }
+    }//for( Wt::WWebWidget *w : widgets )
+    
+    assert( first_widget );
+    if( !first_widget )
+      return;
     
     RmHelpFromDom *remover = new RmHelpFromDom( first_widget );
     
@@ -823,5 +833,23 @@ namespace HelpSystem
     
     first_widget->doJavaScript( strm.str() );
   }//void attachToolTipOn( Wt::WWebWidget* widget, const std::string &text, bool force)
+
+
+  void removeToolTipOn( WWebWidget* widget )
+  {
+    if( !widget )
+      return;
+
+    const vector<Wt::WObject *> &children = static_cast<WObject *>(widget)->children();
+    for( WObject *child : children )
+    {
+      RmHelpFromDom *rm = dynamic_cast<RmHelpFromDom *>( child );
+      if( rm )
+      {
+        delete rm;
+        return;
+      }
+    }//for( loop over children )
+  }//void removeToolTipOn( WWebWidget* widget )
 
 } //namespace HelpSystem

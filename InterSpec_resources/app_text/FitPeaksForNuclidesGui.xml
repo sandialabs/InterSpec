@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- fpn- is short for FitPeaksForNuclides -->
+
+  <!-- Advanced dialog -->
+  <message id="fpn-adv-title">Fit Sources (Advanced)</message>
+  <message id="fpn-adv-content">Advanced options not implemented</message>
+  <message id="fpn-fit-peaks">Fit Peaks</message>
+
+  <!-- Status and error messages -->
+  <message id="fpn-no-data">There is no foreground spectrum to fit peaks on.</message>
+  <message id="fpn-wait-title">Fitting peaks</message>
+  <message id="fpn-wait-content">This may take a minute. You can continue using the app.</message>
+  <message id="fpn-stale">Spectrum changed before fit completed; discarding results.</message>
+
+  <message id="fpn-error-title">Fit failed</message>
+  <message id="fpn-error-content">Error: {1}</message>
+
+  <!-- Results dialog -->
+  <message id="fpn-result-title">Fit results</message>
+  <message id="fpn-no-peaks">No peaks were fit for the selected source(s).</message>
+  <message id="fpn-summary">Fit {1} peak(s) for {2} source(s).</message>
+  <message id="fpn-warnings-header">Warnings:</message>
+  <message id="fpn-auto-accept">Automatically accept fit results</message>
+  <message id="fpn-auto-accepted">Fit results were automatically accepted.</message>
+
+</messages>

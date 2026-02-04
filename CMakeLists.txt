@@ -279,6 +279,7 @@ set(sources
     src/PeakFitUtils.cpp
     src/PeakDef.cpp
     src/PeakDists.cpp
+    src/XRayWidthServer.cpp
     src/SpectraFileModel.cpp
     src/AuxWindow.cpp
     src/PeakFitChi2Fcn.cpp
@@ -331,6 +332,7 @@ set(sources
     src/EnergyCalPreserveWindow.cpp
     src/EnergyCalMultiFile.cpp
     src/FitPeaksForNuclides.cpp
+    src/FitPeaksForNuclidesGui.cpp
     src/SimpleDialog.cpp
     src/FeatureMarkerWidget.cpp
     src/ShowRiidInstrumentsAna.cpp
@@ -400,6 +402,7 @@ set(headers
     InterSpec/PeakDef.h
     InterSpec/PeakDists.h
     InterSpec/PeakDists_imp.hpp
+    InterSpec/XRayWidthServer.h
     InterSpec/SpectraFileModel.h
     InterSpec/AuxWindow.h
     InterSpec/PeakFitChi2Fcn.h
@@ -452,6 +455,7 @@ set(headers
     InterSpec/EnergyCalPreserveWindow.h
     InterSpec/EnergyCalMultiFile.h
     InterSpec/FitPeaksForNuclides.h
+    InterSpec/FitPeaksForNuclidesGui.h
     InterSpec/SimpleDialog.h
     InterSpec/FeatureMarkerWidget.h
     InterSpec/ShowRiidInstrumentsAna.h
@@ -705,6 +709,7 @@ add_subdirectory(external_libs/Cuba-3.0)
 add_subdirectory(external_libs/SpecUtils)
 add_subdirectory(external_libs/SandiaDecay)
 add_subdirectory(external_libs/muparserx-4.0.7)
+add_subdirectory(external_libs/VoigtDistribution)
 
 add_library(InterSpecLib ${INTERSPEC_LIB_TYPE} ${sources} ${headers} )
 
@@ -761,6 +766,28 @@ if(WIN32)
   endif()
 endif(WIN32)
 
+target_link_libraries(
+    InterSpecLib
+    PUBLIC
+    Threads::Threads
+    SpecUtils
+    SandiaDecay
+    Minuit2::Minuit2
+    Cuba-3.0
+    muparserx
+    Boost::thread
+    Boost::date_time
+    Boost::system
+    Boost::filesystem
+    Boost::program_options
+    Boost::regex
+    Boost::random
+    ZLIB::ZLIB
+    Eigen3::Eigen
+    Ceres::ceres
+    ${CMAKE_DL_LIBS}
+    VoigtDistribution
+)
 
 if( USE_SPECRUM_FILE_QUERY_WIDGET )
     add_subdirectory(external_libs/pugixml-1.9)
@@ -1110,6 +1137,12 @@ endif()
 configure_file(
     ${PROJECT_SOURCE_DIR}//external_libs/SandiaDecay/sandia.decay.min.xml
     ${PROJECT_BINARY_DIR}/data/sandia.decay.xml
+    COPYONLY
+)
+
+configure_file(
+    ${PROJECT_SOURCE_DIR}/data/xray_widths.xml
+    ${PROJECT_BINARY_DIR}/data/xray_widths.xml
     COPYONLY
 )
 

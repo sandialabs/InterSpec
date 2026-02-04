@@ -28,7 +28,10 @@
 
 #include <boost/math/constants/constants.hpp>
 #include <boost/math/special_functions/erf.hpp>
+//#include <boost/math/special_functions/erf_inv.hpp>
+#include <boost/math/distributions/normal.hpp>
 #include <boost/math/distributions/poisson.hpp>
+#include <boost/math/quadrature/gauss_kronrod.hpp>
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakDists.h"
@@ -291,7 +294,8 @@ namespace PeakDists
     return (0.5579090118408203125f + P_eval / Q_eval) * (exp(-z * z) / z);
     // Boost implementation has an additional minor error correction here
 }//double boost_erfc_imp( double z )
-  
+
+
   /*
   double erf_approx( double x )
   {
@@ -1010,10 +1014,8 @@ template void photopeak_function_integral<double>( const double, const double,co
                                   const double skew,
                                   const double x )
   {
-    const double t = (x - mean) / sigma;
-    assert( t <= skew );
-    
-    return gauss_exp_norm(sigma,skew)*(sigma/skew)*std::exp((skew/sigma)*(0.5*skew*sigma - mean + x));
+    // Just call the templated version
+    return gauss_exp_tail_indefinite_template( mean, sigma, skew, x );
   }
   
   double gauss_exp_indefinite(const double mean,
@@ -1021,16 +1023,8 @@ template void photopeak_function_integral<double>( const double, const double,co
                              const double skew,
                              const double x )
   {
-    const double t = (x - mean) / sigma;
-    
-    const double root_half_pi = boost::math::constants::root_half_pi<double>();
-    static const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.707106781186547524400
-    
-    double answer = gauss_exp_tail_indefinite( mean, sigma, skew, std::min(x,-skew*sigma + mean) );
-    if( t >= -skew )
-      answer += gauss_exp_norm(sigma,skew)*sigma*root_half_pi
-                 * (boost_erf_imp(t*one_div_root_two) - boost_erf_imp(-skew*one_div_root_two) );
-    return answer;
+    // Just call the templated version
+    return gauss_exp_indefinite_template( mean, sigma, skew, x );
   }
   
   
@@ -1236,8 +1230,214 @@ template void photopeak_function_integral<double>( const double, const double,co
     return norm*answer;
   }//double_sided_crystal_ball_integral(...)
 
+
+// ========== Voigt with Exponential Tail Distribution Implementation ==========
+// Implementation now uses external VoigtDistribution library
+// Wrapper functions in PeakDists namespace that call the library implementations
+
+double voigt_exp_integral( const double peak_mean, const double sigma_gauss,
+                           const double gamma_lor, const double tail_ratio,
+                           const double tail_slope, const double x0, const double x1 )
+{
+#if( USE_PSEUDO_VOIGT_DISTRIBUTION )
+  return pseudo_voigt::voigt_exp_integral( peak_mean, sigma_gauss, gamma_lor, tail_ratio, tail_slope, x0, x1 );
+#else
+  // Use true-Voigt with adaptive Gauss-Kronrod quadrature
+  // Define the integrand as a lambda capturing the distribution parameters
+  auto integrand = [=]( double x ) -> double {
+    return voigt_exp_tail::voigt_exp_pdf( x, peak_mean, sigma_gauss, gamma_lor, tail_ratio, tail_slope );
+  };
   
+  // Use 15-point Gauss-Kronrod rule with error tolerance of 1.0E-6
+  // This balances accuracy and performance for typical peak shapes
+  constexpr double error_tolerance = 1.0e-6;
+  constexpr size_t max_depth = 15; // Maximum recursion depth for adaptive integration
   
+  double error_estimate = 0.0;
+  double result = boost::math::quadrature::gauss_kronrod<double, 15>::integrate(
+    integrand, x0, x1, max_depth, error_tolerance, &error_estimate
+  );
+  
+  return result;
+#endif
+}//voigt_exp_integral(...)
+
+
+std::pair<double,double> voigt_exp_coverage_limits( const double mean, const double sigma_gauss,
+                                                     const double gamma_lor, const double tail_ratio,
+                                                     const double tail_slope, const double p )
+{
+  // Always use pseudo-Voigt for coverage limits since true-Voigt CDF is not reliable
+  return pseudo_voigt::voigt_exp_coverage_limits( mean, sigma_gauss, gamma_lor, tail_ratio, tail_slope, p );
+}//voigt_exp_coverage_limits(...)
+
+
+// ========== Gauss Plus Bortel Distribution Functions ==========
+
+double gauss_plus_bortel_integral( const double peak_mean, const double sigma,
+                                   const double R, const double tau,
+                                   const double x0, const double x1 )
+{
+  // Simple weighted mixture: (1-R)*Gaussian + R*Bortel
+  const double gauss_part = (1.0 - R) * gaussian_integral( peak_mean, sigma, x0, x1 );
+  const double bortel_part = R * bortel_integral( peak_mean, sigma, tau, x0, x1 );
+  return gauss_part + bortel_part;
+}//gauss_plus_bortel_integral(...)
+
+
+std::pair<double,double> gauss_plus_bortel_coverage_limits( const double mean, const double sigma,
+                                                             const double R, const double tau,
+                                                             const double p )
+{
+  if( (p <= 1.0E-11) || (p > 0.999) )
+    throw runtime_error( "gauss_plus_bortel_coverage_limits: invalid p" );
+
+  // When R is small, this is mostly Gaussian; when R is large, it's mostly Bortel.
+  // Use a weighted combination of the coverage limits.
+  if( R <= 0.001 )
+  {
+    // Essentially pure Gaussian
+    const double half_p = 0.5 * p;
+    const double nsigma_low = boost::math::quantile( boost::math::normal_distribution<double>(0,1), half_p );
+    const double nsigma_high = boost::math::quantile( boost::math::normal_distribution<double>(0,1), 1.0 - half_p );
+    return std::make_pair( mean + sigma * nsigma_low, mean + sigma * nsigma_high );
+  }
+
+  if( R >= 0.999 )
+  {
+    // Essentially pure Bortel
+    return bortel_coverage_limits( mean, sigma, tau, p );
+  }
+
+  // For the mixture, use bisection on the CDF
+  try
+  {
+    auto cdf_func = [mean, sigma, R, tau]( const double x ) -> double {
+      // CDF is (1-R)*GaussianCDF + R*BortelCDF
+      const double gauss_cdf = 0.5 * ( 1.0 + boost_erf_imp( (x - mean) / (sigma * std::sqrt(2.0)) ) );
+      const double bortel_cdf = bortel_indefinite_integral( x, mean, sigma, tau ) + 0.5;
+      return (1.0 - R) * gauss_cdf + R * bortel_cdf;
+    };
+
+    auto lower_cdf = [&cdf_func, p]( const double x ) -> double {
+      return cdf_func( x ) - 0.5 * p;
+    };
+
+    auto upper_cdf = [&cdf_func, p]( const double x ) -> double {
+      return cdf_func( x ) - (1.0 - 0.5 * p);
+    };
+
+    auto term_condition = [p]( const double left, const double right ) -> bool {
+      return fabs( left - right ) < 0.01 * p;
+    };
+
+    boost::uintmax_t max_iter = 100;
+    const double low_low_limit = mean - 50 * sigma;
+    const double low_up_limit = mean;
+    const pair<double, double> lower_val = boost::math::tools::bisect( lower_cdf, low_low_limit,
+                                                                        low_up_limit, term_condition, max_iter );
+    const double lower_x = 0.5 * ( lower_val.first + lower_val.second );
+
+    max_iter = 100;
+    const double up_low_limit = mean;
+    const double up_up_limit = mean + 10 * sigma;
+    const pair<double, double> upper_val = boost::math::tools::bisect( upper_cdf, up_low_limit,
+                                                                        up_up_limit, term_condition, max_iter );
+    const double upper_x = 0.5 * ( upper_val.first + upper_val.second );
+
+    return std::make_pair( lower_x, upper_x );
+  }
+  catch( std::exception &e )
+  {
+    throw runtime_error( "gauss_plus_bortel_coverage_limits: failed to find limit: " + string( e.what() ) );
+  }
+}//gauss_plus_bortel_coverage_limits(...)
+
+
+// ========== Double Bortel Distribution Functions ==========
+
+double double_bortel_integral( const double peak_mean, const double sigma,
+                               const double tau1, const double tau2_delta,
+                               const double eta,
+                               const double x0, const double x1 )
+{
+  // DoubleBortel from Bortels & Collaers 1987:
+  // PDF(x) = (1-eta) * Bortel(tau1) + eta * Bortel(tau2)
+  // where tau2 = tau1 + tau2_delta
+
+  const double tau2 = tau1 + tau2_delta;
+
+  const double bortel1_part = ( 1.0 - eta ) * bortel_integral( peak_mean, sigma, tau1, x0, x1 );
+  const double bortel2_part = eta * bortel_integral( peak_mean, sigma, tau2, x0, x1 );
+
+  return bortel1_part + bortel2_part;
+}//double_bortel_integral(...)
+
+
+std::pair<double,double> double_bortel_coverage_limits( const double mean, const double sigma,
+                                                         const double tau1, const double tau2_delta,
+                                                         const double eta, const double p )
+{
+  if( (p <= 1.0E-11) || (p > 0.999) )
+    throw runtime_error( "double_bortel_coverage_limits: invalid p" );
+
+  const double tau2 = tau1 + tau2_delta;
+
+  // Special cases: when eta=0 or eta=1, use single Bortel limits
+  if( eta <= 0.001 )
+    return bortel_coverage_limits( mean, sigma, tau1, p );
+
+  if( eta >= 0.999 )
+    return bortel_coverage_limits( mean, sigma, tau2, p );
+
+  // For the mixture, use bisection on the CDF
+  try
+  {
+    auto cdf_func = [mean, sigma, tau1, tau2, eta]( const double x ) -> double {
+      // CDF is (1-eta)*BortelCDF(tau1) + eta*BortelCDF(tau2)
+      const double bortel1_cdf = bortel_indefinite_integral( x, mean, sigma, tau1 ) + 0.5;
+      const double bortel2_cdf = bortel_indefinite_integral( x, mean, sigma, tau2 ) + 0.5;
+      return ( 1.0 - eta ) * bortel1_cdf + eta * bortel2_cdf;
+    };
+
+    auto lower_cdf = [&cdf_func, p]( const double x ) -> double {
+      return cdf_func( x ) - 0.5 * p;
+    };
+
+    auto upper_cdf = [&cdf_func, p]( const double x ) -> double {
+      return cdf_func( x ) - ( 1.0 - 0.5 * p );
+    };
+
+    auto term_condition = [p]( const double left, const double right ) -> bool {
+      return fabs( left - right ) < 0.01 * p;
+    };
+
+    // The tail with larger tau will extend further, so use max(tau1, tau2)
+    const double max_tau = std::max( tau1, tau2 );
+
+    boost::uintmax_t max_iter = 100;
+    const double low_low_limit = mean - 50 * sigma;
+    const double low_up_limit = mean - max_tau * sigma;
+    const pair<double, double> lower_val = boost::math::tools::bisect( lower_cdf, low_low_limit,
+                                                                        low_up_limit, term_condition, max_iter );
+    const double lower_x = 0.5 * ( lower_val.first + lower_val.second );
+
+    max_iter = 100;
+    const double up_low_limit = mean;
+    const double up_up_limit = mean + 7 * sigma;
+    const pair<double, double> upper_val = boost::math::tools::bisect( upper_cdf, up_low_limit,
+                                                                        up_up_limit, term_condition, max_iter );
+    const double upper_x = 0.5 * ( upper_val.first + upper_val.second );
+
+    return std::make_pair( lower_x, upper_x );
+  }
+  catch( std::exception &e )
+  {
+    throw runtime_error( "double_bortel_coverage_limits: failed to find limit: " + string( e.what() ) );
+  }
+}//double_bortel_coverage_limits(...)
+
+
   // Explicit instantiation definition for the `double` version of `gauss_exp_integral(...)`
   template void gauss_exp_integral<double>( const double, const double, const double,
                                       const double, const float * const, double *, const size_t );
@@ -1259,4 +1459,21 @@ template void photopeak_function_integral<double>( const double, const double,co
                                                              const double, const double, const double,
                                                              const double, const double, const float * const,
                                                              double *, const size_t );
+
+
+  // Explicit instantiation definition for the `double` version of `voigt_exp_integral(...)`
+  template void voigt_exp_integral<double>( const double, const double, const double,
+                                            const double, const double, const double,
+                                            const float * const, double *, const size_t );
+
+  // Explicit instantiation definition for the `double` version of `gauss_plus_bortel_integral(...)`
+  template void gauss_plus_bortel_integral<double>( const double, const double, const double,
+                                                    const double, const double,
+                                                    const float * const, double *, const size_t );
+
+  // Explicit instantiation definition for the `double` version of `double_bortel_integral(...)`
+  template void double_bortel_integral<double>( const double, const double, const double,
+                                                const double, const double, const double,
+                                                const float * const, double *, const size_t );
+
 }//namespace PeakDists

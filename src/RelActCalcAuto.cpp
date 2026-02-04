@@ -85,9 +85,10 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/RelActCalcAuto.h"
+#include "InterSpec/XRayWidthServer.h"
 #include "InterSpec/RelActCalcManual.h"
-#include "InterSpec/BersteinPolynomial.hpp"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/BersteinPolynomial.hpp"
 #include "InterSpec/DetectorPeakResponse.h"
 
 
@@ -1074,7 +1075,8 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
     vector<float> fwhm_paramatersf, uncerts;
     auto peaks_deque = make_shared<deque<shared_ptr<const PeakDef>>>(begin(all_peaks), end(all_peaks));
     MakeDrfFit::performResolutionFit( peaks_deque, form_to_fit, fit_order, fwhm_paramatersf, uncerts );
-      
+    assert( fwhm_paramatersf.size() == static_cast<size_t>(fit_order) );
+
     vector<pair<double,shared_ptr<const PeakDef>>> distances;
     for( const auto &p : *peaks_deque )
     {
@@ -1136,10 +1138,47 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
     fill_in_default_start_fwhm_pars( paramaters, 0, highres, fwhm_form, lowest_energy, highest_energy );
     warnings.push_back( "Failed to estimate FWHM from data: " + string(e.what()) + ".  Using default FWHM parameters." );
   }
-  
+
   vector<float> fwhm_pars_float( paramaters.size() );
   for( size_t i = 0; i < paramaters.size(); ++i )
     fwhm_pars_float[i] = static_cast<float>( paramaters[i] );
+
+  bool valid_whole_range = true;
+  float min_expected_sigma = 1.0E16f, max_expected_sigma = -1.0E16f;
+  const double check_delta_energy = 0.01*(highest_energy - lowest_energy);
+  for( double energy = lowest_energy; valid_whole_range && (energy <= highest_energy); energy += check_delta_energy )
+  {
+    try
+    {
+      const float fwhm = DetectorPeakResponse::peakResolutionFWHM( (float)energy, form_to_fit, fwhm_pars_float );
+      const float sigma = fwhm / PhysicalUnits::fwhm_nsigma;
+
+      float min_sigma, max_sigma;
+      expected_peak_width_limits( energy, highres, nullptr, min_sigma, max_sigma );
+      assert( min_sigma > 0 );
+
+      min_expected_sigma = (std::min)( min_expected_sigma, min_sigma );
+      max_expected_sigma = (std::max)( max_expected_sigma, max_sigma );
+
+      valid_whole_range = (!IsInf(sigma) && !IsNan(sigma) && (sigma >= min_sigma) && (sigma <= max_sigma));
+    }catch( ... )
+    {
+      valid_whole_range = false;
+    }
+  }//for( loop over energy range to check if FWHM fit is reasonable )
+
+  if( !valid_whole_range )
+  {
+    cerr << "Fit FWHM is not valid for the energy range wanted - will just use default." << endl;
+    warnings.push_back( "Failed to estimate FWHM from data: not a large enough span of peaks.  Using default FWHM parameters." );
+    fill_in_default_start_fwhm_pars( paramaters, 0, highres, fwhm_form, lowest_energy, highest_energy );
+    assert( paramaters.size() == fwhm_pars_float.size() );
+    fwhm_pars_float.clear();
+    fwhm_pars_float.resize( paramaters.size(), 0.0f );
+    for( size_t i = 0; i < paramaters.size(); ++i )
+      fwhm_pars_float[i] = static_cast<float>( paramaters[i] );
+  }//if( !valid_whole_range )
+
 
   shared_ptr<DetectorPeakResponse> new_drf;
   if( input_drf )
@@ -1213,6 +1252,57 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
       vector<double> poly_coeffs( begin(paramaters), end(paramaters) );
       paramaters = BersteinPolynomial::power_series_to_bernstein( poly_coeffs.data(), poly_coeffs.size(),
                                                                  lowest_energy/1000.0, highest_energy/1000.0 );
+
+      // Note: The Bernstein coefficients may be outside the y-value range of the initial function - the Bernstein
+      //       coefficients being in a given range is sufficient to say that the function will be within that range,
+      //       but it is not necassary for the Bernstein coefficients to only be in the range of the data.
+
+
+      // For polynomial, we will check if the function is concave up - and if so, reduce the order intil it is not
+      switch( fwhm_form )
+      {
+        case RelActCalcAuto::FwhmForm::Gadras:        case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy:
+        case RelActCalcAuto::FwhmForm::NotApplicable: case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:
+        case RelActCalcAuto::FwhmForm::Polynomial_2:  case RelActCalcAuto::FwhmForm::Berstein_2:
+          break;
+
+        case RelActCalcAuto::FwhmForm::Polynomial_3: case RelActCalcAuto::FwhmForm::Polynomial_4:
+        case RelActCalcAuto::FwhmForm::Polynomial_6: case RelActCalcAuto::FwhmForm::Polynomial_5:
+        case RelActCalcAuto::FwhmForm::Berstein_3:   case RelActCalcAuto::FwhmForm::Berstein_4:
+        case RelActCalcAuto::FwhmForm::Berstein_5:   case RelActCalcAuto::FwhmForm::Berstein_6:
+        {
+          bool paramater_outside = false;
+          for( size_t i = 0; !paramater_outside && (i < paramaters.size()); ++i )
+            paramater_outside = ((paramaters[i] < min_expected_sigma) || (paramaters[i] > max_expected_sigma));
+
+          if( paramater_outside )
+          {
+            // We could try repeatedly reducing the number of coefficients by one each time, but for the moment, we'll
+            //  just gi down to 2.
+            try
+            {
+              vector<float> new_result, new_result_uncerts;
+              auto peaks_deque = make_shared<deque<shared_ptr<const PeakDef>>>(begin(all_peaks), end(all_peaks));
+              MakeDrfFit::performResolutionFit( peaks_deque, form_to_fit, 2, new_result, new_result_uncerts );
+              new_result.resize(fit_order , 0.0f);
+              new_result_uncerts.resize(fit_order , 0.0f);
+
+              poly_coeffs.clear();
+              for( const float v : new_result )
+                poly_coeffs.push_back( v );
+
+              paramaters = BersteinPolynomial::power_series_to_bernstein( poly_coeffs.data(), poly_coeffs.size(),
+                                                                         lowest_energy/1000.0, highest_energy/1000.0 );
+            }catch( std::exception &e )
+            {
+              cout << "Failed to try and refit FWHM to keep the Bernstein coefficients in a reasonable range: " << e.what() << endl;
+            }
+          }//if( paramater_outside )
+
+          break;
+        }
+      }//switch( fwhm_form )
+
       paramaters.push_back( lowest_energy );
       paramaters.push_back( highest_energy );
       break;
@@ -3237,9 +3327,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           {
             const bool html_format = false;
             rel_eff_eqn_str = manual_solution.rel_eff_eqn_txt( html_format );
-            
-            parameters[this_rel_eff_start + 0] = 0.0;  //Atomic number
-            parameters[this_rel_eff_start + 1] = 0.0;  //Areal density
 
             size_t manual_index = 0;
             if( rel_eff_curve.phys_model_self_atten )
@@ -3251,7 +3338,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
                 parameters[this_rel_eff_start + 0] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index); //Atomic number; note both manual and auto RelEff use RelActCalc::ns_an_ceres_mult
                 manual_index += 1;
-              }
+              }else
+              {
+                if( !self_atten.material )
+                {
+                  assert( fabs( parameters[this_rel_eff_start + 0] - (self_atten.atomic_number / RelActCalc::ns_an_ceres_mult) ) < 0.01 );  //Atomic number
+                  parameters[this_rel_eff_start + 0] = self_atten.atomic_number / RelActCalc::ns_an_ceres_mult;
+                }
+              }//if( self_atten.fit_atomic_number ) / else
 
               const int ad_index = static_cast<int>( this_rel_eff_start + 1 );
 
@@ -3283,10 +3377,21 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 }
 
                 initial_par_vals_to_restore_after_initial_fit.emplace_back( ad_index, parameters[ad_index] );
-              }//if( rel_eff_curve.phys_model_self_atten->fit_areal_density )
+              }else
+              {
+                const double ad = self_atten.areal_density / PhysicalUnits::g_per_cm2;
+                assert( fabs(parameters[ad_index] - ad) < 0.1 );  //Areal density
+                parameters[ad_index] = ad; //JIC
+              }//if( rel_eff_curve.phys_model_self_atten->fit_areal_density ) / else
 
               manual_index += 1;
-            }//if( options.phys_model_self_atten )
+            }else
+            {
+              assert( parameters[this_rel_eff_start + 0] == 0.0 );  //Atomic number
+              assert( parameters[this_rel_eff_start + 1] == 0.0 );  //Areal density
+              parameters[this_rel_eff_start + 0] = 0.0;  //Atomic number, JIC
+              parameters[this_rel_eff_start + 1] = 0.0;  //Areal density, JIC
+            }//if( options.phys_model_self_atten ) / else
 
             for( size_t i = 0; i < rel_eff_curve.phys_model_external_atten.size(); ++i )
             {
@@ -3303,13 +3408,25 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 continue;
               }
 
+              const int an_par_index = static_cast<int>( this_rel_eff_start + 2 + 2*i + 0 );
+
               if( ext_att->fit_atomic_number )
               {
                 assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
-                parameters[this_rel_eff_start + 2 + 2*i + 0] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
+                parameters[an_par_index] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
                 manual_index += 1;
-              }
-                
+              }else
+              {
+                if( !ext_att->material )
+                {
+                  assert( fabs( parameters[an_par_index] - (ext_att->atomic_number / RelActCalc::ns_an_ceres_mult) ) < 0.01 );  //Atomic number
+                  parameters[an_par_index] = ext_att->atomic_number / RelActCalc::ns_an_ceres_mult; //JIC
+                }else
+                {
+                  assert( parameters[an_par_index] == 0.0 );  //Atomic number
+                }
+              }//if( ext_att->fit_atomic_number ) / else
+
               assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
               const int ad_par_index = static_cast<int>( this_rel_eff_start + 2 + 2*i + 1 );
               double ad_par = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
@@ -3341,6 +3458,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 // For an example problem, it looks like we dont want to go back to starting paramters after initial fit
                 //if( rel_eff_curve.phys_model_self_atten && rel_eff_curve.phys_model_self_atten->fit_areal_density )
                   //initial_par_vals_to_restore_after_initial_fit.emplace_back( ad_par_index, ad_par );
+              }else
+              {
+                const double ad = ext_att->areal_density / PhysicalUnits::g_per_cm2;
+                assert( fabs(parameters[ad_par_index] - ad) < 0.1 );  //Areal density
+                parameters[ad_par_index] = ad; //JIC
               }//if( ext_att->fit_areal_density )
 
               parameters[ad_par_index] = ad_par;
@@ -6064,11 +6186,15 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           assert( upper_en_val > -500.0 );//should NOT have value -999.9
           
           const T val = lower_en_val + mean_frac*(upper_en_val - lower_en_val);
+          check_jet_for_NaN( val );
+          
           peak.set_coefficient( val, ct );
         }else
         {
           assert( x[skew_start + num_skew + i] < -500.0 ); //should have value -999.9, unless being numerically varies
           const T val = x[skew_start + i];
+          check_jet_for_NaN( val );
+          
           peak.set_coefficient( val, ct );
         }
       }
@@ -6079,6 +6205,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         assert( x[skew_start + num_skew + i] < -500.0 ); //should have value -999.9
         const auto ct = PeakDef::CoefficientType(PeakDef::CoefficientType::SkewPar0 + i);
         const T val = x[skew_start + i];
+        check_jet_for_NaN( val );
+        
         peak.set_coefficient( val, ct );
       }
     }//if( m_skew_has_energy_dependance )
@@ -7145,6 +7273,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       if( !atten.material )
       {
         atten.atomic_number = coeffs[rel_eff_start + 0] * RelActCalc::ns_an_ceres_mult;
+
+        if( !rel_eff_curve.phys_model_self_atten->fit_atomic_number )
+        {
+          assert( abs(atten.atomic_number - rel_eff_curve.phys_model_self_atten->atomic_number) < 0.1 );
+          atten.atomic_number = T(1.0*rel_eff_curve.phys_model_self_atten->atomic_number);
+        }
+
         assert( (atten.atomic_number >= 1.0) && (atten.atomic_number <= 98.0) );
         if( (atten.atomic_number < 1.0) || (atten.atomic_number > 98.0) )
           throw std::logic_error( "make_phys_eqn_input: whack self-atten AN" );
@@ -8097,6 +8232,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           const T peak_amplitude = rel_act * static_cast<double>(m_live_time) * rel_eff * yield * br_uncert_adj;
           const T peak_fwhm = fwhm( T(gamma.energy), x );
 
+          check_jet_for_NaN( rel_act );
+          check_jet_for_NaN( rel_eff );
+          check_jet_for_NaN( yield );
+          check_jet_for_NaN( br_uncert_adj );
+          check_jet_for_NaN( peak_amplitude );
+          check_jet_for_NaN( peak_mean );
+          check_jet_for_NaN( peak_fwhm );
 
           RelActCalcAuto::PeakDefImp<T> peak;
           peak.m_mean = peak_mean;
@@ -8122,6 +8264,57 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           }
           
           set_peak_skew( peak, x );
+          
+          // Add in Lorentzian widths for X-rays
+          if( m_options.lorentzian_xrays
+             && (gamma_type == PeakDef::SourceGammaType::XrayGamma)
+             && ((m_options.skew_type == PeakDef::SkewType::NoSkew)
+                 || (m_options.skew_type == PeakDef::SkewType::GaussPlusBortel)) )
+          {
+            double width = -1.0;
+            if( nuc )
+            {
+              assert( transition );
+              if( transition )
+                width = XRayWidths::get_xray_total_width_for_decay( transition, gamma.energy );
+            }else if( el )
+            {
+              width = XRayWidths::get_xray_lorentzian_width( el, gamma.energy, 0.5 );
+            }else
+            {
+              assert( 0 );
+            }
+            
+            if( width >= 0.0 )
+            {
+              // R=0 gives pure Voigt; `tau` is Exp*Gauss exponential decay constant
+              // The skew parameters were already set by set_peak_skew() above
+              T skew_R(0.0), skew_tau(0.0);
+              if( m_options.skew_type == PeakDef::SkewType::GaussPlusBortel )
+              {
+                // GaussPlusBortel uses skew_pars[0]=R, skew_pars[1]=tau
+                skew_R = peak.m_skew_pars[0];
+                skew_tau = peak.m_skew_pars[1];
+              }
+
+              check_jet_for_NaN( skew_R );
+              check_jet_for_NaN( skew_tau );
+              
+              peak.setSkewType( PeakDef::SkewType::VoigtPlusBortel );
+              // VoigtPlusBortel uses: skew_pars[0]=gamma_lor (Lorentzian HWHM),
+              //                       skew_pars[1]=R, skew_pars[2]=tau
+              peak.set_coefficient( T(width), PeakDef::CoefficientType::SkewPar0 );
+              peak.set_coefficient( skew_R, PeakDef::CoefficientType::SkewPar1 );
+              peak.set_coefficient( skew_tau, PeakDef::CoefficientType::SkewPar2 );
+            }else
+            {
+#if( PERFORM_DEVELOPER_CHECKS )
+              cerr << "Failed to get Lorentzian width for " << gamma.energy << " keV." << endl;//temporary for debug
+#endif
+            }
+          }//if( make x-rays Lorentzian )
+          
+          
           peak.m_rel_eff_index = rel_eff_index;
 
           check_peak_reasonable( peak, gamma.energy );
@@ -8176,6 +8369,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       assert( peak.release_fwhm || (abs(x[fwhm_index] + 1.0) < 1.0E-5) );
       
       num_free_peak_pars += peak.release_fwhm;
+      
+      check_jet_for_NaN( peak_mean );
+      check_jet_for_NaN( peak_fwhm );
+      check_jet_for_NaN( peak_amp );
       
       //cout << "peaks_for_energy_range_imp: free peak at " << peak.energy << " has a FWHM=" << peak_fwhm << " and AMP=" << peak_amp << endl;
       RelActCalcAuto::PeakDefImp<T> imp_peak;
@@ -8501,11 +8698,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         if( nuc_info && !nuc_info->peak_color_css.empty() )
           peak.setLineColor( Wt::WColor( Wt::WString::fromUTF8(nuc_info->peak_color_css) ) );
       }//if( comp_peak.m_rel_eff_index < m_nuclides.size() )
-      
-      // Put in a way to label the peak with the relative efficiency index, so we can tell which
-      //  relative efficiency curve the peak came from, if there are multiple.
-      if( m_nuclides.size() > 1 )
-        peak.setUserLabel( "RelEff " + std::to_string(comp_peak.m_rel_eff_index) );
 
       answer.peaks.push_back( peak );
     }//for( size_t i = 0; i < computed_peaks.peaks.size(); ++i )
@@ -8652,7 +8844,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         assert( !isnan(this_residual[index]) && !isinf(this_residual[index]) );
       }
     }//for( loop over m_energy_ranges )
-    
 
     for( size_t rel_eff_index = 0; rel_eff_index < m_options.rel_eff_curves.size(); ++rel_eff_index )
     {
@@ -8660,9 +8851,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       if( rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
       {
-        assert( rel_eff_index
-               || ((residual_index + m_options.rel_eff_curves.size() + m_peak_ranges_with_uncert.size()) == number_residuals()) );
-
+#ifndef NDEBUG
+        const size_t nresiduals = number_residuals();
+        const size_t calced_nresiduals = residual_index + m_peak_ranges_with_uncert.size() + 1;
+        assert( (rel_eff_index != (m_options.rel_eff_curves.size() - 1)) || (calced_nresiduals == nresiduals) );
+#endif
         // Note: see `USE_RESIDUAL_TO_BREAK_DEGENERACY` in the manual solution for a slight amount more info
         //
         // Now make sure the relative efficiency curve is anchored to 1.0 (this removes the degeneracy
@@ -8696,7 +8889,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         ++residual_index;
       }//if( m_options.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
     }//for( size_t rel_eff_index = 0; rel_eff_index < m_options.rel_eff_curves.size(); ++rel_eff_index )
-    
+
     if( !m_peak_ranges_with_uncert.empty() )
     {
       assert( m_options.additional_br_uncert > 0.0 );
@@ -9988,6 +10181,14 @@ void FloatingPeak::fromXml( const ::rapidxml::xml_node<char> *parent )
 
 void Options::check_same_hoerl_and_external_shielding_specifications() const
 {
+  // Validate lorentzian_xrays compatibility with skew_type
+  if( lorentzian_xrays
+     && (skew_type != PeakDef::SkewType::NoSkew)
+     && (skew_type != PeakDef::SkewType::GaussPlusBortel) )
+  {
+    throw logic_error( "Lorentzian x-rays can only be used with NoSkew or GaussPlusBortel skew types." );
+  }
+
   if( !same_hoerl_for_all_rel_eff_curves && !same_external_shielding_for_all_rel_eff_curves )
     return;
 
@@ -10177,7 +10378,8 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
   append_string_node( base_node, "Title", spectrum_title );
   
   append_string_node( base_node, "SkewType", PeakDef::to_string(skew_type) );
-  
+  append_bool_node( base_node, "LorentzianXrays", lorentzian_xrays );
+
   append_float_node( base_node, "AddUncert", additional_br_uncert );
   
   
@@ -10251,7 +10453,17 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *mat
     const string skew_str = SpecUtils::xml_value_str( skew_node );
     if( !skew_str.empty() )
       skew_type = PeakDef::skew_from_string( skew_str );
-    
+
+    // lorentzian_xrays added 20260121; optional, defaults to false
+    lorentzian_xrays = false;
+    try
+    {
+      lorentzian_xrays = get_bool_node_value( parent, "LorentzianXrays" );
+    }catch( ... )
+    {
+      lorentzian_xrays = false;
+    }
+
     // Additional uncertainty added 202250125, so we'll allow it to be missing.
     try
     {
@@ -11243,8 +11455,13 @@ Options::Options()
   fwhm_estimation_method( FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum ),
   spectrum_title( "" ),
   skew_type( PeakDef::SkewType::NoSkew ),
+  lorentzian_xrays( false ),
   additional_br_uncert( 0.0 ),
-  rel_eff_curves{}
+  rel_eff_curves{},
+  rois{},
+  floating_peaks{},
+  same_hoerl_for_all_rel_eff_curves( false ),
+  same_external_shielding_for_all_rel_eff_curves( false )
 {
 }
   
@@ -12365,10 +12582,32 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
   "<th scope=\"col\">Cont. Range</th>"
   "</tr></thead>\n";
   results_html << "  <tbody>\n";
-    
- 
-  for( const PeakDef &info : m_fit_peaks )
+
+
+  vector<pair<PeakDef,size_t>> peak_rel_eff;
+  for( size_t rel_eff_index = 0; rel_eff_index < m_fit_peaks_for_each_curve.size(); ++rel_eff_index )
   {
+    for( const PeakDef &p : m_fit_peaks_for_each_curve[rel_eff_index] )
+      peak_rel_eff.emplace_back( p, rel_eff_index );
+  }
+
+  // Now grab the free-floating peaks; we will just assign them releff index 0 for the moment
+  for( const PeakDef &peak : m_fit_peaks )
+  {
+    if( !peak.parentNuclide() && !peak.xrayElement() && !peak.reaction() )
+      peak_rel_eff.emplace_back( peak, size_t(0) );
+  }
+
+  std::sort( begin(peak_rel_eff), end(peak_rel_eff), []( const pair<PeakDef,size_t> &lhs, const pair<PeakDef,size_t> &rhs ) -> bool {
+    return lhs.first.mean() < rhs.first.mean();
+  } );
+
+
+  for( const pair<PeakDef,size_t> &peak_index : peak_rel_eff )
+  {
+    const PeakDef &info = peak_index.first;
+    const int rel_eff_index = static_cast<int>(peak_index.second);
+
     const double energy = info.mean();
     SrcVariant peak_src;
     const SandiaDecay::Nuclide * const nuc = info.parentNuclide();
@@ -12426,28 +12665,9 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
                  info.continuum()->upperEnergy()
                  );
       results_html << buffer;
-      continue; // Move to next peak
-
 
       continue; // Skip free-floating peaks
-    }
-
-    int rel_eff_index = 0;
-    if( have_multiple_rel_eff )
-    {
-      string label = info.userLabel();
-      const bool is_rel_eff_label = SpecUtils::istarts_with( label, "RelEff " );
-      assert( is_rel_eff_label );
-      if( is_rel_eff_label )
-      {
-        label = label.substr(7);
-        const bool ok = SpecUtils::parse_int( label.c_str(), label.size(), rel_eff_index );
-        assert( ok );
-        assert( rel_eff_index >= 0 && rel_eff_index < static_cast<int>(m_rel_eff_forms.size()) );
-        if( rel_eff_index < 0 || rel_eff_index >= static_cast<int>(m_rel_eff_forms.size()) )
-          rel_eff_index = 0;
-      }
-    }//if( have_multiple_rel_eff )
+    }//if( is_null(peak_src) )
 
     assert( (rel_eff_index >= 0) && (rel_eff_index < static_cast<int>(m_rel_eff_forms.size())) );
     const RelEffCurveInput &rel_eff = m_options.rel_eff_curves[rel_eff_index];
@@ -15029,7 +15249,10 @@ void Options::equalEnough( const Options &lhs, const Options &rhs )
   
   if( lhs.skew_type != rhs.skew_type )
     throw std::runtime_error( "Skew type in lhs and rhs are not the same" );
-  
+
+  if( lhs.lorentzian_xrays != rhs.lorentzian_xrays )
+    throw std::runtime_error( "Lorentzian xrays in lhs and rhs are not the same" );
+
   if( fabs(lhs.additional_br_uncert - rhs.additional_br_uncert) > 1.0e-5
     && ((lhs.additional_br_uncert > 0.0) || (rhs.additional_br_uncert > 0.0)) )
     throw std::runtime_error( "Additional BR uncertanty in lhs and rhs are not the same" );
