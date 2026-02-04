@@ -35,6 +35,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "InterSpec/PeakDef.h"
@@ -3109,7 +3110,9 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 {
   PeakFitResult result;
 
-  const bool fit_norm_peaks = user_options.testFlag(FitSrcPeaksOptions::FitNormBkgrndPeaks);
+  const bool fit_norm_peaks = user_options.testFlag(FitSrcPeaksOptions::FitNormBkgrndPeaks)
+                              || user_options.testFlag(FitSrcPeaksOptions::FitNormBkgrndPeaksDontUse);
+  const bool norm_peaks_dont_use = user_options.testFlag(FitSrcPeaksOptions::FitNormBkgrndPeaksDontUse);
   const bool apply_energy_cal_between = config.fit_energy_cal
                                         && !user_options.testFlag(FitSrcPeaksOptions::DoNotVaryEnergyCal)
                                         && !user_options.testFlag(FitSrcPeaksOptions::DoNotRefineEnergyCal);
@@ -3228,8 +3231,24 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 
       for( const tuple<const SandiaDecay::Nuclide *,double, double> &info : nuc_activity )
       {
+        const SandiaDecay::Nuclide * const norm_nuc = get<0>(info);
+
+        // If this NORM nuclide is already one of the input sources being fit, skip it
+        // here so we don't duplicate it in the norm fit.
+        bool already_in_sources = false;
+        for( const RelActCalcAuto::NucInputInfo &src : sources )
+        {
+          if( RelActCalcAuto::nuclide( src.source ) == norm_nuc )
+          {
+            already_in_sources = true;
+            break;
+          }
+        }//for( sources )
+        if( already_in_sources )
+          continue;
+
         RelActCalcAuto::NucInputInfo norm_src;
-        norm_src.source  = get<0>(info);
+        norm_src.source  = norm_nuc;
         norm_src.age     = get<2>(info);
         norm_src.fit_age = false;
         //norm_src.starting_rel_act = ;
@@ -3726,6 +3745,26 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     result.status = solution.m_status;
     result.error_message = solution.m_error_message;
 
+    // Returns true if peak_src is one of the input sources being fit.
+    auto is_input_source = [&sources]( const PeakDef &p ) -> bool {
+      RelActCalcAuto::SrcVariant psrc;
+      if( p.parentNuclide() )
+        psrc = p.parentNuclide();
+      if( p.xrayElement() )
+        psrc = p.xrayElement();
+      if( p.reaction() )
+        psrc = p.reaction();
+      
+      if( RelActCalcAuto::is_null( psrc ) )
+        return false;
+      for( const RelActCalcAuto::NucInputInfo &src : sources )
+      {
+        if( src.source == psrc )
+          return true;
+      }
+      return false;
+    };//is_input_source lambda
+
     // Filter peaks - only include those NOT in insignificant ROIs
     result.fit_peaks.clear();
     if( should_debug_print() && !insignificant_roi_ranges.empty() )
@@ -3734,6 +3773,33 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     for( const PeakDef &peak : solution.m_peaks_without_back_sub )
     {
       const double mean = peak.mean();
+
+      // When FitNormBkgrndPeaksDontUse is set, NORM peaks (curve index >= 1)
+      // were included in the fit to constrain FWHM/energy cal but must be
+      // excluded from the returned peaks.  Keep only peaks whose source is
+      // one of the input sources; free peaks (no source) are also dropped.
+      if( norm_peaks_dont_use && !is_input_source( peak ) )
+      {
+#if( PERFORM_DEVELOPER_CHECKS )
+        // Sanity: filtered peak should either have no source assigned (free peak)
+        // or its parentNuclide should be one of the known NORM nuclides.
+        if( peak.hasSourceGammaAssigned() )
+        {
+          const SandiaDecay::Nuclide * const pnuc = peak.parentNuclide();
+          const bool is_known_norm = pnuc
+            && ( (pnuc->symbol == "U238") || (pnuc->symbol == "Ra226")
+              || (pnuc->symbol == "U235") || (pnuc->symbol == "Th232")
+              || (pnuc->symbol == "K40") );
+          if( !is_known_norm )
+            std::cerr << "WARNING: FitNormBkgrndPeaksDontUse filtered peak at " << mean
+                      << " keV with unexpected source: " << peak.sourceName() << std::endl;
+        }
+#endif
+        if( should_debug_print() )
+          std::cout << "  Filtered (NORM background peak): " << mean << " keV" << std::endl;
+        continue;
+      }
+
       const double peak_roi_lower = peak.continuum()->lowerEnergy();
       const double peak_roi_upper = peak.continuum()->upperEnergy();
       bool in_insignificant_roi = false;
@@ -3912,14 +3978,13 @@ PeakFitResult fit_peaks_for_nuclides(
   const bool isHPGe )
 {
   /* These functions needs the following options addresses/implemented from FitSrcPeaksOptions:
-   -[ ] DoNotReplaceExistingPeaksForSource = 0x01,
-   -[ ] ExistingPeaksAsFreePeak = 0x02,
-   -[ ] DoNotVaryEnergyCal = 0x04,
-   -[x] DoNotRefineEnergyCal = 0x08,
-   -[x] FitNormBkgrndPeaks = 0x10,
-   -[ ] FitNormBkgrndPeaksDontUse = 0x20
-   
-   Also need to take care of case where one of the sources is a NORM nuclide, and we're being asked to fit norm
+   - [ ] DoNotUseExistingRois = 0x01,
+   - [ ] ExistingPeaksAsFreePeak = 0x02,
+   - [x] DoNotVaryEnergyCal = 0x04,
+   - [x] DoNotRefineEnergyCal = 0x08,
+   - [x] FitNormBkgrndPeaks = 0x10,
+   - [x] FitNormBkgrndPeaksDontUse = 0x20
+   - [x] Also need to take care of case where one of the sources is a NORM nuclide, and we're being asked to fit norm
    */
   
   

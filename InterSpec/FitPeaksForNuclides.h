@@ -267,10 +267,10 @@ struct PeakFitForNuclideConfig
  */
 enum FitSrcPeaksOptions
 {
-  /** If the foreground currently have any peaks assigned to the source you're fitting, by default, they will be replaced,
-   with this option, those peaks will be excluded from the process
+  /** With this option, any existing ROI will not be used, and any gammas from the current source(s) that fall within
+   the ROI will not be consisdered.
    */
-  DoNotReplaceExistingPeaksForSource = 0x01,
+  DoNotUseExistingRois = 0x01,
   
   /** Notmally ROIs of source peak will try to be limited in energy range to mitigate effects of other nearby peaks; with
    this option, the nearby peaks that will share the ROI will be left in as freely-floating peaks, and included in the results.
