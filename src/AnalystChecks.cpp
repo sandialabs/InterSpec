@@ -417,14 +417,19 @@ namespace AnalystChecks
       throw runtime_error( "Could not identify newly fit peak." );
     
     // get fit peak
-    string source = options.source.has_value() ? options.source.value() : ""s;
-    if( SpecUtils::icontains(source, "unknown") || SpecUtils::istarts_with(source, "unk") )
-      source = "";
-    
-    if( !source.empty() )
+    const string source = options.source.has_value() ? options.source.value() : ""s;
+
+    if( source.empty() )
     {
-      const string source = options.source.value();
-      
+      // Nothing to do here
+    }else if( SpecUtils::icontains(source, "unknown") || SpecUtils::istarts_with(source, "unk") )
+    {
+      // `ToolRegistry::executeGetUnidentifiedDetectedPeaks(...)` will treat the peak as unknown if user label is set to "UNKNOWN"
+      shared_ptr<PeakDef> new_fit_peak = make_shared<PeakDef>( *fit_peak );
+      new_fit_peak->setUserLabel( "UNKNOWN" );
+      fit_peak = new_fit_peak;
+    }else
+    {
       shared_ptr<PeakDef> new_fit_peak = make_shared<PeakDef>( *fit_peak );
       
       PeakModel::SetGammaSource res = PeakModel::setNuclideXrayReaction( *new_fit_peak, source, 4.0 );

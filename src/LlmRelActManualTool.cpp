@@ -294,8 +294,10 @@ nlohmann::json executePeakBasedRelativeEfficiency(
   
   shared_ptr<const deque<shared_ptr<const PeakDef>>> all_peaks = peakModel->peaks();
   if( !all_peaks || all_peaks->empty() )
-    throw runtime_error( "No peaks are fit in the spectrum" );
-  
+    throw runtime_error( "No peaks are fit in the spectrum"
+                        " - please add analysis peaks (i.e., using `add_analysis_peak` or `add_analysis_peaks_for_source`) "
+                        "for the sources you want to analyze, before calling this tool." );
+
   // Get background peaks if needed
   deque<shared_ptr<const PeakDef>> background_peaks;
   shared_ptr<const SpecUtils::Measurement> background;
