@@ -592,7 +592,6 @@ protected:
   Wt::Signal<> m_legendEnabledSignal;
   Wt::Signal<> m_legendDisabledSignal;
   Wt::Signal<double/*xlow*/,double/*xhigh*/,double/*old low*/,double/*old high*/,bool /*user interaction*/> m_xRangeChanged;
-  Wt::Signal<double,double> m_controlKeyDragg;
   Wt::Signal<double,double> m_shiftKeyDragg;
   Wt::Signal<double,double> m_shiftAltKeyDragg;
   Wt::Signal<double,double> m_rightMouseDragg;

@@ -951,7 +951,7 @@ namespace AnalystChecks
           solve_options.rois.push_back(base_roi);
           
           // Set other options
-          solve_options.fit_energy_cal = true;
+          solve_options.energy_cal_type = RelActCalcAuto::EnergyCalFitType::NonLinearFit;
           solve_options.fwhm_form = RelActCalcAuto::FwhmForm::Gadras;
           solve_options.fwhm_estimation_method = RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum;
           solve_options.skew_type = skew_type;
@@ -985,7 +985,7 @@ namespace AnalystChecks
           solve_options.rel_eff_curves.push_back(rel_eff_curve);
           solve_options.rois.push_back(base_roi);
           
-          solve_options.fit_energy_cal = true;
+          solve_options.energy_cal_type = RelActCalcAuto::EnergyCalFitType::NonLinearFit;
           solve_options.fwhm_form = RelActCalcAuto::FwhmForm::Gadras; //RelActCalcAuto::FwhmForm::Polynomial_3
           solve_options.fwhm_estimation_method = RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum;
           solve_options.skew_type = skew_type;
@@ -1019,7 +1019,7 @@ namespace AnalystChecks
           solve_options.rel_eff_curves.push_back(rel_eff_curve);
           solve_options.rois.push_back(base_roi);
           
-          solve_options.fit_energy_cal = true;
+          solve_options.energy_cal_type = RelActCalcAuto::EnergyCalFitType::NonLinearFit;
           solve_options.fwhm_form = RelActCalcAuto::FwhmForm::Gadras;
           solve_options.fwhm_estimation_method = RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum;
           solve_options.skew_type = skew_type;

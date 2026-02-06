@@ -1142,7 +1142,7 @@ Further investigation of top returned candidates is required to make sure they m
   </Tool>
 
   <Tool name="get_isotopics_config">
-    <Description>Retrieve the current isotopics analysis configuration. Returns detailed information about what is currently configured, including: which energy regions (ROIs) are defined for analysis, which nuclides will be fit in each relative efficiency curve, whether energy calibration will be fit, and the detector resolution model (FWHM form). This allows the agent to verify the configuration is appropriate before running an analysis. Returns null if no configuration is loaded (use load_isotopics_preset first in that case).</Description>
+    <Description>Retrieve the current isotopics analysis configuration. Returns detailed information about what is currently configured, including: which energy regions (ROIs) are defined for analysis, which nuclides will be fit in each relative efficiency curve, the energy calibration fit mode, and the detector resolution model (FWHM form). This allows the agent to verify the configuration is appropriate before running an analysis. Returns null if no configuration is loaded (use load_isotopics_preset first in that case).</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {}
@@ -1165,7 +1165,7 @@ Further investigation of top returned candidates is required to make sure they m
 
   <Tool name="load_isotopics_preset">
     <Description>Load an isotopics analysis preset configuration from a file into the applications internal state. 
-The preset file contains the complete analysis configuration including which nuclides to fit, which energy ROIs to use, detector resolution settings, whether to fit energy calibration, and other options. 
+The preset file contains the complete analysis configuration including which nuclides to fit, which energy ROIs to use, detector resolution settings, the energy calibration fit mode, and other options. 
 In addition to loading the configuration to the internal application state, this tool call returns a detailed description of the current state that includes ROIs used, nuclide list, and analysis options.
 Use list_isotopics_presets to discover the preset configurations available.
 </Description>
@@ -1436,9 +1436,10 @@ Note: background_subtract requires a background spectrum to be loaded.</Descript
     <ParametersSchema>{
       "type": "object",
       "properties": {
-        "fit_energy_cal": {
-          "type": "boolean",
-          "description": "Optional. Whether to fit energy calibration during analysis."
+        "energy_cal_type": {
+          "type": "string",
+          "description": "Optional. Energy calibration fitting mode during analysis. NonLinearFit is default and recommended.",
+          "enum": ["NoFit", "LinearFit", "NonLinearFit"]
         },
         "fwhm_form": {
           "type": "string",

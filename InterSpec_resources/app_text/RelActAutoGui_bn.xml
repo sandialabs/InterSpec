@@ -15,7 +15,10 @@
   
   <message id="raag-spectrum-peak-options">স্পেকট্রাম and পিক Options</message>
   <message id="raag-rel-eff-curve-options">Relative Efficiency Curve Options</message>
-  <message id="raag-fit-energy-cal">Fit শক্তি Cal.</message>
+  <message id="raag-energy-cal-label">শক্তি ক্যালিব্রেশন</message>
+  <message id="raag-energy-cal-nofit">কোনও নয়</message>
+  <message id="raag-energy-cal-linear">রৈখিক</message>
+  <message id="raag-energy-cal-nonlinear">অ-রৈখিক</message>
   <message id="raag-back-sub">Back. Sub.</message>
   <message id="raag-fwhm-est">FWHM Est.</message>
   <message id="raag-fwhm-form">FWHM Form</message>
@@ -57,6 +60,13 @@
   <message id="raag-combine-roi-right">Combine with ROI to right</message>
   
   
+  <message id="raag-tt-energy-cal-type">শক্তি ক্যালিব্রেশনে সমন্বয় ফিট করা হবে কি না তা নির্দিষ্ট করে।
+    <ul>
+      <li><b>কোনও নয়</b>: বিদ্যমান শক্তি ক্যালিব্রেশন কোনো পরিবর্তন ছাড়া ব্যবহার করুন।</li>
+      <li><b>রৈখিক</b>: শক্তি ক্যালিব্রেশনে রৈখিক সমন্বয় (অফসেট ও গেইন) ফিট করুন।</li>
+      <li><b>অ-রৈখিক</b>: রৈখিক পদগুলোর পাশাপাশি প্রতিটি ROI-এর জন্য বিচ্যুতি জোড়া (কিউবিক স্প্লাইন) ব্যবহার করে অ-রৈখিক সমন্বয় ফিট করুন। প্রতিটি ROI-তে সনাক্ত হওয়া সবচেয়ে বড় শিখরকে বিচ্যুতি জোড়ার শক্তি হিসেবে ব্যবহার করে; যদি কোনোটি সনাক্ত না হয়, তবে ROI-এর মধ্যবিন্দু ব্যবহার করে; বড় ROI-তে একাধিক বিচ্যুতি জোড়া দেওয়া হতে পারে।</li>
+    </ul>
+  </message>
   <message id="raag-tt-fwhm-form">The equation type used to model peak FWHM as a function of energy.</message>
   <message id="raag-tt-skew-type">The type of skew to apply to the peaks; skew parameters will be fit.</message>
   <message id="raag-tt-u-pu-data-source">The nuclear data source for gamma branching ratios of uranium and plutonium.</message>
@@ -113,6 +123,8 @@
   <message id="raag-increase-gain-additional"> and increase gain by {1}</message>
   <message id="raag-increase-quad-first"> increase quadratic by {1}</message>
   <message id="raag-increase-quad-additional"> and increase quadratic by {1}</message>
+  <message id="raag-dev-pairs-first"> বিচ্যুতি জোড়া {1} যোগ করুন</message>
+  <message id="raag-dev-pairs-additional"> এবং বিচ্যুতি জোড়া {1} যোগ করুন</message>
 
   
   <message id="raag-apply-energy-cal-msg">This will{1} for the primary foreground{2}{3}.<br />Would you like to do this?</message>

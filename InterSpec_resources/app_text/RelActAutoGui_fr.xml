@@ -15,7 +15,10 @@
   <!-- General options -->
   <message id="raag-spectrum-peak-options">Options de spectre et de pics</message>
   <message id="raag-rel-eff-curve-options">Options de courbe d'efficacité relative</message>
-  <message id="raag-fit-energy-cal">Ajust. énergie cal.</message>
+  <message id="raag-energy-cal-label">Cal. énergie</message>
+  <message id="raag-energy-cal-nofit">Aucune</message>
+  <message id="raag-energy-cal-linear">Linéaire</message>
+  <message id="raag-energy-cal-nonlinear">Non linéaire</message>
   <message id="raag-back-sub">Soustract. fond</message>
   <message id="raag-fwhm-est">Estim. FWHM</message>
   <message id="raag-fwhm-form">Forme FWHM</message>
@@ -57,6 +60,13 @@
   <message id="raag-combine-roi-right">Combiner avec ROI droit</message>
   
   <!-- Tooltips -->
+  <message id="raag-tt-energy-cal-type">Indique s'il faut ajuster des corrections à l'étalonnage énergétique.
+    <ul>
+      <li><b>Aucune</b>: Utiliser l'étalonnage énergétique existant sans modification.</li>
+      <li><b>Linéaire</b>: Ajuster une correction linéaire (décalage et gain) de l'étalonnage énergétique.</li>
+      <li><b>Non linéaire</b>: Ajuster des corrections non linéaires à l'aide de paires d'écart (spline cubique) pour chaque ROI, en plus des termes linéaires. Utilise le plus grand pic détecté dans chaque ROI comme énergie de la paire d'écart, ou, si aucun n'est détecté, le milieu de la ROI ; les grandes ROI peuvent recevoir plusieurs paires d'écart.</li>
+    </ul>
+  </message>
   <message id="raag-tt-fwhm-form">Le type d'équation pour modéliser la FWHM des pics en fonction de l'énergie.</message>
   <message id="raag-tt-skew-type">Le type d'asymétrie à appliquer aux pics ; les paramètres d'asymétrie seront ajustés.</message>
   <message id="raag-tt-u-pu-data-source">La source de données nucléaires pour les rapports de branchement gamma de l'uranium et du plutonium.</message>
@@ -113,6 +123,8 @@
   <message id="raag-increase-gain-additional"> et augmenter le gain de {1}</message>
   <message id="raag-increase-quad-first"> augmenter le quadratique de {1}</message>
   <message id="raag-increase-quad-additional"> et augmenter le quadratique de {1}</message>
+  <message id="raag-dev-pairs-first"> ajouter des paires d'écart {1}</message>
+  <message id="raag-dev-pairs-additional"> et ajouter des paires d'écart {1}</message>
 
   <!-- Energy calibration application messages -->
   <message id="raag-apply-energy-cal-msg">Ceci{1} pour le premier plan principal{2}{3}.<br />Voulez-vous faire cela ?</message>

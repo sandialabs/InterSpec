@@ -91,7 +91,7 @@ nlohmann::json stateToJsonSummary( const RelActCalcAuto::RelActAutoGuiState &sta
   result["rel_eff_curve_count"] = options.rel_eff_curves.size();
 
   // Basic options
-  result["fit_energy_cal"] = options.fit_energy_cal;
+  result["energy_cal_type"] = RelActCalcAuto::to_str(options.energy_cal_type);
   result["fwhm_form"] = RelActCalcAuto::to_str(options.fwhm_form);
   result["background_subtract"] = state.background_subtract;
 
@@ -246,7 +246,7 @@ nlohmann::json stateToJsonDetailed( const RelActCalcAuto::RelActAutoGuiState &st
   }
 
   // All options
-  result["fit_energy_cal"] = opts.fit_energy_cal;
+  result["energy_cal_type"] = RelActCalcAuto::to_str(opts.energy_cal_type);
   result["fwhm_form"] = RelActCalcAuto::to_str(opts.fwhm_form);
   result["fwhm_estimation_method"] = RelActCalcAuto::to_str(opts.fwhm_estimation_method);
   result["skew_type"] = PeakDef::to_string(opts.skew_type);
@@ -1633,11 +1633,11 @@ nlohmann::json executeModifyIsotopicsOptions(
   json result;
   json changes = json::array();
 
-  // Handle fit_energy_cal
-  if( params.contains( "fit_energy_cal" ) )
+  if( params.contains( "energy_cal_type" ) )
   {
-    state.options.fit_energy_cal = params.at( "fit_energy_cal" ).get<bool>();
-    changes.push_back( string( "fit_energy_cal=" ) + (state.options.fit_energy_cal ? "true" : "false") );
+    const string type_str = params.at( "energy_cal_type" ).get<string>();
+    state.options.energy_cal_type = RelActCalcAuto::energy_cal_fit_type_from_str( type_str.c_str() );
+    changes.push_back( string( "energy_cal_type=" ) + RelActCalcAuto::to_str(state.options.energy_cal_type) );
   }
 
   // Handle fwhm_form - map Polynomial_X to Berstein_X internally
@@ -1980,7 +1980,7 @@ nlohmann::json executeGetIsotopicsConfigSchema(
     "1) 'rel_eff_curve' - relative efficiency curve settings (equation type, shielding for physical model), "
     "2) 'nuclides' - list of nuclides/sources to analyze with ages and constraints, "
     "3) 'rois' - energy regions of interest to fit, "
-    "4) Global options (fwhm_form, skew_type, fit_energy_cal, etc.). "
+    "4) Global options (fwhm_form, skew_type, energy_cal_type, etc.). "
     "Use get_isotopics_config to see the current configuration structure.";
 
   // ============================================================================
@@ -2066,7 +2066,7 @@ nlohmann::json executeGetIsotopicsConfigSchema(
   result["global_options"]["description"] = "Settings that apply to the entire analysis.";
 
   result["global_options"]["fields"] = json::object();
-  result["global_options"]["fields"]["fit_energy_cal"] = "If true, energy calibration is refined during fitting.";
+  result["global_options"]["fields"]["energy_cal_type"] = "Energy calibration fitting mode during analysis (NoFit, LinearFit, NonLinearFit). NonLinearFit is default and recommended.";
   result["global_options"]["fields"]["fwhm_form"] = "Functional form for peak FWHM vs energy.";
   result["global_options"]["fields"]["fwhm_estimation_method"] = "How initial FWHM parameters are determined.";
   result["global_options"]["fields"]["skew_type"] = "Peak shape skew model (asymmetry).";

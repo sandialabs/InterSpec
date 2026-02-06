@@ -685,10 +685,36 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   WGroupBox *generalOptionsDiv = new WGroupBox( WString::tr("raag-spectrum-peak-options"), this );
   generalOptionsDiv->addStyleClass( "RelActAutoGeneralOptionsRow" );
 
-  m_fit_energy_cal = new WCheckBox( WString::tr("raag-fit-energy-cal"), generalOptionsDiv );
-  m_fit_energy_cal->checked().connect( this, &RelActAutoGui::handleFitEnergyCalChanged );
-  m_fit_energy_cal->unChecked().connect( this, &RelActAutoGui::handleFitEnergyCalChanged );
-  
+  WContainerWidget *energyCalDiv = new WContainerWidget( generalOptionsDiv );
+  energyCalDiv->addStyleClass( "RelActAutoEnergyCalDiv" );
+  label = new WLabel( WString::tr("raag-energy-cal-label"), energyCalDiv );
+  m_fit_energy_cal = new WComboBox( energyCalDiv );
+  label->setBuddy( m_fit_energy_cal );
+
+  for( int i = 0; i <= static_cast<int>(RelActCalcAuto::EnergyCalFitType::NonLinearFit); ++i )
+  {
+    WString name;
+    switch( RelActCalcAuto::EnergyCalFitType(i) )
+    {
+      case RelActCalcAuto::EnergyCalFitType::NoFit:
+        name = WString::tr( "raag-energy-cal-nofit" );
+        break;
+      case RelActCalcAuto::EnergyCalFitType::LinearFit:
+        name = WString::tr( "raag-energy-cal-linear" );
+        break;
+      case RelActCalcAuto::EnergyCalFitType::NonLinearFit:
+        name = WString::tr( "raag-energy-cal-nonlinear" );
+        break;
+    }//switch( RelActCalcAuto::EnergyCalFitType(i) )
+
+    m_fit_energy_cal->addItem( name );
+  }//for( loop over EnergyCalFitType )
+
+  m_fit_energy_cal->activated().connect( this, &RelActAutoGui::handleFitEnergyCalChanged );
+
+  WString tooltip = WString::tr("raag-tt-energy-cal-type");
+  HelpSystem::attachToolTipOn( {label, m_fit_energy_cal}, tooltip, showToolTips );
+
   m_background_subtract = new WCheckBox( WString::tr("raag-back-sub"), generalOptionsDiv );
   m_background_subtract->checked().connect( this, &RelActAutoGui::handleBackgroundSubtractChanged );
   m_background_subtract->unChecked().connect( this, &RelActAutoGui::handleBackgroundSubtractChanged );
@@ -766,8 +792,8 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
     m_fwhm_eqn_form->addItem( name );
     fwhm_eqn_form_model->setData( fwhm_eqn_form_model->index(num_rows, 0), fwhm_form, Wt::UserRole );
   }//for( loop over RelActCalcAuto::FwhmForm )
-  
-  WString tooltip = WString::tr("raag-tt-fwhm-form");
+
+  tooltip = WString::tr("raag-tt-fwhm-form");
   HelpSystem::attachToolTipOn( fwhmFormDiv, tooltip, showToolTips );
     
   // TODO: need to set m_fwhm_eqn_form based on energy ranges selected
@@ -1179,7 +1205,7 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
   RelActCalcAuto::Options options;
   
   
-  options.fit_energy_cal = m_fit_energy_cal->isChecked();
+  options.energy_cal_type = RelActCalcAuto::EnergyCalFitType( std::max( 0, m_fit_energy_cal->currentIndex() ) );
   options.fwhm_form = getFwhmFormFromCombo();
   options.fwhm_estimation_method = RelActCalcAuto::FwhmEstimationMethod( std::max(0,m_fwhm_estimation_method->currentIndex()) );
   if( options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency )
@@ -1939,8 +1965,8 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   if( options.rel_eff_curves.empty() )
     throw runtime_error( "RelActAutoGui::setCalcOptionsGui: for dev, must have at least one rel-eff curve." );
   
-  m_fit_energy_cal->setChecked( options.fit_energy_cal );
-  
+  m_fit_energy_cal->setCurrentIndex( static_cast<int>(options.energy_cal_type) );
+
   m_fwhm_estimation_method->setCurrentIndex( static_cast<int>(options.fwhm_estimation_method) );
   const bool fixed_to_det_eff = (options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency);
   
@@ -3837,7 +3863,8 @@ void RelActAutoGui::startApplyFitEnergyCalToSpecFile()
 {
   const bool fit_offset = (m_solution && m_solution->m_fit_energy_cal[0]);
   const bool fit_gain = (m_solution && m_solution->m_fit_energy_cal[1]);
-  if( !fit_offset && !fit_gain )
+  const bool has_dev_pairs = (m_solution && !m_solution->m_deviation_pair_offsets.empty());
+  if( !fit_offset && !fit_gain && !has_dev_pairs )
     return;
   
   // Build the adjustments part of the message
@@ -3868,7 +3895,35 @@ void RelActAutoGui::startApplyFitEnergyCalToSpecFile()
                    .arg(formatNumber(quad, 5));
     printed_some = true;
   }//if( fit_gain )
-  
+
+  if( m_solution && !m_solution->m_deviation_pair_offsets.empty() )
+  {
+    const size_t num_dev_pairs = m_solution->m_deviation_pair_offsets.size();
+    const size_t num_to_print = std::min( num_dev_pairs, size_t(4) );
+
+    WString dev_pair_str = "[";
+    for( size_t i = 0; i < num_to_print; ++i )
+    {
+      const double energy = m_solution->m_deviation_pair_offsets[i].first;
+      const double offset = m_solution->m_deviation_pair_offsets[i].second;
+
+      char buffer[64];
+      snprintf( buffer, sizeof(buffer), "{%.1f,%.2f}", energy, offset );
+
+      if( i > 0 )
+        dev_pair_str += ", ";
+      dev_pair_str += buffer;
+    }
+
+    if( num_dev_pairs > 4 )
+      dev_pair_str += ",...";
+    dev_pair_str += "]";
+
+    adjustments += WString::tr( printed_some ? "raag-dev-pairs-additional" : "raag-dev-pairs-first" )
+                   .arg( dev_pair_str );
+    printed_some = true;
+  }//if( deviation pairs )
+
   // Build the complete message
   const bool has_back = !!m_interspec->displayedHistogram(SpecUtils::SpectrumType::Background);
   const WString background_part = has_back ? WString::tr("raag-and-background") : WString();
@@ -3948,7 +4003,7 @@ void RelActAutoGui::applyFitEnergyCalToSpecFile()
     const WString msg = WString::tr("raag-energy-cal-updated").arg(background_part);
     
     passMessage( msg, WarningWidget::WarningMsgInfo );
-    m_fit_energy_cal->setChecked( false );
+    m_fit_energy_cal->setCurrentIndex( static_cast<int>(RelActCalcAuto::EnergyCalFitType::NoFit) );
   }catch( std::exception &e )
   {
     passMessage( WString::tr("raag-error-applying-energy-cal").arg(e.what()), WarningWidget::WarningMsgHigh );
@@ -4074,11 +4129,11 @@ void RelActAutoGui::setPeaksToForeground()
   const vector<PeakDef> solution_peaks = m_solution->m_fit_peaks_in_spectrums_cal;
   std::shared_ptr<const DetectorPeakResponse> ana_drf = m_solution->m_drf;
   
-  if( m_solution->m_options.fit_energy_cal )
+  if( m_solution->m_options.energy_cal_type != RelActCalcAuto::EnergyCalFitType::NoFit )
   {
     // The fit peaks have already been adjusted for energy calibration, so I dont
     //  think we need to update them here
-  }//if( m_solution->m_options.fit_energy_cal )
+  }//if( fitting energy cal )
   
   yes->clicked().connect( std::bind([solution_peaks, replace_or_add, refit_peaks, previous_peaks, ana_drf](){
     const bool replace_peaks = (!replace_or_add || replace_or_add->isChecked());
@@ -5094,8 +5149,8 @@ void RelActAutoGui::updateDuringRenderForFreePeakChange()
   }//for( WWidget *w : kids )
   
   
-  const bool fit_energy_cal = m_fit_energy_cal->isChecked();
-  
+  const bool fit_energy_cal = (m_fit_energy_cal->currentIndex() != static_cast<int>(RelActCalcAuto::EnergyCalFitType::NoFit));
+
   const std::vector<WWidget *> &kids = m_free_peaks->children();
   for( WWidget *w : kids )
   {
@@ -5245,6 +5300,21 @@ void RelActAutoGui::startUpdatingCalculation()
   const string sessionId = app->sessionId();
   
   vector<shared_ptr<const PeakDef>> cached_all_peaks = m_cached_all_peaks;
+  
+#if( !defined(NDEBUG) && PERFORM_DEVELOPER_CHECKS )
+  if( cached_all_peaks.empty() )
+  {
+    // Debug builds are crazy slow to fit all the p
+    std::shared_ptr<const SpecMeas> m = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
+    const set<int> &samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Foreground);
+    shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_peaks = m ? m->automatedSearchPeaks(samples) : nullptr;
+    if( auto_peaks && !auto_peaks->empty() )
+    {
+      cached_all_peaks.insert( end(cached_all_peaks), begin(*auto_peaks), end(*auto_peaks) );
+      cerr << "\n\nUsing auto search peaks to send to `RelActCalcAuto::solve(...)` to save time on the debug build!" << endl;
+    }
+  }//if( cached_all_peaks.empty() )
+#endif
   
   auto solution = make_shared<RelActCalcAuto::RelActAutoSolution>();
   auto error_msg = make_shared<string>();

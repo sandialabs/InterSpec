@@ -584,6 +584,7 @@ if( USE_REL_ACT_TOOL )
         InterSpec/RelActCalc_imp.hpp
         InterSpec/RelActCalcAuto.h
         InterSpec/RelActCalcAuto_imp.hpp
+        InterSpec/RelActCalcAuto_EnergyCal_imp.hpp
         InterSpec/RelActCalcManual.h
         InterSpec/RelActAutoGui.h
         InterSpec/RelActManualGui.h

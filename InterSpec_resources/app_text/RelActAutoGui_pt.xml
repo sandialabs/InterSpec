@@ -15,7 +15,10 @@
   <!-- General options -->
   <message id="raag-spectrum-peak-options">Opções de Espectro e Pico</message>
   <message id="raag-rel-eff-curve-options">Opções de Curva de Eficiência Relativa</message>
-  <message id="raag-fit-energy-cal">Ajustar Cal. Energia</message>
+  <message id="raag-energy-cal-label">Cal. Energia</message>
+  <message id="raag-energy-cal-nofit">Nenhuma</message>
+  <message id="raag-energy-cal-linear">Linear</message>
+  <message id="raag-energy-cal-nonlinear">Não linear</message>
   <message id="raag-back-sub">Sub. Fundo</message>
   <message id="raag-fwhm-est">Est. FWHM</message>
   <message id="raag-fwhm-form">Forma FWHM</message>
@@ -57,6 +60,13 @@
   <message id="raag-combine-roi-right">Combinar com ROI à direita</message>
 
   <!-- Tooltips -->
+  <message id="raag-tt-energy-cal-type">Especifica se devem ser ajustadas correções na calibração de energia.
+    <ul>
+      <li><b>Nenhuma</b>: Usar a calibração de energia existente sem modificação.</li>
+      <li><b>Linear</b>: Ajustar uma correção linear (deslocamento e ganho) na calibração de energia.</li>
+      <li><b>Não linear</b>: Ajustar correções não lineares usando pares de desvio (spline cúbica) para cada ROI, além dos termos lineares. Usa o maior pico detectado em cada ROI como a energia do par de desvio ou, se nenhum for detectado, usa o ponto médio da ROI; ROIs grandes podem receber vários pares de desvio.</li>
+    </ul>
+  </message>
   <message id="raag-tt-fwhm-form">O tipo de equação usada para modelar FWHM do pico como função da energia.</message>
   <message id="raag-tt-skew-type">O tipo de assimetria a aplicar aos picos; parâmetros de assimetria serão ajustados.</message>
   <message id="raag-tt-u-pu-data-source">A fonte de dados nucleares para razões de ramificação gama de urânio e plutônio.</message>
@@ -113,6 +123,8 @@
   <message id="raag-increase-gain-additional"> e aumentar ganho em {1}</message>
   <message id="raag-increase-quad-first"> aumentar quadrático em {1}</message>
   <message id="raag-increase-quad-additional"> e aumentar quadrático em {1}</message>
+  <message id="raag-dev-pairs-first"> adicionar pares de desvio {1}</message>
+  <message id="raag-dev-pairs-additional"> e adicionar pares de desvio {1}</message>
 
   <!-- Energy calibration application messages -->
   <message id="raag-apply-energy-cal-msg">Isso irá{1} para o primeiro plano primário{2}{3}.<br />Gostaria de fazer isso?</message>

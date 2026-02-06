@@ -15,7 +15,10 @@
   <!-- General options -->
   <message id="raag-spectrum-peak-options">خيارات الطيف والقمة</message>
   <message id="raag-rel-eff-curve-options">خيارات منحنى الكفاءة النسبية</message>
-  <message id="raag-fit-energy-cal">ملائمة معايرة الطاقة</message>
+  <message id="raag-energy-cal-label">معايرة الطاقة</message>
+  <message id="raag-energy-cal-nofit">لا يوجد</message>
+  <message id="raag-energy-cal-linear">خطي</message>
+  <message id="raag-energy-cal-nonlinear">غير خطي</message>
   <message id="raag-back-sub">طرح الخلفية</message>
   <message id="raag-fwhm-est">تقدير FWHM</message>
   <message id="raag-fwhm-form">شكل FWHM</message>
@@ -57,6 +60,13 @@
   <message id="raag-combine-roi-right">دمج مع ROI الأيمن</message>
   
   <!-- Tooltips -->
+  <message id="raag-tt-energy-cal-type">يحدد ما إذا كان سيتم ملاءمة تعديلات لمعايرة الطاقة.
+    <ul>
+      <li><b>لا يوجد</b>: استخدام معايرة الطاقة الحالية دون تعديل.</li>
+      <li><b>خطي</b>: ملاءمة تعديل خطي (إزاحة وكسب) لمعايرة الطاقة.</li>
+      <li><b>غير خطي</b>: ملاءمة تعديلات غير خطية باستخدام أزواج الانحراف (spline تكعيبي) لكل ROI، بالإضافة إلى الحدود الخطية. يستخدم أكبر قمة مكتشفة في كل ROI كطاقة زوج الانحراف، أو إذا لم تُكتشف أي قمم فيستخدم نقطة منتصف ROI؛ قد تُعطى ROI الكبيرة عدة أزواج انحراف.</li>
+    </ul>
+  </message>
   <message id="raag-tt-fwhm-form">نوع المعادلة لنمذجة FWHM للقمة كدالة للطاقة.</message>
   <message id="raag-tt-skew-type">نوع الانحراف المطبق على القمم؛ ستتم ملائمة معاملات الانحراف.</message>
   <message id="raag-tt-u-pu-data-source">مصدر البيانات النووية لنسب التفرع الغامائي لليورانيوم والبلوتونيوم.</message>
@@ -113,6 +123,8 @@
   <message id="raag-increase-gain-additional"> وزيادة الكسب بـ {1}</message>
   <message id="raag-increase-quad-first"> زيادة التربيعي بـ {1}</message>
   <message id="raag-increase-quad-additional"> وزيادة التربيعي بـ {1}</message>
+  <message id="raag-dev-pairs-first"> إضافة أزواج الانحراف {1}</message>
+  <message id="raag-dev-pairs-additional"> و إضافة أزواج الانحراف {1}</message>
 
   <!-- Energy calibration application messages -->
   <message id="raag-apply-energy-cal-msg">هذا سيقوم{1} للمقدمة الأساسية{2}{3}.<br />هل تريد فعل هذا؟</message>

@@ -15,7 +15,10 @@
   <!-- General options -->
   <message id="raag-spectrum-peak-options">Spectrum and Peak Options</message>
   <message id="raag-rel-eff-curve-options">Relative Efficiency Curve Options</message>
-  <message id="raag-fit-energy-cal">Fit Energy Cal.</message>
+  <message id="raag-energy-cal-label">Energy Cal.</message>
+  <message id="raag-energy-cal-nofit">None</message>
+  <message id="raag-energy-cal-linear">Linear</message>
+  <message id="raag-energy-cal-nonlinear">Non-Linear</message>
   <message id="raag-back-sub">Back. Sub.</message>
   <message id="raag-fwhm-est">FWHM Est.</message>
   <message id="raag-fwhm-form">FWHM Form</message>
@@ -58,6 +61,13 @@
   <message id="raag-combine-roi-right">Combine with ROI to right</message>
   
   <!-- Tooltips -->
+  <message id="raag-tt-energy-cal-type">Specifies whether to fit adjustments to the energy calibration.
+    <ul>
+      <li><b>None</b>: Use the existing energy calibration without modification.</li>
+      <li><b>Linear</b>: Fit a linear adjustment (offset and gain) to the energy calibration.</li>
+      <li><b>Non-Linear</b>: Fit non-linear adjustments using deviation pairs (cubic spline) for each of the ROIs, in addition to linear terms.  Uses the largest detected peak in each ROI as the deviation pair energy, or if none are detected, uses the mid-point of the ROI; large ROIs may be given multiple deviation pairs.</li>
+    </ul>
+  </message>
   <message id="raag-tt-fwhm-form">The equation type used to model peak FWHM as a function of energy.</message>
   <message id="raag-tt-skew-type">The type of skew to apply to the peaks; skew parameters will be fit.</message>
   <message id="raag-tt-lorentzian-xrays">When checked, x-ray peaks will use a Voigt profile with the Lorentzian width set to the natural x-ray linewidth. This accounts for the intrinsic Lorentzian shape of x-ray lines. Only compatible with NoSkew or GaussPlusBortel peak skew types.</message>
@@ -115,6 +125,8 @@
   <message id="raag-increase-gain-additional"> and increase gain by {1}</message>
   <message id="raag-increase-quad-first"> increase quadratic by {1}</message>
   <message id="raag-increase-quad-additional"> and increase quadratic by {1}</message>
+  <message id="raag-dev-pairs-first"> add deviation pairs {1}</message>
+  <message id="raag-dev-pairs-additional"> and add deviation pairs {1}</message>
 
   <!-- Energy calibration application messages -->
   <message id="raag-apply-energy-cal-msg">This will{1} for the primary foreground{2}{3}.<br />Would you like to do this?</message>
