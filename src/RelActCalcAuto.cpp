@@ -8360,8 +8360,87 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           double max_derivative = 0.0;
           for( size_t i = 0; i < sm_auto_diff_stride_size; ++i )
             max_derivative = std::max( max_derivative, std::fabs( val.v[i] ) );
+          
+          // Check if the deviation pair anchors that affect this energy have active derivatives
+          bool local_dev_pair_deriv_active = false;
+          if( dev_pair_deriv_active && !m_dev_pair_anchors.empty() )
+          {
+            // Find the anchors that bracket this energy (for cubic spline interpolation)
+            // An energy is primarily affected by its two adjacent anchor points
+            const size_t num_anchors = m_dev_pair_anchors.size();
+            
+            // Find the lower bound anchor (first anchor with energy >= current energy)
+            size_t upper_idx = 0;
+            for( size_t i = 0; i < num_anchors; ++i )
+            {
+              if( m_dev_pair_anchors[i].anchor_energy >= energy )
+              {
+                upper_idx = i;
+                break;
+              }
+              if( i == num_anchors - 1 )
+                upper_idx = num_anchors; // Energy is beyond all anchors
+            }
+            
+            // Check if the relevant adjacent anchors have active derivatives
+            if( upper_idx > 0 && upper_idx < num_anchors )
+            {
+              // Energy is between two anchors - check both
+              const DeviationPairAnchor &lower_anchor = m_dev_pair_anchors[upper_idx - 1];
+              const DeviationPairAnchor &upper_anchor = m_dev_pair_anchors[upper_idx];
+              
+              if( lower_anchor.is_fitted || upper_anchor.is_fitted )
+              {
+                double local_max_deriv = 0.0;
+                if( lower_anchor.is_fitted )
+                {
+                  const size_t par_index = m_dev_pair_par_start_index + lower_anchor.param_index;
+                  const T &par = x[par_index];
+                  for( size_t i = 0; i < sm_auto_diff_stride_size; ++i )
+                    local_max_deriv = std::max( local_max_deriv, std::fabs( par.v[i] ) );
+                }
+                if( upper_anchor.is_fitted )
+                {
+                  const size_t par_index = m_dev_pair_par_start_index + upper_anchor.param_index;
+                  const T &par = x[par_index];
+                  for( size_t i = 0; i < sm_auto_diff_stride_size; ++i )
+                    local_max_deriv = std::max( local_max_deriv, std::fabs( par.v[i] ) );
+                }
+                local_dev_pair_deriv_active = (local_max_deriv > 1.0e-16);
+              }
+            }
+            else if( upper_idx == 0 )
+            {
+              // Energy is before all anchors - primarily affected by first anchor
+              const DeviationPairAnchor &first_anchor = m_dev_pair_anchors[0];
+              if( first_anchor.is_fitted )
+              {
+                const size_t par_index = m_dev_pair_par_start_index + first_anchor.param_index;
+                const T &par = x[par_index];
+                double local_max_deriv = 0.0;
+                for( size_t i = 0; i < sm_auto_diff_stride_size; ++i )
+                  local_max_deriv = std::max( local_max_deriv, std::fabs( par.v[i] ) );
+                local_dev_pair_deriv_active = (local_max_deriv > 1.0e-16);
+              }
+            }
+            else // upper_idx >= num_anchors
+            {
+              // Energy is beyond all anchors - primarily affected by last anchor
+              const DeviationPairAnchor &last_anchor = m_dev_pair_anchors[num_anchors - 1];
+              if( last_anchor.is_fitted )
+              {
+                const size_t par_index = m_dev_pair_par_start_index + last_anchor.param_index;
+                const T &par = x[par_index];
+                double local_max_deriv = 0.0;
+                for( size_t i = 0; i < sm_auto_diff_stride_size; ++i )
+                  local_max_deriv = std::max( local_max_deriv, std::fabs( par.v[i] ) );
+                local_dev_pair_deriv_active = (local_max_deriv > 1.0e-16);
+              }
+            }
+          }
+          
           static int s_logged_zero_derivative = 0;
-          if( dev_pair_deriv_active && (max_derivative < 1.0e-12) && (s_logged_zero_derivative < 100) )
+          if( local_dev_pair_deriv_active && (max_derivative < 1.0e-12) && (s_logged_zero_derivative < 100) )
           {
             char buffer[256];
             snprintf( buffer, sizeof(buffer),

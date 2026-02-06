@@ -201,7 +201,7 @@ struct PeakFitForNuclideConfig
   bool nucs_of_el_same_age = true;
   bool phys_model_use_hoerl = true;
 
-  // Fields for RelActAuto options configuration
+  // Fields for RelActAuto options configuration - this is only used for optimiziation work - it is supersceeded by `FitSrcPeaksOptions::DoNotVaryEnergyCal
   bool fit_energy_cal = true;
 
   // ROI significance threshold for iterative refinement

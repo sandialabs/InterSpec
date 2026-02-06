@@ -512,7 +512,7 @@ void add_floating_511_peak_if_appropriate(
   // Apply energy calibration correction if we're fitting energy cal.
   // The 510.9989 keV is a true physical energy (electron rest mass),
   // so it should be subject to calibration corrections.
-  floating_511.apply_energy_cal_correction = options.fit_energy_cal;
+  floating_511.apply_energy_cal_correction = ( options.energy_cal_type != RelActCalcAuto::EnergyCalFitType::NoFit );
   
   options.floating_peaks.push_back( floating_511 );
   
@@ -3461,8 +3461,15 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     sources_rel_eff_index = 0;
     options.rel_eff_curves.push_back( rel_eff_curve );
   }
+  
   options.rois = input_rois;
-  options.fit_energy_cal = config.fit_energy_cal;
+  //options.energy_cal_type = config.fit_energy_cal
+  //  ? RelActCalcAuto::EnergyCalFitType::NonLinearFit
+  //  : RelActCalcAuto::EnergyCalFitType::NoFit;
+  options.energy_cal_type = user_options.testFlag(FitSrcPeaksOptions::DoNotVaryEnergyCal)
+                              ? RelActCalcAuto::EnergyCalFitType::NoFit
+                              : RelActCalcAuto::EnergyCalFitType::NonLinearFit;
+  
   options.fwhm_form = config.fwhm_form;
   options.fwhm_estimation_method = RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum;
   options.skew_type = skew_type;
@@ -3856,12 +3863,12 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 
     // As of 20260103, energy calibration adjustments may cause failure to fit the correct solution sometimes,
     //  so if our current solution failed, or is really bad, we'll try without fitting energy cal
-    if( options.fit_energy_cal
+    if( ( options.energy_cal_type != RelActCalcAuto::EnergyCalFitType::NoFit )
       && ((solution.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success)
         || ((solution.m_chi2 / solution.m_dof) > 10.0)) ) //10.0 arbitrary - and un-explored
     {
       RelActCalcAuto::Options no_ecal_opts = options;
-      no_ecal_opts.fit_energy_cal = false;
+      no_ecal_opts.energy_cal_type = RelActCalcAuto::EnergyCalFitType::NoFit;
 
       add_floating_511_peak_if_appropriate( no_ecal_opts, sources, fit_norm_peaks, min_valid_energy, max_valid_energy );
 
