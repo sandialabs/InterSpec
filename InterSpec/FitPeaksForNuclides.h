@@ -107,6 +107,16 @@ struct PeakFitResult
   // Note: even if fitting energy calibration was selected, these peaks are in the original spectrums energy cal.
   std::vector<PeakDef> observable_peaks;
 
+  // Existing user peaks that should be removed from PeakModel when the result is accepted.
+  // Populated when DoNotUseExistingRois or ExistingPeaksAsFreePeak is set:
+  //   - DoNotUseExistingRois: empty (no existing peaks are touched)
+  //   - ExistingPeaksAsFreePeak: contains original peaks that are being replaced by fit peaks
+  //     (either because they had the same source and were re-fit, or because they were absorbed
+  //     into a source peak in a shared ROI).
+  // These are the exact shared_ptr instances from the input user_peaks vector, so pointer
+  // identity is preserved for PeakModel::removePeaks().
+  std::vector<std::shared_ptr<const PeakDef>> original_peaks_to_remove;
+
   // The final RelActCalcAuto solution.  Note that `solution.m_foreground` and/or `solution.m_foreground`
   // may have a different energy calibration than input foreground/background, due to iteratively finding solution.
   // This means the various peak quantities of solution that are supposed to be in the original energy calibration,
@@ -303,9 +313,12 @@ enum FitSrcPeaksOptions
  5. Calls fit_peaks_for_nuclide_relactauto with three different configurations
  6. Returns the best result based on chi2
 
- @param auto_search_peaks Initial peaks found by automatic search
+ @param auto_search_peaks Initial peaks found by automatic search (user peaks merged with auto-detected)
  @param foreground Foreground spectrum to fit
  @param sources Vector of source nuclides to fit
+ @param user_peaks The user's current peaks from PeakModel.  Used when DoNotUseExistingRois or
+        ExistingPeaksAsFreePeak options are set to identify existing ROIs / add floating peaks.
+        May be empty if neither option is set.
  @param background Background spectrum (can be nullptr)
  @param drf_input Detector response function (can be nullptr, will use generic if needed)
  @param options Options for how the fit should be done.
@@ -318,7 +331,8 @@ PeakFitResult fit_peaks_for_nuclides(
   const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,
   const std::vector<RelActCalcAuto::NucInputInfo> &sources,
-  const std::shared_ptr<const SpecUtils::Measurement> &background,
+  const std::vector<std::shared_ptr<const PeakDef>> &user_peaks,
+  std::shared_ptr<const SpecUtils::Measurement> background,
   const std::shared_ptr<const DetectorPeakResponse> &drf_input,
   const Wt::WFlags<FitSrcPeaksOptions> options,
   const PeakFitForNuclideConfig &config,
@@ -328,6 +342,7 @@ PeakFitResult fit_peaks_for_nuclides(
   const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,
   const std::vector<RelActCalcAuto::SrcVariant> &sources,
+  const std::vector<std::shared_ptr<const PeakDef>> &user_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &background,
   const std::shared_ptr<const DetectorPeakResponse> &drf_input,
   const Wt::WFlags<FitSrcPeaksOptions> options,

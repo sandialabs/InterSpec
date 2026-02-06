@@ -50,6 +50,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/UserPreferences.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/ReferenceLineInfo.h"
 #include "InterSpec/FitPeaksForNuclides.h"
 #include "InterSpec/ReferenceLinePredef.h"
@@ -209,7 +210,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
   for( const ReferenceLineInfo &info : persisted )
     add_from_info( info );
 
-  if( sources.empty() )
+  if( sources.empty() && !options.testFlag(FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaks) )
   {
     assert( 0 );
     passMessage( "Sorry, cant fit for any of the current sources.", WarningWidget::WarningMsgMedium ); //Skip localization since we dont expect to be here
@@ -277,6 +278,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
     }
 
     std::vector<std::shared_ptr<const PeakDef>> auto_search_peaks;
+    std::vector<std::shared_ptr<const PeakDef>> user_peaks;
     try
     {
       AnalystChecks::DetectedPeaksOptions peak_opts;
@@ -284,6 +286,16 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
       peak_opts.nonBackgroundPeaksOnly = false;
       const AnalystChecks::DetectedPeakStatus detected = AnalystChecks::detected_peaks( peak_opts, viewer_a );
       auto_search_peaks = detected.peaks;
+
+      // Capture current user peaks (by shared_ptr) for DoNotUseExistingRois / ExistingPeaksAsFreePeak.
+      // These are the exact pointers in PeakModel, preserving identity for later removal.
+      PeakModel *pm = viewer_a->peakModel();
+      if( pm )
+      {
+        const std::shared_ptr<const std::deque<PeakModel::PeakShrdPtr>> current_peaks = pm->peaks();
+        if( current_peaks )
+          user_peaks.assign( current_peaks->begin(), current_peaks->end() );
+      }
     }catch( std::exception &e )
     {
       // Failed to detect peaks - show error and return
@@ -307,7 +319,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
 
       try
       {
-        *result = FitPeaksForNuclides::fit_peaks_for_nuclides( auto_search_peaks, fg_copy, base_nucs, bg_copy, drf_input, options, config, isHPGe );
+        *result = FitPeaksForNuclides::fit_peaks_for_nuclides( auto_search_peaks, fg_copy, base_nucs, user_peaks, bg_copy, drf_input, options, config, isHPGe );
       }catch( std::exception &e )
       {
         result->status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
@@ -380,7 +392,12 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
         {
           PeakModel *peak_model = viewer_c->peakModel();
           if( peak_model )
+          {
+            UndoRedoManager::PeakModelChange peak_undo_creator;
+            if( !result->original_peaks_to_remove.empty() )
+              peak_model->removePeaks( result->original_peaks_to_remove );
             peak_model->addPeaks( result->observable_peaks );
+          }
           passMessage( WString::tr("fpn-auto-accepted"), WarningWidget::WarningMsgInfo );
           wApp->triggerUpdate();
           return;
@@ -546,7 +563,12 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
           {
             PeakModel *peak_model = viewer_c->peakModel();
             if( peak_model )
+            {
+              UndoRedoManager::PeakModelChange peak_undo_creator;
+              if( !result->original_peaks_to_remove.empty() )
+                peak_model->removePeaks( result->original_peaks_to_remove );
               peak_model->addPeaks( result->observable_peaks );
+            }
           }
         } ) );
         // Cancel button uses SimpleDialog's default close behavior.
