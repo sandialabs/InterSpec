@@ -525,6 +525,576 @@ void add_floating_511_peak_if_appropriate(
 }//add_floating_511_peak_if_appropriate(...)
 
 
+/** Add floating peaks for single and double escape peaks of high-energy gammas if appropriate.
+ 
+ This function checks if auto_search_peaks contains single escape peaks for high-energy gammas
+ (like Th232's 2614 keV line). If found and fit_norm_peaks is enabled, it adds floating peaks
+ for both single and double escape peaks to allow the fit to properly account for them.
+ 
+ The implementation is kept general to support other high-energy lines in the future (e.g., Ra226).
+ 
+ \param options The RelActCalcAuto::Options to potentially add floating peaks to
+ \param auto_search_peaks Peaks found by automated peak search
+ \param fit_norm_peaks Whether NORM background peaks are being fit
+ \param min_valid_energy Minimum energy of the valid spectroscopic range (keV)
+ \param max_valid_energy Maximum energy of the valid spectroscopic range (keV)
+ */
+void add_escape_peak_floating_peaks_if_appropriate(
+  RelActCalcAuto::Options &options,
+  const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
+  const bool fit_norm_peaks,
+  const bool isHPGe,
+  const double min_valid_energy,
+  const double max_valid_energy,
+  const PeakFitForNuclideConfig &config )
+{
+  // Only add escape peaks for high-resolution detectors (HPGe)
+  // Escape peaks are smeared out and not distinguishable in lower-resolution detectors
+  if( !fit_norm_peaks || !isHPGe )
+    return;
+  
+  const double electron_rest_mass = 510.9989; // keV
+  const double single_escape_offset = electron_rest_mass;
+  const double double_escape_offset = 2.0 * electron_rest_mass;
+  
+  // Define high-energy gamma lines that commonly have escape peaks
+  // Escape peaks become significant above ~1.5 MeV
+  struct EscapePeakCandidate
+  {
+    double parent_energy;
+    std::string source_name;
+  };
+  
+  const std::vector<EscapePeakCandidate> candidates = {
+    { 2614.533, "Th232" },  // Th232 (Tl208) 2614 keV - most prominent
+    // Future candidates (commented out for now, but structure supports them):
+    // { 2204.21, "Ra226" },  // Ra226 (Bi214) 2204 keV
+    // { 1764.49, "Ra226" },  // Ra226 (Bi214) 1764 keV
+  };
+  
+  const double min_parent_energy_for_escape = 1600.0; // keV - escape peaks significant above ~1.5 MeV
+  
+  // For each high-energy candidate, first find the parent peak in auto_search_peaks
+  for( const EscapePeakCandidate &candidate : candidates )
+  {
+    // Skip if parent energy is outside valid range or too low for escape peaks
+    if( (candidate.parent_energy < min_parent_energy_for_escape)
+       || (candidate.parent_energy > max_valid_energy) )
+      continue;
+    
+    // Find the parent peak in auto_search_peaks using 0.75 FWHM threshold
+    std::shared_ptr<const PeakDef> parent_peak;
+    for( const std::shared_ptr<const PeakDef> &peak : auto_search_peaks )
+    {
+      if( !peak )
+        continue;
+      
+      const double parent_tolerance = 0.75 * peak->fwhm();
+      if( std::fabs( peak->mean() - candidate.parent_energy ) < parent_tolerance )
+      {
+        parent_peak = peak;
+        break;
+      }
+    }
+    
+    if( !parent_peak )
+      continue;  // No parent peak found in auto_search_peaks
+    
+    // Calculate theoretical escape peak energies based on the candidate's nominal energy
+    // Use theoretical energies for floating peaks, not fitted parent energy
+    const double se_energy = candidate.parent_energy - single_escape_offset;
+    const double de_energy = candidate.parent_energy - double_escape_offset;
+    
+    // Calculate expected positions based on fitted parent for checking auto_search_peaks
+    const double se_expected_from_fit = parent_peak->mean() - single_escape_offset;
+    const double de_expected_from_fit = parent_peak->mean() - double_escape_offset;
+    
+    // Skip if escape energies are outside valid range
+    if( (se_energy < min_valid_energy) || (de_energy < min_valid_energy) )
+      continue;
+    
+    // Check if single escape peak is in auto_search_peaks using 0.5 FWHM of parent
+    // Use the expected position based on fitted parent peak
+    const double escape_tolerance = 0.5 * parent_peak->fwhm();
+    bool have_se_peak = false;
+    for( const std::shared_ptr<const PeakDef> &peak : auto_search_peaks )
+    {
+      if( peak && (std::fabs( peak->mean() - se_expected_from_fit ) < escape_tolerance) )
+      {
+        have_se_peak = true;
+        break;
+      }
+    }
+    
+    if( !have_se_peak )
+      continue;  // No S.E. peak found
+    
+    // Check if there's a ROI covering the parent energy
+    bool have_parent_roi = false;
+    for( const RelActCalcAuto::RoiRange &roi : options.rois )
+    {
+      if( (parent_peak->mean() >= roi.lower_energy)
+         && (parent_peak->mean() <= roi.upper_energy) )
+      {
+        have_parent_roi = true;
+        break;
+      }
+    }
+    
+    if( !have_parent_roi )
+      continue;
+    
+    // Check if double escape peak exists in auto_search_peaks (optional but nice to know)
+    // Use the expected position based on fitted parent peak
+    bool have_de_peak = false;
+    for( const std::shared_ptr<const PeakDef> &peak : auto_search_peaks )
+    {
+      if( peak && (std::fabs( peak->mean() - de_expected_from_fit ) < escape_tolerance) )
+      {
+        have_de_peak = true;
+        break;
+      }
+    }
+    
+    if( PEAK_FIT_DEBUG_PRINTOUT )
+    {
+      std::cout << "Found parent peak at " << parent_peak->mean() << " keV for " << candidate.source_name
+                << " with S.E. at " << se_energy << " keV";
+      if( have_de_peak )
+        std::cout << " and D.E. at " << de_energy << " keV";
+      std::cout << " - adding escape peak floating peaks and ROIs" << std::endl;
+    }
+    
+    // Check if ROIs exist for S.E. and D.E. energies, add if missing
+    // Use ROI width from config (defaults to 3.5 FWHM on each side)
+    const double roi_width_lower = config.auto_rel_eff_roi_width_num_fwhm_lower * parent_peak->fwhm();
+    const double roi_width_upper = config.auto_rel_eff_roi_width_num_fwhm_upper * parent_peak->fwhm();
+    
+    // Check/add S.E. ROI
+    bool have_se_roi = false;
+    for( const RelActCalcAuto::RoiRange &roi : options.rois )
+    {
+      if( (se_energy >= roi.lower_energy) && (se_energy <= roi.upper_energy) )
+      {
+        have_se_roi = true;
+        break;
+      }
+    }
+    
+    if( !have_se_roi )
+    {
+      RelActCalcAuto::RoiRange se_roi;
+      se_roi.lower_energy = se_energy - roi_width_lower;
+      se_roi.upper_energy = se_energy + roi_width_upper;
+      
+      // Make sure ROI is within valid energy range
+      if( se_roi.lower_energy < min_valid_energy )
+        se_roi.lower_energy = min_valid_energy;
+      if( se_roi.upper_energy > max_valid_energy )
+        se_roi.upper_energy = max_valid_energy;
+      
+      // Allow ROI to be as small as 0.5 FWHM on each side (1 FWHM total minimum)
+      // If it overlaps with existing ROIs, we'll resolve that later before calling solve
+      const double min_width_each_side = 0.5 * parent_peak->fwhm();
+      
+      // Shrink ROI if needed to maintain minimum width on each side
+      if( (se_energy - se_roi.lower_energy) < min_width_each_side )
+        se_roi.lower_energy = se_energy - min_width_each_side;
+      if( (se_roi.upper_energy - se_energy) < min_width_each_side )
+        se_roi.upper_energy = se_energy + min_width_each_side;
+      
+      // Constrain to valid energy range
+      if( se_roi.lower_energy < min_valid_energy )
+        se_roi.lower_energy = min_valid_energy;
+      if( se_roi.upper_energy > max_valid_energy )
+        se_roi.upper_energy = max_valid_energy;
+      
+      // Add the ROI - overlaps will be resolved later
+      options.rois.push_back( se_roi );
+      
+      if( PEAK_FIT_DEBUG_PRINTOUT )
+      {
+        std::cout << "  Added ROI [" << se_roi.lower_energy << ", " << se_roi.upper_energy 
+                  << "] keV for S.E. peak (may overlap, will be resolved)" << std::endl;
+      }
+    }
+    
+    // Check/add D.E. ROI
+    bool have_de_roi = false;
+    for( const RelActCalcAuto::RoiRange &roi : options.rois )
+    {
+      if( (de_energy >= roi.lower_energy) && (de_energy <= roi.upper_energy) )
+      {
+        have_de_roi = true;
+        break;
+      }
+    }
+    
+    if( !have_de_roi )
+    {
+      RelActCalcAuto::RoiRange de_roi;
+      de_roi.lower_energy = de_energy - roi_width_lower;
+      de_roi.upper_energy = de_energy + roi_width_upper;
+      
+      // Make sure ROI is within valid energy range
+      if( de_roi.lower_energy < min_valid_energy )
+        de_roi.lower_energy = min_valid_energy;
+      if( de_roi.upper_energy > max_valid_energy )
+        de_roi.upper_energy = max_valid_energy;
+      
+      // Allow ROI to be as small as 0.5 FWHM on each side (1 FWHM total minimum)
+      // If it overlaps with existing ROIs, we'll resolve that later before calling solve
+      const double min_width_each_side = 0.5 * parent_peak->fwhm();
+      
+      // Shrink ROI if needed to maintain minimum width on each side
+      if( (de_energy - de_roi.lower_energy) < min_width_each_side )
+        de_roi.lower_energy = de_energy - min_width_each_side;
+      if( (de_roi.upper_energy - de_energy) < min_width_each_side )
+        de_roi.upper_energy = de_energy + min_width_each_side;
+      
+      // Constrain to valid energy range
+      if( de_roi.lower_energy < min_valid_energy )
+        de_roi.lower_energy = min_valid_energy;
+      if( de_roi.upper_energy > max_valid_energy )
+        de_roi.upper_energy = max_valid_energy;
+      
+      // Add the ROI - overlaps will be resolved later
+      options.rois.push_back( de_roi );
+      
+      if( PEAK_FIT_DEBUG_PRINTOUT )
+      {
+        std::cout << "  Added ROI [" << de_roi.lower_energy << ", " << de_roi.upper_energy 
+                  << "] keV for D.E. peak (may overlap, will be resolved)" << std::endl;
+      }
+    }
+    
+    // Add single escape floating peak if not already present
+    // Use tighter tolerance based on parent FWHM
+    const double fp_check_tolerance = 0.5 * parent_peak->fwhm();
+    bool already_have_se = false;
+    for( const RelActCalcAuto::FloatingPeak &fp : options.floating_peaks )
+    {
+      if( std::fabs( fp.energy - se_energy ) < fp_check_tolerance )
+      {
+        already_have_se = true;
+        break;
+      }
+    }
+    
+    if( !already_have_se )
+    {
+      RelActCalcAuto::FloatingPeak se_fp;
+      se_fp.energy = se_energy;
+      se_fp.release_fwhm = false;
+      se_fp.apply_energy_cal_correction = ( options.energy_cal_type != RelActCalcAuto::EnergyCalFitType::NoFit );
+      options.floating_peaks.push_back( se_fp );
+      
+      if( PEAK_FIT_DEBUG_PRINTOUT )
+      {
+        std::cout << "  Added S.E. floating peak at " << se_energy << " keV" << std::endl;
+      }
+    }
+    
+    // Add double escape floating peak if not already present
+    bool already_have_de = false;
+    for( const RelActCalcAuto::FloatingPeak &fp : options.floating_peaks )
+    {
+      if( std::fabs( fp.energy - de_energy ) < fp_check_tolerance )
+      {
+        already_have_de = true;
+        break;
+      }
+    }
+    
+    if( !already_have_de )
+    {
+      RelActCalcAuto::FloatingPeak de_fp;
+      de_fp.energy = de_energy;
+      de_fp.release_fwhm = false;
+      de_fp.apply_energy_cal_correction = ( options.energy_cal_type != RelActCalcAuto::EnergyCalFitType::NoFit );
+      options.floating_peaks.push_back( de_fp );
+      
+      if( PEAK_FIT_DEBUG_PRINTOUT )
+      {
+        std::cout << "  Added D.E. floating peak at " << de_energy << " keV" << std::endl;
+      }
+    }
+  }//for( loop over escape peak candidates )
+}//add_escape_peak_floating_peaks_if_appropriate(...)
+
+
+/** Resolve any overlapping ROIs by merging or splitting them.
+ 
+ This is called after escape peak ROIs are added, which may cause overlaps.
+ Overlapping ROIs are resolved by merging them if the combined width is reasonable,
+ or splitting the overlap region between them.
+ 
+ \param rois Vector of ROI ranges that may have overlaps - will be modified in place
+ \param floating_peaks Vector of floating peaks to check for expected escape peak energies
+ */
+void resolve_overlapping_rois( std::vector<RelActCalcAuto::RoiRange> &rois,
+                               const std::vector<RelActCalcAuto::FloatingPeak> &floating_peaks )
+{
+  if( rois.size() < 2 )
+    return;
+  
+  // Sort by lower energy
+  std::sort( rois.begin(), rois.end(), 
+            []( const RelActCalcAuto::RoiRange &a, const RelActCalcAuto::RoiRange &b ) {
+              return a.lower_energy < b.lower_energy;
+            } );
+  
+  // Check for and resolve overlaps
+  std::vector<RelActCalcAuto::RoiRange> resolved_rois;
+  resolved_rois.reserve( rois.size() );
+  
+  for( size_t i = 0; i < rois.size(); ++i )
+  {
+    if( resolved_rois.empty() )
+    {
+      resolved_rois.push_back( rois[i] );
+      continue;
+    }
+    
+    RelActCalcAuto::RoiRange &last = resolved_rois.back();
+    const RelActCalcAuto::RoiRange &current = rois[i];
+    
+    // Check for overlap
+    if( current.lower_energy < last.upper_energy )
+    {
+      // We have an overlap
+#if( PERFORM_DEVELOPER_CHECKS )
+      // Assert that overlaps only occur due to escape peak ROIs
+      // Check that one of the overlapping ROIs contains a floating peak at an expected escape energy
+      const double last_width = last.upper_energy - last.lower_energy;
+      const double current_width = current.upper_energy - current.lower_energy;
+      const double overlap = last.upper_energy - current.lower_energy;
+      
+      // Expected escape peak energies for Th232 2614 keV (currently the only candidate)
+      // S.E. = 2614.533 - 510.9989 = 2103.534 keV
+      // D.E. = 2614.533 - 1021.9978 = 1592.535 keV
+      const std::vector<double> expected_escape_energies = { 2103.534, 1592.535 };
+      
+      // Check if either ROI contains a floating peak at one of these energies
+      auto roi_has_escape_floating_peak = [&]( const RelActCalcAuto::RoiRange &roi ) -> bool {
+        for( const RelActCalcAuto::FloatingPeak &fp : floating_peaks )
+        {
+          // Check if floating peak is in this ROI
+          if( (fp.energy >= roi.lower_energy) && (fp.energy <= roi.upper_energy) )
+          {
+            // Check if it's at one of the expected escape energies (within 5 keV tolerance)
+            for( const double expected_energy : expected_escape_energies )
+            {
+              if( std::fabs( fp.energy - expected_energy ) < 5.0 )
+                return true;
+            }
+          }
+        }
+        return false;
+      };
+      
+      const bool last_has_escape_peak = roi_has_escape_floating_peak( last );
+      const bool current_has_escape_peak = roi_has_escape_floating_peak( current );
+      
+      if( !last_has_escape_peak && !current_has_escape_peak )
+      {
+        std::cerr << "WARNING: resolve_overlapping_rois found overlap NOT due to escape peaks:\n"
+                  << "  ROI 1: [" << last.lower_energy << ", " << last.upper_energy 
+                  << "] keV (width=" << last_width << " keV)\n"
+                  << "  ROI 2: [" << current.lower_energy << ", " << current.upper_energy 
+                  << "] keV (width=" << current_width << " keV)\n"
+                  << "  Overlap: " << overlap << " keV\n"
+                  << "  Neither ROI contains a floating peak at expected escape energies (2103.5 or 1592.5 keV)\n"
+                  << "  This suggests ROI generation logic has a bug beyond escape peaks." << std::endl;
+        assert( last_has_escape_peak || current_has_escape_peak );
+      }
+#endif
+      
+      // Merge the ROIs by extending the last one to include both
+      last.upper_energy = std::max( last.upper_energy, current.upper_energy );
+      
+      if( PEAK_FIT_DEBUG_PRINTOUT )
+      {
+        std::cout << "Merged overlapping ROIs: [" << last.lower_energy << ", " 
+                  << current.upper_energy << "] -> [" << last.lower_energy << ", " 
+                  << last.upper_energy << "]" << std::endl;
+      }
+    }
+    else
+    {
+      // No overlap - add as new ROI
+      resolved_rois.push_back( current );
+    }
+  }
+  
+  rois = resolved_rois;
+}//resolve_overlapping_rois(...)
+
+
+/** Assign escape peak relationships for high-energy gamma lines if appropriate.
+ 
+ This function checks if fit peaks contain escape peaks that were added as floating peaks,
+ and if they're significant, assigns them as single or double escape peaks of their parent.
+ Currently handles Th232 2614 keV (and structured to support Ra226 lines in the future).
+ 
+ \param fit_peaks Vector of fit peaks to potentially modify with escape peak assignments
+ \param fit_norm_peaks Whether NORM background peaks were fit
+ */
+void assign_escape_peak_relationships(
+  std::vector<PeakDef> &fit_peaks,
+  const bool fit_norm_peaks,
+  const bool isHPGe )
+{
+  // Only assign escape peaks for high-resolution detectors (HPGe)
+  if( !fit_norm_peaks || !isHPGe )
+    return;
+  
+  const double electron_rest_mass = 510.9989; // keV
+  const double single_escape_offset = electron_rest_mass;
+  const double double_escape_offset = 2.0 * electron_rest_mass;
+  
+  // Define high-energy gamma lines that commonly have escape peaks
+  struct EscapePeakCandidate
+  {
+    double parent_energy;
+    std::string parent_symbol;  // e.g., "Th232" for Tl208 in Th232 decay chain
+  };
+  
+  const std::vector<EscapePeakCandidate> candidates = {
+    { 2614.533, "Th232" },  // Th232 (Tl208) 2614 keV
+    // Future candidates:
+    // { 2204.21, "Ra226" },  // Ra226 (Bi214) 2204 keV
+    // { 1764.49, "Ra226" },  // Ra226 (Bi214) 1764 keV
+  };
+  
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  if( !db )
+    return;
+  
+  // For each high-energy candidate, look for its parent peak and potential escape peaks
+  for( const EscapePeakCandidate &candidate : candidates )
+  {
+    const double se_energy = candidate.parent_energy - single_escape_offset;
+    const double de_energy = candidate.parent_energy - double_escape_offset;
+    
+    // Find the parent peak (2614 keV for Th232)
+    PeakDef *parent_peak = nullptr;
+    for( PeakDef &peak : fit_peaks )
+    {
+      if( std::fabs( peak.mean() - candidate.parent_energy ) < 2.0 ) // 2 keV tolerance
+      {
+        parent_peak = &peak;
+        break;
+      }
+    }
+    
+    if( !parent_peak )
+      continue;  // No parent peak found
+    
+    // Get the nuclide for this parent
+    const SandiaDecay::Nuclide * const parent_nuclide = db->nuclide( candidate.parent_symbol );
+    if( !parent_nuclide )
+      continue;
+    
+    // Check if parent peak already has transition assigned - if so, use it
+    // Otherwise, search for the transition
+    const SandiaDecay::Transition *parent_transition = parent_peak->nuclearTransition();
+    int parent_particle_index = parent_peak->decayParticleIndex();
+    
+    if( !parent_transition || (parent_particle_index < 0) )
+    {
+      // Need to find the transition manually by searching descendants
+      const std::vector<const SandiaDecay::Nuclide *> descendants = parent_nuclide->descendants();
+      
+      for( const SandiaDecay::Nuclide * const nuc : descendants )
+      {
+        if( !nuc )
+          continue;
+        
+        for( const SandiaDecay::Transition * const transition : nuc->decaysToChildren )
+        {
+          if( !transition )
+            continue;
+          
+          for( size_t i = 0; i < transition->products.size(); ++i )
+          {
+            const SandiaDecay::RadParticle &particle = transition->products[i];
+            if( (particle.type == SandiaDecay::GammaParticle)
+               && (std::fabs( particle.energy - candidate.parent_energy ) < 0.5) ) // 0.5 keV tolerance
+            {
+              parent_transition = transition;
+              parent_particle_index = static_cast<int>( i );
+              break;
+            }
+          }
+          if( parent_transition )
+            break;
+        }
+        if( parent_transition )
+          break;
+      }
+      
+      if( !parent_transition || (parent_particle_index < 0) )
+        continue;  // Couldn't find the transition
+    }
+    
+    // Look for single escape peak
+    for( PeakDef &peak : fit_peaks )
+    {
+      if( std::fabs( peak.mean() - se_energy ) < 2.0 ) // 2 keV tolerance
+      {
+        // Check if peak is significant (area > some threshold)
+        const double peak_area = peak.peakArea();
+        const double peak_area_uncert = peak.peakAreaUncert();
+        const double significance = (peak_area_uncert > 0.0) ? (peak_area / peak_area_uncert) : 0.0;
+        
+        if( significance > 3.0 ) // At least 3-sigma significance
+        {
+          // Assign as single escape peak
+          peak.setNuclearTransition( parent_nuclide, parent_transition, parent_particle_index,
+                                     PeakDef::SourceGammaType::SingleEscapeGamma );
+          
+          if( PEAK_FIT_DEBUG_PRINTOUT )
+          {
+            std::cout << "Assigned peak at " << peak.mean() << " keV as S.E. of "
+                      << candidate.parent_symbol << " " << candidate.parent_energy << " keV"
+                      << std::endl;
+          }
+        }
+        break;
+      }
+    }
+    
+    // Look for double escape peak
+    for( PeakDef &peak : fit_peaks )
+    {
+      if( std::fabs( peak.mean() - de_energy ) < 2.0 ) // 2 keV tolerance
+      {
+        // Check if peak is significant (area > some threshold)
+        const double peak_area = peak.peakArea();
+        const double peak_area_uncert = peak.peakAreaUncert();
+        const double significance = (peak_area_uncert > 0.0) ? (peak_area / peak_area_uncert) : 0.0;
+        
+        if( significance > 3.0 ) // At least 3-sigma significance
+        {
+          // Assign as double escape peak
+          peak.setNuclearTransition( parent_nuclide, parent_transition, parent_particle_index,
+                                     PeakDef::SourceGammaType::DoubleEscapeGamma );
+          
+          if( PEAK_FIT_DEBUG_PRINTOUT )
+          {
+            std::cout << "Assigned peak at " << peak.mean() << " keV as D.E. of "
+                      << candidate.parent_symbol << " " << candidate.parent_energy << " keV"
+                      << std::endl;
+          }
+        }
+        break;
+      }
+    }
+  }//for( loop over escape peak candidates )
+}//assign_escape_peak_relationships(...)
+
+
 std::pair<double,double> find_valid_energy_range( const std::shared_ptr<const SpecUtils::Measurement> &meas )
 {
   // This implementation is an updated implementation of `find_spectroscopic_extent(...)`,
@@ -3848,9 +4418,15 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 
   // Add a floating peak at 511 keV if appropriate (see function documentation for physics reasoning)
   add_floating_511_peak_if_appropriate( options, sources, fit_norm_peaks, min_valid_energy, max_valid_energy );
+  
+  // Add floating peaks for escape peaks of high-energy gammas if appropriate
+  add_escape_peak_floating_peaks_if_appropriate( options, auto_search_peaks, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy, config );
 
   try
   {
+    // Resolve any overlapping ROIs (may occur from escape peak ROIs)
+    resolve_overlapping_rois( options.rois, options.floating_peaks );
+    
     // Call RelActAuto::solve with provided options
     RelActCalcAuto::RelActAutoSolution solution = RelActCalcAuto::solve(
       options, orig_foreground, orig_background, drf, auto_search_peaks
@@ -3871,6 +4447,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
       no_ecal_opts.energy_cal_type = RelActCalcAuto::EnergyCalFitType::NoFit;
 
       add_floating_511_peak_if_appropriate( no_ecal_opts, sources, fit_norm_peaks, min_valid_energy, max_valid_energy );
+      add_escape_peak_floating_peaks_if_appropriate( no_ecal_opts, auto_search_peaks, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy, config );
 
       RelActCalcAuto::RelActAutoSolution trial_solution = RelActCalcAuto::solve(
         no_ecal_opts, orig_foreground, orig_background, drf, auto_search_peaks
@@ -3923,7 +4500,10 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         curve.phys_model_use_hoerl = (options.rois.size() > 2);
         
         add_floating_511_peak_if_appropriate( desperation_opts, sources, fit_norm_peaks, min_valid_energy, max_valid_energy );
-        
+        add_escape_peak_floating_peaks_if_appropriate( desperation_opts, auto_search_peaks, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy, config );
+
+        resolve_overlapping_rois( desperation_opts.rois, desperation_opts.floating_peaks );
+
         trial_solution = RelActCalcAuto::solve( desperation_opts, orig_foreground, orig_background, drf, auto_search_peaks );
       }//If( still a bad solution )
       
@@ -4094,6 +4674,9 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             curve.phys_model_use_hoerl = (desperation_opts.rois.size() > 2);
 
             add_floating_511_peak_if_appropriate( desperation_opts, sources, fit_norm_peaks, min_valid_energy, max_valid_energy );
+            add_escape_peak_floating_peaks_if_appropriate( desperation_opts, auto_search_peaks, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy, config );
+
+            resolve_overlapping_rois( desperation_opts.rois, desperation_opts.floating_peaks );
 
             RelActCalcAuto::RelActAutoSolution desperation_solution = RelActCalcAuto::solve(
               desperation_opts, foreground, background, drf, auto_search_peaks
@@ -4154,6 +4737,9 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         refined_options.rois = refined_rois;
 
         add_floating_511_peak_if_appropriate( refined_options, sources, fit_norm_peaks, min_valid_energy, max_valid_energy );
+        add_escape_peak_floating_peaks_if_appropriate( refined_options, auto_search_peaks, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy, config );
+
+        resolve_overlapping_rois( refined_options.rois, refined_options.floating_peaks );
 
         RelActCalcAuto::RelActAutoSolution refined_solution
             = RelActCalcAuto::solve( refined_options, foreground, background, drf, auto_search_peaks );
@@ -4506,6 +5092,13 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         }
       }// for( existing_peaks_added_as_floating )
     }// if( existing_peaks_as_free ... )
+
+    // Assign escape peak relationships for high-energy gammas if appropriate
+    // This checks fit peaks (including observable_peaks) and assigns S.E. and D.E. relationships
+    // to significant escape peaks of high-energy lines like Th232 2614 keV
+    assign_escape_peak_relationships( result.fit_peaks, fit_norm_peaks, isHPGe );
+    assign_escape_peak_relationships( result.observable_peaks, fit_norm_peaks, isHPGe );
+    assign_escape_peak_relationships( result.uncombined_fit_peaks, fit_norm_peaks, isHPGe );
 
   }catch( const std::exception &e )
   {

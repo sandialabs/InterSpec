@@ -128,6 +128,9 @@ public:
   /** True if a successful result is available and Accept is valid. */
   bool canAccept() const;
 
+  /** Set maximum height of the chart (e.g. 75% of widget width). Call after dialog sets widget size. */
+  void setChartMaxHeight( double heightPx );
+
   /** Emitted when result state changes (calculating finished, result received, error). */
   Wt::Signal<> &resultUpdated();
 

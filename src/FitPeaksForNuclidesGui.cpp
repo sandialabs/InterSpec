@@ -621,26 +621,35 @@ FitPeaksAdvancedDialog::FitPeaksAdvancedDialog( const Wt::WString &title )
     if( portrait )
     {
       addStyleClass( "FitPeaksAdvancedDialog-portrait" );
-      m_widget->setWidth( 0.95 * interspec->renderedWidth() - 30 );
-      m_widget->setHeight( 0.95 * interspec->renderedHeight() - 90 );
-      m_widget->setMinimumSize( 0.95 * interspec->renderedWidth() - 30, 0.95 * interspec->renderedHeight() - 90 );
-      m_widget->setMaximumSize( 0.95 * interspec->renderedWidth() - 30, 0.95 * interspec->renderedHeight() - 90 );
+      const double w = 0.95 * interspec->renderedWidth() - 30;
+      const double h = 0.95 * interspec->renderedHeight() - 90;
+      m_widget->setWidth( w );
+      m_widget->setHeight( h );
+      m_widget->setMinimumSize( w, h );
+      m_widget->setMaximumSize( w, h );
+      m_widget->setChartMaxHeight( 0.75 * w );
     }
     else if( ( interspec->renderedWidth() > 100 ) && ( interspec->renderedHeight() > 50 ) )
     {
       const double dialogWidth = std::min( 750.0, 0.95 * interspec->renderedWidth() );
-      const double dialogHeight = std::min( 650.0, 0.95 * interspec->renderedHeight() );
-      m_widget->setWidth( dialogWidth - 30 );
-      m_widget->setHeight( dialogHeight - 90 );
-      m_widget->setMinimumSize( dialogWidth - 30, dialogHeight - 90 );
-      m_widget->setMaximumSize( dialogWidth - 30, dialogHeight - 90 );
+      const double dialogHeight = std::min( 750.0, 0.95 * interspec->renderedHeight() );
+      const double w = dialogWidth - 30;
+      const double h = dialogHeight - 90;
+      m_widget->setWidth( w );
+      m_widget->setHeight( h );
+      m_widget->setMinimumSize( w, h );
+      m_widget->setMaximumSize( w, h );
+      m_widget->setChartMaxHeight( 0.75 * w );
     }
     else
     {
-      m_widget->setWidth( 750 - 30 );
-      m_widget->setHeight( 500 - 90 );
-      m_widget->setMinimumSize( 750 - 30, 500 - 90 );
-      m_widget->setMaximumSize( 750 - 30, 500 - 90 );
+      const double w = 750.0 - 30.0;
+      const double h = 500.0 - 90.0;
+      m_widget->setWidth( w );
+      m_widget->setHeight( h );
+      m_widget->setMinimumSize( w, h );
+      m_widget->setMaximumSize( w, h );
+      m_widget->setChartMaxHeight( 0.75 * w );
     }
   }
 
@@ -818,6 +827,7 @@ FitPeaksAdvancedWidget::FitPeaksAdvancedWidget( Wt::WContainerWidget *parent )
 
   m_title = new WText( WString::fromUTF8( "Fit peaks for: " + sourceListTitle() ), this );
   m_title->setInline( false );
+  m_title->addStyleClass( "fpn-title" );
 
   int chartw = 420;
   int charth = 260;
@@ -861,6 +871,14 @@ FitPeaksAdvancedWidget::FitPeaksAdvancedWidget( Wt::WContainerWidget *parent )
 
 FitPeaksAdvancedWidget::~FitPeaksAdvancedWidget()
 {
+  if( m_cancel_calc )
+    m_cancel_calc->store( true );
+}
+
+void FitPeaksAdvancedWidget::setChartMaxHeight( double heightPx )
+{
+  if( m_chart && heightPx > 0 )
+    m_chart->setMaximumSize( WLength::Auto, WLength( heightPx, WLength::Unit::Pixel ) );
 }
 
 void FitPeaksAdvancedWidget::acceptResult()
