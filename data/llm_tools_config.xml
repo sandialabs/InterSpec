@@ -197,10 +197,11 @@
 
 
   <Tool name="add_analysis_peaks_for_source">
-    <Description>Fits all detectable peaks for the one or more specified nuclide(s). 
+    <Description>Fits, and adds to the analysis peaks all detectable peaks for the one or more specified nuclide(s).
     For sources with multiple peaks, will very likely do a much better job than individually fitting peaks for a source, and will do it much more efficiently and with a single tool call.
     If you want to fit peaks for a source that has multiple gamma or x-ray energies, use this function.
-    Returns the peaks that were fit. 
+    The peaks added to the analysis peaks will have their respective source assigned to them.
+    Returns the peaks that were fit.
     </Description>
     <ParametersSchema>{
       "type": "object",
@@ -1585,9 +1586,9 @@ This information provides detailed explanation about the meaning of fields and o
   </Tool>
 
   <Tool name="peak_based_relative_efficiency">
-    <Description>Perform a peak-based relative efficiency calculation using existing fit peaks.
+    <Description>Perform a peak-based relative efficiency calculation using existing analysis peaks.
 
-This tool performs relative efficiency analysis using peaks that have already been fit and assigned to sources. It is useful for:
+This tool performs relative efficiency analysis using peaks that have already been added to analysis peaks and have assigned sources. It is useful for:
 - Validating nuclide identification: peaks that deviate significantly from the fit curve may not be the assigned nuclide
 - Enrichment checks for Uranium or Plutonium isotopes
 - Calculating relative activities/masses of fission products when geometry is unknown

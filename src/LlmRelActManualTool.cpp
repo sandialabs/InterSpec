@@ -389,7 +389,13 @@ nlohmann::json executePeakBasedRelativeEfficiency(
     }//for( peaks )
     
     if( selected_peaks.empty() )
-      throw runtime_error( "No peaks found with the specified source assignments" );
+    {
+      string sources_csv;
+      for( const string &s : target_sources )
+        sources_csv += (sources_csv.empty() ? "" : ", ") + s;
+      throw runtime_error( "No peaks found with the specified sources ("
+                          + sources_csv + ") assigned to them. Please add analysis peaks for these sources and try again." );
+    }
   }//if( has_peak_energies ) / else
   
   // Verify all peaks have sources

@@ -727,6 +727,49 @@ std::vector<std::string> AgentStateMachine::getAllowedTransitions() const
 }//getAllowedTransitions()
 
 
+std::string AgentStateMachine::getFullStateMapSummary() const
+{
+  std::string summary;
+
+  // Start with the initial state, then add remaining states in map order
+  std::vector<std::string> ordered_states;
+  ordered_states.push_back( m_initial_state );
+
+  for( const auto &state_pair : m_states )
+  {
+    if( state_pair.first != m_initial_state )
+      ordered_states.push_back( state_pair.first );
+  }
+
+  for( const std::string &state_name : ordered_states )
+  {
+    if( !hasState( state_name ) )
+      continue;
+
+    const StateDefinition &state = getStateDefinition( state_name );
+    summary += "- **" + state_name + "**: " + state.description;
+
+    if( !state.allowed_transitions.empty() )
+    {
+      summary += " -> ";
+      for( size_t i = 0; i < state.allowed_transitions.size(); ++i )
+      {
+        if( i > 0 )
+          summary += ", ";
+        summary += state.allowed_transitions[i];
+      }
+    }
+
+    if( state.is_final )
+      summary += " (FINAL)";
+
+    summary += "\n";
+  }
+
+  return summary;
+}//getFullStateMapSummary()
+
+
 // ============================================================================
 // End AgentStateMachine implementation
 // ============================================================================

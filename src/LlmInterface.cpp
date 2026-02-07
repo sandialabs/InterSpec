@@ -584,10 +584,11 @@ static std::string serializeRequestForCaching( const nlohmann::json &requestJson
     {
       const std::string &key = it.key();
 
-      // Skip fields we already added
-      if( key == "model" || key == "temperature" ||
-          key == "max_completion_tokens" || key == "max_tokens" ||
-          key == "tools" || key == "tool_choice" )
+      // Skip fields we already added in the priority order above
+      if( key == "model" || key == "temperature"
+         || key == "max_completion_tokens" || key == "max_tokens"
+         || key == "reasoning" || key == "reasoning_effort"
+         || key == "tools" || key == "tool_choice" )
         continue;
 
       if( !first )
@@ -627,6 +628,7 @@ std::string LlmInterface::makeApiCallWithId(const nlohmann::json& requestJson, i
   // Track request string prefix matching for cache verification
   static std::mutex s_cache_check_mutex;
   static std::string s_previous_request_str;
+  static nlohmann::json s_previous_request_json;
 #endif
 
   cout << "=== Making LLM API Call with ID " << requestId << " ===" << endl;
@@ -693,15 +695,14 @@ std::string LlmInterface::makeApiCallWithId(const nlohmann::json& requestJson, i
   // Serialize request with consistent field ordering for LLM provider caching
   const std::string requestStr = serializeRequestForCaching( requestJson );
 
-  /*
 #if( PERFORM_DEVELOPER_CHECKS )
-  // Developer check: Compare this request with the previous one to verify caching optimization
+  // Developer check: Compare this request with the previous one to predict cache hit rate
   {
     std::lock_guard<std::mutex> lock( s_cache_check_mutex );
 
     if( !s_previous_request_str.empty() )
     {
-      // Find how many characters match from the beginning
+      // String-level prefix comparison
       const size_t min_len = std::min( requestStr.length(), s_previous_request_str.length() );
       size_t matching_chars = 0;
       for( size_t i = 0; i < min_len; ++i )
@@ -711,45 +712,70 @@ std::string LlmInterface::makeApiCallWithId(const nlohmann::json& requestJson, i
         ++matching_chars;
       }
 
-      const double match_percent = (matching_chars * 100.0) / std::max( requestStr.length(), s_previous_request_str.length() );
+      const double match_percent = (matching_chars * 100.0)
+                                 / std::max( requestStr.length(), s_previous_request_str.length() );
 
-      cout << "=== LLM Request Cache Analysis ===" << endl;
-      cout << "Current request length: " << requestStr.length() << " chars" << endl;
-      cout << "Previous request length: " << s_previous_request_str.length() << " chars" << endl;
-      cout << "Matching prefix: " << matching_chars << " chars (" << std::fixed << std::setprecision(1) << match_percent << "%)" << endl;
+      cout << "=== LLM Request Cache Prediction ===" << endl;
+      cout << "Current request: " << requestStr.length() << " chars, "
+           << "Previous: " << s_previous_request_str.length() << " chars" << endl;
+      cout << "Matching prefix: " << matching_chars << " chars ("
+           << std::fixed << std::setprecision(1) << match_percent << "%)" << endl;
 
-      if( matching_chars > 0 )
-      {
-        // Show the matching prefix (truncated for readability)
-        const size_t preview_len = std::min( matching_chars, size_t(150) );
-        cout << "Matching prefix: \"" << requestStr.substr(0, preview_len);
-        if( preview_len < matching_chars )
-          cout << "...\" (+" << (matching_chars - preview_len) << " more chars)";
-        else
-          cout << "\"";
-        cout << endl;
-      }
-
-      // Show where the difference starts
+      // Show where the string-level difference starts
       if( matching_chars < min_len )
       {
-        const size_t diff_preview_len = std::min( size_t(50), min_len - matching_chars );
-        cout << "First difference at position " << matching_chars << ":" << endl;
-        cout << "  Current:  \"" << requestStr.substr(matching_chars, diff_preview_len) << "...\"" << endl;
-        cout << "  Previous: \"" << s_previous_request_str.substr(matching_chars, diff_preview_len) << "...\"" << endl;
+        const size_t ctx = std::min( size_t(200), min_len - matching_chars );
+        cout << "First difference at char " << matching_chars << ":" << endl;
+        cout << "  Current:  \"" << sanitizeUtf8( requestStr.substr( matching_chars, ctx ) ) << "\"" << endl;
+        cout << "  Previous: \"" << sanitizeUtf8( s_previous_request_str.substr( matching_chars, ctx ) ) << "\"" << endl;
       }
 
-      cout << "===================================" << endl;
+      // Message-level comparison to identify which message diverges
+      if( requestJson.contains("messages") && s_previous_request_json.contains("messages") )
+      {
+        const auto &curMsgs = requestJson["messages"];
+        const auto &prevMsgs = s_previous_request_json["messages"];
+        const size_t minMsgs = std::min( curMsgs.size(), prevMsgs.size() );
+
+        for( size_t i = 0; i < minMsgs; ++i )
+        {
+          if( curMsgs[i].dump() != prevMsgs[i].dump() )
+          {
+            const string curRole = curMsgs[i].value( "role", "?" );
+            const string prevRole = prevMsgs[i].value( "role", "?" );
+            cout << "First message diff at index " << i << " of " << minMsgs
+                 << " (cur role=\"" << curRole << "\", prev role=\"" << prevRole << "\"):" << endl;
+
+            // Show truncated content of diverging messages
+            string curContent = curMsgs[i].dump();
+            string prevContent = prevMsgs[i].dump();
+            if( curContent.length() > 300 )
+              curContent = curContent.substr( 0, 300 ) + "...";
+            if( prevContent.length() > 300 )
+              prevContent = prevContent.substr( 0, 300 ) + "...";
+            cout << "  Current:  " << sanitizeUtf8( curContent ) << endl;
+            cout << "  Previous: " << sanitizeUtf8( prevContent ) << endl;
+            break;
+          }
+        }
+
+        if( curMsgs.size() != prevMsgs.size() )
+        {
+          cout << "Message count: current=" << curMsgs.size()
+               << ", previous=" << prevMsgs.size() << endl;
+        }
+      }
+
+      cout << "====================================" << endl;
     }else
     {
-      cout << "=== First LLM request in session (no cache comparison) ===" << endl;
+      cout << "=== First LLM request (no cache comparison) ===" << endl;
     }
 
-    // Store current request for next comparison
     s_previous_request_str = requestStr;
+    s_previous_request_json = requestJson;
   }
 #endif // PERFORM_DEVELOPER_CHECKS
-   */
 
   // Use Wt::WWebWidget::jsStringLiteral to properly escape the JSON string for JavaScript
   const std::string jsLiteralRequestStr = Wt::WWebWidget::jsStringLiteral( requestStr );
@@ -818,6 +844,27 @@ void LlmInterface::handleApiResponse( const std::string &response,
         cout << "Total tokens: " << (totalTokens.has_value() ? std::to_string(totalTokens.value()) : "N/A") << endl;
         cout << "=============================" << endl;
       }
+
+#if( PERFORM_DEVELOPER_CHECKS )
+      // Log prompt cache hit info (OpenRouter and OpenAI both use usage.prompt_tokens_details.cached_tokens)
+      if( usage.contains("prompt_tokens_details") && usage["prompt_tokens_details"].is_object() )
+      {
+        const auto &details = usage["prompt_tokens_details"];
+        if( details.contains("cached_tokens") && details["cached_tokens"].is_number() )
+        {
+          const int cachedTokens = details["cached_tokens"].get<int>();
+          cout << "=== Prompt Cache Info ===" << endl;
+          cout << "Cached tokens: " << cachedTokens;
+          if( promptTokens.has_value() && (promptTokens.value() > 0) )
+          {
+            const double pct = 100.0 * cachedTokens / static_cast<double>( promptTokens.value() );
+            cout << " (" << static_cast<int>( pct ) << "% of prompt)";
+          }
+          cout << endl;
+          cout << "=========================" << endl;
+        }
+      }
+#endif // PERFORM_DEVELOPER_CHECKS
     }//if( responseJson.contains("usage") )
     
     
@@ -2212,21 +2259,23 @@ nlohmann::json LlmInterface::buildMessagesArray( const std::shared_ptr<LlmIntera
   // Add system prompt with optional state machine guidance
   string systemPrompt = getSystemPromptForAgent( convo->agent_type );
 
-  // If conversation has a state machine, append current state guidance
+  // If conversation has a state machine, append current state guidance with directive language
   if( convo->state_machine )
   {
+    const string &currentState = convo->state_machine->getCurrentState();
     const string guidance = convo->state_machine->getPromptGuidanceForCurrentState();
 
     if( !guidance.empty() )
     {
-      systemPrompt += "\n\n## Current Workflow State\n\n";
-      systemPrompt += "**State**: " + convo->state_machine->getCurrentState() + "\n\n";
-      systemPrompt += "**Guidance**: " + guidance + "\n\n";
+      systemPrompt += "\n\n## MANDATORY Workflow State Machine\n\n";
+      systemPrompt += "You are currently in state **" + currentState + "**. "
+                      "You MUST follow this state machine.\n\n";
+      systemPrompt += "**Current State Guidance**: " + guidance + "\n\n";
 
       const vector<string> allowed = convo->state_machine->getAllowedTransitions();
       if( !allowed.empty() )
       {
-        systemPrompt += "**Next States**: ";
+        systemPrompt += "**Allowed Next States**: ";
         for( size_t i = 0; i < allowed.size(); ++i )
         {
           if( i > 0 )
@@ -2236,7 +2285,16 @@ nlohmann::json LlmInterface::buildMessagesArray( const std::shared_ptr<LlmIntera
         systemPrompt += "\n\n";
       }
 
-      systemPrompt += "**Action**: Use set_workflow_state tool when transitioning to next state.\n";
+      systemPrompt += "**REQUIRED**: You MUST call `set_workflow_state` to transition"
+                      " before beginning work for a different phase. Do NOT skip states.\n\n";
+
+      // On first call (initial state), include the full state map overview
+      if( currentState == convo->state_machine->getInitialState() )
+      {
+        systemPrompt += "### Full Workflow Map\n\n";
+        systemPrompt += convo->state_machine->getFullStateMapSummary();
+        systemPrompt += "\n";
+      }
     }
   }
 
@@ -2274,8 +2332,39 @@ nlohmann::json LlmInterface::buildMessagesArray( const std::shared_ptr<LlmIntera
     LlmConversationHistory::addConversationToLlmApiHistory( *convo, messages );
   }
   
+  // Add ephemeral state machine reminder as the last message (not persisted in history).
+  // Only inject after the first call (when there are already responses), to avoid consecutive
+  // user messages on the initial request where the system prompt already has the state info.
+  if( convo->state_machine && (convo->responses.size() > 1) )
+  {
+    const string &curState = convo->state_machine->getCurrentState();
+    const vector<string> nextStates = convo->state_machine->getAllowedTransitions();
+
+    if( !curState.empty() )
+    {
+      string reminder = "[System: Current workflow state is " + curState + ".";
+      if( !nextStates.empty() )
+      {
+        reminder += " Allowed transitions: ";
+        for( size_t i = 0; i < nextStates.size(); ++i )
+        {
+          if( i > 0 )
+            reminder += ", ";
+          reminder += nextStates[i];
+        }
+        reminder += ".";
+      }
+      reminder += " Call set_workflow_state when ready to transition.]";
+
+      json stateMsg;
+      stateMsg["role"] = "user";
+      stateMsg["content"] = reminder;
+      messages.push_back( stateMsg );
+    }
+  }
+
   request["messages"] = messages;
-  
+
   // Add tools
   json tools = json::array();
   

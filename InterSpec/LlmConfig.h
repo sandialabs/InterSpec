@@ -119,6 +119,13 @@ public:
   // Guidance
   std::string getPromptGuidanceForCurrentState() const;
   std::vector<std::string> getAllowedTransitions() const;
+
+  /** Generate a compact summary of all states and transitions for LLM context.
+
+   Produces a markdown-formatted overview of the full state machine graph,
+   auto-generated from the XML definitions so it stays in sync automatically.
+   */
+  std::string getFullStateMapSummary() const;
 };//class AgentStateMachine
 
 

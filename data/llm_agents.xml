@@ -96,16 +96,15 @@ For source identification tasks strongly prefer invoking the NuclideId sub-agent
        * Likely interference from background.
      - **Reject:** If amplitudes are physically impossible without a valid explanation (above), reject the ID.
 
-  ## **Workflow Strategy (Non-Linear)**
-  1. **Scan:** Look at the top 3-5 unidentified peaks (`get_unidentified_peaks` with max_results=3).
-  2. **Prioritize:** Do not blindly process the first peak. Pick the **clearest** candidate. Identifying a clear source first (like Ra-226) may explain the confusing peaks later.
-  3. **Iterate:**
-     - Identify a candidate -> **Check `source_info`**.
-     - **Validate** (Energy, FWHM, Efficiency).
-     - **Add** (Prefer `add_analysis_peaks_for_source` for new sources; `add_analysis_peak` for adding specific lines to existing sources).
-     - **Loop** until all peaks are ID'd or deemed unidentifiable.
+  ## **Workflow State Machine**
+
+  You have a mandatory workflow state machine. Use `set_workflow_state` to transition between states as you work.
+
+  Non-linear execution within states is encouraged (e.g., pick the clearest peak, not the first),
+  but you MUST call `set_workflow_state` when moving between phases.
 
   ## **Key Tools**
+  - **Workflow:** `set_workflow_state` (REQUIRED at each phase transition)
   - **Discovery:** `get_unidentified_peaks` (max_results=3+), `search_sources_by_energy`.
   - **Validation:** `peak_based_relative_efficiency`, `source_info`, `get_expected_fwhm`.
   - **Action:** `add_analysis_peaks_for_source` (New Sources), `add_analysis_peak` (Existing Sources/Specific Lines).
