@@ -354,9 +354,14 @@ std::vector<RelActCalcAuto::NucInputInfo> get_norm_sources(
  well-modeled by the source's weak 511 BR. Adding a floating peak in this case allows
  the fit to accommodate excess 511 counts without distorting the relative efficiency curve.
  
+ This feature is only enabled for high-resolution detectors (HPGe) since low-resolution
+ detectors typically cannot resolve the 511 keV peak clearly enough to benefit from
+ this treatment.
+ 
  \param options The RelActCalcAuto::Options to potentially add a floating peak to
  \param sources The input sources being fit
  \param fit_norm_peaks Whether NORM background peaks are being fit
+ \param isHPGe Whether this is a high-resolution (HPGe) detector
  \param min_valid_energy Minimum energy of the valid spectroscopic range (keV)
  \param max_valid_energy Maximum energy of the valid spectroscopic range (keV)
  */
@@ -364,9 +369,14 @@ void add_floating_511_peak_if_appropriate(
   RelActCalcAuto::Options &options,
   const std::vector<RelActCalcAuto::NucInputInfo> &sources,
   const bool fit_norm_peaks,
+  const bool isHPGe,
   const double min_valid_energy,
   const double max_valid_energy )
 {
+  // Only add 511 keV peaks for high-resolution detectors (HPGe)
+  if( !isHPGe )
+    return;
+  
   // Check if there's a ROI covering 511 keV
   const double annihilation_energy = 510.9989;
   const double energy_tolerance = 2.0; // keV tolerance for ROI coverage
@@ -4417,7 +4427,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   }//if( fit_norm_peaks )
 
   // Add a floating peak at 511 keV if appropriate (see function documentation for physics reasoning)
-  add_floating_511_peak_if_appropriate( options, sources, fit_norm_peaks, min_valid_energy, max_valid_energy );
+  add_floating_511_peak_if_appropriate( options, sources, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy );
   
   // Add floating peaks for escape peaks of high-energy gammas if appropriate
   add_escape_peak_floating_peaks_if_appropriate( options, auto_search_peaks, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy, config );
@@ -4446,7 +4456,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
       RelActCalcAuto::Options no_ecal_opts = options;
       no_ecal_opts.energy_cal_type = RelActCalcAuto::EnergyCalFitType::NoFit;
 
-      add_floating_511_peak_if_appropriate( no_ecal_opts, sources, fit_norm_peaks, min_valid_energy, max_valid_energy );
+      add_floating_511_peak_if_appropriate( no_ecal_opts, sources, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy );
       add_escape_peak_floating_peaks_if_appropriate( no_ecal_opts, auto_search_peaks, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy, config );
 
       RelActCalcAuto::RelActAutoSolution trial_solution = RelActCalcAuto::solve(
@@ -4499,7 +4509,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         
         curve.phys_model_use_hoerl = (options.rois.size() > 2);
         
-        add_floating_511_peak_if_appropriate( desperation_opts, sources, fit_norm_peaks, min_valid_energy, max_valid_energy );
+        add_floating_511_peak_if_appropriate( desperation_opts, sources, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy );
         add_escape_peak_floating_peaks_if_appropriate( desperation_opts, auto_search_peaks, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy, config );
 
         resolve_overlapping_rois( desperation_opts.rois, desperation_opts.floating_peaks );
@@ -4673,7 +4683,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 
             curve.phys_model_use_hoerl = (desperation_opts.rois.size() > 2);
 
-            add_floating_511_peak_if_appropriate( desperation_opts, sources, fit_norm_peaks, min_valid_energy, max_valid_energy );
+            add_floating_511_peak_if_appropriate( desperation_opts, sources, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy );
             add_escape_peak_floating_peaks_if_appropriate( desperation_opts, auto_search_peaks, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy, config );
 
             resolve_overlapping_rois( desperation_opts.rois, desperation_opts.floating_peaks );
@@ -4736,7 +4746,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         RelActCalcAuto::Options refined_options = solution.m_options;
         refined_options.rois = refined_rois;
 
-        add_floating_511_peak_if_appropriate( refined_options, sources, fit_norm_peaks, min_valid_energy, max_valid_energy );
+        add_floating_511_peak_if_appropriate( refined_options, sources, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy );
         add_escape_peak_floating_peaks_if_appropriate( refined_options, auto_search_peaks, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy, config );
 
         resolve_overlapping_rois( refined_options.rois, refined_options.floating_peaks );

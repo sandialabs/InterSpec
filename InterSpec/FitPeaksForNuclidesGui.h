@@ -174,6 +174,7 @@ private:
   Wt::WCheckBox *m_opt_dont_refine_energy_cal;
   Wt::WCheckBox *m_opt_fit_bkgnd_peaks;
   Wt::WCheckBox *m_opt_fit_bkgnd_dont_use;
+  Wt::WCheckBox *m_opt_use_background;
   NativeFloatSpinBox *m_opt_roi_min_chi2;
   NativeFloatSpinBox *m_opt_roi_min_peak_sig;
   NativeFloatSpinBox *m_opt_obs_initial_sig;

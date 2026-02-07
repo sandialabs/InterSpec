@@ -690,6 +690,7 @@ FitPeaksAdvancedWidget::FitPeaksAdvancedWidget( Wt::WContainerWidget *parent )
     m_opt_dont_refine_energy_cal( nullptr ),
     m_opt_fit_bkgnd_peaks( nullptr ),
     m_opt_fit_bkgnd_dont_use( nullptr ),
+    m_opt_use_background( nullptr ),
     m_opt_roi_min_chi2( nullptr ),
     m_opt_roi_min_peak_sig( nullptr ),
     m_opt_obs_initial_sig( nullptr ),
@@ -1086,11 +1087,15 @@ void FitPeaksAdvancedWidget::startComputation()
   auto gui_update = wApp->bind( boost::bind( &FitPeaksAdvancedWidget::updateFromResult, this, result, cancel_calc, calc_number ) );
   auto gui_error = wApp->bind( boost::bind( &FitPeaksAdvancedWidget::handleCalcError, this, error_msg, cancel_calc ) );
 
+  std::shared_ptr<SpecUtils::Measurement> bg_to_use = m_bg_copy;
+  if( m_opt_use_background && !m_opt_use_background->isChecked() )
+    bg_to_use = nullptr;
+
   auto worker = [=](){
     try
     {
       *result = FitPeaksForNuclides::fit_peaks_for_nuclides( peaks_to_use, m_fg_copy, m_base_nucs, m_user_peaks,
-                                                            m_bg_copy, m_drf, options, config, m_is_hpge );
+                                                            bg_to_use, m_drf, options, config, m_is_hpge );
       WServer::instance()->post( sessionid, [=](){
         WApplication *app = WApplication::instance();
         if( app )
@@ -1439,6 +1444,14 @@ void FitPeaksAdvancedWidget::buildOptionsFromConfig()
   // m_opt_fit_bkgnd_dont_use = new WCheckBox( WString::tr("fpn-opt-fit-bkgnd-dont-use"), checkboxes_container );
   // m_opt_fit_bkgnd_dont_use->setChecked( false );
   // m_opt_fit_bkgnd_dont_use->changed().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
+
+  if( m_bg_copy )
+  {
+    m_opt_use_background = new WCheckBox( WString::tr("fpn-opt-use-background"), checkboxes_container );
+    m_opt_use_background->setChecked( true );
+    m_opt_use_background->changed().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
+    HelpSystem::attachToolTipOn( m_opt_use_background, WString::tr("fpn-opt-tt-use-background"), show_tool_tips );
+  }
 
   NativeFloatSpinBox *roi_chi2 = new NativeFloatSpinBox();
   roi_chi2->setWidth( WLength( 4, WLength::Unit::FontEm ) );

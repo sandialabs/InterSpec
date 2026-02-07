@@ -25,6 +25,7 @@
   <message id="fpn-opt-dont-refine-energy-cal">Don't refine energy cal</message>
   <message id="fpn-opt-fit-bkgnd-peaks">Fit NORM</message>
   <message id="fpn-opt-fit-bkgnd-dont-use">Fit NORM (don't use)</message>
+  <message id="fpn-opt-use-background">Compute with background subtract</message>
 
   <!-- PeakFitForNuclideConfig option labels -->
   <message id="fpn-opt-roi-min-chi2-red">Keep ROI chi2 reduction threshold</message>
@@ -41,6 +42,7 @@
   <message id="fpn-opt-tt-dont-vary-energy-cal">The energy calibration stays fixed during the fit.</message>
   <message id="fpn-opt-tt-dont-refine-energy-cal">The energy calibration is varied in the fit, but the ROI extent is not updated based on the fit calibration.</message>
   <message id="fpn-opt-tt-fit-bkgnd-peaks">Fit NORM peaks (U-238, Ra-226, U-235, Th-232, K-40) using a second relative efficiency curve.</message>
+  <message id="fpn-opt-tt-use-background">When enabled, the background spectrum is subtracted during peak fitting to determine ROIs to use, but the background is not subtracted for the final fit of peaks that will be returned. Uncheck to fit without background subtraction.</message>
   <message id="fpn-opt-tt-roi-min-chi2-red">Minimum total chi2 reduction required for peaks in a ROI to be considered significant. The chi2 with peaks must be at least this much lower than chi2 with continuum-only.</message>
   <message id="fpn-opt-tt-roi-min-peak-sig">Minimum peak significance (peak_area / sqrt(continuum)) for a peak to be considered significant. If any peak in a ROI has significance above this threshold, the ROI is kept.</message>
   <message id="fpn-opt-tt-obs-initial-sig">Threshold for the initial peak significance filter before refitting. Significance = (peak_amplitude * 0.7607) / sqrt(data_area_in_pm_1_fwhm).</message>
