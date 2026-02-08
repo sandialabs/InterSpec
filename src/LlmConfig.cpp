@@ -432,6 +432,11 @@ std::vector<LlmConfig::ToolConfig> LlmConfig::loadToolConfigsFromFile( const std
         throw runtime_error( "Tool node missing 'name' attribute in " + toolsConfigPath );
 
       tool.name = SpecUtils::xml_value_str( nameAttr );
+      
+      // Tool names should never contain angle brackets
+      assert( tool.name.find('<') == string::npos );
+      if( tool.name.find('<') != string::npos )
+        throw runtime_error( "Tool name '" + tool.name + "' contains invalid character '<' in " + toolsConfigPath );
 
       // Load descriptions
       XML_FOREACH_CHILD(descNode, toolNode, "Description")

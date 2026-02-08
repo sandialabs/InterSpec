@@ -888,11 +888,63 @@ namespace {
     j = json{{"sources", sources}};
   }
 
-  void to_json(json& j, const AnalystChecks::FitPeaksForNuclideStatus &p, const shared_ptr<const SpecUtils::Measurement> &meas ) {
-    json peak_rois;
-    to_json( peak_rois, p.fitPeaks, meas );
+  /** Helper function to create simplified peak JSON with essential fields.
+   
+   Creates a JSON object for a peak containing: energy, fwhm, amplitude, amplitudeUncert, numSigma, and cps.
+   
+   @param peak The peak to convert to simplified JSON
+   @param meas Optional measurement data (used to calculate cps from live_time)
+   @param include_source If true, includes source information (nuclide, element, or reaction) if assigned to the peak
+   @returns JSON object with simplified peak data, or empty JSON object if peak is not GaussianDefined
+   */
+  json peak_to_simplified_json( const shared_ptr<const PeakDef> &peak, 
+                                 const shared_ptr<const SpecUtils::Measurement> &meas,
+                                 const bool include_source )
+  {
+    json peak_json;
     
-    j = json{{"rois_added", peak_rois}};
+    if( !peak || (peak->type() != PeakDef::DefintionType::GaussianDefined) )
+      return peak_json;
+    
+    peak_json["energy"] = rount_to_hundredth( peak->mean() );
+    peak_json["fwhm"] = rount_to_hundredth( peak->fwhm() );
+    peak_json["amplitude"] = rount_to_hundredth( peak->amplitude() );
+    peak_json["amplitudeUncert"] = rount_to_hundredth( peak->amplitudeUncert() );
+    
+    if( peak->amplitudeUncert() > 0.0 )
+      peak_json["numSigma"] = rount_to_hundredth( peak->amplitude() / peak->amplitudeUncert() );
+    
+    if( meas && (meas->live_time() > 0.0) )
+    {
+      const double cps = peak->amplitude() / meas->live_time();
+      peak_json["cps"] = rount_to_hundredth( cps );
+    }
+    
+    if( include_source )
+    {
+      // Include source information if assigned
+      if( const SandiaDecay::Nuclide * const nuc = peak->parentNuclide() )
+        peak_json["source"] = nuc->symbol;
+      else if( const SandiaDecay::Element * const el = peak->xrayElement() )
+        peak_json["source"] = el->symbol;
+      else if( const ReactionGamma::Reaction * const rctn = peak->reaction() )
+        peak_json["source"] = rctn->name();
+    }
+    
+    return peak_json;
+  }
+
+  void to_json(json& j, const AnalystChecks::FitPeaksForNuclideStatus &p, const shared_ptr<const SpecUtils::Measurement> &meas ) {
+    // Return simplified peak information instead of full verbose format
+    json peaks_array = json::array();
+    for( const shared_ptr<const PeakDef> &peak : p.fitPeaks )
+    {
+      json peak_json = peak_to_simplified_json( peak, meas, true );
+      if( !peak_json.empty() )
+        peaks_array.push_back( peak_json );
+    }
+    
+    j = json{{"peaks", peaks_array}};
     if( !p.warnings.empty() )
       j["warnings"] = p.warnings;
   }
@@ -1642,7 +1694,7 @@ nlohmann::json ToolRegistry::executeTool(const std::string& toolName,
 {
   const SharedTool* tool = getTool(toolName);
   if (!tool) {
-    throw std::runtime_error("Tool not found: " + toolName);
+    throw std::runtime_error("Tool not found: " + toolName + ". Perhaps something got garbled somewhere and retrying would help." );
   }
   
   try
@@ -1787,6 +1839,9 @@ nlohmann::json ToolRegistry::executeGetUnidentifiedDetectedPeaks( const nlohmann
     max_results = static_cast<size_t>( max_val );
   }
 
+  // Parse verbose parameter (default: false)
+  const bool verbose = get_boolean( params, "verbose", false );
+
   shared_ptr<const SpecUtils::Measurement> meas = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
   shared_ptr<const SpecUtils::Measurement> background = interspec->displayedHistogram(SpecUtils::SpectrumType::Background);
 
@@ -1819,7 +1874,178 @@ nlohmann::json ToolRegistry::executeGetUnidentifiedDetectedPeaks( const nlohmann
   result.peaks = unidentified_peaks;
 
   json result_json;
-  to_json( result_json, result, meas );
+
+  if( verbose )
+  {
+    // Verbose mode: return full peak description with all aspects
+    to_json( result_json, result, meas );
+  }
+  else
+  {
+    // Non-verbose mode: return simplified JSON with only essential fields
+    json peaks_array = json::array();
+    for( const shared_ptr<const PeakDef> &peak : unidentified_peaks )
+    {
+      json peak_json = peak_to_simplified_json( peak, meas, false );
+      if( !peak_json.empty() )
+        peaks_array.push_back( peak_json );
+    }
+    result_json["peaks"] = peaks_array;
+  }
+
+  // Add elevation metrics if background is available and peaks passed the elevation filter
+  if( background && options.nonBackgroundPeaksOnly )
+  {
+    // Get background peaks
+    shared_ptr<SpecMeas> background_meas = interspec->measurment(SpecUtils::SpectrumType::Background);
+    if( background_meas )
+    {
+      const set<int> bg_sample_nums = interspec->displayedSamples(SpecUtils::SpectrumType::Background);
+      shared_ptr<const deque<shared_ptr<const PeakDef>>> bg_peaks = background_meas->automatedSearchPeaks(bg_sample_nums);
+      
+      if( bg_peaks && !bg_peaks->empty() )
+      {
+        const double fg_live_time = (meas && (meas->live_time() > 0.0f)) ? meas->live_time() : 1.0f;
+        const double bg_live_time = (background->live_time() > 0.0f) ? background->live_time() : 1.0f;
+        
+        // Lambda to find matching background peak and calculate elevation metrics
+        auto calculate_elevation = [&]( const shared_ptr<const PeakDef> &fg_peak ) 
+          -> std::optional<std::pair<double, double>>
+        {
+          if( !fg_peak )
+            return std::nullopt;
+          
+          // Find the closest matching background peak (same logic as detected_peaks(...) in AnalystChecks.cpp)
+          shared_ptr<const PeakDef> closest_bg_peak;
+          double smallest_energy_diff = std::numeric_limits<double>::infinity();
+          
+          for( const shared_ptr<const PeakDef> &bg_peak : *bg_peaks )
+          {
+            if( !bg_peak )
+              continue;
+            
+            const double energy_diff = fabs(fg_peak->mean() - bg_peak->mean());
+            const double avg_fwhm = 0.75 * (fg_peak->fwhm() + bg_peak->fwhm()) / 2.0;
+            
+            if( (energy_diff < avg_fwhm) && (energy_diff < smallest_energy_diff) )
+            {
+              closest_bg_peak = bg_peak;
+              smallest_energy_diff = energy_diff;
+            }
+          }
+          
+          if( !closest_bg_peak )
+            return std::nullopt;
+          
+          // Calculate CPS for both peaks
+          const double fg_cps = fg_peak->amplitude() / fg_live_time;
+          const double bg_cps = closest_bg_peak->amplitude() / bg_live_time;
+          
+          if( bg_cps <= 0.0 )
+            return std::nullopt;
+          
+          // Calculate percent elevation: ((fg_cps / bg_cps) - 1.0) * 100.0
+          const double percent_elevation = ((fg_cps / bg_cps) - 1.0) * 100.0;
+          
+          // Calculate sigma elevation if uncertainties are available
+          double sigma_elevation = 0.0;
+          const double fg_amp_uncert = fg_peak->amplitudeUncert();
+          const double bg_amp_uncert = closest_bg_peak->amplitudeUncert();
+          
+          if( (fg_amp_uncert > 0.0) && (bg_amp_uncert > 0.0) )
+          {
+            const double fg_cps_uncert = fg_amp_uncert / fg_live_time;
+            const double bg_cps_uncert = bg_amp_uncert / bg_live_time;
+            const double combined_uncert = sqrt(fg_cps_uncert*fg_cps_uncert + bg_cps_uncert*bg_cps_uncert);
+            
+            if( combined_uncert > 0.0 )
+              sigma_elevation = (fg_cps - bg_cps) / combined_uncert;
+          }
+          
+          return std::make_pair(percent_elevation, sigma_elevation);
+        };//calculate_elevation lambda
+        
+        if( verbose )
+        {
+          // Verbose mode: navigate ROI structure
+          assert( result_json.contains("rois") && result_json["rois"].is_array() );
+          
+          if( result_json.contains("rois") && result_json["rois"].is_array() )
+          {
+            json &rois_array = result_json["rois"];
+            
+            for( json &roi : rois_array )
+            {
+              assert( roi.is_object() && roi.contains("peaks") && roi["peaks"].is_array() );
+              
+              if( !roi.is_object() || !roi.contains("peaks") || !roi["peaks"].is_array() )
+                continue;
+              
+              json &peaks_in_roi = roi["peaks"];
+              
+              for( json &peak_json : peaks_in_roi )
+              {
+                assert( peak_json.is_object() && peak_json.contains("energy") );
+                if( !peak_json.is_object() || !peak_json.contains("energy") )
+                  continue;
+                
+                const double peak_energy = peak_json["energy"].get<double>();
+                
+                // Find matching peak in unidentified_peaks by energy
+                for( const shared_ptr<const PeakDef> &fg_peak : unidentified_peaks )
+                {
+                  if( !fg_peak || (fabs(fg_peak->mean() - peak_energy) > 0.01) )
+                    continue;
+                  
+                  const std::optional<std::pair<double, double>> elevation = calculate_elevation(fg_peak);
+                  
+                  if( elevation )
+                  {
+                    peak_json["elevatedOverBackgroundPeakPercent"] = rount_to_hundredth(elevation->first);
+                    
+                    if( elevation->second > 0.0 )
+                      peak_json["elevatedOverBackgroundPeakNumSigma"] = rount_to_hundredth(elevation->second);
+                  }
+                  
+                  break;
+                }//for( const shared_ptr<const PeakDef> &fg_peak : unidentified_peaks )
+              }//for( json &peak_json : peaks_in_roi )
+            }//for( json &roi : rois_array )
+          }//if( result_json.contains("rois") && result_json["rois"].is_array() )
+        }else
+        {
+          // Non-verbose mode: direct peaks array
+          assert( result_json.contains("peaks") && result_json["peaks"].is_array() );
+          
+          if( result_json.contains("peaks") && result_json["peaks"].is_array() )
+          {
+            json &peaks_array = result_json["peaks"];
+            
+            // The peaks in the JSON correspond 1-to-1 with unidentified_peaks
+            assert( peaks_array.size() <= unidentified_peaks.size() );
+            
+            for( size_t i = 0; i < peaks_array.size() && i < unidentified_peaks.size(); ++i )
+            {
+              json &peak_json = peaks_array[i];
+              assert( peak_json.is_object() );
+              if( !peak_json.is_object() )
+                continue;
+              
+              const std::optional<std::pair<double, double>> elevation = calculate_elevation(unidentified_peaks[i]);
+              
+              if( elevation )
+              {
+                peak_json["elevatedOverBackgroundPeakPercent"] = rount_to_hundredth(elevation->first);
+                
+                if( elevation->second > 0.0 )
+                  peak_json["elevatedOverBackgroundPeakNumSigma"] = rount_to_hundredth(elevation->second);
+              }
+            }//for( size_t i = 0; i < peaks_array.size() && i < unidentified_peaks.size(); ++i )
+          }//if( result_json.contains("peaks") && result_json["peaks"].is_array() )
+        }//if( verbose ) / else
+      }//if( bg_peaks && !bg_peaks->empty() )
+    }//if( background_meas )
+  }//if( background && options.nonBackgroundPeaksOnly )
 
   return result_json;
 }//nlohmann::json ToolRegistry::executeGetUnidentifiedDetectedPeaks( const nlohmann::json &params, InterSpec *interspec )

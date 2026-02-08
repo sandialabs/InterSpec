@@ -105,7 +105,7 @@ For source identification tasks strongly prefer invoking the NuclideId sub-agent
 
   ## **Key Tools**
   - **Workflow:** `set_workflow_state` (REQUIRED at each phase transition)
-  - **Discovery:** `get_unidentified_peaks` (max_results=3+), `search_sources_by_energy`.
+  - **Discovery:** `get_unidentified_peaks` (max_results=3+, verbose=false), `search_sources_by_energy`.
   - **Validation:** `peak_based_relative_efficiency`, `source_info`, `get_expected_fwhm`.
   - **Action:** `add_analysis_peaks_for_source` (New Sources), `add_analysis_peak` (Existing Sources/Specific Lines).
   ]]></SystemPrompt>
@@ -146,7 +146,7 @@ For source identification tasks strongly prefer invoking the NuclideId sub-agent
           <SuggestedTools>
             <Tool>get_unidentified_peaks</Tool>
           </SuggestedTools>
-          <PromptGuidance>Call `get_unidentified_peaks` with `max_results=3` (or more).
+          <PromptGuidance>Call `get_unidentified_peaks` with `max_results=3` (or more), and `verbose=false`.
           **Decision Logic:**
           1. If the list is empty, transition to FINALIZE_RESULTS.
           2. If peaks exist, select the peak that seems most distinct or easiest to identify (highest energy, or tightest FWHM) that you haven't already failed to ID.

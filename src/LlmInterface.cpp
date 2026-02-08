@@ -73,6 +73,7 @@ static constexpr size_t sm_max_total_nonfinal_autoreplies = 10;
 
 // Forward declarations
 static std::string sanitizeUtf8( const std::string &str );
+static std::string sanitizeToolName( const std::string &toolName );
 
 #if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
 /** Write cache debug information to files for inspection when cache hit rate is low.
@@ -299,6 +300,34 @@ Wt::Signal<>& LlmInterface::responseError() {
 
 bool LlmInterface::isRequestPending(int requestId) const {
   return m_pendingRequests.find(requestId) != m_pendingRequests.end();
+}
+
+
+/** Sanitize a tool name by removing angle brackets and any characters after them.
+ 
+ Some LLM models return tool names with extra characters in angle brackets, like
+ "get_identified_sources<|channel|>" when it should be "get_identified_sources".
+ This function removes the angle bracket and everything after it, then trims whitespace.
+ 
+ @param toolName The potentially malformed tool name
+ @return Sanitized tool name
+ */
+static std::string sanitizeToolName( const std::string &toolName )
+{
+  std::string result = toolName;
+  
+  // Find the first '<' character
+  const size_t pos = result.find( '<' );
+  if( pos != std::string::npos )
+  {
+    // Remove '<' and everything after it
+    result = result.substr( 0, pos );
+  }
+  
+  // Trim whitespace
+  SpecUtils::trim( result );
+  
+  return result;
 }
 
 
@@ -924,35 +953,39 @@ void LlmInterface::handleApiResponse( const std::string &response,
       // Accumulate token usage for this conversation
       m_history->addTokenUsage( conversation, promptTokensInt, completionTokensInt, totalTokens );
 
-      if( completionTokens.has_value() )
-      {
+#if( PERFORM_DEVELOPER_CHECKS )
+      const bool has_completion = completionTokens.has_value();
+      const bool has_cache_detals = (usage.contains("prompt_tokens_details")
+                                     && usage["prompt_tokens_details"].is_object()
+                                     && usage["prompt_tokens_details"].contains("cached_tokens")
+                                     && usage["prompt_tokens_details"].is_number());
+      
+      if( has_completion || has_cache_detals )
         cout << "=== Token Usage This Call ===" << endl;
+      
+      if( has_completion )
+      {
         cout << "Prompt tokens: " << (promptTokens.has_value() ? std::to_string(promptTokens.value()) : "N/A") << endl;
         cout << "Completion tokens: " << completionTokens.value() << endl;
         cout << "Total tokens: " << (totalTokens.has_value() ? std::to_string(totalTokens.value()) : "N/A") << endl;
-        cout << "=============================" << endl;
       }
 
-#if( PERFORM_DEVELOPER_CHECKS )
       // Log prompt cache hit info (OpenRouter and OpenAI both use usage.prompt_tokens_details.cached_tokens)
-      if( usage.contains("prompt_tokens_details") && usage["prompt_tokens_details"].is_object() )
+      if( has_cache_detals )
       {
         const auto &details = usage["prompt_tokens_details"];
-        if( details.contains("cached_tokens") && details["cached_tokens"].is_number() )
+        const int cachedTokens = details["cached_tokens"].get<int>();
+        cout << "Cached tokens: " << cachedTokens;
+        if( promptTokens.has_value() && (promptTokens.value() > 0) )
         {
-          const int cachedTokens = details["cached_tokens"].get<int>();
-          cout << "=== Prompt Cache Info ===" << endl;
-          cout << "Cached tokens: " << cachedTokens;
-          if( promptTokens.has_value() && (promptTokens.value() > 0) )
-          {
-            const double pct = 100.0 * cachedTokens / static_cast<double>( promptTokens.value() );
-            cout << " (" << static_cast<int>( pct ) << "% of prompt)";
-          }
-          cout << endl;
-          cout << "=========================" << endl;
+          const double pct = 100.0 * cachedTokens / static_cast<double>( promptTokens.value() );
+          cout << " (" << static_cast<int>( pct ) << "% of prompt)";
         }
-      }
-#endif // PERFORM_DEVELOPER_CHECKS
+      }//if( has_cache_detals )
+      
+      if( has_completion || has_cache_detals )
+        cout << "=============================" << endl;
+#endif
     }//if( responseJson.contains("usage") )
     
     
@@ -1354,6 +1387,10 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
       if( !function_def.contains("name") )
         throw runtime_error( "No tool 'name' given definition in the JSON" );
       toolName = function_def["name"];
+      
+      // Sanitize tool name to remove any spurious characters like angle brackets
+      // (some LLM models return things like "tool_name<|channel|>")
+      toolName = sanitizeToolName( toolName );
 
       // Get raw arguments string (don't parse yet - we'll parse based on tool type)
       if( function_def.contains("arguments") )

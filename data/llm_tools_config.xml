@@ -24,7 +24,7 @@
           },
           "NonBackgroundPeaksOnly": {
             "type": "boolean",
-            "description": "Optional: If specified true, only peaks without a cooresponding background spectrum peak, or peaks notably elevated over the background, will be returned. May only be specified true for the 'Foreground' spectrum, and only if a background spectrum is loaded.  If not specified, all peaks for the spectrum are returned."
+            "description": "Optional: If specified true, only peaks without a corresponding background spectrum peak, or peaks notably elevated over the background, will be returned. May only be specified true for the 'Foreground' spectrum, and only if a background spectrum is loaded.  If not specified, all peaks for the spectrum are returned."
           },
           "lowerEnergy": {
             "type": "number",
@@ -76,7 +76,7 @@
   </Tool>
 
   <Tool name="get_unidentified_peaks">
-    <Description>Returns the list of foreground peaks (either detected by the auto peak search algorithm or in the internal analysis peak state) that do not have a source (nuclide, x-ray element, or reaction) assigned to them, and that are not consistent with the background spectrum (if present) peaks. Results are sorted by amplitude (largest first) and limited to the specified maximum number of results.</Description>
+    <Description>Returns the list of foreground peaks (either detected by the auto peak search algorithm or in the internal analysis peak state) that do not have a source (nuclide, x-ray element, or reaction) assigned to them, and that are not consistent with the background spectrum (if present) peaks. Results are sorted by amplitude (largest first) and limited to the specified maximum number of results.  If a peak is coincident with a peak in the background spectrum (but elevated, or else it would not be returned), then the amount of elevation will also be returned.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -85,6 +85,11 @@
           "description": "Maximum number of peaks to return, sorted by amplitude (largest first). Defaults to 5 if not specified.",
           "minimum": 1,
           "default": 5
+        },
+        "verbose": {
+          "type": "boolean",
+          "description": "If false (default and recomended), returns list of peaks with essential information (energy, FWHM, amplitude, cps, uncertainty, etc).  If true, includes further information like ROI bounds, continuum type, what its marked to use for, etc.",
+          "default": false
         }
       }
     }</ParametersSchema>
@@ -101,7 +106,7 @@
           },
           "source": {
             "type": "string",
-            "description": "Optional: The parent nuclide (ex U235, I131, Ba133) or x-ray flourescense element (ex Pb, U, W) or nuclear reaction (ex H(n,g)) assigned to the peak."
+            "description": "Optional: The parent nuclide (ex U235, I131, Ba133) or x-ray fluorescence element (ex Pb, U, W) or nuclear reaction (ex H(n,g)) assigned to the peak."
           },
           "specType": {
             "type": "string",
@@ -201,7 +206,7 @@
     For sources with multiple peaks, will very likely do a much better job than individually fitting peaks for a source, and will do it much more efficiently and with a single tool call.
     If you want to fit peaks for a source that has multiple gamma or x-ray energies, use this function.
     The peaks added to the analysis peaks will have their respective source assigned to them.
-    Returns the peaks that were fit.
+    Returns simplified peak information (energy, fwhm, amplitude, amplitudeUncert, numSigma, cps, and source) for the peaks that were fit.
     </Description>
     <ParametersSchema>{
       "type": "object",
@@ -211,7 +216,7 @@
             {"type": "string"},
             {"type": "array", "items": {"type": "string"}}
           ],
-          "description": "The nuclide, x-ray elemement, or reaction, or array of these values, to fit peaks for (ex `'U235'`, `'I131'`, `['U235','U','Mn(a,a)']`)."
+          "description": "The nuclide, x-ray element, or reaction, or array of these values, to fit peaks for (ex `'U235'`, `'I131'`, `['U235','U','Mn(a,a)']`)."
         },
         "doNotAddPeaksToUserSession": {
           "type": "boolean",
@@ -282,7 +287,7 @@
   </Tool>
 
   <Tool name="automated_source_id_results">
-    <Description>Get the source (isotope, flourescent x-ray, or nuclear reaction) ID from the avaiable automated ID algorithms. Will return the detection systems on-board nuclide ID results, if present, as well as the GADRAS Full Spectrum Isotope ID results if the app is configured to get.  These automated results can be wrong or incomplete, so should used at most as a starting point, or something to check.</Description>
+    <Description>Get the source (isotope, florescent x-ray, or nuclear reaction) ID from the available automated ID algorithms. Will return the detection systems on-board nuclide ID results, if present, as well as the GADRAS Full Spectrum Isotope ID results if the app is configured to get.  These automated results can be wrong or incomplete, so should used at most as a starting point, or something to check.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -293,7 +298,7 @@
   <!-- Nuclear Data Tools -->
 
   <Tool name="primary_gammas_for_source">
-    <Description>Get the most likely energies a peak will be detected at for a source (nuclide, flourescent x-ray, or nuclear reaction). Returns one to a few energies (in keV).  This is only a rough guess at the most prominent or unique peaks for the source; not detecting a peak at these energies does not rule out a source, but it makes the source a candidate.</Description>
+    <Description>Get the most likely energies a peak will be detected at for a source (nuclide, florescent x-ray, or nuclear reaction). Returns one to a few energies (in keV).  This is only a rough guess at the most prominent or unique peaks for the source; not detecting a peak at these energies does not rule out a source, but it makes the source a candidate.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -368,7 +373,7 @@
 -->
 
   <Tool name="source_info">
-    <Description>Gets relevant information about the specified source (nuclide, x-ray element, reaction), such as half-life, decay modes, analyst notes (such as when the source is used/seen, typical activity ranges of nuclides, etc.), associated sources (i.e. sources that are commonly detected along with the specified source, or sources that might be mis-identified as the specified source - you should check for these associated sources being present or not when the specified source is observed), source catagories (medical, NORM, industrial, etc), and other nuclear data.</Description>
+    <Description>Gets relevant information about the specified source (nuclide, x-ray element, reaction), such as half-life, decay modes, analyst notes (such as when the source is used/seen, typical activity ranges of nuclides, etc.), associated sources (i.e. sources that are commonly detected along with the specified source, or sources that might be mis-identified as the specified source - you should check for these associated sources being present or not when the specified source is observed), source categories (medical, NORM, industrial, etc), and other nuclear data.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -382,7 +387,7 @@
   </Tool>
 
   <Tool name="nuclide_decay_chain">
-    <Description>Returns a list of all progeny nuclides, of the specified nuclide, and thier decay modes and branching ratios.</Description>
+    <Description>Returns a list of all progeny nuclides, of the specified nuclide, and their decay modes and branching ratios.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -397,7 +402,7 @@
 
   <!-- TODO: consider adding escape peak option to "source_photons" -->
   <Tool name="source_photons">
-    <Description>Returns a list of energy/intensity pairs associated with a nuclide, elemental fluorescence x-rays, or reaction.  The energies are expressed in keV, and intensities are given as photons per source Becquerel for nuclides, or normalized to 1 for flourescence or reactions.  Results will be sorted by energy.</Description>
+    <Description>Returns a list of energy/intensity pairs associated with a nuclide, elemental fluorescence x-rays, or reaction.  The energies are expressed in keV, and intensities are given as photons per source Becquerel for nuclides, or normalized to 1 for fluorescence or reactions.  Results will be sorted by energy.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -718,7 +723,7 @@ Further investigation of top returned candidates is required to make sure they m
   <!-- Shielding and Material Tools -->
 
   <Tool name="get_materials">
-    <Description>Returns a list of avaiable materials for shielding. The materials name is what you will specify to other functions to use it as a shielding.</Description>
+    <Description>Returns a list of available materials for shielding. The materials name is what you will specify to other functions to use it as a shielding.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {},
