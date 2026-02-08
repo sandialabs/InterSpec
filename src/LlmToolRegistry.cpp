@@ -4877,7 +4877,8 @@ nlohmann::json ToolRegistry::executeSetWorkflowState(
   }
 
   AgentStateMachine *sm = conversation->state_machine.get();
-  result["previous_state"] = sm->getCurrentState();
+  const string previous_state = sm->getCurrentState();
+  result["previous_state"] = previous_state;
 
   // Check if state exists
   if( !sm->hasState(new_state) )
@@ -4892,24 +4893,58 @@ nlohmann::json ToolRegistry::executeSetWorkflowState(
   {
     result["warning"] = "Unexpected state transition";
     result["expected_transitions"] = sm->getAllowedTransitions();
-    result["reason"] = "Transition from " + sm->getCurrentState() +
+    result["reason"] = "Transition from " + previous_state +
                        " to " + new_state + " not in allowed transitions";
+    result["transition_forced"] = true;
     // Continue anyway - soft enforcement
   }
 
   // Perform transition
   sm->transitionTo(new_state);
 
-  // Provide guidance for new state
+  // Build comprehensive response with narrative context
   const AgentStateMachine::StateDefinition& state_def = sm->getStateDefinition(new_state);
-  result["guidance"] = state_def.prompt_guidance;
-  result["description"] = state_def.description;
-  result["allowed_next_states"] = state_def.allowed_transitions;
 
-  if( !state_def.suggested_tools.empty() )
-    result["suggested_tools"] = state_def.suggested_tools;
+  // Add narrative transition summary
+  string transition_summary = "You are now in state **" + new_state + "**";
+  if( !previous_state.empty() && previous_state != new_state )
+  {
+    transition_summary += ", having transitioned from **" + previous_state + "**";
+  }
+  transition_summary += ".";
+  result["transition_summary"] = transition_summary;
+
+  // Include state-specific information
+  result["description"] = state_def.description;
+
+  // Enhanced guidance format with clearer structure
+  string guidance_text = "\n**Current State Guidance:**\n" + state_def.prompt_guidance;
+  result["guidance"] = guidance_text;
 
   result["is_final_state"] = state_def.is_final;
+
+  // Allowed transitions
+  if( !state_def.allowed_transitions.empty() )
+  {
+    result["allowed_next_states"] = state_def.allowed_transitions;
+
+    string transitions_text = "\n**Allowed Next States:** ";
+    for( size_t i = 0; i < state_def.allowed_transitions.size(); ++i )
+    {
+      if( i > 0 )
+        transitions_text += ", ";
+      transitions_text += state_def.allowed_transitions[i];
+    }
+    result["allowed_transitions_text"] = transitions_text;
+  }
+  else
+  {
+    result["allowed_next_states"] = json::array();
+  }
+
+  // Include suggested tools if any
+  if( !state_def.suggested_tools.empty() )
+    result["suggested_tools"] = state_def.suggested_tools;
 
   return result;
 }

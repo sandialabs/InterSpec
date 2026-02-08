@@ -82,6 +82,7 @@ public:
     std::vector<std::string> allowed_transitions; // States this can transition to
     std::vector<std::string> suggested_tools;    // Tools typically used in this state
     std::string prompt_guidance;                // Guidance text for the agent
+    std::string ephemeral_message_txt;          // Optional per-state ephemeral message text
     bool is_final = false;                      // True if this is a terminal state
   };//struct StateDefinition
 
@@ -119,6 +120,7 @@ public:
   // Guidance
   std::string getPromptGuidanceForCurrentState() const;
   std::vector<std::string> getAllowedTransitions() const;
+  std::string getEphemeralMessageTxtForCurrentState() const;
 
   /** Generate a compact summary of all states and transitions for LLM context.
 

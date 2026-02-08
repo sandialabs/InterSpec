@@ -54,6 +54,8 @@
 
 
 #if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
+#include <fstream>
+
 #include "SpecUtils/DateTime.h"
 #endif
 #include "SpecUtils/StringAlgo.h"
@@ -63,8 +65,81 @@ static_assert( USE_LLM_INTERFACE, "This file shouldnt be compiled unless USE_LLM
 using namespace std;
 using json = nlohmann::json;
 
+// Max consecutive auto-replies when sub-agent is not in a final state (resets on tool use)
+static constexpr size_t sm_max_consecutive_nonfinal_autoreplies = 4;
+
+// Max total non-final-state auto-replies per sub-agent invocation
+static constexpr size_t sm_max_total_nonfinal_autoreplies = 10;
+
 // Forward declarations
 static std::string sanitizeUtf8( const std::string &str );
+
+#if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
+/** Write cache debug information to files for inspection when cache hit rate is low.
+ * Creates timestamped files with current and previous request JSONs.
+ */
+static void writeCacheDebugFiles( const std::string &currentRequest,
+                                   const std::string &previousRequest,
+                                   const double matchPercent )
+{
+  try
+  {
+    const std::string timestamp = SpecUtils::to_common_string( std::chrono::system_clock::now(), true );
+    // Convert timestamp to safe filename format (replace colons and spaces)
+    std::string safeTimestamp = timestamp;
+    std::replace( safeTimestamp.begin(), safeTimestamp.end(), ':', '-' );
+    std::replace( safeTimestamp.begin(), safeTimestamp.end(), ' ', '_' );
+    
+    const std::string basePath = "/tmp/llm_cache_debug_" + safeTimestamp;
+    const std::string currentPath = basePath + "_current.json";
+    const std::string previousPath = basePath + "_previous.json";
+    const std::string summaryPath = basePath + "_summary.txt";
+    
+    // Write current request
+    std::ofstream currentFile( currentPath );
+    if( currentFile.is_open() )
+    {
+      currentFile << currentRequest;
+      currentFile.close();
+    }
+    
+    // Write previous request
+    std::ofstream previousFile( previousPath );
+    if( previousFile.is_open() )
+    {
+      previousFile << previousRequest;
+      previousFile.close();
+    }
+    
+    // Write summary
+    std::ofstream summaryFile( summaryPath );
+    if( summaryFile.is_open() )
+    {
+      summaryFile << "Cache hit prediction: " << std::fixed << std::setprecision(1) 
+                  << matchPercent << "%" << std::endl;
+      summaryFile << "Current request length: " << currentRequest.length() << " chars" << std::endl;
+      summaryFile << "Previous request length: " << previousRequest.length() << " chars" << std::endl;
+      summaryFile << std::endl;
+      summaryFile << "Files written:" << std::endl;
+      summaryFile << "  Current:  " << currentPath << std::endl;
+      summaryFile << "  Previous: " << previousPath << std::endl;
+      summaryFile << std::endl;
+      summaryFile << "To diff these files, run:" << std::endl;
+      summaryFile << "  diff -u \"" << previousPath << "\" \"" << currentPath << "\"" << std::endl;
+      summaryFile << "Or for a side-by-side view:" << std::endl;
+      summaryFile << "  sdiff -w 200 \"" << previousPath << "\" \"" << currentPath << "\" | less" << std::endl;
+      summaryFile.close();
+      
+      cout << "Cache debug files written to: " << basePath << "_*.{json,txt}" << endl;
+      cout << "Summary: " << summaryPath << endl;
+    }
+  }
+  catch( const std::exception &e )
+  {
+    cerr << "Error writing cache debug files: " << e.what() << endl;
+  }
+}
+#endif // PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER
 
 LlmInterface::LlmInterface( InterSpec* interspec, const std::shared_ptr<const LlmConfig> &config )
   : Wt::Signals::trackable(),
@@ -697,6 +772,8 @@ std::string LlmInterface::makeApiCallWithId(const nlohmann::json& requestJson, i
 
 #if( PERFORM_DEVELOPER_CHECKS )
   // Developer check: Compare this request with the previous one to predict cache hit rate
+  //    Good to check occasionally, but we dont need to clutter up the debug output all the time with it.
+  /*
   {
     std::lock_guard<std::mutex> lock( s_cache_check_mutex );
 
@@ -765,6 +842,16 @@ std::string LlmInterface::makeApiCallWithId(const nlohmann::json& requestJson, i
                << ", previous=" << prevMsgs.size() << endl;
         }
       }
+      
+#if( BUILD_AS_LOCAL_SERVER )
+      // Write debug files if cache hit rate is below threshold
+      const double debug_threshold = 40.0; // Write files if cache hit < 40%
+      if( match_percent < debug_threshold )
+      {
+        cout << "Cache hit rate below " << debug_threshold << "% - writing debug files..." << endl;
+        writeCacheDebugFiles( requestStr, s_previous_request_str, match_percent );
+      }
+#endif
 
       cout << "====================================" << endl;
     }else
@@ -775,6 +862,7 @@ std::string LlmInterface::makeApiCallWithId(const nlohmann::json& requestJson, i
     s_previous_request_str = requestStr;
     s_previous_request_json = requestJson;
   }
+   */
 #endif // PERFORM_DEVELOPER_CHECKS
 
   // Use Wt::WWebWidget::jsStringLiteral to properly escape the JSON string for JavaScript
@@ -998,7 +1086,10 @@ void LlmInterface::handleApiResponse( const std::string &response,
           response_interaction = call_interactions.second;
 
           if( call_interactions.first )
+          {
             number_tool_calls += call_interactions.first->toolCalls().size();
+            conversation->consecutiveNonFinalAutoReplies = 0;
+          }
 
           // Add assistant message to history with thinking content - only if there were no tool calls
           if( number_tool_calls == 0 )
@@ -1027,7 +1118,10 @@ void LlmInterface::handleApiResponse( const std::string &response,
       call_interactions = executeToolCallsAndSendResults( responseJson["tool_calls"], conversation, requestId, response,
         "", "", "", "", promptTokens, completionTokens );
       if( call_interactions.first )
+      {
         number_tool_calls += call_interactions.first->toolCalls().size();
+        conversation->consecutiveNonFinalAutoReplies = 0;
+      }
     }//if( responseJson.contains("choices") && !responseJson["choices"].empty() )
 
     // Lets check for Ask Sage style message to the `/server/query` endpoint
@@ -1086,13 +1180,109 @@ void LlmInterface::handleApiResponse( const std::string &response,
         return;
       }
     }//if( (number_tool_calls == 0) && content.empty() && !reasoning.empty() )
+
+    // For sub-agents with state machines: if the LLM responded with text but no tool calls,
+    // and the current state is NOT a final state, auto-reply to prompt it to continue.
+    if( (number_tool_calls == 0)
+       && !content.empty()
+       && (conversation->agent_type != AgentType::MainAgent)
+       && conversation->state_machine
+       && !conversation->state_machine->isFinalState( conversation->state_machine->getCurrentState() )
+       && !conversation->requestedNonFinalSummary )
+    {
+      const bool consecutiveLimitReached
+        = (conversation->consecutiveNonFinalAutoReplies >= sm_max_consecutive_nonfinal_autoreplies);
+      const bool totalLimitReached
+        = (conversation->totalNonFinalAutoReplies >= sm_max_total_nonfinal_autoreplies);
+
+      if( consecutiveLimitReached || totalLimitReached )
+      {
+        // Limits exhausted - ask for a summary of progress before finishing
+        cout << "Sub-agent " << agentTypeToString( conversation->agent_type )
+             << " in non-final state '" << conversation->state_machine->getCurrentState()
+             << "' but auto-reply limit reached (consecutive="
+             << conversation->consecutiveNonFinalAutoReplies
+             << ", total=" << conversation->totalNonFinalAutoReplies
+             << "). Requesting summary before ending." << endl;
+
+        conversation->requestedNonFinalSummary = true;
+
+        const string summaryRequest =
+          "You have not completed the full workflow, but no further retries are available."
+          " Please provide a concise summary of: (1) what work was completed and any changes made,"
+          " (2) the current state of the analysis, and (3) any remaining steps that were not completed."
+          " This summary will be provided to the coordinating agent.";
+
+        shared_ptr<LlmInteractionAutoReply> autoReply
+          = m_history->addAutoReplyMessage( summaryRequest, conversation );
+
+        const json requestJson = buildMessagesArray( conversation );
+        std::pair<int,std::string> request_id_content
+          = makeTrackedApiCall( requestJson, conversation );
+
+        cout << "Sent non-final summary request with request ID: "
+             << request_id_content.first << endl;
+
+        return;
+      }else
+      {
+        // Send a re-prompt to nudge the LLM to continue
+        const string &currentState = conversation->state_machine->getCurrentState();
+        const vector<string> allowedTransitions = conversation->state_machine->getAllowedTransitions();
+        const string guidance = conversation->state_machine->getPromptGuidanceForCurrentState();
+
+        string transitionList;
+        for( size_t i = 0; i < allowedTransitions.size(); ++i )
+        {
+          if( i > 0 )
+            transitionList += ", ";
+          transitionList += allowedTransitions[i];
+        }
+
+        string autoReplyContent = "You are currently in workflow state '" + currentState
+          + "', which is NOT a final state. You must continue working - please make"
+          " the necessary tool calls to complete the current phase, then call"
+          " `set_workflow_state` to transition to the next state.";
+
+        if( !transitionList.empty() )
+          autoReplyContent += " Allowed transitions from this state: " + transitionList + ".";
+
+        if( !guidance.empty() )
+          autoReplyContent += " Guidance for current state: " + guidance;
+
+        autoReplyContent += " Do not provide a final summary until you have reached a"
+          " final state in the workflow.";
+
+        cout << "Sub-agent " << agentTypeToString( conversation->agent_type )
+             << " in non-final state '" << currentState
+             << "'. Sending non-final-state auto-reply (consecutive="
+             << (conversation->consecutiveNonFinalAutoReplies + 1)
+             << ", total=" << (conversation->totalNonFinalAutoReplies + 1)
+             << ")." << endl;
+
+        conversation->consecutiveNonFinalAutoReplies++;
+        conversation->totalNonFinalAutoReplies++;
+
+        shared_ptr<LlmInteractionAutoReply> autoReply
+          = m_history->addAutoReplyMessage( autoReplyContent, conversation );
+
+        const json requestJson = buildMessagesArray( conversation );
+        std::pair<int,std::string> request_id_content
+          = makeTrackedApiCall( requestJson, conversation );
+
+        cout << "Sent non-final-state auto-reply with request ID: "
+             << request_id_content.first << endl;
+
+        return;
+      }
+    }//if( sub-agent, no tool calls, non-final state )
   }catch( const std::exception &e )
   {
     cout << "Error parsing LLM response: " << e.what()
     << "\n\tresponse="
     << response << endl << endl;
   }
-  
+
   if( !number_tool_calls )
   {
     conversation->finishTime = std::chrono::system_clock::now();
@@ -2256,46 +2446,17 @@ nlohmann::json LlmInterface::buildMessagesArray( const std::shared_ptr<LlmIntera
 
   json messages = json::array();
 
-  // Add system prompt with optional state machine guidance
+  // Add system prompt with static state machine summary
   string systemPrompt = getSystemPromptForAgent( convo->agent_type );
 
-  // If conversation has a state machine, append current state guidance with directive language
+  // Append static state machine overview at end of system prompt if state machine exists
   if( convo->state_machine )
   {
-    const string &currentState = convo->state_machine->getCurrentState();
-    const string guidance = convo->state_machine->getPromptGuidanceForCurrentState();
-
-    if( !guidance.empty() )
-    {
-      systemPrompt += "\n\n## MANDATORY Workflow State Machine\n\n";
-      systemPrompt += "You are currently in state **" + currentState + "**. "
-                      "You MUST follow this state machine.\n\n";
-      systemPrompt += "**Current State Guidance**: " + guidance + "\n\n";
-
-      const vector<string> allowed = convo->state_machine->getAllowedTransitions();
-      if( !allowed.empty() )
-      {
-        systemPrompt += "**Allowed Next States**: ";
-        for( size_t i = 0; i < allowed.size(); ++i )
-        {
-          if( i > 0 )
-            systemPrompt += ", ";
-          systemPrompt += allowed[i];
-        }
-        systemPrompt += "\n\n";
-      }
-
-      systemPrompt += "**REQUIRED**: You MUST call `set_workflow_state` to transition"
-                      " before beginning work for a different phase. Do NOT skip states.\n\n";
-
-      // On first call (initial state), include the full state map overview
-      if( currentState == convo->state_machine->getInitialState() )
-      {
-        systemPrompt += "### Full Workflow Map\n\n";
-        systemPrompt += convo->state_machine->getFullStateMapSummary();
-        systemPrompt += "\n";
-      }
-    }
+    systemPrompt += "\n\n## Workflow State Machine\n\n";
+    systemPrompt += "You will follow a structured workflow through these states:\n\n";
+    systemPrompt += convo->state_machine->getFullStateMapSummary();
+    systemPrompt += "\n\nState transitions are managed via the `set_workflow_state` tool. ";
+    systemPrompt += "After each transition, you'll receive guidance for the new state.";
   }
 
   if( !systemPrompt.empty() )
@@ -2335,31 +2496,70 @@ nlohmann::json LlmInterface::buildMessagesArray( const std::shared_ptr<LlmIntera
   // Add ephemeral state machine reminder as the last message (not persisted in history).
   // Only inject after the first call (when there are already responses), to avoid consecutive
   // user messages on the initial request where the system prompt already has the state info.
+  // Skip if the most recent interaction was a set_workflow_state call, since that tool's response
+  // already contains all the state information.
   if( convo->state_machine && (convo->responses.size() > 1) )
   {
-    const string &curState = convo->state_machine->getCurrentState();
-    const vector<string> nextStates = convo->state_machine->getAllowedTransitions();
-
-    if( !curState.empty() )
+    // Check if the most recent response was a set_workflow_state tool call
+    bool skipEphemeral = false;
+    if( !convo->responses.empty() )
     {
-      string reminder = "[System: Current workflow state is " + curState + ".";
-      if( !nextStates.empty() )
+      const auto &lastResponse = convo->responses.back();
+      if( lastResponse && lastResponse->type() == LlmInteractionTurn::Type::ToolResult )
       {
-        reminder += " Allowed transitions: ";
-        for( size_t i = 0; i < nextStates.size(); ++i )
+        const LlmToolResults *toolResults = dynamic_cast<const LlmToolResults*>( lastResponse.get() );
+        if( toolResults )
         {
-          if( i > 0 )
-            reminder += ", ";
-          reminder += nextStates[i];
+          const vector<LlmToolCall> &calls = toolResults->toolCalls();
+          for( const auto &call : calls )
+          {
+            if( call.toolName == "set_workflow_state" )
+            {
+              skipEphemeral = true;
+              break;
+            }
+          }
         }
-        reminder += ".";
       }
-      reminder += " Call set_workflow_state when ready to transition.]";
+    }
 
-      json stateMsg;
-      stateMsg["role"] = "user";
-      stateMsg["content"] = reminder;
-      messages.push_back( stateMsg );
+    if( !skipEphemeral )
+    {
+      const string &curState = convo->state_machine->getCurrentState();
+      const vector<string> nextStates = convo->state_machine->getAllowedTransitions();
+
+      if( !curState.empty() )
+      {
+        // Build ephemeral state reminder message
+        string ephemeralContent = "[System: Current workflow state is " + curState;
+
+        // Add allowed transitions if any exist
+        if( !nextStates.empty() )
+        {
+          ephemeralContent += ". Allowed transitions: ";
+          for( size_t i = 0; i < nextStates.size(); ++i )
+          {
+            if( i > 0 )
+              ephemeralContent += ", ";
+            ephemeralContent += nextStates[i];
+          }
+          ephemeralContent += ". Call set_workflow_state when ready to transition";
+        }
+        ephemeralContent += ".]";
+
+        // Append per-state ephemeral text if specified in XML
+        const string stateEphemeralTxt = convo->state_machine->getEphemeralMessageTxtForCurrentState();
+        if( !stateEphemeralTxt.empty() )
+        {
+          ephemeralContent += "\n\n" + stateEphemeralTxt;
+        }
+
+        // Create ephemeral user message
+        json stateMsg;
+        stateMsg["role"] = "user";
+        stateMsg["content"] = ephemeralContent;
+        messages.push_back( stateMsg );
+      }
     }
   }
 

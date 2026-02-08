@@ -584,6 +584,14 @@ void AgentStateMachine::fromXml( const rapidxml::xml_node<char> *state_machine_n
       SpecUtils::trim( state_def.prompt_guidance );
     }
 
+    // Get optional ephemeral message text
+    const rapidxml::xml_node<char> *ephemeral_node = XML_FIRST_NODE( state_node, "EphemeralMessageTxt" );
+    if( ephemeral_node )
+    {
+      state_def.ephemeral_message_txt = xml_value_str( ephemeral_node );
+      SpecUtils::trim( state_def.ephemeral_message_txt );
+    }
+
     // Check if final state (can be specified as attribute or child node)
     const rapidxml::xml_attribute<char> *final_attr = XML_FIRST_ATTRIB( state_node, "final" );
     if( final_attr )
@@ -725,6 +733,15 @@ std::vector<std::string> AgentStateMachine::getAllowedTransitions() const
 
   return getStateDefinition(m_current_state).allowed_transitions;
 }//getAllowedTransitions()
+
+
+std::string AgentStateMachine::getEphemeralMessageTxtForCurrentState() const
+{
+  if( !hasState(m_current_state) )
+    return "";
+
+  return getStateDefinition(m_current_state).ephemeral_message_txt;
+}//getEphemeralMessageTxtForCurrentState()
 
 
 std::string AgentStateMachine::getFullStateMapSummary() const

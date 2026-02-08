@@ -332,6 +332,13 @@ struct LlmInteraction
    */
   std::shared_ptr<AgentStateMachine> state_machine;
 
+  /** Tracking for non-final-state auto-replies (sub-agents with state machines only).
+   Runtime-only; not serialized to XML.
+   */
+  size_t consecutiveNonFinalAutoReplies = 0;
+  size_t totalNonFinalAutoReplies = 0;
+  bool requestedNonFinalSummary = false;
+
   /** Function called when the conversation with the LLM has ended.
    For the main agent, this will be to update the GUI.
    For sub-agents, this will be to fill-in the agent summary and send the chat history back to the LLM
