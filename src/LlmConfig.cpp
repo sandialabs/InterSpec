@@ -259,6 +259,12 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
       value_str = SpecUtils::xml_value_str( deep_research_url );
       SpecUtils::trim( value_str );
       llmApi.deep_research_url = value_str;
+
+      // Load optional DebugFile (if not present, remains empty)
+      const rapidxml::xml_node<char> * const debugFileNode = XML_FIRST_NODE(llmApiNode, "DebugFile");
+      value_str = SpecUtils::xml_value_str( debugFileNode );
+      SpecUtils::trim( value_str );
+      llmApi.debug_file = value_str;
     }// End load LLM API settings
 
     {// Begin load MCP server settings
@@ -341,6 +347,9 @@ bool LlmConfig::saveToFile( const LlmConfig &config, const std::string &filename
 
     if( !config.llmApi.deep_research_url.empty() )
       XmlUtils::append_string_node( llmApi, "DeepResearchUrl", config.llmApi.deep_research_url );
+
+    if( !config.llmApi.debug_file.empty() )
+      XmlUtils::append_string_node( llmApi, "DebugFile", config.llmApi.debug_file );
 
 
     // NOTE: Agents and tools are now saved separately in llm_agents.xml and llm_tools_config.xml,

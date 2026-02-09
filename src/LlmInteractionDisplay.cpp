@@ -1523,8 +1523,8 @@ void LlmInteractionDisplay::startStatusTimer()
   const long long startMs = chrono::duration_cast<chrono::milliseconds>(
     now.time_since_epoch() ).count();
 
-  cerr << "LlmInteractionDisplay::startStatusTimer(): Starting timer with ID='" << m_timerId
-       << "', startMs=" << startMs << endl;
+  //cerr << "LlmInteractionDisplay::startStatusTimer(): Starting timer with ID='" << m_timerId
+  //     << "', startMs=" << startMs << endl;
 
   ostringstream js;
   js << "console.log('Starting timer for ID: " << m_timerId << ", startMs: " << startMs << "');"
@@ -1533,7 +1533,7 @@ void LlmInteractionDisplay::startStatusTimer()
      << "  startTime: " << startMs << ","
      << "  interval: setInterval(function() {"
      << "    var elem = document.getElementById('" << m_timerId << "');"
-     << "    console.log('Timer tick for " << m_timerId << ":', elem ? 'elem found' : 'elem NOT found');"
+     //<< "    console.log('Timer tick for " << m_timerId << ":', elem ? 'elem found' : 'elem NOT found');"
      << "    if (!elem) {"
      << "      console.warn('Timer " << m_timerId << ": element not found, stopping timer');"
      << "      clearInterval(window.llmTimers['" << m_timerId << "'].interval);"
@@ -1542,11 +1542,12 @@ void LlmInteractionDisplay::startStatusTimer()
      << "    }"
      << "    var elapsed = Date.now() - " << startMs << ";"
      << "    var seconds = Math.floor(elapsed / 1000);"
-     << "    console.log('Timer " << m_timerId << ": elapsed=' + elapsed + 'ms, seconds=' + seconds + 's');"
+     //<< "    console.log('Timer " << m_timerId << ": elapsed=' + elapsed + 'ms, seconds=' + seconds + 's');"
      << "    elem.innerHTML = seconds + 's';"
      << "  }, 1000)"
      << "};"
-     << "console.log('Timer started for " << m_timerId << ":', window.llmTimers['" << m_timerId << "']);";
+     //<< "console.log('Timer started for " << m_timerId << ":', window.llmTimers['" << m_timerId << "']);"
+  ;
 
   doJavaScript( js.str() );
 }//startStatusTimer()

@@ -260,7 +260,7 @@ void LlmToolGui::sendMessage(const std::string& message)
       doJavaScript( js );
     }//if( convo )
 
-    cout << "Sent message to LLM" << endl;
+    //cout << "Sent message to LLM" << endl;
   }catch( const std::exception &e )
   {
     cerr << "Error sending message to LLM: " << e.what() << endl;
@@ -475,7 +475,7 @@ void LlmToolGui::handleConversationFinished()
   // Re-enable input when we receive a successful response
   // (errors are handled by handleResponseError() which keeps input disabled)
   m_isRequestPending = false;
-  cout << "Conversation finished, re-enabling input" << endl;
+  //cout << "Conversation finished, re-enabling input" << endl;
 
   setInputEnabled( true );
   

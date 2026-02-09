@@ -209,6 +209,17 @@ public:
      If you leave this field blank, the `deep_research` tool-call will not be available.
      */
     std::string deep_research_url;
+
+    /** Optional debug logging file path or stream name.
+     
+     If empty, no debug logging will be done.
+     If "stdout" or "stderr", debug messages will be logged to standard streams.
+     Otherwise, treated as a file path where debug logs will be written.
+     
+     Debug logging includes detailed information about LLM interactions, state transitions,
+     tool calls, and internal processing steps useful for development and troubleshooting.
+     */
+    std::string debug_file;
   };//struct LlmApi
 
 

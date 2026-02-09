@@ -69,6 +69,17 @@ Changes to this file will not take effect until you quit all currently open inst
      It is very recomended you do not put a value in this field.
     -->
     <DeepResearchUrl></DeepResearchUrl>
+
+    <!-- Optional debug logging configuration. If empty or not present, no debug logging will be done.
+         Valid values:
+         - "stdout" or "stderr": Log debug messages to standard output or error streams
+         - A file path: Log debug messages to the specified file (will be created/overwritten)
+
+         Debug logging includes detailed information about LLM interactions, state transitions,
+         tool calls, and internal processing steps useful for development and troubleshooting.
+    -->
+    <!-- <DebugFile>llm_debug.log</DebugFile> -->
+    <!-- <DebugFile>stdout</DebugFile> -->
   </LlmApi>
   
   <!-- MCP Server Settings - this is for InterSpec to create a MCP server you can use with other applications.

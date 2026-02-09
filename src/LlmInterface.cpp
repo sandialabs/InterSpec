@@ -25,6 +25,7 @@
 
 #include <regex>
 #include <stack>
+#include <atomic>
 #include <chrono>
 #include <memory>
 #include <iomanip>
@@ -79,6 +80,8 @@ static std::string sanitizeToolName( const std::string &toolName );
 /** Write cache debug information to files for inspection when cache hit rate is low.
  * Creates timestamped files with current and previous request JSONs.
  */
+
+/*
 static void writeCacheDebugFiles( const std::string &currentRequest,
                                    const std::string &previousRequest,
                                    const double matchPercent )
@@ -140,6 +143,7 @@ static void writeCacheDebugFiles( const std::string &currentRequest,
     cerr << "Error writing cache debug files: " << e.what() << endl;
   }
 }
+ */
 #endif // PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER
 
 LlmInterface::LlmInterface( InterSpec* interspec, const std::shared_ptr<const LlmConfig> &config )
@@ -148,7 +152,10 @@ LlmInterface::LlmInterface( InterSpec* interspec, const std::shared_ptr<const Ll
     m_config( config ),
     m_tool_registry( config ? make_shared<LlmTools::ToolRegistry>(*config) : shared_ptr<LlmTools::ToolRegistry>() ),
     m_history(std::make_shared<LlmConversationHistory>()),
-    m_responseSignal(std::make_unique<Wt::JSignal<std::string, int>>(interspec, "llmResponse")),
+    m_debug_stream( nullptr ),
+    m_debug_file( nullptr ),
+    m_instanceId( std::to_string( []{ static std::atomic<int> s_instance_count{0}; return s_instance_count.fetch_add(1); }() ) ),
+    m_responseSignal(std::make_unique<Wt::JSignal<std::string, int>>(interspec, "llmResponse_" + m_instanceId)),
     m_nextRequestId(1)
 {
   if( !m_interspec )
@@ -159,6 +166,30 @@ LlmInterface::LlmInterface( InterSpec* interspec, const std::shared_ptr<const Ll
   
   if( !m_tool_registry )
     throw std::logic_error( "LlmInterface: couldnt create tool registry from config" );
+  
+  // Initialize debug logging if configured
+  if( !m_config->llmApi.debug_file.empty() )
+  {
+    const string debug_dest = m_config->llmApi.debug_file;
+    if( debug_dest == "stdout" )
+    {
+      m_debug_stream = &std::cout;
+    }else if( debug_dest == "stderr" )
+    {
+      m_debug_stream = &std::cerr;
+    }else
+    {
+      // Open file for writing
+      m_debug_file = std::make_unique<std::ofstream>( debug_dest, std::ios::out | std::ios::app );
+      if( m_debug_file->is_open() )
+      {
+        m_debug_stream = m_debug_file.get();
+      }else
+      {
+        std::cerr << "Warning: Failed to open debug log file: " << debug_dest << std::endl;
+      }
+    }
+  }
   
   // Get session ID through WApplication
   string sessionId = "unknown";
@@ -173,8 +204,13 @@ LlmInterface::LlmInterface( InterSpec* interspec, const std::shared_ptr<const Ll
   setupJavaScriptBridge();
 }
 
-LlmInterface::~LlmInterface() {
-  cout << "LlmInterface destroyed" << endl;
+LlmInterface::~LlmInterface()
+{
+  // Unregister this instance's callback from the JavaScript registry
+  if( Wt::WApplication *app = Wt::WApplication::instance() )
+    app->doJavaScript( "if(window.llmResponseCallbacks) delete window.llmResponseCallbacks['" + m_instanceId + "'];" );
+
+  cout << "LlmInterface destroyed (instanceId=" << m_instanceId << ")" << endl;
 }
 
 
@@ -194,6 +230,33 @@ void LlmInterface::resetWithConfig( const std::shared_ptr<const LlmConfig> &conf
   m_deferredToolResults.clear();
   m_currentConversation.reset();
   m_nextRequestId = 1;
+
+  // Re-initialize debug logging
+  m_debug_stream = nullptr;
+  m_debug_file.reset();
+
+  if( !m_config->llmApi.debug_file.empty() )
+  {
+    const string debug_dest = m_config->llmApi.debug_file;
+    if( debug_dest == "stdout" )
+    {
+      m_debug_stream = &std::cout;
+    }else if( debug_dest == "stderr" )
+    {
+      m_debug_stream = &std::cerr;
+    }else
+    {
+      // Open file for writing
+      m_debug_file = std::make_unique<std::ofstream>( debug_dest, std::ios::out | std::ios::app );
+      if( m_debug_file->is_open() )
+      {
+        m_debug_stream = m_debug_file.get();
+      }else
+      {
+        std::cerr << "Warning: Failed to open debug log file: " << debug_dest << std::endl;
+      }
+    }
+  }
 }
 
 
@@ -208,39 +271,45 @@ shared_ptr<LlmInteraction> LlmInterface::sendUserMessage( const std::string &mes
   if( !isConfigured() )
     throw std::logic_error( "LLM interface is not properly configured" );
   
-  cout << "User message: " << message << endl;
+  if( m_debug_stream )
+    (*m_debug_stream) << "User message: " << message << endl;
   
   // Add to history FIRST to ensure it's there before any async responses
   shared_ptr<LlmInteraction> convo = m_history->addUserMessageToMainConversation( message );
   assert( convo );
-  cout << "Starting new conversation with ID: " << convo->conversationId << endl;
+  if( m_debug_stream )
+    (*m_debug_stream) << "Starting new conversation with ID: " << convo->conversationId << endl;
 
   // Initialize state machine if the agent has one
   initializeStateMachineForConversation( convo );
-  cout << "Added user message to history. History now has " << m_history->getConversations().size() << " conversations" << endl;
   
   // Debug: Show what's actually in history
-  cout << "Current history contents:" << endl;
-  for (size_t i = 0; i < m_history->getConversations().size(); ++i) {
-    const auto& conv = m_history->getConversations()[i];
-    string typeStr;
-    switch (conv->type) {
-      case LlmInteraction::Type::User: typeStr = "user"; break;
-      case LlmInteraction::Type::System: typeStr = "system"; break;
+  if( m_debug_stream )
+  {
+    (*m_debug_stream) << "Added user message to history. History now has " << m_history->getConversations().size() << " conversations" << endl;
+    (*m_debug_stream) << "Current history contents:" << endl;
+    
+    for (size_t i = 0; i < m_history->getConversations().size(); ++i) {
+      const auto& conv = m_history->getConversations()[i];
+      string typeStr;
+      switch (conv->type) {
+        case LlmInteraction::Type::User: typeStr = "user"; break;
+        case LlmInteraction::Type::System: typeStr = "system"; break;
+      }
+      
+      // Get content from InitialRequest
+      string contentPreview;
+      if( !conv->responses.empty() && conv->responses.front()->type() == LlmInteractionTurn::Type::InitialRequest )
+      {
+        const LlmInteractionInitialRequest *initialReq = dynamic_cast<const LlmInteractionInitialRequest*>(conv->responses.front().get());
+        if( initialReq )
+          contentPreview = initialReq->content();
+      }
+      
+      const string preview = contentPreview.length() > 50 ? contentPreview.substr(0, 50) + "..." : contentPreview;
+      (*m_debug_stream) << "  " << i << ". " << typeStr << ": " << preview << " (responses: " << conv->responses.size() << ")" << endl;
     }
-
-    // Get content from InitialRequest
-    string contentPreview;
-    if( !conv->responses.empty() && conv->responses.front()->type() == LlmInteractionTurn::Type::InitialRequest )
-    {
-      const LlmInteractionInitialRequest *initialReq = dynamic_cast<const LlmInteractionInitialRequest*>(conv->responses.front().get());
-      if( initialReq )
-        contentPreview = initialReq->content();
-    }
-
-    const string preview = contentPreview.length() > 50 ? contentPreview.substr(0, 50) + "..." : contentPreview;
-    cout << "  " << i << ". " << typeStr << ": " << preview << " (responses: " << conv->responses.size() << ")" << endl;
-  }
+  }//if( m_debug_stream )
   
   // Build API request (buildMessagesArray will include the message from history + current message)
   json requestJson = buildMessagesArray( convo );
@@ -250,7 +319,8 @@ shared_ptr<LlmInteraction> LlmInterface::sendUserMessage( const std::string &mes
   // Make tracked API call
   std::pair<int,std::string> request_id_content = makeTrackedApiCall( requestJson, convo );
 
-  cout << "Sent user message with request ID: " << request_id_content.first << endl;
+  if( m_debug_stream )
+    (*m_debug_stream) << "Sent user message with request ID: " << request_id_content.first << endl;
 
   // Store raw JSON request in the InitialRequest turn's rawContent field
   if( !convo->responses.empty() )
@@ -270,7 +340,8 @@ void LlmInterface::sendSystemMessage( const std::string &message )
   if( !isConfigured() )
     throw std::runtime_error("LLM interface is not properly configured");
   
-  cout << "System message: " << message << endl;
+  if( m_debug_stream )
+    (*m_debug_stream) << "System message: " << message << endl;
 
   std::shared_ptr<LlmInteraction> convo = m_history->addSystemMessageToMainConversation( message );
 
@@ -282,7 +353,8 @@ void LlmInterface::sendSystemMessage( const std::string &message )
   
   // Make tracked API call
   std::pair<int,std::string> request_id_content = makeTrackedApiCall( requestJson, convo );
-  cout << "Sent system message with request ID: " << request_id_content.first << endl;
+  if( m_debug_stream )
+    (*m_debug_stream) << "Sent system message with request ID: " << request_id_content.first << endl;
 
   // Store raw JSON request in the InitialRequest turn's rawContent field
   if( !convo->responses.empty() )
@@ -604,13 +676,17 @@ static nlohmann::json lenientlyParseJson( const std::string &jsonStr )
 #if( PERFORM_DEVELOPER_CHECKS )
     if( !repairLog.empty() )
     {
-      cout << "=== JSON Repair Attempted ===" << endl;
-      cout << "Original: " << sanitized.substr( 0, 200 )
-           << (sanitized.length() > 200 ? "..." : "") << endl;
-      cout << "Repairs: " << repairLog << endl;
-      cout << "Repaired: " << repaired.substr( 0, 200 )
-           << (repaired.length() > 200 ? "..." : "") << endl;
-      cout << "=============================" << endl;
+      const string msg = "=== JSON Repair Attempted ===\n"
+      "Original: " + sanitized.substr( 0, 200 )
+      + string(sanitized.length() > 200 ? "...\n" : "\n")
+      + "Repairs: " + repairLog + "\n"
+      "Repaired: " + repaired.substr( 0, 200 )
+      + string(repaired.length() > 200 ? "...\n" : "\n")
+      + "=============================";
+      
+      cout << msg << endl;
+      //if( m_debug_stream )
+      //  (*m_debug_stream) << msg << endl;
     }
 #endif
 
@@ -754,66 +830,68 @@ std::string LlmInterface::makeApiCallWithId(const nlohmann::json& requestJson, i
   static nlohmann::json s_previous_request_json;
 #endif
 
-  cout << "=== Making LLM API Call with ID " << requestId << " ===" << endl;
-  cout << "Endpoint: " << m_config->llmApi.apiEndpoint << endl;
-  cout << "Request JSON:" << endl;
-
-  // Wrap debug output in try-catch to prevent debug code from breaking actual functionality
-  try
+  if( m_debug_stream )
   {
-    nlohmann::json debugJson = requestJson;
-
-    // Truncate system prompt to first 100 characters, then sanitize UTF-8
-    if( debugJson.contains("messages") && debugJson["messages"].is_array() && debugJson["messages"].size() && debugJson["messages"][0].is_object() )
+    (*m_debug_stream) << "=== Making LLM API Call with ID " << requestId << " ===" << endl;
+    (*m_debug_stream) << "Endpoint: " << m_config->llmApi.apiEndpoint << endl;
+    (*m_debug_stream) << "Request JSON:" << endl;
+    
+    // Wrap debug output in try-catch to prevent debug code from breaking actual functionality
+    try
     {
-      if( debugJson["messages"][0].contains("content") && debugJson["messages"][0]["content"].is_string() )
+      nlohmann::json debugJson = requestJson;
+      
+      // Truncate system prompt to first 100 characters, then sanitize UTF-8
+      if( debugJson.contains("messages") && debugJson["messages"].is_array() && debugJson["messages"].size() && debugJson["messages"][0].is_object() )
       {
-        std::string systemPrompt = debugJson["messages"][0]["content"].get<std::string>();
-        if( systemPrompt.length() > 100 )
-          systemPrompt = systemPrompt.substr(0, 100) + "...";
-        systemPrompt = sanitizeUtf8( systemPrompt ); // Sanitize after substring to fix any broken UTF-8
-        debugJson["messages"][0]["content"] = systemPrompt;
-      }
-    }
-
-    // Truncate all message contents to 100 characters, then sanitize UTF-8
-    if( debugJson.contains("messages") && debugJson["messages"].is_array() )
-    {
-      for( auto &msg : debugJson["messages"] )
-      {
-        if( msg.is_object() && msg.contains("content") && msg["content"].is_string() )
+        if( debugJson["messages"][0].contains("content") && debugJson["messages"][0]["content"].is_string() )
         {
-          std::string content = msg["content"].get<std::string>();
-          if( content.length() > 100 )
-            content = content.substr(0, 100) + "...";
-          content = sanitizeUtf8( content ); // Sanitize after substring to fix any broken UTF-8
-          msg["content"] = content;
+          std::string systemPrompt = debugJson["messages"][0]["content"].get<std::string>();
+          if( systemPrompt.length() > 100 )
+            systemPrompt = systemPrompt.substr(0, 100) + "...";
+          systemPrompt = sanitizeUtf8( systemPrompt ); // Sanitize after substring to fix any broken UTF-8
+          debugJson["messages"][0]["content"] = systemPrompt;
         }
       }
-    }
-
-    if( debugJson.contains("tools") )
+      
+      // Truncate all message contents to 100 characters, then sanitize UTF-8
+      if( debugJson.contains("messages") && debugJson["messages"].is_array() )
+      {
+        for( auto &msg : debugJson["messages"] )
+        {
+          if( msg.is_object() && msg.contains("content") && msg["content"].is_string() )
+          {
+            std::string content = msg["content"].get<std::string>();
+            if( content.length() > 100 )
+              content = content.substr(0, 100) + "...";
+            content = sanitizeUtf8( content ); // Sanitize after substring to fix any broken UTF-8
+            msg["content"] = content;
+          }
+        }
+      }
+      
+      if( debugJson.contains("tools") )
+      {
+        const size_t ntools = debugJson["tools"].size();
+        debugJson.erase("tools");
+        debugJson["tools"] = std::to_string(ntools) + " tools ommited";
+      }
+      if( debugJson.contains("tool_choice") )
+      {
+        const size_t ntools = debugJson["tool_choice"].size();
+        debugJson.erase("tool_choice");
+        debugJson["tool_choice"] = std::to_string(ntools) + " tool_choice ommited";
+      }
+      
+      (*m_debug_stream) << debugJson.dump(2) << endl;
+    }catch( const std::exception &e )
     {
-      const size_t ntools = debugJson["tools"].size();
-      debugJson.erase("tools");
-      debugJson["tools"] = std::to_string(ntools) + " tools ommited";
+      (*m_debug_stream) << "Error generating debug output (this is non-fatal): " << e.what() << endl;
+      (*m_debug_stream) << "  Request will still be sent to LLM API" << endl;
     }
-    if( debugJson.contains("tool_choice") )
-    {
-      const size_t ntools = debugJson["tool_choice"].size();
-      debugJson.erase("tool_choice");
-      debugJson["tool_choice"] = std::to_string(ntools) + " tool_choice ommited";
-    }
-
-    cout << debugJson.dump(2) << endl;
-  }
-  catch( const std::exception &e )
-  {
-    cerr << "Error generating debug output (this is non-fatal): " << e.what() << endl;
-    cerr << "  Request will still be sent to LLM API" << endl;
-  }
-
-  cout << "=========================" << endl;
+    
+    (*m_debug_stream) << "=========================" << endl;
+  }//if( m_debug_stream )
 
   // Serialize request with consistent field ordering for LLM provider caching
   const std::string requestStr = serializeRequestForCaching( requestJson );
@@ -919,7 +997,7 @@ std::string LlmInterface::makeApiCallWithId(const nlohmann::json& requestJson, i
   string jsCall =
     "var llmRequestData = " + jsLiteralRequestStr + ";\n"
     "window.llmHttpRequest('" + m_config->llmApi.apiEndpoint + "', llmRequestData, '" +
-    m_config->llmApi.bearerToken + "', " + std::to_string(requestId) + ");";
+    m_config->llmApi.bearerToken + "', " + std::to_string(requestId) + ", '" + m_instanceId + "');";
 
   // Execute JavaScript to make the HTTP request
   auto app = Wt::WApplication::instance();
@@ -927,7 +1005,9 @@ std::string LlmInterface::makeApiCallWithId(const nlohmann::json& requestJson, i
     throw runtime_error( "Error: No WApplication instance available for JavaScript bridge" );
 
   app->doJavaScript(jsCall);
-  cout << "JavaScript HTTP request with ID " << requestId << " initiated..." << endl;
+  
+  if( m_debug_stream )
+    (*m_debug_stream) << "JavaScript HTTP request with ID " << requestId << " initiated..." << endl;
 
   return requestStr;
 }
@@ -972,39 +1052,40 @@ void LlmInterface::handleApiResponse( const std::string &response,
       // Accumulate token usage for this conversation
       m_history->addTokenUsage( conversation, promptTokensInt, completionTokensInt, totalTokens );
 
-#if( PERFORM_DEVELOPER_CHECKS )
-      const bool has_completion = completionTokens.has_value();
-      const bool has_cache_detals = (usage.contains("prompt_tokens_details")
-                                     && usage["prompt_tokens_details"].is_object()
-                                     && usage["prompt_tokens_details"].contains("cached_tokens")
-                                     && usage["prompt_tokens_details"].is_number());
-      
-      if( has_completion || has_cache_detals )
-        cout << "=== Token Usage This Call ===" << endl;
-      
-      if( has_completion )
+      if( m_debug_stream )
       {
-        cout << "Prompt tokens: " << (promptTokens.has_value() ? std::to_string(promptTokens.value()) : "N/A") << endl;
-        cout << "Completion tokens: " << completionTokens.value() << endl;
-        cout << "Total tokens: " << (totalTokens.has_value() ? std::to_string(totalTokens.value()) : "N/A") << endl;
-      }
-
-      // Log prompt cache hit info (OpenRouter and OpenAI both use usage.prompt_tokens_details.cached_tokens)
-      if( has_cache_detals )
-      {
-        const auto &details = usage["prompt_tokens_details"];
-        const int cachedTokens = details["cached_tokens"].get<int>();
-        cout << "Cached tokens: " << cachedTokens;
-        if( promptTokens.has_value() && (promptTokens.value() > 0) )
+        const bool has_completion = completionTokens.has_value();
+        const bool has_cache_detals = (usage.contains("prompt_tokens_details")
+                                       && usage["prompt_tokens_details"].is_object()
+                                       && usage["prompt_tokens_details"].contains("cached_tokens")
+                                       && usage["prompt_tokens_details"].is_number());
+        
+        if( has_completion || has_cache_detals )
+          (*m_debug_stream) << "=== Token Usage This Call ===" << endl;
+        
+        if( has_completion )
         {
-          const double pct = 100.0 * cachedTokens / static_cast<double>( promptTokens.value() );
-          cout << " (" << static_cast<int>( pct ) << "% of prompt)";
+          (*m_debug_stream) << "Prompt tokens: " << (promptTokens.has_value() ? std::to_string(promptTokens.value()) : "N/A") << endl;
+          (*m_debug_stream) << "Completion tokens: " << completionTokens.value() << endl;
+          (*m_debug_stream) << "Total tokens: " << (totalTokens.has_value() ? std::to_string(totalTokens.value()) : "N/A") << endl;
         }
-      }//if( has_cache_detals )
-      
-      if( has_completion || has_cache_detals )
-        cout << "=============================" << endl;
-#endif
+        
+        // Log prompt cache hit info (OpenRouter and OpenAI both use usage.prompt_tokens_details.cached_tokens)
+        if( has_cache_detals )
+        {
+          const auto &details = usage["prompt_tokens_details"];
+          const int cachedTokens = details["cached_tokens"].get<int>();
+          (*m_debug_stream) << "Cached tokens: " << cachedTokens;
+          if( promptTokens.has_value() && (promptTokens.value() > 0) )
+          {
+            const double pct = 100.0 * cachedTokens / static_cast<double>( promptTokens.value() );
+            (*m_debug_stream) << " (" << static_cast<int>( pct ) << "% of prompt)";
+          }
+        }//if( has_cache_detals )
+        
+        if( has_completion || has_cache_detals )
+          (*m_debug_stream) << "=============================" << endl;
+      }//if( m_debug_stream )
     }//if( responseJson.contains("usage") )
     
     
@@ -1209,6 +1290,8 @@ void LlmInterface::handleApiResponse( const std::string &response,
         // We already sent an auto-reply prompt and the LLM still didn't respond properly.
         // Just end the conversation instead of looping.
         cout << "LLM provided reasoning but no content/tool calls after auto-reply prompt. Ending conversation." << endl;
+        if( m_debug_stream )
+          (*m_debug_stream) << "LLM provided reasoning but no content/tool calls after auto-reply prompt. Ending conversation." << endl;
       }else
       {
         // Add an auto-reply message to prompt the LLM to continue
@@ -1226,7 +1309,8 @@ void LlmInterface::handleApiResponse( const std::string &response,
         // Make tracked API call to continue the conversation
         std::pair<int,std::string> request_id_content = makeTrackedApiCall( requestJson, conversation );
 
-        cout << "Sent auto-reply prompt with request ID: " << request_id_content.first << endl;
+        if( m_debug_stream )
+          (*m_debug_stream) << "Sent auto-reply prompt with request ID: " << request_id_content.first << endl;
 
         // Don't finish the conversation yet - we're waiting for the LLM to respond to our prompt
         return;
@@ -1250,7 +1334,8 @@ void LlmInterface::handleApiResponse( const std::string &response,
       if( consecutiveLimitReached || totalLimitReached )
       {
         // Limits exhausted - ask for a summary of progress before finishing
-        cout << "Sub-agent " << agentTypeToString( conversation->agent_type )
+        if( m_debug_stream )
+          (*m_debug_stream) << "Sub-agent " << agentTypeToString( conversation->agent_type )
              << " in non-final state '" << conversation->state_machine->getCurrentState()
              << "' but auto-reply limit reached (consecutive="
              << conversation->consecutiveNonFinalAutoReplies
@@ -1272,7 +1357,8 @@ void LlmInterface::handleApiResponse( const std::string &response,
         std::pair<int,std::string> request_id_content
           = makeTrackedApiCall( requestJson, conversation );
 
-        cout << "Sent non-final summary request with request ID: "
+        if( m_debug_stream )
+          (*m_debug_stream) << "Sent non-final summary request with request ID: "
              << request_id_content.first << endl;
 
         return;
@@ -1305,7 +1391,8 @@ void LlmInterface::handleApiResponse( const std::string &response,
         autoReplyContent += " Do not provide a final summary until you have reached a"
           " final state in the workflow.";
 
-        cout << "Sub-agent " << agentTypeToString( conversation->agent_type )
+        if( m_debug_stream )
+          (*m_debug_stream) << "Sub-agent " << agentTypeToString( conversation->agent_type )
              << " in non-final state '" << currentState
              << "'. Sending non-final-state auto-reply (consecutive="
              << (conversation->consecutiveNonFinalAutoReplies + 1)
@@ -1322,7 +1409,8 @@ void LlmInterface::handleApiResponse( const std::string &response,
         std::pair<int,std::string> request_id_content
           = makeTrackedApiCall( requestJson, conversation );
 
-        cout << "Sent non-final-state auto-reply with request ID: "
+        if( m_debug_stream )
+          (*m_debug_stream) << "Sent non-final-state auto-reply with request ID: "
              << request_id_content.first << endl;
 
         return;
@@ -1330,9 +1418,9 @@ void LlmInterface::handleApiResponse( const std::string &response,
     }//if( sub-agent, no tool calls, non-final state )
   }catch( const std::exception &e )
   {
-    cout << "Error parsing LLM response: " << e.what()
-    << "\n\tresponse="
-    << response << endl << endl;
+    cerr << "Error parsing LLM response: " << e.what() << "\n\tresponse=" << response << endl << endl;
+    if( m_debug_stream )
+      (*m_debug_stream) << "Error parsing LLM response: " << e.what() << "\n\tresponse=" << response << endl << endl;
   }
 
   if( !number_tool_calls )
@@ -1347,11 +1435,13 @@ void LlmInterface::handleApiResponse( const std::string &response,
   // This is the SUCCESS path - emit m_conversationFinished (errors emit m_responseError)
   if( m_pendingRequests.empty() )
   {
-    cout << "No pending requests, emitting response received signal" << endl;
+    if( m_debug_stream )
+      (*m_debug_stream) << "No pending requests, emitting response received signal" << endl;
     m_conversationFinished.emit();
   }else
   {
-    cout << "Still have " << m_pendingRequests.size() << " pending requests, not emitting signal yet" << endl;
+    if( m_debug_stream )
+      (*m_debug_stream) << "Still have " << m_pendingRequests.size() << " pending requests, not emitting signal yet" << endl;
   }
 }//void handleApiResponse(...)
 
@@ -1380,7 +1470,8 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
   // Set current conversation for tool execution context
   m_currentConversation = convo;
 
-  cout << "Executing " << toolCalls.size() << " tool calls" << endl;
+  if( m_debug_stream )
+    (*m_debug_stream) << "Executing " << toolCalls.size() << " tool calls" << endl;
 
   // Track executed tool calls for follow-up
   std::vector<std::string> executedToolCallIds;
@@ -1415,7 +1506,8 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
       if( function_def.contains("arguments") )
         rawArguments = function_def["arguments"].get<string>();
 
-      cout << "Calling tool: " << toolName << " with ID: " << callId << endl;
+      if( m_debug_stream )
+        (*m_debug_stream) << "Calling tool: " << toolName << " with ID: " << callId << endl;
 
       // Check if this is an invoke_* tool (sub-agent invocation) - handle specially
       if( SpecUtils::istarts_with(toolName, "invoke_") && (toolName.length() > 7) )
@@ -1429,10 +1521,14 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
         // Try to parse as JSON and extract context/task
         try
         {
-          cout << "--- about to parse sub-agent arguments (lenient)" << endl;
+          if( m_debug_stream )
+            (*m_debug_stream) << "--- about to parse sub-agent arguments (lenient)" << endl;
+          
           arguments = lenientlyParseJson( rawArguments );
-          cout << "--- done parsing sub-agent arguments" << endl;
 
+          if( m_debug_stream )
+            (*m_debug_stream) << "--- done parsing sub-agent arguments" << endl;
+          
           // Try to extract context and task fields
           if( arguments.contains("context") && arguments["context"].is_string() )
             context = arguments["context"].get<string>();
@@ -1490,9 +1586,12 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
         if( agent_type == AgentType::MainAgent )
           throw runtime_error( "Can not invoke a agent of type AgentType::MainAgent" );
 
-        cout << "Detected sub-agent invocation: " << agentName << " (context: " << context.substr(0,50)
-             << (context.length() > 50 ? "..." : "")
-             << ", task: " << task.substr(0,50) << (task.length() > 50 ? "..." : "") << ")" << endl;
+        if( m_debug_stream )
+        {
+          (*m_debug_stream) << "Detected sub-agent invocation: " << agentName << " (context: " << context.substr(0,50)
+                            << (context.length() > 50 ? "..." : "")
+                            << ", task: " << task.substr(0,50) << (task.length() > 50 ? "..." : "") << ")" << endl;
+        }
 
         // Invoke sub-agent (returns request ID)
         const string combinedMessage = "Context:\n" + context + "\n\nTask:\n" + task + "\n\nWhen you are done, provide a summary of your reasoning, as well as how sure you are, or alternate possibilities to investigate.";
@@ -1565,7 +1664,8 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
           }
           
           // Here is where we fill in `parent_conv` with the result, and send back to the LLM
-          cout << "Sub-agent complete (no tool calls left) - will extracting summary and continue main conversation." << endl;
+          if( interface->m_debug_stream )
+            (*interface->m_debug_stream) << "Sub-agent complete (no tool calls left) - will extracting summary and continue main conversation." << endl;
 
           assert( !parent_conv->responses.empty() );
           std::shared_ptr<LlmInteractionTurn> response = nullptr;
@@ -1615,14 +1715,16 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
               const LlmInteractionFinalResponse *llmResp = dynamic_cast<const LlmInteractionFinalResponse*>(sub_agent_convo->responses.back().get());
               if( llmResp )
                 last_response = llmResp->content();
-              cout << "--- about to parse sub_agent_convo->responses='" << last_response << "'" << endl;
+              if( interface->m_debug_stream )
+                (*interface->m_debug_stream) << "--- about to parse sub_agent_convo->responses='" << last_response << "'" << endl;
 
               nlohmann::json responseJson = nlohmann::json::object();
               try
               {
                 if( !last_response.empty() )
                   responseJson = parseLenientJson( last_response );
-                cout << "--- Done parsing sub_agent_convo->responses" << endl;
+                if( interface->m_debug_stream )
+                  (*interface->m_debug_stream) << "--- Done parsing sub_agent_convo->responses" << endl;
                 
                 if( responseJson.contains("choices") && !responseJson["choices"].empty() )
                 {
@@ -1637,14 +1739,16 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
                   }
                 }
                 
-                cout << "--- Done extracting JSON subAgentSummary='" << subAgentSummary << "'\n\n" << endl;
+                if( interface->m_debug_stream )
+                  (*interface->m_debug_stream) << "--- Done extracting JSON subAgentSummary='" << subAgentSummary << "'\n\n" << endl;
               }catch( std::exception &e )
               {
                 // `LlmConversationResponse::content` may not / likely is not, JSON
                 auto [cleanContent, thinkingContent] = extractThinkingAndContent(last_response);
                 subAgentSummary = cleanContent;
                 subAgentThinkingContent = thinkingContent;
-                cout << "--- Done extracting non-JSON subAgentSummary='" << subAgentSummary << "'\n\n" << endl;
+                if( interface->m_debug_stream )
+                  (*interface->m_debug_stream) << "--- Done extracting non-JSON subAgentSummary='" << subAgentSummary << "'\n\n" << endl;
               }
               
               
@@ -1652,9 +1756,12 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
               subAgentSummary = sanitizeUtf8( subAgentSummary );
               subAgentThinkingContent = sanitizeUtf8( subAgentThinkingContent );
 
-              cout << "Sub-agent summary: " << subAgentSummary.substr(0, 100) << (subAgentSummary.length() > 100 ? "..." : "") << endl;
-              cout << "subAgentThinkingContent='" << subAgentThinkingContent << "'" << endl;
-
+              if( interface->m_debug_stream )
+              {
+                (*interface->m_debug_stream) << "Sub-agent summary: " << subAgentSummary.substr(0, 100) << (subAgentSummary.length() > 100 ? "..." : "") << endl;
+                (*interface->m_debug_stream) << "subAgentThinkingContent='" << subAgentThinkingContent << "'" << endl;
+              }
+              
               updatedResult["status"] = "completed";
               updatedResult["summary"] = subAgentSummary;
               updatedResult["agentName"] = agentTypeToString( sub_agent_convo->agent_type );
@@ -1677,10 +1784,13 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
                 sub_agent_convo->completionTokens.has_value() ||
                 sub_agent_convo->totalTokens.has_value() )
             {
-              cout << "=== Aggregating sub-agent token usage to parent ===" << endl;
-              cout << "Sub-agent prompt tokens: " << (sub_agent_convo->promptTokens.has_value() ? std::to_string(sub_agent_convo->promptTokens.value()) : "N/A") << endl;
-              cout << "Sub-agent completion tokens: " << (sub_agent_convo->completionTokens.has_value() ? std::to_string(sub_agent_convo->completionTokens.value()) : "N/A") << endl;
-              cout << "Sub-agent total tokens: " << (sub_agent_convo->totalTokens.has_value() ? std::to_string(sub_agent_convo->totalTokens.value()) : "N/A") << endl;
+              if( interface->m_debug_stream )
+              {
+                (*interface->m_debug_stream) << "=== Aggregating sub-agent token usage to parent ===" << endl;
+                (*interface->m_debug_stream) << "Sub-agent prompt tokens: " << (sub_agent_convo->promptTokens.has_value() ? std::to_string(sub_agent_convo->promptTokens.value()) : "N/A") << endl;
+                (*interface->m_debug_stream) << "Sub-agent completion tokens: " << (sub_agent_convo->completionTokens.has_value() ? std::to_string(sub_agent_convo->completionTokens.value()) : "N/A") << endl;
+                (*interface->m_debug_stream) << "Sub-agent total tokens: " << (sub_agent_convo->totalTokens.has_value() ? std::to_string(sub_agent_convo->totalTokens.value()) : "N/A") << endl;
+              }
 
               // Add sub-agent's tokens to parent conversation
               if( sub_agent_convo->promptTokens.has_value() )
@@ -1707,11 +1817,14 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
                   parent_conv->totalTokens = sub_agent_convo->totalTokens.value();
               }
 
-              cout << "Parent conversation now has:" << endl;
-              cout << "  Prompt tokens: " << (parent_conv->promptTokens.has_value() ? std::to_string(parent_conv->promptTokens.value()) : "N/A") << endl;
-              cout << "  Completion tokens: " << (parent_conv->completionTokens.has_value() ? std::to_string(parent_conv->completionTokens.value()) : "N/A") << endl;
-              cout << "  Total tokens: " << (parent_conv->totalTokens.has_value() ? std::to_string(parent_conv->totalTokens.value()) : "N/A") << endl;
-              cout << "===================================================" << endl;
+              if( interface->m_debug_stream )
+              {
+                (*interface->m_debug_stream) << "Parent conversation now has:" << endl;
+                (*interface->m_debug_stream) << "  Prompt tokens: " << (parent_conv->promptTokens.has_value() ? std::to_string(parent_conv->promptTokens.value()) : "N/A") << endl;
+                (*interface->m_debug_stream) << "  Completion tokens: " << (parent_conv->completionTokens.has_value() ? std::to_string(parent_conv->completionTokens.value()) : "N/A") << endl;
+                (*interface->m_debug_stream) << "  Total tokens: " << (parent_conv->totalTokens.has_value() ? std::to_string(parent_conv->totalTokens.value()) : "N/A") << endl;
+                (*interface->m_debug_stream) << "===================================================" << endl;
+              }
             }
 
             // Emit signal that this sub-agent has finished
@@ -1719,6 +1832,8 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
           }else
           {
             cerr << "Failed to find tool-call result - shouldnt happen!!!" << endl;
+            if( interface->m_debug_stream )
+              (*interface->m_debug_stream) << "Failed to find tool-call result - shouldnt happen!!!" << endl;
           }//if( toolResult )
 
 
@@ -1726,7 +1841,8 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
           assert( defered_pos != end(interface->m_deferredToolResults) );
           if( defered_pos == end(interface->m_deferredToolResults) )
           {
-            cerr << "Sub-agent completed with no defered request being found..." << endl;
+            if( interface->m_debug_stream )
+              (*interface->m_debug_stream) << "Sub-agent completed with no defered request being found..." << endl;
             return;
           }
           
@@ -1740,23 +1856,28 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
           {
             // No more agent calls is pending, lets cleanup the results
             interface->m_deferredToolResults.erase( defered_pos );
-            
-            cout << "=== Sending parent conversation with sub-agent results back to LLM!" << endl;
+            if( interface->m_debug_stream )
+              (*interface->m_debug_stream) << "=== Sending parent conversation with sub-agent results back to LLM!" << endl;
             interface->sendToolResultsToLLM( parent_conv );
           }
         };//sub_agent_convo->conversation_completion_handler
 
-        cout << "Sub-agent invocation deferred - will resume main agent when complete" << endl;
+        if( m_debug_stream )
+          (*m_debug_stream) << "Sub-agent invocation deferred - will resume main agent when complete" << endl;
       }else
       {
         // ===== NORMAL TOOL EXECUTION BRANCH =====
         // For normal tools: Parse arguments as JSON (strict)
 
-        cout << "--- about to parse normal tool arguments for toolName=" << toolName << endl;
+        if( m_debug_stream )
+          (*m_debug_stream) << "--- about to parse normal tool arguments for toolName=" << toolName << endl;
+        
         json arguments;
         if( !rawArguments.empty() )
           arguments = lenientlyParseJson( rawArguments );
-        cout << "--- done parsing normal tool arguments for toolName=" << toolName << endl;
+        
+        if( m_debug_stream )
+          (*m_debug_stream) << "--- done parsing normal tool arguments for toolName=" << toolName << endl;
 
         // Add to requests BEFORE execution (so it's always in sync with results)
         toolCallRequests.emplace_back( toolName, callId, arguments );
@@ -1805,7 +1926,8 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
         
         if( result.contains("status") || result.contains("Status") )
         {
-          cout << "Tool call result contains 'status'" << endl;
+          if( m_debug_stream )
+            (*m_debug_stream) << "Tool call result contains 'status'" << endl;
         }
         //if( !result.contains("status") && !result.contains("Status") )
         //  result["status"] = "Success";
@@ -1819,7 +1941,10 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
       }
     }catch( const json::parse_error &e )
     {
-      cout << "Tool execution JSON parse error: " << e.what() << endl;
+      if( m_debug_stream )
+        (*m_debug_stream) << "Tool execution JSON parse error: " << e.what() << endl;
+      cerr << "Tool execution JSON parse error: " << e.what() << endl;
+      
 
 #if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
       {
@@ -1859,7 +1984,9 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
     }catch( const json::exception &e )
     {
       //Will catch: json::exception, json::invalid_iterator, json::type_error, json::out_of_range, and json::other_error here
-      cout << "Tool execution JSON error: " << e.what() << endl;
+      cerr << "Tool execution JSON error: " << e.what() << endl;
+      if( m_debug_stream )
+        (*m_debug_stream) << "Tool execution JSON error: " << e.what() << endl;
       
 #if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
       {
@@ -1899,7 +2026,8 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
     }catch( const std::exception &e )
     {
       const string msg = e.what();
-      cout << "Tool execution error: " << msg << endl;
+      if( m_debug_stream )
+        (*m_debug_stream) << "Tool execution error: " << msg << endl;
 
 #if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
       {
@@ -1972,7 +2100,8 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
   // If we have a sub-agent invocation, defer sending results until sub-agent completes
   if( !subAgentRequestIds.empty() )
   {
-    cout << "Deferring tool results - for sub-agent to complete" << endl;
+    if( m_debug_stream )
+      (*m_debug_stream) << "Deferring tool results - for sub-agent to complete" << endl;
 
     DeferredToolResult deferred;
     deferred.conversationId = convo->conversationId;
@@ -1986,7 +2115,8 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
   {
     // No sub-agent - send results immediately
     if (!executedToolCallIds.empty()) {
-      cout << "Sending tool results back to LLM for " << executedToolCallIds.size() << " executed tools" << endl;
+      if( m_debug_stream )
+        (*m_debug_stream) << "Sending tool results back to LLM for " << executedToolCallIds.size() << " executed tools" << endl;
       sendToolResultsToLLM( convo );
     }
   }
@@ -2007,7 +2137,8 @@ LlmInterface::parseContentForToolCallsAndSendResults( const std::string &content
                                                             const std::string &reasoningContent,
                                                             const std::string &reasoningDetails )
 {
-  cout << "Parsing content for text-based tool calls..." << endl;
+  if( m_debug_stream )
+    (*m_debug_stream) << "Parsing content for text-based tool calls..." << endl;
   
   nlohmann::json tool_calls = nlohmann::json::array();
   // We will add entries to this array that look like:
@@ -2055,10 +2186,12 @@ LlmInterface::parseContentForToolCallsAndSendResults( const std::string &content
         {
           // Single capture group - JSON object with name and arguments fields
           string toolCallJson = match[1].str();
-          cout << "Found JSON tool call: " << toolCallJson << " -- and about to parse" << endl;
+          if( m_debug_stream )
+            (*m_debug_stream) << "Found JSON tool call: " << toolCallJson << " -- and about to parse" << endl;
 
           json toolCallObj = lenientlyParseJson( toolCallJson );
-          cout << "Done parsing tool call JSON" << endl;
+          if( m_debug_stream )
+            (*m_debug_stream) << "Done parsing tool call JSON" << endl;
 
           if( toolCallObj.contains("name") )
             toolName = toolCallObj["name"];
@@ -2078,18 +2211,22 @@ LlmInterface::parseContentForToolCallsAndSendResults( const std::string &content
           // Parse arguments JSON
           if( !argumentsStr.empty() && (argumentsStr != "{}") )
           {
-            cout << "About to parse alone tool call JSON" << endl;
+            if( m_debug_stream )
+              (*m_debug_stream) << "About to parse alone tool call JSON" << endl;
 
             arguments = lenientlyParseJson( argumentsStr );
 
-            cout << "Done parsing alone tool call JSON" << endl;
+            if( m_debug_stream )
+              (*m_debug_stream) << "Done parsing alone tool call JSON" << endl;
           }
         }
 
-        cout << "Found text-based tool call: " << toolName << " with args: " << arguments.dump() << endl;
+        if( m_debug_stream )
+          (*m_debug_stream) << "Found text-based tool call: " << toolName << " with args: " << arguments.dump() << endl;
       }catch( const std::exception &e )
       {
-        cout << "Error parsing text-based tool call: " << e.what() << endl;
+        if( m_debug_stream )
+          (*m_debug_stream) << "Error parsing text-based tool call: " << e.what() << endl;
 
         // Try to extract tool name from the matched content as a fallback
         if( toolName.empty() )
@@ -2103,12 +2240,14 @@ LlmInterface::parseContentForToolCallsAndSendResults( const std::string &content
           if( std::regex_search( matchStr, nameMatch, namePattern ) && nameMatch.size() > 1 )
           {
             toolName = nameMatch[1].str();
-            cout << "Extracted tool name from fallback pattern: " << toolName << endl;
+            if( m_debug_stream )
+              (*m_debug_stream) << "Extracted tool name from fallback pattern: " << toolName << endl;
           }else
           {
             // Last resort - use a descriptive error placeholder
             toolName = "unknown_tool_parse_error";
-            cerr << "Failed to extract tool name from match, using placeholder: " << toolName << endl;
+            if( m_debug_stream )
+              (*m_debug_stream) << "Failed to extract tool name from match, using placeholder: " << toolName << endl;
           }
         }
       }//try / catch
@@ -2134,7 +2273,8 @@ LlmInterface::parseContentForToolCallsAndSendResults( const std::string &content
     }//for( ; iter != end; ++iter )
   }//for( const auto &pattern : toolCallPatterns )
   
-  cout << "=== Complete extracting " << tool_calls.size() << " text-based tool calls ===" << endl;
+  if( m_debug_stream )
+    (*m_debug_stream) << "=== Complete extracting " << tool_calls.size() << " text-based tool calls ===" << endl;
 
   pair<shared_ptr<LlmToolRequest>,shared_ptr<LlmToolResults>> result
         = executeToolCallsAndSendResults( tool_calls, convo, requestId, rawResponseContent,
@@ -2368,7 +2508,8 @@ void LlmInterface::initializeStateMachineForConversation( std::shared_ptr<LlmInt
         // Create an independent copy of the state machine for this conversation
         convo->state_machine = agent.state_machine->copy();
 
-        cout << "Initialized state machine for " << agentTypeToString(agent.type)
+        if( m_debug_stream )
+          (*m_debug_stream) << "Initialized state machine for " << agentTypeToString(agent.type)
              << " conversation, starting in state: " << convo->state_machine->getCurrentState() << endl;
       }
       return;
@@ -2407,9 +2548,12 @@ int LlmInterface::invokeSubAgent( std::shared_ptr<LlmInteraction> sub_agent_conv
   if( initialReq )
     contextTask = initialReq->content();
 
-  cout << "=== Invoking sub-agent: " << agentTypeToString(sub_agent_convo->agent_type) << " (async with pause) ===" << endl;
-  cout << "Context/Task: " << contextTask.substr(0, 100) << (contextTask.length() > 100 ? "..." : "") << endl;
-  cout << "Invoke tool call ID: " << sub_agent_convo->conversationId << endl;
+  if( m_debug_stream )
+  {
+    (*m_debug_stream) << "=== Invoking sub-agent: " << agentTypeToString(sub_agent_convo->agent_type) << " (async with pause) ===" << endl;
+    (*m_debug_stream) << "Context/Task: " << contextTask.substr(0, 100) << (contextTask.length() > 100 ? "..." : "") << endl;
+    (*m_debug_stream) << "Invoke tool call ID: " << sub_agent_convo->conversationId << endl;
+  }
 
   // Build API request for this specific agent - since the combined message is already in the
   const json requestJson = buildMessagesArray( sub_agent_convo );
@@ -2429,7 +2573,10 @@ int LlmInterface::invokeSubAgent( std::shared_ptr<LlmInteraction> sub_agent_conv
 
   m_pendingRequests[requestId] = pending;
 
-  cout << "Main agent will pause until sub-agent completes" << endl;
+  if( m_debug_stream )
+  {
+    (*m_debug_stream) << "Main agent will pause until sub-agent completes" << endl;
+  }
 
   // Make the actual API call
   std::string msg_content = makeApiCallWithId(requestJson, requestId);
@@ -2529,7 +2676,8 @@ nlohmann::json LlmInterface::buildMessagesArray( const std::shared_ptr<LlmIntera
     const vector<shared_ptr<LlmInteraction>> &conversations = m_history->getConversations();
     if( !conversations.empty() )
     {
-      cout << "=== Including " << conversations.size() << " history messages in request ===" << endl;
+      if( m_debug_stream )
+        (*m_debug_stream) << "=== Including " << conversations.size() << " history messages in request ===" << endl;
       
       for( const shared_ptr<LlmInteraction> &previous_conversation : conversations )
       {
@@ -2541,7 +2689,8 @@ nlohmann::json LlmInterface::buildMessagesArray( const std::shared_ptr<LlmIntera
       }
     }else
     {
-      cout << "=== No history to include ===" << endl;
+      if( m_debug_stream )
+        (*m_debug_stream) << "=== No history to include ===" << endl;
     }
   }else
   {
@@ -2662,223 +2811,234 @@ void LlmInterface::setupJavaScriptBridge() {
   
   //cout << "Setting up JavaScript bridge for HTTP requests..." << endl;
   
-  // Set up the JavaScript function to handle HTTP requests
-  string jsCode = R"(
-    // Track retry state for each request
-    if (!window.requestRetryState) {
+  // Set up shared JavaScript functions (only injected once per page)
+  // The makeRequest/llmHttpRequest functions are shared across all LlmInterface instances;
+  // each instance registers its own callback in window.llmResponseCallbacks[instanceId].
+  string sharedJsCode = R"(
+    if ( !window.llmHttpRequest ) {
       window.requestRetryState = {};
-    }
+      window.llmResponseCallbacks = {};
 
-    // Internal function to make a request (supports retry)
-    function makeRequest(endpoint, requestJsonString, bearerToken, requestId, isRetry) {
-      var startTime = Date.now();
-      var requestObj = null;
+      // Internal function to make a request (supports retry)
+      function makeRequest(endpoint, requestJsonString, bearerToken, requestId, instanceId, isRetry) {
+        var startTime = Date.now();
+        var requestObj = null;
 
-      try {
-        requestObj = JSON.parse(requestJsonString);
-      } catch(e) {
-        console.error('Failed to parse request JSON:', e);
-      }
+        try {
+          requestObj = JSON.parse(requestJsonString);
+        } catch(e) {
+          console.error('Failed to parse request JSON:', e);
+        }
 
-      // Log request diagnostics
-      if (!isRetry) {
-        console.log('=== LLM Request ID', requestId, '===');
-        console.log('Endpoint:', endpoint);
-        console.log('Submit time:', new Date().toISOString());
-        console.log('Request size:', requestJsonString.length, 'bytes');
+        // Log request diagnostics
+        if (!isRetry) {
+          console.log('=== LLM Request ID', requestId, 'instance', instanceId, '===');
+          console.log('Endpoint:', endpoint);
+          console.log('Submit time:', new Date().toISOString());
+          console.log('Request size:', requestJsonString.length, 'bytes');
 
-        if (requestObj) {
-          console.log('Model:', requestObj.model || 'not specified');
-          console.log('Messages count:', requestObj.messages ? requestObj.messages.length : 0);
-          console.log('Tools count:', requestObj.tools ? requestObj.tools.length : 0);
+          if (requestObj) {
+            console.log('Model:', requestObj.model || 'not specified');
+            console.log('Messages count:', requestObj.messages ? requestObj.messages.length : 0);
+            console.log('Tools count:', requestObj.tools ? requestObj.tools.length : 0);
 
-          // Calculate total conversation tokens (rough estimate)
-          var totalChars = 0;
-          if (requestObj.messages) {
-            requestObj.messages.forEach(function(msg) {
-              if (msg.content && typeof msg.content === 'string') {
-                totalChars += msg.content.length;
-              }
-            });
-          }
-          console.log('Estimated input chars:', totalChars);
+            // Calculate total conversation tokens (rough estimate)
+            var totalChars = 0;
+            if (requestObj.messages) {
+              requestObj.messages.forEach(function(msg) {
+                if (msg.content && typeof msg.content === 'string') {
+                  totalChars += msg.content.length;
+                }
+              });
+            }
+            console.log('Estimated input chars:', totalChars);
 
-          // Log truncated request JSON
-          var jsonStr = JSON.stringify(requestObj);
-          if (jsonStr.length > 80) {
-            var truncated = jsonStr.substring(0, 70) + '...' + jsonStr.substring(jsonStr.length - 10);
-            console.log('Request JSON (truncated):', truncated);
+            // Log truncated request JSON
+            var jsonStr = JSON.stringify(requestObj);
+            if (jsonStr.length > 80) {
+              var truncated = jsonStr.substring(0, 70) + '...' + jsonStr.substring(jsonStr.length - 10);
+              console.log('Request JSON (truncated):', truncated);
+            } else {
+              console.log('Request JSON:', jsonStr);
+            }
           } else {
-            console.log('Request JSON:', jsonStr);
+            var truncated = requestJsonString.length > 80
+              ? requestJsonString.substring(0, 70) + '...' + requestJsonString.substring(requestJsonString.length - 10)
+              : requestJsonString;
+            console.log('Request JSON (raw, truncated):', truncated);
           }
-        } else {
-          var truncated = requestJsonString.length > 80
-            ? requestJsonString.substring(0, 70) + '...' + requestJsonString.substring(requestJsonString.length - 10)
-            : requestJsonString;
-          console.log('Request JSON (raw, truncated):', truncated);
-        }
-      }
-
-      var headers = {
-        'Content-Type': 'application/json'
-      };
-
-      if (bearerToken && bearerToken.trim() !== '') {
-        headers['Authorization'] = 'Bearer ' + bearerToken;
-        
-        // Some providers will reject the message if x-access-tokens is set, so only set it for the one I know needs it 
-        if (endpoint.indexOf('.ai/server/query') !== -1) {
-          headers['x-access-tokens'] = bearerToken;
-        }
-      }
-
-      // Create AbortController for timeout handling
-      var controller = new AbortController();
-      var timeoutMs = 45000; // 0.75 minutes
-      var timeoutId = setTimeout(function() {
-        var elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        console.error('=== LLM Request TIMEOUT (ID ' + requestId + (isRetry ? ', RETRY' : '') + ') ===');
-        console.error('Elapsed time: ' + elapsed + 's');
-        console.error('Timeout limit: ' + (timeoutMs / 1000) + 's');
-        console.error('Endpoint: ' + endpoint);
-        controller.abort();
-      }, timeoutMs);
-
-      if (!isRetry) {
-        console.log('Timeout set for:', (timeoutMs / 1000) + 's');
-        console.log('Initiating fetch...');
-      }
-
-      fetch(endpoint, {
-        method: 'POST',
-        headers: headers,
-        body: requestJsonString,
-        signal: controller.signal
-      })
-      .then(function(response) {
-        var elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        console.log('=== LLM Response received (ID ' + requestId + (isRetry ? ', RETRY' : '') + ') ===');
-        console.log('Status:', response.status, response.statusText);
-        console.log('Elapsed time:', elapsed + 's');
-        return response.text();
-      })
-      .then(function(responseText) {
-        var elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        console.log('Response parsed, size:', responseText.length, 'bytes');
-        console.log('Total round-trip time:', elapsed + 's');
-
-        // Clear the timeout since we got a response
-        clearTimeout(timeoutId);
-
-        // Check if we're a retry and original already completed
-        if (isRetry && window.requestRetryState[requestId] && window.requestRetryState[requestId].originalCompleted) {
-          console.log('Retry completed but original already succeeded - ignoring retry response');
-          return;
         }
 
-        // Mark as completed
-        if (window.requestRetryState[requestId]) {
-          window.requestRetryState[requestId].originalCompleted = true;
+        var headers = {
+          'Content-Type': 'application/json'
+        };
+
+        if (bearerToken && bearerToken.trim() !== '') {
+          headers['Authorization'] = 'Bearer ' + bearerToken;
+
+          // Some providers will reject the message if x-access-tokens is set, so only set it for the one I know needs it
+          if (endpoint.indexOf('.ai/server/query') !== -1) {
+            headers['x-access-tokens'] = bearerToken;
+          }
         }
 
-        // Call back to C++ with response and request ID as separate parameters
-        if (window.llmResponseCallback) {
-          window.llmResponseCallback(responseText, requestId);
+        // Create AbortController for timeout handling
+        var controller = new AbortController();
+        var timeoutMs = 45000; // 0.75 minutes
+        var timeoutId = setTimeout(function() {
+          var elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+          console.error('=== LLM Request TIMEOUT (ID ' + requestId + ', instance ' + instanceId + (isRetry ? ', RETRY' : '') + ') ===');
+          console.error('Elapsed time: ' + elapsed + 's');
+          console.error('Timeout limit: ' + (timeoutMs / 1000) + 's');
+          console.error('Endpoint: ' + endpoint);
+          controller.abort();
+        }, timeoutMs);
+
+        if (!isRetry) {
+          console.log('Timeout set for:', (timeoutMs / 1000) + 's');
+          console.log('Initiating fetch...');
         }
-      })
-      .catch(function(error) {
-        var elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
-        // Clear the timeout since we got an error
-        clearTimeout(timeoutId);
+        fetch(endpoint, {
+          method: 'POST',
+          headers: headers,
+          body: requestJsonString,
+          signal: controller.signal
+        })
+        .then(function(response) {
+          var elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+          console.log('=== LLM Response received (ID ' + requestId + ', instance ' + instanceId + (isRetry ? ', RETRY' : '') + ') ===');
+          console.log('Status:', response.status, response.statusText);
+          console.log('Elapsed time:', elapsed + 's');
+          return response.text();
+        })
+        .then(function(responseText) {
+          var elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+          console.log('Response parsed, size:', responseText.length, 'bytes');
+          console.log('Total round-trip time:', elapsed + 's');
 
-        var errorType = error.name === 'AbortError' ? 'timeout_error' : 'network_error';
+          // Clear the timeout since we got a response
+          clearTimeout(timeoutId);
 
-        // If this is the original request (not a retry) and it's a retryable error, attempt retry
-        if (!isRetry && (errorType === 'timeout_error' || errorType === 'network_error')) {
-          console.error('=== LLM Request ERROR (ID ' + requestId + ') - attempting retry ===');
+          // Check if we're a retry and original already completed
+          if (isRetry && window.requestRetryState[requestId] && window.requestRetryState[requestId].originalCompleted) {
+            console.log('Retry completed but original already succeeded - ignoring retry response');
+            return;
+          }
+
+          // Mark as completed
+          if (window.requestRetryState[requestId]) {
+            window.requestRetryState[requestId].originalCompleted = true;
+          }
+
+          // Route response to the correct LlmInterface instance's callback
+          var cb = window.llmResponseCallbacks[instanceId];
+          if (cb) {
+            cb(responseText, requestId);
+          } else {
+            console.error('No llmResponseCallback registered for instance', instanceId);
+          }
+        })
+        .catch(function(error) {
+          var elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
+          // Clear the timeout since we got an error
+          clearTimeout(timeoutId);
+
+          var errorType = error.name === 'AbortError' ? 'timeout_error' : 'network_error';
+
+          // If this is the original request (not a retry) and it's a retryable error, attempt retry
+          if (!isRetry && (errorType === 'timeout_error' || errorType === 'network_error')) {
+            console.error('=== LLM Request ERROR (ID ' + requestId + ', instance ' + instanceId + ') - attempting retry ===');
+            console.error('Error type:', errorType);
+
+            // Initialize retry state
+            if (!window.requestRetryState[requestId]) {
+              window.requestRetryState[requestId] = { isRetrying: true, originalCompleted: false };
+            }
+
+            // Launch retry after small delay (100ms)
+            setTimeout(function() {
+              console.log('=== Launching retry for request ID ' + requestId + ' ===');
+              makeRequest(endpoint, requestJsonString, bearerToken, requestId, instanceId, true);
+            }, 100);
+
+            // Don't send error to C++ yet - wait for retry
+            return;
+          }
+
+          // This is a retry that also failed, OR original completed during retry
+          if (window.requestRetryState[requestId] && window.requestRetryState[requestId].originalCompleted) {
+            console.log('Retry failed but original already succeeded - ignoring');
+            delete window.requestRetryState[requestId];
+            return;
+          }
+
+          console.error('=== LLM Request ERROR (ID ' + requestId + ', instance ' + instanceId + (isRetry ? ', after retry' : '') + ') ===');
           console.error('Error type:', errorType);
+          console.error('Error message:', error.message);
+          console.error('Elapsed time:', elapsed + 's');
 
-          // Initialize retry state
-          if (!window.requestRetryState[requestId]) {
-            window.requestRetryState[requestId] = { isRetrying: true, originalCompleted: false };
-          }
-
-          // Launch retry after small delay (100ms)
-          setTimeout(function() {
-            console.log('=== Launching retry for request ID ' + requestId + ' ===');
-            makeRequest(endpoint, requestJsonString, bearerToken, requestId, true);
-          }, 100);
-
-          // Don't send error to C++ yet - wait for retry
-          return;
-        }
-
-        // This is a retry that also failed, OR original completed during retry
-        if (window.requestRetryState[requestId] && window.requestRetryState[requestId].originalCompleted) {
-          console.log('Retry failed but original already succeeded - ignoring');
+          // Clean up retry state
           delete window.requestRetryState[requestId];
-          return;
-        }
 
-        console.error('=== LLM Request ERROR (ID ' + requestId + (isRetry ? ', after retry' : '') + ') ===');
-        console.error('Error type:', errorType);
-        console.error('Error message:', error.message);
-        console.error('Elapsed time:', elapsed + 's');
+          // Send error response to C++
+          var errorResponse = JSON.stringify({
+            error: {
+              message: 'HTTP request failed: ' + error.message,
+              type: errorType,
+              elapsed_seconds: parseFloat(elapsed),
+              request_id: requestId,
+              retry_attempted: isRetry
+            }
+          });
 
-        // Clean up retry state
-        delete window.requestRetryState[requestId];
-
-        // Send error response to C++
-        var errorResponse = JSON.stringify({
-          error: {
-            message: 'HTTP request failed: ' + error.message,
-            type: errorType,
-            elapsed_seconds: parseFloat(elapsed),
-            request_id: requestId,
-            retry_attempted: isRetry
+          var cb = window.llmResponseCallbacks[instanceId];
+          if (cb) {
+            cb(errorResponse, requestId);
+          } else {
+            console.error('No llmResponseCallback registered for instance', instanceId);
           }
         });
+      }
 
-        if (window.llmResponseCallback) {
-          window.llmResponseCallback(errorResponse, requestId);
-        }
-      });
+      // Public entry point - always starts as non-retry
+      window.llmHttpRequest = function(endpoint, requestJsonString, bearerToken, requestId, instanceId) {
+        makeRequest(endpoint, requestJsonString, bearerToken, requestId, instanceId, false);
+      };
+
+      console.log('LLM JavaScript bridge initialized with automatic retry support');
     }
-
-    // Public entry point - always starts as non-retry
-    window.llmHttpRequest = function(endpoint, requestJsonString, bearerToken, requestId) {
-      makeRequest(endpoint, requestJsonString, bearerToken, requestId, false);
-    };
-
-    console.log('LLM JavaScript bridge initialized with automatic retry support');
   )";
-  
-  app->doJavaScript(jsCode);
-  
-  // Set up the response callback using JSignal to emit signal to C++
-  string callbackJs = 
-    "window.llmResponseCallback = function(response, requestId) { "
-    //"console.log('Emitting signal to C++ with response length:', response.length, 'requestId:', requestId); "
+
+  app->doJavaScript( sharedJsCode );
+
+  // Register this instance's callback in the JavaScript registry
+  const string callbackJs =
+    "if (!window.llmResponseCallbacks) { window.llmResponseCallbacks = {}; }\n"
+    "window.llmResponseCallbacks['" + m_instanceId + "'] = function(response, requestId) { "
     "" + m_responseSignal->createCall("response", "requestId") + ";"
     "};";
-  
-  app->doJavaScript(callbackJs);
+
+  app->doJavaScript( callbackJs );
   
   //cout << "JavaScript bridge setup complete" << endl;
 }
 
 void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
 {
-  cout << "\n\n=== Recieved requestId=" << requestId << " ===" << endl;
-  SpecUtils::trim( response );
-
-  std::string responsePreview = response;
-  SpecUtils::ireplace_all( responsePreview, "\n", " ");
-  SpecUtils::ireplace_all( responsePreview, "\r", "");
-  if( responsePreview.length() > 300 )
-    responsePreview = responsePreview.substr(0, 300) + "...";
-  cout << "Response: " << response << endl;
+  if( m_debug_stream )
+  {
+    (*m_debug_stream) << "\n\n=== Recieved requestId=" << requestId << " ===" << endl;
+    SpecUtils::trim( response );
+    
+    std::string responsePreview = response;
+    SpecUtils::ireplace_all( responsePreview, "\n", " ");
+    SpecUtils::ireplace_all( responsePreview, "\r", "");
+    if( responsePreview.length() > 300 )
+      responsePreview = responsePreview.substr(0, 300) + "...";
+    (*m_debug_stream) << "Response: " << response << endl;
+  }
 
   std::shared_ptr<LlmInteraction> convo;
   
@@ -2907,9 +3067,13 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
     }//if( !convo )
     
     // Check for errors first
-    cout << "--- about to parse response to json --- " << endl;
+    if( m_debug_stream )
+      (*m_debug_stream) << "--- about to parse response to json --- " << endl;
+    
     json responseJson = parseLenientJson( response );
-    cout << "--- done parsing response to json --- " << endl;
+    
+    if( m_debug_stream )
+      (*m_debug_stream) << "--- done parsing response to json --- " << endl;
 
 
     if( (responseJson.contains("error") && !responseJson["error"].is_null())
@@ -2940,6 +3104,10 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
       cout << "\nLLM request error: wrote request input and output to '"
       << debug_name << "', and '" << debug_result << "', respectively."
       << endl << endl;
+      if( m_debug_stream )
+        (*m_debug_stream) << "\nLLM request error: wrote request input and output to '"
+        << debug_name << "', and '" << debug_result << "', respectively."
+        << endl << endl;
 #endif //#if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
       
       // Determine error type from JavaScript response
@@ -2968,7 +3136,9 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
       }
 
       string errorMsg = "LLM API Error: " + responseJson["error"].dump(2);
-      cout << errorMsg << endl;
+      cerr << errorMsg << endl;
+      if( m_debug_stream )
+        (*m_debug_stream) << errorMsg << endl;
 
       // Add error to conversation history with type
       std::shared_ptr<LlmInteractionError> errorResponse = nullptr;
@@ -2981,33 +3151,39 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
 
       // IMPORTANT: Do NOT set finishTime for any errors - all errors pause the conversation
       // The user can either retry or continue anyway via UI buttons
-      cout << "Conversation PAUSED due to error (type: "
+      cerr << "Conversation PAUSED due to error (type: "
            << static_cast<int>(errorType) << ")" << endl;
+      if( m_debug_stream )
+        (*m_debug_stream) << "Conversation PAUSED due to error (type: " << static_cast<int>(errorType) << ")" << endl;
 
       // Signal that an error response was received
       // Only emit if no pending requests (this is the final response)
       if( m_pendingRequests.empty() )
       {
-        cout << "Error response - no pending requests, emitting error signal" << endl;
+        cerr << "Error response - no pending requests, emitting error signal" << endl;
+        if( m_debug_stream )
+          (*m_debug_stream) << "Error response - no pending requests, emitting error signal" << endl;
         m_responseError.emit();
-      }
-      else
+      }else
       {
-        cout << "Error response - still have " << m_pendingRequests.size() << " pending requests, not emitting signal yet" << endl;
+        cerr << "Error response - still have " << m_pendingRequests.size() << " pending requests, not emitting signal yet" << endl;
+        if( m_debug_stream )
+          (*m_debug_stream) << "Error response - still have " << m_pendingRequests.size() << " pending requests, not emitting signal yet" << endl;
       }
       return;
     }
     
-    if( pendingRequest.isSubAgentRequest )
-      cout << "=== Processing sub-agent response for: " << agentTypeToString(convo->agent_type) << " ===" << endl;
+    if( pendingRequest.isSubAgentRequest && m_debug_stream )
+      (*m_debug_stream) << "=== Processing sub-agent response for: " << agentTypeToString(convo->agent_type) << " ===" << endl;
     
     handleApiResponse( response, convo, requestId );
   }catch( const json::parse_error &e )
   {
     string errorMsg = "Failed to parse LLM response as JSON: " + string(e.what());
 
-    cout << errorMsg << endl;
-    cout << "Raw response: " << response << endl;
+    cerr << errorMsg << endl << "Raw response: " << response << endl;
+    if( m_debug_stream )
+      (*m_debug_stream) << errorMsg << endl << "Raw response: " << response << endl;
 
     if( m_history && convo )
       m_history->addErrorMessage( errorMsg, response, convo, LlmInteractionError::ErrorType::JsonParse );
@@ -3019,6 +3195,8 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
     string errorMsg = "Error processing LLM response: " + string(e.what());
 
     cout << errorMsg << endl;
+    if( m_debug_stream )
+      (*m_debug_stream) << errorMsg << endl;
 
     if( m_history && convo )
       m_history->addErrorMessage( errorMsg, response, convo, LlmInteractionError::ErrorType::Unknown );

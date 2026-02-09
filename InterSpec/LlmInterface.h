@@ -186,10 +186,15 @@ private:
   std::shared_ptr<const LlmConfig> m_config;
   std::shared_ptr<const LlmTools::ToolRegistry> m_tool_registry;
   std::shared_ptr<LlmConversationHistory> m_history;
+
+  // Debug logging support
+  std::ostream* m_debug_stream;              // Pointer to debug output stream (nullptr if no logging)
+  std::unique_ptr<std::ofstream> m_debug_file; // File stream if logging to a file
   
   Wt::Signal<> m_conversationFinished; // Signal emitted when succesful final response from LLM is recieved.
   Wt::Signal<> m_responseError;    // Signal emitted when error responses are received
   
+  const std::string m_instanceId; // Unique ID for JavaScript bridge routing of responses to this instance
   std::unique_ptr<Wt::JSignal<std::string, int>> m_responseSignal; // For JavaScript bridge (response, requestId)
 
   // Request tracking

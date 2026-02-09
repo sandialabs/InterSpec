@@ -1579,6 +1579,8 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     "perform_isotopics_calculation",
     "reset_isotopics_config",
     "set_workflow_state",
+    "get_rel_act_manual_state",
+    "peak_based_relative_efficiency"
   };
 
   if( !config.llmApi.deep_research_url.empty() )
