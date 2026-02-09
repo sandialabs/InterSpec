@@ -140,6 +140,10 @@ void LlmToolGui::initializeUI()
   PopupDivMenuItem *clearItem = menu->addMenuItem( "Clear Conversation" );
   clearItem->triggered().connect( this, &LlmToolGui::handleClearConversation );
 
+  // Add "Reset LLM Config" option - re-reads config files and creates a new LlmInterface
+  PopupDivMenuItem *resetConfigItem = menu->addMenuItem( "Reset LLM Config" );
+  resetConfigItem->triggered().connect( this, &LlmToolGui::handleResetLlmConfig );
+
   // Create scrollable container for conversation displays
   WScrollArea *scrollArea = new WScrollArea( scrollWrapper );
   scrollArea->addStyleClass("LlmConversationScrollArea");
@@ -543,6 +547,68 @@ void LlmToolGui::handleClearConversation()
 
   noBtn->clicked().connect( dialog, &SimpleDialog::accept );
 }
+
+
+void LlmToolGui::handleResetLlmConfig()
+{
+  // Show confirmation dialog before resetting
+  SimpleDialog *dialog = new SimpleDialog( "Reset LLM Config" );
+  new WText( "This will re-read the LLM configuration files and clear the current conversation. Continue?",
+            dialog->contents() );
+
+  WPushButton *yesBtn = dialog->addButton( "Yes, Reset" );
+  WPushButton *noBtn = dialog->addButton( "Cancel" );
+
+  yesBtn->clicked().connect( std::bind( [this, dialog]() {
+    dialog->accept();
+
+    // Try to load the config from disk; if it fails, show error and bail out
+    shared_ptr<LlmConfig> config;
+
+    try
+    {
+      config = LlmConfig::load();
+    }catch( std::exception &e )
+    {
+      SimpleDialog *errDialog = new SimpleDialog( "Error Loading LLM Config" );
+      new WText( e.what(), errDialog->contents() );
+      errDialog->addButton( "Okay" );
+      return;
+    }
+
+    if( !config || !config->llmApi.enabled || config->llmApi.apiEndpoint.empty() )
+    {
+      SimpleDialog *errDialog = new SimpleDialog( "Error Loading LLM Config" );
+      new WText( "LLM API is not enabled in the configuration.", errDialog->contents() );
+      errDialog->addButton( "Okay" );
+      return;
+    }
+
+    // Update the global cached config
+    InterSpecServer::set_llm_config( config );
+
+    // Cancel any in-flight request and clear all conversation UI
+    cancelCurrentRequest();
+    clearHistory();
+
+    // Reset the existing LlmInterface with the new config (preserves JS bridge and JSignal)
+    try
+    {
+      m_llmInterface->resetWithConfig( config );
+    }catch( std::exception &e )
+    {
+      SimpleDialog *errDialog = new SimpleDialog( "Error Resetting LLM" );
+      new WText( e.what(), errDialog->contents() );
+      errDialog->addButton( "Okay" );
+      return;
+    }
+
+    setInputEnabled( true );
+  }));
+
+  noBtn->clicked().connect( dialog, &SimpleDialog::accept );
+}
+
 
 void LlmToolGui::setInputEnabled(bool enabled)
 {

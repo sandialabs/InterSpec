@@ -1201,6 +1201,12 @@ std::shared_ptr<const LlmConfig> llm_config()
     ns_llm_config = LlmConfig::load(); //Throws exception if invalid config file, returns null if no config file
   return ns_llm_config;
 }
+
+void set_llm_config( std::shared_ptr<const LlmConfig> config )
+{
+  std::lock_guard<std::mutex> llm_config_lock( ns_llm_config_mutex );
+  ns_llm_config = config;
+}
 #endif
 }//namespace InterSpecServer
 

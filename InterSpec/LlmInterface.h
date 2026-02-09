@@ -113,6 +113,17 @@ public:
   
   /** Check if LLM interface is properly configured and ready to use */
   bool isConfigured() const;
+
+  /** Reset the interface with a new config, clearing all conversation state.
+
+   Keeps the existing JavaScript bridge and JSignal intact (avoids signal
+   re-registration issues), but swaps the config, recreates the tool registry,
+   and clears all conversation history and pending requests.
+
+   @param config The new LLM configuration to use
+   @throws std::logic_error if config is null or LLM API is not enabled
+   */
+  void resetWithConfig( const std::shared_ptr<const LlmConfig> &config );
   
   /** Signal emitted when a new response is received from the LLM */
   Wt::Signal<>& conversationFinished();
@@ -172,8 +183,8 @@ private:
   void emitConversationFinished(){ conversationFinished().emit(); }
   
   InterSpec* m_interspec;
-  const std::shared_ptr<const LlmConfig> m_config;
-  const std::shared_ptr<const LlmTools::ToolRegistry> m_tool_registry;
+  std::shared_ptr<const LlmConfig> m_config;
+  std::shared_ptr<const LlmTools::ToolRegistry> m_tool_registry;
   std::shared_ptr<LlmConversationHistory> m_history;
   
   Wt::Signal<> m_conversationFinished; // Signal emitted when succesful final response from LLM is recieved.

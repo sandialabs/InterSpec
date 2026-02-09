@@ -178,6 +178,25 @@ LlmInterface::~LlmInterface() {
 }
 
 
+void LlmInterface::resetWithConfig( const std::shared_ptr<const LlmConfig> &config )
+{
+  if( !config || !config->llmApi.enabled )
+    throw std::logic_error( "LlmInterface::resetWithConfig: config is null or LLM API not enabled" );
+
+  // Create the tool registry first - if this throws, we haven't modified any state yet
+  std::shared_ptr<const LlmTools::ToolRegistry> tool_registry
+    = make_shared<LlmTools::ToolRegistry>( *config );
+
+  m_config = config;
+  m_tool_registry = tool_registry;
+  m_history = make_shared<LlmConversationHistory>();
+  m_pendingRequests.clear();
+  m_deferredToolResults.clear();
+  m_currentConversation.reset();
+  m_nextRequestId = 1;
+}
+
+
 std::shared_ptr<const LlmTools::ToolRegistry> LlmInterface::toolRegistry()
 {
   return m_tool_registry;

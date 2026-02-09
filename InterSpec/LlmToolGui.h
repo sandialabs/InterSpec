@@ -110,6 +110,9 @@ protected:
 
   /** Show confirmation dialog and clear conversation */
   void handleClearConversation();
+
+  /** Re-read LLM config from disk, clear GUI, and create a new LlmInterface */
+  void handleResetLlmConfig();
   
 
 
