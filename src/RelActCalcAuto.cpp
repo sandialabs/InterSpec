@@ -4911,7 +4911,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
     cost_functor->m_solution_finished = false;
 
+    // Enabling `TRY_FIXING_PARAMETERS_FOR_INITIAL_ESTIMATE == 1` for multiple rel-eff curve problems causes solution
+    //  to not find optimal answer - maybe because the solution starts out in a local minumum it cant get out of.
 #define TRY_FIXING_PARAMETERS_FOR_INITIAL_ESTIMATE 1
+
+#pragma message( "Need to fixup TRY_FIXING_PARAMETERS_FOR_INITIAL_ESTIMATE - or at least disable for multi-releff" )
 
 #if( TRY_FIXING_PARAMETERS_FOR_INITIAL_ESTIMATE )
     /* To help get to the correct solution, we will first fix a number of currently-not-fixed parameters, get
