@@ -377,7 +377,7 @@ T fullrangefraction_energy( const T bin,
  @param energy The energy in keV to find the channel for
  @param coeffs The polynomial coefficients (E = C₀ + C₁*ch + C₂*ch² + ...)
  @param nchannel Number of channels in the spectrum
- @param deviation_pairs The deviation pair anchors and offsets
+ @param dev_pair_spline Pre-computed cubic spline nodes for deviation pairs (use empty vector if none)
  @param accuracy The accuracy in keV for the binary search (default 0.001 keV)
  @returns The channel number (fractional) corresponding to the energy
  */
@@ -385,8 +385,32 @@ template<typename T>
 T find_polynomial_channel( const T energy,
                            const std::vector<T> &coeffs,
                            const size_t nchannel,
+                           const std::vector<CubicSplineNodeT<T>> &dev_pair_spline,
+                           const double accuracy = 0.001 );
+
+
+/** Overload accepting deviation pairs directly (builds the spline internally).
+ @param deviation_pairs The deviation pair anchors and offsets
+ */
+template<typename T>
+T find_polynomial_channel( const T energy,
+                           const std::vector<T> &coeffs,
+                           const size_t nchannel,
                            const std::vector<std::pair<double,T>> &deviation_pairs,
                            const double accuracy = 0.001 )
+{
+  const std::vector<CubicSplineNodeT<T>> dev_pair_spline =
+    deviation_pairs.empty() ? std::vector<CubicSplineNodeT<T>>{} : create_cubic_spline( deviation_pairs );
+  return find_polynomial_channel( energy, coeffs, nchannel, dev_pair_spline, accuracy );
+}
+
+
+template<typename T>
+T find_polynomial_channel( const T energy,
+                           const std::vector<T> &coeffs,
+                           const size_t nchannel,
+                           const std::vector<CubicSplineNodeT<T>> &dev_pair_spline,
+                           const double accuracy )
 {
   using namespace std;
   using namespace ceres;
@@ -410,10 +434,6 @@ T find_polynomial_channel( const T energy,
 
   if( ncoefs < 2 )
     return T(0.0);
-
-  // Build deviation pair spline
-  const std::vector<CubicSplineNodeT<T>> dev_pair_spline =
-    deviation_pairs.empty() ? std::vector<CubicSplineNodeT<T>>{} : create_cubic_spline( deviation_pairs );
 
   // For low-order polynomials, use analytical solutions
   if( ncoefs < 4 )
@@ -554,13 +574,16 @@ T find_polynomial_channel( const T energy,
     for( size_t i = 0; i < coeffs.size(); ++i )
       coeffs_scalar[i] = coeffs[i].a;
 
-    std::vector<std::pair<double,double>> dev_pairs_scalar;
-    dev_pairs_scalar.reserve( deviation_pairs.size() );
-    for( const auto &pair : deviation_pairs )
-      dev_pairs_scalar.emplace_back( pair.first, pair.second.a );
-
-    const std::vector<CubicSplineNodeT<double>> dev_pair_spline_scalar =
-      dev_pairs_scalar.empty() ? std::vector<CubicSplineNodeT<double>>{} : create_cubic_spline( dev_pairs_scalar );
+    // Extract scalar version of the pre-computed spline
+    std::vector<CubicSplineNodeT<double>> dev_pair_spline_scalar( dev_pair_spline.size() );
+    for( size_t i = 0; i < dev_pair_spline.size(); ++i )
+    {
+      dev_pair_spline_scalar[i].x = dev_pair_spline[i].x;
+      dev_pair_spline_scalar[i].y = dev_pair_spline[i].y.a;
+      dev_pair_spline_scalar[i].a = dev_pair_spline[i].a.a;
+      dev_pair_spline_scalar[i].b = dev_pair_spline[i].b.a;
+      dev_pair_spline_scalar[i].c = dev_pair_spline[i].c.a;
+    }
 
     auto energy_at = [&coeffs_scalar,&dev_pair_spline_scalar]( const double ch ) -> double {
       return polynomial_energy( ch, coeffs_scalar, dev_pair_spline_scalar );
@@ -638,7 +661,7 @@ T find_polynomial_channel( const T energy,
  @param energy The energy in keV to find the channel for
  @param coeffs The FRF coefficients
  @param nchannel Number of channels in the spectrum
- @param deviation_pairs The deviation pair anchors and offsets
+ @param dev_pair_spline Pre-computed cubic spline nodes for deviation pairs (use empty vector if none)
  @param accuracy The accuracy in keV for the binary search (default 0.001 keV)
  @returns The channel number (fractional) corresponding to the energy
  */
@@ -646,8 +669,30 @@ template<typename T>
 T find_fullrangefraction_channel( const T energy,
                                   const std::vector<T> &coeffs,
                                   const size_t nchannel,
+                                  const std::vector<CubicSplineNodeT<T>> &dev_pair_spline,
+                                  const double accuracy = 0.001 );
+
+
+/** Overload accepting deviation pairs directly (builds the spline internally). */
+template<typename T>
+T find_fullrangefraction_channel( const T energy,
+                                  const std::vector<T> &coeffs,
+                                  const size_t nchannel,
                                   const std::vector<std::pair<double,T>> &deviation_pairs,
                                   const double accuracy = 0.001 )
+{
+  const std::vector<CubicSplineNodeT<T>> dev_pair_spline =
+    deviation_pairs.empty() ? std::vector<CubicSplineNodeT<T>>{} : create_cubic_spline( deviation_pairs );
+  return find_fullrangefraction_channel( energy, coeffs, nchannel, dev_pair_spline, accuracy );
+}
+
+
+template<typename T>
+T find_fullrangefraction_channel( const T energy,
+                                  const std::vector<T> &coeffs,
+                                  const size_t nchannel,
+                                  const std::vector<CubicSplineNodeT<T>> &dev_pair_spline,
+                                  const double accuracy )
 {
   using namespace std;
   using namespace ceres;
@@ -674,10 +719,6 @@ T find_fullrangefraction_channel( const T energy,
 
   if( ncoefs < 2 )
     return T(0.0);
-
-  // Build deviation pair spline
-  const std::vector<CubicSplineNodeT<T>> dev_pair_spline =
-    deviation_pairs.empty() ? std::vector<CubicSplineNodeT<T>>{} : create_cubic_spline( deviation_pairs );
 
   // For low-order FRF, use analytical solutions
   if( ncoefs < 4 )
@@ -801,13 +842,11 @@ T find_fullrangefraction_channel( const T energy,
     for( size_t i = 0; i < coeffs.size(); ++i )
       coeffs_scalar[i] = coeffs[i].a;
 
-    std::vector<std::pair<double,double>> dev_pairs_scalar;
-    dev_pairs_scalar.reserve( deviation_pairs.size() );
-    for( const auto &pair : deviation_pairs )
-      dev_pairs_scalar.emplace_back( pair.first, pair.second.a );
-
-    const std::vector<CubicSplineNodeT<double>> dev_pair_spline_scalar =
-      dev_pairs_scalar.empty() ? std::vector<CubicSplineNodeT<double>>{} : create_cubic_spline( dev_pairs_scalar );
+    // Extract scalar spline nodes from the Jet spline nodes
+    std::vector<CubicSplineNodeT<double>> dev_pair_spline_scalar;
+    dev_pair_spline_scalar.reserve( dev_pair_spline.size() );
+    for( const auto &node : dev_pair_spline )
+      dev_pair_spline_scalar.push_back( { node.x, node.y.a, node.a.a, node.b.a, node.c.a } );
 
     auto energy_at = [&coeffs_scalar,nchannel,&dev_pair_spline_scalar]( const double bin ) -> double {
       return fullrangefraction_energy( bin, coeffs_scalar, nchannel, dev_pair_spline_scalar );
@@ -875,6 +914,22 @@ T find_fullrangefraction_channel( const T energy,
 }//find_fullrangefraction_channel(...)
 
 
+// Forward declarations of spline-based overloads (defined below)
+template<typename T>
+T find_lowerchannel_channel( const T energy,
+                             const std::vector<float> &channel_energies,
+                             const std::vector<CubicSplineNodeT<T>> &dev_pair_spline,
+                             const double accuracy = 0.001 );
+
+template<typename T>
+T find_lowerchannel_channel( const T energy,
+                             const std::vector<float> &channel_energies,
+                             const std::vector<CubicSplineNodeT<T>> &dev_pair_spline,
+                             const T offset_adj,
+                             const T gain_adj,
+                             const double accuracy = 0.001 );
+
+
 /** Find the channel corresponding to a given energy for lower channel edge calibration.
 
  For lower channel edge calibration, the energies of each channel's lower edge are explicitly specified.
@@ -882,7 +937,7 @@ T find_fullrangefraction_channel( const T energy,
 
  @param energy The energy in keV to find the channel for
  @param channel_energies The lower energies for each channel (should have nchannel or nchannel+1 entries)
- @param deviation_pairs The deviation pair anchors and offsets
+ @param deviation_pairs The deviation pair anchors and offsets (builds spline internally)
  @param accuracy Not used for this calibration type (kept for API consistency)
  @returns The channel number (fractional) corresponding to the energy
  */
@@ -892,14 +947,31 @@ T find_lowerchannel_channel( const T energy,
                              const std::vector<std::pair<double,T>> &deviation_pairs,
                              const double accuracy = 0.001 )
 {
+  const std::vector<CubicSplineNodeT<T>> dev_pair_spline =
+    deviation_pairs.empty() ? std::vector<CubicSplineNodeT<T>>{} : create_cubic_spline( deviation_pairs );
+  return find_lowerchannel_channel( energy, channel_energies, dev_pair_spline, accuracy );
+}
+
+
+/** Find the channel corresponding to a given energy for lower channel edge calibration.
+ Accepts pre-computed spline nodes to avoid rebuilding the spline on every call.
+
+ @param energy The energy in keV to find the channel for
+ @param channel_energies The lower energies for each channel (should have nchannel or nchannel+1 entries)
+ @param dev_pair_spline Pre-computed cubic spline nodes for deviation pairs (use empty vector if none)
+ @param accuracy Not used for this calibration type (kept for API consistency)
+ @returns The channel number (fractional) corresponding to the energy
+ */
+template<typename T>
+T find_lowerchannel_channel( const T energy,
+                             const std::vector<float> &channel_energies,
+                             const std::vector<CubicSplineNodeT<T>> &dev_pair_spline,
+                             const double accuracy )
+{
   if( channel_energies.size() < 2 )
     return T(0.0);
 
   const size_t nchannel = channel_energies.size() - 1;  // Last entry is upper edge of last channel
-
-  // Build deviation pair spline
-  const std::vector<CubicSplineNodeT<T>> dev_pair_spline =
-    deviation_pairs.empty() ? std::vector<CubicSplineNodeT<T>>{} : create_cubic_spline( deviation_pairs );
 
   // Apply deviation pair correction to the energy
   T corrected_energy = energy;
@@ -975,6 +1047,31 @@ T find_lowerchannel_channel( const T energy,
                              const T gain_adj,
                              const double accuracy = 0.001 )
 {
+  const std::vector<CubicSplineNodeT<T>> dev_pair_spline =
+    deviation_pairs.empty() ? std::vector<CubicSplineNodeT<T>>{} : create_cubic_spline( deviation_pairs );
+  return find_lowerchannel_channel( energy, channel_energies, dev_pair_spline, offset_adj, gain_adj, accuracy );
+}
+
+
+/** Find the channel for lower channel edge calibration with offset/gain adjustments.
+ Accepts pre-computed spline nodes to avoid rebuilding the spline on every call.
+
+ @param energy The energy in keV to find the channel for
+ @param channel_energies Lower channel edge energies (size = nchannel + 1)
+ @param dev_pair_spline Pre-computed cubic spline nodes for deviation pairs (use empty vector if none)
+ @param offset_adj Energy calibration offset adjustment in keV
+ @param gain_adj Energy calibration gain adjustment in keV
+ @param accuracy Not used for this calibration type (kept for API consistency)
+ @returns The channel number (fractional) corresponding to the energy
+ */
+template<typename T>
+T find_lowerchannel_channel( const T energy,
+                             const std::vector<float> &channel_energies,
+                             const std::vector<CubicSplineNodeT<T>> &dev_pair_spline,
+                             const T offset_adj,
+                             const T gain_adj,
+                             const double accuracy )
+{
   using namespace std;
   using namespace ceres;
 
@@ -990,10 +1087,6 @@ T find_lowerchannel_channel( const T energy,
 
   if( range <= 0.0 )
     return T(0.0);
-
-  // Build deviation pair spline
-  const std::vector<CubicSplineNodeT<T>> dev_pair_spline =
-    deviation_pairs.empty() ? std::vector<CubicSplineNodeT<T>>{} : create_cubic_spline( deviation_pairs );
 
   // Apply deviation pair correction to the energy first
   T corrected_energy = energy;
@@ -1060,6 +1153,23 @@ T find_lowerchannel_channel( const T energy,
 
   return T(static_cast<double>(low)) + fraction;
 }//find_lowerchannel_channel(...) with offset_adj and gain_adj
+
+
+/** Holds pre-computed cubic spline nodes for energy calibration, to avoid
+ recomputing them on every call to apply_energy_cal_adjustment when performing
+ NonLinearFit energy calibration.  Compute once per cost-function evaluation
+ using RelActAutoCostFcn::compute_energy_cal_splines(), then pass a const pointer
+ to apply_energy_cal_adjustment().
+ */
+template<typename T>
+struct CachedEnergyCalSplines
+{
+  /** Spline for the original (unmodified) deviation pairs from m_energy_cal. */
+  std::vector<CubicSplineNodeT<T>> orig_dev_spline;
+
+  /** Spline for the adjusted deviation pairs (incorporating the fitted offsets). */
+  std::vector<CubicSplineNodeT<T>> adjusted_dev_spline;
+};
 
 
 }//namespace RelActCalcAutoImp

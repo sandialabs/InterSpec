@@ -39,6 +39,7 @@
 
 namespace Wt
 {
+  class WMenu;
   class WCheckBox;
   class WComboBox;
   class WPushButton;
@@ -53,6 +54,8 @@ namespace SpecUtils
 class D3SpectrumDisplayDiv;
 class NativeFloatSpinBox;
 class PeakModel;
+class RelEffChart;
+class RelActTxtResults;
 class ReferenceLineInfo;
 class DetectorPeakResponse;
 
@@ -162,8 +165,11 @@ private:
   std::string sourceListTitle() const;
 
   Wt::WText *m_title;
+  Wt::WMenu *m_upper_menu;
   D3SpectrumDisplayDiv *m_chart;
   PeakModel *m_chart_peak_model;
+  RelEffChart *m_rel_eff_chart;
+  RelActTxtResults *m_txt_results;
   Wt::WText *m_status;
   Wt::WContainerWidget *m_warnings_div;
   Wt::WContainerWidget *m_options_div;
@@ -179,6 +185,7 @@ private:
   NativeFloatSpinBox *m_opt_roi_min_peak_sig;
   NativeFloatSpinBox *m_opt_obs_initial_sig;
   NativeFloatSpinBox *m_opt_obs_final_sig;
+  Wt::WComboBox *m_opt_skew_type;
   Wt::WComboBox *m_opt_fwhm_form;
   Wt::WComboBox *m_opt_rel_eff_type;
   NativeFloatSpinBox *m_opt_rel_eff_order;

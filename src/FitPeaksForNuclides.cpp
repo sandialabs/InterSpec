@@ -720,8 +720,11 @@ void shrink_rois_for_interfering_peaks(
 // Returns the NORM background nuclides (U238, Ra226, U235, Th232, K40) as NucInputInfo entries,
 // excluding any that already appear in `sources`.  Ages are set to prompt/secular equilibrium
 // half-lives appropriate for each nuclide (see `getBackgroundRefLines()` in ReferenceLineInfo.cpp).
+// If `color_css` is non-empty it is assigned to each entry's peak_color_css so the Rel. Eff.
+// chart can render data points for NORM sources.
 std::vector<RelActCalcAuto::NucInputInfo> get_norm_sources(
-  const std::vector<RelActCalcAuto::NucInputInfo> &sources )
+  const std::vector<RelActCalcAuto::NucInputInfo> &sources,
+  const std::string &color_css = {} )
 {
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   assert( db );
@@ -771,9 +774,10 @@ std::vector<RelActCalcAuto::NucInputInfo> get_norm_sources(
       continue;
 
     RelActCalcAuto::NucInputInfo norm_src;
-    norm_src.source  = norm_nuc;
-    norm_src.age     = std::get<2>( info );
-    norm_src.fit_age = false;
+    norm_src.source        = norm_nuc;
+    norm_src.age           = std::get<2>( info );
+    norm_src.fit_age       = false;
+    norm_src.peak_color_css = color_css;
     norm_sources.push_back( norm_src );
   }
 
@@ -4599,8 +4603,8 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   }
 
 
-  // Define skew type to use
-  const PeakDef::SkewType skew_type = PeakDef::SkewType::NoSkew;
+  // Use skew type from config
+  const PeakDef::SkewType skew_type = config.skew_type;
 
   // Create relative efficiency curve from config parameters
   RelActCalcAuto::RelEffCurveInput rel_eff_curve;
@@ -4930,7 +4934,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   {
     try
     {
-      vector<RelActCalcAuto::NucInputInfo> norm_sources = get_norm_sources( sources );
+      vector<RelActCalcAuto::NucInputInfo> norm_sources = get_norm_sources( sources, config.norm_css_color );
 
       PeakFitForNuclideConfig norm_config = config;
       norm_config.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
@@ -5962,7 +5966,7 @@ PeakFitResult fit_peaks_for_nuclides(
     {
       long_background = nullptr; //We dont want to do background subtraction if we are trying to fit NORM peaks.
       
-      const vector<RelActCalcAuto::NucInputInfo> norm_sources = get_norm_sources( sources );
+      const vector<RelActCalcAuto::NucInputInfo> norm_sources = get_norm_sources( sources, config.norm_css_color );
       if( !norm_sources.empty() )
       {
         try

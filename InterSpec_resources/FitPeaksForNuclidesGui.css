@@ -54,15 +54,86 @@
   flex-shrink: 0;
 }
 
-/* Spectrum chart: grows into available space (basis 0), shrinks first;
-   min-height keeps chart usable; max height set in C++ (75% of widget width) */
-.FitPeaksAdvancedWidget .D3SpectrumDisplayDiv
+/* Upper tabbed area: menu on left, content stack on right; fixed height */
+.FitPeaksAdvancedWidget .fpn-upper-area
 {
-  width: 100%;
-  max-width: 100%;
-  box-sizing: border-box;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
   flex: 1 1 0px;
-  min-height: 150px;
+  min-height: 200px;
+  overflow: hidden;
+}
+
+/* Content stack grows to fill remaining width */
+.FitPeaksAdvancedWidget .UpperStack
+{
+  flex: 1 1 auto;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Tab menu: vertical tabs on left side */
+.FitPeaksAdvancedWidget .UpperMenu
+{
+  padding-left: 2px;
+  padding-right: 2px;
+  font-size: 13px;
+  overflow-y: visible;
+  flex: 0 1 auto;
+}
+
+.FitPeaksAdvancedWidget ul.UpperMenu
+{
+  padding-inline-start: 0px;
+  list-style-type: none;
+  max-width: 40px;
+}
+
+.FitPeaksAdvancedWidget ul.UpperMenu li
+{
+  display: inline-block;
+  -webkit-writing-mode: vertical-lr;
+  writing-mode: vertical-rl;
+  writing-mode: tb-lr;
+  transform: scale(-1, -1);
+  white-space: nowrap;
+  height: 50px;
+  font-weight: bold;
+}
+
+.FitPeaksAdvancedWidget ul.UpperMenu li
+{
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 4px;
+  padding-right: 4px;
+  margin-top: 2px;
+  margin-bottom: 2px;
+  -webkit-border-radius: 5px;
+  -moz-border-radius: 5px;
+  border-radius: 5px;
+  
+  text-align: center;
+}
+
+/* All three content panels fill the stack height */
+.FitPeaksAdvancedWidget .D3SpectrumDisplayDiv,
+.FitPeaksAdvancedWidget .RelEffChart,
+.FitPeaksAdvancedWidget .RelActTxtResults
+{
+  height: 100%;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Allow text results to be selectable for copy/paste */
+.FitPeaksAdvancedWidget .RelActTxtResults
+{
+  user-select: auto;
+  -moz-user-select: auto;
+  -webkit-user-select: auto;
+  overflow-y: auto;
 }
 
 /* Status line: single line, fixed height; must not shrink in flex layout */

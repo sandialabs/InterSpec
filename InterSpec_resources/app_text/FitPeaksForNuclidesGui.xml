@@ -2,6 +2,11 @@
 <messages>
   <!-- fpn- is short for FitPeaksForNuclides -->
 
+  <!-- Tab labels for FitPeaksAdvancedWidget upper area -->
+  <message id="fpn-tab-spectrum">Spec.</message>
+  <message id="fpn-tab-rel-eff">Rel. Eff.</message>
+  <message id="fpn-tab-results">Details</message>
+
   <!-- Advanced dialog -->
   <message id="fpn-adv-title">Fit peaks for:</message>
   <message id="fpn-adv-content">Advanced options not implemented</message>
@@ -32,6 +37,7 @@
   <message id="fpn-opt-roi-min-peak-sig">Keep ROI significance threshold</message>
   <message id="fpn-opt-obs-initial-sig">Predicted peak significance threshold</message>
   <message id="fpn-opt-obs-final-sig">Final peak significance threshold</message>
+  <message id="fpn-opt-skew-type">Peak skew</message>
   <message id="fpn-opt-fwhm-form">FWHM form</message>
   <message id="fpn-opt-rel-eff-eqn-type">Rel. Eff. eqn.</message>
   <message id="fpn-opt-rel-eff-eqn-order">Rel. Eff. order</message>
@@ -47,6 +53,7 @@
   <message id="fpn-opt-tt-roi-min-peak-sig">Minimum peak significance (peak_area / sqrt(continuum)) for a peak to be considered significant. If any peak in a ROI has significance above this threshold, the ROI is kept.</message>
   <message id="fpn-opt-tt-obs-initial-sig">Threshold for the initial peak significance filter before refitting. Significance = (peak_amplitude * 0.7607) / sqrt(data_area_in_pm_1_fwhm).</message>
   <message id="fpn-opt-tt-obs-final-sig">Threshold for the final peak significance after refitting. Significance = peak_area / peak_area_uncertainty.</message>
+  <message id="fpn-opt-tt-skew-type">Skew shape applied to all peaks in the fit. &quot;None&quot; uses a pure Gaussian. Other options add low-energy tail components (e.g. Exp*Gauss for NaI/CsI detectors, Crystal Ball for charge-collection tailing in HPGe).</message>
   <message id="fpn-opt-tt-fwhm-form">Functional form for detector resolution (FWHM vs energy). Bernstein polynomial order determines how many coefficients are fit.</message>
   <message id="fpn-opt-tt-rel-eff-eqn-type">Form of the relative efficiency curve (e.g. LnXLnY polynomial, or FRAM physical model).</message>
   <message id="fpn-opt-tt-rel-eff-eqn-order">Polynomial order for the relative efficiency equation (when not using the physical model).</message>

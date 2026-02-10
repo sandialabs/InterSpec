@@ -5908,13 +5908,16 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     // If we are fitting the energy cal, we need to adjust the ROI ranges to the spectrum cal
     solution.m_final_roi_ranges_in_spectrum_cal.clear();
+    const RelActCalcAutoImp::CachedEnergyCalSplines<double> roi_splines
+      = cost_functor->compute_energy_cal_splines( parameters );
+    
     for( const RelActCalcAutoImp::RoiRangeChannels &roi : cost_functor->m_energy_ranges )
     {
       RelActCalcAuto::RoiRange roi_range = roi;
       if( fit_energy_cal )
       {
-        roi_range.lower_energy = cost_functor->apply_energy_cal_adjustment( roi_range.lower_energy, parameters );
-        roi_range.upper_energy = cost_functor->apply_energy_cal_adjustment( roi_range.upper_energy, parameters ); 
+        roi_range.lower_energy = cost_functor->apply_energy_cal_adjustment( roi_range.lower_energy, parameters, roi_splines );
+        roi_range.upper_energy = cost_functor->apply_energy_cal_adjustment( roi_range.upper_energy, parameters, roi_splines );
       } 
 
       solution.m_final_roi_ranges_in_spectrum_cal.push_back( roi_range );
@@ -8144,11 +8147,65 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   }//apply_fitted_deviation_pairs(...)
 */
 
-  /** Translates from a "true" energy (e.g., that of a gamma, or ROI bounds), to the energy
-   of m_energy_cal.
+  /** Pre-computes the cubic spline nodes needed for energy calibration adjustments.
+   
+   When m_options.energy_cal_type == NonLinearFit and deviation pair anchors are present,
+   apply_energy_cal_adjustment() must build two cubic splines on every call.  This function
+   computes both splines once so the result can be passed to apply_energy_cal_adjustment()
+   as a cache, avoiding redundant work when the function is called many times with the same
+   parameter vector x (e.g. once per gamma line inside peaks_for_energy_range_imp).
+   
+   Returns a CachedEnergyCalSplines<T> with both splines populated.
+   If deviation pairs are not used (e.g. NoFit or no anchors), both spline vectors are empty.
    */
   template<typename T>
-  T apply_energy_cal_adjustment( double energy, const std::vector<T> &x ) const
+  RelActCalcAutoImp::CachedEnergyCalSplines<T> compute_energy_cal_splines( const std::vector<T> &x ) const
+  {
+    RelActCalcAutoImp::CachedEnergyCalSplines<T> cache;
+
+    const bool using_paramaterized_deviations = ((m_options.energy_cal_type == RelActCalcAuto::EnergyCalFitType::NonLinearFit)
+                                                  && !m_dev_pair_anchors.empty());
+    if( !using_paramaterized_deviations )
+      return cache;  // empty splines — apply_energy_cal_adjustment will skip spline logic
+
+    // Build original deviation pairs spline
+    const auto &orig_dev_ref = m_energy_cal->deviation_pairs();
+    if( !orig_dev_ref.empty() )
+    {
+      std::vector<std::pair<double,T>> orig_dev_pairs;
+      orig_dev_pairs.reserve( orig_dev_ref.size() );
+      for( const auto &p : orig_dev_ref )
+        orig_dev_pairs.emplace_back( static_cast<double>(p.first), T( static_cast<double>(p.second) ) );
+      cache.orig_dev_spline = RelActCalcAutoImp::create_cubic_spline( orig_dev_pairs );
+    }
+
+    // Build adjusted deviation pairs spline
+    std::vector<std::pair<double,T>> adjusted_dev_pairs;
+    adjusted_dev_pairs.reserve( m_dev_pair_anchors.size() );
+    for( const RelActCalcAutoImp::DeviationPairAnchor &anchor : m_dev_pair_anchors )
+    {
+      const T offset = anchor.is_fitted
+        ? (x[m_dev_pair_par_start_index + anchor.param_index] + T(anchor.initial_offset))
+        : T(anchor.initial_offset);
+      adjusted_dev_pairs.emplace_back( anchor.anchor_energy, offset );
+    }
+    if( !adjusted_dev_pairs.empty() )
+      cache.adjusted_dev_spline = RelActCalcAutoImp::create_cubic_spline( adjusted_dev_pairs );
+
+    return cache;
+  }//compute_energy_cal_splines(...)
+
+
+  /** Translates from a "true" energy (e.g., that of a gamma, or ROI bounds), to the energy
+   of m_energy_cal.
+   
+   @param cached_splines  Pre-computed spline nodes (from compute_energy_cal_splines()).
+                          Avoids rebuilding the cubic splines on every call, which is the main
+                          CPU cost when NonLinearFit deviation pairs are active.
+   */
+  template<typename T>
+  T apply_energy_cal_adjustment( double energy, const std::vector<T> &x,
+                                 const RelActCalcAutoImp::CachedEnergyCalSplines<T> &cached_splines ) const
   {
     assert( x.size() > (RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars + m_num_fitted_dev_pair_params) );
     assert( 0 == m_energy_cal_par_start_index );
@@ -8222,30 +8279,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     const size_t nchannel = m_energy_cal->num_channels();
     const double num_channel = static_cast<double>( nchannel );
 
-    std::vector<std::pair<double,T>> orig_dev_pairs;
-    const auto &orig_dev_ref = m_energy_cal->deviation_pairs();
-    orig_dev_pairs.reserve( orig_dev_ref.size() );
-    for( const auto &p : orig_dev_ref )
-      orig_dev_pairs.emplace_back( static_cast<double>(p.first), T( static_cast<double>(p.second) ) );
-    const std::vector<CubicSplineNodeT<T>> orig_dev_spline =
-      orig_dev_pairs.empty() ? std::vector<CubicSplineNodeT<T>>{} : create_cubic_spline( orig_dev_pairs );
-
-    // Build adjusted calibration deviation pairs (for inverse: true -> channel).
-    std::vector<std::pair<double,T>> adjusted_dev_pairs;
-    if( using_paramaterized_deviations )
-    {
-      adjusted_dev_pairs.reserve( m_dev_pair_anchors.size() );
-      for( const DeviationPairAnchor &anchor : m_dev_pair_anchors )
-      {
-        const T offset = anchor.is_fitted
-          ? (x[m_dev_pair_par_start_index + anchor.param_index] + T(anchor.initial_offset))
-          : T(anchor.initial_offset);
-        adjusted_dev_pairs.emplace_back( anchor.anchor_energy, offset );
-      }
-    }else
-    {
-      adjusted_dev_pairs = orig_dev_pairs;
-    }
+    const std::vector<CubicSplineNodeT<T>> &orig_dev_spline     = cached_splines.orig_dev_spline;
+    const std::vector<CubicSplineNodeT<T>> &adjusted_dev_spline = cached_splines.adjusted_dev_spline;
 
     switch( m_energy_cal->type() )
     {
@@ -8266,7 +8301,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             adj_coefs.push_back( quad_adj / (num_channel*num_channel) );
         }
 
-        const T channel = find_polynomial_channel( T(energy), adj_coefs, nchannel, adjusted_dev_pairs );
+        const T channel = find_polynomial_channel( T(energy), adj_coefs, nchannel, adjusted_dev_spline );
 
         vector<T> ocoefs( orig_coeffs.size() );
         for( size_t i = 0; i < orig_coeffs.size(); ++i )
@@ -8304,13 +8339,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         }
 
         double max_dev_offset = 0.0;
-        for( const auto &pair : adjusted_dev_pairs )
+        for( const auto &node : adjusted_dev_spline )
         {
           double offset_val = 0.0;
           if constexpr ( std::is_same_v<T, double> )
-            offset_val = pair.second;
+            offset_val = node.y;
           else
-            offset_val = pair.second.a;
+            offset_val = node.y.a;
           max_dev_offset = std::max( max_dev_offset, std::fabs( offset_val ) );
         }
 
@@ -8338,10 +8373,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             static int s_logged_energy_out_of_range = 0;
             if( dev_pair_deriv_active && (s_logged_energy_out_of_range < 50) )
             {
-              const std::vector<CubicSplineNodeT<T>> adj_dev_spline =
-                adjusted_dev_pairs.empty() ? std::vector<CubicSplineNodeT<T>>{} : create_cubic_spline( adjusted_dev_pairs );
-              const T e_low = polynomial_energy( T(0.0), adj_coefs, adj_dev_spline );
-              const T e_high = polynomial_energy( T(static_cast<double>(nchannel - 1)), adj_coefs, adj_dev_spline );
+              const T e_low = polynomial_energy( T(0.0), adj_coefs, adjusted_dev_spline );
+              const T e_high = polynomial_energy( T(static_cast<double>(nchannel - 1)), adj_coefs, adjusted_dev_spline );
               const double e_low_val = e_low.a;
               const double e_high_val = e_high.a;
               if( (energy < std::min( e_low_val, e_high_val )) || (energy > std::max( e_low_val, e_high_val )) )
@@ -8474,7 +8507,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             adj_coefs.push_back( quad_adj );
         }
 
-        const T channel = find_fullrangefraction_channel( T(energy), adj_coefs, nchannel, adjusted_dev_pairs );
+        const T channel = find_fullrangefraction_channel( T(energy), adj_coefs, nchannel, adjusted_dev_spline );
 
         vector<T> ocoefs( orig_coeffs.size() );
         for( size_t i = 0; i < orig_coeffs.size(); ++i )
@@ -8488,7 +8521,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         assert( quad_adj == T(0.0) );
         assert( m_energy_cal->channel_energies() && !m_energy_cal->channel_energies()->empty() );
         const std::vector<float> &ch_energies = *m_energy_cal->channel_energies();
-        const T channel = find_lowerchannel_channel( T(energy), ch_energies, adjusted_dev_pairs, offest_adj, gain_adj );
+        const T channel = find_lowerchannel_channel( T(energy), ch_energies, adjusted_dev_spline, offest_adj, gain_adj );
 
         double ch_val;
         if constexpr ( std::is_same_v<T, double> )
@@ -8704,14 +8737,15 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   template<typename T>
   RelActCalcAuto::PeaksForEnergyRangeImp<T> peaks_for_energy_range_imp( const RoiRangeChannels &range,
                                                        const std::vector<T> &x,
+                                                       const RelActCalcAutoImp::CachedEnergyCalSplines<T> &cached_splines,
                                                        const bool multithread ) const
   {
     const size_t num_channels = range.num_channels;
-    
+
     // We will use "adjusted" to refer to energies that have been mapped into the spectrums original
     //  energy calibrations
-    const T adjusted_lower_energy = apply_energy_cal_adjustment( range.lower_energy, x );
-    const T adjusted_upper_energy = apply_energy_cal_adjustment( range.upper_energy, x );
+    const T adjusted_lower_energy = apply_energy_cal_adjustment( range.lower_energy, x, cached_splines );
+    const T adjusted_upper_energy = apply_energy_cal_adjustment( range.upper_energy, x, cached_splines );
     
     // TODO: Check this conversion from `Jet<>` to double doesnt mess anything up - I *think* this is _fine_...
     pair<size_t,size_t> channel_range;
@@ -9075,7 +9109,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             }//if( is_fixed_age(src_info.nuclide, rel_eff_index) )
           }//if( !std::is_same_v<T, double> )          
 
-          const T peak_mean = apply_energy_cal_adjustment( gamma.energy, x );
+          const T peak_mean = apply_energy_cal_adjustment( gamma.energy, x, cached_splines );
           const T peak_amplitude = rel_act * static_cast<double>(m_live_time) * rel_eff * yield * br_uncert_adj;
           const T peak_fwhm = fwhm( T(gamma.energy), x );
 
@@ -9201,7 +9235,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       T peak_mean( peak.energy );
       if( peak.apply_energy_cal_correction )
-        peak_mean = apply_energy_cal_adjustment( peak.energy, x );
+        peak_mean = apply_energy_cal_adjustment( peak.energy, x, cached_splines );
       
       if( isinf(peak_mean) || isnan(peak_mean) )
         throw runtime_error( "peaks_for_energy_range_imp: inf or NaN peak mean for "
@@ -9390,8 +9424,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   {
     typedef ceres::Jet<double,RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size> Jet;
     
+    
+    const RelActCalcAutoImp::CachedEnergyCalSplines<double> deviation_splines = compute_energy_cal_splines( x );
+    
     // `computed_peaks` will include free-floating peaks
-    RelActCalcAuto::PeaksForEnergyRangeImp<double> computed_peaks = peaks_for_energy_range_imp( range, x, true );
+    RelActCalcAuto::PeaksForEnergyRangeImp<double> computed_peaks = peaks_for_energy_range_imp( range, x, deviation_splines, true );
 
     // Compute uncertainties if covariance is provided and valid
     vector<vector<double>> peak_uncertainties; // [peak_index][param_index] where param_index: 0=mean, 1=sigma, 2=amplitude, 3+=skew_pars
@@ -9411,7 +9448,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size) && (i+j < num_par); ++j )
           x_local[i+j].v[j] = 1.0;
         
-        RelActCalcAuto::PeaksForEnergyRangeImp<Jet> computed_peaks_jet = peaks_for_energy_range_imp( range, x_local, true );
+        const RelActCalcAutoImp::CachedEnergyCalSplines<Jet> local_jet_dev_splines = compute_energy_cal_splines( x_local );
+        
+        RelActCalcAuto::PeaksForEnergyRangeImp<Jet> computed_peaks_jet = peaks_for_energy_range_imp( range, x_local, local_jet_dev_splines, true );
         
         // Store jacobians for each peak parameter
         for( size_t peak_idx = 0; peak_idx < num_peaks && peak_idx < computed_peaks_jet.peaks.size(); ++peak_idx )
@@ -9600,6 +9639,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     vector<RelActCalcAuto::PeaksForEnergyRangeImp<T>> peaks_in_ranges_imp( m_energy_ranges.size() );
 
+    const RelActCalcAutoImp::CachedEnergyCalSplines<T> energy_deviation_splines = compute_energy_cal_splines( x );
+    
     // TODO: multi-thread computation needs to be looked at more hollistically, both here and in `PeakFit::fit_continuum(...)`, and possibly in peaks_for_energy_range_imp
     const bool multhread_each_roi = (m_energy_ranges.size() < 6);
     
@@ -9614,10 +9655,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     for( size_t i = 0; i < num_energy_ranges; ++i )
     {
       boost::asio::post( m_pool,
-                        [i,&peaks_in_ranges_imp,this,&x,multhread_each_roi,&cv,&cv_mutex,&tasks_completed,&exception_msg](){
+                        [i,&peaks_in_ranges_imp,this,&x,multhread_each_roi,&cv,&cv_mutex,&tasks_completed,&exception_msg,&energy_deviation_splines](){
         try
         {
-          peaks_in_ranges_imp[i] = peaks_for_energy_range_imp( m_energy_ranges[i], x, multhread_each_roi );
+          peaks_in_ranges_imp[i] = peaks_for_energy_range_imp( m_energy_ranges[i], x, energy_deviation_splines, multhread_each_roi );
         }catch( std::exception &e )
         {
           std::lock_guard<std::mutex> lock(cv_mutex);

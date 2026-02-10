@@ -230,6 +230,14 @@ struct PeakFitForNuclideConfig
   // How many sigma higher the left side must be than the right side to use step continuum
   double step_cont_left_right_nsigma = 3.0;
 
+  // Peak skew type to apply during the RelActAuto fit - note this parameter should not be optimized, but rather
+  //  something that might be over-rided according to the detector efficiency or user preferences.
+  PeakDef::SkewType skew_type = PeakDef::SkewType::NoSkew;
+
+  /** CSS color string for NORM background nuclide peaks (used when FitNormBkgrndPeaks is set).
+   Non-empty default ensures Rel. Eff. chart data points render; override from the background
+   ReferenceLineInfo color or ColorTheme at the call site. */
+  std::string norm_css_color = "rgb(150,150,150)";
 
 
   // Get GammaClusteringSettings for manual RelEff stage

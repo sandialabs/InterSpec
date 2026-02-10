@@ -32,6 +32,7 @@
 #include <boost/bind.hpp>
 #include <boost/function.hpp>
 
+#include <Wt/WMenu>
 #include <Wt/WText>
 #include <Wt/WLabel>
 #include <Wt/WServer>
@@ -39,8 +40,10 @@
 #include <Wt/WComboBox>
 #include <Wt/WGridLayout>
 #include <Wt/WIOService>
+#include <Wt/WMenuItem>
 #include <Wt/WPushButton>
 #include <Wt/WApplication>
+#include <Wt/WStackedWidget>
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -60,7 +63,9 @@
 #include "InterSpec/ReferenceLineInfo.h"
 #include "InterSpec/FitPeaksForNuclides.h"
 #include "InterSpec/ReferenceLinePredef.h"
+#include "InterSpec/RelEffChart.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
+#include "InterSpec/RelActTxtResults.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
@@ -679,8 +684,11 @@ void FitPeaksAdvancedDialog::onResultUpdated()
 FitPeaksAdvancedWidget::FitPeaksAdvancedWidget( Wt::WContainerWidget *parent )
   : WContainerWidget( parent ),
     m_title( nullptr ),
+    m_upper_menu( nullptr ),
     m_chart( nullptr ),
     m_chart_peak_model( nullptr ),
+    m_rel_eff_chart( nullptr ),
+    m_txt_results( nullptr ),
     m_status( nullptr ),
     m_warnings_div( nullptr ),
     m_options_div( nullptr ),
@@ -695,6 +703,7 @@ FitPeaksAdvancedWidget::FitPeaksAdvancedWidget( Wt::WContainerWidget *parent )
     m_opt_roi_min_peak_sig( nullptr ),
     m_opt_obs_initial_sig( nullptr ),
     m_opt_obs_final_sig( nullptr ),
+    m_opt_skew_type( nullptr ),
     m_opt_fwhm_form( nullptr ),
     m_opt_rel_eff_type( nullptr ),
     m_opt_rel_eff_order( nullptr ),
@@ -721,12 +730,29 @@ FitPeaksAdvancedWidget::FitPeaksAdvancedWidget( Wt::WContainerWidget *parent )
 
   WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> options;
 
-  auto add_src = [&]( const RelActCalcAuto::SrcVariant &src, const std::string &age_str ) {
+  // Resolve color for a source from a ReferenceLineInfo: prefer explicit input color,
+  // then fall back to the display's suggestion/generic color.
+  auto resolve_color = [&]( const std::string &src_name, const Wt::WColor &hint ) -> std::string {
+    Wt::WColor color = hint;
+    if( color.isDefault() && !src_name.empty() && ref_disp )
+      color = ref_disp->suggestColorForSource( src_name );
+    if( color.isDefault() && !src_name.empty() && ref_disp )
+    {
+      color = ref_disp->nextGenericSourceColor();
+      if( !color.isDefault() )
+        ref_disp->updateColorCacheForSource( src_name, color );
+    }
+    return color.isDefault() ? std::string{} : color.cssText();
+  };
+
+  auto add_src = [&]( const RelActCalcAuto::SrcVariant &src, const std::string &age_str,
+                      const std::string &color_css ) {
     m_sources.push_back( src );
     RelActCalcAuto::NucInputInfo info;
     info.source = src;
     info.fit_age = false;
     info.age = 0.0;
+    info.peak_color_css = color_css;
     const SandiaDecay::Nuclide *nuc = RelActCalcAuto::nuclide( src );
     if( nuc )
     {
@@ -754,17 +780,27 @@ FitPeaksAdvancedWidget::FitPeaksAdvancedWidget( Wt::WContainerWidget *parent )
     {
       case ReferenceLineInfo::SourceType::Nuclide:
         if( info.m_nuclide )
-          add_src( info.m_nuclide, info.m_input.m_age );
+        {
+          const std::string src_name = info.m_nuclide->symbol;
+          add_src( info.m_nuclide, info.m_input.m_age,
+                   resolve_color( src_name, info.m_input.m_color ) );
+        }
         break;
       case ReferenceLineInfo::SourceType::FluorescenceXray:
         if( info.m_element )
-          add_src( info.m_element, "" );
+        {
+          const std::string src_name = info.m_element->symbol;
+          add_src( info.m_element, "", resolve_color( src_name, info.m_input.m_color ) );
+        }
         break;
       case ReferenceLineInfo::SourceType::Reaction:
         for( const ReactionGamma::Reaction *rctn : info.m_reactions )
         {
           if( rctn )
-            add_src( rctn, "" );
+          {
+            const std::string src_name = rctn->name();
+            add_src( rctn, "", resolve_color( src_name, info.m_input.m_color ) );
+          }
         }
         break;
       case ReferenceLineInfo::SourceType::NuclideMixture:
@@ -774,11 +810,14 @@ FitPeaksAdvancedWidget::FitPeaksAdvancedWidget( Wt::WContainerWidget *parent )
           {
             if( comp.m_nuclide )
             {
+              const std::string src_name = comp.m_nuclide->symbol;
+              const std::string color_css = resolve_color( src_name, comp.m_color );
               m_sources.push_back( comp.m_nuclide );
               RelActCalcAuto::NucInputInfo input_info;
               input_info.source = comp.m_nuclide;
               input_info.fit_age = false;
               input_info.age = std::max( 0.0, info.m_nuc_mix->m_default_age - comp.m_age_offset );
+              input_info.peak_color_css = color_css;
               m_base_nucs.push_back( input_info );
             }
           }
@@ -839,7 +878,18 @@ FitPeaksAdvancedWidget::FitPeaksAdvancedWidget( Wt::WContainerWidget *parent )
   chartw = std::max( chartw, 300 );
   charth = std::max( charth, 200 );
 
-  m_chart = new D3SpectrumDisplayDiv( this );
+  // Tabbed upper area: Spectrum | Rel. Eff. | Results
+  WContainerWidget *upper_div = new WContainerWidget( this );
+  upper_div->addStyleClass( "fpn-upper-area" );
+
+  WStackedWidget *upper_stack = new WStackedWidget();
+  upper_stack->addStyleClass( "UpperStack" );
+
+  m_upper_menu = new WMenu( upper_stack, Wt::Vertical, upper_div );
+  m_upper_menu->addStyleClass( "UpperMenu LightNavMenu" );
+  upper_div->addWidget( upper_stack );
+
+  m_chart = new D3SpectrumDisplayDiv();
   m_chart->clicked().preventPropagation();
   m_chart->setThumbnailMode();
   m_chart->setMinimumSize( 300, 200 );
@@ -854,17 +904,43 @@ FitPeaksAdvancedWidget::FitPeaksAdvancedWidget( Wt::WContainerWidget *parent )
   m_chart_peak_model->setForeground( m_fg_copy );
   m_chart->setPeakModel( m_chart_peak_model );
 
+  m_rel_eff_chart = new RelEffChart();
+  m_txt_results = new RelActTxtResults();
+
+  WMenuItem *upper_item = new WMenuItem( WString::tr("fpn-tab-spectrum"), m_chart );
+  m_upper_menu->addItem( upper_item );
+  upper_item->clicked().connect( std::bind([this,upper_item](){
+    m_upper_menu->select( upper_item );
+    upper_item->triggered().emit( upper_item );
+  }) );
+
+  upper_item = new WMenuItem( WString::tr("fpn-tab-rel-eff"), m_rel_eff_chart );
+  m_upper_menu->addItem( upper_item );
+  upper_item->clicked().connect( std::bind([this,upper_item](){
+    m_upper_menu->select( upper_item );
+    upper_item->triggered().emit( upper_item );
+  }) );
+
+  upper_item = new WMenuItem( WString::tr("fpn-tab-results"), m_txt_results );
+  m_upper_menu->addItem( upper_item );
+  upper_item->clicked().connect( std::bind([this,upper_item](){
+    m_upper_menu->select( upper_item );
+    upper_item->triggered().emit( upper_item );
+  }) );
+
+  m_upper_menu->select( static_cast<int>(0) );
+
   m_status = new WText( WString::tr("fpn-calculating"), this );
   m_status->addStyleClass( "fpn-status" );
   m_status->addStyleClass( "calculating" );
 
-  m_warnings_div = new WContainerWidget( this );
-  m_warnings_div->addStyleClass( "fpn-warnings" );
-  m_warnings_div->addStyleClass( "fpn-warnings-computing" );
-
   m_options_div = new WContainerWidget( this );
   m_options_div->addStyleClass( "fpn-options" );
   buildOptionsFromConfig();
+  
+  m_warnings_div = new WContainerWidget( this );
+  m_warnings_div->addStyleClass( "fpn-warnings" );
+  m_warnings_div->addStyleClass( "fpn-warnings-computing" );
 
   m_render_flags |= UpdateCalculations;
   scheduleRender();
@@ -1039,6 +1115,10 @@ void FitPeaksAdvancedWidget::startComputation()
     m_warnings_div->removeWidget( m_warnings_div->widget( 0 ) );
   if( m_chart_peak_model )
     m_chart_peak_model->removeAllPeaks();
+  if( m_rel_eff_chart )
+    m_rel_eff_chart->setData( RelEffChart::ReCurveInfo{} );
+  if( m_txt_results )
+    m_txt_results->setNoResults();
 
   if( m_cancel_calc )
     m_cancel_calc->store( true );
@@ -1053,6 +1133,17 @@ void FitPeaksAdvancedWidget::startComputation()
   syncConfigFromOptions();
   WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> options = currentOptions();
   FitPeaksForNuclides::PeakFitForNuclideConfig config = currentConfig();
+
+  // Override norm_css_color from the Background ReferenceLineInfo color, if available.
+  for( const ReferenceLineInfo &ref : m_ref_lines )
+  {
+    if( ref.m_source_type == ReferenceLineInfo::SourceType::Background
+        && !ref.m_input.m_color.isDefault() )
+    {
+      config.norm_css_color = ref.m_input.m_color.cssText();
+      break;
+    }
+  }
 
   // Peak detection requires InterSpec (GUI thread); run here and capture for worker
   if( m_auto_search_peaks->empty() )
@@ -1161,6 +1252,8 @@ void FitPeaksAdvancedWidget::updateFromResult( std::shared_ptr<FitPeaksForNuclid
       m_warnings_div->removeWidget( m_warnings_div->widget( 0 ) );
     WText *err_text = new WText( WString::fromUTF8( result->error_message ), m_warnings_div );
     (void)err_text;
+    m_rel_eff_chart->setData( RelEffChart::ReCurveInfo{} );
+    m_txt_results->setNoResults();
   }
   else
   {
@@ -1228,94 +1321,62 @@ void FitPeaksAdvancedWidget::updateFromResult( std::shared_ptr<FitPeaksForNuclid
       m_chart_peak_model->setForeground( m_fg_copy );
       m_chart->setPeakModel( m_chart_peak_model );
     }
-    std::vector<PeakDef> preview_peaks = result->observable_peaks;
-    ReferencePhotopeakDisplay *disp = InterSpec::instance() ? InterSpec::instance()->referenceLinesWidget() : nullptr;
-    for( PeakDef &peak : preview_peaks )
-    {
-      std::string src_name;
-      if( peak.parentNuclide() )
-        src_name = peak.parentNuclide()->symbol;
-      else if( peak.xrayElement() )
-        src_name = peak.xrayElement()->symbol;
-      else if( peak.reaction() )
-        src_name = peak.reaction()->name();
-      if( src_name.empty() || !disp )
-        continue;
-      for( const ReferenceLineInfo &ref_info : m_ref_lines )
-      {
-        bool matches = false;
-        Wt::WColor nuc_mix_comp_color;
-        if( ref_info.m_nuclide && peak.parentNuclide() == ref_info.m_nuclide )
-          matches = true;
-        if( !matches && ref_info.m_element && peak.xrayElement() == ref_info.m_element )
-          matches = true;
-        if( !matches && peak.reaction() && ref_info.m_reactions.count( peak.reaction() ) > 0 )
-          matches = true;
-        if( !matches && peak.parentNuclide()
-            && ref_info.m_source_type == ReferenceLineInfo::SourceType::NuclideMixture
-            && ref_info.m_nuc_mix )
-        {
-          for( const ReferenceLinePredef::NucMixComp &comp : ref_info.m_nuc_mix->m_components )
-          {
-            if( comp.m_nuclide == peak.parentNuclide() )
-            {
-              matches = true;
-              nuc_mix_comp_color = comp.m_color;
-              break;
-            }
-          }
-        }
-        if( matches )
-        {
-          std::string ref_src;
-          if( ref_info.m_nuclide )
-            ref_src = ref_info.m_nuclide->symbol;
-          else if( ref_info.m_element )
-            ref_src = ref_info.m_element->symbol;
-          else if( !ref_info.m_reactions.empty() )
-          {
-            const ReactionGamma::Reaction *rctn = *ref_info.m_reactions.begin();
-            if( rctn )
-              ref_src = rctn->name();
-          }
-          Wt::WColor color = nuc_mix_comp_color.isDefault() ? ref_info.m_input.m_color : nuc_mix_comp_color;
-          if( color.isDefault() && !ref_src.empty() )
-            color = disp->suggestColorForSource( ref_src );
-          if( color.isDefault() && !ref_src.empty() )
-          {
-            color = disp->nextGenericSourceColor();
-            if( !color.isDefault() )
-              disp->updateColorCacheForSource( ref_src, color );
-          }
-          if( !color.isDefault() )
-            peak.setLineColor( color );
-          break;
-        }
-      }
-    }
-    m_chart_peak_model->addPeaks( preview_peaks );
+    // Peak colors are set by RelActCalcAuto via NucInputInfo::peak_color_css, so
+    // result->observable_peaks already carry the correct line colors.
+    m_chart_peak_model->addPeaks( result->observable_peaks );
 
-    double low_e = 0, high_e = 0;
+    double low_e = 9999999.9, high_e = -9999999.9;
     bool first = true;
     for( const PeakDef &p : result->observable_peaks )
     {
-      const double m = p.mean();
-      if( first )
-      {
-        low_e = high_e = m;
-        first = false;
-      }
-      else
-      {
-        if( m < low_e ) low_e = m;
-        if( m > high_e ) high_e = m;
-      }
+      low_e = (std::min)( low_e, p.lowerX() );
+      high_e = (std::max)( high_e, p.upperX() );
     }
-    if( !first )
+    
+    if( high_e > low_e )
     {
       const double margin = 0.1 * ( high_e - low_e );
       m_chart->setXAxisRange( low_e - margin, high_e + margin );
     }
+
+    // Update relative efficiency chart
+    const double live_time = m_fg_copy ? m_fg_copy->live_time() : 1.0;
+    vector<RelEffChart::ReCurveInfo> info_sets;
+    for( size_t i = 0; i < sol.m_rel_activities.size(); ++i )
+    {
+      RelEffChart::ReCurveInfo info;
+      info.live_time = live_time;
+      if( i < sol.m_obs_eff_for_each_curve.size() )
+      {
+        for( const RelActCalcAuto::RelActAutoSolution::ObsEff &obs_eff : sol.m_obs_eff_for_each_curve[i] )
+        {
+          if( (obs_eff.observed_efficiency > 0.0)
+             && (obs_eff.num_sigma_significance > 2.5)
+             && (obs_eff.fraction_roi_counts > 0.05)
+             && obs_eff.within_roi )
+          {
+            info.obs_eff_data.push_back( obs_eff );
+          }
+        }
+      }
+      info.rel_acts = sol.m_rel_activities[i];
+      info.js_rel_eff_eqn = sol.rel_eff_eqn_js_function( i );
+      // 20260210: Lets not show uncertainty band right now, the uncertainty calculations arent reliable yet, so the uncert band can be really large, obscuring the information
+      //info.js_rel_eff_uncert_eqn = sol.rel_eff_eqn_js_uncert_fcn( i );
+      if( i < sol.m_options.rel_eff_curves.size() )
+        info.re_curve_name = WString::fromUTF8( sol.m_options.rel_eff_curves[i].name );
+      try
+      {
+        info.re_curve_eqn_txt = "y = " + sol.rel_eff_txt( false, i );
+      }catch( std::exception & )
+      {
+      }
+      info_sets.push_back( info );
+    }//for( loop over rel eff curves )
+    m_rel_eff_chart->setData( info_sets );
+
+    // Update text results
+    m_txt_results->updateResults( sol );
   }
   m_resultUpdated.emit();
 }
@@ -1337,6 +1398,8 @@ void FitPeaksAdvancedWidget::handleCalcError( std::shared_ptr<std::string> error
     m_warnings_div->removeWidget( m_warnings_div->widget( 0 ) );
   WText *err_text = new WText( WString::fromUTF8( *error_msg ), m_warnings_div );
   (void)err_text;
+  m_rel_eff_chart->setData( RelEffChart::ReCurveInfo{} );
+  m_txt_results->setNoResults();
   m_resultUpdated.emit();
 }
 
@@ -1490,6 +1553,17 @@ void FitPeaksAdvancedWidget::buildOptionsFromConfig()
   add_form_row( WString::tr("fpn-opt-obs-final-sig"), obs_fin, WString::tr("fpn-opt-tt-obs-final-sig") );
   m_opt_obs_final_sig = obs_fin;
 
+  m_opt_skew_type = new WComboBox();
+  for( int i = 0; i < static_cast<int>( PeakDef::SkewType::NumSkewType ); ++i )
+  {
+    const PeakDef::SkewType s = static_cast<PeakDef::SkewType>( i );
+    m_opt_skew_type->addItem( PeakDef::to_label( s ) );
+    if( s == config.skew_type )
+      m_opt_skew_type->setCurrentIndex( i );
+  }
+  m_opt_skew_type->changed().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
+  add_form_row( WString::tr("fpn-opt-skew-type"), m_opt_skew_type, WString::tr("fpn-opt-tt-skew-type") );
+
   m_opt_fwhm_form = new WComboBox();
   for( int i = 0; i <= static_cast<int>( RelActCalcAuto::FwhmForm::NotApplicable ); ++i )
   {
@@ -1549,6 +1623,8 @@ FitPeaksForNuclides::PeakFitForNuclideConfig FitPeaksAdvancedWidget::currentConf
     config.observable_peak_initial_significance_threshold = m_opt_obs_initial_sig->value();
   if( m_opt_obs_final_sig )
     config.observable_peak_final_significance_threshold = m_opt_obs_final_sig->value();
+  if( m_opt_skew_type )
+    config.skew_type = static_cast<PeakDef::SkewType>( m_opt_skew_type->currentIndex() );
   if( m_opt_fwhm_form )
     config.fwhm_form = static_cast<RelActCalcAuto::FwhmForm>( m_opt_fwhm_form->currentIndex() );
   if( m_opt_rel_eff_type )
