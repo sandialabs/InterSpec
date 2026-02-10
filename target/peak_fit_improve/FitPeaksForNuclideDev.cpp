@@ -69,6 +69,7 @@
 
 using namespace std;
 
+// Forward declaration
 // Types from FitPeaksForNuclides namespace - using type aliases for convenience
 using PeakFitResult = FitPeaksForNuclides::PeakFitResult;
 using PeakFitForNuclideConfig = FitPeaksForNuclides::PeakFitForNuclideConfig;
@@ -90,17 +91,6 @@ struct ClusteredGammaInfo {
 // and create_desperation_shielding have been moved to FitPeaksForNuclides namespace
 
 
-// Forward declaration
-// cluster_gammas_to_rois forward declaration removed - function moved to FitPeaksForNuclides namespace
-
-
-// PeakFitResult is now defined in FitPeaksForNuclides namespace
-// Using type alias for convenience
-using PeakFitResult = FitPeaksForNuclides::PeakFitResult;
-
-// GammaClusteringSettings is now defined in FitPeaksForNuclides namespace
-// Using type alias for convenience
-using GammaClusteringSettings = FitPeaksForNuclides::GammaClusteringSettings;
 
 
 /** Combined scoring struct that evaluates both final fit quality and peak finding completeness.
@@ -433,10 +423,14 @@ PeakFitResult fit_peaks_for_nuclides(
   const PeakFitForNuclideConfig &config,
   const bool isHPGe )
 {
+  Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> options;
+  const std::vector<std::shared_ptr<const PeakDef>> user_peaks;
+  
   // Implementation moved to FitPeaksForNuclides namespace
   // This is now a wrapper that calls the new namespace version
   return FitPeaksForNuclides::fit_peaks_for_nuclides(
-    auto_search_peaks, foreground, sources, long_background, drf_input, config, isHPGe );
+    auto_search_peaks, foreground, sources, user_peaks, long_background, drf_input, options, config, isHPGe
+  );
 }//fit_peaks_for_nuclides
 
 
@@ -731,21 +725,20 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
       cout << "Best RelEff curve type solution (" << solution.m_options.rel_eff_curves.front().name << ") selected with chi2/dof="
            << solution.m_chi2 << "/" << solution.m_dof << endl;
 
+      // How many sigma around a peak to consider for matching (default 1.5)
+      const double num_sigma_contribution = 1.5;
+      
       // Score the fit results using only signal photopeaks
       CombinedPeakFitScore combined_score;
 
       // Calculate FinalFitScore using refactored helper
       combined_score.final_fit_score = FinalFit_GA::calculate_final_fit_score(
-        fit_peaks,
-        src_info.expected_signal_photopeaks,
-        config.num_sigma_contribution
+        fit_peaks, src_info.expected_signal_photopeaks, num_sigma_contribution
       );
 
       // Calculate PeakFindAndFitWeights using refactored helper
       combined_score.initial_fit_weights = InitialFit_GA::calculate_peak_find_weights(
-        fit_peaks,
-        src_info.expected_signal_photopeaks,
-        config.num_sigma_contribution
+        fit_peaks, src_info.expected_signal_photopeaks, num_sigma_contribution
       );
 
       // Calculate CandidatePeakScore using refactored helper
