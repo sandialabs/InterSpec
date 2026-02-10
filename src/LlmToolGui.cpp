@@ -21,6 +21,9 @@
 #include <Wt/WContainerWidget>
 
 #include "SpecUtils/DateTime.h"
+#if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
+#include "SpecUtils/StringAlgo.h" //For SpecUtils::convert_from_utf8_to_utf16
+#endif
 
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/InterSpec.h"
