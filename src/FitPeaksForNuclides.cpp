@@ -278,6 +278,445 @@ namespace
 }//namespace
 
 
+/** Returns auto-search peaks that do NOT correspond to any user peak.
+
+ Matching is by energy proximity: an auto-search peak is considered to match a user peak if their
+ means are within 0.15 * auto_peak->fwhm().
+ */
+std::vector<std::shared_ptr<const PeakDef>> compute_unfit_auto_peaks(
+  const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
+  const std::vector<std::shared_ptr<const PeakDef>> &user_peaks )
+{
+  std::vector<std::shared_ptr<const PeakDef>> unfit_peaks;
+
+  for( const std::shared_ptr<const PeakDef> &auto_peak : auto_search_peaks )
+  {
+    if( !auto_peak || !auto_peak->gausPeak() )
+      continue;
+
+    const double auto_mean = auto_peak->mean();
+    const double tolerance = 0.15 * auto_peak->fwhm();
+
+    bool matches_user_peak = false;
+    for( const std::shared_ptr<const PeakDef> &user_peak : user_peaks )
+    {
+      if( !user_peak || !user_peak->gausPeak() )
+        continue;
+
+      if( std::fabs( user_peak->mean() - auto_mean ) < tolerance )
+      {
+        matches_user_peak = true;
+        break;
+      }
+    }//for( const auto &user_peak : user_peaks )
+
+    if( !matches_user_peak )
+      unfit_peaks.push_back( auto_peak );
+  }//for( const auto &auto_peak : auto_search_peaks )
+
+  if( should_debug_print() )
+  {
+    std::cerr << "compute_unfit_auto_peaks: " << auto_search_peaks.size() << " auto peaks, "
+         << user_peaks.size() << " user peaks -> " << unfit_peaks.size() << " unfit peaks" << std::endl;
+  }
+
+  return unfit_peaks;
+}//compute_unfit_auto_peaks(...)
+
+
+/** Returns the energy of the channel with fewest counts between two energies.
+
+ Searches the foreground spectrum for the channel with the minimum count in the range
+ [lower_energy, upper_energy].  Returns the center energy of that channel.
+ If the range spans fewer than 2 channels, returns the midpoint energy.
+ */
+double find_min_counts_energy(
+  const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+  const double lower_energy,
+  const double upper_energy )
+{
+  assert( foreground && foreground->energy_calibration() && foreground->energy_calibration()->valid() );
+  assert( lower_energy < upper_energy );
+
+  if( !foreground || !foreground->energy_calibration() || !foreground->energy_calibration()->valid() )
+    return 0.5 * (lower_energy + upper_energy);
+
+  const std::shared_ptr<const SpecUtils::EnergyCalibration> &energy_cal
+    = foreground->energy_calibration();
+
+  const size_t num_channels = foreground->num_gamma_channels();
+  const size_t lower_ch = static_cast<size_t>( energy_cal->channel_for_energy( lower_energy ) );
+  const size_t upper_ch = std::min( static_cast<size_t>( energy_cal->channel_for_energy( upper_energy ) ),
+                                    num_channels - 1 );
+
+  if( (upper_ch <= lower_ch) || ((upper_ch - lower_ch) < 2) )
+    return 0.5 * (lower_energy + upper_energy);
+
+  float min_counts = std::numeric_limits<float>::max();
+  size_t min_channel = lower_ch;
+
+  for( size_t ch = lower_ch; ch <= upper_ch; ++ch )
+  {
+    const float counts = foreground->gamma_channel_content( ch );
+    if( counts < min_counts )
+    {
+      min_counts = counts;
+      min_channel = ch;
+    }
+  }//for( size_t ch = lower_ch; ch <= upper_ch; ++ch )
+
+  // Return center energy of the minimum-counts channel
+  return energy_cal->energy_for_channel( static_cast<double>(min_channel) + 0.5 );
+}//find_min_counts_energy(...)
+
+
+
+/** Shrinks ROIs to avoid interference from auto-search peaks that do not correspond to source/NORM
+ gammas.
+
+ For each peak in unfit_auto_peaks:
+ - If the peak matches a significant source/NORM gamma (within cluster_num_sigma sigma), skip it.
+ - If the peak's ROI overlaps with one of our analysis ROIs, shrink the analysis ROI to the
+   channel with fewest counts between the significant gamma energy and the interfering peak mean.
+ - Minimum ROI extent from the nearest gamma is enforced: min_fwhm_roi_lower FWHM on the lower
+   side, min_fwhm_roi_upper FWHM on the upper side.
+ - For multi-gamma ROIs where the nearest gamma (edge gamma) is not the largest gamma in the ROI,
+   more aggressive shrinking is allowed: down to edge_gamma ± 0.2*FWHM, while ensuring the
+   largest gamma retains its full extent.  The ROI is shrunk until the interfering peak's
+   Gaussian integral over the ROI is less than 20% of the edge gamma's expected area.
+
+  TODO: This function is by no means optimized, or super well behaving - but its something that kinda covers some obvious cases
+ 
+ \param rois_and_gammas  ROIs paired with their clustered gamma info (modified in-place)
+ \param unfit_auto_peaks  Auto-search peaks not matching user peaks
+ \param foreground  Foreground spectrum (may have adjusted energy calibration)
+ \param orig_cal  Energy calibration of the original foreground (that auto_search_peaks are in)
+ \param current_cal  Current energy calibration (that rois_and_gammas are in)
+ */
+void shrink_rois_for_interfering_peaks(
+  std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> &rois_and_gammas,
+  const std::vector<std::shared_ptr<const PeakDef>> &unfit_auto_peaks,
+  const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+  const DetectorPeakResponse::ResolutionFnctForm fwhm_form,
+  const std::vector<float> &fwhm_coefficients,
+  const double fwhm_lower_energy,
+  const double fwhm_upper_energy,
+  const double cluster_num_sigma,
+  const double min_fwhm_roi_lower,
+  const double min_fwhm_roi_upper,
+  const std::shared_ptr<const SpecUtils::EnergyCalibration> &orig_cal,
+  const std::shared_ptr<const SpecUtils::EnergyCalibration> &current_cal )
+{
+  if( unfit_auto_peaks.empty() || rois_and_gammas.empty() )
+    return;
+
+  const bool have_fwhm_range = (fwhm_lower_energy > 0.0)
+    && (fwhm_upper_energy > 0.0)
+    && (fwhm_lower_energy < fwhm_upper_energy);
+
+  // Determine if we need to translate peak energies from original to current calibration
+  const bool need_cal_translation = (orig_cal && current_cal && (orig_cal != current_cal));
+
+  // Collect all significant gamma energies across all ROIs, for checking if a peak matches a source gamma
+  std::vector<double> all_gamma_energies;
+  for( const std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo> &rg : rois_and_gammas )
+  {
+    for( const double gamma_e : rg.second.gamma_energies )
+      all_gamma_energies.push_back( gamma_e );
+  }
+
+  for( const std::shared_ptr<const PeakDef> &peak : unfit_auto_peaks )
+  {
+    if( !peak || !peak->gausPeak() )
+      continue;
+    
+    // Translate peak energies to current calibration if needed
+    double peak_mean = peak->mean();
+    double peak_lower = peak->lowerX();
+    double peak_upper = peak->upperX();
+    //const double peak_fwhm = peak->fwhm(); //TODO: we might be able to this instead of computing the FWHM for each gamma - but there would be edge-cases we should maybe consider.
+
+    if( need_cal_translation )
+    {
+      const double ch_mean = orig_cal->channel_for_energy( peak_mean );
+      peak_mean = current_cal->energy_for_channel( ch_mean );
+
+      const double ch_lower = orig_cal->channel_for_energy( peak_lower );
+      peak_lower = current_cal->energy_for_channel( ch_lower );
+
+      const double ch_upper = orig_cal->channel_for_energy( peak_upper );
+      peak_upper = current_cal->energy_for_channel( ch_upper );
+    }//if( need_cal_translation )
+
+    // Check if this peak matches any significant source/NORM gamma across all ROIs
+    bool matches_source_gamma = false;
+    for( const double gamma_energy : all_gamma_energies )
+    {
+      const double fwhm_eval_energy = have_fwhm_range
+        ? std::clamp( gamma_energy, fwhm_lower_energy, fwhm_upper_energy )
+        : gamma_energy;
+
+      const float gamma_fwhm = DetectorPeakResponse::peakResolutionFWHM(
+        static_cast<float>(fwhm_eval_energy), fwhm_form, fwhm_coefficients );
+
+      if( !std::isfinite(gamma_fwhm) || (gamma_fwhm <= 0.0f) )
+        continue;
+
+      const double gamma_sigma = gamma_fwhm / PhysicalUnits::fwhm_nsigma;
+
+      if( std::fabs( peak_mean - gamma_energy ) < (cluster_num_sigma * gamma_sigma) )
+      {
+        matches_source_gamma = true;
+        break;
+      }
+    }//for( const double gamma_energy : all_gamma_energies )
+
+    if( matches_source_gamma )
+      continue;
+
+    // This is an interfering peak.  Check each ROI for overlap.
+    for( std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo> &rg : rois_and_gammas )
+    {
+      RelActCalcAuto::RoiRange &roi = rg.first;
+      const ClusteredGammaInfo &gamma_info = rg.second;
+
+      // Skip already-invalidated ROIs
+      if( (roi.lower_energy < 0.0) || (roi.upper_energy < 0.0)
+        || (roi.lower_energy >= roi.upper_energy) )
+        continue;
+
+      // Check for overlap between the interfering peak's ROI and our analysis ROI
+      if( (peak_upper <= roi.lower_energy) || (peak_lower >= roi.upper_energy) )
+        continue;
+
+      // Find the nearest gamma to the interfering peak (edge gamma), and the largest gamma in the ROI
+      double nearest_gamma_energy = 0.5 * (roi.lower_energy + roi.upper_energy); // fallback
+      double nearest_gamma_amplitude = 0.0;
+      double nearest_dist = std::numeric_limits<double>::max();
+      size_t largest_gamma_index = 0;
+
+      assert( gamma_info.gamma_energies.size() == gamma_info.gamma_amplitudes.size() );
+
+      for( size_t gi = 0; gi < gamma_info.gamma_energies.size(); ++gi )
+      {
+        const double gamma_e = gamma_info.gamma_energies[gi];
+        const double dist = std::fabs( gamma_e - peak_mean );
+        if( dist < nearest_dist )
+        {
+          nearest_dist = dist;
+          nearest_gamma_energy = gamma_e;
+          nearest_gamma_amplitude = (gi < gamma_info.gamma_amplitudes.size())
+            ? gamma_info.gamma_amplitudes[gi] : 0.0;
+        }
+
+        if( (gi < gamma_info.gamma_amplitudes.size())
+          && (gamma_info.gamma_amplitudes[gi] > gamma_info.gamma_amplitudes[largest_gamma_index]) )
+        {
+          largest_gamma_index = gi;
+        }
+      }//for( size_t gi = 0; gi < gamma_info.gamma_energies.size(); ++gi )
+
+      // Sometimes we'll run into the case where there are multiple gammas in the ROI, and the gamma near this "unfit"
+      //  peak is actually a pretty small gamma, so in this case, we'll treat it a little different, and allow a more
+      //  agressive shrinking of the ROI - this is so we dont totally mess up the primary line (because the continuum
+      //  may fit really high in amplitude if the ROI extends well into a large "unfit" peak that we are otherwise not
+      //  taking into account).
+      const bool is_multi_gamma = (gamma_info.gamma_energies.size() > 1);
+      const bool edge_gamma_is_largest = !is_multi_gamma
+        || (std::fabs( nearest_gamma_energy - gamma_info.gamma_energies[largest_gamma_index] ) < 0.01);
+
+      // Compute FWHM at the nearest gamma (edge gamma) for minimum ROI width enforcement
+      const double fwhm_eval = have_fwhm_range
+        ? std::clamp( nearest_gamma_energy, fwhm_lower_energy, fwhm_upper_energy )
+        : nearest_gamma_energy;
+      const float fwhm_at_gamma = DetectorPeakResponse::peakResolutionFWHM(
+        static_cast<float>(fwhm_eval), fwhm_form, fwhm_coefficients );
+
+      if( !std::isfinite( fwhm_at_gamma ) || (fwhm_at_gamma <= 0.0f) )
+        continue;
+
+      // For multi-gamma ROIs with non-dominant edge gamma, compute FWHM at the largest gamma
+      double largest_gamma_energy = nearest_gamma_energy;
+      float fwhm_at_largest = fwhm_at_gamma;
+      if( is_multi_gamma && !edge_gamma_is_largest )
+      {
+        largest_gamma_energy = gamma_info.gamma_energies[largest_gamma_index];
+        const double lg_fwhm_eval = have_fwhm_range
+          ? std::clamp( largest_gamma_energy, fwhm_lower_energy, fwhm_upper_energy )
+          : largest_gamma_energy;
+        fwhm_at_largest = DetectorPeakResponse::peakResolutionFWHM(
+          static_cast<float>(lg_fwhm_eval), fwhm_form, fwhm_coefficients );
+        if( !std::isfinite( fwhm_at_largest ) || (fwhm_at_largest <= 0.0f) )
+          fwhm_at_largest = fwhm_at_gamma;
+      }//if( multi-gamma with non-dominant edge gamma )
+
+      const double old_lower = roi.lower_energy;
+      const double old_upper = roi.upper_energy;
+
+      if( peak_mean > nearest_gamma_energy )
+      {
+        // Interfering peak is on the upper side of the nearest gamma
+        const double min_count_energy = find_min_counts_energy( foreground, nearest_gamma_energy, peak_mean );
+
+        // Enforce minimum ROI upper extent from the edge gamma
+        double effective_min_upper = nearest_gamma_energy + min_fwhm_roi_upper * fwhm_at_gamma;
+
+        // For multi-gamma ROIs where the edge gamma is not the largest, allow more aggressive
+        // shrinking down to edge_gamma + 0.2*FWHM, but the largest gamma keeps its full extent.
+        // Shrink until the interfering peak's integral in the ROI is < 20% of edge gamma's area.
+        // (the 0.2*FWHM was fairly arbitrarily chosen, and not optimized)
+        if( is_multi_gamma && !edge_gamma_is_largest
+          && (nearest_gamma_amplitude > 0.0) && (peak->peakArea() > 0.0) )
+        {
+          const double hard_min = nearest_gamma_energy + 0.2 * fwhm_at_gamma;
+          const double largest_min = largest_gamma_energy + min_fwhm_roi_upper * fwhm_at_largest;
+          const double aggressive_min = std::max( hard_min, largest_min );
+
+          // Only try aggressive shrinking if it allows a tighter boundary than the normal one
+          if( aggressive_min < effective_min_upper )
+          {
+            // Check contribution at the normal minimum
+            const double candidate = std::max( min_count_energy, effective_min_upper );
+            const double contribution = peak->gauss_integral( roi.lower_energy, candidate );
+            const double max_allowed = 0.20 * nearest_gamma_amplitude;
+
+            if( contribution >= max_allowed )
+            {
+              // Use coverage_limits to find where the interfering peak's left-tail CDF equals
+              // max_allowed/peakArea(), i.e., the lower quantile at fraction p/2 = max_allowed/peakArea()
+              const double p = 2.0 * max_allowed / peak->peakArea();
+              try
+              {
+                const double * const skew_pars = peak->coefficients() + static_cast<int>(PeakDef::SkewPar0);
+                const double quantile_lower = PeakDists::coverage_limits( p, peak->skewType(),
+                                                peak->mean(), peak->sigma(), skew_pars ).first;
+                effective_min_upper = std::max( quantile_lower, aggressive_min );
+              }catch( std::exception & )
+              {
+                // Fallback to candidate if coverage_limits fails
+                effective_min_upper = std::max( candidate, aggressive_min );
+              }
+
+              if( should_debug_print() )
+              {
+                std::cerr << "shrink_rois_for_interfering_peaks: Aggressive shrink for multi-gamma ROI"
+                     << " (edge gamma at " << nearest_gamma_energy << " keV is not the largest)"
+                     << ", new effective_min_upper=" << effective_min_upper << " keV" << std::endl;
+              }
+            }//if( contribution >= max_allowed )
+          }//if( aggressive_min < effective_min_upper )
+        }//if( multi-gamma with non-dominant edge gamma )
+
+        const double new_upper = std::max( min_count_energy, effective_min_upper );
+
+        // Only shrink, never expand
+        if( new_upper < roi.upper_energy )
+          roi.upper_energy = new_upper;
+      }
+      else
+      {
+        // Interfering peak is on the lower side of the nearest gamma
+        const double min_count_energy = find_min_counts_energy( foreground, peak_mean, nearest_gamma_energy );
+
+        // Enforce minimum ROI lower extent from the edge gamma
+        double effective_max_lower = nearest_gamma_energy - min_fwhm_roi_lower * fwhm_at_gamma;
+
+        // For multi-gamma ROIs where the edge gamma is not the largest, allow more aggressive
+        // shrinking down to edge_gamma - 0.2*FWHM, but the largest gamma keeps its full extent.
+        if( is_multi_gamma && !edge_gamma_is_largest
+          && (nearest_gamma_amplitude > 0.0) && (peak->peakArea() > 0.0) )
+        {
+          const double hard_max = nearest_gamma_energy - 0.2 * fwhm_at_gamma;
+          const double largest_max = largest_gamma_energy - min_fwhm_roi_lower * fwhm_at_largest;
+          const double aggressive_max = std::min( hard_max, largest_max );
+
+          // Only try aggressive shrinking if it allows a tighter boundary than the normal one
+          if( aggressive_max > effective_max_lower )
+          {
+            // Check contribution at the normal minimum
+            const double candidate = std::min( min_count_energy, effective_max_lower );
+            const double contribution = peak->gauss_integral( candidate, roi.upper_energy );
+            const double max_allowed = 0.20 * nearest_gamma_amplitude;
+
+            if( contribution >= max_allowed )
+            {
+              // Use coverage_limits to find where the interfering peak's right-tail CDF equals
+              // max_allowed/peakArea(), i.e., the upper quantile at fraction p/2 = max_allowed/peakArea()
+              const double p = 2.0 * max_allowed / peak->peakArea();
+              try
+              {
+                const double * const skew_pars = peak->coefficients() + static_cast<int>(PeakDef::SkewPar0);
+                const double quantile_upper = PeakDists::coverage_limits( p, peak->skewType(),
+                                                peak->mean(), peak->sigma(), skew_pars ).second;
+                effective_max_lower = std::min( quantile_upper, aggressive_max );
+              }
+              catch( std::exception & )
+              {
+                // Fallback to candidate if coverage_limits fails
+                effective_max_lower = std::min( candidate, aggressive_max );
+              }
+
+              if( should_debug_print() )
+              {
+                std::cerr << "shrink_rois_for_interfering_peaks: Aggressive shrink for multi-gamma ROI"
+                     << " (edge gamma at " << nearest_gamma_energy << " keV is not the largest)"
+                     << ", new effective_max_lower=" << effective_max_lower << " keV" << std::endl;
+              }
+            }//if( contribution >= max_allowed )
+          }//if( aggressive_max > effective_max_lower )
+        }//if( multi-gamma with non-dominant edge gamma )
+
+        const double new_lower = std::min( min_count_energy, effective_max_lower );
+
+        // Only shrink, never expand
+        if( new_lower > roi.lower_energy )
+          roi.lower_energy = new_lower;
+      }//if( peak on upper side ) / else
+
+      if( should_debug_print()
+        && ((roi.lower_energy != old_lower) || (roi.upper_energy != old_upper)) )
+      {
+        std::cerr << "shrink_rois_for_interfering_peaks: Shrunk ROI from ["
+             << old_lower << ", " << old_upper << "] to ["
+             << roi.lower_energy << ", " << roi.upper_energy << "] keV"
+             << " due to interfering peak at " << peak_mean << " keV"
+             << " (nearest gamma at " << nearest_gamma_energy << " keV)" << std::endl;
+      }
+
+      // Mark for removal if ROI collapsed
+      if( roi.lower_energy >= roi.upper_energy )
+      {
+        if( should_debug_print() )
+        {
+          std::cerr << "shrink_rois_for_interfering_peaks: ROI collapsed and removed"
+               << " (was [" << old_lower << ", " << old_upper << "] keV)" << std::endl;
+        }
+        roi.lower_energy = -1.0;
+        roi.upper_energy = -1.0;
+        break;
+      }
+    }//for( auto &rg : rois_and_gammas )
+  }//for( const auto &peak : unfit_auto_peaks )
+
+  // Remove any ROIs that were marked as invalid
+  rois_and_gammas.erase(
+    std::remove_if( rois_and_gammas.begin(), rois_and_gammas.end(),
+      []( const std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo> &rg ) {
+        return (rg.first.lower_energy < 0.0) || (rg.first.upper_energy < 0.0)
+          || (rg.first.lower_energy >= rg.first.upper_energy);
+      } ),
+    rois_and_gammas.end()
+  );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  for( const std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo> &rg : rois_and_gammas )
+  {
+    assert( rg.first.lower_energy < rg.first.upper_energy );
+  }
+#endif
+}//shrink_rois_for_interfering_peaks(...)
+
+
 // Returns the NORM background nuclides (U238, Ra226, U235, Th232, K40) as NucInputInfo entries,
 // excluding any that already appear in `sources`.  Ages are set to prompt/secular equilibrium
 // half-lives appropriate for each nuclide (see `getBackgroundRefLines()` in ReferenceLineInfo.cpp).
@@ -393,7 +832,16 @@ void add_floating_511_peak_if_appropriate(
   }
   
   if( !have_511_roi )
+  {
+    // Remove any existing floating 511 peak (e.g. copied from a previous iteration's options)
+    // since there is no longer a ROI covering it - leaving it would cause an error in the solver.
+    auto &fps = options.floating_peaks;
+    fps.erase( std::remove_if( begin(fps), end(fps),
+      [&]( const RelActCalcAuto::FloatingPeak &fp ){
+        return std::fabs( fp.energy - annihilation_energy ) < 1.0;
+      } ), end(fps) );
     return;
+  }
   
   // Check if any source has 511 in top ~5 gamma BRs AND contributes to other ROIs
   bool should_add_floating_511 = false;
@@ -2331,7 +2779,7 @@ bool should_use_step_continuum(
 // by copying from FitPeaksForNuclideDev.cpp. For now, adding stubs that will
 // be replaced with full implementations.
 
-std::vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
+std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> cluster_gammas_to_rois(
     const std::vector<std::function<double(double)>> &rel_eff_fcns,
     const std::vector<std::vector<std::tuple<RelActCalcAuto::SrcVariant, double /*age*/, double/*act*/>>> &sources_age_activity_sets,
     const std::shared_ptr<const SpecUtils::Measurement> &foreground,
@@ -2341,13 +2789,14 @@ std::vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
     const double fwhm_upper_energy,
     const double lowest_energy,
     const double highest_energy,
-    const GammaClusteringSettings &settings )
+    const GammaClusteringSettings &settings,
+    const std::vector<std::shared_ptr<const PeakDef>> &unfit_auto_peaks = {} )
 {
   assert( rel_eff_fcns.size() == sources_age_activity_sets.size() );
   if( rel_eff_fcns.size() != sources_age_activity_sets.size() )
     throw runtime_error( "cluster_gammas_to_rois: there is a different number of relative efficiency functions and sets of sources" );
 
-  vector<RelActCalcAuto::RoiRange> result_rois;
+  vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> result_rois;
 
   // Collect all gamma lines with their expected counts
   vector<std::pair<double,double>> gammas_by_counts;  // (energy, expected_counts)
@@ -2634,7 +3083,18 @@ std::vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
     }
   }//for( ClusteredGammaInfo &cluster : clustered_gammas )
   
-  // Merge overlapping clusters
+  // Collect all source gamma energies for checking if an unfit peak matches a source gamma;
+  // used during merge prevention below.
+  std::vector<double> all_source_gamma_energies;
+  if( !unfit_auto_peaks.empty() )
+  {
+    for( const ClusteredGammaInfo &c : clustered_gammas )
+      all_source_gamma_energies.insert( all_source_gamma_energies.end(),
+        c.gamma_energies.begin(), c.gamma_energies.end() );
+  }
+
+  // Merge overlapping clusters, but prevent merging when an unfit auto-search peak lies between
+  // the largest gammas of each cluster (the interfering peak would contaminate the combined ROI).
   std::vector<ClusteredGammaInfo> merged_clusters;
   for( const ClusteredGammaInfo &cluster : clustered_gammas )
   {
@@ -2644,24 +3104,100 @@ std::vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
     }
     else
     {
-      if( should_debug_print() )
+      // Clusters overlap - check if an unfit peak is between the largest gammas of each cluster
+      bool unfit_peak_between = false;
+      if( !unfit_auto_peaks.empty() )
       {
-        std::cerr << "cluster_gammas_to_rois: Merging cluster [" << cluster.lower << ", " << cluster.upper
-             << "] into [" << merged_clusters.back().lower << ", " << merged_clusters.back().upper << "]"
-             << " -> new upper=" << std::max( merged_clusters.back().upper, cluster.upper ) << std::endl;
-      }
+        // Find largest-amplitude gamma energy in the existing merged cluster
+        const ClusteredGammaInfo &prev = merged_clusters.back();
+        assert( !prev.gamma_amplitudes.empty() && !cluster.gamma_amplitudes.empty() );
+        const size_t prev_max_idx = static_cast<size_t>(
+          std::max_element( prev.gamma_amplitudes.begin(), prev.gamma_amplitudes.end() )
+          - prev.gamma_amplitudes.begin() );
+        const double prev_largest_energy = prev.gamma_energies[prev_max_idx];
 
-      merged_clusters.back().upper = std::min( highest_energy, std::max( merged_clusters.back().upper, cluster.upper ) );
-      merged_clusters.back().gamma_energies.insert(
-        std::end(merged_clusters.back().gamma_energies),
-        std::begin(cluster.gamma_energies),
-        std::end(cluster.gamma_energies)
-      );
-      merged_clusters.back().gamma_amplitudes.insert(
-        std::end(merged_clusters.back().gamma_amplitudes),
-        std::begin(cluster.gamma_amplitudes),
-        std::end(cluster.gamma_amplitudes)
-      );
+        // Find largest-amplitude gamma energy in the new cluster
+        const size_t curr_max_idx = static_cast<size_t>(
+          std::max_element( cluster.gamma_amplitudes.begin(), cluster.gamma_amplitudes.end() )
+          - cluster.gamma_amplitudes.begin() );
+        const double curr_largest_energy = cluster.gamma_energies[curr_max_idx];
+
+        const double between_lo = std::min( prev_largest_energy, curr_largest_energy );
+        const double between_hi = std::max( prev_largest_energy, curr_largest_energy );
+
+        for( const std::shared_ptr<const PeakDef> &peak : unfit_auto_peaks )
+        {
+          const double peak_mean = peak->mean();
+          if( (peak_mean <= between_lo) || (peak_mean >= between_hi) )
+            continue;
+
+          // Check if this unfit peak matches any source gamma - if so, it's not interfering
+          bool matches_source = false;
+          for( const double gamma_energy : all_source_gamma_energies )
+          {
+            const double fwhm_eval = have_fwhm_range
+              ? std::clamp( gamma_energy, fwhm_lower_energy, fwhm_upper_energy )
+              : gamma_energy;
+            const float gamma_fwhm = DetectorPeakResponse::peakResolutionFWHM(
+              static_cast<float>(fwhm_eval), fwhm_form, fwhm_coefficients );
+            if( !std::isfinite( gamma_fwhm ) || (gamma_fwhm <= 0.0f) )
+              continue;
+            const double gamma_sigma = gamma_fwhm / PhysicalUnits::fwhm_nsigma;
+            if( std::fabs( peak_mean - gamma_energy ) < (settings.cluster_num_sigma * gamma_sigma) )
+            {
+              matches_source = true;
+              break;
+            }
+          }//for( const double gamma_energy : all_source_gamma_energies )
+
+          if( matches_source )
+            continue;
+
+          unfit_peak_between = true;
+
+          if( should_debug_print() )
+          {
+            std::cerr << "cluster_gammas_to_rois: NOT merging clusters ["
+                 << prev.lower << ", " << prev.upper << "] and ["
+                 << cluster.lower << ", " << cluster.upper
+                 << "] due to unfit peak at " << peak_mean
+                 << " keV between largest gammas at " << prev_largest_energy
+                 << " and " << curr_largest_energy << " keV" << std::endl;
+          }
+          break;
+        }//for( const auto &peak : unfit_auto_peaks )
+      }//if( !unfit_auto_peaks.empty() )
+
+      if( unfit_peak_between )
+      {
+        // Don't merge - split the overlap between the two clusters
+        const double split_point = 0.5 * (merged_clusters.back().upper + cluster.lower);
+        merged_clusters.back().upper = split_point;
+        ClusteredGammaInfo adjusted_cluster = cluster;
+        adjusted_cluster.lower = split_point;
+        merged_clusters.push_back( adjusted_cluster );
+      }
+      else
+      {
+        if( should_debug_print() )
+        {
+          std::cerr << "cluster_gammas_to_rois: Merging cluster [" << cluster.lower << ", " << cluster.upper
+               << "] into [" << merged_clusters.back().lower << ", " << merged_clusters.back().upper << "]"
+               << " -> new upper=" << std::max( merged_clusters.back().upper, cluster.upper ) << std::endl;
+        }
+
+        merged_clusters.back().upper = std::min( highest_energy, std::max( merged_clusters.back().upper, cluster.upper ) );
+        merged_clusters.back().gamma_energies.insert(
+          std::end(merged_clusters.back().gamma_energies),
+          std::begin(cluster.gamma_energies),
+          std::end(cluster.gamma_energies)
+        );
+        merged_clusters.back().gamma_amplitudes.insert(
+          std::end(merged_clusters.back().gamma_amplitudes),
+          std::begin(cluster.gamma_amplitudes),
+          std::end(cluster.gamma_amplitudes)
+        );
+      }//if( unfit_peak_between ) / else
     }
   }//for( const ClusteredGammaInfo &cluster : clustered_gammas )
 
@@ -3031,8 +3567,15 @@ std::vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
     {
       const double max_amplitude = *std::max_element( std::begin(cluster.gamma_amplitudes),
                                                   std::end(cluster.gamma_amplitudes) );
-      const double data_area = foreground->gamma_integral( static_cast<float>(roi.lower_energy),
+      
+      const double roi_data_area = foreground->gamma_integral( static_cast<float>(roi.lower_energy),
                                                             static_cast<float>(roi.upper_energy) );
+      
+      // If the ROI is wide, we only want to test against a ~peaks width of the average counts in the ROI.
+      //  1.665 FWHM is 95% of the Gaussian area, so we will just calculate `data_area` to be the average counts
+      //  over 1.665 FWHM of the ROI
+      const double data_area = ((num_fwhm_wide > 1.665) ? (1.665*mid_fwhm / (roi.upper_energy - roi.lower_energy)) : 1.0) * roi_data_area;
+      
       const double est_significance = (data_area > 0.0)
           ? (max_amplitude / std::sqrt(data_area))
           : 0.0;
@@ -3055,7 +3598,7 @@ std::vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
       }
     }//if( !cluster.gamma_amplitudes.empty() )
 
-    result_rois.push_back( roi );
+    result_rois.push_back( std::make_pair( roi, cluster ) );
     previous_roi_upper = roi.upper_energy;
   }//for( const ClusteredGammaInfo &cluster : final_clusters )
 
@@ -3064,7 +3607,7 @@ std::vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
     std::cerr << "cluster_gammas_to_rois: Final " << result_rois.size() << " ROIs:" << std::endl;
     for( size_t i = 0; i < result_rois.size(); ++i )
     {
-      const RelActCalcAuto::RoiRange &roi = result_rois[i];
+      const RelActCalcAuto::RoiRange &roi = result_rois[i].first;
       const double width = roi.upper_energy - roi.lower_energy;
       const double mid = 0.5 * (roi.lower_energy + roi.upper_energy);
       const double mid_clamped = have_fwhm_range
@@ -3081,7 +3624,8 @@ std::vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
         default: break;
       }
       std::cerr << "  [" << i << "] range=[" << roi.lower_energy << ", " << roi.upper_energy << "] keV ("
-           << width << " keV, " << (width / fwhm) << " FWHM), cont=" << cont_str << std::endl;
+           << width << " keV, " << (width / fwhm) << " FWHM), cont=" << cont_str
+           << ", " << result_rois[i].second.gamma_energies.size() << " gammas" << std::endl;
     }
   }
 
@@ -3089,8 +3633,8 @@ std::vector<RelActCalcAuto::RoiRange> cluster_gammas_to_rois(
 #if( PERFORM_DEVELOPER_CHECKS )
   for( size_t i = 1; i < result_rois.size(); ++i )
   {
-    const RelActCalcAuto::RoiRange &prev_roi = result_rois[i - 1];
-    const RelActCalcAuto::RoiRange &curr_roi = result_rois[i];
+    const RelActCalcAuto::RoiRange &prev_roi = result_rois[i - 1].first;
+    const RelActCalcAuto::RoiRange &curr_roi = result_rois[i].first;
     if( curr_roi.lower_energy < prev_roi.upper_energy )
     {
       std::cerr << "ERROR: result_rois[" << (i-1) << "] and [" << i << "] overlap: "
@@ -3112,7 +3656,10 @@ struct InitialRoi
   double fwhm;
 };
 
-std::vector<RelActCalcAuto::RoiRange> merge_rois( std::vector<InitialRoi> initial_rois, const PeakFitForNuclideConfig &config )
+std::vector<RelActCalcAuto::RoiRange> merge_rois(
+    std::vector<InitialRoi> initial_rois,
+    const PeakFitForNuclideConfig &config,
+    const std::vector<std::shared_ptr<const PeakDef>> &unfit_auto_peaks = {} )
 {
   // Sort by lower_energy for merging
   std::sort( initial_rois.begin(), initial_rois.end(), [](const InitialRoi &a, const InitialRoi &b){
@@ -3165,7 +3712,59 @@ std::vector<RelActCalcAuto::RoiRange> merge_rois( std::vector<InitialRoi> initia
 
     const bool width_ok = (combined_width <= config.auto_rel_eff_sol_max_fwhm * mid_fwhm);
 
-    if( width_ok )
+    // Check if an unfit peak lies between the center energies of the two ROIs.
+    // Skip unfit peaks that match a source gamma (center energy) within clustering tolerance.
+    bool unfit_peak_between = false;
+    if( width_ok && !unfit_auto_peaks.empty() )
+    {
+      // Use the last center energy of the merged ROI and the current center energy
+      const double last_center = last_centers.back();
+      const double curr_center = current.center_energy;
+      const double between_lo = std::min( last_center, curr_center );
+      const double between_hi = std::max( last_center, curr_center );
+
+      // Collect all center energies for source-gamma matching
+      std::vector<double> all_centers = last_centers;
+      all_centers.push_back( curr_center );
+
+      for( const std::shared_ptr<const PeakDef> &peak : unfit_auto_peaks )
+      {
+        const double peak_mean = peak->mean();
+        if( (peak_mean <= between_lo) || (peak_mean >= between_hi) )
+          continue;
+
+        // Check if this unfit peak matches any source gamma (center energy)
+        const double peak_sigma = peak->sigma();
+        const double tolerance = config.auto_rel_eff_cluster_num_sigma * peak_sigma;
+        bool matches_source = false;
+        for( const double center : all_centers )
+        {
+          if( std::fabs( peak_mean - center ) < tolerance )
+          {
+            matches_source = true;
+            break;
+          }
+        }
+
+        if( matches_source )
+          continue;
+
+        unfit_peak_between = true;
+
+        if( should_debug_print() )
+        {
+          std::cerr << "merge_rois: NOT merging ROIs ["
+               << last.lower_energy << ", " << last.upper_energy << "] and ["
+               << current.roi.lower_energy << ", " << current.roi.upper_energy
+               << "] due to unfit peak at " << peak_mean
+               << " keV between centers at " << last_center
+               << " and " << curr_center << " keV" << std::endl;
+        }
+        break;
+      }//for( const auto &peak : unfit_auto_peaks )
+    }//if( width_ok && !unfit_auto_peaks.empty() )
+
+    if( width_ok && !unfit_peak_between )
     {
       // MERGE: Extend last ROI to encompass both
       last.upper_energy = combined_upper;
@@ -3551,18 +4150,26 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_fallback(
   };
 
   // Step 4: Call cluster_gammas_to_rois with estimated activities
-  return cluster_gammas_to_rois(
-    {fallback_rel_eff},
-    {source_age_and_acts},
-    foreground,
-    fwhmFnctnlForm,
-    fwhm_coefficients,
-    lower_fwhm_energy,
-    upper_fwhm_energy,
-    min_valid_energy,
-    max_valid_energy,
-    settings
-  );
+  const std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> rois_and_gammas
+    = cluster_gammas_to_rois(
+      {fallback_rel_eff},
+      {source_age_and_acts},
+      foreground,
+      fwhmFnctnlForm,
+      fwhm_coefficients,
+      lower_fwhm_energy,
+      upper_fwhm_energy,
+      min_valid_energy,
+      max_valid_energy,
+      settings
+    );
+
+  std::vector<RelActCalcAuto::RoiRange> result;
+  result.reserve( rois_and_gammas.size() );
+  for( const std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo> &p : rois_and_gammas )
+    result.push_back( p.first );
+
+  return result;
 }//estimate_initial_rois_fallback
 
 std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
@@ -3902,16 +4509,24 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
 
 
     // Step 5: Use the reusable clustering function to create ROIs
-    initial_rois = cluster_gammas_to_rois( {manual_rel_eff}, {source_age_and_acts}, foreground,
-                                          fwhmFnctnlForm, fwhm_coefficients,
-                                          lower_fwhm_energy, upper_fwhm_energy,
-                                          min_valid_energy, max_valid_energy,
-                                          manual_settings );
+    {
+      const std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> rois_and_gammas
+        = cluster_gammas_to_rois( {manual_rel_eff}, {source_age_and_acts}, foreground,
+                                  fwhmFnctnlForm, fwhm_coefficients,
+                                  lower_fwhm_energy, upper_fwhm_energy,
+                                  min_valid_energy, max_valid_energy,
+                                  manual_settings );
+
+      initial_rois.clear();
+      initial_rois.reserve( rois_and_gammas.size() );
+      for( const std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo> &p : rois_and_gammas )
+        initial_rois.push_back( p.first );
+    }
 
     if( should_debug_print() )
     {
       std::cout << "Initial ROIs from RelActManual: ";
-      for( const auto &roi : initial_rois )
+      for( const RelActCalcAuto::RoiRange &roi : initial_rois )
         std::cout << "[" << roi.lower_energy << ", " << roi.upper_energy << "], ";
       std::cout << std::endl;
     }
@@ -4428,9 +5043,15 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 
   // Add a floating peak at 511 keV if appropriate (see function documentation for physics reasoning)
   add_floating_511_peak_if_appropriate( options, sources, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy );
-  
+
   // Add floating peaks for escape peaks of high-energy gammas if appropriate
   add_escape_peak_floating_peaks_if_appropriate( options, auto_search_peaks, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy, config );
+
+  // Compute auto-search peaks that don't correspond to user peaks -- these are peaks in the
+  // auto-search that may interfere with our source/NORM ROIs.  Used during the iterative
+  // refinement loop to shrink ROIs away from interfering peaks.
+  const std::vector<std::shared_ptr<const PeakDef>> unfit_auto_peaks
+    = compute_unfit_auto_peaks( auto_search_peaks, user_peaks );
 
   try
   {
@@ -4622,13 +5243,31 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         const GammaClusteringSettings auto_settings = config.get_auto_clustering_settings();
 
         // Cluster gammas using current solution's relative efficiency
-        std::vector<RelActCalcAuto::RoiRange> refined_rois = cluster_gammas_to_rois(
-            auto_rel_effs, source_age_and_acts, foreground,
-            fwhm_form, fwhm_coefficients,
+        std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> refined_rois_and_gammas
+          = cluster_gammas_to_rois(
+              auto_rel_effs, source_age_and_acts, foreground,
+              fwhm_form, fwhm_coefficients,
+              fwhm_lower_energy, fwhm_upper_energy,
+              min_valid_energy, max_valid_energy,
+              auto_settings, unfit_auto_peaks );
+
+        // Shrink ROIs to avoid interference from unfit auto-search peaks
+        const double min_fwhm_above = 0.5*config.auto_rel_eff_sol_min_fwhm_roi;
+        const double min_fwhm_below = 0.5*config.auto_rel_eff_sol_min_fwhm_roi;
+        shrink_rois_for_interfering_peaks( refined_rois_and_gammas, unfit_auto_peaks,
+            foreground, fwhm_form, fwhm_coefficients,
             fwhm_lower_energy, fwhm_upper_energy,
-            min_valid_energy, max_valid_energy,
-            auto_settings );
-        
+            config.auto_rel_eff_cluster_num_sigma,
+            min_fwhm_below, min_fwhm_above,
+            orig_foreground->energy_calibration(),
+            foreground->energy_calibration() );
+
+        // Extract just the ROIs for downstream use
+        std::vector<RelActCalcAuto::RoiRange> refined_rois;
+        refined_rois.reserve( refined_rois_and_gammas.size() );
+        for( const std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo> &p : refined_rois_and_gammas )
+          refined_rois.push_back( p.first );
+
         if( refined_rois.empty() )
         {
           // If we lost all ROIs and are not already using a PhysicalModel on the sources
@@ -5346,6 +5985,10 @@ PeakFitResult fit_peaks_for_nuclides(
     }//if( use NORM peaks )
     
     
+    // Compute unfit auto-search peaks for preventing merge of ROIs with interfering peaks between
+    const std::vector<std::shared_ptr<const PeakDef>> local_unfit_auto_peaks
+      = compute_unfit_auto_peaks( auto_search_peaks, user_peaks );
+
     vector<RelActCalcAuto::RoiRange> initial_rois;
     {// Begin combine `source_rois` and `norm_rois`
       // Combine source and NORM ROIs, then merge any that overlap
@@ -5377,7 +6020,7 @@ PeakFitResult fit_peaks_for_nuclides(
         all_roi_infos.push_back( roi_info );
       }//for( const RelActCalcAuto::RoiRange &roi : all_rois )
 
-      initial_rois = merge_rois( all_roi_infos, config );
+      initial_rois = merge_rois( all_roi_infos, config, local_unfit_auto_peaks );
     }// End combine `source_rois` and `norm_rois`
     
     

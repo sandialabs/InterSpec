@@ -167,7 +167,6 @@ struct PeakFitForNuclideConfig
 
   // RelActAuto parameters
   RelActCalcAuto::FwhmForm fwhm_form = RelActCalcAuto::FwhmForm::Berstein_3;
-  double num_sigma_contribution = 1.5;  // Peak area contribution sigma range
   double rel_eff_auto_base_rel_eff_uncert = 0.1;  // BR uncertainty for RelActAuto
 
   // ROI clustering thresholds for auto RelEff refinement stage

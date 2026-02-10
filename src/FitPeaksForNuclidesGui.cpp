@@ -1043,6 +1043,7 @@ void FitPeaksAdvancedWidget::startComputation()
   if( m_cancel_calc )
     m_cancel_calc->store( true );
   m_is_calculating = true;
+  m_resultUpdated.emit();
   m_calc_number += 1;
   std::shared_ptr<std::atomic_bool> cancel_calc = std::make_shared<std::atomic_bool>( false );
   m_cancel_calc = cancel_calc;
