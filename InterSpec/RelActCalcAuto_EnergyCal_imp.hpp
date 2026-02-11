@@ -622,30 +622,87 @@ T find_polynomial_channel( const T energy,
 
     double ch_val = 0.5 * (low + high);
 
-    const double eps = 1.0e-3;
-    double df_dch = (energy_at( ch_val + eps ) - energy_at( ch_val - eps )) / (2.0 * eps);
+    // Compute dE/dch using AD at fixed coefficients/spline nodes.
+    std::vector<T> coeffs_const( coeffs.size(), T(0.0) );
+    for( size_t i = 0; i < coeffs.size(); ++i )
+    {
+      coeffs_const[i] = T( coeffs[i].a );
+      for( size_t d = 0; d < static_cast<size_t>(T::DIMENSION); ++d )
+        coeffs_const[i].v[d] = 0.0;
+    }
 
+    std::vector<CubicSplineNodeT<T>> dev_pair_spline_const( dev_pair_spline.size() );
+    for( size_t i = 0; i < dev_pair_spline.size(); ++i )
+    {
+      dev_pair_spline_const[i].x = dev_pair_spline[i].x;
+      dev_pair_spline_const[i].y = T( dev_pair_spline[i].y.a );
+      dev_pair_spline_const[i].a = T( dev_pair_spline[i].a.a );
+      dev_pair_spline_const[i].b = T( dev_pair_spline[i].b.a );
+      dev_pair_spline_const[i].c = T( dev_pair_spline[i].c.a );
+      for( size_t d = 0; d < static_cast<size_t>(T::DIMENSION); ++d )
+      {
+        dev_pair_spline_const[i].y.v[d] = 0.0;
+        dev_pair_spline_const[i].a.v[d] = 0.0;
+        dev_pair_spline_const[i].b.v[d] = 0.0;
+        dev_pair_spline_const[i].c.v[d] = 0.0;
+      }
+    }
+
+    T ch_probe = T( ch_val );
+    for( size_t d = 0; d < static_cast<size_t>(T::DIMENSION); ++d )
+      ch_probe.v[d] = 0.0;
+    ch_probe.v[0] = 1.0;
+    const T e_probe = polynomial_energy( ch_probe, coeffs_const, dev_pair_spline_const );
+    const double denergy_dch = e_probe.v[0];
+
+    // Calculate the energy, that will have all the derivative information from the paramaters.
+    const T f = polynomial_energy( T(ch_val), coeffs, dev_pair_spline ) - energy;
+    
+    // Now use `dEnergy/dChannel` to propagate the derivative stuff from energy, to the channel values
+    T answer = T( ch_val );
+    if( std::fabs( denergy_dch ) > 1.0e-14 )
+    {
+      for( size_t i = 0; i < static_cast<size_t>(T::DIMENSION); ++i )
+        answer.v[i] = -f.v[i] / denergy_dch;
+    }
 
 #if( PERFORM_DEVELOPER_CHECKS )
+    const double eps = 1.0e-3;
+    const double df_dch_old = (energy_at( ch_val + eps ) - energy_at( ch_val - eps )) / (2.0 * eps);
+
     static int s_logged_small_df_dch = 0;
-    if( (std::fabs( df_dch ) < 1.0e-14) && (s_logged_small_df_dch < 50) )
+    if( (std::fabs( denergy_dch ) < 1.0e-14) && (s_logged_small_df_dch < 50) )
     {
       char buffer[256];
       snprintf( buffer, sizeof(buffer),
-        "find_polynomial_channel: df_dch small (%.3e) at ch=%.6f energy=%.6f",
-        df_dch, ch_val, energy.a );
+        "find_polynomial_channel: denergy_dch small (%.3e) at ch=%.6f energy=%.6f",
+        denergy_dch, ch_val, energy.a );
       log_developer_error( __func__, buffer );
       s_logged_small_df_dch += 1;
     }
+
+    if( (std::fabs( denergy_dch ) > 1.0e-14) && (std::fabs( df_dch_old ) > 1.0e-14) )
+    {
+      static int s_logged_derivative_mismatch = 0;
+      for( size_t i = 0; i < static_cast<size_t>(T::DIMENSION); ++i )
+      {
+        const double deriv_new = -f.v[i] / denergy_dch;
+        const double deriv_old = -f.v[i] / df_dch_old;
+        const double abs_diff = std::fabs( deriv_new - deriv_old );
+        const double rel_diff = abs_diff / (std::max)( 1.0e-12, std::fabs( deriv_old ) );
+        if( (abs_diff > 1.0e-6) && (rel_diff > 1.0e-2) && (s_logged_derivative_mismatch < 100) )
+        {
+          char buffer[320];
+          snprintf( buffer, sizeof(buffer),
+            "find_polynomial_channel: implicit-derivative mismatch dim=%zu old=%.6e new=%.6e dE_dch_old=%.6e dE_dch_new=%.6e",
+            i, deriv_old, deriv_new, df_dch_old, denergy_dch );
+          log_developer_error( __func__, buffer );
+          s_logged_derivative_mismatch += 1;
+        }
+      }
+    }
 #endif
 
-    const T f = polynomial_energy( T(ch_val), coeffs, dev_pair_spline ) - energy;
-    T answer = T( ch_val );
-    if( std::fabs( df_dch ) > 1.0e-14 )
-    {
-      for( size_t i = 0; i < static_cast<size_t>(T::DIMENSION); ++i )
-        answer.v[i] = -f.v[i] / df_dch;
-    }
     return answer;
   }
 }//find_polynomial_channel(...)
@@ -885,30 +942,84 @@ T find_fullrangefraction_channel( const T energy,
 
     double bin_val = 0.5 * (low + high);
 
-    const double eps = 1.0e-3;
-    double df_dch = (energy_at( bin_val + eps ) - energy_at( bin_val - eps )) / (2.0 * eps);
-
-
-#if( PERFORM_DEVELOPER_CHECKS )
-    static int s_logged_small_df_dch = 0;
-    if( (std::fabs( df_dch ) < 1.0e-14) && (s_logged_small_df_dch < 50) )
+    // Compute dE/dbin using AD at fixed coefficients/spline nodes.
+    std::vector<T> coeffs_const( coeffs.size(), T(0.0) );
+    for( size_t i = 0; i < coeffs.size(); ++i )
     {
-      char buffer[256];
-      snprintf( buffer, sizeof(buffer),
-        "find_fullrangefraction_channel: df_dch small (%.3e) at bin=%.6f energy=%.6f",
-        df_dch, bin_val, energy.a );
-      log_developer_error( __func__, buffer );
-      s_logged_small_df_dch += 1;
+      coeffs_const[i] = T( coeffs[i].a );
+      for( size_t d = 0; d < static_cast<size_t>(T::DIMENSION); ++d )
+        coeffs_const[i].v[d] = 0.0;
     }
-#endif
+
+    std::vector<CubicSplineNodeT<T>> dev_pair_spline_const( dev_pair_spline.size() );
+    for( size_t i = 0; i < dev_pair_spline.size(); ++i )
+    {
+      dev_pair_spline_const[i].x = dev_pair_spline[i].x;
+      dev_pair_spline_const[i].y = T( dev_pair_spline[i].y.a );
+      dev_pair_spline_const[i].a = T( dev_pair_spline[i].a.a );
+      dev_pair_spline_const[i].b = T( dev_pair_spline[i].b.a );
+      dev_pair_spline_const[i].c = T( dev_pair_spline[i].c.a );
+      for( size_t d = 0; d < static_cast<size_t>(T::DIMENSION); ++d )
+      {
+        dev_pair_spline_const[i].y.v[d] = 0.0;
+        dev_pair_spline_const[i].a.v[d] = 0.0;
+        dev_pair_spline_const[i].b.v[d] = 0.0;
+        dev_pair_spline_const[i].c.v[d] = 0.0;
+      }
+    }
+
+    T bin_probe = T( bin_val );
+    for( size_t d = 0; d < static_cast<size_t>(T::DIMENSION); ++d )
+      bin_probe.v[d] = 0.0;
+    bin_probe.v[0] = 1.0;
+    const T e_probe = fullrangefraction_energy( bin_probe, coeffs_const, nchannel, dev_pair_spline_const );
+    const double denergy_dbin = e_probe.v[0];
 
     const T f = fullrangefraction_energy( T(bin_val), coeffs, nchannel, dev_pair_spline ) - energy;
     T answer = T( bin_val );
-    if( std::fabs( df_dch ) > 1.0e-14 )
+    if( std::fabs( denergy_dbin ) > 1.0e-14 )
     {
       for( size_t i = 0; i < static_cast<size_t>(T::DIMENSION); ++i )
-        answer.v[i] = -f.v[i] / df_dch;
+        answer.v[i] = -f.v[i] / denergy_dbin;
     }
+
+#if( PERFORM_DEVELOPER_CHECKS )
+    const double eps = 1.0e-3;
+    const double df_dch_old = (energy_at( bin_val + eps ) - energy_at( bin_val - eps )) / (2.0 * eps);
+
+    static int s_logged_small_df_dch = 0;
+    if( (std::fabs( denergy_dbin ) < 1.0e-14) && (s_logged_small_df_dch < 50) )
+    {
+      char buffer[256];
+      snprintf( buffer, sizeof(buffer),
+        "find_fullrangefraction_channel: denergy_dbin small (%.3e) at bin=%.6f energy=%.6f",
+        denergy_dbin, bin_val, energy.a );
+      log_developer_error( __func__, buffer );
+      s_logged_small_df_dch += 1;
+    }
+
+    if( (std::fabs( denergy_dbin ) > 1.0e-14) && (std::fabs( df_dch_old ) > 1.0e-14) )
+    {
+      static int s_logged_derivative_mismatch = 0;
+      for( size_t i = 0; i < static_cast<size_t>(T::DIMENSION); ++i )
+      {
+        const double deriv_new = -f.v[i] / denergy_dbin;
+        const double deriv_old = -f.v[i] / df_dch_old;
+        const double abs_diff = std::fabs( deriv_new - deriv_old );
+        const double rel_diff = abs_diff / (std::max)( 1.0e-12, std::fabs( deriv_old ) );
+        if( (abs_diff > 1.0e-6) && (rel_diff > 1.0e-2) && (s_logged_derivative_mismatch < 100) )
+        {
+          char buffer[320];
+          snprintf( buffer, sizeof(buffer),
+            "find_fullrangefraction_channel: implicit-derivative mismatch dim=%zu old=%.6e new=%.6e dE_dbin_old=%.6e dE_dbin_new=%.6e",
+            i, deriv_old, deriv_new, df_dch_old, denergy_dbin );
+          log_developer_error( __func__, buffer );
+          s_logged_derivative_mismatch += 1;
+        }
+      }
+    }
+#endif
+
     return answer;
   }
 }//find_fullrangefraction_channel(...)
