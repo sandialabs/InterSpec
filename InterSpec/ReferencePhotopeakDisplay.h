@@ -369,12 +369,18 @@ public:
   
   bool showingBetaLines() const;
   void setShowBetaLines( const bool show );
-  
+
+  /** Enables or disables the fit sources button.
+
+   Used by FitPeaksForNuclidesGui to prevent repeated clicks during async operations.
+   Safe to call even if the button has not been created yet.
+   */
+  void setFitSourcesButtonEnabled( bool enabled );
+
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
   void updateFitSourcesButtonState();
-  void startFitSources( const bool from_advanced_dialog );
   void showFitSourcesAdvancedDialog();
   void programmaticallyCloseFitSourcesAdvancedDialog();
   

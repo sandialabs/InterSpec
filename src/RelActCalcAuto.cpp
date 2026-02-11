@@ -1087,7 +1087,8 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
     vector<float> fwhm_paramatersf, uncerts;
     auto peaks_deque = make_shared<deque<shared_ptr<const PeakDef>>>(begin(all_peaks), end(all_peaks));
     MakeDrfFit::performResolutionFit( peaks_deque, form_to_fit, fit_order, fwhm_paramatersf, uncerts );
-      
+    assert( fwhm_paramatersf.size() == static_cast<size_t>(fit_order) );
+
     vector<pair<double,shared_ptr<const PeakDef>>> distances;
     for( const auto &p : *peaks_deque )
     {
@@ -1149,10 +1150,47 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
     fill_in_default_start_fwhm_pars( paramaters, 0, highres, fwhm_form, lowest_energy, highest_energy );
     warnings.push_back( "Failed to estimate FWHM from data: " + string(e.what()) + ".  Using default FWHM parameters." );
   }
-  
+
   vector<float> fwhm_pars_float( paramaters.size() );
   for( size_t i = 0; i < paramaters.size(); ++i )
     fwhm_pars_float[i] = static_cast<float>( paramaters[i] );
+
+  bool valid_whole_range = true;
+  float min_expected_sigma = 1.0E16f, max_expected_sigma = -1.0E16f;
+  const double check_delta_energy = 0.01*(highest_energy - lowest_energy);
+  for( double energy = lowest_energy; valid_whole_range && (energy <= highest_energy); energy += check_delta_energy )
+  {
+    try
+    {
+      const float fwhm = DetectorPeakResponse::peakResolutionFWHM( (float)energy, form_to_fit, fwhm_pars_float );
+      const float sigma = fwhm / PhysicalUnits::fwhm_nsigma;
+
+      float min_sigma, max_sigma;
+      expected_peak_width_limits( energy, highres, nullptr, min_sigma, max_sigma );
+      assert( min_sigma > 0 );
+
+      min_expected_sigma = (std::min)( min_expected_sigma, min_sigma );
+      max_expected_sigma = (std::max)( max_expected_sigma, max_sigma );
+
+      valid_whole_range = (!IsInf(sigma) && !IsNan(sigma) && (sigma >= min_sigma) && (sigma <= max_sigma));
+    }catch( ... )
+    {
+      valid_whole_range = false;
+    }
+  }//for( loop over energy range to check if FWHM fit is reasonable )
+
+  if( !valid_whole_range )
+  {
+    cerr << "Fit FWHM is not valid for the energy range wanted - will just use default." << endl;
+    warnings.push_back( "Failed to estimate FWHM from data: not a large enough span of peaks.  Using default FWHM parameters." );
+    fill_in_default_start_fwhm_pars( paramaters, 0, highres, fwhm_form, lowest_energy, highest_energy );
+    assert( paramaters.size() == fwhm_pars_float.size() );
+    fwhm_pars_float.clear();
+    fwhm_pars_float.resize( paramaters.size(), 0.0f );
+    for( size_t i = 0; i < paramaters.size(); ++i )
+      fwhm_pars_float[i] = static_cast<float>( paramaters[i] );
+  }//if( !valid_whole_range )
+
 
   shared_ptr<DetectorPeakResponse> new_drf;
   if( input_drf )
@@ -1226,6 +1264,57 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
       vector<double> poly_coeffs( begin(paramaters), end(paramaters) );
       paramaters = BersteinPolynomial::power_series_to_bernstein( poly_coeffs.data(), poly_coeffs.size(),
                                                                  lowest_energy/1000.0, highest_energy/1000.0 );
+
+      // Note: The Bernstein coefficients may be outside the y-value range of the initial function - the Bernstein
+      //       coefficients being in a given range is sufficient to say that the function will be within that range,
+      //       but it is not necassary for the Bernstein coefficients to only be in the range of the data.
+
+
+      // For polynomial, we will check if the function is concave up - and if so, reduce the order intil it is not
+      switch( fwhm_form )
+      {
+        case RelActCalcAuto::FwhmForm::Gadras:        case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy:
+        case RelActCalcAuto::FwhmForm::NotApplicable: case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:
+        case RelActCalcAuto::FwhmForm::Polynomial_2:  case RelActCalcAuto::FwhmForm::Berstein_2:
+          break;
+
+        case RelActCalcAuto::FwhmForm::Polynomial_3: case RelActCalcAuto::FwhmForm::Polynomial_4:
+        case RelActCalcAuto::FwhmForm::Polynomial_6: case RelActCalcAuto::FwhmForm::Polynomial_5:
+        case RelActCalcAuto::FwhmForm::Berstein_3:   case RelActCalcAuto::FwhmForm::Berstein_4:
+        case RelActCalcAuto::FwhmForm::Berstein_5:   case RelActCalcAuto::FwhmForm::Berstein_6:
+        {
+          bool paramater_outside = false;
+          for( size_t i = 0; !paramater_outside && (i < paramaters.size()); ++i )
+            paramater_outside = ((paramaters[i] < min_expected_sigma) || (paramaters[i] > max_expected_sigma));
+
+          if( paramater_outside )
+          {
+            // We could try repeatedly reducing the number of coefficients by one each time, but for the moment, we'll
+            //  just gi down to 2.
+            try
+            {
+              vector<float> new_result, new_result_uncerts;
+              auto peaks_deque = make_shared<deque<shared_ptr<const PeakDef>>>(begin(all_peaks), end(all_peaks));
+              MakeDrfFit::performResolutionFit( peaks_deque, form_to_fit, 2, new_result, new_result_uncerts );
+              new_result.resize(fit_order , 0.0f);
+              new_result_uncerts.resize(fit_order , 0.0f);
+
+              poly_coeffs.clear();
+              for( const float v : new_result )
+                poly_coeffs.push_back( v );
+
+              paramaters = BersteinPolynomial::power_series_to_bernstein( poly_coeffs.data(), poly_coeffs.size(),
+                                                                         lowest_energy/1000.0, highest_energy/1000.0 );
+            }catch( std::exception &e )
+            {
+              cout << "Failed to try and refit FWHM to keep the Bernstein coefficients in a reasonable range: " << e.what() << endl;
+            }
+          }//if( paramater_outside )
+
+          break;
+        }
+      }//switch( fwhm_form )
+
       paramaters.push_back( lowest_energy );
       paramaters.push_back( highest_energy );
       break;
@@ -3664,9 +3753,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           {
             const bool html_format = false;
             rel_eff_eqn_str = manual_solution.rel_eff_eqn_txt( html_format );
-            
-            parameters[this_rel_eff_start + 0] = 0.0;  //Atomic number
-            parameters[this_rel_eff_start + 1] = 0.0;  //Areal density
 
             size_t manual_index = 0;
             if( rel_eff_curve.phys_model_self_atten )
@@ -3678,7 +3764,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
                 parameters[this_rel_eff_start + 0] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index); //Atomic number; note both manual and auto RelEff use RelActCalc::ns_an_ceres_mult
                 manual_index += 1;
-              }
+              }else
+              {
+                if( !self_atten.material )
+                {
+                  assert( fabs( parameters[this_rel_eff_start + 0] - (self_atten.atomic_number / RelActCalc::ns_an_ceres_mult) ) < 0.01 );  //Atomic number
+                  parameters[this_rel_eff_start + 0] = self_atten.atomic_number / RelActCalc::ns_an_ceres_mult;
+                }
+              }//if( self_atten.fit_atomic_number ) / else
 
               const int ad_index = static_cast<int>( this_rel_eff_start + 1 );
 
@@ -3710,10 +3803,21 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 }
 
                 initial_par_vals_to_restore_after_initial_fit.emplace_back( ad_index, parameters[ad_index] );
-              }//if( rel_eff_curve.phys_model_self_atten->fit_areal_density )
+              }else
+              {
+                const double ad = self_atten.areal_density / PhysicalUnits::g_per_cm2;
+                assert( fabs(parameters[ad_index] - ad) < 0.1 );  //Areal density
+                parameters[ad_index] = ad; //JIC
+              }//if( rel_eff_curve.phys_model_self_atten->fit_areal_density ) / else
 
               manual_index += 1;
-            }//if( options.phys_model_self_atten )
+            }else
+            {
+              assert( parameters[this_rel_eff_start + 0] == 0.0 );  //Atomic number
+              assert( parameters[this_rel_eff_start + 1] == 0.0 );  //Areal density
+              parameters[this_rel_eff_start + 0] = 0.0;  //Atomic number, JIC
+              parameters[this_rel_eff_start + 1] = 0.0;  //Areal density, JIC
+            }//if( options.phys_model_self_atten ) / else
 
             for( size_t i = 0; i < rel_eff_curve.phys_model_external_atten.size(); ++i )
             {
@@ -3730,13 +3834,25 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 continue;
               }
 
+              const int an_par_index = static_cast<int>( this_rel_eff_start + 2 + 2*i + 0 );
+
               if( ext_att->fit_atomic_number )
               {
                 assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
-                parameters[this_rel_eff_start + 2 + 2*i + 0] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
+                parameters[an_par_index] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
                 manual_index += 1;
-              }
-                
+              }else
+              {
+                if( !ext_att->material )
+                {
+                  assert( fabs( parameters[an_par_index] - (ext_att->atomic_number / RelActCalc::ns_an_ceres_mult) ) < 0.01 );  //Atomic number
+                  parameters[an_par_index] = ext_att->atomic_number / RelActCalc::ns_an_ceres_mult; //JIC
+                }else
+                {
+                  assert( parameters[an_par_index] == 0.0 );  //Atomic number
+                }
+              }//if( ext_att->fit_atomic_number ) / else
+
               assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
               const int ad_par_index = static_cast<int>( this_rel_eff_start + 2 + 2*i + 1 );
               double ad_par = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
@@ -3768,6 +3884,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 // For an example problem, it looks like we dont want to go back to starting paramters after initial fit
                 //if( rel_eff_curve.phys_model_self_atten && rel_eff_curve.phys_model_self_atten->fit_areal_density )
                   //initial_par_vals_to_restore_after_initial_fit.emplace_back( ad_par_index, ad_par );
+              }else
+              {
+                const double ad = ext_att->areal_density / PhysicalUnits::g_per_cm2;
+                assert( fabs(parameters[ad_par_index] - ad) < 0.1 );  //Areal density
+                parameters[ad_par_index] = ad; //JIC
               }//if( ext_att->fit_areal_density )
 
               parameters[ad_par_index] = ad_par;
@@ -5795,13 +5916,16 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     // If we are fitting the energy cal, we need to adjust the ROI ranges to the spectrum cal
     solution.m_final_roi_ranges_in_spectrum_cal.clear();
+    const RelActCalcAutoImp::CachedEnergyCalSplines<double> roi_splines
+      = cost_functor->compute_energy_cal_splines( parameters );
+    
     for( const RelActCalcAutoImp::RoiRangeChannels &roi : cost_functor->m_energy_ranges )
     {
       RelActCalcAuto::RoiRange roi_range = roi;
       if( fit_energy_cal )
       {
-        roi_range.lower_energy = cost_functor->apply_energy_cal_adjustment( roi_range.lower_energy, parameters );
-        roi_range.upper_energy = cost_functor->apply_energy_cal_adjustment( roi_range.upper_energy, parameters ); 
+        roi_range.lower_energy = cost_functor->apply_energy_cal_adjustment( roi_range.lower_energy, parameters, roi_splines );
+        roi_range.upper_energy = cost_functor->apply_energy_cal_adjustment( roi_range.upper_energy, parameters, roi_splines );
       } 
 
       solution.m_final_roi_ranges_in_spectrum_cal.push_back( roi_range );
@@ -6523,11 +6647,15 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           assert( upper_en_val > -500.0 );//should NOT have value -999.9
           
           const T val = lower_en_val + mean_frac*(upper_en_val - lower_en_val);
+          check_jet_for_NaN( val );
+          
           peak.set_coefficient( val, ct );
         }else
         {
           assert( x[skew_start + num_skew + i] < -500.0 ); //should have value -999.9, unless being numerically varies
           const T val = x[skew_start + i];
+          check_jet_for_NaN( val );
+          
           peak.set_coefficient( val, ct );
         }
       }
@@ -6538,6 +6666,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         assert( x[skew_start + num_skew + i] < -500.0 ); //should have value -999.9
         const auto ct = PeakDef::CoefficientType(PeakDef::CoefficientType::SkewPar0 + i);
         const T val = x[skew_start + i];
+        check_jet_for_NaN( val );
+        
         peak.set_coefficient( val, ct );
       }
     }//if( m_skew_has_energy_dependance )
@@ -7639,6 +7769,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       if( !atten.material )
       {
         atten.atomic_number = coeffs[rel_eff_start + 0] * RelActCalc::ns_an_ceres_mult;
+
+        if( !rel_eff_curve.phys_model_self_atten->fit_atomic_number )
+        {
+          assert( abs(atten.atomic_number - rel_eff_curve.phys_model_self_atten->atomic_number) < 0.1 );
+          atten.atomic_number = T(1.0*rel_eff_curve.phys_model_self_atten->atomic_number);
+        }
+
         assert( (atten.atomic_number >= 1.0) && (atten.atomic_number <= 98.0) );
         if( (atten.atomic_number < 1.0) || (atten.atomic_number > 98.0) )
           throw std::logic_error( "make_phys_eqn_input: whack self-atten AN" );
@@ -8018,11 +8155,65 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   }//apply_fitted_deviation_pairs(...)
 */
 
-  /** Translates from a "true" energy (e.g., that of a gamma, or ROI bounds), to the energy
-   of m_energy_cal.
+  /** Pre-computes the cubic spline nodes needed for energy calibration adjustments.
+   
+   When m_options.energy_cal_type == NonLinearFit and deviation pair anchors are present,
+   apply_energy_cal_adjustment() must build two cubic splines on every call.  This function
+   computes both splines once so the result can be passed to apply_energy_cal_adjustment()
+   as a cache, avoiding redundant work when the function is called many times with the same
+   parameter vector x (e.g. once per gamma line inside peaks_for_energy_range_imp).
+   
+   Returns a CachedEnergyCalSplines<T> with both splines populated.
+   If deviation pairs are not used (e.g. NoFit or no anchors), both spline vectors are empty.
    */
   template<typename T>
-  T apply_energy_cal_adjustment( double energy, const std::vector<T> &x ) const
+  RelActCalcAutoImp::CachedEnergyCalSplines<T> compute_energy_cal_splines( const std::vector<T> &x ) const
+  {
+    RelActCalcAutoImp::CachedEnergyCalSplines<T> cache;
+
+    const bool using_paramaterized_deviations = ((m_options.energy_cal_type == RelActCalcAuto::EnergyCalFitType::NonLinearFit)
+                                                  && !m_dev_pair_anchors.empty());
+    if( !using_paramaterized_deviations )
+      return cache;  // empty splines — apply_energy_cal_adjustment will skip spline logic
+
+    // Build original deviation pairs spline
+    const auto &orig_dev_ref = m_energy_cal->deviation_pairs();
+    if( !orig_dev_ref.empty() )
+    {
+      std::vector<std::pair<double,T>> orig_dev_pairs;
+      orig_dev_pairs.reserve( orig_dev_ref.size() );
+      for( const auto &p : orig_dev_ref )
+        orig_dev_pairs.emplace_back( static_cast<double>(p.first), T( static_cast<double>(p.second) ) );
+      cache.orig_dev_spline = RelActCalcAutoImp::create_cubic_spline( orig_dev_pairs );
+    }
+
+    // Build adjusted deviation pairs spline
+    std::vector<std::pair<double,T>> adjusted_dev_pairs;
+    adjusted_dev_pairs.reserve( m_dev_pair_anchors.size() );
+    for( const RelActCalcAutoImp::DeviationPairAnchor &anchor : m_dev_pair_anchors )
+    {
+      const T offset = anchor.is_fitted
+        ? (x[m_dev_pair_par_start_index + anchor.param_index] + T(anchor.initial_offset))
+        : T(anchor.initial_offset);
+      adjusted_dev_pairs.emplace_back( anchor.anchor_energy, offset );
+    }
+    if( !adjusted_dev_pairs.empty() )
+      cache.adjusted_dev_spline = RelActCalcAutoImp::create_cubic_spline( adjusted_dev_pairs );
+
+    return cache;
+  }//compute_energy_cal_splines(...)
+
+
+  /** Translates from a "true" energy (e.g., that of a gamma, or ROI bounds), to the energy
+   of m_energy_cal.
+   
+   @param cached_splines  Pre-computed spline nodes (from compute_energy_cal_splines()).
+                          Avoids rebuilding the cubic splines on every call, which is the main
+                          CPU cost when NonLinearFit deviation pairs are active.
+   */
+  template<typename T>
+  T apply_energy_cal_adjustment( double energy, const std::vector<T> &x,
+                                 const RelActCalcAutoImp::CachedEnergyCalSplines<T> &cached_splines ) const
   {
     assert( x.size() > (RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars + m_num_fitted_dev_pair_params) );
     assert( 0 == m_energy_cal_par_start_index );
@@ -8096,30 +8287,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     const size_t nchannel = m_energy_cal->num_channels();
     const double num_channel = static_cast<double>( nchannel );
 
-    std::vector<std::pair<double,T>> orig_dev_pairs;
-    const auto &orig_dev_ref = m_energy_cal->deviation_pairs();
-    orig_dev_pairs.reserve( orig_dev_ref.size() );
-    for( const auto &p : orig_dev_ref )
-      orig_dev_pairs.emplace_back( static_cast<double>(p.first), T( static_cast<double>(p.second) ) );
-    const std::vector<CubicSplineNodeT<T>> orig_dev_spline =
-      orig_dev_pairs.empty() ? std::vector<CubicSplineNodeT<T>>{} : create_cubic_spline( orig_dev_pairs );
-
-    // Build adjusted calibration deviation pairs (for inverse: true -> channel).
-    std::vector<std::pair<double,T>> adjusted_dev_pairs;
-    if( using_paramaterized_deviations )
-    {
-      adjusted_dev_pairs.reserve( m_dev_pair_anchors.size() );
-      for( const DeviationPairAnchor &anchor : m_dev_pair_anchors )
-      {
-        const T offset = anchor.is_fitted
-          ? (x[m_dev_pair_par_start_index + anchor.param_index] + T(anchor.initial_offset))
-          : T(anchor.initial_offset);
-        adjusted_dev_pairs.emplace_back( anchor.anchor_energy, offset );
-      }
-    }else
-    {
-      adjusted_dev_pairs = orig_dev_pairs;
-    }
+    const std::vector<CubicSplineNodeT<T>> &orig_dev_spline     = cached_splines.orig_dev_spline;
+    const std::vector<CubicSplineNodeT<T>> &adjusted_dev_spline = cached_splines.adjusted_dev_spline;
 
     switch( m_energy_cal->type() )
     {
@@ -8140,7 +8309,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             adj_coefs.push_back( quad_adj / (num_channel*num_channel) );
         }
 
-        const T channel = find_polynomial_channel( T(energy), adj_coefs, nchannel, adjusted_dev_pairs );
+        const T channel = find_polynomial_channel( T(energy), adj_coefs, nchannel, adjusted_dev_spline );
 
         vector<T> ocoefs( orig_coeffs.size() );
         for( size_t i = 0; i < orig_coeffs.size(); ++i )
@@ -8175,7 +8344,21 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             s_logged_zero_channel_derivative += 1;
             assert( 0 );
           }
-        
+        }
+
+        double max_dev_offset = 0.0;
+        for( const auto &node : adjusted_dev_spline )
+        {
+          double offset_val = 0.0;
+          if constexpr ( std::is_same_v<T, double> )
+            offset_val = node.y;
+          else
+            offset_val = node.y.a;
+          max_dev_offset = std::max( max_dev_offset, std::fabs( offset_val ) );
+        }
+
+        if constexpr ( !std::is_same_v<T, double> )
+        {
           bool dev_pair_deriv_active = using_paramaterized_deviations;
           if( using_paramaterized_deviations )
           {
@@ -8197,10 +8380,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             static int s_logged_energy_out_of_range = 0;
             if( dev_pair_deriv_active && (s_logged_energy_out_of_range < 50) )
             {
-              const std::vector<CubicSplineNodeT<T>> adj_dev_spline =
-                adjusted_dev_pairs.empty() ? std::vector<CubicSplineNodeT<T>>{} : create_cubic_spline( adjusted_dev_pairs );
-              const T e_low = polynomial_energy( T(0.0), adj_coefs, adj_dev_spline );
-              const T e_high = polynomial_energy( T(static_cast<double>(nchannel - 1)), adj_coefs, adj_dev_spline );
+              const T e_low = polynomial_energy( T(0.0), adj_coefs, adjusted_dev_spline );
+              const T e_high = polynomial_energy( T(static_cast<double>(nchannel - 1)), adj_coefs, adjusted_dev_spline );
               const double e_low_val = e_low.a;
               const double e_high_val = e_high.a;
               if( (energy < std::min( e_low_val, e_high_val )) || (energy > std::max( e_low_val, e_high_val )) )
@@ -8219,8 +8400,87 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           double max_derivative = 0.0;
           for( size_t i = 0; i < sm_auto_diff_stride_size; ++i )
             max_derivative = std::max( max_derivative, std::fabs( val.v[i] ) );
+          
+          // Check if the deviation pair anchors that affect this energy have active derivatives
+          bool local_dev_pair_deriv_active = false;
+          if( dev_pair_deriv_active && !m_dev_pair_anchors.empty() )
+          {
+            // Find the anchors that bracket this energy (for cubic spline interpolation)
+            // An energy is primarily affected by its two adjacent anchor points
+            const size_t num_anchors = m_dev_pair_anchors.size();
+            
+            // Find the lower bound anchor (first anchor with energy >= current energy)
+            size_t upper_idx = 0;
+            for( size_t i = 0; i < num_anchors; ++i )
+            {
+              if( m_dev_pair_anchors[i].anchor_energy >= energy )
+              {
+                upper_idx = i;
+                break;
+              }
+              if( i == num_anchors - 1 )
+                upper_idx = num_anchors; // Energy is beyond all anchors
+            }
+            
+            // Check if the relevant adjacent anchors have active derivatives
+            if( upper_idx > 0 && upper_idx < num_anchors )
+            {
+              // Energy is between two anchors - check both
+              const DeviationPairAnchor &lower_anchor = m_dev_pair_anchors[upper_idx - 1];
+              const DeviationPairAnchor &upper_anchor = m_dev_pair_anchors[upper_idx];
+              
+              if( lower_anchor.is_fitted || upper_anchor.is_fitted )
+              {
+                double local_max_deriv = 0.0;
+                if( lower_anchor.is_fitted )
+                {
+                  const size_t par_index = m_dev_pair_par_start_index + lower_anchor.param_index;
+                  const T &par = x[par_index];
+                  for( size_t i = 0; i < sm_auto_diff_stride_size; ++i )
+                    local_max_deriv = std::max( local_max_deriv, std::fabs( par.v[i] ) );
+                }
+                if( upper_anchor.is_fitted )
+                {
+                  const size_t par_index = m_dev_pair_par_start_index + upper_anchor.param_index;
+                  const T &par = x[par_index];
+                  for( size_t i = 0; i < sm_auto_diff_stride_size; ++i )
+                    local_max_deriv = std::max( local_max_deriv, std::fabs( par.v[i] ) );
+                }
+                local_dev_pair_deriv_active = (local_max_deriv > 1.0e-16);
+              }
+            }
+            else if( upper_idx == 0 )
+            {
+              // Energy is before all anchors - primarily affected by first anchor
+              const DeviationPairAnchor &first_anchor = m_dev_pair_anchors[0];
+              if( first_anchor.is_fitted )
+              {
+                const size_t par_index = m_dev_pair_par_start_index + first_anchor.param_index;
+                const T &par = x[par_index];
+                double local_max_deriv = 0.0;
+                for( size_t i = 0; i < sm_auto_diff_stride_size; ++i )
+                  local_max_deriv = std::max( local_max_deriv, std::fabs( par.v[i] ) );
+                local_dev_pair_deriv_active = (local_max_deriv > 1.0e-16);
+              }
+            }
+            else // upper_idx >= num_anchors
+            {
+              // Energy is beyond all anchors - primarily affected by last anchor
+              const DeviationPairAnchor &last_anchor = m_dev_pair_anchors[num_anchors - 1];
+              if( last_anchor.is_fitted )
+              {
+                const size_t par_index = m_dev_pair_par_start_index + last_anchor.param_index;
+                const T &par = x[par_index];
+                double local_max_deriv = 0.0;
+                for( size_t i = 0; i < sm_auto_diff_stride_size; ++i )
+                  local_max_deriv = std::max( local_max_deriv, std::fabs( par.v[i] ) );
+                local_dev_pair_deriv_active = (local_max_deriv > 1.0e-16);
+              }
+            }
+          }
+          
           static int s_logged_zero_derivative = 0;
-          if( dev_pair_deriv_active && (max_derivative < 1.0e-12) && (s_logged_zero_derivative < 100) )
+          if( local_dev_pair_deriv_active && (max_derivative < 1.0e-12) && (s_logged_zero_derivative < 100) )
           {
             char buffer[256];
             snprintf( buffer, sizeof(buffer),
@@ -8254,7 +8514,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             adj_coefs.push_back( quad_adj );
         }
 
-        const T channel = find_fullrangefraction_channel( T(energy), adj_coefs, nchannel, adjusted_dev_pairs );
+        const T channel = find_fullrangefraction_channel( T(energy), adj_coefs, nchannel, adjusted_dev_spline );
 
         vector<T> ocoefs( orig_coeffs.size() );
         for( size_t i = 0; i < orig_coeffs.size(); ++i )
@@ -8268,7 +8528,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         assert( quad_adj == T(0.0) );
         assert( m_energy_cal->channel_energies() && !m_energy_cal->channel_energies()->empty() );
         const std::vector<float> &ch_energies = *m_energy_cal->channel_energies();
-        const T channel = find_lowerchannel_channel( T(energy), ch_energies, adjusted_dev_pairs, offest_adj, gain_adj );
+        const T channel = find_lowerchannel_channel( T(energy), ch_energies, adjusted_dev_spline, offest_adj, gain_adj );
 
         double ch_val;
         if constexpr ( std::is_same_v<T, double> )
@@ -8484,14 +8744,15 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   template<typename T>
   RelActCalcAuto::PeaksForEnergyRangeImp<T> peaks_for_energy_range_imp( const RoiRangeChannels &range,
                                                        const std::vector<T> &x,
+                                                       const RelActCalcAutoImp::CachedEnergyCalSplines<T> &cached_splines,
                                                        const bool multithread ) const
   {
     const size_t num_channels = range.num_channels;
-    
+
     // We will use "adjusted" to refer to energies that have been mapped into the spectrums original
     //  energy calibrations
-    const T adjusted_lower_energy = apply_energy_cal_adjustment( range.lower_energy, x );
-    const T adjusted_upper_energy = apply_energy_cal_adjustment( range.upper_energy, x );
+    const T adjusted_lower_energy = apply_energy_cal_adjustment( range.lower_energy, x, cached_splines );
+    const T adjusted_upper_energy = apply_energy_cal_adjustment( range.upper_energy, x, cached_splines );
     
     // TODO: Check this conversion from `Jet<>` to double doesnt mess anything up - I *think* this is _fine_...
     pair<size_t,size_t> channel_range;
@@ -8855,10 +9116,17 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             }//if( is_fixed_age(src_info.nuclide, rel_eff_index) )
           }//if( !std::is_same_v<T, double> )          
 
-          const T peak_mean = apply_energy_cal_adjustment( gamma.energy, x );
+          const T peak_mean = apply_energy_cal_adjustment( gamma.energy, x, cached_splines );
           const T peak_amplitude = rel_act * static_cast<double>(m_live_time) * rel_eff * yield * br_uncert_adj;
           const T peak_fwhm = fwhm( T(gamma.energy), x );
 
+          check_jet_for_NaN( rel_act );
+          check_jet_for_NaN( rel_eff );
+          check_jet_for_NaN( yield );
+          check_jet_for_NaN( br_uncert_adj );
+          check_jet_for_NaN( peak_amplitude );
+          check_jet_for_NaN( peak_mean );
+          check_jet_for_NaN( peak_fwhm );
 
           RelActCalcAuto::PeakDefImp<T> peak;
           peak.m_mean = peak_mean;
@@ -8917,6 +9185,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 skew_tau = peak.m_skew_pars[1];
               }
 
+              check_jet_for_NaN( skew_R );
+              check_jet_for_NaN( skew_tau );
+              
               peak.setSkewType( PeakDef::SkewType::VoigtPlusBortel );
               // VoigtPlusBortel uses: skew_pars[0]=gamma_lor (Lorentzian HWHM),
               //                       skew_pars[1]=R, skew_pars[2]=tau
@@ -8971,7 +9242,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       T peak_mean( peak.energy );
       if( peak.apply_energy_cal_correction )
-        peak_mean = apply_energy_cal_adjustment( peak.energy, x );
+        peak_mean = apply_energy_cal_adjustment( peak.energy, x, cached_splines );
       
       if( isinf(peak_mean) || isnan(peak_mean) )
         throw runtime_error( "peaks_for_energy_range_imp: inf or NaN peak mean for "
@@ -8986,6 +9257,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       assert( peak.release_fwhm || (abs(x[fwhm_index] + 1.0) < 1.0E-5) );
       
       num_free_peak_pars += peak.release_fwhm;
+      
+      check_jet_for_NaN( peak_mean );
+      check_jet_for_NaN( peak_fwhm );
+      check_jet_for_NaN( peak_amp );
       
       //cout << "peaks_for_energy_range_imp: free peak at " << peak.energy << " has a FWHM=" << peak_fwhm << " and AMP=" << peak_amp << endl;
       RelActCalcAuto::PeakDefImp<T> imp_peak;
@@ -9156,8 +9431,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   {
     typedef ceres::Jet<double,RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size> Jet;
     
+    
+    const RelActCalcAutoImp::CachedEnergyCalSplines<double> deviation_splines = compute_energy_cal_splines( x );
+    
     // `computed_peaks` will include free-floating peaks
-    RelActCalcAuto::PeaksForEnergyRangeImp<double> computed_peaks = peaks_for_energy_range_imp( range, x, true );
+    RelActCalcAuto::PeaksForEnergyRangeImp<double> computed_peaks = peaks_for_energy_range_imp( range, x, deviation_splines, true );
 
     // Compute uncertainties if covariance is provided and valid
     vector<vector<double>> peak_uncertainties; // [peak_index][param_index] where param_index: 0=mean, 1=sigma, 2=amplitude, 3+=skew_pars
@@ -9177,7 +9455,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size) && (i+j < num_par); ++j )
           x_local[i+j].v[j] = 1.0;
         
-        RelActCalcAuto::PeaksForEnergyRangeImp<Jet> computed_peaks_jet = peaks_for_energy_range_imp( range, x_local, true );
+        const RelActCalcAutoImp::CachedEnergyCalSplines<Jet> local_jet_dev_splines = compute_energy_cal_splines( x_local );
+        
+        RelActCalcAuto::PeaksForEnergyRangeImp<Jet> computed_peaks_jet = peaks_for_energy_range_imp( range, x_local, local_jet_dev_splines, true );
         
         // Store jacobians for each peak parameter
         for( size_t peak_idx = 0; peak_idx < num_peaks && peak_idx < computed_peaks_jet.peaks.size(); ++peak_idx )
@@ -9311,11 +9591,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         if( nuc_info && !nuc_info->peak_color_css.empty() )
           peak.setLineColor( Wt::WColor( Wt::WString::fromUTF8(nuc_info->peak_color_css) ) );
       }//if( comp_peak.m_rel_eff_index < m_nuclides.size() )
-      
-      // Put in a way to label the peak with the relative efficiency index, so we can tell which
-      //  relative efficiency curve the peak came from, if there are multiple.
-      if( m_nuclides.size() > 1 )
-        peak.setUserLabel( "RelEff " + std::to_string(comp_peak.m_rel_eff_index) );
 
       answer.peaks.push_back( peak );
     }//for( size_t i = 0; i < computed_peaks.peaks.size(); ++i )
@@ -9371,6 +9646,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     vector<RelActCalcAuto::PeaksForEnergyRangeImp<T>> peaks_in_ranges_imp( m_energy_ranges.size() );
 
+    const RelActCalcAutoImp::CachedEnergyCalSplines<T> energy_deviation_splines = compute_energy_cal_splines( x );
+    
     // TODO: multi-thread computation needs to be looked at more hollistically, both here and in `PeakFit::fit_continuum(...)`, and possibly in peaks_for_energy_range_imp
     const bool multhread_each_roi = (m_energy_ranges.size() < 6);
     
@@ -9385,10 +9662,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     for( size_t i = 0; i < num_energy_ranges; ++i )
     {
       boost::asio::post( m_pool,
-                        [i,&peaks_in_ranges_imp,this,&x,multhread_each_roi,&cv,&cv_mutex,&tasks_completed,&exception_msg](){
+                        [i,&peaks_in_ranges_imp,this,&x,multhread_each_roi,&cv,&cv_mutex,&tasks_completed,&exception_msg,&energy_deviation_splines](){
         try
         {
-          peaks_in_ranges_imp[i] = peaks_for_energy_range_imp( m_energy_ranges[i], x, multhread_each_roi );
+          peaks_in_ranges_imp[i] = peaks_for_energy_range_imp( m_energy_ranges[i], x, energy_deviation_splines, multhread_each_roi );
         }catch( std::exception &e )
         {
           std::lock_guard<std::mutex> lock(cv_mutex);
@@ -9462,7 +9739,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         assert( !isnan(this_residual[index]) && !isinf(this_residual[index]) );
       }
     }//for( loop over m_energy_ranges )
-    
 
     for( size_t rel_eff_index = 0; rel_eff_index < m_options.rel_eff_curves.size(); ++rel_eff_index )
     {
@@ -9470,9 +9746,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       if( rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
       {
-        assert( rel_eff_index
-               || ((residual_index + m_options.rel_eff_curves.size() + m_peak_ranges_with_uncert.size()) == number_residuals()) );
-
+#ifndef NDEBUG
+        const size_t nresiduals = number_residuals();
+        const size_t calced_nresiduals = residual_index + m_peak_ranges_with_uncert.size() + 1;
+        assert( (rel_eff_index != (m_options.rel_eff_curves.size() - 1)) || (calced_nresiduals == nresiduals) );
+#endif
         // Note: see `USE_RESIDUAL_TO_BREAK_DEGENERACY` in the manual solution for a slight amount more info
         //
         // Now make sure the relative efficiency curve is anchored to 1.0 (this removes the degeneracy
@@ -9506,7 +9784,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         ++residual_index;
       }//if( m_options.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
     }//for( size_t rel_eff_index = 0; rel_eff_index < m_options.rel_eff_curves.size(); ++rel_eff_index )
-    
+
     if( !m_peak_ranges_with_uncert.empty() )
     {
       assert( m_options.additional_br_uncert > 0.0 );
@@ -13275,10 +13553,32 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
   "<th scope=\"col\">Cont. Range</th>"
   "</tr></thead>\n";
   results_html << "  <tbody>\n";
-    
- 
-  for( const PeakDef &info : m_fit_peaks )
+
+
+  vector<pair<PeakDef,size_t>> peak_rel_eff;
+  for( size_t rel_eff_index = 0; rel_eff_index < m_fit_peaks_for_each_curve.size(); ++rel_eff_index )
   {
+    for( const PeakDef &p : m_fit_peaks_for_each_curve[rel_eff_index] )
+      peak_rel_eff.emplace_back( p, rel_eff_index );
+  }
+
+  // Now grab the free-floating peaks; we will just assign them releff index 0 for the moment
+  for( const PeakDef &peak : m_fit_peaks )
+  {
+    if( !peak.parentNuclide() && !peak.xrayElement() && !peak.reaction() )
+      peak_rel_eff.emplace_back( peak, size_t(0) );
+  }
+
+  std::sort( begin(peak_rel_eff), end(peak_rel_eff), []( const pair<PeakDef,size_t> &lhs, const pair<PeakDef,size_t> &rhs ) -> bool {
+    return lhs.first.mean() < rhs.first.mean();
+  } );
+
+
+  for( const pair<PeakDef,size_t> &peak_index : peak_rel_eff )
+  {
+    const PeakDef &info = peak_index.first;
+    const int rel_eff_index = static_cast<int>(peak_index.second);
+
     const double energy = info.mean();
     SrcVariant peak_src;
     const SandiaDecay::Nuclide * const nuc = info.parentNuclide();
@@ -13336,28 +13636,9 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
                  info.continuum()->upperEnergy()
                  );
       results_html << buffer;
-      continue; // Move to next peak
-
 
       continue; // Skip free-floating peaks
-    }
-
-    int rel_eff_index = 0;
-    if( have_multiple_rel_eff )
-    {
-      string label = info.userLabel();
-      const bool is_rel_eff_label = SpecUtils::istarts_with( label, "RelEff " );
-      assert( is_rel_eff_label );
-      if( is_rel_eff_label )
-      {
-        label = label.substr(7);
-        const bool ok = SpecUtils::parse_int( label.c_str(), label.size(), rel_eff_index );
-        assert( ok );
-        assert( rel_eff_index >= 0 && rel_eff_index < static_cast<int>(m_rel_eff_forms.size()) );
-        if( rel_eff_index < 0 || rel_eff_index >= static_cast<int>(m_rel_eff_forms.size()) )
-          rel_eff_index = 0;
-      }
-    }//if( have_multiple_rel_eff )
+    }//if( is_null(peak_src) )
 
     assert( (rel_eff_index >= 0) && (rel_eff_index < static_cast<int>(m_rel_eff_forms.size())) );
     const RelEffCurveInput &rel_eff = m_options.rel_eff_curves[rel_eff_index];

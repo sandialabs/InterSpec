@@ -50,6 +50,11 @@ namespace rapidxml
 class MaterialDB;
 class DetectorPeakResponse;
 
+namespace ReferenceLinePredef
+{
+  struct NucMix;
+}
+
 enum class OtherRefLineType
 {
   U238Series,    //"U238 series"
@@ -451,6 +456,11 @@ struct ReferenceLineInfo
    */
   std::set<const ReactionGamma::Reaction *> m_reactions;
   
+  /* The nuclide mixture information
+   
+   non-empty only if m_source_type==SourceType::NuclideMixture.
+   */
+  const ReferenceLinePredef::NucMix *m_nuc_mix;
   
   ReferenceLineInfo();
   void reset();

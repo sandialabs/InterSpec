@@ -251,6 +251,14 @@ struct NucInputInfo
   /** Energy corresponding to SandiaDecay::EnergyRatePair::energy, or equivalent for x-ray or reactions. */
   std::vector<double> gammas_to_exclude;
   
+  /** CSS color string (e.g. "rgb(255,0,0)") for this source's peaks.
+   
+   Must be set for relative efficiency chart data points to render correctly: RelActCalcAuto uses
+   this to set PeakDef::lineColor() on the internally-fit free-amplitude peaks stored in
+   RelActAutoSolution::m_obs_eff_for_each_curve, and RelEffChart::jsonForData() uses those peak
+   colors to populate the relActsColors map — without which src_counts comes out zero and data
+   points are silently skipped.
+   **/
   std::string peak_color_css;
   
   const std::string name() const;
@@ -991,7 +999,10 @@ struct RelActAutoSolution
   
   std::shared_ptr<const RelActCalcAutoImp::RelActAutoCostFcn> m_cost_functor;
   
+  /** The original foreground passed into `solve_ceres(...)`. */
   std::shared_ptr<const SpecUtils::Measurement> m_foreground;
+  
+  /** The original background passed into `solve_ceres(...)`. */
   std::shared_ptr<const SpecUtils::Measurement> m_background;
   
   /** The final fit parameters. */

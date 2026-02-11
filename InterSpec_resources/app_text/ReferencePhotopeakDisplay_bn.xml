@@ -88,24 +88,6 @@
   <message id="rpd-fit-sources-menu-auto">স্বয়ংক্রিয়</message>
   <message id="rpd-fit-sources-menu-advanced">উন্নত</message>
   
-  <message id="rpd-fit-sources-adv-title">উৎস ফিট করুন (উন্নত)</message>
-  <message id="rpd-fit-sources-adv-content">উন্নত বিকল্পগুলি বাস্তবায়িত হয়নি</message>
-  <message id="rpd-fit-peaks">পিক ফিট করুন</message>
-  
-  <message id="rpd-fit-sources-no-data">পিক ফিট করার জন্য কোন ফোরগ্রাউন্ড স্পেকট্রাম নেই।</message>
-  <message id="rpd-fit-sources-wait-title">পিক ফিট করা হচ্ছে</message>
-  <message id="rpd-fit-sources-wait-content">এতে এক মিনিট সময় লাগতে পারে। আপনি অ্যাপ্লিকেশন ব্যবহার চালিয়ে যেতে পারেন।</message>
-  <message id="rpd-fit-sources-stale">ফিট সম্পূর্ণ হওয়ার আগে স্পেকট্রাম পরিবর্তিত হয়েছে; ফলাফল বাতিল করা হচ্ছে।</message>
-  
-  <message id="rpd-fit-sources-error-title">ফিট ব্যর্থ</message>
-  <message id="rpd-fit-sources-error-content">ত্রুটি: {1}</message>
-  
-  <message id="rpd-fit-sources-result-title">ফিট ফলাফল</message>
-  <message id="rpd-fit-sources-no-peaks">নির্বাচিত উৎস(গুলি) এর জন্য কোন পিক ফিট করা হয়নি।</message>
-  <message id="rpd-fit-sources-summary">{2}টি উৎস(গুলি) এর জন্য {1}টি পিক ফিট করা হয়েছে।</message>
-  <message id="rpd-fit-sources-warnings-header">সতর্কতা:</message>
-  <message id="rpd-fit-sources-auto-accept">ফিট ফলাফল স্বয়ংক্রিয়ভাবে গ্রহণ করুন</message>
-  <message id="rpd-fit-sources-auto-accepted">ফিট ফলাফল স্বয়ংক্রিয়ভাবে গ্রহণ করা হয়েছে।</message>
 
 
 </messages>

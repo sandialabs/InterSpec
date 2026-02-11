@@ -38,6 +38,10 @@
 /** Berstein polynomials have the nice properties that when fitting them in a non-linear fitter, and you
  want to limit the range of values the function can fit to, you can just limit the range of each Berstein
  coefficient to that range.  They are also more numerically stable, I think.
+
+ Note: The Bernstein coefficients may be outside the y-value range of the initial function - the Bernstein
+      coefficients being in a given range is sufficient to say that the function will be within that range,
+      but it is not necassary for the Bernstein coefficients to only be in the range of the y-values.
  */
 namespace BersteinPolynomial
 {
@@ -153,7 +157,11 @@ T evaluate( const T& x, const T * const coefficients, const size_t num_coefficie
  to Bernstein representation: P(x) = sum_{i=0}^n b_i * B_{i,n}(x)
  
  The input x range [x_min, x_max] is mapped to [0, 1] for the Bernstein representation.
- 
+
+ Note: if the function being converted has y values within the range [A,B] for all points in the
+ x range, the converted Bernstein coefficients may be outside [A,B], and can even be negative
+ when the input function is strickly positive over the entire range.
+
  @param power_coeffs Pointer to array of power series coefficients [a_0, a_1, ..., a_n]
  @param num_coefficients Number of power series coefficients
  @param x_min Minimum x value for the power series domain
