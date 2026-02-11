@@ -216,6 +216,13 @@ std::string ShieldingSourceFitPlot::jsonForData( const ShieldingSourceFitCalc::M
     point["mult_uncert"] = comparison.observedOverExpectedUncert;
     point["color"] = comparison.peakColor.cssText(false);
     point["nuclide"] = detail.assignedNuclide;
+    point["numForeground"] = comparison.foregroundCounts;
+    point["numForegroundUncert"] = comparison.foregroundUncert;
+    point["numObserved"] = comparison.observedCounts;
+    point["numObservedUncert"] = comparison.observedUncert;
+    point["numExpected"] = comparison.expectedCounts;
+    point["numBackground"] = comparison.backgroundCounts;
+    point["numBackgroundUncert"] = comparison.backgroundUncert;
 
     // Add source contributions
     point["sources"] = nlohmann::json::array();
@@ -235,6 +242,9 @@ std::string ShieldingSourceFitPlot::jsonForData( const ShieldingSourceFitCalc::M
       nlohmann::json source;
       source["nuclide"] = nuclideSymbol;
       source["fraction"] = fraction;
+      source["counts"] = src.modelContribToPeak;
+      source["br"] = src.br;
+      source["energy"] = src.energy;
       point["sources"].push_back( source );
     }
 

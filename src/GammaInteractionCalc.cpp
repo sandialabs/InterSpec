@@ -4953,6 +4953,13 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
     peak_info.observedOverExpected = scale;
     peak_info.peakColor = peak.lineColor();
     peak_info.observedOverExpectedUncert = scale_uncert;
+    peak_info.foregroundCounts = peak.peakArea();
+    peak_info.foregroundUncert = peak.peakAreaUncert();
+    peak_info.observedCounts = observed_counts;
+    peak_info.observedUncert = observed_uncertainty;
+    peak_info.expectedCounts = expected_counts;
+    peak_info.backgroundCounts = backCounts;
+    peak_info.backgroundUncert = sqrt( backUncert2 );
     answer.push_back( peak_info );
     
     if( info )

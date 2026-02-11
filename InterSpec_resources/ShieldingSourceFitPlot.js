@@ -461,17 +461,26 @@ ShieldingSourceFitPlot.prototype.setData = function( data ) {
         .attr("r", 6);
 
       let txt = "<div><b>" + d.nuclide + "</b> @ " + d.energy.toFixed(2) + " keV</div>";
-      txt += "<div>Chi: " + d.chi.toFixed(3) + " σ</div>";
-      txt += "<div>Mult: " + d.mult.toFixed(3);
-      if( d.mult_uncert > 0 )
-        txt += " ± " + d.mult_uncert.toFixed(3);
-      txt += "</div>";
-
-      if( d.sources && d.sources.length > 1 ) {
-        txt += "<div><b>Contributions:</b></div>";
+      txt += "<div>Num Observed: " + d.numObserved.toFixed(1) + " &pm; " + d.numObservedUncert.toFixed(1) + "</div>";
+      txt += "<div>Num Expected: " + d.numExpected.toFixed(1) + "</div>";
+      txt += "<div>Num Sigma Off: " + d.chi.toPrecision(5) + " &sigma;</div>";
+      txt += "<div>Obs/Exp: " + d.mult.toPrecision(5) + " &pm; " + d.mult_uncert.toPrecision(5) + "</div>";
+      if( d.numBackground > 0 ) {
+        txt += "<div>Num Foreground: " + d.numForeground.toFixed(1) + " &pm; " + d.numForegroundUncert.toFixed(1) + "</div>";
+        txt += "<div>Num Background: " + d.numBackground.toFixed(1) + " &pm; " + d.numBackgroundUncert.toFixed(1) + "</div>";
+      }
+      if( d.sources && d.sources.length > 0 ) {
+        txt += "<div><b>Sources contributing:</b></div>";
+        txt += "<ul style='margin:2px 0;padding-left:18px;'>";
         for( const src of d.sources ) {
-          txt += "<div>&nbsp;&nbsp;" + src.nuclide + ": " + (src.fraction * 100).toFixed(1) + "%</div>";
+          txt += "<li>" + src.nuclide + ", " + src.energy.toFixed(2) + " keV:";
+          txt += " cnts=" + (src.counts > 1e5 ? src.counts.toExponential(3) : src.counts.toFixed(1));
+          txt += ", br=" + src.br.toExponential(3);
+          if( d.sources.length > 1 )
+            txt += ", " + (src.fraction * 100).toFixed(1) + "%";
+          txt += "</li>";
         }
+        txt += "</ul>";
       }
 
       self.tooltip.html(txt);
