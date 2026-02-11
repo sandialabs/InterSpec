@@ -150,4 +150,14 @@
     " é o que é usado para otimizar a blindagem e as fontes.</message>
   <message id="x2g-tt-chi-axis">O eixo Y é as contagens de área do pico, menos o número esperado de contagens dos valores de fonte e blindagem atualmente exibidos, todos divididos pela incerteza estatística. O quadrado disto é o que é usado para otimizar a blindagem e as fontes.</message>
   <message id="x2g-tt-scale-axis">O eixo Y é o múltiplo de contagens de pico observadas, relativo ao que seria esperado dos valores atuais de fonte e blindagem.</message>
+  <message id="x2g-tt-num-observed">Núm. Observado:</message>
+  <message id="x2g-tt-num-expected">Núm. Esperado:</message>
+  <message id="x2g-tt-num-sigma-off">Núm. Sigma Desvio:</message>
+  <message id="x2g-tt-obs-over-exp">Obs/Esp:</message>
+  <message id="x2g-tt-num-foreground">Núm. Primeiro Plano:</message>
+  <message id="x2g-tt-num-background">Núm. Fundo:</message>
+  <message id="x2g-tt-sources-contributing">Fontes contribuintes:</message>
+  <message id="x2g-tt-counts-abbrev">cts</message>
+  <message id="x2g-tt-br-abbrev">br</message>
+  <message id="x2g-dev-label">&lt;dev&gt;</message>
 </messages>

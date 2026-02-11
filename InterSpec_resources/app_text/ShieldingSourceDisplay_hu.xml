@@ -148,4 +148,14 @@
     " négyzete kerül felhasználásra az árnyékolás és források optimalizálására.</message>
   <message id="x2g-tt-chi-axis">Az Y-tengely a csúcs terület impulzusok, mínusz a jelenleg megjelenített forrás és árnyékolási értékekből várható impulzusok száma, mindezt elosztva a statisztikai bizonytalansággal. Ennek négyzete kerül felhasználásra az árnyékolás és források optimalizálására.</message>
   <message id="x2g-tt-scale-axis">Az Y-tengely a megfigyelt csúcs impulzusok többszöröse a jelenlegi forrás és árnyékolási értékekből várhatóhoz képest.</message>
+  <message id="x2g-tt-num-observed">Megfigyelt szám:</message>
+  <message id="x2g-tt-num-expected">Várt szám:</message>
+  <message id="x2g-tt-num-sigma-off">Sigma eltérés:</message>
+  <message id="x2g-tt-obs-over-exp">Megf./Várt:</message>
+  <message id="x2g-tt-num-foreground">Előtér szám:</message>
+  <message id="x2g-tt-num-background">Háttér szám:</message>
+  <message id="x2g-tt-sources-contributing">Hozzájáruló források:</message>
+  <message id="x2g-tt-counts-abbrev">imp</message>
+  <message id="x2g-tt-br-abbrev">br</message>
+  <message id="x2g-dev-label">&lt;dev&gt;</message>
 </messages>

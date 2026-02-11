@@ -18,12 +18,25 @@ ShieldingSourceFitPlot = function (elem, options) {
   // Initialize display mode
   this.showChi = (typeof this.options.showChi === "boolean") ? this.options.showChi : true;
 
-  // Initialize localized strings
-  this.xAxisTitle = (typeof this.options.xAxisTitle === "string") ? this.options.xAxisTitle : "Energy (keV)";
-  this.yAxisTitleChi = (typeof this.options.yAxisTitleChi === "string") ? this.options.yAxisTitleChi : "(observed-model)/uncert";
-  this.yAxisTitleMult = (typeof this.options.yAxisTitleMult === "string") ? this.options.yAxisTitleMult : "Mult. of Model";
-  this.tooltipChi = (typeof this.options.tooltipChi === "string") ? this.options.tooltipChi : "Chi-squared residual";
-  this.tooltipMult = (typeof this.options.tooltipMult === "string") ? this.options.tooltipMult : "Multiple of model";
+  // Initialize localized display strings with English defaults
+  const o = this.options;
+  this.displayStrings = {
+    xAxisTitle:            (typeof o.xAxisTitle === "string") ? o.xAxisTitle : "Energy (keV)",
+    yAxisTitleChi:         (typeof o.yAxisTitleChi === "string") ? o.yAxisTitleChi : "(observed-model)/uncert",
+    yAxisTitleMult:        (typeof o.yAxisTitleMult === "string") ? o.yAxisTitleMult : "Mult. of Model",
+    tooltipChi:            (typeof o.tooltipChi === "string") ? o.tooltipChi : "Chi-squared residual",
+    tooltipMult:           (typeof o.tooltipMult === "string") ? o.tooltipMult : "Multiple of model",
+    ttNumObserved:         (typeof o.ttNumObserved === "string") ? o.ttNumObserved : "Num Observed:",
+    ttNumExpected:         (typeof o.ttNumExpected === "string") ? o.ttNumExpected : "Num Expected:",
+    ttNumSigmaOff:         (typeof o.ttNumSigmaOff === "string") ? o.ttNumSigmaOff : "Num Sigma Off:",
+    ttObsOverExp:          (typeof o.ttObsOverExp === "string") ? o.ttObsOverExp : "Obs/Exp:",
+    ttNumForeground:       (typeof o.ttNumForeground === "string") ? o.ttNumForeground : "Num Foreground:",
+    ttNumBackground:       (typeof o.ttNumBackground === "string") ? o.ttNumBackground : "Num Background:",
+    ttSourcesContributing: (typeof o.ttSourcesContributing === "string") ? o.ttSourcesContributing : "Sources contributing:",
+    ttCountsAbbrev:        (typeof o.ttCountsAbbrev === "string") ? o.ttCountsAbbrev : "cnts",
+    ttBrAbbrev:            (typeof o.ttBrAbbrev === "string") ? o.ttBrAbbrev : "br",
+    devLabel:              (typeof o.devLabel === "string") ? o.devLabel : "<dev>"
+  };
 
   // Set the dimensions of the canvas / graph
   const parentWidth = this.chart.clientWidth;
@@ -141,10 +154,10 @@ ShieldingSourceFitPlot = function (elem, options) {
     });
 
   // Add axis titles if provided
-  if( this.xAxisTitle && this.xAxisTitle.length > 0 )
-    this.setXAxisTitle( this.xAxisTitle, true );
+  if( this.displayStrings.xAxisTitle && this.displayStrings.xAxisTitle.length > 0 )
+    this.setXAxisTitle( this.displayStrings.xAxisTitle, true );
 
-  const yAxisTitle = this.showChi ? this.yAxisTitleChi : this.yAxisTitleMult;
+  const yAxisTitle = this.showChi ? this.displayStrings.yAxisTitleChi : this.displayStrings.yAxisTitleMult;
   if( yAxisTitle && yAxisTitle.length > 0 )
     this.setYAxisTitle( yAxisTitle, true );
 };//ShieldingSourceFitPlot constructor
@@ -154,23 +167,26 @@ ShieldingSourceFitPlot.prototype.setLocalizations = function( locStrings ) {
   if( !locStrings )
     return;
 
-  if( typeof locStrings.xAxisTitle === "string" )
-    this.xAxisTitle = locStrings.xAxisTitle;
-  if( typeof locStrings.yAxisTitleChi === "string" )
-    this.yAxisTitleChi = locStrings.yAxisTitleChi;
-  if( typeof locStrings.yAxisTitleMult === "string" )
-    this.yAxisTitleMult = locStrings.yAxisTitleMult;
-  if( typeof locStrings.tooltipChi === "string" )
-    this.tooltipChi = locStrings.tooltipChi;
-  if( typeof locStrings.tooltipMult === "string" )
-    this.tooltipMult = locStrings.tooltipMult;
+  const keys = [
+    "xAxisTitle", "yAxisTitleChi", "yAxisTitleMult",
+    "tooltipChi", "tooltipMult",
+    "ttNumObserved", "ttNumExpected", "ttNumSigmaOff", "ttObsOverExp",
+    "ttNumForeground", "ttNumBackground",
+    "ttSourcesContributing", "ttCountsAbbrev", "ttBrAbbrev",
+    "devLabel"
+  ];
+
+  for( const key of keys ) {
+    if( typeof locStrings[key] === "string" )
+      this.displayStrings[key] = locStrings[key];
+  }
 
   // Update axis titles
   if( this.xaxistitle )
-    this.xaxistitle.text( this.xAxisTitle );
+    this.xaxistitle.text( this.displayStrings.xAxisTitle );
 
   if( this.yaxistitle ) {
-    const yAxisTitle = this.showChi ? this.yAxisTitleChi : this.yAxisTitleMult;
+    const yAxisTitle = this.showChi ? this.displayStrings.yAxisTitleChi : this.displayStrings.yAxisTitleMult;
     this.yaxistitle.text( yAxisTitle );
   }
 };//ShieldingSourceFitPlot.prototype.setLocalizations
@@ -179,7 +195,7 @@ ShieldingSourceFitPlot.prototype.setLocalizations = function( locStrings ) {
 ShieldingSourceFitPlot.prototype.setXAxisTitle = function( title, dontCallResize ){
   if( !title || (title.length === 0) )
   {
-    this.xAxisTitle = null;
+    this.displayStrings.xAxisTitle = null;
     if( this.xaxistitle ){
       this.xaxistitle.remove();
       this.xaxistitle = null;
@@ -187,7 +203,7 @@ ShieldingSourceFitPlot.prototype.setXAxisTitle = function( title, dontCallResize
     return;
   }//if( we are getting rid of the title )
 
-  this.xAxisTitle = title;
+  this.displayStrings.xAxisTitle = title;
   if( !this.xaxistitle ){
     this.xaxistitle = this.svg.append("text")
       .attr("class", "xaxistitle")
@@ -258,7 +274,7 @@ ShieldingSourceFitPlot.prototype.setShowChi = function( showChi ) {
   this.showChi = showChi;
 
   // Update y-axis title
-  const yAxisTitle = this.showChi ? this.yAxisTitleChi : this.yAxisTitleMult;
+  const yAxisTitle = this.showChi ? this.displayStrings.yAxisTitleChi : this.displayStrings.yAxisTitleMult;
   this.setYAxisTitle( yAxisTitle, true );
 
   // Redraw the chart
@@ -441,6 +457,7 @@ ShieldingSourceFitPlot.prototype.setData = function( data ) {
   });
 
   // Add data points
+  const ds = this.displayStrings;
   this.plotGroup.selectAll("circle")
     .data(data_points)
     .enter()
@@ -461,21 +478,21 @@ ShieldingSourceFitPlot.prototype.setData = function( data ) {
         .attr("r", 6);
 
       let txt = "<div><b>" + d.nuclide + "</b> @ " + d.energy.toFixed(2) + " keV</div>";
-      txt += "<div>Num Observed: " + d.numObserved.toFixed(1) + " &pm; " + d.numObservedUncert.toFixed(1) + "</div>";
-      txt += "<div>Num Expected: " + d.numExpected.toFixed(1) + "</div>";
-      txt += "<div>Num Sigma Off: " + d.chi.toPrecision(5) + " &sigma;</div>";
-      txt += "<div>Obs/Exp: " + d.mult.toPrecision(5) + " &pm; " + d.mult_uncert.toPrecision(5) + "</div>";
+      txt += "<div>" + ds.ttNumObserved + " " + d.numObserved.toFixed(1) + " &pm; " + d.numObservedUncert.toFixed(1) + "</div>";
+      txt += "<div>" + ds.ttNumExpected + " " + d.numExpected.toFixed(1) + "</div>";
+      txt += "<div>" + ds.ttNumSigmaOff + " " + d.chi.toPrecision(5) + " &sigma;</div>";
+      txt += "<div>" + ds.ttObsOverExp + " " + d.mult.toPrecision(5) + " &pm; " + d.mult_uncert.toPrecision(5) + "</div>";
       if( d.numBackground > 0 ) {
-        txt += "<div>Num Foreground: " + d.numForeground.toFixed(1) + " &pm; " + d.numForegroundUncert.toFixed(1) + "</div>";
-        txt += "<div>Num Background: " + d.numBackground.toFixed(1) + " &pm; " + d.numBackgroundUncert.toFixed(1) + "</div>";
+        txt += "<div>" + ds.ttNumForeground + " " + d.numForeground.toFixed(1) + " &pm; " + d.numForegroundUncert.toFixed(1) + "</div>";
+        txt += "<div>" + ds.ttNumBackground + " " + d.numBackground.toFixed(1) + " &pm; " + d.numBackgroundUncert.toFixed(1) + "</div>";
       }
       if( d.sources && d.sources.length > 0 ) {
-        txt += "<div><b>Sources contributing:</b></div>";
+        txt += "<div><b>" + ds.ttSourcesContributing + "</b></div>";
         txt += "<ul style='margin:2px 0;padding-left:18px;'>";
         for( const src of d.sources ) {
           txt += "<li>" + src.nuclide + ", " + src.energy.toFixed(2) + " keV:";
-          txt += " cnts=" + (src.counts > 1e5 ? src.counts.toExponential(3) : src.counts.toFixed(1));
-          txt += ", br=" + src.br.toExponential(3);
+          txt += " " + ds.ttCountsAbbrev + "=" + (src.counts > 1e5 ? src.counts.toExponential(3) : src.counts.toFixed(1));
+          txt += ", " + ds.ttBrAbbrev + "=" + src.br.toExponential(3);
           if( d.sources.length > 1 )
             txt += ", " + (src.fraction * 100).toFixed(1) + "%";
           txt += "</li>";
@@ -531,7 +548,7 @@ ShieldingSourceFitPlot.prototype.setData = function( data ) {
     .attr("y", 15)
     .style("text-anchor", "end")
     .style("font-size", "12px")
-    .text("<dev>=" + dev.toFixed(2) + " σ");
+    .text(this.displayStrings.devLabel + "=" + dev.toFixed(2) + " σ");
 };//ShieldingSourceFitPlot.prototype.setData
 
 

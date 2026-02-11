@@ -77,8 +77,12 @@ ShieldingSourceFitPlot::ShieldingSourceFitPlot( WContainerWidget *parent )
 
   setCssRules();
   InterSpec *interspec = InterSpec::instance();
+  assert( interspec );
   if( interspec )
+  {
+    interspec->useMessageResourceBundle( "ShieldingSourceDisplay" );
     interspec->colorThemeChanged().connect( this, &ShieldingSourceFitPlot::setCssRules );
+  }
     
   wApp->require( "InterSpec_resources/d3.v3.min.js", "d3.v3.js" );
   wApp->require( "InterSpec_resources/ShieldingSourceFitPlot.js" );
@@ -106,6 +110,9 @@ void ShieldingSourceFitPlot::defineJavaScript()
   options += " }";
 
   setJavaScriptMember( "chart", "new ShieldingSourceFitPlot(" + jsRef() + ", " + options + ");" );
+
+  // Send all localized strings to JavaScript on first render
+  doJavaScript( m_jsgraph + ".setLocalizations( " + localizedStringsJson() + " );" );
 
   setJavaScriptMember( "resizeObserver",
     "new ResizeObserver(entries => {"
@@ -169,7 +176,17 @@ std::string ShieldingSourceFitPlot::localizedStringsJson()
        << "\"yAxisTitleChi\": " << m_yAxisTitleChi.jsStringLiteral() << ","
        << "\"yAxisTitleMult\": " << m_yAxisTitleMult.jsStringLiteral() << ","
        << "\"tooltipChi\": " << WString::tr("x2g-tt-chi-axis").jsStringLiteral() << ","
-       << "\"tooltipMult\": " << WString::tr("x2g-tt-scale-axis").jsStringLiteral()
+       << "\"tooltipMult\": " << WString::tr("x2g-tt-scale-axis").jsStringLiteral() << ","
+       << "\"ttNumObserved\": " << WString::tr("x2g-tt-num-observed").jsStringLiteral() << ","
+       << "\"ttNumExpected\": " << WString::tr("x2g-tt-num-expected").jsStringLiteral() << ","
+       << "\"ttNumSigmaOff\": " << WString::tr("x2g-tt-num-sigma-off").jsStringLiteral() << ","
+       << "\"ttObsOverExp\": " << WString::tr("x2g-tt-obs-over-exp").jsStringLiteral() << ","
+       << "\"ttNumForeground\": " << WString::tr("x2g-tt-num-foreground").jsStringLiteral() << ","
+       << "\"ttNumBackground\": " << WString::tr("x2g-tt-num-background").jsStringLiteral() << ","
+       << "\"ttSourcesContributing\": " << WString::tr("x2g-tt-sources-contributing").jsStringLiteral() << ","
+       << "\"ttCountsAbbrev\": " << WString::tr("x2g-tt-counts-abbrev").jsStringLiteral() << ","
+       << "\"ttBrAbbrev\": " << WString::tr("x2g-tt-br-abbrev").jsStringLiteral() << ","
+       << "\"devLabel\": " << WString::tr("x2g-dev-label").jsStringLiteral()
        << "}";
   return json.str();
 }
