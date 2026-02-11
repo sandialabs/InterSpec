@@ -67,12 +67,6 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DataBaseVersionUpgrade.h"
 
-
-#if( USE_LLM_INTERFACE )
-#include "InterSpec/LlmConfig.h"
-#include "InterSpec/LlmMcpResource.h"
-#endif
-
 using namespace std;
 
 // Namespace to track allowed sessions and not
@@ -132,14 +126,6 @@ namespace InterSpecServer
 #if( !BUILD_AS_UNIT_TEST_SUITE )
   Wt::WServer *ns_server = nullptr;
   std::mutex ns_servermutex;
-#endif
-  
-#if( USE_LLM_INTERFACE )
-  std::mutex ns_llm_config_mutex;
-  std::shared_ptr<const LlmConfig> ns_llm_config;
-  
-  std::mutex ns_mcp_mutex;
-  std::unique_ptr<LlmMcpResource> ns_mcp_resource;
 #endif
   
   
@@ -431,56 +417,6 @@ void startWebServer( string name,
   }
       
   cout << "Started server at " << this_url << endl;
-      
-#if( USE_LLM_INTERFACE )
-  static_assert( !BUILD_FOR_WEB_DEPLOYMENT, "MCP interface can not be enabled for web deployment." );
-      
-  try
-  {
-    shared_ptr<const LlmConfig> config = llm_config();
-      
-    if( config && config->mcpServer.enabled )
-    {
-      std::lock_guard<std::mutex> mcp_lock( ns_mcp_mutex );
-        
-      if( !ns_mcp_resource )
-      {
-#if( MCP_ENABLE_AUTH )
-        assert( config->mcpServer.bearerToken != LlmConfig::McpServer::sm_invalid_bearer_token );
-        if( config->mcpServer.bearerToken == LlmConfig::McpServer::sm_invalid_bearer_token )
-          throw runtime_error( "MCP bearer token is invalid" );
-        if( config->mcpServer.bearerToken.empty() )
-          std::cerr << "WARNING: MCP bearer token not specified - not requiring authentication!" << std::endl;
-#endif
-        
-        ns_mcp_resource = std::make_unique<LlmMcpResource>( config ); //Throws exception if there is trouble setting up the tool calls
-          
-        // Add the resource to the existing server at /mcp-api
-        ns_server->addResource( ns_mcp_resource.get(), "/mcp-api");
-      }//if( !ns_mcp_resource )
-        
-      std::cout << "\n=== MCP Interface Enabled ===" << std::endl;
-      std::cout << "MCP Server URL: " << InterSpecServer::urlBeingServedOn() << "/mcp-api" << std::endl;
-      std::cout << "In your tool, set MCP Host to: http://127.0.0.1:" << port << "/mcp-api" << std::endl;
-#if( MCP_ENABLE_AUTH )
-      if( !config->mcpServer.bearerToken.empty() )
-        std::cout << "Bearer Token Required: " << config->mcpServer.bearerToken << std::endl;
-      else
-        std::cout << "Authentication: None required" << std::endl;
-      
-#else
-      std::cout << "Authentication: Disabled" << std::endl;
-#endif
-      std::cout << "=============================" << std::endl << std::endl;
-    }//if( config.mcpServer.enabled )
-  }catch( std::exception &e )
-  {
-    std::cerr << "Exception setting up LLM/MCP interface: " << e.what() << std::endl;
-#if( BUILD_AS_LOCAL_SERVER )
-    // TODO: maybe should shutdown server, etc?
-#endif
-  }//try / catch
-#endif //USE_LLM_INTERFACE
 }//startWebServer(...)
 
 
@@ -1191,22 +1127,6 @@ void clear_file_to_open_on_load( const std::string &session_token )
       
     return config;
   }//
-#endif
-
-#if( USE_LLM_INTERFACE )
-std::shared_ptr<const LlmConfig> llm_config()
-{
-  std::lock_guard<std::mutex> llm_config_lock( ns_llm_config_mutex );
-  if( !ns_llm_config.get() )
-    ns_llm_config = LlmConfig::load(); //Throws exception if invalid config file, returns null if no config file
-  return ns_llm_config;
-}
-
-void set_llm_config( std::shared_ptr<const LlmConfig> config )
-{
-  std::lock_guard<std::mutex> llm_config_lock( ns_llm_config_mutex );
-  ns_llm_config = config;
-}
 #endif
 }//namespace InterSpecServer
 
