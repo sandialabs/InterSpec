@@ -149,12 +149,19 @@
   <message id="sfm-header-age-uncert">Age Uncert.</message>
   <message id="sfm-tt-aging-not-allowed">Nuclides children are stable so aging is not allowed because it doesn't effect gamma spectrum.</message>
 
-  <!-- Chi2Graphic -->
+  <!-- Chi2Graphic / ShieldingSourceFitPlot -->
   <message id="x2g-yaxis-title-chi">(observed-model)/uncert</message>
   <message id="x2g-yaxis-title-mult">Mult. of Model</message>
-  <message id="x2g-">The Y-axis is the peak area counts, minus the expected number of counts from the currently displayed"
-    " source and shielding values, all divided by the statistical uncertainty.  The square of this"
-    " is what is used to optimize the shielding and sources.</message>
   <message id="x2g-tt-chi-axis">The Y-axis is the peak area counts, minus the expected number of counts from the currently displayed source and shielding values, all divided by the statistical uncertainty.  The square of this is what is used to optimize the shielding and sources.</message>
   <message id="x2g-tt-scale-axis">The Y-axis is the multiple of observed peak counts, relative to what would be expected from the current source and shielding values.</message>
+  <message id="x2g-tt-num-observed">Num Observed:</message>
+  <message id="x2g-tt-num-expected">Num Expected:</message>
+  <message id="x2g-tt-num-sigma-off">Num Sigma Off:</message>
+  <message id="x2g-tt-obs-over-exp">Obs/Exp:</message>
+  <message id="x2g-tt-num-foreground">Num Foreground:</message>
+  <message id="x2g-tt-num-background">Num Background:</message>
+  <message id="x2g-tt-sources-contributing">Sources contributing:</message>
+  <message id="x2g-tt-counts-abbrev">cnts</message>
+  <message id="x2g-tt-br-abbrev">br</message>
+  <message id="x2g-dev-label">&lt;dev&gt;</message>
 </messages>

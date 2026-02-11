@@ -36,6 +36,7 @@
 #include <Wt/WTable>
 #include <Wt/WAnchor>
 #include <Wt/WServer>
+#include <Wt/WPainter>
 #include <Wt/WResource>
 #include <Wt/WComboBox>
 #include <Wt/WLineEdit>

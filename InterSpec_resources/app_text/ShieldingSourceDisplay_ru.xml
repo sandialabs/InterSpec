@@ -149,4 +149,14 @@
     " используется для оптимизации экранирования и источников.</message>
   <message id="x2g-tt-chi-axis">Ось Y - это отсчёты площади пика минус ожидаемое число отсчётов от текущих отображённых значений источника и экранирования, всё разделённое на статистическую неопределённость. Квадрат этого используется для оптимизации экранирования и источников.</message>
   <message id="x2g-tt-scale-axis">Ось Y - это кратность наблюдаемых отсчётов пика относительно ожидаемых от текущих значений источника и экранирования.</message>
+  <message id="x2g-tt-num-observed">Кол-во наблюд.:</message>
+  <message id="x2g-tt-num-expected">Кол-во ожид.:</message>
+  <message id="x2g-tt-num-sigma-off">Кол-во сигм откл.:</message>
+  <message id="x2g-tt-obs-over-exp">Набл/Ожид:</message>
+  <message id="x2g-tt-num-foreground">Кол-во перед. план:</message>
+  <message id="x2g-tt-num-background">Кол-во фон:</message>
+  <message id="x2g-tt-sources-contributing">Источники, вносящие вклад:</message>
+  <message id="x2g-tt-counts-abbrev">отсч</message>
+  <message id="x2g-tt-br-abbrev">br</message>
+  <message id="x2g-dev-label">&lt;dev&gt;</message>
 </messages>

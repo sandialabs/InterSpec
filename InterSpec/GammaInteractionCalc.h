@@ -419,7 +419,23 @@ struct PeakResultPlotInfo
   /** `observed_counts / expected_counts` */
   double observedOverExpected;
   double observedOverExpectedUncert;
-  
+
+  /** The foreground peak area (before background subtraction), and its uncertainty. */
+  double foregroundCounts = 0.0;
+  double foregroundUncert = 0.0;
+
+  /** The observed counts in the peak, after subtracting background. */
+  double observedCounts = 0.0;
+  /** Combined uncertainty from foreground and background. */
+  double observedUncert = 0.0;
+
+  /** The expected number of counts from the model. */
+  double expectedCounts = 0.0;
+
+  /** The background counts subtracted from the observed peak area, and its uncertainty. */
+  double backgroundCounts = 0.0;
+  double backgroundUncert = 0.0;
+
   /** `peak.lineColor()` */
   Wt::WColor peakColor;
 };//struct PeakResultPlotInfo
