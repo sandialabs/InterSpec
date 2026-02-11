@@ -245,7 +245,6 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_legendEnabledSignal( this ),
   m_legendDisabledSignal( this ),
   m_xRangeChanged( this ),
-  m_controlKeyDragg( this ),
   m_shiftKeyDragg( this ),
   m_shiftAltKeyDragg( this ),
   m_rightMouseDragg( this ),

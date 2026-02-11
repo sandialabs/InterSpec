@@ -332,6 +332,7 @@ set(sources
     src/EnergyCalPreserveWindow.cpp
     src/EnergyCalMultiFile.cpp
     src/FitPeaksForNuclides.cpp
+    src/FitPeaksForNuclidesGui.cpp
     src/SimpleDialog.cpp
     src/FeatureMarkerWidget.cpp
     src/ShowRiidInstrumentsAna.cpp
@@ -454,6 +455,7 @@ set(headers
     InterSpec/EnergyCalPreserveWindow.h
     InterSpec/EnergyCalMultiFile.h
     InterSpec/FitPeaksForNuclides.h
+    InterSpec/FitPeaksForNuclidesGui.h
     InterSpec/SimpleDialog.h
     InterSpec/FeatureMarkerWidget.h
     InterSpec/ShowRiidInstrumentsAna.h

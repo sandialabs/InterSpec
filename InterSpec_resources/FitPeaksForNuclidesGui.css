@@ -1,0 +1,234 @@
+/* FitPeaksAdvancedDialog: override SimpleDialog max size for responsive layout */
+.simple-dialog.FitPeaksAdvancedDialog
+{
+  max-width: 95vw;
+  max-height: 95vh;
+}
+
+.simple-dialog.FitPeaksAdvancedDialog .body
+{
+  max-height: calc( 95vh - 90px );
+  overflow: hidden;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+@media screen and (max-width: 1000px) {
+  .simple-dialog.FitPeaksAdvancedDialog {
+    max-width: calc(99vw);
+  }
+
+  .simple-dialog.FitPeaksAdvancedDialog .body {
+    max-width: calc(99vw - 30px);
+  }
+}
+
+@media screen and (min-width: 1000px) {
+  .simple-dialog.FitPeaksAdvancedDialog {
+    max-width: calc(99vw);
+  }
+
+  .simple-dialog.FitPeaksAdvancedDialog .body {
+    max-width: calc(99vw - 30px);
+  }
+}
+
+/* FitPeaksAdvancedWidget: flex column that fills the dialog body exactly;
+   overflow hidden forces flex to shrink the chart rather than overflowing.
+   box-sizing: border-box so the C++ set height includes our padding. */
+.FitPeaksAdvancedWidget
+{
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-wrap: nowrap;
+  padding: 16px 5px 5px 5px;
+  box-sizing: border-box;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Title: single line, do not shrink so chart/options absorb space */
+.FitPeaksAdvancedWidget .fpn-title
+{
+  flex-shrink: 0;
+}
+
+/* Upper tabbed area: menu on left, content stack on right; fixed height */
+.FitPeaksAdvancedWidget .fpn-upper-area
+{
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  flex: 1 1 0px;
+  min-height: 200px;
+  overflow: hidden;
+}
+
+/* Content stack grows to fill remaining width */
+.FitPeaksAdvancedWidget .UpperStack
+{
+  flex: 1 1 auto;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Tab menu: vertical tabs on left side */
+.FitPeaksAdvancedWidget .UpperMenu
+{
+  padding-left: 2px;
+  padding-right: 2px;
+  font-size: 13px;
+  overflow-y: visible;
+  flex: 0 1 auto;
+}
+
+.FitPeaksAdvancedWidget ul.UpperMenu
+{
+  padding-inline-start: 0px;
+  list-style-type: none;
+  max-width: 40px;
+}
+
+.FitPeaksAdvancedWidget ul.UpperMenu li
+{
+  display: inline-block;
+  -webkit-writing-mode: vertical-lr;
+  writing-mode: vertical-rl;
+  writing-mode: tb-lr;
+  transform: scale(-1, -1);
+  white-space: nowrap;
+  height: 50px;
+  font-weight: bold;
+}
+
+.FitPeaksAdvancedWidget ul.UpperMenu li
+{
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 4px;
+  padding-right: 4px;
+  margin-top: 2px;
+  margin-bottom: 2px;
+  -webkit-border-radius: 5px;
+  -moz-border-radius: 5px;
+  border-radius: 5px;
+  
+  text-align: center;
+}
+
+/* All three content panels fill the stack height */
+.FitPeaksAdvancedWidget .D3SpectrumDisplayDiv,
+.FitPeaksAdvancedWidget .RelEffChart,
+.FitPeaksAdvancedWidget .RelActTxtResults
+{
+  height: 100%;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Allow text results to be selectable for copy/paste */
+.FitPeaksAdvancedWidget .RelActTxtResults
+{
+  user-select: auto;
+  -moz-user-select: auto;
+  -webkit-user-select: auto;
+  overflow-y: auto;
+}
+
+/* Status line: single line, fixed height; must not shrink in flex layout */
+.FitPeaksAdvancedWidget .fpn-status
+{
+  font-weight: 500;
+  height: 1.5em;
+  min-height: 1.5em;
+  line-height: 1.5em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.FitPeaksAdvancedWidget .fpn-status.calculating
+{
+  color: #c00;
+}
+
+/* Warnings area: always visible, fixed height; must not shrink in flex layout */
+.FitPeaksAdvancedWidget .fpn-warnings
+{
+  height: 3em;
+  min-height: 3em;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 6px;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  font-size: 0.9em;
+  flex-shrink: 0;
+}
+
+.FitPeaksAdvancedWidget .fpn-warnings.fpn-warnings-computing
+{
+  background: #f5f5f5;
+  border-color: #bbb;
+}
+
+.FitPeaksAdvancedWidget .fpn-warnings.fpn-warnings-success
+{
+  background: #e8f5e9;
+  border-color: #81c784;
+}
+
+.FitPeaksAdvancedWidget .fpn-warnings.fpn-warnings-has-warnings
+{
+  background: #fff3e0;
+  border-color: #ffb74d;
+}
+
+.FitPeaksAdvancedWidget .fpn-warnings.fpn-warnings-error
+{
+  background: #c62828;
+  color: #fff;
+  border-color: #b71c1c;
+}
+
+/* Options area: flex row with wrapping; natural height, no inner scrollbar */
+.FitPeaksAdvancedWidget .fpn-options
+{
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+/* Checkboxes: row that wraps */
+.FitPeaksAdvancedWidget .fpn-options-checkboxes
+{
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
+
+.FitPeaksAdvancedWidget .fpn-option-row
+{
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.FitPeaksAdvancedWidget .fpn-option-row .fpn-option-label
+{
+  flex-shrink: 0;
+}
+
+.FitPeaksAdvancedWidget .fpn-option-row .fpn-option-input
+{
+  flex: 0 1 auto;
+}

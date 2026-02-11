@@ -715,6 +715,28 @@ extern template void photopeak_function_integral<double>( const double, const do
                                                            const double eta, const double p );
 
 
+  /** Returns [lower, upper] energy limits such that fraction `p` of the peak's area lies outside
+   the range (i.e., `p/2` below lower, `p/2` above upper), dispatching to the appropriate
+   distribution's coverage-limits function based on skew type.
+
+   For NoSkew, uses the standard Gaussian quantile.
+
+   @param p           Fraction of total area outside returned range; must be in (0, 1).
+   @param skew_type   The peak skew type.
+   @param mean        Peak mean in keV.
+   @param sigma       Peak Gaussian sigma in keV.
+   @param skew_pars   Pointer to skew parameter array (SkewPar0, SkewPar1, ...); may be nullptr
+                      for NoSkew.
+   @returns  Pair [lower_energy, upper_energy].
+   Throws on invalid parameters or if limits cannot be found.
+   */
+  std::pair<double,double> coverage_limits( const double p,
+                                            const PeakDef::SkewType skew_type,
+                                            const double mean,
+                                            const double sigma,
+                                            const double *skew_pars );
+
+
     /** 20231109: Currently `DSCB_pdf_non_norm` yields a that can be almost 20% too low, over the entire effective range
      I'm totally not sure why - it could be an error in my integration for normalization, a bug in the indefinite integral functions,
      or likely a mis-understanding on my part, or a bug in `DSCB_pdf_non_norm` that I have just become blind to seeing.

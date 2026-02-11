@@ -129,4 +129,14 @@
   <message id="x2g-">Y-অক্ষ হল পিক ক্ষেত্রফল গণনা, বর্তমানে প্রদর্শিত উৎস এবং শিল্ডিং মান থেকে প্রত্যাশিত গণনার সংখ্যা বিয়োগ, সবগুলি পরিসংখ্যানগত অনিশ্চয়তা দ্বারা ভাগ। এর বর্গ হল যা শিল্ডিং এবং উৎস অপ্টিমাইজ করতে ব্যবহৃত হয়।</message>
   <message id="x2g-tt-chi-axis">Y-অক্ষ হল পিক ক্ষেত্রফল গণনা, বর্তমানে প্রদর্শিত উৎস এবং শিল্ডিং মান থেকে প্রত্যাশিত গণনার সংখ্যা বিয়োগ, সবগুলি পরিসংখ্যানগত অনিশ্চয়তা দ্বারা ভাগ। এর বর্গ হল যা শিল্ডিং এবং উৎস অপ্টিমাইজ করতে ব্যবহৃত হয়।</message>
   <message id="x2g-tt-scale-axis">Y-অক্ষ হল পর্যবেক্ষিত পিক গণনার গুণক, বর্তমান উৎস এবং শিল্ডিং মান থেকে যা প্রত্যাশিত তার তুলনায়।</message>
+  <message id="x2g-tt-num-observed">পর্যবেক্ষিত সংখ্যা:</message>
+  <message id="x2g-tt-num-expected">প্রত্যাশিত সংখ্যা:</message>
+  <message id="x2g-tt-num-sigma-off">সিগমা দূরত্ব:</message>
+  <message id="x2g-tt-obs-over-exp">পর্যবেক্ষিত/প্রত্যাশিত:</message>
+  <message id="x2g-tt-num-foreground">ফোরগ্রাউন্ড সংখ্যা:</message>
+  <message id="x2g-tt-num-background">ব্যাকগ্রাউন্ড সংখ্যা:</message>
+  <message id="x2g-tt-sources-contributing">অবদানকারী উৎস:</message>
+  <message id="x2g-tt-counts-abbrev">গণনা</message>
+  <message id="x2g-tt-br-abbrev">br</message>
+  <message id="x2g-dev-label">&lt;dev&gt;</message>
 </messages>

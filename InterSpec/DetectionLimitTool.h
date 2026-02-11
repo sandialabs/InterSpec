@@ -123,11 +123,6 @@ namespace Wt
   class WComboBox;
   class WPushButton;
   class WSuggestionPopup;
-  class WStandardItemModel;
-  namespace Chart
-  {
-    class WCartesianChart;
-  }
 }//namespace Wt
 
 class DetectionLimitWindow : public AuxWindow

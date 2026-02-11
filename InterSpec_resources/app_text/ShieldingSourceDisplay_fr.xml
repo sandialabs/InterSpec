@@ -137,4 +137,14 @@
      est ce qui est utilisé pour optimiser le blindage et les sources.</message>
   <message id="x2g-tt-chi-axis">L'axe Y représente le nombre de comptes de l'aire du pic, moins le nombre de comptes attendus à partir des valeurs de source et de blindage actuellement affichées, le tout divisé par l'incertitude statistique.  Le carré de ceci est ce qui est utilisé pour optimiser le blindage et les sources.</message>
   <message id="x2g-tt-scale-axis">L'axe Y est le multiple des comptes de pic observés, par rapport à ce qui serait attendu des valeurs actuelles de source et de blindage.</message>
+  <message id="x2g-tt-num-observed">Nb observé :</message>
+  <message id="x2g-tt-num-expected">Nb attendu :</message>
+  <message id="x2g-tt-num-sigma-off">Nb sigma écart :</message>
+  <message id="x2g-tt-obs-over-exp">Obs/Att :</message>
+  <message id="x2g-tt-num-foreground">Nb premier plan :</message>
+  <message id="x2g-tt-num-background">Nb arrière-plan :</message>
+  <message id="x2g-tt-sources-contributing">Sources contribuantes :</message>
+  <message id="x2g-tt-counts-abbrev">cpts</message>
+  <message id="x2g-tt-br-abbrev">br</message>
+  <message id="x2g-dev-label">&lt;dev&gt;</message>
 </messages>

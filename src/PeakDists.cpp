@@ -1438,6 +1438,56 @@ std::pair<double,double> double_bortel_coverage_limits( const double mean, const
 }//double_bortel_coverage_limits(...)
 
 
+std::pair<double,double> coverage_limits( const double p,
+                                          const PeakDef::SkewType skew_type,
+                                          const double mean,
+                                          const double sigma,
+                                          const double *skew_pars )
+{
+  switch( skew_type )
+  {
+    case PeakDef::SkewType::NumSkewType:
+      assert( 0 );
+      // Fall through to NoSkew for non-debug builds
+
+    case PeakDef::SkewType::NoSkew:
+    {
+      const double nsigma = boost::math::quantile( boost::math::normal_distribution<double>(0,1), 0.5*p );
+      return { mean + sigma*nsigma, mean - sigma*nsigma };
+    }
+
+    case PeakDef::SkewType::Bortel:
+      return bortel_coverage_limits( mean, sigma, skew_pars[0], p );
+
+    case PeakDef::SkewType::GaussExp:
+      return gauss_exp_coverage_limits( mean, sigma, skew_pars[0], p );
+
+    case PeakDef::SkewType::CrystalBall:
+      return crystal_ball_coverage_limits( mean, sigma, skew_pars[0], skew_pars[1], p );
+
+    case PeakDef::SkewType::ExpGaussExp:
+      return exp_gauss_exp_coverage_limits( mean, sigma, skew_pars[0], skew_pars[1], p );
+
+    case PeakDef::SkewType::DoubleSidedCrystalBall:
+      return double_sided_crystal_ball_coverage_limits( mean, sigma,
+                                                        skew_pars[0], skew_pars[1],
+                                                        skew_pars[2], skew_pars[3], p );
+
+    case PeakDef::SkewType::VoigtPlusBortel:
+      return voigt_exp_coverage_limits( mean, sigma, skew_pars[0], skew_pars[1], skew_pars[2], p );
+
+    case PeakDef::SkewType::GaussPlusBortel:
+      return gauss_plus_bortel_coverage_limits( mean, sigma, skew_pars[0], skew_pars[1], p );
+
+    case PeakDef::SkewType::DoubleBortel:
+      return double_bortel_coverage_limits( mean, sigma, skew_pars[0], skew_pars[1], skew_pars[2], p );
+  }//switch( skew_type )
+
+  assert( 0 );
+  throw std::runtime_error( "PeakDists::coverage_limits: invalid skew type" );
+}//coverage_limits(...)
+
+
   // Explicit instantiation definition for the `double` version of `gauss_exp_integral(...)`
   template void gauss_exp_integral<double>( const double, const double, const double,
                                       const double, const float * const, double *, const size_t );

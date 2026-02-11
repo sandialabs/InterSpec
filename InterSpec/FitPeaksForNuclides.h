@@ -41,6 +41,9 @@ namespace SpecUtils
 namespace FitPeaksForNuclides
 {
 
+/** an updated implementation of `find_spectroscopic_extent(...)` - we will replace the old implementation after some more testing. */
+std::pair<double,double> find_valid_energy_range( const std::shared_ptr<const SpecUtils::Measurement> &meas );
+
 // Settings for the gamma clustering algorithm - different values may be used
 // for the initial RelActManual stage vs subsequent RelActAuto refinement stages
 struct GammaClusteringSettings
@@ -88,10 +91,12 @@ struct PeakFitResult
   // Peaks that are close together (within 1.5 sigma) or where a smaller peak
   // is not statistically distinguishable from a larger peak's tail are merged
   // into a single peak with combined properties.
+  // Note: even if fitting energy calibration was selected, these peaks are in the original spectrums energy cal.
   std::vector<PeakDef> fit_peaks;
 
   // Original uncombined peaks from the fit - preserves all individual peak information.
   // This is the raw output from RelActAuto before peak combination.
+  // Note: even if fitting energy calibration was selected, these peaks are in the original spectrums energy cal.
   std::vector<PeakDef> uncombined_fit_peaks;
 
   // Peaks that are statistically observable in the spectrum.
@@ -99,8 +104,23 @@ struct PeakFitResult
   // 1. Removing peaks with initial significance < threshold (using raw data area)
   // 2. Refitting each ROI with PeakFitLM::refitPeaksThatShareROI_LM (SmallRefinementOnly)
   // 3. Iteratively removing peaks with final significance < threshold and refitting
+  // Note: even if fitting energy calibration was selected, these peaks are in the original spectrums energy cal.
   std::vector<PeakDef> observable_peaks;
 
+  // Existing user peaks that should be removed from PeakModel when the result is accepted.
+  // Populated when DoNotUseExistingRois or ExistingPeaksAsFreePeak is set:
+  //   - DoNotUseExistingRois: empty (no existing peaks are touched)
+  //   - ExistingPeaksAsFreePeak: contains original peaks that are being replaced by fit peaks
+  //     (either because they had the same source and were re-fit, or because they were absorbed
+  //     into a source peak in a shared ROI).
+  // These are the exact shared_ptr instances from the input user_peaks vector, so pointer
+  // identity is preserved for PeakModel::removePeaks().
+  std::vector<std::shared_ptr<const PeakDef>> original_peaks_to_remove;
+
+  // The final RelActCalcAuto solution.  Note that `solution.m_foreground` and/or `solution.m_foreground`
+  // may have a different energy calibration than input foreground/background, due to iteratively finding solution.
+  // This means the various peak quantities of solution that are supposed to be in the original energy calibration,
+  // would need translating (i.e., with `EnergyCal::translatePeaksForCalibrationChange(...)`) before using.
   RelActCalcAuto::RelActAutoSolution solution;  // only valid if status == Success
 };//struct PeakFitResult
 
@@ -147,7 +167,6 @@ struct PeakFitForNuclideConfig
 
   // RelActAuto parameters
   RelActCalcAuto::FwhmForm fwhm_form = RelActCalcAuto::FwhmForm::Berstein_3;
-  double num_sigma_contribution = 1.5;  // Peak area contribution sigma range
   double rel_eff_auto_base_rel_eff_uncert = 0.1;  // BR uncertainty for RelActAuto
 
   // ROI clustering thresholds for auto RelEff refinement stage
@@ -181,9 +200,9 @@ struct PeakFitForNuclideConfig
   bool nucs_of_el_same_age = true;
   bool phys_model_use_hoerl = true;
 
-  // Fields for RelActAuto options configuration
-  RelActCalcAuto::EnergyCalFitType energy_cal_type = RelActCalcAuto::EnergyCalFitType::NonLinearFit;
-  
+  // Fields for RelActAuto options configuration - this is only used for optimiziation work - it is supersceeded by `FitSrcPeaksOptions::DoNotVaryEnergyCal
+  bool fit_energy_cal = true;
+
   // ROI significance threshold for iterative refinement
   // Minimum total chi2 reduction required for peaks in a ROI to be considered significant
   // The chi2 with peaks must be at least this much lower than chi2 with continuum-only
@@ -211,6 +230,14 @@ struct PeakFitForNuclideConfig
   // How many sigma higher the left side must be than the right side to use step continuum
   double step_cont_left_right_nsigma = 3.0;
 
+  // Peak skew type to apply during the RelActAuto fit - note this parameter should not be optimized, but rather
+  //  something that might be over-rided according to the detector efficiency or user preferences.
+  PeakDef::SkewType skew_type = PeakDef::SkewType::NoSkew;
+
+  /** CSS color string for NORM background nuclide peaks (used when FitNormBkgrndPeaks is set).
+   Non-empty default ensures Rel. Eff. chart data points render; override from the background
+   ReferenceLineInfo color or ColorTheme at the call site. */
+  std::string norm_css_color = "rgb(150,150,150)";
 
 
   // Get GammaClusteringSettings for manual RelEff stage
@@ -252,8 +279,38 @@ struct PeakFitForNuclideConfig
   }
 };//struct PeakFitForNuclideConfig
 
+  
+/** Options for fitting the peaks of nuclides.
+ */
+enum FitSrcPeaksOptions
+{
+  /** With this option, any existing ROI will not be used, and any gammas from the current source(s) that fall within
+   the ROI will not be consisdered.
+   */
+  DoNotUseExistingRois = 0x01,
+  
+  /** Notmally ROIs of source peak will try to be limited in energy range to mitigate effects of other nearby peaks; with
+   this option, the nearby peaks that will share the ROI will be left in as freely-floating peaks, and included in the results.
+   */
+  ExistingPeaksAsFreePeak = 0x02,
+  
+  /** The energy calibration stays fixed. */
+  DoNotVaryEnergyCal = 0x04,
+  
+  /** The energy calibration is varied in the fit, but the ROI extent is not updated based on the fit calibration. */
+  DoNotRefineEnergyCal = 0x08,
+  
+  /** Fit the NORM peaks, using a second relative efficiency curve. */
+  FitNormBkgrndPeaks = 0x10,
+  
+  /** Fit the NORM peaks to assist in getting FWHM functional form and energy calibration right,
+   but wont return in the solution peaks.
+   */
+  FitNormBkgrndPeaksDontUse = 0x20,
+  
+};
 
-/** Comprehensive peak fitting function for nuclides.
+/** Function to fit all the observable peaks for one or more sources.
 
  This function performs the complete peak fitting workflow:
  1. Determines FWHM functional form from auto-search peaks or DRF
@@ -263,11 +320,15 @@ struct PeakFitForNuclideConfig
  5. Calls fit_peaks_for_nuclide_relactauto with three different configurations
  6. Returns the best result based on chi2
 
- @param auto_search_peaks Initial peaks found by automatic search
+ @param auto_search_peaks Initial peaks found by automatic search (user peaks merged with auto-detected)
  @param foreground Foreground spectrum to fit
  @param sources Vector of source nuclides to fit
- @param long_background Long background spectrum (can be nullptr)
+ @param user_peaks The user's current peaks from PeakModel.  Used when DoNotUseExistingRois or
+        ExistingPeaksAsFreePeak options are set to identify existing ROIs / add floating peaks.
+        May be empty if neither option is set.
+ @param background Background spectrum (can be nullptr)
  @param drf_input Detector response function (can be nullptr, will use generic if needed)
+ @param options Options for how the fit should be done.
  @param config Configuration for peak fitting parameters
  @param isHPGe Whether this is an HPGe detector
  @return PeakFitResult with status, error message, fit peaks, and solution
@@ -277,8 +338,10 @@ PeakFitResult fit_peaks_for_nuclides(
   const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,
   const std::vector<RelActCalcAuto::NucInputInfo> &sources,
-  const std::shared_ptr<const SpecUtils::Measurement> &long_background,
+  const std::vector<std::shared_ptr<const PeakDef>> &user_peaks,
+  std::shared_ptr<const SpecUtils::Measurement> background,
   const std::shared_ptr<const DetectorPeakResponse> &drf_input,
+  const Wt::WFlags<FitSrcPeaksOptions> options,
   const PeakFitForNuclideConfig &config,
   const bool isHPGe );
   
@@ -286,8 +349,10 @@ PeakFitResult fit_peaks_for_nuclides(
   const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,
   const std::vector<RelActCalcAuto::SrcVariant> &sources,
-  const std::shared_ptr<const SpecUtils::Measurement> &long_background,
+  const std::vector<std::shared_ptr<const PeakDef>> &user_peaks,
+  const std::shared_ptr<const SpecUtils::Measurement> &background,
   const std::shared_ptr<const DetectorPeakResponse> &drf_input,
+  const Wt::WFlags<FitSrcPeaksOptions> options,
   const PeakFitForNuclideConfig &config,
   const bool isHPGe );
   

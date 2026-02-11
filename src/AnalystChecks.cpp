@@ -949,13 +949,26 @@ namespace AnalystChecks
       if( sources.empty() )
         throw runtime_error( "No sources specified" );
 
-
+      GetUserPeakOptions user_peak_options;
+      user_peak_options.specType = SpecUtils::SpectrumType::Foreground;
+      //user_peak_options.lowerEnergy = ...;
+      //user_peak_options.upperEnergy = ...;
+      
+      const GetUserPeakStatus user_peaks_status = AnalystChecks::get_user_peaks( user_peak_options, interspec );
+      const std::vector<std::shared_ptr<const PeakDef>> &user_peaks = user_peaks_status.peaks;
+      
+      Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> fit_options;
+      //fit_options |= FitPeaksForNuclides::FitSrcPeaksOptions::DoNotUseExistingRois;
+      //fit_options |= FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaks;
+      //fit_options |= FitPeaksForNuclides::FitSrcPeaksOptions::ExistingPeaksAsFreePeak;
+      
       FitPeaksForNuclides::PeakFitForNuclideConfig fit_config;
 
       // TODO: we will need to update `config` from default in the future
 
       const FitPeaksForNuclides::PeakFitResult fit_results = FitPeaksForNuclides::fit_peaks_for_nuclides(
-                                        auto_search_peaks, foreground, sources, background, drf, fit_config, isHPGe );
+        auto_search_peaks, foreground, sources, user_peaks, background, drf, fit_options, fit_config, isHPGe
+      );
 
       switch( fit_results.status )
       {

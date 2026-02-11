@@ -148,5 +148,15 @@
   <message id="x2g-">Sumbu-Y adalah hitungan area puncak, dikurangi jumlah hitungan yang diharapkan dari sumber yang ditampilkan saat ini dan nilai perisai, semuanya dibagi dengan ketidakpastian statistik. Kuadrat dari ini digunakan untuk mengoptimalkan perisai dan sumber.</message>
   <message id="x2g-tt-chi-axis">Sumbu-Y adalah hitungan area puncak, dikurangi jumlah hitungan yang diharapkan dari nilai sumber dan perisai yang ditampilkan saat ini, semuanya dibagi dengan ketidakpastian statistik. Kuadrat dari ini digunakan untuk mengoptimalkan perisai dan sumber.</message>
   <message id="x2g-tt-scale-axis">Sumbu-Y adalah kelipatan hitungan puncak yang diamati, relatif terhadap apa yang diharapkan dari nilai sumber dan perisai saat ini.</message>
+  <message id="x2g-tt-num-observed">Jml Diamati:</message>
+  <message id="x2g-tt-num-expected">Jml Diharapkan:</message>
+  <message id="x2g-tt-num-sigma-off">Jml Sigma Deviasi:</message>
+  <message id="x2g-tt-obs-over-exp">Diamati/Diharapkan:</message>
+  <message id="x2g-tt-num-foreground">Jml Latar Depan:</message>
+  <message id="x2g-tt-num-background">Jml Latar Belakang:</message>
+  <message id="x2g-tt-sources-contributing">Sumber yang berkontribusi:</message>
+  <message id="x2g-tt-counts-abbrev">hit</message>
+  <message id="x2g-tt-br-abbrev">br</message>
+  <message id="x2g-dev-label">&lt;dev&gt;</message>
 </messages>
 

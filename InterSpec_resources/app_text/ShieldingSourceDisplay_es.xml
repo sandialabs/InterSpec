@@ -148,6 +148,16 @@
   <message id="x2g-">El eje Y son las cuentas del área del pico, menos el número esperado de cuentas de los valores de fuente y blindaje actualmente mostrados, todo dividido por la incertidumbre estadística. El cuadrado de esto es lo que se usa para optimizar el blindaje y fuentes.</message>
   <message id="x2g-tt-chi-axis">El eje Y son las cuentas del área del pico, menos el número esperado de cuentas de los valores de fuente y blindaje actualmente mostrados, todo dividido por la incertidumbre estadística. El cuadrado de esto es lo que se usa para optimizar el blindaje y fuentes.</message>
   <message id="x2g-tt-scale-axis">El eje Y es el múltiplo de cuentas de pico observadas, relativo a lo que se esperaría de los valores actuales de fuente y blindaje.</message>
+  <message id="x2g-tt-num-observed">Núm. observado:</message>
+  <message id="x2g-tt-num-expected">Núm. esperado:</message>
+  <message id="x2g-tt-num-sigma-off">Núm. sigma desv.:</message>
+  <message id="x2g-tt-obs-over-exp">Obs/Esp:</message>
+  <message id="x2g-tt-num-foreground">Núm. primer plano:</message>
+  <message id="x2g-tt-num-background">Núm. fondo:</message>
+  <message id="x2g-tt-sources-contributing">Fuentes contribuyentes:</message>
+  <message id="x2g-tt-counts-abbrev">ctas</message>
+  <message id="x2g-tt-br-abbrev">br</message>
+  <message id="x2g-dev-label">&lt;dev&gt;</message>
 </messages>
 
 

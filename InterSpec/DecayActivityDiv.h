@@ -40,28 +40,17 @@
 namespace Wt
 {
   class WText;
-  class WSlider;
-  class WAnchor;
   class WLineEdit;
   class WCheckBox;
   class WComboBox;
   class WTabWidget;
-  class WDatePicker;
   class WPushButton;
-  class WDoubleSpinBox;
-  class WStandardItemModel;
-
-  namespace Chart
-  {
-    class WCartesianChart;
-  }//namespace Chart
 }//namespace Wt
 
 namespace SandiaDecay
 {
   struct Nuclide;
   class NuclideMixture;
-  class SandiaDecayDataBase;
 }//namespace SandiaDecay
 
 class InterSpec;
@@ -71,7 +60,6 @@ class DecayChainChart;
 class DecayActivityChart;
 class DecayActivityModel;
 class DecaySelectNuclide;
-class ChartToImageResource;
 struct NuclideSelectedInfo;
 class DateLengthCalculator;
 

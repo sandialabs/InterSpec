@@ -144,5 +144,15 @@
   <message id="x2g-">Y轴是峰面积计数，减去当前显示的"源和屏蔽值的预期计数数量，全部除以统计不确定度。这的平方"用于优化屏蔽和源。</message>
   <message id="x2g-tt-chi-axis">Y轴是峰面积计数，减去当前显示的源和屏蔽值的预期计数数量，全部除以统计不确定度。这的平方用于优化屏蔽和源。</message>
   <message id="x2g-tt-scale-axis">Y轴是观察峰计数的倍数，相对于当前源和屏蔽值的预期值。</message>
+  <message id="x2g-tt-num-observed">观测数量：</message>
+  <message id="x2g-tt-num-expected">预期数量：</message>
+  <message id="x2g-tt-num-sigma-off">偏差sigma数：</message>
+  <message id="x2g-tt-obs-over-exp">观测/预期：</message>
+  <message id="x2g-tt-num-foreground">前景数量：</message>
+  <message id="x2g-tt-num-background">本底数量：</message>
+  <message id="x2g-tt-sources-contributing">贡献源：</message>
+  <message id="x2g-tt-counts-abbrev">计数</message>
+  <message id="x2g-tt-br-abbrev">br</message>
+  <message id="x2g-dev-label">&lt;dev&gt;</message>
 </messages>
 

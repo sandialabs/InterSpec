@@ -677,7 +677,7 @@ namespace
           break;
           
         case FileDataField::Filename:
-          row[f] = meas.file_path;
+          row[f] = SpecUtils::filename( meas.file_path );
           break;
           
         case FileDataField::DetectorName:

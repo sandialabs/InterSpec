@@ -90,25 +90,5 @@
   <message id="rpd-fit-sources">ソースをフィット</message>
   <message id="rpd-fit-sources-menu-auto">自動</message>
   <message id="rpd-fit-sources-menu-advanced">高度</message>
-  
-  <message id="rpd-fit-sources-adv-title">ソースをフィット（高度）</message>
-  <message id="rpd-fit-sources-adv-content">高度なオプションは実装されていません</message>
-  <message id="rpd-fit-peaks">ピークをフィット</message>
-  
-  <message id="rpd-fit-sources-no-data">ピークをフィットする前景スペクトルがありません。</message>
-  <message id="rpd-fit-sources-wait-title">ピークをフィット中</message>
-  <message id="rpd-fit-sources-wait-content">これには1分かかる場合があります。アプリケーションの使用を続けることができます。</message>
-  <message id="rpd-fit-sources-stale">フィットが完了する前にスペクトルが変更されました。結果を破棄します。</message>
-  
-  <message id="rpd-fit-sources-error-title">フィット失敗</message>
-  <message id="rpd-fit-sources-error-content">エラー：{1}</message>
-  
-  <message id="rpd-fit-sources-result-title">フィット結果</message>
-  <message id="rpd-fit-sources-no-peaks">選択されたソースに対してピークがフィットされませんでした。</message>
-  <message id="rpd-fit-sources-summary">{2}個のソースに対して{1}個のピークをフィットしました。</message>
-  <message id="rpd-fit-sources-warnings-header">警告：</message>
-  <message id="rpd-fit-sources-auto-accept">フィット結果を自動的に受け入れる</message>
-  <message id="rpd-fit-sources-auto-accepted">フィット結果が自動的に受け入れられました。</message>
-
 
 </messages>

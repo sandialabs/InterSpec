@@ -34,29 +34,13 @@
 #include <boost/optional.hpp>
 #endif
 
-#include <Wt/WRectF>
-#include <Wt/WColor>
-#include <Wt/WPainter>
-#include <Wt/WModelIndex>
-#include <Wt/WGridLayout>
 #include <Wt/WContainerWidget>
-#include <Wt/WAbstractItemModel>
-#include <Wt/Chart/WCartesianChart>
 
 #include "InterSpec/ShieldingSourceFitCalc.h"
 
 //Forward declarations
-class PeakDef;
 struct Material;
-class PeakModel;
-class AuxWindow;
 class MaterialDB;
-class PopupDivMenu;
-class SwitchCheckbox;
-class DetectorDisplay;
-class PopupDivMenuItem;
-class DetectorPeakResponse;
-struct ShieldingSourceModel;
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
 class SpectrumViewerTester;
 #endif

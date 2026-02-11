@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- fpn- is short for FitPeaksForNuclides -->
+
+  <!-- Tab labels for FitPeaksAdvancedWidget upper area -->
+  <message id="fpn-tab-spectrum">Spec.</message>
+  <message id="fpn-tab-rel-eff">Rel. Eff.</message>
+  <message id="fpn-tab-results">Details</message>
+
+  <!-- Advanced dialog -->
+  <message id="fpn-adv-title">Fit peaks for:</message>
+  <message id="fpn-adv-content">Advanced options not implemented</message>
+  <message id="fpn-fit-peaks">Fit Peaks</message>
+  <message id="fpn-accept">Accept</message>
+  <message id="fpn-cancel">Cancel</message>
+
+  <!-- Status and computation messages -->
+  <message id="fpn-calculating">Calculating...</message>
+  <message id="fpn-computation-successful">Computation successful.</message>
+  <message id="fpn-summary-chi2">Chi2/dof: {1}</message>
+  <message id="fpn-summary-rel-activities">Relative activities (max=1): {1}</message>
+  <message id="fpn-summary-rois">ROIs: {1}</message>
+  <message id="fpn-summary-total-area">Total source area: {1}</message>
+  <message id="fpn-summary-no-rel-act">No relative activities (single source).</message>
+
+  <!-- FitSrcPeaksOptions checkbox labels -->
+  <message id="fpn-opt-dont-use-existing-rois">Avoid existing ROIs</message>
+  <message id="fpn-opt-existing-as-free">Allow sharing current ROIs</message>
+  <message id="fpn-opt-dont-vary-energy-cal">Don't vary energy cal</message>
+  <message id="fpn-opt-dont-refine-energy-cal">Don't refine energy cal</message>
+  <message id="fpn-opt-fit-bkgnd-peaks">Fit NORM</message>
+  <message id="fpn-opt-fit-bkgnd-dont-use">Fit NORM (don't use)</message>
+  <message id="fpn-opt-use-background">Compute with background subtract</message>
+
+  <!-- PeakFitForNuclideConfig option labels -->
+  <message id="fpn-opt-roi-min-chi2-red">Keep ROI chi2 reduction threshold</message>
+  <message id="fpn-opt-roi-min-peak-sig">Keep ROI significance threshold</message>
+  <message id="fpn-opt-obs-initial-sig">Predicted peak significance threshold</message>
+  <message id="fpn-opt-obs-final-sig">Final peak significance threshold</message>
+  <message id="fpn-opt-skew-type">Peak skew</message>
+  <message id="fpn-opt-fwhm-form">FWHM form</message>
+  <message id="fpn-opt-rel-eff-eqn-type">Rel. Eff. eqn.</message>
+  <message id="fpn-opt-rel-eff-eqn-order">Rel. Eff. order</message>
+
+  <!-- Tooltips for options -->
+  <message id="fpn-opt-tt-dont-use-existing-rois">With this option, any existing ROI will not be used, and gammas from the current source(s) that fall within an existing ROI will not be considered.</message>
+  <message id="fpn-opt-tt-existing-as-free">Normally ROIs of source peaks are limited in energy range to reduce effects of nearby peaks. With this option, nearby peaks that share the ROI are left in as freely-floating peaks and included in the results.</message>
+  <message id="fpn-opt-tt-dont-vary-energy-cal">The energy calibration stays fixed during the fit.</message>
+  <message id="fpn-opt-tt-dont-refine-energy-cal">The energy calibration is varied in the fit, but the ROI extent is not updated based on the fit calibration.</message>
+  <message id="fpn-opt-tt-fit-bkgnd-peaks">Fit NORM peaks (U-238, Ra-226, U-235, Th-232, K-40) using a second relative efficiency curve.</message>
+  <message id="fpn-opt-tt-use-background">When enabled, the background spectrum is subtracted during peak fitting to determine ROIs to use, but the background is not subtracted for the final fit of peaks that will be returned. Uncheck to fit without background subtraction.</message>
+  <message id="fpn-opt-tt-roi-min-chi2-red">Minimum total chi2 reduction required for peaks in a ROI to be considered significant. The chi2 with peaks must be at least this much lower than chi2 with continuum-only.</message>
+  <message id="fpn-opt-tt-roi-min-peak-sig">Minimum peak significance (peak_area / sqrt(continuum)) for a peak to be considered significant. If any peak in a ROI has significance above this threshold, the ROI is kept.</message>
+  <message id="fpn-opt-tt-obs-initial-sig">Threshold for the initial peak significance filter before refitting. Significance = (peak_amplitude * 0.7607) / sqrt(data_area_in_pm_1_fwhm).</message>
+  <message id="fpn-opt-tt-obs-final-sig">Threshold for the final peak significance after refitting. Significance = peak_area / peak_area_uncertainty.</message>
+  <message id="fpn-opt-tt-skew-type">Skew shape applied to all peaks in the fit. &quot;None&quot; uses a pure Gaussian. Other options add low-energy tail components (e.g. Exp*Gauss for NaI/CsI detectors, Crystal Ball for charge-collection tailing in HPGe).</message>
+  <message id="fpn-opt-tt-fwhm-form">Functional form for detector resolution (FWHM vs energy). Bernstein polynomial order determines how many coefficients are fit.</message>
+  <message id="fpn-opt-tt-rel-eff-eqn-type">Form of the relative efficiency curve (e.g. LnXLnY polynomial, or FRAM physical model).</message>
+  <message id="fpn-opt-tt-rel-eff-eqn-order">Polynomial order for the relative efficiency equation (when not using the physical model).</message>
+
+  <!-- Status and error messages -->
+  <message id="fpn-no-data">There is no foreground spectrum to fit peaks on.</message>
+  <message id="fpn-wait-title">Fitting peaks</message>
+  <message id="fpn-wait-content">This may take a minute. You can continue using the app.</message>
+  <message id="fpn-stale">Spectrum changed before fit completed; discarding results.</message>
+
+  <message id="fpn-error-title">Fit failed</message>
+  <message id="fpn-error-content">Error: {1}</message>
+
+  <!-- Results dialog -->
+  <message id="fpn-result-title">Fit results</message>
+  <message id="fpn-no-peaks">No peaks were fit for the selected source(s).</message>
+  <message id="fpn-summary">Fit {1} peak(s) for {2} source(s).</message>
+  <message id="fpn-warnings-header">Warnings:</message>
+  <message id="fpn-auto-accept">Automatically accept fit results</message>
+  <message id="fpn-auto-accepted">Fit results were automatically accepted.</message>
+
+</messages>

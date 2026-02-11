@@ -714,9 +714,10 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
     m_setup_warnings{},
     m_ncalls( 0 )
   {
-    if( m_input.peaks.size() < 2 )
-      throw runtime_error( "You must use at least two peaks." );
-    
+    if( m_input.peaks.size() < 1 )
+      throw runtime_error( "You must use at least one peak." );
+
+    size_t num_rel_eff_pars_fit = 0;
     if( m_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
     {
       if( m_input.eqn_order != 0 )
@@ -724,17 +725,32 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
       if( !m_input.phys_model_detector )
         throw runtime_error( "ManualGenericRelActFunctor: detector must be specified for FramPhysicalModel." );
 
+      if( m_input.phys_model_use_hoerl )
+        num_rel_eff_pars_fit += 2;
+
       try
       {
         if( m_input.phys_model_self_atten )
-          m_input.phys_model_self_atten->check_valid();  
+        {
+          m_input.phys_model_self_atten->check_valid();
 
-        for( const auto &opt : m_input.phys_model_external_attens )
+          if( m_input.phys_model_self_atten->fit_areal_density )
+            num_rel_eff_pars_fit += 1;
+          if( !m_input.phys_model_self_atten->material && m_input.phys_model_self_atten->fit_atomic_number )
+            num_rel_eff_pars_fit += 1;
+        }//if( m_input.phys_model_self_atten )
+
+        for( const shared_ptr<const RelActCalc::PhysicalModelShieldInput> &opt : m_input.phys_model_external_attens )
         {
           if( !opt )
             throw runtime_error( "ManualGenericRelActFunctor: external attenuation may not be nullptr for FramPhysicalModel." );
           opt->check_valid();
-        }
+
+          if( opt->fit_areal_density )
+            num_rel_eff_pars_fit += 1;
+          if( !opt->material && opt->fit_atomic_number )
+            num_rel_eff_pars_fit += 1;
+        }//for( loop over m_input.phys_model_external_attens )
       }catch( const std::exception &e )
       {
         throw runtime_error( "ManualGenericRelActFunctor: attenuation input is invalid: " + std::string(e.what()) );
@@ -752,6 +768,11 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
         return lhs.m_energy < rhs.m_energy;
         } );
 #endif
+
+      num_rel_eff_pars_fit += m_input.eqn_order;  //We actually fit one more paramater than `eqn_order`, but since we force to an average of 1, we effectively have one less.
+      if( static_cast<int>(m_input.peaks.size()) < m_input.eqn_order )
+        throw runtime_error( "You must use at least as many peaks as the equation order." );
+
     }//if( m_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel ) / else
 
     const size_t num_peaks = m_input.peaks.size();
@@ -1017,7 +1038,8 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
     }//if( !m_input.act_ratio_constraints.empty() )
 
     assert( m_isotopes.size() == m_rel_act_norms.size() );
-    
+
+    size_t num_fit_activities = 0;
     for( size_t i = 0; i < m_rel_act_norms.size(); ++i )
     {
       bool is_controlled = false;
@@ -1043,9 +1065,14 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
                                     + ", so will use 1.0 instead.");
         m_rel_act_norms[i] = 1.0;
       }//if( m_rel_act_norms[i] < 1.0 )
+
+      if( !is_mass_constrained && !is_controlled )
+        num_fit_activities += 1;
     }//for( size_t i = 0; i < m_rel_act_norms.size(); ++i )
-    
-    if( num_isotopes > m_input.peaks.size() )
+
+    //assert( mod_activities.size() == num_fit_activities );
+
+    if( (num_fit_activities + num_rel_eff_pars_fit) > m_input.peaks.size() )
       throw std::runtime_error( "ManualGenericRelActFunctor: you must have at least as many peaks as"
                                " parameters you are fitting for." );
   }//ManualGenericRelActFunctor constructor

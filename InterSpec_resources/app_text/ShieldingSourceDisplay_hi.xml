@@ -145,4 +145,14 @@
   <message id="x2g-">Y-अक्ष शिखर क्षेत्र गणना है, वर्तमान में प्रदर्शित स्रोत और परिरक्षण मूल्यों से अपेक्षित गणना की संख्या घटाकर, सभी को सांख्यिकीय अनिश्चितता से विभाजित किया गया है। इसका वर्ग परिरक्षण और स्रोतों को अनुकूलित करने के लिए उपयोग किया जाता है।</message>
   <message id="x2g-tt-chi-axis">Y-अक्ष शिखर क्षेत्र गणना है, वर्तमान में प्रदर्शित स्रोत और परिरक्षण मूल्यों से अपेक्षित गणना की संख्या घटाकर, सभी को सांख्यिकीय अनिश्चितता से विभाजित किया गया है। इसका वर्ग परिरक्षण और स्रोतों को अनुकूलित करने के लिए उपयोग किया जाता है।</message>
   <message id="x2g-tt-scale-axis">Y-अक्ष देखी गई शिखर गणना का गुणक है, वर्तमान स्रोत और परिरक्षण मूल्यों से क्या अपेक्षित होगा की तुलना में।</message>
+  <message id="x2g-tt-num-observed">देखी गई संख्या:</message>
+  <message id="x2g-tt-num-expected">अपेक्षित संख्या:</message>
+  <message id="x2g-tt-num-sigma-off">सिग्मा विचलन संख्या:</message>
+  <message id="x2g-tt-obs-over-exp">देखा/अपेक्षित:</message>
+  <message id="x2g-tt-num-foreground">अग्रभूमि संख्या:</message>
+  <message id="x2g-tt-num-background">पृष्ठभूमि संख्या:</message>
+  <message id="x2g-tt-sources-contributing">योगदान करने वाले स्रोत:</message>
+  <message id="x2g-tt-counts-abbrev">गणना</message>
+  <message id="x2g-tt-br-abbrev">br</message>
+  <message id="x2g-dev-label">&lt;dev&gt;</message>
 </messages>
