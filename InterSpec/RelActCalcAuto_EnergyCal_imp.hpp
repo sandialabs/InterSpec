@@ -64,7 +64,7 @@ struct CubicSplineNodeT
 };
 
 
-/** Create a natural cubic spline from deviation pair anchors and their offsets.
+/** Create a cubic spline while retaining first-order sensitivities to knot positions.
 
  The spline uses natural boundary conditions (second derivative = 0 at endpoints).
  This is compatible with SpecUtils deviation pair conventions.
@@ -76,115 +76,192 @@ template<typename T>
 std::vector<CubicSplineNodeT<T>> create_cubic_spline(
   const std::vector<std::pair<double,T>> &deviation_pairs )
 {
-  const size_t n = deviation_pairs.size();
+  if constexpr ( std::is_same_v<T, double> )
+  {
+    const size_t n = deviation_pairs.size();
+    if( n < 2 )
+      return std::vector<CubicSplineNodeT<T>>{};
 
-  if( n < 2 )
-    return std::vector<CubicSplineNodeT<T>>{};
-
-  // Verify sorted
 #ifndef NDEBUG
-  for( size_t i = 1; i < n; ++i )
-    assert( deviation_pairs[i].first > deviation_pairs[i-1].first );
+    for( size_t i = 1; i < n; ++i )
+      assert( deviation_pairs[i].first > deviation_pairs[i-1].first );
 #endif
 
-  // Extract anchor energies and offsets
-  std::vector<double> anchor_energies( n );
-  std::vector<T> offsets( n );
-  for( size_t i = 0; i < n; ++i )
-  {
-    anchor_energies[i] = deviation_pairs[i].first;
-    offsets[i] = deviation_pairs[i].second;
+    std::vector<double> x_vals( n, 0.0 );
+    std::vector<double> y_vals( n, 0.0 );
+    for( size_t i = 0; i < n; ++i )
+    {
+      y_vals[i] = deviation_pairs[i].second;
+      x_vals[i] = deviation_pairs[i].first - y_vals[i];
+    }
+
+    Eigen::MatrixXd A = Eigen::MatrixXd::Zero( n, n );
+    Eigen::VectorXd rhs_val = Eigen::VectorXd::Zero( n );
+    for( size_t i = 1; i < (n - 1); ++i )
+    {
+      const double h_prev = x_vals[i] - x_vals[i-1];
+      const double h_next = x_vals[i+1] - x_vals[i];
+
+      A( i, i - 1 ) = h_prev / 3.0;
+      A( i, i )     = (h_prev + h_next) / 1.5;
+      A( i, i + 1 ) = h_next / 3.0;
+
+      rhs_val(i) = ((y_vals[i+1] - y_vals[i]) / h_next)
+                  - ((y_vals[i] - y_vals[i-1]) / h_prev);
+    }
+
+    A( 0, 0 ) = 2.0;
+    rhs_val(0) = 0.0;
+
+    const double h_last = x_vals[n-1] - x_vals[n-2];
+    A( n - 1, n - 2 ) = h_last / 3.0;
+    A( n - 1, n - 1 ) = 2.0 * h_last / 3.0;
+    rhs_val(n - 1) = -(y_vals[n-1] - y_vals[n-2]) / h_last;
+
+    const Eigen::VectorXd b_vals_scalar = A.partialPivLu().solve( rhs_val );
+
+    std::vector<CubicSplineNodeT<T>> nodes( n );
+    for( size_t i = 0; i < (n - 1); ++i )
+    {
+      const double h = x_vals[i+1] - x_vals[i];
+
+      nodes[i].x = x_vals[i];
+      nodes[i].y = y_vals[i];
+      nodes[i].a = (b_vals_scalar(i+1) - b_vals_scalar(i)) / (3.0 * h);
+      nodes[i].b = b_vals_scalar(i);
+      nodes[i].c = (y_vals[i+1] - y_vals[i]) / h
+                 - (2.0 * b_vals_scalar(i) + b_vals_scalar(i+1)) * h / 3.0;
+    }
+
+    nodes[n-1].x = x_vals[n-1];
+    nodes[n-1].y = y_vals[n-1];
+    nodes[n-1].a = 0.0;
+    nodes[n-1].b = 0.0;
+    nodes[n-1].c = 0.0;
+    return nodes;
   }
-
-  // CRITICAL: Transform x-coordinates to match SpecUtils convention
-  // SpecUtils::create_cubic_spline_for_dev_pairs subtracts the offset from the energy
-  // (see EnergyCalibration.cpp line 265: offsets[i].first -= offsets[i].second)
-  // This is because deviation pairs represent: at true_energy, you observe it at (true_energy - offset)
-  std::vector<double> transformed_energies( n );
-  for( size_t i = 0; i < n; ++i )
+  else
   {
-    // Extract the scalar value from T (could be double or ceres::Jet)
-    double offset_val;
-    if constexpr ( std::is_same_v<T, double> )
-      offset_val = offsets[i];
-    else
-      offset_val = offsets[i].a;  // For ceres::Jet, .a is the scalar value
+    const size_t n = deviation_pairs.size();
+    if( n < 2 )
+      return std::vector<CubicSplineNodeT<T>>{};
 
-    transformed_energies[i] = anchor_energies[i] - offset_val;
+#ifndef NDEBUG
+    for( size_t i = 1; i < n; ++i )
+      assert( deviation_pairs[i].first > deviation_pairs[i-1].first );
+#endif
+
+    const size_t nderiv = static_cast<size_t>( T::DIMENSION );
+
+    std::vector<double> x_vals( n, 0.0 );
+    std::vector<std::vector<double>> dx_vals( n, std::vector<double>(nderiv, 0.0) );
+    std::vector<double> y_vals( n, 0.0 );
+    std::vector<std::vector<double>> dy_vals( n, std::vector<double>(nderiv, 0.0) );
+    for( size_t i = 0; i < n; ++i )
+    {
+      y_vals[i] = deviation_pairs[i].second.a;
+      x_vals[i] = deviation_pairs[i].first - y_vals[i];
+      for( size_t d = 0; d < nderiv; ++d )
+      {
+        dy_vals[i][d] = deviation_pairs[i].second.v[d];
+        dx_vals[i][d] = -dy_vals[i][d];
+      }
+    }
+
+    Eigen::MatrixXd A = Eigen::MatrixXd::Zero( n, n );
+    Eigen::VectorXd rhs_val = Eigen::VectorXd::Zero( n );
+    std::vector<Eigen::MatrixXd> dA( nderiv, Eigen::MatrixXd::Zero(n,n) );
+    std::vector<Eigen::VectorXd> drhs( nderiv, Eigen::VectorXd::Zero(n) );
+
+    for( size_t i = 1; i < (n - 1); ++i )
+    {
+      const double h_prev = x_vals[i] - x_vals[i-1];
+      const double h_next = x_vals[i+1] - x_vals[i];
+
+      A( i, i - 1 ) = h_prev / 3.0;
+      A( i, i )     = (h_prev + h_next) / 1.5;
+      A( i, i + 1 ) = h_next / 3.0;
+
+      rhs_val(i) = ((y_vals[i+1] - y_vals[i]) / h_next)
+                  - ((y_vals[i] - y_vals[i-1]) / h_prev);
+
+      const double h_prev_sq = h_prev * h_prev;
+      const double h_next_sq = h_next * h_next;
+      for( size_t d = 0; d < nderiv; ++d )
+      {
+        const double dh_prev = dx_vals[i][d] - dx_vals[i-1][d];
+        const double dh_next = dx_vals[i+1][d] - dx_vals[i][d];
+        const double dy_next = dy_vals[i+1][d] - dy_vals[i][d];
+        const double dy_prev = dy_vals[i][d] - dy_vals[i-1][d];
+
+        dA[d]( i, i - 1 ) = dh_prev / 3.0;
+        dA[d]( i, i )     = (dh_prev + dh_next) / 1.5;
+        dA[d]( i, i + 1 ) = dh_next / 3.0;
+
+        const double dt_next = (dy_next * h_next - (y_vals[i+1] - y_vals[i]) * dh_next) / h_next_sq;
+        const double dt_prev = (dy_prev * h_prev - (y_vals[i] - y_vals[i-1]) * dh_prev) / h_prev_sq;
+        drhs[d](i) = dt_next - dt_prev;
+      }
+    }
+
+    A( 0, 0 ) = 2.0;
+    rhs_val(0) = 0.0;
+
+    const double h_last = x_vals[n-1] - x_vals[n-2];
+    A( n - 1, n - 2 ) = h_last / 3.0;
+    A( n - 1, n - 1 ) = 2.0 * h_last / 3.0;
+    rhs_val(n - 1) = -(y_vals[n-1] - y_vals[n-2]) / h_last;
+    for( size_t d = 0; d < nderiv; ++d )
+    {
+      const double dh_last = dx_vals[n-1][d] - dx_vals[n-2][d];
+      const double dy_last = dy_vals[n-1][d] - dy_vals[n-2][d];
+      const double h_last_sq = h_last * h_last;
+      dA[d]( n - 1, n - 2 ) = dh_last / 3.0;
+      dA[d]( n - 1, n - 1 ) = 2.0 * dh_last / 3.0;
+      drhs[d](n - 1) = -((dy_last * h_last - (y_vals[n-1] - y_vals[n-2]) * dh_last) / h_last_sq);
+    }
+
+    const Eigen::PartialPivLU<Eigen::MatrixXd> lu( A );
+    const Eigen::VectorXd b_vals_scalar = lu.solve( rhs_val );
+
+    std::vector<Eigen::VectorXd> db_vals( nderiv, Eigen::VectorXd::Zero(n) );
+    for( size_t d = 0; d < nderiv; ++d )
+    {
+      const Eigen::VectorXd sensitivity_rhs = drhs[d] - dA[d] * b_vals_scalar;
+      db_vals[d] = lu.solve( sensitivity_rhs );
+    }
+
+    std::vector<T> b_vals( n, T(0.0) );
+    for( size_t i = 0; i < n; ++i )
+    {
+      b_vals[i].a = b_vals_scalar(i);
+      for( size_t d = 0; d < nderiv; ++d )
+        b_vals[i].v[d] = db_vals[d](i);
+    }
+
+    std::vector<CubicSplineNodeT<T>> nodes( n );
+    for( size_t i = 0; i < (n - 1); ++i )
+    {
+      T h = T( x_vals[i+1] - x_vals[i] );
+      for( size_t d = 0; d < nderiv; ++d )
+        h.v[d] = dx_vals[i+1][d] - dx_vals[i][d];
+
+      nodes[i].x = x_vals[i];
+      nodes[i].y = deviation_pairs[i].second;
+      nodes[i].a = (b_vals[i+1] - b_vals[i]) / (T(3.0) * h);
+      nodes[i].b = b_vals[i];
+      nodes[i].c = (deviation_pairs[i+1].second - deviation_pairs[i].second) / h
+                 - (T(2.0) * b_vals[i] + b_vals[i+1]) * h / T(3.0);
+    }
+
+    nodes[n-1].x = x_vals[n-1];
+    nodes[n-1].y = deviation_pairs[n-1].second;
+    nodes[n-1].a = T(0.0);
+    nodes[n-1].b = T(0.0);
+    nodes[n-1].c = T(0.0);
+
+    return nodes;
   }
-
-  // Build the tri-diagonal system to solve for second derivatives (b values)
-  // Using natural spline boundary conditions (second derivative = 0 at ends)
-  //
-  // The matrix elements depend only on x-coordinates (doubles)
-  // But the RHS and solution depend on y-coordinates (template type T)
-  //
-  // We use Eigen to build and invert the tri-diagonal matrix (all doubles),
-  // then manually multiply the inverse by the RHS vector (type T) to get the solution.
-
-  Eigen::MatrixXd A = Eigen::MatrixXd::Zero( n, n );
-  std::vector<T> rhs( n );
-
-  // Interior points (use transformed_energies for spacing)
-  for( size_t i = 1; i < n - 1; ++i )
-  {
-    const double h_prev = transformed_energies[i] - transformed_energies[i-1];
-    const double h_next = transformed_energies[i+1] - transformed_energies[i];
-
-    A( i, i - 1 ) = h_prev / 3.0;             // lower diagonal
-    A( i, i )     = (h_prev + h_next) / 1.5;  // diagonal
-    A( i, i + 1 ) = h_next / 3.0;             // upper diagonal
-
-    rhs[i] = (offsets[i+1] - offsets[i]) / h_next - (offsets[i] - offsets[i-1]) / h_prev;
-  }
-
-  // Left boundary: natural spline (second derivative = 0)
-  A( 0, 0 ) = 2.0;
-  rhs[0] = T( 0.0 );
-
-  // Right boundary: zero first derivative (matches SpecUtils deviation pair convention)
-  // Condition: f'(x_n) = 0
-  // This gives: 2*b_n + b_{n-1} = -6*(y_n - y_{n-1})/h_{n-1}^2
-  const double h_last = transformed_energies[n-1] - transformed_energies[n-2];
-  A( n - 1, n - 2 ) = h_last / 3.0;
-  A( n - 1, n - 1 ) = 2.0 * h_last / 3.0;
-  rhs[n - 1] = -(offsets[n-1] - offsets[n-2]) / h_last;
-
-  // Compute the inverse of A using Eigen's partial-pivot LU decomposition
-  const Eigen::MatrixXd A_inv = A.partialPivLu().inverse();
-
-  // Multiply A_inv (double) by rhs (type T) to get b_vals (type T)
-  // We do this manually to support ceres::Jet<> types
-  std::vector<T> b_vals( n, T(0.0) );
-  for( size_t i = 0; i < n; ++i )
-  {
-    for( size_t j = 0; j < n; ++j )
-      b_vals[i] += A_inv( i, j ) * rhs[j];
-  }
-
-  // Calculate spline coefficients a, b, c for each interval
-  // IMPORTANT: Use transformed_energies for the node x-coordinates to match SpecUtils
-  std::vector<CubicSplineNodeT<T>> nodes( n );
-
-  for( size_t i = 0; i < n - 1; ++i )
-  {
-    const double h = transformed_energies[i+1] - transformed_energies[i];
-
-    nodes[i].x = transformed_energies[i];
-    nodes[i].y = offsets[i];
-    nodes[i].a = (b_vals[i+1] - b_vals[i]) / (3.0 * h);
-    nodes[i].b = b_vals[i];
-    nodes[i].c = (offsets[i+1] - offsets[i]) / h - (2.0 * b_vals[i] + b_vals[i+1]) * h / 3.0;
-  }
-
-  // Last node (for extrapolation - just store position, coefficients are zero)
-  nodes[n-1].x = transformed_energies[n-1];
-  nodes[n-1].y = offsets[n-1];
-  nodes[n-1].a = T(0.0);
-  nodes[n-1].b = T(0.0);
-  nodes[n-1].c = T(0.0);
-
-  return nodes;
 }//create_cubic_spline(...)
 
 
