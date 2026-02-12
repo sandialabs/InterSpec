@@ -596,16 +596,73 @@ namespace {
   }
 
   void from_json(const json& j, AnalystChecks::FitPeaksForNuclideOptions& p) {
-    const json& sourcesParam = j.at("source");
-    if (sourcesParam.is_string()) {
-      p.sources = {sourcesParam.get<std::string>()};
-    } else if (sourcesParam.is_array()) {
-      p.sources = sourcesParam.get<std::vector<std::string>>();
-    } else {
-      throw std::runtime_error("Invalid sources parameter: must be string or array of strings");
-    }
+    // source may be absent, null, empty string, empty array, or an array containing nulls
+    // when FitNormBkgrndPeaks is set (fit only NORM background peaks).
+    const bool has_source = j.contains("source") && !j["source"].is_null();
+    if( has_source )
+    {
+      const json& sourcesParam = j["source"];
+      if( sourcesParam.is_string() && !sourcesParam.get<std::string>().empty() )
+      {
+        p.sources = { sourcesParam.get<std::string>() };
+      }else if( sourcesParam.is_array() )
+      {
+        for( const json &entry : sourcesParam )
+        {
+          if( entry.is_string() && !entry.get<std::string>().empty() )
+            p.sources.push_back( entry.get<std::string>() );
+          else if( !entry.is_null() )
+            throw std::runtime_error( "source array entries must be strings or null" );
+        }
+      }else if( !sourcesParam.is_string() ) // non-empty string already handled above
+      {
+        throw std::runtime_error( "Invalid sources parameter: must be string or array of strings" );
+      }
+    }//if( has_source )
 
-    p.doNotAddPeaksToUserSession = get_boolean( j, "doNotAddPeaksToUserSession", false );
+    // Parse options array; also accept legacy field names for backwards compatibility
+    const std::string options_field = j.contains("options") ? "options"
+                                    : j.contains("fitSrcPeaksOptions") ? "fitSrcPeaksOptions"
+                                    : std::string();
+
+    if( !options_field.empty() && j[options_field].is_array() )
+    {
+      static const std::map<std::string, FitPeaksForNuclides::FitSrcPeaksOptions> flag_map = {
+        { "DoNotUseExistingRois",       FitPeaksForNuclides::FitSrcPeaksOptions::DoNotUseExistingRois },
+        { "ExistingPeaksAsFreePeak",    FitPeaksForNuclides::FitSrcPeaksOptions::ExistingPeaksAsFreePeak },
+        { "DoNotVaryEnergyCal",         FitPeaksForNuclides::FitSrcPeaksOptions::DoNotVaryEnergyCal },
+        { "DoNotRefineEnergyCal",       FitPeaksForNuclides::FitSrcPeaksOptions::DoNotRefineEnergyCal },
+        { "FitNormBkgrndPeaks",         FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaks },
+        { "FitNormBkgrndPeaksDontUse",  FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaksDontUse },
+      };
+
+      for( const json &flag_val : j[options_field] )
+      {
+        if( !flag_val.is_string() )
+          throw std::runtime_error( "options entries must be strings" );
+        const std::string flag_str = flag_val.get<std::string>();
+
+        if( flag_str == "DoNotAddToUserSession" )
+        {
+          p.doNotAddPeaksToUserSession = true;
+          continue;
+        }
+
+        const auto it = flag_map.find( flag_str );
+        if( it == flag_map.end() )
+          throw std::runtime_error( "Unknown options flag: '" + flag_str + "'" );
+        p.fitSrcPeaksOptions |= it->second;
+      }
+    }//if options present
+
+    // Legacy standalone field; options array takes precedence if both present
+    if( options_field != "options" )
+      p.doNotAddPeaksToUserSession = get_boolean( j, "doNotAddPeaksToUserSession", false );
+
+    // Validate: sources may only be empty when FitNormBkgrndPeaks is set
+    const bool fit_norm = (p.fitSrcPeaksOptions & FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaks);
+    if( p.sources.empty() && !fit_norm )
+      throw std::runtime_error( "source must be specified unless FitNormBkgrndPeaks is included in fitSrcPeaksOptions" );
   }
 
   void from_json( const json &j, AnalystChecks::EditAnalysisPeakOptions &p )

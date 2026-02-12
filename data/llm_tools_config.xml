@@ -202,10 +202,12 @@
 
 
   <Tool name="add_analysis_peaks_for_source">
-    <Description>Fits, and adds to the analysis peaks all detectable peaks for the one or more specified nuclide(s).
+    <Description>Fits, and adds to the analysis peaks all of the detectable peaks for the one or more specified sources.
     For sources with multiple peaks, will very likely do a much better job than individually fitting peaks for a source, and will do it much more efficiently and with a single tool call.
     If you want to fit peaks for a source that has multiple gamma or x-ray energies, use this function.
     The peaks added to the analysis peaks will have their respective source assigned to them.
+    If you wish to fit for just just the NORM background peaks call with no source but with the FitNormBkgrndPeaks option, like `{ source: null, options: ["FitNormBkgrndPeaks"] }`.
+    If there were any peaks for the source already added to the analysis peaks, they will be replaced with the results of this fit unless the "DoNotUseExistingRois" option is specified.
     Returns simplified peak information (energy, fwhm, amplitude, amplitudeUncert, numSigma, cps, and source) for the peaks that were fit.
     </Description>
     <ParametersSchema>{
@@ -214,19 +216,45 @@
         "source": {
           "anyOf": [
             {"type": "string"},
-            {"type": "array", "items": {"type": "string"}}
+            {"type": "null"},
+            {"type": "array", "items": {"anyOf": [{"type": "string"}, {"type": "null"}]}}
           ],
-          "description": "The nuclide, x-ray element, or reaction, or array of these values, to fit peaks for (ex `'U235'`, `'I131'`, `['U235','U','Mn(a,a)']`)."
+          "description": "Required. The nuclide, x-ray element, or reaction, or array of these values, to fit peaks for (ex `'U235'`, `'I131'`, `['U235','U','Mn(a,a)']`). May be null or omitted only when 'FitNormBkgrndPeaks' is specified in options, in which case only NORM background nuclide peaks are fit."
         },
-        "doNotAddPeaksToUserSession": {
-          "type": "boolean",
-          "description": "Optional: if true, fitted peaks will not be added to the user's peak collection; defaults to false."
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "oneOf": [
+              {
+                "const": "DoNotAddToUserSession",
+                "description": "Fitted peaks will not be added to the user's peak collection; useful when only inspecting fit results."
+              },
+              {
+                "const": "DoNotUseExistingRois",
+                "description": "Any existing user ROI that overlaps a source gamma energy is ignored; gammas falling within those ROIs are excluded from the fit entirely."
+              },
+              {
+                "const": "ExistingPeaksAsFreePeak",
+                "description": "Normally the ROI extent for a source peak is restricted to reduce interference from nearby peaks, not from this source; with this option those nearby peaks are instead included in the ROI as freely-floating peaks and are effectively refit."
+              },
+              {
+                "const": "DoNotVaryEnergyCal",
+                "description": "The energy calibration is held fixed throughout the fit."
+              },
+              {
+                "const": "FitNormBkgrndPeaks",
+                "description": "NORM background nuclide peaks (e.g. K40, Th232, Ra226, U238) are fit using a separate relative efficiency curve; the resulting peaks are included in the results."
+              }
+            ]
+          },
+          "description": "Optional: array of option flags controlling the fit behaviour."
         }
       },
       "required": ["source"]
     }</ParametersSchema>
   </Tool>
- 
+
 
   <!-- Spectrum Information Tools -->
 
