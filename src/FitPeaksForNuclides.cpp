@@ -4728,11 +4728,11 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   };// peak_source_is_in_fit
 
 
+  // Build existing ROI ranges at function scope so the refinement loop can also filter against them.
+  // Each entry is {lowerEnergy, upperEnergy} of a unique ROI from user_peaks.
+  vector<pair<double,double>> existing_roi_ranges;
   if( do_not_use_existing_rois && !user_peaks.empty() )
   {
-    // Build a set of existing ROI energy ranges from user peaks (peaks sharing a continuum
-    // define one ROI).  We use lowerX()/upperX() which reflect the fitted ROI extent.
-    vector<pair<double,double>> existing_roi_ranges;
     {//Begin create existing ROIs
       set<const PeakContinuum *> seen_continuums;
       for( const std::shared_ptr<const PeakDef> &peak : user_peaks )
@@ -4761,41 +4761,35 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         // Check if there's an overlap
         if( (roi.lower_energy < existing.second) && (roi.upper_energy > existing.first) )
         {
-          // Determine which side(s) to trim
-          const bool overlaps_left = (roi.lower_energy < existing.second) && (roi.lower_energy >= existing.first);
-          const bool overlaps_right = (roi.upper_energy > existing.first) && (roi.upper_energy <= existing.second);
-          const bool contains_existing = (roi.lower_energy < existing.first) && (roi.upper_energy > existing.second);
-          
-          if( contains_existing )
+          // Four mutually exclusive overlap cases:
+          const bool new_contains_existing = (roi.lower_energy < existing.first) && (roi.upper_energy > existing.second);
+          const bool new_contained_by_existing = (roi.lower_energy >= existing.first) && (roi.upper_energy <= existing.second);
+          const bool lower_edge_inside = (roi.lower_energy >= existing.first) && (roi.lower_energy < existing.second);
+          const bool upper_edge_inside = (roi.upper_energy > existing.first) && (roi.upper_energy <= existing.second);
+
+          if( new_contained_by_existing )
           {
-            // ROI completely contains the existing ROI - split into two potential ROIs
-            // For simplicity, keep the larger segment
-            const double left_width = existing.first - roi.lower_energy;
-            const double right_width = roi.upper_energy - existing.second;
-            
-            if( left_width > right_width )
-            {
-              // Keep left side
-              roi.upper_energy = existing.first - overlap_buffer_kev;
-            }else
-            {
-              // Keep right side
-              roi.lower_energy = existing.second + overlap_buffer_kev;
-            }
-          }else if( overlaps_left )
-          {
-            // ROI overlaps on the left side - trim the lower energy bound
-            roi.lower_energy = existing.second + overlap_buffer_kev;
-          }else if( overlaps_right )
-          {
-            // ROI overlaps on the right side - trim the upper energy bound
-            roi.upper_energy = existing.first - overlap_buffer_kev;
-          }else
-          {
-            // ROI is completely contained within existing ROI - mark for removal
+            // New ROI is completely inside the existing ROI - discard it entirely
             roi.lower_energy = -1.0;
             roi.upper_energy = -1.0;
             break;
+          }else if( new_contains_existing )
+          {
+            // New ROI completely contains the existing ROI - keep the larger segment
+            const double left_width = existing.first - roi.lower_energy;
+            const double right_width = roi.upper_energy - existing.second;
+            if( left_width > right_width )
+              roi.upper_energy = existing.first - overlap_buffer_kev;
+            else
+              roi.lower_energy = existing.second + overlap_buffer_kev;
+          }else if( lower_edge_inside )
+          {
+            // New ROI's lower edge is inside the existing ROI - push it past the existing ROI's upper edge
+            roi.lower_energy = existing.second + overlap_buffer_kev;
+          }else if( upper_edge_inside )
+          {
+            // New ROI's upper edge is inside the existing ROI - pull it before the existing ROI's lower edge
+            roi.upper_energy = existing.first - overlap_buffer_kev;
           }
         }//if( (roi.lower_energy < existing.second) && (roi.upper_energy > existing.first) )
       }//for( const std::pair<double,double> &existing : existing_roi_ranges )
@@ -4868,7 +4862,137 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     }//for( RelActCalcAuto::RoiRange roi : options.rois )
     
     options.rois = filtered_rois;
+
+#if( PERFORM_DEVELOPER_CHECKS )
+    // Verify no filtered ROI overlaps with any existing ROI
+    for( const RelActCalcAuto::RoiRange &roi : filtered_rois )
+    {
+      for( const std::pair<double,double> &existing : existing_roi_ranges )
+      {
+        const bool overlaps = (roi.lower_energy < existing.second) && (roi.upper_energy > existing.first);
+        if( overlaps )
+        {
+          std::cerr << "DoNotUseExistingRois: filtered ROI [" << roi.lower_energy << ", " << roi.upper_energy
+                    << "] still overlaps existing ROI [" << existing.first << ", " << existing.second << "]" << std::endl;
+          assert( !overlaps );
+        }
+      }
+    }
+#endif
   }// if( do_not_use_existing_rois && !user_peaks.empty() )
+
+  // Lambda to filter a set of ROIs against existing_roi_ranges (populated only when
+  // do_not_use_existing_rois is set).  Used for both the initial options.rois and each
+  // iteration of the refinement loop, so that refined ROIs also avoid existing user ROIs.
+  const auto filter_rois_for_existing = [&]( std::vector<RelActCalcAuto::RoiRange> rois )
+    -> std::vector<RelActCalcAuto::RoiRange>
+  {
+    if( existing_roi_ranges.empty() )
+      return rois;
+
+    const double overlap_buffer_kev = 1.0;
+    const double min_roi_channels = 5.0;
+    const std::shared_ptr<const SpecUtils::EnergyCalibration> energy_cal
+      = orig_foreground->energy_calibration();
+
+    std::vector<RelActCalcAuto::RoiRange> result_rois;
+    result_rois.reserve( rois.size() );
+
+    for( RelActCalcAuto::RoiRange roi : rois )
+    {
+      for( const std::pair<double,double> &existing : existing_roi_ranges )
+      {
+        if( !((roi.lower_energy < existing.second) && (roi.upper_energy > existing.first)) )
+          continue;
+
+        const bool new_contained_by_existing = (roi.lower_energy >= existing.first) && (roi.upper_energy <= existing.second);
+        const bool new_contains_existing = (roi.lower_energy < existing.first) && (roi.upper_energy > existing.second);
+        const bool lower_edge_inside = (roi.lower_energy >= existing.first) && (roi.lower_energy < existing.second);
+        const bool upper_edge_inside = (roi.upper_energy > existing.first) && (roi.upper_energy <= existing.second);
+
+        if( new_contained_by_existing )
+        {
+          roi.lower_energy = -1.0;
+          roi.upper_energy = -1.0;
+          break;
+        }else if( new_contains_existing )
+        {
+          const double left_width = existing.first - roi.lower_energy;
+          const double right_width = roi.upper_energy - existing.second;
+          if( left_width > right_width )
+            roi.upper_energy = existing.first - overlap_buffer_kev;
+          else
+            roi.lower_energy = existing.second + overlap_buffer_kev;
+        }else if( lower_edge_inside )
+        {
+          roi.lower_energy = existing.second + overlap_buffer_kev;
+        }else if( upper_edge_inside )
+        {
+          roi.upper_energy = existing.first - overlap_buffer_kev;
+        }
+      }//for( existing_roi_ranges )
+
+      if( (roi.lower_energy < 0.0) || (roi.upper_energy < 0.0) )
+        continue;
+      if( roi.lower_energy >= roi.upper_energy )
+        continue;
+
+      if( energy_cal && energy_cal->valid() )
+      {
+        const size_t lower_ch = energy_cal->channel_for_energy( roi.lower_energy );
+        const size_t upper_ch = energy_cal->channel_for_energy( roi.upper_energy );
+        if( (upper_ch - lower_ch) < static_cast<size_t>(min_roi_channels) )
+          continue;
+      }
+
+      // Only keep if it still contains a source gamma
+      bool has_source_gamma = false;
+      for( size_t src_idx = 0; !has_source_gamma && (src_idx < sources.size()); ++src_idx )
+      {
+        const vector<SandiaDecay::EnergyRatePair> photons
+          = get_source_photons( sources[src_idx].source, 1.0, sources[src_idx].age );
+        for( const SandiaDecay::EnergyRatePair &ph : photons )
+        {
+          if( (ph.energy >= roi.lower_energy) && (ph.energy <= roi.upper_energy)
+             && (ph.numPerSecond > std::numeric_limits<float>::epsilon()) )
+          {
+            has_source_gamma = true;
+            break;
+          }
+        }
+      }
+
+      if( !has_source_gamma && fit_norm_peaks )
+      {
+        const std::array<const SandiaDecay::Nuclide *,5> norm_nucs{
+          db->nuclide("U238"), db->nuclide("Ra226"), db->nuclide("U235"),
+          db->nuclide("Th232"), db->nuclide("K40")
+        };
+        for( const SandiaDecay::Nuclide *norm_nuc : norm_nucs )
+        {
+          if( !norm_nuc )
+            continue;
+          const vector<SandiaDecay::EnergyRatePair> photons = get_source_photons( norm_nuc, 1.0, 0.0 );
+          for( const SandiaDecay::EnergyRatePair &ph : photons )
+          {
+            if( (ph.energy >= roi.lower_energy) && (ph.energy <= roi.upper_energy)
+               && (ph.numPerSecond > std::numeric_limits<float>::epsilon()) )
+            {
+              has_source_gamma = true;
+              break;
+            }
+          }
+          if( has_source_gamma )
+            break;
+        }
+      }
+
+      if( has_source_gamma )
+        result_rois.push_back( roi );
+    }//for( roi : rois )
+
+    return result_rois;
+  };//filter_rois_for_existing lambda
 
 
   // Tracks which input user_peaks will be replaced when the result is accepted.
@@ -5387,7 +5511,9 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 
         // Re-run RelActAuto with refined ROIs
         RelActCalcAuto::Options refined_options = solution.m_options;
-        refined_options.rois = refined_rois;
+        // Apply DoNotUseExistingRois filtering to refined ROIs as well, so iterative
+        // re-clustering can't produce ROIs that land on existing user peaks' locations.
+        refined_options.rois = filter_rois_for_existing( refined_rois );
 
         add_floating_511_peak_if_appropriate( refined_options, sources, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy );
         add_escape_peak_floating_peaks_if_appropriate( refined_options, auto_search_peaks, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy, config );
@@ -5747,9 +5873,10 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     }// if( existing_peaks_as_free ... )
 
     // Default mode (neither DoNotUseExistingRois nor ExistingPeaksAsFreePeak):
-    // Populate original_peaks_to_remove with user peaks whose source is one of the fit sources
+    // Populate original_peaks_to_remove with user peaks whose source matches the fit sources
     // and whose energy falls within a fitted observable ROI.  This ensures the caller removes
     // old peaks before adding new fit results, preventing duplicate peaks at the same location.
+    // DoNotUseExistingRois is excluded: existing ROIs are intentionally left untouched.
     if( !do_not_use_existing_rois && !existing_peaks_as_free
        && !user_peaks.empty()
        && (result.status == RelActCalcAuto::RelActAutoSolution::Status::Success) )
@@ -5759,24 +5886,18 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         if( !peak || !peak_source_is_in_fit(peak) )
           continue;
 
+        // Only remove if the fit actually covered this peak's location.
         const double peak_energy = peak->mean();
-
-        // Only remove the peak if its energy falls within one of the observable ROIs,
-        // i.e. the fit actually covered this peak's location.
-        bool in_fitted_roi = false;
         for( const PeakDef &obs_peak : result.observable_peaks )
         {
           if( obs_peak.continuum()
              && (peak_energy >= obs_peak.continuum()->lowerEnergy())
              && (peak_energy <= obs_peak.continuum()->upperEnergy()) )
           {
-            in_fitted_roi = true;
+            result.original_peaks_to_remove.push_back( peak );
             break;
           }
         }
-
-        if( in_fitted_roi )
-          result.original_peaks_to_remove.push_back( peak );
       }//for( user_peaks )
     }// default mode
 
