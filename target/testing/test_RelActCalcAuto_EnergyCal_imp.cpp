@@ -36,6 +36,11 @@
 
 #include "SpecUtils/EnergyCalibration.h"
 
+#if ( defined( WIN32 ) )
+#undef min
+#undef max
+#endif
+
 #include "InterSpec/RelActCalcAuto_EnergyCal_imp.hpp"
 
 

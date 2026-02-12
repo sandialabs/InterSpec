@@ -37,7 +37,10 @@
 
 #include "InterSpec/PeakDists.h"
 
-
+#if ( defined( WIN32 ) )
+#undef min
+#undef max
+#endif
 
 using namespace std;
 using namespace PeakDists;
