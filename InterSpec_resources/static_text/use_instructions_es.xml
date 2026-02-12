@@ -342,7 +342,7 @@ pero los elementos del menú estarán deshabilitados si no se carga ningún espe
       <b><code>Ctrl-h</code></b>: Muestra la <em>Ayuda</em> dentro de la aplicación.
     </li>
     <li>
-      <b><code>Ctrl-i</code></b>: Muestra la pantalla de <em>Información de Bienvenida</em>.
+      <b><code>Ctrl-i</code></b> o <b><code>F10</code></b>: Activa la barra de menú para navegación por teclado (menú <u>I</u>nterSpec).
     </li>
     <li>
       <b><code>Ctrl-k</code></b>: Limpia todas las líneas de fotopeaks de referencia mostradas.

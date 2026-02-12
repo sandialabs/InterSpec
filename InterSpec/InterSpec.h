@@ -1352,7 +1352,6 @@ protected:
   void initDragNDrop();
   
   void hotKeyPressed( const unsigned int value );
-  void arrowKeyPressed( const unsigned int value );
   
   //detectClientDeviceType(): goes through and sets the various bits of
   //  m_clientDeviceType, according to the user agent string, as well as

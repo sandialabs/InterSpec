@@ -79,6 +79,11 @@ public:
    */
   Wt::WPushButton *addButton( const Wt::WString &txt );
   
+  /** Enables Escape-to-reject behavior, with a fallback for dialogs whose focused
+      child widgets otherwise swallow Escape.
+   */
+  virtual void rejectWhenEscapePressed( bool enable = true );
+  
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
@@ -117,6 +122,8 @@ protected:
    code.  So this variable allows us to override the default behavior.
    */
   bool m_multipleBringToFront;
+  
+  Wt::Signals::connection m_escapeConnection1;
 };//class SimpleDialog
 
 

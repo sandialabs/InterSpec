@@ -342,7 +342,7 @@ mas os itens do menu serão desabilitados se nenhum espectro de fundo ou secund�
       <b><code>Ctrl-h</code></b>: Mostra a <em>Ajuda</em> no aplicativo.
     </li>
     <li>
-      <b><code>Ctrl-i</code></b>: Mostra a tela de <em>Informações de Boas-Vindas</em>.
+      <b><code>Ctrl-i</code></b> ou <b><code>F10</code></b>: Ativa a barra de menus para navegação por teclado (menu <u>I</u>nterSpec).
     </li>
     <li>
       <b><code>Ctrl-k</code></b>: Limpa todas as linhas de fotopicos de referência visíveis.
