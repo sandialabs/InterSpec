@@ -628,12 +628,12 @@ namespace {
     if( !options_field.empty() && j[options_field].is_array() )
     {
       static const std::map<std::string, FitPeaksForNuclides::FitSrcPeaksOptions> flag_map = {
-        { "DoNotUseExistingRois",       FitPeaksForNuclides::FitSrcPeaksOptions::DoNotUseExistingRois },
-        { "ExistingPeaksAsFreePeak",    FitPeaksForNuclides::FitSrcPeaksOptions::ExistingPeaksAsFreePeak },
-        { "DoNotVaryEnergyCal",         FitPeaksForNuclides::FitSrcPeaksOptions::DoNotVaryEnergyCal },
-        { "DoNotRefineEnergyCal",       FitPeaksForNuclides::FitSrcPeaksOptions::DoNotRefineEnergyCal },
-        { "FitNormBkgrndPeaks",         FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaks },
-        { "FitNormBkgrndPeaksDontUse",  FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaksDontUse },
+        { "DoNotUseExistingRois",          FitPeaksForNuclides::FitSrcPeaksOptions::DoNotUseExistingRois },
+        { "RefitInterferingAnalysisPeaks", FitPeaksForNuclides::FitSrcPeaksOptions::ExistingPeaksAsFreePeak },
+        { "DoNotVaryEnergyCal",            FitPeaksForNuclides::FitSrcPeaksOptions::DoNotVaryEnergyCal },
+        { "DoNotRefineEnergyCal",          FitPeaksForNuclides::FitSrcPeaksOptions::DoNotRefineEnergyCal },
+        { "FitNormPeaks",                  FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaks },
+        { "FitNormBkgrndPeaksDontUse",     FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaksDontUse },
       };
 
       for( const json &flag_val : j[options_field] )

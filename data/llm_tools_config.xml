@@ -206,8 +206,8 @@
     For sources with multiple peaks, will very likely do a much better job than individually fitting peaks for a source, and will do it much more efficiently and with a single tool call.
     If you want to fit peaks for a source that has multiple gamma or x-ray energies, use this function.
     The peaks added to the analysis peaks will have their respective source assigned to them.
-    If you wish to fit for just just the NORM background peaks call with no source but with the FitNormBkgrndPeaks option, like `{ source: null, options: ["FitNormBkgrndPeaks"] }`.
-    If there were any peaks for the source already added to the analysis peaks, they will be replaced with the results of this fit unless the "DoNotUseExistingRois" option is specified.
+    If you wish to fit for just just the NORM background peaks call with no source but with the FitNormBkgrndPeaks option, like `{ source: null, options: ["FitNormPeaks"] }`.
+    If there were any peaks for the specified source(s) already added in the analysis peaks set, they will be replaced with the results of this fit unless the "DoNotUseExistingRois" option is specified.
     Returns simplified peak information (energy, fwhm, amplitude, amplitudeUncert, numSigma, cps, and source) for the peaks that were fit.
     </Description>
     <ParametersSchema>{
@@ -232,10 +232,10 @@
               },
               {
                 "const": "DoNotUseExistingRois",
-                "description": "Any existing user ROI that overlaps a source gamma energy is ignored; gammas falling within those ROIs are excluded from the fit entirely."
+                "description": "Any existing analysis peak ROI that overlaps a source gamma energy is ignored; gammas falling within those ROIs are excluded from the fit entirely."
               },
               {
-                "const": "ExistingPeaksAsFreePeak",
+                "const": "RefitInterferingAnalysisPeaks",
                 "description": "Normally the ROI extent for a source peak is restricted to reduce interference from nearby peaks, not from this source; with this option those nearby peaks are instead included in the ROI as freely-floating peaks and are effectively refit."
               },
               {
@@ -243,7 +243,7 @@
                 "description": "The energy calibration is held fixed throughout the fit."
               },
               {
-                "const": "FitNormBkgrndPeaks",
+                "const": "FitNormPeaks",
                 "description": "NORM background nuclide peaks (e.g. K40, Th232, Ra226, U238) are fit using a separate relative efficiency curve; the resulting peaks are included in the results."
               }
             ]
