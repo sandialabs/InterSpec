@@ -5746,6 +5746,40 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
       }// for( existing_peaks_added_as_floating )
     }// if( existing_peaks_as_free ... )
 
+    // Default mode (neither DoNotUseExistingRois nor ExistingPeaksAsFreePeak):
+    // Populate original_peaks_to_remove with user peaks whose source is one of the fit sources
+    // and whose energy falls within a fitted observable ROI.  This ensures the caller removes
+    // old peaks before adding new fit results, preventing duplicate peaks at the same location.
+    if( !do_not_use_existing_rois && !existing_peaks_as_free
+       && !user_peaks.empty()
+       && (result.status == RelActCalcAuto::RelActAutoSolution::Status::Success) )
+    {
+      for( const std::shared_ptr<const PeakDef> &peak : user_peaks )
+      {
+        if( !peak || !peak_source_is_in_fit(peak) )
+          continue;
+
+        const double peak_energy = peak->mean();
+
+        // Only remove the peak if its energy falls within one of the observable ROIs,
+        // i.e. the fit actually covered this peak's location.
+        bool in_fitted_roi = false;
+        for( const PeakDef &obs_peak : result.observable_peaks )
+        {
+          if( obs_peak.continuum()
+             && (peak_energy >= obs_peak.continuum()->lowerEnergy())
+             && (peak_energy <= obs_peak.continuum()->upperEnergy()) )
+          {
+            in_fitted_roi = true;
+            break;
+          }
+        }
+
+        if( in_fitted_roi )
+          result.original_peaks_to_remove.push_back( peak );
+      }//for( user_peaks )
+    }// default mode
+
     // Assign escape peak relationships for high-energy gammas if appropriate
     // This checks fit peaks (including observable_peaks) and assigns S.E. and D.E. relationships
     // to significant escape peaks of high-energy lines like Th232 2614 keV
