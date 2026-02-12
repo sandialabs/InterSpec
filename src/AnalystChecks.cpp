@@ -957,10 +957,7 @@ namespace AnalystChecks
       const GetUserPeakStatus user_peaks_status = AnalystChecks::get_user_peaks( user_peak_options, interspec );
       const std::vector<std::shared_ptr<const PeakDef>> &user_peaks = user_peaks_status.peaks;
       
-      Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> fit_options;
-      //fit_options |= FitPeaksForNuclides::FitSrcPeaksOptions::DoNotUseExistingRois;
-      //fit_options |= FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaks;
-      //fit_options |= FitPeaksForNuclides::FitSrcPeaksOptions::ExistingPeaksAsFreePeak;
+      const Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> fit_options = options.fitSrcPeaksOptions;
       
       FitPeaksForNuclides::PeakFitForNuclideConfig fit_config;
 

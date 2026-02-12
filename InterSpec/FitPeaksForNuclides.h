@@ -108,11 +108,12 @@ struct PeakFitResult
   std::vector<PeakDef> observable_peaks;
 
   // Existing user peaks that should be removed from PeakModel when the result is accepted.
-  // Populated when DoNotUseExistingRois or ExistingPeaksAsFreePeak is set:
-  //   - DoNotUseExistingRois: empty (no existing peaks are touched)
-  //   - ExistingPeaksAsFreePeak: contains original peaks that are being replaced by fit peaks
-  //     (either because they had the same source and were re-fit, or because they were absorbed
-  //     into a source peak in a shared ROI).
+  // Behaviour depends on which option flags were set:
+  //   - DoNotUseExistingRois: always empty (existing peaks are not touched)
+  //   - ExistingPeaksAsFreePeak: peaks that had a matching source (unconditionally replaced),
+  //     plus bystander peaks whose ROI ended up in the solution.
+  //   - Default (neither flag): user peaks whose source matches a fit source and whose energy
+  //     falls within a fitted observable ROI (i.e. the fit replaced them).
   // These are the exact shared_ptr instances from the input user_peaks vector, so pointer
   // identity is preserved for PeakModel::removePeaks().
   std::vector<std::shared_ptr<const PeakDef>> original_peaks_to_remove;
@@ -285,7 +286,8 @@ struct PeakFitForNuclideConfig
 enum FitSrcPeaksOptions
 {
   /** With this option, any existing ROI will not be used, and any gammas from the current source(s) that fall within
-   the ROI will not be consisdered.
+   the ROI will not be consisdered.  Without this option the peaks you have already fit, for the sources you are currently
+   trying to fit peaks of, will be replaced.
    */
   DoNotUseExistingRois = 0x01,
   
@@ -307,7 +309,6 @@ enum FitSrcPeaksOptions
    but wont return in the solution peaks.
    */
   FitNormBkgrndPeaksDontUse = 0x20,
-  
 };
 
 /** Function to fit all the observable peaks for one or more sources.

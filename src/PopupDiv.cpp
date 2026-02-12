@@ -314,31 +314,321 @@ WT_DECLARE_WT_MEMBER
     $('.PopupMenuParentButton.active').each(function(){
       $(this).removeClass('active');
     });
-    
+
     $('.PopupDivMenu.AppMenu.current').each(function(){
       $(this).removeClass('current');
     });
-    
+
     $(el).addClass('current');
     $(btn).addClass('active');
-    
+
     // This next call (defined in WPopupMenu.js) binds signals to hide the menu on document mouse
     //  click or escape presses, as well as sets the menus display to 'block'
     if(obj) obj.setHidden(0);
-    
+
     wtapp.positionAtWidget(el.id,btn.id,wtapp.Vertical);
-    
+
     Wt.WT.BringAboveDialogs(el.id);
+
+    // Wt's WPopupMenu doHide() (triggered by escape or clicking outside) hides the menu
+    //  and emits 'cancel' to the C++ server directly - but doesnt clear our .active/.current
+    //  classes.  We bind our own one-shot cleanup handlers to clear those immediately in JS,
+    //  rather than waiting for the C++ aboutToHide() server round-trip.
+    function menuDismissCleanup(){
+      $(document).off('click.menuCleanup keydown.menuCleanup');
+      // Only clean up if Wt's doHide already hid the menu
+      if( el.style.display !== 'block' ){
+        $(el).removeClass('current');
+        $('.PopupMenuParentButton.active').removeClass('active');
+        Wt.WT._kbSubMenu = null;
+      }
+    }
+    setTimeout(function(){
+      $(document).off('click.menuCleanup keydown.menuCleanup');
+      $(document).on('click.menuCleanup', function(){
+        setTimeout(menuDismissCleanup, 1);
+      });
+      $(document).on('keydown.menuCleanup', function(evt){
+        if( evt.keyCode === 27 )
+          setTimeout(menuDismissCleanup, 1);
+      });
+    }, 0);
   }else{
     $(el).removeClass('current');
     $(btn).removeClass('active');
-    
+    Wt.WT._kbSubMenu = null;
+
     // This next call unbinds the document mouse click and escape press, and sets menu display to ''
-    // (not sure why this is needed
     if(obj) obj.setHidden(1);
+    $(document).off('click.menuCleanup keydown.menuCleanup');
   }
 });
 
+
+// Returns the navigable <li> children of a menu (skipping separators, hidden, disabled)
+WT_DECLARE_WT_MEMBER
+(MenuNavGetItems, Wt::JavaScriptFunction, "MenuNavGetItems",
+  function( menuEl )
+{
+  var items = [];
+  var children = menuEl.children;
+  for( var i = 0; i < children.length; i++ )
+  {
+    var li = children[i];
+    if( li.tagName !== 'LI' )
+      continue;
+    if( $(li).hasClass('Wt-separator') )
+      continue;
+    if( $(li).is(':hidden') )
+      continue;
+    if( $(li).hasClass('Wt-disabled') )
+      continue;
+    items.push(li);
+  }
+  return items;
+});
+
+
+// Handles arrow key and Enter navigation for app-level menus, entirely in JS.
+// Uses Wt's own .active class on <li> elements for consistent highlight styling.
+// Tracks the active keyboard-navigated submenu via a module-level variable to
+// avoid unreliable DOM selector lookups.
+// keyCode: 37=Left, 38=Up, 39=Right, 40=Down, 13=Enter, 32=Space
+WT_DECLARE_WT_MEMBER
+(MenuArrowNav, Wt::JavaScriptFunction, "MenuArrowNav",
+  function( keyCode, wtapp )
+{
+  var LEFT = 37, UP = 38, RIGHT = 39, DOWN = 40, ENTER = 13, SPACE = 32;
+
+  const $activeBtn = $('.PopupMenuParentButton.active');
+  if( $activeBtn.length === 0 )
+  {
+    Wt.WT._kbSubMenu = null;
+    return;
+  }
+
+  const $currentMenu = $('.PopupDivMenu.AppMenu.current');
+  if( $currentMenu.length === 0 )
+  {
+    Wt.WT._kbSubMenu = null;
+    return;
+  }
+
+  // Get the Wt popup menu JS object for a menu element
+  const getObj = function( menuEl ){
+    let obj = jQuery.data(menuEl, 'obj');
+    if( !obj ) obj = menuEl.wtObj;
+    return obj;
+  };
+
+  // Get the submenu <ul> for a menu item <li>, using Wt's cached subMenu property,
+  // or by searching children for a UL element (may not be lastChild in all cases).
+  // Also checks if the submenu was already moved out of the <li> by Wt's showSubmenu
+  // (which reparents it to el.parentNode) by looking at the parentItem back-reference.
+  const getSubmenu = function( li ){
+    if( li.subMenu )
+      return li.subMenu;
+
+    // Check children for a UL element
+    var children = li.childNodes;
+    for( var i = children.length - 1; i >= 0; i-- )
+    {
+      if( children[i].tagName === 'UL' )
+      {
+        li.subMenu = children[i];
+        children[i].parentItem = li;
+        return children[i];
+      }
+    }
+
+    return null;
+  };
+
+  // The active keyboard-navigated submenu, tracked as a variable
+  var kbSub = Wt.WT._kbSubMenu || null;
+
+  // Helper: close the keyboard-tracked submenu
+  const closeKbSub = function(){
+    if( kbSub )
+    {
+      $(kbSub).find('> li.active').removeClass('active');
+      kbSub.style.display = 'none';
+      Wt.WT._kbSubMenu = null;
+      kbSub = null;
+    }
+  };
+
+  // Helper: open a submenu for the given <li>, track it, highlight first item
+  const openKbSub = function( li ){
+    var sm = getSubmenu(li);
+    if( !sm )
+      return false;
+
+    // Close any previously open keyboard submenu
+    closeKbSub();
+
+    sm.style.display = 'block';
+    if( sm.parentNode === li )
+    {
+      li.removeChild(sm);
+      $currentMenu[0].parentNode.appendChild(sm);
+    }
+    sm.parentItem = li;
+    // wtapp is Wt.WT which has px(), positionAtWidget(), Horizontal, etc.
+    var margin = wtapp.px(sm, 'paddingTop') + wtapp.px(sm, 'borderTopWidth');
+    wtapp.positionAtWidget(sm.id, li.id, wtapp.Horizontal, -margin);
+    Wt.WT.BringAboveDialogs(sm.id);
+    Wt.WT.AdjustTopPos(sm.id);
+
+    $(sm).find('> li.active').removeClass('active');
+    var subItems = Wt.WT.MenuNavGetItems(sm);
+    if( subItems.length > 0 )
+      $(subItems[0]).addClass('active');
+
+    Wt.WT._kbSubMenu = sm;
+    kbSub = sm;
+    return true;
+  };
+
+  // Helper: close a menu and its button, notifying C++ via cancel signal
+  const closeMenu = function( menuEl ){
+    closeKbSub();
+
+    var obj = getObj(menuEl);
+    if( obj ) obj.setHidden(1);
+
+    $(menuEl).removeClass('current');
+    var btnId = $(menuEl).attr('data-btn-id');
+    if( btnId )
+      $('#' + btnId).removeClass('active');
+
+    menuEl.style.display = 'none';
+    Wt.emit(menuEl.id, 'cancel');
+  };
+
+  const inSubMenu = (kbSub !== null);
+
+  if( keyCode === LEFT || keyCode === RIGHT )
+  {
+    // If in a submenu and LEFT pressed, close submenu and return to parent
+    if( keyCode === LEFT && inSubMenu )
+    {
+      closeKbSub();
+      return;
+    }
+
+    // If RIGHT pressed on a highlighted item that has a submenu, open it
+    if( keyCode === RIGHT )
+    {
+      var navMenu = inSubMenu ? kbSub : $currentMenu[0];
+      var $hl = $(navMenu).find('> li.active');
+      if( $hl.length > 0 && getSubmenu($hl[0]) )
+      {
+        openKbSub($hl[0]);
+        return;
+      }
+    }
+
+    // Switch to next/prev top-level menu
+    closeKbSub();
+
+    // Use Wt's setOthersInactive to fully clear the old menu (removes all .active)
+    var oldObj = getObj($currentMenu[0]);
+    if( oldObj ) oldObj.setHidden(1);
+    $currentMenu[0].style.display = 'none';
+
+    var $allBtns = $('.PopupMenuParentButton');
+    var currentIdx = $allBtns.index($activeBtn[0]);
+    var nextIdx;
+    if( keyCode === LEFT )
+      nextIdx = (currentIdx - 1 + $allBtns.length) % $allBtns.length;
+    else
+      nextIdx = (currentIdx + 1) % $allBtns.length;
+
+    var nextBtn = $allBtns.eq(nextIdx);
+    var nextMenuId = nextBtn.attr('data-menu-id');
+
+    if( nextMenuId )
+      Wt.WT.ParentMouseWentOver( nextMenuId, nextBtn.attr('id'), wtapp );
+    return;
+  }
+
+  if( keyCode === UP || keyCode === DOWN )
+  {
+    var navMenu = inSubMenu ? kbSub : $currentMenu[0];
+    var items = Wt.WT.MenuNavGetItems(navMenu);
+    if( items.length === 0 )
+      return;
+
+    // Find currently highlighted item
+    var $allLi = $(navMenu).find('> li.active');
+    var curIdx = -1;
+    for( var i = 0; i < items.length; i++ )
+    {
+      if( $allLi.index(items[i]) >= 0 )
+      {
+        curIdx = i;
+        break;
+      }
+    }
+
+    // Remove highlight from all items in this menu
+    $allLi.removeClass('active');
+
+    // If navigating in parent menu and a keyboard submenu is open, close it
+    if( !inSubMenu )
+      closeKbSub();
+
+    var nextIdx;
+    if( keyCode === DOWN )
+      nextIdx = (curIdx < 0) ? 0 : ((curIdx + 1) % items.length);
+    else
+      nextIdx = (curIdx <= 0) ? (items.length - 1) : (curIdx - 1);
+
+    $(items[nextIdx]).addClass('active');
+
+    // Scroll into view if needed
+    if( items[nextIdx].scrollIntoView )
+      items[nextIdx].scrollIntoView({block:'nearest'});
+    return;
+  }
+
+  if( keyCode === ENTER || keyCode === SPACE )
+  {
+    var navMenu = inSubMenu ? kbSub : $currentMenu[0];
+    var $hl = $(navMenu).find('> li.active');
+    if( $hl.length === 0 )
+      return;
+
+    // If the item has a submenu, open it (same as RIGHT arrow)
+    if( keyCode === ENTER && getSubmenu($hl[0]) )
+    {
+      openKbSub($hl[0]);
+      return;
+    }
+
+    // Check if this item contains a checkbox input
+    var $cb = $hl.find('input[type="checkbox"]');
+    if( $cb.length > 0 )
+    {
+      // Toggle the checkbox; dont close the menu
+      $cb[0].click();
+      return;
+    }
+
+    // For non-checkbox items: close the menu, then activate
+    if( keyCode === ENTER )
+    {
+      closeMenu( $currentMenu[0] );
+
+      var $anchor = $hl.find('a');
+      if( $anchor.length > 0 )
+        $anchor[0].click();
+      else
+        $hl[0].click();
+    }
+  }
+});
 
 
 PopupDivMenu::PopupDivMenu( Wt::WPushButton *menuParent,
@@ -648,8 +938,8 @@ void PopupDivMenu::setupDesktopMenuStuff()
        make it function like that (e.g., maybe no timeout at all)
      - [ ] See https://css-tricks.com/in-praise-of-the-unambiguous-click-menu/#building-click-menus
      - [x] Check behaviour of mousing over parent button when no menus are open, for Electron build, and mirror that
-     - [ ] Enable using arrows to change menus, and go up/down in the menu, with enter selecting an element
-          - `InterSpec::arrowKeyPressed()` currently cant really work - should implement in JS; maybe need to set a reference between the menu and the button in JS, so we can handle arrow keys in just JS
+     - [x] Enable using arrows to change menus, and go up/down in the menu, with enter selecting an element
+          - Implemented via MenuArrowNav JS function; button-to-menu link via data-menu-id/data-btn-id attributes
      - [ ] When you hit Alt (on windows at least), it underlines the first leter of each menu button, and also maybe 
            select the menu, so you can use the arrows to select and display menus
      
@@ -667,9 +957,18 @@ void PopupDivMenu::setupDesktopMenuStuff()
   
   assert( m_menuParent );
   
+#if( USE_OSX_NATIVE_MENU )
+  const bool useNativeMenu = InterSpecApp::isPrimaryWindowInstance();
+#else
+  const bool useNativeMenu = false;
+#endif
+  
   LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsParentMouseWentOver);
   LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsParentClicked);
   LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsParentClickedCleanupFromCpp);
+  LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsMenuNavGetItems);
+  if( !useNativeMenu )
+    LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsMenuArrowNav);
   
   
   //menuParent->setMenu( this );  //adds/removes active class to menuParent, etc
@@ -677,6 +976,10 @@ void PopupDivMenu::setupDesktopMenuStuff()
   addStyleClass( "AppMenu" );
   m_menuParent->addStyleClass("dropdown-toggle");
   m_menuParent->addStyleClass( "PopupMenuParentButton" );
+
+  // Link button and menu via data attributes, so JS can discover the relationship
+  m_menuParent->setAttributeValue( "data-menu-id", id() );
+  setAttributeValue( "data-btn-id", m_menuParentID );
   
   //setAutoHide( true, 500 );
   

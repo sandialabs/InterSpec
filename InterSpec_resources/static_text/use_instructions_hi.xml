@@ -341,7 +341,7 @@ the XHTML message for that entry.
       <b><code>Ctrl-h</code></b>: इन-ऐप <em>सहायता</em> दिखाता है।
     </li>
     <li>
-      <b><code>Ctrl-i</code></b>: <em>स्वागत जानकारी</em> स्क्रीन दिखाता है।
+      <b><code>Ctrl-i</code></b> या <b><code>F10</code></b>: कीबोर्ड ब्राउज़िंग के लिए मेनू बार सक्रिय करता है (<u>I</u>nterSpec मेनू)।
     </li>
     <li>
       <b><code>Ctrl-k</code></b>: सभी प्रदर्शित संदर्भ फोटोपीक रेखाओं को साफ़ करता है।

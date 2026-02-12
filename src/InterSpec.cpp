@@ -1724,10 +1724,6 @@ void InterSpec::hotKeyPressed( const unsigned int value )
         HelpSystem::createHelpWindow( "getting-started" );
         break;
       
-      case 'i': case 'I':
-        showWelcomeDialog( true );
-        break;
-      
       case 'k': case 'K':
         // TODO: decide how to handle this if the current reference lines are from the
         //       "Nuclide Search" tool
@@ -1747,20 +1743,6 @@ void InterSpec::hotKeyPressed( const unsigned int value )
         createExportSpectrumFileDialog();
         break;
         
-    // Temporarily add shortcut for showing FAQ window during development
-      case 'f': case 'F':
-      {
-        showWelcomeDialog( true );
-        if( m_useInfoWindow )
-          m_useInfoWindow->showFaqTab();
-        break;
-      }
-        
-        
-      case 37: case 38: case 39: case 40:
-        arrowKeyPressed( value );
-        break;
-        
       case 'z':
         if( m_undo )
           m_undo->executeUndo();
@@ -1771,97 +1753,19 @@ void InterSpec::hotKeyPressed( const unsigned int value )
           m_undo->executeRedo();
         break;
     }//switch( value )
-  
-    
-    /*
-    if( expectedTxt.empty() )
-      return;
-  
-    for( int i = 0; i < m_toolsTabs->count(); ++i )
-    {
-      if( m_toolsTabs->tabText(i).toUTF8() == expectedTxt )
-      {
-        m_toolsTabs->setCurrentIndex( i );
-        handleToolTabChanged( i );
-        break;
-      }
-    }//for( int i = 0; i < m_toolsTabs->count(); ++i )
-     */
   }else
   {
     switch( value )
     {
-      case '1': showCompactFileManagerWindow(); break;
-      case '2': showPeakInfoWindow();           break;
-      case '3': showGammaLinesWindow();         break;
-      case '4': showEnergyCalWindow();          break;
-      case '5': showNuclideSearchWindow();      break;
-      case 'l':
-        setLogY( !m_spectrum->yAxisIsLog() );
-        break;
-      case 37: case 38: case 39: case 40:
-        arrowKeyPressed( value );
-        break;
+      case '1': showCompactFileManagerWindow();       break;
+      case '2': showPeakInfoWindow();                 break;
+      case '3': showGammaLinesWindow();               break;
+      case '4': showEnergyCalWindow();                break;
+      case '5': showNuclideSearchWindow();            break;
+      case 'l': setLogY( !m_spectrum->yAxisIsLog() ); break;
     }//switch( value )
   }//if( tool tabs visible ) / else
 }//void hotKeyPressed( const int value )
-
-
-void InterSpec::arrowKeyPressed( const unsigned int value )
-{
-#if( USE_OSX_NATIVE_MENU || IOS || ANDROID )
-  return;
-#endif
-  
-  if( m_mobileMenuButton )
-    return;
-  
-  const vector<PopupDivMenu *> menus{
-    m_fileMenuPopup, m_editMenuPopup, m_displayOptionsPopupDiv, m_toolsMenuPopup, m_helpMenuPopup
-  };
-  
-  bool foundActive = false;
-  size_t activeIndex = 0;
-  for( size_t i = 0; i < menus.size(); ++i )
-  {
-    if( menus[i] && menus[i]->isVisible() && menus[i]->parentButton() )
-    {
-      foundActive = true;
-      activeIndex = i;
-      break;
-    }
-  }
-  
-  if( !foundActive )
-    return;
-  
-  const bool leftArrow  = (value == 37);
-  const bool upArrow    = (value == 38);
-  const bool rightArrow = (value == 39);
-  const bool downArrow  = (value == 40);
-  
-  if( leftArrow || rightArrow )
-  {
-    size_t nextActiveIndex = activeIndex;
-    do
-    {
-      if( leftArrow )
-        nextActiveIndex = (nextActiveIndex == 0) ? (menus.size() - 1) : (nextActiveIndex - 1);
-      else
-        nextActiveIndex = ((nextActiveIndex + 1) % menus.size());
-    }while( !menus[nextActiveIndex] );
-    
-    menus[activeIndex]->hide();
-    menus[nextActiveIndex]->parentClicked();
-  }else if( upArrow || downArrow )
-  {
-    // TODO: Have the up/down arrow keys select different menu items in the menu
-    //   I havent gotten the up/down arrows working to select different menu items - maybe
-    //    it needs to be purely JS.
-    //    And once we do get the up/down arrows working, then need to listen for 'Enter' and
-    //    trigger, again probably all in JS
-  }//if( leftArrow || rightArrow ) / else if( upArrow || downArrow )
-}//void arrowKeyPressed( const unsigned int value )
 
 
 void InterSpec::rightClickMenuClosed()

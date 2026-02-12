@@ -342,7 +342,7 @@ mais les éléments de menu seront désactivés si aucun spectre de fond ou seco
       <b><code>Ctrl-h</code></b> : Affiche l'<em>aide</em> dans l'application.
     </li>
     <li>
-      <b><code>Ctrl-i</code></b> : Affiche l'écran d'<em>informations de bienvenue</em>.
+      <b><code>Ctrl-i</code></b> ou <b><code>F10</code></b> : Active la barre de menus pour la navigation au clavier (menu <u>I</u>nterSpec).
     </li>
     <li>
       <b><code>Ctrl-k</code></b> : Efface toutes les raies de photopeaks de référence affichées.

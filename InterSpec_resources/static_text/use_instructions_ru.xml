@@ -342,7 +342,7 @@ the XHTML message for that entry.
       <b><code>Ctrl-h</code></b>: Показывает внутриприложенческую <em>Помощь</em>.
     </li>
     <li>
-      <b><code>Ctrl-i</code></b>: Показывает экран <em>Информации о добро пожаловать</em>.
+      <b><code>Ctrl-i</code></b> или <b><code>F10</code></b>: Активирует строку меню для навигации с клавиатуры (меню <u>I</u>nterSpec).
     </li>
     <li>
       <b><code>Ctrl-k</code></b>: Очищает все показываемые референсные линии фотопиков.
