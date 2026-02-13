@@ -753,10 +753,10 @@ target_compile_options(InterSpecLib PRIVATE
 SET(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -D BOOST_BIND_GLOBAL_PLACEHOLDERS")
           
 if(WIN32)
+  target_compile_options( InterSpecLib PUBLIC /bigobj )
   #0x0601==Win7, 0x0501=WinXP (Wt CMakeLists.txt uses 0x0501x)
-  target_compile_definitions( InterSpecLib PUBLIC /bigobj -D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS )
+  target_compile_definitions( InterSpecLib PUBLIC -D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS )
   target_compile_definitions( InterSpecLib PRIVATE InterSpec_EXPORTS )
-  add_definitions( /bigobj )
         
   if( INTERSPEC_LIB_TYPE STREQUAL "SHARED" )
     # We get error compiling multi-processor debug build of shared LibInterSpec, presumably due to some 
