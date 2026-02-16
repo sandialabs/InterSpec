@@ -42,6 +42,12 @@ namespace SpecUtils
 
 #define PRINT_VERBOSE_PEAK_FIT_LM_INFO 0
 
+/** When set to 1, and there are more than 2 ROIs, each ROI will be evaluated on a separate
+ thread (using std::async) inside parametersToPeaks, for the T==double instantiation only.
+ Set to 0 to force single-threaded evaluation, e.g. for benchmarking or debugging.
+ */
+#define PEAK_FIT_LM_PARALLEL_ROIS 1
+
 namespace PeakFitLM
 {
 
