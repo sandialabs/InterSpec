@@ -2710,6 +2710,7 @@ void PeakEdit::apply()
           
           m_currentPeak.set_coefficient( val, ct );
           m_currentPeak.set_uncertainty( uncert, ct );
+          m_currentPeak.setFitFor( ct, m_fitFors[t]->isChecked() );
         }//if( use this parameter )
       }//for( loop over {SkewPar0, SkewPar1, SkewPar2, SkewPar3} )
       
