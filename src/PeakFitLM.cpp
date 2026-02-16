@@ -157,10 +157,16 @@ struct RoiInfo
  anchor energies at the spectrum lower/upper bounds), if the ROIs span more than 100 keV and
  the skew type has energy-dependent parameters.
 
- Parameter layout:
+ Parameter layout (default / shared-skew mode):
    [skew_lower_pars (num_skew values) | skew_upper_pars* (M values, only energy-dep params)]
    | ROI_0_cont | ROI_0_sigma | ROI_0_mean | ROI_1_cont | ROI_1_sigma | ROI_1_mean | ...
    * only present when m_fit_skew_energy_dependence == true
+
+ Parameter layout (IndependentSkewValues option):
+   ROI_0_cont | ROI_0_sigma | ROI_0_mean | ROI_0_skew (num_skew values)
+   | ROI_1_cont | ROI_1_sigma | ROI_1_mean | ROI_1_skew | ...
+   There is no shared skew block; each ROI carries its own num_skew parameters at the end of
+   its per-ROI block.
 */
 struct PeakFitDiffCostFunction
 {
@@ -278,6 +284,9 @@ struct PeakFitDiffCostFunction
       return n;
     })() ),
     m_fit_skew_energy_dependence( ([this, &skew_type]() -> bool {
+      // IndependentSkewValues uses per-ROI skew blocks, not a shared energy-dependent block
+      if( m_options.testFlag( PeakFitLM::PeakFitLMOptions::IndependentSkewValues ) )
+        return false;
       if( m_rois.size() <= 1 )
         return false;
       if( PeakDef::num_skew_parameters( skew_type ) == 0 )
@@ -376,12 +385,16 @@ struct PeakFitDiffCostFunction
       return std::min( roi.num_fit_sigmas, size_t(2) );
   }
 
-  // Returns total parameter count for one ROI (cont + sigma + mean params)
+  // Returns total parameter count for one ROI (cont + sigma + mean params, plus per-ROI skew
+  // when IndependentSkewValues is set).
   size_t roi_parameter_count( const RoiInfo &roi ) const
   {
     const size_t cont_pars = roi.use_lls_for_cont
                              ? size_t(0) : PeakContinuum::num_parameters( roi.offset_type );
-    return cont_pars + roi_sigma_parameter_count( roi ) + roi.peaks.size();
+    size_t n = cont_pars + roi_sigma_parameter_count( roi ) + roi.peaks.size();
+    if( m_options.testFlag( PeakFitLM::PeakFitLMOptions::IndependentSkewValues ) )
+      n += PeakDef::num_skew_parameters( m_skew_type );
+    return n;
   }
 
   // Returns total residual count for one ROI (data channels + punishment residuals)
@@ -398,9 +411,13 @@ struct PeakFitDiffCostFunction
     return n;
   }
 
-  // Returns count of shared skew parameters (doubles for energy-dep params when multi-ROI)
+  // Returns count of shared skew parameters (doubles for energy-dep params when multi-ROI).
+  // Returns 0 when IndependentSkewValues is set, since skew params are folded into each ROI block.
   size_t skew_parameter_count() const
   {
+    if( m_options.testFlag( PeakFitLM::PeakFitLMOptions::IndependentSkewValues ) )
+      return 0;
+
     const size_t num_skew = PeakDef::num_skew_parameters( m_skew_type );
     if( !m_fit_skew_energy_dependence )
       return num_skew;
@@ -416,7 +433,9 @@ struct PeakFitDiffCostFunction
     return num_skew + num_energy_dep;
   }
 
-  // Returns degrees of freedom for a single ROI (ignores shared skew contribution)
+  // Returns degrees of freedom for a single ROI.
+  // Shared skew parameters are not counted here (they span all ROIs).
+  // When IndependentSkewValues is set, per-ROI skew parameters are counted here.
   double dof_for_roi( const size_t roi_index ) const
   {
     assert( roi_index < m_rois.size() );
@@ -437,11 +456,38 @@ struct PeakFitDiffCostFunction
         num_fixed += fit ? 0 : 1;
     }
 
+    // Count fitted per-ROI skew parameters when IndependentSkewValues is active.
+    // Mirrors setup_roi_parameters exactly: a parameter is counted as fitted if ANY
+    // matching-type peak in the ROI has fitFor==true for it (OR semantics).
+    size_t num_fit_skew = 0;
+    if( m_options.testFlag( PeakFitLM::PeakFitLMOptions::IndependentSkewValues ) )
+    {
+      const size_t num_skew_pars = PeakDef::num_skew_parameters( m_skew_type );
+      if( num_skew_pars > 0 )
+      {
+        vector<bool> fit_skew( num_skew_pars, false );
+        for( const auto &p : roi.peaks )
+        {
+          if( p->skewType() != m_skew_type )
+            continue;
+          for( size_t i = 0; i < num_skew_pars; ++i )
+          {
+            const auto ct = PeakDef::CoefficientType( static_cast<int>(PeakDef::SkewPar0) + static_cast<int>(i) );
+            if( p->fitFor( ct ) )
+              fit_skew[i] = true;
+          }
+        }
+        for( const bool fit : fit_skew )
+          num_fit_skew += fit ? 1 : 0;
+      }
+    }
+
     return num_channels
            - 2.0*static_cast<double>( roi.peaks.size() )
            + static_cast<double>( num_fixed )
            - static_cast<double>( roi_sigma_parameter_count( roi ) )
-           - static_cast<double>( num_fit_cont );
+           - static_cast<double>( num_fit_cont )
+           - static_cast<double>( num_fit_skew );
   }
 
   // Returns all starting peaks flattened across all ROIs (for skew param initialization)
@@ -749,9 +795,14 @@ struct PeakFitDiffCostFunction
       vector<T> peak_counts( nchannel, T(0.0) );
 
       // Build the skew parameter vector to pass to fit_amp_and_offset_imp.
-      // We use the interpolated skew for this ROI's center energy.
-      // For simplicity, construct a temporary peak at the ROI midpoint to get the skew values.
-      const vector<T> skew_pars( params, params + num_skew );
+      // In IndependentSkewValues mode the skew params are at the tail of this ROI's own block;
+      // otherwise they live at params[0..num_skew-1] (the shared / energy-dependent block).
+      const T *roi_skew_ptr;
+      if( m_options.testFlag( PeakFitLM::PeakFitLMOptions::IndependentSkewValues ) )
+        roi_skew_ptr = roi_params + num_fit_cont + num_sigmas_fit + num_roi_peaks;
+      else
+        roi_skew_ptr = params;
+      const vector<T> skew_pars( roi_skew_ptr, roi_skew_ptr + num_skew );
 
       if( roi.offset_type == PeakContinuum::OffsetType::External )
       {
@@ -852,11 +903,13 @@ struct PeakFitDiffCostFunction
         std::sort( begin(peaks), end(peaks), &PeakType::lessThanByMean );
       }
 
-      // Set continuum and apply shared skew parameters to all peaks in this ROI
+      // Set continuum and apply skew parameters to all peaks in this ROI.
+      // In IndependentSkewValues mode, pass the per-ROI skew pointer; otherwise pass params
+      // (which points to the shared/energy-dependent skew block at the start of the global array).
       for( PeakType &p : peaks )
         p.setContinuum( continuum );
 
-      apply_skew_to_peaks<PeakType, T>( peaks, params );
+      apply_skew_to_peaks<PeakType, T>( peaks, roi_skew_ptr );
 
       // --- Compute residuals for this ROI ---
       T chi2( 0.0 );
@@ -1061,22 +1114,22 @@ struct PeakFitDiffCostFunction
 
           if( m_skew_type == PeakDef::SkewType::Bortel )
           {
-            // Global Bortel: params[0] = tau
+            // Bortel: SkewPar0=tau
             // VoigtPlusBortel: SkewPar0=gamma_lor, SkewPar1=R, SkewPar2=tau
-            // Read tau directly from the parameter array (params[0] is always the base skew block)
-            const T tau = params[0]; // Bortel has one skew param: tau
+            // roi_skew_ptr[0] is always tau for Bortel, whether shared or per-ROI.
+            const T tau = roi_skew_ptr[0];
             fitted.setSkewType( PeakDef::SkewType::VoigtPlusBortel );
             fitted.set_coefficient( T(orig->coefficient(PeakDef::SkewPar0)), PeakDef::SkewPar0 ); // gamma_lor from orig
             fitted.set_coefficient( T(orig->coefficient(PeakDef::SkewPar1)), PeakDef::SkewPar1 ); // R from orig
-            fitted.set_coefficient( tau, PeakDef::SkewPar2 );  // tau from global
+            fitted.set_coefficient( tau, PeakDef::SkewPar2 );  // tau from skew block
           }
           else // GaussPlusBortel
           {
-            // Global GaussPlusBortel: params[0]=R, params[1]=tau
+            // GaussPlusBortel: SkewPar0=R, SkewPar1=tau
             // VoigtPlusBortel: SkewPar0=gamma_lor, SkewPar1=R, SkewPar2=tau
-            // Read R and tau directly from the parameter array
-            const T R_global   = params[0]; // GaussPlusBortel SkewPar0=R
-            const T tau_global = params[1]; // GaussPlusBortel SkewPar1=tau
+            // roi_skew_ptr[0]/[1] are R and tau, whether shared or per-ROI.
+            const T R_global   = roi_skew_ptr[0]; // GaussPlusBortel SkewPar0=R
+            const T tau_global = roi_skew_ptr[1]; // GaussPlusBortel SkewPar1=tau
             fitted.setSkewType( PeakDef::SkewType::VoigtPlusBortel );
             fitted.set_coefficient( T(orig->coefficient(PeakDef::SkewPar0)), PeakDef::SkewPar0 ); // gamma_lor from orig
             fitted.set_coefficient( R_global,   PeakDef::SkewPar1 );
@@ -1230,6 +1283,7 @@ struct PeakFitDiffCostFunction
      params[0..num_skew-1]:        base (lower-anchor) values for all skew params
      params[num_skew..num_skew+M-1]: upper-anchor values for energy-dep params only
        (only present when m_fit_skew_energy_dependence == true)
+   When IndependentSkewValues is set, this function is a no-op (skew is per-ROI).
   */
   void setup_skew_parameters( double *pars,
                               vector<int> &constant_parameters,
@@ -1237,6 +1291,10 @@ struct PeakFitDiffCostFunction
                               vector<std::optional<double>> &upper_bounds,
                               const vector<shared_ptr<const PeakDef>> &inpeaks ) const
   {
+    // With IndependentSkewValues, there is no shared skew block; each ROI sets up its own.
+    if( m_options.testFlag( PeakFitLM::PeakFitLMOptions::IndependentSkewValues ) )
+      return;
+
     const size_t num_skew_pars = PeakDef::num_skew_parameters( m_skew_type );
 
     if( num_skew_pars == 0 )
@@ -1316,6 +1374,11 @@ struct PeakFitDiffCostFunction
       }
     }//for( const auto &p : inpeaks )
 
+    // For small/medium refinement, restrict skew range near starting value to prevent large shifts;
+    // otherwise allow the full parameter range so fitting from default starting values can succeed.
+    const bool restrict_skew_range = m_options.testFlag( PeakFitLM::PeakFitLMOptions::SmallRefinementOnly )
+                                     || m_options.testFlag( PeakFitLM::PeakFitLMOptions::MediumRefinementOnly );
+
     // Set up the base (lower-anchor) skew parameters at params[0..num_skew_pars-1]
     for( size_t skew_index = 0; skew_index < num_skew_pars; ++skew_index )
     {
@@ -1323,8 +1386,15 @@ struct PeakFitDiffCostFunction
 
       if( fit_parameter[skew_index] )
       {
-        lower_bounds[skew_index] = std::max( lower_values[skew_index], 0.5*starting_value[skew_index] );
-        upper_bounds[skew_index] = std::min( upper_values[skew_index], 1.5*fabs(starting_value[skew_index]) );
+        if( restrict_skew_range )
+        {
+          lower_bounds[skew_index] = std::max( lower_values[skew_index], 0.5*starting_value[skew_index] );
+          upper_bounds[skew_index] = std::min( upper_values[skew_index], 1.5*fabs(starting_value[skew_index]) );
+        }else
+        {
+          lower_bounds[skew_index] = lower_values[skew_index];
+          upper_bounds[skew_index] = upper_values[skew_index];
+        }
       }
       else
       {
@@ -1566,6 +1636,130 @@ struct PeakFitDiffCostFunction
         assert( pars[upper_sigma_idx] <= *upper_bounds[upper_sigma_idx] );
       }
     }//sigma parameter setup
+
+    // Per-ROI skew parameters (only when IndependentSkewValues option is set)
+    if( m_options.testFlag( PeakFitLM::PeakFitLMOptions::IndependentSkewValues ) )
+    {
+      const size_t num_skew_pars = PeakDef::num_skew_parameters( m_skew_type );
+      if( num_skew_pars > 0 )
+      {
+        // Determine default ranges and starting values for each skew parameter
+        vector<bool>   fit_parameter( num_skew_pars, false ); // OR'd across matching peaks below
+        vector<double> starting_value( num_skew_pars, 0.0 );
+        vector<double> lower_values( num_skew_pars, 0.0 );
+        vector<double> upper_values( num_skew_pars, 0.0 );
+
+        for( size_t i = 0; i < num_skew_pars; ++i )
+        {
+          const auto ct = PeakDef::CoefficientType( static_cast<int>(PeakDef::SkewPar0) + static_cast<int>(i) );
+          double lower, upper, start, dx;
+          const bool use = PeakDef::skew_parameter_range( m_skew_type, ct, lower, upper, start, dx );
+          assert( use );
+          if( !use )
+            throw logic_error( "Inconsistent skew par val (IndependentSkewValues)" );
+          starting_value[i] = start;
+          lower_values[i]   = lower;
+          upper_values[i]   = upper;
+        }
+
+        // A skew parameter is fitted if ANY matching-type peak in the ROI has fitFor==true for it;
+        // it is held constant only when ALL matching peaks agree it should be fixed.
+        // fit_parameter[] starts false; we OR in each matching peak's fitFor flag.
+        // Initial coefficient values come from the first matching peak.
+        bool found_first = false;
+        for( const auto &p : roi.peaks )
+        {
+          if( p->skewType() != m_skew_type )
+            continue;
+
+          for( size_t i = 0; i < num_skew_pars; ++i )
+          {
+            const auto ct = PeakDef::CoefficientType( static_cast<int>(PeakDef::SkewPar0) + static_cast<int>(i) );
+
+            // OR across peaks: mark as fit if any peak requests it
+            if( p->fitFor( ct ) )
+              fit_parameter[i] = true;
+
+            if( !found_first )
+            {
+              // Coefficient starting value: use first matching peak only
+              double val = p->coefficient( ct );
+
+              if( IsInf(val) || IsNan(val) || (val < lower_values[i]) || (val > upper_values[i]) )
+                val = starting_value[i];
+
+              // Sanity-clamp Crystal Ball power-law params that can drift high
+              switch( m_skew_type )
+              {
+                case PeakDef::NumSkewType:
+                  assert( 0 );
+                  // Fall through to NoSkew for non-debug builds
+                case PeakDef::NoSkew:   case PeakDef::Bortel:
+                case PeakDef::DoubleBortel: case PeakDef::GaussPlusBortel:
+                case PeakDef::GaussExp: case PeakDef::ExpGaussExp:
+                  break;
+
+                case PeakDef::CrystalBall:
+                case PeakDef::DoubleSidedCrystalBall:
+                {
+                  switch( ct )
+                  {
+                    case PeakDef::Mean:           case PeakDef::Sigma:
+                    case PeakDef::GaussAmplitude: case PeakDef::NumCoefficientTypes:
+                    case PeakDef::Chi2DOF:
+                    case PeakDef::SkewPar0:
+                    case PeakDef::SkewPar2:
+                      if( val > 3.0 )
+                        val = starting_value[i];
+                      break;
+                    case PeakDef::SkewPar1:
+                    case PeakDef::SkewPar3:
+                      if( val > 6.0 )
+                        val = starting_value[i];
+                      break;
+                  }
+                  break;
+                }
+
+                case PeakDef::VoigtPlusBortel:
+                  break;
+              }//switch( m_skew_type )
+
+              starting_value[i] = val;
+            }//if( !found_first )
+          }//for( size_t i = 0; i < num_skew_pars; ++i )
+
+          found_first = true;
+        }//for( const auto &p : roi.peaks )
+
+        // Write the per-ROI skew params into the global parameter array
+        const size_t skew_base_idx = param_offset + num_fit_cont + num_sigmas_fit + roi.peaks.size();
+        const bool restrict_skew_range = m_options.testFlag( PeakFitLM::PeakFitLMOptions::SmallRefinementOnly )
+                                         || m_options.testFlag( PeakFitLM::PeakFitLMOptions::MediumRefinementOnly );
+        for( size_t skew_index = 0; skew_index < num_skew_pars; ++skew_index )
+        {
+          const size_t abs_idx = skew_base_idx + skew_index;
+          pars[abs_idx] = starting_value[skew_index];
+
+          if( fit_parameter[skew_index] )
+          {
+            if( restrict_skew_range )
+            {
+              lower_bounds[abs_idx] = std::max( lower_values[skew_index], 0.5*starting_value[skew_index] );
+              upper_bounds[abs_idx] = std::min( upper_values[skew_index], 1.5*fabs(starting_value[skew_index]) );
+            }else
+            {
+              lower_bounds[abs_idx] = lower_values[skew_index];
+              upper_bounds[abs_idx] = upper_values[skew_index];
+            }
+          }
+          else
+          {
+            constant_parameters.push_back( static_cast<int>(abs_idx) );
+          }
+        }
+      }//if( num_skew_pars > 0 )
+    }//if( IndependentSkewValues )
   }//setup_roi_parameters(...)
 
 
