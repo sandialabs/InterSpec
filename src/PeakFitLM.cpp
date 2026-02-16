@@ -533,9 +533,21 @@ struct PeakFitDiffCostFunction
    Skew parameter layout in params[0..skew_block_size-1]:
      params[0..num_skew-1]:        base (lower-anchor) values for all skew params
      params[num_skew..num_skew+M-1]: upper-anchor values for energy-dep params only (M = count of energy-dep params)
+
+   uncertainties: if non-null, has the same layout as params (diagonal of covariance); used to
+     set skew uncertainty on each peak for non-energy-dependent params.
+   covariance: if non-null, the full num_total_pars x num_total_pars row-major covariance matrix
+     for the entire parameter vector; needed for proper error propagation of interpolated
+     energy-dependent skew params.  The indices in this matrix correspond to the global parameter
+     array, so params[0] corresponds to covariance[0][0], etc.
+   params_offset: the index of params[0] in the global parameter array (needed to index covariance).
   */
   template<typename PeakType, typename T>
-  void apply_skew_to_peaks( vector<PeakType> &peaks, const T * const params ) const
+  void apply_skew_to_peaks( vector<PeakType> &peaks, const T * const params,
+                            const T * const uncertainties = nullptr,
+                            const double * const covariance = nullptr,
+                            const size_t num_total_pars = 0,
+                            const size_t params_offset = 0 ) const
   {
     const size_t num_skew = PeakDef::num_skew_parameters( m_skew_type );
     if( num_skew == 0 )
@@ -554,6 +566,8 @@ struct PeakFitDiffCostFunction
         {
           const auto ct = PeakDef::CoefficientType( static_cast<int>(PeakDef::SkewPar0) + static_cast<int>(i) );
           peak.set_coefficient( params[i], ct );
+          if( uncertainties )
+            peak.set_uncertainty( uncertainties[i], ct );
         }
       }
       else
@@ -576,13 +590,50 @@ struct PeakFitDiffCostFunction
           {
             // Interpolate between lower (params[i]) and upper (params[upper_offset])
             val = params[i] + mean_frac * (params[upper_offset] - params[i]);
+            peak.set_coefficient( val, ct );
+
+            // Uncertainty propagation only applies when T=double (post-solve), not during Jet-based solve.
+            if constexpr ( std::is_same_v<T, double> )
+            {
+              // Proper error propagation: val = (1-f)*p_lower + f*p_upper
+              // sigma^2 = (1-f)^2*Var[lower] + f^2*Var[upper] + 2*(1-f)*f*Cov[lower,upper]
+              if( covariance && (num_total_pars > 0) )
+              {
+                const double f = mean_frac;
+                const double one_minus_f = 1.0 - f;
+                const size_t gi = params_offset + i;              // global index of lower-anchor param
+                const size_t gu = params_offset + upper_offset;   // global index of upper-anchor param
+                const double var_lower = covariance[gi * num_total_pars + gi];
+                const double var_upper = covariance[gu * num_total_pars + gu];
+                const double cov_lu    = covariance[gi * num_total_pars + gu];
+                const double variance  = one_minus_f*one_minus_f*var_lower
+                                         + f*f*var_upper
+                                         + 2.0*one_minus_f*f*cov_lu;
+                if( variance > 0.0 )
+                  peak.set_uncertainty( sqrt(variance), ct );
+              }
+              else if( uncertainties )
+              {
+                // Fallback: propagate in quadrature ignoring correlation
+                const double f = mean_frac;
+                const double sigma_lower = uncertainties[i];
+                const double sigma_upper = uncertainties[upper_offset];
+                const double sigma = sqrt( (1.0-f)*(1.0-f)*sigma_lower*sigma_lower
+                                           + f*f*sigma_upper*sigma_upper );
+                if( sigma > 0.0 )
+                  peak.set_uncertainty( sigma, ct );
+              }
+            }//if constexpr T==double
+
             upper_offset += 1;
           }
           else
           {
             val = params[i];
+            peak.set_coefficient( val, ct );
+            if( uncertainties )
+              peak.set_uncertainty( uncertainties[i], ct );
           }
-          peak.set_coefficient( val, ct );
         }
       }
     }//for( PeakType &peak : peaks )
@@ -590,7 +641,9 @@ struct PeakFitDiffCostFunction
 
 
   template<typename PeakType,typename T>
-  vector<PeakType> parametersToPeaks( const T * const params, const T * const uncertainties, T *residuals ) const
+  vector<PeakType> parametersToPeaks( const T * const params, const T * const uncertainties, T *residuals,
+                                      const double * const covariance = nullptr,
+                                      const size_t num_total_pars = 0 ) const
   {
     std::unique_ptr<vector<T>> local_residuals;
     if( !residuals )
@@ -909,7 +962,11 @@ struct PeakFitDiffCostFunction
       for( PeakType &p : peaks )
         p.setContinuum( continuum );
 
-      apply_skew_to_peaks<PeakType, T>( peaks, roi_skew_ptr );
+      // Pass uncertainties at the same offset as the skew params, so uncertainties are set too.
+      const T *roi_skew_uncert_ptr = uncertainties ? (uncertainties + (roi_skew_ptr - params)) : nullptr;
+      const size_t skew_params_offset = static_cast<size_t>( roi_skew_ptr - params );
+      apply_skew_to_peaks<PeakType, T>( peaks, roi_skew_ptr, roi_skew_uncert_ptr,
+                                        covariance, num_total_pars, skew_params_offset );
 
       // --- Compute residuals for this ROI ---
       T chi2( 0.0 );
@@ -1122,6 +1179,8 @@ struct PeakFitDiffCostFunction
             fitted.set_coefficient( T(orig->coefficient(PeakDef::SkewPar0)), PeakDef::SkewPar0 ); // gamma_lor from orig
             fitted.set_coefficient( T(orig->coefficient(PeakDef::SkewPar1)), PeakDef::SkewPar1 ); // R from orig
             fitted.set_coefficient( tau, PeakDef::SkewPar2 );  // tau from skew block
+            if( roi_skew_uncert_ptr )
+              fitted.set_uncertainty( roi_skew_uncert_ptr[0], PeakDef::SkewPar2 );
           }
           else // GaussPlusBortel
           {
@@ -1134,6 +1193,11 @@ struct PeakFitDiffCostFunction
             fitted.set_coefficient( T(orig->coefficient(PeakDef::SkewPar0)), PeakDef::SkewPar0 ); // gamma_lor from orig
             fitted.set_coefficient( R_global,   PeakDef::SkewPar1 );
             fitted.set_coefficient( tau_global, PeakDef::SkewPar2 );
+            if( roi_skew_uncert_ptr )
+            {
+              fitted.set_uncertainty( roi_skew_uncert_ptr[0], PeakDef::SkewPar1 );
+              fitted.set_uncertainty( roi_skew_uncert_ptr[1], PeakDef::SkewPar2 );
+            }
           }
         }//for( const auto &mapping : old_to_new )
       }//if( global skew is Bortel or GaussPlusBortel )
@@ -2158,7 +2222,8 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
 
     vector<double> uncertainties( num_fit_pars, 0.0 );
     double *uncertainties_ptr = uncertainties.data();
-    
+    // Row-major covariance matrix (num_fit_pars x num_fit_pars); valid only when uncertainties_ptr != nullptr.
+    vector<double> row_major_covariance;
     
     ceres::Covariance covariance(cov_options);
     vector<pair<const double*, const double*> > covariance_blocks;
@@ -2172,31 +2237,23 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
       uncertainties_ptr = nullptr;
     }else
     {
-      vector<double> row_major_covariance( num_fit_pars * num_fit_pars );
+      row_major_covariance.resize( num_fit_pars * num_fit_pars );
       const vector<const double *> const_par_blocks( 1, pars );
 
       const bool success = covariance.GetCovarianceMatrix( const_par_blocks, row_major_covariance.data() );
       assert( success );
       if( success )
       {
-        //Obviously we dont need to recopy things, just to get the diagonal, but eventually we will save the full matrix....
-        vector<vector<double>> covariance_matrix( num_fit_pars, vector<double>(num_fit_pars, 0.0) );
-
-        for( size_t row = 0; row < num_fit_pars; ++row )
-        {
-          for( size_t col = 0; col < num_fit_pars; ++col )
-            covariance_matrix[row][col] = row_major_covariance[row*num_fit_pars + col];
-        }//for( size_t row = 0; row < num_fit_pars; ++row )
-
         for( size_t i = 0; i < num_fit_pars; ++i )
         {
           // TODO: compare uncertainties with Minuit method - should maybe check out.
-          if( covariance_matrix[i][i] > 0.0 )
-            uncertainties[i] = sqrt( covariance_matrix[i][i] );
+          if( row_major_covariance[i*num_fit_pars + i] > 0.0 )
+            uncertainties[i] = sqrt( row_major_covariance[i*num_fit_pars + i] );
         }
       }else 
       {
         uncertainties_ptr = nullptr;
+        row_major_covariance.clear();
       }//
     }//if( we failed to computer covariance ) / else
 
@@ -2205,8 +2262,10 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     cout << "Took " << cost_functor->m_ncalls.load() << " calls to get covariance." << endl;
 #endif
 
+    const double *cov_ptr = row_major_covariance.empty() ? nullptr : row_major_covariance.data();
     vector<double> residuals( cost_functor->number_residuals(), 0.0 );
-    auto final_peaks = cost_functor->parametersToPeaks<PeakDef,double>( &parameters[0], uncertainties_ptr, residuals.data() );
+    auto final_peaks = cost_functor->parametersToPeaks<PeakDef,double>( &parameters[0], uncertainties_ptr,
+                                                                         residuals.data(), cov_ptr, num_fit_pars );
 
     vector<shared_ptr<const PeakDef>> results( final_peaks.size() );
     for( size_t i = 0; i < final_peaks.size(); ++i )
