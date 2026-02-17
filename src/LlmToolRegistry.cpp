@@ -121,7 +121,7 @@ namespace {
    */
   double get_number( const json& parent, const string &name )
   {
-    if( !parent.contains(name) )
+    if( !parent.contains(name) || parent[name].is_null() )
       throw runtime_error( "'" + name + "' parameter must be specified." );
 
     if( parent[name].is_number() )
@@ -149,7 +149,7 @@ namespace {
    */
   bool get_boolean( const json& parent, const string &name )
   {
-    if( !parent.contains(name) )
+    if( !parent.contains(name) || parent[name].is_null() )
       throw runtime_error( "'" + name + "' parameter must be specified." );
 
     if( parent[name].is_boolean() )
@@ -219,7 +219,7 @@ namespace {
    */
   double get_number( const json& parent, const string &name, const double default_value )
   {
-    if( !parent.contains(name) )
+    if( !parent.contains(name) || parent[name].is_null() )
       return default_value;
 
     return get_number( parent, name );
@@ -236,7 +236,7 @@ namespace {
    */
   bool get_boolean( const json& parent, const string &name, const bool default_value )
   {
-    if( !parent.contains(name) )
+    if( !parent.contains(name) || parent[name].is_null() )
       return default_value;
 
     return get_boolean( parent, name );
@@ -258,6 +258,34 @@ namespace {
     return get_double( val );
   }//double get_double( const json& val, const double default_value )
 
+  // Returns the actual key in `params` that matches `key` case-insensitively,
+  // or `key` itself if not found (so callers can let contains/operator[] produce a natural error).
+  string find_case_insensitive_key( const string &key, const nlohmann::json &params )
+  {
+    assert( !key.empty() );
+    if( params.contains(key) || key.empty() ) //Go for exact match first
+      return key;
+    
+    const bool key_is_padded = (!key.empty() && (std::isspace( static_cast<unsigned char>(key.front()) )
+                                                 || std::isspace( static_cast<unsigned char>(key.back()) )));
+    
+    for( const auto &item : params.items() )
+    {
+      if( SpecUtils::iequals_ascii( item.key(), key ) )
+        return item.key();
+      
+      if( !key_is_padded
+         && !item.key().empty()
+         && (std::isspace( static_cast<unsigned char>(item.key().front()) )
+             || std::isspace( static_cast<unsigned char>(item.key().back()) )) )
+      {
+        if( SpecUtils::iequals_ascii( key, SpecUtils::trim_copy(item.key()) ) )
+          return item.key();
+      }
+    }//for( const auto &item : params.items() )
+    
+    return key;
+  };//find_case_insensitive_key
 
   /** Some LLMs will give complex values (arrays, objects) as JSON strings instead of native types.
    This function normalizes a field by parsing stringified JSON if needed.
@@ -942,7 +970,10 @@ namespace {
 
   void to_json( json &j, const std::vector<std::string> &sources )
   {
-    j = json{{"sources", sources}};
+    if( sources.empty() )
+      j = json{{"sources", "none"}};
+    else
+      j = json{{"sources", sources}};
   }
 
   /** Helper function to create simplified peak JSON with essential fields.
@@ -1486,11 +1517,11 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
         "properties": {
           "context": {
             "type": "string",
-            "description": "Background context about the current analysis state"
+            "description": "Context about the current analysis state."
           },
           "task": {
             "type": "string",
-            "description": "The specific task for the sub-agent to perform"
+            "description": "The specific task for the sub-agent to perform."
           }
         },
         "required": ["context", "task"]
@@ -2282,7 +2313,7 @@ nlohmann::json ToolRegistry::executeGetLoadedSpectra( const nlohmann::json& para
     loadedSpectra.push_back("Secondary");
   
   nlohmann::json result;
-  result["spectra"] = json(loadedSpectra);
+  result["loaded_spectra"] = json(loadedSpectra);
   
   return result;
 }
@@ -2367,7 +2398,10 @@ nlohmann::json ToolRegistry::executeGetSourceAnalystNotes( const nlohmann::json&
   if( !nuc_info || nuc_info->m_notes.empty() )
     throw runtime_error( "No info for " + nuclide );
     
-  return json{{"source", nuclide}, {"analystNotes", nuc_info->m_notes}};
+  string notes = nuc_info->m_notes;
+  SpecUtils::ireplace_all( notes, "\r\n", "\n" );
+  
+  return json{{"source", nuclide}, {"analystNotes", notes}};
 }//nlohmann::json executeGetSourceAnalystNotes(const nlohmann::json& params, InterSpec* interspec)
 
   
@@ -3233,12 +3267,13 @@ nlohmann::json ToolRegistry::executeCalculateDose(const nlohmann::json& params, 
  */
 nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& params){
 
-  if( !params.contains("Source") )
-    throw runtime_error( "'Source' parameter must be specified." );
+  const string source_key = find_case_insensitive_key( "source", params );
+  if( !params.contains(source_key) )
+    throw runtime_error( "'source' parameter must be specified." );
 
   // The nuclide, element, or reaction for which to retrieve decay product data.
   //   Examples: 'U238' (nuclide), 'Pb' (element), 'H(n,g)' (reaction).
-  string src = params["Source"];
+  string src = params[source_key];
 
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   if( !db )
@@ -3291,20 +3326,22 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
   if( !nuc && !el && !rctn )
     throw runtime_error( "Could not interpret '" + src + "' as a nuclide, x-ray, or reaction." );
 
-  double age_in_seconds = 0.0;
-  const bool has_age = params.contains("Age");
-  if( !nuc && has_age )
-    throw runtime_error( "You can only specify 'Age' for a nuclide source" );
+  const string age_key = find_case_insensitive_key( "age", params );
   
-  if( params.contains("Age") )
+  double age_in_seconds = 0.0;
+  const bool has_age = params.contains(age_key);
+  if( !nuc && has_age )
+    throw runtime_error( "You can only specify 'age' for a nuclide source" );
+  
+  if( has_age )
   {
-    const string &age_str = params["Age"];
+    const string &age_str = params[age_key];
 
     try
     {
       age_in_seconds = PhysicalUnits::stringToTimeDuration(age_str) / PhysicalUnits::second;
       if( age_in_seconds < 0.0 )
-        throw runtime_error( "Nuclide age ('" + age_str + "')must be larger than zero." );
+        throw runtime_error( "Nuclide age ('" + age_str + "') must be larger than zero." );
     }catch( std::exception &e )
     {
       throw runtime_error( "Could not interpret '" + age_str + "' as a time duration for nuclide age." );
@@ -3313,13 +3350,16 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
   {
     age_in_seconds = PeakDef::defaultDecayTime( nuc, nullptr ) / PhysicalUnits::second;
   }
-
-  const int max_results = static_cast<int>( get_number( params, "MaxResults", 125.0 ) );
+  
+  const string max_results_key = find_case_insensitive_key( "maxResults", params );
+  
+  const int max_results = static_cast<int>( get_number( params, max_results_key, 125.0 ) );
   if( max_results < 1 )
-    throw runtime_error( "'MaxResults' must be 1 or larger." );
+    throw runtime_error( "'maxResults' must be 1 or larger." );
 
+  const string cascade_key = find_case_insensitive_key( "includeCascadeSumEnergies", params );
 
-  const bool cascade = get_boolean( params, "IncludeCascadeSumEnergies", false );
+  const bool cascade = get_boolean( params, cascade_key, false );
   if( !nuc && cascade )
     throw runtime_error( "You can only request cascade decay information for nuclides" );
   
@@ -4828,7 +4868,7 @@ nlohmann::json ToolRegistry::executeSearchSourcesByEnergy(nlohmann::json params,
     energies.push_back( energy );
 
     double window = 10.0; // fallback default
-    if( energy_obj.contains("window") )
+    if( energy_obj.contains("window") && !energy_obj["window"].is_null() )
     {
       window = get_number( energy_obj, "window" );
     }
@@ -4864,11 +4904,11 @@ nlohmann::json ToolRegistry::executeSearchSourcesByEnergy(nlohmann::json params,
     min_half_life_str = params["min_half_life"].get<std::string>();
 
   double min_br = 0.0;
-  if( params.contains("min_branching_ratio") )
+  if( params.contains("min_branching_ratio") && !params["min_branching_ratio"].is_null() )
     min_br = get_number( params, "min_branching_ratio" );
 
   int max_results = 10;
-  if( params.contains("max_results") )
+  if( params.contains("max_results") && !params["max_results"].is_null() )
     max_results = static_cast<int>( get_number( params, "max_results" ) );
 
   if( max_results <= 0 )

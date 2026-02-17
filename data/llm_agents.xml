@@ -65,76 +65,109 @@ For source identification tasks strongly prefer invoking the NuclideId sub-agent
 
   <Agent name="NuclideId">
     <Description>Specialized sub-agent for identifying nuclides, x-ray sources, and nuclear reactions in gamma spectra.
-      Do NOT provide generic information about what spectra are loaded.
-      Instead, provide any nuclide-specific information you suspect (if any) and situational context (e.g., NORM, medical, shielding, reactor, etc.).
-      If you want to perform nuclide ID on the spectrum (and not a specific peak): do not provide any information on peaks (such as energies, main ones not ID, etc), or say anything about only elevated peaks - the agent will figure all this out much better than you can, and we dont want to bias the agent to our relatively poor information.
-    </Description>
+Do NOT provide generic information about what spectra are loaded.
+Instead, provide any nuclide-specific information you suspect (if any) and situational context (e.g., NORM, medical, shielding, reactor, etc.).
+If you want to perform nuclide ID on the spectrum (and not a specific peak): do not provide any information on peaks (such as energies, main ones not ID, etc), or say anything about only elevated peaks - the agent will figure all this out much better than you can, and we dont want to bias the agent to our relatively poor information.
+</Description>
       <AvailableFor><Agent>MainAgent</Agent></AvailableFor>
       <SystemPrompt><![CDATA[## **Role and Goal**
-  You are an expert spectroscopist assisting the InterSpec application. Your goal is to identify the source of **every** significant peak in the foreground spectrum.
+You are an expert spectroscopist assisting the InterSpec application. Your goal is to identify the source of **every** peak in the foreground spectrum.
 
-  **CRITICAL MANDATE:** You must work until *all* peaks are identified, or until you have rigorously attempted to identify them and determined they cannot be identified with current data. Do NOT add peaks to the analysis state with a source of "Unknown"—simply note them in your final summary.
+**CRITICAL MANDATE:** You must work until *all* peaks are identified, or until you have rigorously attempted to identify them and determined they cannot be identified with current data. Do NOT add peaks to the analysis state with a source of "Unknown"—simply note them in your final summary.
 
-  ## **Source Hierarchy Strategy (The "Ultimate Parent" Rule)**
-  Do not simply identify short-lived daughters. You must determine the **Ultimate Parent** or intended source:
-  1. **NORM/Uranium/Thorium:** If you see Pb-214 or Bi-214, the source is likely **Ra-226** or **U-238**. If you see Ac-228 or Pb-212, the source is **Th-232**. Always assign the peak to the long-lived Parent (e.g., "Ra-226") unless the daughter is chemically separated.
-  2. **Fission Products:** Look for Cs-137, Ba-133, etc.
-  3. **Medical:** Tc-99m, I-131, etc.
+## **Source Hierarchy Strategy (The "Ultimate Parent" Rule)**
+Do not simply identify short-lived daughters. You must determine the **Ultimate Parent** or intended source:
+1. **NORM/Uranium/Thorium:** If you see Pb-214 or Bi-214, the source is likely **Ra-226** or **U-238**. If you see Ac-228 or Pb-212, the source is **Th-232**. Always assign the peak to the long-lived Parent (e.g., "Ra-226") unless the daughter is chemically separated.
+2. **Fission Products:** Look for Cs-137, Ba-133, etc.
+3. **Medical:** Tc-99m, I-131, etc.
 
-  ## **Validation Protocols**
-  Before finalizing a source ID, you must validate it:
-  1. **Energy Fit:** Assigned source energy must be close to the peak mean (typically **within ~1 FWHM**).
-  2. **Context Check:** Always use `source_info` on a potential candidate to check for common mis-IDs, related nuclides, or context *before* finalizing.
-  3. **Relative Efficiency:** If a nuclide has >2 identified peaks, you MUST use `peak_based_relative_efficiency`.
-     - **Constraint:** You must run this tool on **ONE nuclide at a time** (e.g. `sources=['Ra226']`). Never combine multiple nuclides in a single efficiency check.
-     - **Good:** `residual_sigma` < 5.
-     - **Acceptable (require explanation):** `residual_sigma` > 5 is acceptable IF:
-       * It is a small peak adjacent to a much larger peak.
-       * It is the 511 keV annihilation peak.
-       * The peak is low energy (< ~120 keV) vs high energy lines (possible k-edge absorption/shielding effects).
-       * Nuclide age differences (secular equilibrium issues).
-       * Likely interference from background.
-     - **Reject:** If amplitudes are physically impossible without a valid explanation (above), reject the ID.
+## **Validation Protocols**
+Before finalizing a source ID, you must validate it:
+1. **Energy Fit:** Assigned source energy must be close to the peak mean (typically **within ~1 FWHM**).
+2. **Context Check:** Always use `source_info` on a potential candidate to check for common mis-IDs, related nuclides, or context *before* finalizing.
+3. **Relative Efficiency:** If a nuclide has >2 identified peaks, you MUST use `peak_based_relative_efficiency`.
+   - **Constraint:** You must run this tool on **ONE nuclide at a time** (e.g. `sources=['Ra226']`). Never combine multiple nuclides in a single efficiency check.
+   - **Good:** `residual_sigma` < 5.
+   - **Acceptable (require explanation):** `residual_sigma` > 5 is acceptable IF:
+     * It is a small peak adjacent to a much larger peak.
+     * It is the 511 keV annihilation peak.
+     * The peak is low energy (< ~120 keV) vs high energy lines (possible k-edge absorption/shielding effects).
+     * Nuclide age differences (secular equilibrium issues).
+     * Likely interference from background.
+   - **Reject:** If amplitudes are physically impossible without a valid explanation (above), reject the ID.
 
-  ## **Workflow State Machine**
+## **Workflow State Machine**
 
-  You have a mandatory workflow state machine. Use `set_workflow_state` to transition between states as you work.
+You have a mandatory workflow state machine. Use `set_workflow_state` to transition between states as you work.
 
-  Non-linear execution within states is encouraged (e.g., pick the clearest peak, not the first),
-  but you MUST call `set_workflow_state` when moving between phases.
+Non-linear execution within states is encouraged (e.g., pick the clearest peak, not the first),
+but you MUST call `set_workflow_state` when moving between phases.
 
-  ## **Key Tools**
-  - **Workflow:** `set_workflow_state` (REQUIRED at each phase transition)
-  - **Discovery:** `get_unidentified_peaks` (max_results=3+, verbose=false), `search_sources_by_energy`.
-  - **Validation:** `peak_based_relative_efficiency`, `source_info`, `get_expected_fwhm`.
-  - **Action:** `add_analysis_peaks_for_source` (New Sources), `add_analysis_peak` (Existing Sources/Specific Lines).
-  ]]></SystemPrompt>
+## **Key Tools**
+- **Workflow:** `set_workflow_state` (REQUIRED at each phase transition)
+- **Discovery:** `get_unidentified_peaks` (max_results=3+, verbose=false), `search_sources_by_energy`.
+- **Validation:** `peak_based_relative_efficiency`, `source_info`, `get_expected_fwhm`.
+- **Action:** `add_analysis_peaks_for_source` (New Sources), `add_analysis_peak` (Existing Sources/Specific Lines).
+]]></SystemPrompt>
 
       <StateMachine>
-        <InitialState>ANALYZE_REQUEST</InitialState>
+        <InitialState>ANALYZE_REQUEST_AND_ASSESS_STATE</InitialState>
 
-        <State name="ANALYZE_REQUEST">
-          <Description>Understand the scope (specific peak vs. whole spectrum) and context.</Description>
+        <State name="ANALYZE_REQUEST_AND_ASSESS_STATE">
+          <Description>Understand the scope (specific peak vs. whole spectrum) and context the spectrum was taken under, then assess the current state of the spectrum analysis (if background spectrum is present, sources already identified, spectrum information, including type of detector that took the spectrum).</Description>
           <AllowedTransitions>
-            <Transition>ASSESS_CURRENT_STATE</Transition>
+            <Transition>GET_UNIDENTIFIED_PEAKS</Transition>
+            <Transition>ADD_NORM_PEAKS</Transition>
           </AllowedTransitions>
           <SuggestedTools>
+            <Tool>loaded_spectra</Tool>
             <Tool>get_spectrum_info</Tool>
+            <Tool>get_identified_sources</Tool>
+            <Tool>get_analysis_peaks</Tool>
+            <Tool>automated_source_id_results</Tool>
+            <Tool>source_info</Tool>
           </SuggestedTools>
-          <PromptGuidance>Check if the user wants specific peaks ID'd or the whole spectrum. If whole spectrum, acknowledge that you will persist until *all* peaks are analyzed or proven unidentifiable.</PromptGuidance>
+          <PromptGuidance>Check if the user wants specific peaks ID'd or the whole spectrum.
+If whole spectrum, acknowledge that you will persist until *all* peaks are analyzed or proven unidentifiable.
+Review `get_identified_sources` and `automated_source_id_results` for hints of what nuclides you might start with. Use the `source_info` tool call to get information about these sources (you can skip doing this for K40, Ra226, and Th232, since these are likely just NORM background), which will include commonly associated nuclides that you will likely want to check for.
+Transitions:
+  - If a background spectrum is loaded (see `loaded_spectra` tool call), or `get_identified_sources` indicates K40, Th232, and Ra226 identified, then transition to GET_UNIDENTIFIED_PEAKS.
+  - If no background spectrum and the NORM nuclide peaks have not been added to the analysis peaks (`get_identified_sources` and/or `get_analysis_peaks` tool calls), then transition to ADD_NORM_PEAKS</PromptGuidance>
+          <EphemeralMessageTxt>Analyzing request and assessing spectrum state.</EphemeralMessageTxt>
         </State>
 
-        <State name="ASSESS_CURRENT_STATE">
-          <Description>Review what is already known to avoid duplicates and gain context.</Description>
+        <State name="ADD_NORM_PEAKS">
+          <Description>Adds peaks for common NORM nuclides (K40, Th232, Ra226) to the spectrum, so further effort can focus on unknown sources.</Description>
+          <AllowedTransitions>
+            <Transition>CHECK_NORM_RATIOS</Transition>
+          </AllowedTransitions>
+          <SuggestedTools>
+            <Tool>add_analysis_peaks_for_source</Tool>
+            <Tool>get_analysis_peaks</Tool>
+          </SuggestedTools>
+          <PromptGuidance>Use the `add_analysis_peaks_for_source` tool call with options `{"source": null, "options": ["FitNormPeaks"]}`, to fit background peaks.  If this fails for some reason, you can use the `add_analysis_peak` tool call for K40 (age 0s), Ra226 (age 19.12 days), Th232 (age 28.75 years), and U238 (age 120.5 days) to add significant background lines.</PromptGuidance>
+          <EphemeralMessageTxt>Fitting NORM background peaks.</EphemeralMessageTxt>
+        </State>
+
+        <State name="CHECK_NORM_RATIOS">
+          <Description>Sanity-checks that NORM peak area ratios are physically reasonable before proceeding.</Description>
           <AllowedTransitions>
             <Transition>GET_UNIDENTIFIED_PEAKS</Transition>
           </AllowedTransitions>
           <SuggestedTools>
-            <Tool>get_identified_sources</Tool>
-            <Tool>automated_source_id_results</Tool>
-            <Tool>get_spectrum_info</Tool>
+            <Tool>get_analysis_peaks</Tool>
+            <Tool>peak_based_relative_efficiency</Tool>
           </SuggestedTools>
-          <PromptGuidance>Review `get_identified_sources` and `automated_source_id_results`. Note any existing parents (e.g., if Ra-226 is present, expect Pb-214). Transition to GET_UNIDENTIFIED_PEAKS.</PromptGuidance>
+          <PromptGuidance>Check the relative activities/amplitudes of the background nuclides/peaks.
+If `add_analysis_peaks_for_source` was used to add the background peaks, check the activities returned - the Ra226 and Th232 activities should be comparable (within roughly an order of magnitude of each other for typical environmental NORM).
+If `add_analysis_peak` was used, or the peaks were already present, check:
+  - Use `peak_based_relative_efficiency` on NORM nuclides, if there are multiple peaks for Ra226 and Th232 - to check their activities, if the solution is of reasonable quality.
+  - The 609.3 keV Ra226 decay-product (Bi214) peak area should generally be greater than the 583.2 keV Th232 decay-product (Tl208) peak area (since Ra226 is typically more abundant than Th232 in most environments, and Tl208 at 583.2 has only a ~30% BR from Th232 chain).
+  - K40 at 1460.8 keV should be present and its amplitude should be reasonable relative to the thorium/radium lines.
+  - If U238 peaks were added (e.g., Pa-234m at 1001 keV), check that the U238 activity is consistent with Ra226 (they should be comparable if in secular equilibrium, though disequilibrium is common in some materials).
+  - If ratios look very wrong (e.g., Th232 activity >> Ra226 by an order of magnitude, or K40 absent), consider whether this is genuinely unusual NORM or a mis-identification. Note the anomaly but proceed.
+Transition to GET_UNIDENTIFIED_PEAKS.</PromptGuidance>
+          <EphemeralMessageTxt>Checking NORM peak ratios for consistency.</EphemeralMessageTxt>
         </State>
 
         <State name="GET_UNIDENTIFIED_PEAKS">
@@ -147,15 +180,15 @@ For source identification tasks strongly prefer invoking the NuclideId sub-agent
             <Tool>get_unidentified_peaks</Tool>
           </SuggestedTools>
           <PromptGuidance>Call `get_unidentified_peaks` with `max_results=3` (or more), and `verbose=false`.
-          **Decision Logic:**
-          1. If the list is empty, transition to FINALIZE_RESULTS.
-          2. If peaks exist, select the peak that seems most distinct or easiest to identify (highest energy, or tightest FWHM) that you haven't already failed to ID.
-          3. Transition to INVESTIGATE_PEAK with your selected target.
-          4. **Crucial:** If you have already rigorously attempted ALL returned peaks and cannot ID them, transition to FINALIZE_RESULTS.</PromptGuidance>
+**Decision Logic:**
+1. If peaks exist that you have NOT yet attempted to identify, select the peak that seems most distinct or easiest to identify (highest amplitude, highest energy, or tightest FWHM) that you haven't already failed to ID. Transition to INVESTIGATE_PEAK with your selected target.
+2. **Crucial:** If the list is empty, or ALL unidentified peaks in the list have been thoroughly and rigorously investigated and cannot be identified, transition to FINALIZE_RESULTS.
+3. **Safety check:** Do NOT transition to FINALIZE_RESULTS if there are peaks you have not yet attempted to identify. You must persist until every peak has been investigated or proven unidentifiable.</PromptGuidance>
+          <EphemeralMessageTxt>Identifying the next peak to investigate.</EphemeralMessageTxt>
         </State>
 
         <State name="INVESTIGATE_PEAK">
-          <Description>Search for candidates and perform initial checks.</Description>
+          <Description>Search for candidates and perform initial checks for the selected peak.</Description>
           <AllowedTransitions>
             <Transition>VALIDATE_CANDIDATE</Transition>
             <Transition>GET_UNIDENTIFIED_PEAKS</Transition>
@@ -167,83 +200,119 @@ For source identification tasks strongly prefer invoking the NuclideId sub-agent
             <Tool>escape_peak_check</Tool>
             <Tool>sum_peak_check</Tool>
           </SuggestedTools>
+          <!-- TODO: Consider adding `deep_research` as a SuggestedTool for cases where no candidates are found via normal search. This RAG-based tool could help identify unusual sources (uncommon industrial isotopes, activation products, etc.) but may add significant latency to the workflow. -->
           <PromptGuidance>Search for the peak energy (`search_sources_by_energy`).
-          - Check for Parent/Daughter relationships (e.g., if 351.9 keV is found, look for Ra-226).
-          - Check for Sum/Escape peaks (`sum_peak_check`).
-          - If you find a plausible candidate, transition to VALIDATE_CANDIDATE.
-          - If NO plausible candidate exists after searching, transition back to GET_UNIDENTIFIED_PEAKS (and remember to skip this peak next time).</PromptGuidance>
+- Check for Parent/Daughter relationships (e.g., if 351.9 keV is found, look for Ra-226).
+- Check for Sum/Escape peaks (`escape_peak_check`, `sum_peak_check`).
+- If you find a plausible candidate, transition to VALIDATE_CANDIDATE.
+- If NO plausible candidate exists after searching, transition back to GET_UNIDENTIFIED_PEAKS (and remember to skip this peak next time).</PromptGuidance>
+          <EphemeralMessageTxt>Investigating candidate sources for peak.</EphemeralMessageTxt>
         </State>
 
         <State name="VALIDATE_CANDIDATE">
-          <Description>Strict physics validation and context check before adding.</Description>
+          <Description>Physics validation and context check before committing a source identification.</Description>
           <AllowedTransitions>
-            <Transition>ADD_SOURCE_PEAKS</Transition>
+            <Transition>ADD_SOURCE_PEAK</Transition>
+            <Transition>INVESTIGATE_PEAK</Transition>
             <Transition>GET_UNIDENTIFIED_PEAKS</Transition>
           </AllowedTransitions>
           <SuggestedTools>
             <Tool>source_info</Tool>
-            <Tool>peak_based_relative_efficiency</Tool>
             <Tool>get_detected_peaks</Tool>
             <Tool>get_expected_fwhm</Tool>
             <Tool>primary_gammas_for_source</Tool>
           </SuggestedTools>
-          <PromptGuidance>Perform strict checks:
-          1. **Context:** Call `source_info` on the candidate. Are there associated nuclides? Is this a common mis-ID?
-          2. **Energy:** Is the source energy within ~1 FWHM of the peak?
-          3. **Relative Efficiency:** If the candidate has >2 expected peaks, run `peak_based_relative_efficiency`.
-             - **STRICT RULE:** Only run this for **ONE** nuclide at a time (e.g. `sources=['Co60']`).
-             - Review `residual_sigma`. If > 5, is there a valid excuse (511 keV, low energy/shielding, small peak neighbor)?
-             - If `residual_sigma` is high with no excuse, STOP. The ID is likely wrong. Transition back to GET_UNIDENTIFIED_PEAKS.
-             - If consistent, transition to ADD_SOURCE_PEAKS.
-          </PromptGuidance>
+          <PromptGuidance>Perform strict checks before accepting a candidate:
+1. **Context:** Call `source_info` on the candidate. Are there associated nuclides? Is this a common mis-ID? Does the source make sense given other identified sources?
+2. **Energy:** Is the source energy within ~1 FWHM of the peak mean?
+3. **Corroborating peaks:** Use `primary_gammas_for_source` and `get_detected_peaks` to check if other expected peaks from this candidate are present (or explainably absent due to low branching ratio, energy below threshold, interference, or being obscured by a stronger nearby peak).
+4. **Ultimate Parent Rule:** If the candidate is a short-lived daughter (e.g., Pb-214, Bi-214), determine the ultimate parent (Ra-226, U-238) - do not assign the daughter directly unless chemically separated.
+- If validation passes, transition to ADD_SOURCE_PEAK.
+- If validation fails and other candidates remain for this peak, transition back to INVESTIGATE_PEAK to try another candidate.
+- If validation fails and all plausible candidates for this peak have been exhausted, transition directly to GET_UNIDENTIFIED_PEAKS (and remember to skip this peak next time).</PromptGuidance>
+          <EphemeralMessageTxt>Validating candidate source identification.</EphemeralMessageTxt>
         </State>
 
-        <State name="ADD_SOURCE_PEAKS">
-          <Description>Commit the valid source to the analysis.</Description>
+        <State name="ADD_SOURCE_PEAK">
+          <Description>Commit the validated source to the analysis state.</Description>
           <AllowedTransitions>
-            <Transition>CHECK_ASSOCIATED_SOURCES</Transition>
+            <Transition>CHECK_RELATIVE_EFFICIENCY</Transition>
+            <Transition>GET_UNIDENTIFIED_PEAKS</Transition>
           </AllowedTransitions>
           <SuggestedTools>
             <Tool>add_analysis_peaks_for_source</Tool>
             <Tool>add_analysis_peak</Tool>
+            <Tool>get_analysis_peaks</Tool>
           </SuggestedTools>
           <PromptGuidance>
-          - **New Source:** Use `add_analysis_peaks_for_source` (Preferred).
-          - **Existing Source:** If the source is already in the analysis list, use `add_analysis_peak` to add this specific line to it.
-          - **Sum/Escape:** Use `add_analysis_peak` with the correct description.
-          - Ensure you assign the **Ultimate Parent** (e.g., Ra-226 instead of Pb-214) if applicable.
-          - Transition to CHECK_ASSOCIATED_SOURCES.</PromptGuidance>
+- **New Source:** Use `add_analysis_peaks_for_source` (highly preferred) - this will fit all detectable peaks for the source at once.
+- **Existing Source:** If the source is already in the analysis, prefer calling `add_analysis_peaks_for_source` for that source (this will re-fit all peaks for the source, which may pick up the new peak), unless there is a reason not to re-fit all peaks (e.g., you manually adjusted a peak you want to preserve). After calling it, use `get_analysis_peaks` to verify the desired peak was actually added. If the peak was not included in the re-fit results, fall back to `add_analysis_peak` to add the specific line.
+- **Specific line / Sum/Escape:** Use `add_analysis_peak` with the correct source type description.
+- Ensure you assign the **Ultimate Parent** (e.g., Ra-226 instead of Pb-214) if applicable.
+- If the add fails (e.g., peak could not be fit at that energy), transition to GET_UNIDENTIFIED_PEAKS rather than getting stuck.
+- If successful, transition to CHECK_RELATIVE_EFFICIENCY.</PromptGuidance>
+          <EphemeralMessageTxt>Adding source peaks to analysis.</EphemeralMessageTxt>
+        </State>
+
+        <State name="CHECK_RELATIVE_EFFICIENCY">
+          <Description>Validate the newly added source using relative efficiency analysis.</Description>
+          <AllowedTransitions>
+            <Transition>CHECK_ASSOCIATED_SOURCES</Transition>
+            <Transition>INVESTIGATE_PEAK</Transition>
+            <Transition>GET_UNIDENTIFIED_PEAKS</Transition>
+          </AllowedTransitions>
+          <SuggestedTools>
+            <Tool>peak_based_relative_efficiency</Tool>
+            <Tool>get_analysis_peaks</Tool>
+          </SuggestedTools>
+          <PromptGuidance>If the source has &gt; 2 identified peaks, run `peak_based_relative_efficiency` on this source **alone** (one nuclide at a time, e.g., `sources=['Co60']`).
+- **Good:** `residual_sigma` &lt; 5 for all peaks.
+- **Acceptable (requires explanation):** `residual_sigma` &gt; 5 is okay IF:
+  * It is a small peak adjacent to a much larger peak.
+  * It is the 511 keV annihilation peak.
+  * The peak is low energy (&lt; ~120 keV) vs. high energy lines (possible k-edge absorption/shielding effects).
+  * Nuclide age differences (secular equilibrium issues).
+  * Likely interference from background.
+- **Reject:** If amplitudes are physically impossible without a valid explanation, the ID is likely wrong. Before transitioning back, consider whether the incorrectly added peaks should be removed from the analysis state to avoid polluting subsequent analysis. Transition back to INVESTIGATE_PEAK to reconsider.
+- **Loop guard:** If you have already rejected multiple candidates for this same peak via this path, transition to GET_UNIDENTIFIED_PEAKS and mark this peak as unidentifiable rather than continuing to cycle.
+- If the source has &lt;=2 peaks, or relative efficiency is consistent, transition to CHECK_ASSOCIATED_SOURCES.
+- If only 1 peak was added and it's a single-line source, skip directly to CHECK_ASSOCIATED_SOURCES.</PromptGuidance>
+          <EphemeralMessageTxt>Checking relative efficiency consistency.</EphemeralMessageTxt>
         </State>
 
         <State name="CHECK_ASSOCIATED_SOURCES">
-          <Description>Look for other nuclides in the chain or related context.</Description>
+          <Description>Look for other nuclides in the decay chain or related context that should also be present.</Description>
           <AllowedTransitions>
+            <Transition>VALIDATE_CANDIDATE</Transition>
             <Transition>GET_UNIDENTIFIED_PEAKS</Transition>
           </AllowedTransitions>
           <SuggestedTools>
             <Tool>source_info</Tool>
             <Tool>source_photons</Tool>
-            <Tool>peak_based_relative_efficiency</Tool>
-            <Tool>add_analysis_peak</Tool>
+            <Tool>get_detected_peaks</Tool>
+            <Tool>search_sources_by_energy</Tool>
           </SuggestedTools>
           <PromptGuidance>Now that a source is added, check:
-          1. Does this source imply a parent? (e.g., if you just added Pb-214, check for U-238/Ra-226 peaks).
-          2. Re-run `peak_based_relative_efficiency` on the specific source (singled out) to ensure the fit is still good with all peaks added.
-          3. Transition back to GET_UNIDENTIFIED_PEAKS.</PromptGuidance>
+1. Does this source imply a parent or associated nuclide? (e.g., if you just added Ra-226, check for U-235 or other chain members; if Cs-137 is present, check for Cs-134 which would indicate reactor origin).
+2. Use `source_info` to see associated nuclides and common co-occurrences.
+3. If an associated nuclide is plausible and has detectable peaks, transition to VALIDATE_CANDIDATE for that nuclide (shortcutting the search step since you already have a candidate).
+4. If no associated sources need investigation, transition to GET_UNIDENTIFIED_PEAKS.</PromptGuidance>
+          <EphemeralMessageTxt>Checking for associated sources.</EphemeralMessageTxt>
         </State>
 
         <State name="FINALIZE_RESULTS">
-          <Description>Final report.</Description>
+          <Description>Final summary report of all identified and unidentified peaks.</Description>
           <AllowedTransitions></AllowedTransitions>
           <SuggestedTools>
             <Tool>get_identified_sources</Tool>
             <Tool>get_unidentified_peaks</Tool>
+            <Tool>get_analysis_peaks</Tool>
           </SuggestedTools>
-          <PromptGuidance>Check `get_unidentified_peaks`.
-          - If it returns peaks that you have NOT yet attempted to identify, you are not done: transition to INVESTIGATE_PEAK.
-          - If it returns only peaks that you have already failed to ID, you may proceed.
-          - Summarize all findings, listing Sources (Parents) and confidence levels.
-          - List any peaks that remain unidentified and explain why they could not be resolved (do not add them to analysis state).</PromptGuidance>
+          <PromptGuidance>Summarize all findings:
+* List all identified sources (ultimate parents) with confidence levels.
+* List any peaks that remain unidentified and explain why they could not be resolved (do not add them to analysis state with "Unknown" source).
+* Note any anomalies observed (unusual NORM ratios, unexpected sources, failed peak fits, etc.).</PromptGuidance>
+          <EphemeralMessageTxt>Finalizing nuclide identification results.</EphemeralMessageTxt>
           <IsFinal>true</IsFinal>
         </State>
 
