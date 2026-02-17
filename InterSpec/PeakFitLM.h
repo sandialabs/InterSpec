@@ -31,14 +31,20 @@
 
 #include <Wt/WFlags>
 
+#include "InterSpec/PeakDef.h"
+
 // Forward declarations
-class PeakDef;
+//class PeakDef;
 class DetectorPeakResponse;
 namespace SpecUtils
 {
   class Measurement;
 }//namespace SpecUtils
 
+namespace PeakFitUtils
+{
+  enum class CoarseResolutionType : int;
+}
 
 #define PRINT_VERBOSE_PEAK_FIT_LM_INFO 0
 
@@ -95,6 +101,21 @@ enum PeakFitLMOptions
   /** Similar to `MediumRefinementOnly`, but limits to 15% of a sigma.
    */
   SmallRefinementOnly         = 0x10,
+
+  /** If specified, each ROI will independently fit its own skew parameters (provided the skew
+   type is not NoSkew).  A per-ROI skew parameter is free to vary if ANY peak in the ROI has
+   fitFor set for it; it is held constant only when all peaks in the ROI agree it should be fixed.
+   The skew type and initial coefficient values are still taken from the peaks, but no cross-ROI
+   parameter sharing or energy-dependent interpolation is performed; every ROI's skew converges
+   to its own optimal values.
+
+   If not specified (the default), all ROIs share a single set of non-energy-dependent skew
+   values, and any energy-dependent parameters are fit as a linear function of energy across
+   the full span of all ROIs (when multiple ROIs span more than 100 keV).
+   */
+  IndependentSkewValues       = 0x20,
+
+
 };//enum PeakFitLMOptions
 
 void fit_peak_for_user_click_LM( std::vector< std::shared_ptr<const PeakDef> > &results,
@@ -157,6 +178,87 @@ std::vector<std::shared_ptr<const PeakDef>> refitPeaksThatShareROI_LM(
 // Need to implement the equivalent of `search_for_peaks(...)` which uses Minuit2 based `AutoPeakSearchChi2Fcn` class.
 // Also, the `searchForPeakFromUser(...)` 
 
+  
+/** Results of `fit_peaks_in_spectrum_LM(...)`.
+ */
+struct FitPeaksResults
+{
+  enum class FitPeaksResultsStatus : int
+  {
+    Success,
+    Failure
+  };
+  
+  FitPeaksResultsStatus status;
+  /** Only non-empty if `status == FitPeaksResultsStatus::Failure` */
+  std::string error_message;
+  
+  /** The fit peaks */
+  std::vector<std::shared_ptr<const PeakDef>> fit_peaks;
+  
+  /** Input peaks that did not make it to `fit_peaks` because they became insignificant. */
+  std::vector<std::shared_ptr<const PeakDef>> lost_peaks;
+  
+  /** A struct to convey the fit skew */
+  struct SkewRelation
+  {
+    PeakDef::SkewType skew_type;
+    
+    /** The lower and upper energy anchor points used to fit the energy-dependent skew paramaters.
+     Will be left empty if skew type is `PeakDef::SkewType::NoSkew` , or the `PeakFitLMOptions::IndependentSkewValues`
+     option was specified.
+     */
+    std::optional<std::pair<double,double>> energy_range;
+    
+    /** The maximum number of skew paramaters any of the skew types might have. */
+    static constexpr size_t sm_max_num_skew_pars = 1 + PeakDef::CoefficientType::SkewPar3 - PeakDef::CoefficientType::SkewPar0;
+    static_assert( sm_max_num_skew_pars == 4 );
+    
+    /** The values of energy-dependent skew paramaters at the lower and upper energies.
+     See `PeakDef::is_energy_dependent(SkewType,CoefficientType)`.
+     */
+    std::optional<std::pair<double,double>> energy_dependent_skew_pars[sm_max_num_skew_pars];
+    
+    /** The skew values for the non-energy-dependent skew terms.
+     See `PeakDef::is_energy_dependent(SkewType,CoefficientType)`.
+     */
+    std::optional<std::pair<double,double>> non_energy_dependent_skew_pars[sm_max_num_skew_pars];
+  };//struct SkewRelation
+  
+  /** If skew was fit for more than one ROI, and `PeakFitLMOptions::IndependentSkewValues` was not specified, then the final fit skew energy relation
+   is provided by this variable.
+   */
+  std::optional<SkewRelation> skew_relation;
+};//struct FitPeaksResults
+  
+
+/** Fit the specified peaks to the spectrum; may be one or multiple ROIs (e.g., peaks share one or more PeakContinuum), and can allow the skew to be
+ fit across all fit peaks, or independent.
+ 
+ @param input_peaks The peaks to be fit.  The current values will be used as the starting points for values being fit.  The `PeakDef::fitFor(CoefficientType)`values
+        will be used to decide if a parameter should be fit for.
+ @param data The spectrum to fit the peaks to.
+ @param stat_threshold TODO: fill this definition in from somewhere else
+ @param hypothesis_threshold TODO: fill this definition in from somewhere else
+ @param resolution_type The optional pre-determined coarse detector resolution type to be used.  If not specified, will be guessed.
+ @param skew_type The skew type to make ALL peaks being fit for.  Note that unless `PeakFitLMOptions::IndependentSkewValues` is specified, the
+        skew of all peaks will be related, according to `PeakDef::is_energy_dependent` (i.e., some skew paramaters may be shared exactly across all peaks,
+        and some will be energy-dependent) - this option overides the skew types specified in `input_peaks`, with the special exceptions of if
+        `PeakDef::SkewType::Bortel` or `PeakDef::SkewType::GaussPlusBortel` is specified, and an individual peak specifies `PeakDef::SkewType::VoigtPlusBortel`,
+        then that peak will be left its input type, and things worked out (see `PeakFitDiffCostFunction` for details).  If an input peak is the same skew type as is
+        specified by this paramater, and one or more of its skew paramaters is specified as fixed (i.e. `!PeakDef::fitFor(CoefficientType)`), then that parameter will
+        stay fixed and not fit for that peak.  If `std::nullopt` is given for this argument, then the original peaks will be left to what they are, and refit (if they arent fixed)
+        and treated as independent from ROI to ROI.
+ @param fit_options Options for the fit.  E.g., if you are re-fiiting, then you may want to specify `PeakFitLMOptions::MediumRefinementOnly`, etc
+ */
+FitPeaksResults fit_peaks_in_spectrum_LM( const std::vector<std::shared_ptr<const PeakDef>> input_peaks,
+                               std::shared_ptr<const SpecUtils::Measurement> data,
+                               const double stat_threshold,
+                               const double hypothesis_threshold,
+                               const std::optional<PeakFitUtils::CoarseResolutionType> resolution_type,
+                               const std::optional<PeakDef::SkewType> skew_type = std::nullopt,
+                               const Wt::WFlags<PeakFitLMOptions> fit_options = 0 ) throw();
+  
 }//namespace PeakFitLM
 
 

@@ -1861,9 +1861,12 @@ struct PeakFitDiffCostFunction
   }//get_problem_setup()
 
 public:
+  // NOTE: declaration order must match initialization dependency order.
+  //  m_rois depends on m_data, m_options; m_external_continuum depends on m_rois;
+  //  m_fit_skew_energy_dependence depends on m_rois; m_num_parameters depends on
+  //  m_fit_skew_energy_dependence; m_thread_pool depends on m_rois.
   const std::shared_ptr<const SpecUtils::Measurement> m_data;
   const PeakDef::SkewType m_skew_type;
-  const std::shared_ptr<const SpecUtils::Measurement> m_external_continuum;
   const bool m_isHPGe;
   const Wt::WFlags<PeakFitLMOptions> m_options;
 
@@ -1871,11 +1874,12 @@ public:
 
   const std::vector<RoiInfo> m_rois;
   const size_t m_total_num_peaks;
-  const size_t m_num_parameters;
-  const size_t m_num_residuals;
   const bool m_fit_skew_energy_dependence;
   const double m_skew_anchor_lower_energy;
   const double m_skew_anchor_upper_energy;
+  const std::shared_ptr<const SpecUtils::Measurement> m_external_continuum;
+  const size_t m_num_parameters;
+  const size_t m_num_residuals;
 
 #if( PEAK_FIT_LM_PARALLEL_ROIS )
   // Non-null only when m_rois.size() > 2; sized to min(nrois, physical_cores).
@@ -2736,5 +2740,535 @@ std::vector<std::shared_ptr<const PeakDef>> refitPeaksThatShareROI_LM(
 
   return answer;
 }//refitPeaksThatShareROI_LM(...)
+
+
+/** Internal helper: runs Ceres Levenberg-Marquardt solve on a PeakFitDiffCostFunction.
+
+ Returns the fitted peaks, and the raw fit parameter/uncertainty/covariance data.
+ Throws on failure.
+ */
+struct CeresFitResult
+{
+  vector<PeakDef> final_peaks;
+  vector<double> parameters;
+  vector<double> uncertainties;
+  vector<double> row_major_covariance;
+  size_t num_fit_pars;
+};
+
+static CeresFitResult run_ceres_fit( PeakFitDiffCostFunction &cost_functor, const size_t total_num_peaks )
+{
+  const size_t num_fit_pars = cost_functor.number_parameters();
+
+  auto cost_function = new ceres::DynamicAutoDiffCostFunction<PeakFitDiffCostFunction,8>(
+    &cost_functor, ceres::Ownership::DO_NOT_TAKE_OWNERSHIP );
+
+  cost_function->AddParameterBlock( static_cast<int>(num_fit_pars) );
+  cost_function->SetNumResiduals( static_cast<int>(cost_functor.number_residuals()) );
+
+  const PeakFitDiffCostFunction::ProblemSetup prob_setup = cost_functor.get_problem_setup();
+
+  assert( prob_setup.m_parameters.size() == num_fit_pars );
+  assert( prob_setup.m_lower_bounds.size() == num_fit_pars );
+  assert( prob_setup.m_upper_bounds.size() == num_fit_pars );
+
+  vector<double> parameters = prob_setup.m_parameters;
+  double * const pars = parameters.data();
+
+  std::unique_ptr<ceres::Problem> problem = make_unique<ceres::Problem>();
+
+  ceres::LossFunction *lossfcn = nullptr;
+  problem->AddResidualBlock( cost_function, lossfcn, pars );
+
+  if( !prob_setup.m_constant_parameters.empty() )
+  {
+    ceres::Manifold *subset_manifold = new ceres::SubsetManifold(
+      static_cast<int>(num_fit_pars), prob_setup.m_constant_parameters );
+    problem->SetManifold( pars, subset_manifold );
+  }
+
+  for( size_t i = 0; i < num_fit_pars; ++i )
+  {
+    if( prob_setup.m_lower_bounds[i].has_value() )
+    {
+      assert( *prob_setup.m_lower_bounds[i] <= parameters[i] );
+      problem->SetParameterLowerBound( pars, static_cast<int>(i), *prob_setup.m_lower_bounds[i] );
+    }
+
+    if( prob_setup.m_upper_bounds[i].has_value() )
+    {
+      assert( *prob_setup.m_upper_bounds[i] >= parameters[i] );
+      problem->SetParameterUpperBound( pars, static_cast<int>(i), *prob_setup.m_upper_bounds[i] );
+    }
+  }//for( size_t i = 0; i < num_fit_pars; ++i )
+
+
+  ceres::Solver::Options options;
+  options.linear_solver_type = ceres::DENSE_QR;
+  options.minimizer_type = ceres::TRUST_REGION;
+  options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT;
+  options.use_nonmonotonic_steps = true;
+  options.max_consecutive_nonmonotonic_steps = 10;
+  options.initial_trust_region_radius = 35 * (num_fit_pars - prob_setup.m_constant_parameters.size());
+  options.max_trust_region_radius = 1e16;
+  options.min_trust_region_radius = 1e-32;
+  options.min_relative_decrease = 1e-3;
+  options.max_num_iterations = (total_num_peaks > 2) ? 1000 : 500;
+#ifndef NDEBUG
+  options.max_solver_time_in_seconds = (total_num_peaks > 2) ? 180.0 : 120;
+#else
+  options.max_solver_time_in_seconds = (total_num_peaks > 2) ? 30.0 : 15.0;
+#endif
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+  options.minimizer_progress_to_stdout = true;
+  options.logging_type = ceres::PER_MINIMIZER_ITERATION;
+#else
+  options.minimizer_progress_to_stdout = false;
+  options.logging_type = ceres::SILENT;
+#endif
+  options.function_tolerance = 1e-7;
+  options.parameter_tolerance = 1e-11;
+  options.num_threads = 1;
+  options.max_num_consecutive_invalid_steps = 10;
+
+  ceres::Solver::Summary summary;
+  ceres::Solve( options, problem.get(), &summary );
+
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+  std::cout << summary.FullReport() << "\n";
+  cout << "run_ceres_fit: Took " << cost_functor.m_ncalls.load() << " calls to solve." << endl;
+#endif
+
+  string failure_reason;
+
+  switch( summary.termination_type )
+  {
+    case ceres::CONVERGENCE:
+    case ceres::USER_SUCCESS:
+      break;
+
+    case ceres::NO_CONVERGENCE:
+    {
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+      cerr << "run_ceres_fit: NO_CONVERGENCE:\n" << summary.FullReport() << endl;
+#endif
+      options.max_num_iterations = 5000;
+      cost_functor.m_ncalls = 0;
+      summary = ceres::Solver::Summary();
+      ceres::Solve( options, problem.get(), &summary );
+
+      if( (summary.termination_type == ceres::CONVERGENCE)
+         || (summary.termination_type == ceres::USER_SUCCESS) )
+      {
+        break;
+      }
+
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+      cerr << "run_ceres_fit: Retry failed with " << cost_functor.m_ncalls.load() << " additional calls" << endl;
+#endif
+      failure_reason = "The L-M ceres::Solver solving failed - NO_CONVERGENCE.";
+      [[fallthrough]];
+    }//case ceres::NO_CONVERGENCE:
+
+    case ceres::FAILURE:
+    {
+      if( failure_reason.empty() )
+        failure_reason = "The L-M ceres::Solver solving failed - FAILURE.";
+
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+      cerr << "run_ceres_fit: FAILURE:\n" << summary.FullReport() << endl;
+#endif
+
+      auto numeric_cost_fnct = new ceres::DynamicNumericDiffCostFunction<PeakFitDiffCostFunction>(
+        &cost_functor, ceres::Ownership::DO_NOT_TAKE_OWNERSHIP );
+      numeric_cost_fnct->AddParameterBlock( static_cast<int>(num_fit_pars) );
+      numeric_cost_fnct->SetNumResiduals( static_cast<int>(cost_functor.number_residuals()) );
+
+      std::unique_ptr<ceres::Problem> numerical_problem = make_unique<ceres::Problem>();
+      numerical_problem->AddResidualBlock( numeric_cost_fnct, lossfcn, pars );
+
+      if( !prob_setup.m_constant_parameters.empty() )
+      {
+        ceres::Manifold *subset_manifold = new ceres::SubsetManifold(
+          static_cast<int>(num_fit_pars), prob_setup.m_constant_parameters );
+        numerical_problem->SetManifold( pars, subset_manifold );
+      }
+
+      for( size_t i = 0; i < num_fit_pars; ++i )
+      {
+        if( prob_setup.m_lower_bounds[i].has_value() )
+          numerical_problem->SetParameterLowerBound( pars, static_cast<int>(i), *prob_setup.m_lower_bounds[i] );
+        if( prob_setup.m_upper_bounds[i].has_value() )
+          numerical_problem->SetParameterUpperBound( pars, static_cast<int>(i), *prob_setup.m_upper_bounds[i] );
+      }//for( size_t i = 0; i < num_fit_pars; ++i )
+
+      cost_functor.m_ncalls = 0;
+      summary = ceres::Solver::Summary();
+      ceres::Solve( options, numerical_problem.get(), &summary );
+
+      switch( summary.termination_type )
+      {
+        case ceres::CONVERGENCE:
+        case ceres::USER_SUCCESS:
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+          cout << "run_ceres_fit: Solved using numerical differentiation." << endl;
+#endif
+          problem = std::move( numerical_problem );
+          break;
+
+        case ceres::NO_CONVERGENCE:
+        case ceres::FAILURE:
+        case ceres::USER_FAILURE:
+        {
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+          cerr << "run_ceres_fit: Failed with numerical differentiation too - giving up." << endl;
+#endif
+          throw runtime_error( failure_reason );
+        }
+      }
+
+      break;
+    }//case ceres::FAILURE:
+
+    case ceres::USER_FAILURE:
+    {
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+      cerr << "run_ceres_fit: USER_FAILURE:\n" << summary.FullReport() << endl;
+#endif
+      throw runtime_error( "The L-M ceres::Solver solving failed - USER_FAILURE." );
+    }
+  }//switch( summary.termination_type )
+
+
+  // Compute covariance
+  cost_functor.m_ncalls = 0;
+
+  ceres::Covariance::Options cov_options;
+  cov_options.algorithm_type = ceres::CovarianceAlgorithmType::DENSE_SVD;
+  cov_options.null_space_rank = -1;
+  cov_options.min_reciprocal_condition_number = 1e-14;
+
+  vector<double> uncertainties( num_fit_pars, 0.0 );
+  double *uncertainties_ptr = uncertainties.data();
+  vector<double> row_major_covariance;
+
+  ceres::Covariance covariance( cov_options );
+  vector<pair<const double*, const double*>> covariance_blocks;
+  covariance_blocks.push_back( make_pair( pars, pars ) );
+
+  if( !covariance.Compute( covariance_blocks, problem.get() ) )
+  {
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+    cerr << "run_ceres_fit: Failed to compute covariance!" << endl;
+#endif
+    uncertainties_ptr = nullptr;
+  }
+  else
+  {
+    row_major_covariance.resize( num_fit_pars * num_fit_pars );
+    const vector<const double *> const_par_blocks( 1, pars );
+
+    const bool success = covariance.GetCovarianceMatrix( const_par_blocks, row_major_covariance.data() );
+    assert( success );
+    if( success )
+    {
+      for( size_t i = 0; i < num_fit_pars; ++i )
+      {
+        if( row_major_covariance[i * num_fit_pars + i] > 0.0 )
+          uncertainties[i] = sqrt( row_major_covariance[i * num_fit_pars + i] );
+      }
+    }
+    else
+    {
+      uncertainties_ptr = nullptr;
+      row_major_covariance.clear();
+    }
+  }//if( failed covariance ) / else
+
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+  cout << "run_ceres_fit: Took " << cost_functor.m_ncalls.load() << " calls to get covariance." << endl;
+#endif
+
+  const double *cov_ptr = row_major_covariance.empty() ? nullptr : row_major_covariance.data();
+  vector<double> residuals( cost_functor.number_residuals(), 0.0 );
+  vector<PeakDef> final_peaks = cost_functor.parametersToPeaks<PeakDef,double>(
+    parameters.data(), uncertainties_ptr, residuals.data(), cov_ptr, num_fit_pars );
+
+  CeresFitResult result;
+  result.final_peaks = std::move( final_peaks );
+  result.parameters = std::move( parameters );
+  result.uncertainties = std::move( uncertainties );
+  result.row_major_covariance = std::move( row_major_covariance );
+  result.num_fit_pars = num_fit_pars;
+
+  return result;
+}//run_ceres_fit(...)
+
+
+FitPeaksResults fit_peaks_in_spectrum_LM( const vector<shared_ptr<const PeakDef>> input_peaks,
+                                          shared_ptr<const SpecUtils::Measurement> data,
+                                          const double stat_threshold,
+                                          const double hypothesis_threshold,
+                                          const std::optional<PeakFitUtils::CoarseResolutionType> resolution_type,
+                                          const std::optional<PeakDef::SkewType> skew_type,
+                                          const Wt::WFlags<PeakFitLMOptions> fit_options ) throw()
+{
+  FitPeaksResults results;
+
+  try
+  {
+    if( !data || !data->gamma_counts() || data->gamma_counts()->empty() )
+    {
+      results.status = FitPeaksResults::FitPeaksResultsStatus::Failure;
+      results.error_message = "fit_peaks_in_spectrum_LM: invalid spectrum data.";
+      return results;
+    }
+
+    if( input_peaks.empty() )
+    {
+      results.status = FitPeaksResults::FitPeaksResultsStatus::Failure;
+      results.error_message = "fit_peaks_in_spectrum_LM: no input peaks.";
+      return results;
+    }
+
+    // Separate data-defined (non-Gaussian) peaks from Gaussian peaks
+    vector<shared_ptr<const PeakDef>> gauss_peaks;
+    vector<shared_ptr<const PeakDef>> datadefined_peaks;
+    gauss_peaks.reserve( input_peaks.size() );
+
+    for( const shared_ptr<const PeakDef> &p : input_peaks )
+    {
+      if( p->gausPeak() )
+        gauss_peaks.push_back( p );
+      else
+        datadefined_peaks.push_back( p );
+    }
+
+    if( gauss_peaks.empty() )
+    {
+      // No Gaussian peaks to fit - just return data-defined peaks as-is
+      results.status = FitPeaksResults::FitPeaksResultsStatus::Success;
+      results.fit_peaks = datadefined_peaks;
+      return results;
+    }
+
+    // Determine detector resolution type
+    const PeakFitUtils::CoarseResolutionType res_type = resolution_type.has_value()
+      ? *resolution_type
+      : PeakFitUtils::coarse_resolution_from_peaks( gauss_peaks );
+    const bool isHPGe = (res_type == PeakFitUtils::CoarseResolutionType::High);
+
+    // Deep copy all Gaussian peaks so we dont modify the inputs
+    local_unique_copy_continuum( gauss_peaks );
+
+    vector<shared_ptr<const PeakDef>> all_fit_peaks;
+
+    if( !skew_type.has_value() )
+    {
+      // Mode A: skew_type is nullopt - fit each ROI independently
+      //  Group peaks by shared continuum
+      map<shared_ptr<const PeakContinuum>, vector<shared_ptr<const PeakDef>>> cont_to_peaks;
+      for( const shared_ptr<const PeakDef> &p : gauss_peaks )
+        cont_to_peaks[p->continuum()].push_back( p );
+
+      for( const auto &kv : cont_to_peaks )
+      {
+        try
+        {
+          const vector<shared_ptr<const PeakDef>> roi_result
+            = fit_peaks_in_roi_LM( kv.second, data, isHPGe, fit_options );
+          all_fit_peaks.insert( end(all_fit_peaks), begin(roi_result), end(roi_result) );
+        }
+        catch( std::exception &e )
+        {
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+          cerr << "fit_peaks_in_spectrum_LM: ROI fit failed: " << e.what() << endl;
+#endif
+          // If a ROI fails, keep the original peaks for that ROI
+          all_fit_peaks.insert( end(all_fit_peaks), begin(kv.second), end(kv.second) );
+        }
+      }//for( each ROI group )
+    }
+    else
+    {
+      // Mode B: skew_type is specified - fit all ROIs simultaneously with shared/related skew
+      const PeakDef::SkewType target_skew = *skew_type;
+
+      // Set skew type on all peaks (with VoigtPlusBortel exception)
+      vector<shared_ptr<const PeakDef>> peaks_to_fit;
+      peaks_to_fit.reserve( gauss_peaks.size() );
+
+      for( const shared_ptr<const PeakDef> &p : gauss_peaks )
+      {
+        shared_ptr<PeakDef> newpeak = make_shared<PeakDef>( *p );
+
+        const bool keep_voigt = (newpeak->skewType() == PeakDef::SkewType::VoigtPlusBortel)
+          && ((target_skew == PeakDef::SkewType::Bortel) || (target_skew == PeakDef::SkewType::GaussPlusBortel));
+
+        if( !keep_voigt && (newpeak->skewType() != target_skew) )
+        {
+          newpeak->setSkewType( target_skew );
+
+          // Set default starting values and enable fitting for skew parameters
+          const size_t num_skew_pars = PeakDef::num_skew_parameters( target_skew );
+          for( size_t i = 0; i < num_skew_pars; ++i )
+          {
+            const PeakDef::CoefficientType ct
+              = PeakDef::CoefficientType( static_cast<int>(PeakDef::SkewPar0) + static_cast<int>(i) );
+            double lower, upper, start, dx;
+            PeakDef::skew_parameter_range( target_skew, ct, lower, upper, start, dx );
+            newpeak->set_coefficient( start, ct );
+            newpeak->setFitFor( ct, true );
+          }
+        }
+        // else if peak already had the target skew type, preserve its fitFor settings
+
+        peaks_to_fit.push_back( newpeak );
+      }//for( each gauss peak )
+
+      try
+      {
+        // PeakFitDiffCostFunction handles VoigtPlusBortel exception and multi-ROI grouping internally
+        PeakFitDiffCostFunction cost_functor( data, peaks_to_fit, 0, 0, 0,
+                                              target_skew, isHPGe, fit_options );
+
+        CeresFitResult ceres_result = run_ceres_fit( cost_functor, peaks_to_fit.size() );
+
+        // Convert to shared_ptr
+        all_fit_peaks.reserve( ceres_result.final_peaks.size() );
+        for( PeakDef &peak : ceres_result.final_peaks )
+          all_fit_peaks.push_back( make_shared<PeakDef>( std::move(peak) ) );
+
+        // Extract SkewRelation if applicable
+        const size_t num_skew_pars = PeakDef::num_skew_parameters( target_skew );
+        const bool should_have_skew_relation = (cost_functor.m_rois.size() > 1)
+          && !fit_options.testFlag( PeakFitLMOptions::IndependentSkewValues )
+          && (num_skew_pars > 0);
+
+        if( should_have_skew_relation )
+        {
+          FitPeaksResults::SkewRelation skew_rel;
+          skew_rel.skew_type = target_skew;
+          skew_rel.energy_range = std::make_pair( cost_functor.m_skew_anchor_lower_energy,
+                                                   cost_functor.m_skew_anchor_upper_energy );
+
+          size_t upper_offset = num_skew_pars;
+          for( size_t i = 0; i < num_skew_pars; ++i )
+          {
+            const PeakDef::CoefficientType ct
+              = PeakDef::CoefficientType( static_cast<int>(PeakDef::SkewPar0) + static_cast<int>(i) );
+
+            if( PeakDef::is_energy_dependent( target_skew, ct ) && cost_functor.m_fit_skew_energy_dependence )
+            {
+              skew_rel.energy_dependent_skew_pars[i]
+                = std::make_pair( ceres_result.parameters[i], ceres_result.parameters[upper_offset] );
+              upper_offset += 1;
+            }
+            else
+            {
+              skew_rel.non_energy_dependent_skew_pars[i]
+                = std::make_pair( ceres_result.parameters[i], ceres_result.uncertainties[i] );
+            }
+          }//for( each skew parameter )
+
+          results.skew_relation = skew_rel;
+        }//if( should_have_skew_relation )
+      }
+      catch( std::exception &e )
+      {
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+        cerr << "fit_peaks_in_spectrum_LM: multi-ROI fit failed: " << e.what() << endl;
+#endif
+        results.status = FitPeaksResults::FitPeaksResultsStatus::Failure;
+        results.error_message = string( "fit_peaks_in_spectrum_LM: " ) + e.what();
+        return results;
+      }
+    }//if( !skew_type.has_value() ) / else
+
+
+    // Apply significance testing - mirroring fit_peaks_LM
+    for( size_t i = 0; i < all_fit_peaks.size(); )
+    {
+      const shared_ptr<const PeakDef> &peak = all_fit_peaks[i];
+
+      // Dont remove peaks whose amplitudes we arent fitting
+      if( !peak->fitFor( PeakDef::GaussAmplitude ) )
+      {
+        ++i;
+        continue;
+      }
+
+      const double num_sigma = (peak->amplitudeUncert() > 0.0)
+        ? (peak->amplitude() / peak->amplitudeUncert()) : 999.0;
+      const bool is_sig = (stat_threshold <= 0.0) || (num_sigma >= stat_threshold);
+
+      const double dummy_stat_thresh = 0.0;
+      const bool significant = chi2_significance_test( *peak, dummy_stat_thresh, hypothesis_threshold, {}, data );
+
+      if( !is_sig || !significant )
+      {
+        results.lost_peaks.push_back( peak );
+        all_fit_peaks.erase( all_fit_peaks.begin() + i );
+      }
+      else
+      {
+        ++i;
+      }
+    }//for( significance testing )
+
+    // Remove peaks whose means are within 1 sigma of each other
+    std::sort( begin(all_fit_peaks), end(all_fit_peaks), &PeakDef::lessThanByMeanShrdPtr );
+
+    for( size_t i = 1; i < all_fit_peaks.size(); ++i )
+    {
+      const shared_ptr<const PeakDef> &this_peak = all_fit_peaks[i - 1];
+      const shared_ptr<const PeakDef> &next_peak = all_fit_peaks[i];
+
+      if( !this_peak->fitFor( PeakDef::GaussAmplitude ) )
+        continue;
+
+      const double min_sigma = std::min( this_peak->sigma(), next_peak->sigma() );
+      const double mean_diff = next_peak->mean() - this_peak->mean();
+
+      if( (mean_diff / min_sigma) < 1.0 )
+      {
+        // Remove the peak with the worse chi2
+        if( this_peak->chi2dof() > next_peak->chi2dof() )
+        {
+          results.lost_peaks.push_back( this_peak );
+          all_fit_peaks.erase( all_fit_peaks.begin() + static_cast<ptrdiff_t>(i - 1) );
+        }
+        else
+        {
+          results.lost_peaks.push_back( next_peak );
+          all_fit_peaks.erase( all_fit_peaks.begin() + static_cast<ptrdiff_t>(i) );
+        }
+        i = (i > 1) ? (i - 1) : 0;
+      }
+    }//for( removing duplicate peaks )
+
+    // Add back data-defined peaks
+    if( !datadefined_peaks.empty() )
+    {
+      all_fit_peaks.insert( end(all_fit_peaks), begin(datadefined_peaks), end(datadefined_peaks) );
+      std::sort( begin(all_fit_peaks), end(all_fit_peaks), &PeakDef::lessThanByMeanShrdPtr );
+    }
+
+    results.status = FitPeaksResults::FitPeaksResultsStatus::Success;
+    results.fit_peaks = std::move( all_fit_peaks );
+  }
+  catch( std::exception &e )
+  {
+    results.status = FitPeaksResults::FitPeaksResultsStatus::Failure;
+    results.error_message = string( "fit_peaks_in_spectrum_LM: " ) + e.what();
+
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO || !defined(NDEBUG) )
+    cerr << results.error_message << endl;
+#endif
+  }
+
+  return results;
+}//fit_peaks_in_spectrum_LM(...)
+
 
 }//namespace PeakFitLM
