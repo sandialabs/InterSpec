@@ -4597,6 +4597,9 @@ void InterSpec::applyColorTheme( shared_ptr<const ColorTheme> theme )
     setNonChartCssVar( "button-background", theme->appButtonBackground );
     setNonChartCssVar( "button-border-color", theme->appButtonBorderColor );
     setNonChartCssVar( "button-text-color", theme->appButtonTextColor );
+    setNonChartCssVar( "menubar-background", theme->appMenuBarBackground );
+    setNonChartCssVar( "menubar-active-color", theme->appMenuBarActiveColor );
+    setNonChartCssVar( "menubar-hover-color", theme->appMenuBarHoverColor );
   }
 
   setReferenceLineColors( theme );

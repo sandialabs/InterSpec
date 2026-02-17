@@ -185,12 +185,28 @@ vector<unique_ptr<ColorTheme>> ColorTheme::predefinedThemes()
 ColorTheme::ColorTheme()
 {
   dbIndex = -1;
-  
+
   theme_name = "Default";
   theme_description = "Default InterSpec color scheme.";
   creation_time = WDateTime( WDate(2018,11,1), WTime(22,56) );  //when I originally created this class
   modified_time = WDateTime( WDate(2022,8,3), WTime(14,00) );   //when I slightly modified it
-  
+
+  nonChartAreaTheme = "";
+
+  // Non-chart area colors; defaults match the CSS fallback values in InterSpec.css
+  appBackgroundColor = WColor( "white" );
+  appTextColor = WColor( GlobalColor::black );
+  appBorderColor = WColor( "#e1e1e1" );
+  appLinkColor = WColor( "blue" );
+  appLabelColor = WColor( GlobalColor::black );
+  appInputBackground = WColor( "white" );
+  appButtonBackground = WColor( "#888888" );
+  appButtonBorderColor = WColor( "#e1e1e1" );
+  appButtonTextColor = WColor( "white" );
+  appMenuBarBackground = WColor( "#ffffff" );
+  appMenuBarActiveColor = WColor( 128, 128, 128 );      //rgba(128,128,128,1.0)
+  appMenuBarHoverColor = WColor( 128, 128, 128, 64 );   //rgba(128,128,128,0.25)
+
   foregroundLine = Wt::WColor(0x00, 0x00, 0x00); //Wt::GlobalColor::black
   backgroundLine = Wt::WColor(0x00, 0xff, 0xff); //Wt::GlobalColor::cyan
   secondaryLine = Wt::WColor(0x00, 0x80, 0x00);  //Wt::GlobalColor::darkGreen
@@ -281,6 +297,12 @@ std::string ColorTheme::toJson( const ColorTheme &info )
     nonChartArea["buttonBorderColor"] = WString( info.appButtonBorderColor.cssText(false) );
   if( !info.appButtonTextColor.isDefault() )
     nonChartArea["buttonTextColor"] = WString( info.appButtonTextColor.cssText(false) );
+  if( !info.appMenuBarBackground.isDefault() )
+    nonChartArea["menuBarBackground"] = WString( info.appMenuBarBackground.cssText(false) );
+  if( !info.appMenuBarActiveColor.isDefault() )
+    nonChartArea["menuBarActiveColor"] = WString( info.appMenuBarActiveColor.cssText(false) );
+  if( !info.appMenuBarHoverColor.isDefault() )
+    nonChartArea["menuBarHoverColor"] = WString( info.appMenuBarHoverColor.cssText(false) );
 
   Json::Object &spectrum = base["spectrum"] = Json::Value(Json::ObjectType);
   if( !info.foregroundLine.isDefault() )
@@ -495,6 +517,24 @@ void ColorTheme::fromJson( const std::string &json, ColorTheme &info )
       info.appButtonTextColor = WColor( static_cast<const WString &>(nonChartAreaObj.get("buttonTextColor")) );
     else
       info.appButtonTextColor = WColor( info.nonChartAreaTheme == "dark" ? "rgb(230,230,230)" : "white" );
+
+    // Menu bar background (default/non-hover/non-active state)
+    if( nonChartAreaObj.contains("menuBarBackground") )
+      info.appMenuBarBackground = WColor( static_cast<const WString &>(nonChartAreaObj.get("menuBarBackground")) );
+    else
+      info.appMenuBarBackground = WColor( info.nonChartAreaTheme == "dark" ? "rgb(65,65,65)" : "#ffffff" );
+
+    // Menu bar active color (button background when menu is open)
+    if( nonChartAreaObj.contains("menuBarActiveColor") )
+      info.appMenuBarActiveColor = WColor( static_cast<const WString &>(nonChartAreaObj.get("menuBarActiveColor")) );
+    else
+      info.appMenuBarActiveColor = WColor( info.nonChartAreaTheme == "dark" ? "rgb(18,101,200)" : "rgba(128,128,128,1.0)" );
+
+    // Menu bar hover color (button background on hover, non-active)
+    if( nonChartAreaObj.contains("menuBarHoverColor") )
+      info.appMenuBarHoverColor = WColor( static_cast<const WString &>(nonChartAreaObj.get("menuBarHoverColor")) );
+    else
+      info.appMenuBarHoverColor = WColor( info.nonChartAreaTheme == "dark" ? "rgba(18,101,200,0.25)" : "rgba(128,128,128,0.25)" );
   }
   
   if( base.contains("spectrum") /*&& base["spectrum"].type()==Json::ObjectType*/ )

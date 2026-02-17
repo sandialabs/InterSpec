@@ -93,6 +93,9 @@ public:
 		AppButtonBackground,
 		AppButtonBorder,
 		AppButtonText,
+		AppMenuBarBackground,
+		AppMenuBarActiveColor,
+		AppMenuBarHoverColor,
 		NumSelectableColors
 	};//enum class EditableColor
 

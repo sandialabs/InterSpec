@@ -31,6 +31,12 @@
   <message id="ctwidget-app-button-border-desc">Border color for buttons</message>
   <message id="ctwidget-app-button-text">Button Text</message>
   <message id="ctwidget-app-button-text-desc">Text color for buttons</message>
+  <message id="ctwidget-app-menubar-bg">Menu Bar Background</message>
+  <message id="ctwidget-app-menubar-bg-desc">Background color for the menu bar and menu buttons</message>
+  <message id="ctwidget-app-menubar-active">Menu Bar Active</message>
+  <message id="ctwidget-app-menubar-active-desc">Background color for a menu button when its menu is open</message>
+  <message id="ctwidget-app-menubar-hover">Menu Bar Hover</message>
+  <message id="ctwidget-app-menubar-hover-desc">Background color for a menu button on hover</message>
 
   <!-- Chart colors section -->
   <message id="ctwidget-chart-colors">Chart Colors</message>
