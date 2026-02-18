@@ -26,6 +26,7 @@
 #include "InterSpec_config.h"
 
 #include <set>
+#include <array>
 #include <atomic>
 #include <string>
 #include <memory>
@@ -251,6 +252,14 @@ struct NucInputInfo
   /** Energy corresponding to SandiaDecay::EnergyRatePair::energy, or equivalent for x-ray or reactions. */
   std::vector<double> gammas_to_exclude;
   
+  /** CSS color string (e.g. "rgb(255,0,0)") for this source's peaks.
+   
+   Must be set for relative efficiency chart data points to render correctly: RelActCalcAuto uses
+   this to set PeakDef::lineColor() on the internally-fit free-amplitude peaks stored in
+   RelActAutoSolution::m_obs_eff_for_each_curve, and RelEffChart::jsonForData() uses those peak
+   colors to populate the relActsColors map — without which src_counts comes out zero and data
+   points are silently skipped.
+   **/
   std::string peak_color_css;
   
   const std::string name() const;
@@ -431,6 +440,43 @@ const char *to_str( const FwhmEstimationMethod form );
  Throws exception if invalid string (i.e., any string not returned by #to_str(FwhmEstimationMethod) ).
  */
 FwhmEstimationMethod fwhm_estimation_method_from_str( const char *str );
+
+
+/** Type of energy calibration fitting to perform.
+
+ Controls whether and how energy calibration is adjusted during the fit.
+ */
+enum class EnergyCalFitType : int
+{
+  /** Do not fit any energy calibration corrections. */
+  NoFit,
+
+  /** Fit linear energy calibration corrections (offset and gain adjustments). */
+  LinearFit,
+
+  /** Fit non-linear energy calibration corrections using deviation pairs.
+
+   Requires at least 3 ROIs; if less than 3 ROIs, will use linear fit instead.
+   Each ROI gets an anchor point at its largest peak (or midpoint 
+   if no peaks).  The first and last ROIs have their deviation offsets fixed to zero.  Middle
+   ROIs have their deviation offsets fitted.  The deviation pairs are interpolated using a
+   cubic spline to provide smooth energy corrections.
+   */
+  NonLinearFit
+};//enum class EnergyCalFitType
+
+
+/** Returns string representation of the #EnergyCalFitType.
+ String returned is a static string, so do not delete it.
+ */
+const char *to_str( const EnergyCalFitType type );
+
+
+/** Converts from the string representation of #EnergyCalFitType to enumerated value.
+
+ Throws exception if invalid string (i.e., any string not returned by #to_str(EnergyCalFitType) ).
+ */
+EnergyCalFitType energy_cal_fit_type_from_str( const char *str );
 
 
 size_t num_parameters( const FwhmForm eqn_form );
@@ -627,13 +673,13 @@ struct RelEffCurveInput
 struct Options
 {
   Options();
-   
-  /** Whether to allow making small adjustments to the gain and/or offset of the energy calibration.
-   
-   Which coefficients are fit will be determined based on energy ranges used.
+
+  /** Type of energy calibration fitting to perform.
+
+   Controls whether and how energy calibration is adjusted during the fit.
    */
-  bool fit_energy_cal;
-  
+  EnergyCalFitType energy_cal_type;
+
   /** The functional form of the FWHM equation to use.  The coefficients of this equation will
    be fit for across all energy ranges.
    */
@@ -954,7 +1000,10 @@ struct RelActAutoSolution
   
   std::shared_ptr<const RelActCalcAutoImp::RelActAutoCostFcn> m_cost_functor;
   
+  /** The original foreground passed into `solve_ceres(...)`. */
   std::shared_ptr<const SpecUtils::Measurement> m_foreground;
+  
+  /** The original background passed into `solve_ceres(...)`. */
   std::shared_ptr<const SpecUtils::Measurement> m_background;
   
   /** The final fit parameters. */
@@ -1103,7 +1152,7 @@ struct RelActAutoSolution
     /** The unconstrained fit peak amplitude.  This amplitude includes contributions from all peaks, and all relative efficiency curves. */
     double fit_clustered_peak_amplitude;
     double fit_clustered_peak_amplitude_uncert;
-    /** The starting amiplit*/
+    /** The starting amplitude */
     double initial_clustered_peak_amplitude;
     /** The effective sigma, after clustering all the input peaks together that are within 1.5 sigma of each other. */
     double effective_sigma;
@@ -1181,7 +1230,7 @@ struct RelActAutoSolution
  
    Implemented for values of 2 or 3; lower channel energy calibration will only ever use up to 2.
    */
-  constexpr static size_t sm_num_energy_cal_pars = 2;
+  enum : size_t { sm_num_energy_cal_pars = 2 };
   
   /** It seems parameters centered around zero maybe don't work quite as well, we'll center the energy calibration
    parameters at 1, and allow to vary between 0 and 2.
@@ -1224,7 +1273,18 @@ struct RelActAutoSolution
    Which parameters are fit are subject to number and energy range of ROIs.
    */
   std::array<bool,sm_num_energy_cal_pars> m_fit_energy_cal;
+
+  size_t m_num_deviations_fit = 0;
   
+  /** The fitted deviation pair offsets for non-linear energy calibration.
+
+   Each entry is (anchor_energy_keV, offset_keV).  The offset at lower and upper ROIs is fixed to 0.
+   Entries are sorted by anchor energy.
+
+   Only valid if `Options::energy_cal_type` is `EnergyCalFitType::NonLinearFit`.
+   */
+  std::vector<std::pair<double, double>> m_deviation_pair_offsets;
+
   /** The index of the first parameter that will be used to adjust the peak amplitude. 
    
    Will be valid only if `m_options.additional_br_uncert > 0.0`.
@@ -1311,6 +1371,8 @@ RelActAutoSolution solve( const Options options,
                          std::vector<std::shared_ptr<const PeakDef>> all_peaks,
                          std::shared_ptr<std::atomic_bool> cancel_calc = nullptr
                          );
+
+
 
 }//namespace RelActCalcAuto
 

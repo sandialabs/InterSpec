@@ -65,7 +65,7 @@ void check_auto_state_xml_serialization()
 
   RelActCalcAuto::RelActAutoGuiState state;
 
-  state.options.fit_energy_cal = true;
+  state.options.energy_cal_type = RelActCalcAuto::EnergyCalFitType::NonLinearFit;
   state.options.fwhm_form = RelActCalcAuto::FwhmForm::Polynomial_3;
   state.options.spectrum_title = "Test";
   state.options.skew_type = PeakDef::SkewType::CrystalBall;
@@ -1944,7 +1944,7 @@ int dev_code()
   matdb.parseGadrasMaterialFile( materialfile, db, false );
   
   RelActCalcAuto::Options options;
-  options.fit_energy_cal = true;
+  options.energy_cal_type = RelActCalcAuto::EnergyCalFitType::NonLinearFit;
   options.fwhm_form = RelActCalcAuto::FwhmForm::Polynomial_4;
   options.spectrum_title = "Dev Title";
   options.skew_type = PeakDef::SkewType::NoSkew;

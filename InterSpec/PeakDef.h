@@ -99,6 +99,10 @@ struct PeakContinuum
     /** Two parameters; first gives offset as #OffsetType::Constant, with the second parameter giving change in dy (density of counts
      per keV) between the left and right side of the ROI - the change in count density varies across the ROI as the fraction of data in the
      ROI up to that point (if that makes any sense).
+
+     This distribution comes from section 5.3.4 ("Subtraction of Smoothed-Step Compton Continuum") of
+     Passive nondestructive assay of nuclear materials (NUREG/CR-5550; LA-UR-90-732), https://doi.org/10.2172/5428834,
+     which cites its origin as: R. Gunnink, “Computer Techniques for Analysis of Gamma-Ray Spectra" LLNL UCRL-80297 (1978).
      */
     FlatStep,
     

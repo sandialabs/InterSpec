@@ -1,6 +1,5 @@
 
-body
-{
+body {
   /* Get rid of the annoying callout on webkit touch devices */
   -webkit-user-select: none !important;
   -webkit-tap-highlight-color: rgba(0,0,0,0) !important;
@@ -12,15 +11,14 @@ body
   color: var(--interspec-text-color, black);
 }
 
-/* For when the app requests to go fullscreen in our JS. */
-.Wt-domRoot:fullscreen {
-  background-color: var(--interspec-background-color, white);
-  color: var(--interspec-text-color, black);
-}
 
-input
-{
-  /* border-width: 1px; */
+/* For when the app requests to go fullscreen in our JS. */
+/* On Safari if we out .Wt-domRoot:fullscreen in with the list of the above, it makes the statement
+ fail for some reason, so we'll keep it separate, even though the contents are identical to above.
+ */
+.Wt-domRoot:fullscreen {
+  background-color: var(--interspec-background-color, white) !important;
+  color: var(--interspec-text-color, black);
 }
 
 input[type="text"], input[type="number"], textarea :not(.pm-textarea) {
@@ -28,9 +26,10 @@ input[type="text"], input[type="number"], textarea :not(.pm-textarea) {
   color: var(--interspec-text-color, black);
 }
 
-textarea, select
-{
+textarea, select {
   outline: none;
+  color: var(--interspec-text-color, black);
+  background-color: var(--interspec-input-background, white);
 }
 
 /* Align the label with the checkbox. :has only supported in Safari 15.4 (macOS Monterey, 12.3), Chrome 105 (Aug 2022), FF 121. */
@@ -39,16 +38,11 @@ label:has(input[type="checkbox"]) {
   align-items: center;
 }
 
-.specviewer
-{
+.specviewer {
   /* Make none of the elements selectable by default */
   user-select: none;
   -moz-user-select: none;
   -webkit-user-select: none;
-}
-
-.SpectrumChart
-{
 }
 
 
@@ -407,22 +401,6 @@ button.Wt-btn.LightButton, .btn-group.LightButton
 }
 
 
-.helpPopupMainContainer {
-  opacity:1.0;
-  border: 0px solid black;
-
-}
-
-.helpPopupMainContainer2 {
-  position:relative;
-  opacity:1.0;
-  border: 0px solid black;
-  left:15px;
-  top:-8px;
-}
-
-
-
 .toolTip {
 font-size: 80%;
 opacity:1.0;
@@ -636,9 +614,24 @@ padding-left:10px;
 
 /*fix the menu item links that the SRB CSS messes up*/
 ul.Wt-popupmenu > li > a > span > span
-{ 
+{
   font-weight: normal;
-  color: black;
+  color: var(--interspec-text-color, black);
+}
+
+ul.Wt-popupmenu > li > label > span
+{
+  color: var(--interspec-text-color, black);
+}
+
+.Wt-suggest a
+{
+  color: var(--interspec-text-color, black);
+}
+
+.Wt-popupmenu .active
+{
+  background-color: var(--interspec-menubar-active-color, rgba(128, 128, 128, 1.0));
 }
 
 ul.Wt-popupmenu > li.active > a > span > span
@@ -790,11 +783,6 @@ button.Wt-btn.LinkBtn.Wt-disabled, button.Wt-btn.LinkBtn.Wt-disabled:hover
 
 
 
-.FloatLeft, .FloatLeft:hover
-{
-  float:left;
-}
-
 .PreserveLastCalCb
 {
   margin-left: 1.0em;
@@ -849,63 +837,6 @@ height: 25px;
 .titlebar:hover
 {
 background-color: #909090;
-}
-
-
-.CollaseIcon
-{
-}
-
-.ExpandIcon
-{
-}
-
-.ExpandedDialogfooter
-{
-  height: 0px; padding: 0; margin: 0;
-}
-
-.CollapsedDialogFooter
-{
-  height: 10px; padding: 0; margin: 0;
-  background-color: #EEEEEE;
-}
-
-
-.plusimg
-{
-padding: 0;
-margin-left: 0;
-}
-
-.minusimg, .minusimg-disable
-{
-padding: 0;
-margin-left: -7px;
-}
-
-
-.minusimg-disable
-{
-opacity:0.4;
-}
-
-
-.peakinfo
-{
-  display: inline-block;
-  position:absolute;
-  background: #FFFFCC;
-  border:2px solid #444422;
-  padding-left: 5px;
-  padding-right: 3px;
-  padding-top: 3px;
-  padding-bottom: 3px;
-  
-  -moz-border-radius: 5px;
-  -webkit-border-radius: 5px;
-  border-radius: 5px;
-  opacity: 0.85;
 }
 
 
@@ -983,7 +914,7 @@ button.Wt-btn.with-label.LightButton,
 }
 
 /* DevPair headers and similar */
-.DevPairTitle, .DevPairEnergyHeader, .DevPairOffsetHeader, .ReferencePhotopeakDisplay .OtherNucs .OtherNucTypeHeader {
+.DevPairTitle, .ReferencePhotopeakDisplay .OtherNucs .OtherNucTypeHeader {
   color: var(--interspec-label-color, black);
 }
 
@@ -1004,7 +935,7 @@ a:hover { color:#E88400; border-bottom:none; }
   
   h1
   {
-    color: black;
+    color: var(--interspec-text-color, black);
     font-size: 2em;
     font-weight: bold;
     margin-bottom:0;
@@ -1081,7 +1012,8 @@ a:hover { color:#E88400; border-bottom:none; }
   .MenuBar
   {
     border-bottom: 1px solid grey;
-    background: #FFF;
+    background: var(--interspec-menubar-background, #ffffff);
+    color: var(--interspec-text-color, black) !important;
   }
   
   /* The WebMenuBar CSS class is added to the title bar, for browser-based desktop app sessions (e.g.,
@@ -1162,12 +1094,6 @@ a:hover { color:#E88400; border-bottom:none; }
    }
    */
   
-  .PopupDivMenuItem-disabled
-  {
-    background: none;
-    color: #D2D2D2;
-  }
-  
   .PopupDivMenu li
   {
     padding-top: 4px;
@@ -1181,41 +1107,41 @@ a:hover { color:#E88400; border-bottom:none; }
   }
   
   
-  .PopupMenuParentButton, .PopupMenuParentButton:hover
+  button.Wt-btn.PopupMenuParentButton, button.Wt-btn.PopupMenuParentButton:hover
   {
     height: 23px; /*leave 1 px for WebMenuBar lower border */
     padding: 4px 8px 3px 8px;
     margin:0px 0px;
     font-weight:normal;
-    background: #FFFFFF;
-    color: black;
+    background: var(--interspec-menubar-background, #ffffff);
+    color: var(--interspec-label-color, black);
     border: none;
     vertical-align: top; /* necessary or else on Safari the titlebar border will be partially overlapped - not entirely sure why*/
     -moz-border-radius: 2px;
     -webkit-border-radius: 2px;
     border-radius: 2px;
-    
+
     -moz-box-shadow: none !important;
     -webkit-box-shadow: none !important;
     box-shadow: none !important;
     outline: none;
   }
-  
-  
-  .PopupMenuParentButton:hover:not(.active)
+
+
+  button.Wt-btn.PopupMenuParentButton:hover:not(.active)
   {
-    background: rgba(128, 128, 128, 0.25);
+    background: var(--interspec-menubar-hover-color, rgba(128, 128, 128, 0.25));
   }
-  
-  .PopupMenuParentButton.active
+
+  button.Wt-btn.PopupMenuParentButton.active
   {
-    background: rgba(128, 128, 128, 1.0);
-    
+    background: var(--interspec-menubar-active-color, rgba(128, 128, 128, 1.0));
+
     -moz-box-shadow: none !important;
     -webkit-box-shadow: none !important;
     box-shadow: none !important;
   }
-  
+
   
   .PopupDivMenuWidget.active
   {
@@ -1379,51 +1305,16 @@ a:hover { color:#E88400; border-bottom:none; }
   }
   
   
-  /*
-   This allows buttons and links to work
-   */
-  .TransparentFooter > button, .TransparentFooter > a, .TransparentFooter > img, .TransparentFooter > input
-  {
-    pointer-events:auto;
-    
-  }
   
-  .TransparentFooter
-  {
-    /*    padding: 2px 2px 10px; */
-    margin-bottom: 0;
-    text-align: right;
-    white-space:nowrap;
-    height: 20px;
-    border-top: 1px solid #ddd;
-    
-    pointer-events:none;
-    background:rgba(0,0,0,0.2);
-  }
-  
-  
-  .LoadingIndicator
-  {
-    /* Set the index really high */
-    z-index:2000000000 !important;
-  }
-  .HeaderIcon
-  {
-    /*  position: 3px center;*/
-    padding: 4px;
-    padding-right: 6px;
-    /*  padding-top: 5px;*/
-  }
-  
-  
-  a.LoadSpectrumSaveAsLink
-  {
-    color: #454545;
-  }
-  a.LoadSpectrumSaveAsLink:hover
-  {
-    color: blue;
-  }
+.LoadingIndicator {
+  /* Set the index really high */
+  z-index:2000000000 !important;
+}
+
+.HeaderIcon {
+  padding: 4px;
+  padding-right: 6px;
+}
   
   
   
@@ -1678,10 +1569,8 @@ a:hover { color:#E88400; border-bottom:none; }
     padding-right: 20px;
   }
   
-  .CurrentLanguage
-  {
-    /* TODO: style and make selector more specific */
-    color: red;
+  ul.Wt-popupmenu > li.CurrentLanguage > a > span > span {
+    font-weight: bold;
   }
 
 .CbNoLineBreak

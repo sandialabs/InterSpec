@@ -341,7 +341,7 @@ the XHTML message for that entry.
       <b><code>Ctrl-h</code></b>:显示应用内<em>帮助</em>。
     </li>
     <li>
-      <b><code>Ctrl-i</code></b>:显示<em>欢迎信息</em>屏幕。
+      <b><code>Ctrl-i</code></b> 或 <b><code>F10</code></b>：激活菜单栏进行键盘浏览（<u>I</u>nterSpec菜单）。
     </li>
     <li>
       <b><code>Ctrl-k</code></b>:清除所有显示的参考光电峰谱线。

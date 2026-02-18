@@ -225,7 +225,10 @@ std::string RelEffChart::jsonForData(const std::vector<ReCurveInfo> &infoSets)
         }
         peak.m_source_gammas.push_back(line);
 
-        // Set up color mapping - all peaks for this source get same color as primary peak
+        // Set up color mapping - all peaks for this source get same color as primary peak.
+        // p.lineColor() is set by RelActCalcAuto from NucInputInfo::peak_color_css; if that field
+        // was not populated, lineColor() will be default, relActsColors will stay empty for this
+        // source, src_counts will be 0, and the data point will be skipped with a warning.
         const string src_name = RelActCalcAuto::to_name(peak_src);
         const auto pos = relActsColors.find(src_name);
         if( !p.lineColor().isDefault() && (pos == std::end(relActsColors)) )

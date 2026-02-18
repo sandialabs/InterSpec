@@ -297,8 +297,10 @@ nlohmann::json solution_to_json(const RelActCalcAuto::RelActAutoSolution& soluti
   }
   
   // Energy calibration adjustments
+  const bool fit_any_energy_cal = (solution.m_options.energy_cal_type != RelActCalcAuto::EnergyCalFitType::NoFit);
   json_data["energy_calibration"] = {
-    {"was_fit", solution.m_options.fit_energy_cal},
+    {"was_fit", fit_any_energy_cal},
+    {"energy_cal_type", RelActCalcAuto::to_str(solution.m_options.energy_cal_type)},
     {"adjustments", nlohmann::json::array()}
   };
   
@@ -337,7 +339,7 @@ nlohmann::json solution_to_json(const RelActCalcAuto::RelActAutoSolution& soluti
   
   // Analysis options
   json_data["options"] = {
-    {"fit_energy_cal", solution.m_options.fit_energy_cal},
+    {"energy_cal_type", RelActCalcAuto::to_str(solution.m_options.energy_cal_type)},
     {"fwhm_form", RelActCalcAuto::to_str(solution.m_options.fwhm_form)},
     {"fwhm_estimation_method", RelActCalcAuto::to_str(solution.m_options.fwhm_estimation_method)},
     {"skew_type", static_cast<int>(solution.m_options.skew_type)},

@@ -208,10 +208,6 @@
 #include "InterSpec/RelActManualGui.h"
 #endif
 
-#if( USE_LLM_INTERFACE )
-#include "InterSpec/LlmToolGui.h"
-#include "InterSpec/LlmConversationHistory.h"
-#endif
 
 #include "js/InterSpec.js"
 
@@ -248,9 +244,6 @@ namespace
 #endif
 #if( USE_REL_ACT_TOOL )
   static const string RelActManualTitleKey(      "app-tab-isotopics" );
-#endif
-#if( USE_LLM_INTERFACE )
-static const string LlmAssistantTabTitleKey(   "app-tab-llm-assistant" );
 #endif
 
   // The Reference Photopeak and/or the Search tab need thier widgets loaded,
@@ -493,10 +486,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_decayInfoWindow( nullptr ),
   m_addFwhmTool( nullptr ),
   m_preserveCalibWindow( 0 ),
-#if( USE_LLM_INTERFACE )
-  m_llmToolMenuItem( nullptr ),
-  m_llmTool( nullptr ),
-#endif
 #if( USE_SEARCH_MODE_3D_CHART )
   m_3dViewWindow( nullptr ),
 #endif
@@ -1724,10 +1713,6 @@ void InterSpec::hotKeyPressed( const unsigned int value )
         HelpSystem::createHelpWindow( "getting-started" );
         break;
       
-      case 'i': case 'I':
-        showWelcomeDialog( true );
-        break;
-      
       case 'k': case 'K':
         // TODO: decide how to handle this if the current reference lines are from the
         //       "Nuclide Search" tool
@@ -1747,20 +1732,6 @@ void InterSpec::hotKeyPressed( const unsigned int value )
         createExportSpectrumFileDialog();
         break;
         
-    // Temporarily add shortcut for showing FAQ window during development
-      case 'f': case 'F':
-      {
-        showWelcomeDialog( true );
-        if( m_useInfoWindow )
-          m_useInfoWindow->showFaqTab();
-        break;
-      }
-        
-        
-      case 37: case 38: case 39: case 40:
-        arrowKeyPressed( value );
-        break;
-        
       case 'z':
         if( m_undo )
           m_undo->executeUndo();
@@ -1771,97 +1742,19 @@ void InterSpec::hotKeyPressed( const unsigned int value )
           m_undo->executeRedo();
         break;
     }//switch( value )
-  
-    
-    /*
-    if( expectedTxt.empty() )
-      return;
-  
-    for( int i = 0; i < m_toolsTabs->count(); ++i )
-    {
-      if( m_toolsTabs->tabText(i).toUTF8() == expectedTxt )
-      {
-        m_toolsTabs->setCurrentIndex( i );
-        handleToolTabChanged( i );
-        break;
-      }
-    }//for( int i = 0; i < m_toolsTabs->count(); ++i )
-     */
   }else
   {
     switch( value )
     {
-      case '1': showCompactFileManagerWindow(); break;
-      case '2': showPeakInfoWindow();           break;
-      case '3': showGammaLinesWindow();         break;
-      case '4': showEnergyCalWindow();          break;
-      case '5': showNuclideSearchWindow();      break;
-      case 'l':
-        setLogY( !m_spectrum->yAxisIsLog() );
-        break;
-      case 37: case 38: case 39: case 40:
-        arrowKeyPressed( value );
-        break;
+      case '1': showCompactFileManagerWindow();       break;
+      case '2': showPeakInfoWindow();                 break;
+      case '3': showGammaLinesWindow();               break;
+      case '4': showEnergyCalWindow();                break;
+      case '5': showNuclideSearchWindow();            break;
+      case 'l': setLogY( !m_spectrum->yAxisIsLog() ); break;
     }//switch( value )
   }//if( tool tabs visible ) / else
 }//void hotKeyPressed( const int value )
-
-
-void InterSpec::arrowKeyPressed( const unsigned int value )
-{
-#if( USE_OSX_NATIVE_MENU || IOS || ANDROID )
-  return;
-#endif
-  
-  if( m_mobileMenuButton )
-    return;
-  
-  const vector<PopupDivMenu *> menus{
-    m_fileMenuPopup, m_editMenuPopup, m_displayOptionsPopupDiv, m_toolsMenuPopup, m_helpMenuPopup
-  };
-  
-  bool foundActive = false;
-  size_t activeIndex = 0;
-  for( size_t i = 0; i < menus.size(); ++i )
-  {
-    if( menus[i] && menus[i]->isVisible() && menus[i]->parentButton() )
-    {
-      foundActive = true;
-      activeIndex = i;
-      break;
-    }
-  }
-  
-  if( !foundActive )
-    return;
-  
-  const bool leftArrow  = (value == 37);
-  const bool upArrow    = (value == 38);
-  const bool rightArrow = (value == 39);
-  const bool downArrow  = (value == 40);
-  
-  if( leftArrow || rightArrow )
-  {
-    size_t nextActiveIndex = activeIndex;
-    do
-    {
-      if( leftArrow )
-        nextActiveIndex = (nextActiveIndex == 0) ? (menus.size() - 1) : (nextActiveIndex - 1);
-      else
-        nextActiveIndex = ((nextActiveIndex + 1) % menus.size());
-    }while( !menus[nextActiveIndex] );
-    
-    menus[activeIndex]->hide();
-    menus[nextActiveIndex]->parentClicked();
-  }else if( upArrow || downArrow )
-  {
-    // TODO: Have the up/down arrow keys select different menu items in the menu
-    //   I havent gotten the up/down arrows working to select different menu items - maybe
-    //    it needs to be purely JS.
-    //    And once we do get the up/down arrows working, then need to listen for 'Enter' and
-    //    trigger, again probably all in JS
-  }//if( leftArrow || rightArrow ) / else if( upArrow || downArrow )
-}//void arrowKeyPressed( const unsigned int value )
 
 
 void InterSpec::rightClickMenuClosed()
@@ -3586,12 +3479,7 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
       entry.modify()->simpleMdaUri = m_simpleMdaWindow->tool()->encodeStateToUrl();
     }//if( m_simpleMdaWindow )
 #endif
-    
-#if( USE_LLM_INTERFACE )
-    if( m_llmTool )
-      entry.modify()->shownDisplayFeatures |= UserState::kShowingLlmAssistant;
-#endif
-    
+        
     entry.modify()->backgroundSubMode = UserState::kNoSpectrumSubtract;
     if( m_spectrum->backgroundSubtract() )
       entry.modify()->backgroundSubMode = UserState::kBackgorundSubtract;
@@ -3617,10 +3505,6 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
 #if( USE_REL_ACT_TOOL )
       else if( txtKey == RelActManualTitleKey )
         entry.modify()->currentTab = UserState::kRelActManualTab;
-#endif
-#if( USE_LLM_INTERFACE )
-      else if( txtKey == LlmAssistantTabTitleKey )
-        entry.modify()->currentTab = UserState::kLlmAssistantTab;
 #endif
     }//if( m_toolsTabs )
     
@@ -4129,15 +4013,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     if( (entry->shownDisplayFeatures & UserState::kShowingRelActAuto) )
       relActAutoWindow(true);
 #endif
-    
-#if( USE_LLM_INTERFACE )
-    if( (entry->shownDisplayFeatures & UserState::kShowingLlmAssistant)
-       && LlmToolGui::llmToolIsConfigured() )
-    {
-      createLlmTool();
-    }
-#endif
-    
+        
     if( (entry->shownDisplayFeatures & UserState::kShowingMultimedia) )
       showMultimedia( SpecUtils::SpectrumType::Foreground );
     
@@ -4297,9 +4173,6 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
 #if( USE_REL_ACT_TOOL )
         case UserState::kRelActManualTab: titleKey = RelActManualTitleKey;     break;
 #endif
-#if( USE_LLM_INTERFACE )
-        case UserState::kLlmAssistantTab: titleKey = LlmAssistantTabTitleKey;  break;
-#endif
         case UserState::kNoTabs:                                               break;
       };//switch( entry->currentTab )
       
@@ -4333,12 +4206,6 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
           case UserState::kRelActManualTab: 
             if( m_relActManualGui )
               m_toolsTabs->setCurrentWidget( m_relActManualGui );
-            break;
-  #endif
-  #if( USE_LLM_INTERFACE )
-          case UserState::kLlmAssistantTab:
-            if( m_llmTool )
-              m_toolsTabs->setCurrentWidget( m_llmTool );
             break;
   #endif
           case UserState::kNoTabs:  
@@ -4693,6 +4560,9 @@ void InterSpec::applyColorTheme( shared_ptr<const ColorTheme> theme )
     setNonChartCssVar( "button-background", theme->appButtonBackground );
     setNonChartCssVar( "button-border-color", theme->appButtonBorderColor );
     setNonChartCssVar( "button-text-color", theme->appButtonTextColor );
+    setNonChartCssVar( "menubar-background", theme->appMenuBarBackground );
+    setNonChartCssVar( "menubar-active-color", theme->appMenuBarActiveColor );
+    setNonChartCssVar( "menubar-hover-color", theme->appMenuBarHoverColor );
   }
 
   setReferenceLineColors( theme );
@@ -10024,6 +9894,15 @@ RelActManualGui *InterSpec::createRelActManualWidget()
 }//RelActManualGui *createRelActManualWidget()
 
 
+RelActManualGui *InterSpec::relActManualWidget( const bool createIfNotOpen )
+{
+  if( createIfNotOpen && !m_relActManualGui )
+    return createRelActManualWidget();
+  
+  return m_relActManualGui;
+}//RelActManualGui *relActManualWidget( const bool createIfNotOpen )
+
+
 void InterSpec::handleRelActManualClose()
 {
   assert( m_relActManualGui );
@@ -10085,7 +9964,7 @@ void InterSpec::saveRelActAutoStateToForegroundSpecMeas()
 #endif //#if( USE_REL_ACT_TOOL )
 
 
-#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL || USE_LLM_INTERFACE )
+#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL )
 void InterSpec::handleToolTabClosed( const int tabnum )
 {
   assert( m_toolsTabs );
@@ -10094,16 +9973,6 @@ void InterSpec::handleToolTabClosed( const int tabnum )
   
   WWidget *w = m_toolsTabs->widget( tabnum );
   
-#if( USE_LLM_INTERFACE )
-  if( w == m_llmTool )
-  {
-    handleLlmToolClose();
-  }
-#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL )
-  else
-#endif
-#endif
-
 #if( USE_TERMINAL_WIDGET && USE_REL_ACT_TOOL )
   if( w == m_relActManualGui )
   {
@@ -10248,15 +10117,6 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item = popup->addMenuItem( WString::tr("app-mi-tools-en-sum") );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-en-sum"), showToolTips );
   item->triggered().connect( boost::bind( &InterSpec::showGammaCountDialog, this ) );
-
-#if( USE_LLM_INTERFACE )
-  if( LlmToolGui::llmToolIsConfigured() )
-  {
-    m_llmToolMenuItem = popup->addMenuItem( WString::fromUTF8("LLM Assistant") );
-    HelpSystem::attachToolTipOn( m_llmToolMenuItem, WString::fromUTF8("Open the Large Language Model assistant for spectrum analysis help"), showToolTips );
-    m_llmToolMenuItem->triggered().connect( this, &InterSpec::createLlmTool );
-  }//if( LlmToolGui::llmToolIsConfigured() )
-#endif
   
 #if( USE_SPECRUM_FILE_QUERY_WIDGET )
   
@@ -11584,28 +11444,6 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     if( m_riidDisplay )
       programmaticallyCloseRiidResults();
     
-#if( USE_LLM_INTERFACE )
-    // Save LLM conversation history to previous SpecMeas before switching foreground
-    if( m_llmTool && previous )
-    {
-      try
-      {
-        auto history = m_llmTool->getConversationHistory();
-        if( history && !history->empty() )
-        {
-          // Get the previous foreground's sample numbers
-          const std::set<int> &prevSamples = prevsamples;
-          
-          // Save the history to the previous SpecMeas using sample numbers
-          previous->setLlmConversationHistory( prevSamples, history );
-        }
-      }
-      catch( const std::exception& e )
-      {
-        std::cerr << "Failed to save LLM conversation history to SpecMeas: " << e.what() << std::endl;
-      }
-    }
-#endif
   }//if( (spec_type == SpecUtils::SpectrumType::Foreground) && !!previous && (previous != meas) )
   
   if( !!meas && isMobile() && !toolTabsVisible()
@@ -12246,28 +12084,6 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     }//if( showToolTips )
   }//if( passthrough foreground )
    */
-   
-#if( USE_LLM_INTERFACE )
-  // Load LLM conversation history from the new foreground SpecMeas
-  if( (spec_type == SpecUtils::SpectrumType::Foreground) && meas && m_llmTool )
-  {
-    try
-    {
-      // Get the current sample numbers for the new foreground
-      const std::set<int> &currentSamples = sample_numbers.empty() ? displayedSamples(spec_type) : sample_numbers;
-      
-      // Get the LLM history for these sample numbers
-      auto nativeHistoryPtr = meas->llmConversationHistory( currentSamples );
-      
-      // Set the conversation history in the LLM tool
-      m_llmTool->setConversationHistory( nativeHistoryPtr );
-    }
-    catch( const std::exception& e )
-    {
-      std::cerr << "Failed to load LLM conversation history from SpecMeas: " << e.what() << std::endl;
-    }
-  }
-#endif
 }//void setSpectrum(...)
 
 
@@ -13748,66 +13564,3 @@ void InterSpec::displayBackgroundData()
   if( m_hardBackgroundSub->isEnabled() != canSub )
     m_hardBackgroundSub->setDisabled( !canSub );
 }//void displayBackgroundData()
-
-
-
-
-#if( USE_LLM_INTERFACE )
-void InterSpec::createLlmTool()
-{
-#if( !BUILD_AS_UNIT_TEST_SUITE )
-  assert( LlmToolGui::llmToolIsConfigured() );
-#endif
-
-  if( m_llmTool )
-    return;
-    
-  try
-  {
-    m_llmTool = new LlmToolGui( this );
-    m_llmTool->focusInput();
-    
-    if( m_toolsTabs )
-    {
-      WMenuItem *item = m_toolsTabs->addTab( m_llmTool, WString::fromUTF8("LLM Assistant") );
-      item->setCloseable( true );
-      m_toolsTabs->setCurrentWidget( m_llmTool );
-      const int index = m_toolsTabs->currentIndex();
-      m_toolsTabs->setTabToolTip( index, WString::fromUTF8("Chat with the Large Language Model assistant for spectrum analysis help") );
-      
-      // Note that the m_toolsTabs->tabClosed() signal has already been hooked up to call
-      //  handleToolTabClosed(), which will delete m_llmTool when the user closes the tab.
-    }
-    
-    m_llmToolMenuItem->disable();
-  }catch( const std::exception &e )
-  {
-    std::cout << "Error creating LLM tool: " << e.what() << std::endl;
-    if( m_llmTool )
-    {
-      delete m_llmTool;
-      m_llmTool = nullptr;
-    }//if( m_llmTool )
-  }//try / catch
-}//void createLlmTool()
-
-LlmToolGui *InterSpec::currentLlmTool()
-{
-  return m_llmTool;
-}//LlmToolGui *currentLlmTool();
-
-void InterSpec::handleLlmToolClose()
-{
-  if( !m_llmTool )
-    return;
- 
-  m_llmToolMenuItem->enable();
-  
-  delete m_llmTool;
-  if( m_toolsTabs )
-    m_toolsTabs->setCurrentIndex( 2 );
-  
-  m_llmTool = nullptr;
-}
-#endif // USE_LLM_INTERFACE
-

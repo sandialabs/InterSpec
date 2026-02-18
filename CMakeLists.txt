@@ -128,9 +128,6 @@ set(LEAFLET_MAPS_KEY "n/a" CACHE STRING "Leaflet maps api key.")
 
 option(USE_REMOTE_RID "Enables using remote RID tool" ON)
 option(USE_REL_ACT_TOOL "Enables Relative Activity tool" ON)
-option(USE_LLM_INTERFACE "Enables the AI/LLM interface and MCP server code" ON)
-
-
 
 if(BUILD_FOR_WEB_DEPLOYMENT)
     set(TRY_TO_STATIC_LINK OFF)
@@ -584,6 +581,7 @@ if( USE_REL_ACT_TOOL )
         InterSpec/RelActCalc_imp.hpp
         InterSpec/RelActCalcAuto.h
         InterSpec/RelActCalcAuto_imp.hpp
+        InterSpec/RelActCalcAuto_EnergyCal_imp.hpp
         InterSpec/RelActCalcManual.h
         InterSpec/RelActAutoGui.h
         InterSpec/RelActManualGui.h
@@ -632,15 +630,6 @@ if( BUILD_AS_OSX_APP )
   list( APPEND headers target/osx/macOsUtils.h target/osx/NativeMenu.h )
 endif( BUILD_AS_OSX_APP )
 
-if( USE_LLM_INTERFACE )
-  list( APPEND sources src/LlmMcpResource.cpp src/LlmInterface.cpp src/LlmToolRegistry.cpp src/LlmIsotopicsTool.cpp src/LlmActivityFitTool.cpp src/LlmConfig.cpp src/LlmConversationHistory.cpp src/LlmToolGui.cpp src/LlmInteractionDisplay.cpp )
-  list( APPEND headers InterSpec/LlmMcpResource.h InterSpec/LlmInterface.h InterSpec/LlmToolRegistry.h InterSpec/LlmIsotopicsTool.h InterSpec/LlmActivityFitTool.h InterSpec/LlmConfig.h InterSpec/LlmConversationHistory.h InterSpec/LlmToolGui.h InterSpec/LlmInteractionDisplay.h )
-  list( APPEND OTHER_InterSpec_SUPPORT_FILES data/llm_config.xml data/llm_tools_config.xml data/llm_agents.xml )
-  
-  if( BUILD_FOR_WEB_DEPLOYMENT OR IOS OR ANDROID )
-    MESSAGE(FATAL_ERROR "MCP server can not be enabled for web or mobile builds")
-  endif( BUILD_FOR_WEB_DEPLOYMENT OR IOS OR ANDROID )
-endif( USE_LLM_INTERFACE )
 
 #Copy D3 resources into InterSpec_resources directory at compile time
 include(cmake/DeployJsAndCss.cmake)
@@ -752,10 +741,10 @@ target_compile_options(InterSpecLib PRIVATE
 SET(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -D BOOST_BIND_GLOBAL_PLACEHOLDERS")
           
 if(WIN32)
+  target_compile_options( InterSpecLib PUBLIC /bigobj )
   #0x0601==Win7, 0x0501=WinXP (Wt CMakeLists.txt uses 0x0501x)
-  target_compile_definitions( InterSpecLib PUBLIC /bigobj -D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS )
+  target_compile_definitions( InterSpecLib PUBLIC -D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS )
   target_compile_definitions( InterSpecLib PRIVATE InterSpec_EXPORTS )
-  add_definitions( /bigobj )
         
   if( INTERSPEC_LIB_TYPE STREQUAL "SHARED" )
     # We get error compiling multi-processor debug build of shared LibInterSpec, presumably due to some 

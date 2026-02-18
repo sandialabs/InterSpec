@@ -84,7 +84,7 @@ void DrfChart::defineJavaScript()
     " top: 5,"
     " right: 50,"
     " bottom: 40,"
-    " left: 60"
+    " left: 3"
     " } }";
   
   setJavaScriptMember( "chart", "new DrfChart(" + jsRef() + ", " + options + ");");

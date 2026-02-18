@@ -33,6 +33,9 @@
 
 #include "SpecUtils/SpecFile.h"
 
+#include <Wt/WFlags>
+
+#include "InterSpec/FitPeaksForNuclides.h"
 #include "InterSpec/ReactionGamma.h" //for ReactionGamma::Reaction
 
 // Forward declarations
@@ -51,6 +54,8 @@ namespace AnalystChecks
   struct DetectedPeaksOptions {
     SpecUtils::SpectrumType specType;
     bool nonBackgroundPeaksOnly;
+    std::optional<double> lowerEnergy;
+    std::optional<double> upperEnergy;
   };
   
   /** Results of peak detection analysis. */
@@ -114,12 +119,15 @@ namespace AnalystChecks
   InterSpec_API std::vector<std::string> get_identified_sources( const SpecUtils::SpectrumType specType, InterSpec *interspec );
 
   struct FitPeaksForNuclideOptions {
-    std::vector<std::string> nuclides;
-    bool doNotAddPeaksToUserSession;
+    std::vector<std::string> sources;
+    bool doNotAddPeaksToUserSession = false;
+    Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> fitSrcPeaksOptions;
   };
   
-  struct FitPeaksForNuclideStatus {
+  struct FitPeaksForNuclideStatus
+  {
     std::vector<std::shared_ptr<const PeakDef>> fitPeaks;
+    std::vector<std::string> warnings;
   };
   
   InterSpec_API FitPeaksForNuclideStatus fit_peaks_for_nuclides( const FitPeaksForNuclideOptions &options, InterSpec *interspec );

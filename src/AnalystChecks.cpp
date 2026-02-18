@@ -44,6 +44,7 @@
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 #include "InterSpec/IsotopeId.h"
 #include "InterSpec/ReactionGamma.h"
+#include "InterSpec/FitPeaksForNuclides.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeSearchByEnergy.h"
 #include "InterSpec/MoreNuclideInfo.h"
@@ -277,6 +278,39 @@ namespace AnalystChecks
     }//if( options.nonBackgroundPeaksOnly )
 
 
+    // Apply optional energy filtering
+    const bool has_lower = options.lowerEnergy.has_value();
+    const bool has_upper = options.upperEnergy.has_value();
+
+    if( has_lower && has_upper && (*options.upperEnergy < *options.lowerEnergy) )
+    {
+      throw std::runtime_error( "upperEnergy (" + std::to_string(*options.upperEnergy)
+                                + " keV) must be greater than or equal to lowerEnergy ("
+                                + std::to_string(*options.lowerEnergy) + " keV)" );
+    }
+
+    if( has_lower || has_upper )
+    {
+      const double lower_energy = has_lower ? *options.lowerEnergy : -std::numeric_limits<double>::infinity();
+      const double upper_energy = has_upper ? *options.upperEnergy : std::numeric_limits<double>::infinity();
+
+      auto filter_peaks_in_range = [lower_energy, upper_energy]( const vector<shared_ptr<const PeakDef>> &peaks ){
+        vector<shared_ptr<const PeakDef>> filtered;
+        filtered.reserve( peaks.size() );
+
+        for( const shared_ptr<const PeakDef> &peak : peaks )
+        {
+          if( peak && (peak->mean() >= lower_energy) && (peak->mean() <= upper_energy) )
+            filtered.push_back( peak );
+        }
+
+        return filtered;
+      };
+
+      all_peaks = filter_peaks_in_range( all_peaks );
+      user_analysis_peaks = filter_peaks_in_range( user_analysis_peaks );
+    }
+
     DetectedPeakStatus result;
     result.peaks = std::move(all_peaks);
     result.analysis_peaks = std::move(user_analysis_peaks);
@@ -383,14 +417,19 @@ namespace AnalystChecks
       throw runtime_error( "Could not identify newly fit peak." );
     
     // get fit peak
-    string source = options.source.has_value() ? options.source.value() : ""s;
-    if( SpecUtils::icontains(source, "unknown") || SpecUtils::istarts_with(source, "unk") )
-      source = "";
-    
-    if( !source.empty() )
+    const string source = options.source.has_value() ? options.source.value() : ""s;
+
+    if( source.empty() )
     {
-      const string source = options.source.value();
-      
+      // Nothing to do here
+    }else if( SpecUtils::icontains(source, "unknown") || SpecUtils::istarts_with(source, "unk") )
+    {
+      // `ToolRegistry::executeGetUnidentifiedDetectedPeaks(...)` will treat the peak as unknown if user label is set to "UNKNOWN"
+      shared_ptr<PeakDef> new_fit_peak = make_shared<PeakDef>( *fit_peak );
+      new_fit_peak->setUserLabel( "UNKNOWN" );
+      fit_peak = new_fit_peak;
+    }else
+    {
       shared_ptr<PeakDef> new_fit_peak = make_shared<PeakDef>( *fit_peak );
       
       PeakModel::SetGammaSource res = PeakModel::setNuclideXrayReaction( *new_fit_peak, source, 4.0 );
@@ -866,7 +905,8 @@ namespace AnalystChecks
     
     FitPeaksForNuclideStatus result;
     
-    try {
+    try
+    {
       // Get the foreground spectrum
       std::shared_ptr<SpecMeas> meas = interspec->measurment(SpecUtils::SpectrumType::Foreground);
       if (!meas) {
@@ -883,225 +923,114 @@ namespace AnalystChecks
       
       // Get detector response function
       std::shared_ptr<const DetectorPeakResponse> drf = meas->detector();
-      
-      // Get detected peaks to use as input
-      DetectedPeaksOptions peak_options;
-      peak_options.specType = SpecUtils::SpectrumType::Foreground;
-      DetectedPeakStatus peak_status = detected_peaks(peak_options, interspec);
-      
-      std::vector<std::shared_ptr<const PeakDef>> all_peaks = peak_status.peaks;
-      
-      // Get nuclide names from options
-      const std::vector<std::string> &nuclide_names = options.nuclides;
-      
-      if (nuclide_names.empty()) {
-        throw std::runtime_error("No nuclides specified");
-      }
-      
-      // Create base nuclide info that will be reused across all attempts
-      std::vector<RelActCalcAuto::NucInputInfo> base_nuclides;
-      for (const std::string &nuc_name : nuclide_names) {
-        RelActCalcAuto::NucInputInfo nuc_info;
-        nuc_info.source = RelActCalcAuto::source_from_string(nuc_name);
+      const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
+
+      DetectedPeaksOptions det_peaks_options;
+      det_peaks_options.specType = SpecUtils::SpectrumType::Foreground;
+      det_peaks_options.nonBackgroundPeaksOnly = false; // TODO: as we improve `FitPeaksForNuclides::fit_peaks_for_nuclides(...)` this will need to be change
+      const DetectedPeakStatus detected_peaks = AnalystChecks::detected_peaks( det_peaks_options, interspec );
+      const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks = detected_peaks.peaks;
+
+      vector<RelActCalcAuto::SrcVariant> sources;
+      const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+      if( !db )
+        throw runtime_error( "No decay database available" );
+
+      for( const string &src : options.sources )
+      {
+        RelActCalcAuto::SrcVariant source = RelActCalcAuto::source_from_string(src);
         
-        if (RelActCalcAuto::is_null(nuc_info.source)) {
-          throw std::runtime_error("Invalid nuclide name: " + nuc_name);
-        }
+        if( RelActCalcAuto::is_null(source) )
+          throw runtime_error( "Unrecognized source '" + src + "'" );
         
-        // Set reasonable default age for nuclides
-        if (RelActCalcAuto::nuclide(nuc_info.source)) {
-          const SandiaDecay::Nuclide *nuc = RelActCalcAuto::nuclide(nuc_info.source);
-          nuc_info.age = PeakDef::defaultDecayTime(nuc);
-          nuc_info.fit_age = false; // Don't fit age by default
-        }
-        
-        base_nuclides.push_back(nuc_info);
-      }
+        sources.push_back( source );
+      }//for( const string &src : options.sources )
+
+      if( sources.empty() )
+        throw runtime_error( "No sources specified" );
+
+      GetUserPeakOptions user_peak_options;
+      user_peak_options.specType = SpecUtils::SpectrumType::Foreground;
+      //user_peak_options.lowerEnergy = ...;
+      //user_peak_options.upperEnergy = ...;
       
-      // Set up base ROI to cover the full spectrum energy range
-      RelActCalcAuto::RoiRange base_roi;
-      base_roi.lower_energy = std::max( 55.0f, foreground->gamma_energy_min() );
-      base_roi.upper_energy = foreground->gamma_energy_max();
-      base_roi.continuum_type = PeakContinuum::OffsetType::Linear;
-      base_roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::CanExpandForFwhm;
+      const GetUserPeakStatus user_peaks_status = AnalystChecks::get_user_peaks( user_peak_options, interspec );
+      const std::vector<std::shared_ptr<const PeakDef>> &user_peaks = user_peaks_status.peaks;
       
-      // Create all trial options combinations to run in parallel
-      std::vector<RelActCalcAuto::Options> trial_options;
+      const Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> fit_options = options.fitSrcPeaksOptions;
       
-      // Define skew types to try
-      std::vector<PeakDef::SkewType> skew_types = {
-        PeakDef::SkewType::NoSkew,
-        PeakDef::SkewType::GaussExp
-      };
-      
-      for (PeakDef::SkewType skew_type : skew_types) {
-        // LnX equation form
+      FitPeaksForNuclides::PeakFitForNuclideConfig fit_config;
+
+      // TODO: we will need to update `config` from default in the future
+
+      const FitPeaksForNuclides::PeakFitResult fit_results = FitPeaksForNuclides::fit_peaks_for_nuclides(
+        auto_search_peaks, foreground, sources, user_peaks, background, drf, fit_options, fit_config, isHPGe
+      );
+
+      switch( fit_results.status )
+      {
+        case RelActCalcAuto::RelActAutoSolution::Status::Success:
+          break;
+
+        case RelActCalcAuto::RelActAutoSolution::Status::NotInitiated:
+          throw runtime_error( "Failed to initialize setting up the peak fit"
+                              + (fit_results.error_message.empty() ? string("") : (string("; error: ") + fit_results.error_message) ) );
+
+        case RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem:
+          throw runtime_error( "Failed to setup up the peak fit"
+                              + (fit_results.error_message.empty() ? string("") : (string("; error: ") + fit_results.error_message) ) );
+
+        case RelActCalcAuto::RelActAutoSolution::Status::FailToSolveProblem:
+          throw runtime_error( "Failed to solve the peak fit"
+                              + (fit_results.error_message.empty() ? string("") : (string("; error: ") + fit_results.error_message) ) );
+
+        case RelActCalcAuto::RelActAutoSolution::Status::UserCanceled:
+          throw runtime_error( "Peak fit failed"
+                              + (fit_results.error_message.empty() ? string("") : (string("; error: ") + fit_results.error_message) ) );
+      }//switch( fit_results.status )
+
+      ReferencePhotopeakDisplay * const ref_lines = interspec ? interspec->referenceLinesWidget() : nullptr;
+
+      result.warnings = fit_results.warnings;
+      for( const PeakDef &p : fit_results.observable_peaks )
+      {
+        auto sp = make_shared<PeakDef>(p);
+
+        string src_str;
+        if( sp->parentNuclide() )
+          src_str = sp->parentNuclide()->symbol;
+        else if( sp->xrayElement() )
+          src_str = sp->xrayElement()->symbol;
+        else if( sp->reaction() )
+          src_str = sp->reaction()->name();
+
+        if( ref_lines && !src_str.empty() )
         {
-          RelActCalcAuto::Options solve_options;
-          
-          // Create relative efficiency curve with LnX
-          RelActCalcAuto::RelEffCurveInput rel_eff_curve;
-          rel_eff_curve.name = "LnX Peak Fit";
-          rel_eff_curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::LnX;
-          rel_eff_curve.rel_eff_eqn_order = 3;
-          rel_eff_curve.nucs_of_el_same_age = true;
-          rel_eff_curve.nuclides = base_nuclides;
-          
-          solve_options.rel_eff_curves.push_back(rel_eff_curve);
-          solve_options.rois.push_back(base_roi);
-          
-          // Set other options
-          solve_options.fit_energy_cal = true;
-          solve_options.fwhm_form = RelActCalcAuto::FwhmForm::Gadras;
-          solve_options.fwhm_estimation_method = RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum;
-          solve_options.skew_type = skew_type;
-          solve_options.additional_br_uncert = 0.0;
-          
-          trial_options.push_back(std::move(solve_options));
-        }
-        
-        // FramPhysicalModel with Aluminum shielding
-        {
-          RelActCalcAuto::Options solve_options;
-          
-          RelActCalcAuto::RelEffCurveInput rel_eff_curve;
-          rel_eff_curve.name = "Physical Model Al Peak Fit";
-          rel_eff_curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
-          rel_eff_curve.nucs_of_el_same_age = true;
-          rel_eff_curve.nuclides = base_nuclides;
-          rel_eff_curve.phys_model_use_hoerl = true;
-          
-          // Create aluminum external shielding
-          auto al_shield = std::make_shared<RelActCalc::PhysicalModelShieldInput>();
-          al_shield->atomic_number = 13.0; // Aluminum
-          al_shield->fit_atomic_number = false;
-          al_shield->areal_density = 0.1; // Starting value in g/cm2
-          al_shield->fit_areal_density = true;
-          al_shield->lower_fit_areal_density = 0.001;
-          al_shield->upper_fit_areal_density = 10.0;
-          
-          rel_eff_curve.phys_model_external_atten.push_back(al_shield);
-          
-          solve_options.rel_eff_curves.push_back(rel_eff_curve);
-          solve_options.rois.push_back(base_roi);
-          
-          solve_options.fit_energy_cal = true;
-          solve_options.fwhm_form = RelActCalcAuto::FwhmForm::Gadras; //RelActCalcAuto::FwhmForm::Polynomial_3
-          solve_options.fwhm_estimation_method = RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum;
-          solve_options.skew_type = skew_type;
-          solve_options.additional_br_uncert = 0.0;
-          
-          trial_options.push_back(std::move(solve_options));
-        }
-        
-        // FramPhysicalModel with Lead shielding
-        {
-          RelActCalcAuto::Options solve_options;
-          
-          RelActCalcAuto::RelEffCurveInput rel_eff_curve;
-          rel_eff_curve.name = "Physical Model Pb Peak Fit";
-          rel_eff_curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
-          rel_eff_curve.nucs_of_el_same_age = true;
-          rel_eff_curve.nuclides = base_nuclides;
-          rel_eff_curve.phys_model_use_hoerl = true;
-          
-          // Create lead external shielding
-          auto pb_shield = std::make_shared<RelActCalc::PhysicalModelShieldInput>();
-          pb_shield->atomic_number = 82.0; // Lead
-          pb_shield->fit_atomic_number = false;
-          pb_shield->areal_density = 0.1; // Starting value in g/cm2
-          pb_shield->fit_areal_density = true;
-          pb_shield->lower_fit_areal_density = 0.0;
-          pb_shield->upper_fit_areal_density = 10.0;
-          
-          rel_eff_curve.phys_model_external_atten.push_back(pb_shield);
-          
-          solve_options.rel_eff_curves.push_back(rel_eff_curve);
-          solve_options.rois.push_back(base_roi);
-          
-          solve_options.fit_energy_cal = true;
-          solve_options.fwhm_form = RelActCalcAuto::FwhmForm::Gadras;
-          solve_options.fwhm_estimation_method = RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum;
-          solve_options.skew_type = skew_type;
-          solve_options.additional_br_uncert = 0.0;
-          
-          trial_options.push_back(std::move(solve_options));
-        }
-      }
-      
-      // Execute all trials in parallel using ThreadPool
-      std::vector<RelActCalcAuto::RelActAutoSolution> solutions(trial_options.size());
-      std::mutex solutions_mutex;
-      
-      SpecUtilsAsync::ThreadPool pool;
-      for (size_t i = 0; i < trial_options.size(); ++i) {
-        pool.post([&, i]() {
-          try {
-            RelActCalcAuto::RelActAutoSolution solution = RelActCalcAuto::solve(
-              trial_options[i], foreground, background, drf, all_peaks
-            );
-            
-            std::lock_guard<std::mutex> lock(solutions_mutex);
-            solutions[i] = std::move(solution);
-          } catch (const std::exception &e) {
-            std::lock_guard<std::mutex> lock(solutions_mutex);
-            solutions[i].m_status = RelActCalcAuto::RelActAutoSolution::Status::FailToSolveProblem;
-            solutions[i].m_error_message = e.what();
+          Wt::WColor color = ref_lines->suggestColorForSource( src_str );
+          if( color.isDefault() )
+          {
+            color = ref_lines->nextGenericSourceColor();
+            ref_lines->updateColorCacheForSource( src_str, color );
           }
-        });
-      }
-      
-      pool.join();
-      
-      // Find the best solution from all parallel trials
-      RelActCalcAuto::RelActAutoSolution best_solution;
-      double best_chi2 = std::numeric_limits<double>::max();
-      bool found_valid_solution = false;
-      string last_error_message;
-      
-      for (size_t i = 0; i < solutions.size(); ++i) {
-        const RelActCalcAuto::RelActAutoSolution &solution = solutions[i];
-        
-        if (solution.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success && 
-            solution.m_chi2 < best_chi2) {
-          best_chi2 = solution.m_chi2;
-          best_solution = solution;
-          found_valid_solution = true;
-        } else if (solution.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success) {
-          last_error_message = solution.m_error_message;
-          cerr << "RelActCalcAuto::solve(trial " << i << "): failed: " << solution.m_error_message << endl;
-        }
-      }
-      
-      if (!found_valid_solution) {
-        throw std::runtime_error("RelActCalcAuto::solve failed for all attempted configurations ('" + last_error_message + "')");
-      }
-      
-      // Use the best solution
-      RelActCalcAuto::RelActAutoSolution solution = std::move(best_solution);
-      
-      // Extract the fit peaks from the solution
-      result.fitPeaks.clear();
-      for (const PeakDef &peak : solution.m_fit_peaks_in_spectrums_cal ) {  //If we apply energy cal, we would choose solution.m_fit_peaks
-        result.fitPeaks.push_back(std::make_shared<PeakDef>(peak));
-      }
-      
+          sp->setLineColor( color );
+        }//if( ref_lines && !src_str.empty() )
+
+        result.fitPeaks.push_back( sp );
+      }//for( const PeakDef &p : fit_results.observable_peaks )
+
       // If doNotAddPeaksToUserSession is false, add the peaks to the user's session
-      if (!options.doNotAddPeaksToUserSession) {
-        PeakModel *pmodel = interspec->peakModel();
-        if (pmodel) {
-          std::vector<std::shared_ptr<const PeakDef>> peaks_to_add;
-          for (const auto &peak : result.fitPeaks) {
-            peaks_to_add.push_back(peak);
-          }
-          pmodel->addPeaks(peaks_to_add);
-        }
-      }
-      
-    } catch (const std::exception &e) {
+      if( !options.doNotAddPeaksToUserSession && !result.fitPeaks.empty() )
+      {
+
+        PeakModel * const pmodel = interspec->peakModel();
+        if( pmodel )
+          pmodel->addPeaks( result.fitPeaks );
+      }//if( !options.doNotAddPeaksToUserSession )
+    }catch( const std::exception &e )
+    {
       throw std::runtime_error("Error in fit_peaks_for_nuclides: " + string(e.what()));
-    }
-    
+    }//try / catch
+
     return result;
   }//FitPeaksForNuclideStatus fit_peaks_for_nuclides( const FitPeaksForNuclideOptions &options, InterSpec *interspec )
 

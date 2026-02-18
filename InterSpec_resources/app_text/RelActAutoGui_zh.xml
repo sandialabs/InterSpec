@@ -15,7 +15,10 @@
   <!-- General options -->
   <message id="raag-spectrum-peak-options">谱和峰选项</message>
   <message id="raag-rel-eff-curve-options">相对效率曲线选项</message>
-  <message id="raag-fit-energy-cal">拟合能量刻度</message>
+  <message id="raag-energy-cal-label">能量刻度</message>
+  <message id="raag-energy-cal-nofit">无</message>
+  <message id="raag-energy-cal-linear">线性</message>
+  <message id="raag-energy-cal-nonlinear">非线性</message>
   <message id="raag-back-sub">本底减除</message>
   <message id="raag-fwhm-est">FWHM估计</message>
   <message id="raag-fwhm-form">FWHM形式</message>
@@ -57,6 +60,13 @@
   <message id="raag-combine-roi-right">与右侧ROI合并</message>
   
   <!-- Tooltips -->
+  <message id="raag-tt-energy-cal-type">指定是否拟合对能量刻度的调整。
+    <ul>
+      <li><b>无</b>: 使用现有能量刻度，不做修改。</li>
+      <li><b>线性</b>: 对能量刻度拟合线性调整（偏移和增益）。</li>
+      <li><b>非线性</b>: 在包含线性项的基础上，对每个ROI使用偏差对（立方样条）拟合非线性调整。将每个ROI中检测到的最大峰作为偏差对能量；若未检测到峰，则使用ROI的中点；较大的ROI可能会分配多个偏差对。</li>
+    </ul>
+  </message>
   <message id="raag-tt-fwhm-form">用于将峰FWHM建模为能量函数的方程类型。</message>
   <message id="raag-tt-skew-type">应用于峰的偏斜类型；将拟合偏斜参数。</message>
   <message id="raag-tt-u-pu-data-source">铀和钚的伽马分支比的核数据源。</message>
@@ -113,6 +123,8 @@
   <message id="raag-increase-gain-additional">并增加增益{1}</message>
   <message id="raag-increase-quad-first">增加二次{1}</message>
   <message id="raag-increase-quad-additional">并增加二次{1}</message>
+  <message id="raag-dev-pairs-first"> 添加偏差对{1}</message>
+  <message id="raag-dev-pairs-additional"> 并添加偏差对{1}</message>
 
   <!-- Energy calibration application messages -->
   <message id="raag-apply-energy-cal-msg">这将{1}主要前景{2}{3}。<br />您想这样做吗？</message>

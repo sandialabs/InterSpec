@@ -68,4 +68,20 @@
   <message id="ssd-discard-changes">変更破棄</message>
   <message id="ssd-shield-source-diagram">遮蔽/線源図</message>
   <message id="ssd-show-model-diagram">モデル図を表示</message>
+
+  <!-- Chi2Graphic / ShieldingSourceFitPlot -->
+  <message id="x2g-yaxis-title-chi">(観測-モデル)/不確かさ</message>
+  <message id="x2g-yaxis-title-mult">モデル倍率</message>
+  <message id="x2g-tt-chi-axis">Y軸はピーク面積カウントから、現在表示されている線源および遮蔽値から期待されるカウント数を引き、統計的不確かさで割った値です。この二乗が遮蔽と線源の最適化に使用されます。</message>
+  <message id="x2g-tt-scale-axis">Y軸は観測ピークカウントの倍数で、現在の線源および遮蔽値から期待される値に対する比率です。</message>
+  <message id="x2g-tt-num-observed">観測数：</message>
+  <message id="x2g-tt-num-expected">期待数：</message>
+  <message id="x2g-tt-num-sigma-off">シグマ偏差数：</message>
+  <message id="x2g-tt-obs-over-exp">観測/期待：</message>
+  <message id="x2g-tt-num-foreground">前景数：</message>
+  <message id="x2g-tt-num-background">バックグラウンド数：</message>
+  <message id="x2g-tt-sources-contributing">寄与する線源：</message>
+  <message id="x2g-tt-counts-abbrev">cts</message>
+  <message id="x2g-tt-br-abbrev">br</message>
+  <message id="x2g-dev-label">&lt;dev&gt;</message>
 </messages>
