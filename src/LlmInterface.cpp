@@ -357,8 +357,6 @@ shared_ptr<LlmInteraction> LlmInterface::sendUserMessage( const std::string &mes
       firstTurn->setRawContent( std::move(request_id_content.second) );
   }
   
-  convo->conversationFinished.connect( boost::bind( &LlmInterface::emitConversationFinished, this) );
-  
   return convo;
 }
 
@@ -390,8 +388,6 @@ void LlmInterface::sendSystemMessage( const std::string &message )
     if( firstTurn && firstTurn->type() == LlmInteractionTurn::Type::InitialRequest )
       firstTurn->setRawContent( std::move(request_id_content.second) );
   }
-  
-  convo->conversationFinished.connect( boost::bind( &LlmInterface::emitConversationFinished, this) );
 }
 
 
@@ -1930,7 +1926,7 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
         {
           // Tool calls are blocked; return an error result without executing the tool
           toolResult.status = LlmToolCall::CallStatus::Error;
-          toolResult.content = R"({"status": false, "error": "Tool calls are disabled for this conversation"})";
+          toolResult.content = R"({"status": false, "error": "Tool calls are disabled now, and for the future for this conversation - please answer using only the tool calls that were previously made."})";
         }else
         {
           // Execute the tool

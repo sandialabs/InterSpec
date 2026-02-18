@@ -196,7 +196,7 @@ public:
   void setDebugFile( const std::string &filePath );
 
 private:
-  void emitConversationFinished(){ conversationFinished().emit(); }
+
   
   InterSpec* m_interspec;
   bool m_block_tool_calls; // If true, tool calls return an error instead of being executed
