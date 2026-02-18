@@ -44,8 +44,10 @@
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/SimpleDialog.h"
+#include "InterSpec/LlmConfig.h"
 #include "InterSpec/LlmInterface.h"
 #include "InterSpec/LlmInteractionDisplay.h"
+#include "InterSpec/LlmSubAgentFollowup.h"
 #include "InterSpec/LlmConversationHistory.h"
 
 using namespace Wt;
@@ -1142,6 +1144,8 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
     m_nestingLevel( nestingLevel ),
     m_isFinished( false )
 {
+  assert( m_interaction );
+
   addStyleClass( "LlmInteractionDisplay" );
 
   // Generate unique timer ID
@@ -1638,6 +1642,23 @@ void LlmInteractionDisplay::createMenuIcon()
       showJsonDialog( "Error", string("{\"error\": \"") + e.what() + "\"}", false );
     }
   }));
+
+  // Add "Ask Followup Question" option for debugging
+  PopupDivMenuItem *askFollowup = menu->addMenuItem( "Ask Followup Question" );
+  askFollowup->triggered().connect( std::bind( [this](){
+    if( !m_interaction )
+      return;
+
+    // LlmSubAgentFollowup self-deletes when done
+    try
+    {
+      LlmSubAgentFollowup *followup = new LlmSubAgentFollowup( m_interaction );
+      followup->showDialog();
+    }catch( const std::exception &e )
+    {
+      cerr << "LlmSubAgentFollowup: failed to create: " << e.what() << endl;
+    }
+  } ) );
 
   // Note: "Copy Question" menu item removed - clipboard copy only works via showJsonDialog
 }//createMenuIcon()

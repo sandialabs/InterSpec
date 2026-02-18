@@ -111,6 +111,9 @@ public:
   /** Set conversation history (typically loaded from SpecMeas) */
   void setHistory(std::shared_ptr<LlmConversationHistory> history);
   
+  /** Get the LLM configuration (for building API requests externally). */
+  std::shared_ptr<const LlmConfig> config() const;
+
   /** Check if LLM interface is properly configured and ready to use */
   bool isConfigured() const;
 
@@ -179,10 +182,24 @@ public:
   /** JavaScript callback to handle LLM response */
   void handleJavaScriptResponse(std::string response, int requestId);
 
+  /** When true, tool calls will not be executed; instead an error result is
+   returned to the LLM for each tool call.  Useful for follow-up conversations
+   where we want the LLM to respond with text only.
+   Defaults to false.
+   */
+  void setBlockToolCalls( bool block );
+
+  /** Direct all debug logging to the specified file path.
+   Pass an empty string to disable file logging.
+   Opens the file in append mode; logs a warning to stderr if the file cannot be opened.
+   */
+  void setDebugFile( const std::string &filePath );
+
 private:
   void emitConversationFinished(){ conversationFinished().emit(); }
   
   InterSpec* m_interspec;
+  bool m_block_tool_calls; // If true, tool calls return an error instead of being executed
   std::shared_ptr<const LlmConfig> m_config;
   std::shared_ptr<const LlmTools::ToolRegistry> m_tool_registry;
   std::shared_ptr<LlmConversationHistory> m_history;

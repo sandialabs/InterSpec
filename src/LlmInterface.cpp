@@ -149,6 +149,7 @@ static void writeCacheDebugFiles( const std::string &currentRequest,
 LlmInterface::LlmInterface( InterSpec* interspec, const std::shared_ptr<const LlmConfig> &config )
   : Wt::Signals::trackable(),
     m_interspec(interspec),
+    m_block_tool_calls(false),
     m_config( config ),
     m_tool_registry( config ? make_shared<LlmTools::ToolRegistry>(*config) : shared_ptr<LlmTools::ToolRegistry>() ),
     m_history(std::make_shared<LlmConversationHistory>()),
@@ -211,6 +212,32 @@ LlmInterface::~LlmInterface()
     app->doJavaScript( "if(window.llmResponseCallbacks) delete window.llmResponseCallbacks['" + m_instanceId + "'];" );
 
   cout << "LlmInterface destroyed (instanceId=" << m_instanceId << ")" << endl;
+}
+
+
+void LlmInterface::setBlockToolCalls( bool block )
+{
+  m_block_tool_calls = block;
+}
+
+
+void LlmInterface::setDebugFile( const std::string &filePath )
+{
+  m_debug_stream = nullptr;
+  m_debug_file.reset();
+
+  if( filePath.empty() )
+    return;
+
+  m_debug_file = std::make_unique<std::ofstream>( filePath, std::ios::out | std::ios::app );
+  if( m_debug_file->is_open() )
+  {
+    m_debug_stream = m_debug_file.get();
+  }else
+  {
+    std::cerr << "LlmInterface::setDebugFile: failed to open '" << filePath << "'" << std::endl;
+    m_debug_file.reset();
+  }
 }
 
 
@@ -375,6 +402,12 @@ std::shared_ptr<LlmConversationHistory> LlmInterface::getHistory() const {
 void LlmInterface::setHistory(std::shared_ptr<LlmConversationHistory> history) {
   m_history = history ? history : std::make_shared<LlmConversationHistory>();
 }
+
+std::shared_ptr<const LlmConfig> LlmInterface::config() const
+{
+  return m_config;
+}
+
 
 bool LlmInterface::isConfigured() const {
   return (m_config && m_config->llmApi.enabled && !m_config->llmApi.apiEndpoint.empty());
@@ -1890,61 +1923,69 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
         // Add to requests BEFORE execution (so it's always in sync with results)
         toolCallRequests.emplace_back( toolName, callId, arguments );
 
-        // Execute the tool
-        const auto exec_start = std::chrono::steady_clock::now();
-        json result = m_tool_registry->executeTool(toolName, arguments, m_interspec, convo, m_history.get());
-        const auto exec_end = std::chrono::steady_clock::now();
-        const auto exec_duration = std::chrono::duration_cast<std::chrono::milliseconds>(exec_end - exec_start);
-
-        switch( result.type() )
-        {
-          case nlohmann::detail::value_t::object:
-            // We're good, nothing to do here
-            break;
-            
-            
-          case nlohmann::detail::value_t::null:
-          case nlohmann::detail::value_t::discarded:
-            result = nlohmann::json::object();
-            assert( 0 ); //for development to help ID tool calls where this is the case
-            break;
-          
-          case nlohmann::detail::value_t::boolean:
-          case nlohmann::detail::value_t::array:
-          case nlohmann::detail::value_t::string:
-          case nlohmann::detail::value_t::number_integer:
-          case nlohmann::detail::value_t::number_unsigned:
-          case nlohmann::detail::value_t::number_float:
-          case nlohmann::detail::value_t::binary:
-          {
-            auto result_copy = result;
-            result = nlohmann::json::object();
-            result["value"] = std::move(result_copy);
-            assert( 0 ); //for development to help ID tool calls where this is the case
-            break;
-          }
-        }//switch( result.type() )
-        
-        assert( result.type() == nlohmann::detail::value_t::object );
-        
-        // Add in an indicator, if it isnt already present, that the tool call was succesful - some LLMs or providers
-        //  relly on at least `result["status"] = true;`, or they will keep doing the tool calls multiple times
-        if( !result.contains("success") && !result.contains("Success") )
-          result["success"] = true;
-        
-        if( result.contains("status") || result.contains("Status") )
-        {
-          if( m_debug_stream )
-            (*m_debug_stream) << "Tool call result contains 'status'" << endl;
-        }
-        //if( !result.contains("status") && !result.contains("Status") )
-        //  result["status"] = "Success";
-        
         // Create tool result entry
         LlmToolCall toolResult( toolName, callId, arguments );
-        toolResult.status = LlmToolCall::CallStatus::Success;
-        toolResult.content = result.dump();
-        toolResult.executionDuration = exec_duration;
+
+        if( m_block_tool_calls )
+        {
+          // Tool calls are blocked; return an error result without executing the tool
+          toolResult.status = LlmToolCall::CallStatus::Error;
+          toolResult.content = R"({"status": false, "error": "Tool calls are disabled for this conversation"})";
+        }else
+        {
+          // Execute the tool
+          const auto exec_start = std::chrono::steady_clock::now();
+          json result = m_tool_registry->executeTool(toolName, arguments, m_interspec, convo, m_history.get());
+          const auto exec_end = std::chrono::steady_clock::now();
+          const auto exec_duration = std::chrono::duration_cast<std::chrono::milliseconds>(exec_end - exec_start);
+
+          switch( result.type() )
+          {
+            case nlohmann::detail::value_t::object:
+              // We're good, nothing to do here
+              break;
+              
+              
+            case nlohmann::detail::value_t::null:
+            case nlohmann::detail::value_t::discarded:
+              result = nlohmann::json::object();
+              assert( 0 ); //for development to help ID tool calls where this is the case
+              break;
+            
+            case nlohmann::detail::value_t::boolean:
+            case nlohmann::detail::value_t::array:
+            case nlohmann::detail::value_t::string:
+            case nlohmann::detail::value_t::number_integer:
+            case nlohmann::detail::value_t::number_unsigned:
+            case nlohmann::detail::value_t::number_float:
+            case nlohmann::detail::value_t::binary:
+            {
+              auto result_copy = result;
+              result = nlohmann::json::object();
+              result["value"] = std::move(result_copy);
+              assert( 0 ); //for development to help ID tool calls where this is the case
+              break;
+            }
+          }//switch( result.type() )
+          
+          assert( result.type() == nlohmann::detail::value_t::object );
+          
+          // Add in an indicator, if it isnt already present, that the tool call was succesful - some LLMs or providers
+          //  relly on at least `result["status"] = true;`, or they will keep doing the tool calls multiple times
+          if( !result.contains("success") && !result.contains("Success") )
+            result["success"] = true;
+          
+          if( result.contains("status") || result.contains("Status") )
+          {
+            if( m_debug_stream )
+              (*m_debug_stream) << "Tool call result contains 'status'" << endl;
+          }
+          
+          toolResult.status = LlmToolCall::CallStatus::Success;
+          toolResult.content = result.dump();
+          toolResult.executionDuration = exec_duration;
+        }//if( m_block_tool_calls ) / else
+
         toolCallResults.push_back( std::move(toolResult) );
       }
     }catch( const json::parse_error &e )

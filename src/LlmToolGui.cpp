@@ -741,6 +741,9 @@ void LlmToolGui::setConversationHistory(const std::shared_ptr<std::vector<std::s
     llmHistory->clear();
     for( const std::shared_ptr<LlmInteraction> &conv : *history )
     {
+      if( !conv )
+        continue;
+
       llmHistory->getConversations().push_back(conv);
 
       // Create display widget for this interaction

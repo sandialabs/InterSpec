@@ -403,6 +403,17 @@ struct LlmInteraction
    */
   static std::shared_ptr<LlmInteraction> createEmpty();
 
+  /** Create an independent copy of this interaction for read-only use as history context.
+
+   The returned interaction shares the same turn objects (responses) as the original —
+   turn content is immutable after creation so this is safe. Signals, handlers, and
+   runtime-only tracking fields are not copied; the clone has a fresh conversationId.
+   This prevents any new responses appended by LlmInterface from affecting the original.
+
+   @return A shared_ptr to an independent copy suitable for seeding LlmConversationHistory
+   */
+  std::shared_ptr<LlmInteraction> shallowClone() const;
+
 private:
   LlmInteraction(Type t, AgentType a )
   : type(t), agent_type(a), timestamp(std::chrono::system_clock::now()), conversationId{}

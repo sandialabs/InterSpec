@@ -51,6 +51,28 @@ std::shared_ptr<LlmInteraction> LlmInteraction::createEmpty()
   return std::shared_ptr<LlmInteraction>( new LlmInteraction(Type::User, AgentType::MainAgent) );
 }
 
+
+std::shared_ptr<LlmInteraction> LlmInteraction::shallowClone() const
+{
+  // Create a new interaction with the same type/agent, then copy scalar fields.
+  // The responses vector is copied so the clone has an independent container -
+  // new turns appended by LlmInterface will not appear in the original, and vice versa.
+  // Turn objects themselves are shared (their content is immutable after creation).
+  // Signals, handlers, and runtime-only tracking fields are intentionally not copied.
+  std::shared_ptr<LlmInteraction> clone(
+    new LlmInteraction( type, agent_type ) );
+
+  clone->conversationId   = conversationId;
+  clone->timestamp        = timestamp;
+  clone->finishTime       = finishTime;
+  clone->promptTokens     = promptTokens;
+  clone->completionTokens = completionTokens;
+  clone->totalTokens      = totalTokens;
+  clone->responses        = responses; // shared_ptr copies; turns are immutable read-only objects
+
+  return clone;
+}
+
 std::shared_ptr<LlmInteraction> LlmConversationHistory::addUserMessageToMainConversation( const string &message )
 {
   auto conv = LlmInteraction::create( LlmInteraction::Type::User, message, AgentType::MainAgent );
