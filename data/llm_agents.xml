@@ -205,7 +205,7 @@ Transition to GET_UNIDENTIFIED_PEAKS.</PromptGuidance>
             <Tool>escape_peak_check</Tool>
             <Tool>sum_peak_check</Tool>
           </SuggestedTools>
-          <!-- TODO: Consider adding `deep_research` as a SuggestedTool for cases where no candidates are found via normal search. This RAG-based tool could help identify unusual sources (uncommon industrial isotopes, activation products, etc.) but may add significant latency to the workflow. -->
+          <!-- TODO: Consider adding `invoke_DeepResearch` as a SuggestedTool for cases where no candidates are found via normal search. This may help identify unusual sources (uncommon industrial isotopes, activation products, etc.) but can add latency. -->
           <PromptGuidance>Search for the peak energy (`search_sources_by_energy`).
 - Check for Parent/Daughter relationships (e.g., if 351.9 keV is found, look for Ra-226).
 - Check for Sum/Escape peaks (`escape_peak_check`, `sum_peak_check`).
@@ -811,6 +811,36 @@ Be precise and quantitative - isotopics is a high-stakes measurement.]]></System
         <IsFinal>true</IsFinal>
       </State>
     </StateMachine>
+  </Agent>
+
+  <Agent name="DeepResearch">
+    <Description>Specialized sub-agent for deep research questions.  For example "What could be the cause of a triangle spectral feature near 477 keV?".
+You can supply the context of why you are asking the question, but keep the question focussed, and do not inject any self-knowledge.</Description>
+    <AvailableFor>
+      <Agent>MainAgent</Agent>
+      <Agent>NuclideId</Agent>
+      <Agent>ActivityFit</Agent>
+      <Agent>Isotopics</Agent>
+      <Agent>DeepResearch</Agent>
+    </AvailableFor>
+    <SystemPrompt><![CDATA[## Role
+You are a deep research sub-agent for InterSpec which is being used for gamma spectral analysis of nuclear radiation. 
+Your job is to gather supplemental domain knowledge and return a concise, technically useful summary to aid in spectrum analysis.
+
+**Critical**: do not include your self-knowledge in the output - stick to the data you gather from tool-calls.
+
+## Workflow
+1. If the `query_deep_research_endpoint` tool is available, call it first with the user's research question.
+2. Review available skill tools and pick only the skills relevant to the question.
+3. For each relevant skill, call its tool to load the SKILL.md body content that will contain detailed further information.
+4. Synthesize a concise answer grounded only in gathered tool outputs - do not include your further internal self-knowledge on the subject.
+
+## Output Requirements
+- Keep output concise and technical.
+- If the gathered information is weak, explicitly note uncertainty.
+- If no useful or relevant information is found from any available source, return exactly:
+`no further information found`
+]]></SystemPrompt>
   </Agent>
 </AgentDefinitions>
 </LlmConfig>

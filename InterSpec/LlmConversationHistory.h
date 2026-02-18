@@ -354,12 +354,6 @@ struct LlmInteraction
    */
   std::shared_ptr<AgentStateMachine> state_machine;
 
-  /** Peak checkpoints for this conversation.
-   Allows the LLM agent to snapshot and restore peak state.
-   Runtime-only; not serialized to XML.
-   */
-  std::vector<PeakCheckpoint> m_peak_checkpoints;
-
   /** Tracking for non-final-state auto-replies (sub-agents with state machines only).
    Runtime-only; not serialized to XML.
    */
@@ -526,6 +520,12 @@ public:
   /** Static function to deserialize conversations from XML */
   static void fromXml(const rapidxml::xml_node<char>* node,
                       std::vector<std::shared_ptr<LlmInteraction>>& conversations);
+
+  /** Peak checkpoints across all conversations.
+   Allows LLM agents to snapshot and restore peak state across multiple conversation turns.
+   Runtime-only; not serialized to XML.
+   */
+  std::vector<PeakCheckpoint> m_peak_checkpoints;
 
 private:
   std::vector<std::shared_ptr<LlmInteraction>> m_conversations;

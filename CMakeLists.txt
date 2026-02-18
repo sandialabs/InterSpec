@@ -634,8 +634,8 @@ if( BUILD_AS_OSX_APP )
 endif( BUILD_AS_OSX_APP )
 
 if( USE_LLM_INTERFACE )
-  list( APPEND sources src/LlmMcpResource.cpp src/LlmInterface.cpp src/LlmToolRegistry.cpp src/LlmIsotopicsTool.cpp src/LlmActivityFitTool.cpp src/LlmRelActManualTool.cpp src/LlmConfig.cpp src/LlmConversationHistory.cpp src/LlmToolGui.cpp src/LlmInteractionDisplay.cpp )
-  list( APPEND headers InterSpec/LlmMcpResource.h InterSpec/LlmInterface.h InterSpec/LlmToolRegistry.h InterSpec/LlmIsotopicsTool.h InterSpec/LlmActivityFitTool.h InterSpec/LlmRelActManualTool.h InterSpec/LlmConfig.h InterSpec/LlmConversationHistory.h InterSpec/LlmToolGui.h InterSpec/LlmInteractionDisplay.h )
+  list( APPEND sources src/LlmMcpResource.cpp src/LlmInterface.cpp src/LlmToolRegistry.cpp src/LlmDeepResearchAgent.cpp src/LlmIsotopicsTool.cpp src/LlmActivityFitTool.cpp src/LlmRelActManualTool.cpp src/LlmConfig.cpp src/LlmConversationHistory.cpp src/LlmToolGui.cpp src/LlmInteractionDisplay.cpp )
+  list( APPEND headers InterSpec/LlmMcpResource.h InterSpec/LlmInterface.h InterSpec/LlmToolRegistry.h InterSpec/LlmDeepResearchAgent.h InterSpec/LlmIsotopicsTool.h InterSpec/LlmActivityFitTool.h InterSpec/LlmRelActManualTool.h InterSpec/LlmConfig.h InterSpec/LlmConversationHistory.h InterSpec/LlmToolGui.h InterSpec/LlmInteractionDisplay.h )
   list( APPEND OTHER_InterSpec_SUPPORT_FILES data/llm_config.xml data/llm_tools_config.xml data/llm_agents.xml )
   
   if( BUILD_FOR_WEB_DEPLOYMENT OR IOS OR ANDROID )

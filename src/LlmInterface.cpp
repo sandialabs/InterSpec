@@ -1756,6 +1756,14 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
               subAgentSummary = sanitizeUtf8( subAgentSummary );
               subAgentThinkingContent = sanitizeUtf8( subAgentThinkingContent );
 
+              if( sub_agent_convo->agent_type == AgentType::DeepResearch )
+              {
+                std::string trimmed_summary = subAgentSummary;
+                SpecUtils::trim( trimmed_summary );
+                if( trimmed_summary.empty() )
+                  subAgentSummary = "no further information found";
+              }
+
               if( interface->m_debug_stream )
               {
                 (*interface->m_debug_stream) << "Sub-agent summary: " << subAgentSummary.substr(0, 100) << (subAgentSummary.length() > 100 ? "..." : "") << endl;
@@ -1884,7 +1892,7 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
 
         // Execute the tool
         const auto exec_start = std::chrono::steady_clock::now();
-        json result = m_tool_registry->executeTool(toolName, arguments, m_interspec, convo);
+        json result = m_tool_registry->executeTool(toolName, arguments, m_interspec, convo, m_history.get());
         const auto exec_end = std::chrono::steady_clock::now();
         const auto exec_duration = std::chrono::duration_cast<std::chrono::milliseconds>(exec_end - exec_start);
 

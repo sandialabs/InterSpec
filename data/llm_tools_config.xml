@@ -1843,19 +1843,5 @@ Returns information about:
     </AvailableFor>
   </Tool>
 
-  <Tool name="deep_research">
-    <Description>Performs deep research about a gamma spectroscopy, or nuclear physics type question.  Queries an extensive RAG-based database of gamma-spectroscopy related information.  Do not use this tool for getting numerical information, or information that can be gotten from other tool calls.</Description>
-    <ParametersSchema>{
-      "type": "object",
-      "properties": {
-        "question": {
-          "type": "string",
-          "description": "The natural language question to be researched and answered."
-        }
-      },
-      "required": ["question"]
-    }</ParametersSchema>
-  </Tool>
-
 </ToolDefinitions>
 </LlmConfig>

@@ -34,6 +34,7 @@ class InterSpec;
 class DetectorPeakResponse;
 class LlmConfig;
 struct LlmInteraction;
+class LlmConversationHistory;
 
 #include "InterSpec/LlmConfig.h"  // For AgentType enum
 #include "external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
@@ -50,8 +51,9 @@ struct SharedTool {
     std::string name;
     std::string description;  // Default description
     nlohmann::json parameters_schema;
-    // The executor takes parameters, InterSpec instance, and optionally the current LlmInteraction conversation
-    std::function<nlohmann::json(const nlohmann::json&, InterSpec*, std::shared_ptr<LlmInteraction>)> executor;
+    // The executor takes parameters, InterSpec instance, optionally the current LlmInteraction conversation,
+    // and optionally the LlmConversationHistory (for data that persists across conversations, like peak checkpoints)
+    std::function<nlohmann::json(const nlohmann::json&, InterSpec*, std::shared_ptr<LlmInteraction>, LlmConversationHistory*)> executor;
 
     // Agent-specific configurations
     std::vector<AgentType> availableForAgents;  // List of agent types that can use this tool (empty = all agents)
@@ -110,7 +112,8 @@ public:
   nlohmann::json executeTool(const std::string& toolName,
                            const nlohmann::json& parameters,
                            InterSpec* interspec,
-                           std::shared_ptr<LlmInteraction> conversation = nullptr) const;
+                           std::shared_ptr<LlmInteraction> conversation = nullptr,
+                           LlmConversationHistory* history = nullptr) const;
   
   /** Clear all registered tools (mainly for testing). */
   void clearTools();
@@ -163,8 +166,6 @@ private:
   static nlohmann::json executeGetAttenuationOfShielding(nlohmann::json params, InterSpec* interspec);
   static nlohmann::json executeGetSourcePhotons(const nlohmann::json& params);
 
-  static nlohmann::json executeDeepResearch(const nlohmann::json& params, InterSpec* interspec, const std::string &deep_research_url );
-
   static nlohmann::json executeAvailableDetectors(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeLoadDetectorEfficiency(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeGetDetectorInfo(const nlohmann::json& params, InterSpec* interspec);
@@ -178,8 +179,8 @@ private:
   static nlohmann::json executeSetWorkflowState(const nlohmann::json& params, InterSpec* interspec);
 
   // Peak checkpoint tools
-  static nlohmann::json executeCreatePeakCheckpoint(const nlohmann::json& params, InterSpec* interspec, std::shared_ptr<LlmInteraction> conversation);
-  static nlohmann::json executeRestorePeaksToCheckpoint(const nlohmann::json& params, InterSpec* interspec, std::shared_ptr<LlmInteraction> conversation);
+  static nlohmann::json executeCreatePeakCheckpoint(const nlohmann::json& params, InterSpec* interspec, LlmConversationHistory* history);
+  static nlohmann::json executeRestorePeaksToCheckpoint(const nlohmann::json& params, InterSpec* interspec, LlmConversationHistory* history);
 
   /** Helper function to find and load a detector by identifier.
    @param identifier The detector identifier (name, path, or URI)

@@ -8,12 +8,11 @@
 #include <algorithm>
 #include <stdexcept>
 
-#include <boost/process.hpp>
-
 #include "rapidxml/rapidxml.hpp"
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/LlmConfig.h"
+#include "InterSpec/LlmDeepResearchAgent.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/LlmInterface.h"
 #include "InterSpec/LlmToolGui.h"
@@ -1109,59 +1108,6 @@ namespace {
 
 
 
-std::string query_deep_research_endpoint( const std::string &queryText, const std::string &deep_query_url )
-{
-  try
-  {
-    // Construct the JSON payload
-    nlohmann::json payload = {
-      {"messages", {{{"content", queryText}}}},
-      {"corpora", {"ldrd_llm_gamma_spec"}}
-    };
-    std::string jsonStr = payload.dump();
-
-    // Setup the curl command arguments
-    std::vector<std::string> args = {
-      "-X", "POST",
-      deep_query_url,
-      "-H", "accept: application/json",
-      "-H", "Content-Type: application/json",
-      "-d", jsonStr
-    };
-
-    // Execute curl and capture stdout into a stream
-    boost::process::ipstream is;
-    boost::process::child c(boost::process::search_path("curl"), args, boost::process::std_out > is);
-
-    std::string output;
-    std::string line;
-    while (std::getline(is, line)) {
-      output += line;
-    }
-
-    c.wait(); // Ensure the process finishes
-
-    if( (c.exit_code() == 6) || (c.exit_code() == 7) )
-      throw runtime_error( "The deep-research service is down - this probably means this tool-call will not be useful in the future either." );
-
-    if( c.exit_code() != 0 )
-      throw std::runtime_error( "curl command failed with exit code " + std::to_string(c.exit_code()) );
-
-    // Parse the result
-    nlohmann::json result = nlohmann::json::parse(output);
-
-    if( !result.contains("response") )
-      throw std::runtime_error( "'response' key not found in JSON output from deep-research endpoint." );
-
-    return result["response"].get<std::string>();
-  }catch (const nlohmann::json::parse_error& e)
-  {
-    throw std::runtime_error( std::string("JSON Parse Error: ") + e.what() );
-  }catch (const std::exception& e)
-  {
-    throw std::runtime_error( std::string("Error: ") + e.what() );
-  }
-}//std::string getGammaQueryResponse(const std::string& queryText)
 }//namespace
 
 namespace LlmTools
@@ -1185,282 +1131,278 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
   // Assign executor based on tool name
   if( toolName == "get_detected_peaks" )
   {
-    tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+    tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
       return executePeakDetection(params, interspec);
       };
     }else if( toolName == "add_analysis_peak" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executePeakFit(params, interspec);
       };
     }else if( toolName == "edit_analysis_peak" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeEditAnalysisPeak(params, interspec);
       };
     }else if( toolName == "escape_peak_check" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeEscapePeakCheck(params, interspec);
       };
     }else if( toolName == "sum_peak_check" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeSumPeakCheck(params, interspec);
       };
     }else if( toolName == "get_analysis_peaks" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeGetUserPeaks(params, interspec);
       };
     }else if( toolName == "get_identified_sources" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeGetIdentifiedSources(params, interspec);
       };
     }else if( toolName == "get_unidentified_peaks" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeGetUnidentifiedDetectedPeaks(params, interspec);
       };
     }else if( toolName == "get_spectrum_info" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeGetSpectrumInfo(params, interspec);
       };
     }else if( toolName == "primary_gammas_for_source" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeGetCharacteristicGammasForSource(params);
       };
     }else if( toolName == "sources_with_primary_gammas_in_energy_range" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeGetNuclidesWithCharacteristicsInEnergyRange(params, interspec);
       };
     }else if( toolName == "sources_with_primary_gammas_near_energy" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeGetNuclidesWithCharacteristicsInEnergyRange(params, interspec);
       };
     }
 #if( !INCLUDE_NOTES_AND_ASSOCIATED_SRCS_WITH_SRC_INFO )
     else if( toolName == "sources_associated_with_source" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeGetAssociatedSources(params);
       };
     }else if( toolName == "analyst_notes_for_source" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeGetSourceAnalystNotes(params);
       };
     }
 #endif
     else if( toolName == "source_info" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeGetSourceInfo(params, interspec);
       };
     }else if( toolName == "nuclide_decay_chain" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeGetNuclideDecayChain(params);
       };
     }else if( toolName == "automated_source_id_results" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeGetAutomatedRiidId(params, interspec);
       };
     }else if( toolName == "loaded_spectra" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeGetLoadedSpectra(params, interspec);
       };
     }else if( toolName == "add_analysis_peaks_for_source" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeFitPeaksForNuclide(params, interspec);
       };
     }else if( toolName == "get_counts_in_energy_range" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeGetCountsInEnergyRange(params, interspec);
       };
     }else if( toolName == "get_expected_fwhm" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeGetExpectedFwhm(params, interspec);
       };
     }else if( toolName == "currie_mda_calc" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeCurrieMdaCalc(params, interspec);
       };
     }else if( toolName == "calculate_dose" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeCalculateDose(params, interspec);
       };
     }else if( toolName == "source_photons" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeGetSourcePhotons(params);
       };
     }else if( toolName == "photopeak_detection_efficiency" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executePhotopeakDetectionCalc(params, interspec);
       };
     }else if( toolName == "get_materials" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeGetMaterials(interspec);
       };
     }else if( toolName == "get_material_info" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeGetMaterialInfo(params, interspec);
       };
     }else if( toolName == "available_detector_efficiency_functions" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeAvailableDetectors(params, interspec);
       };
     }else if( toolName == "load_detector_efficiency_function" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeLoadDetectorEfficiency(params, interspec);
       };
     }else if( toolName == "detector_efficiency_function_info" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeGetDetectorInfo(params, interspec);
       };
     }else if( toolName == "search_sources_by_energy" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeSearchSourcesByEnergy(params, interspec);
       };
     }else if( toolName == "activity_fit" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return ActivityFitTool::executeActivityFit(params, interspec);
       };
     }else if( toolName == "activity_fit_one_off" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return ActivityFitTool::executeActivityFitOneOff(params, interspec);
       };
     }else if( toolName == "get_shielding_source_config" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return ActivityFitTool::executeGetShieldingSourceConfig(params, interspec);
       };
     }else if( toolName == "modify_shielding_source_config" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return ActivityFitTool::executeModifyShieldingSourceConfig(params, interspec);
       };
     }else if( toolName == "mark_peaks_for_activity_fit" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return ActivityFitTool::executeMarkPeaksForActivityFit(params, interspec);
       };
     }else if( toolName == "close_activity_shielding_display" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return ActivityFitTool::executeCloseActivityShieldingDisplay(params, interspec);
       };
     }else if( toolName == "ask_user_question" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return ActivityFitTool::executeAskUserQuestion(params, interspec);
       };
     }else if( toolName == "set_workflow_state" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeSetWorkflowState(params, interspec);
       };
     }else if( toolName == "list_isotopics_presets" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return IsotopicsTool::executeListIsotopicsPresets(params, interspec);
       };
     }else if( toolName == "get_isotopics_config" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return IsotopicsTool::executeGetIsotopicsConfig(params, interspec);
       };
     }else if( toolName == "reset_isotopics_config" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return IsotopicsTool::executeResetIsotopicsConfig(params, interspec);
       };
     }else if( toolName == "load_isotopics_preset" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return IsotopicsTool::executeLoadIsotopicsPreset(params, interspec);
       };
     }else if( toolName == "perform_isotopics_calculation" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return IsotopicsTool::executePerformIsotopics(params, interspec);
       };
     }else if( toolName == "modify_isotopics_nuclides" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return IsotopicsTool::executeModifyIsotopicsNuclides(params, interspec);
       };
     }else if( toolName == "modify_isotopics_rois" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return IsotopicsTool::executeModifyIsotopicsRois(params, interspec);
       };
     }else if( toolName == "modify_isotopics_curve_settings" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return IsotopicsTool::executeModifyIsotopicsCurveSettings(params, interspec);
       };
     }else if( toolName == "modify_isotopics_options" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return IsotopicsTool::executeModifyIsotopicsOptions(params, interspec);
       };
     }else if( toolName == "modify_isotopics_constraints" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return IsotopicsTool::executeModifyIsotopicsConstraints(params, interspec);
       };
     }else if( toolName == "get_isotopics_config_schema" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return IsotopicsTool::executeGetIsotopicsConfigSchema(params, interspec);
       };
     }else if( toolName == "peak_based_relative_efficiency" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return RelActManualTool::executePeakBasedRelativeEfficiency(params, interspec);
       };
     }else if( toolName == "get_rel_act_manual_state" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return RelActManualTool::executeGetRelActManualState(params, interspec);
       };
     }else if( toolName == "create_peak_checkpoint" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction> conv) -> json {
-        return executeCreatePeakCheckpoint(params, interspec, conv);
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory* history) -> json {
+        return executeCreatePeakCheckpoint(params, interspec, history);
       };
     }else if( toolName == "restore_peaks_to_checkpoint" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction> conv) -> json {
-        return executeRestorePeaksToCheckpoint(params, interspec, conv);
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory* history) -> json {
+        return executeRestorePeaksToCheckpoint(params, interspec, history);
       };
-    }else if( toolName == "deep_research" )
-    {
-      assert( 0 );
-      throw runtime_error( "The `deep_research` tool-call should not have its executor made here." );
     }else
     {
       throw std::runtime_error( "Unknown tool name: " + toolName );
@@ -1480,36 +1422,6 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     throw std::runtime_error("No tools configuration provided - cannot initialize LLM interface");
   
   //cout << "Registering default LLM tools..." << endl;
-
-  // Helper lambda to apply config overrides to a tool
-  auto applyToolConfig = [&config](SharedTool &tool) {
-    // Look for this tool in the config
-    for( const LlmConfig::ToolConfig &toolConfig : config.tools )
-    {
-      if( toolConfig.name == tool.name )
-      {
-        // Apply agent restrictions
-        if( !toolConfig.availableForAgents.empty() )
-          tool.availableForAgents = toolConfig.availableForAgents;
-
-        // Apply default description override
-        if( !toolConfig.defaultDescription.empty() )
-          tool.description = toolConfig.defaultDescription;
-
-        // Apply role-specific descriptions
-        tool.roleDescriptions = toolConfig.roleDescriptions;
-
-        // Apply parameter schema override (already parsed and validated; {} is a valid empty schema)
-        if( !toolConfig.parametersSchema.is_null() )
-        {
-          tool.parameters_schema = toolConfig.parametersSchema;
-        }
-
-        cout << "  Applied config overrides for tool: " << tool.name << endl;
-        break;
-      }
-    }
-  };
 
   // Register agent-specific invoke tools dynamically from config
   for( const LlmConfig::AgentConfig &agent : config.agents )
@@ -1542,7 +1454,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
       })");
     
     // Executor is a placeholder - actual invocation handled in executeToolCalls
-    invokeTool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
+    invokeTool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
       assert( 0 );
       throw std::runtime_error( "invoke_* tools should be handled by executeToolCalls, not called directly" );
     };
@@ -1554,23 +1466,20 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     else
       invokeTool.availableForAgents = agent.availableForAgents;
 
+    // Prevent recursive invoke loops by removing self-invocation.
+    invokeTool.availableForAgents.erase(
+      std::remove( begin(invokeTool.availableForAgents), end(invokeTool.availableForAgents), agent.type ),
+      end(invokeTool.availableForAgents)
+    );
+
     registerTool(invokeTool);
   }//for( loop over agents in config )
   
-
-  const LlmConfig::ToolConfig *deep_research_tool_config = nullptr;
-
   // Register tools from configs
   for( const LlmConfig::ToolConfig &toolConfig : config.tools )
   {
     try
     {
-      if( toolConfig.name == "deep_research" )
-      {
-        deep_research_tool_config = &toolConfig;
-        continue;
-      }
-
       // Create tool with executor
       SharedTool tool = createToolWithExecutor( toolConfig.name );
 
@@ -1595,30 +1504,16 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     }
   }//for( loop over tool configs )
 
+  bool loaded_deep_research_skills = false;
+  LlmDeepResearch::registerDeepResearchTools( config.llmApi.deep_research_url,
+                                              [this]( const SharedTool &tool ){ registerTool(tool); },
+                                              loaded_deep_research_skills );
 
-  if( !config.llmApi.deep_research_url.empty() )
-  {
-    assert( deep_research_tool_config );
+  if( m_tools.find("invoke_DeepResearch") == end(m_tools) )
+    cerr << "Warning: DeepResearch agent invoke tool was not registered. Check llm_agents.xml configuration." << endl;
 
-    if( deep_research_tool_config )
-    {
-      SharedTool tool;
-      tool.name = deep_research_tool_config->name;
-      tool.description = deep_research_tool_config->defaultDescription;
-      if( !deep_research_tool_config->parametersSchema.is_null() )
-        tool.parameters_schema = deep_research_tool_config->parametersSchema;
-      tool.roleDescriptions = deep_research_tool_config->roleDescriptions;
-      tool.availableForAgents = deep_research_tool_config->availableForAgents;
-
-      const string deep_research_url = config.llmApi.deep_research_url;
-
-      tool.executor = [deep_research_url](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
-        return executeDeepResearch(params, interspec, deep_research_url);
-      };
-
-      registerTool(tool);
-    }//if( deep_research_tool_config )
-  }//if( !config.llmApi.deep_research_url.empty() )
+  if( !loaded_deep_research_skills )
+    cerr << "Info: No DeepResearch SKILL.md files were found under llm_knowledge directories." << endl;
 
   // NOTE: Hard-coded fallback tool definitions have been removed.
   // If no tools are loaded from XML, we throw an exception above.
@@ -1686,7 +1581,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
   };
 
   if( !config.llmApi.deep_research_url.empty() )
-    expectedTools.push_back( "deep_research" );
+    expectedTools.push_back( "query_deep_research_endpoint" );
 
   std::vector<std::string> missingTools;
   for( const std::string &toolName : expectedTools )
@@ -1712,6 +1607,9 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
   {
     // Skip invoke_ tools as they are dynamically created
     if( toolName.find("invoke_") == 0 )
+      continue;
+
+    if( toolName.find("deepresearch_skill_") == 0 )
       continue;
 
     bool found = false;
@@ -1756,6 +1654,12 @@ std::map<std::string, SharedTool> ToolRegistry::getToolsForAgent( AgentType agen
 
   for( const auto &[toolName, tool] : m_tools )
   {
+    if( (agentType == AgentType::DeepResearch) && (toolName.find("invoke_") == 0) )
+      continue;
+
+    if( (agentType == AgentType::DeepResearch) && tool.availableForAgents.empty() )
+      continue;
+
     // If availableForAgents is empty, tool is available to all agents
     if( tool.availableForAgents.empty() )
     {
@@ -1795,7 +1699,8 @@ std::string ToolRegistry::getDescriptionForAgent( const std::string &toolName, A
 nlohmann::json ToolRegistry::executeTool(const std::string& toolName,
                                        const nlohmann::json& parameters,
                                        InterSpec* interspec,
-                                       shared_ptr<LlmInteraction> conversation) const
+                                       shared_ptr<LlmInteraction> conversation,
+                                       LlmConversationHistory* history) const
 {
   const SharedTool* tool = getTool(toolName);
   if (!tool) {
@@ -1808,7 +1713,7 @@ nlohmann::json ToolRegistry::executeTool(const std::string& toolName,
     cout << "Executing tool: " << toolName << " with params: " << parameters.dump() << endl;
 #endif
 
-    json result = tool->executor(parameters, interspec, conversation);
+    json result = tool->executor(parameters, interspec, conversation, history);
     
 #if( !defined(NDEBUG) && !BUILD_AS_UNIT_TEST_SUITE )
     std::string resultStr = result.dump();
@@ -3542,37 +3447,6 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
   return answer;
 }//nlohmann::json executeGetSourcePhotons(const nlohmann::json& params, InterSpec* interspec)
 
-
-
-nlohmann::json ToolRegistry::executeDeepResearch(const nlohmann::json& params, InterSpec* interspec, const std::string &deep_research_url )
-{
-  const string question_key = find_case_insensitive_key( "question", params );
-  if( !params.contains(question_key) || !params[question_key].is_string() )
-  {
-    cerr << "executeDeepResearch error: The 'question' parameter must be present, and a string; params: " << params.dump() << endl << endl;
-    throw runtime_error( "The 'question' parameter must be present, and a string." );
-  }
-
-  const string question = params[question_key];
-
-  cout << "In executeDeepResearch; question: " << question << endl << endl;
-
-  nlohmann::json result;
-
-  try
-  {
-    const string query_result = query_deep_research_endpoint( question, deep_research_url );
-    cout << "executeDeepResearch answer: " << query_result << endl << endl;
-    result["success"] = true;
-    result["answer"] = query_result;
-  }catch( std::exception &e )
-  {
-    result["success"] = false;
-    result["error"] = e.what();
-  }
-
-  return result;
-}//nlohmann::json executeDeepResearch(const nlohmann::json& params, InterSpec* interspec)
 
 
 nlohmann::json ToolRegistry::executeGetAttenuationOfShielding( nlohmann::json params, InterSpec* interspec )
@@ -5321,13 +5195,13 @@ nlohmann::json ToolRegistry::executeSetWorkflowState(
 
 json ToolRegistry::executeCreatePeakCheckpoint( const json& params,
                                                 InterSpec* interspec,
-                                                shared_ptr<LlmInteraction> conversation )
+                                                LlmConversationHistory* history )
 {
   if( !interspec )
     throw runtime_error( "No InterSpec session available." );
 
-  if( !conversation )
-    throw runtime_error( "Peak checkpoints require a conversation context." );
+  if( !history )
+    throw runtime_error( "Peak checkpoints require a conversation history context." );
 
   // Get the optional name hint
   string name_hint;
@@ -5348,7 +5222,7 @@ json ToolRegistry::executeCreatePeakCheckpoint( const json& params,
 
   // Ensure uniqueness by appending a suffix if needed
   {
-    const vector<PeakCheckpoint> &existing = conversation->m_peak_checkpoints;
+    const vector<PeakCheckpoint> &existing = history->m_peak_checkpoints;
     bool name_taken = false;
     for( const PeakCheckpoint &cp : existing )
     {
@@ -5431,7 +5305,7 @@ json ToolRegistry::executeCreatePeakCheckpoint( const json& params,
     }//switch( type )
   }//for( const SpecUtils::SpectrumType type : spec_types )
 
-  conversation->m_peak_checkpoints.push_back( std::move( checkpoint ) );
+  history->m_peak_checkpoints.push_back( std::move( checkpoint ) );
 
   json result = json::object();
   result["checkpoint_name"] = checkpoint_name;
@@ -5443,13 +5317,13 @@ json ToolRegistry::executeCreatePeakCheckpoint( const json& params,
 
 json ToolRegistry::executeRestorePeaksToCheckpoint( const json& params,
                                                      InterSpec* interspec,
-                                                     shared_ptr<LlmInteraction> conversation )
+                                                     LlmConversationHistory* history )
 {
   if( !interspec )
     throw runtime_error( "No InterSpec session available." );
 
-  if( !conversation )
-    throw runtime_error( "Peak checkpoints require a conversation context." );
+  if( !history )
+    throw runtime_error( "Peak checkpoints require a conversation history context." );
 
   if( !params.contains( "checkpoint_name" ) || !params["checkpoint_name"].is_string() )
     throw runtime_error( "Missing required parameter 'checkpoint_name'." );
@@ -5458,8 +5332,8 @@ json ToolRegistry::executeRestorePeaksToCheckpoint( const json& params,
 
   // Find the checkpoint (search from newest to oldest)
   const PeakCheckpoint *found_cp = nullptr;
-  for( auto it = conversation->m_peak_checkpoints.rbegin();
-       it != conversation->m_peak_checkpoints.rend(); ++it )
+  for( auto it = history->m_peak_checkpoints.rbegin();
+       it != history->m_peak_checkpoints.rend(); ++it )
   {
     if( it->m_checkpoint_name == checkpoint_name )
     {
@@ -5471,7 +5345,7 @@ json ToolRegistry::executeRestorePeaksToCheckpoint( const json& params,
   if( !found_cp )
   {
     string available_names;
-    for( const PeakCheckpoint &cp : conversation->m_peak_checkpoints )
+    for( const PeakCheckpoint &cp : history->m_peak_checkpoints )
     {
       if( !available_names.empty() )
         available_names += ", ";
