@@ -48,7 +48,8 @@ enum class AgentType : int
   MainAgent,
   NuclideId,
   ActivityFit,
-  Isotopics
+  Isotopics,
+  DeepResearch
 };//enum class AgentType
 
 /** Convert AgentType to string name */
@@ -200,13 +201,15 @@ public:
     /** A HTTP enpoint to post questions to, to do deeper research.
      At the moment, this is a seperate service that is not distributed, so it likely will not be of use to anyone besides the primary InterSpec developer.
 
-     This field will be a value like: "http://localhost:8000/query", which if you fill it out, will cause the `deep_research` tool-call
-     to post a message formatted like:
+     This field will be a value like: "http://localhost:8000/query", which if you fill it out, will cause the
+     DeepResearch sub-agent to have access to the `query_deep_research_endpoint` tool-call, and post a message
+     formatted like:
      ```
      {"messages": [{"content": "what is the primary use of Ba133?"}], "corpora": ["example_corpra"]}
      ```
 
-     If you leave this field blank, the `deep_research` tool-call will not be available.
+     If you leave this field blank, the DeepResearch sub-agent still remains available, but without
+     the remote endpoint query tool-call.
      */
     std::string deep_research_url;
 

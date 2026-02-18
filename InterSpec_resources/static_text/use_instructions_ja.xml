@@ -341,7 +341,7 @@ the XHTML message for that entry.
       <b><code>Ctrl-h</code></b>：アプリ内<em>ヘルプ</em>を表示。
     </li>
     <li>
-      <b><code>Ctrl-i</code></b>：<em>ようこそ情報</em>画面を表示。
+      <b><code>Ctrl-i</code></b> または <b><code>F10</code></b>：メニューバーをキーボード操作で有効化（<u>I</u>nterSpecメニュー）。
     </li>
     <li>
       <b><code>Ctrl-k</code></b>：表示されているすべての参照フォトピーク線をクリア。

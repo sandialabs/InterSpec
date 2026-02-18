@@ -227,6 +227,39 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
   cell->addStyleClass( "CTRowDesc" );
   new WText(WString::tr("ctwidget-app-button-text-desc"), cell);
 
+  ++row;
+  cell = table->elementAt(row, 0);
+  cell->addStyleClass( "CTRowLabel" );
+  new WLabel(WString::tr("ctwidget-app-menubar-bg"), cell);
+  cell = table->elementAt(row, 1);
+  cell->addStyleClass( "CTSelect" );
+  m_colorSelects[AppMenuBarBackground] = new ColorSelect(0, cell);
+  cell = table->elementAt(row, 2);
+  cell->addStyleClass( "CTRowDesc" );
+  new WText(WString::tr("ctwidget-app-menubar-bg-desc"), cell);
+
+  ++row;
+  cell = table->elementAt(row, 0);
+  cell->addStyleClass( "CTRowLabel" );
+  new WLabel(WString::tr("ctwidget-app-menubar-active"), cell);
+  cell = table->elementAt(row, 1);
+  cell->addStyleClass( "CTSelect" );
+  m_colorSelects[AppMenuBarActiveColor] = new ColorSelect(0, cell);
+  cell = table->elementAt(row, 2);
+  cell->addStyleClass( "CTRowDesc" );
+  new WText(WString::tr("ctwidget-app-menubar-active-desc"), cell);
+
+  ++row;
+  cell = table->elementAt(row, 0);
+  cell->addStyleClass( "CTRowLabel" );
+  new WLabel(WString::tr("ctwidget-app-menubar-hover"), cell);
+  cell = table->elementAt(row, 1);
+  cell->addStyleClass( "CTSelect" );
+  m_colorSelects[AppMenuBarHoverColor] = new ColorSelect(0, cell);
+  cell = table->elementAt(row, 2);
+  cell->addStyleClass( "CTRowDesc" );
+  new WText(WString::tr("ctwidget-app-menubar-hover-desc"), cell);
+
 	++row;
 	cell = table->elementAt(row, 0);
 	cell->setColumnSpan(3);
@@ -906,6 +939,9 @@ void ColorThemeWidget::setTheme(const ColorTheme *theme, const bool modifieable)
   m_colorSelects[AppButtonBackground]->setColor( theme->appButtonBackground );
   m_colorSelects[AppButtonBorder]->setColor( theme->appButtonBorderColor );
   m_colorSelects[AppButtonText]->setColor( theme->appButtonTextColor );
+  m_colorSelects[AppMenuBarBackground]->setColor( theme->appMenuBarBackground );
+  m_colorSelects[AppMenuBarActiveColor]->setColor( theme->appMenuBarActiveColor );
+  m_colorSelects[AppMenuBarHoverColor]->setColor( theme->appMenuBarHoverColor );
 
   for( int i = 0; i < sm_numRefLineColors; ++i )
   {
@@ -1144,6 +1180,18 @@ void ColorThemeWidget::newColorSelectedCallback(const ColorThemeWidget::Selectab
 
     case AppButtonText:
       m_currentTheme->appButtonTextColor = m_colorSelects[color]->color();
+      break;
+
+    case AppMenuBarBackground:
+      m_currentTheme->appMenuBarBackground = m_colorSelects[color]->color();
+      break;
+
+    case AppMenuBarActiveColor:
+      m_currentTheme->appMenuBarActiveColor = m_colorSelects[color]->color();
+      break;
+
+    case AppMenuBarHoverColor:
+      m_currentTheme->appMenuBarHoverColor = m_colorSelects[color]->color();
       break;
 
 	  case NumSelectableColors:

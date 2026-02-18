@@ -342,7 +342,7 @@ tetapi item menu akan dinonaktifkan jika tidak ada latar belakang atau spektrum 
       <b><code>Ctrl-h</code></b>: Menampilkan <em>Bantuan</em> dalam aplikasi.
     </li>
     <li>
-      <b><code>Ctrl-i</code></b>: Menampilkan layar <em>Informasi Selamat Datang</em>.
+      <b><code>Ctrl-i</code></b> atau <b><code>F10</code></b>: Mengaktifkan bilah menu untuk navigasi keyboard (menu <u>I</u>nterSpec).
     </li>
     <li>
       <b><code>Ctrl-k</code></b>: Menghapus semua garis fotopuncak referensi yang ditampilkan.

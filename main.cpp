@@ -74,10 +74,6 @@ int main( int argc, char **argv )
   bool batch_peak_fit = false, batch_act_fit = false;
 #endif
   
-#if( USE_LLM_INTERFACE )
-  static_assert( !BUILD_FOR_WEB_DEPLOYMENT, "MCP interface can not be enabled for web deployment." );
-#endif
-  
 #if( BUILD_FOR_WEB_DEPLOYMENT )
   std::string http_address = "127.0.0.1";
   static_assert( !BUILD_AS_LOCAL_SERVER, "Web and local server should not both be enabled");

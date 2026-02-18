@@ -50,8 +50,9 @@ runs:
     - name: Ccache for gh actions
       uses: hendrikmuhs/ccache-action@v1.2.7
       with: 
-        key: sccache-${{ github.job }}-${{ runner.os }}
-        # key: sccache-${{ github.job }}-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt') }}
+        # Include git SHA so cache invalidates per-commit; avoids stale object files from
+        # previous builds causing linker errors (e.g., unresolved ReferencePhotopeakDisplay symbols)
+        key: sccache-${{ github.job }}-${{ runner.os }}-${{ github.sha }}
         max-size: 10G
         variant: sccache
         append-timestamp: false

@@ -355,45 +355,83 @@ void InterSpecApp::setupDomEnvironment()
     //  Note, at least on mac: ctrl+shift+z gives e.key=='Z', where meta+shift+z gives e.key=='z'.
     if( !e || !e.key || e.altKey || (e.shiftKey && ((e.key != 'Z') && (e.key != 'z'))) || (typeof e.keyCode === 'undefined') )
       return;
-    
+
+    // Activate menu bar for keyboard browsing (Ctrl/Cmd+I or F10)
+    function activateMenuBar(){
+      if( $(".Wt-dialogcover").is(':visible') )
+        return;
+      var $firstBtn = $(".MenuLabel.PopupMenuParentButton").first();
+      if( !$firstBtn.length )
+        return;
+      var menuId = $firstBtn.attr('data-menu-id');
+      if( !menuId )
+        return;
+      if( !Wt.WT || typeof Wt.WT.ParentClicked !== 'function' )
+        return;
+      e.preventDefault();
+      e.stopPropagation();
+      Wt.WT.ParentClicked( menuId, $firstBtn.attr('id'), Wt.WT );
+      setTimeout(function(){
+        if( Wt.WT && typeof Wt.WT.MenuArrowNav === 'function' )
+          Wt.WT.MenuArrowNav( 40, Wt.WT );
+      }, 50);
+    }
+
     let code = 0;
     if( e.ctrlKey || e.metaKey )
     {
       switch( e.key ){
         case '1': case '2': case '3': case '4': case '5': case '6': case '7': //Shortcuts to switch to the various tabs
         case 'h': // Help dialog
-        case 'i': // Info about InterSpec
         case 'k': // Clear showing reference photopeak lines
         case 's': // Store
         case 'l': // Log/Linear
-        case 'f': case 'F': // Show FAQs - for development only
         case 'e': case 'E': // Export file dialog
           if( $(".Wt-dialogcover").is(':visible') ) // Dont do shortcut when there is a blocking-dialog showing
             return;
           code = e.key.charCodeAt(0);
           break;
+        case 'i': case 'I': // Activate InterSpec menu bar for keyboard browsing
+          activateMenuBar();
+          return;
         case 'z': case 'Z': //undo/redo
           code = (e.shiftKey ? 'Z' : 'z').charCodeAt(0);
           break;
-          
+
         default:  //Unused - nothing to see here - let the event propagate up
           return;
       }//switch( e.key )
-    }else{
+    }else
+    {
+      if( e.key === 'F10' ){ // F10 also activates menu bar (standard desktop convention)
+        activateMenuBar();
+        return;
+      }
+
+      var arrowCode = 0;
       switch( e.key ){
-        case "Left":  case "ArrowLeft":  code = 37; break;
-        case "Up":    case "ArrowUp":    code = 38; break;
-        case "Right": case "ArrowRight": code = 39; break;
-        case "Down":  case "ArrowDown":  code = 40; break;
+        case "Left":  case "ArrowLeft":  arrowCode = 37; break;
+        case "Up":    case "ArrowUp":    arrowCode = 38; break;
+        case "Right": case "ArrowRight": arrowCode = 39; break;
+        case "Down":  case "ArrowDown":  arrowCode = 40; break;
+        case "Enter":                    arrowCode = 13; break;
+        case " ":                        arrowCode = 32; break;
         default:  //Unused - nothing to see here - let the event propagate up
           return;
       }//switch( e.key )
-    
-      // No menus are active - dont send the signal
+
+      // No menus are active - dont handle
       if( $(".MenuLabel.PopupMenuParentButton.active").length === 0 )
         return;
+
+      // Handle menu keyboard navigation entirely in JS (no server round-trip)
+      e.preventDefault();
+      e.stopPropagation();
+      if( Wt.WT && typeof Wt.WT.MenuArrowNav === 'function' )
+        Wt.WT.MenuArrowNav( arrowCode, Wt.WT );
+      return;
     }//if( e.ctrlKey ) / else
-    
+
     e.preventDefault();
     e.stopPropagation();
     Wt.emit( id, {name:'hotkey'}, code );
@@ -406,7 +444,9 @@ void InterSpecApp::setupDomEnvironment()
   //"const root = document.querySelector('.Wt-domRoot');"
   //"root.id"
   
-  const string jsfcn = "document.addEventListener('keydown'," + wApp->javaScriptClass() + ".appKeyDown);";
+  // Use capture phase so menu keyboard navigation (arrows, Enter, Space) takes priority
+  //  over any focused input elements when a menu is open.
+  const string jsfcn = "document.addEventListener('keydown'," + wApp->javaScriptClass() + ".appKeyDown,true);";
   doJavaScript( jsfcn );
   
   

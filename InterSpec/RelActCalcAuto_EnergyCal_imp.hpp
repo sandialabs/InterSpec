@@ -423,7 +423,7 @@ T fullrangefraction_energy( const T bin,
                                       const std::vector<CubicSplineNodeT<T>> &dev_pair_spline )
 {
   const T x = bin / static_cast<double>(nchannel);
-  const size_t ncoeffs = std::min( coeffs.size(), size_t(4) );
+  const size_t ncoeffs = (std::min)( coeffs.size(), size_t(4) );
 
   T val = T(0.0);
   T x_power = T(1.0);
@@ -836,7 +836,7 @@ T find_fullrangefraction_channel( const T energy,
 
   // Count non-zero coefficients
   size_t ncoefs = 0;
-  for( size_t i = 0; i < std::min(coeffs.size(), size_t(4)); ++i )
+  for( size_t i = 0; i < (std::min)(coeffs.size(), size_t(4)); ++i )
   {
     double coef_val;
     if constexpr ( std::is_same_v<T, double> )
@@ -919,7 +919,7 @@ T find_fullrangefraction_channel( const T energy,
   // Check if energy is in range
   if( (energy < (min)(e_low, e_high)) || (energy > (max)(e_low, e_high)) )
   {
-    if( energy < min(e_low, e_high) )
+    if( energy < (min)(e_low, e_high) )
     {
       T answer = e_low;
       if constexpr ( !std::is_same_v<T, double> )

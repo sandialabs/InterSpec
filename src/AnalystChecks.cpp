@@ -946,7 +946,9 @@ namespace AnalystChecks
         sources.push_back( source );
       }//for( const string &src : options.sources )
 
-      if( sources.empty() )
+      const bool fit_norm_peaks = options.fitSrcPeaksOptions.testFlag( FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaks )
+                                  || options.fitSrcPeaksOptions.testFlag( FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaksDontUse );
+      if( sources.empty() && !fit_norm_peaks )
         throw runtime_error( "No sources specified" );
 
       GetUserPeakOptions user_peak_options;
@@ -957,10 +959,7 @@ namespace AnalystChecks
       const GetUserPeakStatus user_peaks_status = AnalystChecks::get_user_peaks( user_peak_options, interspec );
       const std::vector<std::shared_ptr<const PeakDef>> &user_peaks = user_peaks_status.peaks;
       
-      Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> fit_options;
-      //fit_options |= FitPeaksForNuclides::FitSrcPeaksOptions::DoNotUseExistingRois;
-      //fit_options |= FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaks;
-      //fit_options |= FitPeaksForNuclides::FitSrcPeaksOptions::ExistingPeaksAsFreePeak;
+      const Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> fit_options = options.fitSrcPeaksOptions;
       
       FitPeaksForNuclides::PeakFitForNuclideConfig fit_config;
 

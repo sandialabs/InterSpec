@@ -5477,24 +5477,14 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
     const int num_isotopes = static_cast<int>(cost_functor->m_isotopes.size());
     if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
     {
-      solution.m_dof = num_peaks - (num_isotopes - 1);
-      if( input.phys_model_self_atten )
-      {
-        solution.m_dof -= static_cast<int>(input.phys_model_self_atten->fit_areal_density);
-        if( !input.phys_model_self_atten->material )
-          solution.m_dof -= static_cast<int>(input.phys_model_self_atten->fit_atomic_number);
-      }
-
-      for( const auto &opt : input.phys_model_external_attens )
-      {
-        solution.m_dof -= static_cast<int>(opt->fit_areal_density);
-        if( !opt->material )
-          solution.m_dof -= static_cast<int>(opt->fit_atomic_number);
-      }
-
-      solution.m_dof -= (input.phys_model_use_hoerl ? 2 : 1); // for b and c
+      // Physical Model has no normalization degeneracy (the DRF provides the absolute efficiency
+      // scale), so all num_parameters are truly free. DOF = num_peaks - num_parameters.
+      solution.m_dof = num_peaks - static_cast<int>( num_parameters );
     }else
     {
+      // For empirical equations there is a normalization degeneracy between the overall scale of
+      // the activities and the rel-eff curve, so only (num_isotopes - 1) activity ratios are
+      // truly free (the absolute scale is absorbed into the rel-eff normalization constraint).
       solution.m_dof = static_cast<int>( num_peaks - (eqn_order + 1) - (num_isotopes - 1) );
     }
 

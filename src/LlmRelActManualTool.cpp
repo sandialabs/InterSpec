@@ -48,6 +48,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/RelActCalc.h"
+#include "InterSpec/AnalystChecks.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/RelActManualGui.h"
 #include "InterSpec/RelActCalcManual.h"
@@ -232,7 +233,15 @@ nlohmann::json executePeakBasedRelativeEfficiency(
   
   if( has_peak_energies && has_sources )
     throw runtime_error( "'peak_energies' and 'sources' are mutually exclusive" );
-  
+
+  const bool has_energy_ranges = params.contains( "energy_ranges" ) && params["energy_ranges"].is_array();
+  if( has_energy_ranges && has_peak_energies )
+    throw runtime_error( "'energy_ranges' can only be used with 'sources', not with 'peak_energies'" );
+
+  const bool has_exclude_peaks = params.contains( "exclude_peak_energies" ) && params["exclude_peak_energies"].is_array();
+  if( has_exclude_peaks && has_peak_energies )
+    throw runtime_error( "'exclude_peak_energies' can only be used with 'sources', not with 'peak_energies'" );
+
   // Parse optional parameters
   RelActCalc::RelEffEqnForm eqn_form = RelActCalc::RelEffEqnForm::LnY;
   if( params.contains("eqn_form") && params["eqn_form"].is_string() )
@@ -257,7 +266,50 @@ nlohmann::json executePeakBasedRelativeEfficiency(
   bool save_to_state = false;
   if( params.contains("save_to_state") && params["save_to_state"].is_boolean() )
     save_to_state = params["save_to_state"].get<bool>();
-  
+
+  // Parse energy_ranges if provided (only valid with sources)
+  vector<pair<double, double>> energy_ranges;
+  if( has_energy_ranges )
+  {
+    const double spec_lower = static_cast<double>( foreground->gamma_energy_min() );
+    const double spec_upper = static_cast<double>( foreground->gamma_energy_max() );
+
+    for( const auto &range : params["energy_ranges"] )
+    {
+      if( !range.is_object() )
+        continue;
+
+      const bool has_lower = range.contains( "lower_energy" ) && range["lower_energy"].is_number();
+      const bool has_upper = range.contains( "upper_energy" ) && range["upper_energy"].is_number();
+
+      if( !has_lower && !has_upper )
+        throw runtime_error( "Each energy range must specify at least one of 'lower_energy' or 'upper_energy'" );
+
+      const double lower = has_lower ? range["lower_energy"].get<double>() : spec_lower;
+      const double upper = has_upper ? range["upper_energy"].get<double>() : spec_upper;
+
+      if( lower > upper )
+        throw runtime_error( "Energy range lower bound (" + to_string( lower )
+                            + " keV) must not exceed upper bound (" + to_string( upper ) + " keV)" );
+
+      energy_ranges.emplace_back( lower, upper );
+    }//for( each range in energy_ranges )
+
+    if( energy_ranges.empty() )
+      throw runtime_error( "'energy_ranges' was specified but contained no valid range objects" );
+  }//if( has_energy_ranges )
+
+  // Parse exclude_peak_energies if provided (only valid with sources)
+  vector<double> exclude_peak_energies;
+  if( has_exclude_peaks )
+  {
+    for( const auto &e : params["exclude_peak_energies"] )
+    {
+      if( e.is_number() )
+        exclude_peak_energies.push_back( e.get<double>() );
+    }
+  }//if( has_exclude_peaks )
+
   // Parse nuclide_ages if provided
   map<string, double> nuclide_ages_input;
   if( params.contains("nuclide_ages") && params["nuclide_ages"].is_object() )
@@ -304,14 +356,21 @@ nlohmann::json executePeakBasedRelativeEfficiency(
   if( background_subtract )
   {
     background = interspec->displayedHistogram( SpecUtils::SpectrumType::Background );
-    
-    shared_ptr<SpecMeas> back_meas = interspec->measurment( SpecUtils::SpectrumType::Background );
-    if( back_meas )
+
+    AnalystChecks::DetectedPeaksOptions back_opts;
+    back_opts.specType = SpecUtils::SpectrumType::Background;
+    back_opts.nonBackgroundPeaksOnly = false;
+
+    try
     {
-      set<int> back_samples = interspec->displayedSamples( SpecUtils::SpectrumType::Background );
-      shared_ptr<const deque<shared_ptr<const PeakDef>>> back_peaks_ptr = back_meas->peaks( back_samples );
-      if( back_peaks_ptr )
-        background_peaks = *back_peaks_ptr;
+      const AnalystChecks::DetectedPeakStatus back_status
+        = AnalystChecks::detected_peaks( back_opts, interspec );
+
+      for( const shared_ptr<const PeakDef> &p : back_status.peaks )
+        background_peaks.push_back( p );
+    }catch( ... )
+    {
+      // If background peak detection fails, just proceed without background peaks
     }
   }//if( background_subtract )
   
@@ -384,17 +443,63 @@ nlohmann::json executePeakBasedRelativeEfficiency(
       else
         continue;
       
-      if( target_sources.count(peak_source) )
+      if( target_sources.count( peak_source ) )
+      {
+        if( !energy_ranges.empty() )
+        {
+          const double peak_energy = p->mean();
+
+          bool in_range = false;
+          for( const pair<double, double> &range : energy_ranges )
+          {
+            if( (peak_energy >= range.first) && (peak_energy <= range.second) )
+            {
+              in_range = true;
+              break;
+            }
+          }//for( each energy range )
+
+          if( !in_range )
+            continue;
+        }//if( energy_ranges specified )
+
+        // Check if this peak should be excluded by energy
+        if( !exclude_peak_energies.empty() )
+        {
+          const double peak_mean = p->mean();
+          const double fwhm = p->gausPeak() ? p->fwhm() : 0.25 * (p->upperX() - p->lowerX());
+          const double tol = 1.25 * fwhm;
+
+          bool excluded = false;
+          for( const double excl_energy : exclude_peak_energies )
+          {
+            if( fabs( peak_mean - excl_energy ) < tol )
+            {
+              excluded = true;
+              break;
+            }
+          }//for( each exclude energy )
+
+          if( excluded )
+            continue;
+        }//if( exclude_peak_energies specified )
+
         selected_peaks.push_back( p );
+      }
     }//for( peaks )
-    
+
     if( selected_peaks.empty() )
     {
       string sources_csv;
       for( const string &s : target_sources )
         sources_csv += (sources_csv.empty() ? "" : ", ") + s;
-      throw runtime_error( "No peaks found with the specified sources ("
-                          + sources_csv + ") assigned to them. Please add analysis peaks for these sources and try again." );
+
+      string msg = "No peaks found with the specified sources (" + sources_csv + ")";
+      if( !energy_ranges.empty() )
+        msg += " within the specified energy range(s)";
+      msg += " assigned to them. Please add analysis peaks for these sources and try again.";
+
+      throw runtime_error( msg );
     }
   }//if( has_peak_energies ) / else
   
@@ -701,7 +806,16 @@ nlohmann::json executePeakBasedRelativeEfficiency(
   }
   
   result["success"] = true;
-  
+
+  // If sources were specified, return the peak energies actually used
+  if( has_sources )
+  {
+    json used_energies = json::array();
+    for( const shared_ptr<const PeakDef> &p : selected_peaks )
+      used_energies.push_back( p->mean() );
+    result["peak_energies_used"] = used_energies;
+  }
+
   // Sources with relative activities and mass fractions
   json sources_arr = json::array();
   for( const auto &rel_act : solution.m_rel_activities )

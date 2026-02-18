@@ -5528,7 +5528,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         for( size_t col = 0; col < num_pars; ++col )
         {
           const optional<double> col_mass_mult = cost_functor->mass_constraint_multiple(col,parameters);
-          const double col_mult = col_mass_mult.has_value() ? *col_mass_mult : solution.m_parameter_scale_factors[row];
+          const double col_mult = col_mass_mult.has_value() ? *col_mass_mult : solution.m_parameter_scale_factors[col];
 
           solution.m_phys_units_cov[row][col] *= row_mult*col_mult;
         }//for( size_t col = 0; col < num_pars; ++col )
@@ -6086,9 +6086,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           }
           for( size_t i = 0; i < outer_curve.phys_model_external_atten.size(); ++i )
           {
-            if( outer_curve.phys_model_self_atten )
+            if( outer_curve.phys_model_external_atten[i] )
             {
-              auto res = get_shield_info( *outer_curve.phys_model_self_atten, solution.m_final_parameters, re_start_index + 2 + 2*i );
+              auto res = get_shield_info( *outer_curve.phys_model_external_atten[i], solution.m_final_parameters, re_start_index + 2 + 2*i );
               phys_model_result.shields_from_other_curves.push_back( res );
             }
           }

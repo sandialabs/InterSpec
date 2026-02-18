@@ -25,6 +25,7 @@
 
 #include <Wt/WDialog>
 #include <Wt/WServer>
+#include <Wt/WTemplate>
 #include <Wt/WPushButton>
 #include <Wt/WApplication>
 #include <Wt/WContainerWidget>
@@ -192,6 +193,26 @@ void SimpleDialog::doNotUseMultpleBringstoFront()
 {
   m_multipleBringToFront = false;
 }
+
+
+void SimpleDialog::rejectWhenEscapePressed( bool enable )
+{
+  WDialog::rejectWhenEscapePressed( enable );
+  
+  if( enable == m_escapeConnection1.connected() )
+    return;
+  
+  if( enable )
+  {
+    WWidget * const implw = implementation();
+    WTemplate * const impl = dynamic_cast<WTemplate *>( implw );
+    if( impl )
+      m_escapeConnection1 = impl->escapePressed().connect( this, &SimpleDialog::reject );
+  }else
+  {
+    m_escapeConnection1.disconnect();
+  }
+}//void rejectWhenEscapePressed( bool enable )
 
 Wt::WPushButton *SimpleDialog::addButton( const Wt::WString &txt )
 {

@@ -342,7 +342,7 @@ but menu items will be disabled if no background or secondary spectrum is loaded
       <b><code>Ctrl-h</code></b>: Shows the in-app <em><u>H</u>elp</em>.
     </li>
     <li>
-      <b><code>Ctrl-i</code></b>: Shows the <em>Welcome <u>I</u>nformation</em> screen.
+      <b><code>Ctrl-i</code></b> or <b><code>F10</code></b>: Activates the menu bar for keyboard browsing (<u>I</u>nterSpec menu).
     </li>
     <li>
       <b><code>Ctrl-k</code></b>: Clears all showing reference photopea<u>k</u> lines.

@@ -342,7 +342,7 @@ the XHTML message for that entry.
       <b><code>Ctrl-h</code></b>: يظهر <em>المساعدة</em> داخل التطبيق.
     </li>
     <li>
-      <b><code>Ctrl-i</code></b>: يظهر شاشة <em>معلومات الترحيب</em>.
+      <b><code>Ctrl-i</code></b> أو <b><code>F10</code></b>: تفعيل شريط القوائم للتنقل بلوحة المفاتيح (قائمة <u>I</u>nterSpec).
     </li>
     <li>
       <b><code>Ctrl-k</code></b>: يمسح جميع خطوط القمم المرجعية المعروضة.

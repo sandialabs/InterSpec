@@ -56,7 +56,7 @@ class NativeFloatSpinBox;
 class PeakModel;
 class RelEffChart;
 class RelActTxtResults;
-class ReferenceLineInfo;
+struct ReferenceLineInfo;
 class DetectorPeakResponse;
 
 class SimpleDialog;

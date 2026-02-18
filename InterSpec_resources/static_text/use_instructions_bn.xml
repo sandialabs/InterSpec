@@ -341,7 +341,7 @@ the XHTML message for that entry.
       <b><code>Ctrl-h</code></b>: ইন-অ্যাপ <em>সাহায্য</em> দেখায়।
     </li>
     <li>
-      <b><code>Ctrl-i</code></b>: <em>স্বাগত তথ্য</em> স্ক্রীন দেখায়।
+      <b><code>Ctrl-i</code></b> বা <b><code>F10</code></b>: কীবোর্ড ব্রাউজিংয়ের জন্য মেনু বার সক্রিয় করে (<u>I</u>nterSpec মেনু)।
     </li>
     <li>
       <b><code>Ctrl-k</code></b>: সমস্ত প্রদর্শিত রেফারেন্স ফটোপিক রেখা সাফ করে।

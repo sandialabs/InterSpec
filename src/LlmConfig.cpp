@@ -31,6 +31,7 @@ std::string agentTypeToString( AgentType type )
     case AgentType::NuclideId:       return "NuclideId";
     case AgentType::ActivityFit:     return "ActivityFit";
     case AgentType::Isotopics:       return "Isotopics";
+    case AgentType::DeepResearch:    return "DeepResearch";
   }
 
   throw std::invalid_argument( "Unknown AgentType" );
@@ -43,6 +44,7 @@ AgentType stringToAgentType( const std::string &name )
   if( name == "NuclideId" )       return AgentType::NuclideId;
   if( name == "ActivityFit" )     return AgentType::ActivityFit;
   if( name == "Isotopics" )       return AgentType::Isotopics;
+  if( name == "DeepResearch" )    return AgentType::DeepResearch;
 
   throw std::invalid_argument( "Unknown agent name: " + name );
 }//stringToAgentType(...)
@@ -121,6 +123,7 @@ std::shared_ptr<LlmConfig> LlmConfig::load()
     requireAgent( AgentType::MainAgent, *config );
     requireAgent( AgentType::NuclideId, *config );
     requireAgent( AgentType::ActivityFit, *config );
+    requireAgent( AgentType::DeepResearch, *config );
   }catch( const std::exception &e )
   {
     // If user provided any override file and it failed to parse, return nullptr
@@ -150,7 +153,7 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
     SpecUtils::load_file_data( llmConfigPath.c_str(), xmlContent );
 
     rapidxml::xml_document<char> doc;
-    const int flags = (rapidxml::parse_normalize_whitespace | rapidxml::parse_trim_whitespace);
+    const int flags = rapidxml::parse_trim_whitespace; // parse_normalize_whitespace would collapse newlines in text content
 
     doc.parse<flags>( &xmlContent[0] );
 
@@ -404,7 +407,7 @@ std::vector<LlmConfig::ToolConfig> LlmConfig::loadToolConfigsFromFile( const std
     SpecUtils::load_file_data( toolsConfigPath.c_str(), xmlContent );
 
     rapidxml::xml_document<char> doc;
-    const int flags = (rapidxml::parse_normalize_whitespace | rapidxml::parse_trim_whitespace);
+    const int flags = rapidxml::parse_trim_whitespace; // parse_normalize_whitespace would collapse newlines in text content
 
     doc.parse<flags>( &xmlContent[0] );
 
@@ -817,7 +820,7 @@ std::vector<LlmConfig::AgentConfig> LlmConfig::loadAgentsFromFile( const std::st
     SpecUtils::load_file_data( agentsConfigPath.c_str(), xmlContent );
 
     rapidxml::xml_document<char> doc;
-    const int flags = (rapidxml::parse_normalize_whitespace | rapidxml::parse_trim_whitespace);
+    const int flags = rapidxml::parse_trim_whitespace; // parse_normalize_whitespace would collapse newlines in text content
 
     doc.parse<flags>( &xmlContent[0] );
 

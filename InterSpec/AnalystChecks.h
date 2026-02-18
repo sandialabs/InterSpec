@@ -33,6 +33,9 @@
 
 #include "SpecUtils/SpecFile.h"
 
+#include <Wt/WFlags>
+
+#include "InterSpec/FitPeaksForNuclides.h"
 #include "InterSpec/ReactionGamma.h" //for ReactionGamma::Reaction
 
 // Forward declarations
@@ -117,7 +120,8 @@ namespace AnalystChecks
 
   struct FitPeaksForNuclideOptions {
     std::vector<std::string> sources;
-    bool doNotAddPeaksToUserSession;
+    bool doNotAddPeaksToUserSession = false;
+    Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> fitSrcPeaksOptions;
   };
   
   struct FitPeaksForNuclideStatus

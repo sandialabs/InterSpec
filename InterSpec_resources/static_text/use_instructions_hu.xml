@@ -342,7 +342,7 @@ de a menü elemek letiltásra kerülnek, ha nincs háttér vagy másodlagos spek
       <b><code>Ctrl-h</code></b>: Megjeleníti az alkalmazáson belüli <em>Segítséget</em>.
     </li>
     <li>
-      <b><code>Ctrl-i</code></b>: Megjeleníti az <em>Üdvözlő Információs</em> képernyőt.
+      <b><code>Ctrl-i</code></b> vagy <b><code>F10</code></b>: Aktiválja a menüsort a billentyűzetes navigációhoz (<u>I</u>nterSpec menü).
     </li>
     <li>
       <b><code>Ctrl-k</code></b>: Törli az összes megjelenített hivatkozási fotocsúcs vonalat.

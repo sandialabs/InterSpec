@@ -26,6 +26,7 @@
 #include "InterSpec_config.h"
 
 #include <set>
+#include <array>
 #include <atomic>
 #include <string>
 #include <memory>
@@ -1229,7 +1230,7 @@ struct RelActAutoSolution
  
    Implemented for values of 2 or 3; lower channel energy calibration will only ever use up to 2.
    */
-  constexpr static size_t sm_num_energy_cal_pars = 2;
+  enum : size_t { sm_num_energy_cal_pars = 2 };
   
   /** It seems parameters centered around zero maybe don't work quite as well, we'll center the energy calibration
    parameters at 1, and allow to vary between 0 and 2.

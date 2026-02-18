@@ -174,6 +174,21 @@ struct ColorTheme
    */
   Wt::WColor appButtonTextColor;
 
+  /** Background color for the menu bar and menu-bar buttons (default, non-hover, non-active state).
+      Applied via CSS variable --interspec-menubar-background.
+   */
+  Wt::WColor appMenuBarBackground;
+
+  /** Background color for menu-bar buttons when the menu is open (active state).
+      Applied via CSS variable --interspec-menubar-active-color.
+   */
+  Wt::WColor appMenuBarActiveColor;
+
+  /** Background color for menu-bar buttons on hover (non-active state).
+      Applied via CSS variable --interspec-menubar-hover-color.
+   */
+  Wt::WColor appMenuBarHoverColor;
+
   /** Line color of foreground spectrum. */
   Wt::WColor foregroundLine;
   
