@@ -549,12 +549,15 @@ struct RelEffSolution
    */
   double m_chi2 = 0.0;
   
-  /** An estimate for the number of degrees of freedom in the fit for equation parameters.
+  /** The number of degrees of freedom in the fit.
    
-   Note: right now just have as just the number of peaks used minus number of equation parameters fit for, minus one less than the
-   number of isotopes - probably off by one, or more - need to think on this and come back to it.
+   For empirical rel-eff equations: num_peaks - (eqn_order + 1) - (num_isotopes - 1).
+   The (num_isotopes - 1) reflects the normalization degeneracy between the overall activity
+   scale and the rel-eff curve normalization.
    
-   For Physical Model, this estimate is totally not valid, and can even be negative.
+   For Physical Model: num_peaks - num_parameters, where num_parameters counts all free
+   parameters (isotope activities, shield areal densities, atomic numbers, Hoerl b/c).
+   The Physical Model has no normalization degeneracy since the DRF provides an absolute scale.
    */
   int m_dof = 0;
   

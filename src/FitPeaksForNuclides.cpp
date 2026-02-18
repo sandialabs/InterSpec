@@ -1059,13 +1059,34 @@ void add_escape_peak_floating_peaks_if_appropriate(
       }
     }
     
-    if( !parent_peak )
-      continue;  // No parent peak found in auto_search_peaks
-    
     // Calculate theoretical escape peak energies based on the candidate's nominal energy
     // Use theoretical energies for floating peaks, not fitted parent energy
     const double se_energy = candidate.parent_energy - single_escape_offset;
     const double de_energy = candidate.parent_energy - double_escape_offset;
+
+    if( !parent_peak )
+    {
+      // No parent peak found in auto_search_peaks - remove any orphaned escape floating peaks
+      // that may have been copied from a previous solution's options but now lack a ROI.
+      // This mirrors how add_floating_511_peak_if_appropriate removes the 511 peak when
+      // there is no ROI covering it.
+      const double fp_tolerance = 1.0; // keV
+      auto &fps = options.floating_peaks;
+      fps.erase( std::remove_if( begin(fps), end(fps),
+        [&]( const RelActCalcAuto::FloatingPeak &fp ) -> bool {
+          if( std::fabs( fp.energy - se_energy ) > fp_tolerance
+              && std::fabs( fp.energy - de_energy ) > fp_tolerance )
+            return false;
+          // Only remove if the floating peak has no covering ROI
+          for( const RelActCalcAuto::RoiRange &roi : options.rois )
+          {
+            if( (fp.energy >= roi.lower_energy) && (fp.energy <= roi.upper_energy) )
+              return false;
+          }
+          return true;
+        } ), end(fps) );
+      continue;
+    }
     
     // Calculate expected positions based on fitted parent for checking auto_search_peaks
     const double se_expected_from_fit = parent_peak->mean() - single_escape_offset;
@@ -1391,6 +1412,30 @@ void resolve_overlapping_rois( std::vector<RelActCalcAuto::RoiRange> &rois,
   
   rois = resolved_rois;
 }//resolve_overlapping_rois(...)
+
+
+/** Remove any floating peaks that are not covered by any ROI.
+
+ This is called before each RelActCalcAuto::solve() invocation to guard against
+ orphaned floating peaks inherited from a previous solution's options (e.g. when
+ the iterative refinement loop replaces ROIs with re-clustered ones that no longer
+ cover an earlier floating peak).  The solver throws if a floating peak has no
+ covering ROI, so we clean up proactively here rather than duplicating the logic
+ in every add_* helper.
+ */
+void remove_floating_peaks_without_roi( RelActCalcAuto::Options &options )
+{
+  auto &fps = options.floating_peaks;
+  fps.erase( std::remove_if( begin(fps), end(fps),
+    [&]( const RelActCalcAuto::FloatingPeak &fp ) -> bool {
+      for( const RelActCalcAuto::RoiRange &roi : options.rois )
+      {
+        if( (fp.energy >= roi.lower_energy) && (fp.energy <= roi.upper_energy) )
+          return false;
+      }
+      return true;  // no ROI covers this floating peak – remove it
+    } ), end(fps) );
+}//remove_floating_peaks_without_roi(...)
 
 
 /** Assign escape peak relationships for high-energy gamma lines if appropriate.
@@ -5185,7 +5230,8 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   {
     // Resolve any overlapping ROIs (may occur from escape peak ROIs)
     resolve_overlapping_rois( options.rois, options.floating_peaks );
-    
+    remove_floating_peaks_without_roi( options );
+
     // Call RelActAuto::solve with provided options
     RelActCalcAuto::RelActAutoSolution solution = RelActCalcAuto::solve(
       options, orig_foreground, orig_background, drf, auto_search_peaks
@@ -5207,6 +5253,8 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 
       add_floating_511_peak_if_appropriate( no_ecal_opts, sources, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy );
       add_escape_peak_floating_peaks_if_appropriate( no_ecal_opts, auto_search_peaks, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy, config );
+      resolve_overlapping_rois( no_ecal_opts.rois, no_ecal_opts.floating_peaks );
+      remove_floating_peaks_without_roi( no_ecal_opts );
 
       RelActCalcAuto::RelActAutoSolution trial_solution = RelActCalcAuto::solve(
         no_ecal_opts, orig_foreground, orig_background, drf, auto_search_peaks
@@ -5262,6 +5310,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         add_escape_peak_floating_peaks_if_appropriate( desperation_opts, auto_search_peaks, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy, config );
 
         resolve_overlapping_rois( desperation_opts.rois, desperation_opts.floating_peaks );
+        remove_floating_peaks_without_roi( desperation_opts );
 
         trial_solution = RelActCalcAuto::solve( desperation_opts, orig_foreground, orig_background, drf, auto_search_peaks );
       }//If( still a bad solution )
@@ -5454,6 +5503,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             add_escape_peak_floating_peaks_if_appropriate( desperation_opts, auto_search_peaks, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy, config );
 
             resolve_overlapping_rois( desperation_opts.rois, desperation_opts.floating_peaks );
+            remove_floating_peaks_without_roi( desperation_opts );
 
             RelActCalcAuto::RelActAutoSolution desperation_solution = RelActCalcAuto::solve(
               desperation_opts, foreground, background, drf, auto_search_peaks
@@ -5519,6 +5569,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         add_escape_peak_floating_peaks_if_appropriate( refined_options, auto_search_peaks, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy, config );
 
         resolve_overlapping_rois( refined_options.rois, refined_options.floating_peaks );
+        remove_floating_peaks_without_roi( refined_options );
 
         RelActCalcAuto::RelActAutoSolution refined_solution
             = RelActCalcAuto::solve( refined_options, foreground, background, drf, auto_search_peaks );

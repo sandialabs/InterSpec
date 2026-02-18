@@ -64,6 +64,10 @@
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/EnergyCalibration.h"
+
+#include "InterSpec/EnergyCal.h"
+#include "InterSpec/PeakModel.h"
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -1181,267 +1185,277 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
   // Assign executor based on tool name
   if( toolName == "get_detected_peaks" )
   {
-    tool.executor = [](const json& params, InterSpec* interspec) -> json {
+    tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
       return executePeakDetection(params, interspec);
       };
     }else if( toolName == "add_analysis_peak" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executePeakFit(params, interspec);
       };
     }else if( toolName == "edit_analysis_peak" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeEditAnalysisPeak(params, interspec);
       };
     }else if( toolName == "escape_peak_check" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeEscapePeakCheck(params, interspec);
       };
     }else if( toolName == "sum_peak_check" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeSumPeakCheck(params, interspec);
       };
     }else if( toolName == "get_analysis_peaks" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeGetUserPeaks(params, interspec);
       };
     }else if( toolName == "get_identified_sources" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeGetIdentifiedSources(params, interspec);
       };
     }else if( toolName == "get_unidentified_peaks" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeGetUnidentifiedDetectedPeaks(params, interspec);
       };
     }else if( toolName == "get_spectrum_info" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeGetSpectrumInfo(params, interspec);
       };
     }else if( toolName == "primary_gammas_for_source" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeGetCharacteristicGammasForSource(params);
       };
     }else if( toolName == "sources_with_primary_gammas_in_energy_range" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeGetNuclidesWithCharacteristicsInEnergyRange(params, interspec);
       };
     }else if( toolName == "sources_with_primary_gammas_near_energy" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeGetNuclidesWithCharacteristicsInEnergyRange(params, interspec);
       };
     }
 #if( !INCLUDE_NOTES_AND_ASSOCIATED_SRCS_WITH_SRC_INFO )
     else if( toolName == "sources_associated_with_source" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeGetAssociatedSources(params);
       };
     }else if( toolName == "analyst_notes_for_source" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeGetSourceAnalystNotes(params);
       };
     }
 #endif
     else if( toolName == "source_info" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeGetSourceInfo(params, interspec);
       };
     }else if( toolName == "nuclide_decay_chain" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeGetNuclideDecayChain(params);
       };
     }else if( toolName == "automated_source_id_results" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeGetAutomatedRiidId(params, interspec);
       };
     }else if( toolName == "loaded_spectra" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeGetLoadedSpectra(params, interspec);
       };
     }else if( toolName == "add_analysis_peaks_for_source" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeFitPeaksForNuclide(params, interspec);
       };
     }else if( toolName == "get_counts_in_energy_range" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeGetCountsInEnergyRange(params, interspec);
       };
     }else if( toolName == "get_expected_fwhm" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeGetExpectedFwhm(params, interspec);
       };
     }else if( toolName == "currie_mda_calc" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeCurrieMdaCalc(params, interspec);
       };
     }else if( toolName == "calculate_dose" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeCalculateDose(params, interspec);
       };
     }else if( toolName == "source_photons" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeGetSourcePhotons(params);
       };
     }else if( toolName == "photopeak_detection_efficiency" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executePhotopeakDetectionCalc(params, interspec);
       };
     }else if( toolName == "get_materials" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeGetMaterials(interspec);
       };
     }else if( toolName == "get_material_info" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeGetMaterialInfo(params, interspec);
       };
     }else if( toolName == "available_detector_efficiency_functions" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeAvailableDetectors(params, interspec);
       };
     }else if( toolName == "load_detector_efficiency_function" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeLoadDetectorEfficiency(params, interspec);
       };
     }else if( toolName == "detector_efficiency_function_info" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeGetDetectorInfo(params, interspec);
       };
     }else if( toolName == "search_sources_by_energy" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeSearchSourcesByEnergy(params, interspec);
       };
     }else if( toolName == "activity_fit" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return ActivityFitTool::executeActivityFit(params, interspec);
       };
     }else if( toolName == "activity_fit_one_off" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return ActivityFitTool::executeActivityFitOneOff(params, interspec);
       };
     }else if( toolName == "get_shielding_source_config" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return ActivityFitTool::executeGetShieldingSourceConfig(params, interspec);
       };
     }else if( toolName == "modify_shielding_source_config" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return ActivityFitTool::executeModifyShieldingSourceConfig(params, interspec);
       };
     }else if( toolName == "mark_peaks_for_activity_fit" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return ActivityFitTool::executeMarkPeaksForActivityFit(params, interspec);
       };
     }else if( toolName == "close_activity_shielding_display" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return ActivityFitTool::executeCloseActivityShieldingDisplay(params, interspec);
       };
     }else if( toolName == "ask_user_question" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return ActivityFitTool::executeAskUserQuestion(params, interspec);
       };
     }else if( toolName == "set_workflow_state" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeSetWorkflowState(params, interspec);
       };
     }else if( toolName == "list_isotopics_presets" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return IsotopicsTool::executeListIsotopicsPresets(params, interspec);
       };
     }else if( toolName == "get_isotopics_config" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return IsotopicsTool::executeGetIsotopicsConfig(params, interspec);
       };
     }else if( toolName == "reset_isotopics_config" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return IsotopicsTool::executeResetIsotopicsConfig(params, interspec);
       };
     }else if( toolName == "load_isotopics_preset" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return IsotopicsTool::executeLoadIsotopicsPreset(params, interspec);
       };
     }else if( toolName == "perform_isotopics_calculation" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return IsotopicsTool::executePerformIsotopics(params, interspec);
       };
     }else if( toolName == "modify_isotopics_nuclides" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return IsotopicsTool::executeModifyIsotopicsNuclides(params, interspec);
       };
     }else if( toolName == "modify_isotopics_rois" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return IsotopicsTool::executeModifyIsotopicsRois(params, interspec);
       };
     }else if( toolName == "modify_isotopics_curve_settings" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return IsotopicsTool::executeModifyIsotopicsCurveSettings(params, interspec);
       };
     }else if( toolName == "modify_isotopics_options" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return IsotopicsTool::executeModifyIsotopicsOptions(params, interspec);
       };
     }else if( toolName == "modify_isotopics_constraints" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return IsotopicsTool::executeModifyIsotopicsConstraints(params, interspec);
       };
     }else if( toolName == "get_isotopics_config_schema" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return IsotopicsTool::executeGetIsotopicsConfigSchema(params, interspec);
       };
     }else if( toolName == "peak_based_relative_efficiency" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return RelActManualTool::executePeakBasedRelativeEfficiency(params, interspec);
       };
     }else if( toolName == "get_rel_act_manual_state" )
     {
-      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return RelActManualTool::executeGetRelActManualState(params, interspec);
+      };
+    }else if( toolName == "create_peak_checkpoint" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction> conv) -> json {
+        return executeCreatePeakCheckpoint(params, interspec, conv);
+      };
+    }else if( toolName == "restore_peaks_to_checkpoint" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction> conv) -> json {
+        return executeRestorePeaksToCheckpoint(params, interspec, conv);
       };
     }else if( toolName == "deep_research" )
     {
@@ -1528,7 +1542,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
       })");
     
     // Executor is a placeholder - actual invocation handled in executeToolCalls
-    invokeTool.executor = [](const json& params, InterSpec* interspec) -> json {
+    invokeTool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
       assert( 0 );
       throw std::runtime_error( "invoke_* tools should be handled by executeToolCalls, not called directly" );
     };
@@ -1598,7 +1612,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
 
       const string deep_research_url = config.llmApi.deep_research_url;
 
-      tool.executor = [deep_research_url](const json& params, InterSpec* interspec) -> json {
+      tool.executor = [deep_research_url](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>) -> json {
         return executeDeepResearch(params, interspec, deep_research_url);
       };
 
@@ -1778,22 +1792,23 @@ std::string ToolRegistry::getDescriptionForAgent( const std::string &toolName, A
 }//getDescriptionForAgent(...)
 
 
-nlohmann::json ToolRegistry::executeTool(const std::string& toolName, 
-                                       const nlohmann::json& parameters, 
-                                       InterSpec* interspec)  const
+nlohmann::json ToolRegistry::executeTool(const std::string& toolName,
+                                       const nlohmann::json& parameters,
+                                       InterSpec* interspec,
+                                       shared_ptr<LlmInteraction> conversation) const
 {
   const SharedTool* tool = getTool(toolName);
   if (!tool) {
     throw std::runtime_error("Tool not found: " + toolName + ". Perhaps something got garbled somewhere and retrying would help." );
   }
-  
+
   try
   {
 #if( !defined(NDEBUG) && !BUILD_AS_UNIT_TEST_SUITE )
     cout << "Executing tool: " << toolName << " with params: " << parameters.dump() << endl;
 #endif
-    
-    json result = tool->executor(parameters, interspec);
+
+    json result = tool->executor(parameters, interspec, conversation);
     
 #if( !defined(NDEBUG) && !BUILD_AS_UNIT_TEST_SUITE )
     std::string resultStr = result.dump();
@@ -2214,7 +2229,7 @@ json ToolRegistry::executeGetSpectrumInfo(const json& params, InterSpec* intersp
     throw std::runtime_error("No InterSpec session available");
   }
   
-  string specTypeStr = params.at("specType").get<string>();
+  string specTypeStr = params.at( find_case_insensitive_key("specType", params) ).get<string>();
   SpecUtils::SpectrumType specType;
   
   if (specTypeStr == "Foreground") specType = SpecUtils::SpectrumType::Foreground;
@@ -2292,7 +2307,7 @@ json ToolRegistry::executeGetSpectrumInfo(const json& params, InterSpec* intersp
   
 nlohmann::json ToolRegistry::executeGetCharacteristicGammasForSource( const nlohmann::json& params )
 {
-  const string source = params.at("source").get<string>();
+  const string source = params.at( find_case_insensitive_key("source", params) ).get<string>();
   json result;
   result["source"] = source;
   result["characteristicGammas"] = AnalystChecks::get_characteristic_gammas( source );
@@ -2324,14 +2339,17 @@ nlohmann::json ToolRegistry::executeGetNuclidesWithCharacteristicsInEnergyRange(
     throw std::runtime_error("No InterSpec session available.");
   
   vector<variant<const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *>> result;
-  if( params.contains("lowerEnergy") && params.contains("upperEnergy") )
+  const string lower_energy_key = find_case_insensitive_key( "lowerEnergy", params );
+  const string upper_energy_key = find_case_insensitive_key( "upperEnergy", params );
+  const string energy_key = find_case_insensitive_key( "energy", params );
+  if( params.contains(lower_energy_key) && params.contains(upper_energy_key) )
   {
-    const double lower_energy = get_number( params, "lowerEnergy" );
-    const double upper_energy = get_number( params, "upperEnergy" );
+    const double lower_energy = get_number( params, lower_energy_key );
+    const double upper_energy = get_number( params, upper_energy_key );
     result = AnalystChecks::get_nuclides_with_characteristics_in_energy_range( lower_energy, upper_energy, interspec );
-  }else if( params.contains("energy") )
+  }else if( params.contains(energy_key) )
   {
-    const double energy = get_number( params, "energy" );
+    const double energy = get_number( params, energy_key );
     result = AnalystChecks::get_characteristics_near_energy( energy, interspec );
   }else
   {
@@ -2358,7 +2376,7 @@ nlohmann::json ToolRegistry::executeGetNuclidesWithCharacteristicsInEnergyRange(
 
 nlohmann::json ToolRegistry::executeGetAssociatedSources( const nlohmann::json& params )
 {
-  const string nuclide = params.at("source").get<string>();
+  const string nuclide = params.at( find_case_insensitive_key("source", params) ).get<string>();
 
   const shared_ptr<const MoreNuclideInfo::MoreNucInfoDb> info_db = MoreNuclideInfo::MoreNucInfoDb::instance();
   if( !info_db )
@@ -2388,7 +2406,7 @@ nlohmann::json ToolRegistry::executeGetAssociatedSources( const nlohmann::json& 
 
 nlohmann::json ToolRegistry::executeGetSourceAnalystNotes( const nlohmann::json& params )
 {
-  const string nuclide = params.at("source").get<string>();
+  const string nuclide = params.at( find_case_insensitive_key("source", params) ).get<string>();
   
   const shared_ptr<const MoreNuclideInfo::MoreNucInfoDb> info_db = MoreNuclideInfo::MoreNucInfoDb::instance();
   if( !info_db )
@@ -2407,7 +2425,7 @@ nlohmann::json ToolRegistry::executeGetSourceAnalystNotes( const nlohmann::json&
   
 nlohmann::json ToolRegistry::executeGetSourceInfo(const nlohmann::json& params, InterSpec* interspec )
 {
-  const string nuclide = params.at("source").get<string>();
+  const string nuclide = params.at( find_case_insensitive_key("source", params) ).get<string>();
   
   nlohmann::json result;
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
@@ -2607,7 +2625,7 @@ nlohmann::json ToolRegistry::executeGetSourceInfo(const nlohmann::json& params, 
 
 nlohmann::json ToolRegistry::executeGetNuclideDecayChain(const nlohmann::json& params )
 {
-  const string nuclide = params.at("nuclide").get<string>();
+  const string nuclide = params.at( find_case_insensitive_key("nuclide", params) ).get<string>();
 
   nlohmann::json result;
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
@@ -2795,10 +2813,10 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
     throw std::runtime_error("No foreground spectrum loaded");
 
   // Parse basic parameters
-  const double energy = get_number( params, "energy" );
-  const double detection_probability = get_number( params, "detectionProbability", 0.95 );
-  const float additional_uncertainty = static_cast<float>( get_number( params, "additionalUncertainty", 0.0 ) );
-  const bool assert_background_spectrum = get_boolean( params, "assertBackgroundSpectrum", false );
+  const double energy = get_number( params, find_case_insensitive_key("energy", params) );
+  const double detection_probability = get_number( params, find_case_insensitive_key("detectionProbability", params), 0.95 );
+  const float additional_uncertainty = static_cast<float>( get_number( params, find_case_insensitive_key("additionalUncertainty", params), 0.0 ) );
+  const bool assert_background_spectrum = get_boolean( params, find_case_insensitive_key("assertBackgroundSpectrum", params), false );
 
   // Parse optional nuclide, distance, age, and shielding parameters
   const SandiaDecay::Nuclide *nuclide = nullptr;
@@ -2810,9 +2828,10 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
   bool has_distance = false;
   bool has_shielding = false;
 
-  if( params.contains("nuclide") && params["nuclide"].is_string() )
+  const string nuclide_key = find_case_insensitive_key( "nuclide", params );
+  if( params.contains(nuclide_key) && params[nuclide_key].is_string() )
   {
-    string nuclide_str = params["nuclide"].get<string>();
+    string nuclide_str = params[nuclide_key].get<string>();
     SpecUtils::trim( nuclide_str );
     if( !nuclide_str.empty() )
     {
@@ -2828,9 +2847,10 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
     }
   }
 
-  if( params.contains("distance") && params["distance"].is_string() )
+  const string distance_key = find_case_insensitive_key( "distance", params );
+  if( params.contains(distance_key) && params[distance_key].is_string() )
   {
-    string distance_str = params["distance"].get<string>();
+    string distance_str = params[distance_key].get<string>();
     SpecUtils::trim( distance_str );
     if( !distance_str.empty() )
     {
@@ -2876,9 +2896,10 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
   if( has_nuclide )
   {
     // Parse age if provided
-    if( params.contains("age") && params["age"].is_string() )
+    const string age_key = find_case_insensitive_key( "age", params );
+    if( params.contains(age_key) && params[age_key].is_string() )
     {
-      string age_str = params["age"].get<string>();
+      string age_str = params[age_key].get<string>();
       SpecUtils::trim( age_str );
       if( !age_str.empty() )
       {
@@ -2945,10 +2966,11 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
   }
 
   // Parse shielding if provided
-  if( params.contains("shielding") && params["shielding"].is_object() )
+  const string shielding_key = find_case_insensitive_key( "shielding", params );
+  if( params.contains(shielding_key) && params[shielding_key].is_object() )
   {
     has_shielding = true;
-    const json &shielding_json = params["shielding"];
+    const json &shielding_json = params[shielding_key];
     
     const bool has_ad = shielding_json.contains("AD");
     const bool has_an = shielding_json.contains("AN");
@@ -3132,9 +3154,9 @@ nlohmann::json ToolRegistry::executeCalculateDose(const nlohmann::json& params, 
     throw runtime_error( "No InterSpec session available." );
 
   // 2. Parse required parameters
-  const string nuclide_str = params.at( "nuclide" ).get<string>();
-  const string distance_str = params.at( "distance" ).get<string>();
-  const string activity_str = params.at( "activity" ).get<string>();
+  const string nuclide_str = params.at( find_case_insensitive_key("nuclide", params) ).get<string>();
+  const string distance_str = params.at( find_case_insensitive_key("distance", params) ).get<string>();
+  const string activity_str = params.at( find_case_insensitive_key("activity", params) ).get<string>();
 
   // 3. Parse distance and activity
   const double distance = stringToDistance( distance_str );
@@ -3150,16 +3172,17 @@ nlohmann::json ToolRegistry::executeCalculateDose(const nlohmann::json& params, 
     throw runtime_error( "Unknown nuclide: " + nuclide_str );
 
   // 5. Parse optional age parameter (use default if not provided)
+  const string age_key = find_case_insensitive_key( "age", params );
   double age;
-  if( !params.contains("age") )
+  if( !params.contains(age_key) )
   {
     age = PeakDef::defaultDecayTime( nuc );
-  }else if( params.contains( "age" ) )
+  }else if( params.contains( age_key ) )
   { 
-    if( !params["age"].is_string() )
+    if( !params[age_key].is_string() )
       throw runtime_error( "the `age` parameter must be a string." );
     
-    const string age_str = params["age"].get<string>();
+    const string age_str = params[age_key].get<string>();
     try
     {
       age = stringToTimeDuration( age_str );
@@ -3186,9 +3209,13 @@ nlohmann::json ToolRegistry::executeCalculateDose(const nlohmann::json& params, 
   float atomic_number = 26.0f; // iron (doesn't matter when AD=0)
 
   // Check if material-based shielding is provided
-  if( params.contains( "material" ) && !params["material"].is_null() )
+  const string material_key = find_case_insensitive_key( "material", params );
+  const string areal_density_key = find_case_insensitive_key( "arealDensity", params );
+  const string thickness_key = find_case_insensitive_key( "thickness", params );
+  const string atomic_number_key = find_case_insensitive_key( "atomicNumber", params );
+  if( params.contains( material_key ) && !params[material_key].is_null() )
   {
-    const string material_name = params["material"].get<string>();
+    const string material_name = params[material_key].get<string>();
 
     // Get material from database
     MaterialDB * const materialDB = interspec->materialDataBase();
@@ -3199,15 +3226,15 @@ nlohmann::json ToolRegistry::executeCalculateDose(const nlohmann::json& params, 
     atomic_number = static_cast<float>( mat->massWeightedAtomicNumber() );
 
     // Check if arealDensity is specified (alternative to thickness)
-    if( params.contains( "arealDensity" ) && !params["arealDensity"].is_null() )
+    if( params.contains( areal_density_key ) && !params[areal_density_key].is_null() )
     {
-      areal_density = static_cast<float>( get_number( params, "arealDensity" ) );
+      areal_density = static_cast<float>( get_number( params, areal_density_key ) );
       areal_density *= static_cast<float>( gram / cm2 );
     }
-    else if( params.contains( "thickness" ) && !params["thickness"].is_null() )
+    else if( params.contains( thickness_key ) && !params[thickness_key].is_null() )
     {
       // Parse thickness and compute areal density
-      const string thickness_str = params["thickness"].get<string>();
+      const string thickness_str = params[thickness_key].get<string>();
       const double thickness = stringToDistance( thickness_str );
       const double density = mat->density; // in PhysicalUnits (g/cm³)
       areal_density = static_cast<float>( thickness * density );
@@ -3218,11 +3245,11 @@ nlohmann::json ToolRegistry::executeCalculateDose(const nlohmann::json& params, 
     }
   }
   // Check if direct areal density/atomic number is provided
-  else if( params.contains( "arealDensity" ) && !params["arealDensity"].is_null() )
+  else if( params.contains( areal_density_key ) && !params[areal_density_key].is_null() )
   {
-    areal_density = static_cast<float>( get_number( params, "arealDensity" ) );
+    areal_density = static_cast<float>( get_number( params, areal_density_key ) );
     areal_density *= static_cast<float>( gram / cm2 );
-    atomic_number = static_cast<float>( get_number( params, "atomicNumber" ) );
+    atomic_number = static_cast<float>( get_number( params, atomic_number_key ) );
   }
 
   // 9. Get scatter table (using helper function)
@@ -3519,13 +3546,14 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
 
 nlohmann::json ToolRegistry::executeDeepResearch(const nlohmann::json& params, InterSpec* interspec, const std::string &deep_research_url )
 {
-  if( !params.contains("question") || !params["question"].is_string() )
+  const string question_key = find_case_insensitive_key( "question", params );
+  if( !params.contains(question_key) || !params[question_key].is_string() )
   {
     cerr << "executeDeepResearch error: The 'question' parameter must be present, and a string; params: " << params.dump() << endl << endl;
     throw runtime_error( "The 'question' parameter must be present, and a string." );
   }
 
-  const string question = params["question"];
+  const string question = params[question_key];
 
   cout << "In executeDeepResearch; question: " << question << endl << endl;
 
@@ -3551,15 +3579,17 @@ nlohmann::json ToolRegistry::executeGetAttenuationOfShielding( nlohmann::json pa
 {
   using namespace PhysicalUnits;
 
-  // Normalize fields in case they're stringified JSON
-  normalize_json_field( params, "Energies" );
-  normalize_json_field( params, "Shielding" );
+  // Normalize fields in case they're stringified JSON (resolve keys case-insensitively first)
+  const string energies_key = find_case_insensitive_key( "Energies", params );
+  const string shielding_key = find_case_insensitive_key( "Shielding", params );
+  normalize_json_field( params, energies_key );
+  normalize_json_field( params, shielding_key );
 
   // Parse the energies array
-  if( !params.contains("Energies") || !params["Energies"].is_array() )
+  if( !params.contains(energies_key) || !params[energies_key].is_array() )
     throw runtime_error( "Energies parameter must be specified as an array." );
 
-  const json& energies_json = params["Energies"];
+  const json& energies_json = params[energies_key];
   vector<double> energies;
   for( const auto& energy_val : energies_json )
   {
@@ -3570,10 +3600,10 @@ nlohmann::json ToolRegistry::executeGetAttenuationOfShielding( nlohmann::json pa
     throw runtime_error( "At least one energy must be specified." );
 
   // Parse the shielding specification
-  if( !params.contains("Shielding") || !params["Shielding"].is_object() )
+  if( !params.contains(shielding_key) || !params[shielding_key].is_object() )
     throw runtime_error( "Shielding parameter must be specified as an object." );
 
-  const json& shielding = params["Shielding"];
+  const json& shielding = params[shielding_key];
 
   // Determine which shielding format is being used
   const bool has_ad = shielding.contains("AD");
@@ -3731,7 +3761,7 @@ nlohmann::json ToolRegistry::executeGetMaterialInfo( const nlohmann::json& param
   if( !db )
     throw std::runtime_error( "Material database not available." );
 
-  const std::string material_name = params.at("material").get<std::string>();
+  const std::string material_name = params.at( find_case_insensitive_key("material", params) ).get<std::string>();
   const Material * const material = db->material( material_name );
 
   if( !material )
@@ -3842,21 +3872,23 @@ nlohmann::json ToolRegistry::executePhotopeakDetectionCalc(nlohmann::json params
 
   // Step 1: Parse and normalize inputs
 
-  // Normalize fields in case they're stringified JSON
-  normalize_json_field( params, "Energies" );
-  normalize_json_field( params, "Shielding" );
+  // Normalize fields in case they're stringified JSON (resolve keys case-insensitively first)
+  const string energies_key = find_case_insensitive_key( "Energies", params );
+  const string shielding_key = find_case_insensitive_key( "Shielding", params );
+  normalize_json_field( params, energies_key );
+  normalize_json_field( params, shielding_key );
 
   // Parse Energies - allow single number or array
   vector<double> energies;
-  if( params.contains("Energies") )
+  if( params.contains(energies_key) )
   {
-    if( params["Energies"].is_number() || params["Energies"].is_string() )
+    if( params[energies_key].is_number() || params[energies_key].is_string() )
     {
-      energies.push_back( get_double( params["Energies"] ) );
+      energies.push_back( get_double( params[energies_key] ) );
     }
-    else if( params["Energies"].is_array() )
+    else if( params[energies_key].is_array() )
     {
-      for( const auto& energy_val : params["Energies"] )
+      for( const auto& energy_val : params[energies_key] )
         energies.push_back( get_double( energy_val ) );
     }
     else
@@ -3880,15 +3912,15 @@ nlohmann::json ToolRegistry::executePhotopeakDetectionCalc(nlohmann::json params
 
   // Parse Shielding - allow single object or array
   vector<json> shieldings;
-  if( params.contains("Shielding") )
+  if( params.contains(shielding_key) )
   {
-    if( params["Shielding"].is_object() )
+    if( params[shielding_key].is_object() )
     {
-      shieldings.push_back( params["Shielding"] );
+      shieldings.push_back( params[shielding_key] );
     }
-    else if( params["Shielding"].is_array() )
+    else if( params[shielding_key].is_array() )
     {
-      shieldings = params["Shielding"].get<vector<json>>();
+      shieldings = params[shielding_key].get<vector<json>>();
     }
     else
     {
@@ -3897,11 +3929,12 @@ nlohmann::json ToolRegistry::executePhotopeakDetectionCalc(nlohmann::json params
   }
 
   // Parse Distance (optional)
+  const string distance_key = find_case_insensitive_key( "Distance", params );
   double distance = 0.0;
   bool has_distance = false;
-  if( params.contains("Distance") && params["Distance"].is_string() )
+  if( params.contains(distance_key) && params[distance_key].is_string() )
   {
-    string distance_str = params["Distance"].get<string>();
+    string distance_str = params[distance_key].get<string>();
     SpecUtils::trim( distance_str );
     if( !distance_str.empty() )
     {
@@ -3911,7 +3944,7 @@ nlohmann::json ToolRegistry::executePhotopeakDetectionCalc(nlohmann::json params
   }//if( params.contains("Distance") && params["Distance"].is_string() )
 
   // Parse IncludeAirAttenuation (optional, default false)
-  const bool include_air = get_boolean( params, "IncludeAirAttenuation", false );
+  const bool include_air = get_boolean( params, find_case_insensitive_key("IncludeAirAttenuation", params), false );
 
   // Step 2: Validate parameters
 
@@ -4622,12 +4655,15 @@ nlohmann::json ToolRegistry::executeLoadDetectorEfficiency(const nlohmann::json&
   if( !foreground )
     throw std::runtime_error( "Cannot load detector efficiency function: no foreground spectrum is currently loaded. Please load a spectrum file first." );
 
-  if( !params.contains("identifier") || !params["identifier"].is_string() )
+  const string identifier_key = find_case_insensitive_key( "identifier", params );
+  if( !params.contains(identifier_key) || !params[identifier_key].is_string() )
     throw std::runtime_error( "Missing required 'identifier' parameter." );
 
-  const std::string identifier = params["identifier"].get<std::string>();
-  const std::string detectorName = params.value("detectorName", std::string());
-  const std::string sourceHint = params.value("source", std::string("AnySource"));
+  const std::string identifier = params[identifier_key].get<std::string>();
+  const string detector_name_key = find_case_insensitive_key( "detectorName", params );
+  const std::string detectorName = params.contains(detector_name_key) ? params[detector_name_key].get<std::string>() : std::string();
+  const string source_hint_key = find_case_insensitive_key( "source", params );
+  const std::string sourceHint = params.contains(source_hint_key) ? params[source_hint_key].get<std::string>() : std::string("AnySource");
 
   std::string loadedFrom;
   std::shared_ptr<DetectorPeakResponse> drf = ToolRegistry::findDetectorByIdentifier( identifier, detectorName, sourceHint, interspec, loadedFrom );
@@ -4680,9 +4716,10 @@ nlohmann::json ToolRegistry::executeGetDetectorInfo(const nlohmann::json& params
   std::shared_ptr<DetectorPeakResponse> drf;
 
   // Check if a specific detector name was requested
-  if( params.contains("name") && params["name"].is_string() && !params["name"].get<std::string>().empty() )
+  const string name_key = find_case_insensitive_key( "name", params );
+  if( params.contains(name_key) && params[name_key].is_string() && !params[name_key].get<std::string>().empty() )
   {
-    const std::string name = params["name"].get<std::string>();
+    const std::string name = params[name_key].get<std::string>();
     std::string loadedFrom;
 
     // Use helper function to find the detector
@@ -4842,14 +4879,15 @@ nlohmann::json ToolRegistry::executeSearchSourcesByEnergy(nlohmann::json params,
   if( !interspec )
     throw std::runtime_error( "No InterSpec session available." );
 
-  // Normalize energies field in case it's a stringified JSON array
-  normalize_json_field( params, "energies" );
+  // Normalize energies field in case it's a stringified JSON array (resolve key case-insensitively first)
+  const string energies_key = find_case_insensitive_key( "energies", params );
+  normalize_json_field( params, energies_key );
 
   // Parse energies array (required)
-  if( !params.contains("energies") || !params["energies"].is_array() || params["energies"].empty() )
+  if( !params.contains(energies_key) || !params[energies_key].is_array() || params[energies_key].empty() )
     throw std::runtime_error( "The 'energies' parameter must be a non-empty array." );
 
-  const json& energies_array = params["energies"];
+  const json& energies_array = params[energies_key];
   std::vector<double> energies;
   std::vector<double> windows;
 
@@ -4895,28 +4933,33 @@ nlohmann::json ToolRegistry::executeSearchSourcesByEnergy(nlohmann::json params,
 
   // Parse optional parameters
   // Use i18n key as default since translations may not be available in all environments
+  const string category_key = find_case_insensitive_key( "source_category", params );
   std::string category_str = "isbe-category-nuc-xray";  // "Nuclides + X-rays"
-  if( params.contains("source_category") && params["source_category"].is_string() )
-    category_str = params["source_category"].get<std::string>();
+  if( params.contains(category_key) && params[category_key].is_string() )
+    category_str = params[category_key].get<std::string>();
 
+  const string min_half_life_key = find_case_insensitive_key( "min_half_life", params );
   std::string min_half_life_str = "100 m";
-  if( params.contains("min_half_life") && params["min_half_life"].is_string() )
-    min_half_life_str = params["min_half_life"].get<std::string>();
+  if( params.contains(min_half_life_key) && params[min_half_life_key].is_string() )
+    min_half_life_str = params[min_half_life_key].get<std::string>();
 
+  const string min_br_key = find_case_insensitive_key( "min_branching_ratio", params );
   double min_br = 0.0;
-  if( params.contains("min_branching_ratio") && !params["min_branching_ratio"].is_null() )
-    min_br = get_number( params, "min_branching_ratio" );
+  if( params.contains(min_br_key) && !params[min_br_key].is_null() )
+    min_br = get_number( params, min_br_key );
 
+  const string max_results_key = find_case_insensitive_key( "max_results", params );
   int max_results = 10;
-  if( params.contains("max_results") && !params["max_results"].is_null() )
-    max_results = static_cast<int>( get_number( params, "max_results" ) );
+  if( params.contains(max_results_key) && !params[max_results_key].is_null() )
+    max_results = static_cast<int>( get_number( params, max_results_key ) );
 
   if( max_results <= 0 )
     throw std::runtime_error( "max_results must be positive." );
 
+  const string sort_by_key = find_case_insensitive_key( "sort_by", params );
   std::string sort_by = "ProfileScore";
-  if( params.contains("sort_by") && params["sort_by"].is_string() )
-    sort_by = params["sort_by"].get<std::string>();
+  if( params.contains(sort_by_key) && params[sort_by_key].is_string() )
+    sort_by = params[sort_by_key].get<std::string>();
 
   if( (sort_by != "ProfileScore") && (sort_by != "SumEnergyDifference") )
     throw std::runtime_error( "sort_by must be either 'ProfileScore' or 'SumEnergyDifference'." );
@@ -5159,8 +5202,10 @@ nlohmann::json ToolRegistry::executeSetWorkflowState(
     throw runtime_error( "InterSpec instance required for set_workflow_state" );
 
   // Get parameters
-  const string new_state = params.value( "state", string() );
-  const string notes = params.value( "notes", string() );
+  const string state_key = find_case_insensitive_key( "state", params );
+  const string notes_key = find_case_insensitive_key( "notes", params );
+  const string new_state = params.contains(state_key) ? params[state_key].get<string>() : string();
+  const string notes = params.contains(notes_key) ? params[notes_key].get<string>() : string();
 
   if( new_state.empty() )
     throw runtime_error( "state parameter is required" );
@@ -5273,6 +5318,251 @@ nlohmann::json ToolRegistry::executeSetWorkflowState(
 
   return result;
 }
+
+json ToolRegistry::executeCreatePeakCheckpoint( const json& params,
+                                                InterSpec* interspec,
+                                                shared_ptr<LlmInteraction> conversation )
+{
+  if( !interspec )
+    throw runtime_error( "No InterSpec session available." );
+
+  if( !conversation )
+    throw runtime_error( "Peak checkpoints require a conversation context." );
+
+  // Get the optional name hint
+  string name_hint;
+  if( params.contains( "name_hint" ) && params["name_hint"].is_string() )
+    name_hint = params["name_hint"].get<string>();
+
+  // Generate a unique checkpoint name
+  string checkpoint_name;
+  if( name_hint.empty() )
+  {
+    const auto ms = chrono::duration_cast<chrono::milliseconds>(
+      chrono::system_clock::now().time_since_epoch() ).count();
+    checkpoint_name = "checkpoint_" + to_string( ms );
+  }else
+  {
+    checkpoint_name = name_hint;
+  }
+
+  // Ensure uniqueness by appending a suffix if needed
+  {
+    const vector<PeakCheckpoint> &existing = conversation->m_peak_checkpoints;
+    bool name_taken = false;
+    for( const PeakCheckpoint &cp : existing )
+    {
+      if( cp.m_checkpoint_name == checkpoint_name )
+      {
+        name_taken = true;
+        break;
+      }
+    }
+
+    if( name_taken )
+    {
+      for( int suffix = 2; suffix < 1000; ++suffix )
+      {
+        const string candidate = checkpoint_name + "_" + to_string( suffix );
+        bool found = false;
+        for( const PeakCheckpoint &cp : existing )
+        {
+          if( cp.m_checkpoint_name == candidate )
+          {
+            found = true;
+            break;
+          }
+        }
+
+        if( !found )
+        {
+          checkpoint_name = candidate;
+          break;
+        }
+      }//for( int suffix = 2; suffix < 1000; ++suffix )
+    }//if( name_taken )
+  }
+
+  PeakCheckpoint checkpoint;
+  checkpoint.m_checkpoint_name = checkpoint_name;
+  checkpoint.m_creation_time = chrono::system_clock::now();
+
+  PeakModel * const peak_model = interspec->peakModel();
+  assert( peak_model );
+  if( !peak_model )
+    throw runtime_error( "No PeakModel available." );
+
+  // Snapshot peaks and energy calibration for each spectrum type
+  const SpecUtils::SpectrumType spec_types[] = {
+    SpecUtils::SpectrumType::Foreground,
+    SpecUtils::SpectrumType::Background,
+    SpecUtils::SpectrumType::SecondForeground
+  };
+
+  for( const SpecUtils::SpectrumType type : spec_types )
+  {
+    const shared_ptr<const SpecUtils::Measurement> meas = interspec->displayedHistogram( type );
+    if( !meas )
+      continue;
+
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> current_peaks = peak_model->peaks( type );
+
+    // Deep-copy the peaks deque (the shared_ptr from PeakModel may be mutated later)
+    shared_ptr<deque<shared_ptr<const PeakDef>>> peaks_copy;
+    if( current_peaks && !current_peaks->empty() )
+      peaks_copy = make_shared<deque<shared_ptr<const PeakDef>>>( *current_peaks );
+
+    const shared_ptr<const SpecUtils::EnergyCalibration> cal = meas->energy_calibration();
+
+    switch( type )
+    {
+      case SpecUtils::SpectrumType::Foreground:
+        checkpoint.m_foreground_peaks = peaks_copy;
+        checkpoint.m_foreground_cal = cal;
+        break;
+      case SpecUtils::SpectrumType::Background:
+        checkpoint.m_background_peaks = peaks_copy;
+        checkpoint.m_background_cal = cal;
+        break;
+      case SpecUtils::SpectrumType::SecondForeground:
+        checkpoint.m_secondary_peaks = peaks_copy;
+        checkpoint.m_secondary_cal = cal;
+        break;
+    }//switch( type )
+  }//for( const SpecUtils::SpectrumType type : spec_types )
+
+  conversation->m_peak_checkpoints.push_back( std::move( checkpoint ) );
+
+  json result = json::object();
+  result["checkpoint_name"] = checkpoint_name;
+  result["status"] = "created";
+
+  return result;
+}//executeCreatePeakCheckpoint(...)
+
+
+json ToolRegistry::executeRestorePeaksToCheckpoint( const json& params,
+                                                     InterSpec* interspec,
+                                                     shared_ptr<LlmInteraction> conversation )
+{
+  if( !interspec )
+    throw runtime_error( "No InterSpec session available." );
+
+  if( !conversation )
+    throw runtime_error( "Peak checkpoints require a conversation context." );
+
+  if( !params.contains( "checkpoint_name" ) || !params["checkpoint_name"].is_string() )
+    throw runtime_error( "Missing required parameter 'checkpoint_name'." );
+
+  const string checkpoint_name = params["checkpoint_name"].get<string>();
+
+  // Find the checkpoint (search from newest to oldest)
+  const PeakCheckpoint *found_cp = nullptr;
+  for( auto it = conversation->m_peak_checkpoints.rbegin();
+       it != conversation->m_peak_checkpoints.rend(); ++it )
+  {
+    if( it->m_checkpoint_name == checkpoint_name )
+    {
+      found_cp = &(*it);
+      break;
+    }
+  }
+
+  if( !found_cp )
+  {
+    string available_names;
+    for( const PeakCheckpoint &cp : conversation->m_peak_checkpoints )
+    {
+      if( !available_names.empty() )
+        available_names += ", ";
+      available_names += "'" + cp.m_checkpoint_name + "'";
+    }
+
+    throw runtime_error( "Checkpoint '" + checkpoint_name + "' not found."
+      + (available_names.empty() ? " No checkpoints exist." : " Available: " + available_names) );
+  }
+
+  const SpecUtils::SpectrumType spec_types[] = {
+    SpecUtils::SpectrumType::Foreground,
+    SpecUtils::SpectrumType::Background,
+    SpecUtils::SpectrumType::SecondForeground
+  };
+
+  vector<string> restored_types;
+
+  for( const SpecUtils::SpectrumType type : spec_types )
+  {
+    const shared_ptr<const SpecUtils::Measurement> meas = interspec->displayedHistogram( type );
+    if( !meas )
+      continue;
+
+    // Get the checkpoint's peaks and calibration for this spectrum type
+    shared_ptr<deque<shared_ptr<const PeakDef>>> cp_peaks;
+    shared_ptr<const SpecUtils::EnergyCalibration> cp_cal;
+
+    switch( type )
+    {
+      case SpecUtils::SpectrumType::Foreground:
+        cp_peaks = found_cp->m_foreground_peaks;
+        cp_cal = found_cp->m_foreground_cal;
+        break;
+      case SpecUtils::SpectrumType::Background:
+        cp_peaks = found_cp->m_background_peaks;
+        cp_cal = found_cp->m_background_cal;
+        break;
+      case SpecUtils::SpectrumType::SecondForeground:
+        cp_peaks = found_cp->m_secondary_peaks;
+        cp_cal = found_cp->m_secondary_cal;
+        break;
+    }//switch( type )
+
+    // If checkpoint had no data for this type (spectrum wasn't loaded at checkpoint time), skip
+    if( !cp_cal )
+      continue;
+
+    shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks_to_set;
+
+    if( !cp_peaks || cp_peaks->empty() )
+    {
+      // Checkpoint had no peaks for this type - set empty
+      peaks_to_set = make_shared<const deque<shared_ptr<const PeakDef>>>();
+    }else
+    {
+      // Check if energy calibration has changed
+      const shared_ptr<const SpecUtils::EnergyCalibration> current_cal = meas->energy_calibration();
+      assert( current_cal );
+
+      if( !current_cal || (cp_cal == current_cal) || (*cp_cal == *current_cal) )
+      {
+        // Calibration unchanged - use peaks directly
+        peaks_to_set = cp_peaks;
+      }else
+      {
+        // Calibration changed - translate peaks
+        const deque<shared_ptr<const PeakDef>> translated =
+          EnergyCal::translatePeaksForCalibrationChange( *cp_peaks, cp_cal, current_cal );
+        peaks_to_set = make_shared<const deque<shared_ptr<const PeakDef>>>( translated );
+      }
+    }//if( !cp_peaks || cp_peaks->empty() ) / else
+
+    interspec->setPeaks( type, peaks_to_set );
+
+    switch( type )
+    {
+      case SpecUtils::SpectrumType::Foreground:      restored_types.push_back( "Foreground" );      break;
+      case SpecUtils::SpectrumType::Background:       restored_types.push_back( "Background" );       break;
+      case SpecUtils::SpectrumType::SecondForeground: restored_types.push_back( "Secondary" ); break;
+    }
+  }//for( const SpecUtils::SpectrumType type : spec_types )
+
+  json result = json::object();
+  result["checkpoint_name"] = checkpoint_name;
+  result["status"] = "restored";
+  result["restored_spectrum_types"] = restored_types;
+
+  return result;
+}//executeRestorePeaksToCheckpoint(...)
+
 
 } // namespace LlmTools
 

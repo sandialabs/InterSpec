@@ -1884,7 +1884,7 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
 
         // Execute the tool
         const auto exec_start = std::chrono::steady_clock::now();
-        json result = m_tool_registry->executeTool(toolName, arguments, m_interspec);
+        json result = m_tool_registry->executeTool(toolName, arguments, m_interspec, convo);
         const auto exec_end = std::chrono::steady_clock::now();
         const auto exec_duration = std::chrono::duration_cast<std::chrono::milliseconds>(exec_end - exec_start);
 

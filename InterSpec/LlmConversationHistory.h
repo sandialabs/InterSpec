@@ -25,6 +25,7 @@
 
 #include "InterSpec_config.h"
 
+#include <deque>
 #include <memory>
 #include <vector>
 #include <string>
@@ -37,9 +38,12 @@
 
 static_assert( USE_LLM_INTERFACE, "You should not include this library unless USE_LLM_INTERFACE is enabled" );
 
+class PeakDef;
 enum class AgentType : int;
 struct LlmInteraction;
 class AgentStateMachine;
+
+namespace SpecUtils { class EnergyCalibration; }
 
 // Forward declarations
 namespace rapidxml {
@@ -287,6 +291,24 @@ public:
 };//class LlmInteractionInitialRequest
 
 
+/** A snapshot of the analysis peaks at a point in time, for a specific conversation.
+
+ This allows an LLM agent to checkpoint the current peak state before making speculative
+ changes, and restore to that state if the changes turn out to be incorrect.
+ */
+struct PeakCheckpoint
+{
+  std::string m_checkpoint_name;
+  std::chrono::system_clock::time_point m_creation_time;
+  std::shared_ptr<std::deque<std::shared_ptr<const PeakDef>>> m_foreground_peaks;
+  std::shared_ptr<const SpecUtils::EnergyCalibration> m_foreground_cal;
+  std::shared_ptr<std::deque<std::shared_ptr<const PeakDef>>> m_background_peaks;
+  std::shared_ptr<const SpecUtils::EnergyCalibration> m_background_cal;
+  std::shared_ptr<std::deque<std::shared_ptr<const PeakDef>>> m_secondary_peaks;
+  std::shared_ptr<const SpecUtils::EnergyCalibration> m_secondary_cal;
+};//struct PeakCheckpoint
+
+
 /** Represents a user asking the LLM a question or to perform a task.
 
  This is typically a user message or system message that initiates a conversation.
@@ -331,6 +353,12 @@ struct LlmInteraction
    initial state. This allows the conversation to track its workflow state independently.
    */
   std::shared_ptr<AgentStateMachine> state_machine;
+
+  /** Peak checkpoints for this conversation.
+   Allows the LLM agent to snapshot and restore peak state.
+   Runtime-only; not serialized to XML.
+   */
+  std::vector<PeakCheckpoint> m_peak_checkpoints;
 
   /** Tracking for non-final-state auto-replies (sub-agents with state machines only).
    Runtime-only; not serialized to XML.

@@ -946,7 +946,9 @@ namespace AnalystChecks
         sources.push_back( source );
       }//for( const string &src : options.sources )
 
-      if( sources.empty() )
+      const bool fit_norm_peaks = options.fitSrcPeaksOptions.testFlag( FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaks )
+                                  || options.fitSrcPeaksOptions.testFlag( FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaksDontUse );
+      if( sources.empty() && !fit_norm_peaks )
         throw runtime_error( "No sources specified" );
 
       GetUserPeakOptions user_peak_options;

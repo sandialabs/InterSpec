@@ -33,6 +33,7 @@
 class InterSpec;
 class DetectorPeakResponse;
 class LlmConfig;
+struct LlmInteraction;
 
 #include "InterSpec/LlmConfig.h"  // For AgentType enum
 #include "external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
@@ -49,8 +50,8 @@ struct SharedTool {
     std::string name;
     std::string description;  // Default description
     nlohmann::json parameters_schema;
-    // The executor takes parameters and InterSpec instance, returns result as JSON
-    std::function<nlohmann::json(const nlohmann::json&, InterSpec*)> executor;
+    // The executor takes parameters, InterSpec instance, and optionally the current LlmInteraction conversation
+    std::function<nlohmann::json(const nlohmann::json&, InterSpec*, std::shared_ptr<LlmInteraction>)> executor;
 
     // Agent-specific configurations
     std::vector<AgentType> availableForAgents;  // List of agent types that can use this tool (empty = all agents)
@@ -106,9 +107,10 @@ public:
    @return JSON result from the tool execution.
    @throws std::runtime_error if tool not found or execution fails.
    */
-  nlohmann::json executeTool(const std::string& toolName, 
-                           const nlohmann::json& parameters, 
-                           InterSpec* interspec) const;
+  nlohmann::json executeTool(const std::string& toolName,
+                           const nlohmann::json& parameters,
+                           InterSpec* interspec,
+                           std::shared_ptr<LlmInteraction> conversation = nullptr) const;
   
   /** Clear all registered tools (mainly for testing). */
   void clearTools();
@@ -174,6 +176,10 @@ private:
 
   // Workflow State Tool (for agents with state machines)
   static nlohmann::json executeSetWorkflowState(const nlohmann::json& params, InterSpec* interspec);
+
+  // Peak checkpoint tools
+  static nlohmann::json executeCreatePeakCheckpoint(const nlohmann::json& params, InterSpec* interspec, std::shared_ptr<LlmInteraction> conversation);
+  static nlohmann::json executeRestorePeaksToCheckpoint(const nlohmann::json& params, InterSpec* interspec, std::shared_ptr<LlmInteraction> conversation);
 
   /** Helper function to find and load a detector by identifier.
    @param identifier The detector identifier (name, path, or URI)

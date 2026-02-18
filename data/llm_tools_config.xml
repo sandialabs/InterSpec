@@ -203,13 +203,13 @@
 
   <Tool name="add_analysis_peaks_for_source">
     <Description>Fits, and adds to the analysis peaks all of the detectable peaks for the one or more specified sources.
-    For sources with multiple peaks, will very likely do a much better job than individually fitting peaks for a source, and will do it much more efficiently and with a single tool call.
-    If you want to fit peaks for a source that has multiple gamma or x-ray energies, use this function.
-    The peaks added to the analysis peaks will have their respective source assigned to them.
-    If you wish to fit for just just the NORM background peaks call with no source but with the FitNormBkgrndPeaks option, like `{ source: null, options: ["FitNormPeaks"] }`.
-    If there were any peaks for the specified source(s) already added in the analysis peaks set, they will be replaced with the results of this fit unless the "DoNotUseExistingRois" option is specified.
-    Returns simplified peak information (energy, fwhm, amplitude, amplitudeUncert, numSigma, cps, and source) for the peaks that were fit.
-    </Description>
+For sources with multiple peaks, will very likely do a much better job than individually fitting peaks for a source, and will do it much more efficiently and with a single tool call.
+If you want to fit peaks for a source that has multiple gamma or x-ray energies, use this function.
+The peaks added to the analysis peaks will have their respective source assigned to them.
+If you wish to fit for just just the NORM background peaks call with no source but with the FitNormBkgrndPeaks option, like `{ source: null, options: ["FitNormPeaks"] }`.
+If there were any peaks for the specified source(s) already added in the analysis peaks set, they will be replaced with the results of this fit unless the "DoNotUseExistingRois" option is specified.
+Returns simplified peak information (energy, fwhm, amplitude, amplitudeUncert, numSigma, cps, and source) for the peaks that were fit.
+</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -434,25 +434,25 @@
     <ParametersSchema>{
       "type": "object",
       "properties": {
-        "Source": {
+        "source": {
           "type": "string",
           "description": "The nuclide, element, or reaction for which to retrieve decay product data. Examples: 'U238' (nuclide), 'Pb' (element), 'H(n,g)' (reaction)."
         },
-        "Age": {
+        "age": {
           "type": "string",
           "description":  "The age of the nuclide at which to return decay products. Applicable only for nuclides; specifying this for elements or reactions will result in an error. If not specified for nuclides, a default age will be used. Examples: '23.25 y', '23 years 60 days', '0s', '5 half-lives'. An age of '0 seconds' will return products from the specified nuclide only, while a positive value will include products from the nuclide's full decay chain, aged to the specified amount."
         },
-        "MaxResults": {
+        "maxResults": {
           "type": "integer",
           "minimum": 1,
           "description": "The maximum number of energy/intensity pairs to return; if the source has more than this number of photons, then information for this number of the largest intensity photons will be returned.  If not specified, a value of 125 will be assumed."
         },
-        "IncludeCascadeSumEnergies": {
+        "includeCascadeSumEnergies": {
           "type": "boolean",
           "description": "Optional: default false. If true, results will also include a list of top gamma pairs that may sum (gammas emitted at the same time that may be detected together), and is only relevant for nuclide sources and measurements less than ~15 cm from the source. The 'MaxResults' argument also limits the max possible length of these results."
         }
       },
-      "required": ["Source"]
+      "required": ["source"]
     }</ParametersSchema>
   </Tool>
 
@@ -1171,13 +1171,41 @@ Further investigation of top returned candidates is required to make sure they m
     </AvailableFor>
   </Tool>
 
+  <Tool name="create_peak_checkpoint">
+    <Description>Creates a checkpoint (snapshot) of the current analysis peaks for all loaded spectra (foreground, background, secondary). Returns a unique checkpoint name that can be used later with restore_peaks_to_checkpoint to undo any peak changes made after the checkpoint. Use this before making speculative peak additions or modifications.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+        "name_hint": {
+          "type": "string",
+          "description": "Optional short descriptive hint for the checkpoint name (e.g., 'before_Co60'). The actual unique checkpoint name will be returned in the result and may differ from this hint."
+        }
+      },
+      "required": []
+    }</ParametersSchema>
+  </Tool>
+
+  <Tool name="restore_peaks_to_checkpoint">
+    <Description>Restores analysis peaks to a previously created checkpoint, undoing all peak changes made since the checkpoint was created. Use this when peak additions or identifications turn out to be incorrect and you want to revert to a known-good state. The checkpoint is kept after restoring, so it can be restored to again if needed.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+        "checkpoint_name": {
+          "type": "string",
+          "description": "The unique checkpoint name returned by create_peak_checkpoint."
+        }
+      },
+      "required": ["checkpoint_name"]
+    }</ParametersSchema>
+  </Tool>
+
   <Tool name="list_isotopics_presets">
     <Description>List available isotopics analysis preset configurations. 
- Returns a list of preset files that can be loaded using load_isotopics_preset.
- Each preset contains pre-configured settings for specific analysis types like Plutonium isotopics, Uranium enrichment, etc. 
- The list includes a special 'Current Configuration' entry if any configuration is currently loaded to the applications internal state. 
- Presets define which nuclides to fit, which energy regions (ROIs) to analyze, detector resolution settings, and other analysis parameters. 
- The returned list of presets will contain descriptions for the presets that will help to determine which preset should be used as a starting point.
+Returns a list of preset files that can be loaded using load_isotopics_preset.
+Each preset contains pre-configured settings for specific analysis types like Plutonium isotopics, Uranium enrichment, etc. 
+The list includes a special 'Current Configuration' entry if any configuration is currently loaded to the applications internal state. 
+Presets define which nuclides to fit, which energy regions (ROIs) to analyze, detector resolution settings, and other analysis parameters. 
+The returned list of presets will contain descriptions for the presets that will help to determine which preset should be used as a starting point.
 </Description>
     <ParametersSchema>{
       "type": "object",
@@ -1627,6 +1655,7 @@ This tool performs relative efficiency analysis using peaks that have already be
 - Calculating relative activities/masses of fission products when geometry is unknown
 
 Peaks can be specified either by energy list or by source nuclide list (mutually exclusive).
+When using 'sources', you can optionally specify 'energy_ranges' to limit which peaks are included based on energy.
 
 The output includes:
 - Activity ratios and mass ratios between sources with uncertainties
@@ -1654,6 +1683,30 @@ The save_to_state option allows persisting the configuration to the app state fo
           "description": "Array of source nuclide names (e.g., 'U235', 'U238'). Uses all peaks assigned to these sources. Mutually exclusive with 'peak_energies'.",
           "items": {
             "type": "string"
+          }
+        },
+        "energy_ranges": {
+          "type": "array",
+          "description": "Optional energy ranges (keV) to filter peaks when using 'sources'. Only peaks within at least one range are included. Only valid with 'sources', not 'peak_energies'. Each range needs at least one of lower_energy/upper_energy; omitted bounds default to the spectrum limits.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "lower_energy": {
+                "type": "number",
+                "description": "Lower bound in keV (inclusive). Defaults to spectrum lower energy if omitted."
+              },
+              "upper_energy": {
+                "type": "number",
+                "description": "Upper bound in keV (inclusive). Defaults to spectrum upper energy if omitted."
+              }
+            }
+          }
+        },
+        "exclude_peak_energies": {
+          "type": "array",
+          "description": "Optional list of peak energies (keV) to exclude when using 'sources'. Peaks whose mean is within 1.25 FWHM of any listed energy will be excluded. Only valid with 'sources', not 'peak_energies'. Can be combined with 'energy_ranges'.",
+          "items": {
+            "type": "number"
           }
         },
         "eqn_form": {
@@ -1743,7 +1796,7 @@ The save_to_state option allows persisting the configuration to the app state fo
         },
         "background_subtract": {
           "type": "boolean",
-          "description": "Whether to subtract background peaks that overlap with the specified signal peaks. Default: false (and usually doesnt matter unless peaks overlap with background)."
+          "description": "Whether to subtract background peaks that overlap with the specified signal peaks. Uses all detected peaks in the background spectrum (both user-defined analysis peaks and automatically detected peaks), not just the analysis peaks. Default: false (and usually doesn't matter unless peaks overlap with background)."
         },
         "additional_uncertainty": {
           "type": "string",

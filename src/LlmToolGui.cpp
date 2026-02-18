@@ -513,10 +513,52 @@ void LlmToolGui::exportConversationJson()
     return;
   }
 
-  // Convert conversation history to JSON
-  const nlohmann::json conversationsJson = history->toApiFormat();
+// Set to 1 to export the full API request (system prompt, tools, model params, all messages)
+// matching exactly what is sent to the LLM. Set to 0 for the legacy bare messages array.
+#define LLM_EXPORT_FULL_API_JSON 1
 
+#if( LLM_EXPORT_FULL_API_JSON )
+  // Build the exact same JSON payload that is sent to the LLM API - this includes
+  // the system prompt, tool definitions, tool_choice, model parameters, all messages,
+  // and the ephemeral state machine reminder (if applicable).
+  // Prefer the currently-active conversation; fall back to the most recent from history.
+  shared_ptr<LlmInteraction> currentConvo = m_llmInterface->getCurrentConversation();
+  if( !currentConvo )
+  {
+    const vector<shared_ptr<LlmInteraction>> &convos = history->getConversations();
+    if( !convos.empty() )
+      currentConvo = convos.back();
+  }
+
+  if( !currentConvo )
+  {
+    SimpleDialog *dialog = new SimpleDialog( "No Active Conversation" );
+    WText *msg = new WText( "There is no active conversation to export.", dialog->contents() );
+    WPushButton *okBtn = dialog->addButton( "OK" );
+    okBtn->clicked().connect( dialog, &SimpleDialog::accept );
+    return;
+  }
+
+  nlohmann::json requestJson;
+  try
+  {
+    requestJson = m_llmInterface->buildMessagesArray( currentConvo );
+  }
+  catch( std::exception &e )
+  {
+    SimpleDialog *dialog = new SimpleDialog( "Export Failed" );
+    WText *msg = new WText( string("Failed to build export JSON: ") + e.what(), dialog->contents() );
+    WPushButton *okBtn = dialog->addButton( "OK" );
+    okBtn->clicked().connect( dialog, &SimpleDialog::accept );
+    return;
+  }
+
+  const string jsonStr = requestJson.dump(2);  // Pretty print with 2-space indent
+#else
+  // Legacy format: bare messages array only (no system prompt, tools, or model params).
+  const nlohmann::json conversationsJson = history->toApiFormat();
   const string jsonStr = conversationsJson.dump(2);  // Pretty print with 2-space indent
+#endif  //LLM_EXPORT_FULL_API_JSON
 
   // Create memory resource for download
   WMemoryResource *resource = new WMemoryResource( "application/json" );

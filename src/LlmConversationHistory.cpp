@@ -461,6 +461,7 @@ void LlmConversationHistory::addConversationToLlmApiHistory( const LlmInteractio
           json toolResultMsg;
           toolResultMsg["role"] = "tool";
           toolResultMsg["tool_call_id"] = toolRes.invocationId;
+
           toolResultMsg["content"] = toolRes.content;
 
           // The Ask Sage tool-call *might* expect a different return format...

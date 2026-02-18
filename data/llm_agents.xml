@@ -127,12 +127,17 @@ but you MUST call `set_workflow_state` when moving between phases.
             <Tool>automated_source_id_results</Tool>
             <Tool>source_info</Tool>
           </SuggestedTools>
-          <PromptGuidance>Check if the user wants specific peaks ID'd or the whole spectrum.
+          <PromptGuidance>**MANDATORY FIRST STEP:** You MUST call `loaded_spectra`, `get_identified_sources`, and `get_analysis_peaks` BEFORE deciding on a transition. Do NOT call `get_unidentified_peaks` or `search_sources_by_energy` in this state — those belong to later states.
+
+Check if the user wants specific peaks ID'd or the whole spectrum.
 If whole spectrum, acknowledge that you will persist until *all* peaks are analyzed or proven unidentifiable.
+
 Review `get_identified_sources` and `automated_source_id_results` for hints of what nuclides you might start with. Use the `source_info` tool call to get information about these sources (you can skip doing this for K40, Ra226, and Th232, since these are likely just NORM background), which will include commonly associated nuclides that you will likely want to check for.
-Transitions:
-  - If a background spectrum is loaded (see `loaded_spectra` tool call), or `get_identified_sources` indicates K40, Th232, and Ra226 identified, then transition to GET_UNIDENTIFIED_PEAKS.
-  - If no background spectrum and the NORM nuclide peaks have not been added to the analysis peaks (`get_identified_sources` and/or `get_analysis_peaks` tool calls), then transition to ADD_NORM_PEAKS</PromptGuidance>
+
+Transition rules (apply in order):
+  1. If a background spectrum is loaded (check `loaded_spectra` results), transition to GET_UNIDENTIFIED_PEAKS.
+  2. If `get_identified_sources` shows K40, Th232, and Ra226 are already identified as analysis peak sources, transition to GET_UNIDENTIFIED_PEAKS.
+  3. Otherwise (no background AND NORM peaks not yet in analysis state), you MUST transition to ADD_NORM_PEAKS. This is the DEFAULT for foreground-only spectra without existing NORM peak assignments.</PromptGuidance>
           <EphemeralMessageTxt>Analyzing request and assessing spectrum state.</EphemeralMessageTxt>
         </State>
 
@@ -240,11 +245,13 @@ Transition to GET_UNIDENTIFIED_PEAKS.</PromptGuidance>
             <Transition>GET_UNIDENTIFIED_PEAKS</Transition>
           </AllowedTransitions>
           <SuggestedTools>
+            <Tool>create_peak_checkpoint</Tool>
             <Tool>add_analysis_peaks_for_source</Tool>
             <Tool>add_analysis_peak</Tool>
             <Tool>get_analysis_peaks</Tool>
           </SuggestedTools>
           <PromptGuidance>
+- **Checkpoint first:** Before adding peaks for a new source, call `create_peak_checkpoint` with a descriptive name hint (e.g., 'before_Co60') so you can roll back if the identification turns out to be wrong.
 - **New Source:** Use `add_analysis_peaks_for_source` (highly preferred) - this will fit all detectable peaks for the source at once.
 - **Existing Source:** If the source is already in the analysis, prefer calling `add_analysis_peaks_for_source` for that source (this will re-fit all peaks for the source, which may pick up the new peak), unless there is a reason not to re-fit all peaks (e.g., you manually adjusted a peak you want to preserve). After calling it, use `get_analysis_peaks` to verify the desired peak was actually added. If the peak was not included in the re-fit results, fall back to `add_analysis_peak` to add the specific line.
 - **Specific line / Sum/Escape:** Use `add_analysis_peak` with the correct source type description.
@@ -264,18 +271,42 @@ Transition to GET_UNIDENTIFIED_PEAKS.</PromptGuidance>
           <SuggestedTools>
             <Tool>peak_based_relative_efficiency</Tool>
             <Tool>get_analysis_peaks</Tool>
+            <Tool>restore_peaks_to_checkpoint</Tool>
           </SuggestedTools>
           <PromptGuidance>If the source has &gt; 2 identified peaks, run `peak_based_relative_efficiency` on this source **alone** (one nuclide at a time, e.g., `sources=['Co60']`).
+
+**Equation order and form setup:**
+- The default `eqn_order` is 3, but it **must** be at most (number_of_peaks - 1). E.g., 3 peaks use order 2, 2 peaks use order 1.
+- If there are many peaks (e.g., 6+), increase the order to better capture the efficiency curve (e.g., 6 peaks use order 4).
+- If the source has a peak near 511 keV and that line is **not** among the top ~3 gamma lines for the source, exclude it via `exclude_peak_energies` (provided there are at least a couple other peaks). The 511 keV annihilation peak from pair-production commonly interferes.
+- If any source peaks potentially overlap with peaks in the background spectrum, set `background_subtract` to `true`.
+
+**Interpreting results:**
+- **Ignore** the `chi2` and `chi2_per_dof` fields — these are not reliable indicators of result quality. Instead, evaluate the `residual_sigma` of each individual peak.
 - **Good:** `residual_sigma` &lt; 5 for all peaks.
+- **High-statistics peaks:** If a peak has `numSigma` &gt; ~20, be more lenient with its `residual_sigma`. Small peak-fitting errors and rel-eff model systematics cause elevated values even when relative efficiency is very close to physically correct.
 - **Acceptable (requires explanation):** `residual_sigma` &gt; 5 is okay IF:
-  * It is a small peak adjacent to a much larger peak.
-  * It is the 511 keV annihilation peak.
-  * The peak is low energy (&lt; ~120 keV) vs. high energy lines (possible k-edge absorption/shielding effects).
+  * It is a small peak (`numSigma` &lt; ~10) adjacent to a much larger peak (the larger peak may bias the fit).
+  * It is near 511 keV and could include annihilation photon contribution.
   * Nuclide age differences (secular equilibrium issues).
-  * Likely interference from background.
-- **Reject:** If amplitudes are physically impossible without a valid explanation, the ID is likely wrong. Before transitioning back, consider whether the incorrectly added peaks should be removed from the analysis state to avoid polluting subsequent analysis. Transition back to INVESTIGATE_PEAK to reconsider.
+  * Likely interference from background or another source.
+
+**Handling low-energy peaks (&lt; ~120 keV):**
+- If there are multiple peaks (&gt; 2) above ~120 keV **and** some peaks below ~120 keV:
+  1. First, run the analysis including all peaks.
+  2. If the result is poor (especially for the low-energy peaks), re-run using `energy_ranges` to restrict to above ~120 keV only (e.g., `energy_ranges=[{"lower_energy": 120}]`).
+  3. If the above-120-keV-only result is good, the source identification is still valid — the low-energy deviations are likely due to k-edge absorption, shielding, or interfering x-rays.
+
+**Improving a poor solution:**
+- Try alternative `eqn_form` values (`LnX`, `LnY`, `LnXLnY`, `FramEmpirical`) — **do not use `FramPhysicalModel`** for this validation step.
+- If the solution is poor for a specific peak and that peak is small (`numSigma` &lt; ~10), located right next to a much larger peak (which may bias its fit), or likely receiving interference from another source, exclude that peak (via `exclude_peak_energies` or `peak_energies`) and re-run. If the remaining peaks give a good solution, the source ID is acceptable.
+
+**Overall assessment:**
+- **Good solution:** Transition to CHECK_ASSOCIATED_SOURCES.
+- **Poor but not terrible:** A mediocre solution does not rule out the source, but other hypotheses should also be explored. Continue to CHECK_ASSOCIATED_SOURCES but note the uncertainty.
+- **Reject:** If amplitudes are physically impossible without a valid explanation, the ID is likely wrong. Use `restore_peaks_to_checkpoint` (using the `checkpoint_name` value returned when the checkpoint was created) to revert to the checkpoint created before adding these peaks, then transition back to INVESTIGATE_PEAK to reconsider.
 - **Loop guard:** If you have already rejected multiple candidates for this same peak via this path, transition to GET_UNIDENTIFIED_PEAKS and mark this peak as unidentifiable rather than continuing to cycle.
-- If the source has &lt;=2 peaks, or relative efficiency is consistent, transition to CHECK_ASSOCIATED_SOURCES.
+- If the source has &lt;= 2 peaks, or relative efficiency is consistent, transition to CHECK_ASSOCIATED_SOURCES.
 - If only 1 peak was added and it's a single-line source, skip directly to CHECK_ASSOCIATED_SOURCES.</PromptGuidance>
           <EphemeralMessageTxt>Checking relative efficiency consistency.</EphemeralMessageTxt>
         </State>

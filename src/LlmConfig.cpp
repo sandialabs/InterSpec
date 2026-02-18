@@ -150,7 +150,7 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
     SpecUtils::load_file_data( llmConfigPath.c_str(), xmlContent );
 
     rapidxml::xml_document<char> doc;
-    const int flags = (rapidxml::parse_normalize_whitespace | rapidxml::parse_trim_whitespace);
+    const int flags = rapidxml::parse_trim_whitespace; // parse_normalize_whitespace would collapse newlines in text content
 
     doc.parse<flags>( &xmlContent[0] );
 
@@ -404,7 +404,7 @@ std::vector<LlmConfig::ToolConfig> LlmConfig::loadToolConfigsFromFile( const std
     SpecUtils::load_file_data( toolsConfigPath.c_str(), xmlContent );
 
     rapidxml::xml_document<char> doc;
-    const int flags = (rapidxml::parse_normalize_whitespace | rapidxml::parse_trim_whitespace);
+    const int flags = rapidxml::parse_trim_whitespace; // parse_normalize_whitespace would collapse newlines in text content
 
     doc.parse<flags>( &xmlContent[0] );
 
@@ -817,7 +817,7 @@ std::vector<LlmConfig::AgentConfig> LlmConfig::loadAgentsFromFile( const std::st
     SpecUtils::load_file_data( agentsConfigPath.c_str(), xmlContent );
 
     rapidxml::xml_document<char> doc;
-    const int flags = (rapidxml::parse_normalize_whitespace | rapidxml::parse_trim_whitespace);
+    const int flags = rapidxml::parse_trim_whitespace; // parse_normalize_whitespace would collapse newlines in text content
 
     doc.parse<flags>( &xmlContent[0] );
 
