@@ -296,7 +296,13 @@ namespace
         case ReferenceLineInfo::SourceType::FissionRefLines:
         {
           out << "FissionProductLines," << refinfo.m_input.m_input_txt << eol_char;
-          out << "TimeAfterFission," << refinfo.m_input.m_age << eol_char;
+          const bool spontaneous_fission = SpecUtils::icontains( refinfo.m_input.m_input_txt, "Fission" )
+                                           && !SpecUtils::icontains( refinfo.m_input.m_input_txt, "Thermal" )
+                                           && !SpecUtils::icontains( refinfo.m_input.m_input_txt, "Fast" )
+                                           && !SpecUtils::icontains( refinfo.m_input.m_input_txt, "14 MeV" )
+                                           && !SpecUtils::icontains( refinfo.m_input.m_input_txt, "14MeV" );
+          out << (spontaneous_fission ? "SourceAge" : "TimeAfterFission")
+              << "," << refinfo.m_input.m_age << eol_char;
         }
           
         case ReferenceLineInfo::SourceType::None:

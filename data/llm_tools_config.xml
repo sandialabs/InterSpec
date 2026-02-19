@@ -428,6 +428,40 @@ Returns simplified peak information (energy, fwhm, amplitude, amplitudeUncert, n
     }</ParametersSchema>
   </Tool>
 
+  <Tool name="decay_calculator">
+    <Description>Calculates radioactive decay of a nuclide over a specified time period. Returns activities of all progeny nuclides after decay. If the time duration is negative, or the end date is before the start date, back-decay is performed to determine the original activity needed to produce the specified activity at the reference time.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+        "nuclide": {
+          "type": "string",
+          "description": "The nuclide to decay. Examples: 'U238', 'Co60', 'Cs137', 'Pu239'."
+        },
+        "activity": {
+          "type": "string",
+          "description": "The activity with units. For forward decay this is the initial activity; for back-decay this is the final (current) activity. Examples: '1.5 uCi', '100 Bq', '3.7 MBq', '1 mCi'."
+        },
+        "time_duration": {
+          "type": "string",
+          "description": "The time duration for decay. Positive values decay forward, negative values back-decay. Supports common time-duration strings or half-life notation. Examples: '5.2 y', '30 days', '3 half-lives', '-10 y', '3hl', '-2hl'. Either time_duration, or both start_date and end_date must be provided."
+        },
+        "start_date": {
+          "type": "string",
+          "description": "The starting date/time. Used with end_date to determine the decay duration. If end_date is before start_date, back-decay is performed. Examples: '2020-01-15', '2020-01-15T10:30:00'. Either time_duration, or both start_date and end_date must be provided."
+        },
+        "end_date": {
+          "type": "string",
+          "description": "The ending date/time. Used with start_date to determine the decay duration. Examples: '2025-06-01', '2025-06-01T14:00:00'. Either time_duration, or both start_date and end_date must be provided."
+        },
+        "initial_age": {
+          "type": "string",
+          "description": "Optional initial age of the nuclide before the decay period begins. Useful for sources that have already been aging, so progeny are already present. Examples: '20 y', '5 days', '0 s'. Default is 0."
+        }
+      },
+      "required": ["nuclide", "activity"]
+    }</ParametersSchema>
+  </Tool>
+
   <!-- TODO: consider adding escape peak option to "source_photons" -->
   <Tool name="source_photons">
     <Description>Returns a list of energy/intensity pairs associated with a nuclide, elemental fluorescence x-rays, or reaction.  The energies are expressed in keV, and intensities are given as photons per source Becquerel for nuclides, or normalized to 1 for fluorescence or reactions.  Results will be sorted by energy.</Description>

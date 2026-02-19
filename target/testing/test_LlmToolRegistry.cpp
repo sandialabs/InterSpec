@@ -38,6 +38,7 @@
 #define BOOST_TEST_MODULE LlmToolRegistry_suite
 #include <boost/test/included/unit_test.hpp>
 
+#include "SpecUtils/DateTime.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 
@@ -45,6 +46,7 @@
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/LlmToolGui.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/LlmInterface.h"
@@ -248,16 +250,19 @@ BOOST_AUTO_TEST_CASE( test_executeGetMaterials )
   json result;
   BOOST_REQUIRE_NO_THROW( result = registry.executeTool("get_materials", json::object(), fixture.m_interspec) );
 
-  // Should return an array
-  BOOST_CHECK( result.is_array() );
-  BOOST_CHECK( !result.empty() );
+  // Should return an object with a "materials" array
+  BOOST_REQUIRE( result.is_object() );
+  BOOST_REQUIRE( result.contains("materials") );
+  const json &materials = result["materials"];
+  BOOST_CHECK( materials.is_array() );
+  BOOST_CHECK( !materials.empty() );
 
   // Check for some expected materials
   bool found_water = false;
   bool found_air = false;
   bool found_concrete = false;
 
-  for( const auto &material : result )
+  for( const auto &material : materials )
   {
     BOOST_CHECK( material.is_string() );
     const string mat_name = material.get<string>();
@@ -324,13 +329,17 @@ BOOST_AUTO_TEST_CASE( test_executeGetSourcePhotons )
   json result;
   BOOST_REQUIRE_NO_THROW( result = registry.executeTool("source_photons", params, fixture.m_interspec) );
 
-  // Should return an array
-  BOOST_CHECK( result.is_array() );
-  BOOST_CHECK( !result.empty() );
+  // Should return an object with a "photons" array and a description
+  BOOST_REQUIRE( result.is_object() );
+  BOOST_REQUIRE( result.contains("photons") );
+  BOOST_CHECK( result.contains("photonsDescription") );
+  const json &photons = result["photons"];
+  BOOST_CHECK( photons.is_array() );
+  BOOST_CHECK( !photons.empty() );
 
   // Each entry should be [energy, intensity]
   bool found_662 = false;
-  for( const auto &entry : result )
+  for( const auto &entry : photons )
   {
     BOOST_CHECK( entry.is_array() );
     BOOST_CHECK_EQUAL( entry.size(), 2 );
@@ -355,14 +364,16 @@ BOOST_AUTO_TEST_CASE( test_executeGetSourcePhotons )
   // Test with an element (x-rays)
   params["Source"] = "Pb";
   BOOST_REQUIRE_NO_THROW( result = registry.executeTool("source_photons", params, fixture.m_interspec) );
-  BOOST_CHECK( result.is_array() );
-  BOOST_CHECK( !result.empty() );
+  BOOST_REQUIRE( result.is_object() && result.contains("photons") );
+  BOOST_CHECK( result["photons"].is_array() );
+  BOOST_CHECK( !result["photons"].empty() );
 
   // Test with age parameter
   params["Source"] = "U238";
   params["Age"] = "0 seconds";
   BOOST_REQUIRE_NO_THROW( result = registry.executeTool("source_photons", params, fixture.m_interspec) );
-  BOOST_CHECK( result.is_array() );
+  BOOST_REQUIRE( result.is_object() && result.contains("photons") );
+  BOOST_CHECK( result["photons"].is_array() );
 
   // Test error handling - age with element should fail
   params["Source"] = "Pb";
@@ -699,12 +710,16 @@ BOOST_AUTO_TEST_CASE( test_executeGetLoadedSpectra )
 
   json result;
   BOOST_REQUIRE_NO_THROW( result = registry.executeTool("loaded_spectra", {}, fixture.m_interspec) );
-  BOOST_CHECK( result.is_array() );
-  BOOST_REQUIRE_EQUAL( result.size(), 2 );
-  BOOST_CHECK( result[0].is_string() );
-  BOOST_CHECK( result[1].is_string() );
-  BOOST_CHECK_EQUAL( result[0].get<string>(), "Foreground" );
-  BOOST_CHECK_EQUAL( result[1].get<string>(), "Background" );
+  // Result is an object with a "loaded_spectra" array
+  BOOST_REQUIRE( result.is_object() );
+  BOOST_REQUIRE( result.contains("loaded_spectra") );
+  const json &spectra = result["loaded_spectra"];
+  BOOST_REQUIRE( spectra.is_array() );
+  BOOST_REQUIRE_EQUAL( spectra.size(), 2 );
+  BOOST_CHECK( spectra[0].is_string() );
+  BOOST_CHECK( spectra[1].is_string() );
+  BOOST_CHECK_EQUAL( spectra[0].get<string>(), "Foreground" );
+  BOOST_CHECK_EQUAL( spectra[1].get<string>(), "Background" );
 }
 
 
@@ -2108,7 +2123,13 @@ BOOST_AUTO_TEST_CASE( test_toolsLoadedFromXml )
     "available_detector_efficiency_functions",
     "load_detector_efficiency_function",
     "detector_efficiency_function_info",
-    "search_sources_by_energy"
+    "search_sources_by_energy",
+    "decay_calculator",
+    "create_peak_checkpoint",
+    "restore_peaks_to_checkpoint",
+    "fit_energy_calibration",
+    "save_energy_cal_checkpoint",
+    "restore_energy_cal_checkpoint"
   };
 
   // Check that all expected tools are present
@@ -2164,8 +2185,8 @@ BOOST_AUTO_TEST_CASE( test_agentsLoadedFromXml )
   // Check that agents were loaded
   BOOST_REQUIRE_MESSAGE( !llmConfig->agents.empty(), "No agents loaded from XML" );
 
-  // Expected agents: MainAgent, NuclideId, ActivityFit, Isotopics
-  const std::set<std::string> expectedAgents = { "MainAgent", "NuclideId", "ActivityFit", "Isotopics" };
+  // Expected agents: MainAgent, NuclideId, ActivityFit, Isotopics, DeepResearch, EnergyCalibration
+  const std::set<std::string> expectedAgents = { "MainAgent", "NuclideId", "ActivityFit", "Isotopics", "DeepResearch", "EnergyCalibration" };
 
   cout << "Loaded " << llmConfig->agents.size() << " agents from XML configuration:" << endl;
 
@@ -2234,7 +2255,7 @@ BOOST_AUTO_TEST_CASE( test_StateMachineBasicFunctionality )
   }
   BOOST_REQUIRE_MESSAGE( nuclideIdAgent != nullptr, "NuclideId agent not found in configuration" );
   BOOST_REQUIRE_MESSAGE( nuclideIdAgent->state_machine != nullptr, "NuclideId agent should have a state machine" );
-  BOOST_CHECK_EQUAL( nuclideIdAgent->state_machine->getInitialState(), "ANALYZE_REQUEST" );
+  BOOST_CHECK_EQUAL( nuclideIdAgent->state_machine->getInitialState(), "ANALYZE_REQUEST_AND_ASSESS_STATE" );
 
   // Find the Isotopics agent which has a state machine
   const LlmConfig::AgentConfig *isotopicsAgent = nullptr;
@@ -2270,13 +2291,13 @@ BOOST_AUTO_TEST_CASE( test_StateMachineBasicFunctionality )
   BOOST_CHECK_EQUAL( initialState.allowed_transitions[0], "SELECT_CONFIGURATION" );
 
   // Verify required tools are populated
-  BOOST_CHECK_MESSAGE( !initialState.required_tools.empty(),
+  BOOST_CHECK_MESSAGE( !initialState.suggested_tools.empty(),
                       "ANALYZE_REQUEST state should have required tools" );
-  BOOST_CHECK_EQUAL( initialState.required_tools.size(), 2 );
+  BOOST_CHECK_EQUAL( initialState.suggested_tools.size(), 2 );
 
   cout << "Initial state validated: " << initialState.name << endl;
   cout << "  Allowed transitions: " << initialState.allowed_transitions.size() << endl;
-  cout << "  Required tools: " << initialState.required_tools.size() << endl;
+  cout << "  Suggested tools: " << initialState.suggested_tools.size() << endl;
 }
 
 BOOST_AUTO_TEST_CASE( test_StateMachineTransitions )
@@ -2419,7 +2440,7 @@ BOOST_AUTO_TEST_CASE( test_StateMachineAllStates )
 
       cout << "  State: " << stateName
            << ", Transitions: " << state.allowed_transitions.size()
-           << ", Tools: " << state.required_tools.size()
+           << ", Tools: " << state.suggested_tools.size()
            << ", Final: " << (state.is_final ? "yes" : "no") << endl;
     }
   }
@@ -3133,5 +3154,404 @@ BOOST_AUTO_TEST_CASE( test_executeCalculateDose_WithMaterialAndArealDensity )
   BOOST_TEST_MESSAGE( "Dose (Sv units): " << dose_sv_str << " (" << dose_ad_sv << " Sv/hr)" );
   BOOST_TEST_MESSAGE( "Areal density (thickness): " << ad_thickness << " g/cm²" );
   BOOST_TEST_MESSAGE( "Areal density (direct): " << ad_direct << " g/cm²" );
+}
+
+
+// Helper to find a nuclide entry in a JSON array by symbol
+static json find_nuclide_in_array( const json &arr, const string &symbol )
+{
+  for( const auto &entry : arr )
+  {
+    if( entry.contains( "nuclide" ) && (entry["nuclide"].get<string>() == symbol) )
+      return entry;
+  }
+  return json();
+}
+
+
+BOOST_AUTO_TEST_CASE( test_decayCalculator_ForwardDuration_Co60 )
+{
+  // Co60 has a half-life of ~5.2714 years.
+  // After exactly 1 half-life, the activity should be halved.
+  // Co60 decays to Ni60 (stable), so progeny should include Ni60.
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+  const SandiaDecay::Nuclide * const co60 = db->nuclide( "Co60" );
+  BOOST_REQUIRE( co60 );
+
+  const double halfLife = co60->halfLife; // in SandiaDecay seconds
+
+  json params;
+  params["nuclide"] = "Co60";
+  params["activity"] = "1 mCi";
+  params["time_duration"] = "1 half-life";
+
+  json result;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool( "decay_calculator", params, fixture.m_interspec ) );
+
+  BOOST_CHECK_EQUAL( result["direction"].get<string>(), "forward" );
+  BOOST_CHECK( result.contains( "final_activities" ) );
+  BOOST_CHECK( result["final_activities"].is_array() );
+
+  // Find Co60 in the final activities and verify it's approximately half
+  const json co60_final = find_nuclide_in_array( result["final_activities"], "Co60" );
+  BOOST_REQUIRE_MESSAGE( !co60_final.empty(), "Co60 should be in final_activities after 1 half-life" );
+
+  const double co60_final_act = PhysicalUnits::stringToActivity( co60_final["activity"].get<string>() );
+  const double expected_act = 0.5 * PhysicalUnits::stringToActivity( "1 mCi" );
+  BOOST_CHECK_CLOSE( co60_final_act, expected_act, 1.0 ); // 1% tolerance
+
+  // Ni60 is the stable daughter of Co60; stable nuclides have zero activity and are
+  // filtered out of final_activities by the decay calculator (activity < 1e-15 threshold).
+  const json ni60_final = find_nuclide_in_array( result["final_activities"], "Ni60" );
+  BOOST_TEST_MESSAGE( "Ni60 (stable daughter) " << (ni60_final.empty() ? "correctly absent from" : "present in") << " final_activities" );
+
+  BOOST_TEST_MESSAGE( "Co60 forward 1 half-life: final activity = " << co60_final["activity"].get<string>() );
+}
+
+
+BOOST_AUTO_TEST_CASE( test_decayCalculator_ForwardDuration_TwoHalfLives )
+{
+  // After 2 half-lives, activity should be 1/4 of original
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+
+  json params;
+  params["nuclide"] = "Co60";
+  params["activity"] = "100 uCi";
+  params["time_duration"] = "2 half-lives";
+
+  json result;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool( "decay_calculator", params, fixture.m_interspec ) );
+
+  BOOST_CHECK_EQUAL( result["direction"].get<string>(), "forward" );
+
+  const json co60_final = find_nuclide_in_array( result["final_activities"], "Co60" );
+  BOOST_REQUIRE( !co60_final.empty() );
+
+  const double co60_final_act = PhysicalUnits::stringToActivity( co60_final["activity"].get<string>() );
+  const double expected_act = 0.25 * PhysicalUnits::stringToActivity( "100 uCi" );
+  BOOST_CHECK_CLOSE( co60_final_act, expected_act, 1.0 );
+
+  BOOST_TEST_MESSAGE( "Co60 forward 2 half-lives: " << co60_final["activity"].get<string>() );
+}
+
+
+BOOST_AUTO_TEST_CASE( test_decayCalculator_BackDecayDuration )
+{
+  // Back-decay: negative time duration means we want to find what original activity was.
+  // If current activity is 0.5 mCi of Co60, and we go back 1 half-life,
+  // the original activity should have been ~1.0 mCi.
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+
+  json params;
+  params["nuclide"] = "Co60";
+  params["activity"] = "0.5 mCi";
+  params["time_duration"] = "-1 half-life";
+
+  json result;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool( "decay_calculator", params, fixture.m_interspec ) );
+
+  BOOST_CHECK_EQUAL( result["direction"].get<string>(), "back_decay" );
+  BOOST_CHECK( result.contains( "initial_activities" ) );
+  BOOST_CHECK( result.contains( "final_activities" ) );
+
+  // Initial activities (before decay) should show Co60 at ~1.0 mCi
+  const json co60_initial = find_nuclide_in_array( result["initial_activities"], "Co60" );
+  BOOST_REQUIRE_MESSAGE( !co60_initial.empty(), "Co60 should be in initial_activities for back-decay" );
+
+  const double co60_init_act = PhysicalUnits::stringToActivity( co60_initial["activity"].get<string>() );
+  const double expected_init = PhysicalUnits::stringToActivity( "1.0 mCi" );
+  BOOST_CHECK_CLOSE( co60_init_act, expected_init, 1.0 );
+
+  // Final activities (after decay) should show Co60 at ~0.5 mCi
+  const json co60_final = find_nuclide_in_array( result["final_activities"], "Co60" );
+  BOOST_REQUIRE( !co60_final.empty() );
+
+  const double co60_final_act = PhysicalUnits::stringToActivity( co60_final["activity"].get<string>() );
+  const double expected_final = PhysicalUnits::stringToActivity( "0.5 mCi" );
+  BOOST_CHECK_CLOSE( co60_final_act, expected_final, 1.0 );
+
+  BOOST_TEST_MESSAGE( "Co60 back-decay 1 half-life: initial=" << co60_initial["activity"].get<string>()
+                     << ", final=" << co60_final["activity"].get<string>() );
+}
+
+
+BOOST_AUTO_TEST_CASE( test_decayCalculator_ForwardDates )
+{
+  // Use start_date/end_date to specify decay.
+  // Cs137 half-life is ~30.08 y. Use a known time span.
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+  const SandiaDecay::Nuclide * const cs137 = db->nuclide( "Cs137" );
+  BOOST_REQUIRE( cs137 );
+
+  // Use dates ~10 years apart: 2010-01-01 to 2020-01-01
+  json params;
+  params["nuclide"] = "Cs137";
+  params["activity"] = "1 mCi";
+  params["start_date"] = "2010-01-01";
+  params["end_date"] = "2020-01-01";
+
+  json result;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool( "decay_calculator", params, fixture.m_interspec ) );
+
+  BOOST_CHECK_EQUAL( result["direction"].get<string>(), "forward" );
+  BOOST_CHECK( result.contains( "final_activities" ) );
+
+  // Compute expected: activity * exp(-lambda * dt)
+  // dt is roughly 10 years = 10 * 365.25 * 24 * 3600 seconds
+  const SpecUtils::time_point_t t0 = SpecUtils::time_from_string( "2010-01-01" );
+  const SpecUtils::time_point_t t1 = SpecUtils::time_from_string( "2020-01-01" );
+  BOOST_REQUIRE( !SpecUtils::is_special( t0 ) );
+  BOOST_REQUIRE( !SpecUtils::is_special( t1 ) );
+
+  const double dt_seconds = std::chrono::duration<double>( t1 - t0 ).count();
+  const double decay_factor = std::exp( -cs137->decayConstant() * dt_seconds );
+  const double initial_act = PhysicalUnits::stringToActivity( "1 mCi" );
+  const double expected_final = initial_act * decay_factor;
+
+  const json cs137_final = find_nuclide_in_array( result["final_activities"], "Cs137" );
+  BOOST_REQUIRE( !cs137_final.empty() );
+
+  const double cs137_final_act = PhysicalUnits::stringToActivity( cs137_final["activity"].get<string>() );
+  BOOST_CHECK_CLOSE( cs137_final_act, expected_final, 1.0 );
+
+  // Ba137m should be present (secular equilibrium daughter)
+  const json ba137m_final = find_nuclide_in_array( result["final_activities"], "Ba137m" );
+  BOOST_CHECK_MESSAGE( !ba137m_final.empty(), "Ba137m should be present as Cs137 daughter" );
+
+  BOOST_TEST_MESSAGE( "Cs137 forward 10y via dates: " << cs137_final["activity"].get<string>() );
+}
+
+
+BOOST_AUTO_TEST_CASE( test_decayCalculator_BackDecayDates )
+{
+  // Back-decay via dates: end_date before start_date
+  // If end_date is 2010-01-01 and start_date is 2020-01-01, thats -10 years
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+  const SandiaDecay::Nuclide * const cs137 = db->nuclide( "Cs137" );
+  BOOST_REQUIRE( cs137 );
+
+  json params;
+  params["nuclide"] = "Cs137";
+  params["activity"] = "1 mCi";
+  params["start_date"] = "2020-01-01";
+  params["end_date"] = "2010-01-01";
+
+  json result;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool( "decay_calculator", params, fixture.m_interspec ) );
+
+  BOOST_CHECK_EQUAL( result["direction"].get<string>(), "back_decay" );
+  BOOST_CHECK( result.contains( "initial_activities" ) );
+
+  // Back-decay 10 years: initial activity should be higher than current
+  const json cs137_initial = find_nuclide_in_array( result["initial_activities"], "Cs137" );
+  BOOST_REQUIRE( !cs137_initial.empty() );
+
+  const double cs137_init_act = PhysicalUnits::stringToActivity( cs137_initial["activity"].get<string>() );
+  const double current_act = PhysicalUnits::stringToActivity( "1 mCi" );
+
+  // After 10 years of decay from the initial, we should get back to ~1 mCi
+  const SpecUtils::time_point_t t0 = SpecUtils::time_from_string( "2010-01-01" );
+  const SpecUtils::time_point_t t1 = SpecUtils::time_from_string( "2020-01-01" );
+  const double dt_seconds = std::chrono::duration<double>( t1 - t0 ).count();
+  const double decay_factor = std::exp( -cs137->decayConstant() * dt_seconds );
+  const double expected_initial = current_act / decay_factor;
+
+  BOOST_CHECK_CLOSE( cs137_init_act, expected_initial, 1.0 );
+  BOOST_CHECK_GT( cs137_init_act, current_act ); // initial should be greater for back-decay
+
+  BOOST_TEST_MESSAGE( "Cs137 back-decay 10y via dates: initial=" << cs137_initial["activity"].get<string>() );
+}
+
+
+BOOST_AUTO_TEST_CASE( test_decayCalculator_ForwardWithProgeny_U238 )
+{
+  // U238 has a long decay chain. After decaying for a few half-lives of Th234 (~24.1 days),
+  // we should see Th234 and Pa234m in the progeny.
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+  const SandiaDecay::Nuclide * const th234 = db->nuclide( "Th234" );
+  BOOST_REQUIRE( th234 );
+
+  // Decay for 5 half-lives of Th234 (~120 days) so Th234 reaches near-equilibrium
+  json params;
+  params["nuclide"] = "U238";
+  params["activity"] = "1 uCi";
+  params["time_duration"] = "120 days";
+
+  json result;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool( "decay_calculator", params, fixture.m_interspec ) );
+
+  BOOST_CHECK_EQUAL( result["direction"].get<string>(), "forward" );
+
+  // Check that Th234 and Pa234m are present as progeny
+  const json th234_final = find_nuclide_in_array( result["final_activities"], "Th234" );
+  BOOST_CHECK_MESSAGE( !th234_final.empty(), "Th234 should appear as U238 progeny after 120 days" );
+
+  const json pa234m_final = find_nuclide_in_array( result["final_activities"], "Pa234m" );
+  BOOST_CHECK_MESSAGE( !pa234m_final.empty(), "Pa234m should appear as U238 progeny after 120 days" );
+
+  // Th234 should be in approximate secular equilibrium with U238 (activity ~= U238 activity)
+  if( !th234_final.empty() )
+  {
+    const double th234_act = PhysicalUnits::stringToActivity( th234_final["activity"].get<string>() );
+    const double u238_act = PhysicalUnits::stringToActivity( "1 uCi" );
+    // After ~5 Th234 half-lives, Th234 should be within ~3% of secular equilibrium
+    BOOST_CHECK_CLOSE( th234_act, u238_act, 5.0 );
+  }
+
+  BOOST_TEST_MESSAGE( "U238 forward 120d: found Th234 and Pa234m progeny" );
+}
+
+
+BOOST_AUTO_TEST_CASE( test_decayCalculator_WithInitialAge )
+{
+  // Test initial_age: U238 with 1 year of initial aging should already have Th234 progeny
+  // even at t=0 in the mixture. Decaying further should maintain equilibrium.
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+
+  json params;
+  params["nuclide"] = "U238";
+  params["activity"] = "1 uCi";
+  params["time_duration"] = "1 day";
+  params["initial_age"] = "1 y";
+
+  json result;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool( "decay_calculator", params, fixture.m_interspec ) );
+
+  BOOST_CHECK( result.contains( "initial_age" ) );
+
+  // After 1 year of aging + 1 day, Th234 should be in secular equilibrium
+  const json th234_final = find_nuclide_in_array( result["final_activities"], "Th234" );
+  BOOST_CHECK_MESSAGE( !th234_final.empty(), "Th234 should be present with 1y initial age" );
+
+  if( !th234_final.empty() )
+  {
+    const double th234_act = PhysicalUnits::stringToActivity( th234_final["activity"].get<string>() );
+    const double u238_act = PhysicalUnits::stringToActivity( "1 uCi" );
+    BOOST_CHECK_CLOSE( th234_act, u238_act, 2.0 );
+  }
+
+  BOOST_TEST_MESSAGE( "U238 with 1y initial age: Th234 in secular equilibrium" );
+}
+
+
+BOOST_AUTO_TEST_CASE( test_decayCalculator_HalfLifeNotation )
+{
+  // Test "3hl" shorthand notation
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+
+  json params;
+  params["nuclide"] = "Co60";
+  params["activity"] = "8 mCi";
+  params["time_duration"] = "3hl";
+
+  json result;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool( "decay_calculator", params, fixture.m_interspec ) );
+
+  // After 3 half-lives, activity should be 1/8 of original
+  const json co60_final = find_nuclide_in_array( result["final_activities"], "Co60" );
+  BOOST_REQUIRE( !co60_final.empty() );
+
+  const double co60_final_act = PhysicalUnits::stringToActivity( co60_final["activity"].get<string>() );
+  const double expected = PhysicalUnits::stringToActivity( "1 mCi" ); // 8 mCi / 8 = 1 mCi
+  BOOST_CHECK_CLOSE( co60_final_act, expected, 1.0 );
+
+  BOOST_TEST_MESSAGE( "Co60 forward 3hl: " << co60_final["activity"].get<string>() );
+}
+
+
+BOOST_AUTO_TEST_CASE( test_decayCalculator_ErrorCases )
+{
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+
+  // Missing nuclide
+  {
+    json params;
+    params["activity"] = "1 mCi";
+    params["time_duration"] = "1 y";
+    BOOST_CHECK_THROW( registry.executeTool( "decay_calculator", params, fixture.m_interspec ), std::exception );
+  }
+
+  // Invalid nuclide
+  {
+    json params;
+    params["nuclide"] = "NotANuclide";
+    params["activity"] = "1 mCi";
+    params["time_duration"] = "1 y";
+    BOOST_CHECK_THROW( registry.executeTool( "decay_calculator", params, fixture.m_interspec ), std::exception );
+  }
+
+  // Missing both time_duration and date pair
+  {
+    json params;
+    params["nuclide"] = "Co60";
+    params["activity"] = "1 mCi";
+    BOOST_CHECK_THROW( registry.executeTool( "decay_calculator", params, fixture.m_interspec ), std::exception );
+  }
+
+  // Only start_date, missing end_date
+  {
+    json params;
+    params["nuclide"] = "Co60";
+    params["activity"] = "1 mCi";
+    params["start_date"] = "2020-01-01";
+    BOOST_CHECK_THROW( registry.executeTool( "decay_calculator", params, fixture.m_interspec ), std::exception );
+  }
+
+  // Zero time span
+  {
+    json params;
+    params["nuclide"] = "Co60";
+    params["activity"] = "1 mCi";
+    params["time_duration"] = "0 s";
+    BOOST_CHECK_THROW( registry.executeTool( "decay_calculator", params, fixture.m_interspec ), std::exception );
+  }
+
+  BOOST_TEST_MESSAGE( "All decay_calculator error cases passed" );
+}
+
+
+BOOST_AUTO_TEST_CASE( test_decayCalculator_BqUnits )
+{
+  // Test with Bq units to verify unit handling works both ways
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+
+  json params;
+  params["nuclide"] = "Cs137";
+  params["activity"] = "37000 Bq";
+  params["time_duration"] = "1 half-life";
+
+  json result;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool( "decay_calculator", params, fixture.m_interspec ) );
+
+  const json cs137_final = find_nuclide_in_array( result["final_activities"], "Cs137" );
+  BOOST_REQUIRE( !cs137_final.empty() );
+
+  const double cs137_final_act = PhysicalUnits::stringToActivity( cs137_final["activity"].get<string>() );
+  const double expected = 0.5 * PhysicalUnits::stringToActivity( "37000 Bq" );
+  BOOST_CHECK_CLOSE( cs137_final_act, expected, 1.0 );
+
+  BOOST_TEST_MESSAGE( "Cs137 forward 1hl with Bq: " << cs137_final["activity"].get<string>() );
 }
 
