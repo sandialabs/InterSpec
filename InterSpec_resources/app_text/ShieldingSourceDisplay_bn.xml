@@ -138,5 +138,5 @@
   <message id="x2g-tt-sources-contributing">অবদানকারী উৎস:</message>
   <message id="x2g-tt-counts-abbrev">গণনা</message>
   <message id="x2g-tt-br-abbrev">br</message>
-  <message id="x2g-dev-label">&lt;dev&gt;</message>
+  <message id="x2g-dev-label"><![CDATA[<বিচ্য>]]></message>
 </messages>

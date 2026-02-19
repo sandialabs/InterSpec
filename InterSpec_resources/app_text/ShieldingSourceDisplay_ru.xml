@@ -158,5 +158,5 @@
   <message id="x2g-tt-sources-contributing">Источники, вносящие вклад:</message>
   <message id="x2g-tt-counts-abbrev">отсч</message>
   <message id="x2g-tt-br-abbrev">br</message>
-  <message id="x2g-dev-label">&lt;dev&gt;</message>
+  <message id="x2g-dev-label"><![CDATA[<откл>]]></message>
 </messages>

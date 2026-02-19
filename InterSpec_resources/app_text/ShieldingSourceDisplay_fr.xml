@@ -146,5 +146,5 @@
   <message id="x2g-tt-sources-contributing">Sources contribuantes :</message>
   <message id="x2g-tt-counts-abbrev">cpts</message>
   <message id="x2g-tt-br-abbrev">br</message>
-  <message id="x2g-dev-label">&lt;dev&gt;</message>
+  <message id="x2g-dev-label"><![CDATA[<dév>]]></message>
 </messages>
