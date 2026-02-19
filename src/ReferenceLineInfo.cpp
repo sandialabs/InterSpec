@@ -625,21 +625,57 @@ std::shared_ptr<const vector<FissionLine>> fission_photons( const SandiaDecay::N
     SandiaDecay::NuclideMixture mixture;
     if( source_age > 0.0 )
     {
-      const int num_steps = 300; //chosen arbitrarily
-      const double dt = source_age / num_steps;
-      for( double start_time = 0.0; start_time < source_age; start_time += dt )
+      // Integrate with non-uniform timesteps: coarser for old fissions and finer near "now",
+      // where short-lived products can dominate the observed spectrum.
+      // Each interval uses a 2-point Gauss-Legendre rule for better accuracy than midpoint.
+      // Note: the calculates gamma intensities are for at the end of the aging interval (i.e., when the spectrum was taken)
+      const double min_dt = 0.1 * PhysicalUnits::second;
+      const double frac_step = 0.06; //fraction of remaining time-until-now per interval
+      const size_t max_steps = 1200;
+      size_t num_steps = 0;
+      
+      double tau_hi = source_age; // "time until now" at start of interval
+      while( (tau_hi > 0.0) && (num_steps < max_steps) )
       {
-        const double end_time = std::min( start_time + dt, source_age );
+        const double dt = std::max( min_dt, frac_step * tau_hi );
+        const double tau_lo = std::max( 0.0, tau_hi - dt );
+        
+        const double start_time = source_age - tau_hi;
+        const double end_time = source_age - tau_lo;
         const double this_dt = end_time - start_time;
         const double mid_time = 0.5 * (start_time + end_time);
+        const double gl_offset = (0.5 * this_dt) / std::sqrt( 3.0 );
+        const double sample_times[2] = { mid_time - gl_offset, mid_time + gl_offset };
+        
+        for( size_t sample_index = 0; sample_index < 2; ++sample_index )
+        {
+          const double sample_time = sample_times[sample_index];
+          const double time_until_now = source_age - sample_time;
+          const double parent_activity = initial_parent_activity * std::exp( -lambda * sample_time );
+          const double fission_rate = sf_branch_ratio * parent_activity;
+          const double sample_weight = 0.5 * this_dt; // (b-a)/2 for each GL2 sample
+          
+          const vector<SandiaDecay::NuclideNumAtomsPair> num_atoms = ager.numAtoms( time_until_now );
+          for( const SandiaDecay::NuclideNumAtomsPair &nuc_num : num_atoms )
+            mixture.addNuclideByAbundance( nuc_num.nuclide, sample_weight * fission_rate * nuc_num.numAtoms );
+        }//for( size_t sample_index = 0; sample_index < 2; ++sample_index )
+        
+        tau_hi = tau_lo;
+        ++num_steps;
+      }//while( (tau_hi > 0.0) && (num_steps < max_steps) )
+      
+      if( tau_hi > 0.0 )
+      {
+        // Safety fallback for extremely large ages: do one final midpoint step.
+        const double this_dt = tau_hi;
+        const double mid_time = source_age - 0.5 * tau_hi;
         const double time_until_now = source_age - mid_time;
         const double parent_activity = initial_parent_activity * std::exp( -lambda * mid_time );
         const double fission_rate = sf_branch_ratio * parent_activity;
-        
         const vector<SandiaDecay::NuclideNumAtomsPair> num_atoms = ager.numAtoms( time_until_now );
         for( const SandiaDecay::NuclideNumAtomsPair &nuc_num : num_atoms )
           mixture.addNuclideByAbundance( nuc_num.nuclide, this_dt * fission_rate * nuc_num.numAtoms );
-      }//for( double start_time = 0.0; ... )
+      }//if( tau_hi > 0.0 )
     }//if( source_age > 0.0 )
     
     final_activities = mixture.activity( 0.0 );

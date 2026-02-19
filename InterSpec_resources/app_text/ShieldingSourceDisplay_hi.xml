@@ -154,5 +154,5 @@
   <message id="x2g-tt-sources-contributing">योगदान करने वाले स्रोत:</message>
   <message id="x2g-tt-counts-abbrev">गणना</message>
   <message id="x2g-tt-br-abbrev">br</message>
-  <message id="x2g-dev-label">&lt;dev&gt;</message>
+  <message id="x2g-dev-label"><![CDATA[<विचल>]]></message>
 </messages>
