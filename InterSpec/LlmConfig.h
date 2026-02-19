@@ -49,7 +49,8 @@ enum class AgentType : int
   NuclideId,
   ActivityFit,
   Isotopics,
-  DeepResearch
+  DeepResearch,
+  EnergyCalibration
 };//enum class AgentType
 
 /** Convert AgentType to string name */

@@ -32,6 +32,7 @@ std::string agentTypeToString( AgentType type )
     case AgentType::ActivityFit:     return "ActivityFit";
     case AgentType::Isotopics:       return "Isotopics";
     case AgentType::DeepResearch:    return "DeepResearch";
+    case AgentType::EnergyCalibration: return "EnergyCalibration";
   }
 
   throw std::invalid_argument( "Unknown AgentType" );
@@ -45,6 +46,7 @@ AgentType stringToAgentType( const std::string &name )
   if( name == "ActivityFit" )     return AgentType::ActivityFit;
   if( name == "Isotopics" )       return AgentType::Isotopics;
   if( name == "DeepResearch" )    return AgentType::DeepResearch;
+  if( name == "EnergyCalibration" ) return AgentType::EnergyCalibration;
 
   throw std::invalid_argument( "Unknown agent name: " + name );
 }//stringToAgentType(...)
