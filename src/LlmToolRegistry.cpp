@@ -1425,6 +1425,11 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
       tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory* history) -> json {
         return executeRestoreEnergyCalCheckpoint(params, interspec, history);
       };
+    }else if( toolName == "decay_calculator" )
+    {
+      tool.executor = [](const json& params, InterSpec*, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
+        return executeDecayCalculator(params);
+      };
     }else
     {
       throw std::runtime_error( "Unknown tool name: " + toolName );
@@ -2589,7 +2594,176 @@ nlohmann::json ToolRegistry::executeGetNuclideDecayChain(const nlohmann::json& p
   
   return result;
 }//nlohmann::json ToolRegistry::executeGetNuclideDecayChain(const nlohmann::json& params )
-  
+
+
+nlohmann::json ToolRegistry::executeDecayCalculator( const nlohmann::json &params )
+{
+  using namespace std;
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  if( !db )
+    throw runtime_error( "Could not initialize nuclide DecayDataBase." );
+
+  // Parse nuclide
+  const string nucStr = params.at( find_case_insensitive_key( "nuclide", params ) ).get<string>();
+  const SandiaDecay::Nuclide * const nuc = db->nuclide( nucStr );
+  if( !nuc )
+    throw runtime_error( "'" + nucStr + "' is not a valid nuclide." );
+
+  // Parse activity
+  const string actStr = params.at( find_case_insensitive_key( "activity", params ) ).get<string>();
+  const double activity = PhysicalUnits::stringToActivity( actStr );
+  if( activity <= 0.0 )
+    throw runtime_error( "Activity must be positive, got: '" + actStr + "'." );
+
+  // Parse initial age (optional)
+  double initialAge = 0.0;
+  {
+    const string ageKey = find_case_insensitive_key( "initial_age", params );
+    if( params.contains( ageKey ) && !params[ageKey].is_null() )
+    {
+      const string ageStr = params[ageKey].get<string>();
+      if( !ageStr.empty() )
+        initialAge = PhysicalUnits::stringToTimeDurationPossibleHalfLife( ageStr, nuc->halfLife );
+      if( initialAge < 0.0 )
+        throw runtime_error( "initial_age must be non-negative, got: '" + ageStr + "'." );
+    }
+  }
+
+  // Determine time span
+  double timeSpan = 0.0;
+
+  const string durKey = find_case_insensitive_key( "time_duration", params );
+  const string startKey = find_case_insensitive_key( "start_date", params );
+  const string endKey = find_case_insensitive_key( "end_date", params );
+
+  const bool hasDuration = params.contains( durKey ) && !params[durKey].is_null()
+                           && !(params[durKey].is_string() && params[durKey].get<string>().empty());
+  const bool hasStartDate = params.contains( startKey ) && !params[startKey].is_null()
+                            && !(params[startKey].is_string() && params[startKey].get<string>().empty());
+  const bool hasEndDate = params.contains( endKey ) && !params[endKey].is_null()
+                          && !(params[endKey].is_string() && params[endKey].get<string>().empty());
+
+  if( hasDuration )
+  {
+    const string durStr = params[durKey].get<string>();
+    timeSpan = PhysicalUnits::stringToTimeDurationPossibleHalfLife( durStr, nuc->halfLife );
+  }
+  else if( hasStartDate && hasEndDate )
+  {
+    const string startStr = params[startKey].get<string>();
+    const string endStr = params[endKey].get<string>();
+
+    const SpecUtils::time_point_t startTime = SpecUtils::time_from_string( startStr );
+    const SpecUtils::time_point_t endTime = SpecUtils::time_from_string( endStr );
+
+    if( SpecUtils::is_special( startTime ) )
+      throw runtime_error( "Could not parse start_date: '" + startStr + "'." );
+    if( SpecUtils::is_special( endTime ) )
+      throw runtime_error( "Could not parse end_date: '" + endStr + "'." );
+
+    const auto duration = endTime - startTime;
+    timeSpan = chrono::duration<double>( duration ).count() * PhysicalUnits::second;
+  }
+  else
+  {
+    throw runtime_error( "Either 'time_duration', or both 'start_date' and 'end_date' must be provided." );
+  }
+
+  if( timeSpan == 0.0 )
+    throw runtime_error( "Time span must be non-zero." );
+
+  const double absTimeSpan = fabs( timeSpan );
+  const bool isBackDecay = (timeSpan < 0.0);
+
+  // Create the mixture and perform decay
+  SandiaDecay::NuclideMixture mixture;
+
+  if( isBackDecay )
+  {
+    // Back-decay: compute what initial activity was needed to yield specified activity now
+    const double decrease_factor = std::exp( timeSpan * nuc->decayConstant() );
+    const double initial_activity = activity / decrease_factor;
+
+    if( IsNan( initial_activity ) || IsInf( initial_activity )
+       || (initial_activity < std::numeric_limits<float>::epsilon()) )
+    {
+      throw runtime_error( "Duration of " + PhysicalUnits::printToBestTimeUnits( absTimeSpan )
+                          + " is too long for back-decay of " + nuc->symbol
+                          + " (half-life " + PhysicalUnits::printToBestTimeUnits( nuc->halfLife ) + ")." );
+    }
+
+    if( initialAge > DBL_EPSILON )
+      mixture.addAgedNuclideByActivity( nuc, initial_activity, initialAge );
+    else
+      mixture.addNuclideByActivity( nuc, initial_activity );
+  }
+  else
+  {
+    // Forward decay
+    if( initialAge > DBL_EPSILON )
+      mixture.addAgedNuclideByActivity( nuc, activity, initialAge );
+    else
+      mixture.addNuclideByActivity( nuc, activity );
+  }
+
+  // Build result JSON
+  nlohmann::json result;
+  result["nuclide"] = nuc->symbol;
+  result["input_activity"] = actStr;
+  result["half_life"] = PhysicalUnits::printToBestTimeUnits( nuc->halfLife, 4 );
+  result["direction"] = isBackDecay ? "back_decay" : "forward";
+  result["time_span"] = PhysicalUnits::printToBestTimeUnits( absTimeSpan, 4 );
+
+  if( initialAge > DBL_EPSILON )
+    result["initial_age"] = PhysicalUnits::printToBestTimeUnits( initialAge, 4 );
+
+  // For back-decay, show the computed initial activities at t=0
+  if( isBackDecay )
+  {
+    const vector<SandiaDecay::NuclideActivityPair> initActivities = mixture.activity( 0.0 );
+    nlohmann::json initArray = nlohmann::json::array();
+    for( const SandiaDecay::NuclideActivityPair &nap : initActivities )
+    {
+      if( !nap.nuclide || (nap.activity < 1.0E-15) )
+        continue;
+
+      nlohmann::json entry;
+      entry["nuclide"] = nap.nuclide->symbol;
+      if( IsInf( nap.nuclide->halfLife ) )
+        entry["activity"] = "stable";
+      else
+        entry["activity"] = PhysicalUnits::printToBestActivityUnits( nap.activity, 4, true );
+      entry["half_life"] = PhysicalUnits::printToBestTimeUnits( nap.nuclide->halfLife, 4 );
+      initArray.push_back( std::move( entry ) );
+    }
+    result["initial_activities"] = std::move( initArray );
+  }//if( isBackDecay )
+
+  // Show the activities after the decay period
+  {
+    const vector<SandiaDecay::NuclideActivityPair> finalActivities = mixture.activity( absTimeSpan );
+    nlohmann::json finalArray = nlohmann::json::array();
+    for( const SandiaDecay::NuclideActivityPair &nap : finalActivities )
+    {
+      if( !nap.nuclide || (nap.activity < 1.0E-15) )
+        continue;
+
+      nlohmann::json entry;
+      entry["nuclide"] = nap.nuclide->symbol;
+      if( IsInf( nap.nuclide->halfLife ) )
+        entry["activity"] = "stable";
+      else
+        entry["activity"] = PhysicalUnits::printToBestActivityUnits( nap.activity, 4, true );
+      entry["half_life"] = PhysicalUnits::printToBestTimeUnits( nap.nuclide->halfLife, 4 );
+      finalArray.push_back( std::move( entry ) );
+    }
+    result["final_activities"] = std::move( finalArray );
+  }
+
+  return result;
+}//nlohmann::json ToolRegistry::executeDecayCalculator(...)
+
 
 nlohmann::json ToolRegistry::executeGetAutomatedRiidId(const nlohmann::json& params, InterSpec* interspec)
 {
@@ -3601,7 +3775,7 @@ nlohmann::json ToolRegistry::executeGetMaterials( InterSpec* interspec )
     throw std::runtime_error( "InterSpec instance is required for retrieving materials." );
 
   // To keep from overwhelming the context, we will just return a subset of possbile shieldings
-  return nlohmann::json{ "acetone", "adipose tissue", "air", "aluminum oxide",
+  nlohmann::json materials_array = nlohmann::json{ "acetone", "adipose tissue", "air", "aluminum oxide",
     "amber", "ammonia", "bakelite", "baratol high explosive",
     "benzene", "beryllium oxide", "bgo", "blood",
     "bone", "boracitol high explosive", "borax",  "brass",
@@ -3625,6 +3799,10 @@ nlohmann::json ToolRegistry::executeGetMaterials( InterSpec* interspec )
     "Thorium oxide", "titanium_dioxide", "Uranium hexafluoride",
     "Uranium metal", "void", "water","wet soil"
   };
+
+  nlohmann::json result = nlohmann::json::object();
+  result["materials"] = std::move( materials_array );
+  return result;
 
   /*  
   MaterialDB * const db = interspec->materialDataBase();

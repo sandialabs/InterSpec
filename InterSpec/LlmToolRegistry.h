@@ -187,6 +187,9 @@ private:
   static nlohmann::json executeSaveEnergyCalCheckpoint(const nlohmann::json& params, InterSpec* interspec, LlmConversationHistory* history);
   static nlohmann::json executeRestoreEnergyCalCheckpoint(const nlohmann::json& params, InterSpec* interspec, LlmConversationHistory* history);
 
+  // Decay calculator tool
+  static nlohmann::json executeDecayCalculator(const nlohmann::json& params);
+
   /** Helper function to find and load a detector by identifier.
    @param identifier The detector identifier (name, path, or URI)
    @param detectorName Optional specific detector name for multi-detector files

@@ -50,7 +50,7 @@ For source identification tasks strongly prefer invoking the NuclideId sub-agent
 
 ### **Step 3: Update the Analysis State**
 
-* Once you have confidently identified the source of a peak, use the "add_analysis_peaks_for_source" (preffered) or "add_analysis_peak" tool to add it to the internal **analysis peaks** state with the source attributed.
+* Once you have confidently identified the source of a peak, use the "add_analysis_peaks_for_source" (preferred) or "add_analysis_peak" tool to add it to the internal **analysis peaks** state with the source attributed.
 * This ensures the identified peak is used for subsequent analysis, like activity fitting.
 
 **Note on Fitting Background Peaks:** You can add known background peaks to the analysis state (e.g., to account for its influence on an adjacent source peak), but **DO NOT** later fit for the activity of these background nuclides. Their attenuation profile will differ from the source of interest.
@@ -946,7 +946,7 @@ Always pick ONE peak for gain-only fit:
 - Otherwise use whichever has larger numSigma
 - If user specified a different calibration peak (e.g., Cs137 at 661.7 keV), use that instead
 
-If the chosen peak is not already an analysis peak, add it using `add_analysis_peak` with the correct source assignment (K40, Th232, etc.). After adding, ensure that the correct energy gamma was assigned to the added peak by inspecting the `source.photonEnergy` field of the peak that was fit (peak information should be returned from the `add_analysis_peak` tool-call).
+If the chosen peak is not already an analysis peak (for the spectrum you are currently working with - i.e., Foreground/Background/Secondary), add it using `add_analysis_peak` with the correct source assignment (K40, Th232, etc.) AND making sure to specify the `specType` for the spectrum you want to add the peak to. After adding, ensure that the correct energy gamma was assigned to the added peak by inspecting the `source.photonEnergy` field of the peak that was fit (peak information should be returned from the `add_analysis_peak` tool-call).
 
 If the peak is within ~2 keV of the expected energy, transition directly to FIT_CALIBRATION.
 If the peak is more than ~2 keV from expected, transition to VALIDATE_PEAKS to check identity.
@@ -1042,8 +1042,8 @@ Transition to FIND_CAL_PEAKS to begin calibrating the next spectrum.</PromptGuid
           <Tool>restore_peaks_to_checkpoint</Tool>
         </SuggestedTools>
         <PromptGuidance>Restore the peak checkpoint created at the start (name: "pre_energy_cal") so the agent does not permanently alter analysis peaks. 
-        Provide a summary of what calibration changes were made, including before/after peak energy differences for each spectrum that was calibrated.
-        **Critical**: if we are here, the energy calibration was successful, so DO NOT call `restore_energy_cal_checkpoint`, as this would put us back to where we started.
+Provide a summary of what calibration changes were made, including before/after peak energy differences for each spectrum that was calibrated.
+**Critical**: if we are here, the energy calibration was successful, so DO NOT call `restore_energy_cal_checkpoint`, as this would put us back to where we started.
         </PromptGuidance>
         <EphemeralMessageTxt>Restoring peaks and summarizing results.</EphemeralMessageTxt>
         <IsFinal>true</IsFinal>
