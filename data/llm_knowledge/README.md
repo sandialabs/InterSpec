@@ -8,7 +8,7 @@ For InterSpec today, these skills are primarily curated knowledge packets (not f
 
 - Lets you add organization- or workflow-specific knowledge without recompiling InterSpec.
 - Helps DeepResearch use curated information instead of relying only on model memory.
-- Keeps local expert notes and procedures close to the app.
+- Keeps local expert notes and procedures
 
 ## Where to put skills
 
@@ -28,7 +28,7 @@ Typical writable data locations:
 - Windows: `C:\Users\<username>\AppData\Roaming\InterSpec`
 - macOS: `/Users/<username>/Library/Containers/gov.sandia.macOS.InterSpec/Data/Library/Application Support/sandia.InterSpec`
 
-Create `llm_knowledge` under that directory if it does not already exist.
+Create a `llm_knowledge` directory under that directory if it does not already exist.
 
 ## How to add a skill (knowledge packet)
 
