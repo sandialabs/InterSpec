@@ -1843,5 +1843,81 @@ Returns information about:
     </AvailableFor>
   </Tool>
 
+  <!-- Energy Calibration Tools -->
+
+  <Tool name="fit_energy_calibration">
+    <Description>Fits energy calibration polynomial coefficients using analysis peaks with known photopeak energies. Each peak must be an analysis peak with a source assignment. By default fits gain only (coefficient[1]) for a single peak. Returns per-peak energy differences before and after the fit, and the sum of absolute differences.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+        "specType": {
+          "type": "string",
+          "description": "Which spectrum to calibrate.",
+          "enum": ["Foreground", "Background", "Secondary"]
+        },
+        "peak_energies": {
+          "type": "array",
+          "items": { "type": "number" },
+          "description": "Peak mean energies (keV) of analysis peaks to use as calibration anchors. Each peak must already be in the analysis peaks set with a source assignment whose photopeak energy provides the true energy."
+        },
+        "fit_coefficients": {
+          "type": "array",
+          "items": { "type": "boolean" },
+          "description": "Optional: Which polynomial coefficients to fit. E.g., [false, true] fits only gain. If not specified, the tool decides intelligently: 1 peak = gain only, 2 peaks = offset + gain, 3+ peaks = offset + gain + quadratic."
+        },
+        "propagate_to": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["Foreground", "Background", "Secondary"]
+          },
+          "description": "Optional: Additional spectrum types to propagate the calibration change to. The change is propagated using the relationship between the old and new calibrations, so detectors with different calibrations are handled correctly."
+        },
+        "apply_to_all_samples": {
+          "type": "boolean",
+          "description": "Optional: If true, apply calibration to all samples and detectors in the file, not just the displayed ones. Default is false."
+        }
+      },
+      "required": ["specType", "peak_energies"]
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>EnergyCalibration</Agent>
+    </AvailableFor>
+  </Tool>
+
+  <Tool name="save_energy_cal_checkpoint">
+    <Description>Creates a checkpoint of the current energy calibration state for all loaded spectra. Returns a unique checkpoint name that can be used later with restore_energy_cal_checkpoint to undo any calibration changes. Use this before making calibration adjustments.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+        "name_hint": {
+          "type": "string",
+          "description": "Optional short descriptive hint for the checkpoint name (e.g., 'pre_energy_cal'). The actual unique checkpoint name will be returned in the result."
+        }
+      },
+      "required": []
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>EnergyCalibration</Agent>
+    </AvailableFor>
+  </Tool>
+
+  <Tool name="restore_energy_cal_checkpoint">
+    <Description>Restores energy calibration to a previously created checkpoint, undoing all calibration changes made since the checkpoint. Also translates current peaks to match the restored calibration. Use this when a calibration adjustment made things worse.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+        "checkpoint_name": {
+          "type": "string",
+          "description": "The unique checkpoint name returned by save_energy_cal_checkpoint."
+        }
+      },
+      "required": ["checkpoint_name"]
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>EnergyCalibration</Agent>
+    </AvailableFor>
+  </Tool>
+
 </ToolDefinitions>
 </LlmConfig>

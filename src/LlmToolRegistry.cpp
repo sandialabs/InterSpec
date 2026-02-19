@@ -113,6 +113,38 @@ namespace {
       {AnalystChecks::EscapePeakType::DoubleEscape, "DoubleEscape"},
   })
 
+  
+  /** Returns the actual key in `params` that matches `key` case-insensitively,
+    or `key` itself if not found (so callers can let contains/operator[] produce a natural error).
+  */
+  string find_case_insensitive_key( const string &key, const nlohmann::json &params )
+  {
+    assert( !key.empty() );
+    if( params.contains(key) || key.empty() ) //Go for exact match first
+      return key;
+    
+    const bool key_is_padded = (!key.empty() && (std::isspace( static_cast<unsigned char>(key.front()) )
+                                                 || std::isspace( static_cast<unsigned char>(key.back()) )));
+    
+    for( const auto &item : params.items() )
+    {
+      if( SpecUtils::iequals_ascii( item.key(), key ) )
+        return item.key();
+      
+      if( !key_is_padded
+         && !item.key().empty()
+         && (std::isspace( static_cast<unsigned char>(item.key().front()) )
+             || std::isspace( static_cast<unsigned char>(item.key().back()) )) )
+      {
+        if( SpecUtils::iequals_ascii( key, SpecUtils::trim_copy(item.key()) ) )
+          return item.key();
+      }
+    }//for( const auto &item : params.items() )
+    
+    return key;
+  };//find_case_insensitive_key
+  
+  
   double rount_to_hundredth(double val){ return 0.01*std::round(100.0*val); }
 
   /** Some LLMs will give number values as strings, so this function will check types and return the correct answer.
@@ -124,20 +156,21 @@ namespace {
    */
   double get_number( const json& parent, const string &name )
   {
-    if( !parent.contains(name) || parent[name].is_null() )
+    const string key = find_case_insensitive_key( name, parent );
+    if( !parent.contains(key) || parent[key].is_null() )
       throw runtime_error( "'" + name + "' parameter must be specified." );
 
-    if( parent[name].is_number() )
-      return parent.at(name).get<double>();
+    if( parent[key].is_number() )
+      return parent.at(key).get<double>();
 
-    if( parent[name].is_string() )
+    if( parent[key].is_string() )
     {
-      string strval = parent.at(name).get<string>();
+      string strval = parent.at(key).get<string>();
       double val;
       if( !(stringstream(strval) >> val) )
         throw runtime_error( "'" + name + "' parameter must be a number." );
       return val;
-    }//if( parent[name].is_string() )
+    }//if( parent[key].is_string() )
 
     throw runtime_error( "'" + name + "' parameter must be a number." );
   }//double get_number( const json& parent, const string &name )
@@ -152,15 +185,16 @@ namespace {
    */
   bool get_boolean( const json& parent, const string &name )
   {
-    if( !parent.contains(name) || parent[name].is_null() )
+    const string key = find_case_insensitive_key( name, parent );
+    if( !parent.contains(key) || parent[key].is_null() )
       throw runtime_error( "'" + name + "' parameter must be specified." );
 
-    if( parent[name].is_boolean() )
-      return parent.at(name).get<bool>();
+    if( parent[key].is_boolean() )
+      return parent.at(key).get<bool>();
 
-    if( parent[name].is_string() )
+    if( parent[key].is_string() )
     {
-      string strval = parent.at(name).get<string>();
+      string strval = parent.at(key).get<string>();
 
       // Convert to lowercase for case-insensitive comparison
       for( char &c : strval )
@@ -173,12 +207,12 @@ namespace {
         return false;
 
       throw runtime_error( "'" + name + "' parameter must be a boolean (received '" + strval + "')." );
-    }//if( parent[name].is_string() )
+    }//if( parent[key].is_string() )
 
     // Handle numeric values as booleans (0 = false, non-zero = true)
-    if( parent[name].is_number() )
+    if( parent[key].is_number() )
     {
-      const double val = parent.at(name).get<double>();
+      const double val = parent.at(key).get<double>();
       return (val != 0.0);
     }
 
@@ -222,10 +256,11 @@ namespace {
    */
   double get_number( const json& parent, const string &name, const double default_value )
   {
-    if( !parent.contains(name) || parent[name].is_null() )
+    const string key = find_case_insensitive_key( name, parent );
+    if( !parent.contains(key) || parent[key].is_null() )
       return default_value;
 
-    return get_number( parent, name );
+    return get_number( parent, key );
   }//double get_number( const json& parent, const string &name, const double default_value )
 
 
@@ -239,10 +274,11 @@ namespace {
    */
   bool get_boolean( const json& parent, const string &name, const bool default_value )
   {
-    if( !parent.contains(name) || parent[name].is_null() )
+    const string key = find_case_insensitive_key( name, parent );
+    if( !parent.contains(key) || parent[key].is_null() )
       return default_value;
 
-    return get_boolean( parent, name );
+    return get_boolean( parent, key );
   }//bool get_boolean( const json& parent, const string &name, const bool default_value )
 
 
@@ -260,35 +296,6 @@ namespace {
 
     return get_double( val );
   }//double get_double( const json& val, const double default_value )
-
-  // Returns the actual key in `params` that matches `key` case-insensitively,
-  // or `key` itself if not found (so callers can let contains/operator[] produce a natural error).
-  string find_case_insensitive_key( const string &key, const nlohmann::json &params )
-  {
-    assert( !key.empty() );
-    if( params.contains(key) || key.empty() ) //Go for exact match first
-      return key;
-    
-    const bool key_is_padded = (!key.empty() && (std::isspace( static_cast<unsigned char>(key.front()) )
-                                                 || std::isspace( static_cast<unsigned char>(key.back()) )));
-    
-    for( const auto &item : params.items() )
-    {
-      if( SpecUtils::iequals_ascii( item.key(), key ) )
-        return item.key();
-      
-      if( !key_is_padded
-         && !item.key().empty()
-         && (std::isspace( static_cast<unsigned char>(item.key().front()) )
-             || std::isspace( static_cast<unsigned char>(item.key().back()) )) )
-      {
-        if( SpecUtils::iequals_ascii( key, SpecUtils::trim_copy(item.key()) ) )
-          return item.key();
-      }
-    }//for( const auto &item : params.items() )
-    
-    return key;
-  };//find_case_insensitive_key
 
   /** Some LLMs will give complex values (arrays, objects) as JSON strings instead of native types.
    This function normalizes a field by parsing stringified JSON if needed.
@@ -480,11 +487,11 @@ namespace {
     {
       peak_json["source"]["element"] = el->symbol;
       peak_json["source"]["photonType"] = "x-ray";
-      peak_json["source"]["energy"] = peak->xrayEnergy();
+      peak_json["source"]["photonEnergy"] = peak->xrayEnergy();
     }else if( const ReactionGamma::Reaction * const rctn = peak->reaction() )
     {
       peak_json["source"]["reaction"] = rctn->name();
-      peak_json["source"]["energy"] = peak->reactionEnergy();
+      peak_json["source"]["photonEnergy"] = peak->reactionEnergy();
       const char * const gamma_type = source_type_str( peak->sourceGammaType() );
       if( gamma_type )
         peak_json["source"]["photonType"] = gamma_type;
@@ -1402,6 +1409,21 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
     {
       tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory* history) -> json {
         return executeRestorePeaksToCheckpoint(params, interspec, history);
+      };
+    }else if( toolName == "fit_energy_calibration" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
+        return executeFitEnergyCalibration(params, interspec);
+      };
+    }else if( toolName == "save_energy_cal_checkpoint" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory* history) -> json {
+        return executeSaveEnergyCalCheckpoint(params, interspec, history);
+      };
+    }else if( toolName == "restore_energy_cal_checkpoint" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory* history) -> json {
+        return executeRestoreEnergyCalCheckpoint(params, interspec, history);
       };
     }else
     {
@@ -4763,9 +4785,25 @@ nlohmann::json ToolRegistry::executeSearchSourcesByEnergy(nlohmann::json params,
   const string energies_key = find_case_insensitive_key( "energies", params );
   normalize_json_field( params, energies_key );
 
-  // Parse energies array (required)
+  // Fall back to accepting a flat {"energy": value} or {"energy": value, "window": value} format
+  //  when the LLM omits the "energies" array wrapper.
   if( !params.contains(energies_key) || !params[energies_key].is_array() || params[energies_key].empty() )
-    throw std::runtime_error( "The 'energies' parameter must be a non-empty array." );
+  {
+    const string energy_key = find_case_insensitive_key( "energy", params );
+    if( params.contains(energy_key) && (params[energy_key].is_number() || params[energy_key].is_string()) )
+    {
+      json single_entry = json::object();
+      single_entry["energy"] = params[energy_key];
+      const string window_key = find_case_insensitive_key( "window", params );
+      if( params.contains(window_key) )
+        single_entry["window"] = params[window_key];
+      params[energies_key] = json::array( { single_entry } );
+    }
+    else
+    {
+      throw std::runtime_error( "The 'energies' parameter must be a non-empty array." );
+    }
+  }
 
   const json& energies_array = params[energies_key];
   std::vector<double> energies;
@@ -5081,8 +5119,20 @@ nlohmann::json ToolRegistry::executeSetWorkflowState(
   if( !interspec )
     throw runtime_error( "InterSpec instance required for set_workflow_state" );
 
-  // Get parameters
-  const string state_key = find_case_insensitive_key( "state", params );
+  // Get parameters - also accept "new_state", "newState", or "name" as aliases for "state"
+  string state_key = find_case_insensitive_key( "state", params );
+  if( !params.contains(state_key) )
+  {
+    for( const string &alias : { "new_state", "newState", "name" } )
+    {
+      const string candidate = find_case_insensitive_key( alias, params );
+      if( params.contains(candidate) )
+      {
+        state_key = candidate;
+        break;
+      }
+    }
+  }
   const string notes_key = find_case_insensitive_key( "notes", params );
   const string new_state = params.contains(state_key) ? params[state_key].get<string>() : string();
   const string notes = params.contains(notes_key) ? params[notes_key].get<string>() : string();
@@ -5442,6 +5492,850 @@ json ToolRegistry::executeRestorePeaksToCheckpoint( const json& params,
 
   return result;
 }//executeRestorePeaksToCheckpoint(...)
+
+
+json ToolRegistry::executeSaveEnergyCalCheckpoint( const json& params,
+                                                   InterSpec* interspec,
+                                                   LlmConversationHistory* history )
+{
+  if( !interspec )
+    throw runtime_error( "No InterSpec session available." );
+
+  if( !history )
+    throw runtime_error( "Energy cal checkpoints require a conversation history context." );
+
+  // Get optional name hint
+  string name_hint;
+  if( params.contains( "name_hint" ) && params["name_hint"].is_string() )
+    name_hint = params["name_hint"].get<string>();
+
+  // Generate a unique checkpoint name
+  string checkpoint_name;
+  if( name_hint.empty() )
+  {
+    const auto ms = chrono::duration_cast<chrono::milliseconds>(
+      chrono::system_clock::now().time_since_epoch() ).count();
+    checkpoint_name = "ecal_checkpoint_" + to_string( ms );
+  }else
+  {
+    checkpoint_name = name_hint;
+  }
+
+  // Ensure uniqueness
+  {
+    const vector<EnergyCalCheckpoint> &existing = history->m_energy_cal_checkpoints;
+    bool name_taken = false;
+    for( const EnergyCalCheckpoint &cp : existing )
+    {
+      if( cp.m_checkpoint_name == checkpoint_name )
+      {
+        name_taken = true;
+        break;
+      }
+    }
+
+    if( name_taken )
+    {
+      for( int suffix = 2; suffix < 1000; ++suffix )
+      {
+        const string candidate = checkpoint_name + "_" + to_string( suffix );
+        bool found = false;
+        for( const EnergyCalCheckpoint &cp : existing )
+        {
+          if( cp.m_checkpoint_name == candidate )
+          {
+            found = true;
+            break;
+          }
+        }
+
+        if( !found )
+        {
+          checkpoint_name = candidate;
+          break;
+        }
+      }//for( int suffix = 2; suffix < 1000; ++suffix )
+    }//if( name_taken )
+  }
+
+  EnergyCalCheckpoint checkpoint;
+  checkpoint.m_checkpoint_name = checkpoint_name;
+  checkpoint.m_creation_time = chrono::system_clock::now();
+
+  const SpecUtils::SpectrumType spec_types[] = {
+    SpecUtils::SpectrumType::Foreground,
+    SpecUtils::SpectrumType::Background,
+    SpecUtils::SpectrumType::SecondForeground
+  };
+
+  vector<string> saved_types;
+
+  for( const SpecUtils::SpectrumType type : spec_types )
+  {
+    const shared_ptr<const SpecUtils::Measurement> disp_meas = interspec->displayedHistogram( type );
+    if( !disp_meas )
+      continue;
+
+    const shared_ptr<SpecMeas> specfile = interspec->measurment( type );
+    if( !specfile )
+      continue;
+
+    EnergyCalCheckpoint::SpectrumState state;
+    state.m_display_cal = disp_meas->energy_calibration();
+
+    // Snapshot calibrations for displayed samples and detectors
+    const set<int> &samples = interspec->displayedSamples( type );
+    const vector<string> detectors = interspec->detectorsToDisplay( type );
+
+    for( const int sample : samples )
+    {
+      for( const string &det : detectors )
+      {
+        const shared_ptr<const SpecUtils::Measurement> m = specfile->measurement( sample, det );
+        if( !m || m->num_gamma_channels() <= 4 )
+          continue;
+
+        const shared_ptr<const SpecUtils::EnergyCalibration> cal = m->energy_calibration();
+        if( !cal || !cal->valid() )
+          continue;
+
+        EnergyCalCheckpoint::PerMeasCal meas_cal;
+        meas_cal.sample_number = sample;
+        meas_cal.detector_name = det;
+        meas_cal.calibration = cal;
+        state.m_per_meas_cals.push_back( std::move( meas_cal ) );
+      }//for( const string &det : detectors )
+    }//for( const int sample : samples )
+
+    switch( type )
+    {
+      case SpecUtils::SpectrumType::Foreground:
+        checkpoint.m_foreground_state = std::move( state );
+        saved_types.push_back( "Foreground" );
+        break;
+      case SpecUtils::SpectrumType::Background:
+        checkpoint.m_background_state = std::move( state );
+        saved_types.push_back( "Background" );
+        break;
+      case SpecUtils::SpectrumType::SecondForeground:
+        checkpoint.m_secondary_state = std::move( state );
+        saved_types.push_back( "Secondary" );
+        break;
+    }//switch( type )
+  }//for( const SpecUtils::SpectrumType type : spec_types )
+
+  history->m_energy_cal_checkpoints.push_back( std::move( checkpoint ) );
+
+  json result = json::object();
+  result["checkpoint_name"] = checkpoint_name;
+  result["status"] = "created";
+  result["saved_spectrum_types"] = saved_types;
+
+  return result;
+}//executeSaveEnergyCalCheckpoint(...)
+
+
+json ToolRegistry::executeRestoreEnergyCalCheckpoint( const json& params,
+                                                       InterSpec* interspec,
+                                                       LlmConversationHistory* history )
+{
+  if( !interspec )
+    throw runtime_error( "No InterSpec session available." );
+
+  if( !history )
+    throw runtime_error( "Energy cal checkpoints require a conversation history context." );
+
+  const string cp_key = find_case_insensitive_key( "checkpoint_name", params );
+  if( cp_key.empty() || !params.contains( cp_key ) || !params[cp_key].is_string() )
+    throw runtime_error( "Missing required parameter 'checkpoint_name'." );
+  const string checkpoint_name = params[cp_key].get<string>();
+
+  // Find the checkpoint (search from newest to oldest)
+  const EnergyCalCheckpoint *found_cp = nullptr;
+  for( auto it = history->m_energy_cal_checkpoints.rbegin();
+       it != history->m_energy_cal_checkpoints.rend(); ++it )
+  {
+    if( it->m_checkpoint_name == checkpoint_name )
+    {
+      found_cp = &(*it);
+      break;
+    }
+  }
+
+  if( !found_cp )
+  {
+    string available_names;
+    for( const EnergyCalCheckpoint &cp : history->m_energy_cal_checkpoints )
+    {
+      if( !available_names.empty() )
+        available_names += ", ";
+      available_names += "'" + cp.m_checkpoint_name + "'";
+    }
+
+    throw runtime_error( "Energy cal checkpoint '" + checkpoint_name + "' not found."
+      + (available_names.empty() ? " No checkpoints exist." : " Available: " + available_names) );
+  }
+
+  const SpecUtils::SpectrumType spec_types[] = {
+    SpecUtils::SpectrumType::Foreground,
+    SpecUtils::SpectrumType::Background,
+    SpecUtils::SpectrumType::SecondForeground
+  };
+
+  PeakModel * const peak_model = interspec->peakModel();
+  vector<string> restored_types;
+
+  for( const SpecUtils::SpectrumType type : spec_types )
+  {
+    const shared_ptr<const SpecUtils::Measurement> disp_meas = interspec->displayedHistogram( type );
+    if( !disp_meas )
+      continue;
+
+    const shared_ptr<SpecMeas> specfile = interspec->measurment( type );
+    if( !specfile )
+      continue;
+
+    const EnergyCalCheckpoint::SpectrumState *cp_state = nullptr;
+    switch( type )
+    {
+      case SpecUtils::SpectrumType::Foreground:      cp_state = &found_cp->m_foreground_state; break;
+      case SpecUtils::SpectrumType::Background:       cp_state = &found_cp->m_background_state; break;
+      case SpecUtils::SpectrumType::SecondForeground: cp_state = &found_cp->m_secondary_state; break;
+    }//switch( type )
+
+    // If no display cal was saved, this spectrum wasn't loaded at checkpoint time
+    if( !cp_state || !cp_state->m_display_cal )
+      continue;
+
+    const shared_ptr<const SpecUtils::EnergyCalibration> current_display_cal = disp_meas->energy_calibration();
+    const shared_ptr<const SpecUtils::EnergyCalibration> saved_display_cal = cp_state->m_display_cal;
+
+    // Restore per-measurement calibrations
+    for( const EnergyCalCheckpoint::PerMeasCal &mc : cp_state->m_per_meas_cals )
+    {
+      const shared_ptr<const SpecUtils::Measurement> m = specfile->measurement( mc.sample_number, mc.detector_name );
+      if( m && mc.calibration )
+        specfile->set_energy_calibration( mc.calibration, m );
+    }//for( const PerMeasCal &mc : cp_state->m_per_meas_cals )
+
+    // Translate current peaks if calibration changed
+    if( current_display_cal && saved_display_cal
+        && (current_display_cal != saved_display_cal)
+        && !(*current_display_cal == *saved_display_cal) )
+    {
+      const set<int> &samples = interspec->displayedSamples( type );
+      const vector<string> detectors = interspec->detectorsToDisplay( type );
+
+      // Translate user analysis peaks
+      const set<set<int>> peak_sample_sets = specfile->sampleNumsWithPeaks();
+      for( const set<int> &peak_samples : peak_sample_sets )
+      {
+        // Only translate if these samples overlap with displayed samples
+        bool any_overlap = false;
+        for( const int s : peak_samples )
+        {
+          if( samples.count( s ) )
+          {
+            any_overlap = true;
+            break;
+          }
+        }
+
+        if( !any_overlap )
+          continue;
+
+        const shared_ptr<const deque<shared_ptr<const PeakDef>>> old_peaks = specfile->peaks( peak_samples );
+        if( !old_peaks || old_peaks->empty() )
+          continue;
+
+        try
+        {
+          const deque<shared_ptr<const PeakDef>> translated =
+            EnergyCal::translatePeaksForCalibrationChange( *old_peaks, current_display_cal, saved_display_cal );
+          specfile->setPeaks( translated, peak_samples );
+
+          if( peak_model )
+            peak_model->setPeakFromSpecMeas( specfile, samples, type );
+        }catch( std::exception &e )
+        {
+          cerr << "executeRestoreEnergyCalCheckpoint: error translating peaks: " << e.what() << endl;
+        }
+      }//for( const set<int> &peak_samples : peak_sample_sets )
+
+      // Translate hint peaks
+      const set<set<int>> hint_sample_sets = specfile->sampleNumsWithAutomatedSearchPeaks();
+      for( const set<int> &hint_samples : hint_sample_sets )
+      {
+        bool any_overlap = false;
+        for( const int s : hint_samples )
+        {
+          if( samples.count( s ) )
+          {
+            any_overlap = true;
+            break;
+          }
+        }
+
+        if( !any_overlap )
+          continue;
+
+        const shared_ptr<const SpecMeas::PeakDeque> hint_peaks = specfile->automatedSearchPeaks( hint_samples );
+        if( !hint_peaks || hint_peaks->empty() )
+          continue;
+
+        try
+        {
+          const deque<shared_ptr<const PeakDef>> translated =
+            EnergyCal::translatePeaksForCalibrationChange( *hint_peaks, current_display_cal, saved_display_cal );
+          specfile->setAutomatedSearchPeaks( hint_samples,
+            make_shared<deque<shared_ptr<const PeakDef>>>( translated ) );
+        }catch( std::exception &e )
+        {
+          cerr << "executeRestoreEnergyCalCheckpoint: error translating hint peaks: " << e.what() << endl;
+        }
+      }//for( const set<int> &hint_samples : hint_sample_sets )
+    }//if( calibration changed )
+
+    switch( type )
+    {
+      case SpecUtils::SpectrumType::Foreground:      restored_types.push_back( "Foreground" );      break;
+      case SpecUtils::SpectrumType::Background:       restored_types.push_back( "Background" );       break;
+      case SpecUtils::SpectrumType::SecondForeground: restored_types.push_back( "Secondary" ); break;
+    }
+  }//for( const SpecUtils::SpectrumType type : spec_types )
+
+  interspec->refreshDisplayedCharts();
+
+  json result = json::object();
+  result["checkpoint_name"] = checkpoint_name;
+  result["status"] = "restored";
+  result["restored_spectrum_types"] = restored_types;
+
+  return result;
+}//executeRestoreEnergyCalCheckpoint(...)
+
+
+json ToolRegistry::executeFitEnergyCalibration( const json& params, InterSpec* interspec )
+{
+  using namespace SpecUtils;
+
+  if( !interspec )
+    throw runtime_error( "No InterSpec session available." );
+
+  // Parse spectrum type
+  const SpectrumType spec_type = parse_spectrum_type( params, "specType" );
+
+  const shared_ptr<const Measurement> disp_meas = interspec->displayedHistogram( spec_type );
+  if( !disp_meas )
+    throw runtime_error( "No spectrum loaded for the specified type." );
+
+  const shared_ptr<SpecMeas> specfile = interspec->measurment( spec_type );
+  if( !specfile )
+    throw runtime_error( "No spectrum file for the specified type." );
+
+  const shared_ptr<const EnergyCalibration> disp_cal = disp_meas->energy_calibration();
+  if( !disp_cal || !disp_cal->valid() )
+    throw runtime_error( "No valid energy calibration for the specified spectrum." );
+
+  if( disp_cal->type() == EnergyCalType::LowerChannelEdge )
+    throw runtime_error( "LowerChannelEdge calibration type is not supported for fitting." );
+
+  if( disp_cal->type() == EnergyCalType::InvalidEquationType )
+    throw runtime_error( "Invalid energy calibration type." );
+
+  const size_t nchan = disp_cal->num_channels();
+  if( nchan < 7 )
+    throw runtime_error( "Spectrum has too few channels (" + to_string( nchan ) + ") for calibration fit." );
+
+  // Parse peak_energies
+  if( !params.contains( "peak_energies" ) )
+    throw runtime_error( "Missing required parameter 'peak_energies'." );
+
+  const json &peak_energies_json = params["peak_energies"];
+  if( !peak_energies_json.is_array() || peak_energies_json.empty() )
+    throw runtime_error( "'peak_energies' must be a non-empty array of numbers." );
+
+  vector<double> peak_energies;
+  for( const json &e : peak_energies_json )
+  {
+    if( e.is_number() )
+      peak_energies.push_back( e.get<double>() );
+    else if( e.is_string() )
+      peak_energies.push_back( stod( e.get<string>() ) );
+    else
+      throw runtime_error( "Each entry in 'peak_energies' must be a number." );
+  }
+
+  // Look up analysis peaks for the spectrum type
+  PeakModel * const peak_model = interspec->peakModel();
+  if( !peak_model )
+    throw runtime_error( "No PeakModel available." );
+
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> analysis_peaks = peak_model->peaks( spec_type );
+  if( !analysis_peaks || analysis_peaks->empty() )
+    throw runtime_error( "No analysis peaks exist for the specified spectrum type." );
+
+  // For each requested energy, find the closest analysis peak (within 5 keV tolerance)
+  vector<EnergyCal::RecalPeakInfo> recal_peaks;
+
+  for( const double target_energy : peak_energies )
+  {
+    shared_ptr<const PeakDef> best_peak;
+    double best_dist = 999999.0;
+
+    for( const shared_ptr<const PeakDef> &peak : *analysis_peaks )
+    {
+      const double dist = fabs( peak->mean() - target_energy );
+      if( dist < best_dist )
+      {
+        best_dist = dist;
+        best_peak = peak;
+      }
+    }//for( each analysis peak )
+
+    if( !best_peak || best_dist > 15.0 )
+    {
+      throw runtime_error( "No analysis peak found within 15 keV of " + to_string( target_energy )
+        + " keV. Closest peak is " + to_string( best_dist ) + " keV away." );
+    }
+
+    // Get the photopeak energy from the source assignment
+    double photopeak_energy = target_energy; // fallback
+    if( best_peak->hasSourceGammaAssigned() )
+    {
+      photopeak_energy = best_peak->gammaParticleEnergy();
+    }else
+    {
+      throw runtime_error( "Analysis peak at " + to_string( best_peak->mean() )
+        + " keV does not have a source assignment. Cannot determine true photopeak energy." );
+    }
+
+    EnergyCal::RecalPeakInfo info;
+    info.peakMean = best_peak->mean();
+    info.peakMeanUncert = best_peak->meanUncert();
+    info.peakMeanBinNumber = disp_cal->channel_for_energy( best_peak->mean() );
+    info.photopeakEnergy = photopeak_energy;
+    recal_peaks.push_back( info );
+  }//for( const double target_energy : peak_energies )
+
+  // Determine which coefficients to fit
+  vector<float> coefs = disp_cal->coefficients();
+  const vector<pair<float,float>> &dev_pairs = disp_cal->deviation_pairs();
+
+  // Ensure at least 2 coefficients
+  while( coefs.size() < 2 )
+    coefs.push_back( 0.0f );
+
+  vector<bool> fitfor( coefs.size(), false );
+
+  if( params.contains( "fit_coefficients" ) && params["fit_coefficients"].is_array() )
+  {
+    const json &fc = params["fit_coefficients"];
+    for( size_t i = 0; i < fc.size() && i < fitfor.size(); ++i )
+    {
+      if( fc[i].is_boolean() )
+        fitfor[i] = fc[i].get<bool>();
+      else if( fc[i].is_string() )
+        fitfor[i] = (fc[i].get<string>() == "true" || fc[i].get<string>() == "1");
+    }
+  }else
+  {
+    // Intelligent defaults: always fit gain only for this agent's primary use case
+    if( recal_peaks.size() == 1 )
+    {
+      fitfor[1] = true; // gain only
+    }else if( recal_peaks.size() == 2 )
+    {
+      fitfor[0] = true; // offset
+      fitfor[1] = true; // gain
+    }else
+    {
+      fitfor[0] = true;
+      fitfor[1] = true;
+      if( coefs.size() > 2 )
+        fitfor[2] = true; // quadratic
+    }
+  }//if( fit_coefficients provided ) / else
+
+  // Compute before-fit differences
+  json per_peak_results = json::array();
+  double sum_abs_diff_before = 0.0;
+
+  for( const EnergyCal::RecalPeakInfo &pi : recal_peaks )
+  {
+    const double diff = fabs( pi.peakMean - pi.photopeakEnergy );
+    sum_abs_diff_before += diff;
+  }
+
+  // Perform the fit
+  vector<float> fit_coefs = coefs;
+  vector<float> fit_uncert;
+  double chi2 = 0.0;
+
+  if( disp_cal->type() == EnergyCalType::FullRangeFraction )
+    chi2 = EnergyCal::fit_energy_cal_frf( recal_peaks, fitfor, nchan, dev_pairs, fit_coefs, fit_uncert );
+  else
+    chi2 = EnergyCal::fit_energy_cal_poly( recal_peaks, fitfor, nchan, dev_pairs, fit_coefs, fit_uncert );
+
+  // Build the new energy calibration
+  auto new_disp_cal = make_shared<EnergyCalibration>();
+  if( disp_cal->type() == EnergyCalType::FullRangeFraction )
+    new_disp_cal->set_full_range_fraction( nchan, fit_coefs, dev_pairs );
+  else
+    new_disp_cal->set_polynomial( nchan, fit_coefs, dev_pairs );
+
+  if( !new_disp_cal->valid() )
+    throw runtime_error( "Fitted energy calibration is invalid." );
+
+  // Compute after-fit differences
+  double sum_abs_diff_after = 0.0;
+  for( const EnergyCal::RecalPeakInfo &pi : recal_peaks )
+  {
+    const double new_energy = new_disp_cal->energy_for_channel( pi.peakMeanBinNumber );
+    const double diff_after = fabs( new_energy - pi.photopeakEnergy );
+    sum_abs_diff_after += diff_after;
+
+    json peak_result = json::object();
+    peak_result["peak_mean_keV"] = pi.peakMean;
+    peak_result["photopeak_energy_keV"] = pi.photopeakEnergy;
+    peak_result["diff_before_keV"] = fabs( pi.peakMean - pi.photopeakEnergy );
+    peak_result["diff_after_keV"] = diff_after;
+    per_peak_results.push_back( peak_result );
+  }//for( each peak )
+
+  // Build list of spectra to apply changes to
+  // Start with the primary spectrum type
+  vector<SpectrumType> apply_to_types;
+  apply_to_types.push_back( spec_type );
+
+  // Add propagate_to targets
+  if( params.contains( "propagate_to" ) && params["propagate_to"].is_array() )
+  {
+    for( const json &pt : params["propagate_to"] )
+    {
+      string pt_str = pt.get<string>();
+      SpecUtils::trim( pt_str );
+      SpectrumType pt_type;
+      if( SpecUtils::iequals_ascii( pt_str, "Foreground" ) )
+        pt_type = SpectrumType::Foreground;
+      else if( SpecUtils::iequals_ascii( pt_str, "Background" ) )
+        pt_type = SpectrumType::Background;
+      else if( SpecUtils::iequals_ascii( pt_str, "Secondary" ) )
+        pt_type = SpectrumType::SecondForeground;
+      else
+        continue;
+
+      // Dont add the primary type again
+      if( pt_type != spec_type )
+        apply_to_types.push_back( pt_type );
+    }
+  }//if( propagate_to provided )
+
+  const bool apply_to_all = get_boolean( params, "apply_to_all_samples", false );
+
+  // Build MeasToApplyCoefChangeTo entries, merging if same SpecMeas
+  struct ApplyEntry
+  {
+    shared_ptr<SpecMeas> meas;
+    set<int> sample_numbers;
+    set<string> detectors;
+  };
+
+  vector<ApplyEntry> apply_entries;
+
+  for( const SpectrumType apply_type : apply_to_types )
+  {
+    const shared_ptr<SpecMeas> apply_meas = interspec->measurment( apply_type );
+    if( !apply_meas )
+      continue;
+
+    // Check if we already have an entry for this SpecMeas
+    ApplyEntry *existing = nullptr;
+    for( ApplyEntry &entry : apply_entries )
+    {
+      if( entry.meas == apply_meas )
+      {
+        existing = &entry;
+        break;
+      }
+    }
+
+    if( !existing )
+    {
+      apply_entries.emplace_back();
+      existing = &apply_entries.back();
+      existing->meas = apply_meas;
+    }
+
+    if( apply_to_all )
+    {
+      const set<int> all_samples = apply_meas->sample_numbers();
+      existing->sample_numbers.insert( all_samples.begin(), all_samples.end() );
+      const vector<string> all_dets = apply_meas->gamma_detector_names();
+      existing->detectors.insert( all_dets.begin(), all_dets.end() );
+    }else
+    {
+      const set<int> &samples = interspec->displayedSamples( apply_type );
+      existing->sample_numbers.insert( samples.begin(), samples.end() );
+      const vector<string> dets = interspec->detectorsToDisplay( apply_type );
+      existing->detectors.insert( dets.begin(), dets.end() );
+    }
+  }//for( const SpectrumType apply_type : apply_to_types )
+
+  // Phase 1: Compute all new calibrations (validate before applying)
+  // Map from old calibration pointer to new calibration
+  map<shared_ptr<const EnergyCalibration>, shared_ptr<const EnergyCalibration>> old_to_new_cals;
+
+  for( const ApplyEntry &entry : apply_entries )
+  {
+    for( const int sample : entry.sample_numbers )
+    {
+      for( const string &det : entry.detectors )
+      {
+        const shared_ptr<const Measurement> m = entry.meas->measurement( sample, det );
+        if( !m || m->num_gamma_channels() <= 4 )
+          continue;
+
+        const shared_ptr<const EnergyCalibration> meas_old_cal = m->energy_calibration();
+        if( !meas_old_cal || !meas_old_cal->valid() )
+          continue;
+
+        // Skip if already computed
+        if( old_to_new_cals.count( meas_old_cal ) )
+          continue;
+
+        shared_ptr<const EnergyCalibration> new_meas_cal;
+        if( meas_old_cal == disp_cal )
+        {
+          new_meas_cal = new_disp_cal;
+        }else
+        {
+          new_meas_cal = EnergyCal::propogate_energy_cal_change( disp_cal, new_disp_cal, meas_old_cal );
+        }
+
+        assert( new_meas_cal && new_meas_cal->valid() );
+        old_to_new_cals[meas_old_cal] = new_meas_cal;
+      }//for( const string &det : entry.detectors )
+    }//for( const int sample : entry.sample_numbers )
+  }//for( const ApplyEntry &entry : apply_entries )
+
+  // Phase 2: Compute translated peaks (validate before applying)
+  // Map from old peaks pointer to new translated peaks
+  map<shared_ptr<deque<shared_ptr<const PeakDef>>>, deque<shared_ptr<const PeakDef>>> updated_peaks;
+  map<shared_ptr<const deque<shared_ptr<const PeakDef>>>, deque<shared_ptr<const PeakDef>>> updated_hint_peaks;
+
+  const shared_ptr<SpecMeas> fore_meas = interspec->measurment( SpectrumType::Foreground );
+  const shared_ptr<SpecMeas> back_meas = interspec->measurment( SpectrumType::Background );
+  const shared_ptr<SpecMeas> sec_meas = interspec->measurment( SpectrumType::SecondForeground );
+
+  for( const ApplyEntry &entry : apply_entries )
+  {
+    // Determine which detector names are used for the "display" calibration for this SpecMeas
+    vector<string> display_detectors;
+    if( entry.meas == fore_meas )
+      display_detectors = interspec->detectorsToDisplay( SpectrumType::Foreground );
+    else if( entry.meas == back_meas )
+      display_detectors = interspec->detectorsToDisplay( SpectrumType::Background );
+    else if( entry.meas == sec_meas )
+      display_detectors = interspec->detectorsToDisplay( SpectrumType::SecondForeground );
+
+    if( display_detectors.empty() )
+      display_detectors.insert( end( display_detectors ), begin( entry.detectors ), end( entry.detectors ) );
+
+    // Translate user analysis peaks
+    const set<set<int>> peak_sample_sets = entry.meas->sampleNumsWithPeaks();
+    for( const set<int> &samples : peak_sample_sets )
+    {
+      // Check overlap with the samples being changed
+      bool all_samples_in_change = true;
+      for( const int s : samples )
+      {
+        if( entry.sample_numbers.count( s ) == 0 )
+        {
+          all_samples_in_change = false;
+          break;
+        }
+      }
+
+      if( !all_samples_in_change )
+        continue;
+
+      shared_ptr<deque<shared_ptr<const PeakDef>>> oldpeaks = entry.meas->peaks( samples );
+      shared_ptr<const EnergyCalibration> oldcal
+        = entry.meas->suggested_sum_energy_calibration( samples, display_detectors );
+
+      if( !oldpeaks || oldpeaks->empty() || !oldcal || !oldcal->valid() )
+        continue;
+
+      const auto newcal_pos = old_to_new_cals.find( oldcal );
+      if( newcal_pos == end( old_to_new_cals ) || !newcal_pos->second || !newcal_pos->second->valid() )
+        continue;
+
+      const shared_ptr<const EnergyCalibration> newcal = newcal_pos->second;
+      if( oldcal == newcal )
+        continue;
+
+      const deque<shared_ptr<const PeakDef>> newpeaks
+        = EnergyCal::translatePeaksForCalibrationChange( *oldpeaks, oldcal, newcal );
+      updated_peaks[oldpeaks] = newpeaks;
+    }//for( const set<int> &samples : peak_sample_sets )
+
+    // Translate hint peaks
+    const set<set<int>> hint_sample_sets = entry.meas->sampleNumsWithAutomatedSearchPeaks();
+    for( const set<int> &samples : hint_sample_sets )
+    {
+      bool all_in = true;
+      for( const int s : samples )
+      {
+        if( entry.sample_numbers.count( s ) == 0 )
+        {
+          all_in = false;
+          break;
+        }
+      }
+
+      if( !all_in )
+        continue;
+
+      shared_ptr<const SpecMeas::PeakDeque> hint_peaks = entry.meas->automatedSearchPeaks( samples );
+      shared_ptr<const EnergyCalibration> oldcal
+        = entry.meas->suggested_sum_energy_calibration( samples, display_detectors );
+
+      if( !hint_peaks || hint_peaks->empty() || !oldcal || !oldcal->valid() )
+        continue;
+
+      const auto newcal_pos = old_to_new_cals.find( oldcal );
+      if( newcal_pos == end( old_to_new_cals ) || !newcal_pos->second )
+        continue;
+
+      if( oldcal == newcal_pos->second )
+        continue;
+
+      try
+      {
+        const deque<shared_ptr<const PeakDef>> translated
+          = EnergyCal::translatePeaksForCalibrationChange( *hint_peaks, oldcal, newcal_pos->second );
+        updated_hint_peaks[hint_peaks] = translated;
+      }catch( std::exception & )
+      {
+        // Non-fatal for hint peaks
+      }
+    }//for( hint peak samples )
+  }//for( const ApplyEntry &entry : apply_entries )
+
+  // Phase 3: Apply calibrations and peaks
+  const set<int> &fore_samples = interspec->displayedSamples( SpectrumType::Foreground );
+  const set<int> &back_samples = interspec->displayedSamples( SpectrumType::Background );
+  const set<int> &sec_samples = interspec->displayedSamples( SpectrumType::SecondForeground );
+
+  for( const ApplyEntry &entry : apply_entries )
+  {
+    // Set calibrations
+    for( const int sample : entry.sample_numbers )
+    {
+      for( const string &det : entry.detectors )
+      {
+        const shared_ptr<const Measurement> m = entry.meas->measurement( sample, det );
+        if( !m || m->num_gamma_channels() <= 4 )
+          continue;
+
+        const shared_ptr<const EnergyCalibration> meas_old_cal = m->energy_calibration();
+        const auto iter = old_to_new_cals.find( meas_old_cal );
+        if( iter == end( old_to_new_cals ) )
+          continue;
+
+        entry.meas->set_energy_calibration( iter->second, m );
+      }//for( const string &det : entry.detectors )
+    }//for( const int sample : entry.sample_numbers )
+
+    // Set translated user peaks
+    const set<set<int>> peak_sample_sets = entry.meas->sampleNumsWithPeaks();
+    for( const set<int> &samples : peak_sample_sets )
+    {
+      shared_ptr<deque<shared_ptr<const PeakDef>>> oldpeaks = entry.meas->peaks( samples );
+      if( !oldpeaks )
+        continue;
+
+      const auto pos = updated_peaks.find( oldpeaks );
+      if( pos == end( updated_peaks ) )
+        continue;
+
+      entry.meas->setPeaks( pos->second, samples );
+
+      if( peak_model )
+      {
+        if( (entry.meas == fore_meas) && (samples == fore_samples) )
+          peak_model->setPeakFromSpecMeas( fore_meas, fore_samples, SpectrumType::Foreground );
+        else if( (entry.meas == back_meas) && (samples == back_samples) )
+          peak_model->setPeakFromSpecMeas( back_meas, back_samples, SpectrumType::Background );
+        else if( (entry.meas == sec_meas) && (samples == sec_samples) )
+          peak_model->setPeakFromSpecMeas( sec_meas, sec_samples, SpectrumType::SecondForeground );
+      }
+    }//for( peak sample sets )
+
+    // Set translated hint peaks
+    const set<set<int>> hint_sample_sets = entry.meas->sampleNumsWithAutomatedSearchPeaks();
+    for( const set<int> &samples : hint_sample_sets )
+    {
+      const shared_ptr<const SpecMeas::PeakDeque> hint_peaks = entry.meas->automatedSearchPeaks( samples );
+      if( !hint_peaks )
+        continue;
+
+      const auto pos = updated_hint_peaks.find( hint_peaks );
+      if( pos == end( updated_hint_peaks ) )
+        continue;
+
+      entry.meas->setAutomatedSearchPeaks( samples,
+        make_shared<deque<shared_ptr<const PeakDef>>>( pos->second ) );
+    }//for( hint peak sample sets )
+  }//for( const ApplyEntry &entry : apply_entries )
+
+  interspec->refreshDisplayedCharts();
+
+  // Build result
+  vector<string> propagated_to;
+  for( size_t i = 1; i < apply_to_types.size(); ++i )
+  {
+    switch( apply_to_types[i] )
+    {
+      case SpectrumType::Foreground:      propagated_to.push_back( "Foreground" ); break;
+      case SpectrumType::Background:       propagated_to.push_back( "Background" ); break;
+      case SpectrumType::SecondForeground: propagated_to.push_back( "Secondary" ); break;
+    }
+  }
+
+  json result = json::object();
+  result["status"] = "success";
+
+  string spec_type_str;
+  switch( spec_type )
+  {
+    case SpectrumType::Foreground:      spec_type_str = "Foreground"; break;
+    case SpectrumType::Background:       spec_type_str = "Background"; break;
+    case SpectrumType::SecondForeground: spec_type_str = "Secondary"; break;
+  }
+  result["specType"] = spec_type_str;
+  result["fit_chi2"] = chi2;
+
+  json coefs_json = json::array();
+  for( const float c : fit_coefs )
+    coefs_json.push_back( c );
+  result["coefficients"] = coefs_json;
+
+  json uncert_json = json::array();
+  for( const float u : fit_uncert )
+    uncert_json.push_back( u );
+  result["coefficient_uncertainties"] = uncert_json;
+
+  result["per_peak_results"] = per_peak_results;
+  result["sum_abs_diff_before_keV"] = sum_abs_diff_before;
+  result["sum_abs_diff_after_keV"] = sum_abs_diff_after;
+
+  if( !propagated_to.empty() )
+    result["propagated_to"] = propagated_to;
+
+  return result;
+}//executeFitEnergyCalibration(...)
 
 
 } // namespace LlmTools

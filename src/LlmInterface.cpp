@@ -30,6 +30,7 @@
 #include <memory>
 #include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -451,6 +452,179 @@ static std::string sanitizeToolName( const std::string &toolName )
 }
 
 
+/** Extract JSON from a markdown code fence if one is present.
+
+ LLMs frequently wrap their JSON output in triple-backtick blocks, e.g.:
+   ```json
+   { ... }
+   ```
+ This function strips the fence and returns the inner content.  If no
+ recognisable fence is found, the original string is returned unchanged.
+ **/
+static std::string extractFromMarkdown( const std::string &s )
+{
+  // Look for ```json or ``` followed by content and a closing ```.
+  // We try the labelled variant first, then unlabelled.
+  static const std::string patterns[] = { "```json", "```JSON", "```" };
+  for( const std::string &fence : patterns )
+  {
+    const size_t start = s.find( fence );
+    if( start == std::string::npos )
+      continue;
+
+    const size_t contentStart = start + fence.size();
+    // Skip the newline immediately after the opening fence
+    size_t bodyStart = contentStart;
+    while( bodyStart < s.size() && (s[bodyStart] == '\r' || s[bodyStart] == '\n') )
+      ++bodyStart;
+
+    const size_t closePos = s.find( "```", contentStart );
+    if( closePos == std::string::npos )
+      continue;
+
+    // For the unlabelled fence we need the body to look like JSON
+    std::string body = s.substr( bodyStart, closePos - bodyStart );
+    // Trim trailing whitespace from body
+    const size_t lastNonSpace = body.find_last_not_of( " \t\r\n" );
+    if( lastNonSpace != std::string::npos )
+      body = body.substr( 0, lastNonSpace + 1 );
+
+    if( body.empty() )
+      continue;
+
+    // For the unlabelled fence, require the body to start with { or [
+    if( fence == "```" && body[0] != '{' && body[0] != '[' )
+      continue;
+
+    return body;
+  }
+
+  return s;
+}//extractFromMarkdown(...)
+
+
+/** Insert missing commas between object fields and array elements.
+
+ Some LLMs omit the comma separator between fields, e.g.:
+   { "a": 1
+     "b": 2 }
+ This function does a line-by-line pass and inserts a trailing comma on lines
+ that end with a complete JSON value when the next non-empty line is neither
+ a closing delimiter nor already preceded by one.
+
+ Only operates on multi-line input; single-line JSON is returned unchanged
+ because the regex approach needed there risks corrupting string values.
+ **/
+static std::string fixMissingCommas( const std::string &s )
+{
+  // Only attempt for multi-line strings
+  if( s.find('\n') == std::string::npos )
+    return s;
+
+  // Split into lines
+  std::vector<std::string> lines;
+  {
+    std::istringstream stream( s );
+    std::string line;
+    while( std::getline( stream, line ) )
+      lines.push_back( line );
+  }
+
+  int depth = 0;
+  std::vector<std::string> result;
+  result.reserve( lines.size() );
+
+  for( size_t li = 0; li < lines.size(); ++li )
+  {
+    const std::string &line = lines[li];
+
+    // Process the line to track depth and find where it ends structurally
+    std::string processed;
+    bool inStr = false;
+    bool esc = false;
+    for( const char c : line )
+    {
+      if( esc ) { esc = false; processed += c; continue; }
+      if( c == '\\' && inStr ) { esc = true; processed += c; continue; }
+      if( c == '"' ) { inStr = !inStr; processed += c; continue; }
+      if( !inStr )
+      {
+        if( c == '{' || c == '[' ) ++depth;
+        else if( c == '}' || c == ']' ) --depth;
+      }
+      processed += c;
+    }
+
+    // Determine trimmed content
+    const size_t trimStart = processed.find_first_not_of( " \t\r\n" );
+    const size_t trimEnd   = processed.find_last_not_of( " \t\r\n" );
+    const std::string trimmed = (trimStart == std::string::npos)
+                                ? "" : processed.substr( trimStart, trimEnd - trimStart + 1 );
+
+    // Lines that already have a comma, colon, or open-delimiter don't need one
+    if( trimmed.empty()
+        || trimmed.back() == ','
+        || trimmed.back() == ':'
+        || trimmed.back() == '{'
+        || trimmed.back() == '[' )
+    {
+      result.push_back( processed );
+      continue;
+    }
+
+    bool needsComma = false;
+    if( depth > 0 && li + 1 < lines.size() )
+    {
+      // Find next non-empty line
+      size_t nextLi = li + 1;
+      while( nextLi < lines.size() )
+      {
+        const size_t ns = lines[nextLi].find_first_not_of( " \t\r\n" );
+        if( ns != std::string::npos )
+          break;
+        ++nextLi;
+      }
+
+      if( nextLi < lines.size() )
+      {
+        const size_t ns = lines[nextLi].find_first_not_of( " \t\r\n" );
+        const char nextFirst = (ns != std::string::npos) ? lines[nextLi][ns] : '\0';
+        if( nextFirst != '\0' && nextFirst != '}' && nextFirst != ']' )
+        {
+          // Current line ends with a complete value?
+          const char last = trimmed.back();
+          const bool endsWithValue = (last == '"' || last == '}' || last == ']'
+                                      || (last >= '0' && last <= '9'));
+          // Also check for boolean/null endings
+          const bool endsWithKeyword = (trimmed.size() >= 4
+                                        && (trimmed.substr( trimmed.size() - 4 ) == "true"
+                                            || trimmed.substr( trimmed.size() - 4 ) == "null"))
+                                       || (trimmed.size() >= 5
+                                           && trimmed.substr( trimmed.size() - 5 ) == "false");
+          if( endsWithValue || endsWithKeyword )
+            needsComma = true;
+        }
+      }
+    }
+
+    if( needsComma )
+      result.push_back( processed + "," );
+    else
+      result.push_back( processed );
+  }//for( lines )
+
+  std::string out;
+  out.reserve( s.size() + lines.size() );
+  for( size_t i = 0; i < result.size(); ++i )
+  {
+    if( i > 0 )
+      out += '\n';
+    out += result[i];
+  }
+  return out;
+}//fixMissingCommas(...)
+
+
 /** Sanitize a JSON string to make it more likely to parse successfully.
 
  This function attempts to fix common JSON formatting issues:
@@ -480,6 +654,32 @@ static std::string sanitizeJsonString( const std::string &jsonStr )
 
   // Remove null bytes which can cause parse failures
   result.erase( std::remove(result.begin(), result.end(), '\0'), result.end() );
+
+  // Extract JSON from markdown code fences (e.g. ```json ... ```) that LLMs emit.
+  // Do this before the leading-garbage strip so the fence itself doesn't mislead it.
+  result = extractFromMarkdown( result );
+  SpecUtils::trim( result );  // re-trim after extraction
+
+  // If the string doesn't start with a valid JSON value character, strip leading garbage
+  // until we reach one.  This handles LLM artefacts like "<tool_call>{...}" or other
+  // non-JSON prefixes that some models emit before the actual payload.
+  // Valid JSON root characters: '{', '[', '"', digit, '-', 't'(rue), 'f'(alse), 'n'(ull).
+  // For the search we only anchor on '{', '[', '"' since digits/letters are too likely
+  // to appear inside the garbage prefix itself (e.g. "<foo1>{...}").
+  if( !result.empty() )
+  {
+    const char first = result[0];
+    const bool isValidJsonStart = (first == '{' || first == '[' || first == '"'
+                                   || first == '-' || (first >= '0' && first <= '9')
+                                   || first == 't' || first == 'f' || first == 'n');
+    if( !isValidJsonStart )
+    {
+      const size_t jsonStart = result.find_first_of( "{[\"" );
+      if( jsonStart != std::string::npos )
+        result = result.substr( jsonStart );
+      // If no recognisable JSON start is found, leave result as-is and let parsing fail.
+    }
+  }
 
   // Replace any invalid UTF-8 sequences
   // This is a simple implementation that handles common cases
@@ -538,6 +738,7 @@ static std::string sanitizeJsonString( const std::string &jsonStr )
 /** Attempt to repair structurally incomplete JSON.
 
  This function tries to make incomplete JSON parseable by:
+ - Inserting missing commas between object fields / array elements
  - Closing unclosed string literals
  - Adding missing closing braces/brackets
 
@@ -558,6 +759,10 @@ static std::string repairIncompleteJson( const std::string &jsonStr,
     return jsonStr;
 
   std::string result = jsonStr;
+
+  // Fix missing commas between object fields / array elements before the
+  // closing-delimiter pass, since the latter doesn't care about commas.
+  result = fixMissingCommas( result );
 
   // Track JSON structure state
   bool inString = false;
@@ -698,7 +903,71 @@ static nlohmann::json lenientlyParseJson( const std::string &jsonStr )
   }
   catch( const nlohmann::json::parse_error &e )
   {
-    // Phase 3: Attempt structural repair
+    // Phase 3: If the trimmed string starts with '{' or '[', strip any trailing
+    // junk after the matching closing bracket (e.g. " <|call|>" appended by some LLMs).
+    // Only attempt this when the top-level structure is an object or array so we
+    // don't accidentally truncate a plain-string value.
+    const size_t firstNonSpace = sanitized.find_first_not_of( " \t\r\n" );
+    if( (firstNonSpace != std::string::npos)
+        && ((sanitized[firstNonSpace] == '{') || (sanitized[firstNonSpace] == '[')) )
+    {
+      const char openChar  = sanitized[firstNonSpace];
+      const char closeChar = (openChar == '{') ? '}' : ']';
+      size_t depth = 0;
+      bool inString = false;
+      bool escaped = false;
+      size_t closePos = std::string::npos;
+      for( size_t i = firstNonSpace; i < sanitized.size(); ++i )
+      {
+        const char c = sanitized[i];
+        if( escaped )
+        {
+          escaped = false;
+          continue;
+        }
+        if( inString )
+        {
+          if( c == '\\' )
+            escaped = true;
+          else if( c == '"' )
+            inString = false;
+          continue;
+        }
+        if( c == '"' )
+        {
+          inString = true;
+        }
+        else if( c == openChar )
+        {
+          ++depth;
+        }
+        else if( c == closeChar )
+        {
+          --depth;
+          if( depth == 0 )
+          {
+            closePos = i;
+            break;
+          }
+        }
+      } //for( loop over sanitized chars )
+
+      if( closePos != std::string::npos && closePos + 1 < sanitized.size() )
+      {
+        // There is trailing content after the closing bracket - try truncating it.
+        const std::string truncated = sanitized.substr( firstNonSpace, closePos - firstNonSpace + 1 );
+        try
+        {
+          return nlohmann::json::parse( truncated );
+        }
+        catch( ... )
+        {
+          // Truncation didn't help; fall through to repair logic.
+        }
+      }
+    } //if top-level object or array
+
+    // Phase 5: Attempt structural repair
     std::string repairLog;
     const std::string repaired = repairIncompleteJson( sanitized, &repairLog );
 
@@ -719,7 +988,7 @@ static nlohmann::json lenientlyParseJson( const std::string &jsonStr )
     }
 #endif
 
-    // Phase 4: Try parsing repaired JSON
+    // Phase 6: Try parsing repaired JSON
     try
     {
       return nlohmann::json::parse( repaired );
@@ -1553,7 +1822,15 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
           if( m_debug_stream )
             (*m_debug_stream) << "--- about to parse sub-agent arguments (lenient)" << endl;
           
-          arguments = lenientlyParseJson( rawArguments );
+          try
+          {
+            arguments = lenientlyParseJson( rawArguments );
+          }catch( ...)
+          {
+            if( m_debug_stream )
+              (*m_debug_stream) << "--- Failed to parse sub-agent arguments (lenient) of:\n```" << rawArguments << "\n```" << endl;
+            throw;
+          }
 
           if( m_debug_stream )
             (*m_debug_stream) << "--- done parsing sub-agent arguments" << endl;
@@ -1906,6 +2183,10 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
         // ===== NORMAL TOOL EXECUTION BRANCH =====
         // For normal tools: Parse arguments as JSON (strict)
 
+        // Add to requests BEFORE parsing arguments, so the request entry always
+        // exists even if lenientlyParseJson throws (keeping requests/results in sync)
+        toolCallRequests.emplace_back( toolName, callId, json::object() );
+
         if( m_debug_stream )
           (*m_debug_stream) << "--- about to parse normal tool arguments for toolName=" << toolName << endl;
         
@@ -1916,8 +2197,8 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
         if( m_debug_stream )
           (*m_debug_stream) << "--- done parsing normal tool arguments for toolName=" << toolName << endl;
 
-        // Add to requests BEFORE execution (so it's always in sync with results)
-        toolCallRequests.emplace_back( toolName, callId, arguments );
+        // Update the stored request with the parsed arguments
+        toolCallRequests.back().toolParameters = arguments;
 
         // Create tool result entry
         LlmToolCall toolResult( toolName, callId, arguments );
@@ -2013,8 +2294,8 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
       arguments["_raw"] = rawArguments;
       arguments["_parse_error"] = e.what();
 
-      // Note: Do NOT add to toolCallRequests here - it was already added before execution
-      // (line 1104 for sub-agents, line 1384 for normal tools)
+      // Note: toolCallRequests was already populated before the parse attempt for normal tools,
+      // or before the sub-agent branch for invoke_* tools - so no need to add it here.
 
       json result;
       result["error"] = "Tool call failed due to JSON parsing: " + string(e.what());
@@ -3289,23 +3570,24 @@ int LlmInterface::sendToolResultsToLLM( std::shared_ptr<LlmInteraction> convo )
   // Find the most recent ToolResult response and store the JSON we're sending
   if( !convo->responses.empty() )
   {
-    // First, find the most recent ToolRequest to get the expected invocationIds
-    std::shared_ptr<LlmToolRequest> mostRecentToolRequest = nullptr;
-    for( auto it = convo->responses.rbegin(); it != convo->responses.rend(); ++it )
-    {
-      if( (*it)->type() == LlmInteractionTurn::Type::ToolCall )
-      {
-        mostRecentToolRequest = std::dynamic_pointer_cast<LlmToolRequest>(*it);
-        break;
-      }
-    }
-
-    // Now find the most recent ToolResult and verify invocationIds match
+    // Find the most recent ToolResult, then find the ToolRequest immediately preceding it
+    // (searching independently could pair entries from different rounds, causing a size mismatch)
     for( auto it = convo->responses.rbegin(); it != convo->responses.rend(); ++it )
     {
       if( (*it)->type() == LlmInteractionTurn::Type::ToolResult )
       {
         std::shared_ptr<LlmToolResults> toolResults = std::dynamic_pointer_cast<LlmToolResults>(*it);
+
+        // Find the ToolRequest that immediately precedes this ToolResult in the response list
+        std::shared_ptr<LlmToolRequest> mostRecentToolRequest = nullptr;
+        for( auto jt = std::next(it); jt != convo->responses.rend(); ++jt )
+        {
+          if( (*jt)->type() == LlmInteractionTurn::Type::ToolCall )
+          {
+            mostRecentToolRequest = std::dynamic_pointer_cast<LlmToolRequest>(*jt);
+            break;
+          }
+        }
 
         // Verify that the invocationIds in the tool results match the tool requests
         if( mostRecentToolRequest && toolResults )

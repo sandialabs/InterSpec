@@ -309,6 +309,44 @@ struct PeakCheckpoint
 };//struct PeakCheckpoint
 
 
+/** A snapshot of the energy calibration state at a point in time, for a specific conversation.
+
+ This allows an LLM agent to checkpoint the energy calibration before making changes,
+ and restore to that state if the calibration adjustment makes things worse.
+
+ Only stores calibrations for displayed samples/detectors (matching the scope of changes
+ the agent will make).
+ */
+struct EnergyCalCheckpoint
+{
+  std::string m_checkpoint_name;
+  std::chrono::system_clock::time_point m_creation_time;
+
+  /** Per-measurement calibration snapshot. */
+  struct PerMeasCal
+  {
+    int sample_number;
+    std::string detector_name;
+    std::shared_ptr<const SpecUtils::EnergyCalibration> calibration;
+  };//struct PerMeasCal
+
+  /** State for a single spectrum type (Foreground/Background/Secondary). */
+  struct SpectrumState
+  {
+    /** The display calibration at checkpoint time, used for translating peaks on restore. */
+    std::shared_ptr<const SpecUtils::EnergyCalibration> m_display_cal;
+
+    /** Per-measurement calibrations for the displayed samples/detectors. */
+    std::vector<PerMeasCal> m_per_meas_cals;
+  };//struct SpectrumState
+
+  /** Only populated for spectrum types that were loaded at checkpoint time. */
+  SpectrumState m_foreground_state;
+  SpectrumState m_background_state;
+  SpectrumState m_secondary_state;
+};//struct EnergyCalCheckpoint
+
+
 /** Represents a user asking the LLM a question or to perform a task.
 
  This is typically a user message or system message that initiates a conversation.
@@ -537,6 +575,12 @@ public:
    Runtime-only; not serialized to XML.
    */
   std::vector<PeakCheckpoint> m_peak_checkpoints;
+
+  /** Energy calibration checkpoints across all conversations.
+   Allows LLM agents to snapshot and restore energy calibration state.
+   Runtime-only; not serialized to XML.
+   */
+  std::vector<EnergyCalCheckpoint> m_energy_cal_checkpoints;
 
 private:
   std::vector<std::shared_ptr<LlmInteraction>> m_conversations;

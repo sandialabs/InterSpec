@@ -182,6 +182,11 @@ private:
   static nlohmann::json executeCreatePeakCheckpoint(const nlohmann::json& params, InterSpec* interspec, LlmConversationHistory* history);
   static nlohmann::json executeRestorePeaksToCheckpoint(const nlohmann::json& params, InterSpec* interspec, LlmConversationHistory* history);
 
+  // Energy calibration tools
+  static nlohmann::json executeFitEnergyCalibration(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeSaveEnergyCalCheckpoint(const nlohmann::json& params, InterSpec* interspec, LlmConversationHistory* history);
+  static nlohmann::json executeRestoreEnergyCalCheckpoint(const nlohmann::json& params, InterSpec* interspec, LlmConversationHistory* history);
+
   /** Helper function to find and load a detector by identifier.
    @param identifier The detector identifier (name, path, or URI)
    @param detectorName Optional specific detector name for multi-detector files
