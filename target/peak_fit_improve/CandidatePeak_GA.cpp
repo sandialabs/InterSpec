@@ -669,23 +669,17 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
       {
         passed_higher_scrutiny = ( (rougher_scnd_drv < 0.0) && (rougher_FOM >= settings.more_scrutiny_coarser_FOM) );
 
-        //rougher_amplitude
-
         if( debug_channel && !passed_higher_scrutiny )
           cout << "Failed higher_scrutiny: rougher_scnd_drv=" << rougher_scnd_drv << ", while rougher_FOM="
           << rougher_FOM << " and settings.more_scrutiny_coarser_FOM=" << settings.more_scrutiny_coarser_FOM << endl;
-
-        //passed_higher_scrutiny
       }//if( figure_of_merit < settings.more_scrutiny_FOM_threshold )
 
 
       // For peaks in low-stat area, a decent way of separating noise peaks out, is to just use the
       //  ROI neighboring regions to estimate a straight line, and then check for at least one
       //  channel in the ROI, that goes above that line, by like ~4 sigma.
-      // Right now, the amplitude below which we do this check is hard-coded, just because there
-      //  are to many variables to loop over to optimize - after getting a better idea of optimal
-      //  values of other variables, we'll add this one into the optimization, when fixing other.
-      if( passed_higher_scrutiny && ((figure_of_merit < settings.more_scrutiny_FOM_threshold) || (amplitude < settings.amp_to_apply_line_test_below)) )
+      if( passed_higher_scrutiny && ((figure_of_merit < settings.more_scrutiny_FOM_threshold)
+                                     || (amplitude < settings.amp_to_apply_line_test_below)) )
       {
         //Using the un-smoothed data - lets estimate the continuum using the area on
         //  either side of the ROI, then compute a chi2 for a straight line, and use this
@@ -766,10 +760,12 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
 
 
       if( (figure_of_merit < 5) && (rougher_scnd_drv >= 0.0) && !rougher_confident_multi_roi )
-
-        if( debug_channel ){
+      {
+        if( debug_channel )
+        {
           cout << "Failed higher_scrutiny: " << figure_of_merit << ", rougher_scnd_drv=" << rougher_scnd_drv
           << ", rougher_confident_multi_roi=" << rougher_confident_multi_roi << endl;
+        }
         passed_higher_scrutiny = false;
       }
 
@@ -897,8 +893,15 @@ CandidatePeakScore calculate_candidate_peak_score_for_source( const vector<PeakD
     {
       const tuple<float,float,float> &det_peak = detected_peaks_tuples[det_index];
       const float mean = get<0>(det_peak);
+      const float det_sigma = get<1>(det_peak);
 
-      if( (mean > expected.roi_lower) && (mean < expected.roi_upper) )
+      // Match if detected peak mean is within expected ROI, or if the detected
+      //  peak's ±1 sigma range overlaps with the expected peak's ROI.
+      //  This handles smoothing shifting detected peak means.
+      const bool mean_in_roi = (mean > expected.roi_lower) && (mean < expected.roi_upper);
+      const bool det_roi_overlaps = ((mean + det_sigma) > expected.roi_lower)
+                                 && ((mean - det_sigma) < expected.roi_upper);
+      if( mean_in_roi || det_roi_overlaps )
       {
         detected_matching_expected.push_back( make_pair(det_peak,det_index) );
         detected_matched_to_expected[det_index] = true;
@@ -915,7 +918,14 @@ CandidatePeakScore calculate_candidate_peak_score_for_source( const vector<PeakD
         num_def_wanted_but_not_detected += 1;
         def_expected_but_not_detected.push_back( expected );
         if( PeakFitImprove::debug_printout )
-          cerr << "Def. wanted m=" << expected.effective_energy << ", nsigma=" << expected.nsigma_over_background << ", but didnt find." << endl;
+        {
+          cerr << "Def. wanted m=" << expected.effective_energy
+               << " keV, nsigma=" << expected.nsigma_over_background
+               << ", area=" << expected.peak_area
+               << ", FWHM=" << expected.effective_fwhm
+               << ", ROI=[" << expected.roi_lower << ", " << expected.roi_upper << "]"
+               << ", but didnt find." << endl;
+        }
       }else
       {
         possibly_expected_but_not_detected.push_back( expected );
@@ -972,6 +982,16 @@ CandidatePeakScore calculate_candidate_peak_score_for_source( const vector<PeakD
     {
       num_detected_not_expected -= 1;
       break;
+    }
+  }
+
+  if( PeakFitImprove::debug_printout && !detected_not_expected.empty() )
+  {
+    cerr << "Extra (unexpected) peaks detected:" << endl;
+    for( const auto &p : detected_not_expected )
+    {
+      cerr << "  Extra peak: m=" << get<0>(p) << " keV, sigma=" << get<1>(p)
+           << ", amp=" << get<2>(p) << endl;
     }
   }
 
@@ -1105,6 +1125,21 @@ CandidatePeakScore eval_candidate_settings( const FindCandidateSettings settings
     num_def_wanted_not_found += source_score.num_def_wanted_not_found;
     num_def_wanted_peaks_found += source_score.num_def_wanted_peaks_found;
     num_extra_peaks += source_score.num_extra_peaks;
+
+    if( PeakFitImprove::debug_printout )
+    {
+      cerr << "\n--- Source: " << info.src_info.src_name
+           << " (" << info.detector_name << "/" << info.location_name << "/" << info.live_time_name << ")"
+           << " ---\n"
+           << "  Score: " << source_score.score
+           << ", Found: " << source_score.num_peaks_found
+           << ", Def wanted found: " << source_score.num_def_wanted_peaks_found
+           << ", Def missed: " << source_score.num_def_wanted_not_found
+           << ", Extra: " << source_score.num_extra_peaks
+           << ", Total expected: " << info.expected_photopeaks.size()
+           << ", Total detected: " << peaks.size()
+           << endl;
+    }
 
     // For N42 output, use the vectors from source_score (already computed by helper function)
     const vector<tuple<float,float,float>> &detected_expected = source_score.detected_expected;

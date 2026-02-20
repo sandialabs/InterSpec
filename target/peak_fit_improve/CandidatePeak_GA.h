@@ -49,6 +49,7 @@ namespace CandidatePeak_GA
 
   struct CandidatePeakScore
   {
+    /** A higher score means the candidate peak finder is correctly detecting the expected peaks while producing fewer spurious extra peaks.  */
     double score;
     size_t num_peaks_found;
     size_t num_def_wanted_not_found;

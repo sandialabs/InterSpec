@@ -887,12 +887,12 @@ int main( int argc, char **argv )
   // Command line argument parsing
   namespace po = boost::program_options;
   
-  string data_base_dir = "/Users/wcjohns/rad_ana/peak_area_optimization/peak_fit_accuracy_inject/";
-  //string data_base_dir = "/Users/wcjohns/coding/InterSpec_peak_fit_improve/peak_fit_accuracy_inject";
+  //string data_base_dir = "/Users/wcjohns/rad_ana/peak_area_optimization/peak_fit_accuracy_inject/";
+  string data_base_dir = "/Users/wcjohns/coding/InterSpec_peak_fit_improve/peak_fit_accuracy_inject";
   string static_data_dir;
   PeakFitImprove::sm_num_optimization_threads = std::max( 8u, std::thread::hardware_concurrency() > 2 ? std::thread::hardware_concurrency() - 2 : 1 );
   size_t number_threads_per_individual = 1;
-  string action_str = "PeaksForNuclide"; // "PeaksForNuclide"; //"CodeDev"; // "FinalFit"; //"InitialFit"; //"Candidate";
+  string action_str = "CodeDev"; // "PeaksForNuclide"; // "PeaksForNuclide"; //"CodeDev"; // "FinalFit"; //"InitialFit"; //"Candidate";
   bool debug_printout_arg = false;
   size_t ga_population = 1500;
   size_t ga_generation_max = 250;
@@ -1733,7 +1733,16 @@ int main( int argc, char **argv )
         //    filtered.push_back( data );
         //}
 
-        CandidatePeak_GA::eval_candidate_settings( settings, input_srcs, true );
+        const CandidatePeak_GA::CandidatePeakScore result = CandidatePeak_GA::eval_candidate_settings( settings, input_srcs, true );
+        
+        cout << "Score: " << result.score << "\n"
+             << "  Peaks found:                        " << result.num_peaks_found << "\n"
+             << "  Def. wanted peaks found:            " << result.num_def_wanted_peaks_found << "\n"
+             << "  Def. wanted peaks missed:           " << result.num_def_wanted_not_found << "\n"
+             << "  Possibly wanted peaks missed:       " << result.num_possibly_accepted_peaks_not_found << "\n"
+             << "  Extra (unexpected) peaks found:     " << result.num_extra_peaks << "\n"
+             << endl;
+        
       }//if( make N42 files )
 
       break;
