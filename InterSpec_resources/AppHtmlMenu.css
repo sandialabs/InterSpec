@@ -103,6 +103,7 @@
   height: 30px;
   overflow: hidden;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 
