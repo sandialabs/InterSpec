@@ -938,6 +938,9 @@ namespace AnalystChecks
 
       for( const string &src : options.sources )
       {
+        if( SpecUtils::iequals_ascii( src, "null" ) )
+          continue;
+
         RelActCalcAuto::SrcVariant source = RelActCalcAuto::source_from_string(src);
         
         if( RelActCalcAuto::is_null(source) )
