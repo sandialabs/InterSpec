@@ -44,24 +44,30 @@ namespace PeakFitUtils
 /** Gives approximate nominal FWHM for a CsI or NaI detector */
 float nai_fwhm_fcn( const float energy );
 
-/** Gives approximate nominal FWHM for a LaBr3 or CZT detector */
+/** Gives approximate nominal FWHM for a LaBr3 detector */
 float labr_fwhm_fcn( const float energy );
+
+/** Gives approximate nominal FWHM for a CZT detector */
+float czt_fwhm_fcn( const float energy );
 
 /** Gives approximate nominal FWHM for a HPGe detector */
 float hpge_fwhm_fcn( const float energy );
-  
-  
+
+
 enum class CoarseResolutionType : int
 {
-  /** Csi, NaI*/
+  /** NaI, CsI */
   Low,
-  
-  /** LaBr, CZT */
-  Medium,
-  
+
+  /** LaBr3 */
+  LaBr,
+
+  /** CZT */
+  CZT,
+
   /** HPGe */
   High,
-  
+
   /** Unknown */
   Unknown
 };//enum class CoarseResolutionType

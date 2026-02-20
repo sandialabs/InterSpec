@@ -54,7 +54,16 @@ float labr_fwhm_fcn( const float energy )
                   DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn, labr_fwhm_coefs );
 }//float labr_fwhm_fcn( const float energy )
 
-  
+
+float czt_fwhm_fcn( const float energy )
+{
+  // From Kromek GR1 generic CZT detector
+  static const vector<float> czt_fwhm_coefs{ 8.95f, 2.39f, 0.344f };
+  return DetectorPeakResponse::peakResolutionFWHM( energy,
+                  DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn, czt_fwhm_coefs );
+}//float czt_fwhm_fcn( const float energy )
+
+
 float hpge_fwhm_fcn( const float energy )
 {
   static const vector<float> hpge_fwhm_coefs{ 1.55f, 0.25f, 0.35f };//"HPGe 40%"
@@ -62,60 +71,64 @@ float hpge_fwhm_fcn( const float energy )
                   DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn, hpge_fwhm_coefs );
 }//float hpge_fwhm_fcn( const float energy )
 
-  
+
 CoarseResolutionType coarse_resolution_from_peaks( const vector<shared_ptr<const PeakDef>> &peaks )
 {
   size_t num_peaks = 0;
   double max_sig = 0.0;
-  double low_w = 0, med_w = 0, high_w = 0, all_w = 0;
-  
+  double low_w = 0, labr_w = 0, czt_w = 0, high_w = 0, all_w = 0;
+
   for( const auto &p : peaks )
   {
     if( !p || !p->gausPeak() || (p->mean() > 3000) || (p->mean() < 50) )
       continue;
-    
+
     num_peaks += 1;
-    
+
     const double drf_low_fwhm = nai_fwhm_fcn( p->mean() );
-    const double drf_med_fwhm = labr_fwhm_fcn( p->mean() );
+    const double drf_labr_fwhm = labr_fwhm_fcn( p->mean() );
+    const double drf_czt_fwhm = czt_fwhm_fcn( p->mean() );
     const double drf_high_fwhm = hpge_fwhm_fcn( p->mean() );
-    
-    const double chi_dof = p->chi2dof();
+
     const double stat_sig = p->peakArea() / p->peakAreaUncert();
     max_sig = std::max( max_sig, stat_sig );
-    
-    const double w = std::min( stat_sig, 10.0 );// / std::max( chi_dof, 0.5 );
-    
+
+    const double w = std::min( stat_sig, 10.0 );
     all_w += w;
-    
-    const double low_diff = fabs(p->fwhm() - drf_low_fwhm);
-    const double med_diff = fabs(p->fwhm() - drf_med_fwhm);
-    const double high_diff = fabs(p->fwhm() - drf_high_fwhm);
-    if( (low_diff < med_diff) && (low_diff < high_diff) )
+
+    // Vote for the detector type whose expected FWHM is closest to the measured peak
+    const double low_diff = fabs( p->fwhm() - drf_low_fwhm );
+    const double labr_diff = fabs( p->fwhm() - drf_labr_fwhm );
+    const double czt_diff = fabs( p->fwhm() - drf_czt_fwhm );
+    const double high_diff = fabs( p->fwhm() - drf_high_fwhm );
+
+    const double min_diff = std::min( {low_diff, labr_diff, czt_diff, high_diff} );
+    if( min_diff == low_diff )
       low_w += w;
-    else if( med_diff < high_diff )
-      med_w += w;
+    else if( min_diff == labr_diff )
+      labr_w += w;
+    else if( min_diff == czt_diff )
+      czt_w += w;
     else
       high_w += w;
   }//for( const auto &p : peak_candidates )
-  
+
   if( (num_peaks == 1) && (max_sig < 5) )
     return CoarseResolutionType::Unknown;
-  
+
   if( all_w <= 0.0 )
     return CoarseResolutionType::Unknown;
-  
-  //if( low_w > high_w )
-  //  return CoarseResolutionType::Low;
-  
-  
-  if( (low_w > med_w) && (low_w > high_w) )
-    return CoarseResolutionType::Low;
-  
-  if( (med_w > high_w) )
-    return CoarseResolutionType::Medium;
-  
-  return CoarseResolutionType::High;
+
+  // Return the type with the highest weighted votes
+  const double max_w = std::max( {low_w, labr_w, czt_w, high_w} );
+  if( max_w == high_w )
+    return CoarseResolutionType::High;
+  if( max_w == czt_w )
+    return CoarseResolutionType::CZT;
+  if( max_w == labr_w )
+    return CoarseResolutionType::LaBr;
+
+  return CoarseResolutionType::Low;
 }//CoarseResolutionType coarse_resolution_from_peaks( const vector<shared_ptr<const PeakDef>> &peaks )
 
   
