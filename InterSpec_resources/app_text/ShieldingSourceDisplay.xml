@@ -163,5 +163,5 @@
   <message id="x2g-tt-sources-contributing">Sources contributing:</message>
   <message id="x2g-tt-counts-abbrev">cnts</message>
   <message id="x2g-tt-br-abbrev">br</message>
-  <message id="x2g-dev-label">&lt;dev&gt;</message>
+  <message id="x2g-dev-label"><![CDATA[<dev>]]></message>
 </messages>
