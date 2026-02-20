@@ -10,19 +10,39 @@
 
 #include "rapidxml/rapidxml.hpp"
 
+#include <Wt/WDialog>
+#include <Wt/WTextArea>
+#include <Wt/WLineEdit>
+#include <Wt/WPushButton>
+#include <Wt/WApplication>
+#include <Wt/Dbo/Dbo>
+
+#include "Minuit2/MnUserParameters.h"
+
+#include "SandiaDecay/SandiaDecay.h"
+
+#include "SpecUtils/SpecFile.h"
+#include "SpecUtils/DateTime.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/EnergyCalibration.h"
+
+
+
+#include "InterSpec/EnergyCal.h"
+#include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/LlmConfig.h"
-#include "InterSpec/LlmDeepResearchAgent.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/LlmInterface.h"
 #include "InterSpec/LlmToolGui.h"
-#include "InterSpec/LlmConversationHistory.h"
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/DrfSelect.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/ReactionGamma.h"
 #include "InterSpec/AnalystChecks.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DataBaseUtils.h"
@@ -35,13 +55,13 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/IsotopeSearchByEnergy.h"
 #include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/LlmDeepResearchAgent.h"
+#include "InterSpec/LlmConversationHistory.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/IsotopeSearchByEnergyModel.h"
-
 #include "InterSpec/DoseCalc.h"
 #include "InterSpec/GadrasSpecFunc.h"
-
 #include "InterSpec/ShieldingSourceFitCalc.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
 #include "InterSpec/RelActCalc.h"
@@ -50,27 +70,7 @@
 #include "InterSpec/LlmActivityFitTool.h"
 #include "InterSpec/LlmRelActManualTool.h"
 
-#include "Minuit2/MnUserParameters.h"
 
-#include <Wt/WDialog>
-#include <Wt/WTextArea>
-#include <Wt/WLineEdit>
-#include <Wt/WPushButton>
-#include <Wt/WApplication>
-#include <Wt/Dbo/Dbo>
-
-#include "SpecUtils/SpecFile.h"
-#include "SpecUtils/DateTime.h"
-#include "SpecUtils/Filesystem.h"
-#include "SpecUtils/StringAlgo.h"
-#include "SpecUtils/EnergyCalibration.h"
-
-#include "InterSpec/EnergyCal.h"
-#include "InterSpec/PeakModel.h"
-
-#include "SandiaDecay/SandiaDecay.h"
-
-#include "InterSpec/ReactionGamma.h"
 
 using namespace std;
 using json = nlohmann::json;
@@ -3280,7 +3280,7 @@ nlohmann::json ToolRegistry::executeCalculateDose(const nlohmann::json& params, 
 
   // 5. Parse optional age parameter (use default if not provided)
   const string age_key = find_case_insensitive_key( "age", params );
-  double age;
+  double age = -1.0;
   if( !params.contains(age_key) )
   {
     age = PeakDef::defaultDecayTime( nuc );
@@ -3298,6 +3298,10 @@ nlohmann::json ToolRegistry::executeCalculateDose(const nlohmann::json& params, 
       throw runtime_error( "Can not interpret age string ('" + age_str + "') as a time duration." );
     }
   }
+
+  assert( age >= 0.0 );
+  if( (age < 0.0) || IsInf(age) || IsNan(age) )
+    throw runtime_error( "Age can not be negative (" + std::to_string(age) + " seconds)" );
 
   // 6. Create nuclide mixture at specified age
   SandiaDecay::NuclideMixture mix;
@@ -5427,7 +5431,7 @@ nlohmann::json ToolRegistry::executeSetWorkflowState(
   return result;
 }
 
-json ToolRegistry::executeCreatePeakCheckpoint( const json& params,
+nlohmann::json ToolRegistry::executeCreatePeakCheckpoint( const nlohmann::json &params,
                                                 InterSpec* interspec,
                                                 LlmConversationHistory* history )
 {
