@@ -540,17 +540,6 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
           if( PeakFitImprove::debug_printout )
           {
             const vector<string> wanted_sources{
-              "Eu152_Sh",
-              "Ho166m_Unsh",
-              "Cs137_Sh",
-              "Cs137_Unsh",
-              "I131_Sh",
-              "Ir192_Sh",
-              "Am241_Unsh",
-              "Pu239_Sh",
-              "Pu238_Unsh",
-              "U235_Unsh",
-              "Th232_Unsh",
             };
             bool wanted = wanted_sources.empty();
             for( const string &src : wanted_sources )
@@ -822,8 +811,13 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
         num_queued = 0;
       }
 
-      pool.post( [&](){
-        create_DataSrcInfo( info );
+      // Capture create_DataSrcInfo by value (copies its reference captures, which point to stable
+      //  vector elements and function-scope variables), and use a stable pointer to the
+      //  InjectSourceInfo element (the vector isnt modified during this loop).
+      //  We cant use [&] because both `create_DataSrcInfo` (a stack-local lambda) and `info`
+      //  (a range-for variable) go out of scope each iteration, before the worker runs.
+      pool.post( [create_DataSrcInfo, info_ptr = &info](){
+        create_DataSrcInfo( *info_ptr );
       } );
     }//for( const InjectSourceInfo &info : source_infos )
   }//for( const DetectorInjectSet &inject_set : inject_sets )
@@ -855,6 +849,493 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
 
   return tuple<vector<DetectorInjectSet>,vector<DataSrcInfo>>{ std::move(inject_sets), std::move(input_srcs) };
 }//std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_data_with_truth_info( )
+
+
+namespace
+{
+  void write_peak_truth_csv_line( ostream &strm, const PeakTruthInfo &info )
+  {
+    char buffer[256];
+    snprintf( buffer, sizeof(buffer), "%.9g,%.9g,%.9g,%.9g,%.9g,%s",
+             info.energy, info.cps, info.area, info.fwhm, info.full_width, info.label.c_str() );
+    strm << buffer << "\n";
+  }//void write_peak_truth_csv_line(...)
+
+
+  void write_expected_photopeaks_section( ostream &strm,
+                                          const string &section_name,
+                                          const vector<ExpectedPhotopeakInfo> &peaks )
+  {
+    strm << section_name << ":\n";
+    strm << "NSigmaOverBkg,ROILower,ROIUpper,EffectiveEnergy,PeakArea,ContinuumArea,EffectiveFWHM,NumGammaLines\n";
+
+    for( const ExpectedPhotopeakInfo &peak : peaks )
+    {
+      char buffer[512];
+      snprintf( buffer, sizeof(buffer), "%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%zu",
+               peak.nsigma_over_background, peak.roi_lower, peak.roi_upper,
+               peak.effective_energy, peak.peak_area, peak.continuum_area,
+               peak.effective_fwhm, peak.gamma_lines.size() );
+      strm << buffer << "\n";
+
+      for( const PeakTruthInfo &gl : peak.gamma_lines )
+        write_peak_truth_csv_line( strm, gl );
+    }//for( const ExpectedPhotopeakInfo &peak : peaks )
+
+    strm << "\n";
+  }//void write_expected_photopeaks_section(...)
+
+
+  vector<ExpectedPhotopeakInfo> parse_expected_photopeaks_section( istream &strm )
+  {
+    vector<ExpectedPhotopeakInfo> results;
+    string line;
+
+    // Read header line: "NSigmaOverBkg,ROILower,..."
+    if( !SpecUtils::safe_get_line( strm, line ) )
+      return results;
+
+    SpecUtils::trim( line );
+    if( !SpecUtils::istarts_with( line, "NSigmaOverBkg" ) )
+      throw runtime_error( "Expected header line starting with 'NSigmaOverBkg', got: '" + line + "'" );
+
+    while( SpecUtils::safe_get_line( strm, line ) )
+    {
+      SpecUtils::trim( line );
+      if( line.empty() )
+        break;
+
+      // Check if this is a section header for the next section
+      if( SpecUtils::icontains( line, "Photopeaks:" ) )
+      {
+        // We've overread into the next section - put it back by seeking
+        // Actually, we cant easily put it back, so instead we'll handle at the caller level
+        // For now, this shouldn't happen since sections are separated by blank lines
+        throw runtime_error( "Unexpected section header while parsing expected photopeaks: '" + line + "'" );
+      }
+
+      // Parse the ExpectedPhotopeakInfo line
+      vector<string> fields;
+      SpecUtils::split( fields, line, "," );
+      if( fields.size() != 8 )
+        throw runtime_error( "Expected 8 fields in ExpectedPhotopeakInfo line, got "
+                            + std::to_string( fields.size() ) + ": '" + line + "'" );
+
+      ExpectedPhotopeakInfo peak;
+      if( !SpecUtils::parse_double( fields[0].c_str(), fields[0].size(), peak.nsigma_over_background )
+         || !SpecUtils::parse_double( fields[1].c_str(), fields[1].size(), peak.roi_lower )
+         || !SpecUtils::parse_double( fields[2].c_str(), fields[2].size(), peak.roi_upper )
+         || !SpecUtils::parse_double( fields[3].c_str(), fields[3].size(), peak.effective_energy )
+         || !SpecUtils::parse_double( fields[4].c_str(), fields[4].size(), peak.peak_area )
+         || !SpecUtils::parse_double( fields[5].c_str(), fields[5].size(), peak.continuum_area )
+         || !SpecUtils::parse_double( fields[6].c_str(), fields[6].size(), peak.effective_fwhm ) )
+      {
+        throw runtime_error( "Failed to parse ExpectedPhotopeakInfo values: '" + line + "'" );
+      }
+
+      size_t num_gamma_lines = 0;
+      if( !(istringstream( fields[7] ) >> num_gamma_lines) )
+        throw runtime_error( "Failed to parse NumGammaLines: '" + fields[7] + "'" );
+
+      // Read the gamma_lines for this peak
+      for( size_t i = 0; i < num_gamma_lines; ++i )
+      {
+        if( !SpecUtils::safe_get_line( strm, line ) )
+          throw runtime_error( "Unexpected EOF reading gamma lines" );
+        SpecUtils::trim( line );
+        peak.gamma_lines.emplace_back( line );
+      }//for( loop over gamma_lines )
+
+      results.push_back( std::move( peak ) );
+    }//while( reading lines )
+
+    return results;
+  }//vector<ExpectedPhotopeakInfo> parse_expected_photopeaks_section(...)
+}//anonymous namespace
+
+
+void write_compact_data( const vector<DetectorInjectSet> &inject_sets,
+                         const vector<DataSrcInfo> &input_srcs,
+                         const string &output_dir )
+{
+  // Build a lookup map from (detector, location, livetime, src_name) -> DataSrcInfo
+  map<string, const DataSrcInfo *> src_lookup;
+  for( const DataSrcInfo &src : input_srcs )
+  {
+    const string key = src.detector_name + "/" + src.location_name + "/"
+                       + src.live_time_name + "/" + src.src_info.src_name;
+    src_lookup[key] = &src;
+  }
+
+  size_t num_written = 0;
+  for( const DetectorInjectSet &inject_set : inject_sets )
+  {
+    const boost::filesystem::path livetime_dir
+      = boost::filesystem::path( output_dir )
+        / inject_set.detector_name / inject_set.location_name / inject_set.live_time_name;
+
+    boost::filesystem::create_directories( livetime_dir );
+
+    // Write the compact marker file
+    {
+      const boost::filesystem::path marker_path = livetime_dir / ".compact_marker";
+      ofstream marker( marker_path.string().c_str() );
+      marker << "CompactV1" << endl;
+    }
+
+    for( const InjectSourceInfo &info : inject_set.source_infos )
+    {
+      if( !info.spec_file || info.src_spectra.empty() )
+        continue;
+
+      // Write compact PCF with just 4 measurements
+      {
+        SpecUtils::SpecFile compact_spec;
+        compact_spec.set_manufacturer( info.spec_file->manufacturer() );
+        compact_spec.set_detector_type( info.spec_file->detector_type() );
+        compact_spec.set_instrument_model( info.spec_file->instrument_model() );
+        compact_spec.set_instrument_type( info.spec_file->instrument_type() );
+        compact_spec.set_filename( info.spec_file->filename() );
+
+        // Add measurements in the expected order: src, short_bg, long_bg, src_no_poisson
+        // We need mutable copies to add to the new SpecFile
+        if( info.src_spectra[0] )
+          compact_spec.add_measurement( make_shared<SpecUtils::Measurement>( *info.src_spectra[0] ), false );
+        if( info.short_background )
+          compact_spec.add_measurement( make_shared<SpecUtils::Measurement>( *info.short_background ), false );
+        if( info.long_background )
+          compact_spec.add_measurement( make_shared<SpecUtils::Measurement>( *info.long_background ), false );
+        if( info.src_no_poisson )
+          compact_spec.add_measurement( make_shared<SpecUtils::Measurement>( *info.src_no_poisson ), false );
+
+        const boost::filesystem::path pcf_path = livetime_dir / (info.src_name + ".pcf");
+        ofstream pcf_strm( pcf_path.string().c_str(), ios::binary | ios::out );
+        if( !pcf_strm.good() )
+          throw runtime_error( "Failed to open for writing: " + pcf_path.string() );
+
+        const bool wrote = compact_spec.write_pcf( pcf_strm );
+        if( !wrote )
+          throw runtime_error( "Failed to write compact PCF: " + pcf_path.string() );
+      }
+
+      // Write compact truth CSV
+      {
+        const boost::filesystem::path truth_path = livetime_dir / (info.src_name + "_truth.csv");
+        ofstream truth_strm( truth_path.string().c_str(), ios::out );
+        if( !truth_strm.good() )
+          throw runtime_error( "Failed to open for writing: " + truth_path.string() );
+
+        truth_strm << "# PeakFitImprove Compact Truth V1\n";
+        truth_strm << "# Source: " << info.src_name << "\n\n";
+
+        // Look up matching DataSrcInfo for pre-computed expected photopeaks
+        const string key = inject_set.detector_name + "/" + inject_set.location_name + "/"
+                          + inject_set.live_time_name + "/" + info.src_name;
+        const auto lookup_iter = src_lookup.find( key );
+
+        if( lookup_iter != end(src_lookup) )
+        {
+          const DataSrcInfo &data_src = *(lookup_iter->second);
+          write_expected_photopeaks_section( truth_strm, "Expected Photopeaks", data_src.expected_photopeaks );
+          write_expected_photopeaks_section( truth_strm, "Expected Signal Photopeaks", data_src.expected_signal_photopeaks );
+          write_expected_photopeaks_section( truth_strm, "Expected Background Photopeaks", data_src.expected_background_photopeaks );
+        }
+        else
+        {
+          // Source was filtered out (dead-time, no detectable clusters, etc.) - write empty sections
+          write_expected_photopeaks_section( truth_strm, "Expected Photopeaks", {} );
+          write_expected_photopeaks_section( truth_strm, "Expected Signal Photopeaks", {} );
+          write_expected_photopeaks_section( truth_strm, "Expected Background Photopeaks", {} );
+        }
+      }
+
+      num_written += 1;
+    }//for( const InjectSourceInfo &info : inject_set.source_infos )
+  }//for( const DetectorInjectSet &inject_set : inject_sets )
+
+  cout << "Wrote " << num_written << " compact source files to " << output_dir << endl;
+}//void write_compact_data(...)
+
+
+bool is_compact_data_directory( const string &base_dir )
+{
+  // Check for .compact_marker in the first {detector}/{city}/{livetime}/ path found
+  for( boost::filesystem::directory_iterator det_itr( base_dir );
+      det_itr != boost::filesystem::directory_iterator(); ++det_itr )
+  {
+    if( !boost::filesystem::is_directory( det_itr->status() ) )
+      continue;
+
+    for( boost::filesystem::directory_iterator city_itr( det_itr->path() );
+        city_itr != boost::filesystem::directory_iterator(); ++city_itr )
+    {
+      if( !boost::filesystem::is_directory( city_itr->status() ) )
+        continue;
+
+      for( boost::filesystem::directory_iterator lt_itr( city_itr->path() );
+          lt_itr != boost::filesystem::directory_iterator(); ++lt_itr )
+      {
+        if( !boost::filesystem::is_directory( lt_itr->status() ) )
+          continue;
+
+        const boost::filesystem::path marker = lt_itr->path() / ".compact_marker";
+        return boost::filesystem::is_regular_file( marker );
+      }//for( livetime directories )
+    }//for( city directories )
+  }//for( detector directories )
+
+  return false;
+}//bool is_compact_data_directory(...)
+
+
+tuple<vector<DetectorInjectSet>,vector<DataSrcInfo>>
+  load_compact_data( const string &base_dir,
+                     const vector<string> &wanted_detectors,
+                     const vector<string> &live_times,
+                     const vector<string> &wanted_cities )
+{
+  vector<DetectorInjectSet> inject_sets;
+
+  std::mutex input_srcs_mutex;
+  vector<DataSrcInfo> input_srcs;
+  vector<bool> used_detector( wanted_detectors.size(), false ), used_live_times( live_times.size(), false );
+
+  for( boost::filesystem::directory_iterator detector_itr( base_dir );
+      detector_itr != boost::filesystem::directory_iterator(); ++detector_itr )
+  {
+    if( !boost::filesystem::is_directory( detector_itr->status() ) )
+      continue;
+
+    const boost::filesystem::path detector_path = detector_itr->path();
+
+    bool is_wanted_det = false;
+    for( size_t i = 0; i < wanted_detectors.size(); ++i )
+    {
+      const string &det = wanted_detectors[i];
+      const bool want = (detector_path.filename() == det);
+      is_wanted_det |= want;
+      used_detector[i] = (used_detector[i] || want);
+    }
+
+    if( !is_wanted_det )
+    {
+      cerr << "Skipping detector " << detector_path.filename() << endl;
+      continue;
+    }
+
+    cout << "In detector directory: " << detector_path.filename() << endl;
+
+    for( boost::filesystem::directory_iterator city_itr( detector_path );
+        city_itr != boost::filesystem::directory_iterator(); ++city_itr )
+    {
+      if( !boost::filesystem::is_directory( city_itr->status() ) )
+        continue;
+
+      const boost::filesystem::path city_path = city_itr->path();
+      cout << "In city directory: " << city_path.filename() << endl;
+
+      const auto wanted_pos = std::find( begin(wanted_cities), end(wanted_cities), city_path.filename() );
+      if( !wanted_cities.empty() && (wanted_pos == end(wanted_cities)) )
+      {
+        cout << "Skipping city " << city_itr->path().filename() << endl;
+        continue;
+      }
+
+      for( boost::filesystem::directory_iterator livetime_itr( city_path );
+          livetime_itr != boost::filesystem::directory_iterator(); ++livetime_itr )
+      {
+        if( !boost::filesystem::is_directory( livetime_itr->status() ) )
+          continue;
+
+        const boost::filesystem::path livetime_path = livetime_itr->path();
+
+        bool is_wanted_lt = false;
+        for( size_t i = 0; i < live_times.size(); ++i )
+        {
+          const string &lt = live_times[i];
+          const bool wanted = (livetime_path.filename() == lt);
+          is_wanted_lt |= wanted;
+          used_live_times[i] = (used_live_times[i] || wanted);
+        }
+
+        if( !is_wanted_lt )
+        {
+          cerr << "Skipping live-time " << livetime_path.filename() << endl;
+          continue;
+        }
+
+        // Collect PCF files in this directory
+        vector<string> pcf_base_names;
+        for( boost::filesystem::directory_iterator file_itr( livetime_path );
+            file_itr != boost::filesystem::directory_iterator(); ++file_itr )
+        {
+          if( !boost::filesystem::is_regular_file( file_itr->status() ) )
+            continue;
+
+          const string filename = file_itr->path().filename().string();
+          if( !SpecUtils::iends_with( filename, ".pcf" ) )
+            continue;
+
+          // base_name is the full path without the .pcf extension
+          const string base_name = file_itr->path().string().substr( 0, file_itr->path().string().size() - 4 );
+          pcf_base_names.push_back( base_name );
+        }//for( loop over files )
+
+        DetectorInjectSet injects;
+        injects.detector_name = detector_path.filename().string();
+        injects.location_name = city_path.filename().string();
+        injects.live_time_name = livetime_path.filename().string();
+        injects.source_infos.resize( pcf_base_names.size() );
+
+        const size_t num_srcs = pcf_base_names.size();
+
+        // Parallel arrays for truth data, indexed same as source_infos
+        struct CompactTruth
+        {
+          vector<ExpectedPhotopeakInfo> expected_photopeaks;
+          vector<ExpectedPhotopeakInfo> expected_signal_photopeaks;
+          vector<ExpectedPhotopeakInfo> expected_background_photopeaks;
+        };
+        vector<CompactTruth> truth_data( num_srcs );
+
+        SpecUtilsAsync::ThreadPool pool;
+        for( size_t file_index = 0; file_index < num_srcs; ++file_index )
+        {
+          const string &base_name = pcf_base_names[file_index];
+          pool.post( [file_index, &base_name, &injects, &truth_data](){
+            try
+            {
+              const string pcf_filename = base_name + ".pcf";
+              const string truth_filename = base_name + "_truth.csv";
+
+              auto spec_file = make_shared<SpecUtils::SpecFile>();
+              const bool loaded_pcf = spec_file->load_pcf_file( pcf_filename );
+              if( !loaded_pcf )
+                throw runtime_error( "Failed to load compact PCF: " + pcf_filename );
+
+              const vector<shared_ptr<const SpecUtils::Measurement>> meass = spec_file->measurements();
+
+              // Compact format has exactly 4 measurements
+              assert( meass.size() == 4 );
+              if( meass.size() != 4 )
+                throw runtime_error( "Expected 4 measurements in compact PCF, got "
+                                    + std::to_string( meass.size() ) + " in " + pcf_filename );
+
+              InjectSourceInfo &info = injects.source_infos[file_index];
+              info.file_base_path = base_name;
+              info.src_name = SpecUtils::filename( base_name );
+              info.spec_file = spec_file;
+              info.from_compact_data = true;
+
+              info.src_spectra.push_back( meass[0] );
+              info.short_background = meass[1];
+              info.long_background = meass[2];
+              info.src_no_poisson = meass[3];
+              // background_no_poisson left as nullptr (not stored in compact format)
+
+              // Parse compact truth CSV
+              ifstream truth_strm( truth_filename.c_str(), ios::in );
+              if( !truth_strm.good() )
+                throw runtime_error( "Failed to open compact truth CSV: " + truth_filename );
+
+              string line;
+
+              // Skip comment/header lines until we find the first section
+              while( SpecUtils::safe_get_line( truth_strm, line ) )
+              {
+                SpecUtils::trim( line );
+                if( SpecUtils::istarts_with( line, "Expected Photopeaks:" ) )
+                  break;
+              }
+              truth_data[file_index].expected_photopeaks = parse_expected_photopeaks_section( truth_strm );
+
+              // Find "Expected Signal Photopeaks:" header
+              while( SpecUtils::safe_get_line( truth_strm, line ) )
+              {
+                SpecUtils::trim( line );
+                if( SpecUtils::istarts_with( line, "Expected Signal Photopeaks:" ) )
+                  break;
+              }
+              truth_data[file_index].expected_signal_photopeaks = parse_expected_photopeaks_section( truth_strm );
+
+              // Find "Expected Background Photopeaks:" header
+              while( SpecUtils::safe_get_line( truth_strm, line ) )
+              {
+                SpecUtils::trim( line );
+                if( SpecUtils::istarts_with( line, "Expected Background Photopeaks:" ) )
+                  break;
+              }
+              truth_data[file_index].expected_background_photopeaks = parse_expected_photopeaks_section( truth_strm );
+            }catch( std::exception &e )
+            {
+              cerr << "Failed to load compact file: " << e.what() << endl;
+            }
+          } );
+        }//for( loop over files )
+
+        pool.join();
+
+        size_t num_success = 0;
+        for( size_t index = 0; index < num_srcs; ++index )
+        {
+          if( !injects.source_infos[index].spec_file )
+            continue;
+          assert( !injects.source_infos[index].src_spectra.empty() );
+          num_success += 1;
+        }
+
+        cout << "Parsed " << num_success << " compact sources from "
+             << livetime_path.filename() << endl;
+
+        // Create DataSrcInfo entries for sources that have non-empty expected_photopeaks
+        for( size_t index = 0; index < num_srcs; ++index )
+        {
+          const InjectSourceInfo &info = injects.source_infos[index];
+          if( !info.spec_file || info.src_spectra.empty() )
+            continue;
+
+          if( truth_data[index].expected_photopeaks.empty() )
+            continue;
+
+          DataSrcInfo data_src;
+          data_src.detector_name = injects.detector_name;
+          data_src.location_name = injects.location_name;
+          data_src.live_time_name = injects.live_time_name;
+          data_src.src_info = info;
+          data_src.expected_photopeaks = std::move( truth_data[index].expected_photopeaks );
+          data_src.expected_signal_photopeaks = std::move( truth_data[index].expected_signal_photopeaks );
+          data_src.expected_background_photopeaks = std::move( truth_data[index].expected_background_photopeaks );
+
+          std::lock_guard<std::mutex> lock( input_srcs_mutex );
+          input_srcs.push_back( std::move( data_src ) );
+        }//for( loop over sources )
+
+        inject_sets.push_back( std::move( injects ) );
+      }//for( loop over live-time directories )
+    }//for( loop over cities )
+  }//for( loop over detector types )
+
+  cout << "Loaded " << input_srcs.size() << " compact data sources." << endl;
+
+  return tuple<vector<DetectorInjectSet>,vector<DataSrcInfo>>{ std::move(inject_sets), std::move(input_srcs) };
+}//load_compact_data(...)
+
+
+tuple<vector<DetectorInjectSet>,vector<DataSrcInfo>>
+  load_data( const string &base_dir,
+             const vector<string> &wanted_detectors,
+             const vector<string> &live_times,
+             const vector<string> &wanted_cities )
+{
+  if( is_compact_data_directory( base_dir ) )
+  {
+    cout << "Detected compact data format in " << base_dir << endl;
+    return load_compact_data( base_dir, wanted_detectors, live_times, wanted_cities );
+  }
+
+  cout << "Using original data format from " << base_dir << endl;
+  return load_inject_data_with_truth_info( base_dir, wanted_detectors, live_times, wanted_cities );
+}//load_data(...)
 
 
 #if( WRITE_ALL_SPEC_TO_HTML )

@@ -690,8 +690,8 @@ void create_n42_peak_fits( const vector<DetectorInjectSet> &inject_sets, const v
     //  continue;
 
 
-    const vector<PeakTruthInfo> &source_lines = src_info.source_lines;
-    const vector<PeakTruthInfo> &background_lines = src_info.background_lines;
+    //const vector<PeakTruthInfo> &source_lines = src_info.source_lines;
+    //const vector<PeakTruthInfo> &background_lines = src_info.background_lines;
     //src_info.spec_file;
     const vector<shared_ptr<const SpecUtils::Measurement>> &src_spectra = src_info.src_spectra;
     assert( !src_spectra.empty() );
@@ -919,7 +919,8 @@ int main( int argc, char **argv )
     ("ga-crossover-fraction", po::value<double>( &ga_crossover_fraction )->default_value( ga_crossover_fraction ), "Fraction of individuals that will have crossover applied to them every generation")
     ("ga-mutation-rate", po::value<double>( &ga_mutation_rate )->default_value( ga_mutation_rate ), "Fraction of individuals that will have mutation applied to them every generation")
     ("ga-mutate-threshold", po::value<double>( &ga_mutate_threshold )->default_value( ga_mutate_threshold ), "The fraction of genes that will be mutated.")
-    ("ga-crossover-threshold", po::value<double>( &ga_crossover_threshold ), "The fraction of genes that will be crossed over (default depends on action: Candidate/InitialFit=0.25, FinalFit=0.15)");
+    ("ga-crossover-threshold", po::value<double>( &ga_crossover_threshold ), "The fraction of genes that will be crossed over (default depends on action: Candidate/InitialFit=0.25, FinalFit=0.15)")
+    ("create-compact-data", po::value<string>(), "Create compacted data directory from source data, verify round-trip, then exit");
   
   po::variables_map vm;
   
@@ -1096,12 +1097,136 @@ int main( int argc, char **argv )
     //"Denver"
   };
 
+  // When creating compact data, include all cities and live times
+  if( vm.count( "create-compact-data" ) )
+  {
+    live_times = { "30_seconds", "300_seconds", "1800_seconds" };
+    wanted_cities = { "Livermore", "Baltimore", "Denver" };
+  }
 
   const std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> &loaded_data
-      = PeakFitImproveData::load_inject_data_with_truth_info( base_dir, hpges, live_times, wanted_cities );
+      = PeakFitImproveData::load_data( base_dir, hpges, live_times, wanted_cities );
 
-  const vector<DetectorInjectSet> &inject_sets = std::get<0>(loaded_data);
-  const vector<DataSrcInfo> &input_srcs = std::get<1>(loaded_data);
+  const vector<DetectorInjectSet> &inject_sets = std::get<0>( loaded_data );
+  const vector<DataSrcInfo> &input_srcs = std::get<1>( loaded_data );
+
+
+  // Handle --create-compact-data: write compact format, then round-trip verify
+  if( vm.count( "create-compact-data" ) )
+  {
+    const string compact_output_dir = vm["create-compact-data"].as<string>();
+    cout << "Creating compact data in: " << compact_output_dir << endl;
+
+    PeakFitImproveData::write_compact_data( inject_sets, input_srcs, compact_output_dir );
+
+    // Round-trip verification: load compact data back and compare with original
+    cout << "\nVerifying round-trip by loading compact data back..." << endl;
+    const auto compact_loaded
+      = PeakFitImproveData::load_compact_data( compact_output_dir, hpges, live_times, wanted_cities );
+    const vector<DataSrcInfo> &compact_srcs = std::get<1>( compact_loaded );
+
+    // Build lookup for compact sources
+    map<string, const DataSrcInfo *> compact_lookup;
+    for( const DataSrcInfo &src : compact_srcs )
+    {
+      const string key = src.detector_name + "/" + src.location_name + "/"
+                        + src.live_time_name + "/" + src.src_info.src_name;
+      compact_lookup[key] = &src;
+    }
+
+    size_t num_compared = 0, num_mismatches = 0;
+    for( const DataSrcInfo &orig : input_srcs )
+    {
+      const string key = orig.detector_name + "/" + orig.location_name + "/"
+                        + orig.live_time_name + "/" + orig.src_info.src_name;
+      const auto it = compact_lookup.find( key );
+      if( it == end(compact_lookup) )
+      {
+        cerr << "MISMATCH: " << key << " not found in compact data!" << endl;
+        num_mismatches += 1;
+        continue;
+      }
+
+      const DataSrcInfo &comp = *(it->second);
+      num_compared += 1;
+
+      // Compare expected_photopeaks
+      if( orig.expected_photopeaks.size() != comp.expected_photopeaks.size() )
+      {
+        cerr << "MISMATCH: " << key << " expected_photopeaks count: "
+             << orig.expected_photopeaks.size() << " vs " << comp.expected_photopeaks.size() << endl;
+        num_mismatches += 1;
+        continue;
+      }
+
+      bool this_matches = true;
+      for( size_t i = 0; i < orig.expected_photopeaks.size(); ++i )
+      {
+        const ExpectedPhotopeakInfo &o = orig.expected_photopeaks[i];
+        const ExpectedPhotopeakInfo &c = comp.expected_photopeaks[i];
+
+        const double tol = 1.0e-6;
+        const bool energy_ok = (fabs( o.effective_energy - c.effective_energy ) < tol * fabs( o.effective_energy ) + tol);
+        const bool area_ok = (fabs( o.peak_area - c.peak_area ) < tol * fabs( o.peak_area ) + tol);
+        const bool cont_ok = (fabs( o.continuum_area - c.continuum_area ) < tol * fabs( o.continuum_area ) + tol);
+        const bool nsig_ok = (fabs( o.nsigma_over_background - c.nsigma_over_background ) < tol * fabs( o.nsigma_over_background ) + tol);
+        const bool fwhm_ok = (fabs( o.effective_fwhm - c.effective_fwhm ) < tol * fabs( o.effective_fwhm ) + tol);
+        const bool roi_lo_ok = (fabs( o.roi_lower - c.roi_lower ) < tol * fabs( o.roi_lower ) + tol);
+        const bool roi_hi_ok = (fabs( o.roi_upper - c.roi_upper ) < tol * fabs( o.roi_upper ) + tol);
+
+        if( !energy_ok || !area_ok || !cont_ok || !nsig_ok || !fwhm_ok || !roi_lo_ok || !roi_hi_ok )
+        {
+          cerr << "MISMATCH: " << key << " expected_photopeaks[" << i << "]:"
+               << " energy=" << o.effective_energy << " vs " << c.effective_energy
+               << ", area=" << o.peak_area << " vs " << c.peak_area << endl;
+          this_matches = false;
+        }
+      }//for( loop over expected_photopeaks )
+
+      if( !this_matches )
+        num_mismatches += 1;
+
+      // Compare spectral data (channel counts should match exactly for PCF binary round-trip)
+      const shared_ptr<const SpecUtils::Measurement> &orig_meas = orig.src_info.src_spectra[0];
+      const shared_ptr<const SpecUtils::Measurement> &comp_meas = comp.src_info.src_spectra[0];
+      if( orig_meas && comp_meas )
+      {
+        const shared_ptr<const vector<float>> orig_counts = orig_meas->gamma_counts();
+        const shared_ptr<const vector<float>> comp_counts = comp_meas->gamma_counts();
+        if( orig_counts && comp_counts && (orig_counts->size() == comp_counts->size()) )
+        {
+          for( size_t ch = 0; ch < orig_counts->size(); ++ch )
+          {
+            if( (*orig_counts)[ch] != (*comp_counts)[ch] )
+            {
+              cerr << "MISMATCH: " << key << " channel " << ch << " counts differ: "
+                   << (*orig_counts)[ch] << " vs " << (*comp_counts)[ch] << endl;
+              num_mismatches += 1;
+              break;
+            }
+          }
+        }
+        else if( orig_counts && comp_counts )
+        {
+          cerr << "MISMATCH: " << key << " channel count sizes differ: "
+               << orig_counts->size() << " vs " << comp_counts->size() << endl;
+          num_mismatches += 1;
+        }
+      }//if( orig_meas && comp_meas )
+    }//for( loop over original sources )
+
+    cout << "\nRound-trip verification complete: compared " << num_compared
+         << " sources, " << num_mismatches << " mismatches." << endl;
+
+    if( num_mismatches > 0 )
+    {
+      cerr << "ERROR: Round-trip verification found mismatches!" << endl;
+      return -10;
+    }
+
+    cout << "SUCCESS: All sources match between original and compact data." << endl;
+    return 0;
+  }//if( vm.count( "create-compact-data" ) )
 
 
 

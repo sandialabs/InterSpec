@@ -108,6 +108,11 @@ struct InjectSourceInfo
 
   /** Background, with no Poisson variation. */
   std::shared_ptr<const SpecUtils::Measurement> background_no_poisson;
+
+  /** Whether this data was loaded from the compact data format (4 measurements per PCF,
+   pre-computed truth info) vs the original format (16 measurements per PCF, CSV truth).
+   */
+  bool from_compact_data = false;
 };//struct InjectSourceInfo
 
 

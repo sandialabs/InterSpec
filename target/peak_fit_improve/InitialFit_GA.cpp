@@ -1481,9 +1481,10 @@ PeakFindAndFitWeights eval_initial_peak_find_and_fit( const InitialPeakFindSetti
                                                      const bool multithread )
 {
   const InjectSourceInfo &src = src_info.src_info;
-  assert( src.src_spectra.size() >= 12 );
-  if( src.src_spectra.size() < 12 )
-    throw runtime_error( "Unexpected number of measurements." );
+  assert( src.from_compact_data || (src.src_spectra.size() >= 12) );
+  assert( src.src_spectra.size() >= 1 );
+  if( src.src_spectra.empty() )
+    throw runtime_error( "No measurements available." );
 
   const shared_ptr<const SpecUtils::Measurement> &data = src.src_spectra.front(); // TODO: we cold loop over all 16 of these histograms
 

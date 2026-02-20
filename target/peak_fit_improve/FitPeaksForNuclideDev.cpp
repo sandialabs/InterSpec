@@ -535,9 +535,10 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
   for( const DataSrcInfo &src_info : srcs_info )
   {
     const InjectSourceInfo &src = src_info.src_info;
-    assert( src.src_spectra.size() >= 12 );
-    if( src.src_spectra.size() < 12 )
-      throw runtime_error( "Unexpected number of measurements." );
+    assert( src.from_compact_data || (src.src_spectra.size() >= 12) );
+    assert( src.src_spectra.size() >= 1 );
+    if( src.src_spectra.empty() )
+      throw runtime_error( "No measurements available." );
 
     string src_name = src.src_name;
     const auto underscore_pos = src_name.find( '_' );

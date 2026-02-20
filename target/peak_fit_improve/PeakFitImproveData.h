@@ -76,6 +76,38 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>>
                                   const std::vector<std::string> &wanted_cities );
 
 
+/** Write compacted data to output_dir, mirroring the original directory structure.
+
+ The output PCF files contain only the 4 needed measurements (with deviation-corrected
+ energy calibration baked in), and truth CSV files include pre-computed ExpectedPhotopeakInfo.
+ */
+void write_compact_data( const std::vector<DetectorInjectSet> &inject_sets,
+                         const std::vector<DataSrcInfo> &input_srcs,
+                         const std::string &output_dir );
+
+
+/** Returns true if the base_dir appears to contain compacted data format. */
+bool is_compact_data_directory( const std::string &base_dir );
+
+
+/** Load compacted data from a compact directory.
+ Produces the same result as load_inject_data_with_truth_info, but from the compacted format.
+ */
+std::tuple<std::vector<DetectorInjectSet>, std::vector<DataSrcInfo>>
+  load_compact_data( const std::string &base_dir,
+                     const std::vector<std::string> &wanted_detectors,
+                     const std::vector<std::string> &live_times,
+                     const std::vector<std::string> &wanted_cities );
+
+
+/** Unified loader that auto-detects format (compact vs original) and delegates. */
+std::tuple<std::vector<DetectorInjectSet>, std::vector<DataSrcInfo>>
+  load_data( const std::string &base_dir,
+             const std::vector<std::string> &wanted_detectors,
+             const std::vector<std::string> &live_times,
+             const std::vector<std::string> &wanted_cities );
+
+
 #if( WRITE_ALL_SPEC_TO_HTML ) //Defined in PeakFitImprove.h
 void write_html_summary( const std::vector<DataSrcInfo> &src_infos );
 #endif
