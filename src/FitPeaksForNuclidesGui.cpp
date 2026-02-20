@@ -1504,6 +1504,12 @@ void FitPeaksAdvancedWidget::buildOptionsFromConfig()
   m_opt_fit_bkgnd_peaks->changed().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
   HelpSystem::attachToolTipOn( m_opt_fit_bkgnd_peaks, WString::tr("fpn-opt-tt-fit-bkgnd-peaks"), show_tool_tips );
 
+  // If fitting only background (no other sources), disable this checkbox but keep it checked
+  const bool fitting_only_background = m_sources.empty() 
+                                       && m_base_options.testFlag( FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaks );
+  if( fitting_only_background )
+    m_opt_fit_bkgnd_peaks->setDisabled( true );
+
   // m_opt_fit_bkgnd_dont_use: not exposed to user for now, may add later
   // m_opt_fit_bkgnd_dont_use = new WCheckBox( WString::tr("fpn-opt-fit-bkgnd-dont-use"), checkboxes_container );
   // m_opt_fit_bkgnd_dont_use->setChecked( false );
@@ -1515,6 +1521,10 @@ void FitPeaksAdvancedWidget::buildOptionsFromConfig()
     m_opt_use_background->setChecked( true );
     m_opt_use_background->changed().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
     HelpSystem::attachToolTipOn( m_opt_use_background, WString::tr("fpn-opt-tt-use-background"), show_tool_tips );
+    
+    // Hide "Use Background" checkbox when fitting only background - background is required
+    if( fitting_only_background )
+      m_opt_use_background->setHidden( true );
   }
 
   NativeFloatSpinBox *roi_chi2 = new NativeFloatSpinBox();
@@ -1585,7 +1595,21 @@ void FitPeaksAdvancedWidget::buildOptionsFromConfig()
   }
   m_opt_rel_eff_type->changed().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
   m_opt_rel_eff_type->changed().connect( this, &FitPeaksAdvancedWidget::onRelEffTypeChanged );
-  add_form_row( WString::tr("fpn-opt-rel-eff-eqn-type"), m_opt_rel_eff_type, WString::tr("fpn-opt-tt-rel-eff-eqn-type") );
+  
+  WContainerWidget *rel_eff_type_row = new WContainerWidget( m_options_div );
+  rel_eff_type_row->addStyleClass( "fpn-option-row" );
+  WLabel *rel_eff_type_lbl = new WLabel( WString::tr("fpn-opt-rel-eff-eqn-type"), rel_eff_type_row );
+  rel_eff_type_lbl->addStyleClass( "fpn-option-label" );
+  rel_eff_type_lbl->setBuddy( m_opt_rel_eff_type );
+  WContainerWidget *rel_eff_type_inp_div = new WContainerWidget( rel_eff_type_row );
+  rel_eff_type_inp_div->addStyleClass( "fpn-option-input" );
+  rel_eff_type_inp_div->addWidget( m_opt_rel_eff_type );
+  if( !WString::tr("fpn-opt-tt-rel-eff-eqn-type").empty() )
+    HelpSystem::attachToolTipOn( {rel_eff_type_lbl, m_opt_rel_eff_type}, WString::tr("fpn-opt-tt-rel-eff-eqn-type"), show_tool_tips );
+  
+  // Hide relative efficiency type when fitting only background
+  if( fitting_only_background )
+    rel_eff_type_row->setHidden( true );
 
   NativeFloatSpinBox *order_spin = new NativeFloatSpinBox();
   order_spin->setWidth( WLength( 4, WLength::Unit::FontEm ) );
@@ -1605,7 +1629,11 @@ void FitPeaksAdvancedWidget::buildOptionsFromConfig()
   order_inp_div->addWidget( order_spin );
   HelpSystem::attachToolTipOn( {order_lbl, order_spin}, WString::tr("fpn-opt-tt-rel-eff-eqn-order"), show_tool_tips );
   m_opt_rel_eff_order = order_spin;
-  m_rel_eff_order_row->setHidden( config.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel );
+  
+  // Hide relative efficiency order row when fitting only background or when using physical model
+  const bool hide_order = fitting_only_background 
+                          || ( config.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel );
+  m_rel_eff_order_row->setHidden( hide_order );
 }
 
 void FitPeaksAdvancedWidget::syncConfigFromOptions()
