@@ -747,6 +747,45 @@ BOOST_AUTO_TEST_CASE( RealWorldToolCallArguments )
     BOOST_CHECK_CLOSE( parsed["energy"].get<double>(), 45.58, 0.001 );
     BOOST_CHECK_EQUAL( parsed["stringValue"].get<string>(), "Eu152" );
   }
+
+  {
+    const string s = R"({
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "index": 0,
+      "message": {
+        "content": "**Validation Summary – Co‑60**\n\n1. **Energy match**  \n   *Peak 1173 keV* – fitted energy 1173.12 keV, FWHM ≈ 2.35 keV → within 1 FWHM of the Co‑60 line (1173.23 keV).  \n   *Peak 1332 keV* – fitted energy 1332.26 keV, FWHM ≈ 2.49 keV → within 1 FWHM of the Co‑60 line (1332.49 keV).\n\n2. **Source information** (`source_info`)  \n   – Co‑60 is a common industrial/sterilization gamma source.  \n   – Associated nuclides (Mn‑54, Zn‑65, Ag‑110m, etc.) are *not* observed, which is fine because they are only expected if the source is a mixed activation product; a pure Co‑60 calibration/source is typical.\n\n3. **Corroborating peaks** (`get_detected_peaks`)  \n   – Both primary gammas are present with comparable amplitudes (≈ 3.8 × 10⁶ counts each).  \n   – The intensity ratio is ~1 : 1, matching Co‑60's 100 % branching for both lines.  \n   – No additional strong Co‑60 lines are expected in this energy range, so the absence of other peaks is not a concern.\n\n4. **Escape‑peak consideration**  \n   – A possible single‑escape of the 1173 keV line would appear near 662 keV, but a very strong, distinct peak at 661.66 keV is present (amplitude 1.5 × 10⁶ cps). This is the well‑known Cs‑137 662 keV line, not an escape peak, and its intensity is far higher than would be expected from a Co‑60 escape (≈ 1 % of the parent). Therefore the 661 keV peak is **not** an escape artifact.\n\n5. **Relative‑efficiency check**  \n   – Only the two Co‑60 peaks are available; the relative‑efficiency tool requires ≥ 3 peaks for a polynomial fit, so a formal fit is unnecessary. The two‑peak agreement is already decisive.\n\n6. **Ultimate‑parent rule**  \n   – Co‑60 is itself a long‑lived parent (half‑life 5.27 y). No higher‑order parent is required.\n\n**Conclusion:** All validation criteria are satisfied. The identification of the 1173 keV and 1332 keV peaks as **Co‑60** is robust.\n\n**Next step:** Commit the source to the analysis state.\n\n---  \n\n**Transitioning workflow:**  \n\n```json\n{\n  \"notes\": \"Co-60 validated and ready to be added as a source peak.\",\n  \"state\": \"ADD_SOURCE_PEAK\"\n}\n```",
+        "provider_specific_fields": {
+          "reasoning_content": "We need to validate Co-60 identification. Steps:\n\n- Check source_info: done (Co-60 is plausible; associated sources include Mn-54 etc.)\n\n- Check other peaks: Co-60 also has 1173 and 1332 keV pairs (they are present). Check if any other peaks of Co-60 expected? Co-60 gamma lines: only these two main lines ~1173 and 1332 keV, plus maybe 44 keV? Actually Co-60 also has low-energy 0.0? It also emits a 0.0? Not relevant. So we have both lines, good.\n\n- Check ratio of amplitudes: Expect ratio close to 1 (branching 100% each). Observed amplitude: 3.84M and 3.74M, fairly similar.\n\n- Use relative efficiency: need enough peaks; we only have two; the rule says need at least as many peaks as equation order (default eqn order 3). Can't do rel eff. Could set eqn order lower? Could override options? The tool requires at least as many peaks as order; but we could request eqn_order=1 to fit with 2 peaks. But maybe we can skip relative efficiency for Co-60 due to limited peaks. However guidelines: if >2 peaks, use relative efficiency. Here only 2, okay.\n\n- Check for other sources overlapping: any other peaks near these energies? Not likely.\n\n- Check for escape peaks: 1173 and 1332 could have single-escape at ~1022 (511 subtractions) ~662 keV? Actually single escape is energy -511 keV: 1173-511=662 keV (close to 661.66 peak, which is present). Could that 661.66 be single escape of 1173? But 662 is a known background line from Bi-214 (609) ??? Actually 662 is Compton edge? Wait 661.66 is characteristic gamma of Cs-137 (662 keV). That is strong. Could also be sum of 511+151? But likely it's Cs-137. So need to check possible escape peaks.\n\nCheck escape_peak_check for 662? But we can note that 661.66 peak likely Cs-137.\n\nThus Co-60 identification seems solid.\n\nNow we must transition to ADD_SOURCE_PEAK.\n\n"
+        },
+        "reasoning_content": "We need to validate Co-60 identification. Steps:\n\n- Check source_info: done (Co-60 is plausible; associated sources include Mn-54 etc.)\n\n- Check other peaks: Co-60 also has 1173 and 1332 keV pairs (they are present). Check if any other peaks of Co-60 expected? Co-60 gamma lines: only these two main lines ~1173 and 1332 keV, plus maybe 44 keV? Actually Co-60 also has low-energy 0.0? It also emits a 0.0? Not relevant. So we have both lines, good.\n\n- Check ratio of amplitudes: Expect ratio close to 1 (branching 100% each). Observed amplitude: 3.84M and 3.74M, fairly similar.\n\n- Use relative efficiency: need enough peaks; we only have two; the rule says need at least as many peaks as equation order (default eqn order 3). Can't do rel eff. Could set eqn order lower? Could override options? The tool requires at least as many peaks as order; but we could request eqn_order=1 to fit with 2 peaks. But maybe we can skip relative efficiency for Co-60 due to limited peaks. However guidelines: if >2 peaks, use relative efficiency. Here only 2, okay.\n\n- Check for other sources overlapping: any other peaks near these energies? Not likely.\n\n- Check for escape peaks: 1173 and 1332 could have single-escape at ~1022 (511 subtractions) ~662 keV? Actually single escape is energy -511 keV: 1173-511=662 keV (close to 661.66 peak, which is present). Could that 661.66 be single escape of 1173? But 662 is a known background line from Bi-214 (609) ??? Actually 662 is Compton edge? Wait 661.66 is characteristic gamma of Cs-137 (662 keV). That is strong. Could also be sum of 511+151? But likely it's Cs-137. So need to check possible escape peaks.\n\nCheck escape_peak_check for 662? But we can note that 661.66 peak likely Cs-137.\n\nThus Co-60 identification seems solid.\n\nNow we must transition to ADD_SOURCE_PEAK.\n\n",
+        "role": "assistant"
+      }
+    }
+  ],
+  "created": 177197,
+  "id": "chatcmpl-...",
+  "model": "openai/gpt-oss-120b",
+  "object": "chat.completion",
+  "usage": {
+    "completion_tokens": 1130,
+    "prompt_tokens": 16936,
+    "total_tokens": 18066
+  }
+})";
+
+    BOOST_REQUIRE_NO_THROW( LlmInterfaceTests::lenientlyParseJson( s ) );
+    const json parsed = LlmInterfaceTests::lenientlyParseJson( s );
+
+    BOOST_REQUIRE( parsed.contains("choices") && parsed["choices"].is_array() && (parsed["choices"].size() == 1) );
+
+    BOOST_REQUIRE( parsed["choices"][0].contains("index") && parsed["choices"][0]["index"].is_number() );
+    BOOST_CHECK_EQUAL( parsed["choices"][0]["index"].get<int>(), 0 );
+
+    BOOST_REQUIRE( parsed["choices"][0].contains("finish_reason") && parsed["choices"][0]["finish_reason"].is_string() );
+    BOOST_CHECK_EQUAL( parsed["choices"][0]["finish_reason"].get<string>(), "stop" );
+  }
 }
 
 BOOST_AUTO_TEST_SUITE_END() // ValidJsonRegression

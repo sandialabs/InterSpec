@@ -2302,12 +2302,10 @@ nlohmann::json ToolRegistry::executeGetNuclidesWithCharacteristicsInEnergyRange(
       result_json.push_back( std::get<const ReactionGamma::Reaction *>(item)->name() );
     }
   }
-  
+
   json answer = json::object();
-  
   answer["sources"] = result_json;
-  answer["success"] = true;
-  
+
   return answer;
 }
   
