@@ -271,7 +271,8 @@ PeakTruthInfo::PeakTruthInfo( const std::string &line )
          || (label == "EscapeXRay+Peak") || (label == "D.E.+EscapeXRay")
          || (label == "D.E.+Peak") || (label == "D.E.+S.E.")
          || (label == "Peak+S.E.")
-         || (label == "EscapeXRay+S.E.") );
+         || (label == "EscapeXRay+S.E.")
+         || (label == "D.E.+EscapeXRay+Peak") );
 }//PeakTruthInfo(...)
 
 
@@ -888,7 +889,7 @@ int main( int argc, char **argv )
   namespace po = boost::program_options;
   
   //string data_base_dir = "/Users/wcjohns/rad_ana/peak_area_optimization/peak_fit_accuracy_inject/";
-  string data_base_dir = "/Users/wcjohns/coding/InterSpec_peak_fit_improve/peak_fit_accuracy_inject";
+  string data_base_dir = "/Users/wcjohns/coding/InterSpec_peak_fit_improve/peak_fit_accuracy_inject_compact";
   string static_data_dir;
   PeakFitImprove::sm_num_optimization_threads = std::max( 8u, std::thread::hardware_concurrency() > 2 ? std::thread::hardware_concurrency() - 2 : 1 );
   size_t number_threads_per_individual = 1;
@@ -1063,8 +1064,9 @@ int main( int argc, char **argv )
 
   const string base_dir = data_base_dir;
 
-  vector<string> hpges {
-    "Detective-X",
+  // An empty `detectors` means use all of them.
+  vector<string> detectors {
+    //"Detective-X",
     //"Detective-EX",
     //"Detective-X_noskew",
     //"Falcon 5000",
@@ -1074,13 +1076,14 @@ int main( int argc, char **argv )
   };
 
   if( debug_printout_arg )
-    hpges = vector<string>{ "Detective-X" };
+    detectors = vector<string>{ "Detective-X" };
 
 #if( WRITE_ALL_SPEC_TO_HTML )
-  hpges = vector<string>{ "Detective-X", "IdentiFINDER-R500-NaI" };
+  detectors = vector<string>{ "Detective-X", "IdentiFINDER-R500-NaI" };
 #endif
 
 
+  // An empty `live_times` means use all of them.
   vector<string> live_times{
     //"30_seconds",
     "300_seconds",
@@ -1091,6 +1094,7 @@ int main( int argc, char **argv )
   live_times = {"300_seconds"};
 #endif
 
+  // An empty `wanted_cities` means use all of them.
   vector<string> wanted_cities{
     "Livermore"
     //, "Baltimore",
@@ -1100,12 +1104,13 @@ int main( int argc, char **argv )
   // When creating compact data, include all cities and live times
   if( vm.count( "create-compact-data" ) )
   {
-    live_times = { "30_seconds", "300_seconds", "1800_seconds" };
-    wanted_cities = { "Livermore", "Baltimore", "Denver" };
+    detectors.clear();
+    live_times.clear();
+    wanted_cities.clear();
   }
 
   const std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> &loaded_data
-      = PeakFitImproveData::load_data( base_dir, hpges, live_times, wanted_cities );
+      = PeakFitImproveData::load_data( base_dir, detectors, live_times, wanted_cities );
 
   const vector<DetectorInjectSet> &inject_sets = std::get<0>( loaded_data );
   const vector<DataSrcInfo> &input_srcs = std::get<1>( loaded_data );
@@ -1122,7 +1127,7 @@ int main( int argc, char **argv )
     // Round-trip verification: load compact data back and compare with original
     cout << "\nVerifying round-trip by loading compact data back..." << endl;
     const auto compact_loaded
-      = PeakFitImproveData::load_compact_data( compact_output_dir, hpges, live_times, wanted_cities );
+      = PeakFitImproveData::load_compact_data( compact_output_dir, detectors, live_times, wanted_cities );
     const vector<DataSrcInfo> &compact_srcs = std::get<1>( compact_loaded );
 
     // Build lookup for compact sources
