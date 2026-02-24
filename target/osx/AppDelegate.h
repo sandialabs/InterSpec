@@ -30,7 +30,7 @@
 @interface OurWebView : WKWebView
 @end
 
-@interface AppDelegate : NSObject <NSApplicationDelegate,WKNavigationDelegate,WKUIDelegate,NSURLDownloadDelegate,WKScriptMessageHandler>
+@interface AppDelegate : NSObject <NSApplicationDelegate,WKNavigationDelegate,WKUIDelegate,WKScriptMessageHandler>
 @property (nonatomic,strong) OurWebView *InterSpecWebView;
 //@property (nonatomic, strong) WKWebViewConfiguration *webConfig;
 
@@ -39,11 +39,13 @@
 @property (strong, nonatomic) NSString *UrlServingOn;
 @property (strong, nonatomic) NSString *UrlUniqueId;
 
-@property (assign) IBOutlet NSWindow *window;
+// Session recovery tracking properties
+@property (nonatomic) BOOL sessionIsValid;
+@property (nonatomic, strong) NSDate *lastSessionValidation;
+@property (nonatomic) NSInteger sessionRecoveryAttempts;
+@property (nonatomic, strong) NSTimer *sessionHealthCheckTimer;
 
-@property (readonly, strong, nonatomic) NSPersistentStoreCoordinator *persistentStoreCoordinator;
-@property (readonly, strong, nonatomic) NSManagedObjectModel *managedObjectModel;
-@property (readonly, strong, nonatomic) NSManagedObjectContext *managedObjectContext;
+@property (assign) IBOutlet NSWindow *window;
 
 -(void) terminated: (NSNotification *)notification;
 -(void) application:(NSApplication *)application openURLs:(NSArray<NSURL *> *)urls;
@@ -57,5 +59,15 @@
 -(void)enableWebInspector;
 
 -(NSString *)generateSessionToken;
+
+// Session recovery methods
+-(void)validateCurrentSession;
+-(void)recoverSession;
+-(void)periodicSessionHealthCheck;
+
+// Debug simulation methods (only used when PERFORM_DEVELOPER_CHECKS is true)
+-(void)simulateWebViewTermination;
+-(void)simulateSessionInvalidation;
+-(void)togglePeriodicHealthCheck;
 
 @end
