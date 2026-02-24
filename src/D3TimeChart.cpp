@@ -1412,6 +1412,7 @@ void D3TimeChart::setDataToClient()
         liveTimes[detName].push_back( Q_DBL_NaN );
         gammaCounts[detName].push_back( Q_DBL_NaN ); 
         neutronCounts[detName].push_back( Q_DBL_NaN );
+        neutronLiveTimes[detName].push_back( Q_DBL_NaN );
 
         if( !isCps )
           gammaNormCounts[detName].push_back(Q_DBL_NaN);

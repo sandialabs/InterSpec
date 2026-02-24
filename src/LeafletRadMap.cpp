@@ -218,7 +218,8 @@ LeafletRadMap::LeafletRadMap( Wt::WContainerWidget *parent )
   m_filter_lower_energy( nullptr ),
   m_filter_upper_energy_grp( nullptr ),
   m_filter_upper_energy( nullptr ),
-  m_displaySamples( this, "loadSamples", false),
+  // Attach signal to InterSpec instance, to avoid signal not being exposed when we should this in a AuxWindow
+  m_displaySamples( /* this */ InterSpec::instance(), "loadSamples", false ),
   m_loadSelected( this )
 {
   //addStyleClass( "LeafletRadMap" );
