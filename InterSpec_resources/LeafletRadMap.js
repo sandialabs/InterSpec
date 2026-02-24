@@ -289,7 +289,11 @@ LeafletRadMap.prototype.handleUserDrawingUpdate = function(){
   }
 
   function sendToInterSpec(evt, spectype, samples){
-    self.WtEmit( self.parent.id, {name: 'loadSamples', eventObject: evt}, samples, spectype );
+    // We attach the sigmal to InterSpec object, and not the actual map opbject because there is some issue with the
+    //  signal being exposed when in an AuxWindow.
+    self.WtEmit( $('.InterSpec').get(0).id, {name: 'loadSamples', eventObject: evt}, samples, spectype );
+    // If we want to go back to attaching to the `LeafletRadMap` instance, we would use:
+    //  self.WtEmit( self.parent.id, {name: 'loadSamples', eventObject: evt}, samples, spectype );
   }
 
   self.btnsDiv.innerHTML = '';
