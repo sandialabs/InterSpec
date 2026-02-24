@@ -656,9 +656,13 @@ static std::string sanitizeJsonString( const std::string &jsonStr )
   result.erase( std::remove(result.begin(), result.end(), '\0'), result.end() );
 
   // Extract JSON from markdown code fences (e.g. ```json ... ```) that LLMs emit.
-  // Do this before the leading-garbage strip so the fence itself doesn't mislead it.
-  result = extractFromMarkdown( result );
-  SpecUtils::trim( result );  // re-trim after extraction
+  // Only do this if the input doesn't already look like valid JSON - otherwise we might
+  // incorrectly match backticks that appear inside JSON string values.
+  if( !result.empty() && result[0] != '{' && result[0] != '[' )
+  {
+    result = extractFromMarkdown( result );
+    SpecUtils::trim( result );  // re-trim after extraction
+  }
 
   // If the string doesn't start with a valid JSON value character, strip leading garbage
   // until we reach one.  This handles LLM artefacts like "<tool_call>{...}" or other
@@ -893,15 +897,23 @@ static nlohmann::json parseLenientJson( const std::string &jsonStr )
 
 static nlohmann::json lenientlyParseJson( const std::string &jsonStr )
 {
-  // Phase 1: Sanitize (existing logic)
+  // Phase 0: try as original string - this will catch most input
+  try
+  {
+    return nlohmann::json::parse( jsonStr );
+  }catch( std::exception & )
+  {
+    
+  }
+  
+  // Phase 1: Sanitize the string
   const std::string sanitized = sanitizeJsonString( jsonStr );
 
   // Phase 2: Try parsing sanitized JSON (fast path)
   try
   {
     return nlohmann::json::parse( sanitized );
-  }
-  catch( const nlohmann::json::parse_error &e )
+  }catch( const nlohmann::json::parse_error &e )
   {
     // Phase 3: If the trimmed string starts with '{' or '[', strip any trailing
     // junk after the matching closing bracket (e.g. " <|call|>" appended by some LLMs).

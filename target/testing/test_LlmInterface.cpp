@@ -785,6 +785,188 @@ BOOST_AUTO_TEST_CASE( RealWorldToolCallArguments )
 
     BOOST_REQUIRE( parsed["choices"][0].contains("finish_reason") && parsed["choices"][0]["finish_reason"].is_string() );
     BOOST_CHECK_EQUAL( parsed["choices"][0]["finish_reason"].get<string>(), "stop" );
+
+    // Check the message object
+    BOOST_REQUIRE( parsed["choices"][0].contains("message") && parsed["choices"][0]["message"].is_object() );
+    const json &message = parsed["choices"][0]["message"];
+
+    BOOST_REQUIRE( message.contains("role") && message["role"].is_string() );
+    BOOST_CHECK_EQUAL( message["role"].get<string>(), "assistant" );
+
+    BOOST_REQUIRE( message.contains("content") && message["content"].is_string() );
+    const string content = message["content"].get<string>();
+    // Verify the content starts with expected markdown and contains key phrases
+    BOOST_CHECK( content.find("**Validation Summary") != string::npos );
+    BOOST_CHECK( content.find("Co-60") != string::npos || content.find("Co\u201160") != string::npos );
+    BOOST_CHECK( content.find("Energy match") != string::npos );
+    BOOST_CHECK( content.find("1173") != string::npos );
+    BOOST_CHECK( content.find("1332") != string::npos );
+
+    // Check reasoning_content field (appears twice - once nested, once at message level)
+    BOOST_REQUIRE( message.contains("reasoning_content") && message["reasoning_content"].is_string() );
+    const string reasoning = message["reasoning_content"].get<string>();
+    BOOST_CHECK( reasoning.find("validate Co-60") != string::npos );
+    BOOST_CHECK( reasoning.find("source_info") != string::npos );
+
+    // Check provider_specific_fields
+    BOOST_REQUIRE( message.contains("provider_specific_fields") && message["provider_specific_fields"].is_object() );
+    const json &providerFields = message["provider_specific_fields"];
+    BOOST_REQUIRE( providerFields.contains("reasoning_content") && providerFields["reasoning_content"].is_string() );
+
+    // Check top-level fields
+    BOOST_REQUIRE( parsed.contains("created") && parsed["created"].is_number() );
+    BOOST_CHECK_EQUAL( parsed["created"].get<int>(), 177197 );
+
+    BOOST_REQUIRE( parsed.contains("id") && parsed["id"].is_string() );
+    BOOST_CHECK_EQUAL( parsed["id"].get<string>(), "chatcmpl-..." );
+
+    BOOST_REQUIRE( parsed.contains("model") && parsed["model"].is_string() );
+    BOOST_CHECK_EQUAL( parsed["model"].get<string>(), "openai/gpt-oss-120b" );
+
+    BOOST_REQUIRE( parsed.contains("object") && parsed["object"].is_string() );
+    BOOST_CHECK_EQUAL( parsed["object"].get<string>(), "chat.completion" );
+
+    // Check usage object
+    BOOST_REQUIRE( parsed.contains("usage") && parsed["usage"].is_object() );
+    const json &usage = parsed["usage"];
+    BOOST_REQUIRE( usage.contains("completion_tokens") && usage["completion_tokens"].is_number() );
+    BOOST_CHECK_EQUAL( usage["completion_tokens"].get<int>(), 1130 );
+    BOOST_REQUIRE( usage.contains("prompt_tokens") && usage["prompt_tokens"].is_number() );
+    BOOST_CHECK_EQUAL( usage["prompt_tokens"].get<int>(), 16936 );
+    BOOST_REQUIRE( usage.contains("total_tokens") && usage["total_tokens"].is_number() );
+    BOOST_CHECK_EQUAL( usage["total_tokens"].get<int>(), 18066 );
+  }
+}
+
+BOOST_AUTO_TEST_CASE( TripleBackticksInsideStringValues )
+{
+  // Regression test: JSON with triple backticks inside string values must not be
+  // incorrectly processed by markdown extraction logic.
+  {
+    const string s = R"({"code": "Use ```python\nprint('hello')\n``` for syntax highlighting"})";
+    BOOST_REQUIRE_NO_THROW( LlmInterfaceTests::lenientlyParseJson( s ) );
+    const json parsed = LlmInterfaceTests::lenientlyParseJson( s );
+    BOOST_CHECK( parsed["code"].get<string>().find("```python") != string::npos );
+    BOOST_CHECK( parsed["code"].get<string>().find("```") != string::npos );
+  }
+
+  // Array with triple backticks in string
+  {
+    const string s = R"(["first", "```json\n{}\n```", "third"])";
+    BOOST_REQUIRE_NO_THROW( LlmInterfaceTests::lenientlyParseJson( s ) );
+    const json parsed = LlmInterfaceTests::lenientlyParseJson( s );
+    BOOST_CHECK_EQUAL( parsed.size(), 3 );
+    BOOST_CHECK( parsed[1].get<string>().find("```json") != string::npos );
+  }
+
+  // Single backticks (inline code) in markdown content - common in LLM responses
+  {
+    const string s = R"({"msg": "Use `source_info` and `get_peaks` functions"})";
+    BOOST_REQUIRE_NO_THROW( LlmInterfaceTests::lenientlyParseJson( s ) );
+    const json parsed = LlmInterfaceTests::lenientlyParseJson( s );
+    BOOST_CHECK( parsed["msg"].get<string>().find("`source_info`") != string::npos );
+  }
+}
+
+BOOST_AUTO_TEST_CASE( ByteOrderMarkHandling )
+{
+  // UTF-8 BOM followed by valid JSON
+  {
+    const string bom = "\xEF\xBB\xBF";
+    const string s = bom + R"({"key": "value"})";
+    BOOST_REQUIRE_NO_THROW( LlmInterfaceTests::lenientlyParseJson( s ) );
+    const json parsed = LlmInterfaceTests::lenientlyParseJson( s );
+    BOOST_CHECK_EQUAL( parsed["key"].get<string>(), "value" );
+  }
+
+  // BOM with whitespace after it
+  {
+    const string bom = "\xEF\xBB\xBF";
+    const string s = bom + "  \n" + R"({"key": "value"})";
+    BOOST_REQUIRE_NO_THROW( LlmInterfaceTests::lenientlyParseJson( s ) );
+    const json parsed = LlmInterfaceTests::lenientlyParseJson( s );
+    BOOST_CHECK_EQUAL( parsed["key"].get<string>(), "value" );
+  }
+}
+
+BOOST_AUTO_TEST_CASE( NullByteRemoval )
+{
+  // Null bytes embedded in JSON should be stripped
+  {
+    string s = R"({"key": "value"})";
+    s.insert( 5, 1, '\0' );  // Insert null byte in middle
+    BOOST_REQUIRE_NO_THROW( LlmInterfaceTests::lenientlyParseJson( s ) );
+    const json parsed = LlmInterfaceTests::lenientlyParseJson( s );
+    BOOST_CHECK_EQUAL( parsed["key"].get<string>(), "value" );
+  }
+
+  // Multiple null bytes
+  {
+    string s = R"({"a": 1})";
+    s.insert( 0, 1, '\0' );
+    s.insert( 4, 1, '\0' );
+    s.append( 1, '\0' );
+    BOOST_REQUIRE_NO_THROW( LlmInterfaceTests::lenientlyParseJson( s ) );
+    const json parsed = LlmInterfaceTests::lenientlyParseJson( s );
+    BOOST_CHECK_EQUAL( parsed["a"].get<int>(), 1 );
+  }
+}
+
+BOOST_AUTO_TEST_CASE( InvalidUtf8Handling )
+{
+  // Invalid UTF-8 continuation byte should be stripped, leaving valid JSON
+  {
+    string s = R"({"key": "value"})";
+    // Insert an invalid UTF-8 sequence (0x80 alone is invalid - it's a continuation byte without a leading byte)
+    s.insert( 8, 1, static_cast<char>(0x80) );
+    BOOST_REQUIRE_NO_THROW( LlmInterfaceTests::lenientlyParseJson( s ) );
+    const json parsed = LlmInterfaceTests::lenientlyParseJson( s );
+    BOOST_CHECK_EQUAL( parsed["key"].get<string>(), "value" );
+  }
+
+  // Valid UTF-8 multi-byte sequence should be preserved
+  {
+    // café in UTF-8: caf\xC3\xA9
+    const string s = R"({"drink": "café"})";
+    BOOST_REQUIRE_NO_THROW( LlmInterfaceTests::lenientlyParseJson( s ) );
+    const json parsed = LlmInterfaceTests::lenientlyParseJson( s );
+    BOOST_CHECK_EQUAL( parsed["drink"].get<string>(), "café" );
+  }
+
+  // 4-byte UTF-8 emoji should be preserved
+  {
+    // Smiley face emoji U+1F600: \xF0\x9F\x98\x80
+    const string s = "{\"emoji\": \"\xF0\x9F\x98\x80\"}";
+    BOOST_REQUIRE_NO_THROW( LlmInterfaceTests::lenientlyParseJson( s ) );
+    const json parsed = LlmInterfaceTests::lenientlyParseJson( s );
+    BOOST_CHECK_EQUAL( parsed["emoji"].get<string>(), "\xF0\x9F\x98\x80" );
+  }
+}
+
+BOOST_AUTO_TEST_CASE( WhitespaceHandling )
+{
+  // Leading whitespace before JSON object
+  {
+    const string s = "   \n\t  " + string(R"({"key": "value"})");
+    BOOST_REQUIRE_NO_THROW( LlmInterfaceTests::lenientlyParseJson( s ) );
+    const json parsed = LlmInterfaceTests::lenientlyParseJson( s );
+    BOOST_CHECK_EQUAL( parsed["key"].get<string>(), "value" );
+  }
+
+  // Trailing whitespace after JSON object
+  {
+    const string s = R"({"key": "value"})" + string("   \n\t  ");
+    BOOST_REQUIRE_NO_THROW( LlmInterfaceTests::lenientlyParseJson( s ) );
+    const json parsed = LlmInterfaceTests::lenientlyParseJson( s );
+    BOOST_CHECK_EQUAL( parsed["key"].get<string>(), "value" );
+  }
+
+  // Both leading and trailing whitespace
+  {
+    const string s = "  \r\n  " + string(R"([1, 2, 3])") + "  \r\n  ";
+    BOOST_REQUIRE_NO_THROW( LlmInterfaceTests::lenientlyParseJson( s ) );
+    const json parsed = LlmInterfaceTests::lenientlyParseJson( s );
+    BOOST_CHECK_EQUAL( parsed.size(), 3 );
   }
 }
 
