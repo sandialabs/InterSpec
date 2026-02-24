@@ -3022,7 +3022,13 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
   if( !meas_to_add.empty() )
   {
     for( const shared_ptr<SpecUtils::Measurement> &i : meas_to_add )
+    {
+      // If we summed measurements above, they may have newly-created names, so we need to add them to `detectors`.
+      const auto name_pos = std::find( begin(detectors), end(detectors), i->detector_name() );
+      if( name_pos == end(detectors) )
+        detectors.push_back( i->detector_name() );
       answer->add_measurement( i, false );
+    }
   }
   
   if( !meas_to_remove.empty() || !meas_to_add.empty() )
