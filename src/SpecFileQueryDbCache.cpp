@@ -25,6 +25,8 @@
 
 #include <numeric>
 
+#include <boost/functional/hash.hpp>
+
 #include <Wt/Utils>
 #include <Wt/Json/Value>
 #include <Wt/Json/Array>
@@ -1026,8 +1028,8 @@ void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath, const
     return;
   
   file_size = SpecUtils::file_size(filepath);
-  file_path_hash = std::hash<std::string>()(filepath);
-  
+  file_path_hash = boost::hash<std::string>{}(filepath);
+
   // TODO: For files that are not N42 or XML files (as determined by filename), and less than a number of MB, read the file into memory, and then parse.  This will minimize hard-drive seeks (for spinning drives), and allow multithreaded searches to work better - hopefully.
   
   SpecUtils::SpecFile meas;
@@ -1681,7 +1683,8 @@ void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath, const
         farm_options.synthesize_background_if_missing );
   }
 
-  
+  // TODO: implement fitting FWHM as a function of energy, and putting in those coefficients, as well as for a few select energies (if the fit peaks span them - maybe 59, 122, 185, 356, 661, 1001, 1460, 2614)
+
   nlohmann::json isotopics_json = nlohmann::json::array();
   
   // ============= FARM: Isotopics via RelActCalcAuto =============
@@ -1829,11 +1832,13 @@ void SpecFileInfoToQuery::fill_event_xml_filter_values( const std::string &filep
 SpecFileQueryDbCache::SpecFileQueryDbCache( const bool use_db_caching,
                                             const std::string &path,
                                             const std::vector<EventXmlFilterInfo> &xmlfilters,
-                                            MaterialDB *materialDb )
+                                            MaterialDB *materialDb,
+                                            const Farm::FarmOptions &farm_opts )
   : m_use_db_caching( use_db_caching ),
     m_using_persist_caching( false ),
     m_fs_path( path ),
     m_xmlfilters( xmlfilters ),
+    m_farm_options( farm_opts ),
     m_materialDb( materialDb )
 {
   m_stop_caching = false;
@@ -1880,11 +1885,14 @@ std::string SpecFileQueryDbCache::construct_persisted_db_filename() const
   string canonical_path = m_fs_path;
   SpecUtils::make_canonical_path( canonical_path );
 
-  const size_t path_hash = std::hash<std::string>()( canonical_path );
-  string fname = "InterSpec_file_query_cache_" + std::to_string( path_hash );
+  const size_t path_hash = boost::hash<std::string>{}(canonical_path);
+
+  string fname = "InterSpec_file_query_cache_";
 
   if( m_farm_options.enable_farm_analysis )
-    fname += "_FARM";
+    fname += "FARM_";
+
+  fname += std::to_string( path_hash );
 
   fname += "_v3.sqlite3";
 
@@ -2175,8 +2183,7 @@ void SpecFileQueryDbCache::cache_results( const std::vector<std::string> &&files
     {
       {//begin lock on m_db_mutex
         std::lock_guard<std::mutex> lock( m_db_mutex );
-        
-        const long long filenamehash = static_cast<long long>( std::hash<std::string>()(filename) );
+        const long long filenamehash = static_cast<long long>( boost::hash<std::string>{}(filename) );
         const size_t filesize = SpecUtils::file_size(filename);
         
         Wt::Dbo::Transaction trans( *m_db_session );
@@ -2377,8 +2384,12 @@ void SpecFileQueryDbCache::set_persist( const bool persist )
   if( SpecUtils::is_file(m_db_location) )
   {
     bool create_tables = false;
-    string newname = SpecUtils::temp_file_name( "interspec_file_query", SpecUtils::temp_dir() );
-    
+
+    const string prefix = m_farm_options.enable_farm_analysis
+                          ? "interspec_file_query_FARM" : "interspec_file_query";
+
+    string newname = SpecUtils::temp_file_name( prefix, SpecUtils::temp_dir() );
+
     if( !SpecUtils::rename_file(m_db_location, newname) )
     {
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -2388,7 +2399,7 @@ void SpecFileQueryDbCache::set_persist( const bool persist )
       log_developer_error( __func__, "Failed to rename persisted file from." );
 #endif
       create_tables = true;
-      newname = SpecUtils::temp_file_name( "interspec_file_query", SpecUtils::temp_dir() );
+      newname = SpecUtils::temp_file_name( prefix, SpecUtils::temp_dir() );
     }
     
     if( open_db(newname, create_tables) )
@@ -2495,8 +2506,8 @@ std::unique_ptr<SpecFileInfoToQuery> SpecFileQueryDbCache::spec_file_info( const
     info->fill_event_xml_filter_values(filepath,m_xmlfilters);
     return info;
   }
-  
-  const long long filenamehash = static_cast<long long>( std::hash<std::string>()(filepath) );
+
+  const long long filenamehash = static_cast<long long>( boost::hash<std::string>{}(filepath) );
   const size_t filesize = SpecUtils::file_size(filepath);
   
   try

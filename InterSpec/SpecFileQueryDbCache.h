@@ -43,6 +43,7 @@
 
 class MaterialDB;
 
+
 //Forward declarations and Wt::Dbo::overhead ish.
 namespace Wt {
   namespace Dbo {
@@ -182,7 +183,7 @@ struct SpecFileInfoToQuery
   
   std::string file_path;
   long long int file_size;
-  long long int file_path_hash;
+  size_t file_path_hash;
   bool is_file;
   bool is_spectrum_file;
   bool is_event_xml_file;
@@ -367,7 +368,8 @@ public:
   SpecFileQueryDbCache( const bool use_db_caching,
                         const std::string &base_path,
                         const std::vector<EventXmlFilterInfo> &xmlfilters,
-                        MaterialDB *materialDb );
+                        MaterialDB *materialDb,
+                        const Farm::FarmOptions &farm_opts );
 
   /** Class detructor makes sure that if #cache_results is running in another
       thread it will exit before the constructor closes.

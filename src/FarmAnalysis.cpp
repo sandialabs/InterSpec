@@ -804,8 +804,9 @@ void write_fertilized_n42(
   nlohmann::json final_remark_json = nlohmann::json::object();
   final_remark_json["InterSpec"] = farm_remark;
   remarks.push_back( "FARM_REMARK: " + final_remark_json.dump() );
-  
-  
+
+  //cout << "FARM JSON for '" << SpecUtils::filename(original_file_path) << "' : " << final_remark_json.dump(2) << endl << endl;
+
   nlohmann::json orig_uuid_json = nlohmann::json::object();
   orig_uuid_json["OriginalFileUuid"] = meas.uuid();
   remarks.push_back( "FARM_REMARK: " + orig_uuid_json.dump() );

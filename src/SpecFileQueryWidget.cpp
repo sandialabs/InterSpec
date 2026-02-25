@@ -2457,13 +2457,20 @@ void SpecFileQueryWidget::basePathChanged()
     database = map_iter->second;
   if( !database )
   {
-    database = m_path_caches[basepath] = make_shared<SpecFileQueryDbCache>( cache_in_db, basepath,
-                                                                m_eventXmlFilters, m_viewer->materialDataBase() );
+    Farm::FarmOptions farm_opts;
     try
     {
       const std::string farm_json = UserPreferences::preferenceValue<std::string>( "FarmOptions", m_viewer );
-      database->set_farm_options( Farm::FarmOptions::fromJson( farm_json ) );
-    }catch( ... ) {}
+      farm_opts = Farm::FarmOptions::fromJson(farm_json);
+    }catch( ... )
+    {
+      // Not a problem - user hasnt set these options
+    }
+
+    database = m_path_caches[basepath] = make_shared<SpecFileQueryDbCache>( cache_in_db, basepath,
+                                                                m_eventXmlFilters,
+                                                                           m_viewer->materialDataBase(),
+                                                                           farm_opts );
   }
 
   if( cache_in_db )
@@ -2808,12 +2815,17 @@ void SpecFileQueryWidget::searchRequestedCallback( const std::string &queryJson 
     
     if( !database )
     {
-      database = std::make_shared<SpecFileQueryDbCache>( false, basepath, m_eventXmlFilters, m_viewer->materialDataBase() );
+      Farm::FarmOptions farm_opts;
       try
       {
         const std::string farm_json = UserPreferences::preferenceValue<std::string>( "FarmOptions", m_viewer );
-        database->set_farm_options( Farm::FarmOptions::fromJson( farm_json ) );
-      }catch( ... ) {}
+        farm_opts = Farm::FarmOptions::fromJson(farm_json);
+      }catch( ... )
+      {
+        // Not a problem - user hasnt set these options
+      }
+
+      database = std::make_shared<SpecFileQueryDbCache>( false, basepath, m_eventXmlFilters, m_viewer->materialDataBase(), farm_opts );
     }
 
     m_stopUpdate->store( false );
