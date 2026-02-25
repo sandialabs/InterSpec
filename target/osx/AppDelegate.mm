@@ -177,9 +177,7 @@
 
 @implementation AppDelegate
 
-@synthesize persistentStoreCoordinator = _persistentStoreCoordinator;
-@synthesize managedObjectModel = _managedObjectModel;
-@synthesize managedObjectContext = _managedObjectContext;
+
 
 
 + (void)initialize
@@ -294,11 +292,8 @@
       //  URL argument (that uses an intermediate database to store file location).
       NSLog( @"Will mark the file to open once a session is created" );
       
-      // I dont quite understand why we need this next '[NSString alloc] initWithString', but we
-      //  do or the app will crash when opened wit ha long app-url, but not with a file...
-      //  This probably indicates something is wrong with my understanding of the obj-c the memory
-      //  management somehow, but I guess for now I'll cross my fingers, or put my head in the sand.
-      _fileNeedsOpening = [[NSString alloc] initWithString: [NSString stringWithUTF8String:urlcontent.c_str()]];
+      // Use copy to ensure we have a strong reference that outlives this method
+      _fileNeedsOpening = [[NSString alloc] initWithUTF8String:urlcontent.c_str()];
       
       NSLog( @"Initially fileNeedsOpening %@", _fileNeedsOpening );
     }//if( !app_lock )
@@ -399,31 +394,12 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   
   
   WKWebViewConfiguration *webConfig = [[WKWebViewConfiguration alloc] init];
-  //Setting the config like bellow seems to slow down the rendering.
-  
-  if ([webConfig respondsToSelector:@selector(applicationNameForUserAgent)]) {
-    webConfig.applicationNameForUserAgent = @"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_4) AppleWebKit/603.1.30 (KHTML, like Gecko) Version/10.1 Safari/603.1.30";
-  }
-  
-  //webConfig.ignoresViewportScaleLimits = ;  //Not sure what this is for.
-  if ([webConfig respondsToSelector:@selector(suppressesIncrementalRendering)]) {
-    webConfig.suppressesIncrementalRendering = YES;
-  }
+  webConfig.applicationNameForUserAgent = @"InterSpec";
+  webConfig.suppressesIncrementalRendering = YES;
   
   WKPreferences *prefs = [webConfig preferences];
-  //prefs.javaEnabled = NO;    //default is false anyway, and deprecated in 10.15
-  //prefs.plugInsEnabled = NO; //default is false anyway, and deprecated in 10.15
-  //prefs.javaScriptEnabled = YES; //default is true anyway, and deprecated in 10.15
-  
-  if ([webConfig respondsToSelector:@selector(javaScriptCanOpenWindowsAutomatically)]) {
-    //Does seem to get here for some reason
-    prefs.javaScriptCanOpenWindowsAutomatically = YES;  //default is true in macOS anyway
-  }
-  
-  //prefs.minimumFontSize = 6.0;
-  if ([webConfig respondsToSelector:@selector(tabFocusesLinks)]) {
-    prefs.tabFocusesLinks = NO;
-  }
+  prefs.javaScriptCanOpenWindowsAutomatically = YES;
+  prefs.tabFocusesLinks = NO;
   
   // Make it so the obj-c didReceiveScriptMessage method will be called any time the javascript
   //  does something like:
@@ -516,14 +492,9 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   self.InterSpecWebView.autoresizingMask = (NSViewWidthSizable | NSViewHeightSizable);
   [_window.contentView setAutoresizesSubviews: YES];
   
-  //Set the user agent string so
-  NSString *userAgentStr = @"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_4) AppleWebKit/603.1.30 (KHTML, like Gecko) Version/10.1 Safari/603.1.30";
-  if ([_InterSpecWebView respondsToSelector:@selector(setCustomUserAgent)]) {
-    [_InterSpecWebView setCustomUserAgent: userAgentStr];
-    _InterSpecWebView.allowsLinkPreview = NO;
-  }
-  
-  _InterSpecWebView.allowsBackForwardNavigationGestures = NO;  //default is NO anyway
+  _InterSpecWebView.customUserAgent = @"InterSpec";
+  _InterSpecWebView.allowsLinkPreview = NO;
+  _InterSpecWebView.allowsBackForwardNavigationGestures = NO;
   
   
   if( allow_dev_tools )
@@ -541,6 +512,45 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
       [itemnow setTarget:self];
       [menu addItem:itemnow];
       [itemnow setEnabled:YES];
+      
+      // Add separator before session debug items
+      [menu addItem:[NSMenuItem separatorItem]];
+      
+      // Add "Simulate WebView Termination" menu item
+      NSMenuItem *simulateTerminate = [[NSMenuItem alloc]
+                                       initWithTitle:@"Simulate WebView Termination"
+                                       action:@selector(simulateWebViewTermination)
+                                       keyEquivalent:@""];
+      [simulateTerminate setTarget:self];
+      [menu addItem:simulateTerminate];
+      [simulateTerminate setEnabled:YES];
+      
+      // Add "Simulate Session Invalidation" menu item
+      NSMenuItem *simulateInvalidate = [[NSMenuItem alloc]
+                                        initWithTitle:@"Simulate Session Invalidation"
+                                        action:@selector(simulateSessionInvalidation)
+                                        keyEquivalent:@""];
+      [simulateInvalidate setTarget:self];
+      [menu addItem:simulateInvalidate];
+      [simulateInvalidate setEnabled:YES];
+      
+      // Add "Force Session Validation" menu item (one-time check)
+      NSMenuItem *forceValidation = [[NSMenuItem alloc]
+                                     initWithTitle:@"Force Session Validation"
+                                     action:@selector(periodicSessionHealthCheck)
+                                     keyEquivalent:@""];
+      [forceValidation setTarget:self];
+      [menu addItem:forceValidation];
+      [forceValidation setEnabled:YES];
+      
+      // Add "Start Periodic Health Check" menu item (toggles 60-second timer)
+      NSMenuItem *togglePeriodicCheck = [[NSMenuItem alloc]
+                                         initWithTitle:@"Start Periodic Health Check (60s)"
+                                         action:@selector(togglePeriodicHealthCheck)
+                                         keyEquivalent:@""];
+      [togglePeriodicCheck setTarget:self];
+      [menu addItem:togglePeriodicCheck];
+      [togglePeriodicCheck setEnabled:YES];
     }
     
     //Note: currently the right click in InterSpecApp is disabled using javascript if
@@ -652,7 +662,87 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
 
 // This method is called when the web view finishes loading a page
 - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
-    NSLog(@"WebView has finished loading (could be a refresh).");
+  NSLog(@"WebView has finished loading (could be a refresh).");
+  
+  [self validateCurrentSession];
+  
+  if( _sessionIsValid )
+  {
+    _sessionRecoveryAttempts = 0; // Reset on successful load
+    NSLog(@"Session validated successfully after navigation");
+  }
+  else
+  {
+    NSLog(@"Session invalid after navigation - will attempt recovery");
+#if( PERFORM_DEVELOPER_CHECKS )
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Session Validation Failed After Navigation";
+    alert.informativeText = [NSString stringWithFormat:
+      @"After navigation finished, session token '%@' is no longer valid. "
+      "Recovery will be attempted.", _UrlUniqueId];
+    alert.alertStyle = NSAlertStyleWarning;
+    [alert addButtonWithTitle:@"OK"];
+    [alert beginSheetModalForWindow:_window completionHandler:nil];
+#endif
+    [self recoverSession];
+  }
+}
+
+// Called when the WebView's content process is terminated by the system
+- (void)webViewWebContentProcessDidTerminate:(WKWebView *)webView
+{
+  NSLog(@"WebView content process terminated by system!");
+  
+#if( PERFORM_DEVELOPER_CHECKS )
+  NSAlert *alert = [[NSAlert alloc] init];
+  alert.messageText = @"WebView Process Terminated";
+  alert.informativeText = @"The WebView content process was terminated by the system. "
+                          "This is likely the cause of session disconnection issues. "
+                          "Attempting automatic recovery.";
+  alert.alertStyle = NSAlertStyleWarning;
+  [alert addButtonWithTitle:@"OK"];
+  [alert beginSheetModalForWindow:_window completionHandler:nil];
+#endif
+  
+  [self recoverSession];
+}
+
+// Called when navigation fails during the early stages (before response received)
+- (void)webView:(WKWebView *)webView
+    didFailProvisionalNavigation:(WKNavigation *)navigation
+    withError:(NSError *)error
+{
+  NSLog(@"WebView provisional navigation failed: %@", error.localizedDescription);
+  
+#if( PERFORM_DEVELOPER_CHECKS )
+  NSAlert *alert = [[NSAlert alloc] init];
+  alert.messageText = @"Navigation Failed (Provisional)";
+  alert.informativeText = [NSString stringWithFormat:
+    @"Error Code: %ld\nDomain: %@\nDescription: %@",
+    (long)error.code, error.domain, error.localizedDescription];
+  alert.alertStyle = NSAlertStyleWarning;
+  [alert addButtonWithTitle:@"OK"];
+  [alert beginSheetModalForWindow:_window completionHandler:nil];
+#endif
+}
+
+// Called when navigation fails after response has been received
+- (void)webView:(WKWebView *)webView
+    didFailNavigation:(WKNavigation *)navigation
+    withError:(NSError *)error
+{
+  NSLog(@"WebView navigation failed: %@", error.localizedDescription);
+  
+#if( PERFORM_DEVELOPER_CHECKS )
+  NSAlert *alert = [[NSAlert alloc] init];
+  alert.messageText = @"Navigation Failed";
+  alert.informativeText = [NSString stringWithFormat:
+    @"Error Code: %ld\nDomain: %@\nDescription: %@",
+    (long)error.code, error.domain, error.localizedDescription];
+  alert.alertStyle = NSAlertStyleWarning;
+  [alert addButtonWithTitle:@"OK"];
+  [alert beginSheetModalForWindow:_window completionHandler:nil];
+#endif
 }
 
 - (void)applicationDidEnterBackground:(NSNotification *)notification {
@@ -1016,243 +1106,65 @@ createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration
 */
 
 
-//Implement NSURLDownloadDelegate
-- (void)download:(NSURLDownload *)download decideDestinationWithSuggestedFilename:(NSString *)filename
-{
-  //NSLog(@"decideDestinationWithSuggestedFilename: %@", filename );
-  
-  //The PNG screenshot has a data encoded URI that the obj-c doesnt seem to grab
-  //  the filename from, so lets do that manually.  I'm sure there is a much
-  //  more elegant way to do this... but it seems to work.
-  if( !filename || [filename isEqualToString: @"Unknown"] )
-  {
-    NSURLRequest *request = [download request];
-    NSURL *url = request ? [request URL] : (NSURL *)nil;
-    NSString *absurl = url ? [url absoluteString] : @"";
-    NSRange pos = [absurl rangeOfString:@"filename="];
-    if( pos.location != NSNotFound )
-    {
-      NSRange fnamerange;
-      fnamerange.location = pos.location + pos.length;
-      fnamerange.length = [absurl length] - fnamerange.location;
-      
-      NSRange semipos = [absurl rangeOfString: @";" options: 0 range: fnamerange locale: nil];
-      
-      if( semipos.location != NSNotFound )
-      {
-        fnamerange.length = semipos.location - fnamerange.location;
-        filename = [absurl substringWithRange: fnamerange];
-      }
-    }
-  }//if( filename is unknown )
-  
-  NSSavePanel *panel = [NSSavePanel savePanel];
-  [panel setNameFieldStringValue:filename];
-  
-  NSInteger result = [panel runModal];
-  if( result == NSFileHandlingPanelOKButton)
-  {
-    NSURL *path = [panel URL];
-    NSLog(@"Saving to %@", [path path]);
-    [download setDestination:[path path] allowOverwrite:NO];
-  }else
-  {
-    [download cancel];
-  }
-}
 
-//Implement NSURLDownloadDelegate
-- (void)download:(NSURLDownload *)download didFailWithError:(NSError *)error
-{
-  NSLog(@"- (void)download:(NSURLDownload *)download didFailWithError:(NSError *)error");
-  NSLog(@"Download failed! Error - %@ %@",
-        [error localizedDescription],
-        [[error userInfo] objectForKey:NSURLErrorFailingURLStringErrorKey]);
-}
-
-//Implement NSURLDownloadDelegate
-- (void)downloadDidFinish:(NSURLDownload *)download
-{
-  //NSData *data = [[download request] HTTPBody];
-  //NSUInteger length = [data length];
-  //  long long expectedLength = [[download request] expectedContentLength];
-  //std::cout << "length=" << length << std::endl;
-  NSLog(@"- (void)downloadDidFinish:(NSURLDownload *)download: ");
-}
-
-//Implement NSURLDownloadDelegate
-- (void)startDownloadingURL:sender
-{
-  NSLog(@"- (void)startDownloadingURL:sender");
-}
-
-//Implement NSURLDownloadDelegate
-- (void)downloadDidBegin:(NSURLDownload *)download
-{
-  NSLog(@"downloadDidBegin");
-}
-
-//Implement NSURLDownloadDelegate
--(void)download:(NSURLDownload *)download didCreateDestination:(NSString *)path
-{
-  // path now contains the destination path
-  // of the download, taking into account any
-  // unique naming caused by -setDestination:allowOverwrite:
-  NSLog(@"Final file destination: %@",path);
-}
-
-
-
-
-// Returns the directory the application uses to store the Core Data store file. This code uses a directory named "sandia.InterSpec" in the user's Application Support directory.
+// Returns the directory the application uses to store user data.
+// Uses a directory named "sandia.InterSpec" in the user's Application Support directory.
 - (NSURL *)applicationFilesDirectory
 { 
-    NSFileManager *fileManager = [NSFileManager defaultManager];
-    NSURL *appSupportURL = [[fileManager URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask] lastObject];
-    return [appSupportURL URLByAppendingPathComponent:@"sandia.InterSpec"];
-}
-
-// Creates if necessary and returns the managed object model for the application.
-- (NSManagedObjectModel *)managedObjectModel
-{
-  if( _managedObjectModel )
-    return _managedObjectModel;
-	
-  NSURL *modelURL = [[NSBundle mainBundle] URLForResource:@"InterSpec" withExtension:@"momd"];
-  _managedObjectModel = [[NSManagedObjectModel alloc] initWithContentsOfURL:modelURL];
-  return _managedObjectModel;
-}
-
-// Returns the persistent store coordinator for the application. This implementation creates and return a coordinator, having added the store for the application to it. (The directory for the store is created, if necessary.)
-- (NSPersistentStoreCoordinator *)persistentStoreCoordinator
-{
-    if( _persistentStoreCoordinator )
-      return _persistentStoreCoordinator;
-    
-    NSManagedObjectModel *mom = [self managedObjectModel];
-    if (!mom) {
-        NSLog(@"%@:%@ No model to generate a store from", [self class], NSStringFromSelector(_cmd));
-        return nil;
-    }
-    
-    NSFileManager *fileManager = [NSFileManager defaultManager];
-    NSURL *applicationFilesDirectory = [self applicationFilesDirectory];
-    NSError *error = nil;
-    
-    NSDictionary *properties = [applicationFilesDirectory resourceValuesForKeys:@[NSURLIsDirectoryKey] error:&error];
-    
-    if (!properties) {
-        BOOL ok = NO;
-        if ([error code] == NSFileReadNoSuchFileError) {
-            ok = [fileManager createDirectoryAtPath:[applicationFilesDirectory path] withIntermediateDirectories:YES attributes:nil error:&error];
-        }
-        if (!ok) {
-            [[NSApplication sharedApplication] presentError:error];
-            return nil;
-        }
-    } else {
-//        if (![properties[NSURLIsDirectoryKey] boolValue]) {
-            // Customize and localize this error.
-//            NSString *failureDescription = [NSString stringWithFormat:@"Expected a folder to store application data, found a file (%@).", [applicationFilesDirectory path]];
-      
-//            NSMutableDictionary *dict = [NSMutableDictionary dictionary];
-//            [dict setValue:failureDescription forKey:NSLocalizedDescriptionKey];
-//            error = [NSError errorWithDomain:@"YOUR_ERROR_DOMAIN" code:101 userInfo:dict];
-      
-//            [[NSApplication sharedApplication] presentError:error];
-//            return nil;
-//        }
-    }
-    
-    NSURL *url = [applicationFilesDirectory URLByAppendingPathComponent:@"InterSpec.storedata"];
-    NSPersistentStoreCoordinator *coordinator = [[NSPersistentStoreCoordinator alloc] initWithManagedObjectModel:mom];
-    if (![coordinator addPersistentStoreWithType:NSXMLStoreType configuration:nil URL:url options:nil error:&error]) {
-        [[NSApplication sharedApplication] presentError:error];
-        return nil;
-    }
-    _persistentStoreCoordinator = coordinator;
-    
-    return _persistentStoreCoordinator;
-}
-
-// Returns the managed object context for the application (which is already bound to the persistent store coordinator for the application.) 
-- (NSManagedObjectContext *)managedObjectContext
-{
-  if( _managedObjectContext )
-    return _managedObjectContext;
-    
-  NSPersistentStoreCoordinator *coordinator = [self persistentStoreCoordinator];
-  if (!coordinator)
+  NSFileManager *fileManager = [NSFileManager defaultManager];
+  NSURL *appSupportURL = [[fileManager URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask] lastObject];
+  NSURL *appFilesDir = [appSupportURL URLByAppendingPathComponent:@"sandia.InterSpec"];
+  
+  // Ensure the directory exists
+  NSError *error = nil;
+  NSDictionary *properties = [appFilesDir resourceValuesForKeys:@[NSURLIsDirectoryKey] error:&error];
+  
+  if( !properties )
   {
-      NSMutableDictionary *dict = [NSMutableDictionary dictionary];
-      [dict setValue:@"Failed to initialize the store" forKey:NSLocalizedDescriptionKey];
-      [dict setValue:@"There was an error building up the data file." forKey:NSLocalizedFailureReasonErrorKey];
-      NSError *error = [NSError errorWithDomain:@"YOUR_ERROR_DOMAIN" code:9999 userInfo:dict];
-      [[NSApplication sharedApplication] presentError:error];
-      return nil;
+    // Directory doesn't exist, try to create it
+    if( [error code] == NSFileReadNoSuchFileError )
+    {
+      NSError *createError = nil;
+      BOOL created = [fileManager createDirectoryAtURL:appFilesDir
+                           withIntermediateDirectories:YES
+                                            attributes:nil
+                                                 error:&createError];
+      if( !created )
+      {
+        NSLog(@"Failed to create application files directory: %@", createError.localizedDescription);
+      }
+    }
+  }else if( ![properties[NSURLIsDirectoryKey] boolValue] )
+  {
+    // A file exists at the path where we expected a directory
+    NSLog(@"Expected a folder to store application data, found a file at: %@", [appFilesDir path]);
+    
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Application Data Error";
+    alert.informativeText = [NSString stringWithFormat:
+      @"Expected a folder to store application data, but found a file at:\n%@\n\n"
+      "Please remove this file and restart the application.",
+      [appFilesDir path]];
+    alert.alertStyle = NSAlertStyleCritical;
+    [alert addButtonWithTitle:@"OK"];
+    [alert runModal];
   }
-  _managedObjectContext = [[NSManagedObjectContext alloc] init];
-  [_managedObjectContext setPersistentStoreCoordinator:coordinator];
-
-  return _managedObjectContext;
+  
+  return appFilesDir;
 }
 
-// Returns the NSUndoManager for the application. In this case, the manager returned is that of the managed object context for the application.
+
+// Returns nil since InterSpec uses its own undo/redo system via UndoRedoManager
 - (NSUndoManager *)windowWillReturnUndoManager:(NSWindow *)window
 {
-  return [[self managedObjectContext] undoManager];
+  return nil;
 }
 
 
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender
 {
-  // Save changes in the application's managed object context before the application terminates.
+  NSLog( @"applicationShouldTerminate called" );
   
-  NSLog( @"Terminated %p", _window );
-  
-  if (!_managedObjectContext)
-  {
-    InterSpecServer::killServer();
-    return NSTerminateNow;
-  }
-    
-  if (![[self managedObjectContext] commitEditing])
-  {
-    InterSpecServer::killServer();
-    NSLog(@"%@:%@ unable to commit editing to terminate", [self class], NSStringFromSelector(_cmd));
-    return NSTerminateCancel;
-  }
-    
-  if( ![[self managedObjectContext] hasChanges] )
-  {
-    InterSpecServer::killServer();
-    return NSTerminateNow;
-  }
-    
-  NSError *error = nil;
-  if( ![[self managedObjectContext] save:&error] )
-  {
-    // Customize this code block to include application-specific recovery steps.
-    BOOL result = [sender presentError:error];
-    if (result)
-      return NSTerminateCancel;
-
-    NSString *question = NSLocalizedString(@"Could not save changes while quitting. Quit anyway?", @"Quit without saves error question message");
-    NSString *info = NSLocalizedString(@"Quitting now will lose any changes you have made since the last successful save", @"Quit without saves error question info");
-    NSString *quitButton = NSLocalizedString(@"Quit anyway", @"Quit anyway button title");
-    NSString *cancelButton = NSLocalizedString(@"Cancel", @"Cancel button title");
-    NSAlert *alert = [[NSAlert alloc] init];
-    [alert setMessageText:question];
-    [alert setInformativeText:info];
-    [alert addButtonWithTitle:quitButton];
-    [alert addButtonWithTitle:cancelButton];
-
-    NSInteger answer = [alert runModal];
-        
-    if( answer == NSAlertFirstButtonReturn )
-      return NSTerminateCancel;
-  }
-
   InterSpecServer::killServer();
   return NSTerminateNow;
 }
@@ -1274,75 +1186,381 @@ createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration
 //      window.webkit.messageHandlers.interOp.postMessage({"val": 1});
 //      window.webkit.messageHandlers.jsErrorHandler.postMessage({"message": message, "source": source, ...} );
 - (void)userContentController:(WKUserContentController *)userContentController
-      didReceiveScriptMessage:(WKScriptMessage *)message{
-  NSDictionary *sentData = (NSDictionary*)message.body;
-
-  if( sentData == nil )
+      didReceiveScriptMessage:(WKScriptMessage *)message
+{
+  // Validate that message.body is a dictionary
+  if( ![message.body isKindOfClass:[NSDictionary class]] )
   {
-    NSLog( @"didReceiveScriptMessage: got nil dictionary" );
+    NSLog( @"didReceiveScriptMessage: expected NSDictionary, got %@", [message.body class] );
     return;
   }
+  
+  NSDictionary *sentData = (NSDictionary *)message.body;
 
-  if ([message.name isEqualToString:@"jsErrorHandler"]) {
+  if( [message.name isEqualToString:@"jsErrorHandler"] )
+  {
     NSString *errorMessage = sentData[@"message"];
     NSString *source = sentData[@"source"];
     NSNumber *lineNumber = sentData[@"lineno"];
     NSNumber *columnNumber = sentData[@"colno"];
     NSString *errorDetails = sentData[@"error"];
 
-    //If the error message contained "Wt internal error" or "c.size", it was a fatal error...
-
-    // Create the alert
+    // Create the alert as a sheet (non-blocking) so multiple errors don't queue up modal dialogs
     NSAlert *alert = [[NSAlert alloc] init];
     alert.messageText = @"JavaScript Error";
-    alert.informativeText = [NSString stringWithFormat:@"Unexpected JavaScript Error - please consider reporting to InterSpec@sandia.gov and restarting app:\n\nMessage: %@\nSource: %@\nLine: %@\nColumn: %@\nDetails: %@",
-       errorMessage ?: @"Unknown",
-       source ?: @"Unknown",
-       lineNumber ?: @0,
-       columnNumber ?: @0,
-       errorDetails ?: @"No additional details"];
+    alert.informativeText = [NSString stringWithFormat:
+      @"Unexpected JavaScript Error - please consider reporting to InterSpec@sandia.gov and restarting app:\n\n"
+      "Message: %@\nSource: %@\nLine: %@\nColumn: %@\nDetails: %@",
+      errorMessage ?: @"Unknown",
+      source ?: @"Unknown",
+      lineNumber ?: @0,
+      columnNumber ?: @0,
+      errorDetails ?: @"No additional details"];
     alert.alertStyle = NSAlertStyleWarning;
-
     [alert addButtonWithTitle:@"OK"];
-    [alert runModal];
+    
+    // Use sheet instead of modal to avoid blocking
+    [alert beginSheetModalForWindow:_window completionHandler:nil];
 
     return;
   }//if( a JS error )
 
-  id val = [sentData objectForKey: @"action"];
-  if( val != (id)[NSNull null] )
+  id val = sentData[@"action"];
+  if( val && val != (id)[NSNull null] && [val isKindOfClass:[NSString class]] )
   {
-    NSString *str = (NSString*)val;
-    if( !str )
-    {
-      NSLog( @"didReceiveScriptMessage: no value for action" );
-      return;
-    }
+    NSString *action = (NSString *)val;
     
-    if( [str isEqualToString:@"ExternalInstance"] )
+    if( [action isEqualToString:@"ExternalInstance"] )
     {
       NSLog( @"didReceiveScriptMessage: request for external instance" );
       
       NSString *sessionToken = [self generateSessionToken];
       InterSpecServer::add_allowed_session_token( [sessionToken UTF8String], InterSpecServer::SessionType::ExternalBrowserInstance );
       
-      //url = InterSpecServer::urlBeingServedOn(); //will be empty if not serving
       const NSInteger port = InterSpecServer::portBeingServedOn();
       NSString *url = [NSString stringWithFormat:@"http://localhost:%ld?apptoken=%@&restore=no", port, sessionToken];
-      //NSString *url = [NSString stringWithFormat:@"%@?primary=no&restore=no", _UrlServingOn];
-      [[NSWorkspace sharedWorkspace] openURL: [NSURL URLWithString:url] ];
+      [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:url]];
     }else
     {
-      NSLog( @"didReceiveScriptMessage: un-understood action: \"%@\"", str );
+      NSLog( @"didReceiveScriptMessage: unrecognized action: \"%@\"", action );
     }
   }else
   {
-    NSLog( @"didReceiveScriptMessage: No \"action\" key" );
+    NSLog( @"didReceiveScriptMessage: missing or invalid \"action\" key" );
+  }
+}//didReceiveScriptMessage
+
+
+#pragma mark - Session Validation and Recovery
+
+- (void)validateCurrentSession
+{
+  if( !_UrlUniqueId || !_isServing )
+  {
+    _sessionIsValid = NO;
+    _lastSessionValidation = [NSDate date];
+    NSLog(@"validateCurrentSession: No token or not serving, sessionIsValid=NO");
+    return;
   }
   
-  // Could call back into the WebView using
-  //[_InterSpecWebView evaluateJavaScript: @"someJavascript" completionHandler:nil];
-}//didReceiveScriptMessage
+  const int status = InterSpecServer::session_status( [_UrlUniqueId UTF8String] );
+  
+  // Status: 0=unknown, 1=authorized not loaded, 2=loaded, 3=no longer auth, 4=dead
+  _sessionIsValid = (status == 2);
+  _lastSessionValidation = [NSDate date];
+  
+  NSLog(@"validateCurrentSession: token='%@', status=%d, valid=%@",
+        _UrlUniqueId, status, _sessionIsValid ? @"YES" : @"NO");
+  
+  if( !_sessionIsValid && status >= 3 )
+  {
+    NSLog(@"Session is dead (status=%d) or no longer authorized - recovery needed", status);
+  }
+}
+
+
+- (void)recoverSession
+{
+  NSLog(@"Attempting session recovery (attempt %ld)", (long)++_sessionRecoveryAttempts);
+  
+  // Always get the current server URL fresh from InterSpecServer
+  // This is more reliable than using _UrlServingOn which might be stale or corrupted
+  const int serverPort = InterSpecServer::portBeingServedOn();
+  if( serverPort <= 0 )
+  {
+    NSLog(@"Cannot recover session: server not running (port=%d)", serverPort);
+#if( PERFORM_DEVELOPER_CHECKS )
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Session Recovery Failed";
+    alert.informativeText = [NSString stringWithFormat:
+      @"Cannot recover session because server is not running.\n\n"
+      "Server port: %d", serverPort];
+    alert.alertStyle = NSAlertStyleCritical;
+    [alert addButtonWithTitle:@"OK"];
+    [alert beginSheetModalForWindow:_window completionHandler:nil];
+#endif
+    return;
+  }
+  
+  // Construct the base URL from the port
+  _UrlServingOn = [NSString stringWithFormat:@"http://127.0.0.1:%d", serverPort];
+  _isServing = YES;
+  NSLog(@"Using server URL: %@", _UrlServingOn);
+  
+  if( _sessionRecoveryAttempts > 3 )
+  {
+    NSLog(@"Too many recovery attempts (%ld), giving up", (long)_sessionRecoveryAttempts);
+#if( PERFORM_DEVELOPER_CHECKS )
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Session Recovery Failed";
+    alert.informativeText = @"Multiple recovery attempts failed. Please restart the application.";
+    alert.alertStyle = NSAlertStyleCritical;
+    [alert addButtonWithTitle:@"OK"];
+    [alert runModal];
+#endif
+    return;
+  }
+  
+  // Mark old session as dead if it exists
+  NSString *oldToken = _UrlUniqueId;
+  if( oldToken )
+  {
+    NSLog(@"Marking old session '%@' as destructing", oldToken);
+    InterSpecServer::set_session_destructing( [oldToken UTF8String] );
+  }
+  
+  // Generate new session token
+  _UrlUniqueId = [self generateSessionToken];
+  
+  NSLog(@"Session recovery: old token='%@', new token='%@'", oldToken, _UrlUniqueId);
+  
+  // Register the new token as a primary app instance
+  InterSpecServer::add_allowed_session_token(
+    [_UrlUniqueId UTF8String],
+    InterSpecServer::SessionType::PrimaryAppInstance
+  );
+  
+  // Build the new URL with restore=yes to restore previous state
+  // Extra safety check - should not happen due to guard at top of function
+  if( !_UrlServingOn || !_UrlUniqueId )
+  {
+    NSLog(@"CRITICAL: recoverSession has nil UrlServingOn='%@' or UrlUniqueId='%@'",
+          _UrlServingOn ?: @"(nil)", _UrlUniqueId ?: @"(nil)");
+#if( PERFORM_DEVELOPER_CHECKS )
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Session Recovery Error";
+    alert.informativeText = [NSString stringWithFormat:
+      @"Unexpected nil value during recovery.\n\n"
+      "UrlServingOn: %@\nUrlUniqueId: %@",
+      _UrlServingOn ?: @"(nil)", _UrlUniqueId ?: @"(nil)"];
+    alert.alertStyle = NSAlertStyleCritical;
+    [alert addButtonWithTitle:@"OK"];
+    [alert beginSheetModalForWindow:_window completionHandler:nil];
+#endif
+    return;
+  }
+  
+  NSString *newURL = [NSString stringWithFormat:@"%@?apptoken=%@&primary=yes&restore=yes",
+                      _UrlServingOn, _UrlUniqueId];
+  
+  // Check for dark mode
+#ifdef AVAILABLE_MAC_OS_X_VERSION_10_14_AND_LATER
+  if( @available(macOS 10.14, *) )
+  {
+    NSAppearanceName basicAppearance =
+      [NSApp.mainWindow.effectiveAppearance
+       bestMatchFromAppearancesWithNames:@[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]];
+    if( [basicAppearance isEqualToString:NSAppearanceNameDarkAqua] )
+    {
+      newURL = [NSString stringWithFormat:@"%@&colortheme=dark", newURL];
+    }
+  }
+#endif
+  
+  NSLog(@"Loading recovered session URL: %@", newURL);
+  NSLog(@"  _UrlServingOn: '%@'", _UrlServingOn);
+  NSLog(@"  _UrlUniqueId: '%@'", _UrlUniqueId);
+  
+  // Create and validate the URL
+  NSURL *url = [NSURL URLWithString:newURL];
+  if( !url )
+  {
+    NSLog(@"ERROR: Failed to create NSURL from string: %@", newURL);
+#if( PERFORM_DEVELOPER_CHECKS )
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Invalid Recovery URL";
+    alert.informativeText = [NSString stringWithFormat:
+      @"Failed to create URL from string.\n\n"
+      "URL String: %@\n\nUrlServingOn: %@\nUrlUniqueId: %@",
+      newURL, _UrlServingOn, _UrlUniqueId];
+    alert.alertStyle = NSAlertStyleCritical;
+    [alert addButtonWithTitle:@"OK"];
+    [alert beginSheetModalForWindow:_window completionHandler:nil];
+#endif
+    return;
+  }
+  
+  // Load the new session
+  [_InterSpecWebView loadRequest:[NSURLRequest requestWithURL:url]];
+  
+  _sessionIsValid = NO; // Will be set to YES after successful load in didFinishNavigation
+  
+#if( PERFORM_DEVELOPER_CHECKS )
+  NSAlert *alert = [[NSAlert alloc] init];
+  alert.messageText = @"Session Recovery Attempted";
+  alert.informativeText = [NSString stringWithFormat:
+    @"Old token: %@\nNew token: %@\nRecovery attempt: %ld\n\n"
+    "The session should restore automatically with previous state.",
+    oldToken ?: @"(none)", _UrlUniqueId, (long)_sessionRecoveryAttempts];
+  alert.alertStyle = NSAlertStyleInformational;
+  [alert addButtonWithTitle:@"OK"];
+  [alert beginSheetModalForWindow:_window completionHandler:nil];
+#endif
+}
+
+
+- (void)periodicSessionHealthCheck
+{
+  if( !_isServing || !_UrlUniqueId )
+    return;
+  
+  [self validateCurrentSession];
+  
+  if( !_sessionIsValid )
+  {
+    NSLog(@"Periodic health check detected invalid session - triggering recovery");
+    
+#if( PERFORM_DEVELOPER_CHECKS )
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Session Health Check Failed";
+    alert.informativeText = [NSString stringWithFormat:
+      @"Periodic health check detected the session '%@' is no longer valid. "
+      "Attempting automatic recovery.", _UrlUniqueId];
+    alert.alertStyle = NSAlertStyleWarning;
+    [alert addButtonWithTitle:@"OK"];
+    [alert beginSheetModalForWindow:_window completionHandler:nil];
+#endif
+    
+    [self recoverSession];
+  }
+}
+
+
+#pragma mark - Debug Simulation Methods
+
+- (void)simulateWebViewTermination
+{
+  NSLog(@"Simulating WebView termination...");
+  
+#if( PERFORM_DEVELOPER_CHECKS )
+  NSAlert *alert = [[NSAlert alloc] init];
+  alert.messageText = @"Simulating WebView Termination";
+  alert.informativeText = @"This will call the webViewWebContentProcessDidTerminate: handler "
+                          "as if the system terminated the WebView process.";
+  alert.alertStyle = NSAlertStyleInformational;
+  [alert addButtonWithTitle:@"Continue"];
+  [alert addButtonWithTitle:@"Cancel"];
+  
+  if( [alert runModal] == NSAlertFirstButtonReturn )
+  {
+    [self webViewWebContentProcessDidTerminate:_InterSpecWebView];
+  }
+#else
+  [self webViewWebContentProcessDidTerminate:_InterSpecWebView];
+#endif
+}
+
+
+- (void)simulateSessionInvalidation
+{
+  NSLog(@"Simulating session invalidation...");
+  
+  if( _UrlUniqueId )
+  {
+    // Mark the current session as dead
+    InterSpecServer::set_session_destructing( [_UrlUniqueId UTF8String] );
+    
+#if( PERFORM_DEVELOPER_CHECKS )
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Session Invalidated";
+    alert.informativeText = [NSString stringWithFormat:
+      @"Session '%@' has been marked as dead.\n\n"
+      "Use 'Force Session Validation' to check immediately and trigger recovery.\n\n"
+      "Or start the periodic health check timer to detect this automatically.",
+      _UrlUniqueId];
+    alert.alertStyle = NSAlertStyleInformational;
+    [alert addButtonWithTitle:@"OK"];
+    [alert beginSheetModalForWindow:_window completionHandler:nil];
+#endif
+  }
+  else
+  {
+    NSLog(@"simulateSessionInvalidation: No session token to invalidate");
+  }
+}
+
+
+- (void)togglePeriodicHealthCheck
+{
+  if( _sessionHealthCheckTimer )
+  {
+    // Stop the timer
+    [_sessionHealthCheckTimer invalidate];
+    _sessionHealthCheckTimer = nil;
+    NSLog(@"Stopped periodic session health check timer");
+    
+    // Update menu item title
+    NSMenu *menu = [[[NSApp mainMenu] itemAtIndex: 1] submenu];
+    for( NSMenuItem *item in [menu itemArray] )
+    {
+      if( [item action] == @selector(togglePeriodicHealthCheck) )
+      {
+        [item setTitle:@"Start Periodic Health Check (60s)"];
+        break;
+      }
+    }
+    
+#if( PERFORM_DEVELOPER_CHECKS )
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Periodic Health Check Stopped";
+    alert.informativeText = @"The 60-second periodic session health check timer has been stopped.";
+    alert.alertStyle = NSAlertStyleInformational;
+    [alert addButtonWithTitle:@"OK"];
+    [alert beginSheetModalForWindow:_window completionHandler:nil];
+#endif
+  }
+  else
+  {
+    // Start the timer
+    _sessionHealthCheckTimer = [NSTimer scheduledTimerWithTimeInterval:60.0
+                                                                target:self
+                                                              selector:@selector(periodicSessionHealthCheck)
+                                                              userInfo:nil
+                                                               repeats:YES];
+    NSLog(@"Started periodic session health check timer (60 second interval)");
+    
+    // Update menu item title
+    NSMenu *menu = [[[NSApp mainMenu] itemAtIndex: 1] submenu];
+    for( NSMenuItem *item in [menu itemArray] )
+    {
+      if( [item action] == @selector(togglePeriodicHealthCheck) )
+      {
+        [item setTitle:@"Stop Periodic Health Check"];
+        break;
+      }
+    }
+    
+#if( PERFORM_DEVELOPER_CHECKS )
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Periodic Health Check Started";
+    alert.informativeText = @"The session will be checked every 60 seconds. "
+                            "If the session becomes invalid, automatic recovery will be attempted.";
+    alert.alertStyle = NSAlertStyleInformational;
+    [alert addButtonWithTitle:@"OK"];
+    [alert beginSheetModalForWindow:_window completionHandler:nil];
+#endif
+  }
+}
 
 
 -(void)enableWebInspector

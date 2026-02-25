@@ -71,6 +71,7 @@
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SimpleDialog.h"
+#include "InterSpec/RelActCalc.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/ExportSpecFile.h"
@@ -2640,8 +2641,8 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
       // We dont expect Intrinsic or Calibration to ever be present when a foreground
       //  and background file has been combined into a single file
       //  See `currentlySelectedFile()` implementation.
-      assert( (type != SpecUtils::SourceType::IntrinsicActivity)
-             && (type != SpecUtils::SourceType::Calibration)
+      assert( ((type != SpecUtils::SourceType::IntrinsicActivity)
+               && (type != SpecUtils::SourceType::Calibration))
              || samples.empty() );
       
       if( !samples.empty() )
@@ -2799,43 +2800,53 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
               }
             }//for( const int sample : back_samples )
             
-            // TODO: refit peaks and then put those into the file - for the moment we'll just leave the original peaks
             if( orig_peaks && orig_peaks->size() )
             {
-              peaks_to_set[set<int>{newspec->sample_number()}] = orig_peaks;
+              // Filter out data-defined peaks (they have no Gaussian to refit), and refit only
+              //  the continuum coefficients for gaussian peaks on the background-subtracted
+              //  spectrum - leaving peak Mean, Sigma, GaussAmplitude, skew, and fitFor values
+              //  unchanged.
+              vector<PeakDef> gaussian_peaks;
+              for( const auto &p : *orig_peaks )
+              {
+                if( p->type() == PeakDef::DefintionType::GaussianDefined )
+                  gaussian_peaks.push_back( *p );
+              }
+
+              auto refit_deque = make_shared<deque<shared_ptr<const PeakDef>>>();
+
+              if( !gaussian_peaks.empty() )
+              {
+                try
+                {
+                  const vector<PeakDef> refit = RelActCalc::refit_roi_continuums( gaussian_peaks, newspec );
+                  for( const PeakDef &p : refit )
+                    refit_deque->push_back( make_shared<const PeakDef>( p ) );
+                }catch( std::exception &e )
+                {
+                  // Refit failed - fall back to original peaks and warn user
+                  refit_deque->clear();
+                  for( const auto &p : *orig_peaks )
+                    refit_deque->push_back( p );
+
+                  answer->add_remark( "Warning: peak continuum refit after background subtraction"
+                                     " failed: " + string( e.what() ) );
+                  passMessage( WString::tr("esf-back-sub-peak-refit-failed"),
+                              WarningWidget::WarningMsgHigh );
+                }//try / catch
+              }//if( !gaussian_peaks.empty() )
+
+              // Add back any data-defined peaks unchanged
+              for( const auto &p : *orig_peaks )
+              {
+                if( p->type() == PeakDef::DefintionType::DataDefined )
+                  refit_deque->push_back( p );
+              }
+
+              peaks_to_set[set<int>{newspec->sample_number()}] = refit_deque;
               peaks_to_remove.insert( fore_samples );
               peaks_to_remove.insert( back_samples );
-            }
-            
-            /*
-             // Re-fit peaks for now being background subtracted
-             std::vector<PeakDef> refit_peaks;
-             if( orig_peaks && orig_peaks->size() )
-             {
-             try
-             {
-             vector<PeakDef> input_peaks;
-             for( const auto &i : *orig_peaks )
-             input_peaks.push_back( *i );
-             
-             const double lowE = newspec->gamma_energy_min();
-             const double upE = newspec->gamma_energy_max();
-             
-             refit_peaks = fitPeaksInRange( lowE, upE, 0.0, 0.0, 0.0, input_peaks, newspec, true );
-             
-             std::deque<std::shared_ptr<const PeakDef> > peakdeque;
-             for( const auto &p : refit_peaks )
-             peakdeque.push_back( std::make_shared<const PeakDef>(p) );
-             
-             newmeas->setPeaks( peakdeque, {newspec->sample_number()} );
-             }catch( std::exception &e )
-             {
-             summed_det_by_det = false;
-             assert( 0 );
-             break;
-             }//try / catch to fit peaks
-             }//if( we need to refit peaks )
-             */
+            }//if( orig_peaks && orig_peaks->size() )
           }catch( std::exception &e )
           {
             cerr << "Error subtracting background from foreground on det-by-det basis: " << e.what() << endl;
@@ -2905,10 +2916,10 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
         if( typePos != end(sampleSourceTypes) )
         {
           meas_to_add.back()->set_source_type( typePos->second );
-          sampleSourceTypes[samples] = typePos->second;
+          sampleSourceTypes[sum_samples] = typePos->second;
         }else
         {
-          sampleSourceTypes[samples] = SpecUtils::SourceType::Background;
+          sampleSourceTypes[sum_samples] = SpecUtils::SourceType::Background;
         }
         
         meas_to_remove.insert( single_record );
@@ -3030,7 +3041,18 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
       answer->add_measurement( i, false );
     }
   }
-  
+
+  // Apply peak changes from background subtraction: remove old peaks keyed on
+  //  original sample numbers, then set refit peaks on new sample numbers.
+  for( const set<int> &rm_samples : peaks_to_remove )
+    answer->removePeaks( rm_samples );
+
+  for( const auto &sample_peaks : peaks_to_set )
+  {
+    if( sample_peaks.second && sample_peaks.second->size() )
+      answer->setPeaks( *sample_peaks.second, sample_peaks.first );
+  }
+
   if( !meas_to_remove.empty() || !meas_to_add.empty() )
   {
     answer->set_uuid( "" );

@@ -527,6 +527,44 @@ T evaluate_power_series_via_bernstein( const T& x,
   return evaluate_power_series_via_bernstein( x, power_coeffs.data(), power_coeffs.size(), x_min, x_max );
 }
 
+/** Converts power series polynomial coefficients to Bernstein polynomial coefficients,
+ with the constraint that all Bernstein coefficients must be within [lower_bound, upper_bound].
+
+ This function first attempts an exact conversion using power_series_to_bernstein(). If all
+ resulting coefficients are within the specified bounds, they are returned directly (fast path).
+
+ If any coefficient falls outside the bounds, a constrained least-squares fit is performed
+ using Ceres optimizer to find Bernstein coefficients that:
+ 1. Are all within [lower_bound, upper_bound]
+ 2. Minimize the squared error to the original polynomial (with y-values clamped to bounds)
+
+ The fitting samples the polynomial at 50 uniformly-spaced points across [x_min, x_max],
+ clamps those y-values to the bounds, and finds the best-fit Bernstein polynomial.
+
+ @param power_coeffs Pointer to array of power series coefficients [a_0, a_1, ..., a_n]
+ @param num_coefficients Number of power series coefficients
+ @param x_min Minimum x value for the power series domain
+ @param x_max Maximum x value for the power series domain
+ @param lower_bound Lower bound for all Bernstein coefficients
+ @param upper_bound Upper bound for all Bernstein coefficients
+ @return Vector of Bernstein coefficients, all guaranteed to be in [lower_bound, upper_bound]
+ @throws std::invalid_argument if inputs are invalid (empty coeffs, x_max <= x_min, etc.)
+ @throws std::runtime_error if Ceres optimization fails
+ */
+std::vector<double> constrained_power_series_to_bernstein( const double* power_coeffs,
+                                                           size_t num_coefficients,
+                                                           double x_min,
+                                                           double x_max,
+                                                           double lower_bound,
+                                                           double upper_bound );
+
+/** Convenience overload for constrained_power_series_to_bernstein() that accepts std::vector */
+std::vector<double> constrained_power_series_to_bernstein( const std::vector<double>& power_coeffs,
+                                                           double x_min,
+                                                           double x_max,
+                                                           double lower_bound,
+                                                           double upper_bound );
+
 }  // namespace BersteinPolynomial
 
 #endif  // BersteinPolynomial_hpp
