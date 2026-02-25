@@ -41,6 +41,7 @@ namespace
   constexpr size_t sm_num_fit_points = 50;
 
   // Stride for Ceres autodiff (maximum number of parameters we expect)
+  //. But if we go over this it will just be a ineffiecny, and Ceres should take acare of it
   constexpr int sm_ceres_stride = 8;
 
 

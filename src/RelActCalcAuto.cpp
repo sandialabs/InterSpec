@@ -210,6 +210,34 @@ const double ns_decay_act_mult = SandiaDecay::MBq;
 // Forward declaration
 struct RelActAutoCostFcn;
 
+
+/** Evaluates FWHM from Bernstein polynomial parameters, for double type only.
+ *
+ * This is a simplified version of RelActCalcAuto::bersteinPeakResolutionFWHM (defined later
+ * in this file), needed here so get_fwhm_coefficients() can validate Bernstein FWHM values.
+ *
+ * @param energy The energy in keV
+ * @param pars The parameters: [bernstein_coeffs..., min_energy, max_energy]
+ * @param num_pars The number of parameters (bernstein coeffs + 2 for min/max energy)
+ */
+double eval_berstein_fwhm( double energy, const double * const pars, const size_t num_pars )
+{
+  if( num_pars < 4 )
+    throw std::runtime_error( "eval_berstein_fwhm(): insufficient parameters" );
+
+  const size_t num_berstein_coeffs = num_pars - 2;
+  const double min_energy = pars[num_berstein_coeffs];
+  const double max_energy = pars[num_berstein_coeffs + 1];
+
+  energy = std::max( energy, min_energy );
+  energy = std::min( energy, max_energy );
+
+  const double t = (energy - min_energy) / (max_energy - min_energy);
+
+  return sqrt( BersteinPolynomial::evaluate( t, pars, num_berstein_coeffs ) );
+}//double eval_berstein_fwhm(...)
+
+
 struct DoWorkOnDestruct
 {
   std::function<void()> m_worker;
@@ -530,29 +558,73 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
           
           assert( min_expected_sigma != std::numeric_limits<float>::max() );
           assert( max_expected_sigma != std::numeric_limits<float>::lowest() );
-          const std::vector<double> berstein_coeffs = BersteinPolynomial::constrained_power_series_to_bernstein( poly_coeffs,
+          
+          const double lower_coef_bound = min_expected_sigma * min_expected_sigma * PhysicalUnits::fwhm_nsigma*PhysicalUnits::fwhm_nsigma;
+          const double upper_coef_bound = max_expected_sigma * max_expected_sigma * PhysicalUnits::fwhm_nsigma*PhysicalUnits::fwhm_nsigma;
+          vector<double> berstein_coeffs;
+          try
+          {
+            berstein_coeffs = BersteinPolynomial::constrained_power_series_to_bernstein( poly_coeffs,
                                                                                       lowest_energy/1000.0, highest_energy/1000.0,
-                                                                                      min_expected_sigma, max_expected_sigma );
+                                                                                      lower_coef_bound, upper_coef_bound );
           
-          
-          // Set Berstein coefficients
-          for( size_t i = 0; i < num_berstein_coeffs; ++i )
-            parameters[fwhm_start + i] = berstein_coeffs[i];
-          
-#if( PERFORM_DEVELOPER_CHECKS )
-          // Verify power series and Berstein give same results
-          for( int j = 0; j <= 4; ++j ) {
-            const double test_energy = lowest_energy + j * (highest_energy - lowest_energy) / 4.0;
-            const double t = (test_energy - lowest_energy) / (highest_energy - lowest_energy);
-            double poly_val = 0.0, berstein_val = 0.0;
-            for( size_t k = 0; k < poly_coeffs.size(); ++k ) {
-              poly_val += poly_coeffs[k] * pow(test_energy, static_cast<double>(k));
+            assert( berstein_coeffs.size() == poly_coeffs.size() );
+
+            // Set Berstein coefficients
+            for( size_t i = 0; i < num_berstein_coeffs; ++i )
+              parameters[fwhm_start + i] = berstein_coeffs[i];
+          }catch( std::exception &e )
+          {
+            try
+            {
+              berstein_coeffs = BersteinPolynomial::power_series_to_bernstein( poly_coeffs.data(), poly_coeffs.size(),
+                                                                    lowest_energy/1000.0, highest_energy/1000.0 );
+             for( size_t i = 0; i < num_berstein_coeffs; ++i )
+              parameters[fwhm_start + i] = clamp( berstein_coeffs[i], lower_coef_bound, upper_coef_bound);
+            }catch(const std::exception& e)
+            {
+              cerr << "We have totally failed to get initial Berstein coefficients - something big is up, and code is not trustworthy - good luck: " << e.what() << endl;
+              assert( 0 );
             }
-            berstein_val = BersteinPolynomial::evaluate( t, berstein_coeffs.data(), berstein_coeffs.size() );
-            assert( fabs(poly_val - berstein_val) < 1.0E-10 * std::max({poly_val, berstein_val, 1.0}) );
-          }
+          }//try / catch
+
+
+#if( PERFORM_DEVELOPER_CHECKS )
+          // BEGIN verify power series and Berstein give same results
+          assert( berstein_coeffs.size() == poly_coeffs.size() );
+          if( berstein_coeffs.size() == poly_coeffs.size() )
+          {
+            // Check if coefficients were simply all within bounds, or if instead a constrained fit using Ceres had to
+            //  be use - this will affect our testing tolerance.
+            bool all_in_bounds = true;
+            try
+            {
+              vector<double> ps_bern_coeffs = BersteinPolynomial::power_series_to_bernstein( poly_coeffs.data(), poly_coeffs.size(),
+                                                                    lowest_energy/1000.0, highest_energy/1000.0 );
+              for( const double coeff : ps_bern_coeffs )
+                all_in_bounds = (all_in_bounds && (coeff > lower_coef_bound) && (coeff < upper_coef_bound));
+            }catch(...)
+            {
+              assert( 0 );
+              all_in_bounds = false;
+            }
+
+            for( int j = 0; j <= 4; ++j )
+            {
+              const double test_energy = lowest_energy + j * (highest_energy - lowest_energy) / 4.0;
+              const double test_energy_MeV = test_energy / 1000.0;
+              const double t = (test_energy - lowest_energy) / (highest_energy - lowest_energy);
+              double poly_val = 0.0, berstein_val = 0.0;
+              for( size_t k = 0; k < poly_coeffs.size(); ++k ) {
+                poly_val += poly_coeffs[k] * pow(test_energy_MeV, static_cast<double>(k));
+              }
+              berstein_val = BersteinPolynomial::evaluate( t, berstein_coeffs.data(), berstein_coeffs.size() );
+              const double allowed_diff = all_in_bounds ? 1.0E-10 : 1.0E-1;
+              assert( fabs(poly_val - berstein_val) < allowed_diff * std::max({poly_val, berstein_val, 1.0}) );
+            }
+          }// END verify power series and Berstein give same results
 #endif
-          
+
           // Set energy range
           parameters[fwhm_start + num_berstein_coeffs] = lowest_energy;
           parameters[fwhm_start + num_berstein_coeffs + 1] = highest_energy;
@@ -700,29 +772,71 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
           // Convert power series to Berstein coefficients
           assert( min_expected_sigma != std::numeric_limits<float>::max() );
           assert( max_expected_sigma != std::numeric_limits<float>::lowest() );
-          const vector<double> berstein_coeffs = BersteinPolynomial::constrained_power_series_to_bernstein( poly_coeffs,
+          const double lower_coef_bound = min_expected_sigma * min_expected_sigma * PhysicalUnits::fwhm_nsigma*PhysicalUnits::fwhm_nsigma;
+          const double upper_coef_bound = max_expected_sigma * max_expected_sigma * PhysicalUnits::fwhm_nsigma*PhysicalUnits::fwhm_nsigma;
+          vector<double> berstein_coeffs;
+          try
+          {
+            berstein_coeffs = BersteinPolynomial::constrained_power_series_to_bernstein( poly_coeffs,
                                                                                         lowest_energy/1000.0, highest_energy/1000.0,
-                                                                                        min_expected_sigma, max_expected_sigma );
-          assert( berstein_coeffs.size() == num_berstein_coeffs );
-          
-          // Set Berstein coefficients
-          for( size_t i = 0; i < num_berstein_coeffs; ++i )
-            parameters[fwhm_start + i] = berstein_coeffs[i];
-          
-#if( PERFORM_DEVELOPER_CHECKS )
-          // Verify power series and Berstein give same results
-          for( int j = 0; j <= 4; ++j ) {
-            const double test_energy = lowest_energy + j * (highest_energy - lowest_energy) / 4.0;
-            const double t = (test_energy - lowest_energy) / (highest_energy - lowest_energy);
-            double poly_val = 0.0, berstein_val = 0.0;
-            for( size_t k = 0; k < poly_coeffs.size(); ++k ) {
-              poly_val += poly_coeffs[k] * pow(test_energy, static_cast<double>(k));
+                                                                                        lower_coef_bound, upper_coef_bound );
+
+            assert( berstein_coeffs.size() == poly_coeffs.size() );
+
+            // Set Berstein coefficients
+            for( size_t i = 0; i < num_berstein_coeffs; ++i )
+              parameters[fwhm_start + i] = berstein_coeffs[i];
+          }catch( std::exception &e )
+          {
+            try
+            {
+              berstein_coeffs = BersteinPolynomial::power_series_to_bernstein( poly_coeffs.data(), poly_coeffs.size(),
+                                                                    lowest_energy/1000.0, highest_energy/1000.0 );
+              for( size_t i = 0; i < num_berstein_coeffs; ++i )
+                parameters[fwhm_start + i] = clamp( berstein_coeffs[i], lower_coef_bound, upper_coef_bound );
+            }catch( const std::exception &e )
+            {
+              cerr << "We have totally failed to get initial Berstein coefficients - something big is up, and code is not trustworthy - good luck: " << e.what() << endl;
+              assert( 0 );
             }
-            berstein_val = BersteinPolynomial::evaluate( t, berstein_coeffs.data(), berstein_coeffs.size() );
-            assert( fabs(poly_val - berstein_val) < 1.0E-10 * std::max({poly_val, berstein_val, 1.0}) );
-          }
+          }//try / catch
+
+#if( PERFORM_DEVELOPER_CHECKS )
+          // BEGIN verify power series and Berstein give same results
+          assert( berstein_coeffs.size() == poly_coeffs.size() );
+          if( berstein_coeffs.size() == poly_coeffs.size() )
+          {
+            // Check if coefficients were simply all within bounds, or if instead a constrained fit using Ceres had to
+            //  be used - this will affect our testing tolerance.
+            bool all_in_bounds = true;
+            try
+            {
+              vector<double> ps_bern_coeffs = BersteinPolynomial::power_series_to_bernstein( poly_coeffs.data(), poly_coeffs.size(),
+                                                                    lowest_energy/1000.0, highest_energy/1000.0 );
+              for( const double coeff : ps_bern_coeffs )
+                all_in_bounds = (all_in_bounds && (coeff > lower_coef_bound) && (coeff < upper_coef_bound));
+            }catch(...)
+            {
+              assert( 0 );
+              all_in_bounds = false;
+            }
+
+            for( int j = 0; j <= 4; ++j )
+            {
+              const double test_energy = lowest_energy + j * (highest_energy - lowest_energy) / 4.0;
+              const double test_energy_MeV = test_energy / 1000.0;
+              const double t = (test_energy - lowest_energy) / (highest_energy - lowest_energy);
+              double poly_val = 0.0, berstein_val = 0.0;
+              for( size_t k = 0; k < poly_coeffs.size(); ++k ) {
+                poly_val += poly_coeffs[k] * pow(test_energy_MeV, static_cast<double>(k));
+              }
+              berstein_val = BersteinPolynomial::evaluate( t, berstein_coeffs.data(), berstein_coeffs.size() );
+              const double allowed_diff = all_in_bounds ? 1.0E-10 : 1.0E-1;
+              assert( fabs(poly_val - berstein_val) < allowed_diff * std::max({poly_val, berstein_val, 1.0}) );
+            }
+          }// END verify power series and Berstein give same results
 #endif
-          
+
           // Set energy range
           parameters[fwhm_start + num_berstein_coeffs] = lowest_energy;
           parameters[fwhm_start + num_berstein_coeffs + 1] = highest_energy;
@@ -937,12 +1051,14 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
           {
             assert( min_expected_sigma != std::numeric_limits<float>::max() );
             assert( max_expected_sigma != std::numeric_limits<float>::lowest() );
+            const double lower_coef_bound = min_expected_sigma * min_expected_sigma * PhysicalUnits::fwhm_nsigma*PhysicalUnits::fwhm_nsigma;
+            const double upper_coef_bound = max_expected_sigma * max_expected_sigma * PhysicalUnits::fwhm_nsigma*PhysicalUnits::fwhm_nsigma;
             berstein_coeffs = BersteinPolynomial::constrained_power_series_to_bernstein( poly_coeffs,
                                   lowest_energy/1000.0, highest_energy/1000.0,
-                                  min_expected_sigma, max_expected_sigma );
+                                  lower_coef_bound, upper_coef_bound );
           }
-          
-          
+
+
           const size_t num_params = num_parameters(fwhm_form);
           paramaters.resize( num_params );
           
@@ -1070,9 +1186,11 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
           {
             assert( min_expected_sigma != std::numeric_limits<float>::max() );
             assert( max_expected_sigma != std::numeric_limits<float>::lowest() );
+            const double lower_coef_bound = min_expected_sigma * min_expected_sigma * PhysicalUnits::fwhm_nsigma*PhysicalUnits::fwhm_nsigma;
+            const double upper_coef_bound = max_expected_sigma * max_expected_sigma * PhysicalUnits::fwhm_nsigma*PhysicalUnits::fwhm_nsigma;
             berstein_coeffs = BersteinPolynomial::constrained_power_series_to_bernstein( poly_coeffs,
                                                                   lowest_energy/1000.0, highest_energy/1000.0,
-                                                                          min_expected_sigma, max_expected_sigma );
+                                                                          lower_coef_bound, upper_coef_bound );
           }
           
           assert( berstein_coeffs.size() == (num_fwhm_pars - 2) );
@@ -1225,6 +1343,41 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
     paramaters.resize( fwhm_paramatersf.size() );
     for( size_t i = 0; i < fwhm_paramatersf.size(); ++i )
       paramaters[i] = static_cast<double>( fwhm_paramatersf[i] );
+
+    // For Bernstein forms, convert polynomial coefficients to Bernstein immediately,
+    //  so that paramaters always contains Bernstein coefficients + energy range from here on.
+    switch( fwhm_form )
+    {
+      case RelActCalcAuto::FwhmForm::Berstein_2:
+      case RelActCalcAuto::FwhmForm::Berstein_3:
+      case RelActCalcAuto::FwhmForm::Berstein_4:
+      case RelActCalcAuto::FwhmForm::Berstein_5:
+      case RelActCalcAuto::FwhmForm::Berstein_6:
+      {
+        const vector<double> poly_coeffs( begin(paramaters), end(paramaters) );
+
+        if( is_fixed_fwhm )
+        {
+          paramaters = BersteinPolynomial::power_series_to_bernstein(
+                          poly_coeffs.data(), poly_coeffs.size(), lowest_energy/1000.0, highest_energy/1000.0 );
+        }else
+        {
+          assert( min_expected_sigma != std::numeric_limits<float>::max() );
+          assert( max_expected_sigma != std::numeric_limits<float>::lowest() );
+          const double lower_coef_bound = min_expected_sigma * min_expected_sigma * PhysicalUnits::fwhm_nsigma*PhysicalUnits::fwhm_nsigma;
+          const double upper_coef_bound = max_expected_sigma * max_expected_sigma * PhysicalUnits::fwhm_nsigma*PhysicalUnits::fwhm_nsigma;
+          paramaters = BersteinPolynomial::constrained_power_series_to_bernstein( poly_coeffs,
+                                                                    lowest_energy/1000.0, highest_energy/1000.0,
+                                                                    lower_coef_bound, upper_coef_bound );
+        }
+
+        paramaters.push_back( lowest_energy );
+        paramaters.push_back( highest_energy );
+        break;
+      }
+      default:
+        break;
+    }//switch( fwhm_form ) - Bernstein conversion
   }catch( std::exception &e )
   {
     paramaters.clear();
@@ -1232,18 +1385,40 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
     warnings.push_back( "Failed to estimate FWHM from data: " + string(e.what()) + ".  Using default FWHM parameters." );
   }
 
+  // At this point, paramaters always contains the final form:
+  //  - For non-Bernstein: polynomial/functional coefficients
+  //  - For Bernstein: Bernstein coefficients + energy range (from conversion above or fill_in_default_start_fwhm_pars)
+  assert( paramaters.size() == num_parameters( fwhm_form ) );
+
+  // Validate the FWHM across the energy range
+  // For Bernstein forms, use eval_berstein_fwhm; for others, use DetectorPeakResponse
+  const double check_delta_energy = 0.01*(highest_energy - lowest_energy);
+  bool valid_whole_range = true;
+
+  // Pre-compute float version of parameters for non-Bernstein validation
   vector<float> fwhm_pars_float( paramaters.size() );
   for( size_t i = 0; i < paramaters.size(); ++i )
     fwhm_pars_float[i] = static_cast<float>( paramaters[i] );
 
-  // Now check if the FWHM fit is valid across the energy range
-  const double check_delta_energy = 0.01*(highest_energy - lowest_energy);
-  bool valid_whole_range = true;
   for( double energy = lowest_energy; valid_whole_range && (energy <= highest_energy); energy += check_delta_energy )
   {
     try
     {
-      const float fwhm = DetectorPeakResponse::peakResolutionFWHM( (float)energy, form_to_fit, fwhm_pars_float );
+      float fwhm;
+      switch( fwhm_form )
+      {
+        case RelActCalcAuto::FwhmForm::Berstein_2:
+        case RelActCalcAuto::FwhmForm::Berstein_3:
+        case RelActCalcAuto::FwhmForm::Berstein_4:
+        case RelActCalcAuto::FwhmForm::Berstein_5:
+        case RelActCalcAuto::FwhmForm::Berstein_6:
+          fwhm = static_cast<float>( eval_berstein_fwhm( energy, paramaters.data(), paramaters.size() ) );
+          break;
+        default:
+          fwhm = DetectorPeakResponse::peakResolutionFWHM( (float)energy, form_to_fit, fwhm_pars_float );
+          break;
+      }//switch( fwhm_form )
+
       const float sigma = fwhm / PhysicalUnits::fwhm_nsigma;
 
       float min_sigma, max_sigma;
@@ -1260,19 +1435,59 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
   {
     cerr << "Fit FWHM is not valid for the energy range wanted - will just use default." << endl;
     warnings.push_back( "Failed to estimate FWHM from data: not a large enough span of peaks.  Using default FWHM parameters." );
+    paramaters.clear();
     fill_in_default_start_fwhm_pars( paramaters, 0, highres, fwhm_form, lowest_energy, highest_energy );
-    assert( paramaters.size() == fwhm_pars_float.size() );
-    fwhm_pars_float.clear();
-    fwhm_pars_float.resize( paramaters.size(), 0.0f );
-    for( size_t i = 0; i < paramaters.size(); ++i )
-      fwhm_pars_float[i] = static_cast<float>( paramaters[i] );
   }//if( !valid_whole_range )
+
+  assert( paramaters.size() == num_parameters( fwhm_form ) );
+
+  // Set up the DRF with kSqrtPolynomial FWHM coefficients for its internal use.
+  // The DRF is queried directly (e.g., for ROI width estimation, energy cal bounds) so it
+  //  needs correct polynomial coefficients. For Bernstein forms, we convert back to polynomial;
+  //  the Ceres optimizer will use the Bernstein paramaters directly via bersteinPeakResolutionFWHM.
+  vector<float> drf_fwhm_pars;
+  switch( fwhm_form )
+  {
+    case RelActCalcAuto::FwhmForm::Berstein_2:
+    case RelActCalcAuto::FwhmForm::Berstein_3:
+    case RelActCalcAuto::FwhmForm::Berstein_4:
+    case RelActCalcAuto::FwhmForm::Berstein_5:
+    case RelActCalcAuto::FwhmForm::Berstein_6:
+    {
+      // Convert Bernstein coefficients back to polynomial so the DRF gives correct FWHM
+      //  when queried directly (e.g., for initial ROI sizing, energy cal bounds, etc.)
+      const size_t num_berstein_coeffs = num_parameters( fwhm_form ) - 2;
+      const vector<double> berstein_coeffs( paramaters.begin(), paramaters.begin() + num_berstein_coeffs );
+      try
+      {
+        const vector<double> poly_coeffs = BersteinPolynomial::bernstein_to_power_series(
+                                              berstein_coeffs, lowest_energy / 1000.0, highest_energy / 1000.0 );
+        drf_fwhm_pars.resize( poly_coeffs.size() );
+        for( size_t i = 0; i < poly_coeffs.size(); ++i )
+          drf_fwhm_pars[i] = static_cast<float>( poly_coeffs[i] );
+      }catch( std::exception & )
+      {
+        // Fallback: use Bernstein coefficients directly (DRF FWHM will be approximate)
+        drf_fwhm_pars.resize( num_berstein_coeffs );
+        for( size_t i = 0; i < num_berstein_coeffs; ++i )
+          drf_fwhm_pars[i] = static_cast<float>( paramaters[i] );
+      }
+      break;
+    }
+    default:
+    {
+      drf_fwhm_pars.resize( paramaters.size() );
+      for( size_t i = 0; i < paramaters.size(); ++i )
+        drf_fwhm_pars[i] = static_cast<float>( paramaters[i] );
+      break;
+    }
+  }//switch( fwhm_form )
 
 
   shared_ptr<DetectorPeakResponse> new_drf;
   if( input_drf )
     new_drf = make_shared<DetectorPeakResponse>(*input_drf);
-  
+
   if( !new_drf )
   {
     const string drf_file = SpecUtils::append_path( InterSpec::staticDataDirectory(), "common_drfs.tsv" );
@@ -1312,7 +1527,7 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
       }
     }//if( !new_drf )
   }//if( !new_drf )
-  
+
   assert( !!new_drf );
   if( !new_drf )
   {
@@ -1325,35 +1540,9 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
                                            static_cast<float>(highest_energy),
                                            DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic);
   }//
-  
-  new_drf->setFwhmCoefficients( fwhm_pars_float, form_to_fit );
 
-  switch( fwhm_form )
-  {
-    case RelActCalcAuto::FwhmForm::Berstein_2:
-    case RelActCalcAuto::FwhmForm::Berstein_3:
-    case RelActCalcAuto::FwhmForm::Berstein_4:
-    case RelActCalcAuto::FwhmForm::Berstein_5:
-    case RelActCalcAuto::FwhmForm::Berstein_6:
-    {
-      // Convert polynomial coefficients to Bernstein with constraints on the coefficients.
-      // Note: the power-series representation uses MeV, while lowest_energy and highest_energy are in keV.
-      // The constrained conversion ensures all Bernstein coefficients stay within [min_expected_sigma, max_expected_sigma],
-      // which guarantees the FWHM function will stay within valid bounds for fitting.
-      const vector<double> poly_coeffs( begin(paramaters), end(paramaters) );
-      paramaters = BersteinPolynomial::constrained_power_series_to_bernstein( poly_coeffs.data(), poly_coeffs.size(),
-                                                                              lowest_energy/1000.0, highest_energy/1000.0,
-                                                                              min_expected_sigma, max_expected_sigma );
+  new_drf->setFwhmCoefficients( drf_fwhm_pars, form_to_fit );
 
-      paramaters.push_back( lowest_energy );
-      paramaters.push_back( highest_energy );
-      break;
-    }
-      
-    default:
-      break;
-  }//switch( fwhm_form )
-  
   return new_drf;
 };//get_fwhm_coefficients(...)
 
@@ -1371,10 +1560,19 @@ struct DeviationPairAnchor
   /** Index of the ROI this anchor belongs to in the sorted (by energy) ROI list. */
   size_t sorted_roi_index;
 
-  /** Whether this anchor's offset is fitted.
-   False for first/last ROIs (which use initial_offset as their fixed value).
+  /** Whether this anchor's offset is a free parameter in the fit.
+   False for non-ROI anchors (from original deviation pairs outside ROI range)
+   and for first/last ROI anchors (fixed to avoid degeneracy with linear offset/gain).
+   True only for interior ROI anchors.
    */
   bool is_fitted;
+
+  /** Whether this is the first or last ROI anchor.
+   These anchors are always fixed (is_fitted == false) to avoid degeneracy with the linear
+   offset/gain parameters; deviation pairs should only capture non-linear residuals.
+   */
+  bool is_first_roi_anchor = false;
+  bool is_last_roi_anchor = false;
 
   /** The parameter index within the deviation pair parameter block (e.g., relative to `RelActAutoCostFcn::m_dev_pair_par_start_index`).
    Only meaningful if `is_fitted` is true.
@@ -1389,10 +1587,13 @@ struct DeviationPairAnchor
   /** The offset from original deviation pairs in the energy calibration at this anchor energy.
 
    If the original energy calibration has no deviation pairs, this is 0.0.
-   If it does, this is the value of SpecUtils::deviation_pair_correction at anchor_energy.
+   If it does, this is the value of SpecUtils::correction_due_to_dev_pairs at anchor_energy,
+   which gives the inverse correction: given the true energy, find what deviation offset was applied.
+   (Note: this is NOT SpecUtils::deviation_pair_correction, which is the forward correction at
+   a polynomial energy.)
 
    For fitted anchors, the total offset = initial_offset + fitted_parameter.
-   For non-fitted (first/last) anchors, the offset is fixed to initial_offset.
+   For non-fitted anchors, the offset is fixed to initial_offset.
    */
   double initial_offset;
 };//struct DeviationPairAnchor
@@ -2439,50 +2640,50 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     // Get original deviation pairs from energy calibration
     const std::vector<std::pair<float,float>> &orig_dev_pairs = m_energy_cal->deviation_pairs();
 
-    // Add boundary anchors from original deviation pairs OUTSIDE the ROI range
-    // This preserves the original calibration behavior at boundaries
+    // Add anchors from original deviation pairs that are outside the ROI range.
+    // These are not fitted, but preserve the original calibration behavior at the extremes.
     if( !orig_dev_pairs.empty() && !all_anchors.empty() )
     {
       const double min_roi_energy = all_anchors.front().energy;
       const double max_roi_energy = all_anchors.back().energy;
       const double tolerance = 0.1;  // keV
 
-      // Create extended anchor list with boundary anchors
+      // Create extended anchor list with non-ROI anchors
       std::vector<AnchorInfo> extended_anchors;
 
-      // Add lower boundary anchors (below min ROI energy)
+      // Add original dev pair anchors below ROI range
       for( const auto &dp : orig_dev_pairs )
       {
         if( dp.first < min_roi_energy - tolerance )
         {
-          AnchorInfo boundary_anchor;
-          boundary_anchor.energy = dp.first;
-          boundary_anchor.sorted_roi_index = std::numeric_limits<size_t>::max();  // Mark as boundary
-          extended_anchors.push_back( boundary_anchor );
+          AnchorInfo non_roi;
+          non_roi.energy = dp.first;
+          non_roi.sorted_roi_index = std::numeric_limits<size_t>::max();  // Mark as non-ROI
+          extended_anchors.push_back( non_roi );
         }
       }
 
       // Add ROI anchors
       extended_anchors.insert( extended_anchors.end(), all_anchors.begin(), all_anchors.end() );
 
-      // Add upper boundary anchors (above max ROI energy)
+      // Add original dev pair anchors above ROI range
       for( const auto &dp : orig_dev_pairs )
       {
         if( dp.first > max_roi_energy + tolerance )
         {
-          AnchorInfo boundary_anchor;
-          boundary_anchor.energy = dp.first;
-          boundary_anchor.sorted_roi_index = std::numeric_limits<size_t>::max();  // Mark as boundary
-          extended_anchors.push_back( boundary_anchor );
+          AnchorInfo non_roi;
+          non_roi.energy = dp.first;
+          non_roi.sorted_roi_index = std::numeric_limits<size_t>::max();  // Mark as non-ROI
+          extended_anchors.push_back( non_roi );
         }
       }
 
       // Replace all_anchors with extended list
       all_anchors = std::move( extended_anchors );
-    }//if( add boundary anchors )
+    }//if( add non-ROI anchors from original dev pairs )
 
-    // Now create DeviationPairAnchor objects
-    // Boundary anchors and first/last ROI anchors have fixed offset (not fitted)
+    // Now create DeviationPairAnchor objects.
+    // Non-ROI anchors and first/last ROI anchors have fixed offset (not fitted).
     size_t fitted_param_index = 0;
 
     for( size_t i = 0; i < all_anchors.size(); ++i )
@@ -2493,17 +2694,18 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       dpa.anchor_energy = info.energy;
       dpa.sorted_roi_index = info.sorted_roi_index;
 
-      // Determine if this anchor should be fitted
-      // Fixed anchors: boundary anchors, first ROI anchor, last ROI anchor
-      const bool is_boundary_anchor = (info.sorted_roi_index == std::numeric_limits<size_t>::max());
+      // Determine if this anchor should be fitted.
+      // Fixed (not fitted): original dev pair anchors outside ROI range, first/last ROI anchors.
+      // Fitted: interior ROI anchors only.
+      const bool is_non_roi_anchor = (info.sorted_roi_index == std::numeric_limits<size_t>::max());
 
       // Check if this is the first or last ROI anchor (not boundary)
       bool is_first_roi = false;
       bool is_last_roi = false;
 
-      if( !is_boundary_anchor )
+      if( !is_non_roi_anchor )
       {
-        // Find the first non-boundary anchor
+        // Find the first ROI anchor
         for( size_t j = 0; j < all_anchors.size(); ++j )
         {
           if( all_anchors[j].sorted_roi_index != std::numeric_limits<size_t>::max() )
@@ -2513,7 +2715,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           }
         }
 
-        // Find the last non-boundary anchor
+        // Find the last ROI anchor
         for( size_t j = all_anchors.size(); j > 0; --j )
         {
           if( all_anchors[j-1].sorted_roi_index != std::numeric_limits<size_t>::max() )
@@ -2524,7 +2726,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         }
       }
 
-      dpa.is_fitted = !(is_boundary_anchor || is_first_roi || is_last_roi);
+      dpa.is_first_roi_anchor = is_first_roi;
+      dpa.is_last_roi_anchor = is_last_roi;
+
+      // Non-ROI anchors and first/last ROI anchors are always fixed (not fitted).
+      // Deviation pairs should only capture non-linear residuals; the first/last ROI anchors
+      // would be degenerate with the linear offset/gain parameters, so they are held at their
+      // initial values.  Interior ROI anchors are fitted.
+      dpa.is_fitted = !is_non_roi_anchor && !is_first_roi && !is_last_roi;
 
       if( dpa.is_fitted )
       {
@@ -2561,8 +2770,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       dpa.initial_offset = 0.0;
       if( !orig_dev_pairs.empty() )
       {
+        // Use correction_due_to_dev_pairs (the inverse correction): given a true energy (anchor_energy),
+        // find the offset that was applied to get from polynomial energy to true energy.
+        // This is correct because create_cubic_spline transforms node x-coordinates as
+        // x = anchor_energy - offset = polynomial_energy, matching the SpecUtils convention.
+        // (deviation_pair_correction would be wrong here since it treats its argument as a
+        // polynomial energy, but anchor_energy is a true energy.)
         dpa.initial_offset = SpecUtils::correction_due_to_dev_pairs( static_cast<float>(dpa.anchor_energy), orig_dev_pairs );
-        //dpa.initial_offset = SpecUtils::deviation_pair_correction( static_cast<float>(dpa.anchor_energy), orig_dev_pairs );
       }
 
       m_dev_pair_anchors.push_back( dpa );
@@ -2575,11 +2789,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     for( size_t i = 1; i < m_dev_pair_anchors.size(); ++i )
       assert( m_dev_pair_anchors[i].anchor_energy >= m_dev_pair_anchors[i-1].anchor_energy );
 
-    // Verify first and last are not fitted
+    // Verify non-ROI anchors and first/last ROI anchors are not fitted
     if( !m_dev_pair_anchors.empty() )
     {
       assert( !m_dev_pair_anchors.front().is_fitted );
       assert( !m_dev_pair_anchors.back().is_fitted );
+
+      for( const auto &anchor : m_dev_pair_anchors )
+        assert( (!anchor.is_first_roi_anchor && !anchor.is_last_roi_anchor) || !anchor.is_fitted );
     }
 
     // Verify param_index values are consecutive for fitted anchors
@@ -3105,6 +3322,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           upper_bounds[par_idx] = anchor.offset_limit;
         }
       }//for( loop over anchors )
+
+      // Note: first/last ROI anchors are already set as not-fitted in
+      // setup_deviation_pair_anchors(), so they have no parameter slots and dont need
+      // to be added to constant_parameters here.  This avoids degeneracy between the
+      // deviation pair boundary values and the linear offset/gain parameters.
     }//if( deviation pairs are being fitted )
 
 #ifndef NDEBUG
@@ -5072,212 +5294,242 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     cost_functor->m_solution_finished = false;
 
     // Enabling `TRY_FIXING_PARAMETERS_FOR_INITIAL_ESTIMATE == 1` for multiple rel-eff curve problems causes solution
-    //  to not find optimal answer - maybe because the solution starts out in a local minumum it cant get out of.
+    //  to not find optimal answer - maybe because the solution starts out in a local minimum it cant get out of.
+    //  So we only use this experimental technique for single rel-eff curve problems.
 #define TRY_FIXING_PARAMETERS_FOR_INITIAL_ESTIMATE 1
 
-#pragma message( "Need to fixup TRY_FIXING_PARAMETERS_FOR_INITIAL_ESTIMATE - or at least disable for multi-releff" )
-
 #if( TRY_FIXING_PARAMETERS_FOR_INITIAL_ESTIMATE )
-    /* To help get to the correct solution, we will first fix a number of currently-not-fixed parameters, get
-     an initial solution, then release some of these fixed paramters, get a hopefully improved solution, then
-
-     TODO: put getting all these paramater indexes, and organizing them into seperate rounds, into its own function
-    */
-    const auto already_fixed = [&constant_parameters]( const size_t index ) -> bool {
-      return (std::find(begin(constant_parameters), end(constant_parameters), static_cast<int>(index))
-              != end(constant_parameters));
-    };
-
-    // Grap Physical paramaters to fix in the different rounds
-    vector<size_t> hoerl_par_indexes, self_atten_par_indexes, ext_atten_par_indexs, non_phys_rel_eff_pars;
-    for( size_t rel_eff_index = 0; rel_eff_index < options.rel_eff_curves.size(); rel_eff_index += 1 )
+    if( cost_functor->m_options.rel_eff_curves.size() <= 1 )
     {
-      const RelActCalcAuto::RelEffCurveInput &rel_eff = options.rel_eff_curves[rel_eff_index];
-      const size_t this_rel_eff_start = cost_functor->rel_eff_eqn_start_parameter( rel_eff_index );
-
-      if( (rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel) )
+      /* To help get to the correct solution, we will first fix a number of currently-not-fixed parameters, get
+       an initial solution, then release some of these fixed paramters, get a hopefully improved solution, then
+       
+       TODO: put getting all these paramater indexes, and organizing them into seperate rounds, into its own function
+       */
+      const auto already_fixed = [&constant_parameters]( const size_t index ) -> bool {
+        return (std::find(begin(constant_parameters), end(constant_parameters), static_cast<int>(index))
+                != end(constant_parameters));
+      };
+      
+      // Grap Physical paramaters to fix in the different rounds
+      vector<size_t> hoerl_par_indexes, self_atten_par_indexes, ext_atten_par_indexs, non_phys_rel_eff_pars;
+      for( size_t rel_eff_index = 0; rel_eff_index < options.rel_eff_curves.size(); rel_eff_index += 1 )
       {
-        for( size_t sub_index = 0; sub_index <= rel_eff.rel_eff_eqn_order; ++sub_index )
-          non_phys_rel_eff_pars.push_back( this_rel_eff_start + sub_index );
-        continue;
-      }
-
-      if( rel_eff.phys_model_use_hoerl )
-      {
-        const size_t b_index = this_rel_eff_start + 2 + 2*rel_eff.phys_model_external_atten.size() + 0;
-        const size_t c_index = this_rel_eff_start + 2 + 2*rel_eff.phys_model_external_atten.size() + 1;
-
-        if( options.same_hoerl_for_all_rel_eff_curves && !hoerl_par_indexes.empty() )
+        const RelActCalcAuto::RelEffCurveInput &rel_eff = options.rel_eff_curves[rel_eff_index];
+        const size_t this_rel_eff_start = cost_functor->rel_eff_eqn_start_parameter( rel_eff_index );
+        
+        if( (rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel) )
         {
-          assert( parameters[b_index] == -1.0 ); //Just a consistency/sanity check
-          assert( parameters[c_index] == -1.0 );
+          for( size_t sub_index = 0; sub_index <= rel_eff.rel_eff_eqn_order; ++sub_index )
+            non_phys_rel_eff_pars.push_back( this_rel_eff_start + sub_index );
+          continue;
+        }
+        
+        if( rel_eff.phys_model_use_hoerl )
+        {
+          const size_t b_index = this_rel_eff_start + 2 + 2*rel_eff.phys_model_external_atten.size() + 0;
+          const size_t c_index = this_rel_eff_start + 2 + 2*rel_eff.phys_model_external_atten.size() + 1;
+          
+          if( options.same_hoerl_for_all_rel_eff_curves && !hoerl_par_indexes.empty() )
+          {
+            assert( parameters[b_index] == -1.0 ); //Just a consistency/sanity check
+            assert( parameters[c_index] == -1.0 );
+          }else
+          {
+            // Right now we hard-wire not using Hoerl correction for manual Physical Rel Eff solution, so `b` and `c` should be at their starting values
+            assert( parameters[b_index] == ((0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset) );  //(energy/1000)^b
+            assert( parameters[c_index] == ((1.0/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset) );  //c^(1000/energy)
+            if( !already_fixed(b_index) )
+              hoerl_par_indexes.push_back( b_index );
+            if( !already_fixed(c_index) )
+              hoerl_par_indexes.push_back( c_index );
+          }//
+        }//if( rel_eff.phys_model_use_hoerl )
+        
+        if( rel_eff.phys_model_self_atten
+           && rel_eff.phys_model_self_atten->fit_atomic_number
+           && !already_fixed(this_rel_eff_start + 0) )
+        {
+          self_atten_par_indexes.push_back( this_rel_eff_start + 0 );
+        }
+        
+        if( rel_eff.phys_model_self_atten
+           && rel_eff.phys_model_self_atten->fit_areal_density
+           && !already_fixed(this_rel_eff_start + 1) )
+        {
+          self_atten_par_indexes.push_back( this_rel_eff_start + 1 );
+        }
+        
+        for( size_t ext_atten_index = 0;  ext_atten_index < rel_eff.phys_model_external_atten.size(); ++ext_atten_index )
+        {
+          const size_t index = this_rel_eff_start + 2 + 2*ext_atten_index;
+          const shared_ptr<const RelActCalc::PhysicalModelShieldInput> &shield = rel_eff.phys_model_external_atten[ext_atten_index];
+          if( shield && shield->fit_atomic_number && !already_fixed(index + 0) )
+            ext_atten_par_indexs.push_back( index + 0 );
+          if( shield && shield->fit_areal_density && !already_fixed(index + 1) )
+            ext_atten_par_indexs.push_back( index + 1 );
+        }
+      }//for( const RelActCalcAuto::RelEffCurveInput &rel_eff : options.rel_eff_curves )
+      
+      // Get the applicable energy cal paramaters we will fix.
+      // Separate into linear cal params (offset/gain/quad) and deviation pair params,
+      // so we can stage the optimization: first solve with linear cal free (dev pairs fixed),
+      // then release dev pairs once the linear cal is close to correct.
+      vector<size_t> ene_cal_pars_indexes;
+      vector<size_t> linear_cal_pars_indexes;
+      vector<size_t> dev_pair_pars_indexes;
+      if( fit_energy_cal )
+      {
+        for( size_t index = cost_functor->m_energy_cal_par_start_index;
+            index < cost_functor->m_fwhm_par_start_index;
+            ++index )
+        {
+          if( !already_fixed(index) )
+          {
+            ene_cal_pars_indexes.push_back( index );
+
+            if( index < cost_functor->m_dev_pair_par_start_index )
+              linear_cal_pars_indexes.push_back( index );
+            else
+              dev_pair_pars_indexes.push_back( index );
+          }
+        }
+      }
+      
+      vector<size_t> fwhm_par_indexes;
+      
+      if( (options.fwhm_estimation_method != RelActCalcAuto::FwhmEstimationMethod::FixedToAllPeaksInSpectrum)
+         && (options.fwhm_estimation_method != RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency) )
+      {
+        for( size_t index = cost_functor->m_fwhm_par_start_index;
+            index < cost_functor->m_rel_eff_par_start_index;
+            ++index )
+        {
+          if( !already_fixed(index) )
+            fwhm_par_indexes.push_back( index );
+        }
+      }//if( we are fitting for FWHM )
+      
+      /** lambda to evaluate the problems, holding a number of paramaters constant.
+       Will update `parameters` if solution is better than previous best solution, otherwise leaves them alone.
+       */
+      double initial_cost = std::numeric_limits<double>::max(), best_cost_val = std::numeric_limits<double>::max();
+      
+      const auto eval_with_constants = [&best_cost_val, &initial_cost, &problem, ceres_options, constant_parameters, num_pars, &parameters]( const vector<vector<size_t>> &indices_to_fix ){
+        const vector<double> orig_parameters = parameters;
+        vector<int> tmp_constant_parameters = constant_parameters;
+        for( const vector<size_t> &indices : indices_to_fix )
+        {
+          for( const size_t index : indices )
+          {
+            const auto pos = std::find(begin(tmp_constant_parameters), end(tmp_constant_parameters), static_cast<int>(index));
+            //assert( pos == end(tmp_constant_parameters) );
+            if( pos == end(tmp_constant_parameters) )
+              tmp_constant_parameters.push_back( static_cast<int>(index) );
+          }
+        }//for( const vector<size_t> &indices : indices_to_fix )
+        
+        if( tmp_constant_parameters.empty() )
+          return;
+        
+        ceres::Manifold *subset_manifold = new ceres::SubsetManifold( static_cast<int>(num_pars), tmp_constant_parameters );
+        double *pars = &parameters[0];
+        problem.SetManifold( pars, subset_manifold );
+        ceres::Solver::Summary summary;
+        ceres::Solve(ceres_options, &problem, &summary);
+        
+        if( (initial_cost == std::numeric_limits<double>::max()) && (summary.initial_cost > 0.0) )
+          initial_cost = summary.initial_cost;
+        
+        bool solution_is_better = false;
+        switch( summary.termination_type )
+        {
+          case ceres::CONVERGENCE:
+          case ceres::USER_SUCCESS:
+            cout << "Pre-fit correction was successful with FinalCost="
+            << summary.final_cost << " (InitialCost=" << summary.initial_cost << ")."
+            << "  Previous best_cost_val=" << ((best_cost_val == std::numeric_limits<double>::max()) ? string("N/A") : SpecUtils::printCompact(best_cost_val, 6))
+            << endl;
+            solution_is_better = (summary.final_cost < best_cost_val);
+            break;
+            
+          case ceres::NO_CONVERGENCE:
+            cout << "Pre-fit correction did not converge" << endl;
+            break;
+            
+          case ceres::FAILURE:
+            cout << "Pre-fit correction failed" << endl;
+            break;
+            
+          case ceres::USER_FAILURE:
+            cout << "Pre-fit correction was user-cancelled" << endl;
+            break;
+        }//switch( summary.termination_type )
+        
+        
+        if( solution_is_better )
+        {
+          best_cost_val = summary.final_cost;
         }else
         {
-          // Right now we hard-wire not using Hoerl correction for manual Physical Rel Eff solution, so `b` and `c` should be at their starting values
-          assert( parameters[b_index] == ((0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset) );  //(energy/1000)^b
-          assert( parameters[c_index] == ((1.0/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset) );  //c^(1000/energy)
-          if( !already_fixed(b_index) )
-            hoerl_par_indexes.push_back( b_index );
-          if( !already_fixed(c_index) )
-            hoerl_par_indexes.push_back( c_index );
-        }//
-      }//if( rel_eff.phys_model_use_hoerl )
-
-      if( rel_eff.phys_model_self_atten
-         && rel_eff.phys_model_self_atten->fit_atomic_number
-         && !already_fixed(this_rel_eff_start + 0) )
+          for( size_t i = 0; i < orig_parameters.size(); ++i )
+            parameters[i] = orig_parameters[i];
+        }//if( solution_is_better ) / else
+      };//eval_with_constants lambda
+      
+      
+      // Evaluate the problem a few times, holding different sets of paramaters constant.
+      // The paramaters we currently have available to us to hold constant (could implement more), are:
+      //    hoerl_par_indexes, ene_cal_pars_indexes, fwhm_par_indexes, self_atten_par_indexes, ext_atten_par_indexs,ext_atten_par_indexs, non_phys_rel_eff_pars
+      //
+      // The
+      // - Fix {Ene. Cal., FWHM} - if Physical{Hoerl, shielding} else starting rel-eff-pars
+      // - if Physical{Hoerl}
+      // At each step, we will only take answer if better - otherwise reset parmaters to the before state.
+      //
+      // TODO: Check if for non-physical solution, holding starting rel-eff-pars constant helps
+      // TODO: Go through and refactor getting these parameters into a seperate function
+      //  Also, all the above getting of indexes is totally not tested.
+      //  Also, still need to give offset and scale for AD shielding - e.g., so zero doesnt mean no shielding
+      eval_with_constants( {ene_cal_pars_indexes, fwhm_par_indexes, hoerl_par_indexes, self_atten_par_indexes, ext_atten_par_indexs, ext_atten_par_indexs, non_phys_rel_eff_pars} );
+      
+      if( !initial_par_vals_to_restore_after_initial_fit.empty() )
       {
-        self_atten_par_indexes.push_back( this_rel_eff_start + 0 );
+        for( const pair<int,double> &intial_vals : initial_par_vals_to_restore_after_initial_fit )
+          parameters[intial_vals.first] = intial_vals.second;
+        eval_with_constants( {ene_cal_pars_indexes, fwhm_par_indexes, hoerl_par_indexes, self_atten_par_indexes, ext_atten_par_indexs, ext_atten_par_indexs} );
+      }
+      
+      if( !hoerl_par_indexes.empty() )
+        eval_with_constants( {hoerl_par_indexes} );
+
+      // Staged energy calibration optimization:
+      // After the initial parameter estimates above (with all energy cal fixed), progressively
+      // free energy calibration parameters to help the optimizer converge.
+      if( !linear_cal_pars_indexes.empty() )
+      {
+        // Stage: free linear cal (offset/gain), but keep deviation pairs fixed.
+        // This lets the optimizer find the correct offset/gain before trying to fit
+        // the non-linear deviation pair corrections.
+        eval_with_constants( {dev_pair_pars_indexes, hoerl_par_indexes} );
+
+        // Stage: free deviation pairs too (with offset/gain already near correct values).
+        // Only do this if we have deviation pair parameters to free.
+        if( !dev_pair_pars_indexes.empty() )
+          eval_with_constants( {hoerl_par_indexes} );
       }
 
-      if( rel_eff.phys_model_self_atten
-         && rel_eff.phys_model_self_atten->fit_areal_density
-         && !already_fixed(this_rel_eff_start + 1) )
+
+      if( !constant_parameters.empty() )
       {
-        self_atten_par_indexes.push_back( this_rel_eff_start + 1 );
-      }
-
-      for( size_t ext_atten_index = 0;  ext_atten_index < rel_eff.phys_model_external_atten.size(); ++ext_atten_index )
-      {
-        const size_t index = this_rel_eff_start + 2 + 2*ext_atten_index;
-        const shared_ptr<const RelActCalc::PhysicalModelShieldInput> &shield = rel_eff.phys_model_external_atten[ext_atten_index];
-        if( shield && shield->fit_atomic_number && !already_fixed(index + 0) )
-          ext_atten_par_indexs.push_back( index + 0 );
-        if( shield && shield->fit_areal_density && !already_fixed(index + 1) )
-          ext_atten_par_indexs.push_back( index + 1 );
-      }
-    }//for( const RelActCalcAuto::RelEffCurveInput &rel_eff : options.rel_eff_curves )
-
-    // Get the applicable energy cal paramaters we will fix
-    vector<size_t> ene_cal_pars_indexes;
-    if( fit_energy_cal )
-    {
-      for( size_t index = cost_functor->m_energy_cal_par_start_index;
-          index < cost_functor->m_fwhm_par_start_index;
-          ++index )
-      {
-        if( !already_fixed(index) )
-          ene_cal_pars_indexes.push_back( index );
-      }
-    }
-
-    vector<size_t> fwhm_par_indexes;
-    
-    if( (options.fwhm_estimation_method != RelActCalcAuto::FwhmEstimationMethod::FixedToAllPeaksInSpectrum)
-       || (options.fwhm_estimation_method != RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency) )
-    {
-      for( size_t index = cost_functor->m_fwhm_par_start_index;
-          index < cost_functor->m_rel_eff_par_start_index;
-          ++index )
-      {
-        if( !already_fixed(index) )
-          fwhm_par_indexes.push_back( index );
-      }
-    }//if( we are fitting for FWHM )
-
-    /** lambda to evaluate the problems, holding a number of paramaters constant.
-     Will update `parameters` if solution is better than previous best solution, otherwise leaves them alone.
-    */
-    double initial_cost = std::numeric_limits<double>::max(), best_cost_val = std::numeric_limits<double>::max();
-
-    const auto eval_with_constants = [&best_cost_val, &initial_cost, &problem, ceres_options, constant_parameters, num_pars, &parameters]( const vector<vector<size_t>> &indices_to_fix ){
-      const vector<double> orig_parameters = parameters;
-      vector<int> tmp_constant_parameters = constant_parameters;
-      for( const vector<size_t> &indices : indices_to_fix )
-      {
-        for( const size_t index : indices )
-        {
-          const auto pos = std::find(begin(tmp_constant_parameters), end(tmp_constant_parameters), static_cast<int>(index));
-          //assert( pos == end(tmp_constant_parameters) );
-          if( pos == end(tmp_constant_parameters) )
-            tmp_constant_parameters.push_back( static_cast<int>(index) );
-        }
-      }//for( const vector<size_t> &indices : indices_to_fix )
-
-      if( tmp_constant_parameters.empty() )
-        return;
-
-      ceres::Manifold *subset_manifold = new ceres::SubsetManifold( static_cast<int>(num_pars), tmp_constant_parameters );
-      double *pars = &parameters[0];
-      problem.SetManifold( pars, subset_manifold );
-      ceres::Solver::Summary summary;
-      ceres::Solve(ceres_options, &problem, &summary);
-
-      if( (initial_cost == std::numeric_limits<double>::max()) && (summary.initial_cost > 0.0) )
-        initial_cost = summary.initial_cost;
-
-      bool solution_is_better = false;
-      switch( summary.termination_type )
-      {
-        case ceres::CONVERGENCE:
-        case ceres::USER_SUCCESS:
-          cout << "Pre-fit correction was successful with FinalCost="
-          << summary.final_cost << " (InitialCost=" << summary.initial_cost << ")."
-          << "  Previous best_cost_val=" << ((best_cost_val == std::numeric_limits<double>::max()) ? string("N/A") : SpecUtils::printCompact(best_cost_val, 6))
-          << endl;
-          solution_is_better = (summary.final_cost < best_cost_val);
-          break;
-
-        case ceres::NO_CONVERGENCE:
-          cout << "Pre-fit correction did not converge" << endl;
-          break;
-
-        case ceres::FAILURE:
-          cout << "Pre-fit correction failed" << endl;
-          break;
-
-        case ceres::USER_FAILURE:
-          cout << "Pre-fit correction was user-cancelled" << endl;
-          break;
-      }//switch( summary.termination_type )
-
-
-      if( solution_is_better )
-      {
-        best_cost_val = summary.final_cost;
+        // Restore the original manifold we want
+        ceres::SubsetManifold *subset_manifold = new ceres::SubsetManifold( static_cast<int>(num_pars), constant_parameters );
+        problem.SetManifold( pars, subset_manifold );
       }else
       {
-        for( size_t i = 0; i < orig_parameters.size(); ++i )
-          parameters[i] = orig_parameters[i];
-      }//if( solution_is_better ) / else
-    };//eval_with_constants lambda
-
-
-    // Evaluate the problem a few times, holding different sets of paramaters constant.
-    // The paramaters we currently have available to us to hold constant (could implement more), are:
-    //    hoerl_par_indexes, ene_cal_pars_indexes, fwhm_par_indexes, self_atten_par_indexes, ext_atten_par_indexs,ext_atten_par_indexs, non_phys_rel_eff_pars
-    //
-    // The
-    // - Fix {Ene. Cal., FWHM} - if Physical{Hoerl, shielding} else starting rel-eff-pars
-    // - if Physical{Hoerl}
-    // At each step, we will only take answer if better - otherwise reset parmaters to the before state.
-    //
-    // TODO: Check if for non-physical solution, holding starting rel-eff-pars constant helps
-    // TODO: Go through and refactor getting these parameters into a seperate function
-    //  Also, all the above getting of indexes is totally not tested.
-    //  Also, still need to give offset and scale for AD shielding - e.g., so zero doesnt mean no shielding
-    eval_with_constants( {ene_cal_pars_indexes, fwhm_par_indexes, hoerl_par_indexes, self_atten_par_indexes, ext_atten_par_indexs, ext_atten_par_indexs, non_phys_rel_eff_pars} );
-
-    if( !initial_par_vals_to_restore_after_initial_fit.empty() )
-    {
-      for( const pair<int,double> &intial_vals : initial_par_vals_to_restore_after_initial_fit )
-        parameters[intial_vals.first] = intial_vals.second;
-      eval_with_constants( {ene_cal_pars_indexes, fwhm_par_indexes, hoerl_par_indexes, self_atten_par_indexes, ext_atten_par_indexs, ext_atten_par_indexs} );
-    }
-
-    if( !hoerl_par_indexes.empty() )
-      eval_with_constants( {hoerl_par_indexes} );
-
-
-    if( !constant_parameters.empty() )
-    {
-      // Restore the original manifold we want
-      ceres::SubsetManifold *subset_manifold = new ceres::SubsetManifold( static_cast<int>(num_pars), constant_parameters );
-      problem.SetManifold( pars, subset_manifold );
-    }else
-    {
-      problem.SetManifold( pars, nullptr );
-    }//if( !constant_parameters.empty() ) / else
+        problem.SetManifold( pars, nullptr );
+      }//if( !constant_parameters.empty() ) / else
+    }//if( single rel-eff curve )
 #endif //TRY_FIXING_PARAMETERS_FOR_INITIAL_ESTIMATE
 
 
@@ -8567,6 +8819,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         assert( quad_adj == T(0.0) );
         assert( m_energy_cal->channel_energies() && !m_energy_cal->channel_energies()->empty() );
         const std::vector<float> &ch_energies = *m_energy_cal->channel_energies();
+        assert( ch_energies.size() > nchannel ); // LowerChannelEdge has nchannel+1 entries
         const T channel = find_lowerchannel_channel( T(energy), ch_energies, adjusted_dev_spline, offest_adj, gain_adj );
 
         double ch_val;
@@ -8582,6 +8835,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         size_t low = static_cast<size_t>( std::floor( ch_val ) );
         if( low >= nchannel )
           low = nchannel - 1;
+        assert( (low + 1) < ch_energies.size() );
         const double e_low = static_cast<double>( ch_energies[low] );
         const double e_high = static_cast<double>( ch_energies[low + 1] );
         const T fraction = channel - T( static_cast<double>(low) );
@@ -8615,8 +8869,17 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       return adjusted_energy;
     }//if( we arent fitting energy cal )
 
-    if( (x[0] == 0.0) && (x[1] == 1.0) )
+    const bool using_paramaterized_deviations = ((m_options.energy_cal_type == RelActCalcAuto::EnergyCalFitType::NonLinearFit)
+                                                  && !m_dev_pair_anchors.empty());
+
+    if( (x[0] == RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset)
+       && (x[1] == RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset)
+       && ((RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars <= 2)
+           || (x[2] == RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset))
+       && !using_paramaterized_deviations )
+    {
       return adjusted_energy;
+    }
 
     // Check adjustments are near the limits we placed
     // Offset: sm_energy_par_offset ± (sm_energy_offset_range_keV/sm_energy_cal_multiple) = 1.0 ± 0.15 = [0.85, 1.15]
@@ -8739,6 +9002,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         assert( quad_adj == 0.0 );
         assert( m_energy_cal->channel_energies() && !m_energy_cal->channel_energies()->empty() );
         const std::vector<float> &ch_energies = *m_energy_cal->channel_energies();
+        assert( ch_energies.size() > nchannel ); // LowerChannelEdge has nchannel+1 entries
         const double lower_energy = static_cast<double>( ch_energies[0] );
         const double upper_energy = static_cast<double>( ch_energies[ch_energies.size() - 1] );
         const double range = upper_energy - lower_energy;
@@ -8751,6 +9015,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         size_t low = static_cast<size_t>( std::floor( ch_val ) );
         if( low >= nchannel )
           low = nchannel - 1;
+        assert( (low + 1) < ch_energies.size() );
         const double e_low = static_cast<double>( ch_energies[low] );
         const double e_high = static_cast<double>( ch_energies[low + 1] );
         const double fraction = channel - static_cast<double>( low );
@@ -10614,6 +10879,9 @@ T bersteinPeakResolutionFWHM( T energy, const T * const pars, const size_t num_p
   const T min_energy = pars[num_berstein_coeffs];
   const T max_energy = pars[num_berstein_coeffs + 1];
   
+  assert( energy >= min_energy );
+  assert( energy <= max_energy );
+
   // Check energy bounds and clamp if necessary
   if( energy < min_energy )
   {
@@ -10623,27 +10891,17 @@ T bersteinPeakResolutionFWHM( T energy, const T * const pars, const size_t num_p
     //  discontinuity at the boundary, but this should be small and rare.
     //  TODO: We could probably do a little better job of preventing this from happening, but its not the biggest fish to fry atm
     if constexpr ( std::is_same_v<T, double> )
-    {
       energy = min_energy;
-    }else
-    {
+    else
       energy.a = min_energy.a;
-    }
   }
   
   if( energy > max_energy )
   {
-#ifndef NDEBUG
     if constexpr ( std::is_same_v<T, double> )
-    {
       energy = max_energy;
-    }else
-    {
+    else
       energy.a = max_energy.a;
-    }
-#endif
-
-    
   }
   
   // Normalize energy to [0, 1] for Berstein polynomial
@@ -15352,7 +15610,9 @@ std::shared_ptr<SpecUtils::EnergyCalibration> RelActAutoSolution::get_adjusted_e
 
   // Use fitted deviation pairs if available, otherwise keep original.
   // m_deviation_pair_offsets are already in the SpecUtils (spectrum -> true) convention.
-  if( !m_deviation_pair_offsets.empty() )
+  // Should be:
+  if( !m_deviation_pair_offsets.empty()
+     && (m_options.energy_cal_type == RelActCalcAuto::EnergyCalFitType::NonLinearFit) )
   {
     for( const auto &fitted_dp : m_deviation_pair_offsets )
       dev_pairs.emplace_back( static_cast<float>(fitted_dp.first), static_cast<float>(fitted_dp.second) );
@@ -15441,15 +15701,27 @@ std::shared_ptr<SpecUtils::EnergyCalibration> RelActAutoSolution::get_adjusted_e
       const size_t nchannel = orig_cal->num_channels();
       if( nchannel > 1 )
       {
+        // Pick sample channels within the deviation pair anchor range (if any).
+        // Outside this range, SpecUtils clamps spline values while the fitting code
+        // linearly extrapolates, so they will legitimately disagree.
+        double ch_low = 0.0;
+        double ch_high = static_cast<double>( nchannel - 1 );
+        if( !m_cost_functor->m_dev_pair_anchors.empty() )
+        {
+          const double e_low = m_cost_functor->m_dev_pair_anchors.front().anchor_energy;
+          const double e_high = m_cost_functor->m_dev_pair_anchors.back().anchor_energy;
+          ch_low = std::max( ch_low, orig_cal->channel_for_energy( e_low ) );
+          ch_high = std::min( ch_high, orig_cal->channel_for_energy( e_high ) );
+        }
+
         const std::vector<double> sample_channels = {
-          0.0,
-          0.5,
-          1.0,
-          0.25 * static_cast<double>(nchannel - 1),
-          0.5 * static_cast<double>(nchannel - 1),
-          0.75 * static_cast<double>(nchannel - 1),
-          static_cast<double>(nchannel - 1) - 0.5,
-          static_cast<double>(nchannel - 1)
+          ch_low,
+          ch_low + 0.5 * (ch_high - ch_low) * 0.01,
+          ch_low + (ch_high - ch_low) * 0.25,
+          ch_low + (ch_high - ch_low) * 0.5,
+          ch_low + (ch_high - ch_low) * 0.75,
+          ch_high - 0.5 * (ch_high - ch_low) * 0.01,
+          ch_high
         };
 
         for( const double channel : sample_channels )
