@@ -545,8 +545,13 @@ T evaluate_power_series_via_bernstein( const T& x,
  @param num_coefficients Number of power series coefficients
  @param x_min Minimum x value for the power series domain
  @param x_max Maximum x value for the power series domain
- @param lower_bound Lower bound for all Bernstein coefficients
- @param upper_bound Upper bound for all Bernstein coefficients
+ @param lower_bound Lower bound for all Bernstein coefficients.
+        For FWHM functions where FWHM = sqrt(polynomial), pass the square of the
+        minimum allowed FWHM (i.e., min_fwhm * min_fwhm), since the Bernstein
+        coefficients represent FWHM-squared values.
+ @param upper_bound Upper bound for all Bernstein coefficients.
+        For FWHM functions where FWHM = sqrt(polynomial), pass the square of the
+        maximum allowed FWHM (i.e., max_fwhm * max_fwhm).
  @return Vector of Bernstein coefficients, all guaranteed to be in [lower_bound, upper_bound]
  @throws std::invalid_argument if inputs are invalid (empty coeffs, x_max <= x_min, etc.)
  @throws std::runtime_error if Ceres optimization fails

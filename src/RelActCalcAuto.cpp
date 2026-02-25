@@ -210,6 +210,34 @@ const double ns_decay_act_mult = SandiaDecay::MBq;
 // Forward declaration
 struct RelActAutoCostFcn;
 
+
+/** Evaluates FWHM from Bernstein polynomial parameters, for double type only.
+ *
+ * This is a simplified version of RelActCalcAuto::bersteinPeakResolutionFWHM (defined later
+ * in this file), needed here so get_fwhm_coefficients() can validate Bernstein FWHM values.
+ *
+ * @param energy The energy in keV
+ * @param pars The parameters: [bernstein_coeffs..., min_energy, max_energy]
+ * @param num_pars The number of parameters (bernstein coeffs + 2 for min/max energy)
+ */
+double eval_berstein_fwhm( double energy, const double * const pars, const size_t num_pars )
+{
+  if( num_pars < 4 )
+    throw std::runtime_error( "eval_berstein_fwhm(): insufficient parameters" );
+
+  const size_t num_berstein_coeffs = num_pars - 2;
+  const double min_energy = pars[num_berstein_coeffs];
+  const double max_energy = pars[num_berstein_coeffs + 1];
+
+  energy = std::max( energy, min_energy );
+  energy = std::min( energy, max_energy );
+
+  const double t = (energy - min_energy) / (max_energy - min_energy);
+
+  return sqrt( BersteinPolynomial::evaluate( t, pars, num_berstein_coeffs ) );
+}//double eval_berstein_fwhm(...)
+
+
 struct DoWorkOnDestruct
 {
   std::function<void()> m_worker;
@@ -530,29 +558,73 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
           
           assert( min_expected_sigma != std::numeric_limits<float>::max() );
           assert( max_expected_sigma != std::numeric_limits<float>::lowest() );
-          const std::vector<double> berstein_coeffs = BersteinPolynomial::constrained_power_series_to_bernstein( poly_coeffs,
+          
+          const double lower_coef_bound = min_expected_sigma * min_expected_sigma * PhysicalUnits::fwhm_nsigma*PhysicalUnits::fwhm_nsigma;
+          const double upper_coef_bound = max_expected_sigma * max_expected_sigma * PhysicalUnits::fwhm_nsigma*PhysicalUnits::fwhm_nsigma;
+          vector<double> berstein_coeffs;
+          try
+          {
+            berstein_coeffs = BersteinPolynomial::constrained_power_series_to_bernstein( poly_coeffs,
                                                                                       lowest_energy/1000.0, highest_energy/1000.0,
-                                                                                      min_expected_sigma, max_expected_sigma );
+                                                                                      lower_coef_bound, upper_coef_bound );
           
-          
-          // Set Berstein coefficients
-          for( size_t i = 0; i < num_berstein_coeffs; ++i )
-            parameters[fwhm_start + i] = berstein_coeffs[i];
-          
-#if( PERFORM_DEVELOPER_CHECKS )
-          // Verify power series and Berstein give same results
-          for( int j = 0; j <= 4; ++j ) {
-            const double test_energy = lowest_energy + j * (highest_energy - lowest_energy) / 4.0;
-            const double t = (test_energy - lowest_energy) / (highest_energy - lowest_energy);
-            double poly_val = 0.0, berstein_val = 0.0;
-            for( size_t k = 0; k < poly_coeffs.size(); ++k ) {
-              poly_val += poly_coeffs[k] * pow(test_energy, static_cast<double>(k));
+            assert( berstein_coeffs.size() == poly_coeffs.size() );
+
+            // Set Berstein coefficients
+            for( size_t i = 0; i < num_berstein_coeffs; ++i )
+              parameters[fwhm_start + i] = berstein_coeffs[i];
+          }catch( std::exception &e )
+          {
+            try
+            {
+              berstein_coeffs = BersteinPolynomial::power_series_to_bernstein( poly_coeffs.data(), poly_coeffs.size(),
+                                                                    lowest_energy/1000.0, highest_energy/1000.0 );
+             for( size_t i = 0; i < num_berstein_coeffs; ++i )
+              parameters[fwhm_start + i] = clamp( berstein_coeffs[i], lower_coef_bound, upper_coef_bound);
+            }catch(const std::exception& e)
+            {
+              cerr << "We have totally failed to get initial Berstein coefficients - something big is up, and code is not trustworthy - good luck: " << e.what() << endl;
+              assert( 0 );
             }
-            berstein_val = BersteinPolynomial::evaluate( t, berstein_coeffs.data(), berstein_coeffs.size() );
-            assert( fabs(poly_val - berstein_val) < 1.0E-10 * std::max({poly_val, berstein_val, 1.0}) );
-          }
+          }//try / catch
+
+
+#if( PERFORM_DEVELOPER_CHECKS )
+          // BEGIN verify power series and Berstein give same results
+          assert( berstein_coeffs.size() == poly_coeffs.size() );
+          if( berstein_coeffs.size() == poly_coeffs.size() )
+          {
+            // Check if coefficients were simply all within bounds, or if instead a constrained fit using Ceres had to
+            //  be use - this will affect our testing tolerance.
+            bool all_in_bounds = true;
+            try
+            {
+              vector<double> ps_bern_coeffs = BersteinPolynomial::power_series_to_bernstein( poly_coeffs.data(), poly_coeffs.size(),
+                                                                    lowest_energy/1000.0, highest_energy/1000.0 );
+              for( const double coeff : ps_bern_coeffs )
+                all_in_bounds = (all_in_bounds && (coeff > lower_coef_bound) && (coeff < upper_coef_bound));
+            }catch(...)
+            {
+              assert( 0 );
+              all_in_bounds = false;
+            }
+
+            for( int j = 0; j <= 4; ++j )
+            {
+              const double test_energy = lowest_energy + j * (highest_energy - lowest_energy) / 4.0;
+              const double test_energy_MeV = test_energy / 1000.0;
+              const double t = (test_energy - lowest_energy) / (highest_energy - lowest_energy);
+              double poly_val = 0.0, berstein_val = 0.0;
+              for( size_t k = 0; k < poly_coeffs.size(); ++k ) {
+                poly_val += poly_coeffs[k] * pow(test_energy_MeV, static_cast<double>(k));
+              }
+              berstein_val = BersteinPolynomial::evaluate( t, berstein_coeffs.data(), berstein_coeffs.size() );
+              const double allowed_diff = all_in_bounds ? 1.0E-10 : 1.0E-1;
+              assert( fabs(poly_val - berstein_val) < allowed_diff * std::max({poly_val, berstein_val, 1.0}) );
+            }
+          }// END verify power series and Berstein give same results
 #endif
-          
+
           // Set energy range
           parameters[fwhm_start + num_berstein_coeffs] = lowest_energy;
           parameters[fwhm_start + num_berstein_coeffs + 1] = highest_energy;
@@ -700,29 +772,71 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
           // Convert power series to Berstein coefficients
           assert( min_expected_sigma != std::numeric_limits<float>::max() );
           assert( max_expected_sigma != std::numeric_limits<float>::lowest() );
-          const vector<double> berstein_coeffs = BersteinPolynomial::constrained_power_series_to_bernstein( poly_coeffs,
+          const double lower_coef_bound = min_expected_sigma * min_expected_sigma * PhysicalUnits::fwhm_nsigma*PhysicalUnits::fwhm_nsigma;
+          const double upper_coef_bound = max_expected_sigma * max_expected_sigma * PhysicalUnits::fwhm_nsigma*PhysicalUnits::fwhm_nsigma;
+          vector<double> berstein_coeffs;
+          try
+          {
+            berstein_coeffs = BersteinPolynomial::constrained_power_series_to_bernstein( poly_coeffs,
                                                                                         lowest_energy/1000.0, highest_energy/1000.0,
-                                                                                        min_expected_sigma, max_expected_sigma );
-          assert( berstein_coeffs.size() == num_berstein_coeffs );
-          
-          // Set Berstein coefficients
-          for( size_t i = 0; i < num_berstein_coeffs; ++i )
-            parameters[fwhm_start + i] = berstein_coeffs[i];
-          
-#if( PERFORM_DEVELOPER_CHECKS )
-          // Verify power series and Berstein give same results
-          for( int j = 0; j <= 4; ++j ) {
-            const double test_energy = lowest_energy + j * (highest_energy - lowest_energy) / 4.0;
-            const double t = (test_energy - lowest_energy) / (highest_energy - lowest_energy);
-            double poly_val = 0.0, berstein_val = 0.0;
-            for( size_t k = 0; k < poly_coeffs.size(); ++k ) {
-              poly_val += poly_coeffs[k] * pow(test_energy, static_cast<double>(k));
+                                                                                        lower_coef_bound, upper_coef_bound );
+
+            assert( berstein_coeffs.size() == poly_coeffs.size() );
+
+            // Set Berstein coefficients
+            for( size_t i = 0; i < num_berstein_coeffs; ++i )
+              parameters[fwhm_start + i] = berstein_coeffs[i];
+          }catch( std::exception &e )
+          {
+            try
+            {
+              berstein_coeffs = BersteinPolynomial::power_series_to_bernstein( poly_coeffs.data(), poly_coeffs.size(),
+                                                                    lowest_energy/1000.0, highest_energy/1000.0 );
+              for( size_t i = 0; i < num_berstein_coeffs; ++i )
+                parameters[fwhm_start + i] = clamp( berstein_coeffs[i], lower_coef_bound, upper_coef_bound );
+            }catch( const std::exception &e )
+            {
+              cerr << "We have totally failed to get initial Berstein coefficients - something big is up, and code is not trustworthy - good luck: " << e.what() << endl;
+              assert( 0 );
             }
-            berstein_val = BersteinPolynomial::evaluate( t, berstein_coeffs.data(), berstein_coeffs.size() );
-            assert( fabs(poly_val - berstein_val) < 1.0E-10 * std::max({poly_val, berstein_val, 1.0}) );
-          }
+          }//try / catch
+
+#if( PERFORM_DEVELOPER_CHECKS )
+          // BEGIN verify power series and Berstein give same results
+          assert( berstein_coeffs.size() == poly_coeffs.size() );
+          if( berstein_coeffs.size() == poly_coeffs.size() )
+          {
+            // Check if coefficients were simply all within bounds, or if instead a constrained fit using Ceres had to
+            //  be used - this will affect our testing tolerance.
+            bool all_in_bounds = true;
+            try
+            {
+              vector<double> ps_bern_coeffs = BersteinPolynomial::power_series_to_bernstein( poly_coeffs.data(), poly_coeffs.size(),
+                                                                    lowest_energy/1000.0, highest_energy/1000.0 );
+              for( const double coeff : ps_bern_coeffs )
+                all_in_bounds = (all_in_bounds && (coeff > lower_coef_bound) && (coeff < upper_coef_bound));
+            }catch(...)
+            {
+              assert( 0 );
+              all_in_bounds = false;
+            }
+
+            for( int j = 0; j <= 4; ++j )
+            {
+              const double test_energy = lowest_energy + j * (highest_energy - lowest_energy) / 4.0;
+              const double test_energy_MeV = test_energy / 1000.0;
+              const double t = (test_energy - lowest_energy) / (highest_energy - lowest_energy);
+              double poly_val = 0.0, berstein_val = 0.0;
+              for( size_t k = 0; k < poly_coeffs.size(); ++k ) {
+                poly_val += poly_coeffs[k] * pow(test_energy_MeV, static_cast<double>(k));
+              }
+              berstein_val = BersteinPolynomial::evaluate( t, berstein_coeffs.data(), berstein_coeffs.size() );
+              const double allowed_diff = all_in_bounds ? 1.0E-10 : 1.0E-1;
+              assert( fabs(poly_val - berstein_val) < allowed_diff * std::max({poly_val, berstein_val, 1.0}) );
+            }
+          }// END verify power series and Berstein give same results
 #endif
-          
+
           // Set energy range
           parameters[fwhm_start + num_berstein_coeffs] = lowest_energy;
           parameters[fwhm_start + num_berstein_coeffs + 1] = highest_energy;
@@ -937,12 +1051,14 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
           {
             assert( min_expected_sigma != std::numeric_limits<float>::max() );
             assert( max_expected_sigma != std::numeric_limits<float>::lowest() );
+            const double lower_coef_bound = min_expected_sigma * min_expected_sigma * PhysicalUnits::fwhm_nsigma*PhysicalUnits::fwhm_nsigma;
+            const double upper_coef_bound = max_expected_sigma * max_expected_sigma * PhysicalUnits::fwhm_nsigma*PhysicalUnits::fwhm_nsigma;
             berstein_coeffs = BersteinPolynomial::constrained_power_series_to_bernstein( poly_coeffs,
                                   lowest_energy/1000.0, highest_energy/1000.0,
-                                  min_expected_sigma, max_expected_sigma );
+                                  lower_coef_bound, upper_coef_bound );
           }
-          
-          
+
+
           const size_t num_params = num_parameters(fwhm_form);
           paramaters.resize( num_params );
           
@@ -1070,9 +1186,11 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
           {
             assert( min_expected_sigma != std::numeric_limits<float>::max() );
             assert( max_expected_sigma != std::numeric_limits<float>::lowest() );
+            const double lower_coef_bound = min_expected_sigma * min_expected_sigma * PhysicalUnits::fwhm_nsigma*PhysicalUnits::fwhm_nsigma;
+            const double upper_coef_bound = max_expected_sigma * max_expected_sigma * PhysicalUnits::fwhm_nsigma*PhysicalUnits::fwhm_nsigma;
             berstein_coeffs = BersteinPolynomial::constrained_power_series_to_bernstein( poly_coeffs,
                                                                   lowest_energy/1000.0, highest_energy/1000.0,
-                                                                          min_expected_sigma, max_expected_sigma );
+                                                                          lower_coef_bound, upper_coef_bound );
           }
           
           assert( berstein_coeffs.size() == (num_fwhm_pars - 2) );
@@ -1225,6 +1343,41 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
     paramaters.resize( fwhm_paramatersf.size() );
     for( size_t i = 0; i < fwhm_paramatersf.size(); ++i )
       paramaters[i] = static_cast<double>( fwhm_paramatersf[i] );
+
+    // For Bernstein forms, convert polynomial coefficients to Bernstein immediately,
+    //  so that paramaters always contains Bernstein coefficients + energy range from here on.
+    switch( fwhm_form )
+    {
+      case RelActCalcAuto::FwhmForm::Berstein_2:
+      case RelActCalcAuto::FwhmForm::Berstein_3:
+      case RelActCalcAuto::FwhmForm::Berstein_4:
+      case RelActCalcAuto::FwhmForm::Berstein_5:
+      case RelActCalcAuto::FwhmForm::Berstein_6:
+      {
+        const vector<double> poly_coeffs( begin(paramaters), end(paramaters) );
+
+        if( is_fixed_fwhm )
+        {
+          paramaters = BersteinPolynomial::power_series_to_bernstein(
+                          poly_coeffs.data(), poly_coeffs.size(), lowest_energy/1000.0, highest_energy/1000.0 );
+        }else
+        {
+          assert( min_expected_sigma != std::numeric_limits<float>::max() );
+          assert( max_expected_sigma != std::numeric_limits<float>::lowest() );
+          const double lower_coef_bound = min_expected_sigma * min_expected_sigma * PhysicalUnits::fwhm_nsigma*PhysicalUnits::fwhm_nsigma;
+          const double upper_coef_bound = max_expected_sigma * max_expected_sigma * PhysicalUnits::fwhm_nsigma*PhysicalUnits::fwhm_nsigma;
+          paramaters = BersteinPolynomial::constrained_power_series_to_bernstein( poly_coeffs,
+                                                                    lowest_energy/1000.0, highest_energy/1000.0,
+                                                                    lower_coef_bound, upper_coef_bound );
+        }
+
+        paramaters.push_back( lowest_energy );
+        paramaters.push_back( highest_energy );
+        break;
+      }
+      default:
+        break;
+    }//switch( fwhm_form ) - Bernstein conversion
   }catch( std::exception &e )
   {
     paramaters.clear();
@@ -1232,18 +1385,40 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
     warnings.push_back( "Failed to estimate FWHM from data: " + string(e.what()) + ".  Using default FWHM parameters." );
   }
 
+  // At this point, paramaters always contains the final form:
+  //  - For non-Bernstein: polynomial/functional coefficients
+  //  - For Bernstein: Bernstein coefficients + energy range (from conversion above or fill_in_default_start_fwhm_pars)
+  assert( paramaters.size() == num_parameters( fwhm_form ) );
+
+  // Validate the FWHM across the energy range
+  // For Bernstein forms, use eval_berstein_fwhm; for others, use DetectorPeakResponse
+  const double check_delta_energy = 0.01*(highest_energy - lowest_energy);
+  bool valid_whole_range = true;
+
+  // Pre-compute float version of parameters for non-Bernstein validation
   vector<float> fwhm_pars_float( paramaters.size() );
   for( size_t i = 0; i < paramaters.size(); ++i )
     fwhm_pars_float[i] = static_cast<float>( paramaters[i] );
 
-  // Now check if the FWHM fit is valid across the energy range
-  const double check_delta_energy = 0.01*(highest_energy - lowest_energy);
-  bool valid_whole_range = true;
   for( double energy = lowest_energy; valid_whole_range && (energy <= highest_energy); energy += check_delta_energy )
   {
     try
     {
-      const float fwhm = DetectorPeakResponse::peakResolutionFWHM( (float)energy, form_to_fit, fwhm_pars_float );
+      float fwhm;
+      switch( fwhm_form )
+      {
+        case RelActCalcAuto::FwhmForm::Berstein_2:
+        case RelActCalcAuto::FwhmForm::Berstein_3:
+        case RelActCalcAuto::FwhmForm::Berstein_4:
+        case RelActCalcAuto::FwhmForm::Berstein_5:
+        case RelActCalcAuto::FwhmForm::Berstein_6:
+          fwhm = static_cast<float>( eval_berstein_fwhm( energy, paramaters.data(), paramaters.size() ) );
+          break;
+        default:
+          fwhm = DetectorPeakResponse::peakResolutionFWHM( (float)energy, form_to_fit, fwhm_pars_float );
+          break;
+      }//switch( fwhm_form )
+
       const float sigma = fwhm / PhysicalUnits::fwhm_nsigma;
 
       float min_sigma, max_sigma;
@@ -1260,19 +1435,59 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
   {
     cerr << "Fit FWHM is not valid for the energy range wanted - will just use default." << endl;
     warnings.push_back( "Failed to estimate FWHM from data: not a large enough span of peaks.  Using default FWHM parameters." );
+    paramaters.clear();
     fill_in_default_start_fwhm_pars( paramaters, 0, highres, fwhm_form, lowest_energy, highest_energy );
-    assert( paramaters.size() == fwhm_pars_float.size() );
-    fwhm_pars_float.clear();
-    fwhm_pars_float.resize( paramaters.size(), 0.0f );
-    for( size_t i = 0; i < paramaters.size(); ++i )
-      fwhm_pars_float[i] = static_cast<float>( paramaters[i] );
   }//if( !valid_whole_range )
+
+  assert( paramaters.size() == num_parameters( fwhm_form ) );
+
+  // Set up the DRF with kSqrtPolynomial FWHM coefficients for its internal use.
+  // The DRF is queried directly (e.g., for ROI width estimation, energy cal bounds) so it
+  //  needs correct polynomial coefficients. For Bernstein forms, we convert back to polynomial;
+  //  the Ceres optimizer will use the Bernstein paramaters directly via bersteinPeakResolutionFWHM.
+  vector<float> drf_fwhm_pars;
+  switch( fwhm_form )
+  {
+    case RelActCalcAuto::FwhmForm::Berstein_2:
+    case RelActCalcAuto::FwhmForm::Berstein_3:
+    case RelActCalcAuto::FwhmForm::Berstein_4:
+    case RelActCalcAuto::FwhmForm::Berstein_5:
+    case RelActCalcAuto::FwhmForm::Berstein_6:
+    {
+      // Convert Bernstein coefficients back to polynomial so the DRF gives correct FWHM
+      //  when queried directly (e.g., for initial ROI sizing, energy cal bounds, etc.)
+      const size_t num_berstein_coeffs = num_parameters( fwhm_form ) - 2;
+      const vector<double> berstein_coeffs( paramaters.begin(), paramaters.begin() + num_berstein_coeffs );
+      try
+      {
+        const vector<double> poly_coeffs = BersteinPolynomial::bernstein_to_power_series(
+                                              berstein_coeffs, lowest_energy / 1000.0, highest_energy / 1000.0 );
+        drf_fwhm_pars.resize( poly_coeffs.size() );
+        for( size_t i = 0; i < poly_coeffs.size(); ++i )
+          drf_fwhm_pars[i] = static_cast<float>( poly_coeffs[i] );
+      }catch( std::exception & )
+      {
+        // Fallback: use Bernstein coefficients directly (DRF FWHM will be approximate)
+        drf_fwhm_pars.resize( num_berstein_coeffs );
+        for( size_t i = 0; i < num_berstein_coeffs; ++i )
+          drf_fwhm_pars[i] = static_cast<float>( paramaters[i] );
+      }
+      break;
+    }
+    default:
+    {
+      drf_fwhm_pars.resize( paramaters.size() );
+      for( size_t i = 0; i < paramaters.size(); ++i )
+        drf_fwhm_pars[i] = static_cast<float>( paramaters[i] );
+      break;
+    }
+  }//switch( fwhm_form )
 
 
   shared_ptr<DetectorPeakResponse> new_drf;
   if( input_drf )
     new_drf = make_shared<DetectorPeakResponse>(*input_drf);
-  
+
   if( !new_drf )
   {
     const string drf_file = SpecUtils::append_path( InterSpec::staticDataDirectory(), "common_drfs.tsv" );
@@ -1312,7 +1527,7 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
       }
     }//if( !new_drf )
   }//if( !new_drf )
-  
+
   assert( !!new_drf );
   if( !new_drf )
   {
@@ -1325,35 +1540,9 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
                                            static_cast<float>(highest_energy),
                                            DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic);
   }//
-  
-  new_drf->setFwhmCoefficients( fwhm_pars_float, form_to_fit );
 
-  switch( fwhm_form )
-  {
-    case RelActCalcAuto::FwhmForm::Berstein_2:
-    case RelActCalcAuto::FwhmForm::Berstein_3:
-    case RelActCalcAuto::FwhmForm::Berstein_4:
-    case RelActCalcAuto::FwhmForm::Berstein_5:
-    case RelActCalcAuto::FwhmForm::Berstein_6:
-    {
-      // Convert polynomial coefficients to Bernstein with constraints on the coefficients.
-      // Note: the power-series representation uses MeV, while lowest_energy and highest_energy are in keV.
-      // The constrained conversion ensures all Bernstein coefficients stay within [min_expected_sigma, max_expected_sigma],
-      // which guarantees the FWHM function will stay within valid bounds for fitting.
-      const vector<double> poly_coeffs( begin(paramaters), end(paramaters) );
-      paramaters = BersteinPolynomial::constrained_power_series_to_bernstein( poly_coeffs.data(), poly_coeffs.size(),
-                                                                              lowest_energy/1000.0, highest_energy/1000.0,
-                                                                              min_expected_sigma, max_expected_sigma );
+  new_drf->setFwhmCoefficients( drf_fwhm_pars, form_to_fit );
 
-      paramaters.push_back( lowest_energy );
-      paramaters.push_back( highest_energy );
-      break;
-    }
-      
-    default:
-      break;
-  }//switch( fwhm_form )
-  
   return new_drf;
 };//get_fwhm_coefficients(...)
 
@@ -5164,7 +5353,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     vector<size_t> fwhm_par_indexes;
     
     if( (options.fwhm_estimation_method != RelActCalcAuto::FwhmEstimationMethod::FixedToAllPeaksInSpectrum)
-       || (options.fwhm_estimation_method != RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency) )
+       && (options.fwhm_estimation_method != RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency) )
     {
       for( size_t index = cost_functor->m_fwhm_par_start_index;
           index < cost_functor->m_rel_eff_par_start_index;
@@ -10614,6 +10803,9 @@ T bersteinPeakResolutionFWHM( T energy, const T * const pars, const size_t num_p
   const T min_energy = pars[num_berstein_coeffs];
   const T max_energy = pars[num_berstein_coeffs + 1];
   
+  assert( energy >= min_energy );
+  assert( energy <= max_energy );
+
   // Check energy bounds and clamp if necessary
   if( energy < min_energy )
   {
@@ -10623,27 +10815,17 @@ T bersteinPeakResolutionFWHM( T energy, const T * const pars, const size_t num_p
     //  discontinuity at the boundary, but this should be small and rare.
     //  TODO: We could probably do a little better job of preventing this from happening, but its not the biggest fish to fry atm
     if constexpr ( std::is_same_v<T, double> )
-    {
       energy = min_energy;
-    }else
-    {
+    else
       energy.a = min_energy.a;
-    }
   }
   
   if( energy > max_energy )
   {
-#ifndef NDEBUG
     if constexpr ( std::is_same_v<T, double> )
-    {
       energy = max_energy;
-    }else
-    {
+    else
       energy.a = max_energy.a;
-    }
-#endif
-
-    
   }
   
   // Normalize energy to [0, 1] for Berstein polynomial
