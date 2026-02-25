@@ -78,6 +78,7 @@
   <!-- Error dialogs -->
   <message id="esf-error-title">Error</message>
   <message id="esf-qr-encode-failed">Failed to display spectrum as a QR code: {1}</message>
+  <message id="esf-back-sub-peak-refit-failed">Failed to refit peak continuums for background-subtracted spectrum; original peak parameters used.</message>
   
   <!-- Pluralized messages -->
   <message id="esf-disp-sample">

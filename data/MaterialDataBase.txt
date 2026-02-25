@@ -3443,3 +3443,209 @@ Zirconium
 1 0 6.5
 Zr
 100
+!
+Brick
+Common Brick
+6 0 1.92
+O
+49.136
+Mg
+1.671
+Al
+16.036
+Si
+27.399
+Ca
+0.380
+Fe
+5.378
+!
+Cat Litter
+Generic Bentonite Clay Litter
+6 0 0.85
+O
+51.45
+Mg
+1.60
+Al
+10.60
+Si
+25.43
+Ca
+7.52
+Fe
+3.40
+!
+Cellulose
+Cellulose
+3 0 1.52
+H
+6.1728
+C
+44.4444
+O
+49.3827
+!
+Clay
+Generic Clay
+5 0 1.70
+O
+51.45
+Al
+10.60
+Si
+25.43
+K
+9.12
+Fe
+3.40
+!
+Concrete, NIST
+Ordinary Concrete (NIST)
+10 0 2.30
+H
+0.5600
+C
+0.1000
+O
+49.8300
+Na
+1.7100
+Mg
+0.2400
+Al
+4.5600
+Si
+31.5800
+K
+1.9200
+Ca
+8.2600
+Fe
+1.2400
+!
+Concrete, Portland
+Portland Concrete
+8 0 2.30
+H
+1.3000
+O
+52.9107
+Na
+1.6000
+Al
+3.3872
+Si
+33.7021
+K
+1.3000
+Ca
+4.4000
+Fe
+1.4000
+!
+Diatomaceous Earth
+Diatomite
+2 0 0.32
+O
+53.2565
+Si
+46.7435
+!
+Earth, US Average
+Average US Soil
+8 0 1.52
+O
+51.373
+Na
+0.120
+Mg
+2.112
+Al
+8.115
+Si
+27.118
+K
+2.349
+Ca
+3.693
+Fe
+5.120
+!
+Mortar
+Standard Mortar
+6 0 2.00
+H
+1.50
+O
+49.50
+Al
+3.50
+Si
+33.50
+Ca
+10.50
+Fe
+1.50
+!
+Quartz
+Quartz Mineral
+2 0 2.65
+O
+53.2565
+Si
+46.7435
+!
+Quartz Glass
+Fused Silica Glass
+2 0 2.20
+O
+53.2565
+Si
+46.7435
+!
+Rock, Igneous
+Average Igneous Rock
+8 0 2.60
+O
+48.40
+Na
+2.80
+Mg
+1.00
+Al
+8.10
+Si
+29.20
+K
+2.60
+Ca
+3.60
+Fe
+4.30
+!
+Rock, Sedimentary
+Average Sedimentary Rock
+7 0 2.40
+C
+3.40
+O
+49.50
+Mg
+2.00
+Al
+5.40
+Si
+25.30
+Ca
+11.20
+Fe
+3.20
+!
+Sand
+Standard Sand
+2 0 1.52
+O
+53.2565
+Si
+46.7435
