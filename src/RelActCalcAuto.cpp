@@ -487,7 +487,7 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
           const size_t num_params = num_parameters( fwhm_form );
           const size_t num_berstein_coeffs = num_params - 2;
           
-          assert( parameters.empty() || (parameters.size() >= (fwhm_start + num_params)) );
+          assert( parameters.empty() || (parameters.size() >= (fwhm_start + num_berstein_coeffs)) );
           if( parameters.size() < (fwhm_start + num_params) )
             parameters.resize( fwhm_start + num_params, 0.0 );
           
