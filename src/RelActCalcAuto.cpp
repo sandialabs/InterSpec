@@ -514,10 +514,26 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
               assert( 0 );
               break;
           }
+                    
+          float min_expected_sigma = std::numeric_limits<float>::max();
+          float max_expected_sigma = std::numeric_limits<float>::lowest();
+          const double check_delta_energy = 0.01*(highest_energy - lowest_energy);
+          for( double energy = lowest_energy; energy <= highest_energy; energy += check_delta_energy )
+          {
+            float min_sigma, max_sigma;
+            expected_peak_width_limits( energy, highres, nullptr, min_sigma, max_sigma );
+            assert( min_sigma > 0 );
+            
+            min_expected_sigma = (std::min)( min_expected_sigma, min_sigma );
+            max_expected_sigma = (std::max)( max_expected_sigma, max_sigma );
+          }//for( loop over energy range to compute expected sigma bounds )
           
-          // Convert power series to Berstein coefficients
-          const std::vector<double> berstein_coeffs = BersteinPolynomial::power_series_to_bernstein( 
-            poly_coeffs.data(), poly_coeffs.size(), lowest_energy, highest_energy );
+          assert( min_expected_sigma != std::numeric_limits<float>::max() );
+          assert( max_expected_sigma != std::numeric_limits<float>::lowest() );
+          const std::vector<double> berstein_coeffs = BersteinPolynomial::constrained_power_series_to_bernstein( poly_coeffs,
+                                                                                      lowest_energy/1000.0, highest_energy/1000.0,
+                                                                                      min_expected_sigma, max_expected_sigma );
+          
           
           // Set Berstein coefficients
           for( size_t i = 0; i < num_berstein_coeffs; ++i )
@@ -668,9 +684,26 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
               break;
           }
           
+          float min_expected_sigma = std::numeric_limits<float>::max();
+          float max_expected_sigma = std::numeric_limits<float>::lowest();
+          const double check_delta_energy = 0.01*(highest_energy - lowest_energy);
+          for( double energy = lowest_energy; energy <= highest_energy; energy += check_delta_energy )
+          {
+            float min_sigma, max_sigma;
+            expected_peak_width_limits( energy, highres, nullptr, min_sigma, max_sigma );
+            assert( min_sigma > 0 );
+            
+            min_expected_sigma = (std::min)( min_expected_sigma, min_sigma );
+            max_expected_sigma = (std::max)( max_expected_sigma, max_sigma );
+          }//for( loop over energy range to compute expected sigma bounds )
+          
           // Convert power series to Berstein coefficients
-          const std::vector<double> berstein_coeffs = BersteinPolynomial::power_series_to_bernstein( 
-            poly_coeffs.data(), poly_coeffs.size(), lowest_energy, highest_energy );
+          assert( min_expected_sigma != std::numeric_limits<float>::max() );
+          assert( max_expected_sigma != std::numeric_limits<float>::lowest() );
+          const vector<double> berstein_coeffs = BersteinPolynomial::constrained_power_series_to_bernstein( poly_coeffs,
+                                                                                        lowest_energy/1000.0, highest_energy/1000.0,
+                                                                                        min_expected_sigma, max_expected_sigma );
+          assert( berstein_coeffs.size() == num_berstein_coeffs );
           
           // Set Berstein coefficients
           for( size_t i = 0; i < num_berstein_coeffs; ++i )
@@ -798,6 +831,29 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
                           " FWHM from peaks in spectrum." );
   }//if( use_drf_fwhm && (!input_drf || !input_drf->hasResolutionInfo()) )
 
+  
+  // First, compute min/max expected sigma across the entire energy range - we need this for
+  // constraining Bernstein coefficients, regardless of whether the FWHM fit is valid
+  float min_expected_sigma = std::numeric_limits<float>::max();
+  float max_expected_sigma = std::numeric_limits<float>::lowest();
+
+  const bool is_fixed_fwhm = ((fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToAllPeaksInSpectrum)
+                              || (fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency) );
+  
+  if( !is_fixed_fwhm )
+  {
+    const double check_delta_energy = 0.01*(highest_energy - lowest_energy);
+    for( double energy = lowest_energy; energy <= highest_energy; energy += check_delta_energy )
+    {
+      float min_sigma, max_sigma;
+      expected_peak_width_limits( energy, highres, nullptr, min_sigma, max_sigma );
+      assert( min_sigma > 0 );
+      
+      min_expected_sigma = (std::min)( min_expected_sigma, min_sigma );
+      max_expected_sigma = (std::max)( max_expected_sigma, max_sigma );
+    }//for( loop over energy range to compute expected sigma bounds )
+  }//if( we are fitting FWHM )
+  
 
   if( use_drf_fwhm )
   {
@@ -872,8 +928,20 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
         {
           // Convert polynomial coefficients to Berstein
           std::vector<double> poly_coeffs( drfpars.begin(), drfpars.end() );
-          const std::vector<double> berstein_coeffs = BersteinPolynomial::power_series_to_bernstein( 
-            poly_coeffs.data(), poly_coeffs.size(), lowest_energy, highest_energy );
+          vector<double> berstein_coeffs;
+          if( is_fixed_fwhm )
+          {
+            berstein_coeffs = BersteinPolynomial::power_series_to_bernstein(
+                                  poly_coeffs.data(), poly_coeffs.size(), lowest_energy/1000.0, highest_energy/1000.0 );
+          }else
+          {
+            assert( min_expected_sigma != std::numeric_limits<float>::max() );
+            assert( max_expected_sigma != std::numeric_limits<float>::lowest() );
+            berstein_coeffs = BersteinPolynomial::constrained_power_series_to_bernstein( poly_coeffs,
+                                  lowest_energy/1000.0, highest_energy/1000.0,
+                                  min_expected_sigma, max_expected_sigma );
+          }
+          
           
           const size_t num_params = num_parameters(fwhm_form);
           paramaters.resize( num_params );
@@ -990,9 +1058,22 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
         {
           // Convert polynomial coefficients to Berstein - note that the power-series
           //  representation uses MeV, while lowest_energy and highest_energy are in keV
-          std::vector<double> poly_coeffs( new_sigma_coefs.begin(), new_sigma_coefs.end() );
-          const std::vector<double> berstein_coeffs = BersteinPolynomial::power_series_to_bernstein( 
-            poly_coeffs.data(), poly_coeffs.size(), lowest_energy/1000.0, highest_energy/1000.0 );
+          vector<double> poly_coeffs( new_sigma_coefs.begin(), new_sigma_coefs.end() );
+          
+          vector<double> berstein_coeffs;
+          
+          if( is_fixed_fwhm )
+          {
+            berstein_coeffs = BersteinPolynomial::power_series_to_bernstein(
+                                poly_coeffs.data(), poly_coeffs.size(), lowest_energy/1000.0, highest_energy/1000.0 );
+          }else
+          {
+            assert( min_expected_sigma != std::numeric_limits<float>::max() );
+            assert( max_expected_sigma != std::numeric_limits<float>::lowest() );
+            berstein_coeffs = BersteinPolynomial::constrained_power_series_to_bernstein( poly_coeffs,
+                                                                  lowest_energy/1000.0, highest_energy/1000.0,
+                                                                          min_expected_sigma, max_expected_sigma );
+          }
           
           assert( berstein_coeffs.size() == (num_fwhm_pars - 2) );
           paramaters.resize( num_fwhm_pars );
@@ -1155,9 +1236,9 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
   for( size_t i = 0; i < paramaters.size(); ++i )
     fwhm_pars_float[i] = static_cast<float>( paramaters[i] );
 
-  bool valid_whole_range = true;
-  float min_expected_sigma = 1.0E16f, max_expected_sigma = -1.0E16f;
+  // Now check if the FWHM fit is valid across the energy range
   const double check_delta_energy = 0.01*(highest_energy - lowest_energy);
+  bool valid_whole_range = true;
   for( double energy = lowest_energy; valid_whole_range && (energy <= highest_energy); energy += check_delta_energy )
   {
     try
@@ -1167,10 +1248,6 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
 
       float min_sigma, max_sigma;
       expected_peak_width_limits( energy, highres, nullptr, min_sigma, max_sigma );
-      assert( min_sigma > 0 );
-
-      min_expected_sigma = (std::min)( min_expected_sigma, min_sigma );
-      max_expected_sigma = (std::max)( max_expected_sigma, max_sigma );
 
       valid_whole_range = (!IsInf(sigma) && !IsNan(sigma) && (sigma >= min_sigma) && (sigma <= max_sigma));
     }catch( ... )
@@ -1259,61 +1336,14 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
     case RelActCalcAuto::FwhmForm::Berstein_5:
     case RelActCalcAuto::FwhmForm::Berstein_6:
     {
-      // Convert polynomial coefficients to Berstein - note that the power-series
-      //  representation uses MeV, while lowest_energy and highest_energy are in keV
-      vector<double> poly_coeffs( begin(paramaters), end(paramaters) );
-      paramaters = BersteinPolynomial::power_series_to_bernstein( poly_coeffs.data(), poly_coeffs.size(),
-                                                                 lowest_energy/1000.0, highest_energy/1000.0 );
-
-      // Note: The Bernstein coefficients may be outside the y-value range of the initial function - the Bernstein
-      //       coefficients being in a given range is sufficient to say that the function will be within that range,
-      //       but it is not necassary for the Bernstein coefficients to only be in the range of the data.
-
-
-      // For polynomial, we will check if the function is concave up - and if so, reduce the order intil it is not
-      switch( fwhm_form )
-      {
-        case RelActCalcAuto::FwhmForm::Gadras:        case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy:
-        case RelActCalcAuto::FwhmForm::NotApplicable: case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:
-        case RelActCalcAuto::FwhmForm::Polynomial_2:  case RelActCalcAuto::FwhmForm::Berstein_2:
-          break;
-
-        case RelActCalcAuto::FwhmForm::Polynomial_3: case RelActCalcAuto::FwhmForm::Polynomial_4:
-        case RelActCalcAuto::FwhmForm::Polynomial_6: case RelActCalcAuto::FwhmForm::Polynomial_5:
-        case RelActCalcAuto::FwhmForm::Berstein_3:   case RelActCalcAuto::FwhmForm::Berstein_4:
-        case RelActCalcAuto::FwhmForm::Berstein_5:   case RelActCalcAuto::FwhmForm::Berstein_6:
-        {
-          bool paramater_outside = false;
-          for( size_t i = 0; !paramater_outside && (i < paramaters.size()); ++i )
-            paramater_outside = ((paramaters[i] < min_expected_sigma) || (paramaters[i] > max_expected_sigma));
-
-          if( paramater_outside )
-          {
-            // We could try repeatedly reducing the number of coefficients by one each time, but for the moment, we'll
-            //  just gi down to 2.
-            try
-            {
-              vector<float> new_result, new_result_uncerts;
-              auto peaks_deque = make_shared<deque<shared_ptr<const PeakDef>>>(begin(all_peaks), end(all_peaks));
-              MakeDrfFit::performResolutionFit( peaks_deque, form_to_fit, 2, new_result, new_result_uncerts );
-              new_result.resize(fit_order , 0.0f);
-              new_result_uncerts.resize(fit_order , 0.0f);
-
-              poly_coeffs.clear();
-              for( const float v : new_result )
-                poly_coeffs.push_back( v );
-
-              paramaters = BersteinPolynomial::power_series_to_bernstein( poly_coeffs.data(), poly_coeffs.size(),
-                                                                         lowest_energy/1000.0, highest_energy/1000.0 );
-            }catch( std::exception &e )
-            {
-              cout << "Failed to try and refit FWHM to keep the Bernstein coefficients in a reasonable range: " << e.what() << endl;
-            }
-          }//if( paramater_outside )
-
-          break;
-        }
-      }//switch( fwhm_form )
+      // Convert polynomial coefficients to Bernstein with constraints on the coefficients.
+      // Note: the power-series representation uses MeV, while lowest_energy and highest_energy are in keV.
+      // The constrained conversion ensures all Bernstein coefficients stay within [min_expected_sigma, max_expected_sigma],
+      // which guarantees the FWHM function will stay within valid bounds for fitting.
+      const vector<double> poly_coeffs( begin(paramaters), end(paramaters) );
+      paramaters = BersteinPolynomial::constrained_power_series_to_bernstein( poly_coeffs.data(), poly_coeffs.size(),
+                                                                              lowest_energy/1000.0, highest_energy/1000.0,
+                                                                              min_expected_sigma, max_expected_sigma );
 
       paramaters.push_back( lowest_energy );
       paramaters.push_back( highest_energy );
@@ -2974,13 +3004,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       {
         float min_sigma, max_sigma;
         expected_peak_width_limits( static_cast<float>(lowest_energy), highres, spectrum, min_sigma, max_sigma );
-        fwhm_at_lowest = max_sigma;
+        fwhm_at_lowest = max_sigma * PhysicalUnits::fwhm_nsigma;
 
         expected_peak_width_limits( static_cast<float>(highest_energy), highres, spectrum, min_sigma, max_sigma );
-        fwhm_at_highest = max_sigma;
+        fwhm_at_highest = max_sigma * PhysicalUnits::fwhm_nsigma;
 
         expected_peak_width_limits( static_cast<float>(midpoint_energy), highres, spectrum, min_sigma, max_sigma );
-        fwhm_at_midpoint = max_sigma;
+        fwhm_at_midpoint = max_sigma * PhysicalUnits::fwhm_nsigma;
       }
 
       // Completely arbitrary
@@ -3003,7 +3033,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       {
         constexpr double offset = RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset;
         constexpr double cal_mult = RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
-        const double limit_by_fwhm = fwhm_at_lowest * RelActCalcAuto::RelActAutoSolution::sm_energy_offset_range_fwhm * PhysicalUnits::fwhm_nsigma;
+        const double limit_by_fwhm = fwhm_at_lowest * RelActCalcAuto::RelActAutoSolution::sm_energy_offset_range_fwhm;
         const double offset_limit = (std::min)( RelActCalcAuto::RelActAutoSolution::sm_energy_offset_range_keV, limit_by_fwhm );
         
         lower_bounds[0] = offset - (offset_limit/cal_mult);
@@ -3018,7 +3048,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       {
         constexpr double offset = RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset;
         constexpr double cal_mult = RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
-        const double limit_by_fwhm = fwhm_at_midpoint * RelActCalcAuto::RelActAutoSolution::sm_energy_gain_range_fwhm * PhysicalUnits::fwhm_nsigma;
+        const double limit_by_fwhm = fwhm_at_midpoint * RelActCalcAuto::RelActAutoSolution::sm_energy_gain_range_fwhm;
         double gain_limit = (std::min)( RelActCalcAuto::RelActAutoSolution::sm_energy_gain_range_keV, limit_by_fwhm );
         
         lower_bounds[1] = offset - (gain_limit/cal_mult);
@@ -3129,6 +3159,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         case RelActCalcAuto::FwhmForm::Berstein_5:
         case RelActCalcAuto::FwhmForm::Berstein_6:
         {
+          // If FWHM is fixed, lets not set the parameter limits, because the pars could actually be outside
+          //   of our FWHM range (which is fine)
+          if( (options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToAllPeaksInSpectrum)
+             || (options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency) )
+          {
+            break;
+          }
+          
           assert( highest_fwhm_energy > lowest_fwhm_energy );
           if( highest_fwhm_energy < lowest_fwhm_energy )
             throw std::logic_error( "Failed to set highest_energy, lowest_fwhm_energy..." );
@@ -3217,7 +3255,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           for( size_t i = 0; i < num_berstein_coeffs; ++i )
           {
             const size_t par_index = cost_functor->m_fwhm_par_start_index + i;
-            lower_bounds[par_index] = static_cast<double>(min_fwhm_keV * min_fwhm_keV);
+            
+            lower_bounds[par_index] = static_cast<double>(min_fwhm_keV * min_fwhm_keV); //Berstein coefficients represent FWHM^2, not FWHM
             upper_bounds[par_index] = static_cast<double>(max_fwhm_keV * max_fwhm_keV);
             
             if( parameters[par_index] < lower_bounds[par_index].value() )
