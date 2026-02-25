@@ -240,8 +240,18 @@ struct PeakDefImp
         break;
 
       case PeakDef::SkewType::DoubleBortel:
+        try
+      {
         vis_limits = PeakDists::double_bortel_coverage_limits( mean, sigma, skew_pars[0],
                                                                 skew_pars[1], skew_pars[2], missing_frac );
+      }catch( std::exception & )
+      {
+        // Bortel has a low-energy tail; go wide on the left, use Gaussian limit on the right
+        vis_limits.first = mean - 15.0*sigma;
+
+        const boost::math::normal_distribution gaus_dist( 1.0 );
+        vis_limits.second = mean + sigma*boost::math::quantile( gaus_dist, 1.0 - missing_frac );
+      }
         break;
     }//switch( m_skew_type )
 
