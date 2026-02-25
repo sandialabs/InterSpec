@@ -1412,19 +1412,19 @@ std::pair<double,double> double_bortel_coverage_limits( const double mean, const
       return fabs( left - right ) < 0.01 * p;
     };
 
-    // The tail with larger tau will extend further, so use max(tau1, tau2)
-    const double max_tau = std::max( tau1, tau2 );
-
+    // Use mean as the upper limit of the lower search, since cdf(mean) ~ 0.5 which is
+    //  always > 0.5*p, guaranteeing a sign change.  Using `mean - max_tau*sigma` can fail
+    //  when tau values are extreme (e.g., during optimization), collapsing the interval.
     boost::uintmax_t max_iter = 100;
-    const double low_low_limit = mean - 50 * sigma;
-    const double low_up_limit = mean - max_tau * sigma;
+    const double low_low_limit = mean - 50.0 * sigma;
+    const double low_up_limit = mean;
     const pair<double, double> lower_val = boost::math::tools::bisect( lower_cdf, low_low_limit,
                                                                         low_up_limit, term_condition, max_iter );
     const double lower_x = 0.5 * ( lower_val.first + lower_val.second );
 
     max_iter = 100;
     const double up_low_limit = mean;
-    const double up_up_limit = mean + 7 * sigma;
+    const double up_up_limit = mean + 7.0 * sigma;
     const pair<double, double> upper_val = boost::math::tools::bisect( upper_cdf, up_low_limit,
                                                                         up_up_limit, term_condition, max_iter );
     const double upper_x = 0.5 * ( upper_val.first + upper_val.second );
