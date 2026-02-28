@@ -487,6 +487,8 @@
   <message id="pct-flat-step">Degrau Plano</message>
   <message id="pct-linear-step">Degrau Linear</message>
   <message id="pct-bilinear-step">Degrau Bilinear</message>
+  <message id="pct-flat-step-cdf">Flat Step (Peak CDF)</message>
+  <message id="pct-linear-step-cdf">Linear Step (Peak CDF)</message>
   <message id="pct-global">Cont. Global</message>
 
   <!-- populateNuclideSelects() in PeakSearchGuiUtils.cpp -->

@@ -2394,7 +2394,7 @@ void SpectrumChart::paintNonGausPeak( const PeakDef &peak, Wt::WPainter& painter
   const SpectrumDataModel *th1Model = dynamic_cast<const SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel() : nullptr );
   assert( th1Model );
 #endif
-  
+
   if( !th1Model )
     throw runtime_error( "SpectrumChart::paintNonGausPeak(...): stupid programmer error"
                          ", SpectrumChart may only be powered by a SpectrumDataModel." );
@@ -2407,6 +2407,9 @@ void SpectrumChart::paintNonGausPeak( const PeakDef &peak, Wt::WPainter& painter
   }//if( !data )
 
   std::shared_ptr<const PeakContinuum> continuum = peak.continuum();
+  
+  assert( (continuum->type() != PeakContinuum::FlatStepCDF)
+         && (continuum->type() != PeakContinuum::LinearStepCDF) );
   
   const double minDispX = axis(Chart::XAxis).minimum();
   const double maxDispX = axis(Chart::XAxis).maximum();
@@ -2437,11 +2440,14 @@ void SpectrumChart::paintNonGausPeak( const PeakDef &peak, Wt::WPainter& painter
     case PeakContinuum::NoOffset:
     break;
       
-    case PeakContinuum::Constant:     case PeakContinuum::Linear:
-    case PeakContinuum::Quadratic:    case PeakContinuum::Cubic:
-    case PeakContinuum::FlatStep:     case PeakContinuum::LinearStep:
-    case PeakContinuum::BiLinearStep: case PeakContinuum::External:
+    case PeakContinuum::Constant:      case PeakContinuum::Linear:
+    case PeakContinuum::Quadratic:     case PeakContinuum::Cubic:
+    case PeakContinuum::FlatStep:      case PeakContinuum::LinearStep:
+    case PeakContinuum::BiLinearStep:  case PeakContinuum::External:
+    case PeakContinuum::FlatStepCDF:   case PeakContinuum::LinearStepCDF:
     {
+      const PeakDef *peak_ptr = &peak; // Note: never actualy gets used since flat/linear sCDF step cant be for data defined
+
       vector<WPointF> path;
       for( int row = lowerrow; row <= upperrow; ++row )
       {
@@ -2449,8 +2455,8 @@ void SpectrumChart::paintNonGausPeak( const PeakDef &peak, Wt::WPainter& painter
         const double rowUpperX = rowLowX + th1Model->rowWidth( row );
         const double lowerx = std::max( rowLowX, axisMinX );
         const double upperx = std::min( rowUpperX, axisMaxX );
-        const double contheight = continuum->offset_integral( rowLowX, rowUpperX, data );
-      
+        const double contheight = continuum->offset_integral( rowLowX, rowUpperX, data, &peak_ptr, 1 );
+
         const WPointF startPoint = mapToDevice( lowerx, contheight );
         const WPointF endPoint = mapToDevice( upperx, contheight );
       
@@ -2474,16 +2480,18 @@ void SpectrumChart::paintNonGausPeak( const PeakDef &peak, Wt::WPainter& painter
   WPointF startpoint;
   std::unique_ptr<WPainterPath> drawpath;
   vector<WPointF> continuumvalues;
-  
+
+  const PeakDef *this_peak_ptr = &peak; // Note: never actualy gets used since flat/linear sCDF step cant be for data defined
+
   for( int row = lowerrow; row <= upperrow; ++row )
   {
     const double rowLowX = th1Model->rowLowEdge( row );
     const double rowUpperX = rowLowX + th1Model->rowWidth( row );
-    
+
     const double lowerx = std::max( rowLowX, axisMinX );
     const double upperx = std::min( rowUpperX, axisMaxX );
     const boost::any dataheightany = th1Model->displayBinValue( row, SpectrumDataModel::DATA_COLUMN );
-    const double contheight = continuum->offset_integral( rowLowX, rowUpperX, data );
+    const double contheight = continuum->offset_integral( rowLowX, rowUpperX, data, &this_peak_ptr, 1 );
     const double dataheight = asNumber( dataheightany );
     
     if( dataheightany.empty() )
@@ -2542,28 +2550,40 @@ void SpectrumChart::paintNonGausPeak( const PeakDef &peak, Wt::WPainter& painter
 double SpectrumChart::peakBackgroundVal( const int row, const PeakDef &peak,
                     const SpectrumDataModel *th1Model,
                     std::shared_ptr<const PeakDef> prevPeak,
-                    std::shared_ptr<const PeakDef> nextPeak )
+                    std::shared_ptr<const PeakDef> nextPeak,
+                    const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks )
 {
   const double bin_x_min = th1Model->rowLowEdge( row );
   const double bin_x_max = bin_x_min + th1Model->rowWidth( row );
-  
-  
+
+
   double yval = 0.0;
-  
+
   switch( peak.continuum()->type() )
   {
     case PeakContinuum::NoOffset:     case PeakContinuum::Constant:
     case PeakContinuum::Linear:       case PeakContinuum::Quadratic:
     case PeakContinuum::Cubic:        case PeakContinuum::External:
-      yval = peak.offset_integral( bin_x_min, bin_x_max, nullptr );
+    {
+      std::shared_ptr<const SpecUtils::Measurement> data;
+      yval = peak.continuum()->offset_integral( bin_x_min, bin_x_max, data, nullptr, 0 );
       break;
-    
+    }
+
     case PeakContinuum::FlatStep:     case PeakContinuum::LinearStep:
     case PeakContinuum::BiLinearStep:
     {
-      shared_ptr<const SpecUtils::Measurement> data = th1Model->getData();
+      std::shared_ptr<const SpecUtils::Measurement> data = th1Model->getData();
       if( data )
-        yval = peak.offset_integral( bin_x_min, bin_x_max, data );
+        yval = peak.continuum()->offset_integral( bin_x_min, bin_x_max, data, nullptr, 0 );
+      break;
+    }
+
+    case PeakContinuum::FlatStepCDF:  case PeakContinuum::LinearStepCDF:
+    {
+      std::shared_ptr<const SpecUtils::Measurement> data = th1Model->getData();
+      if( data )
+        yval = peak.continuum()->offset_integral( bin_x_min, bin_x_max, data, roi_peaks );
       break;
     }
   }//switch( peak.continuum()->type() )
@@ -3161,22 +3181,7 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
       
       double cont_y = 0.0;
       
-      switch( peaks[0]->continuum()->type() )
-      {
-        case PeakContinuum::NoOffset:     case PeakContinuum::Constant:
-        case PeakContinuum::Linear:       case PeakContinuum::Quadratic:
-        case PeakContinuum::Cubic:        case PeakContinuum::External:
-          cont_y = peaks[0]->offset_integral( bin_x_min, bin_x_max, data );
-          break;
-          
-        case PeakContinuum::FlatStep:     case PeakContinuum::LinearStep:
-        case PeakContinuum::BiLinearStep:
-        {
-          if( data )
-            cont_y = peaks[0]->offset_integral( bin_x_min, bin_x_max, data );
-          break;
-        }
-      }//switch( peak.continuum()->type() )
+      cont_y = continuum->offset_integral( bin_x_min, bin_x_max, data, peaks );
       
       
       if( th1Model->backgroundSubtract() && (th1Model->backgroundColumn() >= 0) )
@@ -3346,7 +3351,7 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
             pair<double,double> &peakval = peaksSum[row];
             
             const double backHeight = peakBackgroundVal( row, peak,
-                                                        th1Model, prevPeak, nextPeak );
+                                                        th1Model, prevPeak, nextPeak, peaks );
             peakval.first = bin_center;
             peakval.second += (y - backHeight);
           }//if( outline )
@@ -3387,7 +3392,7 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
           
           double val = peakBackgroundVal( row, peak, th1Model,
                                          std::shared_ptr<const PeakDef>(),
-                                         std::shared_ptr<const PeakDef>() );
+                                         std::shared_ptr<const PeakDef>(), peaks );
           
           val = std::max( val, axisMinY );
           val = std::min( val, axisMaxY );
@@ -3401,7 +3406,7 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
           //          if( outline )
           {
             val = peakBackgroundVal( row, peak, th1Model,
-                                    prevPeak, nextPeak );
+                                    prevPeak, nextPeak, peaks );
             val = std::max( val, axisMinY );
             val = std::min( val, axisMaxY );
             continuumVals[row] = make_pair(bin_center,val);

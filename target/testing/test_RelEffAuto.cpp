@@ -149,7 +149,7 @@ BOOST_AUTO_TEST_CASE( FitContinuum )
   vector<double> continuum_coeffs(num_polynomial_terms, 0.0);
   double peak_counts[nbin];
     
-  PeakFit::fit_continuum( energies, data, nullptr, nbin, num_polynomial_terms, step_continuum,
+  PeakFit::fit_continuum( energies, data, nullptr, nbin, offset_type,
                                   ref_energy, peaks, false, continuum_coeffs.data(), peak_counts );
 
 
@@ -170,8 +170,12 @@ BOOST_AUTO_TEST_CASE( FitContinuum )
   
   double old_way_peak_counts[nbin] = { 0.0 };
   
+  vector<const PeakDef *> pk_ptrs;
   for( const PeakDef &peak : peaks )
+  {
     peak.gauss_integral( energies, old_way_peak_counts, nbin );
+    pk_ptrs.push_back( &peak );
+  }
 
   std::shared_ptr<PeakContinuum> continuum = peaks[0].continuum();
   BOOST_REQUIRE( !!continuum );
@@ -179,7 +183,10 @@ BOOST_AUTO_TEST_CASE( FitContinuum )
   continuum->setParameters( ref_energy, continuum_coeffs, {} );
 
   for( size_t bin = 0; bin < nbin; ++bin )
-    old_way_peak_counts[bin] += continuum->offset_integral(energies[bin], energies[bin+1], nullptr );
+    {
+      std::shared_ptr<const SpecUtils::Measurement> null_data;
+      old_way_peak_counts[bin] += continuum->offset_integral( energies[bin], energies[bin+1], null_data, pk_ptrs.data(), pk_ptrs.size() );
+    }
 
   for( size_t bin = 0; bin < nbin; ++bin )
   {

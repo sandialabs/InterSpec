@@ -47,6 +47,8 @@ struct PeakDefImp
   const T &mean() const { return m_mean; }
   const T &sigma() const { return m_sigma; }
   const T &amplitude() const { return m_amplitude; }
+  PeakDef::SkewType skewType() const { return m_skew_type; }
+  const T *skew_parameters() const { return m_skew_pars; }
 
   void setMean( const T &mean ) { m_mean = mean; }
   void setSigma( const T &sigma ) { m_sigma = sigma; }

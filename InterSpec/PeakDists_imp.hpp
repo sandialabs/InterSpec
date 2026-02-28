@@ -1392,6 +1392,7 @@ void photopeak_function_integral( const T mean,
 }//void photopeak_function_integral(...)
 
 
+
 #if( __cplusplus >= 202002L )
 void offset_integral( const ContType &cont,
                      const float *energies,
@@ -1447,6 +1448,8 @@ offset_integral(const ContType& cont,
           case PeakContinuum::OffsetType::FlatStep:
           case PeakContinuum::OffsetType::LinearStep:
           case PeakContinuum::OffsetType::BiLinearStep:
+          case PeakContinuum::OffsetType::FlatStepCDF:
+          case PeakContinuum::OffsetType::LinearStepCDF:
             assert( 0 );
 
           case PeakContinuum::OffsetType::Cubic:
@@ -1481,6 +1484,10 @@ offset_integral(const ContType& cont,
       break;
     }//case Constant: case Linear: case Quadratic: case Cubic:
 
+
+    case PeakContinuum::OffsetType::FlatStepCDF:
+    case PeakContinuum::OffsetType::LinearStepCDF:
+      throw std::runtime_error( "PeakContinuum::offset_integral: CDF step types require peaks; use the overload that accepts peaks" );
 
     case PeakContinuum::OffsetType::FlatStep:
     case PeakContinuum::OffsetType::LinearStep:
@@ -1570,7 +1577,7 @@ offset_integral(const ContType& cont,
 
             if constexpr ( std::is_same_v<T, double> )
             {
-              assert( answer == cont.offset_integral( data_energies[i], data_energies[i+1], data ) );
+              assert( answer == cont.offset_integral( data_energies[i], data_energies[i+1], data, nullptr, 0 ) );
             }
 
             channels[input_index] += answer;
@@ -1586,7 +1593,7 @@ offset_integral(const ContType& cont,
 
             if constexpr ( std::is_same_v<T, double> )
             {
-              assert( contrib == cont.offset_integral( data_energies[i], data_energies[i+1], data ) );
+              assert( contrib == cont.offset_integral( data_energies[i], data_energies[i+1], data, nullptr, 0 ) );
             }
 
             channels[input_index] += contrib;
@@ -1598,6 +1605,8 @@ offset_integral(const ContType& cont,
           case PeakContinuum::OffsetType::Linear:
           case PeakContinuum::OffsetType::Quadratic:
           case PeakContinuum::OffsetType::Cubic:
+          case PeakContinuum::OffsetType::FlatStepCDF:
+          case PeakContinuum::OffsetType::LinearStepCDF:
           case PeakContinuum::OffsetType::External:
             assert( 0 );
             break;

@@ -53,6 +53,7 @@
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
+#include "InterSpec/PeakFit_imp.hpp"
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/DoseCalc.h"
 #include "InterSpec/SpecMeas.h"
@@ -1528,25 +1529,30 @@ void SimpleActivityCalc::handleBackgroundSubtractChanged()
         const size_t nchannel = (1 + end_channel) - start_channel;
         const float * const energies = cal->channel_energies()->data() + start_channel;
         const float * const data = background->gamma_channel_contents()->data() + start_channel;
-        const bool step_continuum = PeakContinuum::is_step_continuum( back_cont->type() );
-        const int num_polynomial_terms = static_cast<int>( PeakContinuum::num_parameters( back_cont->type() ) );
+        const PeakContinuum::OffsetType cont_type = back_cont->type();
         const double ref_energy = back_cont->referenceEnergy();
         const PeakDef::SkewType skew_type = m_currentPeak->skewType();
         const size_t num_skew = PeakDef::num_skew_parameters( skew_type );
         const double * const skew_pars = m_currentPeak->coefficients() + PeakDef::CoefficientType::SkewPar0;
-        
+
         const vector<PeakDef> dummy_fixed_amp_peaks;
         vector<double> amplitudes, continuum_coeffs, amplitudes_uncerts, continuum_coeffs_uncerts;
-        
-        fit_amp_and_offset( energies, data, nchannel, num_polynomial_terms, step_continuum, ref_energy,
+
+        PeakFit::fit_amp_and_offset_imp( energies, data, static_cast<const float *>( nullptr ),
+                           nchannel, cont_type,
+                           0.0, ref_energy,
                            means, sigmas, dummy_fixed_amp_peaks, skew_type, skew_pars,
-                            amplitudes, continuum_coeffs, amplitudes_uncerts, continuum_coeffs_uncerts );
-        
-        for( size_t i = 0; i < continuum_coeffs.size(); ++i )
+                           amplitudes, continuum_coeffs, amplitudes_uncerts, continuum_coeffs_uncerts,
+                           static_cast<double *>( nullptr ) );
+
+        // For CDF step types, append step_coeff (0.0 initial) so setParameters gets the full set
+        if( PeakContinuum::is_peak_cdf_step_continuum( cont_type ) )
         {
-          back_cont->setPolynomialCoef( i, continuum_coeffs[i] );
-          back_cont->setPolynomialUncert( i, continuum_coeffs_uncerts[i] );
+          continuum_coeffs.push_back( 0.0 );
+          continuum_coeffs_uncerts.push_back( 0.0 );
         }
+
+        back_cont->setParameters( ref_energy, continuum_coeffs, continuum_coeffs_uncerts );
         
         vector<PeakDef> updated_back_roi_peaks;
         for( size_t i = 0; i < background_roi_peaks.size(); ++i )

@@ -475,6 +475,8 @@ void AddNewPeakDialog::roiTypeChanged()
     case PeakContinuum::OffsetType::FlatStep:
     case PeakContinuum::OffsetType::LinearStep:
     case PeakContinuum::OffsetType::BiLinearStep:
+    case PeakContinuum::OffsetType::FlatStepCDF:
+    case PeakContinuum::OffsetType::LinearStepCDF:
       m_candidatePeak->continuum()->calc_linear_continuum_eqn( meas, ref_energy, roi_lower, roi_upper, 5, 5 );
       m_candidatePeak->continuum()->setType( offset );
       break;

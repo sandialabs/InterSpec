@@ -1149,6 +1149,13 @@ void PeakEdit::refreshPeakInfo()
           case PeakContinuum::BiLinearStep:
             hide = (coefnum >= (2 + (type - PeakContinuum::FlatStep)));
             break;
+
+          case PeakContinuum::FlatStepCDF:
+            hide = (coefnum >= 2);
+            break;
+          case PeakContinuum::LinearStepCDF:
+            hide = (coefnum >= 3);
+            break;
         }//switch( type )
         
         row->setHidden( hide );
@@ -1853,22 +1860,24 @@ void PeakEdit::contnuumTypeChanged()
     
     case PeakContinuum::Linear:
     case PeakContinuum::FlatStep:
+    case PeakContinuum::FlatStepCDF:
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial0)->setHidden( false );
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial1)->setHidden( false );
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial2)->setHidden( true );
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial3)->setHidden( true );
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial4)->setHidden( true );
     break;
-  
+
     case PeakContinuum::Quadratic:
     case PeakContinuum::LinearStep:
+    case PeakContinuum::LinearStepCDF:
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial0)->setHidden( false );
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial1)->setHidden( false );
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial2)->setHidden( false );
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial3)->setHidden( true );
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial4)->setHidden( true );
     break;
-    
+
     case PeakContinuum::Cubic:
     case PeakContinuum::BiLinearStep:
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial0)->setHidden( false );
@@ -2553,13 +2562,17 @@ void PeakEdit::setAmplitudeForDataDefinedPeak()
   const size_t lower_channel = data->find_gamma_channel( roilower );
   const size_t upper_channel = data->find_gamma_channel( roiupper );
   
+  // CDF step types require peaks to evaluate, but data-defined peaks dont have Gaussian params
+  //  to define the CDF, so this combination shouldnt occur.
+  assert( !PeakContinuum::is_peak_cdf_step_continuum( continuum->type() ) );
+
   double peaksum = 0.0, datasum = 0.0;
   for( size_t channel = lower_channel; channel <= upper_channel; ++channel )
   {
     const float lowere = max( data->gamma_channel_lower(channel), roilower );
     const float uppere = min( data->gamma_channel_upper(channel), roiupper );
     const double dataarea = gamma_integral( data, lowere, uppere );
-    const double contarea = continuum->offset_integral( lowere, uppere, data );
+    const double contarea = continuum->offset_integral( lowere, uppere, data, nullptr, 0 );
     datasum += max( 0.0, dataarea);
     peaksum += max( 0.0, (dataarea-contarea));
   }//for( int bin = lowerbin; bin <= upperbin; ++bin )
@@ -2654,6 +2667,8 @@ void PeakEdit::apply()
         case PeakContinuum::FlatStep:
         case PeakContinuum::LinearStep:
         case PeakContinuum::BiLinearStep:
+        case PeakContinuum::FlatStepCDF:
+        case PeakContinuum::LinearStepCDF:
           break;
       }//switch( offset )
     }//if( offset != m_currentPeak.offsetType() )

@@ -1868,7 +1868,9 @@ RoiSignificanceResult compute_roi_chi2_significance(
       continue;
 
     // Continuum integral, with a minimum of 1.0 to avoid division issues
-    const double continuum_integral = std::max( 1.0, peak_cont->offset_integral( peak_lower, peak_upper, data ) );
+    double cont_integral_raw = 0.0;
+    cont_integral_raw = peak_cont->offset_integral( peak_lower, peak_upper, data, peaks_in_roi );
+    const double continuum_integral = std::max( 1.0, cont_integral_raw );
 
     // Peak amplitude in the ±1 FWHM range
     const double peak_amp_in_range = peak->amplitude() * fwhm_coverage_fraction;

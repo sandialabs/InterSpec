@@ -200,7 +200,9 @@ struct PeakFitDiffCostFunction
     })() ),
     m_num_parameters(
       PeakDef::num_skew_parameters(skew_type)
-        + (m_use_lls_for_cont ? size_t(0) : PeakContinuum::num_parameters(offset_type))
+        + (m_use_lls_for_cont
+           ? (PeakContinuum::is_peak_cdf_step_continuum(offset_type) ? size_t(1) : size_t(0))
+           : PeakContinuum::num_parameters(offset_type))
         + ( options.testFlag(PeakFitLM::PeakFitLMOptions::AllPeakFwhmIndependent) ? m_num_fit_sigmas : std::min( m_num_fit_sigmas, size_t(2) ) )
         + m_num_peaks
     ),
@@ -293,10 +295,11 @@ struct PeakFitDiffCostFunction
     bool valid_offset_type = false;
     switch( offset_type )
     {
-      case PeakContinuum::NoOffset:     case PeakContinuum::Constant:
-      case PeakContinuum::Linear:       case PeakContinuum::Quadratic:
-      case PeakContinuum::Cubic:        case PeakContinuum::FlatStep:
-      case PeakContinuum::LinearStep:   case PeakContinuum::BiLinearStep:
+      case PeakContinuum::NoOffset:      case PeakContinuum::Constant:
+      case PeakContinuum::Linear:        case PeakContinuum::Quadratic:
+      case PeakContinuum::Cubic:         case PeakContinuum::FlatStep:
+      case PeakContinuum::LinearStep:    case PeakContinuum::BiLinearStep:
+      case PeakContinuum::FlatStepCDF:   case PeakContinuum::LinearStepCDF:
       case PeakContinuum::External:
         valid_offset_type = true;
         break;
@@ -317,9 +320,12 @@ struct PeakFitDiffCostFunction
   {
     const double num_channels = 1.0 + m_upper_channel - m_lower_channel;
     const double num_skew = PeakDef::num_skew_parameters( m_skew_type );
-    const size_t num_fit_continuum_pars = m_use_lls_for_cont ? size_t(0) : PeakContinuum::num_parameters( m_offset_type );
+    const bool cdf_step = PeakContinuum::is_peak_cdf_step_continuum( m_offset_type );
+    const size_t num_fit_continuum_pars = m_use_lls_for_cont
+      ? (cdf_step ? size_t(1) : size_t(0))
+      : PeakContinuum::num_parameters( m_offset_type );
     const double num_sigmas_fit = number_sigma_parameters();
-    
+
     // fixed sigmas are handled by just not having them included in the parameters, so we wont
     //  count fixed sigmas in this next loop.
     size_t num_fixed_pars = 0;
@@ -328,7 +334,7 @@ struct PeakFitDiffCostFunction
       num_fixed_pars += !p->fitFor(PeakDef::GaussAmplitude);
       num_fixed_pars += !p->fitFor(PeakDef::Mean);
     }
-    
+
     // Get the number of fixed continuum parameters.
     if( !m_use_lls_for_cont )
     {
@@ -343,7 +349,9 @@ struct PeakFitDiffCostFunction
   size_t number_parameters() const
   {
     assert( m_num_parameters == (PeakDef::num_skew_parameters(m_skew_type)
-     + (m_use_lls_for_cont ? size_t(0) : PeakContinuum::num_parameters(m_offset_type))
+     + (m_use_lls_for_cont
+        ? (PeakContinuum::is_peak_cdf_step_continuum(m_offset_type) ? size_t(1) : size_t(0))
+        : PeakContinuum::num_parameters(m_offset_type))
      + number_sigma_parameters()
      + m_num_peaks) );
 
@@ -387,7 +395,10 @@ struct PeakFitDiffCostFunction
   {
 #define DEBUG_PAR_TO_PEAKS 0
 
-    const size_t num_fit_continuum_pars = m_use_lls_for_cont ? size_t(0) : PeakContinuum::num_parameters( m_offset_type );
+    const bool cdf_step_lls = m_use_lls_for_cont && PeakContinuum::is_peak_cdf_step_continuum( m_offset_type );
+    const size_t num_fit_continuum_pars = m_use_lls_for_cont
+      ? (cdf_step_lls ? size_t(1) : size_t(0))
+      : PeakContinuum::num_parameters( m_offset_type );
     const size_t end_data_residual = m_upper_channel - m_lower_channel;
 
     auto starting_continuum = m_starting_peaks[0]->continuum();
@@ -759,7 +770,7 @@ struct PeakFitDiffCostFunction
     const float * const energies = energies_ptr->data() + m_lower_channel;
     const float * const channel_counts = counts_vec.data() + m_lower_channel;
 
-    const int num_polynomial_terms = static_cast<int>( PeakContinuum::num_parameters( m_offset_type ) );
+    const int num_polynomial_terms = static_cast<int>( PeakContinuum::num_linear_fit_pars( m_offset_type ) );
     const bool is_step_continuum = PeakContinuum::is_step_continuum( m_offset_type );
 
     assert( !peaks.empty() || !fixed_amp_peaks.empty() );
@@ -802,11 +813,14 @@ struct PeakFitDiffCostFunction
         
         vector<T> amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts;
         
-        PeakFit::fit_amp_and_offset_imp(energies, &(data_copy[0]), &(data_variances[0]), nchannel,
-                                        num_polynomial_terms, is_step_continuum, T(m_ref_energy), means, sigmas,
-                                        fixed_amp_peaks, m_skew_type, skew_pars.data(),
-                                        amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts,
-                                        &(peak_counts[0]) );
+        {
+          const T sc = cdf_step_lls ? params[0] : T(0.0);
+          PeakFit::fit_amp_and_offset_imp(energies, &(data_copy[0]), &(data_variances[0]), nchannel,
+                                          m_offset_type, sc, T(m_ref_energy), means, sigmas,
+                                          fixed_amp_peaks, m_skew_type, skew_pars.data(),
+                                          amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts,
+                                          &(peak_counts[0]) );
+        }
         
         assert( peaks.size() == amplitudes.size() );
         assert( amp_uncerts.empty() || (amp_uncerts.size() == peaks.size()));
@@ -828,11 +842,14 @@ struct PeakFitDiffCostFunction
         peak_counts[i] += T( m_external_continuum->gamma_integral( energies[i], energies[i+1] ) );
     }else if( !m_use_lls_for_cont )
     {
+      // CDF step types should always use the LLS path (m_use_lls_for_cont should be true)
+      assert( !PeakContinuum::is_peak_cdf_step_continuum( m_offset_type ) );
+
       continuum->setParameters( T(m_ref_energy), params, nullptr );
 
       for( size_t peak_index = 0; peak_index < peaks.size(); ++peak_index )
         peaks[peak_index].gauss_integral( energies, &(peak_counts[0]), nchannel );
-      
+
       for( size_t peak_index = 0; peak_index < fixed_amp_peaks.size(); ++peak_index )
         fixed_amp_peaks[peak_index].gauss_integral( energies, &(peak_counts[0]), nchannel );
 
@@ -850,10 +867,13 @@ struct PeakFitDiffCostFunction
 
       vector<T> amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts;
 
-      PeakFit::fit_amp_and_offset_imp(energies, channel_counts, nullptr, nchannel, num_polynomial_terms, is_step_continuum,
-                                          T(m_ref_energy), means, sigmas, fixed_amp_peaks, m_skew_type, skew_pars.data(),
-                                          amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts,
-                                          &(peak_counts[0]) );
+      {
+        const T sc = cdf_step_lls ? params[0] : T(0.0);
+        PeakFit::fit_amp_and_offset_imp(energies, channel_counts, nullptr, nchannel, m_offset_type,
+                                            sc, T(m_ref_energy), means, sigmas, fixed_amp_peaks, m_skew_type, skew_pars.data(),
+                                            amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts,
+                                            &(peak_counts[0]) );
+      }
 
       assert( peaks.size() == amplitudes.size() );
       assert( amp_uncerts.empty() || (amp_uncerts.size() == peaks.size()));
@@ -867,6 +887,14 @@ struct PeakFitDiffCostFunction
       if( (m_offset_type != PeakContinuum::OffsetType::NoOffset)
          && (m_offset_type != PeakContinuum::OffsetType::External) )
       {
+        if( cdf_step_lls )
+        {
+          // For CDF step types, fit_amp_and_offset_imp returns only the polynomial coefficients,
+          //  but the continuum expects poly coeffs + step_coeff as the last parameter.
+          continuum_coeffs.push_back( params[0] );
+          cont_uncerts.push_back( uncertainties ? T(uncertainties[0]) : T(0.0) );
+        }
+
         continuum->setParameters( T(m_ref_energy), continuum_coeffs.data(), cont_uncerts.data() );
       }
     }//if( m_use_lls_for_cont )
@@ -1276,7 +1304,10 @@ struct PeakFitDiffCostFunction
   {
     const size_t num_fit_pars = number_parameters();
     const size_t num_sigmas_fit = number_sigma_parameters();
-    const size_t num_fit_continuum_pars = m_use_lls_for_cont ? size_t(0) : PeakContinuum::num_parameters( m_offset_type );
+    const bool cdf_step_lls = m_use_lls_for_cont && PeakContinuum::is_peak_cdf_step_continuum( m_offset_type );
+    const size_t num_fit_continuum_pars = m_use_lls_for_cont
+      ? (cdf_step_lls ? size_t(1) : size_t(0))
+      : PeakContinuum::num_parameters( m_offset_type );
     const size_t num_skew = PeakDef::num_skew_parameters( m_skew_type );
 
     vector<int> constant_parameters;
@@ -1284,7 +1315,16 @@ struct PeakFitDiffCostFunction
     vector<std::optional<double>> lower_bounds( num_fit_pars );
     vector<std::optional<double>> upper_bounds( num_fit_pars );
 
-    if( m_use_lls_for_cont )
+    if( cdf_step_lls )
+    {
+      // step_coeff is the first Ceres parameter; initialize to 0 with wide bounds
+      const shared_ptr<const PeakContinuum> initial_continuum = m_starting_peaks.front()->continuum();
+      const size_t step_par_index = PeakContinuum::num_parameters( m_offset_type ) - 1;
+      parameters[0] = (step_par_index < initial_continuum->parameters().size())
+                      ? initial_continuum->parameters()[step_par_index] : 0.0;
+      lower_bounds[0] = -1.0e4;
+      upper_bounds[0] = 1.0e4;
+    }else if( m_use_lls_for_cont )
     {
       assert( num_fit_continuum_pars == 0 );
     }else

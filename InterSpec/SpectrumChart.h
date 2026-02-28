@@ -220,11 +220,14 @@ public:
 
   //peakBackgroundVal(...): gives the bottom of the peak (e.g. the continuum)
   //  to paint.  Acounts for data background subtraction as well.
+  //  The roi_peaks parameter provides the ROI peer peaks needed for CDF step
+  //  continuum types (FlatStepCDF, LinearStepCDF).
   static double peakBackgroundVal( const int bin,
                                    const PeakDef &peak,
                                    const SpectrumDataModel *th1Model,
                                    std::shared_ptr<const PeakDef> prevPeak,
-                                   std::shared_ptr<const PeakDef> nextPeak );
+                                   std::shared_ptr<const PeakDef> nextPeak,
+                                   const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks = {} );
   
 
   //paintGausPeaks(): Paints peaks that share a ROI.  All peaks passed into
