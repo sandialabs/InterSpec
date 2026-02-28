@@ -1,23 +1,23 @@
 #ifndef MaterialDB_h
 #define MaterialDB_h
 /* InterSpec: an application to analyze spectral gamma radiation data.
- 
+
  Copyright 2018 National Technology & Engineering Solutions of Sandia, LLC
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
  alternative emails of interspec@sandia.gov.
- 
+
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
  License as published by the Free Software Foundation; either
  version 2.1 of the License, or (at your option) any later version.
- 
+
  This library is distributed in the hope that it will be useful,
  but WITHOUT ANY WARRANTY; without even the implied warranty of
  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  Lesser General Public License for more details.
- 
+
  You should have received a copy of the GNU Lesser General Public
  License along with this library; if not, write to the Free Software
  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
@@ -25,12 +25,11 @@
 
 #include "InterSpec_config.h"
 
-#include <mutex>
+#include <memory>
 #include <string>
 #include <vector>
 #include <utility>
 #include <istream>
-#include <condition_variable>
 
 class MaterialDB;
 
@@ -87,7 +86,7 @@ struct Material
   /** Returns the mass-fraction of the material a certain element is.
    */
   double massFractionOfElementInMaterial( const SandiaDecay::Element * const element ) const;
-  
+
   float massWeightedAtomicNumber() const;
 
   std::string name;
@@ -96,9 +95,9 @@ struct Material
   MaterialDefintionsSrc source;
 
   /** Nuclides and their fractions, by weight.
-   
+
    The fraction is the fraction of the entire materials density, not just the element.
-   
+
    The nuclides here are independent from the elements in #elements; normally if an
    isotope is specified here, then the other isotopes of that element will also be given,
    and the element will not be in #elements (but if it is, then you would add the
@@ -107,7 +106,7 @@ struct Material
   std::vector< NuclideFractionPair >  nuclides;
 
   /** Elements and their fractions by weight.
-   
+
    Isotopic compositions should be assumed to be natural.
    */
   std::vector< ElementFractionPair >  elements;
@@ -125,43 +124,41 @@ private:
 
 class MaterialDB
 {
-/*
-   MaterialDB: keeps an entry of materials in memorry.
-   Text based files in either GEANT4 or GADRAS style formating may be used to
-   populate database.  
-   This class is thread safe, and may be populated by calling 
-   parseGadrasMaterialFile() or parseG4MaterialFile() from a secondary client
-   thread *assuming* only a single input file will be used to populate the 
-   database.  If you are going to populate a second source file, then do not
-   call any other member in parrelel during parsing.
-*/
-  
-public:
-  static const Material sm_voidMaterial;
+  /** MaterialDB: a singleton database of materials.
+
+   The singleton is initialized at application startup via `initialize()`, and accessed
+   via `instance()`.  All public query methods are const, making the singleton thread-safe
+   after initialization.
+
+   Materials are stored as `shared_ptr<const Material>`, so callers receive a ref-counted
+   handle that remains valid regardless of the singleton's lifetime.
+   */
 
 public:
-  MaterialDB();
+  /** Returns the singleton MaterialDB instance.
+
+   If not yet initialized, will attempt lazy initialization.
+   Throws std::runtime_error if initialization has not been done and fails.
+   */
+  static std::shared_ptr<const MaterialDB> instance();
+
+  /** Explicitly initializes the singleton.
+
+   Should be called at application startup, after DecayDataBaseServer::initialize().
+   Parses `staticDataDirectory()/MaterialDataBase.txt`, then optionally
+   `writableDataDirectory()/MaterialDataBase.txt` to allow user overrides.
+
+   Thread-safe; subsequent calls after successful init are no-ops.
+   */
+  static void initialize();
+
+  /** Returns whether the singleton has been successfully initialized. */
+  static bool initialized();
+
+  /** Returns the initialization error message, or empty string if no error. */
+  static const std::string &init_error();
+
   ~MaterialDB();
-
-  //parseGadrasMaterialFile(...)
-  //Will thow std::runtime_exception on failure or unexpected input formating.
-  //See data/MaterialGadras.lib or GADRAS users manual for example formatting.
-  //Ignores all lines of file before the "Air" material
-  //text after a '!' character will be ignored for descriptions and density
-  //  lines
-  //If swapNameDescription==true, then the material name and descriptions will
-  //  be swapped (I like this better from the GADRAS original material DB)
-  void parseGadrasMaterialFile( const std::string &file,
-                                const SandiaDecay::SandiaDecayDataBase *db,
-                                const bool swapNameDescription = true );
-
-
-  //parseG4MaterialFile(...)
-  //Will thow std::runtime_exception on failure or unexpected input formating.
-  //See data/material.txt for example formatting.
-  void parseG4MaterialFile( const std::string &file,
-                            const SandiaDecay::SandiaDecayDataBase *db );
-
 
   //writeGadrasStyleMaterialFile(...):
   //  Writes the materials back out to a GADRAS compatible format, using Windows
@@ -170,85 +167,80 @@ public:
   //Has not been checked to work with GADRAS, just with this class
   void writeGadrasStyleMaterialFile( std::ostream &file ) const;
 
-  //names(): will throw exception if the database has not been initialized, and
-  //  the waite of 1 seconds elapesd for initialization in a background
-  //  thread failed.
+  /** Returns the names of all materials in the database.
+   */
   const std::vector<std::string> &names() const;
 
   /** Returns all materials.
-
-   Will throw exception if the database has not been initialized, and the waite of 1 seconds elapesd for
-   initialization in a background thread failed.
    */
-  const std::vector<const Material *> materials() const;
+  const std::vector<std::shared_ptr<const Material>> &materials() const;
 
-  //material(...) is not case sensitive
-  //  For the case of elements, the names have been altered to include both
-  //  the symbol and the name, for instance "Fe (iron)" - in this case a
-  //  material will be returned if it matches the string exactly
-  //  e.g. "Fe (iron)", matches just the symbol, "Fe", or just the part in
-  //  paranthesis, "iron".  If for some reason this ambiguous, the first
-  //  material found in the sourted alphabetical listing, will be returned.
-  //  throw std::runtime_error if it cant find material.
-  //  Will throw exception if the database has not been initialized, and
-  //  the waite of 1 seconds elapesd for initialization in a background
-  //  thread failed.
-  const Material *material( const std::string &name ) const;
+  /** Returns the material with the given name (case-insensitive).
 
-  //material(...)
-  //  throws std::runtime_error if index is out of bounds
-  const Material *material( const size_t index ) const;
+   For the case of elements, the names have been altered to include both
+   the symbol and the name, for instance "Fe (iron)" - in this case a
+   material will be returned if it matches the string exactly
+   e.g. "Fe (iron)", matches just the symbol, "Fe", or just the part in
+   parenthesis, "iron".  If for some reason this is ambiguous, the first
+   material found in the sorted alphabetical listing will be returned.
 
+   Throws std::runtime_error if it cant find material.
+   */
+  std::shared_ptr<const Material> material( const std::string &name ) const;
 
-  //parseChemicalFormula(...): parses chemical formulas using
-  //  Material::parseChemicalFormula(...).
-  //  Once the furmula is parsed, the Material is created and added to the
-  //  database and returned.
-  //  If formula is the name of an existing Material, then exception is thrown.
-  //  If the formula cant be parsed, than an exception is thrown.
-  const Material *parseChemicalFormula( std::string formula,
-                                   const SandiaDecay::SandiaDecayDataBase *db );
+  /** Returns the material at the given index.
 
-  /** Returns a Material from the given checmical formula.
-   
+   Throws std::runtime_error if index is out of bounds.
+   */
+  std::shared_ptr<const Material> material( const size_t index ) const;
+
+  /** Returns a Material from the given chemical formula.
+
    The new material is NOT added to the database.
-   
+
    Useful for one-off uses in the code.
-   
+
    Throws exception on error.
    */
-  static Material materialFromChemicalFormula( const std::string &formula,
-                                              const SandiaDecay::SandiaDecayDataBase *db );
+  static std::shared_ptr<const Material> materialFromChemicalFormula(
+    const std::string &formula,
+    const SandiaDecay::SandiaDecayDataBase *db );
 
   //Performs a case-insensitive comparison (eg string::operator<) comparison
   //  of names
   static bool less_than_by_name( const Material *lhs, const Material *rhs );
-  
+
   //Similar to #less_than_by_name
   static bool equal_by_name( const Material *lhs, const Material *rhs );
 
-protected:
+private:
+  MaterialDB();
+
+  //parseGadrasMaterialFile(...)
+  //Will throw std::runtime_exception on failure or unexpected input formatting.
+  //See data/MaterialGadras.lib or GADRAS users manual for example formatting.
+  //Ignores all lines of file before the "Air" material.
+  //text after a '!' character will be ignored for descriptions and density lines.
+  //If swapNameDescription==true, then the material name and descriptions will
+  //  be swapped (I like this better from the GADRAS original material DB).
+  //If overwrite==true, materials with the same name as existing ones will replace them.
+  void parseGadrasMaterialFile( const std::string &file,
+                                const SandiaDecay::SandiaDecayDataBase *db,
+                                const bool swapNameDescription = true,
+                                const bool overwrite = false );
+
+
+  //parseG4MaterialFile(...)
+  //Will throw std::runtime_exception on failure or unexpected input formatting.
+  //See data/material.txt for example formatting.
+  void parseG4MaterialFile( const std::string &file,
+                            const SandiaDecay::SandiaDecayDataBase *db );
+
   //refreshMaterialNames(): should be called whenever m_materials is modified.
-  //  Takes lock on m_mutex, so make sure m_mutex isnt already locked (will
-  //  throw exception if cant imediately get it).
   void refreshMaterialNames();
 
-  //wait_material_ready(): returns if the database (e.g. m_materials) has been
-  //  initialized.  If it has not been initalized, and this funciton has not
-  //  failed before, then will wait up to 1.0 second for the database to be
-  //  initialized before returning false.
-  bool wait_material_ready() const;
-  
-protected:
-
-  std::vector<const Material *> m_materials;
-  std::vector<std::string> m_materialNames;  //one-to-one correspondance to m_materials
-  
-  //m_initFailure: if a timeout while waiting for the database to be initialized
-  //  has occured, then skip the waiting for subsequent calls.
-  mutable bool m_initFailure;
-  mutable std::mutex m_mutex;
-  mutable std::condition_variable m_condition;
+  std::vector<std::shared_ptr<const Material>> m_materials;
+  std::vector<std::string> m_materialNames;  //one-to-one correspondence to m_materials
 };//class MaterialDB
 
 

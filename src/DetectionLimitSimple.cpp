@@ -101,8 +101,7 @@ namespace
 }//namespace
 
 
-DetectionLimitSimpleWindow::DetectionLimitSimpleWindow( MaterialDB *materialDB,
-                                Wt::WSuggestionPopup *materialSuggestion,
+DetectionLimitSimpleWindow::DetectionLimitSimpleWindow( Wt::WSuggestionPopup *materialSuggestion,
                                 InterSpec *viewer )
 : AuxWindow( WString::tr("window-title-simple-mda"),
             (AuxWindowProperties::TabletNotFullScreen
@@ -110,10 +109,10 @@ DetectionLimitSimpleWindow::DetectionLimitSimpleWindow( MaterialDB *materialDB,
              | AuxWindowProperties::DisableCollapse) )
 {
   UndoRedoManager::BlockUndoRedoInserts undo_blocker;
-  
+
   rejectWhenEscapePressed( true );
-  
-  m_tool = new DetectionLimitSimple( materialDB, materialSuggestion, viewer, contents() );
+
+  m_tool = new DetectionLimitSimple( materialSuggestion, viewer, contents() );
   m_tool->setHeight( WLength(100,WLength::Percentage) );
   
   AuxWindow::addHelpInFooter( footer(), "simple-mda-dialog" );
@@ -180,14 +179,12 @@ DetectionLimitSimple *DetectionLimitSimpleWindow::tool()
 
 
 
-DetectionLimitSimple::DetectionLimitSimple( MaterialDB *materialDB,
-                                 Wt::WSuggestionPopup *materialSuggestion,
+DetectionLimitSimple::DetectionLimitSimple( Wt::WSuggestionPopup *materialSuggestion,
                                  InterSpec *specViewer,
                                  Wt::WContainerWidget *parent )
  : WContainerWidget( parent ),
   m_viewer( specViewer ),
   m_materialSuggest( materialSuggestion ),
-  m_materialDB( materialDB ),
   m_spectrum( nullptr ),
   m_peakModel( nullptr ),
   m_resultTxt( nullptr ),

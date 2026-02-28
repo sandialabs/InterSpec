@@ -694,7 +694,7 @@ struct ShieldSourceConfig
   ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
   
   rapidxml::xml_node<char> *serialize( rapidxml::xml_node<char> *base_node ) const;
-  void deSerialize( const rapidxml::xml_node<char> *base_node, MaterialDB *materialDb );
+  void deSerialize( const rapidxml::xml_node<char> *base_node );
 };//struct ShieldSourceCalcInput
 
   
@@ -898,7 +898,7 @@ public:
   
   bool hasVariableMassFraction( const size_t material_index ) const;
   
-  std::vector<const Material *> materialsFittingMassFracsFor() const;
+  std::vector<std::shared_ptr<const Material>> materialsFittingMassFracsFor() const;
   
   /** Returns nuclides that are self-attenuating, wether fitting the mass-fraction for them or not. */
   std::vector<const SandiaDecay::Nuclide *> selfAttenuatingNuclides( const size_t material_index ) const;
@@ -1080,8 +1080,8 @@ public:
   bool isGenericMaterial( const size_t materialNum ) const;
   
   //material(): will throw exception if invalid materialNum, and will return
-  //  NULL if a generic material.
-  const Material *material( const size_t materialNum ) const;
+  //  nullptr if a generic material.
+  std::shared_ptr<const Material> material( const size_t materialNum ) const;
   
   //sphericalThickness(...): will throw std::runtime_exception if material is a generic
   //  material

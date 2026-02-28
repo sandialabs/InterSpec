@@ -669,7 +669,7 @@ void RelActAutoGuiRelEffOptions::update_shield_widget(
   if( !w )
     return;
       
-  const Material * const widget_mat = w->material();
+  const std::shared_ptr<const Material> widget_mat = w->material();
   assert( (!!shield.material) == (!!widget_mat) );
   assert( !widget_mat || !shield.material || (widget_mat->name == shield.material->name) );
       

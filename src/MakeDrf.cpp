@@ -701,7 +701,7 @@ namespace
   {
     std::shared_ptr<SpecMeas> m_meas;
     set<int> m_samples;
-    MaterialDB *m_materialDB;
+    
     WSuggestionPopup *m_materialSuggest;
     WContainerWidget *m_peaks;
     WContainerWidget *m_sources;
@@ -803,13 +803,11 @@ namespace
     
   public:
     DrfSpecFileSample( std::shared_ptr<SpecMeas> meas, set<int> samples,
-                      MaterialDB *materialDB,
                       Wt::WSuggestionPopup *materialSuggest,
                       WContainerWidget *parent = nullptr )
     : WPanel( parent ),
       m_meas( meas ),
       m_samples( samples ),
-      m_materialDB( materialDB ),
       m_materialSuggest( materialSuggest ),
       m_peaks( nullptr ),
       m_sources( nullptr ),
@@ -1266,7 +1264,7 @@ namespace
             }//for( const int sample : m_samples )
           }//for( size_t i = 0; i < detNames.size(); ++i )
           
-          MakeDrfSrcDef *src = new MakeDrfSrcDef( n, measDate, m_materialDB, m_materialSuggest, m_sources );
+          MakeDrfSrcDef *src = new MakeDrfSrcDef( n, measDate, m_materialSuggest, m_sources );
           src->setIsEffGeometryType( static_cast<int>(m_geometry_type) );
           src->updated().connect( std::bind([this](){ m_srcInfoUpdated.emit(); }) );
           
@@ -1371,7 +1369,6 @@ namespace
     
   public:
     DrfSpecFile( std::shared_ptr<SpecMeas> meas,
-                MaterialDB *materialDB,
                 Wt::WSuggestionPopup *materialSuggest,
                 WContainerWidget *parent = nullptr )
       : WPanel( parent ),
@@ -1393,7 +1390,7 @@ namespace
           continue;
         
         ++nsamples;
-        auto sample = new DrfSpecFileSample( meas, peakSamps, materialDB, materialSuggest, m_sampleWidgets );
+        auto sample = new DrfSpecFileSample( meas, peakSamps, materialSuggest, m_sampleWidgets );
         sample->srcInfoUpdated().connect( std::bind( [this](){ m_updated.emit(); }) );
       }//for( const set<int> &peakSamps : sampsWithPeaks )
       
@@ -1435,7 +1432,6 @@ namespace
 
 
 MakeDrfWindow::MakeDrfWindow( InterSpec *viewer,
-                MaterialDB *materialDB,
                 Wt::WSuggestionPopup *materialSuggest )
 : AuxWindow( WString::tr("window-title-create-drf"), 
             (AuxWindowProperties::TabletNotFullScreen
@@ -1456,7 +1452,7 @@ MakeDrfWindow::MakeDrfWindow( InterSpec *viewer,
     setMinimumSize( std::min(width,640), std::min(height,480) );
   }//if( ww > 100 && wh > 100 )
     
-  m_tool = new MakeDrf( viewer, materialDB, materialSuggest );
+  m_tool = new MakeDrf( viewer, materialSuggest );
   
   stretcher()->addWidget( m_tool, 0, 0 );
   stretcher()->setContentsMargins( 0, 0, 0, 0 );
@@ -1489,12 +1485,11 @@ MakeDrf *MakeDrfWindow::tool()
   
 
 
-MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
+MakeDrf::MakeDrf( InterSpec *viewer,
                   Wt::WSuggestionPopup *materialSuggest,
                   Wt::WContainerWidget *parent )
 : WContainerWidget( parent ),
   m_interspec( viewer ),
-  m_materialDB( materialDB ),
   m_materialSuggest( materialSuggest ),
   m_intrinsicEfficiencyIsValid( this ),
   m_finished( this ),
@@ -1523,7 +1518,7 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_effUpperEnergy( 0.0f )
 {
   assert( m_interspec );
-  assert( m_materialDB );
+  assert( MaterialDB::instance() );
   assert( m_materialSuggest );
   
   wApp->useStyleSheet( "InterSpec_resources/MakeDrf.css" );
@@ -1740,7 +1735,7 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
       continue;
     
     //Make a widget representing each file
-    DrfSpecFile *fileWidget = new DrfSpecFile( meas, materialDB, materialSuggest, m_files );
+    DrfSpecFile *fileWidget = new DrfSpecFile( meas, materialSuggest, m_files );
     fileWidget->updated().connect( this, &MakeDrf::handleSourcesUpdates );
     added.push_back( fileWidget );
     

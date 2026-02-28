@@ -669,8 +669,7 @@ void RefLineDynamic::startUpdateLines()
   const size_t starting_calc_num = calc_num->load();
 
   const bool highres = PeakFitUtils::is_likely_high_res( m_interspec );
-  const MaterialDB * const materialDb = m_interspec->materialDataBase(); //MaterialDB itself is thread-safe
-  
+
   const set<int> &foreground_samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Foreground);
   const shared_ptr<const SpecMeas> foreground_meas = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
   
@@ -736,7 +735,7 @@ void RefLineDynamic::startUpdateLines()
   
   
   const auto do_work = [foreground, det_ana, unique_foreground_peaks, unique_background_peaks,
-                        foreground_lt, background_lt, highres, always_srcs, materialDb, user_foreground_peaks,
+                        foreground_lt, background_lt, highres, always_srcs, user_foreground_peaks,
                         ext_rid_isotopes, categories, detector_ptr,
                         calc_num, starting_calc_num, sessionId,
                         js_fwhm_fcn, ref_lines_answer,updaterfcn](){
@@ -948,7 +947,7 @@ void RefLineDynamic::startUpdateLines()
           {
             try
             {
-              input.setShieldingAttFcn( materialDb );
+              input.setShieldingAttFcn();
             }catch( std::exception &e )
             {
               cerr << "Error setting shielding for curve: " << e.what() << endl;

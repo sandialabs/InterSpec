@@ -674,7 +674,7 @@ BOOST_AUTO_TEST_CASE( testShieldingEffect )
   input.m_shielding_ad = "";
   input.m_shielding_att = nullptr;
   
-  BOOST_REQUIRE_NO_THROW( input.setShieldingAttFcn( &materialDB ) );
+  BOOST_REQUIRE_NO_THROW( input.setShieldingAttFcn() );
   BOOST_REQUIRE_NO_THROW( ref_lines = ReferenceLineInfo::generateRefLineInfo(input) );
   BOOST_REQUIRE_MESSAGE( ref_lines, "Ref lines for '" << input.m_input_txt << "' should not be null");
   BOOST_CHECK( ref_lines->m_validity == ReferenceLineInfo::InputValidity::Valid );

@@ -303,7 +303,6 @@ public:
   
   /** Throws exception on error. */
   static void prepare_calc_input( const RelActCalcRawInput &input,
-                                 MaterialDB *materialDB,
                                  RelActCalcManual::RelEffInput &output );
   
 public:

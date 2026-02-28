@@ -188,16 +188,14 @@ void batch_test()
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   assert( db );
   
-  MaterialDB matdb;
-  
-  const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
-  matdb.parseGadrasMaterialFile( materialfile, db, false );
-  
-  const Material * const stainless = matdb.material("stainless-steel NIST");
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  assert( matdb );
+
+  const std::shared_ptr<const Material> stainless = matdb->material("stainless-steel NIST");
   assert( stainless );
   
   const auto shield_transmission = [stainless, shielding_thickness]( const double energy ) -> double {
-    const double atten_coef = GammaInteractionCalc::transmition_coefficient_material( stainless, energy, shielding_thickness );
+    const double atten_coef = GammaInteractionCalc::transmition_coefficient_material( stainless.get(), energy, shielding_thickness );
     return exp( -1.0*atten_coef );
   };
   

@@ -63,8 +63,7 @@ class GammaXsGui : public Wt::WContainerWidget
 public:
   //GammaXsGui(...) assumes `tool` is valid and remains accessible throughout
   //  the life of the GammaXsGui - also assumes no multithread issues with it
-  GammaXsGui( MaterialDB *materialDB,
-              Wt::WSuggestionPopup *materialSuggestion,
+  GammaXsGui( Wt::WSuggestionPopup *materialSuggestion,
               InterSpec *specViewer,
               Wt::WContainerWidget *parent = 0 );
   virtual ~GammaXsGui();
@@ -127,8 +126,6 @@ protected:
 
   Wt::WGridLayout *m_layout;
   
-  MaterialDB *m_materialDB;       //not owned by this object
-  
   InterSpec* m_specViewer; //the reference holding the detector
   DetectorDisplay *m_detectorDisplay;
   Wt::WLabel *m_detectorDistanceLabel;
@@ -155,8 +152,7 @@ class GammaXsWindow : public AuxWindow
   When the user closes the window all memmorry is cleaned up.
 */
 public:
-  GammaXsWindow( MaterialDB *materialDB,
-                 Wt::WSuggestionPopup *materialSuggestion,
+  GammaXsWindow( Wt::WSuggestionPopup *materialSuggestion,
                  InterSpec* viewer );
   virtual ~GammaXsWindow();
   
