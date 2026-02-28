@@ -6621,13 +6621,31 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
   //  cerr << endl << endl;
   
   double roi_data_sum = 0.0, step_cumulative_data = 0.0;
-  
+
   const double roi_lower = x[0];
   const double roi_upper = x[nbin];
-  
+
+#if( PEAK_CONTINUUM_DATA_STEP_SUBTRACT )
+  float min_data_val = data[0];
+  for( size_t row = 0; row < nbin; ++row )
+  {
+    roi_data_sum += std::max( data[row], 0.0f );
+    min_data_val = std::min( min_data_val, data[row] );
+  }
+  if( step_continuum )
+  {
+    min_data_val = std::max( min_data_val, 0.0f );
+    roi_data_sum -= static_cast<double>( min_data_val ) * nbin;
+  }else
+  {
+    min_data_val = 0.0f;
+  }
+#else
+  const float min_data_val = 0.0f;
   for( size_t row = 0; row < nbin; ++row )
     roi_data_sum += std::max( data[row], 0.0f );
-  
+#endif
+
   const double avrg_data_val = roi_data_sum / nbin;
   
   // For the RelACtAuto calcs, there can easily be 100 peaks, so for this case we'll calculate
@@ -6685,9 +6703,9 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
     double uncert = (dataval > PEAK_FIT_MIN_CHANNEL_UNCERT ? sqrt(dataval) : 1.0);
 
     if( step_continuum )
-      step_cumulative_data += dataval;
+      step_cumulative_data += (dataval - min_data_val);
 
-    
+
     if( do_mt_fixed_peak )
     {
       assert( mt_fixed_peak_contrib.size() == nbin );
@@ -6718,13 +6736,15 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
       {
         // This logic mirrors that of PeakContinuum::offset_integral(...), and code
         // If you change it in one place - change it in here, below, and in offset_integral.
-        const double frac_data = (step_cumulative_data - 0.5*data[row]) / roi_data_sum;
+        const double frac_data = (roi_data_sum > 0.0)
+            ? (step_cumulative_data - 0.5*(data[row] - min_data_val)) / roi_data_sum : 0.5;
         const double contribution = frac_data * (x1 - x0);
-        
+
         A(row,col) = contribution / uncert;
       }else if( step_continuum && (num_polynomial_terms == 4) )
       {
-        const double frac_data = (step_cumulative_data - 0.5*data[row]) / roi_data_sum;
+        const double frac_data = (roi_data_sum > 0.0)
+            ? (step_cumulative_data - 0.5*(data[row] - min_data_val)) / roi_data_sum : 0.5;
 
         double contrib = 0.0;
         switch( col )
@@ -6890,36 +6910,38 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
     double dataval = data[bin];
     
     if( step_continuum )
-      step_cumulative_data += dataval;
-    
+      step_cumulative_data += (dataval - min_data_val);
+
     //TODO: I havent actually reasoned through the algorithm to see if this is the
     //      correct way to subtract off fixed-amplitude peaks.
     for( size_t i = 0; i < fixedAmpPeaks.size(); ++i )
       dataval -= fixedAmpPeaks[i].gauss_integral( x0, x1 );
-    
+
     double y_pred = 0.0;
     for( size_t col = 0; col < npoly; ++col )
     {
       const double exp = col + 1.0;
       const double x0_rel = x0 - ref_energy;
       const double x1_rel = x1 - ref_energy;
-      
+
       if( step_continuum
          && ((num_polynomial_terms == 2) || (num_polynomial_terms == 3))
          && (col == (num_polynomial_terms - 1)) )
       {
         // This logic mirrors that of PeakContinuum::offset_integral(...) and above code in this
         //  function that defines the matrix, see above for comments
-        const double frac_data = (step_cumulative_data - 0.5*data[bin]) / roi_data_sum;
+        const double frac_data = (roi_data_sum > 0.0)
+            ? (step_cumulative_data - 0.5*(data[bin] - min_data_val)) / roi_data_sum : 0.5;
         const double contribution = frac_data * (x1 - x0);
-        
+
         y_pred += a(col)*contribution;
       }else if( step_continuum && (num_polynomial_terms == 4) )
       {
         // This logic mirrors that of PeakContinuum::offset_integral(...) and above code in this
         //  function that defines the matrix, see above for comments
-        
-        const double frac_data = (step_cumulative_data - 0.5*data[bin]) / roi_data_sum;
+
+        const double frac_data = (roi_data_sum > 0.0)
+            ? (step_cumulative_data - 0.5*(data[bin] - min_data_val)) / roi_data_sum : 0.5;
         
         double contrib = 0.0;
         switch( col )

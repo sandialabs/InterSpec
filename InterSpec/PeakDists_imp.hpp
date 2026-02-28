@@ -1522,10 +1522,20 @@ offset_integral(const ContType& cont,
       assert( roi_upper_channel < counts.size() );
 
 
-      const double roi_data_sum = std::accumulate( begin(counts) + roi_lower_channel, begin(counts) + roi_upper_channel + 1,  0.0 );
-      // Might be able to take advantage of vectorized sum using something like:
-      //const double roi_data_sum = Eigen::VectorXf::Map( &(counts[roi_lower_channel]), (1 + roi_upper_channel - roi_lower_channel) ).sum();
-
+#if( PEAK_CONTINUUM_DATA_STEP_SUBTRACT )
+      float min_count = counts[roi_lower_channel];
+      for( size_t i = roi_lower_channel + 1; i <= roi_upper_channel; ++i )
+        min_count = std::min( min_count, counts[i] );
+      min_count = std::max( min_count, 0.0f );
+#else
+      const float min_count = 0.0f;
+#endif
+      // Compute roi_data_sum by per-element subtraction of min_count to match the
+      //  single-channel offset_integral_non_cdf computation (avoid floating-point
+      //  discrepancy from subtracting min_count*N at the end).
+      double roi_data_sum = 0.0;
+      for( size_t i = roi_lower_channel; i <= roi_upper_channel; ++i )
+        roi_data_sum += (counts[i] - min_count);
 
       const size_t begin_channel = data->find_gamma_channel( energies[0] );
       assert( energies[0] == data->gamma_channel_lower(begin_channel) );
@@ -1542,12 +1552,12 @@ offset_integral(const ContType& cont,
 
       double cumulative_data = 0.0;
 
-      // Incase we are starting
+      // In case we are starting part-way into the ROI
       if( begin_channel > roi_lower_channel )
       {
-        for( size_t i = begin_channel; i < begin_channel; ++i )
-          cumulative_data += counts[i];
-      }//if( begin_channel > lower_channel )
+        for( size_t i = roi_lower_channel; i < begin_channel; ++i )
+          cumulative_data += (counts[i] - min_count);
+      }//if( begin_channel > roi_lower_channel )
 
 
       for( size_t i = begin_channel; i < end_channel; ++i )
@@ -1559,9 +1569,9 @@ offset_integral(const ContType& cont,
         const T x1_rel = static_cast<double>(data_energies[i+1]) - reference_energy;
 
         if( i >= roi_lower_channel && i <= roi_upper_channel )
-          cumulative_data += 0.5*counts[i];
+          cumulative_data += 0.5 * (counts[i] - min_count);
 
-        const double frac_data = cumulative_data / roi_data_sum;
+        const double frac_data = (roi_data_sum > 0.0) ? (cumulative_data / roi_data_sum) : 0.5;
 
         switch( cont_type )
         {
@@ -1613,7 +1623,7 @@ offset_integral(const ContType& cont,
         }//switch( cont_type )
 
         if( i >= roi_lower_channel && i <= roi_upper_channel )
-          cumulative_data += 0.5*counts[i];
+          cumulative_data += 0.5 * (counts[i] - min_count);
       }//for( size_t i = 0; i < channels; ++i )
 
       break;

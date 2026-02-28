@@ -63,6 +63,17 @@ namespace rapidxml
        This is currently necessary since multiple PeakDefs can share a PeakContinuum.  To fix this
        a ROI (e.g., continuum) should own the peaks, not the other way around
  */
+
+
+/** When set to 1, the data-based step continuums (FlatStep, LinearStep, BiLinearStep) subtract
+ the minimum channel count in the ROI before forming the CDF, concentrating the step shape
+ around the peak rather than the flat continuum.  When 0, the old, pre 20260227 behavior of using raw data
+ counts for the CDF is used.
+ 
+ The visual or area difference on a range of example peaks seems pretty minimal.
+ */
+#define PEAK_CONTINUUM_DATA_STEP_SUBTRACT 1
+
 struct PeakContinuum
 {
   enum OffsetType : int

@@ -5587,16 +5587,27 @@ double PeakContinuum::offset_integral_non_cdf( const double x0, const double x1,
     assert( lower_channel <= upper_channel );
     assert( upper_channel < counts.size() );
     
+#if( PEAK_CONTINUUM_DATA_STEP_SUBTRACT )
+    // Find the minimum channel count in the ROI to subtract before forming the CDF;
+    //  this concentrates the CDF shape around the peak rather than the flat continuum.
+    float min_count = counts[lower_channel];
+    for( size_t i = lower_channel + 1; i <= upper_channel; ++i )
+      min_count = std::min( min_count, counts[i] );
+    min_count = std::max( min_count, 0.0f );
+#else
+    const float min_count = 0.0f;
+#endif
+
     cumulative_data = 0.0;
     roi_data_sum = 0.0;
     for( size_t i = lower_channel; i <= upper_channel; ++i )
     {
-      roi_data_sum += counts[i];
-      cumulative_data += (i < mid_channel) ? counts[i] : 0.0f;
+      roi_data_sum += (counts[i] - min_count);
+      cumulative_data += (i < mid_channel) ? static_cast<double>( counts[i] - min_count ) : 0.0;
     }
-    
+
     if( (mid_channel >= lower_channel) && (mid_channel <= upper_channel) )
-      cumulative_data += 0.5*counts[mid_channel];
+      cumulative_data += 0.5 * (counts[mid_channel] - min_count);
   };//integrate_for_step lamda
   
   
@@ -5625,8 +5636,8 @@ double PeakContinuum::offset_integral_non_cdf( const double x0, const double x1,
       const double x0_rel = x0 - m_referenceEnergy;
       const double x1_rel = x1 - m_referenceEnergy;
       
-      const double frac_data = cumulative_data / roi_data_sum;
-      
+      const double frac_data = (roi_data_sum > 0.0) ? (cumulative_data / roi_data_sum) : 0.5;
+
       const double offset = m_values[0]*(x1_rel - x0_rel);
       const double linear = ((m_type == FlatStep) ? 0.0 :  0.5*m_values[1]*(x1_rel*x1_rel - x0_rel*x0_rel));
       const size_t step_index = ((m_type == FlatStep) ? 1 : 2);
@@ -5644,12 +5655,12 @@ double PeakContinuum::offset_integral_non_cdf( const double x0, const double x1,
       
       double roi_lower, roi_upper, cumulative_data, roi_data_sum;
       integrate_for_step( roi_lower, roi_upper, cumulative_data, roi_data_sum );
-      
+
       const double x0_rel = x0 - m_referenceEnergy;
       const double x1_rel = x1 - m_referenceEnergy;
-      
-      const double frac_data = cumulative_data / roi_data_sum;
-      
+
+      const double frac_data = (roi_data_sum > 0.0) ? (cumulative_data / roi_data_sum) : 0.5;
+
       const double left_poly = m_values[0]*(x1_rel - x0_rel) + 0.5*m_values[1]*(x1_rel*x1_rel - x0_rel*x0_rel);
       const double right_poly = m_values[2]*(x1_rel - x0_rel) + 0.5*m_values[3]*(x1_rel*x1_rel - x0_rel*x0_rel);
       
@@ -5914,32 +5925,42 @@ void PeakContinuum::offset_integral_non_cdf( const float *energies, double *chan
       assert( roi_upper_channel < counts.size() );
       
       
-      const double roi_data_sum = std::accumulate( begin(counts) + roi_lower_channel, begin(counts) + roi_upper_channel + 1,  0.0 );
-      // Might be able to take advantage of vectorized sum using something like:
-      //const double roi_data_sum = Eigen::VectorXf::Map( &(counts[roi_lower_channel]), (1 + roi_upper_channel - roi_lower_channel) ).sum();
-      
-      
+#if( PEAK_CONTINUUM_DATA_STEP_SUBTRACT )
+      float min_count = counts[roi_lower_channel];
+      for( size_t i = roi_lower_channel + 1; i <= roi_upper_channel; ++i )
+        min_count = std::min( min_count, counts[i] );
+      min_count = std::max( min_count, 0.0f );
+#else
+      const float min_count = 0.0f;
+#endif
+      // Compute roi_data_sum by per-element subtraction of min_count to match the
+      //  single-channel offset_integral_non_cdf computation (avoid floating-point
+      //  discrepancy from subtracting min_count*N at the end).
+      double roi_data_sum = 0.0;
+      for( size_t i = roi_lower_channel; i <= roi_upper_channel; ++i )
+        roi_data_sum += (counts[i] - min_count);
+
       const size_t begin_channel = data->find_gamma_channel( energies[0] );
       assert( energies[0] == data->gamma_channel_lower(begin_channel) );
       const size_t end_channel = begin_channel + nchannel; //one past last channel we want
-      
+
       // Lets check that `energies` points into the lower channel energies of `data`.
       //  We actually only care that the values of the array are the same, but we'll be
       //  a little tighter for development.
       const vector<float> &data_energies = *data->channel_energies();
-      
+
       if( (energies[0] != data->gamma_channel_lower(begin_channel))
          || (energies[nchannel] != data->gamma_channel_lower(begin_channel+nchannel)) )
         throw std::logic_error( "PeakContinuum::offset_integral: for stepped continua" );
-      
+
       double cumulative_data = 0.0;
-      
-      // Incase we are starting
+
+      // In case we are starting part-way into the ROI
       if( begin_channel > roi_lower_channel )
       {
-        for( size_t i = begin_channel; i < begin_channel; ++i )
-          cumulative_data += counts[i];
-      }//if( begin_channel > lower_channel )
+        for( size_t i = roi_lower_channel; i < begin_channel; ++i )
+          cumulative_data += (counts[i] - min_count);
+      }//if( begin_channel > roi_lower_channel )
       
       
       for( size_t i = begin_channel; i < end_channel; ++i )
@@ -5951,10 +5972,10 @@ void PeakContinuum::offset_integral_non_cdf( const float *energies, double *chan
         const double x1_rel = data_energies[i+1] - m_referenceEnergy;
         
         if( i >= roi_lower_channel && i <= roi_upper_channel )
-          cumulative_data += 0.5*counts[i];
-        
-        const double frac_data = cumulative_data / roi_data_sum;
-        
+          cumulative_data += 0.5 * (counts[i] - min_count);
+
+        const double frac_data = (roi_data_sum > 0.0) ? (cumulative_data / roi_data_sum) : 0.5;
+
         switch( m_type )
         {
           case FlatStep:
@@ -5964,35 +5985,35 @@ void PeakContinuum::offset_integral_non_cdf( const float *energies, double *chan
             const double linear = ((m_type == FlatStep) ? 0.0 :  0.5*m_values[1]*(x1_rel*x1_rel - x0_rel*x0_rel));
             const size_t step_index = ((m_type == FlatStep) ? 1 : 2);
             const double step_contribution = m_values[step_index] * frac_data * (x1_rel - x0_rel);
-            
+
             const double answer = std::max( 0.0, offset + linear + step_contribution );
-            
+
             assert( answer == offset_integral( data_energies[i], data_energies[i+1], data ) );
-            
+
             channels[input_index] += answer;
             break;
           }//case FlatStep: case LinearStep:
-            
+
           case BiLinearStep:
           {
             assert( m_values.size() == 4 );
             const double left_poly = m_values[0]*(x1_rel - x0_rel) + 0.5*m_values[1]*(x1_rel*x1_rel - x0_rel*x0_rel);
             const double right_poly = m_values[2]*(x1_rel - x0_rel) + 0.5*m_values[3]*(x1_rel*x1_rel - x0_rel*x0_rel);
             const double contrib = std::max( 0.0, ((1.0 - frac_data) * left_poly) + (frac_data * right_poly) );
-            
+
             assert( contrib == offset_integral( data_energies[i], data_energies[i+1], data ) );
-            
+
             channels[input_index] += contrib;
             break;
           }//case BiLinearStep:
-            
+
           case NoOffset: case Constant: case Linear: case Quadratic: case Cubic: case External:
             assert( 0 );
             break;
         }//switch( m_type )
-        
+
         if( i >= roi_lower_channel && i <= roi_upper_channel )
-          cumulative_data += 0.5*counts[i];
+          cumulative_data += 0.5 * (counts[i] - min_count);
       }//for( size_t i = 0; i < channels; ++i )
       
       break;

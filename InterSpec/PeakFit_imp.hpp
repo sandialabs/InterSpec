@@ -74,8 +74,27 @@ void fit_continuum( const float * const x,
   Eigen::VectorX<ScalarType> uncerts( static_cast<Eigen::Index>(nbin) );
 
   double roi_data_sum = 0.0, step_cumulative_data = 0.0;
+
+#if( PEAK_CONTINUUM_DATA_STEP_SUBTRACT )
+  double min_data_val = static_cast<double>( data[0] );
+  for( size_t row = 0; row < nbin; ++row )
+  {
+    roi_data_sum += std::max( data[row], 0.0f );
+    min_data_val = std::min( min_data_val, static_cast<double>( data[row] ) );
+  }
+  if( step_continuum && !cdf_step )
+  {
+    min_data_val = std::max( min_data_val, 0.0 );
+    roi_data_sum -= min_data_val * nbin;
+  }else
+  {
+    min_data_val = 0.0;
+  }
+#else
+  const double min_data_val = 0.0;
   for( size_t row = 0; row < nbin; ++row )
     roi_data_sum += std::max( data[row], 0.0f );
+#endif
 
   // Zero out the destination count array
   for( size_t row = 0; row < nbin; ++row )
@@ -204,7 +223,7 @@ void fit_continuum( const float * const x,
     uncerts(row) = ScalarType(uncert);
 
     if( step_continuum && !cdf_step )
-      step_cumulative_data += data_counts;
+      step_cumulative_data += (data_counts - min_data_val);
 
     y(row) = (data_counts > peak_counts[row]) ? (data_counts - peak_counts[row])/uncert : ScalarType(0.0);
 
@@ -218,7 +237,8 @@ void fit_continuum( const float * const x,
       {
         // This logic mirrors that of PeakContinuum::offset_integral(...), and code
         // If you change it in one place - change it in here, below, and in offset_integral.
-        const double frac_data = (step_cumulative_data - 0.5*data_counts) / roi_data_sum;
+        const double frac_data = (roi_data_sum > 0.0)
+            ? (step_cumulative_data - 0.5*(data_counts - min_data_val)) / roi_data_sum : 0.5;
         const double contribution = frac_data * (x1 - x0);
 
         A(row,col) = ScalarType(contribution / uncert);
@@ -226,7 +246,8 @@ void fit_continuum( const float * const x,
         check_jet_for_NaN( A(row,col) );
       }else if( !cdf_step && step_continuum && (num_polynomial_terms == 4) )
       {
-        const double frac_data = (step_cumulative_data - 0.5*data_counts) / roi_data_sum;
+        const double frac_data = (roi_data_sum > 0.0)
+            ? (step_cumulative_data - 0.5*(data_counts - min_data_val)) / roi_data_sum : 0.5;
 
         ScalarType contrib( 0.0 );
         switch( col )
@@ -413,8 +434,26 @@ ScalarType fit_amp_and_offset_imp( const float *x,
   const double roi_lower = x[0];
   const double roi_upper = x[nbin];
 
+#if( PEAK_CONTINUUM_DATA_STEP_SUBTRACT )
+  double min_data_val = static_cast<double>( data[0] );
+  for( size_t row = 0; row < nbin; ++row )
+  {
+    roi_data_sum += std::max( static_cast<double>( data[row] ), 0.0 );
+    min_data_val = std::min( min_data_val, static_cast<double>( data[row] ) );
+  }
+  if( step_continuum && !cdf_step )
+  {
+    min_data_val = std::max( min_data_val, 0.0 );
+    roi_data_sum -= ScalarType( min_data_val * static_cast<double>( nbin ) );
+  }else
+  {
+    min_data_val = 0.0;
+  }
+#else
+  const double min_data_val = 0.0;
   for( size_t row = 0; row < nbin; ++row )
     roi_data_sum += std::max( static_cast<double>(data[row]), 0.0 );
+#endif
 
   const ScalarType avrg_data_val = roi_data_sum / static_cast<double>(nbin);
 
@@ -460,7 +499,7 @@ ScalarType fit_amp_and_offset_imp( const float *x,
     uncerts(row) = uncert;
 
     if( step_continuum && !cdf_step )
-      step_cumulative_data += dataval;
+      step_cumulative_data += (dataval - ScalarType( min_data_val ));
 
     if( nfixedpeak )
     {
@@ -480,13 +519,17 @@ ScalarType fit_amp_and_offset_imp( const float *x,
       {
         // This logic mirrors that of PeakContinuum::offset_integral(...), and code
         // If you change it in one place - change it in here, below, and in offset_integral.
-        const ScalarType frac_data = (step_cumulative_data - 0.5*data[row]) / roi_data_sum;
+        const ScalarType frac_data = (roi_data_sum > 0.0)
+            ? (step_cumulative_data - ScalarType( 0.5*(data[row] - min_data_val) )) / roi_data_sum
+            : ScalarType( 0.5 );
         const ScalarType contribution = frac_data * (x1 - x0);
 
         A(row,col) = ScalarType( contribution / uncert );
       }else if( !cdf_step && step_continuum && (num_polynomial_terms == 4) )
       {
-        const ScalarType frac_data = (step_cumulative_data - 0.5*data[row]) / roi_data_sum;
+        const ScalarType frac_data = (roi_data_sum > 0.0)
+            ? (step_cumulative_data - ScalarType( 0.5*(data[row] - min_data_val) )) / roi_data_sum
+            : ScalarType( 0.5 );
 
         ScalarType contrib( 0.0 );
         switch( col )
