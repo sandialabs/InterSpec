@@ -9653,11 +9653,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       }
       
       vector<double> dummy_amps, continuum_coeffs_old, dummy_amp_uncert, continuum_uncerts;
-      fit_amp_and_offset( energies, data, num_channels, num_polynomial_terms,
-                         is_step_continuum, ref_energy, {}, {}, fixedAmpPeaks,
-                                             PeakDef::SkewType::NoSkew, nullptr, dummy_amps,
+      fit_amp_and_offset( energies, data, num_channels, range.continuum_type,
+                         ref_energy, {}, {}, fixedAmpPeaks,
+                         PeakDef::SkewType::NoSkew, nullptr, dummy_amps,
                          continuum_coeffs_old, dummy_amp_uncert, continuum_uncerts );
-      
+
       assert( static_cast<int>(continuum_coeffs_old.size()) == num_polynomial_terms );
       for( int i = 0; i < num_polynomial_terms; ++i )
       {
