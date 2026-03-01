@@ -1545,8 +1545,10 @@ void SimpleActivityCalc::handleBackgroundSubtractChanged()
                            amplitudes, continuum_coeffs, amplitudes_uncerts, continuum_coeffs_uncerts,
                            static_cast<double *>( nullptr ) );
 
-        // For CDF step types, append step_coeff (0.0 initial) so setParameters gets the full set
-        if( PeakContinuum::is_peak_cdf_step_continuum( cont_type ) )
+        // For FlatStepCDF/LinearStepCDF, append step_coeff (0.0) so setParameters gets the full set.
+        //  BiLinearStepCDF has no step_coeff.
+        if( PeakContinuum::is_peak_cdf_step_continuum( cont_type )
+           && (cont_type != PeakContinuum::BiLinearStepCDF) )
         {
           continuum_coeffs.push_back( 0.0 );
           continuum_coeffs_uncerts.push_back( 0.0 );

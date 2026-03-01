@@ -734,6 +734,7 @@ public:
       case PeakContinuum::BiLinearStep:
       case PeakContinuum::FlatStepCDF:
       case PeakContinuum::LinearStepCDF:
+      case PeakContinuum::BiLinearStepCDF:
       case PeakContinuum::External:
         assert( 0 );
         m_continuum->setCurrentIndex( 0 );
@@ -3421,6 +3422,7 @@ shared_ptr<DetectionLimitCalc::DeconComputeInput> DetectionLimitTool::getCompute
       case PeakContinuum::Cubic:      case PeakContinuum::FlatStep:
       case PeakContinuum::LinearStep: case PeakContinuum::BiLinearStep:
       case PeakContinuum::FlatStepCDF: case PeakContinuum::LinearStepCDF:
+      case PeakContinuum::BiLinearStepCDF:
       case PeakContinuum::External:
         throw logic_error( "DetectionLimitTool::computeForActivity: Unexpected continuum type" );
         break;

@@ -1450,6 +1450,7 @@ offset_integral(const ContType& cont,
           case PeakContinuum::OffsetType::BiLinearStep:
           case PeakContinuum::OffsetType::FlatStepCDF:
           case PeakContinuum::OffsetType::LinearStepCDF:
+          case PeakContinuum::OffsetType::BiLinearStepCDF:
             assert( 0 );
 
           case PeakContinuum::OffsetType::Cubic:
@@ -1487,6 +1488,7 @@ offset_integral(const ContType& cont,
 
     case PeakContinuum::OffsetType::FlatStepCDF:
     case PeakContinuum::OffsetType::LinearStepCDF:
+    case PeakContinuum::OffsetType::BiLinearStepCDF:
       throw std::runtime_error( "PeakContinuum::offset_integral: CDF step types require peaks; use the overload that accepts peaks" );
 
     case PeakContinuum::OffsetType::FlatStep:
@@ -1617,6 +1619,7 @@ offset_integral(const ContType& cont,
           case PeakContinuum::OffsetType::Cubic:
           case PeakContinuum::OffsetType::FlatStepCDF:
           case PeakContinuum::OffsetType::LinearStepCDF:
+          case PeakContinuum::OffsetType::BiLinearStepCDF:
           case PeakContinuum::OffsetType::External:
             assert( 0 );
             break;

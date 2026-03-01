@@ -1183,9 +1183,10 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
           case PeakContinuum::BiLinearStep:
           case PeakContinuum::FlatStepCDF:
           case PeakContinuum::LinearStepCDF:
+          case PeakContinuum::BiLinearStepCDF:
             assert( 0 );
             break;
-            
+
           case PeakContinuum::External:
             if( !computed_global_cont )
               computed_global_cont = estimateContinuum( input.measurement );
@@ -1266,9 +1267,10 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
                                       skew_type, skew_parameters, dummy_fit_amps, continuum_coeffs,
                                       dummy_amplitudes_uncerts, continuum_coeffs_uncerts, peak_counts );
 
-      // For CDF step types, fit_amp_and_offset_imp returns only polynomial coefficients;
-      //  setParameters expects poly + step_coeff.
-      if( PeakContinuum::is_peak_cdf_step_continuum( continuum_type ) )
+      // For FlatStepCDF/LinearStepCDF, fit_amp_and_offset_imp returns only polynomial coefficients;
+      //  setParameters expects poly + step_coeff.  BiLinearStepCDF has no step_coeff.
+      if( PeakContinuum::is_peak_cdf_step_continuum( continuum_type )
+         && (continuum_type != PeakContinuum::BiLinearStepCDF) )
       {
         continuum_coeffs.push_back( 0.0 );
         continuum_coeffs_uncerts.push_back( 0.0 );

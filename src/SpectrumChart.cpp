@@ -2409,7 +2409,8 @@ void SpectrumChart::paintNonGausPeak( const PeakDef &peak, Wt::WPainter& painter
   std::shared_ptr<const PeakContinuum> continuum = peak.continuum();
   
   assert( (continuum->type() != PeakContinuum::FlatStepCDF)
-         && (continuum->type() != PeakContinuum::LinearStepCDF) );
+         && (continuum->type() != PeakContinuum::LinearStepCDF)
+         && (continuum->type() != PeakContinuum::BiLinearStepCDF) );
   
   const double minDispX = axis(Chart::XAxis).minimum();
   const double maxDispX = axis(Chart::XAxis).maximum();
@@ -2445,6 +2446,7 @@ void SpectrumChart::paintNonGausPeak( const PeakDef &peak, Wt::WPainter& painter
     case PeakContinuum::FlatStep:      case PeakContinuum::LinearStep:
     case PeakContinuum::BiLinearStep:  case PeakContinuum::External:
     case PeakContinuum::FlatStepCDF:   case PeakContinuum::LinearStepCDF:
+    case PeakContinuum::BiLinearStepCDF:
     {
       const PeakDef *peak_ptr = &peak; // Note: never actualy gets used since flat/linear sCDF step cant be for data defined
 
@@ -2580,6 +2582,7 @@ double SpectrumChart::peakBackgroundVal( const int row, const PeakDef &peak,
     }
 
     case PeakContinuum::FlatStepCDF:  case PeakContinuum::LinearStepCDF:
+    case PeakContinuum::BiLinearStepCDF:
     {
       std::shared_ptr<const SpecUtils::Measurement> data = th1Model->getData();
       if( data )
@@ -2621,7 +2624,8 @@ double SpectrumChart::peakBackgroundVal( const int row, const PeakDef &peak,
 double SpectrumChart::peakYVal( const int row, const PeakDef &peak,
                                 const SpectrumDataModel *th1Model,
                                std::shared_ptr<const PeakDef> prevPeak,
-                               std::shared_ptr<const PeakDef> nextPeak )
+                               std::shared_ptr<const PeakDef> nextPeak,
+                               const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks )
 {
   double bin_x_min = th1Model->rowLowEdge( row );
   double bin_width = th1Model->rowWidth( row );
@@ -2629,8 +2633,8 @@ double SpectrumChart::peakYVal( const int row, const PeakDef &peak,
 
   double ystart = 0.0;
   ystart += peak.gauss_integral( bin_x_min, bin_x_max );
-  ystart += peakBackgroundVal( row, peak, th1Model, prevPeak, nextPeak );
-  
+  ystart += peakBackgroundVal( row, peak, th1Model, prevPeak, nextPeak, roi_peaks );
+
   return ystart;
 }//double peakYVal(...)
 
@@ -2755,37 +2759,38 @@ void SpectrumChart::gausPeakBinValue( double &bin_center, double &y,
                        const double axisMinX, const double axisMaxX,
                        const double axisMinY, const double axisMaxY,
                        std::shared_ptr<const PeakDef> prevPeak,
-                       std::shared_ptr<const PeakDef> nextPeak ) const 
+                       std::shared_ptr<const PeakDef> nextPeak,
+                       const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks ) const
 {
   y = 0.0;
-  
+
   bin_center = th1Model->rowCenter( row );
-    
-  y = peakYVal( row, peak, th1Model, prevPeak, nextPeak );
-  
+
+  y = peakYVal( row, peak, th1Model, prevPeak, nextPeak, roi_peaks );
+
   if( bin_center < axisMinX && row>1 )
   {
     double prevMid = th1Model->rowCenter( row - 1 );
     const double prevYVal = peakYVal( row-1, peak,
-                                      th1Model, prevPeak, nextPeak );
+                                      th1Model, prevPeak, nextPeak, roi_peaks );
     const double dist = (axisMinX - prevMid) / (bin_center - prevMid);
     y = prevYVal + dist * (y - prevYVal);
     bin_center = axisMinX;
   }//if( xstart < axisMinX )
-    
+
   if( bin_center > axisMaxX && row>1 )
   {
     double prevMid = th1Model->rowCenter( row - 1 );
     const double prevYVal = peakYVal( row-1, peak, th1Model,
-                                      prevPeak, nextPeak );
+                                      prevPeak, nextPeak, roi_peaks );
     const double dist = (axisMaxX - prevMid) / (bin_center - prevMid);
     y = prevYVal + dist * (y - prevYVal);
     bin_center = axisMaxX;
   }//if( xstart < axisMinX )
-    
+
   y = std::max( y, axisMinY );
   y = std::min( y, axisMaxY );
-  
+
   bin_center = std::max( bin_center, axisMinX );
   bin_center = std::min( bin_center, axisMaxX );
 }//gausPeakBinValue
@@ -2796,7 +2801,8 @@ void SpectrumChart::drawIndependantGausPeak( const PeakDef &peak,
                                          Wt::WPainter& painter,
                                          const bool doFill,
                                          const double xstart,
-                                         const double xend ) const
+                                         const double xend,
+                                         const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks ) const
 {
   double axisMinX, axisMaxX, axisMinY, axisMaxY;
   visibleRange( axisMinX, axisMaxX, axisMinY, axisMaxY );
@@ -2841,13 +2847,13 @@ void SpectrumChart::drawIndependantGausPeak( const PeakDef &peak,
     double bin_center, y;
     gausPeakBinValue( bin_center, y, peak, minrow, th1Model,
                      axisMinX, axisMaxX, axisMinY, axisMaxY,
-                     prevPeak, nextPeak );
+                     prevPeak, nextPeak, roi_peaks );
 #if( DRAW_PEAKS_TO_BIN_EXTREMES )
     double lower_y = y;
     if( minrow > 1 )
       gausPeakBinValue( bin_center, lower_y, peak, minrow-1, th1Model,
                        axisMinX, axisMaxX, axisMinY, axisMaxY,
-                       prevPeak, nextPeak );
+                       prevPeak, nextPeak, roi_peaks );
     const double lowx = std::max( axisMinX, std::min(axisMaxX,th1Model->rowLowEdge(minrow)) );
     lower_y = std::max( axisMinY, std::min(axisMaxY,0.5*(y+lower_y)) );
     start_point = mapToDevice( lowx, lower_y );
@@ -2858,11 +2864,11 @@ void SpectrumChart::drawIndependantGausPeak( const PeakDef &peak,
   {
     cerr << "Caught exception: SpectrumChart::drawIndependantGausPeak(...)" << "\n\t" << e.what() << endl;
   }
-  
-  
-  
+
+
+
   WPainterPath path( start_point );
-  
+
   for( int row = minrow; row <= maxrow; ++row )
   {
     try
@@ -2870,11 +2876,11 @@ void SpectrumChart::drawIndependantGausPeak( const PeakDef &peak,
       double bin_center, y;
       gausPeakBinValue( bin_center, y, peak, row, th1Model,
                        axisMinX, axisMaxX, axisMinY, axisMaxY,
-                       prevPeak, nextPeak );
-      
+                       prevPeak, nextPeak, roi_peaks );
+
       const WPointF pointInPx = mapToDevice( bin_center, y );
       path.lineTo( pointInPx );
-      
+
 #if( DRAW_PEAKS_TO_BIN_EXTREMES )
       //For right-most point, draw a line to the very right edge of bin
       if( row == maxrow )
@@ -2883,7 +2889,7 @@ void SpectrumChart::drawIndependantGausPeak( const PeakDef &peak,
         if( (row+1) < th1Model->rowCount() )
           gausPeakBinValue( bin_center, upper_y, peak, row+1, th1Model,
                             axisMinX, axisMaxX, axisMinY, axisMaxY,
-                             prevPeak, nextPeak );
+                             prevPeak, nextPeak, roi_peaks );
         const double bin_x_min = th1Model->rowLowEdge( row );
         const double bin_width = th1Model->rowWidth( row );
         const double bin_x_max = bin_x_min + bin_width;
@@ -2908,9 +2914,9 @@ void SpectrumChart::drawIndependantGausPeak( const PeakDef &peak,
       const double bin_width = th1Model->rowWidth( row );
       const double bin_center = std::max(axisMinX, std::min(axisMaxX, bin_x_min+0.5*bin_width) );
       
-      double val = peakBackgroundVal( row, peak, th1Model, prevPeak, nextPeak );
+      double val = peakBackgroundVal( row, peak, th1Model, prevPeak, nextPeak, roi_peaks );
       val = std::min( axisMaxY, std::max(axisMinY, val) );
-      
+
 #if( DRAW_PEAKS_TO_BIN_EXTREMES )
       //For right most bin, need to extend to right side of bin
       if( row == maxrow )
@@ -2919,20 +2925,20 @@ void SpectrumChart::drawIndependantGausPeak( const PeakDef &peak,
         {
           double upper_y = val;
           if( (row+1) < th1Model->rowCount() )
-            upper_y = peakBackgroundVal( row+1, peak, th1Model, prevPeak, nextPeak );
+            upper_y = peakBackgroundVal( row+1, peak, th1Model, prevPeak, nextPeak, roi_peaks );
           const double upperx = std::max( axisMinX, std::min(axisMaxX,bin_x_min + bin_width) );
           upper_y = std::max( axisMinY, std::min(axisMaxY,0.5*(val+upper_y)) );
           path.lineTo( mapToDevice(upperx, upper_y) );
         }catch(...){}
       }//if( right most bin )
 #endif
-      
+
       const WPointF pointInPx = mapToDevice( bin_center, val );
       path.lineTo( pointInPx );
-      
+
       if( pointInPx.y() < peakMaxInPx.y() )
         peakMaxInPx = pointInPx;
-    
+
 #if( DRAW_PEAKS_TO_BIN_EXTREMES )
       //For left-most bins,  we actually need to start at very left edge of bin,
       //  to match what we did in the loop above
@@ -2942,7 +2948,7 @@ void SpectrumChart::drawIndependantGausPeak( const PeakDef &peak,
         {
           double lower_y = val;
           if( row > 1 )
-            lower_y = peakBackgroundVal( row-1, peak, th1Model, prevPeak, nextPeak );
+            lower_y = peakBackgroundVal( row-1, peak, th1Model, prevPeak, nextPeak, roi_peaks );
           const double lowx = std::max( axisMinX, std::min(axisMaxX,bin_x_min) );
           lower_y = std::max( axisMinY, std::min(axisMaxY,0.5*(val+lower_y)) );
           path.lineTo( mapToDevice(lowx, lower_y) );
@@ -3279,8 +3285,8 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
     //  Right now this results in the continuum being colored by the peak
     //  farthest to the right - eh, should implement a custom solution here.
     for( const auto &p : peaks  )
-      drawIndependantGausPeak( *p, painter, false );
-    
+      drawIndependantGausPeak( *p, painter, false, -999.9, -999.9, peaks );
+
     //(End experimental code for multicolored peaks)
     ////////////////////////////////////////////////////////////////////////////
   }else //if( lineColors.size() > 1 )
@@ -3302,7 +3308,7 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
       if( !sharedContinuum && continuum->isPolynomial() )
       {
         //drawIndependantGausPeak( peak, painter, false );
-        drawIndependantGausPeak( peak, painter, true );
+        drawIndependantGausPeak( peak, painter, true, -999.9, -999.9, peaks );
         continue;
       }//if( independantContinuum && peak.continuum().isPolynomial() )
       
@@ -3317,24 +3323,24 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
       //now limit minrow and maxrow for visible region.
       
       if( outline )
-        drawIndependantGausPeak( peak, painter, false );
-      
+        drawIndependantGausPeak( peak, painter, false, -999.9, -999.9, peaks );
+
       WPointF start_point(0.0, 0.0);
       try
       {
         double xstart, ystart;
         gausPeakBinValue( xstart, ystart, peak, minrow, th1Model,
                          axisMinX, axisMaxX, axisMinY, axisMaxY,
-                         prevPeak, nextPeak );
+                         prevPeak, nextPeak, peaks );
         xstart = max( th1Model->rowLowEdge( minrow ), axisMinX );
         start_point = mapToDevice( xstart, ystart );
       }catch(...)
       {
         cerr << "Caught exception: in SpectrumChart::paintGausPeaks() from gausPeakBinValue" << endl;
       }
-      
+
       WPainterPath path( start_point );
-      
+
       for( int row = minrow; row <= maxrow; ++row )
       {
         try
@@ -3342,7 +3348,7 @@ void SpectrumChart::paintGausPeaks( const vector<std::shared_ptr<const PeakDef> 
           double bin_center, y;
           gausPeakBinValue( bin_center, y, peak, row, th1Model,
                            axisMinX, axisMaxX, axisMinY, axisMaxY,
-                           prevPeak, nextPeak );
+                           prevPeak, nextPeak, peaks );
           if( outline )
           {
             if( peaksSum.find(row) == peaksSum.end() )

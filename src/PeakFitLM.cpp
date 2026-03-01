@@ -201,7 +201,8 @@ struct PeakFitDiffCostFunction
     m_num_parameters(
       PeakDef::num_skew_parameters(skew_type)
         + (m_use_lls_for_cont
-           ? (PeakContinuum::is_peak_cdf_step_continuum(offset_type) ? size_t(1) : size_t(0))
+           ? ((PeakContinuum::is_peak_cdf_step_continuum(offset_type)
+               && (offset_type != PeakContinuum::BiLinearStepCDF)) ? size_t(1) : size_t(0))
            : PeakContinuum::num_parameters(offset_type))
         + ( options.testFlag(PeakFitLM::PeakFitLMOptions::AllPeakFwhmIndependent) ? m_num_fit_sigmas : std::min( m_num_fit_sigmas, size_t(2) ) )
         + m_num_peaks
@@ -300,6 +301,7 @@ struct PeakFitDiffCostFunction
       case PeakContinuum::Cubic:         case PeakContinuum::FlatStep:
       case PeakContinuum::LinearStep:    case PeakContinuum::BiLinearStep:
       case PeakContinuum::FlatStepCDF:   case PeakContinuum::LinearStepCDF:
+      case PeakContinuum::BiLinearStepCDF:
       case PeakContinuum::External:
         valid_offset_type = true;
         break;
@@ -320,9 +322,10 @@ struct PeakFitDiffCostFunction
   {
     const double num_channels = 1.0 + m_upper_channel - m_lower_channel;
     const double num_skew = PeakDef::num_skew_parameters( m_skew_type );
-    const bool cdf_step = PeakContinuum::is_peak_cdf_step_continuum( m_offset_type );
+    const bool cdf_step_coeff = PeakContinuum::is_peak_cdf_step_continuum( m_offset_type )
+                               && (m_offset_type != PeakContinuum::BiLinearStepCDF);
     const size_t num_fit_continuum_pars = m_use_lls_for_cont
-      ? (cdf_step ? size_t(1) : size_t(0))
+      ? (cdf_step_coeff ? size_t(1) : size_t(0))
       : PeakContinuum::num_parameters( m_offset_type );
     const double num_sigmas_fit = number_sigma_parameters();
 
@@ -350,7 +353,8 @@ struct PeakFitDiffCostFunction
   {
     assert( m_num_parameters == (PeakDef::num_skew_parameters(m_skew_type)
      + (m_use_lls_for_cont
-        ? (PeakContinuum::is_peak_cdf_step_continuum(m_offset_type) ? size_t(1) : size_t(0))
+        ? ((PeakContinuum::is_peak_cdf_step_continuum(m_offset_type)
+            && (m_offset_type != PeakContinuum::BiLinearStepCDF)) ? size_t(1) : size_t(0))
         : PeakContinuum::num_parameters(m_offset_type))
      + number_sigma_parameters()
      + m_num_peaks) );
@@ -395,7 +399,8 @@ struct PeakFitDiffCostFunction
   {
 #define DEBUG_PAR_TO_PEAKS 0
 
-    const bool cdf_step_lls = m_use_lls_for_cont && PeakContinuum::is_peak_cdf_step_continuum( m_offset_type );
+    const bool cdf_step_lls = m_use_lls_for_cont && PeakContinuum::is_peak_cdf_step_continuum( m_offset_type )
+                              && (m_offset_type != PeakContinuum::BiLinearStepCDF);
     const size_t num_fit_continuum_pars = m_use_lls_for_cont
       ? (cdf_step_lls ? size_t(1) : size_t(0))
       : PeakContinuum::num_parameters( m_offset_type );
@@ -1304,7 +1309,8 @@ struct PeakFitDiffCostFunction
   {
     const size_t num_fit_pars = number_parameters();
     const size_t num_sigmas_fit = number_sigma_parameters();
-    const bool cdf_step_lls = m_use_lls_for_cont && PeakContinuum::is_peak_cdf_step_continuum( m_offset_type );
+    const bool cdf_step_lls = m_use_lls_for_cont && PeakContinuum::is_peak_cdf_step_continuum( m_offset_type )
+                              && (m_offset_type != PeakContinuum::BiLinearStepCDF);
     const size_t num_fit_continuum_pars = m_use_lls_for_cont
       ? (cdf_step_lls ? size_t(1) : size_t(0))
       : PeakContinuum::num_parameters( m_offset_type );

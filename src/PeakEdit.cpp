@@ -1156,6 +1156,9 @@ void PeakEdit::refreshPeakInfo()
           case PeakContinuum::LinearStepCDF:
             hide = (coefnum >= 3);
             break;
+          case PeakContinuum::BiLinearStepCDF:
+            hide = (coefnum >= 4);
+            break;
         }//switch( type )
         
         row->setHidden( hide );
@@ -1880,6 +1883,7 @@ void PeakEdit::contnuumTypeChanged()
 
     case PeakContinuum::Cubic:
     case PeakContinuum::BiLinearStep:
+    case PeakContinuum::BiLinearStepCDF:
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial0)->setHidden( false );
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial1)->setHidden( false );
       m_valueTable->rowAt(1+PeakEdit::OffsetPolynomial2)->setHidden( false );
@@ -2669,6 +2673,7 @@ void PeakEdit::apply()
         case PeakContinuum::BiLinearStep:
         case PeakContinuum::FlatStepCDF:
         case PeakContinuum::LinearStepCDF:
+        case PeakContinuum::BiLinearStepCDF:
           break;
       }//switch( offset )
     }//if( offset != m_currentPeak.offsetType() )

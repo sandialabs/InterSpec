@@ -15790,6 +15790,7 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
       case PeakContinuum::Quadratic:  case PeakContinuum::Cubic:        case PeakContinuum::FlatStep:
       case PeakContinuum::LinearStep: case PeakContinuum::BiLinearStep:
       case PeakContinuum::FlatStepCDF: case PeakContinuum::LinearStepCDF:
+      case PeakContinuum::BiLinearStepCDF:
         break;
     }//switch( roi.continuum_type )
     
@@ -15917,9 +15918,11 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
     if( ref_energy < 0.0 )
       continue;
     
-    const bool is_cdf_step = PeakContinuum::is_peak_cdf_step_continuum( roi.continuum_type );
+    // BiLinearStepCDF has no step_coeff, so it can go through the direct LLS path
+    const bool is_cdf_step = PeakContinuum::is_peak_cdf_step_continuum( roi.continuum_type )
+                             && (roi.continuum_type != PeakContinuum::BiLinearStepCDF);
     const bool is_step_continuum = PeakContinuum::is_step_continuum( roi.continuum_type );
-    
+
     vector<PeakDef> fixed_amp_peaks;
     for( const RelActCalcAuto::FloatingPeakResult &floater : solution.m_floating_peaks )
     {

@@ -4006,6 +4006,7 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
       case PeakContinuum::FlatStep:      case PeakContinuum::LinearStep:
       case PeakContinuum::BiLinearStep:
       case PeakContinuum::FlatStepCDF:   case PeakContinuum::LinearStepCDF:
+      case PeakContinuum::BiLinearStepCDF:
       {
         const size_t num_cont_par = PeakContinuum::num_parameters( cont_type );
         const double ref_energy = continuum->referenceEnergy();

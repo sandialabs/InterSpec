@@ -1691,8 +1691,9 @@ void LinearProblemSubSolveChi2Fcn::init( std::shared_ptr<const SpecUtils::Measur
     case PeakContinuum::FlatStep:     case PeakContinuum::LinearStep:
     case PeakContinuum::BiLinearStep:
     case PeakContinuum::FlatStepCDF:  case PeakContinuum::LinearStepCDF:
+    case PeakContinuum::BiLinearStepCDF:
     break;
-      
+
     case PeakContinuum::NoOffset: case PeakContinuum::External:
       throw runtime_error( "LinearProblemSubSolveChi2Fcn: invalid offset" );
     break;
@@ -1730,7 +1731,8 @@ double LinearProblemSubSolveChi2Fcn::Up() const
 size_t LinearProblemSubSolveChi2Fcn::nfitPars() const
 {
   const size_t nskew = PeakDef::num_skew_parameters(m_skewType);
-  const size_t nstep = PeakContinuum::is_peak_cdf_step_continuum( m_offsetType ) ? 1 : 0;
+  const size_t nstep = (PeakContinuum::is_peak_cdf_step_continuum( m_offsetType )
+                        && (m_offsetType != PeakContinuum::BiLinearStepCDF)) ? 1 : 0;
   if( m_npeak < 2 )
     return 2 + nskew + nstep;
   return m_npeak + 2 + nskew + nstep;
@@ -1885,9 +1887,11 @@ double LinearProblemSubSolveChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
   }//if( one peak ) / else
   
   const bool is_cdf_step = PeakContinuum::is_peak_cdf_step_continuum( m_offsetType );
+  // BiLinearStepCDF has no step_coeff; only FlatStepCDF/LinearStepCDF do
+  const bool has_step_coeff = is_cdf_step && (m_offsetType != PeakContinuum::BiLinearStepCDF);
 
-  // For CDF step types, step_coeff is the last Minuit2 parameter
-  const double step_coeff = is_cdf_step ? x[start_skew_index + num_skew_pars] : 0.0;
+  // For CDF step types (except BiLinearStepCDF), step_coeff is the last Minuit2 parameter
+  const double step_coeff = has_step_coeff ? x[start_skew_index + num_skew_pars] : 0.0;
 
   vector<double> amps, offsets, amps_uncerts, offsets_uncerts;
 
@@ -1904,9 +1908,10 @@ double LinearProblemSubSolveChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
                                          static_cast<double *>( nullptr ) );
   const double chi2Dof = chi2 / dof();
 
-  // For CDF step types, fit_amp_and_offset_imp returns only polynomial coefficients;
+  // For FlatStepCDF/LinearStepCDF, fit_amp_and_offset_imp returns only polynomial coefficients;
   //  setParameters expects poly + step_coeff, so append it.
-  if( is_cdf_step )
+  //  BiLinearStepCDF has no step_coeff — its 4 polynomial coefficients are all that's needed.
+  if( has_step_coeff )
   {
     offsets.push_back( step_coeff );
     const double step_coeff_uncert = errors ? errors[start_skew_index + num_skew_pars] : 0.0;
@@ -2137,7 +2142,9 @@ void LinearProblemSubSolveChi2Fcn::addStepCoeffParameter(
         const PeakContinuum::OffsetType offsetType,
         const std::vector<std::shared_ptr<const PeakDef>> &inpeaks )
 {
-  if( !PeakContinuum::is_peak_cdf_step_continuum( offsetType ) )
+  // BiLinearStepCDF has no step_coeff; it uses CDF fraction for left/right interpolation
+  if( !PeakContinuum::is_peak_cdf_step_continuum( offsetType )
+     || (offsetType == PeakContinuum::BiLinearStepCDF) )
     return;
 
   double starting_val = 0.0;

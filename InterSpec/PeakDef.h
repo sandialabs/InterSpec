@@ -135,6 +135,13 @@ struct PeakContinuum
      */
     LinearStepCDF,
 
+    /** Like BiLinearStep, but uses the CDF of the peaks in the ROI to define the interpolation
+     fraction between left and right polynomials, rather than the cumulative data histogram.
+     This avoids circular dependence on the data being fit.
+     Four parameters: left_const, left_linear, right_const, right_linear — all solved by LLS.
+     */
+    BiLinearStepCDF,
+
     /** A continuum is determined algorithmically for the entire spectrum; not recommended to use.
 
      It use the Sensitive Nonlinear Iterative Peak (SNIP) clipping algorithm to estimate the background.
@@ -152,8 +159,9 @@ struct PeakContinuum
   static const char *offset_type_str( const OffsetType type );
   
   /** Returns the total number of parameters for a specified offset type.
-   For CDF step types this includes the step_coeff parameter that is optimized by non-linear solvers.
+   For FlatStepCDF/LinearStepCDF this includes the step_coeff parameter that is optimized by non-linear solvers.
    E.g., FlatStepCDF returns 2 (1 polynomial + 1 step_coeff).
+   BiLinearStepCDF returns 4 (all polynomial, no step_coeff).
 
    @sa num_linear_fit_pars
    */
@@ -161,8 +169,9 @@ struct PeakContinuum
 
   /** Returns the number of continuum parameters solved by the linear least-squares (LLS) system.
    For non-CDF types, this is the same as num_parameters().
-   For CDF step types, this excludes the step_coeff (e.g., FlatStepCDF returns 1, LinearStepCDF returns 2),
+   For FlatStepCDF/LinearStepCDF, this excludes the step_coeff (e.g., FlatStepCDF returns 1, LinearStepCDF returns 2),
    since step_coeff is optimized by the non-linear solver (Ceres/L-M), not the LLS.
+   For BiLinearStepCDF, returns 4 (same as num_parameters, since there is no step_coeff).
 
    This is the value to pass to fit_amp_and_offset_imp() and fit_continuum() as the polynomial term count.
 
@@ -170,11 +179,11 @@ struct PeakContinuum
    */
   static size_t num_linear_fit_pars( const OffsetType type );
 
-  /** Returns true if continuum type is FlatStep, LinearStep, BiLinearStep, FlatStepCDF, or LinearStepCDF. */
+  /** Returns true if continuum type is FlatStep, LinearStep, BiLinearStep, FlatStepCDF, LinearStepCDF, or BiLinearStepCDF. */
   static bool is_step_continuum( const OffsetType type );
 
   /** Returns true if continuum type uses the CDF of the peaks in the ROI to define the step,
-   i.e., FlatStepCDF or LinearStepCDF.
+   i.e., FlatStepCDF, LinearStepCDF, or BiLinearStepCDF.
    */
   static bool is_peak_cdf_step_continuum( const OffsetType type );
   
@@ -259,7 +268,7 @@ struct PeakContinuum
 
    For non-CDF types (polynomial, data-step, external), roi_peaks is ignored but must still be
    explicitly specified.
-   For CDF step types (FlatStepCDF, LinearStepCDF), roi_peaks must point to all peaks sharing
+   For CDF step types (FlatStepCDF, LinearStepCDF, BiLinearStepCDF), roi_peaks must point to all peaks sharing
    this ROI's continuum.
 
    @param data Spectrum data (needed for step types; may be nullptr for polynomial/external).

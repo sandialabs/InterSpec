@@ -1109,8 +1109,9 @@ string SpectrumViewerTester::makePeakSummarryTable( const PeakDef &peak,
     case PeakContinuum::LinearStep:   strm << "Linear Step</td></tr>\n";    break;
     case PeakContinuum::BiLinearStep: strm << "Bi-linear Step</td></tr>\n"; break;
     case PeakContinuum::FlatStepCDF:  strm << "Flat Step (CDF)</td></tr>\n"; break;
-    case PeakContinuum::LinearStepCDF: strm << "Linear Step (CDF)</td></tr>\n"; break;
-    case PeakContinuum::External:     strm << "Global</td></tr>\n";         break;
+    case PeakContinuum::LinearStepCDF:    strm << "Linear Step (CDF)</td></tr>\n";    break;
+    case PeakContinuum::BiLinearStepCDF: strm << "Bi-linear Step (CDF)</td></tr>\n"; break;
+    case PeakContinuum::External:        strm << "Global</td></tr>\n";               break;
   }//switch( peak.continuum()->type() )
 
   double offset_area = 0.0;

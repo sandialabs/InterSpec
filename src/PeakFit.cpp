@@ -6674,10 +6674,11 @@ bool chi2_significance_test( const PeakDef &peak,
     PeakFit::fit_amp_and_offset_imp(energies, channel_counts, nullptr, num_roi_channel, cont->type(),
                                     0.0, ref_energy, {}, {}, other_peaks, peak.skewType(), skew_pars,
                                     amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts, (double *)0 );
-    // For CDF step types, fit_amp_and_offset_imp returns only polynomial coefficients;
+    // For FlatStepCDF/LinearStepCDF, fit_amp_and_offset_imp returns only polynomial coefficients;
     //  setParameters expects poly + step_coeff, so append the step_coeff (0.0 here, since
     //  we're refitting the null hypothesis continuum without optimizing the step).
-    if( is_cdf_step )
+    //  BiLinearStepCDF has no step_coeff — its 4 polynomial coefficients are all that's needed.
+    if( is_cdf_step && (cont->type() != PeakContinuum::BiLinearStepCDF) )
     {
       continuum_coeffs.push_back( 0.0 );
       cont_uncerts.push_back( 0.0 );
@@ -7510,9 +7511,11 @@ void AutoPeakSearchChi2Fcn::fit_peak_group( const vector<PeakDef> &peaks,
   }//if( means.size() > 1 ) / else
 #endif
   
-  // For CDF step types, fit_amp_and_offset_imp returns only polynomial coefficients;
+  // For FlatStepCDF/LinearStepCDF, fit_amp_and_offset_imp returns only polynomial coefficients;
   //  setParameters expects poly + step_coeff, so append step_coeff (0.0).
-  if( PeakContinuum::is_peak_cdf_step_continuum( cont->type() ) )
+  // BiLinearStepCDF has no step_coeff, so all 4 params are already returned.
+  if( PeakContinuum::is_peak_cdf_step_continuum( cont->type() )
+     && (cont->type() != PeakContinuum::BiLinearStepCDF) )
   {
     continuum_coeffs.push_back( 0.0 );
     continuum_coeffs_uncerts.push_back( 0.0 );
