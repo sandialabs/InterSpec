@@ -165,7 +165,7 @@ BOOST_AUTO_TEST_CASE( FitContinuum )
     const double new_coef = continuum_coeffs[i];
     const double old_coef = continuum_coeffs_old[i];
     const double diff = fabs(new_coef - old_coef);
-    BOOST_CHECK( (diff < 0.00001*std::max(fabs(new_coef), fabs(old_coef))) || (diff < 1.0E-12) );
+    BOOST_CHECK( (diff < 0.00001*(std::max)(fabs(new_coef), fabs(old_coef))) || (diff < 1.0E-12) );
   }
   
   double old_way_peak_counts[nbin] = { 0.0 };
@@ -186,7 +186,7 @@ BOOST_AUTO_TEST_CASE( FitContinuum )
     const double new_val = peak_counts[bin];
     const double old_coef = old_way_peak_counts[bin];
     const double diff = fabs(new_val - old_coef);
-    BOOST_CHECK( (diff < 0.00001*std::max(fabs(new_val), fabs(old_coef))) || (diff < 1.0E-12) );
+    BOOST_CHECK( (diff < 0.00001*(std::max)(fabs(new_val), fabs(old_coef))) || (diff < 1.0E-12) );
   }
 
 }//BOOST_AUTO_TEST_CASE( FitRelActManualToKnown )
