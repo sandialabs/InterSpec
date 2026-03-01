@@ -10274,16 +10274,9 @@ int run_test()
 {
   try
   {
-    MaterialDB matdb;
-    const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
-    try
-    {
-      const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-      matdb.parseGadrasMaterialFile( materialfile, db, false );
-    }catch( std::exception &e )
-    {
+    const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+    if( !matdb )
       throw runtime_error( "Couldnt initialize material database." );
-    }
     
     
     
@@ -10299,7 +10292,7 @@ int run_test()
     const auto base_node = get_required_node(&doc, "RelActCalcAuto");
   
     RelActCalcAuto::RelActAutoGuiState state;
-    state.deSerialize( base_node, &matdb );
+    state.deSerialize( base_node );
     
     
     auto open_file = [xml_file_path]( const string &filename ) -> shared_ptr<SpecMeas> {
@@ -11651,7 +11644,7 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
 }//rapidxml::xml_node<char> *Options::toXml(...)
 
 
-void Options::fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *materialDB )
+void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
 {
   try
   {
@@ -11742,7 +11735,7 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *mat
         XML_FOREACH_CHILD( curve_node, rel_eff_node, "RelEffCurveInput" )
         {
           RelEffCurveInput curve;
-          curve.fromXml( curve_node, materialDB );
+          curve.fromXml( curve_node );
           rel_eff_curves.push_back( curve );
         }
       }//if( rel_eff_node )
@@ -11765,7 +11758,7 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *mat
     }else
     {
       RelEffCurveInput rel_eff_input;
-      rel_eff_input.fromXml( parent, materialDB );
+      rel_eff_input.fromXml( parent );
       rel_eff_curves.push_back( rel_eff_input );
     }//if( version >= 2 ) / else
 
@@ -12511,7 +12504,7 @@ rapidxml::xml_node<char> *RelEffCurveInput::toXml( ::rapidxml::xml_node<char> *p
 }//RelEffCurveInput::toXml(...)
 
 
-void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *materialDB )
+void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent )
 {
   using namespace rapidxml;
   
@@ -12583,7 +12576,7 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent, Materi
     if( self_atten_node )
     {
       auto att = make_shared<RelActCalc::PhysicalModelShieldInput>();
-      att->fromXml( self_atten_node, materialDB );
+      att->fromXml( self_atten_node );
       phys_model_self_atten = att;
     }//if( self_atten_node )
       
@@ -12594,7 +12587,7 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent, Materi
       XML_FOREACH_CHILD( att_node, ext_atten_node, "PhysicalModelShield" )
       {
         auto att = make_shared<RelActCalc::PhysicalModelShieldInput>();
-        att->fromXml( att_node, materialDB );
+        att->fromXml( att_node );
         phys_model_external_atten.push_back( att );
       }
     }//if( ext_atten_node )
@@ -12807,7 +12800,7 @@ RelActAutoGuiState::RelActAutoGuiState()
 }//::rapidxml::xml_node<char> *serialize( ::rapidxml::xml_node<char> *parent ) const
   
 
-void RelActAutoGuiState::deSerialize( const rapidxml::xml_node<char> *base_node, MaterialDB *materialDb )
+void RelActAutoGuiState::deSerialize( const rapidxml::xml_node<char> *base_node )
 {
   using namespace rapidxml;
   
@@ -12835,7 +12828,7 @@ void RelActAutoGuiState::deSerialize( const rapidxml::xml_node<char> *base_node,
   if( !node )
     throw runtime_error( "RelActAutoGui::deSerialize: No <Options> node." );
   
-  options.fromXml( node, materialDb );
+  options.fromXml( node );
   
   
   {// Begin get extra options

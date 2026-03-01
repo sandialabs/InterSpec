@@ -164,7 +164,7 @@ BOOST_AUTO_TEST_CASE( FitContinuum )
     const double new_coef = continuum_coeffs[i];
     const double old_coef = continuum_coeffs_old[i];
     const double diff = fabs(new_coef - old_coef);
-    BOOST_CHECK( (diff < 0.00001*std::max(fabs(new_coef), fabs(old_coef))) || (diff < 1.0E-12) );
+    BOOST_CHECK( (diff < 0.00001*(std::max)(fabs(new_coef), fabs(old_coef))) || (diff < 1.0E-12) );
   }
   
   double old_way_peak_counts[nbin] = { 0.0 };
@@ -192,7 +192,7 @@ BOOST_AUTO_TEST_CASE( FitContinuum )
     const double new_val = peak_counts[bin];
     const double old_coef = old_way_peak_counts[bin];
     const double diff = fabs(new_val - old_coef);
-    BOOST_CHECK( (diff < 0.00001*std::max(fabs(new_val), fabs(old_coef))) || (diff < 1.0E-12) );
+    BOOST_CHECK( (diff < 0.00001*(std::max)(fabs(new_val), fabs(old_coef))) || (diff < 1.0E-12) );
   }
 
 }//BOOST_AUTO_TEST_CASE( FitRelActManualToKnown )
@@ -285,6 +285,8 @@ BOOST_AUTO_TEST_CASE( test_pu242_by_correlation )
 
 BOOST_AUTO_TEST_CASE( test_deviation_pair_xml_serialization )
 {
+  set_data_dir();
+
   // Test that energy_cal_type is properly serialized and deserialized
   using namespace RelActCalcAuto;
 
@@ -323,7 +325,7 @@ BOOST_AUTO_TEST_CASE( test_deviation_pair_xml_serialization )
   const rapidxml::xml_node<char> *opts_node = root->first_node( "Options" );
   BOOST_REQUIRE( opts_node );
 
-  opts_loaded.fromXml( opts_node, nullptr );
+  opts_loaded.fromXml( opts_node );
 
   BOOST_CHECK( opts_loaded.energy_cal_type == opts_orig.energy_cal_type );
 }//BOOST_AUTO_TEST_CASE( test_deviation_pair_xml_serialization )

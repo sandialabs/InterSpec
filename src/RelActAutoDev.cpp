@@ -59,9 +59,8 @@ void check_auto_state_xml_serialization()
 {
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
 
-  MaterialDB matdb;
-  const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
-  matdb.parseGadrasMaterialFile( materialfile, db, false );
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  assert( matdb );
 
   RelActCalcAuto::RelActAutoGuiState state;
 
@@ -92,9 +91,8 @@ void check_auto_state_xml_serialization()
   // Fill out external attenuation
   auto ext_atten = make_shared<RelActCalc::PhysicalModelShieldInput>();
   ext_atten->atomic_number = 0;
-  const Material * const pu_db = matdb.material("Pu (plutonium)");
-  assert( pu_db );
-  const shared_ptr<const Material> pu = std::make_shared<Material>( *pu_db );
+  const shared_ptr<const Material> pu = matdb->material("Pu (plutonium)");
+  assert( pu );
   ext_atten->material = pu;
   ext_atten->areal_density = 1.0*PhysicalUnits::g_per_cm2;
   ext_atten->fit_atomic_number = true;
@@ -159,7 +157,7 @@ void check_auto_state_xml_serialization()
   RelActCalcAuto::RelActAutoGuiState state2;
   try
   {
-    state2.deSerialize( rel_act_node, &matdb );
+    state2.deSerialize( rel_act_node );
   }catch( std::exception &e )
   {
     cerr << "Failed to deserialize state: " << e.what() << endl;
@@ -200,7 +198,7 @@ void check_auto_state_xml_serialization()
   RelActCalcAuto::RelActAutoGuiState state3;  
   try
   {
-    state3.deSerialize( rel_act_node2, &matdb );
+    state3.deSerialize( rel_act_node2 );
   }catch( std::exception &e )
   {
     cerr << "Failed to deserialize state: " << e.what() << endl;
@@ -227,11 +225,10 @@ void check_physical_model_eff_function()
 {
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   
-  MaterialDB matdb;
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
   
   const string data_dir = InterSpec::staticDataDirectory();
-  const string materialfile = SpecUtils::append_path( data_dir, "MaterialDataBase.txt" );
-  matdb.parseGadrasMaterialFile( materialfile, db, false );
+  assert( matdb );
   
   DetectorPeakResponse det;
   
@@ -245,9 +242,8 @@ void check_physical_model_eff_function()
     return;
   }
   
-  const Material * const pu_db = matdb.material("Pu (plutonium)");
-  assert( pu_db );
-  const shared_ptr<const Material> pu = std::make_shared<Material>( *pu_db );
+  const shared_ptr<const Material> pu = matdb->material("Pu (plutonium)");
+  assert( pu );
   
   RelActCalc::PhysModelShield<double> self_atten;
   self_atten.material = pu;
@@ -255,7 +251,7 @@ void check_physical_model_eff_function()
   
   
   RelActCalc::PhysModelShield<double> ext_atten;
-  ext_atten.material = std::make_shared<Material>( *matdb.material("stainless-steel NIST") );
+  ext_atten.material = matdb->material("stainless-steel NIST");
   ext_atten.areal_density = 0.8*PhysicalUnits::g_per_cm2;
   
   RelActCalc::PhysModelShield<double> generic_atten;
@@ -287,15 +283,13 @@ void example_manual_phys_model()
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   assert( db );
 
-  MaterialDB matdb;
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
   
   const string data_dir = InterSpec::staticDataDirectory();
-  const string materialfile = SpecUtils::append_path( data_dir, "MaterialDataBase.txt" );
-  matdb.parseGadrasMaterialFile( materialfile, db, false );
+  assert( matdb );
   
-  const Material * const u_db = matdb.material("U (uranium)");
-  assert( u_db );
-  const shared_ptr<const Material> uranium = std::make_shared<Material>( *u_db );
+  const shared_ptr<const Material> uranium = matdb->material("U (uranium)");
+  assert( uranium );
   
 
   const string input_file = "uranium_40%_HPGe_15cm_peaks_fit.n42";
@@ -420,10 +414,9 @@ void run_u02_example()
 {
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   assert( db );
-  MaterialDB matdb;
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
   const string data_dir = InterSpec::staticDataDirectory();
-  const string materialfile = SpecUtils::append_path( data_dir, "MaterialDataBase.txt" );
-  matdb.parseGadrasMaterialFile( materialfile, db, false );
+  assert( matdb );
   
   const string specfilename = "mixed_U02_sample.pcf";
   SpecUtils::SpecFile specfile;
@@ -455,7 +448,7 @@ void run_u02_example()
   assert( setup_base_node );
   
   RelActCalcAuto::RelActAutoGuiState state;
-  state.deSerialize( setup_base_node, &matdb );
+  state.deSerialize( setup_base_node );
   
   //RelActCalcAuto::RelEffCurveInput::MassFractionConstraint constraint;
   //constraint.nuclide = db->nuclide("U235");
@@ -609,10 +602,9 @@ void czt_pu_example()
 {
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   assert( db );
-  MaterialDB matdb;
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
   const string data_dir = InterSpec::staticDataDirectory();
-  const string materialfile = SpecUtils::append_path( data_dir, "MaterialDataBase.txt" );
-  matdb.parseGadrasMaterialFile( materialfile, db, false );
+  assert( matdb );
   
   const string specfilename = "czt_600keV__Pu84_60mm_1mmCd_ex.n42";
   
@@ -639,7 +631,7 @@ void czt_pu_example()
   assert( setup_base_node );
   
   RelActCalcAuto::RelActAutoGuiState state;
-  state.deSerialize( setup_base_node, &matdb );
+  state.deSerialize( setup_base_node );
   
   assert( state.options.rel_eff_curves.size() == 1 );
 
@@ -682,7 +674,7 @@ void czt_pu_example()
     assert( state_node );
 
     RelActCalcAuto::RelActAutoGuiState state_cpy;
-    state_cpy.deSerialize( state_node, &matdb );
+    state_cpy.deSerialize( state_node );
 
     RelActCalcAuto::RelActAutoGuiState::equalEnough( state, state_cpy );
   } 
@@ -1686,10 +1678,9 @@ void utile_ana()
 {
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   assert( db );
-  MaterialDB matdb;
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
   const string data_dir = InterSpec::staticDataDirectory();
-  const string materialfile = SpecUtils::append_path( data_dir, "MaterialDataBase.txt" );
-  matdb.parseGadrasMaterialFile( materialfile, db, false );
+  assert( matdb );
   
   const string specfilename = "HEU-025_DU-100_Detective.Chn";
   SpecUtils::SpecFile specfile;
@@ -1728,7 +1719,7 @@ void utile_ana()
   assert( setup_base_node );
     
   RelActCalcAuto::RelActAutoGuiState state;
-  state.deSerialize( setup_base_node, &matdb );
+  state.deSerialize( setup_base_node );
     
   assert( state.options.rel_eff_curves.size() == 2 );
   
@@ -1798,10 +1789,9 @@ void leu_heu_ana()
 {
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   assert( db );
-  MaterialDB matdb;
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
   const string data_dir = InterSpec::staticDataDirectory();
-  const string materialfile = SpecUtils::append_path( data_dir, "MaterialDataBase.txt" );
-  matdb.parseGadrasMaterialFile( materialfile, db, false );
+  assert( matdb );
 
   const string specfilename = "NBS900+U295_B95Dish_2h_COAX.CNF";  //LEU + HEU
   //const string specfilename = "NBS900_B95Dish_2h_COAX.CNF"; //HEU
@@ -1830,7 +1820,7 @@ void leu_heu_ana()
   assert( setup_base_node );
 
   RelActCalcAuto::RelActAutoGuiState state;
-  state.deSerialize( setup_base_node, &matdb );
+  state.deSerialize( setup_base_node );
 
   assert( state.options.rel_eff_curves.size() == 2 );
 
@@ -1937,11 +1927,10 @@ int dev_code()
     return EXIT_FAILURE;
   }
   
-  MaterialDB matdb;
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
   
   const string data_dir = InterSpec::staticDataDirectory();
-  const string materialfile = SpecUtils::append_path( data_dir, "MaterialDataBase.txt" );
-  matdb.parseGadrasMaterialFile( materialfile, db, false );
+  assert( matdb );
   
   RelActCalcAuto::Options options;
   options.energy_cal_type = RelActCalcAuto::EnergyCalFitType::NonLinearFit;
@@ -1959,9 +1948,9 @@ int dev_code()
   
   RelActCalc::PhysicalModelShieldInput self_atten_def;
   self_atten_def.atomic_number = 0.0;
-  const Material * const pu = matdb.material("Pu (plutonium)");
+  const std::shared_ptr<const Material> pu = matdb->material("Pu (plutonium)");
   assert( pu );
-  self_atten_def.material = std::make_shared<const Material>( *pu );
+  self_atten_def.material = pu;
   self_atten_def.areal_density = 19.8 * PhysicalUnits::g_per_cm2;
   //self_atten_def.fit_atomic_number = false;
   //self_atten_def.lower_fit_atomic_number = 1.0;

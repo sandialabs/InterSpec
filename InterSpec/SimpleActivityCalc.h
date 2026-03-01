@@ -95,10 +95,10 @@ struct SimpleActivityCalcState
   bool operator!=( const SimpleActivityCalcState &rhs ) const;
   
   std::string encodeToUrl() const;
-  void decodeFromUrl( const std::string &uri, MaterialDB *materialDB = nullptr );
+  void decodeFromUrl( const std::string &uri );
   
   void serialize( rapidxml::xml_node<char> * const parent_node ) const;
-  void deSerialize( const ::rapidxml::xml_node<char> *src_node, MaterialDB *materialDB = nullptr );
+  void deSerialize( const ::rapidxml::xml_node<char> *src_node );
   
 #if( PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
   static void equalEnough( const SimpleActivityCalcState &lhs, const SimpleActivityCalcState &rhs );
@@ -148,8 +148,7 @@ struct SimpleActivityCalcResult
 class SimpleActivityCalcWindow : public AuxWindow
 {
 public:
-  SimpleActivityCalcWindow( MaterialDB *materialDB,
-                  Wt::WSuggestionPopup *materialSuggestion,
+  SimpleActivityCalcWindow( Wt::WSuggestionPopup *materialSuggestion,
                   InterSpec* viewer );
   
   virtual ~SimpleActivityCalcWindow();
@@ -169,8 +168,7 @@ class SimpleActivityCalc : public Wt::WContainerWidget
 {
 public:
   
-  SimpleActivityCalc( MaterialDB *materialDB,
-                  Wt::WSuggestionPopup *materialSuggestion,
+  SimpleActivityCalc( Wt::WSuggestionPopup *materialSuggestion,
                   InterSpec *specViewer,
                   Wt::WContainerWidget *parent = 0 );
   
@@ -242,7 +240,6 @@ protected:
   
   InterSpec *m_viewer;
   Wt::WSuggestionPopup *m_materialSuggest;
-  MaterialDB *m_materialDB;
   
   Wt::WComboBox *m_peakSelect;
   Wt::WText *m_nuclideInfo;

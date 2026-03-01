@@ -400,7 +400,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_relActManualWindow( nullptr ),
     m_relActManualMenuItem( nullptr ),
 #endif
-    m_materialDB( nullptr ),
     m_nuclideSearchWindow( 0 ),
     m_nuclideSearchContainer(0),
     m_nuclideSearch( 0 ),
@@ -6695,7 +6694,6 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_referencePhotopeakLinesWindow = NULL;
       
     m_referencePhotopeakLines = new ReferencePhotopeakDisplay( m_spectrum,
-                                              m_materialDB.get(),
                                               m_shieldingSuggestion,
                                               this );
     setReferenceLineColors( nullptr );
@@ -8709,7 +8707,7 @@ DetectionLimitWindow *InterSpec::createDetectionLimitTool()
 {
   if( !m_detectionLimitWindow )
   {
-    m_detectionLimitWindow = new DetectionLimitWindow( this, m_materialDB.get(), m_shieldingSuggestion );
+    m_detectionLimitWindow = new DetectionLimitWindow( this, m_shieldingSuggestion );
     m_detectionLimitWindow->finished().connect( this, &InterSpec::handleDetectionLimitWindowClose );
   }//if( !m_detectionLimitWindow )
   
@@ -8779,7 +8777,7 @@ DetectionLimitSimpleWindow *InterSpec::showSimpleMdaWindow()
   if( m_simpleMdaWindow )
     return m_simpleMdaWindow;
   
-  m_simpleMdaWindow = new DetectionLimitSimpleWindow( m_materialDB.get(), m_shieldingSuggestion, this );
+  m_simpleMdaWindow = new DetectionLimitSimpleWindow( m_shieldingSuggestion, this );
   m_simpleMdaWindow->finished().connect( this, &InterSpec::handleSimpleMdaWindowClose );
   
   return m_simpleMdaWindow;
@@ -8978,7 +8976,7 @@ SimpleActivityCalcWindow *InterSpec::showSimpleActivityCalcWindow()
   if( m_simpleActivityCalcWindow )
     return m_simpleActivityCalcWindow;
   
-  m_simpleActivityCalcWindow = new SimpleActivityCalcWindow( m_materialDB.get(), m_shieldingSuggestion, this );
+  m_simpleActivityCalcWindow = new SimpleActivityCalcWindow( m_shieldingSuggestion, this );
   m_simpleActivityCalcWindow->finished().connect( this, &InterSpec::handleSimpleActivityCalcWindowClose );
   
   return m_simpleActivityCalcWindow;
@@ -9735,7 +9733,7 @@ RelActAutoGui *InterSpec::relActAutoWindow( const bool createIfNotOpen )
     try
     {
       std::unique_ptr<RelActCalcAuto::RelActAutoGuiState> relActState = m_dataMeasurement
-                                                  ? m_dataMeasurement->getRelActAutoGuiState( materialDataBase() )
+                                                  ? m_dataMeasurement->getRelActAutoGuiState()
                                                   : nullptr;
       if( relActState )
       {
@@ -10158,40 +10156,29 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
 
 
 
-void InterSpec::fillMaterialDb( std::shared_ptr<MaterialDB> materialDB,
-                                     const std::string sessionid,
-                                     boost::function<void(void)> update )
-{
-  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-  try
-  {
-    //materialDB can get destructed if the session ends immediately....
-    const string materialfile = SpecUtils::append_path(ns_staticDataDirectory, "MaterialDataBase.txt" );
-    materialDB->parseGadrasMaterialFile( materialfile, db, false );
-    
-    WServer::instance()->post( sessionid, update );
-  }catch( std::exception &e )
-  {
-    WString msg = "Error initializing the material database: " + string(e.what());
-    
-    WServer::instance()->post( sessionid, boost::bind( &postSvlogHelper, msg, int(WarningWidget::WarningMsgHigh) ) );
-    
-    return;
-  }//try / catch
-}//void fillMaterialDb(...)
-
-
 void InterSpec::pushMaterialSuggestionsToUsers()
 {
-  if( !m_materialDB || !m_shieldingSuggestion )
+  if( !m_shieldingSuggestion )
     throw runtime_error( "pushMaterialSuggestionsToUsers(): you must"
                         " call initMaterialDbAndSuggestions() first." );
 
-  const vector<const Material *> materials = m_materialDB->materials();
-  for( const Material *material : materials )
+  if( !MaterialDB::initialized() )
   {
-    const string &name = material->name;
-    const string &desc = material->description;
+    const string &err = MaterialDB::init_error();
+    if( !err.empty() )
+    {
+      passMessage( WString::fromUTF8( "Error initializing material database: " + err ),
+                   WarningWidget::WarningMsgHigh );
+    }
+    return;
+  }//if( !MaterialDB::initialized() )
+
+  const std::shared_ptr<const MaterialDB> matDb = MaterialDB::instance();
+  const vector<std::shared_ptr<const Material>> &mats = matDb->materials();
+  for( const std::shared_ptr<const Material> &mat : mats )
+  {
+    const string &name = mat->name;
+    const string &desc = mat->description;
 
     // Lets filter out things like "PuO2 - X.X% Pu240 Plutonium dioxide", since
     //  InterSpec doesnt make used of this enrichment anywhere; but we'll leave
@@ -10206,13 +10193,13 @@ void InterSpec::pushMaterialSuggestionsToUsers()
       continue;
 
     m_shieldingSuggestion->addSuggestion( name, name );
-    if( SpecUtils::iequals_ascii(name, desc) )
+    if( SpecUtils::iequals_ascii( name, desc ) )
       continue;
 
-    const string::size_type sub_pos = SpecUtils::ifind_substr_ascii(name, desc.c_str());
+    const string::size_type sub_pos = SpecUtils::ifind_substr_ascii( name, desc.c_str() );
     if( sub_pos == string::npos )
       m_shieldingSuggestion->addSuggestion( desc, desc );
-  }//for( const Material *material : materials )
+  }//for( const shared_ptr<const Material> &mat : mats )
 
   wApp->triggerUpdate();
 }//void pushMaterialSuggestionsToUsers()
@@ -10231,11 +10218,11 @@ void InterSpec::initMaterialDbAndSuggestions()
     //popupOptions.wordSeparators     = "-_., ;()";     //To show suggestions based on matches of the edited value with parts of the suggestion.
     popupOptions.wordStartRegexp = "\\s|^|\\(|\\<";       // Instead of using .wordSeparators, we will use the regex option to start matching at whitespaces, start of line, open-paren, and boundaries of words (probably a bit duplicative).
     popupOptions.appendReplacedText = "";             //
-    
+
     // We may want to parent `m_shieldingSuggestion...
-    
+
     m_shieldingSuggestion = new WSuggestionPopup( popupOptions, this );
-    
+
     m_shieldingSuggestion->addStyleClass("suggestion");
 #if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
     m_shieldingSuggestion->setJavaScriptMember("wtNoReparent", "true");
@@ -10244,16 +10231,7 @@ void InterSpec::initMaterialDbAndSuggestions()
     m_shieldingSuggestion->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
   }//if( !m_shieldingSuggestion )
 
-  if( !m_materialDB )
-  {
-    m_materialDB = std::make_shared<MaterialDB>();
-    
-    boost::function<void(void)> success = wApp->bind( boost::bind(&InterSpec::pushMaterialSuggestionsToUsers, this) );
-    
-    boost::function<void(void)> worker = boost::bind( &fillMaterialDb,
-                                    m_materialDB, wApp->sessionId(), success );
-    WServer::instance()->ioService().boost::asio::io_service::post( worker );
-  }//if( !m_materialDB )
+  pushMaterialSuggestionsToUsers();
 }//void InterSpec::initMaterialDbAndSuggestions()
 
 
@@ -10261,7 +10239,7 @@ GammaXsWindow *InterSpec::showGammaXsTool()
 {
   if( !m_gammaXsToolWindow )
   {
-    m_gammaXsToolWindow = new GammaXsWindow( m_materialDB.get(), m_shieldingSuggestion, this );
+    m_gammaXsToolWindow = new GammaXsWindow( m_shieldingSuggestion, this );
     m_gammaXsToolWindow->finished().connect( this, &InterSpec::deleteGammaXsTool );
     
     if( m_undo && m_undo->canAddUndoRedoNow() )
@@ -10321,7 +10299,7 @@ DoseCalcWindow *InterSpec::showDoseTool()
 {
   if( !m_doseCalcWindow )
   {
-    m_doseCalcWindow = new DoseCalcWindow( m_materialDB.get(), m_shieldingSuggestion, this );
+    m_doseCalcWindow = new DoseCalcWindow( m_shieldingSuggestion, this );
     m_doseCalcWindow->finished().connect( this, &InterSpec::deleteDoseCalcTool );
     
     if( m_undo && m_undo->canAddUndoRedoNow() )
@@ -10390,7 +10368,7 @@ MakeDrfWindow *InterSpec::showMakeDrfWindow()
         item->setDisabled( true );
     }//for( loop over "Tools" menu items )
     
-    m_makeDrfTool = new MakeDrfWindow( this, m_materialDB.get(), m_shieldingSuggestion );
+    m_makeDrfTool = new MakeDrfWindow( this, m_shieldingSuggestion );
     m_makeDrfTool->finished().connect( boost::bind( &InterSpec::handleCloseMakeDrfWindow, this, m_makeDrfTool ) );
     new UndoRedoManager::BlockGuiUndoRedo( m_makeDrfTool ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
   }//if( !m_makeDrfTool )
@@ -10739,11 +10717,10 @@ void InterSpec::showGammaLinesWindow()
   m_referencePhotopeakLinesWindow->rejectWhenEscapePressed();
 
   m_referencePhotopeakLines = new ReferencePhotopeakDisplay( m_spectrum,
-                                               m_materialDB.get(),
                                                m_shieldingSuggestion,
                                                this );
   setReferenceLineColors( nullptr );
-  
+
   m_externalRidResultsRecieved.connect( boost::bind( &ReferencePhotopeakDisplay::setExternalRidResults,
                                                     m_referencePhotopeakLines, boost::placeholders::_1 ));
   
@@ -10819,7 +10796,6 @@ void InterSpec::closeGammaLinesWindow()
   if( m_toolsTabs )
   {
     m_referencePhotopeakLines = new ReferencePhotopeakDisplay( m_spectrum,
-                                                   m_materialDB.get(),
                                                    m_shieldingSuggestion,
                                                    this );
     setReferenceLineColors( nullptr );
@@ -10930,18 +10906,6 @@ SpecMeasManager *InterSpec::fileManager()
 PeakModel *InterSpec::peakModel()
 {
   return m_peakModel;
-}
-
-
-MaterialDB *InterSpec::materialDataBase()
-{
-  return m_materialDB.get();
-}
-
-
-std::shared_ptr<MaterialDB> InterSpec::materialDataBaseShared()
-{
-  return m_materialDB;
 }
 
 

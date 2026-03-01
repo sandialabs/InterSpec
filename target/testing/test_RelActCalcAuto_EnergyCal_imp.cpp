@@ -340,10 +340,10 @@ BOOST_AUTO_TEST_CASE( CubicSplineFullDeriv_AtKnotEnergies )
     const double rel_v2 = std::fabs( y_legacy.v[2] - y_full.v[2] )
                           / (std::max)( deriv_floor, std::fabs( y_legacy.v[2] ) );
 
-    max_rel_v0 = std::max( max_rel_v0, rel_v0 );
-    max_rel_v1 = std::max( max_rel_v1, rel_v1 );
-    max_rel_v2 = std::max( max_rel_v2, rel_v2 );
-    max_abs_val_diff = std::max( max_abs_val_diff, std::fabs( y_legacy.a - y_full.a ) );
+    max_rel_v0 = (std::max)( max_rel_v0, rel_v0 );
+    max_rel_v1 = (std::max)( max_rel_v1, rel_v1 );
+    max_rel_v2 = (std::max)( max_rel_v2, rel_v2 );
+    max_abs_val_diff = (std::max)( max_abs_val_diff, std::fabs( y_legacy.a - y_full.a ) );
   };
 
   for( size_t i = 0; i < legacy_nodes.size(); ++i )
@@ -1064,7 +1064,7 @@ BOOST_AUTO_TEST_CASE( ApplyUnapplyRoundTrip_LowerChannelEdge )
 
   auto orig_energy_at_channel = [&]( double ch ) -> double {
     if( ch < 0.0 ) ch = 0.0;
-    const size_t low = std::min( static_cast<size_t>( std::floor( ch ) ), nchannel - 1 );
+    const size_t low = (std::min)( static_cast<size_t>( std::floor( ch ) ), nchannel - 1 );
     const double e_low = static_cast<double>( ch_energies[low] );
     const double e_high = static_cast<double>( ch_energies[low + 1] );
     const double frac = ch - static_cast<double>( low );
@@ -1074,7 +1074,7 @@ BOOST_AUTO_TEST_CASE( ApplyUnapplyRoundTrip_LowerChannelEdge )
 
   auto adj_energy_at_channel = [&]( double ch ) -> double {
     if( ch < 0.0 ) ch = 0.0;
-    const size_t low = std::min( static_cast<size_t>( std::floor( ch ) ), nchannel - 1 );
+    const size_t low = (std::min)( static_cast<size_t>( std::floor( ch ) ), nchannel - 1 );
     const double e_low = static_cast<double>( ch_energies[low] );
     const double e_high = static_cast<double>( ch_energies[low + 1] );
     const double frac = ch - static_cast<double>( low );

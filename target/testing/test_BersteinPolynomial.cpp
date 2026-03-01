@@ -724,7 +724,7 @@ BOOST_AUTO_TEST_CASE( test_constrained_power_series_approximation_quality )
     const double y_fitted = BersteinPolynomial::evaluate( t, constrained_coeffs );
 
     const double error = std::abs( y_fitted - y_clamped );
-    max_error = std::max( max_error, error );
+    max_error = (std::max)( max_error, error );
   }
 
   // The approximation should be quite good - within 5% of the range

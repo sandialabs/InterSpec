@@ -35,8 +35,9 @@
 #include <Wt/WApplication>
 #include <Wt/WEnvironment>
 #include <Wt/WDoubleValidator>
-#include <Wt/WSuggestionPopup>
 #include <Wt/WRegExpValidator>
+#include <Wt/WSuggestionPopup>
+#include <Wt/WAbstractItemModel>
 
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/SpecMeas.h"
@@ -64,8 +65,7 @@ using namespace Wt;
 using namespace std;
 
 
-GammaXsGui::GammaXsGui( MaterialDB *materialDB,
-                        Wt::WSuggestionPopup *materialSuggestion,
+GammaXsGui::GammaXsGui( Wt::WSuggestionPopup *materialSuggestion,
                         InterSpec* viewer,
                         WContainerWidget *parent )
   : WContainerWidget( parent ),
@@ -86,7 +86,6 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
     m_transmissionFraction( NULL ),
     m_transmissionFractionVal( -1.0f ),
     m_layout( NULL ),
-    m_materialDB( materialDB ),
     m_specViewer( viewer ),
     m_detectorDisplay( NULL ),
     m_detectorDistanceLabel( nullptr ),
@@ -470,19 +469,29 @@ vector<pair<const SandiaDecay::Element *, float> > GammaXsGui::parseMaterial()
 
   //first look to see if its in the database
   string text = m_materialEdit->text().toUTF8();
-  const Material *material = NULL;
+  std::shared_ptr<const Material> material;
+
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
 
   try
   {
-    material = m_materialDB->material( text );
+    material = matdb->material( text );
   }catch(...){}
 
   if( !material )
   {
     try
     {
-      material = m_materialDB->parseChemicalFormula( text, db );
-      m_materialSuggestion->addSuggestion( material->name, material->name );
+      material = MaterialDB::materialFromChemicalFormula( text, db );
+
+      // Check if this suggestion already exists before adding
+      Wt::WAbstractItemModel *mdl = m_materialSuggestion->model();
+      const Wt::WString suggName = Wt::WString::fromUTF8( material->name );
+      bool alreadyHave = false;
+      for( int row = 0; !alreadyHave && (row < mdl->rowCount()); ++row )
+        alreadyHave = (Wt::asString( mdl->data( row, 0 ) ) == suggName);
+      if( !alreadyHave )
+        m_materialSuggestion->addSuggestion( material->name, material->name );
     }catch(...){}
   }//if( !material )
 
@@ -623,7 +632,7 @@ void GammaXsGui::handleMaterialChange()
   const string text = m_materialEdit->text().toUTF8();
   try
   {
-    const Material *material = m_materialDB->material( text );
+    const std::shared_ptr<const Material> material = MaterialDB::instance()->material( text );
     const double density = material->density*PhysicalUnits::cm3/PhysicalUnits::g;
     
     char buffer[32];
@@ -838,8 +847,7 @@ void GammaXsGui::checkAndAddUndoRedo()
 }//void checkAndAddUndoRedo();
 
 
-GammaXsWindow::GammaXsWindow( MaterialDB *materialDB,
-                              Wt::WSuggestionPopup *materialSuggestion ,
+GammaXsWindow::GammaXsWindow( Wt::WSuggestionPopup *materialSuggestion ,
                               InterSpec* viewer)
   : AuxWindow( WString::tr("window-title-xs-calc"),
               (AuxWindowProperties::PhoneNotFullScreen
@@ -850,8 +858,8 @@ GammaXsWindow::GammaXsWindow( MaterialDB *materialDB,
   rejectWhenEscapePressed( true );
 
   contents()->setOverflow( Wt::WContainerWidget::OverflowAuto, Wt::Orientation::Vertical );
-  
-  m_tool = new GammaXsGui( materialDB, materialSuggestion, viewer, contents() );
+
+  m_tool = new GammaXsGui( materialSuggestion, viewer, contents() );
   
   AuxWindow::addHelpInFooter( footer(), "gamma-xs-dialog" );
   
