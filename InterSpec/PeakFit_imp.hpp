@@ -57,7 +57,7 @@ void fit_continuum( const float * const x,
 
   double roi_data_sum = 0.0, step_cumulative_data = 0.0;
   for( size_t row = 0; row < nbin; ++row )
-    roi_data_sum += std::max( data[row], 0.0f );
+    roi_data_sum += (std::max)( data[row], 0.0f );
 
   // Zero out the destination count array
   for( size_t row = 0; row < nbin; ++row )
@@ -69,7 +69,7 @@ void fit_continuum( const float * const x,
   if( multithread && (nfixedpeak > 8) ) //8 is arbitrary.
   {
     // TODO: multi-thread computation needs to be evaluated more hollistically both here and in #RelActAutoSolution::eval
-    const unsigned nthread = std::min( 16, std::min( static_cast<int>(nfixedpeak), std::max( 1, static_cast<int>( std::thread::hardware_concurrency() ) ) ) );
+    const unsigned nthread = (std::min)( 16, (std::min)( static_cast<int>(nfixedpeak), (std::max)( 1, static_cast<int>( std::thread::hardware_concurrency() ) ) ) );
 
     vector<vector<ScalarType>> results( nthread );
 
@@ -333,7 +333,7 @@ ScalarType fit_amp_and_offset_imp( const float *x,
   const double roi_upper = x[nbin];
 
   for( size_t row = 0; row < nbin; ++row )
-    roi_data_sum += std::max( static_cast<double>(data[row]), 0.0 );
+    roi_data_sum += (std::max)( static_cast<double>(data[row]), 0.0 );
 
   const ScalarType avrg_data_val = roi_data_sum / static_cast<double>(nbin);
 
