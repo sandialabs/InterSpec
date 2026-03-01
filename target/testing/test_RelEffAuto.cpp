@@ -279,6 +279,8 @@ BOOST_AUTO_TEST_CASE( test_pu242_by_correlation )
 
 BOOST_AUTO_TEST_CASE( test_deviation_pair_xml_serialization )
 {
+  set_data_dir();
+
   // Test that energy_cal_type is properly serialized and deserialized
   using namespace RelActCalcAuto;
 
