@@ -127,6 +127,9 @@ void set_data_dir()
   
   const string required_data_path = SpecUtils::append_path(g_test_file_dir, required_data_file);
   BOOST_REQUIRE_MESSAGE( SpecUtils::is_file( required_data_path ), "'" << required_data_file << "' not at '" << required_data_path << "'" );
+
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  BOOST_REQUIRE( MaterialDB::initialized() );
 }//void set_data_dir()
 
 
@@ -135,12 +138,7 @@ BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_XML_Serialization )
 {
   set_data_dir();
   
-  // Set up MaterialDB for ShieldingInfo deserialization
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-  MaterialDB matdb;
-  
-  const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
-  BOOST_REQUIRE_NO_THROW( matdb.parseGadrasMaterialFile( materialfile, db, false ) );
   
   // Test basic XML serialization and deserialization
   {
@@ -190,7 +188,7 @@ BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_XML_Serialization )
     
     // Test deserialization
     SimpleActivityCalcState deserialized_state;
-    BOOST_REQUIRE_NO_THROW( deserialized_state.deSerialize( state_node, &matdb ) );
+    BOOST_REQUIRE_NO_THROW( deserialized_state.deSerialize( state_node ) );
     
     // Verify all fields were restored correctly
     BOOST_CHECK_CLOSE( deserialized_state.peakEnergy, original_state.peakEnergy, 1e-6 );
@@ -211,12 +209,7 @@ BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_XML_GeometryTypes )
 {
   set_data_dir();
   
-  // Set up MaterialDB for ShieldingInfo deserialization
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-  MaterialDB matdb;
-  
-  const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
-  BOOST_REQUIRE_NO_THROW( matdb.parseGadrasMaterialFile( materialfile, db, false ) );
   
   // Test serialization/deserialization of all geometry types
   const std::vector<SimpleActivityGeometryType> geometry_types = {
@@ -256,7 +249,7 @@ BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_XML_GeometryTypes )
     // Deserialize
     rapidxml::xml_node<char> *state_node = XML_FIRST_NODE( root, "SimpleActivityCalcState" );
     SimpleActivityCalcState deserialized_state;
-    BOOST_REQUIRE_NO_THROW( deserialized_state.deSerialize( state_node, &matdb ) );
+    BOOST_REQUIRE_NO_THROW( deserialized_state.deSerialize( state_node ) );
     
     // Verify geometry type is preserved
     BOOST_CHECK_MESSAGE( deserialized_state.geometryType == geom_type, 
@@ -275,7 +268,7 @@ BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_XML_ErrorHandling )
   {
     // Test with nullptr node
     SimpleActivityCalcState state;
-    BOOST_CHECK_THROW( state.deSerialize( nullptr, nullptr ), std::exception );
+    BOOST_CHECK_THROW( state.deSerialize( nullptr ), std::exception );
   }
   
   // Test with wrong node name
@@ -285,7 +278,7 @@ BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_XML_ErrorHandling )
     doc.append_node( wrong_node );
     
     SimpleActivityCalcState state;
-    BOOST_CHECK_THROW( state.deSerialize( wrong_node, nullptr ), std::exception );
+    BOOST_CHECK_THROW( state.deSerialize( wrong_node ), std::exception );
   }
   
   // Test with invalid geometry type value
@@ -307,7 +300,7 @@ BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_XML_ErrorHandling )
     root->append_node( geom_node );
     
     SimpleActivityCalcState state;
-    BOOST_CHECK_THROW( state.deSerialize( root, nullptr ), std::exception );
+    BOOST_CHECK_THROW( state.deSerialize( root ), std::exception );
   }
 }//BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_XML_ErrorHandling )
 
@@ -316,12 +309,7 @@ BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_XML_RoundTrip )
 {
   set_data_dir();
   
-  // Set up MaterialDB for ShieldingInfo deserialization
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-  MaterialDB matdb;
-  
-  const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
-  BOOST_REQUIRE_NO_THROW( matdb.parseGadrasMaterialFile( materialfile, db, false ) );
   
   // Test round-trip serialization with complex data
   SimpleActivityCalcState original_state;
@@ -354,7 +342,7 @@ BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_XML_RoundTrip )
   // First deserialization
   rapidxml::xml_node<char> *state_node1 = XML_FIRST_NODE( root1, "SimpleActivityCalcState" );
   SimpleActivityCalcState intermediate_state;
-  BOOST_REQUIRE_NO_THROW( intermediate_state.deSerialize( state_node1, &matdb ) );
+  BOOST_REQUIRE_NO_THROW( intermediate_state.deSerialize( state_node1 ) );
   
   BOOST_CHECK( intermediate_state == original_state );
   
@@ -368,7 +356,7 @@ BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_XML_RoundTrip )
   // Second deserialization
   rapidxml::xml_node<char> *state_node2 = XML_FIRST_NODE( root2, "SimpleActivityCalcState" );
   SimpleActivityCalcState final_state;
-  BOOST_REQUIRE_NO_THROW( final_state.deSerialize( state_node2, &matdb ) );
+  BOOST_REQUIRE_NO_THROW( final_state.deSerialize( state_node2 ) );
   
   // Verify all data survived round-trip exactly
   BOOST_CHECK_CLOSE( final_state.peakEnergy, original_state.peakEnergy, 1e-10 );
@@ -388,12 +376,7 @@ BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_XML_EmptyFields )
 {
   set_data_dir();
   
-  // Set up MaterialDB for ShieldingInfo deserialization
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-  MaterialDB matdb;
-  
-  const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
-  BOOST_REQUIRE_NO_THROW( matdb.parseGadrasMaterialFile( materialfile, db, false ) );
   
   // Test serialization/deserialization with empty string fields
   SimpleActivityCalcState original_state;
@@ -416,7 +399,7 @@ BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_XML_EmptyFields )
   // Deserialize
   rapidxml::xml_node<char> *state_node = XML_FIRST_NODE( root, "SimpleActivityCalcState" );
   SimpleActivityCalcState deserialized_state;
-  BOOST_REQUIRE_NO_THROW( deserialized_state.deSerialize( state_node, &matdb ) );
+  BOOST_REQUIRE_NO_THROW( deserialized_state.deSerialize( state_node ) );
   
   // Verify empty fields are preserved
   BOOST_CHECK_CLOSE( deserialized_state.peakEnergy, original_state.peakEnergy, 1e-6 );
@@ -673,12 +656,7 @@ BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_WithGenericShielding )
 {
   set_data_dir();
   
-  // Set up MaterialDB for ShieldingInfo handling
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-  MaterialDB matdb;
-  
-  const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
-  BOOST_REQUIRE_NO_THROW( matdb.parseGadrasMaterialFile( materialfile, db, false ) );
   
   // Test URL round-trip with generic shielding
   {
@@ -734,13 +712,10 @@ BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_WithMaterialShielding )
 {
   set_data_dir();
   
-  // Set up MaterialDB for ShieldingInfo handling
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-  MaterialDB matdb;
-  
-  const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
-  BOOST_REQUIRE_NO_THROW( matdb.parseGadrasMaterialFile( materialfile, db, false ) );
-  
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+
   // Test URL round-trip with material-based shielding
   {
     SimpleActivityCalcState original_state;
@@ -749,9 +724,9 @@ BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_WithMaterialShielding )
     original_state.nuclideAgeStr = "30 y";
     original_state.distanceStr = "50 cm";
     original_state.geometryType = SimpleActivityGeometryType::Point;
-    
+
     // Set up material-based shielding (Iron)
-    const Material *iron = matdb.material( "Iron" );
+    const std::shared_ptr<const Material> iron = matdb->material( "Iron" );
     if( iron ) // Only run this test if Iron material is available
     {
       original_state.shielding = ShieldingSourceFitCalc::ShieldingInfo();
@@ -771,7 +746,7 @@ BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_WithMaterialShielding )
       BOOST_CHECK( url.find("V=1") != std::string::npos );
       
       SimpleActivityCalcState decoded_state;
-      BOOST_REQUIRE_NO_THROW( decoded_state.decodeFromUrl( url, &matdb ) );
+      BOOST_REQUIRE_NO_THROW( decoded_state.decodeFromUrl( url ) );
       
       // Verify basic fields
       BOOST_CHECK_LT( fabs(decoded_state.peakEnergy - original_state.peakEnergy), 0.01 );
@@ -805,12 +780,7 @@ BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_ShieldingRoundTripMultiple )
 {
   set_data_dir();
   
-  // Set up MaterialDB for ShieldingInfo handling
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-  MaterialDB matdb;
-  
-  const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
-  BOOST_REQUIRE_NO_THROW( matdb.parseGadrasMaterialFile( materialfile, db, false ) );
   
   // Test multiple encode/decode cycles to ensure stability
   {
@@ -899,11 +869,9 @@ BOOST_AUTO_TEST_CASE( SimpleActivityCalc_Ra226_609keV_Tests )
   set_data_dir();
   
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-  MaterialDB matdb;
-  
-  const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
-  BOOST_REQUIRE_NO_THROW( matdb.parseGadrasMaterialFile( materialfile, db, false ) );
-  
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+
   auto setup_generic_shielding = []() -> ShieldingSourceFitCalc::ShieldingInfo {
     ShieldingSourceFitCalc::ShieldingInfo shielding;
     shielding.m_geometry = GammaInteractionCalc::GeometryType::Spherical;
@@ -923,8 +891,8 @@ BOOST_AUTO_TEST_CASE( SimpleActivityCalc_Ra226_609keV_Tests )
     shielding.m_geometry = GammaInteractionCalc::GeometryType::Spherical;
     shielding.m_isGenericMaterial = false;
     shielding.m_forFitting = false;
-    
-    const Material *iron = matdb.material( "Fe (iron)" );
+
+    const std::shared_ptr<const Material> iron = matdb->material( "Fe (iron)" );
     BOOST_REQUIRE( iron );
     shielding.m_material = std::make_shared<Material>( *iron );
     

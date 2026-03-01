@@ -744,10 +744,12 @@ BOOST_AUTO_TEST_CASE( DistributedSrcCalcTests )
   BOOST_REQUIRE( db );
   const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
   
-  MaterialDB materialdb;
-  BOOST_REQUIRE_NO_THROW( materialdb.parseGadrasMaterialFile( materialfile, db, false ) );
-  
-  //const Material *material = materialdb.material( "Air" );
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  BOOST_REQUIRE( MaterialDB::initialized() );
+
+  const std::shared_ptr<const MaterialDB> materialdb = MaterialDB::instance();
+  BOOST_REQUIRE( materialdb );
+
   DistributedSrcCalc ObjectToIntegrate;
 
   const double energy = 185.0*PhysicalUnits::keV;
@@ -762,8 +764,8 @@ BOOST_AUTO_TEST_CASE( DistributedSrcCalcTests )
 
   double sphereRad = 0.0, transLenCoef = 0.0;
 
-  const Material *material = materialdb.material( "void" );
-  transLenCoef = GammaInteractionCalc::transmition_length_coefficient( material, energy );
+  std::shared_ptr<const Material> material = materialdb->material( "void" );
+  transLenCoef = GammaInteractionCalc::transmition_length_coefficient( material.get(), energy );
   sphereRad += 99.5* PhysicalUnits::cm;
 #if( defined(__GNUC__) && __GNUC__ < 5 )
   ObjectToIntegrate.m_dimensionsTransLenAndType.push_back( tuple<array<double,3>,double,DistributedSrcCalc::ShellType>{{sphereRad,0.0,0.0},transLenCoef,DistributedSrcCalc::ShellType::Material} );
@@ -771,8 +773,8 @@ BOOST_AUTO_TEST_CASE( DistributedSrcCalcTests )
   ObjectToIntegrate.m_dimensionsTransLenAndType.push_back( {{sphereRad,0.0,0.0},transLenCoef,DistributedSrcCalc::ShellType::Material} );
 #endif
 
-  material = materialdb.material( "U" );
-  transLenCoef = GammaInteractionCalc::transmition_length_coefficient( material, energy );
+  material = materialdb->material( "U" );
+  transLenCoef = GammaInteractionCalc::transmition_length_coefficient( material.get(), energy );
   sphereRad += 0.5 * PhysicalUnits::cm;
 #if( defined(__GNUC__) && __GNUC__ < 5 )
   ObjectToIntegrate.m_dimensionsTransLenAndType.push_back( tuple<array<double,3>,double,DistributedSrcCalc::ShellType>{{sphereRad,0.0,0.0},transLenCoef,DistributedSrcCalc::ShellType::Material} );
@@ -781,8 +783,8 @@ BOOST_AUTO_TEST_CASE( DistributedSrcCalcTests )
 #endif
   ObjectToIntegrate.m_materialIndex = ObjectToIntegrate.m_dimensionsTransLenAndType.size() - 1;
 
-  material = materialdb.material( "Fe" );
-  transLenCoef = GammaInteractionCalc::transmition_length_coefficient( material, energy );
+  material = materialdb->material( "Fe" );
+  transLenCoef = GammaInteractionCalc::transmition_length_coefficient( material.get(), energy );
   sphereRad += 0.5 * PhysicalUnits::cm;
   ObjectToIntegrate.m_dimensionsTransLenAndType.push_back( {{sphereRad,0.0,0.0},transLenCoef,DistributedSrcCalc::ShellType::Material} );
 

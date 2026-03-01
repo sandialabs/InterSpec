@@ -368,21 +368,19 @@ void MaterialDB::initialize()
     db->parseGadrasMaterialFile( materialfile, decayDb, false, false );
 
     // Load user overrides from writable directory, if available
-    const string writableDir = InterSpec::writableDataDirectory();
-    if( !writableDir.empty() )
+    try
     {
-      const string userFile = SpecUtils::append_path( writableDir, "MaterialDataBase.txt" );
-      if( SpecUtils::is_file( userFile ) )
+      const string writableDir = InterSpec::writableDataDirectory();
+      if( !writableDir.empty() )
       {
-        try
-        {
+        const string userFile = SpecUtils::append_path( writableDir, "MaterialDataBase.txt" );
+        if( SpecUtils::is_file( userFile ) )
           db->parseGadrasMaterialFile( userFile, decayDb, false, true );
-        }catch( std::exception &e )
-        {
-          cerr << "Warning: failed to parse user MaterialDataBase.txt: " << e.what() << endl;
-        }
-      }//if( user file exists )
-    }//if( writable directory is available )
+      }//if( writable directory is available )
+    }catch( std::exception &e )
+    {
+      cerr << "Warning: failed to load user MaterialDataBase.txt overrides: " << e.what() << endl;
+    }
 
     sm_instance = std::move( db );
     sm_initError.clear();

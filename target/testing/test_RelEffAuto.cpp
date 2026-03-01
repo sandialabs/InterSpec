@@ -317,7 +317,7 @@ BOOST_AUTO_TEST_CASE( test_deviation_pair_xml_serialization )
   const rapidxml::xml_node<char> *opts_node = root->first_node( "Options" );
   BOOST_REQUIRE( opts_node );
 
-  opts_loaded.fromXml( opts_node, nullptr );
+  opts_loaded.fromXml( opts_node );
 
   BOOST_CHECK( opts_loaded.energy_cal_type == opts_orig.energy_cal_type );
 }//BOOST_AUTO_TEST_CASE( test_deviation_pair_xml_serialization )
