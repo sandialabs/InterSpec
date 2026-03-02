@@ -939,10 +939,16 @@ namespace AnalystChecks
       for( const string &src : options.sources )
       {
         RelActCalcAuto::SrcVariant source = RelActCalcAuto::source_from_string(src);
-        
+
         if( RelActCalcAuto::is_null(source) )
           throw runtime_error( "Unrecognized source '" + src + "'" );
-        
+
+        // Skip duplicate sources (e.g., LLM may pass the same nuclide twice)
+        const bool is_duplicate = std::any_of( sources.begin(), sources.end(),
+          [&source]( const RelActCalcAuto::SrcVariant &s ){ return s == source; } );
+        if( is_duplicate )
+          continue;
+
         sources.push_back( source );
       }//for( const string &src : options.sources )
 
