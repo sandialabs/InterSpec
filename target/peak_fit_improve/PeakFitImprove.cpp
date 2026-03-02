@@ -65,6 +65,7 @@
 #include "InterSpec/PeakFitLM.h"
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/PeakFitSpecImp.h"
 #include "InterSpec/InterSpecServer.h"
 #include "InterSpec/ReferenceLineInfo.h"
 
@@ -73,6 +74,7 @@
 #include "CandidatePeak_GA.h"
 #include "FinalFit_GA.h"
 #include "PeakFitImproveData.h"
+#include "ClassifyDetType_GA.h"
 #include "FitPeaksForNuclideDev.h"
 
 using namespace std;
@@ -920,7 +922,8 @@ int main( int argc, char **argv )
     ("ga-mutation-rate", po::value<double>( &ga_mutation_rate )->default_value( ga_mutation_rate ), "Fraction of individuals that will have mutation applied to them every generation")
     ("ga-mutate-threshold", po::value<double>( &ga_mutate_threshold )->default_value( ga_mutate_threshold ), "The fraction of genes that will be mutated.")
     ("ga-crossover-threshold", po::value<double>( &ga_crossover_threshold ), "The fraction of genes that will be crossed over (default depends on action: Candidate/InitialFit=0.25, FinalFit=0.15)")
-    ("create-compact-data", po::value<string>(), "Create compacted data directory from source data, verify round-trip, then exit");
+    ("create-compact-data", po::value<string>(), "Create compacted data directory from source data, verify round-trip, then exit")
+    ("subsample", po::value<size_t>(), "For DetTypeClassify: use every Nth source entry (e.g. 10 = use 1/10th of data)");
   
   po::variables_map vm;
   
@@ -980,7 +983,9 @@ int main( int argc, char **argv )
     FinalFit,
     CodeDev,
     AccuracyFromCsvsStudy,
-    PeaksForNuclide
+    PeaksForNuclide,
+    DetTypeClassify,
+    ValidateDetType
   };//enum class OptimizationAction : int
   
   OptimizationAction action;
@@ -996,9 +1001,13 @@ int main( int argc, char **argv )
     action = OptimizationAction::AccuracyFromCsvsStudy;
   else if( action_str == "PeaksForNuclide" )
     action = OptimizationAction::PeaksForNuclide;
+  else if( action_str == "DetTypeClassify" )
+    action = OptimizationAction::DetTypeClassify;
+  else if( action_str == "ValidateDetType" )
+    action = OptimizationAction::ValidateDetType;
   else
   {
-    cerr << "Error: invalid action '" << action_str << "'. Valid actions are: Candidate, InitialFit, FinalFit, CodeDev, AccuracyFromCsvsStudy, PeaksForNuclide" << endl;
+    cerr << "Error: invalid action '" << action_str << "'. Valid actions are: Candidate, InitialFit, FinalFit, CodeDev, AccuracyFromCsvsStudy, PeaksForNuclide, DetTypeClassify, ValidateDetType" << endl;
     return -4;
   }
   
@@ -2058,6 +2067,186 @@ int main( int argc, char **argv )
 
       break;
     }//case OptimizationAction::CodeDev:
+
+    case OptimizationAction::DetTypeClassify:
+    {
+      // Load ALL detectors, live times, and cities for classification
+      const vector<string> all_dets{
+        // HPGe
+        "Falcon 5000", "Fulcrum40h", "LANL_X", "Detective-EX", "Detective-X",
+        "Detective-X_noskew", "HPGe_Planar_50%",
+        // CZT
+        "1.5cm-2cm-2cm", "1cm-1cm-1cm", "CZT_H3D_M400_ORNL_25cm", "Kromek-GR1-CZT",
+        "nanoRaider", "Interceptor", "Raider",
+        // LaBr
+        "InSpector 1000 LaBr3", "SAM-Eagle-LaBr3", "LaBr3_1.5x1.5_SNL",
+        "IdentiFINDER-LaBr3", "Radseeker-LaBr3",
+        // NaI/CsI
+        "IdentiFINDER-R500-NaI", "Radiacode-102", "SAM-Eagle-NaI-3x3",
+        "Verifinder-SN23N", "Stacked", "IdentiFINDER-NGH", "MDDU-Log",
+        "GR135Plus", "Rack", "D3S", "MKC-A03", "Mirion PDS-100",
+        "Polimaster PM1704-GN", "IdentiFINDER-R425", "RadEagle", "RadEye"
+      };
+      const vector<string> all_times{ "30_seconds", "300_seconds", "1800_seconds" };
+      const vector<string> all_cities{ "Livermore", "Baltimore", "Denver" };
+
+      cout << "Loading all detector data for classification..." << endl;
+      const auto all_data = PeakFitImproveData::load_data( base_dir, all_dets, all_times, all_cities );
+      const vector<DataSrcInfo> &all_loaded_srcs = std::get<1>( all_data );
+      cout << "Loaded " << all_loaded_srcs.size() << " source entries." << endl;
+
+      // Optional subsampling: use every Nth source entry for faster iteration
+      vector<DataSrcInfo> subsampled_srcs;
+      const vector<DataSrcInfo> *input_srcs_ptr = &all_loaded_srcs;
+      if( vm.count( "subsample" ) )
+      {
+        const size_t stride = vm["subsample"].as<size_t>();
+        if( stride > 1 )
+        {
+          for( size_t i = 0; i < all_loaded_srcs.size(); i += stride )
+            subsampled_srcs.push_back( all_loaded_srcs[i] );
+          input_srcs_ptr = &subsampled_srcs;
+          cout << "Subsampled to " << subsampled_srcs.size() << " entries (every " << stride << "th)." << endl;
+        }
+      }
+      const vector<DataSrcInfo> &all_input_srcs = *input_srcs_ptr;
+
+      // Use the best known FindCandidateSettings (single settings for all detector types)
+      FindCandidateSettings candidate_settings;
+      candidate_settings.num_smooth_side_channels = 9;
+      candidate_settings.smooth_polynomial_order = 2;
+      candidate_settings.threshold_FOM = 0.758621;
+      candidate_settings.more_scrutiny_FOM_threshold = 1.598265;
+      candidate_settings.pos_sum_threshold_sf = 0.119178f;
+      candidate_settings.num_chan_fluctuate = 1;
+      candidate_settings.more_scrutiny_coarser_FOM = 3.001943f;
+      candidate_settings.more_scrutiny_min_dev_from_line = 6.816465;
+      candidate_settings.amp_to_apply_line_test_below = 6.0;
+
+      // Precompute candidates once (huge speedup - avoids re-running find_candidate_peaks)
+      cout << "\nPrecomputing candidate peaks for all " << all_input_srcs.size() << " sources..." << endl;
+      const auto precomputed = ClassifyDetType_GA::precompute_candidates( all_input_srcs, candidate_settings );
+      cout << "Precomputed " << precomputed.size() << " candidate sets." << endl;
+
+      // --- Diagnostic run with default settings ---
+      cout << "\n========================================" << endl;
+      cout << "Running diagnostics with DEFAULT settings" << endl;
+      cout << "========================================" << endl;
+      HighResClassifySettings default_highres;
+      ClassifyDetType_GA::print_diagnostic_output_precomputed( all_input_srcs, precomputed,
+                                                               default_highres );
+
+      // --- Stage 1 GA: Optimize High vs NotHigh classification ---
+      cout << "\n========================================" << endl;
+      cout << "Running Stage 1 GA optimization (High vs NotHigh)" << endl;
+      cout << "========================================" << endl;
+
+      const auto highres_eval = [&precomputed]( const HighResClassifySettings &settings ) -> double
+      {
+        return ClassifyDetType_GA::eval_highres_precomputed( settings, precomputed );
+      };
+
+      const HighResClassifySettings best_highres = ClassifyDetType_GA::do_highres_ga_eval( highres_eval );
+
+      cout << "\n========================================" << endl;
+      cout << "Stage 1 (High vs NotHigh) optimized settings:" << endl;
+      cout << best_highres.print( "highres" ) << endl;
+      cout << "========================================" << endl;
+
+      // Print Stage 1 confusion matrix
+      ClassifyDetType_GA::print_stage1_results_precomputed( all_input_srcs, precomputed,
+                                                            best_highres );
+
+      // Re-run diagnostics with optimized settings
+      cout << "\nRunning diagnostics with OPTIMIZED settings:" << endl;
+      ClassifyDetType_GA::print_diagnostic_output_precomputed( all_input_srcs, precomputed,
+                                                               best_highres );
+
+      // Final output
+      const double end_wall = SpecUtils::get_wall_time();
+      const double end_cpu = SpecUtils::get_cpu_time();
+
+      stringstream outmsg;
+      outmsg << "\n=== Final Results ===" << endl
+             << "\nHighRes (High vs NotHigh) settings:\n" << best_highres.print( "highres" )
+             << "\nHighRes JSON:\n" << best_highres.to_json()
+             << "\nRan in {wall=" << (end_wall - start_wall)
+             << ", cpu=" << (end_cpu - start_cpu) << "} seconds" << endl;
+
+      {
+        ofstream results_file( "det_classify_best_settings.txt" );
+        results_file << outmsg.str();
+      }
+
+      cout << outmsg.str() << endl;
+      break;
+    }//case OptimizationAction::DetTypeClassify:
+
+    case OptimizationAction::ValidateDetType:
+    {
+      // Validate that the hardcoded production settings in PeakFitSpecImp.cpp
+      // reproduce expected performance (~97.0% correct, ~0.5% incorrect, ~2.5% unknown).
+      const vector<string> all_dets{
+        "Falcon 5000", "Fulcrum40h", "LANL_X", "Detective-EX", "Detective-X",
+        "Detective-X_noskew", "HPGe_Planar_50%",
+        "1.5cm-2cm-2cm", "1cm-1cm-1cm", "CZT_H3D_M400_ORNL_25cm", "Kromek-GR1-CZT",
+        "nanoRaider", "Interceptor", "Raider",
+        "InSpector 1000 LaBr3", "SAM-Eagle-LaBr3", "LaBr3_1.5x1.5_SNL",
+        "IdentiFINDER-LaBr3", "Radseeker-LaBr3",
+        "IdentiFINDER-R500-NaI", "Radiacode-102", "SAM-Eagle-NaI-3x3",
+        "Verifinder-SN23N", "Stacked", "IdentiFINDER-NGH", "MDDU-Log",
+        "GR135Plus", "Rack", "D3S", "MKC-A03", "Mirion PDS-100",
+        "Polimaster PM1704-GN", "IdentiFINDER-R425", "RadEagle", "RadEye"
+      };
+      const vector<string> all_times{ "30_seconds", "300_seconds", "1800_seconds" };
+      const vector<string> all_cities{ "Livermore", "Baltimore", "Denver" };
+
+      cout << "Loading all detector data for validation..." << endl;
+      const auto all_data = PeakFitImproveData::load_data( base_dir, all_dets, all_times, all_cities );
+      const vector<DataSrcInfo> &all_loaded_srcs = std::get<1>( all_data );
+      cout << "Loaded " << all_loaded_srcs.size() << " source entries." << endl;
+
+      // Use the production hardcoded FindCandidateSettings (from PeakFitSpecImp.cpp)
+      FindCandidateSettings candidate_settings;
+
+      cout << "\nPrecomputing candidate peaks for all " << all_loaded_srcs.size() << " sources..." << endl;
+      const auto precomputed = ClassifyDetType_GA::precompute_candidates( all_loaded_srcs, candidate_settings );
+      cout << "Precomputed " << precomputed.size() << " candidate sets." << endl;
+
+      // Use the production hardcoded LowHighResClassifySettings (same values as in
+      // PeakFitSpec::initial_lowres_highres_classify in src/PeakFitSpecImp.cpp)
+      HighResClassifySettings production_settings;
+      production_settings.hpge_fwhm_bias_mult = 0.493;
+      production_settings.nai_fwhm_bias_mult = 1.121;
+      production_settings.hpge_distance_weight = 4.644;
+      production_settings.nai_distance_weight = 2.266;
+      production_settings.amp_clamp_denom = 7.419;
+      production_settings.weight_clamp_max = 21.120;
+      production_settings.min_peak_energy = 44.267;
+      production_settings.max_peak_energy = 2973.993;
+      production_settings.unknown_threshold = 0.559;
+      production_settings.min_peaks_for_classify = 1;
+      production_settings.min_peak_significance = 2.251;
+      production_settings.sig_fraction_of_max = 0.009;
+      production_settings.narrow_penalty_mult = 1.208;
+      production_settings.narrow_sig_threshold = 65.150;
+      production_settings.best_peak_czt_penalty = 4.545;
+      production_settings.best_peak_conf_threshold = 0.642;
+
+      cout << "\n========================================" << endl;
+      cout << "Validating PRODUCTION hardcoded settings" << endl;
+      cout << "========================================" << endl;
+      ClassifyDetType_GA::print_stage1_results_precomputed( all_loaded_srcs, precomputed,
+                                                             production_settings );
+      ClassifyDetType_GA::print_diagnostic_output_precomputed( all_loaded_srcs, precomputed,
+                                                                production_settings );
+
+      const double end_wall = SpecUtils::get_wall_time();
+      const double end_cpu = SpecUtils::get_cpu_time();
+      cout << "\nValidation took {wall=" << (end_wall - start_wall)
+           << ", cpu=" << (end_cpu - start_cpu) << "} seconds" << endl;
+      break;
+    }//case OptimizationAction::ValidateDetType:
   }//switch( action )
 
 #if( defined(SpecUtils_USE_WT_THREADPOOL) )

@@ -28,6 +28,8 @@
 #include <string>
 #include <vector>
 
+#include "InterSpec/PeakFitSpecImp.h"
+
 namespace SpecUtils
 {
   class SpecFile;
@@ -193,31 +195,8 @@ namespace JudgmentFactors
 }//namespace JudgmentFactors
 
 
-struct FindCandidateSettings
-{
-  int num_smooth_side_channels = 9; // low res more
-  int smooth_polynomial_order = 2;  // highres 3, lowres 2
-  double threshold_FOM = 0.758621;  // accept peaks higher than this FOM
-  double more_scrutiny_FOM_threshold = 1.598265; // Peaks bellow this get extra scrutiny
-  float pos_sum_threshold_sf = 0.119178f;
-
-  /** For second-derivative, how many channels are required to be above threshold, in-order to signal a transition */
-  size_t num_chan_fluctuate = 1;
-
-  //float min_counts_per_channel = 1.0f;
-  float more_scrutiny_coarser_FOM = 3.001943f;
-
-  /** The minimum Chi2 required, of at least one channel in ROI, to be above a straight
-   line predicted by the channels on either side of the ROI.
-   */
-  float more_scrutiny_min_dev_from_line = 6.816465;
-
-  float amp_to_apply_line_test_below = 6.000000;
-
-  std::string print( const std::string &var_name ) const;
-
-  std::string to_json() const;
-};//struct FindCandidateSettings
+/** Alias to the production FindCandidateSettings in PeakFitSpecImp.h. */
+using FindCandidateSettings = PeakFitSpec::FindCandidateSettings;
 
 
 struct InitialPeakFindSettings

@@ -41,7 +41,7 @@ namespace SpecUtils
 
 namespace CandidatePeak_GA
 {
-  std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils::Measurement> data,
+  std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils::Measurement> &data,
                                             size_t start_channel,
                                             size_t end_channel,
                                             const FindCandidateSettings &settings );
