@@ -5922,30 +5922,31 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           }), end(re_peaks) );
         
 #if( PERFORM_DEVELOPER_CHECKS )
-        // Verify that removed peaks match up to free-floating peaks
-        if( !removed_peaks.empty() )
+        // Verify that removed peaks are either zero-amplitude placeholders or match floating peaks
+        for( const PeakDef &removed_peak : removed_peaks )
         {
-          for( const PeakDef &removed_peak : removed_peaks )
+          // Zero-amplitude placeholder peaks (from ROIs with no gammas in range) are expected
+          if( removed_peak.amplitude() < 1.0 )
+            continue;
+
+          bool found_matching_floating_peak = false;
+          const double removed_energy = removed_peak.mean();
+
+          for( const RelActCalcAuto::FloatingPeak &floating_peak : cost_functor->m_options.floating_peaks )
           {
-            bool found_matching_floating_peak = false;
-            const double removed_energy = removed_peak.mean();
-            
-            for( const RelActCalcAuto::FloatingPeak &floating_peak : cost_functor->m_options.floating_peaks )
+            // Use a tolerance that accounts for energy cal corrections potentially shifting the peak
+            const double energy_tolerance = std::max( 1.0, 0.01 * floating_peak.energy );
+            const double energy_diff = std::abs( removed_energy - floating_peak.energy );
+
+            if( energy_diff <= energy_tolerance )
             {
-              // Check if the removed peak's energy is close to a floating peak's energy
-              const double energy_tolerance = 1.0; // At least 1 keV tolerance
-              const double energy_diff = std::abs( removed_energy - floating_peak.energy );
-              
-              if( energy_diff <= energy_tolerance )
-              {
-                found_matching_floating_peak = true;
-                break;
-              }
-            }//for( const RelActCalcAuto::FloatingPeak &floating_peak : cost_functor->m_options.floating_peaks )
-            
-            assert( found_matching_floating_peak && "Removed peak without source should match a free-floating peak" );
-          }//for( const PeakDef &removed_peak : removed_peaks )
-        }//if( !removed_peaks.empty() )
+              found_matching_floating_peak = true;
+              break;
+            }
+          }//for( const RelActCalcAuto::FloatingPeak &floating_peak : cost_functor->m_options.floating_peaks )
+
+          assert( found_matching_floating_peak && "Removed peak without source should match a free-floating peak" );
+        }//for( const PeakDef &removed_peak : removed_peaks )
 #endif // PERFORM_DEVELOPER_CHECKS
       }//for( vector<PeakDef> &re_peaks : peaks_for_each_curve )
     };//filter_peaks_without_sources lambda
