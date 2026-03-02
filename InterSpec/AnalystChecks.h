@@ -127,6 +127,8 @@ namespace AnalystChecks
   struct FitPeaksForNuclideStatus
   {
     std::vector<std::shared_ptr<const PeakDef>> fitPeaks;
+    std::vector<std::shared_ptr<const PeakDef>> peaksToRemove;
+    bool peaksWereRemovedFromSession = false;
     std::vector<std::string> warnings;
   };
   

@@ -1024,13 +1024,19 @@ namespace AnalystChecks
         result.fitPeaks.push_back( sp );
       }//for( const PeakDef &p : fit_results.observable_peaks )
 
-      // If doNotAddPeaksToUserSession is false, add the peaks to the user's session
+      result.peaksToRemove = fit_results.original_peaks_to_remove;
+
+      // If doNotAddPeaksToUserSession is false, remove replaced peaks and add the new ones
       if( !options.doNotAddPeaksToUserSession && !result.fitPeaks.empty() )
       {
-
         PeakModel * const pmodel = interspec->peakModel();
         if( pmodel )
+        {
+          if( !result.peaksToRemove.empty() )
+            pmodel->removePeaks( result.peaksToRemove );
           pmodel->addPeaks( result.fitPeaks );
+          result.peaksWereRemovedFromSession = true;
+        }
       }//if( !options.doNotAddPeaksToUserSession )
     }catch( const std::exception &e )
     {
