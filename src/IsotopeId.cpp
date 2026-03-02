@@ -506,7 +506,8 @@ double minDetectableCounts( std::shared_ptr<const PeakDef> peak, std::shared_ptr
   if( peak->continuum()->parametersProbablySet() )
   {
     const double lowx = peak->lowerX(), upperx = peak->upperX();
-    contArea = peak->offset_integral( lowx, upperx, data );
+    const PeakDef *peak_ptr = peak.get();
+    contArea = peak->continuum()->offset_integral( lowx, upperx, data, &peak_ptr, 1 );
   }else
   {
     const double lowerx = (peak->gausPeak() ? (peak->mean()-3.0*peak->sigma()) : peak->lowerX());

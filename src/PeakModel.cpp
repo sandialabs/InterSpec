@@ -644,7 +644,27 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
               if( meas && energycal && energycal->valid() && meas->channel_energies() )
               {
                 datasum = meas->gamma_integral( lx, ux );
-                continuumsum = peak.continuum()->offset_integral( lx, ux, meas );
+
+                assert( peak_type == PeakDef::DefintionType::DataDefined );
+                assert( !PeakContinuum::is_peak_cdf_step_continuum( peak.continuum()->type() ) );
+
+                if( PeakContinuum::is_peak_cdf_step_continuum( peak.continuum()->type() ) )
+                {
+                  // Collect ROI peers that share the same continuum
+                  //. The offset type shouldnt be a step-CDF type, so we dont really need to do this, but we will in case of bad input.
+                  vector<shared_ptr<const PeakDef>> roi_peaks;
+                  for( const PeakDef &p : answer )
+                  {
+                    if( p.continuum() == peak.continuum() )
+                      roi_peaks.push_back( make_shared<PeakDef>( p ) );
+                  }
+                  roi_peaks.push_back( make_shared<PeakDef>( peak ) );
+
+                  continuumsum = peak.continuum()->offset_integral( lx, ux, meas, roi_peaks );
+                }else
+                {
+                  continuumsum = peak.continuum()->offset_integral( lx, ux, meas, nullptr, 0 );
+                }
               }
               double peaksum = datasum - continuumsum;
               peaksum = ((peaksum >= 0.0) && !IsNan(peaksum) && !IsInf(peaksum)) ? peaksum : 0.0;
@@ -1972,7 +1992,19 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
         
         assert( peak->continuum()->parametersProbablySet() );
         if( peak->continuum()->parametersProbablySet() )
-          contArea = peak->offset_integral( lowx, upperx, dataH );
+        {
+          {
+            // Collect ROI peers sharing the same continuum
+            vector<shared_ptr<const PeakDef>> roi_peaks;
+            for( const PeakShrdPtr &p : *m_peaks )
+            {
+              if( p && (p->continuum() == peak->continuum()) )
+                roi_peaks.push_back( p );
+            }
+
+            contArea = peak->continuum()->offset_integral( lowx, upperx, dataH, roi_peaks );
+          }
+        }
         
         
         const size_t lower_channel = dataH->find_gamma_channel( lowx );
@@ -3533,11 +3565,16 @@ bool PeakModel::compare( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs,
       {
         try
         {
-          rhs_area = rhs->offset_integral( rhs->lowerX(), rhs->upperX(), data );
-          lhs_area = lhs->offset_integral( lhs->lowerX(), lhs->upperX(), data );
+          // In principle we should collect all peaks in the ROI to pass to `offset_integral(...)`,
+          //. but we dont have that information, and I wouldnt exactly matter
+          const PeakDef *rhs_ptr = rhs.get();
+          rhs_area = rhs->continuum()->offset_integral( rhs->lowerX(), rhs->upperX(), data, &rhs_ptr, 1 );
+          const PeakDef *lhs_ptr = lhs.get();
+          lhs_area = lhs->continuum()->offset_integral( lhs->lowerX(), lhs->upperX(), data, &lhs_ptr, 1 );
         }catch(...)
         {
-          //Will only fail for FlatStep, LinearStep, and BiLinearStep continuum - which I doubt we will ever get here anyway.
+          //Will fail for step continua (FlatStep, LinearStep, BiLinearStep, FlatStepCDF, LinearStepCDF)
+          //  - which I doubt we will ever get here anyway.
         }
       }
       
@@ -3964,10 +4001,12 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
       case PeakContinuum::External:
         break;
         
-      case PeakContinuum::Constant:  case PeakContinuum::Linear:
-      case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
-      case PeakContinuum::FlatStep:  case PeakContinuum::LinearStep:
+      case PeakContinuum::Constant:      case PeakContinuum::Linear:
+      case PeakContinuum::Quadratic:     case PeakContinuum::Cubic:
+      case PeakContinuum::FlatStep:      case PeakContinuum::LinearStep:
       case PeakContinuum::BiLinearStep:
+      case PeakContinuum::FlatStepCDF:   case PeakContinuum::LinearStepCDF:
+      case PeakContinuum::BiLinearStepCDF:
       {
         const size_t num_cont_par = PeakContinuum::num_parameters( cont_type );
         const double ref_energy = continuum->referenceEnergy();

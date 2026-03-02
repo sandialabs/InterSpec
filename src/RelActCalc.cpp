@@ -1089,18 +1089,21 @@ std::vector<PeakDef> refit_roi_continuums( const std::vector<PeakDef> &solution_
       roi_peaks.push_back(result_peaks[idx]);
     }
     
-    const int num_polynomial_terms = static_cast<int>(continuum->parameters().size());
+    const bool has_step_coeff = PeakContinuum::is_peak_cdf_step_continuum( continuum->type() )
+                               && (continuum->type() != PeakContinuum::BiLinearStepCDF);
+    const int num_polynomial_terms = static_cast<int>( PeakContinuum::num_linear_fit_pars( continuum->type() ) );
     const bool is_step_continuum = PeakContinuum::is_step_continuum( continuum->type() );
     const double ref_energy = continuum->referenceEnergy();
-    
-    vector<double> continuum_coeffs(num_polynomial_terms);
+
+    // For FlatStepCDF/LinearStepCDF, fit_continuum returns poly + step_coeff
+    vector<double> continuum_coeffs( num_polynomial_terms + (has_step_coeff ? 1 : 0) );
     vector<double> peak_counts(roi_channels);
     
     try
     {
       // Refit the continuum using PeakFit::fit_continuum
       PeakFit::fit_continuum( roi_energies, roi_data, roi_uncerts, roi_channels,
-                             num_polynomial_terms, is_step_continuum, ref_energy,
+                             continuum->type(), ref_energy,
                              roi_peaks, false, continuum_coeffs.data(), peak_counts.data() );
     
       auto new_continuum = make_shared<PeakContinuum>(*continuum);

@@ -489,6 +489,8 @@
   <message id="pct-flat-step">Плоская ступень</message>
   <message id="pct-linear-step">Линейная ступень</message>
   <message id="pct-bilinear-step">Билинейная ступень</message>
+  <message id="pct-flat-step-cdf">Flat Step (Peak CDF)</message>
+  <message id="pct-linear-step-cdf">Linear Step (Peak CDF)</message>
   <message id="pct-global">Глобальный конт.</message>
 
   <!-- populateNuclideSelects() in PeakSearchGuiUtils.cpp -->

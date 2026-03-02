@@ -1516,6 +1516,9 @@ namespace AnalystChecks
           else if( cont_str == "FlatStep" )  continuum_type = PeakContinuum::OffsetType::FlatStep;
           else if( cont_str == "LinearStep" )continuum_type = PeakContinuum::OffsetType::LinearStep;
           else if( cont_str == "BiLinearStep" )continuum_type = PeakContinuum::OffsetType::BiLinearStep;
+          else if( cont_str == "FlatStepCDF" )continuum_type = PeakContinuum::OffsetType::FlatStepCDF;
+          else if( cont_str == "LinearStepCDF" )continuum_type = PeakContinuum::OffsetType::LinearStepCDF;
+          else if( cont_str == "BiLinearStepCDF" )continuum_type = PeakContinuum::OffsetType::BiLinearStepCDF;
           else if( cont_str == "External" )  continuum_type = PeakContinuum::OffsetType::External;
           else throw runtime_error( "Invalid continuum type: " + cont_str );
 

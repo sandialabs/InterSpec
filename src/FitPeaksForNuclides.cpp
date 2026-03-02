@@ -1784,10 +1784,7 @@ RoiSignificanceResult compute_roi_chi2_significance(
   if( !continuum )
     return result;
 
-  const int num_poly_terms = static_cast<int>( continuum->parameters().size() );
-  const bool step_continuum = (continuum->type() == PeakContinuum::OffsetType::FlatStep
-                            || continuum->type() == PeakContinuum::OffsetType::LinearStep
-                            || continuum->type() == PeakContinuum::OffsetType::BiLinearStep);
+  const PeakContinuum::OffsetType cont_type = continuum->type();
 
   // Prepare data arrays for fit_amp_and_offset
   const std::vector<float> &channel_energies = *data->channel_energies();
@@ -1811,8 +1808,7 @@ RoiSignificanceResult compute_roi_chi2_significance(
     &channel_energies[start_channel],
     channel_counts.data(),
     result.num_channels,
-    num_poly_terms,
-    step_continuum,
+    cont_type,
     continuum->referenceEnergy(),
     empty_means,
     empty_sigmas,
@@ -1832,8 +1828,7 @@ RoiSignificanceResult compute_roi_chi2_significance(
     &channel_energies[start_channel],
     channel_counts.data(),
     result.num_channels,
-    num_poly_terms,
-    step_continuum,
+    cont_type,
     continuum->referenceEnergy(),
     empty_means,
     empty_sigmas,
@@ -1868,7 +1863,9 @@ RoiSignificanceResult compute_roi_chi2_significance(
       continue;
 
     // Continuum integral, with a minimum of 1.0 to avoid division issues
-    const double continuum_integral = std::max( 1.0, peak_cont->offset_integral( peak_lower, peak_upper, data ) );
+    double cont_integral_raw = 0.0;
+    cont_integral_raw = peak_cont->offset_integral( peak_lower, peak_upper, data, peaks_in_roi );
+    const double continuum_integral = std::max( 1.0, cont_integral_raw );
 
     // Peak amplitude in the ±1 FWHM range
     const double peak_amp_in_range = peak->amplitude() * fwhm_coverage_fraction;
