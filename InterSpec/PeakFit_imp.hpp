@@ -84,12 +84,12 @@ void fit_continuum( const float * const x,
   double min_data_val = static_cast<double>( data[0] );
   for( size_t row = 0; row < nbin; ++row )
   {
-    roi_data_sum += std::max( data[row], 0.0f );
-    min_data_val = std::min( min_data_val, static_cast<double>( data[row] ) );
+    roi_data_sum += (std::max)( data[row], 0.0f );
+    min_data_val = (std::min)( min_data_val, static_cast<double>( data[row] ) );
   }
   if( step_continuum && !cdf_step )
   {
-    min_data_val = std::max( min_data_val, 0.0 );
+    min_data_val = (std::max)( min_data_val, 0.0 );
     roi_data_sum -= min_data_val * nbin;
   }else if( bilinear_cdf )
   {
@@ -103,6 +103,7 @@ void fit_continuum( const float * const x,
   const double min_data_val = 0.0;
   for( size_t row = 0; row < nbin; ++row )
     roi_data_sum += (std::max)( data[row], 0.0f );
+#endif
 
   // Zero out the destination count array
   for( size_t row = 0; row < nbin; ++row )
@@ -495,12 +496,12 @@ ScalarType fit_amp_and_offset_imp( const float *x,
   double min_data_val = static_cast<double>( data[0] );
   for( size_t row = 0; row < nbin; ++row )
   {
-    roi_data_sum += std::max( static_cast<double>( data[row] ), 0.0 );
-    min_data_val = std::min( min_data_val, static_cast<double>( data[row] ) );
+    roi_data_sum += (std::max)( static_cast<double>( data[row] ), 0.0 );
+    min_data_val = (std::min)( min_data_val, static_cast<double>( data[row] ) );
   }
   if( step_continuum && !cdf_step )
   {
-    min_data_val = std::max( min_data_val, 0.0 );
+    min_data_val = (std::max)( min_data_val, 0.0 );
     roi_data_sum -= ScalarType( min_data_val * static_cast<double>( nbin ) );
   }else
   {
@@ -510,6 +511,7 @@ ScalarType fit_amp_and_offset_imp( const float *x,
   const double min_data_val = 0.0;
   for( size_t row = 0; row < nbin; ++row )
     roi_data_sum += (std::max)( static_cast<double>(data[row]), 0.0 );
+#endif
 
   const ScalarType avrg_data_val = roi_data_sum / static_cast<double>(nbin);
 
@@ -796,7 +798,7 @@ ScalarType fit_amp_and_offset_imp( const float *x,
         // We could get rid of keeping `unit_peak_counts[][]` around, as `A` has this same info.
         // For CDF step types, values can be large (step_coeff * CDF * dx), so use relative tolerance.
         assert( abs(unit_peak_counts[i][bin] - A(bin,num_poly_terms + i)* uncerts(bin))
-                < std::max( ScalarType(1.0E-4), ScalarType(1.0E-6) * abs(unit_peak_counts[i][bin]) ) );
+                < (std::max)( ScalarType(1.0E-4), ScalarType(1.0E-6) * abs(unit_peak_counts[i][bin]) ) );
       }
 
       if( nfixedpeak )
