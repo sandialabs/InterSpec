@@ -1,0 +1,33 @@
+SGI_template: CIRCULAR_PLANE
+ISOCS_file_name: Detective-X_in-situ.gis
+Detector_name: DETX_123456789
+Collimator_name: no_collimator
+
+Convrgence_[%]: 1.0000
+Test_description: 200M_CIRCLE_@1M
+Comment: DETECTIVEX
+Date_Time: Thu_Oct_12_11:48:16_2023
+Source_area_cm2:  7.85398e+7  
+Source_grams:  7.85398e+4  
+keV_eff_%err_effw_%cnvrg(i)_%cnvrg(i-1)_pntsN:    45.00    2.19261e-8   15.0    1.72207e-3     0.191039   -0.160151    11119 
+keV_eff_%err_effw_%cnvrg(i)_%cnvrg(i-1)_pntsN:    50.00    4.60361e-8   12.0    3.61567e-3     0.186583   -0.153196    11119 
+keV_eff_%err_effw_%cnvrg(i)_%cnvrg(i-1)_pntsN:    60.00    1.24465e-7   10.0    9.77543e-3     0.186925   -0.143154    11119 
+keV_eff_%err_effw_%cnvrg(i)_%cnvrg(i-1)_pntsN:    70.00    2.01979e-7   10.0    1.58634e-2     0.186660   -0.138756    11119 
+keV_eff_%err_effw_%cnvrg(i)_%cnvrg(i-1)_pntsN:    80.00    2.76918e-7   10.0    2.17491e-2     0.184463   -0.135942    11119 
+keV_eff_%err_effw_%cnvrg(i)_%cnvrg(i-1)_pntsN:    90.00    3.30226e-7   10.0    2.59359e-2     0.185093   -0.134321    11119 
+keV_eff_%err_effw_%cnvrg(i)_%cnvrg(i-1)_pntsN:   100.00    3.73344e-7   10.0    2.93223e-2     0.184142   -0.133496    11119 
+keV_eff_%err_effw_%cnvrg(i)_%cnvrg(i-1)_pntsN:   125.00    4.26117e-7   10.0    3.34672e-2     0.184060   -0.132741    11119 
+keV_eff_%err_effw_%cnvrg(i)_%cnvrg(i-1)_pntsN:   150.00    4.34106e-7   10.0    3.40946e-2     0.183269   -0.132145    11119 
+keV_eff_%err_effw_%cnvrg(i)_%cnvrg(i-1)_pntsN:   175.00    4.27406e-7   10.0    3.35684e-2     0.182102   -0.132157    11119 
+keV_eff_%err_effw_%cnvrg(i)_%cnvrg(i-1)_pntsN:   200.00    4.06607e-7    8.0    3.19349e-2     0.180679   -0.131995    11119 
+keV_eff_%err_effw_%cnvrg(i)_%cnvrg(i-1)_pntsN:   250.00    3.60431e-7    8.0    2.83082e-2     0.180972   -0.131577    11119 
+keV_eff_%err_effw_%cnvrg(i)_%cnvrg(i-1)_pntsN:   300.00    3.23407e-7    8.0    2.54003e-2     0.180076   -0.131384    11119 
+keV_eff_%err_effw_%cnvrg(i)_%cnvrg(i-1)_pntsN:   400.00    2.61612e-7    6.0    2.05470e-2     0.176911   -0.131033    11119 
+keV_eff_%err_effw_%cnvrg(i)_%cnvrg(i-1)_pntsN:   500.00    2.23522e-7    6.0    1.75554e-2     0.177270   -0.130608    11119 
+keV_eff_%err_effw_%cnvrg(i)_%cnvrg(i-1)_pntsN:   661.00    1.83227e-7    6.0    1.43906e-2     0.175880   -0.129957    11119 
+keV_eff_%err_effw_%cnvrg(i)_%cnvrg(i-1)_pntsN:   700.00    1.75999e-7    6.0    1.38230e-2     0.177072   -0.129848    11119 
+keV_eff_%err_effw_%cnvrg(i)_%cnvrg(i-1)_pntsN:   800.00    1.60378e-7    5.0    1.25961e-2     0.177247   -0.129722    11119 
+keV_eff_%err_effw_%cnvrg(i)_%cnvrg(i-1)_pntsN:  1000.00    1.37836e-7    4.0    1.08256e-2     0.178356   -0.129079    11119 
+keV_eff_%err_effw_%cnvrg(i)_%cnvrg(i-1)_pntsN:  1400.00    1.10116e-7    4.0    8.64851e-3     0.177544   -0.128761    11119 
+keV_eff_%err_effw_%cnvrg(i)_%cnvrg(i-1)_pntsN:  1500.00    1.04736e-7    4.0    8.22596e-3     0.178501   -0.128680    11119 
+keV_eff_%err_effw_%cnvrg(i)_%cnvrg(i-1)_pntsN:  2000.00    8.44439e-8    4.0    6.63221e-3     0.173937   -0.127951    11119 

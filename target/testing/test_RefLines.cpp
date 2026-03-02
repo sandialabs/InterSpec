@@ -642,10 +642,8 @@ BOOST_AUTO_TEST_CASE( testShieldingEffect )
   // We will do a basic sanity check that shielding is actually getting aplied
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   BOOST_REQUIRE( db );
-  const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
-  
-  MaterialDB materialDB;
-  BOOST_REQUIRE_NO_THROW( materialDB.parseGadrasMaterialFile( materialfile, db, false ) );
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  BOOST_REQUIRE( MaterialDB::initialized() );
   
   
   RefLineInput input;
@@ -674,7 +672,7 @@ BOOST_AUTO_TEST_CASE( testShieldingEffect )
   input.m_shielding_ad = "";
   input.m_shielding_att = nullptr;
   
-  BOOST_REQUIRE_NO_THROW( input.setShieldingAttFcn( &materialDB ) );
+  BOOST_REQUIRE_NO_THROW( input.setShieldingAttFcn() );
   BOOST_REQUIRE_NO_THROW( ref_lines = ReferenceLineInfo::generateRefLineInfo(input) );
   BOOST_REQUIRE_MESSAGE( ref_lines, "Ref lines for '" << input.m_input_txt << "' should not be null");
   BOOST_CHECK( ref_lines->m_validity == ReferenceLineInfo::InputValidity::Valid );

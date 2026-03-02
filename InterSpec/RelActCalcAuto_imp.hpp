@@ -257,8 +257,8 @@ struct PeakDefImp
 
     if( max_num_fwhm > 0.0 )
     {
-      vis_limits.first = std::max( vis_limits.first, mean - 2.35482*max_num_fwhm*sigma );
-      vis_limits.second = std::min( vis_limits.second, mean + 2.35482*max_num_fwhm*sigma );
+      vis_limits.first = (std::max)( vis_limits.first, mean - 2.35482*max_num_fwhm*sigma );
+      vis_limits.second = (std::min)( vis_limits.second, mean + 2.35482*max_num_fwhm*sigma );
     }//if( max_num_fwhm > 0.0 )
 
     return vis_limits;

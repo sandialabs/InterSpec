@@ -369,7 +369,7 @@ Shielding3DView::Shielding3DView( const std::vector<ShieldingSourceFitCalc::Shie
   setStyleClass("Shielding3DView");
   
   Wt::WApplication *app = Wt::WApplication::instance();
-  app->require("InterSpec_resources/Shielding3DView.js?v=2");
+  app->require("InterSpec_resources/Shielding3DView.js?v=3");
   app->useStyleSheet("InterSpec_resources/Shielding3DView.css");
   
   defineJavaScript();

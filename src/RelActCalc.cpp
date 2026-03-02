@@ -667,7 +667,7 @@ rapidxml::xml_node<char> *PhysicalModelShieldInput::toXml( ::rapidxml::xml_node<
 }//rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const
   
   
-void PhysicalModelShieldInput::fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *materialDB )
+void PhysicalModelShieldInput::fromXml( const ::rapidxml::xml_node<char> *parent )
 {
   try
   {
@@ -736,26 +736,27 @@ void PhysicalModelShieldInput::fromXml( const ::rapidxml::xml_node<char> *parent
     
     if( material_node )
     {
+      const std::shared_ptr<const MaterialDB> materialDB = MaterialDB::instance();
       if( !materialDB )
         throw runtime_error( "PhysicalModelShieldInput::fromXml: need MaterialDB" );
-      
+
       const string name = SpecUtils::xml_value_str(material_node);
-      const Material * mat = materialDB->material( name );
+      std::shared_ptr<const Material> mat = materialDB->material( name );
       if( !mat )
       {
         try
         {
           const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
-          mat = materialDB->parseChemicalFormula( name, db );
+          mat = MaterialDB::materialFromChemicalFormula( name, db );
         }catch( std::exception & )
         {
         }
       }//if( !mat )
-      
+
       if( !mat )
         throw runtime_error( "Invalid material name '" + name + "'" );
-      
-      material = make_shared<Material>( *mat );
+
+      material = mat;
       
       try
       {

@@ -65,8 +65,7 @@ namespace Wt
 class DoseCalcWindow : public AuxWindow
 {
 public:
-  DoseCalcWindow( MaterialDB *materialDB,
-                  Wt::WSuggestionPopup *materialSuggestion,
+  DoseCalcWindow( Wt::WSuggestionPopup *materialSuggestion,
                   InterSpec* viewer );
   
   virtual ~DoseCalcWindow();
@@ -89,8 +88,7 @@ class DoseCalcWidget : public Wt::WContainerWidget
 {
 public:
   
-  DoseCalcWidget( MaterialDB *materialDB,
-                  Wt::WSuggestionPopup *materialSuggestion,
+  DoseCalcWidget( Wt::WSuggestionPopup *materialSuggestion,
                   InterSpec *specViewer,
                   Wt::WContainerWidget *parent = 0 );
   
@@ -152,7 +150,6 @@ protected:
   
   InterSpec *m_viewer;
   Wt::WSuggestionPopup *m_materialSuggest;
-  MaterialDB *m_materialDB;
   ShieldingSelect *m_enterShieldingSelect;
   ShieldingSelect *m_answerShieldingSelect;
 

@@ -215,7 +215,7 @@ struct RefLineInput
    
    Throw std::exception on failure, in which case #m_shielding_att wont be changed. 
    */
-  void setShieldingAttFcn( const MaterialDB *db );
+  void setShieldingAttFcn();
 };//struct RefLineInput
 
 

@@ -555,10 +555,10 @@ BOOST_AUTO_TEST_CASE( CylinderLineIntersection )
   detector_xyz[0] = 269.23999999999995; detector_xyz[1] = 0 ;detector_xyz[2] = 0;
   
   dist = cylinder_line_intersection( radius, half_length, source_xyz, detector_xyz, CylExitDir::TowardDetector, exit_point );
-  BOOST_CHECK_SMALL( radius - sqrt(exit_point[0]*exit_point[0] + exit_point[1]*exit_point[1]), 1.0E-9*std::max(1.0,radius) );
+  BOOST_CHECK_SMALL( radius - sqrt(exit_point[0]*exit_point[0] + exit_point[1]*exit_point[1]), 1.0E-9*(std::max)(1.0,radius) );
   
   dist = cylinder_line_intersection( radius, half_length, source_xyz, detector_xyz, CylExitDir::AwayFromDetector, exit_point );
-  BOOST_CHECK_SMALL( exit_point[2] - half_length, 1.0E-9*std::max(1.0,half_length) ); //exit on end
+  BOOST_CHECK_SMALL( exit_point[2] - half_length, 1.0E-9*(std::max)(1.0,half_length) ); //exit on end
 }
 
 BOOST_AUTO_TEST_CASE( RectangularIntersections )
@@ -573,40 +573,40 @@ BOOST_AUTO_TEST_CASE( RectangularIntersections )
   source[0] = 0.0; source[1] = 0.0; source[2] = 0.0;
   detector[0] = 0.0; detector[1] = 0.0; detector[2] = 10.0;
   dist_in_shape = rectangle_exit_location( half_width, half_height, half_depth, source, detector, exit_point );
-  BOOST_CHECK_SMALL( fabs(dist_in_shape - 1.0), 1.0E-9*std::max(1.0,dist_in_shape) );
-  BOOST_CHECK_SMALL( fabs(exit_point[0] - 0.0), 1.0E-9*std::max(1.0,fabs(exit_point[0])) );
-  BOOST_CHECK_SMALL( fabs(exit_point[1] - 0.0), 1.0E-9*std::max(1.0,fabs(exit_point[1])) );
-  BOOST_CHECK_SMALL( fabs(exit_point[2] - half_depth), 1.0E-9*std::max(half_depth,fabs(exit_point[2])) );
+  BOOST_CHECK_SMALL( fabs(dist_in_shape - 1.0), 1.0E-9*(std::max)(1.0,dist_in_shape) );
+  BOOST_CHECK_SMALL( fabs(exit_point[0] - 0.0), 1.0E-9*(std::max)(1.0,fabs(exit_point[0])) );
+  BOOST_CHECK_SMALL( fabs(exit_point[1] - 0.0), 1.0E-9*(std::max)(1.0,fabs(exit_point[1])) );
+  BOOST_CHECK_SMALL( fabs(exit_point[2] - half_depth), 1.0E-9*(std::max)(half_depth,fabs(exit_point[2])) );
   
   
   half_width = 1.0; half_height = 1.0; half_depth = 1.0;
   source[0] = 1.0; source[1] = 0.0; source[2] = 0.0;
   detector[0] = 0.0; detector[1] = 0.0; detector[2] = 2.0;
   dist_in_shape = rectangle_exit_location( half_width, half_height, half_depth, source, detector, exit_point );
-  BOOST_CHECK_SMALL( fabs(dist_in_shape - sqrt(1.0*1.0 + 0.5*0.5)), 1.0E-9*std::max(1.0,dist_in_shape) );
-  BOOST_CHECK_SMALL( fabs(exit_point[0] - 0.5), 1.0E-9*std::max(1.0,fabs(exit_point[0])) );
-  BOOST_CHECK_SMALL( fabs(exit_point[1] - 0.0), 1.0E-9*std::max(1.0,fabs(exit_point[1])) );
-  BOOST_CHECK_SMALL( fabs(exit_point[2] - half_depth), 1.0E-9*std::max(half_depth,fabs(exit_point[2])) );
+  BOOST_CHECK_SMALL( fabs(dist_in_shape - sqrt(1.0*1.0 + 0.5*0.5)), 1.0E-9*(std::max)(1.0,dist_in_shape) );
+  BOOST_CHECK_SMALL( fabs(exit_point[0] - 0.5), 1.0E-9*(std::max)(1.0,fabs(exit_point[0])) );
+  BOOST_CHECK_SMALL( fabs(exit_point[1] - 0.0), 1.0E-9*(std::max)(1.0,fabs(exit_point[1])) );
+  BOOST_CHECK_SMALL( fabs(exit_point[2] - half_depth), 1.0E-9*(std::max)(half_depth,fabs(exit_point[2])) );
   
   
   half_width = 1.0; half_height = 1.0; half_depth = 1.0;
   source[0] = 0.5; source[1] = -0.5; source[2] = -1.0;
   detector[0] = 0.0; detector[1] = 0.0; detector[2] = 3.0;
   dist_in_shape = rectangle_exit_location( half_width, half_height, half_depth, source, detector, exit_point );
-  BOOST_CHECK_SMALL( fabs(dist_in_shape - sqrt(0.25*0.25 + 0.25*0.25 + 2.0*2.0)), 1.0E-9*std::max(1.0,dist_in_shape) );
-  BOOST_CHECK_SMALL( fabs(exit_point[0] - 0.25), 1.0E-9*std::max(1.0,fabs(exit_point[0])) );
-  BOOST_CHECK_SMALL( fabs(exit_point[1] - -0.25), 1.0E-9*std::max(1.0,fabs(exit_point[1])) );
-  BOOST_CHECK_SMALL( fabs(exit_point[2] - half_depth), 1.0E-9*std::max(half_depth,fabs(exit_point[2])) );
+  BOOST_CHECK_SMALL( fabs(dist_in_shape - sqrt(0.25*0.25 + 0.25*0.25 + 2.0*2.0)), 1.0E-9*(std::max)(1.0,dist_in_shape) );
+  BOOST_CHECK_SMALL( fabs(exit_point[0] - 0.25), 1.0E-9*(std::max)(1.0,fabs(exit_point[0])) );
+  BOOST_CHECK_SMALL( fabs(exit_point[1] - -0.25), 1.0E-9*(std::max)(1.0,fabs(exit_point[1])) );
+  BOOST_CHECK_SMALL( fabs(exit_point[2] - half_depth), 1.0E-9*(std::max)(half_depth,fabs(exit_point[2])) );
   
   
   half_width = 1.0; half_height = 1.0; half_depth = 1.0;
   source[0] = 0.5; source[1] = -0.5; source[2] = -1.0;
   detector[0] = 0.5; detector[1] = -0.5; detector[2] = 3.0;
   dist_in_shape = rectangle_exit_location( half_width, half_height, half_depth, source, detector, exit_point );
-  BOOST_CHECK_SMALL( fabs(dist_in_shape - 2), 1.0E-9*std::max(1.0,dist_in_shape) );
-  BOOST_CHECK_SMALL( fabs(exit_point[0] - 0.5), 1.0E-9*std::max(1.0,fabs(exit_point[0])) );
-  BOOST_CHECK_SMALL( fabs(exit_point[1] - -0.5), 1.0E-9*std::max(1.0,fabs(exit_point[1])) );
-  BOOST_CHECK_SMALL( fabs(exit_point[2] - half_depth), 1.0E-9*std::max(half_depth,fabs(exit_point[2])) );
+  BOOST_CHECK_SMALL( fabs(dist_in_shape - 2), 1.0E-9*(std::max)(1.0,dist_in_shape) );
+  BOOST_CHECK_SMALL( fabs(exit_point[0] - 0.5), 1.0E-9*(std::max)(1.0,fabs(exit_point[0])) );
+  BOOST_CHECK_SMALL( fabs(exit_point[1] - -0.5), 1.0E-9*(std::max)(1.0,fabs(exit_point[1])) );
+  BOOST_CHECK_SMALL( fabs(exit_point[2] - half_depth), 1.0E-9*(std::max)(half_depth,fabs(exit_point[2])) );
   
   
   
@@ -614,10 +614,10 @@ BOOST_AUTO_TEST_CASE( RectangularIntersections )
   source[0] = 0.0; source[1] = 0.0; source[2] = 0.0;
   detector[0] = 0.5; detector[1] = -0.5; detector[2] = -2.0;
   dist_in_shape = rectangle_exit_location( half_width, half_height, half_depth, source, detector, exit_point );
-  BOOST_CHECK_SMALL( fabs(dist_in_shape - sqrt(0.25*0.25 + 0.25*0.25 + 1.0*1.0)), 1.0E-9*std::max(1.0,dist_in_shape) );
-  BOOST_CHECK_SMALL( fabs(exit_point[0] - 0.25), 1.0E-9*std::max(1.0,fabs(exit_point[0])) );
-  BOOST_CHECK_SMALL( fabs(exit_point[1] - -0.25), 1.0E-9*std::max(1.0,fabs(exit_point[1])) );
-  BOOST_CHECK_SMALL( fabs(exit_point[2] - -half_depth), 1.0E-9*std::max(half_depth,fabs(exit_point[2])) );
+  BOOST_CHECK_SMALL( fabs(dist_in_shape - sqrt(0.25*0.25 + 0.25*0.25 + 1.0*1.0)), 1.0E-9*(std::max)(1.0,dist_in_shape) );
+  BOOST_CHECK_SMALL( fabs(exit_point[0] - 0.25), 1.0E-9*(std::max)(1.0,fabs(exit_point[0])) );
+  BOOST_CHECK_SMALL( fabs(exit_point[1] - -0.25), 1.0E-9*(std::max)(1.0,fabs(exit_point[1])) );
+  BOOST_CHECK_SMALL( fabs(exit_point[2] - -half_depth), 1.0E-9*(std::max)(half_depth,fabs(exit_point[2])) );
   
   
   // Now test the other cases of the ray exiting the rectangle on an arbitrary face.
@@ -625,39 +625,39 @@ BOOST_AUTO_TEST_CASE( RectangularIntersections )
   source[0] = 0.0; source[1] = 0.0; source[2] = 0.0;
   detector[0] = 2.0; detector[1] = 0.0; detector[2] = 0.0;
   dist_in_shape = rectangle_exit_location( half_width, half_height, half_depth, source, detector, exit_point );
-  BOOST_CHECK_SMALL( fabs(dist_in_shape - 1.0), 1.0E-9*std::max(1.0,dist_in_shape) );
-  BOOST_CHECK_SMALL( fabs(exit_point[0] - 1.0), 1.0E-9*std::max(1.0,fabs(exit_point[0])) );
-  BOOST_CHECK_SMALL( fabs(exit_point[1] - 0.0), 1.0E-9*std::max(1.0,fabs(exit_point[1])) );
-  BOOST_CHECK_SMALL( fabs(exit_point[2] - 0.0), 1.0E-9*std::max(half_depth,fabs(exit_point[2])) );
+  BOOST_CHECK_SMALL( fabs(dist_in_shape - 1.0), 1.0E-9*(std::max)(1.0,dist_in_shape) );
+  BOOST_CHECK_SMALL( fabs(exit_point[0] - 1.0), 1.0E-9*(std::max)(1.0,fabs(exit_point[0])) );
+  BOOST_CHECK_SMALL( fabs(exit_point[1] - 0.0), 1.0E-9*(std::max)(1.0,fabs(exit_point[1])) );
+  BOOST_CHECK_SMALL( fabs(exit_point[2] - 0.0), 1.0E-9*(std::max)(half_depth,fabs(exit_point[2])) );
   
   
   half_width = 1.0; half_height = 1.0; half_depth = 1.0;
   source[0] = 0.0; source[1] = 0.0; source[2] = 0.0;
   detector[0] = -2.0; detector[1] = 0.0; detector[2] = 0.0;
   dist_in_shape = rectangle_exit_location( half_width, half_height, half_depth, source, detector, exit_point );
-  BOOST_CHECK_SMALL( fabs(dist_in_shape - 1.0), 1.0E-9*std::max(1.0,dist_in_shape) );
-  BOOST_CHECK_SMALL( fabs(exit_point[0] - -1.0), 1.0E-9*std::max(1.0,fabs(exit_point[0])) );
-  BOOST_CHECK_SMALL( fabs(exit_point[1] - 0.0), 1.0E-9*std::max(1.0,fabs(exit_point[1])) );
-  BOOST_CHECK_SMALL( fabs(exit_point[2] - 0.0), 1.0E-9*std::max(half_depth,fabs(exit_point[2])) );
+  BOOST_CHECK_SMALL( fabs(dist_in_shape - 1.0), 1.0E-9*(std::max)(1.0,dist_in_shape) );
+  BOOST_CHECK_SMALL( fabs(exit_point[0] - -1.0), 1.0E-9*(std::max)(1.0,fabs(exit_point[0])) );
+  BOOST_CHECK_SMALL( fabs(exit_point[1] - 0.0), 1.0E-9*(std::max)(1.0,fabs(exit_point[1])) );
+  BOOST_CHECK_SMALL( fabs(exit_point[2] - 0.0), 1.0E-9*(std::max)(half_depth,fabs(exit_point[2])) );
   
   
   half_width = 1.0; half_height = 1.0; half_depth = 1.0;
   source[0] = 0.0; source[1] = 0.0; source[2] = 0.0;
   detector[0] = 0.0; detector[1] = 2.0; detector[2] = 0.0;
   dist_in_shape = rectangle_exit_location( half_width, half_height, half_depth, source, detector, exit_point );
-  BOOST_CHECK_SMALL( fabs(dist_in_shape - 1.0), 1.0E-9*std::max(1.0,dist_in_shape) );
-  BOOST_CHECK_SMALL( fabs(exit_point[0] - 0.0), 1.0E-9*std::max(1.0,fabs(exit_point[0])) );
-  BOOST_CHECK_SMALL( fabs(exit_point[1] - 1.0), 1.0E-9*std::max(1.0,fabs(exit_point[1])) );
-  BOOST_CHECK_SMALL( fabs(exit_point[2] - 0.0), 1.0E-9*std::max(half_depth,fabs(exit_point[2])) );
+  BOOST_CHECK_SMALL( fabs(dist_in_shape - 1.0), 1.0E-9*(std::max)(1.0,dist_in_shape) );
+  BOOST_CHECK_SMALL( fabs(exit_point[0] - 0.0), 1.0E-9*(std::max)(1.0,fabs(exit_point[0])) );
+  BOOST_CHECK_SMALL( fabs(exit_point[1] - 1.0), 1.0E-9*(std::max)(1.0,fabs(exit_point[1])) );
+  BOOST_CHECK_SMALL( fabs(exit_point[2] - 0.0), 1.0E-9*(std::max)(half_depth,fabs(exit_point[2])) );
   
   half_width = 1.0; half_height = 1.0; half_depth = 1.0;
   source[0] = 0.0; source[1] = 0.0; source[2] = 0.0;
   detector[0] = 0.0; detector[1] = -2.0; detector[2] = 0.0;
   dist_in_shape = rectangle_exit_location( half_width, half_height, half_depth, source, detector, exit_point );
-  BOOST_CHECK_SMALL( fabs(dist_in_shape - 1.0), 1.0E-9*std::max(1.0,dist_in_shape) );
-  BOOST_CHECK_SMALL( fabs(exit_point[0] - 0.0), 1.0E-9*std::max(1.0,fabs(exit_point[0])) );
-  BOOST_CHECK_SMALL( fabs(exit_point[1] - -1.0), 1.0E-9*std::max(1.0,fabs(exit_point[1])) );
-  BOOST_CHECK_SMALL( fabs(exit_point[2] - 0.0), 1.0E-9*std::max(half_depth,fabs(exit_point[2])) );
+  BOOST_CHECK_SMALL( fabs(dist_in_shape - 1.0), 1.0E-9*(std::max)(1.0,dist_in_shape) );
+  BOOST_CHECK_SMALL( fabs(exit_point[0] - 0.0), 1.0E-9*(std::max)(1.0,fabs(exit_point[0])) );
+  BOOST_CHECK_SMALL( fabs(exit_point[1] - -1.0), 1.0E-9*(std::max)(1.0,fabs(exit_point[1])) );
+  BOOST_CHECK_SMALL( fabs(exit_point[2] - 0.0), 1.0E-9*(std::max)(half_depth,fabs(exit_point[2])) );
   
   
   
@@ -665,29 +665,29 @@ BOOST_AUTO_TEST_CASE( RectangularIntersections )
   source[0] = -1.0; source[1] = 0.5; source[2] = -0.5;
   detector[0] = 3.0; detector[1] = 0.0; detector[2] = 0.0;
   dist_in_shape = rectangle_exit_location( half_width, half_height, half_depth, source, detector, exit_point );
-  BOOST_CHECK_SMALL( fabs(dist_in_shape - sqrt(0.25*0.25 + 0.25*0.25 + 2.0*2.0)), 1.0E-9*std::max(1.0,dist_in_shape) );
-  BOOST_CHECK_SMALL( fabs(exit_point[0] - half_width), 1.0E-9*std::max(1.0,fabs(exit_point[0])) );
-  BOOST_CHECK_SMALL( fabs(exit_point[1] - 0.25), 1.0E-9*std::max(1.0,fabs(exit_point[1])) );
-  BOOST_CHECK_SMALL( fabs(exit_point[2] - -0.25), 1.0E-9*std::max(1.0,fabs(exit_point[2])) );
+  BOOST_CHECK_SMALL( fabs(dist_in_shape - sqrt(0.25*0.25 + 0.25*0.25 + 2.0*2.0)), 1.0E-9*(std::max)(1.0,dist_in_shape) );
+  BOOST_CHECK_SMALL( fabs(exit_point[0] - half_width), 1.0E-9*(std::max)(1.0,fabs(exit_point[0])) );
+  BOOST_CHECK_SMALL( fabs(exit_point[1] - 0.25), 1.0E-9*(std::max)(1.0,fabs(exit_point[1])) );
+  BOOST_CHECK_SMALL( fabs(exit_point[2] - -0.25), 1.0E-9*(std::max)(1.0,fabs(exit_point[2])) );
   
   
   half_width = 1.0; half_height = 1.0; half_depth = 1.0;
   source[0] = 1.0; source[1] = -1.0; source[2] = -1.0;
   detector[0] = 0.0; detector[1] = 3.0; detector[2] = 0.0;
   dist_in_shape = rectangle_exit_location( half_width, half_height, half_depth, source, detector, exit_point );
-  BOOST_CHECK_SMALL( fabs(dist_in_shape - sqrt(0.5*0.5 + 0.5*0.5 + 2.0*2.0)), 1.0E-9*std::max(1.0,dist_in_shape) );
-  BOOST_CHECK_SMALL( fabs(exit_point[0] - 0.5), 1.0E-9*std::max(1.0,fabs(exit_point[0])) );
-  BOOST_CHECK_SMALL( fabs(exit_point[1] - 1.0), 1.0E-9*std::max(1.0,fabs(exit_point[1])) );
-  BOOST_CHECK_SMALL( fabs(exit_point[2] - -0.5), 1.0E-9*std::max(1.0,fabs(exit_point[2])) );
+  BOOST_CHECK_SMALL( fabs(dist_in_shape - sqrt(0.5*0.5 + 0.5*0.5 + 2.0*2.0)), 1.0E-9*(std::max)(1.0,dist_in_shape) );
+  BOOST_CHECK_SMALL( fabs(exit_point[0] - 0.5), 1.0E-9*(std::max)(1.0,fabs(exit_point[0])) );
+  BOOST_CHECK_SMALL( fabs(exit_point[1] - 1.0), 1.0E-9*(std::max)(1.0,fabs(exit_point[1])) );
+  BOOST_CHECK_SMALL( fabs(exit_point[2] - -0.5), 1.0E-9*(std::max)(1.0,fabs(exit_point[2])) );
   
   
   half_width = 1.0; half_height = 1.0; half_depth = 1.0;
   source[0] = -0.5; source[1] = -0.5; source[2] = 0.5;
   detector[0] = 2.5; detector[1] = 1.0; detector[2] = 1.0;
   dist_in_shape = rectangle_exit_location( half_width, half_height, half_depth, source, detector, exit_point );
-  BOOST_CHECK_SMALL( fabs(exit_point[0] - 1.0), 1.0E-9*std::max(1.0,fabs(exit_point[0])) );
-  BOOST_CHECK_SMALL( fabs(exit_point[1] - 0.25), 1.0E-9*std::max(1.0,fabs(exit_point[1])) );
-  BOOST_CHECK_SMALL( fabs(exit_point[2] - 0.75), 1.0E-9*std::max(1.0,fabs(exit_point[2])) );
+  BOOST_CHECK_SMALL( fabs(exit_point[0] - 1.0), 1.0E-9*(std::max)(1.0,fabs(exit_point[0])) );
+  BOOST_CHECK_SMALL( fabs(exit_point[1] - 0.25), 1.0E-9*(std::max)(1.0,fabs(exit_point[1])) );
+  BOOST_CHECK_SMALL( fabs(exit_point[2] - 0.75), 1.0E-9*(std::max)(1.0,fabs(exit_point[2])) );
   
   
   // Test rectangle_intersections function
@@ -744,10 +744,12 @@ BOOST_AUTO_TEST_CASE( DistributedSrcCalcTests )
   BOOST_REQUIRE( db );
   const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
   
-  MaterialDB materialdb;
-  BOOST_REQUIRE_NO_THROW( materialdb.parseGadrasMaterialFile( materialfile, db, false ) );
-  
-  //const Material *material = materialdb.material( "Air" );
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  BOOST_REQUIRE( MaterialDB::initialized() );
+
+  const std::shared_ptr<const MaterialDB> materialdb = MaterialDB::instance();
+  BOOST_REQUIRE( materialdb );
+
   DistributedSrcCalc ObjectToIntegrate;
 
   const double energy = 185.0*PhysicalUnits::keV;
@@ -762,8 +764,8 @@ BOOST_AUTO_TEST_CASE( DistributedSrcCalcTests )
 
   double sphereRad = 0.0, transLenCoef = 0.0;
 
-  const Material *material = materialdb.material( "void" );
-  transLenCoef = GammaInteractionCalc::transmition_length_coefficient( material, energy );
+  std::shared_ptr<const Material> material = materialdb->material( "void" );
+  transLenCoef = GammaInteractionCalc::transmition_length_coefficient( material.get(), energy );
   sphereRad += 99.5* PhysicalUnits::cm;
 #if( defined(__GNUC__) && __GNUC__ < 5 )
   ObjectToIntegrate.m_dimensionsTransLenAndType.push_back( tuple<array<double,3>,double,DistributedSrcCalc::ShellType>{{sphereRad,0.0,0.0},transLenCoef,DistributedSrcCalc::ShellType::Material} );
@@ -771,8 +773,8 @@ BOOST_AUTO_TEST_CASE( DistributedSrcCalcTests )
   ObjectToIntegrate.m_dimensionsTransLenAndType.push_back( {{sphereRad,0.0,0.0},transLenCoef,DistributedSrcCalc::ShellType::Material} );
 #endif
 
-  material = materialdb.material( "U" );
-  transLenCoef = GammaInteractionCalc::transmition_length_coefficient( material, energy );
+  material = materialdb->material( "U" );
+  transLenCoef = GammaInteractionCalc::transmition_length_coefficient( material.get(), energy );
   sphereRad += 0.5 * PhysicalUnits::cm;
 #if( defined(__GNUC__) && __GNUC__ < 5 )
   ObjectToIntegrate.m_dimensionsTransLenAndType.push_back( tuple<array<double,3>,double,DistributedSrcCalc::ShellType>{{sphereRad,0.0,0.0},transLenCoef,DistributedSrcCalc::ShellType::Material} );
@@ -781,8 +783,8 @@ BOOST_AUTO_TEST_CASE( DistributedSrcCalcTests )
 #endif
   ObjectToIntegrate.m_materialIndex = ObjectToIntegrate.m_dimensionsTransLenAndType.size() - 1;
 
-  material = materialdb.material( "Fe" );
-  transLenCoef = GammaInteractionCalc::transmition_length_coefficient( material, energy );
+  material = materialdb->material( "Fe" );
+  transLenCoef = GammaInteractionCalc::transmition_length_coefficient( material.get(), energy );
   sphereRad += 0.5 * PhysicalUnits::cm;
   ObjectToIntegrate.m_dimensionsTransLenAndType.push_back( {{sphereRad,0.0,0.0},transLenCoef,DistributedSrcCalc::ShellType::Material} );
 

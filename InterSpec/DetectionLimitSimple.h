@@ -73,8 +73,7 @@ namespace DetectionLimitCalc
 class DetectionLimitSimpleWindow : public AuxWindow
 {
 public:
-  DetectionLimitSimpleWindow( MaterialDB *materialDB,
-                  Wt::WSuggestionPopup *materialSuggestion,
+  DetectionLimitSimpleWindow( Wt::WSuggestionPopup *materialSuggestion,
                   InterSpec* viewer );
   
   virtual ~DetectionLimitSimpleWindow();
@@ -92,8 +91,7 @@ class DetectionLimitSimple : public Wt::WContainerWidget
 {
 public:
   
-  DetectionLimitSimple( MaterialDB *materialDB,
-                  Wt::WSuggestionPopup *materialSuggestion,
+  DetectionLimitSimple( Wt::WSuggestionPopup *materialSuggestion,
                   InterSpec *specViewer,
                   Wt::WContainerWidget *parent = 0 );
   
@@ -199,7 +197,6 @@ protected:
   
   InterSpec *m_viewer;
   Wt::WSuggestionPopup *m_materialSuggest;
-  MaterialDB *m_materialDB;
   // ShieldingSelect *m_enterShieldingSelect;
   
   Wt::WStackedWidget *m_chartErrMsgStack;

@@ -288,8 +288,7 @@ rapidxml::xml_node<char> *ShieldingSourceDisplay::ShieldingSourceDisplayState::s
 }
 
 
-void ShieldingSourceDisplay::ShieldingSourceDisplayState::deSerialize( const rapidxml::xml_node<char> *base_node,
-                                                                       MaterialDB *materialDb )
+void ShieldingSourceDisplay::ShieldingSourceDisplayState::deSerialize( const rapidxml::xml_node<char> *base_node )
 {
   if( !base_node )
     throw runtime_error( "No ShieldingSourceFit node" );
@@ -339,7 +338,7 @@ void ShieldingSourceDisplay::ShieldingSourceDisplayState::deSerialize( const rap
   
   
   shared_ptr<GammaInteractionCalc::ShieldSourceConfig> config_ptr = make_shared<GammaInteractionCalc::ShieldSourceConfig>();
-  config_ptr->deSerialize( base_node, materialDb );
+  config_ptr->deSerialize( base_node );
   
   config = config_ptr;
   
@@ -2556,11 +2555,10 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
   
   try
   {
-    MaterialDB *matdb = viewer->materialDataBase();
     PeakModel *peakModel = viewer->peakModel();
     WSuggestionPopup *shieldSuggest = viewer->shieldingSuggester();
-    
-    disp = new ShieldingSourceDisplay( peakModel, viewer, shieldSuggest, matdb );
+
+    disp = new ShieldingSourceDisplay( peakModel, viewer, shieldSuggest );
     window = new AuxWindow( WString::tr("window-title-act-shield-fit"),
                            (AuxWindowProperties::SetCloseable | AuxWindowProperties::EnableResize) );
     // We have to set minimum size before calling setResizable, or else Wt's Resizable.js functions
@@ -2694,7 +2692,6 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
 ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
                                                 InterSpec *specViewer,
                                                 WSuggestionPopup *matSuggest,
-                                                MaterialDB *materialDB,
                                                 WContainerWidget *parent )
   : WContainerWidget( parent ),
     m_chi2ChartNeedsUpdating( true ),
@@ -2746,7 +2743,6 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     m_modelDbBrowseWindow( nullptr ),
     m_modelDbSaveWindow( nullptr ),
 #endif
-    m_materialDB( materialDB ),
     m_fitModelButton( nullptr ),
     m_fitProgressTxt( nullptr ),
     m_cancelfitModelButton( nullptr )
@@ -3478,7 +3474,7 @@ pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::Mn
       ShieldingSourceFitCalc::ShieldingInfo info = select->toShieldingInfo();
       
       if( !info.m_isGenericMaterial && !info.m_material )
-        info.m_material = make_shared<Material>( *m_materialDB->material( "void" ) );
+        info.m_material = MaterialDB::instance()->material( "void" );
       
       initial_shieldings.push_back( info );
     }//if( select )
@@ -7084,7 +7080,7 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   
   
   ShieldingSourceDisplayState state;
-  state.deSerialize( base_node, m_materialDB );
+  state.deSerialize( base_node );
   
   deSerialize( state, flags );
 }//void deSerialize( const rapidxml::xml_node<char> *base_node )
@@ -7383,7 +7379,7 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before,
   
   m_modifiedThisForeground = true;
   
-  ShieldingSelect *select = new ShieldingSelect( m_materialDB, m_sourceModel, m_materialSuggest, this );
+  ShieldingSelect *select = new ShieldingSelect( m_sourceModel, m_materialSuggest, this );
 
   if( before && m_shieldingSelects->indexOf(before) >= 0 )
     m_shieldingSelects->insertBefore( select, before );
@@ -8147,7 +8143,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
       throw logic_error( "Number of shieldings changed during fitting - should not happen." );
     
     // First we'll update mass-fractions of self-attenuating sources, if we were fitting any of them
-    const vector<const Material *> massfracFitMaterials
+    const vector<shared_ptr<const Material>> massfracFitMaterials
                                            = m_currentFitFcn->materialsFittingMassFracsFor();
     
     for( size_t shielding_index = 0; shielding_index < nshieldings; ++shielding_index )
@@ -8163,7 +8159,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
       if( !usrmaterial )
         continue;
       
-      const bool calcFitMassFrac = std::count(begin(massfracFitMaterials), end(massfracFitMaterials), usrmaterial.get());
+      const bool calcFitMassFrac = std::count(begin(massfracFitMaterials), end(massfracFitMaterials), usrmaterial);
       if( calcFitMassFrac != select->fitForAnyMassFractions() )
       {
         throw logic_error( "GUI fit mass fraction for material '" + usrmaterial->name
@@ -8763,11 +8759,11 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
       if( !chi2Fcn->hasVariableMassFraction(shielding_index) )
         continue;
       
-      const Material *mat = chi2Fcn->material(shielding_index);
+      const shared_ptr<const Material> mat = chi2Fcn->material(shielding_index);
       assert( mat );
       if( !mat )
         continue;
-      
+
       stringstream msg;
       msg << "Shielding material " << mat->name << " fit mass fractions for isotopes:";
       
@@ -8880,7 +8876,7 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
   for( int matn = 0; matn < nmat; ++matn )
   {
     stringstream msg;
-    const Material *mat = chi2Fcn->material( matn );
+    const shared_ptr<const Material> mat = chi2Fcn->material( matn );
     if( !mat )
     {
       const double adUnits = PhysicalUnits::gram / PhysicalUnits::cm2;

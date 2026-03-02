@@ -932,7 +932,6 @@ public:
 
 
 DetectionLimitWindow::DetectionLimitWindow( InterSpec *viewer,
-                                                     MaterialDB *materialDB,
                                                      WSuggestionPopup *materialSuggest )
 : AuxWindow( WString::tr("dlt-window-title"),
   (AuxWindowProperties::TabletNotFullScreen
@@ -942,8 +941,8 @@ DetectionLimitWindow::DetectionLimitWindow( InterSpec *viewer,
 {
   assert( viewer );
   rejectWhenEscapePressed( true );
-  
-  m_tool = new DetectionLimitTool( viewer, materialDB, materialSuggest );
+
+  m_tool = new DetectionLimitTool( viewer, materialSuggest );
   WContainerWidget *content = contents();
   content->addStyleClass( "DetectionLimitWindowContent" );
   content->addWidget( m_tool );
@@ -984,7 +983,6 @@ DetectionLimitTool *DetectionLimitWindow::tool()
 
 
 DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
-                                                  MaterialDB *materialDB,
                                                   Wt::WSuggestionPopup *materialSuggest,
                                                   WContainerWidget *parent )
   : WContainerWidget( parent ),
@@ -1003,7 +1001,6 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
     m_distanceLabel( nullptr ),
     m_distanceForActivityLimit( nullptr ),
     m_activityForDistanceLimit( nullptr ),
-    m_materialDB( materialDB ),
     m_materialSuggest( materialSuggest ),
     m_shieldingSelect( nullptr ),
     m_minRelIntensity( nullptr ),
@@ -1179,7 +1176,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   viewer->detectorModified().connect( boost::bind( &DetectionLimitTool::handleDrfSelected, this, boost::placeholders::_1 ) );
   
   
-  m_shieldingSelect = new ShieldingSelect( m_materialDB, m_materialSuggest, inputTable );
+  m_shieldingSelect = new ShieldingSelect( m_materialSuggest, inputTable );
   m_shieldingSelect->addStyleClass( "GridThirdCol GridSecondRow GridSpanTwoRows" );
   m_shieldingSelect->materialEdit()->setEmptyText( WString("<{1}>").arg( WString::tr("dlt-shield-empty-text") ) );
 
@@ -1384,7 +1381,9 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
 #if( PERFORM_DEVELOPER_CHECKS )
   // A quick sanity check to make sure looked-up definition of "Air" matches the statically compiled
   //  one
-  const Material *air = (m_materialDB ? m_materialDB->material( "Air" ) : nullptr);
+  const std::shared_ptr<const MaterialDB> matDB = MaterialDB::instance();
+  const std::shared_ptr<const Material> air_ptr = matDB ? matDB->material( "Air" ) : nullptr;
+  const Material *air = air_ptr.get();
   assert( air );
   
   /*
@@ -3574,7 +3573,7 @@ void DetectionLimitTool::setRefLinesAndGetLineInfo()
   
   if( m_attenuateForAir->isChecked() && (air_distance > 0.0) )
   {
-    if( !m_materialDB )
+    if( !MaterialDB::instance() )
       throw std::runtime_error( "DetectionLimitTool::setRefLinesAndGetLineInfo(): no material DB" );
     
     const auto air_atten_fcn = boost::bind( &GammaInteractionCalc::transmission_coefficient_air, _1, air_distance );

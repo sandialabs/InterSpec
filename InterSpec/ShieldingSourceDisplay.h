@@ -327,7 +327,6 @@ public:
   ShieldingSourceDisplay( PeakModel *peakModel,
                           InterSpec *specViewer,
                           Wt::WSuggestionPopup *materialSuggest,
-                          MaterialDB *materialDB,
                           Wt::WContainerWidget *parent = 0 );
   
   /** Creates a AuxWindow with a ShieldingSourceDisplay in it.
@@ -546,7 +545,7 @@ public:
     
     ShieldingSourceDisplayState();
     ::rapidxml::xml_node<char> *serialize( ::rapidxml::xml_node<char> *parent_node ) const;
-    void deSerialize( const ::rapidxml::xml_node<char> *base_node, MaterialDB *materialDb );
+    void deSerialize( const ::rapidxml::xml_node<char> *base_node );
 
     bool operator==( const ShieldingSourceDisplayState &rhs ) const;
   };
@@ -780,8 +779,6 @@ protected:
   AuxWindow *m_modelDbSaveWindow;
 #endif
   
-  //m_materialDB: not owned by this object, but passed in at construction.
-  MaterialDB *m_materialDB;
 
 
   Wt::WPushButton *m_fitModelButton;
