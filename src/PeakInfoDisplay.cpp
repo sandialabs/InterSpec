@@ -62,6 +62,7 @@
 #include "InterSpec/ColorSelect.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/PeakFitDetPrefsGui.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PeakInfoDisplay.h"
@@ -531,7 +532,8 @@ PeakInfoDisplay::PeakInfoDisplay( InterSpec *viewer,
     m_searchForPeaks( NULL ),
     m_clearPeaksButton( nullptr ),
     m_nucFromRefButton( nullptr ),
-    m_peakAddRemoveLabel( nullptr )
+    m_peakAddRemoveLabel( nullptr ),
+    m_peakFitDetPrefsGui( nullptr )
 {
   assert( m_spectrumDisplayDiv );
   addStyleClass( "PeakInfoDisplay" );
@@ -955,12 +957,25 @@ void PeakInfoDisplay::init()
   
   m_infoLayout->addWidget( m_infoView, 0, 0 );
   m_infoLayout->setRowStretch( 0, 1 );
-  
+  m_infoLayout->setColumnStretch( 0, 1 );
+
+  // Peak fit detector preferences panel (collapsible, right of table)
+  m_peakFitDetPrefsGui = new PeakFitDetPrefsGui( m_viewer, true );
+  m_infoLayout->addWidget( m_peakFitDetPrefsGui, 0, 1 );
+
+  m_viewer->peakFitDetPrefsChanged().connect(
+    m_peakFitDetPrefsGui, &PeakFitDetPrefsGui::handlePrefsChanged );
+  m_viewer->displayedSpectrumChanged().connect(
+    std::bind( [this]( SpecUtils::SpectrumType, std::shared_ptr<SpecMeas>,
+                       std::set<int>, std::vector<std::string> ){
+      m_peakFitDetPrefsGui->handlePrefsChanged();
+    }, std::placeholders::_1, std::placeholders::_2,
+       std::placeholders::_3, std::placeholders::_4 ) );
 
   //Now add buttons to search/clear peaks
   WContainerWidget *bottomDiv = new WContainerWidget();
   bottomDiv->addStyleClass( "PeakInfoDisplayBottomDiv" );
-  m_infoLayout->addWidget( bottomDiv, 1, 0 );
+  m_infoLayout->addWidget( bottomDiv, 1, 0, 1, 2 );
 
   
   auto helpBtn = new WContainerWidget( bottomDiv );

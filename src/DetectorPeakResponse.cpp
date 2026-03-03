@@ -61,6 +61,7 @@
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
@@ -69,7 +70,7 @@
 using namespace std;
 using SpecUtils::Measurement;
 
-const int DetectorPeakResponse::sm_xmlSerializationVersion = 3;
+const int DetectorPeakResponse::sm_xmlSerializationVersion = 4;
 
 namespace
 {
@@ -691,8 +692,23 @@ bool DetectorPeakResponse::operator==( const DetectorPeakResponse &rhs ) const
           //m_createdUtc
           //m_lastUsedUtc
           && m_geomType==rhs.m_geomType
+          && ((!m_peakFitDetPrefs && !rhs.m_peakFitDetPrefs)
+              || (m_peakFitDetPrefs && rhs.m_peakFitDetPrefs
+                  && (*m_peakFitDetPrefs == *rhs.m_peakFitDetPrefs)))
           );
 }//operator==
+
+
+shared_ptr<const PeakFitDetPrefs> DetectorPeakResponse::peakFitDetPrefs() const
+{
+  return m_peakFitDetPrefs;
+}//peakFitDetPrefs()
+
+
+void DetectorPeakResponse::setPeakFitDetPrefs( shared_ptr<const PeakFitDetPrefs> prefs )
+{
+  m_peakFitDetPrefs = prefs;
+}//setPeakFitDetPrefs(...)
 
 
 DetectorPeakResponse::DrfSource DetectorPeakResponse::drfSource() const
@@ -1813,7 +1829,14 @@ std::string DetectorPeakResponse::toAppUrl() const
       parts["GEOM"] = "FIXED-PER-GRAM";
       break;
   }//switch( m_geomType )
-  
+
+  if( m_peakFitDetPrefs )
+  {
+    const string pfp_url = m_peakFitDetPrefs->toUrlQueryParts();
+    if( !pfp_url.empty() )
+      parts["PFP"] = url_encode( pfp_url, "", false );
+  }
+
   auto current_url_len = [&parts]() -> size_t {
     size_t nchar = (2 * parts.size()) - (parts.size() ? 1 : 0);
     for( const auto &p : parts )
@@ -1863,9 +1886,13 @@ std::string DetectorPeakResponse::toAppUrl() const
     return (current_url_len() < max_binary_num);
   };//remove_part
   
+  // PeakFitDetPrefs is optional metadata - drop first
+  if( remove_part("PFP") )
+    return combine_parts();
+
   if( remove_part("LASTUSED") )
     return combine_parts();
-  
+
   if( remove_part("ORIGIN") )
     return combine_parts();
   
@@ -2243,6 +2270,18 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
   m_geomType = geom_type;
   m_absoluteEfficiencyDistance = absoluteEfficiencyDistance;
   m_absEffCorrectForAirAtten = absEffCorrectForAirAtten;
+
+  if( parts.count( "PFP" ) )
+  {
+    const string pfp_data = Wt::Utils::urlDecode( parts["PFP"] );
+    const map<string,string> pfp_parts = AppUtils::query_str_key_values( pfp_data );
+    auto prefs = make_shared<PeakFitDetPrefs>();
+    prefs->fromUrlQueryParts( pfp_parts );
+    m_peakFitDetPrefs = prefs;
+  }else
+  {
+    m_peakFitDetPrefs.reset();
+  }
 
   if( !isValid() )
     throw runtime_error( "fromAppUrl: DRF is invalid - even though it shouldnt be - logic error in this function." );
@@ -2684,11 +2723,16 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
   // - Version 1: Added geometry type (20230916)
   // - Version 2: Added kConstantPlusSqrtEnergy resolution form (20240410)
   // - Version 3: Added FarFieldAbsolute geometry type with absolute efficiency parameters (20251130)
-  static_assert( sm_xmlSerializationVersion == 3, "Update DetectorPeakResponse sm_xmlSerializationVersion");
+  // - Version 4: Added PeakFitDetPrefs (20260221)
+  static_assert( sm_xmlSerializationVersion == 4, "Update DetectorPeakResponse sm_xmlSerializationVersion");
 
   int version_to_write = 0;
 
-  if( m_geomType == EffGeometryType::FarFieldAbsolute )
+  if( m_peakFitDetPrefs )
+  {
+    // PeakFitDetPrefs requires version 4
+    version_to_write = 4;
+  }else if( m_geomType == EffGeometryType::FarFieldAbsolute )
   {
     // FarFieldAbsolute requires version 3
     version_to_write = 3;
@@ -2912,6 +2956,9 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
     node = doc->allocate_node( node_element, "LastUsedTimeUtc", val );
     base_node->append_node( node );
   }
+
+  if( m_peakFitDetPrefs )
+    m_peakFitDetPrefs->toXml( base_node, doc );
 }//toXml(...)
 
 
@@ -3221,6 +3268,17 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   }else
   {
     m_lastUsedUtc = 0;
+  }
+
+  node = parent->first_node( "PeakFitDetPrefs", 15 );
+  if( node )
+  {
+    auto prefs = make_shared<PeakFitDetPrefs>();
+    prefs->fromXml( node );
+    m_peakFitDetPrefs = prefs;
+  }else
+  {
+    m_peakFitDetPrefs.reset();
   }
 }//void fromXml( ::rapidxml::xml_node<char> *parent )
 

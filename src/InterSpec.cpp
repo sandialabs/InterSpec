@@ -107,6 +107,7 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/InterSpecUser.h"
@@ -10968,6 +10969,12 @@ Wt::Signal<std::shared_ptr<DetectorPeakResponse> > &InterSpec::detectorModified(
 }
 
 
+Wt::Signal<> &InterSpec::peakFitDetPrefsChanged()
+{
+  return m_peakFitDetPrefsChanged;
+}
+
+
 float InterSpec::sample_real_time_increment( const std::shared_ptr<const SpecMeas> &meas,
                                              const int sample,
                                              const std::vector<string> &detector_names )
@@ -11276,6 +11283,74 @@ void InterSpec::initOsColorThemeChangeDetect()
 #endif
 
 
+void InterSpec::determinePeakFitDetPrefs( shared_ptr<SpecMeas> meas,
+                                          shared_ptr<SpecMeas> previous )
+{
+  if( !meas )
+    return;
+
+  // 1. SpecMeas already has it (e.g., loaded from N42 file)
+  if( meas->peakFitDetPrefs() )
+    return;
+
+  // 2. Previous foreground with same instrument (broad match)
+  if( previous && previous->peakFitDetPrefs() )
+  {
+    const bool same_id = (!previous->instrument_id().empty()
+                          && (previous->instrument_id() == meas->instrument_id()));
+    const bool same_det_type = (previous->detector_type() != SpecUtils::DetectorType::Unknown)
+                                && (previous->detector_type() == meas->detector_type());
+    const bool same_mfr_model = (!previous->manufacturer().empty()
+                                 && (previous->manufacturer() == meas->manufacturer())
+                                 && (previous->instrument_model() == meas->instrument_model()));
+
+    if( same_id || same_det_type || same_mfr_model )
+    {
+      meas->setPeakFitDetPrefs( previous->peakFitDetPrefs() );
+      return;
+    }
+  }//if( previous && previous->peakFitDetPrefs() )
+
+  // 3. DetectorPeakResponse has prefs
+  if( meas->detector() && meas->detector()->peakFitDetPrefs() )
+  {
+    auto prefs = make_shared<PeakFitDetPrefs>( *meas->detector()->peakFitDetPrefs() );
+    prefs->m_source = PeakFitDetPrefs::LoadingSource::FromDetectorPeakResponse;
+    meas->setPeakFitDetPrefs( prefs );
+    return;
+  }
+
+  // 4. Default for SpecUtils::DetectorType + keyword matching
+  {
+    const shared_ptr<const PeakFitDetPrefs> prefs
+      = PeakFitDetPrefs::defaultForDetectorType( static_cast<int>( meas->detector_type() ),
+                                                  meas->manufacturer(),
+                                                  meas->instrument_model() );
+    if( prefs )
+    {
+      meas->setPeakFitDetPrefs( prefs );
+      return;
+    }
+  }
+
+  // 5. Guess from spectral data (stub - currently returns nullptr)
+  // {
+  //   auto display = meas->sum_measurements( {}, meas->detector_names() );
+  //   auto prefs = PeakFitDetPrefs::guessFromSpectralData( display );
+  //   if( prefs )
+  //   {
+  //     meas->setPeakFitDetPrefs( prefs );
+  //     return;
+  //   }
+  // }
+
+  // 6. Default
+  auto prefs = make_shared<PeakFitDetPrefs>();
+  prefs->m_source = PeakFitDetPrefs::LoadingSource::Default;
+  meas->setPeakFitDetPrefs( prefs );
+}//void determinePeakFitDetPrefs(...)
+
+
 void InterSpec::loadDetectorResponseFunction( std::shared_ptr<SpecMeas> meas,
                                               SpecUtils::DetectorType type,
                                               const std::string serial_number,
@@ -11340,18 +11415,29 @@ void InterSpec::loadDetectorResponseFunction( std::shared_ptr<SpecMeas> meas,
     const bool wasModifiedSinceDecode = meas->modified_since_decode();
       
     meas->setDetector( det );
-      
+
+    // Update PeakFitDetPrefs from DRF if the user hasnt explicitly set them
+    if( det->peakFitDetPrefs()
+       && (!meas->peakFitDetPrefs()
+           || meas->peakFitDetPrefs()->m_source != PeakFitDetPrefs::LoadingSource::UserInputInGui) )
+    {
+      auto prefs = std::make_shared<PeakFitDetPrefs>( *det->peakFitDetPrefs() );
+      prefs->m_source = PeakFitDetPrefs::LoadingSource::FromDetectorPeakResponse;
+      meas->setPeakFitDetPrefs( prefs );
+      m_peakFitDetPrefsChanged.emit();
+    }
+
     if( !wasModified )
       meas->reset_modified();
-      
+
     if( !wasModifiedSinceDecode )
       meas->reset_modified_since_decode();
-    
+
     m_detectorChanged.emit( det );
-    
+
     const char *msg_key = (usingUserDefaultDet ? "info-user-default-drf" : "info-app-default-drf");
     passMessage( WString::tr(msg_key), WarningWidget::WarningMsgInfo );
-    
+
     WApplication *app = WApplication::instance();
     if( app )
       app->triggerUpdate();
@@ -11539,8 +11625,15 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
             boost::placeholders::_2, boost::placeholders::_3, boost::placeholders::_4 ) );
       }//if( meas )
 
+      // Determine PeakFitDetPrefs for new foreground
+      if( meas )
+      {
+        determinePeakFitDetPrefs( meas, m_dataMeasurement );
+        m_peakFitDetPrefsChanged.emit();
+      }
+
       m_dataMeasurement = meas;
-      
+
       findAndSetExcludedSamples( sample_numbers );
 
       if( !sameSpecFile && m_shieldingSourceFit )

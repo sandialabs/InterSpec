@@ -56,6 +56,7 @@
 class PeakDef;
 class PeakModel;
 class InterSpecUser;
+struct PeakFitDetPrefs;
 namespace SpecUtils{ class Measurement; }
 
 namespace rapidxml
@@ -495,7 +496,10 @@ public:
    If URL is not a valid DRF, throws exception.
    */
   void fromAppUrl( std::string url_query );
-  
+
+  std::shared_ptr<const PeakFitDetPrefs> peakFitDetPrefs() const;
+  void setPeakFitDetPrefs( std::shared_ptr<const PeakFitDetPrefs> prefs );
+
   /** Parses a .ECC file from ISOCS into a fixed-geometry DRF.
    
    On failure, will throw exception.
@@ -955,6 +959,9 @@ protected:
    Stored in bit 60 of m_flags for database persistence.
    */
   bool m_absEffCorrectForAirAtten;
+
+  /** Optional peak fitting preferences associated with this DRF. */
+  std::shared_ptr<const PeakFitDetPrefs> m_peakFitDetPrefs;
 
   /** On 20230916 updated from version 0 to 1, to account for `m_fixedGeometry` - will still write version 0 if
    `m_geomType == EffGeometryType::FarFieldIntrinsic`.

@@ -49,6 +49,7 @@
     <br />
     This is a larger effect at lower energies, or larger calibration distances.
   </message>
+  <message id="md-peak-fit-prefs-title">Peak Fit Prefs</message>
   <message id="md-show-fwhm-markers">Show FWHM points</message>
   <message id="md-display-energy-lower-label">Display Energy, Lower:</message>
   <message id="md-display-energy-upper-label">Upper:</message>

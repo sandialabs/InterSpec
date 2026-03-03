@@ -51,6 +51,7 @@
 #include "InterSpec/SpecMeas.h"
 
 #include "InterSpec/PeakModel.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -58,7 +59,7 @@
 using namespace Wt;
 using namespace std;
 
-const int SpecMeas::sm_specMeasSerializationVersion = 1;
+const int SpecMeas::sm_specMeasSerializationVersion = 2;
 const int SpecMeas::sm_peakXmlSerializationVersion = 2;
 
 static_assert( PERFORM_DEVELOPER_CHECKS == SpecUtils_ENABLE_EQUALITY_CHECKS,
@@ -514,6 +515,9 @@ void SpecMeas::uniqueCopyContents( const SpecMeas &rhs )
       m_detector.reset();
     }
   }//if( m_detector != rhs.m_detector )
+
+  // PeakFitDetPrefs is shared_ptr<const>, so just copy the pointer
+  m_peakFitDetPrefs = rhs.m_peakFitDetPrefs;
 
   *m_displayType = *rhs.m_displayType;
   *m_displayedSampleNumbers = *rhs.m_displayedSampleNumbers;
@@ -1747,7 +1751,26 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
   {
     m_detector.reset();
   }
-  
+
+  node = interspecnode->first_node( "PeakFitDetPrefs", 15 );
+  if( node )
+  {
+    try
+    {
+      auto prefs = std::make_shared<PeakFitDetPrefs>();
+      prefs->fromXml( node );
+      m_peakFitDetPrefs = prefs;
+    }catch( std::exception &e )
+    {
+      m_peakFitDetPrefs.reset();
+      parse_warnings_.push_back( "Could not decode PeakFitDetPrefs in N42 file: "
+                                 + std::string( e.what() ) );
+    }// try / catch
+  }else
+  {
+    m_peakFitDetPrefs.reset();
+  }
+
   node = interspecnode->first_node( "ShieldingSourceFit", 18 );
   if( node )
   {
@@ -1918,6 +1941,9 @@ rapidxml::xml_node<char> *SpecMeas::appendDisplayedDetectorsToXml(
   
   if( !!m_detector && m_detector->isValid() )
     m_detector->toXml( interspec_node, doc );
+
+  if( m_peakFitDetPrefs )
+    m_peakFitDetPrefs->toXml( interspec_node, doc );
 
   //Shielding source fit - if applicable.
   if( m_shieldingSourceModel )
@@ -2192,6 +2218,25 @@ void SpecMeas::setDetector( std::shared_ptr<DetectorPeakResponse> det )
 
   m_detector = det;
 }//void setDetector( std::shared_ptr<const DetectorPeakResponse> );
+
+
+shared_ptr<const PeakFitDetPrefs> SpecMeas::peakFitDetPrefs() const
+{
+  std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
+  return m_peakFitDetPrefs;
+}//peakFitDetPrefs()
+
+
+void SpecMeas::setPeakFitDetPrefs( shared_ptr<const PeakFitDetPrefs> prefs )
+{
+  std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
+
+  if( prefs != m_peakFitDetPrefs )
+    modified_ = modifiedSinceDecode_ = true;
+
+  m_peakFitDetPrefs = prefs;
+}//setPeakFitDetPrefs(...)
+
 
 SpecUtils::SpectrumType SpecMeas::displayType() const
 {

@@ -1,0 +1,235 @@
+/* Styles for PeakFitDetPrefsGui - the peak fitting preferences panel */
+
+/* Outer container - just a flex wrapper so collapsed/expanded sit side by side with the table */
+.PeakFitDetPrefsGui
+{
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+}
+
+
+/* ==================== Collapsed strip ==================== */
+.PeakFitDetPrefsCollapsed
+{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  width: 22px;
+  min-width: 22px;
+  cursor: pointer;
+  margin-left: 2px;
+  border-left: 1px solid var(--interspec-border-color, #e1e1e1);
+  background: var(--interspec-background-color, white);
+  padding: 4px 2px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.PeakFitDetPrefsCollapsed:hover
+{
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.PeakFitDetPrefsCollapsed .PfdpgExpandIcon
+{
+  width: 12px;
+  height: 12px;
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+/* Both icons point left (toward the table) when collapsed */
+
+.PeakFitDetPrefsCollapsedLabel
+{
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--interspec-text-color, black);
+  opacity: 0.7;
+  letter-spacing: 0.5px;
+  flex-grow: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 0;
+}
+
+
+/* ==================== Expanded panel ==================== */
+.PeakFitDetPrefsExpanded
+{
+  display: flex;
+  flex-direction: column;
+  margin-left: 2px;
+  border-left: 1px solid var(--interspec-border-color, #e1e1e1);
+  border-bottom: 1px solid var(--interspec-border-color, #e1e1e1);
+  background: var(--interspec-background-color, white);
+  overflow: hidden;
+  min-width: 150px;
+  width: 170px;
+}
+
+/* Scrollable body below the fixed header */
+.PeakFitDetPrefsExpandedBody
+{
+  display: grid;
+  grid-template-columns: auto 1fr;
+  row-gap: 3px;
+  column-gap: 4px;
+  align-items: center;
+  align-content: start;
+  padding: 3px 6px 4px 6px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 1;
+  min-height: 0;
+}
+
+
+/* Clickable header to collapse - matches table header style */
+.PeakFitDetPrefsExpandedHeader
+{
+  flex-shrink: 0;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: normal;
+  color: var(--interspec-text-color, black);
+  background: #eeeeee;
+  height: 20px;
+  padding: 0 4px;
+  user-select: none;
+  -webkit-user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.PeakFitDetPrefsExpandedHeader::after
+{
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  background-image: url('images/expand_left.svg');
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  transform: rotate(180deg);
+  opacity: 0.5;
+}
+
+.PeakFitDetPrefsExpandedHeader:hover
+{
+  background: rgba(128, 128, 128, 0.1);
+}
+
+
+/* Labels in the grid (column 1, same row as input) */
+.PfdpgLabel
+{
+  font-size: 10px;
+  font-weight: bold;
+  color: var(--interspec-text-color, black);
+  opacity: 0.8;
+  padding-top: 2px;
+  white-space: nowrap;
+}
+
+/* Combo boxes in column 2 */
+.PfdpgCombo
+{
+  width: 100%;
+  font-size: 11px;
+  box-sizing: border-box;
+}
+
+/* Checkbox row spans both columns */
+.PfdpgCheckRow
+{
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-top: 1px;
+}
+
+.PfdpgCheckRow label
+{
+  font-size: 10px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+
+/* ==================== Skew parameters section ==================== */
+.PfdpgSkewParams
+{
+  grid-column: 1 / -1;
+}
+
+/* 3-column grid: name | lower | upper */
+.PfdpgParamTable
+{
+  display: grid;
+  grid-template-columns: auto 1fr 1fr;
+  row-gap: 2px;
+  column-gap: 3px;
+  align-items: center;
+  border-top: 1px solid var(--interspec-border-color, #e1e1e1);
+  padding-top: 2px;
+}
+
+/* For non-energy-dependent params: name | value (spanning 2 cols) */
+.PfdpgParamTable.PfdpgSingleCol
+{
+  grid-template-columns: auto 1fr;
+}
+
+/* Column headers in the param table */
+.PfdpgColHeader
+{
+  font-size: 9px;
+  font-weight: bold;
+  opacity: 0.5;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.PfdpgParamName
+{
+  font-size: 10px;
+  font-weight: bold;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+.PfdpgSpin
+{
+  width: 100%;
+  min-width: 40px;
+  font-size: 11px;
+  box-sizing: border-box;
+}
+
+/* Non-energy-dependent spin in a 3-column grid: span both value columns */
+.PfdpgSpinWide
+{
+  grid-column: span 2;
+}
+
+
+/* Source label at the bottom */
+.PfdpgSourceLabel
+{
+  grid-column: 1 / -1;
+  font-size: 10px;
+  color: var(--interspec-text-color, black);
+  opacity: 0.6;
+  font-style: italic;
+  padding-top: 3px;
+  border-top: 1px solid var(--interspec-border-color, #e1e1e1);
+}

@@ -321,7 +321,13 @@ public:
                                      const bool tryDefaultDrf,
                                      const std::string sessionId );
 
-  
+  /** Determines and sets the PeakFitDetPrefs for a foreground SpecMeas.
+   Priority: 1) already on meas, 2) same instrument as previous, 3) from DRF,
+   4) from DetectorType mapping, 5) spectral data (stub), 6) default.
+   */
+  void determinePeakFitDetPrefs( std::shared_ptr<SpecMeas> meas,
+                                  std::shared_ptr<SpecMeas> previous );
+
   /** Handles "deep" urls.
    
    Meant to handle URLs with the scheme "interspec://...", that would be passed to the application
@@ -769,6 +775,9 @@ public:
   //detectorModified(): signal emited when a property of the current detector
   //  object is modified.
   Wt::Signal<std::shared_ptr<DetectorPeakResponse> > &detectorModified();
+
+  /** Signal emitted when the PeakFitDetPrefs on the foreground SpecMeas changes. */
+  Wt::Signal<> &peakFitDetPrefsChanged();
 
   void showEnergyCalWindow();
   void handEnergyCalWindowClose();
@@ -1718,6 +1727,9 @@ protected:
   //Signals for when the current detector is changed or modified
   Wt::Signal<std::shared_ptr<DetectorPeakResponse> > m_detectorChanged;
   Wt::Signal<std::shared_ptr<DetectorPeakResponse> > m_detectorModified;
+
+  /** Emitted when the PeakFitDetPrefs on the foreground SpecMeas changes. */
+  Wt::Signal<> m_peakFitDetPrefsChanged;
 
   //Connections to the current foreground SpecMeas object that need to be
   //  connected and disconnected when changing spectrums.

@@ -126,6 +126,7 @@
 #include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/MakeDrfSrcDef.h"
 #include "InterSpec/WarningWidget.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/ExportSpecFile.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
@@ -2375,6 +2376,51 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   }//if( we could possible care about propagating peaks from a CSV file )
   
   
+  // Check if this is a standalone PeakFitDetPrefs XML file.
+  {
+    const int pfp_pos = position_in_header( "<PeakFitDetPrefs" );
+    if( (pfp_pos >= 0) && (pfp_pos <= 20) && (filesize < 10*1024) )
+    {
+      try
+      {
+        rapidxml::file<char> input_file( infile );
+        rapidxml::xml_document<char> doc;
+        doc.parse<rapidxml::parse_default>( input_file.data() );
+
+        const rapidxml::xml_node<char> *node = doc.first_node( "PeakFitDetPrefs" );
+        if( !node )
+          throw runtime_error( "No PeakFitDetPrefs node" );
+
+        shared_ptr<PeakFitDetPrefs> prefs = make_shared<PeakFitDetPrefs>();
+        prefs->fromXml( node );
+        prefs->m_source = PeakFitDetPrefs::LoadingSource::UserInputInGui;
+
+        shared_ptr<SpecMeas> foreground = m_viewer
+          ? m_viewer->measurment( SpecUtils::SpectrumType::Foreground )
+          : nullptr;
+
+        if( !foreground )
+        {
+          passMessage( WString::tr( "smm-no-foreground-for-prefs" ), 2 );
+        }
+        else
+        {
+          foreground->setPeakFitDetPrefs( prefs );
+          m_viewer->peakFitDetPrefsChanged().emit();
+          passMessage( WString::tr( "smm-loaded-peak-fit-prefs" ), 0 );
+        }
+
+        delete dialog;
+        return true;
+      }catch( std::exception & )
+      {
+        // Not a valid PeakFitDetPrefs XML - fall through to other checks
+        infile.clear();
+        infile.seekg( 0 );
+      }
+    }//if( candidate PeakFitDetPrefs XML )
+  }
+
   // Check if this is an InterSpec exported DRF CSV, or XML file.
   const bool rel_eff_csv_drf = header_contains( "# Detector Response Function" );
   const int xml_drf_pos = position_in_header( "<DetectorPeakResponse" );
