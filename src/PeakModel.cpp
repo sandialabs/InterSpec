@@ -1249,9 +1249,9 @@ weak_ptr<SpecMeas> PeakModel::measurement( const SpecUtils::SpectrumType type )
     case SpecUtils::SpectrumType::Foreground:
       return m_measurment;
     case SpecUtils::SpectrumType::SecondForeground:
-      return m_background;
-    case SpecUtils::SpectrumType::Background:
       return m_secondary;
+    case SpecUtils::SpectrumType::Background:
+      return m_background;
   }
   
   assert( 0 );
@@ -1607,7 +1607,7 @@ void PeakModel::setPeaks( const deque<shared_ptr<const PeakDef>> &peakdeque, con
   const bool is_background = (type == SpecUtils::SpectrumType::Background);
     
   weak_ptr<SpecMeas> &meas_wk = is_background ? m_background : m_secondary;
-  shared_ptr<deque<shared_ptr<const PeakDef>>> &peaks = is_background ? m_background_peaks : m_background_peaks;
+  shared_ptr<deque<shared_ptr<const PeakDef>>> &peaks = is_background ? m_background_peaks : m_secondary_peaks;
   assert( peaks );
   if( !peaks )
     throw runtime_error( "PeakModel::setPeaks(...) for " + std::string(is_background ? "background" : "secondary")
