@@ -1793,12 +1793,12 @@ double chi2_for_region( const PeakShrdVec &peaks,
         const double xbinlow = energies[channel];
         const double xbinup = energies[channel+1];
         const double ndata = data->gamma_channel_content(channel);
-        const double ncontinuum = continuum->offset_integral(xbinlow, xbinup, data);
-        
+        const double ncontinuum = continuum->offset_integral( xbinlow, xbinup, data, peaks );
+
         const double npeak = gauss_counts[i];
         const double uncert = ndata > PEAK_FIT_MIN_CHANNEL_UNCERT ? sqrt(ndata) : 1.0;
         const double chi = (ndata-ncontinuum-npeak)/uncert;
-        
+
         chi2 += chi*chi;
       }//for( size_t i = 0; i <= nchannel; ++i )
     }else
@@ -1817,7 +1817,7 @@ double chi2_for_region( const PeakShrdVec &peaks,
             predicted[channel] = 0.0;
           const double xbinlow = data->gamma_channel_lower(channel);
           const double xbinup = data->gamma_channel_upper(channel);
-          const double ncontinuum = continuum->offset_integral(xbinlow, xbinup, data);
+          const double ncontinuum = continuum->offset_integral( xbinlow, xbinup, data, peaks );
           predicted[channel] += ncontinuum + peak->gauss_integral( xbinlow, xbinup );
         }//for( int bin = xlowbin; bin <= xhighbin; ++bin )
       }//for( const PeakShrdPtr &peak : peaks )
@@ -1924,8 +1924,10 @@ PeakShrdVec refitPeaksThatShareROI_imp( const std::shared_ptr<const Measurement>
         LinearProblemSubSolveChi2Fcn::addSkewParameters( params, skew_type, inpeaks );
     }//if( skew_type != PeakDef::SkewType::NoSkew )
 
+    LinearProblemSubSolveChi2Fcn::addStepCoeffParameter( params, origCont->type(), inpeaks );
 
-    if( (nFitWidth == 0) && (nFitEnergy == 0) && (nSkewFitPars == 0) )
+    const bool has_cdf_step = PeakContinuum::is_peak_cdf_step_continuum( origCont->type() );
+    if( (nFitWidth == 0) && (nFitEnergy == 0) && (nSkewFitPars == 0) && !has_cdf_step )
     {
       // Nothing to do here; LinearProblemSubSolveChi2Fcn::parametersToPeaks(...) will do all work
     }else
@@ -2121,31 +2123,37 @@ double evaluate_chi2dof_for_range( const std::vector<PeakDef> &peaks,
   const size_t lowerchannel = dataH->find_gamma_channel( startx );
   const size_t upperchannel = dataH->find_gamma_channel( endx );
   
+  // Build a map of continuum to peaks for CDF step types
+  map<const PeakContinuum *, vector<const PeakDef *>> cont_to_peaks;
+  for( size_t j = 0; j < peaks.size(); ++j )
+    cont_to_peaks[peaks[j].continuum().get()].push_back( &peaks[j] );
+
   double chi2 = 0;
   for( size_t channel = lowerchannel; channel <= upperchannel; ++channel )
   {
     const double x0 = dataH->gamma_channel_lower( channel );
     const double x1 = dataH->gamma_channel_lower( channel + 1 );
-    
+
     const float y = dataH->gamma_channel_content( channel );
-    
+
     double y_pred = 0.0;
-    
+
     set<const PeakContinuum *> continuums;
-    
+
     for( size_t j = 0; j < peaks.size(); ++j )
     {
       const PeakContinuum * const contptr = peaks[j].continuum().get();
-      
+
       if( x1 < peaks[j].lowerX() || x0 > peaks[j].upperX() )
         continue;
-      
+
       y_pred += peaks[j].gauss_integral(x0, x1);
-      
+
       if( !continuums.count( contptr ) )
       {
         continuums.insert( contptr );
-        y_pred += contptr->offset_integral(x0, x1, dataH);
+        const vector<const PeakDef *> &roi_peaks = cont_to_peaks[contptr];
+        y_pred += contptr->offset_integral( x0, x1, dataH, roi_peaks.data(), roi_peaks.size() );
       }
     }//for( size_t j = 0; j < peaks.size(); ++j )
     
@@ -2226,18 +2234,19 @@ void refit_for_new_roi( std::vector< std::shared_ptr<const PeakDef> > originalPe
       params.Add( "SigmaFcn", 0.0, 0.001, -0.10, 0.10 );
     
     LinearProblemSubSolveChi2Fcn::addSkewParameters( params, skew_type, originalPeaks );
-    
+    LinearProblemSubSolveChi2Fcn::addStepCoeffParameter( params, offset, originalPeaks );
+
     ROOT::Minuit2::MnUserParameterState inputParamState( params );
     const ROOT::Minuit2::MnStrategy strategy( 2 );
-    
+
     ROOT::Minuit2::CombinedMinimizer fitter;
     ROOT::Minuit2::FunctionMinimum minimum
     = fitter.Minimize( chi2Fcn, params, strategy, 0, 0.01 );
-    
+
     params = minimum.UserState().Parameters();
     const vector<double> pars = params.Params();
     const vector<double> errors = params.Errors();
-    
+
     chi2Fcn.parametersToPeaks( resultPeaks, &pars[0], &errors[0] );
   }catch( std::exception & )
   {
@@ -3164,7 +3173,8 @@ void fit_peak_for_user_click( PeakShrdVec &results,
             
       const PeakDef::SkewType skew_type = LinearProblemSubSolveChi2Fcn::skewTypeFromPrevPeaks( coFitPeaks );
       LinearProblemSubSolveChi2Fcn::addSkewParameters( params, skew_type, coFitPeaks );
-      
+      LinearProblemSubSolveChi2Fcn::addStepCoeffParameter( params, offsetType, coFitPeaks );
+
       LinearProblemSubSolveChi2Fcn chi2Fcn( coFitPeaks, dataH, offsetType, skew_type,
                                            lenergy, uenergy );
       
@@ -3959,19 +3969,21 @@ bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
     // (being lazy and just integrating, rather than evaluating)
     const double ptipval = peak->gauss_integral( mean-0.1*sigma, mean+0.1*sigma );
     const double p2val = peak->gauss_integral( mean+1.9*sigma, mean+2.1*sigma );
-    const double conttipval = peak->offset_integral( mean-0.1*sigma, mean+0.1*sigma, dataH );
-    const double cont2val = peak->offset_integral( mean+1.9*sigma, mean+2.1*sigma, dataH );
+    // This function is only called for single-peak ROIs, so this peak is the only ROI peer.
+    const PeakDef *peak_ptr = peak.get();
+    const double conttipval = peak->continuum()->offset_integral( mean-0.1*sigma, mean+0.1*sigma, dataH, &peak_ptr, 1 );
+    const double cont2val = peak->continuum()->offset_integral( mean+1.9*sigma, mean+2.1*sigma, dataH, &peak_ptr, 1 );
     const double contdiff = conttipval - cont2val;
     const double peakdiff = ptipval - p2val;
-    
+
     const double max_relative_continuum_slope = 1.25;
     const double minuncert_apply_cont_slope_test = 0.05;
-    
+
     const double roi_lower = peak->lowerX();
     const double roi_upper = peak->upperX();
-    
-    const double below_roi_cont_area = peak->continuum()->offset_integral( roi_lower - sigma, roi_lower, dataH );
-    const double above_roi_cont_area = peak->continuum()->offset_integral( roi_upper, roi_upper + sigma, dataH );
+
+    const double below_roi_cont_area = peak->continuum()->offset_integral( roi_lower - sigma, roi_lower, dataH, &peak_ptr, 1 );
+    const double above_roi_cont_area = peak->continuum()->offset_integral( roi_upper, roi_upper + sigma, dataH, &peak_ptr, 1 );
     const double below_roi_data_area = dataH->gamma_integral( roi_lower - sigma, roi_lower );
     const double above_roi_data_area = dataH->gamma_integral( roi_upper, roi_upper + sigma );
     
@@ -4159,18 +4171,16 @@ PeakRejectionStatus check_lowres_multi_peak_fit( const vector<std::shared_ptr<co
   
     for( size_t i = startchannel; i <= endchannel; ++i )
     {
-      const double val = continuum->offset_integral( energies[i], energies[i+1], dataH );
+      const double val = continuum->offset_integral( energies[i], energies[i+1], dataH, fitpeaks );
       if( val < minval )
       {
         minval = val;
         minchanel = i;
       }
     }//for( size_t i = startchannel; i <= endchannel; ++i )
-  
-    const double lowedgeval = continuum->offset_integral( energies[startchannel],
-                                                    energies[startchannel+1], dataH );
-    const double highedgeval = continuum->offset_integral( energies[endchannel],
-                                                    energies[endchannel+1], dataH );
+
+    const double lowedgeval = continuum->offset_integral( energies[startchannel], energies[startchannel+1], dataH, fitpeaks );
+    const double highedgeval = continuum->offset_integral( energies[endchannel], energies[endchannel+1], dataH, fitpeaks );
   
     //THe below 0.5 and 10.0 are based off nearly nothing
     if( minval < 0.5*lowedgeval && minval < 0.5*highedgeval
@@ -4706,8 +4716,9 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
     
     
     
-    const double lcont = peak->continuum()->offset_integral( lxl, lxu );
-    const double ucont = peak->continuum()->offset_integral( uxl, uxu );
+    const PeakDef *peak_ptr_c = peak.get();
+    const double lcont = peak->continuum()->offset_integral( lxl, lxu, dataH, &peak_ptr_c, 1 );
+    const double ucont = peak->continuum()->offset_integral( uxl, uxu, dataH, &peak_ptr_c, 1 );
     const double cslope = (ucont - lcont) / (uxu - lxl);
     
     const double mp = peak->gauss_integral( mxl, mxu );
@@ -5704,7 +5715,8 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std
       const double figure_of_merit = 0.68*peak->amplitude()/est_sigma;
 
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 2 )
-      double cont_area = peak->offset_integral( lowerEnengy, upperEnergy, dataH );
+      const PeakDef *peak_ptr_dbg = peak.get();
+      double cont_area = peak->continuum()->offset_integral( lowerEnengy, upperEnergy, dataH, &peak_ptr_dbg, 1 );
       double new_amp = data_area - cont_area;
       DebugLog(debugstrm) << "mean=" << mean << ", amplitude=" << amplitude
             << ", sigma=" << peak->sigma()
@@ -5934,7 +5946,11 @@ void get_chi2_and_dof_for_roi( double &chi2, double &dof,
   vector<double> gauss_counts( std::max(numchannel,size_t(0)), 0.0 );
   for( size_t i = 0; i < peaks.size(); ++i )
     peaks[i]->gauss_integral( &(energies[startchannel]), &(gauss_counts[0]), numchannel );
-  
+
+  vector<const PeakDef *> roi_peak_ptrs( peaks.size() );
+  for( size_t pi = 0; pi < peaks.size(); ++pi )
+    roi_peak_ptrs[pi] = peaks[pi];
+
   for( size_t i = 0; i < numchannel; ++i )
   {
     const size_t channel = startchannel + i;
@@ -5943,7 +5959,7 @@ void get_chi2_and_dof_for_roi( double &chi2, double &dof,
     double nfitpeak = gauss_counts[i];
 
     const double ndata = data->gamma_channel_content( channel );
-    const double ncontinuim = continuum->offset_integral( xbinlow, xbinup, data );
+    const double ncontinuim = continuum->offset_integral( xbinlow, xbinup, data, roi_peak_ptrs.data(), roi_peak_ptrs.size() );
 
     // datauncert is variance (σ²), not standard deviation
     const double datauncert = channel_count_uncerts
@@ -6490,8 +6506,7 @@ double fit_to_polynomial( const float *x, const float *data, const size_t nbin,
         
         
 double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
-                                  const int num_polynomial_terms,
-                                  const bool step_continuum,
+                                  const PeakContinuum::OffsetType cont_type,
                                   const double ref_energy,
                                   const vector<double> &means,
                                   const vector<double> &sigmas,
@@ -6503,448 +6518,13 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
                                   std::vector<double> &amplitudes_uncerts,
                                   std::vector<double> &continuum_coeffs_uncerts )
 {
-  //20250410: I believe `PeakFit::fit_amp_and_offset_imp(...)` should be the better function to use, as it uses SVD
-  //          but currently leaving the below check in to make sure the re-implementation of this function is correct
-#define COMPARE_TO_OLD_FIT_WAY 0
   double * const dummy_channel_counts = nullptr;
-#if( !COMPARE_TO_OLD_FIT_WAY )
-  return PeakFit::fit_amp_and_offset_imp( x, data, nullptr, nbin, num_polynomial_terms, step_continuum,
-                  ref_energy, means, sigmas, fixedAmpPeaks, skew_type, skew_parameters,
+
+  return PeakFit::fit_amp_and_offset_imp( x, data, nullptr, nbin, cont_type,
+                  0.0, ref_energy, means, sigmas, fixedAmpPeaks, skew_type, skew_parameters,
                                          amplitudes, continuum_coeffs,
                                          amplitudes_uncerts, continuum_coeffs_uncerts,
                                          dummy_channel_counts );
-#else
-  std::vector<double> dummy_amplitudes, dummy_continuum_coeffs, dummy_amplitudes_uncerts, dummy_continuum_coeffs_uncerts;
-  const double dummy_chi2 = PeakFit::fit_amp_and_offset_imp( x, data, nullptr, nbin, num_polynomial_terms, step_continuum,
-                          ref_energy, means, sigmas, fixedAmpPeaks, skew_type, skew_parameters,
-                                         dummy_amplitudes, dummy_continuum_coeffs,
-                              dummy_amplitudes_uncerts, dummy_continuum_coeffs_uncerts,
-                                                            dummy_channel_counts );
-
-
-  // TODO: Need to switch to using Eigen::SVD for this function - it is much more stable and predictable
-  //       See PeakFit::fit_continuum(...) for example of using this.
-  if( sigmas.size() != means.size() )
-    throw runtime_error( "fit_amp_and_offset: invalid input" );
-  
-  if( step_continuum && ((num_polynomial_terms < 2) || (num_polynomial_terms > 4)) )
-    throw runtime_error( "fit_amp_and_offset: Only 2 to 4 terms are supported for step continuums" );
-  
-  if( num_polynomial_terms < 0 )
-    throw runtime_error( "fit_amp_and_offset: continuum must have at least 0 (e.g., no continuum) terms" );
-  
-  if( num_polynomial_terms > 4 )
-    throw runtime_error( "fit_amp_and_offset: you asked for a higher order polynomial continuum than reasonable" );
-  
-  assert( (skew_type == PeakDef::SkewType::NoSkew) || skew_parameters );
-  if( !skew_parameters && (skew_type != PeakDef::SkewType::NoSkew) )
-    throw std::logic_error( "Skew pars not provided" );
-  
-  //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
-  //
-  //Implementation is quite inefficient
-  //
-  //Current implementation is not necessarily numerically the most accurate or
-  //  the best when there are near degeneracies.  Should switch to using SVD for
-  //  solving.
-  //
-  //When uncertainties are not needed (e.g., while fitting means), could save
-  //  maybe a factor of three or so in computations.
-  //
-  //Could use Eigen and do things a bit better, see
-  // https://eigen.tuxfamily.org/dox/group__LeastSquares.html
-  //
-  
-  
-  using namespace boost::numeric;
-  const size_t npeaks = sigmas.size();
-  const size_t npoly = static_cast<size_t>( num_polynomial_terms );
-  const int nfit_terms = static_cast<int>( npoly + npeaks );
-
-  ublas::matrix<double> A( nbin, nfit_terms );
-  ublas::vector<double> b( nbin );
-  
-  //  cerr << endl << "Input: " << ref_energy << ", ";
-  //  for( size_t i = 0; i < npeaks; ++i )
-  //    cerr << "{" << means[i] << ", " << sigmas[i] << "}, ";
-  //  cerr << endl << endl;
-  
-  double roi_data_sum = 0.0, step_cumulative_data = 0.0;
-  
-  const double roi_lower = x[0];
-  const double roi_upper = x[nbin];
-  
-  for( size_t row = 0; row < nbin; ++row )
-    roi_data_sum += std::max( data[row], 0.0f );
-  
-  const double avrg_data_val = roi_data_sum / nbin;
-  
-  // For the RelACtAuto calcs, there can easily be 100 peaks, so for this case we'll calculate
-  //  their contribution multithreaded.
-  //  I have no idea if this is the optimal way to do the calculation, but better than not using
-  //  threads at all.
-  //  If we dont have many fixed peaks, we'll avoid the extra allocation (totally unchecked if
-  //  this actually saves anything perceptible)
-  //  We'll divide the channels into nthread ranges, and then inside each thread,
-  //  compute its range for each peak - this way we can cut the number of calls to the `erf`
-  //  function in half by calling a more optimized version of the peak integral function
-  //
-  const size_t nfixedpeak = fixedAmpPeaks.size();
-  const bool do_mt_fixed_peak = (nfixedpeak > 0); // always use this method if fixed peaks
-  vector<double> mt_fixed_peak_contrib( do_mt_fixed_peak ? nbin : size_t(0), 0.0f );
-  
-  
-  if( do_mt_fixed_peak )
-  {
-    // 20250127: it looks like calling `pool.join()` is causing significant and unreasonable delays
-    //           on macOS (using GCD, at least).  This is likely a problem with
-    //           `SpecUtilsAsync::ThreadPool` - I would guess when creating ThreadPools inside of
-    //           other ThreadPools, but for the moment will just do this single threaded, which is
-    //           like 20 times faster for an example problem
-    
-    //SpecUtilsAsync::ThreadPool pool;
-    double * const fixed_contrib = &(mt_fixed_peak_contrib[0]);
-
-    //std::mutex result_mutex;
-    for( size_t peak_index = 0; peak_index < fixedAmpPeaks.size(); ++peak_index )
-    {
-      fixedAmpPeaks[peak_index].gauss_integral( x, &(fixed_contrib[0]), nbin );
-    }//for( size_t peak_index = 0; peak_index < fixedAmpPeaks.size(); ++peak_index )
-  }//if( do_mt_fixed_peak )
-  
-  
-  for( size_t row = 0; row < nbin; ++row )
-  {
-    double dataval = data[row];
-    
-    const double x0 = x[row];
-    const double x1 = x[row+1];
-    
-    const double x0_rel = x0 - ref_energy;
-    const double x1_rel = x1 - ref_energy;
-    
-    //const double uncert = (dataval > 0.0 ? sqrt(dataval) : 1.0);
-    // If we are background subtracting a spectrum, we can end up with bins with really
-    //  small values, like 0.0007, which, even one of would mess the whole fit up if
-    //  we take its uncertainty to be its square-root, so in this case we will, fairly arbitrarily
-    //  we want to use an uncert of 1.
-    //  However, there are also highly scaled spectra, whose all values are really small, so
-    //  in this case we want to do something more reasonable.
-    // TODO: evaluate these choices of thresholds and tradeoffs, more better
-    double uncert = (dataval > PEAK_FIT_MIN_CHANNEL_UNCERT ? sqrt(dataval) : 1.0);
-
-    if( step_continuum )
-      step_cumulative_data += dataval;
-
-    
-    if( do_mt_fixed_peak )
-    {
-      assert( mt_fixed_peak_contrib.size() == nbin );
-      dataval -= mt_fixed_peak_contrib[row];
-    }else if( !fixedAmpPeaks.empty() )
-    {
-      for( size_t i = 0; i < fixedAmpPeaks.size(); ++i )
-      {
-        // See multithreaded implementation above for reasoning; the logic and width should
-        //  match above.
-        const PeakDef &peak = fixedAmpPeaks[i];
-        const double mean = peak.mean();
-        const double integration_width = 8*peak.sigma();
-        if( (x1 >= (mean - integration_width)) && (x0 <= (mean + integration_width)) )
-          dataval -= fixedAmpPeaks[i].gauss_integral( x0, x1 );
-      }
-    }//if( do_mt_fixed_peak )
-    
-    b(row) = ((dataval > 0.0 ? dataval : 0.0) / uncert);
-    
-    for( size_t col = 0; col < npoly; ++col )
-    {
-      const double exp = col + 1.0;
-      
-      if( step_continuum
-          && ((num_polynomial_terms == 2) || (num_polynomial_terms == 3))
-          && (col == (num_polynomial_terms - 1)) )
-      {
-        // This logic mirrors that of PeakContinuum::offset_integral(...), and code
-        // If you change it in one place - change it in here, below, and in offset_integral.
-        const double frac_data = (step_cumulative_data - 0.5*data[row]) / roi_data_sum;
-        const double contribution = frac_data * (x1 - x0);
-        
-        A(row,col) = contribution / uncert;
-      }else if( step_continuum && (num_polynomial_terms == 4) )
-      {
-        const double frac_data = (step_cumulative_data - 0.5*data[row]) / roi_data_sum;
-
-        double contrib = 0.0;
-        switch( col )
-        {
-          case 0: contrib = (1.0 - frac_data) * (x1_rel - x0_rel);                     break;
-          case 1: contrib = 0.5 * (1.0 - frac_data) * (x1_rel*x1_rel - x0_rel*x0_rel); break;
-          case 2: contrib = frac_data * (x1_rel - x0_rel);                             break;
-          case 3: contrib = 0.5 * frac_data * (x1_rel*x1_rel - x0_rel*x0_rel);         break;
-          default: assert( 0 ); break;
-        }//switch( col )
-        
-        A(row,col) = contrib / uncert;
-      }else
-      {
-        const double contribution = (1.0/exp) * (pow(x1_rel,exp) - pow(x0_rel,exp));
-        
-        A(row,col) = contribution / uncert;
-      }
-    }//for( int order = 0; order < maxorder; ++order )
-  }//for( size_t row = 0; row < nbin; ++row )
-  
-  
-  // If we have more than 2 peaks (arbitrarily chosen), we'll compute the peak contributions
-  //  in parallel.
-  //  TODO: investigate performance impact of computing peak integrals multithread - e.g., should we do this only if a skew is being used?  Or if we have more than X peaks, etc.
-  vector<double> unit_peak_counts( nbin * npeaks, 0.0 );
-  
-  const bool parallelize_peak_sum = (npeaks > 2);
-  if( parallelize_peak_sum )
-  {
-    SpecUtilsAsync::ThreadPool pool;
-    for( size_t i = 0; i < npeaks; ++i )
-    {
-      double *peak_areas = &(unit_peak_counts[i*nbin]);
-      const double mean = means[i];
-      const double sigma = sigmas[i];
-      pool.post( [peak_areas,i,mean,sigma,skew_type,skew_parameters,nbin,x](){
-        PeakDists::photopeak_function_integral( mean, sigma, 1.0, skew_type, skew_parameters,
-                                             nbin, x, peak_areas );
-      } );
-    }//for( size_t i = 0; i < npeaks; ++i )
-    pool.join();
-  }else
-  {
-    for( size_t i = 0; i < npeaks; ++i )
-    {
-      double *peak_areas = &(unit_peak_counts[i*nbin]);
-      PeakDists::photopeak_function_integral( means[i], sigmas[i], 1.0,
-                                           skew_type, skew_parameters,
-                                           nbin, x, peak_areas );
-    }
-  }//if( npeaks > 2 ) / else
-  
-  for( size_t i = 0; i < npeaks; ++i )
-  {
-    double *peak_areas = &(unit_peak_counts[i*nbin]);
-    for( size_t channel = 0; channel < nbin; ++channel )
-    {
-      const double dataval = data[channel];
-      const double uncert = (dataval > PEAK_FIT_MIN_CHANNEL_UNCERT ? sqrt(dataval) : 1.0);
-      A(channel,npoly + i) = peak_areas[channel] / uncert;
-    }//for( size_t channel = 0; channel < nbin; ++channel )
-  }//for( size_t i = 0; i < npeaks; ++i )
-
-  const ublas::matrix<double> A_transpose = ublas::trans( A );
-  const ublas::matrix<double> alpha = prod( A_transpose, A );
-  ublas::matrix<double> C( alpha.size1(), alpha.size2() );
-  
-  bool success = false;
-  
-  try
-  {
-    //See http://viennacl.sourceforge.net/doc/least-squares_8cpp-example.html#a8 for example
-    //  of better solving things following the below commented out lines
-    //typedef boost::numeric::ublas::matrix<double>              MatrixType;
-    //typedef boost::numeric::ublas::vector<double>              VectorType;
-    //boost::numeric::ublas::range ublas_range(0, 3);
-    //boost::numeric::ublas::matrix_range<MatrixType> ublas_R(ublas_A, ublas_range, ublas_range);
-    //boost::numeric::ublas::vector_range<VectorType> ublas_b2(ublas_b, ublas_range);
-    //boost::numeric::ublas::inplace_solve(ublas_R, ublas_b2, boost::numeric::ublas::upper_tag());
-
-    success = matrix_invert( alpha, C );
-  }catch( std::exception &e )
-  {
-#ifndef NDEBUG
-    cerr << "fit_amp_and_offset(...): caught: " << e.what() << endl;
-    cerr << "For means = {";
-    for( double m : means )
-      cerr << m << ", ";
-    cerr << "}, sigmas={";
-    for( double m : sigmas )
-      cerr << m << ", ";
-    cerr << "}" << endl;
-    
-    printf( "b=" );
-    for( size_t row = 0; row < b.size(); ++row )
-      printf( "%.2f, ", b(row) );
-    printf( "\n" );
-    
-    printf( "Alpha=\n" );
-    for( size_t row = 0; row < alpha.size1(); ++row )
-    {
-      for( size_t col = 0; col < alpha.size2(); ++col )
-        printf( "%12.2f, ", alpha(row,col) );
-      printf( "\n" );
-    }
-    printf( "\n" );
-    
-    
-    printf( "\nC=\n" );
-    for( size_t row = 0; row < C.size1(); ++row )
-    {
-      for( size_t col = 0; col < C.size2(); ++col )
-        printf( "%12.2f, ", C(row,col) );
-      printf( "\n" );
-    }
-    printf( "\n\n\n" );
-#endif //#ifndef NDEBUG
-  }//try / catch
-  
-  if( !success )
-  {
-#ifndef NDEBUG
-    cerr << "For means = {";
-    for( double m : means )
-      cerr << m << ", ";
-    cerr << "}, sigmas={";
-    for( double m : sigmas )
-      cerr << m << ", ";
-    cerr << "}" << endl;
-#endif //#ifndef NDEBUG
-    throw runtime_error( "fit_amp_and_offset(...): trouble inverting matrix" );
-  }
-  
-  const ublas::vector<double> beta = prod( A_transpose, b );
-  const ublas::vector<double> a = prod( C, beta );
-  
-  continuum_coeffs.resize( npoly );
-  continuum_coeffs_uncerts.resize( npoly );
-  for( size_t coef = 0; coef < npoly; ++coef )
-  {
-    continuum_coeffs[coef] = a(coef);
-    continuum_coeffs_uncerts[coef] = std::sqrt( C(coef,coef) );
-  }//for( int coef = 0; coef < poly_terms; ++coef )
-  
-  amplitudes.resize( npeaks );
-  amplitudes_uncerts.resize( npeaks );
-  
-  for( size_t i = 0; i < npeaks; ++i )
-  {
-    const size_t coef = npoly + i;
-    amplitudes[i] = a(coef);
-    amplitudes_uncerts[i] = std::sqrt( C(coef,coef) );
-  }//for( size_t i = 0; i < npeaks; ++i )
-  
-  double chi2 = 0;
-  step_cumulative_data = 0.0;
-  for( size_t bin = 0; bin < nbin; ++bin )
-  {
-    const double x0 = x[bin];
-    const double x1 = x[bin+1];
-    
-    double dataval = data[bin];
-    
-    if( step_continuum )
-      step_cumulative_data += dataval;
-    
-    //TODO: I havent actually reasoned through the algorithm to see if this is the
-    //      correct way to subtract off fixed-amplitude peaks.
-    for( size_t i = 0; i < fixedAmpPeaks.size(); ++i )
-      dataval -= fixedAmpPeaks[i].gauss_integral( x0, x1 );
-    
-    double y_pred = 0.0;
-    for( size_t col = 0; col < npoly; ++col )
-    {
-      const double exp = col + 1.0;
-      const double x0_rel = x0 - ref_energy;
-      const double x1_rel = x1 - ref_energy;
-      
-      if( step_continuum
-         && ((num_polynomial_terms == 2) || (num_polynomial_terms == 3))
-         && (col == (num_polynomial_terms - 1)) )
-      {
-        // This logic mirrors that of PeakContinuum::offset_integral(...) and above code in this
-        //  function that defines the matrix, see above for comments
-        const double frac_data = (step_cumulative_data - 0.5*data[bin]) / roi_data_sum;
-        const double contribution = frac_data * (x1 - x0);
-        
-        y_pred += a(col)*contribution;
-      }else if( step_continuum && (num_polynomial_terms == 4) )
-      {
-        // This logic mirrors that of PeakContinuum::offset_integral(...) and above code in this
-        //  function that defines the matrix, see above for comments
-        
-        const double frac_data = (step_cumulative_data - 0.5*data[bin]) / roi_data_sum;
-        
-        double contrib = 0.0;
-        switch( col )
-        {
-          case 0: contrib = (1.0 - frac_data) * (x1_rel - x0_rel);                     break;
-          case 1: contrib = 0.5 * (1.0 - frac_data) * (x1_rel*x1_rel - x0_rel*x0_rel); break;
-          case 2: contrib = frac_data * (x1_rel - x0_rel);                             break;
-          case 3: contrib = 0.5 * frac_data * (x1_rel*x1_rel - x0_rel*x0_rel);         break;
-          default: assert( 0 ); break;
-        }//switch( col )
-        
-        y_pred += a(col) * contrib;
-      }else
-      {
-        y_pred += a(col) * (1.0/exp) * (pow(x1_rel,exp) - pow(x0_rel,exp));
-      }//if( step_continuum ) / else
-    }//for( int order = 0; order < maxorder; ++order )
-    
-    if( y_pred < 0.0 )
-      y_pred = 0.0;
-    
-    for( size_t i = 0; i < npeaks; ++i )
-    {
-      const size_t col = npoly + i;
-      y_pred += a(col) * PeakDists::gaussian_integral( means[i], sigmas[i], x0, x1 );
-    }
-    
-    for( size_t i = 0; i < fixedAmpPeaks.size(); ++i )
-      y_pred += fixedAmpPeaks[i].gauss_integral( x0, x1 );
-    
-    //    cerr << "bin " << bin << " predicted " << y_pred << " data=" << data[bin] << endl;
-    const double uncert = (data[bin] > PEAK_FIT_MIN_CHANNEL_UNCERT ? sqrt( data[bin] ) : 1.0);
-    chi2 += std::pow( (y_pred - data[bin]) / uncert, 2.0 );
-  }//for( int bin = 0; bin < nbin; ++bin )
-
-
-
-  {
-    assert( dummy_amplitudes.size() == amplitudes.size() );
-    assert( dummy_continuum_coeffs.size() == continuum_coeffs.size() );
-    assert( dummy_amplitudes_uncerts.size() == amplitudes_uncerts.size() );
-    assert( dummy_continuum_coeffs_uncerts.size() == continuum_coeffs_uncerts.size() );
-
-    //cout << "For fit, comparison of amplitudes:" << endl << "Prev\t\tNew\n";
-    for( size_t i = 0; i < dummy_amplitudes.size(); ++i )
-    {
-      assert( (abs(amplitudes[i] - dummy_amplitudes[i])
-             < 0.001*max(abs(amplitudes[i]),abs(dummy_amplitudes[i])))
-             || (abs(amplitudes[i] - dummy_amplitudes[i]) < 1.0E-7) );
-      assert( (abs(amplitudes_uncerts[i] - dummy_amplitudes_uncerts[i])
-             < 0.001*max(abs(amplitudes_uncerts[i]),abs(dummy_amplitudes_uncerts[i])))
-             || (abs(amplitudes_uncerts[i] - dummy_amplitudes_uncerts[i]) < 1.0E-6) );
-      //cout << "  " << amplitudes[i] << "+-" << amplitudes_uncerts[i] << "\t\t" << dummy_amplitudes[i] << "+-" << dummy_amplitudes_uncerts[i] << endl;
-    }
-
-/*
-    //cout << "For fit, comparison of continuum coeffs:" << endl << "Prev\t\tNew\n";
-    for( size_t i = 0; i < continuum_coeffs.size(); ++i )
-    {
-      assert( (abs(continuum_coeffs[i] - dummy_continuum_coeffs[i])
-              < 0.0001*max(abs(continuum_coeffs[i]),abs(dummy_continuum_coeffs[i])))
-             || (abs(continuum_coeffs[i] - dummy_continuum_coeffs[i]) < 1.0E-7) );
-      assert( (abs(continuum_coeffs_uncerts[i] - dummy_continuum_coeffs_uncerts[i])
-             < 0.001*max(abs(continuum_coeffs_uncerts[i]),abs(dummy_continuum_coeffs_uncerts[i])))
-             || (abs(continuum_coeffs_uncerts[i] - dummy_continuum_coeffs_uncerts[i]) < 1.0E-6) );
-      //cout << "  " << continuum_coeffs[i] << "+-" << continuum_coeffs_uncerts[i] << "\t\t" << dummy_continuum_coeffs[i] << "+-" << dummy_continuum_coeffs_uncerts[i] << endl;
-    }
- */
-    //cout << "And prev Chi2=" << chi2 << ", with new Chi2=" << dummy_chi2 << endl<< endl<< endl;
-    //assert( abs(chi2 - dummy_chi2) < 0.01*max(chi2,dummy_chi2) );
-    if( (abs(chi2 - dummy_chi2) > 0.01*max(chi2,dummy_chi2)) && (abs(chi2 - dummy_chi2) > 1.0E-9) )
-      cout << "And prev Chi2=" << chi2 << ", with new Chi2=" << dummy_chi2 << endl<< endl<< endl;
-  }
-
-  return chi2;
-#endif // if( COMPARE_TO_OLD_FIT_WAY ) / else
 }//double fit_amp_and_offset(...)
         
         
@@ -7003,7 +6583,7 @@ bool chi2_significance_test( const PeakDef &peak,
     return false;
 
 
-  const size_t poly_order = PeakContinuum::num_parameters( offset_type );
+  const size_t poly_order = PeakContinuum::num_linear_fit_pars( offset_type );
 
   const double xmin = is_step ? cont->lowerEnergy() : std::max( cont->lowerEnergy(), peak.mean() - 2.5*peak.sigma() );
   const double xmax = is_step ? cont->upperEnergy() : std::min( cont->upperEnergy(), peak.mean() + 2.5*peak.sigma() );
@@ -7046,6 +6626,21 @@ bool chi2_significance_test( const PeakDef &peak,
 
   vector<double> without_peak_counts;
 
+  const bool is_cdf_step = PeakContinuum::is_peak_cdf_step_continuum( cont->type() );
+
+  // Build arrays of ROI peak pointers for offset_integral calls
+  vector<const PeakDef *> all_roi_peak_ptrs;   // peak + other_peaks
+  vector<const PeakDef *> other_peak_ptrs;     // just other_peaks (without the peak under test)
+
+  all_roi_peak_ptrs.reserve( 1 + other_peaks.size() );
+  all_roi_peak_ptrs.push_back( &peak );
+  for( const PeakDef &p : other_peaks )
+    all_roi_peak_ptrs.push_back( &p );
+
+  other_peak_ptrs.reserve( other_peaks.size() );
+  for( const PeakDef &p : other_peaks )
+    other_peak_ptrs.push_back( &p );
+
 // We can either fit the continuum with out the peak of interest, or just use the continuum as fit
 //  I think the better thing to do is refit it, but this is totally untested - so the #define will
 //  let you switch between options.
@@ -7065,7 +6660,7 @@ bool chi2_significance_test( const PeakDef &peak,
     //for( size_t i = 0; i < num_roi_channel; ++i )
     //  original_counts[i] += ext_counts[i];
 
-    cont->offset_integral( energies, &(original_counts[0]), num_roi_channel, data );
+    cont->offset_integral( energies, &(original_counts[0]), num_roi_channel, data, all_roi_peak_ptrs.data(), all_roi_peak_ptrs.size() );
     without_peak_counts = original_counts;
   }//if( cont->type() == PeakContinuum::External )
 
@@ -7076,16 +6671,25 @@ bool chi2_significance_test( const PeakDef &peak,
     const double ref_energy = cont->referenceEnergy();
     const double * const skew_pars = peak.coefficients() + static_cast<size_t>(PeakDef::CoefficientType::SkewPar0);
     vector<double> amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts;
-    PeakFit::fit_amp_and_offset_imp(energies, channel_counts, nullptr, num_roi_channel, static_cast<int>(poly_order), is_step,
-                                    ref_energy, {}, {}, other_peaks, peak.skewType(), skew_pars,
+    PeakFit::fit_amp_and_offset_imp(energies, channel_counts, nullptr, num_roi_channel, cont->type(),
+                                    0.0, ref_energy, {}, {}, other_peaks, peak.skewType(), skew_pars,
                                     amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts, (double *)0 );
+    // For FlatStepCDF/LinearStepCDF, fit_amp_and_offset_imp returns only polynomial coefficients;
+    //  setParameters expects poly + step_coeff, so append the step_coeff (0.0 here, since
+    //  we're refitting the null hypothesis continuum without optimizing the step).
+    //  BiLinearStepCDF has no step_coeff — its 4 polynomial coefficients are all that's needed.
+    if( is_cdf_step && (cont->type() != PeakContinuum::BiLinearStepCDF) )
+    {
+      continuum_coeffs.push_back( 0.0 );
+      cont_uncerts.push_back( 0.0 );
+    }
     shared_ptr<PeakContinuum> tmp_continuum = make_shared<PeakContinuum>( *cont );
     tmp_continuum->setParameters( ref_energy, continuum_coeffs, cont_uncerts );
-    tmp_continuum->offset_integral( energies, &(without_peak_counts[0]), num_roi_channel, data );
+    tmp_continuum->offset_integral( energies, &(without_peak_counts[0]), num_roi_channel, data, other_peak_ptrs.data(), other_peak_ptrs.size() );
 
-    cont->offset_integral( energies, &(original_counts[0]), num_roi_channel, data );
+    cont->offset_integral( energies, &(original_counts[0]), num_roi_channel, data, all_roi_peak_ptrs.data(), all_roi_peak_ptrs.size() );
 #else
-    cont->offset_integral( energies, &(original_counts[0]), num_roi_channel, data );
+    cont->offset_integral( energies, &(original_counts[0]), num_roi_channel, data, all_roi_peak_ptrs.data(), all_roi_peak_ptrs.size() );
     without_peak_counts = original_counts;
 #endif
   }//if( cont->type() != PeakContinuum::External )
@@ -7799,47 +7403,6 @@ void AutoPeakSearchChi2Fcn::fit_peak_group( const vector<PeakDef> &peaks,
   
   std::shared_ptr<const PeakContinuum> cont = peaks[0].continuum();
   
-  const int num_polynomial_terms = ([&cont]() -> int {
-    switch( cont->type() )
-    {
-      case PeakContinuum::NoOffset: case PeakContinuum::External:
-        return 0;
-        
-      case PeakContinuum::Constant: case PeakContinuum::Linear:
-      case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
-        return cont->type() - PeakContinuum::NoOffset;
-        
-      case PeakContinuum::FlatStep:
-      case PeakContinuum::LinearStep:
-      case PeakContinuum::BiLinearStep:
-        return 2 + (cont->type() - PeakContinuum::FlatStep);
-    }//switch( cont->type() )
-
-    assert(0);
-    throw std::runtime_error( "Somehow invalid continuum polynomial type." );
-    return 0;
-  })();
-  
-  const bool isStepContinuum = ([&cont]() -> bool {
-    switch( cont->type() )
-    {
-      case PeakContinuum::NoOffset: case PeakContinuum::External:
-      case PeakContinuum::Constant: case PeakContinuum::Linear:
-      case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
-        return false;
-        
-      case PeakContinuum::FlatStep:
-      case PeakContinuum::LinearStep:
-      case PeakContinuum::BiLinearStep:
-        return true;
-    }//switch( cont->type() )
-
-    assert( 0 );
-    throw std::runtime_error( "Somehow invalid continuum polynomial type." );
-    return 0;
-  })();
-  
-  
   std::vector<double> means, sigmas;
   
   for( size_t i = 0; i < peaks.size(); ++i )
@@ -7921,10 +7484,10 @@ void AutoPeakSearchChi2Fcn::fit_peak_group( const vector<PeakDef> &peaks,
       const PeakDef::SkewType skew_type = PeakDef::SkewType::NoSkew;
       const double * const skew_parameters = nullptr;
       
-      chi2 = fit_amp_and_offset( x_start, y_start, nregionbin,
-                                num_polynomial_terms,
-                                isStepContinuum,
-                                cont->lowerEnergy(),
+      double * const dummy_peak_counts = nullptr;
+      chi2 = PeakFit::fit_amp_and_offset_imp( x_start, y_start, nullptr, nregionbin,
+                                cont->type(),
+                                0.0, cont->lowerEnergy(),
                                 means, sigmas,
                                 fixedAmpPeaks,
                                 skew_type,
@@ -7932,7 +7495,8 @@ void AutoPeakSearchChi2Fcn::fit_peak_group( const vector<PeakDef> &peaks,
                                 amplitudes,
                                 continuum_coeffs,
                                 amplitudes_uncerts,
-                                continuum_coeffs_uncerts );
+                                continuum_coeffs_uncerts,
+                                dummy_peak_counts );
     }catch(...)
     {
       for( size_t i = 0; i < nregionbin; ++i )
@@ -7947,6 +7511,16 @@ void AutoPeakSearchChi2Fcn::fit_peak_group( const vector<PeakDef> &peaks,
   }//if( means.size() > 1 ) / else
 #endif
   
+  // For FlatStepCDF/LinearStepCDF, fit_amp_and_offset_imp returns only polynomial coefficients;
+  //  setParameters expects poly + step_coeff, so append step_coeff (0.0).
+  // BiLinearStepCDF has no step_coeff, so all 4 params are already returned.
+  if( PeakContinuum::is_peak_cdf_step_continuum( cont->type() )
+     && (cont->type() != PeakContinuum::BiLinearStepCDF) )
+  {
+    continuum_coeffs.push_back( 0.0 );
+    continuum_coeffs_uncerts.push_back( 0.0 );
+  }
+
   std::shared_ptr<PeakContinuum> fitcont( new PeakContinuum() );
   fitcont->setRange( cont->lowerEnergy(), cont->upperEnergy() );
   fitcont->setType( cont->type() );
@@ -8155,17 +7729,24 @@ bool AutoPeakSearchChi2Fcn::significance_test( const PeakDef &peak,
   
   const size_t endbin = end - xbegin;
   const size_t startbin = begin - xbegin;
+
+  vector<const PeakDef *> all_roi_peak_ptrs;
+  all_roi_peak_ptrs.reserve( 1 + other_peaks.size() );
+  all_roi_peak_ptrs.push_back( &peak );
+  for( const PeakDef &p : other_peaks )
+    all_roi_peak_ptrs.push_back( &p );
+
   for( size_t bin = startbin; bin < endbin; ++bin )
   {
     const float loweredge = (*m_x)[bin];
     const float upperedge = (*m_x)[bin+1];
-    const double continuumarea = continuum->offset_integral( loweredge, upperedge, m_meas );
+    const double continuumarea = continuum->offset_integral( loweredge, upperedge, m_meas, all_roi_peak_ptrs.data(), all_roi_peak_ptrs.size() );
     const double peakarea = peak.gauss_integral( loweredge, upperedge );
     double otherPeakArea = 0.0;
     for( size_t i = 0; i < other_peaks.size(); ++i )
     otherPeakArea += other_peaks[i].gauss_integral( loweredge, upperedge );
     const double dataarea = std::max( (*m_y)[bin], 1.0f );
-    
+
     withChi2 += std::pow(peakarea+otherPeakArea+continuumarea-dataarea, 2.0) / dataarea;
     withoutChi2 += std::pow(otherPeakArea+continuumarea-dataarea, 2.0) / dataarea;
   }//for( size_t bin = startbin; bin < endbin; ++bin )
@@ -8543,22 +8124,14 @@ std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> 
         means.push_back( energy );
         sigmas.push_back( sigma );
         
-        int num_polynomial_terms = 2;  //linear
-        const bool step_continuum = false;
-        /*
-         if( means.size() > 2 )
-         num_polynomial_terms = 3;
-         if( nbin > 15 )  //15 is arbitrarily chosen right now
-         num_polynomial_terms = 3;
-         */
-        
+        const PeakContinuum::OffsetType cont_type = PeakContinuum::OffsetType::Linear;
+
         // TODO: currently doesn't account for/fit peak skew
         const PeakDef::SkewType skew_type = PeakDef::SkewType::NoSkew;
         const double * const skew_pars = nullptr;
-        
-        const double chi2 =  fit_amp_and_offset( x_start, data, nbin,
-                                                num_polynomial_terms,
-                                                step_continuum,
+
+        const double chi2 = fit_amp_and_offset( x_start, data, nbin,
+                                                cont_type,
                                                 energy, means, sigmas,
                                                 fixedAmpPeaks,
                                                 skew_type,

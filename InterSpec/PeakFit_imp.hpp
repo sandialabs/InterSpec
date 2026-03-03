@@ -14,6 +14,27 @@
 namespace PeakFit
 {
 
+/** Converts unit-area peak PDF-per-channel integrals to CDF values at channel centers.
+
+ Given the integral of a unit-area peak distribution in each channel (as produced by
+ photopeak_function_integral with amp=1), computes the CDF at each channel center via
+ cumulative summation: CDF(center_i) = sum(pdf[0..i-1]) + 0.5*pdf[i].
+
+ This is analogous to how data-step types compute frac_data using
+ (cumulative_data - 0.5*data[row]) / total.
+ */
+template<typename T>
+inline void unit_pdf_to_cdf( const T *unit_area_pdf_integrals, T *cdf_at_centers, const size_t nchannel )
+{
+  T cumsum = T(0.0);
+  for( size_t i = 0; i < nchannel; ++i )
+  {
+    cdf_at_centers[i] = cumsum + T(0.5) * unit_area_pdf_integrals[i];
+    cumsum += unit_area_pdf_integrals[i];
+  }
+}//void unit_pdf_to_cdf(...)
+
+
 /** This function fits the polynomial continuum for a region with a number of fixed amplitude peaks.
  *
  * Note that when ScalarType is a `ceres::Jet<>`, and peaks SkewType is not PeakDef::SkewType::NoSkew,
@@ -24,8 +45,7 @@ void fit_continuum( const float * const x,
                     const float * const data,
                     const float * const data_uncert,
                     const size_t nbin,
-                    const int num_polynomial_terms,
-                    const bool step_continuum,
+                    const PeakContinuum::OffsetType cont_type,
                     const ScalarType ref_energy,
                     const std::vector<PeakType> &fixedAmpPeaks,
                     const bool multithread,
@@ -36,14 +56,13 @@ void fit_continuum( const float * const x,
 
   static const double MIN_CHANNEL_UNCERT = 1.0;
 
-  if( step_continuum && ((num_polynomial_terms < 2) || (num_polynomial_terms > 4)) )
-    throw std::runtime_error( "fit_amp_and_offset: Only 2 to 4 terms are supported for step continuums" );
-
-  if( num_polynomial_terms < 0 )
-    throw std::runtime_error( "fit_amp_and_offset: continuum must have at least 0 (e.g., no continuum) terms" );
-
-  if( num_polynomial_terms > 4 )
-    throw std::runtime_error( "fit_amp_and_offset: you asked for a higher order polynomial continuum than reasonable" );
+  const int num_polynomial_terms = static_cast<int>( PeakContinuum::num_linear_fit_pars( cont_type ) );
+  const bool step_continuum = PeakContinuum::is_step_continuum( cont_type );
+  const bool cdf_step = PeakContinuum::is_peak_cdf_step_continuum( cont_type );
+  const bool bilinear_cdf = (cont_type == PeakContinuum::BiLinearStepCDF);
+  // For FlatStepCDF/LinearStepCDF, cdf_step_coeff is true; for BiLinearStepCDF, it's false
+  //  since BiLinearStepCDF has no separate step_coeff - CDF is used for left/right interpolation.
+  const bool cdf_step_coeff = cdf_step && !bilinear_cdf;
 
   // Loosely following:
   //   https://eigen.tuxfamily.org/dox/group__LeastSquares.html
@@ -51,13 +70,40 @@ void fit_continuum( const float * const x,
 
   const Eigen::Index num_poly_terms = static_cast<Eigen::Index>( num_polynomial_terms  );
 
-  Eigen::MatrixX<ScalarType> A( static_cast<Eigen::Index>(nbin), num_poly_terms );
+  // For FlatStepCDF/LinearStepCDF, we add one extra column for step_coeff (solved by LLS here since peak amps are known)
+  // For BiLinearStepCDF, all 4 polynomial params are already in num_poly_terms
+  const Eigen::Index num_lls_terms = cdf_step_coeff ? (num_poly_terms + 1) : num_poly_terms;
+
+  Eigen::MatrixX<ScalarType> A( static_cast<Eigen::Index>(nbin), num_lls_terms );
   Eigen::VectorX<ScalarType> y( static_cast<Eigen::Index>(nbin) );
   Eigen::VectorX<ScalarType> uncerts( static_cast<Eigen::Index>(nbin) );
 
   double roi_data_sum = 0.0, step_cumulative_data = 0.0;
+
+#if( PEAK_CONTINUUM_DATA_STEP_SUBTRACT )
+  double min_data_val = static_cast<double>( data[0] );
   for( size_t row = 0; row < nbin; ++row )
-    roi_data_sum += std::max( data[row], 0.0f );
+  {
+    roi_data_sum += (std::max)( data[row], 0.0f );
+    min_data_val = (std::min)( min_data_val, static_cast<double>( data[row] ) );
+  }
+  if( step_continuum && !cdf_step )
+  {
+    min_data_val = (std::max)( min_data_val, 0.0 );
+    roi_data_sum -= min_data_val * nbin;
+  }else if( bilinear_cdf )
+  {
+    // BiLinearStepCDF still needs cumulative data for the non-CDF fallback; but we dont use data
+    min_data_val = 0.0;
+  }else
+  {
+    min_data_val = 0.0;
+  }
+#else
+  const double min_data_val = 0.0;
+  for( size_t row = 0; row < nbin; ++row )
+    roi_data_sum += (std::max)( data[row], 0.0f );
+#endif
 
   // Zero out the destination count array
   for( size_t row = 0; row < nbin; ++row )
@@ -69,7 +115,7 @@ void fit_continuum( const float * const x,
   if( multithread && (nfixedpeak > 8) ) //8 is arbitrary.
   {
     // TODO: multi-thread computation needs to be evaluated more hollistically both here and in #RelActAutoSolution::eval
-    const unsigned nthread = std::min( 16, std::min( static_cast<int>(nfixedpeak), std::max( 1, static_cast<int>( std::thread::hardware_concurrency() ) ) ) );
+    const unsigned nthread = (std::min)( 16, (std::min)( static_cast<int>(nfixedpeak), (std::max)( 1, static_cast<int>( std::thread::hardware_concurrency() ) ) ) );
 
     vector<vector<ScalarType>> results( nthread );
 
@@ -123,6 +169,80 @@ void fit_continuum( const float * const x,
     }//for( size_t peak_index = 0; peak_index < nfixedpeak; ++peak_index )
   }//if( multithread && (nfixedpeak > 8) ) / else
 
+  // For CDF step types, precompute CDF-based quantities per channel.
+  // For FlatStepCDF/LinearStepCDF: cdf_step_basis[row] = sum_j( amp_j * CDF_j(chan_center) ) * dx
+  // For BiLinearStepCDF: cdf_frac_per_channel[row] = amplitude-weighted CDF fraction in [0,1]
+  //
+  // We compute unit-area peak integrals per channel using photopeak_function_integral (templated
+  // on ScalarType, so Ceres Jet derivative info is preserved), then form CDF via cumulative sum
+  // using PeakDists::unit_pdf_to_cdf.
+  vector<ScalarType> cdf_step_basis;
+  vector<ScalarType> cdf_frac_per_channel;
+  if( cdf_step )
+  {
+    if( bilinear_cdf )
+      cdf_frac_per_channel.resize( nbin, ScalarType(0.0) );
+    else
+      cdf_step_basis.resize( nbin, ScalarType(0.0) );
+
+    vector<ScalarType> pdf_per_channel( nbin );
+    vector<ScalarType> cdf_per_channel( nbin );
+
+    ScalarType total_amp( 0.0 );
+    for( size_t peak_index = 0; peak_index < nfixedpeak; ++peak_index )
+    {
+      const ScalarType &amp_val = fixedAmpPeaks[peak_index].amplitude();
+      const ScalarType &mean_val = fixedAmpPeaks[peak_index].mean();
+      const ScalarType &sigma_val = fixedAmpPeaks[peak_index].sigma();
+      const PeakDef::SkewType skew = fixedAmpPeaks[peak_index].skewType();
+
+      // Get skew parameters as ScalarType pointer
+      const ScalarType *skew_pars = nullptr;
+      if constexpr ( std::is_same_v<PeakType, PeakDef> )
+      {
+        skew_pars = (skew != PeakDef::SkewType::NoSkew)
+                    ? (fixedAmpPeaks[peak_index].coefficients() + PeakDef::CoefficientType::SkewPar0)
+                    : nullptr;
+      }else
+      {
+        skew_pars = (skew != PeakDef::SkewType::NoSkew)
+                    ? fixedAmpPeaks[peak_index].skew_parameters()
+                    : nullptr;
+      }
+
+      // Compute unit-area peak PDF integral per channel, then CDF at channel centers
+      std::fill( pdf_per_channel.begin(), pdf_per_channel.end(), ScalarType(0.0) );
+      PeakDists::photopeak_function_integral( mean_val, sigma_val, ScalarType(1.0),
+                                              skew, skew_pars, nbin, x, pdf_per_channel.data() );
+      unit_pdf_to_cdf( pdf_per_channel.data(), cdf_per_channel.data(), nbin );
+
+      if( bilinear_cdf )
+      {
+        total_amp += amp_val;
+        for( size_t row = 0; row < nbin; ++row )
+          cdf_frac_per_channel[row] += amp_val * cdf_per_channel[row];
+      }else
+      {
+        for( size_t row = 0; row < nbin; ++row )
+        {
+          const double dx = x[row+1] - x[row];
+          cdf_step_basis[row] += amp_val * cdf_per_channel[row] * dx;
+        }
+      }
+    }//for( peak_index )
+
+    // Normalize BiLinearStepCDF fraction to [0,1]
+    if( bilinear_cdf && (total_amp > ScalarType(0.0)) )
+    {
+      for( size_t row = 0; row < nbin; ++row )
+        cdf_frac_per_channel[row] /= total_amp;
+    }else if( bilinear_cdf )
+    {
+      for( size_t row = 0; row < nbin; ++row )
+        cdf_frac_per_channel[row] = ScalarType(0.5);
+    }
+  }//if( cdf_step )
+
   for( size_t row = 0; row < nbin; ++row )
   {
     const double data_counts = data[row];
@@ -136,8 +256,8 @@ void fit_continuum( const float * const x,
 
     uncerts(row) = ScalarType(uncert);
 
-    if( step_continuum )
-      step_cumulative_data += data_counts;
+    if( step_continuum && !cdf_step )
+      step_cumulative_data += (data_counts - min_data_val);
 
     y(row) = (data_counts > peak_counts[row]) ? (data_counts - peak_counts[row])/uncert : ScalarType(0.0);
 
@@ -145,21 +265,23 @@ void fit_continuum( const float * const x,
     {
       const double exp = col + 1.0;
 
-      if( step_continuum
+      if( !cdf_step && step_continuum
           && ((num_polynomial_terms == 2) || (num_polynomial_terms == 3))
           && (col == (num_polynomial_terms - 1)) )
       {
         // This logic mirrors that of PeakContinuum::offset_integral(...), and code
         // If you change it in one place - change it in here, below, and in offset_integral.
-        const double frac_data = (step_cumulative_data - 0.5*data_counts) / roi_data_sum;
+        const double frac_data = (roi_data_sum > 0.0)
+            ? (step_cumulative_data - 0.5*(data_counts - min_data_val)) / roi_data_sum : 0.5;
         const double contribution = frac_data * (x1 - x0);
 
         A(row,col) = ScalarType(contribution / uncert);
 
         check_jet_for_NaN( A(row,col) );
-      }else if( step_continuum && (num_polynomial_terms == 4) )
+      }else if( !cdf_step && step_continuum && (num_polynomial_terms == 4) )
       {
-        const double frac_data = (step_cumulative_data - 0.5*data_counts) / roi_data_sum;
+        const double frac_data = (roi_data_sum > 0.0)
+            ? (step_cumulative_data - 0.5*(data_counts - min_data_val)) / roi_data_sum : 0.5;
 
         ScalarType contrib( 0.0 );
         switch( col )
@@ -168,6 +290,26 @@ void fit_continuum( const float * const x,
           case 1: contrib = 0.5 * (1.0 - frac_data) * (x1_rel*x1_rel - x0_rel*x0_rel); break;
           case 2: contrib = frac_data * (x1_rel - x0_rel);                             break;
           case 3: contrib = 0.5 * frac_data * (x1_rel*x1_rel - x0_rel*x0_rel);         break;
+          default: assert( 0 ); break;
+        }//switch( col )
+
+        A(row,col) = contrib / uncert;
+
+        check_jet_for_NaN( contrib );
+        check_jet_for_NaN( uncert );
+        check_jet_for_NaN( A(row,col) );
+      }else if( bilinear_cdf )
+      {
+        // BiLinearStepCDF: 4 columns using CDF fraction for left/right interpolation
+        const ScalarType frac_cdf = cdf_frac_per_channel[row];
+
+        ScalarType contrib( 0.0 );
+        switch( col )
+        {
+          case 0: contrib = (1.0 - frac_cdf) * (x1_rel - x0_rel);                     break;
+          case 1: contrib = 0.5 * (1.0 - frac_cdf) * (x1_rel*x1_rel - x0_rel*x0_rel); break;
+          case 2: contrib = frac_cdf * (x1_rel - x0_rel);                              break;
+          case 3: contrib = 0.5 * frac_cdf * (x1_rel*x1_rel - x0_rel*x0_rel);          break;
           default: assert( 0 ); break;
         }//switch( col )
 
@@ -187,6 +329,13 @@ void fit_continuum( const float * const x,
         check_jet_for_NaN( A(row,col) );
       }
     }//for( int order = 0; order < maxorder; ++order )
+
+    // For FlatStepCDF/LinearStepCDF, add the step_coeff column (last column in LLS)
+    // BiLinearStepCDF doesn't have a separate step_coeff - CDF is embedded in the 4 poly columns
+    if( cdf_step_coeff )
+    {
+      A(row, num_poly_terms) = cdf_step_basis[row] / uncert;
+    }
   }//for( size_t row = 0; row < nbin; ++row )
 
 
@@ -223,11 +372,22 @@ void fit_continuum( const float * const x,
     //  }
     //}
 
-    assert( coeffs.size() == num_poly_terms );
-    assert( coeffs.rows() == num_poly_terms );
+    assert( coeffs.size() == num_lls_terms );
+    assert( coeffs.rows() == num_lls_terms );
 
+    // Copy polynomial coefficients
     for( Eigen::Index i = 0; i < num_poly_terms; ++i )
       continuum_coeffs[i] = coeffs(i);
+
+    // For FlatStepCDF/LinearStepCDF, the step_coeff is the last solved parameter
+    // BiLinearStepCDF has no step_coeff; all 4 params are already in the polynomial terms
+    if( cdf_step_coeff )
+    {
+      // Store step_coeff as the last continuum coefficient
+      // For FlatStepCDF: continuum_coeffs[0]=constant, continuum_coeffs[1]=step_coeff
+      // For LinearStepCDF: continuum_coeffs[0]=constant, continuum_coeffs[1]=linear, continuum_coeffs[2]=step_coeff
+      continuum_coeffs[num_poly_terms] = coeffs(num_poly_terms);
+    }
 
     const Eigen::VectorX<ScalarType> cont_vals = (A * coeffs).array() * uncerts.array();
 
@@ -257,7 +417,8 @@ void fit_continuum( const float * const x,
  @param nbin The number of channels in the ROI.
  @param num_polynomial_terms The number of polynomial continuum terms to fit for.
         0 is no continuum (untested), 1 is constant, 2 is linear sloped continuum, etc
- @param step_continuum Specifies whether or not a step in the continuum is to be used.
+ @param cont_type The continuum type; determines polynomial vs step vs CDF step behavior.
+ @param step_coeff For CDF step types, the step coefficient from Ceres. Ignored for other types.
  @param means The peak means, in keV
  @param sigmas The peak sigmas, in keV
  @param fixedAmpPeaks The fixed amplitude peaks in the ROI, that we are not fitting for
@@ -283,8 +444,8 @@ ScalarType fit_amp_and_offset_imp( const float *x,
                                   const float *data,
                                   const float *variances,
                                   const size_t nbin,
-                          const int num_polynomial_terms,
-                          const bool step_continuum,
+                          const PeakContinuum::OffsetType cont_type,
+                          const ScalarType step_coeff,
                           const ScalarType ref_energy,
                           const std::vector<ScalarType> &means,
                           const std::vector<ScalarType> &sigmas,
@@ -299,22 +460,21 @@ ScalarType fit_amp_and_offset_imp( const float *x,
 {
   using namespace std;
 
+  const int num_polynomial_terms = static_cast<int>( PeakContinuum::num_linear_fit_pars( cont_type ) );
+  const bool step_continuum = PeakContinuum::is_step_continuum( cont_type );
+  const bool cdf_step = PeakContinuum::is_peak_cdf_step_continuum( cont_type );
+  const bool bilinear_cdf = (cont_type == PeakContinuum::BiLinearStepCDF);
+  const bool cdf_step_coeff = cdf_step && !bilinear_cdf;
+
   if( sigmas.size() != means.size() )
     throw runtime_error( "fit_amp_and_offset_imp: invalid input" );
-
-  if( step_continuum && ((num_polynomial_terms < 2) || (num_polynomial_terms > 4)) )
-    throw runtime_error( "fit_amp_and_offset_imp: Only 2 to 4 terms are supported for step continuums" );
-
-  if( num_polynomial_terms < 0 )
-    throw runtime_error( "fit_amp_and_offset_imp: continuum must have at least 0 (e.g., no continuum) terms" );
-
-  if( num_polynomial_terms > 4 )
-    throw runtime_error( "fit_amp_and_offset_imp: you asked for a higher order polynomial continuum than reasonable" );
 
   assert( (skew_type == PeakDef::SkewType::NoSkew) || skew_parameters );
   if( !skew_parameters && (skew_type != PeakDef::SkewType::NoSkew) )
     throw std::logic_error( "fit_amp_and_offset_imp: skew pars not provided" );
 
+  // step_coeff is only used for FlatStepCDF/LinearStepCDF; for other types it should be zero
+  assert( cdf_step_coeff || (step_coeff == ScalarType(0.0)) );
 
   using namespace boost::numeric;
   const size_t npeaks = sigmas.size();
@@ -332,8 +492,26 @@ ScalarType fit_amp_and_offset_imp( const float *x,
   const double roi_lower = x[0];
   const double roi_upper = x[nbin];
 
+#if( PEAK_CONTINUUM_DATA_STEP_SUBTRACT )
+  double min_data_val = static_cast<double>( data[0] );
   for( size_t row = 0; row < nbin; ++row )
-    roi_data_sum += std::max( static_cast<double>(data[row]), 0.0 );
+  {
+    roi_data_sum += (std::max)( static_cast<double>( data[row] ), 0.0 );
+    min_data_val = (std::min)( min_data_val, static_cast<double>( data[row] ) );
+  }
+  if( step_continuum && !cdf_step )
+  {
+    min_data_val = (std::max)( min_data_val, 0.0 );
+    roi_data_sum -= ScalarType( min_data_val * static_cast<double>( nbin ) );
+  }else
+  {
+    min_data_val = 0.0;
+  }
+#else
+  const double min_data_val = 0.0;
+  for( size_t row = 0; row < nbin; ++row )
+    roi_data_sum += (std::max)( static_cast<double>(data[row]), 0.0 );
+#endif
 
   const ScalarType avrg_data_val = roi_data_sum / static_cast<double>(nbin);
 
@@ -353,7 +531,6 @@ ScalarType fit_amp_and_offset_imp( const float *x,
     for( size_t peak_index = 0; peak_index < fixedAmpPeaks.size(); ++peak_index )
       fixedAmpPeaks[peak_index].gauss_integral( x, fixed_contrib, nbin );
   }//if( nfixedpeak )
-
 
   for( size_t row = 0; row < nbin; ++row )
   {
@@ -379,8 +556,8 @@ ScalarType fit_amp_and_offset_imp( const float *x,
 
     uncerts(row) = uncert;
 
-    if( step_continuum )
-      step_cumulative_data += dataval;
+    if( step_continuum && !cdf_step )
+      step_cumulative_data += (dataval - ScalarType( min_data_val ));
 
     if( nfixedpeak )
     {
@@ -394,19 +571,23 @@ ScalarType fit_amp_and_offset_imp( const float *x,
     {
       const ScalarType exp = ScalarType(col + 1.0);
 
-      if( step_continuum
+      if( !cdf_step && step_continuum
          && ((num_polynomial_terms == 2) || (num_polynomial_terms == 3))
          && (col == (num_polynomial_terms - 1)) )
       {
         // This logic mirrors that of PeakContinuum::offset_integral(...), and code
         // If you change it in one place - change it in here, below, and in offset_integral.
-        const ScalarType frac_data = (step_cumulative_data - 0.5*data[row]) / roi_data_sum;
+        const ScalarType frac_data = (roi_data_sum > 0.0)
+            ? (step_cumulative_data - ScalarType( 0.5*(data[row] - min_data_val) )) / roi_data_sum
+            : ScalarType( 0.5 );
         const ScalarType contribution = frac_data * (x1 - x0);
 
         A(row,col) = ScalarType( contribution / uncert );
-      }else if( step_continuum && (num_polynomial_terms == 4) )
+      }else if( !cdf_step && step_continuum && (num_polynomial_terms == 4) )
       {
-        const ScalarType frac_data = (step_cumulative_data - 0.5*data[row]) / roi_data_sum;
+        const ScalarType frac_data = (roi_data_sum > 0.0)
+            ? (step_cumulative_data - ScalarType( 0.5*(data[row] - min_data_val) )) / roi_data_sum
+            : ScalarType( 0.5 );
 
         ScalarType contrib( 0.0 );
         switch( col )
@@ -428,11 +609,27 @@ ScalarType fit_amp_and_offset_imp( const float *x,
     }//for( int order = 0; order < maxorder; ++order )
   }//for( size_t row = 0; row < nbin; ++row )
 
+  // For BiLinearStepCDF, precompute the normalized CDF fraction per channel from all peaks
+  //  (both the peaks being fit and the fixed-amplitude peaks).
+  //  This uses unit-area integrals to form a CDF, then normalizes to [0,1].
+  vector<ScalarType> cdf_frac_per_channel2;
+  if( bilinear_cdf )
+  {
+    cdf_frac_per_channel2.resize( nbin, ScalarType(0.0) );
+    // We'll accumulate from all peaks (fixed + being-fit) after computing peak areas below,
+    //  but first we need the unit-area PDF per channel for each peak. Since we haven't computed
+    //  unit_peak_counts yet, we'll do the CDF fraction after that loop.
+  }
+
   //  TODO: multithread if we have more than X peaks, etc.
   //
   // For convienience, we'll keep peak unit-area counts around, but
   //  we could just use `A`, i.e., `unit_peak_counts[i][bin] == A(bin,num_poly_terms + i)* uncerts(bin)`.
   vector<vector<ScalarType>> unit_peak_counts( npeaks, vector<ScalarType>(nbin,ScalarType(0.0)) );
+
+  // For FlatStepCDF/LinearStepCDF, we also need the CDF at channel centers, derived from the same
+  //  unit-area PDF integrals — avoids a separate computation and preserves ScalarType derivatives.
+  vector<ScalarType> cdf_at_centers( cdf_step_coeff ? nbin : size_t(0) );
 
   for( size_t i = 0; i < npeaks; ++i )
   {
@@ -441,11 +638,75 @@ ScalarType fit_amp_and_offset_imp( const float *x,
                                              skew_type, skew_parameters,
                                              nbin, x, peak_areas );
 
-    for( size_t channel = 0; channel < nbin; ++channel )
+    // For FlatStepCDF/LinearStepCDF, derive CDF from unit-area PDF integrals, then augment
+    //  each peak's basis function with step_coeff * CDF_j * dx
+    if( cdf_step_coeff )
     {
-      A(channel,num_poly_terms + i) = peak_areas[channel] / uncerts(channel);
-    }//for( size_t channel = 0; channel < nbin; ++channel )
+      unit_pdf_to_cdf( peak_areas, cdf_at_centers.data(), nbin );
+
+      for( size_t channel = 0; channel < nbin; ++channel )
+      {
+        const ScalarType dx = ScalarType( x[channel+1] - x[channel] );
+        peak_areas[channel] += step_coeff * cdf_at_centers[channel] * dx;
+        A(channel,num_poly_terms + i) = peak_areas[channel] / uncerts(channel);
+      }
+    }else if( bilinear_cdf )
+    {
+      // For BiLinearStepCDF, compute unit-area CDF to build the cdf_frac, but don't augment peaks
+      vector<ScalarType> this_cdf( nbin );
+      unit_pdf_to_cdf( peak_areas, this_cdf.data(), nbin );
+
+      // Accumulate amplitude-weighted CDF for fraction computation
+      // Since we're fitting amplitudes, use a uniform weighting (each unit-area peak contributes equally)
+      for( size_t channel = 0; channel < nbin; ++channel )
+        cdf_frac_per_channel2[channel] += this_cdf[channel];
+
+      for( size_t channel = 0; channel < nbin; ++channel )
+        A(channel,num_poly_terms + i) = peak_areas[channel] / uncerts(channel);
+    }else
+    {
+      for( size_t channel = 0; channel < nbin; ++channel )
+        A(channel,num_poly_terms + i) = peak_areas[channel] / uncerts(channel);
+    }
   }//for( size_t i = 0; i < npeaks; ++i )
+
+  // Normalize BiLinearStepCDF CDF fraction, then update the A-matrix polynomial columns
+  if( bilinear_cdf )
+  {
+    const ScalarType total_peaks = ScalarType( static_cast<double>( npeaks + nfixedpeak ) );
+    if( total_peaks > ScalarType(0.0) )
+    {
+      for( size_t channel = 0; channel < nbin; ++channel )
+        cdf_frac_per_channel2[channel] /= total_peaks;
+    }else
+    {
+      for( size_t channel = 0; channel < nbin; ++channel )
+        cdf_frac_per_channel2[channel] = ScalarType(0.5);
+    }
+
+    // Re-fill the A-matrix polynomial columns with CDF-weighted BiLinear basis
+    for( size_t row = 0; row < nbin; ++row )
+    {
+      const ScalarType x0_rel = ScalarType( x[row] ) - ref_energy;
+      const ScalarType x1_rel = ScalarType( x[row+1] ) - ref_energy;
+      const ScalarType frac_cdf = cdf_frac_per_channel2[row];
+
+      for( Eigen::Index col = 0; col < num_poly_terms; ++col )
+      {
+        ScalarType contrib( 0.0 );
+        switch( col )
+        {
+          case 0: contrib = (1.0 - frac_cdf) * (x1_rel - x0_rel);                     break;
+          case 1: contrib = 0.5 * (1.0 - frac_cdf) * (x1_rel*x1_rel - x0_rel*x0_rel); break;
+          case 2: contrib = frac_cdf * (x1_rel - x0_rel);                              break;
+          case 3: contrib = 0.5 * frac_cdf * (x1_rel*x1_rel - x0_rel*x0_rel);          break;
+          default: assert( 0 ); break;
+        }//switch( col )
+
+        A(row,col) = contrib / uncerts(row);
+      }//for( col )
+    }//for( row )
+  }//if( bilinear_cdf )
 
 
 
@@ -535,7 +796,9 @@ ScalarType fit_amp_and_offset_imp( const float *x,
         y_pred += coeffs(col) * unit_peak_counts[i][bin];
 
         // We could get rid of keeping `unit_peak_counts[][]` around, as `A` has this same info.
-        assert( abs(unit_peak_counts[i][bin] - A(bin,num_poly_terms + i)* uncerts(bin)) < 1.0E-4 );
+        // For CDF step types, values can be large (step_coeff * CDF * dx), so use relative tolerance.
+        assert( abs(unit_peak_counts[i][bin] - A(bin,num_poly_terms + i)* uncerts(bin))
+                < (std::max)( ScalarType(1.0E-4), ScalarType(1.0E-6) * abs(unit_peak_counts[i][bin]) ) );
       }
 
       if( nfixedpeak )

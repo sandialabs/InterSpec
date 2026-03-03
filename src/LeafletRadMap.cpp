@@ -682,24 +682,31 @@ std::string LeafletRadMap::createGeoLocationJson( const std::shared_ptr<const Sp
               for( const auto &m : meass )
                 gammaCounts += m->gamma_integral( lower_x, upper_x );
 
-              switch( peak->continuum()->type() )
+              // Group this peak's ROI peers for offset_integral
+              vector<const PeakDef *> roi_peer_ptrs;
+              for( const shared_ptr<const PeakDef> &p : *peaks )
               {
-                case PeakContinuum::NoOffset:
-                case PeakContinuum::Constant:
-                case PeakContinuum::Linear:
-                case PeakContinuum::Quadratic:
-                case PeakContinuum::Cubic:
-                case PeakContinuum::External:
-                  gammaCounts -= peak->continuum()->offset_integral(lower_x, upper_x, nullptr);
-                  break;
+                if( p->continuum() == peak->continuum() )
+                  roi_peer_ptrs.push_back( p.get() );
+              }
 
-                case PeakContinuum::FlatStep:
-                case PeakContinuum::LinearStep:
-                case PeakContinuum::BiLinearStep:
-                  // TODO: we need to sum all `meass` and then pass that into offset_integral(...). For now we'll just ignore the continuum, since I cant imagine anyone using data-defined peaks with step continua (I think you could... but its not really a reasonable thing to do)
-                  cerr << "Not accounting for stepped continua on data-defined peaks" << endl;
-                  break;
-              }//switch( peak->continuum()->type() )
+              // For step types that need data, sum the measurement spectra
+              std::shared_ptr<const SpecUtils::Measurement> step_data;
+              if( PeakContinuum::is_step_continuum( peak->continuum()->type() ) )
+              {
+                if( meass.size() == 1 )
+                {
+                  step_data = meass[0];
+                }else
+                {
+                  // TODO: sum all `meass` for step continua; for now use nullptr and
+                  //  accept that step continuum subtraction wont be correct for multi-meas
+                  cerr << "Not accounting for stepped continua on data-defined peaks with multiple meass" << endl;
+                }
+              }//if( step type )
+
+              gammaCounts -= peak->continuum()->offset_integral( lower_x, upper_x, step_data,
+                                                                 roi_peer_ptrs.data(), roi_peer_ptrs.size() );
             }//if( meass.size() == 1 ) / else
           }//if( peak->gausPeak() ) / else
         }//for( const auto &peak : *peaks )

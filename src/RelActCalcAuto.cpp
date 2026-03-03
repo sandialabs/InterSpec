@@ -72,6 +72,7 @@
 #include "SpecUtils/EnergyCalibration.h"
 
 #include "InterSpec/PeakFit.h"
+#include "InterSpec/PeakFitLM.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/EnergyCal.h"
 #include "InterSpec/InterSpec.h"
@@ -5922,30 +5923,31 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           }), end(re_peaks) );
         
 #if( PERFORM_DEVELOPER_CHECKS )
-        // Verify that removed peaks match up to free-floating peaks
-        if( !removed_peaks.empty() )
+        // Verify that removed peaks are either zero-amplitude placeholders or match floating peaks
+        for( const PeakDef &removed_peak : removed_peaks )
         {
-          for( const PeakDef &removed_peak : removed_peaks )
+          // Zero-amplitude placeholder peaks (from ROIs with no gammas in range) are expected
+          if( removed_peak.amplitude() < 1.0 )
+            continue;
+
+          bool found_matching_floating_peak = false;
+          const double removed_energy = removed_peak.mean();
+
+          for( const RelActCalcAuto::FloatingPeak &floating_peak : cost_functor->m_options.floating_peaks )
           {
-            bool found_matching_floating_peak = false;
-            const double removed_energy = removed_peak.mean();
-            
-            for( const RelActCalcAuto::FloatingPeak &floating_peak : cost_functor->m_options.floating_peaks )
+            // Use a tolerance that accounts for energy cal corrections potentially shifting the peak
+            const double energy_tolerance = std::max( 1.0, 0.01 * floating_peak.energy );
+            const double energy_diff = std::abs( removed_energy - floating_peak.energy );
+
+            if( energy_diff <= energy_tolerance )
             {
-              // Check if the removed peak's energy is close to a floating peak's energy
-              const double energy_tolerance = 1.0; // At least 1 keV tolerance
-              const double energy_diff = std::abs( removed_energy - floating_peak.energy );
-              
-              if( energy_diff <= energy_tolerance )
-              {
-                found_matching_floating_peak = true;
-                break;
-              }
-            }//for( const RelActCalcAuto::FloatingPeak &floating_peak : cost_functor->m_options.floating_peaks )
-            
-            assert( found_matching_floating_peak && "Removed peak without source should match a free-floating peak" );
-          }//for( const PeakDef &removed_peak : removed_peaks )
-        }//if( !removed_peaks.empty() )
+              found_matching_floating_peak = true;
+              break;
+            }
+          }//for( const RelActCalcAuto::FloatingPeak &floating_peak : cost_functor->m_options.floating_peaks )
+
+          assert( found_matching_floating_peak && "Removed peak without source should match a free-floating peak" );
+        }//for( const PeakDef &removed_peak : removed_peaks )
 #endif // PERFORM_DEVELOPER_CHECKS
       }//for( vector<PeakDef> &re_peaks : peaks_for_each_curve )
     };//filter_peaks_without_sources lambda
@@ -9073,7 +9075,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     //const float adjusted_first_channel_lower = m_energy_cal->energy_for_channel(first_channel);
     //const float adjusted_last_channel_upper = m_energy_cal->energy_for_channel(last_channel + 0.999 );
     
-    const int num_polynomial_terms = static_cast<int>( PeakContinuum::num_parameters( range.continuum_type ) );
+    const bool is_cdf_step = PeakContinuum::is_peak_cdf_step_continuum( range.continuum_type );
+    const int num_polynomial_terms = static_cast<int>( PeakContinuum::num_linear_fit_pars( range.continuum_type ) );
     const bool is_step_continuum = PeakContinuum::is_step_continuum( range.continuum_type );
 
 
@@ -9628,8 +9631,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
     vector<RelActCalcAuto::PeakDefImp<T>> dummy;
 
-    PeakFit::fit_continuum( energies, data, data_uncerts, num_channels, num_polynomial_terms,
-                                  is_step_continuum, ref_energy, peaks, multithread,
+    PeakFit::fit_continuum( energies, data, data_uncerts, num_channels,
+                                  range.continuum_type, ref_energy, peaks, multithread,
                                   continuum_coeffs,
                                   peak_counts.data() );
 
@@ -9651,11 +9654,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       }
       
       vector<double> dummy_amps, continuum_coeffs_old, dummy_amp_uncert, continuum_uncerts;
-      fit_amp_and_offset( energies, data, num_channels, num_polynomial_terms,
-                         is_step_continuum, ref_energy, {}, {}, fixedAmpPeaks,
-                                             PeakDef::SkewType::NoSkew, nullptr, dummy_amps,
+      fit_amp_and_offset( energies, data, num_channels, range.continuum_type,
+                         ref_energy, {}, {}, fixedAmpPeaks,
+                         PeakDef::SkewType::NoSkew, nullptr, dummy_amps,
                          continuum_coeffs_old, dummy_amp_uncert, continuum_uncerts );
-      
+
       assert( static_cast<int>(continuum_coeffs_old.size()) == num_polynomial_terms );
       for( int i = 0; i < num_polynomial_terms; ++i )
       {
@@ -10272,16 +10275,9 @@ int run_test()
 {
   try
   {
-    MaterialDB matdb;
-    const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
-    try
-    {
-      const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-      matdb.parseGadrasMaterialFile( materialfile, db, false );
-    }catch( std::exception &e )
-    {
+    const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+    if( !matdb )
       throw runtime_error( "Couldnt initialize material database." );
-    }
     
     
     
@@ -10297,7 +10293,7 @@ int run_test()
     const auto base_node = get_required_node(&doc, "RelActCalcAuto");
   
     RelActCalcAuto::RelActAutoGuiState state;
-    state.deSerialize( base_node, &matdb );
+    state.deSerialize( base_node );
     
     
     auto open_file = [xml_file_path]( const string &filename ) -> shared_ptr<SpecMeas> {
@@ -11649,7 +11645,7 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
 }//rapidxml::xml_node<char> *Options::toXml(...)
 
 
-void Options::fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *materialDB )
+void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
 {
   try
   {
@@ -11740,7 +11736,7 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *mat
         XML_FOREACH_CHILD( curve_node, rel_eff_node, "RelEffCurveInput" )
         {
           RelEffCurveInput curve;
-          curve.fromXml( curve_node, materialDB );
+          curve.fromXml( curve_node );
           rel_eff_curves.push_back( curve );
         }
       }//if( rel_eff_node )
@@ -11763,7 +11759,7 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *mat
     }else
     {
       RelEffCurveInput rel_eff_input;
-      rel_eff_input.fromXml( parent, materialDB );
+      rel_eff_input.fromXml( parent );
       rel_eff_curves.push_back( rel_eff_input );
     }//if( version >= 2 ) / else
 
@@ -12509,7 +12505,7 @@ rapidxml::xml_node<char> *RelEffCurveInput::toXml( ::rapidxml::xml_node<char> *p
 }//RelEffCurveInput::toXml(...)
 
 
-void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *materialDB )
+void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent )
 {
   using namespace rapidxml;
   
@@ -12581,7 +12577,7 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent, Materi
     if( self_atten_node )
     {
       auto att = make_shared<RelActCalc::PhysicalModelShieldInput>();
-      att->fromXml( self_atten_node, materialDB );
+      att->fromXml( self_atten_node );
       phys_model_self_atten = att;
     }//if( self_atten_node )
       
@@ -12592,7 +12588,7 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent, Materi
       XML_FOREACH_CHILD( att_node, ext_atten_node, "PhysicalModelShield" )
       {
         auto att = make_shared<RelActCalc::PhysicalModelShieldInput>();
-        att->fromXml( att_node, materialDB );
+        att->fromXml( att_node );
         phys_model_external_atten.push_back( att );
       }
     }//if( ext_atten_node )
@@ -12805,7 +12801,7 @@ RelActAutoGuiState::RelActAutoGuiState()
 }//::rapidxml::xml_node<char> *serialize( ::rapidxml::xml_node<char> *parent ) const
   
 
-void RelActAutoGuiState::deSerialize( const rapidxml::xml_node<char> *base_node, MaterialDB *materialDb )
+void RelActAutoGuiState::deSerialize( const rapidxml::xml_node<char> *base_node )
 {
   using namespace rapidxml;
   
@@ -12833,7 +12829,7 @@ void RelActAutoGuiState::deSerialize( const rapidxml::xml_node<char> *base_node,
   if( !node )
     throw runtime_error( "RelActAutoGui::deSerialize: No <Options> node." );
   
-  options.fromXml( node, materialDb );
+  options.fromXml( node );
   
   
   {// Begin get extra options
@@ -15787,6 +15783,8 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
       case PeakContinuum::NoOffset:   case PeakContinuum::Constant:     case PeakContinuum::Linear:
       case PeakContinuum::Quadratic:  case PeakContinuum::Cubic:        case PeakContinuum::FlatStep:
       case PeakContinuum::LinearStep: case PeakContinuum::BiLinearStep:
+      case PeakContinuum::FlatStepCDF: case PeakContinuum::LinearStepCDF:
+      case PeakContinuum::BiLinearStepCDF:
         break;
     }//switch( roi.continuum_type )
     
@@ -15914,9 +15912,11 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
     if( ref_energy < 0.0 )
       continue;
     
-    const int num_polynomial_terms = static_cast<int>( PeakContinuum::num_parameters( roi.continuum_type ) );
+    // BiLinearStepCDF has no step_coeff, so it can go through the direct LLS path
+    const bool is_cdf_step = PeakContinuum::is_peak_cdf_step_continuum( roi.continuum_type )
+                             && (roi.continuum_type != PeakContinuum::BiLinearStepCDF);
     const bool is_step_continuum = PeakContinuum::is_step_continuum( roi.continuum_type );
-    
+
     vector<PeakDef> fixed_amp_peaks;
     for( const RelActCalcAuto::FloatingPeakResult &floater : solution.m_floating_peaks )
     {
@@ -15956,12 +15956,96 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
 
     const float * const channel_counts = &((*spectrum)[channel_range.first]);
     const float * const channel_energies = &((*channel_energies_ptr)[channel_range.first]);
-    PeakFit::fit_amp_and_offset_imp( channel_energies, channel_counts, nullptr, roi.num_channels,
-                                    num_polynomial_terms, is_step_continuum, ref_energy, effective_means,
-                                    effective_sigmas, fixed_amp_peaks, options.skew_type, skew_parameters,
-                                    fit_amps, fit_continuum_coefs, fit_amp_uncert, fit_continuum_uncerts, peak_counts );
-    
+
+    if( is_cdf_step )
+    {
+      // For CDF step types, step_coeff must be optimized by a non-linear solver (it can't be solved
+      //  by fit_amp_and_offset_imp which takes step_coeff as a known input).  So we construct PeakDef
+      //  objects with fixed means/sigmas/skew and use fit_peaks_in_roi_LM to jointly optimize
+      //  step_coeff (via Ceres L-M) and amplitudes + polynomial (via LLS).
+      auto fit_continuum = make_shared<PeakContinuum>( *continuum );
+
+      vector<shared_ptr<const PeakDef>> lm_peaks;
+      for( size_t i = 0; i < effective_means.size(); ++i )
+      {
+        auto peak = make_shared<PeakDef>( effective_means[i], effective_sigmas[i], effective_amps[i] );
+        peak->setFitFor( PeakDef::Mean, false );
+        peak->setFitFor( PeakDef::Sigma, false );
+        peak->setFitFor( PeakDef::GaussAmplitude, true );
+        peak->setSkewType( options.skew_type );
+        for( size_t s = 0; s < num_skew; ++s )
+        {
+          const PeakDef::CoefficientType ct
+            = static_cast<PeakDef::CoefficientType>( PeakDef::CoefficientType::SkewPar0 + s );
+          peak->set_coefficient( peak_skews[s], ct );
+          peak->setFitFor( ct, false );
+        }
+        peak->setContinuum( fit_continuum );
+        lm_peaks.push_back( peak );
+      }//for( size_t i = 0; i < effective_means.size(); ++i )
+
+      for( const PeakDef &fp : fixed_amp_peaks )
+      {
+        auto peak = make_shared<PeakDef>( fp.mean(), fp.sigma(), fp.amplitude() );
+        peak->setFitFor( PeakDef::Mean, false );
+        peak->setFitFor( PeakDef::Sigma, false );
+        peak->setFitFor( PeakDef::GaussAmplitude, false );
+        peak->setContinuum( fit_continuum );
+        lm_peaks.push_back( peak );
+      }//for( const PeakDef &fp : fixed_amp_peaks )
+
+      try
+      {
+        const vector<shared_ptr<const PeakDef>> lm_results
+          = PeakFitLM::fit_peaks_in_roi_LM( lm_peaks, solution.m_spectrum, true, 0 );
+
+        // Extract amplitudes from fitting peaks (first effective_means.size() results)
+        // Note: fit_peaks_in_roi_LM may reorder peaks by mean; match by closest mean.
+        fit_amps.resize( effective_means.size(), 0.0 );
+        fit_amp_uncert.resize( effective_means.size(), 0.0 );
+        for( size_t i = 0; i < effective_means.size(); ++i )
+        {
+          double best_dist = std::numeric_limits<double>::max();
+          for( const shared_ptr<const PeakDef> &rp : lm_results )
+          {
+            if( !rp->fitFor( PeakDef::GaussAmplitude ) )
+              continue;
+            const double dist = fabs( rp->mean() - effective_means[i] );
+            if( dist < best_dist )
+            {
+              best_dist = dist;
+              fit_amps[i] = rp->amplitude();
+              fit_amp_uncert[i] = rp->amplitudeUncert();
+            }
+          }//for( const shared_ptr<const PeakDef> &rp : lm_results )
+        }//for( size_t i = 0; i < effective_means.size(); ++i )
+
+        // Extract continuum coefficients (polynomial + step_coeff) from any result peak
+        if( !lm_results.empty() )
+        {
+          const vector<double> &cont_pars = lm_results.front()->continuum()->parameters();
+          const vector<double> &cont_uncerts = lm_results.front()->continuum()->uncertainties();
+          fit_continuum_coefs.assign( begin(cont_pars), end(cont_pars) );
+          fit_continuum_uncerts.assign( begin(cont_uncerts), end(cont_uncerts) );
+        }
+      }catch( std::exception & )
+      {
+        // L-M refit failed; fall back to original solution amplitudes and continuum
+        fit_amps = effective_amps;
+        fit_amp_uncert.assign( effective_amps.size(), 0.0 );
+        fit_continuum_coefs = continuum->parameters();
+        fit_continuum_uncerts = continuum->uncertainties();
+      }
+    }else
+    {
+      PeakFit::fit_amp_and_offset_imp( channel_energies, channel_counts, nullptr, roi.num_channels,
+                                      roi.continuum_type, 0.0, ref_energy, effective_means,
+                                      effective_sigmas, fixed_amp_peaks, options.skew_type, skew_parameters,
+                                      fit_amps, fit_continuum_coefs, fit_amp_uncert, fit_continuum_uncerts, peak_counts );
+    }//if( is_cdf_step ) / else
+
     assert( fit_amps.size() == effective_amps.size() );
+
     auto new_continuum = make_shared<PeakContinuum>( *continuum );
     new_continuum->setParameters( ref_energy, fit_continuum_coefs, fit_continuum_uncerts );
     

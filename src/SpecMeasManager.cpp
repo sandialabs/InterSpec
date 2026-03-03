@@ -3419,12 +3419,11 @@ bool SpecMeasManager::handleShieldingSourceFile( std::istream &input, SimpleDial
     xml_doc->parse<flags>( &((*data)[0]) );
     
   
-    MaterialDB *material_db = m_viewer->materialDataBase();
     PeakModel *peak_model = m_viewer->peakModel();
     WSuggestionPopup *shield_suggest = m_viewer->shieldingSuggester();
-      
+
     ShieldingSourceDisplay::ShieldingSourceDisplayState test_state;
-    test_state.deSerialize( xml_doc->first_node(), material_db );
+    test_state.deSerialize( xml_doc->first_node() );
     
     assert( dialog );
     dialog->contents()->clear();

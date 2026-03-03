@@ -928,11 +928,11 @@ const vector<OtherRefLine> &getBackgroundRefLines()
     
     const char *soil_chem_formula = "H0.022019C0.009009O0.593577Al0.066067Si0.272289K0.01001Fe0.027029 d=1.6";
     
-    const Material soilobj = MaterialDB::materialFromChemicalFormula( soil_chem_formula, db );
-    const Material * const soil = &soilobj;
+    const std::shared_ptr<const Material> soilptr = MaterialDB::materialFromChemicalFormula( soil_chem_formula, db );
+    const Material * const soil = soilptr.get();
     
-    assert( soilobj.elements.size() == 7 );
-    assert( fabs(soilobj.density - 1.6*PhysicalUnits::g/PhysicalUnits::cm3) < 0.001*soilobj.density );
+    assert( soil->elements.size() == 7 );
+    assert( fabs(soil->density - 1.6*PhysicalUnits::g/PhysicalUnits::cm3) < 0.001*soil->density );
     
     vector<OtherRefLine> prelim_answer;
     prelim_answer.resize( 3000 ); //we actually need 2890
@@ -2383,7 +2383,7 @@ void RefLineInput::serialize( rapidxml::xml_node<char> *parent_node ) const
 }//void ReferenceLineInfo::serialize( rapidxml::xml_node<char> *parent_node )
 
 
-void RefLineInput::setShieldingAttFcn( const MaterialDB *db )
+void RefLineInput::setShieldingAttFcn()
 {
   // Check for generic shielding
   if( !m_shielding_an.empty() && !m_shielding_ad.empty() )
@@ -2433,14 +2433,13 @@ void RefLineInput::setShieldingAttFcn( const MaterialDB *db )
     return;
   }//if( m_shielding_name.empty() )
   
+  const std::shared_ptr<const MaterialDB> db = MaterialDB::instance();
   if( !db )
-    throw runtime_error( "No MaterialDB passed in." );
-  
-  const Material * const material_raw = db->material(m_shielding_name);
-  if( !material_raw )
+    throw runtime_error( "MaterialDB not available." );
+
+  const std::shared_ptr<const Material> material = db->material( m_shielding_name );
+  if( !material )
     throw runtime_error( "No material named '" + m_shielding_name + "' available." );
-  
-  const auto material = make_shared<Material>(*material_raw);
   const double thickness = PhysicalUnits::stringToDistance( m_shielding_thickness );
   if( thickness < 0.0 )
     throw runtime_error( "Distance '" + m_shielding_thickness + "' is negative." );
@@ -2449,7 +2448,7 @@ void RefLineInput::setShieldingAttFcn( const MaterialDB *db )
     const double att_coef = GammaInteractionCalc::transmition_coefficient_material( material.get(), energy, thickness );
     return exp( -1.0 * att_coef );
   };
-}//void ReferenceLineInfo::setShieldingAttFcn( const MaterialDB *db )
+}//void RefLineInput::setShieldingAttFcn()
 
 
 std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLineInput input )

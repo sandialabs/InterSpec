@@ -2329,10 +2329,8 @@ rapidxml::xml_node<char> *RelActAutoGui::serialize( rapidxml::xml_node<char> *pa
 
 void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
 {
-  MaterialDB *materialDb = m_interspec->materialDataBase();
-
   RelActCalcAuto::RelActAutoGuiState state;
-  state.deSerialize( base_node, materialDb );
+  state.deSerialize( base_node );
 
   deSerialize( state );  // Use new struct-based method
 }//void deSerialize( const rapidxml::xml_node<char> *base_node )
@@ -2359,9 +2357,8 @@ void RelActAutoGui::setGuiStateFromXml( const rapidxml::xml_document<char> *doc 
   if( !base_node )
     throw runtime_error( "RelActAutoGui::setGuiStateFromXml: couldnt find <RelActCalcAuto> node." );
 
-  MaterialDB *materialDb = m_interspec->materialDataBase();
   RelActCalcAuto::RelActAutoGuiState state;
-  state.deSerialize( base_node, materialDb );
+  state.deSerialize( base_node );
 
   deSerialize( state );  // Use new struct-based method
 }//void setGuiStateFromXml( const rapidxml::xml_node<char> *node );
@@ -5074,10 +5071,9 @@ void RelActAutoGui::updateDuringRenderForRefGammaLineChange()
   {
     if( !m_photopeak_widget )
     {
-      MaterialDB *materialDb = m_interspec->materialDataBase();
       Wt::WSuggestionPopup *materialSuggest = nullptr;
       WContainerWidget *parent = nullptr;
-      m_photopeak_widget.reset( new ReferencePhotopeakDisplay( m_spectrum, materialDb, materialSuggest,
+      m_photopeak_widget.reset( new ReferencePhotopeakDisplay( m_spectrum, materialSuggest,
                                                               m_interspec, parent ) );
       
       // We need to set peaks getting assigned ref. line color, or else our call to

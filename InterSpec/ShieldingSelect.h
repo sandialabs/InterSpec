@@ -136,10 +136,9 @@ public:
   /** ShieldingSelect constructor for use when you arent fitting material thickness or AN/AD - e.g., everywhere except in
    ShieldingSourceDisplay.
    */
-  ShieldingSelect( MaterialDB *materialDB,
-                   Wt::WSuggestionPopup *materialSuggest,
+  ShieldingSelect( Wt::WSuggestionPopup *materialSuggest,
                    Wt::WContainerWidget *parent = 0 );
-  
+
   //ShieldingSelect constructor: if forFitting==true, then the checkboxes
   //  that tell if a quantity should be fit for, are constructed.  if
   //  forFitting==false, then any calls; also if true then cursor focus will
@@ -147,8 +146,7 @@ public:
   //
   //  If materialSuggest does not have an object name, one will be assigned to
   //  it, to allow safe removing of the suggest from the edit in the destructor.
-  ShieldingSelect( MaterialDB *materialDB,
-                   SourceFitModel *sourceModel,
+  ShieldingSelect( SourceFitModel *sourceModel,
                    Wt::WSuggestionPopup *materialSuggest,
                    const ShieldingSourceDisplay *shieldSource,
                    Wt::WContainerWidget *parent = 0 );
@@ -259,9 +257,8 @@ public:
   //material( string ) returns the material for the text passed in.  Does not
   //  change the material represented by the widget, but will add the material
   //  passed in to the possible suggestions if it is a chemical formula.
-  //  Returns a pointer to an object managed by m_materialDB.
   //  Returns null on error.
-  const Material *material( const std::string &text );
+  std::shared_ptr<const Material> material( const std::string &text );
   
   //remove() is the signal emitted when the user clicks the close button
   Wt::Signal<ShieldingSelect *> &remove();
@@ -690,7 +687,6 @@ protected:
   
   Wt::WImage* m_toggleImage;
   const bool m_forFitting;
-  MaterialDB *m_materialDB;
   SourceFitModel *m_sourceModel;
   
   GammaInteractionCalc::GeometryType m_geometry;

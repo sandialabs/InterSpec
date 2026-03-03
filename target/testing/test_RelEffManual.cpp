@@ -134,12 +134,13 @@ BOOST_AUTO_TEST_CASE( FitRelActManualToKnown )
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
   
-  MaterialDB matdb;
-  
-  const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
-  BOOST_REQUIRE_NO_THROW( matdb.parseGadrasMaterialFile( materialfile, db, false ) );
-  
-  const Material * const iron = matdb.material("Fe (iron)");
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  BOOST_REQUIRE( MaterialDB::initialized() );
+
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+
+  const std::shared_ptr<const Material> iron = matdb->material( "Fe (iron)" );
   BOOST_REQUIRE( iron );
   
   const string test_n42_file = SpecUtils::append_path(g_test_file_dir, "manual_rel_eff/spec184_235U_12.9543.n42");
@@ -177,7 +178,7 @@ BOOST_AUTO_TEST_CASE( FitRelActManualToKnown )
   
   RelActCalcManual::RelEffInput calc_input;
   
-  BOOST_REQUIRE_NO_THROW( RelActManualGui::prepare_calc_input( calc_raw_input, &matdb, calc_input ) );
+  BOOST_REQUIRE_NO_THROW( RelActManualGui::prepare_calc_input( calc_raw_input, calc_input ) );
   BOOST_CHECK( calc_input.eqn_form == guiState->m_relEffEqnFormIndex );
   
   // We could check that we see U235, U238, U234, and U232 in `calc_input.peaks`
@@ -200,7 +201,7 @@ BOOST_AUTO_TEST_CASE( FitRelActManualToKnown )
   guiState->m_addUncertIndex = RelActManualGui::AddUncert::FivePercent;
   
   RelActCalcManual::RelEffInput calc_input_lnx;
-  BOOST_REQUIRE_NO_THROW( RelActManualGui::prepare_calc_input( calc_raw_input, &matdb, calc_input_lnx ) );
+  BOOST_REQUIRE_NO_THROW( RelActManualGui::prepare_calc_input( calc_raw_input, calc_input_lnx ) );
   BOOST_REQUIRE( calc_input_lnx.eqn_form == RelActCalc::RelEffEqnForm::LnX );
   
   // First lets try using least linear squares for relative eff. equation

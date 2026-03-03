@@ -58,8 +58,7 @@ struct SrcLibLineInfo;
 class MakeDrfWindow : public AuxWindow
 {
 public:
-  MakeDrfWindow( InterSpec *viewer, 
-                MaterialDB *materialDB,
+  MakeDrfWindow( InterSpec *viewer,
                 Wt::WSuggestionPopup *materialSuggest );
   
   MakeDrf *tool();
@@ -73,7 +72,6 @@ class MakeDrf : public Wt::WContainerWidget
 {
 public:
   MakeDrf( InterSpec *viewer,
-           MaterialDB *materialDB,
            Wt::WSuggestionPopup *materialSuggest,
            Wt::WContainerWidget *parent = nullptr );
   
@@ -165,7 +163,6 @@ protected:
 
   
   InterSpec *m_interspec;
-  MaterialDB *m_materialDB;
   Wt::WSuggestionPopup *m_materialSuggest;
   
   Wt::Signal<bool> m_intrinsicEfficiencyIsValid;

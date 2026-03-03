@@ -79,10 +79,10 @@ const bool PeakDef::sm_defaultUseForDrfIntrinsicEffFit = true;
 const bool PeakDef::sm_defaultUseForDrfFwhmFit = true;
 const bool PeakDef::sm_defaultUseForDrfDepthOfInteractionFit = false;
 
-/** Version 1 adds "FlatStep", "LinearStep", and "BiLinearStep" continuum types
- 
+/** Version 1 adds "FlatStep", "LinearStep", and "BiLinearStep" continuum types.
+ Version 2 adds "FlatStepCDF", "LinearStepCDF", and "BiLinearStepCDF" continuum types.
  */
-const int PeakContinuum::sm_xmlSerializationVersion = 1;
+const int PeakContinuum::sm_xmlSerializationVersion = 2;
 
 namespace
 {
@@ -815,7 +815,27 @@ ostream &operator<<( std::ostream &stream, const PeakContinuum &cont )
       stream << "} relative to " << cont.m_referenceEnergy << " keV";
       break;
     }
-      
+
+    case PeakContinuum::FlatStepCDF:
+    case PeakContinuum::LinearStepCDF:
+    {
+      const char * const names[] = {"Flat", "Linear"};
+      stream << names[cont.type() - PeakContinuum::FlatStepCDF] << " step (peak CDF) with coefficients {";
+      for( size_t i = 0; i < cont.m_values.size(); ++i )
+        stream << (i?", ":"") << cont.m_values[i];
+      stream << "} relative to " << cont.m_referenceEnergy << " keV";
+      break;
+    }
+
+    case PeakContinuum::BiLinearStepCDF:
+    {
+      stream << "Bi-linear step (peak CDF) with coefficients {";
+      for( size_t i = 0; i < cont.m_values.size(); ++i )
+        stream << (i?", ":"") << cont.m_values[i];
+      stream << "} relative to " << cont.m_referenceEnergy << " keV";
+      break;
+    }
+
     case PeakContinuum::Constant:   case PeakContinuum::Linear:
     case PeakContinuum::Quadratic: case PeakContinuum::Cubic:
       stream << "Polynomial continuum with values {";
@@ -1875,9 +1895,9 @@ void PeakContinuum::toXml( rapidxml::xml_node<char> *parent, const int contId ) 
   xml_node<char> *cont_node = doc->allocate_node( node_element, "PeakContinuum" );
   
   // A reminder double check these logics when changing PeakContinuum::sm_xmlSerializationVersion
-  static_assert( PeakContinuum::sm_xmlSerializationVersion == 1,
+  static_assert( PeakContinuum::sm_xmlSerializationVersion == 2,
                 "PeakContinuum::toXml needs to be updated for new serialization version." );
-  
+
   // For version 1.0.8 and newer InterSpec, we will attempt to let InterSpec v1.0.7 and older be
   //  able to read the peaks in N42 files, as long as no stepped-continuums are used.
   int version = PeakContinuum::sm_xmlSerializationVersion;
@@ -1887,10 +1907,15 @@ void PeakContinuum::toXml( rapidxml::xml_node<char> *parent, const int contId ) 
       // Nothing changed for these continuum types between version 0 and version 1.
       version = 0;
       break;
-      
+
     case FlatStep: case LinearStep: case BiLinearStep:
       // These continuums were added for serialization version 1, starting with InterSpec v1.0.8.
       version = 1;
+      break;
+
+    case FlatStepCDF: case LinearStepCDF: case BiLinearStepCDF:
+      // These continuums were added for serialization version 2.
+      version = 2;
       break;
   }//switch( m_type )
   
@@ -2012,11 +2037,11 @@ void PeakContinuum::fromXml( const rapidxml::xml_node<char> *cont_node, int &con
     throw runtime_error( "PeakContinuum invalid version" );
   
   // A reminder double check these logics when changing PeakContinuum::sm_xmlSerializationVersion
-  static_assert( PeakContinuum::sm_xmlSerializationVersion == 1,
+  static_assert( PeakContinuum::sm_xmlSerializationVersion == 2,
                 "PeakContinuum::toXml needs to be updated for new serialization version." );
-  
-  // Serialization version 1 is backwards compatible with version 0 for de-serialization, so no
-  //  changes to this code is needed.
+
+  // Serialization versions 1 and 2 are backwards compatible with version 0 for de-serialization
+  //  (they just add new OffsetType strings), so no changes to this code are needed.
   if( (version < 0) || (version > PeakContinuum::sm_xmlSerializationVersion) )
     throw runtime_error( "Invalid PeakContinuum version: " + std::to_string(version) + ".  "
                     + "Only up to version " + to_string(PeakContinuum::sm_xmlSerializationVersion)
@@ -2910,7 +2935,10 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
     case PeakContinuum::FlatStep:     answer << "FlatStep";     break;
     case PeakContinuum::LinearStep:   answer << "LinearStep";   break;
     case PeakContinuum::BiLinearStep: answer << "BiLinearStep"; break;
-    case PeakContinuum::External:     answer << "External";     break;
+    case PeakContinuum::FlatStepCDF:  answer << "FlatStepCDF";  break;
+    case PeakContinuum::LinearStepCDF:    answer << "LinearStepCDF";    break;
+    case PeakContinuum::BiLinearStepCDF: answer << "BiLinearStepCDF"; break;
+    case PeakContinuum::External:        answer << "External";        break;
   }//switch( continuum->type() )
   
   
@@ -2947,10 +2975,13 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
     case PeakContinuum::FlatStep:
     case PeakContinuum::LinearStep:
     case PeakContinuum::BiLinearStep:
+    case PeakContinuum::FlatStepCDF:
+    case PeakContinuum::LinearStepCDF:
+    case PeakContinuum::BiLinearStepCDF:
     {
       if( IsInf(continuum->referenceEnergy()) || IsNan(continuum->referenceEnergy()) )
         throw runtime_error( "Continuum reference energy is invalid" );
-      
+
       answer << "," << q << "referenceEnergy" << q << ":" << continuum->referenceEnergy();
       const vector<double> &values = continuum->parameters();
       const vector<double> &uncerts = continuum->uncertainties();
@@ -2959,22 +2990,20 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
       {
         if( IsInf(values[i]) || IsNan(values[i]) )
           throw runtime_error( "Continuum coef is invalid" );
-        
+
         answer << (i ? "," : "") << values[i];
       }
       answer << "]," << q << "coeffUncerts" << q << ":[";
       for (size_t i = 0; i < uncerts.size(); ++i)
         answer << (i ? "," : "") << ((IsInf(uncerts[i]) || IsNan(uncerts[i])) ? -1.0 : uncerts[i]); //we'll let uncertainties slide since we dont use them
       answer << "]";
-      
+
       answer << "," << q << "fitForCoeff" << q << ":[";
       for (size_t i = 0; i < continuum->fitForParameter().size(); ++i)
         answer << (i ? "," : "") << (continuum->fitForParameter()[i] ? "true" : "false");
       answer << "]";
       
-      if( ((continuum->type() == PeakContinuum::FlatStep)
-           || (continuum->type() == PeakContinuum::LinearStep)
-           || (continuum->type() == PeakContinuum::BiLinearStep) )
+      if( PeakContinuum::is_step_continuum( continuum->type() )
          && foreground && foreground->num_gamma_channels() )
       {
         const size_t nchannel = foreground->num_gamma_channels();
@@ -3053,20 +3082,22 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
           assert( channel_energies_ptr && (lastbin < channel_energies_ptr->size()) && (firstbin <= lastbin) );
           const size_t num_roi_channels = (lastbin > firstbin) ? (1 + lastbin - firstbin) : size_t(1);
           assert( num_roi_channels > 0 );
-          
+
           const float * const energies = &(channel_energies_ptr->at(firstbin));
           vector<double> continuum_counts( nchannel, 0.0 );
-          continuum->offset_integral( energies, &(continuum_counts[0]), num_roi_channels, foreground );
-          
+
+          continuum->offset_integral( energies, &(continuum_counts[0]), num_roi_channels, foreground, peaks );
+
           for( size_t i = 0; i < num_roi_channels; ++i )
           {
             answer << (i ? "," : "") << continuum_counts[i];
 #if( PERFORM_DEVELOPER_CHECKS )
+            if( !PeakContinuum::is_peak_cdf_step_continuum( continuum->type() ) )
             {
               const size_t channel = i + firstbin;
               const float lower_x = foreground->gamma_channel_lower( channel );
               const float upper_x = foreground->gamma_channel_upper( channel );
-              const double cont_counts_test = continuum->offset_integral( lower_x, upper_x, foreground );
+              const double cont_counts_test = continuum->offset_integral( lower_x, upper_x, foreground, peaks );
               assert( fabs(continuum_counts[i] - cont_counts_test) < std::max( 0.0001*std::max( fabs(continuum_counts[i]), fabs(cont_counts_test) ), 1.0E-6) );
             }
 #endif
@@ -3712,7 +3743,8 @@ double PeakDef::areaFromData( std::shared_ptr<const Measurement> data ) const
       const float e0 = std::max( energyStart, data->gamma_channel_lower(i) );
       const float e1 = std::min( energyEnd, data->gamma_channel_upper(i) );
       const double data_area_i = data->gamma_integral(e0, e1);
-      const double cont_area_1 = m_continuum->offset_integral(e0, e1, data);
+      const PeakDef *self = this;
+      const double cont_area_1 = m_continuum->offset_integral( e0, e1, data, &self, 1 );
       if( data_area_i > cont_area_1 )
         sumval += (data_area_i - cont_area_1);
     }
@@ -4525,6 +4557,8 @@ bool PeakContinuum::parametersProbablySet() const
     case Quadratic:    case Cubic:
     case FlatStep:     case LinearStep:
     case BiLinearStep:
+    case FlatStepCDF:  case LinearStepCDF:
+    case BiLinearStepCDF:
     {
       for( const auto &v : m_values )
       {
@@ -4533,7 +4567,7 @@ bool PeakContinuum::parametersProbablySet() const
       }
       break;
     }// polynomial or step continuum
-    
+
     case External:
       return !!m_externalContinuum;
     break;
@@ -4946,11 +4980,6 @@ void PeakDef::gauss_integral( const float *energies, double *channels, const siz
 }//void gauss_integral( const float * const energies, double *channels, const size_t nchannel )
 
 
-double PeakDef::offset_integral( const double x0, const double x1,
-                                 const std::shared_ptr<const SpecUtils::Measurement> &data ) const
-{
-  return m_continuum->offset_integral( x0, x1, data );
-}//double offset_integral( const double x0, const double x1 ) const
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -4965,10 +4994,13 @@ const char *PeakContinuum::offset_type_label_tr( const PeakContinuum::OffsetType
     case PeakContinuum::Linear:       return "pct-linear";
     case PeakContinuum::Quadratic:    return "pct-quadratic";
     case PeakContinuum::Cubic:        return "pct-cubic";
-    case PeakContinuum::FlatStep:     return "pct-flat-step";
-    case PeakContinuum::LinearStep:   return "pct-linear-step";
-    case PeakContinuum::BiLinearStep: return "pct-bilinear-step";
-    case PeakContinuum::External:     return "pct-global";
+    case PeakContinuum::FlatStep:      return "pct-flat-step";
+    case PeakContinuum::LinearStep:    return "pct-linear-step";
+    case PeakContinuum::BiLinearStep:  return "pct-bilinear-step";
+    case PeakContinuum::FlatStepCDF:   return "pct-flat-step-cdf";
+    case PeakContinuum::LinearStepCDF:    return "pct-linear-step-cdf";
+    case PeakContinuum::BiLinearStepCDF: return "pct-bilinear-step-cdf";
+    case PeakContinuum::External:        return "pct-global";
   }//switch( type )
   
   assert( 0 );
@@ -4985,10 +5017,13 @@ const char *PeakContinuum::offset_type_str( const PeakContinuum::OffsetType type
     case Linear:       return "Linear";
     case Quadratic:    return "Quardratic"; //Note mispelling of "Quardratic" is left for backwards compatibility (InterSpec v1.0.6 and before), but should eventually be fixed...
     case Cubic:        return "Cubic";
-    case FlatStep:     return "FlatStep";
-    case LinearStep:   return "LinearStep";
-    case BiLinearStep: return "BiLinearStep";
-    case External:     return "External";
+    case FlatStep:      return "FlatStep";
+    case LinearStep:    return "LinearStep";
+    case BiLinearStep:  return "BiLinearStep";
+    case FlatStepCDF:      return "FlatStepCDF";
+    case LinearStepCDF:    return "LinearStepCDF";
+    case BiLinearStepCDF:  return "BiLinearStepCDF";
+    case External:         return "External";
   }//switch( m_type )
   
   return "InvalidOffsetType";
@@ -5013,13 +5048,54 @@ size_t PeakContinuum::num_parameters( const PeakContinuum::OffsetType type )
     case OffsetType::LinearStep:
     case OffsetType::BiLinearStep:
       return 2 + (type - FlatStep);
+
+    case OffsetType::FlatStepCDF:
+      return 2;
+    case OffsetType::LinearStepCDF:
+      return 3;
+    case OffsetType::BiLinearStepCDF:
+      return 4;
   }//switch( type )
-  
+
   assert( 0 );
   throw std::runtime_error( "Somehow invalid continuum polynomial type." );
-  
+
   return 0;
 }//size_t num_parameters( const OffsetType type );
+
+
+size_t PeakContinuum::num_linear_fit_pars( const PeakContinuum::OffsetType type )
+{
+  switch( type )
+  {
+    case OffsetType::NoOffset:
+    case OffsetType::External:
+      return 0;
+
+    case OffsetType::Constant:
+    case OffsetType::Linear:
+    case OffsetType::Quadratic:
+    case OffsetType::Cubic:
+      return static_cast<size_t>( type );
+
+    case OffsetType::FlatStep:
+    case OffsetType::LinearStep:
+    case OffsetType::BiLinearStep:
+      return 2 + (type - FlatStep);
+
+    case OffsetType::FlatStepCDF:
+      return 1;  // Constant polynomial only; step_coeff is optimized by non-linear solver
+    case OffsetType::LinearStepCDF:
+      return 2;  // Linear polynomial; step_coeff is optimized by non-linear solver
+    case OffsetType::BiLinearStepCDF:
+      return 4;  // All 4 params (left/right polynomials) solved by LLS; no step_coeff
+  }//switch( type )
+
+  assert( 0 );
+  throw std::runtime_error( "Somehow invalid continuum type in num_linear_fit_pars." );
+
+  return 0;
+}//size_t num_linear_fit_pars( const OffsetType type );
 
 
 bool PeakContinuum::is_step_continuum( const OffsetType type )
@@ -5034,13 +5110,38 @@ bool PeakContinuum::is_step_continuum( const OffsetType type )
     case PeakContinuum::FlatStep:
     case PeakContinuum::LinearStep:
     case PeakContinuum::BiLinearStep:
+    case PeakContinuum::FlatStepCDF:
+    case PeakContinuum::LinearStepCDF:
+    case PeakContinuum::BiLinearStepCDF:
       return true;
   }//switch( cont->type() )
-  
+
   assert( 0 );
   throw std::runtime_error( "Somehow invalid continuum polynomial type." );
   return false;
 }//bool is_step_continuum( const OffsetType type );
+
+
+bool PeakContinuum::is_peak_cdf_step_continuum( const OffsetType type )
+{
+  switch( type )
+  {
+    case PeakContinuum::NoOffset:     case PeakContinuum::External:
+    case PeakContinuum::Constant:     case PeakContinuum::Linear:
+    case PeakContinuum::Quadratic:    case PeakContinuum::Cubic:
+    case PeakContinuum::FlatStep:     case PeakContinuum::LinearStep:
+    case PeakContinuum::BiLinearStep:
+      return false;
+
+    case PeakContinuum::FlatStepCDF:
+    case PeakContinuum::LinearStepCDF:
+    case PeakContinuum::BiLinearStepCDF:
+      return true;
+  }//switch( type )
+
+  assert( 0 );
+  return false;
+}//bool is_peak_cdf_step_continuum( const OffsetType type )
 
 
 PeakContinuum::OffsetType PeakContinuum::str_to_offset_type_str( const char * const str, const size_t len )
@@ -5082,9 +5183,18 @@ PeakContinuum::OffsetType PeakContinuum::str_to_offset_type_str( const char * co
   if( compare(str,len,"LinearStep",10,false) )
     return PeakContinuum::LinearStep;
   
+  if( compare(str,len,"BiLinearStepCDF",15,false) )
+    return PeakContinuum::BiLinearStepCDF;
+
   if( compare(str,len,"BiLinearStep",12,false) )
     return PeakContinuum::BiLinearStep;
-  
+
+  if( compare(str,len,"FlatStepCDF",11,false) )
+    return PeakContinuum::FlatStepCDF;
+
+  if( compare(str,len,"LinearStepCDF",13,false) )
+    return PeakContinuum::LinearStepCDF;
+
   if( compare(str,len,"External",8,false) )
     return PeakContinuum::External;
   
@@ -5152,20 +5262,23 @@ void PeakContinuum::setParameters( double referenceEnergy,
     case FlatStep:
     case LinearStep:
     case BiLinearStep:
+    case FlatStepCDF:
+    case LinearStepCDF:
+    case BiLinearStepCDF:
     {
       const size_t npar = num_parameters(m_type);
-      
+
       m_values.resize( npar );
       m_uncertainties.resize( npar );
       m_fitForValue.resize( npar, true );
       m_referenceEnergy = referenceEnergy;
-      
+
       for( size_t i = 0; i < npar; ++i )
       {
         m_values[i] = parameters[i];
         m_uncertainties[i] = uncertainties ? uncertainties[i] : 0.0;
       }
-      
+
       break;
     }//case - polynomial continuum
   };//switch( m_type )
@@ -5233,15 +5346,17 @@ bool PeakContinuum::isPolynomial() const
     case NoOffset:   case External:
       return false;
       
-    case Constant:   case Linear:
-    case Quadratic: case Cubic:
-    case FlatStep:  case LinearStep:
+    case Constant:      case Linear:
+    case Quadratic:     case Cubic:
+    case FlatStep:      case LinearStep:
     case BiLinearStep:
+    case FlatStepCDF:   case LinearStepCDF:
+    case BiLinearStepCDF:
       return true;
-      
+
     break;
   }//switch( m_type )
-  
+
   return false;
 }//bool isPolynomial() const
 
@@ -5275,25 +5390,26 @@ void PeakContinuum::setType( PeakContinuum::OffsetType type )
       m_fitForValue.resize( 2, true );
       m_externalContinuum.reset();
       
-      if( oldType == FlatStep )
+      if( oldType == FlatStep || oldType == FlatStepCDF )
         m_values[1] = m_uncertainties[1] = 0.0;
       break;
-      
+
     case Quadratic:
       m_values.resize( 3, 0.0 );
       m_uncertainties.resize( 3, 0.0 );
       m_fitForValue.resize( 3, true );
       m_externalContinuum.reset();
-      if( (oldType == BiLinearStep) || (oldType == LinearStep) )
+      if( (oldType == BiLinearStep) || (oldType == BiLinearStepCDF)
+        || (oldType == LinearStep) || (oldType == LinearStepCDF) )
         m_values[2] = m_uncertainties[2] = 0.0;
       break;
-      
+
     case Cubic:
       m_values.resize( 4, 0.0 );
       m_uncertainties.resize( 4, 0.0 );
       m_fitForValue.resize( 4, true );
       m_externalContinuum.reset();
-      if( oldType == BiLinearStep )
+      if( (oldType == BiLinearStep) || (oldType == BiLinearStepCDF) )
         m_values[2] = m_values[3] = m_uncertainties[2] = m_uncertainties[3] = 0.0;
       break;
       
@@ -5348,7 +5464,66 @@ void PeakContinuum::setType( PeakContinuum::OffsetType type )
       m_uncertainties[2] = m_uncertainties[0];
       m_uncertainties[3] = m_uncertainties[1];
       break;
-      
+
+    case FlatStepCDF:
+    {
+      // FlatStepCDF: 2 parameters (constant poly + step coefficient)
+      if( (oldType == LinearStep || oldType == LinearStepCDF) && (m_values.size() > 2) )
+      {
+        // Preserve step amount
+        m_values[1] = m_values[2];
+        m_uncertainties[1] = m_uncertainties[2];
+      }else if( m_values.size() > 1 )
+      {
+        m_values[1] = m_uncertainties[1] = 0.0;
+      }
+
+      m_values.resize( 2, 0.0 );
+      m_uncertainties.resize( 2, 0.0 );
+      m_fitForValue.resize( 2, true );
+      m_externalContinuum.reset();
+      break;
+    }
+
+    case LinearStepCDF:
+    {
+      // LinearStepCDF: 3 parameters (constant + linear poly + step coefficient)
+      m_values.resize( 3, 0.0 );
+      m_uncertainties.resize( 3, 0.0 );
+      m_fitForValue.resize( 3, true );
+      m_externalContinuum.reset();
+
+      if( oldType == FlatStep || oldType == FlatStepCDF )
+      {
+        // Preserve the step amount
+        m_values[2] = m_values[1];
+        m_uncertainties[2] = m_uncertainties[1];
+        m_values[1] = m_uncertainties[1] = 0.0;
+      }else
+      {
+        m_values[2] = m_uncertainties[2] = 0.0;
+      }
+      break;
+    }
+
+    case BiLinearStepCDF:
+    {
+      // BiLinearStepCDF: 4 parameters (left_const, left_linear, right_const, right_linear)
+      if( (oldType == FlatStep) && (m_values.size() > 1) )
+        m_values[1] = m_uncertainties[1] = 0.0;
+
+      m_values.resize( 4, 0.0 );
+      m_uncertainties.resize( 4, 0.0 );
+      m_fitForValue.resize( 4, true );
+      m_externalContinuum.reset();
+      // Set the right polynomial equal to the left polynomial as a starting point
+      m_values[2] = m_values[0];
+      m_values[3] = m_values[1];
+      m_uncertainties[2] = m_uncertainties[0];
+      m_uncertainties[3] = m_uncertainties[1];
+      break;
+    }
+
     case External:
       m_values.clear();
       m_uncertainties.clear();
@@ -5427,8 +5602,8 @@ void PeakContinuum::calc_linear_continuum_eqn( const std::shared_ptr<const SpecU
 }//PeakContinuum::calc_linear_continuum_eqn
 
 
-double PeakContinuum::offset_integral( const double x0, const double x1,
-                                       const std::shared_ptr<const SpecUtils::Measurement> &data  ) const
+double PeakContinuum::offset_integral_non_cdf( const double x0, const double x1,
+                                               const std::shared_ptr<const SpecUtils::Measurement> &data ) const
 {
   
   // A lambda to integrate data for step function continuums
@@ -5456,16 +5631,27 @@ double PeakContinuum::offset_integral( const double x0, const double x1,
     assert( lower_channel <= upper_channel );
     assert( upper_channel < counts.size() );
     
+#if( PEAK_CONTINUUM_DATA_STEP_SUBTRACT )
+    // Find the minimum channel count in the ROI to subtract before forming the CDF;
+    //  this concentrates the CDF shape around the peak rather than the flat continuum.
+    float min_count = counts[lower_channel];
+    for( size_t i = lower_channel + 1; i <= upper_channel; ++i )
+      min_count = std::min( min_count, counts[i] );
+    min_count = std::max( min_count, 0.0f );
+#else
+    const float min_count = 0.0f;
+#endif
+
     cumulative_data = 0.0;
     roi_data_sum = 0.0;
     for( size_t i = lower_channel; i <= upper_channel; ++i )
     {
-      roi_data_sum += counts[i];
-      cumulative_data += (i < mid_channel) ? counts[i] : 0.0f;
+      roi_data_sum += (counts[i] - min_count);
+      cumulative_data += (i < mid_channel) ? static_cast<double>( counts[i] - min_count ) : 0.0;
     }
-    
+
     if( (mid_channel >= lower_channel) && (mid_channel <= upper_channel) )
-      cumulative_data += 0.5*counts[mid_channel];
+      cumulative_data += 0.5 * (counts[mid_channel] - min_count);
   };//integrate_for_step lamda
   
   
@@ -5494,8 +5680,8 @@ double PeakContinuum::offset_integral( const double x0, const double x1,
       const double x0_rel = x0 - m_referenceEnergy;
       const double x1_rel = x1 - m_referenceEnergy;
       
-      const double frac_data = cumulative_data / roi_data_sum;
-      
+      const double frac_data = (roi_data_sum > 0.0) ? (cumulative_data / roi_data_sum) : 0.5;
+
       const double offset = m_values[0]*(x1_rel - x0_rel);
       const double linear = ((m_type == FlatStep) ? 0.0 :  0.5*m_values[1]*(x1_rel*x1_rel - x0_rel*x0_rel));
       const size_t step_index = ((m_type == FlatStep) ? 1 : 2);
@@ -5513,12 +5699,12 @@ double PeakContinuum::offset_integral( const double x0, const double x1,
       
       double roi_lower, roi_upper, cumulative_data, roi_data_sum;
       integrate_for_step( roi_lower, roi_upper, cumulative_data, roi_data_sum );
-      
+
       const double x0_rel = x0 - m_referenceEnergy;
       const double x1_rel = x1 - m_referenceEnergy;
-      
-      const double frac_data = cumulative_data / roi_data_sum;
-      
+
+      const double frac_data = (roi_data_sum > 0.0) ? (cumulative_data / roi_data_sum) : 0.5;
+
       const double left_poly = m_values[0]*(x1_rel - x0_rel) + 0.5*m_values[1]*(x1_rel*x1_rel - x0_rel*x0_rel);
       const double right_poly = m_values[2]*(x1_rel - x0_rel) + 0.5*m_values[3]*(x1_rel*x1_rel - x0_rel*x0_rel);
       
@@ -5527,20 +5713,248 @@ double PeakContinuum::offset_integral( const double x0, const double x1,
       return std::max( 0.0, contrib );
     }//case BiLinearStep:
       
+    case FlatStepCDF:
+    case LinearStepCDF:
+    case BiLinearStepCDF:
+      assert( 0 && "offset_integral_non_cdf called for CDF step type" );
+      throw runtime_error( "PeakContinuum::offset_integral_non_cdf: CDF step types require"
+                          " offset_integral_cdf_step instead" );
+
     case External:
       if( !m_externalContinuum )
         return 0.0;
       return gamma_integral( m_externalContinuum, x0, x1 );
     break;
   };//enum OffsetType
-  
-  return 0.0;
-}//double offset_integral( const double x0, const double x1 ) const
 
+  return 0.0;
+}//double offset_integral_non_cdf( x0, x1, data )
+
+
+double PeakContinuum::offset_integral( const double x0, const double x1,
+                                       const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                       const PeakDef * const *roi_peaks,
+                                       const size_t num_peaks ) const
+{
+  if( is_peak_cdf_step_continuum( m_type ) )
+    return offset_integral_cdf_step( x0, x1, data, roi_peaks, num_peaks );
+  return offset_integral_non_cdf( x0, x1, data );
+}//double offset_integral( x0, x1, data, roi_peaks, num_peaks )
 
 
 void PeakContinuum::offset_integral( const float *energies, double *channels, const size_t nchannel,
-                     const std::shared_ptr<const SpecUtils::Measurement> &data ) const
+                                     const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                     const PeakDef * const *roi_peaks,
+                                     const size_t num_peaks ) const
+{
+  if( is_peak_cdf_step_continuum( m_type ) )
+    offset_integral_cdf_step( energies, channels, nchannel, data, roi_peaks, num_peaks );
+  else
+    offset_integral_non_cdf( energies, channels, nchannel, data );
+}//void offset_integral( energies, channels, nchannel, data, roi_peaks, num_peaks )
+
+
+double PeakContinuum::offset_integral( const double x0, const double x1,
+                                       const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                       const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks ) const
+{
+  // Delegate to the raw-pointer overload
+  std::vector<const PeakDef *> ptrs( roi_peaks.size() );
+  for( size_t i = 0; i < roi_peaks.size(); ++i )
+    ptrs[i] = roi_peaks[i].get();
+  return offset_integral( x0, x1, data, ptrs.data(), ptrs.size() );
+}
+
+
+void PeakContinuum::offset_integral( const float *energies, double *channels, const size_t nchannel,
+                                     const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                     const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks ) const
+{
+  std::vector<const PeakDef *> ptrs( roi_peaks.size() );
+  for( size_t i = 0; i < roi_peaks.size(); ++i )
+    ptrs[i] = roi_peaks[i].get();
+  offset_integral( energies, channels, nchannel, data, ptrs.data(), ptrs.size() );
+}
+
+
+double PeakContinuum::offset_integral_cdf_step( const double x0, const double x1,
+                                                 const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                                 const PeakDef * const *roi_peaks, const size_t num_peaks ) const
+{
+  assert( is_peak_cdf_step_continuum( m_type ) );
+  if( !is_peak_cdf_step_continuum( m_type ) )
+    throw runtime_error( "PeakContinuum::offset_integral_cdf_step: only valid for CDF step types" );
+
+  const double x0_rel = x0 - m_referenceEnergy;
+  const double x1_rel = x1 - m_referenceEnergy;
+  const double dx = x1_rel - x0_rel;
+  const double chan_center = 0.5 * (x0 + x1);
+
+  if( m_type == BiLinearStepCDF )
+  {
+    // BiLinearStepCDF: 4 params (left_const, left_linear, right_const, right_linear)
+    // Interpolation fraction from amplitude-weighted peak CDF
+    assert( m_values.size() == 4 );
+
+    double total_amp = 0.0;
+    double cdf_weighted_sum = 0.0;
+    for( size_t j = 0; j < num_peaks; ++j )
+    {
+      const PeakDef *peak = roi_peaks[j];
+      if( !peak )
+        continue;
+      const double amp = peak->amplitude();
+      const double mean = peak->mean();
+      const double sigma = peak->sigma();
+      const PeakDef::SkewType skew = peak->skewType();
+      const double *skew_pars = peak->coefficients() + PeakDef::CoefficientType::SkewPar0;
+
+      const double cdf_val = PeakDists::peak_cdf( chan_center, mean, sigma, skew, skew_pars );
+      cdf_weighted_sum += amp * cdf_val;
+      total_amp += amp;
+    }
+
+    const double frac_cdf = (total_amp > 0.0) ? (cdf_weighted_sum / total_amp) : 0.5;
+
+    const double left_poly = m_values[0] * dx + 0.5 * m_values[1] * (x1_rel * x1_rel - x0_rel * x0_rel);
+    const double right_poly = m_values[2] * dx + 0.5 * m_values[3] * (x1_rel * x1_rel - x0_rel * x0_rel);
+
+    return std::max( 0.0, ((1.0 - frac_cdf) * left_poly) + (frac_cdf * right_poly) );
+  }//if( m_type == BiLinearStepCDF )
+
+  // FlatStepCDF / LinearStepCDF path
+  const size_t num_poly = (m_type == FlatStepCDF) ? 1 : 2;
+  assert( m_values.size() == (num_poly + 1) );
+
+  // Polynomial part
+  double poly = m_values[0] * dx;
+  if( m_type == LinearStepCDF )
+    poly += 0.5 * m_values[1] * (x1_rel * x1_rel - x0_rel * x0_rel);
+
+  // CDF step part: step_coeff * sum_j(amp_j * CDF_j(chan_center)) * dx
+  const double step_coeff = m_values[num_poly];
+  double cdf_weighted_sum = 0.0;
+  for( size_t j = 0; j < num_peaks; ++j )
+  {
+    const PeakDef *peak = roi_peaks[j];
+    if( !peak )
+      continue;
+    const double amp = peak->amplitude();
+    const double mean = peak->mean();
+    const double sigma = peak->sigma();
+    const PeakDef::SkewType skew = peak->skewType();
+    const double *skew_pars = peak->coefficients() + PeakDef::CoefficientType::SkewPar0;
+
+    const double cdf_val = PeakDists::peak_cdf( chan_center, mean, sigma, skew, skew_pars );
+    cdf_weighted_sum += amp * cdf_val;
+  }
+
+  const double step_contribution = step_coeff * cdf_weighted_sum * dx;
+
+  return std::max( 0.0, poly + step_contribution );
+}//double offset_integral_cdf_step( x0, x1, data, roi_peaks, num_peaks )
+
+
+void PeakContinuum::offset_integral_cdf_step( const float *energies, double *channels, const size_t nchannel,
+                                               const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                               const PeakDef * const *roi_peaks, const size_t num_peaks ) const
+{
+  assert( is_peak_cdf_step_continuum( m_type ) );
+  if( !is_peak_cdf_step_continuum( m_type ) )
+    throw runtime_error( "PeakContinuum::offset_integral_cdf_step: only valid for CDF step types" );
+
+  assert( nchannel > 0 );
+  if( !nchannel )
+    return;
+
+  // Precompute per-peak info for the CDF evaluation
+  struct PeakInfo
+  {
+    double amp, mean, sigma;
+    PeakDef::SkewType skew;
+    const double *skew_pars;
+  };
+
+  std::vector<PeakInfo> peak_infos;
+  double total_amp = 0.0;
+  peak_infos.reserve( num_peaks );
+  for( size_t j = 0; j < num_peaks; ++j )
+  {
+    const PeakDef *peak = roi_peaks[j];
+    if( !peak )
+      continue;
+    PeakInfo info;
+    info.amp = peak->amplitude();
+    info.mean = peak->mean();
+    info.sigma = peak->sigma();
+    info.skew = peak->skewType();
+    info.skew_pars = peak->coefficients() + PeakDef::CoefficientType::SkewPar0;
+    peak_infos.push_back( info );
+    total_amp += info.amp;
+  }
+
+  if( m_type == BiLinearStepCDF )
+  {
+    assert( m_values.size() == 4 );
+
+    for( size_t i = 0; i < nchannel; ++i )
+    {
+      const double x0_rel = energies[i] - m_referenceEnergy;
+      const double x1_rel = energies[i + 1] - m_referenceEnergy;
+      const double dx = x1_rel - x0_rel;
+      const double chan_center = 0.5 * (energies[i] + energies[i + 1]);
+
+      double cdf_weighted_sum = 0.0;
+      for( const PeakInfo &info : peak_infos )
+      {
+        const double cdf_val = PeakDists::peak_cdf( chan_center, info.mean, info.sigma, info.skew, info.skew_pars );
+        cdf_weighted_sum += info.amp * cdf_val;
+      }
+
+      const double frac_cdf = (total_amp > 0.0) ? (cdf_weighted_sum / total_amp) : 0.5;
+
+      const double left_poly = m_values[0] * dx + 0.5 * m_values[1] * (x1_rel * x1_rel - x0_rel * x0_rel);
+      const double right_poly = m_values[2] * dx + 0.5 * m_values[3] * (x1_rel * x1_rel - x0_rel * x0_rel);
+
+      channels[i] += std::max( 0.0, ((1.0 - frac_cdf) * left_poly) + (frac_cdf * right_poly) );
+    }//for( size_t i = 0; i < nchannel; ++i )
+
+    return;
+  }//if( m_type == BiLinearStepCDF )
+
+  // FlatStepCDF / LinearStepCDF path
+  const size_t num_poly = (m_type == FlatStepCDF) ? 1 : 2;
+  assert( m_values.size() == (num_poly + 1) );
+  const double step_coeff = m_values[num_poly];
+
+  for( size_t i = 0; i < nchannel; ++i )
+  {
+    const double x0_rel = energies[i] - m_referenceEnergy;
+    const double x1_rel = energies[i + 1] - m_referenceEnergy;
+    const double dx = x1_rel - x0_rel;
+    const double chan_center = 0.5 * (energies[i] + energies[i + 1]);
+
+    // Polynomial part
+    double poly = m_values[0] * dx;
+    if( m_type == LinearStepCDF )
+      poly += 0.5 * m_values[1] * (x1_rel * x1_rel - x0_rel * x0_rel);
+
+    // CDF step part
+    double cdf_weighted_sum = 0.0;
+    for( const PeakInfo &info : peak_infos )
+    {
+      const double cdf_val = PeakDists::peak_cdf( chan_center, info.mean, info.sigma, info.skew, info.skew_pars );
+      cdf_weighted_sum += info.amp * cdf_val;
+    }
+
+    const double step_contribution = step_coeff * cdf_weighted_sum * dx;
+    channels[i] += std::max( 0.0, poly + step_contribution );
+  }//for( size_t i = 0; i < nchannel; ++i )
+}//void offset_integral_cdf_step( energies, channels, nchannel, data, roi_peaks, num_peaks )
+
+
+void PeakContinuum::offset_integral_non_cdf( const float *energies, double *channels, const size_t nchannel,
+                                             const std::shared_ptr<const SpecUtils::Measurement> &data ) const
 {
   // This function should give the same answer as
   //  `PeakContinuum::offset_integral( double x0, const double x1, data)`, on a channel-by-channel
@@ -5621,32 +6035,42 @@ void PeakContinuum::offset_integral( const float *energies, double *channels, co
       assert( roi_upper_channel < counts.size() );
       
       
-      const double roi_data_sum = std::accumulate( begin(counts) + roi_lower_channel, begin(counts) + roi_upper_channel + 1,  0.0 );
-      // Might be able to take advantage of vectorized sum using something like:
-      //const double roi_data_sum = Eigen::VectorXf::Map( &(counts[roi_lower_channel]), (1 + roi_upper_channel - roi_lower_channel) ).sum();
-      
-      
+#if( PEAK_CONTINUUM_DATA_STEP_SUBTRACT )
+      float min_count = counts[roi_lower_channel];
+      for( size_t i = roi_lower_channel + 1; i <= roi_upper_channel; ++i )
+        min_count = std::min( min_count, counts[i] );
+      min_count = std::max( min_count, 0.0f );
+#else
+      const float min_count = 0.0f;
+#endif
+      // Compute roi_data_sum by per-element subtraction of min_count to match the
+      //  single-channel offset_integral_non_cdf computation (avoid floating-point
+      //  discrepancy from subtracting min_count*N at the end).
+      double roi_data_sum = 0.0;
+      for( size_t i = roi_lower_channel; i <= roi_upper_channel; ++i )
+        roi_data_sum += (counts[i] - min_count);
+
       const size_t begin_channel = data->find_gamma_channel( energies[0] );
       assert( energies[0] == data->gamma_channel_lower(begin_channel) );
       const size_t end_channel = begin_channel + nchannel; //one past last channel we want
-      
+
       // Lets check that `energies` points into the lower channel energies of `data`.
       //  We actually only care that the values of the array are the same, but we'll be
       //  a little tighter for development.
       const vector<float> &data_energies = *data->channel_energies();
-      
+
       if( (energies[0] != data->gamma_channel_lower(begin_channel))
          || (energies[nchannel] != data->gamma_channel_lower(begin_channel+nchannel)) )
         throw std::logic_error( "PeakContinuum::offset_integral: for stepped continua" );
-      
+
       double cumulative_data = 0.0;
-      
-      // Incase we are starting
+
+      // In case we are starting part-way into the ROI
       if( begin_channel > roi_lower_channel )
       {
-        for( size_t i = begin_channel; i < begin_channel; ++i )
-          cumulative_data += counts[i];
-      }//if( begin_channel > lower_channel )
+        for( size_t i = roi_lower_channel; i < begin_channel; ++i )
+          cumulative_data += (counts[i] - min_count);
+      }//if( begin_channel > roi_lower_channel )
       
       
       for( size_t i = begin_channel; i < end_channel; ++i )
@@ -5658,10 +6082,10 @@ void PeakContinuum::offset_integral( const float *energies, double *channels, co
         const double x1_rel = data_energies[i+1] - m_referenceEnergy;
         
         if( i >= roi_lower_channel && i <= roi_upper_channel )
-          cumulative_data += 0.5*counts[i];
-        
-        const double frac_data = cumulative_data / roi_data_sum;
-        
+          cumulative_data += 0.5 * (counts[i] - min_count);
+
+        const double frac_data = (roi_data_sum > 0.0) ? (cumulative_data / roi_data_sum) : 0.5;
+
         switch( m_type )
         {
           case FlatStep:
@@ -5671,35 +6095,35 @@ void PeakContinuum::offset_integral( const float *energies, double *channels, co
             const double linear = ((m_type == FlatStep) ? 0.0 :  0.5*m_values[1]*(x1_rel*x1_rel - x0_rel*x0_rel));
             const size_t step_index = ((m_type == FlatStep) ? 1 : 2);
             const double step_contribution = m_values[step_index] * frac_data * (x1_rel - x0_rel);
-            
+
             const double answer = std::max( 0.0, offset + linear + step_contribution );
-            
+
             assert( answer == offset_integral( data_energies[i], data_energies[i+1], data ) );
-            
+
             channels[input_index] += answer;
             break;
           }//case FlatStep: case LinearStep:
-            
+
           case BiLinearStep:
           {
             assert( m_values.size() == 4 );
             const double left_poly = m_values[0]*(x1_rel - x0_rel) + 0.5*m_values[1]*(x1_rel*x1_rel - x0_rel*x0_rel);
             const double right_poly = m_values[2]*(x1_rel - x0_rel) + 0.5*m_values[3]*(x1_rel*x1_rel - x0_rel*x0_rel);
             const double contrib = std::max( 0.0, ((1.0 - frac_data) * left_poly) + (frac_data * right_poly) );
-            
+
             assert( contrib == offset_integral( data_energies[i], data_energies[i+1], data ) );
-            
+
             channels[input_index] += contrib;
             break;
           }//case BiLinearStep:
-            
+
           case NoOffset: case Constant: case Linear: case Quadratic: case Cubic: case External:
             assert( 0 );
             break;
         }//switch( m_type )
-        
+
         if( i >= roi_lower_channel && i <= roi_upper_channel )
-          cumulative_data += 0.5*counts[i];
+          cumulative_data += 0.5 * (counts[i] - min_count);
       }//for( size_t i = 0; i < channels; ++i )
       
       break;
@@ -5717,7 +6141,7 @@ void PeakContinuum::offset_integral( const float *energies, double *channels, co
     }//case External:
   }//switch( m_type )
   */
-}//void PeakContinuum::offset_integral( ... ) const
+}//void PeakContinuum::offset_integral_non_cdf( energies, channels, nchannel, data )
 
 
 void PeakContinuum::eqn_from_offsets( size_t lowchannel,
@@ -5900,7 +6324,9 @@ double PeakContinuum::offset_eqn_integral( const double *coefs,
   
   switch( type )
   {
-    case NoOffset: case External: case FlatStep: case LinearStep: case BiLinearStep:
+    case NoOffset: case External:
+    case FlatStep: case LinearStep: case BiLinearStep:
+    case FlatStepCDF: case LinearStepCDF: case BiLinearStepCDF:
       throw runtime_error( "PeakContinuum::offset_eqn_integral(...) may only be"
                           " called for polynomial backgrounds" );
       
@@ -5969,7 +6395,18 @@ void PeakContinuum::translate_offset_polynomial( double *new_coefs,
       new_coefs[0] = old_coefs[0];
       new_coefs[1] = old_coefs[1];
       break;
-      
+
+    case FlatStepCDF:
+      new_coefs[0] = old_coefs[0];
+      new_coefs[1] = old_coefs[1];
+      break;
+
+    case LinearStepCDF:
+      new_coefs[0] = old_coefs[0] + old_coefs[1] * (new_center - old_center);
+      new_coefs[1] = old_coefs[1];
+      new_coefs[2] = old_coefs[2];
+      break;
+
     case External:
       throw runtime_error( "translate_offset_polynomial does not support external continuum" );
   }//switch( type )

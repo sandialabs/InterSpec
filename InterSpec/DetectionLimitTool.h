@@ -129,7 +129,6 @@ class DetectionLimitWindow : public AuxWindow
 {
 public:
   DetectionLimitWindow( InterSpec *viewer,
-                             MaterialDB *materialDB,
                              Wt::WSuggestionPopup *materialSuggest );
   virtual ~DetectionLimitWindow();
   
@@ -151,7 +150,6 @@ public:
   
 public:
   DetectionLimitTool( InterSpec *viewer,
-                          MaterialDB *materialDB,
                           Wt::WSuggestionPopup *materialSuggest,
                           Wt::WContainerWidget *parent = 0 );
   
@@ -378,7 +376,6 @@ protected:
   
   Wt::WLineEdit *m_activityForDistanceLimit;
   
-  MaterialDB *m_materialDB;                 //not owned by this object
   Wt::WSuggestionPopup *m_materialSuggest;  //not owned by this object
   ShieldingSelect *m_shieldingSelect;
   

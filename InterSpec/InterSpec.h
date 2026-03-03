@@ -671,25 +671,15 @@ public:
   void showNuclideSearchWindow();
   
   
-  //initMaterialDbAndSuggestions(): initializes m_materialDB and
-  //  m_shieldingSuggestion, and posts to the WServer threadpool a call to
-  //  fillMaterialDbAndPushSuggestionsToUsers() which does the actual parsing
-  //  of the material database.  Its done in two stages so as to not slow
-  //  the initial loading of the app; it would be nice to not have to parse the
-  //  materia DB file in the event loop at all, but this makes it easy to avoid
-  //  race conditions, or whatever.
+  /** Initializes `m_shieldingSuggestion` and populates it with material names
+   from the MaterialDB singleton.
+   */
   void initMaterialDbAndSuggestions();
-  
 
-  //fillMaterialDb(): populates materialDB, and then calls the provided
-  //  'update' function by posting to the WServer thread pool for 'sessionid'
-  //  so it will be executed in its event loop.
-  static void fillMaterialDb( std::shared_ptr<MaterialDB> materialDB,
-                              const std::string sessionid,
-                              boost::function<void(void)> update );
-  
-  //pushMaterialSuggestionsToUsers(): should be called from application loop, to
-  //  fill m_shieldingSuggestion (from m_materialDB) and then push to the user.
+  /** Fills `m_shieldingSuggestion` with material names from the MaterialDB singleton,
+   and pushes the update to the user.
+   Should be called from the application event loop.
+   */
   void pushMaterialSuggestionsToUsers();
   
   GammaXsWindow *showGammaXsTool();
@@ -740,20 +730,9 @@ public:
   
   PeakModel *peakModel();
 
-  /** The material database.
-   
-   Object will be alive as long as *this
-   */
-  MaterialDB *materialDataBase();
-  
-  /** Returns `m_materialDB`.  Note `MaterialDB` should be thread-safe, so you can use this for long running jobs where
-   this instance of InterSpec may disappear.
-   */
-  std::shared_ptr<MaterialDB> materialDataBaseShared();
-  
   /** The suggestion pop-up widget for shielding names; used globally for all shielding name inputs
    so that there is not duplicate copies of the widget in the DOM.
-   
+
    Object will be alive as long as *this.
    */
   Wt::WSuggestionPopup *shieldingSuggester();
@@ -1429,7 +1408,6 @@ protected:
   Wt::WSuggestionPopup   *m_shieldingSuggestion;
   ShieldingSourceDisplay *m_shieldingSourceFit;
   AuxWindow              *m_shieldingSourceFitWindow;
-  std::shared_ptr<MaterialDB> m_materialDB;
   
 #if( USE_REL_ACT_TOOL )
   RelActAutoGui          *m_relActAutoGui;

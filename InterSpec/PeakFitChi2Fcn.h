@@ -459,7 +459,15 @@ public:
   static void addSkewParameters( ROOT::Minuit2::MnUserParameters &pars,
                                  const PeakDef::SkewType skewType,
                                  const std::vector<std::shared_ptr<const PeakDef> > &inpeaks );
-  
+
+  /** For CDF step continuum types, adds step_coeff as a Minuit2 parameter.
+   Must be called AFTER addSkewParameters, as step_coeff is the last parameter in the vector.
+   For non-CDF step types, this function does nothing.
+   */
+  static void addStepCoeffParameter( ROOT::Minuit2::MnUserParameters &pars,
+                                     const PeakContinuum::OffsetType offsetType,
+                                     const std::vector<std::shared_ptr<const PeakDef> > &inpeaks );
+
 protected:
   void init( std::shared_ptr<const SpecUtils::Measurement> data );
   

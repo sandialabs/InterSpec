@@ -59,6 +59,7 @@
 #include "SpecUtils/SerialToDetectorModel.h"
 
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/MaterialDB.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/ReactionGamma.h"
@@ -298,8 +299,11 @@ namespace InterSpecServer
       //  to wait to access the database.
       //  Using the minimized coincidence version of sandia.decay.xml increases parse time
       //  by about 170 ms.
-      ns_server->ioService().boost::asio::io_service::post( &DecayDataBaseServer::initialize );
-      
+      ns_server->ioService().boost::asio::io_service::post( [](){
+        DecayDataBaseServer::initialize();
+        MaterialDB::initialize();
+      } );
+
       // Checking for available languages probably doesnt take too long, but lets do it now anyway.
       ns_server->ioService().boost::asio::io_service::post( [](){
         InterSpecApp::languagesAvailable();
@@ -390,6 +394,7 @@ void startWebServer( string name,
   // See remarks in startServer() on performance and reason for this next call
   ns_server->ioService().boost::asio::io_service::post( [](){
     DecayDataBaseServer::initialize();
+    MaterialDB::initialize();
 
     // Load the reaction gammas into memory
     //  When built for web deployment, using a ALpine container (musl libc), there
