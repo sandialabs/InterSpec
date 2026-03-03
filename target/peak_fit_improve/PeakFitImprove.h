@@ -56,6 +56,11 @@ extern double sm_ga_crossover_fraction;
 extern double sm_ga_mutation_rate;
 extern double sm_ga_mutate_threshold;
 extern double sm_ga_crossover_threshold;
+
+/** Prefix for output summary files, derived from --det-type option (e.g., "HPGe_", "NaI_").
+ Empty string when using all detector types.
+ */
+extern std::string sm_output_file_prefix;
 }
 
 

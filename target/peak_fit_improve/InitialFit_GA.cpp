@@ -48,6 +48,7 @@
 #include "PeakFitImprove.h"
 #include "InitialFit_GA.h"
 #include "CandidatePeak_GA.h"
+#include "ClassifyDetType_GA.h"
 
 using namespace std;
 
@@ -73,7 +74,8 @@ namespace InitialFit_GA
 vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_settings,
                               const FindCandidateSettings &candidate_settings,
                               const shared_ptr<const SpecUtils::Measurement> &data,
-                                          const bool multithread,
+                              const bool isHPGe,
+                              const bool multithread,
                               size_t &num_add_candidates_fit_for,  //Only for eval purposes
                               size_t &num_add_candidates_accepted //Only for eval purposes
                               )
@@ -119,11 +121,6 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
         cout << "Candidate debug peak mean=" << p.mean() << ", area=" << p.amplitude() << " += " << p.amplitudeUncert() << endl;
     }
   }//if( debug_upper_energy > debug_lower_energy )
-
-#warning "initial_peak_find_and_fit: always assuming HPGe right now - for dev"
-  //bool isHPGe = (data->num_gamma_channels() > 5000); // This will be wrong a lot...
-  const bool isHPGe = true;
-  // TODO: improve selection of HPGe here
 
   bool amplitudeOnly = false;
   vector<PeakDef> zeroth_fit_results, initial_fit_results;
@@ -414,9 +411,6 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
       cerr << endl;
 #endif
     }
-
-#warning "initial_peak_find_and_fit: always assuming HPGe right now - for dev"
-    //const bool isHPGe = (coarse_res_type == PeakFitUtils::CoarseResolutionType::High)
 
     if( initial_fit_results.size() <= 2 )
       fwhm_eqn_form = DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn;
@@ -1486,10 +1480,13 @@ PeakFindAndFitWeights eval_initial_peak_find_and_fit( const InitialPeakFindSetti
   //  line, after the initial peak candidate find and fit.
   size_t num_add_candidates_fit_for = 0, num_add_candidates_accepted = 0;
 
+  const bool isHPGe = (ClassifyDetType_GA::true_det_type_for_name( src_info.detector_name )
+                       == PeakFitUtils::CoarseResolutionType::High);
+
   // `initial_peaks` not const for initial development
   vector<PeakDef> initial_peaks
-                        = InitialFit_GA::initial_peak_find_and_fit( fit_settings, candidate_settings, data, multithread,
-                                          num_add_candidates_fit_for, num_add_candidates_accepted);
+                        = InitialFit_GA::initial_peak_find_and_fit( fit_settings, candidate_settings, data, isHPGe,
+                                          multithread, num_add_candidates_fit_for, num_add_candidates_accepted);
 
   const vector<ExpectedPhotopeakInfo> &expected_photopeaks = src_info.expected_photopeaks;
 

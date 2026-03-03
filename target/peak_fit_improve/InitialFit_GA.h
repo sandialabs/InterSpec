@@ -47,7 +47,8 @@ namespace InitialFit_GA
 std::vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_settings,
                               const FindCandidateSettings &candidate_settings,
                               const std::shared_ptr<const SpecUtils::Measurement> &data,
-                                               const bool multithread,
+                              const bool isHPGe,
+                              const bool multithread,
                               size_t &num_add_candidates_fit_for,  //Only for eval purposes
                               size_t &num_add_candidates_accepted //Only for eval purposes
 );

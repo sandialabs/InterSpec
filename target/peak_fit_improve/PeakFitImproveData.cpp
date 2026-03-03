@@ -470,7 +470,7 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
         //if( PeakFitImprove::debug_printout )
         {
 
-          bool is_wanted_lt = false;
+          bool is_wanted_lt = live_times.empty();
           for( size_t i = 0; i < live_times.size(); ++i )
           {
             const string &lt = live_times[i];
@@ -1149,7 +1149,7 @@ tuple<vector<DetectorInjectSet>,vector<DataSrcInfo>>
 
         const boost::filesystem::path livetime_path = livetime_itr->path();
 
-        bool is_wanted_lt = false;
+        bool is_wanted_lt = live_times.empty();
         for( size_t i = 0; i < live_times.size(); ++i )
         {
           const string &lt = live_times[i];
