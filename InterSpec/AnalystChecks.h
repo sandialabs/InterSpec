@@ -120,6 +120,7 @@ namespace AnalystChecks
 
   struct FitPeaksForNuclideOptions {
     std::vector<std::string> sources;
+    SpecUtils::SpectrumType specType = SpecUtils::SpectrumType::Foreground;
     bool doNotAddPeaksToUserSession = false;
     Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> fitSrcPeaksOptions;
   };

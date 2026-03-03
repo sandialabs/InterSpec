@@ -907,26 +907,34 @@ namespace AnalystChecks
     
     try
     {
-      // Get the foreground spectrum
-      std::shared_ptr<SpecMeas> meas = interspec->measurment(SpecUtils::SpectrumType::Foreground);
-      if (!meas) {
-        throw std::runtime_error("No foreground measurement available");
-      }
+      const SpecUtils::SpectrumType specType = options.specType;
+
+      // Get the target spectrum (the one we are fitting peaks to)
+      std::shared_ptr<SpecMeas> meas = interspec->measurment( specType );
+      if( !meas )
+        throw std::runtime_error( std::string("No ") + SpecUtils::descriptionText(specType) + " measurement available" );
+
+      std::shared_ptr<const SpecUtils::Measurement> target_spectrum = interspec->displayedHistogram( specType );
+      if( !target_spectrum )
+        throw std::runtime_error( std::string("No ") + SpecUtils::descriptionText(specType) + " spectrum available" );
+
+      // Background subtraction only makes sense when fitting to the foreground
+      std::shared_ptr<const SpecUtils::Measurement> background;
+      if( specType == SpecUtils::SpectrumType::Foreground )
+        background = interspec->displayedHistogram( SpecUtils::SpectrumType::Background );
       
-      std::shared_ptr<const SpecUtils::Measurement> foreground = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
-      if (!foreground) {
-        throw std::runtime_error("No foreground spectrum available");
-      }
-      
-      // Get background (optional)
-      std::shared_ptr<const SpecUtils::Measurement> background = interspec->displayedHistogram(SpecUtils::SpectrumType::Background);
-      
-      // Get detector response function
+      // Get detector response function; fall back to foreground SpecMeas's DRF if needed
       std::shared_ptr<const DetectorPeakResponse> drf = meas->detector();
+      if( !drf && (specType != SpecUtils::SpectrumType::Foreground) )
+      {
+        std::shared_ptr<SpecMeas> fg_meas = interspec->measurment( SpecUtils::SpectrumType::Foreground );
+        if( fg_meas )
+          drf = fg_meas->detector();
+      }
       const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
 
       DetectedPeaksOptions det_peaks_options;
-      det_peaks_options.specType = SpecUtils::SpectrumType::Foreground;
+      det_peaks_options.specType = specType;
       det_peaks_options.nonBackgroundPeaksOnly = false; // TODO: as we improve `FitPeaksForNuclides::fit_peaks_for_nuclides(...)` this will need to be change
       const DetectedPeakStatus detected_peaks = AnalystChecks::detected_peaks( det_peaks_options, interspec );
       const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks = detected_peaks.peaks;
@@ -956,7 +964,7 @@ namespace AnalystChecks
         throw runtime_error( "No sources specified" );
 
       GetUserPeakOptions user_peak_options;
-      user_peak_options.specType = SpecUtils::SpectrumType::Foreground;
+      user_peak_options.specType = specType;
       //user_peak_options.lowerEnergy = ...;
       //user_peak_options.upperEnergy = ...;
       
@@ -970,7 +978,7 @@ namespace AnalystChecks
       // TODO: we will need to update `config` from default in the future
 
       const FitPeaksForNuclides::PeakFitResult fit_results = FitPeaksForNuclides::fit_peaks_for_nuclides(
-        auto_search_peaks, foreground, sources, user_peaks, background, drf, fit_options, fit_config, isHPGe
+        auto_search_peaks, target_spectrum, sources, user_peaks, background, drf, fit_options, fit_config, isHPGe
       );
 
       switch( fit_results.status )
@@ -1026,15 +1034,37 @@ namespace AnalystChecks
 
       result.peaksToRemove = fit_results.original_peaks_to_remove;
 
-      // If doNotAddPeaksToUserSession is false, remove replaced peaks and add the new ones
+      // If doNotAddPeaksToUserSession is false, update the peak model using setPeaks
+      //  to atomically replace the affected peaks while preserving unrelated ones.
       if( !options.doNotAddPeaksToUserSession && !result.fitPeaks.empty() )
       {
         PeakModel * const pmodel = interspec->peakModel();
         if( pmodel )
         {
-          if( !result.peaksToRemove.empty() )
-            pmodel->removePeaks( result.peaksToRemove );
-          pmodel->addPeaks( result.fitPeaks );
+          std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> existing_peaks
+            = pmodel->peaks( specType );
+
+          std::deque<std::shared_ptr<const PeakDef>> combined_peaks;
+
+          if( existing_peaks )
+          {
+            // Keep existing peaks that are NOT in peaksToRemove
+            for( const std::shared_ptr<const PeakDef> &p : *existing_peaks )
+            {
+              const bool should_remove = std::any_of( result.peaksToRemove.begin(),
+                result.peaksToRemove.end(),
+                [&p]( const std::shared_ptr<const PeakDef> &rm ) -> bool { return rm == p; } );
+
+              if( !should_remove )
+                combined_peaks.push_back( p );
+            }
+          }//if( existing_peaks )
+
+          // Add the newly fit peaks
+          for( const std::shared_ptr<const PeakDef> &p : result.fitPeaks )
+            combined_peaks.push_back( p );
+
+          pmodel->setPeaks( combined_peaks, specType );
           result.peaksWereRemovedFromSession = true;
         }
       }//if( !options.doNotAddPeaksToUserSession )
