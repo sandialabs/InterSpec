@@ -95,6 +95,9 @@ protected:
   /** Enables or disables all editing controls. */
   void setControlsEnabled( const bool enabled );
 
+  /** Opens the FitSkewParamsWindow dialog. */
+  void showFitSkewDialog();
+
 
   InterSpec *m_viewer;
   bool m_compactMode;
@@ -123,6 +126,9 @@ protected:
 
   /** Checkbox for ROI-independent skew. */
   Wt::WCheckBox *m_roiIndepCb;
+
+  /** Link to open the fit skew parameters dialog. */
+  Wt::WText *m_fitSkewLink;
 
   /** Read-only label showing the LoadingSource. */
   Wt::WText *m_sourceLabel;

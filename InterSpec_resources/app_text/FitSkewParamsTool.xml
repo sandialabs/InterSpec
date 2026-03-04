@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- fsw is short for FitSkewParamsWindow/Tool -->
+
+  <message id="fsw-title">Fit Skew Parameters</message>
+
+  <message id="fsw-skew-type-label">Skew Type:</message>
+  <message id="fsw-fit-btn">Fit</message>
+  <message id="fsw-accept-btn">Accept</message>
+  <message id="fsw-cancel-btn">Cancel</message>
+  <message id="fsw-update-peaks-cb">Update analysis peaks on accept</message>
+
+  <!-- Column headers -->
+  <message id="fsw-fit-cb-header">Fit</message>
+  <message id="fsw-lower-header">Low E</message>
+  <message id="fsw-upper-header">High E</message>
+  <message id="fsw-param-label">Par {1}:</message>
+
+  <!-- Status messages -->
+  <message id="fsw-fitting">Fitting...</message>
+  <message id="fsw-fit-success">Fit {1} peaks</message>
+  <message id="fsw-fit-chi2">, &lt;Chi2/dof&gt; = {1}</message>
+  <message id="fsw-fit-failed">Fit failed: {1}</message>
+
+  <!-- Right-click context menu -->
+  <message id="fsw-rclick-change-cont">Change Continuum</message>
+  <message id="fsw-rclick-delete-peak">Delete Peak</message>
+</messages>

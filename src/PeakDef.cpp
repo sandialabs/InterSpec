@@ -1378,47 +1378,54 @@ const char *PeakDef::to_label( const SkewType type )
 
 PeakDef::SkewType PeakDef::skew_from_string( const string &skew_type_str )
 {
-  if( SpecUtils::iequals_ascii(skew_type_str,"NoSkew") )
+  if( SpecUtils::iequals_ascii(skew_type_str,"NoSkew")
+          || SpecUtils::iequals_ascii(skew_type_str,"None") )
     return PeakDef::SkewType::NoSkew;
 
-  // Exp*Gauss (Bortel) - accept multiple aliases
+  // Exp*Gauss (Bortel) - accept multiple aliases, including display label "Exp*Gauss"
   if( SpecUtils::iequals_ascii(skew_type_str,"ExGauss")
           || SpecUtils::iequals_ascii(skew_type_str,"Bortel")
           || SpecUtils::iequals_ascii(skew_type_str,"EMG")
-          || SpecUtils::iequals_ascii(skew_type_str,"ExpGauss") )
+          || SpecUtils::iequals_ascii(skew_type_str,"ExpGauss")
+          || SpecUtils::iequals_ascii(skew_type_str,"Exp*Gauss") )
     return PeakDef::SkewType::Bortel;
 
-  // Double Exp*Gauss (DoubleBortel) - accept aliases
+  // Double Exp*Gauss (DoubleBortel) - accept aliases, including display label
   if( SpecUtils::iequals_ascii(skew_type_str,"DoubleExGauss")
-          || SpecUtils::iequals_ascii(skew_type_str,"DoubleBortel") )
+          || SpecUtils::iequals_ascii(skew_type_str,"DoubleBortel")
+          || SpecUtils::iequals_ascii(skew_type_str,"Double Exp*Gauss") )
     return PeakDef::SkewType::DoubleBortel;
 
-  // Gauss+Exp*Gauss (GaussPlusBortel) - accept aliases
+  // Gauss+Exp*Gauss (GaussPlusBortel) - accept aliases, including display label
   if( SpecUtils::iequals_ascii(skew_type_str,"GaussPlusExGauss")
           || SpecUtils::iequals_ascii(skew_type_str,"GaussPlusBortel")
-          || SpecUtils::iequals_ascii(skew_type_str,"GaussBortel") )
+          || SpecUtils::iequals_ascii(skew_type_str,"GaussBortel")
+          || SpecUtils::iequals_ascii(skew_type_str,"Gauss+Exp*Gauss") )
     return PeakDef::SkewType::GaussPlusBortel;
 
   if( SpecUtils::iequals_ascii(skew_type_str,"GaussExp") )
     return PeakDef::SkewType::GaussExp;
 
   if( SpecUtils::iequals_ascii(skew_type_str,"CrystalBall")
-          || SpecUtils::iequals_ascii(skew_type_str,"CB") )
+          || SpecUtils::iequals_ascii(skew_type_str,"CB")
+          || SpecUtils::iequals_ascii(skew_type_str,"Crystal Ball") )
     return PeakDef::SkewType::CrystalBall;
 
   if( SpecUtils::iequals_ascii(skew_type_str,"ExpGaussExp") )
     return PeakDef::SkewType::ExpGaussExp;
 
   if( SpecUtils::iequals_ascii(skew_type_str,"DoubleSidedCrystalBall")
-          || SpecUtils::iequals_ascii(skew_type_str,"DSCB") )
+          || SpecUtils::iequals_ascii(skew_type_str,"DSCB")
+          || SpecUtils::iequals_ascii(skew_type_str,"Double Crystal Ball") )
     return PeakDef::SkewType::DoubleSidedCrystalBall;
 
-  // Voigt+Exp*Gauss (VoigtPlusBortel) - accept old names for backward compatibility
+  // Voigt+Exp*Gauss (VoigtPlusBortel) - accept old names and display label
   if( SpecUtils::iequals_ascii(skew_type_str,"VoigtPlusExGauss")
           || SpecUtils::iequals_ascii(skew_type_str,"VoigtPlusBortel")
           || SpecUtils::iequals_ascii(skew_type_str,"VoigtWithExpTail")
           || SpecUtils::iequals_ascii(skew_type_str,"VoigtExp")
-          || SpecUtils::iequals_ascii(skew_type_str,"VoigtBortel") )
+          || SpecUtils::iequals_ascii(skew_type_str,"VoigtBortel")
+          || SpecUtils::iequals_ascii(skew_type_str,"Voigt+Exp*Gauss") )
     return PeakDef::SkewType::VoigtPlusBortel;
 
 

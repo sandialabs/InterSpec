@@ -51,7 +51,7 @@ PeakFitDetPrefs::PeakFitDetPrefs()
   , m_peak_skew_type( PeakDef::NoSkew )
   , m_lower_energy_skew{}
   , m_upper_energy_skew{}
-  , m_roi_independent_skew( true )
+  , m_roi_independent_skew( false )
   , m_source( LoadingSource::Default )
 {
 }
@@ -166,7 +166,7 @@ void PeakFitDetPrefs::toXml( ::rapidxml::xml_node<char> *parent_node,
   XmlUtils::append_version_attrib( base_node, sm_xmlSerializationVersion );
 
   XmlUtils::append_string_node( base_node, "DetType", to_str( m_det_type ) );
-  XmlUtils::append_string_node( base_node, "SkewType", PeakDef::to_label( m_peak_skew_type ) );
+  XmlUtils::append_string_node( base_node, "SkewType", PeakDef::to_string( m_peak_skew_type ) );
 
   static const char * const lower_names[] = { "LowerSkew0", "LowerSkew1", "LowerSkew2", "LowerSkew3" };
   static const char * const upper_names[] = { "UpperSkew0", "UpperSkew1", "UpperSkew2", "UpperSkew3" };

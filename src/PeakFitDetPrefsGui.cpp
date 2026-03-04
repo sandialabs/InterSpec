@@ -42,6 +42,7 @@
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/NativeFloatSpinBox.h"
+#include "InterSpec/FitSkewParamsTool.h"
 #include "InterSpec/PeakFitDetPrefsGui.h"
 
 using namespace std;
@@ -60,6 +61,7 @@ PeakFitDetPrefsGui::PeakFitDetPrefsGui( InterSpec *viewer, const bool compactMod
     m_skewTypeCombo( nullptr ),
     m_skewParamsDiv( nullptr ),
     m_roiIndepCb( nullptr ),
+    m_fitSkewLink( nullptr ),
     m_sourceLabel( nullptr )
 {
   assert( m_viewer );
@@ -173,11 +175,14 @@ void PeakFitDetPrefsGui::init()
   WContainerWidget *cbRow = new WContainerWidget( contentDiv );
   cbRow->addStyleClass( "PfdpgCheckRow" );
   m_roiIndepCb = new WCheckBox( WString::tr( "pfdpg-roi-indep-skew" ), cbRow );
-  m_roiIndepCb->setChecked( true );
+  m_roiIndepCb->setChecked( false );
   m_roiIndepCb->changed().connect( std::bind( [this](){
     if( !m_programmaticUpdate )
     {
-      m_skewParamsDiv->setHidden( m_roiIndepCb->isChecked() );
+      const bool hide = m_roiIndepCb->isChecked();
+      m_skewParamsDiv->setHidden( hide );
+      if( m_fitSkewLink )
+        m_fitSkewLink->setHidden( hide );
       userChangedValue();
     }
   }) );
@@ -185,6 +190,12 @@ void PeakFitDetPrefsGui::init()
   // Skew parameters container (dynamic rows)
   m_skewParamsDiv = new WContainerWidget( contentDiv );
   m_skewParamsDiv->addStyleClass( "PfdpgSkewParams" );
+
+  // "fit skew pars" link - visible when skew is selected and ROI-independent is unchecked
+  m_fitSkewLink = new WText( WString::tr( "pfdpg-fit-skew-link" ), contentDiv );
+  m_fitSkewLink->addStyleClass( "PfdpgFitSkewLink" );
+  m_fitSkewLink->setHidden( true );
+  m_fitSkewLink->clicked().connect( this, &PeakFitDetPrefsGui::showFitSkewDialog );
 
   // Source label
   m_sourceLabel = new WText( contentDiv );
@@ -478,10 +489,12 @@ void PeakFitDetPrefsGui::updateSkewParamRows()
   const size_t nparams = PeakDef::num_skew_parameters( skewType );
   const bool hasSkew = (nparams > 0);
 
-  // Hide checkbox and skew params when NoSkew is selected
+  // Hide checkbox, skew params, and fit link when NoSkew is selected
   if( m_roiIndepCb && m_roiIndepCb->parent() )
     m_roiIndepCb->parent()->setHidden( !hasSkew );
   m_skewParamsDiv->setHidden( !hasSkew || m_roiIndepCb->isChecked() );
+  if( m_fitSkewLink )
+    m_fitSkewLink->setHidden( !hasSkew || m_roiIndepCb->isChecked() );
 
   if( !hasSkew )
     return;
@@ -868,3 +881,9 @@ shared_ptr<const PeakFitDetPrefs> PeakFitDetPrefsGui::currentPrefs() const
 
   return meas ? meas->peakFitDetPrefs() : nullptr;
 }//shared_ptr<const PeakFitDetPrefs> currentPrefs() const
+
+
+void PeakFitDetPrefsGui::showFitSkewDialog()
+{
+  new FitSkewParamsWindow( m_viewer );
+}//void showFitSkewDialog()

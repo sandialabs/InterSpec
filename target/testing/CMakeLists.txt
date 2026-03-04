@@ -266,6 +266,13 @@ add_test( NAME TPeakFitLM
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_PeakFitDetPrefs test_PeakFitDetPrefs.cpp )
+target_link_libraries( test_PeakFitDetPrefs PRIVATE InterSpecLib )
+add_test( NAME TPeakFitDetPrefs
+  COMMAND $<TARGET_FILE:test_PeakFitDetPrefs> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 # ./test_offlineAnalysis.cpp
 #target_link_libraries(test_offlineAnalysis PUBLIC 
 #            debug "${Wt_TEST_DEBUG_LIBRARY}"

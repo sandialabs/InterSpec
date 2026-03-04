@@ -33,6 +33,9 @@
   <message id="pfdpg-tt-energy-dep"><br />Value varies with energy; specify at low and high energies.</message>
   <message id="pfdpg-tt-not-energy-dep"><br />Value is constant across the energy range.</message>
 
+  <!-- Fit skew params link -->
+  <message id="pfdpg-fit-skew-link">fit skew pars</message>
+
   <!-- Undo/redo descriptions -->
   <message id="pfdpg-undo-det-type">Change detector type</message>
   <message id="pfdpg-undo-skew-type">Change skew type</message>

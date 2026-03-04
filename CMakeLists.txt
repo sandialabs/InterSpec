@@ -276,6 +276,7 @@ set(sources
     src/PeakFitUtils.cpp
     src/PeakFitDetPrefs.cpp
     src/PeakFitDetPrefsGui.cpp
+    src/FitSkewParamsTool.cpp
     src/PeakDef.cpp
     src/PeakDists.cpp
     src/XRayWidthServer.cpp

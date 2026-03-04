@@ -11627,12 +11627,14 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 
       // Determine PeakFitDetPrefs for new foreground
       if( meas )
-      {
         determinePeakFitDetPrefs( meas, m_dataMeasurement );
-        m_peakFitDetPrefsChanged.emit();
-      }
 
       m_dataMeasurement = meas;
+
+      // Emit after m_dataMeasurement is set, so handlers reading
+      //  measurment(Foreground) get the new measurement.
+      if( meas )
+        m_peakFitDetPrefsChanged.emit();
 
       findAndSetExcludedSamples( sample_numbers );
 
