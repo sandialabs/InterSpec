@@ -157,12 +157,18 @@ protected:
 };//class FitSkewParamsTool
 
 
-/** AuxWindow wrapper around FitSkewParamsTool. */
+/** AuxWindow wrapper around FitSkewParamsTool.
+
+ Lifetime is managed by InterSpec (via showFitSkewParamsWindow / closeFitSkewParamsWindow /
+ acceptFitSkewParamsWindow), so undo/redo and spectrum changes can properly manage the window.
+ */
 class FitSkewParamsWindow : public AuxWindow
 {
 public:
   FitSkewParamsWindow( InterSpec *viewer );
   virtual ~FitSkewParamsWindow();
+
+  FitSkewParamsTool *tool();
 
 private:
   FitSkewParamsTool *m_tool;

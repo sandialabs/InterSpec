@@ -43,7 +43,8 @@
 
 using namespace std;
 
-const int PeakFitDetPrefs::sm_xmlSerializationVersion = 0;
+const int PeakFitDetPrefs::sm_xmlSerializationMajorVersion = 0;
+const int PeakFitDetPrefs::sm_xmlSerializationMinorVersion = 0;
 
 
 PeakFitDetPrefs::PeakFitDetPrefs()
@@ -163,7 +164,11 @@ void PeakFitDetPrefs::toXml( ::rapidxml::xml_node<char> *parent_node,
     = doc->allocate_node( rapidxml::node_element, "PeakFitDetPrefs" );
   parent_node->append_node( base_node );
 
-  XmlUtils::append_version_attrib( base_node, sm_xmlSerializationVersion );
+  const string versionstr = to_string( sm_xmlSerializationMajorVersion )
+                            + "." + to_string( sm_xmlSerializationMinorVersion );
+  rapidxml::xml_attribute<char> *ver_attr
+    = doc->allocate_attribute( "version", doc->allocate_string( versionstr.c_str() ) );
+  base_node->append_attribute( ver_attr );
 
   XmlUtils::append_string_node( base_node, "DetType", to_str( m_det_type ) );
   XmlUtils::append_string_node( base_node, "SkewType", PeakDef::to_string( m_peak_skew_type ) );
@@ -190,7 +195,17 @@ void PeakFitDetPrefs::fromXml( const ::rapidxml::xml_node<char> *node )
   if( !node )
     throw runtime_error( "PeakFitDetPrefs::fromXml: null node" );
 
-  XmlUtils::check_xml_version( node, sm_xmlSerializationVersion );
+  const rapidxml::xml_attribute<char> *ver_attr = node->first_attribute( "version" );
+  if( !ver_attr || !ver_attr->value() )
+    throw runtime_error( "PeakFitDetPrefs::fromXml: missing version attribute" );
+
+  int majorVersion = -1;
+  if( !(stringstream( ver_attr->value() ) >> majorVersion) )
+    throw runtime_error( "PeakFitDetPrefs::fromXml: invalid version" );
+
+  if( majorVersion != sm_xmlSerializationMajorVersion )
+    throw runtime_error( "PeakFitDetPrefs::fromXml: unsupported major version "
+                          + to_string( majorVersion ) );
 
   const string det_type_str = XmlUtils::get_string_node_value( node, "DetType" );
   m_det_type = coarse_res_from_str( det_type_str );

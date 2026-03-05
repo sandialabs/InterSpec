@@ -652,13 +652,18 @@ void FitSkewParamsTool::doFit()
     return;
   }
 
+  // Pre-allocate results and create bound callback in GUI thread, so if widget is destroyed
+  //  before the worker thread finishes, the callback will be a no-op.
+  shared_ptr<PeakFitLM::FitPeaksResults> results
+    = make_shared<PeakFitLM::FitPeaksResults>();
+  boost::function<void()> boundCallback = wApp->bind(
+    boost::bind( &FitSkewParamsTool::handleFitResults, this, results, cancelFlag )
+  );
+
   // Run fit in background thread
   server->ioService().boost::asio::io_service::post( std::bind( [=](){
     if( cancelFlag->load() )
       return;
-
-    shared_ptr<PeakFitLM::FitPeaksResults> results
-      = make_shared<PeakFitLM::FitPeaksResults>();
 
     try
     {
@@ -681,15 +686,8 @@ void FitSkewParamsTool::doFit()
       results->error_message = "Fit failed with unknown error";
     }
 
-    // Post results back to GUI thread
-    WServer::instance()->post( sessionId, std::bind( [=](){
-      WApplication *application = WApplication::instance();
-      if( application )
-      {
-        handleFitResults( results, cancelFlag );
-        application->triggerUpdate();
-      }
-    }) );
+    // Post results back to GUI thread; boundCallback is safe even if widget was destroyed
+    WServer::instance()->post( sessionId, boundCallback );
   }) );
 }//void doFit()
 
@@ -807,6 +805,8 @@ void FitSkewParamsTool::handleFitResults( const shared_ptr<PeakFitLM::FitPeaksRe
   m_statusText->setText( statusMsg );
 
   m_resultUpdated.emit();
+
+  wApp->triggerUpdate();
 }//void handleFitResults(...)
 
 
@@ -1310,18 +1310,17 @@ FitSkewParamsWindow::FitSkewParamsWindow( InterSpec *viewer )
     footer()->addWidget( updateCb );
   }
 
-  // Cancel button
+  // Cancel button - routes through InterSpec for undo/redo tracking
   WPushButton *cancelBtn = addCloseButtonToFooter( WString::tr( "fsw-cancel-btn" ), true );
-  cancelBtn->clicked().connect( this, &AuxWindow::hide );
+  cancelBtn->clicked().connect( viewer, &InterSpec::closeFitSkewParamsWindow );
 
-  // Accept button
+  // Also route the finished() signal (escape key, close button) through InterSpec
+  finished().connect( viewer, &InterSpec::closeFitSkewParamsWindow );
+
+  // Accept button - routes through InterSpec for undo/redo tracking
   m_acceptBtn = new WPushButton( WString::tr( "fsw-accept-btn" ), footer() );
   m_acceptBtn->addStyleClass( "Wt-btn" );
-  m_acceptBtn->clicked().connect( std::bind( [this](){
-    m_tool->acceptResults();
-    hide();
-    AuxWindow::deleteAuxWindow( this );
-  }) );
+  m_acceptBtn->clicked().connect( viewer, &InterSpec::acceptFitSkewParamsWindow );
 
   m_tool->resultUpdated().connect( std::bind( [this](){
     m_acceptBtn->setEnabled( m_tool->canAccept() );
@@ -1335,4 +1334,10 @@ FitSkewParamsWindow::FitSkewParamsWindow( InterSpec *viewer )
 
 FitSkewParamsWindow::~FitSkewParamsWindow()
 {
+}
+
+
+FitSkewParamsTool *FitSkewParamsWindow::tool()
+{
+  return m_tool;
 }

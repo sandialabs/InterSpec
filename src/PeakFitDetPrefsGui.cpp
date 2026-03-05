@@ -42,7 +42,6 @@
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/NativeFloatSpinBox.h"
-#include "InterSpec/FitSkewParamsTool.h"
 #include "InterSpec/PeakFitDetPrefsGui.h"
 
 using namespace std;
@@ -885,5 +884,6 @@ shared_ptr<const PeakFitDetPrefs> PeakFitDetPrefsGui::currentPrefs() const
 
 void PeakFitDetPrefsGui::showFitSkewDialog()
 {
-  new FitSkewParamsWindow( m_viewer );
+  if( m_viewer )
+    m_viewer->showFitSkewParamsWindow();
 }//void showFitSkewDialog()

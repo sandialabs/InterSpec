@@ -4,7 +4,7 @@
 
   <message id="pfdpg-collapsed-label">Peak Fit Opts</message>
 
-  <message id="pfdpg-det-type-label">FWHM Type</message>
+  <message id="pfdpg-det-type-label">Det. Type</message>
   <message id="pfdpg-skew-type-label">Skew Type</message>
   <message id="pfdpg-skew-params-label">Skew Params</message>
   <message id="pfdpg-roi-indep-skew">ROI-indep. skew</message>

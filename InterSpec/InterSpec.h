@@ -75,6 +75,7 @@ class PopupWarningWidget;
 class UnitsConverterTool;
 struct ExternalRidResults;
 class FeatureMarkerWindow;
+class FitSkewParamsWindow;
 class D3SpectrumDisplayDiv;
 class DetectionLimitWindow;
 class DetectorPeakResponse;
@@ -952,6 +953,21 @@ public:
    */
   void handleExportSpectrumFileDialogClose();
 
+  /** Creates the FitSkewParamsWindow, or shows it if it already exists.
+   Registers an undo/redo step for opening the window.
+   */
+  void showFitSkewParamsWindow();
+
+  /** Closes and deletes the FitSkewParamsWindow, if it exists.
+   Registers an undo/redo step for closing the window.
+   */
+  void closeFitSkewParamsWindow();
+
+  /** Called when the user clicks Accept in the FitSkewParamsWindow.
+   Applies the skew fit results, registers undo/redo, and closes the window.
+   */
+  void acceptFitSkewParamsWindow();
+
 #if( USE_DETECTION_LIMIT_TOOL )
   /** If `query_str` is not empty, the handle app URI function will be called. */
   void showDetectionLimitTool( const std::string &query_str );
@@ -1414,6 +1430,10 @@ protected:
   //m_peakEditWindow: used to ensure only one peak editor window is open at a
   //  time.  Will be null if no peak editor is open; valid if one is open.
   PeakEditWindow *m_peakEditWindow;
+
+  // Managed by showFitSkewParamsWindow/closeFitSkewParamsWindow/acceptFitSkewParamsWindow.
+  // Null when no FitSkewParamsWindow is open.
+  FitSkewParamsWindow *m_fitSkewParamsWindow;
   
   
   //m_currentToolsTab: used to track which tab is currently showing when the

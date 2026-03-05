@@ -133,6 +133,7 @@
 #include "InterSpec/EnterAppUrlWindow.h"
 #include "InterSpec/ExternalRidResult.h"
 #include "InterSpec/LocalTimeDelegate.h"
+#include "InterSpec/FitSkewParamsTool.h"
 #include "InterSpec/MultimediaDisplay.h"
 #include "InterSpec/CompactFileManager.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
@@ -381,6 +382,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_peakInfoDisplay( 0 ),
     m_peakInfoWindow( 0 ),
     m_peakEditWindow( 0 ),
+    m_fitSkewParamsWindow( nullptr ),
     m_currentToolsTab( -1 ),
     m_toolsTabs( 0 ),
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
@@ -1313,6 +1315,7 @@ InterSpec::~InterSpec() noexcept(true)
   del_ptr_set_null( m_warnings ); //WarningWidget isnt necessarily parented, so we do have to manually delete it
   
   deletePeakEdit();
+  closeFitSkewParamsWindow();
   deleteGammaCountDialog();
 
   // The following may be parented by app->domRoot()
@@ -2708,6 +2711,110 @@ void InterSpec::deletePeakEdit()
   m_peakEditWindow = nullptr;
 }//void deletePeakEdit()
 
+
+void InterSpec::showFitSkewParamsWindow()
+{
+  if( m_fitSkewParamsWindow )
+  {
+    m_fitSkewParamsWindow->show();
+    return;
+  }
+
+  m_fitSkewParamsWindow = new FitSkewParamsWindow( this );
+
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ closeFitSkewParamsWindow(); };
+    auto redo = [this](){ showFitSkewParamsWindow(); };
+    m_undo->addUndoRedoStep( undo, redo, "Open fit skew params tool." );
+  }
+}//void showFitSkewParamsWindow()
+
+
+void InterSpec::closeFitSkewParamsWindow()
+{
+  if( !m_fitSkewParamsWindow )
+    return;
+
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ showFitSkewParamsWindow(); };
+    auto redo = [this](){ closeFitSkewParamsWindow(); };
+    m_undo->addUndoRedoStep( undo, redo, "Close fit skew params tool." );
+  }
+
+  delete m_fitSkewParamsWindow;
+  m_fitSkewParamsWindow = nullptr;
+}//void closeFitSkewParamsWindow()
+
+
+void InterSpec::acceptFitSkewParamsWindow()
+{
+  if( !m_fitSkewParamsWindow )
+    return;
+
+  FitSkewParamsTool *tool = m_fitSkewParamsWindow->tool();
+  if( !tool )
+    return;
+
+  // Capture old state for undo
+  shared_ptr<SpecMeas> meas = measurment( SpecUtils::SpectrumType::Foreground );
+  const shared_ptr<const PeakFitDetPrefs> oldPrefs = meas ? meas->peakFitDetPrefs() : nullptr;
+
+  PeakModel *pm = peakModel();
+  const shared_ptr<const deque<PeakModel::PeakShrdPtr>> oldPeaksDeque = pm ? pm->peaks() : nullptr;
+  vector<shared_ptr<const PeakDef>> oldPeaks;
+  if( oldPeaksDeque )
+    oldPeaks.assign( oldPeaksDeque->begin(), oldPeaksDeque->end() );
+
+  // Apply results, suppressing inner undo/redo steps so we can create a single combined step
+  {
+    UndoRedoManager::BlockUndoRedoInserts block;
+    tool->acceptResults();
+  }
+
+  // Capture new state
+  const shared_ptr<const PeakFitDetPrefs> newPrefs = meas ? meas->peakFitDetPrefs() : nullptr;
+  vector<shared_ptr<const PeakDef>> newPeaks;
+  if( pm )
+  {
+    const shared_ptr<const deque<PeakModel::PeakShrdPtr>> newPeaksDeque = pm->peaks();
+    if( newPeaksDeque )
+      newPeaks.assign( newPeaksDeque->begin(), newPeaksDeque->end() );
+  }
+
+  // Create combined undo/redo step for both prefs and peak changes
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    weak_ptr<SpecMeas> weakMeas = meas;
+
+    auto doUndoOrRedo = make_shared<function<void(bool)>>(
+      [weakMeas, oldPrefs, newPrefs, oldPeaks, newPeaks]( const bool is_undo ){
+        shared_ptr<SpecMeas> m = weakMeas.lock();
+        if( m )
+          m->setPeakFitDetPrefs( is_undo ? oldPrefs : newPrefs );
+
+        InterSpec *viewer = InterSpec::instance();
+        if( viewer )
+        {
+          viewer->peakFitDetPrefsChanged().emit();
+          PeakModel *peakModel = viewer->peakModel();
+          if( peakModel )
+            peakModel->setPeaks( is_undo ? oldPeaks : newPeaks );
+        }
+      }
+    );
+
+    auto undo = [doUndoOrRedo](){ (*doUndoOrRedo)( true ); };
+    auto redo = [doUndoOrRedo](){ (*doUndoOrRedo)( false ); };
+
+    m_undo->addUndoRedoStep( undo, redo, "Accept fit skew params." );
+  }
+
+  // Close the window without adding another undo step
+  delete m_fitSkewParamsWindow;
+  m_fitSkewParamsWindow = nullptr;
+}//void acceptFitSkewParamsWindow()
 
 
 void InterSpec::setIsotopeSearchEnergy( double energy )
@@ -11014,8 +11121,9 @@ void InterSpec::changeDisplayedSampleNums( const std::set<int> &samples,
     case SpecUtils::SpectrumType::Foreground:
       sampleset = &m_displayedSamples;
       deletePeakEdit();
+      closeFitSkewParamsWindow();
     break;
-      
+
     case SpecUtils::SpectrumType::SecondForeground:
       sampleset = &m_sectondForgroundSampleNumbers;
     break;
@@ -11544,8 +11652,11 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   {
     case SpecUtils::SpectrumType::Foreground:
       if( !sameSpecFile )
+      {
         deletePeakEdit();
-      
+        closeFitSkewParamsWindow();
+      }
+
       m_exportSpecFileMenu->setDisabled( !meas );
     break;
     

@@ -127,7 +127,8 @@ struct PeakFitDetPrefs
 
   // -- XML serialization --
 
-  static const int sm_xmlSerializationVersion; // = 0
+  static const int sm_xmlSerializationMajorVersion; // = 0
+  static const int sm_xmlSerializationMinorVersion; // = 0
 
   /** Appends a `<PeakFitDetPrefs>` child node to `parent_node`. */
   void toXml( ::rapidxml::xml_node<char> *parent_node,
