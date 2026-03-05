@@ -23,7 +23,9 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
 #include <cmath>
+#include <mutex>
 #include <chrono>
 #include <string>
 #include <fstream>
@@ -40,6 +42,7 @@
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakFitSpecImp.h"
+#include "InterSpec/FitPeaksForNuclides.h"
 
 #include "PeakFitImprove.h"
 #include "CandidatePeak_GA.h"
@@ -53,6 +56,14 @@ std::mutex EA::mtx_rand;
 namespace
 {
 std::function<double(const FindCandidateSettings &)> ns_ga_eval_fcn;
+
+const std::vector<DataSrcInfo> *ns_input_srcs = nullptr;
+
+// Cache for find_valid_energy_range results, keyed by Measurement pointer.
+// The same spectra are evaluated for every GA individual, so caching avoids
+// re-running the expensive range computation ~500 * N_sources times per generation.
+std::mutex ns_valid_range_cache_mutex;
+std::map<const SpecUtils::Measurement *, std::pair<size_t,size_t>> ns_valid_range_cache;
 
 std::ofstream sm_output_file;
 
@@ -404,6 +415,60 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
                           size_t end_channel,
                           const FindCandidateSettings &settings )
 {
+  // Use find_valid_energy_range to determine the valid energy bounds, replacing the
+  //  ad-hoc turn-on detection in PeakFitSpec::find_candidate_peaks when start_channel == 0.
+  //  Results are cached since the same spectra are evaluated for every GA individual.
+  if( (start_channel == 0) && data && (data->num_gamma_channels() > 16) )
+  {
+    const SpecUtils::Measurement *key = data.get();
+    std::pair<size_t,size_t> cached_channels;
+    bool found_in_cache = false;
+
+    {
+      std::lock_guard<std::mutex> lock( ns_valid_range_cache_mutex );
+      const auto it = ns_valid_range_cache.find( key );
+      if( it != end(ns_valid_range_cache) )
+      {
+        cached_channels = it->second;
+        found_in_cache = true;
+      }
+    }
+
+    if( !found_in_cache )
+    {
+      try
+      {
+        const auto [min_energy, max_energy] = FitPeaksForNuclides::find_valid_energy_range( data );
+
+        if( min_energy < max_energy )
+        {
+          cached_channels.first = data->find_gamma_channel( static_cast<float>( min_energy ) );
+          cached_channels.second = data->find_gamma_channel( static_cast<float>( max_energy ) );
+        }else
+        {
+          cached_channels = { 0, 0 };
+        }
+      }catch( std::exception & )
+      {
+        // find_valid_energy_range or find_gamma_channel may throw for unusual energy
+        //  calibrations (e.g., full range fraction that fails to converge); fall back
+        //  to the ad-hoc turn-on detection in PeakFitSpec::find_candidate_peaks.
+        cached_channels = { 0, 0 };
+      }
+
+      std::lock_guard<std::mutex> lock( ns_valid_range_cache_mutex );
+      ns_valid_range_cache[key] = cached_channels;
+    }//if( !found_in_cache )
+
+    if( cached_channels.first > 0 || cached_channels.second > 0 )
+    {
+      start_channel = cached_channels.first;
+
+      if( (end_channel == 0) || (end_channel >= (data->num_gamma_channels() - 1)) )
+        end_channel = cached_channels.second;
+    }
+  }//if( start_channel == 0 )
+
   return PeakFitSpec::find_candidate_peaks( data, start_channel, end_channel, settings );
 }//find_candidate_peaks(...)
 
@@ -1050,6 +1115,18 @@ string CandidatePeakSolution::to_string( const string &separator ) const
   + separator + "more_scrutiny_coarser_FOM_delta: " + std::to_string(more_scrutiny_coarser_FOM_delta)
   + separator + "more_scrutiny_min_dev_from_line: " + std::to_string(more_scrutiny_min_dev_from_line)
   + separator + "amp_to_apply_line_test_below: " + std::to_string(amp_to_apply_line_test_below)
+  + separator + "smooth_ref_fraction: " + std::to_string(smooth_ref_fraction)
+  + separator + "smooth_scale_power: " + std::to_string(smooth_scale_power)
+  + separator + "min_second_deriv_significance: " + std::to_string(min_second_deriv_significance)
+  + separator + "compton_next_ratio_max: " + std::to_string(compton_next_ratio_max)
+  + separator + "compton_prev_ratio_min: " + std::to_string(compton_prev_ratio_min)
+  + separator + "compton_total_ratio_min: " + std::to_string(compton_total_ratio_min)
+  + separator + "low_energy_test_max_keV: " + std::to_string(low_energy_test_max_keV)
+  + separator + "low_energy_drop_fraction: " + std::to_string(low_energy_drop_fraction)
+  + separator + "pcgap_feature_nsigma: " + std::to_string(pcgap_feature_nsigma)
+  + separator + "pcgap_max_extent_nsigma: " + std::to_string(pcgap_max_extent_nsigma)
+  + separator + "pcgap_roi_blend_weight: " + std::to_string(pcgap_roi_blend_weight)
+  + separator + "pcgap_fom_blend_threshold: " + std::to_string(pcgap_fom_blend_threshold)
   ;
 }
 
@@ -1057,15 +1134,35 @@ string CandidatePeakSolution::to_string( const string &separator ) const
 void init_genes(CandidatePeakSolution& p,const std::function<double(void)> &rnd01)
 {
   // rnd01() gives a random number in 0~1
-  p.num_smooth_side_channels          = 6+7*rnd01(); //8;                   //2+13*rnd01();
-  p.smooth_polynomial_order           = 2;                   //2+1*rnd01();
-  p.threshold_FOM                     = 0.75+1.25*rnd01(); //0.75 + 0.75*rnd01(); //0.8+2.7*rnd01();
-  p.more_scrutiny_FOM_threshold_delta = -0.1+2.1*rnd01(); //-0.1 + 1.2*rnd01();  //-0.5+4*rnd01();
-  p.pos_sum_threshold_sf              = -0.15+0.3*rnd01(); // -0.1 + 0.11*rnd01();   //-0.1+0.2*rnd01();
-  p.num_chan_fluctuate                = 1;                   //1+3*rnd01();
-  p.more_scrutiny_coarser_FOM_delta   = -0.1+4.1*rnd01(); //2 + 4*rnd01();       //-0.1+5.1*rnd01();
-  p.more_scrutiny_min_dev_from_line   = 0 + 7*rnd01(); //0 + 10*rnd01();      //0.0+10*rnd01();
-  p.amp_to_apply_line_test_below      = 0.0+100*rnd01(); //0 + 75*rnd01();      //0.0+120*rnd01();
+  p.num_smooth_side_channels          = 3+10*rnd01();
+  p.smooth_polynomial_order           = 2;
+  p.threshold_FOM                     = 0.75+1.25*rnd01();
+  p.more_scrutiny_FOM_threshold_delta = -0.1+2.1*rnd01();
+  p.pos_sum_threshold_sf              = -0.15+0.3*rnd01();
+  p.num_chan_fluctuate                = 1;
+  p.more_scrutiny_coarser_FOM_delta   = -0.1+4.1*rnd01();
+  p.more_scrutiny_min_dev_from_line   = 0 + 7*rnd01();
+  p.amp_to_apply_line_test_below      = 0.0+100*rnd01();
+
+  // Energy-adaptive smoothing
+  p.smooth_ref_fraction               = 0.05+0.20*rnd01();  // [0.05, 0.25]
+  p.smooth_scale_power                = 0.6*rnd01();         // [0, 0.6]; 0.5 = sqrt (NaI physics)
+  p.min_second_deriv_significance     = 8.0*rnd01();         // [0, 8]; 0 = disabled
+
+  // Compton backscatter test
+  p.compton_next_ratio_max            = 2.0+18.0*rnd01();   // [2, 20]; old algo: 4.0
+  p.compton_prev_ratio_min            = 0.5*rnd01();         // [0, 0.5]; old algo: 0.2
+  p.compton_total_ratio_min           = 0.8*rnd01();         // [0, 0.8]; old algo: 0.3
+
+  // Low-energy drop-off test
+  p.low_energy_test_max_keV           = 200*rnd01();         // [0, 200]; old algo: 130
+  p.low_energy_drop_fraction          = 0.1+0.7*rnd01();    // [0.1, 0.8]; old algo: 0.45
+
+  // PCGAP ROI
+  p.pcgap_feature_nsigma              = 1.5+3.5*rnd01();    // [1.5, 5.0]; old algo: 3.0
+  p.pcgap_max_extent_nsigma           = 2.5+2.5*rnd01();    // [2.5, 5.0]
+  p.pcgap_roi_blend_weight            = rnd01();             // [0, 1]; 0 = disabled
+  p.pcgap_fom_blend_threshold         = 1.0+9.0*rnd01();    // [1, 10]
 }
 
 FindCandidateSettings genes_to_settings( const CandidatePeakSolution &p )
@@ -1081,6 +1178,26 @@ FindCandidateSettings genes_to_settings( const CandidatePeakSolution &p )
   settings.more_scrutiny_coarser_FOM = p.threshold_FOM + p.more_scrutiny_coarser_FOM_delta;
   settings.more_scrutiny_min_dev_from_line = p.more_scrutiny_min_dev_from_line;
   settings.amp_to_apply_line_test_below = p.amp_to_apply_line_test_below;
+
+  // Energy-adaptive smoothing
+  settings.smooth_ref_fraction = static_cast<float>( p.smooth_ref_fraction );
+  settings.smooth_scale_power = static_cast<float>( p.smooth_scale_power );
+  settings.min_second_deriv_significance = static_cast<float>( p.min_second_deriv_significance );
+
+  // Compton backscatter test
+  settings.compton_next_ratio_max = static_cast<float>( p.compton_next_ratio_max );
+  settings.compton_prev_ratio_min = static_cast<float>( p.compton_prev_ratio_min );
+  settings.compton_total_ratio_min = static_cast<float>( p.compton_total_ratio_min );
+
+  // Low-energy drop-off test
+  settings.low_energy_test_max_keV = static_cast<float>( p.low_energy_test_max_keV );
+  settings.low_energy_drop_fraction = static_cast<float>( p.low_energy_drop_fraction );
+
+  // PCGAP ROI
+  settings.pcgap_feature_nsigma = static_cast<float>( p.pcgap_feature_nsigma );
+  settings.pcgap_max_extent_nsigma = static_cast<float>( p.pcgap_max_extent_nsigma );
+  settings.pcgap_roi_blend_weight = static_cast<float>( p.pcgap_roi_blend_weight );
+  settings.pcgap_fom_blend_threshold = static_cast<float>( p.pcgap_fom_blend_threshold );
 
   return settings;
 }
@@ -1140,13 +1257,12 @@ CandidatePeakSolution mutate(
 
     if( rnd01() > mutate_threshold )
       X_new.num_smooth_side_channels += shrink_scale*(rnd01()-rnd01()); //not multiplying by `mu`, because we can get stuck in a single int
-    //in_range=in_range&&(X_new.num_smooth_side_channels>=2 && X_new.num_smooth_side_channels<15);
     if( rnd01() > mutate_threshold )
-      X_new.num_smooth_side_channels = std::max( X_new.num_smooth_side_channels, 6 );
+      X_new.num_smooth_side_channels = std::max( X_new.num_smooth_side_channels, 3 );
     if( rnd01() > mutate_threshold )
     {
       X_new.num_smooth_side_channels = std::min( X_new.num_smooth_side_channels, 13 );
-      in_range=in_range&&(X_new.num_smooth_side_channels>=6 && X_new.num_smooth_side_channels<=13);
+      in_range=in_range&&(X_new.num_smooth_side_channels>=3 && X_new.num_smooth_side_channels<=13);
     }
 
     //X_new.smooth_polynomial_order+=mu*(rnd01()-rnd01()); //This is an int we could get stuck in...
@@ -1200,6 +1316,83 @@ CandidatePeakSolution mutate(
       in_range=in_range&&(X_new.amp_to_apply_line_test_below>=0.0 && X_new.amp_to_apply_line_test_below<=100);
       //in_range=in_range&&(X_new.amp_to_apply_line_test_below>=0.0 && X_new.amp_to_apply_line_test_below<=75);
     }
+
+    // Energy-adaptive smoothing
+    if( rnd01() > mutate_threshold )
+    {
+      X_new.smooth_ref_fraction += mu * (rnd01() - rnd01());
+      in_range = in_range && (X_new.smooth_ref_fraction >= 0.05 && X_new.smooth_ref_fraction <= 0.25);
+    }
+
+    if( rnd01() > mutate_threshold )
+    {
+      X_new.smooth_scale_power += mu * (rnd01() - rnd01());
+      in_range = in_range && (X_new.smooth_scale_power >= 0.0 && X_new.smooth_scale_power <= 0.6);
+    }
+
+    if( rnd01() > mutate_threshold )
+    {
+      X_new.min_second_deriv_significance += mu * (rnd01() - rnd01());
+      in_range = in_range && (X_new.min_second_deriv_significance >= 0.0 && X_new.min_second_deriv_significance <= 8.0);
+    }
+
+    // Compton backscatter test
+    if( rnd01() > mutate_threshold )
+    {
+      X_new.compton_next_ratio_max += 2.0 * mu * (rnd01() - rnd01());
+      in_range = in_range && (X_new.compton_next_ratio_max >= 2.0 && X_new.compton_next_ratio_max <= 20.0);
+    }
+
+    if( rnd01() > mutate_threshold )
+    {
+      X_new.compton_prev_ratio_min += mu * (rnd01() - rnd01());
+      in_range = in_range && (X_new.compton_prev_ratio_min >= 0.0 && X_new.compton_prev_ratio_min <= 0.5);
+    }
+
+    if( rnd01() > mutate_threshold )
+    {
+      X_new.compton_total_ratio_min += mu * (rnd01() - rnd01());
+      in_range = in_range && (X_new.compton_total_ratio_min >= 0.0 && X_new.compton_total_ratio_min <= 0.8);
+    }
+
+    // Low-energy drop-off test
+    if( rnd01() > mutate_threshold )
+    {
+      X_new.low_energy_test_max_keV += 10.0 * mu * (rnd01() - rnd01());
+      in_range = in_range && (X_new.low_energy_test_max_keV >= 0.0 && X_new.low_energy_test_max_keV <= 200.0);
+    }
+
+    if( rnd01() > mutate_threshold )
+    {
+      X_new.low_energy_drop_fraction += mu * (rnd01() - rnd01());
+      in_range = in_range && (X_new.low_energy_drop_fraction >= 0.1 && X_new.low_energy_drop_fraction <= 0.8);
+    }
+
+    // PCGAP ROI
+    if( rnd01() > mutate_threshold )
+    {
+      X_new.pcgap_feature_nsigma += mu * (rnd01() - rnd01());
+      in_range = in_range && (X_new.pcgap_feature_nsigma >= 1.5 && X_new.pcgap_feature_nsigma <= 5.0);
+    }
+
+    if( rnd01() > mutate_threshold )
+    {
+      X_new.pcgap_max_extent_nsigma += mu * (rnd01() - rnd01());
+      in_range = in_range && (X_new.pcgap_max_extent_nsigma >= 2.5 && X_new.pcgap_max_extent_nsigma <= 5.0);
+    }
+
+    if( rnd01() > mutate_threshold )
+    {
+      X_new.pcgap_roi_blend_weight += mu * (rnd01() - rnd01());
+      in_range = in_range && (X_new.pcgap_roi_blend_weight >= 0.0 && X_new.pcgap_roi_blend_weight <= 1.0);
+    }
+
+    if( rnd01() > mutate_threshold )
+    {
+      X_new.pcgap_fom_blend_threshold += mu * (rnd01() - rnd01());
+      in_range = in_range && (X_new.pcgap_fom_blend_threshold >= 1.0 && X_new.pcgap_fom_blend_threshold <= 10.0);
+    }
+
   } while(!in_range);
   return X_new;
 }
@@ -1301,6 +1494,118 @@ CandidatePeakSolution crossover(
     X_new.amp_to_apply_line_test_below = X2.amp_to_apply_line_test_below;
   }
 
+  // Energy-adaptive smoothing
+  if( rnd01() < crossover_threshold )
+  {
+    r = rnd01();
+    X_new.smooth_ref_fraction = r * X1.smooth_ref_fraction + (1.0 - r) * X2.smooth_ref_fraction;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.smooth_ref_fraction = X2.smooth_ref_fraction;
+  }
+
+  if( rnd01() < crossover_threshold )
+  {
+    r = rnd01();
+    X_new.smooth_scale_power = r * X1.smooth_scale_power + (1.0 - r) * X2.smooth_scale_power;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.smooth_scale_power = X2.smooth_scale_power;
+  }
+
+  if( rnd01() < crossover_threshold )
+  {
+    r = rnd01();
+    X_new.min_second_deriv_significance = r * X1.min_second_deriv_significance + (1.0 - r) * X2.min_second_deriv_significance;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.min_second_deriv_significance = X2.min_second_deriv_significance;
+  }
+
+  // Compton backscatter test
+  if( rnd01() < crossover_threshold )
+  {
+    r = rnd01();
+    X_new.compton_next_ratio_max = r * X1.compton_next_ratio_max + (1.0 - r) * X2.compton_next_ratio_max;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.compton_next_ratio_max = X2.compton_next_ratio_max;
+  }
+
+  if( rnd01() < crossover_threshold )
+  {
+    r = rnd01();
+    X_new.compton_prev_ratio_min = r * X1.compton_prev_ratio_min + (1.0 - r) * X2.compton_prev_ratio_min;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.compton_prev_ratio_min = X2.compton_prev_ratio_min;
+  }
+
+  if( rnd01() < crossover_threshold )
+  {
+    r = rnd01();
+    X_new.compton_total_ratio_min = r * X1.compton_total_ratio_min + (1.0 - r) * X2.compton_total_ratio_min;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.compton_total_ratio_min = X2.compton_total_ratio_min;
+  }
+
+  // Low-energy drop-off test
+  if( rnd01() < crossover_threshold )
+  {
+    r = rnd01();
+    X_new.low_energy_test_max_keV = r * X1.low_energy_test_max_keV + (1.0 - r) * X2.low_energy_test_max_keV;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.low_energy_test_max_keV = X2.low_energy_test_max_keV;
+  }
+
+  if( rnd01() < crossover_threshold )
+  {
+    r = rnd01();
+    X_new.low_energy_drop_fraction = r * X1.low_energy_drop_fraction + (1.0 - r) * X2.low_energy_drop_fraction;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.low_energy_drop_fraction = X2.low_energy_drop_fraction;
+  }
+
+  // PCGAP ROI
+  if( rnd01() < crossover_threshold )
+  {
+    r = rnd01();
+    X_new.pcgap_feature_nsigma = r * X1.pcgap_feature_nsigma + (1.0 - r) * X2.pcgap_feature_nsigma;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.pcgap_feature_nsigma = X2.pcgap_feature_nsigma;
+  }
+
+  if( rnd01() < crossover_threshold )
+  {
+    r = rnd01();
+    X_new.pcgap_max_extent_nsigma = r * X1.pcgap_max_extent_nsigma + (1.0 - r) * X2.pcgap_max_extent_nsigma;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.pcgap_max_extent_nsigma = X2.pcgap_max_extent_nsigma;
+  }
+
+  if( rnd01() < crossover_threshold )
+  {
+    r = rnd01();
+    X_new.pcgap_roi_blend_weight = r * X1.pcgap_roi_blend_weight + (1.0 - r) * X2.pcgap_roi_blend_weight;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.pcgap_roi_blend_weight = X2.pcgap_roi_blend_weight;
+  }
+
+  if( rnd01() < crossover_threshold )
+  {
+    r = rnd01();
+    X_new.pcgap_fom_blend_threshold = r * X1.pcgap_fom_blend_threshold + (1.0 - r) * X2.pcgap_fom_blend_threshold;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.pcgap_fom_blend_threshold = X2.pcgap_fom_blend_threshold;
+  }
+
   return X_new;
 }
 
@@ -1328,22 +1633,36 @@ void SO_report_generation(
     sm_best_total_cost = last_generation.best_total_cost;
   }
 
-  cout <<"Generation ["<<generation_number<<"], "
-  <<"Best="<<last_generation.best_total_cost << ", "
-  <<"Average="<<last_generation.average_cost << ", "
-  <<"Best genes: {\n\t" <<best_genes.to_string("\n\t")  << "\n}\n"
-  <<"Exe_time="<<last_generation.exe_time
-  << endl << endl;
+  cout << "Generation [" << generation_number << "], "
+       << "Best=" << last_generation.best_total_cost << ", "
+       << "Average=" << last_generation.average_cost << ", "
+       << "Exe_time=" << last_generation.exe_time << "\n";
+
+  // Print score details for the best individual
+  if( ns_input_srcs )
+  {
+    const FindCandidateSettings settings = genes_to_settings( best_genes );
+    const CandidatePeakScore score = eval_candidate_settings( settings, *ns_input_srcs, false );
+    cout << "  Score=" << score.score
+         << ", Found=" << score.num_peaks_found
+         << ", DefWantedFound=" << score.num_def_wanted_peaks_found
+         << ", DefWantedMissed=" << score.num_def_wanted_not_found
+         << ", MaybeWantedMissed=" << score.num_possibly_accepted_peaks_not_found
+         << ", Extra=" << score.num_extra_peaks << "\n";
+  }
+
+  cout << "Best genes: {\n\t" << best_genes.to_string( "\n\t" ) << "\n}\n" << endl;
 
   sm_output_file
-  <<generation_number<<"\t"
-  <<last_generation.average_cost<<"\t"
-  <<last_generation.best_total_cost<<"\t"
+  << generation_number << "\t"
+  << last_generation.average_cost << "\t"
+  << last_generation.best_total_cost << "\t"
   << "{" << best_genes.to_string(", ") << "}\n\n";
 }
 
 
-FindCandidateSettings do_ga_eval( std::function<double(const FindCandidateSettings &)> ga_eval_fcn )
+FindCandidateSettings do_ga_eval( std::function<double(const FindCandidateSettings &)> ga_eval_fcn,
+                                  const std::vector<DataSrcInfo> *input_srcs_for_report )
 {
   assert( !sm_has_been_called );
   if( sm_has_been_called )
@@ -1359,6 +1678,7 @@ FindCandidateSettings do_ga_eval( std::function<double(const FindCandidateSettin
     throw runtime_error( "Invalid eval function passed in." );
 
   ns_ga_eval_fcn = ga_eval_fcn;
+  ns_input_srcs = input_srcs_for_report;
 
 
   sm_output_file.open("results.txt");

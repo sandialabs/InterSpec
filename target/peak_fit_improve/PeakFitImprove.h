@@ -41,7 +41,7 @@ namespace SpecUtils
 
 namespace PeakFitImprove
 {
-const bool debug_printout = true;
+const bool debug_printout = false;
 
 const double debug_lower_energy = 250;
 const double debug_upper_energy = 240;
@@ -182,10 +182,10 @@ namespace JudgmentFactors
 
   const double def_want_nsigma = 4;   // i.e., above 4 sigma, lets weight all peaks the same
   const double min_def_wanted_counts = 15; //i.e., if expected peak area is below 15 counts, we wont punish for not finding
-  const double lower_want_nsigma = 2; // The number of sigma above which we will positively reward finding a peak
+  const double lower_want_nsigma = 2.5; // The number of sigma above which we will positively reward finding a peak
   // Between `def_want_nsigma` and `lower_want_nsigma` we will linearly weight for not finding a peak
 
-  const double found_extra_punishment = 0.25; // 1/this-value gives the trade-off of finding extra peaks, verses not finding peaks
+  const double found_extra_punishment = 0.5; // 1/this-value gives the trade-off of finding extra peaks, verses not finding peaks
 
   // When a peak between lower_want_nsigma and def_want_nsigma is found, the minimum value we should assign
   const double min_initial_fit_maybe_want_score = 0.25;

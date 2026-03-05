@@ -97,41 +97,8 @@ namespace PeakFitImprove
 
 
 
-std::string FindCandidateSettings::print( const string &var_name ) const
-{
-  return var_name + ".num_smooth_side_channels = "   + std::to_string(num_smooth_side_channels)        + ";\n"
-  + var_name + ".smooth_polynomial_order = "         + std::to_string(smooth_polynomial_order)         + ";\n"
-  + var_name + ".threshold_FOM = "                   + std::to_string(threshold_FOM)                   + ";\n"
-  + var_name + ".more_scrutiny_FOM_threshold = "     + std::to_string(more_scrutiny_FOM_threshold)     + ";\n"
-  + var_name + ".pos_sum_threshold_sf = "            + std::to_string(pos_sum_threshold_sf)            + ";\n"
-  + var_name + ".num_chan_fluctuate = "              + std::to_string(num_chan_fluctuate)              + ";\n"
-  //+ var_name + ".min_counts_per_channel = "        + std::to_string(min_counts_per_channel)          + ";\n"
-  + var_name + ".more_scrutiny_coarser_FOM = "       + std::to_string(more_scrutiny_coarser_FOM)       + ";\n"
-  + var_name + ".more_scrutiny_min_dev_from_line = " + std::to_string(more_scrutiny_min_dev_from_line) + ";\n"
-  + var_name + ".amp_to_apply_line_test_below = "    + std::to_string(amp_to_apply_line_test_below)    + ";\n"
-  ;
-}//std::string print( const string &var_name ) const
-
-
-std::string FindCandidateSettings::to_json() const
-{
-    //nlohmann::json data;
-  Wt::Json::Object data;
-  data["FindCandidateSettingsVersion"] = 1;
-  data["NumSmoothChannels"] = num_smooth_side_channels;
-  data["SmoothPolyOrder"] = smooth_polynomial_order;
-  data["MinFOM"] = threshold_FOM;
-  data["MoreScrutinyFOM"] = more_scrutiny_FOM_threshold;
-  data["SecondDerivSummingThresh"] = pos_sum_threshold_sf;
-  data["NumChannelFluxuate"] = static_cast<int>(num_chan_fluctuate);
-  //data["MinCountsPerChannel"] = min_counts_per_channel;
-  data["MoreScrutinyCoarseFOM"] = more_scrutiny_coarser_FOM;
-  data["MoreScrutinyMinDevFromLine"] = more_scrutiny_min_dev_from_line;
-  data["AmpToApplyLineTestBelow"] = amp_to_apply_line_test_below;
-
-
-  return Wt::Json::serialize( data );
-}//std::string to_json() const
+// FindCandidateSettings::print() and to_json() are defined in PeakFitSpecImp.cpp
+// with all gene fields (including energy-adaptive, Compton, low-energy, PCGAP).
 
 
 
@@ -1475,7 +1442,7 @@ int main( int argc, char **argv )
         return score.score;
       };
       
-      best_settings = CandidatePeak_GA::do_ga_eval( ga_eval );
+      best_settings = CandidatePeak_GA::do_ga_eval( ga_eval, &input_srcs );
       
       eval_candidate_settings_fcn( best_settings, input_srcs, true );
       cout << "Wrote N42s with best settings." << endl;
@@ -1946,15 +1913,33 @@ int main( int argc, char **argv )
       }else
       {
         // LowOrMedRes settings (NaI/CZT/LaBr) - GA optimized March 2026
-        candidate_settings.num_smooth_side_channels = 8;
+        //  num_smooth_side_channels is the base SG window at the reference channel;
+        //  scales up with energy via smooth_scale_power, capped at 30 side channels.
+        candidate_settings.num_smooth_side_channels = 6;
         candidate_settings.smooth_polynomial_order = 2;
-        candidate_settings.threshold_FOM = 1.192062;
-        candidate_settings.more_scrutiny_FOM_threshold = 1.892036;
-        candidate_settings.pos_sum_threshold_sf = -0.017268;
+        candidate_settings.threshold_FOM = 0.870230f;
+        candidate_settings.more_scrutiny_FOM_threshold = 1.332163f;
+        candidate_settings.pos_sum_threshold_sf = 0.027994f;
         candidate_settings.num_chan_fluctuate = 1;
-        candidate_settings.more_scrutiny_coarser_FOM = 2.792367;
-        candidate_settings.more_scrutiny_min_dev_from_line = 1.135670;
-        candidate_settings.amp_to_apply_line_test_below = 58;
+        candidate_settings.more_scrutiny_coarser_FOM = 2.382512f;
+        candidate_settings.more_scrutiny_min_dev_from_line = 5.650730f;
+        candidate_settings.amp_to_apply_line_test_below = 49;
+
+        // Energy-adaptive smoothing - GA optimized
+        candidate_settings.smooth_ref_fraction = 0.055011f;
+        candidate_settings.smooth_scale_power = 0.582499f;
+        candidate_settings.min_second_deriv_significance = 3.478286f;
+
+        // Compton backscatter, low-energy, PCGAP tests - GA optimized
+        candidate_settings.compton_next_ratio_max = 15.796543f;
+        candidate_settings.compton_prev_ratio_min = 0.379351f;
+        candidate_settings.compton_total_ratio_min = 0.105700f;
+        candidate_settings.low_energy_test_max_keV = 17.415007f;
+        candidate_settings.low_energy_drop_fraction = 0.758085f;
+        candidate_settings.pcgap_feature_nsigma = 3.847805f;
+        candidate_settings.pcgap_max_extent_nsigma = 4.014792f;
+        candidate_settings.pcgap_roi_blend_weight = 0.843503f;
+        candidate_settings.pcgap_fom_blend_threshold = 8.979513f;
       }
 
       // Generate HTML file with candidate peaks overlaid on spectra
@@ -1975,9 +1960,8 @@ int main( int argc, char **argv )
         << "fieldset{width: 90vw; margin-left: auto; margin-right: auto; margin-top: 20px;}" << endl
         << "</style>" << endl;
 
-      // Accumulators for scoring both methods
+      // Accumulator for scoring
       CandidatePeak_GA::CandidatePeakScore ga_total_score{};
-      CandidatePeak_GA::CandidatePeakScore sd_total_score{};
 
       for( size_t i = 0; i < input_srcs.size(); ++i )
       {
@@ -1989,30 +1973,15 @@ int main( int argc, char **argv )
         const shared_ptr<const SpecUtils::Measurement> &long_background = src_info.long_background;
         const vector<ExpectedPhotopeakInfo> &expected_photopeaks = info.expected_photopeaks;
 
-        const bool isHPGe = (ClassifyDetType_GA::true_det_type_for_name( info.detector_name )
-                             == PeakFitUtils::CoarseResolutionType::High);
-
         // Find GA-optimized candidate peaks
         const vector<PeakDef> candidates = CandidatePeak_GA::find_candidate_peaks( spectrum, 0, 0, candidate_settings );
         vector<shared_ptr<const PeakDef>> candidate_ptrs;
         for( const PeakDef &p : candidates )
           candidate_ptrs.push_back( make_shared<PeakDef>( p ) );
 
-        // Find second-derivative candidate peaks
-        const vector<shared_ptr<PeakDef>> sd_peaks_shared
-          = secondDerivativePeakCanidatesWithROI( spectrum, isHPGe, 0, 0 );
-
-        // Convert to non-shared PeakDef vector for scoring
-        vector<PeakDef> sd_peaks;
-        sd_peaks.reserve( sd_peaks_shared.size() );
-        for( const shared_ptr<PeakDef> &p : sd_peaks_shared )
-          sd_peaks.push_back( *p );
-
-        // Score both methods
+        // Score GA candidates
         const CandidatePeak_GA::CandidatePeakScore ga_score
           = CandidatePeak_GA::calculate_candidate_peak_score_for_source( candidates, expected_photopeaks );
-        const CandidatePeak_GA::CandidatePeakScore sd_score
-          = CandidatePeak_GA::calculate_candidate_peak_score_for_source( sd_peaks, expected_photopeaks );
 
         ga_total_score.score += ga_score.score;
         ga_total_score.num_peaks_found += ga_score.num_peaks_found;
@@ -2020,21 +1989,6 @@ int main( int argc, char **argv )
         ga_total_score.num_def_wanted_not_found += ga_score.num_def_wanted_not_found;
         ga_total_score.num_possibly_accepted_peaks_not_found += ga_score.num_possibly_accepted_peaks_not_found;
         ga_total_score.num_extra_peaks += ga_score.num_extra_peaks;
-
-        sd_total_score.score += sd_score.score;
-        sd_total_score.num_peaks_found += sd_score.num_peaks_found;
-        sd_total_score.num_def_wanted_peaks_found += sd_score.num_def_wanted_peaks_found;
-        sd_total_score.num_def_wanted_not_found += sd_score.num_def_wanted_not_found;
-        sd_total_score.num_possibly_accepted_peaks_not_found += sd_score.num_possibly_accepted_peaks_not_found;
-        sd_total_score.num_extra_peaks += sd_score.num_extra_peaks;
-
-        // Set second-derivative peaks to neon pink and combine with GA candidates for display
-        vector<shared_ptr<const PeakDef>> all_peaks_ptrs = candidate_ptrs;
-        for( const shared_ptr<PeakDef> &p : sd_peaks_shared )
-        {
-          p->setLineColor( Wt::WColor( 255, 16, 240 ) ); // neon pink
-          all_peaks_ptrs.push_back( p );
-        }
 
         // Build truth reference lines
         ReferenceLineInfo ref_line_info;
@@ -2122,14 +2076,14 @@ int main( int argc, char **argv )
         background_opts.display_scale_factor = spectrum->live_time() / long_background->live_time();
         foreground_opts.spectrum_type = SpecUtils::SpectrumType::Foreground;
         background_opts.spectrum_type = SpecUtils::SpectrumType::Background;
-        foreground_opts.peaks_json = PeakDef::peak_json( all_peaks_ptrs, spectrum, Wt::WColor(), false );
+        foreground_opts.peaks_json = PeakDef::peak_json( candidate_ptrs, spectrum, Wt::WColor(), false );
 
         const string div_id = "chart_" + std::to_string( i );
 
         html_output << "<fieldset>" << endl
           << "<legend>" << info.location_name << "/" << info.detector_name << "/"
           << info.live_time_name << "/" << src_info.src_name
-          << " (GA: " << candidates.size() << ", 2ndDeriv: " << sd_peaks.size() << ")" << "</legend>" << endl;
+          << " (" << candidates.size() << " candidates)" << "</legend>" << endl;
 
         html_output << "<div id=\"" << div_id << "\" class=\"chart\" oncontextmenu=\"return false;\"></div>" << endl;
 
@@ -2216,7 +2170,7 @@ int main( int argc, char **argv )
 
         cout << "  [" << (i + 1) << "/" << input_srcs.size() << "] "
              << info.detector_name << "/" << info.location_name << "/" << src_info.src_name
-             << " - GA: " << candidates.size() << ", 2ndDeriv: " << sd_peaks.size() << endl;
+             << " - " << candidates.size() << " candidates" << endl;
       }//for( size_t i = 0; i < input_srcs.size(); ++i )
 
       html_output << "</body>" << endl;
@@ -2234,14 +2188,6 @@ int main( int argc, char **argv )
            << "  Extra (unexpected) peaks found:     " << ga_total_score.num_extra_peaks << "\n"
            << endl;
 
-      cout << "=== secondDerivativePeakCanidatesWithROI Score ===" << "\n"
-           << "  Score:                              " << sd_total_score.score << "\n"
-           << "  Peaks found:                        " << sd_total_score.num_peaks_found << "\n"
-           << "  Def. wanted peaks found:            " << sd_total_score.num_def_wanted_peaks_found << "\n"
-           << "  Def. wanted peaks missed:           " << sd_total_score.num_def_wanted_not_found << "\n"
-           << "  Possibly wanted peaks missed:       " << sd_total_score.num_possibly_accepted_peaks_not_found << "\n"
-           << "  Extra (unexpected) peaks found:     " << sd_total_score.num_extra_peaks << "\n"
-           << endl;
 
       break;
 

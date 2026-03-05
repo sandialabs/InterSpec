@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
 #include <cmath>
 #include <limits>
 #include <string>
@@ -62,6 +63,18 @@ string FindCandidateSettings::print( const string &var_name ) const
   result += var_name + ".more_scrutiny_coarser_FOM = "  + to_string( more_scrutiny_coarser_FOM )      + ";\n";
   result += var_name + ".more_scrutiny_min_dev_from_line = " + to_string( more_scrutiny_min_dev_from_line ) + ";\n";
   result += var_name + ".amp_to_apply_line_test_below = "    + to_string( amp_to_apply_line_test_below )    + ";\n";
+  result += var_name + ".smooth_ref_fraction = "             + to_string( smooth_ref_fraction )              + ";\n";
+  result += var_name + ".smooth_scale_power = "             + to_string( smooth_scale_power )               + ";\n";
+  result += var_name + ".min_second_deriv_significance = "  + to_string( min_second_deriv_significance )    + ";\n";
+  result += var_name + ".compton_next_ratio_max = "         + to_string( compton_next_ratio_max )           + ";\n";
+  result += var_name + ".compton_prev_ratio_min = "         + to_string( compton_prev_ratio_min )           + ";\n";
+  result += var_name + ".compton_total_ratio_min = "        + to_string( compton_total_ratio_min )          + ";\n";
+  result += var_name + ".low_energy_test_max_keV = "        + to_string( low_energy_test_max_keV )          + ";\n";
+  result += var_name + ".low_energy_drop_fraction = "       + to_string( low_energy_drop_fraction )         + ";\n";
+  result += var_name + ".pcgap_feature_nsigma = "           + to_string( pcgap_feature_nsigma )             + ";\n";
+  result += var_name + ".pcgap_max_extent_nsigma = "        + to_string( pcgap_max_extent_nsigma )          + ";\n";
+  result += var_name + ".pcgap_roi_blend_weight = "         + to_string( pcgap_roi_blend_weight )           + ";\n";
+  result += var_name + ".pcgap_fom_blend_threshold = "      + to_string( pcgap_fom_blend_threshold )        + ";\n";
   return result;
 }//FindCandidateSettings::print
 
@@ -77,7 +90,19 @@ string FindCandidateSettings::to_json() const
   result += "  \"num_chan_fluctuate\": "          + to_string( num_chan_fluctuate )             + ",\n";
   result += "  \"more_scrutiny_coarser_FOM\": "  + to_string( more_scrutiny_coarser_FOM )      + ",\n";
   result += "  \"more_scrutiny_min_dev_from_line\": " + to_string( more_scrutiny_min_dev_from_line ) + ",\n";
-  result += "  \"amp_to_apply_line_test_below\": "    + to_string( amp_to_apply_line_test_below )    + "\n";
+  result += "  \"amp_to_apply_line_test_below\": "    + to_string( amp_to_apply_line_test_below )    + ",\n";
+  result += "  \"smooth_ref_fraction\": "             + to_string( smooth_ref_fraction )              + ",\n";
+  result += "  \"smooth_scale_power\": "             + to_string( smooth_scale_power )               + ",\n";
+  result += "  \"min_second_deriv_significance\": "  + to_string( min_second_deriv_significance )    + ",\n";
+  result += "  \"compton_next_ratio_max\": "          + to_string( compton_next_ratio_max )           + ",\n";
+  result += "  \"compton_prev_ratio_min\": "          + to_string( compton_prev_ratio_min )           + ",\n";
+  result += "  \"compton_total_ratio_min\": "         + to_string( compton_total_ratio_min )          + ",\n";
+  result += "  \"low_energy_test_max_keV\": "         + to_string( low_energy_test_max_keV )          + ",\n";
+  result += "  \"low_energy_drop_fraction\": "        + to_string( low_energy_drop_fraction )         + ",\n";
+  result += "  \"pcgap_feature_nsigma\": "            + to_string( pcgap_feature_nsigma )             + ",\n";
+  result += "  \"pcgap_max_extent_nsigma\": "         + to_string( pcgap_max_extent_nsigma )          + ",\n";
+  result += "  \"pcgap_roi_blend_weight\": "          + to_string( pcgap_roi_blend_weight )           + ",\n";
+  result += "  \"pcgap_fom_blend_threshold\": "       + to_string( pcgap_fom_blend_threshold )        + "\n";
   result += "}";
   return result;
 }//FindCandidateSettings::to_json
@@ -467,19 +492,80 @@ vector<PeakDef> find_candidate_peaks( const shared_ptr<const SpecUtils::Measurem
 
   const vector<float> &spectrum = *data->gamma_counts();
 
-  vector<float> second_deriv, smoothed_data, coarser_data, rougher_first_deriv, rougher_second_deriv, rougher_second_deriv_var;
+  vector<float> second_deriv, second_deriv_var;
+  vector<float> smoothed_data, rougher_first_deriv, rougher_second_deriv, rougher_second_deriv_var;
 
-  // Create a smoothed second order derivative; its negative-most values will correspond
-  //  to peak centers
-  smoothSpectrum( spectrum, static_cast<int>(side_bins), order, 2, second_deriv );
+  // Energy-adaptive SG 2nd derivative: window size scales with channel position to match
+  //  peak resolution vs energy. Pre-computes smoothings for each integer window size needed,
+  //  then linearly interpolates per-channel.
+  if( (settings.smooth_scale_power > 0.001f)
+     && (settings.smooth_ref_fraction > 0.001f)
+     && (nchannel >= 64)
+     && (side_bins >= 3) )
+  {
+    const float ref_channel = settings.smooth_ref_fraction * nchannel;
+    const int base_side = static_cast<int>( side_bins );
+    const int max_allowed_side = std::min( static_cast<int>( nchannel / 4 ), 30 );
 
-  // We will smooth the data a bit, so we can sum it to help determine stat significance
-  smoothSpectrum( spectrum, static_cast<int>(side_bins), 1, 0, smoothed_data );
+    // Compute the max side bins needed at the highest channel
+    int max_side_needed = base_side;
+    {
+      const float scale = std::pow( static_cast<float>( nchannel - 1 ) / ref_channel,
+                                   settings.smooth_scale_power );
+      max_side_needed = std::min( static_cast<int>( std::ceil( base_side * scale ) ),
+                                 max_allowed_side );
+    }
+
+    // Pre-compute SG smoothings (with variance) for each integer window size
+    map<int, pair<vector<float>, vector<float>>> sg_results;
+    for( int s = base_side; s <= max_side_needed; ++s )
+    {
+      SavitzyGolayCoeffs sg( s, s, order, 2 );
+      sg.smooth_with_variance( spectrum, sg_results[s].first, sg_results[s].second );
+    }
+
+    // Build per-channel second_deriv and second_deriv_var by interpolating between
+    //  the two nearest integer window sizes.
+    second_deriv.resize( nchannel, 0.0f );
+    second_deriv_var.resize( nchannel, 0.0f );
+
+    for( size_t ch = 0; ch < nchannel; ++ch )
+    {
+      float ideal_side;
+      if( ch <= static_cast<size_t>( ref_channel ) )
+        ideal_side = static_cast<float>( base_side );
+      else
+        ideal_side = base_side * std::pow( static_cast<float>( ch ) / ref_channel,
+                                          settings.smooth_scale_power );
+
+      ideal_side = std::max( ideal_side, static_cast<float>( base_side ) );
+      ideal_side = std::min( ideal_side, static_cast<float>( max_side_needed ) );
+
+      const int lo = static_cast<int>( std::floor( ideal_side ) );
+      const int hi = std::min( lo + 1, max_side_needed );
+      const float frac = ideal_side - lo;
+
+      const vector<float> &lo_smooth = sg_results[lo].first;
+      const vector<float> &lo_var = sg_results[lo].second;
+      const vector<float> &hi_smooth = sg_results[hi].first;
+      const vector<float> &hi_var = sg_results[hi].second;
+
+      second_deriv[ch] = (1.0f - frac) * lo_smooth[ch] + frac * hi_smooth[ch];
+      second_deriv_var[ch] = (1.0f - frac) * lo_var[ch] + frac * hi_var[ch];
+    }//for( each channel )
+  }else
+  {
+    // Fixed window (backward compatible, e.g. for HPGe or when scale_power == 0)
+    SavitzyGolayCoeffs sg( static_cast<int>( side_bins ), static_cast<int>( side_bins ), order, 2 );
+    sg.smooth_with_variance( spectrum, second_deriv, second_deriv_var );
+  }
+
+  // Smooth the data lightly for stat significance summing and PCGAP walk
+  smoothSpectrum( spectrum, static_cast<int>( side_bins ), 1, 0, smoothed_data );
 
   smoothSpectrum( spectrum, 3, 3, 1, rougher_first_deriv );
 
-
-  // We will use `rougher_second_deriv` to evaluate sigma, and ROI extents
+  // Rougher 2nd derivative (3-side-channel) used for sigma refinement and ROI extent checks
   {
     SavitzyGolayCoeffs sgcoeffs( 3, 3, 3, 2 );
     sgcoeffs.smooth_with_variance( spectrum, rougher_second_deriv, rougher_second_deriv_var );
@@ -517,6 +603,10 @@ vector<PeakDef> find_candidate_peaks( const shared_ptr<const SpecUtils::Measurem
         break;
       ++start_channel;
     }
+
+    // Add a buffer past the turn-on equal to the smoothing radius, so that the
+    //  first accepted peak isnt contaminated by the edge of the spectrum.
+    start_channel = std::min( start_channel + side_bins, end_channel - nFluxuate - 1 );
   }//if( start_channel == 0 )
 
 
@@ -797,6 +887,84 @@ vector<PeakDef> find_candidate_peaks( const shared_ptr<const SpecUtils::Measurem
 
       assert( roi_begin_index != roi_end_index );
 
+      // PCGAP-style ROI refinement: walk outward from the peak tracking background,
+      //  and blend with derivative-based ROI boundaries.
+      if( (settings.pcgap_roi_blend_weight > 0.01f)
+         && (sigma > 0.01) )
+      {
+        const size_t max_low_ch = data->find_gamma_channel(
+          static_cast<float>( std::max( 0.0, mean - settings.pcgap_max_extent_nsigma * sigma ) ) );
+        const size_t max_high_ch = std::min(
+          data->find_gamma_channel(
+            static_cast<float>( mean + settings.pcgap_max_extent_nsigma * sigma ) ),
+          end_channel );
+
+        // Walk lower boundary from ~1.5 sigma below mean
+        size_t pcgap_lower = max_low_ch;
+        {
+          const size_t walk_start = data->find_gamma_channel(
+            static_cast<float>( mean - 1.5 * sigma ) );
+          float bg_sum = 0.0f;
+          size_t bg_count = 0;
+          for( size_t j = 0; (j < 3) && ((walk_start + j) < nchannel); ++j )
+          {
+            bg_sum += smoothed_data[walk_start + j];
+            bg_count++;
+          }
+
+          for( size_t ch = walk_start; (ch > max_low_ch) && (ch > 0); --ch )
+          {
+            const float bg = std::max( bg_sum / std::max( bg_count, size_t(1) ), 1.0f );
+            const float threshold = bg + settings.pcgap_feature_nsigma * std::sqrt( bg );
+            if( smoothed_data[ch] > threshold )
+            {
+              pcgap_lower = std::min( ch + 3, walk_start );
+              break;
+            }
+            bg_sum += smoothed_data[ch];
+            bg_count++;
+          }
+        }
+
+        // Walk upper boundary from ~1.5 sigma above mean
+        size_t pcgap_upper = max_high_ch;
+        {
+          const size_t walk_start = std::min(
+            data->find_gamma_channel( static_cast<float>( mean + 1.5 * sigma ) ),
+            end_channel );
+          float bg_sum = 0.0f;
+          size_t bg_count = 0;
+          for( size_t j = 0; (j < 3) && (walk_start >= j); ++j )
+          {
+            bg_sum += smoothed_data[walk_start - j];
+            bg_count++;
+          }
+
+          for( size_t ch = walk_start; (ch < max_high_ch) && (ch < nchannel); ++ch )
+          {
+            const float bg = std::max( bg_sum / std::max( bg_count, size_t(1) ), 1.0f );
+            const float threshold = bg + settings.pcgap_feature_nsigma * std::sqrt( bg );
+            if( smoothed_data[ch] > threshold )
+            {
+              pcgap_upper = (ch > 3) ? std::max( ch - 3, walk_start ) : walk_start;
+              break;
+            }
+            bg_sum += smoothed_data[ch];
+            bg_count++;
+          }
+        }
+
+        // Blend derivative-based ROI with PCGAP ROI
+        const float w = settings.pcgap_roi_blend_weight;
+        roi_begin_index = static_cast<size_t>( (1.0f - w) * roi_begin_index + w * pcgap_lower + 0.5f );
+        roi_end_index = static_cast<size_t>( (1.0f - w) * roi_end_index + w * pcgap_upper + 0.5f );
+
+        roi_begin_index = std::max( roi_begin_index, size_t(0) );
+        roi_end_index = std::min( roi_end_index, nchannel - 1 );
+        if( roi_end_index <= roi_begin_index )
+          roi_end_index = roi_begin_index + 1;
+      }//if( PCGAP blending enabled )
+
       const float roi_start_energy = data->gamma_channel_lower( roi_begin_index );
       const float roi_end_energy = data->gamma_channel_upper( roi_end_index );
 
@@ -875,6 +1043,106 @@ vector<PeakDef> find_candidate_peaks( const shared_ptr<const SpecUtils::Measurem
       {
         passed_higher_scrutiny = false;
       }
+
+
+      // Compton backscatter asymmetry test: check that positive 2nd-derivative sums
+      //  flanking the peak are reasonably symmetric (not a Compton edge).
+      if( passed_higher_scrutiny
+         && (settings.compton_next_ratio_max < 50.0f) )
+      {
+        const size_t nflux = std::max( nFluxuate, ((secondzero - firstzero) / side_bins) + size_t(1) );
+
+        // Sum positive 2nd-derivative forward from secondzero
+        float nextpositivesum = 0.0f;
+        for( size_t fwd = secondzero; fwd <= end_channel; ++fwd )
+        {
+          bool all_neg = true;
+          for( size_t j = 0; (j < nflux) && ((fwd + j) <= end_channel); ++j )
+            all_neg &= (second_deriv[fwd + j] < 0.0f);
+          if( all_neg )
+            break;
+          if( second_deriv[fwd] > 0.0f )
+            nextpositivesum += second_deriv[fwd];
+        }
+
+        // Sum positive 2nd-derivative backward from firstzero
+        float prevpositivesum = 0.0f;
+        for( size_t bwd = firstzero; bwd > 0; --bwd )
+        {
+          bool all_neg = true;
+          for( size_t j = 0; (j < nflux) && (bwd >= j + 1); ++j )
+            all_neg &= (second_deriv[bwd - j] < 0.0f);
+          if( all_neg )
+            break;
+          if( second_deriv[bwd] > 0.0f )
+            prevpositivesum += second_deriv[bwd];
+        }
+
+        if( secondsum < 0.0f )
+        {
+          const float nextratio = -nextpositivesum / secondsum;
+          const float prevratio = -prevpositivesum / secondsum;
+          const bool compton_ok = (nextratio < settings.compton_next_ratio_max
+                                   || prevratio > settings.compton_prev_ratio_min)
+                                  && ((nextratio + prevratio) > settings.compton_total_ratio_min);
+          if( !compton_ok )
+            passed_higher_scrutiny = false;
+        }
+      }//if( Compton backscatter test enabled )
+
+
+      // Low-energy drop-off validation: check that peaks below a threshold energy
+      //  have a Gaussian-like shape, not a detector efficiency edge.
+      if( passed_higher_scrutiny
+         && (settings.low_energy_test_max_keV > 0.0f)
+         && (mean < settings.low_energy_test_max_keV)
+         && (sigma > 0.01) && (minbin > 0) )
+      {
+        const size_t p15sig_ch = data->find_gamma_channel(
+          static_cast<float>( mean + 1.5 * sigma ) );
+        if( (p15sig_ch < nchannel) && (p15sig_ch > minbin) )
+        {
+          // Expected Gaussian drop from center to +1.5 sigma
+          //  gaussian(x) = exp(-0.5 * ((x-mean)/sigma)^2), so at 1.5 sigma: exp(-0.5*2.25) = exp(-1.125) ≈ 0.325
+          //  The ratio of Gaussian at +1.5σ to center is ~0.325, so expected drop is ~0.675 of center value.
+          const double gauss_ratio_at_15sig = std::exp( -0.5 * 1.5 * 1.5 );
+          const double expected_drop_fraction = 1.0 - gauss_ratio_at_15sig;
+
+          const float peak_counts = smoothed_data[minbin];
+          const float side_counts = smoothed_data[p15sig_ch];
+
+          if( peak_counts > 1.0f )
+          {
+            const double actual_drop_fraction = (peak_counts - side_counts) / peak_counts;
+            if( actual_drop_fraction < (settings.low_energy_drop_fraction * expected_drop_fraction) )
+              passed_higher_scrutiny = false;
+          }
+        }
+      }//if( low-energy drop-off test enabled )
+
+
+      // Second-derivative significance cut: reject if the 2nd derivative minimum
+      //  is not statistically significant relative to Poisson noise propagated
+      //  through the SG smoothing coefficients.
+      if( (settings.min_second_deriv_significance > 0.0f)
+         && (minbin < second_deriv_var.size())
+         && (second_deriv_var[minbin] > 0.0f) )
+      {
+        const float sig = std::abs( second_deriv[minbin] )
+                        / std::sqrt( second_deriv_var[minbin] );
+        if( sig < settings.min_second_deriv_significance )
+        {
+          passed_higher_scrutiny = false;
+          // Also skip if even high-FOM: a statistically insignificant dip is noise
+          if( figure_of_merit <= threshold_FOM )
+          {
+            secondsum = 0.0;
+            minval = 9999999999.9f;
+            minbin = secondzero = firstzero = 0;
+            continue;
+          }
+        }
+      }//if( 2nd derivative significance check )
 
 
       if( (figure_of_merit > threshold_FOM) || passed_higher_scrutiny )
