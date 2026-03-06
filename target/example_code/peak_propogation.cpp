@@ -422,7 +422,11 @@ void update_gain_from_peak( SpecMeas &specfile, const vector<float> &peak_energi
   for( const double peak_energy : peak_energies )
   {
     const double pixelPerKev = 2;
-    vector<shared_ptr<const PeakDef>> fit_peaks = searchForPeakFromUser( peak_energy, pixelPerKev, raw, {} ).first;
+    shared_ptr<const DetectorPeakResponse> drf;
+    shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_search_peaks;
+    shared_ptr<const PeakFitDetPrefs> fitPrefs;
+    vector<shared_ptr<const PeakDef>> fit_peaks
+      = searchForPeakFromUser( peak_energy, pixelPerKev, raw, {}, drf, auto_search_peaks, fitPrefs ).first;
     
     if( fit_peaks.empty() )
       throw runtime_error( "Could not fit a peaks near " + std::to_string(peak_energy) + " for energy calibration" );

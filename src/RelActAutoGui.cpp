@@ -1728,9 +1728,9 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
 
     const shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_peaks = meas ? meas->automatedSearchPeaks(sample_nums) : nullptr;
 
-    const bool isHPGe = PeakFitUtils::is_likely_high_res( m_interspec );
-    
-    const auto found_peaks = searchForPeakFromUser( energy, pixPerKeV, m_foreground, {}, det, auto_peaks, isHPGe );
+    shared_ptr<const PeakFitDetPrefs> fitPrefs = meas ? meas->peakFitDetPrefs() : nullptr;
+
+    const auto found_peaks = searchForPeakFromUser( energy, pixPerKeV, m_foreground, {}, det, auto_peaks, fitPrefs );
 
     // If we didnt fit a peak, and we dont
     double lower_energy = energy - 10;

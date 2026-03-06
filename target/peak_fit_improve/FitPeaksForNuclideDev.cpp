@@ -421,15 +421,15 @@ PeakFitResult fit_peaks_for_nuclides(
   const std::shared_ptr<const SpecUtils::Measurement> &long_background,
   const std::shared_ptr<const DetectorPeakResponse> &drf_input,
   const PeakFitForNuclideConfig &config,
-  const bool isHPGe )
+  const std::shared_ptr<const PeakFitDetPrefs> &peak_fit_prefs )
 {
   Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> options;
   const std::vector<std::shared_ptr<const PeakDef>> user_peaks;
-  
+
   // Implementation moved to FitPeaksForNuclides namespace
   // This is now a wrapper that calls the new namespace version
   return FitPeaksForNuclides::fit_peaks_for_nuclides(
-    auto_search_peaks, foreground, sources, user_peaks, long_background, drf_input, options, config, isHPGe
+    auto_search_peaks, foreground, sources, user_peaks, long_background, drf_input, options, config, peak_fit_prefs
   );
 }//fit_peaks_for_nuclides
 
@@ -648,6 +648,10 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
     const bool singleThreaded = false;
     shared_ptr<const DetectorPeakResponse> drf = nullptr; //Probably
 
+    // Create default HPGe prefs for dev testing
+    std::shared_ptr<PeakFitDetPrefs> dev_prefs = std::make_shared<PeakFitDetPrefs>();
+    dev_prefs->m_det_type = PeakFitUtils::CoarseResolutionType::High;
+
     try
     {
       shared_ptr<const deque<shared_ptr<const PeakDef>>> dummy_origpeaks;
@@ -656,7 +660,7 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
           = ExperimentalAutomatedPeakSearch::search_for_peaks( foreground, drf, dummy_origpeaks, singleThreaded, isHPGe );
 
       const PeakFitResult curve_results = FitPeaksForNuclideDev::fit_peaks_for_nuclides(
-        auto_search_peaks, foreground, sources, long_background, drf, config, isHPGe );
+        auto_search_peaks, foreground, sources, long_background, drf, config, dev_prefs );
 
       if( curve_results.status != RelActCalcAuto::RelActAutoSolution::Status::Success )
         throw std::runtime_error( "fit_peaks_for_nuclides failed for all RelEff curve types: " + curve_results.error_message );

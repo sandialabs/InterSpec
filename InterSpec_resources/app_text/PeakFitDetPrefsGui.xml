@@ -17,6 +17,18 @@
   <message id="pfdpg-det-hpge">HPGe</message>
   <message id="pfdpg-det-unknown">Unknown</message>
 
+  <!-- FWHM method combo box items -->
+  <message id="pfdpg-fwhm-method-label">FWHM Method</message>
+  <message id="pfdpg-fwhm-normal">Normal</message>
+  <message id="pfdpg-fwhm-det">Use DRF FWHM</message>
+  <message id="pfdpg-fwhm-det-refine">DRF + Refine</message>
+
+  <!-- Dialog for missing FWHM info -->
+  <message id="pfdpg-no-fwhm-title">No FWHM Information</message>
+  <message id="pfdpg-no-fwhm-content">The current detector response function does not have FWHM (resolution) information. You can fit FWHM from the current peaks, or cancel.</message>
+  <message id="pfdpg-no-fwhm-cancel">Cancel</message>
+  <message id="pfdpg-no-fwhm-fit">Fit FWHM...</message>
+
   <!-- Skew parameter labels -->
   <message id="pfdpg-lower-header">Low E</message>
   <message id="pfdpg-upper-header">High E</message>
@@ -41,4 +53,5 @@
   <message id="pfdpg-undo-skew-type">Change skew type</message>
   <message id="pfdpg-undo-skew-param">Change skew parameter</message>
   <message id="pfdpg-undo-roi-indep">Toggle ROI-indep. skew</message>
+  <message id="pfdpg-undo-fwhm-method">Change FWHM method</message>
 </messages>

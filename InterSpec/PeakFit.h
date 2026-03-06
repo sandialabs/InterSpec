@@ -35,6 +35,7 @@
 #include "InterSpec/PeakFitLM.h" //necassary because we cant forward-declare the PeakFitLM::PeakFitLMOptions
 
 
+struct PeakFitDetPrefs;
 class DetectorPeakResponse;
 
 namespace ROOT
@@ -216,18 +217,18 @@ std::vector<PeakDef> fitPeaksInRange( const double x0, const double x1,
 //  be used.
 std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI(
                                                           std::shared_ptr<const SpecUtils::Measurement> data,
-                                                          const bool isHPGe,
+                                                          std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
                                                           size_t start_channel,
                                                           size_t end_channel );
 
 /** Similar to #secondDerivativePeakCanidatesWithROI, but doesnt waste time finding
  the ROI for each peak.  Provides reults as a tuple of {mean,sigma,area} for
  each found peak.
- 
+
  Takes about 40% of the time as #secondDerivativePeakCanidatesWithROI
  */
 void secondDerivativePeakCanidates( const std::shared_ptr<const SpecUtils::Measurement> data,
-                                    const bool isHPGe,
+                                    std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
                                     size_t start_channel,
                                     size_t end_channel,
                                     std::vector< std::tuple<float,float,float> > &results );
@@ -256,7 +257,7 @@ void get_candidate_peak_estimates_for_user_click(
                                                  const double x,
                                                  const double pixelPerKev,
                                                  const std::shared_ptr<const SpecUtils::Measurement> &dataH,
-                                                 const bool isHPGe,
+                                                 std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
                                                  const PeakShrdVec &inpeaks );
 
 //searchForPeakFromUser: looks for a peak near x.  The returned pair contains
@@ -272,7 +273,7 @@ std::pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
                             const std::vector<std::shared_ptr<const PeakDef>> &existing_peaks,
                             std::shared_ptr<const DetectorPeakResponse> drf,
                             const std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> &auto_search_peaks,
-                            const bool isHPGe );
+                            std::shared_ptr<const PeakFitDetPrefs> fitPrefs );
 
 //refitPeaksThatShareROI: intended to refit peaks fit for by
 //  searchForPeakFromUser(...), for instance when you modify the ROI range.
@@ -318,7 +319,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
                           MultiPeakInitialGuessMethod method,
                           std::shared_ptr<const SpecUtils::Measurement> dataH,
                           std::shared_ptr<const DetectorPeakResponse> detector,
-                          const bool isHPGe,
+                          std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
                           std::vector<std::shared_ptr<PeakDef> > &answer,
                           double &chi2 );
 
@@ -464,7 +465,7 @@ namespace ExperimentalAutomatedPeakSearch
                                 const std::shared_ptr<const DetectorPeakResponse> drf,
                                 std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > origpeaks,
                                 const bool singleThreaded,
-                               const bool isHPGe );
+                                std::shared_ptr<const PeakFitDetPrefs> fitPrefs );
 }//namespace ExperimentalAutomatedPeakSearch
 
 

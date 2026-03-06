@@ -2711,7 +2711,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       if( (!cancel_calc || !cancel_calc->load()) && all_peaks.empty() )
       {
         cout << "Will search for peaks: " << endl;
-        all_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks( spectrum, nullptr, {}, false, highres );
+        // TODO: when feature/DetTypeClassify branch is merged, call PeakFitUtils::classify_det_type
+        //       to get spectrum type, rather than relying on input_drf.
+        std::shared_ptr<const PeakFitDetPrefs> fitPrefs = input_drf ? input_drf->peakFitDetPrefs() : nullptr;
+        all_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks( spectrum, nullptr, {}, false, fitPrefs );
 
         for( const auto &p : all_peaks )
           cout << "  auto peak: energy=" << p->mean() << ", fwhm=" << p->fwhm() << ", area=" << p->peakArea()

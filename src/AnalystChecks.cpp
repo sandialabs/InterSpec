@@ -103,10 +103,10 @@ namespace AnalystChecks
     if (!auto_peaks) {
       // Search for peaks
       const bool singleThreaded = false;
-      const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
+      shared_ptr<const PeakFitDetPrefs> fitPrefsAuto = meas->peakFitDetPrefs();
       const auto det = meas->detector();
       const vector<shared_ptr<const PeakDef>> found_auto_peaks
-                = ExperimentalAutomatedPeakSearch::search_for_peaks(spectrum, det, user_peaks, singleThreaded, isHPGe);
+                = ExperimentalAutomatedPeakSearch::search_for_peaks(spectrum, det, user_peaks, singleThreaded, fitPrefsAuto);
         
       auto autopeaksdeque = make_shared<std::deque<std::shared_ptr<const PeakDef>>>(begin(found_auto_peaks), end(found_auto_peaks));
       auto_peaks = autopeaksdeque;
@@ -169,15 +169,15 @@ namespace AnalystChecks
       if( !background_auto_peaks && background_spectrum )
       {
         const bool singleThreaded = false;
-        const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
+        shared_ptr<const PeakFitDetPrefs> bgFitPrefs = background_meas->peakFitDetPrefs();
         const auto det = background_meas->detector();
-        
+
         shared_ptr<const deque<shared_ptr<const PeakDef>>> background_user_peaks;
         if( background_meas->sampleNumsWithPeaks().count(background_sample_nums) )
           background_user_peaks = background_meas->peaks(background_sample_nums);
-        
+
         const vector<shared_ptr<const PeakDef>> found_background_auto_peaks
-                    = ExperimentalAutomatedPeakSearch::search_for_peaks(background_spectrum, det, background_user_peaks, singleThreaded, isHPGe);
+                    = ExperimentalAutomatedPeakSearch::search_for_peaks(background_spectrum, det, background_user_peaks, singleThreaded, bgFitPrefs);
 
         auto background_autopeaksdeque = make_shared<deque<shared_ptr<const PeakDef>>>(begin(found_background_auto_peaks), end(found_background_auto_peaks));
         background_auto_peaks = background_autopeaksdeque;
@@ -354,10 +354,10 @@ namespace AnalystChecks
 
     shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_search_peaks = meas->automatedSearchPeaks(sample_nums);
 
-    const bool isHPGe = PeakFitUtils::is_likely_high_res( interspec );
-    
+    shared_ptr<const PeakFitDetPrefs> fitPrefs = meas->peakFitDetPrefs();
+
     vector<shared_ptr<const PeakDef>> origPeaks;
-    
+
     for( const shared_ptr<const PeakDef> &p : *meas_peaks )
     {
       //Avoid fitting a peak in the same area a data defined peak is.
@@ -366,10 +366,10 @@ namespace AnalystChecks
       else if( (options.energy >= p->lowerX()) && (options.energy <= p->upperX()) )
         throw runtime_error( "Can not fit a peak within the ROI of a data-defined peak." );
     }//if( pmodel->peaks() )
-    
+
     double pixelPerKev = -1.0; //This triggers an "automed" peak fit, which has higher thresholds for keeping peak.
     pair<vector<shared_ptr<const PeakDef>>, vector<shared_ptr<const PeakDef>>> foundPeaks;
-    foundPeaks = searchForPeakFromUser( options.energy, pixelPerKev, data, origPeaks, det, auto_search_peaks, isHPGe );
+    foundPeaks = searchForPeakFromUser( options.energy, pixelPerKev, data, origPeaks, det, auto_search_peaks, fitPrefs );
 
     vector<shared_ptr<const PeakDef>> &peaks_to_add_in = foundPeaks.first;
     const vector<shared_ptr<const PeakDef>> &peaks_to_remove = foundPeaks.second;
@@ -923,7 +923,7 @@ namespace AnalystChecks
       
       // Get detector response function
       std::shared_ptr<const DetectorPeakResponse> drf = meas->detector();
-      const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
+      std::shared_ptr<const PeakFitDetPrefs> peak_fit_prefs = meas ? meas->peakFitDetPrefs() : nullptr;
 
       DetectedPeaksOptions det_peaks_options;
       det_peaks_options.specType = SpecUtils::SpectrumType::Foreground;
@@ -964,7 +964,7 @@ namespace AnalystChecks
       // TODO: we will need to update `config` from default in the future
 
       const FitPeaksForNuclides::PeakFitResult fit_results = FitPeaksForNuclides::fit_peaks_for_nuclides(
-        auto_search_peaks, foreground, sources, user_peaks, background, drf, fit_options, fit_config, isHPGe
+        auto_search_peaks, foreground, sources, user_peaks, background, drf, fit_options, fit_config, peak_fit_prefs
       );
 
       switch( fit_results.status )

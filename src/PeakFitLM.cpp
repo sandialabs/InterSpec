@@ -1440,8 +1440,8 @@ struct PeakFitDiffCostFunction
 
     // For small/medium refinement, restrict skew range near starting value to prevent large shifts;
     // otherwise allow the full parameter range so fitting from default starting values can succeed.
-    const bool restrict_skew_range = m_options.testFlag( PeakFitLM::PeakFitLMOptions::SmallRefinementOnly )
-                                     || m_options.testFlag( PeakFitLM::PeakFitLMOptions::MediumRefinementOnly );
+    const bool restrict_skew_range = m_options.testFlag( PeakFitLM::PeakFitLMOptions::SmallAmplitudeRefinementOnly )
+                                     || m_options.testFlag( PeakFitLM::PeakFitLMOptions::MediumAmplitudeRefinementOnly );
 
     // Set up the base (lower-anchor) skew parameters at params[0..num_skew_pars-1]
     for( size_t skew_index = 0; skew_index < num_skew_pars; ++skew_index )
@@ -1555,7 +1555,7 @@ struct PeakFitDiffCostFunction
         lower_bounds[mean_par_index] = 0.5;
         upper_bounds[mean_par_index] = 1.5;
 
-        if( m_options.testFlag( PeakFitLM::PeakFitLMOptions::MediumRefinementOnly ) )
+        if( m_options.testFlag( PeakFitLM::PeakFitLMOptions::MediumAmplitudeRefinementOnly ) )
         {
           lower_bounds[mean_par_index] = 0.5 + (mean - 0.5*sigma - roi.lower_energy) / range;
           upper_bounds[mean_par_index] = 0.5 + (mean + 0.5*sigma - roi.lower_energy) / range;
@@ -1563,7 +1563,7 @@ struct PeakFitDiffCostFunction
           assert( rel_mean <= *upper_bounds[mean_par_index] );
         }
 
-        if( m_options.testFlag( PeakFitLM::PeakFitLMOptions::SmallRefinementOnly ) )
+        if( m_options.testFlag( PeakFitLM::PeakFitLMOptions::SmallAmplitudeRefinementOnly ) )
         {
           lower_bounds[mean_par_index] = 0.5 + (mean - 0.15*sigma - roi.lower_energy) / range;
           upper_bounds[mean_par_index] = 0.5 + (mean + 0.15*sigma - roi.lower_energy) / range;
@@ -1620,12 +1620,12 @@ struct PeakFitDiffCostFunction
         lower_bounds[sigma_par_idx] = (0.5*std::min(minsigma,min_input_sigma)) / roi.max_initial_sigma;
         upper_bounds[sigma_par_idx] = (1.5*std::max(maxsigma,max_input_sigma)) / roi.max_initial_sigma;
 
-        if( m_options.testFlag( PeakFitLM::PeakFitLMOptions::MediumRefinementOnly ) )
+        if( m_options.testFlag( PeakFitLM::PeakFitLMOptions::MediumFwhmRefinementOnly ) )
         {
           lower_bounds[sigma_par_idx] = 0.5 * sigma / roi.max_initial_sigma;
           upper_bounds[sigma_par_idx] = 1.5 * sigma / roi.max_initial_sigma;
         }
-        if( m_options.testFlag( PeakFitLM::PeakFitLMOptions::SmallRefinementOnly ) )
+        if( m_options.testFlag( PeakFitLM::PeakFitLMOptions::SmallFwhmRefinementOnly ) )
         {
           lower_bounds[sigma_par_idx] = 0.85 * sigma / roi.max_initial_sigma;
           upper_bounds[sigma_par_idx] = 1.15 * sigma / roi.max_initial_sigma;
@@ -1652,14 +1652,14 @@ struct PeakFitDiffCostFunction
       assert( pars[fit_sigma_idx] >= *lower_bounds[fit_sigma_idx] );
       assert( pars[fit_sigma_idx] <= *upper_bounds[fit_sigma_idx] );
 
-      if( m_options.testFlag( PeakFitLM::PeakFitLMOptions::MediumRefinementOnly ) )
+      if( m_options.testFlag( PeakFitLM::PeakFitLMOptions::MediumFwhmRefinementOnly ) )
       {
         lower_bounds[fit_sigma_idx] = (0.5*min_input_sigma) / roi.max_initial_sigma;
         upper_bounds[fit_sigma_idx] = (1.5*max_input_sigma) / roi.max_initial_sigma;
         assert( pars[fit_sigma_idx] >= *lower_bounds[fit_sigma_idx] );
         assert( pars[fit_sigma_idx] <= *upper_bounds[fit_sigma_idx] );
       }
-      if( m_options.testFlag( PeakFitLM::PeakFitLMOptions::SmallRefinementOnly ) )
+      if( m_options.testFlag( PeakFitLM::PeakFitLMOptions::SmallFwhmRefinementOnly ) )
       {
         lower_bounds[fit_sigma_idx] = (0.85*min_input_sigma) / roi.max_initial_sigma;
         upper_bounds[fit_sigma_idx] = (1.15*max_input_sigma) / roi.max_initial_sigma;
@@ -1798,8 +1798,8 @@ struct PeakFitDiffCostFunction
 
         // Write the per-ROI skew params into the global parameter array
         const size_t skew_base_idx = param_offset + num_fit_cont + num_sigmas_fit + roi.peaks.size();
-        const bool restrict_skew_range = m_options.testFlag( PeakFitLM::PeakFitLMOptions::SmallRefinementOnly )
-                                         || m_options.testFlag( PeakFitLM::PeakFitLMOptions::MediumRefinementOnly );
+        const bool restrict_skew_range = m_options.testFlag( PeakFitLM::PeakFitLMOptions::SmallAmplitudeRefinementOnly )
+                                         || m_options.testFlag( PeakFitLM::PeakFitLMOptions::MediumAmplitudeRefinementOnly );
         for( size_t skew_index = 0; skew_index < num_skew_pars; ++skew_index )
         {
           const size_t abs_idx = skew_base_idx + skew_index;

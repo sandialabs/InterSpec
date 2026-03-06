@@ -78,6 +78,7 @@ class FeatureMarkerWindow;
 class FitSkewParamsWindow;
 class D3SpectrumDisplayDiv;
 class DetectionLimitWindow;
+struct PeakFitDetPrefs;
 class DetectorPeakResponse;
 class ExportSpecFileWindow;
 class MakeFwhmForDrfWindow;
@@ -1219,7 +1220,7 @@ public:
   void searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
                            const std::set<int> &samples,
                           const std::shared_ptr<const SpecUtils::Measurement> &spectrum,
-                          const bool isHPGe );
+                          std::shared_ptr<const PeakFitDetPrefs> fitPrefs );
   
   //setHintPeaks(): sets the hint peaks (SpecMeas::m_autoSearchPeaks and
   //  SpecMeas::m_autoSearchInitialPeaks) if spectrum.lock() yeilds a valid ptr.

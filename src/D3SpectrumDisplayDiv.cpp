@@ -52,7 +52,9 @@
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/SpectrumChart.h"
+#include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/RefLineDynamic.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
@@ -2703,8 +2705,33 @@ void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork( double new_lower_ener
         }
       }//if( we should start from the peaks we last fit while dragging )
       
+      // Apply FWHM method from PeakFitDetPrefs if applicable
+      Wt::WFlags<PeakFitLM::PeakFitLMOptions> refit_options( PeakFitLM::PeakFitLMOptions::MediumAmplitudeRefinementOnly );
+
+      {
+        InterSpec *viewer = InterSpec::instance();
+        shared_ptr<const SpecMeas> meas = viewer
+          ? viewer->measurment( SpecUtils::SpectrumType::Foreground )
+          : nullptr;
+        shared_ptr<const PeakFitDetPrefs> prefs = meas ? meas->peakFitDetPrefs() : nullptr;
+        if( prefs )
+        {
+          shared_ptr<const DetectorPeakResponse> drf = meas->detector();
+          vector<shared_ptr<PeakDef>> mutable_peaks;
+          for( const auto &p : new_roi_initial_peaks )
+            mutable_peaks.push_back( make_shared<PeakDef>( *p ) );
+          apply_fwhm_method_to_peaks( mutable_peaks, drf, *prefs, refit_options );
+          new_roi_initial_peaks.clear();
+          for( const auto &p : mutable_peaks )
+            new_roi_initial_peaks.push_back( p );
+        }
+        
+        if( !prefs || (prefs->m_fwhm_method == PeakFitDetPrefs::FwhmMethod::Normal) )
+          refit_options |= PeakFitLM::PeakFitLMOptions::MediumFwhmRefinementOnly;
+      }
+
       vector<shared_ptr<const PeakDef>> refitpeaks
-                  = refitPeaksThatShareROI( spectrum, detector, new_roi_initial_peaks, PeakFitLM::PeakFitLMOptions::MediumRefinementOnly );
+                  = refitPeaksThatShareROI( spectrum, detector, new_roi_initial_peaks, refit_options );
       
       m_continuum_being_drug = continuum;
       m_last_being_drug_peaks = refitpeaks;
@@ -2821,10 +2848,12 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
   //  we will consider fitting a peak for, as well as the maximum number of peaks we
   //  will consider.
   const bool isHPGe = PeakFitUtils::is_likely_high_res( viewer );
-  
+
+  std::shared_ptr<const PeakFitDetPrefs> fitPrefs = meas ? meas->peakFitDetPrefs() : nullptr;
+
   std::vector<std::shared_ptr<const PeakDef>> prev_shown_peaks = m_last_being_added_peaks;
-  
-  auto fcnworker = [foreground,detector,lower_energy,upper_energy,nForcedPeaks,isfinal,window_xpx,window_ypx,app,spectrum,peakModel,isHPGe,prev_shown_peaks](){
+
+  auto fcnworker = [foreground,detector,lower_energy,upper_energy,nForcedPeaks,isfinal,window_xpx,window_ypx,app,spectrum,peakModel,isHPGe,prev_shown_peaks,fitPrefs](){
 
     const float erange = upper_energy - lower_energy;
     const float midenergy = 0.5f*(lower_energy + upper_energy);
@@ -2845,10 +2874,10 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
       const size_t end_channel = foreground->find_gamma_channel(upper_energy);
       
       std::vector< std::tuple<float,float,float> > candidate_peaks;
-      secondDerivativePeakCanidates( foreground, isHPGe, start_channel, end_channel, candidate_peaks );
+      secondDerivativePeakCanidates( foreground, fitPrefs, start_channel, end_channel, candidate_peaks );
       const size_t ncandidates = candidate_peaks.size();
-      
-      //const auto derivative_peaks = secondDerivativePeakCanidatesWithROI( foreground, isHPGe, start_channel, end_channel );
+
+      //const auto derivative_peaks = secondDerivativePeakCanidatesWithROI( foreground, fitPrefs, start_channel, end_channel );
       //const size_t ncandidates = derivative_peaks.size();
       
       nPeaks = static_cast<int>( ncandidates );
@@ -2895,8 +2924,8 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
       
       //cout << "ncandidates=" << ncandidates << endl;
       
-      auto worker = [&chi2s, &results, &npeakstry, ncandidates, isHPGe,
-                     lower_energy, upper_energy, foreground, detector]( const size_t index ){
+      auto worker = [&chi2s, &results, &npeakstry, ncandidates,
+                     lower_energy, upper_energy, foreground, detector, fitPrefs]( const size_t index ){
         std::vector<std::shared_ptr<PeakDef> > newpeaks;
         const auto method = (static_cast<size_t>(npeakstry[index])==ncandidates)
         ? MultiPeakInitialGuessMethod::FromDataInitialGuess
@@ -2919,7 +2948,7 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
         //This next function call duplicates a lot of work between threads - may
         //  be a place that can be optimized if it turns out to be needed.
         findPeaksInUserRange( lower_energy, upper_energy, npeakstry[index], method,
-                             foreground, detector, isHPGe, newpeaks, chi2s[index] );
+                             foreground, detector, fitPrefs, newpeaks, chi2s[index] );
         
         
         //Note: InterSpec::findPeakFromControlDrag(...) adjusts Chi2 as:
@@ -2977,7 +3006,33 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
       
       if( (best_choice < 0) || results[best_choice].empty() )
         throw runtime_error( "Failed to fit for peaks." );
-      
+
+      // Apply FWHM method from PeakFitDetPrefs to the best-fit peaks
+      assert( fitPrefs );
+      if( fitPrefs
+         && (fitPrefs->m_fwhm_method != PeakFitDetPrefs::FwhmMethod::Normal)
+         && detector && detector->hasResolutionInfo() )
+      {
+        Wt::WFlags<PeakFitLM::PeakFitLMOptions> fwhm_options( 0 );
+        apply_fwhm_method_to_peaks( results[best_choice], detector, *fitPrefs, fwhm_options );
+
+        // Refit with the FWHM constraints applied
+        vector<shared_ptr<const PeakDef>> constPeaks;
+        for( const auto &p : results[best_choice] )
+          constPeaks.push_back( p );
+
+        fwhm_options |= PeakFitLM::SmallAmplitudeRefinementOnly;
+        const vector<shared_ptr<const PeakDef>> refit
+          = refitPeaksThatShareROI( foreground, detector, constPeaks, fwhm_options );
+
+        if( !refit.empty() )
+        {
+          results[best_choice].clear();
+          for( const auto &p : refit )
+            results[best_choice].push_back( make_shared<PeakDef>( *p ) );
+        }
+      }//if( need to apply FWHM method )
+
       WApplication::UpdateLock lock( app );
       
       if( !lock )

@@ -56,6 +56,7 @@
 #include "InterSpec/PeakFitLM.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SpectrumChart.h"
@@ -2046,11 +2047,13 @@ void fit_peak_from_double_click( InterSpec *interspec, const double x, const dou
   if( !data )
     return;
 
-  const bool isHPGe = PeakFitUtils::is_likely_high_res( interspec );
-
   // Get the appropriate SpecMeas and sample numbers for the spectrum type
   shared_ptr<SpecMeas> meas = interspec->measurment( spec_type );
   const std::set<int> sample_nums = interspec->displayedSamples( spec_type );
+
+  shared_ptr<const PeakFitDetPrefs> fitPrefs = meas ? meas->peakFitDetPrefs() : nullptr;
+  assert( fitPrefs );
+  // TODO: when feature/DetTypeClassify gets merged in, if fitPrefs is null, then use PeakFitUtils::classify_det_type to get det type.
 
   vector<shared_ptr<const PeakDef>> origPeaks, nearbyOrigPeaks;
 
@@ -2076,11 +2079,42 @@ void fit_peak_from_double_click( InterSpec *interspec, const double x, const dou
   // Get an estimated peak FWHM
 
   pair< PeakShrdVec, PeakShrdVec > foundPeaks;
-  foundPeaks = searchForPeakFromUser( x, pixPerKeV, data, origPeaks, det, auto_peaks, isHPGe );
-  
-  //cerr << "Found " << foundPeaks.first.size() << " peaks to add, and "
-  //     << foundPeaks.second.size() << " peaks to remove" << endl;
-  
+  foundPeaks = searchForPeakFromUser( x, pixPerKeV, data, origPeaks, det, auto_peaks, fitPrefs );
+
+  // Apply FWHM method from PeakFitDetPrefs to found peaks
+  {
+    shared_ptr<const PeakFitDetPrefs> fitPrefs = meas ? meas->peakFitDetPrefs() : nullptr;
+    assert( fitPrefs );
+    if( fitPrefs
+       && (fitPrefs->m_fwhm_method != PeakFitDetPrefs::FwhmMethod::Normal)
+       && det && det->hasResolutionInfo()
+       && !foundPeaks.first.empty() )
+    {
+      Wt::WFlags<PeakFitLM::PeakFitLMOptions> fwhm_options( 0 );
+      vector<shared_ptr<PeakDef>> mutablePeaks;
+      for( const auto &p : foundPeaks.first )
+        mutablePeaks.push_back( make_shared<PeakDef>( *p ) );
+
+      apply_fwhm_method_to_peaks( mutablePeaks, det, *fitPrefs, fwhm_options );
+
+      // Refit with FWHM constraints applied
+      vector<shared_ptr<const PeakDef>> constPeaks;
+      for( const auto &p : mutablePeaks )
+        constPeaks.push_back( p );
+
+      fwhm_options |= PeakFitLM::SmallAmplitudeRefinementOnly;
+      const vector<shared_ptr<const PeakDef>> refit
+        = refitPeaksThatShareROI( data, det, constPeaks, fwhm_options );
+
+      if( !refit.empty() )
+      {
+        foundPeaks.first.clear();
+        for( const auto &p : refit )
+          foundPeaks.first.push_back( make_shared<PeakDef>( *p ) );
+      }
+    }//if( need to apply FWHM method )
+  }
+
   if( foundPeaks.first.empty()
       || foundPeaks.second.size() >= foundPeaks.first.size() )
   {
@@ -2280,19 +2314,39 @@ void automated_search_for_peaks( InterSpec *viewer,
   auto foreground = viewer->measurment(SpecUtils::SpectrumType::Foreground);
   shared_ptr<const DetectorPeakResponse> drf = foreground ? foreground->detector() : nullptr;
 
-  const bool isHPGe = PeakFitUtils::is_likely_high_res( viewer );
-  
+  shared_ptr<const PeakFitDetPrefs> fitPrefs = foreground ? foreground->peakFitDetPrefs() : nullptr;
+
   Wt::WServer *server = Wt::WServer::instance();
   if( !server )
     return;
-  
+
   std::weak_ptr<const SpecUtils::Measurement> weakdata = dataPtr;
   const string seshid = wApp->sessionId();
-  
+
   server->ioService().boost::asio::io_service::post( std::bind( [=](){
     search_for_peaks_worker( weakdata, drf, startingPeaks, displayed, setColor,
-                            searchresults, callback, seshid, false, isHPGe );
-    
+                            searchresults, callback, seshid, false, fitPrefs );
+
+    // Apply FWHM method to search results if needed
+    assert( fitPrefs );
+    if( fitPrefs && searchresults
+       && (fitPrefs->m_fwhm_method != PeakFitDetPrefs::FwhmMethod::Normal)
+       && drf && drf->hasResolutionInfo() )
+    {
+      Wt::WFlags<PeakFitLM::PeakFitLMOptions> fwhm_options( 0 );
+      for( shared_ptr<const PeakDef> &peak : *searchresults )
+      {
+        shared_ptr<PeakDef> mutablePeak = make_shared<PeakDef>( *peak );
+        const float energy = static_cast<float>( mutablePeak->mean() );
+        const double drf_sigma = drf->peakResolutionSigma( energy );
+        mutablePeak->setSigma( drf_sigma );
+
+        if( fitPrefs->m_fwhm_method == PeakFitDetPrefs::FwhmMethod::DetFwhm )
+          mutablePeak->setFitFor( PeakDef::CoefficientType::Sigma, false );
+
+        peak = mutablePeak;
+      }//for( each peak )
+    }//if( need to apply FWHM method )
   } ) );
 }//void automated_search_for_peaks( InterSpec *interspec, const bool keep_old_peaks )
 
@@ -2808,7 +2862,7 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
                                boost::function<void(void)> callback,
                                const std::string sessionID,
                                const bool singleThread,
-                               const bool isHPGe )
+                               std::shared_ptr<const PeakFitDetPrefs> fitPrefs )
 {
   Wt::WServer *server = Wt::WServer::instance();
   if( !server )  //shouldnt ever happen,
@@ -2826,7 +2880,7 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
 
   try
   {
-    *results = ExperimentalAutomatedPeakSearch::search_for_peaks( data, drf, existingPeaks, singleThread, isHPGe );
+    *results = ExperimentalAutomatedPeakSearch::search_for_peaks( data, drf, existingPeaks, singleThread, fitPrefs );
     *results = assign_srcs_from_ref_lines( data, *results, displayed, setColor, false, true );
   }catch( std::exception &e )
   {
@@ -4487,22 +4541,23 @@ void add_peak_from_right_click( InterSpec * const interspec,
   if( !inserted )
     throw runtime_error( "Logic error 2 in add_peak_from_right_click()" );
 
-  const bool isHPGe = PeakFitUtils::is_likely_high_res( interspec );
-  
+  shared_ptr<SpecMeas> meas_for_prefs = interspec->measurment( SpecUtils::SpectrumType::Foreground );
+  shared_ptr<const PeakFitDetPrefs> fitPrefsForAdd = meas_for_prefs ? meas_for_prefs->peakFitDetPrefs() : nullptr;
+
   const MultiPeakInitialGuessMethod methods[] = { FromInputPeaks, UniformInitialGuess, FromDataInitialGuess };
-  
+
   bool found_better_fit = false;
   double fitChi2 = startingChi2;
   const vector<shared_ptr<PeakDef>> orig_answer = answer;
   for( const MultiPeakInitialGuessMethod method : methods )
-  { 
+  {
     try
-    {  
+    {
       vector<shared_ptr<PeakDef>> this_answer = orig_answer;
-      
+
       double this_fitChi2;
       findPeaksInUserRange( x0, x1, int(answer.size()), method, dataH,
-                           interspec->measurment(SpecUtils::SpectrumType::Foreground)->detector(), isHPGe, this_answer, this_fitChi2 );
+                           interspec->measurment(SpecUtils::SpectrumType::Foreground)->detector(), fitPrefsForAdd, this_answer, this_fitChi2 );
       
       if( this_answer.empty() )
       {

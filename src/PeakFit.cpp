@@ -68,6 +68,7 @@
 #include "InterSpec/PeakFitLM.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "SpecUtils/EnergyCalibration.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
@@ -143,7 +144,7 @@ void do_peak_automated_searchfit( const double x,
                                   const std::shared_ptr<const Measurement> &meas,
                                   const std::shared_ptr<const DetectorPeakResponse> &drf,
                                   const PeakShrdVec &inpeaks,
-                                  const bool isHPGe,
+                                  std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
                                   std::pair< PeakShrdVec, PeakShrdVec > &answer )
 {
   try
@@ -151,7 +152,7 @@ void do_peak_automated_searchfit( const double x,
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
     DebugLog(cout) << "Will try fitting peak clicked on at " << x << "\n";
 #endif
-    answer = searchForPeakFromUser( x, -1.0, meas, inpeaks, drf, nullptr, isHPGe );
+    answer = searchForPeakFromUser( x, -1.0, meas, inpeaks, drf, nullptr, fitPrefs );
   }catch( std::exception &e )
   {
     cerr << "do_peak_searchfit(...): caught unexpected exception: '" << e.what()
@@ -165,7 +166,8 @@ void do_peak_automated_searchfit( const double x,
   
 std::vector<std::shared_ptr<const PeakDef> > filter_anomolous_width_peaks_highres(
                           const std::shared_ptr<const Measurement> meas,
-                          std::vector<std::shared_ptr<const PeakDef> > input )
+                          std::vector<std::shared_ptr<const PeakDef> > input,
+                          std::shared_ptr<const PeakFitDetPrefs> fitPrefs )
 {
   if( !meas )
     return input;
@@ -285,8 +287,8 @@ std::vector<std::shared_ptr<const PeakDef> > filter_anomolous_width_peaks_highre
 
         PeakShrdVec onepeak( 1, input[i] );
         pair< PeakShrdVec, PeakShrdVec > twoPeaksPlus, twoPeaksMinus;
-        twoPeaksPlus = searchForPeakFromUser( m + s, -1.0, meas, onepeak, nullptr, nullptr, true );
-        twoPeaksMinus = searchForPeakFromUser( m - s, -1.0, meas, onepeak, nullptr, nullptr, true );
+        twoPeaksPlus = searchForPeakFromUser( m + s, -1.0, meas, onepeak, nullptr, nullptr, fitPrefs );
+        twoPeaksMinus = searchForPeakFromUser( m - s, -1.0, meas, onepeak, nullptr, nullptr, fitPrefs );
         
         if( twoPeaksPlus.first.size() == 2 && twoPeaksMinus.first.size() == 2 )
         {
@@ -354,19 +356,24 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
                                        const std::shared_ptr<const Measurement> meas,
                                        const std::shared_ptr<const DetectorPeakResponse> &drf,
                                        std::shared_ptr<const deque< std::shared_ptr<const PeakDef> > > origpeaks,
-                                       const bool isHPGe )
+                                       std::shared_ptr<const PeakFitDetPrefs> fitPrefs )
 {
   typedef std::shared_ptr<PeakDef> PeakPtr;
   typedef std::shared_ptr<const PeakDef> PeakConstPtr;
-  
+
+  assert( fitPrefs );
+  const bool isHPGe = fitPrefs
+    ? (fitPrefs->m_det_type == PeakFitUtils::CoarseResolutionType::High)
+    : false;
+
   size_t lower_channel = 0, upper_channel = 0;
   //    ExperimentalPeakSearch::find_spectroscopic_extent( meas, lower_channel, upper_channel );
   //    cout << "Start at " << meas->gamma_channel_center( lower_channel ) << " and going through "
   //    << meas->gamma_channel_center( upper_channel ) << endl;
   
   const vector<std::shared_ptr<PeakDef> > initialcandidates
-    = secondDerivativePeakCanidatesWithROI( meas, isHPGe, lower_channel, upper_channel );
-  
+    = secondDerivativePeakCanidatesWithROI( meas, fitPrefs, lower_channel, upper_channel );
+
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
   {
     DebugLog log(cout);
@@ -491,17 +498,17 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
       pair<PeakShrdVec, PeakShrdVec> &res = results[i];
       
       pool.post(
-        [mean, isHPGe, &res,
+        [mean, fitPrefs, &res,
          //&sum_cpu_time, &sum_wall_time,
          meas_cref = std::as_const(meas),
          drf_cref = std::as_const(drf),
          fitpeakvec_cref = std::as_const(fitpeakvec)
         ](){
-          
+
           //const double this_start_cpu_time = SpecUtils::get_cpu_time();
           //const double this_start_wall_time = SpecUtils::get_wall_time();
-          
-          do_peak_automated_searchfit( mean, meas_cref, drf_cref, fitpeakvec_cref, isHPGe, res );
+
+          do_peak_automated_searchfit( mean, meas_cref, drf_cref, fitpeakvec_cref, fitPrefs, res );
           
           //const double this_end_cpu_time = SpecUtils::get_cpu_time();
           //const double this_end_wall_time = SpecUtils::get_wall_time();
@@ -513,7 +520,7 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
       //pool.post( boost::bind( &do_peak_automated_searchfit, mean,
       //                       boost::cref(meas), boost::cref(drf),
       //                       boost::cref(fitpeakvec),
-      //                       isHPGe,
+      //                       fitPrefs,
       //                       boost::ref(results[i]) ));
     }//for( size_t i = 0; i < peaksToTryIndices.size(); ++i )
     
@@ -564,8 +571,8 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
   
   const auto detResolution = PeakFitUtils::coarse_resolution_from_peaks( fitpeakvec );
   if( detResolution == PeakFitUtils::CoarseResolutionType::High )
-    fitpeakvec = filter_anomolous_width_peaks_highres( meas, fitpeakvec );
-  
+    fitpeakvec = filter_anomolous_width_peaks_highres( meas, fitpeakvec, fitPrefs );
+
   return fitpeakvec;
 }//search_for_peaks_multithread(...)
   
@@ -575,14 +582,19 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks_singlethread(
                         const std::shared_ptr<const Measurement> meas,
                         const std::shared_ptr<const DetectorPeakResponse> &drf,
                         std::shared_ptr<const deque< std::shared_ptr<const PeakDef> > > origpeaks,
-                        const bool isHPGe )
+                        std::shared_ptr<const PeakFitDetPrefs> fitPrefs )
 {
   typedef std::shared_ptr<PeakDef> PeakPtr;
   typedef std::shared_ptr<const PeakDef> PeakConstPtr;
-  
+
+  assert( fitPrefs );
+  const bool isHPGe = fitPrefs
+    ? (fitPrefs->m_det_type == PeakFitUtils::CoarseResolutionType::High)
+    : false;
+
   size_t lower_channel = 0, upper_channel = 0;
   vector<PeakPtr> candidates
-   = secondDerivativePeakCanidatesWithROI( meas, isHPGe, lower_channel, upper_channel );
+   = secondDerivativePeakCanidatesWithROI( meas, fitPrefs, lower_channel, upper_channel );
   
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
   {
@@ -636,7 +648,7 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks_singlethread(
 #endif
     
     pair< PeakShrdVec, PeakShrdVec > results;
-    do_peak_automated_searchfit( p.mean(), meas, drf, fitpeakvec, isHPGe, results );
+    do_peak_automated_searchfit( p.mean(), meas, drf, fitpeakvec, fitPrefs, results );
     
     const PeakShrdVec &toadd = results.first;
     const PeakShrdVec &toremove = results.second;
@@ -659,26 +671,26 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks_singlethread(
   
   const auto detResolution = PeakFitUtils::coarse_resolution_from_peaks( fitpeakvec );
   if( detResolution == PeakFitUtils::CoarseResolutionType::High )
-    fitpeakvec = filter_anomolous_width_peaks_highres( meas, fitpeakvec );
-  
+    fitpeakvec = filter_anomolous_width_peaks_highres( meas, fitpeakvec, fitPrefs );
+
   return fitpeakvec;
 }//search_for_peaks_singlethread(...)
 
-  
+
 vector<std::shared_ptr<const PeakDef> > search_for_peaks(
                               const std::shared_ptr<const Measurement> meas,
                               const std::shared_ptr<const DetectorPeakResponse> drf,
                               std::shared_ptr<const deque< std::shared_ptr<const PeakDef> > > origpeaks,
                               const bool singleThreaded,
-                              const bool isHPGe )
+                              std::shared_ptr<const PeakFitDetPrefs> fitPrefs )
 {
   vector<std::shared_ptr<const PeakDef> > answer;
-  
+
   if( singleThreaded )
-    answer = search_for_peaks_singlethread( meas, drf, origpeaks, isHPGe );
+    answer = search_for_peaks_singlethread( meas, drf, origpeaks, fitPrefs );
   else
-    answer = search_for_peaks_multithread( meas, drf, origpeaks, isHPGe );
-  
+    answer = search_for_peaks_multithread( meas, drf, origpeaks, fitPrefs );
+
   return answer;
 }
   
@@ -955,10 +967,15 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
                           MultiPeakInitialGuessMethod method,
                           std::shared_ptr<const Measurement> dataH,
                           std::shared_ptr<const DetectorPeakResponse> detector,
-                          const bool isHPGe,
+                          std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
                           vector<std::shared_ptr<PeakDef> > &answer,
                           double &chi2 )
 {
+  assert( fitPrefs );
+  const bool isHPGe = fitPrefs
+    ? (fitPrefs->m_det_type == PeakFitUtils::CoarseResolutionType::High)
+    : false;
+
   if( method != FromInputPeaks )
     answer.clear();
   
@@ -1038,7 +1055,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
     {
       intputSharesContinuum = false;
       std::vector< std::tuple<float,float,float> > candidates;  //{mean,sigma,area}
-      secondDerivativePeakCanidates( dataH, isHPGe, start_channel, end_channel, candidates );
+      secondDerivativePeakCanidates( dataH, fitPrefs, start_channel, end_channel, candidates );
       std::sort( begin(candidates), end(candidates),
                 []( const tuple<float,float,float> &lhs, const tuple<float,float,float> &rhs) -> bool {
         return std::get<2>(lhs) > std::get<2>(rhs);
@@ -1275,7 +1292,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
 #if( USE_QUICK_PEAK_CANDIDATE )
       intputSharesContinuum = false;
       std::vector< std::tuple<float,float,float> > candidates;  //{mean,sigma,area}
-      secondDerivativePeakCanidates( dataH, isHPGe, start_channel, end_channel, candidates );
+      secondDerivativePeakCanidates( dataH, fitPrefs, start_channel, end_channel, candidates );
       std::sort( begin(candidates), end(candidates),
                 []( const tuple<float,float,float> &lhs, const tuple<float,float,float> &rhs) -> bool {
                   return std::get<2>(lhs) > std::get<2>(rhs);
@@ -1283,7 +1300,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
 #else
       typedef std::shared_ptr<PeakDef> PeakPtr;
       const vector<PeakPtr> derivative_peaks
-        = secondDerivativePeakCanidatesWithROI( dataH, isHPGe, start_channel, end_channel );
+        = secondDerivativePeakCanidatesWithROI( dataH, fitPrefs, start_channel, end_channel );
       map<double,PeakPtr> candidates;
       for( const PeakPtr &p : derivative_peaks )
         candidates[-p->amplitude()] = p;
@@ -2068,9 +2085,9 @@ vector<shared_ptr<const PeakDef>> refitPeaksThatShareROI( const std::shared_ptr<
 #endif
 
   double mean_sigma_vary = -1.0;
-  if( fit_options & PeakFitLM::PeakFitLMOptions::MediumRefinementOnly )
+  if( fit_options & PeakFitLM::PeakFitLMOptions::MediumAmplitudeRefinementOnly )
     mean_sigma_vary = 0.2;
-  else if( fit_options & PeakFitLM::PeakFitLMOptions::SmallRefinementOnly )
+  else if( fit_options & PeakFitLM::PeakFitLMOptions::SmallAmplitudeRefinementOnly )
     mean_sigma_vary = 0.15;
 
   vector<shared_ptr<const PeakDef>> answer = refitPeaksThatShareROI_imp( dataH, detector, inpeaks, mean_sigma_vary );
@@ -2897,9 +2914,14 @@ void get_candidate_peak_estimates_for_user_click(
                                  const double x,
                                  const double pixelPerKev,
                                  const std::shared_ptr<const Measurement> &dataH,
-                                 const bool isHPGe,
+                                 std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
                                  const PeakShrdVec &inpeaks )
 {
+  assert( fitPrefs );
+  const bool isHPGe = fitPrefs
+    ? (fitPrefs->m_det_type == PeakFitUtils::CoarseResolutionType::High)
+    : false;
+
   typedef std::shared_ptr<PeakDef> PeakPtr;
   typedef std::shared_ptr<const PeakDef> PeakConstPtr;
   
@@ -2935,7 +2957,7 @@ void get_candidate_peak_estimates_for_user_click(
   
   
   const vector<PeakPtr> candidates
-       = secondDerivativePeakCanidatesWithROI( dataH, isHPGe, lowchannel, highchannel );
+       = secondDerivativePeakCanidatesWithROI( dataH, fitPrefs, lowchannel, highchannel );
   
 
   float min_sigma, max_sigma;
@@ -4915,13 +4937,18 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
                                                         const PeakShrdVec &inpeaks,
                                                         std::shared_ptr<const DetectorPeakResponse> drf,
                                                        const std::shared_ptr<const std::deque<shared_ptr<const PeakDef>>> &auto_search_peaks,
-                                                       const bool isHPGe )
+                                                       std::shared_ptr<const PeakFitDetPrefs> fitPrefs )
 {
   typedef std::shared_ptr<const PeakDef> PeakDefShrdPtr;
-  
+
+  assert( fitPrefs );
+  const bool isHPGe = fitPrefs
+    ? (fitPrefs->m_det_type == PeakFitUtils::CoarseResolutionType::High)
+    : false;
+
   if( !dataH || !dataH->num_gamma_channels() )
     return pair<PeakShrdVec,PeakShrdVec>();
-  
+
   const bool automated = (pixelPerKev <= 0.0);
   if( automated )
     pixelPerKev = 5.0;
@@ -4933,7 +4960,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
   
   double sigma0, mean0, area0;
   get_candidate_peak_estimates_for_user_click( sigma0, mean0, area0, x,
-                                              pixelPerKev, dataH, isHPGe, inpeaks );
+                                              pixelPerKev, dataH, fitPrefs, inpeaks );
   
   if( drf && drf->isValid() && drf->hasResolutionInfo() )
     sigma0 = drf->peakResolutionSigma( mean0 );
@@ -5180,11 +5207,16 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
 
 
 void secondDerivativePeakCanidates( const std::shared_ptr<const Measurement> data,
-                                   const bool isHPGe,
+                                   std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
                                    size_t start_channel,
                                    size_t end_channel,
                                    std::vector< std::tuple<float,float,float> > &results )
 {
+  assert( fitPrefs );
+  const bool isHPGe = fitPrefs
+    ? (fitPrefs->m_det_type == PeakFitUtils::CoarseResolutionType::High)
+    : false;
+
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
   //If we're debuging things, lets make sure we printout information from just
   //  one function call contiguously to the log.
@@ -5516,10 +5548,15 @@ void secondDerivativePeakCanidates( const std::shared_ptr<const Measurement> dat
 
 
 std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std::shared_ptr<const Measurement> dataH,
-                                                                            const bool isHPGe,
+                                                                            std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
                                                           size_t start_channel,
                                                           size_t end_channel )
 {
+  assert( fitPrefs );
+  const bool isHPGe = fitPrefs
+    ? (fitPrefs->m_det_type == PeakFitUtils::CoarseResolutionType::High)
+    : false;
+
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
   //If we're debuging things, lets make sure we printout information from just
   //  one function call contiguously to the log.
@@ -6120,8 +6157,8 @@ void fitPeaks( const std::vector<PeakDef> &all_near_peaks,
     
     ROOT::Minuit2::MnUserParameters inputPrams;
     
-    const bool amp_only = (fit_options.testFlag(PeakFitLM::PeakFitLMOptions::SmallRefinementOnly)
-                           || fit_options.testFlag(PeakFitLM::PeakFitLMOptions::MediumRefinementOnly));
+    const bool amp_only = (fit_options.testFlag(PeakFitLM::PeakFitLMOptions::SmallAmplitudeRefinementOnly)
+                           || fit_options.testFlag(PeakFitLM::PeakFitLMOptions::MediumAmplitudeRefinementOnly));
     
     PeakFitChi2Fcn::AddPeaksToFitterMethod method = (amp_only
                                                      ? PeakFitChi2Fcn::kRefitPeakParameters

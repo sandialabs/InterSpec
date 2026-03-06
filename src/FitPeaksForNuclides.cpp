@@ -5927,12 +5927,12 @@ PeakFitResult fit_peaks_for_nuclides(
   const std::shared_ptr<const DetectorPeakResponse> &drf_input,
   const Wt::WFlags<FitSrcPeaksOptions> options,
   const PeakFitForNuclideConfig &config,
-  const bool isHPGe )
+  const std::shared_ptr<const PeakFitDetPrefs> &peak_fit_prefs )
 {
-  
+
   std::vector<RelActCalcAuto::NucInputInfo> base_nuclides;
   base_nuclides.reserve( sources.size() );
-  
+
   for( const RelActCalcAuto::SrcVariant &src : sources )
   {
     RelActCalcAuto::NucInputInfo nuc_info;
@@ -5941,9 +5941,9 @@ PeakFitResult fit_peaks_for_nuclides(
     nuc_info.fit_age = false;  // not currently exposed in UI
     base_nuclides.push_back( nuc_info );
   }
-  
+
   return fit_peaks_for_nuclides( auto_search_peaks, foreground, base_nuclides,
-                                user_peaks, background, drf_input, options, config, isHPGe );
+                                user_peaks, background, drf_input, options, config, peak_fit_prefs );
 }
   
   
@@ -5956,8 +5956,15 @@ PeakFitResult fit_peaks_for_nuclides(
   const std::shared_ptr<const DetectorPeakResponse> &drf_input,
   const Wt::WFlags<FitSrcPeaksOptions> options,
   const PeakFitForNuclideConfig &config,
-  const bool isHPGe )
+  const std::shared_ptr<const PeakFitDetPrefs> &peak_fit_prefs )
 {
+  assert( peak_fit_prefs );
+  
+  // TODO: after merging in feature/DetTypeClassify, if peak_fit_prefs is null, lets call PeakFitUtils::classify_det_type to calc Coarse det type - and then use that to load DRF.  Also, update estimate_initial_rois_using_relactmanual, and other functions to take in coarse type, instead of isHPGe.
+  const bool isHPGe = peak_fit_prefs
+    ? (peak_fit_prefs->m_det_type == PeakFitUtils::CoarseResolutionType::High)
+    : false;
+
   PeakFitResult result;
 
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();

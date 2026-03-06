@@ -26,11 +26,15 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <vector>
 #include <memory>
 #include <string>
 #include <optional>
 
+#include <Wt/WFlags>
+
 #include "InterSpec/PeakDef.h"
+#include "InterSpec/PeakFitLM.h"
 #include "InterSpec/PeakFitUtils.h"
 
 // Forward declarations
@@ -44,6 +48,8 @@ namespace SpecUtils
 {
   class Measurement;
 }
+
+class DetectorPeakResponse;
 
 
 /** Holds coarse detector resolution type, default peak skew type, and optional
@@ -80,6 +86,29 @@ struct PeakFitDetPrefs
    If false, skew parameters are shared/related across ROIs.
    */
   bool m_roi_independent_skew;
+
+  /** How peak FWHM (sigma) is determined during fitting. */
+  enum class FwhmMethod : int
+  {
+    /** FWHM is freely fit from the data (default, current behavior). */
+    Normal,
+
+    /** FWHM is fixed to the DRF prediction for the peak energy.
+     Requires the DetectorPeakResponse to have resolution info.
+     Falls back to Normal if DRF lacks FWHM info.
+     */
+    DetFwhm,
+
+    /** FWHM starts at the DRF prediction but is allowed to refine within
+     a small range during fitting.
+     Requires the DetectorPeakResponse to have resolution info.
+     Falls back to Normal if DRF lacks FWHM info.
+     */
+    DetPlusRefine
+  };//enum class FwhmMethod
+
+  /** How peak FWHM is determined during fitting; default Normal. */
+  FwhmMethod m_fwhm_method;
 
   enum class LoadingSource : int
   {
@@ -118,6 +147,11 @@ struct PeakFitDetPrefs
    */
   static PeakFitUtils::CoarseResolutionType coarse_res_from_str( const std::string &str );
 
+
+  // -- String conversion for FwhmMethod --
+
+  static const char *to_str( FwhmMethod method );
+  static FwhmMethod fwhm_method_from_str( const std::string &str );
 
   // -- String conversion for LoadingSource --
 
@@ -169,5 +203,23 @@ struct PeakFitDetPrefs
   static std::shared_ptr<const PeakFitDetPrefs>
     guessFromSpectralData( const std::shared_ptr<const SpecUtils::Measurement> &meas );
 };//struct PeakFitDetPrefs
+
+
+/** Applies the FwhmMethod from prefs to peaks before fitting.
+
+ For FwhmMethod::DetFwhm: sets each peak's sigma to the DRF prediction and
+   sets fitFor(Sigma) = false so sigma is held constant during the fit.
+ For FwhmMethod::DetPlusRefine: sets each peak's sigma to the DRF prediction
+   and adds SmallFwhmRefinementOnly to fit_options so sigma can refine within +-15%.
+ For FwhmMethod::Normal: no-op.
+
+ Silently falls back to Normal if drf is null or lacks resolution info.
+ */
+void apply_fwhm_method_to_peaks(
+  std::vector<std::shared_ptr<PeakDef>> &peaks,
+  const std::shared_ptr<const DetectorPeakResponse> &drf,
+  const PeakFitDetPrefs &prefs,
+  Wt::WFlags<PeakFitLM::PeakFitLMOptions> &fit_options );
+
 
 #endif //PeakFitDetPrefs_h

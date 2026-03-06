@@ -31,18 +31,21 @@
 #include <Wt/WLabel>
 #include <Wt/WCheckBox>
 #include <Wt/WComboBox>
+#include <Wt/WPushButton>
 #include <Wt/WApplication>
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
-#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/SimpleDialog.h"
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/PeakFitDetPrefsGui.h"
+#include "InterSpec/DetectorPeakResponse.h"
 
 using namespace std;
 using namespace Wt;
@@ -57,11 +60,13 @@ PeakFitDetPrefsGui::PeakFitDetPrefsGui( InterSpec *viewer, const bool compactMod
     m_collapsedDiv( nullptr ),
     m_expandedDiv( nullptr ),
     m_detTypeCombo( nullptr ),
+    m_fwhmMethodCombo( nullptr ),
     m_skewTypeCombo( nullptr ),
     m_skewParamsDiv( nullptr ),
     m_roiIndepCb( nullptr ),
     m_fitSkewLink( nullptr ),
-    m_sourceLabel( nullptr )
+    m_sourceLabel( nullptr ),
+    m_pendingFwhmMethod( PeakFitDetPrefs::FwhmMethod::Normal )
 {
   assert( m_viewer );
 
@@ -147,6 +152,95 @@ void PeakFitDetPrefsGui::init()
     if( !m_programmaticUpdate )
       userChangedValue();
   }) );
+
+
+  // FWHM method combo
+  WLabel *fwhmLabel = new WLabel( WString::tr( "pfdpg-fwhm-method-label" ), contentDiv );
+  fwhmLabel->addStyleClass( "PfdpgLabel" );
+
+  m_fwhmMethodCombo = new WComboBox( contentDiv );
+  m_fwhmMethodCombo->addStyleClass( "PfdpgCombo" );
+  m_fwhmMethodCombo->addItem( WString::tr( "pfdpg-fwhm-normal" ) );      // 0 => Normal
+  m_fwhmMethodCombo->addItem( WString::tr( "pfdpg-fwhm-det" ) );         // 1 => DetFwhm
+  m_fwhmMethodCombo->addItem( WString::tr( "pfdpg-fwhm-det-refine" ) );  // 2 => DetPlusRefine
+  m_fwhmMethodCombo->setCurrentIndex( 0 );
+  m_fwhmMethodCombo->activated().connect( std::bind( [this](){
+    if( m_programmaticUpdate )
+      return;
+
+    const int idx = m_fwhmMethodCombo->currentIndex();
+    if( idx == 0 )
+    {
+      // Normal - just apply
+      userChangedValue();
+      return;
+    }
+
+    // DetFwhm or DetPlusRefine - check if DRF has FWHM info
+    shared_ptr<const SpecMeas> meas = m_viewer
+      ? m_viewer->measurment( SpecUtils::SpectrumType::Foreground )
+      : nullptr;
+    shared_ptr<const DetectorPeakResponse> drf = meas ? meas->detector() : nullptr;
+
+    if( drf && drf->hasResolutionInfo() )
+    {
+      userChangedValue();
+      return;
+    }
+
+    // DRF lacks FWHM info - show dialog offering to fit FWHM or cancel
+    SimpleDialog *dialog = new SimpleDialog(
+      WString::tr( "pfdpg-no-fwhm-title" ),
+      WString::tr( "pfdpg-no-fwhm-content" ) );
+
+    WPushButton *fitBtn = dialog->addButton( WString::tr( "pfdpg-no-fwhm-fit" ) );
+    WPushButton *cancelBtn = dialog->addButton( WString::tr( "pfdpg-no-fwhm-cancel" ) );
+
+    const PeakFitDetPrefs::FwhmMethod pending = (idx == 1)
+      ? PeakFitDetPrefs::FwhmMethod::DetFwhm
+      : PeakFitDetPrefs::FwhmMethod::DetPlusRefine;
+
+    cancelBtn->clicked().connect( std::bind( [this](){
+      m_programmaticUpdate = true;
+      m_fwhmMethodCombo->setCurrentIndex( 0 );
+      m_programmaticUpdate = false;
+    }) );
+
+    fitBtn->clicked().connect( std::bind( [this, pending](){
+      m_pendingFwhmMethod = pending;
+      m_programmaticUpdate = true;
+      m_fwhmMethodCombo->setCurrentIndex( 0 );
+      m_programmaticUpdate = false;
+      m_viewer->fwhmFromForegroundWindow( true );
+    }) );
+  }) );
+
+  // When the DRF changes, check if we have a pending FWHM method to apply
+  m_viewer->detectorModified().connect( std::bind( [this]( std::shared_ptr<DetectorPeakResponse> ){
+    if( m_pendingFwhmMethod == PeakFitDetPrefs::FwhmMethod::Normal )
+      return;
+
+    shared_ptr<const SpecMeas> meas = m_viewer
+      ? m_viewer->measurment( SpecUtils::SpectrumType::Foreground )
+      : nullptr;
+    shared_ptr<const DetectorPeakResponse> drf = meas ? meas->detector() : nullptr;
+
+    if( drf && drf->hasResolutionInfo() )
+    {
+      // FWHM is now available - apply the pending method
+      m_programmaticUpdate = true;
+      const int pendIdx = (m_pendingFwhmMethod == PeakFitDetPrefs::FwhmMethod::DetFwhm) ? 1 : 2;
+      m_fwhmMethodCombo->setCurrentIndex( pendIdx );
+      m_programmaticUpdate = false;
+      m_pendingFwhmMethod = PeakFitDetPrefs::FwhmMethod::Normal;
+      userChangedValue();
+    }
+    else
+    {
+      // Still no FWHM - clear pending
+      m_pendingFwhmMethod = PeakFitDetPrefs::FwhmMethod::Normal;
+    }
+  }, std::placeholders::_1 ) );
 
 
   // Skew type combo
@@ -717,6 +811,16 @@ void PeakFitDetPrefsGui::userChangedValue()
   }
 
   newPrefs->m_roi_independent_skew = m_roiIndepCb->isChecked();
+
+  // FWHM method
+  const int fwhmIdx = m_fwhmMethodCombo->currentIndex();
+  switch( fwhmIdx )
+  {
+    case 1:  newPrefs->m_fwhm_method = PeakFitDetPrefs::FwhmMethod::DetFwhm;       break;
+    case 2:  newPrefs->m_fwhm_method = PeakFitDetPrefs::FwhmMethod::DetPlusRefine;  break;
+    default: newPrefs->m_fwhm_method = PeakFitDetPrefs::FwhmMethod::Normal;         break;
+  }
+
   newPrefs->m_source = PeakFitDetPrefs::LoadingSource::UserInputInGui;
 
   // Apply to SpecMeas
@@ -774,6 +878,7 @@ void PeakFitDetPrefsGui::updateFromSpecMeas()
   {
     setControlsEnabled( false );
     m_detTypeCombo->setCurrentIndex( 4 ); // Unknown
+    m_fwhmMethodCombo->setCurrentIndex( 0 ); // Normal
     m_skewTypeCombo->setCurrentIndex( 0 ); // NoSkew
     updateSkewParamRows();
     m_sourceLabel->setText( "" );
@@ -788,6 +893,7 @@ void PeakFitDetPrefsGui::updateFromSpecMeas()
   if( !prefs )
   {
     m_detTypeCombo->setCurrentIndex( 4 );
+    m_fwhmMethodCombo->setCurrentIndex( 0 );
     m_skewTypeCombo->setCurrentIndex( 0 );
     updateSkewParamRows();
     m_sourceLabel->setText( WString::tr( "pfdpg-source-label" )
@@ -805,6 +911,25 @@ void PeakFitDetPrefsGui::updateFromSpecMeas()
     case PeakFitUtils::CoarseResolutionType::High:    m_detTypeCombo->setCurrentIndex( 3 ); break;
     case PeakFitUtils::CoarseResolutionType::Unknown: m_detTypeCombo->setCurrentIndex( 4 ); break;
   }//switch( prefs->m_det_type )
+
+  // Set FWHM method combo
+  // If DetFwhm/DetPlusRefine but DRF lacks FWHM info, force Normal
+  {
+    PeakFitDetPrefs::FwhmMethod effective = prefs->m_fwhm_method;
+    if( effective != PeakFitDetPrefs::FwhmMethod::Normal )
+    {
+      shared_ptr<const DetectorPeakResponse> drf = meas->detector();
+      if( !drf || !drf->hasResolutionInfo() )
+        effective = PeakFitDetPrefs::FwhmMethod::Normal;
+    }
+
+    switch( effective )
+    {
+      case PeakFitDetPrefs::FwhmMethod::Normal:        m_fwhmMethodCombo->setCurrentIndex( 0 ); break;
+      case PeakFitDetPrefs::FwhmMethod::DetFwhm:       m_fwhmMethodCombo->setCurrentIndex( 1 ); break;
+      case PeakFitDetPrefs::FwhmMethod::DetPlusRefine:  m_fwhmMethodCombo->setCurrentIndex( 2 ); break;
+    }
+  }
 
   // Set skew type combo
   const int skewIdx = static_cast<int>( prefs->m_peak_skew_type );
@@ -859,6 +984,7 @@ void PeakFitDetPrefsGui::updateFromSpecMeas()
 void PeakFitDetPrefsGui::setControlsEnabled( const bool enabled )
 {
   m_detTypeCombo->setEnabled( enabled );
+  m_fwhmMethodCombo->setEnabled( enabled );
   m_skewTypeCombo->setEnabled( enabled );
   m_roiIndepCb->setEnabled( enabled );
 

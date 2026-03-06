@@ -11168,10 +11168,10 @@ void InterSpec::changeDisplayedSampleNums( const std::set<int> &samples,
       shared_ptr<const SpecUtils::Measurement> spectrum = is_fore ? m_spectrum->data() : m_spectrum->background();
       if( meas && spectrum && !meas->automatedSearchPeaks(samples) )
       {
-        const bool isHPGe = PeakFitUtils::is_likely_high_res( this );
+        shared_ptr<const PeakFitDetPrefs> hintFitPrefs = meas->peakFitDetPrefs();
 #if( !BUILD_AS_UNIT_TEST_SUITE )
         // We wont search for hint peaks if we are running unit tests - so it wont take forever
-        searchForHintPeaks( meas, samples, spectrum, isHPGe );
+        searchForHintPeaks( meas, samples, spectrum, hintFitPrefs );
 #endif
       }else if( meas )
       {
@@ -12032,11 +12032,11 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       
       if( meas && !meas->automatedSearchPeaks(sample_numbers) )
       {
-        const bool isHPGe = PeakFitUtils::is_likely_high_res( this );
-        
+        shared_ptr<const PeakFitDetPrefs> hintFitPrefs = meas->peakFitDetPrefs();
+
         // We wont search for hint peaks if we are running unit tests - so it wont take forever
 #if( !BUILD_AS_UNIT_TEST_SUITE )
-        searchForHintPeaks( meas, sample_numbers, spectrum, isHPGe );
+        searchForHintPeaks( meas, sample_numbers, spectrum, hintFitPrefs );
 #endif //#if( !BUILD_AS_UNIT_TEST_SUITE )
       }else if( meas )
       {
@@ -12959,38 +12959,38 @@ bool InterSpec::colorPeaksBasedOnReferenceLines() const
 void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
                                    const std::set<int> &samples,
                                    const std::shared_ptr<const SpecUtils::Measurement> &spectrum_meas,
-                                   const bool isHPGe )
+                                   std::shared_ptr<const PeakFitDetPrefs> fitPrefs )
 {
   assert( data );
   if( !data )
     return;
-  
+
   shared_ptr<const deque<shared_ptr<const PeakDef>>> origPeaks;
   if( data->sampleNumsWithAutomatedSearchPeaks().count(samples) )
     origPeaks = data->peaks(samples);
   if( origPeaks )
     origPeaks = make_shared<deque<shared_ptr<const PeakDef>>>( *origPeaks );
-  
+
   shared_ptr<vector<shared_ptr<const PeakDef>>> searchresults = make_shared<vector<shared_ptr<const PeakDef>>>();
-  
+
   const string sessionId = wApp->sessionId();
   weak_ptr<const SpecUtils::Measurement> weakdata = spectrum_meas;
-  
+
   // Grab the detector
   shared_ptr<DetectorPeakResponse> drf = data->detector();
   // If this is the background measurement, and it doesnt have a detector, try to grab it from the foreground
   if( !drf && (data != m_dataMeasurement) && (data == m_backgroundMeasurement) && m_dataMeasurement )
     drf = m_dataMeasurement->detector();
-  
+
   weak_ptr<SpecMeas> spectrum = data;
-  
+
   boost::function<void(void)> callback = wApp->bind( boost::bind(&InterSpec::setHintPeaks,
                 this, spectrum, samples, origPeaks, searchresults
   ) );
-  
+
   boost::function<void(void)> worker = [=](){
     PeakSearchGuiUtils::search_for_peaks_worker( weakdata, drf, origPeaks, {}, false, searchresults,
-                                                callback, sessionId, false, isHPGe );
+                                                callback, sessionId, false, fitPrefs );
   };
   
 

@@ -40,6 +40,7 @@ class PeakModel;
 class InterSpec;
 struct ColorTheme;
 class SpectrumChart;
+struct PeakFitDetPrefs;
 struct ReferenceLineInfo;
 class DetectorPeakResponse;
 class ReferencePhotopeakDisplay;
@@ -162,7 +163,7 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
                                boost::function<void(void)> callback,
                                const std::string sessionID,
                                const bool singleThread,
-                               const bool isHPGe );
+                               std::shared_ptr<const PeakFitDetPrefs> fitPrefs );
   
 /** Assigns peak nuclides/xrays/reactions from the reference photopeak lines by
    modifying the peaks passed in.  

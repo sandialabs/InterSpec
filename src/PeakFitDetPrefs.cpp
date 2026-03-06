@@ -37,9 +37,11 @@
 #include "SpecUtils/RapidXmlUtils.hpp"
 
 #include "InterSpec/PeakDef.h"
+#include "InterSpec/PeakFitLM.h"
 #include "InterSpec/XmlUtils.hpp"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakFitDetPrefs.h"
+#include "InterSpec/DetectorPeakResponse.h"
 
 using namespace std;
 
@@ -53,6 +55,7 @@ PeakFitDetPrefs::PeakFitDetPrefs()
   , m_lower_energy_skew{}
   , m_upper_energy_skew{}
   , m_roi_independent_skew( false )
+  , m_fwhm_method( FwhmMethod::Normal )
   , m_source( LoadingSource::Default )
 {
 }
@@ -67,6 +70,8 @@ bool PeakFitDetPrefs::operator==( const PeakFitDetPrefs &rhs ) const
   if( m_source != rhs.m_source )
     return false;
   if( m_roi_independent_skew != rhs.m_roi_independent_skew )
+    return false;
+  if( m_fwhm_method != rhs.m_fwhm_method )
     return false;
 
   for( int i = 0; i < 4; ++i )
@@ -118,6 +123,33 @@ PeakFitUtils::CoarseResolutionType PeakFitDetPrefs::coarse_res_from_str( const s
 
   throw runtime_error( "PeakFitDetPrefs::coarse_res_from_str: unrecognized value '" + str + "'" );
 }//coarse_res_from_str
+
+
+const char *PeakFitDetPrefs::to_str( const FwhmMethod method )
+{
+  switch( method )
+  {
+    case FwhmMethod::Normal:        return "Normal";
+    case FwhmMethod::DetFwhm:       return "DetFwhm";
+    case FwhmMethod::DetPlusRefine: return "DetPlusRefine";
+  }//switch( method )
+
+  assert( 0 );
+  return "Normal";
+}//to_str( FwhmMethod )
+
+
+PeakFitDetPrefs::FwhmMethod PeakFitDetPrefs::fwhm_method_from_str( const string &str )
+{
+  if( SpecUtils::iequals_ascii( str, "Normal" ) )
+    return FwhmMethod::Normal;
+  if( SpecUtils::iequals_ascii( str, "DetFwhm" ) )
+    return FwhmMethod::DetFwhm;
+  if( SpecUtils::iequals_ascii( str, "DetPlusRefine" ) )
+    return FwhmMethod::DetPlusRefine;
+
+  throw runtime_error( "PeakFitDetPrefs::fwhm_method_from_str: unrecognized value '" + str + "'" );
+}//fwhm_method_from_str
 
 
 const char *PeakFitDetPrefs::to_str( const LoadingSource src )
@@ -185,6 +217,7 @@ void PeakFitDetPrefs::toXml( ::rapidxml::xml_node<char> *parent_node,
   }//for( int i = 0; i < 4; ++i )
 
   XmlUtils::append_bool_node( base_node, "RoiIndepSkew", m_roi_independent_skew );
+  XmlUtils::append_string_node( base_node, "FwhmMethod", to_str( m_fwhm_method ) );
   XmlUtils::append_string_node( base_node, "Source", to_str( m_source ) );
 }//toXml
 
@@ -255,6 +288,13 @@ void PeakFitDetPrefs::fromXml( const ::rapidxml::xml_node<char> *node )
   else
     m_roi_independent_skew = true;
 
+  // FWHM method (default Normal for backward compat with version 0.0)
+  const rapidxml::xml_node<char> *fwhm_node = node->first_node( "FwhmMethod" );
+  if( fwhm_node && fwhm_node->value_size() )
+    m_fwhm_method = fwhm_method_from_str( string( fwhm_node->value(), fwhm_node->value_size() ) );
+  else
+    m_fwhm_method = FwhmMethod::Normal;
+
   const string source_str = XmlUtils::get_string_node_value( node, "Source" );
   m_source = loading_source_from_str( source_str );
 }//fromXml
@@ -270,6 +310,13 @@ string PeakFitDetPrefs::toUrlQueryParts() const
 
   result += "&SK=";
   result += PeakDef::to_label( m_peak_skew_type );
+
+  // FWHM method - only include if non-default
+  if( m_fwhm_method != FwhmMethod::Normal )
+  {
+    result += "&FM=";
+    result += to_str( m_fwhm_method );
+  }
 
   // Skew parameters - only include if set
   static const char * const lower_keys[] = { "LS0", "LS1", "LS2", "LS3" };
@@ -348,6 +395,15 @@ void PeakFitDetPrefs::fromUrlQueryParts( const map<string,string> &parts )
       }
     }
   }//for( int i = 0; i < 4; ++i )
+
+  // FWHM method (optional, defaults to Normal)
+  {
+    const auto it = parts.find( "FM" );
+    if( it != parts.end() )
+      m_fwhm_method = fwhm_method_from_str( it->second );
+    else
+      m_fwhm_method = FwhmMethod::Normal;
+  }
 
   // Source defaults to Default for URL-loaded prefs
   m_source = LoadingSource::Default;
@@ -496,3 +552,38 @@ PeakFitDetPrefs::guessFromSpectralData( const shared_ptr<const SpecUtils::Measur
   // Stub for future implementation
   return nullptr;
 }//guessFromSpectralData
+
+
+void apply_fwhm_method_to_peaks(
+  vector<shared_ptr<PeakDef>> &peaks,
+  const shared_ptr<const DetectorPeakResponse> &drf,
+  const PeakFitDetPrefs &prefs,
+  Wt::WFlags<PeakFitLM::PeakFitLMOptions> &fit_options )
+{
+  if( prefs.m_fwhm_method == PeakFitDetPrefs::FwhmMethod::Normal )
+    return;
+
+  if( !drf || !drf->hasResolutionInfo() )
+    return; // Silently fall back to Normal
+
+  for( shared_ptr<PeakDef> &peak : peaks )
+  {
+    if( !peak )
+      continue;
+
+    const float energy = static_cast<float>( peak->mean() );
+    if( prefs.m_fwhm_method == PeakFitDetPrefs::FwhmMethod::Normal )
+    {
+      const double drf_sigma = drf->peakResolutionSigma( energy );
+      peak->setSigma( drf_sigma );
+
+      if( prefs.m_fwhm_method == PeakFitDetPrefs::FwhmMethod::DetFwhm )
+        peak->setFitFor( PeakDef::CoefficientType::Sigma, false );
+      // DetPlusRefine: leave fitFor(Sigma) as-is (true); SmallFwhmRefinementOnly
+      // will be added to fit_options below.
+    }
+  }//for( peak : peaks )
+
+  if( prefs.m_fwhm_method == PeakFitDetPrefs::FwhmMethod::DetPlusRefine )
+    fit_options |= PeakFitLM::SmallFwhmRefinementOnly;
+}//apply_fwhm_method_to_peaks

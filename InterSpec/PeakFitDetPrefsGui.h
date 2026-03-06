@@ -27,9 +27,10 @@
 
 #include <Wt/WContainerWidget>
 
+#include "InterSpec/PeakFitDetPrefs.h"
+
 class InterSpec;
 class NativeFloatSpinBox;
-struct PeakFitDetPrefs;
 
 namespace Wt
 {
@@ -111,6 +112,7 @@ protected:
 
   // Controls
   Wt::WComboBox *m_detTypeCombo;
+  Wt::WComboBox *m_fwhmMethodCombo;
   Wt::WComboBox *m_skewTypeCombo;
 
   /** Container for the dynamically generated skew parameter rows. */
@@ -132,6 +134,9 @@ protected:
 
   /** Read-only label showing the LoadingSource. */
   Wt::WText *m_sourceLabel;
+
+  /** Tracks a pending FwhmMethod selection while the FWHM fit dialog is open. */
+  PeakFitDetPrefs::FwhmMethod m_pendingFwhmMethod;
 };//class PeakFitDetPrefsGui
 
 #endif //PeakFitDetPrefsGui_h

@@ -664,8 +664,9 @@ void MakeFwhmForDrf::startAutomatedPeakSearch()
     
   vector<shared_ptr<const PeakDef>> user_peaks = get_user_peaks();
   
-  const bool isHPGe = PeakFitUtils::is_likely_high_res( m_interspec );
-  
+  std::shared_ptr<SpecMeas> foreground = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
+  std::shared_ptr<const PeakFitDetPrefs> fitPrefs = foreground ? foreground->peakFitDetPrefs() : nullptr;
+
   //The results of the peak search will be placed into the vector pointed to by searchresults
   auto searchresults = std::make_shared< vector<std::shared_ptr<const PeakDef> > >();
     
@@ -690,7 +691,7 @@ void MakeFwhmForDrf::startAutomatedPeakSearch()
     auto existingPeaks = make_shared<deque<shared_ptr<const PeakDef>>>();
     existingPeaks->insert( end(*existingPeaks), begin(user_peaks), end(user_peaks) );
     
-    *searchresults = ExperimentalAutomatedPeakSearch::search_for_peaks( dataPtr, drf, existingPeaks, singleThread, isHPGe );
+    *searchresults = ExperimentalAutomatedPeakSearch::search_for_peaks( dataPtr, drf, existingPeaks, singleThread, fitPrefs );
     
     Wt::WServer *server = Wt::WServer::instance();
     if( server )

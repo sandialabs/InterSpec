@@ -1245,8 +1245,13 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
       if( (options.peak_stat_threshold != 2.0) || (options.peak_hypothesis_threshold != 1.0) )
         results.warnings.push_back( "peak-stat-threshold and peak-hypothesis-threshold are currently not used when fitting for all peaks." );
 
-      const bool highres = PeakFitUtils::is_high_res( spec );
-      vector<shared_ptr<const PeakDef>> fit_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks( spec, det, nullptr, false, highres );
+      std::shared_ptr<const PeakFitDetPrefs> fitPrefs;
+      if( exemplar_n42 )
+        fitPrefs = exemplar_n42->peakFitDetPrefs();
+      if( !fitPrefs && specfile )
+        fitPrefs = specfile->peakFitDetPrefs();
+
+      vector<shared_ptr<const PeakDef>> fit_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks( spec, det, nullptr, false, fitPrefs );
       fit_peaks_ptrs.insert( end(fit_peaks_ptrs), begin(fit_peaks), end(fit_peaks) );
     }else
     {

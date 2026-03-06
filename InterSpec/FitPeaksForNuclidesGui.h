@@ -204,7 +204,7 @@ private:
   std::shared_ptr<SpecUtils::Measurement> m_fg_copy;
   std::shared_ptr<SpecUtils::Measurement> m_bg_copy;
   std::shared_ptr<const DetectorPeakResponse> m_drf;
-  bool m_is_hpge;
+  std::shared_ptr<const PeakFitDetPrefs> m_peak_fit_prefs;
   std::vector<ReferenceLineInfo> m_ref_lines;
   std::vector<std::shared_ptr<const PeakDef>> m_user_peaks;
   std::shared_ptr<std::vector<std::shared_ptr<const PeakDef>>> m_auto_search_peaks;
