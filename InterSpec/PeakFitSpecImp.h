@@ -90,6 +90,36 @@ struct FindCandidateSettings
 
   float amp_to_apply_line_test_below = 6.000000;
 
+  // Energy-adaptive smoothing: SG window scales with channel position to match peak width
+  //  vs energy.  Below ref channel (smooth_ref_fraction * nchannel), uses num_smooth_side_channels.
+  //  Above ref channel, side_bins = num_smooth_side_channels * (ch/ref_ch)^smooth_scale_power.
+  //  Set smooth_scale_power = 0 to disable (use fixed num_smooth_side_channels everywhere).
+  float smooth_ref_fraction = 0.0f;         // Reference channel as fraction of nchannel (e.g. 0.1)
+  float smooth_scale_power = 0.0f;          // Scaling exponent (e.g. 0.5 = sqrt for NaI)
+
+  // Minimum significance of 2nd derivative at peak center to accept the candidate.
+  //  Significance = |second_deriv[min]| / sqrt(variance[min]).  Set to 0 to disable.
+  float min_second_deriv_significance = 0.0f;
+
+  // Compton backscatter asymmetry test: checks that positive 2nd-derivative regions flanking
+  //  the peak are reasonably symmetric. Set compton_next_ratio_max >= 50 to disable.
+  float compton_next_ratio_max = 100.0f;    // Old algo: 4.0
+  float compton_prev_ratio_min = 0.0f;      // Old algo: 0.2
+  float compton_total_ratio_min = 0.0f;     // Old algo: 0.3
+
+  // Low-energy drop-off test: validates peaks below a threshold energy have a Gaussian-like
+  //  shape, not a detector efficiency edge. Set low_energy_test_max_keV = 0 to disable.
+  float low_energy_test_max_keV = 0.0f;     // Old algo: 130 keV
+  float low_energy_drop_fraction = 0.45f;   // Minimum actual/expected Gaussian drop ratio
+
+  // PCGAP-style ROI: walking background feature detection, blended with derivative-based ROI.
+  //  pcgap_roi_blend_weight: 0 = only derivative-based ROI, 1 = only PCGAP ROI.
+  //  Blending applies only when FOM < pcgap_fom_blend_threshold.
+  float pcgap_feature_nsigma = 3.0f;        // Feature detection threshold (sigma)
+  float pcgap_max_extent_nsigma = 7.5f;     // Maximum ROI walk distance from mean (in sigma)
+  float pcgap_roi_blend_weight = 0.0f;      // 0 = disabled (current behavior)
+  float pcgap_fom_blend_threshold = 5.0f;   // FOM below which PCGAP blending applies
+
   std::string print( const std::string &var_name ) const;
   std::string to_json() const;
 };//struct FindCandidateSettings
