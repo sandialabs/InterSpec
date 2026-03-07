@@ -486,8 +486,8 @@
   <message id="pct-flat-step">Langkah Datar</message>
   <message id="pct-linear-step">Langkah Linear</message>
   <message id="pct-bilinear-step">Langkah Bi-linear</message>
-  <message id="pct-flat-step-cdf">Flat Step (Peak CDF)</message>
-  <message id="pct-linear-step-cdf">Linear Step (Peak CDF)</message>
+  <message id="pct-flat-step-cdf">Flat Step (CDF)</message>
+  <message id="pct-linear-step-cdf">Linear Step (CDF)</message>
   <message id="pct-global">Kont. Global</message>
 
   <!-- populateNuclideSelects() in PeakSearchGuiUtils.cpp -->

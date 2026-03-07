@@ -820,7 +820,7 @@ ostream &operator<<( std::ostream &stream, const PeakContinuum &cont )
     case PeakContinuum::LinearStepCDF:
     {
       const char * const names[] = {"Flat", "Linear"};
-      stream << names[cont.type() - PeakContinuum::FlatStepCDF] << " step (peak CDF) with coefficients {";
+      stream << names[cont.type() - PeakContinuum::FlatStepCDF] << " step (CDF) with coefficients {";
       for( size_t i = 0; i < cont.m_values.size(); ++i )
         stream << (i?", ":"") << cont.m_values[i];
       stream << "} relative to " << cont.m_referenceEnergy << " keV";
@@ -829,7 +829,7 @@ ostream &operator<<( std::ostream &stream, const PeakContinuum &cont )
 
     case PeakContinuum::BiLinearStepCDF:
     {
-      stream << "Bi-linear step (peak CDF) with coefficients {";
+      stream << "Bi-linear step (CDF) with coefficients {";
       for( size_t i = 0; i < cont.m_values.size(); ++i )
         stream << (i?", ":"") << cont.m_values[i];
       stream << "} relative to " << cont.m_referenceEnergy << " keV";

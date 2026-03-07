@@ -488,8 +488,8 @@
   <message id="pct-flat-step">Escalón plano</message>
   <message id="pct-linear-step">Escalón lineal</message>
   <message id="pct-bilinear-step">Escalón bilineal</message>
-  <message id="pct-flat-step-cdf">Flat Step (Peak CDF)</message>
-  <message id="pct-linear-step-cdf">Linear Step (Peak CDF)</message>
+  <message id="pct-flat-step-cdf">Flat Step (CDF)</message>
+  <message id="pct-linear-step-cdf">Linear Step (CDF)</message>
   <message id="pct-global">Cont. global</message>
 
   <!-- populateNuclideSelects() in PeakSearchGuiUtils.cpp -->

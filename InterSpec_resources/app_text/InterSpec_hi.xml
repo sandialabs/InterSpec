@@ -487,8 +487,8 @@
   <message id="pct-flat-step">समतल चरण</message>
   <message id="pct-linear-step">रैखिक चरण</message>
   <message id="pct-bilinear-step">द्वि-रैखिक चरण</message>
-  <message id="pct-flat-step-cdf">Flat Step (Peak CDF)</message>
-  <message id="pct-linear-step-cdf">Linear Step (Peak CDF)</message>
+  <message id="pct-flat-step-cdf">Flat Step (CDF)</message>
+  <message id="pct-linear-step-cdf">Linear Step (CDF)</message>
   <message id="pct-global">वैश्विक सतत</message>
 
   <!-- populateNuclideSelects() in PeakSearchGuiUtils.cpp -->
