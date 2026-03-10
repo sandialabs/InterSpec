@@ -14,6 +14,8 @@
   <message id="pfdpg-det-nai">NaI/CsI</message>
   <message id="pfdpg-det-labr">LaBr3</message>
   <message id="pfdpg-det-czt">CZT</message>
+  <message id="pfdpg-det-medres">Med Res</message>
+  <message id="pfdpg-det-lowormedres">Low/Med Res</message>
   <message id="pfdpg-det-hpge">HPGe</message>
   <message id="pfdpg-det-unknown">Unknown</message>
 

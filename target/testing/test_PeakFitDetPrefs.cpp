@@ -84,7 +84,7 @@ BOOST_AUTO_TEST_CASE( test_coarse_res_str_roundtrip )
 {
   using CRT = PeakFitUtils::CoarseResolutionType;
 
-  const CRT types[] = { CRT::Low, CRT::LaBr, CRT::CZT, CRT::High, CRT::Unknown };
+  const CRT types[] = { CRT::Low, CRT::LaBr, CRT::CZT, CRT::MedRes, CRT::LowOrMedRes, CRT::High, CRT::Unknown };
   for( const CRT t : types )
   {
     const char *s = PeakFitDetPrefs::to_str( t );

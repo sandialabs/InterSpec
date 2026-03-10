@@ -42,6 +42,7 @@
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/EnergyCal.h"
 #include "InterSpec/PeakFitLM.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakDists.h"
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/RelActCalcAuto.h"
@@ -1583,32 +1584,164 @@ std::pair<double,double> find_valid_energy_range( const std::shared_ptr<const Sp
   sgcoeffs.smooth_with_variance( channel_counts, smoothed_2nd, smoothed_2nd_variance );
 
   // Find where spectrum begins by looking for significant negative curvature (detector turn-on)
-  // followed by the curvature leveling off, using variance to set thresholds
+  // followed by the curvature leveling off, using variance to set thresholds.
+  //
+  // For a monotonic turn-on (e.g., HPGe): curvature goes negative then levels off to near-zero.
+  // For a peak near the turn-on (e.g., NaI): curvature goes negative then oscillates to
+  // significantly positive - we detect this and back up to before the peak.
   size_t channel = 0;
 
-  // First, find where we have significant negative curvature (downturn after detector turn-on)
-  // Use variance to set a threshold - we're looking for a signal that's statistically significant
+  // Phase 1: find first significant negative curvature (downturn after turn-on, or at a peak)
   while( channel < nbin )
   {
     const float sigma = (smoothed_2nd_variance[channel] > 0.0f) ? std::sqrt(smoothed_2nd_variance[channel]) : 1.0f;
-    // Look for curvature more negative than -2 sigma (statistically significant downturn)
     if( smoothed_2nd[channel] < -2.0f * sigma )
       break;
     ++channel;
   }
 
-  // Now find where the curvature levels off (spectrum becomes relatively flat/linear)
-  // Again use variance to determine when we're close enough to zero
+  const size_t first_neg_channel = channel;
+
+  // Phase 2: scan forward until curvature levels off, but also check for significant
+  // curvature oscillation (negative to positive), which indicates peak structure.
+  bool found_oscillation = false;
   while( channel < nbin )
   {
     const float sigma = (smoothed_2nd_variance[channel] > 0.0f) ? std::sqrt(smoothed_2nd_variance[channel]) : 1.0f;
-    // Look for curvature within 1 sigma of zero (spectrum has leveled off)
+
     if( std::abs(smoothed_2nd[channel]) < sigma )
       break;
+
+    // Significant positive curvature after negative indicates a peak, not turn-on deceleration
+    if( smoothed_2nd[channel] > 2.0f * sigma )
+    {
+      found_oscillation = true;
+      break;
+    }
+
     ++channel;
   }
-  
-  lower_channel = std::min(channel-0,smoothed_2nd.size()-1);
+
+  // Verify the oscillation is from a real peak (local maximum in counts) vs a turn-on
+  // discontinuity artifact (counts still monotonically rising). Average a few channels
+  // around each point for robustness against Poisson noise.
+  if( found_oscillation && (channel > first_neg_channel) )
+  {
+    const size_t hw = std::min( size_t(3), (channel - first_neg_channel) / 2 );
+    float sum_at_neg = 0, sum_at_osc = 0;
+    for( size_t i = 0; i <= 2 * hw; ++i )
+    {
+      const size_t neg_ch = (first_neg_channel >= hw) ? (first_neg_channel - hw + i) : i;
+      const size_t osc_ch = (channel >= hw) ? (channel - hw + i) : i;
+      if( neg_ch < nbin ) sum_at_neg += channel_counts[neg_ch];
+      if( osc_ch < nbin ) sum_at_osc += channel_counts[osc_ch];
+    }
+
+    // If counts at the oscillation point are higher, this is just the turn-on kink,
+    // not a real peak - fall back to the non-oscillation behavior.
+    if( sum_at_osc >= sum_at_neg )
+      found_oscillation = false;
+  }
+
+  if( found_oscillation )
+  {
+    // The negative curvature was from a real peak. Find the left extent of the peak by
+    // scanning backward until curvature is no longer significantly negative.
+    size_t left_extent = first_neg_channel;
+    while( left_extent > 0 )
+    {
+      const float sigma = (smoothed_2nd_variance[left_extent] > 0.0f) ? std::sqrt(smoothed_2nd_variance[left_extent]) : 1.0f;
+      if( smoothed_2nd[left_extent] > -1.0f * sigma )
+        break;
+      --left_extent;
+    }
+
+    // Buffer proportional to the negative curvature half-width to capture the peak base
+    const size_t neg_half_width = (first_neg_channel > left_extent) ? (first_neg_channel - left_extent) : 1;
+    const size_t buffered_lower = (left_extent > neg_half_width) ? (left_extent - neg_half_width) : 0;
+
+    // Floor: first inflection of the 2nd derivative, advanced past the SG lookahead to
+    // where there are actual consecutive non-zero counts.
+    size_t first_inflection = 0;
+    while( first_inflection < first_neg_channel )
+    {
+      const float sigma = (smoothed_2nd_variance[first_inflection] > 0.0f) ? std::sqrt(smoothed_2nd_variance[first_inflection]) : 1.0f;
+      if( std::abs(smoothed_2nd[first_inflection]) > 2.0f * sigma )
+        break;
+      ++first_inflection;
+    }
+
+    while( (first_inflection + 3) < nbin )
+    {
+      if( (channel_counts[first_inflection] > 0.0f)
+        && (channel_counts[first_inflection + 1] > 0.0f)
+        && (channel_counts[first_inflection + 2] > 0.0f)
+        && (channel_counts[first_inflection + 3] > 0.0f) )
+      {
+        break;
+      }
+      ++first_inflection;
+    }
+
+    lower_channel = std::max( first_inflection, buffered_lower );
+  }
+  else
+  {
+    const size_t leveled_off = std::min( channel, smoothed_2nd.size() - 1 );
+
+    // Check for a narrow turn-on spike followed by a valley - common in scintillators
+    // at the LLD boundary. The spike is just a detector artifact, not a feature to skip past.
+    // Condition: the turn-on spans < ~10 bins, and counts decrease significantly after the
+    // peak (indicating a valley), unlike a monotonic turn-on where counts keep rising.
+    bool narrow_turnon_with_valley = false;
+    const size_t peak_search_lo = (first_neg_channel > 2) ? (first_neg_channel - 2) : 0;
+    const size_t peak_search_hi = std::min( first_neg_channel + 2, nbin - 1 );
+
+    if( (leveled_off > first_neg_channel) && ((leveled_off - first_neg_channel) < 10) )
+    {
+      // Find max counts near the Phase 1 channel (the turn-on peak)
+      float max_near_peak = 0;
+      for( size_t i = peak_search_lo; i <= peak_search_hi; ++i )
+        max_near_peak = std::max( max_near_peak, channel_counts[i] );
+
+      // Find min counts between the peak and the leveled-off point
+      float min_after_peak = max_near_peak;
+      for( size_t i = first_neg_channel + 1; i <= leveled_off && i < nbin; ++i )
+        min_after_peak = std::min( min_after_peak, channel_counts[i] );
+
+      if( (max_near_peak > 5.0f) && (min_after_peak < 0.5f * max_near_peak) )
+        narrow_turnon_with_valley = true;
+    }
+
+    if( narrow_turnon_with_valley )
+    {
+      // Find the turn-on peak channel, then back up a few bins into the non-zero region
+      size_t peak_ch = peak_search_lo;
+      float peak_val = 0;
+      for( size_t i = peak_search_lo; i <= peak_search_hi; ++i )
+      {
+        if( channel_counts[i] > peak_val )
+        {
+          peak_val = channel_counts[i];
+          peak_ch = i;
+        }
+      }
+
+      // Go back ~3 bins from the peak, stopping at zero-count channels
+      size_t lower = peak_ch;
+      for( size_t i = 0; i < 3; ++i )
+      {
+        if( (lower == 0) || (channel_counts[lower - 1] == 0.0f) )
+          break;
+        --lower;
+      }
+      lower_channel = lower;
+    }
+    else
+    {
+      lower_channel = leveled_off;
+    }
+  }
   
   // Find the upper energy limit by looking for the last channel with meaningful signal
   // Start from the end and work backwards
@@ -5959,11 +6092,9 @@ PeakFitResult fit_peaks_for_nuclides(
   const std::shared_ptr<const PeakFitDetPrefs> &peak_fit_prefs )
 {
   assert( peak_fit_prefs );
-  
-  // TODO: after merging in feature/DetTypeClassify, if peak_fit_prefs is null, lets call PeakFitUtils::classify_det_type to calc Coarse det type - and then use that to load DRF.  Also, update estimate_initial_rois_using_relactmanual, and other functions to take in coarse type, instead of isHPGe.
   const bool isHPGe = peak_fit_prefs
     ? (peak_fit_prefs->m_det_type == PeakFitUtils::CoarseResolutionType::High)
-    : false;
+    : (PeakFitUtils::coarse_det_type( foreground, nullptr ) == PeakFitUtils::CoarseResolutionType::High);
 
   PeakFitResult result;
 
