@@ -222,4 +222,102 @@ std::vector<double> constrained_power_series_to_bernstein( const std::vector<dou
                                                 x_min, x_max, lower_bound, upper_bound );
 }
 
+
+
+std::vector<double> constrained_bernstein_refit( const std::vector<double> &bernstein_coeffs,
+                                                  const double lower_bound,
+                                                  const double upper_bound )
+{
+  const size_t num_coefficients = bernstein_coeffs.size();
+
+  if( num_coefficients == 0 )
+    throw std::invalid_argument( "BersteinPolynomial::constrained_bernstein_refit:"
+                                 " coefficients cannot be empty" );
+
+  if( upper_bound <= lower_bound )
+    throw std::invalid_argument( "BersteinPolynomial::constrained_bernstein_refit:"
+                                 " upper_bound must be greater than lower_bound" );
+
+  // Fast path: if all coefficients are already within bounds, return them directly
+  bool all_in_bounds = true;
+  for( const double coeff : bernstein_coeffs )
+  {
+    if( (coeff < lower_bound) || (coeff > upper_bound) )
+    {
+      all_in_bounds = false;
+      break;
+    }
+  }
+
+  if( all_in_bounds )
+    return bernstein_coeffs;
+
+  // Sample the existing Bernstein polynomial at uniform points in [0,1]
+  std::vector<double> x_normalized( sm_num_fit_points );
+  std::vector<double> y_target( sm_num_fit_points );
+
+  for( size_t i = 0; i < sm_num_fit_points; ++i )
+  {
+    const double t = static_cast<double>(i) / static_cast<double>(sm_num_fit_points - 1);
+    x_normalized[i] = t;
+
+    // Evaluate existing Bernstein polynomial at this normalized point
+    const double y = evaluate( t, bernstein_coeffs.data(), num_coefficients );
+
+    // Clamp to new bounds - this is what we want to approximate
+    y_target[i] = std::clamp( y, lower_bound, upper_bound );
+  }
+
+  // Initial values: clamp existing coefficients to bounds
+  std::vector<double> fit_coeffs( num_coefficients );
+  for( size_t i = 0; i < num_coefficients; ++i )
+  {
+    fit_coeffs[i] = std::clamp( bernstein_coeffs[i], lower_bound, upper_bound );
+  }
+
+  // Set up Ceres problem
+  ceres::Problem problem;
+
+  ConstrainedBernsteinFitCost *cost_functor
+    = new ConstrainedBernsteinFitCost( std::move( x_normalized ),
+                                       std::move( y_target ),
+                                       num_coefficients );
+
+  ceres::DynamicAutoDiffCostFunction<ConstrainedBernsteinFitCost, sm_ceres_stride> *cost_function
+    = new ceres::DynamicAutoDiffCostFunction<ConstrainedBernsteinFitCost, sm_ceres_stride>(
+        cost_functor, ceres::TAKE_OWNERSHIP );
+
+  cost_function->AddParameterBlock( static_cast<int>(num_coefficients) );
+  cost_function->SetNumResiduals( static_cast<int>(sm_num_fit_points) );
+
+  problem.AddResidualBlock( cost_function, nullptr, fit_coeffs.data() );
+
+  // Set bounds on all coefficients
+  for( size_t i = 0; i < num_coefficients; ++i )
+  {
+    problem.SetParameterLowerBound( fit_coeffs.data(), static_cast<int>(i), lower_bound );
+    problem.SetParameterUpperBound( fit_coeffs.data(), static_cast<int>(i), upper_bound );
+  }
+
+  // Configure solver
+  ceres::Solver::Options options;
+  options.linear_solver_type = ceres::DENSE_QR;
+  options.minimizer_progress_to_stdout = false;
+  options.max_num_iterations = 100;
+  options.function_tolerance = 1e-10;
+  options.parameter_tolerance = 1e-10;
+
+  ceres::Solver::Summary summary;
+  ceres::Solve( options, &problem, &summary );
+
+  if( summary.termination_type == ceres::FAILURE )
+  {
+    throw std::runtime_error( "BersteinPolynomial::constrained_bernstein_refit:"
+                              " Ceres optimization failed: " + summary.message );
+  }
+
+  return fit_coeffs;
+}//constrained_bernstein_refit(...)
+
+
 }//namespace BersteinPolynomial

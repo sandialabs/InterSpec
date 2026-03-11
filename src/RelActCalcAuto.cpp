@@ -3489,38 +3489,62 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             max_fwhm_keV = std::max( max_fwhm_keV, min_channel_width_constraint );
           }
           
-          // Set bounds for each Berstein coefficient - setting all these coeffiecients bounds
+          // Set bounds for each Berstein coefficient - setting all these coefficients bounds
           //  ensures the equation never goes outside of this range.
           //  Note: `fwhm = sqrt( sum over Berstein terms )`, so we need to square things.
+          const double lower_fwhm_sq = static_cast<double>( min_fwhm_keV * min_fwhm_keV );
+          const double upper_fwhm_sq = static_cast<double>( max_fwhm_keV * max_fwhm_keV );
+
+          // Check if any coefficients are outside the optimization bounds
+          bool any_out_of_bounds = false;
           for( size_t i = 0; i < num_berstein_coeffs; ++i )
           {
             const size_t par_index = cost_functor->m_fwhm_par_start_index + i;
-            
-            lower_bounds[par_index] = static_cast<double>(min_fwhm_keV * min_fwhm_keV); //Berstein coefficients represent FWHM^2, not FWHM
-            upper_bounds[par_index] = static_cast<double>(max_fwhm_keV * max_fwhm_keV);
-            
-            if( parameters[par_index] < lower_bounds[par_index].value() )
+            if( (parameters[par_index] < lower_fwhm_sq) || (parameters[par_index] > upper_fwhm_sq) )
             {
-              const string msg = "Initial FWHM parameter " + std::to_string(i) + " value ("
-              + std::to_string(parameters[par_index])
-              + ") is less than expected lower range (" + std::to_string(lower_bounds[par_index].value())
-              + ") - will bring up to lower range.";
-              cerr << endl << msg << endl << endl;
-              solution.m_warnings.push_back( msg );
+              any_out_of_bounds = true;
+              break;
             }
-            
-            if( parameters[par_index] > upper_bounds[par_index].value() )
+          }
+
+          // If any coefficients are out of bounds, re-fit to preserve curve shape within bounds,
+          //  rather than just clamping individual coefficients (which distorts the FWHM curve).
+          if( any_out_of_bounds )
+          {
+            vector<double> current_coeffs( num_berstein_coeffs );
+            for( size_t i = 0; i < num_berstein_coeffs; ++i )
+              current_coeffs[i] = parameters[cost_functor->m_fwhm_par_start_index + i];
+
+            try
             {
-              const string msg = "Initial FWHM parameter "+ std::to_string(i) + " value ("
-              + std::to_string(parameters[par_index])
-              + ") is more than expected upper range (" + std::to_string(upper_bounds[par_index].value())
-              + ") - will bring down to upper range.";
-              cerr << endl << msg << endl << endl;
-              solution.m_warnings.push_back( msg );
-            }//if( parameters[par_index] > upper_bounds[par_index].value() )
-            
-            parameters[par_index] = std::max( parameters[par_index], lower_bounds[par_index].value() );
-            parameters[par_index] = std::min( parameters[par_index], upper_bounds[par_index].value() );
+              const vector<double> refit_coeffs
+                = BersteinPolynomial::constrained_bernstein_refit( current_coeffs,
+                                                                   lower_fwhm_sq, upper_fwhm_sq );
+
+              for( size_t i = 0; i < num_berstein_coeffs; ++i )
+                parameters[cost_functor->m_fwhm_par_start_index + i] = refit_coeffs[i];
+
+              solution.m_warnings.push_back( "Re-fit initial FWHM Bernstein coefficients"
+                                             " to tighter optimization bounds." );
+            }catch( std::exception &e )
+            {
+              // If re-fit fails, fall back to clamping
+              for( size_t i = 0; i < num_berstein_coeffs; ++i )
+              {
+                const size_t par_index = cost_functor->m_fwhm_par_start_index + i;
+                parameters[par_index] = std::clamp( parameters[par_index], lower_fwhm_sq, upper_fwhm_sq );
+              }
+
+              solution.m_warnings.push_back( "Failed to re-fit FWHM Bernstein coefficients ("
+                + string( e.what() ) + ") - clamped to bounds instead." );
+            }//try / catch
+          }//if( any_out_of_bounds )
+
+          for( size_t i = 0; i < num_berstein_coeffs; ++i )
+          {
+            const size_t par_index = cost_functor->m_fwhm_par_start_index + i;
+            lower_bounds[par_index] = lower_fwhm_sq;
+            upper_bounds[par_index] = upper_fwhm_sq;
           }//for( size_t i = 0; i < num_berstein_coeffs; ++i )
            
           // For Berstein forms, mark the min/max energy parameters as constant (if not already marked)
