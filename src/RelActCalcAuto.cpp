@@ -5485,10 +5485,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         {
           case ceres::CONVERGENCE:
           case ceres::USER_SUCCESS:
+#ifndef NDEBUG
             cout << "Pre-fit correction was successful with FinalCost="
             << summary.final_cost << " (InitialCost=" << summary.initial_cost << ")."
             << "  Previous best_cost_val=" << ((best_cost_val == std::numeric_limits<double>::max()) ? string("N/A") : SpecUtils::printCompact(best_cost_val, 6))
             << endl;
+#endif
             solution_is_better = (summary.final_cost < best_cost_val);
             break;
             

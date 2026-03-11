@@ -367,6 +367,7 @@ void MaterialDB::initialize()
     const string materialfile = SpecUtils::append_path( staticDir, "MaterialDataBase.txt" );
     db->parseGadrasMaterialFile( materialfile, decayDb, false, false );
 
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
     // Load user overrides from writable directory, if available
     try
     {
@@ -381,6 +382,7 @@ void MaterialDB::initialize()
     {
       cerr << "Warning: failed to load user MaterialDataBase.txt overrides: " << e.what() << endl;
     }
+#endif
 
     sm_instance = std::move( db );
     sm_initError.clear();

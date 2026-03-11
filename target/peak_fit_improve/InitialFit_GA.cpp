@@ -1186,37 +1186,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
           auto cont = max_sig_peaks.front()->continuum();
           cont->setRange( channel_energies[trial_start_chnl], channel_energies[trial_end_chnl+1] );
 
-          if( step_continuum )
-          {
-            if( num_polynomial_terms == 2 )
-              cont->setType( PeakContinuum::OffsetType::FlatStep );
-            else if( num_polynomial_terms == 3 )
-              cont->setType( PeakContinuum::OffsetType::LinearStep );
-            else if( num_polynomial_terms == 4 )
-              cont->setType( PeakContinuum::OffsetType::BiLinearStep );
-            else
-            {
-              assert( 0 );
-              throw logic_error( "Unknown step cont type" );
-            }
-          }else
-          {
-            if( num_polynomial_terms == 0 )
-              cont->setType( PeakContinuum::OffsetType::NoOffset );
-            else if( num_polynomial_terms == 1 )
-              cont->setType( PeakContinuum::OffsetType::Constant );
-            else if( num_polynomial_terms == 2 )
-              cont->setType( PeakContinuum::OffsetType::Linear );
-            else if( num_polynomial_terms == 3 )
-              cont->setType( PeakContinuum::OffsetType::Quadratic );
-            else if( num_polynomial_terms == 4 )
-              cont->setType( PeakContinuum::OffsetType::Cubic );
-            else
-            {
-              assert( 0 );
-              throw logic_error( "Unknown cont type" );
-            }
-          }//if( step_continuum ) / else
+          cont->setType( cont_type );
 
           cont->setParameters( ref_energy, continuum_coeffs, continuum_coeffs_uncerts );
 
