@@ -83,5 +83,5 @@
   <message id="x2g-tt-sources-contributing">寄与する線源：</message>
   <message id="x2g-tt-counts-abbrev">cts</message>
   <message id="x2g-tt-br-abbrev">br</message>
-  <message id="x2g-dev-label">&lt;dev&gt;</message>
+  <message id="x2g-dev-label"><![CDATA[<偏差>]]></message>
 </messages>

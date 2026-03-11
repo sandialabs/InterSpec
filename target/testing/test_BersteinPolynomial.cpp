@@ -466,3 +466,268 @@ BOOST_AUTO_TEST_CASE( test_lls_error_conditions )
   // Too few data points for degree
   BOOST_CHECK_THROW( BersteinPolynomial::fit_bernstein_lls( valid_data, valid_data, valid_data, 5, 0.0, 5.0 ), std::invalid_argument );
 }
+
+
+BOOST_AUTO_TEST_CASE( test_constrained_power_series_to_bernstein_fast_path )
+{
+  // Test case where all coefficients are already within bounds (fast path)
+  // A simple polynomial that stays positive and bounded
+
+  const double tolerance = 1e-10;
+
+  // f(x) = 1 + 0.5*x on [0, 1] gives y in [1, 1.5]
+  // Bernstein coeffs should be [1, 1.5], both within [0, 2]
+  vector<double> power_coeffs = {1.0, 0.5};
+  const double x_min = 0.0;
+  const double x_max = 1.0;
+  const double lower_bound = 0.0;
+  const double upper_bound = 2.0;
+
+  vector<double> constrained_coeffs = BersteinPolynomial::constrained_power_series_to_bernstein(
+    power_coeffs, x_min, x_max, lower_bound, upper_bound );
+
+  // Should match exact conversion since coeffs are in bounds
+  vector<double> exact_coeffs = BersteinPolynomial::power_series_to_bernstein( power_coeffs, x_min, x_max );
+
+  BOOST_REQUIRE_EQUAL( constrained_coeffs.size(), exact_coeffs.size() );
+
+  for( size_t i = 0; i < constrained_coeffs.size(); ++i )
+  {
+    BOOST_CHECK_CLOSE( constrained_coeffs[i], exact_coeffs[i], tolerance );
+  }
+
+  // Verify all coefficients are within bounds
+  for( const double coeff : constrained_coeffs )
+  {
+    BOOST_CHECK_GE( coeff, lower_bound );
+    BOOST_CHECK_LE( coeff, upper_bound );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( test_constrained_power_series_to_bernstein_needs_fitting )
+{
+  // Test case where exact conversion gives coefficients outside bounds
+  // requiring the Ceres fitting path
+
+  // A polynomial with oscillation that causes Bernstein coeffs to go outside y-range
+  // f(x) = 1 - 4*(x - 0.5)^2 = 1 - 4*x^2 + 4*x - 1 = 4*x - 4*x^2
+  // This is a parabola with max at x=0.5, y=1, and y=0 at x=0 and x=1
+  // Power series: 0 + 4*x - 4*x^2
+  vector<double> power_coeffs = {0.0, 4.0, -4.0};
+  const double x_min = 0.0;
+  const double x_max = 1.0;
+
+  // The exact Bernstein conversion may have coefficients outside [0, 1]
+  // Let's force a tighter bound that requires fitting
+  const double lower_bound = 0.2;
+  const double upper_bound = 0.9;
+
+  // First verify the exact conversion has coefficients outside bounds
+  // to confirm we're actually testing the Ceres fitting path
+  vector<double> exact_coeffs = BersteinPolynomial::power_series_to_bernstein( power_coeffs, x_min, x_max );
+  bool has_out_of_bounds = false;
+  for( const double coeff : exact_coeffs )
+  {
+    if( (coeff < lower_bound) || (coeff > upper_bound) )
+    {
+      has_out_of_bounds = true;
+      break;
+    }
+  }
+  BOOST_CHECK_MESSAGE( has_out_of_bounds,
+    "Exact Bernstein coefficients should be outside bounds to test Ceres path" );
+
+  vector<double> constrained_coeffs = BersteinPolynomial::constrained_power_series_to_bernstein(
+    power_coeffs, x_min, x_max, lower_bound, upper_bound );
+
+  BOOST_REQUIRE_EQUAL( constrained_coeffs.size(), 3 );
+
+  // Verify ALL coefficients are within bounds
+  for( size_t i = 0; i < constrained_coeffs.size(); ++i )
+  {
+    BOOST_CHECK_GE( constrained_coeffs[i], lower_bound );
+    BOOST_CHECK_LE( constrained_coeffs[i], upper_bound );
+  }
+
+  // Verify the fitted polynomial approximates the clamped original reasonably well
+  // Sample at a few points and check
+  for( double t = 0.0; t <= 1.0; t += 0.1 )
+  {
+    const double y_fitted = BersteinPolynomial::evaluate( t, constrained_coeffs );
+
+    // The fitted value should be within bounds
+    BOOST_CHECK_GE( y_fitted, lower_bound - 0.01 );  // Small tolerance for numerical issues
+    BOOST_CHECK_LE( y_fitted, upper_bound + 0.01 );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( test_constrained_power_series_to_bernstein_negative_coeffs )
+{
+  // Test case where exact conversion gives Bernstein coefficients outside tight bounds
+  // The polynomial f(x) = 2 - 3*x + 2*x^2 on [0, 1] has these exact Bernstein coeffs:
+  // B0 = f(0) = 2, B1 = (1/2)(c1 + 2*c0) = 0.5, B2 = c0 + c1 + c2 = 1
+  // So with tight bounds [0.8, 1.8], the exact B0=2 is too high and B1=0.5 is too low
+  vector<double> power_coeffs = {2.0, -3.0, 2.0};
+  const double x_min = 0.0;
+  const double x_max = 1.0;
+
+  // Tight bounds that force B0=2 and B1=0.5 to be out of range
+  const double lower_bound = 0.8;
+  const double upper_bound = 1.8;
+
+  // First verify the exact conversion has coefficients outside bounds
+  // to confirm we're actually testing the Ceres fitting path
+  vector<double> exact_coeffs = BersteinPolynomial::power_series_to_bernstein( power_coeffs, x_min, x_max );
+  bool has_out_of_bounds = false;
+  for( const double coeff : exact_coeffs )
+  {
+    if( (coeff < lower_bound) || (coeff > upper_bound) )
+    {
+      has_out_of_bounds = true;
+      break;
+    }
+  }
+  BOOST_CHECK_MESSAGE( has_out_of_bounds,
+    "Exact Bernstein coefficients should be outside bounds to test Ceres path" );
+
+  vector<double> constrained_coeffs = BersteinPolynomial::constrained_power_series_to_bernstein(
+    power_coeffs, x_min, x_max, lower_bound, upper_bound );
+
+  BOOST_REQUIRE_EQUAL( constrained_coeffs.size(), 3 );
+
+  // Verify all coefficients are within bounds
+  for( const double coeff : constrained_coeffs )
+  {
+    BOOST_CHECK_GE( coeff, lower_bound );
+    BOOST_CHECK_LE( coeff, upper_bound );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( test_constrained_power_series_to_bernstein_higher_degree )
+{
+  // Test with a higher degree polynomial (degree 4)
+
+  // f(x) = 1 + 2*x - 3*x^2 + 2*x^3 - 0.5*x^4
+  vector<double> power_coeffs = {1.0, 2.0, -3.0, 2.0, -0.5};
+  const double x_min = 0.0;
+  const double x_max = 1.0;
+  const double lower_bound = 0.0;
+  const double upper_bound = 2.0;
+
+  vector<double> constrained_coeffs = BersteinPolynomial::constrained_power_series_to_bernstein(
+    power_coeffs, x_min, x_max, lower_bound, upper_bound );
+
+  BOOST_REQUIRE_EQUAL( constrained_coeffs.size(), 5 );
+
+  // Verify all coefficients are within bounds
+  for( const double coeff : constrained_coeffs )
+  {
+    BOOST_CHECK_GE( coeff, lower_bound );
+    BOOST_CHECK_LE( coeff, upper_bound );
+  }
+
+  // Verify the polynomial stays within bounds when evaluated
+  for( double t = 0.0; t <= 1.0; t += 0.05 )
+  {
+    const double y_fitted = BersteinPolynomial::evaluate( t, constrained_coeffs );
+    BOOST_CHECK_GE( y_fitted, lower_bound - 0.01 );
+    BOOST_CHECK_LE( y_fitted, upper_bound + 0.01 );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( test_constrained_power_series_to_bernstein_domain_transform )
+{
+  // Test with non-unit domain
+
+  // f(x) = 100 + 0.1*x on [100, 200]
+  vector<double> power_coeffs = {100.0, 0.1};
+  const double x_min = 100.0;
+  const double x_max = 200.0;
+  const double lower_bound = 105.0;
+  const double upper_bound = 125.0;
+
+  vector<double> constrained_coeffs = BersteinPolynomial::constrained_power_series_to_bernstein(
+    power_coeffs, x_min, x_max, lower_bound, upper_bound );
+
+  BOOST_REQUIRE_EQUAL( constrained_coeffs.size(), 2 );
+
+  // Verify all coefficients are within bounds
+  for( const double coeff : constrained_coeffs )
+  {
+    BOOST_CHECK_GE( coeff, lower_bound );
+    BOOST_CHECK_LE( coeff, upper_bound );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( test_constrained_power_series_to_bernstein_error_conditions )
+{
+  vector<double> valid_coeffs = {1.0, 2.0};
+
+  // Empty coefficients
+  {
+    vector<double> empty;
+    BOOST_CHECK_THROW( BersteinPolynomial::constrained_power_series_to_bernstein(
+      empty, 0.0, 1.0, 0.0, 2.0 ), std::invalid_argument );
+  }
+
+  // Invalid domain (x_max <= x_min)
+  {
+    BOOST_CHECK_THROW( BersteinPolynomial::constrained_power_series_to_bernstein(
+      valid_coeffs, 1.0, 1.0, 0.0, 2.0 ), std::invalid_argument );
+    BOOST_CHECK_THROW( BersteinPolynomial::constrained_power_series_to_bernstein(
+      valid_coeffs, 2.0, 1.0, 0.0, 2.0 ), std::invalid_argument );
+  }
+
+  // Invalid bounds (upper_bound <= lower_bound)
+  {
+    BOOST_CHECK_THROW( BersteinPolynomial::constrained_power_series_to_bernstein(
+      valid_coeffs, 0.0, 1.0, 2.0, 2.0 ), std::invalid_argument );
+    BOOST_CHECK_THROW( BersteinPolynomial::constrained_power_series_to_bernstein(
+      valid_coeffs, 0.0, 1.0, 3.0, 2.0 ), std::invalid_argument );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( test_constrained_power_series_approximation_quality )
+{
+  // Test that the constrained fit provides a good approximation to the original
+  // polynomial within the valid range
+
+  // A polynomial: f(x) = 0.5 + 2*x - x^2 on [0, 1]
+  // This has range approximately [0.5, 1.5] with max at x=1
+  vector<double> power_coeffs = {0.5, 2.0, -1.0};
+  const double x_min = 0.0;
+  const double x_max = 1.0;
+
+  // Set bounds that should be achievable
+  const double lower_bound = 0.4;
+  const double upper_bound = 1.6;
+
+  vector<double> constrained_coeffs = BersteinPolynomial::constrained_power_series_to_bernstein(
+    power_coeffs, x_min, x_max, lower_bound, upper_bound );
+
+  // Evaluate both original and fitted at several points
+  // The fitted should match closely where original is in bounds
+  boost::math::tools::polynomial<double> original_poly( power_coeffs.begin(), power_coeffs.end() );
+
+  double max_error = 0.0;
+  for( double t = 0.0; t <= 1.0; t += 0.02 )
+  {
+    const double x = x_min + t * (x_max - x_min);
+    const double y_original = original_poly.evaluate( x );
+    const double y_clamped = std::clamp( y_original, lower_bound, upper_bound );
+    const double y_fitted = BersteinPolynomial::evaluate( t, constrained_coeffs );
+
+    const double error = std::abs( y_fitted - y_clamped );
+    max_error = (std::max)( max_error, error );
+  }
+
+  // The approximation should be quite good - within 5% of the range
+  const double range = upper_bound - lower_bound;
+  BOOST_CHECK_LT( max_error, 0.05 * range );
+}

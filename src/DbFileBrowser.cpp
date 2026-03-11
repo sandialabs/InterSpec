@@ -93,6 +93,9 @@ public:
       throw runtime_error( "DbSpecFileItem: invalid input or no wApp" );
     
     addStyleClass( "DbSpecFileItem" );
+    InterSpec *viewer = InterSpec::instance();
+    if( viewer )
+      viewer->useMessageResourceBundle( "DbFileBrowser" );
     
     const int secondsOffset = 60 * wApp->environment().timeZoneOffset();
     Wt::WDateTime uploadTime = dbentry->uploadTime.addSecs(secondsOffset);
@@ -203,6 +206,9 @@ DbFileBrowser::DbFileBrowser( SpecMeasManager *manager,
   m_factory( nullptr )
 {
   wApp->useStyleSheet( "InterSpec_resources/DbFileBrowser.css" );
+  
+  if( viewer )
+    viewer->useMessageResourceBundle( "DbFileBrowser" );
   
   WGridLayout *layout = stretcher();
   layout->setContentsMargins(0, 0, 0, 0);

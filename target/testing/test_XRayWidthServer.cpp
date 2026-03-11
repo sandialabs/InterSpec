@@ -43,106 +43,61 @@ using namespace std;
 using namespace boost::unit_test;
 using namespace XRayWidths;
 
-// Global data directory path
-static std::string g_data_dir;
-
-// Boost test framework initialization
-struct GlobalFixture
+// We need to set the static data directory, so the code knows where
+//  sandia.decay.xml and xray_widths.xml are located.
+void set_data_dir()
 {
-  GlobalFixture()
+  // We only need to initialize things once
+  static bool s_have_set = false;
+  if( s_have_set )
+    return;
+
+  s_have_set = true;
+
+  const int argc = boost::unit_test::framework::master_test_suite().argc;
+  char **argv = boost::unit_test::framework::master_test_suite().argv;
+
+  string datadir;
+
+  for( int i = 1; i < argc; ++i )
   {
-    // Prefer --datadir=... provided by the test runner.
-    for( int i = 0; i < framework::master_test_suite().argc; ++i )
+    const string arg = argv[i];
+    if( SpecUtils::istarts_with( arg, "--datadir=" ) )
+      datadir = arg.substr( 10 );
+  }//for( int i = 1; i < argc; ++i )
+
+  SpecUtils::ireplace_all( datadir, "%20", " " );
+
+  // Search around a little for the data directory, if it wasnt specified
+  if( datadir.empty() )
+  {
+    for( const auto &d : { "data", "../data", "../../data", "../../../data" } )
     {
-      const std::string arg = framework::master_test_suite().argv[i];
-      if( SpecUtils::starts_with( arg, "--datadir=" ) )
+      if( SpecUtils::is_file( SpecUtils::append_path( d, "sandia.decay.xml" ) ) )
       {
-        g_data_dir = arg.substr( 10 );
+        datadir = d;
+        break;
       }
-    }
+    }//for( loop over candidate dirs )
+  }//if( datadir.empty() )
 
-    // Fall back to searching relative paths.
-    if( g_data_dir.empty() )
-    {
-      for( const auto &d : { "data", "../data", "../../data", "../../../data" } )
-      {
-        if( SpecUtils::is_file( SpecUtils::append_path( d, "xray_widths.xml" ) ) )
-        {
-          g_data_dir = d;
-          break;
-        }
-      }
-    }
+  const string sandia_decay_file = SpecUtils::append_path( datadir, "sandia.decay.xml" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file( sandia_decay_file ),
+                        "sandia.decay.xml not at '" << sandia_decay_file << "'" );
 
-    if( g_data_dir.empty() )
-    {
-      cerr << "Warning: Could not find data directory" << endl;
-      g_data_dir = "data";  // Default fallback
-    }
+  BOOST_REQUIRE_NO_THROW( InterSpec::setStaticDataDirectory( datadir ) );
 
-    // Make sure XRayWidthDatabase prefers our test data directory (via InterSpec writable data dir).
-    // `setStaticDataDirectory()` is stricter (requires sandia.decay.xml etc.), but writable data dir
-    // is sufficient for xray_widths.xml lookup.
-    try
-    {
-      InterSpec::setWritableDataDirectory( g_data_dir );
-    }
-    catch( std::exception &e )
-    {
-      cerr << "Warning: Could not set writable data directory to '" << g_data_dir
-           << "': " << e.what() << endl;
-    }
-
-    // Ensure SandiaDecay database can be initialized before XRayWidthDatabase loads,
-    // since Doppler widths are computed in code using element atomic masses.
-    try
-    {
-      std::string decay_xml;
-
-      const std::vector<std::string> rel_data_dirs = { "data", "../data", "../../data", "../../../data", "../../../../data" };
-      const std::vector<std::string> rel_roots = { ".", "..", "../..", "../../..", "../../../..", "../../../../.." };
-
-      // Prefer the x-ray data dir, but fall back to common repo-relative locations.
-      const std::vector<std::string> candidates = [&]()
-      {
-        std::vector<std::string> out;
-        out.push_back( SpecUtils::append_path( g_data_dir, "sandia.decay.xml" ) );
-        for( const std::string &d : rel_data_dirs )
-          out.push_back( SpecUtils::append_path( d, "sandia.decay.xml" ) );
-        for( const std::string &root : rel_roots )
-          out.push_back( SpecUtils::append_path( root, "external_libs/SandiaDecay/sandia.decay.xml" ) );
-        return out;
-      }();
-
-      for( const std::string &path : candidates )
-      {
-        if( SpecUtils::is_file( path ) )
-        {
-          decay_xml = path;
-          break;
-        }
-      }
-
-      if( decay_xml.empty() )
-      {
-        cerr << "Warning: Could not find sandia.decay.xml; SandiaDecay-dependent tests may fail." << endl;
-        return;
-      }
-
-      DecayDataBaseServer::setDecayXmlFile( decay_xml );
-    }
-    catch( std::exception & )
-    {
-      // If already set/initialized elsewhere, ignore.
-    }
-  }
-};
-
-BOOST_GLOBAL_FIXTURE( GlobalFixture );
+  // Make sure we can actually init the decay database
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
+  BOOST_REQUIRE_MESSAGE( db->nuclide( "U238" ), "SandiaDecayDataBase empty?" );
+}//void set_data_dir()
 
 
 BOOST_AUTO_TEST_CASE( DatabaseLoading )
 {
+  set_data_dir();
+
   // Test that database loads successfully
   const std::shared_ptr<const XRayWidthDatabase> db = XRayWidthDatabase::instance();
 
@@ -159,6 +114,8 @@ BOOST_AUTO_TEST_CASE( DatabaseLoading )
 
 BOOST_AUTO_TEST_CASE( OriginalDataValidation )
 {
+  set_data_dir();
+
   // Regression coverage:
   // The original PeakDists hardcoded table (now removed) contained a small curated set of
   // line widths. The current XML is larger and may use different evaluations/sources, so
@@ -367,6 +324,8 @@ BOOST_AUTO_TEST_CASE( OriginalDataValidation )
 
 BOOST_AUTO_TEST_CASE( EnergyMatching )
 {
+  set_data_dir();
+
   const std::shared_ptr<const XRayWidthDatabase> db = XRayWidthDatabase::instance();
   BOOST_REQUIRE( db != nullptr );
 
@@ -400,6 +359,8 @@ BOOST_AUTO_TEST_CASE( EnergyMatching )
 
 BOOST_AUTO_TEST_CASE( DopplerWidthCalculation )
 {
+  set_data_dir();
+
   const std::shared_ptr<const XRayWidthDatabase> db = XRayWidthDatabase::instance();
   BOOST_REQUIRE( db != nullptr );
 
@@ -425,6 +386,8 @@ BOOST_AUTO_TEST_CASE( DopplerWidthCalculation )
 
 BOOST_AUTO_TEST_CASE( TotalWidthCalculation )
 {
+  set_data_dir();
+
   const std::shared_ptr<const XRayWidthDatabase> db = XRayWidthDatabase::instance();
   BOOST_REQUIRE( db != nullptr );
 
@@ -448,9 +411,9 @@ BOOST_AUTO_TEST_CASE( TotalWidthCalculation )
 
 BOOST_AUTO_TEST_CASE( GetXRayLorentzianWidth )
 {
-  // Test get_xray_lorentzian_width() function for fluorescent x-rays
+  set_data_dir();
 
-  // SandiaDecay database is initialized in the global fixture.
+  // Test get_xray_lorentzian_width() function for fluorescent x-rays
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   BOOST_REQUIRE( db != nullptr );
 
@@ -501,6 +464,8 @@ BOOST_AUTO_TEST_CASE( GetXRayLorentzianWidth )
 
 BOOST_AUTO_TEST_CASE( ElementCoverage )
 {
+  set_data_dir();
+
   const std::shared_ptr<const XRayWidthDatabase> db = XRayWidthDatabase::instance();
   BOOST_REQUIRE( db != nullptr );
 
@@ -527,6 +492,8 @@ BOOST_AUTO_TEST_CASE( ElementCoverage )
 
 BOOST_AUTO_TEST_CASE( DataPhysicalValidity )
 {
+  set_data_dir();
+
   const std::shared_ptr<const XRayWidthDatabase> db = XRayWidthDatabase::instance();
   BOOST_REQUIRE( db != nullptr );
 
@@ -569,6 +536,8 @@ BOOST_AUTO_TEST_CASE( DataPhysicalValidity )
 
 BOOST_AUTO_TEST_CASE( MissingWidthHandling )
 {
+  set_data_dir();
+
   const std::shared_ptr<const XRayWidthDatabase> db = XRayWidthDatabase::instance();
   BOOST_REQUIRE( db != nullptr );
 
@@ -587,10 +556,10 @@ BOOST_AUTO_TEST_CASE( MissingWidthHandling )
 
 BOOST_AUTO_TEST_CASE( AlphaRecoilDoppler )
 {
+  set_data_dir();
+
   // Test alpha recoil Doppler calculation via get_xray_total_width_for_decay()
   // This test verifies that decay x-rays include both natural and recoil contributions
-
-  // SandiaDecay database is initialized in the global fixture.
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   BOOST_REQUIRE( db != nullptr );
 
@@ -742,9 +711,9 @@ BOOST_AUTO_TEST_CASE( AlphaRecoilDoppler )
 
 BOOST_AUTO_TEST_CASE( GetXRayTotalWidthForDecay )
 {
-  // Test get_xray_total_width_for_decay() function for decay x-rays
+  set_data_dir();
 
-  // SandiaDecay database is initialized in the global fixture.
+  // Test get_xray_total_width_for_decay() function for decay x-rays
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   BOOST_REQUIRE( db != nullptr );
 
@@ -809,10 +778,10 @@ BOOST_AUTO_TEST_CASE( GetXRayTotalWidthForDecay )
 
 BOOST_AUTO_TEST_CASE( NaturalAndTotalWidthForMultipleNuclides )
 {
+  set_data_dir();
+
   // Test natural Lorentzian width availability and total width calculation
   // for multiple alpha-emitting nuclides
-
-  // SandiaDecay database is initialized in the global fixture.
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   BOOST_REQUIRE( db != nullptr );
 

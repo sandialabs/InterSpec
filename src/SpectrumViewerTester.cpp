@@ -1109,17 +1109,21 @@ string SpectrumViewerTester::makePeakSummarryTable( const PeakDef &peak,
     case PeakContinuum::FlatStep:     strm << "Flat Step</td></tr>\n";      break;
     case PeakContinuum::LinearStep:   strm << "Linear Step</td></tr>\n";    break;
     case PeakContinuum::BiLinearStep: strm << "Bi-linear Step</td></tr>\n"; break;
-    case PeakContinuum::External:     strm << "Global</td></tr>\n";         break;
+    case PeakContinuum::FlatStepCDF:  strm << "Flat Step (CDF)</td></tr>\n"; break;
+    case PeakContinuum::LinearStepCDF:    strm << "Linear Step (CDF)</td></tr>\n";    break;
+    case PeakContinuum::BiLinearStepCDF: strm << "Bi-linear Step (CDF)</td></tr>\n"; break;
+    case PeakContinuum::External:        strm << "Global</td></tr>\n";               break;
   }//switch( peak.continuum()->type() )
-  
+
   double offset_area = 0.0;
-  
+
   try
   {
-    peak.continuum()->offset_integral(peak.lowerX(), peak.upperX(), data);
+    const PeakDef *peak_ptr = &peak;
+    offset_area = peak.continuum()->offset_integral( peak.lowerX(), peak.upperX(), data, &peak_ptr, 1 );
   }catch(...)
   {
-    //can only get here for PeakContinuum::FlatStep/LinearStep/BiLinearStep with invalid data
+    //can only get here for step types with invalid data, or CDF types without peers
   }
   
   strm << startrow << "Cont. Area" << starttd << offset_area << "</td></tr>\n";

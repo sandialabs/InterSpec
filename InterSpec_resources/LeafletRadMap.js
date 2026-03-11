@@ -55,6 +55,9 @@ LeafletRadMap = function (elem,options) {
   this.btnsDiv.classList.add("LeafletRadMapBtnsDiv");
   this.bottomDiv.appendChild( this.btnsDiv );
 
+  this.copyBtnsDiv = document.createElement("div");
+  this.copyBtnsDiv.classList.add("CopyMapBtnsDiv");
+  this.bottomDiv.appendChild( this.copyBtnsDiv );
 
   this.markerLegendDiv = document.createElement("div");
   this.markerLegendDiv.classList.add("LeafletRadMapMarkerLegend");
@@ -285,11 +288,16 @@ LeafletRadMap.prototype.handleUserDrawingUpdate = function(){
   
   if( wantedSamples.length === 0 ){
     self.btnsDiv.innerHTML = '<div class="NoSamplesSel"><p>No measurements selected</p></div>';
+    self._appendCopyMapBtns();
     return;
   }
 
   function sendToInterSpec(evt, spectype, samples){
-    self.WtEmit( self.parent.id, {name: 'loadSamples', eventObject: evt}, samples, spectype );
+    // We attach the sigmal to InterSpec object, and not the actual map opbject because there is some issue with the
+    //  signal being exposed when in an AuxWindow.
+    self.WtEmit( $('.InterSpec').get(0).id, {name: 'loadSamples', eventObject: evt}, samples, spectype );
+    // If we want to go back to attaching to the `LeafletRadMap` instance, we would use:
+    //  self.WtEmit( self.parent.id, {name: 'loadSamples', eventObject: evt}, samples, spectype );
   }
 
   self.btnsDiv.innerHTML = '';
@@ -328,6 +336,8 @@ LeafletRadMap.prototype.handleUserDrawingUpdate = function(){
   self.btnsDiv.appendChild( foreground );
   self.btnsDiv.appendChild( background );
   self.btnsDiv.appendChild( secondary );
+
+  self._appendCopyMapBtns();
 };//LeafletRadMap.prototype.handleUserDrawingUpdate
 
 
@@ -769,9 +779,16 @@ LeafletRadMap.prototype.refresh = function( dont_update_zoom ){
     self.map.setView([37.67640130843344, -121.70667619429008], 15); 
   }
 
+  // Show the bottom div whenever there are markers (for copy-URL buttons);
+  //  gradient legend only shows when there are multiple markers.
+  if( self.markers.length >= 1 ){
+    self.bottomDiv.style.display = null;
+  }else{
+    self.bottomDiv.style.display = 'none';
+  }
+
   if( (self.markers.length) > 1 && self.markerGradientStops ){
     self.gradientLegendDiv.style.display = null;
-    self.bottomDiv.style.display = null;
 
     let maxcps = self.maxGammaCps;
     let mincps = self.minGammaCps;
@@ -788,7 +805,7 @@ LeafletRadMap.prototype.refresh = function( dont_update_zoom ){
       mincps = mincps.toFixed(1);
     else
       mincps = Math.round(mincps)
-      
+
 
     self.legendUpperCps.innerHTML = maxcps + "<br />" + self.options.cpsText;
     self.legendLowerCps.innerHTML = mincps + "<br />" + self.options.cpsText;
@@ -800,16 +817,204 @@ LeafletRadMap.prototype.refresh = function( dont_update_zoom ){
     const gradient = ctx.createLinearGradient(0, 0, 0, height);
     self.legendCanvas.width = width;
     self.legendCanvas.height = height;
-    for( let i in self.markerGradientStops ) 
+    for( let i in self.markerGradientStops )
       gradient.addColorStop( i, self.markerGradientStops[i] );
 
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, width, height);
   }else{
     self.gradientLegendDiv.style.display = 'none';
-    self.bottomDiv.style.display = 'none';
   }
 
   self.handleUserDrawingUpdate();
   self.updateMarkerLegend();
 }//LeafletRadMap.prototype.refresh()
+
+
+/** Populate the copyBtnsDiv with "Copy Google Maps URL" and "Copy Bing Maps URL" buttons.
+ Only creates the buttons once; subsequent calls just show/hide the div.
+ */
+LeafletRadMap.prototype._appendCopyMapBtns = function() {
+  const self = this;
+  const hasData = self.data && self.data.samples && self.data.samples.length > 0;
+
+  if( self.copyBtnsDiv.childElementCount === 0 && hasData )
+  {
+    const googleBtn = document.createElement( 'button' );
+    googleBtn.innerHTML = self.options.copyGoogleMapsTxt || 'Copy Google Maps URL';
+    googleBtn.classList.add( 'Wt-btn', 'LinkBtn' );
+    googleBtn.addEventListener( 'click', function(){ self.copyGoogleMapsUrl(); } );
+
+    const bingBtn = document.createElement( 'button' );
+    bingBtn.innerHTML = self.options.copyBingMapsTxt || 'Copy Bing Maps URL';
+    bingBtn.classList.add( 'Wt-btn', 'LinkBtn' );
+    bingBtn.addEventListener( 'click', function(){ self.copyBingMapsUrl(); } );
+
+    self.copyBtnsDiv.appendChild( googleBtn );
+    self.copyBtnsDiv.appendChild( bingBtn );
+  }
+
+  self.copyBtnsDiv.style.display = hasData ? null : 'none';
+};//LeafletRadMap.prototype._appendCopyMapBtns
+
+
+/** Collect unique valid GPS points from data samples, preserving order. */
+LeafletRadMap.prototype._getGpsPoints = function() {
+  const samples = this.data ? this.data.samples : [];
+  const points = [];
+  const seen = new Set();
+
+  for( let i = 0; i < samples.length; i++ )
+  {
+    const s = samples[i];
+    if( !s.gps || isNaN(s.gps[0]) || isNaN(s.gps[1]) )
+      continue;
+
+    const key = s.gps[0].toFixed(6) + ',' + s.gps[1].toFixed(6);
+    if( !seen.has(key) )
+    {
+      seen.add( key );
+      points.push( [s.gps[0], s.gps[1]] );
+    }
+  }
+
+  return points;
+};//LeafletRadMap.prototype._getGpsPoints
+
+
+/** Subsample an array of points to at most maxPoints, evenly spaced. */
+LeafletRadMap.prototype._subsamplePoints = function( points, maxPoints ) {
+  if( points.length <= maxPoints )
+    return points;
+
+  const result = [];
+  const step = (points.length - 1) / (maxPoints - 1);
+
+  for( let i = 0; i < maxPoints; i++ )
+  {
+    const idx = Math.round( i * step );
+    result.push( points[idx] );
+  }
+
+  return result;
+};//LeafletRadMap.prototype._subsamplePoints
+
+
+/** Copy text to clipboard, showing a notification on success or failure. */
+LeafletRadMap.prototype._copyToClipboard = function( text ) {
+  const self = this;
+  const successMsg = 'showMsg-info-' + (self.options.copyUrlSuccessTxt || 'Map URL copied to clipboard.');
+  const failMsg = 'showMsg-error-' + (self.options.copyUrlFailTxt || 'Failed to copy map URL.');
+
+  function notify( msg ) {
+    if( window.Wt )
+      Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, msg );
+  }
+
+  if( !navigator.clipboard )
+  {
+    let textArea = document.createElement( "textarea" );
+    textArea.value = text;
+    textArea.style.position = "fixed";
+    textArea.style.top = "0";
+    textArea.style.left = "0";
+    textArea.style.width = "2em";
+    textArea.style.height = "2em";
+    textArea.style.opacity = "0";
+    document.body.appendChild( textArea );
+    textArea.focus();
+    textArea.select();
+
+    let successful = false;
+    try
+    {
+      successful = document.execCommand( 'copy' );
+    }catch( ex )
+    {
+      successful = false;
+    }
+
+    document.body.removeChild( textArea );
+    notify( successful ? successMsg : failMsg );
+    return;
+  }//if( !navigator.clipboard )
+
+  navigator.clipboard.writeText( text ).then( function() {
+    notify( successMsg );
+  }, function( err ) {
+    console.warn( 'LeafletRadMap: Failed to copy to clipboard: ', err );
+    notify( failMsg );
+  });
+};//LeafletRadMap.prototype._copyToClipboard
+
+
+/** Build and copy a Google Maps URL from the current measurement GPS data. */
+LeafletRadMap.prototype.copyGoogleMapsUrl = function() {
+  const self = this;
+  const points = self._getGpsPoints();
+
+  if( points.length === 0 )
+  {
+    if( window.Wt )
+      Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'},
+        'showMsg-info-' + (self.options.copyUrlNoGpsTxt || 'No GPS data.') );
+    return;
+  }
+
+  let url;
+  if( points.length === 1 )
+  {
+    // Single point: center on location
+    url = 'https://www.google.com/maps/@'
+      + points[0][0].toFixed(6) + ',' + points[0][1].toFixed(6) + ',15z';
+  }else
+  {
+    // Multiple points: directions mode with up to 10 waypoints
+    const sampled = self._subsamplePoints( points, 10 );
+    url = 'https://www.google.com/maps/dir';
+    for( let i = 0; i < sampled.length; i++ )
+      url += '/' + sampled[i][0].toFixed(6) + ',' + sampled[i][1].toFixed(6);
+  }
+
+  self._copyToClipboard( url );
+};//LeafletRadMap.prototype.copyGoogleMapsUrl
+
+
+/** Build and copy a Bing Maps URL from the current measurement GPS data.
+ Uses the 'rtp' (route) parameter with 'pos' waypoints, since the 'sp=point'
+ pushpin format is currently broken on the Bing Maps consumer website.
+ */
+LeafletRadMap.prototype.copyBingMapsUrl = function() {
+  const self = this;
+  const points = self._getGpsPoints();
+
+  if( points.length === 0 )
+  {
+    if( window.Wt )
+      Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'},
+        'showMsg-info-' + (self.options.copyUrlNoGpsTxt || 'No GPS data.') );
+    return;
+  }
+
+  let url;
+  if( points.length === 1 )
+  {
+    // Single point: center on location
+    url = 'https://bing.com/maps/default.aspx?cp='
+      + points[0][0].toFixed(6) + '~' + points[0][1].toFixed(6) + '&lvl=15';
+  }else
+  {
+    // Multiple points: route waypoints, up to 25
+    const sampled = self._subsamplePoints( points, 25 );
+    let rtp = '';
+    for( let i = 0; i < sampled.length; i++ )
+    {
+      if( i > 0 ) rtp += '~';
+      rtp += 'pos.' + sampled[i][0].toFixed(6)
+        + '_' + sampled[i][1].toFixed(6) + '_' + (i + 1);
+    }
+    url = 'https://bing.com/maps/default.aspx?rtp=' + rtp;
+  }
+
+  self._copyToClipboard( url );
+};//LeafletRadMap.prototype.copyBingMapsUrl

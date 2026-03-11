@@ -26,7 +26,7 @@
 #include <sstream>
 
 #define BOOST_TEST_MODULE PeakFitDetPrefs_suite
-#include <boost/test/unit_test.hpp>
+#include <boost/test/included/unit_test.hpp>
 
 #include "rapidxml/rapidxml.hpp"
 #include "rapidxml/rapidxml_print.hpp"

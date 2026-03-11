@@ -1141,6 +1141,129 @@ template void photopeak_function_integral<double>( const double, const double,co
     return 0.5 * (boost_erf_imp(erfhigharg) - boost_erf_imp(erflowarg));
   }//double gaussian_integral(...)
 
+
+double peak_cdf( const double x, const double mean, const double sigma,
+                 const PeakDef::SkewType skew_type, const double *skew_pars )
+{
+  assert( sigma > 0.0 );
+
+  switch( skew_type )
+  {
+    case PeakDef::SkewType::NoSkew:
+    case PeakDef::SkewType::NumSkewType:
+    {
+      const double sqrt2 = boost::math::constants::root_two<double>();
+      return 0.5 * (1.0 + boost_erf_imp( (x - mean) / (sqrt2 * sigma) ));
+    }
+
+    case PeakDef::SkewType::Bortel:
+    {
+      assert( skew_pars );
+      return bortel_indefinite_integral( x, mean, sigma, skew_pars[0] );
+    }
+
+    case PeakDef::SkewType::GaussExp:
+    {
+      assert( skew_pars );
+      return gauss_exp_indefinite( mean, sigma, skew_pars[0], x );
+    }
+
+    case PeakDef::SkewType::ExpGaussExp:
+    {
+      assert( skew_pars );
+      return exp_gauss_exp_indefinite( mean, sigma, skew_pars[0], skew_pars[1], x );
+    }
+
+    case PeakDef::SkewType::CrystalBall:
+    {
+      assert( skew_pars );
+      // Use crystal_ball_integral from a far-left starting point
+      const double far_left = mean - 50.0 * sigma;
+      return crystal_ball_integral( mean, sigma, skew_pars[0], skew_pars[1], far_left, x );
+    }
+
+    case PeakDef::SkewType::DoubleSidedCrystalBall:
+    {
+      assert( skew_pars );
+      // CDF via non-normalized indefinite integrals
+      const double t = (x - mean) / sigma;
+      const double alpha_low = skew_pars[0], n_low = skew_pars[1];
+      const double alpha_high = skew_pars[2], n_high = skew_pars[3];
+      const double norm = DSCB_norm( alpha_low, n_low, alpha_high, n_high );
+
+      // Integrate from -infinity to t in the non-normalized space
+      // CDF = norm * [left_tail(-inf to min(t,-alpha_low)) + gauss(max(-alpha_low, ?) to ?) + right_tail]
+      double answer = 0.0;
+
+      // Left tail from -inf to min(t, -alpha_low)
+      if( t <= -alpha_low )
+      {
+        // Only left tail contributes; evaluate from a far-left point
+        const double t_far = std::min( t, -50.0 );
+        answer = DSCB_left_tail_indefinite_non_norm_t( alpha_low, n_low, t )
+               - DSCB_left_tail_indefinite_non_norm_t( alpha_low, n_low, t_far );
+        return std::max( 0.0, std::min( 1.0, norm * answer ) );
+      }
+
+      // Full left tail from -inf to -alpha_low
+      const double t_far = -50.0;
+      answer += DSCB_left_tail_indefinite_non_norm_t( alpha_low, n_low, -alpha_low )
+              - DSCB_left_tail_indefinite_non_norm_t( alpha_low, n_low, t_far );
+
+      // Gaussian from -alpha_low to min(t, alpha_high)
+      const double t_gauss_upper = std::min( t, alpha_high );
+      answer += DSCB_gauss_indefinite_non_norm_t( t_gauss_upper )
+              - DSCB_gauss_indefinite_non_norm_t( -alpha_low );
+
+      // Right tail from alpha_high to t (if t > alpha_high)
+      if( t > alpha_high )
+      {
+        answer += DSCB_right_tail_indefinite_non_norm_t( alpha_high, n_high, t )
+                - DSCB_right_tail_indefinite_non_norm_t( alpha_high, n_high, alpha_high );
+      }
+
+      return std::max( 0.0, std::min( 1.0, norm * answer ) );
+    }
+
+    case PeakDef::SkewType::GaussPlusBortel:
+    {
+      assert( skew_pars );
+      // GaussPlusBortel = (1-R)*Gaussian + R*Bortel, so CDF is the same weighted mixture
+      const double R = skew_pars[0];
+      const double tau = skew_pars[1];
+      const double sqrt2 = boost::math::constants::root_two<double>();
+      const double gauss_cdf = 0.5 * (1.0 + boost_erf_imp( (x - mean) / (sqrt2 * sigma) ));
+      const double bortel_cdf = bortel_indefinite_integral( x, mean, sigma, tau );
+      return (1.0 - R) * gauss_cdf + R * bortel_cdf;
+    }
+
+    case PeakDef::SkewType::DoubleBortel:
+    {
+      assert( skew_pars );
+      // DoubleBortel = (1-eta)*Bortel(tau1) + eta*Bortel(tau2), where tau2 = tau1 + tau2_delta
+      const double tau1 = skew_pars[0];
+      const double tau2_delta = skew_pars[1];
+      const double eta = skew_pars[2];
+      const double tau2 = tau1 + tau2_delta;
+      const double bortel1_cdf = bortel_indefinite_integral( x, mean, sigma, tau1 );
+      const double bortel2_cdf = bortel_indefinite_integral( x, mean, sigma, tau2 );
+      return (1.0 - eta) * bortel1_cdf + eta * bortel2_cdf;
+    }
+
+    case PeakDef::SkewType::VoigtPlusBortel:
+    {
+      assert( skew_pars );
+      // No closed-form CDF; use numerical integration from far below the peak
+      const double far_left = mean - 50.0 * sigma;
+      return voigt_exp_integral( mean, sigma, skew_pars[0], skew_pars[1], skew_pars[2], far_left, x );
+    }
+  }//switch( skew_type )
+
+  assert( 0 );
+  return 0.5;
+}//double peak_cdf(...)
+
+
   // Explicit instantiation definition for the `double` version of `gaussian_integral(...)`
   template void gaussian_integral<double>(const double, const double, const double,
                                   const float * const, double *, const size_t);
@@ -1412,19 +1535,19 @@ std::pair<double,double> double_bortel_coverage_limits( const double mean, const
       return fabs( left - right ) < 0.01 * p;
     };
 
-    // The tail with larger tau will extend further, so use max(tau1, tau2)
-    const double max_tau = std::max( tau1, tau2 );
-
+    // Use mean as the upper limit of the lower search, since cdf(mean) ~ 0.5 which is
+    //  always > 0.5*p, guaranteeing a sign change.  Using `mean - max_tau*sigma` can fail
+    //  when tau values are extreme (e.g., during optimization), collapsing the interval.
     boost::uintmax_t max_iter = 100;
-    const double low_low_limit = mean - 50 * sigma;
-    const double low_up_limit = mean - max_tau * sigma;
+    const double low_low_limit = mean - 50.0 * sigma;
+    const double low_up_limit = mean;
     const pair<double, double> lower_val = boost::math::tools::bisect( lower_cdf, low_low_limit,
                                                                         low_up_limit, term_condition, max_iter );
     const double lower_x = 0.5 * ( lower_val.first + lower_val.second );
 
     max_iter = 100;
     const double up_low_limit = mean;
-    const double up_up_limit = mean + 7 * sigma;
+    const double up_up_limit = mean + 7.0 * sigma;
     const pair<double, double> upper_val = boost::math::tools::bisect( upper_cdf, up_low_limit,
                                                                         up_up_limit, term_condition, max_iter );
     const double upper_x = 0.5 * ( upper_val.first + upper_val.second );

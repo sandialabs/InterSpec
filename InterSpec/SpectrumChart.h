@@ -201,12 +201,15 @@ public:
                                      const Wt::WModelIndex &bottomRight );
 
   //peakYVal(...): returns the y-value to paint for the center of the bin, for
-  //  given the peak; includes the background value
+  //  given the peak; includes the background value.
+  //  The roi_peaks parameter provides the ROI peer peaks needed for CDF step
+  //  continuum types; defaults to empty (which is fine for non-CDF types).
   static double peakYVal( const int bin, const PeakDef &peak,
                           const SpectrumDataModel *th1Model,
                           std::shared_ptr<const PeakDef> prevPeak,
-                          std::shared_ptr<const PeakDef> nextPeak );
-  
+                          std::shared_ptr<const PeakDef> nextPeak,
+                          const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks = {} );
+
   //gausPeakBinValue(...): gets the x and y values for the marker, for bin
   //  of data specified.
   //May throw exception
@@ -216,15 +219,19 @@ public:
                          const double axisMinX, const double axisMaxX,
                          const double axisMinY, const double axisMaxY,
                          std::shared_ptr<const PeakDef> prevPeak,
-                         std::shared_ptr<const PeakDef> nextPeak ) const;
+                         std::shared_ptr<const PeakDef> nextPeak,
+                         const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks = {} ) const;
 
   //peakBackgroundVal(...): gives the bottom of the peak (e.g. the continuum)
   //  to paint.  Acounts for data background subtraction as well.
+  //  The roi_peaks parameter provides the ROI peer peaks needed for CDF step
+  //  continuum types (FlatStepCDF, LinearStepCDF).
   static double peakBackgroundVal( const int bin,
                                    const PeakDef &peak,
                                    const SpectrumDataModel *th1Model,
                                    std::shared_ptr<const PeakDef> prevPeak,
-                                   std::shared_ptr<const PeakDef> nextPeak );
+                                   std::shared_ptr<const PeakDef> nextPeak,
+                                   const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks = {} );
   
 
   //paintGausPeaks(): Paints peaks that share a ROI.  All peaks passed into
@@ -236,11 +243,14 @@ public:
   //drawIndependantGausPeak(...): draw a peak, not taking into account any other
   //  peaks.  If doFill==false then only the outline for the peak is drawn, or
   //  else the fill area and outline of the peak will be drawn.
+  //  The roi_peaks parameter provides the ROI peer peaks needed for CDF step
+  //  continuum types; defaults to empty (which is fine for non-CDF types).
   void drawIndependantGausPeak( const PeakDef &peak,
                                 Wt::WPainter& painter,
                                 const bool doFill = false,
                                 const double xstart = -999.9,
-                                const double xend = -999.9 ) const;
+                                const double xend = -999.9,
+                                const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks = {} ) const;
   
   void visibleRange( double &xmin, double &xmax,
                      double &ymin, double &ymax ) const;

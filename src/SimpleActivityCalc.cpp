@@ -53,6 +53,7 @@
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
+#include "InterSpec/PeakFit_imp.hpp"
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/DoseCalc.h"
 #include "InterSpec/SpecMeas.h"
@@ -306,7 +307,7 @@ std::string SimpleActivityCalcState::encodeToUrl() const
 }//std::string SimpleActivityCalcState::encodeToUrl() const
 
 
-void SimpleActivityCalcState::decodeFromUrl( const std::string &uri, MaterialDB *materialDB )
+void SimpleActivityCalcState::decodeFromUrl( const std::string &uri )
 {
   *this = SimpleActivityCalcState();
   
@@ -415,11 +416,12 @@ void SimpleActivityCalcState::decodeFromUrl( const std::string &uri, MaterialDB 
         SpecUtils::ireplace_all(mat_name, "%26", "&");
         
         // Look up material in MaterialDB
-        if( materialDB )
+        const std::shared_ptr<const MaterialDB> matDB = MaterialDB::instance();
+        if( matDB )
         {
-          const Material *material = materialDB->material( mat_name );
+          std::shared_ptr<const Material> material = matDB->material( mat_name );
           if( material )
-            shielding->m_material = std::shared_ptr<const Material>( new Material(*material) );
+            shielding->m_material = material;
           else
             throw std::runtime_error( "Material '" + mat_name + "' not found in MaterialDB" );
         }else
@@ -486,7 +488,7 @@ void SimpleActivityCalcState::serialize( rapidxml::xml_node<char> * const parent
 }//void serialize( rapidxml::xml_node<char> * const parent_node ) const
 
 
-void SimpleActivityCalcState::deSerialize( const ::rapidxml::xml_node<char> *src_node, MaterialDB *materialDB )
+void SimpleActivityCalcState::deSerialize( const ::rapidxml::xml_node<char> *src_node )
 {
   using namespace rapidxml;
   
@@ -538,7 +540,7 @@ void SimpleActivityCalcState::deSerialize( const ::rapidxml::xml_node<char> *src
     if( shielding_node )
     {
       shielding = ShieldingSourceFitCalc::ShieldingInfo();
-      shielding->deSerialize( shielding_node, materialDB );
+      shielding->deSerialize( shielding_node );
     }else
     {
       // If no shielding node found, leave as empty optional
@@ -620,8 +622,7 @@ void SimpleActivityCalcState::equalEnough( const SimpleActivityCalcState &lhs, c
 }//void SimpleActivityCalcState::equalEnough( const SimpleActivityCalcState &lhs, const SimpleActivityCalcState &rhs )
 #endif
 
-SimpleActivityCalcWindow::SimpleActivityCalcWindow( MaterialDB *materialDB,
-                                                  Wt::WSuggestionPopup *materialSuggestion,
+SimpleActivityCalcWindow::SimpleActivityCalcWindow( Wt::WSuggestionPopup *materialSuggestion,
                                                   InterSpec* viewer )
 : AuxWindow( WString::tr("simple-activity-calc-title"),
             (AuxWindowProperties::TabletNotFullScreen
@@ -631,7 +632,7 @@ SimpleActivityCalcWindow::SimpleActivityCalcWindow( MaterialDB *materialDB,
 {
   setModal( false );
 
-  m_tool = new SimpleActivityCalc( materialDB, materialSuggestion, viewer, contents() );
+  m_tool = new SimpleActivityCalc( materialSuggestion, viewer, contents() );
   
   AuxWindow::addHelpInFooter( footer(), "simple-activity-calc" );
   
@@ -684,8 +685,7 @@ SimpleActivityCalc *SimpleActivityCalcWindow::tool()
   return m_tool;
 }
 
-SimpleActivityCalc::SimpleActivityCalc( MaterialDB *materialDB,
-                                      Wt::WSuggestionPopup *materialSuggestion,
+SimpleActivityCalc::SimpleActivityCalc( Wt::WSuggestionPopup *materialSuggestion,
                                       InterSpec *specViewer,
                                       Wt::WContainerWidget *parent )
 : WContainerWidget( parent ),
@@ -693,7 +693,6 @@ SimpleActivityCalc::SimpleActivityCalc( MaterialDB *materialDB,
   m_haveRendered( false ),
   m_viewer( specViewer ),
   m_materialSuggest( materialSuggestion ),
-  m_materialDB( materialDB ),
   m_peakSelect( nullptr ),
   m_nuclideInfo( nullptr ),
   m_ageEdit( nullptr ),
@@ -712,7 +711,7 @@ SimpleActivityCalc::SimpleActivityCalc( MaterialDB *materialDB,
   m_currentPeak( nullptr ),
   m_previous_state{}
 {
-  if( !m_materialDB )
+  if( !MaterialDB::instance() )
     throw logic_error( "SimpleActivityCalc requires a valid MaterialDB." );
  
   // Start loading the scatter table if it isnt already loaded
@@ -777,7 +776,7 @@ void SimpleActivityCalc::init()
   shieldingRow->addStyleClass( "row" );
   WLabel *shieldingLabel = new WLabel( WString::tr("sac-shielding-label"), shieldingRow );
   shieldingLabel->addStyleClass( "label" );
-  m_shieldingSelect = new ShieldingSelect( m_materialDB, m_materialSuggest, shieldingRow );
+  m_shieldingSelect = new ShieldingSelect( m_materialSuggest, shieldingRow );
   //m_shieldingSelect->addStyleClass( "input" );
   m_shieldingSelect->materialChanged().connect( this, &SimpleActivityCalc::handleShieldingChanged );
   m_shieldingSelect->materialModified().connect( this, &SimpleActivityCalc::handleShieldingChanged );
@@ -940,7 +939,7 @@ void SimpleActivityCalc::handleAppUrl( const std::string &query_str )
   try
   {
     SimpleActivityCalcState state;
-    state.decodeFromUrl( query_str, m_materialDB );
+    state.decodeFromUrl( query_str );
     setState( state );
   }catch( const std::exception &e )
   {
@@ -1529,25 +1528,32 @@ void SimpleActivityCalc::handleBackgroundSubtractChanged()
         const size_t nchannel = (1 + end_channel) - start_channel;
         const float * const energies = cal->channel_energies()->data() + start_channel;
         const float * const data = background->gamma_channel_contents()->data() + start_channel;
-        const bool step_continuum = PeakContinuum::is_step_continuum( back_cont->type() );
-        const int num_polynomial_terms = static_cast<int>( PeakContinuum::num_parameters( back_cont->type() ) );
+        const PeakContinuum::OffsetType cont_type = back_cont->type();
         const double ref_energy = back_cont->referenceEnergy();
         const PeakDef::SkewType skew_type = m_currentPeak->skewType();
         const size_t num_skew = PeakDef::num_skew_parameters( skew_type );
         const double * const skew_pars = m_currentPeak->coefficients() + PeakDef::CoefficientType::SkewPar0;
-        
+
         const vector<PeakDef> dummy_fixed_amp_peaks;
         vector<double> amplitudes, continuum_coeffs, amplitudes_uncerts, continuum_coeffs_uncerts;
-        
-        fit_amp_and_offset( energies, data, nchannel, num_polynomial_terms, step_continuum, ref_energy,
+
+        PeakFit::fit_amp_and_offset_imp( energies, data, static_cast<const float *>( nullptr ),
+                           nchannel, cont_type,
+                           0.0, ref_energy,
                            means, sigmas, dummy_fixed_amp_peaks, skew_type, skew_pars,
-                            amplitudes, continuum_coeffs, amplitudes_uncerts, continuum_coeffs_uncerts );
-        
-        for( size_t i = 0; i < continuum_coeffs.size(); ++i )
+                           amplitudes, continuum_coeffs, amplitudes_uncerts, continuum_coeffs_uncerts,
+                           static_cast<double *>( nullptr ) );
+
+        // For FlatStepCDF/LinearStepCDF, append step_coeff (0.0) so setParameters gets the full set.
+        //  BiLinearStepCDF has no step_coeff.
+        if( PeakContinuum::is_peak_cdf_step_continuum( cont_type )
+           && (cont_type != PeakContinuum::BiLinearStepCDF) )
         {
-          back_cont->setPolynomialCoef( i, continuum_coeffs[i] );
-          back_cont->setPolynomialUncert( i, continuum_coeffs_uncerts[i] );
+          continuum_coeffs.push_back( 0.0 );
+          continuum_coeffs_uncerts.push_back( 0.0 );
         }
+
+        back_cont->setParameters( ref_energy, continuum_coeffs, continuum_coeffs_uncerts );
         
         vector<PeakDef> updated_back_roi_peaks;
         for( size_t i = 0; i < background_roi_peaks.size(); ++i )
@@ -2147,51 +2153,41 @@ SimpleActivityCalcResult SimpleActivityCalc::performCalculation( const SimpleAct
         if( !db )
           throw runtime_error( "Failed to get SandiaDecayDataBase!?!" );
         
-        // We will manually make a "Air" definition so we dont need to carry a MaterialDB through to here (mostly for
-        //  testing).
+        // Use MaterialDB::materialFromChemicalFormula to create the air material
         try
         {
-          MaterialDB matdb;
-          const Material * const mat = matdb.parseChemicalFormula( "N0.7553O0.2318Ar0.0129 d=0.00129", db );
+          const std::shared_ptr<const Material> mat
+            = MaterialDB::materialFromChemicalFormula( "N0.7553O0.2318Ar0.0129 d=0.00129", db );
           if( !mat )
             throw runtime_error( "Failed to make air." );
-          
+
 #ifndef NDEBUG
-          const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
-          matdb.parseGadrasMaterialFile( materialfile, db, false );
-          const Material * const air = matdb.material( "Air" );
+          const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+          const std::shared_ptr<const Material> air = matdb ? matdb->material( "Air" ) : nullptr;
           assert( air );
-          assert( fabs(air->density - mat->density) < 0.001*std::max(air->density,mat->density) );
-          assert( mat->elements.size() == air->elements.size() );
-          
-          for( const auto &a : mat->elements )
+          if( air )
           {
-            bool found = false;
-            for( const auto &b : air->elements )
+            assert( fabs(air->density - mat->density) < 0.001*std::max(air->density,mat->density) );
+            assert( mat->elements.size() == air->elements.size() );
+
+            for( const auto &a : mat->elements )
             {
-              if( b.first == a.first )
+              bool found = false;
+              for( const auto &b : air->elements )
               {
-                assert( fabs(a.second - b.second) < 0.001*std::max(a.second, b.second) );
-                found = true;
-                break;
+                if( b.first == a.first )
+                {
+                  assert( fabs(a.second - b.second) < 0.001*std::max(a.second, b.second) );
+                  found = true;
+                  break;
+                }
               }
-            }
-            assert( found );
-          }//for( const auto &a : mat->elements )
+              assert( found );
+            }//for( const auto &a : mat->elements )
+          }//if( air )
 #endif //#ifndef NDEBUG
-          
-          trace_shield.m_material = make_shared<Material>( *mat );
-          
-          //We cant directly make an air object because the Material constructor is private.
-          //auto air = make_shared<Material>();
-          //air->name = "Air";
-          //air->description = "Air";
-          //air->density = 0.00129*PhysicalUnits::g/PhysicalUnits::cm3;
-          //air->source = Material::MaterialDefintionsSrc::kGadras;
-          //air->elements.emplace_back( db->element(7), 0.7553f );
-          //air->elements.emplace_back( db->element(8), 0.2318f );
-          //air->elements.emplace_back( db->element(18), 0.0129f );
-          //trace_shield.m_material = air;
+
+          trace_shield.m_material = mat;
         }catch( std::exception & )
         {
           throw logic_error( "Failed to define air." );

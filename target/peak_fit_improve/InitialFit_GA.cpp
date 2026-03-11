@@ -1058,30 +1058,31 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
       {
         assert( orig_continuum->isPolynomial() );
 
-        const int num_prev_poly = orig_continuum->isPolynomial() ? static_cast<int>(orig_continuum->parameters().size()) : 2;
-
         const float * const energies = &(channel_energies[trial_start_chnl]);
         const float * const data_cnts = &(channel_counts[trial_start_chnl]);
-        int num_polynomial_terms = std::max( num_prev_poly, 2 );
-
-        if( debug_peak )
-          cout << "  num_prev_poly=" << num_prev_poly << ", num_polynomial_terms=" << num_polynomial_terms << endl;
 
         //Really high stat HPGe peaks that have a "step" in them are susceptible to getting a bunch
         //  of peaks added on in the low-energy range.  So for these we'll make the continuum
         //  step-functions - either flat, or if higher-stat, linear.
         //  These threshold are pure guesses - but its maybe not worth the effort to include in the optimization?
         const double significance_for_flat_step_continuum = 40;
-        //const double significance_for_linear_step_continuum = 60;
 
-        bool step_continuum = (PeakContinuum::is_step_continuum( orig_continuum->type() )
-                                    || (max_significance > significance_for_flat_step_continuum));
-        //if( max_significance > significance_for_linear_step_continuum )
-        //{
-        //  num_polynomial_terms = std::max( num_polynomial_terms, step_continuum ? 2 : 3 );
-        //  if( debug_peak )
-        //    cout << "  Elevating step continuum to linearstep" << ", num_polynomial_terms=" << num_polynomial_terms << ", max_significance=" << max_significance << endl;
-        //}
+        PeakContinuum::OffsetType cont_type = orig_continuum->type();
+        if( !PeakContinuum::is_step_continuum( cont_type )
+          && (max_significance > significance_for_flat_step_continuum) )
+        {
+          cont_type = PeakContinuum::OffsetType::FlatStep;
+        }
+
+        // Ensure at least a Linear continuum
+        if( !PeakContinuum::is_step_continuum( cont_type )
+          && (PeakContinuum::num_parameters( cont_type ) < 2) )
+        {
+          cont_type = PeakContinuum::OffsetType::Linear;
+        }
+
+        if( debug_peak )
+          cout << "  cont_type=" << PeakContinuum::offset_type_str( cont_type ) << endl;
 
         const double ref_energy = orig_continuum->referenceEnergy();
         vector<double> trial_means = means, trial_sigmas = sigmas;
@@ -1092,7 +1093,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
         vector<double> amplitudes, continuum_coeffs, amplitudes_uncerts, continuum_coeffs_uncerts;
 
         const double without_new_peak_chi2 = fit_amp_and_offset( energies, data_cnts,
-                              num_trial_channel, num_polynomial_terms, step_continuum, ref_energy,
+                              num_trial_channel, cont_type, ref_energy,
                               trial_means, trial_sigmas, nearbyOtherRoiPeaks, PeakDef::SkewType::NoSkew,
                               skew_parameters, amplitudes, continuum_coeffs,
                               amplitudes_uncerts, continuum_coeffs_uncerts );
@@ -1102,7 +1103,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
         trial_means.push_back( added_mean );
         trial_sigmas.push_back( avrg_gaus_sigma );
         const double with_new_peak_chi2 = fit_amp_and_offset( energies, data_cnts,
-                              num_trial_channel, num_polynomial_terms, step_continuum, ref_energy,
+                              num_trial_channel, cont_type, ref_energy,
                               trial_means, trial_sigmas, nearbyOtherRoiPeaks, PeakDef::SkewType::NoSkew,
                               skew_parameters, amplitudes, continuum_coeffs,
                               amplitudes_uncerts, continuum_coeffs_uncerts );
@@ -1147,7 +1148,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
         const double new_peak_uncert = amplitudes_uncerts.back();
         const double nsigma = new_peak_area / new_peak_uncert;
 
-        const size_t ndof = (num_trial_channel - amplitudes.size()) - num_polynomial_terms;
+        const size_t ndof = (num_trial_channel - amplitudes.size()) - PeakContinuum::num_parameters( cont_type );
         const double chi2_improve = (without_new_peak_chi2 - with_new_peak_chi2);
         const double chi2_dof_improve = chi2_improve / ndof;
         // Note/TODO: The Chi2/Dof wont improve as much when adding a peak to a wide ROI - maybe there is a better measure to use?

@@ -372,13 +372,11 @@ double evaluate_polynomial( const double x,
 
 /** Fits the continuum and amplitude of peaks with specified means and sigmas, over the data range specified.  Uses a
  matrix based linear regression fitter to perform minization.
- 
+
  @param energies The lower-channel energies of ROI.  ROI defined by energies[0] to energies[nbin]. Must be of at least length nbin+1.
  @param data The channel counts of the ROI.  Must be of at least length nbin.
  @param nbin The number of channels in the ROI.
- @param num_polynomial_terms The number of polynomial continuum terms to fit for.
-        0 is no continuum (untested), 1 is constant, 2 is linear sloped continuum, etc
- @param step_continuum Specifies whether or not a step in the continuum is to be used.
+ @param cont_type The continuum offset type to fit for.
  @param means The peak means, in keV
  @param sigmas The peak sigmas, in keV
  @param fixedAmpPeaks The fixed amplitude peaks in the ROI, that we are not fitting for
@@ -390,15 +388,13 @@ double evaluate_polynomial( const double x,
  @param[out] amplitudes_uncerts The (statistical) uncertainties for the amplitudes
  @param[out] continuum_coeffs_uncerts The (statistical) uncertainties for the continuum coefficients
  @returns The chi2 of the ROI
- Currently the implementation is reasonably inefficient.
- 
+
  Skew uncertainties are also not taken into account in determining amplitude or continuum uncertainties.
- 
+
  Throws exception upon ill-posed input.
  */
 double fit_amp_and_offset( const float *energies, const float *data, const size_t nbin,
-                           const int num_polynomial_terms,
-                           const bool step_continuum,
+                           const PeakContinuum::OffsetType cont_type,
                            const double ref_energy,
                            const std::vector<double> &means,
                            const std::vector<double> &sigmas,

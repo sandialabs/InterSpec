@@ -761,19 +761,15 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
     return result;
   }
   
-  MaterialDB matdb;
-  const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
-  try
-  {
-    matdb.parseGadrasMaterialFile( materialfile, db, false );
-  }catch( std::exception &e )
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  if( !matdb )
   {
     result.m_error_msg = "Could not initialize shielding material database.";
     result.m_result_code = BatchActivityFitResult::ResultCode::CouldntInitializeStaticResources;
     return result;
   }
-  
-  const Material * const iron = matdb.material("Fe (iron)");
+
+  const std::shared_ptr<const Material> iron = matdb->material("Fe (iron)");
   if( !iron )
   {
     result.m_error_msg = "Couldnt access materials from shielding database.";
@@ -1355,7 +1351,7 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
     GammaInteractionCalc::ShieldSourceConfig config;
     try
     {
-      config.deSerialize( base_node, &matdb );
+      config.deSerialize( base_node );
     }catch( std::exception &e )
     {
       const string msg = e.what();

@@ -179,6 +179,26 @@ std::vector<std::shared_ptr<const PeakDef>> fit_peaks_in_range_LM( const double 
                                       const bool isRefit,
                                       const PeakFitUtils::CoarseResolutionType det_type );
 
+/** Fit peaks in a ROI using Ceres L-M optimizer.
+ All input peaks must share the same PeakContinuum.  Peak `fitFor` flags are respected:
+ parameters marked as not-fit-for will be held constant.
+
+ Uses the LLS-hybrid approach: means/sigmas/skew/step_coeff optimized by Ceres,
+ amplitudes and polynomial coefficients solved by linear least-squares each iteration.
+
+ @param coFitPeaks All peaks in the ROI (must share a continuum)
+ @param dataH The spectrum data
+ @param det_type The coarse detector resolution type.
+ @param fit_options Fitting options (e.g., SmallRefinementOnly)
+ @returns Fitted peaks with updated amplitudes, continuum, and uncertainties.
+          Throws on failure.
+ */
+std::vector<std::shared_ptr<const PeakDef>> fit_peaks_in_roi_LM(
+                                   const std::vector<std::shared_ptr<const PeakDef>> coFitPeaks,
+                                   const std::shared_ptr<const SpecUtils::Measurement> &dataH,
+                                   const PeakFitUtils::CoarseResolutionType det_type,
+                                   const Wt::WFlags<PeakFitLMOptions> fit_options = 0 );
+
 /** Refit peaks that share an ROI.
  * @param data The data to fit
  * @param detector Currently unused
@@ -186,7 +206,7 @@ std::vector<std::shared_ptr<const PeakDef>> fit_peaks_in_range_LM( const double 
  *        also dictate which quantities are fit for each peak, the skew and continuum types used, etc.
  * @param fit_options The options to use for the fit.
  * @return The refitted peaks, if fitting was sucessful.
- * 
+ *
  * On failure, returns an empty vector.
  */
 std::vector<std::shared_ptr<const PeakDef>> refitPeaksThatShareROI_LM(

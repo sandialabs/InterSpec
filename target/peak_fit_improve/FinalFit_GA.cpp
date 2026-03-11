@@ -969,7 +969,8 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
           const double data_counts = data->gamma_channel_content(i);
           const float lenergy = data->gamma_channel_lower(i);
           const float uenergy = data->gamma_channel_upper(i);
-          const double expected_continuum_counts = most_sig_peak.continuum()->offset_integral( lenergy, uenergy, data );
+          const PeakDef *sig_peak_ptr = &most_sig_peak;
+          const double expected_continuum_counts = most_sig_peak.continuum()->offset_integral( lenergy, uenergy, data, &sig_peak_ptr, 1 );
           const double expected_gauss_counts = most_sig_peak.gauss_integral( lenergy, uenergy );
           const double expected_counts = expected_continuum_counts + expected_gauss_counts;
           const double residual = (data_counts - expected_counts) / sqrt( std::max( 1.0, data_counts ) );
@@ -1153,9 +1154,14 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
         const float ch_upper_energy = data->gamma_channel_upper(i + 1);
 
         double fit_amp = 0.0;
-        for( const PeakDef &p : orig_roi )
-          fit_amp += p.gauss_integral(ch_lower_energy, ch_upper_energy);
-        fit_amp += orig_roi.front().continuum()->offset_integral(ch_lower_energy, ch_upper_energy, data);
+        vector<const PeakDef *> roi_peak_ptrs_ga( orig_roi.size() );
+        for( size_t pi = 0; pi < orig_roi.size(); ++pi )
+        {
+          fit_amp += orig_roi[pi].gauss_integral(ch_lower_energy, ch_upper_energy);
+          roi_peak_ptrs_ga[pi] = &orig_roi[pi];
+        }
+        fit_amp += orig_roi.front().continuum()->offset_integral( ch_lower_energy, ch_upper_energy, data,
+                                                                   roi_peak_ptrs_ga.data(), roi_peak_ptrs_ga.size() );
 
         const double deviation = fabs(fit_amp - data_cnts) / uncert;
         if( deviation > max_deviation )

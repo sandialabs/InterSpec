@@ -63,6 +63,17 @@ namespace rapidxml
        This is currently necessary since multiple PeakDefs can share a PeakContinuum.  To fix this
        a ROI (e.g., continuum) should own the peaks, not the other way around
  */
+
+
+/** When set to 1, the data-based step continuums (FlatStep, LinearStep, BiLinearStep) subtract
+ the minimum channel count in the ROI before forming the CDF, concentrating the step shape
+ around the peak rather than the flat continuum.  When 0, the old, pre 20260227 behavior of using raw data
+ counts for the CDF is used.
+ 
+ The visual or area difference on a range of example peaks seems pretty minimal.
+ */
+#define PEAK_CONTINUUM_DATA_STEP_SUBTRACT 1
+
 struct PeakContinuum
 {
   enum OffsetType : int
@@ -109,7 +120,28 @@ struct PeakContinuum
     LinearStep,
     
     BiLinearStep,
-    
+
+    /** Like FlatStep, but uses the CDF of the peaks in the ROI to define the step shape,
+     rather than the cumulative data histogram.  This avoids circular dependence on the data
+     being fit, producing cleaner step shapes especially for low-statistics spectra.
+     Two parameters: the polynomial continuum term, and a step coefficient.
+     The step coefficient is fit by the non-linear optimizer and not by LLS.
+     */
+    FlatStepCDF,
+
+    /** Like LinearStep, but uses peak CDF for the step shape.
+     Three parameters: two polynomial continuum terms, and a step coefficient.
+     The step coefficient is fit by the non-linear optimizer and not by LLS.
+     */
+    LinearStepCDF,
+
+    /** Like BiLinearStep, but uses the CDF of the peaks in the ROI to define the interpolation
+     fraction between left and right polynomials, rather than the cumulative data histogram.
+     This avoids circular dependence on the data being fit.
+     Four parameters: left_const, left_linear, right_const, right_linear — all solved by LLS.
+     */
+    BiLinearStepCDF,
+
     /** A continuum is determined algorithmically for the entire spectrum; not recommended to use.
 
      It use the Sensitive Nonlinear Iterative Peak (SNIP) clipping algorithm to estimate the background.
@@ -126,11 +158,34 @@ struct PeakContinuum
   /** Returns string to be used for XML or JSON identification of continuum type. */
   static const char *offset_type_str( const OffsetType type );
   
-  /** Returns the number of parameters for a specified offset type. */
+  /** Returns the total number of parameters for a specified offset type.
+   For FlatStepCDF/LinearStepCDF this includes the step_coeff parameter that is optimized by non-linear solvers.
+   E.g., FlatStepCDF returns 2 (1 polynomial + 1 step_coeff).
+   BiLinearStepCDF returns 4 (all polynomial, no step_coeff).
+
+   @sa num_linear_fit_pars
+   */
   static size_t num_parameters( const OffsetType type );
-  
-  /** Returns true if continuum type is FlatStep, LinearStep, or BiLinearStep and otherwise false */
+
+  /** Returns the number of continuum parameters solved by the linear least-squares (LLS) system.
+   For non-CDF types, this is the same as num_parameters().
+   For FlatStepCDF/LinearStepCDF, this excludes the step_coeff (e.g., FlatStepCDF returns 1, LinearStepCDF returns 2),
+   since step_coeff is optimized by the non-linear solver (Ceres/L-M), not the LLS.
+   For BiLinearStepCDF, returns 4 (same as num_parameters, since there is no step_coeff).
+
+   This is the value to pass to fit_amp_and_offset_imp() and fit_continuum() as the polynomial term count.
+
+   @sa num_parameters
+   */
+  static size_t num_linear_fit_pars( const OffsetType type );
+
+  /** Returns true if continuum type is FlatStep, LinearStep, BiLinearStep, FlatStepCDF, LinearStepCDF, or BiLinearStepCDF. */
   static bool is_step_continuum( const OffsetType type );
+
+  /** Returns true if continuum type uses the CDF of the peaks in the ROI to define the step,
+   i.e., FlatStepCDF, LinearStepCDF, or BiLinearStepCDF.
+   */
+  static bool is_peak_cdf_step_continuum( const OffsetType type );
   
   /** Throws exception if string does not match a string returned by #offset_type_str.
    @param str String to be tested.  Must not be a null pointer, but string does not need to be null terminated.
@@ -209,47 +264,70 @@ struct PeakContinuum
                                  const size_t num_lower_channels,
                                  const size_t num_upper_channels );
   
-  //offset_integral: returns the area of the continuum from x0 to x1.  If m_type
-  //  is NoOffset, then will return 0.  If a polynomial, then the integral of
-  //  the continuum density will be returned.  If globally defined continuum,
-  //  then the integral will be returned, using linear interpolation for
-  //  ranges not exactly on the bin edges.
-  //  If FlatStep, then data histogram is necessary
-  //  If possible, consider calling the other overload of this function to compute all
-  //  channels in the ROI in one function call, as it is a lot more efficient for stepped continua.
-  double offset_integral( const double x0, const double x1,
-                          const std::shared_ptr<const SpecUtils::Measurement> &data ) const;
-  
-  /** Computes the channel-by-channel continua for the entire ROI at once.
- 
-   Adds each channels continuum component to the `channels` array.
-   
-   For stepped continua, using this overload, rather than calling `offset_integral(double,double,data)` in
-   `PeakFitChi2Fcn::chi2(const double *)`, makes fitting peaks a factor of 5 faster! (and even makes fitting
-   peaks with linear continua 34% faster).
-   
-   \param energies Array of lower channel energies; must have at least one more entry than
-          `nchannel`.  For stepped continua (FlatStep, LinearStep, BiLinearStep), this must point
-          into the energy calibration energies array of `data`.
-   \param channels Channel count array integrals of continuum; will be _added_ to (e.g.,
-          will not be zeroed); must have at least `nchannel` entries
-   \param nchannel The number of channels to do the integration over.
-   \param data The spectrum (only used for stepped continua).
+  /** Returns the area of the continuum from x0 to x1.
+
+   For non-CDF types (polynomial, data-step, external), roi_peaks is ignored but must still be
+   explicitly specified.
+   For CDF step types (FlatStepCDF, LinearStepCDF, BiLinearStepCDF), roi_peaks must point to all peaks sharing
+   this ROI's continuum.
+
+   @param data Spectrum data (needed for step types; may be nullptr for polynomial/external).
+   @param roi_peaks Array of pointers to all peaks in this ROI (nullptr only for non-CDF types).
+   @param num_peaks Number of entries in roi_peaks.
+
+   If possible, use the batch overload for all channels in a ROI, as it is much more efficient
+   for stepped continua.
    */
-   void offset_integral( const float *energies, double *channels, const size_t nchannel,
-                        const std::shared_ptr<const SpecUtils::Measurement> &data ) const;
-   
-  
-  
+  double offset_integral( const double x0, const double x1,
+                          const std::shared_ptr<const SpecUtils::Measurement> &data,
+                          const PeakDef * const *roi_peaks,
+                          const size_t num_peaks ) const;
+
+  /** Computes channel-by-channel continuum integrals for the entire ROI at once.
+
+   Adds each channels continuum component to the `channels` array.
+   Same semantics as the single-channel version regarding roi_peaks.
+
+   For stepped continua, using this overload rather than calling per-channel
+   makes fitting peaks a factor of 5 faster.
+
+   \param energies Array of lower channel energies; must have at least one more entry than
+          `nchannel`.  For data-based stepped continua, this must point into the energy
+          calibration energies array of `data`.
+   \param channels Channel count array integrals of continuum; will be _added_ to (e.g.,
+          will not be zeroed); must have at least `nchannel` entries.
+   \param nchannel The number of channels to do the integration over.
+   \param data Spectrum data (needed for step types; may be nullptr for polynomial/external).
+   \param roi_peaks Array of pointers to all peaks in this ROI (nullptr only for non-CDF types).
+   \param num_peaks Number of entries in roi_peaks.
+   */
+  void offset_integral( const float *energies, double *channels, const size_t nchannel,
+                        const std::shared_ptr<const SpecUtils::Measurement> &data,
+                        const PeakDef * const *roi_peaks,
+                        const size_t num_peaks ) const;
+
+  /** Convenience: single-channel with shared_ptr peak vector.
+   Extracts raw pointers and forwards to the primary overload.
+   */
+  double offset_integral( const double x0, const double x1,
+                          const std::shared_ptr<const SpecUtils::Measurement> &data,
+                          const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks ) const;
+
+  /** Convenience: multi-channel with shared_ptr peak vector. */
+  void offset_integral( const float *energies, double *channels, const size_t nchannel,
+                        const std::shared_ptr<const SpecUtils::Measurement> &data,
+                        const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks ) const;
+
+
   /** Returns true if a _valid_ polynomial, step, or external continuum type.
    Where valid polynomial and step continuums means any of the coefficients are non zero, not that they actually make sense.
    */
   bool parametersProbablySet() const;
-  
+
   //energyRangeDefined: returns if an energy range has explicitely been set
   bool energyRangeDefined() const;
-  
-  /** Returns true if Constant, Linear, Quadratic, Cubic, or FlatStep: */
+
+  /** Returns true if the continuum type has polynomial parameters, including step types. */
   bool isPolynomial() const;
   
   double lowerEnergy() const { return m_lowerEnergy; }
@@ -304,6 +382,25 @@ struct PeakContinuum
 #endif
 
   
+private:
+  /** Non-CDF single-channel implementation (polynomial, data-step, external). */
+  double offset_integral_non_cdf( const double x0, const double x1,
+                                  const std::shared_ptr<const SpecUtils::Measurement> &data ) const;
+
+  /** Non-CDF multi-channel batch implementation. */
+  void offset_integral_non_cdf( const float *energies, double *channels, const size_t nchannel,
+                                const std::shared_ptr<const SpecUtils::Measurement> &data ) const;
+
+  /** CDF step single-channel implementation. */
+  double offset_integral_cdf_step( const double x0, const double x1,
+                                   const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                   const PeakDef * const *roi_peaks, const size_t num_peaks ) const;
+
+  /** CDF step multi-channel batch implementation. */
+  void offset_integral_cdf_step( const float *energies, double *channels, const size_t nchannel,
+                                 const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                 const PeakDef * const *roi_peaks, const size_t num_peaks ) const;
+
 protected:
   OffsetType m_type;
   
@@ -884,9 +981,7 @@ public:
   void gauss_integral( const float *energies, double *channels, const size_t nchannel ) const;
   
   
-  //offset_integral(): gives area of the continuum component between x0 and x1.
-  double offset_integral( const double x0, const double x1,
-                          const std::shared_ptr<const SpecUtils::Measurement> &data ) const;
+
 
   inline bool fitFor( CoefficientType type ) const;
   inline void setFitFor( CoefficientType type, bool fit );

@@ -663,7 +663,7 @@ struct RelEffCurveInput
    * @returns The node the fields were written into (so the added node, or the parent node passed in).
    */
   rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const;
-  void fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *materialDB );
+  void fromXml( const ::rapidxml::xml_node<char> *parent );
 
 #if( PERFORM_DEVELOPER_CHECKS )
   static void equalEnough( const RelEffCurveInput &lhs, const RelEffCurveInput &rhs );
@@ -775,12 +775,12 @@ struct Options
   
   /** Sets the member variables from an XML element created by `toXml(...)`.
    @param parent An XML element with name "Options".
-   @param materialDB The material database to use to retrieve a material from for the #PhysicalModelShieldInput;
-          for other equation types, or for AN/AD defined shields, this isnt used/required.
-          `same_hoerl_for_all_rel_eff_curves` and `same_external_shielding_for_all_rel_eff_curves`
-          were also added, and are optional.
+   Uses `MaterialDB::instance()` to retrieve materials for #PhysicalModelShieldInput;
+   for other equation types, or for AN/AD defined shields, the material DB isnt used/required.
+   `same_hoerl_for_all_rel_eff_curves` and `same_external_shielding_for_all_rel_eff_curves`
+   were also added, and are optional.
    */
-  void fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *materialDB );
+  void fromXml( const ::rapidxml::xml_node<char> *parent );
 
 #if( PERFORM_DEVELOPER_CHECKS )
   static void equalEnough( const Options &lhs, const Options &rhs );
@@ -841,7 +841,7 @@ struct RelActAutoGuiState
   
   /** Returns XML node added; i.e., will have name "RelActCalcAuto" */
   ::rapidxml::xml_node<char> *serialize( ::rapidxml::xml_node<char> *parent ) const;
-  void deSerialize( const rapidxml::xml_node<char> *base_node, MaterialDB *materialDb );
+  void deSerialize( const rapidxml::xml_node<char> *base_node );
 
 #if( PERFORM_DEVELOPER_CHECKS )
   static void equalEnough( const RelActAutoGuiState &lhs, const RelActAutoGuiState &rhs );

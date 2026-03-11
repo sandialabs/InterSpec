@@ -1360,25 +1360,33 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
           if( continuum && continuum->isPolynomial() )
           {
             const PeakContinuum::OffsetType origType = continuum->type();
+            // calc_linear_continuum_eqn sets type to Linear and resizes m_values to 2 polynomial
+            //  coefficients.  We compute the continuum integral while the type is still Linear
+            //  (just polynomial, no step), then restore the original type.
+            //  For step types (including CDF step), this gives a reasonable polynomial-only estimate
+            //  for the starting amplitude — the step coefficient will be fit later.
+            //  Note: setType(origType) will init the step coefficient to zero, so the only-one-peak
+            //  vs all-ROI-peers distinction for CDF step types is moot here.
             continuum->calc_linear_continuum_eqn( spec, peak.mean(), peak.lowerX(), peak.upperX(), 2, 2 );
+
+            const double mean = peak.mean(), fwhm = peak.fwhm();
+            const double data_area = spec->gamma_integral( mean - fwhm, mean + fwhm );
+
+            if( (data_area > 1) && (peak.amplitude() > data_area) )
+            {
+              const double cont_area = continuum->offset_integral( mean - fwhm, mean + fwhm,
+                                                                    spec, nullptr, 0 );
+              if( (cont_area > 0.0) && (cont_area < data_area) )
+              {
+                peak.setAmplitude( data_area - cont_area );
+              }else
+              {
+                peak.setAmplitude( 0.25*data_area );
+              }
+            }//if( exemplar peak is clearly much larger than data )
+
             continuum->setType( origType );
           }//if( continuum )
-
-          const double mean = peak.mean(), fwhm = peak.fwhm();
-          const double data_area = spec->gamma_integral( mean - fwhm, mean + fwhm );
-
-          if( (data_area > 1) && (peak.amplitude() > data_area) )
-          {
-            double cont_area = continuum->offset_integral(  mean - fwhm, mean + fwhm, spec );
-            if( (cont_area > 0.0) && (cont_area < data_area) )
-            {
-              peak.setAmplitude( data_area - cont_area );
-            }else
-            {
-              peak.setAmplitude( 0.25*data_area );
-            }
-
-          }//if( exemplar peak is clearly much larger than data )
         }//if( peak.gausPeak() )
 
         candidate_peaks.push_back( peak );

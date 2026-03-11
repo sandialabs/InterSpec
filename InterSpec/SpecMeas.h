@@ -365,9 +365,8 @@ public:
   /** Sets the XML for the GUI state of the auto Rel. Act. widget. */
   void setRelActAutoGuiState( std::unique_ptr<rapidxml::xml_document<char>> &&model );
 
-  /** Gets the RelActAuto state as a struct. Returns nullptr if no state is set.
-      Caller must provide MaterialDB for deserializing PhysicalModel shields. */
-  std::unique_ptr<RelActCalcAuto::RelActAutoGuiState> getRelActAutoGuiState( MaterialDB *materialDb ) const;
+  /** Gets the RelActAuto state as a struct. Returns nullptr if no state is set. */
+  std::unique_ptr<RelActCalcAuto::RelActAutoGuiState> getRelActAutoGuiState() const;
 
   /** Sets the RelActAuto state from a struct. Pass nullptr to clear the state. */
   void setRelActAutoGuiState( const RelActCalcAuto::RelActAutoGuiState *state );

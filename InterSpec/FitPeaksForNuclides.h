@@ -293,8 +293,9 @@ enum FitSrcPeaksOptions
    */
   DoNotUseExistingRois = 0x01,
   
-  /** Notmally ROIs of source peak will try to be limited in energy range to mitigate effects of other nearby peaks; with
-   this option, the nearby peaks may share the ROI will be left in as freely-floating peaks, and included in the results.
+  /** Normally ROIs of source peak will try to be limited in energy range to mitigate effects of other nearby peaks (of
+   sources you are not fitting); with this option, the nearby peaks may share the ROI will be left in as freely-floating peaks,
+   and included in the results.
    */
   ExistingPeaksAsFreePeak = 0x02,
   

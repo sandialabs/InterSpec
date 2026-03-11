@@ -1917,10 +1917,7 @@ RoiSignificanceResult compute_roi_chi2_significance(
   if( !continuum )
     return result;
 
-  const int num_poly_terms = static_cast<int>( continuum->parameters().size() );
-  const bool step_continuum = (continuum->type() == PeakContinuum::OffsetType::FlatStep
-                            || continuum->type() == PeakContinuum::OffsetType::LinearStep
-                            || continuum->type() == PeakContinuum::OffsetType::BiLinearStep);
+  const PeakContinuum::OffsetType cont_type = continuum->type();
 
   // Prepare data arrays for fit_amp_and_offset
   const std::vector<float> &channel_energies = *data->channel_energies();
@@ -1944,8 +1941,7 @@ RoiSignificanceResult compute_roi_chi2_significance(
     &channel_energies[start_channel],
     channel_counts.data(),
     result.num_channels,
-    num_poly_terms,
-    step_continuum,
+    cont_type,
     continuum->referenceEnergy(),
     empty_means,
     empty_sigmas,
@@ -1965,8 +1961,7 @@ RoiSignificanceResult compute_roi_chi2_significance(
     &channel_energies[start_channel],
     channel_counts.data(),
     result.num_channels,
-    num_poly_terms,
-    step_continuum,
+    cont_type,
     continuum->referenceEnergy(),
     empty_means,
     empty_sigmas,
@@ -2001,7 +1996,9 @@ RoiSignificanceResult compute_roi_chi2_significance(
       continue;
 
     // Continuum integral, with a minimum of 1.0 to avoid division issues
-    const double continuum_integral = std::max( 1.0, peak_cont->offset_integral( peak_lower, peak_upper, data ) );
+    double cont_integral_raw = 0.0;
+    cont_integral_raw = peak_cont->offset_integral( peak_lower, peak_upper, data, peaks_in_roi );
+    const double continuum_integral = std::max( 1.0, cont_integral_raw );
 
     // Peak amplitude in the ±1 FWHM range
     const double peak_amp_in_range = peak->amplitude() * fwhm_coverage_fraction;
@@ -3810,8 +3807,9 @@ std::vector<RelActCalcAuto::RoiRange> merge_rois(
   std::vector<std::vector<double>> merged_centers;  // Track center energies for each merged ROI
   std::vector<double> merged_fwhms;  // Track FWHM for validation
 
-  for( const InitialRoi &current : initial_rois )
+  for( size_t roi_idx = 0; roi_idx < initial_rois.size(); ++roi_idx )
   {
+    const InitialRoi &current = initial_rois[roi_idx];
     if( merged_rois.empty() )
     {
       merged_rois.push_back( current.roi );
@@ -3950,20 +3948,21 @@ std::vector<RelActCalcAuto::RoiRange> merge_rois(
 
       if( !last_valid )
       {
-        // Last ROI is no longer valid after split - remove it and add current as-is
+        // Last ROI is no longer valid after split - remove it and re-process current
+        // against the new back of merged_rois (which may also overlap).
+        // Using --roi_idx so the for-loop increment brings us back to the same index.
         merged_rois.pop_back();
         merged_centers.pop_back();
         merged_fwhms.pop_back();
 
-        merged_rois.push_back( current.roi );
-        merged_centers.push_back( {current.center_energy} );
-        merged_fwhms.push_back( current.fwhm );
-
         if( should_debug_print() )
         {
-          std::cerr << "Removed last ROI (invalid after split), kept current ROI at "
-               << current.center_energy << " keV" << std::endl;
+          std::cerr << "Removed last ROI (invalid after split), will re-process current ROI at "
+               << current.center_energy << " keV against prior ROI" << std::endl;
         }
+
+        --roi_idx;
+        continue;
       }
       else if( current_valid )
       {
@@ -4000,6 +3999,28 @@ std::vector<RelActCalcAuto::RoiRange> merge_rois(
 #if( PERFORM_DEVELOPER_CHECKS )
   for( size_t i = 1; i < merged_rois.size(); ++i )
   {
+    if( merged_rois[i].lower_energy < merged_rois[i-1].upper_energy )
+    {
+      std::cerr << "merge_rois OVERLAP at index " << i << " of " << merged_rois.size()
+           << ": ROI[" << (i-1) << "]=[" << merged_rois[i-1].lower_energy
+           << ", " << merged_rois[i-1].upper_energy
+           << "], ROI[" << i << "]=[" << merged_rois[i].lower_energy
+           << ", " << merged_rois[i].upper_energy << "]" << std::endl;
+      std::cerr << "  Input had " << initial_rois.size() << " ROIs:" << std::endl;
+      for( size_t j = 0; j < initial_rois.size(); ++j )
+      {
+        std::cerr << "    input[" << j << "]: roi=[" << initial_rois[j].roi.lower_energy
+             << ", " << initial_rois[j].roi.upper_energy
+             << "], center=" << initial_rois[j].center_energy
+             << ", fwhm=" << initial_rois[j].fwhm << std::endl;
+      }
+      std::cerr << "  Output has " << merged_rois.size() << " ROIs:" << std::endl;
+      for( size_t j = 0; j < merged_rois.size(); ++j )
+      {
+        std::cerr << "    output[" << j << "]: [" << merged_rois[j].lower_energy
+             << ", " << merged_rois[j].upper_energy << "]" << std::endl;
+      }
+    }
     assert( merged_rois[i].lower_energy >= merged_rois[i-1].upper_energy );
   }
 #endif
@@ -4064,6 +4085,22 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_without_peaks(
   };
 
   std::vector<GammaInfo> selected_gammas;
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  // Verify no duplicate sources
+  for( size_t i = 0; i < sources.size(); ++i )
+  {
+    for( size_t j = i + 1; j < sources.size(); ++j )
+    {
+      if( sources[i].source == sources[j].source )
+      {
+        std::cerr << "estimate_initial_rois_without_peaks: Duplicate source at indices "
+             << i << " and " << j << ": " << RelActCalcAuto::to_name( sources[i].source ) << std::endl;
+      }
+      assert( sources[i].source != sources[j].source );
+    }
+  }
+#endif
 
   for( const RelActCalcAuto::NucInputInfo &src : sources )
   {
@@ -5334,10 +5371,10 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         norm_fallback_warning
       );
 
-      vector<RelActCalcAuto::RoiRange> initial_src_norm_rois = input_rois;
-      initial_src_norm_rois.insert( end(initial_src_norm_rois), begin(norm_rois), end(norm_rois) );
+      // Note: input_rois already contains NORM ROIs (merged by the caller in fit_peaks_for_nuclides),
+      // so we only use input_rois here without re-adding norm_rois.
       vector<InitialRoi> initial_src_norm_info_rois;
-      for( const RelActCalcAuto::RoiRange &roi : initial_src_norm_rois )
+      for( const RelActCalcAuto::RoiRange &roi : input_rois )
       {
         InitialRoi roi_info;
         roi_info.roi = roi;
@@ -5362,7 +5399,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
           roi_info.fwhm = max_sigma_width*PhysicalUnits::fwhm_nsigma;
 
         initial_src_norm_info_rois.push_back( roi_info );
-      }//for( const RelActCalcAuto::RoiRange &roi : initial_src_norm_rois )
+      }//for( const RelActCalcAuto::RoiRange &roi : input_rois )
 
       options.rois = merge_rois( initial_src_norm_info_rois, config );
 
@@ -6416,6 +6453,7 @@ PeakFitResult fit_peaks_for_nuclides(
       // Combine source and NORM ROIs, then merge any that overlap
       vector<RelActCalcAuto::RoiRange> all_rois = source_rois;
       all_rois.insert( end(all_rois), begin(norm_rois), end(norm_rois) );
+
 
       const bool have_fwhm_range = (lower_fwhm_energy > 0.0) && (upper_fwhm_energy > 0.0) && (lower_fwhm_energy < upper_fwhm_energy);
 

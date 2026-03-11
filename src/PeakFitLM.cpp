@@ -391,8 +391,12 @@ struct PeakFitDiffCostFunction
   // when IndependentSkewValues is set).
   size_t roi_parameter_count( const RoiInfo &roi ) const
   {
+    const bool cdf_step_lls = roi.use_lls_for_cont
+                              && PeakContinuum::is_peak_cdf_step_continuum( roi.offset_type )
+                              && (roi.offset_type != PeakContinuum::BiLinearStepCDF);
     const size_t cont_pars = roi.use_lls_for_cont
-                             ? size_t(0) : PeakContinuum::num_parameters( roi.offset_type );
+                             ? (cdf_step_lls ? size_t(1) : size_t(0))
+                             : PeakContinuum::num_parameters( roi.offset_type );
     size_t n = cont_pars + roi_sigma_parameter_count( roi ) + roi.peaks.size();
     if( m_options.testFlag( PeakFitLM::PeakFitLMOptions::IndependentSkewValues ) )
       n += PeakDef::num_skew_parameters( m_skew_type );
@@ -443,8 +447,12 @@ struct PeakFitDiffCostFunction
     assert( roi_index < m_rois.size() );
     const RoiInfo &roi = m_rois[roi_index];
     const double num_channels = static_cast<double>( 1 + roi.upper_channel - roi.lower_channel );
+    const bool cdf_step_lls = roi.use_lls_for_cont
+                              && PeakContinuum::is_peak_cdf_step_continuum( roi.offset_type )
+                              && (roi.offset_type != PeakContinuum::BiLinearStepCDF);
     const size_t num_fit_cont = roi.use_lls_for_cont
-                                ? size_t(0) : PeakContinuum::num_parameters( roi.offset_type );
+                                ? (cdf_step_lls ? size_t(1) : size_t(0))
+                                : PeakContinuum::num_parameters( roi.offset_type );
 
     size_t num_fixed = 0;
     for( const auto &p : roi.peaks )
@@ -687,8 +695,12 @@ struct PeakFitDiffCostFunction
       const RoiInfo &roi = m_rois[roi_idx];
       const size_t num_roi_peaks = roi.peaks.size();
       const size_t num_sigmas_fit = roi_sigma_parameter_count( roi );
+      const bool cdf_step_lls = roi.use_lls_for_cont
+                                && PeakContinuum::is_peak_cdf_step_continuum( roi.offset_type )
+                                && (roi.offset_type != PeakContinuum::BiLinearStepCDF);
       const size_t num_fit_cont = roi.use_lls_for_cont
-                                  ? size_t(0) : PeakContinuum::num_parameters( roi.offset_type );
+                                  ? (cdf_step_lls ? size_t(1) : size_t(0))
+                                  : PeakContinuum::num_parameters( roi.offset_type );
       const size_t nchannel = roi.upper_channel - roi.lower_channel + 1;
       const double range = roi.upper_energy - roi.lower_energy;
 
@@ -837,9 +849,6 @@ struct PeakFitDiffCostFunction
       const float * const energies       = energies_ptr->data() + roi.lower_channel;
       const float * const channel_counts = counts_vec.data()    + roi.lower_channel;
 
-      const int  num_polynomial_terms = static_cast<int>( PeakContinuum::num_parameters( roi.offset_type ) );
-      const bool is_step_continuum    = PeakContinuum::is_step_continuum( roi.offset_type );
-
       assert( !peaks.empty() || !fixed_amp_peaks.empty() );
       auto continuum = create_continuum( (!peaks.empty())
                                          ? peaks.front().getContinuum()
@@ -885,11 +894,14 @@ struct PeakFitDiffCostFunction
           }
 
           vector<T> amplitudes, cont_coeffs, amp_uncerts, cont_uncerts;
-          PeakFit::fit_amp_and_offset_imp( energies, &data_copy[0], &data_variances[0], nchannel,
-                                           num_polynomial_terms, is_step_continuum, T(roi.ref_energy),
-                                           means, sigmas, fixed_amp_peaks, m_skew_type, skew_pars.data(),
-                                           amplitudes, cont_coeffs, amp_uncerts, cont_uncerts,
-                                           &peak_counts[0] );
+          {
+            const T sc = cdf_step_lls ? roi_params[0] : T(0.0);
+            PeakFit::fit_amp_and_offset_imp( energies, &data_copy[0], &data_variances[0], nchannel,
+                                             roi.offset_type, sc, T(roi.ref_energy),
+                                             means, sigmas, fixed_amp_peaks, m_skew_type, skew_pars.data(),
+                                             amplitudes, cont_coeffs, amp_uncerts, cont_uncerts,
+                                             &peak_counts[0] );
+          }
           assert( peaks.size() == amplitudes.size() );
           for( size_t pi = 0; pi < peaks.size(); ++pi )
           {
@@ -909,6 +921,9 @@ struct PeakFitDiffCostFunction
       }
       else if( !roi.use_lls_for_cont )
       {
+        // CDF step types should always use the LLS path (roi.use_lls_for_cont should be true)
+        assert( !PeakContinuum::is_peak_cdf_step_continuum( roi.offset_type ) );
+
         // Non-LLS continuum: continuum parameters are in roi_params[0..num_fit_cont-1]
         continuum->setParameters( T(roi.ref_energy), roi_params, nullptr );
 
@@ -930,11 +945,14 @@ struct PeakFitDiffCostFunction
         }
 
         vector<T> amplitudes, cont_coeffs, amp_uncerts, cont_uncerts;
-        PeakFit::fit_amp_and_offset_imp( energies, channel_counts, nullptr, nchannel,
-                                         num_polynomial_terms, is_step_continuum, T(roi.ref_energy),
-                                         means, sigmas, fixed_amp_peaks, m_skew_type, skew_pars.data(),
-                                         amplitudes, cont_coeffs, amp_uncerts, cont_uncerts,
-                                         &peak_counts[0] );
+        {
+          const T sc = cdf_step_lls ? roi_params[0] : T(0.0);
+          PeakFit::fit_amp_and_offset_imp( energies, channel_counts, nullptr, nchannel,
+                                           roi.offset_type, sc, T(roi.ref_energy),
+                                           means, sigmas, fixed_amp_peaks, m_skew_type, skew_pars.data(),
+                                           amplitudes, cont_coeffs, amp_uncerts, cont_uncerts,
+                                           &peak_counts[0] );
+        }
         assert( peaks.size() == amplitudes.size() );
         for( size_t pi = 0; pi < peaks.size(); ++pi )
         {
@@ -946,6 +964,14 @@ struct PeakFitDiffCostFunction
         if( (roi.offset_type != PeakContinuum::OffsetType::NoOffset)
             && (roi.offset_type != PeakContinuum::OffsetType::External) )
         {
+          if( cdf_step_lls )
+          {
+            // For CDF step types, fit_amp_and_offset_imp returns only the polynomial coefficients,
+            //  but the continuum expects poly coeffs + step_coeff as the last parameter.
+            cont_coeffs.push_back( roi_params[0] );
+            cont_uncerts.push_back( uncertainties ? T(uncertainties[param_offset]) : T(0.0) );
+          }
+
           continuum->setParameters( T(roi.ref_energy), cont_coeffs.data(), cont_uncerts.data() );
         }
       }//continuum handling
@@ -1503,13 +1529,27 @@ struct PeakFitDiffCostFunction
                              vector<std::optional<double>> &lower_bounds,
                              vector<std::optional<double>> &upper_bounds ) const
   {
+    const bool cdf_step_lls = roi.use_lls_for_cont
+                              && PeakContinuum::is_peak_cdf_step_continuum( roi.offset_type )
+                              && (roi.offset_type != PeakContinuum::BiLinearStepCDF);
     const size_t num_fit_cont = roi.use_lls_for_cont
-                                ? size_t(0) : PeakContinuum::num_parameters( roi.offset_type );
+                                ? (cdf_step_lls ? size_t(1) : size_t(0))
+                                : PeakContinuum::num_parameters( roi.offset_type );
     const size_t num_sigmas_fit = roi_sigma_parameter_count( roi );
     const double range = roi.upper_energy - roi.lower_energy;
 
+    // CDF step coefficient (step_coeff is the first parameter for this ROI)
+    if( cdf_step_lls )
+    {
+      const shared_ptr<const PeakContinuum> initial_continuum = roi.peaks.front()->continuum();
+      const size_t step_par_index = PeakContinuum::num_parameters( roi.offset_type ) - 1;
+      pars[param_offset] = (step_par_index < initial_continuum->parameters().size())
+                           ? initial_continuum->parameters()[step_par_index] : 0.0;
+      lower_bounds[param_offset] = -1.0e4;
+      upper_bounds[param_offset] = 1.0e4;
+    }
     // Continuum parameters (if not LLS)
-    if( !roi.use_lls_for_cont )
+    else if( !roi.use_lls_for_cont )
     {
       const shared_ptr<const PeakContinuum> initial_continuum = roi.peaks.front()->continuum();
       assert( initial_continuum );
@@ -3134,7 +3174,6 @@ FitPeaksResults fit_peaks_in_spectrum_LM( const vector<shared_ptr<const PeakDef>
     const PeakFitUtils::CoarseResolutionType res_type = resolution_type.has_value()
       ? *resolution_type
       : PeakFitUtils::coarse_resolution_from_peaks( gauss_peaks );
-    const bool isHPGe = (res_type == PeakFitUtils::CoarseResolutionType::High);
 
     // Deep copy all Gaussian peaks so we dont modify the inputs
     local_unique_copy_continuum( gauss_peaks );

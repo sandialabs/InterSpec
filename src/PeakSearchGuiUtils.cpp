@@ -3781,10 +3781,12 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
     bool valid_offset = false;
     switch( type )
     {
-      case PeakContinuum::NoOffset:   case PeakContinuum::Constant:
-      case PeakContinuum::Linear:     case PeakContinuum::Quadratic:
-      case PeakContinuum::Cubic:      case PeakContinuum::FlatStep:
-      case PeakContinuum::LinearStep: case PeakContinuum::BiLinearStep:
+      case PeakContinuum::NoOffset:      case PeakContinuum::Constant:
+      case PeakContinuum::Linear:        case PeakContinuum::Quadratic:
+      case PeakContinuum::Cubic:         case PeakContinuum::FlatStep:
+      case PeakContinuum::LinearStep:    case PeakContinuum::BiLinearStep:
+      case PeakContinuum::FlatStepCDF:   case PeakContinuum::LinearStepCDF:
+      case PeakContinuum::BiLinearStepCDF:
       case PeakContinuum::External:
         valid_offset = true;
         break;
@@ -3842,13 +3844,15 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
     
     switch( type )
     {
-      case PeakContinuum::NoOffset:   case PeakContinuum::Constant:
-      case PeakContinuum::Linear:     case PeakContinuum::Quadratic:
-      case PeakContinuum::Cubic:      case PeakContinuum::FlatStep:
-      case PeakContinuum::LinearStep: case PeakContinuum::BiLinearStep:
+      case PeakContinuum::NoOffset:      case PeakContinuum::Constant:
+      case PeakContinuum::Linear:        case PeakContinuum::Quadratic:
+      case PeakContinuum::Cubic:         case PeakContinuum::FlatStep:
+      case PeakContinuum::LinearStep:    case PeakContinuum::BiLinearStep:
+      case PeakContinuum::FlatStepCDF:   case PeakContinuum::LinearStepCDF:
+      case PeakContinuum::BiLinearStepCDF:
         newContinuum->setType( type );
       break;
-      
+
       case PeakContinuum::External:
       {
         newContinuum->setType( type );
@@ -4257,12 +4261,16 @@ void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const SpecUtils::
     
     const PeakContinuum::OffsetType type = peak.continuum()->type();
     peak.continuum()->calc_linear_continuum_eqn( data, centroid, peak.lowerX(), peak.upperX(), 2, 2 );
-    peak.continuum()->setType( type );
     
     const double lowerx = std::max( peak.lowerX(), peak.mean() - 3*peak.sigma() );
     const double upperx = std::min( peak.upperX(), peak.mean() + 3*peak.sigma() );
     const double dataarea = data->gamma_integral( lowerx, upperx );
-    const double contarea = peak.continuum()->offset_integral( lowerx, upperx, data );
+
+    assert( peak.continuum()->type() == PeakContinuum::Linear );
+    const double contarea = peak.continuum()->offset_integral( lowerx, upperx, data, nullptr, 0 );
+
+    peak.continuum()->setType( type );
+
     const double peakarea = (dataarea > contarea) ? (dataarea - contarea) : 10.0;
     peak.setPeakArea( peakarea );
     

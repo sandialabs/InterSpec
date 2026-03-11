@@ -280,6 +280,7 @@ set(sources
     src/PeakFitSpecImp.cpp
     src/PeakDef.cpp
     src/PeakDists.cpp
+    src/BersteinPolynomial.cpp
     src/XRayWidthServer.cpp
     src/SpectraFileModel.cpp
     src/AuxWindow.cpp

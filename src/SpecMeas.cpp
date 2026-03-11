@@ -1096,7 +1096,7 @@ void SpecMeas::setRelActAutoGuiState( std::unique_ptr<rapidxml::xml_document<cha
 }//void setRelActAutoGuiState( std::unique_ptr<rapidxml::xml_document<char>> &&model )
 
 
-std::unique_ptr<RelActCalcAuto::RelActAutoGuiState> SpecMeas::getRelActAutoGuiState( MaterialDB *materialDb ) const
+std::unique_ptr<RelActCalcAuto::RelActAutoGuiState> SpecMeas::getRelActAutoGuiState() const
 {
   std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
 
@@ -1114,7 +1114,7 @@ std::unique_ptr<RelActCalcAuto::RelActAutoGuiState> SpecMeas::getRelActAutoGuiSt
 
   try
   {
-    state->deSerialize( base_node, materialDb );
+    state->deSerialize( base_node );
   }catch( std::exception &e )
   {
     // Log error but don't throw - return nullptr to indicate failure
@@ -1123,7 +1123,7 @@ std::unique_ptr<RelActCalcAuto::RelActAutoGuiState> SpecMeas::getRelActAutoGuiSt
   }
 
   return state;
-}//std::unique_ptr<RelActCalcAuto::RelActAutoGuiState> getRelActAutoGuiState( MaterialDB *materialDb ) const
+}//std::unique_ptr<RelActCalcAuto::RelActAutoGuiState> getRelActAutoGuiState() const
 
 
 void SpecMeas::setRelActAutoGuiState( const RelActCalcAuto::RelActAutoGuiState *state )
@@ -1516,6 +1516,9 @@ void SpecMeas::load_cnf_using_reader( CAMInputOutput::CAMIO &reader )
     const vector<CAMInputOutput::Peak> &peaks = reader.GetPeaks();
     for( const CAMInputOutput::Peak &p : peaks )
     {
+      if( p.Energy < 1.0 )
+        continue;
+      
       try
       {
         auto peak = make_shared<PeakDef>( p.Energy, p.FullWidthAtHalfMaximum/2.35482, p.Area );
