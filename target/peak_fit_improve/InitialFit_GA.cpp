@@ -74,7 +74,7 @@ namespace InitialFit_GA
 vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_settings,
                               const FindCandidateSettings &candidate_settings,
                               const shared_ptr<const SpecUtils::Measurement> &data,
-                              const bool isHPGe,
+                              const PeakFitUtils::CoarseResolutionType det_type,
                               const bool multithread,
                               size_t &num_add_candidates_fit_for,  //Only for eval purposes
                               size_t &num_add_candidates_accepted //Only for eval purposes
@@ -138,7 +138,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
   //                fit_settings.initial_stat_threshold, fit_settings.initial_hypothesis_threshold,
   //                                     candidate_peaks, data, dummy_fixedpeaks, amplitudeOnly, isHPGe );
 
-  auto fit_peaks_per_roi = [&fit_settings, &data, isHPGe, multithread]( const vector<PeakDef> &input_peaks ) -> vector<PeakDef> {
+  auto fit_peaks_per_roi = [&fit_settings, &data, det_type, multithread]( const vector<PeakDef> &input_peaks ) -> vector<PeakDef> {
 
     const bool amplitudeOnly = false;
 
@@ -173,7 +173,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
                                      fit_settings.initial_stat_threshold,
                                      fit_settings.initial_hypothesis_threshold,
                                      amplitudeOnly,
-                                     isHPGe ) );
+                                     det_type ) );
 #else
         vector<PeakDef> &results = fit_rois[fit_rois_index];
 
@@ -184,7 +184,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
                                      data,
                                      boost::ref( results ),
                                      amplitudeOnly,
-                                     isHPGe ) );
+                                     (det_type == PeakFitUtils::CoarseResolutionType::High) ) );
 #endif
         fit_rois_index += 1;
       }//for( auto &roi_peaks : roi_to_peaks_map )
@@ -205,11 +205,11 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
 
         PeakFitLM::fit_peaks_LM( results, input_peaks_tmp, data,
                                 fit_settings.initial_stat_threshold, fit_settings.initial_hypothesis_threshold,
-                                amplitudeOnly, isHPGe );
+                                amplitudeOnly, det_type );
 #else
         vector<PeakDef> &results = fit_rois[fit_rois_index];
         fitPeaks( peaks, fit_settings.initial_stat_threshold, fit_settings.initial_hypothesis_threshold,
-                 data, results, amplitudeOnly, isHPGe );
+                 data, results, amplitudeOnly, (det_type == PeakFitUtils::CoarseResolutionType::High) );
 #endif
         fit_rois_index += 1;
       }//for( auto &roi_peaks : roi_to_peaks_map )
@@ -566,7 +566,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
 
       if( (fwhm < 0.0001) || IsNan(fwhm) )
       {
-        if( isHPGe )
+        if( det_type == PeakFitUtils::CoarseResolutionType::High )
           fwhm = PeakFitUtils::hpge_fwhm_fcn( energy );
         else
           fwhm = PeakFitUtils::nai_fwhm_fcn( energy );
@@ -1480,12 +1480,11 @@ PeakFindAndFitWeights eval_initial_peak_find_and_fit( const InitialPeakFindSetti
   //  line, after the initial peak candidate find and fit.
   size_t num_add_candidates_fit_for = 0, num_add_candidates_accepted = 0;
 
-  const bool isHPGe = (ClassifyDetType_GA::true_det_type_for_name( src_info.detector_name )
-                       == PeakFitUtils::CoarseResolutionType::High);
+  const PeakFitUtils::CoarseResolutionType det_type = src_info.det_type;
 
   // `initial_peaks` not const for initial development
   vector<PeakDef> initial_peaks
-                        = InitialFit_GA::initial_peak_find_and_fit( fit_settings, candidate_settings, data, isHPGe,
+                        = InitialFit_GA::initial_peak_find_and_fit( fit_settings, candidate_settings, data, det_type,
                                           multithread, num_add_candidates_fit_for, num_add_candidates_accepted);
 
   const vector<ExpectedPhotopeakInfo> &expected_photopeaks = src_info.expected_photopeaks;

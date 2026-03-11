@@ -3528,10 +3528,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             
             if( !is_floater_peak && !p.m_source_gammas.empty() )
             {
-              cout << "Peak at {" << p.m_energy << ", " << p.m_fwhm << ", " << p.m_counts << "} keV has sources: ";
-              for( const auto s : p.m_source_gammas )
-                cout << "{" << s.m_isotope << ", " << std::scientific << s.m_yield << "}, ";
-              cout << endl;
+              //cout << "Peak at {" << p.m_energy << ", " << p.m_fwhm << ", " << p.m_counts << "} keV has sources: ";
+              //for( const auto s : p.m_source_gammas )
+              //  cout << "{" << s.m_isotope << ", " << std::scientific << s.m_yield << "}, ";
+              //cout << endl;
               peaks_with_sources.push_back( p );
             }
           }//for( const auto &p : peaks_with_nucs )
@@ -3725,8 +3725,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                           " estimate of relative efficiencies and activities." );
           
           const string re_id_str =  (num_rel_eff_curves > 1) ? ("RE_" + std::to_string(re_eff_index)) : string("");
-          cout << "Initial manual '" << re_id_str << "' estimate:" << endl;
-          manual_solution.print_summary( cout );
+          //cout << "Initial manual '" << re_id_str << "' estimate:" << endl;
+          //manual_solution.print_summary( cout );
           
           //ofstream debug_manual_html( "/Users/wcjohns/rad_ana/InterSpec_RelAct/RelActTest/initial_manual" + re_id_str + "_estimate.html" );
           //manual_solution.print_html_report( debug_manual_html, options.spectrum_title, spectrum, debug_manual_display_peaks );
@@ -3940,7 +3940,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               }
             }//if( manual_input.phys_model_use_hoerl ) / else
           }//if( no Physical Model ) / else
+
+#ifndef NDEBUG
           cout << "Starting with initial rel. eff. eqn = " << rel_eff_eqn_str << endl;
+#endif
           
           const double live_time = (spectrum && (spectrum->live_time() > 0)) ? solution.m_spectrum->live_time() : 1.0f;
           
@@ -4001,11 +4004,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               parameters[act_index] = -1.0;
               cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
               
+#ifndef NDEBUG
               cout << "Fixing act_index=" << act_index << ", "
               << RelActCalcAuto::to_name(act_ratio_constraint->constrained_source)
               << ":" << RelActCalcAuto::to_name(act_ratio_constraint->controlling_source)
               << " = " << act_ratio_constraint->constrained_to_controlled_activity_ratio
               << endl;
+#endif
               
               assert( std::find( begin(constant_parameters), end(constant_parameters), static_cast<int>(act_index) ) == end(constant_parameters) );
               constant_parameters.push_back( static_cast<int>(act_index) );
@@ -4049,7 +4054,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               if( fabs(mass_frac_constraint->lower_mass_fraction - mass_frac_constraint->upper_mass_fraction)
                   <= 1.0E-6*std::max(mass_frac_constraint->lower_mass_fraction, mass_frac_constraint->upper_mass_fraction) )
               {
+#ifndef NDEBUG
                 cout << "Fixing act_index=" << act_index << ", " << mass_frac_constraint->nuclide << ", for mass fraction constraint" << endl;
+#endif
                 assert( std::find( constant_parameters.begin(), constant_parameters.end(), static_cast<int>(act_index) ) == constant_parameters.end() );
                 constant_parameters.push_back( static_cast<int>(act_index) );
               }else
@@ -4073,14 +4080,18 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = nuc.min_rel_act.value();
               assert( cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple > 0.0 );
               constant_parameters.push_back( static_cast<int>(act_index) );
+#ifndef NDEBUG
               cout << "Fixing " << nuc.name() << " rel act to " << nuc.min_rel_act.value() << " for rel eff curve " << re_eff_index << endl;
+#endif
               continue;
             }
 
             if( nuc.starting_rel_act.has_value() )
             {
+#ifndef NDEBUG
               cout << "Will use starting rel act of " << nuc.starting_rel_act.value() << " for " << nuc.name() 
                    << " on rel eff curve " << re_eff_index << ", instead of initial estimate of " << rel_act << endl;
+#endif
               rel_act = nuc.starting_rel_act.value();
             }
             if( (rel_act < 1.0E-16) || IsInf(rel_act) || IsNan(rel_act) )
@@ -4090,8 +4101,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             if( nuc.max_rel_act.has_value() )
               upper_bounds[act_index] = (nuc.max_rel_act.value() / rel_act) + RelActAutoCostFcn::sm_activity_par_offset;
 
+#ifndef NDEBUG
             cout << "Updating initial activity estimate for " << nuc.name() << " from "
                    << parameters[act_index] << " to " << rel_act << endl;          
+#endif
             
             cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = rel_act;
             assert( rel_act > 0.0 );
@@ -4103,8 +4116,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           succesfully_estimated_re_and_ra = true;
         }catch( std::exception &e )
         {
+#ifndef NDEBUG
           cerr << "Failed to do initial estimate on RelEff curve: " << e.what() << endl;
-          
+#endif
           solution.m_warnings.push_back( "Initial estimate of relative efficiency curve failed ('"
                                         + string(e.what())
                                         + "'), using a flat line as a starting point" );
@@ -4390,7 +4404,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
               parameters[act_index] = 1.0 + RelActAutoCostFcn::sm_activity_par_offset;
               cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
+#ifndef NDEBUG
               cout << "Setting par " << act_index << " to " << (1.0 + RelActAutoCostFcn::sm_activity_par_offset) << " for " << nuc.name() << endl;
+#endif
 
               if( constraint.lower_mass_fraction == constraint.upper_mass_fraction )
               {
@@ -4983,10 +4999,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       {
         num_fit_par += 1;
         par_area *= (fabs(parameters[i]) > 1.0) ? std::min(10.0,fabs(parameters[i])) : 1.0;
-        cout << "Starting value of " << cost_functor->parameter_name(i) << ": " << parameters[i] << endl;
+        //cout << "Starting value of " << cost_functor->parameter_name(i) << ": " << parameters[i] << endl;
       }
     }
-    cout << "Starting with parameter volume of " << par_area << " from " << num_fit_par << " paramaters." << endl;
+    //cout << "Starting with parameter volume of " << par_area << " from " << num_fit_par << " paramaters." << endl;
     // The below is pretty arbitrary - and only kinda sort optimized on one problem
     ceres_options.initial_trust_region_radius = 100.0*std::min( std::max( par_area, 10.0 ), 10.0*num_fit_par );
 
@@ -5000,8 +5016,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     ceres_options.linear_solver_type = ceres::DENSE_QR; //ceres::DENSE_SCHUR, ceres::DENSE_NORMAL_CHOLESKY, ceres::ITERATIVE_SCHUR
     
-    ceres_options.minimizer_progress_to_stdout = true; //true;
+#ifdef NDEBUG
+    ceres_options.minimizer_progress_to_stdout = false;
+    ceres_options.logging_type = ceres::SILENT;
+#else
+    ceres_options.minimizer_progress_to_stdout = true;
     ceres_options.logging_type = ceres::PER_MINIMIZER_ITERATION;
+#endif
     ceres_options.max_num_iterations = 50000;
 #ifndef NDEBUG
     ceres_options.max_solver_time_in_seconds = 600.0; //10 minutes!
@@ -5180,10 +5201,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       {
         case ceres::CONVERGENCE:
         case ceres::USER_SUCCESS:
+#ifndef NDEBUG
           cout << "Pre-fit correction was successful with FinalCost="
           << summary.final_cost << " (InitialCost=" << summary.initial_cost << ")."
           << "  Previous best_cost_val=" << ((best_cost_val == std::numeric_limits<double>::max()) ? string("N/A") : SpecUtils::printCompact(best_cost_val, 6))
           << endl;
+#endif
           solution_is_better = (summary.final_cost < best_cost_val);
           break;
 
@@ -5256,8 +5279,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     cost_functor->m_solution_finished = true;
     
+#ifndef NDEBUG
     std::cout << summary.FullReport() << "\n";
     cout << "Took " << cost_functor->m_ncalls.load() << " calls to solve." << endl;
+#endif
     
     
     // 20250324 HACK to test fitting peak skew
@@ -5337,6 +5362,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     solution.m_num_function_eval_solution = static_cast<int>( cost_functor->m_ncalls );
     solution.m_num_microseconds_in_eval = static_cast<int>( cost_functor->m_nanoseconds_spent_in_eval / 1000 );  //convert from nanoseconds to micro
     
+#ifndef NDEBUG
     {
       const auto now_time = std::chrono::high_resolution_clock::now();
       const auto dt = 1.0*std::chrono::duration_cast<std::chrono::nanoseconds>(now_time - start_time).count();
@@ -5346,6 +5372,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       << " us in eval, and a total time of " << 0.001*dt << " us in fcnt - this is "
       << frac << " fraction of the time" << endl;
     }
+#endif
     
     ceres::Covariance::Options cov_options;
     // DENSE_SVD: accurate but slow (only to be used for small to moderate sized problems). Handles full-rank as well as rank deficient Jacobians.

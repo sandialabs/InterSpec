@@ -1900,7 +1900,9 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
       eval( pars, residuals );
     }catch( std::exception &e )
     {
+#ifndef NDEBUG
       cerr << "ManualGenericRelActFunctor::operator() caught: " << e.what() << endl;
+#endif
       return false;
     }
     
@@ -5112,8 +5114,13 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
   ceres_options.minimizer_type = ceres::TRUST_REGION; //ceres::LINE_SEARCH
   ceres_options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT; //ceres::DOGLEG
   ceres_options.linear_solver_type = ceres::DENSE_QR;
-  ceres_options.logging_type = ceres::PER_MINIMIZER_ITERATION; //ceres::SILENT;
-  ceres_options.minimizer_progress_to_stdout = true; //false; //true;
+#ifdef NDEBUG
+  ceres_options.logging_type = ceres::SILENT;
+  ceres_options.minimizer_progress_to_stdout = false;
+#else
+  ceres_options.logging_type = ceres::PER_MINIMIZER_ITERATION;
+  ceres_options.minimizer_progress_to_stdout = true;
+#endif
   ceres_options.max_num_iterations = 1000;
   ceres_options.max_solver_time_in_seconds = 60.0;
   //ceres_options.min_trust_region_radius = 1e-10;
@@ -5170,7 +5177,7 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
     return solution;
   }//try / catch to fit the solution
   
-  
+#ifndef NDEBUG
   std::cout << summary.BriefReport() << "\n";
   //std::cout << summary.FullReport() << "\n";
   const auto nmicro = std::chrono::duration<double, std::micro>(std::chrono::high_resolution_clock::now() - start_time).count();
@@ -5180,7 +5187,7 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
     cout << (i ? ", " : "") << parameters[i];
   cout << "}\n";
   cout << "Chi2=" << summary.final_cost << " (from initial value " << summary.initial_cost << ")\n\n";
-  
+#endif
 
   solution.m_fit_parameters = parameters;
 

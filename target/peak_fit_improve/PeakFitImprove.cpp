@@ -58,6 +58,7 @@
 
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/AppUtils.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/DrfSelect.h"
 #include "InterSpec/InterSpec.h"
@@ -77,6 +78,7 @@
 #include "PeakFitImproveData.h"
 #include "ClassifyDetType_GA.h"
 #include "FitPeaksForNuclideDev.h"
+#include "NuclideConfig_GA.h"
 
 using namespace std;
 
@@ -249,7 +251,7 @@ PeakTruthInfo::PeakTruthInfo( const std::string &line )
 
 void create_n42_peak_fits_for_dir( const string &dir )
 {
-  const bool isHPGe = true;
+  const PeakFitUtils::CoarseResolutionType det_type = PeakFitUtils::CoarseResolutionType::High;
 
   //Generation [48], Best=-19.7537, Average=-19.7535, Best genes:
   //Using all live time and HPGe detectors, and cities - 20250912
@@ -313,7 +315,7 @@ void create_n42_peak_fits_for_dir( const string &dir )
 
 
 
-  auto do_fit_peaks = [&hpge_candidate_settings, &hpge_initial_fit_settings, &hpge_final_fit_settings, isHPGe]
+  auto do_fit_peaks = [&hpge_candidate_settings, &hpge_initial_fit_settings, &hpge_final_fit_settings, det_type]
                         ( const shared_ptr<const SpecUtils::Measurement> &spectrum )
                       -> vector<PeakDef>
   {
@@ -321,7 +323,7 @@ void create_n42_peak_fits_for_dir( const string &dir )
     size_t num_add_candidates_fit_for = 0, num_add_candidates_accepted = 0; //Only for eval purposes
     const vector<PeakDef> initial_peaks = InitialFit_GA::initial_peak_find_and_fit( hpge_initial_fit_settings,
                                                                                    hpge_candidate_settings,
-                                                                                   spectrum, isHPGe,
+                                                                                   spectrum, det_type,
                                                                                    multithread,
                                                                                    num_add_candidates_fit_for,
                                                                                    num_add_candidates_accepted);
@@ -332,7 +334,7 @@ void create_n42_peak_fits_for_dir( const string &dir )
       cout << "    {" << p.mean() << ", " << p.fwhm() << ", " << p.lowerX() << "-" << p.upperX() << "}" << endl;
     cout << endl;
 
-    const vector<PeakDef> fit_peaks = FinalFit_GA::final_peak_fit( initial_peaks, hpge_final_fit_settings, isHPGe,
+    const vector<PeakDef> fit_peaks = FinalFit_GA::final_peak_fit( initial_peaks, hpge_final_fit_settings, det_type,
                                                                   spectrum, multithread );
 
     return fit_peaks;
@@ -593,13 +595,12 @@ void create_n42_peak_fits( const vector<DetectorInjectSet> &inject_sets, const v
                         ( const shared_ptr<const SpecUtils::Measurement> &spectrum, const DataSrcInfo &info )
                       -> vector<PeakDef>
   {
-    const bool isHPGe = (ClassifyDetType_GA::true_det_type_for_name( info.detector_name )
-                         == PeakFitUtils::CoarseResolutionType::High);
+    const PeakFitUtils::CoarseResolutionType det_type = info.det_type;
     const bool multithread = true;
     size_t num_add_candidates_fit_for = 0, num_add_candidates_accepted = 0; //Only for eval purposes
     const vector<PeakDef> initial_peaks = InitialFit_GA::initial_peak_find_and_fit( hpge_initial_fit_settings,
                                                                                    hpge_candidate_settings,
-                                                                                   spectrum, isHPGe,
+                                                                                   spectrum, det_type,
                                                                                    multithread,
                                                                                    num_add_candidates_fit_for,
                                                                                    num_add_candidates_accepted);
@@ -610,7 +611,7 @@ void create_n42_peak_fits( const vector<DetectorInjectSet> &inject_sets, const v
       cout << "    {" << p.mean() << ", " << p.fwhm() << ", " << p.lowerX() << "-" << p.upperX() << "}" << endl;
     cout << endl;
 
-    const vector<PeakDef> fit_peaks = FinalFit_GA::final_peak_fit( initial_peaks, hpge_final_fit_settings, isHPGe,
+    const vector<PeakDef> fit_peaks = FinalFit_GA::final_peak_fit( initial_peaks, hpge_final_fit_settings, det_type,
                                                                   spectrum, multithread );
 
 
@@ -1058,7 +1059,8 @@ int main( int argc, char **argv )
     AccuracyFromCsvsStudy,
     PeaksForNuclide,
     DetTypeClassify,
-    ValidateDetType
+    ValidateDetType,
+    NuclideConfigGA
   };//enum class OptimizationAction : int
   
   OptimizationAction action;
@@ -1078,9 +1080,11 @@ int main( int argc, char **argv )
     action = OptimizationAction::DetTypeClassify;
   else if( action_str == "ValidateDetType" )
     action = OptimizationAction::ValidateDetType;
+  else if( action_str == "NuclideConfigGA" )
+    action = OptimizationAction::NuclideConfigGA;
   else
   {
-    cerr << "Error: invalid action '" << action_str << "'. Valid actions are: Candidate, InitialFit, FinalFit, CodeDev, AccuracyFromCsvsStudy, PeaksForNuclide, DetTypeClassify, ValidateDetType" << endl;
+    cerr << "Error: invalid action '" << action_str << "'. Valid actions are: Candidate, InitialFit, FinalFit, CodeDev, AccuracyFromCsvsStudy, PeaksForNuclide, DetTypeClassify, ValidateDetType, NuclideConfigGA" << endl;
     return -4;
   }
 
@@ -1205,7 +1209,7 @@ int main( int argc, char **argv )
   // When creating compact data, include all cities and live times
   if( vm.count( "create-compact-data" ) )
   {
-    detectors.clear();
+    wanted_detectors.clear();
     live_times.clear();
     wanted_cities.clear();
   }
@@ -1608,6 +1612,80 @@ int main( int argc, char **argv )
       break;
     }//case OptimizationAction::PeaksForNuclide:
 
+    case OptimizationAction::NuclideConfigGA:
+    {
+      // Precompute the expensive search_for_peaks for all spectra
+      const std::vector<NuclideConfig_GA::PrecomputedNuclideData> precomputed
+        = NuclideConfig_GA::precompute_nuclide_data( input_srcs, NuclideConfig_GA::sm_background_mode );
+
+      if( precomputed.empty() )
+      {
+        cerr << "No valid spectra to optimize - check your data and filters." << endl;
+        break;
+      }
+
+      const double num_sigma_contribution = 1.5;
+
+      // The GA evaluation function: given a config, score it across all precomputed spectra
+      const auto ga_eval = [&precomputed, num_sigma_contribution]( const FitPeaksForNuclides::PeakFitForNuclideConfig &config ) -> double
+      {
+        double total_score = 0.0;
+
+        for( const NuclideConfig_GA::PrecomputedNuclideData &pd : precomputed )
+        {
+          Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> options;
+          if( NuclideConfig_GA::sm_background_mode == NuclideConfig_GA::BackgroundMode::NoBackgroundFitNorm )
+            options |= FitPeaksForNuclides::FitNormBkgrndPeaks;
+
+          try
+          {
+            const std::vector<std::shared_ptr<const PeakDef>> user_peaks;
+
+            const FitPeaksForNuclides::PeakFitResult result = FitPeaksForNuclides::fit_peaks_for_nuclides(
+              pd.auto_search_peaks, pd.foreground, pd.sources, user_peaks,
+              pd.background, pd.drf, options, config, pd.peak_fit_prefs );
+
+            if( result.status != RelActCalcAuto::RelActAutoSolution::Status::Success )
+            {
+              total_score += 100.0;  // Penalty for failed fits
+              continue;
+            }
+
+            const std::vector<PeakDef> &fit_peaks = result.observable_peaks;
+
+            // Score the results using the same combined scoring
+            CombinedPeakFitScore combined_score;
+            combined_score.final_fit_score = FinalFit_GA::calculate_final_fit_score(
+              fit_peaks, pd.src_info->expected_signal_photopeaks, num_sigma_contribution );
+            combined_score.initial_fit_weights = InitialFit_GA::calculate_peak_find_weights(
+              fit_peaks, pd.src_info->expected_signal_photopeaks, num_sigma_contribution );
+            combined_score.candidate_peak_score = CandidatePeak_GA::calculate_candidate_peak_score_for_source(
+              fit_peaks, pd.src_info->expected_signal_photopeaks );
+            CandidatePeak_GA::correct_score_for_escape_peaks(
+              combined_score.candidate_peak_score, pd.src_info->expected_signal_photopeaks );
+
+            combined_score.final_weight = combined_score.initial_fit_weights.find_weight
+                                        + combined_score.final_fit_score.total_weight
+                                        + combined_score.candidate_peak_score.score;
+
+            total_score += combined_score.final_weight;
+          }
+          catch( const std::exception & )
+          {
+            total_score += 100.0;  // Penalty for exceptions
+          }
+        }//for( pd : precomputed )
+
+        return total_score;
+      };//ga_eval lambda
+
+      // Run the GA
+      const FitPeaksForNuclides::PeakFitForNuclideConfig best_config
+        = NuclideConfig_GA::do_nuclide_config_ga( precomputed, ga_eval );
+
+      break;
+    }//case OptimizationAction::NuclideConfigGA
+
     case OptimizationAction::AccuracyFromCsvsStudy:
     {
       const string result_base_path = "/Users/wcjohns/rad_ana/InterSpec/target/peak_fit_improve/build_xcode/PeakSearchCsvs";
@@ -1694,8 +1772,11 @@ int main( int argc, char **argv )
           g2k_peaks.back().setAmplitudeUncert( p.NetAreaError ); //We get 2-sigma errors from G2k
         }
         
+        auto hpge_prefs = std::make_shared<PeakFitDetPrefs>();
+        hpge_prefs->m_det_type = PeakFitUtils::CoarseResolutionType::High;
+
         vector<shared_ptr<const PeakDef> > interspec_peaks_initial
-            = ExperimentalAutomatedPeakSearch::search_for_peaks( data, drf, nullptr, false, true );
+            = ExperimentalAutomatedPeakSearch::search_for_peaks( data, drf, nullptr, false, hpge_prefs );
         vector<PeakDef> interspec_peaks;
         for( const auto &p : interspec_peaks_initial )
           interspec_peaks.push_back( *p );
@@ -2239,8 +2320,7 @@ int main( int argc, char **argv )
             //p.continuum()->setType( PeakContinuum::OffsetType::Linear );
           }
 
-          const bool isHPGe = (ClassifyDetType_GA::true_det_type_for_name( info.detector_name )
-                               == PeakFitUtils::CoarseResolutionType::High);
+          const PeakFitUtils::CoarseResolutionType det_type = info.det_type;
           const bool amplitudeOnly = false;
           vector<PeakDef> zeroth_fit_results, initial_fit_results;
           
@@ -2269,11 +2349,11 @@ int main( int argc, char **argv )
               vector<shared_ptr<const PeakDef>> results_tmp, input_peaks_tmp;
               for( const auto &p : candidate_peaks )
                 input_peaks_tmp.push_back( make_shared<PeakDef>(p) );
-              PeakFitLM::fit_peaks_LM( results_tmp, input_peaks_tmp, data, 0.0, 0.0, amplitudeOnly, isHPGe );
+              PeakFitLM::fit_peaks_LM( results_tmp, input_peaks_tmp, data, 0.0, 0.0, amplitudeOnly, det_type );
               for( const auto &p : results_tmp )
                 peaks.push_back( *p );
 #else
-              fitPeaks( candidate_peaks, 0.0, 0.0, data, peaks, amplitudeOnly, isHPGe );
+              fitPeaks( candidate_peaks, 0.0, 0.0, data, peaks, amplitudeOnly, (det_type == PeakFitUtils::CoarseResolutionType::High) );
 #endif
 
               //vector<PeakDef> peaksInRange = fitPeaksInRange( 0.0, data->gamma_energy_max(), 1.5, 0.0, 0.0, candidate_peaks, data, dummy_fixedpeaks, amplitudeOnly, isHPGe );

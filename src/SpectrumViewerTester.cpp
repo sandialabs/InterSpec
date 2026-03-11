@@ -73,6 +73,7 @@
 #include "InterSpec/DecayWindow.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/UseInfoWindow.h"
@@ -1383,13 +1384,16 @@ SpectrumViewerTester::Score SpectrumViewerTester::testAutomatedPeakSearch()
 
   peakModel->setPeaks( std::vector<PeakDef>() );
   
-  const bool isHPGe = PeakFitUtils::is_likely_high_res( m_viewer );
-  
+  std::shared_ptr<PeakFitDetPrefs> fitPrefs = std::make_shared<PeakFitDetPrefs>();
+  fitPrefs->m_det_type = PeakFitUtils::is_likely_high_res( m_viewer )
+                         ? PeakFitUtils::CoarseResolutionType::High
+                         : PeakFitUtils::CoarseResolutionType::Low;
+
   shared_ptr<const SpecUtils::Measurement> data = m_viewer->m_spectrum->data();
   try
   {
     //This will take a minute, and app will look paused, but whatever.
-    auto resultpeaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, nullptr, nullptr, false, isHPGe );
+    auto resultpeaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, nullptr, nullptr, false, fitPrefs );
     
     for( const auto &p : resultpeaks )
       testpeaks.push_back( *p );

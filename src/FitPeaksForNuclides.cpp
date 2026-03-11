@@ -4283,9 +4283,10 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_fallback(
       const double peak_area = matched_peak->peakArea();
       estimated_activity = peak_area / (best_br * best_eff);
 
-      std::cout << "Fallback: " << RelActCalcAuto::to_name( src.source ) << " matched peak at " << matched_peak->mean()
-           << " keV (gamma at " << best_energy << " keV), area=" << peak_area
-           << ", estimated activity=" << estimated_activity << std::endl;
+      if( should_debug_print() )
+        std::cout << "Fallback: " << RelActCalcAuto::to_name( src.source ) << " matched peak at " << matched_peak->mean()
+             << " keV (gamma at " << best_energy << " keV), area=" << peak_area
+             << ", estimated activity=" << estimated_activity << std::endl;
     }
     else
     {
@@ -4299,9 +4300,10 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_fallback(
 
       estimated_activity = estimated_peak_area / (best_br * best_eff * live_time);
 
-      std::cout << "Fallback: " << RelActCalcAuto::to_name( src.source ) << " no matching peak for gamma at " << best_energy
-           << " keV, integrated counts=" << total_counts << ", est. peak area=" << estimated_peak_area
-           << ", estimated activity=" << estimated_activity << std::endl;
+      if( should_debug_print() )
+        std::cout << "Fallback: " << RelActCalcAuto::to_name( src.source ) << " no matching peak for gamma at " << best_energy
+             << " keV, integrated counts=" << total_counts << ", est. peak area=" << estimated_peak_area
+             << ", estimated activity=" << estimated_activity << std::endl;
     }
 
     if( estimated_activity > 0.0 )
@@ -4310,7 +4312,8 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_fallback(
 
   if( source_age_and_acts.empty() )
   {
-    std::cerr << "Fallback: Could not estimate activity for any source" << std::endl;
+    if( should_debug_print() )
+      std::cerr << "Fallback: Could not estimate activity for any source" << std::endl;
     return {};
   }
 
@@ -4732,8 +4735,11 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
     }
   }catch( std::exception &e )
   {
-    std::cerr << "Error trying to fit initial manual rel-eff solution: " << e.what() << std::endl;
-    std::cerr << "Using fallback activity estimation..." << std::endl;
+    if( should_debug_print() )
+    {
+      std::cerr << "Error trying to fit initial manual rel-eff solution: " << e.what() << std::endl;
+      std::cerr << "Using fallback activity estimation..." << std::endl;
+    }
 
     initial_rois = estimate_initial_rois_fallback(
       auto_search_peaks, foreground, sources, drf, det_type,
@@ -4743,10 +4749,13 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
     fallback_warning = "RelActManual fitting failed (" + std::string(e.what())
                      + "); used simplified activity estimation fallback";
 
-    std::cout << "Fallback ROIs: ";
-    for( const RelActCalcAuto::RoiRange &roi : initial_rois )
-      std::cout << "[" << roi.lower_energy << ", " << roi.upper_energy << "], ";
-    std::cout << std::endl;
+    if( should_debug_print() )
+    {
+      std::cout << "Fallback ROIs: ";
+      for( const RelActCalcAuto::RoiRange &roi : initial_rois )
+        std::cout << "[" << roi.lower_energy << ", " << roi.upper_energy << "], ";
+      std::cout << std::endl;
+    }
   }
 
   return initial_rois;
@@ -5502,9 +5511,9 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     }
 
     const size_t print_curve_idx = (sources_rel_eff_index >= 0) ? static_cast<size_t>( sources_rel_eff_index ) : 0u;
-    std::cout << "Initial RelActAuto solution (" << options.rel_eff_curves[print_curve_idx].name << "):" << std::endl;
-    solution.print_summary( std::cout );
-    std::cout << "Chi2/DOF = " << solution.m_chi2 << "/" << solution.m_dof << " = " << (solution.m_chi2 / solution.m_dof) << std::endl;
+    //std::cout << "Initial RelActAuto solution (" << options.rel_eff_curves[print_curve_idx].name << "):" << std::endl;
+    //solution.print_summary( std::cout );
+    //std::cout << "Chi2/DOF = " << solution.m_chi2 << "/" << solution.m_dof << " = " << (solution.m_chi2 / solution.m_dof) << std::endl;
 
     // We may adjust energy calibration - sow we'll use `background` and `foreground` for this.
     shared_ptr<const SpecUtils::Measurement> foreground = orig_foreground;
@@ -5720,11 +5729,13 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         // Check if ROIs changed significantly - if not, stop iterating
         if( rois_are_similar( refined_rois, solution.m_options.rois ) )
         {
-          std::cout << "Iteration " << iter << ": ROIs are similar, stopping refinement" << std::endl;
+          if( should_debug_print() )
+            std::cout << "Iteration " << iter << ": ROIs are similar, stopping refinement" << std::endl;
           break;
         }
 
-        std::cout << "Iteration " << iter << ": trying " << refined_rois.size() << " refined ROIs" << std::endl;
+        if( should_debug_print() )
+          std::cout << "Iteration " << iter << ": trying " << refined_rois.size() << " refined ROIs" << std::endl;
 
         // Re-run RelActAuto with refined ROIs
         RelActCalcAuto::Options refined_options = solution.m_options;
@@ -5742,7 +5753,8 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 
         if( refined_solution.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success )
         {
-          std::cout << "Iteration " << iter << " failed: " << refined_solution.m_error_message << std::endl;
+          if( should_debug_print() )
+            std::cout << "Iteration " << iter << " failed: " << refined_solution.m_error_message << std::endl;
           break;
         }
 
@@ -5776,24 +5788,33 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         // Check if chi2/dof improved
         if( new_chi2_dof >= old_chi2_dof )
         {
-          std::cout << "Iteration " << iter << " did not improve filtered chi2/dof ("
-               << old_chi2_dof << " -> " << new_chi2_dof << "), stopping" << std::endl;
-          if( !new_insignificant_rois.empty() )
-            std::cout << "  (" << new_insignificant_rois.size() << " ROIs had insignificant peaks)" << std::endl;
+          if( should_debug_print() )
+          {
+            std::cout << "Iteration " << iter << " did not improve filtered chi2/dof ("
+                 << old_chi2_dof << " -> " << new_chi2_dof << "), stopping" << std::endl;
+            if( !new_insignificant_rois.empty() )
+              std::cout << "  (" << new_insignificant_rois.size() << " ROIs had insignificant peaks)" << std::endl;
+          }
           break;
         }
 
         solution = std::move( refined_solution );
-        std::cout << "Iteration " << iter << " improved: chi2/dof=" << new_chi2_dof
-             << " (was " << old_chi2_dof << ")" << std::endl;
+
+        if( should_debug_print() )
+          std::cout << "Iteration " << iter << " improved: chi2/dof=" << new_chi2_dof
+               << " (was " << old_chi2_dof << ")" << std::endl;
       }//for( size_t iter = 0; iter < max_iterations; ++iter )
 
-      std::cout << "Final solution after refinement:" << std::endl;
-      solution.print_summary( std::cout );
-      std::cout << std::endl;
+      if( should_debug_print() )
+      {
+        std::cout << "Final solution after refinement:" << std::endl;
+        solution.print_summary( std::cout );
+        std::cout << std::endl;
 
-      // Print ROIs and sum fit peak areas for each ROI
-      std::cout << "Solution ROIs and fit peak areas:" << std::endl;
+        // Print ROIs and sum fit peak areas for each ROI
+        std::cout << "Solution ROIs and fit peak areas:" << std::endl;
+      }
+
       for( size_t roi_index = 0; roi_index < solution.m_final_roi_ranges.size(); ++roi_index )
       {
         const RelActCalcAuto::RoiRange &roi = solution.m_final_roi_ranges[roi_index];
@@ -5813,10 +5834,13 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
           }
         }//for( loop over fit peaks )
 
-        std::cout << "  ROI " << roi_index << ": [" << roi.lower_energy << ", " << roi.upper_energy << "] keV"
-             << ", " << num_peaks_in_roi << " peaks, sum area = " << sum_peak_area << std::endl;
+        if( should_debug_print() )
+          std::cout << "  ROI " << roi_index << ": [" << roi.lower_energy << ", " << roi.upper_energy << "] keV"
+               << ", " << num_peaks_in_roi << " peaks, sum area = " << sum_peak_area << std::endl;
       }//for( loop over ROIs )
-      std::cout << std::endl;
+
+      if( should_debug_print() )
+        std::cout << std::endl;
     }//iterative refinement
 
     // Identify ROIs without significant peaks for filtering
@@ -5940,8 +5964,9 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     if( !insignificant_roi_ranges.empty() )
     {
       const size_t num_filtered = solution.m_peaks_without_back_sub.size() - result.fit_peaks.size();
-      std::cout << "Filtered out " << num_filtered << " peaks from "
-           << insignificant_roi_ranges.size() << " ROIs without significant chi2 improvement" << std::endl;
+      if( should_debug_print() )
+        std::cout << "Filtered out " << num_filtered << " peaks from "
+             << insignificant_roi_ranges.size() << " ROIs without significant chi2 improvement" << std::endl;
     }
     
     
