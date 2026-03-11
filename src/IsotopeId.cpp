@@ -926,7 +926,8 @@ void findCandidates( vector<string> &suggestednucs,
                     std::shared_ptr<const PeakDef> peak,
                     std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > allpeaks,
                     std::shared_ptr<const DetectorPeakResponse> detector,
-                    std::shared_ptr<const SpecUtils::Measurement> data )
+                    std::shared_ptr<const SpecUtils::Measurement> data,
+                    const PeakFitUtils::CoarseResolutionType det_type )
 {
   if( !peak || !allpeaks || !data )
   {
@@ -947,15 +948,33 @@ void findCandidates( vector<string> &suggestednucs,
       detector = detPtr;
       
       const string basename = SpecUtils::append_path( dataDirectory(), "GenericGadrasDetectors" );
-      
-      string csvfilename = SpecUtils::append_path( basename, "HPGe 40%/Efficiency.csv" );
-      string datFilename = SpecUtils::append_path( basename, "HPGe 40%/Detector.dat" );
-      
-      if( !PeakFitUtils::is_high_res(data) )
+
+      string det_dir;
+      switch( det_type )
       {
-        csvfilename = SpecUtils::append_path( basename, "NaI 3x3/Efficiency.csv" );
-        datFilename = SpecUtils::append_path( basename, "NaI 3x3/Detector.dat" );
-      }//if( this is a NaI or other low resolution detector )
+        case PeakFitUtils::CoarseResolutionType::High:
+          det_dir = "HPGe 40%";
+          break;
+
+        case PeakFitUtils::CoarseResolutionType::LaBr:
+        case PeakFitUtils::CoarseResolutionType::MedRes:
+          // Use LaBr 10% if available, otherwise fall back to NaI 3x3
+          det_dir = "LaBr 10%";
+          if( !SpecUtils::is_directory( SpecUtils::append_path( basename, det_dir ) ) )
+            det_dir = "NaI 3x3";
+          break;
+
+        case PeakFitUtils::CoarseResolutionType::CZT:
+          // No CZT generic detector available; use NaI 3x3 as closest available
+        case PeakFitUtils::CoarseResolutionType::Low:
+        case PeakFitUtils::CoarseResolutionType::LowOrMedRes:
+        case PeakFitUtils::CoarseResolutionType::Unknown:
+          det_dir = "NaI 3x3";
+          break;
+      }//switch( det_type )
+
+      string csvfilename = SpecUtils::append_path( basename, det_dir + "/Efficiency.csv" );
+      string datFilename = SpecUtils::append_path( basename, det_dir + "/Detector.dat" );
       
 #ifdef _WIN32
       const std::wstring wcsvfilename = SpecUtils::convert_from_utf8_to_utf16(csvfilename);
@@ -1482,6 +1501,7 @@ void populateCandidateNuclides( std::shared_ptr<const SpecUtils::Measurement> da
                                std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > userpeaks,
                                const std::vector<ReferenceLineInfo> showingRefLines,
                                std::shared_ptr<const DetectorPeakResponse> detector,
+                               const PeakFitUtils::CoarseResolutionType det_type,
                                const std::string sessionid,
                                std::shared_ptr< vector<string> > candidates,
                                boost::function<void(void)> doupdate )
@@ -1540,7 +1560,7 @@ void populateCandidateNuclides( std::shared_ptr<const SpecUtils::Measurement> da
   
   pool.post( boost::bind( &findCandidates,
                          boost::ref(suggestednucs),
-                         peak, allpeaks, detector, data ) );
+                         peak, allpeaks, detector, data, det_type ) );
   
   pool.post( boost::bind( &findCharacteristics,
                          boost::ref(characteristicnucs), peak ) );

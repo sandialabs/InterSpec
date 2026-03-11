@@ -46,6 +46,8 @@
 #include "SpecUtils/SpecUtilsAsync.h"
 #endif
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/PeakFitDetPrefs.h"
+#include "InterSpec/PeakFitSpecImp.h"
 #include "SpecUtils/EnergyCalibration.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
@@ -269,11 +271,11 @@ struct PeakFitDiffCostFunction
                            const double roi_upper_energy,    // kept for API compat, ignored
                            const double continuum_ref_energy, // kept for API compat, ignored
                            const PeakDef::SkewType skew_type,
-                           const bool isHPGe,
+                           const PeakFitUtils::CoarseResolutionType det_type,
                            const Wt::WFlags<PeakFitLM::PeakFitLMOptions> options )
   : m_data( data ),
     m_skew_type( skew_type ),
-    m_isHPGe( isHPGe ),
+    m_det_type( det_type ),
     m_options( options ),
     m_ncalls( 0 ),
     m_rois( make_rois( data, starting_peaks, options ) ),
@@ -1591,7 +1593,7 @@ struct PeakFitDiffCostFunction
       else
       {
         float lowersigma, uppersigma;
-        expected_peak_width_limits( mean, m_isHPGe, m_data, lowersigma, uppersigma );
+        expected_peak_width_limits( mean, m_det_type, m_data, lowersigma, uppersigma );
         if( i == 0 )
           minsigma = lowersigma;
         if( i == (roi.peaks.size() - 1) )
@@ -1867,7 +1869,7 @@ public:
   //  m_fit_skew_energy_dependence; m_thread_pool depends on m_rois.
   const std::shared_ptr<const SpecUtils::Measurement> m_data;
   const PeakDef::SkewType m_skew_type;
-  const bool m_isHPGe;
+  const PeakFitUtils::CoarseResolutionType m_det_type;
   const Wt::WFlags<PeakFitLMOptions> m_options;
 
   mutable std::atomic<unsigned int> m_ncalls;
@@ -1893,7 +1895,7 @@ public:
  */
 vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<const PeakDef>> coFitPeaks,
                                                       const std::shared_ptr<const SpecUtils::Measurement> &dataH,
-                                                      const bool isHPGe,
+                                                      const PeakFitUtils::CoarseResolutionType det_type,
                                                       const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options )
 {
   /** For this first go, we will have Ceres fit for things.
@@ -1963,7 +1965,7 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
 
 
     auto cost_functor = make_unique<PeakFitDiffCostFunction>( dataH, coFitPeaks, roiLowerEnergy, roiUpperEnergy,
-                                                    reference_energy, skew_type, isHPGe, fit_options );
+                                                    reference_energy, skew_type, det_type, fit_options );
 
     //Choosing 8 paramaters to include in the `ceres::Jet<>` is 4 peaks in ROI, which covers most cases
     //  without introducing a ton of extra overhead.
@@ -2299,18 +2301,91 @@ void fit_peak_for_user_click_LM( PeakShrdVec &results,
                              const double area0,
                              const float roiLowerEnergy,
                              const float roiUpperEnergy,
-                             const bool isHPGe )
+                             const std::shared_ptr<const PeakFitDetPrefs> &fitPrefs,
+                             const std::shared_ptr<const DetectorPeakResponse> &drf )
 {
   vector<shared_ptr<const PeakDef>> coFitPeaks = coFitPeaksInput;
-  
+
   const PeakDef::SkewType skew_type = PeakFitDiffCostFunction::skew_type_from_prev_peaks( coFitPeaks );
   const size_t num_skew = PeakDef::num_skew_parameters( skew_type );
 
   std::shared_ptr<PeakDef> candidatepeak = std::make_shared<PeakDef>(mean0, sigma0, area0);
 
+  PeakFitUtils::CoarseResolutionType det_type = PeakFitUtils::CoarseResolutionType::Unknown;
+
+  // Apply skew type from fitPrefs to the candidate peak, overriding any
+  //  skew type inferred from existing nearby peaks.
+  assert( fitPrefs );
+  if( fitPrefs )
+  {
+    det_type = fitPrefs->m_det_type;
+    candidatepeak->setSkewType( fitPrefs->m_peak_skew_type );
+
+    const size_t num_prefs_skew
+      = PeakDef::num_skew_parameters( fitPrefs->m_peak_skew_type );
+    for( size_t i = 0; i < num_prefs_skew; ++i )
+    {
+      const PeakDef::CoefficientType ct
+        = PeakDef::CoefficientType( PeakDef::CoefficientType::SkewPar0 + i );
+
+      if( fitPrefs->m_lower_energy_skew[i].has_value() )
+      {
+        double val = fitPrefs->m_lower_energy_skew[i].value();
+
+        if( PeakDef::is_energy_dependent( fitPrefs->m_peak_skew_type, ct )
+           && fitPrefs->m_upper_energy_skew[i].has_value()
+           && dataH && dataH->num_gamma_channels() > 0 )
+        {
+          const double lower_energy = dataH->gamma_channel_lower( 0 );
+          const double upper_energy
+            = dataH->gamma_channel_upper( dataH->num_gamma_channels() - 1 );
+          const double frac = (mean0 - lower_energy) / (upper_energy - lower_energy);
+          val += frac * (fitPrefs->m_upper_energy_skew[i].value() - val);
+        }
+
+        candidatepeak->set_coefficient( val, ct );
+        candidatepeak->setFitFor( ct, false );
+      }//if( skew param value specified )
+    }//for( loop over skew parameters )
+
+    // Apply FWHM method from preferences
+    if( (fitPrefs->m_fwhm_method != PeakFitDetPrefs::FwhmMethod::Normal)
+       && drf && drf->hasResolutionInfo() )
+    {
+      const double drf_sigma
+        = drf->peakResolutionSigma( static_cast<float>( mean0 ) );
+      candidatepeak->setSigma( drf_sigma );
+
+      if( fitPrefs->m_fwhm_method == PeakFitDetPrefs::FwhmMethod::DetFwhm )
+        candidatepeak->setFitFor( PeakDef::CoefficientType::Sigma, false );
+    }//if( apply FWHM from DRF )
+  }else
+  {
+    const PeakFitSpec::SpecClassType type = PeakFitSpec::initial_lowres_highres_classify( dataH );
+
+    switch( type )
+    {
+      case PeakFitSpec::SpecClassType::LowOrMedRes:
+        det_type = PeakFitUtils::CoarseResolutionType::LowOrMedRes;
+      break;
+
+      case PeakFitSpec::SpecClassType::High:
+        det_type = PeakFitUtils::CoarseResolutionType::High;
+      break;
+
+      case PeakFitSpec::SpecClassType::Unknown:
+        det_type = PeakFitUtils::CoarseResolutionType::Unknown;
+      break;
+    }
+  }//if( fitPrefs )
+
+  const bool isHPGe = (det_type == PeakFitUtils::CoarseResolutionType::High);
+
   //The below should probably go off the number of bins in the ROI
   const size_t num_fit_peaks = coFitPeaksInput.size() + 1;
   PeakContinuum::OffsetType offset_type = (num_fit_peaks < (isHPGe ? 3 : 2)) ? PeakContinuum::Linear : PeakContinuum::Quadratic;
+
+  // TODO: remove isHPGe usage above and use det_type directly
 
   if( coFitPeaks.size() )
     offset_type = std::max( offset_type, coFitPeaks[0]->continuum()->type() );
@@ -2361,11 +2436,17 @@ void fit_peak_for_user_click_LM( PeakShrdVec &results,
   std::sort( coFitPeaks.begin(), coFitPeaks.end(), &PeakDef::lessThanByMeanShrdPtr );
 
 
-  const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options( 0 );
+  Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options( 0 );
+  if( fitPrefs
+     && (fitPrefs->m_fwhm_method == PeakFitDetPrefs::FwhmMethod::DetPlusRefine)
+     && drf && drf->hasResolutionInfo() )
+  {
+    fit_options |= PeakFitLM::SmallFwhmRefinementOnly;
+  }
 
   try
   {
-    results = fit_peaks_in_roi_LM( coFitPeaks, dataH, isHPGe, fit_options );
+    results = fit_peaks_in_roi_LM( coFitPeaks, dataH, det_type, fit_options );
   }catch( std::exception &e )
   {
     results.clear();
@@ -2379,7 +2460,7 @@ void fit_peaks_LM( vector<shared_ptr<const PeakDef>> &results,
                   const double stat_threshold,
                   const double hypothesis_threshold,
                   const bool is_refit,
-                  const bool isHPGe ) throw()
+                  const PeakFitUtils::CoarseResolutionType det_type ) throw()
 {
   try
   {
@@ -2430,8 +2511,9 @@ void fit_peaks_LM( vector<shared_ptr<const PeakDef>> &results,
       const shared_ptr<const PeakDef> &highgaus = near_peaks.back();
 
       double dummy = 0.0;
-      findROIEnergyLimits( lowx, dummy, *lowgaus, data, isHPGe );
-      findROIEnergyLimits( dummy, highx, *highgaus, data, isHPGe );
+      const bool isHPGe_for_roi = (det_type == PeakFitUtils::CoarseResolutionType::High);
+      findROIEnergyLimits( lowx, dummy, *lowgaus, data, isHPGe_for_roi );
+      findROIEnergyLimits( dummy, highx, *highgaus, data, isHPGe_for_roi );
     }
 
 
@@ -2439,7 +2521,7 @@ void fit_peaks_LM( vector<shared_ptr<const PeakDef>> &results,
     if( is_refit )
       fit_options |= PeakFitLM::PeakFitLMOptions::MediumRefinementOnly;
 
-    results = fit_peaks_in_roi_LM( near_peaks, data, isHPGe, fit_options );
+    results = fit_peaks_in_roi_LM( near_peaks, data, det_type, fit_options );
 
     // I'm pretty sure things have been sorted, but lets check
     assert( std::is_sorted(begin(results), end(results), &PeakDef::lessThanByMeanShrdPtr ) );
@@ -2521,7 +2603,7 @@ void fit_peaks_LM( vector<shared_ptr<const PeakDef>> &results,
     }//for( size_t i = 1; i < fitpeaks.size(); ++i )
 
     if( removed_peak )
-      results = fit_peaks_in_roi_LM( results, data, isHPGe, fit_options );
+      results = fit_peaks_in_roi_LM( results, data, det_type, fit_options );
 
     if( datadefined_peaks.size() )
     {
@@ -2554,7 +2636,7 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_range_LM( const double x0, const 
                                       const std::vector<std::shared_ptr<const PeakDef>> input_peaks,
                                       const std::shared_ptr<const SpecUtils::Measurement> data,
                                       const bool isRefit,
-                                      const bool isHPGe )
+                                      const PeakFitUtils::CoarseResolutionType det_type )
 {
   if( !data || (x1 < x0) )
     return input_peaks;
@@ -2593,7 +2675,7 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_range_LM( const double x0, const 
                                  stat_threshold,
                                  hypothesis_threshold,
                                  isRefit,
-                                 isHPGe ) );
+                                 det_type ) );
   }//for( size_t peakn = 0; peakn < seperated_peaks.size(); ++peakn )
   threadpool.join();
 
@@ -2631,7 +2713,7 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_range_LM( const double x0, const 
 
     return fit_peaks_in_range_LM( x0, x1, ncausalitysigma,
                            stat_threshold, hypothesis_threshold,
-                                 results, data, isRefit, isHPGe );
+                                 results, data, isRefit, det_type );
   }//if( migration )
 
   //  cout << "Fit took: " << timer.format() << endl;
@@ -2643,6 +2725,7 @@ std::vector<std::shared_ptr<const PeakDef>> refitPeaksThatShareROI_LM(
                                    const std::shared_ptr<const SpecUtils::Measurement> &data,
                                    const std::shared_ptr<const DetectorPeakResponse> &detector,
                                    const std::vector<std::shared_ptr<const PeakDef>> &inpeaks,
+                                   const PeakFitUtils::CoarseResolutionType det_type,
                                    const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options )
 {
   vector<shared_ptr<const PeakDef>> answer;
@@ -2658,12 +2741,7 @@ std::vector<std::shared_ptr<const PeakDef>> refitPeaksThatShareROI_LM(
       if( origCont != p->continuum() )
         throw runtime_error( "refitPeaksThatShareROI_LM: all input peaks must share a ROI" );
 
-
-    //const bool isHPGe = PeakFitUtils::is_high_res( spec );
-    const auto resType = PeakFitUtils::coarse_resolution_from_peaks(inpeaks);
-    const bool isHPGe = (resType == PeakFitUtils::CoarseResolutionType::High);
-
-    answer = fit_peaks_in_roi_LM( inpeaks, data, isHPGe, fit_options );
+    answer = fit_peaks_in_roi_LM( inpeaks, data, det_type, fit_options );
 
 
     //now we need to go through and make sure the peaks we're adding are both
@@ -2690,7 +2768,7 @@ std::vector<std::shared_ptr<const PeakDef>> refitPeaksThatShareROI_LM(
         const bool isRefit = true;
         const vector<shared_ptr<const PeakDef>> refit_peaks
                      = fit_peaks_in_range_LM( lx, ux, ncausalitysigma, stat_threshold, hypothesis_threshold,
-                                             inpeaks, data, isRefit, isHPGe );
+                                             inpeaks, data, isRefit, det_type );
 
 
         if( refit_peaks.size() == inpeaks.size() )
@@ -3076,7 +3154,7 @@ FitPeaksResults fit_peaks_in_spectrum_LM( const vector<shared_ptr<const PeakDef>
         try
         {
           const vector<shared_ptr<const PeakDef>> roi_result
-            = fit_peaks_in_roi_LM( kv.second, data, isHPGe, fit_options );
+            = fit_peaks_in_roi_LM( kv.second, data, res_type, fit_options );
           all_fit_peaks.insert( end(all_fit_peaks), begin(roi_result), end(roi_result) );
         }
         catch( std::exception &e )
@@ -3130,7 +3208,7 @@ FitPeaksResults fit_peaks_in_spectrum_LM( const vector<shared_ptr<const PeakDef>
       {
         // PeakFitDiffCostFunction handles VoigtPlusBortel exception and multi-ROI grouping internally
         PeakFitDiffCostFunction cost_functor( data, peaks_to_fit, 0, 0, 0,
-                                              target_skew, isHPGe, fit_options );
+                                              target_skew, res_type, fit_options );
 
         CeresFitResult ceres_result = run_ceres_fit( cost_functor, peaks_to_fit.size() );
 

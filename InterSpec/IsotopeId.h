@@ -29,6 +29,7 @@
 #include <string>
 #include <vector>
 
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/ReferenceLineInfo.h"
 
 //Forward Declarations
@@ -124,6 +125,7 @@ void populateCandidateNuclides( std::shared_ptr<const SpecUtils::Measurement> da
                                std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > userpeaks,
                                const std::vector<ReferenceLineInfo> showingRefLines,
                                std::shared_ptr<const DetectorPeakResponse> detector,
+                               const PeakFitUtils::CoarseResolutionType det_type,
                                const std::string sessionid,
                                std::shared_ptr< std::vector<std::string> > candidates,
                                boost::function<void(void)> doupdate );
@@ -153,7 +155,8 @@ void findCandidates( std::vector<std::string> &suggestednucs,
                      std::shared_ptr<const PeakDef> peak,
                      std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > allpeaks,
                      std::shared_ptr<const DetectorPeakResponse> detector,
-                     std::shared_ptr<const SpecUtils::Measurement> data );
+                     std::shared_ptr<const SpecUtils::Measurement> data,
+                     const PeakFitUtils::CoarseResolutionType det_type );
 
   /** A first attempt to guess which nuclide most closely matches the searched
    energy ranges, using the "profile" of the spectrum, represented by the

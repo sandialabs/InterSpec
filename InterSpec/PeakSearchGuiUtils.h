@@ -358,12 +358,15 @@ void fit_template_peaks( InterSpec *interspec,
                          std::vector<PeakDef> template_peaks,
                          std::vector<PeakDef> original_peaks,
                          const PeakTemplateFitSrc fitsrc,
+                         std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
                          const std::string sessionid );
 
 void prepare_and_add_gadras_peaks(
                         std::shared_ptr<const SpecUtils::Measurement> data,
                         std::vector<PeakDef> gadras_peaks,
                         std::vector<PeakDef> original_peaks,
+                        std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
+                        std::shared_ptr<const DetectorPeakResponse> drf,
                         const std::string sessionid );
 
 /** Adds a new peak to an existing ROI based on right-click energy.

@@ -222,4 +222,19 @@ void apply_fwhm_method_to_peaks(
   Wt::WFlags<PeakFitLM::PeakFitLMOptions> &fit_options );
 
 
+/** Applies both FWHM method and skew type/parameters from prefs to peaks.
+
+ Calls apply_fwhm_method_to_peaks for FWHM, then sets each peak's skew type
+ to prefs.m_peak_skew_type.  If skew parameter values are specified in prefs
+ (m_lower_energy_skew, m_upper_energy_skew), they are applied as fixed values
+ with energy interpolation for energy-dependent parameters.
+ */
+void apply_fit_prefs_to_peaks(
+  std::vector<std::shared_ptr<PeakDef>> &peaks,
+  const std::shared_ptr<const SpecUtils::Measurement> &data,
+  const std::shared_ptr<const DetectorPeakResponse> &drf,
+  const PeakFitDetPrefs &prefs,
+  Wt::WFlags<PeakFitLM::PeakFitLMOptions> &fit_options );
+
+
 #endif //PeakFitDetPrefs_h

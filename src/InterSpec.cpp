@@ -2407,10 +2407,15 @@ void InterSpec::handleRightClick( double energy, double counts,
             }//if( !ref_nuc.empty() )
             
             const string session_id = wApp->sessionId();
-            
+
+            const std::shared_ptr<const PeakFitDetPrefs> fitPrefs = meas ? meas->peakFitDetPrefs() : nullptr;
+            assert( fitPrefs );
+            const PeakFitUtils::CoarseResolutionType det_type
+              = fitPrefs ? fitPrefs->m_det_type : PeakFitUtils::coarse_det_type( hist, meas );
+
             boost::function<void(void)> worker = [=](){
               IsotopeId::populateCandidateNuclides( hist, peak, hintpeaks,
-                      peaks, refLines, detector, session_id, candidates, updater );
+                      peaks, refLines, detector, det_type, session_id, candidates, updater );
             };
             
             io.boost::asio::io_service::post( worker );
@@ -7810,16 +7815,18 @@ void InterSpec::finishHardBackgroundSub( std::shared_ptr<bool> truncate_neg, std
         for( const auto &i : *orig_peaks )
           input_peaks.push_back( *i );
         
-        const auto res_type = PeakFitUtils::coarse_resolution_from_peaks( *orig_peaks );
-        const bool isHPGe = (res_type == PeakFitUtils::CoarseResolutionType::High);
-        
+        std::shared_ptr<const SpecMeas> fore = measurment( SpecUtils::SpectrumType::Foreground );
+        std::shared_ptr<const PeakFitDetPrefs> fitPrefs = fore ? fore->peakFitDetPrefs() : nullptr;
+        const PeakFitUtils::CoarseResolutionType detType
+          = fitPrefs ? fitPrefs->m_det_type : PeakFitUtils::coarse_det_type( newspec, fore );
+
         const double lowE = newspec->gamma_energy_min();
         const double upE = newspec->gamma_energy_max();
-      
+
         Wt::WFlags<PeakFitLM::PeakFitLMOptions> re_fit_options;
         //re_fit_options |= PeakFitLM::PeakFitLMOptions::MediumRefinementOnly;
-        
-        refit_peaks = fitPeaksInRange( lowE, upE, 0.0, 0.0, 0.0, input_peaks, newspec, re_fit_options, isHPGe );
+
+        refit_peaks = fitPeaksInRange( lowE, upE, 0.0, 0.0, 0.0, input_peaks, newspec, re_fit_options, detType );
         
         std::deque<std::shared_ptr<const PeakDef> > peakdeque;
         for( const auto &p : refit_peaks )
@@ -11891,10 +11898,13 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 #endif
       
       const std::string sessionid = wApp->sessionId();
-      propigate_peaks_fcns = [this, input_peaks, original_peaks, sessionid]( std::shared_ptr<const SpecUtils::Measurement> data ){
+      std::shared_ptr<const PeakFitDetPrefs> propFitPrefs = m_dataMeasurement ? m_dataMeasurement->peakFitDetPrefs() : nullptr;
+      if( !propFitPrefs && m_dataMeasurement && m_dataMeasurement->detector() )
+        propFitPrefs = m_dataMeasurement->detector()->peakFitDetPrefs();
+      propigate_peaks_fcns = [this, input_peaks, original_peaks, propFitPrefs, sessionid]( std::shared_ptr<const SpecUtils::Measurement> data ){
         PeakSearchGuiUtils::fit_template_peaks( this, data, input_peaks, original_peaks,
                        PeakSearchGuiUtils::PeakTemplateFitSrc::PreviousSpectrum,
-                       sessionid );
+                       propFitPrefs, sessionid );
       };
     }//if( prev spec had peaks and new one doesnt )
   }//if( should propogate peaks )
@@ -13169,6 +13179,14 @@ void InterSpec::excludePeaksFromRange( double x0, double x1 )
   for( PeakDef peak : peaks_to_keep )
     peaksinroi[peak.continuum()].push_back( std::make_shared<PeakDef>(peak) );
   
+  const shared_ptr<const SpecMeas> fgMeas = measurment( SpecUtils::SpectrumType::Foreground );
+  shared_ptr<const PeakFitDetPrefs> erasePrefs = fgMeas ? fgMeas->peakFitDetPrefs() : nullptr;
+  if( !erasePrefs && detector )
+    erasePrefs = detector->peakFitDetPrefs();
+  assert( erasePrefs );
+  const PeakFitUtils::CoarseResolutionType eraseDetType
+    = erasePrefs ? erasePrefs->m_det_type : PeakFitUtils::coarse_det_type( data, fgMeas );
+
   map<std::shared_ptr<const PeakContinuum>, PeakShrdVec >::const_iterator iter;
   for( iter = peaksinroi.begin(); iter != peaksinroi.end(); ++iter )
   {
@@ -13177,8 +13195,8 @@ void InterSpec::excludePeaksFromRange( double x0, double x1 )
     //refitPeakFromRightClick();
     //This would make things more consistent between right clicking to fit, and
     //  erasing part of the ROI (which is what happened if we are here).
-    
-    PeakShrdVec newpeaks = refitPeaksThatShareROI( data, detector, iter->second, PeakFitLM::PeakFitLMOptions::SmallRefinementOnly );
+
+    PeakShrdVec newpeaks = refitPeaksThatShareROI( data, detector, iter->second, eraseDetType, PeakFitLM::PeakFitLMOptions::SmallRefinementOnly );
     if( newpeaks.size() == iter->second.size() )
     {
       for( size_t j = 0; j < newpeaks.size(); ++j )

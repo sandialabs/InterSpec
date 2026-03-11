@@ -41,6 +41,8 @@ namespace SpecUtils
   class Measurement;
 }//namespace SpecUtils
 
+struct PeakFitDetPrefs;
+
 namespace PeakFitUtils
 {
   enum class CoarseResolutionType : int;
@@ -142,7 +144,8 @@ void fit_peak_for_user_click_LM( std::vector< std::shared_ptr<const PeakDef> > &
                                 const double area0,
                                 const float roiLowerEnergy,
                                 const float roiUpperEnergy,
-                                const bool isHPGe );
+                                const std::shared_ptr<const PeakFitDetPrefs> &fitPrefs,
+                                const std::shared_ptr<const DetectorPeakResponse> &drf );
 
 /** Analog of `void fitPeaks(...)`, but using the Ceres based L-M fit method.
 
@@ -163,7 +166,7 @@ void fit_peaks_LM( std::vector<std::shared_ptr<const PeakDef>> &results,
                   const double stat_threshold,
                   const double hypothesis_threshold,
                   const bool is_refit,
-                  const bool isHPGe ) throw();
+                  const PeakFitUtils::CoarseResolutionType det_type ) throw();
 
 
 
@@ -174,7 +177,7 @@ std::vector<std::shared_ptr<const PeakDef>> fit_peaks_in_range_LM( const double 
                                       const std::vector<std::shared_ptr<const PeakDef>> all_peaks,
                                       const std::shared_ptr<const SpecUtils::Measurement> data,
                                       const bool isRefit,
-                                      const bool isHPGe );
+                                      const PeakFitUtils::CoarseResolutionType det_type );
 
 /** Refit peaks that share an ROI.
  * @param data The data to fit
@@ -190,6 +193,7 @@ std::vector<std::shared_ptr<const PeakDef>> refitPeaksThatShareROI_LM(
                                    const std::shared_ptr<const SpecUtils::Measurement> &data,
                                    const std::shared_ptr<const DetectorPeakResponse> &detector,
                                    const std::vector<std::shared_ptr<const PeakDef>> &inpeaks,
+                                   const PeakFitUtils::CoarseResolutionType det_type,
                                    const Wt::WFlags<PeakFitLMOptions> fit_options = 0 );
 
 // Need to implement the equivalent of `search_for_peaks(...)` which uses Minuit2 based `AutoPeakSearchChi2Fcn` class.

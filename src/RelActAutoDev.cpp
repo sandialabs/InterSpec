@@ -42,6 +42,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/RelActCalc.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/RelActAutoDev.h"
 #include "InterSpec/RelActCalcAuto.h"
@@ -484,8 +485,9 @@ void run_u02_example()
   const double start_wall = SpecUtils::get_wall_time();
   
   const RelActCalcAuto::RelActAutoSolution solution = RelActCalcAuto::solve( state.options,
-                                              foreground, background, det, all_peaks, nullptr );
-  
+                                              foreground, background, det, all_peaks,
+                                              PeakFitUtils::CoarseResolutionType::High, nullptr );
+
   const double end_cpu = SpecUtils::get_cpu_time();
   const double end_wall = SpecUtils::get_wall_time();
   
@@ -690,7 +692,8 @@ void czt_pu_example()
   
   vector<shared_ptr<const PeakDef>> all_peaks{};
   const RelActCalcAuto::RelActAutoSolution solution = RelActCalcAuto::solve( state.options,
-                                                                            foreground, nullptr, det, all_peaks, nullptr );
+                                                foreground, nullptr, det, all_peaks,
+                                                PeakFitUtils::CoarseResolutionType::CZT, nullptr );
   ofstream out_html( "czt_Pu_rel_eff_result.html" );
   solution.print_summary( cout );
   solution.print_html_report( out_html );
@@ -1773,12 +1776,13 @@ void utile_ana()
     
     
   const RelActCalcAuto::RelActAutoSolution solution
-                = RelActCalcAuto::solve( state.options, foreground, background, det, all_peaks, nullptr );
+                = RelActCalcAuto::solve( state.options, foreground, background, det, all_peaks,
+                                         PeakFitUtils::CoarseResolutionType::High, nullptr );
   ofstream out_html( specfilename + "_releff_result.html" );
-    
+
   solution.print_summary( cout );
   solution.print_html_report( out_html );
-    
+
   for( size_t i = 0; i < solution.m_rel_activities.size(); ++i )
   {
     pair<double,optional<double>> enrich = solution.mass_enrichment_fraction( u235, i );
@@ -1875,7 +1879,8 @@ void leu_heu_ana()
 
 
   const RelActCalcAuto::RelActAutoSolution solution
-                = RelActCalcAuto::solve( state.options, foreground, background, det, all_peaks, nullptr );
+                = RelActCalcAuto::solve( state.options, foreground, background, det, all_peaks,
+                                         PeakFitUtils::CoarseResolutionType::High, nullptr );
   ofstream out_html( specfilename + "_releff_result.html" );
 
   solution.print_summary( cout );
@@ -2096,7 +2101,8 @@ int dev_code()
   vector<shared_ptr<const PeakDef>> all_peaks{};
   
   const RelActCalcAuto::RelActAutoSolution solution = RelActCalcAuto::solve(
-    options, foreground, background, drf, all_peaks, nullptr );
+    options, foreground, background, drf, all_peaks,
+    PeakFitUtils::CoarseResolutionType::High, nullptr );
   
   ofstream out_html( "result.html" );
   solution.print_summary( cout );

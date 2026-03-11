@@ -95,7 +95,10 @@ void PeakFitDetPrefsGui::init()
 {
   InterSpecApp *app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
   if( app )
+  {
+    app->useMessageResourceBundle( "PeakEdit" );
     app->useMessageResourceBundle( "PeakFitDetPrefsGui" );
+  }
   
   if( m_compactMode )
   {
@@ -142,12 +145,14 @@ void PeakFitDetPrefsGui::init()
 
   m_detTypeCombo = new WComboBox( contentDiv );
   m_detTypeCombo->addStyleClass( "PfdpgCombo" );
-  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-nai" ) );     // 0 => Low
-  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-labr" ) );    // 1 => LaBr
-  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-czt" ) );     // 2 => CZT
-  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-hpge" ) );    // 3 => High
-  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-unknown" ) ); // 4 => Unknown
-  m_detTypeCombo->setCurrentIndex( 4 );
+  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-nai" ) );        // 0 => Low
+  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-labr" ) );       // 1 => LaBr
+  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-czt" ) );        // 2 => CZT
+  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-medres" ) );     // 3 => MedRes
+  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-lowormedres" ) ); // 4 => LowOrMedRes
+  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-hpge" ) );       // 5 => High
+  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-unknown" ) );    // 6 => Unknown
+  m_detTypeCombo->setCurrentIndex( 6 );
   m_detTypeCombo->activated().connect( std::bind( [this](){
     if( !m_programmaticUpdate )
       userChangedValue();
@@ -431,8 +436,12 @@ namespace
       case PeakDef::Bortel: // tau: range [0,15], larger=less tail
         switch( detType )
         {
-          case PeakFitUtils::CoarseResolutionType::Low:  lower[0] = 8.0; upper[0] = 8.0; break;
-          case PeakFitUtils::CoarseResolutionType::LaBr: lower[0] = 7.0; upper[0] = 7.0; break;
+          case PeakFitUtils::CoarseResolutionType::Low:
+          case PeakFitUtils::CoarseResolutionType::LowOrMedRes:
+            lower[0] = 8.0; upper[0] = 8.0; break;
+          case PeakFitUtils::CoarseResolutionType::LaBr:
+          case PeakFitUtils::CoarseResolutionType::MedRes:
+            lower[0] = 7.0; upper[0] = 7.0; break;
           case PeakFitUtils::CoarseResolutionType::CZT:  lower[0] = 3.0; upper[0] = 5.0; break;
           case PeakFitUtils::CoarseResolutionType::High: lower[0] = 0.8; upper[0] = 3.0; break;
           default: break;
@@ -442,8 +451,12 @@ namespace
       case PeakDef::GaussExp: // k: range [0.15,3.25], larger=less tail
         switch( detType )
         {
-          case PeakFitUtils::CoarseResolutionType::Low:  lower[0] = 3.0;  upper[0] = 3.0;  break;
-          case PeakFitUtils::CoarseResolutionType::LaBr: lower[0] = 3.0;  upper[0] = 3.0;  break;
+          case PeakFitUtils::CoarseResolutionType::Low:
+          case PeakFitUtils::CoarseResolutionType::LowOrMedRes:
+            lower[0] = 3.0;  upper[0] = 3.0;  break;
+          case PeakFitUtils::CoarseResolutionType::LaBr:
+          case PeakFitUtils::CoarseResolutionType::MedRes:
+            lower[0] = 3.0;  upper[0] = 3.0;  break;
           case PeakFitUtils::CoarseResolutionType::CZT:  lower[0] = 2.0;  upper[0] = 2.5;  break;
           case PeakFitUtils::CoarseResolutionType::High: lower[0] = 0.5;  upper[0] = 2.0;  break;
           default: break;
@@ -453,8 +466,12 @@ namespace
       case PeakDef::CrystalBall: // alpha (energy-dep): [0.5,4], larger=less tail; n (not): [1.05,100]
         switch( detType )
         {
-          case PeakFitUtils::CoarseResolutionType::Low:  lower[0] = 3.5; upper[0] = 3.5; lower[1] = 5.0; break;
-          case PeakFitUtils::CoarseResolutionType::LaBr: lower[0] = 3.5; upper[0] = 3.5; lower[1] = 5.0; break;
+          case PeakFitUtils::CoarseResolutionType::Low:
+          case PeakFitUtils::CoarseResolutionType::LowOrMedRes:
+            lower[0] = 3.5; upper[0] = 3.5; lower[1] = 5.0; break;
+          case PeakFitUtils::CoarseResolutionType::LaBr:
+          case PeakFitUtils::CoarseResolutionType::MedRes:
+            lower[0] = 3.5; upper[0] = 3.5; lower[1] = 5.0; break;
           case PeakFitUtils::CoarseResolutionType::CZT:  lower[0] = 2.5; upper[0] = 3.0; lower[1] = 3.0; break;
           case PeakFitUtils::CoarseResolutionType::High: lower[0] = 1.2; upper[0] = 2.5; lower[1] = 3.0; break;
           default: break;
@@ -465,8 +482,10 @@ namespace
         switch( detType )
         {
           case PeakFitUtils::CoarseResolutionType::Low:
+          case PeakFitUtils::CoarseResolutionType::LowOrMedRes:
             lower[0] = 3.0; upper[0] = 3.0; lower[1] = 3.0; upper[1] = 3.0; break;
           case PeakFitUtils::CoarseResolutionType::LaBr:
+          case PeakFitUtils::CoarseResolutionType::MedRes:
             lower[0] = 3.0; upper[0] = 3.0; lower[1] = 3.0; upper[1] = 3.0; break;
           case PeakFitUtils::CoarseResolutionType::CZT:
             lower[0] = 2.0; upper[0] = 2.5; lower[1] = 3.0; upper[1] = 3.0; break;
@@ -480,9 +499,11 @@ namespace
         switch( detType )
         {
           case PeakFitUtils::CoarseResolutionType::Low:
+          case PeakFitUtils::CoarseResolutionType::LowOrMedRes:
             lower[0] = 3.5; upper[0] = 3.5; lower[1] = 5.0;
             lower[2] = 3.5; upper[2] = 3.5; lower[3] = 5.0; break;
           case PeakFitUtils::CoarseResolutionType::LaBr:
+          case PeakFitUtils::CoarseResolutionType::MedRes:
             lower[0] = 3.5; upper[0] = 3.5; lower[1] = 5.0;
             lower[2] = 3.5; upper[2] = 3.5; lower[3] = 5.0; break;
           case PeakFitUtils::CoarseResolutionType::CZT:
@@ -499,10 +520,12 @@ namespace
         switch( detType )
         {
           case PeakFitUtils::CoarseResolutionType::Low:
+          case PeakFitUtils::CoarseResolutionType::LowOrMedRes:
             lower[0] = 0.01; upper[0] = 0.01;
             lower[1] = 0.01; upper[1] = 0.01;
             lower[2] = 5.0;  upper[2] = 5.0;  break;
           case PeakFitUtils::CoarseResolutionType::LaBr:
+          case PeakFitUtils::CoarseResolutionType::MedRes:
             lower[0] = 0.01; upper[0] = 0.01;
             lower[1] = 0.01; upper[1] = 0.01;
             lower[2] = 5.0;  upper[2] = 5.0;  break;
@@ -522,9 +545,11 @@ namespace
         switch( detType )
         {
           case PeakFitUtils::CoarseResolutionType::Low:
+          case PeakFitUtils::CoarseResolutionType::LowOrMedRes:
             lower[0] = 0.01; upper[0] = 0.01;
             lower[1] = 5.0;  upper[1] = 5.0;  break;
           case PeakFitUtils::CoarseResolutionType::LaBr:
+          case PeakFitUtils::CoarseResolutionType::MedRes:
             lower[0] = 0.01; upper[0] = 0.01;
             lower[1] = 5.0;  upper[1] = 5.0;  break;
           case PeakFitUtils::CoarseResolutionType::CZT:
@@ -541,10 +566,12 @@ namespace
         switch( detType )
         {
           case PeakFitUtils::CoarseResolutionType::Low:
+          case PeakFitUtils::CoarseResolutionType::LowOrMedRes:
             lower[0] = 5.0; upper[0] = 5.0;
             lower[1] = 1.0; upper[1] = 1.0;
             lower[2] = 0.1; break;
           case PeakFitUtils::CoarseResolutionType::LaBr:
+          case PeakFitUtils::CoarseResolutionType::MedRes:
             lower[0] = 5.0; upper[0] = 5.0;
             lower[1] = 1.0; upper[1] = 1.0;
             lower[2] = 0.1; break;
@@ -736,10 +763,12 @@ void PeakFitDetPrefsGui::updateSkewParamRows()
     PeakFitUtils::CoarseResolutionType detType = PeakFitUtils::CoarseResolutionType::Unknown;
     switch( detIdx )
     {
-      case 0:  detType = PeakFitUtils::CoarseResolutionType::Low;  break;
-      case 1:  detType = PeakFitUtils::CoarseResolutionType::LaBr; break;
-      case 2:  detType = PeakFitUtils::CoarseResolutionType::CZT;  break;
-      case 3:  detType = PeakFitUtils::CoarseResolutionType::High; break;
+      case 0:  detType = PeakFitUtils::CoarseResolutionType::Low;        break;
+      case 1:  detType = PeakFitUtils::CoarseResolutionType::LaBr;       break;
+      case 2:  detType = PeakFitUtils::CoarseResolutionType::CZT;        break;
+      case 3:  detType = PeakFitUtils::CoarseResolutionType::MedRes;     break;
+      case 4:  detType = PeakFitUtils::CoarseResolutionType::LowOrMedRes; break;
+      case 5:  detType = PeakFitUtils::CoarseResolutionType::High;       break;
       default: break;
     }
 
@@ -779,11 +808,13 @@ void PeakFitDetPrefsGui::userChangedValue()
   const int detIdx = m_detTypeCombo->currentIndex();
   switch( detIdx )
   {
-    case 0:  newPrefs->m_det_type = PeakFitUtils::CoarseResolutionType::Low;     break;
-    case 1:  newPrefs->m_det_type = PeakFitUtils::CoarseResolutionType::LaBr;    break;
-    case 2:  newPrefs->m_det_type = PeakFitUtils::CoarseResolutionType::CZT;     break;
-    case 3:  newPrefs->m_det_type = PeakFitUtils::CoarseResolutionType::High;    break;
-    default: newPrefs->m_det_type = PeakFitUtils::CoarseResolutionType::Unknown; break;
+    case 0:  newPrefs->m_det_type = PeakFitUtils::CoarseResolutionType::Low;        break;
+    case 1:  newPrefs->m_det_type = PeakFitUtils::CoarseResolutionType::LaBr;       break;
+    case 2:  newPrefs->m_det_type = PeakFitUtils::CoarseResolutionType::CZT;        break;
+    case 3:  newPrefs->m_det_type = PeakFitUtils::CoarseResolutionType::MedRes;     break;
+    case 4:  newPrefs->m_det_type = PeakFitUtils::CoarseResolutionType::LowOrMedRes; break;
+    case 5:  newPrefs->m_det_type = PeakFitUtils::CoarseResolutionType::High;       break;
+    default: newPrefs->m_det_type = PeakFitUtils::CoarseResolutionType::Unknown;    break;
   }
 
   // Skew type
@@ -892,7 +923,7 @@ void PeakFitDetPrefsGui::updateFromSpecMeas()
 
   if( !prefs )
   {
-    m_detTypeCombo->setCurrentIndex( 4 );
+    m_detTypeCombo->setCurrentIndex( 6 );
     m_fwhmMethodCombo->setCurrentIndex( 0 );
     m_skewTypeCombo->setCurrentIndex( 0 );
     updateSkewParamRows();
@@ -905,11 +936,13 @@ void PeakFitDetPrefsGui::updateFromSpecMeas()
   // Set detector type combo
   switch( prefs->m_det_type )
   {
-    case PeakFitUtils::CoarseResolutionType::Low:     m_detTypeCombo->setCurrentIndex( 0 ); break;
-    case PeakFitUtils::CoarseResolutionType::LaBr:    m_detTypeCombo->setCurrentIndex( 1 ); break;
-    case PeakFitUtils::CoarseResolutionType::CZT:     m_detTypeCombo->setCurrentIndex( 2 ); break;
-    case PeakFitUtils::CoarseResolutionType::High:    m_detTypeCombo->setCurrentIndex( 3 ); break;
-    case PeakFitUtils::CoarseResolutionType::Unknown: m_detTypeCombo->setCurrentIndex( 4 ); break;
+    case PeakFitUtils::CoarseResolutionType::Low:        m_detTypeCombo->setCurrentIndex( 0 ); break;
+    case PeakFitUtils::CoarseResolutionType::LaBr:       m_detTypeCombo->setCurrentIndex( 1 ); break;
+    case PeakFitUtils::CoarseResolutionType::CZT:        m_detTypeCombo->setCurrentIndex( 2 ); break;
+    case PeakFitUtils::CoarseResolutionType::MedRes:     m_detTypeCombo->setCurrentIndex( 3 ); break;
+    case PeakFitUtils::CoarseResolutionType::LowOrMedRes: m_detTypeCombo->setCurrentIndex( 4 ); break;
+    case PeakFitUtils::CoarseResolutionType::High:       m_detTypeCombo->setCurrentIndex( 5 ); break;
+    case PeakFitUtils::CoarseResolutionType::Unknown:    m_detTypeCombo->setCurrentIndex( 6 ); break;
   }//switch( prefs->m_det_type )
 
   // Set FWHM method combo

@@ -162,14 +162,15 @@ void smoothSpectrum( const std::vector<float> &spectrum, const int side_bins,
 
 #define PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL 0
 
-//expected_peak_width_limits(): gives the extremes of expected peak
-//  sigmas for detectors - the min sigma is 0.5 (0.75) times the smallest known
-//  detector width, and the max sigma is 3 (2) times the largest known detector
-//  width for highres (lowres) detectors.
-//  Specify highres=false for NaI, CsI, LaBr3, or CZT detectors. lowres=true for
-//  HPGe detectors.
+/** Gives the extremes of expected peak sigmas for detectors.
+ The min sigma is a fraction of the smallest known detector width, and the max
+ sigma is a multiple of the largest known detector width.
+
+ For Unknown det_type, the widest possible range is returned (min from HPGe,
+ max from low-res).
+ */
 void expected_peak_width_limits( const float energy,
-                                 const bool highres,
+                                 const PeakFitUtils::CoarseResolutionType det_type,
                                  const std::shared_ptr<const SpecUtils::Measurement> &meas,
                                  float &min_sigma_width_kev,
                                  float &max_sigma_width_kev );
@@ -205,7 +206,7 @@ std::vector<PeakDef> fitPeaksInRange( const double x0, const double x1,
                                       std::vector<PeakDef> all_peaks,
                                       std::shared_ptr<const SpecUtils::Measurement> data,
                                       const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options,
-                                      const bool isHPGe );
+                                      const PeakFitUtils::CoarseResolutionType det_type );
 
 
 
@@ -285,6 +286,7 @@ std::vector< std::shared_ptr<const PeakDef> >
     refitPeaksThatShareROI( const std::shared_ptr<const SpecUtils::Measurement> &dataH,
                             const DetctorPtr &detector,
                             const std::vector< std::shared_ptr<const PeakDef> > &inpeaks,
+                            const PeakFitUtils::CoarseResolutionType det_type,
                             const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options );
 
 
@@ -479,7 +481,7 @@ namespace ExperimentalPeakSearch
   //  search_for_peaks(...) that uses the current best guess of arguments
   std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const SpecUtils::Measurement> meas,
                                          const std::vector<PeakDef> &origpeaks,
-                                        const bool isHPGe );
+                                        const PeakFitUtils::CoarseResolutionType det_type );
   
   
 bool find_spectroscopic_extent( std::shared_ptr<const SpecUtils::Measurement> meas,
@@ -496,7 +498,7 @@ std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const SpecUtils::Me
                                       const double stat_thresh,
                                       const double width_thresh,
                                       const std::vector<PeakDef> &origpeaks, /*included in result, unmodified, wont have duplciate */
-                                      const bool isHPGe
+                                      const PeakFitUtils::CoarseResolutionType det_type
 #if( WRITE_CANDIDATE_PEAK_INFO_TO_FILE )
                                       , std::shared_ptr<const DetectorPeakResponse> detector
 #endif
@@ -519,7 +521,8 @@ std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const SpecUtils::Me
     
   protected:
     bool m_inited;
-    const bool m_isHPGe;
+    const PeakFitUtils::CoarseResolutionType m_det_type;
+    const bool m_isHighRes;
     
     std::shared_ptr< const std::vector<float> > m_y;
     std::shared_ptr< const std::vector<float> > m_x;
@@ -567,7 +570,7 @@ std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const SpecUtils::Me
     //             manor then the new peaks.
     AutoPeakSearchChi2Fcn( std::shared_ptr<const SpecUtils::Measurement> data,
                           const std::vector<PeakDef > &fixed_peaks,
-                          const bool isHPGe );    
+                          const PeakFitUtils::CoarseResolutionType det_type );
     
     size_t lower_spectrum_channel() const;
     size_t upper_spectrum_channel() const;

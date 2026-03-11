@@ -30,6 +30,7 @@
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/RelActCalc.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -364,7 +365,7 @@ PeakFitResult fit_peaks_for_nuclides(
 std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_without_peaks(
   const std::vector<RelActCalcAuto::NucInputInfo> &sources,
   const std::shared_ptr<const DetectorPeakResponse> &drf,
-  const bool isHPGe,
+  const PeakFitUtils::CoarseResolutionType det_type,
   const DetectorPeakResponse::ResolutionFnctForm fwhmFnctnlForm,
   const std::vector<float> &fwhm_coefficients,
   const double lower_fwhm_energy,

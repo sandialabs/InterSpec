@@ -40,6 +40,7 @@
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/EnergyCal.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
 using namespace std;
@@ -202,8 +203,8 @@ int main( int argc, char **argv )
     const double lower_energy = exemplar_peaks.front()->mean() - 0.1;
     const double uppper_energy = exemplar_peaks.back()->mean() + 0.1;
     
-    // We are not refitting peaks, because the areas may be wildly different.
-    const bool isRefit = false;
+    // Determine the coarse detector resolution type from the spectrum
+    const PeakFitUtils::CoarseResolutionType det_type = PeakFitUtils::coarse_det_type( raw, nullptr );
     
     //Use default for peak fit filters
     const double ncausalitysigma = 0.0, stat_threshold  = 0.0, hypothesis_threshold = 0.0;
@@ -242,14 +243,14 @@ int main( int argc, char **argv )
       
       vector<PeakDef> peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
                                                   stat_threshold, hypothesis_threshold,
-                                              energy_cal_peaks, raw, {}, isRefit );
+                                              energy_cal_peaks, raw, {}, det_type );
       fit_energy_cal_from_fit_peaks( raw_n42, peaks, 4 );
     }//for( size_t i = 0; i < 1; ++i )
     
     
     vector<PeakDef> fit_peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
                                                  stat_threshold, hypothesis_threshold,
-                                                 candidate_peaks, raw, {}, isRefit );
+                                                 candidate_peaks, raw, {}, det_type );
     
     cout << "Fit for the following " << fit_peaks.size() << " peaks (the exemplar file had "
          << exemplar_peaks.size() <<  ") from the raw spectrum:"
@@ -537,7 +538,8 @@ void refit_peaks(  )
     if( inputPeak.size() > 1 )
     {
       const shared_ptr<const DetectorPeakResponse> &detector = foreground->detector();
-      const PeakShrdVec result = refitPeaksThatShareROI( data, detector, peaksInRoi, PeakFitLM::PeakFitLMOptions::SmallRefinementOnly );
+      const PeakFitUtils::CoarseResolutionType det_type = PeakFitUtils::coarse_resolution_from_peaks( peaksInRoi );
+      const PeakShrdVec result = refitPeaksThatShareROI( data, detector, peaksInRoi, det_type, PeakFitLM::PeakFitLMOptions::SmallRefinementOnly );
       
       if( result.size() == inputPeak.size() )
       {

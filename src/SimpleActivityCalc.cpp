@@ -66,6 +66,7 @@
 #include "InterSpec/XmlUtils.hpp"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/GadrasSpecFunc.h"
@@ -1573,11 +1574,14 @@ void SimpleActivityCalc::handleBackgroundSubtractChanged()
         const double stat_threshold = -1.0;
         const double hypothesis_threshold = -1.0;
         const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options( PeakFitLM::PeakFitLMOptions::SmallRefinementOnly );
-        const bool isHPGe = PeakFitUtils::is_likely_high_res( m_viewer ); //Or we could use the current peaks FWHM to estimate this...
-        
+        std::shared_ptr<const PeakFitDetPrefs> sacFitPrefs = m_viewer->measurment( SpecUtils::SpectrumType::Foreground )
+          ? m_viewer->measurment( SpecUtils::SpectrumType::Foreground )->peakFitDetPrefs() : nullptr;
+        const PeakFitUtils::CoarseResolutionType sacDetType
+          = sacFitPrefs ? sacFitPrefs->m_det_type : PeakFitUtils::coarse_det_type( background, nullptr );
+
         const vector<PeakDef> fit_peaks = fitPeaksInRange( lower_x, upper_x,
                                              ncausalitysigma, stat_threshold, hypothesis_threshold, updated_back_roi_peaks,
-                                             background, fit_options, isHPGe );
+                                             background, fit_options, sacDetType );
         
         double min_dist = 9999.9;
         std::shared_ptr<const PeakDef> background_peak;

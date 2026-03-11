@@ -96,11 +96,13 @@ const char *PeakFitDetPrefs::to_str( const PeakFitUtils::CoarseResolutionType ty
 {
   switch( type )
   {
-    case PeakFitUtils::CoarseResolutionType::Low:     return "Low";
-    case PeakFitUtils::CoarseResolutionType::LaBr:    return "LaBr";
-    case PeakFitUtils::CoarseResolutionType::CZT:     return "CZT";
-    case PeakFitUtils::CoarseResolutionType::High:    return "High";
-    case PeakFitUtils::CoarseResolutionType::Unknown:  return "Unknown";
+    case PeakFitUtils::CoarseResolutionType::Low:        return "Low";
+    case PeakFitUtils::CoarseResolutionType::LaBr:       return "LaBr";
+    case PeakFitUtils::CoarseResolutionType::CZT:        return "CZT";
+    case PeakFitUtils::CoarseResolutionType::MedRes:     return "MedRes";
+    case PeakFitUtils::CoarseResolutionType::LowOrMedRes: return "LowOrMedRes";
+    case PeakFitUtils::CoarseResolutionType::High:       return "High";
+    case PeakFitUtils::CoarseResolutionType::Unknown:    return "Unknown";
   }//switch( type )
 
   assert( 0 );
@@ -116,6 +118,10 @@ PeakFitUtils::CoarseResolutionType PeakFitDetPrefs::coarse_res_from_str( const s
     return PeakFitUtils::CoarseResolutionType::LaBr;
   if( SpecUtils::iequals_ascii( str, "CZT" ) )
     return PeakFitUtils::CoarseResolutionType::CZT;
+  if( SpecUtils::iequals_ascii( str, "MedRes" ) )
+    return PeakFitUtils::CoarseResolutionType::MedRes;
+  if( SpecUtils::iequals_ascii( str, "LowOrMedRes" ) )
+    return PeakFitUtils::CoarseResolutionType::LowOrMedRes;
   if( SpecUtils::iequals_ascii( str, "High" ) || SpecUtils::iequals_ascii( str, "HPGe" ) )
     return PeakFitUtils::CoarseResolutionType::High;
   if( SpecUtils::iequals_ascii( str, "Unknown" ) )
@@ -572,18 +578,65 @@ void apply_fwhm_method_to_peaks(
       continue;
 
     const float energy = static_cast<float>( peak->mean() );
-    if( prefs.m_fwhm_method == PeakFitDetPrefs::FwhmMethod::Normal )
-    {
-      const double drf_sigma = drf->peakResolutionSigma( energy );
-      peak->setSigma( drf_sigma );
+    const double drf_sigma = drf->peakResolutionSigma( energy );
+    peak->setSigma( drf_sigma );
 
-      if( prefs.m_fwhm_method == PeakFitDetPrefs::FwhmMethod::DetFwhm )
-        peak->setFitFor( PeakDef::CoefficientType::Sigma, false );
-      // DetPlusRefine: leave fitFor(Sigma) as-is (true); SmallFwhmRefinementOnly
-      // will be added to fit_options below.
-    }
+    if( prefs.m_fwhm_method == PeakFitDetPrefs::FwhmMethod::DetFwhm )
+      peak->setFitFor( PeakDef::CoefficientType::Sigma, false );
+    // DetPlusRefine: leave fitFor(Sigma) as-is (true); SmallFwhmRefinementOnly
+    // will be added to fit_options below.
   }//for( peak : peaks )
 
   if( prefs.m_fwhm_method == PeakFitDetPrefs::FwhmMethod::DetPlusRefine )
     fit_options |= PeakFitLM::SmallFwhmRefinementOnly;
 }//apply_fwhm_method_to_peaks
+
+
+void apply_fit_prefs_to_peaks(
+  std::vector<std::shared_ptr<PeakDef>> &peaks,
+  const std::shared_ptr<const SpecUtils::Measurement> &data,
+  const std::shared_ptr<const DetectorPeakResponse> &drf,
+  const PeakFitDetPrefs &prefs,
+  Wt::WFlags<PeakFitLM::PeakFitLMOptions> &fit_options )
+{
+  // Apply FWHM method
+  apply_fwhm_method_to_peaks( peaks, drf, prefs, fit_options );
+
+  // Apply skew type and parameters
+  const PeakDef::SkewType prefs_skew = prefs.m_peak_skew_type;
+  const size_t num_skew = PeakDef::num_skew_parameters( prefs_skew );
+
+  for( shared_ptr<PeakDef> &peak : peaks )
+  {
+    if( !peak )
+      continue;
+
+    peak->setSkewType( prefs_skew );
+
+    for( size_t i = 0; i < num_skew; ++i )
+    {
+      const PeakDef::CoefficientType ct
+        = PeakDef::CoefficientType( PeakDef::CoefficientType::SkewPar0 + i );
+
+      if( prefs.m_lower_energy_skew[i].has_value() )
+      {
+        double val = prefs.m_lower_energy_skew[i].value();
+
+        if( PeakDef::is_energy_dependent( prefs_skew, ct )
+           && prefs.m_upper_energy_skew[i].has_value()
+           && data && data->num_gamma_channels() > 0 )
+        {
+          const double lower_energy = data->gamma_channel_lower( 0 );
+          const double upper_energy
+            = data->gamma_channel_upper( data->num_gamma_channels() - 1 );
+          const double frac = (peak->mean() - lower_energy)
+                              / (upper_energy - lower_energy);
+          val += frac * (prefs.m_upper_energy_skew[i].value() - val);
+        }
+
+        peak->set_coefficient( val, ct );
+        peak->setFitFor( ct, false );
+      }//if( skew param value specified )
+    }//for( loop over skew parameters )
+  }//for( peak : peaks )
+}//apply_fit_prefs_to_peaks

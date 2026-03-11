@@ -887,12 +887,19 @@ void FitSkewParamsTool::acceptResults()
       for( const shared_ptr<const PeakDef> &pk : withSkew )
         roiGroups[pk->continuum()].push_back( pk );
 
+      shared_ptr<const PeakFitDetPrefs> skewPrefs = meas ? meas->peakFitDetPrefs() : nullptr;
+      if( !skewPrefs && drf )
+        skewPrefs = drf->peakFitDetPrefs();
+      assert( skewPrefs );
+      const PeakFitUtils::CoarseResolutionType skewDetType
+        = skewPrefs ? skewPrefs->m_det_type : PeakFitUtils::coarse_det_type( data, meas );
+
       vector<shared_ptr<const PeakDef>> allRefit;
       for( const auto &entry : roiGroups )
       {
         const vector<shared_ptr<const PeakDef>> refit
           = refitPeaksThatShareROI( data, drf, entry.second,
-                                    PeakFitLM::SmallRefinementOnly );
+                                    skewDetType, PeakFitLM::SmallRefinementOnly );
 
         if( refit.size() == entry.second.size() )
           allRefit.insert( allRefit.end(), refit.begin(), refit.end() );
@@ -985,9 +992,18 @@ void FitSkewParamsTool::handleRoiDrag( double new_lower, double new_upper, doubl
   {
     // Refit the peaks in this ROI (skew locked, mean/sigma/amplitude free)
     shared_ptr<const DetectorPeakResponse> detector;
+    const shared_ptr<const SpecMeas> dragMeas = m_viewer
+      ? m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) : nullptr;
+    shared_ptr<const PeakFitDetPrefs> dragFitPrefs = dragMeas ? dragMeas->peakFitDetPrefs() : nullptr;
+    if( !dragFitPrefs && dragMeas )
+      dragFitPrefs = dragMeas->detector() ? dragMeas->detector()->peakFitDetPrefs() : nullptr;
+    assert( dragFitPrefs );
+    const PeakFitUtils::CoarseResolutionType dragDetType
+      = dragFitPrefs ? dragFitPrefs->m_det_type : PeakFitUtils::coarse_det_type( m_spectrum, dragMeas );
+
     const vector<shared_ptr<const PeakDef>> refitPeaks
       = refitPeaksThatShareROI_LM( m_spectrum, detector, roiPeaks,
-                                   PeakFitLM::SmallRefinementOnly );
+                                   dragDetType, PeakFitLM::SmallRefinementOnly );
     if( !refitPeaks.empty() )
       roiPeaks = refitPeaks;
   }//if( is_final && worth refitting )
@@ -1254,9 +1270,18 @@ void FitSkewParamsTool::changeContinuumTypeNearEnergy( double energy, int contin
   if( m_spectrum )
   {
     shared_ptr<const DetectorPeakResponse> detector;
+    const shared_ptr<const SpecMeas> contMeas = m_viewer
+      ? m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) : nullptr;
+    shared_ptr<const PeakFitDetPrefs> contFitPrefs = contMeas ? contMeas->peakFitDetPrefs() : nullptr;
+    if( !contFitPrefs && contMeas )
+      contFitPrefs = contMeas->detector() ? contMeas->detector()->peakFitDetPrefs() : nullptr;
+    assert( contFitPrefs );
+    const PeakFitUtils::CoarseResolutionType contDetType
+      = contFitPrefs ? contFitPrefs->m_det_type : PeakFitUtils::coarse_det_type( m_spectrum, contMeas );
+
     const vector<shared_ptr<const PeakDef>> refitPeaks
       = refitPeaksThatShareROI_LM( m_spectrum, detector, roiPeaks,
-                                   PeakFitLM::SmallRefinementOnly );
+                                   contDetType, PeakFitLM::SmallRefinementOnly );
     if( !refitPeaks.empty() )
       roiPeaks = refitPeaks;
   }

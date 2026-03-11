@@ -2705,33 +2705,41 @@ void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork( double new_lower_ener
         }
       }//if( we should start from the peaks we last fit while dragging )
       
-      // Apply FWHM method from PeakFitDetPrefs if applicable
+      // Apply fit preferences (FWHM method and skew) from PeakFitDetPrefs
       Wt::WFlags<PeakFitLM::PeakFitLMOptions> refit_options( PeakFitLM::PeakFitLMOptions::MediumAmplitudeRefinementOnly );
+      PeakFitUtils::CoarseResolutionType dragDetType = PeakFitUtils::CoarseResolutionType::Unknown;
 
       {
         InterSpec *viewer = InterSpec::instance();
-        shared_ptr<const SpecMeas> meas = viewer
+        const shared_ptr<const SpecMeas> meas = viewer
           ? viewer->measurment( SpecUtils::SpectrumType::Foreground )
           : nullptr;
         shared_ptr<const PeakFitDetPrefs> prefs = meas ? meas->peakFitDetPrefs() : nullptr;
+        if( !prefs && detector )
+          prefs = detector->peakFitDetPrefs();
+        assert( prefs );
+
+        dragDetType = prefs ? prefs->m_det_type
+                            : PeakFitUtils::coarse_det_type( spectrum, meas );
+
         if( prefs )
         {
-          shared_ptr<const DetectorPeakResponse> drf = meas->detector();
+          shared_ptr<const DetectorPeakResponse> drf = meas ? meas->detector() : nullptr;
           vector<shared_ptr<PeakDef>> mutable_peaks;
           for( const auto &p : new_roi_initial_peaks )
             mutable_peaks.push_back( make_shared<PeakDef>( *p ) );
-          apply_fwhm_method_to_peaks( mutable_peaks, drf, *prefs, refit_options );
+          apply_fit_prefs_to_peaks( mutable_peaks, spectrum, drf, *prefs, refit_options );
           new_roi_initial_peaks.clear();
           for( const auto &p : mutable_peaks )
             new_roi_initial_peaks.push_back( p );
         }
-        
+
         if( !prefs || (prefs->m_fwhm_method == PeakFitDetPrefs::FwhmMethod::Normal) )
           refit_options |= PeakFitLM::PeakFitLMOptions::MediumFwhmRefinementOnly;
       }
 
       vector<shared_ptr<const PeakDef>> refitpeaks
-                  = refitPeaksThatShareROI( spectrum, detector, new_roi_initial_peaks, refit_options );
+                  = refitPeaksThatShareROI( spectrum, detector, new_roi_initial_peaks, dragDetType, refit_options );
       
       m_continuum_being_drug = continuum;
       m_last_being_drug_peaks = refitpeaks;
@@ -2844,27 +2852,27 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
     return;
   }
   
-  // Lets determine if this is a HPGe spectrum or not - this is used for minimum width
-  //  we will consider fitting a peak for, as well as the maximum number of peaks we
-  //  will consider.
-  const bool isHPGe = PeakFitUtils::is_likely_high_res( viewer );
-
   std::shared_ptr<const PeakFitDetPrefs> fitPrefs = meas ? meas->peakFitDetPrefs() : nullptr;
+  if( !fitPrefs && detector )
+    fitPrefs = detector->peakFitDetPrefs();
+  assert( fitPrefs );
+  const PeakFitUtils::CoarseResolutionType det_type
+    = fitPrefs ? fitPrefs->m_det_type : PeakFitUtils::coarse_det_type( foreground, meas );
 
   std::vector<std::shared_ptr<const PeakDef>> prev_shown_peaks = m_last_being_added_peaks;
 
-  auto fcnworker = [foreground,detector,lower_energy,upper_energy,nForcedPeaks,isfinal,window_xpx,window_ypx,app,spectrum,peakModel,isHPGe,prev_shown_peaks,fitPrefs](){
+  auto fcnworker = [foreground,detector,lower_energy,upper_energy,nForcedPeaks,isfinal,window_xpx,window_ypx,app,spectrum,peakModel,det_type,prev_shown_peaks,fitPrefs](){
 
     const float erange = upper_energy - lower_energy;
     const float midenergy = 0.5f*(lower_energy + upper_energy);
-    
+
     try
     {
       //const auto start_cpu_time = SpecUtils::get_cpu_time();
       //const auto start_wall_time = SpecUtils::get_wall_time();
-      
+
       float min_sigma_width_kev, max_sigma_width_kev;
-      expected_peak_width_limits( midenergy, isHPGe, foreground, min_sigma_width_kev, max_sigma_width_kev );
+      expected_peak_width_limits( midenergy, det_type, foreground, min_sigma_width_kev, max_sigma_width_kev );
       
       if( erange < min_sigma_width_kev )
         throw runtime_error( "to small range" );
@@ -3007,23 +3015,21 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
       if( (best_choice < 0) || results[best_choice].empty() )
         throw runtime_error( "Failed to fit for peaks." );
 
-      // Apply FWHM method from PeakFitDetPrefs to the best-fit peaks
+      // Apply fit preferences (FWHM method and skew) to the best-fit peaks
       assert( fitPrefs );
-      if( fitPrefs
-         && (fitPrefs->m_fwhm_method != PeakFitDetPrefs::FwhmMethod::Normal)
-         && detector && detector->hasResolutionInfo() )
+      if( fitPrefs )
       {
-        Wt::WFlags<PeakFitLM::PeakFitLMOptions> fwhm_options( 0 );
-        apply_fwhm_method_to_peaks( results[best_choice], detector, *fitPrefs, fwhm_options );
+        Wt::WFlags<PeakFitLM::PeakFitLMOptions> prefs_options( 0 );
+        apply_fit_prefs_to_peaks( results[best_choice], foreground, detector, *fitPrefs, prefs_options );
 
-        // Refit with the FWHM constraints applied
+        // Refit with the preferences applied
         vector<shared_ptr<const PeakDef>> constPeaks;
         for( const auto &p : results[best_choice] )
           constPeaks.push_back( p );
 
-        fwhm_options |= PeakFitLM::SmallAmplitudeRefinementOnly;
+        prefs_options |= PeakFitLM::SmallAmplitudeRefinementOnly;
         const vector<shared_ptr<const PeakDef>> refit
-          = refitPeaksThatShareROI( foreground, detector, constPeaks, fwhm_options );
+          = refitPeaksThatShareROI( foreground, detector, constPeaks, fitPrefs->m_det_type, prefs_options );
 
         if( !refit.empty() )
         {
@@ -3031,7 +3037,7 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
           for( const auto &p : refit )
             results[best_choice].push_back( make_shared<PeakDef>( *p ) );
         }
-      }//if( need to apply FWHM method )
+      }//if( need to apply fit preferences )
 
       WApplication::UpdateLock lock( app );
       

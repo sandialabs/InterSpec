@@ -805,7 +805,7 @@ std::vector<RelActCalcAuto::NucInputInfo> get_norm_sources(
  \param options The RelActCalcAuto::Options to potentially add a floating peak to
  \param sources The input sources being fit
  \param fit_norm_peaks Whether NORM background peaks are being fit
- \param isHPGe Whether this is a high-resolution (HPGe) detector
+ \param det_type The coarse resolution type of the detector
  \param min_valid_energy Minimum energy of the valid spectroscopic range (keV)
  \param max_valid_energy Maximum energy of the valid spectroscopic range (keV)
  */
@@ -813,12 +813,12 @@ void add_floating_511_peak_if_appropriate(
   RelActCalcAuto::Options &options,
   const std::vector<RelActCalcAuto::NucInputInfo> &sources,
   const bool fit_norm_peaks,
-  const bool isHPGe,
+  const PeakFitUtils::CoarseResolutionType det_type,
   const double min_valid_energy,
   const double max_valid_energy )
 {
   // Only add 511 keV peaks for high-resolution detectors (HPGe)
-  if( !isHPGe )
+  if( det_type != PeakFitUtils::CoarseResolutionType::High )
     return;
   
   // Check if there's a ROI covering 511 keV
@@ -1006,14 +1006,14 @@ void add_escape_peak_floating_peaks_if_appropriate(
   RelActCalcAuto::Options &options,
   const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
   const bool fit_norm_peaks,
-  const bool isHPGe,
+  const PeakFitUtils::CoarseResolutionType det_type,
   const double min_valid_energy,
   const double max_valid_energy,
   const PeakFitForNuclideConfig &config )
 {
   // Only add escape peaks for high-resolution detectors (HPGe)
   // Escape peaks are smeared out and not distinguishable in lower-resolution detectors
-  if( !fit_norm_peaks || !isHPGe )
+  if( !fit_norm_peaks || (det_type != PeakFitUtils::CoarseResolutionType::High) )
     return;
   
   const double electron_rest_mass = 510.9989; // keV
@@ -1406,10 +1406,10 @@ void resolve_overlapping_rois( std::vector<RelActCalcAuto::RoiRange> &rois,
 void assign_escape_peak_relationships(
   std::vector<PeakDef> &fit_peaks,
   const bool fit_norm_peaks,
-  const bool isHPGe )
+  const PeakFitUtils::CoarseResolutionType det_type )
 {
   // Only assign escape peaks for high-resolution detectors (HPGe)
-  if( !fit_norm_peaks || !isHPGe )
+  if( !fit_norm_peaks || (det_type != PeakFitUtils::CoarseResolutionType::High) )
     return;
   
   const double electron_rest_mass = 510.9989; // keV
@@ -2253,6 +2253,7 @@ std::vector<PeakDef> combine_overlapping_peaks_in_rois(
 std::vector<PeakDef> compute_observable_peaks(
   const std::vector<PeakDef> &fit_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+  const PeakFitUtils::CoarseResolutionType det_type,
   const PeakFitForNuclideConfig &config )
 {
   
@@ -2499,7 +2500,7 @@ std::vector<PeakDef> compute_observable_peaks(
   for( size_t roi_index = 0; roi_index < num_rois; ++roi_index )
   {
     pool.post( [roi_index, &roi_vec, &roi_results, &foreground,
-                final_significance_threshold, &reduce_roi_bounds_if_needed]()
+                final_significance_threshold, det_type, &reduce_roi_bounds_if_needed]()
     {
       std::vector<PeakDef> roi_peaks = roi_vec[roi_index].second;
 
@@ -2525,7 +2526,7 @@ std::vector<PeakDef> compute_observable_peaks(
         // Refit with SmallRefinementOnly option
         std::vector<std::shared_ptr<const PeakDef>> refit_result =
           PeakFitLM::refitPeaksThatShareROI_LM( foreground, nullptr, input_peaks,
-            PeakFitLM::PeakFitLMOptions::SmallRefinementOnly );
+            det_type, PeakFitLM::PeakFitLMOptions::SmallRefinementOnly );
 
         // If refit failed, keep original peaks
         if( refit_result.empty() )
@@ -4016,7 +4017,7 @@ std::vector<RelActCalcAuto::RoiRange> merge_rois(
 std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_without_peaks(
   const std::vector<RelActCalcAuto::NucInputInfo> &sources,
   const std::shared_ptr<const DetectorPeakResponse> &drf,
-  const bool isHPGe,
+  const PeakFitUtils::CoarseResolutionType det_type,
   const DetectorPeakResponse::ResolutionFnctForm fwhmFnctnlForm,
   const std::vector<float> &fwhm_coefficients,
   const double lower_fwhm_energy,
@@ -4029,9 +4030,25 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_without_peaks(
   std::shared_ptr<const DetectorPeakResponse> drf_to_use = drf;
   if( !drf_to_use || !drf_to_use->isValid() )
   {
-    drf_to_use = isHPGe
-        ? DetectorPeakResponse::getGenericHPGeDetector()
-        : DetectorPeakResponse::getGenericNaIDetector();
+    switch( det_type )
+    {
+      case PeakFitUtils::CoarseResolutionType::High:
+        drf_to_use = DetectorPeakResponse::getGenericHPGeDetector();
+        break;
+      case PeakFitUtils::CoarseResolutionType::LaBr:
+      case PeakFitUtils::CoarseResolutionType::MedRes:
+        drf_to_use = DetectorPeakResponse::getGenericLaBrDetector();
+        break;
+      case PeakFitUtils::CoarseResolutionType::CZT:
+        drf_to_use = DetectorPeakResponse::getGenericCZTGeneralDetector();
+        break;
+      case PeakFitUtils::CoarseResolutionType::Low:
+      case PeakFitUtils::CoarseResolutionType::LowOrMedRes:
+      case PeakFitUtils::CoarseResolutionType::Unknown:
+      default:
+        drf_to_use = DetectorPeakResponse::getGenericNaIDetector();
+        break;
+    }//switch( det_type )
   }
 
   if( !drf_to_use || !drf_to_use->isValid() )
@@ -4148,7 +4165,7 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_fallback(
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,
   const std::vector<RelActCalcAuto::NucInputInfo> &sources,
   const std::shared_ptr<const DetectorPeakResponse> &drf,
-  const bool isHPGe,
+  const PeakFitUtils::CoarseResolutionType det_type,
   const DetectorPeakResponse::ResolutionFnctForm fwhmFnctnlForm,
   const std::vector<float> &fwhm_coefficients,
   const double lower_fwhm_energy,
@@ -4159,9 +4176,25 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_fallback(
   std::shared_ptr<const DetectorPeakResponse> drf_to_use = drf;
   if( !drf_to_use || !drf_to_use->isValid() )
   {
-    drf_to_use = isHPGe
-        ? DetectorPeakResponse::getGenericHPGeDetector()
-        : DetectorPeakResponse::getGenericNaIDetector();
+    switch( det_type )
+    {
+      case PeakFitUtils::CoarseResolutionType::High:
+        drf_to_use = DetectorPeakResponse::getGenericHPGeDetector();
+        break;
+      case PeakFitUtils::CoarseResolutionType::LaBr:
+      case PeakFitUtils::CoarseResolutionType::MedRes:
+        drf_to_use = DetectorPeakResponse::getGenericLaBrDetector();
+        break;
+      case PeakFitUtils::CoarseResolutionType::CZT:
+        drf_to_use = DetectorPeakResponse::getGenericCZTGeneralDetector();
+        break;
+      case PeakFitUtils::CoarseResolutionType::Low:
+      case PeakFitUtils::CoarseResolutionType::LowOrMedRes:
+      case PeakFitUtils::CoarseResolutionType::Unknown:
+      default:
+        drf_to_use = DetectorPeakResponse::getGenericNaIDetector();
+        break;
+    }//switch( det_type )
   }
 
   if( !drf_to_use || !drf_to_use->isValid() )
@@ -4314,7 +4347,7 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,
   const std::vector<RelActCalcAuto::NucInputInfo> &sources,
   const std::shared_ptr<const DetectorPeakResponse> &drf,
-  const bool isHPGe,
+  const PeakFitUtils::CoarseResolutionType det_type,
   const DetectorPeakResponse::ResolutionFnctForm fwhmFnctnlForm,
   const std::vector<float> &fwhm_coefficients,
   const double lower_fwhm_energy,
@@ -4404,7 +4437,7 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
   if( peaks_matched.empty() )
   {
     return estimate_initial_rois_without_peaks(
-      sources, drf, isHPGe,
+      sources, drf, det_type,
       fwhmFnctnlForm, fwhm_coefficients, lower_fwhm_energy, upper_fwhm_energy,
       min_valid_energy, max_valid_energy, config );
   }
@@ -4489,10 +4522,25 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
     manual_input.phys_model_detector = drf;
     if( !manual_input.phys_model_detector )
     {
-      if( isHPGe )
-        manual_input.phys_model_detector = DetectorPeakResponse::getGenericHPGeDetector();
-      else
-        manual_input.phys_model_detector = DetectorPeakResponse::getGenericNaIDetector();
+      switch( det_type )
+      {
+        case PeakFitUtils::CoarseResolutionType::High:
+          manual_input.phys_model_detector = DetectorPeakResponse::getGenericHPGeDetector();
+          break;
+        case PeakFitUtils::CoarseResolutionType::LaBr:
+        case PeakFitUtils::CoarseResolutionType::MedRes:
+          manual_input.phys_model_detector = DetectorPeakResponse::getGenericLaBrDetector();
+          break;
+        case PeakFitUtils::CoarseResolutionType::CZT:
+          manual_input.phys_model_detector = DetectorPeakResponse::getGenericCZTGeneralDetector();
+          break;
+        case PeakFitUtils::CoarseResolutionType::Low:
+        case PeakFitUtils::CoarseResolutionType::LowOrMedRes:
+        case PeakFitUtils::CoarseResolutionType::Unknown:
+        default:
+          manual_input.phys_model_detector = DetectorPeakResponse::getGenericNaIDetector();
+          break;
+      }//switch( det_type )
     }
 
     manual_input.phys_model_self_atten = std::shared_ptr<const RelActCalc::PhysicalModelShieldInput>{};
@@ -4545,10 +4593,25 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
       retry_input.phys_model_use_hoerl = (manual_input.peaks.size() > 3);
       retry_input.use_ceres_to_fit_eqn = true;
       retry_input.eqn_order = 0;
-      if( isHPGe )
-        retry_input.phys_model_detector = DetectorPeakResponse::getGenericHPGeDetector();
-      else
-        retry_input.phys_model_detector = DetectorPeakResponse::getGenericNaIDetector();
+      switch( det_type )
+      {
+        case PeakFitUtils::CoarseResolutionType::High:
+          retry_input.phys_model_detector = DetectorPeakResponse::getGenericHPGeDetector();
+          break;
+        case PeakFitUtils::CoarseResolutionType::LaBr:
+        case PeakFitUtils::CoarseResolutionType::MedRes:
+          retry_input.phys_model_detector = DetectorPeakResponse::getGenericLaBrDetector();
+          break;
+        case PeakFitUtils::CoarseResolutionType::CZT:
+          retry_input.phys_model_detector = DetectorPeakResponse::getGenericCZTGeneralDetector();
+          break;
+        case PeakFitUtils::CoarseResolutionType::Low:
+        case PeakFitUtils::CoarseResolutionType::LowOrMedRes:
+        case PeakFitUtils::CoarseResolutionType::Unknown:
+        default:
+          retry_input.phys_model_detector = DetectorPeakResponse::getGenericNaIDetector();
+          break;
+      }//switch( det_type )
 
       RelActCalcManual::RelEffSolution retry_solution
         = RelActCalcManual::solve_relative_efficiency( retry_input );
@@ -4673,7 +4736,7 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
     std::cerr << "Using fallback activity estimation..." << std::endl;
 
     initial_rois = estimate_initial_rois_fallback(
-      auto_search_peaks, foreground, sources, drf, isHPGe,
+      auto_search_peaks, foreground, sources, drf, det_type,
       fwhmFnctnlForm, fwhm_coefficients, lower_fwhm_energy, upper_fwhm_energy,
       manual_settings );
 
@@ -4701,7 +4764,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   const PeakFitForNuclideConfig &config,
   const DetectorPeakResponse::ResolutionFnctForm fwhm_form,
   const std::vector<float> &fwhm_coefficients,
-  const bool isHPGe,
+  const PeakFitUtils::CoarseResolutionType det_type,
   const double fwhm_lower_energy,
   const double fwhm_upper_energy )
 {
@@ -5228,14 +5291,33 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 
       auto norm_drf = drf;
       if( !norm_drf )
-        norm_drf = isHPGe ? DetectorPeakResponse::getGenericHPGeDetector() : DetectorPeakResponse::getGenericNaIDetector();
-      // We also have getGenericLaBrDetector(), getGenericCZTGeneralDetector(), getGenericCZTGoodDetector();
+      {
+        switch( det_type )
+        {
+          case PeakFitUtils::CoarseResolutionType::High:
+            norm_drf = DetectorPeakResponse::getGenericHPGeDetector();
+            break;
+          case PeakFitUtils::CoarseResolutionType::LaBr:
+          case PeakFitUtils::CoarseResolutionType::MedRes:
+            norm_drf = DetectorPeakResponse::getGenericLaBrDetector();
+            break;
+          case PeakFitUtils::CoarseResolutionType::CZT:
+            norm_drf = DetectorPeakResponse::getGenericCZTGeneralDetector();
+            break;
+          case PeakFitUtils::CoarseResolutionType::Low:
+          case PeakFitUtils::CoarseResolutionType::LowOrMedRes:
+          case PeakFitUtils::CoarseResolutionType::Unknown:
+          default:
+            norm_drf = DetectorPeakResponse::getGenericNaIDetector();
+            break;
+        }//switch( det_type )
+      }
 
       const GammaClusteringSettings manual_settings = config.get_manual_clustering_settings();
 
       string norm_fallback_warning;
       const vector<RelActCalcAuto::RoiRange> norm_rois = estimate_initial_rois_using_relactmanual( auto_search_peaks,
-        orig_foreground, norm_sources, norm_drf, isHPGe,
+        orig_foreground, norm_sources, norm_drf, det_type,
         fwhm_form, fwhm_coefficients,
         fwhm_lower_energy, fwhm_upper_energy,
         min_valid_energy, max_valid_energy,
@@ -5261,7 +5343,9 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             static_cast<float>(fwhm_eval_energy), fwhm_form, fwhm_coefficients );
 
         float min_sigma_width, max_sigma_width;
-        expected_peak_width_limits( roi_info.fwhm, isHPGe, orig_foreground, min_sigma_width, max_sigma_width );
+        expected_peak_width_limits( roi_info.fwhm,
+          det_type,
+          orig_foreground, min_sigma_width, max_sigma_width );
 
         if( roi_info.fwhm < (min_sigma_width*PhysicalUnits::fwhm_nsigma) )
           roi_info.fwhm = min_sigma_width*PhysicalUnits::fwhm_nsigma;
@@ -5303,10 +5387,10 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   }//if( fit_norm_peaks )
 
   // Add a floating peak at 511 keV if appropriate (see function documentation for physics reasoning)
-  add_floating_511_peak_if_appropriate( options, sources, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy );
+  add_floating_511_peak_if_appropriate( options, sources, fit_norm_peaks, det_type, min_valid_energy, max_valid_energy );
 
   // Add floating peaks for escape peaks of high-energy gammas if appropriate
-  add_escape_peak_floating_peaks_if_appropriate( options, auto_search_peaks, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy, config );
+  add_escape_peak_floating_peaks_if_appropriate( options, auto_search_peaks, fit_norm_peaks, det_type, min_valid_energy, max_valid_energy, config );
 
   // Compute auto-search peaks that don't correspond to user peaks -- these are peaks in the
   // auto-search that may interfere with our source/NORM ROIs.  Used during the iterative
@@ -5321,7 +5405,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     
     // Call RelActAuto::solve with provided options
     RelActCalcAuto::RelActAutoSolution solution = RelActCalcAuto::solve(
-      options, orig_foreground, orig_background, drf, auto_search_peaks
+      options, orig_foreground, orig_background, drf, auto_search_peaks, det_type
     );
     
     //{
@@ -5338,11 +5422,11 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
       RelActCalcAuto::Options no_ecal_opts = options;
       no_ecal_opts.energy_cal_type = RelActCalcAuto::EnergyCalFitType::NoFit;
 
-      add_floating_511_peak_if_appropriate( no_ecal_opts, sources, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy );
-      add_escape_peak_floating_peaks_if_appropriate( no_ecal_opts, auto_search_peaks, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy, config );
+      add_floating_511_peak_if_appropriate( no_ecal_opts, sources, fit_norm_peaks, det_type, min_valid_energy, max_valid_energy );
+      add_escape_peak_floating_peaks_if_appropriate( no_ecal_opts, auto_search_peaks, fit_norm_peaks, det_type, min_valid_energy, max_valid_energy, config );
 
       RelActCalcAuto::RelActAutoSolution trial_solution = RelActCalcAuto::solve(
-        no_ecal_opts, orig_foreground, orig_background, drf, auto_search_peaks
+        no_ecal_opts, orig_foreground, orig_background, drf, auto_search_peaks, det_type
       );
       
       // If the solution is still really bad - we'll try a Physical Model solution
@@ -5391,12 +5475,12 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         
         curve.phys_model_use_hoerl = (options.rois.size() > 2);
         
-        add_floating_511_peak_if_appropriate( desperation_opts, sources, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy );
-        add_escape_peak_floating_peaks_if_appropriate( desperation_opts, auto_search_peaks, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy, config );
+        add_floating_511_peak_if_appropriate( desperation_opts, sources, fit_norm_peaks, det_type, min_valid_energy, max_valid_energy );
+        add_escape_peak_floating_peaks_if_appropriate( desperation_opts, auto_search_peaks, fit_norm_peaks, det_type, min_valid_energy, max_valid_energy, config );
 
         resolve_overlapping_rois( desperation_opts.rois, desperation_opts.floating_peaks );
 
-        trial_solution = RelActCalcAuto::solve( desperation_opts, orig_foreground, orig_background, drf, auto_search_peaks );
+        trial_solution = RelActCalcAuto::solve( desperation_opts, orig_foreground, orig_background, drf, auto_search_peaks, det_type );
       }//If( still a bad solution )
       
       if( (trial_solution.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success)
@@ -5583,13 +5667,13 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 
             curve.phys_model_use_hoerl = (desperation_opts.rois.size() > 2);
 
-            add_floating_511_peak_if_appropriate( desperation_opts, sources, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy );
-            add_escape_peak_floating_peaks_if_appropriate( desperation_opts, auto_search_peaks, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy, config );
+            add_floating_511_peak_if_appropriate( desperation_opts, sources, fit_norm_peaks, det_type, min_valid_energy, max_valid_energy );
+            add_escape_peak_floating_peaks_if_appropriate( desperation_opts, auto_search_peaks, fit_norm_peaks, det_type, min_valid_energy, max_valid_energy, config );
 
             resolve_overlapping_rois( desperation_opts.rois, desperation_opts.floating_peaks );
 
             RelActCalcAuto::RelActAutoSolution desperation_solution = RelActCalcAuto::solve(
-              desperation_opts, foreground, background, drf, auto_search_peaks
+              desperation_opts, foreground, background, drf, auto_search_peaks, det_type
             );
 
             if( (desperation_solution.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success)
@@ -5648,13 +5732,13 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         // re-clustering can't produce ROIs that land on existing user peaks' locations.
         refined_options.rois = filter_rois_for_existing( refined_rois );
 
-        add_floating_511_peak_if_appropriate( refined_options, sources, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy );
-        add_escape_peak_floating_peaks_if_appropriate( refined_options, auto_search_peaks, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy, config );
+        add_floating_511_peak_if_appropriate( refined_options, sources, fit_norm_peaks, det_type, min_valid_energy, max_valid_energy );
+        add_escape_peak_floating_peaks_if_appropriate( refined_options, auto_search_peaks, fit_norm_peaks, det_type, min_valid_energy, max_valid_energy, config );
 
         resolve_overlapping_rois( refined_options.rois, refined_options.floating_peaks );
 
         RelActCalcAuto::RelActAutoSolution refined_solution
-            = RelActCalcAuto::solve( refined_options, foreground, background, drf, auto_search_peaks );
+            = RelActCalcAuto::solve( refined_options, foreground, background, drf, auto_search_peaks, det_type );
 
         if( refined_solution.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success )
         {
@@ -5876,7 +5960,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     }
 
     // Compute observable peaks - peaks that users can visually see in the spectrum
-    result.observable_peaks = compute_observable_peaks( result.fit_peaks, foreground, config );
+    result.observable_peaks = compute_observable_peaks( result.fit_peaks, foreground, det_type, config );
 
 
     if( apply_energy_cal_between && config.fit_energy_cal )
@@ -6037,9 +6121,9 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     // Assign escape peak relationships for high-energy gammas if appropriate
     // This checks fit peaks (including observable_peaks) and assigns S.E. and D.E. relationships
     // to significant escape peaks of high-energy lines like Th232 2614 keV
-    assign_escape_peak_relationships( result.fit_peaks, fit_norm_peaks, isHPGe );
-    assign_escape_peak_relationships( result.observable_peaks, fit_norm_peaks, isHPGe );
-    assign_escape_peak_relationships( result.uncombined_fit_peaks, fit_norm_peaks, isHPGe );
+    assign_escape_peak_relationships( result.fit_peaks, fit_norm_peaks, det_type );
+    assign_escape_peak_relationships( result.observable_peaks, fit_norm_peaks, det_type );
+    assign_escape_peak_relationships( result.uncombined_fit_peaks, fit_norm_peaks, det_type );
 
   }catch( const std::exception &e )
   {
@@ -6092,9 +6176,9 @@ PeakFitResult fit_peaks_for_nuclides(
   const std::shared_ptr<const PeakFitDetPrefs> &peak_fit_prefs )
 {
   assert( peak_fit_prefs );
-  const bool isHPGe = peak_fit_prefs
-    ? (peak_fit_prefs->m_det_type == PeakFitUtils::CoarseResolutionType::High)
-    : (PeakFitUtils::coarse_det_type( foreground, nullptr ) == PeakFitUtils::CoarseResolutionType::High);
+  const PeakFitUtils::CoarseResolutionType det_type = peak_fit_prefs
+    ? peak_fit_prefs->m_det_type
+    : PeakFitUtils::coarse_det_type( foreground, nullptr );
 
   PeakFitResult result;
 
@@ -6163,10 +6247,25 @@ PeakFitResult fit_peaks_for_nuclides(
       }else
       {
         // With no peaks and no DRF resolution info, use generic detector resolution coefficients.
-        if( isHPGe )
-          drf = DetectorPeakResponse::getGenericHPGeDetector();
-        else
-          drf = DetectorPeakResponse::getGenericNaIDetector();
+        switch( det_type )
+        {
+          case PeakFitUtils::CoarseResolutionType::High:
+            drf = DetectorPeakResponse::getGenericHPGeDetector();
+            break;
+          case PeakFitUtils::CoarseResolutionType::LaBr:
+          case PeakFitUtils::CoarseResolutionType::MedRes:
+            drf = DetectorPeakResponse::getGenericLaBrDetector();
+            break;
+          case PeakFitUtils::CoarseResolutionType::CZT:
+            drf = DetectorPeakResponse::getGenericCZTGeneralDetector();
+            break;
+          case PeakFitUtils::CoarseResolutionType::Low:
+          case PeakFitUtils::CoarseResolutionType::LowOrMedRes:
+          case PeakFitUtils::CoarseResolutionType::Unknown:
+          default:
+            drf = DetectorPeakResponse::getGenericNaIDetector();
+            break;
+        }//switch( det_type )
 
         if( drf && drf->isValid() && drf->hasResolutionInfo() )
         {
@@ -6226,8 +6325,9 @@ PeakFitResult fit_peaks_for_nuclides(
       }
     }
 
-    lowest_energy_gamma = (std::max)( lowest_energy_gamma - (isHPGe ? 5 : 25), (double)foreground->gamma_energy_min() );
-    highest_energy_gamma = (std::min)( highest_energy_gamma + (isHPGe ? 5 : 25), (double)foreground->gamma_energy_max() );
+    const double energy_pad = (det_type == PeakFitUtils::CoarseResolutionType::High) ? 5.0 : 25.0;
+    lowest_energy_gamma = (std::max)( lowest_energy_gamma - energy_pad, (double)foreground->gamma_energy_min() );
+    highest_energy_gamma = (std::min)( highest_energy_gamma + energy_pad, (double)foreground->gamma_energy_max() );
     */
 
     // Step 2, 3 & 4: Estimate initial ROIs using RelActManual with multiple fallbacks
@@ -6242,7 +6342,7 @@ PeakFitResult fit_peaks_for_nuclides(
     const vector<RelActCalcAuto::RoiRange> source_rois = sources.empty()
       ? vector<RelActCalcAuto::RoiRange>{}
       : estimate_initial_rois_using_relactmanual(
-          auto_search_peaks, foreground, sources, drf, isHPGe,
+          auto_search_peaks, foreground, sources, drf, det_type,
           fwhmFnctnlForm, fwhm_coefficients, lower_fwhm_energy, upper_fwhm_energy,
           min_valid_energy, max_valid_energy, manual_settings,
           config, fallback_warning
@@ -6266,7 +6366,7 @@ PeakFitResult fit_peaks_for_nuclides(
         {
           fallback_warning.clear();
           norm_rois = estimate_initial_rois_using_relactmanual(
-            auto_search_peaks, foreground, norm_sources, drf, isHPGe,
+            auto_search_peaks, foreground, norm_sources, drf, det_type,
             fwhmFnctnlForm, fwhm_coefficients, lower_fwhm_energy, upper_fwhm_energy,
             min_valid_energy, max_valid_energy, manual_settings,
             config, fallback_warning
@@ -6307,7 +6407,9 @@ PeakFitResult fit_peaks_for_nuclides(
             static_cast<float>(fwhm_eval_energy), fwhmFnctnlForm, fwhm_coefficients );
 
         float min_sigma_width, max_sigma_width;
-        expected_peak_width_limits( roi_info.fwhm, isHPGe, foreground, min_sigma_width, max_sigma_width );
+        expected_peak_width_limits( roi_info.fwhm,
+          det_type,
+          foreground, min_sigma_width, max_sigma_width );
 
         if( roi_info.fwhm < (min_sigma_width * PhysicalUnits::fwhm_nsigma) )
           roi_info.fwhm = min_sigma_width * PhysicalUnits::fwhm_nsigma;
@@ -6325,7 +6427,7 @@ PeakFitResult fit_peaks_for_nuclides(
     result = fit_peaks_for_nuclide_relactauto(
       auto_search_peaks, foreground, sources,
       initial_rois, user_peaks, long_background, drf, options, config,
-      fwhmFnctnlForm, fwhm_coefficients, isHPGe,
+      fwhmFnctnlForm, fwhm_coefficients, det_type,
       lower_fwhm_energy, upper_fwhm_energy
     );
 

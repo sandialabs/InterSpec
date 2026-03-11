@@ -364,7 +364,7 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
   assert( fitPrefs );
   const bool isHPGe = fitPrefs
     ? (fitPrefs->m_det_type == PeakFitUtils::CoarseResolutionType::High)
-    : false;
+    : (PeakFitUtils::coarse_det_type( meas, nullptr ) == PeakFitUtils::CoarseResolutionType::High);
 
   size_t lower_channel = 0, upper_channel = 0;
   //    ExperimentalPeakSearch::find_spectroscopic_extent( meas, lower_channel, upper_channel );
@@ -590,7 +590,7 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks_singlethread(
   assert( fitPrefs );
   const bool isHPGe = fitPrefs
     ? (fitPrefs->m_det_type == PeakFitUtils::CoarseResolutionType::High)
-    : false;
+    : (PeakFitUtils::coarse_det_type( meas, nullptr ) == PeakFitUtils::CoarseResolutionType::High);
 
   size_t lower_channel = 0, upper_channel = 0;
   vector<PeakPtr> candidates
@@ -972,9 +972,10 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
                           double &chi2 )
 {
   assert( fitPrefs );
-  const bool isHPGe = fitPrefs
-    ? (fitPrefs->m_det_type == PeakFitUtils::CoarseResolutionType::High)
-    : false;
+  const PeakFitUtils::CoarseResolutionType det_type = fitPrefs
+    ? fitPrefs->m_det_type
+    : PeakFitUtils::coarse_det_type( dataH, nullptr );
+  const bool isHPGe = (det_type == PeakFitUtils::CoarseResolutionType::High);
 
   if( method != FromInputPeaks )
     answer.clear();
@@ -1144,7 +1145,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
   
   vector<shared_ptr<const PeakDef>> results;
   
-  PeakFitLM::fit_peaks_LM( results, inpeaks, dataH, stat_threshold, hypothesis_threshold, is_refit, isHPGe );
+  PeakFitLM::fit_peaks_LM( results, inpeaks, dataH, stat_threshold, hypothesis_threshold, is_refit, det_type );
   
   answer.clear();
   if( static_cast<int>(results.size()) == nPeaks )
@@ -1418,7 +1419,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
     if( !fixSigma )
     {
       float minw, maxw;
-      expected_peak_width_limits( inpeaks[i].mean(), isHPGe, dataH, minw, maxw );
+      expected_peak_width_limits( inpeaks[i].mean(), det_type, dataH, minw, maxw );
 
       maxsigma = std::max( maxsigma, double(maxw) );
       minsigma = std::min( minsigma, double(minw) );
@@ -1534,7 +1535,7 @@ std::vector<PeakDef> fitPeaksInRange( const double x0,
                                      std::vector<PeakDef> input_peaks,
                                      std::shared_ptr<const Measurement> data,
                                      const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options,
-                                     const bool isHPGe )
+                                     const PeakFitUtils::CoarseResolutionType det_type )
 {
   //20120309: For the Ba133 example spectrum with default settings on my newer
   //          mac book pro, this function takes:
@@ -1558,7 +1559,7 @@ std::vector<PeakDef> fitPeaksInRange( const double x0,
     for( const auto &p : orig_input_peaks )
       lm_input_peaks.push_back( make_shared<PeakDef>(p) );
     peak_from_LM = PeakFitLM::fit_peaks_in_range_LM( x0, x1, ncausality, stat_threshold, hypothesis_threshold,
-                                                    lm_input_peaks, data, fit_options, isHPGe );
+                                                    lm_input_peaks, data, fit_options, det_type );
 
     // If a debug build, we'll compare to old method, for the moment
 #ifdef NDEBUG
@@ -1606,6 +1607,7 @@ std::vector<PeakDef> fitPeaksInRange( const double x0,
   for( size_t peakn = 0; peakn < seperated_peaks.size(); ++peakn )
   {
     //    fit_jobs[peakn] =
+    const bool isHPGe = (det_type == PeakFitUtils::CoarseResolutionType::High);
     threadpool.post( boost::bind( &fitPeaks,
                                  boost::cref(seperated_peaks[peakn]),
                                  stat_threshold,
@@ -1653,7 +1655,7 @@ std::vector<PeakDef> fitPeaksInRange( const double x0,
     
     return fitPeaksInRange( x0, x1, ncausality,
                            stat_threshold, hypothesis_threshold,
-                           input_peaks, data, fit_options, isHPGe );
+                           input_peaks, data, fit_options, det_type );
   }//if( migration )
 
 #if( USE_LM_PEAK_FIT )
@@ -1857,6 +1859,7 @@ double chi2_for_region( const PeakShrdVec &peaks,
 PeakShrdVec refitPeaksThatShareROI_imp( const std::shared_ptr<const Measurement> &dataH,
                                    const DetctorPtr &detector,
                                    const PeakShrdVec &inpeaks,
+                                   const PeakFitUtils::CoarseResolutionType det_type,
                                    const double meanSigmaVary )
 {
   typedef std::shared_ptr<const PeakDef> PeakPtr;
@@ -2013,12 +2016,8 @@ PeakShrdVec refitPeaksThatShareROI_imp( const std::shared_ptr<const Measurement>
         for( const auto &p : inpeaks )
           input_peaks.push_back( *p );
 
-        const auto resType = PeakFitUtils::coarse_resolution_from_peaks(inpeaks);
-        const bool isHPGe = (resType == PeakFitUtils::CoarseResolutionType::High);
-
-
         vector<PeakDef> output_peak = fitPeaksInRange( lx, ux, ncausalitysigma, stat_threshold,
-                                     hypothesis_threshold, input_peaks, dataH, fit_options, isHPGe );
+                                     hypothesis_threshold, input_peaks, dataH, fit_options, det_type );
 
         if( output_peak.size() == inpeaks.size() )
         {
@@ -2075,13 +2074,14 @@ PeakShrdVec refitPeaksThatShareROI_imp( const std::shared_ptr<const Measurement>
 vector<shared_ptr<const PeakDef>> refitPeaksThatShareROI( const std::shared_ptr<const Measurement> &dataH,
                                    const std::shared_ptr<const DetectorPeakResponse> &detector,
                                    const PeakShrdVec &inpeaks,
+                                   const PeakFitUtils::CoarseResolutionType det_type,
                                    const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options )
 {
 #if( USE_LM_PEAK_FIT )
 #ifdef NDEBUG
   // For release builds we'll just return the L-M based results.
   //  For debug builds we'll print out some comparisons, for the moment
-  return PeakFitLM::refitPeaksThatShareROI_LM( dataH, detector, inpeaks, fit_options );
+  return PeakFitLM::refitPeaksThatShareROI_LM( dataH, detector, inpeaks, det_type, fit_options );
 #endif
 
   double mean_sigma_vary = -1.0;
@@ -2090,9 +2090,9 @@ vector<shared_ptr<const PeakDef>> refitPeaksThatShareROI( const std::shared_ptr<
   else if( fit_options & PeakFitLM::PeakFitLMOptions::SmallAmplitudeRefinementOnly )
     mean_sigma_vary = 0.15;
 
-  vector<shared_ptr<const PeakDef>> answer = refitPeaksThatShareROI_imp( dataH, detector, inpeaks, mean_sigma_vary );
+  vector<shared_ptr<const PeakDef>> answer = refitPeaksThatShareROI_imp( dataH, detector, inpeaks, det_type, mean_sigma_vary );
 
-  vector<shared_ptr<const PeakDef>> answer_LM = PeakFitLM::refitPeaksThatShareROI_LM( dataH, detector, inpeaks, fit_options );
+  vector<shared_ptr<const PeakDef>> answer_LM = PeakFitLM::refitPeaksThatShareROI_LM( dataH, detector, inpeaks, det_type, fit_options );
 
   if( !inpeaks.empty() )
   {
@@ -2125,7 +2125,7 @@ vector<shared_ptr<const PeakDef>> refitPeaksThatShareROI( const std::shared_ptr<
 
   return answer_LM;
 #else
-  return refitPeaksThatShareROI_imp( dataH, detector, inpeaks, meanSigmaVary );
+  return refitPeaksThatShareROI_imp( dataH, detector, inpeaks, det_type, mean_sigma_vary );
 #endif
 }//PeakShrdVec refitPeaksThatShareROI(...)
 
@@ -2182,17 +2182,17 @@ void refit_for_new_roi( std::vector< std::shared_ptr<const PeakDef> > originalPe
                        const std::shared_ptr<const Measurement> &dataH,
                        const double new_lower_roi,
                        const double new_roi_upper,
-                       const bool isHPGe,
+                       const PeakFitUtils::CoarseResolutionType det_type,
                        std::vector<PeakDef> &resultPeaks )
 {
 #if( USE_LM_PEAK_FIT )
   const bool is_refit = true;
   const double stat_threshold = 0.0;
   const double hypothesis_threshold = 0.0;
-  
+
   vector<shared_ptr<const PeakDef>> results;
   PeakFitLM::fit_peaks_LM( results, originalPeaks, dataH,
-                          stat_threshold, hypothesis_threshold, is_refit, isHPGe );
+                          stat_threshold, hypothesis_threshold, is_refit, det_type );
   
   resultPeaks.clear();
   
@@ -2552,7 +2552,7 @@ void find_roi_for_2nd_deriv_candidate(
 
 
 void expected_peak_width_limits( const float energy,
-                                 const bool highres,
+                                 const PeakFitUtils::CoarseResolutionType det_type,
                                  const std::shared_ptr<const SpecUtils::Measurement> &meas,
                                  float &min_sigma_width_kev,
                                  float &max_sigma_width_kev )
@@ -2562,7 +2562,10 @@ void expected_peak_width_limits( const float energy,
   //  function just gives a mutliple of these values.
   //The arrays in this function were generated using the
   //  print_detector_sigma_range() function in developcode.cpp.
-  const float max_width_multple = highres ? 4.0 : 3.0f;
+  const bool highres = (det_type == PeakFitUtils::CoarseResolutionType::High);
+  const bool unknown = (det_type == PeakFitUtils::CoarseResolutionType::Unknown);
+
+  const float max_width_multple = highres ? 4.0f : 3.0f;
   const float min_width_multiple = highres ? (energy < 50.0f ? 0.25f : 0.35f) : 0.5f;
   
   const size_t nenergies = 32;
@@ -2611,19 +2614,99 @@ void expected_peak_width_limits( const float energy,
   const float next_energy = energies[index+1];
   const float frac = (energy - prev_energy) / (next_energy - prev_energy);
   
-  const float *smallest = highres ? highres_smallest_expected_sigma + 0
-                                  : lowres_smallest_expected_sigma + 0;
-  const float *largest  = highres ? highres_largest_expected_sigma + 0
-                                  : lowres_largest_expected_sigma + 0;
-  
-  const float deltalarge = largest[index+1] - largest[index];
-  const float deltasmall = smallest[index+1] - smallest[index];
-  
-  const float largerres = largest[index] + frac*deltalarge;
-  const float lowerres = smallest[index] + frac*deltasmall;
-  
-  min_sigma_width_kev = min_width_multiple * lowerres;
-  max_sigma_width_kev = max_width_multple * largerres;
+  // Helper to interpolate from the lookup tables
+  auto interp = [index, frac]( const float *arr ) -> float {
+    return arr[index] + frac * (arr[index+1] - arr[index]);
+  };
+
+  const float sigma_to_fwhm = 2.3548f;
+
+  switch( det_type )
+  {
+    case PeakFitUtils::CoarseResolutionType::High:
+    {
+      const float lowerres = interp( highres_smallest_expected_sigma );
+      const float largerres = interp( highres_largest_expected_sigma );
+      min_sigma_width_kev = min_width_multiple * lowerres;
+      max_sigma_width_kev = max_width_multple * largerres;
+      break;
+    }
+
+    case PeakFitUtils::CoarseResolutionType::Low:
+    {
+      const float lowerres = interp( lowres_smallest_expected_sigma );
+      const float largerres = interp( lowres_largest_expected_sigma );
+      min_sigma_width_kev = min_width_multiple * lowerres;
+      max_sigma_width_kev = max_width_multple * largerres;
+      break;
+    }
+
+    case PeakFitUtils::CoarseResolutionType::LaBr:
+    {
+      const float typical_sigma = PeakFitUtils::labr_fwhm_fcn( energy ) / sigma_to_fwhm;
+      min_sigma_width_kev = 0.5f * typical_sigma;
+      max_sigma_width_kev = 2.0f * typical_sigma;
+      break;
+    }
+
+    case PeakFitUtils::CoarseResolutionType::CZT:
+    {
+      // "Good" CZT (M400): {2.7, 0.699, 0.753}
+      static const std::vector<float> czt_good_coefs{ 2.7f, 0.699f, 0.753f };
+      const float good_sigma = DetectorPeakResponse::peakResolutionFWHM( energy,
+                    DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn,
+                    czt_good_coefs ) / sigma_to_fwhm;
+      // "General" CZT (Kromek GR1): {8.95, 2.39, 0.344}
+      const float general_sigma = PeakFitUtils::czt_fwhm_fcn( energy ) / sigma_to_fwhm;
+
+      min_sigma_width_kev = 0.5f * good_sigma;
+      max_sigma_width_kev = 2.0f * general_sigma;
+      break;
+    }
+
+    case PeakFitUtils::CoarseResolutionType::MedRes:
+    {
+      // MedRes could be either LaBr or CZT; use range spanning both
+      const float labr_sigma = PeakFitUtils::labr_fwhm_fcn( energy ) / sigma_to_fwhm;
+
+      static const std::vector<float> czt_good_coefs{ 2.7f, 0.699f, 0.753f };
+      const float czt_good_sigma = DetectorPeakResponse::peakResolutionFWHM( energy,
+                    DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn,
+                    czt_good_coefs ) / sigma_to_fwhm;
+      const float czt_general_sigma = PeakFitUtils::czt_fwhm_fcn( energy ) / sigma_to_fwhm;
+
+      min_sigma_width_kev = 0.5f * std::min( labr_sigma, czt_good_sigma );
+      max_sigma_width_kev = 2.0f * std::max( labr_sigma, czt_general_sigma );
+      break;
+    }
+
+    case PeakFitUtils::CoarseResolutionType::LowOrMedRes:
+    {
+      // Could be NaI, CsI, LaBr, or CZT; use range from best CZT to worst NaI
+      static const std::vector<float> czt_good_coefs{ 2.7f, 0.699f, 0.753f };
+      const float czt_good_sigma = DetectorPeakResponse::peakResolutionFWHM( energy,
+                    DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn,
+                    czt_good_coefs ) / sigma_to_fwhm;
+
+      const float lowres_max = interp( lowres_largest_expected_sigma );
+
+      min_sigma_width_kev = 0.5f * czt_good_sigma;
+      max_sigma_width_kev = 3.0f * lowres_max;
+      break;
+    }
+
+    case PeakFitUtils::CoarseResolutionType::Unknown:
+    {
+      // Use the widest possible range: min from HPGe, max from low-res
+      const float hp_min_mult = (energy < 50.0f ? 0.25f : 0.35f);
+      const float hp_lowerres = interp( highres_smallest_expected_sigma );
+      const float lr_largerres = interp( lowres_largest_expected_sigma );
+
+      min_sigma_width_kev = hp_min_mult * hp_lowerres;
+      max_sigma_width_kev = 3.0f * lr_largerres;
+      break;
+    }
+  }//switch( det_type )
   
   // For really nice HPGe or micro-calorimeters, the resolution may be even better than
   //  expected from the above, so we'll also check the spectrum an allow the FWHM
@@ -2918,13 +3001,14 @@ void get_candidate_peak_estimates_for_user_click(
                                  const PeakShrdVec &inpeaks )
 {
   assert( fitPrefs );
-  const bool isHPGe = fitPrefs
-    ? (fitPrefs->m_det_type == PeakFitUtils::CoarseResolutionType::High)
-    : false;
+  const PeakFitUtils::CoarseResolutionType det_type = fitPrefs
+    ? fitPrefs->m_det_type
+    : PeakFitUtils::coarse_det_type( dataH, nullptr );
+  const bool isHPGe = (det_type == PeakFitUtils::CoarseResolutionType::High);
 
   typedef std::shared_ptr<PeakDef> PeakPtr;
   typedef std::shared_ptr<const PeakDef> PeakConstPtr;
-  
+
   const double lower_energy_mult = 0.2;
   const double upper_energy_mult = 0.2;
   
@@ -2940,7 +3024,7 @@ void get_candidate_peak_estimates_for_user_click(
   size_t highchannel = ((midbin + upper_chan_sub) >= nchannels) ? nchannels-1 : static_cast<size_t>(midbin + upper_chan_sub);
   
   float min_sigma_width_kev, max_sigma_width_kev;
-  expected_peak_width_limits( x, isHPGe, dataH, min_sigma_width_kev, max_sigma_width_kev );
+  expected_peak_width_limits( x, det_type, dataH, min_sigma_width_kev, max_sigma_width_kev );
 
   
   
@@ -2961,7 +3045,7 @@ void get_candidate_peak_estimates_for_user_click(
   
 
   float min_sigma, max_sigma;
-  expected_peak_width_limits( x, isHPGe, dataH, min_sigma, max_sigma );
+  expected_peak_width_limits( x, det_type, dataH, min_sigma, max_sigma );
 
   sigma0 = 0.5*(min_sigma + max_sigma) * (isHPGe ? 0.20 : 0.25);  //expected_peak_width_limits multiplies max width by  4 for isHPGe, and 3 for lowres
   mean0 = x;
@@ -3101,16 +3185,22 @@ void fit_peak_for_user_click( PeakShrdVec &results,
                               const double area0,
                               const vector<double> &lowerEnergies,
                               const vector<double> &upperEnergies,
-                             const bool isHPGe )
+                              const std::shared_ptr<const PeakFitDetPrefs> &fitPrefs )
 {
   typedef std::shared_ptr<const PeakDef> PeakDefShrdPtr;
-  
+
+  assert( fitPrefs );
+  const PeakFitUtils::CoarseResolutionType det_type = fitPrefs
+    ? fitPrefs->m_det_type
+    : PeakFitUtils::coarse_det_type( dataH, nullptr );
+  const bool isHPGe = (det_type == PeakFitUtils::CoarseResolutionType::High);
+
   assert( !lowerEnergies.empty() );
   assert( lowerEnergies.size() == upperEnergies.size() );
-  
+
   chi2Dof = DBL_MAX;
   results.clear();
-  
+
   const size_t nchannels = dataH->num_gamma_channels();
   const size_t midbin = dataH->find_gamma_channel( mean0 );
   const float binwidth = dataH->gamma_channel_width( midbin );
@@ -3172,7 +3262,7 @@ void fit_peak_for_user_click( PeakShrdVec &results,
         {
 //          cout << "Testing setting peak resolution limits based on expected_lowres_peak_width_limits" << endl;
           float lowersigma, uppersigma;
-          expected_peak_width_limits( mean, false, dataH, lowersigma, uppersigma );
+          expected_peak_width_limits( mean, det_type, dataH, lowersigma, uppersigma );
           if( !i )
             minsigma = lowersigma;
           if( i == (coFitPeaks.size()-1) )
@@ -3321,7 +3411,7 @@ PeakShrdVec lowres_shrink_roi( const PeakShrdVec &inpeaks,
       {
         
         vector<PeakDef> newfitpeaks;
-        refit_for_new_roi( inpeaks, dataH, finalLowerE, startx, false, newfitpeaks );
+        refit_for_new_roi( inpeaks, dataH, finalLowerE, startx, PeakFitUtils::CoarseResolutionType::LowOrMedRes, newfitpeaks );
         
         const double newChi2Dof = newfitpeaks.empty() ? DBL_MAX : evaluate_chi2dof_for_range( newfitpeaks, dataH, finalLowerE, startx );
         const double totalOldlen  = finalUpperE - finalLowerE;
@@ -3362,7 +3452,7 @@ PeakShrdVec lowres_shrink_roi( const PeakShrdVec &inpeaks,
       if( tailChi2Dof < 0.95*generalChi2Dof )
       {
         vector<PeakDef> newfitpeaks;
-        refit_for_new_roi( inpeaks, dataH, endx, finalUpperE, false, newfitpeaks );
+        refit_for_new_roi( inpeaks, dataH, endx, finalUpperE, PeakFitUtils::CoarseResolutionType::LowOrMedRes, newfitpeaks );
        
         const double newChi2Dof = newfitpeaks.empty() ? DBL_MAX : evaluate_chi2dof_for_range( newfitpeaks, dataH, endx, finalUpperE );
         const double totalOldlen  = finalUpperE - finalLowerE;
@@ -3410,7 +3500,7 @@ PeakShrdVec lowres_shrink_roi( const PeakShrdVec &inpeaks,
           
         const vector<double> originalFitPars, originalFitErrors;
           
-        refit_for_new_roi( peaksToReFit, dataH, finalLowerE, finalUpperE, false, newfitpeaks );
+        refit_for_new_roi( peaksToReFit, dataH, finalLowerE, finalUpperE, PeakFitUtils::CoarseResolutionType::LowOrMedRes, newfitpeaks );
           
         const double newChi2Dof = newfitpeaks.empty() ? DBL_MAX
                                            : evaluate_chi2dof_for_range( newfitpeaks, dataH, finalLowerE, finalUpperE );
@@ -3518,7 +3608,7 @@ PeakShrdVec highres_shrink_roi( const PeakShrdVec &inpeaks,
       
       
       vector<PeakDef> newfitpeaks;
-      refit_for_new_roi( inpeaks, dataH, test_lower_roi, test_upper_roi, true, newfitpeaks );
+      refit_for_new_roi( inpeaks, dataH, test_lower_roi, test_upper_roi, PeakFitUtils::CoarseResolutionType::High, newfitpeaks );
       const double origChi2ForNewRange = evaluate_chi2dof_for_range( fitpeaks, dataH, test_lower_roi, test_upper_roi );
       const double testChi2Dof = newfitpeaks.empty() ? DBL_MAX
                                      : evaluate_chi2dof_for_range( newfitpeaks, dataH, test_lower_roi, test_upper_roi );
@@ -3635,7 +3725,7 @@ PeakShrdVec highres_shrink_roi( const PeakShrdVec &inpeaks,
         
         const vector<double> originalFitPars, originalFitErrors;
         
-        refit_for_new_roi( peaksToReFit, dataH, finalLowerE, finalUpperE, true, newfitpeaks );
+        refit_for_new_roi( peaksToReFit, dataH, finalLowerE, finalUpperE, PeakFitUtils::CoarseResolutionType::High, newfitpeaks );
         
         const double newChi2Dof = newfitpeaks.empty() ? DBL_MAX
                                             : evaluate_chi2dof_for_range( newfitpeaks, dataH, finalLowerE, finalUpperE );
@@ -3818,8 +3908,8 @@ bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
   if( lowres_enforce_peak_width_limits )
   {
     float min_sigma, max_sigma;
-    expected_peak_width_limits( mean, false, dataH, min_sigma, max_sigma );
-    
+    expected_peak_width_limits( mean, PeakFitUtils::CoarseResolutionType::LowOrMedRes, dataH, min_sigma, max_sigma );
+
     if( sigma < min_sigma || sigma > max_sigma )
     {
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
@@ -4306,7 +4396,7 @@ PeakRejectionStatus check_lowres_multi_peak_fit( const vector<std::shared_ptr<co
     vector<PeakDef> withoutResultPeaks;
     const double withNewChi2Dof = newpeak->chi2dof();
     
-    refit_for_new_roi( otherpeak, dataH, lx, ux, false, withoutResultPeaks );
+    refit_for_new_roi( otherpeak, dataH, lx, ux, PeakFitUtils::CoarseResolutionType::LowOrMedRes, withoutResultPeaks );
     
     const double withoutNewChi2Dof = withoutResultPeaks.empty() ? DBL_MAX
                                                   : evaluate_chi2dof_for_range( withoutResultPeaks, dataH, lx, ux );
@@ -4436,8 +4526,8 @@ PeakRejectionStatus check_highres_multi_peak_fit( const vector<std::shared_ptr<c
     const float sigma = static_cast<float>( p->sigma() );
     
     float min_sigma, max_sigma;
-    expected_peak_width_limits( mean, true, dataH, min_sigma, max_sigma );
-    
+    expected_peak_width_limits( mean, PeakFitUtils::CoarseResolutionType::High, dataH, min_sigma, max_sigma );
+
     bool outsideExpectedFwhm = (sigma < min_sigma || sigma > max_sigma);
     
     // We checked against reasonable expected FWHM, but incase this failed for some reason,
@@ -4661,7 +4751,7 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
   
   
   float min_sigma, max_sigma;
-  expected_peak_width_limits( (float)mean, true, dataH, min_sigma, max_sigma );
+  expected_peak_width_limits( (float)mean, PeakFitUtils::CoarseResolutionType::High, dataH, min_sigma, max_sigma );
   
   //An issue is that doppler broadened peaks (like 511 keV) will have a width
   //  outside of limits - so if the chi2dof is good enough, or the peak is
@@ -4944,7 +5034,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
   assert( fitPrefs );
   const bool isHPGe = fitPrefs
     ? (fitPrefs->m_det_type == PeakFitUtils::CoarseResolutionType::High)
-    : false;
+    : (PeakFitUtils::coarse_det_type( dataH, nullptr ) == PeakFitUtils::CoarseResolutionType::High);
 
   if( !dataH || !dataH->num_gamma_channels() )
     return pair<PeakShrdVec,PeakShrdVec>();
@@ -5012,14 +5102,14 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
 #if( !USE_LM_PEAK_FIT )
   PeakShrdVec initialfitpeaks;
   fit_peak_for_user_click( initialfitpeaks, chi2Dof, dataH, coFitPeaks,
-                          mean0, sigma0, area0, lowerEnergies, upperEnergies, isHPGe );
+                          mean0, sigma0, area0, lowerEnergies, upperEnergies, fitPrefs );
 #else
 
 #if( !defined(NDEBUG) && !BUILD_AS_UNIT_TEST_SUITE )
   PeakShrdVec mnInitialfitpeaks;
   const auto t1 = std::chrono::high_resolution_clock::now();
   fit_peak_for_user_click( mnInitialfitpeaks, chi2Dof, dataH, coFitPeaks,
-                           mean0, sigma0, area0, lowerEnergies, upperEnergies, isHPGe );
+                           mean0, sigma0, area0, lowerEnergies, upperEnergies, fitPrefs );
   const auto t2 = std::chrono::high_resolution_clock::now();
   for( size_t i = 0; i < mnInitialfitpeaks.size(); ++i )
   {
@@ -5032,7 +5122,8 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
 
   PeakShrdVec lmInitialfitpeaks;
   PeakFitLM::fit_peak_for_user_click_LM( lmInitialfitpeaks, dataH, coFitPeaks,
-                             mean0, sigma0, area0, lowerEnergies[0], upperEnergies[0], isHPGe );
+                             mean0, sigma0, area0, lowerEnergies[0], upperEnergies[0],
+                             fitPrefs, drf );
   
 #if( !defined(NDEBUG) && !BUILD_AS_UNIT_TEST_SUITE )
   const auto t4 = std::chrono::high_resolution_clock::now();
@@ -5145,7 +5236,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
 #if( USE_LM_PEAK_FIT )
 #if( !defined(NDEBUG) && !BUILD_AS_UNIT_TEST_SUITE )
       fit_peak_for_user_click( initialfitpeaks, chi2Dof, dataH, coFitPeaks,
-                          mean0, sigma0, area0, lowerEnergies, upperEnergies, isHPGe );
+                          mean0, sigma0, area0, lowerEnergies, upperEnergies, fitPrefs );
       for( size_t i = 0; i < initialfitpeaks.size(); ++i )
       {
         cout << "OLD Peak " << std::setw(2) << i << ": mean=" << std::setw(10) << initialfitpeaks[i]->mean()
@@ -5156,7 +5247,8 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
 
       initialfitpeaks.clear();
       PeakFitLM::fit_peak_for_user_click_LM( initialfitpeaks, dataH, coFitPeaks,
-                                 mean0, sigma0, area0, lowerEnergies[0], upperEnergies[0], isHPGe );
+                                 mean0, sigma0, area0, lowerEnergies[0], upperEnergies[0],
+                                 fitPrefs, drf );
 #if( !defined(NDEBUG) && !BUILD_AS_UNIT_TEST_SUITE )
       for( size_t i = 0; i < initialfitpeaks.size(); ++i )
       {
@@ -5167,7 +5259,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
 #endif
 #else
       fit_peak_for_user_click( initialfitpeaks, chi2Dof, dataH, coFitPeaks,
-                          mean0, sigma0, area0, lowerEnergies, upperEnergies, isHPGe );
+                          mean0, sigma0, area0, lowerEnergies, upperEnergies, fitPrefs );
 #endif  //!USE_LM_PEAK_FIT / else
     }else
     {
@@ -5215,7 +5307,7 @@ void secondDerivativePeakCanidates( const std::shared_ptr<const Measurement> dat
   assert( fitPrefs );
   const bool isHPGe = fitPrefs
     ? (fitPrefs->m_det_type == PeakFitUtils::CoarseResolutionType::High)
-    : false;
+    : (PeakFitUtils::coarse_det_type( data, nullptr ) == PeakFitUtils::CoarseResolutionType::High);
 
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
   //If we're debuging things, lets make sure we printout information from just
@@ -5555,7 +5647,7 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std
   assert( fitPrefs );
   const bool isHPGe = fitPrefs
     ? (fitPrefs->m_det_type == PeakFitUtils::CoarseResolutionType::High)
-    : false;
+    : (PeakFitUtils::coarse_det_type( dataH, nullptr ) == PeakFitUtils::CoarseResolutionType::High);
 
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
   //If we're debuging things, lets make sure we printout information from just
@@ -7193,10 +7285,11 @@ namespace ExperimentalPeakSearch
 
 AutoPeakSearchChi2Fcn::AutoPeakSearchChi2Fcn( std::shared_ptr<const Measurement> data,
                                              const std::vector<PeakDef > &fixed_peaks,
-                                             const bool isHPGe )
+                                             const PeakFitUtils::CoarseResolutionType det_type )
 : ROOT::Minuit2::FCNBase(),
   m_inited( false ),
-  m_isHPGe( isHPGe )
+  m_det_type( det_type ),
+  m_isHighRes( det_type == PeakFitUtils::CoarseResolutionType::High )
 {
   if( !data )
     throw runtime_error( "AutoPeakSearchChi2Fcn: invalid input for construction" );
@@ -7207,11 +7300,11 @@ AutoPeakSearchChi2Fcn::AutoPeakSearchChi2Fcn( std::shared_ptr<const Measurement>
   
   m_fixed_peaks = fixed_peaks;
   
-  m_side_bins           = m_isHPGe ? 7    : 10;
-  m_smooth_order        = m_isHPGe ? 3    : 2;
-  m_second_deriv_thresh = m_isHPGe ? -0.02 : 0.05;
-  m_stat_thresh         = m_isHPGe ? 1.0   : 1.3;
-  m_width_thresh        = 0.0;//m_isHPGe ? 3.5  : 4.5;
+  m_side_bins           = m_isHighRes ? 7    : 10;
+  m_smooth_order        = m_isHighRes ? 3    : 2;
+  m_second_deriv_thresh = m_isHighRes ? -0.02 : 0.05;
+  m_stat_thresh         = m_isHighRes ? 1.0   : 1.3;
+  m_width_thresh        = 0.0;//m_isHighRes ? 3.5  : 4.5;
   
   m_min_chi2_dof_thresh = 1.5;
   m_min_gross_counts_sig_thresh = 2.0;
@@ -7303,7 +7396,7 @@ std::vector<PeakDef> AutoPeakSearchChi2Fcn::candidate_peaks( const vector<float>
       double lowerEnengy = -999.9, upperEnergy = -999.9;
       
       //Set the ROI width here according to the second derivative.
-      if( m_isHPGe )
+      if( m_isHighRes )
       {
         int i, j;
         
@@ -7345,10 +7438,10 @@ std::vector<PeakDef> AutoPeakSearchChi2Fcn::candidate_peaks( const vector<float>
          upperEnergy = 0.5*(energies[upperbin] + energies[upperbin+1]);
          */
         
-        findROIEnergyLimits( lowerEnengy, upperEnergy, peak, m_meas, m_isHPGe );
+        findROIEnergyLimits( lowerEnengy, upperEnergy, peak, m_meas, m_isHighRes );
         lower_channel = m_meas->find_gamma_channel( lowerEnengy );
         upper_channel = m_meas->find_gamma_channel( upperEnergy );
-      }//if( m_isHPGe ) / else
+      }//if( m_isHighRes ) / else
       
       //Clamp the ROI to not get riducuolouse
       //      lowerEnengy = std::max( lowerEnengy, mean-5.0*sigma );
@@ -7496,7 +7589,7 @@ bool AutoPeakSearchChi2Fcn::init()
   //      m_resolution_type = SqrtEnergy;
   else if( npeaks < 4 )
     m_resolution_type = Polynomial1stOrder;
-  else if( npeaks < 5 || !m_isHPGe )
+  else if( npeaks < 5 || !m_isHighRes )
     m_resolution_type = Polynomial2ndOrder;
   else
     m_resolution_type = Polynomial3rdOrder;
@@ -7548,7 +7641,7 @@ bool AutoPeakSearchChi2Fcn::init()
       
       //XXX - deciding the order of the continuum is purely a guess right now
       PeakContinuum::OffsetType type = PeakContinuum::Linear;
-      if( m_isHPGe )
+      if( m_isHighRes )
       {
         if( currentgroup.size() > 2 )
           type = PeakContinuum::Quadratic;
@@ -7576,7 +7669,7 @@ bool AutoPeakSearchChi2Fcn::init()
   std::shared_ptr<PeakContinuum> cont = currentgroup.back().continuum();
   
   PeakContinuum::OffsetType type = PeakContinuum::Linear;
-  if( m_isHPGe )
+  if( m_isHighRes )
   {
     if( currentgroup.size() > 2 )
       type = PeakContinuum::Quadratic;
@@ -7758,7 +7851,7 @@ ROOT::Minuit2::MnUserParameters AutoPeakSearchChi2Fcn::initial_parameters() cons
   {
     case Polynomial0thOrder:
     {
-      const double minwidth = m_isHPGe ? meanbinwidth : 4*meanbinwidth;
+      const double minwidth = m_isHighRes ? meanbinwidth : 4*meanbinwidth;
       pars.Add( "ResolutionZeroth", meanwidth, meanbinwidth,  minwidth, 2.0*maxsigma );
       
       break;
@@ -8340,11 +8433,12 @@ bool find_spectroscopic_extent( std::shared_ptr<const Measurement> meas,
 
 std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> meas,
                                       const std::vector<PeakDef> &origpeaks,
-                                      const bool isHPGe )
+                                      const PeakFitUtils::CoarseResolutionType det_type )
 {
   if( !meas || !meas->gamma_counts() )
     return origpeaks;
-  
+
+  const bool isHPGe = (det_type == PeakFitUtils::CoarseResolutionType::High);
   const double min_chi2_dof_thresh         = isHPGe ? 0.2   : 3.5;
   const double min_gross_counts_sig_thresh = isHPGe ? 3.0   : 3;
   const double above_line_chi2_thresh      = isHPGe ? 4.075 : 4.075;
@@ -8353,19 +8447,19 @@ std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> 
   const double second_deriv_thresh         = isHPGe ? -0.02 : 0.04;
   const double stat_thresh                 = isHPGe ? 1.0   : 2;
   const double width_thresh                = isHPGe ? 0.0   : 0.0;
-  
-  
+
+
   //initial_above_line_chi2_thresh: 3.5,
   //initial_second_deriv_thresh: 0.05,
   //initial_stat_thresh: 1.3,
   //final_min_chi2_dof_thresh: 1.1,
   //final_min_gross_counts_sig_thresh: 4.5
-  
+
   return search_for_peaks( meas, min_chi2_dof_thresh,
                           min_gross_counts_sig_thresh,
                           above_line_chi2_thresh, side_bins, smooth_order,
                           second_deriv_thresh, stat_thresh, width_thresh,
-                          origpeaks, isHPGe
+                          origpeaks, det_type
 #if( WRITE_CANDIDATE_PEAK_INFO_TO_FILE )
                           , std::shared_ptr<const DetectorPeakResponse>()
 #endif
@@ -8383,20 +8477,20 @@ std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> 
                                       const double stat_thresh,
                                       const double width_thresh,
                                       const std::vector<PeakDef> &origpeaks, /*included in result, unmodified, wont have duplciate */
-                                      const bool isHPGe
+                                      const PeakFitUtils::CoarseResolutionType det_type
 #if( WRITE_CANDIDATE_PEAK_INFO_TO_FILE )
                                       , std::shared_ptr<const DetectorPeakResponse> detector
 #endif
 )
 {
   vector<PeakDef> finalpeaks;
-  
+
   if( !meas )
     throw runtime_error( "search_for_peaks: invalid input" );
-  
+
   // TODO: currently doesn't account for/fit peak skew
-  
-  AutoPeakSearchChi2Fcn chi2fcn( meas, origpeaks, isHPGe );
+
+  AutoPeakSearchChi2Fcn chi2fcn( meas, origpeaks, det_type );
   chi2fcn.m_min_chi2_dof_thresh = min_chi2_dof_thresh;
   chi2fcn.m_min_gross_counts_sig_thresh = min_gross_counts_sig_thresh;
   chi2fcn.m_nsigma_near_group = 3.0;
@@ -8912,7 +9006,8 @@ std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> 
       for( size_t j = 0; j < groupsofpeaks[i].size(); ++j )
       {
         double lowerEnengy, upperEnergy;
-        findROIEnergyLimits( lowerEnengy, upperEnergy, groupsofpeaks[i][j], meas, isHPGe );
+        const bool isHighRes = (det_type == PeakFitUtils::CoarseResolutionType::High);
+        findROIEnergyLimits( lowerEnengy, upperEnergy, groupsofpeaks[i][j], meas, isHighRes );
         lx = std::min( lx, lowerEnengy );
         ux = std::max( ux, upperEnergy );
         if( j )
@@ -8929,7 +9024,7 @@ std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> 
       
       
       
-      resultpeaks = refitPeaksThatShareROI( meas, detctorPtr, inputpeaks, PeakFitLM::PeakFitLMOptions::MediumRefinementOnly );
+      resultpeaks = refitPeaksThatShareROI( meas, detctorPtr, inputpeaks, det_type, PeakFitLM::PeakFitLMOptions::MediumRefinementOnly );
       
       for( size_t j = 0; j < resultpeaks.size(); ++j )
       {

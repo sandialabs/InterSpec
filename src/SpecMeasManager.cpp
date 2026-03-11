@@ -2341,9 +2341,13 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
         
         // For peaks from a InterSpec/PeakEasy CSV file, we will re-fit the peaks, as in practice
         //  they might not be from this exact spectrum file.
-        Wt::WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [this, currdata, candidate_peaks, orig_peaks, seessionid](){
+        shared_ptr<SpecMeas> fgMeas = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
+        shared_ptr<const PeakFitDetPrefs> csvFitPrefs = fgMeas ? fgMeas->peakFitDetPrefs() : nullptr;
+        if( !csvFitPrefs && fgMeas && fgMeas->detector() )
+          csvFitPrefs = fgMeas->detector()->peakFitDetPrefs();
+        Wt::WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [this, currdata, candidate_peaks, orig_peaks, csvFitPrefs, seessionid](){
           PeakSearchGuiUtils::fit_template_peaks( m_viewer, currdata, candidate_peaks,
-                                                 orig_peaks, PeakSearchGuiUtils::PeakTemplateFitSrc::CsvFile, seessionid );
+                                                 orig_peaks, PeakSearchGuiUtils::PeakTemplateFitSrc::CsvFile, csvFitPrefs, seessionid );
         } ) );
       }else
       {
@@ -2351,9 +2355,14 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
         
         const vector<PeakDef> candidate_peaks = PeakModel::gadras_peak_csv_to_peaks(currdata, infile);
         
-        Wt::WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
+        shared_ptr<SpecMeas> gadrasFgMeas = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
+        shared_ptr<const PeakFitDetPrefs> gadrasFitPrefs = gadrasFgMeas ? gadrasFgMeas->peakFitDetPrefs() : nullptr;
+        shared_ptr<const DetectorPeakResponse> gadrasDrf = gadrasFgMeas ? gadrasFgMeas->detector() : nullptr;
+        if( !gadrasFitPrefs && gadrasDrf )
+          gadrasFitPrefs = gadrasDrf->peakFitDetPrefs();
+        Wt::WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=, gadrasFitPrefs=gadrasFitPrefs](){
           PeakSearchGuiUtils::prepare_and_add_gadras_peaks( currdata, candidate_peaks,
-                                                 orig_peaks, seessionid );
+                                                 orig_peaks, gadrasFitPrefs, gadrasDrf, seessionid );
         } ) );
       }//if( possible_peak_csv )
       
