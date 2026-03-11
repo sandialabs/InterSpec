@@ -3087,6 +3087,7 @@ void refit_peaks_from_right_click( InterSpec * const interspec, const double rig
         refitPrefs = det->peakFitDetPrefs();
     }
 
+    assert( refitPrefs );
     const PeakFitUtils::CoarseResolutionType refitDetType
       = refitPrefs ? refitPrefs->m_det_type : PeakFitUtils::coarse_det_type( data, foreground );
 
@@ -4218,6 +4219,7 @@ void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const SpecUtils::
     return;
   }
 
+  assert( fitPrefs );
   const PeakFitUtils::CoarseResolutionType templateDetType
     = fitPrefs ? fitPrefs->m_det_type : PeakFitUtils::coarse_det_type( data, nullptr );
 
@@ -4338,6 +4340,7 @@ void prepare_and_add_gadras_peaks( std::shared_ptr<const SpecUtils::Measurement>
     return;
   }
 
+  assert( fitPrefs );
   const PeakFitUtils::CoarseResolutionType gadrasDetType
     = fitPrefs ? fitPrefs->m_det_type : PeakFitUtils::coarse_det_type( data, nullptr );
 

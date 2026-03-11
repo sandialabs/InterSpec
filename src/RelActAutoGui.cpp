@@ -5340,6 +5340,7 @@ void RelActAutoGui::startUpdatingCalculation()
   {
     const std::shared_ptr<const SpecMeas> meas = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
     const std::shared_ptr<const PeakFitDetPrefs> prefs = meas ? meas->peakFitDetPrefs() : nullptr;
+    assert( prefs );
     if( prefs )
       det_type = prefs->m_det_type;
     else

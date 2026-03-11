@@ -1576,6 +1576,7 @@ void SimpleActivityCalc::handleBackgroundSubtractChanged()
         const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options( PeakFitLM::PeakFitLMOptions::SmallRefinementOnly );
         std::shared_ptr<const PeakFitDetPrefs> sacFitPrefs = m_viewer->measurment( SpecUtils::SpectrumType::Foreground )
           ? m_viewer->measurment( SpecUtils::SpectrumType::Foreground )->peakFitDetPrefs() : nullptr;
+        assert( sacFitPrefs );
         const PeakFitUtils::CoarseResolutionType sacDetType
           = sacFitPrefs ? sacFitPrefs->m_det_type : PeakFitUtils::coarse_det_type( background, nullptr );
 

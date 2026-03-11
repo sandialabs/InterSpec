@@ -7817,6 +7817,7 @@ void InterSpec::finishHardBackgroundSub( std::shared_ptr<bool> truncate_neg, std
         
         std::shared_ptr<const SpecMeas> fore = measurment( SpecUtils::SpectrumType::Foreground );
         std::shared_ptr<const PeakFitDetPrefs> fitPrefs = fore ? fore->peakFitDetPrefs() : nullptr;
+        assert( fitPrefs );
         const PeakFitUtils::CoarseResolutionType detType
           = fitPrefs ? fitPrefs->m_det_type : PeakFitUtils::coarse_det_type( newspec, fore );
 

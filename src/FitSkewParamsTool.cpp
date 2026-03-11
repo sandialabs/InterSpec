@@ -263,6 +263,7 @@ void FitSkewParamsTool::initWidgets()
   shared_ptr<const SpecMeas> meas
     = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
   shared_ptr<const PeakFitDetPrefs> prefs = meas ? meas->peakFitDetPrefs() : nullptr;
+  assert( prefs );
 
   if( prefs )
   {
@@ -633,8 +634,9 @@ void FitSkewParamsTool::doFit()
   shared_ptr<const SpecMeas> meas
     = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
   shared_ptr<const PeakFitDetPrefs> prefs = meas ? meas->peakFitDetPrefs() : nullptr;
+  assert( prefs );
 
-  optional<PeakFitUtils::CoarseResolutionType> resType;
+  optional<PeakFitUtils::CoarseResolutionType> resType = PeakFitUtils::CoarseResolutionType::Unknown;
   if( prefs )
     resType = prefs->m_det_type;
 
