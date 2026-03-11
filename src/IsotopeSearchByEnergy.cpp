@@ -2399,12 +2399,12 @@ void IsotopeSearchByEnergy::startSearch( const bool refreshBr )
   workingspace->windows = windows;
   workingspace->sortColumn = m_model->sortColumn();
   workingspace->sortOrder = m_model->sortOrder();
-  workingspace->isHPGe = PeakFitUtils::is_likely_high_res( m_viewer );
   workingspace->undoSentry = getDisableUndoRedoSentry(); //m_undo_redo_sentry.lock();
-  
+
   std::shared_ptr<SpecMeas> foreground = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
   if( foreground )
   {
+    workingspace->fitPrefs = foreground->peakFitDetPrefs();
     const set<int> &samplenums = m_viewer->displayedSamples(SpecUtils::SpectrumType::Foreground);
     auto userpeaks = foreground->peaks( samplenums );
     auto autopeaks = foreground->automatedSearchPeaks( samplenums );

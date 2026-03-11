@@ -33,6 +33,7 @@
 class PeakModel;
 class InterSpec;
 class D3SpectrumDisplayDiv;
+class PeakFitDetPrefsGui;
 
 namespace Wt
 {
@@ -103,6 +104,8 @@ protected:
   Wt::WPushButton *m_clearPeaksButton;
   Wt::WPushButton *m_nucFromRefButton;
   Wt::WLabel *m_peakAddRemoveLabel;
+
+  PeakFitDetPrefsGui *m_peakFitDetPrefsGui;
 };//class PeakInfoDisplay
 
 #endif // #ifndef PeakInfoDisplay_h

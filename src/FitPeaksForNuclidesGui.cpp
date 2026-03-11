@@ -222,12 +222,11 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
     return;
   }
 
-  const bool isHPGe = PeakFitUtils::is_likely_high_res( viewer );
+  std::shared_ptr<SpecMeas> fg_meas = viewer->measurment( SpecUtils::SpectrumType::Foreground );
+  std::shared_ptr<const PeakFitDetPrefs> peak_fit_prefs = fg_meas ? fg_meas->peakFitDetPrefs() : nullptr;
+  std::shared_ptr<const DetectorPeakResponse> drf_input = fg_meas ? fg_meas->detector() : nullptr;
   std::shared_ptr<const SpecUtils::Measurement> background
                                  = viewer->displayedHistogram( SpecUtils::SpectrumType::Background );
-
-  std::shared_ptr<SpecMeas> fg_meas = viewer->measurment( SpecUtils::SpectrumType::Foreground );
-  std::shared_ptr<const DetectorPeakResponse> drf_input = fg_meas ? fg_meas->detector() : nullptr;
 
   FitPeaksForNuclides::PeakFitForNuclideConfig config;
 
@@ -324,7 +323,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
 
       try
       {
-        *result = FitPeaksForNuclides::fit_peaks_for_nuclides( auto_search_peaks, fg_copy, base_nucs, user_peaks, bg_copy, drf_input, options, config, isHPGe );
+        *result = FitPeaksForNuclides::fit_peaks_for_nuclides( auto_search_peaks, fg_copy, base_nucs, user_peaks, bg_copy, drf_input, options, config, peak_fit_prefs );
       }catch( std::exception &e )
       {
         result->status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
@@ -841,13 +840,16 @@ FitPeaksAdvancedWidget::FitPeaksAdvancedWidget( Wt::WContainerWidget *parent )
     return;
 
   m_base_options = options;
-  m_is_hpge = PeakFitUtils::is_likely_high_res( viewer );
+  {
+    std::shared_ptr<SpecMeas> fg_meas = viewer->measurment( SpecUtils::SpectrumType::Foreground );
+    m_peak_fit_prefs = fg_meas ? fg_meas->peakFitDetPrefs() : nullptr;
+    m_drf = fg_meas ? fg_meas->detector() : nullptr;
+  }
+
   m_fg_copy = std::make_shared<SpecUtils::Measurement>( *foreground );
   std::shared_ptr<const SpecUtils::Measurement> background
     = viewer->displayedHistogram( SpecUtils::SpectrumType::Background );
   m_bg_copy = background ? std::make_shared<SpecUtils::Measurement>( *background ) : nullptr;
-  std::shared_ptr<SpecMeas> fg_meas = viewer->measurment( SpecUtils::SpectrumType::Foreground );
-  m_drf = fg_meas ? fg_meas->detector() : nullptr;
 
   if( current_showing.m_validity == ReferenceLineInfo::InputValidity::Valid )
     m_ref_lines.push_back( current_showing );
@@ -1187,7 +1189,7 @@ void FitPeaksAdvancedWidget::startComputation()
     try
     {
       *result = FitPeaksForNuclides::fit_peaks_for_nuclides( peaks_to_use, m_fg_copy, m_base_nucs, m_user_peaks,
-                                                            bg_to_use, m_drf, options, config, m_is_hpge );
+                                                            bg_to_use, m_drf, options, config, m_peak_fit_prefs );
       WServer::instance()->post( sessionid, [=](){
         WApplication *app = WApplication::instance();
         if( app )

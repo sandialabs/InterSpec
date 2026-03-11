@@ -40,6 +40,7 @@ class PeakDef;
 class PeakModel;
 class MaterialDB;
 struct PeakContinuum;
+struct PeakFitDetPrefs;
 class DetectorPeakResponse;
 
 namespace RelActCalcAuto
@@ -152,6 +153,9 @@ public:
   
   std::shared_ptr<DetectorPeakResponse> detector();
   std::shared_ptr<const DetectorPeakResponse> detector() const;
+
+  std::shared_ptr<const PeakFitDetPrefs> peakFitDetPrefs() const;
+  void setPeakFitDetPrefs( std::shared_ptr<const PeakFitDetPrefs> prefs );
 
   /**
   \deprecated Not consistently used if SpecMeas is used for foreground and background or whatever.
@@ -400,6 +404,11 @@ protected:
   //  a PeakDeque to be relatively small in size, in general)
   std::shared_ptr< SampleNumsToPeakMap > m_peaks;
   std::shared_ptr<DetectorPeakResponse> m_detector;
+
+  /** Peak fitting preferences (coarse detector type, default skew, skew params).
+   If null, no preferences have been determined yet.
+   */
+  std::shared_ptr<const PeakFitDetPrefs> m_peakFitDetPrefs;
 
   /** \TODO: Currently m_displayType, m_displayedSampleNumbers, and m_displayedDetectors track
    foreground, or background, or secondary, but this doesnt cover case where this SpecMeas is

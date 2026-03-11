@@ -37,6 +37,7 @@ class InterSpec;
 class MaterialDB;
 class MakeDrfChart;
 class DetectorPeakResponse;
+class PeakFitDetPrefsGui;
 
 namespace Wt
 {
@@ -225,7 +226,10 @@ protected:
   float m_effLowerEnergy; ///< The lowest energy peak used for eff calculation
   float m_effUpperEnergy; ///< The highest energy peak used for eff calculation
   std::vector<float> m_effEqnCoefs, m_effEqnCoefUncerts;
-  
+
+  /** Optional peak fitting preferences to embed in the created DRF. */
+  PeakFitDetPrefsGui *m_peakFitDetPrefsGui;
+
   friend class MakeDrfWindow;
 };//class MakeDrf
 

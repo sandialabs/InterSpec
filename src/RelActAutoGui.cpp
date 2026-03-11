@@ -78,6 +78,7 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/SimpleDialog.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/RelActAutoGui.h"
@@ -1728,9 +1729,9 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
 
     const shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_peaks = meas ? meas->automatedSearchPeaks(sample_nums) : nullptr;
 
-    const bool isHPGe = PeakFitUtils::is_likely_high_res( m_interspec );
-    
-    const auto found_peaks = searchForPeakFromUser( energy, pixPerKeV, m_foreground, {}, det, auto_peaks, isHPGe );
+    shared_ptr<const PeakFitDetPrefs> fitPrefs = meas ? meas->peakFitDetPrefs() : nullptr;
+
+    const auto found_peaks = searchForPeakFromUser( energy, pixPerKeV, m_foreground, {}, det, auto_peaks, fitPrefs );
 
     // If we didnt fit a peak, and we dont
     double lower_energy = energy - 10;
@@ -1755,7 +1756,7 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
       //  (We could check on auto-searched peaks and estimate from those, but
       //   really, at this point, its not worth the effort as things are probably
       //   low quality)
-      const bool isHPGe = PeakFitUtils::is_high_res(m_foreground);
+      const bool isHPGe = (PeakFitUtils::coarse_det_type( m_foreground, nullptr ) == PeakFitUtils::CoarseResolutionType::High);
       if( isHPGe )
       {
         lower_energy = energy - 5;
@@ -4157,19 +4158,30 @@ void RelActAutoGui::setPeaksToForeground()
       vector<shared_ptr<const PeakDef>> solution_peaks_ptrs;
       for( const PeakDef &p : solution_peaks )
         solution_peaks_ptrs.push_back( make_shared<const PeakDef>(p) );
-      const auto resType = PeakFitUtils::coarse_resolution_from_peaks(solution_peaks_ptrs);
-      
-      const bool isHPGe = (resType == PeakFitUtils::CoarseResolutionType::High); //Shouldnt matter since peaks all have defined ROIs, but JIC
-      
+      shared_ptr<const PeakFitDetPrefs> fitPrefs;
+      shared_ptr<const SpecMeas> specmeas = interpsec->measurment( SpecUtils::SpectrumType::Foreground );
+      if( specmeas )
+        fitPrefs = specmeas->peakFitDetPrefs();
+      if( !fitPrefs && ana_drf )
+        fitPrefs = ana_drf->peakFitDetPrefs();
+      if( !fitPrefs )
+      {
+        auto prefs = make_shared<PeakFitDetPrefs>();
+        prefs->m_det_type = PeakFitUtils::coarse_resolution_from_peaks( solution_peaks_ptrs );
+        fitPrefs = prefs;
+      }
+
+      const PeakFitUtils::CoarseResolutionType resType = fitPrefs->m_det_type;
+
       vector< vector<shared_ptr<const PeakDef>> > fit_peaks( rois.size() );
-      
+
       SpecUtilsAsync::ThreadPool pool;
       size_t roi_num = 0;
       for( const auto &cont_peaks : rois )
       {
         const vector<shared_ptr<const PeakDef>> *peaks = &(cont_peaks.second);
-        
-        pool.post( [&fit_peaks, roi_num, foreground, peaks, ana_drf, isHPGe](){
+
+        pool.post( [&fit_peaks, roi_num, foreground, peaks, ana_drf, fitPrefs, resType](){
           
           // If two peaks are near each other, we wont be able to resolve them in the fit,
           //  so just get rid of the smaller amplitude peak
@@ -4218,7 +4230,7 @@ void RelActAutoGui::setPeaksToForeground()
           WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
           fit_options |= PeakFitLM::PeakFitLMOptions::MediumRefinementOnly; //Arbitrary
           
-          fit_peaks[roi_num] = refitPeaksThatShareROI( foreground, ana_drf, peaks_to_refit, fit_options );
+          fit_peaks[roi_num] = refitPeaksThatShareROI( foreground, ana_drf, peaks_to_refit, resType, fit_options );
           
           if( fit_peaks[roi_num].size() != peaks_to_refit.size() )
           {
@@ -4237,9 +4249,11 @@ void RelActAutoGui::setPeaksToForeground()
             Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
             fit_options |= PeakFitLM::PeakFitLMOptions::SmallRefinementOnly; //THe peaks should be pretty close, so we'll only allow small changes to mean, so we dont fit into someunrelated peak...
             
+            const PeakFitUtils::CoarseResolutionType retryDetType
+              = fitPrefs ? fitPrefs->m_det_type : PeakFitUtils::coarse_det_type( foreground, nullptr );
             const vector<PeakDef> retry_peak = fitPeaksInRange( lx, ux, ncausality, stat_threshold,
                                                           hypothesis_threshold, input_peaks,
-                                                          foreground, fit_options, isHPGe );
+                                                          foreground, fit_options, retryDetType );
             
             if( (retry_peak.size() == peaks_to_refit.size())
                || (fit_peaks[roi_num].empty() && !retry_peak.empty()) )
@@ -5321,13 +5335,22 @@ void RelActAutoGui::startUpdatingCalculation()
   
   auto gui_update_callback = wApp->bind( boost::bind( &RelActAutoGui::updateFromCalc, this, solution, cancel_calc, m_calc_number ) );
   auto error_callback = wApp->bind( boost::bind( &RelActAutoGui::handleCalcException, this, error_msg, cancel_calc) );
-  
-  
+
+  PeakFitUtils::CoarseResolutionType det_type = PeakFitUtils::CoarseResolutionType::High;
+  {
+    const std::shared_ptr<const SpecMeas> meas = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
+    const std::shared_ptr<const PeakFitDetPrefs> prefs = meas ? meas->peakFitDetPrefs() : nullptr;
+    if( prefs )
+      det_type = prefs->m_det_type;
+    else
+      det_type = PeakFitUtils::coarse_det_type( foreground, nullptr );
+  }
+
   auto worker = [=](){
     try
     {
       RelActCalcAuto::RelActAutoSolution answer
-        = RelActCalcAuto::solve( options, foreground, background, cached_drf, cached_all_peaks, cancel_calc );
+        = RelActCalcAuto::solve( options, foreground, background, cached_drf, cached_all_peaks, det_type, cancel_calc );
       
       WServer::instance()->post( sessionId, [=](){
         WApplication *app = WApplication::instance();

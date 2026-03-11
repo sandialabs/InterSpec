@@ -27,6 +27,8 @@
   <message id="smm-zip-filename-hdr">Filename</message>
   <message id="smm-zip-kilobyte-hdr">kb</message>
   <message id="smm-zip-display-btn">Display</message>
+  <message id="smm-loaded-peak-fit-prefs">Loaded peak fitting preferences from file.</message>
+  <message id="smm-no-foreground-for-prefs">Load a foreground spectrum before applying peak fitting preferences.</message>
   <message id="smm-empty-file">File was probably an empty file - not a spectrum file.</message>
   <message id="smm-failed-reading-nonspec-file">Failed to read non-spectrum file.</message>
   <message id="smm-not-spec-file">Not a spectrum file</message>

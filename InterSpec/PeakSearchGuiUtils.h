@@ -40,6 +40,7 @@ class PeakModel;
 class InterSpec;
 struct ColorTheme;
 class SpectrumChart;
+struct PeakFitDetPrefs;
 struct ReferenceLineInfo;
 class DetectorPeakResponse;
 class ReferencePhotopeakDisplay;
@@ -162,7 +163,7 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
                                boost::function<void(void)> callback,
                                const std::string sessionID,
                                const bool singleThread,
-                               const bool isHPGe );
+                               std::shared_ptr<const PeakFitDetPrefs> fitPrefs );
   
 /** Assigns peak nuclides/xrays/reactions from the reference photopeak lines by
    modifying the peaks passed in.  
@@ -357,12 +358,15 @@ void fit_template_peaks( InterSpec *interspec,
                          std::vector<PeakDef> template_peaks,
                          std::vector<PeakDef> original_peaks,
                          const PeakTemplateFitSrc fitsrc,
+                         std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
                          const std::string sessionid );
 
 void prepare_and_add_gadras_peaks(
                         std::shared_ptr<const SpecUtils::Measurement> data,
                         std::vector<PeakDef> gadras_peaks,
                         std::vector<PeakDef> original_peaks,
+                        std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
+                        std::shared_ptr<const DetectorPeakResponse> drf,
                         const std::string sessionid );
 
 /** Adds a new peak to an existing ROI based on right-click energy.

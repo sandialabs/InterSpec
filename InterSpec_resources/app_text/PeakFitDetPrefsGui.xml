@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- pfdpg is short for PeakFitDetPrefsGui -->
+
+  <message id="pfdpg-collapsed-label">Peak Fit Opts</message>
+
+  <message id="pfdpg-det-type-label">Det. Type</message>
+  <message id="pfdpg-skew-type-label">Skew Type</message>
+  <message id="pfdpg-skew-params-label">Skew Params</message>
+  <message id="pfdpg-roi-indep-skew">ROI-indep. skew</message>
+  <message id="pfdpg-source-label">Source: </message>
+
+  <!-- Detector type combo box items -->
+  <message id="pfdpg-det-nai">NaI/CsI</message>
+  <message id="pfdpg-det-labr">LaBr3</message>
+  <message id="pfdpg-det-czt">CZT</message>
+  <message id="pfdpg-det-medres">Med Res</message>
+  <message id="pfdpg-det-lowormedres">Low/Med Res</message>
+  <message id="pfdpg-det-hpge">HPGe</message>
+  <message id="pfdpg-det-unknown">Unknown</message>
+
+  <!-- FWHM method combo box items -->
+  <message id="pfdpg-fwhm-method-label">FWHM Method</message>
+  <message id="pfdpg-fwhm-normal">Normal</message>
+  <message id="pfdpg-fwhm-det">Use DRF FWHM</message>
+  <message id="pfdpg-fwhm-det-refine">DRF + Refine</message>
+
+  <!-- Dialog for missing FWHM info -->
+  <message id="pfdpg-no-fwhm-title">No FWHM Information</message>
+  <message id="pfdpg-no-fwhm-content">The current detector response function does not have FWHM (resolution) information. You can fit FWHM from the current peaks, or cancel.</message>
+  <message id="pfdpg-no-fwhm-cancel">Cancel</message>
+  <message id="pfdpg-no-fwhm-fit">Fit FWHM...</message>
+
+  <!-- Skew parameter labels -->
+  <message id="pfdpg-lower-header">Low E</message>
+  <message id="pfdpg-upper-header">High E</message>
+  <message id="pfdpg-param-label">Par {1}:</message>
+
+  <!-- Loading source display strings -->
+  <message id="pfdpg-src-default">Default</message>
+  <message id="pfdpg-src-user">User set</message>
+  <message id="pfdpg-src-drf">From DRF</message>
+  <message id="pfdpg-src-det-type">From det. type</message>
+  <message id="pfdpg-src-spectral">From spectrum</message>
+
+  <!-- Tooltip suffixes for energy dependence -->
+  <message id="pfdpg-tt-energy-dep"><br />Value varies with energy; specify at low and high energies.</message>
+  <message id="pfdpg-tt-not-energy-dep"><br />Value is constant across the energy range.</message>
+
+  <!-- Fit skew params link -->
+  <message id="pfdpg-fit-skew-link">fit skew pars</message>
+
+  <!-- Undo/redo descriptions -->
+  <message id="pfdpg-undo-det-type">Change detector type</message>
+  <message id="pfdpg-undo-skew-type">Change skew type</message>
+  <message id="pfdpg-undo-skew-param">Change skew parameter</message>
+  <message id="pfdpg-undo-roi-indep">Toggle ROI-indep. skew</message>
+  <message id="pfdpg-undo-fwhm-method">Change FWHM method</message>
+</messages>

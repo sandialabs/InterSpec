@@ -75,8 +75,10 @@ class PopupWarningWidget;
 class UnitsConverterTool;
 struct ExternalRidResults;
 class FeatureMarkerWindow;
+class FitSkewParamsWindow;
 class D3SpectrumDisplayDiv;
 class DetectionLimitWindow;
+struct PeakFitDetPrefs;
 class DetectorPeakResponse;
 class ExportSpecFileWindow;
 class MakeFwhmForDrfWindow;
@@ -321,7 +323,13 @@ public:
                                      const bool tryDefaultDrf,
                                      const std::string sessionId );
 
-  
+  /** Determines and sets the PeakFitDetPrefs for a foreground SpecMeas.
+   Priority: 1) already on meas, 2) same instrument as previous, 3) from DRF,
+   4) from DetectorType mapping, 5) spectral data (stub), 6) default.
+   */
+  void determinePeakFitDetPrefs( std::shared_ptr<SpecMeas> meas,
+                                  std::shared_ptr<SpecMeas> previous );
+
   /** Handles "deep" urls.
    
    Meant to handle URLs with the scheme "interspec://...", that would be passed to the application
@@ -770,6 +778,9 @@ public:
   //  object is modified.
   Wt::Signal<std::shared_ptr<DetectorPeakResponse> > &detectorModified();
 
+  /** Signal emitted when the PeakFitDetPrefs on the foreground SpecMeas changes. */
+  Wt::Signal<> &peakFitDetPrefsChanged();
+
   void showEnergyCalWindow();
   void handEnergyCalWindowClose();
 
@@ -942,6 +953,21 @@ public:
    Sets the `m_exportSpecFileWindow` member variable to nullptr.
    */
   void handleExportSpectrumFileDialogClose();
+
+  /** Creates the FitSkewParamsWindow, or shows it if it already exists.
+   Registers an undo/redo step for opening the window.
+   */
+  void showFitSkewParamsWindow();
+
+  /** Closes and deletes the FitSkewParamsWindow, if it exists.
+   Registers an undo/redo step for closing the window.
+   */
+  void closeFitSkewParamsWindow();
+
+  /** Called when the user clicks Accept in the FitSkewParamsWindow.
+   Applies the skew fit results, registers undo/redo, and closes the window.
+   */
+  void acceptFitSkewParamsWindow();
 
 #if( USE_DETECTION_LIMIT_TOOL )
   /** If `query_str` is not empty, the handle app URI function will be called. */
@@ -1194,7 +1220,7 @@ public:
   void searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
                            const std::set<int> &samples,
                           const std::shared_ptr<const SpecUtils::Measurement> &spectrum,
-                          const bool isHPGe );
+                          std::shared_ptr<const PeakFitDetPrefs> fitPrefs );
   
   //setHintPeaks(): sets the hint peaks (SpecMeas::m_autoSearchPeaks and
   //  SpecMeas::m_autoSearchInitialPeaks) if spectrum.lock() yeilds a valid ptr.
@@ -1405,6 +1431,10 @@ protected:
   //m_peakEditWindow: used to ensure only one peak editor window is open at a
   //  time.  Will be null if no peak editor is open; valid if one is open.
   PeakEditWindow *m_peakEditWindow;
+
+  // Managed by showFitSkewParamsWindow/closeFitSkewParamsWindow/acceptFitSkewParamsWindow.
+  // Null when no FitSkewParamsWindow is open.
+  FitSkewParamsWindow *m_fitSkewParamsWindow;
   
   
   //m_currentToolsTab: used to track which tab is currently showing when the
@@ -1718,6 +1748,9 @@ protected:
   //Signals for when the current detector is changed or modified
   Wt::Signal<std::shared_ptr<DetectorPeakResponse> > m_detectorChanged;
   Wt::Signal<std::shared_ptr<DetectorPeakResponse> > m_detectorModified;
+
+  /** Emitted when the PeakFitDetPrefs on the foreground SpecMeas changes. */
+  Wt::Signal<> m_peakFitDetPrefsChanged;
 
   //Connections to the current foreground SpecMeas object that need to be
   //  connected and disconnected when changing spectrums.

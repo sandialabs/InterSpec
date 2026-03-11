@@ -75,7 +75,9 @@
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/MakeDrfChart.h"
+#include "InterSpec/PeakFitDetPrefsGui.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/MakeDrfSrcDef.h"
@@ -1520,7 +1522,8 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_fwhmEqnChi2( -999.9 ),
   m_effEqnChi2( -999.9 ),
   m_effLowerEnergy( 0.0f ),
-  m_effUpperEnergy( 0.0f )
+  m_effUpperEnergy( 0.0f ),
+  m_peakFitDetPrefsGui( nullptr )
 {
   assert( m_interspec );
   assert( m_materialDB );
@@ -1645,8 +1648,12 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   HelpSystem::attachToolTipOn( m_airAttenuate, WString::tr("md-tt-atten-for-air"),
                               showToolTips, HelpSystem::ToolTipPosition::Right,
                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
-  
-  
+
+  // Peak fit preferences (optional, embedded in DRF)
+  WGroupBox *peakFitPrefsGroup = new WGroupBox( WString::tr( "md-peak-fit-prefs-title" ), fitOptionsDiv );
+  m_peakFitDetPrefsGui = new PeakFitDetPrefsGui( m_interspec, false, peakFitPrefsGroup );
+
+
   m_chart = new MakeDrfChart();
   DrfChartHolder *chartholder = new DrfChartHolder( m_chart, nullptr );
   upperLayout->addWidget( chartholder, 0, 1 );
@@ -3209,10 +3216,18 @@ shared_ptr<DetectorPeakResponse> MakeDrf::assembleDrf( const string &name, const
     }//switch( m_fwhmEqnType->currentIndex() )
   }//if( !m_fwhmCoefs.empty() )
   
+  // Attach peak fitting preferences if set in the GUI
+  if( m_peakFitDetPrefsGui )
+  {
+    shared_ptr<const PeakFitDetPrefs> prefs = m_peakFitDetPrefsGui->currentPrefs();
+    if( prefs )
+      drf->setPeakFitDetPrefs( prefs );
+  }
+
   if( !drf->isValid() )
     throw runtime_error( "DRF wasnt valid after creation" );
   //Need something here to indicate this is a created DRF.
-  
+
   return drf;
 }//std::make_shared<DetectorPeakResponse> assembleDrf() const;
 

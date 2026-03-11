@@ -392,9 +392,11 @@ struct DoWorkOnDestruct
   }//void fit_nominal_gadras_pars()
 */
   
-void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fwhm_start, bool highres, RelActCalcAuto::FwhmForm fwhm_form, double lowest_energy, double highest_energy )
+// TODO: better customize the default FWHM parameters for each specific detector type
+//       (e.g., NaI, CZT, LaBr, etc.), rather than just branching on High vs non-High.
+void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fwhm_start, PeakFitUtils::CoarseResolutionType det_type, RelActCalcAuto::FwhmForm fwhm_form, double lowest_energy, double highest_energy )
 {
-  if( highres )
+  if( det_type == PeakFitUtils::CoarseResolutionType::High )
   {
     // The following parameters fit from the GADRAS parameters {1.54f, 0.264f, 0.33f}, using the
     // fit_nominal_gadras_pars() commented out above.
@@ -701,7 +703,7 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
         throw runtime_error( "NotApplicable should not be used here" );
         break;
     }//switch( options.fwhm_form )
-  }//if( highres ) / else
+  }//if( det_type == CoarseResolutionType::High ) / else
 }//fill_in_default_start_fwhm_pars()
 
 
@@ -710,7 +712,7 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
  * @param fwhm_form 
  * @param fwhm_estimation_method 
  * @param all_peaks 
- * @param highres 
+ * @param det_type
  * @param lowest_energy The lowest energy in the analysis energy range; used only when converting 
  *        DetectorPeakResponse FWHM info to a different form, and is not used when fitting FWHM from data.
  * @param highest_energy The highest energy in the analysis energy range; used only when converting 
@@ -733,7 +735,7 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
 std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActCalcAuto::FwhmForm fwhm_form, 
             const RelActCalcAuto::FwhmEstimationMethod fwhm_estimation_method,
             const std::vector<std::shared_ptr<const PeakDef>> all_peaks, 
-            const bool highres,
+            const PeakFitUtils::CoarseResolutionType det_type,
             const double lowest_energy,
             const double highest_energy,
             std::shared_ptr<const DetectorPeakResponse> input_drf,
@@ -1147,7 +1149,7 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
   }catch( std::exception &e )
   {
     paramaters.clear();
-    fill_in_default_start_fwhm_pars( paramaters, 0, highres, fwhm_form, lowest_energy, highest_energy );
+    fill_in_default_start_fwhm_pars( paramaters, 0, det_type, fwhm_form, lowest_energy, highest_energy );
     warnings.push_back( "Failed to estimate FWHM from data: " + string(e.what()) + ".  Using default FWHM parameters." );
   }
 
@@ -1166,7 +1168,7 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
       const float sigma = fwhm / PhysicalUnits::fwhm_nsigma;
 
       float min_sigma, max_sigma;
-      expected_peak_width_limits( energy, highres, nullptr, min_sigma, max_sigma );
+      expected_peak_width_limits( energy, det_type, nullptr, min_sigma, max_sigma );
       assert( min_sigma > 0 );
 
       min_expected_sigma = (std::min)( min_expected_sigma, min_sigma );
@@ -1183,7 +1185,7 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
   {
     cerr << "Fit FWHM is not valid for the energy range wanted - will just use default." << endl;
     warnings.push_back( "Failed to estimate FWHM from data: not a large enough span of peaks.  Using default FWHM parameters." );
-    fill_in_default_start_fwhm_pars( paramaters, 0, highres, fwhm_form, lowest_energy, highest_energy );
+    fill_in_default_start_fwhm_pars( paramaters, 0, det_type, fwhm_form, lowest_energy, highest_energy );
     assert( paramaters.size() == fwhm_pars_float.size() );
     fwhm_pars_float.clear();
     fwhm_pars_float.resize( paramaters.size(), 0.0f );
@@ -1220,7 +1222,7 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
     if( !new_drf )
     {
       const string drfpaths = SpecUtils::append_path( InterSpec::staticDataDirectory(), "GenericGadrasDetectors" );
-      const string drf_dir = SpecUtils::append_path( drfpaths, highres ? "HPGe 40%" : "LaBr 10%" );
+      const string drf_dir = SpecUtils::append_path( drfpaths, (det_type == PeakFitUtils::CoarseResolutionType::High) ? "HPGe 40%" : "LaBr 10%" );
       try
       {
         new_drf = std::make_shared<DetectorPeakResponse>();
@@ -1718,6 +1720,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
    */
   double m_rel_eff_anchor_enhancement;
   
+  const PeakFitUtils::CoarseResolutionType m_det_type;
+
   /** Will either be null, or have FWHM info. */
   std::shared_ptr<const DetectorPeakResponse> m_drf;
   
@@ -1859,6 +1863,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                      const vector<float> &channel_counts_uncert,
                      std::shared_ptr<const DetectorPeakResponse> drf,
                      std::vector<std::shared_ptr<const PeakDef>> all_peaks,
+                     const PeakFitUtils::CoarseResolutionType det_type,
                      std::shared_ptr<std::atomic_bool> cancel_calc
                            )
   : m_options( options ),
@@ -1870,6 +1875,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   m_channel_count_uncerts( channel_counts_uncert ),
   m_energy_cal( spectrum ? spectrum->energy_calibration() : nullptr ),
   m_rel_eff_anchor_enhancement( 1000.0 ),
+  m_det_type( det_type ),
   m_drf( nullptr ),
   m_energy_cal_par_start_index( std::numeric_limits<size_t>::max() ),
   m_dev_pair_par_start_index( std::numeric_limits<size_t>::max() ),
@@ -1909,7 +1915,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     if( spectrum->num_gamma_channels() != channel_counts_uncert.size() )
       throw runtime_error( "RelActAutoCostFcn: Diff number of spectrum channels and channel counts uncert." );
     
-    const bool highres = PeakFitUtils::is_high_res( spectrum );
     vector<RelActCalcAuto::RoiRange> energy_ranges = options.rois;
     vector<RelActCalcAuto::FloatingPeak> extra_peaks = options.floating_peaks;
     
@@ -2032,10 +2037,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       vector<pair<double,double>> gammas_in_range;
       
       // Define a helper function to add a gamma at an energy into \c gammas_in_range
-      auto add_peak_to_range = [&gammas_in_range, this, &spectrum, highres, &roi_range, num_sigma_half_roi]( const double energy ){
+      auto add_peak_to_range = [&gammas_in_range, this, &spectrum, &roi_range, num_sigma_half_roi]( const double energy ){
         double energy_sigma;
         float min_sigma, max_sigma;
-        expected_peak_width_limits( energy, highres, spectrum, min_sigma, max_sigma );
+        expected_peak_width_limits( energy, m_det_type, spectrum, min_sigma, max_sigma );
         
         if( m_drf && m_drf->hasResolutionInfo() )
         {
@@ -2575,6 +2580,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                                         std::shared_ptr<const SpecUtils::Measurement> background,
                                                         const std::shared_ptr<const DetectorPeakResponse> input_drf,
                                                         std::vector<std::shared_ptr<const PeakDef>> all_peaks,
+                                                        const PeakFitUtils::CoarseResolutionType det_type,
                                                         std::shared_ptr<std::atomic_bool> cancel_calc
                                                         )
   {
@@ -2582,8 +2588,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     const vector<RelActCalcAuto::FloatingPeak> &extra_peaks = options.floating_peaks;
 
     const auto start_time = std::chrono::high_resolution_clock::now();
-    
-    const bool highres = PeakFitUtils::is_high_res( foreground );
     
     const size_t num_rel_eff_curves = options.rel_eff_curves.size();
     
@@ -2711,7 +2715,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       if( (!cancel_calc || !cancel_calc->load()) && all_peaks.empty() )
       {
         cout << "Will search for peaks: " << endl;
-        all_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks( spectrum, nullptr, {}, false, highres );
+        // If DRF doesnt have PeakFitDetPrefs, search_for_peaks will fall back to is_high_res
+        std::shared_ptr<const PeakFitDetPrefs> fitPrefs = input_drf ? input_drf->peakFitDetPrefs() : nullptr;
+        all_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks( spectrum, nullptr, {}, false, fitPrefs );
 
         for( const auto &p : all_peaks )
           cout << "  auto peak: energy=" << p->mean() << ", fwhm=" << p->fwhm() << ", area=" << p->peakArea()
@@ -2752,13 +2758,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           //  allowed variation of FWHM, for a given order.
           const double aditional_factor = (r.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::CanExpandForFwhm) ? 2.0 : 1.5;
           float min_sigma, max_sigma;
-          expected_peak_width_limits( static_cast<float>(r.lower_energy), highres, spectrum, min_sigma, max_sigma );
+          expected_peak_width_limits( static_cast<float>(r.lower_energy), det_type, spectrum, min_sigma, max_sigma );
           
           // Note that `bersteinPeakResolutionFWHM(...)` will clamp energies to this range, if above/below lowest_fwhm_energy/highest_fwhm_energy
           lowest_fwhm_energy = std::min( lowest_fwhm_energy, r.lower_energy - aditional_factor*DEFAULT_PEAK_HALF_WIDTH_SIGMA*max_sigma );
           lowest_fwhm_energy = std::max( lowest_fwhm_energy, 10.0 );
             
-          expected_peak_width_limits( static_cast<float>(r.upper_energy), highres, spectrum, min_sigma, max_sigma );
+          expected_peak_width_limits( static_cast<float>(r.upper_energy), det_type, spectrum, min_sigma, max_sigma );
           highest_fwhm_energy = std::max( highest_fwhm_energy, r.upper_energy + aditional_factor*DEFAULT_PEAK_HALF_WIDTH_SIGMA*max_sigma );
           highest_fwhm_energy = std::min( highest_fwhm_energy, 10000.0 );
         }//for( const RelActCalcAuto::RoiRange &r : options.rois )
@@ -2767,7 +2773,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         //  otherwise it will add FWHM estimate, or if it isnt valid at all, it will
         //  load a default efficiency function
         solution.m_drf = get_fwhm_coefficients( options.fwhm_form, options.fwhm_estimation_method, all_peaks,
-                                              highres, lowest_fwhm_energy, highest_fwhm_energy, input_drf,
+                                              det_type, lowest_fwhm_energy, highest_fwhm_energy, input_drf,
                                               starting_fwhm_paramaters, solution.m_warnings );
       }catch( std::exception &e )
       {
@@ -2883,7 +2889,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         throw runtime_error( "User cancelled calculation." );
       
       auto functor = new RelActAutoCostFcn( options, spectrum, channel_count_uncerts,
-                                           solution.m_drf, all_peaks, cancel_calc );
+                                           solution.m_drf, all_peaks, det_type, cancel_calc );
       cost_functor.reset( functor );
     }catch( std::exception &e )
     {
@@ -2975,13 +2981,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       }else
       {
         float min_sigma, max_sigma;
-        expected_peak_width_limits( static_cast<float>(lowest_energy), highres, spectrum, min_sigma, max_sigma );
+        expected_peak_width_limits( static_cast<float>(lowest_energy), det_type, spectrum, min_sigma, max_sigma );
         fwhm_at_lowest = max_sigma;
 
-        expected_peak_width_limits( static_cast<float>(highest_energy), highres, spectrum, min_sigma, max_sigma );
+        expected_peak_width_limits( static_cast<float>(highest_energy), det_type, spectrum, min_sigma, max_sigma );
         fwhm_at_highest = max_sigma;
 
-        expected_peak_width_limits( static_cast<float>(midpoint_energy), highres, spectrum, min_sigma, max_sigma );
+        expected_peak_width_limits( static_cast<float>(midpoint_energy), det_type, spectrum, min_sigma, max_sigma );
         fwhm_at_midpoint = max_sigma;
       }
 
@@ -3036,7 +3042,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         
         if( solution.m_fit_energy_cal[1]
            && (cost_functor->m_energy_ranges.size() > 4)
-           && PeakFitUtils::is_high_res( cost_functor->m_spectrum )
+           && (det_type == PeakFitUtils::CoarseResolutionType::High)
            && (cost_functor->m_energy_cal->type() != SpecUtils::EnergyCalType::LowerChannelEdge) )
         {
           constexpr double offset = RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset;
@@ -3146,7 +3152,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           for( double energy = lowest_fwhm_energy; energy <= highest_fwhm_energy; energy += energy_step )
           {
             float min_sigma, max_sigma;
-            expected_peak_width_limits( static_cast<float>(energy), highres, spectrum, min_sigma, max_sigma );
+            expected_peak_width_limits( static_cast<float>(energy), det_type, spectrum, min_sigma, max_sigma );
             
             const float min_fwhm = min_sigma * 2.35482f; // Convert sigma to FWHM
             const float max_fwhm = max_sigma * 2.35482f;
@@ -3180,7 +3186,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           }
 
           // For high-res detectors, set lower bound to 1.5 times mean channel width
-          if( highres )
+          if( det_type == PeakFitUtils::CoarseResolutionType::High )
           {
             const size_t lower_channel = spectrum->find_gamma_channel( lowest_fwhm_energy );
             const size_t upper_channel = spectrum->find_gamma_channel( highest_fwhm_energy );
@@ -10268,7 +10274,8 @@ int run_test()
       back_meas = background->measurements()[0];
 
     vector<shared_ptr<const PeakDef>> all_peaks;
-    RelActAutoSolution solution = solve( options, fore_meas, back_meas, drf, all_peaks );
+    const PeakFitUtils::CoarseResolutionType det_type = PeakFitUtils::coarse_det_type( fore_meas, nullptr );
+    RelActAutoSolution solution = solve( options, fore_meas, back_meas, drf, all_peaks, det_type );
     
     std::reverse( begin(input_warnings), end(input_warnings) );
     for( const string &w : input_warnings )
@@ -15727,12 +15734,13 @@ RelActAutoSolution solve( const Options options,
                          std::shared_ptr<const SpecUtils::Measurement> background,
                          std::shared_ptr<const DetectorPeakResponse> input_drf,
                          std::vector<std::shared_ptr<const PeakDef>> all_peaks,
+                         const PeakFitUtils::CoarseResolutionType det_type,
                          std::shared_ptr<std::atomic_bool> cancel_calc
                          )
-{ 
+{
   const std::vector<RoiRange> &energy_ranges = options.rois;
   const std::vector<FloatingPeak> &extra_peaks = options.floating_peaks;
-  
+
 
   const RelActAutoSolution orig_sol = RelActCalcAutoImp::RelActAutoCostFcn::solve_ceres(
                      options,
@@ -15740,6 +15748,7 @@ RelActAutoSolution solve( const Options options,
                      background,
                      input_drf,
                      all_peaks,
+                     det_type,
                      cancel_calc );
   
   bool all_roi_full_range = true;
@@ -16081,7 +16090,7 @@ RelActAutoSolution solve( const Options options,
       updated_options.rois = updated_energy_ranges;
       
       const RelActAutoSolution updated_sol
-      = RelActCalcAutoImp::RelActAutoCostFcn::solve_ceres( updated_options, foreground, background, input_drf, all_peaks, cancel_calc );
+      = RelActCalcAutoImp::RelActAutoCostFcn::solve_ceres( updated_options, foreground, background, input_drf, all_peaks, det_type, cancel_calc );
       
       switch( updated_sol.m_status )
       {

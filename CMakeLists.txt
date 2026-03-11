@@ -274,6 +274,10 @@ set(sources
     src/SpecMeas.cpp
     src/PeakFit.cpp
     src/PeakFitUtils.cpp
+    src/PeakFitDetPrefs.cpp
+    src/PeakFitDetPrefsGui.cpp
+    src/FitSkewParamsTool.cpp
+    src/PeakFitSpecImp.cpp
     src/PeakDef.cpp
     src/PeakDists.cpp
     src/XRayWidthServer.cpp
@@ -396,6 +400,9 @@ set(headers
     InterSpec/PeakFit.h
     InterSpec/PeakFit_imp.hpp
     InterSpec/PeakFitUtils.h
+    InterSpec/PeakFitDetPrefs.h
+    InterSpec/PeakFitDetPrefsGui.h
+    InterSpec/PeakFitSpecImp.h
     InterSpec/PeakDef.h
     InterSpec/PeakDists.h
     InterSpec/PeakDists_imp.hpp

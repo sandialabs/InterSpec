@@ -38,6 +38,8 @@
 #include "InterSpec/PeakDef.h" //for PeakContinuum::OffsetType and PeakDef::SkewType
 #include "InterSpec/RelActCalc.h"
 
+namespace PeakFitUtils{ enum class CoarseResolutionType : int; }
+
 // Forward declarations
 class DetectorPeakResponse;
 struct Material;
@@ -1369,6 +1371,7 @@ RelActAutoSolution solve( const Options options,
                          std::shared_ptr<const SpecUtils::Measurement> background,
                          std::shared_ptr<const DetectorPeakResponse> drf,
                          std::vector<std::shared_ptr<const PeakDef>> all_peaks,
+                         const PeakFitUtils::CoarseResolutionType det_type,
                          std::shared_ptr<std::atomic_bool> cancel_calc = nullptr
                          );
 

@@ -52,6 +52,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakFitLM.h"
 #include "InterSpec/PeakModel.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/ColorSelect.h"
 #include "InterSpec/PeakFitUtils.h"
@@ -2482,16 +2483,34 @@ void PeakEdit::refit( const PeakEdit::RefitOption type )
     }//switch( type )
     
     
-    const PeakShrdVec outp = refitPeaksThatShareROI( data, detector, inpkptrs, fit_options );
+    const shared_ptr<const SpecMeas> fg_meas = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
+    shared_ptr<const PeakFitDetPrefs> fitPrefs = fg_meas ? fg_meas->peakFitDetPrefs() : nullptr;
+    if( !fitPrefs && detector )
+      fitPrefs = detector->peakFitDetPrefs();
+    assert( fitPrefs );
+    const PeakFitUtils::CoarseResolutionType det_type
+      = fitPrefs ? fitPrefs->m_det_type : PeakFitUtils::coarse_det_type( data, fg_meas );
+
+    const PeakShrdVec outp = refitPeaksThatShareROI( data, detector, inpkptrs, det_type, fit_options );
     for( size_t i = 0; i < outp.size(); ++i )
       outputPeak.push_back( *outp[i] );
   }else
   {
     assert( type == RefitOption::Normal ); //
     Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;  //No options - full refit...
-    const bool isHPGe = PeakFitUtils::is_likely_high_res( m_viewer );
+    const shared_ptr<const SpecMeas> fg = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
+    shared_ptr<const PeakFitDetPrefs> refitPrefs = fg ? fg->peakFitDetPrefs() : nullptr;
+    if( !refitPrefs )
+    {
+      const shared_ptr<const DetectorPeakResponse> det = fg ? fg->detector() : nullptr;
+      if( det )
+        refitPrefs = det->peakFitDetPrefs();
+    }
+    assert( refitPrefs );
+    const PeakFitUtils::CoarseResolutionType refitDetType
+      = refitPrefs ? refitPrefs->m_det_type : PeakFitUtils::coarse_det_type( data, fg );
     outputPeak = fitPeaksInRange( lowE, upE, ncausalitysigma, stat_threshold,
-                                  hypothesis_threshold, inputPeak, data, fit_options, isHPGe );
+                                  hypothesis_threshold, inputPeak, data, fit_options, refitDetType );
   }
   
   

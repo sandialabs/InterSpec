@@ -41,6 +41,8 @@ namespace SpecUtils
   class Measurement;
 }//namespace SpecUtils
 
+struct PeakFitDetPrefs;
+
 namespace PeakFitUtils
 {
   enum class CoarseResolutionType : int;
@@ -64,7 +66,7 @@ namespace PeakFitLM
  - If there are multiple peaks, their FWHM is a linear function of thier mean; the FWHM can vary by +-15% over the ROI
 
  However, these choices can be overridden
- 
+
  Note: this must be an enum, and not a `enum class` because it doesnt look like Wt 3.x WFlags doent play nicely with enum classes.
  */
 enum PeakFitLMOptions
@@ -89,18 +91,17 @@ enum PeakFitLMOptions
 
   // TODO: add option to just have FWHM vary with sqrt(energy)
 
-  /** By default, peak means and sigmas are allowed to be fit within ROI and detector limits, however
-   specifying this option will reduce the sigma to only change up to about 50% (or if `AllPeakFwhmIndependent`
-   is not specified, then peak sigmas can range 50% additional from previous range - not applied on a peak-to-peal basis),
-   or the mean to move within 50% of a sigma.
+  /** Restricts mean, amplitude, continuum, and skew parameters to change only moderately from
+   starting values.  Mean moves within 0.5 sigma.
 
    This is somewhat the analigous option to `PeakFitChi2Fcn::kRefitPeakParameters`.
    */
-  MediumRefinementOnly        = 0x08,
+  MediumAmplitudeRefinementOnly = 0x08,
 
-  /** Similar to `MediumRefinementOnly`, but limits to 15% of a sigma.
+  /** Restricts mean, amplitude, continuum, and skew parameters to change only slightly.
+   Mean moves within 0.15 sigma.
    */
-  SmallRefinementOnly         = 0x10,
+  SmallAmplitudeRefinementOnly  = 0x10,
 
   /** If specified, each ROI will independently fit its own skew parameters (provided the skew
    type is not NoSkew).  A per-ROI skew parameter is free to vary if ANY peak in the ROI has
@@ -115,6 +116,24 @@ enum PeakFitLMOptions
    */
   IndependentSkewValues       = 0x20,
 
+  /** Restricts sigma (FWHM) to change within 50% of starting value. */
+  MediumFwhmRefinementOnly    = 0x40,
+
+  /** Restricts sigma (FWHM) to change within 15% of starting value. */
+  SmallFwhmRefinementOnly     = 0x80,
+
+  /** Backward-compatible composite: restricts both amplitude/mean and FWHM moderately.
+   Equivalent to `MediumAmplitudeRefinementOnly | MediumFwhmRefinementOnly`.
+
+   Note: since WFlags::testFlag uses bitwise AND, testFlag(MediumRefinementOnly) returns true
+   if EITHER MediumAmplitudeRefinementOnly or MediumFwhmRefinementOnly is set.
+   */
+  MediumRefinementOnly = MediumAmplitudeRefinementOnly | MediumFwhmRefinementOnly, // 0x48
+
+  /** Backward-compatible composite: restricts both amplitude/mean and FWHM tightly.
+   Equivalent to `SmallAmplitudeRefinementOnly | SmallFwhmRefinementOnly`.
+   */
+  SmallRefinementOnly = SmallAmplitudeRefinementOnly | SmallFwhmRefinementOnly, // 0x90
 
 };//enum PeakFitLMOptions
 
@@ -125,7 +144,8 @@ void fit_peak_for_user_click_LM( std::vector< std::shared_ptr<const PeakDef> > &
                                 const double area0,
                                 const float roiLowerEnergy,
                                 const float roiUpperEnergy,
-                                const bool isHPGe );
+                                const std::shared_ptr<const PeakFitDetPrefs> &fitPrefs,
+                                const std::shared_ptr<const DetectorPeakResponse> &drf );
 
 /** Analog of `void fitPeaks(...)`, but using the Ceres based L-M fit method.
 
@@ -146,7 +166,7 @@ void fit_peaks_LM( std::vector<std::shared_ptr<const PeakDef>> &results,
                   const double stat_threshold,
                   const double hypothesis_threshold,
                   const bool is_refit,
-                  const bool isHPGe ) throw();
+                  const PeakFitUtils::CoarseResolutionType det_type ) throw();
 
 
 
@@ -157,7 +177,7 @@ std::vector<std::shared_ptr<const PeakDef>> fit_peaks_in_range_LM( const double 
                                       const std::vector<std::shared_ptr<const PeakDef>> all_peaks,
                                       const std::shared_ptr<const SpecUtils::Measurement> data,
                                       const bool isRefit,
-                                      const bool isHPGe );
+                                      const PeakFitUtils::CoarseResolutionType det_type );
 
 /** Refit peaks that share an ROI.
  * @param data The data to fit
@@ -173,6 +193,7 @@ std::vector<std::shared_ptr<const PeakDef>> refitPeaksThatShareROI_LM(
                                    const std::shared_ptr<const SpecUtils::Measurement> &data,
                                    const std::shared_ptr<const DetectorPeakResponse> &detector,
                                    const std::vector<std::shared_ptr<const PeakDef>> &inpeaks,
+                                   const PeakFitUtils::CoarseResolutionType det_type,
                                    const Wt::WFlags<PeakFitLMOptions> fit_options = 0 );
 
 // Need to implement the equivalent of `search_for_peaks(...)` which uses Minuit2 based `AutoPeakSearchChi2Fcn` class.

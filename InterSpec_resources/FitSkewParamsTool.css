@@ -1,0 +1,134 @@
+/* Styles for FitSkewParamsTool — the fit skew parameters dialog content */
+
+/* Main container: flex column, chart fills top, controls fixed at bottom */
+.FitSkewParamsTool
+{
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+/* Chart fills the remaining space above the controls */
+.FswChart
+{
+  flex: 1 1 0px;
+  min-height: 150px;
+  overflow: hidden;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+/* Controls area below the chart — flex column, centered, does not grow */
+.FswControls
+{
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px 8px;
+  border-top: 1px solid var(--interspec-border-color, #e1e1e1);
+  gap: 4px;
+}
+
+/* Skew type row: label + combo side by side */
+.FswSkewRow
+{
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.FswLabel
+{
+  font-size: 11px;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+.FswCombo
+{
+  font-size: 11px;
+  box-sizing: border-box;
+}
+
+
+/* ==================== Skew parameters section ==================== */
+
+/* 4-column grid: name | lower | upper | fit_cb */
+.FswParamTable
+{
+  display: grid;
+  grid-template-columns: auto auto auto auto;
+  row-gap: 2px;
+  column-gap: 4px;
+  align-items: center;
+  border-top: 1px solid var(--interspec-border-color, #e1e1e1);
+  padding-top: 3px;
+}
+
+/* For non-energy-dependent params only: name | value | fit_cb */
+.FswParamTable.FswParamTableSingleCol
+{
+  grid-template-columns: auto auto auto;
+}
+
+.FswColHeader
+{
+  font-size: 9px;
+  font-weight: bold;
+  opacity: 0.5;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.FswParamName
+{
+  font-size: 10px;
+  font-weight: bold;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+.FswSpin
+{
+  width: 80px;
+  min-width: 50px;
+  font-size: 11px;
+  box-sizing: border-box;
+}
+
+/* Non-energy-dependent spin in a 4-column grid: span both value columns */
+.FswSpinWide
+{
+  grid-column: span 2;
+}
+
+
+/* ==================== Fit button row ==================== */
+.FswFitRow
+{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.FswFitBtn
+{
+  font-size: 11px;
+}
+
+.FswStatus
+{
+  font-size: 10px;
+  opacity: 0.7;
+  font-style: italic;
+}
+
+.FswUpdatePeaksCb
+{
+  font-size: 10px;
+}
