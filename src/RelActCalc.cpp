@@ -601,8 +601,28 @@ void PhysicalModelShieldInput::check_valid() const
   }//if( input.material ) / else.
     
 };//PhysicalModelShieldInput::check_valid()
-  
-  
+
+
+bool PhysicalModelShieldInput::operator==( const PhysicalModelShieldInput &rhs ) const
+{
+  return (atomic_number == rhs.atomic_number)
+    && (material == rhs.material)
+    && (areal_density == rhs.areal_density)
+    && (fit_atomic_number == rhs.fit_atomic_number)
+    && (lower_fit_atomic_number == rhs.lower_fit_atomic_number)
+    && (upper_fit_atomic_number == rhs.upper_fit_atomic_number)
+    && (fit_areal_density == rhs.fit_areal_density)
+    && (lower_fit_areal_density == rhs.lower_fit_areal_density)
+    && (upper_fit_areal_density == rhs.upper_fit_areal_density);
+}//bool PhysicalModelShieldInput::operator==( const PhysicalModelShieldInput &rhs ) const
+
+
+bool PhysicalModelShieldInput::operator!=( const PhysicalModelShieldInput &rhs ) const
+{
+  return !( *this == rhs );
+}//bool PhysicalModelShieldInput::operator!=( const PhysicalModelShieldInput &rhs ) const
+
+
 #if( PERFORM_DEVELOPER_CHECKS )
 void PhysicalModelShieldInput::equalEnough( const PhysicalModelShieldInput &lhs, const PhysicalModelShieldInput &rhs )
 {

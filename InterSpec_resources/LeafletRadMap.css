@@ -49,6 +49,9 @@ table.MapMousePopup td {
   
   display: flex;
   flex-direction: row;
+  flex-wrap: wrap;
+  
+  justify-content: space-between;
 }
 
 .LeafletRadMapBtnsDiv {
@@ -82,9 +85,6 @@ table.MapMousePopup td {
   flex-direction: row;
   align-items: center;
   padding-left: 10px;
-  flex-grow: 1;
-  flex-shrink: 1;
-  justify-content: flex-end;
   column-gap: 7px;
 }
 
@@ -204,5 +204,19 @@ div.LeafletRadMapWidget .EnergyRangeRow .EnergyRangeGrp {
 }
 
 .LeafletRadMapWidget .EnergyRangeRow .EnergyFilterHelp {
-  
+
+}
+
+.CopyMapBtnsDiv {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  column-gap: 5px;
+  margin: 0 auto;
+}
+
+.CopyMapBtnsDiv button.LinkBtn {
+  font-size: 8px;
+  font-weight: normal;
+  float: none;
 }

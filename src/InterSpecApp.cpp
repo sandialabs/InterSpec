@@ -68,6 +68,7 @@
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/UserPreferences.h"
 
 #if( BUILD_AS_ELECTRON_APP )
@@ -611,6 +612,9 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     WApplication::quit();
     return;
   }//try / catch to create a InterSpec object
+  
+  // Keep from adding any undo/redo while we finish initial rendering
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
   
   root()->addStyleClass( "specviewer" );
   

@@ -170,11 +170,15 @@ div.DispType .SummaryTable td:nth-child(odd) {
 div.DispType .SummaryTable td:nth-child(even) {
   text-align: left;
   border-right: 1px solid #e1e1e1;
-  
+
   max-width: 60px;
   text-overflow: ellipsis;
   overflow: hidden;
   white-space: nowrap;
+
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  user-select: text;
 }
 
 button.LinkBtn.GpsBtn, button.LinkBtn.GpsBtn:hover {

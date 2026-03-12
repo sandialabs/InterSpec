@@ -1512,6 +1512,9 @@ void SpecMeas::load_cnf_using_reader( CAMInputOutput::CAMIO &reader )
     const vector<CAMInputOutput::Peak> &peaks = reader.GetPeaks();
     for( const CAMInputOutput::Peak &p : peaks )
     {
+      if( p.Energy < 1.0 )
+        continue;
+      
       try
       {
         auto peak = make_shared<PeakDef>( p.Energy, p.FullWidthAtHalfMaximum/2.35482, p.Area );

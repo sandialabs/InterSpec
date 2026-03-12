@@ -483,8 +483,8 @@
   <message id="pct-flat-step">平坦阶跃</message>
   <message id="pct-linear-step">线性阶跃</message>
   <message id="pct-bilinear-step">双线性阶跃</message>
-  <message id="pct-flat-step-cdf">Flat Step (Peak CDF)</message>
-  <message id="pct-linear-step-cdf">Linear Step (Peak CDF)</message>
+  <message id="pct-flat-step-cdf">Flat Step (CDF)</message>
+  <message id="pct-linear-step-cdf">Linear Step (CDF)</message>
   <message id="pct-global">全局连续谱</message>
 
   <!-- populateNuclideSelects() in PeakSearchGuiUtils.cpp -->

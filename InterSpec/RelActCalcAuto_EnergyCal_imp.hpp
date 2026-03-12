@@ -690,11 +690,42 @@ T find_polynomial_channel( const T energy,
     };
 
     const double e_low_val = energy_at( 0.0 );
-    const double e_high_val = energy_at( static_cast<double>(nchannel - 1) );
+    const double e_high_val = energy_at( static_cast<double>(nchannel) );
     const double energy_val = energy.a;
 
+    // Handle out-of-range energies with linear extrapolation (matching double version)
+    if( energy_val <= e_low_val )
+    {
+      const double bin_val = (energy_val - e_low_val) * static_cast<double>(nchannel) / coeffs[0].a;
+      T answer = T( bin_val );
+      // Propagate derivatives through the linear extrapolation
+      // bin = (E - E_low) * nchannel / C1
+      // d(bin)/d(param) = d(E)/d(param) * nchannel / C1 - (E - E_low) * nchannel / C1^2 * d(C1)/d(param)
+      const double nchan_over_c1 = static_cast<double>(nchannel) / coeffs[1].a;
+      for( size_t d = 0; d < static_cast<size_t>(T::DIMENSION); ++d )
+      {
+        answer.v[d] = energy.v[d] * nchan_over_c1
+                    - (energy_val - e_low_val) * nchan_over_c1 / coeffs[1].a * coeffs[1].v[d];
+      }
+      return answer;
+    }
+
+    if( energy_val >= e_high_val )
+    {
+      const double bin_val = static_cast<double>(nchannel)
+                           + (energy_val - e_high_val) * static_cast<double>(nchannel) / coeffs[1].a;
+      T answer = T( bin_val );
+      const double nchan_over_c1 = static_cast<double>(nchannel) / coeffs[1].a;
+      for( size_t d = 0; d < static_cast<size_t>(T::DIMENSION); ++d )
+      {
+        answer.v[d] = energy.v[d] * nchan_over_c1
+                    - (energy_val - e_high_val) * nchan_over_c1 / coeffs[1].a * coeffs[1].v[d];
+      }
+      return answer;
+    }
+
     double low = 0.0;
-    double high = static_cast<double>(nchannel - 1);
+    double high = static_cast<double>(nchannel);
     const int max_iterations = 1000;
     int niter = 0;
     while( ((high - low) > 1.0e-6) && (niter < max_iterations) )
@@ -938,37 +969,28 @@ T find_fullrangefraction_channel( const T energy,
   }
 
   // For higher-order or with deviation pairs, use binary search
+  // Following SpecUtils::find_fullrangefraction_channel, evaluate at channel nchannel (not nchannel-1)
   const T e_low = fullrangefraction_energy( T(0.0), coeffs, nchannel, dev_pair_spline );
-  const T e_high = fullrangefraction_energy( T(static_cast<double>(nchannel - 1)), coeffs, nchannel, dev_pair_spline );
+  const T e_high = fullrangefraction_energy( T(static_cast<double>(nchannel)), coeffs, nchannel, dev_pair_spline );
 
-  // Check if energy is in range
-  if( (energy < (min)(e_low, e_high)) || (energy > (max)(e_low, e_high)) )
+  // Check if energy is below the lower bound - extrapolate using just the gain
+  // FRF: E = C_0 + C_1*(ch/nbin) + ...  -->  ch = (E - E_0) * nbin / C_1
+  if( energy <= e_low )
   {
-    if( energy < (min)(e_low, e_high) )
-    {
-      T answer = e_low;
-      if constexpr ( !std::is_same_v<T, double> )
-        answer.a = 0.0;
-      else 
-        answer = 0.0;
-    return answer;
-    }else
-    {
-      T answer = e_high;
-      if constexpr ( !std::is_same_v<T, double> )
-        answer.a = static_cast<double>(nchannel - 1);
-      else 
-        answer = static_cast<double>(nchannel - 1);
+    return (energy - e_low) * T(static_cast<double>(nchannel)) / coeffs[1];
+  }
 
-      return answer;
-    }
+  // Check if energy is above the upper bound - extrapolate using just the gain
+  if( energy >= e_high )
+  {
+    return T(static_cast<double>(nchannel)) + (energy - e_high) * T(static_cast<double>(nchannel)) / coeffs[1];
   }
 
   // Binary search (and derivative-preserving implicit update for Jet types)
   if constexpr ( std::is_same_v<T, double> )
   {
     T low_bin( 0.0 );
-    T high_bin( static_cast<double>(nchannel - 1) );
+    T high_bin( static_cast<double>(nchannel) );
 
     const int max_iterations = 1000;
     int niter = 0;

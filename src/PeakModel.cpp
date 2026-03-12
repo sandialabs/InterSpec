@@ -2021,17 +2021,50 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
   switch( column )
   {
     case kMean:
+    {
+      if( role == Wt::EditRole )
+      {
+        const double uncert = peak->meanUncert();
+        if( uncert > 0.0 )
+        {
+          const string txt = PhysicalUnits::printValueWithUncertainty( peak->mean(), uncert, 7 );
+          return WString::fromUTF8( txt );
+        }
+        char text[64];
+        snprintf( text, sizeof(text), "%.2f", peak->mean() );
+        return WString::fromUTF8( text );
+      }//if( role == Wt::EditRole )
+
       return peak->mean();
-      
+    }//case kMean:
+
     case kFwhm:
+    {
       switch( peak->type() )
       {
         case PeakDef::GaussianDefined:
-          return 2.3548201*peak->sigma();
-          
+        {
+          const double fwhm = 2.3548201 * peak->sigma();
+          if( role == Wt::EditRole )
+          {
+            const double uncert = 2.3548201 * peak->sigmaUncert();
+            if( uncert > 0.0 )
+            {
+              const string txt = PhysicalUnits::printValueWithUncertainty( fwhm, uncert, 5 );
+              return WString::fromUTF8( txt );
+            }
+            char text[64];
+            snprintf( text, sizeof(text), "%.2f", fwhm );
+            return WString::fromUTF8( text );
+          }//if( role == Wt::EditRole )
+
+          return fwhm;
+        }//case PeakDef::GaussianDefined:
+
         case PeakDef::DataDefined:
           return boost::any();
       }//switch( peak->type() )
+    }//case kFwhm:
       
     case kAmplitude:
     {
@@ -2317,7 +2350,14 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
     {
       shared_ptr<const PeakContinuum> continuum = peak->continuum();
       assert( continuum->energyRangeDefined() );
-      return (column == kLowerX) ? peak->lowerX() : peak->upperX();
+      const double val = (column == kLowerX) ? peak->lowerX() : peak->upperX();
+      if( role == Wt::EditRole )
+      {
+        char text[64];
+        snprintf( text, sizeof(text), "%.2f", val );
+        return WString::fromUTF8( text );
+      }
+      return val;
     }//case kLowerX / case kUpperX:
     
       
@@ -2764,8 +2804,13 @@ bool PeakModel::setData( const WModelIndex &index,
         break;
       }//case kFwhm or kAmplitude
 
-      case kCps: case kHasSkew: case kSkewAmount: case kType: case kLowerX: case kUpperX:
-      case kRoiCounts: case kContinuumType: case kNumColumns: case kDifference:
+      case kLowerX:
+      case kUpperX:
+      case kContinuumType:
+      break;
+
+      case kCps: case kHasSkew: case kSkewAmount: case kType:
+      case kRoiCounts: case kNumColumns: case kDifference:
       default:
         cerr << "PeakModel::setData(...)\n\tUn Supported column" << endl;
         return false;
@@ -2782,7 +2827,7 @@ bool PeakModel::setData( const WModelIndex &index,
 
     switch( column )
     {
-      case kMean: case kFwhm: case kAmplitude:
+      case kMean: case kFwhm: case kAmplitude: case kLowerX: case kUpperX:
         try
         {
           const string strval = txt_val.toUTF8();
@@ -2834,6 +2879,10 @@ bool PeakModel::setData( const WModelIndex &index,
                 dbl_val = peak->fwhm();
               else if( column == kAmplitude && (peak->type() == PeakDef::GaussianDefined) )
                 dbl_val = peak->amplitude();
+              else if( column == kLowerX )
+                dbl_val = peak->lowerX();
+              else if( column == kUpperX )
+                dbl_val = peak->upperX();
             }//if( prevValStr == valstr )
             
             if( (uncert_val > 0.0) && (prevUncertStr == uncertstr) )
@@ -3220,9 +3269,158 @@ bool PeakModel::setData( const WModelIndex &index,
         break;
       }
         
+      case kLowerX:
+      case kUpperX:
+      {
+        // Validate the new ROI bound
+        const double oldLower = old_peak->lowerX();
+        const double oldUpper = old_peak->upperX();
+        const double peakMean = old_peak->mean();
+
+        double newLower = (column == kLowerX) ? dbl_val : oldLower;
+        double newUpper = (column == kUpperX) ? dbl_val : oldUpper;
+
+        if( newLower >= newUpper )
+          return false;
+
+        // If the ROI previously contained the peak mean, the new bounds must still contain it
+        const bool meanWasInRoi = (peakMean >= oldLower) && (peakMean <= oldUpper);
+        if( meanWasInRoi && ((peakMean < newLower) || (peakMean > newUpper)) )
+          return false;
+
+        // Get all peaks sharing this ROI and update them all
+        const vector<shared_ptr<const PeakDef>> oldPeaksInRoi = peaksSharingRoi( old_peak );
+
+        // Also check that the new bounds contain all peaks in the ROI that were previously contained
+        for( const shared_ptr<const PeakDef> &p : oldPeaksInRoi )
+        {
+          const double pm = p->mean();
+          if( (pm >= oldLower) && (pm <= oldUpper) && ((pm < newLower) || (pm > newUpper)) )
+            return false;
+        }//for( check all ROI peers )
+
+        auto newContinuum = make_shared<PeakContinuum>( *old_peak->continuum() );
+        newContinuum->setRange( newLower, newUpper );
+
+        vector<shared_ptr<const PeakDef>> newCandidatePeaks;
+        for( const auto &p : oldPeaksInRoi )
+        {
+          auto np = make_shared<PeakDef>( *p );
+          np->setContinuum( newContinuum );
+          newCandidatePeaks.push_back( np );
+        }
+
+        // Try to refit the peaks for the new ROI range
+        shared_ptr<const DetectorPeakResponse> detector;
+        shared_ptr<SpecMeas> meas = m_measurment.lock();
+        if( meas )
+          detector = meas->detector();
+
+        vector<shared_ptr<const PeakDef>> result
+          = refitPeaksThatShareROI( m_foreground, detector, newCandidatePeaks,
+                                    Wt::WFlags<PeakFitLM::PeakFitLMOptions>(0) );
+
+        if( result.size() == newCandidatePeaks.size() )
+        {
+          vector<PeakDef> newPeaks;
+          for( const auto &p : result )
+            newPeaks.push_back( *p );
+          updatePeaks( oldPeaksInRoi, newPeaks );
+        }else
+        {
+          // Refit failed - just update the range without refitting
+          vector<PeakDef> newPeaks;
+          for( const auto &p : newCandidatePeaks )
+            newPeaks.push_back( *p );
+          updatePeaks( oldPeaksInRoi, newPeaks );
+        }
+
+        return true;
+      }//case kLowerX / case kUpperX:
+
+      case kContinuumType:
+      {
+        const string typetxt = txt_val.toUTF8();
+
+        // Find the matching OffsetType from the translated label
+        PeakContinuum::OffsetType newType = PeakContinuum::OffsetType::NoOffset;
+        bool foundType = false;
+        for( int i = 0; i <= static_cast<int>(PeakContinuum::External); ++i )
+        {
+          const PeakContinuum::OffsetType t = static_cast<PeakContinuum::OffsetType>( i );
+          if( WString::tr( PeakContinuum::offset_type_label_tr(t) ).toUTF8() == typetxt )
+          {
+            newType = t;
+            foundType = true;
+            break;
+          }
+        }
+
+        if( !foundType )
+          return false;
+
+        if( old_peak->continuum()->type() == newType )
+          return false;
+
+        const vector<shared_ptr<const PeakDef>> oldPeaksInRoi = peaksSharingRoi( old_peak );
+
+        auto newContinuum = make_shared<PeakContinuum>( *old_peak->continuum() );
+        newContinuum->setType( newType );
+
+        if( newType == PeakContinuum::External )
+        {
+          shared_ptr<SpecUtils::Measurement> continuumHist = estimateContinuum( m_foreground );
+          newContinuum->setExternalContinuum( continuumHist );
+        }
+
+        vector<shared_ptr<const PeakDef>> newCandidatePeaks;
+        for( const auto &p : oldPeaksInRoi )
+        {
+          auto np = make_shared<PeakDef>( *p );
+          np->setContinuum( newContinuum );
+          newCandidatePeaks.push_back( np );
+        }
+
+        // For DataDefined peaks, just update without refitting
+        if( old_peak->type() == PeakDef::DataDefined )
+        {
+          vector<PeakDef> newPeaks;
+          for( const auto &p : newCandidatePeaks )
+            newPeaks.push_back( *p );
+          updatePeaks( oldPeaksInRoi, newPeaks );
+          return true;
+        }
+
+        // Refit the peaks with the new continuum type
+        shared_ptr<const DetectorPeakResponse> detector;
+        shared_ptr<SpecMeas> meas = m_measurment.lock();
+        if( meas )
+          detector = meas->detector();
+
+        const vector<shared_ptr<const PeakDef>> result
+          = refitPeaksThatShareROI( m_foreground, detector, newCandidatePeaks,
+                                    Wt::WFlags<PeakFitLM::PeakFitLMOptions>(0) );
+
+        if( result.size() == newCandidatePeaks.size() )
+        {
+          vector<PeakDef> newPeaks;
+          for( const auto &p : result )
+            newPeaks.push_back( *p );
+          updatePeaks( oldPeaksInRoi, newPeaks );
+        }else
+        {
+          // Refit failed - just update the type without refitting
+          vector<PeakDef> newPeaks;
+          for( const auto &p : newCandidatePeaks )
+            newPeaks.push_back( *p );
+          updatePeaks( oldPeaksInRoi, newPeaks );
+        }
+
+        return true;
+      }//case kContinuumType:
+
       case kHasSkew: case kSkewAmount: case kType:
-      case kLowerX: case kUpperX: case kRoiCounts:
-      case kCps: case kContinuumType:
+      case kRoiCounts: case kCps:
       case kNumColumns:
         return false;
     }//switch( section )
@@ -3232,7 +3430,7 @@ bool PeakModel::setData( const WModelIndex &index,
 
     if( column != kIsotope
         && column != kPhotoPeakEnergy
-        && column != kMean 
+        && column != kMean
         && column != kAmplitude )
     {
       dataChanged().emit( index, index );
@@ -3299,9 +3497,12 @@ WFlags<ItemFlag> PeakModel::flags( const WModelIndex &index ) const
     case kUseForManualRelEff:
       return ItemIsUserCheckable | ItemIsSelectable;
 
+    case kLowerX: case kUpperX:
+    case kContinuumType:
+      return ItemIsEditable | ItemIsSelectable;
+
     case kHasSkew: case kSkewAmount: case kType:
-    case kLowerX: case kUpperX: case kRoiCounts:
-    case kContinuumType: case kCps:
+    case kRoiCounts: case kCps:
 #if( !ALLOW_PEAK_COLOR_DELEGATE )
     case kPeakLineColor:
 #endif

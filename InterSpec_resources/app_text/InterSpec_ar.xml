@@ -446,8 +446,8 @@
   <message id="pct-flat-step">خطوة مسطحة</message>
   <message id="pct-linear-step">خطوة خطية</message>
   <message id="pct-bilinear-step">خطوة ثنائية خطية</message>
-  <message id="pct-flat-step-cdf">Flat Step (Peak CDF)</message>
-  <message id="pct-linear-step-cdf">Linear Step (Peak CDF)</message>
+  <message id="pct-flat-step-cdf">Flat Step (CDF)</message>
+  <message id="pct-linear-step-cdf">Linear Step (CDF)</message>
   <message id="pct-global">متصل عام</message>
 
   <!-- populateNuclideSelects() in PeakSearchGuiUtils.cpp -->

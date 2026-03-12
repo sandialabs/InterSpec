@@ -331,8 +331,8 @@ LeafletRadMap::LeafletRadMap( Wt::WContainerWidget *parent )
   grid->setVerticalSpacing( 0 );
   grid->setHorizontalSpacing( 0 );
 
-  grid->addWidget( m_map_holder, 0, 0  );
-  grid->addWidget( m_energy_range_row, 1, 0  );
+  grid->addWidget( m_map_holder, 0, 0 );
+  grid->addWidget( m_energy_range_row, 1, 0 );
 
   grid->setRowStretch( 0, 1 );
   grid->setColumnStretch( 0, 1 );
@@ -451,6 +451,11 @@ void LeafletRadMap::defineJavaScript()
     ", loadTxtShort: '" + WString::tr("lrm-load-meas-as-short").toUTF8() + "'"
     ", realTimeTxt: '" + WString::tr("Real Time").toUTF8() + "'"
     ", liveTimeTxt: '" + WString::tr("Live Time").toUTF8() + "'"
+    ", copyGoogleMapsTxt: '" + WString::tr("lrm-copy-google-maps").toUTF8() + "'"
+    ", copyBingMapsTxt: '" + WString::tr("lrm-copy-bing-maps").toUTF8() + "'"
+    ", copyUrlSuccessTxt: '" + WString::tr("lrm-copy-url-success").toUTF8() + "'"
+    ", copyUrlFailTxt: '" + WString::tr("lrm-copy-url-fail").toUTF8() + "'"
+    ", copyUrlNoGpsTxt: '" + WString::tr("lrm-copy-url-no-gps").toUTF8() + "'"
   "}";
   
   setJavaScriptMember( "map", "new LeafletRadMap(" + m_map_holder->jsRef() + "," + options + ");");
@@ -1104,6 +1109,7 @@ void LeafletRadMap::showOrHideEnergyRangeFilter()
   }//for( const auto &m : meass )
 
   const bool show_energy_countrate = ((unique_lats.size() > 1) || (unique_longs.size() > 1));
+
   if( show_energy_countrate == m_energy_range_row->isHidden() )
     m_energy_range_row->setHidden( !show_energy_countrate );
 
