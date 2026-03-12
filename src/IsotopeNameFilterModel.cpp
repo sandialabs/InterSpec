@@ -1285,12 +1285,9 @@ WT_DECLARE_WT_MEMBER(SetupEnterKeyMatchFix, Wt::JavaScriptFunction, "SetupEnterK
                 hidePopup();
                 setTimeout( hidePopup, 50 );
               }
-            }else if( currentText && allSuggestions.length === 0 ){
+            }else{
+              // Either currentText is empty, or there are no suggestions matching
               hidePopup();
-              editElement.value = currentText;
-              if( editElement.selectionStart !== undefined ){
-                editElement.selectionStart = editElement.selectionEnd = currentText.length;
-              }
               if( editElement.dispatchEvent ){
                 var changeEvent = document.createEvent( 'HTMLEvents' );
                 changeEvent.initEvent( 'change', true, true );
