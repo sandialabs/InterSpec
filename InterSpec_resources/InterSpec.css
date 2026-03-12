@@ -32,8 +32,8 @@ textarea, select {
   background-color: var(--interspec-input-background, white);
 }
 
-textarea:disabled, select:disabled {
-  opacity: 0.5;
+textarea:disabled, select:disabled, button:disabled {
+  opacity: 0.4;
 }
 
 /* Align the label with the checkbox. :has only supported in Safari 15.4 (macOS Monterey, 12.3), Chrome 105 (Aug 2022), FF 121. */

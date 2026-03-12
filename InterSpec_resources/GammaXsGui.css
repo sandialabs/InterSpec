@@ -1,0 +1,6 @@
+/* Allow result text fields to be selectable for copy/paste */
+.GammaXsGui .GxsResult {
+  user-select: auto;
+  -moz-user-select: auto;
+  -webkit-user-select: auto;
+}
