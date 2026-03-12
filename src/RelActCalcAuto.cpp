@@ -11166,6 +11166,144 @@ bool NucInputInfo::operator==( const NucInputInfo &rhs ) const
          (this->peak_color_css == rhs.peak_color_css));
 }
 
+
+bool RoiRange::operator==( const RoiRange &rhs ) const
+{
+  return (lower_energy == rhs.lower_energy)
+    && (upper_energy == rhs.upper_energy)
+    && (continuum_type == rhs.continuum_type)
+    && (range_limits_type == rhs.range_limits_type);
+}
+
+bool RoiRange::operator!=( const RoiRange &rhs ) const
+{
+  return !( *this == rhs );
+}
+
+
+bool FloatingPeak::operator==( const FloatingPeak &rhs ) const
+{
+  return (energy == rhs.energy)
+    && (release_fwhm == rhs.release_fwhm)
+    && (apply_energy_cal_correction == rhs.apply_energy_cal_correction);
+}
+
+bool FloatingPeak::operator!=( const FloatingPeak &rhs ) const
+{
+  return !( *this == rhs );
+}
+
+
+bool RelEffCurveInput::ActRatioConstraint::operator==( const ActRatioConstraint &rhs ) const
+{
+  return (controlling_source == rhs.controlling_source)
+    && (constrained_source == rhs.constrained_source)
+    && (constrained_to_controlled_activity_ratio == rhs.constrained_to_controlled_activity_ratio);
+}
+
+bool RelEffCurveInput::ActRatioConstraint::operator!=( const ActRatioConstraint &rhs ) const
+{
+  return !( *this == rhs );
+}
+
+
+bool RelEffCurveInput::MassFractionConstraint::operator==( const MassFractionConstraint &rhs ) const
+{
+  return (nuclide == rhs.nuclide)
+    && (lower_mass_fraction == rhs.lower_mass_fraction)
+    && (upper_mass_fraction == rhs.upper_mass_fraction);
+}
+
+bool RelEffCurveInput::MassFractionConstraint::operator!=( const MassFractionConstraint &rhs ) const
+{
+  return !( *this == rhs );
+}
+
+
+bool RelEffCurveInput::operator==( const RelEffCurveInput &rhs ) const
+{
+  if( (name != rhs.name)
+    || (nucs_of_el_same_age != rhs.nucs_of_el_same_age)
+    || (rel_eff_eqn_type != rhs.rel_eff_eqn_type)
+    || (rel_eff_eqn_order != rhs.rel_eff_eqn_order)
+    || (phys_model_use_hoerl != rhs.phys_model_use_hoerl)
+    || (pu242_correlation_method != rhs.pu242_correlation_method)
+    || (shielded_by_other_phys_model_curve_shieldings != rhs.shielded_by_other_phys_model_curve_shieldings)
+    || (nuclides != rhs.nuclides)
+    || (act_ratio_constraints != rhs.act_ratio_constraints)
+    || (mass_fraction_constraints != rhs.mass_fraction_constraints) )
+  {
+    return false;
+  }
+
+  // Compare shared_ptr<const PhysicalModelShieldInput> by content
+  const bool has_self_lhs = !!phys_model_self_atten;
+  const bool has_self_rhs = !!rhs.phys_model_self_atten;
+  if( has_self_lhs != has_self_rhs )
+    return false;
+  if( has_self_lhs && (*phys_model_self_atten != *rhs.phys_model_self_atten) )
+    return false;
+
+  if( phys_model_external_atten.size() != rhs.phys_model_external_atten.size() )
+    return false;
+  for( size_t i = 0; i < phys_model_external_atten.size(); ++i )
+  {
+    const bool has_lhs = !!phys_model_external_atten[i];
+    const bool has_rhs = !!rhs.phys_model_external_atten[i];
+    if( has_lhs != has_rhs )
+      return false;
+    if( has_lhs && (*phys_model_external_atten[i] != *rhs.phys_model_external_atten[i]) )
+      return false;
+  }
+
+  return true;
+}//bool RelEffCurveInput::operator==( const RelEffCurveInput &rhs ) const
+
+bool RelEffCurveInput::operator!=( const RelEffCurveInput &rhs ) const
+{
+  return !( *this == rhs );
+}
+
+
+bool Options::operator==( const Options &rhs ) const
+{
+  return (energy_cal_type == rhs.energy_cal_type)
+    && (fwhm_form == rhs.fwhm_form)
+    && (fwhm_estimation_method == rhs.fwhm_estimation_method)
+    && (spectrum_title == rhs.spectrum_title)
+    && (skew_type == rhs.skew_type)
+    && (lorentzian_xrays == rhs.lorentzian_xrays)
+    && (additional_br_uncert == rhs.additional_br_uncert)
+    && (same_hoerl_for_all_rel_eff_curves == rhs.same_hoerl_for_all_rel_eff_curves)
+    && (same_external_shielding_for_all_rel_eff_curves == rhs.same_external_shielding_for_all_rel_eff_curves)
+    && (rel_eff_curves == rhs.rel_eff_curves)
+    && (rois == rhs.rois)
+    && (floating_peaks == rhs.floating_peaks);
+}//bool Options::operator==( const Options &rhs ) const
+
+bool Options::operator!=( const Options &rhs ) const
+{
+  return !( *this == rhs );
+}
+
+
+bool RelActAutoGuiState::operator==( const RelActAutoGuiState &rhs ) const
+{
+  return (note == rhs.note)
+    && (description == rhs.description)
+    && (background_subtract == rhs.background_subtract)
+    && (show_ref_lines == rhs.show_ref_lines)
+    && (lower_display_energy == rhs.lower_display_energy)
+    && (upper_display_energy == rhs.upper_display_energy)
+    && (options == rhs.options);
+}//bool RelActAutoGuiState::operator==( const RelActAutoGuiState &rhs ) const
+
+bool RelActAutoGuiState::operator!=( const RelActAutoGuiState &rhs ) const
+{
+  return !( *this == rhs );
+}
+
+
 void NucInputInfo::toXml( ::rapidxml::xml_node<char> *parent ) const
 {
   using namespace rapidxml;
