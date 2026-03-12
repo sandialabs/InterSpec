@@ -13693,7 +13693,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
           if( enrich_frac.second.has_value() )
           {
             const double minus_2sigma = 100.0*(enrich_frac.first - 2.0*enrich_frac.second.value());
-            const double plus_2sigma = 100.0*(enrich_frac.first - 2.0*enrich_frac.second.value());
+            const double plus_2sigma = 100.0*(enrich_frac.first + 2.0*enrich_frac.second.value());
             results_html << "<td>" << minus_2sigma << "%, " << plus_2sigma << "%</td>";
           }else
           {
