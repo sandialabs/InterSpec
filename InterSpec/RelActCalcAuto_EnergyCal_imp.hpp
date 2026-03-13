@@ -385,11 +385,38 @@ T correction_due_to_deviation_pairs( const T true_energy, const std::vector<Cubi
       true_energy_val = true_energy.a;
     }
 
-    char buffer[512];
-    snprintf( buffer, sizeof(buffer),
-      "correction_due_to_deviation_pairs: Failed to converge after %d iterations for true_energy=%.6f keV, final diff=%.6g keV",
-      max_iterations, true_energy_val, diff_val );
-    log_developer_error( __func__, buffer );
+    std::string msg = "correction_due_to_deviation_pairs: Failed to converge after "
+      + std::to_string( max_iterations ) + " iterations for true_energy="
+      + std::to_string( true_energy_val ) + " keV, final diff="
+      + std::to_string( diff_val ) + " keV.\n"
+      + "\tTo reproduce, call correction_due_to_deviation_pairs( "
+      + std::to_string( true_energy_val ) + ", {";
+    for( size_t i = 0; i < nodes.size(); ++i )
+    {
+      double y_val, a_val, b_val, c_val;
+      if constexpr ( std::is_same_v<T, double> )
+      {
+        y_val = nodes[i].y;
+        a_val = nodes[i].a;
+        b_val = nodes[i].b;
+        c_val = nodes[i].c;
+      }else
+      {
+        y_val = nodes[i].y.a;
+        a_val = nodes[i].a.a;
+        b_val = nodes[i].b.a;
+        c_val = nodes[i].c.a;
+      }
+
+      msg += (i ? ", " : " ");
+      msg += "{x=" + std::to_string( nodes[i].x )
+        + ", y=" + std::to_string( y_val )
+        + ", a=" + std::to_string( a_val )
+        + ", b=" + std::to_string( b_val )
+        + ", c=" + std::to_string( c_val ) + "}";
+    }
+    msg += " } )";
+    log_developer_error( __func__, msg.c_str() );
   }
 #endif
 
