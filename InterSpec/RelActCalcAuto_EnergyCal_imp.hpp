@@ -66,8 +66,9 @@ struct CubicSplineNodeT
 
 /** Create a cubic spline while retaining first-order sensitivities to knot positions.
 
- The spline uses natural boundary conditions (second derivative = 0 at endpoints).
- This is compatible with SpecUtils deviation pair conventions.
+ Boundary conditions match SpecUtils::create_cubic_spline_for_dev_pairs:
+   Left:  natural  (second derivative = 0)  -- i.e., DerivativeType::Second, 0.0
+   Right: clamped  (first  derivative = 0)  -- i.e., DerivativeType::First,  0.0
 
  @param deviation_pairs Vector of (energy, offset) pairs, sorted by energy
  @returns Vector of spline nodes for interpolation
@@ -87,6 +88,11 @@ std::vector<CubicSplineNodeT<T>> create_cubic_spline(
       assert( deviation_pairs[i].first > deviation_pairs[i-1].first );
 #endif
 
+    // x_vals and y_vals follow the SpecUtils deviation pair convention:
+    //   y = offset (the deviation correction value)
+    //   x = true_energy - offset = polynomial_energy
+    // This means the spline is parameterized by polynomial energy, and
+    // eval_cubic_spline(poly_energy, spline) returns the offset to add.
     std::vector<double> x_vals( n, 0.0 );
     std::vector<double> y_vals( n, 0.0 );
     for( size_t i = 0; i < n; ++i )
@@ -110,9 +116,12 @@ std::vector<CubicSplineNodeT<T>> create_cubic_spline(
                   - ((y_vals[i] - y_vals[i-1]) / h_prev);
     }
 
+    // Left boundary: natural (second derivative = 0), i.e., 2*b[0] = 0
     A( 0, 0 ) = 2.0;
     rhs_val(0) = 0.0;
 
+    // Right boundary: clamped (first derivative = 0)
+    // Equivalent to SpecUtils row (b[n-2]+2*b[n-1])*h = -3*(y[n-1]-y[n-2])/h, divided by 3.
     const double h_last = x_vals[n-1] - x_vals[n-2];
     A( n - 1, n - 2 ) = h_last / 3.0;
     A( n - 1, n - 1 ) = 2.0 * h_last / 3.0;
@@ -153,6 +162,12 @@ std::vector<CubicSplineNodeT<T>> create_cubic_spline(
 
     const size_t nderiv = static_cast<size_t>( T::DIMENSION );
 
+    // x_vals and y_vals follow the SpecUtils deviation pair convention:
+    //   y = offset (the deviation correction value)
+    //   x = true_energy - offset = polynomial_energy
+    // This means the spline is parameterized by polynomial energy, and
+    // eval_cubic_spline(poly_energy, spline) returns the offset to add.
+    // dx_vals = -dy_vals because x = anchor_energy(constant) - y.
     std::vector<double> x_vals( n, 0.0 );
     std::vector<std::vector<double>> dx_vals( n, std::vector<double>(nderiv, 0.0) );
     std::vector<double> y_vals( n, 0.0 );
@@ -204,9 +219,11 @@ std::vector<CubicSplineNodeT<T>> create_cubic_spline(
       }
     }
 
+    // Left boundary: natural (second derivative = 0)
     A( 0, 0 ) = 2.0;
     rhs_val(0) = 0.0;
 
+    // Right boundary: clamped (first derivative = 0), with sensitivity propagation
     const double h_last = x_vals[n-1] - x_vals[n-2];
     A( n - 1, n - 2 ) = h_last / 3.0;
     A( n - 1, n - 1 ) = 2.0 * h_last / 3.0;
@@ -270,6 +287,8 @@ std::vector<CubicSplineNodeT<T>> create_cubic_spline(
  @param energy The energy to evaluate at (template type T)
  @param nodes The spline nodes from create_cubic_spline
  @returns The interpolated value (template type T)
+
+ Note: Outside the spline range, clamps to boundary y-values to match SpecUtils behavior.
  */
 template<typename T>
 T eval_cubic_spline( const T energy, const std::vector<CubicSplineNodeT<T>> &nodes )
@@ -289,7 +308,7 @@ T eval_cubic_spline( const T energy, const std::vector<CubicSplineNodeT<T>> &nod
   const auto it = std::upper_bound( nodes.begin(), nodes.end(), lookup_energy,
     []( double e, const CubicSplineNodeT<T> &node ) { return e < node.x; } );
 
-  // Clamp to first/last values for extrapolation
+  // Clamp to boundary y-values (matching SpecUtils::eval_cubic_spline behavior)
   if( it == nodes.begin() )
     return nodes.front().y;
 
@@ -366,11 +385,38 @@ T correction_due_to_deviation_pairs( const T true_energy, const std::vector<Cubi
       true_energy_val = true_energy.a;
     }
 
-    char buffer[512];
-    snprintf( buffer, sizeof(buffer),
-      "correction_due_to_deviation_pairs: Failed to converge after %d iterations for true_energy=%.6f keV, final diff=%.6g keV",
-      max_iterations, true_energy_val, diff_val );
-    log_developer_error( __func__, buffer );
+    std::string msg = "correction_due_to_deviation_pairs: Failed to converge after "
+      + std::to_string( max_iterations ) + " iterations for true_energy="
+      + std::to_string( true_energy_val ) + " keV, final diff="
+      + std::to_string( diff_val ) + " keV.\n"
+      + "\tTo reproduce, call correction_due_to_deviation_pairs( "
+      + std::to_string( true_energy_val ) + ", {";
+    for( size_t i = 0; i < nodes.size(); ++i )
+    {
+      double y_val, a_val, b_val, c_val;
+      if constexpr ( std::is_same_v<T, double> )
+      {
+        y_val = nodes[i].y;
+        a_val = nodes[i].a;
+        b_val = nodes[i].b;
+        c_val = nodes[i].c;
+      }else
+      {
+        y_val = nodes[i].y.a;
+        a_val = nodes[i].a.a;
+        b_val = nodes[i].b.a;
+        c_val = nodes[i].c.a;
+      }
+
+      msg += (i ? ", " : " ");
+      msg += "{x=" + std::to_string( nodes[i].x )
+        + ", y=" + std::to_string( y_val )
+        + ", a=" + std::to_string( a_val )
+        + ", b=" + std::to_string( b_val )
+        + ", c=" + std::to_string( c_val ) + "}";
+    }
+    msg += " } )";
+    log_developer_error( __func__, msg.c_str() );
   }
 #endif
 
@@ -563,7 +609,11 @@ T find_polynomial_channel( const T energy,
       if( root2_valid && !root1_valid )
         return root2;
 
-      // Both valid - choose the one closer to linear solution
+      // Both valid - choose the one closer to linear solution.
+      // Note: for Jet types, if dist1 ≈ dist2, a small perturbation could flip the
+      // selected root, creating a derivative discontinuity.  In practice this is
+      // unlikely for well-conditioned polynomial calibrations, but could be an issue
+      // in the future if quadratic terms become large.
       if( root1_valid && root2_valid )
       {
         const T linear_sol = (polyenergy - coeffs[0]) / coeffs[1];
@@ -667,11 +717,42 @@ T find_polynomial_channel( const T energy,
     };
 
     const double e_low_val = energy_at( 0.0 );
-    const double e_high_val = energy_at( static_cast<double>(nchannel - 1) );
+    const double e_high_val = energy_at( static_cast<double>(nchannel) );
     const double energy_val = energy.a;
 
+    // Handle out-of-range energies with linear extrapolation (matching double version)
+    if( energy_val <= e_low_val )
+    {
+      const double bin_val = (energy_val - e_low_val) * static_cast<double>(nchannel) / coeffs[0].a;
+      T answer = T( bin_val );
+      // Propagate derivatives through the linear extrapolation
+      // bin = (E - E_low) * nchannel / C1
+      // d(bin)/d(param) = d(E)/d(param) * nchannel / C1 - (E - E_low) * nchannel / C1^2 * d(C1)/d(param)
+      const double nchan_over_c1 = static_cast<double>(nchannel) / coeffs[1].a;
+      for( size_t d = 0; d < static_cast<size_t>(T::DIMENSION); ++d )
+      {
+        answer.v[d] = energy.v[d] * nchan_over_c1
+                    - (energy_val - e_low_val) * nchan_over_c1 / coeffs[1].a * coeffs[1].v[d];
+      }
+      return answer;
+    }
+
+    if( energy_val >= e_high_val )
+    {
+      const double bin_val = static_cast<double>(nchannel)
+                           + (energy_val - e_high_val) * static_cast<double>(nchannel) / coeffs[1].a;
+      T answer = T( bin_val );
+      const double nchan_over_c1 = static_cast<double>(nchannel) / coeffs[1].a;
+      for( size_t d = 0; d < static_cast<size_t>(T::DIMENSION); ++d )
+      {
+        answer.v[d] = energy.v[d] * nchan_over_c1
+                    - (energy_val - e_high_val) * nchan_over_c1 / coeffs[1].a * coeffs[1].v[d];
+      }
+      return answer;
+    }
+
     double low = 0.0;
-    double high = static_cast<double>(nchannel - 1);
+    double high = static_cast<double>(nchannel);
     const int max_iterations = 1000;
     int niter = 0;
     while( ((high - low) > 1.0e-6) && (niter < max_iterations) )
@@ -898,7 +979,9 @@ T find_fullrangefraction_channel( const T energy,
       if( bin2_valid && !bin1_valid )
         return bin2;
 
-      // Both valid - choose closer to linear solution
+      // Both valid - choose closer to linear solution.
+      // Note: for Jet types, if dist1 ≈ dist2, the selected root could flip with
+      // small perturbations, creating a derivative discontinuity (see polynomial version).
       if( bin1_valid && bin2_valid )
       {
         const T linear_sol = T(static_cast<double>(nchannel)) * (frf_energy - coeffs[0]) / coeffs[1];
@@ -913,37 +996,28 @@ T find_fullrangefraction_channel( const T energy,
   }
 
   // For higher-order or with deviation pairs, use binary search
+  // Following SpecUtils::find_fullrangefraction_channel, evaluate at channel nchannel (not nchannel-1)
   const T e_low = fullrangefraction_energy( T(0.0), coeffs, nchannel, dev_pair_spline );
-  const T e_high = fullrangefraction_energy( T(static_cast<double>(nchannel - 1)), coeffs, nchannel, dev_pair_spline );
+  const T e_high = fullrangefraction_energy( T(static_cast<double>(nchannel)), coeffs, nchannel, dev_pair_spline );
 
-  // Check if energy is in range
-  if( (energy < (min)(e_low, e_high)) || (energy > (max)(e_low, e_high)) )
+  // Check if energy is below the lower bound - extrapolate using just the gain
+  // FRF: E = C_0 + C_1*(ch/nbin) + ...  -->  ch = (E - E_0) * nbin / C_1
+  if( energy <= e_low )
   {
-    if( energy < (min)(e_low, e_high) )
-    {
-      T answer = e_low;
-      if constexpr ( !std::is_same_v<T, double> )
-        answer.a = 0.0;
-      else 
-        answer = 0.0;
-    return answer;
-    }else
-    {
-      T answer = e_high;
-      if constexpr ( !std::is_same_v<T, double> )
-        answer.a = static_cast<double>(nchannel - 1);
-      else 
-        answer = static_cast<double>(nchannel - 1);
+    return (energy - e_low) * T(static_cast<double>(nchannel)) / coeffs[1];
+  }
 
-      return answer;
-    }
+  // Check if energy is above the upper bound - extrapolate using just the gain
+  if( energy >= e_high )
+  {
+    return T(static_cast<double>(nchannel)) + (energy - e_high) * T(static_cast<double>(nchannel)) / coeffs[1];
   }
 
   // Binary search (and derivative-preserving implicit update for Jet types)
   if constexpr ( std::is_same_v<T, double> )
   {
     T low_bin( 0.0 );
-    T high_bin( static_cast<double>(nchannel - 1) );
+    T high_bin( static_cast<double>(nchannel) );
 
     const int max_iterations = 1000;
     int niter = 0;

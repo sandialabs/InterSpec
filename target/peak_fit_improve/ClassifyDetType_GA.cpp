@@ -224,7 +224,7 @@ vector<PrecomputedCandidates> precompute_candidates(
     const DataSrcInfo &info = input_srcs[i];
     PrecomputedCandidates &pc = result[i];
 
-    pc.truth = true_det_type_for_name( info.detector_name );
+    pc.truth = info.det_type;
 
     const size_t nchannel = info.src_info.src_spectra.empty() ? 0
                               : info.src_info.src_spectra[0]->num_gamma_channels();

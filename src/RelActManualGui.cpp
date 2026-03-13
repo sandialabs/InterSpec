@@ -1346,7 +1346,6 @@ RelActManualGui::RelActCalcRawInput RelActManualGui::get_raw_info_for_calc_input
 
 
 void RelActManualGui::prepare_calc_input( const RelActCalcRawInput &setup_input,
-                                         MaterialDB *materialDB,
                                          RelActCalcManual::RelEffInput &setup_output )
 {
   const shared_ptr<const GuiState> &state = setup_input.state;
@@ -1734,13 +1733,13 @@ void RelActManualGui::prepare_calc_input( const RelActCalcRawInput &setup_input,
 
     if( state->m_selfAttenShield )
     {
-      setup_output.phys_model_self_atten = state->m_selfAttenShield->fitInput(materialDB);
+      setup_output.phys_model_self_atten = state->m_selfAttenShield->fitInput();
       assert( setup_output.phys_model_self_atten );
     }
 
     for( const unique_ptr<RelEffShieldState> &w : state->m_externalShields )
     {
-      shared_ptr<const RelActCalc::PhysicalModelShieldInput> rr = w ? w->fitInput(materialDB) : nullptr;
+      shared_ptr<const RelActCalc::PhysicalModelShieldInput> rr = w ? w->fitInput() : nullptr;
       assert( rr );
       if( rr )
         setup_output.phys_model_external_attens.push_back( rr );
@@ -1826,17 +1825,13 @@ void RelActManualGui::calculateSolution()
     auto errmsg = make_shared<WString>();
     auto err_updater = wApp->bind( boost::bind( &RelActManualGui::updateGuiWithError, this, errmsg ) );
     
-    InterSpec *interspec = InterSpec::instance();
-    std::shared_ptr<MaterialDB> materialdb = interspec ? interspec->materialDataBaseShared() : nullptr;
-    
     // We could almost call `prepare_calc_input(...)` off the GUI thread, and I think the only
     //  impact would be warning messages wouldnt be localized.
     RelActCalcManual::RelEffInput setup_output;
-    prepare_calc_input( raw_info, materialdb.get(), setup_output );
-    
+    prepare_calc_input( raw_info, setup_output );
 
     WServer::instance()->ioService().boost::asio::io_service::post( std::bind(
-      [setup_output, materialdb, sessionId, solution, updater, errmsg, err_updater](){
+      [setup_output, sessionId, solution, updater, errmsg, err_updater](){
         try
         {
           *solution = solve_relative_efficiency( setup_output );

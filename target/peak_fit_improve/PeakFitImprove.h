@@ -28,6 +28,8 @@
 #include <string>
 #include <vector>
 
+#include "InterSpec/PeakDef.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakFitSpecImp.h"
 
 namespace SpecUtils
@@ -155,6 +157,14 @@ struct DataSrcInfo
   std::string detector_name;
   std::string location_name;
   std::string live_time_name;
+
+  /** The coarse resolution type for this detector (HPGe, MedRes, Low, etc.). */
+  PeakFitUtils::CoarseResolutionType det_type = PeakFitUtils::CoarseResolutionType::Unknown;
+
+  /** The skew type to use for peak fitting with this detector.
+   Currently: DoubleSidedCrystalBall for CZT/MedRes, NoSkew for everything else.
+   */
+  PeakDef::SkewType skew_type = PeakDef::SkewType::NoSkew;
 
   InjectSourceInfo src_info;
 

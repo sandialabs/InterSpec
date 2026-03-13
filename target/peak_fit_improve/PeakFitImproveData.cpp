@@ -70,8 +70,34 @@
 
 #include "InitialFit_GA.h"
 #include "PeakFitImproveData.h"
+#include "ClassifyDetType_GA.h"
 
 using namespace std;
+
+namespace
+{
+/** Returns the skew type to use for peak fitting based on detector name.
+ Currently: DoubleSidedCrystalBall for CZT detectors, NoSkew for everything else.
+ */
+PeakDef::SkewType skew_type_for_detector( const std::string &detector_name )
+{
+  // CZT detectors get DoubleSidedCrystalBall skew
+  if( SpecUtils::icontains( detector_name, "1.5cm-2cm" )
+     || SpecUtils::icontains( detector_name, "1cm-1cm" )
+     || SpecUtils::icontains( detector_name, "CZT_H3D" )
+     || SpecUtils::icontains( detector_name, "Kromek-GR1" )
+     || SpecUtils::icontains( detector_name, "nanoRaider" )
+     || SpecUtils::icontains( detector_name, "Interceptor" )
+     || SpecUtils::icontains( detector_name, "Raider" ) )
+  {
+    return PeakDef::SkewType::DoubleSidedCrystalBall;
+  }
+
+  // HPGe, LaBr, NaI all use NoSkew for now
+  return PeakDef::SkewType::NoSkew;
+}//skew_type_for_detector(...)
+}//anonymous namespace
+
 
 namespace PeakFitImproveData
 {
@@ -793,6 +819,8 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
           src_info.detector_name = inject_set.detector_name;
           src_info.location_name = inject_set.location_name;
           src_info.live_time_name = inject_set.live_time_name;
+          src_info.det_type = ClassifyDetType_GA::true_det_type_for_name( inject_set.detector_name );
+          src_info.skew_type = skew_type_for_detector( inject_set.detector_name );
 
           src_info.src_info = info;
           src_info.expected_photopeaks = combined_detectable_clusters;
@@ -1306,6 +1334,8 @@ tuple<vector<DetectorInjectSet>,vector<DataSrcInfo>>
           data_src.detector_name = injects.detector_name;
           data_src.location_name = injects.location_name;
           data_src.live_time_name = injects.live_time_name;
+          data_src.det_type = ClassifyDetType_GA::true_det_type_for_name( injects.detector_name );
+          data_src.skew_type = skew_type_for_detector( injects.detector_name );
           data_src.src_info = info;
           data_src.expected_photopeaks = std::move( truth_data[index].expected_photopeaks );
           data_src.expected_signal_photopeaks = std::move( truth_data[index].expected_signal_photopeaks );

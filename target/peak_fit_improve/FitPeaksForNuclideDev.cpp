@@ -64,8 +64,11 @@
 #include "PeakFitImprove.h"
 #include "InitialFit_GA.h"
 #include "CandidatePeak_GA.h"
+#include "FitPeaksForNuclideDev.h"
 
 #include "InterSpec/FitPeaksForNuclides.h"
+
+#include "FitPeaksForNuclideDev.h"
 
 using namespace std;
 
@@ -93,55 +96,7 @@ struct ClusteredGammaInfo {
 
 
 
-/** Combined scoring struct that evaluates both final fit quality and peak finding completeness.
-
- This struct provides a comprehensive assessment by combining:
- - FinalFitScore: Area, width, and position accuracy metrics
- - PeakFindAndFitWeights: Peak detection completeness and area accuracy
- - final_weight: Combined score (simple sum of find_weight + total_weight)
- */
-struct CombinedPeakFitScore
-{
-  FinalFit_GA::FinalFitScore final_fit_score;
-  InitialFit_GA::PeakFindAndFitWeights initial_fit_weights;
-  CandidatePeak_GA::CandidatePeakScore candidate_peak_score;
-
-  /** Combined weight score (find_weight + total_weight).
-   * find_weight: higher is better (more correct peaks found)
-   * total_weight: lower is better (more accurate areas)
-   */
-  double final_weight = 0.0;
-
-  std::string print( const std::string &varname ) const
-  {
-    std::string answer;
-
-    answer += "=== " + varname + " - Final Fit Metrics ===\n";
-    answer += final_fit_score.print( varname + ".final_fit_score" );
-
-    answer += "\n=== " + varname + " - Peak Finding Metrics ===\n";
-    answer += varname + ".initial_fit_weights.find_weight =                     " + std::to_string(initial_fit_weights.find_weight) + "\n";
-    answer += varname + ".initial_fit_weights.def_wanted_area_weight =          " + std::to_string(initial_fit_weights.def_wanted_area_weight) + "\n";
-    answer += varname + ".initial_fit_weights.maybe_wanted_area_weight =        " + std::to_string(initial_fit_weights.maybe_wanted_area_weight) + "\n";
-    answer += varname + ".initial_fit_weights.not_wanted_area_weight =          " + std::to_string(initial_fit_weights.not_wanted_area_weight) + "\n";
-    answer += varname + ".initial_fit_weights.def_wanted_area_median_weight =   " + std::to_string(initial_fit_weights.def_wanted_area_median_weight) + "\n";
-    answer += varname + ".initial_fit_weights.maybe_wanted_area_median_weight = " + std::to_string(initial_fit_weights.maybe_wanted_area_median_weight) + "\n";
-    answer += varname + ".initial_fit_weights.not_wanted_area_median_weight =   " + std::to_string(initial_fit_weights.not_wanted_area_median_weight) + "\n";
-
-    answer += "\n=== " + varname + " - Candidate Peak Metrics ===\n";
-    answer += varname + ".candidate_peak_score.score =                           " + std::to_string(candidate_peak_score.score) + "\n";
-    answer += varname + ".candidate_peak_score.num_peaks_found =                 " + std::to_string(candidate_peak_score.num_peaks_found) + "\n";
-    answer += varname + ".candidate_peak_score.num_def_wanted_not_found =         " + std::to_string(candidate_peak_score.num_def_wanted_not_found) + "\n";
-    answer += varname + ".candidate_peak_score.num_def_wanted_peaks_found =      " + std::to_string(candidate_peak_score.num_def_wanted_peaks_found) + "\n";
-    answer += varname + ".candidate_peak_score.num_possibly_accepted_peaks_not_found = " + std::to_string(candidate_peak_score.num_possibly_accepted_peaks_not_found) + "\n";
-    answer += varname + ".candidate_peak_score.num_extra_peaks =                " + std::to_string(candidate_peak_score.num_extra_peaks) + "\n";
-
-    answer += "\n=== " + varname + " - Combined Metrics ===\n";
-    answer += varname + ".final_weight = " + std::to_string(final_weight) + "\n";
-
-    return answer;
-  }//print(...)
-};//struct CombinedPeakFitScore
+// CombinedPeakFitScore is now defined in FitPeaksForNuclideDev.h
 
 
 // PeakFitForNuclideConfig is now defined in FitPeaksForNuclides namespace
@@ -161,258 +116,6 @@ using PeakFitForNuclideConfig = FitPeaksForNuclides::PeakFitForNuclideConfig;
 // Functions removed - implementations are now in src/FitPeaksForNuclides.cpp
 
 
-/** Test function for estimate_initial_rois_without_peaks.
-
- Tests the function with Pu238, Pu239, and Pu241 sources and validates:
- - ROIs are created for each source
- - No ROIs overlap
- - All ROIs are at least 1 FWHM wide
- - All ROIs contain their source gamma energies
-
- @return true if all tests pass, false otherwise
- */
-bool test_estimate_initial_rois_without_peaks()
-{
-  cout << "\n=== Testing estimate_initial_rois_without_peaks ===" << endl;
-
-  bool all_tests_passed = true;
-
-  try
-  {
-    // Setup test sources: Pu238, Pu239, Pu241
-    std::vector<RelActCalcAuto::NucInputInfo> test_sources;
-
-    const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
-    assert( db );
-    if( !db )
-    {
-      cerr << "TEST FAILED: Could not get decay database" << endl;
-      return false;
-    }
-
-    const SandiaDecay::Nuclide * const pu238 = db->nuclide( "Pu238" );
-    const SandiaDecay::Nuclide * const pu239 = db->nuclide( "Pu239" );
-    const SandiaDecay::Nuclide * const pu241 = db->nuclide( "Pu241" );
-
-    if( !pu238 || !pu239 || !pu241 )
-    {
-      cerr << "TEST FAILED: Could not find Pu238, Pu239, or Pu241 in database" << endl;
-      return false;
-    }
-
-    RelActCalcAuto::NucInputInfo pu238_input;
-    pu238_input.source = pu238;
-    pu238_input.age = 20.0*PhysicalUnits::year;
-    pu238_input.fit_age = false;
-
-    RelActCalcAuto::NucInputInfo pu239_input;
-    pu239_input.source = pu239;
-    pu239_input.age = 20.0*PhysicalUnits::year;
-    pu239_input.fit_age = false;
-
-    RelActCalcAuto::NucInputInfo pu241_input;
-    pu241_input.source = pu241;
-    pu241_input.age = 20.0*PhysicalUnits::year;
-    pu241_input.fit_age = false;
-
-
-    test_sources.push_back( pu238_input );
-    test_sources.push_back( pu239_input );
-    test_sources.push_back( pu241_input );
-
-    // Setup test parameters
-    const bool isHPGe = true;
-    const DetectorPeakResponse::ResolutionFnctForm fwhmFnctnlForm
-        = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
-
-    // Typical HPGe FWHM coefficients: FWHM = sqrt(a + b*E + c*E^2) where E is in keV
-    const std::vector<float> fwhm_coefficients = {0.5f, 0.0f, 0.0f};  // ~0.7 keV FWHM constant
-    const double lower_fwhm_energy = 0.0;
-    const double upper_fwhm_energy = 3000.0;
-    const double min_valid_energy = 50.0;
-    const double max_valid_energy = 2000.0;
-
-    // Create test config
-    PeakFitForNuclideConfig config;
-    config.auto_rel_eff_sol_max_fwhm = 12.0;
-
-    // Get generic HPGe DRF
-    std::shared_ptr<const DetectorPeakResponse> drf = DetectorPeakResponse::getGenericHPGeDetector();
-    if( !drf || !drf->isValid() )
-    {
-      cerr << "TEST FAILED: Could not get generic HPGe detector" << endl;
-      return false;
-    }
-
-    // Call the function under test
-    const std::vector<RelActCalcAuto::RoiRange> rois = FitPeaksForNuclides::estimate_initial_rois_without_peaks(
-      test_sources, drf, isHPGe,
-      fwhmFnctnlForm, fwhm_coefficients, lower_fwhm_energy, upper_fwhm_energy,
-      min_valid_energy, max_valid_energy, config );
-
-    cout << "Created " << rois.size() << " ROIs" << endl;
-
-    // Test 1: Check that we have ROIs
-    if( rois.empty() )
-    {
-      cerr << "TEST FAILED: No ROIs created" << endl;
-      all_tests_passed = false;
-    }
-    else
-    {
-      cout << "PASS: ROIs were created" << endl;
-    }
-
-    // Test 2: Check no overlaps
-    for( size_t i = 1; i < rois.size(); ++i )
-    {
-      if( rois[i].lower_energy < rois[i-1].upper_energy )
-      {
-        cerr << "TEST FAILED: ROIs " << (i-1) << " and " << i << " overlap: "
-             << "[" << rois[i-1].lower_energy << ", " << rois[i-1].upper_energy << "] "
-             << "and [" << rois[i].lower_energy << ", " << rois[i].upper_energy << "]" << endl;
-        all_tests_passed = false;
-      }
-    }
-
-    if( all_tests_passed )
-      cout << "PASS: No overlapping ROIs" << endl;
-
-    // Test 3: Check that each ROI is at least 1 FWHM wide
-    for( size_t i = 0; i < rois.size(); ++i )
-    {
-      const double roi_width = rois[i].upper_energy - rois[i].lower_energy;
-      const double mid_energy = 0.5 * (rois[i].lower_energy + rois[i].upper_energy);
-      const double fwhm = DetectorPeakResponse::peakResolutionFWHM(
-        static_cast<float>(mid_energy), fwhmFnctnlForm, fwhm_coefficients );
-
-      if( roi_width < fwhm )
-      {
-        cerr << "TEST FAILED: ROI " << i << " is narrower than 1 FWHM: "
-             << roi_width << " keV < " << fwhm << " keV FWHM at " << mid_energy << " keV" << endl;
-        all_tests_passed = false;
-      }
-    }
-
-    if( all_tests_passed )
-      cout << "PASS: All ROIs are at least 1 FWHM wide" << endl;
-
-    // Test 4: Check that we have ROIs for each source
-    // Collect expected gamma energies for each source (top 4 by BR*eff)
-    std::map<const SandiaDecay::Nuclide*, std::vector<double>> expected_gammas;
-
-    for( const RelActCalcAuto::NucInputInfo &src : test_sources )
-    {
-      // get_source_age and get_source_photons are now in anonymous namespace in FitPeaksForNuclides.cpp
-      // For test purposes, use a simple approach
-      const SandiaDecay::Nuclide *nuc = RelActCalcAuto::nuclide( src.source );
-      const double age = nuc ? src.age : 0.0;
-      SandiaDecay::NuclideMixture mix;
-      if( nuc )
-        mix.addAgedNuclideByActivity( nuc, 1.0, age );
-      const std::vector<SandiaDecay::EnergyRatePair> photons = mix.photons( 0.0, SandiaDecay::NuclideMixture::OrderByEnergy );
-
-      struct GammaScore
-      {
-        double energy;
-        double score;
-      };
-      std::vector<GammaScore> candidates;
-
-      for( const SandiaDecay::EnergyRatePair &photon : photons )
-      {
-        if( photon.energy < min_valid_energy || photon.energy > max_valid_energy )
-          continue;
-
-        const double br = photon.numPerSecond;
-        const double eff = drf->intrinsicEfficiency( static_cast<float>(photon.energy) );
-        const double score = br * eff;
-
-        if( score > 0.0 )
-          candidates.push_back( {photon.energy, score} );
-      }
-
-      // Sort and take top 4
-      std::sort( candidates.begin(), candidates.end(),
-        [](const GammaScore &a, const GammaScore &b) { return a.score > b.score; } );
-
-      const size_t num_to_take = std::min( candidates.size(), size_t(4) );
-
-      for( size_t i = 0; i < num_to_take; ++i )
-        expected_gammas[nuc].push_back( candidates[i].energy );
-    }
-
-    // Check that ROIs cover expected gammas
-    for( const auto &[nuc, gammas] : expected_gammas )
-    {
-      cout << "Checking " << nuc->symbol << " gammas:" << endl;
-
-      for( const double gamma_energy : gammas )
-      {
-        bool found = false;
-        for( const RelActCalcAuto::RoiRange &roi : rois )
-        {
-          if( gamma_energy >= roi.lower_energy && gamma_energy <= roi.upper_energy )
-          {
-            found = true;
-            cout << "  " << gamma_energy << " keV: FOUND in ROI [" << roi.lower_energy
-                 << ", " << roi.upper_energy << "]" << endl;
-            break;
-          }
-        }
-
-        if( !found )
-        {
-          cerr << "TEST FAILED: " << nuc->symbol << " gamma at " << gamma_energy
-               << " keV not found in any ROI" << endl;
-          all_tests_passed = false;
-        }
-      }
-    }
-
-    // Test 5: Verify all ROIs have Linear continuum type
-    for( size_t i = 0; i < rois.size(); ++i )
-    {
-      if( rois[i].continuum_type != PeakContinuum::OffsetType::Linear )
-      {
-        cerr << "TEST FAILED: ROI " << i << " does not have Linear continuum type" << endl;
-        all_tests_passed = false;
-      }
-    }
-
-    if( all_tests_passed )
-      cout << "PASS: All ROIs have Linear continuum type" << endl;
-
-    // Test 6: Verify all ROIs have Fixed range limits
-    for( size_t i = 0; i < rois.size(); ++i )
-    {
-      if( rois[i].range_limits_type != RelActCalcAuto::RoiRange::RangeLimitsType::Fixed )
-      {
-        cerr << "TEST FAILED: ROI " << i << " does not have Fixed range limits" << endl;
-        all_tests_passed = false;
-      }
-    }
-
-    if( all_tests_passed )
-      cout << "PASS: All ROIs have Fixed range limits" << endl;
-
-  }
-  catch( const std::exception &e )
-  {
-    cerr << "TEST FAILED: Exception thrown: " << e.what() << endl;
-    all_tests_passed = false;
-  }
-
-  if( all_tests_passed )
-    cout << "=== ALL TESTS PASSED ===" << endl;
-  else
-    cout << "=== SOME TESTS FAILED ===" << endl;
-
-  cout << endl;
-
-  return all_tests_passed;
-}//test_estimate_initial_rois_without_peaks
-
 
 PeakFitResult fit_peaks_for_nuclides(
   const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
@@ -421,15 +124,15 @@ PeakFitResult fit_peaks_for_nuclides(
   const std::shared_ptr<const SpecUtils::Measurement> &long_background,
   const std::shared_ptr<const DetectorPeakResponse> &drf_input,
   const PeakFitForNuclideConfig &config,
-  const bool isHPGe )
+  const std::shared_ptr<const PeakFitDetPrefs> &peak_fit_prefs )
 {
   Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> options;
   const std::vector<std::shared_ptr<const PeakDef>> user_peaks;
-  
+
   // Implementation moved to FitPeaksForNuclides namespace
   // This is now a wrapper that calls the new namespace version
   return FitPeaksForNuclides::fit_peaks_for_nuclides(
-    auto_search_peaks, foreground, sources, user_peaks, long_background, drf_input, options, config, isHPGe
+    auto_search_peaks, foreground, sources, user_peaks, long_background, drf_input, options, config, peak_fit_prefs
   );
 }//fit_peaks_for_nuclides
 
@@ -644,19 +347,21 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
     const shared_ptr<const SpecUtils::Measurement> &foreground = src.src_spectra.front(); // TODO: we cold loop over all 16 of these histograms
     const shared_ptr<const SpecUtils::Measurement> &long_background = src.long_background;
 
-    const bool isHPGe = true;
     const bool singleThreaded = false;
     shared_ptr<const DetectorPeakResponse> drf = nullptr; //Probably
+
+    std::shared_ptr<PeakFitDetPrefs> dev_prefs = std::make_shared<PeakFitDetPrefs>();
+    dev_prefs->m_det_type = src_info.det_type;
 
     try
     {
       shared_ptr<const deque<shared_ptr<const PeakDef>>> dummy_origpeaks;
 
       const vector<shared_ptr<const PeakDef> > auto_search_peaks
-          = ExperimentalAutomatedPeakSearch::search_for_peaks( foreground, drf, dummy_origpeaks, singleThreaded, isHPGe );
+          = ExperimentalAutomatedPeakSearch::search_for_peaks( foreground, drf, dummy_origpeaks, singleThreaded, dev_prefs );
 
       const PeakFitResult curve_results = FitPeaksForNuclideDev::fit_peaks_for_nuclides(
-        auto_search_peaks, foreground, sources, long_background, drf, config, isHPGe );
+        auto_search_peaks, foreground, sources, long_background, drf, config, dev_prefs );
 
       if( curve_results.status != RelActCalcAuto::RelActAutoSolution::Status::Success )
         throw std::runtime_error( "fit_peaks_for_nuclides failed for all RelEff curve types: " + curve_results.error_message );

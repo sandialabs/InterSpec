@@ -146,7 +146,6 @@ class ReferencePhotopeakDisplay : public Wt::WContainerWidget
 public:
   ReferencePhotopeakDisplay(
                         D3SpectrumDisplayDiv *chart,
-                        MaterialDB *materialDB,
                         Wt::WSuggestionPopup *materialSuggest,
                         InterSpec *specViewer,
                         Wt::WContainerWidget *parent = 0 );
@@ -281,7 +280,7 @@ public:
   Wt::Signal<> &nuclidesCleared();
   
   /** Return the material database this widget uses */
-  const MaterialDB *materialDB() const;
+  std::shared_ptr<const MaterialDB> materialDB() const;
   
   /** Returns a shared pointer to `m_undo_redo_sentry` - as long as there are any shared ptrs to
    the sentry alive, an undo/redo step wont be inserted.
@@ -501,7 +500,6 @@ protected:
   Wt::WContainerWidget *m_featureMarkerColumn;
   
   DetectorDisplay *m_detectorDisplay;
-  MaterialDB *m_materialDB;                 //not owned by this object
   Wt::WSuggestionPopup *m_materialSuggest;  //not owned by this object
   ShieldingSelect *m_shieldingSelect;
 

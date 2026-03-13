@@ -91,11 +91,23 @@ extern template void photopeak_function_integral<double>( const double, const do
                          const PeakDef::SkewType, const double * const, const size_t, const float * const, double * );
 
 
-  
-  
-  
-  
-  
+/** Returns the CDF (cumulative distribution function) at energy `x` for a unit-area peak
+   distribution with the given mean, sigma, and skew type.
+
+   CDF(x) = integral from -infinity to x of the unit-area peak distribution.
+   Returns 0 for x far below the peak, 1 for x far above.
+
+   @param x Energy at which to evaluate the CDF
+   @param mean Peak mean energy
+   @param sigma Peak Gaussian width (standard deviation)
+   @param skew_type The skew type of the peak
+   @param skew_pars Pointer to skew parameters (may be nullptr for NoSkew)
+   @returns CDF value in [0,1]
+ */
+double peak_cdf( const double x, const double mean, const double sigma,
+                 const PeakDef::SkewType skew_type, const double *skew_pars );
+
+
   /** Calculates the area of a Gaussian with specified mean, sigma, and amplitude, between x0 and x1.
    
     Results have approximately 9 decimal digits of accuracy.

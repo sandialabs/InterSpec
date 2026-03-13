@@ -90,21 +90,21 @@ CoarseResolutionType coarse_resolution_from_peaks( const std::deque<std::shared_
   
   
 /** Tries to guess if the passed in spectrum is from a high-resolution system (i.e., HPGe), or a lower resolution system.
- 
+
  Primarily intended to determine defaults for peak-fitting.
- 
+
  Currently looks at number of channels and/or average channel width, but may look at actual spectrum features for ambiguous cases
  in the future.
- 
- TODO: return an enum from this function, and everywhere `isHPGe` or `highres` is used.
+
+ For a more detailed classification, see \c classify_det_type or \c coarse_det_type.
  */
 bool is_high_res( const std::shared_ptr<const SpecUtils::Measurement> &meas );
 
-  
+
 /** Tries to determine if the current foreground spectrum is from a high-resolution system (i.e., HPGe), or a lower resolution system.
  Must only be called from the Wt application thread.
- 
- TODO: return an enum from this function, and everywhere `isHPGe` or `highres` is used.
+
+ For a more detailed classification, see \c classify_det_type or \c coarse_det_type.
  */
 bool is_likely_high_res( InterSpec *viewer );
 

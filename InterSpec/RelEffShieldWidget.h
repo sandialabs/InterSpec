@@ -58,7 +58,7 @@ struct RelEffShieldState
   void fromXml(const rapidxml::xml_node<char>* node);
   
   /** Will return nullptr if invalid or empty state, including the material name can not be parsed. */
-  std::shared_ptr<RelActCalc::PhysicalModelShieldInput> fitInput( MaterialDB *materialDB ) const;
+  std::shared_ptr<RelActCalc::PhysicalModelShieldInput> fitInput() const;
   
   void setStateFromFitInput( const RelActCalc::PhysicalModelShieldInput &input );
 };//struct RelEffShieldState
@@ -79,8 +79,8 @@ public:
 
   bool isMaterialSelected() const;
   void setMaterialSelected( bool selected );
-  static const Material *material( const std::string &mat_name, MaterialDB *materialD );
-  const Material *material() const;
+  static std::shared_ptr<const Material> material( const std::string &mat_name );
+  std::shared_ptr<const Material> material() const;
   /** The text showing in the material name input field - may not be a valid material name. */
   Wt::WString materialNameTxt() const;
 

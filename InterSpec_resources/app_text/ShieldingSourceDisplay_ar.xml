@@ -159,5 +159,5 @@
   <message id="x2g-tt-sources-contributing">المصادر المساهمة:</message>
   <message id="x2g-tt-counts-abbrev">عدد</message>
   <message id="x2g-tt-br-abbrev">br</message>
-  <message id="x2g-dev-label">&lt;dev&gt;</message>
+  <message id="x2g-dev-label"><![CDATA[<انحر>]]></message>
 </messages>

@@ -38,6 +38,8 @@
 #include "InterSpec/PeakDef.h" //for PeakContinuum::OffsetType and PeakDef::SkewType
 #include "InterSpec/RelActCalc.h"
 
+namespace PeakFitUtils{ enum class CoarseResolutionType : int; }
+
 // Forward declarations
 class DetectorPeakResponse;
 struct Material;
@@ -661,7 +663,7 @@ struct RelEffCurveInput
    * @returns The node the fields were written into (so the added node, or the parent node passed in).
    */
   rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const;
-  void fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *materialDB );
+  void fromXml( const ::rapidxml::xml_node<char> *parent );
 
 #if( PERFORM_DEVELOPER_CHECKS )
   static void equalEnough( const RelEffCurveInput &lhs, const RelEffCurveInput &rhs );
@@ -700,6 +702,20 @@ struct Options
    power law is not allowed to have an energy dependence (see `PeakDef::is_energy_dependent(...)`).
    */
   PeakDef::SkewType skew_type;
+
+  /** Optional fixed skew parameter values for the lower energy end of the spectrum.
+   If a value is set, that skew parameter will be held constant during fitting
+   (not optimized), using the specified value.  If nullopt, the parameter is fit as usual.
+   Index 0..3 correspond to SkewPar0..SkewPar3.
+   */
+  std::optional<double> fixed_lower_skew[4];
+
+  /** Optional fixed skew parameter values for the upper energy end of the spectrum.
+   Only meaningful for energy-dependent skew parameters (see `PeakDef::is_energy_dependent`).
+   If nullopt for an energy-dependent parameter, the upper value will match the lower
+   (i.e., no energy dependence for that parameter).
+   */
+  std::optional<double> fixed_upper_skew[4];
 
   /** Whether to use Lorentzian (Voigt) peak shapes for x-ray peaks.
    *
@@ -773,12 +789,12 @@ struct Options
   
   /** Sets the member variables from an XML element created by `toXml(...)`.
    @param parent An XML element with name "Options".
-   @param materialDB The material database to use to retrieve a material from for the #PhysicalModelShieldInput;
-          for other equation types, or for AN/AD defined shields, this isnt used/required.
-          `same_hoerl_for_all_rel_eff_curves` and `same_external_shielding_for_all_rel_eff_curves`
-          were also added, and are optional.
+   Uses `MaterialDB::instance()` to retrieve materials for #PhysicalModelShieldInput;
+   for other equation types, or for AN/AD defined shields, the material DB isnt used/required.
+   `same_hoerl_for_all_rel_eff_curves` and `same_external_shielding_for_all_rel_eff_curves`
+   were also added, and are optional.
    */
-  void fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *materialDB );
+  void fromXml( const ::rapidxml::xml_node<char> *parent );
 
 #if( PERFORM_DEVELOPER_CHECKS )
   static void equalEnough( const Options &lhs, const Options &rhs );
@@ -839,7 +855,7 @@ struct RelActAutoGuiState
   
   /** Returns XML node added; i.e., will have name "RelActCalcAuto" */
   ::rapidxml::xml_node<char> *serialize( ::rapidxml::xml_node<char> *parent ) const;
-  void deSerialize( const rapidxml::xml_node<char> *base_node, MaterialDB *materialDb );
+  void deSerialize( const rapidxml::xml_node<char> *base_node );
 
 #if( PERFORM_DEVELOPER_CHECKS )
   static void equalEnough( const RelActAutoGuiState &lhs, const RelActAutoGuiState &rhs );
@@ -1369,6 +1385,7 @@ RelActAutoSolution solve( const Options options,
                          std::shared_ptr<const SpecUtils::Measurement> background,
                          std::shared_ptr<const DetectorPeakResponse> drf,
                          std::vector<std::shared_ptr<const PeakDef>> all_peaks,
+                         const PeakFitUtils::CoarseResolutionType det_type,
                          std::shared_ptr<std::atomic_bool> cancel_calc = nullptr
                          );
 

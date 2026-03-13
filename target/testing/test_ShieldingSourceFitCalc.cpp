@@ -197,15 +197,16 @@ BOOST_AUTO_TEST_CASE( ShieldingInfoUri )
   set_data_dir();
   
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-  MaterialDB matdb;
-  
-  const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
-  BOOST_REQUIRE_NO_THROW( matdb.parseGadrasMaterialFile( materialfile, db, false ) );
-  
-  const Material * const iron = matdb.material("Fe (iron)");
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  BOOST_REQUIRE( MaterialDB::initialized() );
+
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+
+  const std::shared_ptr<const Material> iron = matdb->material( "Fe (iron)" );
   BOOST_REQUIRE( iron );
-  
-  const Material * const uranium = matdb.material("U (uranium)");
+
+  const std::shared_ptr<const Material> uranium = matdb->material( "U (uranium)" );
   BOOST_REQUIRE( uranium );
   
   {// Begin test Trace source serialization
@@ -280,7 +281,7 @@ BOOST_AUTO_TEST_CASE( ShieldingInfoUri )
       const string uri = info.encodeStateToUrl();
       
       ShieldingInfo from_uri;
-      BOOST_REQUIRE_NO_THROW( from_uri.handleAppUrl( uri, &matdb ) );
+      BOOST_REQUIRE_NO_THROW( from_uri.handleAppUrl( uri ) );
       BOOST_CHECK_NO_THROW( ShieldingInfo::equalEnough( info, from_uri ) );
     }// End test URI
     
@@ -302,7 +303,7 @@ BOOST_AUTO_TEST_CASE( ShieldingInfoUri )
       BOOST_REQUIRE_NO_THROW( info.serialize( &doc ) );
       
       ShieldingInfo from_xml;
-      BOOST_REQUIRE_NO_THROW( from_xml.deSerialize( doc.first_node(), &matdb ) );
+      BOOST_REQUIRE_NO_THROW( from_xml.deSerialize( doc.first_node() ) );
       BOOST_REQUIRE_NO_THROW( ShieldingInfo::equalEnough( info, from_xml ) );
     }
     
@@ -364,7 +365,7 @@ BOOST_AUTO_TEST_CASE( ShieldingInfoUri )
       BOOST_REQUIRE_NO_THROW( info.serialize( &doc ) );
       
       ShieldingInfo from_xml;
-      BOOST_REQUIRE_NO_THROW( from_xml.deSerialize( doc.first_node(), &matdb ) );
+      BOOST_REQUIRE_NO_THROW( from_xml.deSerialize( doc.first_node() ) );
       BOOST_REQUIRE_NO_THROW( ShieldingInfo::equalEnough( info, from_xml ) );
     }
   }// End test ShieldingInfo encode/decode from URI
@@ -1057,14 +1058,13 @@ BOOST_AUTO_TEST_CASE( FitAnalystTraceSource )
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
  
-  MaterialDB matdb;
-  
-  const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
-  BOOST_REQUIRE_NO_THROW( matdb.parseGadrasMaterialFile( materialfile, db, false ) );
-  
-  const Material * const iron = matdb.material("Fe (iron)");
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+
+  const std::shared_ptr<const Material> iron = matdb->material( "Fe (iron)" );
   BOOST_REQUIRE( iron );
-  
+
   const string test_n42_file = SpecUtils::append_path(g_test_file_dir, "../analysis_tests/AEGIS_Eu152_surface_contamination.n42_20230622T113239.276178.n42");
   BOOST_REQUIRE( SpecUtils::is_file(test_n42_file) );
   
@@ -1128,7 +1128,7 @@ BOOST_AUTO_TEST_CASE( FitAnalystTraceSource )
   XML_FOREACH_CHILD(shield_node, shieldings_node, "Shielding")
   {
     ShieldingSourceFitCalc::ShieldingInfo info;
-    BOOST_REQUIRE_NO_THROW( info.deSerialize( shield_node, &matdb ) );
+    BOOST_REQUIRE_NO_THROW( info.deSerialize( shield_node ) );
     shield_definitions.push_back( info );
   }
   
@@ -1146,7 +1146,7 @@ BOOST_AUTO_TEST_CASE( FitAnalystTraceSource )
   BOOST_REQUIRE( src_definitions.size() == 1 );
 
   GammaInteractionCalc::ShieldSourceConfig parsed_config;
-  BOOST_REQUIRE_NO_THROW( parsed_config.deSerialize( base_node, &matdb ) );
+  BOOST_REQUIRE_NO_THROW( parsed_config.deSerialize( base_node ) );
 
   BOOST_CHECK_SMALL( fabs(parsed_config.distance - distance), 1e-9 * (std::max)(1.0, fabs(distance)) );
   BOOST_CHECK_EQUAL( static_cast<int>(parsed_config.geometry), static_cast<int>(geometry) );
@@ -1168,7 +1168,7 @@ BOOST_AUTO_TEST_CASE( FitAnalystTraceSource )
   BOOST_REQUIRE_NO_THROW( parsed_config.serialize( round_root ) );
 
   GammaInteractionCalc::ShieldSourceConfig reparsed_config;
-  BOOST_REQUIRE_NO_THROW( reparsed_config.deSerialize( round_root, &matdb ) );
+  BOOST_REQUIRE_NO_THROW( reparsed_config.deSerialize( round_root ) );
 
   BOOST_CHECK_SMALL( fabs(reparsed_config.distance - parsed_config.distance), 1e-9 * (std::max)(1.0, fabs(parsed_config.distance)) );
   BOOST_CHECK_EQUAL( static_cast<int>(reparsed_config.geometry), static_cast<int>(parsed_config.geometry) );
@@ -1251,14 +1251,13 @@ BOOST_AUTO_TEST_CASE( FitAnalystShieldingSourcecases )
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
  
-  MaterialDB matdb;
-  
-  const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
-  BOOST_REQUIRE_NO_THROW( matdb.parseGadrasMaterialFile( materialfile, db, false ) );
-  
-  const Material * const iron = matdb.material("Fe (iron)");
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+
+  const std::shared_ptr<const Material> iron = matdb->material( "Fe (iron)" );
   BOOST_REQUIRE( iron );
-  
+
   const string base_dir = SpecUtils::append_path(g_test_file_dir, "../analysis_tests");
   BOOST_REQUIRE( SpecUtils::is_directory(base_dir) );
   
@@ -1477,7 +1476,7 @@ BOOST_AUTO_TEST_CASE( FitAnalystShieldingSourcecases )
       try
       {
         ShieldingSourceFitCalc::ShieldingInfo info;
-        info.deSerialize( shield_node, &matdb );
+        info.deSerialize( shield_node );
         shield_definitions.push_back( std::move(info) );
       }catch( std::exception &e )
       {
@@ -1533,7 +1532,7 @@ BOOST_AUTO_TEST_CASE( FitAnalystShieldingSourcecases )
     
     
     GammaInteractionCalc::ShieldSourceConfig parsed_config;
-    BOOST_CHECK_NO_THROW( parsed_config.deSerialize( base_node, &matdb ) );
+    BOOST_CHECK_NO_THROW( parsed_config.deSerialize( base_node ) );
 
     BOOST_CHECK_SMALL( fabs(parsed_config.distance - distance), 1e-9 * (std::max)(1.0, fabs(distance)) );
     BOOST_CHECK_EQUAL( static_cast<int>(parsed_config.geometry), static_cast<int>(geometry) );
@@ -1555,7 +1554,7 @@ BOOST_AUTO_TEST_CASE( FitAnalystShieldingSourcecases )
     BOOST_CHECK_NO_THROW( parsed_config.serialize( round_root ) );
 
     GammaInteractionCalc::ShieldSourceConfig reparsed_config;
-    BOOST_CHECK_NO_THROW( reparsed_config.deSerialize( round_root, &matdb ) );
+    BOOST_CHECK_NO_THROW( reparsed_config.deSerialize( round_root ) );
 
     BOOST_CHECK_SMALL( fabs(reparsed_config.distance - parsed_config.distance), 1e-9 * (std::max)(1.0, fabs(parsed_config.distance)) );
     BOOST_CHECK_EQUAL( static_cast<int>(reparsed_config.geometry), static_cast<int>(parsed_config.geometry) );
@@ -1635,11 +1634,10 @@ BOOST_AUTO_TEST_CASE( ShieldingSourceDisplayGuiRoundTrip )
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
   
-  MaterialDB matdb;
-  
-  const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
-  BOOST_REQUIRE_NO_THROW( matdb.parseGadrasMaterialFile( materialfile, db, false ) );
-  
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+
   const string base_dir = SpecUtils::append_path(g_test_file_dir, "../analysis_tests");
   BOOST_REQUIRE( SpecUtils::is_directory(base_dir) );
   
@@ -1672,7 +1670,7 @@ BOOST_AUTO_TEST_CASE( ShieldingSourceDisplayGuiRoundTrip )
     
     // Parse original config from XML
     GammaInteractionCalc::ShieldSourceConfig original_config;
-    BOOST_CHECK_NO_THROW( original_config.deSerialize( base_node, &matdb ) );
+    BOOST_CHECK_NO_THROW( original_config.deSerialize( base_node ) );
     
     // Load the file into InterSpec
     m_interspec->userOpenFileFromFilesystem( n42_filename, n42_filename );

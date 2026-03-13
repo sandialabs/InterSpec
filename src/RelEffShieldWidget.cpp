@@ -31,6 +31,7 @@
 #include <Wt/WApplication>
 #include <Wt/WStackedWidget>
 #include <Wt/WRegExpValidator>
+#include <Wt/WAbstractItemModel>
 
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/RapidXmlUtils.hpp"
@@ -179,35 +180,46 @@ void RelEffShieldWidget::setMaterialSelected( bool selected )
 }
 
 
-const Material *RelEffShieldWidget::material( const std::string &text, MaterialDB *matDB )
+std::shared_ptr<const Material> RelEffShieldWidget::material( const std::string &text )
 {
+  const std::shared_ptr<const MaterialDB> matDB = MaterialDB::instance();
   assert( matDB );
   if( !matDB )
     return nullptr;
-  
+
   if( text.empty() )
     return nullptr;
-  
+
   try
   {
-    const Material *answer = matDB->material( text );
-    return answer;
+    std::shared_ptr<const Material> answer = matDB->material( text );
+    if( answer )
+      return answer;
   }catch(...)
   {
     //material wasnt in the database
   }
-  
+
   //See if 'text' is a chemical formula, if so add it to possible suggestions
   try
   {
     const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-    const Material *mat = matDB->parseChemicalFormula( text, db );
-    
+    std::shared_ptr<const Material> mat = MaterialDB::materialFromChemicalFormula( text, db );
+
     // Update the material suggestions widget, if we are in an InterSpec
     InterSpec *interspec = InterSpec::instance();
     Wt::WSuggestionPopup *suggester = interspec ? interspec->shieldingSuggester() : nullptr;
     if( suggester )
-      suggester->addSuggestion( mat->name, mat->name );
+    {
+      // Check if this suggestion already exists before adding
+      Wt::WAbstractItemModel *mdl = suggester->model();
+      const Wt::WString suggName = Wt::WString::fromUTF8( mat->name );
+      bool alreadyHave = false;
+      for( int row = 0; !alreadyHave && (row < mdl->rowCount()); ++row )
+        alreadyHave = (Wt::asString( mdl->data( row, 0 ) ) == suggName);
+      if( !alreadyHave )
+        suggester->addSuggestion( mat->name, mat->name );
+    }
     return mat;
   }catch(...)
   {
@@ -215,20 +227,17 @@ const Material *RelEffShieldWidget::material( const std::string &text, MaterialD
   }
 
   return nullptr;
-}//const Material *material( const std::string &text )
+}//shared_ptr<const Material> material( const std::string &text )
 
 
-const Material *RelEffShieldWidget::material() const
+std::shared_ptr<const Material> RelEffShieldWidget::material() const
 {
   if( !isMaterialSelected() )
     return nullptr;
-  
-  InterSpec * const viewer = InterSpec::instance();
-  MaterialDB * const matDB = viewer ? viewer->materialDataBase() : nullptr;
-  
+
   const string text = m_materialEdit->text().toUTF8();
-  return material( text, matDB );
-}//const Material *material() const
+  return material( text );
+}//shared_ptr<const Material> material() const
 
 
 Wt::WString RelEffShieldWidget::materialNameTxt() const
@@ -345,10 +354,10 @@ bool RelEffShieldWidget::nonEmpty() const
 {
   if( isMaterialSelected() )
   {
-    const Material *mat = material();
+    const std::shared_ptr<const Material> mat = material();
     if( !mat )
       return false;
-    
+
     //if( fitThickness() )
     //  return true;
 
@@ -397,7 +406,7 @@ void RelEffShieldWidget::userUpdated()
 
 void RelEffShieldWidget::materialUpdated()
 { 
-  const Material * const mat = material();
+  const std::shared_ptr<const Material> mat = material();
   std::string name = mat ? mat->name : ""s;
   m_materialEdit->setText( name );
 
@@ -529,24 +538,19 @@ void RelEffShieldState::fromXml(const rapidxml::xml_node<>* node)
 }//void RelEffShieldState::fromXml(const rapidxml::xml_node<>* node)
 
 
-std::shared_ptr<RelActCalc::PhysicalModelShieldInput> RelEffShieldState::fitInput( MaterialDB *materialDB ) const
+std::shared_ptr<RelActCalc::PhysicalModelShieldInput> RelEffShieldState::fitInput() const
 {
   auto self_atten = std::make_shared<RelActCalc::PhysicalModelShieldInput>();
   if( materialSelected )
   {
-    const Material * const mat = RelEffShieldWidget::material( material, materialDB );
+    const std::shared_ptr<const Material> mat = RelEffShieldWidget::material( material );
     assert( mat );
     if( !mat )
       return nullptr;
-    
+
     self_atten->material = make_shared<Material>( *mat );
     const double distance = PhysicalUnits::stringToDistance(thickness);
     self_atten->areal_density = distance * mat->density;
-    
-    cout << "RelEffShieldState::fitInput: dist=" << distance/PhysicalUnits::cm << " cm, AD="
-    << self_atten->areal_density / PhysicalUnits::g_per_cm2 << " g/cm2, for '" << mat->name << "'"
-    << " wit hdensity " << self_atten->material->density * PhysicalUnits::cm3 / PhysicalUnits::g << " g/cm3."
-    << endl;
     
     // The rest of this scope is more to remind me in the future
     self_atten->fit_atomic_number = false;
@@ -616,7 +620,7 @@ std::shared_ptr<RelActCalc::PhysicalModelShieldInput> RelEffShieldWidget::fitInp
   
   if( isMaterialSelected() )
   {
-    const Material * const mat = material();
+    const std::shared_ptr<const Material> mat = material();
     assert( mat );
     if( !mat )
       return nullptr;

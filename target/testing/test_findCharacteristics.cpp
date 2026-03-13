@@ -44,6 +44,7 @@
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/IsotopeId.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
@@ -220,19 +221,19 @@ BOOST_AUTO_TEST_CASE( testFindCandidates )
   };
   
   vector<string> suggestednucs;
-  IsotopeId::findCandidates( suggestednucs, eu152_peak, allpeaks_no_id, detector, foreground );
+  IsotopeId::findCandidates( suggestednucs, eu152_peak, allpeaks_no_id, detector, foreground, PeakFitUtils::CoarseResolutionType::High );
   BOOST_CHECK_MESSAGE( !suggestednucs.empty() && (suggestednucs[0] == "Eu152 344.28 keV"),
                       "The top recommendation for the 344.3 keV should have been 'Eu152 344.28 keV'; suggestions were "
                       << to_csv(suggestednucs) );
-  
+
   suggestednucs.clear();
-  IsotopeId::findCandidates( suggestednucs, cs137_peak, allpeaks_no_id, detector, foreground );
+  IsotopeId::findCandidates( suggestednucs, cs137_peak, allpeaks_no_id, detector, foreground, PeakFitUtils::CoarseResolutionType::High );
   BOOST_CHECK_MESSAGE( std::count( begin(suggestednucs), end(suggestednucs), "Cs137 661.66 keV"),
                       "The 661 keV peak didnt have the expected 'Cs137 661.66 keV'; suggestions were "
                       << to_csv(suggestednucs) );
-  
+
   suggestednucs.clear();
-  IsotopeId::findCandidates( suggestednucs, co60_peak, allpeaks_no_id, detector, foreground );
+  IsotopeId::findCandidates( suggestednucs, co60_peak, allpeaks_no_id, detector, foreground, PeakFitUtils::CoarseResolutionType::High );
   BOOST_CHECK_MESSAGE( !suggestednucs.empty() && (suggestednucs[0] == "Co60 1173.23 keV"),
                       "The top recommendation for the 1173 keV should have been 'Co60 1173.23 keV'; suggestions were "
                       << to_csv(suggestednucs) );

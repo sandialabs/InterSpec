@@ -157,5 +157,5 @@
   <message id="x2g-tt-sources-contributing">Hozzájáruló források:</message>
   <message id="x2g-tt-counts-abbrev">imp</message>
   <message id="x2g-tt-br-abbrev">br</message>
-  <message id="x2g-dev-label">&lt;dev&gt;</message>
+  <message id="x2g-dev-label"><![CDATA[<elt>]]></message>
 </messages>

@@ -1710,7 +1710,12 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
             
             try
             {
-              cont_area[index] = cont->offset_integral( channel_lower, channel_upper, spectrum );
+              {
+                vector<shared_ptr<const PeakDef>> roi_peaks;
+                for( const int pi : peaks_with_cont )
+                  roi_peaks.push_back( peaks[pi] );
+                cont_area[index] = cont->offset_integral( channel_lower, channel_upper, spectrum, roi_peaks );
+              }
             }catch( std::exception & )
             {
               assert( 0 );
@@ -1733,7 +1738,12 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
         
         try
         {
-          cont_json["ContinuumArea"] = cont->offset_integral( cont->lowerEnergy(), cont->upperEnergy(), spectrum );
+          {
+            vector<shared_ptr<const PeakDef>> roi_peaks;
+            for( const int pi : peaks_with_cont )
+              roi_peaks.push_back( peaks[pi] );
+            cont_json["ContinuumArea"] = cont->offset_integral( cont->lowerEnergy(), cont->upperEnergy(), spectrum, roi_peaks );
+          }
         }catch( std::exception &e )
         {
           cont_json["ContinuumArea"] = 0.0;

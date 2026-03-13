@@ -1392,6 +1392,7 @@ void photopeak_function_integral( const T mean,
 }//void photopeak_function_integral(...)
 
 
+
 #if( __cplusplus >= 202002L )
 void offset_integral( const ContType &cont,
                      const float *energies,
@@ -1447,6 +1448,9 @@ offset_integral(const ContType& cont,
           case PeakContinuum::OffsetType::FlatStep:
           case PeakContinuum::OffsetType::LinearStep:
           case PeakContinuum::OffsetType::BiLinearStep:
+          case PeakContinuum::OffsetType::FlatStepCDF:
+          case PeakContinuum::OffsetType::LinearStepCDF:
+          case PeakContinuum::OffsetType::BiLinearStepCDF:
             assert( 0 );
 
           case PeakContinuum::OffsetType::Cubic:
@@ -1482,6 +1486,11 @@ offset_integral(const ContType& cont,
     }//case Constant: case Linear: case Quadratic: case Cubic:
 
 
+    case PeakContinuum::OffsetType::FlatStepCDF:
+    case PeakContinuum::OffsetType::LinearStepCDF:
+    case PeakContinuum::OffsetType::BiLinearStepCDF:
+      throw std::runtime_error( "PeakContinuum::offset_integral: CDF step types require peaks; use the overload that accepts peaks" );
+
     case PeakContinuum::OffsetType::FlatStep:
     case PeakContinuum::OffsetType::LinearStep:
     case PeakContinuum::OffsetType::BiLinearStep:
@@ -1515,10 +1524,20 @@ offset_integral(const ContType& cont,
       assert( roi_upper_channel < counts.size() );
 
 
-      const double roi_data_sum = std::accumulate( begin(counts) + roi_lower_channel, begin(counts) + roi_upper_channel + 1,  0.0 );
-      // Might be able to take advantage of vectorized sum using something like:
-      //const double roi_data_sum = Eigen::VectorXf::Map( &(counts[roi_lower_channel]), (1 + roi_upper_channel - roi_lower_channel) ).sum();
-
+#if( PEAK_CONTINUUM_DATA_STEP_SUBTRACT )
+      float min_count = counts[roi_lower_channel];
+      for( size_t i = roi_lower_channel + 1; i <= roi_upper_channel; ++i )
+        min_count = std::min( min_count, counts[i] );
+      min_count = std::max( min_count, 0.0f );
+#else
+      const float min_count = 0.0f;
+#endif
+      // Compute roi_data_sum by per-element subtraction of min_count to match the
+      //  single-channel offset_integral_non_cdf computation (avoid floating-point
+      //  discrepancy from subtracting min_count*N at the end).
+      double roi_data_sum = 0.0;
+      for( size_t i = roi_lower_channel; i <= roi_upper_channel; ++i )
+        roi_data_sum += (counts[i] - min_count);
 
       const size_t begin_channel = data->find_gamma_channel( energies[0] );
       assert( energies[0] == data->gamma_channel_lower(begin_channel) );
@@ -1535,12 +1554,12 @@ offset_integral(const ContType& cont,
 
       double cumulative_data = 0.0;
 
-      // Incase we are starting
+      // In case we are starting part-way into the ROI
       if( begin_channel > roi_lower_channel )
       {
-        for( size_t i = begin_channel; i < begin_channel; ++i )
-          cumulative_data += counts[i];
-      }//if( begin_channel > lower_channel )
+        for( size_t i = roi_lower_channel; i < begin_channel; ++i )
+          cumulative_data += (counts[i] - min_count);
+      }//if( begin_channel > roi_lower_channel )
 
 
       for( size_t i = begin_channel; i < end_channel; ++i )
@@ -1552,9 +1571,9 @@ offset_integral(const ContType& cont,
         const T x1_rel = static_cast<double>(data_energies[i+1]) - reference_energy;
 
         if( i >= roi_lower_channel && i <= roi_upper_channel )
-          cumulative_data += 0.5*counts[i];
+          cumulative_data += 0.5 * (counts[i] - min_count);
 
-        const double frac_data = cumulative_data / roi_data_sum;
+        const double frac_data = (roi_data_sum > 0.0) ? (cumulative_data / roi_data_sum) : 0.5;
 
         switch( cont_type )
         {
@@ -1570,7 +1589,7 @@ offset_integral(const ContType& cont,
 
             if constexpr ( std::is_same_v<T, double> )
             {
-              assert( answer == cont.offset_integral( data_energies[i], data_energies[i+1], data ) );
+              assert( answer == cont.offset_integral( data_energies[i], data_energies[i+1], data, nullptr, 0 ) );
             }
 
             channels[input_index] += answer;
@@ -1586,7 +1605,7 @@ offset_integral(const ContType& cont,
 
             if constexpr ( std::is_same_v<T, double> )
             {
-              assert( contrib == cont.offset_integral( data_energies[i], data_energies[i+1], data ) );
+              assert( contrib == cont.offset_integral( data_energies[i], data_energies[i+1], data, nullptr, 0 ) );
             }
 
             channels[input_index] += contrib;
@@ -1598,13 +1617,16 @@ offset_integral(const ContType& cont,
           case PeakContinuum::OffsetType::Linear:
           case PeakContinuum::OffsetType::Quadratic:
           case PeakContinuum::OffsetType::Cubic:
+          case PeakContinuum::OffsetType::FlatStepCDF:
+          case PeakContinuum::OffsetType::LinearStepCDF:
+          case PeakContinuum::OffsetType::BiLinearStepCDF:
           case PeakContinuum::OffsetType::External:
             assert( 0 );
             break;
         }//switch( cont_type )
 
         if( i >= roi_lower_channel && i <= roi_upper_channel )
-          cumulative_data += 0.5*counts[i];
+          cumulative_data += 0.5 * (counts[i] - min_count);
       }//for( size_t i = 0; i < channels; ++i )
 
       break;

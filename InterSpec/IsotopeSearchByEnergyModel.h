@@ -39,6 +39,7 @@
 #include "InterSpec/ReactionGamma.h"
 
 class SpecMeas;
+struct PeakFitDetPrefs;
 class DetectorPeakResponse;
 namespace SpecUtils{ class Measurement; }
 
@@ -123,7 +124,7 @@ public:
     std::shared_ptr<const SpecUtils::Measurement> displayed_measurement;
     std::shared_ptr<SpecMeas> foreground;
     std::set<int> foreground_samplenums;
-    bool isHPGe;
+    std::shared_ptr<const PeakFitDetPrefs> fitPrefs;
     std::vector< std::vector<IsotopeMatch> > matches;
     std::string error_msg;
     Column sortColumn;

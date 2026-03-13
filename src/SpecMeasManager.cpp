@@ -126,6 +126,7 @@
 #include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/MakeDrfSrcDef.h"
 #include "InterSpec/WarningWidget.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/ExportSpecFile.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
@@ -2340,9 +2341,13 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
         
         // For peaks from a InterSpec/PeakEasy CSV file, we will re-fit the peaks, as in practice
         //  they might not be from this exact spectrum file.
-        Wt::WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [this, currdata, candidate_peaks, orig_peaks, seessionid](){
+        shared_ptr<SpecMeas> fgMeas = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
+        shared_ptr<const PeakFitDetPrefs> csvFitPrefs = fgMeas ? fgMeas->peakFitDetPrefs() : nullptr;
+        if( !csvFitPrefs && fgMeas && fgMeas->detector() )
+          csvFitPrefs = fgMeas->detector()->peakFitDetPrefs();
+        Wt::WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [this, currdata, candidate_peaks, orig_peaks, csvFitPrefs, seessionid](){
           PeakSearchGuiUtils::fit_template_peaks( m_viewer, currdata, candidate_peaks,
-                                                 orig_peaks, PeakSearchGuiUtils::PeakTemplateFitSrc::CsvFile, seessionid );
+                                                 orig_peaks, PeakSearchGuiUtils::PeakTemplateFitSrc::CsvFile, csvFitPrefs, seessionid );
         } ) );
       }else
       {
@@ -2350,9 +2355,14 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
         
         const vector<PeakDef> candidate_peaks = PeakModel::gadras_peak_csv_to_peaks(currdata, infile);
         
-        Wt::WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
+        shared_ptr<SpecMeas> gadrasFgMeas = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
+        shared_ptr<const PeakFitDetPrefs> gadrasFitPrefs = gadrasFgMeas ? gadrasFgMeas->peakFitDetPrefs() : nullptr;
+        shared_ptr<const DetectorPeakResponse> gadrasDrf = gadrasFgMeas ? gadrasFgMeas->detector() : nullptr;
+        if( !gadrasFitPrefs && gadrasDrf )
+          gadrasFitPrefs = gadrasDrf->peakFitDetPrefs();
+        Wt::WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=, gadrasFitPrefs=gadrasFitPrefs](){
           PeakSearchGuiUtils::prepare_and_add_gadras_peaks( currdata, candidate_peaks,
-                                                 orig_peaks, seessionid );
+                                                 orig_peaks, gadrasFitPrefs, gadrasDrf, seessionid );
         } ) );
       }//if( possible_peak_csv )
       
@@ -2375,6 +2385,51 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   }//if( we could possible care about propagating peaks from a CSV file )
   
   
+  // Check if this is a standalone PeakFitDetPrefs XML file.
+  {
+    const int pfp_pos = position_in_header( "<PeakFitDetPrefs" );
+    if( (pfp_pos >= 0) && (pfp_pos <= 20) && (filesize < 10*1024) )
+    {
+      try
+      {
+        rapidxml::file<char> input_file( infile );
+        rapidxml::xml_document<char> doc;
+        doc.parse<rapidxml::parse_default>( input_file.data() );
+
+        const rapidxml::xml_node<char> *node = doc.first_node( "PeakFitDetPrefs" );
+        if( !node )
+          throw runtime_error( "No PeakFitDetPrefs node" );
+
+        shared_ptr<PeakFitDetPrefs> prefs = make_shared<PeakFitDetPrefs>();
+        prefs->fromXml( node );
+        prefs->m_source = PeakFitDetPrefs::LoadingSource::UserInputInGui;
+
+        shared_ptr<SpecMeas> foreground = m_viewer
+          ? m_viewer->measurment( SpecUtils::SpectrumType::Foreground )
+          : nullptr;
+
+        if( !foreground )
+        {
+          passMessage( WString::tr( "smm-no-foreground-for-prefs" ), 2 );
+        }
+        else
+        {
+          foreground->setPeakFitDetPrefs( prefs );
+          m_viewer->peakFitDetPrefsChanged().emit();
+          passMessage( WString::tr( "smm-loaded-peak-fit-prefs" ), 0 );
+        }
+
+        delete dialog;
+        return true;
+      }catch( std::exception & )
+      {
+        // Not a valid PeakFitDetPrefs XML - fall through to other checks
+        infile.clear();
+        infile.seekg( 0 );
+      }
+    }//if( candidate PeakFitDetPrefs XML )
+  }
+
   // Check if this is an InterSpec exported DRF CSV, or XML file.
   const bool rel_eff_csv_drf = header_contains( "# Detector Response Function" );
   const int xml_drf_pos = position_in_header( "<DetectorPeakResponse" );
@@ -3419,12 +3474,11 @@ bool SpecMeasManager::handleShieldingSourceFile( std::istream &input, SimpleDial
     xml_doc->parse<flags>( &((*data)[0]) );
     
   
-    MaterialDB *material_db = m_viewer->materialDataBase();
     PeakModel *peak_model = m_viewer->peakModel();
     WSuggestionPopup *shield_suggest = m_viewer->shieldingSuggester();
-      
+
     ShieldingSourceDisplay::ShieldingSourceDisplayState test_state;
-    test_state.deSerialize( xml_doc->first_node(), material_db );
+    test_state.deSerialize( xml_doc->first_node() );
     
     assert( dialog );
     dialog->contents()->clear();

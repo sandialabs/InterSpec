@@ -218,7 +218,8 @@ LeafletRadMap::LeafletRadMap( Wt::WContainerWidget *parent )
   m_filter_lower_energy( nullptr ),
   m_filter_upper_energy_grp( nullptr ),
   m_filter_upper_energy( nullptr ),
-  m_displaySamples( this, "loadSamples", false),
+  // Attach signal to InterSpec instance, to avoid signal not being exposed when we should this in a AuxWindow
+  m_displaySamples( /* this */ InterSpec::instance(), "loadSamples", false ),
   m_loadSelected( this )
 {
   //addStyleClass( "LeafletRadMap" );
@@ -330,8 +331,8 @@ LeafletRadMap::LeafletRadMap( Wt::WContainerWidget *parent )
   grid->setVerticalSpacing( 0 );
   grid->setHorizontalSpacing( 0 );
 
-  grid->addWidget( m_map_holder, 0, 0  );
-  grid->addWidget( m_energy_range_row, 1, 0  );
+  grid->addWidget( m_map_holder, 0, 0 );
+  grid->addWidget( m_energy_range_row, 1, 0 );
 
   grid->setRowStretch( 0, 1 );
   grid->setColumnStretch( 0, 1 );
@@ -450,6 +451,11 @@ void LeafletRadMap::defineJavaScript()
     ", loadTxtShort: '" + WString::tr("lrm-load-meas-as-short").toUTF8() + "'"
     ", realTimeTxt: '" + WString::tr("Real Time").toUTF8() + "'"
     ", liveTimeTxt: '" + WString::tr("Live Time").toUTF8() + "'"
+    ", copyGoogleMapsTxt: '" + WString::tr("lrm-copy-google-maps").toUTF8() + "'"
+    ", copyBingMapsTxt: '" + WString::tr("lrm-copy-bing-maps").toUTF8() + "'"
+    ", copyUrlSuccessTxt: '" + WString::tr("lrm-copy-url-success").toUTF8() + "'"
+    ", copyUrlFailTxt: '" + WString::tr("lrm-copy-url-fail").toUTF8() + "'"
+    ", copyUrlNoGpsTxt: '" + WString::tr("lrm-copy-url-no-gps").toUTF8() + "'"
   "}";
   
   setJavaScriptMember( "map", "new LeafletRadMap(" + m_map_holder->jsRef() + "," + options + ");");
@@ -681,24 +687,31 @@ std::string LeafletRadMap::createGeoLocationJson( const std::shared_ptr<const Sp
               for( const auto &m : meass )
                 gammaCounts += m->gamma_integral( lower_x, upper_x );
 
-              switch( peak->continuum()->type() )
+              // Group this peak's ROI peers for offset_integral
+              vector<const PeakDef *> roi_peer_ptrs;
+              for( const shared_ptr<const PeakDef> &p : *peaks )
               {
-                case PeakContinuum::NoOffset:
-                case PeakContinuum::Constant:
-                case PeakContinuum::Linear:
-                case PeakContinuum::Quadratic:
-                case PeakContinuum::Cubic:
-                case PeakContinuum::External:
-                  gammaCounts -= peak->continuum()->offset_integral(lower_x, upper_x, nullptr);
-                  break;
+                if( p->continuum() == peak->continuum() )
+                  roi_peer_ptrs.push_back( p.get() );
+              }
 
-                case PeakContinuum::FlatStep:
-                case PeakContinuum::LinearStep:
-                case PeakContinuum::BiLinearStep:
-                  // TODO: we need to sum all `meass` and then pass that into offset_integral(...). For now we'll just ignore the continuum, since I cant imagine anyone using data-defined peaks with step continua (I think you could... but its not really a reasonable thing to do)
-                  cerr << "Not accounting for stepped continua on data-defined peaks" << endl;
-                  break;
-              }//switch( peak->continuum()->type() )
+              // For step types that need data, sum the measurement spectra
+              std::shared_ptr<const SpecUtils::Measurement> step_data;
+              if( PeakContinuum::is_step_continuum( peak->continuum()->type() ) )
+              {
+                if( meass.size() == 1 )
+                {
+                  step_data = meass[0];
+                }else
+                {
+                  // TODO: sum all `meass` for step continua; for now use nullptr and
+                  //  accept that step continuum subtraction wont be correct for multi-meas
+                  cerr << "Not accounting for stepped continua on data-defined peaks with multiple meass" << endl;
+                }
+              }//if( step type )
+
+              gammaCounts -= peak->continuum()->offset_integral( lower_x, upper_x, step_data,
+                                                                 roi_peer_ptrs.data(), roi_peer_ptrs.size() );
             }//if( meass.size() == 1 ) / else
           }//if( peak->gausPeak() ) / else
         }//for( const auto &peak : *peaks )
@@ -1096,6 +1109,7 @@ void LeafletRadMap::showOrHideEnergyRangeFilter()
   }//for( const auto &m : meass )
 
   const bool show_energy_countrate = ((unique_lats.size() > 1) || (unique_longs.size() > 1));
+
   if( show_energy_countrate == m_energy_range_row->isHidden() )
     m_energy_range_row->setHidden( !show_energy_countrate );
 

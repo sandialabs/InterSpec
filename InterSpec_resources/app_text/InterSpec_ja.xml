@@ -470,6 +470,8 @@
   <message id="pct-flat-step">平坦ステップ</message>
   <message id="pct-linear-step">線形ステップ</message>
   <message id="pct-bilinear-step">双線形ステップ</message>
+  <message id="pct-flat-step-cdf">Flat Step (CDF)</message>
+  <message id="pct-linear-step-cdf">Linear Step (CDF)</message>
   <message id="pct-global">グローバル連続成分</message>
 
   <!-- populateNuclideSelects() in PeakSearchGuiUtils.cpp -->

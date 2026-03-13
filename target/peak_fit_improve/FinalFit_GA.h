@@ -32,6 +32,7 @@
 #include "openGA.hpp"
 
 #include "InterSpec/PeakDef.h"
+#include "InterSpec/PeakFitUtils.h"
 
 #include "PeakFitImprove.h"
 
@@ -45,12 +46,12 @@ Note: this function assumes you have already delt with `FinalPeakFitSettings::re
  */
 std::vector<PeakDef> final_peak_fit_for_roi( const std::vector<PeakDef> &pre_fit_peaks,
                                             const FinalPeakFitSettings &final_fit_settings,
-                                            const bool isHPGe,
+                                            const PeakFitUtils::CoarseResolutionType det_type,
                                             const std::shared_ptr<const SpecUtils::Measurement> &data );
 
 std::vector<PeakDef> final_peak_fit( const std::vector<PeakDef> &pre_fit_peaks,
                                     const FinalPeakFitSettings &final_fit_settings,
-                                    const bool isHPGe,
+                                    const PeakFitUtils::CoarseResolutionType det_type,
                                     const std::shared_ptr<const SpecUtils::Measurement> &data,
                                     const bool multithread );
 

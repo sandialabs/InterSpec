@@ -103,10 +103,10 @@ namespace AnalystChecks
     if (!auto_peaks) {
       // Search for peaks
       const bool singleThreaded = false;
-      const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
+      shared_ptr<const PeakFitDetPrefs> fitPrefsAuto = meas->peakFitDetPrefs();
       const auto det = meas->detector();
       const vector<shared_ptr<const PeakDef>> found_auto_peaks
-                = ExperimentalAutomatedPeakSearch::search_for_peaks(spectrum, det, user_peaks, singleThreaded, isHPGe);
+                = ExperimentalAutomatedPeakSearch::search_for_peaks(spectrum, det, user_peaks, singleThreaded, fitPrefsAuto);
         
       auto autopeaksdeque = make_shared<std::deque<std::shared_ptr<const PeakDef>>>(begin(found_auto_peaks), end(found_auto_peaks));
       auto_peaks = autopeaksdeque;
@@ -169,15 +169,15 @@ namespace AnalystChecks
       if( !background_auto_peaks && background_spectrum )
       {
         const bool singleThreaded = false;
-        const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
+        shared_ptr<const PeakFitDetPrefs> bgFitPrefs = background_meas->peakFitDetPrefs();
         const auto det = background_meas->detector();
-        
+
         shared_ptr<const deque<shared_ptr<const PeakDef>>> background_user_peaks;
         if( background_meas->sampleNumsWithPeaks().count(background_sample_nums) )
           background_user_peaks = background_meas->peaks(background_sample_nums);
-        
+
         const vector<shared_ptr<const PeakDef>> found_background_auto_peaks
-                    = ExperimentalAutomatedPeakSearch::search_for_peaks(background_spectrum, det, background_user_peaks, singleThreaded, isHPGe);
+                    = ExperimentalAutomatedPeakSearch::search_for_peaks(background_spectrum, det, background_user_peaks, singleThreaded, bgFitPrefs);
 
         auto background_autopeaksdeque = make_shared<deque<shared_ptr<const PeakDef>>>(begin(found_background_auto_peaks), end(found_background_auto_peaks));
         background_auto_peaks = background_autopeaksdeque;
@@ -354,10 +354,10 @@ namespace AnalystChecks
 
     shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_search_peaks = meas->automatedSearchPeaks(sample_nums);
 
-    const bool isHPGe = PeakFitUtils::is_likely_high_res( interspec );
-    
+    shared_ptr<const PeakFitDetPrefs> fitPrefs = meas->peakFitDetPrefs();
+
     vector<shared_ptr<const PeakDef>> origPeaks;
-    
+
     for( const shared_ptr<const PeakDef> &p : *meas_peaks )
     {
       //Avoid fitting a peak in the same area a data defined peak is.
@@ -366,10 +366,10 @@ namespace AnalystChecks
       else if( (options.energy >= p->lowerX()) && (options.energy <= p->upperX()) )
         throw runtime_error( "Can not fit a peak within the ROI of a data-defined peak." );
     }//if( pmodel->peaks() )
-    
+
     double pixelPerKev = -1.0; //This triggers an "automed" peak fit, which has higher thresholds for keeping peak.
     pair<vector<shared_ptr<const PeakDef>>, vector<shared_ptr<const PeakDef>>> foundPeaks;
-    foundPeaks = searchForPeakFromUser( options.energy, pixelPerKev, data, origPeaks, det, auto_search_peaks, isHPGe );
+    foundPeaks = searchForPeakFromUser( options.energy, pixelPerKev, data, origPeaks, det, auto_search_peaks, fitPrefs );
 
     vector<shared_ptr<const PeakDef>> &peaks_to_add_in = foundPeaks.first;
     const vector<shared_ptr<const PeakDef>> &peaks_to_remove = foundPeaks.second;
@@ -907,26 +907,38 @@ namespace AnalystChecks
     
     try
     {
-      // Get the foreground spectrum
-      std::shared_ptr<SpecMeas> meas = interspec->measurment(SpecUtils::SpectrumType::Foreground);
-      if (!meas) {
-        throw std::runtime_error("No foreground measurement available");
-      }
+      const SpecUtils::SpectrumType specType = options.specType;
+
+      // Get the target spectrum (the one we are fitting peaks to)
+      std::shared_ptr<SpecMeas> meas = interspec->measurment( specType );
+      if( !meas )
+        throw std::runtime_error( std::string("No ") + SpecUtils::descriptionText(specType) + " measurement available" );
+
+      std::shared_ptr<const SpecUtils::Measurement> target_spectrum = interspec->displayedHistogram( specType );
+      if( !target_spectrum )
+        throw std::runtime_error( std::string("No ") + SpecUtils::descriptionText(specType) + " spectrum available" );
+
+      // Background subtraction only makes sense when fitting to the foreground
+      std::shared_ptr<const SpecUtils::Measurement> background;
+      if( specType == SpecUtils::SpectrumType::Foreground )
+        background = interspec->displayedHistogram( SpecUtils::SpectrumType::Background );
       
-      std::shared_ptr<const SpecUtils::Measurement> foreground = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
-      if (!foreground) {
-        throw std::runtime_error("No foreground spectrum available");
-      }
-      
-      // Get background (optional)
-      std::shared_ptr<const SpecUtils::Measurement> background = interspec->displayedHistogram(SpecUtils::SpectrumType::Background);
-      
-      // Get detector response function
+      // Get detector response function; fall back to foreground SpecMeas's DRF if needed
       std::shared_ptr<const DetectorPeakResponse> drf = meas->detector();
-      const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
+      std::shared_ptr<const PeakFitDetPrefs> peak_fit_prefs = meas ? meas->peakFitDetPrefs() : nullptr;
+      if( !drf && (specType != SpecUtils::SpectrumType::Foreground) )
+      {
+        std::shared_ptr<SpecMeas> fg_meas = interspec->measurment( SpecUtils::SpectrumType::Foreground );
+        if( fg_meas )
+        {
+          drf = fg_meas->detector();
+          if( !peak_fit_prefs )
+            peak_fit_prefs = fg_meas->peakFitDetPrefs();
+        }
+      }
 
       DetectedPeaksOptions det_peaks_options;
-      det_peaks_options.specType = SpecUtils::SpectrumType::Foreground;
+      det_peaks_options.specType = specType;
       det_peaks_options.nonBackgroundPeaksOnly = false; // TODO: as we improve `FitPeaksForNuclides::fit_peaks_for_nuclides(...)` this will need to be change
       const DetectedPeakStatus detected_peaks = AnalystChecks::detected_peaks( det_peaks_options, interspec );
       const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks = detected_peaks.peaks;
@@ -939,10 +951,16 @@ namespace AnalystChecks
       for( const string &src : options.sources )
       {
         RelActCalcAuto::SrcVariant source = RelActCalcAuto::source_from_string(src);
-        
+
         if( RelActCalcAuto::is_null(source) )
           throw runtime_error( "Unrecognized source '" + src + "'" );
-        
+
+        // Skip duplicate sources (e.g., LLM may pass the same nuclide twice)
+        const bool is_duplicate = std::any_of( sources.begin(), sources.end(),
+          [&source]( const RelActCalcAuto::SrcVariant &s ){ return s == source; } );
+        if( is_duplicate )
+          continue;
+
         sources.push_back( source );
       }//for( const string &src : options.sources )
 
@@ -950,7 +968,7 @@ namespace AnalystChecks
         throw runtime_error( "No sources specified" );
 
       GetUserPeakOptions user_peak_options;
-      user_peak_options.specType = SpecUtils::SpectrumType::Foreground;
+      user_peak_options.specType = specType;
       //user_peak_options.lowerEnergy = ...;
       //user_peak_options.upperEnergy = ...;
       
@@ -964,7 +982,7 @@ namespace AnalystChecks
       // TODO: we will need to update `config` from default in the future
 
       const FitPeaksForNuclides::PeakFitResult fit_results = FitPeaksForNuclides::fit_peaks_for_nuclides(
-        auto_search_peaks, foreground, sources, user_peaks, background, drf, fit_options, fit_config, isHPGe
+        auto_search_peaks, target_spectrum, sources, user_peaks, background, drf, fit_options, fit_config, peak_fit_prefs
       );
 
       switch( fit_results.status )
@@ -1018,13 +1036,41 @@ namespace AnalystChecks
         result.fitPeaks.push_back( sp );
       }//for( const PeakDef &p : fit_results.observable_peaks )
 
-      // If doNotAddPeaksToUserSession is false, add the peaks to the user's session
+      result.peaksToRemove = fit_results.original_peaks_to_remove;
+
+      // If doNotAddPeaksToUserSession is false, update the peak model using setPeaks
+      //  to atomically replace the affected peaks while preserving unrelated ones.
       if( !options.doNotAddPeaksToUserSession && !result.fitPeaks.empty() )
       {
-
         PeakModel * const pmodel = interspec->peakModel();
         if( pmodel )
-          pmodel->addPeaks( result.fitPeaks );
+        {
+          std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> existing_peaks
+            = pmodel->peaks( specType );
+
+          std::deque<std::shared_ptr<const PeakDef>> combined_peaks;
+
+          if( existing_peaks )
+          {
+            // Keep existing peaks that are NOT in peaksToRemove
+            for( const std::shared_ptr<const PeakDef> &p : *existing_peaks )
+            {
+              const bool should_remove = std::any_of( result.peaksToRemove.begin(),
+                result.peaksToRemove.end(),
+                [&p]( const std::shared_ptr<const PeakDef> &rm ) -> bool { return rm == p; } );
+
+              if( !should_remove )
+                combined_peaks.push_back( p );
+            }
+          }//if( existing_peaks )
+
+          // Add the newly fit peaks
+          for( const std::shared_ptr<const PeakDef> &p : result.fitPeaks )
+            combined_peaks.push_back( p );
+
+          pmodel->setPeaks( combined_peaks, specType );
+          result.peaksWereRemovedFromSession = true;
+        }
       }//if( !options.doNotAddPeaksToUserSession )
     }catch( const std::exception &e )
     {
@@ -1504,6 +1550,9 @@ namespace AnalystChecks
           else if( cont_str == "FlatStep" )  continuum_type = PeakContinuum::OffsetType::FlatStep;
           else if( cont_str == "LinearStep" )continuum_type = PeakContinuum::OffsetType::LinearStep;
           else if( cont_str == "BiLinearStep" )continuum_type = PeakContinuum::OffsetType::BiLinearStep;
+          else if( cont_str == "FlatStepCDF" )continuum_type = PeakContinuum::OffsetType::FlatStepCDF;
+          else if( cont_str == "LinearStepCDF" )continuum_type = PeakContinuum::OffsetType::LinearStepCDF;
+          else if( cont_str == "BiLinearStepCDF" )continuum_type = PeakContinuum::OffsetType::BiLinearStepCDF;
           else if( cont_str == "External" )  continuum_type = PeakContinuum::OffsetType::External;
           else throw runtime_error( "Invalid continuum type: " + cont_str );
 

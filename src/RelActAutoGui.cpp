@@ -78,6 +78,7 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/SimpleDialog.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/RelActAutoGui.h"
@@ -459,6 +460,8 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_add_uncert( nullptr ),
   m_lorentzian_xrays_enabled( false ),
   m_lorentzian_xrays( nullptr ),
+  m_use_fixed_skew_enabled( false ),
+  m_use_fixed_skew( nullptr ),
   m_more_options_menu( nullptr ),
   m_apply_energy_cal_item( nullptr ),
   m_show_ref_lines_item( nullptr ),
@@ -606,6 +609,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   
   m_interspec->detectorChanged().connect( this, &RelActAutoGui::handleDetectorChange );
   m_interspec->detectorModified().connect( this, &RelActAutoGui::handleDetectorChange );
+  m_interspec->peakFitDetPrefsChanged().connect( this, &RelActAutoGui::handlePeakFitDetPrefsChanged );
 
   m_default_par_sets_dir = SpecUtils::append_path( InterSpec::staticDataDirectory(), "rel_act" );
   const vector<string> default_par_sets = SpecUtils::recursive_ls( m_default_par_sets_dir, ".xml" );
@@ -824,6 +828,18 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_lorentzian_xrays->unChecked().connect( this, &RelActAutoGui::handleLorentzianXraysChanged );
   tooltip = WString::tr("raag-tt-lorentzian-xrays");
   HelpSystem::attachToolTipOn( m_lorentzian_xrays, tooltip, showToolTips );
+
+  // "Peak fit opt. skew" checkbox - when checked, skew type and fixed params come from PeakFitDetPrefs
+  m_use_fixed_skew = new WCheckBox( WString::tr("raag-use-fixed-skew"), generalOptionsDiv );
+  m_use_fixed_skew->addStyleClass( "UseFixedSkewCb CbNoLineBreak" );
+  m_use_fixed_skew->setChecked( true );
+  m_use_fixed_skew->setHidden( true );
+  m_use_fixed_skew_enabled = false;
+  m_use_fixed_skew->checked().connect( this, &RelActAutoGui::handleUseFixedSkewChanged );
+  m_use_fixed_skew->unChecked().connect( this, &RelActAutoGui::handleUseFixedSkewChanged );
+  tooltip = WString::tr("raag-tt-use-fixed-skew");
+  HelpSystem::attachToolTipOn( m_use_fixed_skew, tooltip, showToolTips );
+  handlePeakFitDetPrefsChanged();  // Set initial visibility based on current prefs
 
   WContainerWidget *addUncertDiv = new WContainerWidget( generalOptionsDiv );
   addUncertDiv->addStyleClass( "RelActAutoAddUncertDiv" );
@@ -1225,6 +1241,20 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
   assert( !options.lorentzian_xrays
          || (options.skew_type == PeakDef::SkewType::NoSkew)
          || (options.skew_type == PeakDef::SkewType::GaussPlusBortel) );
+
+  // Copy fixed skew parameter values from PeakFitDetPrefs if checkbox is checked
+  if( m_use_fixed_skew_enabled && m_use_fixed_skew->isChecked() )
+  {
+    shared_ptr<const PeakFitDetPrefs> prefs = meas ? meas->peakFitDetPrefs() : nullptr;
+    if( prefs )
+    {
+      for( size_t i = 0; i < 4; ++i )
+      {
+        options.fixed_lower_skew[i] = prefs->m_lower_energy_skew[i];
+        options.fixed_upper_skew[i] = prefs->m_upper_energy_skew[i];
+      }
+    }
+  }//if( use fixed skew from prefs )
 
   options.additional_br_uncert = -1.0;
   const auto add_uncert = RelActAutoGui::AddUncert(m_add_uncert->currentIndex());
@@ -1728,9 +1758,9 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
 
     const shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_peaks = meas ? meas->automatedSearchPeaks(sample_nums) : nullptr;
 
-    const bool isHPGe = PeakFitUtils::is_likely_high_res( m_interspec );
-    
-    const auto found_peaks = searchForPeakFromUser( energy, pixPerKeV, m_foreground, {}, det, auto_peaks, isHPGe );
+    shared_ptr<const PeakFitDetPrefs> fitPrefs = meas ? meas->peakFitDetPrefs() : nullptr;
+
+    const auto found_peaks = searchForPeakFromUser( energy, pixPerKeV, m_foreground, {}, det, auto_peaks, fitPrefs );
 
     // If we didnt fit a peak, and we dont
     double lower_energy = energy - 10;
@@ -1755,7 +1785,7 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
       //  (We could check on auto-searched peaks and estimate from those, but
       //   really, at this point, its not worth the effort as things are probably
       //   low quality)
-      const bool isHPGe = PeakFitUtils::is_high_res(m_foreground);
+      const bool isHPGe = (PeakFitUtils::coarse_det_type( m_foreground, nullptr ) == PeakFitUtils::CoarseResolutionType::High);
       if( isHPGe )
       {
         lower_energy = energy - 5;
@@ -1980,6 +2010,16 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   m_lorentzian_xrays->setChecked( options.lorentzian_xrays );
   populateSkewTypeComboBox( options.lorentzian_xrays );
   setCurrentSkewType( options.skew_type );
+
+  // Update fixed skew checkbox state: checked if options have any fixed skew values
+  {
+    bool has_fixed = false;
+    for( size_t i = 0; i < 4; ++i )
+      has_fixed |= options.fixed_lower_skew[i].has_value();
+    m_use_fixed_skew->setChecked( has_fixed );
+    // Re-check prefs to see if checkbox should be visible, and disable/enable combo
+    handlePeakFitDetPrefsChanged();
+  }
 
   // We'll just round add-uncert to the nearest-ish value we allow in the GUI
   RelActAutoGui::AddUncert add_uncert = AddUncert::NumAddUncert;
@@ -2329,10 +2369,8 @@ rapidxml::xml_node<char> *RelActAutoGui::serialize( rapidxml::xml_node<char> *pa
 
 void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
 {
-  MaterialDB *materialDb = m_interspec->materialDataBase();
-
   RelActCalcAuto::RelActAutoGuiState state;
-  state.deSerialize( base_node, materialDb );
+  state.deSerialize( base_node );
 
   deSerialize( state );  // Use new struct-based method
 }//void deSerialize( const rapidxml::xml_node<char> *base_node )
@@ -2359,9 +2397,8 @@ void RelActAutoGui::setGuiStateFromXml( const rapidxml::xml_document<char> *doc 
   if( !base_node )
     throw runtime_error( "RelActAutoGui::setGuiStateFromXml: couldnt find <RelActCalcAuto> node." );
 
-  MaterialDB *materialDb = m_interspec->materialDataBase();
   RelActCalcAuto::RelActAutoGuiState state;
-  state.deSerialize( base_node, materialDb );
+  state.deSerialize( base_node );
 
   deSerialize( state );  // Use new struct-based method
 }//void setGuiStateFromXml( const rapidxml::xml_node<char> *node );
@@ -2924,6 +2961,74 @@ void RelActAutoGui::handleLorentzianXraysChanged()
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
 }//void RelActAutoGui::handleLorentzianXraysChanged()
+
+
+void RelActAutoGui::handleUseFixedSkewChanged()
+{
+  checkIfInUserConfigOrCreateOne( false );
+
+  if( m_use_fixed_skew->isChecked() )
+  {
+    // Sync skew type combo to prefs and disable it
+    shared_ptr<SpecMeas> meas = m_interspec
+      ? m_interspec->measurment( SpecUtils::SpectrumType::Foreground ) : nullptr;
+    shared_ptr<const PeakFitDetPrefs> prefs = meas ? meas->peakFitDetPrefs() : nullptr;
+    if( prefs && (prefs->m_peak_skew_type != PeakDef::SkewType::NoSkew) )
+      setCurrentSkewType( prefs->m_peak_skew_type );
+    m_skew_type->setDisabled( true );
+  }else
+  {
+    m_skew_type->setDisabled( false );
+  }
+
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}//void RelActAutoGui::handleUseFixedSkewChanged()
+
+
+void RelActAutoGui::handlePeakFitDetPrefsChanged()
+{
+  // Check if current prefs specify a non-NoSkew skew type
+  shared_ptr<SpecMeas> meas = m_interspec
+    ? m_interspec->measurment( SpecUtils::SpectrumType::Foreground ) : nullptr;
+  shared_ptr<const PeakFitDetPrefs> prefs = meas ? meas->peakFitDetPrefs() : nullptr;
+
+  const bool prefs_have_skew = prefs
+    && (prefs->m_peak_skew_type != PeakDef::SkewType::NoSkew);
+
+  // Fixed skew values only apply when ROI-independent skew is off
+  bool has_fixed = false;
+  if( prefs_have_skew && !prefs->m_roi_independent_skew )
+  {
+    const size_t n = PeakDef::num_skew_parameters( prefs->m_peak_skew_type );
+    for( size_t i = 0; i < n; ++i )
+    {
+      if( prefs->m_lower_energy_skew[i].has_value() )
+      {
+        has_fixed = true;
+        break;
+      }
+    }
+  }//if( prefs_have_skew && !roi_independent )
+
+  m_use_fixed_skew_enabled = has_fixed;
+  m_use_fixed_skew->setHidden( !has_fixed );
+
+  // Always sync the skew type combo to prefs when prefs specify a skew type
+  if( prefs_have_skew )
+    setCurrentSkewType( prefs->m_peak_skew_type );
+
+  if( has_fixed && m_use_fixed_skew->isChecked() )
+  {
+    m_skew_type->setDisabled( true );
+
+    m_render_flags |= RenderActions::UpdateCalculations;
+    scheduleRender();
+  }else
+  {
+    m_skew_type->setDisabled( false );
+  }
+}//void RelActAutoGui::handlePeakFitDetPrefsChanged()
 
 
 PeakDef::SkewType RelActAutoGui::currentSkewType() const
@@ -4157,19 +4262,30 @@ void RelActAutoGui::setPeaksToForeground()
       vector<shared_ptr<const PeakDef>> solution_peaks_ptrs;
       for( const PeakDef &p : solution_peaks )
         solution_peaks_ptrs.push_back( make_shared<const PeakDef>(p) );
-      const auto resType = PeakFitUtils::coarse_resolution_from_peaks(solution_peaks_ptrs);
-      
-      const bool isHPGe = (resType == PeakFitUtils::CoarseResolutionType::High); //Shouldnt matter since peaks all have defined ROIs, but JIC
-      
+      shared_ptr<const PeakFitDetPrefs> fitPrefs;
+      shared_ptr<const SpecMeas> specmeas = interpsec->measurment( SpecUtils::SpectrumType::Foreground );
+      if( specmeas )
+        fitPrefs = specmeas->peakFitDetPrefs();
+      if( !fitPrefs && ana_drf )
+        fitPrefs = ana_drf->peakFitDetPrefs();
+      if( !fitPrefs )
+      {
+        auto prefs = make_shared<PeakFitDetPrefs>();
+        prefs->m_det_type = PeakFitUtils::coarse_resolution_from_peaks( solution_peaks_ptrs );
+        fitPrefs = prefs;
+      }
+
+      const PeakFitUtils::CoarseResolutionType resType = fitPrefs->m_det_type;
+
       vector< vector<shared_ptr<const PeakDef>> > fit_peaks( rois.size() );
-      
+
       SpecUtilsAsync::ThreadPool pool;
       size_t roi_num = 0;
       for( const auto &cont_peaks : rois )
       {
         const vector<shared_ptr<const PeakDef>> *peaks = &(cont_peaks.second);
-        
-        pool.post( [&fit_peaks, roi_num, foreground, peaks, ana_drf, isHPGe](){
+
+        pool.post( [&fit_peaks, roi_num, foreground, peaks, ana_drf, fitPrefs, resType](){
           
           // If two peaks are near each other, we wont be able to resolve them in the fit,
           //  so just get rid of the smaller amplitude peak
@@ -4218,7 +4334,7 @@ void RelActAutoGui::setPeaksToForeground()
           WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
           fit_options |= PeakFitLM::PeakFitLMOptions::MediumRefinementOnly; //Arbitrary
           
-          fit_peaks[roi_num] = refitPeaksThatShareROI( foreground, ana_drf, peaks_to_refit, fit_options );
+          fit_peaks[roi_num] = refitPeaksThatShareROI( foreground, ana_drf, peaks_to_refit, resType, fit_options );
           
           if( fit_peaks[roi_num].size() != peaks_to_refit.size() )
           {
@@ -4237,9 +4353,11 @@ void RelActAutoGui::setPeaksToForeground()
             Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
             fit_options |= PeakFitLM::PeakFitLMOptions::SmallRefinementOnly; //THe peaks should be pretty close, so we'll only allow small changes to mean, so we dont fit into someunrelated peak...
             
+            const PeakFitUtils::CoarseResolutionType retryDetType
+              = fitPrefs ? fitPrefs->m_det_type : PeakFitUtils::coarse_det_type( foreground, nullptr );
             const vector<PeakDef> retry_peak = fitPeaksInRange( lx, ux, ncausality, stat_threshold,
                                                           hypothesis_threshold, input_peaks,
-                                                          foreground, fit_options, isHPGe );
+                                                          foreground, fit_options, retryDetType );
             
             if( (retry_peak.size() == peaks_to_refit.size())
                || (fit_peaks[roi_num].empty() && !retry_peak.empty()) )
@@ -5074,10 +5192,9 @@ void RelActAutoGui::updateDuringRenderForRefGammaLineChange()
   {
     if( !m_photopeak_widget )
     {
-      MaterialDB *materialDb = m_interspec->materialDataBase();
       Wt::WSuggestionPopup *materialSuggest = nullptr;
       WContainerWidget *parent = nullptr;
-      m_photopeak_widget.reset( new ReferencePhotopeakDisplay( m_spectrum, materialDb, materialSuggest,
+      m_photopeak_widget.reset( new ReferencePhotopeakDisplay( m_spectrum, materialSuggest,
                                                               m_interspec, parent ) );
       
       // We need to set peaks getting assigned ref. line color, or else our call to
@@ -5321,13 +5438,23 @@ void RelActAutoGui::startUpdatingCalculation()
   
   auto gui_update_callback = wApp->bind( boost::bind( &RelActAutoGui::updateFromCalc, this, solution, cancel_calc, m_calc_number ) );
   auto error_callback = wApp->bind( boost::bind( &RelActAutoGui::handleCalcException, this, error_msg, cancel_calc) );
-  
-  
+
+  PeakFitUtils::CoarseResolutionType det_type = PeakFitUtils::CoarseResolutionType::High;
+  {
+    const std::shared_ptr<const SpecMeas> meas = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
+    const std::shared_ptr<const PeakFitDetPrefs> prefs = meas ? meas->peakFitDetPrefs() : nullptr;
+    assert( prefs );
+    if( prefs )
+      det_type = prefs->m_det_type;
+    else
+      det_type = PeakFitUtils::coarse_det_type( foreground, nullptr );
+  }
+
   auto worker = [=](){
     try
     {
       RelActCalcAuto::RelActAutoSolution answer
-        = RelActCalcAuto::solve( options, foreground, background, cached_drf, cached_all_peaks, cancel_calc );
+        = RelActCalcAuto::solve( options, foreground, background, cached_drf, cached_all_peaks, det_type, cancel_calc );
       
       WServer::instance()->post( sessionId, [=](){
         WApplication *app = WApplication::instance();

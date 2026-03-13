@@ -188,16 +188,14 @@ void batch_test()
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   assert( db );
   
-  MaterialDB matdb;
-  
-  const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
-  matdb.parseGadrasMaterialFile( materialfile, db, false );
-  
-  const Material * const stainless = matdb.material("stainless-steel NIST");
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  assert( matdb );
+
+  const std::shared_ptr<const Material> stainless = matdb->material("stainless-steel NIST");
   assert( stainless );
   
   const auto shield_transmission = [stainless, shielding_thickness]( const double energy ) -> double {
-    const double atten_coef = GammaInteractionCalc::transmition_coefficient_material( stainless, energy, shielding_thickness );
+    const double atten_coef = GammaInteractionCalc::transmition_coefficient_material( stainless.get(), energy, shielding_thickness );
     return exp( -1.0*atten_coef );
   };
   
@@ -1181,9 +1179,12 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
           case PeakContinuum::FlatStep:
           case PeakContinuum::LinearStep:
           case PeakContinuum::BiLinearStep:
+          case PeakContinuum::FlatStepCDF:
+          case PeakContinuum::LinearStepCDF:
+          case PeakContinuum::BiLinearStepCDF:
             assert( 0 );
             break;
-            
+
           case PeakContinuum::External:
             if( !computed_global_cont )
               computed_global_cont = estimateContinuum( input.measurement );
@@ -1242,13 +1243,12 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
       const size_t nbin = (1 + upper_channel - lower_channel);
       const float * const data_uncert = nullptr;  //Just use data
       const bool step_continuum = PeakContinuum::is_step_continuum(continuum_type);
-      const size_t num_poly_terms = PeakContinuum::num_parameters(continuum_type);
 
       // We can use either `PeakFit::fit_continuum`, or `PeakFit::fit_amp_and_offset_imp` - and I dont think it matters
       //  so we'll just do the latter
       //vector<double> continuum_coeffs( num_polynomial_terms, 0.0 );
       //vector<double> peak_channel_counts( nbin, 0.0 );
-      //PeakFit::fit_continuum( x, data, data_uncert, nbin, static_cast<int>(num_poly_terms), step_continuum,
+      //PeakFit::fit_continuum( x, data, data_uncert, nbin, step_continuum,
       //                       reference_energy, roi_peaks_to_use_for_fitting_continuum, false,
       //                       &(continuum_coeffs[0]), &(peak_channel_counts[0]) );
 
@@ -1259,12 +1259,20 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
       double * const peak_counts = nullptr;
       PeakDef::SkewType skew_type = PeakDef::SkewType::NoSkew;
       const double * const skew_parameters = nullptr;
-      PeakFit::fit_amp_and_offset_imp( x, data, nullptr, nbin, static_cast<int>(num_poly_terms),
-                                      step_continuum, static_cast<double>(reference_energy),
+      PeakFit::fit_amp_and_offset_imp( x, data, nullptr, nbin,
+                                      continuum_type, 0.0, static_cast<double>(reference_energy),
                                       dummy_means, dummy_sigmas, roi_peaks_to_use_for_fitting_continuum,
                                       skew_type, skew_parameters, dummy_fit_amps, continuum_coeffs,
                                       dummy_amplitudes_uncerts, continuum_coeffs_uncerts, peak_counts );
 
+      // For FlatStepCDF/LinearStepCDF, fit_amp_and_offset_imp returns only polynomial coefficients;
+      //  setParameters expects poly + step_coeff.  BiLinearStepCDF has no step_coeff.
+      if( PeakContinuum::is_peak_cdf_step_continuum( continuum_type )
+         && (continuum_type != PeakContinuum::BiLinearStepCDF) )
+      {
+        continuum_coeffs.push_back( 0.0 );
+        continuum_coeffs_uncerts.push_back( 0.0 );
+      }
       peak_continuum->setType( continuum_type );
       peak_continuum->setParameters( reference_energy, continuum_coeffs, continuum_coeffs_uncerts );
     }//if( peak_continuum && !roi_peaks_to_use_for_fitting_continuum.empty() )

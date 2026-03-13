@@ -296,7 +296,13 @@ namespace
         case ReferenceLineInfo::SourceType::FissionRefLines:
         {
           out << "FissionProductLines," << refinfo.m_input.m_input_txt << eol_char;
-          out << "TimeAfterFission," << refinfo.m_input.m_age << eol_char;
+          const bool spontaneous_fission = SpecUtils::icontains( refinfo.m_input.m_input_txt, "Fission" )
+                                           && !SpecUtils::icontains( refinfo.m_input.m_input_txt, "Thermal" )
+                                           && !SpecUtils::icontains( refinfo.m_input.m_input_txt, "Fast" )
+                                           && !SpecUtils::icontains( refinfo.m_input.m_input_txt, "14 MeV" )
+                                           && !SpecUtils::icontains( refinfo.m_input.m_input_txt, "14MeV" );
+          out << (spontaneous_fission ? "SourceAge" : "TimeAfterFission")
+              << "," << refinfo.m_input.m_age << eol_char;
         }
           
         case ReferenceLineInfo::SourceType::None:
@@ -314,11 +320,11 @@ namespace
           assert( refinfo.m_input.m_shielding_an.empty() );
           assert( refinfo.m_input.m_shielding_ad.empty() );
           
-          const Material *material = nullptr;
-          const MaterialDB *matDB = m_display->materialDB();
+          std::shared_ptr<const Material> material;
+          const std::shared_ptr<const MaterialDB> matDB = MaterialDB::instance();
           if( matDB )
             material = matDB->material( refinfo.m_input.m_shielding_name );
-          
+
           if( !material )
             throw runtime_error( "Invalid shielding '" + refinfo.m_input.m_shielding_name + "'" );
           
@@ -815,7 +821,6 @@ const std::vector<DecayParticleModel::RowData> &DecayParticleModel::rowData() co
 
 ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
                                             D3SpectrumDisplayDiv *chart,
-                                            MaterialDB *materialDB,
                                             WSuggestionPopup *materialSuggest,
                                             InterSpec *specViewer,
                                             WContainerWidget *parent )
@@ -858,7 +863,6 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_external_results{},
     m_featureMarkerColumn( nullptr ),
     m_detectorDisplay( NULL ),
-    m_materialDB( materialDB ),
     m_materialSuggest( materialSuggest ),
     m_shieldingSelect( NULL ),
     m_particleView( NULL ),
@@ -1070,7 +1074,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
 
   lowerInputLayout->addWidget( m_detectorDisplay, 1, 0 );
 
-  m_shieldingSelect = new ShieldingSelect( m_materialDB, m_materialSuggest );
+  m_shieldingSelect = new ShieldingSelect( m_materialSuggest );
   m_shieldingSelect->materialEdit()->setEmptyText( WString("<{1}>").arg( WString::tr("rpd-shield-mat") ) );
   m_shieldingSelect->materialChanged().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   m_shieldingSelect->materialModified().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
@@ -3188,9 +3192,9 @@ Wt::Signal<> &ReferencePhotopeakDisplay::nuclidesCleared()
   return m_nuclidesCleared;
 }
 
-const MaterialDB *ReferencePhotopeakDisplay::materialDB() const
+std::shared_ptr<const MaterialDB> ReferencePhotopeakDisplay::materialDB() const
 {
-  return m_materialDB;
+  return MaterialDB::instance();
 }
 
 
@@ -3488,7 +3492,7 @@ void ReferencePhotopeakDisplay::deSerialize( std::string &xml_data  )
         if( (!input.m_shielding_name.empty() && !input.m_shielding_thickness.empty())
            || (!input.m_shielding_an.empty() && !input.m_shielding_ad.empty()) )
         {
-          input.setShieldingAttFcn( m_materialDB );
+          input.setShieldingAttFcn();
         }
         
         //shared_ptr<ReferenceLineInfo> ref_line = ReferenceLineInfo::generateRefLineInfo( input );

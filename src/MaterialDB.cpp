@@ -1,21 +1,21 @@
 /* InterSpec: an application to analyze spectral gamma radiation data.
- 
+
  Copyright 2018 National Technology & Engineering Solutions of Sandia, LLC
  (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
  Government retains certain rights in this software.
  For questions contact William Johnson via email at wcjohns@sandia.gov, or
  alternative emails of interspec@sandia.gov.
- 
+
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
  License as published by the Free Software Foundation; either
  version 2.1 of the License, or (at your option) any later version.
- 
+
  This library is distributed in the hope that it will be useful,
  but WITHOUT ANY WARRANTY; without even the implied warranty of
  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  Lesser General Public License for more details.
- 
+
  You should have received a copy of the GNU Lesser General Public
  License along with this library; if not, write to the Free Software
  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
@@ -26,28 +26,37 @@
 #include <mutex>
 #include <cmath>
 #include <memory>
-#include <thread>
 #include <string>
 #include <vector>
-#include <chrono>
 #include <fstream>
 #include <utility>
 #include <sstream>
+#include <iostream>
 #include <stdexcept>
-#include <condition_variable>
 
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/ParseUtils.h"
+#include "SpecUtils/Filesystem.h"
+
+#include "InterSpec/InterSpec.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"
+#include "InterSpec/DecayDataBaseServer.h"
+
 #include "SandiaDecay/SandiaDecay.h"
 
 using namespace std;
 
 
-const Material MaterialDB::sm_voidMaterial( "void", 0.0 );
+namespace
+{
+  std::mutex sm_mutex;
+  std::shared_ptr<const MaterialDB> sm_instance;
+  std::string sm_initError;
+}//anonymous namespace
+
 
 Material::Material()
 {
@@ -285,7 +294,7 @@ double Material::massFractionOfElementInMaterial( const SandiaDecay::Element * c
 {
   if( !element )
     return 0.0;
-  
+
   double elementsMassFraction = 0.0;
   for( const Material::ElementFractionPair &efp : elements )
   {
@@ -306,95 +315,138 @@ double Material::massFractionOfElementInMaterial( const SandiaDecay::Element * c
 float Material::massWeightedAtomicNumber() const
 {
   float totalFraction = 0.0f, massAnTotalFrac = 0.0f;
-  
+
   for( const Material::ElementFractionPair &nf : elements )
   {
     totalFraction += nf.second;
     massAnTotalFrac += nf.second * nf.first->atomicNumber;
   }
-  
+
   for( const Material::NuclideFractionPair &nf : nuclides )
   {
     totalFraction += nf.second;
     massAnTotalFrac += nf.second * nf.first->atomicNumber;
   }
-  
+
   if( totalFraction == 0.0f )
     return 0.0f;
-  
+
   return (massAnTotalFrac / totalFraction);
 }//float massWeightedAtomicNumber() const
 
 
 MaterialDB::MaterialDB()
 {
-  m_initFailure = false;
-  m_materials.push_back( &sm_voidMaterial );
+  // Add the "void" material (zero density, no elements)
+  std::shared_ptr<Material> voidMat( new Material( "void", 0.0f ) );
+  voidMat->source = Material::kGadras;
+  m_materials.push_back( std::move( voidMat ) );
   refreshMaterialNames();
 }
 
 
-
 MaterialDB::~MaterialDB()
 {
-  std::unique_lock<std::mutex> lock( m_mutex );
-  for( const Material *m : m_materials )
-    if( m != &sm_voidMaterial )
-      delete m;
-  m_materials.clear();
+}
+
+
+void MaterialDB::initialize()
+{
+  std::lock_guard<std::mutex> lock( sm_mutex );
+  if( sm_instance )
+    return;
+
+  try
+  {
+    std::shared_ptr<MaterialDB> db( new MaterialDB() );
+    const SandiaDecay::SandiaDecayDataBase *decayDb = DecayDataBaseServer::database();
+    if( !decayDb )
+      throw runtime_error( "DecayDataBaseServer not initialized" );
+
+    const string staticDir = InterSpec::staticDataDirectory();
+    const string materialfile = SpecUtils::append_path( staticDir, "MaterialDataBase.txt" );
+    db->parseGadrasMaterialFile( materialfile, decayDb, false, false );
+
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
+    // Load user overrides from writable directory, if available
+    try
+    {
+      const string writableDir = InterSpec::writableDataDirectory();
+      if( !writableDir.empty() )
+      {
+        const string userFile = SpecUtils::append_path( writableDir, "MaterialDataBase.txt" );
+        if( SpecUtils::is_file( userFile ) )
+          db->parseGadrasMaterialFile( userFile, decayDb, false, true );
+      }//if( writable directory is available )
+    }catch( std::exception &e )
+    {
+      cerr << "Warning: failed to load user MaterialDataBase.txt overrides: " << e.what() << endl;
+    }
+#endif
+
+    sm_instance = std::move( db );
+    sm_initError.clear();
+  }catch( std::exception &e )
+  {
+    sm_initError = e.what();
+    cerr << "MaterialDB::initialize(): " << sm_initError << endl;
+  }
+}//void initialize()
+
+
+std::shared_ptr<const MaterialDB> MaterialDB::instance()
+{
+  {
+    std::lock_guard<std::mutex> lock( sm_mutex );
+    if( sm_instance )
+      return sm_instance;
+  }
+
+  initialize();
+
+  std::lock_guard<std::mutex> lock( sm_mutex );
+  if( !sm_instance )
+    throw runtime_error( "MaterialDB not initialized"
+      + (sm_initError.empty() ? string("") : (": " + sm_initError)) );
+
+  return sm_instance;
+}//shared_ptr<const MaterialDB> instance()
+
+
+bool MaterialDB::initialized()
+{
+  std::lock_guard<std::mutex> lock( sm_mutex );
+  return !!sm_instance;
+}
+
+
+const std::string &MaterialDB::init_error()
+{
+  std::lock_guard<std::mutex> lock( sm_mutex );
+  return sm_initError;
 }
 
 
 const std::vector<std::string> &MaterialDB::names() const
 {
-  if( !wait_material_ready() )
-    throw std::runtime_error( "Material database is not initialized" );
-  
   return m_materialNames;
 }//std::vector<std::string> MaterialDB::names() const
 
 
-const std::vector<const Material *> MaterialDB::materials() const
+const std::vector<std::shared_ptr<const Material>> &MaterialDB::materials() const
 {
-  if( !wait_material_ready() )
-    throw std::runtime_error( "Material database is not initialized" );
-
-  std::unique_lock<std::mutex> lock( m_mutex );
   return m_materials;
-}//
+}
 
 
-bool MaterialDB::wait_material_ready() const
-{
-  std::unique_lock<std::mutex> lock( m_mutex );
-  
-  if( m_materials.size() > 1 )
-    return true;
-  
-  if( m_initFailure )
-    return false;
-  
-  if( m_materials.size() < 2 )
-    m_condition.wait_for( lock, std::chrono::milliseconds(1000), [this](){return m_materials.size()>1;} );
-  
-  m_initFailure = (m_materials.size() < 2);
-  
-  return !m_initFailure;
-}//bool wait_material_ready() const
-
-
-const Material *MaterialDB::material( const std::string &name ) const
+std::shared_ptr<const Material> MaterialDB::material( const std::string &name ) const
 {
   if( name.empty() )
     throw std::runtime_error( "Empty material name" );
 
-  if( !wait_material_ready() )
-    throw std::runtime_error( "Material database is not initialized" );
-  
-  std::unique_lock<std::mutex> lock( m_mutex );
-  for( const Material *m : m_materials )
+  for( const std::shared_ptr<const Material> &m : m_materials )
   {
-    //we had added some comments in (...), so lets gets allow the user
+    //we had added some comments in (...), so lets allow the user
     //  to either enter the whole thing eg "Fe (iron)" or just "Fe", or "iron"
     const string thisname = m->name;
     string thissymbol, thisdescrip;
@@ -414,65 +466,46 @@ const Material *MaterialDB::material( const std::string &name ) const
     {
       return m;
     }
-  }//for( const Material *m : m_materials )
+  }//for( const shared_ptr<const Material> &m : m_materials )
 
   throw std::runtime_error( "Couldnt find material '" + name + "'" );
-  return NULL;
-}//const Material *material( &std::string &name ) const
+}//shared_ptr<const Material> material( const string &name ) const
 
 
-const Material *MaterialDB::material( const size_t index ) const
+std::shared_ptr<const Material> MaterialDB::material( const size_t index ) const
 {
-  if( !wait_material_ready() )
-    throw std::runtime_error( "Material database is not initialized" );
-  
-  std::unique_lock<std::mutex> lock( m_mutex );
   if( index >= m_materials.size() )
     throw std::runtime_error( "MaterialDB::material( size_t index ): index out of bounds" );
   return m_materials[index];
-}//const Material *material( &std::string &name ) const
+}//shared_ptr<const Material> material( size_t index ) const
 
 
 void MaterialDB::refreshMaterialNames()
 {
-  //Try to get the lock for 10 milli-seconds
-  //  Another (b=maybye better) approach would be to use boost::timed_mutex
-  int ntry = 0;
-  std::unique_lock<std::mutex> lock( m_mutex, std::defer_lock );
-  while( (ntry < 1000) && !lock.try_lock() )
-  {
-    ++ntry;
-    std::this_thread::sleep_for( std::chrono::microseconds(10) );
-  }
-  
-  if( ntry >= 10 )
-    throw runtime_error( "MaterialDB::refreshMaterialNames(): unable to get mutex lock" );
-  
   m_materialNames.clear();
   m_materialNames.reserve( m_materials.size() );
 
-  for( const Material *m : m_materials )
+  for( const std::shared_ptr<const Material> &m : m_materials )
     m_materialNames.push_back( m->name );
 }//void MaterialDB::refreshMaterialNames()
 
 
 void MaterialDB::writeGadrasStyleMaterialFile( ostream &file ) const
 {
-  const Material *air = material( "Air" );
+  const std::shared_ptr<const Material> air = material( "Air" );
   if( air )
     air->writeGadrasStyleMaterialFile( file );
 
-  std::unique_lock<std::mutex> lock( m_mutex );
-  
-  for( const Material *mat : m_materials )
-    if( !SpecUtils::iequals_ascii(mat->name, "Air") )
+  for( const std::shared_ptr<const Material> &mat : m_materials )
+    if( !SpecUtils::iequals_ascii( mat->name, "Air" ) )
       mat->writeGadrasStyleMaterialFile( file );
 }//void writeGadrasStyleMaterialFile( std::ostream file )
 
 
 void MaterialDB::parseGadrasMaterialFile( const std::string &file,
                                           const SandiaDecay::SandiaDecayDataBase *db,
-                                          const bool swapNameDescription )
+                                          const bool swapNameDescription,
+                                          const bool overwrite )
 {
   //Gadras Material names are formatted like
   /*
@@ -490,9 +523,9 @@ void MaterialDB::parseGadrasMaterialFile( const std::string &file,
     radioactive Element/Isotope 1 Mass percentage
     ...
   */
-  
+
   int lineNumber = 0;
-  std::vector<const Material *> materials;
+  std::vector<std::shared_ptr<const Material>> newMaterials;
 
   try
   {
@@ -611,7 +644,7 @@ void MaterialDB::parseGadrasMaterialFile( const std::string &file,
         bool hasNumber = false;
         for( const char c : symbol )
           hasNumber |= ((c >= '0') && (c <= '9'));
-        
+
         const SandiaDecay::Nuclide *nuc = hasNumber ? db->nuclide( symbol ) : nullptr;
         if( !nuc )
           element = db->element( symbol );
@@ -640,19 +673,6 @@ void MaterialDB::parseGadrasMaterialFile( const std::string &file,
         throw runtime_error( "Expected and found number of elements+nuclides"
                              " didnt match for material " + material->name );
 
-//      if( nexpectedelement != nelement )
-//        cerr << "Expected and found number of elements"
-//                " didnt match for material " + material->name << endl;
-//        throw runtime_error( "Expected and found number of elements"
-//                             " didnt match for material " + material->name );
-
-//      if( nexpectednuclide != nisotope )
-//        cerr << "Expected and found number of isotopes"
-//                " didnt match for material " + material->name << endl;
-//        throw runtime_error( "Expected and found number of isotopes"
-//                             " didnt match for material " + material->name );
-
-
       //I actually like the description in the GADRAS material library better
       //  as the names
       if( swapNameDescription )
@@ -666,46 +686,52 @@ void MaterialDB::parseGadrasMaterialFile( const std::string &file,
           material->name = el->symbol + " (" + el->name + ")";
       }//if( material->elements.size() == 1 && material->nuclides.empty() )
 
-      //lets make sure we dont already have this material actually
+      // Check if we already have this material
       bool alreadyHave = false;
-      {//begin lock on m_mutex
-        std::unique_lock<std::mutex> lock( m_mutex );
-        
-        auto pos = lower_bound( begin(m_materials), end(m_materials),
-                                material.get(), &MaterialDB::less_than_by_name );
+      const Material *rawPtr = material.get();
+      auto pos = lower_bound( begin( m_materials ), end( m_materials ),
+                              rawPtr,
+                              []( const std::shared_ptr<const Material> &a, const Material *b ) -> bool {
+                                return less_than_by_name( a.get(), b );
+                              } );
 
-        alreadyHave = ( SpecUtils::iequals_ascii(material->name,"void")
-                        || ((pos != end(m_materials)) && MaterialDB::equal_by_name(material.get(),*pos)) );
-      }//end lock on m_mutex
-      
+      if( SpecUtils::iequals_ascii( material->name, "void" ) )
+      {
+        alreadyHave = true;
+      }else if( (pos != end( m_materials )) && equal_by_name( material.get(), pos->get() ) )
+      {
+        if( overwrite )
+        {
+          // Replace the existing material with the new one
+          *pos = std::shared_ptr<const Material>( material.release() );
+          alreadyHave = true; // dont add to newMaterials
+        }else
+        {
+          alreadyHave = true;
+        }
+      }
+
       if( !alreadyHave )
-        materials.push_back( material.release() );
+        newMaterials.push_back( std::shared_ptr<const Material>( material.release() ) );
     }//while( safe_get_line( is, line ) )
   }catch( const std::exception &e )
   {
-    for( const Material *m : materials )
-      delete m;
-
     stringstream msg;
-    msg << "MaterialDB::parseG4MaterialFile(...): Error parsing file  at or "
+    msg << "MaterialDB::parseGadrasMaterialFile(...): Error parsing file at or "
         << "near line " << lineNumber << ". error=" << e.what();
 
     cerr << "\n\nMaterialDB::parseGadrasMaterialFile(...)\n\t" << msg.str() << endl << endl;
-    
-    m_condition.notify_all();
-    
+
     throw std::runtime_error( msg.str() );
   }//try /catch
 
-  {
-    std::unique_lock<std::mutex> lock( m_mutex );
-    m_materials.insert( m_materials.end(), materials.begin(), materials.end() );
-    sort( m_materials.begin(), m_materials.end(), &MaterialDB::less_than_by_name );
-  }
+  m_materials.insert( m_materials.end(), newMaterials.begin(), newMaterials.end() );
+  sort( m_materials.begin(), m_materials.end(),
+    []( const std::shared_ptr<const Material> &a, const std::shared_ptr<const Material> &b ) -> bool {
+      return less_than_by_name( a.get(), b.get() );
+    } );
 
   refreshMaterialNames();
-  
-  m_condition.notify_all();
 }//void parseGadrasMaterialFile(...)
 
 
@@ -714,7 +740,7 @@ void MaterialDB::parseG4MaterialFile( const std::string &file,
                             const SandiaDecay::SandiaDecayDataBase *db )
 {
   int lineNumber = 0;
-  std::vector<const Material *> materials;
+  std::vector<std::shared_ptr<const Material>> newMaterials;
 
   try
   {
@@ -729,20 +755,10 @@ void MaterialDB::parseG4MaterialFile( const std::string &file,
       cerr << "Couldnt open file " << file << endl;
       throw runtime_error( "Couldnt open file " + file );
     }
-/*
-    is.seekg( 0, ios::end );
-    ifstream::pos_type length = is.tellg();
-    is.seekg( 0, ios::beg );
-    std::unique_ptr<char> buffer( new char [length+1] );
-    is.read( buffer.get(),length );
-    buffer.get()[length] = '\0';
-    is.close();
-*/
 
     bool is_compound = true;
     string line;
     while( SpecUtils::safe_get_line( is, line ) )
-//    while( getline( is, line ) )
     {
       ++lineNumber;
 
@@ -757,7 +773,7 @@ void MaterialDB::parseG4MaterialFile( const std::string &file,
       if( fields.size() < 2 )
         continue;
 
-      const bool is_component = !is_material && isdigit(fields[0][0]);  //we're garunteed fields[0].size()>0
+      const bool is_component = !is_material && isdigit(fields[0][0]);  //we're guaranteed fields[0].size()>0
 
       if( is_component )
         throw std::runtime_error( "Found a component line unexpectedly" );
@@ -803,7 +819,6 @@ void MaterialDB::parseG4MaterialFile( const std::string &file,
 
         for( int compn = 0; compn < ncomp; ++compn )
         {
-//          if( !getline( is, line ) )
           if( !SpecUtils::safe_get_line( is, line ) )
             throw std::runtime_error( "Couldnt read expected number of "
                                       "components of compound "
@@ -854,96 +869,58 @@ void MaterialDB::parseG4MaterialFile( const std::string &file,
           material->name = el->symbol + " (" + el->name + ")";
       }//if( material->elements.size() == 1 && material->nuclides.empty() )
 
-      //lets make sure we dont already have this material actually
+      // Check if we already have this material
       bool alreadyHave = false;
-      {//begin lock on m_mutex
-        std::unique_lock<std::mutex> lock( m_mutex );
+      {
+        const Material *rawPtr = material.get();
         auto pos = lower_bound( m_materials.begin(), m_materials.end(),
-                               material.get(), &MaterialDB::less_than_by_name );
-      
-        alreadyHave = ((pos != m_materials.end()) && MaterialDB::equal_by_name(material.get(),*pos) );
-      }//end lock on m_mutex
+                                rawPtr,
+                                []( const std::shared_ptr<const Material> &a, const Material *b ) -> bool {
+                                  return less_than_by_name( a.get(), b );
+                                } );
+
+        alreadyHave = ((pos != m_materials.end()) && equal_by_name( material.get(), pos->get() ) );
+      }
       if( !alreadyHave )
-        materials.push_back( material.release() );
+        newMaterials.push_back( std::shared_ptr<const Material>( material.release() ) );
     }//while( safe_get_line( is, line ) )
   }catch( const std::exception &e )
   {
-    for( const Material *m : materials )
-      delete m;
-
     stringstream msg;
-    msg << "MaterialDB::parseG4MaterialFile(...): Error parsing file  at or "
+    msg << "MaterialDB::parseG4MaterialFile(...): Error parsing file at or "
         << "near line " << lineNumber << ". error=" << e.what();
 
     cerr << "\n\nMaterialDB::parseG4MaterialFile(...)\n\t" << msg.str() << endl << endl;
 
-    m_condition.notify_all();
-    
     throw std::runtime_error( msg.str() );
   }//try /catch
 
-  {
-    std::unique_lock<std::mutex> lock( m_mutex );
-    m_materials.insert( m_materials.end(), materials.begin(), materials.end() );
-    sort( m_materials.begin(), m_materials.end(), &MaterialDB::less_than_by_name );
-  }
+  m_materials.insert( m_materials.end(), newMaterials.begin(), newMaterials.end() );
+  sort( m_materials.begin(), m_materials.end(),
+    []( const std::shared_ptr<const Material> &a, const std::shared_ptr<const Material> &b ) -> bool {
+      return less_than_by_name( a.get(), b.get() );
+    } );
 
   refreshMaterialNames();
-  
-  m_condition.notify_all();
 }//void parseG4MaterialFile(...)
 
 
-
-const Material *MaterialDB::parseChemicalFormula( string text,
-                                   const SandiaDecay::SandiaDecayDataBase *db )
+std::shared_ptr<const Material> MaterialDB::materialFromChemicalFormula(
+  const std::string &formula,
+  const SandiaDecay::SandiaDecayDataBase *db )
 {
-  if( text.empty() )
-    throw runtime_error( "GammaXsGui::parseChemicalFormula(...): I cant deal "
-                         "with no input" );
-
-  //first look to see if its in the database
+  Material *answer = new Material();
   try
   {
-    const Material *material = MaterialDB::material( text );
-    assert( material );
-    if( material )
-      throw runtime_error( "Material '" + text + "' already exists in database" );
-  }catch(...){}
-
-  //If we're here, we have to parse the chemical formula, which might look like
-  Material *material = new Material();
-
-  try
+    answer->parseChemicalFormula( formula, db );
+  }catch( std::exception & )
   {
-    material->parseChemicalFormula( text, db );
-    
-    {
-      std::unique_lock<std::mutex> lock( m_mutex );
-      auto iter = lower_bound( m_materials.begin(), m_materials.end(), material, &MaterialDB::less_than_by_name );
-      m_materials.insert( iter, material );
-    }
-    
-    refreshMaterialNames();
+    delete answer;
+    throw;
+  }
 
-    cerr << "\n\nJust parsed and added: " << material->chemicalFormula() << endl << endl;
-  }catch( std::exception &e )
-  {
-    delete material;
-    throw e;
-  }//try / catch
-
-  return material;
-}//const Material *parseChemicalFormula(  )
-
-
-Material MaterialDB::materialFromChemicalFormula( const std::string &formula,
-                                            const SandiaDecay::SandiaDecayDataBase *db )
-{
-  Material answer;
-  answer.parseChemicalFormula( formula, db );
-  return answer;
-}
+  return std::shared_ptr<const Material>( answer );
+}//shared_ptr<const Material> materialFromChemicalFormula(...)
 
 
 

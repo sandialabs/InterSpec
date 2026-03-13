@@ -487,6 +487,8 @@
   <message id="pct-flat-step">Lapos lépcső</message>
   <message id="pct-linear-step">Lineáris lépcső</message>
   <message id="pct-bilinear-step">Bilineáris lépcső</message>
+  <message id="pct-flat-step-cdf">Flat Step (CDF)</message>
+  <message id="pct-linear-step-cdf">Linear Step (CDF)</message>
   <message id="pct-global">Globális kont.</message>
 
   <!-- populateNuclideSelects() in PeakSearchGuiUtils.cpp -->

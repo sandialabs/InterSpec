@@ -40,8 +40,10 @@ Shielding3DView = function(id, data) {
         // Update canvas size
         self.canvas.width = width;
         self.canvas.height = height;
-        
-        // Optionally force a render here if loop isn't running
+        if (self.overlayCanvas) {
+          self.overlayCanvas.width = width;
+          self.overlayCanvas.height = height;
+        }
       }
     }
   });
@@ -81,7 +83,7 @@ Shielding3DView = function(id, data) {
     'varying vec3 vPos;',
     'void main() {',
     '  vec3 normal = normalize(vNormal);',
-    '  float diff = max(dot(normal, uLightDir), 0.3);',
+    '  float diff = max(abs(dot(normal, uLightDir)), 0.3);',
     '  gl_FragColor = vec4(uColor.rgb * diff, uColor.a);',
     '}'
   ].join('\n');
@@ -237,6 +239,36 @@ Shielding3DView = function(id, data) {
       out[7] = (a32*b02 - a30*b05 - a33*b01) * det;
       out[8] = (a30*b04 - a31*b02 + a33*b00) * det;
       return out;
+    },
+    invert: function(out, a) {
+      var a00=a[0], a01=a[1], a02=a[2], a03=a[3];
+      var a10=a[4], a11=a[5], a12=a[6], a13=a[7];
+      var a20=a[8], a21=a[9], a22=a[10], a23=a[11];
+      var a30=a[12], a31=a[13], a32=a[14], a33=a[15];
+      var b00=a00*a11-a01*a10, b01=a00*a12-a02*a10, b02=a00*a13-a03*a10;
+      var b03=a01*a12-a02*a11, b04=a01*a13-a03*a11, b05=a02*a13-a03*a12;
+      var b06=a20*a31-a21*a30, b07=a20*a32-a22*a30, b08=a20*a33-a23*a30;
+      var b09=a21*a32-a22*a31, b10=a21*a33-a23*a31, b11=a22*a33-a23*a32;
+      var det = b00*b11 - b01*b10 + b02*b09 + b03*b08 - b04*b07 + b05*b06;
+      if (!det) return null;
+      det = 1.0 / det;
+      out[0] = (a11*b11 - a12*b10 + a13*b09) * det;
+      out[1] = (a02*b10 - a01*b11 - a03*b09) * det;
+      out[2] = (a31*b05 - a32*b04 + a33*b03) * det;
+      out[3] = (a22*b04 - a21*b05 - a23*b03) * det;
+      out[4] = (a12*b08 - a10*b11 - a13*b07) * det;
+      out[5] = (a00*b11 - a02*b08 + a03*b07) * det;
+      out[6] = (a32*b02 - a30*b05 - a33*b01) * det;
+      out[7] = (a20*b05 - a22*b02 + a23*b01) * det;
+      out[8] = (a10*b10 - a11*b08 + a13*b06) * det;
+      out[9] = (a01*b08 - a00*b10 - a03*b06) * det;
+      out[10] = (a30*b04 - a31*b02 + a33*b00) * det;
+      out[11] = (a21*b02 - a20*b04 - a23*b00) * det;
+      out[12] = (a11*b07 - a10*b09 - a12*b06) * det;
+      out[13] = (a00*b09 - a01*b07 + a02*b06) * det;
+      out[14] = (a31*b01 - a30*b03 - a32*b00) * det;
+      out[15] = (a20*b03 - a21*b01 + a22*b00) * det;
+      return out;
     }
   };
 
@@ -303,15 +335,15 @@ Shielding3DView = function(id, data) {
     }
     for (var i = 0; i < radialSegments; i++) {
         var idx = i * 2;
-        indices.push(idx, idx + 1, idx + 2);
-        indices.push(idx + 1, idx + 3, idx + 2);
+        indices.push(idx, idx + 2, idx + 1);
+        indices.push(idx + 1, idx + 2, idx + 3);
     }
     // Caps (simple triangle fan approximation with center point)
     var topCenterIdx = positions.length / 3;
     positions.push(0, 0, length / 2); normals.push(0, 0, 1);
     var bottomCenterIdx = topCenterIdx + 1;
     positions.push(0, 0, -length / 2); normals.push(0, 0, -1);
-    
+
     // Add cap vertices with correct normals
     var capStartIdx = bottomCenterIdx + 1;
     for (var i = 0; i <= radialSegments; i++) {
@@ -385,7 +417,23 @@ Shielding3DView = function(id, data) {
   this.lastMouseY = 0;
   this.button = -1;
   this.renderLoopId = null;
-  
+  this.hoverTarget = null;
+  this.keyPoints = null;
+  this.currentViewProj = null;
+
+  // --- 2D Overlay Canvas for distance annotations ---
+  this.overlayCanvas = document.createElement('canvas');
+  this.overlayCanvas.style.position = 'absolute';
+  this.overlayCanvas.style.top = '0';
+  this.overlayCanvas.style.left = '0';
+  this.overlayCanvas.style.width = '100%';
+  this.overlayCanvas.style.height = '100%';
+  this.overlayCanvas.style.pointerEvents = 'none';
+  this.overlayCanvas.width = container.clientWidth;
+  this.overlayCanvas.height = container.clientHeight;
+  container.appendChild(this.overlayCanvas);
+  this.overlayCtx = this.overlayCanvas.getContext('2d');
+
   // Initialize with data if provided
   if (data) {
     this.setData(data);
@@ -405,26 +453,90 @@ Shielding3DView = function(id, data) {
   });
 
   canvas.addEventListener('mousemove', function(e) {
-    if (!self.isDragging) return;
-    var dx = e.clientX - self.lastMouseX;
-    var dy = e.clientY - self.lastMouseY;
-    self.lastMouseX = e.clientX;
-    self.lastMouseY = e.clientY;
+    if (self.isDragging) {
+      var dx = e.clientX - self.lastMouseX;
+      var dy = e.clientY - self.lastMouseY;
+      self.lastMouseX = e.clientX;
+      self.lastMouseY = e.clientY;
 
-    if (self.button === 0) { // Left Button: Rotate
-      self.camPhi -= dx * 0.01;
-      self.camTheta -= dy * 0.01;
-      // Clamp theta to avoid gimbal lock or flipping
-      if (self.camTheta < 0.01) self.camTheta = 0.01;
-      if (self.camTheta > Math.PI - 0.01) self.camTheta = Math.PI - 0.01;
-    } else if (self.button === 2) { // Right Button: Pan
-      // Move camTarget relative to camera view
-      // Simple implementation: Pan in screen plane
-      var panSpeed = self.camRadius * 0.002; // Scale pan with distance
-      self.camTarget[0] -= dx * panSpeed * Math.cos(self.camPhi);
-      self.camTarget[2] -= dx * panSpeed * Math.sin(self.camPhi);
-      self.camTarget[1] += dy * panSpeed;
+      if (self.button === 0) { // Left Button: Rotate
+        self.camPhi -= dx * 0.01;
+        self.camTheta -= dy * 0.01;
+        if (self.camTheta < 0.01) self.camTheta = 0.01;
+        if (self.camTheta > Math.PI - 0.01) self.camTheta = Math.PI - 0.01;
+      } else if (self.button === 2) { // Right Button: Pan
+        var panSpeed = self.camRadius * 0.002;
+        self.camTarget[0] -= dx * panSpeed * Math.cos(self.camPhi);
+        self.camTarget[2] -= dx * panSpeed * Math.sin(self.camPhi);
+        self.camTarget[1] += dy * panSpeed;
+      }
+      self.hoverTarget = null;
+      return;
     }
+
+    // Hover hit-testing when not dragging
+    if (self.keyPoints && self.currentViewProj) {
+      var rect = canvas.getBoundingClientRect();
+      var mouseX = e.clientX - rect.left;
+      var mouseY = e.clientY - rect.top;
+
+      var invVP = self.Mat4.invert(self.Mat4.create(), self.currentViewProj);
+      if (invVP) {
+        // Unproject mouse to ray
+        var ndcX = (mouseX / canvas.width) * 2.0 - 1.0;
+        var ndcY = 1.0 - (mouseY / canvas.height) * 2.0;
+
+        // Near and far points in clip space, then unproject
+        var nearW = [
+          invVP[0]*ndcX + invVP[4]*ndcY + invVP[8]*(-1) + invVP[12],
+          invVP[1]*ndcX + invVP[5]*ndcY + invVP[9]*(-1) + invVP[13],
+          invVP[2]*ndcX + invVP[6]*ndcY + invVP[10]*(-1) + invVP[14],
+          invVP[3]*ndcX + invVP[7]*ndcY + invVP[11]*(-1) + invVP[15]
+        ];
+        var farW = [
+          invVP[0]*ndcX + invVP[4]*ndcY + invVP[8]*(1) + invVP[12],
+          invVP[1]*ndcX + invVP[5]*ndcY + invVP[9]*(1) + invVP[13],
+          invVP[2]*ndcX + invVP[6]*ndcY + invVP[10]*(1) + invVP[14],
+          invVP[3]*ndcX + invVP[7]*ndcY + invVP[11]*(1) + invVP[15]
+        ];
+
+        var near = [nearW[0]/nearW[3], nearW[1]/nearW[3], nearW[2]/nearW[3]];
+        var far = [farW[0]/farW[3], farW[1]/farW[3], farW[2]/farW[3]];
+        var dirX = far[0]-near[0], dirY = far[1]-near[1], dirZ = far[2]-near[2];
+        var dirLen = Math.sqrt(dirX*dirX + dirY*dirY + dirZ*dirZ);
+        dirX /= dirLen; dirY /= dirLen; dirZ /= dirLen;
+
+        // Ray-sphere intersection test
+        var kp = self.keyPoints;
+        var hitDet = false, hitSrc = false;
+
+        // Test detector bounding sphere
+        var ocX = near[0]-kp.detCenter[0], ocY = near[1]-kp.detCenter[1], ocZ = near[2]-kp.detCenter[2];
+        var b = ocX*dirX + ocY*dirY + ocZ*dirZ;
+        var c = ocX*ocX + ocY*ocY + ocZ*ocZ - kp.detBoundRadius*kp.detBoundRadius;
+        if (b*b - c >= 0) hitDet = true;
+
+        // Test source bounding sphere (generous 10mm hit radius, or proportional to scene)
+        var srcHitRad = Math.max(10, kp.detDistance * 0.03);
+        ocX = near[0]; ocY = near[1]; ocZ = near[2];
+        b = ocX*dirX + ocY*dirY + ocZ*dirZ;
+        c = ocX*ocX + ocY*ocY + ocZ*ocZ - srcHitRad*srcHitRad;
+        if (b*b - c >= 0) hitSrc = true;
+
+        if (hitDet || hitSrc) {
+          self.hoverTarget = hitDet ? 'detector' : 'source';
+          canvas.style.cursor = 'crosshair';
+        } else {
+          self.hoverTarget = null;
+          canvas.style.cursor = 'default';
+        }
+      }
+    }
+  });
+
+  canvas.addEventListener('mouseleave', function() {
+    self.hoverTarget = null;
+    canvas.style.cursor = 'default';
   });
 
   canvas.addEventListener('contextmenu', function(e) { e.preventDefault(); return false; }); // Disable context menu
@@ -461,8 +573,9 @@ Shielding3DView = function(id, data) {
     var eyeZ = self.camTarget[2] + horizRad * Math.cos(self.camPhi);
 
     var view = self.Mat4.lookAt(self.Mat4.create(), [eyeX, eyeY, eyeZ], self.camTarget, [0, 1, 0]);
-    var projection = self.Mat4.perspective(self.Mat4.create(), Math.PI / 4, canvas.width / canvas.height, 1.0, 10000.0); // near 1, far 10000
+    var projection = self.Mat4.perspective(self.Mat4.create(), Math.PI / 4, canvas.width / canvas.height, 1.0, 10000.0);
     var viewProj = self.Mat4.multiply(self.Mat4.create(), projection, view);
+    self.currentViewProj = viewProj;
 
     var lightDir = [1, 1, 1]; // normalized in shader usually
     var norm = Math.sqrt(3);
@@ -511,12 +624,106 @@ Shielding3DView = function(id, data) {
       gl.enableVertexAttribArray(locs.aNormal);
 
       if (mesh.transparent) {
-          gl.depthMask(false); // Don't write depth for transparent
+          gl.depthMask(false);
+          gl.disable(gl.CULL_FACE);
       } else {
           gl.depthMask(true);
+          gl.enable(gl.CULL_FACE);
       }
 
       gl.drawElements(gl.TRIANGLES, mesh.buffer.numElements, gl.UNSIGNED_SHORT, 0);
+    }
+
+    // --- Draw distance annotation overlay ---
+    var ctx = self.overlayCtx;
+    if (ctx) {
+      if (self.overlayCanvas.width !== canvas.width || self.overlayCanvas.height !== canvas.height) {
+        self.overlayCanvas.width = canvas.width;
+        self.overlayCanvas.height = canvas.height;
+      }
+      ctx.clearRect(0, 0, self.overlayCanvas.width, self.overlayCanvas.height);
+
+      if (self.hoverTarget && self.keyPoints) {
+        var kp = self.keyPoints;
+        var cw = canvas.width, ch = canvas.height;
+
+        // Project 3D point to 2D screen coordinates
+        function proj(pt) {
+          var x = pt[0], y = pt[1], z = pt[2];
+          var cx = viewProj[0]*x + viewProj[4]*y + viewProj[8]*z + viewProj[12];
+          var cy = viewProj[1]*x + viewProj[5]*y + viewProj[9]*z + viewProj[13];
+          var cw2 = viewProj[3]*x + viewProj[7]*y + viewProj[11]*z + viewProj[15];
+          return {
+            x: (cx/cw2 * 0.5 + 0.5) * cw,
+            y: (1.0 - (cy/cw2 * 0.5 + 0.5)) * ch
+          };
+        }
+
+        var srcPt = proj(kp.sourceCenter);
+        var shellPt = proj(kp.outerShellPoint);
+        var detPt = proj(kp.detFaceCenter);
+
+        // Draw dashed line from source to detector face
+        ctx.beginPath();
+        ctx.setLineDash([6, 4]);
+        ctx.strokeStyle = 'rgba(255, 165, 0, 0.9)';
+        ctx.lineWidth = 2;
+        ctx.moveTo(detPt.x, detPt.y);
+        ctx.lineTo(srcPt.x, srcPt.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Draw marker dots
+        function drawDot(pt, color, radius) {
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, radius, 0, 2 * Math.PI);
+          ctx.fillStyle = color;
+          ctx.fill();
+        }
+        drawDot(srcPt, 'red', 4);
+        drawDot(shellPt, 'orange', 4);
+        drawDot(detPt, '#4444ff', 4);
+
+        // Format length for display
+        function fmtLen(mm) {
+          if (mm === 0) return "0.00 mm";
+          var cm = mm / 10;
+          var m = mm / 1000;
+          if (mm < 10) return mm.toFixed(2) + " mm";
+          if (cm < 100) return cm.toFixed(2) + " cm";
+          return m.toFixed(2) + " m";
+        }
+
+        // Distance labels
+        var distToCenter = kp.detDistance;
+        var distToSurface = kp.detDistance - kp.outerShellZ;
+
+        // Midpoints for label placement
+        var midDet = { x: (detPt.x + shellPt.x)/2, y: (detPt.y + shellPt.y)/2 };
+        var midSrc = { x: (shellPt.x + srcPt.x)/2, y: (shellPt.y + srcPt.y)/2 };
+
+        // Compute perpendicular offset for text placement (above/below line)
+        var lineAngle = Math.atan2(detPt.y - srcPt.y, detPt.x - srcPt.x);
+        var perpX = -Math.sin(lineAngle);
+        var perpY = Math.cos(lineAngle);
+        var textOffset = 14;
+
+        ctx.font = '11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // "To surface" label (detector face to outer shell)
+        if (distToSurface > 0.01) {
+          ctx.fillStyle = 'orange';
+          ctx.fillText("To surface: " + fmtLen(distToSurface),
+            midDet.x + perpX * textOffset, midDet.y + perpY * textOffset);
+        }
+
+        // "To center" label (detector face to source center)
+        ctx.fillStyle = 'orange';
+        ctx.fillText("To center: " + fmtLen(distToCenter),
+          midSrc.x - perpX * textOffset, midSrc.y - perpY * textOffset);
+      }
     }
 
     requestAnimationFrame(render);
@@ -624,8 +831,8 @@ Shielding3DView.prototype.setData = function(data) {
     }
     for (var i = 0; i < radialSegments; i++) {
         var idx = i * 2;
-        indices.push(idx, idx + 1, idx + 2);
-        indices.push(idx + 1, idx + 3, idx + 2);
+        indices.push(idx, idx + 2, idx + 1);
+        indices.push(idx + 1, idx + 2, idx + 3);
     }
     // Caps (simple triangle fan approximation with center point)
     var topCenterIdx = positions.length / 3;
@@ -652,7 +859,7 @@ Shielding3DView.prototype.setData = function(data) {
     }
     return { position: positions, normal: normals, indices: indices };
   }
-  
+
   function createBox(width, height, depth) {
     // 8 vertices, but normals differ per face, so 24 vertices
     var w = width/2, h = height/2, d = depth/2;
@@ -688,7 +895,7 @@ Shielding3DView.prototype.setData = function(data) {
     ];
     return { position: positions, normal: normals, indices: indices };
   }
-  
+
   // Now create meshes (same logic as constructor)
   var meshes = this.meshes;
 
@@ -808,6 +1015,30 @@ Shielding3DView.prototype.setData = function(data) {
       });
     }
   }
+
+  // Store key 3D points for hover annotations
+  var outerShellZ = 0;
+  if (data.geometry === "Spherical") {
+    outerShellZ = currentRad;
+  } else if (data.geometry === "CylinderEndOn") {
+    outerShellZ = currentCylLen / 2;
+  } else if (data.geometry === "CylinderSideOn") {
+    // SideOn cylinder is rotated 90 deg about X, so the "end" is along Y; Z extent is the radius
+    outerShellZ = currentCylRad;
+  } else if (data.geometry === "Rectangular") {
+    outerShellZ = currentD / 2;
+  }
+
+  this.keyPoints = {
+    sourceCenter: [0, 0, 0],
+    detFaceCenter: [0, 0, detDistance],
+    outerShellPoint: [0, 0, outerShellZ],
+    outerShellZ: outerShellZ,
+    detDistance: detDistance,
+    detCenter: [0, 0, detZ],
+    detBoundRadius: Math.max(detRad, detLen / 2) * 1.2,
+    geometry: data.geometry
+  };
 
   // 5. Point Sources
   // Check if there are point sources in data.fitSources

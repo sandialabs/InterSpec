@@ -74,7 +74,7 @@ namespace InitialFit_GA
 vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_settings,
                               const FindCandidateSettings &candidate_settings,
                               const shared_ptr<const SpecUtils::Measurement> &data,
-                              const bool isHPGe,
+                              const PeakFitUtils::CoarseResolutionType det_type,
                               const bool multithread,
                               size_t &num_add_candidates_fit_for,  //Only for eval purposes
                               size_t &num_add_candidates_accepted //Only for eval purposes
@@ -138,7 +138,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
   //                fit_settings.initial_stat_threshold, fit_settings.initial_hypothesis_threshold,
   //                                     candidate_peaks, data, dummy_fixedpeaks, amplitudeOnly, isHPGe );
 
-  auto fit_peaks_per_roi = [&fit_settings, &data, isHPGe, multithread]( const vector<PeakDef> &input_peaks ) -> vector<PeakDef> {
+  auto fit_peaks_per_roi = [&fit_settings, &data, det_type, multithread]( const vector<PeakDef> &input_peaks ) -> vector<PeakDef> {
 
     const bool amplitudeOnly = false;
 
@@ -173,7 +173,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
                                      fit_settings.initial_stat_threshold,
                                      fit_settings.initial_hypothesis_threshold,
                                      amplitudeOnly,
-                                     isHPGe ) );
+                                     det_type ) );
 #else
         vector<PeakDef> &results = fit_rois[fit_rois_index];
 
@@ -184,7 +184,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
                                      data,
                                      boost::ref( results ),
                                      amplitudeOnly,
-                                     isHPGe ) );
+                                     (det_type == PeakFitUtils::CoarseResolutionType::High) ) );
 #endif
         fit_rois_index += 1;
       }//for( auto &roi_peaks : roi_to_peaks_map )
@@ -205,11 +205,11 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
 
         PeakFitLM::fit_peaks_LM( results, input_peaks_tmp, data,
                                 fit_settings.initial_stat_threshold, fit_settings.initial_hypothesis_threshold,
-                                amplitudeOnly, isHPGe );
+                                amplitudeOnly, det_type );
 #else
         vector<PeakDef> &results = fit_rois[fit_rois_index];
         fitPeaks( peaks, fit_settings.initial_stat_threshold, fit_settings.initial_hypothesis_threshold,
-                 data, results, amplitudeOnly, isHPGe );
+                 data, results, amplitudeOnly, (det_type == PeakFitUtils::CoarseResolutionType::High) );
 #endif
         fit_rois_index += 1;
       }//for( auto &roi_peaks : roi_to_peaks_map )
@@ -566,7 +566,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
 
       if( (fwhm < 0.0001) || IsNan(fwhm) )
       {
-        if( isHPGe )
+        if( det_type == PeakFitUtils::CoarseResolutionType::High )
           fwhm = PeakFitUtils::hpge_fwhm_fcn( energy );
         else
           fwhm = PeakFitUtils::nai_fwhm_fcn( energy );
@@ -1058,30 +1058,31 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
       {
         assert( orig_continuum->isPolynomial() );
 
-        const int num_prev_poly = orig_continuum->isPolynomial() ? static_cast<int>(orig_continuum->parameters().size()) : 2;
-
         const float * const energies = &(channel_energies[trial_start_chnl]);
         const float * const data_cnts = &(channel_counts[trial_start_chnl]);
-        int num_polynomial_terms = std::max( num_prev_poly, 2 );
-
-        if( debug_peak )
-          cout << "  num_prev_poly=" << num_prev_poly << ", num_polynomial_terms=" << num_polynomial_terms << endl;
 
         //Really high stat HPGe peaks that have a "step" in them are susceptible to getting a bunch
         //  of peaks added on in the low-energy range.  So for these we'll make the continuum
         //  step-functions - either flat, or if higher-stat, linear.
         //  These threshold are pure guesses - but its maybe not worth the effort to include in the optimization?
         const double significance_for_flat_step_continuum = 40;
-        //const double significance_for_linear_step_continuum = 60;
 
-        bool step_continuum = (PeakContinuum::is_step_continuum( orig_continuum->type() )
-                                    || (max_significance > significance_for_flat_step_continuum));
-        //if( max_significance > significance_for_linear_step_continuum )
-        //{
-        //  num_polynomial_terms = std::max( num_polynomial_terms, step_continuum ? 2 : 3 );
-        //  if( debug_peak )
-        //    cout << "  Elevating step continuum to linearstep" << ", num_polynomial_terms=" << num_polynomial_terms << ", max_significance=" << max_significance << endl;
-        //}
+        PeakContinuum::OffsetType cont_type = orig_continuum->type();
+        if( !PeakContinuum::is_step_continuum( cont_type )
+          && (max_significance > significance_for_flat_step_continuum) )
+        {
+          cont_type = PeakContinuum::OffsetType::FlatStep;
+        }
+
+        // Ensure at least a Linear continuum
+        if( !PeakContinuum::is_step_continuum( cont_type )
+          && (PeakContinuum::num_parameters( cont_type ) < 2) )
+        {
+          cont_type = PeakContinuum::OffsetType::Linear;
+        }
+
+        if( debug_peak )
+          cout << "  cont_type=" << PeakContinuum::offset_type_str( cont_type ) << endl;
 
         const double ref_energy = orig_continuum->referenceEnergy();
         vector<double> trial_means = means, trial_sigmas = sigmas;
@@ -1092,7 +1093,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
         vector<double> amplitudes, continuum_coeffs, amplitudes_uncerts, continuum_coeffs_uncerts;
 
         const double without_new_peak_chi2 = fit_amp_and_offset( energies, data_cnts,
-                              num_trial_channel, num_polynomial_terms, step_continuum, ref_energy,
+                              num_trial_channel, cont_type, ref_energy,
                               trial_means, trial_sigmas, nearbyOtherRoiPeaks, PeakDef::SkewType::NoSkew,
                               skew_parameters, amplitudes, continuum_coeffs,
                               amplitudes_uncerts, continuum_coeffs_uncerts );
@@ -1102,7 +1103,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
         trial_means.push_back( added_mean );
         trial_sigmas.push_back( avrg_gaus_sigma );
         const double with_new_peak_chi2 = fit_amp_and_offset( energies, data_cnts,
-                              num_trial_channel, num_polynomial_terms, step_continuum, ref_energy,
+                              num_trial_channel, cont_type, ref_energy,
                               trial_means, trial_sigmas, nearbyOtherRoiPeaks, PeakDef::SkewType::NoSkew,
                               skew_parameters, amplitudes, continuum_coeffs,
                               amplitudes_uncerts, continuum_coeffs_uncerts );
@@ -1147,7 +1148,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
         const double new_peak_uncert = amplitudes_uncerts.back();
         const double nsigma = new_peak_area / new_peak_uncert;
 
-        const size_t ndof = (num_trial_channel - amplitudes.size()) - num_polynomial_terms;
+        const size_t ndof = (num_trial_channel - amplitudes.size()) - PeakContinuum::num_parameters( cont_type );
         const double chi2_improve = (without_new_peak_chi2 - with_new_peak_chi2);
         const double chi2_dof_improve = chi2_improve / ndof;
         // Note/TODO: The Chi2/Dof wont improve as much when adding a peak to a wide ROI - maybe there is a better measure to use?
@@ -1185,37 +1186,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
           auto cont = max_sig_peaks.front()->continuum();
           cont->setRange( channel_energies[trial_start_chnl], channel_energies[trial_end_chnl+1] );
 
-          if( step_continuum )
-          {
-            if( num_polynomial_terms == 2 )
-              cont->setType( PeakContinuum::OffsetType::FlatStep );
-            else if( num_polynomial_terms == 3 )
-              cont->setType( PeakContinuum::OffsetType::LinearStep );
-            else if( num_polynomial_terms == 4 )
-              cont->setType( PeakContinuum::OffsetType::BiLinearStep );
-            else
-            {
-              assert( 0 );
-              throw logic_error( "Unknown step cont type" );
-            }
-          }else
-          {
-            if( num_polynomial_terms == 0 )
-              cont->setType( PeakContinuum::OffsetType::NoOffset );
-            else if( num_polynomial_terms == 1 )
-              cont->setType( PeakContinuum::OffsetType::Constant );
-            else if( num_polynomial_terms == 2 )
-              cont->setType( PeakContinuum::OffsetType::Linear );
-            else if( num_polynomial_terms == 3 )
-              cont->setType( PeakContinuum::OffsetType::Quadratic );
-            else if( num_polynomial_terms == 4 )
-              cont->setType( PeakContinuum::OffsetType::Cubic );
-            else
-            {
-              assert( 0 );
-              throw logic_error( "Unknown cont type" );
-            }
-          }//if( step_continuum ) / else
+          cont->setType( cont_type );
 
           cont->setParameters( ref_energy, continuum_coeffs, continuum_coeffs_uncerts );
 
@@ -1480,12 +1451,11 @@ PeakFindAndFitWeights eval_initial_peak_find_and_fit( const InitialPeakFindSetti
   //  line, after the initial peak candidate find and fit.
   size_t num_add_candidates_fit_for = 0, num_add_candidates_accepted = 0;
 
-  const bool isHPGe = (ClassifyDetType_GA::true_det_type_for_name( src_info.detector_name )
-                       == PeakFitUtils::CoarseResolutionType::High);
+  const PeakFitUtils::CoarseResolutionType det_type = src_info.det_type;
 
   // `initial_peaks` not const for initial development
   vector<PeakDef> initial_peaks
-                        = InitialFit_GA::initial_peak_find_and_fit( fit_settings, candidate_settings, data, isHPGe,
+                        = InitialFit_GA::initial_peak_find_and_fit( fit_settings, candidate_settings, data, det_type,
                                           multithread, num_add_candidates_fit_for, num_add_candidates_accepted);
 
   const vector<ExpectedPhotopeakInfo> &expected_photopeaks = src_info.expected_photopeaks;

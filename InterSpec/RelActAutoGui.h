@@ -136,6 +136,8 @@ public:
   void handlePuByCorrelationChanged();
   void handleSkewTypeChanged();
   void handleLorentzianXraysChanged();
+  void handleUseFixedSkewChanged();
+  void handlePeakFitDetPrefsChanged();
   void populateSkewTypeComboBox( const bool lorentzian_mode );
   PeakDef::SkewType currentSkewType() const;
   void setCurrentSkewType( const PeakDef::SkewType skew_type );
@@ -412,6 +414,12 @@ protected:
    */
   bool m_lorentzian_xrays_enabled;
   Wt::WCheckBox *m_lorentzian_xrays;
+
+  /** Tracks whether the "use fixed skew from prefs" checkbox should be visible.
+   True when PeakFitDetPrefs has fixed skew parameter values set.
+   */
+  bool m_use_fixed_skew_enabled;
+  Wt::WCheckBox *m_use_fixed_skew;
 
   // Wt::WComboBox *m_u_pu_data_source;
   PopupDivMenu *m_more_options_menu;

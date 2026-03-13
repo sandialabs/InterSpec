@@ -39,9 +39,18 @@
  want to limit the range of values the function can fit to, you can just limit the range of each Berstein
  coefficient to that range.  They are also more numerically stable, I think.
 
- Note: The Bernstein coefficients may be outside the y-value range of the initial function - the Bernstein
-      coefficients being in a given range is sufficient to say that the function will be within that range,
-      but it is not necassary for the Bernstein coefficients to only be in the range of the y-values.
+ Note on the "convex hull" property of Bernstein coefficients:
+   Bounding all Bernstein coefficients to a range [a, b] guarantees the polynomial will evaluate within
+   [a, b] over the entire domain.  However, the converse is NOT true: a polynomial whose values stay
+   entirely within [a, b] may require Bernstein coefficients that extend outside [a, b].  This is because
+   the Bernstein coefficients form a "convex hull" around the polynomial curve, and this hull is generally
+   wider than the actual range of the polynomial.  The discrepancy grows with more oscillatory curves, and
+   can be significant even for smooth, monotonic polynomials.
+
+   In practice, this means that when constraining Bernstein coefficients to enforce output bounds, the
+   effective representable function space is somewhat reduced compared to an unconstrained polynomial of the
+   same degree.  If this becomes a limiting factor, using a slightly higher degree polynomial will tighten
+   the convex hull closer to the actual polynomial range, recovering representational flexibility.
  */
 namespace BersteinPolynomial
 {
@@ -526,6 +535,68 @@ T evaluate_power_series_via_bernstein( const T& x,
 {
   return evaluate_power_series_via_bernstein( x, power_coeffs.data(), power_coeffs.size(), x_min, x_max );
 }
+
+/** Converts power series polynomial coefficients to Bernstein polynomial coefficients,
+ with the constraint that all Bernstein coefficients must be within [lower_bound, upper_bound].
+
+ This function first attempts an exact conversion using power_series_to_bernstein(). If all
+ resulting coefficients are within the specified bounds, they are returned directly (fast path).
+
+ If any coefficient falls outside the bounds, a constrained least-squares fit is performed
+ using Ceres optimizer to find Bernstein coefficients that:
+ 1. Are all within [lower_bound, upper_bound]
+ 2. Minimize the squared error to the original polynomial (with y-values clamped to bounds)
+
+ The fitting samples the polynomial at 50 uniformly-spaced points across [x_min, x_max],
+ clamps those y-values to the bounds, and finds the best-fit Bernstein polynomial.
+
+ @param power_coeffs Pointer to array of power series coefficients [a_0, a_1, ..., a_n]
+ @param num_coefficients Number of power series coefficients
+ @param x_min Minimum x value for the power series domain
+ @param x_max Maximum x value for the power series domain
+ @param lower_bound Lower bound for all Bernstein coefficients.
+        For FWHM functions where FWHM = sqrt(polynomial), pass the square of the
+        minimum allowed FWHM (i.e., min_fwhm * min_fwhm), since the Bernstein
+        coefficients represent FWHM-squared values.
+ @param upper_bound Upper bound for all Bernstein coefficients.
+        For FWHM functions where FWHM = sqrt(polynomial), pass the square of the
+        maximum allowed FWHM (i.e., max_fwhm * max_fwhm).
+ @return Vector of Bernstein coefficients, all guaranteed to be in [lower_bound, upper_bound]
+ @throws std::invalid_argument if inputs are invalid (empty coeffs, x_max <= x_min, etc.)
+ @throws std::runtime_error if Ceres optimization fails
+ */
+std::vector<double> constrained_power_series_to_bernstein( const double* power_coeffs,
+                                                           size_t num_coefficients,
+                                                           double x_min,
+                                                           double x_max,
+                                                           double lower_bound,
+                                                           double upper_bound );
+
+/** Convenience overload for constrained_power_series_to_bernstein() that accepts std::vector */
+std::vector<double> constrained_power_series_to_bernstein( const std::vector<double>& power_coeffs,
+                                                           double x_min,
+                                                           double x_max,
+                                                           double lower_bound,
+                                                           double upper_bound );
+
+/** Re-fits existing Bernstein coefficients to satisfy new (tighter) bounds.
+
+ Samples the existing Bernstein polynomial at many points, clamps targets to bounds,
+ and uses Ceres to find new coefficients within bounds that best approximate the
+ original curve shape.
+
+ If all coefficients are already within bounds, returns them unchanged (fast path).
+
+ @param bernstein_coeffs Existing Bernstein coefficients to re-fit
+ @param lower_bound Lower bound for all re-fit coefficients
+ @param upper_bound Upper bound for all re-fit coefficients
+ @return Vector of Bernstein coefficients, all guaranteed to be in [lower_bound, upper_bound]
+ @throws std::invalid_argument if inputs are invalid (empty coeffs, upper_bound <= lower_bound)
+ @throws std::runtime_error if Ceres optimization fails
+ */
+std::vector<double> constrained_bernstein_refit( const std::vector<double> &bernstein_coeffs,
+                                                  double lower_bound,
+                                                  double upper_bound );
 
 }  // namespace BersteinPolynomial
 

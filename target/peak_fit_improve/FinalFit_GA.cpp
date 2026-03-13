@@ -175,7 +175,7 @@ std::string FinalFitScore::print( const std::string &varname ) const
 
 vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
                                        const FinalPeakFitSettings &final_fit_settings,
-                                       const bool isHPGe,
+                                       const PeakFitUtils::CoarseResolutionType det_type,
                                        const shared_ptr<const SpecUtils::Measurement> &data )
 {
 #ifndef NDEBUG
@@ -223,7 +223,7 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
 
 
 
-  const auto refit_peaks = [data, isHPGe]( const vector<PeakDef> &these_input_peaks ) -> vector<PeakDef> {
+  const auto refit_peaks = [data, det_type]( const vector<PeakDef> &these_input_peaks ) -> vector<PeakDef> {
 
     // Do an initial fit
     const double initial_stat_threshold = 0.0;
@@ -236,12 +236,12 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
       for( const PeakDef &p : these_input_peaks )
         input_peaks_tmp.push_back( make_shared<PeakDef>(p) );
       PeakFitLM::fit_peaks_LM( results_tmp, input_peaks_tmp, data,
-                          initial_stat_threshold, initial_hypothesis_threshold,  amplitudeOnly, isHPGe );
+                          initial_stat_threshold, initial_hypothesis_threshold,  amplitudeOnly, det_type );
     for( const shared_ptr<const PeakDef> &p : results_tmp )
       these_fit_peaks.push_back( *p );
 #else
       fitPeaks( these_fit_peaks, initial_stat_threshold, initial_hypothesis_threshold,
-                data, initial_peaks, amplitudeOnly, isHPGe );
+                data, initial_peaks, amplitudeOnly, (det_type == PeakFitUtils::CoarseResolutionType::High) );
 #endif
 
     return these_fit_peaks;
@@ -260,7 +260,7 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
 
   vector<PeakDef> initial_peaks = pre_fit_peaks;
 
-  const auto find_ROI_limits = [&initial_peaks,&data,&final_fit_settings,&channel_counts,isHPGe,lower_extend_base_nfwhm,upper_extend_base_nfwhm, debug_peak]() -> pair<double,double> {
+  const auto find_ROI_limits = [&initial_peaks,&data,&final_fit_settings,&channel_counts,det_type,lower_extend_base_nfwhm,upper_extend_base_nfwhm, debug_peak]() -> pair<double,double> {
 
     const PeakDef &first_peak = initial_peaks.front();
     const PeakDef &last_peak = initial_peaks.back();
@@ -346,7 +346,7 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
       possible_roi_channels[i] = channel_counts[i + smooth_lower_index];
     }
 
-    const int order = isHPGe ? 3 : 2;
+    const int order = (det_type == PeakFitUtils::CoarseResolutionType::High) ? 3 : 2;
 
     SavitzyGolayCoeffs first_deriv_sgcoeffs( smooth_nchannel, smooth_nchannel, order, 1 );
     vector<float> smoothed_first_derivs, first_derivs_variance;
@@ -969,7 +969,8 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
           const double data_counts = data->gamma_channel_content(i);
           const float lenergy = data->gamma_channel_lower(i);
           const float uenergy = data->gamma_channel_upper(i);
-          const double expected_continuum_counts = most_sig_peak.continuum()->offset_integral( lenergy, uenergy, data );
+          const PeakDef *sig_peak_ptr = &most_sig_peak;
+          const double expected_continuum_counts = most_sig_peak.continuum()->offset_integral( lenergy, uenergy, data, &sig_peak_ptr, 1 );
           const double expected_gauss_counts = most_sig_peak.gauss_integral( lenergy, uenergy );
           const double expected_counts = expected_continuum_counts + expected_gauss_counts;
           const double residual = (data_counts - expected_counts) / sqrt( std::max( 1.0, data_counts ) );
@@ -1153,9 +1154,14 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
         const float ch_upper_energy = data->gamma_channel_upper(i + 1);
 
         double fit_amp = 0.0;
-        for( const PeakDef &p : orig_roi )
-          fit_amp += p.gauss_integral(ch_lower_energy, ch_upper_energy);
-        fit_amp += orig_roi.front().continuum()->offset_integral(ch_lower_energy, ch_upper_energy, data);
+        vector<const PeakDef *> roi_peak_ptrs_ga( orig_roi.size() );
+        for( size_t pi = 0; pi < orig_roi.size(); ++pi )
+        {
+          fit_amp += orig_roi[pi].gauss_integral(ch_lower_energy, ch_upper_energy);
+          roi_peak_ptrs_ga[pi] = &orig_roi[pi];
+        }
+        fit_amp += orig_roi.front().continuum()->offset_integral( ch_lower_energy, ch_upper_energy, data,
+                                                                   roi_peak_ptrs_ga.data(), roi_peak_ptrs_ga.size() );
 
         const double deviation = fabs(fit_amp - data_cnts) / uncert;
         if( deviation > max_deviation )
@@ -1256,7 +1262,7 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
 
 vector<PeakDef> final_peak_fit( const vector<PeakDef> &pre_fit_peaks,
                                const FinalPeakFitSettings &final_fit_settings,
-                               const bool isHPGe,
+                               const PeakFitUtils::CoarseResolutionType det_type,
                                const std::shared_ptr<const SpecUtils::Measurement> &data,
                                const bool multithread )
 {
@@ -1420,10 +1426,10 @@ vector<PeakDef> final_peak_fit( const vector<PeakDef> &pre_fit_peaks,
     {
       const vector<PeakDef> *in_peaks = &cont_peaks.second;
 
-      pool.post( [&answer, &answer_mutex, in_peaks, &final_fit_settings, &data, isHPGe](){
+      pool.post( [&answer, &answer_mutex, in_peaks, &final_fit_settings, &data, det_type](){
         try
         {
-          const vector<PeakDef> roi_answer = final_peak_fit_for_roi( *in_peaks, final_fit_settings, isHPGe, data );
+          const vector<PeakDef> roi_answer = final_peak_fit_for_roi( *in_peaks, final_fit_settings, det_type, data );
 
           std::lock_guard<std::mutex> lock( answer_mutex );
           answer.insert( end(answer), begin(roi_answer), end(roi_answer) );
@@ -1449,7 +1455,7 @@ vector<PeakDef> final_peak_fit( const vector<PeakDef> &pre_fit_peaks,
 
       try
       {
-        const vector<PeakDef> roi_answer = final_peak_fit_for_roi( in_peaks, final_fit_settings, isHPGe, data );
+        const vector<PeakDef> roi_answer = final_peak_fit_for_roi( in_peaks, final_fit_settings, det_type, data );
         answer.insert( end(answer), begin(roi_answer), end(roi_answer) );
       }catch( std::exception &e )
       {
@@ -1555,10 +1561,9 @@ FinalFitScore eval_final_peak_fit( const FinalPeakFitSettings &final_fit_setting
   const shared_ptr<const SpecUtils::Measurement> &data = src_spectra.front();
   assert( data );
 
-  const bool isHPGe = (ClassifyDetType_GA::true_det_type_for_name( src_info.detector_name )
-                       == PeakFitUtils::CoarseResolutionType::High);
+  const PeakFitUtils::CoarseResolutionType det_type = src_info.det_type;
 
-  vector<PeakDef> fit_peaks = final_peak_fit( intial_peaks, final_fit_settings, isHPGe, data, ns_final_peak_fit_parrallel );
+  vector<PeakDef> fit_peaks = final_peak_fit( intial_peaks, final_fit_settings, det_type, data, ns_final_peak_fit_parrallel );
 
   // - Calculate score based on fit_peaks, we will judge on:
   //   - Area of each peaks
@@ -1872,12 +1877,11 @@ void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_s
       vector<PeakDef> *result = &(initial_peak_fits[input_src_index]);
       shared_ptr<const SpecUtils::Measurement> data = src.src_info.src_spectra[0];
 
-      const bool src_isHPGe = (ClassifyDetType_GA::true_det_type_for_name( src.detector_name )
-                               == PeakFitUtils::CoarseResolutionType::High);
+      const PeakFitUtils::CoarseResolutionType src_det_type = src.det_type;
 
-      auto fit_initial_peaks_worker = [&candidate_settings, &initial_fit_settings, &num_completed, num_total, data, result, src_isHPGe](){
+      auto fit_initial_peaks_worker = [&candidate_settings, &initial_fit_settings, &num_completed, num_total, data, result, src_det_type](){
         size_t dummy1, dummy2;
-        *result = InitialFit_GA::initial_peak_find_and_fit( initial_fit_settings, candidate_settings, data, src_isHPGe, false, dummy1, dummy2 );
+        *result = InitialFit_GA::initial_peak_find_and_fit( initial_fit_settings, candidate_settings, data, src_det_type, false, dummy1, dummy2 );
 
         long long val = num_completed.fetch_add(1, std::memory_order_relaxed);
         if( ((val+1) % 100) == 0 )

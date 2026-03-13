@@ -30,7 +30,9 @@
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/RelActCalc.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/RelActCalcAuto.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
 namespace SpecUtils
@@ -291,8 +293,9 @@ enum FitSrcPeaksOptions
    */
   DoNotUseExistingRois = 0x01,
   
-  /** Notmally ROIs of source peak will try to be limited in energy range to mitigate effects of other nearby peaks; with
-   this option, the nearby peaks may share the ROI will be left in as freely-floating peaks, and included in the results.
+  /** Normally ROIs of source peak will try to be limited in energy range to mitigate effects of other nearby peaks (of
+   sources you are not fitting); with this option, the nearby peaks may share the ROI will be left in as freely-floating peaks,
+   and included in the results.
    */
   ExistingPeaksAsFreePeak = 0x02,
   
@@ -331,10 +334,11 @@ enum FitSrcPeaksOptions
  @param drf_input Detector response function (can be nullptr, will use generic if needed)
  @param options Options for how the fit should be done.
  @param config Configuration for peak fitting parameters
- @param isHPGe Whether this is an HPGe detector
+ @param peak_fit_prefs Peak fitting preferences (detector type, skew, FWHM method).
+        The isHPGe flag is derived from prefs->m_det_type.  If nullptr, defaults are used.
  @return PeakFitResult with status, error message, fit peaks, and solution
  */
-  
+
 PeakFitResult fit_peaks_for_nuclides(
   const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,
@@ -344,8 +348,8 @@ PeakFitResult fit_peaks_for_nuclides(
   const std::shared_ptr<const DetectorPeakResponse> &drf_input,
   const Wt::WFlags<FitSrcPeaksOptions> options,
   const PeakFitForNuclideConfig &config,
-  const bool isHPGe );
-  
+  const std::shared_ptr<const PeakFitDetPrefs> &peak_fit_prefs );
+
 PeakFitResult fit_peaks_for_nuclides(
   const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,
@@ -355,14 +359,14 @@ PeakFitResult fit_peaks_for_nuclides(
   const std::shared_ptr<const DetectorPeakResponse> &drf_input,
   const Wt::WFlags<FitSrcPeaksOptions> options,
   const PeakFitForNuclideConfig &config,
-  const bool isHPGe );
+  const std::shared_ptr<const PeakFitDetPrefs> &peak_fit_prefs );
   
 
 // Helper function for estimating initial ROIs when no peaks are available
 std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_without_peaks(
   const std::vector<RelActCalcAuto::NucInputInfo> &sources,
   const std::shared_ptr<const DetectorPeakResponse> &drf,
-  const bool isHPGe,
+  const PeakFitUtils::CoarseResolutionType det_type,
   const DetectorPeakResponse::ResolutionFnctForm fwhmFnctnlForm,
   const std::vector<float> &fwhm_coefficients,
   const double lower_fwhm_energy,

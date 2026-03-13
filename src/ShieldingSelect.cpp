@@ -44,6 +44,7 @@
 #include <Wt/WStackedWidget>
 #include <Wt/WRegExpValidator>
 #include <Wt/WSuggestionPopup>
+#include <Wt/WAbstractItemModel>
 
 #include "rapidxml/rapidxml.hpp"
 #include "rapidxml/rapidxml_utils.hpp"
@@ -1418,14 +1419,12 @@ void SourceCheckbox::handleFitMassFractionChanged()
 }
 
 
-ShieldingSelect::ShieldingSelect( MaterialDB *materialDB,
-                 Wt::WSuggestionPopup *materialSuggest,
+ShieldingSelect::ShieldingSelect( Wt::WSuggestionPopup *materialSuggest,
                  Wt::WContainerWidget *parent )
 : WContainerWidget( parent ),
   m_toggleImage( nullptr ),
   m_shieldSrcDisp( nullptr ),
   m_forFitting( false ),
-  m_materialDB( materialDB ),
   m_sourceModel( nullptr ),
   m_geometry( GeometryType::Spherical ),
   m_materialSuggest( materialSuggest ),
@@ -1464,8 +1463,7 @@ ShieldingSelect::ShieldingSelect( MaterialDB *materialDB,
 }
 
 
-ShieldingSelect::ShieldingSelect( MaterialDB *materialDB,
-                                  SourceFitModel *sourceModel,
+ShieldingSelect::ShieldingSelect( SourceFitModel *sourceModel,
                                   Wt::WSuggestionPopup *materialSuggest,
                                   const ShieldingSourceDisplay *shieldSource,
                                   Wt::WContainerWidget *parent )
@@ -1473,7 +1471,6 @@ ShieldingSelect::ShieldingSelect( MaterialDB *materialDB,
     m_toggleImage( nullptr ),
     m_shieldSrcDisp( shieldSource ),
     m_forFitting( (shieldSource != nullptr) ),
-    m_materialDB( materialDB ),
     m_sourceModel( sourceModel ),
     m_geometry( GeometryType::Spherical ),
     m_materialSuggest( materialSuggest ),
@@ -1736,8 +1733,8 @@ void ShieldingSelect::setMaterialNameAndThickness( const string &name,
   if( m_isGenericMaterial )
     handleToggleGeneric();
   
-  const Material *mat = material( name );
-  
+  const std::shared_ptr<const Material> mat = material( name );
+
   if( !mat && name.size() )
     throw runtime_error( "'" + name + "' was not a recognized material." );
   
@@ -3486,34 +3483,44 @@ bool ShieldingSelect::fitArealDensity() const
 }//bool fitArealDensity() const
 
 
-const Material *ShieldingSelect::material( const std::string &text )
+std::shared_ptr<const Material> ShieldingSelect::material( const std::string &text )
 {
   //See if 'text' is the name of a material in the database
   try
   {
-    const Material *answer = m_materialDB->material( text );
-    
-    return answer;
+    std::shared_ptr<const Material> answer = MaterialDB::instance()->material( text );
+    if( answer )
+      return answer;
   }catch(...)
   {
     //material wasnt in the database
   }
-  
+
   //See if 'text' is a chemical formula, if so add it to possible suggestions
   try
   {
     const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-    const Material *mat = m_materialDB->parseChemicalFormula( text, db );
-    if( m_materialSuggest )
-      m_materialSuggest->addSuggestion( mat->name, mat->name );
-    return mat;
+    std::shared_ptr<const Material> mat = MaterialDB::materialFromChemicalFormula( text, db );
+    if( mat && m_materialSuggest )
+    {
+      // Check if this suggestion already exists before adding
+      Wt::WAbstractItemModel *mdl = m_materialSuggest->model();
+      const Wt::WString suggName = Wt::WString::fromUTF8( mat->name );
+      bool alreadyHave = false;
+      for( int row = 0; !alreadyHave && (row < mdl->rowCount()); ++row )
+        alreadyHave = (Wt::asString( mdl->data( row, 0 ) ) == suggName);
+      if( !alreadyHave )
+        m_materialSuggest->addSuggestion( mat->name, mat->name );
+    }
+    if( mat )
+      return mat;
   }catch(...)
   {
     // No luck
   }
 
   return nullptr;
-}//std::shared_ptr<Material> material( const std::string &text )
+}//shared_ptr<const Material> material( const std::string &text )
 
 
 std::shared_ptr<const Material> ShieldingSelect::material()
@@ -4485,13 +4492,13 @@ void ShieldingSelect::handleToggleGeneric()
     m_materialEdit->disable();
     m_toggleImage->setImageLink( Wt::WLink("InterSpec_resources/images/atom_black.png") );
     
-    const Material *mat = nullptr;
+    std::shared_ptr<const Material> mat;
     try
     {
-      mat = m_materialDB->material( oldmaterial );
+      mat = MaterialDB::instance()->material( oldmaterial );
     }catch(std::exception &)
     {}
-    
+
     double ad = -1.0;
     if( mat )
     {
@@ -4602,7 +4609,7 @@ void ShieldingSelect::handleToggleGeneric()
       if( el )
       {
         m_materialEdit->setText( el->symbol );
-        const Material *mat = m_materialDB->material( el->symbol );
+        const std::shared_ptr<const Material> mat = MaterialDB::instance()->material( el->symbol );
         if( ad >= 0.0 )
         {
           const double dist = ad / mat->density;
@@ -4679,8 +4686,8 @@ void ShieldingSelect::updateMaterialFromUserInputTxt()
     return;
   }//if( text.empty() )
   
-  const Material *mat = material( text );
-  
+  const std::shared_ptr<const Material> mat = material( text );
+
   if( mat )
   {
     m_currentMaterialDescrip = text;
@@ -4963,14 +4970,14 @@ void ShieldingSelect::handleUserChangedMaterialName()
   
   if( !text.empty()  )
   {
-    const Material *mat = material( text );
-    
+    const std::shared_ptr<const Material> mat = material( text );
+
     if( !mat )
     {
       //Check if `text` is the beginning of a shielding name, and if so, just set the text
       //  to the previous value.  If we dont do this, and its an invalid material, then the
       //  user will see an error message.
-      const vector<string> &material_names = m_materialDB->names();
+      const vector<string> &material_names = MaterialDB::instance()->names();
       for( const string &mat_name : material_names )
       {
         if( SpecUtils::istarts_with(mat_name, text) )
@@ -5405,7 +5412,7 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
   try
   {
     ShieldingSourceFitCalc::ShieldingInfo decoded_info;
-    decoded_info.deSerialize( added_node, m_materialDB );
+    decoded_info.deSerialize( added_node );
     ShieldingSourceFitCalc::ShieldingInfo::equalEnough( info, decoded_info );
   }catch( std::exception &e )
   {
@@ -5503,7 +5510,7 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
   {
     const string uri = encodeStateToUrl();
     
-    ShieldingSelect test( m_materialDB, m_sourceModel, m_materialSuggest, m_shieldSrcDisp  );
+    ShieldingSelect test( m_sourceModel, m_materialSuggest, m_shieldSrcDisp  );
     test.handleAppUrl( uri );
     testShieldingSelectPartiallySameAsOrig( test );
   }catch( std::exception &e )
@@ -5520,7 +5527,7 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
    //  on them being inserted into m_shieldSrcDisp
   try
   {
-    ShieldingSelect test( m_materialDB, m_sourceModel, m_materialSuggest, m_shieldSrcDisp );
+    ShieldingSelect test( m_sourceModel, m_materialSuggest, m_shieldSrcDisp );
     test.deSerialize(added_node);
     testShieldingSelectPartiallySameAsOrig( test );
   }catch( std::exception &e )
@@ -5539,7 +5546,7 @@ void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node,
                                   const bool is_fixed_geom_det )
 {
   ShieldingSourceFitCalc::ShieldingInfo info;
-  info.deSerialize( shield_node, m_materialDB );
+  info.deSerialize( shield_node );
   
   // If not for fitting, we shouldnt have intrinsic or trace sources
   assert( info.m_forFitting || info.m_traceSources.empty() );
@@ -5783,7 +5790,7 @@ std::string ShieldingSelect::encodeStateToUrl() const
 void ShieldingSelect::handleAppUrl( std::string query_str )
 {
   ShieldingSourceFitCalc::ShieldingInfo info;
-  info.handleAppUrl( query_str, m_materialDB );
+  info.handleAppUrl( query_str );
   fromShieldingInfo( info );
   
   // Update distances to exactly match user input for round-tripping

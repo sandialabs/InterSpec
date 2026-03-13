@@ -981,7 +981,7 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
   }//void serialize( rapidxml::xml_node<char> *parent_node ) const
   
   
-  void ShieldingInfo::deSerialize( const rapidxml::xml_node<char> *shield_node, MaterialDB *materialDb )
+  void ShieldingInfo::deSerialize( const rapidxml::xml_node<char> *shield_node )
   {
     using GammaInteractionCalc::GeometryType;
     
@@ -1078,7 +1078,7 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
     
     if( material_node )
     {
-      if( !materialDb )
+      if( !MaterialDB::instance() )
         throw runtime_error( "De-serializing shielding requires valid Material DB" );
         
       m_isGenericMaterial = false;
@@ -1118,30 +1118,31 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
       m_material.reset();
       if( !material_name.empty() )
       {
-        const Material *mat = nullptr;
-        
+        const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+        std::shared_ptr<const Material> mat;
+
         try
         {
-          mat = materialDb->material( material_name );
+          mat = matdb->material( material_name );
         }catch( std::exception & )
         {
         }
-        
+
         if( !mat )
         {
           // Maybe the user specified a chemical formula, like "U0.99Np0.01"
           try
           {
             const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
-            mat = materialDb->parseChemicalFormula( material_name, db );
+            mat = MaterialDB::materialFromChemicalFormula( material_name, db );
           }catch( std::exception & )
           {
           }
         }//if( !mat )
-        
+
         if( !mat )
           throw runtime_error( "Invalid shielding material: '" + material_name + "'" );
-        m_material = make_shared<Material>( *mat );
+        m_material = mat;
       }//if( !material_name.empty() )
       
       
@@ -1444,7 +1445,7 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
   }//std::string encodeStateToUrl() const
     
   
-  void ShieldingInfo::handleAppUrl( std::string query_str, MaterialDB *materialDb )
+  void ShieldingInfo::handleAppUrl( std::string query_str )
   {
     // "V=1&G=S&D1=1.2cm&N=Fe"
     // "V": version
@@ -1601,25 +1602,26 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
         m_material = nullptr;
       }else
       {
-        if( !materialDb )
-          throw runtime_error( "ShieldingInfo::handleAppUrl: invalid MaterialDB passed in" );
-        
-        const Material * mat = materialDb->material(materialstr);
-        
+        const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+        if( !matdb )
+          throw runtime_error( "ShieldingInfo::handleAppUrl: MaterialDB not available" );
+
+        std::shared_ptr<const Material> mat = matdb->material( materialstr );
+
         if( !mat )
         {
           try
           {
             const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
-            mat = materialDb->parseChemicalFormula( materialstr, db );
+            mat = MaterialDB::materialFromChemicalFormula( materialstr, db );
           }catch( std::exception & )
           {
           }
         }//if( !mat )
-        
+
         if( !mat )
           throw runtime_error( "Invalid material name '" + materialstr + "'" );
-        m_material = make_shared<Material>( *mat );
+        m_material = mat;
       }//if( !materialstr.empty() ) / else
       
       
@@ -2418,7 +2420,7 @@ void fit_model( const std::string wtsession,
       shield.m_isGenericMaterial = chi2Fcn->isGenericMaterial(shielding_index);
       assert( shield.m_isGenericMaterial == initial_shield.m_isGenericMaterial );
       shield.m_material = initial_shield.m_material;
-      assert( shield.m_material.get() == chi2Fcn->material(shielding_index) );
+      assert( shield.m_material == chi2Fcn->material(shielding_index) );
       
 #if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
       shield.m_truthFitMassFractions = initial_shield.m_truthFitMassFractions;

@@ -34,6 +34,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/PeakFitSpecImp.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
@@ -373,21 +374,26 @@ bool is_likely_high_res( InterSpec *viewer )
 {
   assert( wApp );
   assert( viewer );
-  
+
   PeakModel *peakModel = viewer->peakModel();
   assert( peakModel );
   if( !peakModel )
     return false;
-  
+
   std::shared_ptr<const SpecMeas> meas = viewer->measurment(SpecUtils::SpectrumType::Foreground);
   assert( meas );
-  
+
   shared_ptr<const SpecUtils::Measurement> foreground = viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
   assert( foreground );
-  
+
   if( !meas || !foreground || (foreground->num_gamma_channels() < 512) )
     return false;
-  
+
+  // If the user has set PeakFitDetPrefs, use that as the definitive answer
+  const shared_ptr<const PeakFitDetPrefs> fitPrefs = meas->peakFitDetPrefs();
+  if( fitPrefs && (fitPrefs->m_det_type != CoarseResolutionType::Unknown) )
+    return (fitPrefs->m_det_type == CoarseResolutionType::High);
+
   switch( meas->detector_type() )
   {
     case SpecUtils::DetectorType::Fulcrum:
@@ -485,8 +491,27 @@ CoarseResolutionType coarse_det_type(
   const shared_ptr<const SpecUtils::Measurement> &meas,
   const shared_ptr<const SpecMeas> &spec )
 {
-  if( !spec )
+  // Lambda to perform FWHM-based classification (Tier 3)
+  const auto fwhm_classify = [&meas]() -> CoarseResolutionType {
+    if( meas && (meas->num_gamma_channels() >= 16) )
+    {
+      const PeakFitSpec::SpecClassType spec_class = PeakFitSpec::initial_lowres_highres_classify( meas );
+      switch( spec_class )
+      {
+        case PeakFitSpec::SpecClassType::High:
+          return CoarseResolutionType::High;
+        case PeakFitSpec::SpecClassType::LowOrMedRes:
+          return CoarseResolutionType::LowOrMedRes;
+        case PeakFitSpec::SpecClassType::Unknown:
+          return is_high_res( meas ) ? CoarseResolutionType::High : CoarseResolutionType::LowOrMedRes;
+      }
+    }
     return CoarseResolutionType::Unknown;
+  };//fwhm_classify lambda
+  
+  // If no SpecMeas provided, can only do FWHM-based classification
+  if( !spec )
+    return fwhm_classify();
 
   // Tier 1: Check SpecUtils::DetectorType from file parsing (most reliable)
   switch( spec->detector_type() )
@@ -615,18 +640,7 @@ CoarseResolutionType coarse_det_type(
 
 
   // Tier 3: FWHM-based classification using GA-optimized settings
-  if( meas && (meas->num_gamma_channels() >= 16) )
-  {
-    const PeakFitSpec::SpecClassType spec_class = PeakFitSpec::initial_lowres_highres_classify( meas );
-    switch( spec_class )
-    {
-      case PeakFitSpec::SpecClassType::High:        return CoarseResolutionType::High;
-      case PeakFitSpec::SpecClassType::LowOrMedRes: return CoarseResolutionType::LowOrMedRes;
-      case PeakFitSpec::SpecClassType::Unknown:     return CoarseResolutionType::Unknown;
-    }
-  }
-
-  return CoarseResolutionType::Unknown;
+  return fwhm_classify();
 }//coarse_det_type
 
 
