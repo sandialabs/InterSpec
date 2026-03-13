@@ -23,8 +23,6 @@
 
 #include "InterSpec_config.h"
 
-#include "InterSpec/BatchGuiAnaWidget.h"
-
 #include <memory>
 #include <string>
 #include <vector>
@@ -69,6 +67,7 @@
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/ParseUtils.h"
 #include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/EnergyCalibration.h"
 
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/SpecMeas.h"
@@ -1836,7 +1835,8 @@ void FileConvertOpts::performAnalysis( const vector<tuple<string, string, shared
         // Sum all measurements within this file into one spectrum
         const set<int> &samples = spec->sample_numbers();
         const vector<string> &dets = spec->detector_names();
-        shared_ptr<SpecUtils::Measurement> file_sum = spec->sum_measurements( samples, dets, nullptr );
+        shared_ptr<SpecUtils::Measurement> file_sum =
+          spec->sum_measurements( samples, dets, shared_ptr<const SpecUtils::EnergyCalibration>{} );
         if( !file_sum )
           continue;
 
@@ -1847,7 +1847,7 @@ void FileConvertOpts::performAnalysis( const vector<tuple<string, string, shared
         {
           // Combine running sum with this files sum using a temporary SpecMeas,
           //  so sum_measurements handles any energy calibration differences.
-          SpecMeas temp;
+          SpecUtils::SpecFile temp;
           shared_ptr<SpecUtils::Measurement> m1 = make_shared<SpecUtils::Measurement>( *running_sum );
           m1->set_sample_number( 1 );
           shared_ptr<SpecUtils::Measurement> m2 = make_shared<SpecUtils::Measurement>( *file_sum );
@@ -1858,13 +1858,14 @@ void FileConvertOpts::performAnalysis( const vector<tuple<string, string, shared
 
           const set<int> all_samples = temp.sample_numbers();
           const vector<string> all_dets = temp.detector_names();
-          running_sum = temp.sum_measurements( all_samples, all_dets, nullptr );
+          running_sum =
+            temp.sum_measurements( all_samples, all_dets, shared_ptr<const SpecUtils::EnergyCalibration>{} );
         }
       }//for( size_t i = 0; i < input_files.size(); ++i )
 
       if( running_sum )
       {
-        SpecMeas summed;
+        SpecUtils::SpecFile summed;
         running_sum->set_sample_number( 1 );
         summed.add_measurement( running_sum, true );
 
