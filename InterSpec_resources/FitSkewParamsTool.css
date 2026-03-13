@@ -128,7 +128,9 @@
   font-style: italic;
 }
 
-.FswUpdatePeaksCb
+label.FswUpdatePeaksCb:has(input[type="checkbox"])
 {
   font-size: 10px;
+  display: inline-flex;
+  float: left;
 }

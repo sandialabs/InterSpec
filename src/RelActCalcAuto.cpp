@@ -4975,7 +4975,17 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         parameters[skew_start + i] = starting;
         lower_bounds[skew_start + i] = lower;
         upper_bounds[skew_start + i] = upper;
-        
+
+        // Apply fixed skew parameter values from options, if specified
+        const bool lower_fixed = options.fixed_lower_skew[i].has_value();
+        if( lower_fixed )
+        {
+          parameters[skew_start + i] = options.fixed_lower_skew[i].value();
+          constant_parameters.push_back( static_cast<int>(skew_start + i) );
+          lower_bounds[skew_start + i] = std::nullopt;
+          upper_bounds[skew_start + i] = std::nullopt;
+        }
+
         // 20250324 HACK to test fitting peak skew
 #if( PEAK_SKEW_HACK == 1 ) //Fix the peak skew, and dont fit it
 #pragma message( "Doing peak skew hack - fixing peak skew to preset values!" )
@@ -4983,7 +4993,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         if( options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall )
         {
           cerr << "\n\n\nDoing peak skew hack! - fixing peak skew to preset values\n\n\n" << endl;
-          
+
           const double coefs[4] = { 2.7005, 16.0960, 2.1167, 4.1235 };
           parameters[skew_start + i] = starting = coefs[i];
           constant_parameters.push_back( static_cast<int>(skew_start + i) );
@@ -5001,9 +5011,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           initial_const_parameters.push_back( static_cast<int>(skew_start + i) );
         }
 #endif
-        
-          
-        // Specify ranges for second set of skew parameters
+
+
+        // Specify ranges for second set of skew parameters (upper energy values)
         if( !fit_skew_energy_dep )
         {
           parameters[skew_start + i + num_skew_coefs] = -999.9;
@@ -5013,7 +5023,24 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           parameters[skew_start + i + num_skew_coefs] = starting;
           lower_bounds[skew_start + i + num_skew_coefs] = lower;
           upper_bounds[skew_start + i + num_skew_coefs] = upper;
-          
+
+          // Apply fixed upper skew parameter values from options, if specified
+          if( options.fixed_upper_skew[i].has_value() )
+          {
+            parameters[skew_start + i + num_skew_coefs] = options.fixed_upper_skew[i].value();
+            constant_parameters.push_back( static_cast<int>(skew_start + i + num_skew_coefs) );
+            lower_bounds[skew_start + i + num_skew_coefs] = std::nullopt;
+            upper_bounds[skew_start + i + num_skew_coefs] = std::nullopt;
+          }else if( lower_fixed )
+          {
+            // If lower is fixed but upper is not specified, fix upper to same value
+            //  (no energy dependence for this parameter)
+            parameters[skew_start + i + num_skew_coefs] = options.fixed_lower_skew[i].value();
+            constant_parameters.push_back( static_cast<int>(skew_start + i + num_skew_coefs) );
+            lower_bounds[skew_start + i + num_skew_coefs] = std::nullopt;
+            upper_bounds[skew_start + i + num_skew_coefs] = std::nullopt;
+          }
+
           // 20250324 HACK to test fitting peak skew
 #if( PEAK_SKEW_HACK == 1 ) //Fix the peak skew, and dont fit it
           if( options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall )
@@ -9911,7 +9938,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         const PeakDef::CoefficientType coef
              = static_cast<PeakDef::CoefficientType>( static_cast<int>(PeakDef::CoefficientType::SkewPar0) + skew_index );
         peak.set_coefficient( comp_peak.m_skew_pars[skew_index], coef );
-        
+
+        // If this skew parameter was fixed (not fit), mark fitFor as false
+        const bool was_fixed = (skew_index < 4) && m_options.fixed_lower_skew[skew_index].has_value();
+        peak.setFitFor( coef, !was_fixed );
+
         // Set skew parameter uncertainty if computed
         if( i < peak_uncertainties.size() && skew_index < 4 )
         {
@@ -11680,6 +11711,22 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
   append_string_node( base_node, "Title", spectrum_title );
   
   append_string_node( base_node, "SkewType", PeakDef::to_string(skew_type) );
+
+  // Serialize fixed skew parameter values (only write if any are set)
+  {
+    const char *lower_names[4] = { "FixedLowerSkew0", "FixedLowerSkew1",
+                                   "FixedLowerSkew2", "FixedLowerSkew3" };
+    const char *upper_names[4] = { "FixedUpperSkew0", "FixedUpperSkew1",
+                                   "FixedUpperSkew2", "FixedUpperSkew3" };
+    for( size_t i = 0; i < 4; ++i )
+    {
+      if( fixed_lower_skew[i].has_value() )
+        append_float_node( base_node, lower_names[i], fixed_lower_skew[i].value() );
+      if( fixed_upper_skew[i].has_value() )
+        append_float_node( base_node, upper_names[i], fixed_upper_skew[i].value() );
+    }
+  }
+
   append_bool_node( base_node, "LorentzianXrays", lorentzian_xrays );
 
   append_float_node( base_node, "AddUncert", additional_br_uncert );
@@ -11774,6 +11821,37 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
     const string skew_str = SpecUtils::xml_value_str( skew_node );
     if( !skew_str.empty() )
       skew_type = PeakDef::skew_from_string( skew_str );
+
+    // fixed skew parameters - optional, default to nullopt
+    {
+      const char *lower_names[4] = { "FixedLowerSkew0", "FixedLowerSkew1",
+                                     "FixedLowerSkew2", "FixedLowerSkew3" };
+      const char *upper_names[4] = { "FixedUpperSkew0", "FixedUpperSkew1",
+                                     "FixedUpperSkew2", "FixedUpperSkew3" };
+      for( size_t i = 0; i < 4; ++i )
+      {
+        fixed_lower_skew[i] = std::nullopt;
+        fixed_upper_skew[i] = std::nullopt;
+
+        const rapidxml::xml_node<char> *lower_node
+          = parent->first_node( lower_names[i], strlen(lower_names[i]), true );
+        if( lower_node )
+        {
+          const string val_str = SpecUtils::xml_value_str( lower_node );
+          if( !val_str.empty() )
+            fixed_lower_skew[i] = std::stod( val_str );
+        }
+
+        const rapidxml::xml_node<char> *upper_node
+          = parent->first_node( upper_names[i], strlen(upper_names[i]), true );
+        if( upper_node )
+        {
+          const string val_str = SpecUtils::xml_value_str( upper_node );
+          if( !val_str.empty() )
+            fixed_upper_skew[i] = std::stod( val_str );
+        }
+      }//for( i )
+    }//fixed skew params
 
     // lorentzian_xrays added 20260121; optional, defaults to false
     lorentzian_xrays = false;
@@ -16777,6 +16855,14 @@ void Options::equalEnough( const Options &lhs, const Options &rhs )
   
   if( lhs.skew_type != rhs.skew_type )
     throw std::runtime_error( "Skew type in lhs and rhs are not the same" );
+
+  for( size_t i = 0; i < 4; ++i )
+  {
+    if( lhs.fixed_lower_skew[i] != rhs.fixed_lower_skew[i] )
+      throw std::runtime_error( "Fixed lower skew[" + std::to_string(i) + "] in lhs and rhs are not the same" );
+    if( lhs.fixed_upper_skew[i] != rhs.fixed_upper_skew[i] )
+      throw std::runtime_error( "Fixed upper skew[" + std::to_string(i) + "] in lhs and rhs are not the same" );
+  }
 
   if( lhs.lorentzian_xrays != rhs.lorentzian_xrays )
     throw std::runtime_error( "Lorentzian xrays in lhs and rhs are not the same" );

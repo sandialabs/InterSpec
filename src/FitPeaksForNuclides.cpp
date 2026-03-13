@@ -4812,7 +4812,8 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   const std::vector<float> &fwhm_coefficients,
   const PeakFitUtils::CoarseResolutionType det_type,
   const double fwhm_lower_energy,
-  const double fwhm_upper_energy )
+  const double fwhm_upper_energy,
+  const std::shared_ptr<const PeakFitDetPrefs> &peak_fit_prefs )
 {
   PeakFitResult result;
 
@@ -4915,6 +4916,16 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   options.fwhm_estimation_method = RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum;
   options.skew_type = skew_type;
   options.additional_br_uncert = config.rel_eff_auto_base_rel_eff_uncert;
+
+  // Copy fixed skew parameter values from PeakFitDetPrefs, if available and not ROI-independent
+  if( peak_fit_prefs && !peak_fit_prefs->m_roi_independent_skew )
+  {
+    for( size_t i = 0; i < 4; ++i )
+    {
+      options.fixed_lower_skew[i] = peak_fit_prefs->m_lower_energy_skew[i];
+      options.fixed_upper_skew[i] = peak_fit_prefs->m_upper_energy_skew[i];
+    }
+  }//if( peak_fit_prefs && !roi_independent )
 
   // Find valid energy range based on contiguous channels with data
   const auto [min_valid_energy, max_valid_energy] = find_valid_energy_range( orig_foreground );
@@ -5743,7 +5754,6 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             }
           }//if( !using_physical_model )
 
-          result.warnings.push_back( "Lost all ROIs while iterationing to refine solution - stopped early." );
           std::cerr << "Have lost all ROIs!  Halting iterations to refine solution." << std::endl;
           break;
         }//if( refined_rois.empty() )
@@ -6491,7 +6501,8 @@ PeakFitResult fit_peaks_for_nuclides(
       auto_search_peaks, foreground, sources,
       initial_rois, user_peaks, long_background, drf, options, config,
       fwhmFnctnlForm, fwhm_coefficients, det_type,
-      lower_fwhm_energy, upper_fwhm_energy
+      lower_fwhm_energy, upper_fwhm_energy,
+      peak_fit_prefs
     );
 
   }catch( const std::exception &e )

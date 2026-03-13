@@ -294,6 +294,17 @@ void PeakFitDetPrefs::fromXml( const ::rapidxml::xml_node<char> *node )
   else
     m_roi_independent_skew = true;
 
+  // When ROI-independent, fixed skew values don't apply — clear them
+  if( m_roi_independent_skew )
+  {
+    for( size_t i = 0; i < 4; ++i )
+    {
+      assert( !m_lower_energy_skew[i].has_value() && !m_upper_energy_skew[i].has_value() );
+      m_lower_energy_skew[i] = std::nullopt;
+      m_upper_energy_skew[i] = std::nullopt;
+    }
+  }//if( m_roi_independent_skew )
+
   // FWHM method (default Normal for backward compat with version 0.0)
   const rapidxml::xml_node<char> *fwhm_node = node->first_node( "FwhmMethod" );
   if( fwhm_node && fwhm_node->value_size() )

@@ -160,6 +160,7 @@ private:
   void onExistingAsFreeChanged();
   void onDontVaryEnergyCalChanged();
   void onRelEffTypeChanged();
+  void handlePeakFitDetPrefsChanged();
   FitPeaksForNuclides::PeakFitForNuclideConfig currentConfig() const;
   Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> currentOptions() const;
   std::string sourceListTitle() const;
@@ -186,6 +187,7 @@ private:
   NativeFloatSpinBox *m_opt_obs_initial_sig;
   NativeFloatSpinBox *m_opt_obs_final_sig;
   Wt::WComboBox *m_opt_skew_type;
+  Wt::WCheckBox *m_opt_use_fixed_skew;
   Wt::WComboBox *m_opt_fwhm_form;
   Wt::WComboBox *m_opt_rel_eff_type;
   NativeFloatSpinBox *m_opt_rel_eff_order;

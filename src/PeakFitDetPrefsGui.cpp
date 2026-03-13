@@ -843,6 +843,16 @@ void PeakFitDetPrefsGui::userChangedValue()
 
   newPrefs->m_roi_independent_skew = m_roiIndepCb->isChecked();
 
+  // When ROI-independent, fixed skew values don't apply — clear them
+  if( newPrefs->m_roi_independent_skew )
+  {
+    for( size_t i = 0; i < 4; ++i )
+    {
+      newPrefs->m_lower_energy_skew[i] = std::nullopt;
+      newPrefs->m_upper_energy_skew[i] = std::nullopt;
+    }
+  }//if( roi_independent )
+
   // FWHM method
   const int fwhmIdx = m_fwhmMethodCombo->currentIndex();
   switch( fwhmIdx )
