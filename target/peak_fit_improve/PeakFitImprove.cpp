@@ -997,7 +997,8 @@ int main( int argc, char **argv )
     ("create-compact-data", po::value<string>(), "Create compacted data directory from source data, verify round-trip, then exit")
     ("subsample", po::value<size_t>(), "Use every Nth source entry (e.g. 10 = use 1/10th of data)")
     ("detector", po::value<string>(), "Specific detector name to load (e.g. Verifinder-SN23N). Overrides --det-type.")
-    ("city", po::value<string>(), "City/location to load (e.g. Livermore, Baltimore, Denver)");
+    ("city", po::value<string>(), "City/location to load (e.g. Livermore, Baltimore, Denver)")
+    ("source-nuclide", po::value<string>(), "Comma-separated source nuclide prefixes to include (e.g. Ba133,Co60). Matches if src_name starts with the prefix.");
   
   po::variables_map vm;
   
@@ -1238,6 +1239,32 @@ int main( int argc, char **argv )
       input_srcs = std::move( subsampled );
     }
   }
+
+  // Filter by source nuclide prefixes if requested
+  if( vm.count( "source-nuclide" ) )
+  {
+    const string nuclide_csv = vm["source-nuclide"].as<string>();
+    vector<string> prefixes;
+    SpecUtils::split( prefixes, nuclide_csv, "," );
+
+    const size_t before = input_srcs.size();
+    vector<DataSrcInfo> filtered;
+    for( DataSrcInfo &info : input_srcs )
+    {
+      for( const string &prefix : prefixes )
+      {
+        if( SpecUtils::istarts_with( info.src_info.src_name, prefix.c_str() ) )
+        {
+          filtered.push_back( std::move( info ) );
+          break;
+        }
+      }
+    }//for( DataSrcInfo &info : input_srcs )
+
+    cout << "Source nuclide filter: kept " << filtered.size() << " of "
+         << before << " entries matching prefixes: " << nuclide_csv << endl;
+    input_srcs = std::move( filtered );
+  }//if( source-nuclide filter )
 
   // Handle --create-compact-data: write compact format, then round-trip verify
   if( vm.count( "create-compact-data" ) )
