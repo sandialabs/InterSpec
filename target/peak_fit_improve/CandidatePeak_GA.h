@@ -41,7 +41,7 @@ namespace SpecUtils
 
 namespace CandidatePeak_GA
 {
-  std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils::Measurement> data,
+  std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils::Measurement> &data,
                                             size_t start_channel,
                                             size_t end_channel,
                                             const FindCandidateSettings &settings );
@@ -109,6 +109,26 @@ namespace CandidatePeak_GA
     double more_scrutiny_min_dev_from_line;
     int amp_to_apply_line_test_below;
 
+    // Energy-adaptive smoothing genes
+    double smooth_ref_fraction;
+    double smooth_scale_power;
+    double min_second_deriv_significance;
+
+    // Compton backscatter test genes
+    double compton_next_ratio_max;
+    double compton_prev_ratio_min;
+    double compton_total_ratio_min;
+
+    // Low-energy drop-off test genes
+    double low_energy_test_max_keV;
+    double low_energy_drop_fraction;
+
+    // PCGAP ROI genes
+    double pcgap_feature_nsigma;
+    double pcgap_max_extent_nsigma;
+    double pcgap_roi_blend_weight;
+    double pcgap_fom_blend_threshold;
+
     std::string to_string( const std::string &separator ) const;
   };//struct CandidatePeakSolution
 
@@ -147,7 +167,8 @@ namespace CandidatePeak_GA
 
    Currently, you can only call this function once per program execution.
   */
-  FindCandidateSettings do_ga_eval( std::function<double(const FindCandidateSettings &)> ga_eval_fcn );
+  FindCandidateSettings do_ga_eval( std::function<double(const FindCandidateSettings &)> ga_eval_fcn,
+                                    const std::vector<DataSrcInfo> *input_srcs_for_report = nullptr );
 }//namespace CandidatePeak_GA
 
 #endif //CandidatePeak_GA_h

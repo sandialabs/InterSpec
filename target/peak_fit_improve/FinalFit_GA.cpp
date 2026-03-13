@@ -62,6 +62,7 @@
 #include "PeakFitImprove.h"
 #include "FinalFit_GA.h"
 #include "InitialFit_GA.h"
+#include "ClassifyDetType_GA.h"
 
 using namespace std;
 
@@ -1554,8 +1555,8 @@ FinalFitScore eval_final_peak_fit( const FinalPeakFitSettings &final_fit_setting
   const shared_ptr<const SpecUtils::Measurement> &data = src_spectra.front();
   assert( data );
 
-#warning "final_peak_fit_for_roi: always assuming HPGe right now - for dev"
-  const bool isHPGe = true;
+  const bool isHPGe = (ClassifyDetType_GA::true_det_type_for_name( src_info.detector_name )
+                       == PeakFitUtils::CoarseResolutionType::High);
 
   vector<PeakDef> fit_peaks = final_peak_fit( intial_peaks, final_fit_settings, isHPGe, data, ns_final_peak_fit_parrallel );
 
@@ -1871,9 +1872,12 @@ void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_s
       vector<PeakDef> *result = &(initial_peak_fits[input_src_index]);
       shared_ptr<const SpecUtils::Measurement> data = src.src_info.src_spectra[0];
 
-      auto fit_initial_peaks_worker = [&candidate_settings, &initial_fit_settings, &num_completed, num_total, data, result](){
+      const bool src_isHPGe = (ClassifyDetType_GA::true_det_type_for_name( src.detector_name )
+                               == PeakFitUtils::CoarseResolutionType::High);
+
+      auto fit_initial_peaks_worker = [&candidate_settings, &initial_fit_settings, &num_completed, num_total, data, result, src_isHPGe](){
         size_t dummy1, dummy2;
-        *result = InitialFit_GA::initial_peak_find_and_fit( initial_fit_settings, candidate_settings, data, false, dummy1, dummy2 );
+        *result = InitialFit_GA::initial_peak_find_and_fit( initial_fit_settings, candidate_settings, data, src_isHPGe, false, dummy1, dummy2 );
 
         long long val = num_completed.fetch_add(1, std::memory_order_relaxed);
         if( ((val+1) % 100) == 0 )
@@ -1921,9 +1925,6 @@ void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_s
     static std::mutex sm_score_mutex;
     static FinalFitScore sm_best_score{ 0.0, 0.0, 0.0, 0u, 0.0, DBL_MAX, 0u };
 
-#warning "final_peak_fit_for_roi: always assuming HPGe right now - for dev"
-  const bool isHPGe = true;
-
     if( PeakFitImprove::sm_num_threads_per_individual > 1 )
     {
       boost::asio::thread_pool pool(PeakFitImprove::sm_num_threads_per_individual);
@@ -1934,7 +1935,7 @@ void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_s
         const DataSrcInfo * const info = &(data_srcs_ref[src_index]);
         const vector<PeakDef> * const initial_peaks = &(intial_peaks_ref[src_index]);
 
-        boost::asio::post(pool, [src_index,info,initial_peaks,settings,&sum_score,isHPGe](){
+        boost::asio::post(pool, [src_index,info,initial_peaks,settings,&sum_score](){
 
           const FinalFitScore score = FinalFit_GA::eval_final_peak_fit( settings, *info, *initial_peaks, false );
 
@@ -2008,7 +2009,7 @@ void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_s
       {
         const DataSrcInfo * const info = &(data_srcs_ref[src_index]);
         const vector<PeakDef> * const initial_peaks = &(intial_peaks_ref[src_index]);
-        boost::asio::post(pool, [info,initial_peaks,&settings,isHPGe](){
+        boost::asio::post(pool, [info,initial_peaks,&settings](){
           FinalFit_GA::eval_final_peak_fit( settings, *info, *initial_peaks, true );
         } );
       }//for( size_t src_index = 0; src_index < data_srcs_ref.size(); ++src_index )
@@ -2069,7 +2070,7 @@ void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_s
   << ", cpu=" << (end_cpu - start_cpu) << "} seconds" << endl;
 
   {
-    ofstream best_settings_file( "best_final_settings.txt" );
+    ofstream best_settings_file( PeakFitImprove::sm_output_file_prefix + "best_final_settings.txt" );
     best_settings_file << outmsg.str();
   }
 

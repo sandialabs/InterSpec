@@ -48,6 +48,7 @@
 #include "PeakFitImprove.h"
 #include "InitialFit_GA.h"
 #include "CandidatePeak_GA.h"
+#include "ClassifyDetType_GA.h"
 
 using namespace std;
 
@@ -73,7 +74,8 @@ namespace InitialFit_GA
 vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_settings,
                               const FindCandidateSettings &candidate_settings,
                               const shared_ptr<const SpecUtils::Measurement> &data,
-                                          const bool multithread,
+                              const bool isHPGe,
+                              const bool multithread,
                               size_t &num_add_candidates_fit_for,  //Only for eval purposes
                               size_t &num_add_candidates_accepted //Only for eval purposes
                               )
@@ -119,11 +121,6 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
         cout << "Candidate debug peak mean=" << p.mean() << ", area=" << p.amplitude() << " += " << p.amplitudeUncert() << endl;
     }
   }//if( debug_upper_energy > debug_lower_energy )
-
-#warning "initial_peak_find_and_fit: always assuming HPGe right now - for dev"
-  //bool isHPGe = (data->num_gamma_channels() > 5000); // This will be wrong a lot...
-  const bool isHPGe = true;
-  // TODO: improve selection of HPGe here
 
   bool amplitudeOnly = false;
   vector<PeakDef> zeroth_fit_results, initial_fit_results;
@@ -279,7 +276,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
       cout << "zeroth fit peak at " << peak.mean() << " has area " << peak.amplitude() << " +- " << peak.amplitudeUncert() << endl;
 
     // We wont mess with multi peak ROIs right now
-    if( (i > 0) && (peak.continuum() == zeroth_fit_results[i].continuum()) )
+    if( (i > 0) && (peak.continuum() == zeroth_fit_results[i - 1].continuum()) )
       continue;
 
     if( ((i + 1) < zeroth_fit_results.size()) && (peak.continuum() == zeroth_fit_results[i+1].continuum()) )
@@ -415,10 +412,6 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
 #endif
     }
 
-#warning "initial_peak_find_and_fit: always assuming HPGe right now - for dev"
-    //const bool isHPGe = (coarse_res_type == PeakFitUtils::CoarseResolutionType::High)
-
-    DetectorPeakResponse::ResolutionFnctForm form = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
     if( initial_fit_results.size() <= 2 )
       fwhm_eqn_form = DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn;
 
@@ -439,7 +432,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
       MakeDrfFit::performResolutionFit( peaks, fwhm_eqn_form, fwhm_poly_eqn_order,
                                        fwhm_coeffs, fwhm_coeff_uncerts );
 
-      cs137_fwhm = DetectorPeakResponse::peakResolutionFWHM( 661, form, fwhm_coeffs );
+      cs137_fwhm = DetectorPeakResponse::peakResolutionFWHM( 661, fwhm_eqn_form, fwhm_coeffs );
     }//if( IsNan(cs137_fwhm) && (initial_fit_results.size() > 1) )
 
     if( IsNan(cs137_fwhm) || ((100*cs137_fwhm/661) < 0.05) )
@@ -452,12 +445,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
       vector<pair<double,shared_ptr<const PeakDef>>> distances;
       for( const auto &p : *peaks )
       {
-        double pred_fwhm = 0.0;
-        const double mean_MeV = 0.001 * p->mean();  //kSqrtPolynomial
-        for( size_t i = 0; i < fwhm_coeffs.size(); ++i )
-          pred_fwhm += fwhm_coeffs[i] * std::pow( mean_MeV, 1.0*i );
-        pred_fwhm = sqrt( pred_fwhm );
-        //pred_fwhm = fwhm_coeffs[0] + fwhm_coeffs[1]*sqrt( p->mean() ); //
+        const double pred_fwhm = DetectorPeakResponse::peakResolutionFWHM( p->mean(), fwhm_eqn_form, fwhm_coeffs );
 
         const double frac_diff = fabs( p->fwhm() - pred_fwhm ) / p->fwhm();
         if( !IsNan(frac_diff) && !IsInf(frac_diff) )
@@ -475,7 +463,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
       const size_t max_remove = static_cast<size_t>( std::ceil( 0.2*distances.size() ) );
       for( size_t index = 0; index < distances.size(); ++index )
       {
-        if( (distances[index].first < 0.25) || (index > max_remove) )
+        if( (distances[index].first < 0.25) || (index >= max_remove) )
           new_peaks->push_back( distances[index].second );
       }
 
@@ -483,7 +471,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
                                        fwhm_coeffs, fwhm_coeff_uncerts );
     }//if( peaks->size() > 5 )
 
-    cs137_fwhm = DetectorPeakResponse::peakResolutionFWHM( 661, form, fwhm_coeffs );
+    cs137_fwhm = DetectorPeakResponse::peakResolutionFWHM( 661, fwhm_eqn_form, fwhm_coeffs );
 
     if( IsNan(cs137_fwhm) || ((100*cs137_fwhm/661) < 0.05) )
       throw std::runtime_error( "Failed to fit valid FWHM function." );
@@ -931,7 +919,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
         continue;
 
       const double other_lower_roi = other_cont->lowerEnergy() - 7*avrg_gaus_sigma;
-      const double other_upper_roi = other_cont->lowerEnergy() + 7*avrg_gaus_sigma;
+      const double other_upper_roi = other_cont->upperEnergy() + 7*avrg_gaus_sigma;
 
       if( (other_lower_roi < old_upper_energy) && (other_upper_roi > old_lower_energy) )
       {
@@ -1492,10 +1480,13 @@ PeakFindAndFitWeights eval_initial_peak_find_and_fit( const InitialPeakFindSetti
   //  line, after the initial peak candidate find and fit.
   size_t num_add_candidates_fit_for = 0, num_add_candidates_accepted = 0;
 
+  const bool isHPGe = (ClassifyDetType_GA::true_det_type_for_name( src_info.detector_name )
+                       == PeakFitUtils::CoarseResolutionType::High);
+
   // `initial_peaks` not const for initial development
   vector<PeakDef> initial_peaks
-                        = InitialFit_GA::initial_peak_find_and_fit( fit_settings, candidate_settings, data, multithread,
-                                          num_add_candidates_fit_for, num_add_candidates_accepted);
+                        = InitialFit_GA::initial_peak_find_and_fit( fit_settings, candidate_settings, data, isHPGe,
+                                          multithread, num_add_candidates_fit_for, num_add_candidates_accepted);
 
   const vector<ExpectedPhotopeakInfo> &expected_photopeaks = src_info.expected_photopeaks;
 

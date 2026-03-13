@@ -28,6 +28,8 @@
 #include <string>
 #include <vector>
 
+#include "InterSpec/PeakFitSpecImp.h"
+
 namespace SpecUtils
 {
   class SpecFile;
@@ -39,7 +41,7 @@ namespace SpecUtils
 
 namespace PeakFitImprove
 {
-const bool debug_printout = true;
+const bool debug_printout = false;
 
 const double debug_lower_energy = 250;
 const double debug_upper_energy = 240;
@@ -54,6 +56,11 @@ extern double sm_ga_crossover_fraction;
 extern double sm_ga_mutation_rate;
 extern double sm_ga_mutate_threshold;
 extern double sm_ga_crossover_threshold;
+
+/** Prefix for output summary files, derived from --det-type option (e.g., "HPGe_", "NaI_").
+ Empty string when using all detector types.
+ */
+extern std::string sm_output_file_prefix;
 }
 
 
@@ -175,10 +182,10 @@ namespace JudgmentFactors
 
   const double def_want_nsigma = 4;   // i.e., above 4 sigma, lets weight all peaks the same
   const double min_def_wanted_counts = 15; //i.e., if expected peak area is below 15 counts, we wont punish for not finding
-  const double lower_want_nsigma = 2; // The number of sigma above which we will positively reward finding a peak
+  const double lower_want_nsigma = 2.5; // The number of sigma above which we will positively reward finding a peak
   // Between `def_want_nsigma` and `lower_want_nsigma` we will linearly weight for not finding a peak
 
-  const double found_extra_punishment = 0.25; // 1/this-value gives the trade-off of finding extra peaks, verses not finding peaks
+  const double found_extra_punishment = 0.5; // 1/this-value gives the trade-off of finding extra peaks, verses not finding peaks
 
   // When a peak between lower_want_nsigma and def_want_nsigma is found, the minimum value we should assign
   const double min_initial_fit_maybe_want_score = 0.25;
@@ -193,31 +200,8 @@ namespace JudgmentFactors
 }//namespace JudgmentFactors
 
 
-struct FindCandidateSettings
-{
-  int num_smooth_side_channels = 9; // low res more
-  int smooth_polynomial_order = 2;  // highres 3, lowres 2
-  double threshold_FOM = 0.758621;  // accept peaks higher than this FOM
-  double more_scrutiny_FOM_threshold = 1.598265; // Peaks bellow this get extra scrutiny
-  float pos_sum_threshold_sf = 0.119178f;
-
-  /** For second-derivative, how many channels are required to be above threshold, in-order to signal a transition */
-  size_t num_chan_fluctuate = 1;
-
-  //float min_counts_per_channel = 1.0f;
-  float more_scrutiny_coarser_FOM = 3.001943f;
-
-  /** The minimum Chi2 required, of at least one channel in ROI, to be above a straight
-   line predicted by the channels on either side of the ROI.
-   */
-  float more_scrutiny_min_dev_from_line = 6.816465;
-
-  float amp_to_apply_line_test_below = 6.000000;
-
-  std::string print( const std::string &var_name ) const;
-
-  std::string to_json() const;
-};//struct FindCandidateSettings
+/** Alias to the production FindCandidateSettings in PeakFitSpecImp.h. */
+using FindCandidateSettings = PeakFitSpec::FindCandidateSettings;
 
 
 struct InitialPeakFindSettings
