@@ -31,6 +31,8 @@
   <!-- File convert options options -->
   <message id="bgw-overwrite-output-cb">استبدال الإخراج</message>
   <message id="bgw-sum-multirecord-to-single">جمع الملفات متعددة السجلات إلى سجل واحد</message>
+  <message id="bgw-sum-all-to-single">جمع كل الملفات في طيف واحد</message>
+  <message id="bgw-concatenate-all-to-single">دمج كل الملفات في ملف واحد</message>
   <message id="bgw-info-will-convert-file-type">سيتم تحويل الملفات إلى النوع المختار.</message>
   
   

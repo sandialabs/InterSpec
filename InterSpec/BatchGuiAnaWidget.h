@@ -227,8 +227,12 @@ protected:
   Wt::WMenu *m_format_menu;
   Wt::WCheckBox *m_overwrite_output;
   Wt::WCheckBox *m_sum_for_single_output_types;
-  
+  Wt::WCheckBox *m_sum_all_to_single;
+  Wt::WCheckBox *m_concatenate_all_to_single;
+
   void handleFormatChange();
+  void handleSumAllChanged();
+  void handleConcatenateAllChanged();
   SpecUtils::SaveSpectrumAsType currentSaveType() const;
   
 public:

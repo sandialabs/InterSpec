@@ -31,6 +31,8 @@
   <!-- File convert options options -->
   <message id="bgw-overwrite-output-cb">आउटपुट अधिलेखित करें</message>
   <message id="bgw-sum-multirecord-to-single">एकाधिक रिकॉर्ड वाली फ़ाइलों को एकल रिकॉर्ड में योग करें</message>
+  <message id="bgw-sum-all-to-single">सभी फ़ाइलों को एकल स्पेक्ट्रम में योग करें</message>
+  <message id="bgw-concatenate-all-to-single">सभी फ़ाइलों को एकल फ़ाइल में जोड़ें</message>
   <message id="bgw-info-will-convert-file-type">फ़ाइलें चयनित प्रकार में परिवर्तित की जाएंगी।</message>
 
 

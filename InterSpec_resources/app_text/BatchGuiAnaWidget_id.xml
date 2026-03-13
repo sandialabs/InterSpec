@@ -31,6 +31,8 @@
   <!-- File convert options options -->
   <message id="bgw-overwrite-output-cb">Timpa output</message>
   <message id="bgw-sum-multirecord-to-single">Jumlahkan file multi-rekaman ke rekaman tunggal</message>
+  <message id="bgw-sum-all-to-single">Jumlahkan semua file ke spektrum tunggal</message>
+  <message id="bgw-concatenate-all-to-single">Gabungkan semua file ke file tunggal</message>
   <message id="bgw-info-will-convert-file-type">File akan dikonversi ke tipe yang dipilih.</message>
   
   
