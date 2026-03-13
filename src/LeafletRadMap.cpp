@@ -158,13 +158,16 @@ LeafletRadMapWindow::LeafletRadMapWindow()
             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
              | AuxWindowProperties::SetCloseable
              | AuxWindowProperties::EnableResize) ),
-  m_map( nullptr )
+  m_map( nullptr ),
+  m_tileLoadWarningBtn( nullptr )
 {
   InterSpec *viewer = InterSpec::instance();
   viewer->useMessageResourceBundle( "LeafletRadMap" );
-  
+
   m_map = new LeafletRadMap( contents() );
   m_map->setHeight( WLength(100,WLength::Percentage) );
+
+  m_map->tileLoadFailed().connect( this, &LeafletRadMapWindow::handleTileLoadFailed );
   
   AuxWindow::addHelpInFooter( footer(), "leaflet-rad-map" );
   
@@ -208,6 +211,22 @@ LeafletRadMap *LeafletRadMapWindow::map()
 }
 
 
+void LeafletRadMapWindow::handleTileLoadFailed()
+{
+  if( m_tileLoadWarningBtn )
+    return;
+
+  m_tileLoadWarningBtn = new WPushButton( WString::tr( "lrm-tile-load-btn" ) );
+  footer()->insertWidget( 0, m_tileLoadWarningBtn );
+
+  m_tileLoadWarningBtn->clicked().connect( std::bind( [](){
+    SimpleDialog *dialog = new SimpleDialog( WString::tr( "lrm-tile-load-dialog-title"),
+                                            WString::tr( "lrm-tile-load-dialog-content" ) );
+    dialog->addButton( WString::tr( "Okay" ) );
+  } ) );
+}//void LeafletRadMapWindow::handleTileLoadFailed()
+
+
 LeafletRadMap::LeafletRadMap( Wt::WContainerWidget *parent )
  : Wt::WContainerWidget( parent ),
   m_meas(),
@@ -220,6 +239,7 @@ LeafletRadMap::LeafletRadMap( Wt::WContainerWidget *parent )
   m_filter_upper_energy( nullptr ),
   // Attach signal to InterSpec instance, to avoid signal not being exposed when we should this in a AuxWindow
   m_displaySamples( /* this */ InterSpec::instance(), "loadSamples", false ),
+  m_tileLoadFailed( InterSpec::instance(), "tileLoadFailed", false ),
   m_loadSelected( this )
 {
   //addStyleClass( "LeafletRadMap" );
@@ -344,7 +364,13 @@ LeafletRadMap::LeafletRadMap( Wt::WContainerWidget *parent )
 LeafletRadMap::~LeafletRadMap()
 {
 }//~LeafletRadMap()
-  
+
+
+Wt::JSignal<> &LeafletRadMap::tileLoadFailed()
+{
+  return m_tileLoadFailed;
+}//tileLoadFailed()
+
 
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
 std::string LeafletRadMap::get_user_arcgis_key()
