@@ -31,6 +31,8 @@
   <!-- File convert options options -->
   <message id="bgw-overwrite-output-cb">出力を上書き</message>
   <message id="bgw-sum-multirecord-to-single">複数レコードファイルを単一レコードに合計</message>
+  <message id="bgw-sum-all-to-single">全ファイルを単一スペクトルに合計</message>
+  <message id="bgw-concatenate-all-to-single">全ファイルを単一ファイルに連結</message>
   <message id="bgw-info-will-convert-file-type">ファイルは選択されたタイプに変換されます。</message>
   
   

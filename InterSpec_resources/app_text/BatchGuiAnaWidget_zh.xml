@@ -31,6 +31,8 @@
   <!-- File convert options options -->
   <message id="bgw-overwrite-output-cb">覆盖输出</message>
   <message id="bgw-sum-multirecord-to-single">将多记录文件合并为单记录</message>
+  <message id="bgw-sum-all-to-single">将所有文件合计为单一光谱</message>
+  <message id="bgw-concatenate-all-to-single">将所有文件连接为单一文件</message>
   <message id="bgw-info-will-convert-file-type">文件将转换为所选类型。</message>
   
   

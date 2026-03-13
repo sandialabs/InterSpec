@@ -1636,7 +1636,9 @@ FileConvertOpts::FileConvertOpts( Wt::WContainerWidget *parent )
  : BatchGuiAnaWidget( parent ),
   m_format_menu( nullptr ),
   m_overwrite_output( nullptr ),
-  m_sum_for_single_output_types( nullptr )
+  m_sum_for_single_output_types( nullptr ),
+  m_sum_all_to_single( nullptr ),
+  m_concatenate_all_to_single( nullptr )
 {
   addStyleClass( "FileConvertOpts" );
   
@@ -1724,6 +1726,17 @@ FileConvertOpts::FileConvertOpts( Wt::WContainerWidget *parent )
   m_sum_for_single_output_types->hide();
   m_sum_for_single_output_types->checked().connect( this, &FileConvertOpts::optionsChanged );
 
+  m_sum_all_to_single = new WCheckBox( WString::tr("bgw-sum-all-to-single"), opts );
+  m_sum_all_to_single->addStyleClass( "CbNoLineBreak" );
+  m_sum_all_to_single->checked().connect( this, &FileConvertOpts::handleSumAllChanged );
+  m_sum_all_to_single->unChecked().connect( this, &FileConvertOpts::handleSumAllChanged );
+
+  m_concatenate_all_to_single = new WCheckBox( WString::tr("bgw-concatenate-all-to-single"), opts );
+  m_concatenate_all_to_single->addStyleClass( "CbNoLineBreak" );
+  m_concatenate_all_to_single->hide();
+  m_concatenate_all_to_single->checked().connect( this, &FileConvertOpts::handleConcatenateAllChanged );
+  m_concatenate_all_to_single->unChecked().connect( this, &FileConvertOpts::handleConcatenateAllChanged );
+
   WText *spacer = new WText( "&nbsp;", opts );
   spacer->addStyleClass( "FileOptSpacer" );
 
@@ -1741,12 +1754,42 @@ void FileConvertOpts::handleFormatChange()
 {
   const SpecUtils::SaveSpectrumAsType save_type = currentSaveType();
   const uint16_t max_records = max_records_in_save_type( save_type, nullptr );
+  const bool is_multi_record = (max_records > 3);
+  const bool sum_all = (m_sum_all_to_single && m_sum_all_to_single->isChecked());
+  const bool concat_all = (m_concatenate_all_to_single && m_concatenate_all_to_single->isChecked());
 
+  // Per-file multi-record sum: hide for multi-record formats, or when either "all files" option is active
   if( m_sum_for_single_output_types )
-    m_sum_for_single_output_types->setHidden( max_records > 3 );
-  
+    m_sum_for_single_output_types->setHidden( is_multi_record || sum_all || concat_all );
+
+  // Concatenate option only makes sense for multi-record output formats
+  if( m_concatenate_all_to_single )
+  {
+    m_concatenate_all_to_single->setHidden( !is_multi_record );
+    if( !is_multi_record && m_concatenate_all_to_single->isChecked() )
+      m_concatenate_all_to_single->setChecked( false );
+  }
+
   optionsChanged();
 }//void FileConvertOpts::handleFormatChange()
+
+
+void FileConvertOpts::handleSumAllChanged()
+{
+  if( m_sum_all_to_single->isChecked() && m_concatenate_all_to_single )
+    m_concatenate_all_to_single->setChecked( false );
+
+  handleFormatChange();
+}//void FileConvertOpts::handleSumAllChanged()
+
+
+void FileConvertOpts::handleConcatenateAllChanged()
+{
+  if( m_concatenate_all_to_single->isChecked() && m_sum_all_to_single )
+    m_sum_all_to_single->setChecked( false );
+
+  handleFormatChange();
+}//void FileConvertOpts::handleConcatenateAllChanged()
 
 
 SpecUtils::SaveSpectrumAsType FileConvertOpts::currentSaveType() const
@@ -1769,96 +1812,220 @@ void FileConvertOpts::performAnalysis( const vector<tuple<string, string, shared
                                const string &output_dir )
 {
   vector<string> warnings;
-  
+
   const SpecUtils::SaveSpectrumAsType save_type = currentSaveType();
   const bool overwrite = m_overwrite_output->isChecked();
-  const bool sum_multi =  m_sum_for_single_output_types->isChecked();
-  
-  for( size_t index = 0; index < input_files.size(); ++index )
+  const bool sum_multi = m_sum_for_single_output_types->isChecked();
+  const bool sum_all = m_sum_all_to_single->isChecked();
+  const bool concat_all = m_concatenate_all_to_single->isChecked();
+  const string output_ext = SpecUtils::suggestedNameEnding( save_type );
+
+  if( sum_all )
   {
-    const string &display_name = get<0>( input_files[index] );
-    const string &path_to_file = get<1>( input_files[index] );
-    const shared_ptr<const SpecMeas> &spec_meas = get<2>( input_files[index] );
-    assert( spec_meas );
-    if( !spec_meas )
-      continue;
-    
+    // Sum all input files into a single spectrum, then write one output file.
     try
     {
-      const uint16_t max_records = max_records_in_save_type( save_type, spec_meas );
-      
-      const string orig_leaf_name = SpecUtils::filename(display_name);
-      const string orig_ext = SpecUtils::file_extension(orig_leaf_name);
-      const string leaf_name = ((orig_ext.size() > 0) && (orig_ext.size() <= 4) && (orig_ext.size() < orig_leaf_name.size()))
-      ? orig_leaf_name.substr( 0, orig_leaf_name.size() - orig_ext.size() )
-      : orig_leaf_name;
-      const string output_ext = SpecUtils::suggestedNameEnding(save_type);
-      const string base_filename = SpecUtils::append_path( output_dir, leaf_name );
-      
-      const size_t num_records = spec_meas->num_measurements();
-      if( num_records > max_records )
+      shared_ptr<SpecUtils::Measurement> running_sum;
+
+      for( size_t i = 0; i < input_files.size(); ++i )
       {
-        // We will write out every record into a different file.
-        if( sum_multi )
+        const shared_ptr<const SpecMeas> &spec = get<2>( input_files[i] );
+        if( !spec )
+          continue;
+
+        // Sum all measurements within this file into one spectrum
+        const set<int> &samples = spec->sample_numbers();
+        const vector<string> &dets = spec->detector_names();
+        shared_ptr<SpecUtils::Measurement> file_sum = spec->sum_measurements( samples, dets, nullptr );
+        if( !file_sum )
+          continue;
+
+        if( !running_sum )
         {
-          const string outputname = base_filename + "." + output_ext;
-          spec_meas->write_to_file( outputname, save_type );
+          running_sum = file_sum;
         }else
         {
-          vector<shared_ptr<const SpecUtils::Measurement> > meass = spec_meas->measurements();
-          for( size_t record_num = 0; record_num < meass.size(); ++record_num )
-          {
-            const shared_ptr<const SpecUtils::Measurement> &m = meass[record_num];
-            
-            const string outputname = base_filename + "_" + std::to_string(record_num) + "." + output_ext;
-            const bool is_file = SpecUtils::is_file(outputname);
-            
-            if( SpecUtils::is_file(outputname) && !overwrite )
-            {
-              warnings.push_back( "Not overwriting existing '" + outputname + "'" );
-            }else
-            {
-              if( is_file && !SpecUtils::remove_file(outputname) )
-                warnings.push_back( "Failed to delete existing file '" + outputname + "'" );
-              
-              spec_meas->write_to_file( outputname, {m->sample_number()}, {m->detector_name()}, save_type );
-            }
-          }//for( size_t record_num = 0; record_num < meass.size(); ++record_num )
-        }//if( sum_multi )
-      }else
+          // Combine running sum with this files sum using a temporary SpecMeas,
+          //  so sum_measurements handles any energy calibration differences.
+          SpecMeas temp;
+          shared_ptr<SpecUtils::Measurement> m1 = make_shared<SpecUtils::Measurement>( *running_sum );
+          m1->set_sample_number( 1 );
+          shared_ptr<SpecUtils::Measurement> m2 = make_shared<SpecUtils::Measurement>( *file_sum );
+          m2->set_sample_number( 2 );
+          temp.add_measurement( m1, false );
+          temp.add_measurement( m2, false );
+          temp.cleanup_after_load();
+
+          const set<int> all_samples = temp.sample_numbers();
+          const vector<string> all_dets = temp.detector_names();
+          running_sum = temp.sum_measurements( all_samples, all_dets, nullptr );
+        }
+      }//for( size_t i = 0; i < input_files.size(); ++i )
+
+      if( running_sum )
       {
-        const string outputname = base_filename + "." + output_ext;
-        const bool is_file = SpecUtils::is_file(outputname);
-        
-        if( SpecUtils::is_file(outputname) && !overwrite )
+        SpecMeas summed;
+        running_sum->set_sample_number( 1 );
+        summed.add_measurement( running_sum, true );
+
+        const string outputname = SpecUtils::append_path( output_dir, "summed." + output_ext );
+
+        if( SpecUtils::is_file( outputname ) && !overwrite )
         {
           warnings.push_back( "Not overwriting existing '" + outputname + "'" );
         }else
         {
-          if( is_file && !SpecUtils::remove_file(outputname) )
+          if( SpecUtils::is_file( outputname ) && !SpecUtils::remove_file( outputname ) )
             warnings.push_back( "Failed to delete existing file '" + outputname + "'" );
-          
-          spec_meas->write_to_file( outputname, save_type );
+          else
+            summed.write_to_file( outputname, save_type );
         }
-      }//if( num_records > max_records ) / else
-      
+      }else
+      {
+        warnings.push_back( "No valid spectra found to sum." );
+      }
     }catch( std::exception &e )
     {
-      warnings.push_back( "Unexpected error writing file '" + display_name + "': " + string(e.what()) );
+      warnings.push_back( "Error summing files: " + string( e.what() ) );
     }
-  }//for( size_t index = 0; index < input_files.size(); ++index )
-  
-  
+  }else if( concat_all )
+  {
+    // Concatenate all input files into a single output file, preserving individual records.
+    try
+    {
+      SpecMeas concatenated;
+      int current_sample = 0;
+
+      for( size_t i = 0; i < input_files.size(); ++i )
+      {
+        const string &display_name = get<0>( input_files[i] );
+        const shared_ptr<const SpecMeas> &spec = get<2>( input_files[i] );
+        if( !spec )
+          continue;
+
+        const string source_filename = SpecUtils::filename( display_name );
+
+        for( const shared_ptr<const SpecUtils::Measurement> &m : spec->measurements() )
+        {
+          shared_ptr<SpecUtils::Measurement> new_meas = make_shared<SpecUtils::Measurement>( *m );
+          current_sample += 1;
+          new_meas->set_sample_number( current_sample );
+
+          const string orig_title = new_meas->title();
+          if( orig_title.empty() )
+            new_meas->set_title( source_filename );
+          else
+            new_meas->set_title( source_filename + " - " + orig_title );
+
+          concatenated.add_measurement( new_meas, false );
+        }//for( each measurement in file )
+      }//for( size_t i = 0; i < input_files.size(); ++i )
+
+      concatenated.cleanup_after_load( SpecUtils::SpecFile::ReorderSamplesByTime );
+
+      const string outputname = SpecUtils::append_path( output_dir, "concatenated." + output_ext );
+
+      if( SpecUtils::is_file( outputname ) && !overwrite )
+      {
+        warnings.push_back( "Not overwriting existing '" + outputname + "'" );
+      }else
+      {
+        if( SpecUtils::is_file( outputname ) && !SpecUtils::remove_file( outputname ) )
+          warnings.push_back( "Failed to delete existing file '" + outputname + "'" );
+        else
+          concatenated.write_to_file( outputname, save_type );
+      }
+    }catch( std::exception &e )
+    {
+      warnings.push_back( "Error concatenating files: " + string( e.what() ) );
+    }
+  }else
+  {
+    // Per-file conversion (existing behavior)
+    for( size_t index = 0; index < input_files.size(); ++index )
+    {
+      const string &display_name = get<0>( input_files[index] );
+      const string &path_to_file = get<1>( input_files[index] );
+      const shared_ptr<const SpecMeas> &spec_meas = get<2>( input_files[index] );
+      assert( spec_meas );
+      if( !spec_meas )
+        continue;
+
+      try
+      {
+        const uint16_t max_records = max_records_in_save_type( save_type, spec_meas );
+
+        const string orig_leaf_name = SpecUtils::filename( display_name );
+        const string orig_ext = SpecUtils::file_extension( orig_leaf_name );
+        const string leaf_name = ((orig_ext.size() > 0) && (orig_ext.size() <= 4) && (orig_ext.size() < orig_leaf_name.size()))
+          ? orig_leaf_name.substr( 0, orig_leaf_name.size() - orig_ext.size() )
+          : orig_leaf_name;
+        const string base_filename = SpecUtils::append_path( output_dir, leaf_name );
+
+        const size_t num_records = spec_meas->num_measurements();
+        if( num_records > max_records )
+        {
+          if( sum_multi )
+          {
+            const string outputname = base_filename + "." + output_ext;
+            spec_meas->write_to_file( outputname, save_type );
+          }else
+          {
+            vector<shared_ptr<const SpecUtils::Measurement>> meass = spec_meas->measurements();
+            for( size_t record_num = 0; record_num < meass.size(); ++record_num )
+            {
+              const shared_ptr<const SpecUtils::Measurement> &m = meass[record_num];
+
+              const string outputname = base_filename + "_" + std::to_string( record_num ) + "." + output_ext;
+              const bool is_file = SpecUtils::is_file( outputname );
+
+              if( SpecUtils::is_file( outputname ) && !overwrite )
+              {
+                warnings.push_back( "Not overwriting existing '" + outputname + "'" );
+              }else
+              {
+                if( is_file && !SpecUtils::remove_file( outputname ) )
+                  warnings.push_back( "Failed to delete existing file '" + outputname + "'" );
+
+                spec_meas->write_to_file( outputname, {m->sample_number()}, {m->detector_name()}, save_type );
+              }
+            }//for( size_t record_num = 0; record_num < meass.size(); ++record_num )
+          }//if( sum_multi ) / else
+        }else
+        {
+          const string outputname = base_filename + "." + output_ext;
+          const bool is_file = SpecUtils::is_file( outputname );
+
+          if( SpecUtils::is_file( outputname ) && !overwrite )
+          {
+            warnings.push_back( "Not overwriting existing '" + outputname + "'" );
+          }else
+          {
+            if( is_file && !SpecUtils::remove_file( outputname ) )
+              warnings.push_back( "Failed to delete existing file '" + outputname + "'" );
+
+            spec_meas->write_to_file( outputname, save_type );
+          }
+        }//if( num_records > max_records ) / else
+
+      }catch( std::exception &e )
+      {
+        warnings.push_back( "Unexpected error writing file '" + display_name + "': " + string( e.what() ) );
+      }
+    }//for( size_t index = 0; index < input_files.size(); ++index )
+  }//if( sum_all ) / else if( concat_all ) / else
+
+
   SimpleDialog *dialog = new SimpleDialog( WString::tr( "bgw-analysis-summary-title" ) );
   dialog->addStyleClass( "BatchAnalysisResultDialog" );
-  
+
   if( warnings.empty() )
   {
     new WText( "File conversion complete.", dialog->contents() );
   }else
   {
     dialog->addStyleClass( "BatchAnalysisWarningDialog" );
-    
+
     WContainerWidget *contents = dialog->contents();
     contents->setList( true, false );
     for( const string &warn_msg : warnings )
@@ -1867,7 +2034,7 @@ void FileConvertOpts::performAnalysis( const vector<tuple<string, string, shared
       new WText( warn_msg, item );
     }
   }//if( warnings.empty() ) / else
-  
+
   dialog->addButton( WString::tr( "Okay" ) );
 }//void FileConvertOpts::performAnalysis(...)
 

@@ -31,6 +31,8 @@
   <!-- File convert options options -->
   <message id="bgw-overwrite-output-cb">Kimenet felülírása</message>
   <message id="bgw-sum-multirecord-to-single">Többrekordos fájlok összegzése egyetlen rekorddá</message>
+  <message id="bgw-sum-all-to-single">Összes fájl összegzése egyetlen spektrummá</message>
+  <message id="bgw-concatenate-all-to-single">Összes fájl összefűzése egyetlen fájlba</message>
   <message id="bgw-info-will-convert-file-type">A fájlok a kiválasztott típusra lesznek konvertálva.</message>
   
   

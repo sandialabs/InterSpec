@@ -114,7 +114,82 @@ LeafletRadMap = function (elem,options) {
   };
   
   L.control.layers(basemapLayers, null, { collapsed: true }).addTo( self.map );
-  
+
+  // Monitor tile loading - detect failures from proxy, no internet, etc.
+  // The vectorBasemapLayer fires a "ready" event when the ArcGIS style is
+  // fetched and MapLibre GL is initialized; on network failure this never fires.
+  // However, the browser may cache the style, so _ready can be true even when
+  // the server is unreachable - we must also check actual tile loading via
+  // the MapLibre GL map's error/idle events.
+  self._tilesLoaded = false;
+  self._tileLoadFailedEmitted = false;
+
+  function emitTileLoadFailed() {
+    if( self._tileLoadFailedEmitted )
+      return;
+    self._tileLoadFailedEmitted = true;
+    try {
+      const interspecEl = document.querySelector( '.InterSpec' );
+      if( interspecEl && window.Wt )
+        Wt.emit( interspecEl.id, {name: 'tileLoadFailed'} );
+    } catch( e ) {
+      console.warn( "LeafletRadMap: error emitting tileLoadFailed:", e );
+    }
+  }
+
+  function onLayerReady( layer ) {
+    // Style loaded (possibly from cache). Hook into the MapLibre GL map to
+    // check whether tiles actually load, or only the cached style was used.
+    try {
+      const glMap = layer._maplibreGL && layer._maplibreGL.getMaplibreMap
+                  ? layer._maplibreGL.getMaplibreMap() : null;
+      if( glMap ){
+        let hadError = false;
+        glMap.on( 'error', function() { hadError = true; } );
+        glMap.once( 'idle', function() {
+          if( !hadError ){
+            self._tilesLoaded = true;
+            if( self._tileLoadTimer )
+              clearTimeout( self._tileLoadTimer );
+          }
+        } );
+        return;
+      }
+    } catch( e ) {
+      // Could not access MapLibre GL internals
+    }
+
+    // Fallback: if we cant access MapLibre GL internals, treat ready as loaded
+    self._tilesLoaded = true;
+    if( self._tileLoadTimer )
+      clearTimeout( self._tileLoadTimer );
+  }
+
+  function startTileLoadMonitor( layer ) {
+    if( self._tileLoadTimer )
+      clearTimeout( self._tileLoadTimer );
+    self._tilesLoaded = false;
+
+    // If style already loaded (e.g., from browser cache), check tiles now
+    if( layer._ready )
+      onLayerReady( layer );
+
+    // Also listen for future ready event (for non-cached case)
+    layer.once( "ready", function() { onLayerReady( layer ); } );
+
+    // Timeout: if tiles haven't confirmed loaded within 15s, warn user
+    self._tileLoadTimer = setTimeout( function() {
+      if( !self._tilesLoaded )
+        emitTileLoadFailed();
+    }, 15000 );
+  }
+
+  startTileLoadMonitor( basemapLayers.Streets );
+
+  self.map.on( 'baselayerchange', function( e ) {
+    startTileLoadMonitor( e.layer );
+  } );
+
   // Add drawing tools
   this.map.pm.addControls({
     editControls: true,
