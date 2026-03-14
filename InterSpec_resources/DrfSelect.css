@@ -84,7 +84,10 @@ table.FormulaDrfTbl label
 
 .DetectorDiamDiv
 {
-
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 5px;
+  align-items: center;
 }
 
 .FixedGeometry
@@ -92,10 +95,6 @@ table.FormulaDrfTbl label
   
 }
 
-.DetectorDotDatDiv
-{
-  /*padding-top: 10px;*/
-}
 
 .DrfSelectArea
 {

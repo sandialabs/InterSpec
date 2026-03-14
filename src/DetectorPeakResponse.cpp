@@ -481,6 +481,7 @@ DetectorPeakResponse::DetectorPeakResponse()
     m_createdUtc( 0 ),
     m_lastUsedUtc( 0 ),
     m_geomType( EffGeometryType::FarFieldIntrinsic ),
+    m_detectorSetback( 0.0 ),
     m_absoluteEfficiencyDistance( -1.0 ),
     m_absEffCorrectForAirAtten( true )
 {
@@ -504,6 +505,7 @@ DetectorPeakResponse::DetectorPeakResponse( const std::string &name,
     m_createdUtc( 0 ),
     m_lastUsedUtc( 0 ),
     m_geomType( EffGeometryType::FarFieldIntrinsic ),
+    m_detectorSetback( 0.0 ),
     m_absoluteEfficiencyDistance( -1.0 ),
     m_absEffCorrectForAirAtten( true )
 {
@@ -540,6 +542,8 @@ void DetectorPeakResponse::computeHash()
   boost::hash_combine( seed, m_description );
   
   boost::hash_combine( seed, m_detectorDiameter );
+  if( m_detectorSetback > 0.0 )
+    boost::hash_combine( seed, m_detectorSetback );
   boost::hash_combine( seed, m_efficiencyEnergyUnits );
   boost::hash_combine( seed, m_resolutionForm );
   for( const float val : m_resolutionCoeffs )
@@ -645,6 +649,7 @@ void DetectorPeakResponse::reset()
   m_name.clear();
   m_description.clear();
   m_detectorDiameter = 0.0;
+  m_detectorSetback = 0.0;
   m_efficiencyEnergyUnits = static_cast<float>( PhysicalUnits::keV );
   m_resolutionForm = kNumResolutionFnctForm;
   m_efficiencyForm = kNumEfficiencyFnctForms;
@@ -679,6 +684,7 @@ bool DetectorPeakResponse::operator==( const DetectorPeakResponse &rhs ) const
   return (m_name==rhs.m_name
           && m_description==rhs.m_description
           && fabs(m_detectorDiameter-rhs.m_detectorDiameter)<0.000001
+          && fabs(m_detectorSetback-rhs.m_detectorSetback)<0.000001
           && fabs(m_efficiencyEnergyUnits-rhs.m_efficiencyEnergyUnits)<0.000001f
           && m_resolutionForm==rhs.m_resolutionForm
           && m_efficiencyForm==rhs.m_efficiencyForm
@@ -860,20 +866,21 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
     std::reverse( energyEfficiencies.begin(), energyEfficiencies.end() );
   
   m_detectorDiameter = detectorDiameter;
+  m_detectorSetback = 0.0;
   m_energyEfficiencies = energyEfficiencies;
   m_efficiencyEnergyUnits = energyUnits;
-  
+
   m_efficiencySource = DrfSource::UserImportedIntrisicEfficiencyDrf;
   m_efficiencyForm = kEnergyEfficiencyPairs;
-  
+
   m_flags = 0;
-  
+
   m_lowerEnergy = m_energyEfficiencies.front().energy;
   m_upperEnergy = m_energyEfficiencies.back().energy;
-  
+
   m_lastUsedUtc = m_createdUtc = std::time(nullptr);
   m_geomType = geometry_type;
-  
+
   if( geometry_type == EffGeometryType::FarFieldAbsolute )
   {
     m_absoluteEfficiencyDistance = characterizationDist;
@@ -883,7 +890,7 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
     m_absoluteEfficiencyDistance = 0.0;
     m_absEffCorrectForAirAtten = true;
   }
-  
+
   computeHash();
 }//void fromEnergyEfficiencyCsv(...)
 
@@ -919,6 +926,7 @@ void DetectorPeakResponse::setEfficiencyPoints( const std::vector<DetectorPeakRe
   std::sort( begin(m_energyEfficiencies), end(m_energyEfficiencies) );
 
   m_detectorDiameter = detectorDiameter;
+  m_detectorSetback = 0.0;
   m_efficiencyEnergyUnits = static_cast<float>(PhysicalUnits::keV);
 
   m_efficiencyForm = kEnergyEfficiencyPairs;
@@ -929,7 +937,7 @@ void DetectorPeakResponse::setEfficiencyPoints( const std::vector<DetectorPeakRe
 
   m_lastUsedUtc = m_createdUtc = std::time(nullptr);
   m_geomType = geometry_type;
-  
+
   if( geometry_type == EffGeometryType::FarFieldAbsolute )
   {
     m_absoluteEfficiencyDistance = absoluteEffDistance;
@@ -961,18 +969,19 @@ void DetectorPeakResponse::setIntrinsicEfficiencyFormula( const string &fcnstr,
   m_efficiencyFcn = boost::bind( &FormulaWrapper::efficiency, expression,
                                 boost::placeholders::_1  );
   m_detectorDiameter = diameter;
+  m_detectorSetback = 0.0;
   m_efficiencyEnergyUnits = energyUnits;
-  
+
   m_flags = 0;
-  
+
   m_lowerEnergy = lowerEnergy;
   m_upperEnergy = upperEnergy;
-  
+
   m_efficiencySource = DrfSource::UserSpecifiedFormulaDrf;
-  
+
   m_lastUsedUtc = m_createdUtc = std::time(nullptr);
   m_geomType = geometry_type;
-  
+
   computeHash();
 }//void setIntrinsicEfficiencyFormula( const std::string &fcn )
 
@@ -991,6 +1000,7 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
 {
   float detWidth = 0.0, heightToWidth = 0.0;
   float lowerEnergy = 0.0, upperEnergy = 0.0;
+  float detSetback = 0.0;
 
   m_efficiencyEnergyUnits = static_cast<float>( PhysicalUnits::keV );
   m_resolutionCoeffs.clear();
@@ -1053,6 +1063,15 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
       m_resolutionCoeffs[0] = get_float_value( peak_shape, "fwhm_offset" );
       m_resolutionCoeffs[1] = get_float_value( peak_shape, "fwhm_at_661keV" );
       m_resolutionCoeffs[2] = get_float_value( peak_shape, "fwhm_power" );
+
+      // Try to read setback from "setback" node, if present
+      try
+      {
+        detSetback = get_float_value( gamma_detector, "setback" );
+      }catch(...)
+      {
+        // "setback" node may not be present in older XML Detector.dat files
+      }
     }catch( std::exception &e )
     {
       throw std::runtime_error( "Failed to read XML Detector.dat: " + std::string(e.what()) );
@@ -1084,6 +1103,7 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
           case 12: heightToWidth = value;         break;
           //case 35: lowerEnergy = value;           break;  //LLD(keV)
           //case ??: upperEnergy = value;           break;  //chi-square / max energy, keV
+          case 40: detSetback = value;            break;
         }//switch( parnum )
       }catch(...)
       {
@@ -1104,7 +1124,10 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
   //const bool fixed_geom = false;
   const EffGeometryType geometry_type = EffGeometryType::FarFieldIntrinsic;
   fromEnergyEfficiencyCsv( csvFile, diam, -1.0, static_cast<float>(PhysicalUnits::keV), geometry_type );
-  
+
+  if( detSetback > 0.0f )
+    m_detectorSetback = detSetback * PhysicalUnits::cm;
+
   m_flags = 0;
   
   m_lowerEnergy = lowerEnergy;
@@ -1195,6 +1218,7 @@ void DetectorPeakResponse::fromExpOfLogPowerSeries(
   m_efficiencyForm = kExpOfLogPowerSeries;
   m_efficiencyEnergyUnits = equationEnergyUnits;
   m_detectorDiameter = det_diam;
+  m_detectorSetback = 0.0;
   m_expOfLogPowerSeriesCoeffs = coefs;
   m_expOfLogPowerSeriesUncerts = uncerts;
   
@@ -1276,8 +1300,26 @@ std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseSingleCsvLineRe
     SpecUtils::ireplace_all( description, "%20", " " );
     SpecUtils::trim( description );
     det.reset( new DetectorPeakResponse( name, description ) );
-    det->fromExpOfLogPowerSeries( coefs, {}, dist, diam, eunits, 0.0f, 0.0f, EffGeometryType::FarFieldAbsolute );
+    // Parse lower/upper energy from fields 23/24 if available
+    float lowerE = 0.0f, upperE = 0.0f;
+    if( fields.size() > 24 )
+    {
+      try { upperE = static_cast<float>( std::stod(fields[24]) ); } catch(...) {}
+      try { lowerE = static_cast<float>( std::stod(fields[23]) ); } catch(...) {}
+    }
+
+    det->fromExpOfLogPowerSeries( coefs, {}, dist, diam, eunits, lowerE, upperE, EffGeometryType::FarFieldAbsolute );
     det->setDrfSource( DetectorPeakResponse::DrfSource::UserAddedRelativeEfficiencyDrf );
+
+    // Parse detector setback from field 21 if available
+    if( fields.size() > 21 )
+    {
+      double setback_cm = 0.0;
+      if( SpecUtils::parse_double(fields[21].c_str(), fields[21].size(), setback_cm) && (setback_cm > 0.0) )
+        det->m_detectorSetback = setback_cm * PhysicalUnits::cm;
+    }
+
+    det->computeHash();
   }catch( std::exception &e )
   {
     det.reset();
@@ -1497,9 +1539,9 @@ void DetectorPeakResponse::parseGammaQuantRelEffDrfCsv( std::istream &input,
       const string &setback = detector_setbacks[col];
       if( !SpecUtils::parse_double(setback.c_str(), setback.size(), det_setback) )
       {
-        warnings.push_back( "Failed to parse detector setback, '" + setback
-                           + "', to a number, skipping detector '" + name + "'" );
-        continue;
+        det_setback = 0.0;
+        //warnings.push_back( "Failed to parse detector setback, '" + setback
+        //                   + "', for detector '" + name + "' - defaulting to 0" );
       }
         
       
@@ -1611,7 +1653,12 @@ void DetectorPeakResponse::parseGammaQuantRelEffDrfCsv( std::istream &input,
         string desc = comment + ((!comment.empty() && !cal_geom.empty()) ? ", " : "") + cal_geom;
         det->setDescription( desc );
         det->setDrfSource( DetectorPeakResponse::DrfSource::UserImportedIntrisicEfficiencyDrf );
-        
+
+        if( det_setback > 0.0 )
+          det->m_detectorSetback = det_setback * PhysicalUnits::cm;
+
+        det->computeHash();
+
         drfs.push_back( det );
       }catch( std::exception &e )
       {
@@ -1683,7 +1730,10 @@ std::string DetectorPeakResponse::toAppUrl() const
 
   if( (m_geomType == EffGeometryType::FarFieldIntrinsic) || (m_geomType == EffGeometryType::FarFieldAbsolute) || (m_detectorDiameter > 0.0) )
     parts["DIAM"] = SpecUtils::printCompact( m_detectorDiameter, 5 );
-  
+
+  if( m_detectorSetback > 0.0 )
+    parts["SETBK"] = SpecUtils::printCompact( m_detectorSetback / PhysicalUnits::cm, 5 );
+
   // We'll assume units are MeV, unless stated otherwise.
   const bool notKeV = (fabs(m_efficiencyEnergyUnits - PhysicalUnits::keV) > 0.001);
   if( notKeV )
@@ -1865,7 +1915,10 @@ std::string DetectorPeakResponse::toAppUrl() const
   
   if( remove_part("LASTUSED") )
     return combine_parts();
-  
+
+  if( remove_part("SETBK") )
+    return combine_parts();
+
   if( remove_part("ORIGIN") )
     return combine_parts();
   
@@ -2014,7 +2067,15 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
   {
     detectorDiameter = 0.0;
   }//if( parts.count("DIAM") )
-  
+
+  double detectorSetback = 0.0;
+  if( parts.count("SETBK") )
+  {
+    if( !(stringstream(parts["SETBK"]) >> detectorSetback) || (detectorSetback < 0.0) )
+      throw runtime_error( "fromAppUrl: invalid SETBK component" );
+    detectorSetback *= PhysicalUnits::cm;
+  }//if( parts.count("SETBK") )
+
   if( parts.count("EUNIT") )
   {
     if( !(stringstream(parts["EUNIT"]) >> efficiencyEnergyUnits) || (efficiencyEnergyUnits <= 0.0) )
@@ -2218,8 +2279,9 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
   m_description = desc;
        
   m_detectorDiameter = detectorDiameter;
+  m_detectorSetback = detectorSetback;
   m_efficiencyEnergyUnits = efficiencyEnergyUnits;
-       
+
   m_efficiencyForm = eff_form;
   m_efficiencyFormula = eqn;
   m_efficiencyFcn = efficiencyFcn;
@@ -2563,6 +2625,7 @@ std::shared_ptr<DetectorPeakResponse>
     answer->m_description += ", setback=" + to_string( setback_pu / PhysicalUnits::mm ) + "mm";
 
   answer->m_detectorDiameter = static_cast<float>( 2.0 * crystal_radius * dist_unit );
+  answer->m_detectorSetback = setback_pu;
   answer->m_efficiencyEnergyUnits = static_cast<float>( PhysicalUnits::keV );
   answer->m_resolutionForm = ResolutionFnctForm::kNumResolutionFnctForm;
   answer->m_efficiencySource = DrfSource::AngleOutx;
@@ -2881,7 +2944,15 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
     node = doc->allocate_node( node_element, "DetectorDiameter", val );
     base_node->append_node( node );
   }//if( (m_geomType == EffGeometryType::FarFieldIntrinsic) || (m_geomType == EffGeometryType::FarFieldAbsolute) || (m_detectorDiameter > 0.0) )
-  
+
+  if( m_detectorSetback > 0.0 )
+  {
+    snprintf( buffer, sizeof(buffer), "%1.8E", m_detectorSetback );
+    val = doc->allocate_string( buffer );
+    node = doc->allocate_node( node_element, "DetectorSetback", val );
+    base_node->append_node( node );
+  }//if( m_detectorSetback > 0.0 )
+
   val = "UnknownDrfSource";
   switch( m_efficiencySource )
   {
@@ -3178,7 +3249,16 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
     m_detectorDiameter = atof( node->value() );
   else
     m_detectorDiameter = 0.0;
-  
+
+  m_detectorSetback = 0.0;
+  node = parent->first_node( "DetectorSetback", 15 );
+  if( node && node->value() )
+  {
+    m_detectorSetback = atof( node->value() );
+    if( m_detectorSetback < 0.0 )
+      m_detectorSetback = 0.0;
+  }//if( DetectorSetback node found )
+
   node = parent->first_node( "EfficiencySource", 16 );
   if( !node || !node->value() )
     throw runtime_error( "DetectorPeakResponse missing EfficiencySource node" );
@@ -3413,6 +3493,14 @@ void DetectorPeakResponse::equalEnough( const DetectorPeakResponse &lhs,
     snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: detector diameter"
               " of LHS (%1.8E) doesnt match RHS (%1.8E)",
              lhs.m_detectorDiameter, rhs.m_detectorDiameter );
+    throw runtime_error(buffer);
+  }
+
+  if( fabs(lhs.m_detectorSetback - rhs.m_detectorSetback) > 0.001 )
+  {
+    snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: detector setback"
+              " of LHS (%1.8E) doesnt match RHS (%1.8E)",
+             lhs.m_detectorSetback, rhs.m_detectorSetback );
     throw runtime_error(buffer);
   }
 
@@ -3681,7 +3769,7 @@ double DetectorPeakResponse::fractionalSolidAngle( const double detDiam, const d
 
 double DetectorPeakResponse::efficiency( const float energy, const double dist ) const
 {
-  const double fracSolidAngle = fractionalSolidAngle( m_detectorDiameter, dist );
+  const double fracSolidAngle = fractionalSolidAngle( m_detectorDiameter, dist + m_detectorSetback );
   return fracSolidAngle * intrinsicEfficiency( energy );
 }//float efficiency( const float energy ) const
 
@@ -3700,7 +3788,7 @@ float DetectorPeakResponse::absoluteToIntrinsicMultiple( const float energy ) co
     return 1.0f;
 
   // Calculate geometric correction factor
-  const double frac_angle = fractionalSolidAngle( m_detectorDiameter, m_absoluteEfficiencyDistance );
+  const double frac_angle = fractionalSolidAngle( m_detectorDiameter, m_absoluteEfficiencyDistance + m_detectorSetback );
   double factor = 1.0 / frac_angle;
 
   // Apply air attenuation correction if requested
@@ -4137,6 +4225,21 @@ float DetectorPeakResponse::detectorDiameter() const
 {
   return m_detectorDiameter;
 }
+
+
+double DetectorPeakResponse::detectorSetback() const
+{
+  return m_detectorSetback;
+}
+
+
+void DetectorPeakResponse::setDetectorSetback( const double distance )
+{
+  if( distance < 0.0 || IsInf(distance) || IsNan(distance) )
+    throw runtime_error( "Detector setback distance must be non-negative" );
+  m_detectorSetback = distance;
+  computeHash();
+}//void setDetectorSetback( const double distance )
 
 
 double DetectorPeakResponse::absoluteEfficiencyDistance() const

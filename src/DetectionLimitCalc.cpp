@@ -300,7 +300,7 @@ void batch_test()
            << endl;
       cout << endl;
       const double intrinsic_eff = det->intrinsicEfficiency( erp.energy );
-      const double geom_eff = det->fractionalSolidAngle( det->detectorDiameter(), distance );
+      const double geom_eff = det->fractionalSolidAngle( det->detectorDiameter(), distance + det->detectorSetback() );
       cout << std::left << std::setw(label_width) << "\tDetector Intrinsic Eff.:"
            << SpecUtils::printCompact( intrinsic_eff, 5 )
            << endl;

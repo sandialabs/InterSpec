@@ -1109,3 +1109,324 @@ struct GlobalFixture
 };
 
 BOOST_GLOBAL_FIXTURE( GlobalFixture );
+
+
+BOOST_AUTO_TEST_CASE( test_detector_setback_basics )
+{
+  cout << "\n\nTesting detector setback basics..." << endl;
+
+  // Default setback should be 0
+  DetectorPeakResponse drf( "TestDRF", "Test DRF for setback" );
+  BOOST_CHECK_CLOSE( drf.detectorSetback(), 0.0, 1e-10 );
+
+  // Setting a positive setback should work
+  const double setback = 0.5 * PhysicalUnits::cm;
+  BOOST_CHECK_NO_THROW( drf.setDetectorSetback( setback ) );
+  BOOST_CHECK_CLOSE( drf.detectorSetback(), setback, 1e-10 );
+
+  // Negative setback should throw
+  BOOST_CHECK_THROW( drf.setDetectorSetback( -1.0 ), std::runtime_error );
+
+  // Zero setback should be fine
+  BOOST_CHECK_NO_THROW( drf.setDetectorSetback( 0.0 ) );
+  BOOST_CHECK_CLOSE( drf.detectorSetback(), 0.0, 1e-10 );
+
+  cout << "Detector setback basics passed" << endl;
+}//test_detector_setback_basics
+
+
+BOOST_AUTO_TEST_CASE( test_detector_setback_efficiency )
+{
+  cout << "\n\nTesting detector setback effect on efficiency..." << endl;
+
+  const double det_diameter = 5.0 * PhysicalUnits::cm;
+  const double distance = 25.0 * PhysicalUnits::cm;
+  const double setback = 0.5 * PhysicalUnits::cm;
+
+  // Create two DRFs with same intrinsic efficiency
+  const vector<float> coeffs = { -5.0f, 0.5f, -0.01f };
+
+  auto drf_with_setback = make_shared<DetectorPeakResponse>( "WithSetback", "Has setback" );
+  drf_with_setback->fromExpOfLogPowerSeries( coeffs, {}, 0.0, det_diameter,
+    PhysicalUnits::keV, 50.0f, 3000.0f,
+    DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+  drf_with_setback->setDetectorSetback( setback );
+
+  auto drf_no_setback = make_shared<DetectorPeakResponse>( "NoSetback", "No setback" );
+  drf_no_setback->fromExpOfLogPowerSeries( coeffs, {}, 0.0, det_diameter,
+    PhysicalUnits::keV, 50.0f, 3000.0f,
+    DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+
+  // efficiency(energy, D) with setback S should equal efficiency(energy, D+S) without setback
+  const float energy = 661.0f * PhysicalUnits::keV;
+  const double eff_with_setback = drf_with_setback->efficiency( energy, distance );
+  const double eff_no_setback_at_further_dist = drf_no_setback->efficiency( energy, distance + setback );
+
+  BOOST_CHECK_MESSAGE( close_enough( eff_with_setback, eff_no_setback_at_further_dist, 1e-6 ),
+    "efficiency(E, D) with setback S should equal efficiency(E, D+S) without setback: "
+    + to_string(eff_with_setback) + " vs " + to_string(eff_no_setback_at_further_dist) );
+
+  // efficiency with setback should be less than without (at same distance)
+  const double eff_no_setback = drf_no_setback->efficiency( energy, distance );
+  BOOST_CHECK_GT( eff_no_setback, eff_with_setback );
+
+  cout << "Detector setback efficiency test passed" << endl;
+}//test_detector_setback_efficiency
+
+
+BOOST_AUTO_TEST_CASE( test_detector_setback_hash_stability )
+{
+  cout << "\n\nTesting detector setback hash stability..." << endl;
+
+  const vector<float> coeffs = { -5.0f, 0.5f, -0.01f };
+  const double det_diameter = 5.0 * PhysicalUnits::cm;
+
+  // DRF with setback=0 should have same hash as DRF created without setback
+  auto drf1 = make_shared<DetectorPeakResponse>( "HashTest1", "hash test" );
+  drf1->fromExpOfLogPowerSeries( coeffs, {}, 0.0, det_diameter,
+    PhysicalUnits::keV, 50.0f, 3000.0f,
+    DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+
+  auto drf2 = make_shared<DetectorPeakResponse>( "HashTest1", "hash test" );
+  drf2->fromExpOfLogPowerSeries( coeffs, {}, 0.0, det_diameter,
+    PhysicalUnits::keV, 50.0f, 3000.0f,
+    DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+  drf2->setDetectorSetback( 0.0 );
+
+  BOOST_CHECK_EQUAL( drf1->hashValue(), drf2->hashValue() );
+
+  // Changing setback to non-zero should change the hash
+  drf2->setDetectorSetback( 1.0 * PhysicalUnits::cm );
+  BOOST_CHECK_NE( drf1->hashValue(), drf2->hashValue() );
+
+  cout << "Detector setback hash stability test passed" << endl;
+}//test_detector_setback_hash_stability
+
+
+BOOST_AUTO_TEST_CASE( test_detector_setback_xml_roundtrip )
+{
+  cout << "\n\nTesting detector setback XML round-trip..." << endl;
+
+  const double det_diameter = 5.0 * PhysicalUnits::cm;
+  const double setback = 1.44 * PhysicalUnits::cm;
+  const vector<float> coeffs = { -5.0f, 0.5f, -0.01f };
+
+  // Create DRF with setback
+  auto original = make_shared<DetectorPeakResponse>( "SetbackXML", "XML setback test" );
+  original->fromExpOfLogPowerSeries( coeffs, {}, 0.0, det_diameter,
+    PhysicalUnits::keV, 50.0f, 3000.0f,
+    DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+  original->setDetectorSetback( setback );
+
+  // Serialize to XML
+  rapidxml::xml_document<char> doc;
+  rapidxml::xml_node<char> *root = doc.allocate_node( rapidxml::node_element, "root" );
+  doc.append_node( root );
+  BOOST_CHECK_NO_THROW( original->toXml( root, &doc ) );
+
+  // Deserialize from XML
+  rapidxml::xml_node<char> *drf_node = root->first_node( "DetectorPeakResponse" );
+  BOOST_REQUIRE( drf_node != nullptr );
+
+  auto restored = make_shared<DetectorPeakResponse>();
+  BOOST_CHECK_NO_THROW( restored->fromXml( drf_node ) );
+
+  // Verify setback is preserved
+  BOOST_CHECK_MESSAGE( close_enough( restored->detectorSetback(), setback, 1e-4 ),
+    "Setback not preserved: " + to_string(restored->detectorSetback()) + " vs " + to_string(setback) );
+
+  // Verify equalEnough passes
+  BOOST_CHECK_NO_THROW( DetectorPeakResponse::equalEnough( *original, *restored ) );
+
+  // Test backward compat: XML without DetectorSetback should give setback=0
+  auto drf_no_setback = make_shared<DetectorPeakResponse>( "NoSetbackXML", "no setback" );
+  drf_no_setback->fromExpOfLogPowerSeries( coeffs, {}, 0.0, det_diameter,
+    PhysicalUnits::keV, 50.0f, 3000.0f,
+    DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+
+  rapidxml::xml_document<char> doc2;
+  rapidxml::xml_node<char> *root2 = doc2.allocate_node( rapidxml::node_element, "root" );
+  doc2.append_node( root2 );
+  drf_no_setback->toXml( root2, &doc2 );
+
+  auto restored2 = make_shared<DetectorPeakResponse>();
+  restored2->fromXml( root2->first_node( "DetectorPeakResponse" ) );
+  BOOST_CHECK_CLOSE( restored2->detectorSetback(), 0.0, 1e-10 );
+
+  cout << "Detector setback XML round-trip test passed" << endl;
+}//test_detector_setback_xml_roundtrip
+
+
+BOOST_AUTO_TEST_CASE( test_detector_setback_url_roundtrip )
+{
+  cout << "\n\nTesting detector setback URL round-trip..." << endl;
+
+  const double det_diameter = 5.0 * PhysicalUnits::cm;
+  const double setback = 0.5 * PhysicalUnits::cm;
+  const vector<float> coeffs = { -5.0f, 0.5f, -0.01f };
+
+  // Create DRF with setback
+  auto original = make_shared<DetectorPeakResponse>( "SetbackURL", "URL setback test" );
+  original->fromExpOfLogPowerSeries( coeffs, {}, 25.0 * PhysicalUnits::cm, det_diameter,
+    PhysicalUnits::keV, 50.0f, 3000.0f,
+    DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
+  original->setDetectorSetback( setback );
+
+  // Serialize to URL
+  string url;
+  BOOST_CHECK_NO_THROW( url = original->toAppUrl() );
+  BOOST_CHECK_MESSAGE( url.find("SETBK") != string::npos,
+    "URL should contain SETBK parameter" );
+
+  // Deserialize from URL
+  auto restored = make_shared<DetectorPeakResponse>();
+  BOOST_CHECK_NO_THROW( restored->fromAppUrl( url ) );
+
+  // Verify setback is preserved
+  BOOST_CHECK_MESSAGE( close_enough( restored->detectorSetback(), setback, 1e-3 ),
+    "Setback not preserved in URL: " + to_string(restored->detectorSetback()) + " vs " + to_string(setback) );
+
+  // Test backward compat: URL without SETBK should give setback=0
+  auto drf_no_setback = make_shared<DetectorPeakResponse>( "NoSetbackURL", "no setback" );
+  drf_no_setback->fromExpOfLogPowerSeries( coeffs, {}, 25.0 * PhysicalUnits::cm, det_diameter,
+    PhysicalUnits::keV, 50.0f, 3000.0f,
+    DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
+
+  const string url2 = drf_no_setback->toAppUrl();
+  BOOST_CHECK_MESSAGE( url2.find("SETBK") == string::npos,
+    "URL for setback=0 DRF should NOT contain SETBK" );
+
+  auto restored2 = make_shared<DetectorPeakResponse>();
+  restored2->fromAppUrl( url2 );
+  BOOST_CHECK_CLOSE( restored2->detectorSetback(), 0.0, 1e-10 );
+
+  cout << "Detector setback URL round-trip test passed" << endl;
+}//test_detector_setback_url_roundtrip
+
+
+BOOST_AUTO_TEST_CASE( test_detector_setback_outx )
+{
+  cout << "\n\nTesting detector setback from ANGLE .outx file..." << endl;
+
+  BOOST_REQUIRE_MESSAGE( !g_test_data_dir.empty(), "Test data directory not set (use --testfiledir=...)" );
+
+  const string outx_file = SpecUtils::append_path( g_test_data_dir, "det_eff/Angle-example-efficiency.outx" );
+  if( !SpecUtils::is_file(outx_file) )
+  {
+    cout << "  Skipping - OUTX file not found: " << outx_file << endl;
+    return;
+  }
+
+  ifstream input( outx_file.c_str() );
+  BOOST_REQUIRE( input.is_open() );
+
+  shared_ptr<DetectorPeakResponse> drf = DetectorPeakResponse::parseAngleOutxFile( input );
+  BOOST_REQUIRE( drf != nullptr );
+
+  // The .outx file should have a positive setback (sum of endCap + vacuum + inactiveGe + housing layers)
+  BOOST_CHECK_MESSAGE( drf->detectorSetback() > 0.0,
+    "OUTX file should have positive setback, got: " + to_string(drf->detectorSetback() / PhysicalUnits::mm) + " mm" );
+
+  cout << "  Setback from .outx: " << (drf->detectorSetback() / PhysicalUnits::mm) << " mm" << endl;
+  cout << "Detector setback .outx test passed" << endl;
+}//test_detector_setback_outx
+
+
+BOOST_AUTO_TEST_CASE( test_detector_setback_common_drfs )
+{
+  cout << "\n\nTesting detector setback from common_drfs.tsv..." << endl;
+
+  BOOST_REQUIRE_MESSAGE( !g_data_dir.empty(), "Data directory not set (use --datadir=...)" );
+
+  const string drfs_file = SpecUtils::append_path( g_data_dir, "common_drfs.tsv" );
+  if( !SpecUtils::is_file(drfs_file) )
+  {
+    cout << "  Skipping - common_drfs.tsv not found: " << drfs_file << endl;
+    return;
+  }
+
+  ifstream input( drfs_file.c_str() );
+  BOOST_REQUIRE( input.is_open() );
+
+  vector<string> credits;
+  vector<shared_ptr<DetectorPeakResponse>> drfs;
+  DetectorPeakResponse::parseMultipleRelEffDrfCsv( input, credits, drfs );
+
+  BOOST_REQUIRE_MESSAGE( !drfs.empty(), "Should parse at least one DRF from common_drfs.tsv" );
+
+  // Check that some DRFs have non-zero setback (e.g., ORTEC Detective-DX has 0.5 cm)
+  int drfs_with_setback = 0;
+  for( const auto &drf : drfs )
+  {
+    if( drf->detectorSetback() > 0.0 )
+    {
+      drfs_with_setback++;
+      cout << "  " << drf->name() << ": setback = "
+           << (drf->detectorSetback() / PhysicalUnits::cm) << " cm" << endl;
+    }
+  }
+
+  BOOST_CHECK_MESSAGE( drfs_with_setback > 0,
+    "At least some DRFs in common_drfs.tsv should have non-zero setback" );
+
+  cout << "Found " << drfs_with_setback << " DRFs with setback out of " << drfs.size() << " total" << endl;
+  cout << "Detector setback common_drfs.tsv test passed" << endl;
+}//test_detector_setback_common_drfs
+
+
+BOOST_AUTO_TEST_CASE( test_detector_setback_gadras )
+{
+  cout << "\n\nTesting detector setback from GADRAS Detector.dat..." << endl;
+
+  BOOST_REQUIRE_MESSAGE( !g_data_dir.empty(), "Data directory not set (use --datadir=...)" );
+
+  // Find a GADRAS detector that has field 40 (det setback) > 0
+  const string gadras_dir = SpecUtils::append_path( g_data_dir, "GenericGadrasDetectors" );
+  if( !SpecUtils::is_directory(gadras_dir) )
+  {
+    cout << "  Skipping - GenericGadrasDetectors directory not found" << endl;
+    return;
+  }
+
+  // Try to find a detector with a non-zero setback
+  // NaI 1x1 has setback of 0.5 cm per the data
+  const vector<string> detectors_to_try = { "NaI 1x1", "NaI 2x2", "NaI 3x3" };
+
+  for( const string &det_name : detectors_to_try )
+  {
+    const string det_dir = SpecUtils::append_path( gadras_dir, det_name );
+    const string det_dat = SpecUtils::append_path( det_dir, "Detector.dat" );
+    const string eff_csv = SpecUtils::append_path( det_dir, "Efficiency.csv" );
+
+    if( !SpecUtils::is_file(det_dat) || !SpecUtils::is_file(eff_csv) )
+      continue;
+
+    ifstream dat_input( det_dat.c_str() );
+    ifstream csv_input( eff_csv.c_str() );
+
+    if( !dat_input.is_open() || !csv_input.is_open() )
+      continue;
+
+    DetectorPeakResponse drf;
+    try
+    {
+      drf.fromGadrasDefinition( csv_input, dat_input );
+    }catch( std::exception &e )
+    {
+      cout << "  Failed to parse " << det_name << ": " << e.what() << endl;
+      continue;
+    }
+
+    cout << "  " << det_name << " setback: " << (drf.detectorSetback() / PhysicalUnits::cm) << " cm" << endl;
+
+    // The NaI 1x1 should have setback of 0.5 cm
+    if( det_name == "NaI 1x1" )
+    {
+      BOOST_CHECK_MESSAGE( close_enough( drf.detectorSetback(), 0.5 * PhysicalUnits::cm, 0.01 ),
+        "NaI 1x1 should have setback of ~0.5 cm, got: "
+        + to_string(drf.detectorSetback() / PhysicalUnits::cm) + " cm" );
+    }
+  }//for( const string &det_name : detectors_to_try )
+
+  cout << "Detector setback GADRAS test passed" << endl;
+}//test_detector_setback_gadras

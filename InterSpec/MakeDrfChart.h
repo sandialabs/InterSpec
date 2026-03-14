@@ -124,6 +124,7 @@ public:
    */
   void setDataPoints( const std::vector<DataPoint> &datapoints,
                       const float det_diameter,
+                      const float det_setback,
                       const float det_low_energy, const float det_up_energy );
   
   /** Returns the current data points. */
@@ -154,6 +155,7 @@ protected:
   void updateColorTheme( std::shared_ptr<const ColorTheme> theme );
 
   float m_det_diameter;
+  float m_det_setback;
   float m_det_lower_energy;
   float m_det_upper_energy;
   std::vector<DataPoint> m_datapoints;  //probably dont need this, but whtaever for now

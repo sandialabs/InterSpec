@@ -343,6 +343,7 @@ struct DistributedSrcCalc
   
   size_t m_materialIndex;
   double m_detectorRadius;
+  double m_detectorSetback;
   double m_observationDist;
   
   /** Whether to account for attenuation in air.  If you want this, you must also set m_airTransLenCoef to the appropriate value. */

@@ -361,14 +361,15 @@ protected:
   Wt::WTabWidget *m_tabs;
 
   Wt::WLineEdit *m_detectorDiameter;
+  Wt::WLineEdit *m_detectorSetback;
   Wt::WContainerWidget *m_uploadedDetNameDiv;
   Wt::WLineEdit *m_uploadedDetName;
   Wt::WContainerWidget *m_detectrDiameterDiv;
   Wt::WFileUpload *m_efficiencyCsvUpload;
-  Wt::WContainerWidget *m_detectrDotDatDiv;
+  Wt::WLabel *m_detectrDotDatLabel;
   Wt::WFileUpload *m_detectorDotDatUpload;
   Wt::WComboBox *m_efficiencyType;
-  Wt::WContainerWidget *m_detectorDistanceDiv;
+  Wt::WLabel *m_detectorDistanceLabel;
   Wt::WLineEdit *m_detectorDistance;
 
   Wt::WPushButton *m_acceptButton;
@@ -389,6 +390,7 @@ protected:
   
   Wt::WLabel       *m_detectorManualDiameterLabel;
   Wt::WLineEdit    *m_detectorManualDiameterText;
+  Wt::WLineEdit    *m_detectorManualSetbackText;
   Wt::WLineEdit    *m_detectorManualDistText;
   Wt::WLabel       *m_detectorManualDistLabel;
   NativeFloatSpinBox *m_detectorManualMinEnergy;

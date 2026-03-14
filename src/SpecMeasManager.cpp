@@ -67,6 +67,7 @@
 #include <Wt/WResource>
 #include <Wt/WDateTime>
 #include <Wt/WGroupBox>
+#include <Wt/WCheckBox>
 #include <Wt/WComboBox>
 #include <Wt/WBoxLayout>
 
@@ -3261,10 +3262,21 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
 
   if( det->detectorDiameter() > 0.0f )
     diameter_edit->setText( PhysicalUnits::printToBestLengthUnits( det->detectorDiameter() ) );
-  
-  cell = far_field_opt->elementAt( 1, 0 );
+
+  int ff_row = 1;
+
+  if( det->detectorSetback() > 0.0 )
+  {
+    cell = far_field_opt->elementAt( ff_row, 0 );
+    new WLabel( WString::tr("smm-ecc-det-setback"), cell );
+    cell = far_field_opt->elementAt( ff_row, 1 );
+    new WText( PhysicalUnits::printToBestLengthUnits( det->detectorSetback() ), cell );
+    ++ff_row;
+  }//if( det->detectorSetback() > 0.0 )
+
+  cell = far_field_opt->elementAt( ff_row, 0 );
   label = new WLabel( WString::tr("smm-ecc-dist"), cell );
-  cell = far_field_opt->elementAt( 1, 1 );
+  cell = far_field_opt->elementAt( ff_row, 1 );
   WLineEdit *distance_edit = new WLineEdit( "", cell );
   label->setBuddy( distance_edit );
   distance_edit->setValidator( dist_validator );
@@ -3277,8 +3289,44 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   auto fore = InterSpec::instance()->measurment( SpecUtils::SpectrumType::Foreground );
   shared_ptr<DetectorPeakResponse> prev = fore ? fore->detector() : nullptr;
   
-  // TODO: make option to make DRF default for detector model, or serial number
-  
+  const bool makeSerialNumCb = (fore && !fore->instrument_id().empty());
+  const bool makeModelCb = (fore
+                            && ((fore->detector_type() != SpecUtils::DetectorType::Unknown)
+                                 || !fore->instrument_model().empty()));
+
+  WCheckBox *defaultForSerialNumber = nullptr;
+  WCheckBox *defaultForDetectorModel = nullptr;
+
+  if( makeSerialNumCb || makeModelCb )
+  {
+    InterSpec::instance()->useMessageResourceBundle( "DrfSelect" );
+
+    WContainerWidget *saveCbDiv = new WContainerWidget( dialog->contents() );
+    saveCbDiv->addStyleClass( "EccDrfDefaultCbs" );
+
+    if( makeSerialNumCb )
+    {
+      WString msg = WString::tr("ds-use-for-serialnum-cb").arg( fore->instrument_id() );
+      defaultForSerialNumber = new WCheckBox( msg, saveCbDiv );
+      defaultForSerialNumber->addStyleClass( "CbNoLineBreak" );
+      defaultForSerialNumber->setInline( false );
+    }//if( have serial number )
+
+    if( makeModelCb )
+    {
+      string model;
+      if( fore->detector_type() != SpecUtils::DetectorType::Unknown )
+        model = detectorTypeToString( fore->detector_type() );
+      else
+        model = fore->instrument_model();
+
+      WString msg = WString::tr("ds-use-for-model-cb").arg( model );
+      defaultForDetectorModel = new WCheckBox( msg, saveCbDiv );
+      defaultForDetectorModel->addStyleClass( "CbNoLineBreak" );
+      defaultForDetectorModel->setInline( false );
+    }//if( makeModelCb )
+  }//if( makeSerialNumCb || makeModelCb )
+
   dialog->addButton( WString::tr("Cancel") );
   WPushButton *accept = dialog->addButton( WString::tr("smm-ecc-use-drf") );
   
@@ -3392,7 +3440,23 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
     const Wt::Dbo::ptr<InterSpecUser> &user = interspec->user();
     DrfSelect::updateLastUsedTimeOrAddToDb( new_drf, user.id(), sql );
     interspec->detectorChanged().emit( new_drf ); //This loads it to the foreground spectrum file
-    
+
+    if( fore && new_drf && defaultForSerialNumber && defaultForSerialNumber->isChecked() )
+    {
+      UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorSerialNumber;
+      WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
+        DrfSelect::setUserPrefferedDetector( new_drf, sql, user, preftype, fore );
+      } ) );
+    }//if( defaultForSerialNumber and is checked )
+
+    if( fore && new_drf && defaultForDetectorModel && defaultForDetectorModel->isChecked() )
+    {
+      UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorModelName;
+      WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
+        DrfSelect::setUserPrefferedDetector( new_drf, sql, user, preftype, fore );
+      } ) );
+    }//if( defaultForDetectorModel and is checked )
+
     UndoRedoManager *undoManager = InterSpec::instance()->undoRedoManager();
     if( undoManager && undoManager->canAddUndoRedoNow() )
     {
