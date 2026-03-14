@@ -2165,6 +2165,7 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
       case DrfSource::UserCreatedDrf:
       case DrfSource::FromSpectrumFileDrf:
       case DrfSource::IsocsEcc:
+      case DrfSource::AngleOutx:
         break;
       
       default:
@@ -2422,6 +2423,162 @@ tuple<shared_ptr<DetectorPeakResponse>,double,double>
   
   return {answer, source_area, source_mass};
 }//shared_ptr<DetectorPeakResponse> parseEccFile( std::istream &input )
+
+
+std::shared_ptr<DetectorPeakResponse>
+  DetectorPeakResponse::parseAngleOutxFile( std::istream &input )
+{
+  // Read the entire stream into a string for XML parsing
+  const string xml_data( (std::istreambuf_iterator<char>(input)),
+                          std::istreambuf_iterator<char>() );
+
+  if( xml_data.size() < 50 )
+    throw runtime_error( "parseAngleOutxFile: input too small." );
+
+  // rapidxml needs a mutable, null-terminated buffer
+  vector<char> xml_buf( xml_data.begin(), xml_data.end() );
+  xml_buf.push_back( '\0' );
+
+  rapidxml::xml_document<char> doc;
+  try
+  {
+    doc.parse<rapidxml::parse_trim_whitespace>( xml_buf.data() );
+  }catch( const rapidxml::parse_error &e )
+  {
+    throw runtime_error( "parseAngleOutxFile: XML parse error: " + string(e.what()) );
+  }
+
+  const rapidxml::xml_node<char> *angle_node = XML_FIRST_NODE( (&doc), "angle" );
+  if( !angle_node )
+    throw runtime_error( "parseAngleOutxFile: no <angle> root element." );
+
+  // Extract distance unit from <angle units="mm|cm">; default to mm
+  double dist_unit = 1.0 * PhysicalUnits::mm;
+  const string units_str = SpecUtils::xml_value_str( XML_FIRST_ATTRIB( angle_node, "units" ) );
+  if( SpecUtils::iequals_ascii( units_str, "cm" ) )
+    dist_unit = 1.0 * PhysicalUnits::cm;
+
+  // Extract detector metadata and geometry
+  string det_name, det_desc;
+  float crystal_radius = 0.0f;
+  float setback = 0.0f;
+
+  const rapidxml::xml_node<char> *det_node = XML_FIRST_NODE( angle_node, "detector" );
+  if( det_node )
+  {
+    det_name = SpecUtils::xml_value_str( XML_FIRST_ATTRIB( det_node, "name" ) );
+    det_desc = SpecUtils::xml_value_str( XML_FIRST_ATTRIB( det_node, "description" ) );
+
+    // Extract crystal radius from <crystal radius="...">
+    const auto *r_attr = SpecUtils::xml_first_attribute( XML_FIRST_NODE( det_node, "crystal" ), "radius" );
+    if( r_attr )
+      SpecUtils::parse_float( r_attr->value(), r_attr->value_size(), crystal_radius );
+
+    // Calculate setback: sum of material layers from outer enclosure to active Ge surface.
+    //  housing/topUpper + housing/topLower + endCap top + vacuum top + inactiveGe top
+    auto parse_attr_float = []( const rapidxml::xml_node<char> *node, const char *attr,
+                                size_t attr_len ) -> float
+    {
+      float val = 0.0f;
+      const auto *a = node ? node->first_attribute( attr, attr_len ) : nullptr;
+      if( a && a->value_size() )
+        SpecUtils::parse_float( a->value(), a->value_size(), val );
+      return val;
+    };//parse_attr_float
+
+    setback += parse_attr_float( XML_FIRST_NODE( det_node, "endCap" ), "topThickness", 12 );
+    setback += parse_attr_float( XML_FIRST_NODE( det_node, "vacuum" ), "topThickness", 12 );
+    setback += parse_attr_float( XML_FIRST_NODE( det_node, "inactiveGe" ), "topThickness", 12 );
+
+    const rapidxml::xml_node<char> *housing = XML_FIRST_NODE( det_node, "housing" );
+    if( housing )
+    {
+      setback += parse_attr_float( XML_FIRST_NODE( housing, "topUpper" ), "thickness", 9 );
+      setback += parse_attr_float( XML_FIRST_NODE( housing, "topLower" ), "thickness", 9 );
+    }//if( housing )
+  }//if( det_node )
+
+  // Find <results> and parse <result> children
+  const rapidxml::xml_node<char> *results_node = XML_FIRST_NODE( angle_node, "results" );
+  if( !results_node )
+    throw runtime_error( "parseAngleOutxFile: no <results> element." );
+
+  vector<EnergyEfficiencyPair> energy_efficiencies;
+  vector<pair<float,float>> energy_precision;
+
+  XML_FOREACH_CHILD( result, results_node, "result" )
+  {
+    const auto *energy_attr = XML_FIRST_ATTRIB( result, "energy" );
+    const auto *eff_attr = XML_FIRST_ATTRIB( result, "efficiency" );
+
+    if( !energy_attr || !energy_attr->value_size() || !eff_attr || !eff_attr->value_size() )
+      continue;
+
+    float energy = 0.0f, efficiency = 0.0f;
+    if( !SpecUtils::parse_float( energy_attr->value(), energy_attr->value_size(), energy ) )
+      throw runtime_error( "parseAngleOutxFile: failed to parse energy attribute." );
+    if( !SpecUtils::parse_float( eff_attr->value(), eff_attr->value_size(), efficiency ) )
+      throw runtime_error( "parseAngleOutxFile: failed to parse efficiency attribute." );
+
+    if( energy <= 1.0f )
+      throw runtime_error( "parseAngleOutxFile: energy <= 1 keV (" + to_string(energy) + ")" );
+    if( energy > 14000.0f )
+      throw runtime_error( "parseAngleOutxFile: energy > 14 MeV (" + to_string(energy) + ")" );
+    if( (efficiency < 0.0f) || IsNan(efficiency) || IsInf(efficiency) )
+      throw runtime_error( "parseAngleOutxFile: invalid efficiency ("
+                          + to_string(efficiency) + " at " + to_string(energy) + " keV)" );
+
+    EnergyEfficiencyPair eep;
+    eep.energy = energy;
+    eep.efficiency = efficiency;
+    energy_efficiencies.push_back( eep );
+
+    // Parse efficiencyPrecision for future use (relative precision factor from ANGLE)
+    const auto *prec_attr = XML_FIRST_ATTRIB( result, "efficiencyPrecision" );
+    if( prec_attr && prec_attr->value_size() )
+    {
+      float precision = 0.0f;
+      if( SpecUtils::parse_float( prec_attr->value(), prec_attr->value_size(), precision ) )
+        energy_precision.emplace_back( energy, precision );
+    }
+  }//for( loop over <result> nodes )
+
+  if( energy_efficiencies.size() < 4 )
+    throw runtime_error( "parseAngleOutxFile: not enough energy/efficiency pairs (got "
+                        + to_string(energy_efficiencies.size()) + ")." );
+
+  std::sort( begin(energy_efficiencies), end(energy_efficiencies),
+    []( const EnergyEfficiencyPair &lhs, const EnergyEfficiencyPair &rhs ) -> bool {
+    return lhs.energy < rhs.energy;
+  } );
+
+  shared_ptr<DetectorPeakResponse> answer = make_shared<DetectorPeakResponse>();
+  answer->m_name = det_name;
+  if( !det_desc.empty() )
+    answer->m_name += (answer->m_name.empty() ? "" : " - ") + det_desc;
+
+  answer->m_description = "ANGLE .outx";
+  const double setback_pu = setback * dist_unit;
+  if( setback_pu > 0.0 )
+    answer->m_description += ", setback=" + to_string( setback_pu / PhysicalUnits::mm ) + "mm";
+
+  answer->m_detectorDiameter = static_cast<float>( 2.0 * crystal_radius * dist_unit );
+  answer->m_efficiencyEnergyUnits = static_cast<float>( PhysicalUnits::keV );
+  answer->m_resolutionForm = ResolutionFnctForm::kNumResolutionFnctForm;
+  answer->m_efficiencySource = DrfSource::AngleOutx;
+  answer->m_efficiencyForm = EfficiencyFnctForm::kEnergyEfficiencyPairs;
+  answer->m_energyEfficiencies = energy_efficiencies;
+  answer->m_flags = 0;
+  answer->m_lowerEnergy = energy_efficiencies.front().energy;
+  answer->m_upperEnergy = energy_efficiencies.back().energy;
+  answer->m_createdUtc = std::time( nullptr );
+  answer->m_lastUsedUtc = answer->m_createdUtc;
+  answer->m_geomType = EffGeometryType::FixedGeomTotalAct;
+  answer->m_parentHash = 0;
+  answer->computeHash();
+
+  return answer;
+}//shared_ptr<DetectorPeakResponse> parseAngleOutxFile( std::istream &input )
 
 
 shared_ptr<DetectorPeakResponse> DetectorPeakResponse::convertFixedGeometryType( const double quantity,
@@ -2739,6 +2896,7 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
     case UserCreatedDrf:                    val = "UserCreatedDrf";                    break;
     case FromSpectrumFileDrf:               val = "FromSpectrumFileDrf";               break;
     case DrfSource::IsocsEcc:               val = "ISOCS";                             break;
+    case DrfSource::AngleOutx:              val = "AngleOutx";                         break;
   }//switch( m_efficiencySource )
   
   node = doc->allocate_node( node_element, "EfficiencySource", val );
@@ -3053,7 +3211,9 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
     m_efficiencySource = FromSpectrumFileDrf;
   else if( compare(node->value(),node->value_size(),"ISOCS",5,false) )
     m_efficiencySource = IsocsEcc;
-  else 
+  else if( compare(node->value(),node->value_size(),"AngleOutx",9,false) )
+    m_efficiencySource = AngleOutx;
+  else
     throw runtime_error( "DetectorPeakResponse: invalid EfficiencySource value" );
   
   

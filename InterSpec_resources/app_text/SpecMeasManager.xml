@@ -137,6 +137,10 @@
   <message id="smm-ecc-use-drf">Use DRF</message>
   <message id="smm-ecc-error">Error creating DRF from ECC: {1}</message>
 
+  <!-- Text for dialog when user drag-n-drop an ANGLE .outx file onto app -->
+  <message id="smm-outx-curve">ANGLE Efficiency Calibration Curve DRF</message>
+  <message id="smm-outx-error">Error creating DRF from ANGLE .outx: {1}</message>
+
   <!-- Text for dialog when user drag-n-drop the Activity/Shielding fit file onto app -->
   <message id="smm-act-shield-xml">Activity/Shielding XML</message>
   <message id="smm-act-shield-use">Use this Activity/Shielding fit setup?</message>

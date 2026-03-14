@@ -4476,7 +4476,60 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::detectorFromEffUpload() const
     {
     }
   }//if( !det )
-  
+
+  // Try an ANGLE .outx file
+  if( !det )
+  {
+    try
+    {
+#ifdef _WIN32
+      const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
+      ifstream outxfile( wfilename.c_str(), ios_base::binary | ios_base::in );
+#else
+      ifstream outxfile( filename.c_str(), ios_base::binary|ios_base::in );
+#endif
+
+      shared_ptr<DetectorPeakResponse> trial_det = DetectorPeakResponse::parseAngleOutxFile( outxfile );
+
+      if( trial_det && trial_det->isValid() )
+      {
+        det = trial_det;
+
+        // .outx files have no source area/mass, so only far-field and total-activity modes apply
+        if( m_efficiencyType->currentIndex() == 0 )
+        {
+          if( (diameter > 0.0) && (abs_eff_dist > 0) )
+            det = trial_det->reinterpretAsFarFieldAbsEfficiency( diameter, abs_eff_dist, true );
+          else if( diameter > 0.0 )
+            det = trial_det->reinterpretAsFarFieldIntrinsicEfficiency( diameter );
+          else
+            return nullptr;
+        }else if( m_efficiencyType->currentIndex() == 1 )
+        {
+          if( (diameter > 0.0) && (abs_eff_dist > 0) )
+            det = trial_det->reinterpretAsFarFieldAbsEfficiency( diameter, abs_eff_dist, true );
+          else
+            return nullptr;
+        }else if( m_efficiencyType->currentIndex() == 2 )
+        {
+          if( diameter > 0.0 )
+            det = trial_det;
+          else
+            return nullptr;
+        }else if( m_efficiencyType->currentIndex() == 3 )
+        {
+          det = trial_det;
+        }else
+        {
+          // Per-cm2, per-m2, per-gram modes not available for .outx (no source area/mass)
+          return nullptr;
+        }
+      }//if( trial_det && trial_det->isValid() )
+    }catch( std::exception & )
+    {
+    }
+  }//if( !det ) -- try .outx
+
   if( !det )
   {
 #ifdef _WIN32
@@ -4674,8 +4727,28 @@ void DrfSelect::handleEfficiencyCsvUpload()
   }catch( std::exception & )
   {
   }
-  
-  
+
+  // Try an ANGLE .outx file
+  if( !det )
+  {
+    try
+    {
+#ifdef _WIN32
+      const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
+      ifstream outxfile( wfilename.c_str(), ios_base::binary | ios_base::in );
+#else
+      ifstream outxfile( filename.c_str(), ios_base::binary|ios_base::in );
+#endif
+
+      shared_ptr<DetectorPeakResponse> trial_det = DetectorPeakResponse::parseAngleOutxFile( outxfile );
+      if( trial_det && trial_det->isValid() )
+        det = trial_det->reinterpretAsFixedGeom( DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct );
+    }catch( std::exception & )
+    {
+    }
+  }//if( !det ) -- try .outx
+
+
   const bool fixed_geometry = (det && det->isFixedGeometry());
   bool can_accept = fixed_geometry;
   

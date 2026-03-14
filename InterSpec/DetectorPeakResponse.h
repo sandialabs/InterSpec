@@ -236,6 +236,9 @@ public:
     
     /** From ISOCS .ECC file. */
     IsocsEcc = 10,
+
+    /** From ANGLE .outx file. */
+    AngleOutx = 11,
   };//enum DrfSource
   
 public:
@@ -507,7 +510,18 @@ public:
    */
   static std::tuple<std::shared_ptr<DetectorPeakResponse>,double,double>
                                               parseEccFile( std::istream &input );
-  
+
+  /** Parses an ANGLE .outx XML file into a fixed-geometry DRF.
+
+   The .outx file has root element `<angle generator="ANGLE" ...>`, with energy/efficiency
+   pairs in `<results>/<result energy="..." efficiency="..." efficiencyPrecision="..." />`.
+
+   On failure, will throw exception.
+
+   @returns a valid DRF with (efficiencyFcnType() == kEnergyEfficiencyPairs)
+   */
+  static std::shared_ptr<DetectorPeakResponse> parseAngleOutxFile( std::istream &input );
+
   /** Converts between the fixed geometry types of EffGeometryType.
    
    @param quantity Either the surface area or mass (in units of PhysicalUnits), depending on value to `to_type`.

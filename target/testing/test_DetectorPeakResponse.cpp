@@ -457,6 +457,76 @@ BOOST_AUTO_TEST_CASE( test_read_ecc_file )
 }
 
 
+BOOST_AUTO_TEST_CASE( test_read_angle_outx_file )
+{
+  cout << "\n\nTesting ANGLE .outx file reading..." << endl;
+
+  BOOST_REQUIRE_MESSAGE( !g_test_data_dir.empty(), "Test data directory not set (use --testfiledir=...)" );
+
+  const string outx_file = SpecUtils::append_path( g_test_data_dir, "det_eff/Angle-example-efficiency.outx" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file(outx_file), "OUTX file not found: " + outx_file );
+
+  ifstream input( outx_file.c_str() );
+  BOOST_REQUIRE_MESSAGE( input.is_open(), "Failed to open OUTX file" );
+
+  shared_ptr<DetectorPeakResponse> drf;
+
+  BOOST_CHECK_NO_THROW(
+    drf = DetectorPeakResponse::parseAngleOutxFile(input)
+  );
+
+  BOOST_REQUIRE_MESSAGE( drf != nullptr, "OUTX parsing should return valid DRF" );
+
+  // Verify geometry type
+  BOOST_CHECK_MESSAGE( drf->geometryType() == DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct,
+                      "OUTX DRF should have FixedGeomTotalAct geometry" );
+
+  // Verify efficiency form is pairs
+  BOOST_CHECK_MESSAGE( drf->efficiencyFcnType() == DetectorPeakResponse::EfficiencyFnctForm::kEnergyEfficiencyPairs,
+                      "OUTX DRF should use energy-efficiency pairs" );
+
+  // Verify DRF source
+  BOOST_CHECK_MESSAGE( drf->drfSource() == DetectorPeakResponse::DrfSource::AngleOutx,
+                      "OUTX DRF should have AngleOutx source" );
+
+  // Verify detector name is populated from XML attributes
+  BOOST_CHECK_MESSAGE( !drf->name().empty(), "OUTX DRF name should not be empty" );
+
+  // Test efficiency values at energies present in the file
+  const vector<pair<float, double>> expected_efficiencies = {
+    {100.0f,   0.200207559471988},
+    {500.0f,   0.0744367862247439},
+    {661.657f, 0.0584335868503359},
+    {1000.0f,  0.0415204261052124}
+  };
+
+  for( const auto &test : expected_efficiencies )
+  {
+    const float energy_kev = test.first;
+    const double expected_eff = test.second;
+
+    float eff = 0.0f;
+    BOOST_CHECK_NO_THROW( eff = drf->intrinsicEfficiency(energy_kev * PhysicalUnits::keV) );
+    BOOST_CHECK_MESSAGE( eff >= 0.0f, "Efficiency should be non-negative at " + to_string(energy_kev) + " keV" );
+
+    // Check against expected value with 1% tolerance
+    BOOST_CHECK_MESSAGE( close_enough(eff, expected_eff, 0.01),
+                        "Efficiency at " + to_string(energy_kev) + " keV: " +
+                        to_string(eff) + " vs expected " + to_string(expected_eff) );
+  }
+
+  // Verify that parseAngleOutxFile rejects an ECC file
+  const string ecc_file = SpecUtils::append_path( g_test_data_dir, "det_eff/Detective-X_in-situ.ecc" );
+  if( SpecUtils::is_file(ecc_file) )
+  {
+    ifstream ecc_input( ecc_file.c_str() );
+    BOOST_CHECK_THROW( DetectorPeakResponse::parseAngleOutxFile(ecc_input), std::exception );
+  }
+
+  cout << "Successfully parsed ANGLE .outx file" << endl;
+}
+
+
 BOOST_AUTO_TEST_CASE( test_exp_of_log_power_series )
 {
   cout << "\n\nTesting exp-of-log power series efficiency..." << endl;

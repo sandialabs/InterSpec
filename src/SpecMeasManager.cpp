@@ -2460,14 +2460,15 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   }
 #endif
   
-  // Check if a .ECC file from ISOCS
-  if( (header_contains("SGI_template") || header_contains("ISOCS_file_name"))
+  // Check if a .ECC file from ISOCS, or a .outx file from ANGLE
+  if( (header_contains("SGI_template") || header_contains("ISOCS_file_name")
+       || header_contains("<angle"))
      && handleEccFile(infile, dialog) )
   {
     add_undo_redo();
-    
+
     return true;
-  }//if( a .ECC file from ISOCS )
+  }//if( a .ECC file from ISOCS, or .outx from ANGLE )
   
   if( header_contains("<ShieldingSourceFit") && header_contains("<Geometry")
      && (filesize > 128) && (filesize < 1024*1024)
@@ -3125,23 +3126,43 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   
   shared_ptr<DetectorPeakResponse> det;
   double source_area = 0.0, source_mass = 0.0;
+
+  // Try parsing as ECC file first
   try
   {
     tuple<shared_ptr<DetectorPeakResponse>,double,double> det_area_mass
       = DetectorPeakResponse::parseEccFile( input );
-    
+
     det = get<0>(det_area_mass);
     source_area = get<1>(det_area_mass);
     source_mass = get<2>(det_area_mass);
-    
+
     assert( det && det->isValid() );
     if( !det || !det->isValid() )
       throw std::logic_error( "DRF returned from DetectorPeakResponse::parseEccFile() should be valid." );
-  }catch( std::exception &e )
+  }catch( std::exception & )
   {
-    input.seekg( start_pos );
-    return false;
+    det.reset();
   }//try / catch
+
+  // If not ECC, try parsing as ANGLE .outx file
+  if( !det )
+  {
+    input.clear();
+    input.seekg( start_pos );
+    try
+    {
+      det = DetectorPeakResponse::parseAngleOutxFile( input );
+
+      assert( det && det->isValid() );
+      if( !det || !det->isValid() )
+        throw std::logic_error( "DRF returned from parseAngleOutxFile() should be valid." );
+    }catch( std::exception & )
+    {
+      input.seekg( start_pos );
+      return false;
+    }//try / catch
+  }//if( !det )
   
   dialog->addStyleClass( "EccDrfDialog" );
   
@@ -3158,7 +3179,8 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   chartw = std::max( chartw, 300 );
   charth = std::max( charth, 175 );
   
-  WText *title = new WText( WString::tr("smm-ecc-curve"), dialog->contents() );
+  const bool is_outx = (det->drfSource() == DetectorPeakResponse::DrfSource::AngleOutx);
+  WText *title = new WText( WString::tr(is_outx ? "smm-outx-curve" : "smm-ecc-curve"), dialog->contents() );
   title->addStyleClass( "title" );
   title->setInline( false );
   
@@ -3236,6 +3258,9 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   label->setBuddy( diameter_edit );
   diameter_edit->setValidator( dist_validator );
   diameter_edit->setEmptyText( "0 cm" );
+
+  if( det->detectorDiameter() > 0.0f )
+    diameter_edit->setText( PhysicalUnits::printToBestLengthUnits( det->detectorDiameter() ) );
   
   cell = far_field_opt->elementAt( 1, 0 );
   label = new WLabel( WString::tr("smm-ecc-dist"), cell );
@@ -3354,7 +3379,8 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
       }//switch( geom_type )
     }catch( std::exception &e )
     {
-      passMessage( WString::tr("smm-ecc-error").arg(e.what()), WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr(is_outx ? "smm-outx-error" : "smm-ecc-error").arg(e.what()),
+                   WarningWidget::WarningMsgHigh );
       return;
     }//try / catch
     
@@ -3384,7 +3410,7 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
        
       // This next undo/redo wont bring up the dialog, but it will at least get us back
       //  to the original detector.
-      undoManager->addUndoRedoStep( undo, redo, "Change to ECC DRF" );
+      undoManager->addUndoRedoStep( undo, redo, is_outx ? "Change to ANGLE DRF" : "Change to ECC DRF" );
     }
   }) );
     

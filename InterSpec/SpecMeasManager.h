@@ -235,7 +235,7 @@ public:
   /** Handles Source.lib files dropped onto the app. */
   bool handleSourceLibFile( std::istream &input, SimpleDialog *dialog );
   
-  /** Handles the user dropping a .ECC file produced from ISOCS. */
+  /** Handles the user dropping a .ECC file from ISOCS, or a .outx file from ANGLE. */
   bool handleEccFile( std::istream &input, SimpleDialog *dialog );
   
   /** Some input files contain duplicate data - we will ask the user how they want to handle
