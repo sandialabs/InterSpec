@@ -2644,6 +2644,369 @@ std::shared_ptr<DetectorPeakResponse>
 }//shared_ptr<DetectorPeakResponse> parseAngleOutxFile( std::istream &input )
 
 
+DetectorPeakResponse::EffCsvParseResult
+DetectorPeakResponse::parseEfficiencyCsvFile( std::istream &input )
+{
+  // Read all lines from the input
+  vector<string> all_lines;
+  string line;
+  while( SpecUtils::safe_get_line( input, line ) )
+  {
+    if( all_lines.size() > 5000 )
+      throw runtime_error( "Efficiency CSV file has too many lines." );
+    all_lines.push_back( line );
+  }
+
+  if( all_lines.size() < 3 )
+    throw runtime_error( "Efficiency CSV file has too few lines." );
+
+  // Find the first non-empty, non-comment lines for header analysis
+  vector<string> header_lines;
+  for( size_t i = 0; (i < all_lines.size()) && (header_lines.size() < 3); ++i )
+  {
+    string trimmed = all_lines[i];
+    SpecUtils::trim( trimmed );
+    if( !trimmed.empty() && (trimmed[0] != '#') )
+      header_lines.push_back( trimmed );
+  }
+
+  if( header_lines.size() < 2 )
+    throw runtime_error( "Efficiency CSV file has too few non-comment lines." );
+
+  // Determine format from header lines
+  bool is_gadras = false;
+  bool is_percentage = false;
+  int energy_col_index = 0; // default: energy in first column
+  int eff_col_index = 1;    // default: efficiency in second column
+  float energy_units_scale = static_cast<float>( PhysicalUnits::keV ); // default keV
+  bool energy_units_from_header = false; // whether we detected energy units from the header
+
+  // Check for GADRAS format: any of first 3 header lines contains "(%"
+  for( size_t i = 0; i < std::min( header_lines.size(), static_cast<size_t>(3) ); ++i )
+  {
+    if( header_lines[i].find( "(%" ) != string::npos )
+    {
+      is_gadras = true;
+      is_percentage = true;
+      energy_col_index = 0;
+      eff_col_index = 1; // "Peak" column, index 1
+      break;
+    }
+  }//for( check GADRAS format )
+
+  if( !is_gadras )
+  {
+    // Split the first header row by commas and tabs to find column names
+    const string &hdr = header_lines[0];
+
+    vector<string> hdr_fields;
+    size_t start = 0;
+    for( size_t i = 0; i <= hdr.size(); ++i )
+    {
+      if( (i == hdr.size()) || (hdr[i] == ',') || (hdr[i] == '\t') )
+      {
+        string field = hdr.substr( start, i - start );
+        SpecUtils::trim( field );
+        hdr_fields.push_back( field );
+        start = i + 1;
+      }
+    }//for( split header )
+
+    // Look for energy column (contains "energy" or "en" case-insensitive)
+    // and efficiency column (contains "eff" case-insensitive)
+    bool found_energy_col = false;
+    bool found_eff_col = false;
+
+    for( size_t i = 0; i < hdr_fields.size(); ++i )
+    {
+      const string field_lower = SpecUtils::to_lower_ascii_copy( hdr_fields[i] );
+
+      // Check for energy column
+      if( !found_energy_col
+         && ((field_lower.find( "energy" ) != string::npos)
+             || (field_lower.find( "en" ) != string::npos && field_lower.find( "eff" ) == string::npos)) )
+      {
+        energy_col_index = static_cast<int>( i );
+        found_energy_col = true;
+
+        // Detect energy units from column name (e.g., "Energy[keV]", "energy_keV", "Energy(MeV)")
+        if( field_lower.find( "mev" ) != string::npos )
+        {
+          energy_units_scale = static_cast<float>( PhysicalUnits::MeV );
+          energy_units_from_header = true;
+        }else if( (field_lower.find( "kev" ) != string::npos)
+                 || (field_lower.find( "ke" ) != string::npos) )
+        {
+          energy_units_scale = static_cast<float>( PhysicalUnits::keV );
+          energy_units_from_header = true;
+        }else if( field_lower.find( "ev" ) != string::npos )
+        {
+          // Check for bare "eV" (not "keV" or "MeV" which were already matched)
+          energy_units_scale = static_cast<float>( PhysicalUnits::eV );
+          energy_units_from_header = true;
+        }
+      }//if( energy column )
+
+      // Check for efficiency column: look for "eff" in the field name
+      // Prefer exact "Eff" match, but also accept "efficiency", etc.
+      // Exclude columns like "Eff. Unc", "Eff_Unc", "Eff_err" (uncertainty columns)
+      if( !found_eff_col && (field_lower.find( "eff" ) != string::npos) )
+      {
+        // Skip uncertainty/error columns
+        if( (field_lower.find( "unc" ) != string::npos)
+           || (field_lower.find( "err" ) != string::npos)
+           || (field_lower.find( "eff." ) != string::npos && field_lower.find( "eff. " ) != string::npos) )
+        {
+          continue;
+        }
+
+        eff_col_index = static_cast<int>( i );
+        found_eff_col = true;
+
+        // If the efficiency column title contains "%", treat values as percentage
+        if( hdr_fields[i].find( '%' ) != string::npos )
+          is_percentage = true;
+      }//if( efficiency column )
+    }//for( each header field )
+
+    // We require both an energy-like and efficiency-like column in the header
+    if( !found_energy_col || !found_eff_col )
+      throw runtime_error( "Efficiency CSV header must contain both energy and efficiency columns." );
+  }//if( !is_gadras )
+
+
+  // Parse data lines
+  bool got_data = false;
+  vector<EnergyEfficiencyPair> energy_efficiencies;
+
+  for( const string &raw_line : all_lines )
+  {
+    string trimmed = raw_line;
+    SpecUtils::trim( trimmed );
+
+    if( trimmed.empty() || (trimmed[0] == '#') )
+      continue;
+
+    if( !isdigit( static_cast<unsigned char>(trimmed[0]) )
+       && (trimmed[0] != '+') && (trimmed[0] != '-') && (trimmed[0] != '.') )
+    {
+      if( !got_data )
+        continue; // skip header lines
+      break; // done with data
+    }
+
+    vector<float> fields;
+    const bool ok = SpecUtils::split_to_floats( trimmed.c_str(), trimmed.size(), fields );
+
+    const int min_col = std::max( energy_col_index, eff_col_index );
+    if( !ok || (static_cast<int>(fields.size()) <= min_col) || (fields.size() < 2) )
+    {
+      if( !got_data )
+        continue;
+      break;
+    }
+
+    EnergyEfficiencyPair point;
+    point.energy = fields[energy_col_index]; // energy units applied after parsing
+    point.efficiency = fields[eff_col_index];
+
+    if( is_percentage )
+      point.efficiency /= 100.0f;
+
+    got_data = true;
+    energy_efficiencies.push_back( point );
+
+    if( energy_efficiencies.size() > 3000 )
+      throw runtime_error( "Efficiency CSV file has too many data points (max 3000)." );
+  }//for( each line )
+
+  if( energy_efficiencies.size() < 2 )
+    throw runtime_error( "Efficiency CSV file has fewer than 2 valid data points." );
+
+  // If energy units weren't determined from the header, try to auto-detect from data values
+  if( !energy_units_from_header && !is_gadras )
+  {
+    const float first_e = energy_efficiencies.front().energy;
+    const float last_e = energy_efficiencies.back().energy;
+    const float min_e = std::min( first_e, last_e );
+    const float max_e = std::max( first_e, last_e );
+
+    if( max_e > 8000.0f )
+    {
+      // Energies are likely in eV (e.g., 50000 eV = 50 keV)
+      energy_units_scale = static_cast<float>( PhysicalUnits::eV );
+    }else if( min_e < 80.0f && max_e < 80.0f )
+    {
+      // Energies are likely in MeV (e.g., 0.662 MeV = 662 keV)
+      energy_units_scale = static_cast<float>( PhysicalUnits::MeV );
+    }
+    // Otherwise keep default keV
+  }//if( !energy_units_from_header && !is_gadras )
+
+  // Apply energy units to all data points
+  for( EnergyEfficiencyPair &point : energy_efficiencies )
+    point.energy *= energy_units_scale;
+
+  // Validate: check monotonicity and value ranges
+  const bool increasing = (energy_efficiencies[1].energy > energy_efficiencies[0].energy);
+  for( size_t i = 1; i < energy_efficiencies.size(); ++i )
+  {
+    const float prev_e = energy_efficiencies[i - 1].energy;
+    const float this_e = energy_efficiencies[i].energy;
+
+    if( IsNan( prev_e ) || IsNan( this_e ) || IsInf( prev_e ) || IsInf( this_e ) )
+      throw runtime_error( "NaN or Inf energy detected in efficiency CSV." );
+
+    if( (prev_e < 0.0f) || (this_e < 0.0f) )
+      throw runtime_error( "Negative energy in efficiency CSV." );
+
+    const float prev_eff = energy_efficiencies[i - 1].efficiency;
+    const float this_eff = energy_efficiencies[i].efficiency;
+
+    if( IsNan( prev_eff ) || IsNan( this_eff ) || IsInf( prev_eff ) || IsInf( this_eff ) )
+      throw runtime_error( "NaN or Inf efficiency in efficiency CSV." );
+
+    if( (prev_eff < 0.0f) || (this_eff < 0.0f) || (prev_eff > 1.0f) || (this_eff > 1.0f) )
+      throw runtime_error( "Efficiency value out of range [0, 1] in CSV." );
+
+    // Allow very close energies (within ~1e-5 relative tolerance)
+    if( fabs( prev_e - this_e ) < 1.0E-5f * std::max( fabs( this_e ), fabs( prev_e ) ) )
+      continue;
+
+    const bool bigger = (this_e > prev_e);
+    if( increasing != bigger )
+      throw runtime_error( "Energies in efficiency CSV are not monotonically ordered." );
+  }//for( validate )
+
+  if( !increasing )
+    std::reverse( energy_efficiencies.begin(), energy_efficiencies.end() );
+
+  // Build the DRF
+  auto answer = make_shared<DetectorPeakResponse>();
+  answer->m_name = "Efficiency CSV";
+  answer->m_description = is_gadras ? "GADRAS Efficiency.csv" : "Efficiency CSV";
+  answer->m_detectorDiameter = 0.0f;
+  answer->m_detectorSetback = 0.0;
+  answer->m_efficiencyEnergyUnits = static_cast<float>( PhysicalUnits::keV );
+  answer->m_resolutionForm = ResolutionFnctForm::kNumResolutionFnctForm;
+  answer->m_efficiencySource = DrfSource::UserImportedEfficiencyCsvDrf;
+  answer->m_efficiencyForm = EfficiencyFnctForm::kEnergyEfficiencyPairs;
+  answer->m_energyEfficiencies = energy_efficiencies;
+  answer->m_flags = 0;
+  answer->m_lowerEnergy = energy_efficiencies.front().energy;
+  answer->m_upperEnergy = energy_efficiencies.back().energy;
+  answer->m_createdUtc = std::time( nullptr );
+  answer->m_lastUsedUtc = answer->m_createdUtc;
+  answer->m_geomType = EffGeometryType::FixedGeomTotalAct;
+  answer->m_parentHash = 0;
+  answer->computeHash();
+
+  EffCsvParseResult result;
+  result.drf = answer;
+  result.is_gadras_format = is_gadras;
+
+  return result;
+}//EffCsvParseResult parseEfficiencyCsvFile( std::istream &input )
+
+
+void DetectorPeakResponse::parseDetectorDatGeometry( std::istream &detDatFile,
+                                                     float &diameter, float &setback )
+{
+  diameter = 0.0f;
+  setback = 0.0f;
+
+  float detWidth = 0.0f, heightToWidth = 0.0f;
+  float detSetback = 0.0f;
+
+  const istream::pos_type orig_pos = detDatFile.tellg();
+
+  string line;
+  if( !SpecUtils::safe_get_line( detDatFile, line ) )
+    throw runtime_error( "Could not read first line of Detector.dat" );
+
+  const bool is_xml = (line.find( "xml" ) != string::npos);
+
+  if( is_xml )
+  {
+    try
+    {
+      auto get_float_value = []( const rapidxml::xml_node<char> * const parent,
+                                 const string &name ) -> float {
+        const auto target = parent->first_node( name.c_str(), name.size() );
+        const auto value = SpecUtils::xml_first_node( target, "value" );
+        const string val_str = SpecUtils::xml_value_str( value );
+        float val;
+        if( !(stringstream( val_str ) >> val) )
+          throw runtime_error( "Missing <" + name + "> node." );
+        return val;
+      };
+
+      detDatFile.seekg( orig_pos );
+      rapidxml::file<char> input_file( detDatFile );
+
+      rapidxml::xml_document<char> doc;
+      doc.parse<rapidxml::parse_trim_whitespace>( input_file.data() );
+
+      const auto gamma_detector = doc.first_node( "gamma_detector" );
+      if( !gamma_detector )
+        throw runtime_error( "Missing <gamma_detector> node." );
+
+      const auto dimensions = XML_FIRST_NODE( gamma_detector, "dimensions" );
+      if( !dimensions )
+        throw runtime_error( "Missing <dimensions> node." );
+
+      detWidth = get_float_value( dimensions, "width" );
+      heightToWidth = get_float_value( dimensions, "height_to_width_ratio" );
+
+      try
+      {
+        detSetback = get_float_value( gamma_detector, "setback" );
+      }catch( ... )
+      {
+      }
+    }catch( std::exception &e )
+    {
+      throw runtime_error( "Failed to read XML Detector.dat: " + string( e.what() ) );
+    }
+  }else
+  {
+    do
+    {
+      SpecUtils::trim( line );
+      if( line.empty() || !isdigit( static_cast<unsigned char>(line[0]) ) )
+        continue;
+
+      vector<string> parts;
+      SpecUtils::split( parts, line, " \t" );
+
+      try
+      {
+        const int parnum = std::stoi( parts.at( 0 ) );
+        const float value = static_cast<float>( std::stod( parts.at( 1 ) ) );
+        switch( parnum )
+        {
+          case 11: detWidth = value;      break;
+          case 12: heightToWidth = value;  break;
+          case 40: detSetback = value;    break;
+        }
+      }catch( ... )
+      {
+        continue;
+      }
+    }while( SpecUtils::safe_get_line( detDatFile, line ) );
+  }//if( is_xml ) / else
+
+  if( (detWidth <= 0.0f) || (heightToWidth <= 0.0f) )
+    throw runtime_error( "Could not find detector dimensions in Detector.dat" );
+
+  const float surfaceArea = detWidth * detWidth * heightToWidth;
+  diameter = 2.0f * sqrt( surfaceArea / 3.14159265359f ) * static_cast<float>( PhysicalUnits::cm );
+
+  if( detSetback > 0.0f )
+    setback = detSetback * static_cast<float>( PhysicalUnits::cm );
+}//void parseDetectorDatGeometry(...)
+
+
 shared_ptr<DetectorPeakResponse> DetectorPeakResponse::convertFixedGeometryType( const double quantity,
                                                             const EffGeometryType to_type ) const
 {

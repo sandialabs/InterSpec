@@ -142,6 +142,13 @@
   <message id="smm-outx-curve">ANGLE Efficiency Calibration Curve DRF</message>
   <message id="smm-outx-error">Error creating DRF from ANGLE .outx: {1}</message>
 
+  <!-- Text for dialog when user drag-n-drop an efficiency CSV file onto app -->
+  <message id="smm-eff-csv-curve">Efficiency CSV Curve DRF</message>
+  <message id="smm-eff-csv-error">Error creating DRF from efficiency CSV: {1}</message>
+  <message id="smm-eff-csv-det-dat-label">Detector.dat (optional)</message>
+  <message id="smm-eff-csv-intrinsic">Intrinsic Efficiency</message>
+  <message id="smm-eff-csv-abs-eff">Absolute Efficiency</message>
+
   <!-- Text for dialog when user drag-n-drop the Activity/Shielding fit file onto app -->
   <message id="smm-act-shield-xml">Activity/Shielding XML</message>
   <message id="smm-act-shield-use">Use this Activity/Shielding fit setup?</message>

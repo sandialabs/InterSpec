@@ -1430,3 +1430,147 @@ BOOST_AUTO_TEST_CASE( test_detector_setback_gadras )
 
   cout << "Detector setback GADRAS test passed" << endl;
 }//test_detector_setback_gadras
+
+
+BOOST_AUTO_TEST_CASE( test_read_gameff_csv )
+{
+  cout << "\n\nTesting gamEff CSV file reading..." << endl;
+
+  BOOST_REQUIRE_MESSAGE( !g_test_data_dir.empty(), "Test data directory not set" );
+
+  const string csv_file = SpecUtils::append_path( g_test_data_dir,
+    "det_eff/25-163U01_ES2502_23003-1-F-1_gamEff.csv" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file( csv_file ), "gamEff CSV not found: " + csv_file );
+
+  ifstream input( csv_file.c_str() );
+  BOOST_REQUIRE_MESSAGE( input.is_open(), "Failed to open gamEff CSV" );
+
+  DetectorPeakResponse::EffCsvParseResult result;
+  BOOST_CHECK_NO_THROW( result = DetectorPeakResponse::parseEfficiencyCsvFile( input ) );
+
+  BOOST_REQUIRE_MESSAGE( result.drf != nullptr, "gamEff parsing should return valid DRF" );
+  BOOST_CHECK_MESSAGE( result.drf->isValid(), "gamEff DRF should be valid" );
+  BOOST_CHECK_MESSAGE( !result.is_gadras_format, "gamEff should NOT be detected as GADRAS format" );
+
+  BOOST_CHECK_MESSAGE( result.drf->geometryType() == DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct,
+                       "gamEff DRF should have FixedGeomTotalAct geometry" );
+  BOOST_CHECK_MESSAGE( result.drf->efficiencyFcnType() == DetectorPeakResponse::EfficiencyFnctForm::kEnergyEfficiencyPairs,
+                       "gamEff DRF should use energy-efficiency pairs" );
+  BOOST_CHECK_MESSAGE( result.drf->drfSource() == DetectorPeakResponse::DrfSource::UserImportedEfficiencyCsvDrf,
+                       "gamEff DRF should have UserImportedEfficiencyCsvDrf source" );
+
+  // Check first data point: 48.814 keV, 3.098e-03
+  const float eff_first = result.drf->intrinsicEfficiency( 48.814f * static_cast<float>(PhysicalUnits::keV) );
+  BOOST_CHECK_MESSAGE( close_enough( eff_first, 3.098e-03, 0.01 ),
+    "gamEff first point efficiency: " + to_string( eff_first ) + " vs expected 3.098e-03" );
+
+  // All efficiencies should be < 1.0 (fractional, not percentage)
+  BOOST_CHECK_MESSAGE( eff_first < 1.0f, "gamEff efficiencies should be fractional (< 1.0)" );
+
+  cout << "Successfully parsed gamEff CSV file" << endl;
+}//test_read_gameff_csv
+
+
+BOOST_AUTO_TEST_CASE( test_read_run_effoutput_csv )
+{
+  cout << "\n\nTesting Run_effoutput CSV file reading..." << endl;
+
+  BOOST_REQUIRE_MESSAGE( !g_test_data_dir.empty(), "Test data directory not set" );
+
+  const string csv_file = SpecUtils::append_path( g_test_data_dir,
+    "det_eff/Run_effoutput_BIG8_Foil_86mm_110p_Abs-1.csv" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file( csv_file ), "Run_effoutput CSV not found: " + csv_file );
+
+  ifstream input( csv_file.c_str() );
+  BOOST_REQUIRE_MESSAGE( input.is_open(), "Failed to open Run_effoutput CSV" );
+
+  DetectorPeakResponse::EffCsvParseResult result;
+  BOOST_CHECK_NO_THROW( result = DetectorPeakResponse::parseEfficiencyCsvFile( input ) );
+
+  BOOST_REQUIRE_MESSAGE( result.drf != nullptr, "Run_effoutput parsing should return valid DRF" );
+  BOOST_CHECK_MESSAGE( result.drf->isValid(), "Run_effoutput DRF should be valid" );
+  BOOST_CHECK_MESSAGE( !result.is_gadras_format, "Run_effoutput should NOT be detected as GADRAS format" );
+
+  BOOST_CHECK_MESSAGE( result.drf->geometryType() == DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct,
+                       "Run_effoutput DRF should have FixedGeomTotalAct geometry" );
+  BOOST_CHECK_MESSAGE( result.drf->drfSource() == DetectorPeakResponse::DrfSource::UserImportedEfficiencyCsvDrf,
+                       "Run_effoutput DRF should have UserImportedEfficiencyCsvDrf source" );
+
+  // Check first data point: Energy=34.9731 keV, Eff=2.93E-06 (column 4, "Eff")
+  const float eff_first = result.drf->intrinsicEfficiency( 34.9731f * static_cast<float>(PhysicalUnits::keV) );
+  BOOST_CHECK_MESSAGE( close_enough( eff_first, 2.93e-06, 0.02 ),
+    "Run_effoutput first point efficiency: " + to_string( eff_first ) + " vs expected 2.93e-06" );
+
+  // All efficiencies should be < 1.0 (fractional, not percentage)
+  BOOST_CHECK_MESSAGE( eff_first < 1.0f, "Run_effoutput efficiencies should be fractional (< 1.0)" );
+
+  cout << "Successfully parsed Run_effoutput CSV file" << endl;
+}//test_read_run_effoutput_csv
+
+
+BOOST_AUTO_TEST_CASE( test_read_gadras_csv_standalone )
+{
+  cout << "\n\nTesting standalone GADRAS Efficiency.csv reading..." << endl;
+
+  BOOST_REQUIRE_MESSAGE( !g_data_dir.empty(), "Data directory not set" );
+
+  const string csv_file = SpecUtils::append_path( g_data_dir,
+    "GenericGadrasDetectors/HPGe 40%/Efficiency.csv" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file( csv_file ), "GADRAS Efficiency.csv not found: " + csv_file );
+
+  ifstream input( csv_file.c_str() );
+  BOOST_REQUIRE_MESSAGE( input.is_open(), "Failed to open GADRAS Efficiency.csv" );
+
+  DetectorPeakResponse::EffCsvParseResult result;
+  BOOST_CHECK_NO_THROW( result = DetectorPeakResponse::parseEfficiencyCsvFile( input ) );
+
+  BOOST_REQUIRE_MESSAGE( result.drf != nullptr, "GADRAS CSV parsing should return valid DRF" );
+  BOOST_CHECK_MESSAGE( result.drf->isValid(), "GADRAS CSV DRF should be valid" );
+  BOOST_CHECK_MESSAGE( result.is_gadras_format, "GADRAS CSV should be detected as GADRAS format" );
+
+  BOOST_CHECK_MESSAGE( result.drf->geometryType() == DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct,
+                       "GADRAS CSV DRF should have FixedGeomTotalAct geometry (before reinterpretation)" );
+
+  // Efficiency at ~100 keV should be around 0.49899 (from file: 49.899%)
+  // The exact energy may not be in the file, so use intrinsicEfficiency which interpolates
+  const float eff_100 = result.drf->intrinsicEfficiency( 100.0f * static_cast<float>(PhysicalUnits::keV) );
+  BOOST_CHECK_MESSAGE( (eff_100 > 0.0f) && (eff_100 <= 1.0f),
+    "GADRAS CSV efficiency should be in [0, 1] after percentage conversion, got: " + to_string( eff_100 ) );
+
+  cout << "Successfully parsed standalone GADRAS Efficiency.csv" << endl;
+}//test_read_gadras_csv_standalone
+
+
+BOOST_AUTO_TEST_CASE( test_parseDetectorDatGeometry )
+{
+  cout << "\n\nTesting Detector.dat geometry parsing..." << endl;
+
+  BOOST_REQUIRE_MESSAGE( !g_data_dir.empty(), "Data directory not set" );
+
+  const string dat_file = SpecUtils::append_path( g_data_dir,
+    "GenericGadrasDetectors/HPGe 40%/Detector.dat" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file( dat_file ), "Detector.dat not found: " + dat_file );
+
+  ifstream input( dat_file.c_str() );
+  BOOST_REQUIRE_MESSAGE( input.is_open(), "Failed to open Detector.dat" );
+
+  float diameter = 0.0f, setback = 0.0f;
+  BOOST_CHECK_NO_THROW(
+    DetectorPeakResponse::parseDetectorDatGeometry( input, diameter, setback )
+  );
+
+  BOOST_CHECK_MESSAGE( diameter > 0.0f,
+    "Detector diameter should be positive, got: " + to_string( diameter / static_cast<float>(PhysicalUnits::cm) ) + " cm" );
+
+  // Compare with the diameter from fromGadrasDirectory
+  const string det_dir = SpecUtils::append_path( g_data_dir, "GenericGadrasDetectors/HPGe 40%" );
+  DetectorPeakResponse drf_full;
+  BOOST_CHECK_NO_THROW( drf_full.fromGadrasDirectory( det_dir ) );
+
+  BOOST_CHECK_MESSAGE( close_enough( diameter, drf_full.detectorDiameter(), 0.01 ),
+    "parseDetectorDatGeometry diameter (" + to_string( diameter / static_cast<float>(PhysicalUnits::cm) ) +
+    " cm) should match fromGadrasDirectory (" +
+    to_string( drf_full.detectorDiameter() / static_cast<float>(PhysicalUnits::cm) ) + " cm)" );
+
+  cout << "Successfully parsed Detector.dat geometry" << endl;
+}//test_parseDetectorDatGeometry

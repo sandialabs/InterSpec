@@ -239,6 +239,11 @@ public:
 
     /** From ANGLE .outx file. */
     AngleOutx = 11,
+
+    /** From a drag-and-dropped efficiency CSV file (gamEff, Run_effoutput, or standalone
+     GADRAS Efficiency.csv).
+     */
+    UserImportedEfficiencyCsvDrf = 12,
   };//enum DrfSource
   
 public:
@@ -521,6 +526,44 @@ public:
    @returns a valid DRF with (efficiencyFcnType() == kEnergyEfficiencyPairs)
    */
   static std::shared_ptr<DetectorPeakResponse> parseAngleOutxFile( std::istream &input );
+
+  /** Result struct from parsing an efficiency CSV file. */
+  struct EffCsvParseResult
+  {
+    std::shared_ptr<DetectorPeakResponse> drf;
+
+    /** Whether the detected format was a GADRAS Efficiency.csv (has "(%" on line 2).
+     If true, the dialog should offer optional Detector.dat upload for diameter/setback.
+     */
+    bool is_gadras_format;
+  };//struct EffCsvParseResult
+
+  /** Parses a CSV file containing energy-efficiency pairs.
+
+   Auto-detects three formats:
+   - GADRAS Efficiency.csv: Has "(%" on second line. Efficiency in column 2 as percentage.
+   - gamEff CSV: Header has "efficiency" (case-insensitive). 2-column fractional (0-1).
+   - Run_effoutput CSV: Multi-column with "Eff" column header. Fractional efficiency.
+
+   Returns the DRF with FixedGeomTotalAct geometry and kEnergyEfficiencyPairs form
+   (caller should reinterpret geometry via dialog).
+
+   Throws std::runtime_error if the file cannot be parsed as any supported format.
+   */
+  static EffCsvParseResult parseEfficiencyCsvFile( std::istream &input );
+
+  /** Parses a GADRAS Detector.dat file to extract detector diameter and setback.
+
+   Handles both legacy text and newer XML Detector.dat formats.
+
+   @param detDatFile Input stream for the Detector.dat file.
+   @param[out] diameter Detector diameter in PhysicalUnits.
+   @param[out] setback Detector setback in PhysicalUnits, or 0 if not found.
+
+   Throws std::runtime_error if the file cannot be parsed.
+   */
+  static void parseDetectorDatGeometry( std::istream &detDatFile,
+                                        float &diameter, float &setback );
 
   /** Converts between the fixed geometry types of EffGeometryType.
    
