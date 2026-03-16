@@ -5517,7 +5517,6 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             }
           }//if( !using_physical_model )
 
-          result.warnings.push_back( "Lost all ROIs while iterationing to refine solution - stopped early." );
           std::cerr << "Have lost all ROIs!  Halting iterations to refine solution." << std::endl;
           break;
         }//if( refined_rois.empty() )

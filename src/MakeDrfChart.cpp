@@ -92,6 +92,7 @@ void DrfChartHolder::layoutSizeChanged( int width, int height )
 MakeDrfChart::MakeDrfChart( Wt::WContainerWidget *parent )
 : Wt::Chart::WCartesianChart( parent ),
   m_det_diameter( 1.0*PhysicalUnits::cm ),
+  m_det_setback( 0.0f ),
   m_det_lower_energy( 0.0 ),
   m_det_upper_energy( 3000.0 ),
   m_datapoints{},
@@ -337,7 +338,7 @@ void MakeDrfChart::updateDataToModel()
     {
       const double fracSolidAngle
            = (data.distance < 0.0) ? 1.0
-                                   : DetectorPeakResponse::fractionalSolidAngle( m_det_diameter, data.distance );
+                                   : DetectorPeakResponse::fractionalSolidAngle( m_det_diameter, data.distance + m_det_setback );
       const double expected = data.source_count_rate * data.livetime * fracSolidAngle;
       const double eff = data.peak_area / expected;
       
@@ -789,10 +790,12 @@ void MakeDrfChart::setEfficiencyCoefficients( const std::vector<float> &coeffs,
 
 void MakeDrfChart::setDataPoints( const std::vector<MakeDrfChart::DataPoint> &datapoints,
                                   const float det_diameter,
+                                  const float det_setback,
                                   const float lower_energy, const float upper_energy )
 {
   m_datapoints = datapoints;
   m_det_diameter = det_diameter;
+  m_det_setback = det_setback;
   
   const bool update_xrange = ((lower_energy != m_det_lower_energy) || (upper_energy != m_det_upper_energy));
   

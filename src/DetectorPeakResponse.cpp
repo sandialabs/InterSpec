@@ -481,6 +481,7 @@ DetectorPeakResponse::DetectorPeakResponse()
     m_createdUtc( 0 ),
     m_lastUsedUtc( 0 ),
     m_geomType( EffGeometryType::FarFieldIntrinsic ),
+    m_detectorSetback( 0.0 ),
     m_absoluteEfficiencyDistance( -1.0 ),
     m_absEffCorrectForAirAtten( true )
 {
@@ -504,6 +505,7 @@ DetectorPeakResponse::DetectorPeakResponse( const std::string &name,
     m_createdUtc( 0 ),
     m_lastUsedUtc( 0 ),
     m_geomType( EffGeometryType::FarFieldIntrinsic ),
+    m_detectorSetback( 0.0 ),
     m_absoluteEfficiencyDistance( -1.0 ),
     m_absEffCorrectForAirAtten( true )
 {
@@ -540,6 +542,8 @@ void DetectorPeakResponse::computeHash()
   boost::hash_combine( seed, m_description );
   
   boost::hash_combine( seed, m_detectorDiameter );
+  if( m_detectorSetback > 0.0 )
+    boost::hash_combine( seed, m_detectorSetback );
   boost::hash_combine( seed, m_efficiencyEnergyUnits );
   boost::hash_combine( seed, m_resolutionForm );
   for( const float val : m_resolutionCoeffs )
@@ -645,6 +649,7 @@ void DetectorPeakResponse::reset()
   m_name.clear();
   m_description.clear();
   m_detectorDiameter = 0.0;
+  m_detectorSetback = 0.0;
   m_efficiencyEnergyUnits = static_cast<float>( PhysicalUnits::keV );
   m_resolutionForm = kNumResolutionFnctForm;
   m_efficiencyForm = kNumEfficiencyFnctForms;
@@ -679,6 +684,7 @@ bool DetectorPeakResponse::operator==( const DetectorPeakResponse &rhs ) const
   return (m_name==rhs.m_name
           && m_description==rhs.m_description
           && fabs(m_detectorDiameter-rhs.m_detectorDiameter)<0.000001
+          && fabs(m_detectorSetback-rhs.m_detectorSetback)<0.000001
           && fabs(m_efficiencyEnergyUnits-rhs.m_efficiencyEnergyUnits)<0.000001f
           && m_resolutionForm==rhs.m_resolutionForm
           && m_efficiencyForm==rhs.m_efficiencyForm
@@ -860,20 +866,21 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
     std::reverse( energyEfficiencies.begin(), energyEfficiencies.end() );
   
   m_detectorDiameter = detectorDiameter;
+  m_detectorSetback = 0.0;
   m_energyEfficiencies = energyEfficiencies;
   m_efficiencyEnergyUnits = energyUnits;
-  
+
   m_efficiencySource = DrfSource::UserImportedIntrisicEfficiencyDrf;
   m_efficiencyForm = kEnergyEfficiencyPairs;
-  
+
   m_flags = 0;
-  
+
   m_lowerEnergy = m_energyEfficiencies.front().energy;
   m_upperEnergy = m_energyEfficiencies.back().energy;
-  
+
   m_lastUsedUtc = m_createdUtc = std::time(nullptr);
   m_geomType = geometry_type;
-  
+
   if( geometry_type == EffGeometryType::FarFieldAbsolute )
   {
     m_absoluteEfficiencyDistance = characterizationDist;
@@ -883,7 +890,7 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
     m_absoluteEfficiencyDistance = 0.0;
     m_absEffCorrectForAirAtten = true;
   }
-  
+
   computeHash();
 }//void fromEnergyEfficiencyCsv(...)
 
@@ -919,6 +926,7 @@ void DetectorPeakResponse::setEfficiencyPoints( const std::vector<DetectorPeakRe
   std::sort( begin(m_energyEfficiencies), end(m_energyEfficiencies) );
 
   m_detectorDiameter = detectorDiameter;
+  m_detectorSetback = 0.0;
   m_efficiencyEnergyUnits = static_cast<float>(PhysicalUnits::keV);
 
   m_efficiencyForm = kEnergyEfficiencyPairs;
@@ -929,7 +937,7 @@ void DetectorPeakResponse::setEfficiencyPoints( const std::vector<DetectorPeakRe
 
   m_lastUsedUtc = m_createdUtc = std::time(nullptr);
   m_geomType = geometry_type;
-  
+
   if( geometry_type == EffGeometryType::FarFieldAbsolute )
   {
     m_absoluteEfficiencyDistance = absoluteEffDistance;
@@ -961,18 +969,19 @@ void DetectorPeakResponse::setIntrinsicEfficiencyFormula( const string &fcnstr,
   m_efficiencyFcn = boost::bind( &FormulaWrapper::efficiency, expression,
                                 boost::placeholders::_1  );
   m_detectorDiameter = diameter;
+  m_detectorSetback = 0.0;
   m_efficiencyEnergyUnits = energyUnits;
-  
+
   m_flags = 0;
-  
+
   m_lowerEnergy = lowerEnergy;
   m_upperEnergy = upperEnergy;
-  
+
   m_efficiencySource = DrfSource::UserSpecifiedFormulaDrf;
-  
+
   m_lastUsedUtc = m_createdUtc = std::time(nullptr);
   m_geomType = geometry_type;
-  
+
   computeHash();
 }//void setIntrinsicEfficiencyFormula( const std::string &fcn )
 
@@ -991,6 +1000,7 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
 {
   float detWidth = 0.0, heightToWidth = 0.0;
   float lowerEnergy = 0.0, upperEnergy = 0.0;
+  float detSetback = 0.0;
 
   m_efficiencyEnergyUnits = static_cast<float>( PhysicalUnits::keV );
   m_resolutionCoeffs.clear();
@@ -1053,6 +1063,15 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
       m_resolutionCoeffs[0] = get_float_value( peak_shape, "fwhm_offset" );
       m_resolutionCoeffs[1] = get_float_value( peak_shape, "fwhm_at_661keV" );
       m_resolutionCoeffs[2] = get_float_value( peak_shape, "fwhm_power" );
+
+      // Try to read setback from "setback" node, if present
+      try
+      {
+        detSetback = get_float_value( gamma_detector, "setback" );
+      }catch(...)
+      {
+        // "setback" node may not be present in older XML Detector.dat files
+      }
     }catch( std::exception &e )
     {
       throw std::runtime_error( "Failed to read XML Detector.dat: " + std::string(e.what()) );
@@ -1084,6 +1103,7 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
           case 12: heightToWidth = value;         break;
           //case 35: lowerEnergy = value;           break;  //LLD(keV)
           //case ??: upperEnergy = value;           break;  //chi-square / max energy, keV
+          case 40: detSetback = value;            break;
         }//switch( parnum )
       }catch(...)
       {
@@ -1104,7 +1124,10 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
   //const bool fixed_geom = false;
   const EffGeometryType geometry_type = EffGeometryType::FarFieldIntrinsic;
   fromEnergyEfficiencyCsv( csvFile, diam, -1.0, static_cast<float>(PhysicalUnits::keV), geometry_type );
-  
+
+  if( detSetback > 0.0f )
+    m_detectorSetback = detSetback * PhysicalUnits::cm;
+
   m_flags = 0;
   
   m_lowerEnergy = lowerEnergy;
@@ -1195,6 +1218,7 @@ void DetectorPeakResponse::fromExpOfLogPowerSeries(
   m_efficiencyForm = kExpOfLogPowerSeries;
   m_efficiencyEnergyUnits = equationEnergyUnits;
   m_detectorDiameter = det_diam;
+  m_detectorSetback = 0.0;
   m_expOfLogPowerSeriesCoeffs = coefs;
   m_expOfLogPowerSeriesUncerts = uncerts;
   
@@ -1276,8 +1300,26 @@ std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseSingleCsvLineRe
     SpecUtils::ireplace_all( description, "%20", " " );
     SpecUtils::trim( description );
     det.reset( new DetectorPeakResponse( name, description ) );
-    det->fromExpOfLogPowerSeries( coefs, {}, dist, diam, eunits, 0.0f, 0.0f, EffGeometryType::FarFieldAbsolute );
+    // Parse lower/upper energy from fields 23/24 if available
+    float lowerE = 0.0f, upperE = 0.0f;
+    if( fields.size() > 24 )
+    {
+      try { upperE = static_cast<float>( std::stod(fields[24]) ); } catch(...) {}
+      try { lowerE = static_cast<float>( std::stod(fields[23]) ); } catch(...) {}
+    }
+
+    det->fromExpOfLogPowerSeries( coefs, {}, dist, diam, eunits, lowerE, upperE, EffGeometryType::FarFieldAbsolute );
     det->setDrfSource( DetectorPeakResponse::DrfSource::UserAddedRelativeEfficiencyDrf );
+
+    // Parse detector setback from field 21 if available
+    if( fields.size() > 21 )
+    {
+      double setback_cm = 0.0;
+      if( SpecUtils::parse_double(fields[21].c_str(), fields[21].size(), setback_cm) && (setback_cm > 0.0) )
+        det->m_detectorSetback = setback_cm * PhysicalUnits::cm;
+    }
+
+    det->computeHash();
   }catch( std::exception &e )
   {
     det.reset();
@@ -1497,9 +1539,9 @@ void DetectorPeakResponse::parseGammaQuantRelEffDrfCsv( std::istream &input,
       const string &setback = detector_setbacks[col];
       if( !SpecUtils::parse_double(setback.c_str(), setback.size(), det_setback) )
       {
-        warnings.push_back( "Failed to parse detector setback, '" + setback
-                           + "', to a number, skipping detector '" + name + "'" );
-        continue;
+        det_setback = 0.0;
+        //warnings.push_back( "Failed to parse detector setback, '" + setback
+        //                   + "', for detector '" + name + "' - defaulting to 0" );
       }
         
       
@@ -1611,7 +1653,12 @@ void DetectorPeakResponse::parseGammaQuantRelEffDrfCsv( std::istream &input,
         string desc = comment + ((!comment.empty() && !cal_geom.empty()) ? ", " : "") + cal_geom;
         det->setDescription( desc );
         det->setDrfSource( DetectorPeakResponse::DrfSource::UserImportedIntrisicEfficiencyDrf );
-        
+
+        if( det_setback > 0.0 )
+          det->m_detectorSetback = det_setback * PhysicalUnits::cm;
+
+        det->computeHash();
+
         drfs.push_back( det );
       }catch( std::exception &e )
       {
@@ -1683,7 +1730,10 @@ std::string DetectorPeakResponse::toAppUrl() const
 
   if( (m_geomType == EffGeometryType::FarFieldIntrinsic) || (m_geomType == EffGeometryType::FarFieldAbsolute) || (m_detectorDiameter > 0.0) )
     parts["DIAM"] = SpecUtils::printCompact( m_detectorDiameter, 5 );
-  
+
+  if( m_detectorSetback > 0.0 )
+    parts["SETBK"] = SpecUtils::printCompact( m_detectorSetback / PhysicalUnits::cm, 5 );
+
   // We'll assume units are MeV, unless stated otherwise.
   const bool notKeV = (fabs(m_efficiencyEnergyUnits - PhysicalUnits::keV) > 0.001);
   if( notKeV )
@@ -1865,7 +1915,10 @@ std::string DetectorPeakResponse::toAppUrl() const
   
   if( remove_part("LASTUSED") )
     return combine_parts();
-  
+
+  if( remove_part("SETBK") )
+    return combine_parts();
+
   if( remove_part("ORIGIN") )
     return combine_parts();
   
@@ -2014,7 +2067,15 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
   {
     detectorDiameter = 0.0;
   }//if( parts.count("DIAM") )
-  
+
+  double detectorSetback = 0.0;
+  if( parts.count("SETBK") )
+  {
+    if( !(stringstream(parts["SETBK"]) >> detectorSetback) || (detectorSetback < 0.0) )
+      throw runtime_error( "fromAppUrl: invalid SETBK component" );
+    detectorSetback *= PhysicalUnits::cm;
+  }//if( parts.count("SETBK") )
+
   if( parts.count("EUNIT") )
   {
     if( !(stringstream(parts["EUNIT"]) >> efficiencyEnergyUnits) || (efficiencyEnergyUnits <= 0.0) )
@@ -2165,6 +2226,7 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
       case DrfSource::UserCreatedDrf:
       case DrfSource::FromSpectrumFileDrf:
       case DrfSource::IsocsEcc:
+      case DrfSource::AngleOutx:
         break;
       
       default:
@@ -2217,8 +2279,9 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
   m_description = desc;
        
   m_detectorDiameter = detectorDiameter;
+  m_detectorSetback = detectorSetback;
   m_efficiencyEnergyUnits = efficiencyEnergyUnits;
-       
+
   m_efficiencyForm = eff_form;
   m_efficiencyFormula = eqn;
   m_efficiencyFcn = efficiencyFcn;
@@ -2422,6 +2485,526 @@ tuple<shared_ptr<DetectorPeakResponse>,double,double>
   
   return {answer, source_area, source_mass};
 }//shared_ptr<DetectorPeakResponse> parseEccFile( std::istream &input )
+
+
+std::shared_ptr<DetectorPeakResponse>
+  DetectorPeakResponse::parseAngleOutxFile( std::istream &input )
+{
+  // Read the entire stream into a string for XML parsing
+  const string xml_data( (std::istreambuf_iterator<char>(input)),
+                          std::istreambuf_iterator<char>() );
+
+  if( xml_data.size() < 50 )
+    throw runtime_error( "parseAngleOutxFile: input too small." );
+
+  // rapidxml needs a mutable, null-terminated buffer
+  vector<char> xml_buf( xml_data.begin(), xml_data.end() );
+  xml_buf.push_back( '\0' );
+
+  rapidxml::xml_document<char> doc;
+  try
+  {
+    doc.parse<rapidxml::parse_trim_whitespace>( xml_buf.data() );
+  }catch( const rapidxml::parse_error &e )
+  {
+    throw runtime_error( "parseAngleOutxFile: XML parse error: " + string(e.what()) );
+  }
+
+  const rapidxml::xml_node<char> *angle_node = XML_FIRST_NODE( (&doc), "angle" );
+  if( !angle_node )
+    throw runtime_error( "parseAngleOutxFile: no <angle> root element." );
+
+  // Extract distance unit from <angle units="mm|cm">; default to mm
+  double dist_unit = 1.0 * PhysicalUnits::mm;
+  const string units_str = SpecUtils::xml_value_str( XML_FIRST_ATTRIB( angle_node, "units" ) );
+  if( SpecUtils::iequals_ascii( units_str, "cm" ) )
+    dist_unit = 1.0 * PhysicalUnits::cm;
+
+  // Extract detector metadata and geometry
+  string det_name, det_desc;
+  float crystal_radius = 0.0f;
+  float setback = 0.0f;
+
+  const rapidxml::xml_node<char> *det_node = XML_FIRST_NODE( angle_node, "detector" );
+  if( det_node )
+  {
+    det_name = SpecUtils::xml_value_str( XML_FIRST_ATTRIB( det_node, "name" ) );
+    det_desc = SpecUtils::xml_value_str( XML_FIRST_ATTRIB( det_node, "description" ) );
+
+    // Extract crystal radius from <crystal radius="...">
+    const auto *r_attr = SpecUtils::xml_first_attribute( XML_FIRST_NODE( det_node, "crystal" ), "radius" );
+    if( r_attr )
+      SpecUtils::parse_float( r_attr->value(), r_attr->value_size(), crystal_radius );
+
+    // Calculate setback: sum of material layers from outer enclosure to active Ge surface.
+    //  housing/topUpper + housing/topLower + endCap top + vacuum top + inactiveGe top
+    auto parse_attr_float = []( const rapidxml::xml_node<char> *node, const char *attr,
+                                size_t attr_len ) -> float
+    {
+      float val = 0.0f;
+      const auto *a = node ? node->first_attribute( attr, attr_len ) : nullptr;
+      if( a && a->value_size() )
+        SpecUtils::parse_float( a->value(), a->value_size(), val );
+      return val;
+    };//parse_attr_float
+
+    setback += parse_attr_float( XML_FIRST_NODE( det_node, "endCap" ), "topThickness", 12 );
+    setback += parse_attr_float( XML_FIRST_NODE( det_node, "vacuum" ), "topThickness", 12 );
+    setback += parse_attr_float( XML_FIRST_NODE( det_node, "inactiveGe" ), "topThickness", 12 );
+
+    const rapidxml::xml_node<char> *housing = XML_FIRST_NODE( det_node, "housing" );
+    if( housing )
+    {
+      setback += parse_attr_float( XML_FIRST_NODE( housing, "topUpper" ), "thickness", 9 );
+      setback += parse_attr_float( XML_FIRST_NODE( housing, "topLower" ), "thickness", 9 );
+    }//if( housing )
+  }//if( det_node )
+
+  // Find <results> and parse <result> children
+  const rapidxml::xml_node<char> *results_node = XML_FIRST_NODE( angle_node, "results" );
+  if( !results_node )
+    throw runtime_error( "parseAngleOutxFile: no <results> element." );
+
+  vector<EnergyEfficiencyPair> energy_efficiencies;
+  vector<pair<float,float>> energy_precision;
+
+  XML_FOREACH_CHILD( result, results_node, "result" )
+  {
+    const auto *energy_attr = XML_FIRST_ATTRIB( result, "energy" );
+    const auto *eff_attr = XML_FIRST_ATTRIB( result, "efficiency" );
+
+    if( !energy_attr || !energy_attr->value_size() || !eff_attr || !eff_attr->value_size() )
+      continue;
+
+    float energy = 0.0f, efficiency = 0.0f;
+    if( !SpecUtils::parse_float( energy_attr->value(), energy_attr->value_size(), energy ) )
+      throw runtime_error( "parseAngleOutxFile: failed to parse energy attribute." );
+    if( !SpecUtils::parse_float( eff_attr->value(), eff_attr->value_size(), efficiency ) )
+      throw runtime_error( "parseAngleOutxFile: failed to parse efficiency attribute." );
+
+    if( energy <= 1.0f )
+      throw runtime_error( "parseAngleOutxFile: energy <= 1 keV (" + to_string(energy) + ")" );
+    if( energy > 14000.0f )
+      throw runtime_error( "parseAngleOutxFile: energy > 14 MeV (" + to_string(energy) + ")" );
+    if( (efficiency < 0.0f) || IsNan(efficiency) || IsInf(efficiency) )
+      throw runtime_error( "parseAngleOutxFile: invalid efficiency ("
+                          + to_string(efficiency) + " at " + to_string(energy) + " keV)" );
+
+    EnergyEfficiencyPair eep;
+    eep.energy = energy;
+    eep.efficiency = efficiency;
+    energy_efficiencies.push_back( eep );
+
+    // Parse efficiencyPrecision for future use (relative precision factor from ANGLE)
+    const auto *prec_attr = XML_FIRST_ATTRIB( result, "efficiencyPrecision" );
+    if( prec_attr && prec_attr->value_size() )
+    {
+      float precision = 0.0f;
+      if( SpecUtils::parse_float( prec_attr->value(), prec_attr->value_size(), precision ) )
+        energy_precision.emplace_back( energy, precision );
+    }
+  }//for( loop over <result> nodes )
+
+  if( energy_efficiencies.size() < 4 )
+    throw runtime_error( "parseAngleOutxFile: not enough energy/efficiency pairs (got "
+                        + to_string(energy_efficiencies.size()) + ")." );
+
+  std::sort( begin(energy_efficiencies), end(energy_efficiencies),
+    []( const EnergyEfficiencyPair &lhs, const EnergyEfficiencyPair &rhs ) -> bool {
+    return lhs.energy < rhs.energy;
+  } );
+
+  shared_ptr<DetectorPeakResponse> answer = make_shared<DetectorPeakResponse>();
+  answer->m_name = det_name;
+  if( !det_desc.empty() )
+    answer->m_name += (answer->m_name.empty() ? "" : " - ") + det_desc;
+
+  answer->m_description = "ANGLE .outx";
+  const double setback_pu = setback * dist_unit;
+  if( setback_pu > 0.0 )
+    answer->m_description += ", setback=" + to_string( setback_pu / PhysicalUnits::mm ) + "mm";
+
+  answer->m_detectorDiameter = static_cast<float>( 2.0 * crystal_radius * dist_unit );
+  answer->m_detectorSetback = setback_pu;
+  answer->m_efficiencyEnergyUnits = static_cast<float>( PhysicalUnits::keV );
+  answer->m_resolutionForm = ResolutionFnctForm::kNumResolutionFnctForm;
+  answer->m_efficiencySource = DrfSource::AngleOutx;
+  answer->m_efficiencyForm = EfficiencyFnctForm::kEnergyEfficiencyPairs;
+  answer->m_energyEfficiencies = energy_efficiencies;
+  answer->m_flags = 0;
+  answer->m_lowerEnergy = energy_efficiencies.front().energy;
+  answer->m_upperEnergy = energy_efficiencies.back().energy;
+  answer->m_createdUtc = std::time( nullptr );
+  answer->m_lastUsedUtc = answer->m_createdUtc;
+  answer->m_geomType = EffGeometryType::FixedGeomTotalAct;
+  answer->m_parentHash = 0;
+  answer->computeHash();
+
+  return answer;
+}//shared_ptr<DetectorPeakResponse> parseAngleOutxFile( std::istream &input )
+
+
+DetectorPeakResponse::EffCsvParseResult
+DetectorPeakResponse::parseEfficiencyCsvFile( std::istream &input )
+{
+  // Read all lines from the input
+  vector<string> all_lines;
+  string line;
+  while( SpecUtils::safe_get_line( input, line ) )
+  {
+    if( all_lines.size() > 5000 )
+      throw runtime_error( "Efficiency CSV file has too many lines." );
+    all_lines.push_back( line );
+  }
+
+  if( all_lines.size() < 3 )
+    throw runtime_error( "Efficiency CSV file has too few lines." );
+
+  // Find the first non-empty, non-comment lines for header analysis
+  vector<string> header_lines;
+  for( size_t i = 0; (i < all_lines.size()) && (header_lines.size() < 3); ++i )
+  {
+    string trimmed = all_lines[i];
+    SpecUtils::trim( trimmed );
+    if( !trimmed.empty() && (trimmed[0] != '#') )
+      header_lines.push_back( trimmed );
+  }
+
+  if( header_lines.size() < 2 )
+    throw runtime_error( "Efficiency CSV file has too few non-comment lines." );
+
+  // Determine format from header lines
+  bool is_gadras = false;
+  bool is_percentage = false;
+  int energy_col_index = 0; // default: energy in first column
+  int eff_col_index = 1;    // default: efficiency in second column
+  float energy_units_scale = static_cast<float>( PhysicalUnits::keV ); // default keV
+  bool energy_units_from_header = false; // whether we detected energy units from the header
+
+  // Check for GADRAS format: any of first 3 header lines contains "(%"
+  for( size_t i = 0; i < std::min( header_lines.size(), static_cast<size_t>(3) ); ++i )
+  {
+    if( header_lines[i].find( "(%" ) != string::npos )
+    {
+      is_gadras = true;
+      is_percentage = true;
+      energy_col_index = 0;
+      eff_col_index = 1; // "Peak" column, index 1
+      break;
+    }
+  }//for( check GADRAS format )
+
+  if( !is_gadras )
+  {
+    // Split the first header row by commas and tabs to find column names
+    const string &hdr = header_lines[0];
+
+    vector<string> hdr_fields;
+    size_t start = 0;
+    for( size_t i = 0; i <= hdr.size(); ++i )
+    {
+      if( (i == hdr.size()) || (hdr[i] == ',') || (hdr[i] == '\t') )
+      {
+        string field = hdr.substr( start, i - start );
+        SpecUtils::trim( field );
+        hdr_fields.push_back( field );
+        start = i + 1;
+      }
+    }//for( split header )
+
+    // Look for energy column (contains "energy" or "en" case-insensitive)
+    // and efficiency column (contains "eff" case-insensitive)
+    bool found_energy_col = false;
+    bool found_eff_col = false;
+
+    for( size_t i = 0; i < hdr_fields.size(); ++i )
+    {
+      const string field_lower = SpecUtils::to_lower_ascii_copy( hdr_fields[i] );
+
+      // Check for energy column
+      if( !found_energy_col
+         && ((field_lower.find( "energy" ) != string::npos)
+             || (field_lower.find( "en" ) != string::npos && field_lower.find( "eff" ) == string::npos)) )
+      {
+        energy_col_index = static_cast<int>( i );
+        found_energy_col = true;
+
+        // Detect energy units from column name (e.g., "Energy[keV]", "energy_keV", "Energy(MeV)")
+        if( field_lower.find( "mev" ) != string::npos )
+        {
+          energy_units_scale = static_cast<float>( PhysicalUnits::MeV );
+          energy_units_from_header = true;
+        }else if( (field_lower.find( "kev" ) != string::npos)
+                 || (field_lower.find( "ke" ) != string::npos) )
+        {
+          energy_units_scale = static_cast<float>( PhysicalUnits::keV );
+          energy_units_from_header = true;
+        }else if( field_lower.find( "ev" ) != string::npos )
+        {
+          // Check for bare "eV" (not "keV" or "MeV" which were already matched)
+          energy_units_scale = static_cast<float>( PhysicalUnits::eV );
+          energy_units_from_header = true;
+        }
+      }//if( energy column )
+
+      // Check for efficiency column: look for "eff" in the field name
+      // Prefer exact "Eff" match, but also accept "efficiency", etc.
+      // Exclude columns like "Eff. Unc", "Eff_Unc", "Eff_err" (uncertainty columns)
+      if( !found_eff_col && (field_lower.find( "eff" ) != string::npos) )
+      {
+        // Skip uncertainty/error columns
+        if( (field_lower.find( "unc" ) != string::npos)
+           || (field_lower.find( "err" ) != string::npos)
+           || (field_lower.find( "eff." ) != string::npos && field_lower.find( "eff. " ) != string::npos) )
+        {
+          continue;
+        }
+
+        eff_col_index = static_cast<int>( i );
+        found_eff_col = true;
+
+        // If the efficiency column title contains "%", treat values as percentage
+        if( hdr_fields[i].find( '%' ) != string::npos )
+          is_percentage = true;
+      }//if( efficiency column )
+    }//for( each header field )
+
+    // We require both an energy-like and efficiency-like column in the header
+    if( !found_energy_col || !found_eff_col )
+      throw runtime_error( "Efficiency CSV header must contain both energy and efficiency columns." );
+  }//if( !is_gadras )
+
+
+  // Parse data lines
+  bool got_data = false;
+  vector<EnergyEfficiencyPair> energy_efficiencies;
+
+  for( const string &raw_line : all_lines )
+  {
+    string trimmed = raw_line;
+    SpecUtils::trim( trimmed );
+
+    if( trimmed.empty() || (trimmed[0] == '#') )
+      continue;
+
+    if( !isdigit( static_cast<unsigned char>(trimmed[0]) )
+       && (trimmed[0] != '+') && (trimmed[0] != '-') && (trimmed[0] != '.') )
+    {
+      if( !got_data )
+        continue; // skip header lines
+      break; // done with data
+    }
+
+    vector<float> fields;
+    const bool ok = SpecUtils::split_to_floats( trimmed.c_str(), trimmed.size(), fields );
+
+    const int min_col = std::max( energy_col_index, eff_col_index );
+    if( !ok || (static_cast<int>(fields.size()) <= min_col) || (fields.size() < 2) )
+    {
+      if( !got_data )
+        continue;
+      break;
+    }
+
+    EnergyEfficiencyPair point;
+    point.energy = fields[energy_col_index]; // energy units applied after parsing
+    point.efficiency = fields[eff_col_index];
+
+    if( is_percentage )
+      point.efficiency /= 100.0f;
+
+    got_data = true;
+    energy_efficiencies.push_back( point );
+
+    if( energy_efficiencies.size() > 3000 )
+      throw runtime_error( "Efficiency CSV file has too many data points (max 3000)." );
+  }//for( each line )
+
+  if( energy_efficiencies.size() < 2 )
+    throw runtime_error( "Efficiency CSV file has fewer than 2 valid data points." );
+
+  // If energy units weren't determined from the header, try to auto-detect from data values
+  if( !energy_units_from_header && !is_gadras )
+  {
+    const float first_e = energy_efficiencies.front().energy;
+    const float last_e = energy_efficiencies.back().energy;
+    const float min_e = std::min( first_e, last_e );
+    const float max_e = std::max( first_e, last_e );
+
+    if( max_e > 8000.0f )
+    {
+      // Energies are likely in eV (e.g., 50000 eV = 50 keV)
+      energy_units_scale = static_cast<float>( PhysicalUnits::eV );
+    }else if( min_e < 80.0f && max_e < 80.0f )
+    {
+      // Energies are likely in MeV (e.g., 0.662 MeV = 662 keV)
+      energy_units_scale = static_cast<float>( PhysicalUnits::MeV );
+    }
+    // Otherwise keep default keV
+  }//if( !energy_units_from_header && !is_gadras )
+
+  // Apply energy units to all data points
+  for( EnergyEfficiencyPair &point : energy_efficiencies )
+    point.energy *= energy_units_scale;
+
+  // Validate: check monotonicity and value ranges
+  const bool increasing = (energy_efficiencies[1].energy > energy_efficiencies[0].energy);
+  for( size_t i = 1; i < energy_efficiencies.size(); ++i )
+  {
+    const float prev_e = energy_efficiencies[i - 1].energy;
+    const float this_e = energy_efficiencies[i].energy;
+
+    if( IsNan( prev_e ) || IsNan( this_e ) || IsInf( prev_e ) || IsInf( this_e ) )
+      throw runtime_error( "NaN or Inf energy detected in efficiency CSV." );
+
+    if( (prev_e < 0.0f) || (this_e < 0.0f) )
+      throw runtime_error( "Negative energy in efficiency CSV." );
+
+    const float prev_eff = energy_efficiencies[i - 1].efficiency;
+    const float this_eff = energy_efficiencies[i].efficiency;
+
+    if( IsNan( prev_eff ) || IsNan( this_eff ) || IsInf( prev_eff ) || IsInf( this_eff ) )
+      throw runtime_error( "NaN or Inf efficiency in efficiency CSV." );
+
+    if( (prev_eff < 0.0f) || (this_eff < 0.0f) || (prev_eff > 1.0f) || (this_eff > 1.0f) )
+      throw runtime_error( "Efficiency value out of range [0, 1] in CSV." );
+
+    // Allow very close energies (within ~1e-5 relative tolerance)
+    if( fabs( prev_e - this_e ) < 1.0E-5f * std::max( fabs( this_e ), fabs( prev_e ) ) )
+      continue;
+
+    const bool bigger = (this_e > prev_e);
+    if( increasing != bigger )
+      throw runtime_error( "Energies in efficiency CSV are not monotonically ordered." );
+  }//for( validate )
+
+  if( !increasing )
+    std::reverse( energy_efficiencies.begin(), energy_efficiencies.end() );
+
+  // Build the DRF
+  auto answer = make_shared<DetectorPeakResponse>();
+  answer->m_name = "Efficiency CSV";
+  answer->m_description = is_gadras ? "GADRAS Efficiency.csv" : "Efficiency CSV";
+  answer->m_detectorDiameter = 0.0f;
+  answer->m_detectorSetback = 0.0;
+  answer->m_efficiencyEnergyUnits = static_cast<float>( PhysicalUnits::keV );
+  answer->m_resolutionForm = ResolutionFnctForm::kNumResolutionFnctForm;
+  answer->m_efficiencySource = DrfSource::UserImportedEfficiencyCsvDrf;
+  answer->m_efficiencyForm = EfficiencyFnctForm::kEnergyEfficiencyPairs;
+  answer->m_energyEfficiencies = energy_efficiencies;
+  answer->m_flags = 0;
+  answer->m_lowerEnergy = energy_efficiencies.front().energy;
+  answer->m_upperEnergy = energy_efficiencies.back().energy;
+  answer->m_createdUtc = std::time( nullptr );
+  answer->m_lastUsedUtc = answer->m_createdUtc;
+  answer->m_geomType = EffGeometryType::FixedGeomTotalAct;
+  answer->m_parentHash = 0;
+  answer->computeHash();
+
+  EffCsvParseResult result;
+  result.drf = answer;
+  result.is_gadras_format = is_gadras;
+
+  return result;
+}//EffCsvParseResult parseEfficiencyCsvFile( std::istream &input )
+
+
+void DetectorPeakResponse::parseDetectorDatGeometry( std::istream &detDatFile,
+                                                     float &diameter, float &setback )
+{
+  diameter = 0.0f;
+  setback = 0.0f;
+
+  float detWidth = 0.0f, heightToWidth = 0.0f;
+  float detSetback = 0.0f;
+
+  const istream::pos_type orig_pos = detDatFile.tellg();
+
+  string line;
+  if( !SpecUtils::safe_get_line( detDatFile, line ) )
+    throw runtime_error( "Could not read first line of Detector.dat" );
+
+  const bool is_xml = (line.find( "xml" ) != string::npos);
+
+  if( is_xml )
+  {
+    try
+    {
+      auto get_float_value = []( const rapidxml::xml_node<char> * const parent,
+                                 const string &name ) -> float {
+        const auto target = parent->first_node( name.c_str(), name.size() );
+        const auto value = SpecUtils::xml_first_node( target, "value" );
+        const string val_str = SpecUtils::xml_value_str( value );
+        float val;
+        if( !(stringstream( val_str ) >> val) )
+          throw runtime_error( "Missing <" + name + "> node." );
+        return val;
+      };
+
+      detDatFile.seekg( orig_pos );
+      rapidxml::file<char> input_file( detDatFile );
+
+      rapidxml::xml_document<char> doc;
+      doc.parse<rapidxml::parse_trim_whitespace>( input_file.data() );
+
+      const auto gamma_detector = doc.first_node( "gamma_detector" );
+      if( !gamma_detector )
+        throw runtime_error( "Missing <gamma_detector> node." );
+
+      const auto dimensions = XML_FIRST_NODE( gamma_detector, "dimensions" );
+      if( !dimensions )
+        throw runtime_error( "Missing <dimensions> node." );
+
+      detWidth = get_float_value( dimensions, "width" );
+      heightToWidth = get_float_value( dimensions, "height_to_width_ratio" );
+
+      try
+      {
+        detSetback = get_float_value( gamma_detector, "setback" );
+      }catch( ... )
+      {
+      }
+    }catch( std::exception &e )
+    {
+      throw runtime_error( "Failed to read XML Detector.dat: " + string( e.what() ) );
+    }
+  }else
+  {
+    do
+    {
+      SpecUtils::trim( line );
+      if( line.empty() || !isdigit( static_cast<unsigned char>(line[0]) ) )
+        continue;
+
+      vector<string> parts;
+      SpecUtils::split( parts, line, " \t" );
+
+      try
+      {
+        const int parnum = std::stoi( parts.at( 0 ) );
+        const float value = static_cast<float>( std::stod( parts.at( 1 ) ) );
+        switch( parnum )
+        {
+          case 11: detWidth = value;      break;
+          case 12: heightToWidth = value;  break;
+          case 40: detSetback = value;    break;
+        }
+      }catch( ... )
+      {
+        continue;
+      }
+    }while( SpecUtils::safe_get_line( detDatFile, line ) );
+  }//if( is_xml ) / else
+
+  if( (detWidth <= 0.0f) || (heightToWidth <= 0.0f) )
+    throw runtime_error( "Could not find detector dimensions in Detector.dat" );
+
+  const float surfaceArea = detWidth * detWidth * heightToWidth;
+  diameter = 2.0f * sqrt( surfaceArea / 3.14159265359f ) * static_cast<float>( PhysicalUnits::cm );
+
+  if( detSetback > 0.0f )
+    setback = detSetback * static_cast<float>( PhysicalUnits::cm );
+}//void parseDetectorDatGeometry(...)
 
 
 shared_ptr<DetectorPeakResponse> DetectorPeakResponse::convertFixedGeometryType( const double quantity,
@@ -2724,7 +3307,15 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
     node = doc->allocate_node( node_element, "DetectorDiameter", val );
     base_node->append_node( node );
   }//if( (m_geomType == EffGeometryType::FarFieldIntrinsic) || (m_geomType == EffGeometryType::FarFieldAbsolute) || (m_detectorDiameter > 0.0) )
-  
+
+  if( m_detectorSetback > 0.0 )
+  {
+    snprintf( buffer, sizeof(buffer), "%1.8E", m_detectorSetback );
+    val = doc->allocate_string( buffer );
+    node = doc->allocate_node( node_element, "DetectorSetback", val );
+    base_node->append_node( node );
+  }//if( m_detectorSetback > 0.0 )
+
   val = "UnknownDrfSource";
   switch( m_efficiencySource )
   {
@@ -2739,6 +3330,7 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
     case UserCreatedDrf:                    val = "UserCreatedDrf";                    break;
     case FromSpectrumFileDrf:               val = "FromSpectrumFileDrf";               break;
     case DrfSource::IsocsEcc:               val = "ISOCS";                             break;
+    case DrfSource::AngleOutx:              val = "AngleOutx";                         break;
   }//switch( m_efficiencySource )
   
   node = doc->allocate_node( node_element, "EfficiencySource", val );
@@ -3020,7 +3612,16 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
     m_detectorDiameter = atof( node->value() );
   else
     m_detectorDiameter = 0.0;
-  
+
+  m_detectorSetback = 0.0;
+  node = parent->first_node( "DetectorSetback", 15 );
+  if( node && node->value() )
+  {
+    m_detectorSetback = atof( node->value() );
+    if( m_detectorSetback < 0.0 )
+      m_detectorSetback = 0.0;
+  }//if( DetectorSetback node found )
+
   node = parent->first_node( "EfficiencySource", 16 );
   if( !node || !node->value() )
     throw runtime_error( "DetectorPeakResponse missing EfficiencySource node" );
@@ -3053,7 +3654,9 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
     m_efficiencySource = FromSpectrumFileDrf;
   else if( compare(node->value(),node->value_size(),"ISOCS",5,false) )
     m_efficiencySource = IsocsEcc;
-  else 
+  else if( compare(node->value(),node->value_size(),"AngleOutx",9,false) )
+    m_efficiencySource = AngleOutx;
+  else
     throw runtime_error( "DetectorPeakResponse: invalid EfficiencySource value" );
   
   
@@ -3253,6 +3856,14 @@ void DetectorPeakResponse::equalEnough( const DetectorPeakResponse &lhs,
     snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: detector diameter"
               " of LHS (%1.8E) doesnt match RHS (%1.8E)",
              lhs.m_detectorDiameter, rhs.m_detectorDiameter );
+    throw runtime_error(buffer);
+  }
+
+  if( fabs(lhs.m_detectorSetback - rhs.m_detectorSetback) > 0.001 )
+  {
+    snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: detector setback"
+              " of LHS (%1.8E) doesnt match RHS (%1.8E)",
+             lhs.m_detectorSetback, rhs.m_detectorSetback );
     throw runtime_error(buffer);
   }
 
@@ -3521,7 +4132,7 @@ double DetectorPeakResponse::fractionalSolidAngle( const double detDiam, const d
 
 double DetectorPeakResponse::efficiency( const float energy, const double dist ) const
 {
-  const double fracSolidAngle = fractionalSolidAngle( m_detectorDiameter, dist );
+  const double fracSolidAngle = fractionalSolidAngle( m_detectorDiameter, dist + m_detectorSetback );
   return fracSolidAngle * intrinsicEfficiency( energy );
 }//float efficiency( const float energy ) const
 
@@ -3540,7 +4151,7 @@ float DetectorPeakResponse::absoluteToIntrinsicMultiple( const float energy ) co
     return 1.0f;
 
   // Calculate geometric correction factor
-  const double frac_angle = fractionalSolidAngle( m_detectorDiameter, m_absoluteEfficiencyDistance );
+  const double frac_angle = fractionalSolidAngle( m_detectorDiameter, m_absoluteEfficiencyDistance + m_detectorSetback );
   double factor = 1.0 / frac_angle;
 
   // Apply air attenuation correction if requested
@@ -3977,6 +4588,21 @@ float DetectorPeakResponse::detectorDiameter() const
 {
   return m_detectorDiameter;
 }
+
+
+double DetectorPeakResponse::detectorSetback() const
+{
+  return m_detectorSetback;
+}
+
+
+void DetectorPeakResponse::setDetectorSetback( const double distance )
+{
+  if( distance < 0.0 || IsInf(distance) || IsNan(distance) )
+    throw runtime_error( "Detector setback distance must be non-negative" );
+  m_detectorSetback = distance;
+  computeHash();
+}//void setDetectorSetback( const double distance )
 
 
 double DetectorPeakResponse::absoluteEfficiencyDistance() const

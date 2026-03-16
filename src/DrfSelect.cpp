@@ -2151,14 +2151,15 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_gui_select_matches_det( false ),
     m_tabs( nullptr ),
     m_detectorDiameter( nullptr ),
+    m_detectorSetback( nullptr ),
     m_uploadedDetNameDiv( nullptr ),
     m_uploadedDetName( nullptr ),
     m_detectrDiameterDiv( nullptr ),
     m_efficiencyCsvUpload( nullptr ),
-    m_detectrDotDatDiv( nullptr ),
+    m_detectrDotDatLabel( nullptr ),
     m_detectorDotDatUpload( nullptr ),
     m_efficiencyType( nullptr ),
-    m_detectorDistanceDiv( nullptr ),
+    m_detectorDistanceLabel( nullptr ),
     m_detectorDistance( nullptr ),
     m_acceptButton( nullptr ),
     m_cancelButton( nullptr ),
@@ -2171,6 +2172,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_drfType( nullptr ),
     m_detectorManualDiameterLabel( nullptr ),
     m_detectorManualDiameterText( nullptr ),
+    m_detectorManualSetbackText( nullptr ),
     m_detectorManualDistText( nullptr ),
     m_detectorManualDistLabel( nullptr ),
     m_detectorManualMinEnergy( nullptr ),
@@ -2373,54 +2375,65 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorDiameter->enterPressed().connect( this, &DrfSelect::handleDetectorDiameterOrDistanceChanged );
   m_detectorDiameter->blurred().connect( this, &DrfSelect::handleDetectorDiameterOrDistanceChanged );
 
-  m_detectorDistanceDiv = new WContainerWidget( uploadDetTab );
-  m_detectorDistanceDiv->addStyleClass( "DetectorDistanceDiv" );
-  label = new WLabel( WString::tr("ds-dist-label"), m_detectorDistanceDiv );
-  m_detectorDistance = new WLineEdit( "25 cm", m_detectorDistanceDiv );
-  label->setBuddy( m_detectorDistance );
+  label = new WLabel( WString::tr("ds-det-setback"), m_detectrDiameterDiv );
+  m_detectorSetback = new WLineEdit( "0 cm", m_detectrDiameterDiv );
+  label->setBuddy( m_detectorSetback );
+
+  m_detectorSetback->setAttributeValue( "ondragstart", "return false" );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_detectorSetback->setAttributeValue( "autocorrect", "off" );
+  m_detectorSetback->setAttributeValue( "spellcheck", "off" );
+#endif
+
+  m_detectorSetback->setValidator( distValidator );
+  m_detectorSetback->setTextSize( 10 );
+  m_detectorSetback->changed().connect( this, &DrfSelect::handleDetectorDiameterOrDistanceChanged );
+  m_detectorSetback->enterPressed().connect( this, &DrfSelect::handleDetectorDiameterOrDistanceChanged );
+  m_detectorSetback->blurred().connect( this, &DrfSelect::handleDetectorDiameterOrDistanceChanged );
+
+  m_detectorDistanceLabel = new WLabel( WString::tr("ds-dist-label"), m_detectrDiameterDiv );
+  m_detectorDistance = new WLineEdit( "25 cm", m_detectrDiameterDiv );
+  m_detectorDistanceLabel->setBuddy( m_detectorDistance );
 
   m_detectorDistance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_detectorDistance->setAttributeValue( "autocorrect", "off" );
   m_detectorDistance->setAttributeValue( "spellcheck", "off" );
 #endif
-  
+
   m_detectorDistance->setValidator( distValidator );
   m_detectorDistance->setTextSize( 10 );
   m_detectorDistance->changed().connect( this, &DrfSelect::handleDetectorDiameterOrDistanceChanged );
   m_detectorDistance->enterPressed().connect( this, &DrfSelect::handleDetectorDiameterOrDistanceChanged );
   m_detectorDistance->blurred().connect( this, &DrfSelect::handleDetectorDiameterOrDistanceChanged );
-  m_detectorDistanceDiv->hide();
-  m_detectorDistanceDiv->setHiddenKeepsGeometry( true );
+  m_detectorDistanceLabel->hide();
+  m_detectorDistance->hide();
 
-  
+  m_detectrDotDatLabel = new WLabel( WString::tr("ds-gad-det-file-label"), m_detectrDiameterDiv );
+  m_detectorDotDatUpload = new WFileUpload( m_detectrDiameterDiv );
+  m_detectorDotDatUpload->uploaded().connect( boost::bind( &DrfSelect::handleGadrasDetectorDotDatUpload, this ) );
+  m_detectorDotDatUpload->fileTooLarge().connect( boost::bind(&SpecMeasManager::fileTooLarge, boost::placeholders::_1) );
+  m_detectorDotDatUpload->changed().connect( m_detectorDotDatUpload, &WFileUpload::upload );
+  m_detectrDotDatLabel->hide();
+  m_detectorDotDatUpload->hide();
+
+  m_detectrDiameterDiv->hide();
+  m_detectrDiameterDiv->setHiddenKeepsGeometry( true );
+
   m_uploadedDetNameDiv = new WContainerWidget( uploadDetTab );
   label = new WLabel( WString::tr("ds-name-label"), m_uploadedDetNameDiv );
   m_uploadedDetName = new WLineEdit( m_uploadedDetNameDiv );
   label->setBuddy( m_uploadedDetName );
-  
+
   m_uploadedDetName->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_uploadedDetName->setAttributeValue( "autocorrect", "off" );
   m_uploadedDetName->setAttributeValue( "spellcheck", "off" );
 #endif
-  
+
   m_uploadedDetName->textInput().connect( this, &DrfSelect::handleUserChangedUploadedDrfName );
   m_uploadedDetName->setTextSize( 30 );
   m_uploadedDetNameDiv->hide();
-  
-  m_detectrDotDatDiv = new WContainerWidget( m_detectrDiameterDiv );
-  m_detectrDotDatDiv->addStyleClass( "DetectorDotDatDiv" );
-
-  label = new WLabel( WString::tr("ds-gad-det-file-label"), m_detectrDotDatDiv );
-  label->setInline( false );
-  m_detectorDotDatUpload = new WFileUpload( m_detectrDotDatDiv );
-  m_detectorDotDatUpload->setInline( false );
-  m_detectorDotDatUpload->uploaded().connect( boost::bind( &DrfSelect::handleGadrasDetectorDotDatUpload, this ) );
-  m_detectorDotDatUpload->fileTooLarge().connect( boost::bind(&SpecMeasManager::fileTooLarge, boost::placeholders::_1) );
-  m_detectorDotDatUpload->changed().connect( m_detectorDotDatUpload, &WFileUpload::upload );
-  m_detectrDiameterDiv->hide();
-  m_detectrDiameterDiv->setHiddenKeepsGeometry( true );
 
     
   //-------------------------------------
@@ -2571,8 +2584,25 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorManualDiameterText->setAttributeValue( "autocorrect", "off" );
   m_detectorManualDiameterText->setAttributeValue( "spellcheck", "off" );
 #endif
-  
-  
+
+  cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
+  WLabel *manualSetbackLabel = new WLabel( WString::tr("ds-manual-det-setback-label"), cell );
+  cell = formulaTable->elementAt( cell->row(), 1 );
+  m_detectorManualSetbackText = new WLineEdit( cell );
+  manualSetbackLabel->setBuddy( m_detectorManualSetbackText );
+  m_detectorManualSetbackText->setValidator( distValidator );
+  m_detectorManualSetbackText->setEmptyText( "0 cm" );
+  m_detectorManualSetbackText->blurred().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  m_detectorManualSetbackText->enterPressed().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  m_detectorManualSetbackText->textInput().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+
+  m_detectorManualSetbackText->setAttributeValue( "ondragstart", "return false" );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_detectorManualSetbackText->setAttributeValue( "autocorrect", "off" );
+  m_detectorManualSetbackText->setAttributeValue( "spellcheck", "off" );
+#endif
+
+
   cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
   label = new WLabel( WString::tr("ds-energy-range"), cell );
   
@@ -3386,6 +3416,8 @@ void DrfSelect::setGuiToCurrentDetector()
         const float diam = m_detector->detectorDiameter();
         const string diamstr = PhysicalUnits::printToBestLengthUnits( diam );
         m_detectorManualDiameterText->setText( diamstr );
+        if( m_detector->detectorSetback() > 0.0 )
+          m_detectorManualSetbackText->setText( PhysicalUnits::printToBestLengthUnits(m_detector->detectorSetback()) );
         const float units = m_detector->efficiencyEnergyUnits();
         int energygrp = 0;
         if( fabs(PhysicalUnits::MeV-units) < fabs(PhysicalUnits::keV-units) )
@@ -3573,6 +3605,7 @@ void DrfSelect::verifyManualDefinition()
   m_detectorManualDistText->setHidden( is_intrinsic || is_fixed_geom );
   m_detectorManualDiameterText->setHidden( is_fixed_geom );
   m_detectorManualDiameterLabel->setHidden( is_fixed_geom );
+  m_detectorManualSetbackText->setHidden( is_fixed_geom );
   
   if( is_absolute )
   {
@@ -3615,11 +3648,21 @@ void DrfSelect::verifyManualDefinition()
         m_detectorManualDistText->addStyleClass( "Wt-invalid" );
     }//try / catch
     
-    const double gfactor = DetectorPeakResponse::fractionalSolidAngle( det_diam, dist );
+    double manual_setback = 0.0;
+    try
+    {
+      manual_setback = PhysicalUnits::stringToDistance( m_detectorManualSetbackText->text().toUTF8() );
+      if( manual_setback < 0.0 )
+        manual_setback = 0.0;
+    }catch( std::exception & )
+    {
+    }
+
+    const double gfactor = DetectorPeakResponse::fractionalSolidAngle( det_diam, dist + manual_setback );
     if( !fcn_txt.empty() )
       fcn_txt = std::to_string(1.0/gfactor) + "*(" + fcn_txt + ")";
   }//if( absolute eff )
-  
+
   const float energyUnits = static_cast<float>( m_eqnEnergyGroup->checkedId()==0
                                                ? PhysicalUnits::keV : PhysicalUnits::MeV);
   
@@ -3727,11 +3770,20 @@ void DrfSelect::setFormulaDefineDetector()
       const float dist = (float)PhysicalUnits::stringToDistance( disttxt );
       if( dist < 0.0001f )
         throw runtime_error( WString::tr("ds-err-det-dist-pos").toUTF8() );
-      
-      
+
+      double manual_setback = 0.0;
+      try
+      {
+        manual_setback = PhysicalUnits::stringToDistance( m_detectorManualSetbackText->text().toUTF8() );
+        if( manual_setback < 0.0 )
+          manual_setback = 0.0;
+      }catch( std::exception & )
+      {
+      }
+
       const double gfactor = DetectorPeakResponse::fractionalSolidAngle(
-                                                              det_diam, dist );
-        
+                                                              det_diam, dist + manual_setback );
+
       fcn = std::to_string(1.0/gfactor) + "*(" + fcn + ")";
     }//if( is_absolute )
     
@@ -3771,7 +3823,16 @@ void DrfSelect::setFormulaDefineDetector()
     }
     
     detec->setDrfSource( DetectorPeakResponse::DrfSource::UserSpecifiedFormulaDrf );
-    
+
+    try
+    {
+      const double setback_val = PhysicalUnits::stringToDistance( m_detectorManualSetbackText->text().toUTF8() );
+      if( setback_val > 0.0 )
+        detec->setDetectorSetback( setback_val );
+    }catch( std::exception & )
+    {
+    }
+
 //#if( PERFORM_DEVELOPER_CHECKS )
 //    check_url_serialization( detec );
 //#endif
@@ -4242,38 +4303,40 @@ void DrfSelect::showWidgetsForCurrentEfficiencyType()
   const int eff_type_index = m_efficiencyType->currentIndex();
   if( eff_type_index >= 3 && eff_type_index <= 6 )
   {
-    // Fixed Geometry options (indices 3-6): Hide diameter, distance, and GADRAS upload
-    m_detectorDiameter->hide();
-    m_detectorDistanceDiv->hide();
+    // Fixed Geometry options (indices 3-6): Hide everything
     m_detectrDiameterDiv->hide();
-    m_detectrDotDatDiv->hide();
   }else if( eff_type_index == 2 )
   {
-    // GADRAS (index 2): Show GADRAS Detector.dat upload, hide diameter and distance
-    m_detectorDiameter->show();
+    // GADRAS (index 2): Show diameter, setback, GADRAS upload; hide distance
     m_detectrDiameterDiv->show();
-    
-    m_detectrDotDatDiv->show();
-    
-    m_detectorDistanceDiv->hide();
+    m_detectorDiameter->show();
+    m_detectorSetback->show();
+    m_detectrDotDatLabel->show();
+    m_detectorDotDatUpload->show();
+    m_detectorDistanceLabel->hide();
+    m_detectorDistance->hide();
   }else if( eff_type_index == 0 )
   {
-    // Intrinsic Efficiency (index 0): Show detector diameter, hide distance and GADRAS upload
-    m_detectorDiameter->show();
+    // Intrinsic Efficiency (index 0): Show diameter, setback; hide distance and GADRAS
     m_detectrDiameterDiv->show();
-    
-    m_detectorDistanceDiv->hide();
-    m_detectrDotDatDiv->hide();
+    m_detectorDiameter->show();
+    m_detectorSetback->show();
     m_detectorDiameter->enable();
+    m_detectorDistanceLabel->hide();
+    m_detectorDistance->hide();
+    m_detectrDotDatLabel->hide();
+    m_detectorDotDatUpload->hide();
   }else if( eff_type_index == 1 )
   {
-    // Far-Field Efficiency (index 1): Show detector diameter AND distance field, hide GADRAS upload
-    m_detectorDiameter->show();
+    // Far-Field Efficiency (index 1): Show diameter, setback, distance; hide GADRAS
     m_detectrDiameterDiv->show();
-    
-    m_detectorDistanceDiv->show();
-    m_detectrDotDatDiv->hide();
+    m_detectorDiameter->show();
+    m_detectorSetback->show();
     m_detectorDiameter->enable();
+    m_detectorDistanceLabel->show();
+    m_detectorDistance->show();
+    m_detectrDotDatLabel->hide();
+    m_detectorDotDatUpload->hide();
   }
 }//void showWidgetsForCurrentEfficiencyType()
 
@@ -4332,9 +4395,10 @@ void DrfSelect::handleGadrasDetectorDotDatUpload()
     det->setDrfSource( DetectorPeakResponse::DrfSource::UserImportedGadrasDrf );
     m_detectorDiameter->setText( PhysicalUnits::printToBestLengthUnits(det->detectorDiameter()) );
     m_detectorDiameter->setEnabled( false );
-    
+    m_detectorSetback->setText( PhysicalUnits::printToBestLengthUnits(det->detectorSetback()) );
+
     m_detector = det;
-    
+
     m_detectorDiameter->setText( PhysicalUnits::printToBestLengthUnits(det->detectorDiameter(), 4) );
     
     setAcceptButtonEnabled( true );
@@ -4368,8 +4432,21 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::detectorFromEffUpload() const
     }
   }//if( !m_detectrDiameterDiv->isHidden() )
   
+  double setback = 0.0;
+  if( !m_detectrDiameterDiv->isHidden() )
+  {
+    try
+    {
+      setback = PhysicalUnits::stringToDistance( m_detectorSetback->text().toUTF8() );
+      if( setback < 0.0 )
+        setback = 0.0;
+    }catch(...)
+    {
+    }
+  }//if( !m_detectrDiameterDiv->isHidden() ) - setback
+
   double abs_eff_dist = -1.0;
-  if( !m_detectorDistanceDiv->isHidden() )
+  if( !m_detectorDistance->isHidden() )
   {
     try
     {
@@ -4377,7 +4454,7 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::detectorFromEffUpload() const
     }catch(...)
     {
     }
-  }//if( !m_detectorDistanceDiv->isHidden() )
+  }//if( !m_detectorDistance->isHidden() )
   
   
   if( (m_efficiencyType->currentIndex() == 2) && !m_detectorDotDatUpload->empty() ) //GADRAS
@@ -4476,7 +4553,60 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::detectorFromEffUpload() const
     {
     }
   }//if( !det )
-  
+
+  // Try an ANGLE .outx file
+  if( !det )
+  {
+    try
+    {
+#ifdef _WIN32
+      const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
+      ifstream outxfile( wfilename.c_str(), ios_base::binary | ios_base::in );
+#else
+      ifstream outxfile( filename.c_str(), ios_base::binary|ios_base::in );
+#endif
+
+      shared_ptr<DetectorPeakResponse> trial_det = DetectorPeakResponse::parseAngleOutxFile( outxfile );
+
+      if( trial_det && trial_det->isValid() )
+      {
+        det = trial_det;
+
+        // .outx files have no source area/mass, so only far-field and total-activity modes apply
+        if( m_efficiencyType->currentIndex() == 0 )
+        {
+          if( (diameter > 0.0) && (abs_eff_dist > 0) )
+            det = trial_det->reinterpretAsFarFieldAbsEfficiency( diameter, abs_eff_dist, true );
+          else if( diameter > 0.0 )
+            det = trial_det->reinterpretAsFarFieldIntrinsicEfficiency( diameter );
+          else
+            return nullptr;
+        }else if( m_efficiencyType->currentIndex() == 1 )
+        {
+          if( (diameter > 0.0) && (abs_eff_dist > 0) )
+            det = trial_det->reinterpretAsFarFieldAbsEfficiency( diameter, abs_eff_dist, true );
+          else
+            return nullptr;
+        }else if( m_efficiencyType->currentIndex() == 2 )
+        {
+          if( diameter > 0.0 )
+            det = trial_det;
+          else
+            return nullptr;
+        }else if( m_efficiencyType->currentIndex() == 3 )
+        {
+          det = trial_det;
+        }else
+        {
+          // Per-cm2, per-m2, per-gram modes not available for .outx (no source area/mass)
+          return nullptr;
+        }
+      }//if( trial_det && trial_det->isValid() )
+    }catch( std::exception & )
+    {
+    }
+  }//if( !det ) -- try .outx
+
   if( !det )
   {
 #ifdef _WIN32
@@ -4557,7 +4687,10 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::detectorFromEffUpload() const
   
   if( !m_uploadedDetName->text().empty() )
     det->setName( m_uploadedDetName->text().toUTF8() );
-  
+
+  if( setback > 0.0 )
+    det->setDetectorSetback( setback );
+
   try
   {
     if( (m_efficiencyType->currentIndex() == 0) || (m_efficiencyType->currentIndex() == 2) )
@@ -4634,7 +4767,6 @@ void DrfSelect::handleEfficiencyCsvUpload()
   {
     m_efficiencyType->hide();
     m_detectrDiameterDiv->hide();
-    m_detectrDotDatDiv->hide();
     passMessage( WString::tr("ds-err-invalid-csv-format"), WarningWidget::WarningMsgHigh );
     setAcceptButtonEnabled( false );
     return;
@@ -4650,6 +4782,7 @@ void DrfSelect::handleEfficiencyCsvUpload()
     m_uploadedDetNameDiv->show();
     m_detector = det;
     m_detectorDiameter->setText( PhysicalUnits::printToBestLengthUnits(det->detectorDiameter(), 6) );
+    m_detectorSetback->setText( PhysicalUnits::printToBestLengthUnits(det->detectorSetback()) );
     setAcceptButtonEnabled( true );
     updateUserNameFromCurrentDetEff();
     m_efficiencyType->setCurrentIndex( 0 );
@@ -4674,8 +4807,28 @@ void DrfSelect::handleEfficiencyCsvUpload()
   }catch( std::exception & )
   {
   }
-  
-  
+
+  // Try an ANGLE .outx file
+  if( !det )
+  {
+    try
+    {
+#ifdef _WIN32
+      const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
+      ifstream outxfile( wfilename.c_str(), ios_base::binary | ios_base::in );
+#else
+      ifstream outxfile( filename.c_str(), ios_base::binary|ios_base::in );
+#endif
+
+      shared_ptr<DetectorPeakResponse> trial_det = DetectorPeakResponse::parseAngleOutxFile( outxfile );
+      if( trial_det && trial_det->isValid() )
+        det = trial_det->reinterpretAsFixedGeom( DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct );
+    }catch( std::exception & )
+    {
+    }
+  }//if( !det ) -- try .outx
+
+
   const bool fixed_geometry = (det && det->isFixedGeometry());
   bool can_accept = fixed_geometry;
   
@@ -4710,7 +4863,7 @@ void DrfSelect::handleEfficiencyCsvUpload()
       }//if( !m_detectrDiameterDiv->isHidden() && (m_efficiencyType->currentIndex() == 1) )
       
       double abs_eff_dist = -1.0;
-      if( !m_detectorDistanceDiv->isHidden() && (m_efficiencyType->currentIndex() == 1) )
+      if( !m_detectorDistance->isHidden() && (m_efficiencyType->currentIndex() == 1) )
       {
         try
         {
@@ -4769,10 +4922,12 @@ void DrfSelect::handleEfficiencyCsvUpload()
         case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
           m_efficiencyType->setCurrentIndex( 0 );
           m_detectorDiameter->setText( PhysicalUnits::printToBestLengthUnits(xml_det->detectorDiameter(), 6) );
+          m_detectorSetback->setText( PhysicalUnits::printToBestLengthUnits(xml_det->detectorSetback()) );
           break;
         case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
           m_efficiencyType->setCurrentIndex( 1 );
           m_detectorDiameter->setText( PhysicalUnits::printToBestLengthUnits(xml_det->detectorDiameter(), 6) );
+          m_detectorSetback->setText( PhysicalUnits::printToBestLengthUnits(xml_det->detectorSetback()) );
           m_detectorDistance->setText( PhysicalUnits::printToBestLengthUnits(xml_det->absoluteEfficiencyDistance(), 6) );
           break;
         case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
@@ -4788,7 +4943,7 @@ void DrfSelect::handleEfficiencyCsvUpload()
           m_efficiencyType->setCurrentIndex( 6 );
           break;
       }//switch( xml_det->geometryType() )
-      
+
       det = xml_det;
       can_accept = true;
     }catch( std::exception & )
@@ -4802,7 +4957,6 @@ void DrfSelect::handleEfficiencyCsvUpload()
     
     m_efficiencyType->hide();
     m_detectrDiameterDiv->hide();
-    m_detectrDotDatDiv->hide();
     setAcceptButtonEnabled( false );
     m_uploadedDetNameDiv->hide();
     return;
@@ -4861,8 +5015,6 @@ void DrfSelect::handleEfficiencyTypeChange()
 {
   if( m_efficiencyCsvUpload->empty() )
   {
-    m_detectrDotDatDiv->hide();
-    m_detectorDistanceDiv->hide();
     m_detectrDiameterDiv->hide();
     m_uploadedDetNameDiv->hide();
     m_efficiencyType->hide();
@@ -4914,7 +5066,6 @@ void DrfSelect::handleUploadTabSelected()
   {
     m_detectrDiameterDiv->hide();
     m_efficiencyType->hide();
-    m_detectorDistanceDiv->hide();
   }
   
   std::shared_ptr<DetectorPeakResponse> det = detectorFromEffUpload();

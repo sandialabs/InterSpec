@@ -456,7 +456,7 @@ void GammaXsGui::updateDetectorCalc()
       
       // fractional solid angle
       const float diameter = m_detector->detectorDiameter();
-      const double gfactor =  m_detector->fractionalSolidAngle( diameter, dist );
+      const double gfactor =  m_detector->fractionalSolidAngle( diameter, dist + m_detector->detectorSetback() );
       snprintf( buffer, sizeof(buffer), "%.4g", gfactor );
       m_fractionalAngle->setText( buffer );
       

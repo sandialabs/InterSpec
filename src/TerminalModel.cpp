@@ -1464,7 +1464,7 @@ double TerminalModel::drfGeometricEff( const std::string &distance_str )
   
   try
   {
-    return DetectorPeakResponse::fractionalSolidAngle( det->detectorDiameter(), distance );
+    return DetectorPeakResponse::fractionalSolidAngle( det->detectorDiameter(), distance + det->detectorSetback() );
   }catch( std::exception &e )
   {
     throw mup::ParserError( "Error getting geometric efficiency: " + std::string(e.what()) );
