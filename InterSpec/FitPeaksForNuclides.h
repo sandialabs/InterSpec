@@ -130,6 +130,11 @@ struct PeakFitResult
 // These values will be optimized via genetic algorithm for different detector types
 struct PeakFitForNuclideConfig
 {
+  /** Returns the default `PeakFitForNuclideConfig` for the detector type.
+   */
+  static const PeakFitForNuclideConfig &default_config( const bool isHPGe );
+
+
   // FWHM functional form
   DetectorPeakResponse::ResolutionFnctForm fwhm_functional_form = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
 
@@ -278,9 +283,14 @@ struct PeakFitForNuclideConfig
     settings.step_cont_left_right_nsigma = step_cont_left_right_nsigma;
     return settings;
   }
+
+private:
+  PeakFitForNuclideConfig(){};
 };//struct PeakFitForNuclideConfig
 
-  
+
+
+
 /** Options for fitting the peaks of nuclides.
  */
 enum FitSrcPeaksOptions

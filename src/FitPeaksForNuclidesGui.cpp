@@ -229,7 +229,8 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
   std::shared_ptr<SpecMeas> fg_meas = viewer->measurment( SpecUtils::SpectrumType::Foreground );
   std::shared_ptr<const DetectorPeakResponse> drf_input = fg_meas ? fg_meas->detector() : nullptr;
 
-  FitPeaksForNuclides::PeakFitForNuclideConfig config;
+  FitPeaksForNuclides::PeakFitForNuclideConfig config = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config( isHPGe );
+
 
   // Let user continue using app while fitting.
   SimpleDialog *wait_dlg = new SimpleDialog( WString::tr("fpn-wait-title"),
@@ -1423,12 +1424,14 @@ std::string FitPeaksAdvancedWidget::sourceListTitle() const
 
 void FitPeaksAdvancedWidget::buildOptionsFromConfig()
 {
-  FitPeaksForNuclides::PeakFitForNuclideConfig config;
-
   InterSpec *viewer = InterSpec::instance();
   const bool show_tool_tips = viewer
     ? UserPreferences::preferenceValue<bool>( "ShowTooltips", viewer )
     : false;
+
+  const bool isHPGe = PeakFitUtils::is_likely_high_res( InterSpec::instance() );
+  FitPeaksForNuclides::PeakFitForNuclideConfig config = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config( isHPGe );
+
 
   auto add_checkbox_row = [this, show_tool_tips]( const WString &label, WCheckBox *input,
                                                    const WString &tooltip = WString() ) {
@@ -1642,7 +1645,9 @@ void FitPeaksAdvancedWidget::syncConfigFromOptions()
 
 FitPeaksForNuclides::PeakFitForNuclideConfig FitPeaksAdvancedWidget::currentConfig() const
 {
-  FitPeaksForNuclides::PeakFitForNuclideConfig config;
+  const bool isHPGe = PeakFitUtils::is_likely_high_res( InterSpec::instance() );
+  FitPeaksForNuclides::PeakFitForNuclideConfig config = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config( isHPGe );
+
   if( m_opt_roi_min_chi2 )
     config.roi_significance_min_chi2_reduction = m_opt_roi_min_chi2->value();
   if( m_opt_roi_min_peak_sig )

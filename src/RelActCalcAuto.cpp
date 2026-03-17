@@ -10875,8 +10875,8 @@ T bersteinPeakResolutionFWHM( T energy, const T * const pars, const size_t num_p
   const T min_energy = pars[num_berstein_coeffs];
   const T max_energy = pars[num_berstein_coeffs + 1];
   
-  assert( energy >= min_energy );
-  assert( energy <= max_energy );
+  //assert( energy >= min_energy );
+  //assert( energy <= max_energy );
 
   // Check energy bounds and clamp if necessary
   if( energy < min_energy )

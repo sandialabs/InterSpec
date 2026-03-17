@@ -5953,7 +5953,79 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   return result;
 }//fit_peaks_for_nuclide_relactauto
 
-  
+
+const PeakFitForNuclideConfig &PeakFitForNuclideConfig::default_config( const bool isHPGe )
+{
+  static const PeakFitForNuclideConfig s_default_hpge_config;
+
+  if( isHPGe )
+    return s_default_hpge_config;
+
+  // TODO: add a constructor for PeakFitForNuclideConfig, so we can avoid all this mutex stuff
+  static std::mutex s_have_inited_non_hpge_config_mutex;
+  static bool s_have_inited_non_hpge_config = false;
+  static PeakFitForNuclideConfig s_default_non_hpge_config;
+
+  std::unique_lock<std::mutex> lock( s_have_inited_non_hpge_config_mutex );
+  if( s_have_inited_non_hpge_config )
+    return s_default_non_hpge_config;
+
+  // Settings from a single Genetic Algorithm optimization, using only 50 individuals, and 8 sources - so could be a lot better!
+  s_default_non_hpge_config.fwhm_functional_form = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
+  s_default_non_hpge_config.rel_eff_manual_base_rel_eff_uncert=0.308957;
+  s_default_non_hpge_config.initial_nuc_match_cluster_num_sigma=1.41369;
+  s_default_non_hpge_config.manual_eff_cluster_num_sigma=3.80554;
+  s_default_non_hpge_config.initial_manual_relEff_1peak_eqn_order=1;
+  s_default_non_hpge_config.initial_manual_relEff_1peak_form= RelActCalc::RelEffEqnForm::LnX;
+  s_default_non_hpge_config.initial_manual_relEff_2peak_eqn_order=2;
+  s_default_non_hpge_config.initial_manual_relEff_2peak_form= RelActCalc::RelEffEqnForm::FramEmpirical;
+  s_default_non_hpge_config.initial_manual_relEff_3peak_eqn_order=0;
+  s_default_non_hpge_config.initial_manual_relEff_3peak_form = RelActCalc::RelEffEqnForm::LnX;
+  s_default_non_hpge_config.initial_manual_relEff_4peak_physical_use_hoerl = true;
+  s_default_non_hpge_config.initial_manual_relEff_4peak_eqn_order=2;
+  s_default_non_hpge_config.initial_manual_relEff_4peak_form= RelActCalc::RelEffEqnForm::LnY;
+  s_default_non_hpge_config.initial_manual_relEff_many_peak_physical_use_hoerl = true;
+  s_default_non_hpge_config.initial_manual_relEff_many_peak_eqn_order=2;
+  s_default_non_hpge_config.initial_manual_relEff_manypeak_form = RelActCalc::RelEffEqnForm::LnXLnY;
+  s_default_non_hpge_config.manual_rel_eff_sol_min_data_area_keep=28.0357;
+  s_default_non_hpge_config.manual_rel_eff_sol_min_est_peak_area_keep=19.0573;
+  s_default_non_hpge_config.manual_rel_eff_sol_min_est_significance_keep=5.26621;
+  s_default_non_hpge_config.manual_rel_eff_sol_min_fwhm_roi=2.7522;
+  s_default_non_hpge_config.manual_rel_eff_sol_min_fwhm_quad_cont=12.8368;
+  s_default_non_hpge_config.manual_rel_eff_sol_max_fwhm=19.9579;
+  s_default_non_hpge_config.manual_rel_eff_roi_width_num_fwhm_lower=2.3479;
+  s_default_non_hpge_config.manual_rel_eff_roi_width_num_fwhm_upper=2.75252;
+  s_default_non_hpge_config.fwhm_form = RelActCalcAuto::FwhmForm::Berstein_3;
+  s_default_non_hpge_config.rel_eff_auto_base_rel_eff_uncert=0.191199;
+  s_default_non_hpge_config.auto_rel_eff_cluster_num_sigma=4.75069;
+  s_default_non_hpge_config.auto_rel_eff_sol_min_data_area_keep=57.7287;
+  s_default_non_hpge_config.auto_rel_eff_sol_min_est_peak_area_keep=16.9081;
+  s_default_non_hpge_config.auto_rel_eff_sol_min_est_significance_keep=6.38959;
+  s_default_non_hpge_config.auto_rel_eff_roi_width_num_fwhm_lower=4.53179;
+  s_default_non_hpge_config.auto_rel_eff_roi_width_num_fwhm_upper=3.59084;
+  s_default_non_hpge_config.auto_rel_eff_sol_max_fwhm=12.2638;
+  s_default_non_hpge_config.auto_rel_eff_sol_min_fwhm_roi=0.691922;
+  s_default_non_hpge_config.auto_rel_eff_sol_min_fwhm_quad_cont=5.1814;
+  s_default_non_hpge_config.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramEmpirical;
+  s_default_non_hpge_config.rel_eff_eqn_order=1;
+  s_default_non_hpge_config.desperation_phys_model_atomic_number=41.2303;
+  s_default_non_hpge_config.desperation_phys_model_areal_density_g_per_cm2=13.7506;
+  s_default_non_hpge_config.nucs_of_el_same_age = true;
+  s_default_non_hpge_config.phys_model_use_hoerl = false;
+  s_default_non_hpge_config.fit_energy_cal = true;  //manually changed from `false`
+  s_default_non_hpge_config.roi_significance_min_chi2_reduction=24.235;
+  s_default_non_hpge_config.roi_significance_min_peak_sig=6.15896;
+  s_default_non_hpge_config.observable_peak_initial_significance_threshold=4.2546;
+  s_default_non_hpge_config.observable_peak_final_significance_threshold=3.73082;
+  s_default_non_hpge_config.step_cont_min_peak_area=551.075;
+  s_default_non_hpge_config.step_cont_min_peak_significance=61.9867;
+  s_default_non_hpge_config.step_cont_left_right_nsigma=6.69618;
+
+  s_have_inited_non_hpge_config = true;
+
+  return s_default_non_hpge_config;
+}
+
 PeakFitResult fit_peaks_for_nuclides(
   const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,

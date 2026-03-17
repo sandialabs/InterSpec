@@ -973,7 +973,7 @@ namespace AnalystChecks
       
       const Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> fit_options = options.fitSrcPeaksOptions;
       
-      FitPeaksForNuclides::PeakFitForNuclideConfig fit_config;
+      FitPeaksForNuclides::PeakFitForNuclideConfig fit_config = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config( isHPGe );
 
       // TODO: we will need to update `config` from default in the future
 
