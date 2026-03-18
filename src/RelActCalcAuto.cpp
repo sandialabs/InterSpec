@@ -2619,7 +2619,18 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const RoiRangeChannels &roi = m_energy_ranges[roi_idx];
       const double roi_width = roi.upper_energy - roi.lower_energy;
 
-      if( roi_width > 50.0 )
+      // Only split a large ROI into multiple anchors if it is both wider
+      // than 50 keV AND wider than ~15 FWHM at the ROI midpoint.  For low-res
+      // detectors (NaI, LaBr3) the ROIs are naturally wide relative to FWHM,
+      // and adding extra anchors within a single ROI introduces unconstrained
+      // deviation pair parameters that can cause wild oscillations.
+      const double mid_energy = 0.5 * (roi.lower_energy + roi.upper_energy);
+      const double mid_fwhm = (m_drf && m_drf->hasResolutionInfo())
+        ? m_drf->peakResolutionFWHM( static_cast<float>( mid_energy ) )
+        : 0.0;
+      const bool split_roi = (roi_width > 50.0) && ((mid_fwhm <= 0.0) || (roi_width > 15.0 * mid_fwhm));
+
+      if( split_roi )
       {
         // Large ROI: multiple anchors
         const std::vector<double> anchors = find_anchors_for_large_roi( roi.lower_energy, roi.upper_energy );
