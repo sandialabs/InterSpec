@@ -7,6 +7,7 @@
 - [Release Notes, including short usage videos](https://sandialabs.github.io/InterSpec/releases/)
 - [Tutorials and example problems/solutions](https://sandialabs.github.io/InterSpec/tutorials/)
 - [Short Usage Videos](https://sandialabs.github.io/InterSpec/videos/index.html)
+- [NSDD Flavor Drills](https://sandialabs.github.io/InterSpec/example_problems/flavor_of_the_month/)
 
 
 Some example screenshots:
