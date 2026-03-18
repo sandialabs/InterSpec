@@ -23,6 +23,12 @@
 
 #include "InterSpec_config.h"
 
+// When enabled, observable peaks are computed on the original (non-energy-cal-adjusted)
+// foreground with background subtraction, then the continuum is refit to the raw foreground.
+// When disabled (0), observable peaks are computed on the fitted-cal foreground without
+// background subtraction, then translated back to original energy cal.
+#define OBSERVABLE_PEAKS_USING_ORIGINAL_CAL_WITH_BACK_SUB 0
+
 #include <algorithm>
 #include <cmath>
 #include <deque>
@@ -2260,7 +2266,11 @@ std::vector<PeakDef> combine_overlapping_peaks_in_rois(
 std::vector<PeakDef> compute_observable_peaks(
   const std::vector<PeakDef> &fit_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,
-  const PeakFitForNuclideConfig &config )
+  const PeakFitForNuclideConfig &config
+#if( OBSERVABLE_PEAKS_USING_ORIGINAL_CAL_WITH_BACK_SUB )
+  , const std::shared_ptr<const SpecUtils::Measurement> &background
+#endif
+  )
 {
   
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -2319,6 +2329,37 @@ std::vector<PeakDef> compute_observable_peaks(
     if( !found_overlap_input && should_debug_print() )
       std::cout << "compute_observable_peaks: Input fit_peaks have no overlapping ROIs" << std::endl;
   }//if( should_debug_print() )
+#endif
+
+  std::shared_ptr<const SpecUtils::Measurement> refit_data = foreground;
+#if( OBSERVABLE_PEAKS_USING_ORIGINAL_CAL_WITH_BACK_SUB )
+  // If background is provided, create a background-subtracted spectrum for refitting.
+  // The bg-subtracted data gives Gaussian params that match the peak signal,
+  // while the raw foreground is used afterwards to refit just the continuum for display.
+  if( background && background->energy_calibration() && background->energy_calibration()->valid()
+     && (background->live_time() > 0.0f) && (foreground->live_time() > 0.0f) )
+  {
+    const double lt_sf = foreground->live_time() / background->live_time();
+    std::vector<float> channel_counts = *foreground->gamma_counts();
+    const std::vector<float> &fore_energies = *foreground->energy_calibration()->channel_energies();
+    const std::vector<float> &back_energies = *background->energy_calibration()->channel_energies();
+
+    std::vector<float> bg_rebinned;
+    SpecUtils::rebin_by_lower_edge( back_energies, *background->gamma_counts(),
+                                     fore_energies, bg_rebinned );
+
+    for( size_t i = 0; i < channel_counts.size(); ++i )
+    {
+      const double fg = std::max( static_cast<double>( channel_counts[i] ), 0.0 );
+      const double bg = (i < bg_rebinned.size()) ? std::max( static_cast<double>( bg_rebinned[i] ), 0.0 ) : 0.0;
+      channel_counts[i] = static_cast<float>( std::max( fg - lt_sf * bg, 0.0 ) );
+    }
+
+    std::shared_ptr<SpecUtils::Measurement> bg_sub = std::make_shared<SpecUtils::Measurement>( *foreground );
+    bg_sub->set_gamma_counts( std::make_shared<std::vector<float>>( std::move(channel_counts) ),
+                               foreground->live_time(), foreground->real_time() );
+    refit_data = bg_sub;
+  }//if( background provided )
 #endif
 
   // Fraction of Gaussian area within +/-1 FWHM
@@ -2514,7 +2555,7 @@ std::vector<PeakDef> compute_observable_peaks(
 
   for( size_t roi_index = 0; roi_index < num_rois; ++roi_index )
   {
-    pool.post( [roi_index, &roi_vec, &roi_results, &foreground,
+    pool.post( [roi_index, &roi_vec, &roi_results, &refit_data,
                 final_significance_threshold, &reduce_roi_bounds_if_needed]()
     {
       std::vector<PeakDef> roi_peaks = roi_vec[roi_index].second;
@@ -2565,7 +2606,7 @@ std::vector<PeakDef> compute_observable_peaks(
         refine_amount |= PeakFitLM::PeakFitLMOptions::MediumRefinementOnly;
         
         vector<shared_ptr<const PeakDef>> refit_result
-            = PeakFitLM::refitPeaksThatShareROI_LM( foreground, nullptr, input_peaks, refine_amount );
+            = PeakFitLM::refitPeaksThatShareROI_LM( refit_data, nullptr, input_peaks, refine_amount );
 
 #if( PERFORM_DEVELOPER_CHECKS )
         if( should_debug_print() )
@@ -2608,19 +2649,19 @@ std::vector<PeakDef> compute_observable_peaks(
               // Compute chi2 with peak vs continuum-only
               const double roi_lower = peak->continuum()->lowerEnergy();
               const double roi_upper = peak->continuum()->upperEnergy();
-              const int lch = static_cast<int>( foreground->find_gamma_channel( roi_lower ) );
-              const int uch = static_cast<int>( foreground->find_gamma_channel( roi_upper ) );
+              const int lch = static_cast<int>( refit_data->find_gamma_channel( roi_lower ) );
+              const int uch = static_cast<int>( refit_data->find_gamma_channel( roi_upper ) );
               const int nch = std::max( uch - lch, 1 );
 
               std::vector<std::shared_ptr<const PeakDef>> peak_vec = { peak };
-              const double chi2_with_peak = chi2_for_region( peak_vec, foreground, lch, uch );
+              const double chi2_with_peak = chi2_for_region( peak_vec, refit_data, lch, uch );
 
               // Continuum-only chi2: make a copy with zero amplitude
               PeakDef no_peak_copy = *peak;
               no_peak_copy.setAmplitude( 0.0 );
               std::vector<std::shared_ptr<const PeakDef>> no_peak_vec
                 = { std::make_shared<PeakDef>( no_peak_copy ) };
-              const double chi2_cont_only = chi2_for_region( no_peak_vec, foreground, lch, uch );
+              const double chi2_cont_only = chi2_for_region( no_peak_vec, refit_data, lch, uch );
 
               std::cout << "  Kept peak at " << mean << " keV: sig=" << final_sig
                    << ", chi2/dof=" << (chi2_with_peak / nch)
@@ -2667,6 +2708,45 @@ std::vector<PeakDef> compute_observable_peaks(
   // Sort by energy
   std::sort( std::begin(observable_peaks), std::end(observable_peaks), &PeakDef::lessThanByMean );
 
+#if( OBSERVABLE_PEAKS_USING_ORIGINAL_CAL_WITH_BACK_SUB )
+  // If we refit on bg-subtracted data, the peak Gaussians are correct but the
+  // continuum won't match the raw foreground for display.  Refit just the continuum
+  // on the raw foreground while keeping peak Gaussians fixed.
+  if( background && !observable_peaks.empty() )
+  {
+#if( PERFORM_DEVELOPER_CHECKS )
+    if( should_debug_print() )
+    {
+      std::cout << "compute_observable_peaks: before refit_roi_continuums (" << observable_peaks.size() << " peaks):" << std::endl;
+      for( const PeakDef &p : observable_peaks )
+      {
+        std::cout << "  mean=" << p.mean() << " keV, sigma=" << p.sigma()
+             << ", area=" << p.peakArea() << ", chi2dof=" << p.chi2dof()
+             << ", ROI=[" << p.continuum()->lowerEnergy() << ", " << p.continuum()->upperEnergy() << "]"
+             << std::endl;
+      }
+    }
+#endif
+
+    observable_peaks = RelActCalc::refit_roi_continuums( observable_peaks, foreground );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+    if( should_debug_print() )
+    {
+      std::cout << "compute_observable_peaks: after refit_roi_continuums (" << observable_peaks.size() << " peaks):" << std::endl;
+      for( const PeakDef &p : observable_peaks )
+      {
+        std::cout << "  mean=" << p.mean() << " keV, sigma=" << p.sigma()
+             << ", area=" << p.peakArea() << ", chi2dof=" << p.chi2dof()
+             << ", ROI=[" << p.continuum()->lowerEnergy() << ", " << p.continuum()->upperEnergy() << "]"
+             << std::endl;
+      }
+    }
+#endif
+  }
+#endif
+  
+  
 #if( PERFORM_DEVELOPER_CHECKS )
   // Debug: Check for overlapping ROI bounds
   if( should_debug_print() )
@@ -4280,11 +4360,20 @@ std::vector<RelActCalcAuto::RoiRange> merge_rois(
             split_constraint_lower, split_constraint_upper );
       }
 
-      // Adjust boundaries at the split point
+      // Adjust boundaries at the split point, leaving at least ~1 channel gap
+      // so the two ROIs don't share a boundary and the continuum fits are
+      // independent.
+      double half_gap = 0.5;  // keV, default fallback
+      if( foreground && foreground->energy_calibration() && foreground->energy_calibration()->valid() )
+      {
+        const double ch = foreground->find_gamma_channel( split_point );
+        half_gap = 0.5 * foreground->gamma_channel_width( static_cast<size_t>( ch ) );
+      }
+
       const double original_last_upper = last.upper_energy;
-      last.upper_energy = split_point;
+      last.upper_energy = split_point - half_gap;
       RelActCalcAuto::RoiRange adjusted_current = current.roi;
-      adjusted_current.lower_energy = split_point;
+      adjusted_current.lower_energy = split_point + half_gap;
 
       // Validate adjusted last ROI still contains all its center energies and is wide enough
       const double last_width = last.upper_energy - last.lower_energy;
@@ -6589,38 +6678,48 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
            << result.fit_peaks.size() << " peaks" << std::endl;
     }
 
-    // Compute observable peaks - peaks that users can visually see in the spectrum
-    result.observable_peaks = compute_observable_peaks( result.fit_peaks, foreground, config );
-
-
-    if( apply_energy_cal_between && config.fit_energy_cal )
+    // Translate peaks from fitted energy cal back to original energy cal (if needed)
+    auto translate_peaks_to_orig_cal = [&]( vector<PeakDef> &peaks )
     {
-      // Peaks are currently in foreground's (fitted) energy cal; translate them
-      // back to the original foreground's energy cal for display.
+      if( !apply_energy_cal_between || !config.fit_energy_cal )
+        return;
+
       const shared_ptr<const SpecUtils::EnergyCalibration> fitted_cal = foreground->energy_calibration();
       const shared_ptr<const SpecUtils::EnergyCalibration> orig_cal = orig_foreground->energy_calibration();
 
-      if( fitted_cal && orig_cal && (*fitted_cal != *orig_cal) )
-      {
-        auto translate_peaks = [&fitted_cal, &orig_cal]( vector<PeakDef> &peaks )
-        {
-          deque<shared_ptr<const PeakDef>> tmp_peaks;
-          for( const PeakDef &p : peaks )
-            tmp_peaks.push_back( make_shared<const PeakDef>( p ) );
+      if( !fitted_cal || !orig_cal || (*fitted_cal == *orig_cal) )
+        return;
 
-          const deque<shared_ptr<const PeakDef>> translated
-              = EnergyCal::translatePeaksForCalibrationChange( tmp_peaks, fitted_cal, orig_cal );
+      deque<shared_ptr<const PeakDef>> tmp_peaks;
+      for( const PeakDef &p : peaks )
+        tmp_peaks.push_back( make_shared<const PeakDef>( p ) );
 
-          peaks.clear();
-          for( const shared_ptr<const PeakDef> &p : translated )
-            peaks.push_back( *p );
-        };
+      const deque<shared_ptr<const PeakDef>> translated
+        = EnergyCal::translatePeaksForCalibrationChange( tmp_peaks, fitted_cal, orig_cal );
 
-        translate_peaks( result.fit_peaks );
-        translate_peaks( result.uncombined_fit_peaks );
-        translate_peaks( result.observable_peaks );
-      }
-    }//if( apply_energy_cal_between && config.fit_energy_cal )
+      peaks.clear();
+      for( const shared_ptr<const PeakDef> &p : translated )
+        peaks.push_back( *p );
+    };
+
+#if( OBSERVABLE_PEAKS_USING_ORIGINAL_CAL_WITH_BACK_SUB )
+    // Translate fit_peaks and uncombined_fit_peaks to original energy cal first,
+    // then compute observable peaks on the original foreground with background
+    // subtraction.  This avoids the poor continuum fits that result from refitting
+    // on the energy-cal-adjusted spectrum and then translating peaks back.
+    translate_peaks_to_orig_cal( result.fit_peaks );
+    translate_peaks_to_orig_cal( result.uncombined_fit_peaks );
+
+    result.observable_peaks = compute_observable_peaks(
+      result.fit_peaks, orig_foreground, config, orig_background );
+#else
+    // Existing path: refit on fitted-cal foreground, then translate all peaks back
+    result.observable_peaks = compute_observable_peaks( result.fit_peaks, foreground, config );
+
+    translate_peaks_to_orig_cal( result.fit_peaks );
+    translate_peaks_to_orig_cal( result.uncombined_fit_peaks );
+    translate_peaks_to_orig_cal( result.observable_peaks );
+#endif
 
     if( should_debug_print() && (result.observable_peaks.size() != result.fit_peaks.size()) )
     {
