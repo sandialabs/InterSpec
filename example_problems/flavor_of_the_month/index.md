@@ -32,6 +32,8 @@ Spectrum files referenced from the document are available in:
 Please see one of the following documents for the questions:
 * [March 2026 Flavor Drill LA-UR-26-21973.docx](202603/March 2026 Flavor Drill LA-UR-26-21973.docx)
 * [March 2026 Flavor Drill LA-UR-26-21973.pdf](202603/March 2026 Flavor Drill LA-UR-26-21973.pdf)
+* Online form with automatic grading: [here](https://forms.office.com/g/sCW3KUayyp).
+
 
 Spectrum files referenced from the document are available in:
 * [N42 Format Files Preferred.zip](202603/N42 Format Files Preferred.zip).
