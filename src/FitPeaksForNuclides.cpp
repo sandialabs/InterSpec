@@ -982,18 +982,15 @@ void add_floating_511_peak_if_appropriate(
   // due to Doppler broadening from positron momentum distribution
   floating_511.release_fwhm = true;
   
-  // Apply energy calibration correction if we're fitting energy cal.
-  // The 510.9989 keV is a true physical energy (electron rest mass),
-  // so it should be subject to calibration corrections.
-  floating_511.apply_energy_cal_correction = ( options.energy_cal_type != RelActCalcAuto::EnergyCalFitType::NoFit );
-  
+  // 510.9989 keV is a true physical energy (electron rest mass), so always Known.
+  floating_511.energy_origin = RelActCalcAuto::FloatingPeak::EnergyType::Known;
+
   options.floating_peaks.push_back( floating_511 );
-  
+
   if( PEAK_FIT_DEBUG_PRINTOUT )
   {
-    std::cout << "Added floating peak at " << annihilation_energy 
-              << " keV with release_fwhm=true and apply_energy_cal_correction="
-              << floating_511.apply_energy_cal_correction << std::endl;
+    std::cout << "Added floating peak at " << annihilation_energy
+              << " keV with release_fwhm=true and energy_origin=Known" << std::endl;
   }
 }//add_floating_511_peak_if_appropriate(...)
 
@@ -1259,7 +1256,7 @@ void add_escape_peak_floating_peaks_if_appropriate(
       RelActCalcAuto::FloatingPeak se_fp;
       se_fp.energy = se_energy;
       se_fp.release_fwhm = false;
-      se_fp.apply_energy_cal_correction = ( options.energy_cal_type != RelActCalcAuto::EnergyCalFitType::NoFit );
+      se_fp.energy_origin = RelActCalcAuto::FloatingPeak::EnergyType::Known;
       options.floating_peaks.push_back( se_fp );
       
       if( PEAK_FIT_DEBUG_PRINTOUT )
@@ -1284,7 +1281,7 @@ void add_escape_peak_floating_peaks_if_appropriate(
       RelActCalcAuto::FloatingPeak de_fp;
       de_fp.energy = de_energy;
       de_fp.release_fwhm = false;
-      de_fp.apply_energy_cal_correction = ( options.energy_cal_type != RelActCalcAuto::EnergyCalFitType::NoFit );
+      de_fp.energy_origin = RelActCalcAuto::FloatingPeak::EnergyType::Known;
       options.floating_peaks.push_back( de_fp );
       
       if( PEAK_FIT_DEBUG_PRINTOUT )
@@ -5777,12 +5774,12 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
       }else
       {
         // Bystander peak: add as a FloatingPeak so the fit can account for it.
-        // Use apply_energy_cal_correction = false since the mean comes from a fit to the data
-        // (already in the data's energy calibration).
+        // Use ObservedInSpectrum since the mean comes from a fit to the data
+        //  (already in the data's energy calibration).
         RelActCalcAuto::FloatingPeak fp;
         fp.energy = peak_energy;
         fp.release_fwhm = false;
-        fp.apply_energy_cal_correction = false;
+        fp.energy_origin = RelActCalcAuto::FloatingPeak::EnergyType::ObservedInSpectrum;
         options.floating_peaks.push_back( fp );
 
         existing_peaks_added_as_floating.emplace_back( peak, peak_energy );

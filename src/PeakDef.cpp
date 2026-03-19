@@ -6379,12 +6379,14 @@ void PeakContinuum::translate_offset_polynomial( double *new_coefs,
                            "quadratic or cubic polynomials" );
     
     case LinearStep:
+    case LinearStepCDF:
       new_coefs[0] = old_coefs[0] + old_coefs[1] * (new_center - old_center);
       new_coefs[1] = old_coefs[1];
       new_coefs[2] = old_coefs[2];
       break;
       
     case BiLinearStep:
+    case BiLinearStepCDF:
       new_coefs[0] = old_coefs[0] + old_coefs[1] * (new_center - old_center);
       new_coefs[1] = old_coefs[1];
       new_coefs[2] = old_coefs[2] + old_coefs[3] * (new_center - old_center);
@@ -6392,20 +6394,10 @@ void PeakContinuum::translate_offset_polynomial( double *new_coefs,
       break;
     
     case FlatStep:
-      new_coefs[0] = old_coefs[0];
-      new_coefs[1] = old_coefs[1];
-      break;
-
     case FlatStepCDF:
       new_coefs[0] = old_coefs[0];
       new_coefs[1] = old_coefs[1];
-      break;
-
-    case LinearStepCDF:
-      new_coefs[0] = old_coefs[0] + old_coefs[1] * (new_center - old_center);
-      new_coefs[1] = old_coefs[1];
-      new_coefs[2] = old_coefs[2];
-      break;
+      break;      
 
     case External:
       throw runtime_error( "translate_offset_polynomial does not support external continuum" );

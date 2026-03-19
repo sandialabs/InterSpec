@@ -1492,7 +1492,9 @@ vector<RelActCalcAuto::FloatingPeak> RelActAutoGui::getFloatingPeaks() const
     RelActCalcAuto::FloatingPeak peak;
     peak.energy = energy;
     peak.release_fwhm = !free_peak->fwhmConstrained();
-    peak.apply_energy_cal_correction = free_peak->applyEnergyCal();
+    peak.energy_origin = free_peak->applyEnergyCal()
+      ? RelActCalcAuto::FloatingPeak::EnergyType::Known
+      : RelActCalcAuto::FloatingPeak::EnergyType::ObservedInSpectrum;
     
     answer.push_back( peak );
   }//for( loop over RelActAutoGuiFreePeak widgets )
@@ -2189,7 +2191,8 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
     handleShowFreePeaks();
   
   for( const RelActCalcAuto::FloatingPeak &peak : options.floating_peaks )
-    handleAddFreePeak( peak.energy, !peak.release_fwhm, peak.apply_energy_cal_correction );
+    handleAddFreePeak( peak.energy, !peak.release_fwhm,
+                       (peak.energy_origin == RelActCalcAuto::FloatingPeak::EnergyType::Known) );
   
   handleNuclidesChanged();
   

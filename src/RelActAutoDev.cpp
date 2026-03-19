@@ -142,7 +142,7 @@ void check_auto_state_xml_serialization()
   RelActCalcAuto::FloatingPeak peak;
   peak.energy = 1000.0;
   peak.release_fwhm = true;
-  peak.apply_energy_cal_correction = true;
+  peak.energy_origin = RelActCalcAuto::FloatingPeak::EnergyType::Known;
   state.options.floating_peaks.push_back( peak );
 
   state.background_subtract = true;

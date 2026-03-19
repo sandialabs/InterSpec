@@ -5913,26 +5913,37 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     else
       solution.m_fit_peaks_in_spectrums_cal_for_each_curve = fit_peaks_for_each_curve;
 
-    // Lambda to filter out peaks without sources from a vector of peak vectors
-    auto filter_peaks_without_sources = [cost_functor]( vector<vector<PeakDef>> &peaks_for_each_curve )
+    // Lambda to filter out peaks without sources from a vector of peak vectors.
+    //
+    // The `peaks_in_original_cal` flag indicates whether the peaks are in the original spectrum
+    //  energy calibration (true), or in the corrected/new calibration (false).  This matters
+    //  for matching floating peaks: when `energy_origin == Known`, the floating peak's mean
+    //  was adjusted during fitting (from true energy to observed position in original cal),
+    //  so we need to convert `FloatingPeak::energy` to the same calibration as the peaks
+    //  for comparison.
+    const RelActCalcAutoImp::CachedEnergyCalSplines<double> deviation_splines
+      = cost_functor->compute_energy_cal_splines( parameters );
+
+    auto filter_peaks_without_sources = [cost_functor, &parameters, &deviation_splines, new_cal](
+      vector<vector<PeakDef>> &peaks_for_each_curve, const bool peaks_in_original_cal )
     {
       for( vector<PeakDef> &re_peaks : peaks_for_each_curve )
       {
         vector<PeakDef> removed_peaks;
-        
+
         // Collect peaks without sources before removing them
         for( const PeakDef &peak : re_peaks )
         {
           if( !peak.hasSourceGammaAssigned() )
             removed_peaks.push_back( peak );
         }
-        
+
         // Remove peaks without sources
         re_peaks.erase( std::remove_if( begin(re_peaks), end(re_peaks),
           []( const PeakDef &peak ) -> bool {
             return !peak.hasSourceGammaAssigned();
           }), end(re_peaks) );
-        
+
 #if( PERFORM_DEVELOPER_CHECKS )
         // Verify that removed peaks are either zero-amplitude placeholders or match floating peaks
         for( const PeakDef &removed_peak : removed_peaks )
@@ -5943,12 +5954,51 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
           bool found_matching_floating_peak = false;
           const double removed_energy = removed_peak.mean();
+          double best_energy_diff = std::numeric_limits<double>::max();
+          double best_floating_energy = 0.0;
+          double best_expected_energy = 0.0;
+          RelActCalcAuto::FloatingPeak::EnergyType best_energy_origin = RelActCalcAuto::FloatingPeak::EnergyType::Known;
 
           for( const RelActCalcAuto::FloatingPeak &floating_peak : cost_functor->m_options.floating_peaks )
           {
-            // Use a tolerance that accounts for energy cal corrections potentially shifting the peak
+            // Compute the expected peak mean in the same calibration as the peaks.
+            double expected_energy = floating_peak.energy;
+
+            if( peaks_in_original_cal )
+            {
+              // Peaks are in the original spectrum calibration.
+              // If energy_origin is Known, the peak mean was set to
+              //  apply_energy_cal_adjustment(fp.energy) during fitting, converting
+              //  from true energy to the observed position in original cal.
+              // If ObservedInSpectrum, the mean was set directly to fp.energy (already in original cal).
+              if( floating_peak.energy_origin == RelActCalcAuto::FloatingPeak::EnergyType::Known )
+                expected_energy = cost_functor->apply_energy_cal_adjustment( floating_peak.energy, parameters, deviation_splines );
+            }else
+            {
+              // Peaks have been translated from original cal to new cal.
+              // If energy_origin is Known, the peak mean was at the observed position in original
+              //  cal, and translation moves it back near the true energy.
+              //  So fp.energy should match directly.
+              // If ObservedInSpectrum, the peak mean was at fp.energy in original cal, and
+              //  translation shifted it to the new cal.  We need to apply the same translation.
+              if( (floating_peak.energy_origin == RelActCalcAuto::FloatingPeak::EnergyType::ObservedInSpectrum)
+                 && new_cal && cost_functor->m_energy_cal )
+              {
+                const float channel = cost_functor->m_energy_cal->channel_for_energy( static_cast<float>( floating_peak.energy ) );
+                expected_energy = new_cal->energy_for_channel( channel );
+              }
+            }
+
             const double energy_tolerance = std::max( 1.0, 0.01 * floating_peak.energy );
-            const double energy_diff = std::abs( removed_energy - floating_peak.energy );
+            const double energy_diff = std::abs( removed_energy - expected_energy );
+
+            if( energy_diff < best_energy_diff )
+            {
+              best_energy_diff = energy_diff;
+              best_floating_energy = floating_peak.energy;
+              best_expected_energy = expected_energy;
+              best_energy_origin = floating_peak.energy_origin;
+            }
 
             if( energy_diff <= energy_tolerance )
             {
@@ -5957,6 +6007,23 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             }
           }//for( const RelActCalcAuto::FloatingPeak &floating_peak : cost_functor->m_options.floating_peaks )
 
+          if( !found_matching_floating_peak )
+          {
+            cerr << "Removed peak without source at " << removed_energy << " keV"
+                 << " (amp=" << removed_peak.amplitude() << ")"
+                 << " did not match any floating peak."
+                 << "\n\tNearest floating peak: " << best_floating_energy << " keV"
+                 << " (expected_energy=" << best_expected_energy
+                 << ", energy_origin=" << (best_energy_origin == RelActCalcAuto::FloatingPeak::EnergyType::Known ? "Known" : "ObservedInSpectrum")
+                 << "), diff=" << best_energy_diff << " keV"
+                 << ", tolerance=" << std::max( 1.0, 0.01 * best_floating_energy ) << " keV"
+                 << "\n\tEnergy cal fit type: "
+                 << static_cast<int>( cost_functor->m_options.energy_cal_type )
+                 << ", peaks_in_original_cal=" << peaks_in_original_cal
+                 << ", num floating peaks: " << cost_functor->m_options.floating_peaks.size()
+                 << endl;
+          }
+
           assert( found_matching_floating_peak && "Removed peak without source should match a free-floating peak" );
         }//for( const PeakDef &removed_peak : removed_peaks )
 #endif // PERFORM_DEVELOPER_CHECKS
@@ -5964,7 +6031,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     };//filter_peaks_without_sources lambda
     
     // Filter out peaks without sources from m_fit_peaks_in_spectrums_cal_for_each_curve
-    filter_peaks_without_sources( solution.m_fit_peaks_in_spectrums_cal_for_each_curve );
+    filter_peaks_without_sources( solution.m_fit_peaks_in_spectrums_cal_for_each_curve, true );
 
     if( background )
     {
@@ -6020,7 +6087,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       solution.m_fit_peaks_for_each_curve = fit_peaks_for_each_curve;
     
     // Filter out peaks without sources from m_fit_peaks_for_each_curve
-    filter_peaks_without_sources( solution.m_fit_peaks_for_each_curve );
+    filter_peaks_without_sources( solution.m_fit_peaks_for_each_curve, (new_cal == cost_functor->m_energy_cal) );
     
     assert( solution.m_fit_peaks_for_each_curve.size() == num_rel_eff_curves );
     assert( solution.m_fit_peaks_in_spectrums_cal_for_each_curve.size() == num_rel_eff_curves );
@@ -6245,14 +6312,28 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
       const double area_multiple = cost_functor->m_free_peak_area_multiples[i];
       
+      const RelActCalcAuto::FloatingPeak &fp = cost_functor->m_options.floating_peaks[i];
+
       RelActCalcAuto::FloatingPeakResult peak;
-      peak.energy = cost_functor->m_options.floating_peaks[i].energy;
+      peak.energy = fp.energy;
+
+      // Compute the observed position in the original spectrum calibration
+      if( fp.energy_origin == RelActCalcAuto::FloatingPeak::EnergyType::Known )
+        peak.original_spectrum_cal_energy = cost_functor->apply_energy_cal_adjustment( fp.energy, parameters, deviation_splines );
+      else
+        peak.original_spectrum_cal_energy = fp.energy;
+
       peak.amplitude = parameters[amp_index] * area_multiple;
       peak.fwhm = parameters[fwhm_index];
-      
-      if( !cost_functor->m_options.floating_peaks[i].release_fwhm )
+
+      if( !fp.release_fwhm )
       {
-        const double true_energy = cost_functor->un_apply_energy_cal_adjustment( peak.energy, parameters );
+        // For Known energies, fp.energy is already the true gamma energy.
+        // For ObservedInSpectrum, we need to convert from observed position to true energy.
+        const double true_energy
+          = (fp.energy_origin == RelActCalcAuto::FloatingPeak::EnergyType::Known)
+            ? fp.energy
+            : cost_functor->un_apply_energy_cal_adjustment( fp.energy, parameters );
         peak.fwhm = cost_functor->fwhm( true_energy, parameters );
         
         // TODO: implement evaluating uncertainty of FWHM, given covariance.
@@ -9559,7 +9640,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                             + std::to_string(peak.energy) + " keV extra peak.");
       
       T peak_mean( peak.energy );
-      if( peak.apply_energy_cal_correction )
+      if( peak.energy_origin == RelActCalcAuto::FloatingPeak::EnergyType::Known )
         peak_mean = apply_energy_cal_adjustment( peak.energy, x, cached_splines );
       
       if( isinf(peak_mean) || isnan(peak_mean) )
@@ -11196,7 +11277,7 @@ bool FloatingPeak::operator==( const FloatingPeak &rhs ) const
 {
   return (energy == rhs.energy)
     && (release_fwhm == rhs.release_fwhm)
-    && (apply_energy_cal_correction == rhs.apply_energy_cal_correction);
+    && (energy_origin == rhs.energy_origin);
 }
 
 bool FloatingPeak::operator!=( const FloatingPeak &rhs ) const
@@ -11517,7 +11598,9 @@ void FloatingPeak::toXml( ::rapidxml::xml_node<char> *parent ) const
   append_version_attrib( base_node, FloatingPeak::sm_xmlSerializationVersion );
   append_float_node( base_node, "Energy", energy );
   append_bool_node( base_node, "ReleaseFwhm", release_fwhm );
-  append_bool_node( base_node, "ApplyEnergyCalCorrection", apply_energy_cal_correction );
+  // Deprecated: writing old XML element name for backward compatibility with older versions
+  const bool apply_cal_as_bool = (energy_origin == EnergyType::Known);
+  append_bool_node( base_node, "ApplyEnergyCalCorrection", apply_cal_as_bool );
 }//void FloatingPeak::toXml(...)
 
 
@@ -11541,11 +11624,12 @@ void FloatingPeak::fromXml( const ::rapidxml::xml_node<char> *parent )
     
     try
     {
-      // Dont require there to be a <ApplyEnergyCalCorrection> node
-      apply_energy_cal_correction = get_bool_node_value( parent, "ApplyEnergyCalCorrection" );
+      // Read old-format <ApplyEnergyCalCorrection> for backward compatibility
+      const bool apply_cal = get_bool_node_value( parent, "ApplyEnergyCalCorrection" );
+      energy_origin = apply_cal ? EnergyType::Known : EnergyType::ObservedInSpectrum;
     }catch( ... )
     {
-      apply_energy_cal_correction = true;
+      energy_origin = EnergyType::Known;
     }
   }catch( std::exception &e )
   {
@@ -16777,8 +16861,8 @@ void FloatingPeak::equalEnough( const FloatingPeak &lhs, const FloatingPeak &rhs
   if( lhs.release_fwhm != rhs.release_fwhm )
     throw std::runtime_error( "Release FWHM in lhs and rhs are not the same" );
   
-  if( lhs.apply_energy_cal_correction != rhs.apply_energy_cal_correction )
-    throw std::runtime_error( "Apply energy cal correction in lhs and rhs are not the same" );
+  if( lhs.energy_origin != rhs.energy_origin )
+    throw std::runtime_error( "FloatingPeak energy_origin in lhs and rhs are not the same" );
 }//FloatingPeak::equalEnough
 
 
