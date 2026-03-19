@@ -977,7 +977,10 @@ namespace AnalystChecks
       
       const Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> fit_options = options.fitSrcPeaksOptions;
       
-      FitPeaksForNuclides::PeakFitForNuclideConfig fit_config;
+      const PeakFitUtils::CoarseResolutionType det_type = peak_fit_prefs
+        ? peak_fit_prefs->m_det_type
+        : PeakFitUtils::coarse_det_type( target_spectrum, meas );
+      FitPeaksForNuclides::PeakFitForNuclideConfig fit_config = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config( det_type );
 
       // TODO: we will need to update `config` from default in the future
 

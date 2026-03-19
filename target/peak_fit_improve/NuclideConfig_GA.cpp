@@ -261,6 +261,8 @@ std::string NuclideConfigSolution::to_string( const std::string &separator ) con
       << "manual_rel_eff_sol_min_fwhm_roi=" << manual_rel_eff_sol_min_fwhm_roi << separator
       << "manual_rel_eff_sol_min_fwhm_quad_cont=" << manual_rel_eff_sol_min_fwhm_quad_cont << separator
       << "manual_rel_eff_sol_max_fwhm=" << manual_rel_eff_sol_max_fwhm << separator
+      << "manual_rel_eff_min_tail_contribution=" << manual_rel_eff_min_tail_contribution << separator
+      << "manual_rel_eff_tail_width_scale_fwhm=" << manual_rel_eff_tail_width_scale_fwhm << separator
       << "manual_rel_eff_roi_width_num_fwhm_lower=" << manual_rel_eff_roi_width_num_fwhm_lower << separator
       << "manual_rel_eff_roi_width_num_fwhm_upper=" << manual_rel_eff_roi_width_num_fwhm_upper << separator
       << "fwhm_form=" << fwhm_form << separator
@@ -272,6 +274,8 @@ std::string NuclideConfigSolution::to_string( const std::string &separator ) con
       << "auto_rel_eff_roi_width_num_fwhm_lower=" << auto_rel_eff_roi_width_num_fwhm_lower << separator
       << "auto_rel_eff_roi_width_num_fwhm_upper=" << auto_rel_eff_roi_width_num_fwhm_upper << separator
       << "auto_rel_eff_sol_max_fwhm=" << auto_rel_eff_sol_max_fwhm << separator
+      << "auto_rel_eff_min_tail_contribution=" << auto_rel_eff_min_tail_contribution << separator
+      << "auto_rel_eff_tail_width_scale_fwhm=" << auto_rel_eff_tail_width_scale_fwhm << separator
       << "auto_rel_eff_sol_min_fwhm_roi=" << auto_rel_eff_sol_min_fwhm_roi << separator
       << "auto_rel_eff_sol_min_fwhm_quad_cont=" << auto_rel_eff_sol_min_fwhm_quad_cont << separator
       << "rel_eff_eqn_type=" << rel_eff_eqn_type << separator
@@ -283,6 +287,7 @@ std::string NuclideConfigSolution::to_string( const std::string &separator ) con
       << "fit_energy_cal=" << fit_energy_cal << separator
       << "roi_significance_min_chi2_reduction=" << roi_significance_min_chi2_reduction << separator
       << "roi_significance_min_peak_sig=" << roi_significance_min_peak_sig << separator
+      << "roi_significance_min_quad_cont_chi2_dof=" << roi_significance_min_quad_cont_chi2_dof << separator
       << "observable_peak_initial_significance_threshold=" << observable_peak_initial_significance_threshold << separator
       << "observable_peak_final_significance_threshold=" << observable_peak_final_significance_threshold << separator
       << "step_cont_min_peak_area=" << step_cont_min_peak_area << separator
@@ -294,7 +299,10 @@ std::string NuclideConfigSolution::to_string( const std::string &separator ) con
 
 PeakFitForNuclideConfig genes_to_settings( const NuclideConfigSolution &p )
 {
-  PeakFitForNuclideConfig config;
+  // Start from default_config for non-High (Low) since the GA optimizes for non-HPGe.
+  // All GA-optimized fields are overwritten below; non-optimized fields (e.g., skew_type,
+  // norm_css_color, shielding vectors) keep their default values.
+  PeakFitForNuclideConfig config = PeakFitForNuclideConfig::default_config( PeakFitUtils::CoarseResolutionType::Low );
 
   config.fwhm_functional_form = static_cast<DetectorPeakResponse::ResolutionFnctForm>(
     std::clamp( p.fwhm_functional_form, 0, static_cast<int>(DetectorPeakResponse::kNumResolutionFnctForm) - 1 ) );
@@ -322,6 +330,8 @@ PeakFitForNuclideConfig genes_to_settings( const NuclideConfigSolution &p )
   config.manual_rel_eff_sol_min_fwhm_roi = p.manual_rel_eff_sol_min_fwhm_roi;
   config.manual_rel_eff_sol_min_fwhm_quad_cont = p.manual_rel_eff_sol_min_fwhm_quad_cont;
   config.manual_rel_eff_sol_max_fwhm = p.manual_rel_eff_sol_max_fwhm;
+  config.manual_rel_eff_min_tail_contribution = p.manual_rel_eff_min_tail_contribution;
+  config.manual_rel_eff_tail_width_scale_fwhm = p.manual_rel_eff_tail_width_scale_fwhm;
   config.manual_rel_eff_roi_width_num_fwhm_lower = p.manual_rel_eff_roi_width_num_fwhm_lower;
   config.manual_rel_eff_roi_width_num_fwhm_upper = p.manual_rel_eff_roi_width_num_fwhm_upper;
 
@@ -341,6 +351,8 @@ PeakFitForNuclideConfig genes_to_settings( const NuclideConfigSolution &p )
   config.auto_rel_eff_roi_width_num_fwhm_lower = p.auto_rel_eff_roi_width_num_fwhm_lower;
   config.auto_rel_eff_roi_width_num_fwhm_upper = p.auto_rel_eff_roi_width_num_fwhm_upper;
   config.auto_rel_eff_sol_max_fwhm = p.auto_rel_eff_sol_max_fwhm;
+  config.auto_rel_eff_min_tail_contribution = p.auto_rel_eff_min_tail_contribution;
+  config.auto_rel_eff_tail_width_scale_fwhm = p.auto_rel_eff_tail_width_scale_fwhm;
   config.auto_rel_eff_sol_min_fwhm_roi = p.auto_rel_eff_sol_min_fwhm_roi;
   config.auto_rel_eff_sol_min_fwhm_quad_cont = p.auto_rel_eff_sol_min_fwhm_quad_cont;
 
@@ -358,6 +370,7 @@ PeakFitForNuclideConfig genes_to_settings( const NuclideConfigSolution &p )
 
   config.roi_significance_min_chi2_reduction = p.roi_significance_min_chi2_reduction;
   config.roi_significance_min_peak_sig = p.roi_significance_min_peak_sig;
+  config.roi_significance_min_quad_cont_chi2_dof = p.roi_significance_min_quad_cont_chi2_dof;
   config.observable_peak_initial_significance_threshold = p.observable_peak_initial_significance_threshold;
   config.observable_peak_final_significance_threshold = p.observable_peak_final_significance_threshold;
 
@@ -418,6 +431,8 @@ void init_genes( NuclideConfigSolution &p, const std::function<double(void)> &rn
   p.manual_rel_eff_sol_min_fwhm_roi = 0.5 + 2.5 * rnd01();
   p.manual_rel_eff_sol_min_fwhm_quad_cont = 3.0 + 12.0 * rnd01();
   p.manual_rel_eff_sol_max_fwhm = 5.0 + 25.0 * rnd01();
+  p.manual_rel_eff_min_tail_contribution = 0.01 * rnd01();
+  p.manual_rel_eff_tail_width_scale_fwhm = 1.0 + 14.0 * rnd01();
   p.manual_rel_eff_roi_width_num_fwhm_lower = 1.0 + 5.0 * rnd01();
   p.manual_rel_eff_roi_width_num_fwhm_upper = 1.0 + 5.0 * rnd01();
 
@@ -436,6 +451,8 @@ void init_genes( NuclideConfigSolution &p, const std::function<double(void)> &rn
   p.auto_rel_eff_roi_width_num_fwhm_lower = 1.0 + 6.0 * rnd01();
   p.auto_rel_eff_roi_width_num_fwhm_upper = 1.0 + 6.0 * rnd01();
   p.auto_rel_eff_sol_max_fwhm = 4.0 + 21.0 * rnd01();
+  p.auto_rel_eff_min_tail_contribution = 0.01 * rnd01();
+  p.auto_rel_eff_tail_width_scale_fwhm = 1.0 + 14.0 * rnd01();
   p.auto_rel_eff_sol_min_fwhm_roi = 0.5 + 2.5 * rnd01();
   p.auto_rel_eff_sol_min_fwhm_quad_cont = 3.0 + 12.0 * rnd01();
 
@@ -458,6 +475,7 @@ void init_genes( NuclideConfigSolution &p, const std::function<double(void)> &rn
   // ROI significance and observable peak thresholds
   p.roi_significance_min_chi2_reduction = 2.0 + 28.0 * rnd01();
   p.roi_significance_min_peak_sig = 1.0 + 7.0 * rnd01();
+  p.roi_significance_min_quad_cont_chi2_dof = 3.0 * rnd01();
   p.observable_peak_initial_significance_threshold = 1.0 + 4.0 * rnd01();
   p.observable_peak_final_significance_threshold = 0.5 + 4.5 * rnd01();
 
@@ -568,6 +586,8 @@ NuclideConfigSolution mutate( const NuclideConfigSolution &X_base,
     MUTATE_DOUBLE( manual_rel_eff_sol_min_fwhm_roi, 0.5, 3.0 )
     MUTATE_DOUBLE( manual_rel_eff_sol_min_fwhm_quad_cont, 3.0, 15.0 )
     MUTATE_DOUBLE( manual_rel_eff_sol_max_fwhm, 5.0, 30.0 )
+    MUTATE_DOUBLE( manual_rel_eff_min_tail_contribution, 0.0, 0.01 )
+    MUTATE_DOUBLE( manual_rel_eff_tail_width_scale_fwhm, 1.0, 15.0 )
     MUTATE_DOUBLE( manual_rel_eff_roi_width_num_fwhm_lower, 1.0, 6.0 )
     MUTATE_DOUBLE( manual_rel_eff_roi_width_num_fwhm_upper, 1.0, 6.0 )
 
@@ -583,6 +603,8 @@ NuclideConfigSolution mutate( const NuclideConfigSolution &X_base,
     MUTATE_DOUBLE( auto_rel_eff_roi_width_num_fwhm_lower, 1.0, 7.0 )
     MUTATE_DOUBLE( auto_rel_eff_roi_width_num_fwhm_upper, 1.0, 7.0 )
     MUTATE_DOUBLE( auto_rel_eff_sol_max_fwhm, 4.0, 25.0 )
+    MUTATE_DOUBLE( auto_rel_eff_min_tail_contribution, 0.0, 0.01 )
+    MUTATE_DOUBLE( auto_rel_eff_tail_width_scale_fwhm, 1.0, 15.0 )
     MUTATE_DOUBLE( auto_rel_eff_sol_min_fwhm_roi, 0.5, 3.0 )
     MUTATE_DOUBLE( auto_rel_eff_sol_min_fwhm_quad_cont, 3.0, 15.0 )
 
@@ -602,6 +624,7 @@ NuclideConfigSolution mutate( const NuclideConfigSolution &X_base,
     // ROI significance
     MUTATE_DOUBLE( roi_significance_min_chi2_reduction, 2.0, 30.0 )
     MUTATE_DOUBLE( roi_significance_min_peak_sig, 1.0, 8.0 )
+    MUTATE_DOUBLE( roi_significance_min_quad_cont_chi2_dof, 0.0, 3.0 )
     MUTATE_DOUBLE( observable_peak_initial_significance_threshold, 1.0, 5.0 )
     MUTATE_DOUBLE( observable_peak_final_significance_threshold, 0.5, 5.0 )
 
@@ -673,6 +696,8 @@ NuclideConfigSolution crossover( const NuclideConfigSolution &X1,
   CROSSOVER_DOUBLE( manual_rel_eff_sol_min_fwhm_roi )
   CROSSOVER_DOUBLE( manual_rel_eff_sol_min_fwhm_quad_cont )
   CROSSOVER_DOUBLE( manual_rel_eff_sol_max_fwhm )
+  CROSSOVER_DOUBLE( manual_rel_eff_min_tail_contribution )
+  CROSSOVER_DOUBLE( manual_rel_eff_tail_width_scale_fwhm )
   CROSSOVER_DOUBLE( manual_rel_eff_roi_width_num_fwhm_lower )
   CROSSOVER_DOUBLE( manual_rel_eff_roi_width_num_fwhm_upper )
 
@@ -686,6 +711,8 @@ NuclideConfigSolution crossover( const NuclideConfigSolution &X1,
   CROSSOVER_DOUBLE( auto_rel_eff_roi_width_num_fwhm_lower )
   CROSSOVER_DOUBLE( auto_rel_eff_roi_width_num_fwhm_upper )
   CROSSOVER_DOUBLE( auto_rel_eff_sol_max_fwhm )
+  CROSSOVER_DOUBLE( auto_rel_eff_min_tail_contribution )
+  CROSSOVER_DOUBLE( auto_rel_eff_tail_width_scale_fwhm )
   CROSSOVER_DOUBLE( auto_rel_eff_sol_min_fwhm_roi )
   CROSSOVER_DOUBLE( auto_rel_eff_sol_min_fwhm_quad_cont )
 
@@ -705,6 +732,7 @@ NuclideConfigSolution crossover( const NuclideConfigSolution &X1,
   // ROI significance
   CROSSOVER_DOUBLE( roi_significance_min_chi2_reduction )
   CROSSOVER_DOUBLE( roi_significance_min_peak_sig )
+  CROSSOVER_DOUBLE( roi_significance_min_quad_cont_chi2_dof )
   CROSSOVER_DOUBLE( observable_peak_initial_significance_threshold )
   CROSSOVER_DOUBLE( observable_peak_final_significance_threshold )
 

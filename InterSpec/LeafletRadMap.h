@@ -126,6 +126,9 @@ public:
   
   /** Returns the measurment this map is for. */
   std::shared_ptr<const SpecMeas> measurement() const { return m_meas; };
+
+  /** Signal emitted from JS when map tiles fail to load (e.g., proxy, no internet). */
+  Wt::JSignal<> &tileLoadFailed();
   
 protected:
   void defineJavaScript();
@@ -156,6 +159,7 @@ protected:
   NativeFloatSpinBox *m_filter_upper_energy;
 
   Wt::JSignal<std::string,std::string> m_displaySamples;
+  Wt::JSignal<> m_tileLoadFailed;
   Wt::Signal<SpecUtils::SpectrumType, std::shared_ptr<const SpecMeas>, std::set<int>> m_loadSelected;
   
   
@@ -175,11 +179,14 @@ class LeafletRadMapWindow : public AuxWindow
 public:
   LeafletRadMapWindow();
   virtual ~LeafletRadMapWindow();
-  
+
   LeafletRadMap *map();
-  
+
 protected:
+  void handleTileLoadFailed();
+
   LeafletRadMap *m_map;
-};//class GammaXsWindow
+  Wt::WPushButton *m_tileLoadWarningBtn;
+};//class LeafletRadMapWindow
 
 #endif //LeafletRadMap_h

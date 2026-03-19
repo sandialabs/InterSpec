@@ -229,13 +229,27 @@ shared_ptr<DetectorPeakResponse> init_drf_from_name( std::string drf_file, std::
     {
       input.seekg( 0, ios::beg );
       input.clear();
-        
+
       auto answer = DetectorPeakResponse::parseEccFile( input );
       if( std::get<0>(answer) )
         return std::get<0>(answer);
-    }catch( std::exception &e )
+    }catch( std::exception & )
     {
       // Not a .ECC file
+    }
+
+    // Try an ANGLE .outx file
+    try
+    {
+      input.seekg( 0, ios::beg );
+      input.clear();
+
+      shared_ptr<DetectorPeakResponse> outx_det = DetectorPeakResponse::parseAngleOutxFile( input );
+      if( outx_det )
+        return outx_det;
+    }catch( std::exception & )
+    {
+      // Not an .outx file
     }
   }else if( !drf_name.empty() )  //if( !drf_file.empty() )
   {

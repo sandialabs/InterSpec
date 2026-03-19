@@ -807,7 +807,8 @@ padding-bottom: 1px;
   place-self: center;
 }
 
-.DownloadBtn.RelActDownload, .DownloadBtn.RelActDownload:hover
+.DownloadBtn.RelActDownload, .DownloadBtn.RelActDownload:hover,
+.DownloadLink.RelActDownload, .DownloadLink.RelActDownload:hover
 {
   float: left;
   padding-left: 2px;

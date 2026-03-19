@@ -101,6 +101,10 @@ GammaXsGui::GammaXsGui( Wt::WSuggestionPopup *materialSuggestion,
 {
   UndoRedoManager::BlockUndoRedoInserts undo_blocker;
   
+  addStyleClass( "GammaXsGui" );
+
+  wApp->useStyleSheet( "InterSpec_resources/GammaXsGui.css" );
+
   m_layout = new WGridLayout();
   setLayout( m_layout );
 
@@ -158,6 +162,7 @@ GammaXsGui::GammaXsGui( Wt::WSuggestionPopup *materialSuggestion,
   label = new WLabel( WString::tr("gxsg-total-atten-xs") );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_totalAttenuation = new WText();
+  m_totalAttenuation->addStyleClass( "GxsResult" );
   m_layout->addWidget( m_totalAttenuation, row, 1, 1, 1 );
 #ifndef WT_NO_STD_WSTRING
   label = new WLabel( L"cm\x00B2/g" );
@@ -170,6 +175,7 @@ GammaXsGui::GammaXsGui( Wt::WSuggestionPopup *materialSuggestion,
   label = new WLabel( WString::tr("gxsg-compton-label") );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_compton = new WText();
+  m_compton->addStyleClass( "GxsResult" );
   m_layout->addWidget( m_compton, row, 1, 1, 1 );
 #ifndef WT_NO_STD_WSTRING
   label = new WLabel( L"cm\x00B2/g" );
@@ -183,6 +189,7 @@ GammaXsGui::GammaXsGui( Wt::WSuggestionPopup *materialSuggestion,
   label = new WLabel( WString::tr("gxsg-rayleigh-label") );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_rayleigh = new WText();
+  m_rayleigh->addStyleClass( "GxsResult" );
   m_layout->addWidget( m_rayleigh, row, 1, 1, 1 );
 #ifndef WT_NO_STD_WSTRING
   label = new WLabel( L"cm\x00B2/g" );
@@ -196,6 +203,7 @@ GammaXsGui::GammaXsGui( Wt::WSuggestionPopup *materialSuggestion,
   label = new WLabel( WString::tr("gxsg-photoelec-label") );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_photoElectric = new WText();
+  m_photoElectric->addStyleClass( "GxsResult" );
   m_layout->addWidget( m_photoElectric, row, 1, 1, 1 );
 #ifndef WT_NO_STD_WSTRING
   label = new WLabel( L"cm\x00B2/g" );
@@ -208,6 +216,7 @@ GammaXsGui::GammaXsGui( Wt::WSuggestionPopup *materialSuggestion,
   label = new WLabel( WString::tr("gxsg-pp-label") );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_conversion = new WText();
+  m_conversion->addStyleClass( "GxsResult" );
   m_layout->addWidget( m_conversion, row, 1, 1, 1 );
 #ifndef WT_NO_STD_WSTRING
   label = new WLabel( L"cm\x00B2/g" );
@@ -219,6 +228,7 @@ GammaXsGui::GammaXsGui( Wt::WSuggestionPopup *materialSuggestion,
   ++row;
   label = new WLabel( WString::tr("gxsg-mass-avrg-an") );
   m_effectiveZ = new WText( "" );
+  m_effectiveZ->addStyleClass( "GxsResult" );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_layout->addWidget( m_effectiveZ, row, 1, 1, 1 );
   
@@ -283,6 +293,7 @@ GammaXsGui::GammaXsGui( Wt::WSuggestionPopup *materialSuggestion,
   label = new WLabel( WString::tr("gxsg-trans-frac-label") );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_transmissionFraction = new WText();
+  m_transmissionFraction->addStyleClass( "GxsResult" );
   m_layout->addWidget( m_transmissionFraction, row, 1, 1, 2 );
   
   HelpSystem::attachToolTipOn( {label, m_transmissionFraction}, WString::tr("gxsg-tt-trans-frac"),
@@ -320,6 +331,7 @@ GammaXsGui::GammaXsGui( Wt::WSuggestionPopup *materialSuggestion,
   m_intrinsicEfficiencyLabel = new WLabel( WString::tr("gxsg-intrinsic-eff-label") );
   m_layout->addWidget( m_intrinsicEfficiencyLabel , row, 0, 1, 1, AlignLeft );
   m_intrinsicEfficiency = new WText();
+  m_intrinsicEfficiency->addStyleClass( "GxsResult" );
   m_layout->addWidget( m_intrinsicEfficiency, row, 1, 1, 2 );
   
 //  HelpSystem::attachToolTipOn( m_detectorLabel[detectorCount],"Intrinsic efficiency (in-peak detection efficiency of gammas striking detector face).", showToolTips );
@@ -330,6 +342,7 @@ GammaXsGui::GammaXsGui( Wt::WSuggestionPopup *materialSuggestion,
   m_fractionalAngleLabel = new WLabel( WString::tr("gxsg-solid-angle-frac-label") );
   m_layout->addWidget( m_fractionalAngleLabel, row, 0, 1, 1, AlignLeft );
   m_fractionalAngle = new WText();
+  m_fractionalAngle->addStyleClass( "GxsResult" );
   m_layout->addWidget( m_fractionalAngle, row, 1, 1, 2 );
   
 //  HelpSystem::attachToolTipOn( m_detectorLabel[detectorCount],"Fractional solid angle of the selected detector at specified distance." , showToolTips );
@@ -341,6 +354,7 @@ GammaXsGui::GammaXsGui( Wt::WSuggestionPopup *materialSuggestion,
   m_efficiencyLabel = new WLabel( WString::tr("gxsg-det-eff-label") );
   m_layout->addWidget( m_efficiencyLabel, row, 0, 1, 1, AlignLeft );
   m_efficiency = new WText();
+  m_efficiency->addStyleClass( "GxsResult" );
   m_layout->addWidget( m_efficiency, row, 1, 1, 2 );
   
   HelpSystem::attachToolTipOn( {m_efficiencyLabel, m_efficiency}, WString::tr("gxsg-tt-det-eff"),
@@ -350,6 +364,7 @@ GammaXsGui::GammaXsGui( Wt::WSuggestionPopup *materialSuggestion,
   m_totalEfficiencyLabel = new WLabel( WString::tr("gxsg-total-eff-label") );
   m_layout->addWidget( m_totalEfficiencyLabel, row, 0, 1, 1, AlignLeft );
   m_totalEfficiency = new WText();
+  m_totalEfficiency->addStyleClass( "GxsResult" );
   m_layout->addWidget( m_totalEfficiency, row, 1, 1, 2 );
   
   HelpSystem::attachToolTipOn( m_totalEfficiencyLabel,
@@ -441,7 +456,7 @@ void GammaXsGui::updateDetectorCalc()
       
       // fractional solid angle
       const float diameter = m_detector->detectorDiameter();
-      const double gfactor =  m_detector->fractionalSolidAngle( diameter, dist );
+      const double gfactor =  m_detector->fractionalSolidAngle( diameter, dist + m_detector->detectorSetback() );
       snprintf( buffer, sizeof(buffer), "%.4g", gfactor );
       m_fractionalAngle->setText( buffer );
       

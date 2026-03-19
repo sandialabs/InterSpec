@@ -60,6 +60,20 @@ struct GammaClusteringSettings
   double min_fwhm_roi;              // Minimum ROI width in FWHM to keep
   double min_fwhm_quad_cont;        // Width threshold to use quadratic continuum
 
+  // Merge prevention via Gaussian tail contribution check.
+  // Two overlapping clusters are only merged if the Gaussian tail of one cluster's peaks
+  // contributes more than this fraction at the other cluster's nearest peak.
+  // 0 disables the check. Evaluated as:
+  //   sum(amp_i * exp(-d_i^2 / (2*sigma^2))) / ref_peak_amplitude > threshold
+  // where the sum is over all peaks in the other cluster.
+  double min_tail_contribution_fraction = 0.0;
+
+  // Width normalization for tail check: the threshold is scaled up linearly
+  // with combined ROI width (in FWHM) beyond this value.
+  // effective_threshold = min_tail * max(1, combined_width_fwhm / width_scale)
+  // Larger values = less penalty for wide ROIs. 0 disables width scaling.
+  double tail_merge_width_scale_fwhm = 0.0;
+
   // Parameters for synthetic spectrum-based ROI breaking
   // Region around minimum/maximum to compute significance (in FWHM units)
   double break_check_fwhm_fraction = 0.5;
@@ -132,6 +146,11 @@ struct PeakFitResult
 // These values will be optimized via genetic algorithm for different detector types
 struct PeakFitForNuclideConfig
 {
+  /** Returns the default `PeakFitForNuclideConfig` for the detector type.
+   */
+  static const PeakFitForNuclideConfig &default_config( const PeakFitUtils::CoarseResolutionType det_type );
+
+
   // FWHM functional form
   DetectorPeakResponse::ResolutionFnctForm fwhm_functional_form = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
 
@@ -165,6 +184,8 @@ struct PeakFitForNuclideConfig
   double manual_rel_eff_sol_min_fwhm_roi = 1.0;
   double manual_rel_eff_sol_min_fwhm_quad_cont = 8.0;
   double manual_rel_eff_sol_max_fwhm = 15.0;
+  double manual_rel_eff_min_tail_contribution = 0.001;  // Min Gaussian tail fraction to allow merge
+  double manual_rel_eff_tail_width_scale_fwhm = 5.0;    // Width (FWHM) at which tail threshold doubles
   double manual_rel_eff_roi_width_num_fwhm_lower = 3.0;
   double manual_rel_eff_roi_width_num_fwhm_upper = 3.0;
 
@@ -180,6 +201,8 @@ struct PeakFitForNuclideConfig
   double auto_rel_eff_roi_width_num_fwhm_lower = 3.5;  // Slightly more generous for refined fit
   double auto_rel_eff_roi_width_num_fwhm_upper = 3.5;
   double auto_rel_eff_sol_max_fwhm = 12.0;  // Tighter constraint as solution improves
+  double auto_rel_eff_min_tail_contribution = 0.001;  // Min Gaussian tail fraction to allow merge
+  double auto_rel_eff_tail_width_scale_fwhm = 5.0;    // Width (FWHM) at which tail threshold doubles
   double auto_rel_eff_sol_min_fwhm_roi = 1.0;
   double auto_rel_eff_sol_min_fwhm_quad_cont = 8.0;
 
@@ -199,8 +222,9 @@ struct PeakFitForNuclideConfig
   // Areal density starting value for desperation external shielding (in g/cm2)
   double desperation_phys_model_areal_density_g_per_cm2 = 1.0;  // Default: 1.0 g/cm2
 
-  // Physical model options (only used when rel_eff_eqn_type == FramPhysicalModel)
   bool nucs_of_el_same_age = true;
+  
+  // Physical model options (only used when rel_eff_eqn_type == FramPhysicalModel)
   bool phys_model_use_hoerl = true;
 
   // Fields for RelActAuto options configuration - this is only used for optimiziation work - it is supersceeded by `FitSrcPeaksOptions::DoNotVaryEnergyCal
@@ -215,6 +239,13 @@ struct PeakFitForNuclideConfig
   // If any peak in a ROI has significance above this threshold, the ROI is considered significant
   // (alternative to chi2 reduction test - ROI passes if EITHER test passes)
   double roi_significance_min_peak_sig = 3.5;
+
+  // Minimum chi2/dof of a quadratic (or higher-order) continuum-only fit required
+  // for the ROI to be considered as potentially containing a peak.  If a quadratic
+  // continuum alone fits the data well (chi2/dof below this threshold), there is no
+  // evidence of a peak and the ROI is marked insignificant regardless of other tests.
+  // Set to 0.0 to disable this check (e.g., for HPGe where this is less relevant).
+  double roi_significance_min_quad_cont_chi2_dof = 0.0;
 
   // Threshold for initial peak significance filter before refitting for observable_peaks.
   // Significance = (peak_amplitude * 0.7607) / sqrt(data_area_in_pm_1_fwhm)
@@ -256,6 +287,8 @@ struct PeakFitForNuclideConfig
     settings.max_fwhm_width = manual_rel_eff_sol_max_fwhm;
     settings.min_fwhm_roi = manual_rel_eff_sol_min_fwhm_roi;
     settings.min_fwhm_quad_cont = manual_rel_eff_sol_min_fwhm_quad_cont;
+    settings.min_tail_contribution_fraction = manual_rel_eff_min_tail_contribution;
+    settings.tail_merge_width_scale_fwhm = manual_rel_eff_tail_width_scale_fwhm;
     settings.step_cont_min_peak_area = step_cont_min_peak_area;
     settings.step_cont_min_peak_significance = step_cont_min_peak_significance;
     settings.step_cont_left_right_nsigma = step_cont_left_right_nsigma;
@@ -275,14 +308,21 @@ struct PeakFitForNuclideConfig
     settings.max_fwhm_width = auto_rel_eff_sol_max_fwhm;
     settings.min_fwhm_roi = auto_rel_eff_sol_min_fwhm_roi;
     settings.min_fwhm_quad_cont = auto_rel_eff_sol_min_fwhm_quad_cont;
+    settings.min_tail_contribution_fraction = auto_rel_eff_min_tail_contribution;
+    settings.tail_merge_width_scale_fwhm = auto_rel_eff_tail_width_scale_fwhm;
     settings.step_cont_min_peak_area = step_cont_min_peak_area;
     settings.step_cont_min_peak_significance = step_cont_min_peak_significance;
     settings.step_cont_left_right_nsigma = step_cont_left_right_nsigma;
     return settings;
   }
+
+private:
+  PeakFitForNuclideConfig(){};
 };//struct PeakFitForNuclideConfig
 
-  
+
+
+
 /** Options for fitting the peaks of nuclides.
  */
 enum FitSrcPeaksOptions
@@ -374,6 +414,14 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_without_peaks(
   const double min_valid_energy,
   const double max_valid_energy,
   const PeakFitForNuclideConfig &config );
+
+/** Debug harness for fit_peaks_for_nuclides.
+ Loads spectrum files, runs auto peak search, calls fit_peaks_for_nuclides,
+ and prints diagnostics at each stage. Enable PERFORM_DEVELOPER_CHECKS for
+ full internal trace output via the existing local_debug_printout flag.
+ Called from main.cpp before server startup.
+*/
+int debug_fit_peaks_for_nuclides();
 
 }//namespace FitPeaksForNuclides
 

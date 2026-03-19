@@ -131,6 +131,11 @@ public:
    Will throw if user input is invalid.
    */
   double detectorDiameter() const;
+
+  /** Get the user-entered detector setback distance.
+   Returns 0.0 if the field is empty or invalid.
+   */
+  double detectorSetback() const;
   
   /** Called when user drag-n-drops a Source.lib onto app.
    
@@ -180,7 +185,8 @@ protected:
   Wt::WGroupBox *m_detDiamGroup;
   
   Wt::WLineEdit *m_detDiameter;
-  
+  Wt::WLineEdit *m_detSetback;
+
   Wt::WComboBox *m_geometry;
   
   Wt::WCheckBox *m_showFwhmPoints;

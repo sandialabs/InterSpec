@@ -31,6 +31,8 @@
   <!-- File convert options options -->
   <message id="bgw-overwrite-output-cb">Перезаписать вывод</message>
   <message id="bgw-sum-multirecord-to-single">Объединить многозаписные файлы в одну запись</message>
+  <message id="bgw-sum-all-to-single">Суммировать все файлы в один спектр</message>
+  <message id="bgw-concatenate-all-to-single">Объединить все файлы в один файл</message>
   <message id="bgw-info-will-convert-file-type">Файлы будут преобразованы в выбранный тип.</message>
   
   

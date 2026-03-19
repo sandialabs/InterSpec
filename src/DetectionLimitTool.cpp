@@ -290,7 +290,7 @@ protected:
           
           auto counts_at_distance = [this,intrinsic_eff,activity]( const double dist ) -> double {
             const double counts_4pi_no_air = m_input.counts_per_bq_into_4pi__;
-            const double geom_eff = m_input.drf->fractionalSolidAngle(m_input.drf->detectorDiameter(), dist);
+            const double geom_eff = m_input.drf->fractionalSolidAngle(m_input.drf->detectorDiameter(), dist + m_input.drf->detectorSetback());
             double air_eff = 1.0;
             if( m_input.do_air_attenuation )
             {
@@ -1818,7 +1818,7 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
                                                 : DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
     const bool air_atten = (do_air_attenuation && !fixed_geom && (distance > 0.0));
     const double intrinsic_eff = drf ? drf->intrinsicEfficiency( energy ) : 1.0f;
-    const double geom_eff = (drf && (distance >= 0.0)) ? drf->fractionalSolidAngle( drf->detectorDiameter(), distance ) : 1.0;
+    const double geom_eff = (drf && (distance >= 0.0)) ? drf->fractionalSolidAngle( drf->detectorDiameter(), distance + drf->detectorSetback() ) : 1.0;
     const double det_eff = fixed_geom ? intrinsic_eff : (drf ? drf->efficiency(energy, distance) : 1.0);
      
     const double gammas_per_bq_into_4pi = branch_ratio * live_time * shield_transmission;

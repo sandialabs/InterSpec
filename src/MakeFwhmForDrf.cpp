@@ -918,7 +918,7 @@ void MakeFwhmForDrf::setEquationToChart()
   const float det_diameter = m_orig_drf ? m_orig_drf->detectorDiameter()
                                         : static_cast<float>(2.54f*PhysicalUnits::cm);
   
-  m_chart->setDataPoints( datapoints, det_diameter, min_energy, max_energy );
+  m_chart->setDataPoints( datapoints, det_diameter, 0.0f, min_energy, max_energy );
   m_chart->setFwhmCoefficients( m_parameters, m_uncertainties, chart_fwhm_type, MakeDrfChart::EqnEnergyUnits::keV );
 }//void setEquationToChart()
 

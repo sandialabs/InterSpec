@@ -311,6 +311,10 @@ protected:
   
   void addDownloadAndUploadLinks( Wt::WContainerWidget *parent );
   void handleRequestToUploadXmlConfig();
+
+  /** Registers an undo/redo step if the current state differs from the previous state. */
+  void addUndoRedoStep();
+
 protected:
   
   enum RenderActions
@@ -324,10 +328,14 @@ protected:
     UpdateFitEnergyCal    = 0x0040,
     UpdateRefGammaLines   = 0x0080,
     UpdateShowHideBack    = 0x0100,
-    UpdateXRaysInRois     = 0x0200
+    UpdateXRaysInRois     = 0x0200,
+    AddUndoRedoStep       = 0x0400
   };//enum D3RenderActions
-  
+
   Wt::WFlags<RenderActions> m_render_flags;
+
+  /** The GUI state from the last render; used for undo/redo deduplication. */
+  std::shared_ptr<const RelActCalcAuto::RelActAutoGuiState> m_currentGuiState;
   
   std::string m_default_par_sets_dir;
   std::string m_user_par_sets_dir;

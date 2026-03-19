@@ -1499,6 +1499,7 @@ MakeDrf::MakeDrf( InterSpec *viewer,
   m_files( nullptr ),
   m_detDiamGroup( nullptr ),
   m_detDiameter( nullptr ),
+  m_detSetback( nullptr ),
   m_geometry( nullptr ),
   m_showFwhmPoints( nullptr ),
   m_fwhmOptionGroup( nullptr ),
@@ -1555,7 +1556,22 @@ MakeDrf::MakeDrf( InterSpec *viewer,
   m_detDiameter->setAttributeValue( "autocorrect", "off" );
   m_detDiameter->setAttributeValue( "spellcheck", "off" );
 #endif
-  
+
+  WLabel *setbackLabel = new WLabel( WString::tr("md-det-setback"), m_detDiamGroup );
+  setbackLabel->setInline( false );
+  m_detSetback = new WLineEdit( m_detDiamGroup );
+  setbackLabel->setBuddy( m_detSetback );
+  m_detSetback->setInline( false );
+  m_detSetback->setValidator( distValidator );
+  m_detSetback->setText( "0 cm" );
+  m_detSetback->changed().connect( this, &MakeDrf::handleSourcesUpdates );
+  m_detSetback->enterPressed().connect( this, &MakeDrf::handleSourcesUpdates );
+  m_detSetback->setAttributeValue( "ondragstart", "return false" );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_detSetback->setAttributeValue( "autocorrect", "off" );
+  m_detSetback->setAttributeValue( "spellcheck", "off" );
+#endif
+
   m_effOptionGroup = new WGroupBox( WString::tr("md-eff-type"), fitOptionsDiv );
   m_effEqnOrder = new WComboBox( m_effOptionGroup );
   m_effEqnOrder->setNoSelectionEnabled( true );
@@ -1719,7 +1735,7 @@ MakeDrf::MakeDrf( InterSpec *viewer,
   {
     layout->addLayout( upperLayout, 0, 0 );
     layout->addWidget( fileHolder, 1, 0 );
-    layout->setRowResizable( 0, true, 250 );
+    layout->setRowResizable( 0, true, 275 );
   }//if( is phone ) / else
   
   SpecMeasManager *manager = viewer->fileManager();
@@ -2133,6 +2149,7 @@ void MakeDrf::handleSourcesUpdates()
   
   bool detDiamInvalid = false;
   double diameter = 0.0; //2.54*PhysicalUnits::cm;
+  const double setback = detectorSetback();
   if( !is_fixed_geometry )
   {
     try
@@ -2325,16 +2342,16 @@ void MakeDrf::handleSourcesUpdates()
         };//trans_frac lambda
         
         
-        auto src_rate = [&mixtures,trans_frac,diameter,is_fixed_geometry]( const float energy, const float width,
+        auto src_rate = [&mixtures,trans_frac,diameter,setback,is_fixed_geometry]( const float energy, const float width,
                                                 MakeDrfSrcDef * const src, DrfPeak * const peak,
                                                 float &source_count_rate,
                                                 float &incidentGamma, float &fracUncert ) {
           source_count_rate = incidentGamma = fracUncert = 0.0;
-          
+
           const double distance = is_fixed_geometry ? -1.0 : src->distance();
           const double transmittion_factor = trans_frac( energy, src );
           const SandiaDecay::Nuclide * const nuc = src->nuclide();
-          
+
           if( nuc )
           {
             const vector<SandiaDecay::EnergyRatePair> &rates = mixtures[nuc];
@@ -2347,19 +2364,19 @@ void MakeDrf::handleSourcesUpdates()
           {
             if( !peak->m_userBr || (peak->m_userBr->validate()!=WValidator::State::Valid) )
               throw runtime_error( "Logic error - no nuclide associated with " + std::to_string(peak->m_peak->mean()) + " keV peak, and no user BR." );
-            
+
             const double activity = src->activityAtSpectrumTime();
             const double br = peak->m_userBr->value();
             source_count_rate += transmittion_factor * br * activity;
           }
-          
+
           //If we get here on initial GUI load, we seem to get error validating
           //  the uncertainty (hence a workaround is used to delay first reading)
-          
+
           if( source_count_rate > 0.0f )
           {
             const double livetime = peak->m_livetime;
-            const double fracSolidAngle = is_fixed_geometry ? 1.0 : DetectorPeakResponse::fractionalSolidAngle( diameter, distance );
+            const double fracSolidAngle = is_fixed_geometry ? 1.0 : DetectorPeakResponse::fractionalSolidAngle( diameter, distance + setback );
             incidentGamma = source_count_rate * livetime * fracSolidAngle;
             fracUncert = src->fractionalActivityUncertainty();
           }//if( source_count_rate > 0.0f )
@@ -2542,7 +2559,7 @@ void MakeDrf::handleSourcesUpdates()
     }
   }//
   
-  m_chart->setDataPoints( datapoints, diameter, minenergy, maxenergy );
+  m_chart->setDataPoints( datapoints, diameter, static_cast<float>( setback ), minenergy, maxenergy );
   
   m_effOptionGroup->setHidden( datapoints.empty() );
   m_fwhmOptionGroup->setHidden( datapoints.empty() );
@@ -3181,7 +3198,11 @@ shared_ptr<DetectorPeakResponse> MakeDrf::assembleDrf( const string &name, const
   drf->fromExpOfLogPowerSeries( m_effEqnCoefs, m_effEqnCoefUncerts, 0.0, diameter, eqnEnergyUnits,
                                      lowerEnergy, upperEnergy, geom_type );
   drf->setDrfSource( DetectorPeakResponse::DrfSource::UserCreatedDrf );
-  
+
+  const double sb = detectorSetback();
+  if( sb > 0.0 )
+    drf->setDetectorSetback( sb );
+
   if( !m_fwhmCoefs.empty() )
   {
     const auto fwhmForm = DetectorPeakResponse::ResolutionFnctForm( m_fwhmEqnType->currentIndex() );
@@ -3267,6 +3288,7 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   
   
   double diam = 0.0;
+  const double setback = detectorSetback();
   try
   {
     diam = detectorDiameter();
@@ -3278,7 +3300,7 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
       return;
     }
   }//try / catch
-  
+
   if( effEqnCoefs.empty() )
   {
     out << "Detector response function not valid" << endline;
@@ -3373,7 +3395,7 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   }else
   {
     //Convert equation into an absolute efficiency at 25 cm, and output those equations
-    const double solidAngleAt25cm = DetectorPeakResponse::fractionalSolidAngle( diam, 25*PhysicalUnits::cm );
+    const double solidAngleAt25cm = DetectorPeakResponse::fractionalSolidAngle( diam, 25*PhysicalUnits::cm + setback );
     out << "# Absolute Efficiency Coefficients (i.e. probability of gamma emitted from source at 25cm being detected in the full energy photopeak) for equation of form"
     " Eff(x) = exp( C_0 + C_1*log(x) + C_2*log(x)^2 + ...) where x is energy in "
     << (effInMeV ? "MeV" : "keV") << " and at distance of 25 cm" << endline
@@ -3532,7 +3554,7 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
     const double deteff = peakCps / d.source_count_rate;
     const double deteffUncert = deteff * sqrt( pow(d.peak_area_uncertainty/d.peak_area,2)
                                                + pow(d.source_count_rate_uncertainty/d.source_count_rate,2) );
-    const double geomFactor = (d.distance < 0.0) ? 1.0 : DetectorPeakResponse::fractionalSolidAngle(diam, d.distance);
+    const double geomFactor = (d.distance < 0.0) ? 1.0 : DetectorPeakResponse::fractionalSolidAngle( diam, d.distance + setback );
     out << d.energy << "," << d.livetime
         << "," << d.peak_area << "," << d.peak_area_uncertainty
         << "," << d.peak_fwhm << "," << d.peak_fwhm_uncertainty
@@ -3606,6 +3628,7 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   }//switch( m_geometry->currentIndex() )
   
   const double diam = [this]() -> double {try{return detectorDiameter();}catch(...){return 0.0;}}();
+  const double setback = detectorSetback();
   const WString diameter = ((geom_type == DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic) || (diam > 0.0))
                               ? m_detDiameter->text() : WString("N/A");
   
@@ -3827,7 +3850,7 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
         
         const float energy = raw_energy / (effInMeV ? 1000.0f : 1.0f);
         const float intrinsic_eff = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy, m_effEqnCoefs );
-        const double frac_solid_angle = DetectorPeakResponse::fractionalSolidAngle( diam, dist_cm*PhysicalUnits::cm );
+        const double frac_solid_angle = DetectorPeakResponse::fractionalSolidAngle( diam, dist_cm*PhysicalUnits::cm + setback );
         
         snprintf( buffer, sizeof(buffer), "<td>%.2G</td>", 100.0*frac_solid_angle*intrinsic_eff );
         efftable << buffer;
@@ -3853,7 +3876,7 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
     const float chartLower = 10.0f * std::round( 0.1f*(m_effLowerEnergy - 6.0f) );
     const float chartUpper = 10.0f * std::round( 0.1f*(m_effUpperEnergy + 6.0f) );
     
-    chart.setDataPoints( data, detDiam, chartLower, chartUpper );
+    chart.setDataPoints( data, detDiam, static_cast<float>( setback ), chartLower, chartUpper );
     
     const auto units = effInMeV ? MakeDrfChart::EqnEnergyUnits::MeV
                                 : MakeDrfChart::EqnEnergyUnits::keV;
@@ -3950,6 +3973,19 @@ double MakeDrf::detectorDiameter() const
   return diam;
 }//double detectorDiameter() const
 
+
+double MakeDrf::detectorSetback() const
+{
+  try
+  {
+    const double sb = PhysicalUnits::stringToDistance( m_detSetback->text().toUTF8() );
+    return (sb > 0.0) ? sb : 0.0;
+  }catch(...)
+  {
+  }
+
+  return 0.0;
+}//double detectorSetback() const
 
 
 void MakeDrf::useSourceLibrary( const vector<shared_ptr<const SrcLibLineInfo>> &srcs, 

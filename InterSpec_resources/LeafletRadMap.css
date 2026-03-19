@@ -49,6 +49,7 @@ table.MapMousePopup td {
   
   display: flex;
   flex-direction: row;
+  flex-wrap: wrap;
   
   justify-content: space-between;
 }
@@ -215,7 +216,7 @@ div.LeafletRadMapWidget .EnergyRangeRow .EnergyRangeGrp {
 }
 
 .CopyMapBtnsDiv button.LinkBtn {
-  font-size: 9px;
+  font-size: 8px;
   font-weight: normal;
   float: none;
 }

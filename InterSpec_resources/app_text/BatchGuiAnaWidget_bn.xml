@@ -31,6 +31,8 @@
   <!-- File convert options options -->
   <message id="bgw-overwrite-output-cb">আউটপুট ওভাররাইট করুন</message>
   <message id="bgw-sum-multirecord-to-single">একাধিক রেকর্ড সহ ফাইল একক রেকর্ডে সমষ্টি করুন</message>
+  <message id="bgw-sum-all-to-single">সমস্ত ফাইল একক বর্ণালীতে যোগ করুন</message>
+  <message id="bgw-concatenate-all-to-single">সমস্ত ফাইল একক ফাইলে সংযুক্ত করুন</message>
   <message id="bgw-info-will-convert-file-type">ফাইলগুলি নির্বাচিত টাইপে রূপান্তরিত হবে।</message>
 
 

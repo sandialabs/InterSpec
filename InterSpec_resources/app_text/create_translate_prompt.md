@@ -27,4 +27,7 @@ After finishing the translation - go back through and check that each "<message>
 
 # Language and Country specific instructions
 
-None yet.
+## Hungarian
+- "Escape peaks" should be translated to the most common Hungarian terminology of "kiszökési csúcsok".
+- "Detector response" should be translated as "detector hatásfok" (which means detector efficiency).
+- "efficiency" should be translated as “hatásfok” (not "hatékokonyság").

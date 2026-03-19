@@ -1218,7 +1218,13 @@
       <ul>
         <li>DRFs created using the &quot;Make Detector Response&quot;, in <code>CSV</code>, <code>XML</code>, <code>URI</code>, or <code>QR-code</code> form</li>
         <li>From <a target="_blank" href="https://rsicc.ornl.gov/PackageDetail.aspx?p=GADRAS-DRF-18.8.13&amp;id=P00610&amp;cpu=PCX86&amp;v=04&amp;t=Gamma%20Detector%20Response%20and%20Analysis%20Software–Detector%20Response%20Function.">GADRAS-DRF</a></li>
-        <li>In a couple <code>CSV</code>/<code>TSV</code> formats</li>
+        <li>In a couple <code>CSV</code>/<code>TSV</code> formats
+          <ul>
+            <li>Files with a variant of at least &quot;Energy&quot; and &quot;Efficiency&quot; header column</li>
+            <li>See <code>data/common_drfs.tsv</code> for a format that holds multiple detectors</li>
+          </ul>
+        </li>
+        <li><code>.outx</code> files produced by <a target="_blank" href="https://www.angle.me">Angle</a></li>
         <li><code>.ECC</code> files produced by
           <a target="_blank" href="https://www.mirion.com/products/technologies/spectroscopy-scientific-analysis/gamma-spectroscopy/gamma-spectroscopy-software/lab-applications/s573-isocs-calibration-software">Mirion ISOCS</a>
         </li>

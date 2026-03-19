@@ -9832,61 +9832,51 @@ void InterSpec::programaticallyCloseAutoRemoteRidResultDialog()
 #if( USE_REL_ACT_TOOL )
 RelActAutoGui *InterSpec::relActAutoWindow( const bool createIfNotOpen )
 {
+  assert( (!m_relActAutoGui) == (!m_relActAutoWindow) );
+  
   if( !createIfNotOpen )
     return m_relActAutoGui;
   
-  if( !m_relActAutoGui )
+  if( m_relActAutoGui )
+    return m_relActAutoGui;
+  
+  const std::pair<RelActAutoGui *,AuxWindow *> widgets = RelActAutoGui::createWindow( this );
+  if( !widgets.first || !widgets.second )
+    return m_relActAutoGui;
+  
+  m_relActAutoGui = widgets.first;
+  m_relActAutoWindow = widgets.second;
+  
+  m_relActAutoWindow->finished().connect( boost::bind( &InterSpec::handleRelActAutoClose, this ) );
+  
+  try
   {
-    const std::pair<RelActAutoGui *,AuxWindow *> widgets = RelActAutoGui::createWindow( this );
-    if( !widgets.first || !widgets.second )
-      return m_relActAutoGui;
-      
-    m_relActAutoGui = widgets.first;
-    m_relActAutoWindow = widgets.second;
-    
-    m_relActAutoWindow->finished().connect( boost::bind( &InterSpec::handleRelActAutoClose, this ) );
-    
-    try
+    std::unique_ptr<RelActCalcAuto::RelActAutoGuiState> relActState = m_dataMeasurement
+    ? m_dataMeasurement->getRelActAutoGuiState()
+    : nullptr;
+    if( relActState )
     {
-      std::unique_ptr<RelActCalcAuto::RelActAutoGuiState> relActState = m_dataMeasurement
-                                                  ? m_dataMeasurement->getRelActAutoGuiState()
-                                                  : nullptr;
-      if( relActState )
-      {
-        m_relActAutoGui->deSerialize( *relActState );
-        m_relActAutoGui->checkIfInUserConfigOrCreateOne( true );
-      }
-    }catch( std::exception &e )
-    {
-      passMessage( "Error setting &quot;Isotopics from nuclides&quot; state to previously used state: "
-                  + std::string(e.what()), WarningWidget::WarningMsgHigh );
-      
+      m_relActAutoGui->deSerialize( *relActState );
+      m_relActAutoGui->checkIfInUserConfigOrCreateOne( true );
+    }
+  }catch( std::exception &e )
+  {
+    passMessage( "Error setting &quot;Isotopics from nuclides&quot; state to previously used state: "
+                + std::string(e.what()), WarningWidget::WarningMsgHigh );
+    
 #if( PERFORM_DEVELOPER_CHECKS )
-      log_developer_error( __func__, ("Error deserializing Rel. Act. GUI state: " + string(e.what())).c_str() );
+    log_developer_error( __func__, ("Error deserializing Rel. Act. GUI state: " + string(e.what())).c_str() );
 #endif
-      
-      //assert( 0 );
-    }//try / catch
-
-    if( m_undo && m_undo->canAddUndoRedoNow() )
-    {
-      auto undo = [this](){ handleRelActAutoClose(); };
-      auto redo = [this](){ relActAutoWindow(true); };
-      m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show 'Isotopics from nuclides' tool" );
-    }//if( m_undo && !m_undo->canAddUndoRedoNow() )
-
-    // Since we dont have undo/redo implemented for RelActAuto - we will block it entirely
-    new UndoRedoManager::BlockGuiUndoRedo( m_relActAutoGui );
-  }else
-  {
-    const double windowWidth = 0.95 * renderedWidth();
-    const double windowHeight = 0.95 * renderedHeight();
-    m_relActAutoWindow->resizeWindow( windowWidth, windowHeight );
     
-    m_relActAutoWindow->resizeToFitOnScreen();
-    m_relActAutoWindow->show();
-    m_relActAutoWindow->centerWindow();
-  }//if( !m_shieldingSourceFit )
+    //assert( 0 );
+  }//try / catch
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ handleRelActAutoClose(); };
+    auto redo = [this](){ relActAutoWindow(true); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show 'Isotopics from nuclides' tool" );
+  }//if( m_undo && !m_undo->canAddUndoRedoNow() )
   
   assert( m_relActAutoMenuItem );
   m_relActAutoMenuItem->disable();

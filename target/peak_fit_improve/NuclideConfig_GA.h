@@ -191,9 +191,16 @@ struct NuclideConfigSolution
   int phys_model_use_hoerl;  // 0 or 1
   int fit_energy_cal;         // 0 or 1
 
+  // --- Tail contribution merge prevention ---
+  double manual_rel_eff_min_tail_contribution;
+  double manual_rel_eff_tail_width_scale_fwhm;
+  double auto_rel_eff_min_tail_contribution;
+  double auto_rel_eff_tail_width_scale_fwhm;
+
   // --- ROI significance and observable peak thresholds ---
   double roi_significance_min_chi2_reduction;
   double roi_significance_min_peak_sig;
+  double roi_significance_min_quad_cont_chi2_dof;
   double observable_peak_initial_significance_threshold;
   double observable_peak_final_significance_threshold;
 

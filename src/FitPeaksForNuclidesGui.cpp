@@ -228,7 +228,10 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
   std::shared_ptr<const SpecUtils::Measurement> background
                                  = viewer->displayedHistogram( SpecUtils::SpectrumType::Background );
 
-  FitPeaksForNuclides::PeakFitForNuclideConfig config;
+  const PeakFitUtils::CoarseResolutionType det_type = peak_fit_prefs
+    ? peak_fit_prefs->m_det_type : PeakFitUtils::coarse_det_type( foreground, fg_meas );
+  FitPeaksForNuclides::PeakFitForNuclideConfig config
+    = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config( det_type );
 
   // Override skew type from PeakFitDetPrefs
   if( peak_fit_prefs )
@@ -1443,21 +1446,28 @@ std::string FitPeaksAdvancedWidget::sourceListTitle() const
 
 void FitPeaksAdvancedWidget::buildOptionsFromConfig()
 {
-  FitPeaksForNuclides::PeakFitForNuclideConfig config;
-
   InterSpec *viewer = InterSpec::instance();
 
+  const std::shared_ptr<SpecMeas> fg_meas = viewer
+    ? viewer->measurment( SpecUtils::SpectrumType::Foreground ) : nullptr;
+  const std::shared_ptr<const SpecUtils::Measurement> foreground = viewer
+    ? viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground ) : nullptr;
+  const std::shared_ptr<const PeakFitDetPrefs> prefs = fg_meas ? fg_meas->peakFitDetPrefs() : nullptr;
+
+  const PeakFitUtils::CoarseResolutionType det_type = prefs
+    ? prefs->m_det_type
+    : PeakFitUtils::coarse_det_type( foreground, fg_meas );
+  FitPeaksForNuclides::PeakFitForNuclideConfig config
+    = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config( det_type );
+
   // Initialize skew type from PeakFitDetPrefs
-  if( viewer )
-  {
-    std::shared_ptr<SpecMeas> fg = viewer->measurment( SpecUtils::SpectrumType::Foreground );
-    std::shared_ptr<const PeakFitDetPrefs> prefs = fg ? fg->peakFitDetPrefs() : nullptr;
-    if( prefs )
-      config.skew_type = prefs->m_peak_skew_type;
-  }
+  if( prefs )
+    config.skew_type = prefs->m_peak_skew_type;
+
   const bool show_tool_tips = viewer
     ? UserPreferences::preferenceValue<bool>( "ShowTooltips", viewer )
     : false;
+
 
   auto add_checkbox_row = [this, show_tool_tips]( const WString &label, WCheckBox *input,
                                                    const WString &tooltip = WString() ) {
@@ -1682,7 +1692,18 @@ void FitPeaksAdvancedWidget::syncConfigFromOptions()
 
 FitPeaksForNuclides::PeakFitForNuclideConfig FitPeaksAdvancedWidget::currentConfig() const
 {
-  FitPeaksForNuclides::PeakFitForNuclideConfig config;
+  InterSpec *viewer = InterSpec::instance();
+  const std::shared_ptr<SpecMeas> fg_meas = viewer
+    ? viewer->measurment( SpecUtils::SpectrumType::Foreground ) : nullptr;
+  const std::shared_ptr<const SpecUtils::Measurement> foreground = viewer
+    ? viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground ) : nullptr;
+  const std::shared_ptr<const PeakFitDetPrefs> prefs = fg_meas ? fg_meas->peakFitDetPrefs() : nullptr;
+  const PeakFitUtils::CoarseResolutionType det_type = prefs
+    ? prefs->m_det_type
+    : PeakFitUtils::coarse_det_type( foreground, fg_meas );
+  FitPeaksForNuclides::PeakFitForNuclideConfig config
+    = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config( det_type );
+
   if( m_opt_roi_min_chi2 )
     config.roi_significance_min_chi2_reduction = m_opt_roi_min_chi2->value();
   if( m_opt_roi_min_peak_sig )

@@ -43,4 +43,18 @@
   <message id="lrm-copy-url-success">Map URL copied to clipboard — paste into your browser.</message>
   <message id="lrm-copy-url-fail">Failed to copy map URL to clipboard.</message>
   <message id="lrm-copy-url-no-gps">No GPS data available to create map URL.</message>
+  <message id="lrm-tile-load-btn">Map tiles not loading?</message>
+  <message id="lrm-tile-load-dialog-title">Map Tiles Not Loading</message>
+  <message id="lrm-tile-load-dialog-content">
+    Map tiles could not be loaded from arcgis.com. This may be caused by:
+    <ul>
+      <li>No internet connection</li>
+      <li>A corporate proxy or firewall blocking access to arcgis.com</li>
+      <li>An invalid or expired API key</li>
+    </ul>
+    <p>If you are behind a proxy, you may need to configure proxy settings.
+    See the file <em>data/config/example_InterSpec_app_settings.json</em> for
+    the <b>ProxySetting</b> option; usually a value of <b>system</b> will work.</p>
+    <p>The measurement markers will still display, but the map background will be blank.</p>
+  </message>
 </messages>

@@ -500,8 +500,6 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   if( app )
     app->useMessageResourceBundle( "RelActAutoGui" );
     
-  new UndoRedoManager::BlockGuiUndoRedo( this );
-    
   wApp->useStyleSheet( "InterSpec_resources/RelActAutoGui.css" );
   wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
   
@@ -1094,6 +1092,60 @@ RelActAutoGui::~RelActAutoGui()
 }//~RelActAutoGui();
 
 
+void RelActAutoGui::addUndoRedoStep()
+{
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( !undoRedo || !undoRedo->canAddUndoRedoNow() )
+    return;
+
+  shared_ptr<RelActCalcAuto::RelActAutoGuiState> current_state = make_shared<RelActCalcAuto::RelActAutoGuiState>();
+  try
+  {
+    serialize( *current_state );
+  }catch( std::exception &e )
+  {
+    cerr << "RelActAutoGui unexpectedly caught exception rendering to undo/redo state: " << e.what() << endl;
+    return;
+  }
+  
+  if( !m_currentGuiState )
+  {
+    // This is the first render - dont add undo/redo
+    m_currentGuiState = current_state;
+    return;
+  }
+  
+  if( *current_state == *m_currentGuiState )
+    return;
+
+  const shared_ptr<const RelActCalcAuto::RelActAutoGuiState> prev_state = m_currentGuiState;
+
+  auto undo = [prev_state](){
+    InterSpec *viewer = InterSpec::instance();
+    RelActAutoGui *gui = viewer ? viewer->relActAutoWindow( true ) : nullptr;
+    if( gui && prev_state )
+    {
+      gui->deSerialize( *prev_state );
+      gui->m_render_flags.clear( RenderActions::AddUndoRedoStep );
+    }
+  };
+
+  auto redo = [current_state](){
+    InterSpec *viewer = InterSpec::instance();
+    RelActAutoGui *gui = viewer ? viewer->relActAutoWindow( true ) : nullptr;
+    if( gui && current_state )
+    {
+      gui->deSerialize( *current_state );
+      gui->m_render_flags.clear( RenderActions::AddUndoRedoStep );
+    }
+  };
+  
+  undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "RelActAutoGui gui change." );
+  
+  m_currentGuiState = current_state;
+}//void addUndoRedoStep(...)
+
+
 void RelActAutoGui::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
   if( m_render_flags.testFlag(RenderActions::UpdateSpectra) )
@@ -1147,10 +1199,14 @@ void RelActAutoGui::render( Wt::WFlags<Wt::RenderFlag> flags )
   {
     startUpdatingCalculation();
   }
-  
+
+  // Capture current GUI state and add undo/redo step if flagged
+  if( m_render_flags.testFlag( RenderActions::AddUndoRedoStep ) )
+    addUndoRedoStep();
+
   m_render_flags = 0;
   m_loading_preset = false;
-  
+
   WContainerWidget::render( flags );
 }//void render( Wt::WFlags<Wt::RenderFlag> flags )
 
@@ -1860,6 +1916,7 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
     checkIfInUserConfigOrCreateOne( false );
     m_render_flags |= RenderActions::UpdateEnergyRanges;
     m_render_flags |= RenderActions::UpdateCalculations;
+    m_render_flags |= RenderActions::AddUndoRedoStep;
     scheduleRender();
   }catch( std::exception &e )
   {
@@ -2296,8 +2353,9 @@ Wt::WWidget *RelActAutoGui::handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateEnergyRanges;
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
-  
+
   return left_range;
 }//void handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget *right_roi );
 
@@ -2315,6 +2373,15 @@ void RelActAutoGui::serialize( RelActCalcAuto::RelActAutoGuiState &state ) const
 
 void RelActAutoGui::deSerialize( const RelActCalcAuto::RelActAutoGuiState &state )
 {
+  // m_currentGuiState is only set after the first render(), so if it is set,
+  //  we are in active use - and AddUndoRedoStep should not be set during undo/redo execution.
+  //  During initial load (e.g., loadStateFromDb), m_currentGuiState is null, and flags may be set.
+  assert( !m_currentGuiState || !m_render_flags.testFlag( RenderActions::AddUndoRedoStep ) );
+
+  // Cancel any in-progress calculation so its results dont overwrite the state we are about to restore.
+  if( m_cancel_calc )
+    m_cancel_calc->store( true );
+
   const WString user_note = WString::fromUTF8(state.note);
   m_user_note->setText( user_note );
   m_user_note->setToolTip( user_note );
@@ -2418,8 +2485,9 @@ void RelActAutoGui::handlePresetChange()
   m_render_flags |= RenderActions::UpdateEnergyRanges;
   m_render_flags |= RenderActions::UpdateCalculations;
   m_render_flags |= RenderActions::ChartToDefaultRange;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
-  
+
   if( m_current_preset_index >= static_cast<int>(m_preset_paths.size()) )
     m_previous_presets[m_current_preset_index] = guiStateToXml();
   
@@ -2560,6 +2628,7 @@ void RelActAutoGui::handleRelEffEqnTypeChanged( RelActAutoGuiRelEffOptions *rel_
   
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleRelEffEqnTypeChanged();
 
@@ -2592,6 +2661,7 @@ void RelActAutoGui::handleSameHoerlOnAllCurvesChanged( RelActAutoGuiRelEffOption
   
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleSameHoerlOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
 
@@ -2628,6 +2698,7 @@ void RelActAutoGui::handleSameExtShieldingOnAllCurvesChanged( RelActAutoGuiRelEf
   
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleSameExtShieldingOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
 
@@ -2658,6 +2729,7 @@ void RelActAutoGui::handleShieldedByOtherCurvesChanged( RelActAutoGuiRelEffOptio
 
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleShieldedByOtherCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
 
@@ -2666,6 +2738,7 @@ void RelActAutoGui::handleRelEffEqnOrderChanged()
 {
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleRelEffEqnOrderChanged();
 
@@ -2674,6 +2747,7 @@ void RelActAutoGui::handleFwhmFormChanged()
 {
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleFwhmFormChanged()
 
@@ -2759,6 +2833,7 @@ void RelActAutoGui::handleFwhmEstimationMethodChanged()
   
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleFwhmEstimationMethodChanged()
 
@@ -2768,6 +2843,7 @@ void RelActAutoGui::handleFitEnergyCalChanged()
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateFitEnergyCal;
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleFitEnergyCalChanged();
 
@@ -2775,6 +2851,8 @@ void RelActAutoGui::handleFitEnergyCalChanged()
 void RelActAutoGui::handleUserNoteChanged()
 {
   checkIfInUserConfigOrCreateOne( false );
+  m_render_flags |= RenderActions::AddUndoRedoStep;
+  scheduleRender();
 }
 
 
@@ -2787,6 +2865,7 @@ void RelActAutoGui::handleBackgroundSubtractChanged()
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
   m_render_flags |= RenderActions::UpdateShowHideBack;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }
 
@@ -2796,6 +2875,7 @@ void RelActAutoGui::handleSameAgeChanged()
   DoWorkOnDestruct do_work( [&](){
     checkIfInUserConfigOrCreateOne( false );
     m_render_flags |= RenderActions::UpdateCalculations;
+    m_render_flags |= RenderActions::AddUndoRedoStep;
     scheduleRender();
   } );
 
@@ -2866,6 +2946,7 @@ void RelActAutoGui::handlePuByCorrelationChanged()
 {
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }
 
@@ -2873,6 +2954,7 @@ void RelActAutoGui::handleSkewTypeChanged()
 {
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }
 
@@ -2959,6 +3041,7 @@ void RelActAutoGui::handleLorentzianXraysChanged()
   populateSkewTypeComboBox( lorentzian_checked );
 
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void RelActAutoGui::handleLorentzianXraysChanged()
 
@@ -3139,6 +3222,7 @@ void RelActAutoGui::handleNucDataSrcChanged()
 {
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleNucDataSrcChanged()
 
@@ -3163,6 +3247,7 @@ void RelActAutoGui::handleNuclidesChanged()
   m_render_flags |= RenderActions::UpdateNuclidesPresent;
   m_render_flags |= RenderActions::UpdateCalculations;
   m_render_flags |= RenderActions::UpdateRefGammaLines;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
 
   scheduleRender();
 }//void handleNuclidesChanged()
@@ -3174,6 +3259,7 @@ void RelActAutoGui::handleNuclideFitAgeChanged( RelActAutoGuiNuclide *nuc, bool 
     checkIfInUserConfigOrCreateOne( false );
     m_render_flags |= RenderActions::UpdateCalculations;
     m_render_flags |= RenderActions::UpdateRefGammaLines;
+    m_render_flags |= RenderActions::AddUndoRedoStep;
     scheduleRender();
   } );
     
@@ -3214,6 +3300,7 @@ void RelActAutoGui::handleNuclideAgeChanged( RelActAutoGuiNuclide *nuc )
     checkIfInUserConfigOrCreateOne( false );
     m_render_flags |= RenderActions::UpdateCalculations;
     m_render_flags |= RenderActions::UpdateRefGammaLines;
+    m_render_flags |= RenderActions::AddUndoRedoStep;
     scheduleRender();
   } );
 
@@ -3334,7 +3421,8 @@ void RelActAutoGui::handleEnergyRangeChange()
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateEnergyRanges;
   m_render_flags |= RenderActions::UpdateCalculations;
-  
+  m_render_flags |= RenderActions::AddUndoRedoStep;
+
   scheduleRender();
 }//void handleEnergyRangeChange()
 
@@ -3344,6 +3432,7 @@ void RelActAutoGui::handleFreePeakChange()
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateFreePeaks;
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleFreePeakChange()
 
@@ -3352,6 +3441,7 @@ void RelActAutoGui::handleAdditionalUncertChanged()
 {
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleAdditionalUncertChanged()
 
@@ -3507,11 +3597,12 @@ void RelActAutoGui::handleAddNuclideForCurrentRelEffCurve()
     return;
   
   checkIfInUserConfigOrCreateOne( false );
-  
+  m_render_flags |= RenderActions::AddUndoRedoStep;
+  scheduleRender();
+
   // If we just added a blank source widget - no need to trigger a calc update
   //m_render_flags |= RenderActions::UpdateNuclidesPresent;
   //m_render_flags |= RenderActions::UpdateCalculations;
-  //scheduleRender();
 }//void handleAddNuclideForCurrentRelEffCurve()
 
 
@@ -3539,6 +3630,7 @@ void RelActAutoGui::handleAddEnergy()
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateEnergyRanges;
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleAddEnergy()
 
@@ -3589,6 +3681,7 @@ void RelActAutoGui::removeAllEnergyRanges()
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateEnergyRanges;
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void removeAllEnergyRanges()
 
@@ -3612,6 +3705,7 @@ void RelActAutoGui::handleHideFreePeaks()
     checkIfInUserConfigOrCreateOne( false );
     m_render_flags |= RenderActions::UpdateCalculations;
     m_render_flags |= RenderActions::UpdateFreePeaks;
+    m_render_flags |= RenderActions::AddUndoRedoStep;
     scheduleRender();
   }
 }//void handleHideFreePeaks()
@@ -3638,6 +3732,7 @@ void RelActAutoGui::handleRemoveFreePeak( Wt::WWidget *w )
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateEnergyRanges;
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleRemoveFreePeak( Wt::WWidget *w )
 
@@ -3663,6 +3758,7 @@ void RelActAutoGui::handleRemoveEnergy( WWidget *w )
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateEnergyRanges;
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleRemoveEnergy( Wt::WContainerWidget *w )
 
@@ -3777,6 +3873,7 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
     checkIfInUserConfigOrCreateOne( false );
     m_render_flags |= RenderActions::UpdateEnergyRanges;
     m_render_flags |= RenderActions::UpdateCalculations;
+    m_render_flags |= RenderActions::AddUndoRedoStep;
     scheduleRender();
   };//on_yes lamda
   
@@ -3799,6 +3896,7 @@ void RelActAutoGui::handleAddFreePeak( const double energy, const bool constrain
   
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= UpdateFreePeaks;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleAddFreePeak( const double energy, const bool constrain_fwhm )
 
@@ -3959,6 +4057,7 @@ void RelActAutoGui::handleRemoveNuclide( Wt::WWidget *w )
   m_render_flags |= RenderActions::UpdateNuclidesPresent;
   m_render_flags |= RenderActions::UpdateCalculations;
   m_render_flags |= RenderActions::UpdateRefGammaLines;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
 
   scheduleRender();
 }//void handleRemoveNuclide( Wt::WWidget *w )
@@ -4142,6 +4241,7 @@ void RelActAutoGui::handleShowRefLines( const bool show )
   m_hide_ref_lines_item->setDisabled( !show );
   
   m_render_flags |= RenderActions::UpdateRefGammaLines;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void RelActAutoGui::handleShowRefLines()
 
@@ -4173,6 +4273,7 @@ void RelActAutoGui::handleShowBackground( const bool show )
   if( can_show )
   {
     m_render_flags |= RenderActions::UpdateShowHideBack;
+    m_render_flags |= RenderActions::AddUndoRedoStep;
     scheduleRender();
   }
 }//void handleShowBackground( const bool show )
@@ -4437,6 +4538,7 @@ void RelActAutoGui::handleRelEffModelOptionsChanged( RelActAutoGuiRelEffOptions 
   
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleRelEffModelOptionsChanged()
 
@@ -4543,6 +4645,7 @@ void RelActAutoGui::handleAddRelEffCurve()
 
   m_render_flags |= RenderActions::UpdateCalculations;
   m_render_flags |= RenderActions::UpdateRefGammaLines;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
 
   scheduleRender();
 }//void handleAddRelEffCurve( RelActAutoGuiRelEffOptions *curve )
@@ -4623,6 +4726,7 @@ void RelActAutoGui::handleDelRelEffCurve( RelActAutoGuiRelEffOptions *curve )
   
   m_render_flags |= RenderActions::UpdateCalculations;
   m_render_flags |= RenderActions::UpdateRefGammaLines;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
 
   scheduleRender();
 }//void handleDelRelEffCurve( RelActAutoGuiRelEffOptions *curve )
@@ -4663,6 +4767,7 @@ void RelActAutoGui::handleRelEffCurveNameChanged( RelActAutoGuiRelEffOptions *cu
     nuc_changed_item->setText( name );
 
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleRelEffCurveNameChanged( RelActAutoGuiRelEffOptions *curve, const Wt::WString &name )
 
@@ -5164,6 +5269,8 @@ void RelActAutoGui::updateDuringRenderForNuclideChange()
 
 void RelActAutoGui::updateDuringRenderForRefGammaLineChange()
 {
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+  
   // Determine if we should show/hide the reference lines.
   const bool show_ref_lines = m_hide_ref_lines_item->isEnabled();
   vector<RelActCalcAuto::NucInputInfo> nuclides;
@@ -5506,6 +5613,11 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   assert( answer );
   if( !answer )
     return;
+
+  // Block undo/redo inserts while updating the GUI from computation results.
+  //  Updating widgets (e.g., nuclide ages, shielding values) can trigger signal handlers
+  //  that would otherwise create spurious undo steps.
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
   
   // If we started a new calculation between when this one was started, and right now, dont
   //  do anything to the GUI state.

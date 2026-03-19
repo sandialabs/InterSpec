@@ -186,6 +186,9 @@ struct RoiRange
   void toXml( ::rapidxml::xml_node<char> *parent ) const;
   void fromXml( const ::rapidxml::xml_node<char> *parent );
 
+  bool operator==( const RoiRange &rhs ) const;
+  bool operator!=( const RoiRange &rhs ) const;
+
 #if( PERFORM_DEVELOPER_CHECKS )
   static void equalEnough( const RoiRange &lhs, const RoiRange &rhs );
 #endif
@@ -312,6 +315,9 @@ struct FloatingPeak
   static const int sm_xmlSerializationVersion = 0;
   void toXml( ::rapidxml::xml_node<char> *parent ) const;
   void fromXml( const ::rapidxml::xml_node<char> *parent );
+
+  bool operator==( const FloatingPeak &rhs ) const;
+  bool operator!=( const FloatingPeak &rhs ) const;
 
 #if( PERFORM_DEVELOPER_CHECKS )
   static void equalEnough( const FloatingPeak &lhs, const FloatingPeak &rhs );
@@ -587,6 +593,9 @@ struct RelEffCurveInput
   void toXml( ::rapidxml::xml_node<char> *parent ) const;
   void fromXml( const ::rapidxml::xml_node<char> *constraint_node );
 
+  bool operator==( const ActRatioConstraint &rhs ) const;
+  bool operator!=( const ActRatioConstraint &rhs ) const;
+
 #if( PERFORM_DEVELOPER_CHECKS )
   static void equalEnough( const ActRatioConstraint &lhs, const ActRatioConstraint &rhs );
 #endif
@@ -620,6 +629,9 @@ struct RelEffCurveInput
     static const int sm_xmlSerializationVersion = 0;
     void toXml( ::rapidxml::xml_node<char> *parent ) const;
     void fromXml( const ::rapidxml::xml_node<char> *parent );
+
+  bool operator==( const MassFractionConstraint &rhs ) const;
+  bool operator!=( const MassFractionConstraint &rhs ) const;
 
 #if( PERFORM_DEVELOPER_CHECKS )
   static void equalEnough( const MassFractionConstraint &lhs, const MassFractionConstraint &rhs );
@@ -664,6 +676,9 @@ struct RelEffCurveInput
    */
   rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const;
   void fromXml( const ::rapidxml::xml_node<char> *parent );
+
+  bool operator==( const RelEffCurveInput &rhs ) const;
+  bool operator!=( const RelEffCurveInput &rhs ) const;
 
 #if( PERFORM_DEVELOPER_CHECKS )
   static void equalEnough( const RelEffCurveInput &lhs, const RelEffCurveInput &rhs );
@@ -796,6 +811,9 @@ struct Options
    */
   void fromXml( const ::rapidxml::xml_node<char> *parent );
 
+  bool operator==( const Options &rhs ) const;
+  bool operator!=( const Options &rhs ) const;
+
 #if( PERFORM_DEVELOPER_CHECKS )
   static void equalEnough( const Options &lhs, const Options &rhs );
 #endif
@@ -856,6 +874,9 @@ struct RelActAutoGuiState
   /** Returns XML node added; i.e., will have name "RelActCalcAuto" */
   ::rapidxml::xml_node<char> *serialize( ::rapidxml::xml_node<char> *parent ) const;
   void deSerialize( const rapidxml::xml_node<char> *base_node );
+
+  bool operator==( const RelActAutoGuiState &rhs ) const;
+  bool operator!=( const RelActAutoGuiState &rhs ) const;
 
 #if( PERFORM_DEVELOPER_CHECKS )
   static void equalEnough( const RelActAutoGuiState &lhs, const RelActAutoGuiState &rhs );

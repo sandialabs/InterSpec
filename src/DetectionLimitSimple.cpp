@@ -1802,7 +1802,7 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
     
     if( distance >= 0.0 )
     {
-      const double geom_eff = drf->fractionalSolidAngle( drf->detectorDiameter(), distance );
+      const double geom_eff = drf->fractionalSolidAngle( drf->detectorDiameter(), distance + drf->detectorSetback() );
       
       label = WString::tr("dls-solid-angle-frac");
       value = SpecUtils::printCompact( geom_eff, 5 );
