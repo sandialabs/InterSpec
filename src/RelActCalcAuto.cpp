@@ -5029,20 +5029,24 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const double cluster_num_sigma = 1.5;
       cost_functor->m_peak_ranges_with_uncert = cost_functor->cluster_photopeaks( cluster_num_sigma, parameters );
       
-      const size_t num_pars = parameters.size() + cost_functor->m_peak_ranges_with_uncert.size();
-      parameters.resize( num_pars, sm_peak_range_uncert_offset );
-      pars = &parameters[0];
-                
-      const double val_with_zero_yield = sm_peak_range_uncert_offset - sm_peak_range_uncert_par_scale/options.additional_br_uncert;
+      // Only set up the additional BR uncertainty parameters if we actually have peak ranges
+      if( !cost_functor->m_peak_ranges_with_uncert.empty() )
+      {
+        const size_t num_pars = parameters.size() + cost_functor->m_peak_ranges_with_uncert.size();
+        parameters.resize( num_pars, sm_peak_range_uncert_offset );
+        pars = &parameters[0];
+                  
+        const double val_with_zero_yield = sm_peak_range_uncert_offset - sm_peak_range_uncert_par_scale/options.additional_br_uncert;
 
-      lower_bounds.resize( num_pars, optional<double>(val_with_zero_yield) );
-      upper_bounds.resize( num_pars );
-      
-      const size_t num_skew_coefs = PeakDef::num_skew_parameters( options.skew_type );
-      cost_functor->m_add_br_uncert_start_index = cost_functor->m_skew_par_start_index + 2*num_skew_coefs;
-      
-      assert( num_pars == cost_functor->number_parameters() );
-      assert( num_pars == (cost_functor->m_add_br_uncert_start_index + cost_functor->m_peak_ranges_with_uncert.size()) );
+        lower_bounds.resize( num_pars, optional<double>(val_with_zero_yield) );
+        upper_bounds.resize( num_pars );
+        
+        const size_t num_skew_coefs = PeakDef::num_skew_parameters( options.skew_type );
+        cost_functor->m_add_br_uncert_start_index = cost_functor->m_skew_par_start_index + 2*num_skew_coefs;
+        
+        assert( num_pars == cost_functor->number_parameters() );
+        assert( num_pars == (cost_functor->m_add_br_uncert_start_index + cost_functor->m_peak_ranges_with_uncert.size()) );
+      }//if( !cost_functor->m_peak_ranges_with_uncert.empty() )
     }//if( options.additional_br_uncert > 0.0 )
     
     const size_t num_pars = cost_functor->number_parameters();
