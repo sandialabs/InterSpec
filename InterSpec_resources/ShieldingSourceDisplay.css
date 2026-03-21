@@ -1,6 +1,20 @@
 .ShieldingSourceDisplay
 {
-  
+
+}
+
+/* Override SimpleDialog max-width for the background peak preview dialog */
+.simple-dialog.BackPeakPreviewDialog
+{
+  max-width: 85vw;
+  max-height: 95vh;
+}
+
+.simple-dialog.BackPeakPreviewDialog .body
+{
+  max-width: calc( 85vw - 30px );
+  max-height: calc( 95vh - 90px );
+  overflow: hidden;
 }
 
 

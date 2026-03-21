@@ -2008,7 +2008,7 @@ SpectrumViewerTester::Score SpectrumViewerTester::testShieldSourceFit()
     shared_ptr<ShieldingSourceFitCalc::ModelFitResults> result = disp->doModelFit( false );
     
     // Uhg, sometimes users have to hit  a couple times right now - this should be fixed
-    result = disp->doModelFit( false );
+    result = disp->doModelFit( false, false );
     
     note.m_testImage = make_shared<Wt::WSvgImage>(m_picWidth, m_picHeight);
     // TODO: 20251110 The Wt-based Chi2 chart was replaced by `ShieldingSourceFitPlot` - so should update to that...
