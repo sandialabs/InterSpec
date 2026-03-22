@@ -201,7 +201,7 @@ struct PeakFitForNuclideConfig
   double auto_rel_eff_sol_max_fwhm = 12.0;  // Tighter constraint as solution improves
   double auto_rel_eff_min_tail_contribution = 0.0004;  // Min Gaussian tail fraction to allow merge
   double auto_rel_eff_tail_width_scale_fwhm = 5.0;    // Width (FWHM) at which tail threshold doubles
-  double auto_rel_eff_sol_min_fwhm_roi = 1.0;
+  double auto_rel_eff_sol_min_fwhm_roi = 1.25;
   double auto_rel_eff_sol_min_fwhm_quad_cont = 8.0;
 
 
@@ -323,17 +323,28 @@ private:
 
 /** Options for fitting the peaks of nuclides.
 
- Default behavior (no flags set):
- - Existing ROIs containing only other-source peaks are trimmed to avoid overlap with new fit ROIs.
- - Existing ROIs containing both same-source and other-source peaks (mixed ROIs) use the existing
-   ROI bounds; other-source peaks are included as bystander floating peaks in the combined fit.
+ By default, when No FitSrcPeaksOptions are specified:
+ - Existing ROIs containing only other-source peaks will not have peaks of the source(s) being fit added to them; if the photopeak of the source(s) being fit are inside an existing ROI, that photopeak will be ignored. If a photopeak is adjacent to an existing ROI, the existing ROI will not be modified, but the added ROI may slightly overlap (although it will be tried to make it not overlap - but if PeakFitForNuclideConfig::auto_rel_eff_sol_min_fwhm_roi dictates it must, then it will), but will not extend any closer than `0.5*PeakFitForNuclideConfig::auto_rel_eff_sol_min_fwhm_roi` to any peak mean in the existing ROI (e.g., new ROI wont cover the mean of any peak in the existing ROI).
+ - If a peak/ROI for a source being fit (and only contains peaks for the source(s) being fit) is already present in the data, then these ROIs will be re-fit; their energy range and/or peak properties may become different.  If the fit to the source(s) determines that the ROI should not be present (i.e., it doesnt think the peak(s) are significant) then the original ROI will remain unaltered.
+ - Existing ROIs containing both a source being fit, as well as other-source peaks (mixed ROIs) use the existing ROI bounds; other-source peaks are included as bystander floating peaks in the combined fit.  These bystander peaks will be included in the results (with the original bystander peak being in the collection of peaks that should be removed before adding the result peaks), and have the same sources associated with them.  It is possible the bystander peak will become insignificant in the fit, so it may just be in the collection of peaks to remove without a replacement, but the ROI will maintain the original bounds (even if the bystander peak disappears).
+ - ROIs added for the sources being fit, will not overlap with each other - they will have at least one channel between them.
  - All peaks sharing a PeakContinuum with a removed peak are also removed and replaced together.
+ 
+ When the DoNotUseExistingRois option is specified:
+ - Any existing ROI will not be used, and any gammas from the current source(s) that fall within the ROI will not be considered, even if that ROI has a peak with a source being fitted (i.e., existing peaks/ROIs of the sources being fit will not be altered in any way).  Existing ROIs will not be combined with new ROIS. Like default, a new ROI may slightly overlap with an existing ROI, but not any closer than `0.5*PeakFitForNuclideConfig::auto_rel_eff_sol_min_fwhm_roi` to any peak mean in the existing ROI.
+ 
+ When the ExistingPeaksAsFreePeak option is specified:
+ - Potential peaks for the sources being fit, that are adjacent to, or within an existing ROI may be combined with the existing ROI (potentially, and likely altering its energy extent); the existing peaks will be treated as freely-floating peaks, and included in the results (and the set of peaks to delete).  If a new peak for a source being fit is not added to (or combined with) an existing ROI, the existing ROI will not be altered (either its energy range, or the peaks in it).
+ 
+ DoNotUseExistingRois can not be used in combination with ExistingPeaksAsFreePeak.
  */
 enum FitSrcPeaksOptions
 {
   /** With this option, any existing ROI will not be used, and any gammas from the current source(s)
    that fall within the ROI will not be considered.  Without this option the peaks you have already
    fit, for the sources you are currently trying to fit peaks of, will be replaced.
+   
+   TODO: we should probably rename DoNotUseExistingRois to DoNotUseExistingRoisOfSourcesBeingFit
    */
   DoNotUseExistingRois = 0x01,
 

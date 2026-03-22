@@ -7106,12 +7106,75 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             //  source peak(s) in this ROI absorbed all the counts.  The two gammas are too
             //  close to resolve.  Remove the original bystander to prevent overlapping ROIs,
             //  but don't add a zero-amplitude replacement.
+            //
+            // Also extend the observable ROI into the space freed by the removed bystander,
+            //  so the source peak has adequate continuum extent on both sides.
 #if( PERFORM_DEVELOPER_CHECKS )
             std::cerr << "ExistingPeaksAsFreePeak: bystander at " << orig_energy
                  << " keV has non-positive amplitude (" << fpr->amplitude
                  << ") — removing original to prevent ROI overlap." << std::endl;
 #endif
             result.original_peaks_to_remove.push_back( orig_peak );
+
+            // Extend the observable ROI that contained this bystander to cover at least
+            //  the configured FWHM extent from its edge peaks, using the space freed by
+            //  the removed bystander's ROI.
+            if( roi_continuum )
+            {
+              const double bystander_roi_lower = orig_peak->lowerX();
+              const double bystander_roi_upper = orig_peak->upperX();
+
+              // Find the outermost peaks in the observable ROI to determine desired extent
+              double leftmost_mean = std::numeric_limits<double>::max();
+              double leftmost_fwhm = 1.0;
+              double rightmost_mean = -std::numeric_limits<double>::max();
+              double rightmost_fwhm = 1.0;
+
+              for( const PeakDef &obs : result.observable_peaks )
+              {
+                if( obs.continuum() != roi_continuum )
+                  continue;
+                if( obs.mean() < leftmost_mean )
+                {
+                  leftmost_mean = obs.mean();
+                  leftmost_fwhm = obs.fwhm();
+                }
+                if( obs.mean() > rightmost_mean )
+                {
+                  rightmost_mean = obs.mean();
+                  rightmost_fwhm = obs.fwhm();
+                }
+              }//for( obs in observable_peaks )
+
+              if( leftmost_mean < std::numeric_limits<double>::max() )
+              {
+                const double desired_lower = leftmost_mean
+                  - config.auto_rel_eff_roi_width_num_fwhm_lower * leftmost_fwhm;
+                const double desired_upper = rightmost_mean
+                  + config.auto_rel_eff_roi_width_num_fwhm_upper * rightmost_fwhm;
+
+                double new_lower = roi_continuum->lowerEnergy();
+                double new_upper = roi_continuum->upperEnergy();
+                bool changed = false;
+
+                // Extend into space freed by the removed bystander's ROI, capping at
+                //  the bystander ROI boundary as the maximum extension.
+                if( desired_lower < new_lower )
+                {
+                  new_lower = std::max( desired_lower, bystander_roi_lower );
+                  changed = (new_lower < roi_continuum->lowerEnergy());
+                }
+                if( desired_upper > new_upper )
+                {
+                  new_upper = std::min( desired_upper, bystander_roi_upper );
+                  changed = changed || (new_upper > roi_continuum->upperEnergy());
+                }
+
+                if( changed )
+                  roi_continuum->setRange( new_lower, new_upper );
+              }
+            }//if( roi_continuum )
+
             continue;
           }
 
@@ -7207,6 +7270,105 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 
           result.observable_peaks.erase( new_end, result.observable_peaks.end() );
         }//if( !bystander_fp_energies.empty() )
+      }
+
+      // Post-fit: trim observable peaks' ROI bounds to avoid overlapping existing ROIs that
+      //  were NOT removed/replaced by the bystander mechanism.  This handles orphaned bystanders
+      //  (initially found inside candidate ROIs, but the solver narrowed the ROI so they fell
+      //  outside) and ensures existing analysis peaks are left untouched when no new source peak
+      //  was effectively added to their ROI.
+      {
+        std::set<const PeakContinuum *> removed_continuums;
+        for( const std::shared_ptr<const PeakDef> &peak : result.original_peaks_to_remove )
+          removed_continuums.insert( peak->continuum().get() );
+
+        std::vector<std::pair<double,double>> active_existing_rois;
+        {
+          std::set<const PeakContinuum *> seen;
+          for( const std::shared_ptr<const PeakDef> &peak : user_peaks )
+          {
+            if( !peak || removed_continuums.count( peak->continuum().get() ) )
+              continue;
+            if( seen.insert( peak->continuum().get() ).second )
+              active_existing_rois.emplace_back( peak->lowerX(), peak->upperX() );
+          }
+        }
+
+        if( !active_existing_rois.empty() )
+        {
+          // No buffer for post-fit trimming: the peaks are already fit and we know
+          //  exactly where they are.  A buffer could push the ROI edge past a peak mean.
+          const double buffer_kev = 0.0;
+          std::set<PeakContinuum *> adjusted;
+
+          for( PeakDef &obs_peak : result.observable_peaks )
+          {
+            std::shared_ptr<PeakContinuum> cont = obs_peak.continuum();
+            if( !cont || !adjusted.insert( cont.get() ).second )
+              continue;
+
+            double lower = cont->lowerEnergy();
+            double upper = cont->upperEnergy();
+            bool changed = false;
+
+            for( const std::pair<double,double> &existing : active_existing_rois )
+            {
+              if( !((lower < existing.second) && (upper > existing.first)) )
+                continue;
+
+              const bool lower_inside = (lower >= existing.first) && (lower < existing.second);
+              const bool upper_inside = (upper > existing.first) && (upper <= existing.second);
+
+              if( lower_inside && upper_inside )
+              {
+                // Observable ROI fully inside an existing ROI - remove
+                lower = -1.0;
+                break;
+              }
+              else if( lower_inside )
+              {
+                lower = existing.second + buffer_kev;
+                changed = true;
+              }
+              else if( upper_inside )
+              {
+                upper = existing.first - buffer_kev;
+                changed = true;
+              }
+              else // observable contains existing - keep larger side
+              {
+                const double left_w = existing.first - lower;
+                const double right_w = upper - existing.second;
+                if( left_w > right_w )
+                  upper = existing.first - buffer_kev;
+                else
+                  lower = existing.second + buffer_kev;
+                changed = true;
+              }
+            }//for( active_existing_rois )
+
+            if( lower < 0.0 )
+            {
+              cont->setRange( -1.0, -1.0 );  // Mark for removal
+            }
+            else if( changed && (lower < upper) )
+            {
+              cont->setRange( lower, upper );
+            }
+          }//for( observable_peaks )
+
+          // Remove observable peaks whose ROI was invalidated or whose mean fell outside
+          result.observable_peaks.erase(
+            std::remove_if( result.observable_peaks.begin(), result.observable_peaks.end(),
+              []( const PeakDef &p ) -> bool {
+                if( !p.continuum() || (p.continuum()->lowerEnergy() < 0.0) )
+                  return true;
+                return (p.mean() < p.continuum()->lowerEnergy())
+                    || (p.mean() > p.continuum()->upperEnergy());
+              } ),
+            result.observable_peaks.end()
+          );
+        }//if( !active_existing_rois.empty() )
       }
     }// if( existing_peaks_as_free ... )
 
