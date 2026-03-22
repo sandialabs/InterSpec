@@ -1401,6 +1401,66 @@ void resolve_overlapping_rois( std::vector<RelActCalcAuto::RoiRange> &rois,
 }//resolve_overlapping_rois(...)
 
 
+/** Ensure at least one channel gap between consecutive ROIs.
+
+ After resolving overlaps, adjacent ROIs may abut exactly (upper_energy of one equals
+ lower_energy of the next), sharing the same channel boundary.  This function ensures
+ at least one channel separates consecutive ROIs by adjusting their boundaries.
+
+ ROIs must be sorted by lower_energy before calling this function.
+ */
+void ensure_min_channel_gap( std::vector<RelActCalcAuto::RoiRange> &rois,
+                             const std::shared_ptr<const SpecUtils::EnergyCalibration> &energy_cal )
+{
+  if( !energy_cal || !energy_cal->valid() || (rois.size() < 2) )
+    return;
+
+  for( size_t i = 1; i < rois.size(); ++i )
+  {
+    const size_t prev_upper_ch = energy_cal->channel_for_energy( rois[i - 1].upper_energy );
+    const size_t curr_lower_ch = energy_cal->channel_for_energy( rois[i].lower_energy );
+
+    if( curr_lower_ch <= prev_upper_ch )
+    {
+      // Abutting or overlapping in channel space - create a 1-channel gap
+      // Split at the midpoint energy, assigning mid_ch to prev and mid_ch+1 to current
+      const size_t mid_ch = (prev_upper_ch + curr_lower_ch) / 2;
+      const size_t num_channels = energy_cal->num_channels();
+
+      if( (mid_ch + 1) < num_channels )
+      {
+        rois[i - 1].upper_energy = energy_cal->energy_for_channel( mid_ch );
+        rois[i].lower_energy = energy_cal->energy_for_channel( mid_ch + 1 );
+      }
+    }
+  }//for( size_t i = 1; i < rois.size(); ++i )
+}//ensure_min_channel_gap(...)
+
+
+/** Remove any floating peaks that are not covered by any ROI.
+
+ This is called before each RelActCalcAuto::solve() invocation to guard against
+ orphaned floating peaks inherited from a previous solution's options (e.g. when
+ the iterative refinement loop replaces ROIs with re-clustered ones that no longer
+ cover an earlier floating peak).  The solver throws if a floating peak has no
+ covering ROI, so we clean up proactively here rather than duplicating the logic
+ in every add_* helper.
+ */
+void remove_floating_peaks_without_roi( RelActCalcAuto::Options &options )
+{
+  auto &fps = options.floating_peaks;
+  fps.erase( std::remove_if( begin(fps), end(fps),
+    [&]( const RelActCalcAuto::FloatingPeak &fp ) -> bool {
+      for( const RelActCalcAuto::RoiRange &roi : options.rois )
+      {
+        if( (fp.energy >= roi.lower_energy) && (fp.energy <= roi.upper_energy) )
+          return false;
+      }
+      return true;  // no ROI covers this floating peak – remove it
+    } ), end(fps) );
+}//remove_floating_peaks_without_roi(...)
+
+
 /** Assign escape peak relationships for high-energy gamma lines if appropriate.
  
  This function checks if fit peaks contain escape peaks that were added as floating peaks,
@@ -5463,9 +5523,17 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 
 
   // Build existing ROI ranges at function scope so the refinement loop can also filter against them.
-  // Each entry is {lowerEnergy, upperEnergy} of a unique ROI from user_peaks.
+  // Each entry stores the ROI bounds plus the peak means within each ROI, so that the
+  // trimming logic can enforce FWHM-based margins from existing peak means.
   // Populated in both DoNotUseExistingRois mode (all user ROIs) and default mode (other-source ROIs only).
-  vector<pair<double,double>> existing_roi_ranges;
+  struct ExistingRoiInfo
+  {
+    double lower_energy;
+    double upper_energy;
+    vector<double> peak_means;
+  };
+
+  vector<ExistingRoiInfo> existing_roi_ranges;
 
   // In default mode, tracks bystander peaks from mixed ROIs (existing ROIs containing both
   // same-source and other-source peaks). After the fit, these bystanders are updated with
@@ -5477,12 +5545,24 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     if( do_not_use_existing_rois )
     {
       // DoNotUseExistingRois mode: all user peak ROIs are excluded from the fit
-      set<const PeakContinuum *> seen_continuums;
+      map<const PeakContinuum *, size_t> continuum_to_index;
       for( const std::shared_ptr<const PeakDef> &peak : user_peaks )
       {
-        const pair<set<const PeakContinuum *>::iterator,bool> pos = seen_continuums.insert( peak->continuum().get() );
-        if( pos.second )
-          existing_roi_ranges.emplace_back( peak->lowerX(), peak->upperX() );
+        const PeakContinuum * const cont = peak->continuum().get();
+        const map<const PeakContinuum *, size_t>::const_iterator it = continuum_to_index.find( cont );
+        if( it == continuum_to_index.end() )
+        {
+          continuum_to_index[cont] = existing_roi_ranges.size();
+          ExistingRoiInfo info;
+          info.lower_energy = peak->lowerX();
+          info.upper_energy = peak->upperX();
+          info.peak_means.push_back( peak->mean() );
+          existing_roi_ranges.push_back( info );
+        }
+        else
+        {
+          existing_roi_ranges[it->second].peak_means.push_back( peak->mean() );
+        }
       }
     }else
     {
@@ -5518,7 +5598,12 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         if( !has_fit_source )
         {
           // All other-source: add to existing_roi_ranges for trimming
-          existing_roi_ranges.emplace_back( peaks.front()->lowerX(), peaks.front()->upperX() );
+          ExistingRoiInfo info;
+          info.lower_energy = peaks.front()->lowerX();
+          info.upper_energy = peaks.front()->upperX();
+          for( const std::shared_ptr<const PeakDef> &p : peaks )
+            info.peak_means.push_back( p->mean() );
+          existing_roi_ranges.push_back( info );
         }else if( has_other_source )
         {
           // Mixed ROI: contains both same-source and other-source peaks.
@@ -5627,16 +5712,16 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
       for( RelActCalcAuto::RoiRange roi : options.rois )
       {
         // Check for overlaps with existing ROIs and reduce bounds if needed
-        for( const std::pair<double,double> &existing : existing_roi_ranges )
+        for( const ExistingRoiInfo &existing : existing_roi_ranges )
         {
           // Check if there's an overlap
-          if( (roi.lower_energy < existing.second) && (roi.upper_energy > existing.first) )
+          if( (roi.lower_energy < existing.upper_energy) && (roi.upper_energy > existing.lower_energy) )
           {
             // Four mutually exclusive overlap cases:
-            const bool new_contains_existing = (roi.lower_energy < existing.first) && (roi.upper_energy > existing.second);
-            const bool new_contained_by_existing = (roi.lower_energy >= existing.first) && (roi.upper_energy <= existing.second);
-            const bool lower_edge_inside = (roi.lower_energy >= existing.first) && (roi.lower_energy < existing.second);
-            const bool upper_edge_inside = (roi.upper_energy > existing.first) && (roi.upper_energy <= existing.second);
+            const bool new_contains_existing = (roi.lower_energy < existing.lower_energy) && (roi.upper_energy > existing.upper_energy);
+            const bool new_contained_by_existing = (roi.lower_energy >= existing.lower_energy) && (roi.upper_energy <= existing.upper_energy);
+            const bool lower_edge_inside = (roi.lower_energy >= existing.lower_energy) && (roi.lower_energy < existing.upper_energy);
+            const bool upper_edge_inside = (roi.upper_energy > existing.lower_energy) && (roi.upper_energy <= existing.upper_energy);
 
             if( new_contained_by_existing )
             {
@@ -5647,49 +5732,79 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             }else if( new_contains_existing )
             {
               // New ROI completely contains the existing ROI - keep the larger segment
-              const double left_width = existing.first - roi.lower_energy;
-              const double right_width = roi.upper_energy - existing.second;
+              const double left_width = existing.lower_energy - roi.lower_energy;
+              const double right_width = roi.upper_energy - existing.upper_energy;
               if( left_width > right_width )
-                roi.upper_energy = existing.first;
+                roi.upper_energy = existing.lower_energy;
               else
-                roi.lower_energy = existing.second;
+                roi.lower_energy = existing.upper_energy;
             }else if( lower_edge_inside )
             {
               // New ROI's lower edge is inside the existing ROI - allow abutting, but ensure
               //  the nearest source gamma still has at least 1 FWHM of extent below it.
               const double nearest_gamma = nearest_source_gamma_in_range(
-                existing.second, roi.upper_energy, true );
+                existing.upper_energy, roi.upper_energy, true );
               if( nearest_gamma > 0.0 )
               {
                 const double fwhm_eval = std::clamp( nearest_gamma, fwhm_lower_energy, fwhm_upper_energy );
                 const double gamma_fwhm = DetectorPeakResponse::peakResolutionFWHM(
                   static_cast<float>(fwhm_eval), fwhm_form, fwhm_coefficients );
                 const double min_lower = nearest_gamma - std::max( gamma_fwhm, 1.0 );
-                roi.lower_energy = std::max( existing.second, min_lower );
+                roi.lower_energy = std::max( existing.upper_energy, min_lower );
               }else
               {
-                roi.lower_energy = existing.second;
+                roi.lower_energy = existing.upper_energy;
               }
             }else if( upper_edge_inside )
             {
               // New ROI's upper edge is inside the existing ROI - allow abutting, but ensure
               //  the nearest source gamma still has at least 1 FWHM of extent above it.
               const double nearest_gamma = nearest_source_gamma_in_range(
-                roi.lower_energy, existing.first, false );
+                roi.lower_energy, existing.lower_energy, false );
               if( nearest_gamma > 0.0 )
               {
                 const double fwhm_eval = std::clamp( nearest_gamma, fwhm_lower_energy, fwhm_upper_energy );
                 const double gamma_fwhm = DetectorPeakResponse::peakResolutionFWHM(
                   static_cast<float>(fwhm_eval), fwhm_form, fwhm_coefficients );
                 const double max_upper = nearest_gamma + std::max( gamma_fwhm, 1.0 );
-                roi.upper_energy = std::min( existing.first, max_upper );
+                roi.upper_energy = std::min( existing.lower_energy, max_upper );
               }else
               {
-                roi.upper_energy = existing.first;
+                roi.upper_energy = existing.lower_energy;
               }
             }
-          }//if( (roi.lower_energy < existing.second) && (roi.upper_energy > existing.first) )
-        }//for( const std::pair<double,double> &existing : existing_roi_ranges )
+          }//if( overlap )
+
+          // Enforce FWHM-based margin from existing peak means.
+          // New ROI edges must not be closer than 0.5*auto_rel_eff_sol_min_fwhm_roi * FWHM
+          // to any peak mean in the existing ROI.
+          for( const double peak_mean : existing.peak_means )
+          {
+            if( (peak_mean <= roi.lower_energy) || (peak_mean >= roi.upper_energy) )
+              continue;  // peak mean is outside this (possibly trimmed) ROI - no issue
+
+            // Peak mean is inside the new ROI - this means the new ROI extends past
+            // an existing peak mean. Pull back whichever edge is closer.
+            const double fwhm_eval = std::clamp( peak_mean, fwhm_lower_energy, fwhm_upper_energy );
+            const double peak_fwhm = DetectorPeakResponse::peakResolutionFWHM(
+              static_cast<float>(fwhm_eval), fwhm_form, fwhm_coefficients );
+            const double min_margin = 0.5 * config.auto_rel_eff_sol_min_fwhm_roi * peak_fwhm;
+
+            const double dist_from_lower = peak_mean - roi.lower_energy;
+            const double dist_from_upper = roi.upper_energy - peak_mean;
+
+            if( dist_from_lower < dist_from_upper )
+            {
+              // Peak mean is closer to lower edge - pull lower edge away
+              roi.lower_energy = peak_mean + min_margin;
+            }
+            else
+            {
+              // Peak mean is closer to upper edge - pull upper edge away
+              roi.upper_energy = peak_mean - min_margin;
+            }
+          }//for( peak means )
+        }//for( const ExistingRoiInfo &existing : existing_roi_ranges )
 
         // Skip if ROI was marked for removal
         if( (roi.lower_energy < 0.0) || (roi.upper_energy < 0.0) )
@@ -5764,13 +5879,13 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
       // Verify no filtered ROI overlaps with any existing other-source ROI
       for( const RelActCalcAuto::RoiRange &roi : filtered_rois )
       {
-        for( const std::pair<double,double> &existing : existing_roi_ranges )
+        for( const ExistingRoiInfo &existing : existing_roi_ranges )
         {
-          const bool overlaps = (roi.lower_energy < existing.second) && (roi.upper_energy > existing.first);
+          const bool overlaps = (roi.lower_energy < existing.upper_energy) && (roi.upper_energy > existing.lower_energy);
           if( overlaps )
           {
             std::cerr << "Existing ROI trimming: filtered ROI [" << roi.lower_energy << ", " << roi.upper_energy
-                      << "] still overlaps existing ROI [" << existing.first << ", " << existing.second << "]" << std::endl;
+                      << "] still overlaps existing ROI [" << existing.lower_energy << ", " << existing.upper_energy << "]" << std::endl;
             assert( !overlaps );
           }
         }
@@ -5798,15 +5913,15 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 
     for( RelActCalcAuto::RoiRange roi : rois )
     {
-      for( const std::pair<double,double> &existing : existing_roi_ranges )
+      for( const ExistingRoiInfo &existing : existing_roi_ranges )
       {
-        if( !((roi.lower_energy < existing.second) && (roi.upper_energy > existing.first)) )
+        if( !((roi.lower_energy < existing.upper_energy) && (roi.upper_energy > existing.lower_energy)) )
           continue;
 
-        const bool new_contained_by_existing = (roi.lower_energy >= existing.first) && (roi.upper_energy <= existing.second);
-        const bool new_contains_existing = (roi.lower_energy < existing.first) && (roi.upper_energy > existing.second);
-        const bool lower_edge_inside = (roi.lower_energy >= existing.first) && (roi.lower_energy < existing.second);
-        const bool upper_edge_inside = (roi.upper_energy > existing.first) && (roi.upper_energy <= existing.second);
+        const bool new_contained_by_existing = (roi.lower_energy >= existing.lower_energy) && (roi.upper_energy <= existing.upper_energy);
+        const bool new_contains_existing = (roi.lower_energy < existing.lower_energy) && (roi.upper_energy > existing.upper_energy);
+        const bool lower_edge_inside = (roi.lower_energy >= existing.lower_energy) && (roi.lower_energy < existing.upper_energy);
+        const bool upper_edge_inside = (roi.upper_energy > existing.lower_energy) && (roi.upper_energy <= existing.upper_energy);
 
         if( new_contained_by_existing )
         {
@@ -5815,18 +5930,35 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
           break;
         }else if( new_contains_existing )
         {
-          const double left_width = existing.first - roi.lower_energy;
-          const double right_width = roi.upper_energy - existing.second;
+          const double left_width = existing.lower_energy - roi.lower_energy;
+          const double right_width = roi.upper_energy - existing.upper_energy;
           if( left_width > right_width )
-            roi.upper_energy = existing.first - overlap_buffer_kev;
+            roi.upper_energy = existing.lower_energy - overlap_buffer_kev;
           else
-            roi.lower_energy = existing.second + overlap_buffer_kev;
+            roi.lower_energy = existing.upper_energy + overlap_buffer_kev;
         }else if( lower_edge_inside )
         {
-          roi.lower_energy = existing.second + overlap_buffer_kev;
+          roi.lower_energy = existing.upper_energy + overlap_buffer_kev;
         }else if( upper_edge_inside )
         {
-          roi.upper_energy = existing.first - overlap_buffer_kev;
+          roi.upper_energy = existing.lower_energy - overlap_buffer_kev;
+        }
+
+        // Enforce FWHM-based margin from existing peak means
+        for( const double peak_mean : existing.peak_means )
+        {
+          if( (peak_mean <= roi.lower_energy) || (peak_mean >= roi.upper_energy) )
+            continue;
+
+          const double fwhm_at_peak = DetectorPeakResponse::peakResolutionFWHM(
+            static_cast<float>( std::clamp( peak_mean, fwhm_lower_energy, fwhm_upper_energy ) ),
+            fwhm_form, fwhm_coefficients );
+          const double min_margin = 0.5 * config.auto_rel_eff_sol_min_fwhm_roi * fwhm_at_peak;
+
+          if( (peak_mean - roi.lower_energy) < (roi.upper_energy - peak_mean) )
+            roi.lower_energy = peak_mean + min_margin;
+          else
+            roi.upper_energy = peak_mean - min_margin;
         }
       }//for( existing_roi_ranges )
 
@@ -5958,15 +6090,27 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
       for( const auto &orig_and_energy : existing_peaks_added_as_floating )
         touched_continuums.insert( orig_and_energy.first->continuum().get() );
 
-      std::set<const PeakContinuum *> seen_continuums;
+      std::map<const PeakContinuum *, size_t> seen_continuums;
       for( const std::shared_ptr<const PeakDef> &peak : user_peaks )
       {
         if( !peak || touched_continuums.count( peak->continuum().get() ) )
           continue;
 
-        const auto pos = seen_continuums.insert( peak->continuum().get() );
-        if( pos.second )
-          existing_roi_ranges.emplace_back( peak->lowerX(), peak->upperX() );
+        const PeakContinuum * const cont = peak->continuum().get();
+        const std::map<const PeakContinuum *, size_t>::const_iterator it = seen_continuums.find( cont );
+        if( it == seen_continuums.end() )
+        {
+          seen_continuums[cont] = existing_roi_ranges.size();
+          ExistingRoiInfo info;
+          info.lower_energy = peak->lowerX();
+          info.upper_energy = peak->upperX();
+          info.peak_means.push_back( peak->mean() );
+          existing_roi_ranges.push_back( info );
+        }
+        else
+        {
+          existing_roi_ranges[it->second].peak_means.push_back( peak->mean() );
+        }
       }
 
       // Re-filter candidate ROIs to avoid overlapping untouched existing ROIs
@@ -6118,7 +6262,10 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   {
     // Resolve any overlapping ROIs (may occur from escape peak ROIs)
     resolve_overlapping_rois( options.rois, options.floating_peaks );
-    
+    ensure_min_channel_gap( options.rois, orig_foreground->energy_calibration() );
+    remove_floating_peaks_without_roi( options );
+
+
     // Call RelActAuto::solve with provided options
     RelActCalcAuto::RelActAutoSolution solution = RelActCalcAuto::solve(
       options, orig_foreground, orig_background, drf, auto_search_peaks
@@ -6140,6 +6287,9 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 
       add_floating_511_peak_if_appropriate( no_ecal_opts, sources, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy );
       add_escape_peak_floating_peaks_if_appropriate( no_ecal_opts, auto_search_peaks, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy, config );
+      resolve_overlapping_rois( no_ecal_opts.rois, no_ecal_opts.floating_peaks );
+      ensure_min_channel_gap( no_ecal_opts.rois, orig_foreground->energy_calibration() );
+      remove_floating_peaks_without_roi( no_ecal_opts );
 
       RelActCalcAuto::RelActAutoSolution trial_solution = RelActCalcAuto::solve(
         no_ecal_opts, orig_foreground, orig_background, drf, auto_search_peaks
@@ -6195,6 +6345,8 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         add_escape_peak_floating_peaks_if_appropriate( desperation_opts, auto_search_peaks, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy, config );
 
         resolve_overlapping_rois( desperation_opts.rois, desperation_opts.floating_peaks );
+        ensure_min_channel_gap( desperation_opts.rois, orig_foreground->energy_calibration() );
+        remove_floating_peaks_without_roi( desperation_opts );
 
         trial_solution = RelActCalcAuto::solve( desperation_opts, orig_foreground, orig_background, drf, auto_search_peaks );
       }//If( still a bad solution )
@@ -6568,6 +6720,8 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             add_escape_peak_floating_peaks_if_appropriate( desperation_opts, auto_search_peaks, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy, config );
 
             resolve_overlapping_rois( desperation_opts.rois, desperation_opts.floating_peaks );
+            ensure_min_channel_gap( desperation_opts.rois, orig_foreground->energy_calibration() );
+            remove_floating_peaks_without_roi( desperation_opts );
 
             RelActCalcAuto::RelActAutoSolution desperation_solution = RelActCalcAuto::solve(
               desperation_opts, foreground, background, drf, auto_search_peaks
@@ -6632,6 +6786,8 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         add_escape_peak_floating_peaks_if_appropriate( refined_options, auto_search_peaks, fit_norm_peaks, isHPGe, min_valid_energy, max_valid_energy, config );
 
         resolve_overlapping_rois( refined_options.rois, refined_options.floating_peaks );
+        ensure_min_channel_gap( refined_options.rois, orig_foreground->energy_calibration() );
+        remove_floating_peaks_without_roi( refined_options );
 
         RelActCalcAuto::RelActAutoSolution refined_solution
             = RelActCalcAuto::solve( refined_options, foreground, background, drf, auto_search_peaks );
@@ -7103,77 +7259,14 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
           if( fpr->amplitude <= 0.0 )
           {
             // The solver gave the floating peak zero or negative amplitude, meaning the
-            //  source peak(s) in this ROI absorbed all the counts.  The two gammas are too
-            //  close to resolve.  Remove the original bystander to prevent overlapping ROIs,
-            //  but don't add a zero-amplitude replacement.
-            //
-            // Also extend the observable ROI into the space freed by the removed bystander,
-            //  so the source peak has adequate continuum extent on both sides.
+            //  source peak(s) in this ROI absorbed all the counts.  Remove the original
+            //  bystander but don't add a zero-amplitude replacement.
 #if( PERFORM_DEVELOPER_CHECKS )
             std::cerr << "ExistingPeaksAsFreePeak: bystander at " << orig_energy
                  << " keV has non-positive amplitude (" << fpr->amplitude
-                 << ") — removing original to prevent ROI overlap." << std::endl;
+                 << ") — removing original." << std::endl;
 #endif
             result.original_peaks_to_remove.push_back( orig_peak );
-
-            // Extend the observable ROI that contained this bystander to cover at least
-            //  the configured FWHM extent from its edge peaks, using the space freed by
-            //  the removed bystander's ROI.
-            if( roi_continuum )
-            {
-              const double bystander_roi_lower = orig_peak->lowerX();
-              const double bystander_roi_upper = orig_peak->upperX();
-
-              // Find the outermost peaks in the observable ROI to determine desired extent
-              double leftmost_mean = std::numeric_limits<double>::max();
-              double leftmost_fwhm = 1.0;
-              double rightmost_mean = -std::numeric_limits<double>::max();
-              double rightmost_fwhm = 1.0;
-
-              for( const PeakDef &obs : result.observable_peaks )
-              {
-                if( obs.continuum() != roi_continuum )
-                  continue;
-                if( obs.mean() < leftmost_mean )
-                {
-                  leftmost_mean = obs.mean();
-                  leftmost_fwhm = obs.fwhm();
-                }
-                if( obs.mean() > rightmost_mean )
-                {
-                  rightmost_mean = obs.mean();
-                  rightmost_fwhm = obs.fwhm();
-                }
-              }//for( obs in observable_peaks )
-
-              if( leftmost_mean < std::numeric_limits<double>::max() )
-              {
-                const double desired_lower = leftmost_mean
-                  - config.auto_rel_eff_roi_width_num_fwhm_lower * leftmost_fwhm;
-                const double desired_upper = rightmost_mean
-                  + config.auto_rel_eff_roi_width_num_fwhm_upper * rightmost_fwhm;
-
-                double new_lower = roi_continuum->lowerEnergy();
-                double new_upper = roi_continuum->upperEnergy();
-                bool changed = false;
-
-                // Extend into space freed by the removed bystander's ROI, capping at
-                //  the bystander ROI boundary as the maximum extension.
-                if( desired_lower < new_lower )
-                {
-                  new_lower = std::max( desired_lower, bystander_roi_lower );
-                  changed = (new_lower < roi_continuum->lowerEnergy());
-                }
-                if( desired_upper > new_upper )
-                {
-                  new_upper = std::min( desired_upper, bystander_roi_upper );
-                  changed = changed || (new_upper > roi_continuum->upperEnergy());
-                }
-
-                if( changed )
-                  roi_continuum->setRange( new_lower, new_upper );
-              }
-            }//if( roi_continuum )
 
             continue;
           }
@@ -7272,104 +7365,45 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         }//if( !bystander_fp_energies.empty() )
       }
 
-      // Post-fit: trim observable peaks' ROI bounds to avoid overlapping existing ROIs that
-      //  were NOT removed/replaced by the bystander mechanism.  This handles orphaned bystanders
-      //  (initially found inside candidate ROIs, but the solver narrowed the ROI so they fell
-      //  outside) and ensures existing analysis peaks are left untouched when no new source peak
-      //  was effectively added to their ROI.
+      // Developer check: warn if any observable ROI overlaps an active existing ROI.
+      // The pre-fit filter_rois_for_existing should prevent this, but RelActAuto may
+      // adjust ROI bounds during solving.  We do not modify ROI bounds post-fit since
+      // that would make the displayed bounds inconsistent with the actual fit.
+#if( PERFORM_DEVELOPER_CHECKS )
       {
         std::set<const PeakContinuum *> removed_continuums;
         for( const std::shared_ptr<const PeakDef> &peak : result.original_peaks_to_remove )
           removed_continuums.insert( peak->continuum().get() );
 
-        std::vector<std::pair<double,double>> active_existing_rois;
+        std::set<const PeakContinuum *> seen_obs;
+        for( const PeakDef &obs_peak : result.observable_peaks )
         {
-          std::set<const PeakContinuum *> seen;
-          for( const std::shared_ptr<const PeakDef> &peak : user_peaks )
+          if( !obs_peak.continuum() || !seen_obs.insert( obs_peak.continuum().get() ).second )
+            continue;
+
+          const double obs_lower = obs_peak.continuum()->lowerEnergy();
+          const double obs_upper = obs_peak.continuum()->upperEnergy();
+
+          std::set<const PeakContinuum *> seen_user;
+          for( const std::shared_ptr<const PeakDef> &up : user_peaks )
           {
-            if( !peak || removed_continuums.count( peak->continuum().get() ) )
+            if( !up || removed_continuums.count( up->continuum().get() ) )
               continue;
-            if( seen.insert( peak->continuum().get() ).second )
-              active_existing_rois.emplace_back( peak->lowerX(), peak->upperX() );
+            if( !seen_user.insert( up->continuum().get() ).second )
+              continue;
+            const double user_lower = up->lowerX();
+            const double user_upper = up->upperX();
+            if( (obs_lower < user_upper) && (obs_upper > user_lower) )
+            {
+              std::cerr << "WARNING: ExistingPeaksAsFreePeak: observable ROI ["
+                   << obs_lower << ", " << obs_upper
+                   << "] overlaps active existing ROI [" << user_lower << ", " << user_upper
+                   << "] keV" << std::endl;
+            }
           }
         }
-
-        if( !active_existing_rois.empty() )
-        {
-          // No buffer for post-fit trimming: the peaks are already fit and we know
-          //  exactly where they are.  A buffer could push the ROI edge past a peak mean.
-          const double buffer_kev = 0.0;
-          std::set<PeakContinuum *> adjusted;
-
-          for( PeakDef &obs_peak : result.observable_peaks )
-          {
-            std::shared_ptr<PeakContinuum> cont = obs_peak.continuum();
-            if( !cont || !adjusted.insert( cont.get() ).second )
-              continue;
-
-            double lower = cont->lowerEnergy();
-            double upper = cont->upperEnergy();
-            bool changed = false;
-
-            for( const std::pair<double,double> &existing : active_existing_rois )
-            {
-              if( !((lower < existing.second) && (upper > existing.first)) )
-                continue;
-
-              const bool lower_inside = (lower >= existing.first) && (lower < existing.second);
-              const bool upper_inside = (upper > existing.first) && (upper <= existing.second);
-
-              if( lower_inside && upper_inside )
-              {
-                // Observable ROI fully inside an existing ROI - remove
-                lower = -1.0;
-                break;
-              }
-              else if( lower_inside )
-              {
-                lower = existing.second + buffer_kev;
-                changed = true;
-              }
-              else if( upper_inside )
-              {
-                upper = existing.first - buffer_kev;
-                changed = true;
-              }
-              else // observable contains existing - keep larger side
-              {
-                const double left_w = existing.first - lower;
-                const double right_w = upper - existing.second;
-                if( left_w > right_w )
-                  upper = existing.first - buffer_kev;
-                else
-                  lower = existing.second + buffer_kev;
-                changed = true;
-              }
-            }//for( active_existing_rois )
-
-            if( lower < 0.0 )
-            {
-              cont->setRange( -1.0, -1.0 );  // Mark for removal
-            }
-            else if( changed && (lower < upper) )
-            {
-              cont->setRange( lower, upper );
-            }
-          }//for( observable_peaks )
-
-          // Remove observable peaks whose ROI was invalidated or whose mean fell outside
-          result.observable_peaks.erase(
-            std::remove_if( result.observable_peaks.begin(), result.observable_peaks.end(),
-              []( const PeakDef &p ) -> bool {
-                if( !p.continuum() || (p.continuum()->lowerEnergy() < 0.0) )
-                  return true;
-                return (p.mean() < p.continuum()->lowerEnergy())
-                    || (p.mean() > p.continuum()->upperEnergy());
-              } ),
-            result.observable_peaks.end()
-          );
-        }//if( !active_existing_rois.empty() )
       }
+#endif
     }// if( existing_peaks_as_free ... )
 
     // Default mode (neither DoNotUseExistingRois nor ExistingPeaksAsFreePeak):
