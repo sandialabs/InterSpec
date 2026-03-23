@@ -2,7 +2,7 @@
 <messages>
   <!-- ds- is short for DirectorySelector -->
   <message id="ds-path-label">Útvonal:</message>
-  <message id="ds-txt-input-placeholder">Adja meg a könyvtár útvonalát...</message>
+  <message id="ds-txt-input-placeholder">Írja be a könyvtár elérési útját...</message>
   <message id="ds-native-select-path-button">Útvonal kiválasztása</message>
   <message id="ds-native-no-path-placeholder">(Nincs útvonal kiválasztva)</message>
 </messages>

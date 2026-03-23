@@ -3,34 +3,33 @@
   <!-- gxsg- is short for GammaXsGui -->
   <message id="gxsg-material-formula">Anyag/Képlet</message>
   <message id="gxsg-tt-material">
-    Megadhat egy előre definiált anyag vagy elem nevét (törölje az űrlap szövegét
-    és kattintson az űrlap jobb oldalán található nyílra az összes előre definiált 
-    opció megtekintéséhez), vagy megadhat egy kémiai képletet, például 'H0.112 O0.88',
-    ahol a számok a g/cm3-ben megadott sűrűség (vagy használja a tömegfrakciót és
-    a Sűrűség mezőt) az előző elemhez.
+    Megadhat egy előre definiált anyag- vagy elemnevet (törölje a mező szövegét
+    és kattintson a mező jobb oldalán lévő nyílra az összes előre definiált lehetőség megtekintéséhez), vagy
+    megadhat egy kémiai képletet, például 'H0.112 O0.88', ahol a számok az
+    előző elem sűrűségét jelölik g/cm3-ben (vagy használja a tömegarányt és a Sűrűség mezőt).
   </message>
-  <message id="gxsg-total-atten-xs">Teljes csillapítási keresztmetszet</message>
+  <message id="gxsg-total-atten-xs">Teljes gyeng. hatáskeresztmetszet</message>
   <message id="gxsg-compton-label">Compton</message>
   <message id="gxsg-rayleigh-label">Rayleigh</message>
   <message id="gxsg-photoelec-label">Fotoelektromos</message>
-  <message id="gxsg-pp-label">Párképzés</message>
-  <message id="gxsg-mass-avrg-an">Tömeg átlag atomszám</message>
-  <message id="gxsg-opt-atten">Csillapítás (opcionális):</message>
+  <message id="gxsg-pp-label">Párképződés</message>
+  <message id="gxsg-mass-avrg-an">Tömegátlag rendszám</message>
+  <message id="gxsg-opt-atten">Gyengítés (opcionális):</message>
   <message id="gxsg-density-label">Sűrűség:</message>
   <message id="gxsg-thickness-label">Vastagság:</message>
-  <message id="gxsg-tt-thickness">A csillapító vastagság.</message>
-  <message id="gxsg-trans-frac-label">Áthaladási Tört</message>
-  <message id="gxsg-tt-trans-frac">Ez azon gamma sugarak hányada, amelyek átjutnak a megadott árnyékoláson.</message>
-  <message id="gxsg-tt-distance">Ez a távolság a forrás középpontjától a detektorig.</message>
-  <message id="gxsg-intrinsic-eff-label">Belső Hatékonyság</message>
-  <message id="gxsg-tt-intrinsic-eff">Belső hatékonyság (a detektor felületét érő gamma sugarak csúcsban való detektálási hatékonysága).</message>
-  <message id="gxsg-solid-angle-frac-label">Térszög Tört</message>
-  <message id="gxsg-tt-solid-angle-frac">A kiválasztott detektor törtrészes térszöge a megadott távolságban.</message>
-  <message id="gxsg-det-eff-label">Detektálási Hatékonyság</message>
-  <message id="gxsg-tt-det-eff">Belső hatékonyság szorozva a térszög törttel. Pl. az árnyékolásból kijutó gamma sugarak hányada, amelyet detektálni fognak. Nem tartalmazza a csillapítást.</message>
-  <message id="gxsg-total-eff-label">Teljes Hatékonyság</message>
-  <message id="gxsg-tt-total-eff">Áteresztési tört szorozva a detektálási hatékonysággal. Pl. a forrásból kibocsátott gamma sugarak hányada, amelyet detektálni fognak.</message>
-  <message id="gxsg-warn-suspect">XS Számítás gyanús lehet: {1}</message>
-  <message id="gxsg-tool-state-title">Gamma XS Eszköz Állapot</message>
-  <message id="gxsg-tool-state-text">Az xs eszköz jelenlegi állapota.</message>
+  <message id="gxsg-tt-thickness">A gyengítő anyag vastagsága.</message>
+  <message id="gxsg-trans-frac-label">Áteresztési hányad</message>
+  <message id="gxsg-tt-trans-frac">A megadott árnyékoláson átjutó gammák hányada.</message>
+  <message id="gxsg-tt-distance">A forrás középpontjától a detektorig mért távolság.</message>
+  <message id="gxsg-intrinsic-eff-label">Belső hatásfok</message>
+  <message id="gxsg-tt-intrinsic-eff">Belső hatásfok (a detektor felületére érkező gammák csúcsba eső detektálási hatásfoka).</message>
+  <message id="gxsg-solid-angle-frac-label">Térszög-hányad</message>
+  <message id="gxsg-tt-solid-angle-frac">A kiválasztott detektor térszög-hányada a megadott távolságnál.</message>
+  <message id="gxsg-det-eff-label">Detektálási hatásfok</message>
+  <message id="gxsg-tt-det-eff">Belső hatásfok szorozva a térszög-hányadtal. Azaz az árnyékoláson átjutó gammák detektált hányada. Nem tartalmazza a gyengítést.</message>
+  <message id="gxsg-total-eff-label">Teljes hatásfok</message>
+  <message id="gxsg-tt-total-eff">Áteresztési hányad szorozva a detektálási hatásfokkal. Azaz a forrásból kibocsátott gammák detektált hányada.</message>
+  <message id="gxsg-warn-suspect">A hatáskeresztmetszet-számítás megbízhatósága kérdéses: {1}</message>
+  <message id="gxsg-tool-state-title">Gamma hatáskeresztmetszet eszköz állapota</message>
+  <message id="gxsg-tool-state-text">A hatáskeresztmetszet eszköz jelenlegi állapota.</message>
 </messages>

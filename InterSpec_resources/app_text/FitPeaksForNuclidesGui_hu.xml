@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- fpn- is short for FitPeaksForNuclides -->
+
+  <!-- Tab labels for FitPeaksAdvancedWidget upper area -->
+  <message id="fpn-tab-spectrum">Spekt.</message>
+  <message id="fpn-tab-rel-eff">Rel. hat.</message>
+  <message id="fpn-tab-results">Részletek</message>
+
+  <!-- Advanced dialog -->
+  <message id="fpn-adv-title">Csúcsillesztés:</message>
+  <message id="fpn-adv-content">Speciális beállítások nincsenek implementálva</message>
+  <message id="fpn-fit-peaks">Csúcsok illesztése</message>
+  <message id="fpn-accept">Elfogadás</message>
+  <message id="fpn-cancel">Mégse</message>
+
+  <!-- Status and computation messages -->
+  <message id="fpn-calculating">Számítás...</message>
+  <message id="fpn-computation-successful">Számítás sikeres.</message>
+  <message id="fpn-summary-chi2">Chi2/dof: {1}</message>
+  <message id="fpn-summary-rel-activities">Relatív aktivitások (max=1): {1}</message>
+  <message id="fpn-summary-rois">ROI-k: {1}</message>
+  <message id="fpn-summary-total-area">Teljes forrás terület: {1}</message>
+  <message id="fpn-summary-no-rel-act">Nincs relatív aktivitás (egyetlen forrás).</message>
+
+  <!-- FitSrcPeaksOptions checkbox labels -->
+  <message id="fpn-opt-dont-use-existing-rois">Meglévő ROI-k mellőzése</message>
+  <message id="fpn-opt-existing-as-free">Jelenlegi ROI-k megosztása</message>
+  <message id="fpn-opt-dont-vary-energy-cal">Energiakal. ne változzon</message>
+  <message id="fpn-opt-dont-refine-energy-cal">Energiakal. ne finomodjon</message>
+  <message id="fpn-opt-fit-bkgnd-peaks">NORM illesztés</message>
+  <message id="fpn-opt-fit-bkgnd-dont-use">NORM ill. (nem használt)</message>
+  <message id="fpn-opt-use-background">Háttérkivonással számol</message>
+
+  <!-- PeakFitForNuclideConfig option labels -->
+  <message id="fpn-opt-roi-min-chi2-red">ROI chi2 csökkenés küszöbe</message>
+  <message id="fpn-opt-roi-min-peak-sig">ROI szignifikancia küszöbe</message>
+  <message id="fpn-opt-obs-initial-sig">Becsült csúcsszignifikancia küszöb</message>
+  <message id="fpn-opt-obs-final-sig">Végső csúcsszignifikancia küszöb</message>
+  <message id="fpn-opt-skew-type">Csúcs ferdeség</message>
+  <message id="fpn-opt-fwhm-form">FWHM forma</message>
+  <message id="fpn-opt-rel-eff-eqn-type">Rel. hat. egyenlet</message>
+  <message id="fpn-opt-rel-eff-eqn-order">Rel. hat. rend</message>
+
+  <!-- Tooltips for options -->
+  <message id="fpn-opt-tt-dont-use-existing-rois">Ezzel a beállítással a meglévő ROI-k nem kerülnek felhasználásra, és a jelenlegi forrás(ok) gammái, amelyek meglévő ROI-ba esnek, figyelmen kívül maradnak.</message>
+  <message id="fpn-opt-tt-existing-as-free">Normál esetben a forráscsúcsok ROI-jai energiatartományban korlátozottak a közeli csúcsok hatásának csökkentése érdekében. Ezzel a beállítással a közeli csúcsok, amelyek osztoznak a ROI-n, szabadon lebegő csúcsként bennmaradnak, és szerepelnek az eredményekben.</message>
+  <message id="fpn-opt-tt-dont-vary-energy-cal">Az energiakalibráció rögzített marad az illesztés során.</message>
+  <message id="fpn-opt-tt-dont-refine-energy-cal">Az energiakalibráció változik az illesztés során, de a ROI kiterjedése nem frissül az illesztett kalibráció alapján.</message>
+  <message id="fpn-opt-tt-fit-bkgnd-peaks">NORM csúcsok (U-238, Ra-226, U-235, Th-232, K-40) illesztése második relatív hatásfok görbével.</message>
+  <message id="fpn-opt-tt-use-background">Ha be van kapcsolva, a háttérspektrum kivonásra kerül a csúcsillesztés során a felhasználandó ROI-k meghatározásához, de a háttér nem kerül kivonásra a visszaadott csúcsok végső illesztéséhez. Kikapcsolva a háttérkivonás nélkül illeszti a csúcsokat.</message>
+  <message id="fpn-opt-tt-roi-min-chi2-red">A csúcsoknak egy ROI-ban elért minimális teljes chi2 csökkenés ahhoz, hogy szignifikánsnak minősüljenek. A csúcsokkal kapott chi2-nek legalább ennyivel kell kisebbnek lennie, mint a csak-kontinuum chi2.</message>
+  <message id="fpn-opt-tt-roi-min-peak-sig">A csúcs minimális szignifikanciája (csúcs_terület / sqrt(kontinuum)) ahhoz, hogy szignifikánsnak minősüljön. Ha a ROI bármely csúcsának szignifikanciája meghaladja ezt a küszöböt, a ROI megmarad.</message>
+  <message id="fpn-opt-tt-obs-initial-sig">Küszöbérték a kezdeti csúcsszignifikancia-szűrőhöz az újraillesztés előtt. Szignifikancia = (csúcs_amplitúdó * 0.7607) / sqrt(adat_terület_a_pm_1_fwhm-ben).</message>
+  <message id="fpn-opt-tt-obs-final-sig">Küszöbérték a végső csúcsszignifikanciához az újraillesztés után. Szignifikancia = csúcs_terület / csúcs_terület_bizonytalanság.</message>
+  <message id="fpn-opt-tt-skew-type">Az összes csúcsra alkalmazott ferdeségi alak az illesztésben. A &quot;None&quot; tiszta Gauss-t használ. Egyéb lehetőségek alacsony energiás farokkomponenseket adnak hozzá (pl. Exp*Gauss NaI/CsI detektorokhoz, Crystal Ball töltésgyűjtési farokhoz HPGe-ben).</message>
+  <message id="fpn-opt-tt-fwhm-form">A detektor felbontás (FWHM vs energia) függvényformája. A Bernstein polinom rendje határozza meg az illesztett együtthatók számát.</message>
+  <message id="fpn-opt-tt-rel-eff-eqn-type">A relatív hatásfok görbe formája (pl. LnXLnY polinom vagy FRAM fizikai modell).</message>
+  <message id="fpn-opt-tt-rel-eff-eqn-order">A relatív hatásfok egyenlet polinom rendje (ha nem a fizikai modellt használja).</message>
+
+  <!-- Status and error messages -->
+  <message id="fpn-no-data">Nincs előtérspektrum a csúcsillesztéshez.</message>
+  <message id="fpn-wait-title">Csúcsillesztés</message>
+  <message id="fpn-wait-content">Ez eltarthat egy percig. Közben tovább használhatja az alkalmazást.</message>
+  <message id="fpn-stale">A spektrum megváltozott az illesztés befejezése előtt; eredmények elvetése.</message>
+
+  <message id="fpn-error-title">Illesztés sikertelen</message>
+  <message id="fpn-error-content">Hiba: {1}</message>
+
+  <!-- Results dialog -->
+  <message id="fpn-result-title">Illesztési eredmények</message>
+  <message id="fpn-no-peaks">Nem illesztett csúcsokat a kiválasztott forrás(ok)hoz.</message>
+  <message id="fpn-summary">{1} csúcs illesztve {2} forrás(ok)hoz.</message>
+  <message id="fpn-warnings-header">Figyelmeztetések:</message>
+  <message id="fpn-auto-accept">Illesztési eredmények automatikus elfogadása</message>
+  <message id="fpn-auto-accepted">Az illesztési eredmények automatikusan elfogadva.</message>
+
+</messages>
