@@ -2005,7 +2005,7 @@ SpectrumViewerTester::Score SpectrumViewerTester::testShieldSourceFit()
     //  unfairly close to the real answer.
     disp->setFitQuantitiesToDefaultValues();
     
-    shared_ptr<ShieldingSourceFitCalc::ModelFitResults> result = disp->doModelFit( false );
+    shared_ptr<ShieldingSourceFitCalc::ModelFitResults> result = disp->doModelFit( false, false );
     
     // Uhg, sometimes users have to hit  a couple times right now - this should be fixed
     result = disp->doModelFit( false, false );
