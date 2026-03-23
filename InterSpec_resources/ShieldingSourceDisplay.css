@@ -18,12 +18,19 @@
 }
 
 
+.BackPeakManualHint
+{
+  font-style: italic;
+  font-size: smaller;
+  text-align: center;
+}
+
 .ShieldingSelectContainer
 {
    min-width: min(23em, calc(100vw - 15px));
    min-height: 10em;
    overflow-y: auto;
-   
+
    padding-left:   5px;
    padding-right:  5px;
 }

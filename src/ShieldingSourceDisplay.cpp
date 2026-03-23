@@ -5100,6 +5100,7 @@ bool ShieldingSourceDisplay::checkForMissingBackgroundPeaks( const bool triggere
 
   WCheckBox *add_all_cb = new WCheckBox( WString::tr( "ssd-btn-add-all-detectable" ), dialog->contents() );
   add_all_cb->addStyleClass( "CbNoLineBreak" );
+  add_all_cb->setFloatSide( Wt::Side::Right );
 
   WPushButton *no_btn = dialog->addButton( WString::tr( "ssd-btn-no-dont-add" ) );
   WPushButton *add_btn = dialog->addButton( WString::tr( "ssd-btn-add-peaks" ) );
@@ -5306,6 +5307,11 @@ void ShieldingSourceDisplay::fitAndPreviewBackgroundPeaks(
   summary_txt->setInline( false );
   summary_txt->setMargin( 10, Wt::Top );
   summary_txt->setMargin( 5, Wt::Bottom );
+
+  WText *manual_hint = new WText( WString::tr( "ssd-back-peaks-manual-hint" ), dialog->contents() );
+  manual_hint->setInline( false );
+  manual_hint->addStyleClass( "BackPeakManualHint" );
+  manual_hint->setMargin( 5, Wt::Bottom );
 
   // Build the vector of peaks to add as shared_ptrs
   vector<shared_ptr<const PeakDef>> peaks_to_add;
