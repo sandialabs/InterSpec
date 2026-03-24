@@ -2213,34 +2213,31 @@ std::vector<PeakDef> combine_overlapping_peaks_in_rois(
   if( uncombined_peaks.empty() )
     return {};
 
-  // Phase 1: Group peaks by continuum (ROI)
-  std::map<std::shared_ptr<const PeakContinuum>, std::vector<size_t>> continuum_to_peak_indices;
-  for( size_t i = 0; i < uncombined_peaks.size(); ++i )
-  {
-    const std::shared_ptr<const PeakContinuum> cont = uncombined_peaks[i].continuum();
-    continuum_to_peak_indices[cont].push_back( i );
-  }
+  // Phase 1: Group peaks by continuum (ROI), sorted by energy for deterministic order.
+  std::vector<std::pair<const PeakContinuum *, std::vector<PeakDef>>> sorted_groups
+    = group_peaks_by_roi( uncombined_peaks );
 
   std::vector<PeakDef> combined_peaks;
   combined_peaks.reserve( uncombined_peaks.size() );
 
   // Phase 2 & 3: Process each ROI independently
-  for( const auto &roi_entry : continuum_to_peak_indices )
+  for( const std::pair<const PeakContinuum *, std::vector<PeakDef>> &roi_group : sorted_groups )
   {
-    const std::vector<size_t> &peak_indices = roi_entry.second;
+    const std::vector<PeakDef> &roi_peaks = roi_group.second;
 
-    if( peak_indices.size() == 1 )
+    if( roi_peaks.size() == 1 )
     {
       // Single peak in ROI - no combination needed
-      combined_peaks.push_back( uncombined_peaks[peak_indices[0]] );
+      combined_peaks.push_back( roi_peaks[0] );
       continue;
     }
 
-    // Sort indices by peak area (descending) - we'll process largest peaks first
-    std::vector<size_t> sorted_indices = peak_indices;
+    // Sort by peak area (descending) - we'll process largest peaks first
+    std::vector<size_t> sorted_indices( roi_peaks.size() );
+    std::iota( sorted_indices.begin(), sorted_indices.end(), 0 );
     std::sort( sorted_indices.begin(), sorted_indices.end(),
-      [&uncombined_peaks]( size_t a, size_t b ) {
-        return uncombined_peaks[a].peakArea() > uncombined_peaks[b].peakArea();
+      [&roi_peaks]( size_t a, size_t b ) {
+        return roi_peaks[a].peakArea() > roi_peaks[b].peakArea();
       });
 
     // Greedy clustering: start with largest peak, cluster nearby peaks into it,
@@ -2257,7 +2254,7 @@ std::vector<PeakDef> combine_overlapping_peaks_in_rois(
         continue;
 
       // Start a new cluster with this peak (the largest remaining unclustered peak)
-      const PeakDef &anchor_peak = uncombined_peaks[idx_i];
+      const PeakDef &anchor_peak = roi_peaks[idx_i];
       std::vector<const PeakDef *> cluster;
       cluster.push_back( &anchor_peak );
       clustered.insert( idx_i );
@@ -2271,7 +2268,7 @@ std::vector<PeakDef> combine_overlapping_peaks_in_rois(
         if( clustered.count( idx_j ) )
           continue;
 
-        const PeakDef &candidate_peak = uncombined_peaks[idx_j];
+        const PeakDef &candidate_peak = roi_peaks[idx_j];
 
         // Check if this smaller peak should be combined with the anchor peak
         if( should_combine_peaks( anchor_peak, candidate_peak, 1.5 ) )
@@ -2285,30 +2282,30 @@ std::vector<PeakDef> combine_overlapping_peaks_in_rois(
     }//for( size_t i = 0; i < sorted_indices.size(); ++i )
 
     // Create combined peaks for each cluster
-    std::vector<PeakDef> roi_peaks;  // Peaks for this ROI
+    std::vector<PeakDef> combined_roi_peaks;
     for( const std::vector<const PeakDef *> &cluster : clusters )
     {
       if( cluster.size() == 1 )
       {
-        roi_peaks.push_back( *cluster[0] );
+        combined_roi_peaks.push_back( *cluster[0] );
       }
       else
       {
-        roi_peaks.push_back( combine_peaks( cluster ) );
+        combined_roi_peaks.push_back( combine_peaks( cluster ) );
       }
     }//for( const std::vector<const PeakDef *> &cluster : clusters )
 
     // Make all peaks in this ROI share a new continuum
-    if( !roi_peaks.empty() )
+    if( !combined_roi_peaks.empty() )
     {
-      std::shared_ptr<PeakContinuum> roi_continuum = std::make_shared<PeakContinuum>( *roi_peaks.front().continuum() );
-      for( PeakDef &peak : roi_peaks )
+      std::shared_ptr<PeakContinuum> roi_continuum = std::make_shared<PeakContinuum>( *combined_roi_peaks.front().continuum() );
+      for( PeakDef &peak : combined_roi_peaks )
         peak.setContinuum( roi_continuum );
     }
 
     // Add this ROI's peaks to the combined output
-    combined_peaks.insert( combined_peaks.end(), roi_peaks.begin(), roi_peaks.end() );
-  }//for( const auto &roi_entry : continuum_to_peak_indices )
+    combined_peaks.insert( combined_peaks.end(), combined_roi_peaks.begin(), combined_roi_peaks.end() );
+  }//for( roi_group : sorted_groups )
 
   // Sort combined peaks by mean energy
   std::sort( combined_peaks.begin(), combined_peaks.end(),
@@ -2485,7 +2482,7 @@ std::vector<PeakDef> compute_observable_peaks(
 
   // Step 1: Group input peaks by ROI (shared continuum), skipping peaks whose
   //  mean is outside their own continuum (tail contributions to adjacent ROIs).
-  std::map<std::shared_ptr<const PeakContinuum>, std::vector<PeakDef>> input_rois;
+  std::vector<PeakDef> peaks_in_bounds;
   for( const PeakDef &peak : fit_peaks )
   {
     const double mean = peak.mean();
@@ -2493,9 +2490,12 @@ std::vector<PeakDef> compute_observable_peaks(
       && (mean >= peak.continuum()->lowerEnergy())
       && (mean <= peak.continuum()->upperEnergy()) )
     {
-      input_rois[peak.continuum()].push_back( peak );
+      peaks_in_bounds.push_back( peak );
     }
   }
+
+  std::vector<std::pair<const PeakContinuum *, std::vector<PeakDef>>> input_rois
+    = group_peaks_by_roi( peaks_in_bounds );
 
   // Step 2: Initial significance filter and ROI adjustment per ROI
   std::vector<PeakDef> filtered_peaks;
@@ -2547,10 +2547,9 @@ std::vector<PeakDef> compute_observable_peaks(
   if( filtered_peaks.empty() )
     return filtered_peaks;
 
-  // Step 3: Group peaks by shared continuum (ROI) - may have new continuums from adjustment
-  std::map<std::shared_ptr<const PeakContinuum>, std::vector<PeakDef>> rois;
-  for( const PeakDef &peak : filtered_peaks )
-    rois[peak.continuum()].push_back( peak );
+  // Step 3: Group peaks by shared continuum (ROI) - may have new continuums from adjustment.
+  std::vector<std::pair<const PeakContinuum *, std::vector<PeakDef>>> rois
+    = group_peaks_by_roi( filtered_peaks );
 
   // Debug: Check if rois already have overlaps before parallel processing
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -2606,7 +2605,7 @@ std::vector<PeakDef> compute_observable_peaks(
   std::vector<std::vector<PeakDef>> roi_results( num_rois );
 
   // Copy ROI data to vector for parallel processing
-  std::vector<std::pair<std::shared_ptr<const PeakContinuum>, std::vector<PeakDef>>> roi_vec( rois.begin(), rois.end() );
+  std::vector<std::pair<const PeakContinuum *, std::vector<PeakDef>>> roi_vec( rois.begin(), rois.end() );
 
   SpecUtilsAsync::ThreadPool pool;
 
@@ -5649,6 +5648,12 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
       }//for( roi_groups )
     }//if( do_not_use_existing_rois ) / else
 
+    // Sort existing_roi_ranges by energy for deterministic trimming order
+    std::sort( existing_roi_ranges.begin(), existing_roi_ranges.end(),
+      []( const ExistingRoiInfo &a, const ExistingRoiInfo &b ) {
+        return a.lower_energy < b.lower_energy;
+      } );
+
     // Filter options.rois: reduce, or remove ROIs that overlap existing other-source ROIs
     if( !existing_roi_ranges.empty() )
     {
@@ -6070,8 +6075,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
       }else
       {
         // Bystander peak: add as a FloatingPeak so the fit can account for it.
-        // Use ObservedInSpectrum since the mean comes from a fit to the data
-        //  (already in the data's energy calibration).
+        // Use the gamma energy (nuclear data constant) for deterministic results.
         RelActCalcAuto::FloatingPeak fp;
         fp.energy = peak_energy;
         fp.release_fwhm = false;
@@ -6112,6 +6116,12 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
           existing_roi_ranges[it->second].peak_means.push_back( peak->mean() );
         }
       }
+
+      // Sort existing_roi_ranges by energy for deterministic trimming order
+      std::sort( existing_roi_ranges.begin(), existing_roi_ranges.end(),
+        []( const ExistingRoiInfo &a, const ExistingRoiInfo &b ) {
+          return a.lower_energy < b.lower_energy;
+        } );
 
       // Re-filter candidate ROIs to avoid overlapping untouched existing ROIs
       if( !existing_roi_ranges.empty() )

@@ -10061,7 +10061,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     size_t tasks_completed = 0;
     std::string exception_msg;
     const size_t num_energy_ranges = m_energy_ranges.size();
-    
+
     for( size_t i = 0; i < num_energy_ranges; ++i )
     {
       boost::asio::post( m_pool,
@@ -10074,14 +10074,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           std::lock_guard<std::mutex> lock(cv_mutex);
           exception_msg = e.what();
         }
-        
-        
+
+
         std::lock_guard<std::mutex> lock(cv_mutex); //lock_guard is simpler than unique_lock, so use it here
         tasks_completed += 1;
         cv.notify_one();
       } );
     }//for( size_t i = 0; i < num_energy_ranges; ++i )
-    
+
     {//begin wait for things to finish
       std::unique_lock<std::mutex> lock(cv_mutex);
       cv.wait(lock, [num_energy_ranges,&tasks_completed]() -> bool {
