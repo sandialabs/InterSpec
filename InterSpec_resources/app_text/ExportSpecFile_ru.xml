@@ -78,7 +78,8 @@
   <!-- Error dialogs -->
   <message id="esf-error-title">Ошибка</message>
   <message id="esf-qr-encode-failed">Не удалось отобразить спектр как QR код: {1}</message>
-  
+  <message id="esf-back-sub-peak-refit-failed">Не удалось переподогнать континуумы пиков для спектра с вычтенным фоном; использованы исходные параметры пиков.</message>
+
   <!-- Pluralized messages -->
   <message id="esf-disp-sample">
     <plural case="0">Отобр.&nbsp;Образец</plural>

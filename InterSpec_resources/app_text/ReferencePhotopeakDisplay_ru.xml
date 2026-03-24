@@ -7,7 +7,7 @@
   <message id="rpd-tt-nuc-edit">напр. <b>U235</b>, <b>235 Uranium</b>, <b>U</b> (только рентген), <b>Uranium</b> (рентген), <b>U-235m</b> (метастабильное состояние), <b>Cs137</b>, <b>background</b>, <b>H(n,g)</b> и т.д.</message>
   <message id="rpd-tt-age">
     <div>
-      Возраст можно указать, используя комбинацию временных единиц, например '<b>5.3y 8d 22m</b>' или в периодах полураспада, например 
+      Возраст можно указать, используя комбинацию временных единиц, например '<b>5.3y 8d 22m</b>' или в периодах полураспада, например
       '<b>2.5 HL</b>'.
     </div>
     <div>
@@ -49,12 +49,12 @@
   <message id="rpd-line-thick-normal">Стандартная толщ.</message>
   <message id="rpd-line-thick-thick">Толстые линии</message>
   <message id="rpd-line-thick-thicker">Более толстые линии</message>
-  
+
   <!-- Reference lines visual verbosity options. -->
   <message id="rpd-line-verb-none">Минимум линий</message>
   <message id="rpd-line-verb-hover">Справ. линия наведения</message>
   <message id="rpd-line-verb-major">Полные основные линии</message>
-  
+
   <message id="rpd-csv-export-msg">Инструмент 'Информация о распаде нуклидов' предоставляет дополнительные возможности для экспорта нуклидов, продуктов распада и информации о распаде в CSV файлы.</message>
   <message id="rpd-changed-age">Изменён возраст на более разумное значение для {1} с '{2}' на '{3}'</message>
   <message id="rpd-changed-age-fission">Изменён возраст на {1}, чтобы быть действительным.</message>
@@ -90,25 +90,6 @@
   <message id="rpd-fit-sources">Подогнать источники</message>
   <message id="rpd-fit-sources-menu-auto">Автоматически</message>
   <message id="rpd-fit-sources-menu-advanced">Расширенные</message>
-  
-  <message id="rpd-fit-sources-adv-title">Подогнать источники (Расширенные)</message>
-  <message id="rpd-fit-sources-adv-content">Расширенные опции не реализованы</message>
-  <message id="rpd-fit-peaks">Подогнать пики</message>
-  
-  <message id="rpd-fit-sources-no-data">Нет основного спектра для подгонки пиков.</message>
-  <message id="rpd-fit-sources-wait-title">Подгонка пиков</message>
-  <message id="rpd-fit-sources-wait-content">Это может занять минуту. Вы можете продолжать использовать приложение.</message>
-  <message id="rpd-fit-sources-stale">Спектр изменился до завершения подгонки; результаты отброшены.</message>
-  
-  <message id="rpd-fit-sources-error-title">Подгонка не удалась</message>
-  <message id="rpd-fit-sources-error-content">Ошибка: {1}</message>
-  
-  <message id="rpd-fit-sources-result-title">Результаты подгонки</message>
-  <message id="rpd-fit-sources-no-peaks">Пики не были подогнаны для выбранного(ых) источника(ов).</message>
-  <message id="rpd-fit-sources-summary">Подогнано {1} пик(ов) для {2} источника(ов).</message>
-  <message id="rpd-fit-sources-warnings-header">Предупреждения:</message>
-  <message id="rpd-fit-sources-auto-accept">Автоматически принимать результаты подгонки</message>
-  <message id="rpd-fit-sources-auto-accepted">Результаты подгонки были автоматически приняты.</message>
 
 
 </messages>

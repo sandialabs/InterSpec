@@ -78,7 +78,8 @@
   <!-- Error dialogs -->
   <message id="esf-error-title">خطأ</message>
   <message id="esf-qr-encode-failed">فشل في عرض الطيف كرمز QR: {1}</message>
-  
+  <message id="esf-back-sub-peak-refit-failed">فشل في إعادة ملاءمة استمراريات القمم للطيف المطروح منه الخلفية؛ تم استخدام معلمات القمم الأصلية.</message>
+
   <!-- Pluralized messages -->
   <message id="esf-disp-sample">
     <plural case="0">عينة&nbsp;معروضة</plural>

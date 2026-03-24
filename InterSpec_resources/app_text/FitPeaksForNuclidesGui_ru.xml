@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- fpn- is short for FitPeaksForNuclides -->
+
+  <!-- Tab labels for FitPeaksAdvancedWidget upper area -->
+  <message id="fpn-tab-spectrum">Спектр</message>
+  <message id="fpn-tab-rel-eff">Отн. эфф.</message>
+  <message id="fpn-tab-results">Детали</message>
+
+  <!-- Advanced dialog -->
+  <message id="fpn-adv-title">Фит пиков для:</message>
+  <message id="fpn-adv-content">Расширенные параметры не реализованы</message>
+  <message id="fpn-fit-peaks">Фит пиков</message>
+  <message id="fpn-accept">Принять</message>
+  <message id="fpn-cancel">Отмена</message>
+
+  <!-- Status and computation messages -->
+  <message id="fpn-calculating">Вычисление...</message>
+  <message id="fpn-computation-successful">Вычисление выполнено успешно.</message>
+  <message id="fpn-summary-chi2">Chi2/dof: {1}</message>
+  <message id="fpn-summary-rel-activities">Относительные активности (макс=1): {1}</message>
+  <message id="fpn-summary-rois">ROI: {1}</message>
+  <message id="fpn-summary-total-area">Общая площадь источника: {1}</message>
+  <message id="fpn-summary-no-rel-act">Нет относительных активностей (один источник).</message>
+
+  <!-- FitSrcPeaksOptions checkbox labels -->
+  <message id="fpn-opt-dont-use-existing-rois">Избегать существующих ROI</message>
+  <message id="fpn-opt-existing-as-free">Разрешить совместное использование ROI</message>
+  <message id="fpn-opt-dont-vary-energy-cal">Не изменять калибр. энергии</message>
+  <message id="fpn-opt-dont-refine-energy-cal">Не уточнять калибр. энергии</message>
+  <message id="fpn-opt-fit-bkgnd-peaks">Фит NORM</message>
+  <message id="fpn-opt-fit-bkgnd-dont-use">Фит NORM (не использовать)</message>
+  <message id="fpn-opt-use-background">Вычислять с вычитанием фона</message>
+
+  <!-- PeakFitForNuclideConfig option labels -->
+  <message id="fpn-opt-roi-min-chi2-red">Порог снижения chi2 ROI</message>
+  <message id="fpn-opt-roi-min-peak-sig">Порог значимости ROI</message>
+  <message id="fpn-opt-obs-initial-sig">Порог начальной значимости пика</message>
+  <message id="fpn-opt-obs-final-sig">Порог конечной значимости пика</message>
+  <message id="fpn-opt-skew-type">Асимметрия пика</message>
+  <message id="fpn-opt-fwhm-form">Форма FWHM</message>
+  <message id="fpn-opt-rel-eff-eqn-type">Ур-ние отн. эфф.</message>
+  <message id="fpn-opt-rel-eff-eqn-order">Порядок отн. эфф.</message>
+
+  <!-- Tooltips for options -->
+  <message id="fpn-opt-tt-dont-use-existing-rois">При этой опции существующие ROI не будут использоваться, а гамма-линии текущего источника(ов), попадающие в существующие ROI, не будут учитываться.</message>
+  <message id="fpn-opt-tt-existing-as-free">Обычно ROI пиков источника ограничены по энергетическому диапазону для снижения влияния соседних пиков. При этой опции соседние пики, разделяющие ROI, остаются как свободно плавающие пики и включаются в результаты.</message>
+  <message id="fpn-opt-tt-dont-vary-energy-cal">Калибровка энергии остаётся фиксированной во время фита.</message>
+  <message id="fpn-opt-tt-dont-refine-energy-cal">Калибровка энергии варьируется при фите, но диапазон ROI не обновляется на основе калибровки фита.</message>
+  <message id="fpn-opt-tt-fit-bkgnd-peaks">Фит пиков NORM (U-238, Ra-226, U-235, Th-232, K-40) с использованием второй кривой относительной эффективности.</message>
+  <message id="fpn-opt-tt-use-background">При включении фоновый спектр вычитается при фите пиков для определения используемых ROI, но фон не вычитается при окончательном фите возвращаемых пиков. Снимите флажок для фита без вычитания фона.</message>
+  <message id="fpn-opt-tt-roi-min-chi2-red">Минимальное общее снижение chi2, необходимое для признания пиков в ROI значимыми. Chi2 с пиками должен быть ниже chi2 только с континуумом как минимум на эту величину.</message>
+  <message id="fpn-opt-tt-roi-min-peak-sig">Минимальная значимость пика (площадь_пика / sqrt(континуум)) для признания пика значимым. Если любой пик в ROI имеет значимость выше этого порога, ROI сохраняется.</message>
+  <message id="fpn-opt-tt-obs-initial-sig">Порог фильтра начальной значимости пика перед повторным фитом. Значимость = (амплитуда_пика * 0.7607) / sqrt(площадь_данных_в_pm_1_fwhm).</message>
+  <message id="fpn-opt-tt-obs-final-sig">Порог конечной значимости пика после повторного фита. Значимость = площадь_пика / неопределённость_площади_пика.</message>
+  <message id="fpn-opt-tt-skew-type">Форма асимметрии, применяемая ко всем пикам при фите. &quot;None&quot; использует чистый гауссиан. Другие варианты добавляют компоненты низкоэнергетического хвоста (напр. Exp*Gauss для детекторов NaI/CsI, Crystal Ball для хвоста сбора заряда в HPGe).</message>
+  <message id="fpn-opt-tt-fwhm-form">Функциональная форма разрешения детектора (FWHM от энергии). Порядок полинома Bernstein определяет количество подгоняемых коэффициентов.</message>
+  <message id="fpn-opt-tt-rel-eff-eqn-type">Форма кривой относительной эффективности (напр. полином LnXLnY или физическая модель FRAM).</message>
+  <message id="fpn-opt-tt-rel-eff-eqn-order">Порядок полинома уравнения относительной эффективности (при неиспользовании физической модели).</message>
+
+  <!-- Status and error messages -->
+  <message id="fpn-no-data">Нет переднего спектра для фита пиков.</message>
+  <message id="fpn-wait-title">Фит пиков</message>
+  <message id="fpn-wait-content">Это может занять минуту. Вы можете продолжать использовать приложение.</message>
+  <message id="fpn-stale">Спектр изменился до завершения фита; результаты отброшены.</message>
+
+  <message id="fpn-error-title">Фит не удался</message>
+  <message id="fpn-error-content">Ошибка: {1}</message>
+
+  <!-- Results dialog -->
+  <message id="fpn-result-title">Результаты фита</message>
+  <message id="fpn-no-peaks">Для выбранного источника(ов) пики не были подогнаны.</message>
+  <message id="fpn-summary">Подогнано {1} пик(ов) для {2} источника(ов).</message>
+  <message id="fpn-warnings-header">Предупреждения:</message>
+  <message id="fpn-auto-accept">Автоматически принимать результаты фита</message>
+  <message id="fpn-auto-accepted">Результаты фита приняты автоматически.</message>
+
+</messages>

@@ -15,6 +15,7 @@
   <message id="dsfs-all-peaks-cb">所有峰</message>
   
   <message id="md-det-diam">探测器直径</message>
+  <message id="md-det-setback">Det. 后退距离</message>
   <message id="md-eff-type">效率类型</message>
   <message id="md-eqn-in-kev">方程单位keV</message>
   <message id="md-eqn-in-mev">方程单位MeV</message>

@@ -2,9 +2,11 @@
 <messages>
   <!-- rs- is short for Reference Spectra -->
   <message id="rs-dialog-title">Spectres de référence</message>
-  <message id="rs-show-foreground">Afficher premier plan</message>
-  <message id="rs-show-background">Bruit de fond</message>
-  <message id="rs-load-background">Charger bruit de fond</message>
+  <message id="rs-show-foreground">Comp. premier plan</message>
+  <message id="rs-show-foreground-portrait">Comparer</message>
+  <message id="rs-show-background">Fond</message>
+  <message id="rs-show-background-portrait">Fond</message>
+  <message id="rs-load-background">Charger fond</message>
   <message id="rs-load-background-portrait">+Bruit de fond</message>
   <message id="rs-tt-add-dir-btn">Ajouter répertoire pour ouvrir les spectres de référence.</message>
   <message id="rs-tt-delete-dir-btn">Supprime le répertoire actuellement sélectionné de la liste des endroits pour afficher les spectres de référence.</message>

@@ -13,6 +13,30 @@
   <message id="ctwidget-non-chart-area">নন-চার্ট এলাকা</message>
   <message id="ctwidget-backdrop-theme">ব্যাকড্রপ থিম</message>
   <message id="ctwidget-backdrop-desc">সমস্ত নন-চার্ট এলাকার জন্য থিম</message>
+  <message id="ctwidget-app-background">ব্যাকগ্রাউন্ড রং</message>
+  <message id="ctwidget-app-background-desc">ডায়ালগ, প্রধান অ্যাপ এলাকা ইত্যাদির জন্য ব্যাকগ্রাউন্ড রং।</message>
+  <message id="ctwidget-app-text">টেক্সট রং</message>
+  <message id="ctwidget-app-text-desc">নন-চার্ট এলাকার জন্য টেক্সট রং</message>
+  <message id="ctwidget-app-border">বর্ডার রং</message>
+  <message id="ctwidget-app-border-desc">UI উপাদানের জন্য বর্ডার রং (ট্যাব, বাটন, প্যানেল)</message>
+  <message id="ctwidget-app-link">লিঙ্ক রং</message>
+  <message id="ctwidget-app-link-desc">লিঙ্ক এবং ইন্টারেক্টিভ অ্যাকসেন্টের জন্য রং</message>
+  <message id="ctwidget-app-label">লেবেল রং</message>
+  <message id="ctwidget-app-label-desc">লেবেল, ট্যাব এবং হেডারের জন্য টেক্সট রং</message>
+  <message id="ctwidget-app-input-bg">ইনপুট ব্যাকগ্রাউন্ড</message>
+  <message id="ctwidget-app-input-bg-desc">ইনপুট ফিল্ডের জন্য ব্যাকগ্রাউন্ড রং</message>
+  <message id="ctwidget-app-button-bg">বাটন ব্যাকগ্রাউন্ড</message>
+  <message id="ctwidget-app-button-bg-desc">বাটনের জন্য ব্যাকগ্রাউন্ড রং</message>
+  <message id="ctwidget-app-button-border">বাটন বর্ডার</message>
+  <message id="ctwidget-app-button-border-desc">বাটনের জন্য বর্ডার রং</message>
+  <message id="ctwidget-app-button-text">বাটন টেক্সট</message>
+  <message id="ctwidget-app-button-text-desc">বাটনের জন্য টেক্সট রং</message>
+  <message id="ctwidget-app-menubar-bg">মেনু বার ব্যাকগ্রাউন্ড</message>
+  <message id="ctwidget-app-menubar-bg-desc">মেনু বার এবং মেনু বাটনের জন্য ব্যাকগ্রাউন্ড রং</message>
+  <message id="ctwidget-app-menubar-active">মেনু বার সক্রিয়</message>
+  <message id="ctwidget-app-menubar-active-desc">মেনু খোলা থাকলে মেনু বাটনের জন্য ব্যাকগ্রাউন্ড রং</message>
+  <message id="ctwidget-app-menubar-hover">মেনু বার হোভার</message>
+  <message id="ctwidget-app-menubar-hover-desc">হোভারে মেনু বাটনের জন্য ব্যাকগ্রাউন্ড রং</message>
 
   <!-- Chart colors section -->
   <message id="ctwidget-chart-colors">চার্ট রং</message>

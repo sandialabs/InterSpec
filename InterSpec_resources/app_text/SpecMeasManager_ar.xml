@@ -63,6 +63,7 @@
     جزء "<em>الكفاءة النسبية</em>" من أداة "<em>اختيار دالة استجابة الكاشف</em>".
   </message>
   <message id="smm-err-saving-drf">خطأ في حفظ ملف DRF للاستخدام لاحقًا.</message>
+  <message id="smm-file-is-drf">يبدو أن هذا الملف دالة استجابة كاشف.</message>
   <message id="smm-file-is-multi-drf">هذا الملف يحتوي على دوال استجابة كاشف متعددة.</message>
 
   <!-- Text for dialog that appears when user drag-n-drop a .CALp file onto InterSpec -->
@@ -132,9 +133,21 @@
   <message id="smm-ecc-fix-geom-act-m2">هندسة ثابتة - النشاط لكل م2</message>
   <message id="smm-ecc-fix-geom-act-gram">هندسة ثابتة - النشاط لكل جرام</message>
   <message id="smm-ecc-det-diam">قطر الكاشف</message>
+  <message id="smm-ecc-det-setback">تراجع الكاشف</message>
   <message id="smm-ecc-dist">المسافة</message>
   <message id="smm-ecc-use-drf">استخدام DRF</message>
   <message id="smm-ecc-error">خطأ في إنشاء DRF من ECC: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop an ANGLE .outx file onto app -->
+  <message id="smm-outx-curve">DRF منحنى معايرة كفاءة ANGLE</message>
+  <message id="smm-outx-error">خطأ في إنشاء DRF من ANGLE .outx: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop an efficiency CSV file onto app -->
+  <message id="smm-eff-csv-curve">DRF منحنى CSV الكفاءة</message>
+  <message id="smm-eff-csv-error">خطأ في إنشاء DRF من CSV الكفاءة: {1}</message>
+  <message id="smm-eff-csv-det-dat-label">Detector.dat (اختياري)</message>
+  <message id="smm-eff-csv-intrinsic">الكفاءة الجوهرية</message>
+  <message id="smm-eff-csv-abs-eff">الكفاءة المطلقة</message>
 
   <!-- Text for dialog when user drag-n-drop the Activity/Shielding fit file onto app -->
   <message id="smm-act-shield-xml">XML النشاط/التدريع</message>

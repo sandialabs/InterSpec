@@ -15,6 +15,7 @@
   <message id="dsfs-all-peaks-cb">Todos los picos</message>
   
   <message id="md-det-diam">Diám. det.</message>
+  <message id="md-det-setback">Retroceso det.</message>
   <message id="md-eff-type">Tipo eficiencia</message>
   <message id="md-eqn-in-kev">Ecu. en keV</message>
   <message id="md-eqn-in-mev">Ecu. en MeV</message>

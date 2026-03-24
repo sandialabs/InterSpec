@@ -133,9 +133,21 @@
   <message id="smm-ecc-fix-geom-act-m2">Geometria Fixa - atividade por m2</message>
   <message id="smm-ecc-fix-geom-act-gram">Geometria Fixa - atividade por grama</message>
   <message id="smm-ecc-det-diam">Diâm. detector</message>
+  <message id="smm-ecc-det-setback">Recuo det.</message>
   <message id="smm-ecc-dist">Distância</message>
   <message id="smm-ecc-use-drf">Usar DRF</message>
   <message id="smm-ecc-error">Erro ao criar DRF de ECC: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop an ANGLE .outx file onto app -->
+  <message id="smm-outx-curve">DRF de Curva de Calibração de Eficiência ANGLE</message>
+  <message id="smm-outx-error">Erro ao criar DRF de ANGLE .outx: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop an efficiency CSV file onto app -->
+  <message id="smm-eff-csv-curve">DRF de Curva CSV de Eficiência</message>
+  <message id="smm-eff-csv-error">Erro ao criar DRF de CSV de eficiência: {1}</message>
+  <message id="smm-eff-csv-det-dat-label">Detector.dat (opcional)</message>
+  <message id="smm-eff-csv-intrinsic">Eficiência Intrínseca</message>
+  <message id="smm-eff-csv-abs-eff">Eficiência Absoluta</message>
 
   <!-- Text for dialog when user drag-n-drop the Activity/Shielding fit file onto app -->
   <message id="smm-act-shield-xml">XML Atividade/Blindagem</message>

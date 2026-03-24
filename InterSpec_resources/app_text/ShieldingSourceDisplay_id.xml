@@ -32,6 +32,7 @@
   <message id="ssd-perform-fit-btn">Lakukan Pencocokan Model</message>
   <message id="ssd-cancel-fit">Batalkan Pencocokan Model</message>
   <message id="ssd-mi-calc-log">Log Perhitungan</message>
+  <message id="ssd-mi-calc-log-html">Log Perhitungan (HTML)</message>
   <message id="ssd-mi-import-model">Impor Model...</message>
   <message id="ssd-mi-export-model">Ekspor Model</message>
   <message id="ssd-mi-from-db">Buka Dari Database...</message>
@@ -83,12 +84,35 @@
     latar depan, identifikasi puncak yang berpotensi dikurangkan, lalu beralih kembali ke kombinasi
     latar depan/latar belakang Anda saat ini.
   </message>
+  <message id="ssd-missing-back-peaks-title">Puncak Latar Belakang Hilang</message>
+  <message id="ssd-missing-back-peaks-msg">
+    Spektrum latar belakang tidak memiliki puncak yang ditambahkan pada energi {1}, tetapi
+    kemungkinan ada puncak nyata di spektrum latar belakang pada energi tersebut -
+    apakah Anda ingin menambahkan puncak tersebut ke spektrum latar belakang?
+  </message>
+  <message id="ssd-btn-no-dont-add">Tidak</message>
+  <message id="ssd-btn-add-peaks">Tambah Puncak...</message>
+  <message id="ssd-btn-add-all-detectable">Tambah semua puncak auto-fit</message>
+  <message id="ssd-back-peak-preview-title">Pratinjau Puncak Latar Belakang</message>
+  <message id="ssd-back-peak-preview-msg">Puncak berikut akan ditambahkan ke spektrum latar belakang:</message>
+  <message id="ssd-no-new-back-peaks">Tidak ditemukan puncak tambahan di spektrum latar belakang pada energi yang ditunjukkan.</message>
+  <message id="ssd-back-peaks-all-fit">{1} puncak kandidat telah disesuaikan ke latar belakang.</message>
+  <message id="ssd-back-peaks-some-fit">{1} dari {2} puncak kandidat signifikan dan disesuaikan ke latar belakang.</message>
+  <message id="ssd-back-peaks-manual-hint">(Anda juga dapat menyesuaikan puncak latar belakang secara manual dengan tombol Alt (mac: tombol Option) plus klik<br />
+  ganda pada spektrum, atau dengan memuat latar belakang sebagai latar depan)</message>
+  <message id="ssd-err-adding-back-peaks">Kesalahan menambahkan puncak ke latar belakang: {1}</message>
   <message id="ssd-update-dim-to-be-min">Memperbarui dimensi perisai menjadi ketebalan minimum.</message>
   <message id="ssd-scaled-shield-to-be-less-dist">Ketebalan perisai telah diskalakan agar kurang dari jarak detektor.</message>
   <message id="ssd-err-fit-only-one-an">Anda hanya dapat menyesuaikan nomor atom dari satu perisai umum pada satu waktu.</message>
   <message id="ssd-warn-invalid-chi2-for-energy">Chi2 yang tidak valid dihitung untuk {1} keV, hasil lain mungkin tidak valid</message>
   <message id="ssd-calc-log-window-title">Log Perhitungan</message>
   <message id="ssd-calc-log-export-txt">File TXT</message>
+  <message id="ssd-calc-log-html-title">Log Perhitungan</message>
+  <message id="ssd-template-text-log">Log Standar (Teks)</message>
+  <message id="ssd-template-html-report">Laporan Pencocokan Aktivitas (HTML)</message>
+  <message id="ssd-template-deprecated-txt">Teks Usang</message>
+  <message id="ssd-no-fit-results">Tidak ada hasil pencocokan yang tersedia untuk ditampilkan.</message>
+  <message id="ssd-error-creating-html-log">Kesalahan membuat log perhitungan HTML: {1}</message>
   <message id="ssd-err-opening-import-model">Kesalahan membuka Model Pencocokan Perisai Sumber yang diunggah: {1}</message>
   <message id="ssd-import-model-window-title">Impor Model XML Perisai Sumber</message>
   <message id="ssd-err-opening-db-model">Kesalahan membuka Model Pencocokan Perisai Sumber dari database: {1}</message>
@@ -145,7 +169,6 @@
   <!-- Chi2Graphic -->
   <message id="x2g-yaxis-title-chi">(diamati-model)/ketidakpast</message>
   <message id="x2g-yaxis-title-mult">Kelipatan Model</message>
-  <message id="x2g-">Sumbu-Y adalah hitungan area puncak, dikurangi jumlah hitungan yang diharapkan dari sumber yang ditampilkan saat ini dan nilai perisai, semuanya dibagi dengan ketidakpastian statistik. Kuadrat dari ini digunakan untuk mengoptimalkan perisai dan sumber.</message>
   <message id="x2g-tt-chi-axis">Sumbu-Y adalah hitungan area puncak, dikurangi jumlah hitungan yang diharapkan dari nilai sumber dan perisai yang ditampilkan saat ini, semuanya dibagi dengan ketidakpastian statistik. Kuadrat dari ini digunakan untuk mengoptimalkan perisai dan sumber.</message>
   <message id="x2g-tt-scale-axis">Sumbu-Y adalah kelipatan hitungan puncak yang diamati, relatif terhadap apa yang diharapkan dari nilai sumber dan perisai saat ini.</message>
   <message id="x2g-tt-num-observed">Jml Diamati:</message>

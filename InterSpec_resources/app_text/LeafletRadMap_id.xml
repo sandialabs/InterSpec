@@ -37,5 +37,24 @@
 <li><b>Rentang energi</b>: Saring hitungan gamma dalam rentang energi yang ditentukan.</li>
 <li><b>Puncak dalam rentang</b>: Tampilkan hanya nomor sampel yang memiliki puncak dalam rentang energi dengan warna penanda dan CPS berdasarkan laju hitung puncak.</li>
 </ul></message>
+  <message id="lrm-copy-google-maps">Salin URL Google Maps</message>
+  <message id="lrm-copy-bing-maps">Salin URL Bing Maps</message>
+  <message id="lrm-copy-url-success">URL peta disalin ke clipboard — tempel di browser Anda.</message>
+  <message id="lrm-copy-url-fail">Gagal menyalin URL peta ke clipboard.</message>
+  <message id="lrm-copy-url-no-gps">Tidak ada data GPS yang tersedia untuk membuat URL peta.</message>
+  <message id="lrm-tile-load-btn">Ubin peta tidak dimuat?</message>
+  <message id="lrm-tile-load-dialog-title">Ubin Peta Tidak Dimuat</message>
+  <message id="lrm-tile-load-dialog-content">
+    Ubin peta tidak dapat dimuat dari arcgis.com. Ini mungkin disebabkan oleh:
+    <ul>
+      <li>Tidak ada koneksi internet</li>
+      <li>Proxy perusahaan atau firewall yang memblokir akses ke arcgis.com</li>
+      <li>Kunci API yang tidak valid atau kedaluwarsa</li>
+    </ul>
+    <p>Jika Anda berada di belakang proxy, Anda mungkin perlu mengonfigurasi pengaturan proxy.
+    Lihat file <em>data/config/example_InterSpec_app_settings.json</em> untuk
+    opsi <b>ProxySetting</b>; biasanya nilai <b>system</b> akan berfungsi.</p>
+    <p>Penanda pengukuran masih akan ditampilkan, tetapi latar belakang peta akan kosong.</p>
+  </message>
 </messages>
 

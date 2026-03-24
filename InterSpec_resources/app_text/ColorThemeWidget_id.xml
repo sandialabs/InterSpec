@@ -13,7 +13,31 @@
   <message id="ctwidget-non-chart-area">Area Non-Grafik</message>
   <message id="ctwidget-backdrop-theme">Tema Latar Belakang</message>
   <message id="ctwidget-backdrop-desc">Tema untuk semua area non-grafik</message>
-  
+  <message id="ctwidget-app-background">Warna Latar Belakang</message>
+  <message id="ctwidget-app-background-desc">Warna latar belakang untuk dialog, area aplikasi utama, dll.</message>
+  <message id="ctwidget-app-text">Warna Teks</message>
+  <message id="ctwidget-app-text-desc">Warna teks untuk area non-grafik</message>
+  <message id="ctwidget-app-border">Warna Batas</message>
+  <message id="ctwidget-app-border-desc">Warna batas untuk elemen UI (tab, tombol, panel)</message>
+  <message id="ctwidget-app-link">Warna Tautan</message>
+  <message id="ctwidget-app-link-desc">Warna untuk tautan dan aksen interaktif</message>
+  <message id="ctwidget-app-label">Warna Label</message>
+  <message id="ctwidget-app-label-desc">Warna teks untuk label, tab, dan header</message>
+  <message id="ctwidget-app-input-bg">Latar Belakang Input</message>
+  <message id="ctwidget-app-input-bg-desc">Warna latar belakang untuk bidang input</message>
+  <message id="ctwidget-app-button-bg">Latar Belakang Tombol</message>
+  <message id="ctwidget-app-button-bg-desc">Warna latar belakang untuk tombol</message>
+  <message id="ctwidget-app-button-border">Batas Tombol</message>
+  <message id="ctwidget-app-button-border-desc">Warna batas untuk tombol</message>
+  <message id="ctwidget-app-button-text">Teks Tombol</message>
+  <message id="ctwidget-app-button-text-desc">Warna teks untuk tombol</message>
+  <message id="ctwidget-app-menubar-bg">Latar Belakang Bilah Menu</message>
+  <message id="ctwidget-app-menubar-bg-desc">Warna latar belakang untuk bilah menu dan tombol menu</message>
+  <message id="ctwidget-app-menubar-active">Bilah Menu Aktif</message>
+  <message id="ctwidget-app-menubar-active-desc">Warna latar belakang untuk tombol menu ketika menunya terbuka</message>
+  <message id="ctwidget-app-menubar-hover">Bilah Menu Hover</message>
+  <message id="ctwidget-app-menubar-hover-desc">Warna latar belakang untuk tombol menu saat hover</message>
+
   <!-- Chart colors section -->
   <message id="ctwidget-chart-colors">Warna Grafik</message>
   

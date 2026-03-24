@@ -2,8 +2,10 @@
 <messages>
   <!-- rs- is short for Reference Spectra -->
   <message id="rs-dialog-title">Референсные спектры</message>
-  <message id="rs-show-foreground">Показать передний план</message>
+  <message id="rs-show-foreground">Сравн. спектр</message>
+  <message id="rs-show-foreground-portrait">Сравнить</message>
   <message id="rs-show-background">Фон</message>
+  <message id="rs-show-background-portrait">Фон</message>
   <message id="rs-load-background">Загрузить фон</message>
   <message id="rs-load-background-portrait">+Фон</message>
   <message id="rs-tt-add-dir-btn">Добавить каталог для открытия референсных спектров.</message>

@@ -13,7 +13,31 @@
   <message id="ctwidget-non-chart-area">منطقة غير المخطط</message>
   <message id="ctwidget-backdrop-theme">سمة الخلفية</message>
   <message id="ctwidget-backdrop-desc">سمة لجميع المناطق غير المخطط</message>
-  
+  <message id="ctwidget-app-background">لون الخلفية</message>
+  <message id="ctwidget-app-background-desc">لون الخلفية للحوارات ومنطقة التطبيق الرئيسية وغيرها.</message>
+  <message id="ctwidget-app-text">لون النص</message>
+  <message id="ctwidget-app-text-desc">لون النص للمناطق غير المخطط</message>
+  <message id="ctwidget-app-border">لون الحدود</message>
+  <message id="ctwidget-app-border-desc">لون الحدود لعناصر الواجهة (التبويبات، الأزرار، اللوحات)</message>
+  <message id="ctwidget-app-link">لون الرابط</message>
+  <message id="ctwidget-app-link-desc">لون الروابط والعناصر التفاعلية</message>
+  <message id="ctwidget-app-label">لون التسمية</message>
+  <message id="ctwidget-app-label-desc">لون النص للتسميات والتبويبات والعناوين</message>
+  <message id="ctwidget-app-input-bg">خلفية حقل الإدخال</message>
+  <message id="ctwidget-app-input-bg-desc">لون الخلفية لحقول الإدخال</message>
+  <message id="ctwidget-app-button-bg">خلفية الزر</message>
+  <message id="ctwidget-app-button-bg-desc">لون الخلفية للأزرار</message>
+  <message id="ctwidget-app-button-border">حدود الزر</message>
+  <message id="ctwidget-app-button-border-desc">لون الحدود للأزرار</message>
+  <message id="ctwidget-app-button-text">نص الزر</message>
+  <message id="ctwidget-app-button-text-desc">لون النص للأزرار</message>
+  <message id="ctwidget-app-menubar-bg">خلفية شريط القوائم</message>
+  <message id="ctwidget-app-menubar-bg-desc">لون الخلفية لشريط القوائم وأزرار القوائم</message>
+  <message id="ctwidget-app-menubar-active">شريط القوائم نشط</message>
+  <message id="ctwidget-app-menubar-active-desc">لون الخلفية لزر القائمة عندما تكون قائمته مفتوحة</message>
+  <message id="ctwidget-app-menubar-hover">تحويم شريط القوائم</message>
+  <message id="ctwidget-app-menubar-hover-desc">لون الخلفية لزر القائمة عند التحويم</message>
+
   <!-- Chart colors section -->
   <message id="ctwidget-chart-colors">ألوان المخطط</message>
   

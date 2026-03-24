@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- fpn- is short for FitPeaksForNuclides -->
+
+  <!-- Tab labels for FitPeaksAdvancedWidget upper area -->
+  <message id="fpn-tab-spectrum">বর্ণালী</message>
+  <message id="fpn-tab-rel-eff">আপে. দক্ষ.</message>
+  <message id="fpn-tab-results">বিবরণ</message>
+
+  <!-- Advanced dialog -->
+  <message id="fpn-adv-title">পিক ফিট করুন:</message>
+  <message id="fpn-adv-content">উন্নত বিকল্পগুলি বাস্তবায়িত হয়নি</message>
+  <message id="fpn-fit-peaks">পিক ফিট</message>
+  <message id="fpn-accept">গ্রহণ</message>
+  <message id="fpn-cancel">বাতিল</message>
+
+  <!-- Status and computation messages -->
+  <message id="fpn-calculating">গণনা চলছে...</message>
+  <message id="fpn-computation-successful">গণনা সফল।</message>
+  <message id="fpn-summary-chi2">Chi2/dof: {1}</message>
+  <message id="fpn-summary-rel-activities">আপেক্ষিক সক্রিয়তা (সর্বোচ্চ=1): {1}</message>
+  <message id="fpn-summary-rois">ROI: {1}</message>
+  <message id="fpn-summary-total-area">মোট উৎস ক্ষেত্রফল: {1}</message>
+  <message id="fpn-summary-no-rel-act">কোনো আপেক্ষিক সক্রিয়তা নেই (একক উৎস)।</message>
+
+  <!-- FitSrcPeaksOptions checkbox labels -->
+  <message id="fpn-opt-dont-use-existing-rois">বিদ্যমান ROI এড়িয়ে যান</message>
+  <message id="fpn-opt-existing-as-free">বর্তমান ROI শেয়ার করার অনুমতি</message>
+  <message id="fpn-opt-dont-vary-energy-cal">শক্তি ক্যাল পরিবর্তন করবেন না</message>
+  <message id="fpn-opt-dont-refine-energy-cal">শক্তি ক্যাল পরিমার্জন করবেন না</message>
+  <message id="fpn-opt-fit-bkgnd-peaks">NORM ফিট</message>
+  <message id="fpn-opt-fit-bkgnd-dont-use">NORM ফিট (ব্যবহার নয়)</message>
+  <message id="fpn-opt-use-background">পটভূমি বিয়োগ সহ গণনা</message>
+
+  <!-- PeakFitForNuclideConfig option labels -->
+  <message id="fpn-opt-roi-min-chi2-red">ROI chi2 হ্রাসের সীমা</message>
+  <message id="fpn-opt-roi-min-peak-sig">ROI তাৎপর্যের সীমা</message>
+  <message id="fpn-opt-obs-initial-sig">পূর্বাভাসিত পিক তাৎপর্যের সীমা</message>
+  <message id="fpn-opt-obs-final-sig">চূড়ান্ত পিক তাৎপর্যের সীমা</message>
+  <message id="fpn-opt-skew-type">পিক স্কিউ</message>
+  <message id="fpn-opt-fwhm-form">FWHM ফর্ম</message>
+  <message id="fpn-opt-rel-eff-eqn-type">আপে. দক্ষ. সমীকরণ</message>
+  <message id="fpn-opt-rel-eff-eqn-order">আপে. দক্ষ. ক্রম</message>
+
+  <!-- Tooltips for options -->
+  <message id="fpn-opt-tt-dont-use-existing-rois">এই বিকল্পের সাথে, কোনো বিদ্যমান ROI ব্যবহার করা হবে না, এবং বর্তমান উৎস(গুলি) থেকে গামা যা বিদ্যমান ROI-এর মধ্যে পড়ে তা বিবেচনা করা হবে না।</message>
+  <message id="fpn-opt-tt-existing-as-free">সাধারণত উৎস পিকের ROI শক্তি পরিসরে সীমাবদ্ধ থাকে কাছাকাছি পিকের প্রভাব কমাতে। এই বিকল্পের সাথে, ROI শেয়ার করা কাছাকাছি পিকগুলি মুক্ত-ভাসমান পিক হিসাবে রাখা হয় এবং ফলাফলে অন্তর্ভুক্ত করা হয়।</message>
+  <message id="fpn-opt-tt-dont-vary-energy-cal">ফিট চলাকালীন শক্তি ক্যালিব্রেশন স্থির থাকে।</message>
+  <message id="fpn-opt-tt-dont-refine-energy-cal">ফিটে শক্তি ক্যালিব্রেশন পরিবর্তিত হয়, কিন্তু ফিট ক্যালিব্রেশনের উপর ভিত্তি করে ROI পরিসর আপডেট হয় না।</message>
+  <message id="fpn-opt-tt-fit-bkgnd-peaks">দ্বিতীয় আপেক্ষিক দক্ষতা বক্ররেখা ব্যবহার করে NORM পিক (U-238, Ra-226, U-235, Th-232, K-40) ফিট করুন।</message>
+  <message id="fpn-opt-tt-use-background">সক্রিয় থাকলে, ব্যবহারযোগ্য ROI নির্ধারণ করতে পিক ফিটিংয়ের সময় পটভূমি বর্ণালী বিয়োগ করা হয়, তবে ফেরত দেওয়া পিকের চূড়ান্ত ফিটের জন্য পটভূমি বিয়োগ করা হয় না। পটভূমি বিয়োগ ছাড়া ফিট করতে আনচেক করুন।</message>
+  <message id="fpn-opt-tt-roi-min-chi2-red">ROI-তে পিকগুলিকে তাৎপর্যপূর্ণ বলে বিবেচনা করতে ন্যূনতম মোট chi2 হ্রাস প্রয়োজন। পিকসহ chi2 কন্টিনিউয়াম-শুধু chi2 থেকে কমপক্ষে এতটুকু কম হতে হবে।</message>
+  <message id="fpn-opt-tt-roi-min-peak-sig">পিক তাৎপর্যপূর্ণ বলে বিবেচিত হতে ন্যূনতম পিক তাৎপর্য (পিক_ক্ষেত্রফল / sqrt(কন্টিনিউয়াম))। ROI-এর কোনো পিকের তাৎপর্য এই সীমার উপরে থাকলে, ROI রাখা হয়।</message>
+  <message id="fpn-opt-tt-obs-initial-sig">পুনরায় ফিট করার আগে প্রাথমিক পিক তাৎপর্য ফিল্টারের সীমা। তাৎপর্য = (পিক_প্রশস্ততা * 0.7607) / sqrt(pm_1_fwhm-এ_ডেটা_ক্ষেত্রফল)।</message>
+  <message id="fpn-opt-tt-obs-final-sig">পুনরায় ফিট করার পর চূড়ান্ত পিক তাৎপর্যের সীমা। তাৎপর্য = পিক_ক্ষেত্রফল / পিক_ক্ষেত্রফল_অনিশ্চয়তা।</message>
+  <message id="fpn-opt-tt-skew-type">ফিটে সমস্ত পিকে প্রয়োগ করা স্কিউ আকৃতি। &quot;None&quot; বিশুদ্ধ গাউসিয়ান ব্যবহার করে। অন্যান্য বিকল্প নিম্ন-শক্তি লেজ উপাদান যোগ করে (যেমন NaI/CsI ডিটেক্টরের জন্য Exp*Gauss, HPGe-তে চার্জ-সংগ্রহ লেজের জন্য Crystal Ball)।</message>
+  <message id="fpn-opt-tt-fwhm-form">ডিটেক্টর রেজোলিউশনের (FWHM বনাম শক্তি) ফাংশনাল ফর্ম। Bernstein বহুপদীর ক্রম নির্ধারণ করে কতগুলি সহগ ফিট করা হবে।</message>
+  <message id="fpn-opt-tt-rel-eff-eqn-type">আপেক্ষিক দক্ষতা বক্ররেখার ফর্ম (যেমন LnXLnY বহুপদী, বা FRAM ভৌত মডেল)।</message>
+  <message id="fpn-opt-tt-rel-eff-eqn-order">আপেক্ষিক দক্ষতা সমীকরণের বহুপদী ক্রম (ভৌত মডেল ব্যবহার না করলে)।</message>
+
+  <!-- Status and error messages -->
+  <message id="fpn-no-data">পিক ফিট করার জন্য কোনো ফোরগ্রাউন্ড বর্ণালী নেই।</message>
+  <message id="fpn-wait-title">পিক ফিট চলছে</message>
+  <message id="fpn-wait-content">এটি এক মিনিট সময় নিতে পারে। আপনি অ্যাপ ব্যবহার চালিয়ে যেতে পারেন।</message>
+  <message id="fpn-stale">ফিট সম্পন্ন হওয়ার আগে বর্ণালী পরিবর্তিত হয়েছে; ফলাফল বাতিল করা হচ্ছে।</message>
+
+  <message id="fpn-error-title">ফিট ব্যর্থ</message>
+  <message id="fpn-error-content">ত্রুটি: {1}</message>
+
+  <!-- Results dialog -->
+  <message id="fpn-result-title">ফিটের ফলাফল</message>
+  <message id="fpn-no-peaks">নির্বাচিত উৎস(গুলি)-এর জন্য কোনো পিক ফিট করা হয়নি।</message>
+  <message id="fpn-summary">{2} উৎস(গুলি)-এর জন্য {1} পিক ফিট করা হয়েছে।</message>
+  <message id="fpn-warnings-header">সতর্কতা:</message>
+  <message id="fpn-auto-accept">ফিটের ফলাফল স্বয়ংক্রিয়ভাবে গ্রহণ করুন</message>
+  <message id="fpn-auto-accepted">ফিটের ফলাফল স্বয়ংক্রিয়ভাবে গ্রহণ করা হয়েছে।</message>
+
+</messages>

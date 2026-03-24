@@ -37,4 +37,23 @@
 <li><b>Faixa de energia</b>: Filtrar contagens gama dentro da faixa de energia especificada.</li>
 <li><b>Picos na faixa</b>: Mostrar apenas números de amostra que têm picos dentro da faixa de energia com cores de marcador e CPS baseadas na taxa de contagem dos picos.</li>
 </ul></message>
+  <message id="lrm-copy-google-maps">Copiar URL do Google Maps</message>
+  <message id="lrm-copy-bing-maps">Copiar URL do Bing Maps</message>
+  <message id="lrm-copy-url-success">URL do mapa copiada para a área de transferência — cole no seu navegador.</message>
+  <message id="lrm-copy-url-fail">Falha ao copiar URL do mapa para a área de transferência.</message>
+  <message id="lrm-copy-url-no-gps">Nenhum dado GPS disponível para criar URL do mapa.</message>
+  <message id="lrm-tile-load-btn">Blocos do mapa não carregam?</message>
+  <message id="lrm-tile-load-dialog-title">Blocos do Mapa Não Carregam</message>
+  <message id="lrm-tile-load-dialog-content">
+    Os blocos do mapa não puderam ser carregados de arcgis.com. Isso pode ser causado por:
+    <ul>
+      <li>Sem conexão com a internet</li>
+      <li>Um proxy corporativo ou firewall bloqueando o acesso a arcgis.com</li>
+      <li>Uma chave de API inválida ou expirada</li>
+    </ul>
+    <p>Se você estiver atrás de um proxy, pode ser necessário configurar as definições de proxy.
+    Consulte o arquivo <em>data/config/example_InterSpec_app_settings.json</em> para
+    a opção <b>ProxySetting</b>; normalmente o valor <b>system</b> funcionará.</p>
+    <p>Os marcadores de medição ainda serão exibidos, mas o fundo do mapa ficará em branco.</p>
+  </message>
 </messages>

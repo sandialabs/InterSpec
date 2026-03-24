@@ -78,6 +78,7 @@
   <!-- Error dialogs -->
   <message id="esf-error-title">Erro</message>
   <message id="esf-qr-encode-failed">Falha ao exibir espectro como QR code: {1}</message>
+  <message id="esf-back-sub-peak-refit-failed">Falha ao reajustar os contínuos de picos para o espectro com subtração de fundo; parâmetros de picos originais utilizados.</message>
 
   <!-- Pluralized messages -->
   <message id="esf-disp-sample">

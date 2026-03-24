@@ -16,6 +16,7 @@
   <message id="Apply">প্রয়োগ করুন</message>
   <message id="Accept">গ্রহণ করুন</message>
   <message id="Okay">ঠিক আছে</message>
+  <message id="Reject">প্রত্যাখ্যান</message>
   <message id="Foreground">ফোরগ্রাউন্ড</message>
   <message id="Background">ব্যাকগ্রাউন্ড</message>
   <message id="Secondary">সেকেন্ডারি</message>
@@ -465,6 +466,7 @@
   <message id="pct-bilinear-step">দ্বি-রৈখিক ধাপ</message>
   <message id="pct-flat-step-cdf">Flat Step (CDF)</message>
   <message id="pct-linear-step-cdf">Linear Step (CDF)</message>
+  <message id="pct-bilinear-step-cdf">দ্বি-রৈখিক ধাপ (CDF)</message>
   <message id="pct-global">গ্লোবাল ধারা।</message>
 
   <!-- populateNuclideSelects() in PeakSearchGuiUtils.cpp -->

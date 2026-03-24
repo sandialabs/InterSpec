@@ -78,7 +78,8 @@
   <!-- Error dialogs -->
   <message id="esf-error-title">Kesalahan</message>
   <message id="esf-qr-encode-failed">Gagal menampilkan spektrum sebagai kode QR: {1}</message>
-  
+  <message id="esf-back-sub-peak-refit-failed">Gagal menyesuaikan ulang kontinum puncak untuk spektrum yang dikurangi latar belakang; parameter puncak asli digunakan.</message>
+
   <!-- Pluralized messages -->
   <message id="esf-disp-sample">
     <plural case="0">Sampel&#160;Ditampilkan</plural>

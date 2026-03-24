@@ -78,6 +78,7 @@
   <!-- Error dialogs -->
   <message id="esf-error-title">ত্রুটি</message>
   <message id="esf-qr-encode-failed">স্পেকট্রাম QR কোড হিসাবে প্রদর্শন করতে ব্যর্থ: {1}</message>
+  <message id="esf-back-sub-peak-refit-failed">ব্যাকগ্রাউন্ড-বিয়োগকৃত স্পেকট্রামের জন্য পিক কন্টিনিউম পুনরায় ফিট করতে ব্যর্থ; মূল পিক প্যারামিটার ব্যবহৃত হয়েছে।</message>
 
   <!-- Pluralized messages -->
   <message id="esf-disp-sample">

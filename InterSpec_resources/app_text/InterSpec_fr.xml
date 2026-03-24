@@ -16,6 +16,7 @@
   <message id="Apply">Appliquer</message>
   <message id="Accept">Accepter</message>
   <message id="Okay">D'accord</message>
+  <message id="Reject">Rejeter</message>
   <message id="Foreground">Premier plan</message>
   <message id="Background">Arrière-plan</message>
   <message id="Secondary">Secondaire</message>
@@ -56,7 +57,6 @@
   <message id="Title">Titre</message>
   <message id="Fit">Ajuster</message>
   <message id="Use">Utiliser</message>
-  <message id="Energy">Énergie</message>
   <message id="Mean">Moyenne</message>
   <message id="FWHM">FWHM</message>
   <message id="Amp.">Amp.</message>
@@ -93,7 +93,6 @@
   <message id="Min.">Min.</message>
   <message id="Max.">Max.</message>
   <message id="QR Code">Code QR</message>
-  <message id="Accept">Accepter</message>
   <message id="Dose">Dose</message>
   <message id="Shielding">Blindage</message>
   <message id="app-qr-err">Erreur lors de la création du code QR : {1}</message>
@@ -491,6 +490,7 @@
   <message id="pct-bilinear-step">Marche bi-linéaire</message>
   <message id="pct-flat-step-cdf">Flat Step (CDF)</message>
   <message id="pct-linear-step-cdf">Linear Step (CDF)</message>
+  <message id="pct-bilinear-step-cdf">Marche bilinéaire (CDF)</message>
   <message id="pct-global">Cont. global</message>
 
   <!-- populateNuclideSelects() dans PeakSearchGuiUtils.cpp -->
@@ -603,6 +603,8 @@
   <message id="lang-de">Deutsch</message>
   <message id="lang-ja">日本語</message>
   <message id="lang-zh">中文</message>
+  <message id="lang-hi">हिन्दी</message>
+  <message id="lang-bn">বাংলা</message>
   <message id="lang-pt">Português</message>
   <message id="lang-ru">Русский</message>
   <message id="lang-it">Italiano</message>
@@ -610,6 +612,8 @@
   <message id="lang-vi">Tiếng Việt</message>
   <message id="lang-tr">Türkçe</message>
   <message id="lang-ar">العربية</message>
+  <message id="lang-hu">Magyar</message>
+  <message id="lang-id">Bahasa Indonesia</message>
 
 
   <!-- Une liste incomplète de pays possibles - correspondant le code à deux lettres que nous recevons comme partie de
@@ -626,6 +630,9 @@
   <message id="country-JP">Japon</message>
   <message id="country-CN">Chine</message>
   <message id="country-TW">Taïwan</message>
+  <message id="country-IN">भारत</message>
+  <message id="country-BD">বাংলাদেশ</message>
+  <message id="country-ID">Indonesia</message>
   <message id="country-BR">Brésil</message>
   <message id="country-PT">Portugal</message>
   <message id="country-RU">Russie</message>

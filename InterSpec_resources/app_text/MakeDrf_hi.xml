@@ -15,6 +15,7 @@
   <message id="dsfs-all-peaks-cb">सभी शिखर</message>
 
   <message id="md-det-diam">डिटेक्टर व्यास</message>
+  <message id="md-det-setback">Det. सेटबैक</message>
   <message id="md-eff-type">दक्षता प्रकार</message>
   <message id="md-eqn-in-kev">समीकरण keV में</message>
   <message id="md-eqn-in-mev">समीकरण MeV में</message>

@@ -23,6 +23,7 @@
   <message id="raag-fwhm-est">Оценка ПШПВ</message>
   <message id="raag-fwhm-form">Форма ПШПВ</message>
   <message id="raag-peak-skew">Асимметрия пика</message>
+  <message id="raag-lorentzian-xrays">Lorentzian рентген</message>
   <message id="raag-add-uncert">Доп. неопред.</message>
   <message id="raag-yield-info">Инф. о выходе</message>
   
@@ -69,6 +70,7 @@
   </message>
   <message id="raag-tt-fwhm-form">Тип уравнения для моделирования FWHM пика как функции энергии.</message>
   <message id="raag-tt-skew-type">Тип скоса, применяемый к пикам; параметры скоса будут подогнаны.</message>
+  <message id="raag-tt-lorentzian-xrays">При включении пики рентгеновских лучей будут использовать профиль Voigt с шириной Lorentzian, установленной на естественную ширину линии рентгеновского излучения. Это учитывает собственную Lorentzian форму линий рентгеновского излучения. Совместимо только с типами асимметрии пиков NoSkew или GaussPlusBortel.</message>
   <message id="raag-tt-u-pu-data-source">Источник ядерных данных для коэффициентов ветвления гамма-излучения урана и плутония.</message>
   <message id="raag-tt-add-source">Добавить источник.</message>
   <message id="raag-tt-add-energy-range">Добавить диапазон энергий.</message>

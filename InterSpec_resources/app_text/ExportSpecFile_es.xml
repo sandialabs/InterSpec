@@ -78,7 +78,8 @@
   <!-- Error dialogs -->
   <message id="esf-error-title">Error</message>
   <message id="esf-qr-encode-failed">Falló al mostrar el espectro como un código QR: {1}</message>
-  
+  <message id="esf-back-sub-peak-refit-failed">No se pudieron reajustar los continuos de picos para el espectro con sustracción de fondo; se usaron los parámetros de picos originales.</message>
+
   <!-- Pluralized messages -->
   <message id="esf-disp-sample">
     <plural case="0">Muestra&nbsp;Mostrada</plural>

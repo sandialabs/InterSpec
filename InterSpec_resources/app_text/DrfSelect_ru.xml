@@ -47,6 +47,7 @@
     </div>
   </message>
   <message id="ds-det-diam">Диаметр детектора:</message>
+  <message id="ds-det-setback">Отступ дет.:</message>
   <message id="ds-fixed-geom">Фиксированная геометрия</message>
   <message id="ds-gad-det-file-label">Файл GADRAS Detector.Dat:</message>
   <message id="ds-manual-det-empty-fcn">Пример: exp(-9.8 - 8.1*log(x) + 4.62E-02*log(x)^2 + ...)\n
@@ -64,6 +65,7 @@
   <message id="ds-tt-manual-energy-unit">Единица энергии для формулы эффективности</message>
   <message id="ds-tt-manual-desc">Описание этого отклика детектора</message>
   <message id="ds-manual-det-diam-label">Диам. детектора</message>
+  <message id="ds-manual-det-setback-label">Отступ дет.</message>
   <message id="ds-energy-range">Диапазон энергий</message>
   <message id="ds-(optional)">(необязательно)</message>
   <message id="ds-min.">Мин.</message>
@@ -126,4 +128,9 @@
   <message id="ds-err-det-dist-pos">Расстояние должно быть положительным для абсолютных эффективностей</message>
   <message id="ds-warn-min-max-energy-swapped">Минимальная энергия детектора была больше максимальной энергии; игнорирую диапазон энергий.</message>
   <message id="ds-need-det-diam">Нужен диаметр детектора</message>
+  <message id="ds-err-invalid-csv-format">CSV файл не распознан. Пожалуйста, загрузите корректный CSV файл эффективности (формат MakeDrf или простой формат со столбцами энергии и эффективности).</message>
+  <message id="ds-err-parsing-gadras">Ошибка разбора детектора GADRAS: {1}</message>
+  <message id="ds-eff-type-intrinsic">Собственная эффективность</message>
+  <message id="ds-eff-type-farfield">Эффективность дальнего поля</message>
+  <message id="ds-eff-type-gadras">GADRAS</message>
 </messages>

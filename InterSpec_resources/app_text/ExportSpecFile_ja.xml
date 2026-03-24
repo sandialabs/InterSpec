@@ -78,7 +78,8 @@
   <!-- Error dialogs -->
   <message id="esf-error-title">エラー</message>
   <message id="esf-qr-encode-failed">スペクトルをQRコードとして表示できませんでした：{1}</message>
-  
+  <message id="esf-back-sub-peak-refit-failed">バックグラウンド減算スペクトルのピークコンティニュアムの再フィットに失敗しました。元のピークパラメータが使用されます。</message>
+
   <!-- Pluralized messages -->
   <message id="esf-disp-sample">
     <plural case="0">表示&nbsp;サンプル</plural>

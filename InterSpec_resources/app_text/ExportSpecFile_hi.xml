@@ -78,6 +78,7 @@
   <!-- Error dialogs -->
   <message id="esf-error-title">त्रुटि</message>
   <message id="esf-qr-encode-failed">स्पेक्ट्रम को QR कोड के रूप में प्रदर्शित करने में विफल: {1}</message>
+  <message id="esf-back-sub-peak-refit-failed">पृष्ठभूमि-घटाए गए स्पेक्ट्रम के लिए पीक कंटीन्यूम को पुनः फिट करने में विफल; मूल पीक पैरामीटर उपयोग किए गए।</message>
 
   <!-- Pluralized messages -->
   <message id="esf-disp-sample">

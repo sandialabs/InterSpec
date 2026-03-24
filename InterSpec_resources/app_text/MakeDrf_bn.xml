@@ -15,6 +15,7 @@
   <message id="dsfs-all-peaks-cb">সব পিক</message>
 
   <message id="md-det-diam">ডিট. ব্যাস</message>
+  <message id="md-det-setback">ডিট. সেটব্যাক</message>
   <message id="md-eff-type">দক্ষতা ধরন</message>
   <message id="md-eqn-in-kev">keV তে সমীকরণ</message>
   <message id="md-eqn-in-mev">MeV তে সমীকরণ</message>

@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <message id="N42-2012">
+    Enregistre les données au format ANSI N42.42-2012.
+
+    Toutes les informations extraites du fichier de spectre original, ainsi que les informations ajoutées par InterSpec, telles que les pics ajustés, la calibration en énergie mise à jour, les informations d'ajustement de source, les informations de réponse du détecteur, etc., seront incluses dans le fichier de sortie.
+
+    C'est le format de fichier de spectre recommandé si vous souhaitez retravailler avec les données dans InterSpec ultérieurement.
+
+    Le format N42.42-2012 a été mis à jour vers N42.42-2020, cependant le format mis à jour est essentiellement identique à la version 2012, les modifications étant principalement des clarifications de la documentation.
+
+    Veuillez consulter https://www.nist.gov/pml/radiation-physics/ansiieee-n4242-2020-version ou https://www.nist.gov/programs-projects/documentary-standards-ansiieee-n4242-standard pour plus d'informations.
+
+    Remarque : les fichiers N42-2012 produits par InterSpec contiennent un élément &lt;DHS:InterSpec&gt;&lt;/DHS:InterSpec&gt;, en violation de la spécification, ce qui peut poser des problèmes à certains analyseurs XML ; il peut également y avoir d'autres petits écarts par rapport aux spécifications — ces problèmes sont connus et il est prévu de les corriger à l'avenir.
+  </message>
+
+  <message id="N42-2006">
+    Enregistre au format XML N42 de 2006.
+
+    La plupart des informations pertinentes de la plupart des fichiers de spectre d'entrée seront incluses dans le fichier de sortie, ainsi que les informations que vous avez ajoutées dans InterSpec ; cependant, tous les programmes de spectroscopie ne sont pas capables d'extraire tous les champs ni de lire toutes les variations de fichiers N42.
+
+    Il est recommandé d'utiliser le format N42.42-2012 au lieu de ce format, sauf si vous exportez les données pour une utilisation avec une application ancienne.
+  </message>
+
+  <message id="CHN">
+    Cette option produit un fichier CHN binaire à nombres entiers.
+
+    Ce format contient un seul spectre, l'heure de début de mesure, le titre du spectre (jusqu'à 63 caractères), la description du détecteur et la calibration en énergie actuelle.
+
+    Les paires de déviation en énergie, les comptages de neutrons, les informations spécifiques à InterSpec (DRF, ajustements d'activité, etc.), ainsi que toute autre méta-information, ne seront pas inclus dans le fichier de sortie.
+  </message>
+
+  <message id="IAEA SPE">
+    Les fichiers SPE sont des fichiers à spectre unique basés sur ASCII, couramment utilisés pour l'échange de données entre programmes.
+
+    L'enregistrement dans ce format préserve les comptages de neutrons, l'heure de début, le temps actif, le temps réel, la calibration en énergie, les commentaires et le titre.
+
+    Les paires de déviation, le GPS, le modèle, les informations spécifiques à InterSpec (DRF, ajustements d'activité, etc.) et autres méta-informations ne seront pas inclus dans le fichier de sortie.
+  </message>
+
+  <message id="CSV">
+    Cette option produit un fichier de valeurs séparées par des virgules (CSV), qui peut inclure plusieurs spectres gamma.
+
+    Les spectres sont écrits dans un format à deux colonnes (séparées par une virgule) ; la première colonne est l'énergie du bord inférieur du canal gamma (en keV), la deuxième colonne est le comptage du canal. Chaque spectre dans le fichier est écrit de manière contiguë et séparé par un en-tête indiquant "Energy, Data".
+    Des fins de ligne de style Windows sont utilisées (\\n\\r).
+
+    Ce format perd toutes les informations non spectrales, y compris les temps actif et réel, et est destiné à être un moyen simple d'importer les informations spectrales dans d'autres programmes comme Excel.
+  </message>
+
+  <message id="TXT">
+    Le(s) spectre(s) seront écrits dans un fichier texte ASCII.
+
+    Au début du fichier, le nom du fichier original, les temps actif et réel totaux, le total des comptages gamma, le total des comptages de neutrons, le numéro de série (si présent) et tout commentaire au niveau du fichier seront écrits sur des lignes étiquetées séparées.
+    Ensuite, après deux lignes vides, chaque spectre du fichier actuel sera écrit, séparé par deux lignes vides. Chaque spectre contiendra tous les commentaires, l'heure de début de mesure (si valide), les temps actif et réel, le numéro d'échantillon, le nom du détecteur, le type de détecteur, les coordonnées/heure GPS (si valides), le type de calibration en énergie et les valeurs de coefficients, et les comptages de neutrons (si valides) ; le numéro de canal, l'énergie inférieure du canal et le comptage du canal sont ensuite fournis, chaque canal étant placé sur une ligne séparée et chaque champ étant séparé par un espace.
+
+    L'analyse du détecteur fournie par le programme original, ainsi que le fabricant, l'UUID, les paires de déviation, les informations de voie, le nom de localisation ou le titre du spectre seront perdus.
+    La convention de fin de ligne Windows est utilisée (\\n\\r).
+
+    Ce n'est pas un format standard couramment lu par d'autres programmes, et il est destiné à être un résumé lisible par l'homme des informations du fichier de spectre ; toutes les informations écrites ne seront pas relues par InterSpec si vous rechargez le fichier résultant dans le programme.
+  </message>
+
+  <message id="PCF">
+    Le format PCF est le format binaire natif de GADRAS.
+
+    L'enregistrement dans ce format entraînera la perte de certaines informations. Cependant, la calibration, le premier plan/fond, la vitesse, l'échantillon et le titre du spectre (jusqu'à 60 caractères) seront préservés avec les informations spectrales et les comptages de neutrons.
+
+    Ce format est le plus couramment utilisé pour importer des données dans GADRAS.
+  </message>
+
+  <message id="CNF">
+    Les fichiers CNF Mirion/Canberra sont des fichiers binaires à spectre unique.
+
+    L'enregistrement dans ce format préserve l'heure de début, le temps actif, le temps réel, la calibration en énergie, le titre et les coordonnées GPS.
+    Les comptages de neutrons, les paires de déviation, le modèle, les résultats RIID, les informations spécifiques à InterSpec (DRFs, pics ajustés, activités ajustées, etc.) et autres méta-informations seront perdus.
+
+    Seul un sous-ensemble de champs de fichier CAM est pris en charge pour l'exportation, et certains champs peuvent ne pas encore être corrects.
+  </message>
+
+  <message id="SPC (int)">
+    Cette option produit un fichier SPC binaire à spectre unique basé sur des entiers.
+
+    Ce format inclut le spectre gamma, les comptages de neutrons, les informations GPS, l'heure de début de mesure, le numéro de série du détecteur et la calibration en énergie.
+
+    Les paires de déviation en énergie, les résultats d'analyse, les informations spécifiques à InterSpec (DRFs, pics ajustés, activités ajustées, etc.) et autres méta-informations ne seront pas inclus.
+  </message>
+
+  <message id="SPC (float)">
+    Cette option produit un fichier SPC binaire à spectre unique basé sur des nombres à virgule flottante.
+
+    Ce format inclut le spectre gamma, les comptages de neutrons, les informations GPS, l'heure de début de mesure, le numéro de série du détecteur et la calibration en énergie.
+
+    Les paires de déviation en énergie, les résultats d'analyse, les informations spécifiques à InterSpec (DRFs, pics ajustés, activités ajustées, etc.) et autres méta-informations ne seront pas inclus.
+  </message>
+
+  <message id="SPC (ascii)">
+    Cette option produit un fichier SPC ASCII à spectre unique.
+
+    Ce format inclut le spectre gamma, les comptages de neutrons, les informations GPS, l'heure de début de mesure, le numéro de série du détecteur, la calibration en énergie, certaines informations d'analyse du détecteur, le fabricant et les informations de modèle.
+
+    Les paires de déviation en énergie, certains résultats d'analyse, les informations spécifiques à InterSpec (DRFs, pics ajustés, activités ajustées, etc.) et possiblement certaines, mais pas toutes, les méta-informations ne seront pas incluses.
+  </message>
+
+  <message id="TKA">
+    Fichier Canberra Toolkit.
+
+    L'enregistrement dans ce format inclura un seul spectre gamma, le temps actif et le temps réel.
+
+    Toute autre information sera perdue.
+  </message>
+
+  <message id="GR-130">
+    Le format GR130 est le format binaire natif des détecteurs Exploranium GR130.
+
+    L'enregistrement dans ce format provoquera le redécoupage des données en 256 canaux, en préservant les heures de début et les temps actifs, mais la calibration en énergie et les informations de neutrons seront perdues, ainsi que toutes les méta-informations telles que commentaires, GPS, etc.
+
+    Plusieurs spectres peuvent être écrits dans un seul fichier, les enregistrements étant ordonnés par numéro d'échantillon puis par numéro de détecteur.
+  </message>
+
+  <message id="GR-135">
+    Le format GR135 est le format binaire natif des détecteurs Exploranium GR135v2.
+
+    L'enregistrement dans ce format provoquera le redécoupage des données en 1024 canaux, en préservant les heures de début et les temps actifs, les comptages de neutrons, la calibration en énergie et les numéros de série numériques.
+
+    Les paires de déviation, les commentaires, le titre, le GPS et autres méta-informations seront perdus.
+
+    Plusieurs spectres peuvent être écrits dans un seul fichier, les enregistrements étant ordonnés par numéro d'échantillon puis par numéro de détecteur.
+  </message>
+
+  <message id="HTML">
+    Un fichier HTML autonome est produit avec un graphique de spectre interactif.
+
+    Le fichier peut inclure un spectre de premier plan et d'arrière-plan, des lignes de référence gamma, et proposera quelques options de visualisation de base.
+
+    Ce format de fichier ne peut être lu et affiché que par des navigateurs web ayant javascript activé et prenant en charge les images SVG.
+  </message>
+
+  <message id="QR-code/URL">
+    Le spectre sera encodé dans un code QR et/ou un URI.
+
+    Le code QR ou l'URI peut contenir les spectres de premier plan et d'arrière-plan, s'ils tiennent.
+
+    Les spectres gamma, les comptages de neutrons, les coordonnées GPS, la calibration en énergie et les informations du détecteur seront inclus, si disponibles.
+
+    Toute autre méta-information et information spécifique à InterSpec (DRFs, pics ajustés, activités ajustées, etc.) ne sera pas incluse.
+
+    Les spectres HPGe peuvent nécessiter plusieurs codes QR pour représenter un seul spectre, auquel cas les spectres d'arrière-plan et de premier plan doivent être encodés séparément.
+  </message>
+</messages>

@@ -24,6 +24,7 @@
   <message id="ssd-perform-fit-btn">মডেল ফিট সম্পাদন করুন</message>
   <message id="ssd-cancel-fit">মডেল ফিট বাতিল করুন</message>
   <message id="ssd-mi-calc-log">গণনা লগ</message>
+  <message id="ssd-mi-calc-log-html">গণনা লগ (HTML)</message>
   <message id="ssd-mi-import-model">মডেল আমদানি...</message>
   <message id="ssd-mi-export-model">মডেল রপ্তানি</message>
   <message id="ssd-mi-from-db">ডাটাবেস থেকে খুলুন...</message>
@@ -64,12 +65,35 @@
   <message id="ssd-warn-no-back-peaks-toggle">
     ব্যাকগ্রাউন্ড স্পেকট্রামে কোনো পিক শনাক্ত নেই। আপনার ব্যাকগ্রাউন্ড স্পেকট্রাম ফোরগ্রাউন্ড হিসাবে লোড করা উচিত, বিয়োগ করার সম্ভাব্য পিকগুলি শনাক্ত করুন, এবং তারপর আপনার বর্তমান ফোরগ্রাউন্ড/ব্যাকগ্রাউন্ড সংমিশ্রণে ফিরে যান।
   </message>
+  <message id="ssd-missing-back-peaks-title">অনুপস্থিত ব্যাকগ্রাউন্ড পিক</message>
+  <message id="ssd-missing-back-peaks-msg">
+    ব্যাকগ্রাউন্ড স্পেকট্রামে {1} শক্তিতে পিক যোগ করা নেই, কিন্তু
+    সেই শক্তিতে ব্যাকগ্রাউন্ড স্পেকট্রামে সম্ভবত প্রকৃত পিক রয়েছে -
+    আপনি কি সেই পিকগুলি ব্যাকগ্রাউন্ড স্পেকট্রামে যোগ করতে চান?
+  </message>
+  <message id="ssd-btn-no-dont-add">না</message>
+  <message id="ssd-btn-add-peaks">পিক যোগ করুন...</message>
+  <message id="ssd-btn-add-all-detectable">সব স্বয়ংক্রিয়-ফিট পিক যোগ করুন</message>
+  <message id="ssd-back-peak-preview-title">ব্যাকগ্রাউন্ড পিক পূর্বরূপ</message>
+  <message id="ssd-back-peak-preview-msg">নিম্নলিখিত পিকগুলি ব্যাকগ্রাউন্ড স্পেকট্রামে যোগ করা হবে:</message>
+  <message id="ssd-no-new-back-peaks">নির্দেশিত শক্তিতে ব্যাকগ্রাউন্ড স্পেকট্রামে কোনো অতিরিক্ত পিক পাওয়া যায়নি।</message>
+  <message id="ssd-back-peaks-all-fit">{1}টি প্রার্থী পিক ব্যাকগ্রাউন্ডে ফিট করা হয়েছে।</message>
+  <message id="ssd-back-peaks-some-fit">{2}টি প্রার্থী পিকের মধ্যে {1}টি তাৎপর্যপূর্ণ ছিল এবং ব্যাকগ্রাউন্ডে ফিট করা হয়েছে।</message>
+  <message id="ssd-back-peaks-manual-hint">(আপনি Alt কী (mac: Option কী) প্লাস ডাবল<br />
+  ক্লিক করে স্পেকট্রামে ম্যানুয়ালি ব্যাকগ্রাউন্ড পিক ফিট করতে পারেন, বা ব্যাকগ্রাউন্ড ফোরগ্রাউন্ড হিসাবে লোড করে)</message>
+  <message id="ssd-err-adding-back-peaks">ব্যাকগ্রাউন্ডে পিক যোগ করতে ত্রুটি: {1}</message>
   <message id="ssd-update-dim-to-be-min">ন্যূনতম পুরুত্ব হতে শিল্ডিং মাত্রা আপডেট করা হয়েছে।</message>
   <message id="ssd-scaled-shield-to-be-less-dist">শিল্ডিং পুরুত্বগুলি ডিটেক্টর দূরত্বের চেয়ে কম হতে স্কেল করা হয়েছে।</message>
   <message id="ssd-err-fit-only-one-an">আপনি একবারে শুধুমাত্র একটি জেনেরিক শিল্ডিংয়ের পারমাণবিক সংখ্যার জন্য ফিট করতে পারেন।</message>
   <message id="ssd-warn-invalid-chi2-for-energy">{1} keV এর জন্য একটি অবৈধ chi2 গণনা করা হয়েছে, অন্যান্য ফলাফল অবৈধ হতে পারে</message>
   <message id="ssd-calc-log-window-title">গণনা লগ</message>
   <message id="ssd-calc-log-export-txt">TXT ফাইল</message>
+  <message id="ssd-calc-log-html-title">গণনা লগ</message>
+  <message id="ssd-template-text-log">স্ট্যান্ডার্ড লগ (টেক্সট)</message>
+  <message id="ssd-template-html-report">কার্যকলাপ ফিট রিপোর্ট (HTML)</message>
+  <message id="ssd-template-deprecated-txt">অপ্রচলিত টেক্সট</message>
+  <message id="ssd-no-fit-results">প্রদর্শনের জন্য কোনো ফিট ফলাফল উপলব্ধ নেই।</message>
+  <message id="ssd-error-creating-html-log">HTML গণনা লগ তৈরি করতে ত্রুটি: {1}</message>
   <message id="ssd-err-opening-import-model">আপলোড করা উৎস শিল্ডিং ফিট মডেল খুলতে ত্রুটি: {1}</message>
   <message id="ssd-import-model-window-title">উৎস শিল্ডিং XML মডেল আমদানি</message>
   <message id="ssd-err-opening-db-model">ডাটাবেস থেকে উৎস শিল্ডিং ফিট মডেল খুলতে ত্রুটি: {1}</message>
@@ -126,7 +150,6 @@
   <!-- Chi2Graphic -->
   <message id="x2g-yaxis-title-chi">(পর্যবেক্ষিত-মডেল)/অনিশ্চয়তা</message>
   <message id="x2g-yaxis-title-mult">মডেলের গুণক</message>
-  <message id="x2g-">Y-অক্ষ হল পিক ক্ষেত্রফল গণনা, বর্তমানে প্রদর্শিত উৎস এবং শিল্ডিং মান থেকে প্রত্যাশিত গণনার সংখ্যা বিয়োগ, সবগুলি পরিসংখ্যানগত অনিশ্চয়তা দ্বারা ভাগ। এর বর্গ হল যা শিল্ডিং এবং উৎস অপ্টিমাইজ করতে ব্যবহৃত হয়।</message>
   <message id="x2g-tt-chi-axis">Y-অক্ষ হল পিক ক্ষেত্রফল গণনা, বর্তমানে প্রদর্শিত উৎস এবং শিল্ডিং মান থেকে প্রত্যাশিত গণনার সংখ্যা বিয়োগ, সবগুলি পরিসংখ্যানগত অনিশ্চয়তা দ্বারা ভাগ। এর বর্গ হল যা শিল্ডিং এবং উৎস অপ্টিমাইজ করতে ব্যবহৃত হয়।</message>
   <message id="x2g-tt-scale-axis">Y-অক্ষ হল পর্যবেক্ষিত পিক গণনার গুণক, বর্তমান উৎস এবং শিল্ডিং মান থেকে যা প্রত্যাশিত তার তুলনায়।</message>
   <message id="x2g-tt-num-observed">পর্যবেক্ষিত সংখ্যা:</message>

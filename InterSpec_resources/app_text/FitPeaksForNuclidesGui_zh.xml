@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- fpn- is short for FitPeaksForNuclides -->
+
+  <!-- Tab labels for FitPeaksAdvancedWidget upper area -->
+  <message id="fpn-tab-spectrum">谱</message>
+  <message id="fpn-tab-rel-eff">相对效率</message>
+  <message id="fpn-tab-results">详情</message>
+
+  <!-- Advanced dialog -->
+  <message id="fpn-adv-title">拟合峰：</message>
+  <message id="fpn-adv-content">高级选项尚未实现</message>
+  <message id="fpn-fit-peaks">拟合峰</message>
+  <message id="fpn-accept">接受</message>
+  <message id="fpn-cancel">取消</message>
+
+  <!-- Status and computation messages -->
+  <message id="fpn-calculating">正在计算...</message>
+  <message id="fpn-computation-successful">计算成功。</message>
+  <message id="fpn-summary-chi2">Chi2/dof：{1}</message>
+  <message id="fpn-summary-rel-activities">相对活度（最大=1）：{1}</message>
+  <message id="fpn-summary-rois">ROI：{1}</message>
+  <message id="fpn-summary-total-area">源总面积：{1}</message>
+  <message id="fpn-summary-no-rel-act">无相对活度（单一源）。</message>
+
+  <!-- FitSrcPeaksOptions checkbox labels -->
+  <message id="fpn-opt-dont-use-existing-rois">避免现有ROI</message>
+  <message id="fpn-opt-existing-as-free">允许共享当前ROI</message>
+  <message id="fpn-opt-dont-vary-energy-cal">不改变能量校准</message>
+  <message id="fpn-opt-dont-refine-energy-cal">不精修能量校准</message>
+  <message id="fpn-opt-fit-bkgnd-peaks">拟合NORM</message>
+  <message id="fpn-opt-fit-bkgnd-dont-use">拟合NORM（不使用）</message>
+  <message id="fpn-opt-use-background">使用本底扣除计算</message>
+
+  <!-- PeakFitForNuclideConfig option labels -->
+  <message id="fpn-opt-roi-min-chi2-red">ROI chi2降低阈值</message>
+  <message id="fpn-opt-roi-min-peak-sig">ROI显著性阈值</message>
+  <message id="fpn-opt-obs-initial-sig">预测峰显著性阈值</message>
+  <message id="fpn-opt-obs-final-sig">最终峰显著性阈值</message>
+  <message id="fpn-opt-skew-type">峰偏斜</message>
+  <message id="fpn-opt-fwhm-form">FWHM形式</message>
+  <message id="fpn-opt-rel-eff-eqn-type">相对效率方程</message>
+  <message id="fpn-opt-rel-eff-eqn-order">相对效率阶数</message>
+
+  <!-- Tooltips for options -->
+  <message id="fpn-opt-tt-dont-use-existing-rois">启用此选项后，不会使用任何现有ROI，且当前源的伽马射线若落在现有ROI内也不会被考虑。</message>
+  <message id="fpn-opt-tt-existing-as-free">通常源峰的ROI在能量范围上受到限制，以减少邻近峰的影响。启用此选项后，共享ROI的邻近峰将作为自由浮动峰保留并包含在结果中。</message>
+  <message id="fpn-opt-tt-dont-vary-energy-cal">拟合过程中能量校准保持固定。</message>
+  <message id="fpn-opt-tt-dont-refine-energy-cal">拟合中能量校准会变化，但ROI范围不会根据拟合校准进行更新。</message>
+  <message id="fpn-opt-tt-fit-bkgnd-peaks">使用第二条相对效率曲线拟合NORM峰（U-238、Ra-226、U-235、Th-232、K-40）。</message>
+  <message id="fpn-opt-tt-use-background">启用后，在峰拟合过程中扣除本底谱以确定要使用的ROI，但对返回峰的最终拟合不扣除本底。取消勾选则不进行本底扣除拟合。</message>
+  <message id="fpn-opt-tt-roi-min-chi2-red">ROI中峰被视为显著所需的最小总chi2降低量。含峰的chi2必须至少比仅连续谱的chi2低这么多。</message>
+  <message id="fpn-opt-tt-roi-min-peak-sig">峰被视为显著的最小峰显著性（峰面积 / sqrt(连续谱)）。如果ROI中任何峰的显著性超过此阈值，则保留该ROI。</message>
+  <message id="fpn-opt-tt-obs-initial-sig">重新拟合前初始峰显著性过滤器的阈值。显著性 =（峰幅度 * 0.7607）/ sqrt(pm_1_fwhm内的数据面积)。</message>
+  <message id="fpn-opt-tt-obs-final-sig">重新拟合后最终峰显著性的阈值。显著性 = 峰面积 / 峰面积不确定度。</message>
+  <message id="fpn-opt-tt-skew-type">应用于拟合中所有峰的偏斜形状。&quot;None&quot;使用纯高斯。其他选项添加低能尾部分量（如NaI/CsI探测器用Exp*Gauss，HPGe中电荷收集尾部用Crystal Ball）。</message>
+  <message id="fpn-opt-tt-fwhm-form">探测器分辨率（FWHM与能量）的函数形式。Bernstein多项式阶数决定拟合的系数数量。</message>
+  <message id="fpn-opt-tt-rel-eff-eqn-type">相对效率曲线的形式（如LnXLnY多项式或FRAM物理模型）。</message>
+  <message id="fpn-opt-tt-rel-eff-eqn-order">相对效率方程的多项式阶数（不使用物理模型时）。</message>
+
+  <!-- Status and error messages -->
+  <message id="fpn-no-data">没有前景谱可供拟合峰。</message>
+  <message id="fpn-wait-title">正在拟合峰</message>
+  <message id="fpn-wait-content">可能需要一分钟。您可以继续使用应用程序。</message>
+  <message id="fpn-stale">拟合完成前谱已更改；丢弃结果。</message>
+
+  <message id="fpn-error-title">拟合失败</message>
+  <message id="fpn-error-content">错误：{1}</message>
+
+  <!-- Results dialog -->
+  <message id="fpn-result-title">拟合结果</message>
+  <message id="fpn-no-peaks">所选源未拟合到任何峰。</message>
+  <message id="fpn-summary">为{2}个源拟合了{1}个峰。</message>
+  <message id="fpn-warnings-header">警告：</message>
+  <message id="fpn-auto-accept">自动接受拟合结果</message>
+  <message id="fpn-auto-accepted">拟合结果已自动接受。</message>
+
+</messages>

@@ -23,6 +23,7 @@
   <message id="raag-fwhm-est">تقدير FWHM</message>
   <message id="raag-fwhm-form">شكل FWHM</message>
   <message id="raag-peak-skew">انحراف القمة</message>
+  <message id="raag-lorentzian-xrays">أشعة سينية Lorentzian</message>
   <message id="raag-add-uncert">عدم يقين إضافي</message>
   <message id="raag-yield-info">معلومات الإنتاجية</message>
   
@@ -69,6 +70,7 @@
   </message>
   <message id="raag-tt-fwhm-form">نوع المعادلة لنمذجة FWHM للقمة كدالة للطاقة.</message>
   <message id="raag-tt-skew-type">نوع الانحراف المطبق على القمم؛ ستتم ملائمة معاملات الانحراف.</message>
+  <message id="raag-tt-lorentzian-xrays">عند التفعيل، ستستخدم قمم الأشعة السينية ملف Voigt مع ضبط عرض Lorentzian على عرض خط الأشعة السينية الطبيعي. يأخذ هذا في الاعتبار الشكل Lorentzian الجوهري لخطوط الأشعة السينية. متوافق فقط مع أنواع انحراف القمة NoSkew أو GaussPlusBortel.</message>
   <message id="raag-tt-u-pu-data-source">مصدر البيانات النووية لنسب التفرع الغامائي لليورانيوم والبلوتونيوم.</message>
   <message id="raag-tt-add-source">إضافة مصدر.</message>
   <message id="raag-tt-add-energy-range">إضافة نطاق طاقة.</message>

@@ -41,8 +41,77 @@
 
   <message id="pe-est-lin-cont-no-data">Harap muat spektrum latar depan sebelum memperkirakan kontinum.</message>
   <message id="pe-failed-est-lin-cont">Gagal memperkirakan kontinum dari tepi ROI: {1}</message>
-  
-  
-  
+
+  <!-- Skew parameter labels for Bortel (Exp*Gauss) -->
+  <message id="pe-label-skew-bortel-tau">Miring &alpha;</message>
+
+  <!-- Skew parameter labels for DoubleBortel -->
+  <message id="pe-label-skew-doublebortel-tau1">&tau;<sub>1</sub></message>
+  <message id="pe-label-skew-doublebortel-deltatau2">&Delta;&tau;<sub>2</sub></message>
+  <message id="pe-label-skew-doublebortel-eta">&eta;</message>
+
+  <!-- Skew parameter labels for GaussPlusBortel -->
+  <message id="pe-label-skew-gaussplusbortel-r">Rasio Campuran R</message>
+  <message id="pe-label-skew-gaussplusbortel-tau">Bortel &tau;</message>
+
+  <!-- Skew parameter labels for GaussExp -->
+  <message id="pe-label-skew-gaussexp-k">Miring k</message>
+
+  <!-- Skew parameter labels for CrystalBall -->
+  <message id="pe-label-skew-crystalball-alpha">Miring &alpha;</message>
+  <message id="pe-label-skew-crystalball-n">Miring n</message>
+
+  <!-- Skew parameter labels for ExpGaussExp -->
+  <message id="pe-label-skew-expgaussexp-kl">Miring k<sub>L</sub></message>
+  <message id="pe-label-skew-expgaussexp-kh">Miring k<sub>H</sub></message>
+
+  <!-- Skew parameter labels for DoubleSidedCrystalBall -->
+  <message id="pe-label-skew-dscb-alphalow">Miring &alpha;<sub>low</sub></message>
+  <message id="pe-label-skew-dscb-nlow">Miring n<sub>low</sub></message>
+  <message id="pe-label-skew-dscb-alphahigh">Miring &alpha;<sub>high</sub></message>
+  <message id="pe-label-skew-dscb-nhigh">Miring n<sub>high</sub></message>
+
+  <!-- Skew parameter labels for VoigtPlusBortel -->
+  <message id="pe-label-skew-voigtplusbortel-gamma">Lorentz &gamma;</message>
+  <message id="pe-label-skew-voigtplusbortel-r">Rasio Campuran R</message>
+  <message id="pe-label-skew-voigtplusbortel-tau">Bortel &tau;</message>
+
+  <!-- Tooltips for skew parameters -->
+  <message id="pe-tt-skew-bortel-tau">Konstanta peluruhan eksponensial untuk Exp*Gauss (Gaussian Termodifikasi Eksponensial). Mewakili skala panjang karakteristik ekor energi rendah. Rentang valid: 0,0-15 σ, nilai tipikal: 0,5-3 σ.</message>
+
+  <message id="pe-tt-skew-doublebortel-tau1">Konstanta peluruhan eksponensial pertama, biasanya mendekati σ. Mengontrol komponen ekor energi rendah utama. Rentang valid: 0,01-15 σ.</message>
+
+  <message id="pe-tt-skew-doublebortel-deltatau2">Peluruhan tambahan untuk eksponensial kedua: τ₂ = τ₁ + Δτ₂. Mengontrol komponen ekor yang diperluas. Rentang valid: 0,0-10 σ.</message>
+
+  <message id="pe-tt-skew-doublebortel-eta">Bobot komponen eksponensial kedua. η=0 memberikan Exp*Gauss(τ₁) tunggal, η=1 memberikan Exp*Gauss(τ₂) murni. Rentang valid: 0,0-1,0.</message>
+
+  <message id="pe-tt-skew-gaussplusbortel-r">Rasio campuran antara Gaussian dan Exp*Gauss. R=0 adalah Gaussian murni, R=1 adalah Exp*Gauss murni. Rentang valid: 0,0-1,0, tipikal: 0,2-0,8.</message>
+
+  <message id="pe-tt-skew-gaussplusbortel-tau">Konstanta peluruhan eksponensial untuk komponen Exp*Gauss dalam campuran. Rentang valid: 0,01-15 σ, nilai tipikal: 0,5-3 σ.</message>
+
+  <message id="pe-tt-skew-gaussexp-k">Mengontrol ambang batas (μ - k·σ) tempat ekor eksponensial dimulai dan laju peluruhan. Rentang valid: 0,15-3,25, tipikal: 0,5-2,0.</message>
+
+  <message id="pe-tt-skew-crystalball-alpha">Ambang batas dalam satuan σ tempat ekor hukum pangkat dimulai: x = μ - α·σ. Rentang valid: 0,5-4,0, tipikal: 1,0-3,0.</message>
+
+  <message id="pe-tt-skew-crystalball-n">Eksponen hukum pangkat untuk ekor energi rendah: (x - μ + α·σ)^(-n). Nilai n yang lebih besar menghasilkan penurunan yang lebih curam. Rentang valid: 1,05-100, tipikal: 2-10.</message>
+
+  <message id="pe-tt-skew-expgaussexp-kl">Mengontrol ambang batas dan peluruhan ekor energi bawah (kiri). Rentang valid: 0,15-3,25, tipikal: 0,5-2,0.</message>
+
+  <message id="pe-tt-skew-expgaussexp-kh">Mengontrol ambang batas dan peluruhan ekor energi atas (kanan). Rentang valid: 0,15-3,25, tipikal: 0,5-2,0.</message>
+
+  <message id="pe-tt-skew-dscb-alphalow">Ambang batas bawah dalam satuan σ tempat ekor hukum pangkat energi rendah dimulai. Rentang valid: 0,5-4,0, tipikal: 1,0-3,0.</message>
+
+  <message id="pe-tt-skew-dscb-nlow">Eksponen hukum pangkat untuk ekor energi rendah. Rentang valid: 1,05-100, tipikal: 2-10.</message>
+
+  <message id="pe-tt-skew-dscb-alphahigh">Ambang batas atas dalam satuan σ tempat ekor hukum pangkat energi tinggi dimulai. Rentang valid: 0,5-4,0, tipikal: 1,0-3,0.</message>
+
+  <message id="pe-tt-skew-dscb-nhigh">Eksponen hukum pangkat untuk ekor energi tinggi. Rentang valid: 1,05-100, tipikal: 2-10.</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-gamma">HWHM Lorentzian (setengah-lebar pada setengah-maksimum) yang mewakili lebar garis sinar-X alami. Rentang valid: 0,0-10,0 keV, tipikal untuk sinar-X: 0,01-0,5 keV.</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-r">Rasio campuran antara profil Voigt dan Exp*Gauss. R=0 adalah Voigt murni (hanya lebar garis alami), R=1 adalah Exp*Gauss murni (hanya ekor detektor). Rentang valid: 0,0-1,0.</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-tau">Konstanta peluruhan eksponensial untuk komponen Exp*Gauss, mewakili ekor pengumpulan muatan tidak lengkap. Rentang valid: 0,01-10 σ.</message>
+
 </messages>
 

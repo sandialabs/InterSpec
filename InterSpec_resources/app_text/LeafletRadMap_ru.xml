@@ -37,4 +37,23 @@
 <li><b>Диапазон энергии</b>: Фильтровать гамма-подсчеты в указанном диапазоне энергии.</li>
 <li><b>Пики в диапазоне</b>: Показывать только номера образцов, которые имеют пики в диапазоне энергии, с цветами маркеров и CPS, основанными на скорости подсчета пиков.</li>
 </ul></message>
+  <message id="lrm-copy-google-maps">Копировать URL Google Maps</message>
+  <message id="lrm-copy-bing-maps">Копировать URL Bing Maps</message>
+  <message id="lrm-copy-url-success">URL карты скопирован в буфер обмена — вставьте в ваш браузер.</message>
+  <message id="lrm-copy-url-fail">Не удалось скопировать URL карты в буфер обмена.</message>
+  <message id="lrm-copy-url-no-gps">Нет данных GPS для создания URL карты.</message>
+  <message id="lrm-tile-load-btn">Тайлы карты не загружаются?</message>
+  <message id="lrm-tile-load-dialog-title">Тайлы карты не загружаются</message>
+  <message id="lrm-tile-load-dialog-content">
+    Тайлы карты не удалось загрузить с arcgis.com. Это может быть вызвано:
+    <ul>
+      <li>Отсутствие подключения к интернету</li>
+      <li>Корпоративный прокси или файервол блокирует доступ к arcgis.com</li>
+      <li>Недействительный или просроченный ключ API</li>
+    </ul>
+    <p>Если вы за прокси, вам может потребоваться настроить параметры прокси.
+    Смотрите файл <em>data/config/example_InterSpec_app_settings.json</em> для
+    опции <b>ProxySetting</b>; обычно значение <b>system</b> работает.</p>
+    <p>Маркеры измерений всё равно будут отображаться, но фон карты будет пустым.</p>
+  </message>
 </messages>

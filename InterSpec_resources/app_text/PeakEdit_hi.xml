@@ -42,6 +42,75 @@
   <message id="pe-est-lin-cont-no-data">कृपया निरंतरता का अनुमान लगाने से पहले अग्रभूमि स्पेक्ट्रम लोड करें।</message>
   <message id="pe-failed-est-lin-cont">ROI के किनारों से निरंतरता का अनुमान लगाने में विफल: {1}</message>
 
+  <!-- Skew parameter labels for Bortel (Exp*Gauss) -->
+  <message id="pe-label-skew-bortel-tau">विषमता &alpha;</message>
 
+  <!-- Skew parameter labels for DoubleBortel -->
+  <message id="pe-label-skew-doublebortel-tau1">&tau;<sub>1</sub></message>
+  <message id="pe-label-skew-doublebortel-deltatau2">&Delta;&tau;<sub>2</sub></message>
+  <message id="pe-label-skew-doublebortel-eta">&eta;</message>
+
+  <!-- Skew parameter labels for GaussPlusBortel -->
+  <message id="pe-label-skew-gaussplusbortel-r">मिश्रण अनुपात R</message>
+  <message id="pe-label-skew-gaussplusbortel-tau">Bortel &tau;</message>
+
+  <!-- Skew parameter labels for GaussExp -->
+  <message id="pe-label-skew-gaussexp-k">विषमता k</message>
+
+  <!-- Skew parameter labels for CrystalBall -->
+  <message id="pe-label-skew-crystalball-alpha">विषमता &alpha;</message>
+  <message id="pe-label-skew-crystalball-n">विषमता n</message>
+
+  <!-- Skew parameter labels for ExpGaussExp -->
+  <message id="pe-label-skew-expgaussexp-kl">विषमता k<sub>L</sub></message>
+  <message id="pe-label-skew-expgaussexp-kh">विषमता k<sub>H</sub></message>
+
+  <!-- Skew parameter labels for DoubleSidedCrystalBall -->
+  <message id="pe-label-skew-dscb-alphalow">विषमता &alpha;<sub>low</sub></message>
+  <message id="pe-label-skew-dscb-nlow">विषमता n<sub>low</sub></message>
+  <message id="pe-label-skew-dscb-alphahigh">विषमता &alpha;<sub>high</sub></message>
+  <message id="pe-label-skew-dscb-nhigh">विषमता n<sub>high</sub></message>
+
+  <!-- Skew parameter labels for VoigtPlusBortel -->
+  <message id="pe-label-skew-voigtplusbortel-gamma">Lorentz &gamma;</message>
+  <message id="pe-label-skew-voigtplusbortel-r">मिश्रण अनुपात R</message>
+  <message id="pe-label-skew-voigtplusbortel-tau">Bortel &tau;</message>
+
+  <!-- Tooltips for skew parameters -->
+  <message id="pe-tt-skew-bortel-tau">Exp*Gauss (घातांकीय रूप से संशोधित Gaussian) के लिए घातांकीय क्षय स्थिरांक। निम्न-ऊर्जा पूंछ के विशेषता लंबाई पैमाने का प्रतिनिधित्व करता है। वैध सीमा: 0.0-15 σ, सामान्य मान: 0.5-3 σ।</message>
+
+  <message id="pe-tt-skew-doublebortel-tau1">पहला घातांकीय क्षय स्थिरांक, आमतौर पर σ के करीब। प्राथमिक निम्न-ऊर्जा पूंछ घटक को नियंत्रित करता है। वैध सीमा: 0.01-15 σ।</message>
+
+  <message id="pe-tt-skew-doublebortel-deltatau2">दूसरे घातांकीय के लिए अतिरिक्त क्षय: τ₂ = τ₁ + Δτ₂। विस्तारित पूंछ घटक को नियंत्रित करता है। वैध सीमा: 0.0-10 σ।</message>
+
+  <message id="pe-tt-skew-doublebortel-eta">दूसरे घातांकीय घटक का भार। η=0 सरल Exp*Gauss(τ₁) देता है, η=1 शुद्ध Exp*Gauss(τ₂) देता है। वैध सीमा: 0.0-1.0।</message>
+
+  <message id="pe-tt-skew-gaussplusbortel-r">Gaussian और Exp*Gauss के बीच मिश्रण अनुपात। R=0 शुद्ध Gaussian है, R=1 शुद्ध Exp*Gauss है। वैध सीमा: 0.0-1.0, सामान्य: 0.2-0.8।</message>
+
+  <message id="pe-tt-skew-gaussplusbortel-tau">मिश्रण में Exp*Gauss घटक के लिए घातांकीय क्षय स्थिरांक। वैध सीमा: 0.01-15 σ, सामान्य मान: 0.5-3 σ।</message>
+
+  <message id="pe-tt-skew-gaussexp-k">दहलीज (μ - k·σ) जहां घातांकीय पूंछ शुरू होती है और क्षय दर दोनों को नियंत्रित करता है। वैध सीमा: 0.15-3.25, सामान्य: 0.5-2.0।</message>
+
+  <message id="pe-tt-skew-crystalball-alpha">σ इकाइयों में दहलीज जहां घात-नियम पूंछ शुरू होती है: x = μ - α·σ। वैध सीमा: 0.5-4.0, सामान्य: 1.0-3.0।</message>
+
+  <message id="pe-tt-skew-crystalball-n">निम्न-ऊर्जा पूंछ के लिए घात-नियम घातांक: (x - μ + α·σ)^(-n)। बड़ा n अधिक तीव्र गिरावट बनाता है। वैध सीमा: 1.05-100, सामान्य: 2-10।</message>
+
+  <message id="pe-tt-skew-expgaussexp-kl">निचली (बाईं) ऊर्जा पूंछ की दहलीज और क्षय को नियंत्रित करता है। वैध सीमा: 0.15-3.25, सामान्य: 0.5-2.0।</message>
+
+  <message id="pe-tt-skew-expgaussexp-kh">ऊपरी (दाईं) ऊर्जा पूंछ की दहलीज और क्षय को नियंत्रित करता है। वैध सीमा: 0.15-3.25, सामान्य: 0.5-2.0।</message>
+
+  <message id="pe-tt-skew-dscb-alphalow">σ इकाइयों में निचली दहलीज जहां निम्न-ऊर्जा घात-नियम पूंछ शुरू होती है। वैध सीमा: 0.5-4.0, सामान्य: 1.0-3.0।</message>
+
+  <message id="pe-tt-skew-dscb-nlow">निम्न-ऊर्जा पूंछ के लिए घात-नियम घातांक। वैध सीमा: 1.05-100, सामान्य: 2-10।</message>
+
+  <message id="pe-tt-skew-dscb-alphahigh">σ इकाइयों में ऊपरी दहलीज जहां उच्च-ऊर्जा घात-नियम पूंछ शुरू होती है। वैध सीमा: 0.5-4.0, सामान्य: 1.0-3.0।</message>
+
+  <message id="pe-tt-skew-dscb-nhigh">उच्च-ऊर्जा पूंछ के लिए घात-नियम घातांक। वैध सीमा: 1.05-100, सामान्य: 2-10।</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-gamma">Lorentz HWHM (अर्ध-अधिकतम पर अर्ध-चौड़ाई) जो प्राकृतिक एक्स-रे रेखा चौड़ाई का प्रतिनिधित्व करता है। वैध सीमा: 0.0-10.0 keV, एक्स-रे के लिए सामान्य: 0.01-0.5 keV।</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-r">Voigt प्रोफाइल और Exp*Gauss के बीच मिश्रण अनुपात। R=0 शुद्ध Voigt है (केवल प्राकृतिक रेखा चौड़ाई), R=1 शुद्ध Exp*Gauss है (केवल डिटेक्टर पूंछ)। वैध सीमा: 0.0-1.0।</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-tau">Exp*Gauss घटक के लिए घातांकीय क्षय स्थिरांक, अपूर्ण आवेश संग्रहण पूंछ का प्रतिनिधित्व करता है। वैध सीमा: 0.01-10 σ।</message>
 
 </messages>

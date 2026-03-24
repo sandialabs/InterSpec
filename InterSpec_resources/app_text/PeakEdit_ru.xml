@@ -41,7 +41,76 @@
 
   <message id="pe-est-lin-cont-no-data">Пожалуйста, загрузите основной спектр перед оценкой континуума.</message>
   <message id="pe-failed-est-lin-cont">Не удалось оценить континуум по краям ROI: {1}</message>
-  
-  
-  
+
+  <!-- Skew parameter labels for Bortel (Exp*Gauss) -->
+  <message id="pe-label-skew-bortel-tau">Асимм. &alpha;</message>
+
+  <!-- Skew parameter labels for DoubleBortel -->
+  <message id="pe-label-skew-doublebortel-tau1">&tau;<sub>1</sub></message>
+  <message id="pe-label-skew-doublebortel-deltatau2">&Delta;&tau;<sub>2</sub></message>
+  <message id="pe-label-skew-doublebortel-eta">&eta;</message>
+
+  <!-- Skew parameter labels for GaussPlusBortel -->
+  <message id="pe-label-skew-gaussplusbortel-r">Коэфф. смеш. R</message>
+  <message id="pe-label-skew-gaussplusbortel-tau">Bortel &tau;</message>
+
+  <!-- Skew parameter labels for GaussExp -->
+  <message id="pe-label-skew-gaussexp-k">Асимм. k</message>
+
+  <!-- Skew parameter labels for CrystalBall -->
+  <message id="pe-label-skew-crystalball-alpha">Асимм. &alpha;</message>
+  <message id="pe-label-skew-crystalball-n">Асимм. n</message>
+
+  <!-- Skew parameter labels for ExpGaussExp -->
+  <message id="pe-label-skew-expgaussexp-kl">Асимм. k<sub>L</sub></message>
+  <message id="pe-label-skew-expgaussexp-kh">Асимм. k<sub>H</sub></message>
+
+  <!-- Skew parameter labels for DoubleSidedCrystalBall -->
+  <message id="pe-label-skew-dscb-alphalow">Асимм. &alpha;<sub>low</sub></message>
+  <message id="pe-label-skew-dscb-nlow">Асимм. n<sub>low</sub></message>
+  <message id="pe-label-skew-dscb-alphahigh">Асимм. &alpha;<sub>high</sub></message>
+  <message id="pe-label-skew-dscb-nhigh">Асимм. n<sub>high</sub></message>
+
+  <!-- Skew parameter labels for VoigtPlusBortel -->
+  <message id="pe-label-skew-voigtplusbortel-gamma">Лоренц &gamma;</message>
+  <message id="pe-label-skew-voigtplusbortel-r">Коэфф. смеш. R</message>
+  <message id="pe-label-skew-voigtplusbortel-tau">Bortel &tau;</message>
+
+  <!-- Tooltips for skew parameters -->
+  <message id="pe-tt-skew-bortel-tau">Константа экспоненциального затухания для Exp*Gauss (экспоненциально модифицированная гауссиана). Представляет характерный масштаб длины хвоста низкой энергии. Допустимый диапазон: 0,0–15 σ, типичные значения: 0,5–3 σ.</message>
+
+  <message id="pe-tt-skew-doublebortel-tau1">Первая константа экспоненциального затухания, обычно близка к σ. Управляет основным компонентом хвоста низкой энергии. Допустимый диапазон: 0,01–15 σ.</message>
+
+  <message id="pe-tt-skew-doublebortel-deltatau2">Дополнительное затухание для второй экспоненты: τ₂ = τ₁ + Δτ₂. Управляет расширенным компонентом хвоста. Допустимый диапазон: 0,0–10 σ.</message>
+
+  <message id="pe-tt-skew-doublebortel-eta">Вес второго экспоненциального компонента. η=0 даёт простую Exp*Gauss(τ₁), η=1 даёт чистую Exp*Gauss(τ₂). Допустимый диапазон: 0,0–1,0.</message>
+
+  <message id="pe-tt-skew-gaussplusbortel-r">Коэффициент смешения между гауссианой и Exp*Gauss. R=0 — чистая гауссиана, R=1 — чистая Exp*Gauss. Допустимый диапазон: 0,0–1,0, типичный: 0,2–0,8.</message>
+
+  <message id="pe-tt-skew-gaussplusbortel-tau">Константа экспоненциального затухания для компонента Exp*Gauss в смеси. Допустимый диапазон: 0,01–15 σ, типичные значения: 0,5–3 σ.</message>
+
+  <message id="pe-tt-skew-gaussexp-k">Управляет как порогом (μ - k·σ), где начинается экспоненциальный хвост, так и скоростью затухания. Допустимый диапазон: 0,15–3,25, типичный: 0,5–2,0.</message>
+
+  <message id="pe-tt-skew-crystalball-alpha">Порог в единицах σ, где начинается степенной хвост: x = μ - α·σ. Допустимый диапазон: 0,5–4,0, типичный: 1,0–3,0.</message>
+
+  <message id="pe-tt-skew-crystalball-n">Показатель степенного закона для хвоста низкой энергии: (x - μ + α·σ)^(-n). Большее n создаёт более крутой спад. Допустимый диапазон: 1,05–100, типичный: 2–10.</message>
+
+  <message id="pe-tt-skew-expgaussexp-kl">Управляет порогом и затуханием хвоста нижней (левой) энергии. Допустимый диапазон: 0,15–3,25, типичный: 0,5–2,0.</message>
+
+  <message id="pe-tt-skew-expgaussexp-kh">Управляет порогом и затуханием хвоста верхней (правой) энергии. Допустимый диапазон: 0,15–3,25, типичный: 0,5–2,0.</message>
+
+  <message id="pe-tt-skew-dscb-alphalow">Нижний порог в единицах σ, где начинается степенной хвост низкой энергии. Допустимый диапазон: 0,5–4,0, типичный: 1,0–3,0.</message>
+
+  <message id="pe-tt-skew-dscb-nlow">Показатель степенного закона для хвоста низкой энергии. Допустимый диапазон: 1,05–100, типичный: 2–10.</message>
+
+  <message id="pe-tt-skew-dscb-alphahigh">Верхний порог в единицах σ, где начинается степенной хвост высокой энергии. Допустимый диапазон: 0,5–4,0, типичный: 1,0–3,0.</message>
+
+  <message id="pe-tt-skew-dscb-nhigh">Показатель степенного закона для хвоста высокой энергии. Допустимый диапазон: 1,05–100, типичный: 2–10.</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-gamma">Лоренцева ПШПВ (полуширина на полувысоте), представляющая естественную ширину линии рентгеновского излучения. Допустимый диапазон: 0,0–10,0 кэВ, типичный для рентгена: 0,01–0,5 кэВ.</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-r">Коэффициент смешения между профилем Фойгта и Exp*Gauss. R=0 — чистый Фойгт (только естественная ширина линии), R=1 — чистая Exp*Gauss (только хвост детектора). Допустимый диапазон: 0,0–1,0.</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-tau">Константа экспоненциального затухания для компонента Exp*Gauss, представляющая хвост неполного сбора заряда. Допустимый диапазон: 0,01–10 σ.</message>
+
 </messages>

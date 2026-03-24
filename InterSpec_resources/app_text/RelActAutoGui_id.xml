@@ -23,6 +23,7 @@
   <message id="raag-fwhm-est">Estimasi FWHM</message>
   <message id="raag-fwhm-form">Bentuk FWHM</message>
   <message id="raag-peak-skew">Kemiring Puncak</message>
+  <message id="raag-lorentzian-xrays">Sinar-X Lorentzian</message>
   <message id="raag-add-uncert">Ketidakpast. Tambh.</message>
   <message id="raag-yield-info">Info Hasil</message>
   
@@ -69,6 +70,7 @@
   </message>
   <message id="raag-tt-fwhm-form">Jenis persamaan yang digunakan untuk memodelkan FWHM puncak sebagai fungsi energi.</message>
   <message id="raag-tt-skew-type">Jenis kemiring untuk diterapkan pada puncak; parameter kemiring akan disesuaikan.</message>
+  <message id="raag-tt-lorentzian-xrays">Saat dicentang, puncak sinar-X akan menggunakan profil Voigt dengan lebar Lorentzian diatur ke lebar garis alami sinar-X. Ini memperhitungkan bentuk Lorentzian intrinsik dari garis sinar-X. Hanya kompatibel dengan jenis kemiring puncak NoSkew atau GaussPlusBortel.</message>
   <message id="raag-tt-u-pu-data-source">Sumber data nuklir untuk rasio percabangan gamma uranium dan plutonium.</message>
   <message id="raag-tt-add-source">Tambahkan sumber.</message>
   <message id="raag-tt-add-energy-range">Tambahkan rentang energi.</message>

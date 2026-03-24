@@ -27,4 +27,5 @@
     </message>
     <message id="dcw-age-to-big">{1}は{2}を崩壊させるには半減期が多すぎます</message>
     <message id="dcw-nuc-is-stable">{1}は安定です</message>
+    <message id="dcw-made-age-reasonable">{1}の年齢を'{2}'からより妥当な値'{3}'に変更しました</message>
 </messages>

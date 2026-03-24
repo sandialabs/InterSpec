@@ -78,7 +78,8 @@
   <!-- Error dialogs -->
   <message id="esf-error-title">Erreur</message>
   <message id="esf-qr-encode-failed">Échec de l'affichage du spectre comme code QR : {1}</message>
-  
+  <message id="esf-back-sub-peak-refit-failed">Échec du réajustement des continuums de pics pour le spectre soustrait du fond ; les paramètres de pics originaux ont été utilisés.</message>
+
   <!-- Pluralized messages -->
   <message id="esf-disp-sample">
     <plural case="0">Échantillon&nbsp;Affiché</plural>

@@ -32,6 +32,7 @@
   <message id="ssd-perform-fit-btn">モデルフィット実行</message>
   <message id="ssd-cancel-fit">モデルフィットキャンセル</message>
   <message id="ssd-mi-calc-log">計算ログ</message>
+  <message id="ssd-mi-calc-log-html">計算ログ (HTML)</message>
   <message id="ssd-mi-import-model">モデルインポート...</message>
   <message id="ssd-mi-export-model">モデルエクスポート</message>
   <message id="ssd-mi-from-db">データベースから開く...</message>
@@ -50,24 +51,117 @@
     0.0に減少させると、ピークに関連付けられたガンマのみが使用されます
     (「複数核種がピークに寄与」のチェックを外すのと同じ)。
   </message>
-
-  <!-- Additional key interface elements -->
-  <message id="ssd-distance-label">距離:</message>
-  <message id="ssd-activity-label">放射能:</message>
-  <message id="ssd-age-label">年数:</message>
-  <message id="ssd-source-label">線源:</message>
-  <message id="ssd-shielding-label">遮蔽:</message>
-  <message id="ssd-material-label">材料:</message>
-  <message id="ssd-thickness-label">厚さ:</message>
-  <message id="ssd-chi2-label">χ²:</message>
-  <message id="ssd-fit-peaks">フィットピーク</message>
-  <message id="ssd-add-nuclide">核種追加</message>
-  <message id="ssd-remove-nuclide">核種削除</message>
-  <message id="ssd-update-display">表示更新</message>
-  <message id="ssd-save-changes">変更保存</message>
-  <message id="ssd-discard-changes">変更破棄</message>
+  <message id="ssd-cb-atten-for-air">空気減衰を考慮</message>
+  <message id="ssd-tt-atten-for-air">チェックすると、線源または外側遮蔽と検出器間の空気による減衰が計算に考慮されます。</message>
+  <message id="ssd-cb-sub-back-peaks">バックグラウンドピークを差し引く</message>
+  <message id="ssd-tt-sub-back-peaks">同一元素の同位体をフィットにおいて全て同じ年齢にすることを強制します。</message>
+  <message id="ssd-cb-same-el-same-age">同一Z同一年齢</message>
+  <message id="ssd-tt-same-el-same-age">同一元素の同位体が全て同じ年齢を持つことを強制します。</message>
+  <message id="ssd-cb-corr-for-decay">測定中の壊変を補正</message>
+  <message id="ssd-tt-corr-for-decay">測定時間中に起こる壊変および生成効果を補正します。算出された放射能は測定開始時点に対応します。解の探索に追加の計算時間がかかる場合があります。</message>
+  <message id="ssd-tt-geometry">「トレース」線源または自己減衰線源のモデリングに使用するジオメトリ。
+    <br />
+    <br />
+    デフォルトでは、全てのジオメトリにおいて、全ての線源は検出器から指定距離にある点線源です。
+    <br />
+    ただし、核種を「トレース」線源にする場合（遮蔽の右下隅にある「<em>トレース線源追加</em>」ボタンをクリック）、または自己減衰線源にする場合（遮蔽がフィット対象核種と同じ元素を含む場合に「
+    <em>線源：</em>」チェックボックスを選択）、線源同位体は遮蔽全体に分布するものとしてモデル化され、
+    遮蔽内の各位置における異なる減衰量を考慮するためにレイトレーシングが使用されます。
+    <br />
+    <br />
+    簡単のため、「トレース」または自己減衰線源へのフィットを行う場合を除き、「点/球状」ジオメトリを選択してください。
+  </message>
+  <message id="ssd-phone-tab-source-peaks">線源ピーク</message>
+  <message id="ssd-phone-tab-source-isotopes">線源同位体</message>
+  <message id="ssd-phone-tab-shielding">遮蔽</message>
+  <message id="ssd-warn-no-back-peaks">バックグラウンドピークが定義されていないため、差し引きを行いません</message>
+  <message id="ssd-warn-no-back-spec">バックグラウンドスペクトルが読み込まれていないため、前景からバックグラウンドピーク面積を差し引くことができません。</message>
+  <message id="ssd-warn-no-back-peaks-toggle">
+    バックグラウンドスペクトルにはピークが同定されていません。バックグラウンドスペクトルを前景として読み込み、
+    差し引く可能性のあるピークを同定してから、現在の前景/バックグラウンドの組み合わせに
+    戻してください。
+  </message>
+  <message id="ssd-missing-back-peaks-title">不足しているバックグラウンドピーク</message>
+  <message id="ssd-missing-back-peaks-msg">
+    バックグラウンドスペクトルにはエネルギー {1} にピークが追加されていませんが、
+    それらのエネルギーにおいてバックグラウンドスペクトルに実際のピークが存在する可能性があります -
+    それらのピークをバックグラウンドスペクトルに追加しますか？
+  </message>
+  <message id="ssd-btn-no-dont-add">いいえ</message>
+  <message id="ssd-btn-add-peaks">ピークを追加...</message>
+  <message id="ssd-btn-add-all-detectable">全自動フィットピークを追加</message>
+  <message id="ssd-back-peak-preview-title">バックグラウンドピークのプレビュー</message>
+  <message id="ssd-back-peak-preview-msg">以下のピークがバックグラウンドスペクトルに追加されます：</message>
+  <message id="ssd-no-new-back-peaks">指定されたエネルギーにおいてバックグラウンドスペクトルに追加のピークは見つかりませんでした。</message>
+  <message id="ssd-back-peaks-all-fit">{1} 個の候補ピークがバックグラウンドにフィットされました。</message>
+  <message id="ssd-back-peaks-some-fit">{2} 個の候補ピークのうち {1} 個が有意でバックグラウンドにフィットされました。</message>
+  <message id="ssd-back-peaks-manual-hint">(Altキー（mac: Optionキー）を押しながらスペクトル上でダブル<br />
+  クリックすることで、手動でバックグラウンドピークをフィットすることもできます。また、バックグラウンドをフォアグラウンドとして読み込む方法もあります)</message>
+  <message id="ssd-err-adding-back-peaks">バックグラウンドへのピーク追加エラー: {1}</message>
+  <message id="ssd-update-dim-to-be-min">遮蔽寸法を最小厚さに更新しました。</message>
+  <message id="ssd-scaled-shield-to-be-less-dist">遮蔽厚さが検出器距離未満になるようスケーリングされました。</message>
+  <message id="ssd-err-fit-only-one-an">一度にフィットできる汎用遮蔽の原子番号は1つだけです。</message>
+  <message id="ssd-warn-invalid-chi2-for-energy">{1} keVに対して無効なchi2が計算されました。他の結果も無効である可能性があります</message>
+  <message id="ssd-calc-log-window-title">計算ログ</message>
+  <message id="ssd-calc-log-export-txt">TXTファイル</message>
+  <message id="ssd-calc-log-html-title">計算ログ</message>
+  <message id="ssd-template-text-log">標準ログ（テキスト）</message>
+  <message id="ssd-template-html-report">放射能フィットレポート (HTML)</message>
+  <message id="ssd-template-deprecated-txt">非推奨テキスト</message>
+  <message id="ssd-no-fit-results">表示可能なフィット結果がありません。</message>
+  <message id="ssd-error-creating-html-log">HTML計算ログ作成エラー: {1}</message>
+  <message id="ssd-err-opening-import-model">アップロードされた線源遮蔽フィットモデルの読み込みエラー: {1}</message>
+  <message id="ssd-import-model-window-title">線源遮蔽XMLモデルのインポート</message>
+  <message id="ssd-err-opening-db-model">データベースからの線源遮蔽フィットモデル読み込みエラー: {1}</message>
+  <message id="ssd-err-loading-model">選択したモデルを読み込めません - 申し訳ありません :(</message>
+  <message id="ssd-prev-saved-window-title">以前に保存したモデル</message>
+  <message id="ssd-models-prev-for-fore">この前景で以前使用したモデル:</message>
+  <message id="ssd-models-prev-saved">以前に保存したモデル:</message>
+  <message id="ssd-model-desc">モデルの説明:</message>
+  <message id="ssd-cb-allow-del">削除を許可</message>
+  <message id="ssd-no-model-in-db">データベースにモデルがありません</message>
+  <message id="ssd-err-creating-db-browser">データベースモデルブラウザの作成エラー</message>
+  <message id="ssd-save-model-to-db-window-title">放射能/遮蔽モデルをデータベースに保存</message>
+  <message id="ssd-save-to-db-name">モデル名を入力:</message>
+  <message id="ssd-save-to-db-desc">モデルの説明を入力（任意）:</message>
+  <message id="ssd-must-enter-name">名前を入力してください</message>
+  <message id="ssd-err-saving-to-db">データベースへの保存エラー</message>
+  <message id="ssd-Best">最適</message>
+  <message id="ssd-fit-failed">モデルフィット失敗</message>
+  <message id="ssd-using-fit-anyway">フィット結果をそのまま使用します。</message>
+  <message id="ssd-err-fit-not-performed">
+    {1}
+    <br />
+    フィットは実行されませんでした。
+  </message>
+  <message id="ssd-err-before-fit">
+    {1}
+    <br />
+    フィット実行前。
+  </message>
+  <message id="ssd-err-couldnt-make-chi2-fcn">
+    {1}
+    <br />
+    フィットは実行されませんでした（Chi2Fcnを作成できません）。
+  </message>
+  <message id="ssd-error-create-tool">放射能/遮蔽フィット表示の作成エラー: {1}</message>
   <message id="ssd-shield-source-diagram">遮蔽/線源図</message>
   <message id="ssd-show-model-diagram">モデル図を表示</message>
+
+  <!-- SourceFitModel quantities -->
+  <message id="sfm-tt-header-isotope">核種はフィットに使用されるフォトピークに応じて追加または削除されるため、このテーブルでは編集できません</message>
+  <message id="sfm-tt-header-activity">核種の放射能。適切な初期値の入力はフィットに役立つ場合があり、放射能をフィットする必要はありません。値は'12.4 kBq'、'1.0mCi'、'55.3uCi'、'15.82Mbq'のような形式で入力できます</message>
+  <message id="sfm-tt-header-age">核種の年齢。値は以下のような形式で入力できます：'23.3s'、'2 hl'（hlは半減期）、'5.23y'、'23:14:21.343'、'19min'など。安定な娘核種にのみ壊変する核種は年齢を設定できません。</message>
+  <message id="sfm-tt-header-fit-act">フィットで核種の放射能も求めますか、それとも入力値を正しいと仮定しますか？</message>
+  <message id="sfm-tt-header-fit-age">フィットで核種の年齢も求めますか、それとも入力値を正しいと仮定しますか？安定な娘核種にのみ壊変する核種ではこのオプションは使用できません。</message>
+  <message id="sfm-tt-header-iso-mass">表示されている放射能を仮定した場合の裸の核種の質量です。</message>
+  <message id="sfm-tt-header-act-uncert">フィットによる放射能の不確かさです。</message>
+  <message id="sfm-tt-header-age-uncert">フィットによる年齢の不確かさです。</message>
+  <message id="sfm-header-fit-act">放射能フィット</message>
+  <message id="sfm-header-fit-age">年齢フィット</message>
+  <message id="sfm-header-act-uncert">放射能不確かさ</message>
+  <message id="sfm-header-age-uncert">年齢不確かさ</message>
+  <message id="sfm-tt-aging-not-allowed">娘核種が安定であるため、ガンマスペクトルに影響しないので年齢設定は許可されていません。</message>
 
   <!-- Chi2Graphic / ShieldingSourceFitPlot -->
   <message id="x2g-yaxis-title-chi">(観測-モデル)/不確かさ</message>

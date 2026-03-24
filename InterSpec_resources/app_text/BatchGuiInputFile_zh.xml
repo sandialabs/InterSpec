@@ -5,5 +5,6 @@
   <message id="bgw-not-spec-preview">非谱文件</message>
   <message id="bgw-passthrough-sum-error">直通错误</message>
   <message id="bgw-preview-error">预览渲染错误</message>
-</messages> 
+  <message id="bgw-preview-skip">跳过预览</message>
+</messages>
 
