@@ -1229,17 +1229,21 @@ T find_fullrangefraction_channel( const T energy,
   const T e_low = fullrangefraction_energy( T(0.0), coeffs, nchannel, dev_pair_spline );
   const T e_high = fullrangefraction_energy( T(static_cast<double>(nchannel)), coeffs, nchannel, dev_pair_spline );
 
-  // Check if energy is below the lower bound - extrapolate using just the gain
-  // FRF: E = C_0 + C_1*(ch/nbin) + ...  -->  ch = (E - E_0) * nbin / C_1
-  if( energy <= e_low )
+  // Check if energy is outside the calibration range - extrapolate using just the gain.
+  // Skip this for FRF with C4 term, since the C4/(1+60x) rational term can make the
+  // energy function non-monotonic near bin=0 (dE/dx at x=0 includes -60*C4 contribution),
+  // so the boundary energy may not be the true extremum.
+  if( coeffs.size() <= 4 )
   {
-    return (energy - e_low) * T(static_cast<double>(nchannel)) / coeffs[1];
-  }
+    if( energy <= e_low )
+    {
+      return (energy - e_low) * T(static_cast<double>(nchannel)) / coeffs[1];
+    }
 
-  // Check if energy is above the upper bound - extrapolate using just the gain
-  if( energy >= e_high )
-  {
-    return T(static_cast<double>(nchannel)) + (energy - e_high) * T(static_cast<double>(nchannel)) / coeffs[1];
+    if( energy >= e_high )
+    {
+      return T(static_cast<double>(nchannel)) + (energy - e_high) * T(static_cast<double>(nchannel)) / coeffs[1];
+    }
   }
 
   // Binary search (and derivative-preserving implicit update for Jet types)
