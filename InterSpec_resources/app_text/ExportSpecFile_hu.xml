@@ -63,6 +63,8 @@
   <!-- Buttons -->
   <message id="esf-export">Exportálás</message>
   <message id="esf-show-qr-code">QR-kód megjelenítése</message>
+  <message id="esf-lossless-qr">Veszteségmentes</message>
+  <message id="esf-lossless-qr-tt">Ha be van jelölve, a spektrális adatok nem veszítenek információt, de nagy csatornaszámú vagy magas statisztikájú spektrumok esetén több QR-kódra lehet szükség. Ha nincs bejelölve, wavelet-alapú veszteséges tömörítés kerül alkalmazásra, amely némi információt elveszít, de lehetővé teszi kevesebb elemű, nagyobb hibajavítású QR-kód használatát, vagy bármely spektrum egyetlen QR-kódban való ábrázolását.</message>
 
   <!-- File info table headers -->
   <message id="esf-displayed-as">Megjelenítve mint</message>
@@ -74,6 +76,11 @@
   <message id="esf-next-qr-code">Következő QR-kód</message>
   <message id="esf-url-link">URL hivatkozás</message>
   <message id="esf-email-link">Email hivatkozás</message>
+  <message id="esf-lossy-qr-title">Spektrum veszteséges QR-kódja</message>
+  <message id="esf-qr-error-tolerance">QR hibatűrés:</message>
+  <message id="esf-qr-num-elements">QR elemek száma:</message>
+  <message id="esf-qr-rmse-info">RMSE: {1}, Együtthatók: {2}</message>
+  <message id="esf-qr-lossy-err">A spektrum nem illeszthető ennél a QR méretnél/tűrésnél</message>
 
   <!-- Error dialogs -->
   <message id="esf-error-title">Hiba</message>

@@ -63,18 +63,25 @@
   <!-- Buttons -->
   <message id="esf-export">تصدير</message>
   <message id="esf-show-qr-code">عرض رمز QR</message>
-  
+  <message id="esf-lossless-qr">بدون فقدان</message>
+  <message id="esf-lossless-qr-tt">عند التحديد، لن تفقد البيانات الطيفية أي معلومات، ولكن بالنسبة للأطياف ذات العدد الكبير من القنوات أو الإحصائيات العالية، قد تكون هناك حاجة لعدة رموز QR. عند عدم التحديد، يُستخدم ضغط مع فقدان قائم على wavelet، والذي يفقد بعض المعلومات ولكنه يسمح باستخدام رمز QR بعناصر أقل، أو تصحيح أخطاء أكبر، أو تمثيل أي طيف في رمز QR واحد.</message>
+
   <!-- File info table headers -->
   <message id="esf-displayed-as">معروض كـ</message>
   <message id="esf-fore-abbrev">أمامي</message>
   <message id="esf-back-abbrev">خلفية</message>
   <message id="esf-sec-abbrev">ثانوي</message>
-  
+
   <!-- QR Code dialog -->
   <message id="esf-next-qr-code">رمز QR التالي</message>
   <message id="esf-url-link">رابط URL</message>
   <message id="esf-email-link">رابط البريد الإلكتروني</message>
-  
+  <message id="esf-lossy-qr-title">رمز QR مع فقدان للطيف</message>
+  <message id="esf-qr-error-tolerance">تحمل خطأ QR:</message>
+  <message id="esf-qr-num-elements">عدد عناصر QR:</message>
+  <message id="esf-qr-rmse-info">RMSE: {1}، المعاملات: {2}</message>
+  <message id="esf-qr-lossy-err">لا يمكن ملاءمة الطيف بهذا الحجم/التحمل لـ QR</message>
+
   <!-- Error dialogs -->
   <message id="esf-error-title">خطأ</message>
   <message id="esf-qr-encode-failed">فشل في عرض الطيف كرمز QR: {1}</message>

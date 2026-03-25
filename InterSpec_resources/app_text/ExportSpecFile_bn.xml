@@ -63,6 +63,8 @@
   <!-- Buttons -->
   <message id="esf-export">এক্সপোর্ট</message>
   <message id="esf-show-qr-code">QR-কোড দেখান</message>
+  <message id="esf-lossless-qr">ক্ষতিহীন</message>
+  <message id="esf-lossless-qr-tt">চেক করা হলে, স্পেকট্রাল ডেটা কোনো তথ্য হারাবে না, তবে উচ্চ চ্যানেল সংখ্যা বা উচ্চ পরিসংখ্যানের স্পেকট্রামের জন্য একাধিক QR কোডের প্রয়োজন হতে পারে। চেক না করা হলে, wavelet-ভিত্তিক ক্ষতিকর সংকোচন ব্যবহৃত হয়, যা কিছু তথ্য হারায় তবে কম উপাদান, বেশি ত্রুটি সংশোধন, বা একটি একক QR কোডে যেকোনো স্পেকট্রাম উপস্থাপন করতে দেয়।</message>
 
   <!-- File info table headers -->
   <message id="esf-displayed-as">প্রদর্শিত হিসাবে</message>
@@ -74,6 +76,11 @@
   <message id="esf-next-qr-code">পরবর্তী QR কোড</message>
   <message id="esf-url-link">URL লিঙ্ক</message>
   <message id="esf-email-link">ইমেল লিঙ্ক</message>
+  <message id="esf-lossy-qr-title">স্পেকট্রামের ক্ষতিকর QR-কোড</message>
+  <message id="esf-qr-error-tolerance">QR ত্রুটি সহনশীলতা:</message>
+  <message id="esf-qr-num-elements">QR উপাদান সংখ্যা:</message>
+  <message id="esf-qr-rmse-info">RMSE: {1}, সহগ: {2}</message>
+  <message id="esf-qr-lossy-err">এই QR আকার/সহনশীলতায় স্পেকট্রাম ফিট করা যাচ্ছে না</message>
 
   <!-- Error dialogs -->
   <message id="esf-error-title">ত্রুটি</message>
