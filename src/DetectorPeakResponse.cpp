@@ -3325,6 +3325,7 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
     case UserAddedRelativeEfficiencyDrf:    val = "UserAddedRelativeEfficiencyDrf";    break;
     case DefaultRelativeEfficiencyDrf:      val = "DefaultRelativeEfficiencyDrf";      break;
     case UserImportedIntrisicEfficiencyDrf: val = "UserImportedIntrisicEfficiencyDrf"; break;
+    case UserImportedEfficiencyCsvDrf:      val = "UserImportedEfficiencyCsvDrf";      break;
     case UserImportedGadrasDrf:             val = "UserImportedGadrasDrf";             break;
     case UserSpecifiedFormulaDrf:           val = "UserSpecifiedFormulaDrf";           break;
     case UserCreatedDrf:                    val = "UserCreatedDrf";                    break;

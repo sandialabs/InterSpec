@@ -3298,10 +3298,13 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> cluster_gam
   };
   std::sort( std::begin(gammas_by_energy), std::end(gammas_by_energy), lessThanByEnergy );
 
-  // Sort gammas by expected counts (highest first)
+  // Sort gammas by expected counts (highest first), with energy as tiebreaker
+  // for determinism when two gammas have equal expected counts.
   std::sort( std::begin(gammas_by_counts), std::end(gammas_by_counts),
     []( const std::pair<double,double> &lhs, const std::pair<double,double> &rhs ) {
-      return lhs.second > rhs.second;
+      if( lhs.second != rhs.second )
+        return lhs.second > rhs.second;
+      return lhs.first < rhs.first;
   } );
 
   if( should_debug_print() )
@@ -6075,7 +6078,6 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
       }else
       {
         // Bystander peak: add as a FloatingPeak so the fit can account for it.
-        // Use the gamma energy (nuclear data constant) for deterministic results.
         RelActCalcAuto::FloatingPeak fp;
         fp.energy = peak_energy;
         fp.release_fwhm = false;
@@ -6280,11 +6282,6 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     RelActCalcAuto::RelActAutoSolution solution = RelActCalcAuto::solve(
       options, orig_foreground, orig_background, drf, auto_search_peaks
     );
-    
-    //{
-    //  ofstream tmpout( "firstgosol.html" );
-    //  solution.print_html_report( tmpout );
-    //}
 
     // As of 20260103, energy calibration adjustments may cause failure to fit the correct solution sometimes,
     //  so if our current solution failed, or is really bad, we'll try without fitting energy cal
@@ -7071,6 +7068,12 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     translate_peaks_to_orig_cal( result.uncombined_fit_peaks );
     translate_peaks_to_orig_cal( result.observable_peaks );
 #endif
+
+    // Sort observable_peaks by mean energy for deterministic ordering.
+    // compute_observable_peaks processes ROIs via a map keyed by continuum
+    // pointer, whose iteration order is non-deterministic across runs.
+    std::sort( result.observable_peaks.begin(), result.observable_peaks.end(),
+      &PeakDef::lessThanByMean );
 
     if( should_debug_print() && (result.observable_peaks.size() != result.fit_peaks.size()) )
     {

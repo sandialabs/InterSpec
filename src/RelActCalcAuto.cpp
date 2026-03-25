@@ -33,6 +33,7 @@
 #include <limits>
 #include <cstdlib>
 #include <fstream>
+#include <iomanip>
 #include <sstream>
 #include <algorithm>
 #include <functional>
@@ -5303,9 +5304,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     //RelActAutoCostFcn::CeresStepSummaryCallback step_summary_callback( cost_functor.get() );
     //ceres_options.callbacks.push_back( &step_summary_callback );
     
-    // Setting ceres_options.num_threads >1 doesnt seem to do much (any?) good - so instead we do
-    //  some multiple threaded computations in RelActAutoSolution::eval(...)
-    ceres_options.num_threads = static_cast<int>( std::thread::hardware_concurrency(), 2 );
+    // Setting ceres_options.num_threads >1 doesnt seem to do much (any?) good
+    ceres_options.num_threads = static_cast<int>( std::max(std::thread::hardware_concurrency(), 2u) );
 
     cost_functor->m_solution_finished = false;
 
@@ -6582,7 +6582,43 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 #endif
     
     //solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::Success;
-    
+
+    // Sort all peak vectors deterministically by mean energy, with tiebreakers
+    // on gamma energy, peak area, and source nuclide name.  The peak ordering
+    // from the solver depends on ROI processing order which may vary between
+    // runs, and downstream code can be sensitive to order.
+    const auto peak_order = []( const PeakDef &lhs, const PeakDef &rhs ) -> bool {
+      if( lhs.mean() != rhs.mean() )
+        return lhs.mean() < rhs.mean();
+
+      const double lhs_ge = lhs.gammaParticleEnergy();
+      const double rhs_ge = rhs.gammaParticleEnergy();
+      if( lhs_ge != rhs_ge )
+        return lhs_ge < rhs_ge;
+
+      if( lhs.peakArea() != rhs.peakArea() )
+        return lhs.peakArea() < rhs.peakArea();
+
+      const SandiaDecay::Nuclide * const lhs_nuc = lhs.parentNuclide();
+      const SandiaDecay::Nuclide * const rhs_nuc = rhs.parentNuclide();
+      if( lhs_nuc != rhs_nuc )
+      {
+        if( !lhs_nuc ) return true;
+        if( !rhs_nuc ) return false;
+        return lhs_nuc->symbol < rhs_nuc->symbol;
+      }
+
+      return false;
+    };
+
+    std::sort( solution.m_fit_peaks.begin(), solution.m_fit_peaks.end(), peak_order );
+    std::sort( solution.m_fit_peaks_in_spectrums_cal.begin(), solution.m_fit_peaks_in_spectrums_cal.end(), peak_order );
+    std::sort( solution.m_peaks_without_back_sub.begin(), solution.m_peaks_without_back_sub.end(), peak_order );
+    for( vector<PeakDef> &v : solution.m_fit_peaks_for_each_curve )
+      std::sort( v.begin(), v.end(), peak_order );
+    for( vector<PeakDef> &v : solution.m_fit_peaks_in_spectrums_cal_for_each_curve )
+      std::sort( v.begin(), v.end(), peak_order );
+
     return solution;
   }//RelActCalcAuto::RelActAutoSolution solve_ceres( ceres::Problem &problem )
   
