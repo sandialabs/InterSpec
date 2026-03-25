@@ -1067,13 +1067,34 @@ void add_escape_peak_floating_peaks_if_appropriate(
       }
     }
     
-    if( !parent_peak )
-      continue;  // No parent peak found in auto_search_peaks
-    
     // Calculate theoretical escape peak energies based on the candidate's nominal energy
     // Use theoretical energies for floating peaks, not fitted parent energy
     const double se_energy = candidate.parent_energy - single_escape_offset;
     const double de_energy = candidate.parent_energy - double_escape_offset;
+
+    if( !parent_peak )
+    {
+      // No parent peak found in auto_search_peaks - remove any orphaned escape floating peaks
+      // that may have been copied from a previous solution's options but now lack a ROI.
+      // This mirrors how add_floating_511_peak_if_appropriate removes the 511 peak when
+      // there is no ROI covering it.
+      const double fp_tolerance = 1.0; // keV
+      auto &fps = options.floating_peaks;
+      fps.erase( std::remove_if( begin(fps), end(fps),
+        [&]( const RelActCalcAuto::FloatingPeak &fp ) -> bool {
+          if( std::fabs( fp.energy - se_energy ) > fp_tolerance
+              && std::fabs( fp.energy - de_energy ) > fp_tolerance )
+            return false;
+          // Only remove if the floating peak has no covering ROI
+          for( const RelActCalcAuto::RoiRange &roi : options.rois )
+          {
+            if( (fp.energy >= roi.lower_energy) && (fp.energy <= roi.upper_energy) )
+              return false;
+          }
+          return true;
+        } ), end(fps) );
+      continue;
+    }
     
     // Calculate expected positions based on fitted parent for checking auto_search_peaks
     const double se_expected_from_fit = parent_peak->mean() - single_escape_offset;
@@ -6277,7 +6298,6 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     ensure_min_channel_gap( options.rois, orig_foreground->energy_calibration() );
     remove_floating_peaks_without_roi( options );
 
-
     // Call RelActAuto::solve with provided options
     RelActCalcAuto::RelActAutoSolution solution = RelActCalcAuto::solve(
       options, orig_foreground, orig_background, drf, auto_search_peaks
@@ -7812,28 +7832,41 @@ PeakFitResult fit_peaks_for_nuclides(
 
     if( !drf || !drf->isValid() || !drf->hasResolutionInfo() || (auto_search_peaks.size() > 6) )
     {
+      bool got_fwhm_fcn = false;
+      
       // If we have peaks, estimate FWHM from peak widths. Otherwise fall back to a generic detector.
       if( !auto_search_peaks.empty() )
       {
-        const int num_auto_peaks = static_cast<int>(auto_search_peaks.size());
-        int sqrtEqnOrder = (std::min)( 6, num_auto_peaks / (1 + (num_auto_peaks > 3)) );
-        if( auto_search_peaks.size() < 3 )
-          sqrtEqnOrder = static_cast<int>( auto_search_peaks.size() );
-
-        std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> auto_search_peaks_dq
-          = std::make_shared<const std::deque<std::shared_ptr<const PeakDef>>>( begin(auto_search_peaks), end(auto_search_peaks) );
-
-        MakeDrfFit::performResolutionFit( auto_search_peaks_dq, fwhmFnctnlForm, sqrtEqnOrder, fwhm_coefficients, fwhm_uncerts );
-        auto_search_peaks_dq = MakeDrfFit::removeOutlyingWidthPeaks( auto_search_peaks_dq, fwhmFnctnlForm, fwhm_coefficients );
-        MakeDrfFit::performResolutionFit( auto_search_peaks_dq, fwhmFnctnlForm, sqrtEqnOrder, fwhm_coefficients, fwhm_uncerts );
-
-        // Set energy range based on peaks used for FWHM fit
-        if( !auto_search_peaks_dq->empty() )
+        try
         {
-          lower_fwhm_energy = auto_search_peaks_dq->front()->mean();
-          upper_fwhm_energy = auto_search_peaks_dq->back()->mean();
+          const int num_auto_peaks = static_cast<int>(auto_search_peaks.size());
+          int sqrtEqnOrder = (std::min)( 6, num_auto_peaks / (1 + (num_auto_peaks > 3)) );
+          if( auto_search_peaks.size() < 3 )
+            sqrtEqnOrder = static_cast<int>( auto_search_peaks.size() );
+          
+          std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> auto_search_peaks_dq
+          = std::make_shared<const std::deque<std::shared_ptr<const PeakDef>>>( begin(auto_search_peaks), end(auto_search_peaks) );
+          
+          MakeDrfFit::performResolutionFit( auto_search_peaks_dq, fwhmFnctnlForm, sqrtEqnOrder, fwhm_coefficients, fwhm_uncerts );
+          auto_search_peaks_dq = MakeDrfFit::removeOutlyingWidthPeaks( auto_search_peaks_dq, fwhmFnctnlForm, fwhm_coefficients );
+          MakeDrfFit::performResolutionFit( auto_search_peaks_dq, fwhmFnctnlForm, sqrtEqnOrder, fwhm_coefficients, fwhm_uncerts );
+          
+          // Set energy range based on peaks used for FWHM fit
+          if( !auto_search_peaks_dq->empty() )
+          {
+            lower_fwhm_energy = auto_search_peaks_dq->front()->mean();
+            upper_fwhm_energy = auto_search_peaks_dq->back()->mean();
+          }
+          
+          got_fwhm_fcn = true;
+        }catch( std::exception &e )
+        {
+          cerr << "Failed to fit FWHM functional form in fit_peaks_for_nuclides: " << e.what() << ". WIll use generic FWHM." << endl;
+          got_fwhm_fcn = true;
         }
-      }else
+      }//if( !auto_search_peaks.empty() )
+      
+      if( !got_fwhm_fcn )
       {
         // With no peaks and no DRF resolution info, use generic detector resolution coefficients.
         if( isHPGe )
