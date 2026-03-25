@@ -1161,14 +1161,14 @@ std::vector<PeakDef> refit_roi_continuums( const std::vector<PeakDef> &solution_
   {
     // Use ThreadPool for parallel processing
     SpecUtilsAsync::ThreadPool pool;
-    
+
     for( const auto &roi_group : roi_groups )
     {
       pool.post( [&refit_roi_continuum, roi_group]() {
         refit_roi_continuum(roi_group);
       });
     }
-    
+
     // Wait for all tasks to complete
     pool.join();
   }
