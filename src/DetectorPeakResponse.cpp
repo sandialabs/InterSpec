@@ -769,105 +769,39 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
   if( ((geometry_type == EffGeometryType::FarFieldIntrinsic) || (geometry_type == EffGeometryType::FarFieldAbsolute))
      && ((detectorDiameter <= 0.0) || IsInf(detectorDiameter) || IsNan(detectorDiameter)) )
     throw runtime_error( "Detector diameter must be greater than 0.0" );
-  
+
   if( (geometry_type == EffGeometryType::FarFieldAbsolute) && (characterizationDist <= 0.0) )
     throw runtime_error( "Distance for absolute efficency must be greater than zero" );
-  
+
   if( energyUnits <= 0.0 || IsInf(energyUnits) || IsNan(energyUnits) )
     throw runtime_error( "Energy units must be greater than 0.0" );
 
-  
-  bool gotline = false;
-  int linen = 0;
-  string line;
-  std::vector<EnergyEfficiencyPair> energyEfficiencies;
-  
-  while( SpecUtils::safe_get_line( input, line ) )
+  // Delegate to parseEfficiencyCsvFile for the actual CSV parsing, which correctly
+  //  detects whether efficiency values are percentages or fractional from the header.
+  const EffCsvParseResult parse_result = parseEfficiencyCsvFile( input );
+
+  assert( parse_result.drf && parse_result.drf->isValid() );
+  if( !parse_result.drf || !parse_result.drf->isValid() )
+    throw runtime_error( "Failed to parse efficiency CSV file." );
+
+  // Copy the parsed energy-efficiency pairs, applying the callers energy units
+  const std::vector<EnergyEfficiencyPair> &parsed_pairs = parse_result.drf->m_energyEfficiencies;
+  const float parsed_energy_units = parse_result.drf->m_efficiencyEnergyUnits;
+
+  m_energyEfficiencies.clear();
+  m_energyEfficiencies.reserve( parsed_pairs.size() );
+  for( const EnergyEfficiencyPair &p : parsed_pairs )
   {
-    ++linen;
-    SpecUtils::trim( line );
-
-    if( line.empty() || line[0] == '#' )
-      continue;
-    
-    if( !isdigit(line[0]) )
-    {
-      if( !gotline )
-        continue;
-      throw runtime_error( "Invalid efficiency file.  After the CSV file header"
-                           ", all lines must begin with a number (the energy"
-                           " and then the % efficiency)" );
-    }//if( !isdigit(line[0]) )
-
-    vector<float> fields;
-    const bool ok = SpecUtils::split_to_floats( line.c_str(), line.size(), fields );
-    
-    if( (fields.size() < 2) || !ok )
-    {
-      if( !gotline )
-        continue;
-      
-      throw runtime_error( "Invalid efficiency file.  After the CSV file header"
-                           ", all lines must have at least two numbers: "
-                           "energy and % efficiency. Further comma separated "
-                           "numbers are allowed, but no other text" );
-    }//if( fields.size() < 2 )
-    
     EnergyEfficiencyPair point;
-    point.energy = fields[0] * PhysicalUnits::keV;
-    point.efficiency = fields[1] / 100.0; //files have it listed as a percentage
-    
-    gotline = true;
-    energyEfficiencies.push_back( point );
-    
-    if( linen > 5000 || energyEfficiencies.size() > 3000 )
-      throw runtime_error( "Efficiency CSV files can have a max of 5000 total lines or 3000 energy efficiency pairs" );
-    
-  }//while( SpecUtils::safe_get_line(input) )
+    // The parsed pairs have energies in the units determined by parseEfficiencyCsvFile;
+    //  convert to the energy units requested by the caller.
+    point.energy = p.energy * (energyUnits / parsed_energy_units);
+    point.efficiency = p.efficiency;
+    m_energyEfficiencies.push_back( point );
+  }
 
-  
-  if( energyEfficiencies.size() < 2 )
-    throw runtime_error( "File was not a valid efficiency file, need at least"
-                        " two efficiency points." );
-  
-  //Lets check if the numbers were strickly increasing or strickly decreasing
-  const bool increasing = (energyEfficiencies[1].energy > energyEfficiencies[0].energy);
-  for( size_t i = 2; i < energyEfficiencies.size(); ++i )
-  {
-    //We'll let two be energied be the exact same in a row
-    const float laste = energyEfficiencies[i-1].energy;
-    const float thise = energyEfficiencies[i].energy;
-    
-    if( IsNan(laste) || IsNan(thise)
-        || IsInf(laste) || IsInf(thise) )
-      throw runtime_error( "NaN or Inf energy detected from CSV file" );
-    
-    if( laste<0.0f || thise<0.0f )
-      throw runtime_error( "Energy can not be less than zero in CSV efficiecny file" );
-    
-    if( energyEfficiencies[i-1].efficiency < 0.0f
-       || energyEfficiencies[i].efficiency < 0.0f
-       || energyEfficiencies[i-1].efficiency > 1.0f
-       || energyEfficiencies[i].efficiency > 1.0f )
-      throw runtime_error( "Intrinsic efficiency can not be less than zero or"
-                           " greater than 100 in CSV efficiency file" );
-    
-    if( fabs(laste - thise) < 1.0E-5*std::max(fabs(thise),fabs(laste)) )
-      continue;
-    
-    const bool bigger = (thise > laste);
-    if( increasing != bigger )
-      throw runtime_error( "Energies in efficiency CSV must be strickly "
-                           "increasing or strickly decreasing" );
-  }//for( size_t i = 2; i < energyEfficiencies.size(); ++i )
-  
-
-  if( !increasing )
-    std::reverse( energyEfficiencies.begin(), energyEfficiencies.end() );
-  
   m_detectorDiameter = detectorDiameter;
   m_detectorSetback = 0.0;
-  m_energyEfficiencies = energyEfficiencies;
   m_efficiencyEnergyUnits = energyUnits;
 
   m_efficiencySource = DrfSource::UserImportedIntrisicEfficiencyDrf;
