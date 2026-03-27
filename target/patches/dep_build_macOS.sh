@@ -287,44 +287,33 @@ fi #if libharu.installe exists / else
 cd "${working_directory}"
 
 
-## Build Wt 3.7.1
+## Build Wt 4.12.6
 if [ -f "${working_directory}/wt.installed" ]; then
     echo "Wt already installed (as indicated by existance of wt.installed file) - skipping."
 else
-  # InterSpec code will only compile with exactly version 3.3.4 or 3.7.1.  
-  # For 3.3.4, see version of this file from before Dec 26th 2021 for pathc and build instructions.
-
-  file_url="https://github.com/emweb/wt/archive/3.7.1.tar.gz"
-  file_name="wt-3.7.1.tar.gz"
-  expected_sha256="232a2f0a2f3c4174c96872ab15ef7bc0a544d9401486a4c496a6b37f27cc10e7"
-  src_dir="wt-3.7.1"
-  
-  download_file "${file_url}" "${file_name}" "${expected_sha256}"
+  src_dir="wt-4.12.6"
+  git_hash="4d158458b06554192c63389e098ad03e5e35a713"
 
   if [ -d "${src_dir}" ]; then
-    echo "Wt already unzipped, not doing again."
+    echo "Wt cloned - not doing it again."
+    cd "${src_dir}"
   else
-    tar -xzvf "${file_name}"
-  fi
-  
-  cd "${src_dir}"
-
-  if [ -f "wt.patched" ]; then
-    echo "Wt already pated, not doing again."
-  else
-    git apply --reject --ignore-space-change --ignore-whitespace "${PATCH_DIR}/wt/3.7.1/NormalBuild/wt_3.7.1_git.patch"
-    touch wt.patched
+    git clone --recursive https://github.com/emweb/wt.git --branch master --single-branch --depth 1 "${src_dir}"
+    cd "${src_dir}"
+    git fetch --depth 1 origin ${git_hash}
+    git checkout ${git_hash}
+    git submodule update --init --recursive
   fi
 
   if [ -d build ]; then
     rm -r build
-    echo "Deleted previous libharu build directory."
+    echo "Deleted previous Wt build directory."
   fi
 
   mkdir build
   cd build
 
-  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DBoost_INCLUDE_DIR="${MY_WT_PREFIX}/include" -DBOOST_PREFIX="${MY_WT_PREFIX}" -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DHARU_PREFIX="${MY_WT_PREFIX}" -DHARU_LIB="${MY_WT_PREFIX}/lib/libhpdfs.a" -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DENABLE_PANGO=OFF -DINSTALL_FINDWT_CMAKE_FILE=ON -DHTTP_WITH_ZLIB=OFF -DWT_CPP_11_MODE="-std=c++17" -DCONFIGURATION=data/config/wt_config_osx.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR="${MY_WT_PREFIX}/etc/wt" -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" -S ..
+  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DBoost_INCLUDE_DIR="${MY_WT_PREFIX}/include" -DBOOST_PREFIX="${MY_WT_PREFIX}" -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DHARU_PREFIX="${MY_WT_PREFIX}" -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DENABLE_PANGO=OFF -DENABLE_FIREBIRD=OFF -DENABLE_MSSQLSERVER=OFF -DENABLE_OPENGL=ON -DENABLE_QT4=OFF -DENABLE_QT5=OFF -DENABLE_QT6=OFF -DENABLE_LIBWTTEST=ON -DENABLE_SAML=OFF -DENABLE_UNWIND=OFF -DHTTP_WITH_ZLIB=OFF -DCMAKE_CXX_STANDARD=17 -DCONFIGURATION=data/config/wt_config_osx.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR="${MY_WT_PREFIX}/etc/wt" -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" -S ..
   make -j$(sysctl -n hw.ncpu) install
   touch "${working_directory}/wt.installed"
 fi #if wt.installed exists / else
