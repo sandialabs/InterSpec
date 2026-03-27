@@ -340,9 +340,9 @@ else
   # Build Eigen, which is required by ceres-solver, and used a few other places
   # in InterSpec if its available
 
-  src_dir="eigen-5.x"
-  # Get version 5.0.1 (minimizing how much history we download)
-  git_hash="bc3b39870ecb690a623a3f49149a358b95c5781d"
+  src_dir="eigen-3.x"
+  # Get trunk version as of 20250114 to pickup some compile issues for c++20 (minimizing how much history we download)
+  git_hash="2e76277bd049f7bec36b0f908c69734a42c5234f"
   
   if [ -d "${src_dir}" ]; then
     echo "Eigen cloned - not doing it again."
@@ -372,43 +372,6 @@ fi #if Eigen.installed exists / else
 
 cd "${working_directory}"
 
-## Build Abseil
-if [ -f "${working_directory}/abseil.installed" ]; then
-    echo "Abseil already installed (as indicated by existence of abseil.installed file) - skipping."
-else
-  # Abseil is required by ceres-solver.
-  # Using LTS 20260107.1
-  src_dir="abseil-cpp"
-  git_hash="255c84dadd029fd8ad25c5efb5933e47beaa00c7"
-
-  if [ -d "${src_dir}" ]; then
-    echo "Abseil cloned - not doing it again."
-    cd "${src_dir}"
-  else
-    git clone --recursive https://github.com/abseil/abseil-cpp.git --branch master --single-branch --depth 1 "${src_dir}"
-    cd "${src_dir}"
-    git fetch --depth 1 origin ${git_hash}
-    git checkout ${git_hash}
-    git submodule update --init --recursive
-  fi
-
-  if [ -d build ]; then
-    rm -r build
-    echo "Deleted previous Abseil build directory."
-  fi
-
-  mkdir build
-  cd build
-
-  cmake -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DABSL_BUILD_TESTING=OFF -DABSL_USE_GOOGLETEST_HEAD=OFF -DCMAKE_CXX_STANDARD=17 -DBUILD_SHARED_LIBS=OFF -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" ..
-  cmake --build . --config Release --target install -j $(sysctl -n hw.ncpu)
-
-  touch "${working_directory}/abseil.installed"
-fi #if abseil.installed exists / else
-
-
-cd "${working_directory}"
-
 ## Build Ceres-Solver
 if [ -f "${working_directory}/Ceres.installed" ]; then
     echo "Ceres-Solver already installed (as indicated by existence of Ceres.installed file) - skipping."
@@ -417,14 +380,10 @@ else
   # tool, and a small amount of the peak fitting.
   git clone --recursive https://github.com/ceres-solver/ceres-solver.git --branch master --single-branch --depth 1
   cd ceres-solver
-  # Get HEAD version from Mar 22, 2026 (minimizing how much history we download)
-  git fetch --depth 1 origin 2f946a582ae4a9e7ee0492030ec12d9b1f3dbade
-  git checkout 2f946a582ae4a9e7ee0492030ec12d9b1f3dbade
+  # Get version 2.2.0, Oct 12, 2023 (minimizing how much history we download)
+  git fetch --depth 1 origin 85331393dc0dff09f6fb9903ab0c4bfa3e134b01
+  git checkout 85331393dc0dff09f6fb9903ab0c4bfa3e134b01
   git submodule update --init --recursive
-
-  # Remove bundled abseil so Ceres uses the system-installed one (avoids CMake
-  # export-set errors when bundled abseil targets arent in the CeresExport set)
-  rm -rf third_party/abseil-cpp/*
 
   if [ -d build_macos ]; then
     rm -r build_macos
@@ -434,9 +393,8 @@ else
   mkdir build_macos
   cd build_macos
 
-  cmake -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DACCELERATESPARSE=OFF -DUSE_CUDA=OFF -DEXPORT_BUILD_DIR=OFF -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_CXX_STANDARD=17 -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" ..
-  # Build single-threaded to avoid lipo race conditions with universal binary builds
-  cmake --build . --config Release --target install -j1
+  cmake -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DMINIGLOG=ON -DGFLAGS=OFF -DACCELERATESPARSE=OFF -DUSE_CUDA=OFF -DEXPORT_BUILD_DIR=ON -DBUILD_TESTING=ON -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" ..
+  cmake --build . --config Release --target install -j $(sysctl -n hw.ncpu)
 
   touch "${working_directory}/Ceres.installed"
 fi #if Ceres.installed exists / else
