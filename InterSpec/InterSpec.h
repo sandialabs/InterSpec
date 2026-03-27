@@ -1209,7 +1209,8 @@ public:
   void setHintPeaks( std::weak_ptr<SpecMeas> spectrum,
                      std::set<int> samplenums,
                      std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > existingPeaks,
-                     std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > resultpeaks );
+                     std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > resultpeaks,
+                     const bool potentuallyUpdateDetTypeGuess );
   
   
   void excludePeaksFromRange( double x0, double x1 );

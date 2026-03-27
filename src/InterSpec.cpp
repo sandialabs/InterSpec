@@ -12948,9 +12948,13 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
     drf = m_dataMeasurement->detector();
 
   weak_ptr<SpecMeas> spectrum = data;
+  const bool updateDetTypeGuess = ((data == m_dataMeasurement)
+                                    && (samples == m_displayedSamples)
+                                    && (!fitPrefs
+                                    || (fitPrefs->m_det_type == PeakFitUtils::CoarseResolutionType::Unknown)));
 
   boost::function<void(void)> callback = wApp->bind( boost::bind(&InterSpec::setHintPeaks,
-                this, spectrum, samples, origPeaks, searchresults
+                this, spectrum, samples, origPeaks, searchresults, updateDetTypeGuess
   ) );
 
   boost::function<void(void)> worker = [=](){
@@ -12977,7 +12981,8 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
 void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
                   std::set<int> samplenums,
                   shared_ptr<const deque< std::shared_ptr<const PeakDef>>> existing,
-                  shared_ptr<vector<std::shared_ptr<const PeakDef>>> resultpeaks )
+                  shared_ptr<vector<std::shared_ptr<const PeakDef>>> resultpeaks,
+                  const bool potentuallyUpdateDetTypeGuess )
 {
 #if( PERFORM_DEVELOPER_CHECKS )
   if( !wApp )
@@ -13038,6 +13043,35 @@ void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
   }//if( addedpeaks.size() )
   
   spectrum->setAutomatedSearchPeaks( samplenums, newpeaks );
+  
+  
+  if( potentuallyUpdateDetTypeGuess
+     && spectrum
+     && resultpeaks
+     && !resultpeaks->empty()
+     && (spectrum == m_dataMeasurement)
+     && (m_displayedSamples == samplenums) )
+  {
+    shared_ptr<const PeakFitDetPrefs> hintFitPrefs = spectrum->peakFitDetPrefs();
+    if( !hintFitPrefs || (hintFitPrefs->m_det_type == PeakFitUtils::CoarseResolutionType::Unknown) )
+    {
+      const PeakFitUtils::CoarseResolutionType peak_fwhm_type
+              = PeakFitUtils::coarse_resolution_from_peaks( *resultpeaks );
+      if( peak_fwhm_type != PeakFitUtils::CoarseResolutionType::Unknown )
+      {
+        shared_ptr<PeakFitDetPrefs> prefs = make_shared<PeakFitDetPrefs>();
+        prefs->m_det_type = peak_fwhm_type;
+        prefs->m_peak_skew_type = PeakDef::SkewType::NoSkew;
+        prefs->m_roi_independent_skew = false;
+        prefs->m_fwhm_method = PeakFitDetPrefs::FwhmMethod::Normal;
+        prefs->m_source = PeakFitDetPrefs::LoadingSource::FromSpectralData;
+        m_dataMeasurement->setPeakFitDetPrefs( prefs );
+        m_peakFitDetPrefsChanged.emit();
+        
+        // TODO: we should launch a re-fit of the hint peak search...
+      }
+    }//
+  }//if( potentuallyUpdateDetTypeGuess )
   
   if( (spectrum == m_dataMeasurement) && (m_displayedSamples == samplenums) )
     m_hintPeaksSet.emit(SpecUtils::SpectrumType::Foreground);
