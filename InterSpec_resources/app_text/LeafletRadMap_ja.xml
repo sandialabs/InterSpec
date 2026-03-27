@@ -38,4 +38,23 @@
     <li><b>範囲内のピーク</b>: エネルギー範囲内にピークを持つサンプル番号のみを表示し、マーカーの色とCPSはピークのカウント率に基づきます。</li>
     </ul>
   </message>
+  <message id="lrm-copy-google-maps">Google Maps URLをコピー</message>
+  <message id="lrm-copy-bing-maps">Bing Maps URLをコピー</message>
+  <message id="lrm-copy-url-success">マップURLをクリップボードにコピーしました。ブラウザに貼り付けてください。</message>
+  <message id="lrm-copy-url-fail">マップURLのクリップボードへのコピーに失敗しました。</message>
+  <message id="lrm-copy-url-no-gps">マップURLを作成するためのGPSデータがありません。</message>
+  <message id="lrm-tile-load-btn">マップタイルが読み込まれない？</message>
+  <message id="lrm-tile-load-dialog-title">マップタイルが読み込まれません</message>
+  <message id="lrm-tile-load-dialog-content">
+    arcgis.comからマップタイルを読み込めませんでした。原因として考えられるもの：
+    <ul>
+      <li>インターネット接続がない</li>
+      <li>企業プロキシまたはファイアウォールがarcgis.comへのアクセスをブロックしている</li>
+      <li>無効または期限切れのAPIキー</li>
+    </ul>
+    <p>プロキシの背後にいる場合、プロキシ設定を構成する必要があるかもしれません。
+    <b>ProxySetting</b>オプションについては<em>data/config/example_InterSpec_app_settings.json</em>
+    ファイルを参照してください。通常、<b>system</b>の値で動作します。</p>
+    <p>測定マーカーは引き続き表示されますが、マップの背景は空白になります。</p>
+  </message>
 </messages>

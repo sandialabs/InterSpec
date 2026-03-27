@@ -27,6 +27,8 @@
   <message id="smm-zip-filename-hdr">Filename</message>
   <message id="smm-zip-kilobyte-hdr">kb</message>
   <message id="smm-zip-display-btn">Display</message>
+  <message id="smm-loaded-peak-fit-prefs">Loaded peak fitting preferences from file.</message>
+  <message id="smm-no-foreground-for-prefs">Load a foreground spectrum before applying peak fitting preferences.</message>
   <message id="smm-empty-file">File was probably an empty file - not a spectrum file.</message>
   <message id="smm-failed-reading-nonspec-file">Failed to read non-spectrum file.</message>
   <message id="smm-not-spec-file">Not a spectrum file</message>
@@ -133,9 +135,21 @@
   <message id="smm-ecc-fix-geom-act-m2">Fixed Geometry - activity per m2</message>
   <message id="smm-ecc-fix-geom-act-gram">Fixed Geometry - activity per gram</message>
   <message id="smm-ecc-det-diam">Detector diam.</message>
+  <message id="smm-ecc-det-setback">Det. setback</message>
   <message id="smm-ecc-dist">Distance</message>
   <message id="smm-ecc-use-drf">Use DRF</message>
   <message id="smm-ecc-error">Error creating DRF from ECC: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop an ANGLE .outx file onto app -->
+  <message id="smm-outx-curve">ANGLE Efficiency Calibration Curve DRF</message>
+  <message id="smm-outx-error">Error creating DRF from ANGLE .outx: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop an efficiency CSV file onto app -->
+  <message id="smm-eff-csv-curve">Efficiency CSV Curve DRF</message>
+  <message id="smm-eff-csv-error">Error creating DRF from efficiency CSV: {1}</message>
+  <message id="smm-eff-csv-det-dat-label">Detector.dat (optional)</message>
+  <message id="smm-eff-csv-intrinsic">Intrinsic Efficiency</message>
+  <message id="smm-eff-csv-abs-eff">Absolute Efficiency</message>
 
   <!-- Text for dialog when user drag-n-drop the Activity/Shielding fit file onto app -->
   <message id="smm-act-shield-xml">Activity/Shielding XML</message>

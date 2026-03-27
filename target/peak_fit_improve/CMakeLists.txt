@@ -52,6 +52,8 @@ add_executable( PeakFitImprove
   InitialFit_GA.h InitialFit_GA.cpp
   FinalFit_GA.h FinalFit_GA.cpp
   FitPeaksForNuclideDev.h FitPeaksForNuclideDev.cpp
+  ClassifyDetType_GA.h ClassifyDetType_GA.cpp
+  NuclideConfig_GA.h NuclideConfig_GA.cpp
 )
 
 target_link_libraries( PeakFitImprove PRIVATE InterSpecLib )

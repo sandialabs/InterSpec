@@ -168,4 +168,7 @@ button.LinkBtn.NonSpecQrCodeBtn.Wt-btn.with-label
   margin-bottom: 5px;
 }
 
-
+.simple-dialog.EccDrfDialog .EccDrfDefaultCbs
+{
+  margin-top: 15px;
+}

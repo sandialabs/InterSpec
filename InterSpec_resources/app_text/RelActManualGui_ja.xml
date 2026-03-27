@@ -9,7 +9,7 @@
   <message id="ramrr-no-solution-title">相対放射能解が利用できません</message>
   <message id="ramrr-no-solution-text"></message>
   <message id="ramrr-err-report">現在表示されているスペクトルファイル取得エラー: {1}</message>
-  
+
   <!-- Messages in the nuclide component of the GUI -->
   <message id="mrend-spec-act">比放射能</message>
   <message id="mrend-X(a,n)">{1}上のアルファによる中性子生成</message>
@@ -23,9 +23,94 @@
   <message id="mrend-X(,)"></message>
   <message id="mrend-cb-decay-during-meas">測定中の崩壊</message>
   <message id="mrend-tt-decay-during-meas">チェックすると、測定中の核種崩壊が考慮され、引用される相対放射能は測定開始時の放射能になります。</message>
-  
+
   <!-- Message on the general GUI interface -->
   <message id="ramg-eqn-form-label">方程式形式</message>
   <message id="ramg-options-label">オプション</message>
-  <message id="ramg-tt-eqn-form">相対効率曲線に使用する関数形式。</message>
+  <message id="ramg-tt-eqn-form">
+    相対効率曲線に使用する関数形式。
+    <br />
+    選択肢:
+    <table style="margin-left: 10px;">
+      <tr><th>Log(エネルギー):</th>               <th>y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...</th></tr>
+      <tr><th>Log(相対効率):</th>            <th>y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )</th></tr>
+      <tr><th>Log(エネルギー)Log(相対効率):</th> <th>y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )</th></tr>
+      <tr><th>FRAM経験式:</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr>
+      <tr><th>FRAM物理式:</th>             <th>
+        y = <span style="display: inline-block; vertical-align: middle;">
+              <span style="display: block; text-align: center;">
+               (1 - exp(-AD<sub>0</sub>*μ<sub>0</sub>))
+              </span>
+              <span style="display: block; border-top: 1px solid black; text-align: center;">
+                (AD<sub>0</sub>*μ<sub>0</sub>)
+              </span>
+            </span>
+             * [exp(-AD<sub>1</sub>*μ<sub>1</sub>) * exp(-AD<sub>2</sub>*μ<sub>2</sub>) + ...]
+             * [検出効率]
+             * [E<sup>b</sup> * C<sup>1/E</sup>]
+        </th></tr>
+    </table>
+  </message>
+  <message id="ramg-eqn-order-label">方程式次数</message>
+  <message id="ramg-tt-eqn-order">相対効率方程式の次数（エネルギー依存項の数）。</message>
+  <message id="ramg-phys-model-use-hoerl">補正関数使用</message>
+  <message id="ramg-tt-phys-model-use-hoerl">チェックすると、修正Hoerl補正係数（すなわち E<sup>b</sup> * C<sup>1/E</sup>）が物理モデルおよび/または検出器効率と観測データの差異を補正するために使用されます。</message>
+  <message id="ramg-yield-info-label">収率情報</message>
+  <message id="ramg-tt-data-src">ガンマ分岐比の核データソース。</message>
+  <message id="ramg-match-tol-label">一致許容値</message>
+  <message id="ramg-tt-match-tol">
+    ピーク平均値からのFWHM数で、ソースガンマをピーク面積への寄与として含める範囲を指定します。
+    <br />
+    一部の核種の一部の光電ピークでは、エネルギーの近い複数のガンマが検出ピーク面積に
+    寄与する場合があります。この一致許容値は、使用する分岐比を決定するために、
+    観測ピーク平均値から何FWHMの範囲でソースガンマを合算するかを指定します。
+    <br />
+    ゼロを指定すると、非常に近接する他のガンマが存在しても、
+    ピークに割り当てられたガンマエネルギーのみが使用されます。
+  </message>
+  <message id="ramg-add-uncert-label">追加不確かさ</message>
+  <message id="ramg-tt-add-uncert">
+    各フィット光電ピークの相対効率直線に追加する付加的不確かさ。
+    <br />
+    1つまたは少数の高統計ピークの検出効率の小さな偏差は、統計的不確かさのみを使用すると
+    効率曲線が他の点から著しく逸脱する原因となります。追加不確かさを加えると、
+    相対効率はすべてのデータ点をよりよく通過し、限定的なテストからより正確な結果が
+    得られます。これは各検出光電ピークにピーク間で無相関な系統的不確かさを
+    追加すると考えることができます。限定的なテストでは使用する値は非常に重要ではなく、
+    何らかの値があれば十分です。重み付けなしフィットも選択でき、
+    この場合各ピークは統計的不確かさに関わらず均等にフィットに寄与します。
+  </message>
+  <message id="ramg-unweighted-label">重み付けなし</message>
+  <message id="ramg-stat-only-label">統計のみ</message>
+  <message id="ramg-back-sub-cb">バックグラウンド減算</message>
+  <message id="ramg-html-export-label">HTMLレポート</message>
+  <message id="ramg-nucs-label">核種</message>
+  <message id="ramg-nucs-shield-label">遮蔽/核種</message>
+  <message id="ramg-peaks-to-use-label">使用するピーク</message>
+  <message id="ramg-results-label">結果</message>
+  <message id="ramg-mi-results">テーブル</message>
+  <message id="ramg-mi-chart">グラフ</message>
+  <message id="ramg-back-sub-neg">バックグラウンド減算後、{1} keVのピークは負のカウントとなったため使用されませんでした。</message>
+  <message id="ramg-warn-reaction">反応光電ピークの使用は、ガンマが単一の物体から均一に放出される場合を除き、有効でない可能性があります。</message>
+  <message id="ramg-warn-no-bkg-sub-used">バックグラウンドピークの減算が選択されましたが、選択された前景ピークに一致するバックグラウンドピークがありませんでした。</message>
+  <message id="ramg-warn-rel-eff-u/pu-xray">相対効率曲線はX線吸収端を考慮しません。UまたはPu問題で120 keV未満のピークの使用は推奨されません。</message>
+  <message id="ramg-warn-rel-eff-other-xray">相対効率曲線は潜在的な遮蔽のX線吸収端を考慮しません。使用するピークが遮蔽の吸収端をまたがないことを確認してください。</message>
+  <message id="ramg-warn-match-outside-tol">割り当てられたガンマ{1}（{2} keV）はピーク{1}（{3}）の一致許容値の範囲外です。割り当てられたガンマエネルギーは近接ガンマの補正に使用され、フィットピーク平均値ではないことに注意してください。</message>
+  <message id="ramg-warn-failed-match">核種{1}をどのピークにも一致させることができませんでした: {2}</message>
+  <message id="ramg-err-setting-up-calc">相対効率計算のセットアップエラー: {1}</message>
+  <message id="ramg-err-performing-calc">相対効率計算の実行エラー: {1}</message>
+  <message id="ramg-no-results-available">利用可能な結果がありません。</message>
+  <message id="ramg-result-error-msg">エラー: {1}</message>
+  <message id="ramg-result-warn-msg">警告: {1}</message>
+  <message id="ramg-and-there-were">および</message>
+  <message id="ramg-dof">DOF</message> <!-- Degrees of freedom -->
+  <message id="ramg-fit-unweighted-txt">フィットは重み付けなしでした。不確かさは正しくない可能性があります。</message>
+  <message id="ramg-fit-stat-only">不確かさは統計的不確かさのみです。</message>
+  <message id="ramg-fit-uncert-increased">不確かさは「追加不確かさ」により人為的に増加されています。</message>
+  <message id="ramg-consider-add-uncert-u">ウラン問題では「追加不確かさ」の追加を検討してください。</message>
+  <message id="ramg-you-using-add-uncert-u">「追加不確かさ」が適用されています。計算された不確かさは慎重に解釈してください。</message>
+  <message id="ramg-you-using-add-uncert-non-u">現在「追加不確かさ」が適用されており、計算された不確かさが正確でなくなります。</message>
+  <message id="ramg-chart-info-title">χ²/dof = {1}/{2}{3}{4}</message>
+  <message id="ramg-pval"> (p値={1})</message>
+  <message id="ramg-1-pval"> (1-p値={1})</message>
 </messages>

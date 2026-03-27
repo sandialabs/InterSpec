@@ -2,32 +2,32 @@
 <messages>
   <!-- sm3dc- is short for SearchMode3DChart -->
   <message id="sm3dc-loading">Betöltés...</message>
-  <message id="sm3dc-min-energy">Min Energia</message>
-  <message id="sm3dc-max-energy">Max Energia</message>
-  <message id="sm3dc-min-time">Min Idő (s)</message>
-  <message id="sm3dc-max-time">Max Idő (s)</message>
+  <message id="sm3dc-min-energy">Min. energia</message>
+  <message id="sm3dc-max-energy">Max. energia</message>
+  <message id="sm3dc-min-time">Min. idő (s)</message>
+  <message id="sm3dc-max-time">Max. idő (s)</message>
   <message id="sm3dc-time-bins">Idő megjelenítési rekeszek</message>
   <message id="sm3dc-tt-time-bins">
-    Az időosztások maximális száma a grafikonon; ha az adatai több idő-mintával rendelkeznek
-    a megjelenített tartományban, mint ez, az idő-minták kombinálásra kerülnek, amíg ez kisebb nem lesz ennél az értéknél.
+    Az ábrázolt időosztások maximális száma; ha az adatai több idő-mintával rendelkeznek
+    a megjelenített tartományban, mint ez az érték, az idő-minták összevonásra kerülnek, amíg a számuk ez alá nem csökken.
     <br />
     <br />
     Például, ha ez az érték 60, de a mérésnek 208 mintája van, akkor minden 4
-    minta összegzésre kerül egyetlen rekeszbe az idő tengelyen,
-    összesen 52 rekesszell az idő tengelyen.
+    minta összegzésre kerül egyetlen rekeszbe az időtengelyen,
+    összesen 52 rekesszel az időtengelyen.
     <br />
-    Ha az idő csatornák száma szorozva az energia csatornák számával
+    Ha az időcsatornák számának és az energiacsatornák számának szorzata
     túl nagy, teljesítményproblémák léphetnek fel.
   </message>
   <message id="sm3dc-energy-bins">Energia megjelenítési rekeszek</message>
   <message id="sm3dc-tt-energy-bins">
-    Az energia osztások maximális száma a grafikonon; ha az adatai több energia-csatornával rendelkeznek
-    a megjelenített tartományban, mint ez, a csatornák kombinálásra kerülnek, amíg ez kisebb nem lesz ennél az értéknél.
+    Az ábrázolt energiaosztások maximális száma; ha az adatai több energiacsatornával rendelkeznek
+    a megjelenített tartományban, mint ez az érték, a csatornák összevonásra kerülnek, amíg a számuk ez alá nem csökken.
     <br />
     <br />
-    Ha az idő csatornák száma szorozva az energia csatornák számával
+    Ha az időcsatornák számának és az energiacsatornák számának szorzata
     túl nagy, teljesítményproblémák léphetnek fel.
   </message>
   <message id="sm3dc-time-axis-label">Idő (másodperc)</message>
-  <message id="sm3dc-counts-axis-label">Impulzusok Csatornánként</message>
+  <message id="sm3dc-counts-axis-label">Impulzusszám csatornánként</message>
 </messages>

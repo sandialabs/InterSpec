@@ -5,4 +5,5 @@
   <message id="bgw-not-spec-preview">Pas un fichier de spectre</message>
   <message id="bgw-passthrough-sum-error">Erreur de transmission</message>
   <message id="bgw-preview-error">Erreur rendu aperçu</message>
-</messages> 
+  <message id="bgw-preview-skip">Aperçu ignoré</message>
+</messages>

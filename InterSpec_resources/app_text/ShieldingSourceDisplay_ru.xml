@@ -32,6 +32,7 @@
   <message id="ssd-perform-fit-btn">Выполнить подгонку модели</message>
   <message id="ssd-cancel-fit">Отменить подгонку модели</message>
   <message id="ssd-mi-calc-log">Журнал вычислений</message>
+  <message id="ssd-mi-calc-log-html">Журнал вычислений (HTML)</message>
   <message id="ssd-mi-import-model">Импортировать модель...</message>
   <message id="ssd-mi-export-model">Экспортировать модель</message>
   <message id="ssd-mi-from-db">Открыть из базы данных...</message>
@@ -82,12 +83,35 @@
     передний план, идентифицировать пики для потенциального вычитания, а затем переключиться обратно к текущей
     комбинации передний план/фон.
   </message>
+  <message id="ssd-missing-back-peaks-title">Отсутствующие фоновые пики</message>
+  <message id="ssd-missing-back-peaks-msg">
+    В фоновом спектре нет пиков на энергиях {1}, но на этих энергиях
+    вероятно есть реальные пики в фоновом спектре - хотите ли вы
+    добавить эти пики в фоновый спектр?
+  </message>
+  <message id="ssd-btn-no-dont-add">Нет</message>
+  <message id="ssd-btn-add-peaks">Добавить пики...</message>
+  <message id="ssd-btn-add-all-detectable">Добавить все автоподогнанные пики</message>
+  <message id="ssd-back-peak-preview-title">Предпросмотр фоновых пиков</message>
+  <message id="ssd-back-peak-preview-msg">Следующие пики будут добавлены в фоновый спектр:</message>
+  <message id="ssd-no-new-back-peaks">Дополнительных пиков в фоновом спектре на указанных энергиях не найдено.</message>
+  <message id="ssd-back-peaks-all-fit">{1} пиков-кандидатов подогнаны к фону.</message>
+  <message id="ssd-back-peaks-some-fit">{1} из {2} пиков-кандидатов были значимыми и подогнаны к фону.</message>
+  <message id="ssd-back-peaks-manual-hint">(вы также можете подогнать фоновые пики вручную, нажав Alt (mac: Option) и дважды<br />
+  кликнув по спектру, или загрузив фон как передний план)</message>
+  <message id="ssd-err-adding-back-peaks">Ошибка добавления пиков в фон: {1}</message>
   <message id="ssd-update-dim-to-be-min">Размер экранирования обновлён до минимальной толщины.</message>
   <message id="ssd-scaled-shield-to-be-less-dist">Толщины экранирования масштабированы так, чтобы быть меньше расстояния до детектора.</message>
   <message id="ssd-err-fit-only-one-an">Вы можете подгонять атомный номер только одного общего экранирования за раз.</message>
   <message id="ssd-warn-invalid-chi2-for-energy">Недопустимое значение chi2 было вычислено для {1} кэВ, другие результаты могут быть недопустимыми</message>
   <message id="ssd-calc-log-window-title">Журнал вычислений</message>
   <message id="ssd-calc-log-export-txt">TXT файл</message>
+  <message id="ssd-calc-log-html-title">Журнал вычислений</message>
+  <message id="ssd-template-text-log">Стандартный журнал (текст)</message>
+  <message id="ssd-template-html-report">Отчёт подгонки активности (HTML)</message>
+  <message id="ssd-template-deprecated-txt">Устаревший текст</message>
+  <message id="ssd-no-fit-results">Нет доступных результатов подгонки для отображения.</message>
+  <message id="ssd-error-creating-html-log">Ошибка создания HTML-журнала вычислений: {1}</message>
   <message id="ssd-err-opening-import-model">Ошибка открытия загруженной модели подгонки источник-экранирование: {1}</message>
   <message id="ssd-import-model-window-title">Импорт XML-модели источник-экранирование</message>
   <message id="ssd-err-opening-db-model">Ошибка открытия модели подгонки источник-экранирование из базы данных: {1}</message>
@@ -144,9 +168,6 @@
   <!-- Chi2Graphic -->
   <message id="x2g-yaxis-title-chi">(наблюд.-модель)/неопр.</message>
   <message id="x2g-yaxis-title-mult">Кратн. модели</message>
-  <message id="x2g-">Ось Y - это отсчёты площади пика минус ожидаемое число отсчётов от текущих отображённых"
-    " значений источника и экранирования, всё разделённое на статистическую неопределённость. Квадрат этого"
-    " используется для оптимизации экранирования и источников.</message>
   <message id="x2g-tt-chi-axis">Ось Y - это отсчёты площади пика минус ожидаемое число отсчётов от текущих отображённых значений источника и экранирования, всё разделённое на статистическую неопределённость. Квадрат этого используется для оптимизации экранирования и источников.</message>
   <message id="x2g-tt-scale-axis">Ось Y - это кратность наблюдаемых отсчётов пика относительно ожидаемых от текущих значений источника и экранирования.</message>
   <message id="x2g-tt-num-observed">Кол-во наблюд.:</message>
@@ -158,5 +179,5 @@
   <message id="x2g-tt-sources-contributing">Источники, вносящие вклад:</message>
   <message id="x2g-tt-counts-abbrev">отсч</message>
   <message id="x2g-tt-br-abbrev">br</message>
-  <message id="x2g-dev-label">&lt;dev&gt;</message>
+  <message id="x2g-dev-label"><![CDATA[<откл>]]></message>
 </messages>

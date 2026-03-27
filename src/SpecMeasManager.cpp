@@ -67,6 +67,7 @@
 #include <Wt/WResource>
 #include <Wt/WDateTime>
 #include <Wt/WGroupBox>
+#include <Wt/WCheckBox>
 #include <Wt/WComboBox>
 #include <Wt/WBoxLayout>
 
@@ -126,6 +127,7 @@
 #include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/MakeDrfSrcDef.h"
 #include "InterSpec/WarningWidget.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/ExportSpecFile.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
@@ -2017,7 +2019,53 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     } );
     return (pos != char_end);
   };//header_contains lambda
-  
+
+  // Case-insensitive check that both terms appear on the same comma/tab-delimited line
+  //  within the header data.
+  auto header_line_has_both = [&data]( const std::string &term1, const std::string &term2 ) -> bool {
+    const char *buf = (const char *)data;
+    size_t buf_len = strnlen( buf, boost::size(data) );
+
+    // Skip past UTF-8 BOM if present
+    if( (buf_len >= 3)
+       && (static_cast<uint8_t>(buf[0]) == 0xEF)
+       && (static_cast<uint8_t>(buf[1]) == 0xBB)
+       && (static_cast<uint8_t>(buf[2]) == 0xBF) )
+    {
+      buf += 3;
+      buf_len -= 3;
+    }
+
+    const string header_str( buf, buf_len );
+
+    vector<string> lines;
+    SpecUtils::split( lines, header_str, "\r\n" );
+
+    for( const string &line : lines )
+    {
+      vector<string> fields;
+      SpecUtils::split( fields, line, ",\t" );
+      if( fields.size() < 2 )
+        continue;
+
+      // Check if any field starts with term1, and any field starts with term2
+      bool has_term1 = false, has_term2 = false;
+      for( const string &field : fields )
+      {
+        const string f = SpecUtils::to_lower_ascii_copy( field );
+        if( SpecUtils::istarts_with( f, term1.c_str() ) )
+          has_term1 = true;
+        if( SpecUtils::istarts_with( f, term2.c_str() ) )
+          has_term2 = true;
+      }
+
+      if( has_term1 && has_term2 )
+        return true;
+    }//for( each line )
+
+    return false;
+  };//header_line_has_both lambda
+
   // SpecMeasManager will keep track of this next dialog, so we can do undo/redo a little better
   SimpleDialog *dialog = new SimpleDialog();
   
@@ -2340,9 +2388,13 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
         
         // For peaks from a InterSpec/PeakEasy CSV file, we will re-fit the peaks, as in practice
         //  they might not be from this exact spectrum file.
-        Wt::WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [this, currdata, candidate_peaks, orig_peaks, seessionid](){
+        shared_ptr<SpecMeas> fgMeas = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
+        shared_ptr<const PeakFitDetPrefs> csvFitPrefs = fgMeas ? fgMeas->peakFitDetPrefs() : nullptr;
+        if( !csvFitPrefs && fgMeas && fgMeas->detector() )
+          csvFitPrefs = fgMeas->detector()->peakFitDetPrefs();
+        Wt::WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [this, currdata, candidate_peaks, orig_peaks, csvFitPrefs, seessionid](){
           PeakSearchGuiUtils::fit_template_peaks( m_viewer, currdata, candidate_peaks,
-                                                 orig_peaks, PeakSearchGuiUtils::PeakTemplateFitSrc::CsvFile, seessionid );
+                                                 orig_peaks, PeakSearchGuiUtils::PeakTemplateFitSrc::CsvFile, csvFitPrefs, seessionid );
         } ) );
       }else
       {
@@ -2350,9 +2402,14 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
         
         const vector<PeakDef> candidate_peaks = PeakModel::gadras_peak_csv_to_peaks(currdata, infile);
         
-        Wt::WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
+        shared_ptr<SpecMeas> gadrasFgMeas = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
+        shared_ptr<const PeakFitDetPrefs> gadrasFitPrefs = gadrasFgMeas ? gadrasFgMeas->peakFitDetPrefs() : nullptr;
+        shared_ptr<const DetectorPeakResponse> gadrasDrf = gadrasFgMeas ? gadrasFgMeas->detector() : nullptr;
+        if( !gadrasFitPrefs && gadrasDrf )
+          gadrasFitPrefs = gadrasDrf->peakFitDetPrefs();
+        Wt::WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=, gadrasFitPrefs=gadrasFitPrefs](){
           PeakSearchGuiUtils::prepare_and_add_gadras_peaks( currdata, candidate_peaks,
-                                                 orig_peaks, seessionid );
+                                                 orig_peaks, gadrasFitPrefs, gadrasDrf, seessionid );
         } ) );
       }//if( possible_peak_csv )
       
@@ -2375,6 +2432,51 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   }//if( we could possible care about propagating peaks from a CSV file )
   
   
+  // Check if this is a standalone PeakFitDetPrefs XML file.
+  {
+    const int pfp_pos = position_in_header( "<PeakFitDetPrefs" );
+    if( (pfp_pos >= 0) && (pfp_pos <= 20) && (filesize < 10*1024) )
+    {
+      try
+      {
+        rapidxml::file<char> input_file( infile );
+        rapidxml::xml_document<char> doc;
+        doc.parse<rapidxml::parse_default>( input_file.data() );
+
+        const rapidxml::xml_node<char> *node = doc.first_node( "PeakFitDetPrefs" );
+        if( !node )
+          throw runtime_error( "No PeakFitDetPrefs node" );
+
+        shared_ptr<PeakFitDetPrefs> prefs = make_shared<PeakFitDetPrefs>();
+        prefs->fromXml( node );
+        prefs->m_source = PeakFitDetPrefs::LoadingSource::UserInputInGui;
+
+        shared_ptr<SpecMeas> foreground = m_viewer
+          ? m_viewer->measurment( SpecUtils::SpectrumType::Foreground )
+          : nullptr;
+
+        if( !foreground )
+        {
+          passMessage( WString::tr( "smm-no-foreground-for-prefs" ), 2 );
+        }
+        else
+        {
+          foreground->setPeakFitDetPrefs( prefs );
+          m_viewer->peakFitDetPrefsChanged().emit();
+          passMessage( WString::tr( "smm-loaded-peak-fit-prefs" ), 0 );
+        }
+
+        delete dialog;
+        return true;
+      }catch( std::exception & )
+      {
+        // Not a valid PeakFitDetPrefs XML - fall through to other checks
+        infile.clear();
+        infile.seekg( 0 );
+      }
+    }//if( candidate PeakFitDetPrefs XML )
+  }
+
   // Check if this is an InterSpec exported DRF CSV, or XML file.
   const bool rel_eff_csv_drf = header_contains( "# Detector Response Function" );
   const int xml_drf_pos = position_in_header( "<DetectorPeakResponse" );
@@ -2460,15 +2562,26 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   }
 #endif
   
-  // Check if a .ECC file from ISOCS
-  if( (header_contains("SGI_template") || header_contains("ISOCS_file_name"))
+  // Check if a .ECC file from ISOCS, or a .outx file from ANGLE
+  if( (header_contains("SGI_template") || header_contains("ISOCS_file_name")
+       || header_contains("<angle"))
      && handleEccFile(infile, dialog) )
   {
     add_undo_redo();
-    
+
     return true;
-  }//if( a .ECC file from ISOCS )
-  
+  }//if( a .ECC file from ISOCS, or .outx from ANGLE )
+
+  // Check if this is an efficiency CSV file - require both an energy-like and efficiency-like
+  //  column name on the same comma/tab-delimited line in the header.
+  if( (header_line_has_both("en", "eff")    // e.g., "Energy, Efficiency" or "Energy[keV],...,Eff,..."
+       || header_contains("energy,peak,pcom") )   // GADRAS Efficiency.csv
+     && handleEfficiencyCsvFile(infile, dialog) )
+  {
+    add_undo_redo();
+    return true;
+  }//if( an efficiency CSV file )
+
   if( header_contains("<ShieldingSourceFit") && header_contains("<Geometry")
      && (filesize > 128) && (filesize < 1024*1024)
      && handleShieldingSourceFile(infile, dialog) )
@@ -3125,23 +3238,43 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   
   shared_ptr<DetectorPeakResponse> det;
   double source_area = 0.0, source_mass = 0.0;
+
+  // Try parsing as ECC file first
   try
   {
     tuple<shared_ptr<DetectorPeakResponse>,double,double> det_area_mass
       = DetectorPeakResponse::parseEccFile( input );
-    
+
     det = get<0>(det_area_mass);
     source_area = get<1>(det_area_mass);
     source_mass = get<2>(det_area_mass);
-    
+
     assert( det && det->isValid() );
     if( !det || !det->isValid() )
       throw std::logic_error( "DRF returned from DetectorPeakResponse::parseEccFile() should be valid." );
-  }catch( std::exception &e )
+  }catch( std::exception & )
   {
-    input.seekg( start_pos );
-    return false;
+    det.reset();
   }//try / catch
+
+  // If not ECC, try parsing as ANGLE .outx file
+  if( !det )
+  {
+    input.clear();
+    input.seekg( start_pos );
+    try
+    {
+      det = DetectorPeakResponse::parseAngleOutxFile( input );
+
+      assert( det && det->isValid() );
+      if( !det || !det->isValid() )
+        throw std::logic_error( "DRF returned from parseAngleOutxFile() should be valid." );
+    }catch( std::exception & )
+    {
+      input.seekg( start_pos );
+      return false;
+    }//try / catch
+  }//if( !det )
   
   dialog->addStyleClass( "EccDrfDialog" );
   
@@ -3158,7 +3291,8 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   chartw = std::max( chartw, 300 );
   charth = std::max( charth, 175 );
   
-  WText *title = new WText( WString::tr("smm-ecc-curve"), dialog->contents() );
+  const bool is_outx = (det->drfSource() == DetectorPeakResponse::DrfSource::AngleOutx);
+  WText *title = new WText( WString::tr(is_outx ? "smm-outx-curve" : "smm-ecc-curve"), dialog->contents() );
   title->addStyleClass( "title" );
   title->setInline( false );
   
@@ -3236,10 +3370,24 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   label->setBuddy( diameter_edit );
   diameter_edit->setValidator( dist_validator );
   diameter_edit->setEmptyText( "0 cm" );
-  
-  cell = far_field_opt->elementAt( 1, 0 );
+
+  if( det->detectorDiameter() > 0.0f )
+    diameter_edit->setText( PhysicalUnits::printToBestLengthUnits( det->detectorDiameter() ) );
+
+  int ff_row = 1;
+
+  if( det->detectorSetback() > 0.0 )
+  {
+    cell = far_field_opt->elementAt( ff_row, 0 );
+    new WLabel( WString::tr("smm-ecc-det-setback"), cell );
+    cell = far_field_opt->elementAt( ff_row, 1 );
+    new WText( PhysicalUnits::printToBestLengthUnits( det->detectorSetback() ), cell );
+    ++ff_row;
+  }//if( det->detectorSetback() > 0.0 )
+
+  cell = far_field_opt->elementAt( ff_row, 0 );
   label = new WLabel( WString::tr("smm-ecc-dist"), cell );
-  cell = far_field_opt->elementAt( 1, 1 );
+  cell = far_field_opt->elementAt( ff_row, 1 );
   WLineEdit *distance_edit = new WLineEdit( "", cell );
   label->setBuddy( distance_edit );
   distance_edit->setValidator( dist_validator );
@@ -3252,8 +3400,44 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   auto fore = InterSpec::instance()->measurment( SpecUtils::SpectrumType::Foreground );
   shared_ptr<DetectorPeakResponse> prev = fore ? fore->detector() : nullptr;
   
-  // TODO: make option to make DRF default for detector model, or serial number
-  
+  const bool makeSerialNumCb = (fore && !fore->instrument_id().empty());
+  const bool makeModelCb = (fore
+                            && ((fore->detector_type() != SpecUtils::DetectorType::Unknown)
+                                 || !fore->instrument_model().empty()));
+
+  WCheckBox *defaultForSerialNumber = nullptr;
+  WCheckBox *defaultForDetectorModel = nullptr;
+
+  if( makeSerialNumCb || makeModelCb )
+  {
+    InterSpec::instance()->useMessageResourceBundle( "DrfSelect" );
+
+    WContainerWidget *saveCbDiv = new WContainerWidget( dialog->contents() );
+    saveCbDiv->addStyleClass( "EccDrfDefaultCbs" );
+
+    if( makeSerialNumCb )
+    {
+      WString msg = WString::tr("ds-use-for-serialnum-cb").arg( fore->instrument_id() );
+      defaultForSerialNumber = new WCheckBox( msg, saveCbDiv );
+      defaultForSerialNumber->addStyleClass( "CbNoLineBreak" );
+      defaultForSerialNumber->setInline( false );
+    }//if( have serial number )
+
+    if( makeModelCb )
+    {
+      string model;
+      if( fore->detector_type() != SpecUtils::DetectorType::Unknown )
+        model = detectorTypeToString( fore->detector_type() );
+      else
+        model = fore->instrument_model();
+
+      WString msg = WString::tr("ds-use-for-model-cb").arg( model );
+      defaultForDetectorModel = new WCheckBox( msg, saveCbDiv );
+      defaultForDetectorModel->addStyleClass( "CbNoLineBreak" );
+      defaultForDetectorModel->setInline( false );
+    }//if( makeModelCb )
+  }//if( makeSerialNumCb || makeModelCb )
+
   dialog->addButton( WString::tr("Cancel") );
   WPushButton *accept = dialog->addButton( WString::tr("smm-ecc-use-drf") );
   
@@ -3354,7 +3538,8 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
       }//switch( geom_type )
     }catch( std::exception &e )
     {
-      passMessage( WString::tr("smm-ecc-error").arg(e.what()), WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr(is_outx ? "smm-outx-error" : "smm-ecc-error").arg(e.what()),
+                   WarningWidget::WarningMsgHigh );
       return;
     }//try / catch
     
@@ -3366,7 +3551,23 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
     const Wt::Dbo::ptr<InterSpecUser> &user = interspec->user();
     DrfSelect::updateLastUsedTimeOrAddToDb( new_drf, user.id(), sql );
     interspec->detectorChanged().emit( new_drf ); //This loads it to the foreground spectrum file
-    
+
+    if( fore && new_drf && defaultForSerialNumber && defaultForSerialNumber->isChecked() )
+    {
+      UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorSerialNumber;
+      WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
+        DrfSelect::setUserPrefferedDetector( new_drf, sql, user, preftype, fore );
+      } ) );
+    }//if( defaultForSerialNumber and is checked )
+
+    if( fore && new_drf && defaultForDetectorModel && defaultForDetectorModel->isChecked() )
+    {
+      UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorModelName;
+      WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
+        DrfSelect::setUserPrefferedDetector( new_drf, sql, user, preftype, fore );
+      } ) );
+    }//if( defaultForDetectorModel and is checked )
+
     UndoRedoManager *undoManager = InterSpec::instance()->undoRedoManager();
     if( undoManager && undoManager->canAddUndoRedoNow() )
     {
@@ -3384,12 +3585,407 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
        
       // This next undo/redo wont bring up the dialog, but it will at least get us back
       //  to the original detector.
-      undoManager->addUndoRedoStep( undo, redo, "Change to ECC DRF" );
+      undoManager->addUndoRedoStep( undo, redo, is_outx ? "Change to ANGLE DRF" : "Change to ECC DRF" );
     }
   }) );
     
   return true;
 }//bool handleEccFile( std::istream &input, SimpleDialog *dialog )
+
+
+bool SpecMeasManager::handleEfficiencyCsvFile( std::istream &input, SimpleDialog *dialog )
+{
+  const size_t start_pos = input.tellg();
+
+  DetectorPeakResponse::EffCsvParseResult parse_result;
+
+  try
+  {
+    parse_result = DetectorPeakResponse::parseEfficiencyCsvFile( input );
+
+    assert( parse_result.drf && parse_result.drf->isValid() );
+    if( !parse_result.drf || !parse_result.drf->isValid() )
+      throw std::logic_error( "parseEfficiencyCsvFile returned invalid DRF." );
+  }catch( std::exception & )
+  {
+    input.seekg( start_pos );
+    return false;
+  }
+
+  shared_ptr<DetectorPeakResponse> det = parse_result.drf;
+  const bool is_gadras = parse_result.is_gadras_format;
+
+  dialog->addStyleClass( "EccDrfDialog" );
+
+  dialog->contents()->clear();
+  dialog->footer()->clear();
+
+  int chartw = 350, charth = 200;
+  if( m_viewer->renderedWidth() > 500 )
+    chartw = std::min( ((3 * m_viewer->renderedWidth() / 4) - 50), 500 );
+  if( m_viewer->renderedHeight() > 400 )
+    charth = std::min( m_viewer->renderedHeight() / 4, (4 * chartw) / 7 );
+  chartw = std::max( chartw, 300 );
+  charth = std::max( charth, 175 );
+
+  WText *title = new WText( WString::tr("smm-eff-csv-curve"), dialog->contents() );
+  title->addStyleClass( "title" );
+  title->setInline( false );
+
+  DrfChart *chart = new DrfChart( dialog->contents() );
+  chart->setMinimumSize( 300, 175 );
+  chart->resize( chartw, charth );
+  chart->updateChart( det );
+
+  const string name = Wt::Utils::htmlEncode( det->name() );
+  const string desc = Wt::Utils::htmlEncode( det->description() );
+
+  string txt_css = "style=\"text-align: left;"
+  " max-width: " + std::to_string( chartw - 5 ) + "px;"
+  " white-space: nowrap;"
+  " text-overflow: ellipsis;"
+  " overflow-x: hidden;"
+  "\"";
+
+  string msg =
+    "<p " + txt_css + ">"
+      "Name: " + name +
+  "</p>";
+  if( !desc.empty() )
+    msg += "<p " + txt_css + ">"
+        "Desc: " + desc +
+    "</p>";
+
+  new WText( msg, TextFormat::XHTMLText, dialog->contents() );
+
+  WContainerWidget *btn_div = new WContainerWidget( dialog->contents() );
+  btn_div->addStyleClass( "HowToUseGrp" );
+
+  map<int,DetectorPeakResponse::EffGeometryType> index_to_geom;
+
+  WLabel *geom_label = new WLabel( WString::tr("smm-ecc-how-to-interpret"), btn_div );
+  WComboBox *geom_combo = new WComboBox( btn_div );
+
+  const int intrinsic_index = geom_combo->count();
+  geom_combo->addItem( WString::tr("smm-eff-csv-intrinsic") );
+  index_to_geom[intrinsic_index] = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
+
+  geom_combo->addItem( WString::tr("smm-eff-csv-abs-eff") );
+  index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FarFieldAbsolute;
+
+  geom_combo->addItem( WString::tr("smm-ecc-fix-geom-total-act") );
+  index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct;
+
+  // Default: GADRAS => intrinsic (index 0), otherwise => fixed geom total act (index 2)
+  geom_combo->setCurrentIndex( is_gadras ? 0 : 2 );
+
+  // For GADRAS format, add optional Detector.dat upload
+  // We create the widgets here for layout order, but connect signals after diameter_edit exists
+  WFileUpload *det_dat_upload = nullptr;
+  WText *det_dat_status = nullptr;
+  WText *setback_text = nullptr;
+
+  if( is_gadras )
+  {
+    WContainerWidget *det_dat_div = new WContainerWidget( dialog->contents() );
+    det_dat_div->addStyleClass( "DetDatUploadDiv" );
+
+    new WLabel( WString::tr("smm-eff-csv-det-dat-label"), det_dat_div );
+
+    det_dat_upload = new WFileUpload( det_dat_div );
+    det_dat_upload->changed().connect( det_dat_upload, &Wt::WFileUpload::upload );
+
+    det_dat_status = new WText( det_dat_div );
+    det_dat_status->setInline( false );
+    det_dat_status->setAttributeValue( "style", "margin-left: 20px;" );
+    setback_text = new WText( det_dat_div );
+    setback_text->setInline( false );
+    setback_text->setAttributeValue( "style", "margin-left: 20px;" );
+  }//if( is_gadras )
+
+
+  // Detector diameter and distance table - we put diameter and distance in separate tables
+  //  so we can independently show/hide the distance row (intrinsic needs only diameter,
+  //  absolute needs both).
+  WTable *diam_opt = new WTable( dialog->contents() );
+  diam_opt->addStyleClass( "FarFieldOptTbl" );
+
+  WRegExpValidator *dist_validator = new WRegExpValidator( PhysicalUnits::sm_distanceRegex, this );
+  dist_validator->setFlags( Wt::MatchCaseInsensitive );
+  dist_validator->setInvalidBlankText( "0.0 cm" );
+  dist_validator->setMandatory( true );
+
+  WTableCell *cell = diam_opt->elementAt( 0, 0 );
+  WLabel *label = new WLabel( WString::tr("smm-ecc-det-diam"), cell );
+  cell = diam_opt->elementAt( 0, 1 );
+  WLineEdit *diameter_edit = new WLineEdit( "", cell );
+  label->setBuddy( diameter_edit );
+  diameter_edit->setValidator( dist_validator );
+  diameter_edit->setEmptyText( "0 cm" );
+
+  if( det->detectorDiameter() > 0.0f )
+    diameter_edit->setText( PhysicalUnits::printToBestLengthUnits( det->detectorDiameter() ) );
+
+  int diam_row = 1;
+  if( det->detectorSetback() > 0.0 )
+  {
+    cell = diam_opt->elementAt( diam_row, 0 );
+    new WLabel( WString::tr("smm-ecc-det-setback"), cell );
+    cell = diam_opt->elementAt( diam_row, 1 );
+    new WText( PhysicalUnits::printToBestLengthUnits( det->detectorSetback() ), cell );
+    ++diam_row;
+  }
+
+  WTable *dist_opt = new WTable( dialog->contents() );
+  dist_opt->addStyleClass( "FarFieldOptTbl" );
+
+  cell = dist_opt->elementAt( 0, 0 );
+  label = new WLabel( WString::tr("smm-ecc-dist"), cell );
+  cell = dist_opt->elementAt( 0, 1 );
+  WLineEdit *distance_edit = new WLineEdit( "", cell );
+  label->setBuddy( distance_edit );
+  distance_edit->setValidator( dist_validator );
+  distance_edit->setEmptyText( "0 cm" );
+
+  // A lambda to update visibility of diameter/distance based on current geometry selection
+  auto update_field_visibility = [=](){
+    const int index = geom_combo->currentIndex();
+    const auto pos = index_to_geom.find( index );
+    if( pos == end( index_to_geom ) )
+      return;
+
+    const DetectorPeakResponse::EffGeometryType geom_type = pos->second;
+    const bool need_diam = (geom_type == DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic)
+                           || (geom_type == DetectorPeakResponse::EffGeometryType::FarFieldAbsolute);
+    const bool need_dist = (geom_type == DetectorPeakResponse::EffGeometryType::FarFieldAbsolute);
+
+    diam_opt->setHidden( !need_diam );
+    dist_opt->setHidden( !need_dist );
+  };
+
+  // Set initial visibility
+  update_field_visibility();
+
+  // Now that diameter_edit and update_field_visibility exist, connect the Detector.dat upload signal
+  if( is_gadras && det_dat_upload )
+  {
+    det_dat_upload->uploaded().connect( std::bind( [=](){
+      const std::string spool = det_dat_upload->spoolFileName();
+      if( spool.empty() )
+        return;
+
+      try
+      {
+#ifdef _WIN32
+        const std::wstring wspool = SpecUtils::convert_from_utf8_to_utf16( spool );
+        std::ifstream dat_strm( wspool.c_str(), ios::in | ios::binary );
+#else
+        std::ifstream dat_strm( spool.c_str(), ios::in | ios::binary );
+#endif
+        if( !dat_strm )
+          throw runtime_error( "Could not open Detector.dat" );
+
+        float diam = 0.0f, sb = 0.0f;
+        DetectorPeakResponse::parseDetectorDatGeometry( dat_strm, diam, sb );
+
+        if( diam > 0.0f )
+          diameter_edit->setText( PhysicalUnits::printToBestLengthUnits( diam ) );
+
+        if( sb > 0.0 )
+          setback_text->setText( WString::tr("smm-ecc-det-setback").toUTF8()
+                                 + ": " + PhysicalUnits::printToBestLengthUnits( sb ) );
+        else
+          setback_text->setText( "" );
+
+        det_dat_status->setText( "Valid .dat file" );
+
+        // Switch to intrinsic efficiency and update visibility
+        geom_combo->setCurrentIndex( intrinsic_index );
+        update_field_visibility();
+      }catch( std::exception &e )
+      {
+        det_dat_status->setText( "Error: " + string( e.what() ) );
+        if( setback_text )
+          setback_text->setText( "" );
+      }
+    }) );
+  }//if( is_gadras && det_dat_upload )
+
+  auto fore = InterSpec::instance()->measurment( SpecUtils::SpectrumType::Foreground );
+  shared_ptr<DetectorPeakResponse> prev = fore ? fore->detector() : nullptr;
+
+  const bool makeSerialNumCb = (fore && !fore->instrument_id().empty());
+  const bool makeModelCb = (fore
+                            && ((fore->detector_type() != SpecUtils::DetectorType::Unknown)
+                                 || !fore->instrument_model().empty()));
+
+  WCheckBox *defaultForSerialNumber = nullptr;
+  WCheckBox *defaultForDetectorModel = nullptr;
+
+  if( makeSerialNumCb || makeModelCb )
+  {
+    InterSpec::instance()->useMessageResourceBundle( "DrfSelect" );
+
+    WContainerWidget *saveCbDiv = new WContainerWidget( dialog->contents() );
+    saveCbDiv->addStyleClass( "EccDrfDefaultCbs" );
+
+    if( makeSerialNumCb )
+    {
+      WString cb_msg = WString::tr("ds-use-for-serialnum-cb").arg( fore->instrument_id() );
+      defaultForSerialNumber = new WCheckBox( cb_msg, saveCbDiv );
+      defaultForSerialNumber->addStyleClass( "CbNoLineBreak" );
+      defaultForSerialNumber->setInline( false );
+    }
+
+    if( makeModelCb )
+    {
+      string model;
+      if( fore->detector_type() != SpecUtils::DetectorType::Unknown )
+        model = detectorTypeToString( fore->detector_type() );
+      else
+        model = fore->instrument_model();
+
+      WString cb_msg = WString::tr("ds-use-for-model-cb").arg( model );
+      defaultForDetectorModel = new WCheckBox( cb_msg, saveCbDiv );
+      defaultForDetectorModel->addStyleClass( "CbNoLineBreak" );
+      defaultForDetectorModel->setInline( false );
+    }
+  }//if( makeSerialNumCb || makeModelCb )
+
+  dialog->addButton( WString::tr("Cancel") );
+  WPushButton *accept = dialog->addButton( WString::tr("smm-ecc-use-drf") );
+
+
+  // Lambda to create DRF for the currently selected geometry type
+  auto create_drf_for_geom = [=]( const DetectorPeakResponse::EffGeometryType geom_type )
+    -> shared_ptr<DetectorPeakResponse>
+  {
+    switch( geom_type )
+    {
+      case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
+      {
+        const double diam = PhysicalUnits::stringToDistance( diameter_edit->text().toUTF8() );
+        if( diam <= 0.0 )
+          throw runtime_error( "diam <= 0" );
+        return det->reinterpretAsFarFieldIntrinsicEfficiency( diam );
+      }
+
+      case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
+      {
+        const double diam = PhysicalUnits::stringToDistance( diameter_edit->text().toUTF8() );
+        const double distance = PhysicalUnits::stringToDistance( distance_edit->text().toUTF8() );
+        if( diam <= 0.0 )
+          throw runtime_error( "diam <= 0" );
+        if( distance < 0.0 )
+          throw runtime_error( "dist < 0" );
+        const bool correct_for_air_atten = true;
+        return det->reinterpretAsFarFieldAbsEfficiency( diam, distance, correct_for_air_atten );
+      }
+
+      case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
+      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
+      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
+      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
+        return det;
+    }//switch( geom_type )
+
+    return det;
+  };//create_drf_for_geom
+
+  auto update_state = [=](){
+    const int index = geom_combo->currentIndex();
+    const auto pos = index_to_geom.find( index );
+    assert( pos != end( index_to_geom ) );
+    if( pos == end( index_to_geom ) )
+      throw logic_error( "handleEfficiencyCsvFile: unexpected index" );
+
+    const DetectorPeakResponse::EffGeometryType geom_type = pos->second;
+
+    update_field_visibility();
+
+    try
+    {
+      shared_ptr<DetectorPeakResponse> new_drf = create_drf_for_geom( geom_type );
+      chart->updateChart( new_drf );
+      accept->enable();
+    }catch( std::exception & )
+    {
+      chart->updateChart( nullptr );
+      accept->disable();
+    }
+  };//update_state lambda
+
+  geom_combo->activated().connect( std::bind( update_state ) );
+  distance_edit->textInput().connect( std::bind( update_state ) );
+  diameter_edit->textInput().connect( std::bind( update_state ) );
+
+
+  accept->clicked().connect( std::bind( [=](){
+    const int index = geom_combo->currentIndex();
+    const auto pos = index_to_geom.find( index );
+    assert( pos != end( index_to_geom ) );
+    if( pos == end( index_to_geom ) )
+      throw logic_error( "handleEfficiencyCsvFile: unexpected index" );
+
+    const DetectorPeakResponse::EffGeometryType geom_type = pos->second;
+
+    shared_ptr<DetectorPeakResponse> new_drf;
+    try
+    {
+      new_drf = create_drf_for_geom( geom_type );
+    }catch( std::exception &e )
+    {
+      passMessage( WString::tr("smm-eff-csv-error").arg( e.what() ),
+                   WarningWidget::WarningMsgHigh );
+      return;
+    }
+
+    auto interspec = InterSpec::instance();
+    if( !new_drf || !interspec )
+      return;
+
+    shared_ptr<DataBaseUtils::DbSession> sql = interspec->sql();
+    const Wt::Dbo::ptr<InterSpecUser> &user = interspec->user();
+    DrfSelect::updateLastUsedTimeOrAddToDb( new_drf, user.id(), sql );
+    interspec->detectorChanged().emit( new_drf );
+
+    if( fore && new_drf && defaultForSerialNumber && defaultForSerialNumber->isChecked() )
+    {
+      UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorSerialNumber;
+      WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
+        DrfSelect::setUserPrefferedDetector( new_drf, sql, user, preftype, fore );
+      } ) );
+    }
+
+    if( fore && new_drf && defaultForDetectorModel && defaultForDetectorModel->isChecked() )
+    {
+      UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorModelName;
+      WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
+        DrfSelect::setUserPrefferedDetector( new_drf, sql, user, preftype, fore );
+      } ) );
+    }
+
+    UndoRedoManager *undoManager = InterSpec::instance()->undoRedoManager();
+    if( undoManager && undoManager->canAddUndoRedoNow() )
+    {
+      auto undo = [prev](){
+        InterSpec *viewer = InterSpec::instance();
+        if( viewer )
+          viewer->detectorChanged().emit( prev );
+      };
+
+      auto redo = [new_drf](){
+        InterSpec *viewer = InterSpec::instance();
+        if( viewer )
+          viewer->detectorChanged().emit( new_drf );
+      };
+
+      undoManager->addUndoRedoStep( undo, redo, "Change to efficiency CSV DRF" );
+    }
+  }) );
+
+  return true;
+}//bool handleEfficiencyCsvFile( std::istream &input, SimpleDialog *dialog )
 
 
 bool SpecMeasManager::handleShieldingSourceFile( std::istream &input, SimpleDialog *dialog )
@@ -3419,12 +4015,11 @@ bool SpecMeasManager::handleShieldingSourceFile( std::istream &input, SimpleDial
     xml_doc->parse<flags>( &((*data)[0]) );
     
   
-    MaterialDB *material_db = m_viewer->materialDataBase();
     PeakModel *peak_model = m_viewer->peakModel();
     WSuggestionPopup *shield_suggest = m_viewer->shieldingSuggester();
-      
+
     ShieldingSourceDisplay::ShieldingSourceDisplayState test_state;
-    test_state.deSerialize( xml_doc->first_node(), material_db );
+    test_state.deSerialize( xml_doc->first_node() );
     
     assert( dialog );
     dialog->contents()->clear();

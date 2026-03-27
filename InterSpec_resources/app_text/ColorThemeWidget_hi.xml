@@ -13,6 +13,30 @@
   <message id="ctwidget-non-chart-area">गैर-चार्ट क्षेत्र</message>
   <message id="ctwidget-backdrop-theme">पृष्ठभूमि थीम</message>
   <message id="ctwidget-backdrop-desc">सभी गैर-चार्ट क्षेत्र के लिए थीम</message>
+  <message id="ctwidget-app-background">पृष्ठभूमि रंग</message>
+  <message id="ctwidget-app-background-desc">डायलॉग, मुख्य ऐप क्षेत्र, आदि के लिए पृष्ठभूमि रंग।</message>
+  <message id="ctwidget-app-text">टेक्स्ट रंग</message>
+  <message id="ctwidget-app-text-desc">गैर-चार्ट क्षेत्रों के लिए टेक्स्ट रंग</message>
+  <message id="ctwidget-app-border">बॉर्डर रंग</message>
+  <message id="ctwidget-app-border-desc">UI तत्वों के लिए बॉर्डर रंग (टैब, बटन, पैनल)</message>
+  <message id="ctwidget-app-link">लिंक रंग</message>
+  <message id="ctwidget-app-link-desc">लिंक और इंटरैक्टिव एक्सेंट के लिए रंग</message>
+  <message id="ctwidget-app-label">लेबल रंग</message>
+  <message id="ctwidget-app-label-desc">लेबल, टैब और शीर्षलेख के लिए टेक्स्ट रंग</message>
+  <message id="ctwidget-app-input-bg">इनपुट पृष्ठभूमि</message>
+  <message id="ctwidget-app-input-bg-desc">इनपुट फ़ील्ड के लिए पृष्ठभूमि रंग</message>
+  <message id="ctwidget-app-button-bg">बटन पृष्ठभूमि</message>
+  <message id="ctwidget-app-button-bg-desc">बटन के लिए पृष्ठभूमि रंग</message>
+  <message id="ctwidget-app-button-border">बटन बॉर्डर</message>
+  <message id="ctwidget-app-button-border-desc">बटन के लिए बॉर्डर रंग</message>
+  <message id="ctwidget-app-button-text">बटन टेक्स्ट</message>
+  <message id="ctwidget-app-button-text-desc">बटन के लिए टेक्स्ट रंग</message>
+  <message id="ctwidget-app-menubar-bg">मेनू बार पृष्ठभूमि</message>
+  <message id="ctwidget-app-menubar-bg-desc">मेनू बार और मेनू बटन के लिए पृष्ठभूमि रंग</message>
+  <message id="ctwidget-app-menubar-active">मेनू बार सक्रिय</message>
+  <message id="ctwidget-app-menubar-active-desc">मेनू बटन के लिए पृष्ठभूमि रंग जब उसका मेनू खुला हो</message>
+  <message id="ctwidget-app-menubar-hover">मेनू बार होवर</message>
+  <message id="ctwidget-app-menubar-hover-desc">होवर पर मेनू बटन के लिए पृष्ठभूमि रंग</message>
 
   <!-- Chart colors section -->
   <message id="ctwidget-chart-colors">चार्ट रंग</message>

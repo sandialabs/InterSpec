@@ -101,8 +101,7 @@ namespace
 }//namespace
 
 
-DetectionLimitSimpleWindow::DetectionLimitSimpleWindow( MaterialDB *materialDB,
-                                Wt::WSuggestionPopup *materialSuggestion,
+DetectionLimitSimpleWindow::DetectionLimitSimpleWindow( Wt::WSuggestionPopup *materialSuggestion,
                                 InterSpec *viewer )
 : AuxWindow( WString::tr("window-title-simple-mda"),
             (AuxWindowProperties::TabletNotFullScreen
@@ -110,10 +109,10 @@ DetectionLimitSimpleWindow::DetectionLimitSimpleWindow( MaterialDB *materialDB,
              | AuxWindowProperties::DisableCollapse) )
 {
   UndoRedoManager::BlockUndoRedoInserts undo_blocker;
-  
+
   rejectWhenEscapePressed( true );
-  
-  m_tool = new DetectionLimitSimple( materialDB, materialSuggestion, viewer, contents() );
+
+  m_tool = new DetectionLimitSimple( materialSuggestion, viewer, contents() );
   m_tool->setHeight( WLength(100,WLength::Percentage) );
   
   AuxWindow::addHelpInFooter( footer(), "simple-mda-dialog" );
@@ -180,14 +179,12 @@ DetectionLimitSimple *DetectionLimitSimpleWindow::tool()
 
 
 
-DetectionLimitSimple::DetectionLimitSimple( MaterialDB *materialDB,
-                                 Wt::WSuggestionPopup *materialSuggestion,
+DetectionLimitSimple::DetectionLimitSimple( Wt::WSuggestionPopup *materialSuggestion,
                                  InterSpec *specViewer,
                                  Wt::WContainerWidget *parent )
  : WContainerWidget( parent ),
   m_viewer( specViewer ),
   m_materialSuggest( materialSuggestion ),
-  m_materialDB( materialDB ),
   m_spectrum( nullptr ),
   m_peakModel( nullptr ),
   m_resultTxt( nullptr ),
@@ -1724,7 +1721,9 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
     {
       label = WString::tr("dls-continuum-area");
       const PeakDef &peak = result.fit_peaks.front();
-      const double cont_area = peak.continuum()->offset_integral(roi_start, roi_end, measurement);
+      // CDF step types wont typically occur in detection limit context; if they do, use single peak
+      const PeakDef *peak_ptr = &peak;
+      const double cont_area = peak.continuum()->offset_integral( roi_start, roi_end, measurement, &peak_ptr, 1 );
       value = SpecUtils::printCompact(cont_area, 5);
       
       cell = table->elementAt( table->rowCount(), 0 );
@@ -1803,7 +1802,7 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
     
     if( distance >= 0.0 )
     {
-      const double geom_eff = drf->fractionalSolidAngle( drf->detectorDiameter(), distance );
+      const double geom_eff = drf->fractionalSolidAngle( drf->detectorDiameter(), distance + drf->detectorSetback() );
       
       label = WString::tr("dls-solid-angle-frac");
       value = SpecUtils::printCompact( geom_eff, 5 );

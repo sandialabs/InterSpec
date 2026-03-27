@@ -333,10 +333,13 @@ struct PhysicalModelShieldInput
   
   static const int sm_xmlSerializationVersion = 0;
   rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const;
-  void fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *materialDB );
+  void fromXml( const ::rapidxml::xml_node<char> *parent );
   
   static const double sm_upper_allowed_areal_density_in_g_per_cm2; //Set to 500
   
+  bool operator==( const PhysicalModelShieldInput &rhs ) const;
+  bool operator!=( const PhysicalModelShieldInput &rhs ) const;
+
 #if( PERFORM_DEVELOPER_CHECKS )
   static void equalEnough( const PhysicalModelShieldInput &lhs, const PhysicalModelShieldInput &rhs );
 #endif

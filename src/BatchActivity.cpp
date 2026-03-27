@@ -229,13 +229,27 @@ shared_ptr<DetectorPeakResponse> init_drf_from_name( std::string drf_file, std::
     {
       input.seekg( 0, ios::beg );
       input.clear();
-        
+
       auto answer = DetectorPeakResponse::parseEccFile( input );
       if( std::get<0>(answer) )
         return std::get<0>(answer);
-    }catch( std::exception &e )
+    }catch( std::exception & )
     {
       // Not a .ECC file
+    }
+
+    // Try an ANGLE .outx file
+    try
+    {
+      input.seekg( 0, ios::beg );
+      input.clear();
+
+      shared_ptr<DetectorPeakResponse> outx_det = DetectorPeakResponse::parseAngleOutxFile( input );
+      if( outx_det )
+        return outx_det;
+    }catch( std::exception & )
+    {
+      // Not an .outx file
     }
   }else if( !drf_name.empty() )  //if( !drf_file.empty() )
   {
@@ -761,19 +775,15 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
     return result;
   }
   
-  MaterialDB matdb;
-  const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
-  try
-  {
-    matdb.parseGadrasMaterialFile( materialfile, db, false );
-  }catch( std::exception &e )
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  if( !matdb )
   {
     result.m_error_msg = "Could not initialize shielding material database.";
     result.m_result_code = BatchActivityFitResult::ResultCode::CouldntInitializeStaticResources;
     return result;
   }
-  
-  const Material * const iron = matdb.material("Fe (iron)");
+
+  const std::shared_ptr<const Material> iron = matdb->material("Fe (iron)");
   if( !iron )
   {
     result.m_error_msg = "Couldnt access materials from shielding database.";
@@ -1355,7 +1365,7 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
     GammaInteractionCalc::ShieldSourceConfig config;
     try
     {
-      config.deSerialize( base_node, &matdb );
+      config.deSerialize( base_node );
     }catch( std::exception &e )
     {
       const string msg = e.what();

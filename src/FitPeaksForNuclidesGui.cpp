@@ -222,14 +222,20 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
     return;
   }
 
-  const bool isHPGe = PeakFitUtils::is_likely_high_res( viewer );
+  std::shared_ptr<SpecMeas> fg_meas = viewer->measurment( SpecUtils::SpectrumType::Foreground );
+  std::shared_ptr<const PeakFitDetPrefs> peak_fit_prefs = fg_meas ? fg_meas->peakFitDetPrefs() : nullptr;
+  std::shared_ptr<const DetectorPeakResponse> drf_input = fg_meas ? fg_meas->detector() : nullptr;
   std::shared_ptr<const SpecUtils::Measurement> background
                                  = viewer->displayedHistogram( SpecUtils::SpectrumType::Background );
 
-  std::shared_ptr<SpecMeas> fg_meas = viewer->measurment( SpecUtils::SpectrumType::Foreground );
-  std::shared_ptr<const DetectorPeakResponse> drf_input = fg_meas ? fg_meas->detector() : nullptr;
+  const PeakFitUtils::CoarseResolutionType det_type = peak_fit_prefs
+    ? peak_fit_prefs->m_det_type : PeakFitUtils::coarse_det_type( foreground, fg_meas );
+  FitPeaksForNuclides::PeakFitForNuclideConfig config
+    = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config( det_type );
 
-  FitPeaksForNuclides::PeakFitForNuclideConfig config;
+  // Override skew type from PeakFitDetPrefs
+  if( peak_fit_prefs )
+    config.skew_type = peak_fit_prefs->m_peak_skew_type;
 
   // Let user continue using app while fitting.
   SimpleDialog *wait_dlg = new SimpleDialog( WString::tr("fpn-wait-title"),
@@ -324,7 +330,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
 
       try
       {
-        *result = FitPeaksForNuclides::fit_peaks_for_nuclides( auto_search_peaks, fg_copy, base_nucs, user_peaks, bg_copy, drf_input, options, config, isHPGe );
+        *result = FitPeaksForNuclides::fit_peaks_for_nuclides( auto_search_peaks, fg_copy, base_nucs, user_peaks, bg_copy, drf_input, options, config, peak_fit_prefs );
       }catch( std::exception &e )
       {
         result->status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
@@ -704,6 +710,7 @@ FitPeaksAdvancedWidget::FitPeaksAdvancedWidget( Wt::WContainerWidget *parent )
     m_opt_obs_initial_sig( nullptr ),
     m_opt_obs_final_sig( nullptr ),
     m_opt_skew_type( nullptr ),
+    m_opt_use_fixed_skew( nullptr ),
     m_opt_fwhm_form( nullptr ),
     m_opt_rel_eff_type( nullptr ),
     m_opt_rel_eff_order( nullptr ),
@@ -841,13 +848,16 @@ FitPeaksAdvancedWidget::FitPeaksAdvancedWidget( Wt::WContainerWidget *parent )
     return;
 
   m_base_options = options;
-  m_is_hpge = PeakFitUtils::is_likely_high_res( viewer );
+  {
+    std::shared_ptr<SpecMeas> fg_meas = viewer->measurment( SpecUtils::SpectrumType::Foreground );
+    m_peak_fit_prefs = fg_meas ? fg_meas->peakFitDetPrefs() : nullptr;
+    m_drf = fg_meas ? fg_meas->detector() : nullptr;
+  }
+
   m_fg_copy = std::make_shared<SpecUtils::Measurement>( *foreground );
   std::shared_ptr<const SpecUtils::Measurement> background
     = viewer->displayedHistogram( SpecUtils::SpectrumType::Background );
   m_bg_copy = background ? std::make_shared<SpecUtils::Measurement>( *background ) : nullptr;
-  std::shared_ptr<SpecMeas> fg_meas = viewer->measurment( SpecUtils::SpectrumType::Foreground );
-  m_drf = fg_meas ? fg_meas->detector() : nullptr;
 
   if( current_showing.m_validity == ReferenceLineInfo::InputValidity::Valid )
     m_ref_lines.push_back( current_showing );
@@ -1183,11 +1193,24 @@ void FitPeaksAdvancedWidget::startComputation()
   if( m_opt_use_background && !m_opt_use_background->isChecked() )
     bg_to_use = nullptr;
 
+  // If "use fixed skew" checkbox is unchecked, clear fixed skew values from prefs copy
+  std::shared_ptr<const PeakFitDetPrefs> fit_prefs_to_use = m_peak_fit_prefs;
+  if( m_opt_use_fixed_skew && !m_opt_use_fixed_skew->isChecked() && m_peak_fit_prefs )
+  {
+    std::shared_ptr<PeakFitDetPrefs> prefs_copy = std::make_shared<PeakFitDetPrefs>( *m_peak_fit_prefs );
+    for( size_t i = 0; i < 4; ++i )
+    {
+      prefs_copy->m_lower_energy_skew[i] = std::nullopt;
+      prefs_copy->m_upper_energy_skew[i] = std::nullopt;
+    }
+    fit_prefs_to_use = prefs_copy;
+  }
+
   auto worker = [=](){
     try
     {
       *result = FitPeaksForNuclides::fit_peaks_for_nuclides( peaks_to_use, m_fg_copy, m_base_nucs, m_user_peaks,
-                                                            bg_to_use, m_drf, options, config, m_is_hpge );
+                                                            bg_to_use, m_drf, options, config, fit_prefs_to_use );
       WServer::instance()->post( sessionid, [=](){
         WApplication *app = WApplication::instance();
         if( app )
@@ -1423,12 +1446,28 @@ std::string FitPeaksAdvancedWidget::sourceListTitle() const
 
 void FitPeaksAdvancedWidget::buildOptionsFromConfig()
 {
-  FitPeaksForNuclides::PeakFitForNuclideConfig config;
-
   InterSpec *viewer = InterSpec::instance();
+
+  const std::shared_ptr<SpecMeas> fg_meas = viewer
+    ? viewer->measurment( SpecUtils::SpectrumType::Foreground ) : nullptr;
+  const std::shared_ptr<const SpecUtils::Measurement> foreground = viewer
+    ? viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground ) : nullptr;
+  const std::shared_ptr<const PeakFitDetPrefs> prefs = fg_meas ? fg_meas->peakFitDetPrefs() : nullptr;
+
+  const PeakFitUtils::CoarseResolutionType det_type = prefs
+    ? prefs->m_det_type
+    : PeakFitUtils::coarse_det_type( foreground, fg_meas );
+  FitPeaksForNuclides::PeakFitForNuclideConfig config
+    = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config( det_type );
+
+  // Initialize skew type from PeakFitDetPrefs
+  if( prefs )
+    config.skew_type = prefs->m_peak_skew_type;
+
   const bool show_tool_tips = viewer
     ? UserPreferences::preferenceValue<bool>( "ShowTooltips", viewer )
     : false;
+
 
   auto add_checkbox_row = [this, show_tool_tips]( const WString &label, WCheckBox *input,
                                                    const WString &tooltip = WString() ) {
@@ -1504,6 +1543,12 @@ void FitPeaksAdvancedWidget::buildOptionsFromConfig()
   m_opt_fit_bkgnd_peaks->changed().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
   HelpSystem::attachToolTipOn( m_opt_fit_bkgnd_peaks, WString::tr("fpn-opt-tt-fit-bkgnd-peaks"), show_tool_tips );
 
+  // If fitting only background (no other sources), disable this checkbox but keep it checked
+  const bool fitting_only_background = m_sources.empty() 
+                                       && m_base_options.testFlag( FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaks );
+  if( fitting_only_background )
+    m_opt_fit_bkgnd_peaks->setDisabled( true );
+
   // m_opt_fit_bkgnd_dont_use: not exposed to user for now, may add later
   // m_opt_fit_bkgnd_dont_use = new WCheckBox( WString::tr("fpn-opt-fit-bkgnd-dont-use"), checkboxes_container );
   // m_opt_fit_bkgnd_dont_use->setChecked( false );
@@ -1515,6 +1560,10 @@ void FitPeaksAdvancedWidget::buildOptionsFromConfig()
     m_opt_use_background->setChecked( true );
     m_opt_use_background->changed().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
     HelpSystem::attachToolTipOn( m_opt_use_background, WString::tr("fpn-opt-tt-use-background"), show_tool_tips );
+    
+    // Hide "Use Background" checkbox when fitting only background - background is required
+    if( fitting_only_background )
+      m_opt_use_background->setHidden( true );
   }
 
   NativeFloatSpinBox *roi_chi2 = new NativeFloatSpinBox();
@@ -1564,6 +1613,17 @@ void FitPeaksAdvancedWidget::buildOptionsFromConfig()
   m_opt_skew_type->changed().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
   add_form_row( WString::tr("fpn-opt-skew-type"), m_opt_skew_type, WString::tr("fpn-opt-tt-skew-type") );
 
+  // "Use fixed skew from prefs" checkbox - visible only when prefs have fixed values
+  m_opt_use_fixed_skew = new WCheckBox();
+  m_opt_use_fixed_skew->setChecked( true );
+  m_opt_use_fixed_skew->changed().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
+  add_checkbox_row( WString::tr("fpn-opt-use-fixed-skew"), m_opt_use_fixed_skew,
+                   WString::tr("fpn-opt-tt-use-fixed-skew") );
+  handlePeakFitDetPrefsChanged();  // Set initial visibility
+
+  if( viewer )
+    viewer->peakFitDetPrefsChanged().connect( this, &FitPeaksAdvancedWidget::handlePeakFitDetPrefsChanged );
+
   m_opt_fwhm_form = new WComboBox();
   for( int i = 0; i <= static_cast<int>( RelActCalcAuto::FwhmForm::NotApplicable ); ++i )
   {
@@ -1585,7 +1645,21 @@ void FitPeaksAdvancedWidget::buildOptionsFromConfig()
   }
   m_opt_rel_eff_type->changed().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
   m_opt_rel_eff_type->changed().connect( this, &FitPeaksAdvancedWidget::onRelEffTypeChanged );
-  add_form_row( WString::tr("fpn-opt-rel-eff-eqn-type"), m_opt_rel_eff_type, WString::tr("fpn-opt-tt-rel-eff-eqn-type") );
+  
+  WContainerWidget *rel_eff_type_row = new WContainerWidget( m_options_div );
+  rel_eff_type_row->addStyleClass( "fpn-option-row" );
+  WLabel *rel_eff_type_lbl = new WLabel( WString::tr("fpn-opt-rel-eff-eqn-type"), rel_eff_type_row );
+  rel_eff_type_lbl->addStyleClass( "fpn-option-label" );
+  rel_eff_type_lbl->setBuddy( m_opt_rel_eff_type );
+  WContainerWidget *rel_eff_type_inp_div = new WContainerWidget( rel_eff_type_row );
+  rel_eff_type_inp_div->addStyleClass( "fpn-option-input" );
+  rel_eff_type_inp_div->addWidget( m_opt_rel_eff_type );
+  if( !WString::tr("fpn-opt-tt-rel-eff-eqn-type").empty() )
+    HelpSystem::attachToolTipOn( {rel_eff_type_lbl, m_opt_rel_eff_type}, WString::tr("fpn-opt-tt-rel-eff-eqn-type"), show_tool_tips );
+  
+  // Hide relative efficiency type when fitting only background
+  if( fitting_only_background )
+    rel_eff_type_row->setHidden( true );
 
   NativeFloatSpinBox *order_spin = new NativeFloatSpinBox();
   order_spin->setWidth( WLength( 4, WLength::Unit::FontEm ) );
@@ -1605,7 +1679,11 @@ void FitPeaksAdvancedWidget::buildOptionsFromConfig()
   order_inp_div->addWidget( order_spin );
   HelpSystem::attachToolTipOn( {order_lbl, order_spin}, WString::tr("fpn-opt-tt-rel-eff-eqn-order"), show_tool_tips );
   m_opt_rel_eff_order = order_spin;
-  m_rel_eff_order_row->setHidden( config.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel );
+  
+  // Hide relative efficiency order row when fitting only background or when using physical model
+  const bool hide_order = fitting_only_background 
+                          || ( config.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel );
+  m_rel_eff_order_row->setHidden( hide_order );
 }
 
 void FitPeaksAdvancedWidget::syncConfigFromOptions()
@@ -1614,7 +1692,18 @@ void FitPeaksAdvancedWidget::syncConfigFromOptions()
 
 FitPeaksForNuclides::PeakFitForNuclideConfig FitPeaksAdvancedWidget::currentConfig() const
 {
-  FitPeaksForNuclides::PeakFitForNuclideConfig config;
+  InterSpec *viewer = InterSpec::instance();
+  const std::shared_ptr<SpecMeas> fg_meas = viewer
+    ? viewer->measurment( SpecUtils::SpectrumType::Foreground ) : nullptr;
+  const std::shared_ptr<const SpecUtils::Measurement> foreground = viewer
+    ? viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground ) : nullptr;
+  const std::shared_ptr<const PeakFitDetPrefs> prefs = fg_meas ? fg_meas->peakFitDetPrefs() : nullptr;
+  const PeakFitUtils::CoarseResolutionType det_type = prefs
+    ? prefs->m_det_type
+    : PeakFitUtils::coarse_det_type( foreground, fg_meas );
+  FitPeaksForNuclides::PeakFitForNuclideConfig config
+    = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config( det_type );
+
   if( m_opt_roi_min_chi2 )
     config.roi_significance_min_chi2_reduction = m_opt_roi_min_chi2->value();
   if( m_opt_roi_min_peak_sig )
@@ -1685,3 +1774,35 @@ void FitPeaksAdvancedWidget::onRelEffTypeChanged()
   if( m_rel_eff_order_row )
     m_rel_eff_order_row->setHidden( is_physical );
 }
+
+
+void FitPeaksAdvancedWidget::handlePeakFitDetPrefsChanged()
+{
+  if( !m_opt_use_fixed_skew )
+    return;
+
+  InterSpec *viewer = InterSpec::instance();
+  std::shared_ptr<SpecMeas> meas = viewer
+    ? viewer->measurment( SpecUtils::SpectrumType::Foreground ) : nullptr;
+  std::shared_ptr<const PeakFitDetPrefs> prefs = meas ? meas->peakFitDetPrefs() : nullptr;
+
+  bool has_fixed = false;
+  if( prefs && (prefs->m_peak_skew_type != PeakDef::SkewType::NoSkew)
+     && !prefs->m_roi_independent_skew )
+  {
+    const size_t n = PeakDef::num_skew_parameters( prefs->m_peak_skew_type );
+    for( size_t i = 0; i < n; ++i )
+    {
+      if( prefs->m_lower_energy_skew[i].has_value() )
+      {
+        has_fixed = true;
+        break;
+      }
+    }
+  }//if( prefs with skew and not roi-independent )
+
+  // The checkbox row is the parent of m_opt_use_fixed_skew
+  Wt::WWidget *row = m_opt_use_fixed_skew->parent();
+  if( row )
+    row->setHidden( !has_fixed );
+}//void FitPeaksAdvancedWidget::handlePeakFitDetPrefsChanged()

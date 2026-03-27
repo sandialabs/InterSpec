@@ -78,6 +78,7 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/SimpleDialog.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/RelActAutoGui.h"
@@ -459,6 +460,8 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_add_uncert( nullptr ),
   m_lorentzian_xrays_enabled( false ),
   m_lorentzian_xrays( nullptr ),
+  m_use_fixed_skew_enabled( false ),
+  m_use_fixed_skew( nullptr ),
   m_more_options_menu( nullptr ),
   m_apply_energy_cal_item( nullptr ),
   m_show_ref_lines_item( nullptr ),
@@ -496,8 +499,6 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   assert( app );
   if( app )
     app->useMessageResourceBundle( "RelActAutoGui" );
-    
-  new UndoRedoManager::BlockGuiUndoRedo( this );
     
   wApp->useStyleSheet( "InterSpec_resources/RelActAutoGui.css" );
   wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
@@ -606,6 +607,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   
   m_interspec->detectorChanged().connect( this, &RelActAutoGui::handleDetectorChange );
   m_interspec->detectorModified().connect( this, &RelActAutoGui::handleDetectorChange );
+  m_interspec->peakFitDetPrefsChanged().connect( this, &RelActAutoGui::handlePeakFitDetPrefsChanged );
 
   m_default_par_sets_dir = SpecUtils::append_path( InterSpec::staticDataDirectory(), "rel_act" );
   const vector<string> default_par_sets = SpecUtils::recursive_ls( m_default_par_sets_dir, ".xml" );
@@ -824,6 +826,18 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_lorentzian_xrays->unChecked().connect( this, &RelActAutoGui::handleLorentzianXraysChanged );
   tooltip = WString::tr("raag-tt-lorentzian-xrays");
   HelpSystem::attachToolTipOn( m_lorentzian_xrays, tooltip, showToolTips );
+
+  // "Peak fit opt. skew" checkbox - when checked, skew type and fixed params come from PeakFitDetPrefs
+  m_use_fixed_skew = new WCheckBox( WString::tr("raag-use-fixed-skew"), generalOptionsDiv );
+  m_use_fixed_skew->addStyleClass( "UseFixedSkewCb CbNoLineBreak" );
+  m_use_fixed_skew->setChecked( true );
+  m_use_fixed_skew->setHidden( true );
+  m_use_fixed_skew_enabled = false;
+  m_use_fixed_skew->checked().connect( this, &RelActAutoGui::handleUseFixedSkewChanged );
+  m_use_fixed_skew->unChecked().connect( this, &RelActAutoGui::handleUseFixedSkewChanged );
+  tooltip = WString::tr("raag-tt-use-fixed-skew");
+  HelpSystem::attachToolTipOn( m_use_fixed_skew, tooltip, showToolTips );
+  handlePeakFitDetPrefsChanged();  // Set initial visibility based on current prefs
 
   WContainerWidget *addUncertDiv = new WContainerWidget( generalOptionsDiv );
   addUncertDiv->addStyleClass( "RelActAutoAddUncertDiv" );
@@ -1078,6 +1092,60 @@ RelActAutoGui::~RelActAutoGui()
 }//~RelActAutoGui();
 
 
+void RelActAutoGui::addUndoRedoStep()
+{
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( !undoRedo || !undoRedo->canAddUndoRedoNow() )
+    return;
+
+  shared_ptr<RelActCalcAuto::RelActAutoGuiState> current_state = make_shared<RelActCalcAuto::RelActAutoGuiState>();
+  try
+  {
+    serialize( *current_state );
+  }catch( std::exception &e )
+  {
+    cerr << "RelActAutoGui unexpectedly caught exception rendering to undo/redo state: " << e.what() << endl;
+    return;
+  }
+  
+  if( !m_currentGuiState )
+  {
+    // This is the first render - dont add undo/redo
+    m_currentGuiState = current_state;
+    return;
+  }
+  
+  if( *current_state == *m_currentGuiState )
+    return;
+
+  const shared_ptr<const RelActCalcAuto::RelActAutoGuiState> prev_state = m_currentGuiState;
+
+  auto undo = [prev_state](){
+    InterSpec *viewer = InterSpec::instance();
+    RelActAutoGui *gui = viewer ? viewer->relActAutoWindow( true ) : nullptr;
+    if( gui && prev_state )
+    {
+      gui->deSerialize( *prev_state );
+      gui->m_render_flags.clear( RenderActions::AddUndoRedoStep );
+    }
+  };
+
+  auto redo = [current_state](){
+    InterSpec *viewer = InterSpec::instance();
+    RelActAutoGui *gui = viewer ? viewer->relActAutoWindow( true ) : nullptr;
+    if( gui && current_state )
+    {
+      gui->deSerialize( *current_state );
+      gui->m_render_flags.clear( RenderActions::AddUndoRedoStep );
+    }
+  };
+  
+  undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "RelActAutoGui gui change." );
+  
+  m_currentGuiState = current_state;
+}//void addUndoRedoStep(...)
+
+
 void RelActAutoGui::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
   if( m_render_flags.testFlag(RenderActions::UpdateSpectra) )
@@ -1131,10 +1199,14 @@ void RelActAutoGui::render( Wt::WFlags<Wt::RenderFlag> flags )
   {
     startUpdatingCalculation();
   }
-  
+
+  // Capture current GUI state and add undo/redo step if flagged
+  if( m_render_flags.testFlag( RenderActions::AddUndoRedoStep ) )
+    addUndoRedoStep();
+
   m_render_flags = 0;
   m_loading_preset = false;
-  
+
   WContainerWidget::render( flags );
 }//void render( Wt::WFlags<Wt::RenderFlag> flags )
 
@@ -1225,6 +1297,20 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
   assert( !options.lorentzian_xrays
          || (options.skew_type == PeakDef::SkewType::NoSkew)
          || (options.skew_type == PeakDef::SkewType::GaussPlusBortel) );
+
+  // Copy fixed skew parameter values from PeakFitDetPrefs if checkbox is checked
+  if( m_use_fixed_skew_enabled && m_use_fixed_skew->isChecked() )
+  {
+    shared_ptr<const PeakFitDetPrefs> prefs = meas ? meas->peakFitDetPrefs() : nullptr;
+    if( prefs )
+    {
+      for( size_t i = 0; i < 4; ++i )
+      {
+        options.fixed_lower_skew[i] = prefs->m_lower_energy_skew[i];
+        options.fixed_upper_skew[i] = prefs->m_upper_energy_skew[i];
+      }
+    }
+  }//if( use fixed skew from prefs )
 
   options.additional_br_uncert = -1.0;
   const auto add_uncert = RelActAutoGui::AddUncert(m_add_uncert->currentIndex());
@@ -1436,7 +1522,9 @@ vector<RelActCalcAuto::FloatingPeak> RelActAutoGui::getFloatingPeaks() const
     RelActCalcAuto::FloatingPeak peak;
     peak.energy = energy;
     peak.release_fwhm = !free_peak->fwhmConstrained();
-    peak.apply_energy_cal_correction = free_peak->applyEnergyCal();
+    peak.energy_origin = free_peak->applyEnergyCal()
+      ? RelActCalcAuto::FloatingPeak::EnergyType::Known
+      : RelActCalcAuto::FloatingPeak::EnergyType::ObservedInSpectrum;
     
     answer.push_back( peak );
   }//for( loop over RelActAutoGuiFreePeak widgets )
@@ -1728,9 +1816,9 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
 
     const shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_peaks = meas ? meas->automatedSearchPeaks(sample_nums) : nullptr;
 
-    const bool isHPGe = PeakFitUtils::is_likely_high_res( m_interspec );
-    
-    const auto found_peaks = searchForPeakFromUser( energy, pixPerKeV, m_foreground, {}, det, auto_peaks, isHPGe );
+    shared_ptr<const PeakFitDetPrefs> fitPrefs = meas ? meas->peakFitDetPrefs() : nullptr;
+
+    const auto found_peaks = searchForPeakFromUser( energy, pixPerKeV, m_foreground, {}, det, auto_peaks, fitPrefs );
 
     // If we didnt fit a peak, and we dont
     double lower_energy = energy - 10;
@@ -1755,7 +1843,7 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
       //  (We could check on auto-searched peaks and estimate from those, but
       //   really, at this point, its not worth the effort as things are probably
       //   low quality)
-      const bool isHPGe = PeakFitUtils::is_high_res(m_foreground);
+      const bool isHPGe = (PeakFitUtils::coarse_det_type( m_foreground, nullptr ) == PeakFitUtils::CoarseResolutionType::High);
       if( isHPGe )
       {
         lower_energy = energy - 5;
@@ -1830,6 +1918,7 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
     checkIfInUserConfigOrCreateOne( false );
     m_render_flags |= RenderActions::UpdateEnergyRanges;
     m_render_flags |= RenderActions::UpdateCalculations;
+    m_render_flags |= RenderActions::AddUndoRedoStep;
     scheduleRender();
   }catch( std::exception &e )
   {
@@ -1980,6 +2069,16 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   m_lorentzian_xrays->setChecked( options.lorentzian_xrays );
   populateSkewTypeComboBox( options.lorentzian_xrays );
   setCurrentSkewType( options.skew_type );
+
+  // Update fixed skew checkbox state: checked if options have any fixed skew values
+  {
+    bool has_fixed = false;
+    for( size_t i = 0; i < 4; ++i )
+      has_fixed |= options.fixed_lower_skew[i].has_value();
+    m_use_fixed_skew->setChecked( has_fixed );
+    // Re-check prefs to see if checkbox should be visible, and disable/enable combo
+    handlePeakFitDetPrefsChanged();
+  }
 
   // We'll just round add-uncert to the nearest-ish value we allow in the GUI
   RelActAutoGui::AddUncert add_uncert = AddUncert::NumAddUncert;
@@ -2132,7 +2231,8 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
     handleShowFreePeaks();
   
   for( const RelActCalcAuto::FloatingPeak &peak : options.floating_peaks )
-    handleAddFreePeak( peak.energy, !peak.release_fwhm, peak.apply_energy_cal_correction );
+    handleAddFreePeak( peak.energy, !peak.release_fwhm,
+                       (peak.energy_origin == RelActCalcAuto::FloatingPeak::EnergyType::Known) );
   
   handleNuclidesChanged();
   
@@ -2256,8 +2356,9 @@ Wt::WWidget *RelActAutoGui::handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateEnergyRanges;
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
-  
+
   return left_range;
 }//void handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget *right_roi );
 
@@ -2275,6 +2376,15 @@ void RelActAutoGui::serialize( RelActCalcAuto::RelActAutoGuiState &state ) const
 
 void RelActAutoGui::deSerialize( const RelActCalcAuto::RelActAutoGuiState &state )
 {
+  // m_currentGuiState is only set after the first render(), so if it is set,
+  //  we are in active use - and AddUndoRedoStep should not be set during undo/redo execution.
+  //  During initial load (e.g., loadStateFromDb), m_currentGuiState is null, and flags may be set.
+  assert( !m_currentGuiState || !m_render_flags.testFlag( RenderActions::AddUndoRedoStep ) );
+
+  // Cancel any in-progress calculation so its results dont overwrite the state we are about to restore.
+  if( m_cancel_calc )
+    m_cancel_calc->store( true );
+
   const WString user_note = WString::fromUTF8(state.note);
   m_user_note->setText( user_note );
   m_user_note->setToolTip( user_note );
@@ -2329,10 +2439,8 @@ rapidxml::xml_node<char> *RelActAutoGui::serialize( rapidxml::xml_node<char> *pa
 
 void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
 {
-  MaterialDB *materialDb = m_interspec->materialDataBase();
-
   RelActCalcAuto::RelActAutoGuiState state;
-  state.deSerialize( base_node, materialDb );
+  state.deSerialize( base_node );
 
   deSerialize( state );  // Use new struct-based method
 }//void deSerialize( const rapidxml::xml_node<char> *base_node )
@@ -2359,9 +2467,8 @@ void RelActAutoGui::setGuiStateFromXml( const rapidxml::xml_document<char> *doc 
   if( !base_node )
     throw runtime_error( "RelActAutoGui::setGuiStateFromXml: couldnt find <RelActCalcAuto> node." );
 
-  MaterialDB *materialDb = m_interspec->materialDataBase();
   RelActCalcAuto::RelActAutoGuiState state;
-  state.deSerialize( base_node, materialDb );
+  state.deSerialize( base_node );
 
   deSerialize( state );  // Use new struct-based method
 }//void setGuiStateFromXml( const rapidxml::xml_node<char> *node );
@@ -2381,8 +2488,9 @@ void RelActAutoGui::handlePresetChange()
   m_render_flags |= RenderActions::UpdateEnergyRanges;
   m_render_flags |= RenderActions::UpdateCalculations;
   m_render_flags |= RenderActions::ChartToDefaultRange;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
-  
+
   if( m_current_preset_index >= static_cast<int>(m_preset_paths.size()) )
     m_previous_presets[m_current_preset_index] = guiStateToXml();
   
@@ -2523,6 +2631,7 @@ void RelActAutoGui::handleRelEffEqnTypeChanged( RelActAutoGuiRelEffOptions *rel_
   
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleRelEffEqnTypeChanged();
 
@@ -2555,6 +2664,7 @@ void RelActAutoGui::handleSameHoerlOnAllCurvesChanged( RelActAutoGuiRelEffOption
   
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleSameHoerlOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
 
@@ -2591,6 +2701,7 @@ void RelActAutoGui::handleSameExtShieldingOnAllCurvesChanged( RelActAutoGuiRelEf
   
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleSameExtShieldingOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
 
@@ -2621,6 +2732,7 @@ void RelActAutoGui::handleShieldedByOtherCurvesChanged( RelActAutoGuiRelEffOptio
 
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleShieldedByOtherCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
 
@@ -2629,6 +2741,7 @@ void RelActAutoGui::handleRelEffEqnOrderChanged()
 {
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleRelEffEqnOrderChanged();
 
@@ -2637,6 +2750,7 @@ void RelActAutoGui::handleFwhmFormChanged()
 {
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleFwhmFormChanged()
 
@@ -2722,6 +2836,7 @@ void RelActAutoGui::handleFwhmEstimationMethodChanged()
   
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleFwhmEstimationMethodChanged()
 
@@ -2731,6 +2846,7 @@ void RelActAutoGui::handleFitEnergyCalChanged()
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateFitEnergyCal;
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleFitEnergyCalChanged();
 
@@ -2738,6 +2854,8 @@ void RelActAutoGui::handleFitEnergyCalChanged()
 void RelActAutoGui::handleUserNoteChanged()
 {
   checkIfInUserConfigOrCreateOne( false );
+  m_render_flags |= RenderActions::AddUndoRedoStep;
+  scheduleRender();
 }
 
 
@@ -2750,6 +2868,7 @@ void RelActAutoGui::handleBackgroundSubtractChanged()
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
   m_render_flags |= RenderActions::UpdateShowHideBack;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }
 
@@ -2759,6 +2878,7 @@ void RelActAutoGui::handleSameAgeChanged()
   DoWorkOnDestruct do_work( [&](){
     checkIfInUserConfigOrCreateOne( false );
     m_render_flags |= RenderActions::UpdateCalculations;
+    m_render_flags |= RenderActions::AddUndoRedoStep;
     scheduleRender();
   } );
 
@@ -2829,6 +2949,7 @@ void RelActAutoGui::handlePuByCorrelationChanged()
 {
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }
 
@@ -2836,6 +2957,7 @@ void RelActAutoGui::handleSkewTypeChanged()
 {
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }
 
@@ -2922,8 +3044,77 @@ void RelActAutoGui::handleLorentzianXraysChanged()
   populateSkewTypeComboBox( lorentzian_checked );
 
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void RelActAutoGui::handleLorentzianXraysChanged()
+
+
+void RelActAutoGui::handleUseFixedSkewChanged()
+{
+  checkIfInUserConfigOrCreateOne( false );
+
+  if( m_use_fixed_skew->isChecked() )
+  {
+    // Sync skew type combo to prefs and disable it
+    shared_ptr<SpecMeas> meas = m_interspec
+      ? m_interspec->measurment( SpecUtils::SpectrumType::Foreground ) : nullptr;
+    shared_ptr<const PeakFitDetPrefs> prefs = meas ? meas->peakFitDetPrefs() : nullptr;
+    if( prefs && (prefs->m_peak_skew_type != PeakDef::SkewType::NoSkew) )
+      setCurrentSkewType( prefs->m_peak_skew_type );
+    m_skew_type->setDisabled( true );
+  }else
+  {
+    m_skew_type->setDisabled( false );
+  }
+
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}//void RelActAutoGui::handleUseFixedSkewChanged()
+
+
+void RelActAutoGui::handlePeakFitDetPrefsChanged()
+{
+  // Check if current prefs specify a non-NoSkew skew type
+  shared_ptr<SpecMeas> meas = m_interspec
+    ? m_interspec->measurment( SpecUtils::SpectrumType::Foreground ) : nullptr;
+  shared_ptr<const PeakFitDetPrefs> prefs = meas ? meas->peakFitDetPrefs() : nullptr;
+
+  const bool prefs_have_skew = prefs
+    && (prefs->m_peak_skew_type != PeakDef::SkewType::NoSkew);
+
+  // Fixed skew values only apply when ROI-independent skew is off
+  bool has_fixed = false;
+  if( prefs_have_skew && !prefs->m_roi_independent_skew )
+  {
+    const size_t n = PeakDef::num_skew_parameters( prefs->m_peak_skew_type );
+    for( size_t i = 0; i < n; ++i )
+    {
+      if( prefs->m_lower_energy_skew[i].has_value() )
+      {
+        has_fixed = true;
+        break;
+      }
+    }
+  }//if( prefs_have_skew && !roi_independent )
+
+  m_use_fixed_skew_enabled = has_fixed;
+  m_use_fixed_skew->setHidden( !has_fixed );
+
+  // Always sync the skew type combo to prefs when prefs specify a skew type
+  if( prefs_have_skew )
+    setCurrentSkewType( prefs->m_peak_skew_type );
+
+  if( has_fixed && m_use_fixed_skew->isChecked() )
+  {
+    m_skew_type->setDisabled( true );
+
+    m_render_flags |= RenderActions::UpdateCalculations;
+    scheduleRender();
+  }else
+  {
+    m_skew_type->setDisabled( false );
+  }
+}//void RelActAutoGui::handlePeakFitDetPrefsChanged()
 
 
 PeakDef::SkewType RelActAutoGui::currentSkewType() const
@@ -3034,6 +3225,7 @@ void RelActAutoGui::handleNucDataSrcChanged()
 {
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleNucDataSrcChanged()
 
@@ -3058,6 +3250,7 @@ void RelActAutoGui::handleNuclidesChanged()
   m_render_flags |= RenderActions::UpdateNuclidesPresent;
   m_render_flags |= RenderActions::UpdateCalculations;
   m_render_flags |= RenderActions::UpdateRefGammaLines;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
 
   scheduleRender();
 }//void handleNuclidesChanged()
@@ -3069,6 +3262,7 @@ void RelActAutoGui::handleNuclideFitAgeChanged( RelActAutoGuiNuclide *nuc, bool 
     checkIfInUserConfigOrCreateOne( false );
     m_render_flags |= RenderActions::UpdateCalculations;
     m_render_flags |= RenderActions::UpdateRefGammaLines;
+    m_render_flags |= RenderActions::AddUndoRedoStep;
     scheduleRender();
   } );
     
@@ -3109,6 +3303,7 @@ void RelActAutoGui::handleNuclideAgeChanged( RelActAutoGuiNuclide *nuc )
     checkIfInUserConfigOrCreateOne( false );
     m_render_flags |= RenderActions::UpdateCalculations;
     m_render_flags |= RenderActions::UpdateRefGammaLines;
+    m_render_flags |= RenderActions::AddUndoRedoStep;
     scheduleRender();
   } );
 
@@ -3229,7 +3424,8 @@ void RelActAutoGui::handleEnergyRangeChange()
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateEnergyRanges;
   m_render_flags |= RenderActions::UpdateCalculations;
-  
+  m_render_flags |= RenderActions::AddUndoRedoStep;
+
   scheduleRender();
 }//void handleEnergyRangeChange()
 
@@ -3239,6 +3435,7 @@ void RelActAutoGui::handleFreePeakChange()
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateFreePeaks;
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleFreePeakChange()
 
@@ -3247,6 +3444,7 @@ void RelActAutoGui::handleAdditionalUncertChanged()
 {
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleAdditionalUncertChanged()
 
@@ -3402,11 +3600,12 @@ void RelActAutoGui::handleAddNuclideForCurrentRelEffCurve()
     return;
   
   checkIfInUserConfigOrCreateOne( false );
-  
+  m_render_flags |= RenderActions::AddUndoRedoStep;
+  scheduleRender();
+
   // If we just added a blank source widget - no need to trigger a calc update
   //m_render_flags |= RenderActions::UpdateNuclidesPresent;
   //m_render_flags |= RenderActions::UpdateCalculations;
-  //scheduleRender();
 }//void handleAddNuclideForCurrentRelEffCurve()
 
 
@@ -3434,6 +3633,7 @@ void RelActAutoGui::handleAddEnergy()
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateEnergyRanges;
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleAddEnergy()
 
@@ -3484,6 +3684,7 @@ void RelActAutoGui::removeAllEnergyRanges()
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateEnergyRanges;
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void removeAllEnergyRanges()
 
@@ -3507,6 +3708,7 @@ void RelActAutoGui::handleHideFreePeaks()
     checkIfInUserConfigOrCreateOne( false );
     m_render_flags |= RenderActions::UpdateCalculations;
     m_render_flags |= RenderActions::UpdateFreePeaks;
+    m_render_flags |= RenderActions::AddUndoRedoStep;
     scheduleRender();
   }
 }//void handleHideFreePeaks()
@@ -3533,6 +3735,7 @@ void RelActAutoGui::handleRemoveFreePeak( Wt::WWidget *w )
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateEnergyRanges;
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleRemoveFreePeak( Wt::WWidget *w )
 
@@ -3558,6 +3761,7 @@ void RelActAutoGui::handleRemoveEnergy( WWidget *w )
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateEnergyRanges;
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleRemoveEnergy( Wt::WContainerWidget *w )
 
@@ -3672,6 +3876,7 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
     checkIfInUserConfigOrCreateOne( false );
     m_render_flags |= RenderActions::UpdateEnergyRanges;
     m_render_flags |= RenderActions::UpdateCalculations;
+    m_render_flags |= RenderActions::AddUndoRedoStep;
     scheduleRender();
   };//on_yes lamda
   
@@ -3694,6 +3899,7 @@ void RelActAutoGui::handleAddFreePeak( const double energy, const bool constrain
   
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= UpdateFreePeaks;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleAddFreePeak( const double energy, const bool constrain_fwhm )
 
@@ -3854,6 +4060,7 @@ void RelActAutoGui::handleRemoveNuclide( Wt::WWidget *w )
   m_render_flags |= RenderActions::UpdateNuclidesPresent;
   m_render_flags |= RenderActions::UpdateCalculations;
   m_render_flags |= RenderActions::UpdateRefGammaLines;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
 
   scheduleRender();
 }//void handleRemoveNuclide( Wt::WWidget *w )
@@ -4037,6 +4244,7 @@ void RelActAutoGui::handleShowRefLines( const bool show )
   m_hide_ref_lines_item->setDisabled( !show );
   
   m_render_flags |= RenderActions::UpdateRefGammaLines;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void RelActAutoGui::handleShowRefLines()
 
@@ -4068,6 +4276,7 @@ void RelActAutoGui::handleShowBackground( const bool show )
   if( can_show )
   {
     m_render_flags |= RenderActions::UpdateShowHideBack;
+    m_render_flags |= RenderActions::AddUndoRedoStep;
     scheduleRender();
   }
 }//void handleShowBackground( const bool show )
@@ -4157,19 +4366,30 @@ void RelActAutoGui::setPeaksToForeground()
       vector<shared_ptr<const PeakDef>> solution_peaks_ptrs;
       for( const PeakDef &p : solution_peaks )
         solution_peaks_ptrs.push_back( make_shared<const PeakDef>(p) );
-      const auto resType = PeakFitUtils::coarse_resolution_from_peaks(solution_peaks_ptrs);
-      
-      const bool isHPGe = (resType == PeakFitUtils::CoarseResolutionType::High); //Shouldnt matter since peaks all have defined ROIs, but JIC
-      
+      shared_ptr<const PeakFitDetPrefs> fitPrefs;
+      shared_ptr<const SpecMeas> specmeas = interpsec->measurment( SpecUtils::SpectrumType::Foreground );
+      if( specmeas )
+        fitPrefs = specmeas->peakFitDetPrefs();
+      if( !fitPrefs && ana_drf )
+        fitPrefs = ana_drf->peakFitDetPrefs();
+      if( !fitPrefs )
+      {
+        auto prefs = make_shared<PeakFitDetPrefs>();
+        prefs->m_det_type = PeakFitUtils::coarse_resolution_from_peaks( solution_peaks_ptrs );
+        fitPrefs = prefs;
+      }
+
+      const PeakFitUtils::CoarseResolutionType resType = fitPrefs->m_det_type;
+
       vector< vector<shared_ptr<const PeakDef>> > fit_peaks( rois.size() );
-      
+
       SpecUtilsAsync::ThreadPool pool;
       size_t roi_num = 0;
       for( const auto &cont_peaks : rois )
       {
         const vector<shared_ptr<const PeakDef>> *peaks = &(cont_peaks.second);
-        
-        pool.post( [&fit_peaks, roi_num, foreground, peaks, ana_drf, isHPGe](){
+
+        pool.post( [&fit_peaks, roi_num, foreground, peaks, ana_drf, fitPrefs, resType](){
           
           // If two peaks are near each other, we wont be able to resolve them in the fit,
           //  so just get rid of the smaller amplitude peak
@@ -4218,7 +4438,7 @@ void RelActAutoGui::setPeaksToForeground()
           WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
           fit_options |= PeakFitLM::PeakFitLMOptions::MediumRefinementOnly; //Arbitrary
           
-          fit_peaks[roi_num] = refitPeaksThatShareROI( foreground, ana_drf, peaks_to_refit, fit_options );
+          fit_peaks[roi_num] = refitPeaksThatShareROI( foreground, ana_drf, peaks_to_refit, resType, fit_options );
           
           if( fit_peaks[roi_num].size() != peaks_to_refit.size() )
           {
@@ -4237,9 +4457,11 @@ void RelActAutoGui::setPeaksToForeground()
             Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
             fit_options |= PeakFitLM::PeakFitLMOptions::SmallRefinementOnly; //THe peaks should be pretty close, so we'll only allow small changes to mean, so we dont fit into someunrelated peak...
             
+            const PeakFitUtils::CoarseResolutionType retryDetType
+              = fitPrefs ? fitPrefs->m_det_type : PeakFitUtils::coarse_det_type( foreground, nullptr );
             const vector<PeakDef> retry_peak = fitPeaksInRange( lx, ux, ncausality, stat_threshold,
                                                           hypothesis_threshold, input_peaks,
-                                                          foreground, fit_options, isHPGe );
+                                                          foreground, fit_options, retryDetType );
             
             if( (retry_peak.size() == peaks_to_refit.size())
                || (fit_peaks[roi_num].empty() && !retry_peak.empty()) )
@@ -4319,6 +4541,7 @@ void RelActAutoGui::handleRelEffModelOptionsChanged( RelActAutoGuiRelEffOptions 
   
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleRelEffModelOptionsChanged()
 
@@ -4425,6 +4648,7 @@ void RelActAutoGui::handleAddRelEffCurve()
 
   m_render_flags |= RenderActions::UpdateCalculations;
   m_render_flags |= RenderActions::UpdateRefGammaLines;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
 
   scheduleRender();
 }//void handleAddRelEffCurve( RelActAutoGuiRelEffOptions *curve )
@@ -4505,6 +4729,7 @@ void RelActAutoGui::handleDelRelEffCurve( RelActAutoGuiRelEffOptions *curve )
   
   m_render_flags |= RenderActions::UpdateCalculations;
   m_render_flags |= RenderActions::UpdateRefGammaLines;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
 
   scheduleRender();
 }//void handleDelRelEffCurve( RelActAutoGuiRelEffOptions *curve )
@@ -4545,6 +4770,7 @@ void RelActAutoGui::handleRelEffCurveNameChanged( RelActAutoGuiRelEffOptions *cu
     nuc_changed_item->setText( name );
 
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void handleRelEffCurveNameChanged( RelActAutoGuiRelEffOptions *curve, const Wt::WString &name )
 
@@ -5046,6 +5272,8 @@ void RelActAutoGui::updateDuringRenderForNuclideChange()
 
 void RelActAutoGui::updateDuringRenderForRefGammaLineChange()
 {
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+  
   // Determine if we should show/hide the reference lines.
   const bool show_ref_lines = m_hide_ref_lines_item->isEnabled();
   vector<RelActCalcAuto::NucInputInfo> nuclides;
@@ -5074,10 +5302,9 @@ void RelActAutoGui::updateDuringRenderForRefGammaLineChange()
   {
     if( !m_photopeak_widget )
     {
-      MaterialDB *materialDb = m_interspec->materialDataBase();
       Wt::WSuggestionPopup *materialSuggest = nullptr;
       WContainerWidget *parent = nullptr;
-      m_photopeak_widget.reset( new ReferencePhotopeakDisplay( m_spectrum, materialDb, materialSuggest,
+      m_photopeak_widget.reset( new ReferencePhotopeakDisplay( m_spectrum, materialSuggest,
                                                               m_interspec, parent ) );
       
       // We need to set peaks getting assigned ref. line color, or else our call to
@@ -5321,13 +5548,23 @@ void RelActAutoGui::startUpdatingCalculation()
   
   auto gui_update_callback = wApp->bind( boost::bind( &RelActAutoGui::updateFromCalc, this, solution, cancel_calc, m_calc_number ) );
   auto error_callback = wApp->bind( boost::bind( &RelActAutoGui::handleCalcException, this, error_msg, cancel_calc) );
-  
-  
+
+  PeakFitUtils::CoarseResolutionType det_type = PeakFitUtils::CoarseResolutionType::High;
+  {
+    const std::shared_ptr<const SpecMeas> meas = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
+    const std::shared_ptr<const PeakFitDetPrefs> prefs = meas ? meas->peakFitDetPrefs() : nullptr;
+    assert( prefs );
+    if( prefs )
+      det_type = prefs->m_det_type;
+    else
+      det_type = PeakFitUtils::coarse_det_type( foreground, nullptr );
+  }
+
   auto worker = [=](){
     try
     {
       RelActCalcAuto::RelActAutoSolution answer
-        = RelActCalcAuto::solve( options, foreground, background, cached_drf, cached_all_peaks, cancel_calc );
+        = RelActCalcAuto::solve( options, foreground, background, cached_drf, cached_all_peaks, det_type, cancel_calc );
       
       WServer::instance()->post( sessionId, [=](){
         WApplication *app = WApplication::instance();
@@ -5379,6 +5616,11 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   assert( answer );
   if( !answer )
     return;
+
+  // Block undo/redo inserts while updating the GUI from computation results.
+  //  Updating widgets (e.g., nuclide ages, shielding values) can trigger signal handlers
+  //  that would otherwise create spurious undo steps.
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
   
   // If we started a new calculation between when this one was started, and right now, dont
   //  do anything to the GUI state.

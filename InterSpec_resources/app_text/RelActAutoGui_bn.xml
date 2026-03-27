@@ -23,6 +23,7 @@
   <message id="raag-fwhm-est">FWHM Est.</message>
   <message id="raag-fwhm-form">FWHM Form</message>
   <message id="raag-peak-skew">পিক Skew</message>
+  <message id="raag-lorentzian-xrays">Lorentzian এক্স-রে</message>
   <message id="raag-add-uncert">Add. Uncert</message>
   <message id="raag-yield-info">Yield Info</message>
   
@@ -69,6 +70,7 @@
   </message>
   <message id="raag-tt-fwhm-form">The equation type used to model peak FWHM as a function of energy.</message>
   <message id="raag-tt-skew-type">The type of skew to apply to the peaks; skew parameters will be fit.</message>
+  <message id="raag-tt-lorentzian-xrays">চেক করা হলে, এক্স-রে পিকগুলি Voigt প্রোফাইল ব্যবহার করবে যেখানে Lorentzian প্রস্থ প্রাকৃতিক এক্স-রে লাইনউইডথে সেট করা হয়। এটি এক্স-রে লাইনের অন্তর্নিহিত Lorentzian আকৃতি বিবেচনা করে। শুধুমাত্র NoSkew বা GaussPlusBortel পিক স্কিউ টাইপের সাথে সামঞ্জস্যপূর্ণ।</message>
   <message id="raag-tt-u-pu-data-source">The nuclear data source for gamma branching ratios of uranium and plutonium.</message>
   <message id="raag-tt-add-source">Add a source.</message>
   <message id="raag-tt-add-energy-range">Add an energy range.</message>

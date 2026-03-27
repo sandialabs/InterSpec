@@ -37,4 +37,23 @@
 <li><b>শক্তি পরিসর</b>: নির্দিষ্ট শক্তি পরিসরের মধ্যে গামা গণনা ফিল্টার করুন।</li>
 <li><b>পরিসরে শিখর</b>: শুধুমাত্র সেই নমুনা নম্বরগুলি দেখান যেগুলির শক্তি পরিসরে শিখর রয়েছে, মার্কার রং এবং CPS শিখরের গণনার হার ভিত্তিক।</li>
 </ul></message>
+  <message id="lrm-copy-google-maps">Google Maps URL কপি করুন</message>
+  <message id="lrm-copy-bing-maps">Bing Maps URL কপি করুন</message>
+  <message id="lrm-copy-url-success">মানচিত্র URL ক্লিপবোর্ডে কপি করা হয়েছে — আপনার ব্রাউজারে পেস্ট করুন।</message>
+  <message id="lrm-copy-url-fail">ক্লিপবোর্ডে মানচিত্র URL কপি করতে ব্যর্থ।</message>
+  <message id="lrm-copy-url-no-gps">মানচিত্র URL তৈরি করতে কোনো GPS ডেটা উপলব্ধ নেই।</message>
+  <message id="lrm-tile-load-btn">ম্যাপ টাইল লোড হচ্ছে না?</message>
+  <message id="lrm-tile-load-dialog-title">ম্যাপ টাইল লোড হচ্ছে না</message>
+  <message id="lrm-tile-load-dialog-content">
+    arcgis.com থেকে ম্যাপ টাইল লোড করা যায়নি। এর কারণ হতে পারে:
+    <ul>
+      <li>ইন্টারনেট সংযোগ নেই</li>
+      <li>একটি কর্পোরেট প্রক্সি বা ফায়ারওয়াল arcgis.com-এ অ্যাক্সেস ব্লক করছে</li>
+      <li>একটি অবৈধ বা মেয়াদোত্তীর্ণ API কী</li>
+    </ul>
+    <p>আপনি যদি প্রক্সির পেছনে থাকেন, তাহলে আপনাকে প্রক্সি সেটিংস কনফিগার করতে হতে পারে।
+    <b>ProxySetting</b> বিকল্পের জন্য <em>data/config/example_InterSpec_app_settings.json</em> ফাইল দেখুন;
+    সাধারণত <b>system</b> মান কাজ করবে।</p>
+    <p>পরিমাপ মার্কারগুলি এখনও প্রদর্শিত হবে, তবে মানচিত্রের পটভূমি ফাঁকা থাকবে।</p>
+  </message>
 </messages>

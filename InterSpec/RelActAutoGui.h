@@ -136,6 +136,8 @@ public:
   void handlePuByCorrelationChanged();
   void handleSkewTypeChanged();
   void handleLorentzianXraysChanged();
+  void handleUseFixedSkewChanged();
+  void handlePeakFitDetPrefsChanged();
   void populateSkewTypeComboBox( const bool lorentzian_mode );
   PeakDef::SkewType currentSkewType() const;
   void setCurrentSkewType( const PeakDef::SkewType skew_type );
@@ -309,6 +311,10 @@ protected:
   
   void addDownloadAndUploadLinks( Wt::WContainerWidget *parent );
   void handleRequestToUploadXmlConfig();
+
+  /** Registers an undo/redo step if the current state differs from the previous state. */
+  void addUndoRedoStep();
+
 protected:
   
   enum RenderActions
@@ -322,10 +328,14 @@ protected:
     UpdateFitEnergyCal    = 0x0040,
     UpdateRefGammaLines   = 0x0080,
     UpdateShowHideBack    = 0x0100,
-    UpdateXRaysInRois     = 0x0200
+    UpdateXRaysInRois     = 0x0200,
+    AddUndoRedoStep       = 0x0400
   };//enum D3RenderActions
-  
+
   Wt::WFlags<RenderActions> m_render_flags;
+
+  /** The GUI state from the last render; used for undo/redo deduplication. */
+  std::shared_ptr<const RelActCalcAuto::RelActAutoGuiState> m_currentGuiState;
   
   std::string m_default_par_sets_dir;
   std::string m_user_par_sets_dir;
@@ -412,6 +422,12 @@ protected:
    */
   bool m_lorentzian_xrays_enabled;
   Wt::WCheckBox *m_lorentzian_xrays;
+
+  /** Tracks whether the "use fixed skew from prefs" checkbox should be visible.
+   True when PeakFitDetPrefs has fixed skew parameter values set.
+   */
+  bool m_use_fixed_skew_enabled;
+  Wt::WCheckBox *m_use_fixed_skew;
 
   // Wt::WComboBox *m_u_pu_data_source;
   PopupDivMenu *m_more_options_menu;

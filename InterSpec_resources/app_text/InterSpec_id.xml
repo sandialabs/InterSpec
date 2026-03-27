@@ -16,6 +16,7 @@
   <message id="Apply">Terapkan</message>
   <message id="Accept">Terima</message>
   <message id="Okay">Oke</message>
+  <message id="Reject">Tolak</message>
   <message id="Foreground">Latar Depan</message>
   <message id="Background">Latar Belakang</message>
   <message id="Secondary">Sekunder</message>
@@ -486,6 +487,9 @@
   <message id="pct-flat-step">Langkah Datar</message>
   <message id="pct-linear-step">Langkah Linear</message>
   <message id="pct-bilinear-step">Langkah Bi-linear</message>
+  <message id="pct-flat-step-cdf">Flat Step (CDF)</message>
+  <message id="pct-linear-step-cdf">Linear Step (CDF)</message>
+  <message id="pct-bilinear-step-cdf">Langkah Bi-linear (CDF)</message>
   <message id="pct-global">Kont. Global</message>
 
   <!-- populateNuclideSelects() in PeakSearchGuiUtils.cpp -->

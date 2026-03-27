@@ -56,6 +56,7 @@
 class PeakDef;
 class PeakModel;
 class InterSpecUser;
+struct PeakFitDetPrefs;
 namespace SpecUtils{ class Measurement; }
 
 namespace rapidxml
@@ -236,6 +237,14 @@ public:
     
     /** From ISOCS .ECC file. */
     IsocsEcc = 10,
+
+    /** From ANGLE .outx file. */
+    AngleOutx = 11,
+
+    /** From a drag-and-dropped efficiency CSV file (gamEff, Run_effoutput, or standalone
+     GADRAS Efficiency.csv).
+     */
+    UserImportedEfficiencyCsvDrf = 12,
   };//enum DrfSource
   
 public:
@@ -495,7 +504,10 @@ public:
    If URL is not a valid DRF, throws exception.
    */
   void fromAppUrl( std::string url_query );
-  
+
+  std::shared_ptr<const PeakFitDetPrefs> peakFitDetPrefs() const;
+  void setPeakFitDetPrefs( std::shared_ptr<const PeakFitDetPrefs> prefs );
+
   /** Parses a .ECC file from ISOCS into a fixed-geometry DRF.
    
    On failure, will throw exception.
@@ -507,7 +519,56 @@ public:
    */
   static std::tuple<std::shared_ptr<DetectorPeakResponse>,double,double>
                                               parseEccFile( std::istream &input );
-  
+
+  /** Parses an ANGLE .outx XML file into a fixed-geometry DRF.
+
+   The .outx file has root element `<angle generator="ANGLE" ...>`, with energy/efficiency
+   pairs in `<results>/<result energy="..." efficiency="..." efficiencyPrecision="..." />`.
+
+   On failure, will throw exception.
+
+   @returns a valid DRF with (efficiencyFcnType() == kEnergyEfficiencyPairs)
+   */
+  static std::shared_ptr<DetectorPeakResponse> parseAngleOutxFile( std::istream &input );
+
+  /** Result struct from parsing an efficiency CSV file. */
+  struct EffCsvParseResult
+  {
+    std::shared_ptr<DetectorPeakResponse> drf;
+
+    /** Whether the detected format was a GADRAS Efficiency.csv (has "(%" on line 2).
+     If true, the dialog should offer optional Detector.dat upload for diameter/setback.
+     */
+    bool is_gadras_format;
+  };//struct EffCsvParseResult
+
+  /** Parses a CSV file containing energy-efficiency pairs.
+
+   Auto-detects three formats:
+   - GADRAS Efficiency.csv: Has "(%" on second line. Efficiency in column 2 as percentage.
+   - gamEff CSV: Header has "efficiency" (case-insensitive). 2-column fractional (0-1).
+   - Run_effoutput CSV: Multi-column with "Eff" column header. Fractional efficiency.
+
+   Returns the DRF with FixedGeomTotalAct geometry and kEnergyEfficiencyPairs form
+   (caller should reinterpret geometry via dialog).
+
+   Throws std::runtime_error if the file cannot be parsed as any supported format.
+   */
+  static EffCsvParseResult parseEfficiencyCsvFile( std::istream &input );
+
+  /** Parses a GADRAS Detector.dat file to extract detector diameter and setback.
+
+   Handles both legacy text and newer XML Detector.dat formats.
+
+   @param detDatFile Input stream for the Detector.dat file.
+   @param[out] diameter Detector diameter in PhysicalUnits.
+   @param[out] setback Detector setback in PhysicalUnits, or 0 if not found.
+
+   Throws std::runtime_error if the file cannot be parsed.
+   */
+  static void parseDetectorDatGeometry( std::istream &detDatFile,
+                                        float &diameter, float &setback );
+
   /** Converts between the fixed geometry types of EffGeometryType.
    
    @param quantity Either the surface area or mass (in units of PhysicalUnits), depending on value to `to_type`.
@@ -717,14 +778,14 @@ public:
    
    Must be zero, or a positive number.
    */
-  //void setDetectorSetback( const double distance );
-  
+  void setDetectorSetback( const double distance );
+
   /** The setback distance of the detector.
    Distances are usually given from the face of the detector, to the item of interest,
    however, there is typically a small distance between the face of the detector, and
    the detection element surface - this is the setback distance.
    */
-  //double detectorSetback() const;
+  double detectorSetback() const;
   
   /** Updated the #m_lastUsedUtc member variable to current time.  Does not
       save to database.
@@ -839,6 +900,12 @@ protected:
   //  need to find the equivalent diameter for the face surface area of
   //  detector
   float m_detectorDiameter;
+
+  /** Distance from the external face of the detector to the surface of the
+   active detector element, in PhysicalUnits.  Must be >= 0.0.
+   Default is 0.0 (no setback).
+   */
+  double m_detectorSetback;
 
   //m_efficiencyEnergyUnits: units the absolute energy efficiency formula,
   //  equation, or EnergyEfficiencyPairs are expecting.  Defaults to
@@ -955,6 +1022,9 @@ protected:
    Stored in bit 60 of m_flags for database persistence.
    */
   bool m_absEffCorrectForAirAtten;
+
+  /** Optional peak fitting preferences associated with this DRF. */
+  std::shared_ptr<const PeakFitDetPrefs> m_peakFitDetPrefs;
 
   /** On 20230916 updated from version 0 to 1, to account for `m_fixedGeometry` - will still write version 0 if
    `m_geomType == EffGeometryType::FarFieldIntrinsic`.
@@ -1099,6 +1169,7 @@ public:
     //const uint64_t fixed_geom_bit = 0x80000000;
     const uint64_t fixed_geom_bits =  0xF80000000;
     const uint64_t abs_eff_air_atten_bit = 0x1000000000000000;  // Bit 60
+    const uint64_t det_setback_packed_bit = 0x0800000000000000;  // Bit 59
 
     int64_t hash = 0, parentHash = 0, flags = 0;
     if( a.getsValue() )
@@ -1117,7 +1188,8 @@ public:
       assert( (m_geomType == EffGeometryType::FarFieldIntrinsic) || (m_geomType == EffGeometryType::FarFieldAbsolute) || (geom_flags != 0) );
 
       const uint64_t air_atten_flag = m_absEffCorrectForAirAtten ? abs_eff_air_atten_bit : uint64_t(0);
-      uint64_t flags_tmp = (m_flags | geom_flags | air_atten_flag);
+      const uint64_t setback_flag = (m_detectorSetback > 0.0) ? det_setback_packed_bit : uint64_t(0);
+      uint64_t flags_tmp = (m_flags | geom_flags | air_atten_flag | setback_flag);
       flags = reinterpret_cast<int64_t&>(flags_tmp);
     }//if( a.getsValue() )
     
@@ -1143,6 +1215,7 @@ public:
 
       m_flags &= ~fixed_geom_bits; //clear fixed geometry flags
       m_flags &= ~abs_eff_air_atten_bit; //clear air atten flag
+      // Note: det_setback_packed_bit is cleared later when extracting setback from uncerts
       
       if( !a.isSchema() )
       {
@@ -1180,26 +1253,49 @@ public:
     }//if( a.setsValue() || a.isSchema() )
 
     // For FarFieldAbsolute, we append m_absoluteEfficiencyDistance to the uncerts vector
-    //  to avoid changing the DB schema (added 20251130)
+    //  to avoid changing the DB schema (added 20251130).
+    // Similarly, m_detectorSetback is appended after abs distance if > 0 (added 20260313).
+    // The det_setback_packed_bit flag in m_flags indicates setback is present.
+    // Save order: [uncerts..., abs_dist (if FarFieldAbsolute), setback (if > 0)]
+    // Load order: pop setback (if flag set), then pop abs_dist (if FarFieldAbsolute)
     if( a.getsValue() )
     {
       std::vector<float> uncerts_to_save = m_expOfLogPowerSeriesUncerts;
       if( m_geomType == EffGeometryType::FarFieldAbsolute )
         uncerts_to_save.push_back( static_cast<float>(m_absoluteEfficiencyDistance) );
+      if( m_detectorSetback > 0.0 )
+        uncerts_to_save.push_back( static_cast<float>(m_detectorSetback) );
       saveFloatVectorToDB(uncerts_to_save, "m_expOfLogPowerSeriesUncerts", a);
     }
     if( a.setsValue() || a.isSchema() )
     {
       loadDBToFloatVector(m_expOfLogPowerSeriesUncerts, "m_expOfLogPowerSeriesUncerts", a);
-      // If FarFieldAbsolute, extract m_absoluteEfficiencyDistance from last element
-      if( !a.isSchema() && (m_geomType == EffGeometryType::FarFieldAbsolute) )
+
+      if( !a.isSchema() )
       {
-        assert( !m_expOfLogPowerSeriesUncerts.empty() );
-        if( m_expOfLogPowerSeriesUncerts.empty() )
-          throw std::runtime_error( "DetectorPeakResponse: FarFieldAbsolute must have m_expOfLogPowerSeriesUncerts" );
-        m_absoluteEfficiencyDistance = static_cast<double>(m_expOfLogPowerSeriesUncerts.back());
-        m_expOfLogPowerSeriesUncerts.pop_back();
-      }
+        // Extract m_detectorSetback if flag bit is set (must pop before abs_dist)
+        const bool has_packed_setback = (m_flags & det_setback_packed_bit) != 0;
+        m_flags &= ~det_setback_packed_bit;
+
+        if( has_packed_setback && !m_expOfLogPowerSeriesUncerts.empty() )
+        {
+          m_detectorSetback = static_cast<double>(m_expOfLogPowerSeriesUncerts.back());
+          m_expOfLogPowerSeriesUncerts.pop_back();
+        }else
+        {
+          m_detectorSetback = 0.0;
+        }
+
+        // Extract m_absoluteEfficiencyDistance from last element if FarFieldAbsolute
+        if( m_geomType == EffGeometryType::FarFieldAbsolute )
+        {
+          assert( !m_expOfLogPowerSeriesUncerts.empty() );
+          if( m_expOfLogPowerSeriesUncerts.empty() )
+            throw std::runtime_error( "DetectorPeakResponse: FarFieldAbsolute must have m_expOfLogPowerSeriesUncerts" );
+          m_absoluteEfficiencyDistance = static_cast<double>(m_expOfLogPowerSeriesUncerts.back());
+          m_expOfLogPowerSeriesUncerts.pop_back();
+        }
+      }//if( !a.isSchema() )
     }
     
     if( a.getsValue() )

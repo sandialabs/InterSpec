@@ -23,6 +23,7 @@
   <message id="raag-fwhm-est">FWHM अनुमान</message>
   <message id="raag-fwhm-form">FWHM रूप</message>
   <message id="raag-peak-skew">शिखर विषमता</message>
+  <message id="raag-lorentzian-xrays">Lorentzian एक्स-रे</message>
   <message id="raag-add-uncert">अतिरिक्त अनिश्चितता</message>
   <message id="raag-yield-info">उपज जानकारी</message>
 
@@ -69,6 +70,7 @@
   </message>
   <message id="raag-tt-fwhm-form">समीकरण प्रकार जो शिखर FWHM को ऊर्जा के फ़ंक्शन के रूप में मॉडल करने के लिए उपयोग किया जाता है।</message>
   <message id="raag-tt-skew-type">शिखरों पर लागू करने के लिए विषमता का प्रकार; विषमता पैरामीटर फिट किए जाएंगे।</message>
+  <message id="raag-tt-lorentzian-xrays">जब चेक किया जाता है, तो एक्स-रे शिखर Voigt प्रोफ़ाइल का उपयोग करेंगे जिसमें Lorentzian चौड़ाई प्राकृतिक एक्स-रे रेखा चौड़ाई पर सेट की जाती है। यह एक्स-रे रेखाओं की आंतरिक Lorentzian आकृति को ध्यान में रखता है। केवल NoSkew या GaussPlusBortel शिखर विषमता प्रकारों के साथ संगत।</message>
   <message id="raag-tt-u-pu-data-source">यूरेनियम और प्लूटोनियम के गामा शाखा अनुपात के लिए परमाणु डेटा स्रोत।</message>
   <message id="raag-tt-add-source">स्रोत जोड़ें।</message>
   <message id="raag-tt-add-energy-range">ऊर्जा सीमा जोड़ें।</message>

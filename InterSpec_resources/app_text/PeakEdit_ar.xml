@@ -14,7 +14,7 @@
   <message id="pe-btn-refit-roi-independent">إعادة ملائمة ROI: FWHMs مستقلة</message>
   <message id="pe-btn-refit-roi-fine">إعادة ملائمة ROI: تحسينات صغيرة</message>
   <message id="pe-btn-refit-roi-independent-fine">إعادة ملائمة ROI: تحسين مع FWHMs مستقلة</message>
-  
+
   <message id="pe-label-centroid">المركز</message>
   <message id="pe-label-drf-fwhm">DRF المتنبأ FWHM</message>
   <message id="pe-label-amp">السعة</message>
@@ -41,7 +41,76 @@
 
   <message id="pe-est-lin-cont-no-data">يرجى تحميل طيف مقدمة قبل تقدير المتصل.</message>
   <message id="pe-failed-est-lin-cont">فشل في تقدير المتصل من حواف ROI: {1}</message>
-  
-  
-  
+
+  <!-- Skew parameter labels for Bortel (Exp*Gauss) -->
+  <message id="pe-label-skew-bortel-tau">انحراف &alpha;</message>
+
+  <!-- Skew parameter labels for DoubleBortel -->
+  <message id="pe-label-skew-doublebortel-tau1">&tau;<sub>1</sub></message>
+  <message id="pe-label-skew-doublebortel-deltatau2">&Delta;&tau;<sub>2</sub></message>
+  <message id="pe-label-skew-doublebortel-eta">&eta;</message>
+
+  <!-- Skew parameter labels for GaussPlusBortel -->
+  <message id="pe-label-skew-gaussplusbortel-r">نسبة الخلط R</message>
+  <message id="pe-label-skew-gaussplusbortel-tau">Bortel &tau;</message>
+
+  <!-- Skew parameter labels for GaussExp -->
+  <message id="pe-label-skew-gaussexp-k">انحراف k</message>
+
+  <!-- Skew parameter labels for CrystalBall -->
+  <message id="pe-label-skew-crystalball-alpha">انحراف &alpha;</message>
+  <message id="pe-label-skew-crystalball-n">انحراف n</message>
+
+  <!-- Skew parameter labels for ExpGaussExp -->
+  <message id="pe-label-skew-expgaussexp-kl">انحراف k<sub>L</sub></message>
+  <message id="pe-label-skew-expgaussexp-kh">انحراف k<sub>H</sub></message>
+
+  <!-- Skew parameter labels for DoubleSidedCrystalBall -->
+  <message id="pe-label-skew-dscb-alphalow">انحراف &alpha;<sub>low</sub></message>
+  <message id="pe-label-skew-dscb-nlow">انحراف n<sub>low</sub></message>
+  <message id="pe-label-skew-dscb-alphahigh">انحراف &alpha;<sub>high</sub></message>
+  <message id="pe-label-skew-dscb-nhigh">انحراف n<sub>high</sub></message>
+
+  <!-- Skew parameter labels for VoigtPlusBortel -->
+  <message id="pe-label-skew-voigtplusbortel-gamma">Lorentz &gamma;</message>
+  <message id="pe-label-skew-voigtplusbortel-r">نسبة الخلط R</message>
+  <message id="pe-label-skew-voigtplusbortel-tau">Bortel &tau;</message>
+
+  <!-- Tooltips for skew parameters -->
+  <message id="pe-tt-skew-bortel-tau">ثابت الاضمحلال الأسي لـ Exp*Gauss (Gaussian المعدل أسياً). يمثل مقياس الطول المميز للذيل منخفض الطاقة. النطاق الصالح: 0.0-15 σ، القيم النموذجية: 0.5-3 σ.</message>
+
+  <message id="pe-tt-skew-doublebortel-tau1">ثابت الاضمحلال الأسي الأول، عادةً قريب من σ. يتحكم في مكون الذيل الأساسي منخفض الطاقة. النطاق الصالح: 0.01-15 σ.</message>
+
+  <message id="pe-tt-skew-doublebortel-deltatau2">اضمحلال إضافي للأسي الثاني: τ₂ = τ₁ + Δτ₂. يتحكم في مكون الذيل الممتد. النطاق الصالح: 0.0-10 σ.</message>
+
+  <message id="pe-tt-skew-doublebortel-eta">وزن مكون الأسي الثاني. η=0 يعطي Exp*Gauss(τ₁) بسيط، η=1 يعطي Exp*Gauss(τ₂) نقي. النطاق الصالح: 0.0-1.0.</message>
+
+  <message id="pe-tt-skew-gaussplusbortel-r">نسبة الخلط بين Gaussian و Exp*Gauss. R=0 غاوسي نقي، R=1 هو Exp*Gauss نقي. النطاق الصالح: 0.0-1.0، النموذجي: 0.2-0.8.</message>
+
+  <message id="pe-tt-skew-gaussplusbortel-tau">ثابت الاضمحلال الأسي لمكون Exp*Gauss في الخليط. النطاق الصالح: 0.01-15 σ، القيم النموذجية: 0.5-3 σ.</message>
+
+  <message id="pe-tt-skew-gaussexp-k">يتحكم في كلٍ من العتبة (μ - k·σ) التي يبدأ عندها الذيل الأسي ومعدل الاضمحلال. النطاق الصالح: 0.15-3.25، النموذجي: 0.5-2.0.</message>
+
+  <message id="pe-tt-skew-crystalball-alpha">العتبة بوحدات σ حيث يبدأ ذيل قانون القوة: x = μ - α·σ. النطاق الصالح: 0.5-4.0، النموذجي: 1.0-3.0.</message>
+
+  <message id="pe-tt-skew-crystalball-n">أس قانون القوة للذيل منخفض الطاقة: (x - μ + α·σ)^(-n). قيمة n أكبر تعطي انحداراً أكثر حدة. النطاق الصالح: 1.05-100، النموذجي: 2-10.</message>
+
+  <message id="pe-tt-skew-expgaussexp-kl">يتحكم في عتبة واضمحلال ذيل الطاقة السفلي (الأيسر). النطاق الصالح: 0.15-3.25، النموذجي: 0.5-2.0.</message>
+
+  <message id="pe-tt-skew-expgaussexp-kh">يتحكم في عتبة واضمحلال ذيل الطاقة العلوي (الأيمن). النطاق الصالح: 0.15-3.25، النموذجي: 0.5-2.0.</message>
+
+  <message id="pe-tt-skew-dscb-alphalow">العتبة السفلى بوحدات σ حيث يبدأ ذيل قانون القوة منخفض الطاقة. النطاق الصالح: 0.5-4.0، النموذجي: 1.0-3.0.</message>
+
+  <message id="pe-tt-skew-dscb-nlow">أس قانون القوة للذيل منخفض الطاقة. النطاق الصالح: 1.05-100، النموذجي: 2-10.</message>
+
+  <message id="pe-tt-skew-dscb-alphahigh">العتبة العليا بوحدات σ حيث يبدأ ذيل قانون القوة مرتفع الطاقة. النطاق الصالح: 0.5-4.0، النموذجي: 1.0-3.0.</message>
+
+  <message id="pe-tt-skew-dscb-nhigh">أس قانون القوة للذيل مرتفع الطاقة. النطاق الصالح: 1.05-100، النموذجي: 2-10.</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-gamma">HWHM لورنتزي (نصف العرض عند نصف الارتفاع) يمثل عرض خط الأشعة السينية الطبيعي. النطاق الصالح: 0.0-10.0 keV، النموذجي للأشعة السينية: 0.01-0.5 keV.</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-r">نسبة الخلط بين ملف Voigt و Exp*Gauss. R=0 هو Voigt نقي (عرض خط طبيعي فقط)، R=1 هو Exp*Gauss نقي (ذيل الكاشف فقط). النطاق الصالح: 0.0-1.0.</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-tau">ثابت الاضمحلال الأسي لمكون Exp*Gauss، يمثل ذيل جمع الشحنة غير المكتمل. النطاق الصالح: 0.01-10 σ.</message>
+
 </messages>

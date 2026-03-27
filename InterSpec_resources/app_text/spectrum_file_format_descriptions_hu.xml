@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <message id="N42-2012">
+    Az adatok mentése ANSI N42.42-2012 formátumban.
+
+    Az eredeti spektrumfájlból kinyert összes információ, valamint az InterSpec által hozzáadott adatok - például illesztett csúcsok, frissített energiakalibráció, forrásillesztési információk, detector hatásfok adatok stb. - mind szerepelni fognak a kimeneti fájlban.
+
+    Ez az ajánlott spektrumfájl-formátum, ha az adatokkal később újra szeretne dolgozni az InterSpec-ben.
+
+    Az N42.42-2012 formátumot N42.42-2020-ra frissítették, azonban a frissített formátum lényegében megegyezik a 2012-es verzióval; a változtatások elsősorban a dokumentáció pontosításai.
+
+    További információért lásd: https://www.nist.gov/pml/radiation-physics/ansiieee-n4242-2020-version, vagy https://www.nist.gov/programs-projects/documentary-standards-ansiieee-n4242-standard.
+
+    Megjegyzés: az InterSpec által előállított N42-2012 fájlok tartalmaznak egy &lt;DHS:InterSpec&gt;&lt;/DHS:InterSpec&gt; elemet a specifikáció megsértésével, ami egyes XML feldolgozóknál problémát okozhat; más kisebb eltérések is lehetnek a specifikációtól - ezek a problémák ismertek, és a jövőben javítani tervezzük őket.
+  </message>
+
+  <message id="N42-2006">
+    Mentés 2006-os N42 XML formátumban.
+
+    A legtöbb bemeneti spektrumfájl releváns információja szerepelni fog a kimeneti fájlban, valamint az InterSpec-ben hozzáadott adatok is; azonban nem minden spektroszkópiai program képes az összes mezőt kiolvasni, vagy az N42 fájlok minden változatát beolvasni.
+
+    Ajánlott az N42.42-2012 formátum használata e formátum helyett, kivéve, ha régebbi alkalmazáshoz exportálja az adatokat.
+  </message>
+
+  <message id="CHN">
+    Ez a beállítás egész szám alapú bináris CHN fájlt hoz létre.
+
+    Ez a formátum egyetlen spektrumot, mérési kezdési időt, spektrum címet (legfeljebb 63 karakter), detektorleírást és az aktuális energiakalibrációt tartalmazza.
+
+    Az energiaeltérési párok, neutronszámlálások, InterSpec-specifikus információk (DRF, aktivitásillesztések stb.), valamint egyéb metaadatok nem szerepelnek a kimeneti fájlban.
+  </message>
+
+  <message id="IAEA SPE">
+    Az SPE fájlok ASCII alapú, egyspektrumú fájlok, amelyeket gyakran használnak programok közötti adatcserére.
+
+    Ebben a formátumban megmaradnak a neutronszámlálások, kezdési idő, élő idő, valós idő, energiakalibráció, megjegyzések és cím.
+
+    Az eltérési párok, GPS, modell, InterSpec-specifikus információk (DRF, aktivitásillesztések stb.) és egyéb metaadatok nem szerepelnek a kimeneti fájlban.
+  </message>
+
+  <message id="CSV">
+    Ez a beállítás vesszővel tagolt (CSV) fájlt hoz létre, amely több gamma spektrumot is tartalmazhat.
+
+    A spektrumok kétoszlopos formátumban kerülnek kiírásra (vesszővel elválasztva); az első oszlop a gamma csatorna alsó élenergiája (keV-ban), a második oszlop a csatornaszámlálás. A fájlban lévő spektrumok egymás után, összefüggően kerülnek kiírásra, és egy "Energy, Data" fejléc választja el őket.
+    Windows stílusú sorvégződések használatosak (\\n\\r).
+
+    Ez a formátum minden nem spektrális információt elveszít, beleértve az élő és valós időket, és célja a spektrálinformáció egyszerű importálása más programokba, például Excelbe.
+  </message>
+
+  <message id="TXT">
+    A spektrum(ok) ASCII szöveges fájlba kerülnek kiírásra.
+
+    A fájl elején az eredeti fájlnév, teljes élő és valós idő, összesített gamma számlálás, összesített neutron számlálás, sorozatszám (ha van) és a fájlszintű megjegyzések külön felcímkézett sorokon szerepelnek.
+    Ezután két üres sor után az aktuális fájl minden spektruma kiírásra kerül, két üres sorral elválasztva. Minden spektrum tartalmazza az összes megjegyzést, mérés kezdési idejét (ha érvényes), élő és valós időket, mintaszámot, detektornevet, detektortípust, GPS koordinátákat/időt (ha érvényes), energiakalibráció típusát és együttható értékeit, valamint neutronszámlálást (ha érvényes); a csatornaszám, csatorna alsó energia és csatornaszámlálás ezután kerül megadásra, minden csatorna külön sorban, a mezők szóközzel elválasztva.
+
+    Az eredeti program detektorelemzése, valamint a gyártó, UUID, eltérési párok, sávinformáció, helynév vagy spektrumcím elvész.
+    Windows sorvégződési konvenció használatos (\\n\\r).
+
+    Ez nem egy más programok által általánosan olvasott szabványos formátum, hanem a spektrumfájl-információ emberi olvasásra szánt összefoglalója; nem minden kiírt információt fog az InterSpec visszaolvasni, ha az eredményfájlt visszatölti a programba.
+  </message>
+
+  <message id="PCF">
+    A PCF formátum a GADRAS natív bináris formátuma.
+
+    Ebbe a formátumba mentés némi információvesztéssel jár. Azonban a kalibráció, előtér/háttér, sebesség, minta és spektrumcím (legfeljebb 60 karakter) megmarad a spektrálinformáció és neutronszámlálások mellett.
+
+    Ez a formátum leggyakrabban adatok GADRAS-ba történő importálására használatos.
+  </message>
+
+  <message id="CNF">
+    A Mirion/Canberra CNF fájlok bináris egyspektrumú fájlok.
+
+    Ebbe a formátumba mentés megőrzi a kezdési időt, élő időt, valós időt, energiakalibrációt, címet és GPS koordinátákat.
+    A neutronszámlálások, eltérési párok, modell, RIID eredmények, InterSpec-specifikus információk (DRF-ek, illesztett csúcsok, illesztett aktivitások stb.) és egyéb metaadatok elvesznek.
+
+    Csak a CAM fájlmezők egy része támogatott exportálásra, és egyes mezők esetleg még nem pontosak.
+  </message>
+
+  <message id="SPC (int)">
+    Ez a beállítás egyspektrumú, egész szám alapú bináris SPC fájlt hoz létre.
+
+    Ez a formátum tartalmazza a gamma spektrumot, neutronszámlálásokat, GPS adatokat, mérési kezdési időt, detektor sorozatszámát és energiakalibrációt.
+
+    Az energiaeltérési párok, elemzési eredmények, InterSpec-specifikus információk (DRF-ek, illesztett csúcsok, illesztett aktivitások stb.) és egyéb metaadatok nem szerepelnek.
+  </message>
+
+  <message id="SPC (float)">
+    Ez a beállítás egyspektrumú, lebegőpontos bináris SPC fájlt hoz létre.
+
+    Ez a formátum tartalmazza a gamma spektrumot, neutronszámlálásokat, GPS adatokat, mérési kezdési időt, detektor sorozatszámát és energiakalibrációt.
+
+    Az energiaeltérési párok, elemzési eredmények, InterSpec-specifikus információk (DRF-ek, illesztett csúcsok, illesztett aktivitások stb.) és egyéb metaadatok nem szerepelnek.
+  </message>
+
+  <message id="SPC (ascii)">
+    Ez a beállítás egyspektrumú ASCII SPC fájlt hoz létre.
+
+    Ez a formátum tartalmazza a gamma spektrumot, neutronszámlálásokat, GPS adatokat, mérési kezdési időt, detektor sorozatszámát, energiakalibrációt, néhány detektorelemzési információt, gyártó- és modelladatokat.
+
+    Az energiaeltérési párok, egyes elemzési eredmények, InterSpec-specifikus információk (DRF-ek, illesztett csúcsok, illesztett aktivitások stb.) és esetleg egyes, de nem az összes metaadat nem szerepelnek.
+  </message>
+
+  <message id="TKA">
+    Canberra Toolkit fájl.
+
+    Ebbe a formátumba mentés egyetlen gamma spektrumot, élő időt és valós időt tartalmaz.
+
+    Minden egyéb információ elvész.
+  </message>
+
+  <message id="GR-130">
+    A GR130 formátum az Exploranium GR130 detektorok natív bináris formátuma.
+
+    Ebbe a formátumba mentés az adatokat 256 csatornára bontja újra, megőrizve a kezdési és élő időket, de az energiakalibráció és neutroninformáció elvész, a metaadatokkal együtt (megjegyzések, GPS stb.).
+
+    Több spektrum is kiírható egyetlen fájlba, a rekordok mintaszám, majd detektorszám szerint rendezve.
+  </message>
+
+  <message id="GR-135">
+    A GR135 formátum az Exploranium GR135v2 detektorok natív bináris formátuma.
+
+    Ebbe a formátumba mentés az adatokat 1024 csatornára bontja újra, megőrizve a kezdési és élő időket, neutronszámlálásokat, energiakalibrációt és numerikus sorozatszámokat.
+
+    Az eltérési párok, megjegyzések, cím, GPS és egyéb metaadatok elvesznek.
+
+    Több spektrum is kiírható egyetlen fájlba, a rekordok mintaszám, majd detektorszám szerint rendezve.
+  </message>
+
+  <message id="HTML">
+    Önálló HTML fájl készül interaktív spektrumdiagrammal.
+
+    A fájl tartalmazhat előtér- és háttérspektrumot, gamma referenciavonalakat, és alapvető megjelenítési beállításokat kínál.
+
+    Ez a fájlformátum csak olyan webböngészőkkel olvasható és jeleníthető meg, amelyekben a javascript engedélyezve van és támogatják az SVG képeket.
+  </message>
+
+  <message id="QR-code/URL">
+    A spektrum QR-kóddá és/vagy URI-vá lesz kódolva.
+
+    A QR-kód vagy URI tartalmazhatja az előtér- és háttérspektrumot, ha beférnek.
+
+    A gamma spektrumok, neutronszámlálások, GPS koordináták, energiakalibráció és detektorinformációk szerepelni fognak, ha rendelkezésre állnak.
+
+    Minden egyéb metaadat és InterSpec-specifikus információ (DRF-ek, illesztett csúcsok, illesztett aktivitások stb.) nem kerül bele.
+
+    HPGe spektrumok esetén egyetlen spektrum ábrázolásához több QR-kód is szükséges lehet; ebben az esetben a háttér- és előtérspektrumot külön kell kódolni.
+  </message>
+</messages>

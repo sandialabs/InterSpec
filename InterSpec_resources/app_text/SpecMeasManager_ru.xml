@@ -133,9 +133,21 @@
   <message id="smm-ecc-fix-geom-act-m2">Фиксированная геометрия - активность на м2</message>
   <message id="smm-ecc-fix-geom-act-gram">Фиксированная геометрия - активность на грамм</message>
   <message id="smm-ecc-det-diam">Диаметр детектора.</message>
+  <message id="smm-ecc-det-setback">Смещ. дет.</message>
   <message id="smm-ecc-dist">Расстояние.</message>
   <message id="smm-ecc-use-drf">Использовать DRF</message>
   <message id="smm-ecc-error">Ошибка создания DRF из ECC: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop an ANGLE .outx file onto app -->
+  <message id="smm-outx-curve">DRF кривой калибровки эффективности ANGLE</message>
+  <message id="smm-outx-error">Ошибка создания DRF из ANGLE .outx: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop an efficiency CSV file onto app -->
+  <message id="smm-eff-csv-curve">DRF кривой CSV эффективности</message>
+  <message id="smm-eff-csv-error">Ошибка создания DRF из CSV эффективности: {1}</message>
+  <message id="smm-eff-csv-det-dat-label">Detector.dat (необязательно)</message>
+  <message id="smm-eff-csv-intrinsic">Собственная эффективность</message>
+  <message id="smm-eff-csv-abs-eff">Абсолютная эффективность</message>
 
   <!-- Text for dialog when user drag-n-drop the Activity/Shielding fit file onto app -->
   <message id="smm-act-shield-xml">XML активности/экранирования</message>

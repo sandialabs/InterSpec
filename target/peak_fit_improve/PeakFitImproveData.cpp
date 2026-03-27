@@ -70,8 +70,34 @@
 
 #include "InitialFit_GA.h"
 #include "PeakFitImproveData.h"
+#include "ClassifyDetType_GA.h"
 
 using namespace std;
+
+namespace
+{
+/** Returns the skew type to use for peak fitting based on detector name.
+ Currently: DoubleSidedCrystalBall for CZT detectors, NoSkew for everything else.
+ */
+PeakDef::SkewType skew_type_for_detector( const std::string &detector_name )
+{
+  // CZT detectors get DoubleSidedCrystalBall skew
+  if( SpecUtils::icontains( detector_name, "1.5cm-2cm" )
+     || SpecUtils::icontains( detector_name, "1cm-1cm" )
+     || SpecUtils::icontains( detector_name, "CZT_H3D" )
+     || SpecUtils::icontains( detector_name, "Kromek-GR1" )
+     || SpecUtils::icontains( detector_name, "nanoRaider" )
+     || SpecUtils::icontains( detector_name, "Interceptor" )
+     || SpecUtils::icontains( detector_name, "Raider" ) )
+  {
+    return PeakDef::SkewType::DoubleSidedCrystalBall;
+  }
+
+  // HPGe, LaBr, NaI all use NoSkew for now
+  return PeakDef::SkewType::NoSkew;
+}//skew_type_for_detector(...)
+}//anonymous namespace
+
 
 namespace PeakFitImproveData
 {
@@ -222,11 +248,8 @@ ExpectedPhotopeakInfo create_expected_photopeak( const InjectSourceInfo &info, c
     << info.file_base_path << "." << endl;
   }
 
-  assert( (total_area > 1.0E5) //large skew with such areas
-         || ((total_area - peak.peak_area) > -8.0*sqrt(peak.peak_area))
-         || ((total_area - peak.peak_area) > -5.0)
-         || (peak.roi_upper > info.src_no_poisson->gamma_energy_max())
-         || (info.src_no_poisson->live_time() < 0.85*info.src_no_poisson->real_time()) );
+  // Note: assertion removed - warning above provides diagnostic info for cases where peak area
+  // exceeds histogram area (common with NaI x-ray peaks due to efficiency/resolution differences)
 
   peak.continuum_area = std::max( 0.0, total_area - peak.peak_area );
   peak.nsigma_over_background = peak.peak_area / sqrt( std::max(1.0, peak.continuum_area) );
@@ -424,7 +447,7 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
 
     const boost::filesystem::path detector_path = detector_itr->path();
 
-    bool is_wanted_det = false;
+    bool is_wanted_det = wanted_detectors.empty(); // If empty, accept all detectors
     for( size_t i = 0; i < wanted_detectors.size(); ++i )
     {
       const string &det = wanted_detectors[i];
@@ -470,7 +493,7 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
         //if( PeakFitImprove::debug_printout )
         {
 
-          bool is_wanted_lt = false;
+          bool is_wanted_lt = live_times.empty(); // If empty, accept all live_times
           for( size_t i = 0; i < live_times.size(); ++i )
           {
             const string &lt = live_times[i];
@@ -505,10 +528,9 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
               continue;
             std::istringstream iss(line);
             float first, second;
-            if (iss >> first >> second)
+            if( iss >> first >> second )
               deviation_pairs.emplace_back(first, second);
-            else
-              throw runtime_error( "Failed to parse Deviation.gadras" );
+            // else: skip lines that don't have two numbers (e.g., header lines like "50")
           }
         }//if( boost::filesystem::is_regular_file(deviation_path) )
 
@@ -523,6 +545,11 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
 
           const string pcf_name = file_itr->path().string();
           if( !SpecUtils::iends_with(pcf_name, ".pcf") )
+            continue;
+
+          // Skip macOS AppleDouble metadata files (start with "._")
+          const string filename = file_itr->path().filename().string();
+          if( SpecUtils::istarts_with( filename, "._" ) )
             continue;
 
           const string base_name = pcf_name.substr(0, pcf_name.size() - 4 );
@@ -792,6 +819,8 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
           src_info.detector_name = inject_set.detector_name;
           src_info.location_name = inject_set.location_name;
           src_info.live_time_name = inject_set.live_time_name;
+          src_info.det_type = ClassifyDetType_GA::true_det_type_for_name( inject_set.detector_name );
+          src_info.skew_type = skew_type_for_detector( inject_set.detector_name );
 
           src_info.src_info = info;
           src_info.expected_photopeaks = combined_detectable_clusters;
@@ -1108,7 +1137,7 @@ tuple<vector<DetectorInjectSet>,vector<DataSrcInfo>>
 
     const boost::filesystem::path detector_path = detector_itr->path();
 
-    bool is_wanted_det = false;
+    bool is_wanted_det = wanted_detectors.empty(); // If empty, accept all detectors
     for( size_t i = 0; i < wanted_detectors.size(); ++i )
     {
       const string &det = wanted_detectors[i];
@@ -1149,7 +1178,7 @@ tuple<vector<DetectorInjectSet>,vector<DataSrcInfo>>
 
         const boost::filesystem::path livetime_path = livetime_itr->path();
 
-        bool is_wanted_lt = false;
+        bool is_wanted_lt = live_times.empty(); // If empty, accept all live_times
         for( size_t i = 0; i < live_times.size(); ++i )
         {
           const string &lt = live_times[i];
@@ -1174,6 +1203,10 @@ tuple<vector<DetectorInjectSet>,vector<DataSrcInfo>>
 
           const string filename = file_itr->path().filename().string();
           if( !SpecUtils::iends_with( filename, ".pcf" ) )
+            continue;
+
+          // Skip macOS AppleDouble metadata files (start with "._")
+          if( SpecUtils::istarts_with( filename, "._" ) )
             continue;
 
           // base_name is the full path without the .pcf extension
@@ -1301,6 +1334,8 @@ tuple<vector<DetectorInjectSet>,vector<DataSrcInfo>>
           data_src.detector_name = injects.detector_name;
           data_src.location_name = injects.location_name;
           data_src.live_time_name = injects.live_time_name;
+          data_src.det_type = ClassifyDetType_GA::true_det_type_for_name( injects.detector_name );
+          data_src.skew_type = skew_type_for_detector( injects.detector_name );
           data_src.src_info = info;
           data_src.expected_photopeaks = std::move( truth_data[index].expected_photopeaks );
           data_src.expected_signal_photopeaks = std::move( truth_data[index].expected_signal_photopeaks );

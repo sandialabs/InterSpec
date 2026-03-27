@@ -5,6 +5,7 @@
   <message id="bgw-not-spec-preview">No es archivo de espectro</message>
   <message id="bgw-passthrough-sum-error">Error de paso directo</message>
   <message id="bgw-preview-error">Error renderizando vista previa</message>
+  <message id="bgw-preview-skip">Omitiendo vista previa</message>
 </messages>
 
 

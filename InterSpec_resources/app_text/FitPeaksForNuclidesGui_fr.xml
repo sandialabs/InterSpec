@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- fpn- is short for FitPeaksForNuclides -->
+
+  <!-- Tab labels for FitPeaksAdvancedWidget upper area -->
+  <message id="fpn-tab-spectrum">Spect.</message>
+  <message id="fpn-tab-rel-eff">Eff. Rel.</message>
+  <message id="fpn-tab-results">Détails</message>
+
+  <!-- Advanced dialog -->
+  <message id="fpn-adv-title">Ajuster les pics pour :</message>
+  <message id="fpn-adv-content">Options avancées non implémentées</message>
+  <message id="fpn-fit-peaks">Ajuster les pics</message>
+  <message id="fpn-accept">Accepter</message>
+  <message id="fpn-cancel">Annuler</message>
+
+  <!-- Status and computation messages -->
+  <message id="fpn-calculating">Calcul en cours...</message>
+  <message id="fpn-computation-successful">Calcul réussi.</message>
+  <message id="fpn-summary-chi2">Chi2/dof : {1}</message>
+  <message id="fpn-summary-rel-activities">Activités relatives (max=1) : {1}</message>
+  <message id="fpn-summary-rois">ROI : {1}</message>
+  <message id="fpn-summary-total-area">Aire totale de la source : {1}</message>
+  <message id="fpn-summary-no-rel-act">Pas d'activités relatives (source unique).</message>
+
+  <!-- FitSrcPeaksOptions checkbox labels -->
+  <message id="fpn-opt-dont-use-existing-rois">Éviter les ROI existants</message>
+  <message id="fpn-opt-existing-as-free">Autoriser le partage des ROI actuels</message>
+  <message id="fpn-opt-dont-vary-energy-cal">Ne pas varier la cal. énergie</message>
+  <message id="fpn-opt-dont-refine-energy-cal">Ne pas affiner la cal. énergie</message>
+  <message id="fpn-opt-fit-bkgnd-peaks">Ajuster NORM</message>
+  <message id="fpn-opt-fit-bkgnd-dont-use">Ajuster NORM (ne pas utiliser)</message>
+  <message id="fpn-opt-use-background">Calculer avec soustraction du bruit de fond</message>
+
+  <!-- PeakFitForNuclideConfig option labels -->
+  <message id="fpn-opt-roi-min-chi2-red">Seuil de réduction chi2 du ROI</message>
+  <message id="fpn-opt-roi-min-peak-sig">Seuil de significativité du ROI</message>
+  <message id="fpn-opt-obs-initial-sig">Seuil de significativité initiale du pic</message>
+  <message id="fpn-opt-obs-final-sig">Seuil de significativité finale du pic</message>
+  <message id="fpn-opt-skew-type">Asymétrie du pic</message>
+  <message id="fpn-opt-fwhm-form">Forme FWHM</message>
+  <message id="fpn-opt-rel-eff-eqn-type">Éq. d'Eff. Rel.</message>
+  <message id="fpn-opt-rel-eff-eqn-order">Ordre d'Eff. Rel.</message>
+
+  <!-- Tooltips for options -->
+  <message id="fpn-opt-tt-dont-use-existing-rois">Avec cette option, aucun ROI existant ne sera utilisé, et les gammas de la ou des source(s) actuelle(s) tombant dans un ROI existant ne seront pas pris en compte.</message>
+  <message id="fpn-opt-tt-existing-as-free">Normalement, les ROI des pics source sont limités en plage d'énergie pour réduire les effets des pics voisins. Avec cette option, les pics voisins partageant le ROI sont laissés comme pics librement flottants et inclus dans les résultats.</message>
+  <message id="fpn-opt-tt-dont-vary-energy-cal">La calibration en énergie reste fixe pendant l'ajustement.</message>
+  <message id="fpn-opt-tt-dont-refine-energy-cal">La calibration en énergie est variée dans l'ajustement, mais l'étendue du ROI n'est pas mise à jour en fonction de la calibration ajustée.</message>
+  <message id="fpn-opt-tt-fit-bkgnd-peaks">Ajuster les pics NORM (U-238, Ra-226, U-235, Th-232, K-40) en utilisant une seconde courbe d'efficacité relative.</message>
+  <message id="fpn-opt-tt-use-background">Lorsqu'activé, le spectre de bruit de fond est soustrait lors de l'ajustement des pics pour déterminer les ROI à utiliser, mais le bruit de fond n'est pas soustrait pour l'ajustement final des pics retournés. Décochez pour ajuster sans soustraction du bruit de fond.</message>
+  <message id="fpn-opt-tt-roi-min-chi2-red">Réduction minimale totale de chi2 requise pour que les pics d'un ROI soient considérés comme significatifs. Le chi2 avec pics doit être au moins inférieur de cette valeur au chi2 avec continuum seul.</message>
+  <message id="fpn-opt-tt-roi-min-peak-sig">Significativité minimale du pic (aire_du_pic / sqrt(continuum)) pour qu'un pic soit considéré comme significatif. Si un pic du ROI a une significativité supérieure à ce seuil, le ROI est conservé.</message>
+  <message id="fpn-opt-tt-obs-initial-sig">Seuil du filtre de significativité initiale du pic avant le réajustement. Significativité = (amplitude_du_pic * 0.7607) / sqrt(aire_des_données_dans_pm_1_fwhm).</message>
+  <message id="fpn-opt-tt-obs-final-sig">Seuil de significativité finale du pic après le réajustement. Significativité = aire_du_pic / incertitude_de_l_aire_du_pic.</message>
+  <message id="fpn-opt-tt-skew-type">Forme d'asymétrie appliquée à tous les pics de l'ajustement. &quot;None&quot; utilise une gaussienne pure. Les autres options ajoutent des composantes de queue basse énergie (ex. Exp*Gauss pour les détecteurs NaI/CsI, Crystal Ball pour la queue de collection de charge dans les HPGe).</message>
+  <message id="fpn-opt-tt-fwhm-form">Forme fonctionnelle de la résolution du détecteur (FWHM vs énergie). L'ordre du polynôme de Bernstein détermine le nombre de coefficients ajustés.</message>
+  <message id="fpn-opt-tt-rel-eff-eqn-type">Forme de la courbe d'efficacité relative (ex. polynôme LnXLnY, ou modèle physique FRAM).</message>
+  <message id="fpn-opt-tt-rel-eff-eqn-order">Ordre polynomial de l'équation d'efficacité relative (lorsque le modèle physique n'est pas utilisé).</message>
+
+  <!-- Status and error messages -->
+  <message id="fpn-no-data">Il n'y a pas de spectre de premier plan pour ajuster les pics.</message>
+  <message id="fpn-wait-title">Ajustement des pics</message>
+  <message id="fpn-wait-content">Cela peut prendre une minute. Vous pouvez continuer à utiliser l'application.</message>
+  <message id="fpn-stale">Le spectre a changé avant la fin de l'ajustement ; résultats ignorés.</message>
+
+  <message id="fpn-error-title">Échec de l'ajustement</message>
+  <message id="fpn-error-content">Erreur : {1}</message>
+
+  <!-- Results dialog -->
+  <message id="fpn-result-title">Résultats de l'ajustement</message>
+  <message id="fpn-no-peaks">Aucun pic n'a été ajusté pour la ou les source(s) sélectionnée(s).</message>
+  <message id="fpn-summary">{1} pic(s) ajusté(s) pour {2} source(s).</message>
+  <message id="fpn-warnings-header">Avertissements :</message>
+  <message id="fpn-auto-accept">Accepter automatiquement les résultats de l'ajustement</message>
+  <message id="fpn-auto-accepted">Les résultats de l'ajustement ont été acceptés automatiquement.</message>
+
+</messages>

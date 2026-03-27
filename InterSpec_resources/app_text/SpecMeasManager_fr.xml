@@ -91,6 +91,14 @@
   <message id="smm-CALp-cb-apply-to-back">Appliquer à l'arrière-plan</message>
   <message id="smm-CALp-cb-apply-to-second">Appliquer au secondaire</message>
   <message id="smm-CALp-like-to-use"><p style="white-space: nowrap;">Souhaitez-vous l'utiliser ?</p></message>
+  <message id="smm-CALp-prev-is-channel-lower-energy">
+    <p style="margin-top: 10px; font-style: italic;">
+      Note : l'étalonnage en énergie actuel utilise les énergies des canaux inférieurs ;<br />
+      vous souhaiterez peut-être linéariser le spectre avant d'appliquer cet<br />
+      étalonnage en énergie.
+    </p>
+  </message>
+
   <message id="smm-CALp-err-applying-single">Une erreur s'est produite lors de l'application de l'étalonnage :
     <br />
     {1}
@@ -117,9 +125,21 @@
   <message id="smm-ecc-fix-geom-act-m2">Géométrie fixe - activité par m²</message>
   <message id="smm-ecc-fix-geom-act-gram">Géométrie fixe - activité par gramme</message>
   <message id="smm-ecc-det-diam">Diam. du détecteur</message>
-  <message id="smm-ecc-dist">Distance.</message>
+  <message id="smm-ecc-det-setback">Recul du dét.</message>
+  <message id="smm-ecc-dist">Distance</message>
   <message id="smm-ecc-use-drf">Utiliser la DRF</message>
   <message id="smm-ecc-error">Erreur lors de la création de la DRF à partir de l'ECC : {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop an ANGLE .outx file onto app -->
+  <message id="smm-outx-curve">DRF courbe d'étalonnage en efficacité ANGLE</message>
+  <message id="smm-outx-error">Erreur lors de la création de la DRF à partir du fichier ANGLE .outx : {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop an efficiency CSV file onto app -->
+  <message id="smm-eff-csv-curve">DRF courbe CSV d'efficacité</message>
+  <message id="smm-eff-csv-error">Erreur lors de la création de la DRF à partir du CSV d'efficacité : {1}</message>
+  <message id="smm-eff-csv-det-dat-label">Detector.dat (facultatif)</message>
+  <message id="smm-eff-csv-intrinsic">Efficacité intrinsèque</message>
+  <message id="smm-eff-csv-abs-eff">Efficacité absolue</message>
 
   <message id="smm-act-shield-xml">XML Activité/Blindage</message>
   <message id="smm-act-shield-use">Utiliser cette configuration d'ajustement Activité/Blindage ?</message>

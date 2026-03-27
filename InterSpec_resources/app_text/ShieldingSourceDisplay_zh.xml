@@ -31,6 +31,7 @@
   <message id="ssd-perform-fit-btn">执行模型拟合</message>
   <message id="ssd-cancel-fit">取消模型拟合</message>
   <message id="ssd-mi-calc-log">计算日志</message>
+  <message id="ssd-mi-calc-log-html">计算日志 (HTML)</message>
   <message id="ssd-mi-import-model">导入模型...</message>
   <message id="ssd-mi-export-model">导出模型</message>
   <message id="ssd-mi-from-db">从数据库打开...</message>
@@ -79,12 +80,34 @@
     前景，识别可能要减除的峰，然后切换回当前的
     前景/本底组合。
   </message>
+  <message id="ssd-missing-back-peaks-title">缺失的本底峰</message>
+  <message id="ssd-missing-back-peaks-msg">
+    本底谱在能量 {1} 处没有添加峰，但在这些能量处
+    本底谱中可能存在真实峰 - 您是否要将这些峰添加到本底谱中？
+  </message>
+  <message id="ssd-btn-no-dont-add">否</message>
+  <message id="ssd-btn-add-peaks">添加峰...</message>
+  <message id="ssd-btn-add-all-detectable">添加所有自动拟合峰</message>
+  <message id="ssd-back-peak-preview-title">本底峰预览</message>
+  <message id="ssd-back-peak-preview-msg">以下峰将被添加到本底谱中：</message>
+  <message id="ssd-no-new-back-peaks">在指定能量处的本底谱中未找到额外的峰。</message>
+  <message id="ssd-back-peaks-all-fit">{1} 个候选峰已拟合到本底。</message>
+  <message id="ssd-back-peaks-some-fit">{2} 个候选峰中有 {1} 个显著并已拟合到本底。</message>
+  <message id="ssd-back-peaks-manual-hint">（您也可以通过 Alt 键（mac：Option 键）加双击<br />
+  谱图来手动拟合本底峰，或将本底加载为前景）</message>
+  <message id="ssd-err-adding-back-peaks">向本底添加峰时出错：{1}</message>
   <message id="ssd-update-dim-to-be-min">已将屏蔽尺寸更新为最小厚度。</message>
   <message id="ssd-scaled-shield-to-be-less-dist">屏蔽厚度已缩放为小于探测器距离。</message>
   <message id="ssd-err-fit-only-one-an">您一次只能拟合一个通用屏蔽的原子序数。</message>
   <message id="ssd-warn-invalid-chi2-for-energy">为{1} keV计算了无效的chi2，其他结果可能无效</message>
   <message id="ssd-calc-log-window-title">计算日志</message>
   <message id="ssd-calc-log-export-txt">TXT文件</message>
+  <message id="ssd-calc-log-html-title">计算日志</message>
+  <message id="ssd-template-text-log">标准日志（文本）</message>
+  <message id="ssd-template-html-report">活度拟合报告 (HTML)</message>
+  <message id="ssd-template-deprecated-txt">已弃用文本</message>
+  <message id="ssd-no-fit-results">没有可用的拟合结果供显示。</message>
+  <message id="ssd-error-creating-html-log">创建HTML计算日志时出错：{1}</message>
   <message id="ssd-err-opening-import-model">打开上传的源屏蔽拟合模型时出错：{1}</message>
   <message id="ssd-import-model-window-title">导入源屏蔽XML模型</message>
   <message id="ssd-err-opening-db-model">从数据库打开源屏蔽拟合模型时出错：{1}</message>
@@ -141,7 +164,6 @@
   <!-- Chi2Graphic -->
   <message id="x2g-yaxis-title-chi">（观察-模型）/不确定度</message>
   <message id="x2g-yaxis-title-mult">模型倍数</message>
-  <message id="x2g-">Y轴是峰面积计数，减去当前显示的"源和屏蔽值的预期计数数量，全部除以统计不确定度。这的平方"用于优化屏蔽和源。</message>
   <message id="x2g-tt-chi-axis">Y轴是峰面积计数，减去当前显示的源和屏蔽值的预期计数数量，全部除以统计不确定度。这的平方用于优化屏蔽和源。</message>
   <message id="x2g-tt-scale-axis">Y轴是观察峰计数的倍数，相对于当前源和屏蔽值的预期值。</message>
   <message id="x2g-tt-num-observed">观测数量：</message>
@@ -153,6 +175,6 @@
   <message id="x2g-tt-sources-contributing">贡献源：</message>
   <message id="x2g-tt-counts-abbrev">计数</message>
   <message id="x2g-tt-br-abbrev">br</message>
-  <message id="x2g-dev-label">&lt;dev&gt;</message>
+  <message id="x2g-dev-label"><![CDATA[<偏差>]]></message>
 </messages>
 

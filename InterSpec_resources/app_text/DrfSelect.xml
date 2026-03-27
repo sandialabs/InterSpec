@@ -46,9 +46,10 @@
       Intrinsic is efficiency for gammas hitting surface of detector, while Absolute is at a given distance.
     </div>
   </message>
-  <message id="ds-det-diam">Detector Diameter:</message>
+  <message id="ds-det-diam">Det. Diameter:</message>
+  <message id="ds-det-setback">Det. Setback:</message>
   <message id="ds-fixed-geom">Fixed Geometry</message>
-  <message id="ds-gad-det-file-label">GADRAS Detector.Dat File:</message>
+  <message id="ds-gad-det-file-label">Or Detector.dat:</message>
   <message id="ds-manual-det-empty-fcn">Example: exp(-9.8 - 8.1*log(x) + 4.62E-02*log(x)^2 + ...)\n
     Or equivalently: -9.8 -8.1 4.62E-02 ...</message>
   <message id="ds-manual-det-desc">Detector efficiency defined by a mathematical formula, given the energy x;
@@ -64,6 +65,7 @@
   <message id="ds-tt-manual-energy-unit">Energy unit for efficiency formula</message>
   <message id="ds-tt-manual-desc">Description of this detector response</message>
   <message id="ds-manual-det-diam-label">Detector diam.</message>
+  <message id="ds-manual-det-setback-label">Det. setback</message>
   <message id="ds-energy-range">Energy Range</message>
   <message id="ds-(optional)">(optional)</message>
   <message id="ds-min.">Min.</message>
@@ -95,7 +97,7 @@
     <br />
     Fixed Geometry - activity per g: similar to per cm2, but for per gram of source.
   </message>
-  <message id="ds-dist-label">Dist:</message>
+  <message id="ds-dist-label">Distance:</message>
   <message id="ds-set-btn">Set</message>
   <message id="ds-last-used">Last Used</message>
   <message id="ds-det-type-filter-all">All</message>

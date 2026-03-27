@@ -47,8 +47,9 @@
     </div>
   </message>
   <message id="ds-det-diam">قطر الكاشف:</message>
+  <message id="ds-det-setback">تراجع الكاشف:</message>
   <message id="ds-fixed-geom">هندسة ثابتة</message>
-  <message id="ds-gad-det-file-label">ملف GADRAS Detector.Dat:</message>
+  <message id="ds-gad-det-file-label">أو Detector.dat:</message>
   <message id="ds-manual-det-empty-fcn">مثال: exp(-9.8 - 8.1*log(x) + 4.62E-02*log(x)^2 + ...)\n
     أو بشكل مكافئ: -9.8 -8.1 4.62E-02 ...</message>
   <message id="ds-manual-det-desc">كفاءة الكاشف محددة بصيغة رياضية، بإعطاء الطاقة x؛
@@ -64,6 +65,7 @@
   <message id="ds-tt-manual-energy-unit">وحدة الطاقة لصيغة الكفاءة</message>
   <message id="ds-tt-manual-desc">وصف استجابة الكاشف هذه</message>
   <message id="ds-manual-det-diam-label">قطر الكاشف</message>
+  <message id="ds-manual-det-setback-label">تراجع الكاشف</message>
   <message id="ds-energy-range">نطاق الطاقة</message>
   <message id="ds-(optional)">(اختياري)</message>
   <message id="ds-min.">أدنى</message>
@@ -124,4 +126,9 @@
   <message id="ds-err-det-dist-pos">المسافة يجب أن تكون موجبة للكفاءات المطلقة</message>
   <message id="ds-warn-min-max-energy-swapped">كانت أدنى طاقة للكاشف أكبر من أعلى طاقة؛ تجاهل نطاق الطاقة.</message>
   <message id="ds-need-det-diam">نحتاج لقطر الكاشف</message>
+  <message id="ds-err-invalid-csv-format">لم يتم التعرف على ملف CSV. يرجى تحميل ملف كفاءة CSV صالح (بتنسيق MakeDrf أو التنسيق البسيط مع أعمدة الطاقة والكفاءة).</message>
+  <message id="ds-err-parsing-gadras">خطأ في تحليل كاشف GADRAS: {1}</message>
+  <message id="ds-eff-type-intrinsic">الكفاءة الجوهرية</message>
+  <message id="ds-eff-type-farfield">كفاءة المجال البعيد</message>
+  <message id="ds-eff-type-gadras">GADRAS</message>
 </messages>

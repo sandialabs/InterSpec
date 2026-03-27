@@ -32,6 +32,8 @@
   </message>
   <message id="ramg-eqn-order-label">Ordre de l'équation</message>
   <message id="ramg-tt-eqn-order">L'ordre (combien de termes dépendant de l'énergie) de l'équation d'efficacité relative à utiliser.</message>
+  <message id="ramg-phys-model-use-hoerl">Util. fcn. corr.</message>
+  <message id="ramg-tt-phys-model-use-hoerl">Lorsque cette case est cochée, le facteur de correction Hoerl modifié (c.-à-d. E<sup>b</sup> * C<sup>1/E</sup>) est utilisé pour tenir compte des différences entre le modèle physique et/ou l'efficacité du détecteur, et les données observées.</message>
   <message id="ramg-yield-info-label">Info de rendement</message>
   <message id="ramg-tt-data-src">La source de données nucléaires pour les rapports de branchement gamma.</message>
   <message id="ramg-match-tol-label">Tol. de correspondance</message>
@@ -63,6 +65,7 @@
   <message id="ramg-back-sub-cb">Soustraire l'arrière-plan</message>
   <message id="ramg-html-export-label">Rapport HTML</message>
   <message id="ramg-nucs-label">Nucléides</message>
+  <message id="ramg-nucs-shield-label">Blindages/Nucl.</message>
   <message id="ramg-peaks-to-use-label">Pics à utiliser</message>
   <message id="ramg-results-label">Résultats</message>
   <message id="ramg-mi-results">Tableau</message>

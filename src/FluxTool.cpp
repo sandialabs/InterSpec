@@ -1352,7 +1352,7 @@ void FluxToolWidget::refreshPeakTable()
     const double cps = amp / live_time;
     const double cpsUncert = ampUncert / live_time;
     const double intrinsic = det->intrinsicEfficiency(energy);
-    const double geomEff = fixed_geom ? 1.0 : det->fractionalSolidAngle( det->detectorDiameter(), distance );
+    const double geomEff = fixed_geom ? 1.0 : det->fractionalSolidAngle( det->detectorDiameter(), distance + det->detectorSetback() );
     const double totaleff = fixed_geom ? intrinsic : det->efficiency(energy, distance );
     
     

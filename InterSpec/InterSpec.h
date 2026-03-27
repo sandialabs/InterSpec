@@ -75,8 +75,10 @@ class PopupWarningWidget;
 class UnitsConverterTool;
 struct ExternalRidResults;
 class FeatureMarkerWindow;
+class FitSkewParamsWindow;
 class D3SpectrumDisplayDiv;
 class DetectionLimitWindow;
+struct PeakFitDetPrefs;
 class DetectorPeakResponse;
 class ExportSpecFileWindow;
 class MakeFwhmForDrfWindow;
@@ -321,7 +323,13 @@ public:
                                      const bool tryDefaultDrf,
                                      const std::string sessionId );
 
-  
+  /** Determines and sets the PeakFitDetPrefs for a foreground SpecMeas.
+   Priority: 1) already on meas, 2) same instrument as previous, 3) from DRF,
+   4) from DetectorType mapping, 5) spectral data (stub), 6) default.
+   */
+  void determinePeakFitDetPrefs( std::shared_ptr<SpecMeas> meas,
+                                  std::shared_ptr<SpecMeas> previous );
+
   /** Handles "deep" urls.
    
    Meant to handle URLs with the scheme "interspec://...", that would be passed to the application
@@ -671,25 +679,15 @@ public:
   void showNuclideSearchWindow();
   
   
-  //initMaterialDbAndSuggestions(): initializes m_materialDB and
-  //  m_shieldingSuggestion, and posts to the WServer threadpool a call to
-  //  fillMaterialDbAndPushSuggestionsToUsers() which does the actual parsing
-  //  of the material database.  Its done in two stages so as to not slow
-  //  the initial loading of the app; it would be nice to not have to parse the
-  //  materia DB file in the event loop at all, but this makes it easy to avoid
-  //  race conditions, or whatever.
+  /** Initializes `m_shieldingSuggestion` and populates it with material names
+   from the MaterialDB singleton.
+   */
   void initMaterialDbAndSuggestions();
-  
 
-  //fillMaterialDb(): populates materialDB, and then calls the provided
-  //  'update' function by posting to the WServer thread pool for 'sessionid'
-  //  so it will be executed in its event loop.
-  static void fillMaterialDb( std::shared_ptr<MaterialDB> materialDB,
-                              const std::string sessionid,
-                              boost::function<void(void)> update );
-  
-  //pushMaterialSuggestionsToUsers(): should be called from application loop, to
-  //  fill m_shieldingSuggestion (from m_materialDB) and then push to the user.
+  /** Fills `m_shieldingSuggestion` with material names from the MaterialDB singleton,
+   and pushes the update to the user.
+   Should be called from the application event loop.
+   */
   void pushMaterialSuggestionsToUsers();
   
   GammaXsWindow *showGammaXsTool();
@@ -740,20 +738,9 @@ public:
   
   PeakModel *peakModel();
 
-  /** The material database.
-   
-   Object will be alive as long as *this
-   */
-  MaterialDB *materialDataBase();
-  
-  /** Returns `m_materialDB`.  Note `MaterialDB` should be thread-safe, so you can use this for long running jobs where
-   this instance of InterSpec may disappear.
-   */
-  std::shared_ptr<MaterialDB> materialDataBaseShared();
-  
   /** The suggestion pop-up widget for shielding names; used globally for all shielding name inputs
    so that there is not duplicate copies of the widget in the DOM.
-   
+
    Object will be alive as long as *this.
    */
   Wt::WSuggestionPopup *shieldingSuggester();
@@ -769,6 +756,9 @@ public:
   //detectorModified(): signal emited when a property of the current detector
   //  object is modified.
   Wt::Signal<std::shared_ptr<DetectorPeakResponse> > &detectorModified();
+
+  /** Signal emitted when the PeakFitDetPrefs on the foreground SpecMeas changes. */
+  Wt::Signal<> &peakFitDetPrefsChanged();
 
   void showEnergyCalWindow();
   void handEnergyCalWindowClose();
@@ -942,6 +932,21 @@ public:
    Sets the `m_exportSpecFileWindow` member variable to nullptr.
    */
   void handleExportSpectrumFileDialogClose();
+
+  /** Creates the FitSkewParamsWindow, or shows it if it already exists.
+   Registers an undo/redo step for opening the window.
+   */
+  void showFitSkewParamsWindow();
+
+  /** Closes and deletes the FitSkewParamsWindow, if it exists.
+   Registers an undo/redo step for closing the window.
+   */
+  void closeFitSkewParamsWindow();
+
+  /** Called when the user clicks Accept in the FitSkewParamsWindow.
+   Applies the skew fit results, registers undo/redo, and closes the window.
+   */
+  void acceptFitSkewParamsWindow();
 
 #if( USE_DETECTION_LIMIT_TOOL )
   /** If `query_str` is not empty, the handle app URI function will be called. */
@@ -1194,7 +1199,7 @@ public:
   void searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
                            const std::set<int> &samples,
                           const std::shared_ptr<const SpecUtils::Measurement> &spectrum,
-                          const bool isHPGe );
+                          std::shared_ptr<const PeakFitDetPrefs> fitPrefs );
   
   //setHintPeaks(): sets the hint peaks (SpecMeas::m_autoSearchPeaks and
   //  SpecMeas::m_autoSearchInitialPeaks) if spectrum.lock() yeilds a valid ptr.
@@ -1204,7 +1209,8 @@ public:
   void setHintPeaks( std::weak_ptr<SpecMeas> spectrum,
                      std::set<int> samplenums,
                      std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > existingPeaks,
-                     std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > resultpeaks );
+                     std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > resultpeaks,
+                     const bool potentuallyUpdateDetTypeGuess );
   
   
   void excludePeaksFromRange( double x0, double x1 );
@@ -1405,6 +1411,10 @@ protected:
   //m_peakEditWindow: used to ensure only one peak editor window is open at a
   //  time.  Will be null if no peak editor is open; valid if one is open.
   PeakEditWindow *m_peakEditWindow;
+
+  // Managed by showFitSkewParamsWindow/closeFitSkewParamsWindow/acceptFitSkewParamsWindow.
+  // Null when no FitSkewParamsWindow is open.
+  FitSkewParamsWindow *m_fitSkewParamsWindow;
   
   
   //m_currentToolsTab: used to track which tab is currently showing when the
@@ -1429,7 +1439,6 @@ protected:
   Wt::WSuggestionPopup   *m_shieldingSuggestion;
   ShieldingSourceDisplay *m_shieldingSourceFit;
   AuxWindow              *m_shieldingSourceFitWindow;
-  std::shared_ptr<MaterialDB> m_materialDB;
   
 #if( USE_REL_ACT_TOOL )
   RelActAutoGui          *m_relActAutoGui;
@@ -1718,6 +1727,9 @@ protected:
   //Signals for when the current detector is changed or modified
   Wt::Signal<std::shared_ptr<DetectorPeakResponse> > m_detectorChanged;
   Wt::Signal<std::shared_ptr<DetectorPeakResponse> > m_detectorModified;
+
+  /** Emitted when the PeakFitDetPrefs on the foreground SpecMeas changes. */
+  Wt::Signal<> m_peakFitDetPrefsChanged;
 
   //Connections to the current foreground SpecMeas object that need to be
   //  connected and disconnected when changing spectrums.

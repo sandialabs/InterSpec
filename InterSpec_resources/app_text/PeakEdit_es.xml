@@ -14,7 +14,7 @@
   <message id="pe-btn-refit-roi-independent">Reajustar ROI: FWHMs independientes</message>
   <message id="pe-btn-refit-roi-fine">Reajustar ROI: refinamientos pequeños</message>
   <message id="pe-btn-refit-roi-independent-fine">Reajustar ROI: refinar con FWHMs indep.</message>
-  
+
   <message id="pe-label-centroid">Centroide</message>
   <message id="pe-label-drf-fwhm">FWHM pred. DRF</message>
   <message id="pe-label-amp">Amplitud</message>
@@ -41,9 +41,76 @@
 
   <message id="pe-est-lin-cont-no-data">Por favor cargue un espectro de primer plano antes de estimar el continuo.</message>
   <message id="pe-failed-est-lin-cont">Error al estimar continuo desde los bordes de la ROI: {1}</message>
-  
-  
-  
+
+  <!-- Skew parameter labels for Bortel (Exp*Gauss) -->
+  <message id="pe-label-skew-bortel-tau">Asimetría &alpha;</message>
+
+  <!-- Skew parameter labels for DoubleBortel -->
+  <message id="pe-label-skew-doublebortel-tau1">&tau;<sub>1</sub></message>
+  <message id="pe-label-skew-doublebortel-deltatau2">&Delta;&tau;<sub>2</sub></message>
+  <message id="pe-label-skew-doublebortel-eta">&eta;</message>
+
+  <!-- Skew parameter labels for GaussPlusBortel -->
+  <message id="pe-label-skew-gaussplusbortel-r">Ratio mezcla R</message>
+  <message id="pe-label-skew-gaussplusbortel-tau">Bortel &tau;</message>
+
+  <!-- Skew parameter labels for GaussExp -->
+  <message id="pe-label-skew-gaussexp-k">Asimetría k</message>
+
+  <!-- Skew parameter labels for CrystalBall -->
+  <message id="pe-label-skew-crystalball-alpha">Asimetría &alpha;</message>
+  <message id="pe-label-skew-crystalball-n">Asimetría n</message>
+
+  <!-- Skew parameter labels for ExpGaussExp -->
+  <message id="pe-label-skew-expgaussexp-kl">Asimetría k<sub>L</sub></message>
+  <message id="pe-label-skew-expgaussexp-kh">Asimetría k<sub>H</sub></message>
+
+  <!-- Skew parameter labels for DoubleSidedCrystalBall -->
+  <message id="pe-label-skew-dscb-alphalow">Asimetría &alpha;<sub>low</sub></message>
+  <message id="pe-label-skew-dscb-nlow">Asimetría n<sub>low</sub></message>
+  <message id="pe-label-skew-dscb-alphahigh">Asimetría &alpha;<sub>high</sub></message>
+  <message id="pe-label-skew-dscb-nhigh">Asimetría n<sub>high</sub></message>
+
+  <!-- Skew parameter labels for VoigtPlusBortel -->
+  <message id="pe-label-skew-voigtplusbortel-gamma">Lorentz &gamma;</message>
+  <message id="pe-label-skew-voigtplusbortel-r">Ratio mezcla R</message>
+  <message id="pe-label-skew-voigtplusbortel-tau">Bortel &tau;</message>
+
+  <!-- Tooltips for skew parameters -->
+  <message id="pe-tt-skew-bortel-tau">Constante de decaimiento exponencial para Exp*Gauss (Gaussiana Modificada Exponencialmente). Representa la escala de longitud característica de la cola de baja energía. Rango válido: 0.0-15 σ, valores típicos: 0.5-3 σ.</message>
+
+  <message id="pe-tt-skew-doublebortel-tau1">Primera constante de decaimiento exponencial, típicamente cercana a σ. Controla el componente principal de la cola de baja energía. Rango válido: 0.01-15 σ.</message>
+
+  <message id="pe-tt-skew-doublebortel-deltatau2">Decaimiento adicional para la segunda exponencial: τ₂ = τ₁ + Δτ₂. Controla el componente de cola extendida. Rango válido: 0.0-10 σ.</message>
+
+  <message id="pe-tt-skew-doublebortel-eta">Peso del segundo componente exponencial. η=0 da Exp*Gauss(τ₁) simple, η=1 da Exp*Gauss(τ₂) puro. Rango válido: 0.0-1.0.</message>
+
+  <message id="pe-tt-skew-gaussplusbortel-r">Ratio de mezcla entre Gaussiana y Exp*Gauss. R=0 es Gaussiana pura, R=1 es Exp*Gauss puro. Rango válido: 0.0-1.0, típico: 0.2-0.8.</message>
+
+  <message id="pe-tt-skew-gaussplusbortel-tau">Constante de decaimiento exponencial para el componente Exp*Gauss en la mezcla. Rango válido: 0.01-15 σ, valores típicos: 0.5-3 σ.</message>
+
+  <message id="pe-tt-skew-gaussexp-k">Controla tanto el umbral (μ - k·σ) donde comienza la cola exponencial como la tasa de decaimiento. Rango válido: 0.15-3.25, típico: 0.5-2.0.</message>
+
+  <message id="pe-tt-skew-crystalball-alpha">Umbral en unidades de σ donde comienza la cola de ley de potencia: x = μ - α·σ. Rango válido: 0.5-4.0, típico: 1.0-3.0.</message>
+
+  <message id="pe-tt-skew-crystalball-n">Exponente de ley de potencia para la cola de baja energía: (x - μ + α·σ)^(-n). Un n mayor crea una caída más abrupta. Rango válido: 1.05-100, típico: 2-10.</message>
+
+  <message id="pe-tt-skew-expgaussexp-kl">Controla el umbral y decaimiento de la cola de energía inferior (izquierda). Rango válido: 0.15-3.25, típico: 0.5-2.0.</message>
+
+  <message id="pe-tt-skew-expgaussexp-kh">Controla el umbral y decaimiento de la cola de energía superior (derecha). Rango válido: 0.15-3.25, típico: 0.5-2.0.</message>
+
+  <message id="pe-tt-skew-dscb-alphalow">Umbral inferior en unidades de σ donde comienza la cola de ley de potencia de baja energía. Rango válido: 0.5-4.0, típico: 1.0-3.0.</message>
+
+  <message id="pe-tt-skew-dscb-nlow">Exponente de ley de potencia para la cola de baja energía. Rango válido: 1.05-100, típico: 2-10.</message>
+
+  <message id="pe-tt-skew-dscb-alphahigh">Umbral superior en unidades de σ donde comienza la cola de ley de potencia de alta energía. Rango válido: 0.5-4.0, típico: 1.0-3.0.</message>
+
+  <message id="pe-tt-skew-dscb-nhigh">Exponente de ley de potencia para la cola de alta energía. Rango válido: 1.05-100, típico: 2-10.</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-gamma">HWHM lorentziano (semiancho a semialtura) que representa el ancho natural de línea de rayos X. Rango válido: 0.0-10.0 keV, típico para rayos X: 0.01-0.5 keV.</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-r">Ratio de mezcla entre perfil Voigt y Exp*Gauss. R=0 es Voigt puro (solo ancho de línea natural), R=1 es Exp*Gauss puro (solo cola del detector). Rango válido: 0.0-1.0.</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-tau">Constante de decaimiento exponencial para el componente Exp*Gauss, que representa la cola de recolección incompleta de carga. Rango válido: 0.01-10 σ.</message>
+
 </messages>
-
-

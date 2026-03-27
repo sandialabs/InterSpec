@@ -43,22 +43,38 @@
   <message id="rpd-suggestions">Suggestions</message>
   <message id="rpd-feature-markers">Marqueurs de caractéristiques</message>
 
+  <!-- Reference line thickness options -->
+  <message id="rpd-line-thick-light">Lignes fines</message>
+  <message id="rpd-line-thick-normal">Épaiss. standard</message>
+  <message id="rpd-line-thick-thick">Lignes épaisses</message>
+  <message id="rpd-line-thick-thicker">Lignes plus épaisses</message>
+
+  <!-- Reference lines visual verbosity options. -->
+  <message id="rpd-line-verb-none">Lignes minimales</message>
+  <message id="rpd-line-verb-hover">Ligne réf. guide</message>
+  <message id="rpd-line-verb-major">Toutes lignes princ.</message>
 
   <message id="rpd-csv-export-msg">L'outil 'Infos sur la désintégration des nucléides' offre des fonctionnalités supplémentaires pour exporter les nucléides, les produits de désintégration et les informations de désintégration vers des fichiers CSV.</message>
   <message id="rpd-changed-age">L'âge a été modifié à une valeur plus raisonnable pour {1} de '{2}' à '{3}'</message>
+  <message id="rpd-changed-age-fission">Âge modifié à {1}, pour être valide.</message>
   <message id="rpd-det-id">ID du détecteur</message>
   <message id="rpd-ext-rid">RID externe</message>
   <message id="rpd-prev">Précédent</message>
   <message id="rpd-warn-cascade-xrays">les rayons X ne sont pas inclus dans les cascades</message>
 
-  <message id="rpd-tbl-iso">Iso</message>  <message id="rpd-tbl-el-cap">c.e.</message> <message id="rpd-tbl-proton">proton</message>
-  <message id="rpd-tbl-spont-fis">f.s.</message> <message id="rpd-tbl-xray">rayon x</message>
+  <!-- Values in the table on this tool -->
+  <message id="rpd-tbl-iso">Iso</message>  <!-- a.k.a meta-stable state of nuclide -->
+  <message id="rpd-tbl-el-cap">c.e.</message> <!-- a.k.a electron capture -->
+  <message id="rpd-tbl-proton">proton</message>
+  <message id="rpd-tbl-spont-fis">f.s.</message> <!-- Spontaneous Fission-->
+  <message id="rpd-tbl-xray">rayon x</message>
   <message id="rpd-tbl-reaction">Réaction</message>
   <message id="rpd-tbl-norm">NORM</message>
   <message id="rpd-tbl-cascade-sum">Somme en cascade</message>
 
   <message id="rpd-tbl-hdr-energy">Énergie (keV)</message>
-  <message id="rpd-tbl-hdr-br">R.B.</message> <message id="rpd-tbl-hdr-parent">Parent</message>
+  <message id="rpd-tbl-hdr-br">R.B.</message> <!-- branching ratio -->
+  <message id="rpd-tbl-hdr-parent">Parent</message>
   <message id="rpd-tbl-hdr-mode">Mode</message>
   <message id="rpd-tbl-hdr-particle">Particule</message>
   <message id="rpd-tbl-hdr-tt-energy">Énergie de la particule produite</message>

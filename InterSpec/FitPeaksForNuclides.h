@@ -30,7 +30,9 @@
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/RelActCalc.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/RelActCalcAuto.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
 namespace SpecUtils
@@ -57,6 +59,20 @@ struct GammaClusteringSettings
   double max_fwhm_width;            // Maximum ROI width in FWHM before breaking up
   double min_fwhm_roi;              // Minimum ROI width in FWHM to keep
   double min_fwhm_quad_cont;        // Width threshold to use quadratic continuum
+
+  // Merge prevention via Gaussian tail contribution check.
+  // Two overlapping clusters are only merged if the Gaussian tail of one cluster's peaks
+  // contributes more than this fraction at the other cluster's nearest peak.
+  // 0 disables the check. Evaluated as:
+  //   sum(amp_i * exp(-d_i^2 / (2*sigma^2))) / ref_peak_amplitude > threshold
+  // where the sum is over all peaks in the other cluster.
+  double min_tail_contribution_fraction = 0.0;
+
+  // Width normalization for tail check: the threshold is scaled up linearly
+  // with combined ROI width (in FWHM) beyond this value.
+  // effective_threshold = min_tail * max(1, combined_width_fwhm / width_scale)
+  // Larger values = less penalty for wide ROIs. 0 disables width scaling.
+  double tail_merge_width_scale_fwhm = 0.0;
 
   // Parameters for synthetic spectrum-based ROI breaking
   // Region around minimum/maximum to compute significance (in FWHM units)
@@ -130,6 +146,11 @@ struct PeakFitResult
 // These values will be optimized via genetic algorithm for different detector types
 struct PeakFitForNuclideConfig
 {
+  /** Returns the default `PeakFitForNuclideConfig` for the detector type.
+   */
+  static const PeakFitForNuclideConfig &default_config( const PeakFitUtils::CoarseResolutionType det_type );
+
+
   // FWHM functional form
   DetectorPeakResponse::ResolutionFnctForm fwhm_functional_form = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
 
@@ -163,6 +184,8 @@ struct PeakFitForNuclideConfig
   double manual_rel_eff_sol_min_fwhm_roi = 1.0;
   double manual_rel_eff_sol_min_fwhm_quad_cont = 8.0;
   double manual_rel_eff_sol_max_fwhm = 15.0;
+  double manual_rel_eff_min_tail_contribution = 0.0004;  // Min Gaussian tail fraction to allow merge
+  double manual_rel_eff_tail_width_scale_fwhm = 5.0;    // Width (FWHM) at which tail threshold doubles
   double manual_rel_eff_roi_width_num_fwhm_lower = 3.0;
   double manual_rel_eff_roi_width_num_fwhm_upper = 3.0;
 
@@ -178,7 +201,9 @@ struct PeakFitForNuclideConfig
   double auto_rel_eff_roi_width_num_fwhm_lower = 3.5;  // Slightly more generous for refined fit
   double auto_rel_eff_roi_width_num_fwhm_upper = 3.5;
   double auto_rel_eff_sol_max_fwhm = 12.0;  // Tighter constraint as solution improves
-  double auto_rel_eff_sol_min_fwhm_roi = 1.0;
+  double auto_rel_eff_min_tail_contribution = 0.0004;  // Min Gaussian tail fraction to allow merge
+  double auto_rel_eff_tail_width_scale_fwhm = 5.0;    // Width (FWHM) at which tail threshold doubles
+  double auto_rel_eff_sol_min_fwhm_roi = 1.25;
   double auto_rel_eff_sol_min_fwhm_quad_cont = 8.0;
 
 
@@ -197,8 +222,9 @@ struct PeakFitForNuclideConfig
   // Areal density starting value for desperation external shielding (in g/cm2)
   double desperation_phys_model_areal_density_g_per_cm2 = 1.0;  // Default: 1.0 g/cm2
 
-  // Physical model options (only used when rel_eff_eqn_type == FramPhysicalModel)
   bool nucs_of_el_same_age = true;
+  
+  // Physical model options (only used when rel_eff_eqn_type == FramPhysicalModel)
   bool phys_model_use_hoerl = true;
 
   // Fields for RelActAuto options configuration - this is only used for optimiziation work - it is supersceeded by `FitSrcPeaksOptions::DoNotVaryEnergyCal
@@ -213,6 +239,13 @@ struct PeakFitForNuclideConfig
   // If any peak in a ROI has significance above this threshold, the ROI is considered significant
   // (alternative to chi2 reduction test - ROI passes if EITHER test passes)
   double roi_significance_min_peak_sig = 3.5;
+
+  // Minimum chi2/dof of a quadratic (or higher-order) continuum-only fit required
+  // for the ROI to be considered as potentially containing a peak.  If a quadratic
+  // continuum alone fits the data well (chi2/dof below this threshold), there is no
+  // evidence of a peak and the ROI is marked insignificant regardless of other tests.
+  // Set to 0.0 to disable this check (e.g., for HPGe where this is less relevant).
+  double roi_significance_min_quad_cont_chi2_dof = 0.0;
 
   // Threshold for initial peak significance filter before refitting for observable_peaks.
   // Significance = (peak_amplitude * 0.7607) / sqrt(data_area_in_pm_1_fwhm)
@@ -254,6 +287,8 @@ struct PeakFitForNuclideConfig
     settings.max_fwhm_width = manual_rel_eff_sol_max_fwhm;
     settings.min_fwhm_roi = manual_rel_eff_sol_min_fwhm_roi;
     settings.min_fwhm_quad_cont = manual_rel_eff_sol_min_fwhm_quad_cont;
+    settings.min_tail_contribution_fraction = manual_rel_eff_min_tail_contribution;
+    settings.tail_merge_width_scale_fwhm = manual_rel_eff_tail_width_scale_fwhm;
     settings.step_cont_min_peak_area = step_cont_min_peak_area;
     settings.step_cont_min_peak_significance = step_cont_min_peak_significance;
     settings.step_cont_left_right_nsigma = step_cont_left_right_nsigma;
@@ -273,26 +308,51 @@ struct PeakFitForNuclideConfig
     settings.max_fwhm_width = auto_rel_eff_sol_max_fwhm;
     settings.min_fwhm_roi = auto_rel_eff_sol_min_fwhm_roi;
     settings.min_fwhm_quad_cont = auto_rel_eff_sol_min_fwhm_quad_cont;
+    settings.min_tail_contribution_fraction = auto_rel_eff_min_tail_contribution;
+    settings.tail_merge_width_scale_fwhm = auto_rel_eff_tail_width_scale_fwhm;
     settings.step_cont_min_peak_area = step_cont_min_peak_area;
     settings.step_cont_min_peak_significance = step_cont_min_peak_significance;
     settings.step_cont_left_right_nsigma = step_cont_left_right_nsigma;
     return settings;
   }
+
+private:
+  PeakFitForNuclideConfig(){};
 };//struct PeakFitForNuclideConfig
 
-  
+
+
+
 /** Options for fitting the peaks of nuclides.
+
+ By default, when No FitSrcPeaksOptions are specified:
+ - Existing ROIs containing only other-source peaks will not have peaks of the source(s) being fit added to them; if the photopeak of the source(s) being fit are inside an existing ROI, that photopeak will be ignored. If a photopeak is adjacent to an existing ROI, the existing ROI will not be modified, but the added ROI may slightly overlap (although it will be tried to make it not overlap - but if PeakFitForNuclideConfig::auto_rel_eff_sol_min_fwhm_roi dictates it must, then it will), but will not extend any closer than `0.5*PeakFitForNuclideConfig::auto_rel_eff_sol_min_fwhm_roi` to any peak mean in the existing ROI (e.g., new ROI wont cover the mean of any peak in the existing ROI).
+ - If a peak/ROI for a source being fit (and only contains peaks for the source(s) being fit) is already present in the data, then these ROIs will be re-fit; their energy range and/or peak properties may become different.  If the fit to the source(s) determines that the ROI should not be present (i.e., it doesnt think the peak(s) are significant) then the original ROI will remain unaltered.
+ - Existing ROIs containing both a source being fit, as well as other-source peaks (mixed ROIs) use the existing ROI bounds; other-source peaks are included as bystander floating peaks in the combined fit.  These bystander peaks will be included in the results (with the original bystander peak being in the collection of peaks that should be removed before adding the result peaks), and have the same sources associated with them.  It is possible the bystander peak will become insignificant in the fit, so it may just be in the collection of peaks to remove without a replacement, but the ROI will maintain the original bounds (even if the bystander peak disappears).
+ - ROIs added for the sources being fit, will not overlap with each other - they will have at least one channel between them.
+ - All peaks sharing a PeakContinuum with a removed peak are also removed and replaced together.
+ 
+ When the DoNotUseExistingRois option is specified:
+ - Any existing ROI will not be used, and any gammas from the current source(s) that fall within the ROI will not be considered, even if that ROI has a peak with a source being fitted (i.e., existing peaks/ROIs of the sources being fit will not be altered in any way).  Existing ROIs will not be combined with new ROIS. Like default, a new ROI may slightly overlap with an existing ROI, but not any closer than `0.5*PeakFitForNuclideConfig::auto_rel_eff_sol_min_fwhm_roi` to any peak mean in the existing ROI.
+ 
+ When the ExistingPeaksAsFreePeak option is specified:
+ - Potential peaks for the sources being fit, that are adjacent to, or within an existing ROI may be combined with the existing ROI (potentially, and likely altering its energy extent); the existing peaks will be treated as freely-floating peaks, and included in the results (and the set of peaks to delete).  If a new peak for a source being fit is not added to (or combined with) an existing ROI, the existing ROI will not be altered (either its energy range, or the peaks in it).
+ 
+ DoNotUseExistingRois can not be used in combination with ExistingPeaksAsFreePeak.
  */
 enum FitSrcPeaksOptions
 {
-  /** With this option, any existing ROI will not be used, and any gammas from the current source(s) that fall within
-   the ROI will not be consisdered.  Without this option the peaks you have already fit, for the sources you are currently
-   trying to fit peaks of, will be replaced.
+  /** With this option, any existing ROI will not be used, and any gammas from the current source(s)
+   that fall within the ROI will not be considered.  Without this option the peaks you have already
+   fit, for the sources you are currently trying to fit peaks of, will be replaced.
+   
+   TODO: we should probably rename DoNotUseExistingRois to DoNotUseExistingRoisOfSourcesBeingFit
    */
   DoNotUseExistingRois = 0x01,
-  
-  /** Notmally ROIs of source peak will try to be limited in energy range to mitigate effects of other nearby peaks; with
-   this option, the nearby peaks may share the ROI will be left in as freely-floating peaks, and included in the results.
+
+  /** Normally ROIs of source peak will try to be limited in energy range to mitigate effects of
+   other nearby peaks (of sources you are not fitting); with this option, the nearby peaks may
+   share the ROI will be left in as freely-floating peaks, and included in the results.
    */
   ExistingPeaksAsFreePeak = 0x02,
   
@@ -331,10 +391,11 @@ enum FitSrcPeaksOptions
  @param drf_input Detector response function (can be nullptr, will use generic if needed)
  @param options Options for how the fit should be done.
  @param config Configuration for peak fitting parameters
- @param isHPGe Whether this is an HPGe detector
+ @param peak_fit_prefs Peak fitting preferences (detector type, skew, FWHM method).
+        The isHPGe flag is derived from prefs->m_det_type.  If nullptr, defaults are used.
  @return PeakFitResult with status, error message, fit peaks, and solution
  */
-  
+
 PeakFitResult fit_peaks_for_nuclides(
   const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,
@@ -344,8 +405,8 @@ PeakFitResult fit_peaks_for_nuclides(
   const std::shared_ptr<const DetectorPeakResponse> &drf_input,
   const Wt::WFlags<FitSrcPeaksOptions> options,
   const PeakFitForNuclideConfig &config,
-  const bool isHPGe );
-  
+  const std::shared_ptr<const PeakFitDetPrefs> &peak_fit_prefs );
+
 PeakFitResult fit_peaks_for_nuclides(
   const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,
@@ -355,14 +416,14 @@ PeakFitResult fit_peaks_for_nuclides(
   const std::shared_ptr<const DetectorPeakResponse> &drf_input,
   const Wt::WFlags<FitSrcPeaksOptions> options,
   const PeakFitForNuclideConfig &config,
-  const bool isHPGe );
+  const std::shared_ptr<const PeakFitDetPrefs> &peak_fit_prefs );
   
 
 // Helper function for estimating initial ROIs when no peaks are available
 std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_without_peaks(
   const std::vector<RelActCalcAuto::NucInputInfo> &sources,
   const std::shared_ptr<const DetectorPeakResponse> &drf,
-  const bool isHPGe,
+  const PeakFitUtils::CoarseResolutionType det_type,
   const DetectorPeakResponse::ResolutionFnctForm fwhmFnctnlForm,
   const std::vector<float> &fwhm_coefficients,
   const double lower_fwhm_energy,
@@ -370,6 +431,14 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_without_peaks(
   const double min_valid_energy,
   const double max_valid_energy,
   const PeakFitForNuclideConfig &config );
+
+/** Debug harness for fit_peaks_for_nuclides.
+ Loads spectrum files, runs auto peak search, calls fit_peaks_for_nuclides,
+ and prints diagnostics at each stage. Enable PERFORM_DEVELOPER_CHECKS for
+ full internal trace output via the existing local_debug_printout flag.
+ Called from main.cpp before server startup.
+*/
+int debug_fit_peaks_for_nuclides();
 
 }//namespace FitPeaksForNuclides
 

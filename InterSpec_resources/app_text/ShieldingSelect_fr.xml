@@ -47,6 +47,9 @@
   <message id="ss-invalid-mat">mat. invalide</message>
   <message id="ss-src-mass-frac-label">frac. massique de {1} :</message>
   <message id="ss-non-src-frac">Frac. non source</message>
+  <message id="ss-add-shield-before">Ajouter blindage avant</message>
+  <message id="ss-add-shield-after">Ajouter blindage après</message>
+  <message id="ss-add-trace-src">Ajouter source trace</message>
   <message id="ss-non-src-frac-el">autre {1} :</message>
   <message id="ss-tt-with-uncert">{1}</message>
   <message id="ss-tt-without"></message>

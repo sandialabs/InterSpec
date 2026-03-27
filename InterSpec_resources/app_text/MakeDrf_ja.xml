@@ -15,6 +15,7 @@
   <message id="dsfs-all-peaks-cb">全ピーク</message>
   
   <message id="md-det-diam">検出器直径</message>
+  <message id="md-det-setback">Det. セットバック</message>
   <message id="md-eff-type">効率タイプ</message>
   <message id="md-eqn-in-kev">方程式(keV)</message>
   <message id="md-eqn-in-mev">方程式(MeV)</message>

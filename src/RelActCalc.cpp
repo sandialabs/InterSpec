@@ -601,8 +601,28 @@ void PhysicalModelShieldInput::check_valid() const
   }//if( input.material ) / else.
     
 };//PhysicalModelShieldInput::check_valid()
-  
-  
+
+
+bool PhysicalModelShieldInput::operator==( const PhysicalModelShieldInput &rhs ) const
+{
+  return (atomic_number == rhs.atomic_number)
+    && (material == rhs.material)
+    && (areal_density == rhs.areal_density)
+    && (fit_atomic_number == rhs.fit_atomic_number)
+    && (lower_fit_atomic_number == rhs.lower_fit_atomic_number)
+    && (upper_fit_atomic_number == rhs.upper_fit_atomic_number)
+    && (fit_areal_density == rhs.fit_areal_density)
+    && (lower_fit_areal_density == rhs.lower_fit_areal_density)
+    && (upper_fit_areal_density == rhs.upper_fit_areal_density);
+}//bool PhysicalModelShieldInput::operator==( const PhysicalModelShieldInput &rhs ) const
+
+
+bool PhysicalModelShieldInput::operator!=( const PhysicalModelShieldInput &rhs ) const
+{
+  return !( *this == rhs );
+}//bool PhysicalModelShieldInput::operator!=( const PhysicalModelShieldInput &rhs ) const
+
+
 #if( PERFORM_DEVELOPER_CHECKS )
 void PhysicalModelShieldInput::equalEnough( const PhysicalModelShieldInput &lhs, const PhysicalModelShieldInput &rhs )
 {
@@ -667,7 +687,7 @@ rapidxml::xml_node<char> *PhysicalModelShieldInput::toXml( ::rapidxml::xml_node<
 }//rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const
   
   
-void PhysicalModelShieldInput::fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *materialDB )
+void PhysicalModelShieldInput::fromXml( const ::rapidxml::xml_node<char> *parent )
 {
   try
   {
@@ -736,26 +756,27 @@ void PhysicalModelShieldInput::fromXml( const ::rapidxml::xml_node<char> *parent
     
     if( material_node )
     {
+      const std::shared_ptr<const MaterialDB> materialDB = MaterialDB::instance();
       if( !materialDB )
         throw runtime_error( "PhysicalModelShieldInput::fromXml: need MaterialDB" );
-      
+
       const string name = SpecUtils::xml_value_str(material_node);
-      const Material * mat = materialDB->material( name );
+      std::shared_ptr<const Material> mat = materialDB->material( name );
       if( !mat )
       {
         try
         {
           const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
-          mat = materialDB->parseChemicalFormula( name, db );
+          mat = MaterialDB::materialFromChemicalFormula( name, db );
         }catch( std::exception & )
         {
         }
       }//if( !mat )
-      
+
       if( !mat )
         throw runtime_error( "Invalid material name '" + name + "'" );
-      
-      material = make_shared<Material>( *mat );
+
+      material = mat;
       
       try
       {
@@ -1088,28 +1109,50 @@ std::vector<PeakDef> refit_roi_continuums( const std::vector<PeakDef> &solution_
       roi_peaks.push_back(result_peaks[idx]);
     }
     
-    const int num_polynomial_terms = static_cast<int>(continuum->parameters().size());
+    const bool has_step_coeff = PeakContinuum::is_peak_cdf_step_continuum( continuum->type() )
+                               && (continuum->type() != PeakContinuum::BiLinearStepCDF);
+    const int num_polynomial_terms = static_cast<int>( PeakContinuum::num_linear_fit_pars( continuum->type() ) );
     const bool is_step_continuum = PeakContinuum::is_step_continuum( continuum->type() );
     const double ref_energy = continuum->referenceEnergy();
-    
-    vector<double> continuum_coeffs(num_polynomial_terms);
+
+    // For FlatStepCDF/LinearStepCDF, fit_continuum returns poly + step_coeff
+    vector<double> continuum_coeffs( num_polynomial_terms + (has_step_coeff ? 1 : 0) );
     vector<double> peak_counts(roi_channels);
     
     try
     {
       // Refit the continuum using PeakFit::fit_continuum
       PeakFit::fit_continuum( roi_energies, roi_data, roi_uncerts, roi_channels,
-                             num_polynomial_terms, is_step_continuum, ref_energy,
+                             continuum->type(), ref_energy,
                              roi_peaks, false, continuum_coeffs.data(), peak_counts.data() );
-    
+
       auto new_continuum = make_shared<PeakContinuum>(*continuum);
       new_continuum->setParameters( lower_energy, continuum_coeffs, {} );
-      
+
+#if( PERFORM_DEVELOPER_CHECKS )
+      {
+        const vector<double> old_coeffs = continuum->parameters();
+        // Use a single snprintf to avoid interleaving from threads
+        char buf[512];
+        int pos = snprintf( buf, sizeof(buf),
+          "refit_roi_continuums: ROI [%.1f, %.1f] nch=%zu np=%zu old_coeffs={",
+          lower_energy, upper_energy, roi_channels, roi_peaks.size() );
+        for( size_t ci = 0; ci < old_coeffs.size() && pos < 400; ++ci )
+          pos += snprintf( buf + pos, sizeof(buf) - pos, "%.2f%s", old_coeffs[ci], (ci + 1 < old_coeffs.size()) ? "," : "" );
+        pos += snprintf( buf + pos, sizeof(buf) - pos, "} new_coeffs={" );
+        for( size_t ci = 0; ci < continuum_coeffs.size() && pos < 480; ++ci )
+          pos += snprintf( buf + pos, sizeof(buf) - pos, "%.2f%s", continuum_coeffs[ci], (ci + 1 < continuum_coeffs.size()) ? "," : "" );
+        snprintf( buf + pos, sizeof(buf) - pos, "}\n" );
+        cerr << buf;
+      }
+#endif
+
       // Update all peaks with the new continuum coefficients
       for( size_t idx : peak_indices )
         result_peaks[idx].setContinuum(new_continuum);
     } catch( const exception &e ) {
-      // If fitting fails, silently continue with original continuum
+      cerr << "refit_roi_continuums: EXCEPTION for ROI [" << lower_energy << ", " << upper_energy
+           << "] keV: " << e.what() << endl;
     }
   };
   
@@ -1118,14 +1161,14 @@ std::vector<PeakDef> refit_roi_continuums( const std::vector<PeakDef> &solution_
   {
     // Use ThreadPool for parallel processing
     SpecUtilsAsync::ThreadPool pool;
-    
+
     for( const auto &roi_group : roi_groups )
     {
       pool.post( [&refit_roi_continuum, roi_group]() {
         refit_roi_continuum(roi_group);
       });
     }
-    
+
     // Wait for all tasks to complete
     pool.join();
   }

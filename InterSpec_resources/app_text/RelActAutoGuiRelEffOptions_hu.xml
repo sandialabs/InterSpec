@@ -1,36 +1,36 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
   <!-- raageo- is short for RelActAutoGuiRelEffOptions -->
-  
+
   <!-- Labels -->
-  <message id="raageo-eqn-type">Egyenlet Típus</message>
-  <message id="raageo-eqn-order">Egyenlet Rend</message>
-  <message id="raageo-pu242-corr">Pu242 korr</message>
-  
+  <message id="raageo-eqn-type">Egyenlet típus</message>
+  <message id="raageo-eqn-order">Egyenlet rend</message>
+  <message id="raageo-pu242-corr">Pu242 korr.</message>
+
   <!-- Checkboxes -->
-  <message id="raageo-use-corr-fcn">Korr. fv. használata</message>
-  <message id="raageo-share-corr-fcn">Korr. fv. megosztása</message>
-  <message id="raageo-share-ext-atten">Külső csillapítás megosztása</message>
-  <message id="raageo-shielded-by-other-curves">Más görbék által árnyékolt</message>
-  
+  <message id="raageo-use-corr-fcn">Korr. fv. haszn.</message>
+  <message id="raageo-share-corr-fcn">Korr. fv. megoszt.</message>
+  <message id="raageo-share-ext-atten">Külső gyeng. megoszt.</message>
+  <message id="raageo-shielded-by-other-curves">Más görbék árnyékolásával</message>
+
   <!-- Equation types -->
   <message id="raageo-eqn-log-x">Log(x)</message>
   <message id="raageo-eqn-log-y">Log(y)</message>
   <message id="raageo-eqn-log-x-log-y">Log(x)Log(y)</message>
   <message id="raageo-eqn-empirical">Empirikus</message>
   <message id="raageo-eqn-physical">Fizikai</message>
-  
+
   <!-- Placeholders -->
-  <message id="raageo-curve-name">Görbe Név</message>
-  
+  <message id="raageo-curve-name">Görbe neve</message>
+
   <!-- Tooltips -->
-  <message id="raageo-eqn-type-tt">A relatív hatékonyság görbéhez használandó funkcionális forma.<br />Opciók:<table style="margin-left: 10px;"><tr><th>Log(energia):</th>               <th>y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...</th></tr><tr><th>Log(rel. hat.):</th>            <th>y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )</th></tr><tr><th>Log(energia)Log(rel. hat.):</th> <th>y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )</th></tr><tr><th>Empirikus:</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr><tr><th>Fizikai:</th>             <th>y = <span style="display: inline-block; vertical-align: middle;"><span style="display: block; text-align: center;">(1 - exp(-AD<sub>0</sub>*μ<sub>0</sub>))</span><span style="display: block; border-top: 1px solid black; text-align: center;">(AD<sub>0</sub>*μ<sub>0</sub>)</span></span> * [exp(-AD<sub>1</sub>*μ<sub>1</sub>) * exp(-AD<sub>2</sub>*μ<sub>2</sub>) + ...] * [Det. Hat.] * [E<sup>b</sup> * C<sup>1/E</sup>]</th></tr></table></message>
-  <message id="raageo-eqn-order-tt">A használandó relatív hatékonyság egyenlet rendje (hány energia-függő tag).</message>
-  <message id="raageo-pu242-corr-tt">A Pu-242 gyakran nem közvetlenül megfigyelhető gamma spektrumokban. Azonban ennek az izotópnak a korrekciója a dúsítás számításakor, ennek az izotópnak a várható hozzájárulásai következtethetők a többi Pu izotópból. Ez a forma lehetővé teszi a korrekciós módszer kiválasztását.</message>
-  <message id="raageo-share-corr-fcn-tt">Ha be van jelölve, a Korrelációs Függvény beállítás szinkronizálva lesz az összes Fizikai modell görbén.</message>
-  <message id="raageo-share-ext-atten-tt">Ha be van jelölve, a külső árnyékolási konfiguráció szinkronizálva lesz az összes Fizikai modell görbén.</message>
-  <message id="raageo-shielded-by-other-curves-tt">Ha be van jelölve, ennek a görbének a forrásai árnyékolva lesznek az összes többi Fizikai modell görbe által.</message>
-  <message id="raageo-del-rel-eff-curve-tt">Eltávolítja ezt a relatív hatékonyság görbét.</message>
-  <message id="raageo-add-rel-eff-curve-tt">Másik relatív hatékonyság görbe hozzáadása.</message>
-  
+  <message id="raageo-eqn-type-tt">A relatív hatásfok görbéhez használandó funkcionális forma.<br />Lehetőségek:<table style="margin-left: 10px;"><tr><th>Log(energia):</th>               <th>y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...</th></tr><tr><th>Log(rel. hat.):</th>            <th>y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )</th></tr><tr><th>Log(energia)Log(rel. hat.):</th> <th>y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )</th></tr><tr><th>Empirikus:</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr><tr><th>Fizikai:</th>             <th>y = <span style="display: inline-block; vertical-align: middle;"><span style="display: block; text-align: center;">(1 - exp(-AD<sub>0</sub>*μ<sub>0</sub>))</span><span style="display: block; border-top: 1px solid black; text-align: center;">(AD<sub>0</sub>*μ<sub>0</sub>)</span></span> * [exp(-AD<sub>1</sub>*μ<sub>1</sub>) * exp(-AD<sub>2</sub>*μ<sub>2</sub>) + ...] * [Det. hat.] * [E<sup>b</sup> * C<sup>1/E</sup>]</th></tr></table></message>
+  <message id="raageo-eqn-order-tt">A relatív hatásfok egyenlet rendje (hány energiafüggő tag).</message>
+  <message id="raageo-pu242-corr-tt">A Pu-242 gyakran nem figyelhető meg közvetlenül a gamma spektrumokban. Az izotópösszetétel számításakor azonban ennek az izotópnak a várható hozzájárulása a többi Pu izotópból következtethető. Ez az űrlap lehetővé teszi a korrekciós módszer kiválasztását.</message>
+  <message id="raageo-share-corr-fcn-tt">Ha be van jelölve, a korrekciós függvény beállítása szinkronizálva lesz az összes fizikai modell görbén.</message>
+  <message id="raageo-share-ext-atten-tt">Ha be van jelölve, a külső árnyékolási konfiguráció szinkronizálva lesz az összes fizikai modell görbén.</message>
+  <message id="raageo-shielded-by-other-curves-tt">Ha be van jelölve, ennek a görbének a forrásait az összes többi fizikai modell görbe árnyékolja.</message>
+  <message id="raageo-del-rel-eff-curve-tt">Relatív hatásfok görbe eltávolítása.</message>
+  <message id="raageo-add-rel-eff-curve-tt">Újabb relatív hatásfok görbe hozzáadása.</message>
+
 </messages>

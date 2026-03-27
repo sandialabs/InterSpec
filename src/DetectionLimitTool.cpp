@@ -290,7 +290,7 @@ protected:
           
           auto counts_at_distance = [this,intrinsic_eff,activity]( const double dist ) -> double {
             const double counts_4pi_no_air = m_input.counts_per_bq_into_4pi__;
-            const double geom_eff = m_input.drf->fractionalSolidAngle(m_input.drf->detectorDiameter(), dist);
+            const double geom_eff = m_input.drf->fractionalSolidAngle(m_input.drf->detectorDiameter(), dist + m_input.drf->detectorSetback());
             double air_eff = 1.0;
             if( m_input.do_air_attenuation )
             {
@@ -732,6 +732,9 @@ public:
       case PeakContinuum::FlatStep:
       case PeakContinuum::LinearStep:
       case PeakContinuum::BiLinearStep:
+      case PeakContinuum::FlatStepCDF:
+      case PeakContinuum::LinearStepCDF:
+      case PeakContinuum::BiLinearStepCDF:
       case PeakContinuum::External:
         assert( 0 );
         m_continuum->setCurrentIndex( 0 );
@@ -932,7 +935,6 @@ public:
 
 
 DetectionLimitWindow::DetectionLimitWindow( InterSpec *viewer,
-                                                     MaterialDB *materialDB,
                                                      WSuggestionPopup *materialSuggest )
 : AuxWindow( WString::tr("dlt-window-title"),
   (AuxWindowProperties::TabletNotFullScreen
@@ -942,8 +944,8 @@ DetectionLimitWindow::DetectionLimitWindow( InterSpec *viewer,
 {
   assert( viewer );
   rejectWhenEscapePressed( true );
-  
-  m_tool = new DetectionLimitTool( viewer, materialDB, materialSuggest );
+
+  m_tool = new DetectionLimitTool( viewer, materialSuggest );
   WContainerWidget *content = contents();
   content->addStyleClass( "DetectionLimitWindowContent" );
   content->addWidget( m_tool );
@@ -984,7 +986,6 @@ DetectionLimitTool *DetectionLimitWindow::tool()
 
 
 DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
-                                                  MaterialDB *materialDB,
                                                   Wt::WSuggestionPopup *materialSuggest,
                                                   WContainerWidget *parent )
   : WContainerWidget( parent ),
@@ -1003,7 +1004,6 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
     m_distanceLabel( nullptr ),
     m_distanceForActivityLimit( nullptr ),
     m_activityForDistanceLimit( nullptr ),
-    m_materialDB( materialDB ),
     m_materialSuggest( materialSuggest ),
     m_shieldingSelect( nullptr ),
     m_minRelIntensity( nullptr ),
@@ -1179,7 +1179,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   viewer->detectorModified().connect( boost::bind( &DetectionLimitTool::handleDrfSelected, this, boost::placeholders::_1 ) );
   
   
-  m_shieldingSelect = new ShieldingSelect( m_materialDB, m_materialSuggest, inputTable );
+  m_shieldingSelect = new ShieldingSelect( m_materialSuggest, inputTable );
   m_shieldingSelect->addStyleClass( "GridThirdCol GridSecondRow GridSpanTwoRows" );
   m_shieldingSelect->materialEdit()->setEmptyText( WString("<{1}>").arg( WString::tr("dlt-shield-empty-text") ) );
 
@@ -1384,7 +1384,9 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
 #if( PERFORM_DEVELOPER_CHECKS )
   // A quick sanity check to make sure looked-up definition of "Air" matches the statically compiled
   //  one
-  const Material *air = (m_materialDB ? m_materialDB->material( "Air" ) : nullptr);
+  const std::shared_ptr<const MaterialDB> matDB = MaterialDB::instance();
+  const std::shared_ptr<const Material> air_ptr = matDB ? matDB->material( "Air" ) : nullptr;
+  const Material *air = air_ptr.get();
   assert( air );
   
   /*
@@ -1816,7 +1818,7 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
                                                 : DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
     const bool air_atten = (do_air_attenuation && !fixed_geom && (distance > 0.0));
     const double intrinsic_eff = drf ? drf->intrinsicEfficiency( energy ) : 1.0f;
-    const double geom_eff = (drf && (distance >= 0.0)) ? drf->fractionalSolidAngle( drf->detectorDiameter(), distance ) : 1.0;
+    const double geom_eff = (drf && (distance >= 0.0)) ? drf->fractionalSolidAngle( drf->detectorDiameter(), distance + drf->detectorSetback() ) : 1.0;
     const double det_eff = fixed_geom ? intrinsic_eff : (drf ? drf->efficiency(energy, distance) : 1.0);
      
     const double gammas_per_bq_into_4pi = branch_ratio * live_time * shield_transmission;
@@ -3418,6 +3420,8 @@ shared_ptr<DetectionLimitCalc::DeconComputeInput> DetectionLimitTool::getCompute
       case PeakContinuum::NoOffset:   case PeakContinuum::Constant:
       case PeakContinuum::Cubic:      case PeakContinuum::FlatStep:
       case PeakContinuum::LinearStep: case PeakContinuum::BiLinearStep:
+      case PeakContinuum::FlatStepCDF: case PeakContinuum::LinearStepCDF:
+      case PeakContinuum::BiLinearStepCDF:
       case PeakContinuum::External:
         throw logic_error( "DetectionLimitTool::computeForActivity: Unexpected continuum type" );
         break;
@@ -3574,7 +3578,7 @@ void DetectionLimitTool::setRefLinesAndGetLineInfo()
   
   if( m_attenuateForAir->isChecked() && (air_distance > 0.0) )
   {
-    if( !m_materialDB )
+    if( !MaterialDB::instance() )
       throw std::runtime_error( "DetectionLimitTool::setRefLinesAndGetLineInfo(): no material DB" );
     
     const auto air_atten_fcn = boost::bind( &GammaInteractionCalc::transmission_coefficient_air, _1, air_distance );

@@ -28,14 +28,13 @@
   <message id="pm-hdr-tt-fwhm">Ancho completo a media altura</message>
   <message id="pm-hdr-tt-amp">Área del pico</message>
   <message id="pm-hdr-tt-cps">Cuentas del pico por segundo</message>
-  <message id="pm-hdr-tt-sigma">Sigma del pico</message>
-  <message id="pm-hdr-tt-chi2dof">Chi cuadrado sobre grados de libertad</message>
-  <message id="pm-hdr-tt-cont">Tipo de continuo</message>
+  <message id="pm-hdr-tt-photopeak-energy">Energía del fotopico</message>
   <message id="pm-hdr-tt-diff">Diferencia entre energía del pico ajustado y energía de referencia</message>
-  <message id="pm-hdr-tt-cal-peak">Si usar este pico para calibración de energía</message>
-  <message id="pm-hdr-tt-rel-act">Si usar este pico para análisis de actividad relativa</message>
-  <message id="pm-hdr-tt-label">Etiqueta definida por usuario</message>
+  <message id="pm-hdr-tt-man-rel-eff">Usar para análisis de "Isotópicos desde picos".</message>
   <message id="pm-hdr-tt-color">Color del pico</message>
+  <message id="pm-hdr-tt-label">Etiqueta definida por usuario</message>
+  <message id="pm-hdr-tt-roi-counts">Integral de cuentas gamma sobre la región de interés</message>
+  <message id="pm-hdr-tt-"></message>
 </messages>
 
 

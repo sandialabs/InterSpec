@@ -107,6 +107,7 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/InterSpecUser.h"
@@ -132,6 +133,7 @@
 #include "InterSpec/EnterAppUrlWindow.h"
 #include "InterSpec/ExternalRidResult.h"
 #include "InterSpec/LocalTimeDelegate.h"
+#include "InterSpec/FitSkewParamsTool.h"
 #include "InterSpec/MultimediaDisplay.h"
 #include "InterSpec/CompactFileManager.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
@@ -380,6 +382,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_peakInfoDisplay( 0 ),
     m_peakInfoWindow( 0 ),
     m_peakEditWindow( 0 ),
+    m_fitSkewParamsWindow( nullptr ),
     m_currentToolsTab( -1 ),
     m_toolsTabs( 0 ),
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
@@ -400,7 +403,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_relActManualWindow( nullptr ),
     m_relActManualMenuItem( nullptr ),
 #endif
-    m_materialDB( nullptr ),
     m_nuclideSearchWindow( 0 ),
     m_nuclideSearchContainer(0),
     m_nuclideSearch( 0 ),
@@ -1312,6 +1314,7 @@ InterSpec::~InterSpec() noexcept(true)
   del_ptr_set_null( m_warnings ); //WarningWidget isnt necessarily parented, so we do have to manually delete it
   
   deletePeakEdit();
+  closeFitSkewParamsWindow();
   deleteGammaCountDialog();
 
   // The following may be parented by app->domRoot()
@@ -2403,10 +2406,15 @@ void InterSpec::handleRightClick( double energy, double counts,
             }//if( !ref_nuc.empty() )
             
             const string session_id = wApp->sessionId();
-            
+
+            const std::shared_ptr<const PeakFitDetPrefs> fitPrefs = meas ? meas->peakFitDetPrefs() : nullptr;
+            assert( fitPrefs );
+            const PeakFitUtils::CoarseResolutionType det_type
+              = fitPrefs ? fitPrefs->m_det_type : PeakFitUtils::coarse_det_type( hist, meas );
+
             boost::function<void(void)> worker = [=](){
               IsotopeId::populateCandidateNuclides( hist, peak, hintpeaks,
-                      peaks, refLines, detector, session_id, candidates, updater );
+                      peaks, refLines, detector, det_type, session_id, candidates, updater );
             };
             
             io.boost::asio::io_service::post( worker );
@@ -2707,6 +2715,110 @@ void InterSpec::deletePeakEdit()
   m_peakEditWindow = nullptr;
 }//void deletePeakEdit()
 
+
+void InterSpec::showFitSkewParamsWindow()
+{
+  if( m_fitSkewParamsWindow )
+  {
+    m_fitSkewParamsWindow->show();
+    return;
+  }
+
+  m_fitSkewParamsWindow = new FitSkewParamsWindow( this );
+
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ closeFitSkewParamsWindow(); };
+    auto redo = [this](){ showFitSkewParamsWindow(); };
+    m_undo->addUndoRedoStep( undo, redo, "Open fit skew params tool." );
+  }
+}//void showFitSkewParamsWindow()
+
+
+void InterSpec::closeFitSkewParamsWindow()
+{
+  if( !m_fitSkewParamsWindow )
+    return;
+
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ showFitSkewParamsWindow(); };
+    auto redo = [this](){ closeFitSkewParamsWindow(); };
+    m_undo->addUndoRedoStep( undo, redo, "Close fit skew params tool." );
+  }
+
+  delete m_fitSkewParamsWindow;
+  m_fitSkewParamsWindow = nullptr;
+}//void closeFitSkewParamsWindow()
+
+
+void InterSpec::acceptFitSkewParamsWindow()
+{
+  if( !m_fitSkewParamsWindow )
+    return;
+
+  FitSkewParamsTool *tool = m_fitSkewParamsWindow->tool();
+  if( !tool )
+    return;
+
+  // Capture old state for undo
+  shared_ptr<SpecMeas> meas = measurment( SpecUtils::SpectrumType::Foreground );
+  const shared_ptr<const PeakFitDetPrefs> oldPrefs = meas ? meas->peakFitDetPrefs() : nullptr;
+
+  PeakModel *pm = peakModel();
+  const shared_ptr<const deque<PeakModel::PeakShrdPtr>> oldPeaksDeque = pm ? pm->peaks() : nullptr;
+  vector<shared_ptr<const PeakDef>> oldPeaks;
+  if( oldPeaksDeque )
+    oldPeaks.assign( oldPeaksDeque->begin(), oldPeaksDeque->end() );
+
+  // Apply results, suppressing inner undo/redo steps so we can create a single combined step
+  {
+    UndoRedoManager::BlockUndoRedoInserts block;
+    tool->acceptResults();
+  }
+
+  // Capture new state
+  const shared_ptr<const PeakFitDetPrefs> newPrefs = meas ? meas->peakFitDetPrefs() : nullptr;
+  vector<shared_ptr<const PeakDef>> newPeaks;
+  if( pm )
+  {
+    const shared_ptr<const deque<PeakModel::PeakShrdPtr>> newPeaksDeque = pm->peaks();
+    if( newPeaksDeque )
+      newPeaks.assign( newPeaksDeque->begin(), newPeaksDeque->end() );
+  }
+
+  // Create combined undo/redo step for both prefs and peak changes
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    weak_ptr<SpecMeas> weakMeas = meas;
+
+    auto doUndoOrRedo = make_shared<function<void(bool)>>(
+      [weakMeas, oldPrefs, newPrefs, oldPeaks, newPeaks]( const bool is_undo ){
+        shared_ptr<SpecMeas> m = weakMeas.lock();
+        if( m )
+          m->setPeakFitDetPrefs( is_undo ? oldPrefs : newPrefs );
+
+        InterSpec *viewer = InterSpec::instance();
+        if( viewer )
+        {
+          viewer->peakFitDetPrefsChanged().emit();
+          PeakModel *peakModel = viewer->peakModel();
+          if( peakModel )
+            peakModel->setPeaks( is_undo ? oldPeaks : newPeaks );
+        }
+      }
+    );
+
+    auto undo = [doUndoOrRedo](){ (*doUndoOrRedo)( true ); };
+    auto redo = [doUndoOrRedo](){ (*doUndoOrRedo)( false ); };
+
+    m_undo->addUndoRedoStep( undo, redo, "Accept fit skew params." );
+  }
+
+  // Close the window without adding another undo step
+  delete m_fitSkewParamsWindow;
+  m_fitSkewParamsWindow = nullptr;
+}//void acceptFitSkewParamsWindow()
 
 
 void InterSpec::setIsotopeSearchEnergy( double energy )
@@ -6695,7 +6807,6 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_referencePhotopeakLinesWindow = NULL;
       
     m_referencePhotopeakLines = new ReferencePhotopeakDisplay( m_spectrum,
-                                              m_materialDB.get(),
                                               m_shieldingSuggestion,
                                               this );
     setReferenceLineColors( nullptr );
@@ -7702,16 +7813,19 @@ void InterSpec::finishHardBackgroundSub( std::shared_ptr<bool> truncate_neg, std
         for( const auto &i : *orig_peaks )
           input_peaks.push_back( *i );
         
-        const auto res_type = PeakFitUtils::coarse_resolution_from_peaks( *orig_peaks );
-        const bool isHPGe = (res_type == PeakFitUtils::CoarseResolutionType::High);
-        
+        std::shared_ptr<const SpecMeas> fore = measurment( SpecUtils::SpectrumType::Foreground );
+        std::shared_ptr<const PeakFitDetPrefs> fitPrefs = fore ? fore->peakFitDetPrefs() : nullptr;
+        assert( fitPrefs );
+        const PeakFitUtils::CoarseResolutionType detType
+          = fitPrefs ? fitPrefs->m_det_type : PeakFitUtils::coarse_det_type( newspec, fore );
+
         const double lowE = newspec->gamma_energy_min();
         const double upE = newspec->gamma_energy_max();
-      
+
         Wt::WFlags<PeakFitLM::PeakFitLMOptions> re_fit_options;
         //re_fit_options |= PeakFitLM::PeakFitLMOptions::MediumRefinementOnly;
-        
-        refit_peaks = fitPeaksInRange( lowE, upE, 0.0, 0.0, 0.0, input_peaks, newspec, re_fit_options, isHPGe );
+
+        refit_peaks = fitPeaksInRange( lowE, upE, 0.0, 0.0, 0.0, input_peaks, newspec, re_fit_options, detType );
         
         std::deque<std::shared_ptr<const PeakDef> > peakdeque;
         for( const auto &p : refit_peaks )
@@ -8709,7 +8823,7 @@ DetectionLimitWindow *InterSpec::createDetectionLimitTool()
 {
   if( !m_detectionLimitWindow )
   {
-    m_detectionLimitWindow = new DetectionLimitWindow( this, m_materialDB.get(), m_shieldingSuggestion );
+    m_detectionLimitWindow = new DetectionLimitWindow( this, m_shieldingSuggestion );
     m_detectionLimitWindow->finished().connect( this, &InterSpec::handleDetectionLimitWindowClose );
   }//if( !m_detectionLimitWindow )
   
@@ -8779,7 +8893,7 @@ DetectionLimitSimpleWindow *InterSpec::showSimpleMdaWindow()
   if( m_simpleMdaWindow )
     return m_simpleMdaWindow;
   
-  m_simpleMdaWindow = new DetectionLimitSimpleWindow( m_materialDB.get(), m_shieldingSuggestion, this );
+  m_simpleMdaWindow = new DetectionLimitSimpleWindow( m_shieldingSuggestion, this );
   m_simpleMdaWindow->finished().connect( this, &InterSpec::handleSimpleMdaWindowClose );
   
   return m_simpleMdaWindow;
@@ -8978,7 +9092,7 @@ SimpleActivityCalcWindow *InterSpec::showSimpleActivityCalcWindow()
   if( m_simpleActivityCalcWindow )
     return m_simpleActivityCalcWindow;
   
-  m_simpleActivityCalcWindow = new SimpleActivityCalcWindow( m_materialDB.get(), m_shieldingSuggestion, this );
+  m_simpleActivityCalcWindow = new SimpleActivityCalcWindow( m_shieldingSuggestion, this );
   m_simpleActivityCalcWindow->finished().connect( this, &InterSpec::handleSimpleActivityCalcWindowClose );
   
   return m_simpleActivityCalcWindow;
@@ -9718,61 +9832,51 @@ void InterSpec::programaticallyCloseAutoRemoteRidResultDialog()
 #if( USE_REL_ACT_TOOL )
 RelActAutoGui *InterSpec::relActAutoWindow( const bool createIfNotOpen )
 {
+  assert( (!m_relActAutoGui) == (!m_relActAutoWindow) );
+  
   if( !createIfNotOpen )
     return m_relActAutoGui;
   
-  if( !m_relActAutoGui )
+  if( m_relActAutoGui )
+    return m_relActAutoGui;
+  
+  const std::pair<RelActAutoGui *,AuxWindow *> widgets = RelActAutoGui::createWindow( this );
+  if( !widgets.first || !widgets.second )
+    return m_relActAutoGui;
+  
+  m_relActAutoGui = widgets.first;
+  m_relActAutoWindow = widgets.second;
+  
+  m_relActAutoWindow->finished().connect( boost::bind( &InterSpec::handleRelActAutoClose, this ) );
+  
+  try
   {
-    const std::pair<RelActAutoGui *,AuxWindow *> widgets = RelActAutoGui::createWindow( this );
-    if( !widgets.first || !widgets.second )
-      return m_relActAutoGui;
-      
-    m_relActAutoGui = widgets.first;
-    m_relActAutoWindow = widgets.second;
-    
-    m_relActAutoWindow->finished().connect( boost::bind( &InterSpec::handleRelActAutoClose, this ) );
-    
-    try
+    std::unique_ptr<RelActCalcAuto::RelActAutoGuiState> relActState = m_dataMeasurement
+    ? m_dataMeasurement->getRelActAutoGuiState()
+    : nullptr;
+    if( relActState )
     {
-      std::unique_ptr<RelActCalcAuto::RelActAutoGuiState> relActState = m_dataMeasurement
-                                                  ? m_dataMeasurement->getRelActAutoGuiState( materialDataBase() )
-                                                  : nullptr;
-      if( relActState )
-      {
-        m_relActAutoGui->deSerialize( *relActState );
-        m_relActAutoGui->checkIfInUserConfigOrCreateOne( true );
-      }
-    }catch( std::exception &e )
-    {
-      passMessage( "Error setting &quot;Isotopics from nuclides&quot; state to previously used state: "
-                  + std::string(e.what()), WarningWidget::WarningMsgHigh );
-      
+      m_relActAutoGui->deSerialize( *relActState );
+      m_relActAutoGui->checkIfInUserConfigOrCreateOne( true );
+    }
+  }catch( std::exception &e )
+  {
+    passMessage( "Error setting &quot;Isotopics from nuclides&quot; state to previously used state: "
+                + std::string(e.what()), WarningWidget::WarningMsgHigh );
+    
 #if( PERFORM_DEVELOPER_CHECKS )
-      log_developer_error( __func__, ("Error deserializing Rel. Act. GUI state: " + string(e.what())).c_str() );
+    log_developer_error( __func__, ("Error deserializing Rel. Act. GUI state: " + string(e.what())).c_str() );
 #endif
-      
-      //assert( 0 );
-    }//try / catch
-
-    if( m_undo && m_undo->canAddUndoRedoNow() )
-    {
-      auto undo = [this](){ handleRelActAutoClose(); };
-      auto redo = [this](){ relActAutoWindow(true); };
-      m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show 'Isotopics from nuclides' tool" );
-    }//if( m_undo && !m_undo->canAddUndoRedoNow() )
-
-    // Since we dont have undo/redo implemented for RelActAuto - we will block it entirely
-    new UndoRedoManager::BlockGuiUndoRedo( m_relActAutoGui );
-  }else
-  {
-    const double windowWidth = 0.95 * renderedWidth();
-    const double windowHeight = 0.95 * renderedHeight();
-    m_relActAutoWindow->resizeWindow( windowWidth, windowHeight );
     
-    m_relActAutoWindow->resizeToFitOnScreen();
-    m_relActAutoWindow->show();
-    m_relActAutoWindow->centerWindow();
-  }//if( !m_shieldingSourceFit )
+    //assert( 0 );
+  }//try / catch
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ handleRelActAutoClose(); };
+    auto redo = [this](){ relActAutoWindow(true); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show 'Isotopics from nuclides' tool" );
+  }//if( m_undo && !m_undo->canAddUndoRedoNow() )
   
   assert( m_relActAutoMenuItem );
   m_relActAutoMenuItem->disable();
@@ -10158,40 +10262,29 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
 
 
 
-void InterSpec::fillMaterialDb( std::shared_ptr<MaterialDB> materialDB,
-                                     const std::string sessionid,
-                                     boost::function<void(void)> update )
-{
-  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-  try
-  {
-    //materialDB can get destructed if the session ends immediately....
-    const string materialfile = SpecUtils::append_path(ns_staticDataDirectory, "MaterialDataBase.txt" );
-    materialDB->parseGadrasMaterialFile( materialfile, db, false );
-    
-    WServer::instance()->post( sessionid, update );
-  }catch( std::exception &e )
-  {
-    WString msg = "Error initializing the material database: " + string(e.what());
-    
-    WServer::instance()->post( sessionid, boost::bind( &postSvlogHelper, msg, int(WarningWidget::WarningMsgHigh) ) );
-    
-    return;
-  }//try / catch
-}//void fillMaterialDb(...)
-
-
 void InterSpec::pushMaterialSuggestionsToUsers()
 {
-  if( !m_materialDB || !m_shieldingSuggestion )
+  if( !m_shieldingSuggestion )
     throw runtime_error( "pushMaterialSuggestionsToUsers(): you must"
                         " call initMaterialDbAndSuggestions() first." );
 
-  const vector<const Material *> materials = m_materialDB->materials();
-  for( const Material *material : materials )
+  if( !MaterialDB::initialized() )
   {
-    const string &name = material->name;
-    const string &desc = material->description;
+    const string &err = MaterialDB::init_error();
+    if( !err.empty() )
+    {
+      passMessage( WString::fromUTF8( "Error initializing material database: " + err ),
+                   WarningWidget::WarningMsgHigh );
+    }
+    return;
+  }//if( !MaterialDB::initialized() )
+
+  const std::shared_ptr<const MaterialDB> matDb = MaterialDB::instance();
+  const vector<std::shared_ptr<const Material>> &mats = matDb->materials();
+  for( const std::shared_ptr<const Material> &mat : mats )
+  {
+    const string &name = mat->name;
+    const string &desc = mat->description;
 
     // Lets filter out things like "PuO2 - X.X% Pu240 Plutonium dioxide", since
     //  InterSpec doesnt make used of this enrichment anywhere; but we'll leave
@@ -10206,13 +10299,13 @@ void InterSpec::pushMaterialSuggestionsToUsers()
       continue;
 
     m_shieldingSuggestion->addSuggestion( name, name );
-    if( SpecUtils::iequals_ascii(name, desc) )
+    if( SpecUtils::iequals_ascii( name, desc ) )
       continue;
 
-    const string::size_type sub_pos = SpecUtils::ifind_substr_ascii(name, desc.c_str());
+    const string::size_type sub_pos = SpecUtils::ifind_substr_ascii( name, desc.c_str() );
     if( sub_pos == string::npos )
       m_shieldingSuggestion->addSuggestion( desc, desc );
-  }//for( const Material *material : materials )
+  }//for( const shared_ptr<const Material> &mat : mats )
 
   wApp->triggerUpdate();
 }//void pushMaterialSuggestionsToUsers()
@@ -10231,11 +10324,11 @@ void InterSpec::initMaterialDbAndSuggestions()
     //popupOptions.wordSeparators     = "-_., ;()";     //To show suggestions based on matches of the edited value with parts of the suggestion.
     popupOptions.wordStartRegexp = "\\s|^|\\(|\\<";       // Instead of using .wordSeparators, we will use the regex option to start matching at whitespaces, start of line, open-paren, and boundaries of words (probably a bit duplicative).
     popupOptions.appendReplacedText = "";             //
-    
+
     // We may want to parent `m_shieldingSuggestion...
-    
+
     m_shieldingSuggestion = new WSuggestionPopup( popupOptions, this );
-    
+
     m_shieldingSuggestion->addStyleClass("suggestion");
 #if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
     m_shieldingSuggestion->setJavaScriptMember("wtNoReparent", "true");
@@ -10244,16 +10337,7 @@ void InterSpec::initMaterialDbAndSuggestions()
     m_shieldingSuggestion->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
   }//if( !m_shieldingSuggestion )
 
-  if( !m_materialDB )
-  {
-    m_materialDB = std::make_shared<MaterialDB>();
-    
-    boost::function<void(void)> success = wApp->bind( boost::bind(&InterSpec::pushMaterialSuggestionsToUsers, this) );
-    
-    boost::function<void(void)> worker = boost::bind( &fillMaterialDb,
-                                    m_materialDB, wApp->sessionId(), success );
-    WServer::instance()->ioService().boost::asio::io_service::post( worker );
-  }//if( !m_materialDB )
+  pushMaterialSuggestionsToUsers();
 }//void InterSpec::initMaterialDbAndSuggestions()
 
 
@@ -10261,7 +10345,7 @@ GammaXsWindow *InterSpec::showGammaXsTool()
 {
   if( !m_gammaXsToolWindow )
   {
-    m_gammaXsToolWindow = new GammaXsWindow( m_materialDB.get(), m_shieldingSuggestion, this );
+    m_gammaXsToolWindow = new GammaXsWindow( m_shieldingSuggestion, this );
     m_gammaXsToolWindow->finished().connect( this, &InterSpec::deleteGammaXsTool );
     
     if( m_undo && m_undo->canAddUndoRedoNow() )
@@ -10321,7 +10405,7 @@ DoseCalcWindow *InterSpec::showDoseTool()
 {
   if( !m_doseCalcWindow )
   {
-    m_doseCalcWindow = new DoseCalcWindow( m_materialDB.get(), m_shieldingSuggestion, this );
+    m_doseCalcWindow = new DoseCalcWindow( m_shieldingSuggestion, this );
     m_doseCalcWindow->finished().connect( this, &InterSpec::deleteDoseCalcTool );
     
     if( m_undo && m_undo->canAddUndoRedoNow() )
@@ -10390,7 +10474,7 @@ MakeDrfWindow *InterSpec::showMakeDrfWindow()
         item->setDisabled( true );
     }//for( loop over "Tools" menu items )
     
-    m_makeDrfTool = new MakeDrfWindow( this, m_materialDB.get(), m_shieldingSuggestion );
+    m_makeDrfTool = new MakeDrfWindow( this, m_shieldingSuggestion );
     m_makeDrfTool->finished().connect( boost::bind( &InterSpec::handleCloseMakeDrfWindow, this, m_makeDrfTool ) );
     new UndoRedoManager::BlockGuiUndoRedo( m_makeDrfTool ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
   }//if( !m_makeDrfTool )
@@ -10739,11 +10823,10 @@ void InterSpec::showGammaLinesWindow()
   m_referencePhotopeakLinesWindow->rejectWhenEscapePressed();
 
   m_referencePhotopeakLines = new ReferencePhotopeakDisplay( m_spectrum,
-                                               m_materialDB.get(),
                                                m_shieldingSuggestion,
                                                this );
   setReferenceLineColors( nullptr );
-  
+
   m_externalRidResultsRecieved.connect( boost::bind( &ReferencePhotopeakDisplay::setExternalRidResults,
                                                     m_referencePhotopeakLines, boost::placeholders::_1 ));
   
@@ -10819,7 +10902,6 @@ void InterSpec::closeGammaLinesWindow()
   if( m_toolsTabs )
   {
     m_referencePhotopeakLines = new ReferencePhotopeakDisplay( m_spectrum,
-                                                   m_materialDB.get(),
                                                    m_shieldingSuggestion,
                                                    this );
     setReferenceLineColors( nullptr );
@@ -10933,18 +11015,6 @@ PeakModel *InterSpec::peakModel()
 }
 
 
-MaterialDB *InterSpec::materialDataBase()
-{
-  return m_materialDB.get();
-}
-
-
-std::shared_ptr<MaterialDB> InterSpec::materialDataBaseShared()
-{
-  return m_materialDB;
-}
-
-
 Wt::WSuggestionPopup *InterSpec::shieldingSuggester()
 {
   return m_shieldingSuggestion;
@@ -10965,6 +11035,12 @@ Wt::Signal<std::shared_ptr<DetectorPeakResponse> > &InterSpec::detectorChanged()
 Wt::Signal<std::shared_ptr<DetectorPeakResponse> > &InterSpec::detectorModified()
 {
   return m_detectorModified;
+}
+
+
+Wt::Signal<> &InterSpec::peakFitDetPrefsChanged()
+{
+  return m_peakFitDetPrefsChanged;
 }
 
 
@@ -11007,8 +11083,9 @@ void InterSpec::changeDisplayedSampleNums( const std::set<int> &samples,
     case SpecUtils::SpectrumType::Foreground:
       sampleset = &m_displayedSamples;
       deletePeakEdit();
+      closeFitSkewParamsWindow();
     break;
-      
+
     case SpecUtils::SpectrumType::SecondForeground:
       sampleset = &m_sectondForgroundSampleNumbers;
     break;
@@ -11053,10 +11130,10 @@ void InterSpec::changeDisplayedSampleNums( const std::set<int> &samples,
       shared_ptr<const SpecUtils::Measurement> spectrum = is_fore ? m_spectrum->data() : m_spectrum->background();
       if( meas && spectrum && !meas->automatedSearchPeaks(samples) )
       {
-        const bool isHPGe = PeakFitUtils::is_likely_high_res( this );
+        shared_ptr<const PeakFitDetPrefs> hintFitPrefs = meas->peakFitDetPrefs();
 #if( !BUILD_AS_UNIT_TEST_SUITE )
         // We wont search for hint peaks if we are running unit tests - so it wont take forever
-        searchForHintPeaks( meas, samples, spectrum, isHPGe );
+        searchForHintPeaks( meas, samples, spectrum, hintFitPrefs );
 #endif
       }else if( meas )
       {
@@ -11276,6 +11353,74 @@ void InterSpec::initOsColorThemeChangeDetect()
 #endif
 
 
+void InterSpec::determinePeakFitDetPrefs( shared_ptr<SpecMeas> meas,
+                                          shared_ptr<SpecMeas> previous )
+{
+  if( !meas )
+    return;
+
+  // 1. SpecMeas already has it (e.g., loaded from N42 file)
+  if( meas->peakFitDetPrefs() )
+    return;
+
+  // 2. Previous foreground with same instrument (broad match)
+  if( previous && previous->peakFitDetPrefs() )
+  {
+    const bool same_id = (!previous->instrument_id().empty()
+                          && (previous->instrument_id() == meas->instrument_id()));
+    const bool same_det_type = (previous->detector_type() != SpecUtils::DetectorType::Unknown)
+                                && (previous->detector_type() == meas->detector_type());
+    const bool same_mfr_model = (!previous->manufacturer().empty()
+                                 && (previous->manufacturer() == meas->manufacturer())
+                                 && (previous->instrument_model() == meas->instrument_model()));
+
+    if( same_id || same_det_type || same_mfr_model )
+    {
+      meas->setPeakFitDetPrefs( previous->peakFitDetPrefs() );
+      return;
+    }
+  }//if( previous && previous->peakFitDetPrefs() )
+
+  // 3. DetectorPeakResponse has prefs
+  if( meas->detector() && meas->detector()->peakFitDetPrefs() )
+  {
+    auto prefs = make_shared<PeakFitDetPrefs>( *meas->detector()->peakFitDetPrefs() );
+    prefs->m_source = PeakFitDetPrefs::LoadingSource::FromDetectorPeakResponse;
+    meas->setPeakFitDetPrefs( prefs );
+    return;
+  }
+
+  // 4. Default for SpecUtils::DetectorType + keyword matching
+  {
+    const shared_ptr<const PeakFitDetPrefs> prefs
+      = PeakFitDetPrefs::defaultForDetectorType( static_cast<int>( meas->detector_type() ),
+                                                  meas->manufacturer(),
+                                                  meas->instrument_model() );
+    if( prefs )
+    {
+      meas->setPeakFitDetPrefs( prefs );
+      return;
+    }
+  }
+
+  // 5. Guess from spectral data (stub - currently returns nullptr)
+  // {
+  //   auto display = meas->sum_measurements( {}, meas->detector_names() );
+  //   auto prefs = PeakFitDetPrefs::guessFromSpectralData( display );
+  //   if( prefs )
+  //   {
+  //     meas->setPeakFitDetPrefs( prefs );
+  //     return;
+  //   }
+  // }
+
+  // 6. Default
+  auto prefs = make_shared<PeakFitDetPrefs>();
+  prefs->m_source = PeakFitDetPrefs::LoadingSource::Default;
+  meas->setPeakFitDetPrefs( prefs );
+}//void determinePeakFitDetPrefs(...)
+
+
 void InterSpec::loadDetectorResponseFunction( std::shared_ptr<SpecMeas> meas,
                                               SpecUtils::DetectorType type,
                                               const std::string serial_number,
@@ -11340,18 +11485,29 @@ void InterSpec::loadDetectorResponseFunction( std::shared_ptr<SpecMeas> meas,
     const bool wasModifiedSinceDecode = meas->modified_since_decode();
       
     meas->setDetector( det );
-      
+
+    // Update PeakFitDetPrefs from DRF if the user hasnt explicitly set them
+    if( det->peakFitDetPrefs()
+       && (!meas->peakFitDetPrefs()
+           || meas->peakFitDetPrefs()->m_source != PeakFitDetPrefs::LoadingSource::UserInputInGui) )
+    {
+      auto prefs = std::make_shared<PeakFitDetPrefs>( *det->peakFitDetPrefs() );
+      prefs->m_source = PeakFitDetPrefs::LoadingSource::FromDetectorPeakResponse;
+      meas->setPeakFitDetPrefs( prefs );
+      m_peakFitDetPrefsChanged.emit();
+    }
+
     if( !wasModified )
       meas->reset_modified();
-      
+
     if( !wasModifiedSinceDecode )
       meas->reset_modified_since_decode();
-    
+
     m_detectorChanged.emit( det );
-    
+
     const char *msg_key = (usingUserDefaultDet ? "info-user-default-drf" : "info-app-default-drf");
     passMessage( WString::tr(msg_key), WarningWidget::WarningMsgInfo );
-    
+
     WApplication *app = WApplication::instance();
     if( app )
       app->triggerUpdate();
@@ -11458,8 +11614,11 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   {
     case SpecUtils::SpectrumType::Foreground:
       if( !sameSpecFile )
+      {
         deletePeakEdit();
-      
+        closeFitSkewParamsWindow();
+      }
+
       m_exportSpecFileMenu->setDisabled( !meas );
     break;
     
@@ -11539,8 +11698,17 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
             boost::placeholders::_2, boost::placeholders::_3, boost::placeholders::_4 ) );
       }//if( meas )
 
+      // Determine PeakFitDetPrefs for new foreground
+      if( meas )
+        determinePeakFitDetPrefs( meas, m_dataMeasurement );
+
       m_dataMeasurement = meas;
-      
+
+      // Emit after m_dataMeasurement is set, so handlers reading
+      //  measurment(Foreground) get the new measurement.
+      if( meas )
+        m_peakFitDetPrefsChanged.emit();
+
       findAndSetExcludedSamples( sample_numbers );
 
       if( !sameSpecFile && m_shieldingSourceFit )
@@ -11685,10 +11853,13 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 #endif
       
       const std::string sessionid = wApp->sessionId();
-      propigate_peaks_fcns = [this, input_peaks, original_peaks, sessionid]( std::shared_ptr<const SpecUtils::Measurement> data ){
+      std::shared_ptr<const PeakFitDetPrefs> propFitPrefs = m_dataMeasurement ? m_dataMeasurement->peakFitDetPrefs() : nullptr;
+      if( !propFitPrefs && m_dataMeasurement && m_dataMeasurement->detector() )
+        propFitPrefs = m_dataMeasurement->detector()->peakFitDetPrefs();
+      propigate_peaks_fcns = [this, input_peaks, original_peaks, propFitPrefs, sessionid]( std::shared_ptr<const SpecUtils::Measurement> data ){
         PeakSearchGuiUtils::fit_template_peaks( this, data, input_peaks, original_peaks,
                        PeakSearchGuiUtils::PeakTemplateFitSrc::PreviousSpectrum,
-                       sessionid );
+                       propFitPrefs, sessionid );
       };
     }//if( prev spec had peaks and new one doesnt )
   }//if( should propogate peaks )
@@ -11826,11 +11997,11 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       
       if( meas && !meas->automatedSearchPeaks(sample_numbers) )
       {
-        const bool isHPGe = PeakFitUtils::is_likely_high_res( this );
-        
+        shared_ptr<const PeakFitDetPrefs> hintFitPrefs = meas->peakFitDetPrefs();
+
         // We wont search for hint peaks if we are running unit tests - so it wont take forever
 #if( !BUILD_AS_UNIT_TEST_SUITE )
-        searchForHintPeaks( meas, sample_numbers, spectrum, isHPGe );
+        searchForHintPeaks( meas, sample_numbers, spectrum, hintFitPrefs );
 #endif //#if( !BUILD_AS_UNIT_TEST_SUITE )
       }else if( meas )
       {
@@ -12753,38 +12924,42 @@ bool InterSpec::colorPeaksBasedOnReferenceLines() const
 void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
                                    const std::set<int> &samples,
                                    const std::shared_ptr<const SpecUtils::Measurement> &spectrum_meas,
-                                   const bool isHPGe )
+                                   std::shared_ptr<const PeakFitDetPrefs> fitPrefs )
 {
   assert( data );
   if( !data )
     return;
-  
+
   shared_ptr<const deque<shared_ptr<const PeakDef>>> origPeaks;
   if( data->sampleNumsWithAutomatedSearchPeaks().count(samples) )
     origPeaks = data->peaks(samples);
   if( origPeaks )
     origPeaks = make_shared<deque<shared_ptr<const PeakDef>>>( *origPeaks );
-  
+
   shared_ptr<vector<shared_ptr<const PeakDef>>> searchresults = make_shared<vector<shared_ptr<const PeakDef>>>();
-  
+
   const string sessionId = wApp->sessionId();
   weak_ptr<const SpecUtils::Measurement> weakdata = spectrum_meas;
-  
+
   // Grab the detector
   shared_ptr<DetectorPeakResponse> drf = data->detector();
   // If this is the background measurement, and it doesnt have a detector, try to grab it from the foreground
   if( !drf && (data != m_dataMeasurement) && (data == m_backgroundMeasurement) && m_dataMeasurement )
     drf = m_dataMeasurement->detector();
-  
+
   weak_ptr<SpecMeas> spectrum = data;
-  
+  const bool updateDetTypeGuess = ((data == m_dataMeasurement)
+                                    && (samples == m_displayedSamples)
+                                    && (!fitPrefs
+                                    || (fitPrefs->m_det_type == PeakFitUtils::CoarseResolutionType::Unknown)));
+
   boost::function<void(void)> callback = wApp->bind( boost::bind(&InterSpec::setHintPeaks,
-                this, spectrum, samples, origPeaks, searchresults
+                this, spectrum, samples, origPeaks, searchresults, updateDetTypeGuess
   ) );
-  
+
   boost::function<void(void)> worker = [=](){
     PeakSearchGuiUtils::search_for_peaks_worker( weakdata, drf, origPeaks, {}, false, searchresults,
-                                                callback, sessionId, false, isHPGe );
+                                                callback, sessionId, false, fitPrefs );
   };
   
 
@@ -12806,7 +12981,8 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
 void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
                   std::set<int> samplenums,
                   shared_ptr<const deque< std::shared_ptr<const PeakDef>>> existing,
-                  shared_ptr<vector<std::shared_ptr<const PeakDef>>> resultpeaks )
+                  shared_ptr<vector<std::shared_ptr<const PeakDef>>> resultpeaks,
+                  const bool potentuallyUpdateDetTypeGuess )
 {
 #if( PERFORM_DEVELOPER_CHECKS )
   if( !wApp )
@@ -12867,6 +13043,35 @@ void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
   }//if( addedpeaks.size() )
   
   spectrum->setAutomatedSearchPeaks( samplenums, newpeaks );
+  
+  
+  if( potentuallyUpdateDetTypeGuess
+     && spectrum
+     && resultpeaks
+     && !resultpeaks->empty()
+     && (spectrum == m_dataMeasurement)
+     && (m_displayedSamples == samplenums) )
+  {
+    shared_ptr<const PeakFitDetPrefs> hintFitPrefs = spectrum->peakFitDetPrefs();
+    if( !hintFitPrefs || (hintFitPrefs->m_det_type == PeakFitUtils::CoarseResolutionType::Unknown) )
+    {
+      const PeakFitUtils::CoarseResolutionType peak_fwhm_type
+              = PeakFitUtils::coarse_resolution_from_peaks( *resultpeaks );
+      if( peak_fwhm_type != PeakFitUtils::CoarseResolutionType::Unknown )
+      {
+        shared_ptr<PeakFitDetPrefs> prefs = make_shared<PeakFitDetPrefs>();
+        prefs->m_det_type = peak_fwhm_type;
+        prefs->m_peak_skew_type = PeakDef::SkewType::NoSkew;
+        prefs->m_roi_independent_skew = false;
+        prefs->m_fwhm_method = PeakFitDetPrefs::FwhmMethod::Normal;
+        prefs->m_source = PeakFitDetPrefs::LoadingSource::FromSpectralData;
+        m_dataMeasurement->setPeakFitDetPrefs( prefs );
+        m_peakFitDetPrefsChanged.emit();
+        
+        // TODO: we should launch a re-fit of the hint peak search...
+      }
+    }//
+  }//if( potentuallyUpdateDetTypeGuess )
   
   if( (spectrum == m_dataMeasurement) && (m_displayedSamples == samplenums) )
     m_hintPeaksSet.emit(SpecUtils::SpectrumType::Foreground);
@@ -12963,6 +13168,14 @@ void InterSpec::excludePeaksFromRange( double x0, double x1 )
   for( PeakDef peak : peaks_to_keep )
     peaksinroi[peak.continuum()].push_back( std::make_shared<PeakDef>(peak) );
   
+  const shared_ptr<const SpecMeas> fgMeas = measurment( SpecUtils::SpectrumType::Foreground );
+  shared_ptr<const PeakFitDetPrefs> erasePrefs = fgMeas ? fgMeas->peakFitDetPrefs() : nullptr;
+  if( !erasePrefs && detector )
+    erasePrefs = detector->peakFitDetPrefs();
+  assert( erasePrefs );
+  const PeakFitUtils::CoarseResolutionType eraseDetType
+    = erasePrefs ? erasePrefs->m_det_type : PeakFitUtils::coarse_det_type( data, fgMeas );
+
   map<std::shared_ptr<const PeakContinuum>, PeakShrdVec >::const_iterator iter;
   for( iter = peaksinroi.begin(); iter != peaksinroi.end(); ++iter )
   {
@@ -12971,8 +13184,8 @@ void InterSpec::excludePeaksFromRange( double x0, double x1 )
     //refitPeakFromRightClick();
     //This would make things more consistent between right clicking to fit, and
     //  erasing part of the ROI (which is what happened if we are here).
-    
-    PeakShrdVec newpeaks = refitPeaksThatShareROI( data, detector, iter->second, PeakFitLM::PeakFitLMOptions::SmallRefinementOnly );
+
+    PeakShrdVec newpeaks = refitPeaksThatShareROI( data, detector, iter->second, eraseDetType, PeakFitLM::PeakFitLMOptions::SmallRefinementOnly );
     if( newpeaks.size() == iter->second.size() )
     {
       for( size_t j = 0; j < newpeaks.size(); ++j )

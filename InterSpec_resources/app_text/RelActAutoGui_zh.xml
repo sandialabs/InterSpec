@@ -23,6 +23,7 @@
   <message id="raag-fwhm-est">FWHM估计</message>
   <message id="raag-fwhm-form">FWHM形式</message>
   <message id="raag-peak-skew">峰偏斜</message>
+  <message id="raag-lorentzian-xrays">Lorentzian X射线</message>
   <message id="raag-add-uncert">附加不确定度</message>
   <message id="raag-yield-info">产额信息</message>
   
@@ -69,6 +70,7 @@
   </message>
   <message id="raag-tt-fwhm-form">用于将峰FWHM建模为能量函数的方程类型。</message>
   <message id="raag-tt-skew-type">应用于峰的偏斜类型；将拟合偏斜参数。</message>
+  <message id="raag-tt-lorentzian-xrays">勾选后，X射线峰将使用Voigt轮廓，其Lorentzian宽度设置为自然X射线线宽。这考虑了X射线谱线固有的Lorentzian形状。仅与NoSkew或GaussPlusBortel峰偏斜类型兼容。</message>
   <message id="raag-tt-u-pu-data-source">铀和钚的伽马分支比的核数据源。</message>
   <message id="raag-tt-add-source">添加源。</message>
   <message id="raag-tt-add-energy-range">添加能量范围。</message>

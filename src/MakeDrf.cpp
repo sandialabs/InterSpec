@@ -75,7 +75,9 @@
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/MakeDrfChart.h"
+#include "InterSpec/PeakFitDetPrefsGui.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/MakeDrfSrcDef.h"
@@ -701,7 +703,7 @@ namespace
   {
     std::shared_ptr<SpecMeas> m_meas;
     set<int> m_samples;
-    MaterialDB *m_materialDB;
+    
     WSuggestionPopup *m_materialSuggest;
     WContainerWidget *m_peaks;
     WContainerWidget *m_sources;
@@ -803,13 +805,11 @@ namespace
     
   public:
     DrfSpecFileSample( std::shared_ptr<SpecMeas> meas, set<int> samples,
-                      MaterialDB *materialDB,
                       Wt::WSuggestionPopup *materialSuggest,
                       WContainerWidget *parent = nullptr )
     : WPanel( parent ),
       m_meas( meas ),
       m_samples( samples ),
-      m_materialDB( materialDB ),
       m_materialSuggest( materialSuggest ),
       m_peaks( nullptr ),
       m_sources( nullptr ),
@@ -1266,7 +1266,7 @@ namespace
             }//for( const int sample : m_samples )
           }//for( size_t i = 0; i < detNames.size(); ++i )
           
-          MakeDrfSrcDef *src = new MakeDrfSrcDef( n, measDate, m_materialDB, m_materialSuggest, m_sources );
+          MakeDrfSrcDef *src = new MakeDrfSrcDef( n, measDate, m_materialSuggest, m_sources );
           src->setIsEffGeometryType( static_cast<int>(m_geometry_type) );
           src->updated().connect( std::bind([this](){ m_srcInfoUpdated.emit(); }) );
           
@@ -1371,7 +1371,6 @@ namespace
     
   public:
     DrfSpecFile( std::shared_ptr<SpecMeas> meas,
-                MaterialDB *materialDB,
                 Wt::WSuggestionPopup *materialSuggest,
                 WContainerWidget *parent = nullptr )
       : WPanel( parent ),
@@ -1393,7 +1392,7 @@ namespace
           continue;
         
         ++nsamples;
-        auto sample = new DrfSpecFileSample( meas, peakSamps, materialDB, materialSuggest, m_sampleWidgets );
+        auto sample = new DrfSpecFileSample( meas, peakSamps, materialSuggest, m_sampleWidgets );
         sample->srcInfoUpdated().connect( std::bind( [this](){ m_updated.emit(); }) );
       }//for( const set<int> &peakSamps : sampsWithPeaks )
       
@@ -1435,7 +1434,6 @@ namespace
 
 
 MakeDrfWindow::MakeDrfWindow( InterSpec *viewer,
-                MaterialDB *materialDB,
                 Wt::WSuggestionPopup *materialSuggest )
 : AuxWindow( WString::tr("window-title-create-drf"), 
             (AuxWindowProperties::TabletNotFullScreen
@@ -1456,7 +1454,7 @@ MakeDrfWindow::MakeDrfWindow( InterSpec *viewer,
     setMinimumSize( std::min(width,640), std::min(height,480) );
   }//if( ww > 100 && wh > 100 )
     
-  m_tool = new MakeDrf( viewer, materialDB, materialSuggest );
+  m_tool = new MakeDrf( viewer, materialSuggest );
   
   stretcher()->addWidget( m_tool, 0, 0 );
   stretcher()->setContentsMargins( 0, 0, 0, 0 );
@@ -1489,12 +1487,11 @@ MakeDrf *MakeDrfWindow::tool()
   
 
 
-MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
+MakeDrf::MakeDrf( InterSpec *viewer,
                   Wt::WSuggestionPopup *materialSuggest,
                   Wt::WContainerWidget *parent )
 : WContainerWidget( parent ),
   m_interspec( viewer ),
-  m_materialDB( materialDB ),
   m_materialSuggest( materialSuggest ),
   m_intrinsicEfficiencyIsValid( this ),
   m_finished( this ),
@@ -1502,6 +1499,7 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_files( nullptr ),
   m_detDiamGroup( nullptr ),
   m_detDiameter( nullptr ),
+  m_detSetback( nullptr ),
   m_geometry( nullptr ),
   m_showFwhmPoints( nullptr ),
   m_fwhmOptionGroup( nullptr ),
@@ -1520,10 +1518,11 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_fwhmEqnChi2( -999.9 ),
   m_effEqnChi2( -999.9 ),
   m_effLowerEnergy( 0.0f ),
-  m_effUpperEnergy( 0.0f )
+  m_effUpperEnergy( 0.0f ),
+  m_peakFitDetPrefsGui( nullptr )
 {
   assert( m_interspec );
-  assert( m_materialDB );
+  assert( MaterialDB::instance() );
   assert( m_materialSuggest );
   
   wApp->useStyleSheet( "InterSpec_resources/MakeDrf.css" );
@@ -1557,7 +1556,22 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   m_detDiameter->setAttributeValue( "autocorrect", "off" );
   m_detDiameter->setAttributeValue( "spellcheck", "off" );
 #endif
-  
+
+  WLabel *setbackLabel = new WLabel( WString::tr("md-det-setback"), m_detDiamGroup );
+  setbackLabel->setInline( false );
+  m_detSetback = new WLineEdit( m_detDiamGroup );
+  setbackLabel->setBuddy( m_detSetback );
+  m_detSetback->setInline( false );
+  m_detSetback->setValidator( distValidator );
+  m_detSetback->setText( "0 cm" );
+  m_detSetback->changed().connect( this, &MakeDrf::handleSourcesUpdates );
+  m_detSetback->enterPressed().connect( this, &MakeDrf::handleSourcesUpdates );
+  m_detSetback->setAttributeValue( "ondragstart", "return false" );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_detSetback->setAttributeValue( "autocorrect", "off" );
+  m_detSetback->setAttributeValue( "spellcheck", "off" );
+#endif
+
   m_effOptionGroup = new WGroupBox( WString::tr("md-eff-type"), fitOptionsDiv );
   m_effEqnOrder = new WComboBox( m_effOptionGroup );
   m_effEqnOrder->setNoSelectionEnabled( true );
@@ -1645,8 +1659,12 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   HelpSystem::attachToolTipOn( m_airAttenuate, WString::tr("md-tt-atten-for-air"),
                               showToolTips, HelpSystem::ToolTipPosition::Right,
                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
-  
-  
+
+  // Peak fit preferences (optional, embedded in DRF)
+  WGroupBox *peakFitPrefsGroup = new WGroupBox( WString::tr( "md-peak-fit-prefs-title" ), fitOptionsDiv );
+  m_peakFitDetPrefsGui = new PeakFitDetPrefsGui( m_interspec, false, peakFitPrefsGroup );
+
+
   m_chart = new MakeDrfChart();
   DrfChartHolder *chartholder = new DrfChartHolder( m_chart, nullptr );
   upperLayout->addWidget( chartholder, 0, 1 );
@@ -1717,7 +1735,7 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   {
     layout->addLayout( upperLayout, 0, 0 );
     layout->addWidget( fileHolder, 1, 0 );
-    layout->setRowResizable( 0, true, 250 );
+    layout->setRowResizable( 0, true, 275 );
   }//if( is phone ) / else
   
   SpecMeasManager *manager = viewer->fileManager();
@@ -1740,7 +1758,7 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
       continue;
     
     //Make a widget representing each file
-    DrfSpecFile *fileWidget = new DrfSpecFile( meas, materialDB, materialSuggest, m_files );
+    DrfSpecFile *fileWidget = new DrfSpecFile( meas, materialSuggest, m_files );
     fileWidget->updated().connect( this, &MakeDrf::handleSourcesUpdates );
     added.push_back( fileWidget );
     
@@ -2131,6 +2149,7 @@ void MakeDrf::handleSourcesUpdates()
   
   bool detDiamInvalid = false;
   double diameter = 0.0; //2.54*PhysicalUnits::cm;
+  const double setback = detectorSetback();
   if( !is_fixed_geometry )
   {
     try
@@ -2323,16 +2342,16 @@ void MakeDrf::handleSourcesUpdates()
         };//trans_frac lambda
         
         
-        auto src_rate = [&mixtures,trans_frac,diameter,is_fixed_geometry]( const float energy, const float width,
+        auto src_rate = [&mixtures,trans_frac,diameter,setback,is_fixed_geometry]( const float energy, const float width,
                                                 MakeDrfSrcDef * const src, DrfPeak * const peak,
                                                 float &source_count_rate,
                                                 float &incidentGamma, float &fracUncert ) {
           source_count_rate = incidentGamma = fracUncert = 0.0;
-          
+
           const double distance = is_fixed_geometry ? -1.0 : src->distance();
           const double transmittion_factor = trans_frac( energy, src );
           const SandiaDecay::Nuclide * const nuc = src->nuclide();
-          
+
           if( nuc )
           {
             const vector<SandiaDecay::EnergyRatePair> &rates = mixtures[nuc];
@@ -2345,19 +2364,19 @@ void MakeDrf::handleSourcesUpdates()
           {
             if( !peak->m_userBr || (peak->m_userBr->validate()!=WValidator::State::Valid) )
               throw runtime_error( "Logic error - no nuclide associated with " + std::to_string(peak->m_peak->mean()) + " keV peak, and no user BR." );
-            
+
             const double activity = src->activityAtSpectrumTime();
             const double br = peak->m_userBr->value();
             source_count_rate += transmittion_factor * br * activity;
           }
-          
+
           //If we get here on initial GUI load, we seem to get error validating
           //  the uncertainty (hence a workaround is used to delay first reading)
-          
+
           if( source_count_rate > 0.0f )
           {
             const double livetime = peak->m_livetime;
-            const double fracSolidAngle = is_fixed_geometry ? 1.0 : DetectorPeakResponse::fractionalSolidAngle( diameter, distance );
+            const double fracSolidAngle = is_fixed_geometry ? 1.0 : DetectorPeakResponse::fractionalSolidAngle( diameter, distance + setback );
             incidentGamma = source_count_rate * livetime * fracSolidAngle;
             fracUncert = src->fractionalActivityUncertainty();
           }//if( source_count_rate > 0.0f )
@@ -2540,7 +2559,7 @@ void MakeDrf::handleSourcesUpdates()
     }
   }//
   
-  m_chart->setDataPoints( datapoints, diameter, minenergy, maxenergy );
+  m_chart->setDataPoints( datapoints, diameter, static_cast<float>( setback ), minenergy, maxenergy );
   
   m_effOptionGroup->setHidden( datapoints.empty() );
   m_fwhmOptionGroup->setHidden( datapoints.empty() );
@@ -3179,7 +3198,11 @@ shared_ptr<DetectorPeakResponse> MakeDrf::assembleDrf( const string &name, const
   drf->fromExpOfLogPowerSeries( m_effEqnCoefs, m_effEqnCoefUncerts, 0.0, diameter, eqnEnergyUnits,
                                      lowerEnergy, upperEnergy, geom_type );
   drf->setDrfSource( DetectorPeakResponse::DrfSource::UserCreatedDrf );
-  
+
+  const double sb = detectorSetback();
+  if( sb > 0.0 )
+    drf->setDetectorSetback( sb );
+
   if( !m_fwhmCoefs.empty() )
   {
     const auto fwhmForm = DetectorPeakResponse::ResolutionFnctForm( m_fwhmEqnType->currentIndex() );
@@ -3209,10 +3232,18 @@ shared_ptr<DetectorPeakResponse> MakeDrf::assembleDrf( const string &name, const
     }//switch( m_fwhmEqnType->currentIndex() )
   }//if( !m_fwhmCoefs.empty() )
   
+  // Attach peak fitting preferences if set in the GUI
+  if( m_peakFitDetPrefsGui )
+  {
+    shared_ptr<const PeakFitDetPrefs> prefs = m_peakFitDetPrefsGui->currentPrefs();
+    if( prefs )
+      drf->setPeakFitDetPrefs( prefs );
+  }
+
   if( !drf->isValid() )
     throw runtime_error( "DRF wasnt valid after creation" );
   //Need something here to indicate this is a created DRF.
-  
+
   return drf;
 }//std::make_shared<DetectorPeakResponse> assembleDrf() const;
 
@@ -3257,6 +3288,7 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   
   
   double diam = 0.0;
+  const double setback = detectorSetback();
   try
   {
     diam = detectorDiameter();
@@ -3268,7 +3300,7 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
       return;
     }
   }//try / catch
-  
+
   if( effEqnCoefs.empty() )
   {
     out << "Detector response function not valid" << endline;
@@ -3363,7 +3395,7 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   }else
   {
     //Convert equation into an absolute efficiency at 25 cm, and output those equations
-    const double solidAngleAt25cm = DetectorPeakResponse::fractionalSolidAngle( diam, 25*PhysicalUnits::cm );
+    const double solidAngleAt25cm = DetectorPeakResponse::fractionalSolidAngle( diam, 25*PhysicalUnits::cm + setback );
     out << "# Absolute Efficiency Coefficients (i.e. probability of gamma emitted from source at 25cm being detected in the full energy photopeak) for equation of form"
     " Eff(x) = exp( C_0 + C_1*log(x) + C_2*log(x)^2 + ...) where x is energy in "
     << (effInMeV ? "MeV" : "keV") << " and at distance of 25 cm" << endline
@@ -3522,7 +3554,7 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
     const double deteff = peakCps / d.source_count_rate;
     const double deteffUncert = deteff * sqrt( pow(d.peak_area_uncertainty/d.peak_area,2)
                                                + pow(d.source_count_rate_uncertainty/d.source_count_rate,2) );
-    const double geomFactor = (d.distance < 0.0) ? 1.0 : DetectorPeakResponse::fractionalSolidAngle(diam, d.distance);
+    const double geomFactor = (d.distance < 0.0) ? 1.0 : DetectorPeakResponse::fractionalSolidAngle( diam, d.distance + setback );
     out << d.energy << "," << d.livetime
         << "," << d.peak_area << "," << d.peak_area_uncertainty
         << "," << d.peak_fwhm << "," << d.peak_fwhm_uncertainty
@@ -3596,6 +3628,7 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   }//switch( m_geometry->currentIndex() )
   
   const double diam = [this]() -> double {try{return detectorDiameter();}catch(...){return 0.0;}}();
+  const double setback = detectorSetback();
   const WString diameter = ((geom_type == DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic) || (diam > 0.0))
                               ? m_detDiameter->text() : WString("N/A");
   
@@ -3817,7 +3850,7 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
         
         const float energy = raw_energy / (effInMeV ? 1000.0f : 1.0f);
         const float intrinsic_eff = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy, m_effEqnCoefs );
-        const double frac_solid_angle = DetectorPeakResponse::fractionalSolidAngle( diam, dist_cm*PhysicalUnits::cm );
+        const double frac_solid_angle = DetectorPeakResponse::fractionalSolidAngle( diam, dist_cm*PhysicalUnits::cm + setback );
         
         snprintf( buffer, sizeof(buffer), "<td>%.2G</td>", 100.0*frac_solid_angle*intrinsic_eff );
         efftable << buffer;
@@ -3843,7 +3876,7 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
     const float chartLower = 10.0f * std::round( 0.1f*(m_effLowerEnergy - 6.0f) );
     const float chartUpper = 10.0f * std::round( 0.1f*(m_effUpperEnergy + 6.0f) );
     
-    chart.setDataPoints( data, detDiam, chartLower, chartUpper );
+    chart.setDataPoints( data, detDiam, static_cast<float>( setback ), chartLower, chartUpper );
     
     const auto units = effInMeV ? MakeDrfChart::EqnEnergyUnits::MeV
                                 : MakeDrfChart::EqnEnergyUnits::keV;
@@ -3940,6 +3973,19 @@ double MakeDrf::detectorDiameter() const
   return diam;
 }//double detectorDiameter() const
 
+
+double MakeDrf::detectorSetback() const
+{
+  try
+  {
+    const double sb = PhysicalUnits::stringToDistance( m_detSetback->text().toUTF8() );
+    return (sb > 0.0) ? sb : 0.0;
+  }catch(...)
+  {
+  }
+
+  return 0.0;
+}//double detectorSetback() const
 
 
 void MakeDrf::useSourceLibrary( const vector<shared_ptr<const SrcLibLineInfo>> &srcs, 

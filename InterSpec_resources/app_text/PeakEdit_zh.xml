@@ -41,8 +41,77 @@
 
   <message id="pe-est-lin-cont-no-data">请在估计连续谱之前加载前景谱。</message>
   <message id="pe-failed-est-lin-cont">从ROI边缘估计连续谱失败：{1}</message>
-  
-  
-  
+
+  <!-- Skew parameter labels for Bortel (Exp*Gauss) -->
+  <message id="pe-label-skew-bortel-tau">偏斜 &alpha;</message>
+
+  <!-- Skew parameter labels for DoubleBortel -->
+  <message id="pe-label-skew-doublebortel-tau1">&tau;<sub>1</sub></message>
+  <message id="pe-label-skew-doublebortel-deltatau2">&Delta;&tau;<sub>2</sub></message>
+  <message id="pe-label-skew-doublebortel-eta">&eta;</message>
+
+  <!-- Skew parameter labels for GaussPlusBortel -->
+  <message id="pe-label-skew-gaussplusbortel-r">混合比 R</message>
+  <message id="pe-label-skew-gaussplusbortel-tau">Bortel &tau;</message>
+
+  <!-- Skew parameter labels for GaussExp -->
+  <message id="pe-label-skew-gaussexp-k">偏斜 k</message>
+
+  <!-- Skew parameter labels for CrystalBall -->
+  <message id="pe-label-skew-crystalball-alpha">偏斜 &alpha;</message>
+  <message id="pe-label-skew-crystalball-n">偏斜 n</message>
+
+  <!-- Skew parameter labels for ExpGaussExp -->
+  <message id="pe-label-skew-expgaussexp-kl">偏斜 k<sub>L</sub></message>
+  <message id="pe-label-skew-expgaussexp-kh">偏斜 k<sub>H</sub></message>
+
+  <!-- Skew parameter labels for DoubleSidedCrystalBall -->
+  <message id="pe-label-skew-dscb-alphalow">偏斜 &alpha;<sub>low</sub></message>
+  <message id="pe-label-skew-dscb-nlow">偏斜 n<sub>low</sub></message>
+  <message id="pe-label-skew-dscb-alphahigh">偏斜 &alpha;<sub>high</sub></message>
+  <message id="pe-label-skew-dscb-nhigh">偏斜 n<sub>high</sub></message>
+
+  <!-- Skew parameter labels for VoigtPlusBortel -->
+  <message id="pe-label-skew-voigtplusbortel-gamma">洛伦兹 &gamma;</message>
+  <message id="pe-label-skew-voigtplusbortel-r">混合比 R</message>
+  <message id="pe-label-skew-voigtplusbortel-tau">Bortel &tau;</message>
+
+  <!-- Tooltips for skew parameters -->
+  <message id="pe-tt-skew-bortel-tau">Exp*Gauss（指数修正高斯）的指数衰减常数。表示低能尾部的特征长度尺度。有效范围：0.0-15 σ，典型值：0.5-3 σ。</message>
+
+  <message id="pe-tt-skew-doublebortel-tau1">第一个指数衰减常数，通常接近σ。控制主要的低能尾部分量。有效范围：0.01-15 σ。</message>
+
+  <message id="pe-tt-skew-doublebortel-deltatau2">第二个指数的附加衰减：τ₂ = τ₁ + Δτ₂。控制扩展尾部分量。有效范围：0.0-10 σ。</message>
+
+  <message id="pe-tt-skew-doublebortel-eta">第二个指数分量的权重。η=0给出单一Exp*Gauss(τ₁)，η=1给出纯Exp*Gauss(τ₂)。有效范围：0.0-1.0。</message>
+
+  <message id="pe-tt-skew-gaussplusbortel-r">高斯与Exp*Gauss之间的混合比。R=0为纯高斯，R=1为纯Exp*Gauss。有效范围：0.0-1.0，典型值：0.2-0.8。</message>
+
+  <message id="pe-tt-skew-gaussplusbortel-tau">混合中Exp*Gauss分量的指数衰减常数。有效范围：0.01-15 σ，典型值：0.5-3 σ。</message>
+
+  <message id="pe-tt-skew-gaussexp-k">同时控制指数尾部开始的阈值（μ - k·σ）和衰减率。有效范围：0.15-3.25，典型值：0.5-2.0。</message>
+
+  <message id="pe-tt-skew-crystalball-alpha">幂律尾部开始的阈值（以σ为单位）：x = μ - α·σ。有效范围：0.5-4.0，典型值：1.0-3.0。</message>
+
+  <message id="pe-tt-skew-crystalball-n">低能尾部的幂律指数：(x - μ + α·σ)^(-n)。n越大，衰减越陡。有效范围：1.05-100，典型值：2-10。</message>
+
+  <message id="pe-tt-skew-expgaussexp-kl">控制下方（左侧）能量尾部的阈值和衰减。有效范围：0.15-3.25，典型值：0.5-2.0。</message>
+
+  <message id="pe-tt-skew-expgaussexp-kh">控制上方（右侧）能量尾部的阈值和衰减。有效范围：0.15-3.25，典型值：0.5-2.0。</message>
+
+  <message id="pe-tt-skew-dscb-alphalow">低能幂律尾部开始的下阈值（以σ为单位）。有效范围：0.5-4.0，典型值：1.0-3.0。</message>
+
+  <message id="pe-tt-skew-dscb-nlow">低能尾部的幂律指数。有效范围：1.05-100，典型值：2-10。</message>
+
+  <message id="pe-tt-skew-dscb-alphahigh">高能幂律尾部开始的上阈值（以σ为单位）。有效范围：0.5-4.0，典型值：1.0-3.0。</message>
+
+  <message id="pe-tt-skew-dscb-nhigh">高能尾部的幂律指数。有效范围：1.05-100，典型值：2-10。</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-gamma">洛伦兹HWHM（半高半宽），表示自然X射线线宽。有效范围：0.0-10.0 keV，X射线典型值：0.01-0.5 keV。</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-r">Voigt轮廓与Exp*Gauss之间的混合比。R=0为纯Voigt（仅自然线宽），R=1为纯Exp*Gauss（仅探测器尾部）。有效范围：0.0-1.0。</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-tau">Exp*Gauss分量的指数衰减常数，表示不完全电荷收集尾部。有效范围：0.01-10 σ。</message>
+
 </messages>
 

@@ -160,8 +160,7 @@ rapidxml::xml_node<char> *ShieldSourceConfig::serialize( rapidxml::xml_node<char
   return base_node;
 }
 
-void ShieldSourceConfig::deSerialize( const rapidxml::xml_node<char> *base_node,
-                                                          MaterialDB *materialDb )
+void ShieldSourceConfig::deSerialize( const rapidxml::xml_node<char> *base_node )
 {
   if( !base_node )
     throw runtime_error( "ShieldSourceConfig::deSerialize: null node" );
@@ -200,7 +199,7 @@ void ShieldSourceConfig::deSerialize( const rapidxml::xml_node<char> *base_node,
       shield_node; shield_node = shield_node->next_sibling( "Shielding", 9 ) )
   {
     ShieldingSourceFitCalc::ShieldingInfo info;
-    info.deSerialize( shield_node, materialDb );
+    info.deSerialize( shield_node );
     shieldings.push_back( std::move(info) );
   }
 
@@ -673,6 +672,7 @@ DistributedSrcCalc::DistributedSrcCalc()
   m_geometry = GeometryType::NumGeometryType;
   m_materialIndex = 0;
   m_detectorRadius = -1.0;
+  m_detectorSetback = 0.0;
   m_observationDist = -1.0;
   m_attenuateForAir = false;
   m_airTransLenCoef = 0.0;
@@ -934,7 +934,7 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
   
   // Note: previous to 20211104 m_observationDist was used instead of dist_to_det; I believe this
   //       change is an appropriate correction, but still needs to be validated/ensured.
-  trans *= DetectorPeakResponse::fractionalSolidAngle( 2.0*m_detectorRadius, dist_to_det );
+  trans *= DetectorPeakResponse::fractionalSolidAngle( 2.0*m_detectorRadius, dist_to_det + m_detectorSetback );
 
   ff[0] = trans * dV;
 }//eval_spherical(...)
@@ -1032,9 +1032,9 @@ void DistributedSrcCalc::eval_single_cyl_end_on( const double xx[], const int *n
   
   // Finally toss in the geometric factor (e.g., 1/r2 from where we are evaluating to to detector).
   const double eval_dist_to_det = sqrt( r*r + eval_z_dist_to_det*eval_z_dist_to_det );
-  trans *= DetectorPeakResponse::fractionalSolidAngle( 2.0*m_detectorRadius, eval_dist_to_det );
-  
-  
+  trans *= DetectorPeakResponse::fractionalSolidAngle( 2.0*m_detectorRadius, eval_dist_to_det + m_detectorSetback );
+
+
   // For debug builds, also check against the more general transport
 #ifndef NDEBUG
   double test_ff[1];
@@ -1643,8 +1643,8 @@ void DistributedSrcCalc::eval_cylinder( const double xx[], const int *ndimptr,
   
   // Finally toss in the geometric factor (e.g., 1/r2 from where we are evaluating to to detector).
   const double eval_dist_to_det = distance( eval_point, detector_pos );
-  trans *= DetectorPeakResponse::fractionalSolidAngle( 2.0*m_detectorRadius, eval_dist_to_det );
-  
+  trans *= DetectorPeakResponse::fractionalSolidAngle( 2.0*m_detectorRadius, eval_dist_to_det + m_detectorSetback );
+
   ff[0] = trans * dV;
 }//void eval_cylinder(...)
 
@@ -2079,8 +2079,8 @@ void DistributedSrcCalc::eval_rect( const double xx[], const int *ndimptr,
   }
   
   const double eval_dist_to_det = distance(eval_loc, detector_loc);
-  trans *= DetectorPeakResponse::fractionalSolidAngle( 2.0*m_detectorRadius, eval_dist_to_det );
-  
+  trans *= DetectorPeakResponse::fractionalSolidAngle( 2.0*m_detectorRadius, eval_dist_to_det + m_detectorSetback );
+
   ff[0] = trans * dV;
 }//void eval_rect(...)
 
@@ -3087,10 +3087,10 @@ bool ShieldingSourceChi2Fcn::hasVariableMassFraction( const size_t material_inde
 }//bool hasVariableMassFraction( const Material *material ) const
 
   
-vector<const Material *> ShieldingSourceChi2Fcn::materialsFittingMassFracsFor() const
+vector<shared_ptr<const Material>> ShieldingSourceChi2Fcn::materialsFittingMassFracsFor() const
 {
-  vector<const Material *> answer;
-  
+  vector<shared_ptr<const Material>> answer;
+
   for( const ShieldingSourceFitCalc::ShieldingInfo &ms : m_initial_shieldings )
   {
     bool isFittingAny = false;
@@ -3099,13 +3099,13 @@ vector<const Material *> ShieldingSourceChi2Fcn::materialsFittingMassFracsFor() 
       for( const auto &nuc_info : el_nucs.second )
         isFittingAny |= get<2>(nuc_info);
     }
-    
+
     if( isFittingAny )
-      answer.push_back( ms.m_material.get() );
+      answer.push_back( ms.m_material );
   }//for( ShieldLayerInfo &ms : m_initial_shieldings )
-  
+
   return answer;
-}//vector<const Material *material> materialsFittingMassFracsFor() const
+}//vector<shared_ptr<const Material>> materialsFittingMassFracsFor() const
   
 
 vector<const SandiaDecay::Nuclide *> ShieldingSourceChi2Fcn::selfAttenuatingNuclides( const size_t material_index ) const
@@ -4392,9 +4392,9 @@ size_t ShieldingSourceChi2Fcn::numMaterials() const
 }//int numMaterials() const
 
 
-const Material *ShieldingSourceChi2Fcn::material( const size_t materialNum ) const
+shared_ptr<const Material> ShieldingSourceChi2Fcn::material( const size_t materialNum ) const
 {
-  return m_initial_shieldings.at(materialNum).m_material.get();
+  return m_initial_shieldings.at(materialNum).m_material;
 }
 
 bool ShieldingSourceChi2Fcn::isSpecificMaterial( const size_t materialNum ) const
@@ -5796,9 +5796,13 @@ vector<PeakResultPlotInfo>
     baseCalculator.m_geometry = m_geometry;
     
     if( m_detector )
+    {
       baseCalculator.m_detectorRadius = 0.5 * m_detector->detectorDiameter();
-    else
+      baseCalculator.m_detectorSetback = m_detector->detectorSetback();
+    }else
+    {
       baseCalculator.m_detectorRadius = 0.5 * PhysicalUnits::cm;
+    }
 
     baseCalculator.m_observationDist = m_distance;
     baseCalculator.m_attenuateForAir = m_options.attenuate_for_air;
@@ -6378,10 +6382,10 @@ vector<PeakResultPlotInfo>
       {
         for( size_t shielding_index = 0; shielding_index < numMaterials(); ++shielding_index )
         {
-          const Material * const mat = material(shielding_index);
+          const shared_ptr<const Material> mat = material(shielding_index);
           if( !mat )
             continue;
-          
+
           const vector<const SandiaDecay::Nuclide *> nucs = selfAttenuatingNuclides(shielding_index);
           const auto pos = std::find( begin(nucs), end(nucs), nuc );
           if( pos != end(nucs) )
@@ -6482,7 +6486,7 @@ void ShieldingSourceChi2Fcn::log_shield_info( const vector<double> &params,
         }
       }else
       {
-        const Material * const material = chi2Fcn->material( shielding_index );
+        const shared_ptr<const Material> material = chi2Fcn->material( shielding_index );
         assert( material );
         if( !material )
           throw std::logic_error( "Unexpected null material" );
@@ -6689,10 +6693,10 @@ void ShieldingSourceChi2Fcn::log_source_info( const std::vector<double> &params,
         bool found_shield = false;
         for( size_t shielding_index = 0; shielding_index < chi2Fcn->numMaterials(); ++shielding_index )
         {
-          const Material * const mat = chi2Fcn->material(shielding_index);
+          const shared_ptr<const Material> mat = chi2Fcn->material(shielding_index);
           if( !mat )
             continue;
-          
+
           const vector<const SandiaDecay::Nuclide *> nucs = chi2Fcn->selfAttenuatingNuclides(shielding_index);
           const auto pos = std::find( begin(nucs), end(nucs), nuc );
           if( pos != end(nucs) )

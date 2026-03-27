@@ -138,7 +138,7 @@ BOOST_AUTO_TEST_CASE( testNuclideSearch )
   //orig_workingspace->displayed_measurement  =  std::shared_ptr<const SpecUtils::Measurement>;
   //orig_workingspace->foreground = std::shared_ptr<SpecMeas>;
   //orig_workingspace->foreground_samplenums = std::set<int>;
-  orig_workingspace->isHPGe = true;
+  //orig_workingspace->fitPrefs = ...;  // Using default (nullptr) for test
   //orig_workingspace->error_msg = string;
   //orig_workingspace->matches = std::vector< std::vector<IsotopeMatch> > ;
   orig_workingspace->sortColumn = IsotopeSearchByEnergyModel::Column::ParentIsotope;

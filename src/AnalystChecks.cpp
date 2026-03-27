@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
 #include <set>
 #include <cmath>
 #include <deque>
@@ -103,10 +104,10 @@ namespace AnalystChecks
     if (!auto_peaks) {
       // Search for peaks
       const bool singleThreaded = false;
-      const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
+      shared_ptr<const PeakFitDetPrefs> fitPrefsAuto = meas->peakFitDetPrefs();
       const auto det = meas->detector();
       const vector<shared_ptr<const PeakDef>> found_auto_peaks
-                = ExperimentalAutomatedPeakSearch::search_for_peaks(spectrum, det, user_peaks, singleThreaded, isHPGe);
+                = ExperimentalAutomatedPeakSearch::search_for_peaks(spectrum, det, user_peaks, singleThreaded, fitPrefsAuto);
         
       auto autopeaksdeque = make_shared<std::deque<std::shared_ptr<const PeakDef>>>(begin(found_auto_peaks), end(found_auto_peaks));
       auto_peaks = autopeaksdeque;
@@ -122,17 +123,21 @@ namespace AnalystChecks
       user_analysis_peaks.insert(user_analysis_peaks.end(), user_peaks->begin(), user_peaks->end());
     }
 
-    // We will add auto-search peaks only if there isnt already a user peak at essentially the same energy
+    // We will add auto-search peaks only if there isnt already a user peak at essentially the same energy.
+    // Track which auto-search continuum pointers had peaks suppressed, and which user analysis
+    // peak(s) caused each suppression, so we can unify ROI bounds for remaining siblings.
     if (auto_peaks) {
       //Lambda to find the nearest peak, so far, to a given energy.
-      auto nearest_peak = [&all_peaks](const float energy) -> std::shared_ptr<const PeakDef> {
+      const auto nearest_peak = [&all_peaks](const float energy) -> std::shared_ptr<const PeakDef> {
         std::shared_ptr<const PeakDef> nearest;
         double minDE = std::numeric_limits<double>::infinity();
 
-        for (const auto &peak : all_peaks) {
+        for (const std::shared_ptr<const PeakDef> &peak : all_peaks) {
           const double dE = fabs(peak->mean() - energy);
-          if ((dE < minDE)
-              && ((energy > peak->lowerX()) && (energy < peak->upperX()))) {
+          const bool in_roi = (energy > peak->lowerX()) && (energy < peak->upperX());
+          const double pk_sigma = peak->gausPeak() ? peak->sigma() : 0.25 * peak->roiWidth();
+          const bool within_sigma = (dE < pk_sigma);
+          if ((dE < minDE) && (in_roi || within_sigma)) {
             minDE = dE;
             nearest = peak;
           }
@@ -141,14 +146,109 @@ namespace AnalystChecks
         return nearest;
       };
 
+      // Map from suppressed auto-search continuum → user analysis peak(s) that caused suppression.
+      // A multimap handles the case where multiple auto-search peaks from the same continuum are
+      // each suppressed by different user analysis peaks.
+      std::map<const PeakContinuum *, std::vector<std::shared_ptr<const PeakDef>>> suppressed_to_nearpeaks;
+
       for (const shared_ptr<const PeakDef> &peak : *auto_peaks) {
-        auto nearpeak = nearest_peak(peak->mean());
+        std::shared_ptr<const PeakDef> nearpeak = nearest_peak(peak->mean());
         const double peak_sigma = peak->gausPeak() ? peak->sigma() : 0.25*peak->roiWidth();
         if (!nearpeak || (fabs(nearpeak->mean() - peak->mean()) > peak_sigma))
+        {
           all_peaks.push_back(peak);
+        }else
+        {
+          // Auto-search peak suppressed by nearpeak; record for sibling ROI unification
+          suppressed_to_nearpeaks[peak->continuum().get()].push_back( nearpeak );
+        }
       }
+
+      // Post-processing: unify ROI bounds for auto-search siblings whose peer was suppressed.
+      // When an auto-search peak is suppressed, remaining siblings from the same auto-search ROI
+      // still reference the original wide ROI bounds, which may overlap with the user analysis
+      // peak's ROI. Fix by giving all involved peaks a shared continuum with unified bounds.
+      if( !suppressed_to_nearpeaks.empty() )
+      {
+        // Track which user analysis peaks have already been replaced (to avoid double-replacement
+        // when multiple siblings reference the same suppression)
+        std::map<const PeakDef *, std::shared_ptr<PeakContinuum>> replaced_user_peaks;
+
+        for( size_t i = 0; i < all_peaks.size(); ++i )
+        {
+          const std::shared_ptr<const PeakDef> &peak = all_peaks[i];
+          const std::map<const PeakContinuum *, std::vector<std::shared_ptr<const PeakDef>>>::const_iterator
+            it = suppressed_to_nearpeaks.find( peak->continuum().get() );
+          if( it == suppressed_to_nearpeaks.end() )
+            continue;
+
+          // This peak is a kept auto-search sibling of a suppressed peak.
+          // Check if we've already created a unified continuum for this suppression group.
+          const std::map<const PeakDef *, std::shared_ptr<PeakContinuum>>::const_iterator
+            replaced_it = replaced_user_peaks.find( it->second.front().get() );
+          std::shared_ptr<PeakContinuum> unified_cont;
+
+          if( replaced_it != replaced_user_peaks.end() )
+          {
+            // Reuse previously created unified continuum and expand bounds if needed
+            unified_cont = replaced_it->second;
+            const double new_lower = std::min( unified_cont->lowerEnergy(), peak->lowerX() );
+            const double new_upper = std::max( unified_cont->upperEnergy(), peak->upperX() );
+            unified_cont->setRange( new_lower, new_upper );
+          }else
+          {
+            // Create a new unified continuum; start from the first user analysis peak's continuum
+            const std::vector<std::shared_ptr<const PeakDef>> &nearpeaks = it->second;
+            unified_cont = std::make_shared<PeakContinuum>( *nearpeaks.front()->continuum() );
+
+            // Compute union of all involved ROI bounds
+            double union_lower = std::min( peak->lowerX(), unified_cont->lowerEnergy() );
+            double union_upper = std::max( peak->upperX(), unified_cont->upperEnergy() );
+            for( const std::shared_ptr<const PeakDef> &np : nearpeaks )
+            {
+              union_lower = std::min( union_lower, np->lowerX() );
+              union_upper = std::max( union_upper, np->upperX() );
+            }
+            unified_cont->setRange( union_lower, union_upper );
+
+            // Replace the user analysis peaks in all_peaks (and user_analysis_peaks) with copies
+            // using the unified continuum, so the copies inherit the analysis-peak status.
+            for( const std::shared_ptr<const PeakDef> &np : nearpeaks )
+            {
+              replaced_user_peaks[np.get()] = unified_cont;
+              std::shared_ptr<PeakDef> np_copy = std::make_shared<PeakDef>( *np );
+              np_copy->setContinuum( unified_cont );
+
+              for( size_t j = 0; j < all_peaks.size(); ++j )
+              {
+                if( all_peaks[j].get() == np.get() )
+                {
+                  all_peaks[j] = np_copy;
+                  break;
+                }
+              }
+
+              // Also replace in user_analysis_peaks so isAnalysisPeak detection
+              // (which uses pointer equality) recognizes the copy.
+              for( size_t j = 0; j < user_analysis_peaks.size(); ++j )
+              {
+                if( user_analysis_peaks[j].get() == np.get() )
+                {
+                  user_analysis_peaks[j] = np_copy;
+                  break;
+                }
+              }
+            }
+          }
+
+          // Replace this auto-search sibling with a copy using the unified continuum
+          std::shared_ptr<PeakDef> sibling_copy = std::make_shared<PeakDef>( *peak );
+          sibling_copy->setContinuum( unified_cont );
+          all_peaks[i] = sibling_copy;
+        }//for( all_peaks )
+      }//if( !suppressed_to_nearpeaks.empty() )
     }
-    
+
     std::sort(begin(all_peaks), end(all_peaks), &PeakDef::lessThanByMeanShrdPtr);
 
     // Apply nonBackgroundPeaksOnly filtering if requested
@@ -169,15 +269,15 @@ namespace AnalystChecks
       if( !background_auto_peaks && background_spectrum )
       {
         const bool singleThreaded = false;
-        const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
+        shared_ptr<const PeakFitDetPrefs> bgFitPrefs = background_meas->peakFitDetPrefs();
         const auto det = background_meas->detector();
-        
+
         shared_ptr<const deque<shared_ptr<const PeakDef>>> background_user_peaks;
         if( background_meas->sampleNumsWithPeaks().count(background_sample_nums) )
           background_user_peaks = background_meas->peaks(background_sample_nums);
-        
+
         const vector<shared_ptr<const PeakDef>> found_background_auto_peaks
-                    = ExperimentalAutomatedPeakSearch::search_for_peaks(background_spectrum, det, background_user_peaks, singleThreaded, isHPGe);
+                    = ExperimentalAutomatedPeakSearch::search_for_peaks(background_spectrum, det, background_user_peaks, singleThreaded, bgFitPrefs);
 
         auto background_autopeaksdeque = make_shared<deque<shared_ptr<const PeakDef>>>(begin(found_background_auto_peaks), end(found_background_auto_peaks));
         background_auto_peaks = background_autopeaksdeque;
@@ -354,10 +454,10 @@ namespace AnalystChecks
 
     shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_search_peaks = meas->automatedSearchPeaks(sample_nums);
 
-    const bool isHPGe = PeakFitUtils::is_likely_high_res( interspec );
-    
+    shared_ptr<const PeakFitDetPrefs> fitPrefs = meas->peakFitDetPrefs();
+
     vector<shared_ptr<const PeakDef>> origPeaks;
-    
+
     for( const shared_ptr<const PeakDef> &p : *meas_peaks )
     {
       //Avoid fitting a peak in the same area a data defined peak is.
@@ -366,10 +466,10 @@ namespace AnalystChecks
       else if( (options.energy >= p->lowerX()) && (options.energy <= p->upperX()) )
         throw runtime_error( "Can not fit a peak within the ROI of a data-defined peak." );
     }//if( pmodel->peaks() )
-    
+
     double pixelPerKev = -1.0; //This triggers an "automed" peak fit, which has higher thresholds for keeping peak.
     pair<vector<shared_ptr<const PeakDef>>, vector<shared_ptr<const PeakDef>>> foundPeaks;
-    foundPeaks = searchForPeakFromUser( options.energy, pixelPerKev, data, origPeaks, det, auto_search_peaks, isHPGe );
+    foundPeaks = searchForPeakFromUser( options.energy, pixelPerKev, data, origPeaks, det, auto_search_peaks, fitPrefs );
 
     vector<shared_ptr<const PeakDef>> &peaks_to_add_in = foundPeaks.first;
     const vector<shared_ptr<const PeakDef>> &peaks_to_remove = foundPeaks.second;
@@ -907,26 +1007,38 @@ namespace AnalystChecks
     
     try
     {
-      // Get the foreground spectrum
-      std::shared_ptr<SpecMeas> meas = interspec->measurment(SpecUtils::SpectrumType::Foreground);
-      if (!meas) {
-        throw std::runtime_error("No foreground measurement available");
-      }
+      const SpecUtils::SpectrumType specType = options.specType;
+
+      // Get the target spectrum (the one we are fitting peaks to)
+      std::shared_ptr<SpecMeas> meas = interspec->measurment( specType );
+      if( !meas )
+        throw std::runtime_error( std::string("No ") + SpecUtils::descriptionText(specType) + " measurement available" );
+
+      std::shared_ptr<const SpecUtils::Measurement> target_spectrum = interspec->displayedHistogram( specType );
+      if( !target_spectrum )
+        throw std::runtime_error( std::string("No ") + SpecUtils::descriptionText(specType) + " spectrum available" );
+
+      // Background subtraction only makes sense when fitting to the foreground
+      std::shared_ptr<const SpecUtils::Measurement> background;
+      if( specType == SpecUtils::SpectrumType::Foreground )
+        background = interspec->displayedHistogram( SpecUtils::SpectrumType::Background );
       
-      std::shared_ptr<const SpecUtils::Measurement> foreground = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
-      if (!foreground) {
-        throw std::runtime_error("No foreground spectrum available");
-      }
-      
-      // Get background (optional)
-      std::shared_ptr<const SpecUtils::Measurement> background = interspec->displayedHistogram(SpecUtils::SpectrumType::Background);
-      
-      // Get detector response function
+      // Get detector response function; fall back to foreground SpecMeas's DRF if needed
       std::shared_ptr<const DetectorPeakResponse> drf = meas->detector();
-      const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
+      std::shared_ptr<const PeakFitDetPrefs> peak_fit_prefs = meas ? meas->peakFitDetPrefs() : nullptr;
+      if( !drf && (specType != SpecUtils::SpectrumType::Foreground) )
+      {
+        std::shared_ptr<SpecMeas> fg_meas = interspec->measurment( SpecUtils::SpectrumType::Foreground );
+        if( fg_meas )
+        {
+          drf = fg_meas->detector();
+          if( !peak_fit_prefs )
+            peak_fit_prefs = fg_meas->peakFitDetPrefs();
+        }
+      }
 
       DetectedPeaksOptions det_peaks_options;
-      det_peaks_options.specType = SpecUtils::SpectrumType::Foreground;
+      det_peaks_options.specType = specType;
       det_peaks_options.nonBackgroundPeaksOnly = false; // TODO: as we improve `FitPeaksForNuclides::fit_peaks_for_nuclides(...)` this will need to be change
       const DetectedPeakStatus detected_peaks = AnalystChecks::detected_peaks( det_peaks_options, interspec );
       const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks = detected_peaks.peaks;
@@ -939,10 +1051,16 @@ namespace AnalystChecks
       for( const string &src : options.sources )
       {
         RelActCalcAuto::SrcVariant source = RelActCalcAuto::source_from_string(src);
-        
+
         if( RelActCalcAuto::is_null(source) )
           throw runtime_error( "Unrecognized source '" + src + "'" );
-        
+
+        // Skip duplicate sources (e.g., LLM may pass the same nuclide twice)
+        const bool is_duplicate = std::any_of( sources.begin(), sources.end(),
+          [&source]( const RelActCalcAuto::SrcVariant &s ){ return s == source; } );
+        if( is_duplicate )
+          continue;
+
         sources.push_back( source );
       }//for( const string &src : options.sources )
 
@@ -950,7 +1068,7 @@ namespace AnalystChecks
         throw runtime_error( "No sources specified" );
 
       GetUserPeakOptions user_peak_options;
-      user_peak_options.specType = SpecUtils::SpectrumType::Foreground;
+      user_peak_options.specType = specType;
       //user_peak_options.lowerEnergy = ...;
       //user_peak_options.upperEnergy = ...;
       
@@ -959,12 +1077,15 @@ namespace AnalystChecks
       
       const Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> fit_options = options.fitSrcPeaksOptions;
       
-      FitPeaksForNuclides::PeakFitForNuclideConfig fit_config;
+      const PeakFitUtils::CoarseResolutionType det_type = peak_fit_prefs
+        ? peak_fit_prefs->m_det_type
+        : PeakFitUtils::coarse_det_type( target_spectrum, meas );
+      FitPeaksForNuclides::PeakFitForNuclideConfig fit_config = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config( det_type );
 
       // TODO: we will need to update `config` from default in the future
 
       const FitPeaksForNuclides::PeakFitResult fit_results = FitPeaksForNuclides::fit_peaks_for_nuclides(
-        auto_search_peaks, foreground, sources, user_peaks, background, drf, fit_options, fit_config, isHPGe
+        auto_search_peaks, target_spectrum, sources, user_peaks, background, drf, fit_options, fit_config, peak_fit_prefs
       );
 
       switch( fit_results.status )
@@ -1018,13 +1139,67 @@ namespace AnalystChecks
         result.fitPeaks.push_back( sp );
       }//for( const PeakDef &p : fit_results.observable_peaks )
 
-      // If doNotAddPeaksToUserSession is false, add the peaks to the user's session
+      result.peaksToRemove = fit_results.original_peaks_to_remove;
+
+      // If doNotAddPeaksToUserSession is false, update the peak model using setPeaks
+      //  to atomically replace the affected peaks while preserving unrelated ones.
       if( !options.doNotAddPeaksToUserSession && !result.fitPeaks.empty() )
       {
-
         PeakModel * const pmodel = interspec->peakModel();
         if( pmodel )
-          pmodel->addPeaks( result.fitPeaks );
+        {
+          std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> existing_peaks
+            = pmodel->peaks( specType );
+
+          std::deque<std::shared_ptr<const PeakDef>> combined_peaks;
+
+          if( existing_peaks )
+          {
+            // Keep existing peaks that are NOT in peaksToRemove
+            for( const std::shared_ptr<const PeakDef> &p : *existing_peaks )
+            {
+              const bool should_remove = std::any_of( result.peaksToRemove.begin(),
+                result.peaksToRemove.end(),
+                [&p]( const std::shared_ptr<const PeakDef> &rm ) -> bool { return rm == p; } );
+
+              if( !should_remove )
+                combined_peaks.push_back( p );
+            }
+          }//if( existing_peaks )
+
+          // Add the newly fit peaks
+          for( const std::shared_ptr<const PeakDef> &p : result.fitPeaks )
+            combined_peaks.push_back( p );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+          // Verify every removed sibling has a corresponding replacement peak in combined_peaks
+          // whose ROI covers the sibling's energy.
+          for( const std::shared_ptr<const PeakDef> &rm : result.peaksToRemove )
+          {
+            const double rm_energy = rm->mean();
+            bool has_replacement = false;
+            for( const std::shared_ptr<const PeakDef> &cp : combined_peaks )
+            {
+              if( (rm_energy >= cp->lowerX()) && (rm_energy <= cp->upperX()) )
+              {
+                has_replacement = true;
+                break;
+              }
+            }
+
+            if( !has_replacement )
+            {
+              std::cerr << "WARNING: removed peak at " << rm_energy
+                   << " keV (source: " << rm->sourceName()
+                   << ") has no replacement peak in combined_peaks." << std::endl;
+              assert( has_replacement );
+            }
+          }
+#endif
+
+          pmodel->setPeaks( combined_peaks, specType );
+          result.peaksWereRemovedFromSession = true;
+        }
       }//if( !options.doNotAddPeaksToUserSession )
     }catch( const std::exception &e )
     {
@@ -1388,8 +1563,30 @@ namespace AnalystChecks
       };
     }//if( DeletePeak )
 
-    // Create a modified copy of the peak
+    // Create a modified copy of the peak.
+    //  Note: PeakDef copy shares the same PeakContinuum pointer, so we must create a new
+    //  independent continuum.  If other peaks share the original continuum (i.e., are in the
+    //  same ROI), we need to copy those peaks too and point them to the new continuum, so the
+    //  ROI remains intact but fully independent from the originals.
     PeakDef modifiedPeak = *peak;
+
+    // Collect all peaks sharing the same ROI continuum as the original peak
+    const std::shared_ptr<const PeakContinuum> originalContinuum = peak->continuum();
+    vector<shared_ptr<const PeakDef>> roiSiblings; // other peaks in same ROI (not including the target peak)
+    {
+      shared_ptr<const deque<shared_ptr<const PeakDef>>> all_peaks_ptr = peakModel->peaks();
+      if( all_peaks_ptr )
+      {
+        for( const shared_ptr<const PeakDef> &p : *all_peaks_ptr )
+        {
+          if( (p != peak) && (p->continuum() == originalContinuum) )
+            roiSiblings.push_back( p );
+        }
+      }
+    }//end collect ROI siblings
+
+    // Create a new independent continuum for the modified peak
+    modifiedPeak.makeUniqueNewContinuum();
 
     // Perform the edit based on action
     try
@@ -1504,6 +1701,9 @@ namespace AnalystChecks
           else if( cont_str == "FlatStep" )  continuum_type = PeakContinuum::OffsetType::FlatStep;
           else if( cont_str == "LinearStep" )continuum_type = PeakContinuum::OffsetType::LinearStep;
           else if( cont_str == "BiLinearStep" )continuum_type = PeakContinuum::OffsetType::BiLinearStep;
+          else if( cont_str == "FlatStepCDF" )continuum_type = PeakContinuum::OffsetType::FlatStepCDF;
+          else if( cont_str == "LinearStepCDF" )continuum_type = PeakContinuum::OffsetType::LinearStepCDF;
+          else if( cont_str == "BiLinearStepCDF" )continuum_type = PeakContinuum::OffsetType::BiLinearStepCDF;
           else if( cont_str == "External" )  continuum_type = PeakContinuum::OffsetType::External;
           else throw runtime_error( "Invalid continuum type: " + cont_str );
 
@@ -1573,23 +1773,36 @@ namespace AnalystChecks
 
         case EditPeakAction::SplitFromRoi:
         {
-          // Make the peak have its own unique continuum
-          modifiedPeak.makeUniqueNewContinuum();
+          // Make the peak have its own unique continuum, separate from the ROI.
+          //  We already called makeUniqueNewContinuum() above, so we just need to make sure the
+          //  sibling peaks are NOT updated to share the new continuum - they should keep
+          //  their original shared continuum.
+          roiSiblings.clear();
           break;
         }
 
         case EditPeakAction::MergeWithLeft:
         case EditPeakAction::MergeWithRight:
         {
-          // Find the adjacent peak to merge with
+          // Merging two ROIs: create a new combined ROI whose energy range is the union of
+          //  the two original ROIs, copy all peaks from both ROIs into the new continuum,
+          //  then refit the combined ROI to the data.
+
           shared_ptr<const deque<shared_ptr<const PeakDef>>> all_peaks_ptr = peakModel->peaks();
           if( !all_peaks_ptr )
             throw runtime_error( "No peaks available in model" );
 
           const deque<shared_ptr<const PeakDef>> &all_peaks = *all_peaks_ptr;
 
-          // Find current peak index
-          auto peak_iter = find( all_peaks.begin(), all_peaks.end(), peak );
+          // PeakModel::peaks() returns peaks sorted by mean energy
+          assert( std::is_sorted( all_peaks.begin(), all_peaks.end(),
+            []( const shared_ptr<const PeakDef> &a, const shared_ptr<const PeakDef> &b ){
+              return a->mean() < b->mean();
+            } ) );
+
+          // Find the adjacent peak to merge with
+          const deque<shared_ptr<const PeakDef>>::const_iterator peak_iter
+            = find( all_peaks.begin(), all_peaks.end(), peak );
           if( peak_iter == all_peaks.end() )
             throw runtime_error( "Could not find peak in model" );
 
@@ -1607,10 +1820,133 @@ namespace AnalystChecks
             adjacent_peak = *(peak_iter + 1);
           }
 
-          // Share the continuum with the adjacent peak
-          // Need to const_cast because setContinuum expects non-const shared_ptr
-          modifiedPeak.setContinuum( const_pointer_cast<PeakContinuum>(adjacent_peak->continuum()) );
-          break;
+          const shared_ptr<const PeakContinuum> adjContinuum = adjacent_peak->continuum();
+
+          if( adjContinuum == originalContinuum )
+            throw runtime_error( "Adjacent peak already shares the same ROI" );
+
+          // Collect all peaks from both ROIs (original and adjacent)
+          vector<shared_ptr<const PeakDef>> oldPeaksToRemove;
+          for( const shared_ptr<const PeakDef> &p : all_peaks )
+          {
+            if( (p->continuum() == originalContinuum) || (p->continuum() == adjContinuum) )
+              oldPeaksToRemove.push_back( p );
+          }
+
+          // Create new continuum whose range is the union of both ROIs
+          std::shared_ptr<PeakContinuum> mergedContinuum
+            = make_shared<PeakContinuum>( *originalContinuum );
+          const double newLower = (std::min)( originalContinuum->lowerEnergy(),
+                                            adjContinuum->lowerEnergy() );
+          const double newUpper = (std::max)( originalContinuum->upperEnergy(),
+                                            adjContinuum->upperEnergy() );
+          mergedContinuum->setRange( newLower, newUpper );
+
+          // Copy all peaks from both ROIs, pointing them to the new merged continuum
+          vector<PeakDef> mergedPeaks;
+          for( const shared_ptr<const PeakDef> &p : oldPeaksToRemove )
+          {
+            PeakDef peakCopy = *p;
+            peakCopy.setContinuum( mergedContinuum );
+            mergedPeaks.push_back( peakCopy );
+          }
+
+          // Try to refit the combined ROI to the data
+          const shared_ptr<const SpecUtils::Measurement> data
+            = interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+          shared_ptr<SpecMeas> meas = interspec->measurment( SpecUtils::SpectrumType::Foreground );
+          const shared_ptr<const DetectorPeakResponse> det = meas ? meas->detector() : nullptr;
+
+          bool used_refit = false;
+          if( data )
+          {
+            vector<shared_ptr<const PeakDef>> peaksToFit;
+            for( const PeakDef &p : mergedPeaks )
+              peaksToFit.push_back( make_shared<const PeakDef>( p ) );
+
+            shared_ptr<const PeakFitDetPrefs> refitPrefs = meas ? meas->peakFitDetPrefs() : nullptr;
+            if( !refitPrefs && det )
+              refitPrefs = det->peakFitDetPrefs();
+            const PeakFitUtils::CoarseResolutionType refitDetType
+              = refitPrefs ? refitPrefs->m_det_type : PeakFitUtils::coarse_det_type( data, nullptr );
+
+            const vector<shared_ptr<const PeakDef>> refitResult
+              = refitPeaksThatShareROI( data, det, peaksToFit, refitDetType,
+                                        Wt::WFlags<PeakFitLM::PeakFitLMOptions>(0) );
+
+            // Only use refit result if no peaks were lost (e.g., became insignificant)
+            if( refitResult.size() == mergedPeaks.size() )
+            {
+              mergedPeaks.clear();
+              for( const shared_ptr<const PeakDef> &p : refitResult )
+                mergedPeaks.push_back( *p );
+              used_refit = true;
+            }
+          }//if( data )
+
+          // Replace old peaks from both ROIs with the new merged set
+          peakModel->updatePeaks( oldPeaksToRemove, mergedPeaks );
+
+          // Collect the resulting peaks from the model for the return value.
+          //  The mergedPeaks all share a common continuum (either mergedContinuum, or the
+          //  refit's continuum), so we can identify them by matching that pointer.
+          const std::shared_ptr<const PeakContinuum> resultContinuum
+            = mergedPeaks.empty() ? mergedContinuum : mergedPeaks.front().continuum();
+
+          vector<shared_ptr<const PeakDef>> peaks_in_roi;
+          shared_ptr<const PeakDef> updated_peak;
+
+          all_peaks_ptr = peakModel->peaks();
+          if( all_peaks_ptr )
+          {
+            for( const shared_ptr<const PeakDef> &p : *all_peaks_ptr )
+            {
+              if( p->continuum() == resultContinuum )
+              {
+                peaks_in_roi.push_back( p );
+                if( !updated_peak && fabs( p->mean() - peak->mean() ) < 0.5 )
+                  updated_peak = p;
+              }
+            }
+          }
+
+          if( !updated_peak && !peaks_in_roi.empty() )
+            updated_peak = peaks_in_roi.front();
+
+          // Build the result message with any relevant warnings
+          string msg = "Merged ROIs into combined region [" + std::to_string( newLower )
+            + ", " + std::to_string( newUpper ) + "] keV with "
+            + std::to_string( peaks_in_roi.size() ) + " peaks";
+
+          if( used_refit )
+          {
+            msg += " (refit to data)";
+          }
+          else
+          {
+            msg += ". Warning: the combined ROI could not be refit to the data because"
+                   " one or more peaks became insignificant during the fit; the un-fit"
+                   " peak parameters were used instead.";
+          }
+
+          // Warn if the peak being merged is far from the adjacent peak
+          const double avg_fwhm = 0.5 * (peak->fwhm() + adjacent_peak->fwhm());
+          const double peak_separation = fabs( peak->mean() - adjacent_peak->mean() );
+          if( peak_separation > 6.0 * avg_fwhm )
+          {
+            msg += " Warning: the peak at " + std::to_string( peak->mean() )
+              + " keV is " + std::to_string( peak_separation / avg_fwhm )
+              + " FWHM away from the adjacent peak at "
+              + std::to_string( adjacent_peak->mean() )
+              + " keV; merging peaks this far apart may not be appropriate.";
+          }
+
+          return EditAnalysisPeakStatus{
+            true,
+            msg,
+            updated_peak,
+            peaks_in_roi
+          };
         }
 
         case EditPeakAction::DeletePeak:
@@ -1619,8 +1955,33 @@ namespace AnalystChecks
           break;
       }//switch( options.editAction )
 
-      // Update the peak in the model
-      peakModel->updatePeak( peak, modifiedPeak );
+      // Update the peak(s) in the model.
+      //  If there are sibling peaks that shared the original continuum, we need to copy them
+      //  to share the new continuum, so the ROI remains intact but fully independent from the
+      //  originals.
+      if( roiSiblings.empty() )
+      {
+        peakModel->updatePeak( peak, modifiedPeak );
+      }else
+      {
+        vector<shared_ptr<const PeakDef>> oldPeaks;
+        vector<PeakDef> newPeaks;
+
+        oldPeaks.push_back( peak );
+        newPeaks.push_back( modifiedPeak );
+
+        const std::shared_ptr<PeakContinuum> newContinuum = modifiedPeak.getContinuum();
+        for( const shared_ptr<const PeakDef> &sibling : roiSiblings )
+        {
+          oldPeaks.push_back( sibling );
+
+          PeakDef siblingCopy = *sibling;
+          siblingCopy.setContinuum( newContinuum );
+          newPeaks.push_back( siblingCopy );
+        }
+
+        peakModel->updatePeaks( oldPeaks, newPeaks );
+      }
 
       // Get all peaks in the same ROI for the return value
       vector<shared_ptr<const PeakDef>> peaks_in_roi;
@@ -1629,15 +1990,15 @@ namespace AnalystChecks
       if( all_peaks_ptr )
       {
         const deque<shared_ptr<const PeakDef>> &all_peaks = *all_peaks_ptr;
-        shared_ptr<const PeakContinuum> continuum = modifiedPeak.continuum();
+        const std::shared_ptr<const PeakContinuum> continuum = modifiedPeak.continuum();
 
-        for( const auto &p : all_peaks )
+        for( const shared_ptr<const PeakDef> &p : all_peaks )
         {
           if( p->continuum() == continuum )
           {
             peaks_in_roi.push_back( p );
             // Find the updated peak by comparing energies
-            if( !updated_peak && fabs(p->mean() - modifiedPeak.mean()) < 0.01 )
+            if( !updated_peak && fabs( p->mean() - modifiedPeak.mean() ) < 0.01 )
               updated_peak = p;
           }
         }
@@ -1645,7 +2006,7 @@ namespace AnalystChecks
 
       // If we couldn't find the updated peak in the model, use our local copy
       if( !updated_peak )
-        updated_peak = make_shared<const PeakDef>(modifiedPeak);
+        updated_peak = make_shared<const PeakDef>( modifiedPeak );
 
       return EditAnalysisPeakStatus{
         true,

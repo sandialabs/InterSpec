@@ -13,6 +13,30 @@
   <message id="ctwidget-non-chart-area">Área Fora do Gráfico</message>
   <message id="ctwidget-backdrop-theme">Tema de Fundo</message>
   <message id="ctwidget-backdrop-desc">Tema para toda área fora do gráfico</message>
+  <message id="ctwidget-app-background">Cor de Fundo</message>
+  <message id="ctwidget-app-background-desc">Cor de fundo para diálogos, área principal do aplicativo, etc.</message>
+  <message id="ctwidget-app-text">Cor do Texto</message>
+  <message id="ctwidget-app-text-desc">Cor do texto para áreas fora do gráfico</message>
+  <message id="ctwidget-app-border">Cor da Borda</message>
+  <message id="ctwidget-app-border-desc">Cor da borda para elementos UI (abas, botões, painéis)</message>
+  <message id="ctwidget-app-link">Cor do Link</message>
+  <message id="ctwidget-app-link-desc">Cor para links e destaques interativos</message>
+  <message id="ctwidget-app-label">Cor do Rótulo</message>
+  <message id="ctwidget-app-label-desc">Cor do texto para rótulos, abas e cabeçalhos</message>
+  <message id="ctwidget-app-input-bg">Fundo de Entrada</message>
+  <message id="ctwidget-app-input-bg-desc">Cor de fundo para campos de entrada</message>
+  <message id="ctwidget-app-button-bg">Fundo do Botão</message>
+  <message id="ctwidget-app-button-bg-desc">Cor de fundo para botões</message>
+  <message id="ctwidget-app-button-border">Borda do Botão</message>
+  <message id="ctwidget-app-button-border-desc">Cor da borda para botões</message>
+  <message id="ctwidget-app-button-text">Texto do Botão</message>
+  <message id="ctwidget-app-button-text-desc">Cor do texto para botões</message>
+  <message id="ctwidget-app-menubar-bg">Fundo da Barra de Menu</message>
+  <message id="ctwidget-app-menubar-bg-desc">Cor de fundo para a barra de menu e botões de menu</message>
+  <message id="ctwidget-app-menubar-active">Barra de Menu Ativo</message>
+  <message id="ctwidget-app-menubar-active-desc">Cor de fundo para um botão de menu quando seu menu está aberto</message>
+  <message id="ctwidget-app-menubar-hover">Barra de Menu Hover</message>
+  <message id="ctwidget-app-menubar-hover-desc">Cor de fundo para um botão de menu ao passar o mouse</message>
 
   <!-- Chart colors section -->
   <message id="ctwidget-chart-colors">Cores do Gráfico</message>

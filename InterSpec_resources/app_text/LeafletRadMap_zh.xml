@@ -38,5 +38,24 @@
     <li><b>范围内的峰值</b>：仅显示在能量范围内具有峰值的样本编号，标记颜色和CPS基于峰值计数率。</li>
     </ul>
   </message>
+  <message id="lrm-copy-google-maps">复制Google Maps URL</message>
+  <message id="lrm-copy-bing-maps">复制Bing Maps URL</message>
+  <message id="lrm-copy-url-success">地图URL已复制到剪贴板 - 粘贴到您的浏览器中。</message>
+  <message id="lrm-copy-url-fail">复制地图URL到剪贴板失败。</message>
+  <message id="lrm-copy-url-no-gps">没有可用的GPS数据来创建地图URL。</message>
+  <message id="lrm-tile-load-btn">地图瓦片未加载？</message>
+  <message id="lrm-tile-load-dialog-title">地图瓦片未加载</message>
+  <message id="lrm-tile-load-dialog-content">
+    无法从arcgis.com加载地图瓦片。可能的原因：
+    <ul>
+      <li>没有互联网连接</li>
+      <li>企业代理或防火墙阻止访问arcgis.com</li>
+      <li>无效或过期的API密钥</li>
+    </ul>
+    <p>如果您在代理后面，可能需要配置代理设置。
+    请参阅文件<em>data/config/example_InterSpec_app_settings.json</em>中的
+    <b>ProxySetting</b>选项；通常<b>system</b>值即可使用。</p>
+    <p>测量标记仍会显示，但地图背景将为空白。</p>
+  </message>
 </messages>
 

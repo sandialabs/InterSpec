@@ -74,6 +74,9 @@ dialog
 {
   padding: 0 20px 20px;
   text-align: center;
+  
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .simple-dialog .footer
@@ -91,6 +94,7 @@ dialog
   white-space: pre;
   -webkit-rtl-ordering: logical;
   -webkit-user-select: text;
+  user-select: text;
   font-style: normal;
   font-weight: 400;
   font-family: system-ui;

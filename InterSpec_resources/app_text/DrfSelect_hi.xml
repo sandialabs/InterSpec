@@ -47,6 +47,7 @@
     </div>
   </message>
   <message id="ds-det-diam">डिटेक्टर व्यास:</message>
+  <message id="ds-det-setback">Det. सेटबैक:</message>
   <message id="ds-fixed-geom">निश्चित ज्यामिति</message>
   <message id="ds-gad-det-file-label">GADRAS Detector.Dat फ़ाइल:</message>
   <message id="ds-manual-det-empty-fcn">उदाहरण: exp(-9.8 - 8.1*log(x) + 4.62E-02*log(x)^2 + ...)\n
@@ -64,6 +65,7 @@
   <message id="ds-tt-manual-energy-unit">दक्षता सूत्र के लिए ऊर्जा इकाई</message>
   <message id="ds-tt-manual-desc">इस डिटेक्टर प्रतिक्रिया का विवरण</message>
   <message id="ds-manual-det-diam-label">डिटेक्टर व्यास</message>
+  <message id="ds-manual-det-setback-label">Det. सेटबैक</message>
   <message id="ds-energy-range">ऊर्जा सीमा</message>
   <message id="ds-(optional)">(वैकल्पिक)</message>
   <message id="ds-min.">न्यूनतम</message>
@@ -126,4 +128,9 @@
   <message id="ds-err-det-dist-pos">पूर्ण दक्षता के लिए दूरी धनात्मक होनी चाहिए</message>
   <message id="ds-warn-min-max-energy-swapped">डिटेक्टर न्यूनतम ऊर्जा अधिकतम ऊर्जा से अधिक थी; ऊर्जा सीमा को अनदेखा कर रहे हैं।</message>
   <message id="ds-need-det-diam">डिटेक्टर के व्यास की आवश्यकता है</message>
+  <message id="ds-err-invalid-csv-format">CSV फ़ाइल पहचानी नहीं गई। कृपया एक मान्य दक्षता CSV फ़ाइल अपलोड करें (MakeDrf प्रारूप या ऊर्जा और दक्षता स्तंभों वाला सरल प्रारूप)।</message>
+  <message id="ds-err-parsing-gadras">GADRAS डिटेक्टर पार्स करने में त्रुटि: {1}</message>
+  <message id="ds-eff-type-intrinsic">आंतरिक दक्षता</message>
+  <message id="ds-eff-type-farfield">दूर-क्षेत्र दक्षता</message>
+  <message id="ds-eff-type-gadras">GADRAS</message>
 </messages>

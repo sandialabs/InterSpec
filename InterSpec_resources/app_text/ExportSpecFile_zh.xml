@@ -63,22 +63,30 @@
   <!-- Buttons -->
   <message id="esf-export">导出</message>
   <message id="esf-show-qr-code">显示QR码</message>
-  
+  <message id="esf-lossless-qr">无损</message>
+  <message id="esf-lossless-qr-tt">勾选后，谱数据不会丢失任何信息，但对于高通道数或高统计量的谱，可能需要多个QR码。取消勾选后，将使用基于wavelet的有损压缩，会丢失部分信息，但可以使用更少元素、更多纠错的QR码，或将任何谱用单个QR码表示。</message>
+
   <!-- File info table headers -->
   <message id="esf-displayed-as">显示为</message>
   <message id="esf-fore-abbrev">前景</message>
   <message id="esf-back-abbrev">本底</message>
   <message id="esf-sec-abbrev">次要</message>
-  
+
   <!-- QR Code dialog -->
   <message id="esf-next-qr-code">下一个QR码</message>
   <message id="esf-url-link">URL链接</message>
   <message id="esf-email-link">电子邮件链接</message>
-  
+  <message id="esf-lossy-qr-title">谱的有损QR码</message>
+  <message id="esf-qr-error-tolerance">QR误差容限：</message>
+  <message id="esf-qr-num-elements">QR元素数量：</message>
+  <message id="esf-qr-rmse-info">RMSE：{1}，系数：{2}</message>
+  <message id="esf-qr-lossy-err">无法在此QR大小/容限下拟合谱</message>
+
   <!-- Error dialogs -->
   <message id="esf-error-title">错误</message>
   <message id="esf-qr-encode-failed">将谱显示为QR码失败：{1}</message>
-  
+  <message id="esf-back-sub-peak-refit-failed">本底减除谱的峰连续谱重新拟合失败；使用了原始峰参数。</message>
+
   <!-- Pluralized messages -->
   <message id="esf-disp-sample">
     <plural case="0">显示&#160;样本</plural>

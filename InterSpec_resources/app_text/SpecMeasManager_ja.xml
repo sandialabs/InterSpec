@@ -131,9 +131,21 @@
   <message id="smm-ecc-fix-geom-act-m2">固定ジオメトリ - 放射能/m2</message>
   <message id="smm-ecc-fix-geom-act-gram">固定ジオメトリ - 放射能/g</message>
   <message id="smm-ecc-det-diam">検出器直径</message>
+  <message id="smm-ecc-det-setback">検出器セットバック</message>
   <message id="smm-ecc-dist">距離</message>
   <message id="smm-ecc-use-drf">DRF使用</message>
   <message id="smm-ecc-error">ECCからのDRF作成エラー: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop an ANGLE .outx file onto app -->
+  <message id="smm-outx-curve">ANGLE効率較正曲線DRF</message>
+  <message id="smm-outx-error">ANGLE .outxからのDRF作成エラー: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop an efficiency CSV file onto app -->
+  <message id="smm-eff-csv-curve">効率CSV曲線DRF</message>
+  <message id="smm-eff-csv-error">効率CSVからのDRF作成エラー: {1}</message>
+  <message id="smm-eff-csv-det-dat-label">Detector.dat（任意）</message>
+  <message id="smm-eff-csv-intrinsic">固有効率</message>
+  <message id="smm-eff-csv-abs-eff">絶対効率</message>
 
   <!-- Text for dialog when user drag-n-drop the Activity/Shielding fit file onto app -->
   <message id="smm-act-shield-xml">放射能/遮蔽XML</message>

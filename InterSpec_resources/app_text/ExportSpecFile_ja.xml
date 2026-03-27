@@ -63,22 +63,30 @@
   <!-- Buttons -->
   <message id="esf-export">エクスポート</message>
   <message id="esf-show-qr-code">QRコード表示</message>
-  
+  <message id="esf-lossless-qr">可逆圧縮</message>
+  <message id="esf-lossless-qr-tt">チェックすると、スペクトルデータは情報を失いませんが、高チャンネル数や高統計量のスペクトルでは複数のQRコードが必要になる場合があります。チェックを外すと、waveletベースの非可逆圧縮が使用され、一部の情報は失われますが、より少ない要素数、より多くの誤り訂正、または任意のスペクトルを単一のQRコードで表現できます。</message>
+
   <!-- File info table headers -->
   <message id="esf-displayed-as">表示として</message>
   <message id="esf-fore-abbrev">フォア</message>
   <message id="esf-back-abbrev">バック</message>
   <message id="esf-sec-abbrev">セカン</message>
-  
+
   <!-- QR Code dialog -->
   <message id="esf-next-qr-code">次のQRコード</message>
   <message id="esf-url-link">URLリンク</message>
   <message id="esf-email-link">メールリンク</message>
-  
+  <message id="esf-lossy-qr-title">スペクトルの非可逆QRコード</message>
+  <message id="esf-qr-error-tolerance">QR誤差許容値:</message>
+  <message id="esf-qr-num-elements">QR要素数:</message>
+  <message id="esf-qr-rmse-info">RMSE: {1}、係数: {2}</message>
+  <message id="esf-qr-lossy-err">このQRサイズ/許容値ではスペクトルをフィットできません</message>
+
   <!-- Error dialogs -->
   <message id="esf-error-title">エラー</message>
   <message id="esf-qr-encode-failed">スペクトルをQRコードとして表示できませんでした：{1}</message>
-  
+  <message id="esf-back-sub-peak-refit-failed">バックグラウンド減算スペクトルのピークコンティニュアムの再フィットに失敗しました。元のピークパラメータが使用されます。</message>
+
   <!-- Pluralized messages -->
   <message id="esf-disp-sample">
     <plural case="0">表示&nbsp;サンプル</plural>

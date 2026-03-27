@@ -5,4 +5,5 @@
   <message id="bgw-not-spec-preview">স্পেকট্রাম ফাইল নয়</message>
   <message id="bgw-passthrough-sum-error">প্যাসথ্রু ত্রুটি</message>
   <message id="bgw-preview-error">প্রিভিউ রেন্ডারিং ত্রুটি</message>
+  <message id="bgw-preview-skip">প্রিভিউ বাদ দেওয়া হচ্ছে</message>
 </messages>

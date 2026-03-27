@@ -16,6 +16,7 @@
   <message id="Apply">Apply</message>
   <message id="Accept">Accept</message>
   <message id="Okay">Okay</message>
+  <message id="Reject">Reject</message>
   <message id="Foreground">Foreground</message>
   <message id="Background">Background</message>
   <message id="Secondary">Secondary</message>
@@ -487,6 +488,9 @@
   <message id="pct-flat-step">Flat Step</message>
   <message id="pct-linear-step">Linear Step</message>
   <message id="pct-bilinear-step">Bi-linear Step</message>
+  <message id="pct-flat-step-cdf">Flat Step (CDF)</message>
+  <message id="pct-linear-step-cdf">Linear Step (CDF)</message>
+  <message id="pct-bilinear-step-cdf">Bi-linear Step (CDF)</message>
   <message id="pct-global">Global Cont.</message>
 
   <!-- populateNuclideSelects() in PeakSearchGuiUtils.cpp -->

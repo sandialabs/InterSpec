@@ -47,6 +47,8 @@ struct PeakDefImp
   const T &mean() const { return m_mean; }
   const T &sigma() const { return m_sigma; }
   const T &amplitude() const { return m_amplitude; }
+  PeakDef::SkewType skewType() const { return m_skew_type; }
+  const T *skew_parameters() const { return m_skew_pars; }
 
   void setMean( const T &mean ) { m_mean = mean; }
   void setSigma( const T &sigma ) { m_sigma = sigma; }
@@ -240,15 +242,25 @@ struct PeakDefImp
         break;
 
       case PeakDef::SkewType::DoubleBortel:
+        try
+      {
         vis_limits = PeakDists::double_bortel_coverage_limits( mean, sigma, skew_pars[0],
                                                                 skew_pars[1], skew_pars[2], missing_frac );
+      }catch( std::exception & )
+      {
+        // Bortel has a low-energy tail; go wide on the left, use Gaussian limit on the right
+        vis_limits.first = mean - 15.0*sigma;
+
+        const boost::math::normal_distribution gaus_dist( 1.0 );
+        vis_limits.second = mean + sigma*boost::math::quantile( gaus_dist, 1.0 - missing_frac );
+      }
         break;
     }//switch( m_skew_type )
 
     if( max_num_fwhm > 0.0 )
     {
-      vis_limits.first = std::max( vis_limits.first, mean - 2.35482*max_num_fwhm*sigma );
-      vis_limits.second = std::min( vis_limits.second, mean + 2.35482*max_num_fwhm*sigma );
+      vis_limits.first = (std::max)( vis_limits.first, mean - 2.35482*max_num_fwhm*sigma );
+      vis_limits.second = (std::min)( vis_limits.second, mean + 2.35482*max_num_fwhm*sigma );
     }//if( max_num_fwhm > 0.0 )
 
     return vis_limits;

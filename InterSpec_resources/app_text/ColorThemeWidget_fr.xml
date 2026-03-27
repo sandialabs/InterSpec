@@ -13,7 +13,31 @@
   <message id="ctwidget-non-chart-area">Zone Non-Graphique</message>
   <message id="ctwidget-backdrop-theme">Thème Arrière-Plan</message>
   <message id="ctwidget-backdrop-desc">Thème pour toute zone non-graphique</message>
-  
+  <message id="ctwidget-app-background">Couleur Arrière-Plan</message>
+  <message id="ctwidget-app-background-desc">Couleur arrière-plan pour dialogues, zone principale de l'application, etc.</message>
+  <message id="ctwidget-app-text">Couleur Texte</message>
+  <message id="ctwidget-app-text-desc">Couleur texte pour zones non-graphique</message>
+  <message id="ctwidget-app-border">Couleur Bordure</message>
+  <message id="ctwidget-app-border-desc">Couleur bordure pour éléments UI (onglets, boutons, panneaux)</message>
+  <message id="ctwidget-app-link">Couleur Lien</message>
+  <message id="ctwidget-app-link-desc">Couleur pour liens et accents interactifs</message>
+  <message id="ctwidget-app-label">Couleur Étiquette</message>
+  <message id="ctwidget-app-label-desc">Couleur texte pour étiquettes, onglets et en-têtes</message>
+  <message id="ctwidget-app-input-bg">Arrière-Plan Saisie</message>
+  <message id="ctwidget-app-input-bg-desc">Couleur arrière-plan pour champs de saisie</message>
+  <message id="ctwidget-app-button-bg">Arrière-Plan Bouton</message>
+  <message id="ctwidget-app-button-bg-desc">Couleur arrière-plan pour boutons</message>
+  <message id="ctwidget-app-button-border">Bordure Bouton</message>
+  <message id="ctwidget-app-button-border-desc">Couleur bordure pour boutons</message>
+  <message id="ctwidget-app-button-text">Texte Bouton</message>
+  <message id="ctwidget-app-button-text-desc">Couleur texte pour boutons</message>
+  <message id="ctwidget-app-menubar-bg">Arrière-Plan Barre Menu</message>
+  <message id="ctwidget-app-menubar-bg-desc">Couleur arrière-plan pour la barre de menu et boutons de menu</message>
+  <message id="ctwidget-app-menubar-active">Barre Menu Actif</message>
+  <message id="ctwidget-app-menubar-active-desc">Couleur arrière-plan pour un bouton de menu quand son menu est ouvert</message>
+  <message id="ctwidget-app-menubar-hover">Barre Menu Survol</message>
+  <message id="ctwidget-app-menubar-hover-desc">Couleur arrière-plan pour un bouton de menu au survol</message>
+
   <!-- Chart colors section -->
   <message id="ctwidget-chart-colors">Couleurs Graphique</message>
   

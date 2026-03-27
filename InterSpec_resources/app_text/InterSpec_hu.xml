@@ -1,21 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
   <!-- Text labels for general buttons/prompts, and one-off words around the app.  Note the capitalization. -->
-  <message id="Cancel">Mégsem</message>
+  <message id="Cancel">Mégse</message>
   <message id="Yes">Igen</message>
   <message id="No">Nem</message>
-  <message id="Close">Bezár</message>
-  <message id="Continue">Folytat</message>
+  <message id="Close">Bezárás</message>
+  <message id="Continue">Tovább</message>
   <message id="Save">Mentés</message>
   <message id="Name">Név</message>
   <message id="Desc.">Leírás</message>
   <message id="Back">Vissza</message>
-  <message id="Create">Létrehoz</message>
+  <message id="Create">Létrehozás</message>
   <message id="Energy">Energia</message>
-  <message id="Counts">Impulzusok</message>
+  <message id="Counts">Beütésszám</message>
   <message id="Apply">Alkalmaz</message>
   <message id="Accept">Elfogad</message>
   <message id="Okay">Rendben</message>
+  <message id="Reject">Elutasít</message>
   <message id="Foreground">Előtér</message>
   <message id="Background">Háttér</message>
   <message id="Secondary">Másodlagos</message>
@@ -24,8 +25,8 @@
   <message id="background" comment="For use in middle of sentence">háttér</message>
   <message id="secondary" comment="For use in middle of sentence">másodlagos</message>
   <message id="Exit">Kilépés</message>
-  <message id="Enter">Belépés</message>
-  <message id="show-lines">Vonalak megjelenítése</message>
+  <message id="Enter">Bevitel</message>
+  <message id="show-lines">Vonalak</message>
   <message id="Default">Alapértelmezett</message>
   <message id="Error">Hiba</message>
   <message id="Description">Leírás</message>
@@ -44,64 +45,63 @@
   <message id="background-label">Háttér:</message>
   <message id="secondary-label">Másodlagos:</message>
   <message id="Remark">Megjegyzés</message>
-  <message id="Tap">Érintés</message>
-  <message id="Click">Kattintás</message>
-  <message id="tap">érintés</message>
-  <message id="click">kattintás</message>
+  <message id="Tap">Érintse meg</message>
+  <message id="Click">Kattintson</message>
+  <message id="tap">érintse meg</message>
+  <message id="click">kattintson</message>
 
 
-  <!-- Words not used in InterSpec.cpp, but at least a few places throughout the app --> 
+  <!-- Words not used in InterSpec.cpp, but at least a few places throughout the app -->
   <message id="Continuum">Kontinuum</message>
   <message id="cont-type">Kont. típus</message>
   <message id="Title">Cím</message>
   <message id="Fit">Illesztés</message>
-  <message id="Use">Használ</message>
+  <message id="Use">Használat</message>
   <message id="Mean">Átlag</message>
   <message id="FWHM">FWHM</message>
-  <message id="Amp.">Ampl.</message>
+  <message id="Amp.">Amp.</message>
   <message id="Area">Terület</message>
   <message id="Age">Kor</message>
-  <message id="Add">Hozzáad</message>
+  <message id="Add">Hozzáadás</message>
   <message id="Peak">Csúcs</message>
-  <message id="Delete">Töröl</message>
-  <message id="Photopeak">Fotocsúcs</message>
+  <message id="Delete">Törlés</message>
+  <message id="Photopeak">Fotócsúcs</message>
   <message id="Nuclide">Nuklid</message>
-  <message id="Nuc.">Nukl.</message>
+  <message id="Nuc.">Nuc.</message>
   <message id="Skew">Aszimmetria</message>
   <message id="CPS">CPS</message>
   <message id="CSV">CSV</message>
   <message id="True">Igaz</message>
   <message id="False">Hamis</message>
-  <message id="Remove">Eltávolít</message>
+  <message id="Remove">Eltávolítás</message>
   <message id="RemoveAll">Összes eltávolítása</message>
   <message id="Clear">Törlés</message>
   <message id="ClearAll">Összes törlése</message>
   <message id="T1/2">T½</message>
   <message id="Gamma">Gamma</message>
-  <message id="X-rays">Röntgen</message>
-  <message id="x-ray">röntgen</message>
+  <message id="X-rays">Röntgensugarak</message>
+  <message id="x-ray">röntgensugár</message>
   <message id="Live Time">Élő idő</message>
   <message id="Real Time">Valós idő</message>
   <message id="Geometry">Geometria</message>
   <message id="Load">Betöltés</message>
   <message id="Mass">Tömeg</message>
   <message id="Material">Anyag</message>
-  <message id="NA">NA</message>
+  <message id="NA">N/A</message>
   <message id="n/a">n/a</message>
   <message id="N/A">N/A</message>
   <message id="Min.">Min.</message>
   <message id="Max.">Max.</message>
   <message id="QR Code">QR kód</message>
-  <message id="Accept">Elfogad</message>
   <message id="Dose">Dózis</message>
   <message id="Shielding">Árnyékolás</message>
   <message id="app-qr-err">Hiba a QR kód létrehozásakor: {1}</message>
   <message id="intrinsic-activity">Belső aktivitás</message>
-  <message id="Calibration">Kalibrálás</message>
+  <message id="Calibration">Kalibráció</message>
   <message id="Unknown">Ismeretlen</message>
   <message id="keV">keV</message>
   <message id="Energy (keV)">Energia (keV)</message>
-  <message id="Efficiency">Hatékonyság</message>
+  <message id="Efficiency">Hatásfok</message>
   <message id="stable">stabil</message>
 
   <!-- Units the user may use to write time duration.
@@ -111,19 +111,19 @@
 
     It is important that the | character is used, with no spaces, to seperate the different possible
     units (this is because this string will become part of a regular-expression).
-    
+
     These 'units-labels-*' string also MUST NOT be empty, or regex validation inputs will fail.
     (you can leave the whole element out, to default to English, but if you put in a localized
     element, the node must hav a value)
   -->
-  <message id="units-labels-second">másodperc|mp|s|MÁSODPERC|MP|S|sec|second|seconds|SEC|SECOND|SECONDS</message>
-  <message id="units-labels-minute">perc|p|min|m|PERC|P|MIN|M|minute|minutes</message>
-  <message id="units-labels-hours">óra|ó|h|ÓRA|Ó|H|hour|hours|hrs</message>
-  <message id="units-labels-days">nap|n|d|NAP|N|D|day|days</message>
-  <message id="units-labels-year">év|é|y|ÉV|É|Y|year|years|yr</message>
-  <message id="units-labels-half-lives">felezési idő|felezési|fl|FELEZÉSI IDŐ|FELEZÉSI|FL|hl|halflife|halflives|half-life|half-lives|half lives|half life</message>
+  <message id="units-labels-second">másodperc|másodpercek|mp|s|MÁSODPERC|MÁSODPERCEK|MP|S|seconds|second|sec</message>
+  <message id="units-labels-minute">perc|percek|p|m|minute|minutes|min</message>
+  <message id="units-labels-hours">óra|órák|ó|h|hours|hour|hrs</message>
+  <message id="units-labels-days">nap|napok|n|d|days|day</message>
+  <message id="units-labels-year">év|évek|é|y|years|year|yr</message>
+  <message id="units-labels-half-lives">hl|felezési idő|felezésiidő|felezési|halflife|halflives|half-life|half-lives|half lives|half life</message>
   <!-- Units to use when writing a time duration out -->
-  <message id="units-label-seconds-short">s</message>
+  <message id="units-label-seconds-short">mp</message>
   <message id="units-label-minutes-short">p</message>
   <message id="units-label-hours-short">ó</message>
   <message id="units-label-days-short">n</message>
@@ -132,7 +132,7 @@
 
   <!-- The dialog when the user selects "Clear Session..." from the File menu -->
   <message id="clear-session">Munkamenet törlése?</message>
-  <message id="clear-session-msg">Biztos benne, hogy tiszta munkamenetet szeretne indítani?</message>
+  <message id="clear-session-msg">Biztosan szeretne egy tiszta munkamenetet indítani?</message>
 
   <message id="window-title-spec-file-query">Spektrumfájl lekérdező eszköz</message>
   <message id="window-title-notification-log">Értesítési napló</message>
@@ -141,63 +141,63 @@
   <message id="window-title-store-state-as">Állapot mentése másként</message>
   <message id="window-title-tag-state">Jelenlegi állapot címkézése</message>
   <message id="window-title-create-snapshot">Pillanatkép létrehozása</message>
-  <message id="window-title-energy-cal">Energia kalibrálás</message>
-  <message id="window-title-hard-back-sub">Kemény háttérkivonás végrehajtása?</message>
+  <message id="window-title-energy-cal">Energiakalibráció</message>
+  <message id="window-title-hard-back-sub">Végrehajtja a kemény háttérlevonást?</message>
   <message id="window-title-3d">3D adatnézet</message>
-  <message id="window-title-peak-rel-eff">Izotóparány felhasználói csúcsokból</message>
-  <message id="window-title-compact-file">Megnyitott spektrumok kiválasztása megjelenítéshez</message>
-  <message id="window-title-feature-markers">Jellemző jelölők</message>
+  <message id="window-title-peak-rel-eff">Izotóp-összetétel felhasználó által illesztett csúcsokból</message>
+  <message id="window-title-compact-file">Megjelenítendő megnyitott spektrumok kiválasztása</message>
+  <message id="window-title-feature-markers">Jellemző-jelölők</message>
   <message id="window-title-act-shield-fit">Aktivitás/Árnyékolás illesztés</message>
-  <message id="window-title-xs-calc">Gamma XS számítás</message>
-  <message id="window-title-dose-calc">Dózis számítás</message>
-  <message id="window-title-1/r2-calc">1/r<sup>2</sup> kalkulátor</message>
-  <message id="window-title-units-convert">Egységátalakító</message>
+  <message id="window-title-xs-calc">Gamma hatáskeresztmetszet-számító</message>
+  <message id="window-title-dose-calc">Dózisszámító</message>
+  <message id="window-title-1/r2-calc">1/r<sup>2</sup> Számító</message>
+  <message id="window-title-units-convert">Mértékegység-átváltó</message>
   <message id="window-title-flux-tool">Fluxus eszköz</message>
-  <message id="window-title-nuc-decay">Nuklid bomlásinformáció</message>
-  <message id="window-title-select-det-eff-fcn">Detektor válaszfüggvény kiválasztás</message>
-  <message id="window-title-add-fwhm">FWHM hozzáadása a detektor válaszfüggvényhez</message>
-  <message id="window-title-create-drf">Detektor válaszfüggvény létrehozása</message>
-  <message id="window-title-file-parameters">Fájl paraméterek</message>
-  <message id="window-title-energy-range-sum">Energia tartomány összeg</message>
+  <message id="window-title-nuc-decay">Nuklid bomlási információ</message>
+  <message id="window-title-select-det-eff-fcn">Detector hatásfok függvény kiválasztása</message>
+  <message id="window-title-add-fwhm">FWHM hozzáadása a detector hatásfok függvényhez</message>
+  <message id="window-title-create-drf">Detector hatásfok függvény létrehozása</message>
+  <message id="window-title-file-parameters">Fájlparaméterek</message>
+  <message id="window-title-energy-range-sum">Energiatartomány összegzés</message>
   <message id="window-title-external-rid">Külső RID</message>
   <message id="window-title-license-credit">Jogi nyilatkozatok, licencek, szerzők és kapcsolat</message>
-  <message id="window-title-help">InterSpec súgó</message>
+  <message id="window-title-help">InterSpec Súgó</message>
   <message id="window-title-simple-mda">Egyszerű minimális detektálható aktivitás számítás</message>
   <message id="window-title-peak-editor">Csúcsszerkesztő</message>
-  
+
 
   <!-- The names of the tool-tabs at the bottom of the app -->
   <message id="app-tab-peak-manager">Csúcskezelő</message>
-  <message id="app-tab-ref-photopeak">Referencia fotocsúcsok</message>
-  <message id="app-tab-energy-cal">Energia kalibrálás</message>
-  <message id="app-tab-nuc-search">Nuklid keresés</message>
+  <message id="app-tab-ref-photopeak">Referencia fotócsúcsok</message>
+  <message id="app-tab-energy-cal">Energiakalibráció</message>
+  <message id="app-tab-nuc-search">Nuklidkeresés</message>
   <message id="app-tab-spec-files">Spektrumfájlok</message>
   <message id="app-tab-terminal">Terminál</message>
-  <message id="app-tab-isotopics">Izotóparány</message>
+  <message id="app-tab-isotopics">Izotóp-összetétel</message>
 
-  <message id="app-tab-tt-ref-photopeak">Lehetővé teszi a felhasználó számára referencia fotocsúcs vonalak megjelenítését röntgen,
-    gamma vagy nukleáris reakciókból.  
+  <message id="app-tab-tt-ref-photopeak">Lehetővé teszi referencia fotócsúcs-vonalak megjelenítését röntgensugarakból,
+    gamma-sugarakból vagy magreakciókból.
     <br />
-    A nuklidok kora, alkalmazott árnyékolás és detektor hatékonyság szerkeszthető.
+    A nuklidok kora, az alkalmazott árnyékolás és a felhasznált detector hatásfok szerkeszthető.
     <br />
-    A bővített információs menüben kaskád bomlási összegeket, alfa energiákat vagy béta végpontokat is megjeleníthet.
+    A részletes információ menüben megjelenítheti a kaszkád bomlási összegeket, alfa energiákat vagy béta végponti energiákat is.
     <br />
-    CSV fájlt is exportálhat a nuklid információkkal.
+    A nuklidinformációkat CSV fájlként is exportálhatja.
   </message>
-  <message id="app-tab-tt-peak-manager">Megjeleníti az illesztett csúcsok információit szerkeszthető és rendezhető táblázatban,
-    lehetővé teszi a csúcsinformációk CSV exportját, valamint eszközöket biztosít az automatikus csúcskereséshez, és csúcsok hozzáadásához és törléséhez.
+  <message id="app-tab-tt-peak-manager">Az illesztett csúcsok információit szerkeszthető és rendezhető táblázatban jeleníti meg,
+    lehetővé teszi a csúcsinformáció CSV exportálását, valamint eszközöket biztosít az automatikus csúcskereséshez, csúcsok hozzáadásához és törléséhez.
   </message>
-  <message id="app-tab-tt-energy-cal">Lehetővé teszi a felhasználó számára az energia kalibrálási tényezők és nemlineáris eltérési párok módosítását vagy illesztését.
+  <message id="app-tab-tt-energy-cal">Lehetővé teszi az energiakalibrációs paraméterek és nemlineáris eltéréspárok módosítását vagy illesztését.
     <br />
-    Lehetőségek vannak a spektrum linearizálására, az energia kalibrálási típus megváltoztatására, energia tartomány csonkítására vagy csatornák kombinálására.
+    Emellett lehetőség van a spektrum linearizálására, a kalibráció típusának megváltoztatására, az energiatartomány csonkolására vagy csatornák összevonására.
     <br />
-    Az energia kalibrálás grafikusan is elvégezhető jobb kattintás húzásával a spektrumon az eredeti energiáról a módosított energiára
-    (pl. az adatok csúcsának húzása a megfelelő referencia vonalra).
+    Az energiakalibráció grafikusan is elvégezhető: jobb egérgombbal húzza a spektrumot az eredeti energiáról a módosított energiára
+    (pl. húzza az adatcsúcsot a megfelelő referenciavonalra).
   </message>
-  <message id="app-tab-tt-nuc-search">Nuklidok keresése energia, elágazási arány és felezési idő megszorításokkal.</message>
+  <message id="app-tab-tt-nuc-search">Nuklidok keresése energia, elágazási arány és felezési idő megkötésekkel.</message>
   <message id="app-tab-tt-auto-search">Automatikus csúcskeresés</message>
-  <message id="app-tab-tt-terminal">Numerikus, algebrai és szöveg alapú spektrum interakciós terminál.</message>
-  <message id="app-tab-tt-rel-eff">Relatív hatékonyság elemzés az illesztett csúcsokból.</message>
+  <message id="app-tab-tt-terminal">Numerikus, algebrai és szöveges spektrum-interakciós terminál.</message>
+  <message id="app-tab-tt-rel-eff">Relatív hatásfok elemzés az Ön által illesztett csúcsokból.</message>
 
 
   <!-- App-level menu names -->
@@ -207,9 +207,9 @@
   <message id="app-menu-view">Nézet</message>
   <message id="app-menu-help">Súgó</message>
   <message id="app-menu-tools">Eszközök</message>
-  
 
-  <!-- 
+
+  <!--
     Menu item text for the app-level menus.
     They are in the form of "app-mi-{menu}-item-desc", or for tool tips "app-mi-tt-{menu}-item-desc"
   -->
@@ -217,29 +217,29 @@
   <message id="app-mi-file-open">Fájl megnyitása...</message>
   <message id="app-mi-file-loaded-spec">Betöltött spektrumok...</message>
   <message id="app-mi-file-manager">Kezelő...</message>
-  <message id="app-mi-tt-file-manager">Betöltött spektrumok kezelése. Spektrumok összegzése, spektrumok kombinálása különböző fájlokba, megjelenítés, ...</message>
-  <message id="app-mi-file-store">Tárolás</message>
-  <message id="app-mi-tt-file-store">A jelenlegi alkalmazás állapot mentése az InterSpec adatbázisába</message>
-  <message id="app-mi-file-store-as">Tárolás másként...</message>
-  <message id="app-mi-tt-file-store-as">A jelenlegi alkalmazás állapot mentése új bejegyzésként az InterSpec adatbázisába</message>
+  <message id="app-mi-tt-file-manager">Betöltött spektrumok kezelése. Spektrumok összegzése, egyesítése különböző fájlokba, megjelenítése, ...</message>
+  <message id="app-mi-file-store">Mentés</message>
+  <message id="app-mi-tt-file-store">Az aktuális alkalmazásállapot mentése az InterSpec adatbázisába</message>
+  <message id="app-mi-file-store-as">Mentés másként...</message>
+  <message id="app-mi-tt-file-store-as">Az aktuális alkalmazásállapot mentése új bejegyzésként az InterSpec adatbázisába</message>
   <message id="app-mi-file-tag">Címkézés...</message>
-  <message id="app-mi-tt-file-tag">A jelenlegi InterSpec állapot címkézése, hogy
-   később visszatérhessen hozzá. Alkalmazás állapot betöltésekor
-   választhat a legfrissebb mentés és a múltbeli címkézett verziók között.
+  <message id="app-mi-tt-file-tag">Az aktuális InterSpec állapot megcímkézése, hogy
+   később visszatérhessen hozzá. Alkalmazásállapot betöltésekor
+   választhat a legutóbbi mentés vagy a korábbi címkézett verziók közül.
   </message>
-  <message id="app-mi-file-prev">Előző...</message>
+  <message id="app-mi-file-prev">Korábbi...</message>
   <message id="app-mi-tt-file-prev">Korábban mentett állapotok vagy spektrumok megnyitása.</message>
   <message id="app-mi-file-clear">Munkamenet törlése...</message>
-  <message id="app-mi-tt-file-clear">Tiszta alkalmazás állapot indítása betöltött spektrumok nélkül</message>
+  <message id="app-mi-tt-file-clear">Tiszta alkalmazásállapot indítása betöltött spektrumok nélkül</message>
   <message id="app-mi-samples">Minták</message>
-  <message id="app-mi-tt-file-open">Dialógus létrehozása spektrumfájl tallózásához a fájlrendszeren.
-    Húzza be a fájlt közvetlenül az alkalmazás ablakába gyorsabb alternatívaként.
+  <message id="app-mi-tt-file-open">Párbeszédablakot nyit a spektrumfájl kereséséhez a fájlrendszeren.
+    Gyorsabb alternatívaként a fájlt közvetlenül az alkalmazásablakba is húzhatja.
   </message>
   <message id="app-mi-export-file">Fájl exportálása...</message>
 
   <message id="app-mi-samples-ba133">Ba-133 (16k csatorna)</message>
-  <message id="app-mi-samples-passthrough-mobile">Passthrough (16k csatorna)</message>
-  <message id="app-mi-samples-passthrough">Passthrough (16k bin ICD1, 8 det., 133 minta)</message>
+  <message id="app-mi-samples-passthrough-mobile">Áthaladásos (16k csatorna)</message>
+  <message id="app-mi-samples-passthrough">Áthaladásos (16k bin ICD1, 8 det., 133 minta)</message>
   <message id="app-mi-samples-background">Háttér (16k bin N42)</message>
   <message id="app-mi-samples-reference">Referencia spektrumok...</message>
 
@@ -251,169 +251,169 @@
   <message id="app-mi-edit-enter-url">URL megadása</message>
 
   <!-- Items in the "View" menu -->
-  <message id="app-mi-view-show-tabs">Eszközfülek megjelenítése</message>
+  <message id="app-mi-view-show-tabs">Eszközfülek mutatása</message>
   <message id="app-mi-view-hide-tabs">Eszközfülek elrejtése</message>
   <message id="app-mi-view-chart-opts">Diagram beállítások</message>
-  <message id="app-mi-view-logy">Log Y tengely</message>
+  <message id="app-mi-view-logy">Logaritmikus Y tengely</message>
   <message id="app-mi-view-liny">Lineáris Y tengely</message>
-  <message id="app-mi-view-show-vert">Függőleges vonalak megjelenítése</message>
+  <message id="app-mi-view-show-vert">Függőleges vonalak</message>
   <message id="app-mi-view-hide-vert">Függőleges vonalak elrejtése</message>
-  <message id="app-mi-view-show-horz">Vízszintes vonalak megjelenítése</message>
+  <message id="app-mi-view-show-horz">Vízszintes vonalak</message>
   <message id="app-mi-view-hide-horz">Vízszintes vonalak elrejtése</message>
-  <message id="app-mi-view-compact-x">Kompakt X-tengely</message>
-  <message id="app-mi-view-normal-x">Normál X-tengely</message>
-  <message id="app-mi-view-show-leg">Spektrum jelmagyarázat megjelenítése</message>
-  <message id="app-mi-view-show-slider">Energia csúszka megjelenítése</message>
-  <message id="app-mi-view-hide-slider">Energia csúszka elrejtése</message>
-  <message id="app-mi-view-show-scaler">Y-tengely skálázók megjelenítése</message>
-  <message id="app-mi-view-hide-scaler">Y-tengely skálázók elrejtése</message>
-  <message id="app-mi-view-back-sub">Háttér kivonás</message>
-  <message id="app-mi-view-back-unsub">Háttér kivonás visszavonása</message>
-  <message id="app-mi-view-hard-sub">Kemény háttér kivonás...</message>
+  <message id="app-mi-view-compact-x">Kompakt X tengely</message>
+  <message id="app-mi-view-normal-x">Normál X tengely</message>
+  <message id="app-mi-view-show-leg">Spektrum jelmagyarázat</message>
+  <message id="app-mi-view-show-slider">Energiacsúszka mutatása</message>
+  <message id="app-mi-view-hide-slider">Energiacsúszka elrejtése</message>
+  <message id="app-mi-view-show-scaler">Y tengely skálázók</message>
+  <message id="app-mi-view-hide-scaler">Y tengely skálázók elrejtése</message>
+  <message id="app-mi-view-back-sub">Háttérlevonás</message>
+  <message id="app-mi-view-back-unsub">Háttérlevonás visszavonása</message>
+  <message id="app-mi-view-hard-sub">Kemény háttérlevonás...</message>
   <message id="app-mi-view-map">Térkép</message>
-  <message id="app-mi-tt-view-map">Mérés(ek) helyének megjelenítése térképen. Csak akkor engedélyezett, ha GPS koordináták elérhetők.</message>
-  <message id="app-mi-view-3d">3D nézet megjelenítése</message>
-  <message id="app-mi-tt-view-3d">Idő vs. Energia vs. Impulzusok nézet megjelenítése keresési mód vagy RPM adatokhoz.</message>
-  <message id="app-mi-view-rid">ID eredmények megjelenítése</message>
-  <message id="app-mi-tt-view-rid">A spektrumfájlban található detektor ID elemzési eredmények megjelenítése.</message>
-  <message id="app-mi-view-img">Képek megjelenítése</message>
-  <message id="app-mi-tt-view-img">A spektrumfájlban található képek megjelenítése.</message>
-  <message id="app-mi-view-feature-markers">Jellemző jelölők...</message>
-  <message id="app-mi-view-hide-feature-markers">Jellemző jelölők elrejtése</message>
-  <message id="app-mi-view-enable-dynamic-ref-lines">Dinamikus referencia vonalak megjelenítése</message>
-  <message id="app-mi-view-disable-dynamic-ref-lines">Dinamikus referencia vonalak elrejtése</message>
-  <message id="app-mi-tt-view-feature-markers">Eszköz az egyszeres/kétszeres escape csúcsok, Compton csúcs, Compton él és összegcsúcsok megjelenítéséhez.</message>
-  <message id="app-mi-view-new-win">Új alkalmazás ablak</message>
-  <message id="app-mi-view-webbrowser">Használat külső böngészőben</message>
+  <message id="app-mi-tt-view-map">Mérés(ek) helyének megjelenítése térképen. Csak GPS-koordináták megléte esetén aktív.</message>
+  <message id="app-mi-view-3d">3D nézet</message>
+  <message id="app-mi-tt-view-3d">Idő-Energia-Beütésszám nézet keresési módú vagy RPM adatokhoz.</message>
+  <message id="app-mi-view-rid">ID eredmények</message>
+  <message id="app-mi-tt-view-rid">A detektor beépített azonosítási eredményeinek megjelenítése a spektrumfájlból.</message>
+  <message id="app-mi-view-img">Képek mutatása</message>
+  <message id="app-mi-tt-view-img">A spektrumfájlba ágyazott képek megjelenítése.</message>
+  <message id="app-mi-view-feature-markers">Jellemző-jelölők...</message>
+  <message id="app-mi-view-hide-feature-markers">Jellemző-jelölők elrejtése</message>
+  <message id="app-mi-view-enable-dynamic-ref-lines">Dinamikus referenciavonalak</message>
+  <message id="app-mi-view-disable-dynamic-ref-lines">Dinamikus referenciavonalak elrejtése</message>
+  <message id="app-mi-tt-view-feature-markers">Eszköz az egyszeres/kétszeres kiszökési csúcsok, Compton-csúcs, Compton-él és összegcsúcsok megjelenítéséhez.</message>
+  <message id="app-mi-view-new-win">Új alkalmazásablak</message>
+  <message id="app-mi-view-webbrowser">Megnyitás külső böngészőben</message>
   <message id="app-mi-view-full">Teljes képernyő váltás</message>
-  <message id="app-mi-view-act-size">Valós méret</message>
+  <message id="app-mi-view-act-size">Eredeti méret</message>
   <message id="app-mi-view-zin">Nagyítás</message>
   <message id="app-mi-view-zout">Kicsinyítés</message>
-  <message id="app-mi-view-dev-tool">Fejlesztői eszközök váltás</message>
+  <message id="app-mi-view-dev-tool">Fejlesztői eszközök</message>
   <message id="app-mi-view-dets">Detektorok</message>
-  <message id="app-mi-view-peak-labels">Csúcscímkék</message>
-  <message id="app-mi-view-lbl-usr">Felhasználói címkék megjelenítése</message>
-  <message id="app-mi-view-lbl-peak-en">Csúcs energiák megjelenítése</message>
-  <message id="app-mi-view-lbl-nuc-nm">Nuklid nevek megjelenítése</message>
-  <message id="app-mi-view-lbl-nuc-en">Nuklid energiák megjelenítése</message>
+  <message id="app-mi-view-peak-labels">Csúcs feliratok</message>
+  <message id="app-mi-view-lbl-usr">Felhasználói címkék</message>
+  <message id="app-mi-view-lbl-peak-en">Csúcs energiák</message>
+  <message id="app-mi-view-lbl-nuc-nm">Nuklidnevek</message>
+  <message id="app-mi-view-lbl-nuc-en">Nuklid energiák</message>
 
   <!-- The Detectors sub-menu under View -->
   <message id="app-mi-det-no-name">Det. {1} ({2})</message>
   <message id="app-mi-det-with-name">Det. {1}</message>
 
-  
+
   <!-- Items in the "Tools" menu -->
   <message id="app-mi-tools-act-fit">Aktivitás/Árnyékolás illesztés</message>
-  <message id="app-mi-tt-tools-act-fit">Eszköz a nuklidok aktivitásának és árnyékolásának illesztéséhez a spektrumban.
+  <message id="app-mi-tt-tools-act-fit">Eszköz a spektrumban lévő nuklidok aktivitásának és árnyékolásának illesztésére.
     <br />
-    Tartalmazza a nuklidok korának, szennyeződési koncentrációk vagy dúsítások meghatározásának képességeit is.
+    Képes továbbá nuklidok korának, szennyezési koncentrációnak vagy dúsításnak a meghatározására is.
   </message>
-  <message id="app-mi-tools-iso-by-nuc">Izotóparány nuklidok szerint</message>
+  <message id="app-mi-tools-iso-by-nuc">Izotóp-összetétel nuklidok szerint</message>
   <message id="app-mi-tt-tools-iso-by-nuc">
-    Automatikusan illeszti a nuklidok csúcsait a nuklidok relatív
-    aktivitásainak meghatározásához. Nem igényli a detektor
-   válasz vagy árnyékolási információk ismeretét.
+    Automatikusan illeszti a nuklidok csúcsait a relatív
+    aktivitások meghatározásához. Nem szükséges hozzá a detector
+   hatásfok vagy az árnyékolási információ ismerete.
   </message>
-  <message id="app-mi-tools-iso-by-peak">Izotóparány csúcsokból</message>
-  <message id="app-mi-tt-tools-iso-by-peak">Az illesztett csúcsokat használja a nuklidok relatív aktivitásainak meghatározásához. Nem igényli a detektor válasz vagy árnyékolási információk ismeretét. </message>
-  <message id="app-mi-tools-xs-calc">Gamma XS számítás</message>
-  <message id="app-mi-tt-tools-xs-calc">Lehetővé teszi a felhasználó számára tetszőleges energiájú gammák keresztmetszetének meghatározását
-    az <code>InterSpec</code> könyvtárában lévő bármilyen anyagon keresztül. Hatékonysági becslések
-    a gamma sugarak teljes energia csúcsban való detektálásához és azon gamma sugarak arányához
-    amelyek át fognak jutni az anyagon anélkül, hogy kölcsönhatnának vele, további információk bevitelével biztosíthatók.
+  <message id="app-mi-tools-iso-by-peak">Izotóp-összetétel csúcsokból</message>
+  <message id="app-mi-tt-tools-iso-by-peak">Az Ön által illesztett csúcsokat használja a nuklidok relatív aktivitásának meghatározásához. Nem szükséges hozzá a detector hatásfok vagy az árnyékolási információ ismerete. </message>
+  <message id="app-mi-tools-xs-calc">Gamma hatáskeresztmetszet</message>
+  <message id="app-mi-tt-tools-xs-calc">Lehetővé teszi tetszőleges energiájú gamma-sugarak hatáskeresztmetszetének
+    meghatározását az <code>InterSpec</code> könyvtárában szereplő bármely anyagon keresztül. A gamma-sugarak
+    teljes energiacsúcsban való detektálásának hatásfok-becslése és az anyagon kölcsönhatás nélkül áthaladó
+    gamma-sugarak arányának meghatározása további információk megadásával lehetséges.
   </message>
-  <message id="app-mi-tools-dose-calc">Dózis számítás</message>
+  <message id="app-mi-tools-dose-calc">Dózisszámító</message>
   <message id="app-mi-tt-tools-dose-calc">Lehetővé teszi a dózis, aktivitás, árnyékolás
-    vagy távolság kiszámítását, a többi információ megadásával.
+    vagy távolság kiszámítását a többi adat ismeretében.
   </message>
-  <message id="app-mi-tools-1r2">1/r<sup>2</sup> kalkulátor</message>
-  <message id="app-mi-tt-tools-1r2">Lehetővé teszi a felhasználó számára, hogy két, különböző távolságokból vett dózismérést használjon a forrástól való abszolút távolság meghatározásához a közelebbi méréstől.</message>
-  <message id="app-mi-tools-unit">Egységátalakító</message>
-  <message id="app-mi-tt-tools-unit">Sugárzással kapcsolatos egységek átalakítása.</message>
+  <message id="app-mi-tools-1r2">1/r<sup>2</sup> Számító</message>
+  <message id="app-mi-tt-tools-1r2">Lehetővé teszi a forrástól mért abszolút távolság meghatározását két, különböző távolságokból végzett dózismérés alapján, a közelebbi mérési pontra vonatkozóan.</message>
+  <message id="app-mi-tools-unit">Mértékegység-átváltó</message>
+  <message id="app-mi-tt-tools-unit">Sugárzással kapcsolatos mértékegységek átváltása.</message>
   <message id="app-mi-tools-flux">Fluxus eszköz</message>
-  <message id="app-mi-tt-tools-flux">Detektált csúcs impulzusok átalakítása a forrás által kibocsátott gammákká.</message>
-  <message id="app-mi-tools-nuc-decay">Nuklid bomlási információ</message>
-  <message id="app-mi-tt-tools-nuc-decay">Lehetővé teszi a felhasználó számára részletes információ szerzését aktivitásokról, gamma/alfa/béta termelési arányokról, bomlási láncról és leszármazott nuklidokról.</message>
-  <message id="app-mi-tools-mda">Detektálási megbízhatóság eszköz</message>
-  <message id="app-mi-tt-tools-mda">Felső aktivitás becslést biztosít nuklidokhoz</message>
-  <message id="app-mi-tools-select-drf">Detektor válasz kiválasztás</message>
-  <message id="app-mi-tt-tools-select-drf">Lehetővé teszi a felhasználó számára a detektor válaszfüggvény megváltoztatását.</message>
-  <message id="app-mi-tools-make-drf">Detektor válasz létrehozása</message>
-  <message id="app-mi-tt-tools-make-drf">Detektor válaszfüggvény létrehozása karakterizációs adatokból.</message>
-  <message id="app-mi-tools-file-par">Fájl paraméterek</message>
-  <message id="app-mi-tt-tools-file-par">Lehetővé teszi a felhasználó számára a fájl paraméterek megtekintését/szerkesztését. Ha az alkalmazás nem tudja renderelni az aktivitás számítást, használja ezt az eszközt az eredeti fájl által nem biztosított paraméterek megadásához; az <code>InterSpec</code>-nek minden paraméterre szüksége van az aktivitás számításhoz.</message>
-  <message id="app-mi-tools-en-sum">Energia tartomány összeg</message>
-  <message id="app-mi-tt-tools-en-sum">Összegzi a gammák számát az érdeklődési régióban (ROI). Elérhető bal kattintás húzásával is a ROI-n az <kbd><b>ALT</b></kbd> és <kbd><b>SHIFT</b></kbd> billentyűk lenyomva tartásával.</message>
-  <message id="app-mi-tools-query">Fájl lekérdezési eszköz</message>
-  <message id="app-mi-tt-tools-query">Könyvtáron keresztül keres (rekurzívan) megadott feltételeknek megfelelő spektrumfájlokat.</message>
+  <message id="app-mi-tt-tools-flux">Detektált csúcs beütésszámok átváltása a forrás által kibocsátott gamma-sugarak számára.</message>
+  <message id="app-mi-tools-nuc-decay">Nuklid bomlási info</message>
+  <message id="app-mi-tt-tools-nuc-decay">Lehetővé teszi részletes információk lekérését az aktivitásokról, gamma/alfa/béta termelési rátákról, bomlási láncról és leánynuklidokról.</message>
+  <message id="app-mi-tools-mda">Detektálási megbízhatósági eszköz</message>
+  <message id="app-mi-tt-tools-mda">Felső aktivitásbecslést ad a nuklidokra</message>
+  <message id="app-mi-tools-select-drf">Detector hatásfok kiválasztása</message>
+  <message id="app-mi-tt-tools-select-drf">Lehetővé teszi a detector hatásfok függvény megváltoztatását.</message>
+  <message id="app-mi-tools-make-drf">Detector hatásfok létrehozása</message>
+  <message id="app-mi-tt-tools-make-drf">Detector hatásfok függvény létrehozása jellemzési adatokból.</message>
+  <message id="app-mi-tools-file-par">Fájlparaméterek</message>
+  <message id="app-mi-tt-tools-file-par">Lehetővé teszi a fájlparaméterek megtekintését/szerkesztését. Ha az alkalmazás nem tudja elvégezni az aktivitásszámítást, használja ezt az eszközt az eredeti fájlból hiányzó paraméterek megadásához; az <code>InterSpec</code>-nek minden paraméterre szüksége van az aktivitásszámításhoz.</message>
+  <message id="app-mi-tools-en-sum">Energiatartomány összegzés</message>
+  <message id="app-mi-tt-tools-en-sum">Összegzi a gamma-sugarak számát a vizsgált tartományban (ROI). A ROI felett bal egérgombos húzással is elérhető, miközben az <kbd><b>ALT</b></kbd> és <kbd><b>SHIFT</b></kbd> billentyűket lenyomva tartja.</message>
+  <message id="app-mi-tools-query">Fájl lekérdező eszköz</message>
+  <message id="app-mi-tt-tools-query">Rekurzívan keres spektrumfájlokat egy könyvtárban a megadott feltételeknek megfelelően.</message>
   <message id="app-mi-tools-math">Matematikai/Parancs terminál</message>
-  <message id="app-mi-tt-tools-math">Terminált hoz létre, amely numerikus és algebrai számításokat biztosít, valamint lehetővé teszi néhány szöveg alapú interakciót a spektrumokkal.</message>
+  <message id="app-mi-tt-tools-math">Terminált hoz létre, amely numerikus és algebrai számításokat, valamint szöveges spektrum-interakciókat biztosít.</message>
  <message id="app-mi-tools-ext-rid">Külső RID</message>
- <message id="app-mi-tt-tools-ext-rid">{1} távoli URL-t használ nuklid azonosítás végrehajtására a spektrumon.</message>
+ <message id="app-mi-tt-tools-ext-rid">Egy{1} távoli URL-t használ a nuklid-azonosítás elvégzéséhez a spektrumon.</message>
  <!-- This next sentence fragment _may_ get substituted into the previous message, where there is a {1} in it -->
- <message id="app-mi-tt-tools-ext-rid-exe"> külső program vagy</message>
+ <message id="app-mi-tt-tools-ext-rid-exe"> külső programot vagy</message>
 
   <!-- Items in the "Help" menu -->
-  <message id="app-mi-help-welcome">Üdvözlő...</message>
-  <message id="app-mi-help-contents">Súgó tartalom...</message>
+  <message id="app-mi-help-welcome">Üdvözlés...</message>
+  <message id="app-mi-help-contents">Súgó tartalma...</message>
   <message id="app-mi-help-notif-log">Értesítési napló</message>
   <message id="app-mi-help-opts">Beállítások</message>
-  <message id="app-mi-help-pref-auto-store"> Munka automatikus tárolása</message>
-  <message id="app-mi-help-pref-check-prev"> Előző munka ellenőrzése</message>
-  <message id="app-mi-help-pref-show-tt"> Eszköztippek megjelenítése</message>
-  <message id="app-mi-help-pref-prop-peak"> Csúcsok propagálására kérdez</message>
-  <message id="app-mi-help-pref-preserve-ene-cal"> Energia kal. megtartására kérdez.</message>
+  <message id="app-mi-help-pref-auto-store"> Munka automatikus mentése</message>
+  <message id="app-mi-help-pref-check-prev"> Korábbi munka keresése</message>
+  <message id="app-mi-help-pref-show-tt"> Buboréksúgók mutatása</message>
+  <message id="app-mi-help-pref-prop-peak"> Csúcsátvitel kérdezése</message>
+  <message id="app-mi-help-pref-preserve-ene-cal"> Energiakal. megtartásának kérdezése</message>
   <message id="app-mi-help-pref-auto-accept-fit-sources"> Illesztési eredmények automatikus elfogadása</message>
-  <message id="app-mi-help-pref-disp-bq"> Becquerel-ben megjelenítés</message>
+  <message id="app-mi-help-pref-disp-bq"> Megjelenítés Becquerelben</message>
   <message id="app-mi-help-pref-def-drfs"> Alapértelmezett DRF-ek használata</message>
   <message id="app-mi-help-pref-desktop"> Asztali felület</message>
-  <message id="app-mi-help-pref-auto-dark"> "Sötét" téma automatikus alkalmazása</message>
+  <message id="app-mi-help-pref-auto-dark"> „Sötét" téma automatikus alkalmazása</message>
   <message id="app-mi-help-pref-theme">Színtémák...</message>
-  <message id="app-mi-help-pref-prompt-prev">Előző állapot betöltésére kérdez</message>
-  <message id="app-mi-help-pref-load-prev">Előző állapot betöltése indításkor</message>
+  <message id="app-mi-help-pref-prompt-prev">Korábbi állapot betöltésének kérdezése</message>
+  <message id="app-mi-help-pref-load-prev">Korábbi állapot betöltése indításkor</message>
   <message id="app-mi-help-language">Nyelv</message>
   <message id="app-mi-help-about">Az InterSpec-ről...</message>
 
-  <message id="app-mi-tt-help-pref-auto-store">Automatikusan tárolja az alkalmazás állapotot, ha tárolt állapotban dolgozik,
-    vagy ha nem, akkor a spektrumokat
-    és a munkáját (pl. illesztett csúcsok, energia kalibrálási változások, stb.) az
-    InterSpec belső adatbázisába menti és megkérdezi, hogy folytatni szeretné-e
-    ott ahol abbahagyta legközelebb, amikor ugyanazt a spektrumot tölti be.
+  <message id="app-mi-tt-help-pref-auto-store">Automatikusan menti az alkalmazásállapotot, ha egy mentett
+    állapotban dolgozik, ellenkező esetben a spektrumokat
+    és a munkáját (pl. illesztett csúcsok, energiakalibrációs módosítások stb.)
+    az InterSpec belső adatbázisába menti, és legközelebb, amikor ugyanazt
+    a spektrumot betölti, felajánlja a korábbi munka folytatását.
   </message>
-  <message id="app-mi-tt-help-pref-check-prev"> Spektrumfájl betöltésekor ellenőrzi, hogy korábban végeztek-e
-    munkát (csúcsillesztések, aktivitás illesztések, stb.) ugyanazon a fájlon.
+  <message id="app-mi-tt-help-pref-check-prev"> Spektrumfájl betöltésekor ellenőrzi, hogy végeztek-e
+    korábban munkát (csúcsillesztés, aktivitásillesztés stb.) ugyanazon a fájlon.
   </message>
-  <message id="app-mi-tt-help-pref-show-tt">Eszköztippek megjelenítése egy elem felett való lebegés után fél másodperccel.</message>
-  <message id="app-mi-tt-help-pref-prop-peak">Ugyanabból a detektorból származó spektrumok betöltésekor
-    megkérdezi, hogy újra kellene-e illeszteni ugyanazokat a csúcsokat az új spektrumhoz. Csak akkor alkalmazandó, ha az új spektrumnak nincsenek csúcsai, de az előző
+  <message id="app-mi-tt-help-pref-show-tt">Buboréksúgók megjelenítése fél másodperces rámutatás után.</message>
+  <message id="app-mi-tt-help-pref-prop-peak">Ugyanazon detektorból származó spektrumok betöltésekor
+    megkérdezi, hogy újra kell-e illeszteni ugyanazokat a csúcsokat az új spektrumhoz. Csak akkor érvényes, ha az új spektrumnak nincsenek csúcsai, de a korábbi
     előtérnek voltak.
   </message>
-  <message id="app-mi-tt-help-pref-preserve-ene-cal">Ugyanabból a detektorból származó spektrumok betöltésekor, és az energia
-    kalibráció az új fájlban eltér a régi fájltól, megkérdezi, hogy a régi fájl energia kalibrációját alkalmazni kell-e
-    az új fájlra.
+  <message id="app-mi-tt-help-pref-preserve-ene-cal">Ugyanazon detektorból származó spektrumok betöltésekor, ha az
+    új fájl energiakalibrációja eltér a régi fájlétól, megkérdezi, hogy a régi fájl
+    energiakalibrációját alkalmazza-e az új fájlra.
   </message>
-  <message id="app-mi-tt-help-pref-auto-accept-fit-sources">Referencia fotópik vonalakból csúcsok illesztésekor automatikusan adja hozzá az illesztett csúcsokat megerősítő párbeszédpanel megjelenítése nélkül.</message>
-  <message id="app-mi-tt-help-pref-disp-bq">Aktivitás megjelenítése becquerel egységekben, curie helyett.</message>
-  <message id="app-mi-tt-help-def-drfs">Spektrum betöltésekor, és ha korábban nem
-    társított detektor válaszfüggvényt a detektor modelljéhez
-    amelyből a spektrum származik, hogy automatikusan megpróbáljon-e
-    alapértelmezett DRF-et találni és betölteni.
+  <message id="app-mi-tt-help-pref-auto-accept-fit-sources">Referencia fotócsúcs-vonalakból történő csúcsillesztéskor automatikusan hozzáadja az illesztett csúcsokat megerősítő párbeszédablak nélkül.</message>
+  <message id="app-mi-tt-help-pref-disp-bq">Aktivitás megjelenítése becquerel egységben curie helyett.</message>
+  <message id="app-mi-tt-help-def-drfs">Spektrum betöltésekor, ha korábban nem társított
+    detector hatásfok függvényt a spektrum forrásául szolgáló
+    detektormodellhez, automatikusan megpróbál-e alapértelmezett DRF-et
+    keresni és betölteni.
   </message>
-  <message id="app-mi-tt-help-desktop">Mobilabb vagy asztali stílusú
-    alkalmazás felület használatának kiválasztása. Az elsődleges különbség a
-    "Hamburger" stílusú menü vagy menüsáv használata.
+  <message id="app-mi-tt-help-desktop">Választás a mobilos vagy asztali stílusú
+    alkalmazásfelület között. A fő különbség a
+    „hamburger" menü vagy a menüsor használata.
 
-    Ennek a beállításnak a megváltoztatása nem lép életbe az alkalmazás
-    újraindításáig, vagy a "Munkamenet törlése..." opció kiválasztásáig.
+    Ennek a beállításnak a módosítása csak az alkalmazás
+    újraindítása vagy a „Munkamenet törlése..." opció választása után lép érvénybe.
   </message>
-  <message id="app-mi-tt-help-auto-dark">A "Sötét" színtémát automatikusan alkalmazza az
-    operációs rendszer aktuális értéke szerint, vagy amikor az átmegy.
+  <message id="app-mi-tt-help-auto-dark">A „Sötét" színtémát automatikusan alkalmazza az
+    operációs rendszer aktuális beállítása szerint, vagy annak változásakor.
   </message>
-  <message id="app-mi-tt-help-pref-prompt-prev">Alkalmazás indításakor kérdez az előző állapot betöltésére.</message>
-  <message id="app-mi-tt-help-pref-load-prev">Alkalmazás indításakor automatikusan betölti az előző állapotot, ha nincs beállítva a kérdezésre.</message>
-  <message id="warn-desktop-disp-switch">A változtatások csak az alkalmazás újraindítása vagy frissítése után lépnek életbe.</message>
+  <message id="app-mi-tt-help-pref-prompt-prev">Az alkalmazás indulásakor kérdezzen rá a korábbi állapot betöltésére.</message>
+  <message id="app-mi-tt-help-pref-load-prev">Az alkalmazás indulásakor automatikusan betölti a korábbi állapotot, ha nincs beállítva a rákérdezés.</message>
+  <message id="warn-desktop-disp-switch">A változtatások az alkalmazás újraindítása vagy frissítése után lépnek érvénybe.</message>
   <message id="warn-desktop-disp-switch-refresh">Munkamenet frissítése</message>
-  <message id="warn-language-restart">Nem minden mező frissül az új nyelvvel - indítsa újra az alkalmazást a teljes frissítéshez.</message>
+  <message id="warn-language-restart">Nem minden mező frissül az új nyelvvel - az alkalmazás teljes frissítéséhez indítsa újra.</message>
 
 
 
@@ -421,27 +421,27 @@
   <message id="rclick-mi-peak-editor">Csúcsszerkesztő...</message>
   <message id="rclick-mi-refit-peak">Csúcs újraillesztése</message>
   <message id="rclick-mi-use-drf-fwhm">DRF FWHM használata</message>
-  <message id="rclick-mi-tt-use-drf-fwhm">Rögzíti a csúcs FWHM-jét ahhoz, amit a detektor válaszfüggvény megjósol, majd újrailleszti a csúcsot.</message>
-  <message id="rclick-mi-fix-mean">Átlag fotocsúcsra állítása</message>
-  <message id="rclick-mi-tt-fix-mean">Rögzíti a csúcs centroidot a hozzárendelt gamma energiához, vagy ha nincs forrás hozzárendelve, a valószínű referencia fotocsúcs vonalhoz. A centroid beállítása után a többi csúcs paraméter újraillesztésre kerül</message>
-  
-  
+  <message id="rclick-mi-tt-use-drf-fwhm">A csúcs FWHM-jét a detector hatásfok függvény által előrejelzett értékre rögzíti, majd újrailleszti a csúcsot.</message>
+  <message id="rclick-mi-fix-mean">Átlag rögzítése fotócsúcsra</message>
+  <message id="rclick-mi-tt-fix-mean">A csúcs középértékét a hozzárendelt gamma-energiára rögzíti, vagy ha nincs forrás hozzárendelve, a valószínű referencia fotócsúcs-vonalra. A középérték beállítása után a többi csúcsparaméter újraillesztésre kerül</message>
+
+
   <message id="rclick-mi-refit-roi">ROI újraillesztése</message>
-  <message id="rclick-mi-tt-refit-roi">ROI újraillesztése ésszerű lineáris kapcsolat betartatásával a FWHM-ek között a ROI-ban, minden nem rögzített FWHM-re.</message>
+  <message id="rclick-mi-tt-refit-roi">Újrailleszti a ROI-t, a nem rögzített FWHM-ekre ésszerű lineáris összefüggést érvényesítve a ROI-n belül.</message>
   <message id="rclick-mi-refit-roi-aggressive">ROI újraillesztése (agresszív)</message>
-  <message id="rclick-mi-tt-refit-roi-aggressive">ROI újraillesztése, lehetővé téve minden csúcs FWHM-jének független változását, kivéve ha rögzítve vannak a <em>Csúcsszerkesztő</em>ben</message>
+  <message id="rclick-mi-tt-refit-roi-aggressive">Újrailleszti a ROI-t, lehetővé téve minden csúcs FWHM-jének független változását, kivéve ha azok rögzítettek a <em>Csúcsszerkesztőben</em></message>
   <message id="rclick-mi-delete-peak">Csúcs törlése</message>
-  <message id="rclick-mi-change-nuc">Nuklid megváltoztatása</message>
-  <message id="rclick-mi-change-cont">Kontinuum megváltoztatása</message>
-  <message id="rclick-mi-skew-type">Aszimmetria típus megváltoztatása</message>
+  <message id="rclick-mi-change-nuc">Nuklid módosítása</message>
+  <message id="rclick-mi-change-cont">Kontinuum módosítása</message>
+  <message id="rclick-mi-skew-type">Aszimmetria típus módosítása</message>
   <message id="rclick-mi-add-peak">Csúcs hozzáadása</message>
-  <message id="rclick-mi-combine-cont-left">Kont. kombinálás balra</message>
-  <message id="rclick-mi-combine-cont-right">Kont. kombinálás jobbra</message>
+  <message id="rclick-mi-combine-cont-left">Kont. összevonás balra</message>
+  <message id="rclick-mi-combine-cont-right">Kont. összevonás jobbra</message>
   <message id="rclick-mi-own-cont">Saját kontinuum</message>
   <message id="rclick-mi-calc-status">...számítás...</message>
   <message id="rclick-mi-fix-energy">Rögzítés {1} keV-re</message>
   <message id="rclick-mi-no-nuc-suggestions">Nincs javaslat</message>
-  <message id="rclick-mi-fit-new-peak">Csúcs illesztése {1} keV közelében</message>
+  <message id="rclick-mi-fit-new-peak">Csúcsillesztés {1} keV közelében</message>
   <message id="rclick-mi-add-new-peak">Csúcs hozzáadása...</message>
   <message id="rclick-mi-search-energy">Keresés {1} keV közelében</message>
   <message id="rclick-simple-mda">Gyors MDA {1}...</message>
@@ -450,43 +450,46 @@
 
   <!-- Error messages, the user probably wont see -->
   <message id="err-save-sate-to-db">
-    Sajnálom, technikai hiba történt a felhasználói állapot adatbázisba mentésekor.
+    Sajnáljuk, technikai hiba történt a felhasználói állapot adatbázisba mentése közben.
     <p style="font-size: x-small;">{1}</p>
   </message>
-  <message id="err-save-to-large-for-db">A fájl nagyobb, mint ami megengedett az adatbázisba mentéshez ({1} kb, megengedett {2} kb).</message>
-  <message id="err-no-roi-to-add-peak">Nem volt ROI a csúcs hozzáadásához.</message>
-  <message id="err-no-add-peak-to-data-roi">Sajnálom, nem lehet csúcsokat hozzáadni adat definiált csúccsal rendelkező ROI-hoz.</message>
-  <message id="err-add-peak-no-improve">Csúcs hozzáadása nem javította az összesített ROI illesztést - nem adunk hozzá egyet.</message>
-  <message id="err-no-peak-to-del">Nem volt csúcs a törléshez.</message>
-  <message id="err-no-foreground">Előtér spektrumot kell betöltenie, mielőtt háttér vagy második előtér spektrumot tekintene meg.</message>
-  <message id="err-invalid-language">A kiválasztott nyelv, {1}, valahogy nem elérhető.</message>
+  <message id="err-save-to-large-for-db">A fájl túl nagy az adatbázisba mentéshez ({1} kB, megengedett {2} kB).</message>
+  <message id="err-no-roi-to-add-peak">Nem található ROI a csúcs hozzáadásához.</message>
+  <message id="err-no-add-peak-to-data-roi">Sajnáljuk, nem lehet csúcsot hozzáadni adat-definiált csúcsot tartalmazó ROI-hoz.</message>
+  <message id="err-add-peak-no-improve">A csúcs hozzáadása nem javította az összesített ROI illesztést - nem kerül hozzáadásra.</message>
+  <message id="err-no-peak-to-del">Nem található törölhető csúcs.</message>
+  <message id="err-no-foreground">A háttér vagy második előtér spektrum megtekintése előtt be kell töltenie egy előtér spektrumot.</message>
+  <message id="err-invalid-language">A kiválasztott nyelv, {1}, valamilyen okból nem elérhető.</message>
 
 
   <!-- Messages for saving/updating/deleting from internal state DB -->
-  <message id="db-new-tag">Új '{1}' címke létrehozva a '{2}' pillanatkép alatt.</message>
-  <message id="db-new-snapshot">Új '{1}' pillanatkép létrehozva.</message>
-  <message id="db-error-no-name">Meg kell adnia egy nevet</message>
-  <message id="db-name-empty-txt">(Név tároláshoz)</message>
+  <message id="db-new-tag">Új címke létrehozva: '{1}' a(z) '{2}' pillanatkép alatt.</message>
+  <message id="db-new-snapshot">Új pillanatkép létrehozva: '{1}'.</message>
+  <message id="db-error-no-name">Nevet kell megadnia</message>
+  <message id="db-name-empty-txt">(Mentési név)</message>
   <message id="db-dec-empty-txt">(Opcionális leírás)</message>
   <message id="db-dec-export-msg">
-    Ez az aktuális alkalmazás állapotot menti az adatbázisba - exportáláshoz
+    Ez az aktuális alkalmazásállapotot az adatbázisba menti - külön fájlként
     <br />
-    külön fájlként, használja a &quot;Fájl exportálása&quot; menü opciót
+    történő exportáláshoz használja a &quot;Fájl exportálása&quot; menüpontot
   </message>
   <message id="db-Tag">Címke</message>
-  <message id="db-saved-state-msg">'{1}' állapot elmentve</message>
+  <message id="db-saved-state-msg">'{1}' állapot mentve</message>
 
 
 
   <!-- Peak continuum types, returned by `PeakContinuum::offset_type_label_tr(...)` in src/PeakDef.cpp -->
   <message id="pct-none">Nincs</message>
-  <message id="pct-constant">Állandó</message>
+  <message id="pct-constant">Konstans</message>
   <message id="pct-linear">Lineáris</message>
   <message id="pct-quadratic">Másodfokú</message>
   <message id="pct-cubic">Harmadfokú</message>
   <message id="pct-flat-step">Lapos lépcső</message>
   <message id="pct-linear-step">Lineáris lépcső</message>
   <message id="pct-bilinear-step">Bilineáris lépcső</message>
+  <message id="pct-flat-step-cdf">Lapos lépcső (CDF)</message>
+  <message id="pct-linear-step-cdf">Lineáris lépcső (CDF)</message>
+  <message id="pct-bilinear-step-cdf">Bilineáris lépcső (CDF)</message>
   <message id="pct-global">Globális kont.</message>
 
   <!-- populateNuclideSelects() in PeakSearchGuiUtils.cpp -->
@@ -496,92 +499,92 @@
   <message id="window-content-hard-back-sub">
     <div style="text-align: left;">
       <p>
-        A normál háttér kivonási opció csak az adatok megjelenítését érinti, műveletek
-        mint a csúcsillesztés vagy adatok exportálása a teljes statisztikájú eredeti előtér
+        A normál háttérlevonás csak az adatok megjelenítését befolyásolja; a műveletek,
+        mint a csúcsillesztés vagy az adatexportálás, az eredeti, teljes statisztikájú előtér
         spektrumon történnek.
       </p>
       <p>
-        A "kemény háttér kivonás" módosított előteret hoz létre a háttér
-        előtérről való bin-by-bin kivonásával.
+        A „kemény háttérlevonás" egy módosított előteret hoz létre a háttér csatornánkénti
+        kivonásával az előtérből.
       </p>
 
-      A kemény háttér kivonás mellékhatásai:
+      A kemény háttérlevonás mellékhatásai:
       <ul style="list-style-type: square; margin-top: 4px;">
-        <li>A varianciák, azaz minden csatorna statisztikai bizonytalansága, többé nem lesz helyes.</li>
-        <li>A spektrumok közötti kis energia kalibrálási különbségek mesterséges jellemzőket hozhatnak létre az adatokban.</li>
+        <li>A szórásnégyzetek, azaz az egyes csatornák statisztikai bizonytalansága, többé nem lesz pontos.</li>
+        <li>A spektrumok közötti kis energiakalibrációs különbségek mesterséges jellemzőket hozhatnak létre az adatokban.</li>
         <li>
-          Ha egy előtérbeli csúcs átfed egy háttérbeli csúccsal, az illesztett előtér csúcsok statisztikai bizonytalansága többé nem lesz helyes
+          Ha az előtér egy csúcsa átfedésben van egy háttércsúccsal, az illesztett előtércsúcsok statisztikai bizonytalansága többé nem lesz helyes
         </li>
       </ul>
 
-      A kemény háttér kivonás választásának elsődleges okai a normál megjelenítési háttér kivonással szemben:
+      A kemény háttérlevonás választásának fő okai a normál megjelenítési háttérlevonással szemben:
       <ul style="list-style-type: square; margin-top: 4px;">
-        <li>Az illesztett csúcs kontinuumokon lévő műtermékek elkerülése.</li>
-        <li>A háttér csúcs kivonás egyszerűsítése az <b>Aktivitás/Árnyékolás illesztés</b> eszközben.</li>
-        <li>Nem törődik az általa okozott finomságokkal (amelyek a gyakorlatban minimálisak).</li>
+        <li>Az illesztett csúcskontinuumokon megjelenő műtermékek elkerülése.</li>
+        <li>A háttércsúcs-levonás egyszerűsítése az <b>Aktivitás/Árnyékolás illesztés</b> eszközben.</li>
+        <li>Nem érdeklik az ebből eredő finomságok (amelyek a gyakorlatban minimálisak).</li>
       </ul>
     </div>
     <br />
-    <div style="text-align: center;"><b><em>Szeretne folytatni?</em></b></div>
+    <div style="text-align: center;"><b><em>Szeretné folytatni?</em></b></div>
   </message>
-  <message id="window-hard-back-sub-truncate">Negatív binok csonkítása nullánál</message>
-  <message id="window-hard-back-sub-round">Csatorna impulzusok kerekítése a legközelebbi egész számra</message>
+  <message id="window-hard-back-sub-truncate">Negatív csatornák nullára csonkolása</message>
+  <message id="window-hard-back-sub-round">Csatorna beütésszámok kerekítése egész számra</message>
 
-  <message id="info-user-default-drf">A detektor válaszfüggvény használata, amelyet alapértelmezettként adott meg erre a detektorra.</message>
-  <message id="info-app-default-drf">Alapértelmezett detektor válaszfüggvény betöltve ehhez a detekciós rendszerhez.</message>
-  <message id="info-recal-tab-selected">Grafikusan is újrakalibrálhat jobb kattintással és a spektrum húzásával oda, ahova szeretné.</message>
+  <message id="info-user-default-drf">Az Ön által ehhez a detektorhoz alapértelmezettként megadott detector hatásfok függvény használata.</message>
+  <message id="info-app-default-drf">Alapértelmezett detector hatásfok függvény betöltve ehhez a detektálási rendszerhez.</message>
+  <message id="info-recal-tab-selected">Grafikusan is újrakalibrálhat: jobb gombbal kattintson és húzza a spektrumot a kívánt helyre.</message>
 
 
   <!-- Toast message shown to user when they load a spectrum that has GPS coordinates -->
-  <message id="info-has-gps-txt">A fájl GPS koordinátákat tartalmaz.</message>
+  <message id="info-has-gps-txt">A fájl GPS-koordinátákat tartalmaz.</message>
   <message id="info-has-gps-btn">Megjelenítés térképen</message>
 
   <!-- Toast message shown to user when they load a spectrum that has results from the onboard-rid -->
-  <message id="info-has-rid-txt">A fájl fedélzeti RID eredményeket tartalmazott</message>
-  <message id="info-has-rid-btn">Teljes ID eredmények megjelenítése</message>
+  <message id="info-has-rid-txt">A fájl beépített RID eredményeket tartalmaz</message>
+  <message id="info-has-rid-btn">Teljes ID eredmények</message>
 
   <!-- Toast message shown to user when they load a spectrum that has an embedded image -->
-  <message id="info-has-img-txt">A spektrumfájl beágyazott képeket tartalmazott</message>
-  <message id="info-has-img-btn">Képek megjelenítése</message>
+  <message id="info-has-img-txt">A spektrumfájl beágyazott képeket tartalmaz</message>
+  <message id="info-has-img-btn">Képek mutatása</message>
 
 
-  <message id="warn-no-energy-cal">Figyelmeztetés, nincs energia kalibrálás a kiválasztott mintákhoz</message>
+  <message id="warn-no-energy-cal">Figyelmeztetés: nincs energiakalibráció a kiválasztott mintákhoz</message>
 
-  <message id="prompt-how-open">Ez a fájl úgy tűnik, ugyanabból a detektorból származik, mint a jelenlegi előtér.
+  <message id="prompt-how-open">Ez a fájl úgy tűnik, hogy ugyanarról a detektorról származik, mint a jelenlegi előtér.
     <p>Hogyan szeretné megnyitni ezt a spektrumfájlt?</p>
   </message>
 
 
   <!-- Error message when the selected foreground cant be plotted (inexistent, no energy calibration, no gamma spectra selected, etc)-->
   <message id="err-no-fore-sn">
-    <p>A spektrumfájl nem tartalmazott spektrumokat az aktuális mintaszámokkal.</p>
-    <p>Kérjük, válasszon eltérő/több mintaszámot.</p>
+    <p>A spektrumfájl nem tartalmaz spektrumot a jelenlegi mintaszámokkal.</p>
+    <p>Kérjük, válasszon más/több mintaszámot.</p>
   </message>
   <message id="err-no-fore-det-sn">
-    <p>A spektrumfájl nem tartalmazott spektrumokat az aktuális mintaszámokkal és detektor nevekkel. </p>
+    <p>A spektrumfájl nem tartalmaz spektrumot a jelenlegi mintaszámokkal és detektornevekkel. </p>
     <p>Kérjük, válasszon több detektort vagy mintaszámot.</p>
   </message>
   <message id="err-no-fore-all-neut">
-    <p>Az aktuális mintaszámok és detektor nevek csak neutron adatokat tartalmaznak.</p>
+    <p>A jelenlegi mintaszámok és detektornevek csak neutronadatokat tartalmaznak.</p>
     <p>Kérjük, válasszon spektroszkópiai adatokat tartalmazó mintákat.</p>
   </message>
   <message id="err-no-fore-no-spec">
-    <p>Az aktuális mintaszámok és detektor nevek nem tartalmaznak spektroszkópiai méréseket.</p>
+    <p>A jelenlegi mintaszámok és detektornevek nem tartalmaznak spektroszkópiai méréseket.</p>
     <p>Kérjük, válasszon spektroszkópiai adatokat tartalmazó mintákat.</p>
   </message>
   <message id="err-no-fore-no-ecal-1spec">
-    <p>Nem tudtam meghatározni a binning-et a spektrum megjelenítéséhez.</p>
+    <p>Nem sikerült meghatározni a spektrum megjelenítéséhez szükséges csatornabeosztást.</p>
   </message>
   <message id="err-no-fore-no-ecal-g1spec">
-    <p>Nem tudtam meghatározni a binning-et a spektrum megjelenítéséhez.</p>
+    <p>Nem sikerült meghatározni a spektrum megjelenítéséhez szükséges csatornabeosztást.</p>
     <p>
-      Megpróbálhatja csak egy spektrum kiválasztását megjelenítésre a
-      <b>Fájlkezelő</b>ben, vagy egy gamma impulzusokat tartalmazó mintát.
+      Próbáljon meg egyetlen spektrumot kiválasztani a megjelenítéshez
+      a <b>Fájlkezelőben</b>, vagy válasszon gamma-beütéseket tartalmazó mintát.
     </p>
   </message>
 
   <!-- The detector display.  Defined here so we dont have to load a whole new XML file for just these few entries. -->
-  <message id="app-tt-det-disp">A jelenleg kiválasztott detektor. Kattintson egy másik detektor kiválasztásához, vagy ennek módosításához.</message>
+  <message id="app-tt-det-disp">A jelenleg kiválasztott detektor. Kattintson másik detektor kiválasztásához vagy a jelenlegi módosításához.</message>
   <message id="app-det-select-txt">kattintson a kiválasztáshoz</message>
   <message id="app-det-select-txt-mobile">érintse meg a kiválasztáshoz</message>
   <message id="app-default-manual-det-name">Felhasználó által definiált detektor</message>
@@ -589,7 +592,7 @@
 
   <!-- An incomplete list of possible languages - mapping the two letter code we receive as
     part of the locale, to their native name - mostly picked by LLM result.
-    
+
     A more complete listing of languages and countries can be found in commit e28dbb39.
 
     You do not need to, and shouldnt, include these, or countries, into translations of this file.
@@ -600,6 +603,8 @@
   <message id="lang-de">Deutsch</message>
   <message id="lang-ja">日本語</message>
   <message id="lang-zh">中文</message>
+  <message id="lang-hi">हिन्दी</message>
+  <message id="lang-bn">বাংলা</message>
   <message id="lang-pt">Português</message>
   <message id="lang-ru">Русский</message>
   <message id="lang-it">Italiano</message>
@@ -608,6 +613,7 @@
   <message id="lang-tr">Türkçe</message>
   <message id="lang-ar">العربية</message>
   <message id="lang-hu">Magyar</message>
+  <message id="lang-id">Bahasa Indonesia</message>
 
 
   <!-- An incomplete list of possible countries - mapping the two letter code we receive as part of
@@ -624,11 +630,13 @@
   <message id="country-JP">日本</message>
   <message id="country-CN">中国</message>
   <message id="country-TW">台灣</message>
+  <message id="country-IN">भारत</message>
+  <message id="country-BD">বাংলাদেশ</message>
+  <message id="country-ID">Indonesia</message>
   <message id="country-BR">Brasil</message>
   <message id="country-PT">Portugal</message>
   <message id="country-RU">Россия</message>
   <message id="country-IT">Italia</message>
   <message id="country-KR">대한민국</message>
   <message id="country-TR">Türkiye</message>
-  <message id="country-HU">Magyarország</message>
 </messages>

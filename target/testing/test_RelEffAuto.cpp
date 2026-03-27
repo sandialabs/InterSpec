@@ -143,35 +143,38 @@ BOOST_AUTO_TEST_CASE( FitContinuum )
   constexpr float energies[nbin+1] = {100.0f, 101.0f, 102.0f, 103.0f, 104.0f, 105.0f, 106.0f, 107.0f};
   constexpr float data[nbin] = {900.0f, 1090.0f, 990.0f, 1090.0f, 910.0f, 1090.0f, 950.0f};
   const PeakContinuum::OffsetType offset_type = PeakContinuum::OffsetType::Linear;
-  const int num_polynomial_terms = static_cast<int>( PeakContinuum::num_parameters( offset_type ) );
-  const bool step_continuum = PeakContinuum::is_step_continuum( offset_type );
+  const size_t num_polynomial_terms = PeakContinuum::num_parameters( offset_type );
   constexpr double ref_energy = energies[0];
   vector<double> continuum_coeffs(num_polynomial_terms, 0.0);
   double peak_counts[nbin];
-    
-  PeakFit::fit_continuum( energies, data, nullptr, nbin, num_polynomial_terms, step_continuum,
+
+  PeakFit::fit_continuum( energies, data, nullptr, nbin, offset_type,
                                   ref_energy, peaks, false, continuum_coeffs.data(), peak_counts );
 
 
   vector<double> dummy_amps, continuum_coeffs_old, dummy_amp_uncert, continuum_uncerts;
-  fit_amp_and_offset( energies, data, nbin, num_polynomial_terms,
-                       step_continuum, ref_energy, {}, {}, peaks,
+  fit_amp_and_offset( energies, data, nbin, offset_type,
+                      ref_energy, {}, {}, peaks,
                       PeakDef::SkewType::NoSkew, nullptr, dummy_amps,
-                       continuum_coeffs_old, dummy_amp_uncert, continuum_uncerts );
-    
-  BOOST_REQUIRE( continuum_coeffs_old.size() == static_cast<size_t>(num_polynomial_terms) );
+                      continuum_coeffs_old, dummy_amp_uncert, continuum_uncerts );
+
+  BOOST_REQUIRE( continuum_coeffs_old.size() == num_polynomial_terms );
   for( size_t i = 0; i < num_polynomial_terms; ++i )
   {
     const double new_coef = continuum_coeffs[i];
     const double old_coef = continuum_coeffs_old[i];
     const double diff = fabs(new_coef - old_coef);
-    BOOST_CHECK( (diff < 0.00001*std::max(fabs(new_coef), fabs(old_coef))) || (diff < 1.0E-12) );
+    BOOST_CHECK( (diff < 0.00001*(std::max)(fabs(new_coef), fabs(old_coef))) || (diff < 1.0E-12) );
   }
   
   double old_way_peak_counts[nbin] = { 0.0 };
   
+  vector<const PeakDef *> pk_ptrs;
   for( const PeakDef &peak : peaks )
+  {
     peak.gauss_integral( energies, old_way_peak_counts, nbin );
+    pk_ptrs.push_back( &peak );
+  }
 
   std::shared_ptr<PeakContinuum> continuum = peaks[0].continuum();
   BOOST_REQUIRE( !!continuum );
@@ -179,14 +182,17 @@ BOOST_AUTO_TEST_CASE( FitContinuum )
   continuum->setParameters( ref_energy, continuum_coeffs, {} );
 
   for( size_t bin = 0; bin < nbin; ++bin )
-    old_way_peak_counts[bin] += continuum->offset_integral(energies[bin], energies[bin+1], nullptr );
+    {
+      std::shared_ptr<const SpecUtils::Measurement> null_data;
+      old_way_peak_counts[bin] += continuum->offset_integral( energies[bin], energies[bin+1], null_data, pk_ptrs.data(), pk_ptrs.size() );
+    }
 
   for( size_t bin = 0; bin < nbin; ++bin )
   {
     const double new_val = peak_counts[bin];
     const double old_coef = old_way_peak_counts[bin];
     const double diff = fabs(new_val - old_coef);
-    BOOST_CHECK( (diff < 0.00001*std::max(fabs(new_val), fabs(old_coef))) || (diff < 1.0E-12) );
+    BOOST_CHECK( (diff < 0.00001*(std::max)(fabs(new_val), fabs(old_coef))) || (diff < 1.0E-12) );
   }
 
 }//BOOST_AUTO_TEST_CASE( FitRelActManualToKnown )
@@ -279,6 +285,8 @@ BOOST_AUTO_TEST_CASE( test_pu242_by_correlation )
 
 BOOST_AUTO_TEST_CASE( test_deviation_pair_xml_serialization )
 {
+  set_data_dir();
+
   // Test that energy_cal_type is properly serialized and deserialized
   using namespace RelActCalcAuto;
 
@@ -317,7 +325,7 @@ BOOST_AUTO_TEST_CASE( test_deviation_pair_xml_serialization )
   const rapidxml::xml_node<char> *opts_node = root->first_node( "Options" );
   BOOST_REQUIRE( opts_node );
 
-  opts_loaded.fromXml( opts_node, nullptr );
+  opts_loaded.fromXml( opts_node );
 
   BOOST_CHECK( opts_loaded.energy_cal_type == opts_orig.energy_cal_type );
 }//BOOST_AUTO_TEST_CASE( test_deviation_pair_xml_serialization )

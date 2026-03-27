@@ -15,6 +15,7 @@
   <message id="dsfs-all-peaks-cb">جميع القمم</message>
   
   <message id="md-det-diam">قطر الكاشف</message>
+  <message id="md-det-setback">تراجع الكاشف</message>
   <message id="md-eff-type">نوع الكفاءة</message>
   <message id="md-eqn-in-kev">المعادلة بالكيلوإلكترون فولت</message>
   <message id="md-eqn-in-mev">المعادلة بالميجا إلكترون فولت</message>

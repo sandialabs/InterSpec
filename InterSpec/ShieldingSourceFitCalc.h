@@ -240,7 +240,7 @@ namespace ShieldingSourceFitCalc
     ShieldingInfo();
     
     rapidxml::xml_node<char> *serialize( rapidxml::xml_node<char> *parent_node ) const;
-    void deSerialize( const rapidxml::xml_node<char> *shield_node, MaterialDB *materialDb );
+    void deSerialize( const rapidxml::xml_node<char> *shield_node );
     
     /** Encodes current tool state to app-url format.  Returned string is just the query portion of URL;
      so will look something like "V=1&G=S&D1=1.2cm", and it will not be url-encoded.
@@ -249,7 +249,7 @@ namespace ShieldingSourceFitCalc
      */
     std::string encodeStateToUrl() const;
     
-    void handleAppUrl( std::string query_str, MaterialDB *materialDb );
+    void handleAppUrl( std::string query_str );
     
 #if( PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
     /** Throws exception if the two shieldings are not equal. */

@@ -35,6 +35,7 @@
 #include "InterSpec/PeakFitLM.h" //necassary because we cant forward-declare the PeakFitLM::PeakFitLMOptions
 
 
+struct PeakFitDetPrefs;
 class DetectorPeakResponse;
 
 namespace ROOT
@@ -161,14 +162,15 @@ void smoothSpectrum( const std::vector<float> &spectrum, const int side_bins,
 
 #define PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL 0
 
-//expected_peak_width_limits(): gives the extremes of expected peak
-//  sigmas for detectors - the min sigma is 0.5 (0.75) times the smallest known
-//  detector width, and the max sigma is 3 (2) times the largest known detector
-//  width for highres (lowres) detectors.
-//  Specify highres=false for NaI, CsI, LaBr3, or CZT detectors. lowres=true for
-//  HPGe detectors.
+/** Gives the extremes of expected peak sigmas for detectors.
+ The min sigma is a fraction of the smallest known detector width, and the max
+ sigma is a multiple of the largest known detector width.
+
+ For Unknown det_type, the widest possible range is returned (min from HPGe,
+ max from low-res).
+ */
 void expected_peak_width_limits( const float energy,
-                                 const bool highres,
+                                 const PeakFitUtils::CoarseResolutionType det_type,
                                  const std::shared_ptr<const SpecUtils::Measurement> &meas,
                                  float &min_sigma_width_kev,
                                  float &max_sigma_width_kev );
@@ -204,7 +206,7 @@ std::vector<PeakDef> fitPeaksInRange( const double x0, const double x1,
                                       std::vector<PeakDef> all_peaks,
                                       std::shared_ptr<const SpecUtils::Measurement> data,
                                       const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options,
-                                      const bool isHPGe );
+                                      const PeakFitUtils::CoarseResolutionType det_type );
 
 
 
@@ -216,18 +218,18 @@ std::vector<PeakDef> fitPeaksInRange( const double x0, const double x1,
 //  be used.
 std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI(
                                                           std::shared_ptr<const SpecUtils::Measurement> data,
-                                                          const bool isHPGe,
+                                                          std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
                                                           size_t start_channel,
                                                           size_t end_channel );
 
 /** Similar to #secondDerivativePeakCanidatesWithROI, but doesnt waste time finding
  the ROI for each peak.  Provides reults as a tuple of {mean,sigma,area} for
  each found peak.
- 
+
  Takes about 40% of the time as #secondDerivativePeakCanidatesWithROI
  */
 void secondDerivativePeakCanidates( const std::shared_ptr<const SpecUtils::Measurement> data,
-                                    const bool isHPGe,
+                                    std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
                                     size_t start_channel,
                                     size_t end_channel,
                                     std::vector< std::tuple<float,float,float> > &results );
@@ -256,7 +258,7 @@ void get_candidate_peak_estimates_for_user_click(
                                                  const double x,
                                                  const double pixelPerKev,
                                                  const std::shared_ptr<const SpecUtils::Measurement> &dataH,
-                                                 const bool isHPGe,
+                                                 std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
                                                  const PeakShrdVec &inpeaks );
 
 //searchForPeakFromUser: looks for a peak near x.  The returned pair contains
@@ -272,7 +274,7 @@ std::pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
                             const std::vector<std::shared_ptr<const PeakDef>> &existing_peaks,
                             std::shared_ptr<const DetectorPeakResponse> drf,
                             const std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> &auto_search_peaks,
-                            const bool isHPGe );
+                            std::shared_ptr<const PeakFitDetPrefs> fitPrefs );
 
 //refitPeaksThatShareROI: intended to refit peaks fit for by
 //  searchForPeakFromUser(...), for instance when you modify the ROI range.
@@ -284,6 +286,7 @@ std::vector< std::shared_ptr<const PeakDef> >
     refitPeaksThatShareROI( const std::shared_ptr<const SpecUtils::Measurement> &dataH,
                             const DetctorPtr &detector,
                             const std::vector< std::shared_ptr<const PeakDef> > &inpeaks,
+                            const PeakFitUtils::CoarseResolutionType det_type,
                             const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options );
 
 
@@ -318,7 +321,7 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
                           MultiPeakInitialGuessMethod method,
                           std::shared_ptr<const SpecUtils::Measurement> dataH,
                           std::shared_ptr<const DetectorPeakResponse> detector,
-                          const bool isHPGe,
+                          std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
                           std::vector<std::shared_ptr<PeakDef> > &answer,
                           double &chi2 );
 
@@ -369,13 +372,11 @@ double evaluate_polynomial( const double x,
 
 /** Fits the continuum and amplitude of peaks with specified means and sigmas, over the data range specified.  Uses a
  matrix based linear regression fitter to perform minization.
- 
+
  @param energies The lower-channel energies of ROI.  ROI defined by energies[0] to energies[nbin]. Must be of at least length nbin+1.
  @param data The channel counts of the ROI.  Must be of at least length nbin.
  @param nbin The number of channels in the ROI.
- @param num_polynomial_terms The number of polynomial continuum terms to fit for.
-        0 is no continuum (untested), 1 is constant, 2 is linear sloped continuum, etc
- @param step_continuum Specifies whether or not a step in the continuum is to be used.
+ @param cont_type The continuum offset type to fit for.
  @param means The peak means, in keV
  @param sigmas The peak sigmas, in keV
  @param fixedAmpPeaks The fixed amplitude peaks in the ROI, that we are not fitting for
@@ -387,15 +388,13 @@ double evaluate_polynomial( const double x,
  @param[out] amplitudes_uncerts The (statistical) uncertainties for the amplitudes
  @param[out] continuum_coeffs_uncerts The (statistical) uncertainties for the continuum coefficients
  @returns The chi2 of the ROI
- Currently the implementation is reasonably inefficient.
- 
+
  Skew uncertainties are also not taken into account in determining amplitude or continuum uncertainties.
- 
+
  Throws exception upon ill-posed input.
  */
 double fit_amp_and_offset( const float *energies, const float *data, const size_t nbin,
-                           const int num_polynomial_terms,
-                           const bool step_continuum,
+                           const PeakContinuum::OffsetType cont_type,
                            const double ref_energy,
                            const std::vector<double> &means,
                            const std::vector<double> &sigmas,
@@ -464,7 +463,7 @@ namespace ExperimentalAutomatedPeakSearch
                                 const std::shared_ptr<const DetectorPeakResponse> drf,
                                 std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > origpeaks,
                                 const bool singleThreaded,
-                               const bool isHPGe );
+                                std::shared_ptr<const PeakFitDetPrefs> fitPrefs );
 }//namespace ExperimentalAutomatedPeakSearch
 
 
@@ -478,7 +477,7 @@ namespace ExperimentalPeakSearch
   //  search_for_peaks(...) that uses the current best guess of arguments
   std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const SpecUtils::Measurement> meas,
                                          const std::vector<PeakDef> &origpeaks,
-                                        const bool isHPGe );
+                                        const PeakFitUtils::CoarseResolutionType det_type );
   
   
 bool find_spectroscopic_extent( std::shared_ptr<const SpecUtils::Measurement> meas,
@@ -495,7 +494,7 @@ std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const SpecUtils::Me
                                       const double stat_thresh,
                                       const double width_thresh,
                                       const std::vector<PeakDef> &origpeaks, /*included in result, unmodified, wont have duplciate */
-                                      const bool isHPGe
+                                      const PeakFitUtils::CoarseResolutionType det_type
 #if( WRITE_CANDIDATE_PEAK_INFO_TO_FILE )
                                       , std::shared_ptr<const DetectorPeakResponse> detector
 #endif
@@ -518,7 +517,8 @@ std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const SpecUtils::Me
     
   protected:
     bool m_inited;
-    const bool m_isHPGe;
+    const PeakFitUtils::CoarseResolutionType m_det_type;
+    const bool m_isHighRes;
     
     std::shared_ptr< const std::vector<float> > m_y;
     std::shared_ptr< const std::vector<float> > m_x;
@@ -566,7 +566,7 @@ std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const SpecUtils::Me
     //             manor then the new peaks.
     AutoPeakSearchChi2Fcn( std::shared_ptr<const SpecUtils::Measurement> data,
                           const std::vector<PeakDef > &fixed_peaks,
-                          const bool isHPGe );    
+                          const PeakFitUtils::CoarseResolutionType det_type );
     
     size_t lower_spectrum_channel() const;
     size_t upper_spectrum_channel() const;

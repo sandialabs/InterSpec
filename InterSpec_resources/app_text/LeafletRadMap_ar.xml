@@ -37,4 +37,23 @@
 <li><b>نطاق الطاقة</b>: ترشيح عدادات جاما ضمن نطاق الطاقة المحدد.</li>
 <li><b>الذروات في النطاق</b>: عرض أرقام العينات التي تحتوي على ذروات ضمن نطاق الطاقة فقط مع ألوان العلامات وCPS مبنية على معدل عد الذروات.</li>
 </ul></message>
+  <message id="lrm-copy-google-maps">نسخ رابط خرائط Google</message>
+  <message id="lrm-copy-bing-maps">نسخ رابط خرائط Bing</message>
+  <message id="lrm-copy-url-success">تم نسخ رابط الخريطة إلى الحافظة — الصقه في متصفحك.</message>
+  <message id="lrm-copy-url-fail">فشل في نسخ رابط الخريطة إلى الحافظة.</message>
+  <message id="lrm-copy-url-no-gps">لا تتوفر بيانات GPS لإنشاء رابط الخريطة.</message>
+  <message id="lrm-tile-load-btn">بلاطات الخريطة لا تُحمّل؟</message>
+  <message id="lrm-tile-load-dialog-title">بلاطات الخريطة لا تُحمّل</message>
+  <message id="lrm-tile-load-dialog-content">
+    تعذر تحميل بلاطات الخريطة من arcgis.com. قد يكون ذلك بسبب:
+    <ul>
+      <li>عدم وجود اتصال بالإنترنت</li>
+      <li>بروكسي مؤسسي أو جدار حماية يحظر الوصول إلى arcgis.com</li>
+      <li>مفتاح API غير صالح أو منتهي الصلاحية</li>
+    </ul>
+    <p>إذا كنت خلف بروكسي، قد تحتاج إلى تكوين إعدادات البروكسي.
+    انظر ملف <em>data/config/example_InterSpec_app_settings.json</em> لخيار
+    <b>ProxySetting</b>؛ عادةً قيمة <b>system</b> ستعمل.</p>
+    <p>ستظل علامات القياس معروضة، لكن خلفية الخريطة ستكون فارغة.</p>
+  </message>
 </messages>

@@ -73,6 +73,7 @@
 #include "InterSpec/DecayWindow.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/UseInfoWindow.h"
@@ -1108,17 +1109,21 @@ string SpectrumViewerTester::makePeakSummarryTable( const PeakDef &peak,
     case PeakContinuum::FlatStep:     strm << "Flat Step</td></tr>\n";      break;
     case PeakContinuum::LinearStep:   strm << "Linear Step</td></tr>\n";    break;
     case PeakContinuum::BiLinearStep: strm << "Bi-linear Step</td></tr>\n"; break;
-    case PeakContinuum::External:     strm << "Global</td></tr>\n";         break;
+    case PeakContinuum::FlatStepCDF:  strm << "Flat Step (CDF)</td></tr>\n"; break;
+    case PeakContinuum::LinearStepCDF:    strm << "Linear Step (CDF)</td></tr>\n";    break;
+    case PeakContinuum::BiLinearStepCDF: strm << "Bi-linear Step (CDF)</td></tr>\n"; break;
+    case PeakContinuum::External:        strm << "Global</td></tr>\n";               break;
   }//switch( peak.continuum()->type() )
-  
+
   double offset_area = 0.0;
-  
+
   try
   {
-    peak.continuum()->offset_integral(peak.lowerX(), peak.upperX(), data);
+    const PeakDef *peak_ptr = &peak;
+    offset_area = peak.continuum()->offset_integral( peak.lowerX(), peak.upperX(), data, &peak_ptr, 1 );
   }catch(...)
   {
-    //can only get here for PeakContinuum::FlatStep/LinearStep/BiLinearStep with invalid data
+    //can only get here for step types with invalid data, or CDF types without peers
   }
   
   strm << startrow << "Cont. Area" << starttd << offset_area << "</td></tr>\n";
@@ -1383,13 +1388,16 @@ SpectrumViewerTester::Score SpectrumViewerTester::testAutomatedPeakSearch()
 
   peakModel->setPeaks( std::vector<PeakDef>() );
   
-  const bool isHPGe = PeakFitUtils::is_likely_high_res( m_viewer );
-  
+  std::shared_ptr<PeakFitDetPrefs> fitPrefs = std::make_shared<PeakFitDetPrefs>();
+  fitPrefs->m_det_type = PeakFitUtils::is_likely_high_res( m_viewer )
+                         ? PeakFitUtils::CoarseResolutionType::High
+                         : PeakFitUtils::CoarseResolutionType::Low;
+
   shared_ptr<const SpecUtils::Measurement> data = m_viewer->m_spectrum->data();
   try
   {
     //This will take a minute, and app will look paused, but whatever.
-    auto resultpeaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, nullptr, nullptr, false, isHPGe );
+    auto resultpeaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, nullptr, nullptr, false, fitPrefs );
     
     for( const auto &p : resultpeaks )
       testpeaks.push_back( *p );
@@ -2001,10 +2009,10 @@ SpectrumViewerTester::Score SpectrumViewerTester::testShieldSourceFit()
     //  unfairly close to the real answer.
     disp->setFitQuantitiesToDefaultValues();
     
-    shared_ptr<ShieldingSourceFitCalc::ModelFitResults> result = disp->doModelFit( false );
+    shared_ptr<ShieldingSourceFitCalc::ModelFitResults> result = disp->doModelFit( false, false );
     
     // Uhg, sometimes users have to hit  a couple times right now - this should be fixed
-    result = disp->doModelFit( false );
+    result = disp->doModelFit( false, false );
     
     note.m_testImage = make_shared<Wt::WSvgImage>(m_picWidth, m_picHeight);
     // TODO: 20251110 The Wt-based Chi2 chart was replaced by `ShieldingSourceFitPlot` - so should update to that...

@@ -234,10 +234,10 @@
             {% if background.HasNeutrons %}
             <tr>
                 <th>Neutron Count:</th>
-                <td> background.NeutronSum </td>
+                <td> {{ background.NeutronCounts }} </td>
 
                 <th>Neut. Live Time:</th>
-                <td> background.NeutronLiveTime </td>
+                <td> {{ printCompact(background.NeutronLiveTime,6) }} </td>
 
                 <th>Neutron CPS:</th>
                 <td> {{ printFixed(background.NeutronCps,4) }} </td>
@@ -403,13 +403,6 @@ Sources:
 
 </div> <!-- <div id="peaks" style="margin-top: 25px"> -->
 
-{% if exists("ShieldingSourceFitPlotData") %}
-<div id="fit-plot-container" style="margin-top: 25px">
-  Model vs. Observation:
-  <div id="fit-plot" style="height: 400px; width: 80vw; margin-left: auto; margin-right: auto; border: 1px solid #ccc;">
-  </div>
-</div>
-{% endif %}
 
 {% if exists("Sources") %}
 <div id="PeakContributions" style="margin-top: 25px">

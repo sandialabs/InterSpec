@@ -32,6 +32,7 @@
   <message id="ssd-perform-fit-btn">تنفيذ ملاءمة النموذج</message>
   <message id="ssd-cancel-fit">إلغاء ملاءمة النموذج</message>
   <message id="ssd-mi-calc-log">سجل الحساب</message>
+  <message id="ssd-mi-calc-log-html">سجل الحساب (HTML)</message>
   <message id="ssd-mi-import-model">استيراد نموذج...</message>
   <message id="ssd-mi-export-model">تصدير نموذج</message>
   <message id="ssd-mi-from-db">فتح من قاعدة البيانات...</message>
@@ -83,12 +84,35 @@
     مقدمة، تحديد الذرى المحتمل طرحها، ثم العودة لتركيبة
     المقدمة/الخلفية الحالية.
   </message>
+  <message id="ssd-missing-back-peaks-title">ذرى الخلفية المفقودة</message>
+  <message id="ssd-missing-back-peaks-msg">
+    طيف الخلفية لا يحتوي على ذرى مضافة عند الطاقات {1}، ولكن من المحتمل
+    وجود ذرى حقيقية في طيف الخلفية عند تلك الطاقات - هل ترغب في إضافة
+    تلك الذرى إلى طيف الخلفية؟
+  </message>
+  <message id="ssd-btn-no-dont-add">لا</message>
+  <message id="ssd-btn-add-peaks">إضافة ذرى...</message>
+  <message id="ssd-btn-add-all-detectable">إضافة جميع الذرى المُلاءمة تلقائياً</message>
+  <message id="ssd-back-peak-preview-title">معاينة ذرى الخلفية</message>
+  <message id="ssd-back-peak-preview-msg">سيتم إضافة الذرى التالية إلى طيف الخلفية:</message>
+  <message id="ssd-no-new-back-peaks">لم يتم العثور على ذرى إضافية في طيف الخلفية عند الطاقات المحددة.</message>
+  <message id="ssd-back-peaks-all-fit">تمت ملاءمة {1} ذروة مرشحة إلى الخلفية.</message>
+  <message id="ssd-back-peaks-some-fit">{1} من {2} ذروة مرشحة كانت ذات دلالة وتمت ملاءمتها إلى الخلفية.</message>
+  <message id="ssd-back-peaks-manual-hint">(يمكنك أيضاً ملاءمة ذرى الخلفية يدوياً بالضغط على مفتاح Alt (mac: مفتاح Option) مع النقر<br />
+  المزدوج على الطيف، أو بتحميل الخلفية كمقدمة)</message>
+  <message id="ssd-err-adding-back-peaks">خطأ في إضافة ذرى إلى الخلفية: {1}</message>
   <message id="ssd-update-dim-to-be-min">تم تحديث بُعد التدريع ليكون سماكة دنيا.</message>
   <message id="ssd-scaled-shield-to-be-less-dist">تم تقييس سماكات التدريع لتكون أقل من مسافة الكاشف.</message>
   <message id="ssd-err-fit-only-one-an">يمكنك فقط ملاءمة العدد الذري لتدريع عام واحد في المرة.</message>
   <message id="ssd-warn-invalid-chi2-for-energy">تم حساب chi2 غير صالح لـ {1} keV، النتائج الأخرى قد تكون غير صالحة</message>
   <message id="ssd-calc-log-window-title">سجل الحساب</message>
   <message id="ssd-calc-log-export-txt">ملف TXT</message>
+  <message id="ssd-calc-log-html-title">سجل الحساب</message>
+  <message id="ssd-template-text-log">سجل قياسي (نص)</message>
+  <message id="ssd-template-html-report">تقرير ملاءمة النشاط (HTML)</message>
+  <message id="ssd-template-deprecated-txt">نص قديم</message>
+  <message id="ssd-no-fit-results">لا توجد نتائج ملاءمة متاحة للعرض.</message>
+  <message id="ssd-error-creating-html-log">خطأ في إنشاء سجل حساب HTML: {1}</message>
   <message id="ssd-err-opening-import-model">خطأ في فتح نموذج ملاءمة التدريع المصدر المرفوع: {1}</message>
   <message id="ssd-import-model-window-title">استيراد نموذج XML تدريع المصدر</message>
   <message id="ssd-err-opening-db-model">خطأ في فتح نموذج ملاءمة التدريع المصدر من قاعدة البيانات: {1}</message>
@@ -145,9 +169,6 @@
   <!-- Chi2Graphic -->
   <message id="x2g-yaxis-title-chi">(مرصود-نموذج)/عدم يقين</message>
   <message id="x2g-yaxis-title-mult">مضاعف النموذج</message>
-  <message id="x2g-">المحور Y هو عدد مساحة الذروة، ناقص العدد المتوقع من العدد من"
-    " المصدر والتدريع المعروضين حاليًا، كلها مقسومة على عدم اليقين الإحصائي. مربع هذا"
-    " ما يُستخدم لتحسين التدريع والمصادر.</message>
   <message id="x2g-tt-chi-axis">المحور Y هو عدد مساحة الذروة، ناقص العدد المتوقع من المصدر وقيم التدريع المعروضة حاليًا، كلها مقسومة على عدم اليقين الإحصائي. مربع هذا ما يُستخدم لتحسين التدريع والمصادر.</message>
   <message id="x2g-tt-scale-axis">المحور Y هو مضاعف عدد الذروة المرصودة، نسبة لما متوقع من قيم المصدر والتدريع الحالية.</message>
   <message id="x2g-tt-num-observed">عدد المرصود:</message>
@@ -159,5 +180,5 @@
   <message id="x2g-tt-sources-contributing">المصادر المساهمة:</message>
   <message id="x2g-tt-counts-abbrev">عدد</message>
   <message id="x2g-tt-br-abbrev">br</message>
-  <message id="x2g-dev-label">&lt;dev&gt;</message>
+  <message id="x2g-dev-label"><![CDATA[<انحر>]]></message>
 </messages>

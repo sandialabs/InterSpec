@@ -44,6 +44,8 @@
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
+
+#include "3rdparty/code_from_boost/hash/hash.hpp"
 #include "InterSpec/SpecFileQuery.h"
 //#include "InterSpec/InterSpecApp.h" //for passMessage debugging
 #include "SpecUtils/EnergyCalibration.h"
@@ -998,7 +1000,7 @@ void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath )
     return;
   
   file_size = SpecUtils::file_size(filepath);
-  file_path_hash = std::hash<std::string>()(filepath);
+  file_path_hash = boost_hash::hash_value( filepath );
   
   // TODO: For files that are not N42 or XML files (as determined by filename), and less than a number of MB, read the file into memory, and then parse.  This will minimize hard-drive seeks (for spinning drives), and allow multithreaded searches to work better - hopefully.
   
@@ -1472,8 +1474,8 @@ std::string SpecFileQueryDbCache::construct_persisted_db_filename( std::string p
 {
   SpecUtils::make_canonical_path(persisted_path);
   
-  const auto path_hash = std::hash<std::string>()( persisted_path );
-  return SpecUtils::append_path( persisted_path, "InterSpec_file_query_cache_" + std::to_string(path_hash) + "_v2.sqlite3" );
+  const size_t path_hash = boost_hash::hash_value( persisted_path );
+  return SpecUtils::append_path( persisted_path, "InterSpec_file_query_cache_" + std::to_string(path_hash) + "_v3.sqlite3" );
 }//std::string construct_persisted_db_filename( std::string basepath )
 
 
@@ -1761,7 +1763,7 @@ void SpecFileQueryDbCache::cache_results( const std::vector<std::string> &&files
       {//begin lock on m_db_mutex
         std::lock_guard<std::mutex> lock( m_db_mutex );
         
-        const long long filenamehash = static_cast<long long>( std::hash<std::string>()(filename) );
+        const long long filenamehash = static_cast<long long>( boost_hash::hash_value( filename ) );
         const size_t filesize = SpecUtils::file_size(filename);
         
         Wt::Dbo::Transaction trans( *m_db_session );
@@ -2017,7 +2019,7 @@ std::unique_ptr<SpecFileInfoToQuery> SpecFileQueryDbCache::spec_file_info( const
     return info;
   }
   
-  const long long filenamehash = static_cast<long long>( std::hash<std::string>()(filepath) );
+  const long long filenamehash = static_cast<long long>( boost_hash::hash_value( filepath ) );
   const size_t filesize = SpecUtils::file_size(filepath);
   
   try

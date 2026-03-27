@@ -42,6 +42,75 @@
   <message id="pe-est-lin-cont-no-data">কন্টিনিউয়াম অনুমান করার আগে একটি ফোরগ্রাউন্ড স্পেকট্রাম লোড করুন।</message>
   <message id="pe-failed-est-lin-cont">ROI-এর প্রান্ত থেকে কন্টিনিউয়াম অনুমান করতে ব্যর্থ: {1}</message>
 
+  <!-- Skew parameter labels for Bortel (Exp*Gauss) -->
+  <message id="pe-label-skew-bortel-tau">স্কিউ &alpha;</message>
 
+  <!-- Skew parameter labels for DoubleBortel -->
+  <message id="pe-label-skew-doublebortel-tau1">&tau;<sub>1</sub></message>
+  <message id="pe-label-skew-doublebortel-deltatau2">&Delta;&tau;<sub>2</sub></message>
+  <message id="pe-label-skew-doublebortel-eta">&eta;</message>
+
+  <!-- Skew parameter labels for GaussPlusBortel -->
+  <message id="pe-label-skew-gaussplusbortel-r">মিশ্র অনুপাত R</message>
+  <message id="pe-label-skew-gaussplusbortel-tau">Bortel &tau;</message>
+
+  <!-- Skew parameter labels for GaussExp -->
+  <message id="pe-label-skew-gaussexp-k">স্কিউ k</message>
+
+  <!-- Skew parameter labels for CrystalBall -->
+  <message id="pe-label-skew-crystalball-alpha">স্কিউ &alpha;</message>
+  <message id="pe-label-skew-crystalball-n">স্কিউ n</message>
+
+  <!-- Skew parameter labels for ExpGaussExp -->
+  <message id="pe-label-skew-expgaussexp-kl">স্কিউ k<sub>L</sub></message>
+  <message id="pe-label-skew-expgaussexp-kh">স্কিউ k<sub>H</sub></message>
+
+  <!-- Skew parameter labels for DoubleSidedCrystalBall -->
+  <message id="pe-label-skew-dscb-alphalow">স্কিউ &alpha;<sub>low</sub></message>
+  <message id="pe-label-skew-dscb-nlow">স্কিউ n<sub>low</sub></message>
+  <message id="pe-label-skew-dscb-alphahigh">স্কিউ &alpha;<sub>high</sub></message>
+  <message id="pe-label-skew-dscb-nhigh">স্কিউ n<sub>high</sub></message>
+
+  <!-- Skew parameter labels for VoigtPlusBortel -->
+  <message id="pe-label-skew-voigtplusbortel-gamma">Lorentz &gamma;</message>
+  <message id="pe-label-skew-voigtplusbortel-r">মিশ্র অনুপাত R</message>
+  <message id="pe-label-skew-voigtplusbortel-tau">Bortel &tau;</message>
+
+  <!-- Tooltips for skew parameters -->
+  <message id="pe-tt-skew-bortel-tau">Exp*Gauss (সূচকীয়ভাবে পরিবর্তিত Gaussian) এর জন্য সূচকীয় ক্ষয় ধ্রুবক। নিম্ন-শক্তির লেজের বৈশিষ্ট্যগত দৈর্ঘ্য স্কেল উপস্থাপন করে। বৈধ পরিসীমা: 0.0-15 σ, সাধারণ মান: 0.5-3 σ।</message>
+
+  <message id="pe-tt-skew-doublebortel-tau1">প্রথম সূচকীয় ক্ষয় ধ্রুবক, সাধারণত σ-এর কাছাকাছি। প্রাথমিক নিম্ন-শক্তির লেজ উপাদান নিয়ন্ত্রণ করে। বৈধ পরিসীমা: 0.01-15 σ।</message>
+
+  <message id="pe-tt-skew-doublebortel-deltatau2">দ্বিতীয় সূচকীয়ের জন্য অতিরিক্ত ক্ষয়: τ₂ = τ₁ + Δτ₂। বর্ধিত লেজ উপাদান নিয়ন্ত্রণ করে। বৈধ পরিসীমা: 0.0-10 σ।</message>
+
+  <message id="pe-tt-skew-doublebortel-eta">দ্বিতীয় সূচকীয় উপাদানের ওজন। η=0 একক Exp*Gauss(τ₁) দেয়, η=1 বিশুদ্ধ Exp*Gauss(τ₂) দেয়। বৈধ পরিসীমা: 0.0-1.0।</message>
+
+  <message id="pe-tt-skew-gaussplusbortel-r">Gaussian এবং Exp*Gauss এর মধ্যে মিশ্রণ অনুপাত। R=0 বিশুদ্ধ Gaussian, R=1 বিশুদ্ধ Exp*Gauss। বৈধ পরিসীমা: 0.0-1.0, সাধারণ: 0.2-0.8।</message>
+
+  <message id="pe-tt-skew-gaussplusbortel-tau">মিশ্রণে Exp*Gauss উপাদানের জন্য সূচকীয় ক্ষয় ধ্রুবক। বৈধ পরিসীমা: 0.01-15 σ, সাধারণ মান: 0.5-3 σ।</message>
+
+  <message id="pe-tt-skew-gaussexp-k">থ্রেশহোল্ড (μ - k·σ) যেখানে সূচকীয় লেজ শুরু হয় এবং ক্ষয়ের হার উভয়ই নিয়ন্ত্রণ করে। বৈধ পরিসীমা: 0.15-3.25, সাধারণ: 0.5-2.0।</message>
+
+  <message id="pe-tt-skew-crystalball-alpha">σ একক-এ থ্রেশহোল্ড যেখানে পাওয়ার-ল লেজ শুরু হয়: x = μ - α·σ। বৈধ পরিসীমা: 0.5-4.0, সাধারণ: 1.0-3.0।</message>
+
+  <message id="pe-tt-skew-crystalball-n">নিম্ন-শক্তির লেজের জন্য পাওয়ার-ল সূচক: (x - μ + α·σ)^(-n)। বৃহত্তর n আরো খাড়া পতন তৈরি করে। বৈধ পরিসীমা: 1.05-100, সাধারণ: 2-10।</message>
+
+  <message id="pe-tt-skew-expgaussexp-kl">নিম্ন (বাম) শক্তির লেজের থ্রেশহোল্ড এবং ক্ষয় নিয়ন্ত্রণ করে। বৈধ পরিসীমা: 0.15-3.25, সাধারণ: 0.5-2.0।</message>
+
+  <message id="pe-tt-skew-expgaussexp-kh">উচ্চ (ডান) শক্তির লেজের থ্রেশহোল্ড এবং ক্ষয় নিয়ন্ত্রণ করে। বৈধ পরিসীমা: 0.15-3.25, সাধারণ: 0.5-2.0।</message>
+
+  <message id="pe-tt-skew-dscb-alphalow">σ একক-এ নিম্ন থ্রেশহোল্ড যেখানে নিম্ন-শক্তির পাওয়ার-ল লেজ শুরু হয়। বৈধ পরিসীমা: 0.5-4.0, সাধারণ: 1.0-3.0।</message>
+
+  <message id="pe-tt-skew-dscb-nlow">নিম্ন-শক্তির লেজের জন্য পাওয়ার-ল সূচক। বৈধ পরিসীমা: 1.05-100, সাধারণ: 2-10।</message>
+
+  <message id="pe-tt-skew-dscb-alphahigh">σ একক-এ উচ্চ থ্রেশহোল্ড যেখানে উচ্চ-শক্তির পাওয়ার-ল লেজ শুরু হয়। বৈধ পরিসীমা: 0.5-4.0, সাধারণ: 1.0-3.0।</message>
+
+  <message id="pe-tt-skew-dscb-nhigh">উচ্চ-শক্তির লেজের জন্য পাওয়ার-ল সূচক। বৈধ পরিসীমা: 1.05-100, সাধারণ: 2-10।</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-gamma">Lorentz HWHM (অর্ধ-সর্বোচ্চে অর্ধ-প্রস্থ) যা প্রাকৃতিক এক্স-রে রেখার প্রস্থ উপস্থাপন করে। বৈধ পরিসীমা: 0.0-10.0 keV, এক্স-রে-র জন্য সাধারণ: 0.01-0.5 keV।</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-r">Voigt প্রোফাইল এবং Exp*Gauss এর মধ্যে মিশ্রণ অনুপাত। R=0 বিশুদ্ধ Voigt (শুধুমাত্র প্রাকৃতিক রেখার প্রস্থ), R=1 বিশুদ্ধ Exp*Gauss (শুধুমাত্র ডিটেক্টর লেজ)। বৈধ পরিসীমা: 0.0-1.0।</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-tau">Exp*Gauss উপাদানের জন্য সূচকীয় ক্ষয় ধ্রুবক, অসম্পূর্ণ চার্জ সংগ্রহ লেজ উপস্থাপন করে। বৈধ পরিসীমা: 0.01-10 σ।</message>
 
 </messages>

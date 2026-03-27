@@ -218,8 +218,7 @@ namespace
 
 
 
-DoseCalcWindow::DoseCalcWindow( MaterialDB *materialDB,
-                                Wt::WSuggestionPopup *materialSuggestion,
+DoseCalcWindow::DoseCalcWindow( Wt::WSuggestionPopup *materialSuggestion,
                                 InterSpec *viewer )
 : AuxWindow( WString::tr("window-title-dose-calc"),
             (AuxWindowProperties::TabletNotFullScreen
@@ -227,8 +226,8 @@ DoseCalcWindow::DoseCalcWindow( MaterialDB *materialDB,
              | AuxWindowProperties::DisableCollapse) )
 {
   rejectWhenEscapePressed( true );
-  
-  m_dose = new DoseCalcWidget( materialDB, materialSuggestion, viewer, contents() );
+
+  m_dose = new DoseCalcWidget( materialSuggestion, viewer, contents() );
   m_dose->setHeight( WLength(100,WLength::Percentage) );
   
   AuxWindow::addHelpInFooter( footer(), "dose-dialog" );
@@ -298,14 +297,12 @@ DoseCalcWidget *DoseCalcWindow::tool()
 
 
 
-DoseCalcWidget::DoseCalcWidget( MaterialDB *materialDB,
-                                 Wt::WSuggestionPopup *materialSuggestion,
+DoseCalcWidget::DoseCalcWidget( Wt::WSuggestionPopup *materialSuggestion,
                                  InterSpec *specViewer,
                                  Wt::WContainerWidget *parent )
  : WContainerWidget( parent ),
    m_viewer( specViewer ),
    m_materialSuggest( materialSuggestion ),
-   m_materialDB( materialDB ),
    m_enterShieldingSelect( NULL ),
    m_answerShieldingSelect( NULL ),
    m_gammaSource( NULL ),
@@ -734,8 +731,8 @@ void DoseCalcWidget::init()
           m_enterWidgets[i]->addWidget( shieldingLabel );
         }
         
-        m_enterShieldingSelect = new ShieldingSelect( m_materialDB, m_materialSuggest );
-        m_answerShieldingSelect = new ShieldingSelect( m_materialDB, m_materialSuggest );
+        m_enterShieldingSelect = new ShieldingSelect( m_materialSuggest );
+        m_answerShieldingSelect = new ShieldingSelect( m_materialSuggest );
         m_answerShieldingSelect->setSphericalThicknessEditEnabled(false);
         m_answerShieldingSelect->arealDensityEdit()->disable();
         m_enterWidgets[i]->addWidget( m_enterShieldingSelect );

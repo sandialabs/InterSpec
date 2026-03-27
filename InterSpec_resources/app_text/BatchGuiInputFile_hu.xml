@@ -2,7 +2,8 @@
 <messages>
   <!-- bgw- is short for BatchGuiWidget, strings used by BatchGuiAnaWidget -->
   <message id="bgw-peaks-csv-txt">Csúcsok CSV fájl</message>
-  <message id="bgw-not-spec-preview">Nem spektrum fájl</message>
+  <message id="bgw-not-spec-preview">Nem spektrumfájl</message>
   <message id="bgw-passthrough-sum-error">Áteresztési hiba</message>
-  <message id="bgw-preview-error">Hiba az előnézet renderelésében</message>
+  <message id="bgw-preview-error">Hiba az előnézet megjelenítésekor</message>
+  <message id="bgw-preview-skip">Előnézet kihagyása</message>
 </messages>

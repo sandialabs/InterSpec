@@ -838,7 +838,7 @@ BOOST_AUTO_TEST_CASE( DoubleSidedCrystalBall )
       
       //double integrated = double_sided_crystal_ball_integral( mean, sigma, alpha_low, n_low, alpha_high, n_high, lower_energy, upper_energy );
       //double integrated_non_norm = integrated / norm;
-      //const double diff_frac = fabs(integrated_non_norm - area) / std::max(integrated_non_norm,area);
+      //const double diff_frac = fabs(integrated_non_norm - area) / (std::max)(integrated_non_norm,area);
       //if( diff_frac > 1.0E-4 )
       //{
       //  cout << "Starting at t=" << (x-mean)/sigma << ", diff=" << diff_frac << ", area=" << area << ", integrated_non_norm=" << integrated_non_norm << endl;
@@ -1236,8 +1236,8 @@ BOOST_AUTO_TEST_CASE( GaussPlusBortel )
     pair<double,double> gauss_bortel_limits = gauss_plus_bortel_coverage_limits( mean, sigma, R, tau, 1.0E-6 );
     pair<double,double> voigt_bortel_limits = voigt_exp_coverage_limits( mean, sigma, gamma_lor, R, tau, 1.0E-6 );
 
-    double x0 = std::min( gauss_bortel_limits.first, voigt_bortel_limits.first );
-    double x1 = std::max( gauss_bortel_limits.second, voigt_bortel_limits.second );
+    double x0 = (std::min)( gauss_bortel_limits.first, voigt_bortel_limits.first );
+    double x1 = (std::max)( gauss_bortel_limits.second, voigt_bortel_limits.second );
 
     double gauss_bortel_val = gauss_plus_bortel_integral( mean, sigma, R, tau, x0, x1 );
     double voigt_bortel_val = voigt_exp_integral( mean, sigma, gamma_lor, R, tau, x0, x1 );

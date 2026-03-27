@@ -2,11 +2,11 @@
 <messages>
   <!-- rs- is short for Reference Spectra -->
   <message id="rs-dialog-title">Espectros de Referência</message>
-  <message id="rs-show-foreground">Comparar Espectro</message>
+  <message id="rs-show-foreground">Comp. Espectro</message>
   <message id="rs-show-foreground-portrait">Comparar</message>
-  <message id="rs-show-background">Mostrar Fundo</message>
+  <message id="rs-show-background">Fundo</message>
   <message id="rs-show-background-portrait">Fundo</message>
-  <message id="rs-load-background">Carregar Fundo</message>
+  <message id="rs-load-background">Carreg. Fundo</message>
   <message id="rs-load-background-portrait">+Fundo</message>
   <message id="rs-tt-add-dir-btn">Adicionar diretório para abrir espectros de referência.</message>
   <message id="rs-tt-delete-dir-btn">Remove o diretório atualmente selecionado da lista de locais de onde mostrar espectros de referência.</message>

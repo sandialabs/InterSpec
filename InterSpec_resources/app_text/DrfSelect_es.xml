@@ -46,9 +46,10 @@
       Intrínseca es eficiencia para gammas que golpean la superficie del detector, mientras que Absoluta es a una distancia dada.
     </div>
   </message>
-  <message id="ds-det-diam">Diámetro del detector:</message>
+  <message id="ds-det-diam">Diám. det.:</message>
+  <message id="ds-det-setback">Retroceso det.:</message>
   <message id="ds-fixed-geom">Geometría fija</message>
-  <message id="ds-gad-det-file-label">Archivo GADRAS Detector.Dat:</message>
+  <message id="ds-gad-det-file-label">O Detector.dat:</message>
   <message id="ds-manual-det-empty-fcn">Ejemplo: exp(-9.8 - 8.1*log(x) + 4.62E-02*log(x)^2 + ...)\n
     O equivalentemente: -9.8 -8.1 4.62E-02 ...</message>
   <message id="ds-manual-det-desc">Eficiencia del detector definida por una fórmula matemática, dada la energía x;
@@ -64,6 +65,7 @@
   <message id="ds-tt-manual-energy-unit">Unidad de energía para fórmula de eficiencia</message>
   <message id="ds-tt-manual-desc">Descripción de esta respuesta del detector</message>
   <message id="ds-manual-det-diam-label">Diám. detector</message>
+  <message id="ds-manual-det-setback-label">Retroceso det.</message>
   <message id="ds-energy-range">Rango de energía</message>
   <message id="ds-(optional)">(opcional)</message>
   <message id="ds-min.">Mín.</message>
@@ -95,7 +97,7 @@
     <br />
     Geometría fija - actividad por g: similar a por cm2, pero para por gramo de fuente.
   </message>
-  <message id="ds-dist-label">Dist.:</message>
+  <message id="ds-dist-label">Distancia:</message>
   <message id="ds-set-btn">Establecer</message>
   <message id="ds-last-used">Último usado</message>
   <message id="ds-det-type-filter-all">Todo</message>
@@ -126,6 +128,9 @@
   <message id="ds-err-det-dist-pos">La distancia debe ser positiva para eficiencias absolutas</message>
   <message id="ds-warn-min-max-energy-swapped">La energía mín. del detector era mayor que la energía máx.; ignorando rango de energía.</message>
   <message id="ds-need-det-diam">Se necesita el diámetro del detector</message>
+  <message id="ds-err-invalid-csv-format">CSV de archivo no reconocido. Suba un archivo CSV de eficiencia válido (formato MakeDrf o formato simple con columnas de energía y eficiencia).</message>
+  <message id="ds-err-parsing-gadras">Error analizando detector GADRAS: {1}</message>
+  <message id="ds-eff-type-intrinsic">Eficiencia intrínseca</message>
+  <message id="ds-eff-type-farfield">Eficiencia de campo lejano</message>
+  <message id="ds-eff-type-gadras">GADRAS</message>
 </messages>
-
-

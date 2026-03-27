@@ -11,6 +11,7 @@
   <message id="dsfs-all-peaks-cb">Tous les pics</message>
   
   <message id="md-det-diam">Diam. dét.</message>
+  <message id="md-det-setback">Recul dét.</message>
   <message id="md-eff-type">Type d'efficacité</message>
   <message id="md-eqn-in-kev">Équa. en keV</message>
   <message id="md-eqn-in-mev">Équa. en MeV</message>

@@ -23,6 +23,7 @@
   <message id="raag-fwhm-est">半値幅推定</message>
   <message id="raag-fwhm-form">半値幅形式</message>
   <message id="raag-peak-skew">ピーク歪度</message>
+  <message id="raag-lorentzian-xrays">Lorentzian X線</message>
   <message id="raag-add-uncert">追加不確実性</message>
   <message id="raag-yield-info">収率情報</message>
   
@@ -69,6 +70,7 @@
   </message>
   <message id="raag-tt-fwhm-form">エネルギーの関数としてピークFWHMをモデル化する方程式タイプ。</message>
   <message id="raag-tt-skew-type">ピークに適用するスキュータイプ；スキューパラメータがフィットされます。</message>
+  <message id="raag-tt-lorentzian-xrays">チェックすると、X線ピークは自然X線線幅に設定されたLorentzian幅を持つVoigtプロファイルを使用します。これはX線ラインの固有のLorentzian形状を考慮します。NoSkewまたはGaussPlusBortelピークスキュータイプとのみ互換性があります。</message>
   <message id="raag-tt-u-pu-data-source">ウランとプルトニウムのガンマ分岐比の核データソース。</message>
   <message id="raag-tt-add-source">ソースを追加。</message>
   <message id="raag-tt-add-energy-range">エネルギー範囲を追加。</message>

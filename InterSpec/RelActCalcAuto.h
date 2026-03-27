@@ -38,6 +38,8 @@
 #include "InterSpec/PeakDef.h" //for PeakContinuum::OffsetType and PeakDef::SkewType
 #include "InterSpec/RelActCalc.h"
 
+namespace PeakFitUtils{ enum class CoarseResolutionType : int; }
+
 // Forward declarations
 class DetectorPeakResponse;
 struct Material;
@@ -184,6 +186,9 @@ struct RoiRange
   void toXml( ::rapidxml::xml_node<char> *parent ) const;
   void fromXml( const ::rapidxml::xml_node<char> *parent );
 
+  bool operator==( const RoiRange &rhs ) const;
+  bool operator!=( const RoiRange &rhs ) const;
+
 #if( PERFORM_DEVELOPER_CHECKS )
   static void equalEnough( const RoiRange &lhs, const RoiRange &rhs );
 #endif
@@ -281,35 +286,59 @@ struct NucInputInfo
  */
 struct FloatingPeak
 {
+  /** Whether #FloatingPeak::energy represents a known true gamma energy, or an energy observed
+   in the spectrum.
+
+   When energy calibration is being fit, this determines whether the energy cal correction is
+   applied to this peak's mean during fitting:
+   - Known: the energy is a true gamma energy (e.g., 511 keV annihilation); the fitting will
+     apply energy cal adjustment to convert from true energy to observed position, the same
+     as for source gamma peaks.
+   - ObservedInSpectrum: the energy was read from the spectrum (e.g., a bystander peak from a
+     prior peak fit); it is already in the spectrum's calibration and no correction is applied.
+
+   Only has an effect when the energy calibration is being fit for as well.
+   */
+  enum class EnergyType : int
+  {
+    /** Energy is a known true gamma energy. Energy cal correction will be applied during fitting. */
+    Known = 0,
+    /** Energy was observed in the spectrum. No energy cal correction is applied during fitting. */
+    ObservedInSpectrum = 1
+  };//enum class EnergyType
+
   /** Energy (in keV) of the peak.
-   
-   Note that if energy calibration is being fit for, this energy will not have that correction
-   applied when fitting things; this is because these peaks are nominally expected to be added
-   by a user who gets the energy based on looking at the spectrum.
+
+   The interpretation of this value depends on #energy_origin:
+   - If #EnergyType::Known, this is the true gamma energy, and the fitting process will apply
+     energy calibration adjustment (same as source gamma peaks).
+   - If #EnergyType::ObservedInSpectrum, this is the observed position in the spectrum's
+     original energy calibration, and no energy cal correction is applied during fitting.
    */
   double energy = -1.0;
-  
+
   /** If true, the FWHM of the peak will be allowed to freely vary from 0.25 to 4.0 times (both
    numbers arbitrarily chosen) the FWHM that would be predicted by the functional FWHM
    for the energy.
    */
   bool release_fwhm = false;
-  
-  /** Whether the energy correction should be applied while performing the fit for the answer.
- 
-   That is, if #FloatingPeak::energy represents a known true gamma energy, set this value to true;
-   if this peak represents an observed peak in the spectrum (maybe from unknown origins), set
-   this value to false.
-   
+
+  /** Whether #energy represents a known true gamma energy or an observed spectrum position.
+
    Only has an effect when the energy calibration is being fit for as well.
+
+   @sa EnergyType
    */
-  bool apply_energy_cal_correction = true;
+  EnergyType energy_origin = EnergyType::Known;
   
   // TODO: should maybe have a max-width in FloatingPeak
   
   static const int sm_xmlSerializationVersion = 0;
   void toXml( ::rapidxml::xml_node<char> *parent ) const;
   void fromXml( const ::rapidxml::xml_node<char> *parent );
+
+  bool operator==( const FloatingPeak &rhs ) const;
+  bool operator!=( const FloatingPeak &rhs ) const;
 
 #if( PERFORM_DEVELOPER_CHECKS )
   static void equalEnough( const FloatingPeak &lhs, const FloatingPeak &rhs );
@@ -585,6 +614,9 @@ struct RelEffCurveInput
   void toXml( ::rapidxml::xml_node<char> *parent ) const;
   void fromXml( const ::rapidxml::xml_node<char> *constraint_node );
 
+  bool operator==( const ActRatioConstraint &rhs ) const;
+  bool operator!=( const ActRatioConstraint &rhs ) const;
+
 #if( PERFORM_DEVELOPER_CHECKS )
   static void equalEnough( const ActRatioConstraint &lhs, const ActRatioConstraint &rhs );
 #endif
@@ -618,6 +650,9 @@ struct RelEffCurveInput
     static const int sm_xmlSerializationVersion = 0;
     void toXml( ::rapidxml::xml_node<char> *parent ) const;
     void fromXml( const ::rapidxml::xml_node<char> *parent );
+
+  bool operator==( const MassFractionConstraint &rhs ) const;
+  bool operator!=( const MassFractionConstraint &rhs ) const;
 
 #if( PERFORM_DEVELOPER_CHECKS )
   static void equalEnough( const MassFractionConstraint &lhs, const MassFractionConstraint &rhs );
@@ -661,7 +696,10 @@ struct RelEffCurveInput
    * @returns The node the fields were written into (so the added node, or the parent node passed in).
    */
   rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const;
-  void fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *materialDB );
+  void fromXml( const ::rapidxml::xml_node<char> *parent );
+
+  bool operator==( const RelEffCurveInput &rhs ) const;
+  bool operator!=( const RelEffCurveInput &rhs ) const;
 
 #if( PERFORM_DEVELOPER_CHECKS )
   static void equalEnough( const RelEffCurveInput &lhs, const RelEffCurveInput &rhs );
@@ -700,6 +738,20 @@ struct Options
    power law is not allowed to have an energy dependence (see `PeakDef::is_energy_dependent(...)`).
    */
   PeakDef::SkewType skew_type;
+
+  /** Optional fixed skew parameter values for the lower energy end of the spectrum.
+   If a value is set, that skew parameter will be held constant during fitting
+   (not optimized), using the specified value.  If nullopt, the parameter is fit as usual.
+   Index 0..3 correspond to SkewPar0..SkewPar3.
+   */
+  std::optional<double> fixed_lower_skew[4];
+
+  /** Optional fixed skew parameter values for the upper energy end of the spectrum.
+   Only meaningful for energy-dependent skew parameters (see `PeakDef::is_energy_dependent`).
+   If nullopt for an energy-dependent parameter, the upper value will match the lower
+   (i.e., no energy dependence for that parameter).
+   */
+  std::optional<double> fixed_upper_skew[4];
 
   /** Whether to use Lorentzian (Voigt) peak shapes for x-ray peaks.
    *
@@ -773,12 +825,15 @@ struct Options
   
   /** Sets the member variables from an XML element created by `toXml(...)`.
    @param parent An XML element with name "Options".
-   @param materialDB The material database to use to retrieve a material from for the #PhysicalModelShieldInput;
-          for other equation types, or for AN/AD defined shields, this isnt used/required.
-          `same_hoerl_for_all_rel_eff_curves` and `same_external_shielding_for_all_rel_eff_curves`
-          were also added, and are optional.
+   Uses `MaterialDB::instance()` to retrieve materials for #PhysicalModelShieldInput;
+   for other equation types, or for AN/AD defined shields, the material DB isnt used/required.
+   `same_hoerl_for_all_rel_eff_curves` and `same_external_shielding_for_all_rel_eff_curves`
+   were also added, and are optional.
    */
-  void fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *materialDB );
+  void fromXml( const ::rapidxml::xml_node<char> *parent );
+
+  bool operator==( const Options &rhs ) const;
+  bool operator!=( const Options &rhs ) const;
 
 #if( PERFORM_DEVELOPER_CHECKS )
   static void equalEnough( const Options &lhs, const Options &rhs );
@@ -808,7 +863,23 @@ struct NuclideRelAct
 
 struct FloatingPeakResult
 {
+  /** The energy as specified in #FloatingPeak::energy.
+
+   For #FloatingPeak::EnergyType::Known peaks, this is the true gamma energy.
+   For #FloatingPeak::EnergyType::ObservedInSpectrum peaks, this is the observed
+   position in the original spectrum calibration.
+   */
   double energy;
+
+  /** The energy in the original spectrum's energy calibration — i.e., where this peak
+   appears in the (uncorrected) spectrum.
+
+   For #FloatingPeak::EnergyType::Known peaks, this is the result of applying the
+   energy calibration adjustment to the true energy (i.e., the observed position).
+   For #FloatingPeak::EnergyType::ObservedInSpectrum peaks, this equals #energy.
+   */
+  double original_spectrum_cal_energy;
+
   double amplitude;
   double amplitude_uncert;
   double fwhm;
@@ -839,7 +910,10 @@ struct RelActAutoGuiState
   
   /** Returns XML node added; i.e., will have name "RelActCalcAuto" */
   ::rapidxml::xml_node<char> *serialize( ::rapidxml::xml_node<char> *parent ) const;
-  void deSerialize( const rapidxml::xml_node<char> *base_node, MaterialDB *materialDb );
+  void deSerialize( const rapidxml::xml_node<char> *base_node );
+
+  bool operator==( const RelActAutoGuiState &rhs ) const;
+  bool operator!=( const RelActAutoGuiState &rhs ) const;
 
 #if( PERFORM_DEVELOPER_CHECKS )
   static void equalEnough( const RelActAutoGuiState &lhs, const RelActAutoGuiState &rhs );
@@ -1369,6 +1443,7 @@ RelActAutoSolution solve( const Options options,
                          std::shared_ptr<const SpecUtils::Measurement> background,
                          std::shared_ptr<const DetectorPeakResponse> drf,
                          std::vector<std::shared_ptr<const PeakDef>> all_peaks,
+                         const PeakFitUtils::CoarseResolutionType det_type,
                          std::shared_ptr<std::atomic_bool> cancel_calc = nullptr
                          );
 

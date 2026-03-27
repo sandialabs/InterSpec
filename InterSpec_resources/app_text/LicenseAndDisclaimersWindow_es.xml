@@ -29,23 +29,28 @@
   <message id="ladw-external-only-remote-rid">InterSpec no envía o recibe datos externos a su dispositivo, excepto cuando se usa la característica RID externo.</message>
   <message id="ladw-external-only-map">InterSpec no envía o recibe datos externos a su dispositivo, excepto cuando se usa la característica de mapa.</message>
   <message id="ladw-external-remote-rid-and-map">InterSpec no envía o recibe datos externos a su dispositivo, excepto cuando se usan las características de mapas o RID externo.</message>
-  <message id="ladw-external-remote-rid-and-map-and-update-check">InterSpec no envía o recibe datos externos a su dispositivo, excepto cuando se usan las características de mapas, RID externo, o verificación de actualización.</message>
-  <message id="ladw-external-only-update-check">InterSpec no envía o recibe datos externos a su dispositivo, excepto cuando se usa la característica de verificación de actualización.</message>
-  <message id="ladw-external-map-and-update-check">InterSpec no envía o recibe datos externos a su dispositivo, excepto cuando se usan las características de mapa o verificación de actualización.</message>
-  <message id="ladw-external-remote-rid-and-update-check">InterSpec no envía o recibe datos externos a su dispositivo, excepto cuando se usan las características de RID externo o verificación de actualización.</message>
-  <message id="ladw-external-all">InterSpec no envía o recibe datos externos a su dispositivo, excepto cuando se usan las características de mapa, RID externo, o verificación de actualización.</message>
-  <message id="ladw-build-date">Fecha de construcción: {1}</message>
-  <message id="ladw-build-version">Versión de construcción: {1}</message>
-  <message id="ladw-git-hash">Hash Git: {1}</message>
-  <message id="ladw-git-branch">Rama Git: {1}</message>
-  <message id="ladw-git-describe">Git describe: {1}</message>
-  <message id="ladw-git-clean">Git limpio: {1}</message>
-  <message id="ladw-cmake-config">Config CMake: {1}</message>
-  <message id="ladw-cmake-flags">Banderas CMake: {1}</message>
-  <message id="ladw-compiler">Compilador: {1}</message>
-  <message id="ladw-compiler-flags">Banderas compilador: {1}</message>
-  <message id="ladw-boost-version">Versión Boost: {1}</message>
-  <message id="ladw-wt-version">Versión Wt: {1}</message>
+  <message id="ladw-local-store-info">
+    <br />
+    InterSpec almacena localmente las preferencias, los espectros que carga, los estados guardados de la aplicación y las estadísticas de uso.
+    Esta información no sale de su dispositivo y se puede eliminar borrando el directorio de datos de usuario que se muestra arriba.
+  </message>
+  <message id="ladw-google-map">
+    <br />
+    Cuando se usa la función de Google Maps, la información de ubicación del archivo de espectro se envía a Google para recibir mapas de la ubicación correspondiente.
+  </message>
+  <message id="ladw-leaflet-map">
+    <br />
+    Cuando se usa la herramienta de Mapas, se solicitan mosaicos de mapa a <a href="https://arcgis.com">https://arcgis.com</a>
+    para el área que abarca las coordenadas GPS de las mediciones de radiación, pero el marcado/visualización de los datos de radiación en los mapas se realiza en su dispositivo.
+  </message>
+  <message id="ladw-remote-rid">
+    <br />
+    Para la herramienta de RID externo, consulte la política de privacidad de
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-remote-rid-none">
+    Para la herramienta de RID externo, consulte la política de privacidad de la URL que ingrese.
+  </message>
 </messages>
 
 

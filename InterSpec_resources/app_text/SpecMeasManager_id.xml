@@ -133,9 +133,21 @@
   <message id="smm-ecc-fix-geom-act-m2">Geometri Tetap - aktivitas per m2</message>
   <message id="smm-ecc-fix-geom-act-gram">Geometri Tetap - aktivitas per gram</message>
   <message id="smm-ecc-det-diam">Diameter det.</message>
+  <message id="smm-ecc-det-setback">Setback det.</message>
   <message id="smm-ecc-dist">Jarak</message>
   <message id="smm-ecc-use-drf">Gunakan DRF</message>
   <message id="smm-ecc-error">Kesalahan membuat DRF dari ECC: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop an ANGLE .outx file onto app -->
+  <message id="smm-outx-curve">DRF Kurva Kalibrasi Efisiensi ANGLE</message>
+  <message id="smm-outx-error">Kesalahan membuat DRF dari ANGLE .outx: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop an efficiency CSV file onto app -->
+  <message id="smm-eff-csv-curve">DRF Kurva CSV Efisiensi</message>
+  <message id="smm-eff-csv-error">Kesalahan membuat DRF dari CSV efisiensi: {1}</message>
+  <message id="smm-eff-csv-det-dat-label">Detector.dat (opsional)</message>
+  <message id="smm-eff-csv-intrinsic">Efisiensi Intrinsik</message>
+  <message id="smm-eff-csv-abs-eff">Efisiensi Absolut</message>
 
   <!-- Text for dialog when user drag-n-drop the Activity/Shielding fit file onto app -->
   <message id="smm-act-shield-xml">XML Aktivitas/Perisai</message>

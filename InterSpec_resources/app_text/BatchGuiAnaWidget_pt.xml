@@ -31,6 +31,8 @@
   <!-- File convert options options -->
   <message id="bgw-overwrite-output-cb">Sobrescrever saída</message>
   <message id="bgw-sum-multirecord-to-single">Somar arquivos com múltiplos registros em um único registro</message>
+  <message id="bgw-sum-all-to-single">Somar todos os arquivos em um único espectro</message>
+  <message id="bgw-concatenate-all-to-single">Concatenar todos os arquivos em um único arquivo</message>
   <message id="bgw-info-will-convert-file-type">Os arquivos serão convertidos para o tipo selecionado.</message>
 
 

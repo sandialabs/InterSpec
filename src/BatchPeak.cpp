@@ -44,6 +44,7 @@
 #include "InterSpec/EnergyCal.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/BatchInfoLog.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
@@ -1245,8 +1246,13 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
       if( (options.peak_stat_threshold != 2.0) || (options.peak_hypothesis_threshold != 1.0) )
         results.warnings.push_back( "peak-stat-threshold and peak-hypothesis-threshold are currently not used when fitting for all peaks." );
 
-      const bool highres = PeakFitUtils::is_high_res( spec );
-      vector<shared_ptr<const PeakDef>> fit_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks( spec, det, nullptr, false, highres );
+      std::shared_ptr<const PeakFitDetPrefs> fitPrefs;
+      if( exemplar_n42 )
+        fitPrefs = exemplar_n42->peakFitDetPrefs();
+      if( !fitPrefs && specfile )
+        fitPrefs = specfile->peakFitDetPrefs();
+
+      vector<shared_ptr<const PeakDef>> fit_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks( spec, det, nullptr, false, fitPrefs );
       fit_peaks_ptrs.insert( end(fit_peaks_ptrs), begin(fit_peaks), end(fit_peaks) );
     }else
     {
@@ -1316,11 +1322,19 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
       const double uppper_energy = starting_peaks.back().mean() + 0.1;
 
       // We are not refitting peaks, because the areas may be wildly different.
-      const bool isRefit = false;
 
       const double ncausalitysigma = 0.0;
       const double stat_threshold = options.peak_stat_threshold;
       const double hypothesis_threshold = options.peak_hypothesis_threshold;
+
+      std::shared_ptr<const PeakFitDetPrefs> fitPrefs;
+      if( exemplar_n42 )
+        fitPrefs = exemplar_n42->peakFitDetPrefs();
+      if( !fitPrefs && specfile )
+        fitPrefs = specfile->peakFitDetPrefs();
+
+      const PeakFitUtils::CoarseResolutionType det_type
+        = fitPrefs ? fitPrefs->m_det_type : PeakFitUtils::coarse_det_type( spec, nullptr );
 
       vector<PeakDef> candidate_peaks;
       for( const auto &p : starting_peaks )
@@ -1346,25 +1360,33 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
           if( continuum && continuum->isPolynomial() )
           {
             const PeakContinuum::OffsetType origType = continuum->type();
+            // calc_linear_continuum_eqn sets type to Linear and resizes m_values to 2 polynomial
+            //  coefficients.  We compute the continuum integral while the type is still Linear
+            //  (just polynomial, no step), then restore the original type.
+            //  For step types (including CDF step), this gives a reasonable polynomial-only estimate
+            //  for the starting amplitude — the step coefficient will be fit later.
+            //  Note: setType(origType) will init the step coefficient to zero, so the only-one-peak
+            //  vs all-ROI-peers distinction for CDF step types is moot here.
             continuum->calc_linear_continuum_eqn( spec, peak.mean(), peak.lowerX(), peak.upperX(), 2, 2 );
+
+            const double mean = peak.mean(), fwhm = peak.fwhm();
+            const double data_area = spec->gamma_integral( mean - fwhm, mean + fwhm );
+
+            if( (data_area > 1) && (peak.amplitude() > data_area) )
+            {
+              const double cont_area = continuum->offset_integral( mean - fwhm, mean + fwhm,
+                                                                    spec, nullptr, 0 );
+              if( (cont_area > 0.0) && (cont_area < data_area) )
+              {
+                peak.setAmplitude( data_area - cont_area );
+              }else
+              {
+                peak.setAmplitude( 0.25*data_area );
+              }
+            }//if( exemplar peak is clearly much larger than data )
+
             continuum->setType( origType );
           }//if( continuum )
-
-          const double mean = peak.mean(), fwhm = peak.fwhm();
-          const double data_area = spec->gamma_integral( mean - fwhm, mean + fwhm );
-
-          if( (data_area > 1) && (peak.amplitude() > data_area) )
-          {
-            double cont_area = continuum->offset_integral(  mean - fwhm, mean + fwhm, spec );
-            if( (cont_area > 0.0) && (cont_area < data_area) )
-            {
-              peak.setAmplitude( data_area - cont_area );
-            }else
-            {
-              peak.setAmplitude( 0.25*data_area );
-            }
-
-          }//if( exemplar peak is clearly much larger than data )
         }//if( peak.gausPeak() )
 
         candidate_peaks.push_back( peak );
@@ -1389,7 +1411,7 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
 
           vector<PeakDef> peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
                                                   stat_threshold, hypothesis_threshold,
-                                                  energy_cal_peaks, spec, {}, isRefit );
+                                                  energy_cal_peaks, spec, {}, det_type );
 
           try
           {
@@ -1425,7 +1447,7 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
 
       vector<PeakDef> fit_peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
                                                   stat_threshold, hypothesis_threshold,
-                                                  candidate_peaks, spec, {}, isRefit );
+                                                  candidate_peaks, spec, {}, det_type );
 
 #if( !USE_LM_PEAK_FIT )
       // will re-fit the peaks again to make sure have the best solution.
@@ -1433,9 +1455,10 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
       for( size_t i = 0; i < 3; ++i )
       {
         const vector<PeakDef> prev_peaks = fit_peaks;
+        const Wt::WFlags<PeakFitLM::PeakFitLMOptions> refit_options( PeakFitLM::PeakFitLMOptions::MediumRefinementOnly );
         fit_peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
                                     stat_threshold, hypothesis_threshold,
-                                    fit_peaks, spec, {}, true );
+                                    fit_peaks, spec, refit_options, det_type );
 
         if( fit_peaks.size() != prev_peaks.size() )
           fit_peaks = prev_peaks;

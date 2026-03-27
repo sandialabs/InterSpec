@@ -16,6 +16,7 @@
   <message id="Apply">Aplicar</message>
   <message id="Accept">Aceptar</message>
   <message id="Okay">OK</message>
+  <message id="Reject">Rechazar</message>
   <message id="Foreground">Primer plano</message>
   <message id="Background">Fondo</message>
   <message id="Secondary">Secundario</message>
@@ -92,7 +93,6 @@
   <message id="Min.">Mín.</message>
   <message id="Max.">Máx.</message>
   <message id="QR Code">Código QR</message>
-  <message id="Accept">Aceptar</message>
   <message id="Dose">Dosis</message>
   <message id="Shielding">Blindaje</message>
   <message id="app-qr-err">Error al crear código QR: {1}</message>
@@ -488,6 +488,9 @@
   <message id="pct-flat-step">Escalón plano</message>
   <message id="pct-linear-step">Escalón lineal</message>
   <message id="pct-bilinear-step">Escalón bilineal</message>
+  <message id="pct-flat-step-cdf">Flat Step (CDF)</message>
+  <message id="pct-linear-step-cdf">Linear Step (CDF)</message>
+  <message id="pct-bilinear-step-cdf">Paso bilineal (CDF)</message>
   <message id="pct-global">Cont. global</message>
 
   <!-- populateNuclideSelects() in PeakSearchGuiUtils.cpp -->
@@ -601,6 +604,8 @@
   <message id="lang-de">Deutsch</message>
   <message id="lang-ja">日本語</message>
   <message id="lang-zh">中文</message>
+  <message id="lang-hi">हिन्दी</message>
+  <message id="lang-bn">বাংলা</message>
   <message id="lang-pt">Português</message>
   <message id="lang-ru">Русский</message>
   <message id="lang-it">Italiano</message>
@@ -608,6 +613,8 @@
   <message id="lang-vi">Tiếng Việt</message>
   <message id="lang-tr">Türkçe</message>
   <message id="lang-ar">العربية</message>
+  <message id="lang-hu">Magyar</message>
+  <message id="lang-id">Bahasa Indonesia</message>
 
 
   <!-- An incomplete list of possible countries - mapping the two letter code we receive as part of
@@ -624,6 +631,9 @@
   <message id="country-JP">Japón</message>
   <message id="country-CN">China</message>
   <message id="country-TW">Taiwán</message>
+  <message id="country-IN">भारत</message>
+  <message id="country-BD">বাংলাদেশ</message>
+  <message id="country-ID">Indonesia</message>
   <message id="country-BR">Brasil</message>
   <message id="country-PT">Portugal</message>
   <message id="country-RU">Rusia</message>

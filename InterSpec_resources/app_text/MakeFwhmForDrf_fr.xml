@@ -4,14 +4,15 @@
   <message id="fpm-peak-source">Source du pic</message>
   <message id="fpm-user">Utilisateur</message>
   <message id="fpm-auto-fit">Ajustement auto</message>
-  
-  
+
+
   <message id="mffdw-use-fwhm-btn">Utiliser la FWHM</message>
-  
-  <message id="mffd-eqn-type-label">Type d'équation :</message>
-  <message id="mffd-num-terms-label">Nombre de termes :</message>
-  <message id="mffd-par-vals-label">Valeurs des paramètres :</message>
+
+  <message id="mffd-eqn-type-label">Type d'équation :</message>
+  <message id="mffd-num-terms-label">Nombre de termes :</message>
+  <message id="mffd-par-vals-label">Valeurs des paramètres :</message>
   <message id="mffd-err-no-foreground">Il n'y a pas de données sur lesquelles rechercher des pics.</message>
-  <message id="mffd-tt-par">Avec incertitude : {1}</message>
-  <message id="mffd-err-fail-fit">Échec de l'ajustement de l'équation FWHM : {1}</message>
+  <message id="mffd-tt-par">Avec incertitude : {1}</message>
+  <message id="mffd-err-fail-fit">Échec de l'ajustement de l'équation FWHM : {1}</message>
+  <message id="mffd-err-waiting-for-search">Recherche de pics en cours - veuillez patienter</message>
 </messages>

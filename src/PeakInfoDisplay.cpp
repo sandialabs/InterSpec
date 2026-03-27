@@ -62,7 +62,9 @@
 #include "InterSpec/ColorSelect.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/PeakFitDetPrefsGui.h"
 #include "InterSpec/SimpleDialog.h"
+#include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PeakInfoDisplay.h"
 #include "InterSpec/UndoRedoManager.h"
@@ -398,7 +400,284 @@ protected:
   }//createEditor(...)
 };//class ItemDelegate
 
-  
+
+/** Delegate for the Mean column that shifts the ROI bounds when the mean is changed,
+ but only for single-peak ROIs. For multi-peak ROIs, the edit is rejected if the new
+ mean would fall outside the ROI.
+ */
+class MeanDelegate : public ItemDelegate
+{
+public:
+  MeanDelegate( PeakModel *model, WObject *parent = nullptr )
+    : ItemDelegate( parent ),
+      m_peakModel( model )
+  {
+  }
+
+  virtual void setModelData( const boost::any &editState,
+                             Wt::WAbstractItemModel *model,
+                             const Wt::WModelIndex &index ) const
+  {
+    assert( m_peakModel );
+    if( !m_peakModel )
+      return;
+
+    const shared_ptr<const PeakDef> peak = m_peakModel->peak( index );
+    if( !peak || (peak->type() != PeakDef::GaussianDefined) )
+    {
+      WItemDelegate::setModelData( editState, model, index );
+      return;
+    }
+
+    const double oldMean = peak->mean();
+    const double oldLower = peak->lowerX();
+    const double oldUpper = peak->upperX();
+    const bool meanWasInRoi = (oldMean >= oldLower) && (oldMean <= oldUpper);
+
+    // Parse the new mean value from the edit state
+    double newMean = oldMean;
+    try
+    {
+      const WString txt = boost::any_cast<WString>( editState );
+      string valstr = txt.toUTF8();
+
+      // Strip uncertainty portion if present
+      string::size_type pos = valstr.find( "\xC2\xB1" );
+      if( pos == string::npos )
+        pos = valstr.find( "+-" );
+      if( pos == string::npos )
+        pos = valstr.find( "-+" );
+      if( pos != string::npos )
+        valstr = valstr.substr( 0, pos );
+      SpecUtils::trim( valstr );
+
+      // Try parsing with units first (e.g., "185 keV", "1.011 MeV"), then plain number (assumed keV)
+      try
+      {
+        newMean = PhysicalUnits::stringToEnergy( valstr );
+      }catch(...)
+      {
+        if( !SpecUtils::parse_double( valstr.c_str(), valstr.size(), newMean ) )
+          return;
+      }
+    }catch(...)
+    {
+      return;
+    }
+
+    const double meanDelta = newMean - oldMean;
+    if( fabs( meanDelta ) < 1.0e-6 )
+      return;
+
+    // Convert the parsed mean (in keV) to a plain numeric string so the model
+    // doesnt re-parse units like "0.555 MeV" as 0.555 keV.
+    char meanBuf[64];
+    snprintf( meanBuf, sizeof(meanBuf), "%.6g", newMean );
+    const boost::any kevEditState = boost::any( WString::fromUTF8( meanBuf ) );
+
+    const vector<shared_ptr<const PeakDef>> roiPeaks = m_peakModel->peaksSharingRoi( peak );
+    const bool isSinglePeakRoi = (roiPeaks.size() == 1);
+
+    if( !isSinglePeakRoi )
+    {
+      // Multi-peak ROI: reject if the new mean would be outside the ROI
+      if( meanWasInRoi && ((newMean < oldLower) || (newMean > oldUpper)) )
+        return;
+
+      // Mean stays within ROI; apply just the mean change
+      WItemDelegate::setModelData( kevEditState, model, index );
+      return;
+    }
+
+    // Single peak ROI: apply the mean change, then shift the ROI bounds
+    WItemDelegate::setModelData( kevEditState, model, index );
+
+    const shared_ptr<const PeakDef> updatedPeak = m_peakModel->peak( index );
+    if( !updatedPeak )
+      return;
+
+    const vector<shared_ptr<const PeakDef>> currentRoiPeaks = m_peakModel->peaksSharingRoi( updatedPeak );
+
+    auto newCont = make_shared<PeakContinuum>( *updatedPeak->continuum() );
+    newCont->setRange( oldLower + meanDelta, oldUpper + meanDelta );
+
+    vector<PeakDef> newPeaks;
+    for( const auto &p : currentRoiPeaks )
+    {
+      PeakDef np( *p );
+      np.setContinuum( newCont );
+      newPeaks.push_back( np );
+    }
+
+    m_peakModel->updatePeaks( currentRoiPeaks, newPeaks );
+  }//setModelData(...)
+
+protected:
+  PeakModel *m_peakModel;
+};//class MeanDelegate
+
+
+/** Delegate that presents a WComboBox for selecting the continuum type of a peak. */
+class ContinuumTypeDelegate : public Wt::WAbstractItemDelegate
+{
+public:
+  ContinuumTypeDelegate( WObject *parent = nullptr )
+    : WAbstractItemDelegate( parent )
+  {
+  }
+
+  virtual WWidget *update( WWidget *widget, const WModelIndex &index,
+                           WFlags<ViewItemRenderFlag> flags )
+  {
+    if( flags & RenderEditing )
+    {
+      // Check if we already have an editor (container with combo box)
+      WContainerWidget *container = dynamic_cast<WContainerWidget *>( widget );
+      if( !container )
+      {
+        widget = createEditor( index, flags );
+        WInteractWidget *iw = dynamic_cast<WInteractWidget *>( widget );
+        if( iw )
+        {
+          iw->mouseWentDown().preventPropagation();
+          iw->clicked().preventPropagation();
+        }
+      }
+      return widget;
+    }
+
+    // Not editing - display as text
+    if( dynamic_cast<WContainerWidget *>( widget ) )
+      widget = nullptr;
+
+    WText *text = dynamic_cast<WText *>( widget );
+    if( !text )
+      text = new WText();
+
+    const boost::any d = index.data( DisplayRole );
+    if( !d.empty() )
+      text->setText( boost::any_cast<WString>( d ) );
+    else
+      text->setText( "" );
+
+    return text;
+  }//update(...)
+
+
+  virtual void setModelData( const boost::any &editState,
+                             Wt::WAbstractItemModel *model,
+                             const Wt::WModelIndex &index ) const
+  {
+    const int comboIndex = boost::any_cast<int>( editState );
+    if( (comboIndex < 0) || (comboIndex >= static_cast<int>(m_types.size())) )
+      return;
+
+    const WString label = WString::tr( PeakContinuum::offset_type_label_tr( m_types[comboIndex] ) );
+    model->setData( index, boost::any( label ), EditRole );
+  }//setModelData(...)
+
+
+  virtual boost::any editState( WWidget *editor ) const
+  {
+    WContainerWidget *container = dynamic_cast<WContainerWidget *>( editor );
+    if( !container )
+      return boost::any();
+
+    for( WWidget *child : container->children() )
+    {
+      WComboBox *combo = dynamic_cast<WComboBox *>( child );
+      if( combo )
+        return boost::any( combo->currentIndex() );
+    }
+    return boost::any();
+  }//editState(...)
+
+
+  virtual void setEditState( WWidget *editor, const boost::any &value ) const
+  {
+    WContainerWidget *container = dynamic_cast<WContainerWidget *>( editor );
+    if( !container )
+      return;
+
+    const int idx = boost::any_cast<int>( value );
+    for( WWidget *child : container->children() )
+    {
+      WComboBox *combo = dynamic_cast<WComboBox *>( child );
+      if( combo )
+      {
+        combo->setCurrentIndex( idx );
+        return;
+      }
+    }
+  }//setEditState(...)
+
+protected:
+  WWidget *createEditor( const WModelIndex &index, WFlags<ViewItemRenderFlag> flags ) const
+  {
+    WContainerWidget *container = new WContainerWidget();
+    container->setSelectable( true );
+    //container->setPadding(15, Wt::Right);
+
+    WComboBox *combo = new WComboBox( container );
+
+    // Find current type from the display data
+    const boost::any d = index.data( DisplayRole );
+    const WString currentLabel = d.empty() ? WString() : boost::any_cast<WString>( d );
+
+    int currentIdx = 0;
+    for( size_t i = 0; i < m_types.size(); ++i )
+    {
+      const WString label = WString::tr( PeakContinuum::offset_type_label_tr( m_types[i] ) );
+      combo->addItem( label );
+      if( label == currentLabel )
+        currentIdx = static_cast<int>( i );
+    }
+
+    combo->setCurrentIndex( currentIdx );
+
+    auto userSelected = make_shared<bool>( false );
+
+    // Close and save on explicit selection change
+    combo->changed().connect( std::bind( [this, container, userSelected](){
+      (*userSelected) = true;
+      doCloseEditor( container, true );
+    }) );
+
+    // Close without saving on blur (e.g., switching tabs)
+    combo->blurred().connect( std::bind( [this, container, userSelected](){
+      if( !(*userSelected) )
+        doCloseEditor( container, false );
+    }) );
+
+    return container;
+  }//createEditor(...)
+
+
+  void doCloseEditor( WWidget *editor, bool save ) const
+  {
+    closeEditor().emit( editor, save );
+  }//doCloseEditor(...)
+
+
+  // The continuum types we allow the user to select from in the combo box
+  static const vector<PeakContinuum::OffsetType> m_types;
+};//class ContinuumTypeDelegate
+
+const vector<PeakContinuum::OffsetType> ContinuumTypeDelegate::m_types = {
+  PeakContinuum::Constant,
+  PeakContinuum::Linear,
+  PeakContinuum::Quadratic,
+  PeakContinuum::Cubic,
+  PeakContinuum::FlatStep,
+  PeakContinuum::LinearStep,
+  PeakContinuum::BiLinearStep,
+  PeakContinuum::FlatStepCDF,
+  PeakContinuum::LinearStepCDF,
+  PeakContinuum::BiLinearStepCDF,
+  PeakContinuum::External
+};
+
+
 // See also CopyUrlToClipboard in QrCode.cpp, and CopyFluxDataTextToClipboard in FluxTool.cpp
 //  Note that modern browsers ONLY allow copying 'text/plain' and 'text/html' mime types
 //  to the pasteboard (for security reasons); e.g., using 'text/csv' silently fails.
@@ -531,7 +810,8 @@ PeakInfoDisplay::PeakInfoDisplay( InterSpec *viewer,
     m_searchForPeaks( NULL ),
     m_clearPeaksButton( nullptr ),
     m_nucFromRefButton( nullptr ),
-    m_peakAddRemoveLabel( nullptr )
+    m_peakAddRemoveLabel( nullptr ),
+    m_peakFitDetPrefsGui( nullptr )
 {
   assert( m_spectrumDisplayDiv );
   addStyleClass( "PeakInfoDisplay" );
@@ -882,9 +1162,12 @@ void PeakInfoDisplay::init()
   m_infoView->setEditTriggers( WAbstractItemView::SingleClicked | WAbstractItemView::DoubleClicked );
   blurred().connect( boost::bind(&RowStretchTreeView::closeEditors, m_infoView, true) );
   
+  MeanDelegate *meanDelegate = new MeanDelegate( m_model, m_infoView );
+  meanDelegate->setTextFormat( "%.2f" );
+  m_infoView->setItemDelegateForColumn( PeakModel::kMean, meanDelegate );
+
   ItemDelegate *dblDelagate = new ItemDelegate( m_infoView );
   dblDelagate->setTextFormat( "%.2f" );
-  m_infoView->setItemDelegateForColumn( PeakModel::kMean, dblDelagate );
   m_infoView->setItemDelegateForColumn( PeakModel::kFwhm, dblDelagate );
   m_infoView->setItemDelegateForColumn( PeakModel::kLowerX, dblDelagate );
   m_infoView->setItemDelegateForColumn( PeakModel::kUpperX, dblDelagate );
@@ -938,6 +1221,8 @@ void PeakInfoDisplay::init()
   m_infoView->setColumnWidth( PeakModel::kUpperX,     WLength(/*11*/12, WLength::FontEx) );
   m_infoView->setColumnWidth( PeakModel::kRoiCounts,  WLength(8, WLength::FontEx) );
   m_infoView->setColumnWidth( PeakModel::kContinuumType,  WLength(/*11*/12, WLength::FontEx) );
+  ContinuumTypeDelegate *contTypeDelegate = new ContinuumTypeDelegate( m_infoView );
+  m_infoView->setItemDelegateForColumn( PeakModel::kContinuumType, contTypeDelegate );
 //  m_infoView->setColumnWidth( PeakModel::kNumColumns, WLength(6, WLength::FontEx) );
 //  m_infoView->setColumnAlignment( PeakModel::kMean, AlignRight );
 
@@ -955,12 +1240,25 @@ void PeakInfoDisplay::init()
   
   m_infoLayout->addWidget( m_infoView, 0, 0 );
   m_infoLayout->setRowStretch( 0, 1 );
-  
+  m_infoLayout->setColumnStretch( 0, 1 );
+
+  // Peak fit detector preferences panel (collapsible, right of table)
+  m_peakFitDetPrefsGui = new PeakFitDetPrefsGui( m_viewer, true );
+  m_infoLayout->addWidget( m_peakFitDetPrefsGui, 0, 1 );
+
+  m_viewer->peakFitDetPrefsChanged().connect(
+    m_peakFitDetPrefsGui, &PeakFitDetPrefsGui::handlePrefsChanged );
+  m_viewer->displayedSpectrumChanged().connect(
+    std::bind( [this]( SpecUtils::SpectrumType, std::shared_ptr<SpecMeas>,
+                       std::set<int>, std::vector<std::string> ){
+      m_peakFitDetPrefsGui->handlePrefsChanged();
+    }, std::placeholders::_1, std::placeholders::_2,
+       std::placeholders::_3, std::placeholders::_4 ) );
 
   //Now add buttons to search/clear peaks
   WContainerWidget *bottomDiv = new WContainerWidget();
   bottomDiv->addStyleClass( "PeakInfoDisplayBottomDiv" );
-  m_infoLayout->addWidget( bottomDiv, 1, 0 );
+  m_infoLayout->addWidget( bottomDiv, 1, 0, 1, 2 );
 
   
   auto helpBtn = new WContainerWidget( bottomDiv );

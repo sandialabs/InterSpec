@@ -20,10 +20,14 @@ target/electron/node_modules*/
 target/electron/release-builds
 InterSpec_resources/SpectrumChartD3StandAlone.css
 infer-out/
+output_n42/
 InterSpec_resources/app_text/convert_xml_to_csv.py
 InterSpec_resources/app_text/convert_csv_to_xml.py
 InterSpec_resources/app_text/InterSpec_string*.csv
 peak_fit_accuracy_inject_compact
+GEMINI.md
+CLAUDE.md
+AGENT.md
 
 *OUO*
 *ouo*

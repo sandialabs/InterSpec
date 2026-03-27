@@ -42,6 +42,75 @@
   <message id="pe-est-lin-cont-no-data">Por favor, carregue um espectro de primeiro plano antes de estimar o contínuo.</message>
   <message id="pe-failed-est-lin-cont">Falha ao estimar contínuo das bordas da ROI: {1}</message>
 
+  <!-- Skew parameter labels for Bortel (Exp*Gauss) -->
+  <message id="pe-label-skew-bortel-tau">Assimetria &alpha;</message>
 
+  <!-- Skew parameter labels for DoubleBortel -->
+  <message id="pe-label-skew-doublebortel-tau1">&tau;<sub>1</sub></message>
+  <message id="pe-label-skew-doublebortel-deltatau2">&Delta;&tau;<sub>2</sub></message>
+  <message id="pe-label-skew-doublebortel-eta">&eta;</message>
+
+  <!-- Skew parameter labels for GaussPlusBortel -->
+  <message id="pe-label-skew-gaussplusbortel-r">Razão Mistura R</message>
+  <message id="pe-label-skew-gaussplusbortel-tau">Bortel &tau;</message>
+
+  <!-- Skew parameter labels for GaussExp -->
+  <message id="pe-label-skew-gaussexp-k">Assimetria k</message>
+
+  <!-- Skew parameter labels for CrystalBall -->
+  <message id="pe-label-skew-crystalball-alpha">Assimetria &alpha;</message>
+  <message id="pe-label-skew-crystalball-n">Assimetria n</message>
+
+  <!-- Skew parameter labels for ExpGaussExp -->
+  <message id="pe-label-skew-expgaussexp-kl">Assimetria k<sub>L</sub></message>
+  <message id="pe-label-skew-expgaussexp-kh">Assimetria k<sub>H</sub></message>
+
+  <!-- Skew parameter labels for DoubleSidedCrystalBall -->
+  <message id="pe-label-skew-dscb-alphalow">Assimetria &alpha;<sub>low</sub></message>
+  <message id="pe-label-skew-dscb-nlow">Assimetria n<sub>low</sub></message>
+  <message id="pe-label-skew-dscb-alphahigh">Assimetria &alpha;<sub>high</sub></message>
+  <message id="pe-label-skew-dscb-nhigh">Assimetria n<sub>high</sub></message>
+
+  <!-- Skew parameter labels for VoigtPlusBortel -->
+  <message id="pe-label-skew-voigtplusbortel-gamma">Lorentz &gamma;</message>
+  <message id="pe-label-skew-voigtplusbortel-r">Razão Mistura R</message>
+  <message id="pe-label-skew-voigtplusbortel-tau">Bortel &tau;</message>
+
+  <!-- Tooltips for skew parameters -->
+  <message id="pe-tt-skew-bortel-tau">Constante de decaimento exponencial para Exp*Gauss (Gaussiana Modificada Exponencialmente). Representa a escala de comprimento característica da cauda de baixa energia. Faixa válida: 0,0-15 σ, valores típicos: 0,5-3 σ.</message>
+
+  <message id="pe-tt-skew-doublebortel-tau1">Primeira constante de decaimento exponencial, tipicamente próxima de σ. Controla o componente principal da cauda de baixa energia. Faixa válida: 0,01-15 σ.</message>
+
+  <message id="pe-tt-skew-doublebortel-deltatau2">Decaimento adicional para a segunda exponencial: τ₂ = τ₁ + Δτ₂. Controla o componente da cauda estendida. Faixa válida: 0,0-10 σ.</message>
+
+  <message id="pe-tt-skew-doublebortel-eta">Peso do segundo componente exponencial. η=0 dá Exp*Gauss(τ₁) simples, η=1 dá Exp*Gauss(τ₂) puro. Faixa válida: 0,0-1,0.</message>
+
+  <message id="pe-tt-skew-gaussplusbortel-r">Razão de mistura entre Gaussiana e Exp*Gauss. R=0 é Gaussiana pura, R=1 é Exp*Gauss puro. Faixa válida: 0,0-1,0, típico: 0,2-0,8.</message>
+
+  <message id="pe-tt-skew-gaussplusbortel-tau">Constante de decaimento exponencial para o componente Exp*Gauss na mistura. Faixa válida: 0,01-15 σ, valores típicos: 0,5-3 σ.</message>
+
+  <message id="pe-tt-skew-gaussexp-k">Controla tanto o limiar (μ - k·σ) onde a cauda exponencial começa quanto a taxa de decaimento. Faixa válida: 0,15-3,25, típico: 0,5-2,0.</message>
+
+  <message id="pe-tt-skew-crystalball-alpha">Limiar em unidades de σ onde a cauda de lei de potência começa: x = μ - α·σ. Faixa válida: 0,5-4,0, típico: 1,0-3,0.</message>
+
+  <message id="pe-tt-skew-crystalball-n">Expoente de lei de potência para a cauda de baixa energia: (x - μ + α·σ)^(-n). Maior n cria queda mais abrupta. Faixa válida: 1,05-100, típico: 2-10.</message>
+
+  <message id="pe-tt-skew-expgaussexp-kl">Controla o limiar e decaimento da cauda de energia inferior (esquerda). Faixa válida: 0,15-3,25, típico: 0,5-2,0.</message>
+
+  <message id="pe-tt-skew-expgaussexp-kh">Controla o limiar e decaimento da cauda de energia superior (direita). Faixa válida: 0,15-3,25, típico: 0,5-2,0.</message>
+
+  <message id="pe-tt-skew-dscb-alphalow">Limiar inferior em unidades de σ onde a cauda de lei de potência de baixa energia começa. Faixa válida: 0,5-4,0, típico: 1,0-3,0.</message>
+
+  <message id="pe-tt-skew-dscb-nlow">Expoente de lei de potência para a cauda de baixa energia. Faixa válida: 1,05-100, típico: 2-10.</message>
+
+  <message id="pe-tt-skew-dscb-alphahigh">Limiar superior em unidades de σ onde a cauda de lei de potência de alta energia começa. Faixa válida: 0,5-4,0, típico: 1,0-3,0.</message>
+
+  <message id="pe-tt-skew-dscb-nhigh">Expoente de lei de potência para a cauda de alta energia. Faixa válida: 1,05-100, típico: 2-10.</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-gamma">HWHM lorentziana (meia-largura a meia-altura) representando a largura natural de linha de raios X. Faixa válida: 0,0-10,0 keV, típico para raios X: 0,01-0,5 keV.</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-r">Razão de mistura entre perfil Voigt e Exp*Gauss. R=0 é Voigt puro (apenas largura de linha natural), R=1 é Exp*Gauss puro (apenas cauda do detector). Faixa válida: 0,0-1,0.</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-tau">Constante de decaimento exponencial para o componente Exp*Gauss, representando a cauda de coleta de carga incompleta. Faixa válida: 0,01-10 σ.</message>
 
 </messages>

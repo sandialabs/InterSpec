@@ -38,6 +38,25 @@
     <li><b>Picos en rango</b>: Mostrar solo números de muestra que tienen picos dentro del rango de energía con los colores de marcador y CPS basados en la tasa de conteo de picos.</li>
     </ul>
   </message>
+  <message id="lrm-copy-google-maps">Copiar URL de Google Maps</message>
+  <message id="lrm-copy-bing-maps">Copiar URL de Bing Maps</message>
+  <message id="lrm-copy-url-success">URL del mapa copiada al portapapeles — péguela en su navegador.</message>
+  <message id="lrm-copy-url-fail">No se pudo copiar la URL del mapa al portapapeles.</message>
+  <message id="lrm-copy-url-no-gps">No hay datos GPS disponibles para crear la URL del mapa.</message>
+  <message id="lrm-tile-load-btn">¿Los mosaicos del mapa no cargan?</message>
+  <message id="lrm-tile-load-dialog-title">Los mosaicos del mapa no cargan</message>
+  <message id="lrm-tile-load-dialog-content">
+    No se pudieron cargar los mosaicos del mapa desde arcgis.com. Esto puede ser causado por:
+    <ul>
+      <li>Sin conexión a internet</li>
+      <li>Un proxy corporativo o firewall que bloquea el acceso a arcgis.com</li>
+      <li>Una clave API inválida o expirada</li>
+    </ul>
+    <p>Si está detrás de un proxy, puede que necesite configurar los ajustes de proxy.
+    Consulte el archivo <em>data/config/example_InterSpec_app_settings.json</em> para
+    la opción <b>ProxySetting</b>; normalmente un valor de <b>system</b> funcionará.</p>
+    <p>Los marcadores de medición seguirán mostrándose, pero el fondo del mapa estará en blanco.</p>
+  </message>
 </messages>
 
 

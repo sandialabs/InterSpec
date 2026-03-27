@@ -5,4 +5,5 @@
   <message id="bgw-not-spec-preview">スペクトルファイルではありません</message>
   <message id="bgw-passthrough-sum-error">パススルーエラー</message>
   <message id="bgw-preview-error">プレビュー描画エラー</message>
+  <message id="bgw-preview-skip">プレビューをスキップ</message>
 </messages>

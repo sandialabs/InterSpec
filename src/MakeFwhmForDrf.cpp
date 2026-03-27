@@ -664,8 +664,9 @@ void MakeFwhmForDrf::startAutomatedPeakSearch()
     
   vector<shared_ptr<const PeakDef>> user_peaks = get_user_peaks();
   
-  const bool isHPGe = PeakFitUtils::is_likely_high_res( m_interspec );
-  
+  std::shared_ptr<SpecMeas> foreground = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
+  std::shared_ptr<const PeakFitDetPrefs> fitPrefs = foreground ? foreground->peakFitDetPrefs() : nullptr;
+
   //The results of the peak search will be placed into the vector pointed to by searchresults
   auto searchresults = std::make_shared< vector<std::shared_ptr<const PeakDef> > >();
     
@@ -690,7 +691,7 @@ void MakeFwhmForDrf::startAutomatedPeakSearch()
     auto existingPeaks = make_shared<deque<shared_ptr<const PeakDef>>>();
     existingPeaks->insert( end(*existingPeaks), begin(user_peaks), end(user_peaks) );
     
-    *searchresults = ExperimentalAutomatedPeakSearch::search_for_peaks( dataPtr, drf, existingPeaks, singleThread, isHPGe );
+    *searchresults = ExperimentalAutomatedPeakSearch::search_for_peaks( dataPtr, drf, existingPeaks, singleThread, fitPrefs );
     
     Wt::WServer *server = Wt::WServer::instance();
     if( server )
@@ -917,7 +918,7 @@ void MakeFwhmForDrf::setEquationToChart()
   const float det_diameter = m_orig_drf ? m_orig_drf->detectorDiameter()
                                         : static_cast<float>(2.54f*PhysicalUnits::cm);
   
-  m_chart->setDataPoints( datapoints, det_diameter, min_energy, max_energy );
+  m_chart->setDataPoints( datapoints, det_diameter, 0.0f, min_energy, max_energy );
   m_chart->setFwhmCoefficients( m_parameters, m_uncertainties, chart_fwhm_type, MakeDrfChart::EqnEnergyUnits::keV );
 }//void setEquationToChart()
 

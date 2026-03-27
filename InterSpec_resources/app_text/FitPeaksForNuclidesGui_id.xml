@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- fpn- is short for FitPeaksForNuclides -->
+
+  <!-- Tab labels for FitPeaksAdvancedWidget upper area -->
+  <message id="fpn-tab-spectrum">Spek.</message>
+  <message id="fpn-tab-rel-eff">Ef. Rel.</message>
+  <message id="fpn-tab-results">Detail</message>
+
+  <!-- Advanced dialog -->
+  <message id="fpn-adv-title">Fit puncak untuk:</message>
+  <message id="fpn-adv-content">Opsi lanjutan belum diimplementasikan</message>
+  <message id="fpn-fit-peaks">Fit Puncak</message>
+  <message id="fpn-accept">Terima</message>
+  <message id="fpn-cancel">Batal</message>
+
+  <!-- Status and computation messages -->
+  <message id="fpn-calculating">Menghitung...</message>
+  <message id="fpn-computation-successful">Perhitungan berhasil.</message>
+  <message id="fpn-summary-chi2">Chi2/dof: {1}</message>
+  <message id="fpn-summary-rel-activities">Aktivitas relatif (maks=1): {1}</message>
+  <message id="fpn-summary-rois">ROI: {1}</message>
+  <message id="fpn-summary-total-area">Total area sumber: {1}</message>
+  <message id="fpn-summary-no-rel-act">Tidak ada aktivitas relatif (sumber tunggal).</message>
+
+  <!-- FitSrcPeaksOptions checkbox labels -->
+  <message id="fpn-opt-dont-use-existing-rois">Hindari ROI yang ada</message>
+  <message id="fpn-opt-existing-as-free">Izinkan berbagi ROI saat ini</message>
+  <message id="fpn-opt-dont-vary-energy-cal">Jangan ubah kal. energi</message>
+  <message id="fpn-opt-dont-refine-energy-cal">Jangan perhalus kal. energi</message>
+  <message id="fpn-opt-fit-bkgnd-peaks">Fit NORM</message>
+  <message id="fpn-opt-fit-bkgnd-dont-use">Fit NORM (jangan gunakan)</message>
+  <message id="fpn-opt-use-background">Hitung dengan pengurangan latar belakang</message>
+
+  <!-- PeakFitForNuclideConfig option labels -->
+  <message id="fpn-opt-roi-min-chi2-red">Ambang reduksi chi2 ROI</message>
+  <message id="fpn-opt-roi-min-peak-sig">Ambang signifikansi ROI</message>
+  <message id="fpn-opt-obs-initial-sig">Ambang signifikansi awal puncak</message>
+  <message id="fpn-opt-obs-final-sig">Ambang signifikansi akhir puncak</message>
+  <message id="fpn-opt-skew-type">Kemiringan puncak</message>
+  <message id="fpn-opt-fwhm-form">Bentuk FWHM</message>
+  <message id="fpn-opt-rel-eff-eqn-type">Pers. Ef. Rel.</message>
+  <message id="fpn-opt-rel-eff-eqn-order">Orde Ef. Rel.</message>
+
+  <!-- Tooltips for options -->
+  <message id="fpn-opt-tt-dont-use-existing-rois">Dengan opsi ini, ROI yang ada tidak akan digunakan, dan gamma dari sumber saat ini yang jatuh dalam ROI yang ada tidak akan dipertimbangkan.</message>
+  <message id="fpn-opt-tt-existing-as-free">Normalnya ROI puncak sumber dibatasi rentang energinya untuk mengurangi efek puncak terdekat. Dengan opsi ini, puncak terdekat yang berbagi ROI dibiarkan sebagai puncak mengambang bebas dan disertakan dalam hasil.</message>
+  <message id="fpn-opt-tt-dont-vary-energy-cal">Kalibrasi energi tetap tetap selama fit.</message>
+  <message id="fpn-opt-tt-dont-refine-energy-cal">Kalibrasi energi divariasikan dalam fit, tetapi cakupan ROI tidak diperbarui berdasarkan kalibrasi fit.</message>
+  <message id="fpn-opt-tt-fit-bkgnd-peaks">Fit puncak NORM (U-238, Ra-226, U-235, Th-232, K-40) menggunakan kurva efisiensi relatif kedua.</message>
+  <message id="fpn-opt-tt-use-background">Saat diaktifkan, spektrum latar belakang dikurangkan selama fitting puncak untuk menentukan ROI yang akan digunakan, tetapi latar belakang tidak dikurangkan untuk fit akhir puncak yang akan dikembalikan. Hapus centang untuk fit tanpa pengurangan latar belakang.</message>
+  <message id="fpn-opt-tt-roi-min-chi2-red">Reduksi chi2 total minimum yang diperlukan agar puncak dalam ROI dianggap signifikan. Chi2 dengan puncak harus setidaknya lebih rendah sebanyak ini dari chi2 dengan kontinum saja.</message>
+  <message id="fpn-opt-tt-roi-min-peak-sig">Signifikansi puncak minimum (area_puncak / sqrt(kontinum)) agar puncak dianggap signifikan. Jika ada puncak dalam ROI yang signifikansinya di atas ambang ini, ROI dipertahankan.</message>
+  <message id="fpn-opt-tt-obs-initial-sig">Ambang untuk filter signifikansi puncak awal sebelum refit. Signifikansi = (amplitudo_puncak * 0.7607) / sqrt(area_data_dalam_pm_1_fwhm).</message>
+  <message id="fpn-opt-tt-obs-final-sig">Ambang untuk signifikansi puncak akhir setelah refit. Signifikansi = area_puncak / ketidakpastian_area_puncak.</message>
+  <message id="fpn-opt-tt-skew-type">Bentuk kemiringan yang diterapkan pada semua puncak dalam fit. &quot;None&quot; menggunakan Gaussian murni. Opsi lain menambahkan komponen ekor energi rendah (mis. Exp*Gauss untuk detektor NaI/CsI, Crystal Ball untuk ekor pengumpulan muatan di HPGe).</message>
+  <message id="fpn-opt-tt-fwhm-form">Bentuk fungsional untuk resolusi detektor (FWHM vs energi). Orde polinomial Bernstein menentukan berapa banyak koefisien yang difit.</message>
+  <message id="fpn-opt-tt-rel-eff-eqn-type">Bentuk kurva efisiensi relatif (mis. polinomial LnXLnY, atau model fisik FRAM).</message>
+  <message id="fpn-opt-tt-rel-eff-eqn-order">Orde polinomial untuk persamaan efisiensi relatif (bila tidak menggunakan model fisik).</message>
+
+  <!-- Status and error messages -->
+  <message id="fpn-no-data">Tidak ada spektrum latar depan untuk fit puncak.</message>
+  <message id="fpn-wait-title">Melakukan fit puncak</message>
+  <message id="fpn-wait-content">Ini mungkin memerlukan waktu satu menit. Anda dapat terus menggunakan aplikasi.</message>
+  <message id="fpn-stale">Spektrum berubah sebelum fit selesai; hasil dibuang.</message>
+
+  <message id="fpn-error-title">Fit gagal</message>
+  <message id="fpn-error-content">Error: {1}</message>
+
+  <!-- Results dialog -->
+  <message id="fpn-result-title">Hasil fit</message>
+  <message id="fpn-no-peaks">Tidak ada puncak yang difit untuk sumber yang dipilih.</message>
+  <message id="fpn-summary">{1} puncak difit untuk {2} sumber.</message>
+  <message id="fpn-warnings-header">Peringatan:</message>
+  <message id="fpn-auto-accept">Terima hasil fit secara otomatis</message>
+  <message id="fpn-auto-accepted">Hasil fit diterima secara otomatis.</message>
+
+</messages>

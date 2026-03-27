@@ -37,6 +37,7 @@ class InterSpec;
 class MaterialDB;
 class MakeDrfChart;
 class DetectorPeakResponse;
+class PeakFitDetPrefsGui;
 
 namespace Wt
 {
@@ -58,8 +59,7 @@ struct SrcLibLineInfo;
 class MakeDrfWindow : public AuxWindow
 {
 public:
-  MakeDrfWindow( InterSpec *viewer, 
-                MaterialDB *materialDB,
+  MakeDrfWindow( InterSpec *viewer,
                 Wt::WSuggestionPopup *materialSuggest );
   
   MakeDrf *tool();
@@ -73,7 +73,6 @@ class MakeDrf : public Wt::WContainerWidget
 {
 public:
   MakeDrf( InterSpec *viewer,
-           MaterialDB *materialDB,
            Wt::WSuggestionPopup *materialSuggest,
            Wt::WContainerWidget *parent = nullptr );
   
@@ -132,6 +131,11 @@ public:
    Will throw if user input is invalid.
    */
   double detectorDiameter() const;
+
+  /** Get the user-entered detector setback distance.
+   Returns 0.0 if the field is empty or invalid.
+   */
+  double detectorSetback() const;
   
   /** Called when user drag-n-drops a Source.lib onto app.
    
@@ -165,7 +169,6 @@ protected:
 
   
   InterSpec *m_interspec;
-  MaterialDB *m_materialDB;
   Wt::WSuggestionPopup *m_materialSuggest;
   
   Wt::Signal<bool> m_intrinsicEfficiencyIsValid;
@@ -182,7 +185,8 @@ protected:
   Wt::WGroupBox *m_detDiamGroup;
   
   Wt::WLineEdit *m_detDiameter;
-  
+  Wt::WLineEdit *m_detSetback;
+
   Wt::WComboBox *m_geometry;
   
   Wt::WCheckBox *m_showFwhmPoints;
@@ -225,7 +229,10 @@ protected:
   float m_effLowerEnergy; ///< The lowest energy peak used for eff calculation
   float m_effUpperEnergy; ///< The highest energy peak used for eff calculation
   std::vector<float> m_effEqnCoefs, m_effEqnCoefUncerts;
-  
+
+  /** Optional peak fitting preferences to embed in the created DRF. */
+  PeakFitDetPrefsGui *m_peakFitDetPrefsGui;
+
   friend class MakeDrfWindow;
 };//class MakeDrf
 
