@@ -63,6 +63,8 @@
   <!-- Buttons -->
   <message id="esf-export">Exportar</message>
   <message id="esf-show-qr-code">Mostrar QR-code</message>
+  <message id="esf-lossless-qr">Sem perda</message>
+  <message id="esf-lossless-qr-tt">Quando marcado, os dados espectrais não perderão nenhuma informação, mas para espectros com alto número de canais ou altas estatísticas, podem ser necessários múltiplos códigos QR. Quando desmarcado, uma compressão com perda baseada em wavelet é utilizada, que perde algumas informações mas permite usar um código QR com menos elementos, mais correção de erros, ou representar qualquer espectro em um único código QR.</message>
 
   <!-- File info table headers -->
   <message id="esf-displayed-as">Exibido Como</message>
@@ -74,10 +76,16 @@
   <message id="esf-next-qr-code">Próximo QR code</message>
   <message id="esf-url-link">Link URL</message>
   <message id="esf-email-link">Link Email</message>
+  <message id="esf-lossy-qr-title">Código QR com perda do espectro</message>
+  <message id="esf-qr-error-tolerance">Tolerância de erro QR:</message>
+  <message id="esf-qr-num-elements">Núm. elementos QR:</message>
+  <message id="esf-qr-rmse-info">RMSE: {1}, Coeficientes: {2}</message>
+  <message id="esf-qr-lossy-err">Não é possível ajustar o espectro neste tamanho/tolerância de QR</message>
 
   <!-- Error dialogs -->
   <message id="esf-error-title">Erro</message>
   <message id="esf-qr-encode-failed">Falha ao exibir espectro como QR code: {1}</message>
+  <message id="esf-back-sub-peak-refit-failed">Falha ao reajustar os contínuos de picos para o espectro com subtração de fundo; parâmetros de picos originais utilizados.</message>
 
   <!-- Pluralized messages -->
   <message id="esf-disp-sample">

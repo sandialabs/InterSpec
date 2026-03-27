@@ -47,6 +47,7 @@
     </div>
   </message>
   <message id="ds-det-diam">検出器直径:</message>
+  <message id="ds-det-setback">Det. セットバック:</message>
   <message id="ds-fixed-geom">固定ジオメトリ</message>
   <message id="ds-gad-det-file-label">GADRAS Detector.Datファイル:</message>
   <message id="ds-manual-det-empty-fcn">例: exp(-9.8 - 8.1*log(x) + 4.62E-02*log(x)^2 + ...)
@@ -64,6 +65,7 @@
   <message id="ds-tt-manual-energy-unit">効率式のエネルギー単位</message>
   <message id="ds-tt-manual-desc">この検出器応答の説明</message>
   <message id="ds-manual-det-diam-label">検出器直径</message>
+  <message id="ds-manual-det-setback-label">Det. セットバック</message>
   <message id="ds-energy-range">エネルギー範囲</message>
   <message id="ds-(optional)">(オプション)</message>
   <message id="ds-min.">最小</message>
@@ -126,4 +128,9 @@
   <message id="ds-err-det-dist-pos">絶対効率では距離は正の値である必要があります</message>
   <message id="ds-warn-min-max-energy-swapped">検出器最小エネルギーが最大エネルギーより大きいです；エネルギー範囲を無視します。</message>
   <message id="ds-need-det-diam">検出器の直径が必要です</message>
+  <message id="ds-err-invalid-csv-format">CSVファイルが認識されませんでした。有効な効率CSVファイルをアップロードしてください（MakeDrf形式またはエネルギーと効率の列を持つ簡易形式）。</message>
+  <message id="ds-err-parsing-gadras">GADRAS検出器の解析エラー: {1}</message>
+  <message id="ds-eff-type-intrinsic">固有効率</message>
+  <message id="ds-eff-type-farfield">遠距離場効率</message>
+  <message id="ds-eff-type-gadras">GADRAS</message>
 </messages>

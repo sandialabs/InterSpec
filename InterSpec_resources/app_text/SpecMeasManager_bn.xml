@@ -128,11 +128,23 @@
   <message id="smm-ecc-fix-geom-act-m2">Fixed Geometry - activity per m2</message>
   <message id="smm-ecc-fix-geom-act-gram">Fixed Geometry - activity per gram</message>
   <message id="smm-ecc-det-diam">ডিটেক্টর diam.</message>
-  <message id="smm-ecc-dist">Distance</message>
+  <message id="smm-ecc-det-setback">ডিটেক্টর সেটব্যাক</message>
+  <message id="smm-ecc-dist">দূরত্ব</message>
   <message id="smm-ecc-use-drf">Use DRF</message>
   <message id="smm-ecc-error">ত্রুটি creating DRF from ECC: {1}</message>
 
-  
+  <!-- Text for dialog when user drag-n-drop an ANGLE .outx file onto app -->
+  <message id="smm-outx-curve">ANGLE দক্ষতা ক্যালিব্রেশন কার্ভ DRF</message>
+  <message id="smm-outx-error">ANGLE .outx থেকে DRF তৈরিতে ত্রুটি: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop an efficiency CSV file onto app -->
+  <message id="smm-eff-csv-curve">দক্ষতা CSV কার্ভ DRF</message>
+  <message id="smm-eff-csv-error">দক্ষতা CSV থেকে DRF তৈরিতে ত্রুটি: {1}</message>
+  <message id="smm-eff-csv-det-dat-label">Detector.dat (ঐচ্ছিক)</message>
+  <message id="smm-eff-csv-intrinsic">অন্তর্নিহিত দক্ষতা</message>
+  <message id="smm-eff-csv-abs-eff">পরম দক্ষতা</message>
+
+
   <message id="smm-act-shield-xml">কার্যকলাপ/শিল্ডিং XML</message>
   <message id="smm-act-shield-use">Use this কার্যকলাপ/শিল্ডিং fit setup?</message>
   <message id="smm-err-act-shield">Sorry, there was an error loading কার্যকলাপ/শিল্ডিং Fit model: {1}</message>

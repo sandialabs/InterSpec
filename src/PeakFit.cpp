@@ -481,49 +481,26 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
     }//for( size_t i = 0; i < candidates.size(); ++i )
     
     SpecUtilsAsync::ThreadPool pool;
-    
+
     vector< pair< PeakShrdVec, PeakShrdVec > > results( candidatesBeingFitFor.size() );
-    
-    // CPU usuage doesnt *look* pegged for this function because we are doing a
-    //  `while( !candidates.empty() ){...}`, which leads to fewer and fewer peaks
-    //  each iteration.  For the example Ba133 HPGe spectrum, it looks like 2 cores
-    //  are being used, because this loop is actually doing 5 iterations.
-    //std::atomic<double> sum_cpu_time( 0.0 ), sum_wall_time( 0.0 );
-    //const double start_cpu_time = SpecUtils::get_cpu_time();
-    //const double start_wall_time = SpecUtils::get_wall_time();
-    
+
     for( size_t i = 0; i < candidatesBeingFitFor.size(); ++i )
     {
       const double mean = candidatesBeingFitFor[i]->mean();
       pair<PeakShrdVec, PeakShrdVec> &res = results[i];
-      
+
       pool.post(
         [mean, fitPrefs, &res,
-         //&sum_cpu_time, &sum_wall_time,
          meas_cref = std::as_const(meas),
          drf_cref = std::as_const(drf),
          fitpeakvec_cref = std::as_const(fitpeakvec)
         ](){
-
-          //const double this_start_cpu_time = SpecUtils::get_cpu_time();
-          //const double this_start_wall_time = SpecUtils::get_wall_time();
-
           do_peak_automated_searchfit( mean, meas_cref, drf_cref, fitpeakvec_cref, fitPrefs, res );
-          
-          //const double this_end_cpu_time = SpecUtils::get_cpu_time();
-          //const double this_end_wall_time = SpecUtils::get_wall_time();
-          //sum_cpu_time += (this_end_cpu_time - this_start_cpu_time);
-          //sum_wall_time += (this_end_wall_time - this_start_wall_time);
         }
       );
-      
-      //pool.post( boost::bind( &do_peak_automated_searchfit, mean,
-      //                       boost::cref(meas), boost::cref(drf),
-      //                       boost::cref(fitpeakvec),
-      //                       fitPrefs,
-      //                       boost::ref(results[i]) ));
-    }//for( size_t i = 0; i < peaksToTryIndices.size(); ++i )
-    
+    }//for( size_t i = 0; i < candidatesBeingFitFor.size(); ++i )
+
+
     pool.join();
     
     //const double end_cpu_time = SpecUtils::get_cpu_time();
@@ -913,22 +890,22 @@ causilyDisconnectedPeaks(  const double ncausality,
       
 void unique_copy_continuum( std::vector<PeakDef> &input_peaks )
 {
-  map<std::shared_ptr<PeakContinuum>,vector<PeakDef>> contToPeaks;
-  for( auto &p : input_peaks )
-    contToPeaks[p.continuum()].push_back( p );
-        
-  for( auto &pp : contToPeaks )
+  // Use group_peaks_by_roi for deterministic ordering (sorted by lowerEnergy)
+  std::vector<std::pair<const PeakContinuum *, std::vector<PeakDef>>> groups
+    = group_peaks_by_roi( input_peaks );
+
+  for( auto &group : groups )
   {
-    pp.second[0].makeUniqueNewContinuum();
-    auto newcont = pp.second[0].continuum();
-    for( size_t i = 1; i < pp.second.size(); ++i )
-      pp.second[i].setContinuum( newcont );
+    group.second[0].makeUniqueNewContinuum();
+    std::shared_ptr<PeakContinuum> newcont = group.second[0].continuum();
+    for( size_t i = 1; i < group.second.size(); ++i )
+      group.second[i].setContinuum( newcont );
   }
-        
+
   input_peaks.clear();
-  for( auto &pp : contToPeaks )
+  for( const auto &group : groups )
   {
-    for( auto p : pp.second )
+    for( const PeakDef &p : group.second )
       input_peaks.push_back( p );
   }
   std::sort( begin(input_peaks), end(input_peaks), &PeakDef::lessThanByMean );
@@ -1603,10 +1580,8 @@ std::vector<PeakDef> fitPeaksInRange( const double x0,
   //Fit each of the ranges
   vector< PeakVec > fit_peak_ranges( seperated_peaks.size() );
   SpecUtilsAsync::ThreadPool threadpool;
-  //  vector< boost::function<void()> > fit_jobs( seperated_peaks.size() );
   for( size_t peakn = 0; peakn < seperated_peaks.size(); ++peakn )
   {
-    //    fit_jobs[peakn] =
     const bool isHPGe = (det_type == PeakFitUtils::CoarseResolutionType::High);
     threadpool.post( boost::bind( &fitPeaks,
                                  boost::cref(seperated_peaks[peakn]),
@@ -1617,7 +1592,7 @@ std::vector<PeakDef> fitPeaksInRange( const double x0,
                                  fit_options,
                                  isHPGe ) );
   }//for( size_t peakn = 0; peakn < seperated_peaks.size(); ++peakn )
-  
+
   threadpool.join();
   //  const bool phys_cores_only = false;
   //  SpecUtils::do_asyncronous_work( fit_jobs, phys_cores_only );
@@ -7694,20 +7669,20 @@ double AutoPeakSearchChi2Fcn::pars_to_peaks( std::vector<PeakDef> &resultpeaks,
   size_t peakn = 0;
   
   SpecUtilsAsync::ThreadPool pool;
-  
+
   for( size_t group = 0; group < m_grouped_candidates.size(); ++group )
   {
     const vector<PeakDef> &peaks = m_grouped_candidates[group];
-    
+
     const double *startpars = &(pars[0]) + peakn;
-    
+
     pool.post( boost::bind( &AutoPeakSearchChi2Fcn::fit_peak_group, this,
                            boost::cref(peaks), boost::cref(rescoef), group, startpars,
                            boost::ref(chi2s[group]), boost::ref(peakdefs[group]) ) );
-    
+
     peakn += peaks.size();
   }//for( size_t group = 0; group < m_grouped_candidates.size(); ++group )
-  
+
   pool.join();
   
   double chi2 = 0.0;

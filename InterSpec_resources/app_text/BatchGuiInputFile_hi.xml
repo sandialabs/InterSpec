@@ -5,4 +5,5 @@
   <message id="bgw-not-spec-preview">स्पेक्ट्रम फ़ाइल नहीं</message>
   <message id="bgw-passthrough-sum-error">Passthrough त्रुटि</message>
   <message id="bgw-preview-error">पूर्वावलोकन रेंडरिंग में त्रुटि</message>
+  <message id="bgw-preview-skip">पूर्वावलोकन छोड़ रहे हैं</message>
 </messages>

@@ -84,6 +84,23 @@
     the foreground, identify the peaks to potentially be subtracted, and then switch back to your current
     foreground/background combination.
   </message>
+  <message id="ssd-missing-back-peaks-title">Missing Background Peaks</message>
+  <message id="ssd-missing-back-peaks-msg">
+    The background spectrum does not have peaks added at energies {1}, but there
+    are likely real peaks in the background spectrum at those energies - would you
+    like to add those peaks to the background spectrum?
+  </message>
+  <message id="ssd-btn-no-dont-add">No</message>
+  <message id="ssd-btn-add-peaks">Add Peaks...</message>
+  <message id="ssd-btn-add-all-detectable">Add all auto-fit peaks</message>
+  <message id="ssd-back-peak-preview-title">Preview Background Peaks</message>
+  <message id="ssd-back-peak-preview-msg">The following peaks would be added to the background spectrum:</message>
+  <message id="ssd-no-new-back-peaks">No additional peaks were found in the background spectrum at the indicated energies.</message>
+  <message id="ssd-back-peaks-all-fit">{1} candidate peaks were fit to the background.</message>
+  <message id="ssd-back-peaks-some-fit">{1} of {2} candidate peaks were significant and fit to the background.</message>
+  <message id="ssd-back-peaks-manual-hint">(you can also manually fit background peaks by Alt-key (mac: Option-key) plus double<br />
+  clicking on the spectrum, or by loading the background as the foreground)</message>
+  <message id="ssd-err-adding-back-peaks">Error adding peaks to background: {1}</message>
   <message id="ssd-update-dim-to-be-min">Updated shielding dimension to be a minimum thickness.</message>
   <message id="ssd-scaled-shield-to-be-less-dist">Shielding thicknesses have been scaled to be less then detector distance.</message>
   <message id="ssd-err-fit-only-one-an">You can only fit for the atomic number of one generic shielding at a time.</message>

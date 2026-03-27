@@ -5,4 +5,5 @@
   <message id="bgw-not-spec-preview">Не файл спектра</message>
   <message id="bgw-passthrough-sum-error">Ошибка сквозной передачи</message>
   <message id="bgw-preview-error">Ошибка отображения предварительного просмотра</message>
-</messages> 
+  <message id="bgw-preview-skip">Пропуск предварительного просмотра</message>
+</messages>

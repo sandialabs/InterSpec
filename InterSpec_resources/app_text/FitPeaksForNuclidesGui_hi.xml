@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- fpn- is short for FitPeaksForNuclides -->
+
+  <!-- Tab labels for FitPeaksAdvancedWidget upper area -->
+  <message id="fpn-tab-spectrum">स्पेक्ट्रम</message>
+  <message id="fpn-tab-rel-eff">सापे. दक्ष.</message>
+  <message id="fpn-tab-results">विवरण</message>
+
+  <!-- Advanced dialog -->
+  <message id="fpn-adv-title">पीक फ़िट करें:</message>
+  <message id="fpn-adv-content">उन्नत विकल्प लागू नहीं किए गए</message>
+  <message id="fpn-fit-peaks">पीक फ़िट करें</message>
+  <message id="fpn-accept">स्वीकार</message>
+  <message id="fpn-cancel">रद्द</message>
+
+  <!-- Status and computation messages -->
+  <message id="fpn-calculating">गणना हो रही है...</message>
+  <message id="fpn-computation-successful">गणना सफल।</message>
+  <message id="fpn-summary-chi2">Chi2/dof: {1}</message>
+  <message id="fpn-summary-rel-activities">सापेक्ष सक्रियताएँ (अधिकतम=1): {1}</message>
+  <message id="fpn-summary-rois">ROI: {1}</message>
+  <message id="fpn-summary-total-area">कुल स्रोत क्षेत्रफल: {1}</message>
+  <message id="fpn-summary-no-rel-act">कोई सापेक्ष सक्रियता नहीं (एकल स्रोत)।</message>
+
+  <!-- FitSrcPeaksOptions checkbox labels -->
+  <message id="fpn-opt-dont-use-existing-rois">मौजूदा ROI से बचें</message>
+  <message id="fpn-opt-existing-as-free">वर्तमान ROI साझा करने दें</message>
+  <message id="fpn-opt-dont-vary-energy-cal">ऊर्जा कैल न बदलें</message>
+  <message id="fpn-opt-dont-refine-energy-cal">ऊर्जा कैल परिशोधित न करें</message>
+  <message id="fpn-opt-fit-bkgnd-peaks">NORM फ़िट</message>
+  <message id="fpn-opt-fit-bkgnd-dont-use">NORM फ़िट (उपयोग न करें)</message>
+  <message id="fpn-opt-use-background">पृष्ठभूमि घटाव के साथ गणना</message>
+
+  <!-- PeakFitForNuclideConfig option labels -->
+  <message id="fpn-opt-roi-min-chi2-red">ROI chi2 कमी सीमा</message>
+  <message id="fpn-opt-roi-min-peak-sig">ROI महत्व सीमा</message>
+  <message id="fpn-opt-obs-initial-sig">अनुमानित पीक महत्व सीमा</message>
+  <message id="fpn-opt-obs-final-sig">अंतिम पीक महत्व सीमा</message>
+  <message id="fpn-opt-skew-type">पीक विषमता</message>
+  <message id="fpn-opt-fwhm-form">FWHM रूप</message>
+  <message id="fpn-opt-rel-eff-eqn-type">सापे. दक्ष. समीकरण</message>
+  <message id="fpn-opt-rel-eff-eqn-order">सापे. दक्ष. क्रम</message>
+
+  <!-- Tooltips for options -->
+  <message id="fpn-opt-tt-dont-use-existing-rois">इस विकल्प के साथ, कोई भी मौजूदा ROI उपयोग नहीं किया जाएगा, और वर्तमान स्रोत(स्रोतों) से गामा जो मौजूदा ROI में आते हैं, उन पर विचार नहीं किया जाएगा।</message>
+  <message id="fpn-opt-tt-existing-as-free">सामान्यतः स्रोत पीक के ROI ऊर्जा सीमा में सीमित होते हैं ताकि पास के पीक के प्रभाव कम हों। इस विकल्प के साथ, ROI साझा करने वाले पास के पीक मुक्त-तैरते पीक के रूप में रखे जाते हैं और परिणामों में शामिल किए जाते हैं।</message>
+  <message id="fpn-opt-tt-dont-vary-energy-cal">फ़िट के दौरान ऊर्जा अंशांकन स्थिर रहता है।</message>
+  <message id="fpn-opt-tt-dont-refine-energy-cal">फ़िट में ऊर्जा अंशांकन बदला जाता है, लेकिन फ़िट अंशांकन के आधार पर ROI सीमा अपडेट नहीं की जाती।</message>
+  <message id="fpn-opt-tt-fit-bkgnd-peaks">दूसरे सापेक्ष दक्षता वक्र का उपयोग करके NORM पीक (U-238, Ra-226, U-235, Th-232, K-40) फ़िट करें।</message>
+  <message id="fpn-opt-tt-use-background">सक्षम होने पर, उपयोग किए जाने वाले ROI निर्धारित करने के लिए पीक फ़िटिंग के दौरान पृष्ठभूमि स्पेक्ट्रम घटाया जाता है, लेकिन लौटाए जाने वाले पीक के अंतिम फ़िट के लिए पृष्ठभूमि नहीं घटाई जाती। पृष्ठभूमि घटाव के बिना फ़िट करने के लिए अनचेक करें।</message>
+  <message id="fpn-opt-tt-roi-min-chi2-red">ROI में पीक को महत्वपूर्ण माने जाने के लिए आवश्यक न्यूनतम कुल chi2 कमी। पीक वाला chi2 केवल-कॉन्टिनुअम chi2 से कम से कम इतना कम होना चाहिए।</message>
+  <message id="fpn-opt-tt-roi-min-peak-sig">पीक को महत्वपूर्ण माने जाने के लिए न्यूनतम पीक महत्व (पीक_क्षेत्रफल / sqrt(कॉन्टिनुअम))। यदि ROI में किसी पीक का महत्व इस सीमा से ऊपर है, तो ROI रखा जाता है।</message>
+  <message id="fpn-opt-tt-obs-initial-sig">पुनः फ़िट करने से पहले प्रारंभिक पीक महत्व फ़िल्टर की सीमा। महत्व = (पीक_आयाम * 0.7607) / sqrt(pm_1_fwhm_में_डेटा_क्षेत्रफल)।</message>
+  <message id="fpn-opt-tt-obs-final-sig">पुनः फ़िट करने के बाद अंतिम पीक महत्व की सीमा। महत्व = पीक_क्षेत्रफल / पीक_क्षेत्रफल_अनिश्चितता।</message>
+  <message id="fpn-opt-tt-skew-type">फ़िट में सभी पीक पर लागू विषमता आकृति। &quot;None&quot; शुद्ध गॉसियन उपयोग करता है। अन्य विकल्प निम्न-ऊर्जा पूंछ घटक जोड़ते हैं (जैसे NaI/CsI संसूचकों के लिए Exp*Gauss, HPGe में आवेश-संग्रह पूंछ के लिए Crystal Ball)।</message>
+  <message id="fpn-opt-tt-fwhm-form">संसूचक विभेदन (FWHM बनाम ऊर्जा) का फलनात्मक रूप। Bernstein बहुपद क्रम निर्धारित करता है कि कितने गुणांक फ़िट किए जाएंगे।</message>
+  <message id="fpn-opt-tt-rel-eff-eqn-type">सापेक्ष दक्षता वक्र का रूप (जैसे LnXLnY बहुपद, या FRAM भौतिक मॉडल)।</message>
+  <message id="fpn-opt-tt-rel-eff-eqn-order">सापेक्ष दक्षता समीकरण का बहुपद क्रम (जब भौतिक मॉडल उपयोग नहीं किया जा रहा हो)।</message>
+
+  <!-- Status and error messages -->
+  <message id="fpn-no-data">पीक फ़िट करने के लिए कोई अग्रभूमि स्पेक्ट्रम नहीं है।</message>
+  <message id="fpn-wait-title">पीक फ़िट हो रहे हैं</message>
+  <message id="fpn-wait-content">इसमें एक मिनट लग सकता है। आप ऐप का उपयोग जारी रख सकते हैं।</message>
+  <message id="fpn-stale">फ़िट पूरा होने से पहले स्पेक्ट्रम बदल गया; परिणाम छोड़े जा रहे हैं।</message>
+
+  <message id="fpn-error-title">फ़िट विफल</message>
+  <message id="fpn-error-content">त्रुटि: {1}</message>
+
+  <!-- Results dialog -->
+  <message id="fpn-result-title">फ़िट परिणाम</message>
+  <message id="fpn-no-peaks">चयनित स्रोत(स्रोतों) के लिए कोई पीक फ़िट नहीं किए गए।</message>
+  <message id="fpn-summary">{2} स्रोत(स्रोतों) के लिए {1} पीक फ़िट किए गए।</message>
+  <message id="fpn-warnings-header">चेतावनियाँ:</message>
+  <message id="fpn-auto-accept">फ़िट परिणाम स्वतः स्वीकार करें</message>
+  <message id="fpn-auto-accepted">फ़िट परिणाम स्वतः स्वीकार कर लिए गए।</message>
+
+</messages>

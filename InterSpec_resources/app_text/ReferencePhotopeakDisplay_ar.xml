@@ -43,22 +43,38 @@
   <message id="rpd-suggestions">اقتراحات</message>
   <message id="rpd-feature-markers">علامات الميزات</message>
 
+  <!-- Reference line thickness options -->
+  <message id="rpd-line-thick-light">خطوط رفيعة</message>
+  <message id="rpd-line-thick-normal">سماكة قياسية</message>
+  <message id="rpd-line-thick-thick">خطوط سميكة</message>
+  <message id="rpd-line-thick-thicker">خطوط أسمك</message>
+
+  <!-- Reference lines visual verbosity options. -->
+  <message id="rpd-line-verb-none">خطوط بسيطة</message>
+  <message id="rpd-line-verb-hover">خط مرجعي دليلي</message>
+  <message id="rpd-line-verb-major">كل الخطوط الرئيسية</message>
 
   <message id="rpd-csv-export-msg">توفر أداة 'معلومات تحلل النويدات' إمكانات إضافية لتصدير معلومات النويدات، ومنتجات التحلل، والتحلل إلى ملفات CSV.</message>
   <message id="rpd-changed-age">تم تغيير العمر إلى قيمة أكثر منطقية لـ {1} من '{2}' إلى '{3}'</message>
+  <message id="rpd-changed-age-fission">تم تغيير العمر إلى {1}، ليكون صالحًا.</message>
   <message id="rpd-det-id">معرف الكاشف</message>
   <message id="rpd-ext-rid">RID خارجي</message>
   <message id="rpd-prev">السابق</message>
   <message id="rpd-warn-cascade-xrays">الأشعة السينية غير متضمنة في التتابعات</message>
 
-  <message id="rpd-tbl-iso">Iso</message>  <message id="rpd-tbl-el-cap">e.c.</message> <message id="rpd-tbl-proton">بروتون</message>
-  <message id="rpd-tbl-spont-fis">s.f.</message> <message id="rpd-tbl-xray">الأشعة السينية</message>
+  <!-- Values in the table on this tool -->
+  <message id="rpd-tbl-iso">Iso</message>  <!-- a.k.a meta-stable state of nuclide -->
+  <message id="rpd-tbl-el-cap">e.c.</message> <!-- a.k.a electron capture -->
+  <message id="rpd-tbl-proton">بروتون</message>
+  <message id="rpd-tbl-spont-fis">s.f.</message> <!-- Spontaneous Fission-->
+  <message id="rpd-tbl-xray">الأشعة السينية</message>
   <message id="rpd-tbl-reaction">تفاعل</message>
   <message id="rpd-tbl-norm">NORM</message>
   <message id="rpd-tbl-cascade-sum">مجموع متتالي</message>
 
   <message id="rpd-tbl-hdr-energy">الطاقة (keV)</message>
-  <message id="rpd-tbl-hdr-br">B.R.</message> <message id="rpd-tbl-hdr-parent">الأصل</message>
+  <message id="rpd-tbl-hdr-br">B.R.</message> <!-- branching ratio -->
+  <message id="rpd-tbl-hdr-parent">الأصل</message>
   <message id="rpd-tbl-hdr-mode">الوضع</message>
   <message id="rpd-tbl-hdr-particle">الجسيم</message>
   <message id="rpd-tbl-hdr-tt-energy">طاقة الجسيم الناتج</message>

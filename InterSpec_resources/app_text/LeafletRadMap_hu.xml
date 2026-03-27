@@ -2,39 +2,59 @@
 <messages>
   <!-- lrm- is short for LeafletRadMap
   -->
-  <message id="lrm-pre-warn-title">Folytatás Előtt</message>
+  <message id="lrm-pre-warn-title">Folytatás előtt</message>
   <message id="lrm-pre-warn-content">
-    Térkép csempék lesznek kérve a <a href="https://arcgis.com" target="_blank">https://arcgis.com</a> oldalról.
-    Radiációs adatok nem hagyják el az eszközét, de a méréseket magukba foglaló
-    térkép csempék kérése történik ehhez a szolgáltatáshoz.
+    Térképcsempék lesznek lekérve az <a href="https://arcgis.com" target="_blank">https://arcgis.com</a> oldalról.
+    Sugárzási adatok nem hagyják el az eszközét, de a mérési területet lefedő
+    térképcsempék lekérésre kerülnek erről a szolgáltatásról.
     {1}
   </message>
   <message id="lrm-pre-warn-user-key">
-    <p>Az egyéni arcgis kulcsa '{1}'-el kezdődően lesz használva a térkép csempék kéréséhez.</p>
+    <p>Az Ön egyéni, '{1}'-val kezdődő arcgis kulcsa lesz használva a térképcsempék lekéréséhez.</p>
   </message>
   <message id="lrm-pre-warn-invalid-user-key">
-    <p>Érvénytelen arcgis kulcs lett megadva az arcgis_key.txt fájlban, így a beépített kulcs lesz használva.</p>
+    <p>Érvénytelen arcgis kulcs lett megadva az arcgis_key.txt fájlban, ezért a beépített kulcs lesz használva.</p>
   </message>
-  <message id="lrm-pre-warn-dont-ask">Ne kérdezze meg újra</message>
+  <message id="lrm-pre-warn-dont-ask">Ne kérdezze újra</message>
   <message id="lrm-pre-warn-proceed-btn">Folytatás</message>
-  <message id="lrm-window-title">Térkép Eszköz</message>
-  <message id="lrm-will-use-user-key">Felhasználó által megadott arcgis kulcs lesz használva, '{1}'-el kezdődően a térképek kéréséhez.</message>
-  <message id="lrm-user-key-invalid">Volt egy arcgis_key.txt fájl, de nem tartalmazott érvényes kulcsot</message>
+  <message id="lrm-window-title">Térkép eszköz</message>
+  <message id="lrm-will-use-user-key">A felhasználó által megadott, '{1}'-val kezdődő arcgis kulcs lesz használva a térképek lekéréséhez.</message>
+  <message id="lrm-user-key-invalid">Létezik arcgis_key.txt fájl, de nem tartalmaz érvényes kulcsot</message>
   <message id="lrm-err-loading-samples">Hiba a térkép-kiválasztott minták betöltésekor: {1}</message>
   <message id="lrm-displayed-as">Megjelenítve mint</message>
   <message id="lrm-measurements-as">mérések mint</message>
   <message id="lrm-load-meas-as-short">Betöltés mint</message>
-
   <message id="lrm-filter-label">Szűrő</message>
   <message id="lrm-filter-none">Nincs</message>
-  <message id="lrm-filter-energy-range">Energia tartomány</message>
-  <message id="lrm-filter-peaks-in-range">Csúcsok tartományban</message>
+  <message id="lrm-filter-energy-range">Energiatartomány</message>
+  <message id="lrm-filter-peaks-in-range">Csúcsok a tartományban</message>
   <message id="lrm-lower-energy">Alsó energia</message>
   <message id="lrm-upper-energy">Felső energia</message>
-  <message id="lrm-energy-filter-help">Energia tartomány szűrő alkalmazása megváltoztatja, hogy a térképen hogyan és esetleg milyen adatok jelennek meg.
-<ul>
-<li><b>Nincs</b>: Nincs szűrés alkalmazva - a színek és CPS szöveg a teljes spektrum számlálási arányon alapul.</li>
-<li><b>Energia tartomány</b>: Gamma számlálások szűrése a megadott energia tartományon belül.</li>
-<li><b>Csúcsok tartományban</b>: Csak azokat a mintaszámokat mutassa, amelyeknek csúcsai vannak az energia tartományban, a jelölő színek és CPS a csúcsok számlálási arányán alapul.</li>
-</ul></message>
+  <message id="lrm-energy-filter-help">
+    Energiatartomány-szűrő alkalmazása megváltoztatja az adatok megjelenítésének módját és esetleg tartalmát a térképen.
+    <ul>
+    <li><b>Nincs</b>: Nincs szűrés alkalmazva - a színek és CPS szöveg a teljes spektrum beütésszámán alapul.</li>
+    <li><b>Energiatartomány</b>: Gamma impulzusok szűrése a megadott energiatartományon belül.</li>
+    <li><b>Csúcsok a tartományban</b>: Csak azok a mintaszámok jelennek meg, amelyeknek csúcsai vannak az energiatartományban; a jelölőszínek és CPS a csúcsok beütésszámán alapulnak.</li>
+    </ul>
+  </message>
+  <message id="lrm-copy-google-maps">Google Maps URL másolása</message>
+  <message id="lrm-copy-bing-maps">Bing Maps URL másolása</message>
+  <message id="lrm-copy-url-success">Térkép URL vágólapra másolva - illessze be a böngészőjébe.</message>
+  <message id="lrm-copy-url-fail">Nem sikerült a térkép URL-t vágólapra másolni.</message>
+  <message id="lrm-copy-url-no-gps">Nincs elérhető GPS adat a térkép URL létrehozásához.</message>
+  <message id="lrm-tile-load-btn">Nem töltődnek a térképcsempék?</message>
+  <message id="lrm-tile-load-dialog-title">Térképcsempék nem töltődnek</message>
+  <message id="lrm-tile-load-dialog-content">
+    Nem sikerült térképcsempéket betölteni az arcgis.com-ról. Lehetséges okok:
+    <ul>
+      <li>Nincs internetkapcsolat</li>
+      <li>Vállalati proxy vagy tűzfal blokkolja az arcgis.com elérését</li>
+      <li>Érvénytelen vagy lejárt API kulcs</li>
+    </ul>
+    <p>Ha proxy mögött van, szükség lehet a proxy beállítások konfigurálására.
+    Lásd a <em>data/config/example_InterSpec_app_settings.json</em> fájlban
+    a <b>ProxySetting</b> opciót; általában a <b>system</b> érték működik.</p>
+    <p>A mérési jelölők továbbra is megjelennek, de a térképháttér üres lesz.</p>
+  </message>
 </messages>

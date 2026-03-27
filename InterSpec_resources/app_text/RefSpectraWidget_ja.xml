@@ -3,7 +3,9 @@
   <!-- rs- is short for Reference Spectra -->
   <message id="rs-dialog-title">参照スペクトル</message>
   <message id="rs-show-foreground">フォアグラウンド表示</message>
+  <message id="rs-show-foreground-portrait">比較</message>
   <message id="rs-show-background">バックグラウンド</message>
+  <message id="rs-show-background-portrait">背景</message>
   <message id="rs-load-background">バックグラウンドを読み込む</message>
   <message id="rs-load-background-portrait">+バックグラウンド</message>
   <message id="rs-tt-add-dir-btn">参照スペクトルを開くディレクトリを追加。</message>

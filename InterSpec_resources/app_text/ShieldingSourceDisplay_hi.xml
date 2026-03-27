@@ -32,6 +32,7 @@
   <message id="ssd-perform-fit-btn">मॉडल फिट करें</message>
   <message id="ssd-cancel-fit">मॉडल फिट रद्द करें</message>
   <message id="ssd-mi-calc-log">गणना लॉग</message>
+  <message id="ssd-mi-calc-log-html">गणना लॉग (HTML)</message>
   <message id="ssd-mi-import-model">मॉडल आयात करें...</message>
   <message id="ssd-mi-export-model">मॉडल निर्यात करें</message>
   <message id="ssd-mi-from-db">डेटाबेस से खोलें...</message>
@@ -80,12 +81,35 @@
     अग्रभूमि के रूप में लोड करना चाहिए, संभावित रूप से घटाए जाने वाले शिखरों की पहचान करनी चाहिए, और फिर अपने वर्तमान
     अग्रभूमि/पृष्ठभूमि संयोजन में वापस स्विच करना चाहिए।
   </message>
+  <message id="ssd-missing-back-peaks-title">अनुपस्थित पृष्ठभूमि शिखर</message>
+  <message id="ssd-missing-back-peaks-msg">
+    पृष्ठभूमि स्पेक्ट्रम में ऊर्जाओं {1} पर शिखर नहीं जोड़े गए हैं, लेकिन
+    उन ऊर्जाओं पर पृष्ठभूमि स्पेक्ट्रम में संभवतः वास्तविक शिखर हैं -
+    क्या आप उन शिखरों को पृष्ठभूमि स्पेक्ट्रम में जोड़ना चाहेंगे?
+  </message>
+  <message id="ssd-btn-no-dont-add">नहीं</message>
+  <message id="ssd-btn-add-peaks">शिखर जोड़ें...</message>
+  <message id="ssd-btn-add-all-detectable">सभी स्वतः-फिट शिखर जोड़ें</message>
+  <message id="ssd-back-peak-preview-title">पृष्ठभूमि शिखर पूर्वावलोकन</message>
+  <message id="ssd-back-peak-preview-msg">निम्नलिखित शिखर पृष्ठभूमि स्पेक्ट्रम में जोड़े जाएंगे:</message>
+  <message id="ssd-no-new-back-peaks">निर्दिष्ट ऊर्जाओं पर पृष्ठभूमि स्पेक्ट्रम में कोई अतिरिक्त शिखर नहीं मिले।</message>
+  <message id="ssd-back-peaks-all-fit">{1} उम्मीदवार शिखर पृष्ठभूमि में फिट किए गए।</message>
+  <message id="ssd-back-peaks-some-fit">{2} उम्मीदवार शिखरों में से {1} महत्वपूर्ण थे और पृष्ठभूमि में फिट किए गए।</message>
+  <message id="ssd-back-peaks-manual-hint">(आप Alt कुंजी (mac: Option कुंजी) प्लस डबल<br />
+  क्लिक करके स्पेक्ट्रम पर मैन्युअल रूप से पृष्ठभूमि शिखर भी फिट कर सकते हैं, या पृष्ठभूमि को अग्रभूमि के रूप में लोड करके)</message>
+  <message id="ssd-err-adding-back-peaks">पृष्ठभूमि में शिखर जोड़ने में त्रुटि: {1}</message>
   <message id="ssd-update-dim-to-be-min">परिरक्षण आयाम को न्यूनतम मोटाई होने के लिए अपडेट किया गया।</message>
   <message id="ssd-scaled-shield-to-be-less-dist">परिरक्षण मोटाई को डिटेक्टर दूरी से कम होने के लिए स्केल किया गया है।</message>
   <message id="ssd-err-fit-only-one-an">आप एक समय में केवल एक सामान्य परिरक्षण की परमाणु संख्या के लिए फिट कर सकते हैं।</message>
   <message id="ssd-warn-invalid-chi2-for-energy">{1} keV के लिए एक अमान्य chi2 की गणना की गई थी, अन्य परिणाम अमान्य हो सकते हैं</message>
   <message id="ssd-calc-log-window-title">गणना लॉग</message>
   <message id="ssd-calc-log-export-txt">TXT फ़ाइल</message>
+  <message id="ssd-calc-log-html-title">गणना लॉग</message>
+  <message id="ssd-template-text-log">मानक लॉग (टेक्स्ट)</message>
+  <message id="ssd-template-html-report">सक्रियता फिट रिपोर्ट (HTML)</message>
+  <message id="ssd-template-deprecated-txt">पुराना टेक्स्ट</message>
+  <message id="ssd-no-fit-results">प्रदर्शित करने के लिए कोई फिट परिणाम उपलब्ध नहीं।</message>
+  <message id="ssd-error-creating-html-log">HTML गणना लॉग बनाने में त्रुटि: {1}</message>
   <message id="ssd-err-opening-import-model">अपलोड किए गए स्रोत परिरक्षण फिट मॉडल को खोलने में त्रुटि: {1}</message>
   <message id="ssd-import-model-window-title">स्रोत परिरक्षण XML मॉडल आयात करें</message>
   <message id="ssd-err-opening-db-model">डेटाबेस से स्रोत परिरक्षण फिट मॉडल खोलने में त्रुटि: {1}</message>
@@ -142,7 +166,6 @@
   <!-- Chi2Graphic -->
   <message id="x2g-yaxis-title-chi">(देखा-मॉडल)/अनिश्चितता</message>
   <message id="x2g-yaxis-title-mult">मॉडल का गुणक</message>
-  <message id="x2g-">Y-अक्ष शिखर क्षेत्र गणना है, वर्तमान में प्रदर्शित स्रोत और परिरक्षण मूल्यों से अपेक्षित गणना की संख्या घटाकर, सभी को सांख्यिकीय अनिश्चितता से विभाजित किया गया है। इसका वर्ग परिरक्षण और स्रोतों को अनुकूलित करने के लिए उपयोग किया जाता है।</message>
   <message id="x2g-tt-chi-axis">Y-अक्ष शिखर क्षेत्र गणना है, वर्तमान में प्रदर्शित स्रोत और परिरक्षण मूल्यों से अपेक्षित गणना की संख्या घटाकर, सभी को सांख्यिकीय अनिश्चितता से विभाजित किया गया है। इसका वर्ग परिरक्षण और स्रोतों को अनुकूलित करने के लिए उपयोग किया जाता है।</message>
   <message id="x2g-tt-scale-axis">Y-अक्ष देखी गई शिखर गणना का गुणक है, वर्तमान स्रोत और परिरक्षण मूल्यों से क्या अपेक्षित होगा की तुलना में।</message>
   <message id="x2g-tt-num-observed">देखी गई संख्या:</message>

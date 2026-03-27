@@ -133,9 +133,21 @@
   <message id="smm-ecc-fix-geom-act-m2">निश्चित ज्यामिति - प्रति m2 सक्रियता</message>
   <message id="smm-ecc-fix-geom-act-gram">निश्चित ज्यामिति - प्रति ग्राम सक्रियता</message>
   <message id="smm-ecc-det-diam">डिटेक्टर व्यास</message>
+  <message id="smm-ecc-det-setback">डिटेक्टर सेटबैक</message>
   <message id="smm-ecc-dist">दूरी</message>
   <message id="smm-ecc-use-drf">DRF उपयोग करें</message>
   <message id="smm-ecc-error">ECC से DRF बनाने में त्रुटि: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop an ANGLE .outx file onto app -->
+  <message id="smm-outx-curve">ANGLE दक्षता अंशांकन वक्र DRF</message>
+  <message id="smm-outx-error">ANGLE .outx से DRF बनाने में त्रुटि: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop an efficiency CSV file onto app -->
+  <message id="smm-eff-csv-curve">दक्षता CSV वक्र DRF</message>
+  <message id="smm-eff-csv-error">दक्षता CSV से DRF बनाने में त्रुटि: {1}</message>
+  <message id="smm-eff-csv-det-dat-label">Detector.dat (वैकल्पिक)</message>
+  <message id="smm-eff-csv-intrinsic">आंतरिक दक्षता</message>
+  <message id="smm-eff-csv-abs-eff">पूर्ण दक्षता</message>
 
   <!-- Text for dialog when user drag-n-drop the Activity/Shielding fit file onto app -->
   <message id="smm-act-shield-xml">सक्रियता/परिरक्षण XML</message>

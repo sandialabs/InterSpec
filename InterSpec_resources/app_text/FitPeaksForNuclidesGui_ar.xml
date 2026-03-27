@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- fpn- is short for FitPeaksForNuclides -->
+
+  <!-- Tab labels for FitPeaksAdvancedWidget upper area -->
+  <message id="fpn-tab-spectrum">الطيف</message>
+  <message id="fpn-tab-rel-eff">الكفاءة النسبية</message>
+  <message id="fpn-tab-results">التفاصيل</message>
+
+  <!-- Advanced dialog -->
+  <message id="fpn-adv-title">ملاءمة القمم لـ:</message>
+  <message id="fpn-adv-content">الخيارات المتقدمة غير مطبّقة</message>
+  <message id="fpn-fit-peaks">ملاءمة القمم</message>
+  <message id="fpn-accept">قبول</message>
+  <message id="fpn-cancel">إلغاء</message>
+
+  <!-- Status and computation messages -->
+  <message id="fpn-calculating">جارٍ الحساب...</message>
+  <message id="fpn-computation-successful">تمّ الحساب بنجاح.</message>
+  <message id="fpn-summary-chi2">Chi2/dof: ‏{1}</message>
+  <message id="fpn-summary-rel-activities">الأنشطة النسبية (الحد الأقصى=1): {1}</message>
+  <message id="fpn-summary-rois">ROI: ‏{1}</message>
+  <message id="fpn-summary-total-area">إجمالي مساحة المصدر: {1}</message>
+  <message id="fpn-summary-no-rel-act">لا توجد أنشطة نسبية (مصدر واحد).</message>
+
+  <!-- FitSrcPeaksOptions checkbox labels -->
+  <message id="fpn-opt-dont-use-existing-rois">تجنّب ROI الحالية</message>
+  <message id="fpn-opt-existing-as-free">السماح بمشاركة ROI الحالية</message>
+  <message id="fpn-opt-dont-vary-energy-cal">عدم تغيير معايرة الطاقة</message>
+  <message id="fpn-opt-dont-refine-energy-cal">عدم تحسين معايرة الطاقة</message>
+  <message id="fpn-opt-fit-bkgnd-peaks">ملاءمة NORM</message>
+  <message id="fpn-opt-fit-bkgnd-dont-use">ملاءمة NORM (بدون استخدام)</message>
+  <message id="fpn-opt-use-background">الحساب مع طرح الخلفية</message>
+
+  <!-- PeakFitForNuclideConfig option labels -->
+  <message id="fpn-opt-roi-min-chi2-red">حد تخفيض chi2 لـ ROI</message>
+  <message id="fpn-opt-roi-min-peak-sig">حد أهمية ROI</message>
+  <message id="fpn-opt-obs-initial-sig">حد الأهمية الأولية المتوقعة للقمة</message>
+  <message id="fpn-opt-obs-final-sig">حد الأهمية النهائية للقمة</message>
+  <message id="fpn-opt-skew-type">انحراف القمة</message>
+  <message id="fpn-opt-fwhm-form">صيغة FWHM</message>
+  <message id="fpn-opt-rel-eff-eqn-type">معادلة الكفاءة النسبية</message>
+  <message id="fpn-opt-rel-eff-eqn-order">رتبة الكفاءة النسبية</message>
+
+  <!-- Tooltips for options -->
+  <message id="fpn-opt-tt-dont-use-existing-rois">مع هذا الخيار، لن يتم استخدام أي ROI حالي، وسيتم تجاهل أشعة غاما من المصدر (المصادر) الحالي التي تقع ضمن ROI حالي.</message>
+  <message id="fpn-opt-tt-existing-as-free">عادةً يتم تحديد نطاق الطاقة لـ ROI الخاص بقمم المصدر لتقليل تأثيرات القمم المجاورة. مع هذا الخيار، تبقى القمم المجاورة التي تتشارك ROI كقمم حرة العائمة وتُضمّن في النتائج.</message>
+  <message id="fpn-opt-tt-dont-vary-energy-cal">تبقى معايرة الطاقة ثابتة أثناء الملاءمة.</message>
+  <message id="fpn-opt-tt-dont-refine-energy-cal">يتم تغيير معايرة الطاقة أثناء الملاءمة، لكن نطاق ROI لا يُحدَّث بناءً على المعايرة الناتجة عن الملاءمة.</message>
+  <message id="fpn-opt-tt-fit-bkgnd-peaks">ملاءمة قمم NORM (U-238, Ra-226, U-235, Th-232, K-40) باستخدام منحنى كفاءة نسبية ثانٍ.</message>
+  <message id="fpn-opt-tt-use-background">عند التفعيل، يُطرح طيف الخلفية أثناء ملاءمة القمم لتحديد ROI المراد استخدامها، لكن الخلفية لا تُطرح عند الملاءمة النهائية للقمم المُعادة. قم بإلغاء التحديد للملاءمة بدون طرح الخلفية.</message>
+  <message id="fpn-opt-tt-roi-min-chi2-red">الحد الأدنى لتخفيض chi2 الكلي المطلوب للقمم في ROI لاعتبارها ذات أهمية. يجب أن يكون chi2 مع القمم أقل بهذا المقدار على الأقل من chi2 مع المتصل فقط.</message>
+  <message id="fpn-opt-tt-roi-min-peak-sig">الحد الأدنى لأهمية القمة (مساحة_القمة / sqrt(المتصل)) لاعتبار القمة ذات أهمية. إذا تجاوزت أهمية أي قمة في ROI هذا الحد، يتم الاحتفاظ بـ ROI.</message>
+  <message id="fpn-opt-tt-obs-initial-sig">حد مرشح الأهمية الأولية للقمة قبل إعادة الملاءمة. الأهمية = (سعة_القمة * 0.7607) / sqrt(مساحة_البيانات_في_pm_1_fwhm).</message>
+  <message id="fpn-opt-tt-obs-final-sig">حد الأهمية النهائية للقمة بعد إعادة الملاءمة. الأهمية = مساحة_القمة / عدم_يقين_مساحة_القمة.</message>
+  <message id="fpn-opt-tt-skew-type">شكل الانحراف المطبّق على جميع القمم في الملاءمة. &quot;None&quot; يستخدم غاوسيان صرف. الخيارات الأخرى تضيف مكوّنات ذيل الطاقة المنخفضة (مثل Exp*Gauss لكواشف NaI/CsI، أو Crystal Ball لذيل تجميع الشحنة في HPGe).</message>
+  <message id="fpn-opt-tt-fwhm-form">الصيغة الدالية لدقة الكاشف (FWHM مقابل الطاقة). رتبة كثير حدود Bernstein تحدد عدد المعاملات المُلاءَمة.</message>
+  <message id="fpn-opt-tt-rel-eff-eqn-type">شكل منحنى الكفاءة النسبية (مثل كثير حدود LnXLnY، أو نموذج FRAM الفيزيائي).</message>
+  <message id="fpn-opt-tt-rel-eff-eqn-order">رتبة كثير الحدود لمعادلة الكفاءة النسبية (عند عدم استخدام النموذج الفيزيائي).</message>
+
+  <!-- Status and error messages -->
+  <message id="fpn-no-data">لا يوجد طيف أمامي لملاءمة القمم عليه.</message>
+  <message id="fpn-wait-title">جارٍ ملاءمة القمم</message>
+  <message id="fpn-wait-content">قد يستغرق هذا دقيقة. يمكنك الاستمرار في استخدام التطبيق.</message>
+  <message id="fpn-stale">تغيّر الطيف قبل اكتمال الملاءمة؛ يتم تجاهل النتائج.</message>
+
+  <message id="fpn-error-title">فشلت الملاءمة</message>
+  <message id="fpn-error-content">خطأ: {1}</message>
+
+  <!-- Results dialog -->
+  <message id="fpn-result-title">نتائج الملاءمة</message>
+  <message id="fpn-no-peaks">لم يتم ملاءمة أي قمم للمصدر (المصادر) المحدد.</message>
+  <message id="fpn-summary">تمّت ملاءمة {1} قمة (قمم) لـ {2} مصدر (مصادر).</message>
+  <message id="fpn-warnings-header">تحذيرات:</message>
+  <message id="fpn-auto-accept">قبول نتائج الملاءمة تلقائياً</message>
+  <message id="fpn-auto-accepted">تم قبول نتائج الملاءمة تلقائياً.</message>
+
+</messages>

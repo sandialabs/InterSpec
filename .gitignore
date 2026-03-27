@@ -24,6 +24,9 @@ output_n42/
 InterSpec_resources/app_text/convert_xml_to_csv.py
 InterSpec_resources/app_text/convert_csv_to_xml.py
 InterSpec_resources/app_text/InterSpec_string*.csv
+GEMINI.md
+CLAUDE.md
+AGENT.md
 
 *OUO*
 *ouo*

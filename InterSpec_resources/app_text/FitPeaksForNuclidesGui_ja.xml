@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- fpn- is short for FitPeaksForNuclides -->
+
+  <!-- Tab labels for FitPeaksAdvancedWidget upper area -->
+  <message id="fpn-tab-spectrum">スペクトル</message>
+  <message id="fpn-tab-rel-eff">相対効率</message>
+  <message id="fpn-tab-results">詳細</message>
+
+  <!-- Advanced dialog -->
+  <message id="fpn-adv-title">ピークフィット対象:</message>
+  <message id="fpn-adv-content">詳細オプションは未実装です</message>
+  <message id="fpn-fit-peaks">ピークフィット</message>
+  <message id="fpn-accept">承認</message>
+  <message id="fpn-cancel">キャンセル</message>
+
+  <!-- Status and computation messages -->
+  <message id="fpn-calculating">計算中...</message>
+  <message id="fpn-computation-successful">計算成功。</message>
+  <message id="fpn-summary-chi2">Chi2/dof: {1}</message>
+  <message id="fpn-summary-rel-activities">相対放射能 (最大=1): {1}</message>
+  <message id="fpn-summary-rois">ROI: {1}</message>
+  <message id="fpn-summary-total-area">全線源面積: {1}</message>
+  <message id="fpn-summary-no-rel-act">相対放射能なし（単一線源）。</message>
+
+  <!-- FitSrcPeaksOptions checkbox labels -->
+  <message id="fpn-opt-dont-use-existing-rois">既存ROIを回避</message>
+  <message id="fpn-opt-existing-as-free">現在のROI共有を許可</message>
+  <message id="fpn-opt-dont-vary-energy-cal">エネルギー校正を変更しない</message>
+  <message id="fpn-opt-dont-refine-energy-cal">エネルギー校正を精密化しない</message>
+  <message id="fpn-opt-fit-bkgnd-peaks">NORMフィット</message>
+  <message id="fpn-opt-fit-bkgnd-dont-use">NORMフィット（使用しない）</message>
+  <message id="fpn-opt-use-background">バックグラウンド減算で計算</message>
+
+  <!-- PeakFitForNuclideConfig option labels -->
+  <message id="fpn-opt-roi-min-chi2-red">ROI chi2削減閾値</message>
+  <message id="fpn-opt-roi-min-peak-sig">ROI有意性閾値</message>
+  <message id="fpn-opt-obs-initial-sig">予測ピーク有意性閾値</message>
+  <message id="fpn-opt-obs-final-sig">最終ピーク有意性閾値</message>
+  <message id="fpn-opt-skew-type">ピーク歪度</message>
+  <message id="fpn-opt-fwhm-form">FWHM形式</message>
+  <message id="fpn-opt-rel-eff-eqn-type">相対効率式</message>
+  <message id="fpn-opt-rel-eff-eqn-order">相対効率次数</message>
+
+  <!-- Tooltips for options -->
+  <message id="fpn-opt-tt-dont-use-existing-rois">このオプションでは、既存のROIは使用されず、既存ROI内に含まれる現在の線源のガンマ線は考慮されません。</message>
+  <message id="fpn-opt-tt-existing-as-free">通常、線源ピークのROIは近接ピークの影響を低減するためにエネルギー範囲が制限されます。このオプションでは、ROIを共有する近接ピークが自由浮動ピークとして残され、結果に含まれます。</message>
+  <message id="fpn-opt-tt-dont-vary-energy-cal">フィット中、エネルギー校正は固定されたままです。</message>
+  <message id="fpn-opt-tt-dont-refine-energy-cal">フィットでエネルギー校正は変化しますが、フィット校正に基づくROI範囲の更新は行われません。</message>
+  <message id="fpn-opt-tt-fit-bkgnd-peaks">第2の相対効率曲線を使用してNORMピーク（U-238、Ra-226、U-235、Th-232、K-40）をフィットします。</message>
+  <message id="fpn-opt-tt-use-background">有効にすると、使用するROIを決定するためにピークフィッティング中にバックグラウンドスペクトルが減算されますが、返されるピークの最終フィットではバックグラウンドは減算されません。バックグラウンド減算なしでフィットするにはチェックを外してください。</message>
+  <message id="fpn-opt-tt-roi-min-chi2-red">ROI内のピークが有意と見なされるために必要な最小合計chi2削減量。ピークありのchi2がコンティニュアムのみのchi2より少なくともこの値だけ低い必要があります。</message>
+  <message id="fpn-opt-tt-roi-min-peak-sig">ピークが有意と見なされるための最小ピーク有意性（ピーク面積 / sqrt(コンティニュアム)）。ROI内のいずれかのピークの有意性がこの閾値を超える場合、ROIは保持されます。</message>
+  <message id="fpn-opt-tt-obs-initial-sig">再フィット前の初期ピーク有意性フィルターの閾値。有意性 = (ピーク振幅 * 0.7607) / sqrt(pm_1_fwhm内のデータ面積)。</message>
+  <message id="fpn-opt-tt-obs-final-sig">再フィット後の最終ピーク有意性の閾値。有意性 = ピーク面積 / ピーク面積不確かさ。</message>
+  <message id="fpn-opt-tt-skew-type">フィット内の全ピークに適用される歪度形状。&quot;None&quot;は純粋なガウシアンを使用します。他のオプションは低エネルギーテール成分を追加します（例：NaI/CsI検出器用のExp*Gauss、HPGeの電荷収集テール用のCrystal Ball）。</message>
+  <message id="fpn-opt-tt-fwhm-form">検出器分解能（FWHM対エネルギー）の関数形式。Bernstein多項式の次数がフィットする係数の数を決定します。</message>
+  <message id="fpn-opt-tt-rel-eff-eqn-type">相対効率曲線の形式（例：LnXLnY多項式、またはFRAM物理モデル）。</message>
+  <message id="fpn-opt-tt-rel-eff-eqn-order">相対効率方程式の多項式次数（物理モデルを使用しない場合）。</message>
+
+  <!-- Status and error messages -->
+  <message id="fpn-no-data">ピークフィットする前景スペクトルがありません。</message>
+  <message id="fpn-wait-title">ピークフィット中</message>
+  <message id="fpn-wait-content">1分程度かかる場合があります。アプリの使用を続けられます。</message>
+  <message id="fpn-stale">フィット完了前にスペクトルが変更されました。結果を破棄します。</message>
+
+  <message id="fpn-error-title">フィット失敗</message>
+  <message id="fpn-error-content">エラー: {1}</message>
+
+  <!-- Results dialog -->
+  <message id="fpn-result-title">フィット結果</message>
+  <message id="fpn-no-peaks">選択した線源のピークはフィットされませんでした。</message>
+  <message id="fpn-summary">{2}線源に対して{1}ピークをフィットしました。</message>
+  <message id="fpn-warnings-header">警告:</message>
+  <message id="fpn-auto-accept">フィット結果を自動承認</message>
+  <message id="fpn-auto-accepted">フィット結果は自動的に承認されました。</message>
+
+</messages>

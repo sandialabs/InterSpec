@@ -23,6 +23,7 @@
   <message id="raag-fwhm-est">Est. FWHM</message>
   <message id="raag-fwhm-form">Forma FWHM</message>
   <message id="raag-peak-skew">Asimetría pico</message>
+  <message id="raag-lorentzian-xrays">Rayos X Lorentzian</message>
   <message id="raag-add-uncert">Incert. adic.</message>
   <message id="raag-yield-info">Info rendimiento</message>
   
@@ -69,6 +70,7 @@
   </message>
   <message id="raag-tt-fwhm-form">El tipo de ecuación para modelar FWHM de pico como función de energía.</message>
   <message id="raag-tt-skew-type">El tipo de asimetría a aplicar a los picos; parámetros de asimetría serán ajustados.</message>
+  <message id="raag-tt-lorentzian-xrays">Cuando está marcado, los picos de rayos X usarán un perfil Voigt con el ancho Lorentzian establecido al ancho de línea natural de rayos X. Esto tiene en cuenta la forma Lorentzian intrínseca de las líneas de rayos X. Solo compatible con los tipos de asimetría de pico NoSkew o GaussPlusBortel.</message>
   <message id="raag-tt-u-pu-data-source">La fuente de datos nucleares para razones de ramificación gamma de uranio y plutonio.</message>
   <message id="raag-tt-add-source">Añadir fuente.</message>
   <message id="raag-tt-add-energy-range">Añadir rango de energía.</message>

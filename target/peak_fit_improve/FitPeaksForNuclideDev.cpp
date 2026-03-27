@@ -196,14 +196,9 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
   if( !db )
     throw runtime_error( "Failed to open SandiaDecayDataBase" );
 
-  // Configuration for peak fitting - these values will eventually be optimized via GA
-  PeakFitForNuclideConfig config;
+  // Configuration for peak fitting - uses default_config for the given detector type
   // TODO: lets better assign FWHM form that should be used based on detector type
   // TODO: add an enum for how to handle existing ROIs here {ignore, replace_source, no_overlap}
-
-  // Get clustering settings from config
-  const GammaClusteringSettings manual_settings = config.get_manual_clustering_settings();
-  const GammaClusteringSettings auto_settings = config.get_auto_clustering_settings();
 
 
   double total_score = 0.0;
@@ -360,6 +355,7 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
       const vector<shared_ptr<const PeakDef> > auto_search_peaks
           = ExperimentalAutomatedPeakSearch::search_for_peaks( foreground, drf, dummy_origpeaks, singleThreaded, dev_prefs );
 
+      const PeakFitForNuclideConfig &config = PeakFitForNuclideConfig::default_config( src_info.det_type );
       const PeakFitResult curve_results = FitPeaksForNuclideDev::fit_peaks_for_nuclides(
         auto_search_peaks, foreground, sources, long_background, drf, config, dev_prefs );
 

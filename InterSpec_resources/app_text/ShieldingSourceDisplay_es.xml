@@ -32,6 +32,7 @@
   <message id="ssd-perform-fit-btn">Realizar ajuste modelo</message>
   <message id="ssd-cancel-fit">Cancelar ajuste modelo</message>
   <message id="ssd-mi-calc-log">Log cálculo</message>
+  <message id="ssd-mi-calc-log-html">Log cálculo (HTML)</message>
   <message id="ssd-mi-import-model">Importar modelo...</message>
   <message id="ssd-mi-export-model">Exportar modelo</message>
   <message id="ssd-mi-from-db">Abrir de base datos...</message>
@@ -83,12 +84,35 @@
     primer plano, identificar los picos a sustraer potencialmente, y luego cambiar de vuelta a su
     combinación actual de primer plano/fondo.
   </message>
+  <message id="ssd-missing-back-peaks-title">Picos de fondo faltantes</message>
+  <message id="ssd-missing-back-peaks-msg">
+    El espectro de fondo no tiene picos añadidos en las energías {1}, pero
+    probablemente hay picos reales en el espectro de fondo en esas energías -
+    ¿desea añadir esos picos al espectro de fondo?
+  </message>
+  <message id="ssd-btn-no-dont-add">No</message>
+  <message id="ssd-btn-add-peaks">Añadir picos...</message>
+  <message id="ssd-btn-add-all-detectable">Añadir todos los picos auto-ajustados</message>
+  <message id="ssd-back-peak-preview-title">Vista previa de picos de fondo</message>
+  <message id="ssd-back-peak-preview-msg">Los siguientes picos se añadirían al espectro de fondo:</message>
+  <message id="ssd-no-new-back-peaks">No se encontraron picos adicionales en el espectro de fondo en las energías indicadas.</message>
+  <message id="ssd-back-peaks-all-fit">{1} picos candidatos fueron ajustados al fondo.</message>
+  <message id="ssd-back-peaks-some-fit">{1} de {2} picos candidatos fueron significativos y ajustados al fondo.</message>
+  <message id="ssd-back-peaks-manual-hint">(también puede ajustar picos de fondo manualmente con la tecla Alt (mac: tecla Option) más doble<br />
+  clic en el espectro, o cargando el fondo como primer plano)</message>
+  <message id="ssd-err-adding-back-peaks">Error al añadir picos al fondo: {1}</message>
   <message id="ssd-update-dim-to-be-min">Se actualizó dimensión de blindaje para ser espesor mínimo.</message>
   <message id="ssd-scaled-shield-to-be-less-dist">Los espesores de blindaje han sido escalados para ser menores que la distancia del detector.</message>
   <message id="ssd-err-fit-only-one-an">Solo puede ajustar el número atómico de un blindaje genérico a la vez.</message>
   <message id="ssd-warn-invalid-chi2-for-energy">Se calculó un chi2 inválido para {1} keV, otros resultados pueden ser inválidos</message>
   <message id="ssd-calc-log-window-title">Log de cálculo</message>
   <message id="ssd-calc-log-export-txt">Archivo TXT</message>
+  <message id="ssd-calc-log-html-title">Log de cálculo</message>
+  <message id="ssd-template-text-log">Log estándar (texto)</message>
+  <message id="ssd-template-html-report">Informe de ajuste de actividad (HTML)</message>
+  <message id="ssd-template-deprecated-txt">Txt obsoleto</message>
+  <message id="ssd-no-fit-results">No hay resultados de ajuste disponibles para mostrar.</message>
+  <message id="ssd-error-creating-html-log">Error al crear log de cálculo HTML: {1}</message>
   <message id="ssd-err-opening-import-model">Error abriendo modelo de ajuste de fuente blindaje subido: {1}</message>
   <message id="ssd-import-model-window-title">Importar modelo XML de fuente blindaje</message>
   <message id="ssd-err-opening-db-model">Error abriendo modelo de ajuste de fuente blindaje de base de datos: {1}</message>
@@ -145,7 +169,6 @@
   <!-- Chi2Graphic -->
   <message id="x2g-yaxis-title-chi">(observado-modelo)/incert</message>
   <message id="x2g-yaxis-title-mult">Múlt. del modelo</message>
-  <message id="x2g-">El eje Y son las cuentas del área del pico, menos el número esperado de cuentas de los valores de fuente y blindaje actualmente mostrados, todo dividido por la incertidumbre estadística. El cuadrado de esto es lo que se usa para optimizar el blindaje y fuentes.</message>
   <message id="x2g-tt-chi-axis">El eje Y son las cuentas del área del pico, menos el número esperado de cuentas de los valores de fuente y blindaje actualmente mostrados, todo dividido por la incertidumbre estadística. El cuadrado de esto es lo que se usa para optimizar el blindaje y fuentes.</message>
   <message id="x2g-tt-scale-axis">El eje Y es el múltiplo de cuentas de pico observadas, relativo a lo que se esperaría de los valores actuales de fuente y blindaje.</message>
   <message id="x2g-tt-num-observed">Núm. observado:</message>

@@ -13,7 +13,31 @@
   <message id="ctwidget-non-chart-area">非图表区域</message>
   <message id="ctwidget-backdrop-theme">背景主题</message>
   <message id="ctwidget-backdrop-desc">所有非图表区域的主题</message>
-  
+  <message id="ctwidget-app-background">背景颜色</message>
+  <message id="ctwidget-app-background-desc">对话框、主应用区域等的背景颜色。</message>
+  <message id="ctwidget-app-text">文本颜色</message>
+  <message id="ctwidget-app-text-desc">非图表区域的文本颜色</message>
+  <message id="ctwidget-app-border">边框颜色</message>
+  <message id="ctwidget-app-border-desc">UI元素的边框颜色（标签页、按钮、面板）</message>
+  <message id="ctwidget-app-link">链接颜色</message>
+  <message id="ctwidget-app-link-desc">链接和交互强调的颜色</message>
+  <message id="ctwidget-app-label">标签颜色</message>
+  <message id="ctwidget-app-label-desc">标签、选项卡和标题的文本颜色</message>
+  <message id="ctwidget-app-input-bg">输入框背景</message>
+  <message id="ctwidget-app-input-bg-desc">输入字段的背景颜色</message>
+  <message id="ctwidget-app-button-bg">按钮背景</message>
+  <message id="ctwidget-app-button-bg-desc">按钮的背景颜色</message>
+  <message id="ctwidget-app-button-border">按钮边框</message>
+  <message id="ctwidget-app-button-border-desc">按钮的边框颜色</message>
+  <message id="ctwidget-app-button-text">按钮文本</message>
+  <message id="ctwidget-app-button-text-desc">按钮的文本颜色</message>
+  <message id="ctwidget-app-menubar-bg">菜单栏背景</message>
+  <message id="ctwidget-app-menubar-bg-desc">菜单栏和菜单按钮的背景颜色</message>
+  <message id="ctwidget-app-menubar-active">菜单栏激活</message>
+  <message id="ctwidget-app-menubar-active-desc">菜单打开时菜单按钮的背景颜色</message>
+  <message id="ctwidget-app-menubar-hover">菜单栏悬停</message>
+  <message id="ctwidget-app-menubar-hover-desc">悬停时菜单按钮的背景颜色</message>
+
   <!-- Chart colors section -->
   <message id="ctwidget-chart-colors">图表颜色</message>
   

@@ -13,7 +13,31 @@
   <message id="ctwidget-non-chart-area">Область Не-Диаграммы</message>
   <message id="ctwidget-backdrop-theme">Тема Фона</message>
   <message id="ctwidget-backdrop-desc">Тема для всей области не-диаграммы</message>
-  
+  <message id="ctwidget-app-background">Цвет Фона</message>
+  <message id="ctwidget-app-background-desc">Цвет фона для диалогов, основной области приложения и т.д.</message>
+  <message id="ctwidget-app-text">Цвет Текста</message>
+  <message id="ctwidget-app-text-desc">Цвет текста для областей не-диаграммы</message>
+  <message id="ctwidget-app-border">Цвет Границы</message>
+  <message id="ctwidget-app-border-desc">Цвет границы для элементов UI (вкладки, кнопки, панели)</message>
+  <message id="ctwidget-app-link">Цвет Ссылки</message>
+  <message id="ctwidget-app-link-desc">Цвет для ссылок и интерактивных акцентов</message>
+  <message id="ctwidget-app-label">Цвет Метки</message>
+  <message id="ctwidget-app-label-desc">Цвет текста для меток, вкладок и заголовков</message>
+  <message id="ctwidget-app-input-bg">Фон Ввода</message>
+  <message id="ctwidget-app-input-bg-desc">Цвет фона для полей ввода</message>
+  <message id="ctwidget-app-button-bg">Фон Кнопки</message>
+  <message id="ctwidget-app-button-bg-desc">Цвет фона для кнопок</message>
+  <message id="ctwidget-app-button-border">Граница Кнопки</message>
+  <message id="ctwidget-app-button-border-desc">Цвет границы для кнопок</message>
+  <message id="ctwidget-app-button-text">Текст Кнопки</message>
+  <message id="ctwidget-app-button-text-desc">Цвет текста для кнопок</message>
+  <message id="ctwidget-app-menubar-bg">Фон Панели Меню</message>
+  <message id="ctwidget-app-menubar-bg-desc">Цвет фона для панели меню и кнопок меню</message>
+  <message id="ctwidget-app-menubar-active">Панель Меню Активна</message>
+  <message id="ctwidget-app-menubar-active-desc">Цвет фона для кнопки меню когда её меню открыто</message>
+  <message id="ctwidget-app-menubar-hover">Панель Меню Наведение</message>
+  <message id="ctwidget-app-menubar-hover-desc">Цвет фона для кнопки меню при наведении</message>
+
   <!-- Chart colors section -->
   <message id="ctwidget-chart-colors">Цвета Диаграммы</message>
   

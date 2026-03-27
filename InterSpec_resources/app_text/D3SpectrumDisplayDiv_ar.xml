@@ -39,4 +39,6 @@
   <message id="d3sdd-yaxis-upper-counts-below-zero">النطاق الأعلى مساوٍ للصفر أو أقل منه.</message>
   <message id="d3sdd-yaxis-lower-counts-below-zero">النطاق الأدنى مساوٍ للصفر أو أقل منه.</message>
   <message id="d3sdd-yaxis-below-min-non-zero">النطاق الأعلى أقل من الحد الأدنى المعروض، قيمة غير صفرية.</message>
+  <message id="d3sdd-candidates">المرشحون:</message>
+  <message id="d3sdd-use-arrows-to-select">(استخدم ↑ و ↓ للاختيار)</message>
 </messages>

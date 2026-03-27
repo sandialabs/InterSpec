@@ -2,14 +2,14 @@
 <messages>
   <message id="ssd-tt-distance">
     Distance du centre de la source à la face du détecteur.  Le nombre doit être
-    suivi d'unités ; les unités valides sont : mètres, m, cm, mm, km, pieds,
+    suivi d'unités ; les unités valides sont : mètres, m, cm, mm, km, pieds,
     ft, ', in, pouces, ou ".  Vous pouvez également ajouter plusieurs distances,
     telles que '3ft 4in', ou '3.6E-2 m 12 cm' qui sont équivalentes à
     40 pouces et 15.6 cm respectivement.
   </message>
   <message id="ssd-geom-point">Point/Sphérique</message>
-  <message id="ssd-geom-cyl-end">Cylindrique : extrémité</message>
-  <message id="ssd-geom-cyl-side">Cylindrique : côté</message>
+  <message id="ssd-geom-cyl-end">Cylindrique : extrémité</message>
+  <message id="ssd-geom-cyl-side">Cylindrique : côté</message>
   <message id="ssd-rectangular">Rectangulaire</message>
   <message id="ssd-fixed-geom-notification">Utilisation d'une DRF à géométrie fixe</message>
   <message id="ssd-tt-shieldings">
@@ -27,6 +27,7 @@
   <message id="ssd-perform-fit-btn">Effectuer l'ajustement du modèle</message>
   <message id="ssd-cancel-fit">Annuler l'ajustement du modèle</message>
   <message id="ssd-mi-calc-log">Journal de calcul</message>
+  <message id="ssd-mi-calc-log-html">Journal de calcul (HTML)</message>
   <message id="ssd-mi-import-model">Importer un modèle...</message>
   <message id="ssd-mi-export-model">Exporter le modèle</message>
   <message id="ssd-mi-from-db">Ouvrir depuis la base de données...</message>
@@ -37,7 +38,14 @@
   <message id="ssd-cb-all-peaks">Tous les pics</message>
   <message id="ssd-multi-iso-per-peak">Correction d'interférence</message>
   <message id="ssd-options-title">Options</message>
-  <message id="ssd-tt-multi-iso-per-peak">La sélection de cette option permettra à d'autres nucléides en cours d'ajustement, autres que celui attribué à un pic, de contribuer aux comptes attendus dans un pic observé.  Cela pourrait par exemple être utile lors de l'ajustement de Ho166m et U235 qui ont tous deux un pic près de 185 keV.</message>
+  <message id="ssd-tt-multi-iso-per-peak">La sélection de cette option permettra à d'autres nucléides en cours d'ajustement, autres que celui attribué à un pic, de contribuer aux comptes attendus dans un pic observé.  Cela pourrait par exemple être utile lors de l'ajustement de Ho166m et U235 qui ont tous deux un pic près de 185 keV.</message>
+  <message id="ssd-cluster-width-label">Largeur d'interférence (nb σ) :</message>
+  <message id="ssd-tt-cluster-width">Le nombre de sigma par rapport à la moyenne du pic dans lequel les raies gamma,
+    de n'importe quel nucléide, seront sommées et attribuées au pic. La valeur par défaut est 1,25 sigma, mais si le pic est
+    manifestement élargi en raison d'interférences, ou si l'ajustement est médiocre, vous pouvez souhaiter augmenter cette valeur.
+    La diminuer à 0,0 entraînera l'utilisation uniquement des gammas associés au pic
+    (identique à décocher "Plusieurs nucléides contribuent au pic").
+  </message>
   <message id="ssd-cb-atten-for-air">Atténuer pour l'air</message>
   <message id="ssd-tt-atten-for-air">Lorsque cette case est cochée, l'atténuation due à l'air entre la source, ou le blindage extérieur, et le détecteur sera prise en compte dans les calculs.</message>
   <message id="ssd-cb-sub-back-peaks">Soustraire les pics d'arrière-plan</message>
@@ -53,7 +61,7 @@
     <br />
     Cependant, si vous faites d'un nucléide une source "trace" (en cliquant sur le bouton ⊕ d'un blindage
     et en sélectionnant "<em>Ajouter une source trace</em>"), ou une source auto-atténuante (en sélectionnant la
-    case à cocher <em>Source pour :</em>" lorsqu'un blindage a le même élément qu'un nucléide que vous
+    case à cocher <em>Source pour :</em>" lorsqu'un blindage a le même élément qu'un nucléide que vous
     ajustez), alors l'isotope source sera modélisé comme étant distribué dans tout le blindage,
     et le traçage de rayons sera utilisé pour tenir compte des différentes atténuations à chaque emplacement dans
     le blindage.
@@ -72,26 +80,49 @@
     premier plan, identifier les pics à potentiellement soustraire, puis revenir à votre
     combinaison premier plan/arrière-plan actuelle.
   </message>
+  <message id="ssd-missing-back-peaks-title">Pics d'arrière-plan manquants</message>
+  <message id="ssd-missing-back-peaks-msg">
+    Le spectre d'arrière-plan ne contient pas de pics ajoutés aux énergies {1}, mais il
+    y a probablement des pics réels dans le spectre d'arrière-plan à ces énergies -
+    souhaitez-vous ajouter ces pics au spectre d'arrière-plan ?
+  </message>
+  <message id="ssd-btn-no-dont-add">Non</message>
+  <message id="ssd-btn-add-peaks">Ajouter des pics...</message>
+  <message id="ssd-btn-add-all-detectable">Ajouter tous les pics auto-ajustés</message>
+  <message id="ssd-back-peak-preview-title">Aperçu des pics d'arrière-plan</message>
+  <message id="ssd-back-peak-preview-msg">Les pics suivants seraient ajoutés au spectre d'arrière-plan :</message>
+  <message id="ssd-no-new-back-peaks">Aucun pic supplémentaire n'a été trouvé dans le spectre d'arrière-plan aux énergies indiquées.</message>
+  <message id="ssd-back-peaks-all-fit">{1} pics candidats ont été ajustés à l'arrière-plan.</message>
+  <message id="ssd-back-peaks-some-fit">{1} sur {2} pics candidats étaient significatifs et ajustés à l'arrière-plan.</message>
+  <message id="ssd-back-peaks-manual-hint">(vous pouvez également ajuster manuellement les pics d'arrière-plan avec la touche Alt (mac : touche Option) plus double<br />
+  clic sur le spectre, ou en chargeant l'arrière-plan comme premier plan)</message>
+  <message id="ssd-err-adding-back-peaks">Erreur lors de l'ajout de pics à l'arrière-plan : {1}</message>
   <message id="ssd-update-dim-to-be-min">Dimension de blindage mise à jour pour être une épaisseur minimale.</message>
   <message id="ssd-scaled-shield-to-be-less-dist">Les épaisseurs de blindage ont été mises à l'échelle pour être inférieures à la distance du détecteur.</message>
   <message id="ssd-err-fit-only-one-an">Vous ne pouvez ajuster que le numéro atomique d'un seul blindage générique à la fois.</message>
-  <message id="ssd-warn-invalid-chi2-for-energy">Un chi2 invalide a été calculé pour {1} keV, d'autres résultats peuvent être invalides</message>
+  <message id="ssd-warn-invalid-chi2-for-energy">Un chi2 invalide a été calculé pour {1} keV, d'autres résultats peuvent être invalides</message>
   <message id="ssd-calc-log-window-title">Journal de calcul</message>
   <message id="ssd-calc-log-export-txt">Fichier TXT</message>
-  <message id="ssd-err-opening-import-model">Erreur lors de l'ouverture du modèle d'ajustement source/blindage téléchargé : {1}</message>
+  <message id="ssd-calc-log-html-title">Journal de calcul</message>
+  <message id="ssd-template-text-log">Journal standard (texte)</message>
+  <message id="ssd-template-html-report">Rapport d'ajustement d'activité (HTML)</message>
+  <message id="ssd-template-deprecated-txt">Texte obsolète</message>
+  <message id="ssd-no-fit-results">Aucun résultat d'ajustement disponible à afficher.</message>
+  <message id="ssd-error-creating-html-log">Erreur lors de la création du journal de calcul HTML : {1}</message>
+  <message id="ssd-err-opening-import-model">Erreur lors de l'ouverture du modèle d'ajustement source/blindage téléchargé : {1}</message>
   <message id="ssd-import-model-window-title">Importer un modèle XML source/blindage</message>
-  <message id="ssd-err-opening-db-model">Erreur lors de l'ouverture du modèle d'ajustement source/blindage depuis la base de données : {1}</message>
+  <message id="ssd-err-opening-db-model">Erreur lors de l'ouverture du modèle d'ajustement source/blindage depuis la base de données : {1}</message>
   <message id="ssd-err-loading-model">Impossible de charger le modèle sélectionné - désolé :(</message>
   <message id="ssd-prev-saved-window-title">Modèles précédemment enregistrés</message>
-  <message id="ssd-models-prev-for-fore">Modèles précédemment utilisés avec ce premier plan :</message>
-  <message id="ssd-models-prev-saved">Modèles que vous avez précédemment enregistrés :</message>
-  <message id="ssd-model-desc">Description du modèle :</message>
+  <message id="ssd-models-prev-for-fore">Modèles précédemment utilisés avec ce premier plan :</message>
+  <message id="ssd-models-prev-saved">Modèles que vous avez précédemment enregistrés :</message>
+  <message id="ssd-model-desc">Description du modèle :</message>
   <message id="ssd-cb-allow-del">Autoriser la suppression</message>
   <message id="ssd-no-model-in-db">Il n'y a aucun modèle dans la base de données pour vous</message>
   <message id="ssd-err-creating-db-browser">Erreur lors de la création du navigateur de modèles de base de données</message>
   <message id="ssd-save-model-to-db-window-title">Enregistrer le modèle activité/blindage dans la base de données</message>
-  <message id="ssd-save-to-db-name">Entrez le nom du modèle :</message>
-  <message id="ssd-save-to-db-desc">Entrez la description du modèle (facultatif) :</message>
+  <message id="ssd-save-to-db-name">Entrez le nom du modèle :</message>
+  <message id="ssd-save-to-db-desc">Entrez la description du modèle (facultatif) :</message>
   <message id="ssd-must-enter-name">Vous devez entrer un nom</message>
   <message id="ssd-err-saving-to-db">Erreur lors de l'enregistrement dans la base de données</message>
   <message id="ssd-Best">Meilleur</message>
@@ -117,10 +148,10 @@
   <message id="ssd-show-model-diagram">Afficher le schéma du modèle</message>
 
   <message id="sfm-tt-header-isotope">Les nucléides sont ajoutés ou supprimés en fonction des photopics utilisés pour cet ajustement, ils ne peuvent donc pas être modifiés dans ce tableau</message>
-  <message id="sfm-tt-header-activity">Activité du nucléide.  Entrer une valeur de départ raisonnable peut aider l'ajustement, ou l'activité n'a pas besoin d'être ajustée.  Les valeurs peuvent être entrées dans des formats similaires à '12.4 kBq', '1.0mCi', '55.3uCi', '15.82Mbq'</message>
-  <message id="sfm-tt-header-age">Âge du nucléide.  Les valeurs peuvent être entrées dans un format similaire à : '23.3s' '2 hl' - (hl signifie demi-vies), '5.23a', '23:14:21.343', '19min', etc.  Notez que les nucléides qui se désintègrent en produits stables ne peuvent pas être vieillis.</message>
-  <message id="sfm-tt-header-fit-act">L'ajustement doit-il également essayer de trouver l'activité du nucléide, ou supposer que la valeur entrée est correcte ?</message>
-  <message id="sfm-tt-header-fit-age">L'ajustement doit-il également essayer de trouver l'âge du nucléide, ou simplement supposer que la valeur entrée est correcte ?  Cette option n'est pas disponible pour les nucléides qui se désintègrent uniquement en produits stables.</message>
+  <message id="sfm-tt-header-activity">Activité du nucléide.  Entrer une valeur de départ raisonnable peut aider l'ajustement, ou l'activité n'a pas besoin d'être ajustée.  Les valeurs peuvent être entrées dans des formats similaires à '12.4 kBq', '1.0mCi', '55.3uCi', '15.82Mbq'</message>
+  <message id="sfm-tt-header-age">Âge du nucléide.  Les valeurs peuvent être entrées dans un format similaire à : '23.3s' '2 hl' - (hl signifie demi-vies), '5.23a', '23:14:21.343', '19min', etc.  Notez que les nucléides qui se désintègrent en produits stables ne peuvent pas être vieillis.</message>
+  <message id="sfm-tt-header-fit-act">L'ajustement doit-il également essayer de trouver l'activité du nucléide, ou supposer que la valeur entrée est correcte ?</message>
+  <message id="sfm-tt-header-fit-age">L'ajustement doit-il également essayer de trouver l'âge du nucléide, ou simplement supposer que la valeur entrée est correcte ?  Cette option n'est pas disponible pour les nucléides qui se désintègrent uniquement en produits stables.</message>
   <message id="sfm-tt-header-iso-mass">Il s'agit de la masse du nucléide nu en supposant l'activité indiquée.</message>
   <message id="sfm-tt-header-act-uncert">Il s'agit de l'incertitude sur l'activité issue de l'ajustement.</message>
   <message id="sfm-tt-header-age-uncert">Il s'agit de l'incertitude sur l'âge issue de l'ajustement.</message>
@@ -132,9 +163,6 @@
 
   <message id="x2g-yaxis-title-chi">(observé-modèle)/incert</message>
   <message id="x2g-yaxis-title-mult">Mult. du modèle</message>
-  <message id="x2g-">L'axe Y représente le nombre de comptes de l'aire du pic, moins le nombre de comptes attendus à partir des
-     valeurs de source et de blindage actuellement affichées, le tout divisé par l'incertitude statistique. Le carré de ceci
-     est ce qui est utilisé pour optimiser le blindage et les sources.</message>
   <message id="x2g-tt-chi-axis">L'axe Y représente le nombre de comptes de l'aire du pic, moins le nombre de comptes attendus à partir des valeurs de source et de blindage actuellement affichées, le tout divisé par l'incertitude statistique.  Le carré de ceci est ce qui est utilisé pour optimiser le blindage et les sources.</message>
   <message id="x2g-tt-scale-axis">L'axe Y est le multiple des comptes de pic observés, par rapport à ce qui serait attendu des valeurs actuelles de source et de blindage.</message>
   <message id="x2g-tt-num-observed">Nb observé :</message>

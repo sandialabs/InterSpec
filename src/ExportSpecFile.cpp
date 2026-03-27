@@ -44,10 +44,14 @@
 #include <Wt/WResource>
 #include <Wt/WTabWidget>
 #include <Wt/WTableCell>
+#include <Wt/WLabel>
+#include <Wt/WAnchor>
 #include <Wt/WPushButton>
 #include <Wt/Http/Request>
 #include <Wt/WApplication>
+#include <Wt/WEnvironment>
 #include <Wt/Http/Response>
+#include <Wt/WMemoryResource>
 #include <Wt/WContainerWidget>
 #include <Wt/WRegExpValidator>
 #include <Wt/WMessageResourceBundle>
@@ -84,6 +88,8 @@
 #if( USE_QR_CODES )
 #include "InterSpec/QrCode.h"
 #include "InterSpec/QRSpectrum.h"
+
+#include "SpecUtils/UriLossySpectrum.h"
 #endif
 
 using namespace std;
@@ -271,13 +277,13 @@ void displayQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
     
     if( urls.empty() )
     {
-      string msg = (urlspec.size() == 1) ? "<p>Likely due to requiring more than 9 QR codes<p>"
+      string msg = (urlspec.size() == 1) ? "<p>Likely due to requiring more than 9 QR codes</p>"
                                          : "<p>Likely due to not being able to fit multiple spectra"
                                            " into a single QR code.</p>";
       
       auto dialog = new SimpleDialog( WString::tr("esf-error-title"),
                                      "<p>Spectrum could not be encoded to a QR code.</p>" + msg );
-      dialog->addButton( WString::tr("Ok") );
+      dialog->addButton( WString::tr("Okay") );
       return;
     }//if( urls.empty() )
     
@@ -290,9 +296,319 @@ void displayQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
   }catch( std::exception &e )
   {
     auto dialog = new SimpleDialog( WString::tr("esf-error-title"), WString::tr("esf-qr-encode-failed").arg(e.what()) );
-    dialog->addButton( "Ok" );
+    dialog->addButton( WString::tr("Okay") );
   }//try catch
 }//void displayQrCode( const vector<SpecUtils::UrlSpectrum> urlspec, const bool as_emailto )
+
+
+void displayLossyQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
+                          shared_ptr<const SpecMeas> spec,
+                          boost::function<void()> successfullyDone )
+{
+  // QR version options: version -> elements = version*4+17
+  struct QrVersionInfo
+  {
+    int version;
+    int elements;
+    const char *label;
+  };
+
+  static const QrVersionInfo s_qr_versions[] = {
+    { 15,  77, "77x77 (v15)" },
+    { 20,  97, "97x97 (v20)" },
+    { 25, 117, "117x117 (v25)" },
+    { 30, 137, "137x137 (v30)" },
+    { 35, 157, "157x157 (v35)" },
+    { 40, 177, "177x177 (v40)" },
+  };
+
+  static const size_t s_num_versions = sizeof(s_qr_versions) / sizeof(s_qr_versions[0]);
+
+  // Alphanumeric capacity: [version_index][ecl_index], ecl: 0=Low, 1=Medium, 2=Quartile, 3=High
+  static const size_t s_qr_cap[6][4] = {
+    {  758,  600,  426,  320 },  // v15
+    { 1249,  970,  702,  528 },  // v20
+    { 1853, 1451, 1041,  769 },  // v25
+    { 2520, 1994, 1429, 1016 },  // v30
+    { 3351, 2632, 1867, 1347 },  // v35
+    { 4296, 3391, 2420, 1729 },  // v40
+  };
+
+  InterSpec *interspec = InterSpec::instance();
+  const bool is_phone = (interspec && interspec->isPhone());
+
+  int w = interspec ? interspec->renderedWidth() : 0;
+  int h = interspec ? interspec->renderedHeight() : 0;
+
+  if( (interspec && interspec->isMobile()) && (w < 100) )
+  {
+    w = wApp->environment().screenWidth();
+    h = wApp->environment().screenHeight();
+  }
+
+  const bool narrow_layout = ((w > 100) && (w < 480));
+
+  // Default to version index 2 (v25, 117x117) and Low ECL for maximum data capacity
+  const int default_ver_index = 2;
+  const int default_ecl_index = 0;
+
+  const size_t max_chars = s_qr_cap[default_ver_index][default_ecl_index];
+
+  SpecUtils::LossyEncodeResult result;
+  try
+  {
+    result = SpecUtils::url_encode_spectra_lossy( urlspec, 0, 1, max_chars );
+  }catch( std::exception &e )
+  {
+    SimpleDialog *dialog = new SimpleDialog( WString::tr("esf-error-title"),
+      WString::tr("esf-qr-lossy-err") );
+    dialog->addButton( WString::tr("Ok") );
+    return;
+  }
+
+  if( result.m_urls.empty() )
+  {
+    SimpleDialog *dialog = new SimpleDialog( WString::tr("esf-error-title"),
+      WString::tr("esf-qr-lossy-err") );
+    dialog->addButton( WString::tr("Ok") );
+    return;
+  }
+
+  // URL-decode the URI for QR code generation (base-45 chars are all QR alphanumeric)
+  string url = Wt::Utils::urlDecode( result.m_urls[0] );
+
+  QrCode::ErrorCorrLevel wanted_ecl = static_cast<QrCode::ErrorCorrLevel>( default_ecl_index );
+  const tuple<string,int,QrCode::ErrorCorrLevel> qr_svg
+    = QrCode::utf8_string_to_svg_qr( url, wanted_ecl, 3 );
+  const string &qr_svg_str = get<0>( qr_svg );
+  const int qr_size = get<1>( qr_svg );
+
+  if( qr_svg_str.empty() )
+  {
+    passMessage( "Sorry, couldn't create QR code", 3 );
+    return;
+  }
+
+  int svg_size = 5 * (qr_size + 1);
+  if( (w > 100) && (h > 100) )
+  {
+    const int otherVertSpace = (is_phone ? ((h / 20) + 95) : 205) + 15 + 20;
+    int wdim = w / (is_phone ? 2 : 3);
+    if( narrow_layout )
+      wdim = (3 * w) / 4;
+    wdim = std::min( wdim, (h - otherVertSpace) );
+    wdim = std::max( wdim, 125 );
+    svg_size = std::min( wdim, svg_size );
+  }
+  svg_size = std::min( svg_size, 640 );
+
+  SimpleDialog *window = new SimpleDialog( WString::tr("esf-lossy-qr-title"), "" );
+  window->rejectWhenEscapePressed();
+  window->addButton( "Close" );
+
+  if( is_phone )
+    window->setAttributeValue( "style", "max-width: 95vw; " + window->attributeValue("style") );
+
+  const unsigned char *svg_begin = reinterpret_cast<const unsigned char *>( qr_svg_str.data() );
+  const vector<unsigned char> svg_data( svg_begin, svg_begin + qr_svg_str.size() );
+  WMemoryResource *svgResource = new WMemoryResource( "image/svg+xml", svg_data, window );
+  svgResource->suggestFileName( "qr_lossy.svg", WResource::Attachment );
+
+  string contentStyle;
+  if( is_phone && !narrow_layout )
+    contentStyle = "display: flex; "
+                   "flex-direction: row; "
+                   "column-gap: 10px; "
+                   "max-width: calc(95vw - 30px); "
+                   "max-height: calc(95vh - 65px); ";
+  if( narrow_layout )
+    contentStyle += "font-size: small; ";
+
+  if( !contentStyle.empty() )
+    window->contents()->setAttributeValue( "style", contentStyle );
+
+  WImage *qrImage = new WImage( WLink(svgResource), window->contents() );
+  qrImage->setInline( false );
+  qrImage->resize( svg_size, svg_size );
+  qrImage->setMargin( 5, Wt::Side::Bottom );
+  qrImage->setMargin( WLength::Auto, Wt::Side::Left );
+  qrImage->setMargin( WLength::Auto, Wt::Side::Right );
+
+  // Error tolerance row
+  WContainerWidget *eclRow = new WContainerWidget( window->contents() );
+  const char *row_style = "margin-bottom: 10px;"
+    " display: flex;"
+    " flex-wrap: nowrap;"
+    " align-items: center;"
+    " gap: 3px;"
+    " margin-left: 10px;"
+    " margin-right: 10px;";
+  eclRow->setAttributeValue( "style", row_style );
+
+  WLabel *eclLabel = new WLabel( WString::tr("esf-qr-error-tolerance"), eclRow );
+  WComboBox *eclSelect = new WComboBox( eclRow );
+  eclLabel->setBuddy( eclSelect );
+  eclSelect->setNoSelectionEnabled( false );
+  eclSelect->addItem( "Approx. 7% Loss" );
+  eclSelect->addItem( "Approx. 15% Loss" );
+  eclSelect->addItem( "Approx. 25% Loss" );
+  eclSelect->addItem( "Approx. 30% Loss" );
+  eclSelect->setCurrentIndex( default_ecl_index );
+
+  // QR version (size) row
+  WContainerWidget *verRow = new WContainerWidget( window->contents() );
+  verRow->setAttributeValue( "style", row_style );
+
+  WLabel *verLabel = new WLabel( WString::tr("esf-qr-num-elements"), verRow );
+  WComboBox *verSelect = new WComboBox( verRow );
+  verLabel->setBuddy( verSelect );
+  verSelect->setNoSelectionEnabled( false );
+  for( size_t i = 0; i < s_num_versions; ++i )
+    verSelect->addItem( s_qr_versions[i].label );
+  verSelect->setCurrentIndex( default_ver_index );
+
+  // RMSE and coefficient info
+  WContainerWidget *infoRow = new WContainerWidget( window->contents() );
+  infoRow->setAttributeValue( "style", row_style );
+
+  char rmse_buf[64];
+  snprintf( rmse_buf, sizeof(rmse_buf), "%.2f", result.m_rmse );
+  WText *infoTxt = new WText( WString::tr("esf-qr-rmse-info")
+                               .arg( rmse_buf )
+                               .arg( result.m_num_coefficients ), infoRow );
+
+  // Shared state for the update lambda
+  // current_url holds the decoded URL (for QR rendering), current_encoded_url holds
+  // the original URL-encoded URI (for clipboard copy and "Enter URL" compatibility)
+  shared_ptr<string> current_url = make_shared<string>( url );
+  shared_ptr<string> current_encoded_url = make_shared<string>( result.m_urls[0] );
+
+  // Update lambda called when either combo box changes
+  auto doUpdate = [=](){
+    const int ver_idx = verSelect->currentIndex();
+    const int ecl_idx = eclSelect->currentIndex();
+    if( ver_idx < 0 || ver_idx >= static_cast<int>( s_num_versions )
+        || ecl_idx < 0 || ecl_idx > 3 )
+      return;
+
+    const size_t chars = s_qr_cap[ver_idx][ecl_idx];
+
+    try
+    {
+      SpecUtils::LossyEncodeResult res
+        = SpecUtils::url_encode_spectra_lossy( urlspec, 0, 1, chars );
+
+      if( res.m_urls.empty() )
+        throw runtime_error( "No URLs produced" );
+
+      const string new_url = Wt::Utils::urlDecode( res.m_urls[0] );
+      *current_url = new_url;
+      *current_encoded_url = res.m_urls[0];
+
+      const QrCode::ErrorCorrLevel ecl = static_cast<QrCode::ErrorCorrLevel>( ecl_idx );
+      const tuple<string,int,QrCode::ErrorCorrLevel> new_qr
+        = QrCode::utf8_string_to_svg_qr( new_url, ecl, 3 );
+
+      const string &new_svg = get<0>( new_qr );
+      if( new_svg.empty() )
+        throw runtime_error( "Error creating SVG" );
+
+      const unsigned char *begin = reinterpret_cast<const unsigned char *>( new_svg.data() );
+      const vector<unsigned char> new_data( begin, begin + new_svg.size() );
+      svgResource->setData( new_data );
+
+      char buf[64];
+      snprintf( buf, sizeof(buf), "%.2f", res.m_rmse );
+      infoTxt->setText( WString::tr("esf-qr-rmse-info")
+                         .arg( buf )
+                         .arg( res.m_num_coefficients ) );
+
+      qrImage->show();
+    }catch( std::exception & )
+    {
+      infoTxt->setText( WString::tr("esf-qr-lossy-err") );
+      qrImage->hide();
+    }
+  };
+
+  eclSelect->changed().connect( std::bind(doUpdate) );
+  verSelect->changed().connect( std::bind(doUpdate) );
+
+  // Buttons row
+  WContainerWidget *btndiv = new WContainerWidget( window->contents() );
+
+#if( BUILD_AS_OSX_APP || IOS )
+  WAnchor *svgDownload = new WAnchor( WLink(svgResource) );
+  svgDownload->setTarget( AnchorTarget::TargetNewWindow );
+  svgDownload->setStyleClass( "LinkBtn DownloadLink DrfXmlDownload" );
+#else
+  WPushButton *svgDownload = new WPushButton( btndiv );
+  svgDownload->setIcon( "InterSpec_resources/images/download_small.svg" );
+  svgDownload->setLink( WLink(svgResource) );
+  svgDownload->setLinkTarget( Wt::TargetNewWindow );
+  svgDownload->setStyleClass( "LinkBtn DownloadBtn" );
+#if( ANDROID )
+  svgDownload->clicked().connect( std::bind([svgResource](){
+    android_download_workaround( svgResource, "qr_lossy.svg" );
+  }) );
+#endif //ANDROID
+#endif
+  svgDownload->setText( "SVG" );
+  svgDownload->setFloatSide( Wt::Side::Right );
+
+  WPushButton *copyBtn = new WPushButton( "Copy url to clipboard", btndiv );
+  copyBtn->setStyleClass( "LinkBtn" );
+  copyBtn->setFloatSide( Wt::Side::Left );
+
+  // Use a JS variable to hold the URL-encoded URI for clipboard copy
+  const string js_var = "window.__lossy_qr_url_" + window->id();
+  wApp->doJavaScript( js_var + "=" + WString(*current_encoded_url).jsStringLiteral() + ";" );
+
+  copyBtn->clicked().connect( "function(s,e){"
+    "var txt=" + js_var + ";"
+    "if(navigator.clipboard){navigator.clipboard.writeText(txt);}"
+    "else{var ta=document.createElement('textarea');ta.value=txt;"
+    "ta.style.position='fixed';document.body.appendChild(ta);"
+    "ta.focus();ta.select();document.execCommand('copy');"
+    "document.body.removeChild(ta);}"
+    "}" );
+
+  // Update the JS variable whenever settings change
+  auto updateJsUrl = [=](){
+    wApp->doJavaScript( js_var + "=" + WString(*current_encoded_url).jsStringLiteral() + ";" );
+  };
+  eclSelect->changed().connect( std::bind(updateJsUrl) );
+  verSelect->changed().connect( std::bind(updateJsUrl) );
+
+  if( is_phone && !narrow_layout )
+  {
+    btndiv->addWidget( svgDownload );
+    btndiv->addWidget( copyBtn );
+  }else
+  {
+    btndiv->addWidget( copyBtn );
+    btndiv->addWidget( svgDownload );
+  }
+
+  // Connect Close button to successfullyDone if provided
+  if( successfullyDone )
+  {
+    WContainerWidget *foot = window->footer();
+    if( foot )
+    {
+      for( WWidget *child : foot->children() )
+      {
+        WPushButton *btn = dynamic_cast<WPushButton *>( child );
+        if( btn )
+        {
+          btn->clicked().connect( std::bind(successfullyDone) );
+          break;
+        }
+      }
+    }
+  }//if( successfullyDone )
+}//void displayLossyQrCode(...)
+
 }//namespace
 #endif //USE_QR_CODES
 
@@ -691,6 +1007,7 @@ ExportSpecFileTool::ExportSpecFileTool( InterSpec *viewer, Wt::WContainerWidget 
   m_export_btn( nullptr ),
 #if( USE_QR_CODES )
   m_show_qr_btn( nullptr ),
+  m_lossless_qr_cb( nullptr ),
 #endif
   m_resource( nullptr ),
   m_last_state_uri{}
@@ -741,6 +1058,7 @@ ExportSpecFileTool::ExportSpecFileTool( const std::shared_ptr<const SpecMeas> &s
   m_export_btn( nullptr ),
 #if( USE_QR_CODES )
   m_show_qr_btn( nullptr ),
+  m_lossless_qr_cb( nullptr ),
 #endif
   m_resource( nullptr ),
   m_last_state_uri{}
@@ -1069,7 +1387,18 @@ void ExportSpecFileTool::init()
   
   m_excludeGpsInfo = new WCheckBox( WString::tr("esf-remove-gps"), m_optionsHolder );
   m_excludeGpsInfo->addStyleClass( "CbNoLineBreak" );
-  
+
+#if( USE_QR_CODES )
+  m_lossless_qr_cb = new WCheckBox( WString::tr("esf-lossless-qr"), m_optionsHolder );
+  m_lossless_qr_cb->addStyleClass( "CbNoLineBreak" );
+  m_lossless_qr_cb->setChecked( true );
+  m_lossless_qr_cb->hide();
+  tooltip = WString::tr("esf-lossless-qr-tt");
+  HelpSystem::attachToolTipOn( m_lossless_qr_cb, tooltip, true,
+                              HelpSystem::ToolTipPosition::Right,
+                              HelpSystem::ToolTipPrefOverride::AlwaysShow );
+#endif
+
   m_sampleSelectNotAppTxt = new WText( WString::tr("esf-not-applicable") );
   m_sampleSelectNotAppTxt->addStyleClass( "ExportNotAppTxt" );
   m_samplesHolder->insertWidget( 1, m_sampleSelectNotAppTxt ); // Put right below title
@@ -2028,7 +2357,14 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
   
   
   m_excludeGpsInfo->setHidden( !spec || !spec->has_gps_info() );
-  
+
+#if( USE_QR_CODES )
+  {
+    const bool is_qr = (save_type == SpecUtils::SaveSpectrumAsType::Uri);
+    m_lossless_qr_cb->setHidden( !is_qr );
+  }
+#endif
+
   if( !spec || (spec->sample_numbers().size() <= 1) )
   {
     m_dispForeSamples->setChecked(false);
@@ -2052,7 +2388,11 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
     
     m_sampleSelectNotAppTxt->show();
     m_optionsNotAppTxt->setHidden( m_excludeGpsInfo->isVisible()
-                                  || m_excludeInterSpecInfo->isVisible() );
+                                  || m_excludeInterSpecInfo->isVisible()
+#if( USE_QR_CODES )
+                                  || m_lossless_qr_cb->isVisible()
+#endif
+                                  );
     
     if( spec && (spec->gamma_detector_names().size() > 1) && (max_records < 2) )
     {
@@ -3244,8 +3584,11 @@ void ExportSpecFileTool::handleGenerateQrCode()
     const vector<SpecUtils::UrlSpectrum> urlspec = SpecUtils::to_url_spectra( spec->measurements(), model );
     
     auto successfullyDone = wApp->bind( boost::bind( &ExportSpecFileTool::emitDone, this, true ) );
-    
-    displayQrCode( urlspec, spec, successfullyDone, false );
+
+    if( m_lossless_qr_cb && m_lossless_qr_cb->isChecked() )
+      displayQrCode( urlspec, spec, successfullyDone, false );
+    else
+      displayLossyQrCode( urlspec, spec, successfullyDone );
   }catch( std::exception &e )
   {
     auto dialog = new SimpleDialog( "Error", "Failed to encoded spectrum to a URI: " + string(e.what()) );

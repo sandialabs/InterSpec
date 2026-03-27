@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <message id="N42-2012">
+    Guarda los datos en el formato ANSI N42.42-2012.
+
+    Toda la información extraída del archivo de espectro original, así como la información agregada por InterSpec, como picos ajustados, calibración de energía actualizada, información de ajuste de fuentes, información de respuesta del detector, etc., se incluirá en el archivo de salida.
+
+    Este es el formato de archivo de espectro recomendado si desea trabajar con los datos en InterSpec nuevamente en el futuro.
+
+    El formato N42.42-2012 se ha actualizado a N42.42-2020, sin embargo, el formato actualizado es esencialmente idéntico a la versión de 2012, siendo los cambios principalmente aclaraciones en la documentación.
+
+    Consulte https://www.nist.gov/pml/radiation-physics/ansiieee-n4242-2020-version o https://www.nist.gov/programs-projects/documentary-standards-ansiieee-n4242-standard para más información.
+
+    Nota: los archivos N42-2012 producidos por InterSpec contienen un elemento &lt;DHS:InterSpec&gt;&lt;/DHS:InterSpec&gt;, en violación de la especificación, lo cual puede causar problemas a algunos analizadores XML; también puede haber otras pequeñas desviaciones de las especificaciones; estos problemas son conocidos y se pretende corregirlos en el futuro.
+  </message>
+
+  <message id="N42-2006">
+    Guarda en el formato XML N42 de 2006.
+
+    La mayor parte de la información relevante de la mayoría de los archivos de espectro de entrada se incluirá en el archivo de salida, así como la información que agregó en InterSpec; sin embargo, no todos los programas de espectroscopía pueden extraer todos los campos ni leer todas las variaciones de archivos N42.
+
+    Se recomienda utilizar el formato N42.42-2012 en lugar de este formato, a menos que esté exportando los datos para su uso con una aplicación heredada.
+  </message>
+
+  <message id="CHN">
+    Esta opción produce un archivo CHN binario de enteros.
+
+    Este formato contiene un único espectro, hora de inicio de medición, título del espectro (hasta 63 caracteres), descripción del detector y la calibración de energía actual.
+
+    Los pares de desviación de energía, conteos de neutrones, información específica de InterSpec (DRF, ajustes de actividad, etc.), así como cualquier otra metainformación, no se incluirán en el archivo de salida.
+  </message>
+
+  <message id="IAEA SPE">
+    Los archivos SPE son archivos de espectro único basados en ASCII, comunes para el intercambio de datos entre programas.
+
+    Guardar en este formato preserva los conteos de neutrones, hora de inicio, tiempo vivo, tiempo real, calibración de energía, comentarios y título.
+
+    Los pares de desviación, GPS, modelo, información específica de InterSpec (DRF, ajustes de actividad, etc.) y otra metainformación no se incluirán en el archivo de salida.
+  </message>
+
+  <message id="CSV">
+    Esta opción produce un archivo de valores separados por comas (CSV), que puede incluir múltiples espectros gamma.
+
+    Los espectros se escriben en formato de dos columnas (separadas por una coma); la primera columna es la energía del borde inferior del canal gamma (en keV), la segunda columna es el conteo del canal. Cada espectro en el archivo se escribe de forma contigua y se separa por un encabezado que dice "Energy, Data".
+    Se utilizan terminaciones de línea de estilo Windows (\\n\\r).
+
+    Este formato pierde toda la información no espectral, incluyendo tiempos vivos y reales, y está destinado a ser una forma sencilla de importar la información espectral en otros programas como Excel.
+  </message>
+
+  <message id="TXT">
+    Los espectros se escribirán en un archivo de texto ASCII.
+
+    Al inicio del archivo se escribirán el nombre del archivo original, tiempos vivos y reales totales, conteos gamma totales, conteos de neutrones totales, número de serie (si está presente) y cualquier comentario a nivel de archivo en líneas etiquetadas separadas.
+    Luego, después de dos líneas en blanco, cada espectro del archivo actual se escribirá separado por dos líneas en blanco. Cada espectro contendrá todos los comentarios, hora de inicio de medición (si es válida), tiempos vivo y real, número de muestra, nombre del detector, tipo de detector, coordenadas/hora GPS (si son válidas), tipo de calibración de energía y valores de coeficientes, y conteos de neutrones (si son válidos); el número de canal, energía inferior del canal y conteo del canal se proporcionan con cada canal en una línea separada y cada campo separado por un espacio.
+
+    El análisis del detector proporcionado en el programa original, así como el fabricante, UUID, pares de desviación, información de carril, nombre de ubicación o título del espectro se perderán.
+    Se utiliza la convención de terminación de línea de Windows (\\n\\r).
+
+    Este no es un formato estándar comúnmente leído por otros programas, y está destinado como un resumen legible por humanos de la información del archivo de espectro; no toda la información escrita será leída por InterSpec si carga el archivo resultante de nuevo en el programa.
+  </message>
+
+  <message id="PCF">
+    El formato PCF es el formato binario nativo de GADRAS.
+
+    Guardar en este formato causará la pérdida de alguna información. Sin embargo, la calibración, primer plano/fondo, velocidad, muestra y título del espectro (hasta 60 caracteres) se preservarán junto con la información espectral y los conteos de neutrones.
+
+    Este formato se utiliza más comúnmente para importar datos en GADRAS.
+  </message>
+
+  <message id="CNF">
+    Los archivos CNF de Mirion/Canberra son archivos binarios de espectro único.
+
+    Guardar en este formato preserva la hora de inicio, tiempo vivo, tiempo real, calibración de energía, título y coordenadas GPS.
+    Los conteos de neutrones, pares de desviación, modelo, resultados RIID, información específica de InterSpec (DRFs, picos ajustados, actividades ajustadas, etc.) y otra metainformación se perderán.
+
+    Solo un subconjunto de campos de archivo CAM es compatible con la exportación, y algunos campos pueden no ser correctos aún.
+  </message>
+
+  <message id="SPC (int)">
+    Esta opción produce un archivo SPC binario de espectro único basado en enteros.
+
+    Este formato incluye el espectro gamma, conteos de neutrones, información GPS, hora de inicio de medición, número de serie del detector y calibración de energía.
+
+    Los pares de desviación de energía, resultados de análisis, información específica de InterSpec (DRFs, picos ajustados, actividades ajustadas, etc.) y otra metainformación no se incluirán.
+  </message>
+
+  <message id="SPC (float)">
+    Esta opción produce un archivo SPC binario de espectro único basado en punto flotante.
+
+    Este formato incluye el espectro gamma, conteos de neutrones, información GPS, hora de inicio de medición, número de serie del detector y calibración de energía.
+
+    Los pares de desviación de energía, resultados de análisis, información específica de InterSpec (DRFs, picos ajustados, actividades ajustadas, etc.) y otra metainformación no se incluirán.
+  </message>
+
+  <message id="SPC (ascii)">
+    Esta opción produce un archivo SPC ASCII de espectro único.
+
+    Este formato incluye el espectro gamma, conteos de neutrones, información GPS, hora de inicio de medición, número de serie del detector, calibración de energía, alguna información de análisis del detector, fabricante e información del modelo.
+
+    Los pares de desviación de energía, algunos resultados de análisis, información específica de InterSpec (DRFs, picos ajustados, actividades ajustadas, etc.) y posiblemente alguna, pero no toda, la metainformación no se incluirán.
+  </message>
+
+  <message id="TKA">
+    Archivo Canberra Toolkit.
+
+    Guardar en este formato incluirá un único espectro gamma, el tiempo vivo y el tiempo real.
+
+    Toda otra información se perderá.
+  </message>
+
+  <message id="GR-130">
+    El formato GR130 es el formato binario nativo de los detectores Exploranium GR130.
+
+    Guardar en este formato causará que los datos se redistribuyan a 256 canales, preservando los tiempos de inicio y vivo, pero la calibración de energía y la información de neutrones se perderán, junto con toda la metainformación como comentarios, GPS, etc.
+
+    Se pueden escribir múltiples espectros en un solo archivo, con los registros ordenados por número de muestra y luego por número de detector.
+  </message>
+
+  <message id="GR-135">
+    El formato GR135 es el formato binario nativo de los detectores Exploranium GR135v2.
+
+    Guardar en este formato causará que los datos se redistribuyan a 1024 canales, preservando los tiempos de inicio y vivo, conteos de neutrones, calibración de energía y números de serie numéricos.
+
+    Los pares de desviación, comentarios, título, GPS y otra metainformación se perderán.
+
+    Se pueden escribir múltiples espectros en un solo archivo, con los registros ordenados por número de muestra y luego por número de detector.
+  </message>
+
+  <message id="HTML">
+    Se produce un archivo HTML independiente con un gráfico de espectro interactivo.
+
+    El archivo puede incluir un espectro de primer plano y de fondo, líneas de referencia gamma, y tendrá algunas opciones básicas de visualización.
+
+    Este formato de archivo solo puede ser leído y mostrado por navegadores web que tengan javascript habilitado y soporten imágenes SVG.
+  </message>
+
+  <message id="QR-code/URL">
+    El espectro se codificará en un código QR y/o URI.
+
+    El código QR o URI puede contener los espectros de primer plano y fondo, si caben.
+
+    Los espectros gamma, conteos de neutrones, coordenadas GPS, calibración de energía e información del detector se incluirán, si están disponibles.
+
+    Toda otra metainformación e información específica de InterSpec (DRFs, picos ajustados, actividades ajustadas, etc.) no se incluirá.
+
+    Los espectros HPGe pueden requerir múltiples códigos QR para representar un solo espectro, en cuyo caso los espectros de fondo y de primer plano deben codificarse por separado.
+  </message>
+</messages>

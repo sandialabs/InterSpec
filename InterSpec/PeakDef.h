@@ -30,6 +30,7 @@
 #include <vector>
 #include <utility>
 #include <assert.h>
+#include <algorithm>
 #include <stdexcept>
 
 #include <Wt/WColor>
@@ -1493,5 +1494,59 @@ void PeakDef::setUseForDrfDepthOfInteractionFit( const bool use )
 {
   m_useForDrfDepthOfInteractionFit = use;
 }
+
+
+/** Helper to extract the raw PeakContinuum pointer from any peak-like type.
+
+ Supports PeakDef (by value/reference), PeakDef*, shared_ptr<PeakDef>,
+ and shared_ptr<const PeakDef>.
+ */
+inline const PeakContinuum *peak_continuum_ptr( const PeakDef &p ) { return p.continuum().get(); }
+inline const PeakContinuum *peak_continuum_ptr( const PeakDef *p ) { return p ? p->continuum().get() : nullptr; }
+
+template<typename T>
+const PeakContinuum *peak_continuum_ptr( const std::shared_ptr<T> &p ) { return p ? p->continuum().get() : nullptr; }
+
+
+/** Group peak-like items by their shared PeakContinuum, returning groups sorted
+ by continuum lower energy for deterministic iteration order.
+
+ This avoids the non-determinism caused by `std::map<std::shared_ptr<PeakContinuum>, ...>`
+ whose iteration order depends on pointer values (randomized by ASLR).
+
+ @tparam PeakT Any type for which `peak_continuum_ptr()` is defined:
+         PeakDef, PeakDef*, shared_ptr<PeakDef>, shared_ptr<const PeakDef>.
+ @param peaks The peaks to group.
+ @return Vector of (raw-continuum-pointer, peaks-in-that-roi) pairs, sorted by lowerEnergy().
+         The raw pointer is for identification only; lifetime is guaranteed by the peaks themselves.
+ */
+template<typename PeakT>
+std::vector<std::pair<const PeakContinuum *, std::vector<PeakT>>>
+group_peaks_by_roi( const std::vector<PeakT> &peaks )
+{
+  std::map<const PeakContinuum *, std::vector<PeakT>> groups;
+  for( const PeakT &p : peaks )
+  {
+    const PeakContinuum * const cont = peak_continuum_ptr( p );
+    if( cont )
+      groups[cont].push_back( p );
+  }
+
+  std::vector<std::pair<const PeakContinuum *, std::vector<PeakT>>> result;
+  result.reserve( groups.size() );
+  for( auto &entry : groups )
+    result.emplace_back( entry.first, std::move( entry.second ) );
+
+  std::sort( result.begin(), result.end(),
+    []( const std::pair<const PeakContinuum *, std::vector<PeakT>> &a,
+        const std::pair<const PeakContinuum *, std::vector<PeakT>> &b ) -> bool {
+      if( a.first->lowerEnergy() != b.first->lowerEnergy() )
+        return a.first->lowerEnergy() < b.first->lowerEnergy();
+      return a.first->upperEnergy() < b.first->upperEnergy();
+    } );
+
+  return result;
+}
+
 
 #endif

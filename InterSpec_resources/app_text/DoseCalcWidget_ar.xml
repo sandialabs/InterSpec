@@ -32,6 +32,7 @@
   <message id="dcw-err-other">خطأ في حساب الجرعة من المصدر، عذرًا :{</message>
   <message id="dcw-invalid-src-dose">جرعة المصدر غير صالحة.</message>
   <message id="dcw-invalid-src-act">نشاط المصدر غير صالح.</message>
+  <message id="dcw-invalid-src-dose">جرعة مصدر غير صالحة.</message>
   <message id="dcw-failed-find-lower-dist">فشل في العثور على المسافة الحدية السفلى، عند {1} سم.</message>
   <message id="dcw-failed-find-upper-dist">فشل في العثور على المسافة الحدية العليا، عند {1} سم.</message>
   <message id="dcw-failed-find-dist">لم يتمكن من العثور على المسافة؛ تجاوز الحد الأقصى للتكرارات.</message>

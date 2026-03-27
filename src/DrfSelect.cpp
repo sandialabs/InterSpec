@@ -4842,10 +4842,10 @@ void DrfSelect::handleEfficiencyCsvUpload()
 #else
       ifstream csvfile( filename.c_str(), ios_base::binary|ios_base::in );
 #endif
-      
+
       if( !csvfile.is_open() )
         throw runtime_error( "Failed to open uploaded file." );
-      
+
       float diameter = -1.0f;
       if( !m_detectrDiameterDiv->isHidden()
          && ((m_efficiencyType->currentIndex() == 0) || (m_efficiencyType->currentIndex() == 1)) )
@@ -4861,7 +4861,7 @@ void DrfSelect::handleEfficiencyCsvUpload()
           m_detectorDiameter->setText( "" );
         }
       }//if( !m_detectrDiameterDiv->isHidden() && (m_efficiencyType->currentIndex() == 1) )
-      
+
       double abs_eff_dist = -1.0;
       if( !m_detectorDistance->isHidden() && (m_efficiencyType->currentIndex() == 1) )
       {
@@ -4875,16 +4875,16 @@ void DrfSelect::handleEfficiencyCsvUpload()
           m_detectorDistance->setText( "" );
         }
       }
-      
+
       const DetectorPeakResponse::EffGeometryType eff_type = (abs_eff_dist >= 0.0f) ? DetectorPeakResponse::EffGeometryType::FarFieldAbsolute
                                                                               : DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
-      
+
       can_accept = ((diameter > 0.0f) && ((m_efficiencyType->currentIndex() == 0) || (abs_eff_dist >= 0.0)));
       if( diameter < 0.0f )
         diameter = 2.53*3*PhysicalUnits::cm;
       if( (m_efficiencyType->currentIndex() == 1) && (abs_eff_dist < 0.0f) )
         abs_eff_dist = 1.0*PhysicalUnits::m;
-      
+
       shared_ptr<DetectorPeakResponse> trial_det = make_shared<DetectorPeakResponse>();
       trial_det->fromEnergyEfficiencyCsv( csvfile, diameter, abs_eff_dist, float(PhysicalUnits::keV), eff_type );
       if( trial_det->isValid() )

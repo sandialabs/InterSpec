@@ -14,7 +14,7 @@
   <message id="pe-btn-refit-roi-independent">ROI újraillesztés: független FWHM-ek</message>
   <message id="pe-btn-refit-roi-fine">ROI újraillesztés: kis finomítások</message>
   <message id="pe-btn-refit-roi-independent-fine">ROI újraillesztés: finomítás független FWHM-ekkel</message>
-  
+
   <message id="pe-label-centroid">Centroid</message>
   <message id="pe-label-drf-fwhm">DRF jósolt FWHM</message>
   <message id="pe-label-amp">Amplitúdó</message>
@@ -37,11 +37,80 @@
   <message id="pe-drf-predict-fwhm-txt">A DRF {1} keV FWHM-et jósol</message>
   <message id="pe-btn-cont-to-linear">Lineáris kontinuum becslése</message>
   <message id="pe-tt-btn-cont-to-linear">A ROI jobb és bal oldalán lévő csatornákat használja egyenes vonalú kontinuum becsléséhez.</message>
-  <message id="pe-failed-refit-insig">Nem sikerült a csúcs újraillesztése (jelentéktelenné vált), így nem teszünk semmit</message>
+  <message id="pe-failed-refit-insig">Nem sikerült a csúcs újraillesztése (jelentéktelenné vált), így nem történik művelet</message>
 
   <message id="pe-est-lin-cont-no-data">Kérjük, töltsön be egy előtér spektrumot a kontinuum becslése előtt.</message>
   <message id="pe-failed-est-lin-cont">Nem sikerült becsülni a kontinuumot a ROI széleiből: {1}</message>
-  
-  
-  
+
+  <!-- Skew parameter labels for Bortel (Exp*Gauss) -->
+  <message id="pe-label-skew-bortel-tau">Aszimm. &alpha;</message>
+
+  <!-- Skew parameter labels for DoubleBortel -->
+  <message id="pe-label-skew-doublebortel-tau1">&tau;<sub>1</sub></message>
+  <message id="pe-label-skew-doublebortel-deltatau2">&Delta;&tau;<sub>2</sub></message>
+  <message id="pe-label-skew-doublebortel-eta">&eta;</message>
+
+  <!-- Skew parameter labels for GaussPlusBortel -->
+  <message id="pe-label-skew-gaussplusbortel-r">Keverési arány R</message>
+  <message id="pe-label-skew-gaussplusbortel-tau">Bortel &tau;</message>
+
+  <!-- Skew parameter labels for GaussExp -->
+  <message id="pe-label-skew-gaussexp-k">Aszimm. k</message>
+
+  <!-- Skew parameter labels for CrystalBall -->
+  <message id="pe-label-skew-crystalball-alpha">Aszimm. &alpha;</message>
+  <message id="pe-label-skew-crystalball-n">Aszimm. n</message>
+
+  <!-- Skew parameter labels for ExpGaussExp -->
+  <message id="pe-label-skew-expgaussexp-kl">Aszimm. k<sub>L</sub></message>
+  <message id="pe-label-skew-expgaussexp-kh">Aszimm. k<sub>H</sub></message>
+
+  <!-- Skew parameter labels for DoubleSidedCrystalBall -->
+  <message id="pe-label-skew-dscb-alphalow">Aszimm. &alpha;<sub>low</sub></message>
+  <message id="pe-label-skew-dscb-nlow">Aszimm. n<sub>low</sub></message>
+  <message id="pe-label-skew-dscb-alphahigh">Aszimm. &alpha;<sub>high</sub></message>
+  <message id="pe-label-skew-dscb-nhigh">Aszimm. n<sub>high</sub></message>
+
+  <!-- Skew parameter labels for VoigtPlusBortel -->
+  <message id="pe-label-skew-voigtplusbortel-gamma">Lorentz &gamma;</message>
+  <message id="pe-label-skew-voigtplusbortel-r">Keverési arány R</message>
+  <message id="pe-label-skew-voigtplusbortel-tau">Bortel &tau;</message>
+
+  <!-- Tooltips for skew parameters -->
+  <message id="pe-tt-skew-bortel-tau">Exponenciális lecsengési állandó az Exp*Gauss (Exponenciálisan Módosított Gauss) függvényhez. Az alacsony energiás csóva jellemző hosszát adja meg. Érvényes tartomány: 0,0-15 σ, tipikus értékek: 0,5-3 σ.</message>
+
+  <message id="pe-tt-skew-doublebortel-tau1">Első exponenciális lecsengési állandó, tipikusan σ közelében. Az elsődleges alacsony energiás csóva komponenst szabályozza. Érvényes tartomány: 0,01-15 σ.</message>
+
+  <message id="pe-tt-skew-doublebortel-deltatau2">Második exponenciális pótlólagos lecsengése: τ₂ = τ₁ + Δτ₂. A kiterjesztett csóva komponenst szabályozza. Érvényes tartomány: 0,0-10 σ.</message>
+
+  <message id="pe-tt-skew-doublebortel-eta">A második exponenciális komponens súlya. η=0 egyszerű Exp*Gauss(τ₁), η=1 tiszta Exp*Gauss(τ₂). Érvényes tartomány: 0,0-1,0.</message>
+
+  <message id="pe-tt-skew-gaussplusbortel-r">Keverési arány Gauss és Exp*Gauss között. R=0 tiszta Gauss, R=1 tiszta Exp*Gauss. Érvényes tartomány: 0,0-1,0, tipikus: 0,2-0,8.</message>
+
+  <message id="pe-tt-skew-gaussplusbortel-tau">Exponenciális lecsengési állandó a keverék Exp*Gauss komponenséhez. Érvényes tartomány: 0,01-15 σ, tipikus értékek: 0,5-3 σ.</message>
+
+  <message id="pe-tt-skew-gaussexp-k">Az exponenciális csóva küszöbértékét (μ - k·σ) és a lecsengési sebességet is szabályozza. Érvényes tartomány: 0,15-3,25, tipikus: 0,5-2,0.</message>
+
+  <message id="pe-tt-skew-crystalball-alpha">Küszöbérték σ egységben, ahol a hatványfüggvény csóva kezdődik: x = μ - α·σ. Érvényes tartomány: 0,5-4,0, tipikus: 1,0-3,0.</message>
+
+  <message id="pe-tt-skew-crystalball-n">Hatványkitevő az alacsony energiás csóvához: (x - μ + α·σ)^(-n). Nagyobb n meredekebb leesést ad. Érvényes tartomány: 1,05-100, tipikus: 2-10.</message>
+
+  <message id="pe-tt-skew-expgaussexp-kl">Az alsó (bal) energiás csóva küszöbértékét és lecsengését szabályozza. Érvényes tartomány: 0,15-3,25, tipikus: 0,5-2,0.</message>
+
+  <message id="pe-tt-skew-expgaussexp-kh">A felső (jobb) energiás csóva küszöbértékét és lecsengését szabályozza. Érvényes tartomány: 0,15-3,25, tipikus: 0,5-2,0.</message>
+
+  <message id="pe-tt-skew-dscb-alphalow">Alsó küszöbérték σ egységben, ahol az alacsony energiás hatványfüggvény csóva kezdődik. Érvényes tartomány: 0,5-4,0, tipikus: 1,0-3,0.</message>
+
+  <message id="pe-tt-skew-dscb-nlow">Hatványkitevő az alacsony energiás csóvához. Érvényes tartomány: 1,05-100, tipikus: 2-10.</message>
+
+  <message id="pe-tt-skew-dscb-alphahigh">Felső küszöbérték σ egységben, ahol a magas energiás hatványfüggvény csóva kezdődik. Érvényes tartomány: 0,5-4,0, tipikus: 1,0-3,0.</message>
+
+  <message id="pe-tt-skew-dscb-nhigh">Hatványkitevő a magas energiás csóvához. Érvényes tartomány: 1,05-100, tipikus: 2-10.</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-gamma">Lorentz-féle HWHM (félszélesség fél maximumnál), amely a természetes röntgenvonal-szélességet jelöli. Érvényes tartomány: 0,0-10,0 keV, röntgeneknél tipikus: 0,01-0,5 keV.</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-r">Keverési arány Voigt-profil és Exp*Gauss között. R=0 tiszta Voigt (csak természetes vonalszélesség), R=1 tiszta Exp*Gauss (csak detektor csóva). Érvényes tartomány: 0,0-1,0.</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-tau">Exponenciális lecsengési állandó az Exp*Gauss komponenshez, amely a hiányos töltésgyűjtési csóvát jelöli. Érvényes tartomány: 0,01-10 σ.</message>
+
 </messages>

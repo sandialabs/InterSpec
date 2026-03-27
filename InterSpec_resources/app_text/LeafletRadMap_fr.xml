@@ -36,4 +36,23 @@
     <li><b>Pics dans la plage</b> : Afficher uniquement les numéros d'échantillon qui ont des pics dans la plage d'énergie avec les couleurs des marqueurs et le CPS basés sur le taux de comptage des pics.</li>
     </ul>
   </message>
+  <message id="lrm-copy-google-maps">Copier l'URL Google Maps</message>
+  <message id="lrm-copy-bing-maps">Copier l'URL Bing Maps</message>
+  <message id="lrm-copy-url-success">URL de la carte copiée dans le presse-papiers — collez-la dans votre navigateur.</message>
+  <message id="lrm-copy-url-fail">Échec de la copie de l'URL de la carte dans le presse-papiers.</message>
+  <message id="lrm-copy-url-no-gps">Aucune donnée GPS disponible pour créer l'URL de la carte.</message>
+  <message id="lrm-tile-load-btn">Les tuiles de carte ne chargent pas ?</message>
+  <message id="lrm-tile-load-dialog-title">Les tuiles de carte ne chargent pas</message>
+  <message id="lrm-tile-load-dialog-content">
+    Les tuiles de carte n'ont pas pu être chargées depuis arcgis.com. Cela peut être causé par :
+    <ul>
+      <li>Pas de connexion internet</li>
+      <li>Un proxy d'entreprise ou un pare-feu bloquant l'accès à arcgis.com</li>
+      <li>Une clé API invalide ou expirée</li>
+    </ul>
+    <p>Si vous êtes derrière un proxy, vous devrez peut-être configurer les paramètres de proxy.
+    Consultez le fichier <em>data/config/example_InterSpec_app_settings.json</em> pour
+    l'option <b>ProxySetting</b> ; généralement une valeur de <b>system</b> fonctionnera.</p>
+    <p>Les marqueurs de mesure s'afficheront toujours, mais l'arrière-plan de la carte sera vide.</p>
+  </message>
 </messages>

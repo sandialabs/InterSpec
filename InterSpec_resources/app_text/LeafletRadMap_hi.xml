@@ -37,4 +37,23 @@
 <li><b>ऊर्जा सीमा</b>: निर्दिष्ट ऊर्जा सीमा के भीतर गामा गिनती को फिल्टर करें।</li>
 <li><b>सीमा में चोटियां</b>: केवल उन नमूना संख्याओं को दिखाएं जिनमें ऊर्जा सीमा में चोटियां हैं, मार्कर रंग और CPS चोटियों की गिनती दर पर आधारित।</li>
 </ul></message>
+  <message id="lrm-copy-google-maps">Google Maps URL कॉपी करें</message>
+  <message id="lrm-copy-bing-maps">Bing Maps URL कॉपी करें</message>
+  <message id="lrm-copy-url-success">मानचित्र URL क्लिपबोर्ड पर कॉपी हो गया — अपने ब्राउज़र में पेस्ट करें।</message>
+  <message id="lrm-copy-url-fail">क्लिपबोर्ड पर मानचित्र URL कॉपी करने में विफल।</message>
+  <message id="lrm-copy-url-no-gps">मानचित्र URL बनाने के लिए कोई GPS डेटा उपलब्ध नहीं।</message>
+  <message id="lrm-tile-load-btn">मानचित्र टाइलें लोड नहीं हो रहीं?</message>
+  <message id="lrm-tile-load-dialog-title">मानचित्र टाइलें लोड नहीं हो रहीं</message>
+  <message id="lrm-tile-load-dialog-content">
+    arcgis.com से मानचित्र टाइलें लोड नहीं हो सकीं। इसके कारण हो सकते हैं:
+    <ul>
+      <li>इंटरनेट कनेक्शन नहीं है</li>
+      <li>एक कॉर्पोरेट प्रॉक्सी या फ़ायरवॉल arcgis.com तक पहुंच को अवरुद्ध कर रहा है</li>
+      <li>एक अमान्य या समय-सीमा समाप्त API कुंजी</li>
+    </ul>
+    <p>यदि आप प्रॉक्सी के पीछे हैं, तो आपको प्रॉक्सी सेटिंग्स कॉन्फ़िगर करने की आवश्यकता हो सकती है।
+    <b>ProxySetting</b> विकल्प के लिए <em>data/config/example_InterSpec_app_settings.json</em> फ़ाइल देखें;
+    आमतौर पर <b>system</b> मान काम करेगा।</p>
+    <p>माप मार्कर अभी भी प्रदर्शित होंगे, लेकिन मानचित्र पृष्ठभूमि खाली होगी।</p>
+  </message>
 </messages>

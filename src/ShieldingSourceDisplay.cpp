@@ -76,6 +76,7 @@
 #include "external_libs/SpecUtils/3rdparty/inja/inja.hpp"
 
 #include "InterSpec/PeakDef.h"
+#include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/PeakModel.h"
@@ -102,8 +103,11 @@
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/IsotopeSelectionAids.h"
+#include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/ShieldingSourceDiagram.h"
@@ -2733,6 +2737,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     m_optionsDiv( nullptr ),
     m_photopeak_cluster_sigma( 1.25 ),
     m_multithread_computation( true ),
+    m_skipBackgroundPeakCheck( false ),
     m_showLog( nullptr ),
     m_logDiv( nullptr ),
     m_diagramDialog( nullptr ),
@@ -2933,7 +2938,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   
   
   m_fitModelButton = new WPushButton( WString::tr("ssd-perform-fit-btn") );
-  m_fitModelButton->clicked().connect( boost::bind(&ShieldingSourceDisplay::doModelFit, this, true) );
+  m_fitModelButton->clicked().connect( boost::bind(&ShieldingSourceDisplay::doModelFit, this, true, true) );
 
   m_fitProgressTxt = new WText();
   m_fitProgressTxt->hide();
@@ -4952,16 +4957,436 @@ void ShieldingSourceDisplay::backgroundPeakSubChanged()
     const set<int> &displayed = m_specViewer->displayedSamples(SpecUtils::SpectrumType::Background);
     peaks = back->peaks( displayed );
     
+    // Check for missing background peaks (including the case of no peaks at all).
+    // If auto-search finds candidates, a dialog will be shown offering to add them.
+    if( checkForMissingBackgroundPeaks( false ) )
+      return;
+
     if( !peaks || peaks->empty() )
     {
       m_backgroundPeakSub->setUnChecked();
       passMessage( WString::tr("ssd-warn-no-back-peaks-toggle"), WarningWidget::WarningMsgHigh );
       return;
     }//if( !peaks || peaks->empty() )
-  }//if( m_backgroundPeakSub->isChecked() )
-  
+  }else
+  {
+    // We could reset the skip flag when unchecking, so the check runs next time
+    //m_skipBackgroundPeakCheck = false;
+  }//if( m_backgroundPeakSub->isChecked() ) / else
+
   updateChi2Chart();
 }//void backgroundPeakSubChanged()
+
+
+bool ShieldingSourceDisplay::checkForMissingBackgroundPeaks( const bool triggeredFromFit )
+{
+  if( m_skipBackgroundPeakCheck )
+    return false;
+
+  if( !m_backgroundPeakSub->isChecked() )
+    return false;
+
+  const shared_ptr<const deque<PeakModel::PeakShrdPtr>> foreground_peaks = m_peakModel->peaks();
+  if( !foreground_peaks || foreground_peaks->empty() )
+    return false;
+
+  shared_ptr<SpecMeas> back_meas = m_specViewer->measurment( SpecUtils::SpectrumType::Background );
+  if( !back_meas )
+    return false;
+
+  const shared_ptr<const SpecUtils::Measurement> back_hist
+    = m_specViewer->displayedHistogram( SpecUtils::SpectrumType::Background );
+  if( !back_hist )
+    return false;
+
+  const set<int> &back_samples = m_specViewer->displayedSamples( SpecUtils::SpectrumType::Background );
+  if( back_samples.empty() )
+    return false;
+
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> back_peaks = back_meas->peaks( back_samples );
+
+  // Get or generate auto-search peaks for the background
+  shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_peaks
+    = back_meas->automatedSearchPeaks( back_samples );
+
+  if( !auto_peaks )
+  {
+    const bool singleThreaded = true;
+    const shared_ptr<const DetectorPeakResponse> det = back_meas->detector();
+
+    shared_ptr<const PeakFitDetPrefs> fitPrefs;
+    const shared_ptr<SpecMeas> fore_meas = m_specViewer->measurment( SpecUtils::SpectrumType::Foreground );
+    if( fore_meas )
+      fitPrefs = fore_meas->peakFitDetPrefs();
+    if( !fitPrefs )
+      fitPrefs = back_meas->peakFitDetPrefs();
+    if( !fitPrefs && det )
+      fitPrefs = det->peakFitDetPrefs();
+
+    const vector<shared_ptr<const PeakDef>> found
+      = ExperimentalAutomatedPeakSearch::search_for_peaks( back_hist, det, back_peaks, singleThreaded, fitPrefs );
+
+    auto found_deque = make_shared<deque<shared_ptr<const PeakDef>>>( begin( found ), end( found ) );
+    back_meas->setAutomatedSearchPeaks( back_samples, found_deque );
+    auto_peaks = found_deque;
+  }//if( !auto_peaks )
+
+  if( !auto_peaks || auto_peaks->empty() )
+    return false;
+
+  // Find foreground fit peaks that are missing corresponding background user-peaks,
+  // but do have a matching auto-search peak in the background
+  vector<shared_ptr<const PeakDef>> missing_auto_peaks;
+  vector<double> missing_energies;
+
+  for( const shared_ptr<const PeakDef> &fg_peak : *foreground_peaks )
+  {
+    if( !fg_peak || !fg_peak->useForShieldingSourceFit() )
+      continue;
+
+    const double fg_mean = fg_peak->mean();
+    const double fg_fwhm = fg_peak->fwhm();
+
+    // Check if there is already a background user peak near this energy
+    bool has_back_peak = false;
+    if( back_peaks )
+    {
+      for( const shared_ptr<const PeakDef> &bp : *back_peaks )
+      {
+        if( bp && (fabs( bp->mean() - fg_mean ) <= fg_fwhm) )
+        {
+          has_back_peak = true;
+          break;
+        }
+      }//for( back_peaks )
+    }//if( back_peaks )
+
+    if( has_back_peak )
+      continue;
+
+    // Check if there is an auto-search peak near this energy in the background
+    shared_ptr<const PeakDef> closest_auto;
+    double closest_dist = fg_fwhm;
+    for( const shared_ptr<const PeakDef> &ap : *auto_peaks )
+    {
+      if( !ap )
+        continue;
+      const double dist = fabs( ap->mean() - fg_mean );
+      if( dist < closest_dist )
+      {
+        closest_dist = dist;
+        closest_auto = ap;
+      }
+    }//for( auto_peaks )
+
+    if( closest_auto )
+    {
+      missing_auto_peaks.push_back( closest_auto );
+      missing_energies.push_back( closest_auto->mean() );
+    }
+  }//for( foreground_peaks )
+
+  if( missing_energies.empty() )
+    return false;
+
+  // Build comma-separated energy list string
+  stringstream energy_ss;
+  for( size_t i = 0; i < missing_energies.size(); ++i )
+  {
+    if( i > 0 )
+    {
+      if( missing_energies.size() > 2 )
+        energy_ss << ",";
+      energy_ss << " ";
+      if( i == (missing_energies.size() - 1) )
+        energy_ss << "and ";
+    }
+    energy_ss << std::fixed << std::setprecision( 1 ) << missing_energies[i] << " keV";
+  }//for( each missing energy )
+
+  SimpleDialog *dialog = new SimpleDialog( WString::tr( "ssd-missing-back-peaks-title" ),
+                                           WString::tr( "ssd-missing-back-peaks-msg" ).arg( energy_ss.str() ) );
+
+  WCheckBox *add_all_cb = new WCheckBox( WString::tr( "ssd-btn-add-all-detectable" ), dialog->contents() );
+  add_all_cb->addStyleClass( "CbNoLineBreak" );
+  add_all_cb->setFloatSide( Wt::Side::Right );
+
+  WPushButton *no_btn = dialog->addButton( WString::tr( "ssd-btn-no-dont-add" ) );
+  WPushButton *add_btn = dialog->addButton( WString::tr( "ssd-btn-add-peaks" ) );
+  add_btn->setFocus();
+
+  // Capture copies for lambdas
+  const vector<shared_ptr<const PeakDef>> missing_copy = missing_auto_peaks;
+  const vector<shared_ptr<const PeakDef>> all_auto_copy( auto_peaks->begin(), auto_peaks->end() );
+
+  
+  boost::function<void()> setSkipTrueAndFit = wApp->bind( boost::bind(&ShieldingSourceDisplay::setSkipBackgroundPeakCheckAndOrDoFit, this, true, triggeredFromFit ) );
+  
+  boost::function<void()> dofit = wApp->bind( boost::bind(&ShieldingSourceDisplay::doModelFit, this, true, false ) );
+  
+  no_btn->clicked().connect( std::bind( [setSkipTrueAndFit](){ setSkipTrueAndFit(); } ) );
+
+  boost::function<void()> fitPeaks_all = wApp->bind( boost::bind(&ShieldingSourceDisplay::fitAndPreviewBackgroundPeaks, this, all_auto_copy, triggeredFromFit ) );
+  boost::function<void()> fitPeaks_missing = wApp->bind( boost::bind(&ShieldingSourceDisplay::fitAndPreviewBackgroundPeaks, this, missing_copy, triggeredFromFit ) );
+  
+  add_btn->clicked().connect( std::bind( [this, add_all_cb, fitPeaks_all, fitPeaks_missing](){
+    if( add_all_cb->isChecked() )
+      fitPeaks_all();
+    else
+      fitPeaks_missing();
+  }) );
+
+  return true;
+}//bool checkForMissingBackgroundPeaks( bool )
+
+
+void ShieldingSourceDisplay::setSkipBackgroundPeakCheckAndOrDoFit( const std::optional<bool> setSkip, const std::optional<bool> doFit )
+{
+  if( setSkip.has_value() )
+    m_skipBackgroundPeakCheck = setSkip.value();
+  if( doFit.has_value() && doFit.value() )
+    doModelFit( true, false );
+}
+
+void ShieldingSourceDisplay::fitAndPreviewBackgroundPeaks(
+  const vector<shared_ptr<const PeakDef>> &candidates,
+  const bool triggeredFromFit )
+{
+  const shared_ptr<SpecMeas> back_meas = m_specViewer->measurment( SpecUtils::SpectrumType::Background );
+  const shared_ptr<const SpecUtils::Measurement> back_hist
+    = m_specViewer->displayedHistogram( SpecUtils::SpectrumType::Background );
+  const set<int> &back_samples = m_specViewer->displayedSamples( SpecUtils::SpectrumType::Background );
+
+  if( !back_meas || !back_hist || back_samples.empty() )
+  {
+    passMessage( WString::tr( "ssd-warn-no-back-spec" ), WarningWidget::WarningMsgHigh );
+    if( triggeredFromFit )
+    {
+      m_skipBackgroundPeakCheck = true;
+      doModelFit( true, false );
+    }
+    return;
+  }//if( no background )
+
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> existing_back_peaks = back_meas->peaks( back_samples );
+
+  shared_ptr<const PeakFitDetPrefs> fitPrefs;
+  const shared_ptr<SpecMeas> fore_meas = m_specViewer->measurment( SpecUtils::SpectrumType::Foreground );
+  if( fore_meas )
+    fitPrefs = fore_meas->peakFitDetPrefs();
+  if( !fitPrefs )
+    fitPrefs = back_meas->peakFitDetPrefs();
+  if( !fitPrefs && back_meas->detector() )
+    fitPrefs = back_meas->detector()->peakFitDetPrefs();
+  const PeakFitUtils::CoarseResolutionType det_type
+    = fitPrefs ? fitPrefs->m_det_type : PeakFitUtils::coarse_det_type( back_hist, nullptr );
+
+  boost::function<void()> dofit = wApp->bind( boost::bind(&ShieldingSourceDisplay::doModelFit, this, true, false ) );
+  
+  
+  // Collect candidate peaks that dont already have a matching user peak, and
+  //  determine the overall energy range to fit
+  vector<PeakDef> candidates_to_fit;
+  double min_energy = numeric_limits<double>::max();
+  double max_energy = -numeric_limits<double>::max();
+
+  for( const shared_ptr<const PeakDef> &candidate : candidates )
+  {
+    if( !candidate )
+      continue;
+
+    // Check if a user peak already exists near this energy
+    bool already_exists = false;
+    if( existing_back_peaks )
+    {
+      for( const shared_ptr<const PeakDef> &ep : *existing_back_peaks )
+      {
+        if( ep && (fabs( ep->mean() - candidate->mean() ) <= candidate->fwhm()) )
+        {
+          already_exists = true;
+          break;
+        }
+      }
+    }//if( existing_back_peaks )
+
+    if( already_exists )
+      continue;
+
+    candidates_to_fit.push_back( *candidate );
+
+    const double cand_sigma = candidate->sigma();
+    const double lower_x = (candidate->continuum() && (candidate->continuum()->lowerEnergy() > 10))
+                            ? candidate->continuum()->lowerEnergy()
+                            : (candidate->mean() - 4.0 * cand_sigma);
+    const double upper_x = (candidate->continuum() && (candidate->continuum()->upperEnergy() > 10))
+                            ? candidate->continuum()->upperEnergy()
+                            : (candidate->mean() + 4.0 * cand_sigma);
+
+    min_energy = std::min( min_energy, lower_x );
+    max_energy = std::max( max_energy, upper_x );
+  }//for( each candidate )
+
+  if( candidates_to_fit.empty() )
+  {
+    SimpleDialog *dialog = new SimpleDialog( "", WString::tr( "ssd-no-new-back-peaks" ) );
+    dialog->addButton( WString::tr( "Okay" ) );
+    if( triggeredFromFit )
+      dialog->finished().connect( std::bind( [dofit](){ dofit(); } ) );
+
+    return;
+  }//if( candidates_to_fit.empty() )
+
+  // Fit all candidate peaks in a single call
+  vector<PeakDef> all_fit_peaks;
+  try
+  {
+    const double ncausalitysigma = 0.0;
+    const double stat_threshold = 2.0;
+    const double hypothesis_threshold = -1.0;
+    const WFlags<PeakFitLM::PeakFitLMOptions> fit_options( PeakFitLM::PeakFitLMOptions::SmallRefinementOnly );
+
+    all_fit_peaks = fitPeaksInRange( min_energy, max_energy,
+      ncausalitysigma, stat_threshold, hypothesis_threshold,
+      candidates_to_fit, back_hist, fit_options, det_type );
+    
+    if( all_fit_peaks.empty() )
+      all_fit_peaks = candidates_to_fit;
+  }catch( std::exception & )
+  {
+    // If fitting fails entirely, show a message
+  }
+
+  if( all_fit_peaks.empty() )
+  {
+    SimpleDialog *dialog = new SimpleDialog( "", WString::tr( "ssd-no-new-back-peaks" ) );
+    dialog->addButton( WString::tr( "Okay" ) );
+
+    if( triggeredFromFit )
+      dialog->finished().connect( std::bind( [dofit](){ dofit(); } ) );
+
+    return;
+  }//if( all_fit_peaks.empty() )
+
+  // Compute display range from the fit results
+  min_energy = numeric_limits<double>::max();
+  max_energy = -numeric_limits<double>::max();
+  for( const PeakDef &fp : all_fit_peaks )
+  {
+    min_energy = std::min( min_energy, fp.mean() - 4.0 * fp.sigma() );
+    max_energy = std::max( max_energy, fp.mean() + 4.0 * fp.sigma() );
+  }//for( each fit peak )
+
+  SimpleDialog *dialog = new SimpleDialog( WString::tr( "ssd-back-peak-preview-title" ),
+                                           WString::tr( "ssd-back-peak-preview-msg" ) );
+
+  // Override the default SimpleDialog size constraints so the chart can be large enough
+  dialog->addStyleClass( "BackPeakPreviewDialog" );
+
+  // Size the chart based on the app window size
+  const int app_w = m_specViewer->renderedWidth();
+  const int app_h = m_specViewer->renderedHeight();
+  const int chart_w = std::max( 350, std::min( static_cast<int>( 0.7 * app_w ), 800 ) );
+  const int chart_h = std::max( 200, std::min( static_cast<int>( 0.45 * app_h ), 450 ) );
+
+  D3SpectrumDisplayDiv *spectrum = new D3SpectrumDisplayDiv( dialog->contents() );
+  spectrum->clicked().preventPropagation();
+  spectrum->setThumbnailMode();
+  spectrum->resize( chart_w, chart_h );
+  spectrum->setData( back_hist, false );
+
+  PeakModel *pmodel = new PeakModel( spectrum );
+  pmodel->setNoSpecMeasBacking();
+  pmodel->setForeground( back_hist );
+  spectrum->setPeakModel( pmodel );
+  pmodel->addPeaks( all_fit_peaks );
+
+  const double dx = max_energy - min_energy;
+  spectrum->setXAxisRange( min_energy - 0.5 * dx, max_energy + 0.5 * dx );
+
+  // Workaround: also schedule x-axis range set with a delay
+  auto set_range = wApp->bind( boost::bind( &D3SpectrumDisplayDiv::setXAxisRange,
+    spectrum, min_energy - 0.5 * dx, max_energy + 0.5 * dx ) );
+  WServer::instance()->schedule( 100, wApp->sessionId(), [set_range](){
+    set_range();
+    wApp->triggerUpdate();
+  } );
+
+  // Add summary text below the spectrum
+  const size_t num_fit = all_fit_peaks.size();
+  const size_t num_candidates = candidates_to_fit.size();
+
+  WString summary_msg;
+  if( num_fit == num_candidates )
+    summary_msg = WString::tr( "ssd-back-peaks-all-fit" ).arg( static_cast<int>( num_fit ) );
+  else
+    summary_msg = WString::tr( "ssd-back-peaks-some-fit" )
+                    .arg( static_cast<int>( num_fit ) ).arg( static_cast<int>( num_candidates ) );
+
+  WText *summary_txt = new WText( summary_msg, dialog->contents() );
+  summary_txt->setInline( false );
+  summary_txt->setMargin( 10, Wt::Top );
+  summary_txt->setMargin( 5, Wt::Bottom );
+
+  WText *manual_hint = new WText( WString::tr( "ssd-back-peaks-manual-hint" ), dialog->contents() );
+  manual_hint->setInline( false );
+  manual_hint->addStyleClass( "BackPeakManualHint" );
+  manual_hint->setMargin( 5, Wt::Bottom );
+
+  // Build the vector of peaks to add as shared_ptrs
+  vector<shared_ptr<const PeakDef>> peaks_to_add;
+  for( const PeakDef &p : all_fit_peaks )
+    peaks_to_add.push_back( make_shared<PeakDef>( p ) );
+
+  WPushButton *accept_btn = dialog->addButton( WString::tr( "Accept" ) );
+  WPushButton *cancel_btn = dialog->addButton( WString::tr( "Reject" ) );
+
+  boost::function<void()> add_peaks = wApp->bind( boost::bind(&ShieldingSourceDisplay::addPeaksToBackgroundAndContinue, this, peaks_to_add, triggeredFromFit ) );
+  accept_btn->clicked().connect( std::bind( [add_peaks](){ add_peaks(); } ) );
+
+  if( triggeredFromFit )
+    cancel_btn->clicked().connect( std::bind( [dofit](){ dofit(); } ) );
+}//void fitAndPreviewBackgroundPeaks(...)
+
+
+void ShieldingSourceDisplay::addPeaksToBackgroundAndContinue(
+  const vector<shared_ptr<const PeakDef>> new_peaks,
+  const bool triggeredFromFit )
+{
+  try
+  {
+    const shared_ptr<SpecMeas> back_meas = m_specViewer->measurment( SpecUtils::SpectrumType::Background );
+    if( !back_meas )
+      throw runtime_error( "No background spectrum loaded." );
+
+    const set<int> &back_samples = m_specViewer->displayedSamples( SpecUtils::SpectrumType::Background );
+    if( back_samples.empty() )
+      throw runtime_error( "No background samples displayed." );
+
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> existing = back_meas->peaks( back_samples );
+
+    auto combined = make_shared<deque<shared_ptr<const PeakDef>>>();
+    if( existing )
+      *combined = *existing;
+
+    for( const shared_ptr<const PeakDef> &p : new_peaks )
+    {
+      if( p )
+      {
+        auto pos = lower_bound( combined->begin(), combined->end(), p, &PeakDef::lessThanByMeanShrdPtr );
+        combined->insert( pos, p );
+      }
+    }//for( each new peak )
+
+    m_specViewer->setPeaks( SpecUtils::SpectrumType::Background, combined );
+  }catch( std::exception &e )
+  {
+    passMessage( WString::tr( "ssd-err-adding-back-peaks" ).arg( e.what() ),
+                WarningWidget::WarningMsgHigh );
+  }//try / catch
+
+  if( triggeredFromFit )
+    doModelFit( true, false );
+}//void addPeaksToBackgroundAndContinue(...)
 
 
 void ShieldingSourceDisplay::sameIsotopesAgeChanged()
@@ -7057,6 +7482,7 @@ void ShieldingSourceDisplay::reset( const bool set_use_peaks_false )
 void ShieldingSourceDisplay::newForegroundSet()
 {
   m_modifiedThisForeground = false;
+  m_skipBackgroundPeakCheck = false;
 }//void newForegroundSet()
 
 
@@ -8633,7 +9059,8 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
 }//void updateGuiWithModelFitResults( std::vector<double> paramValues, paramErrors )
 
 
-std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> ShieldingSourceDisplay::doModelFit( const bool fitInBackground )
+std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> ShieldingSourceDisplay::doModelFit( const bool fitInBackground,
+                                                                                           const bool checkForMissingBackPeaks )
 {
   try
   {
@@ -8662,7 +9089,13 @@ std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> ShieldingSourceDisplay:
   {
     passMessage( WString::tr("ssd-err-before-fit").arg(e.what()), WarningWidget::WarningMsgHigh );
   }//try / catch
-  
+
+  if( checkForMissingBackPeaks && m_backgroundPeakSub->isChecked() )
+  {
+    if( checkForMissingBackgroundPeaks( true ) )
+      return nullptr;
+  }//if( background subtract is checked )
+
   shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn;
   vector<string> errormsgs;
   vector<ShieldingSelect *> shieldings;

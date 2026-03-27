@@ -14,7 +14,7 @@
   <message id="pe-btn-refit-roi-independent">Réajuster ROI : FWHM indépendantes</message>
   <message id="pe-btn-refit-roi-fine">Réajuster ROI : affinements légers</message>
   <message id="pe-btn-refit-roi-independent-fine">Réajuster ROI : affiner avec FWHM indép.</message>
-  
+
   <message id="pe-label-centroid">Centroïde</message>
   <message id="pe-label-drf-fwhm">FWHM prédite DRF</message>
   <message id="pe-label-amp">Amplitude</message>
@@ -41,7 +41,76 @@
 
   <message id="pe-est-lin-cont-no-data">Veuillez charger un spectre de premier plan avant d'estimer le continuum.</message>
   <message id="pe-failed-est-lin-cont">Échec de l'estimation du continuum à partir des bords de la ROI : {1}</message>
-  
-  
-  
+
+  <!-- Skew parameter labels for Bortel (Exp*Gauss) -->
+  <message id="pe-label-skew-bortel-tau">Asymétrie &alpha;</message>
+
+  <!-- Skew parameter labels for DoubleBortel -->
+  <message id="pe-label-skew-doublebortel-tau1">&tau;<sub>1</sub></message>
+  <message id="pe-label-skew-doublebortel-deltatau2">&Delta;&tau;<sub>2</sub></message>
+  <message id="pe-label-skew-doublebortel-eta">&eta;</message>
+
+  <!-- Skew parameter labels for GaussPlusBortel -->
+  <message id="pe-label-skew-gaussplusbortel-r">Ratio mélange R</message>
+  <message id="pe-label-skew-gaussplusbortel-tau">Bortel &tau;</message>
+
+  <!-- Skew parameter labels for GaussExp -->
+  <message id="pe-label-skew-gaussexp-k">Asymétrie k</message>
+
+  <!-- Skew parameter labels for CrystalBall -->
+  <message id="pe-label-skew-crystalball-alpha">Asymétrie &alpha;</message>
+  <message id="pe-label-skew-crystalball-n">Asymétrie n</message>
+
+  <!-- Skew parameter labels for ExpGaussExp -->
+  <message id="pe-label-skew-expgaussexp-kl">Asymétrie k<sub>L</sub></message>
+  <message id="pe-label-skew-expgaussexp-kh">Asymétrie k<sub>H</sub></message>
+
+  <!-- Skew parameter labels for DoubleSidedCrystalBall -->
+  <message id="pe-label-skew-dscb-alphalow">Asymétrie &alpha;<sub>low</sub></message>
+  <message id="pe-label-skew-dscb-nlow">Asymétrie n<sub>low</sub></message>
+  <message id="pe-label-skew-dscb-alphahigh">Asymétrie &alpha;<sub>high</sub></message>
+  <message id="pe-label-skew-dscb-nhigh">Asymétrie n<sub>high</sub></message>
+
+  <!-- Skew parameter labels for VoigtPlusBortel -->
+  <message id="pe-label-skew-voigtplusbortel-gamma">Lorentz &gamma;</message>
+  <message id="pe-label-skew-voigtplusbortel-r">Ratio mélange R</message>
+  <message id="pe-label-skew-voigtplusbortel-tau">Bortel &tau;</message>
+
+  <!-- Tooltips for skew parameters -->
+  <message id="pe-tt-skew-bortel-tau">Constante de décroissance exponentielle pour Exp*Gauss (Gaussienne Modifiée Exponentiellement). Représente l'échelle de longueur caractéristique de la traîne basse énergie. Plage valide : 0.0-15 σ, valeurs typiques : 0.5-3 σ.</message>
+
+  <message id="pe-tt-skew-doublebortel-tau1">Première constante de décroissance exponentielle, typiquement proche de σ. Contrôle la composante principale de la traîne basse énergie. Plage valide : 0.01-15 σ.</message>
+
+  <message id="pe-tt-skew-doublebortel-deltatau2">Décroissance supplémentaire pour la seconde exponentielle : τ₂ = τ₁ + Δτ₂. Contrôle la composante de traîne étendue. Plage valide : 0.0-10 σ.</message>
+
+  <message id="pe-tt-skew-doublebortel-eta">Poids de la seconde composante exponentielle. η=0 donne une simple Exp*Gauss(τ₁), η=1 donne une Exp*Gauss(τ₂) pure. Plage valide : 0.0-1.0.</message>
+
+  <message id="pe-tt-skew-gaussplusbortel-r">Ratio de mélange entre Gaussienne et Exp*Gauss. R=0 est Gaussienne pure, R=1 est Exp*Gauss pure. Plage valide : 0.0-1.0, typique : 0.2-0.8.</message>
+
+  <message id="pe-tt-skew-gaussplusbortel-tau">Constante de décroissance exponentielle pour la composante Exp*Gauss du mélange. Plage valide : 0.01-15 σ, valeurs typiques : 0.5-3 σ.</message>
+
+  <message id="pe-tt-skew-gaussexp-k">Contrôle à la fois le seuil (μ - k·σ) où la traîne exponentielle commence et le taux de décroissance. Plage valide : 0.15-3.25, typique : 0.5-2.0.</message>
+
+  <message id="pe-tt-skew-crystalball-alpha">Seuil en unités de σ où la traîne en loi de puissance commence : x = μ - α·σ. Plage valide : 0.5-4.0, typique : 1.0-3.0.</message>
+
+  <message id="pe-tt-skew-crystalball-n">Exposant de loi de puissance pour la traîne basse énergie : (x - μ + α·σ)^(-n). Un n plus grand crée une chute plus abrupte. Plage valide : 1.05-100, typique : 2-10.</message>
+
+  <message id="pe-tt-skew-expgaussexp-kl">Contrôle le seuil et la décroissance de la traîne d'énergie inférieure (gauche). Plage valide : 0.15-3.25, typique : 0.5-2.0.</message>
+
+  <message id="pe-tt-skew-expgaussexp-kh">Contrôle le seuil et la décroissance de la traîne d'énergie supérieure (droite). Plage valide : 0.15-3.25, typique : 0.5-2.0.</message>
+
+  <message id="pe-tt-skew-dscb-alphalow">Seuil inférieur en unités de σ où la traîne en loi de puissance basse énergie commence. Plage valide : 0.5-4.0, typique : 1.0-3.0.</message>
+
+  <message id="pe-tt-skew-dscb-nlow">Exposant de loi de puissance pour la traîne basse énergie. Plage valide : 1.05-100, typique : 2-10.</message>
+
+  <message id="pe-tt-skew-dscb-alphahigh">Seuil supérieur en unités de σ où la traîne en loi de puissance haute énergie commence. Plage valide : 0.5-4.0, typique : 1.0-3.0.</message>
+
+  <message id="pe-tt-skew-dscb-nhigh">Exposant de loi de puissance pour la traîne haute énergie. Plage valide : 1.05-100, typique : 2-10.</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-gamma">HWHM lorentzienne (demi-largeur à mi-hauteur) représentant la largeur naturelle de raie X. Plage valide : 0.0-10.0 keV, typique pour rayons X : 0.01-0.5 keV.</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-r">Ratio de mélange entre profil Voigt et Exp*Gauss. R=0 est Voigt pur (largeur de raie naturelle uniquement), R=1 est Exp*Gauss pur (traîne du détecteur uniquement). Plage valide : 0.0-1.0.</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-tau">Constante de décroissance exponentielle pour la composante Exp*Gauss, représentant la traîne de collecte de charge incomplète. Plage valide : 0.01-10 σ.</message>
+
 </messages>

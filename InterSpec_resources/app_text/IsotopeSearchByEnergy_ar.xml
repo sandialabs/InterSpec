@@ -4,8 +4,8 @@
   <message id="isbe-cb-gammas">أشعة غاما</message>
 
   <message id="isbe-cb-rxnts">تفاعلات</message>
-  <message id="isbe-min-br">الحد الأدنى لـ B.R.</message>
-  <message id="isbe-tt-min-br">الحد الأدنى لنسبة التفريع.</message>
+  <message id="isbe-min-br">الحد الأدنى لـ B.R. النسبي</message>
+  <message id="isbe-tt-min-br">الحد الأدنى للشدة المطلوبة، بالنسبة للشدة القصوى لأشعة غاما في سلسلة التحلل.</message>
   <message id="isbe-min-hl">الحد الأدنى لـ T½</message>
   <message id="isbe-tt-min-hl">
     الحد الأدنى لعمر النصف للنويدات المراد البحث عنها.
@@ -34,7 +34,7 @@
   <message id="isbe-assign-matching-peaks-no-id">تعيين الذروات المطابقة التي ليس لها معرف إلى {1}...</message>
   <message id="isbe-assign-all-matching-peaks">تعيين كل الذروات المطابقة إلى {1}...</message>
 
-  <message id="isbem-parent-nuc">الأصل</message>
+  <message id="isbem-parent-nuc">النويدة</message>
   <message id="isbem-diff">الفرق</message>
   <message id="isbem-rel-br">B.R. النسبي</message>
   <message id="isbem-profile">الملف الشخصي</message>
@@ -53,4 +53,36 @@
   </message>
   <message id="isbem-tt-parent-hl">عمر النصف الأصل</message>
   <message id="isbem-tt-assumed-age">العمر المفترض للنويدة</message>
+
+  <!-- Categories int the drop-down-->
+  <message id="isbe-category-nuc-xray">النويدات + الأشعة السينية</message>
+  <message id="isbe-category-nuc-xray-desc">النويدات + الأشعة السينية</message>
+  <message id="isbe-category-nuc-xray-rctn">النويدات والأشعة السينية والتفاعلات</message>
+  <message id="isbe-category-nuc-xray-rctn-desc">جميع النويدات والأشعة السينية (التحلل والتفلور) والتفاعلات</message>
+  <message id="isbe-category-xray">أشعة سينية فلورية</message>
+  <message id="isbe-category-xray-desc">أشعة سينية فلورية فقط</message>
+  <message id="isbe-category-reactions">تفاعلات</message>
+  <message id="isbe-category-reactions-desc">تفاعلات فقط</message>
+  <message id="isbe-category-medical">نويدات طبية</message>
+  <message id="isbe-category-medical-desc">نويدات طبية شائعة</message>
+  <message id="isbe-category-industrial">نويدات صناعية</message>
+  <message id="isbe-category-industrial-desc">نويدات صناعية شائعة</message>
+  <message id="isbe-category-snm">SNM</message>
+  <message id="isbe-category-snm-desc">نويدات SNM</message>
+  <message id="isbe-category-norm">NORM</message>
+  <message id="isbe-category-norm-desc">نويدات مشعة طبيعية المنشأ</message>
+  <message id="isbe-category-common">مصادر ميدانية شائعة</message>
+  <message id="isbe-category-common-desc">نويدات وتفاعلات شائعة تُصادف في الأطياف الميدانية</message>
+  <message id="isbe-category-common-nuc">نويدات ميدانية شائعة</message>
+  <message id="isbe-category-common-nuc-desc">نويدات شائعة تُصادف في الأطياف الميدانية (بدون نيوترونات أو تفاعلات)</message>
+  <message id="isbe-category-reactions">تفاعلات نووية</message>
+  <message id="isbe-category-reactions-desc">تفاعلات نووية</message>
+  <message id="isbe-category-fission">نواتج الانشطار</message>
+  <message id="isbe-category-fission-desc">نواتج انشطار قد تظهر في طيف غاما (ليست قائمة شاملة بأي حال)</message>
+  <message id="isbe-category-alphas">ألفا</message>
+  <message id="isbe-category-alphas-desc">البحث حسب طاقة جسيمات ألفا.</message>
+  <message id="isbe-category-betas">طاقة بيتا القصوى</message>
+  <message id="isbe-category-betas-desc">البحث حسب طاقة نهاية جسيمات بيتا.</message>
+  <message id="isbe-category-no-progeny">نويدات بدون ذرية</message>
+  <message id="isbe-category-no-progeny-desc">عدم تضمين ذرية النويدات. يتطابق مع أشعة غاما أو الأشعة السينية للتحلل.</message>
 </messages>

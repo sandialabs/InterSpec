@@ -3,7 +3,9 @@
   <!-- rs- is short for Reference Spectra -->
   <message id="rs-dialog-title">Espectros de referencia</message>
   <message id="rs-show-foreground">Mostrar primer plano</message>
+  <message id="rs-show-foreground-portrait">Comparar</message>
   <message id="rs-show-background">Fondo</message>
+  <message id="rs-show-background-portrait">Fondo</message>
   <message id="rs-load-background">Cargar fondo</message>
   <message id="rs-load-background-portrait">+Fondo</message>
   <message id="rs-tt-add-dir-btn">Añadir directorio para abrir espectros de referencia.</message>

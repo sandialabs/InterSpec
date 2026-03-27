@@ -286,29 +286,50 @@ struct NucInputInfo
  */
 struct FloatingPeak
 {
+  /** Whether #FloatingPeak::energy represents a known true gamma energy, or an energy observed
+   in the spectrum.
+
+   When energy calibration is being fit, this determines whether the energy cal correction is
+   applied to this peak's mean during fitting:
+   - Known: the energy is a true gamma energy (e.g., 511 keV annihilation); the fitting will
+     apply energy cal adjustment to convert from true energy to observed position, the same
+     as for source gamma peaks.
+   - ObservedInSpectrum: the energy was read from the spectrum (e.g., a bystander peak from a
+     prior peak fit); it is already in the spectrum's calibration and no correction is applied.
+
+   Only has an effect when the energy calibration is being fit for as well.
+   */
+  enum class EnergyType : int
+  {
+    /** Energy is a known true gamma energy. Energy cal correction will be applied during fitting. */
+    Known = 0,
+    /** Energy was observed in the spectrum. No energy cal correction is applied during fitting. */
+    ObservedInSpectrum = 1
+  };//enum class EnergyType
+
   /** Energy (in keV) of the peak.
-   
-   Note that if energy calibration is being fit for, this energy will not have that correction
-   applied when fitting things; this is because these peaks are nominally expected to be added
-   by a user who gets the energy based on looking at the spectrum.
+
+   The interpretation of this value depends on #energy_origin:
+   - If #EnergyType::Known, this is the true gamma energy, and the fitting process will apply
+     energy calibration adjustment (same as source gamma peaks).
+   - If #EnergyType::ObservedInSpectrum, this is the observed position in the spectrum's
+     original energy calibration, and no energy cal correction is applied during fitting.
    */
   double energy = -1.0;
-  
+
   /** If true, the FWHM of the peak will be allowed to freely vary from 0.25 to 4.0 times (both
    numbers arbitrarily chosen) the FWHM that would be predicted by the functional FWHM
    for the energy.
    */
   bool release_fwhm = false;
-  
-  /** Whether the energy correction should be applied while performing the fit for the answer.
- 
-   That is, if #FloatingPeak::energy represents a known true gamma energy, set this value to true;
-   if this peak represents an observed peak in the spectrum (maybe from unknown origins), set
-   this value to false.
-   
+
+  /** Whether #energy represents a known true gamma energy or an observed spectrum position.
+
    Only has an effect when the energy calibration is being fit for as well.
+
+   @sa EnergyType
    */
-  bool apply_energy_cal_correction = true;
+  EnergyType energy_origin = EnergyType::Known;
   
   // TODO: should maybe have a max-width in FloatingPeak
   
@@ -842,7 +863,23 @@ struct NuclideRelAct
 
 struct FloatingPeakResult
 {
+  /** The energy as specified in #FloatingPeak::energy.
+
+   For #FloatingPeak::EnergyType::Known peaks, this is the true gamma energy.
+   For #FloatingPeak::EnergyType::ObservedInSpectrum peaks, this is the observed
+   position in the original spectrum calibration.
+   */
   double energy;
+
+  /** The energy in the original spectrum's energy calibration — i.e., where this peak
+   appears in the (uncorrected) spectrum.
+
+   For #FloatingPeak::EnergyType::Known peaks, this is the result of applying the
+   energy calibration adjustment to the true energy (i.e., the observed position).
+   For #FloatingPeak::EnergyType::ObservedInSpectrum peaks, this equals #energy.
+   */
+  double original_spectrum_cal_energy;
+
   double amplitude;
   double amplitude_uncert;
   double fwhm;

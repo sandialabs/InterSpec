@@ -13,7 +13,31 @@
   <message id="ctwidget-non-chart-area">非チャート領域</message>
   <message id="ctwidget-backdrop-theme">背景テーマ</message>
   <message id="ctwidget-backdrop-desc">すべての非チャート領域用テーマ</message>
-  
+  <message id="ctwidget-app-background">背景色</message>
+  <message id="ctwidget-app-background-desc">ダイアログ、メインアプリ領域などの背景色。</message>
+  <message id="ctwidget-app-text">テキスト色</message>
+  <message id="ctwidget-app-text-desc">非チャート領域のテキスト色</message>
+  <message id="ctwidget-app-border">枠線色</message>
+  <message id="ctwidget-app-border-desc">UI要素（タブ、ボタン、パネル）の枠線色</message>
+  <message id="ctwidget-app-link">リンク色</message>
+  <message id="ctwidget-app-link-desc">リンクおよびインタラクティブアクセントの色</message>
+  <message id="ctwidget-app-label">ラベル色</message>
+  <message id="ctwidget-app-label-desc">ラベル、タブ、ヘッダーのテキスト色</message>
+  <message id="ctwidget-app-input-bg">入力フィールド背景</message>
+  <message id="ctwidget-app-input-bg-desc">入力フィールドの背景色</message>
+  <message id="ctwidget-app-button-bg">ボタン背景</message>
+  <message id="ctwidget-app-button-bg-desc">ボタンの背景色</message>
+  <message id="ctwidget-app-button-border">ボタン枠線</message>
+  <message id="ctwidget-app-button-border-desc">ボタンの枠線色</message>
+  <message id="ctwidget-app-button-text">ボタンテキスト</message>
+  <message id="ctwidget-app-button-text-desc">ボタンのテキスト色</message>
+  <message id="ctwidget-app-menubar-bg">メニューバー背景</message>
+  <message id="ctwidget-app-menubar-bg-desc">メニューバーとメニューボタンの背景色</message>
+  <message id="ctwidget-app-menubar-active">メニューバーアクティブ</message>
+  <message id="ctwidget-app-menubar-active-desc">メニューが開いている時のメニューボタンの背景色</message>
+  <message id="ctwidget-app-menubar-hover">メニューバーホバー</message>
+  <message id="ctwidget-app-menubar-hover-desc">ホバー時のメニューボタンの背景色</message>
+
   <!-- Chart colors section -->
   <message id="ctwidget-chart-colors">チャート色</message>
   

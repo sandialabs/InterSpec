@@ -108,23 +108,24 @@ struct PeakDefImpWithCont : public RelActCalcAuto::PeakDefImp<T>
 /** Replaces contents of input peaks vector with completely new peaks, that crucually have had new continuums allocated. */
 void local_unique_copy_continuum( vector<shared_ptr<const PeakDef>> &input_peaks )
 {
-  map<std::shared_ptr<const PeakContinuum>,vector<shared_ptr<PeakDef>>> contToPeaks;
-  for( auto &p : input_peaks )
-    contToPeaks[p->continuum()].push_back( make_shared<PeakDef>(*p) );
-
-  for( auto &pp : contToPeaks )
-  {
-    pp.second[0]->makeUniqueNewContinuum();
-    auto newcont = pp.second[0]->continuum();
-    for( size_t i = 1; i < pp.second.size(); ++i )
-      pp.second[i]->setContinuum( newcont );
-  }
+  // Use group_peaks_by_roi for deterministic ordering (sorted by lowerEnergy)
+  std::vector<std::pair<const PeakContinuum *, std::vector<std::shared_ptr<const PeakDef>>>> groups
+    = group_peaks_by_roi( input_peaks );
 
   input_peaks.clear();
-  for( auto &pp : contToPeaks )
+  for( auto &group : groups )
   {
-    for( auto p : pp.second )
-      input_peaks.push_back( p );
+    std::shared_ptr<PeakDef> first_copy = make_shared<PeakDef>( *group.second[0] );
+    first_copy->makeUniqueNewContinuum();
+    std::shared_ptr<PeakContinuum> newcont = first_copy->continuum();
+    input_peaks.push_back( first_copy );
+
+    for( size_t i = 1; i < group.second.size(); ++i )
+    {
+      std::shared_ptr<PeakDef> copy = make_shared<PeakDef>( *group.second[i] );
+      copy->setContinuum( newcont );
+      input_peaks.push_back( copy );
+    }
   }
   std::sort( begin(input_peaks), end(input_peaks), &PeakDef::lessThanByMeanShrdPtr );
 }//unique_copy_continuum(...)

@@ -63,7 +63,9 @@
   <!-- Buttons -->
   <message id="esf-export">Export</message>
   <message id="esf-show-qr-code">Show QR-code</message>
-  
+  <message id="esf-lossless-qr">Lossless</message>
+  <message id="esf-lossless-qr-tt">When checked, the spectral data will not lose any information, but for high channel count or high statistics spectra, multiple QR codes may be needed. When unchecked, a wavelet-based lossy compression is used, which loses some information but allows using a QR code with fewer elements, more error correction, or representing any spectrum in a single QR code.</message>
+
   <!-- File info table headers -->
   <message id="esf-displayed-as">Displayed As</message>
   <message id="esf-fore-abbrev">For.</message>
@@ -74,6 +76,11 @@
   <message id="esf-next-qr-code">Next QR code</message>
   <message id="esf-url-link">URL Link</message>
   <message id="esf-email-link">Email Link</message>
+  <message id="esf-lossy-qr-title">Lossy QR-code of spectrum</message>
+  <message id="esf-qr-error-tolerance">QR Error Tolerance:</message>
+  <message id="esf-qr-num-elements">Num. QR Elements:</message>
+  <message id="esf-qr-rmse-info">RMSE: {1}, Coefficients: {2}</message>
+  <message id="esf-qr-lossy-err">Cannot fit spectrum at this QR size/tolerance</message>
   
   <!-- Error dialogs -->
   <message id="esf-error-title">Error</message>

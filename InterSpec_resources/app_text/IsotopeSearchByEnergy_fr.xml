@@ -4,8 +4,8 @@
   <message id="isbe-cb-gammas">Gammas</message>
 
   <message id="isbe-cb-rxnts">Réactions</message>
-  <message id="isbe-min-br">BR min.</message>
-  <message id="isbe-tt-min-br">Rapport de branchement minimum.</message>
+  <message id="isbe-min-br">BR rel. min.</message>
+  <message id="isbe-tt-min-br">Intensité minimale requise, relative à l'intensité maximale du gamma de la chaîne de désintégration.</message>
   <message id="isbe-min-hl">T½ min.</message>
   <message id="isbe-tt-min-hl">
     Demi-vie minimale des nucléides à rechercher.
@@ -34,7 +34,7 @@
   <message id="isbe-assign-matching-peaks-no-id">Attribuer les pics correspondants sans ID à {1}...</message>
   <message id="isbe-assign-all-matching-peaks">Attribuer tous les pics correspondants à {1}...</message>
 
-  <message id="isbem-parent-nuc">Parent</message>
+  <message id="isbem-parent-nuc">Nucléide</message>
   <message id="isbem-diff">Diff.</message>
   <message id="isbem-rel-br">R.B. Rel.</message>
   <message id="isbem-profile">Profil</message>
@@ -53,4 +53,36 @@
   </message>
   <message id="isbem-tt-parent-hl">Demi-vie du parent</message>
   <message id="isbem-tt-assumed-age">Âge supposé du nucléide</message>
+
+  <!-- Categories int the drop-down-->
+  <message id="isbe-category-nuc-xray">Nucléides + Rayons X</message>
+  <message id="isbe-category-nuc-xray-desc">Nucléides + Rayons X</message>
+  <message id="isbe-category-nuc-xray-rctn">Nucléides, Rayons X, Réactions</message>
+  <message id="isbe-category-nuc-xray-rctn-desc">Tous les nucléides, rayons X (désintégration et fluorescence) et réactions</message>
+  <message id="isbe-category-xray">Rayons X de fluorescence</message>
+  <message id="isbe-category-xray-desc">Rayons X de fluorescence uniquement</message>
+  <message id="isbe-category-reactions">Réactions</message>
+  <message id="isbe-category-reactions-desc">Réactions uniquement</message>
+  <message id="isbe-category-medical">Nucléides médicaux</message>
+  <message id="isbe-category-medical-desc">Nucléides médicaux courants</message>
+  <message id="isbe-category-industrial">Nucléides industriels</message>
+  <message id="isbe-category-industrial-desc">Nucléides industriels courants</message>
+  <message id="isbe-category-snm">SNM</message>
+  <message id="isbe-category-snm-desc">Nucléides SNM</message>
+  <message id="isbe-category-norm">NORM</message>
+  <message id="isbe-category-norm-desc">Radionucléides d'origine naturelle</message>
+  <message id="isbe-category-common">Sources rencontrées sur le terrain</message>
+  <message id="isbe-category-common-desc">Nucléides et réactions courants rencontrés dans les spectres collectés sur le terrain</message>
+  <message id="isbe-category-common-nuc">Nucléides rencontrés sur le terrain</message>
+  <message id="isbe-category-common-nuc-desc">Nucléides courants rencontrés dans les spectres collectés sur le terrain (pas de neutrons ni de réactions)</message>
+  <message id="isbe-category-reactions">Réactions nucléaires</message>
+  <message id="isbe-category-reactions-desc">Réactions nucléaires</message>
+  <message id="isbe-category-fission">Produits de fission</message>
+  <message id="isbe-category-fission-desc">Produits de fission que vous pourriez observer dans un spectre gamma (liste non exhaustive)</message>
+  <message id="isbe-category-alphas">Alphas</message>
+  <message id="isbe-category-alphas-desc">Recherche par énergie des particules alpha.</message>
+  <message id="isbe-category-betas">Énergie max. bêta</message>
+  <message id="isbe-category-betas-desc">Recherche par énergie de point final des particules bêta.</message>
+  <message id="isbe-category-no-progeny">Nucléides sans descendance</message>
+  <message id="isbe-category-no-progeny-desc">Ne pas inclure la descendance des nucléides. Correspond aux gammas ou aux rayons X de désintégration.</message>
 </messages>

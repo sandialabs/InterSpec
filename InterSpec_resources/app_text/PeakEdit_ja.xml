@@ -41,7 +41,76 @@
 
   <message id="pe-est-lin-cont-no-data">連続成分を推定する前にフォアグラウンドスペクトルを読み込んでください。</message>
   <message id="pe-failed-est-lin-cont">ROI端からの連続成分推定に失敗: {1}</message>
-  
-  
-  
+
+  <!-- Skew parameter labels for Bortel (Exp*Gauss) -->
+  <message id="pe-label-skew-bortel-tau">歪度 &alpha;</message>
+
+  <!-- Skew parameter labels for DoubleBortel -->
+  <message id="pe-label-skew-doublebortel-tau1">&tau;<sub>1</sub></message>
+  <message id="pe-label-skew-doublebortel-deltatau2">&Delta;&tau;<sub>2</sub></message>
+  <message id="pe-label-skew-doublebortel-eta">&eta;</message>
+
+  <!-- Skew parameter labels for GaussPlusBortel -->
+  <message id="pe-label-skew-gaussplusbortel-r">混合比 R</message>
+  <message id="pe-label-skew-gaussplusbortel-tau">Bortel &tau;</message>
+
+  <!-- Skew parameter labels for GaussExp -->
+  <message id="pe-label-skew-gaussexp-k">歪度 k</message>
+
+  <!-- Skew parameter labels for CrystalBall -->
+  <message id="pe-label-skew-crystalball-alpha">歪度 &alpha;</message>
+  <message id="pe-label-skew-crystalball-n">歪度 n</message>
+
+  <!-- Skew parameter labels for ExpGaussExp -->
+  <message id="pe-label-skew-expgaussexp-kl">歪度 k<sub>L</sub></message>
+  <message id="pe-label-skew-expgaussexp-kh">歪度 k<sub>H</sub></message>
+
+  <!-- Skew parameter labels for DoubleSidedCrystalBall -->
+  <message id="pe-label-skew-dscb-alphalow">歪度 &alpha;<sub>low</sub></message>
+  <message id="pe-label-skew-dscb-nlow">歪度 n<sub>low</sub></message>
+  <message id="pe-label-skew-dscb-alphahigh">歪度 &alpha;<sub>high</sub></message>
+  <message id="pe-label-skew-dscb-nhigh">歪度 n<sub>high</sub></message>
+
+  <!-- Skew parameter labels for VoigtPlusBortel -->
+  <message id="pe-label-skew-voigtplusbortel-gamma">ローレンツ &gamma;</message>
+  <message id="pe-label-skew-voigtplusbortel-r">混合比 R</message>
+  <message id="pe-label-skew-voigtplusbortel-tau">Bortel &tau;</message>
+
+  <!-- Tooltips for skew parameters -->
+  <message id="pe-tt-skew-bortel-tau">Exp*Gauss（指数修正ガウシアン）の指数減衰定数。低エネルギー側テールの特性長を表します。有効範囲: 0.0〜15 σ、典型値: 0.5〜3 σ。</message>
+
+  <message id="pe-tt-skew-doublebortel-tau1">第1指数減衰定数、通常σに近い値。主要な低エネルギーテール成分を制御します。有効範囲: 0.01〜15 σ。</message>
+
+  <message id="pe-tt-skew-doublebortel-deltatau2">第2指数の追加減衰: τ₂ = τ₁ + Δτ₂。拡張テール成分を制御します。有効範囲: 0.0〜10 σ。</message>
+
+  <message id="pe-tt-skew-doublebortel-eta">第2指数成分の重み。η=0で単一Exp*Gauss(τ₁)、η=1で純粋なExp*Gauss(τ₂)。有効範囲: 0.0〜1.0。</message>
+
+  <message id="pe-tt-skew-gaussplusbortel-r">ガウシアンとExp*Gaussの混合比。R=0は純粋なガウシアン、R=1は純粋なExp*Gauss。有効範囲: 0.0〜1.0、典型: 0.2〜0.8。</message>
+
+  <message id="pe-tt-skew-gaussplusbortel-tau">混合中のExp*Gauss成分の指数減衰定数。有効範囲: 0.01〜15 σ、典型値: 0.5〜3 σ。</message>
+
+  <message id="pe-tt-skew-gaussexp-k">指数テールが始まる閾値（μ - k·σ）と減衰率の両方を制御します。有効範囲: 0.15〜3.25、典型: 0.5〜2.0。</message>
+
+  <message id="pe-tt-skew-crystalball-alpha">べき乗則テールが始まるσ単位の閾値: x = μ - α·σ。有効範囲: 0.5〜4.0、典型: 1.0〜3.0。</message>
+
+  <message id="pe-tt-skew-crystalball-n">低エネルギーテールのべき乗則指数: (x - μ + α·σ)^(-n)。nが大きいほど急峻な減衰。有効範囲: 1.05〜100、典型: 2〜10。</message>
+
+  <message id="pe-tt-skew-expgaussexp-kl">下側（左）エネルギーテールの閾値と減衰を制御します。有効範囲: 0.15〜3.25、典型: 0.5〜2.0。</message>
+
+  <message id="pe-tt-skew-expgaussexp-kh">上側（右）エネルギーテールの閾値と減衰を制御します。有効範囲: 0.15〜3.25、典型: 0.5〜2.0。</message>
+
+  <message id="pe-tt-skew-dscb-alphalow">低エネルギーべき乗則テールが始まるσ単位の下側閾値。有効範囲: 0.5〜4.0、典型: 1.0〜3.0。</message>
+
+  <message id="pe-tt-skew-dscb-nlow">低エネルギーテールのべき乗則指数。有効範囲: 1.05〜100、典型: 2〜10。</message>
+
+  <message id="pe-tt-skew-dscb-alphahigh">高エネルギーべき乗則テールが始まるσ単位の上側閾値。有効範囲: 0.5〜4.0、典型: 1.0〜3.0。</message>
+
+  <message id="pe-tt-skew-dscb-nhigh">高エネルギーテールのべき乗則指数。有効範囲: 1.05〜100、典型: 2〜10。</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-gamma">自然X線線幅を表すローレンツHWHM（半値半幅）。有効範囲: 0.0〜10.0 keV、X線の典型値: 0.01〜0.5 keV。</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-r">VoigtプロファイルとExp*Gaussの混合比。R=0は純粋なVoigt（自然線幅のみ）、R=1は純粋なExp*Gauss（検出器テールのみ）。有効範囲: 0.0〜1.0。</message>
+
+  <message id="pe-tt-skew-voigtplusbortel-tau">Exp*Gauss成分の指数減衰定数。不完全電荷収集テールを表します。有効範囲: 0.01〜10 σ。</message>
+
 </messages>

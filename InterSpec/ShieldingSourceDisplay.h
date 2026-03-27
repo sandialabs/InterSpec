@@ -415,7 +415,8 @@ public:
             if fitting is being performed in the background, the returned object will be updated as
             fitting is being performed (use m_mutex to ensure safe access).
    */
-  std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> doModelFit( const bool fitInBackground );
+  std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> doModelFit( const bool fitInBackground,
+                                                                      const bool checkForMissingBackPeaks );
   
   /** Cancels the current model fit happening */
   void cancelModelFit();
@@ -662,6 +663,37 @@ public:
   void clusterWidthChanged();
   void attenuateForAirChanged();
   void backgroundPeakSubChanged();
+
+  /** Checks if background spectrum is missing peaks at energies where
+   foreground fit-peaks exist but auto-search suggests real background peaks.
+   Shows a dialog if missing peaks are found.
+
+   @param triggeredFromFit If true, the model fit should proceed after dialog
+          interaction completes.
+   @returns true if a dialog was shown (caller should not proceed), false
+            if no missing peaks found (caller can continue).
+   */
+  bool checkForMissingBackgroundPeaks( const bool triggeredFromFit );
+
+  /** Fits peaks at candidate locations on background spectrum and shows a
+   preview dialog with the results.
+
+   @param candidates The auto-search peak candidates to fit.
+   @param triggeredFromFit If true, resume doModelFit after dialog completes.
+   */
+  void fitAndPreviewBackgroundPeaks(
+    const std::vector<std::shared_ptr<const PeakDef>> &candidates,
+    const bool triggeredFromFit );
+
+  /** Adds the given peaks to the background spectrum and optionally continues
+   the model fit.
+   */
+  void addPeaksToBackgroundAndContinue(
+    const std::vector<std::shared_ptr<const PeakDef>> new_peaks,
+    const bool triggeredFromFit );
+  
+  void setSkipBackgroundPeakCheckAndOrDoFit( const std::optional<bool> setSkip, const std::optional<bool> diFit );
+
   void sameIsotopesAgeChanged();
   void decayCorrectChanged();
   void showGraphicTypeChanged();
@@ -764,7 +796,13 @@ protected:
   /** This variable should be set to the same value as `m_clusterWidth`, but is around for undo/redo support. */
   double m_photopeak_cluster_sigma;
   bool m_multithread_computation;
-  
+
+  /** When true, skip the check for missing background peaks when the user
+   checks the background-subtract checkbox or clicks "Perform Model Fit".
+   Reset to false when foreground changes or background-subtract is unchecked.
+   */
+  bool m_skipBackgroundPeakCheck;
+
   PopupDivMenuItem *m_showLog;
 
   InjaLogDialog *m_logDiv;
