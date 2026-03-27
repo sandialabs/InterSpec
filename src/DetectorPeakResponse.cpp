@@ -2161,6 +2161,7 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
       case DrfSource::FromSpectrumFileDrf:
       case DrfSource::IsocsEcc:
       case DrfSource::AngleOutx:
+      case DrfSource::UserImportedEfficiencyCsvDrf:
         break;
       
       default:
