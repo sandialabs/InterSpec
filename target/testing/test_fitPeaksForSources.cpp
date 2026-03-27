@@ -532,6 +532,53 @@ namespace
   }// verify_existing_peaks_unchanged
 
 
+  // Verify that for each source in original_peaks_to_remove, the same number of peaks
+  // for that source appear in observable_peaks.  This ensures bystander peaks are properly
+  // replaced rather than silently lost.
+  void verify_removed_peaks_replaced(
+    const FitPeaksForNuclides::PeakFitResult &result )
+  {
+    if( result.status != RelActCalcAuto::RelActAutoSolution::Status::Success )
+      return;
+
+    // Count removed peaks by source name
+    map<string,size_t> removed_per_source;
+    for( const shared_ptr<const PeakDef> &p : result.original_peaks_to_remove )
+    {
+      if( !p )
+        continue;
+      const string src = p->parentNuclide() ? p->parentNuclide()->symbol
+                       : (p->xrayElement() ? p->xrayElement()->symbol
+                       : (p->reaction() ? string("reaction") : string("unassigned")));
+      removed_per_source[src] += 1;
+    }
+
+    // Count observable peaks by source name
+    map<string,size_t> observable_per_source;
+    for( const PeakDef &p : result.observable_peaks )
+    {
+      const string src = p.parentNuclide() ? p.parentNuclide()->symbol
+                       : (p.xrayElement() ? p.xrayElement()->symbol
+                       : (p.reaction() ? string("reaction") : string("unassigned")));
+      observable_per_source[src] += 1;
+    }
+
+    // For each source that had peaks removed, check that at least as many
+    // peaks for that source appear in observable_peaks
+    for( const auto &src_count : removed_per_source )
+    {
+      const string &src = src_count.first;
+      const size_t num_removed = src_count.second;
+      const size_t num_observable = observable_per_source.count(src) ? observable_per_source.at(src) : 0;
+
+      BOOST_CHECK_MESSAGE( num_observable >= num_removed,
+        "Source '" << src << "': " << num_removed << " peak(s) removed but only "
+        << num_observable << " replacement peak(s) in observable_peaks "
+        << "(expected at least " << num_removed << ")" );
+    }
+  }// verify_removed_peaks_replaced
+
+
   // Apply fit result to a peak list: remove peaks_to_remove, add observable_peaks
   vector<shared_ptr<const PeakDef>> apply_fit_result(
     const vector<shared_ptr<const PeakDef>> &current_peaks,
@@ -668,6 +715,7 @@ BOOST_AUTO_TEST_CASE( test_eu152_then_eu154 )
   // (the spectrum is pure Eu-152, so Eu-154 may or may not be found)
   verify_fit_result( eu154_result, after_eu152, spec.foreground,
     FitPeaksForNuclides::FitSrcPeaksOptions::ExistingPeaksAsFreePeak );
+  verify_removed_peaks_replaced( eu154_result );
 
   // If no Eu-154 was found, all Eu-152 peaks should be unchanged
   if( eu154_result.observable_peaks.empty() )
@@ -711,6 +759,7 @@ BOOST_AUTO_TEST_CASE( test_refit_same_source )
   BOOST_REQUIRE( result2.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
 
   verify_fit_result( result2, after_first, spec.foreground, {} );
+  verify_removed_peaks_replaced( result2 );
 
   // The old peaks should be marked for removal (they are same-source)
   BOOST_CHECK_GE( result2.original_peaks_to_remove.size(), 1u );
@@ -765,6 +814,7 @@ BOOST_AUTO_TEST_CASE( test_refit_after_peak_delete )
 
   BOOST_REQUIRE( result2.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
   verify_fit_result( result2, with_deletions, spec.foreground, {} );
+  verify_removed_peaks_replaced( result2 );
 
   // Check that the deleted peaks come back
   BOOST_CHECK_MESSAGE( has_peak_near( result2.observable_peaks, deleted_energy_1, 3.0 ),
@@ -848,6 +898,8 @@ BOOST_AUTO_TEST_CASE( test_default_preserves_other_source )
   if( ba_result.status != RelActCalcAuto::RelActAutoSolution::Status::Success )
     return;
 
+  verify_removed_peaks_replaced( ba_result );
+
   // Cs137 peaks should not be in peaksToRemove (they are from a different source)
   set<const PeakDef *> removed_ptrs;
   for( const shared_ptr<const PeakDef> &p : ba_result.original_peaks_to_remove )
@@ -925,6 +977,7 @@ BOOST_AUTO_TEST_CASE( test_trinitite_default_sequence )
       = run_fit( spec.foreground, spec.background, auto_peaks, sources, user_peaks, spec.isHPGe );
 
     verify_fit_result( result, user_peaks, spec.foreground, {} );
+    verify_removed_peaks_replaced( result );
 
     BOOST_CHECK_GE( result.observable_peaks.size(), 1u );
     BOOST_CHECK( has_peak_near( result.observable_peaks, 661.66, 3.0 ) );
@@ -944,6 +997,7 @@ BOOST_AUTO_TEST_CASE( test_trinitite_default_sequence )
       = run_fit( spec.foreground, spec.background, auto_peaks, sources, user_peaks, spec.isHPGe );
 
     verify_fit_result( result, user_peaks, spec.foreground, {} );
+    verify_removed_peaks_replaced( result );
 
     BOOST_CHECK_GE( result.observable_peaks.size(), 1u );
     BOOST_CHECK( has_peak_near( result.observable_peaks, 59.54, 3.0 ) );
@@ -966,6 +1020,7 @@ BOOST_AUTO_TEST_CASE( test_trinitite_default_sequence )
       = run_fit( spec.foreground, spec.background, auto_peaks, sources, user_peaks, spec.isHPGe );
 
     verify_fit_result( result, user_peaks, spec.foreground, {} );
+    verify_removed_peaks_replaced( result );
 
     // Eu-152 should have many peaks
     BOOST_CHECK_GE( result.observable_peaks.size(), 15u );
@@ -1001,6 +1056,7 @@ BOOST_AUTO_TEST_CASE( test_trinitite_default_sequence )
     // (but allow them if found)
     verify_fit_result( result, user_peaks, spec.foreground,
       FitPeaksForNuclides::FitSrcPeaksOptions::ExistingPeaksAsFreePeak );
+    verify_removed_peaks_replaced( result );
 
     if( result.observable_peaks.empty() )
     {
@@ -1027,6 +1083,7 @@ BOOST_AUTO_TEST_CASE( test_trinitite_default_sequence )
       = run_fit( spec.foreground, spec.background, auto_peaks, sources, user_peaks, spec.isHPGe );
 
     verify_fit_result( result, user_peaks, spec.foreground, {} );
+    verify_removed_peaks_replaced( result );
 
     BOOST_CHECK_GE( result.observable_peaks.size(), 3u );
     BOOST_CHECK( has_peak_near( result.observable_peaks, 356.02, 3.0 ) );
@@ -1078,6 +1135,7 @@ BOOST_AUTO_TEST_CASE( test_trinitite_default_sequence )
       = run_fit( spec.foreground, spec.background, auto_peaks, sources, user_peaks, spec.isHPGe );
 
     verify_fit_result( result, user_peaks, spec.foreground, {} );
+    verify_removed_peaks_replaced( result );
 
     BOOST_CHECK_GE( result.observable_peaks.size(), 2u );
     BOOST_CHECK( has_peak_near( result.observable_peaks, 1173.23, 3.0 ) );
@@ -1340,6 +1398,7 @@ BOOST_AUTO_TEST_CASE( test_eu154_does_not_remove_strong_eu152_peak )
 
   verify_fit_result( result_eu154, eu152_user_peaks, spec.foreground,
     FitPeaksForNuclides::FitSrcPeaksOptions::ExistingPeaksAsFreePeak );
+  verify_removed_peaks_replaced( result_eu154 );
 
   // Check that no strong existing peak is removed without a comparably significant replacement.
   for( const shared_ptr<const PeakDef> &removed : result_eu154.original_peaks_to_remove )
@@ -1424,6 +1483,7 @@ BOOST_AUTO_TEST_CASE( test_eu154_does_not_destroy_am241_peak )
   {
     verify_fit_result( result_eu154, am241_user_peaks, spec.foreground,
       FitPeaksForNuclides::FitSrcPeaksOptions::ExistingPeaksAsFreePeak );
+    verify_removed_peaks_replaced( result_eu154 );
   }
 
   // Whether fit succeeded or not, check that no strong existing peak is destroyed

@@ -5885,7 +5885,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const PeaksForEnergyRange these_peaks = cost_functor->peaks_for_energy_range( range, parameters, {}, &(solution.m_covariance) );
 
       fit_peaks.insert( end(fit_peaks), begin(these_peaks.peaks), end(these_peaks.peaks) );
-      
+
       if( num_rel_eff_curves > 1 )
       {
         shared_ptr<PeakContinuum> shared_continuum;
@@ -6061,7 +6061,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       solution.m_peaks_without_back_sub = solution.m_fit_peaks_in_spectrums_cal;
     }
 
-
     // \c fit_peaks are in the original energy calibration of the spectrum, we may need to adjust
     //  them to match the new energy calibration
     if( new_cal != cost_functor->m_energy_cal )
@@ -6089,7 +6088,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       solution.m_fit_peaks_for_each_curve = vector<vector<PeakDef>>{1, fit_peaks};
     else
       solution.m_fit_peaks_for_each_curve = fit_peaks_for_each_curve;
-    
+
     // Filter out peaks without sources from m_fit_peaks_for_each_curve
     filter_peaks_without_sources( solution.m_fit_peaks_for_each_curve, (new_cal == cost_functor->m_energy_cal) );
     
@@ -6591,10 +6590,18 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       if( lhs.mean() != rhs.mean() )
         return lhs.mean() < rhs.mean();
 
-      const double lhs_ge = lhs.gammaParticleEnergy();
-      const double rhs_ge = rhs.gammaParticleEnergy();
-      if( lhs_ge != rhs_ge )
-        return lhs_ge < rhs_ge;
+      const bool lhs_has_src = lhs.hasSourceGammaAssigned();
+      const bool rhs_has_src = rhs.hasSourceGammaAssigned();
+      if( lhs_has_src != rhs_has_src )
+        return lhs_has_src > rhs_has_src;  // peaks with sources sort first
+
+      if( lhs_has_src )  // both have sources
+      {
+        const double lhs_ge = lhs.gammaParticleEnergy();
+        const double rhs_ge = rhs.gammaParticleEnergy();
+        if( lhs_ge != rhs_ge )
+          return lhs_ge < rhs_ge;
+      }
 
       if( lhs.peakArea() != rhs.peakArea() )
         return lhs.peakArea() < rhs.peakArea();

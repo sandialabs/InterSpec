@@ -2503,6 +2503,9 @@ std::vector<PeakDef> compute_observable_peaks(
 
   // Step 1: Group input peaks by ROI (shared continuum), skipping peaks whose
   //  mean is outside their own continuum (tail contributions to adjacent ROIs).
+  //  NOTE/TODO: if any peaks migrate out the ROI while fitting the observable peaks,
+  //             we currently expand their ROI so this next filter wont delete them.
+  //             This isnt the best solution, and should be improved.      
   std::vector<PeakDef> peaks_in_bounds;
   for( const PeakDef &peak : fit_peaks )
   {
@@ -2770,6 +2773,46 @@ std::vector<PeakDef> compute_observable_peaks(
         roi_peaks = std::move( kept_peaks );
         iteration += 1;
       }//while( changed && !roi_peaks.empty() && (iteration < max_iterations) )
+
+      // The refit (using MediumRefinementOnly) allows peak means to shift up to ±0.5*sigma,
+      // which can push a peak mean slightly outside the continuum bounds when the peak
+      // starts near the ROI edge.  Rather than constraining the fitter (which could hurt
+      // fit quality for edge peaks), we expand the ROI bounds to encompass all peak means.
+      // TODO: revisit whether the refit should more tightly constrain means to stay within
+      //       the ROI, or whether the ROI bounds from the RelActAuto solver should provide
+      //       more margin around edge peaks to begin with.
+      // NOTE: the `reduce_roi_bounds_if_needed` lambda will delete any pak whose mean is outside the ROI
+      if( !roi_peaks.empty() )
+      {
+        std::shared_ptr<const PeakContinuum> continuum = roi_peaks.front().continuum();
+        assert( continuum );
+
+        double lower = continuum->lowerEnergy();
+        double upper = continuum->upperEnergy();
+        bool needs_expansion = false;
+
+        for( const PeakDef &p : roi_peaks )
+        {
+          if( p.mean() < lower )
+          {
+            lower = p.mean() - 0.1;
+            needs_expansion = true;
+          }
+          if( p.mean() > upper )
+          {
+            upper = p.mean() + 0.1;
+            needs_expansion = true;
+          }
+        }//for( const PeakDef &p : roi_peaks )
+
+        if( needs_expansion )
+        {
+          std::shared_ptr<PeakContinuum> new_continuum = std::make_shared<PeakContinuum>( *continuum );
+          new_continuum->setRange( lower, upper );
+          for( PeakDef &p : roi_peaks )
+            p.setContinuum( new_continuum );
+        }
+      }//if( !roi_peaks.empty() )
 
       roi_results[roi_index] = std::move( roi_peaks );
     });//pool.post lambda
