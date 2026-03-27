@@ -23,6 +23,7 @@ infer-out/
 InterSpec_resources/app_text/convert_xml_to_csv.py
 InterSpec_resources/app_text/convert_csv_to_xml.py
 InterSpec_resources/app_text/InterSpec_string*.csv
+peak_fit_accuracy_inject_compact
 
 *OUO*
 *ouo*
