@@ -3440,6 +3440,8 @@ void DrfSelect::setGuiToCurrentDetector()
       case DetectorPeakResponse::UserImportedGadrasDrf:
       case DetectorPeakResponse::UserCreatedDrf:
       case DetectorPeakResponse::IsocsEcc:
+      case DetectorPeakResponse::AngleOutx:
+      case DetectorPeakResponse::UserImportedEfficiencyCsvDrf:
       case DetectorPeakResponse::FromSpectrumFileDrf:
       {
         m_drfTypeMenu->select( 4 );
