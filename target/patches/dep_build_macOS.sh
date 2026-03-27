@@ -385,7 +385,7 @@ else
     echo "Abseil cloned - not doing it again."
     cd "${src_dir}"
   else
-    git clone --recursive git@github.com:abseil/abseil-cpp.git --branch master --single-branch --depth 1 "${src_dir}"
+    git clone --recursive https://github.com/abseil/abseil-cpp.git --branch master --single-branch --depth 1 "${src_dir}"
     cd "${src_dir}"
     git fetch --depth 1 origin ${git_hash}
     git checkout ${git_hash}
