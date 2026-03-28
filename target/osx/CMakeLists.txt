@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.25 FATAL_ERROR)
 
+cmake_policy(SET CMP0167 NEW)
+
 project( InterSpecApp VERSION 1.0.13 )
 
 if(POLICY CMP0114)

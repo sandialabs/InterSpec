@@ -18,9 +18,9 @@ foreach(_dep IN ITEMS boost wt zlib eigen ceres-solver wxWidgets)
 endforeach()
 
 # We'll set the install directory to somewhere not /usr/local or something, so we dont
-#  mess the system filesystem up; Wt and zlib will install 
+#  mess the system filesystem up; Wt and zlib will install
 #  If you want to install the packages, it looks like doing the following command
-#   should place them in prefix directory - although I think I patched the install 
+#   should place them in prefix directory - although I think I patched the install
 #   functionality out of zlib and Wt... I should restore.
 #     cmake --build . --config Release -j8 --target install
 set( CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/prefix" CACHE INTERNAL "" )
@@ -28,7 +28,7 @@ set( CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/prefix" CACHE INTERNAL "" )
 set(BOOST_ENABLE_CMAKE ON CACHE INTERNAL "" )
 
 
-# Currently installing dependencies to "prefix" of the build directory is a work in progress, 
+# Currently installing dependencies to "prefix" of the build directory is a work in progress,
 #  so just doing it for iOS build, at the moment.... Boost and Wt seem to be not working - not sure if this is something I did, or not
 if( InterSpec_IOS )
   set( INSTALL_DEPENDENCIES_IN_BUILD_DIR ON )
@@ -53,27 +53,9 @@ set( BUILD_SHARED_LIBS OFF CACHE INTERNAL "Build SHARED libraries" )
 
 # TODO: set BOOST libraries to not build, like wave, beast, wserialization, etc
 
-# CMAKE_CURRENT_SOURCE_DIR could either be project base directory, or a target 
+# CMAKE_CURRENT_SOURCE_DIR could either be project base directory, or a target
 #  directory, so we will search for the patch files to apply
-find_file( WT_PATCH_FILE "wt/3.7.1/FetchContent/wt_3.7.1_FetchContent.git.patch"
-  PATHS "${CMAKE_CURRENT_SOURCE_DIR}/target/patches"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../target/patches"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../../target/patches"
-  REQUIRED
-  NO_DEFAULT_PATH
-  NO_CMAKE_FIND_ROOT_PATH
-) 
-
-find_file( ZLIB_PATCH_FILE "zlib/1.2.12/FetchContent/zlib_1.2.12.git.patch"  
-  PATHS "${CMAKE_CURRENT_SOURCE_DIR}/target/patches"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../target/patches"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../../target/patches"
-  REQUIRED
-  NO_DEFAULT_PATH
-  NO_CMAKE_FIND_ROOT_PATH
-)
-
-find_file( CERES_PATCH_FILE "ceres/2.2.0/ceres.patch"  
+find_file( ZLIB_PATCH_FILE "zlib/1.2.12/FetchContent/zlib_1.2.12.git.patch"
   PATHS "${CMAKE_CURRENT_SOURCE_DIR}/target/patches"
         "${CMAKE_CURRENT_SOURCE_DIR}/../target/patches"
         "${CMAKE_CURRENT_SOURCE_DIR}/../../target/patches"
@@ -84,7 +66,7 @@ find_file( CERES_PATCH_FILE "ceres/2.2.0/ceres.patch"
 
 # set( FETCHCONTENT_QUIET FALSE )
 
-# Check for local Boost
+# ---- Boost 1.84.0 ----
 set(LOCAL_BOOST_DIR "${CMAKE_BINARY_DIR}/_deps/boost-src")
 if(EXISTS "${LOCAL_BOOST_DIR}/CMakeLists.txt")
   message(STATUS "Using local Boost from ${LOCAL_BOOST_DIR}")
@@ -92,24 +74,37 @@ if(EXISTS "${LOCAL_BOOST_DIR}/CMakeLists.txt")
   FetchContent_Declare( boost ${BOOST_FETCHCONTENT_SOURCE} )
 else()
   set(BOOST_FETCHCONTENT_SOURCE
-    #URL https://github.com/boostorg/boost/releases/download/boost-1.85.0/boost-1.85.0-cmake.zip
-    #URL_HASH MD5=0f0d58e89e08f8b5f6a01656e19b8535
-    #DOWNLOAD_EXTRACT_TIMESTAMP true
     GIT_REPOSITORY https://github.com/boostorg/boost.git
-    GIT_TAG        ab7968a0bbcf574a7859240d1d8443f58ed6f6cf # release-1.85.0
+    GIT_TAG        ad09f667e61e18f5c31590941e748ac38e5a81bf # boost-1.84.0
     GIT_SHALLOW    ON
   )
-  #set(BOOST_ENABLE_LIBRARIES regex thread date_time system filesystem program_options random CACHE STRING "Boost libraries to build")
-  #set(Boost_USE_STATIC_LIBS ON CACHE BOOL "Use shared Boost libraries")
-  #set(Boost_USE_MULTITHREADED ON CACHE BOOL "Use multithreaded Boost libraries")
-  #set(Boost_USE_STATIC_RUNTIME ON CACHE BOOL "Use static runtime for Boost")
   FetchContent_Declare( boost ${BOOST_FETCHCONTENT_SOURCE} )
 endif()
 
 FetchContent_MakeAvailable( boost )
 FetchContent_GetProperties( boost )
 
-# Check for local Wt
+
+# ---- Wt 4.12.6 ----
+set( SHARED_LIBS OFF CACHE INTERNAL "" )
+set( ENABLE_SSL OFF CACHE INTERNAL "" )
+set( CONNECTOR_FCGI OFF CACHE INTERNAL "" )
+set( BUILD_EXAMPLES OFF CACHE INTERNAL "" )
+set( BUILD_TESTS OFF CACHE INTERNAL "" )
+set( ENABLE_MYSQL OFF CACHE INTERNAL "" )
+set( ENABLE_POSTGRES OFF CACHE INTERNAL "" )
+set( ENABLE_PANGO OFF CACHE INTERNAL "" )
+set( ENABLE_FIREBIRD OFF CACHE INTERNAL "" )
+set( ENABLE_MSSQLSERVER OFF CACHE INTERNAL "" )
+set( ENABLE_OPENGL ON CACHE INTERNAL "" )
+set( ENABLE_QT4 OFF CACHE INTERNAL "" )
+set( ENABLE_QT5 OFF CACHE INTERNAL "" )
+set( ENABLE_QT6 OFF CACHE INTERNAL "" )
+set( ENABLE_LIBWTTEST ON CACHE INTERNAL "" )
+set( ENABLE_SAML OFF CACHE INTERNAL "" )
+set( ENABLE_UNWIND OFF CACHE INTERNAL "" )
+set( HTTP_WITH_ZLIB OFF CACHE INTERNAL "" )
+
 set(LOCAL_WT_DIR "${CMAKE_BINARY_DIR}/_deps/wt-src")
 if(EXISTS "${LOCAL_WT_DIR}/CMakeLists.txt")
   message(STATUS "Using local Wt from ${LOCAL_WT_DIR}")
@@ -117,9 +112,8 @@ if(EXISTS "${LOCAL_WT_DIR}/CMakeLists.txt")
 else()
   set(WT_FETCHCONTENT_SOURCE
     GIT_REPOSITORY https://github.com/emweb/wt.git
-    GIT_TAG        b84925215d2b45879cf20c0cb340c4e7960d0c53 # 3.7.1
+    GIT_TAG        4d158458b06554192c63389e098ad03e5e35a713 # 4.12.6
     GIT_SHALLOW    ON
-    PATCH_COMMAND ${GIT_EXECUTABLE} apply --reverse --check --ignore-space-change --ignore-whitespace ${WT_PATCH_FILE} || ${GIT_EXECUTABLE} apply --reject --ignore-space-change --ignore-whitespace ${WT_PATCH_FILE}
   )
 endif()
 
@@ -134,24 +128,23 @@ if( INSTALL_DEPENDENCIES_IN_BUILD_DIR )
   #  builds the install target (e.g., for electron build), it wont install stuff to /usr/local
   FetchContent_MakeAvailable( wt boost )
 else( INSTALL_DEPENDENCIES_IN_BUILD_DIR )
+  # Suppress install rules from Wt (and other subdeps) to avoid export set
+  # errors from references to boost/abseil targets not in the same export set
+  set( _prev_skip_install_rules ${CMAKE_SKIP_INSTALL_RULES} )
+  set( CMAKE_SKIP_INSTALL_RULES ON )
+
   FetchContent_GetProperties(wt)
   if(NOT wt_POPULATED)
     FetchContent_Populate(wt)
     add_subdirectory(${wt_SOURCE_DIR} ${wt_BINARY_DIR} EXCLUDE_FROM_ALL)
   endif()
 
-  #FetchContent_GetProperties(boost)
-  #if(NOT boost_POPULATED)
-  #  FetchContent_Populate(boost)
-  #  add_subdirectory(${boost_SOURCE_DIR} ${boost_BINARY_DIR} EXCLUDE_FROM_ALL)
-  #endif()
-
   # Since we arent installing Wt, the InterSpec CMakeLists.txt wont find Wt resources,
   #  so we'll hard code this directory.
   set(WT_RESOURCES_DIRECTORY "${wt_SOURCE_DIR}/resources" CACHE INTERNAL "Set Wt resources dir")
 
-  # If we run the Cmake "install" target (e.g., for Electron build), we'll get an error because 
-  # ${boost_BINARY_DIR}/cmake_install.cmake doesnt exist, so we'll just put a dummy 
+  # If we run the Cmake "install" target (e.g., for Electron build), we'll get an error because
+  # ${boost_BINARY_DIR}/cmake_install.cmake doesnt exist, so we'll just put a dummy
   # there, and things seem to work
   #   However, the proper fix would be something like:
   #     https://stackoverflow.com/questions/65527126/disable-install-for-fetchcontent#answer-65529161
@@ -182,12 +175,12 @@ if( NOT APPLE AND NOT ANDROID )
   endif()
 
   FetchContent_MakeAvailable( zlib )
-   
-  if( ZLIB::zlib ) 
+
+  if( ZLIB::zlib )
     # Hmmm, not sure if we ever actually get here
     add_library( ZLIB::ZLIB ALIAS ZLIB::zlib )
   elseif( NOT ZLIB::ZLIB )
-    # On Linux, we seem to always get here, so we'll just hack things.  
+    # On Linux, we seem to always get here, so we'll just hack things.
     #  I must not understand the export(...) cmake stuff of the sub-project - oh well for now.
     add_library( ZLIB::ZLIB ALIAS zlib )
     set( ZLIB_LIBRARY zlib CACHE INTERNAL "set zlib static lib" )
@@ -196,15 +189,15 @@ if( NOT APPLE AND NOT ANDROID )
 endif( NOT APPLE AND NOT ANDROID )
 
 
-  
-# Set some eigen options
+
+# ---- Eigen 5.0.1 ----
 set( EIGEN_BUILD_SHARED_LIBS OFF CACHE INTERNAL "" )
 set( EIGEN_BUILD_DOC OFF CACHE INTERNAL "" )
 set( EIGEN_BUILD_TESTING OFF CACHE INTERNAL "" )
 set( EIGEN_BUILD_PKGCONFIG OFF )
 set( EIGEN_BUILD_CMAKE_PACKAGE ON CACHE INTERNAL "" )
-#set( Eigen3_DIR "${FETCHCONTENT_BASE_DIR}/..." CACHE INTERNAL "" )
-# Check for local Eigen
+set( EIGEN_MPL2_ONLY ON CACHE INTERNAL "" )
+
 set(LOCAL_EIGEN_DIR "${CMAKE_BINARY_DIR}/_deps/eigen-src")
 if(EXISTS "${LOCAL_EIGEN_DIR}/CMakeLists.txt")
   message(STATUS "Using local Eigen from ${LOCAL_EIGEN_DIR}")
@@ -212,26 +205,25 @@ if(EXISTS "${LOCAL_EIGEN_DIR}/CMakeLists.txt")
 else()
   set(EIGEN_FETCHCONTENT_SOURCE
     GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-    GIT_TAG        2e76277bd049f7bec36b0f908c69734a42c5234f  # Get trunk version as of 20250114 to pickup some compile issues for c++20
-    UPDATE_DISCONNECTED TRUE # Prevent automatic updates if the tag is already present
+    GIT_TAG        bc3b39870ecb690a623a3f49149a358b95c5781d  # version 5.0.1
+    UPDATE_DISCONNECTED TRUE
   )
 endif(EXISTS "${LOCAL_EIGEN_DIR}/CMakeLists.txt")
 
 FetchContent_Declare( eigen ${EIGEN_FETCHCONTENT_SOURCE} )
 FetchContent_MakeAvailable( eigen )
-#FetchContent_GetProperties( eigen )
-#if(NOT eigen_POPULATED)
-#  FetchContent_Populate(eigen)
-#  add_subdirectory(${eigen_SOURCE_DIR} ${eigen_BINARY_DIR} EXCLUDE_FROM_ALL)
-#endif()
-  
-  # For Android and iOS, we need to force the path information for Eigen, for some reason.
-set( CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${eigen_BINARY_DIR}" CACHE STRING "Modules for CMake" FORCE )
-set( Eigen3_DIR "${eigen_BINARY_DIR}/share/eigen3/cmake/" CACHE PATH "Path to Eigen3Config.cmake" )  #${eigen_SOURCE_DIR}
 
-  # Set some Google Ceres options; both to allow compiling without further dependencies, and
-  #  avoid some things we dont need
-set( MINIGLOG ON CACHE INTERNAL "" )
+# For Android and iOS, we need to force the path information for Eigen, for some reason.
+set( CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${eigen_BINARY_DIR}" CACHE STRING "Modules for CMake" FORCE )
+set( Eigen3_DIR "${eigen_BINARY_DIR}/share/eigen3/cmake/" CACHE PATH "Path to Eigen3Config.cmake" )
+
+
+# ---- Ceres-Solver (HEAD from Mar 22, 2026) ----
+# Ceres bundles its own abseil in third_party/abseil-cpp and will use it
+# automatically.  We set abseil options before Ceres so they propagate.
+set( ABSL_BUILD_TESTING OFF CACHE INTERNAL "" )
+set( ABSL_USE_GOOGLETEST_HEAD OFF CACHE INTERNAL "" )
+set( ABSL_PROPAGATE_CXX_STD ON CACHE INTERNAL "" )
 set( GFLAGS OFF CACHE INTERNAL "" )
 set( ACCELERATESPARSE OFF CACHE INTERNAL "" )
 set( USE_CUDA OFF CACHE INTERNAL "" )
@@ -239,7 +231,7 @@ set( EXPORT_BUILD_DIR OFF CACHE INTERNAL "" )
 set( BUILD_TESTING OFF CACHE INTERNAL "" )
 set( BUILD_EXAMPLES OFF CACHE INTERNAL "" )
 set( PROVIDE_UNINSTALL_TARGET OFF CACHE INTERNAL "" )
-# Check for local Ceres Solver
+
 set(LOCAL_CERES_DIR "${CMAKE_BINARY_DIR}/_deps/ceres-solver-src")
 if(EXISTS "${LOCAL_CERES_DIR}/CMakeLists.txt")
   message(STATUS "Using local Ceres Solver from ${LOCAL_CERES_DIR}")
@@ -247,21 +239,16 @@ if(EXISTS "${LOCAL_CERES_DIR}/CMakeLists.txt")
 else()
   set(CERES_FETCHCONTENT_SOURCE
       GIT_REPOSITORY https://github.com/ceres-solver/ceres-solver.git
-      GIT_TAG         85331393dc0dff09f6fb9903ab0c4bfa3e134b01 # release-2.2.0
+      GIT_TAG        2f946a582ae4a9e7ee0492030ec12d9b1f3dbade  # HEAD from Mar 22, 2026
       UPDATE_DISCONNECTED TRUE
       GIT_SHALLOW    TRUE
-      PATCH_COMMAND ${GIT_EXECUTABLE} apply --reverse --check --ignore-space-change --ignore-whitespace ${CERES_PATCH_FILE} || ${GIT_EXECUTABLE} apply --reject --ignore-space-change --ignore-whitespace ${CERES_PATCH_FILE}
       EXCLUDE_FROM_ALL
   )
 endif()
 
 FetchContent_Declare( ceres-solver ${CERES_FETCHCONTENT_SOURCE} )
 FetchContent_MakeAvailable( ceres-solver )
-#FetchContent_GetProperties( ceres-solver )
-#if(NOT ceres-solver_POPULATED)
-#  FetchContent_Populate(ceres-solver)
-#  add_subdirectory(${ceres-solver_SOURCE_DIR} ${ceres_solver_BINARY_DIR} EXCLUDE_FROM_ALL)
-#endif()
+
 
 if( BUILD_AS_WX_WIDGETS_APP )
   set(wxBUILD_SHARED OFF CACHE BOOL "")
@@ -278,7 +265,7 @@ if( BUILD_AS_WX_WIDGETS_APP )
     GIT_REPOSITORY https://github.com/wxWidgets/wxWidgets.git
     GIT_TAG        97e99707c5d2271a70cb686720b48dbf34ced496 # release-3.2.1
     GIT_SHALLOW    ON
-    # GIT_PROGRESS TRUE # Also need FETCHCONTENT_QUIET 
+    # GIT_PROGRESS TRUE # Also need FETCHCONTENT_QUIET
   )
 
   FetchContent_GetProperties(wxWidgets)
@@ -289,5 +276,12 @@ if( BUILD_AS_WX_WIDGETS_APP )
 
   # write_file( "${wxWidgets_BINARY_DIR}/cmake_install.cmake" "# This is a dummy patch file the InterSpec build put in" )
 endif( BUILD_AS_WX_WIDGETS_APP )
+
+# Restore install rules for the main project
+if( DEFINED _prev_skip_install_rules )
+  set( CMAKE_SKIP_INSTALL_RULES ${_prev_skip_install_rules} )
+else()
+  unset( CMAKE_SKIP_INSTALL_RULES )
+endif()
 
 message("Building Wt and boost may also take up to a couple hours...")

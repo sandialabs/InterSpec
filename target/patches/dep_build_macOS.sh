@@ -248,25 +248,24 @@ fi #if libpng.installe exists / else
 cd "${working_directory}"
 
 
-## Build libharu
+## Build libharu 2.4.6
 if [ -f "${working_directory}/libharu.installed" ]; then
     echo "libharu already installed (as indicated by existance of libharu.installed file) - skipping."
 else
   # libharu is only necessary if you are going to build the macOS packaged app, with the Quick Look utility.
-  file_url="https://github.com/libharu/libharu/archive/RELEASE_2_3_0.zip"
-  file_name="libharu_2.3.0.zip"
-  expected_sha256="34de0ed4e994d9c704339292740b8019c33e8538814e104d882508a33517d1a8"
-  src_dir="libharu-RELEASE_2_3_0"
-   
-  download_file "${file_url}" "${file_name}" "${expected_sha256}"
+  src_dir="libharu-2.4.6"
+  git_hash="3467749fd1c0ab6ca6ed424d053b1ea53c1bf67c"
 
   if [ -d "${src_dir}" ]; then
-    echo "libharu already unzipped, not doing again."
+    echo "libharu cloned - not doing it again."
+    cd "${src_dir}"
   else
-    unzip "${file_name}"
+    git clone --recursive https://github.com/libharu/libharu.git --branch master --single-branch --depth 1 "${src_dir}"
+    cd "${src_dir}"
+    git fetch --depth 1 origin ${git_hash}
+    git checkout ${git_hash}
+    git submodule update --init --recursive
   fi
-  
-  cd "${src_dir}"
 
   if [ -d build ]; then
     rm -r build
@@ -277,11 +276,11 @@ else
   cd build
 
   # CMake will take care of building for x86_64 and arm64 at the same time
-  cmake -DLIBHPDF_SHARED=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DPNG_LIBRARY_RELEASE= -DPNG_LIBRARY_RELEASE=${MY_WT_PREFIX}/lib/libpng.a -DPNG_PNG_INCLUDE_DIR=${MY_WT_PREFIX}/include -DCMAKE_INSTALL_PREFIX=${MY_WT_PREFIX} -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" ..
+  cmake -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DPNG_LIBRARY_RELEASE=${MY_WT_PREFIX}/lib/libpng.a -DPNG_PNG_INCLUDE_DIR=${MY_WT_PREFIX}/include -DCMAKE_INSTALL_PREFIX=${MY_WT_PREFIX} -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" ..
   make -j$(sysctl -n hw.ncpu) install
 
   touch "${working_directory}/libharu.installed"
-fi #if libharu.installe exists / else
+fi #if libharu.installed exists / else
 
 
 cd "${working_directory}"

@@ -2,6 +2,7 @@
 cmake_minimum_required(VERSION 3.1...3.20 FATAL_ERROR)
 cmake_policy(SET CMP0091 NEW)
 cmake_policy(SET CMP0042 NEW)
+cmake_policy(SET CMP0167 NEW)
 
 project( InterSpecAddOn )
 

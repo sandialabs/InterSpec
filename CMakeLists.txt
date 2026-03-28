@@ -1,5 +1,8 @@
  cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 
+# Use the installed BoostConfig.cmake instead of the removed FindBoost module
+cmake_policy(SET CMP0167 NEW)
+
 project(InterSpec VERSION 1.0.14)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -223,20 +226,40 @@ else(TRY_TO_STATIC_LINK)
     SET(CMAKE_FIND_LIBRARY_SUFFIXES .so .dylib ${CMAKE_FIND_LIBRARY_SUFFIXES})
 endif(TRY_TO_STATIC_LINK)
 
-include( cmake/FindWt.cmake )
-
 find_package( ZLIB REQUIRED )
 find_package( Threads REQUIRED )
 
 if( InterSpec_FETCH_DEPENDENCIES )
   set( Wt_INCLUDE_DIR "${wt_SOURCE_DIR}/src" )
 else( InterSpec_FETCH_DEPENDENCIES )
-  set(Boost_USE_STATIC_LIBS ON)
-  set(Boost_USE_MULTITHREADED ON)
-  find_package(Boost 1.68 REQUIRED COMPONENTS thread date_time system filesystem program_options regex random )
+  set( Boost_USE_STATIC_LIBS ON )
+  set( Boost_USE_MULTITHREADED ON )
+  find_package( Boost 1.78 REQUIRED COMPONENTS thread date_time system filesystem program_options regex random )
 
-  find_package( Eigen3 3.4 REQUIRED NO_MODULE )
+  find_package( Eigen3 3.4...6.0 REQUIRED NO_MODULE )
   find_package( Ceres REQUIRED )
+
+  # libharu (HPDF) does not install a CMake config, but Wt::Wt depends on
+  # the HPDF::HPDF target.  We must create it before calling find_package(wt).
+  if( NOT TARGET HPDF::HPDF )
+    find_library( HPDF_LIB_PATH NAMES hpdf hpdfs REQUIRED )
+    find_path( HPDF_INCLUDE_PATH NAMES hpdf.h REQUIRED )
+    find_package( PNG REQUIRED )
+
+    add_library( HPDF::HPDF STATIC IMPORTED )
+    set_target_properties( HPDF::HPDF PROPERTIES
+      IMPORTED_LOCATION "${HPDF_LIB_PATH}"
+      INTERFACE_INCLUDE_DIRECTORIES "${HPDF_INCLUDE_PATH}"
+      INTERFACE_LINK_LIBRARIES "PNG::PNG;ZLIB::ZLIB"
+    )
+  endif( NOT TARGET HPDF::HPDF )
+
+  # Find Wt 4 via its installed CMake config
+  find_package( wt CONFIG REQUIRED )
+
+  # Set Wt_INCLUDE_DIR for backward compatibility with downstream references
+  get_target_property( _wt_inc Wt::Wt INTERFACE_INCLUDE_DIRECTORIES )
+  set( Wt_INCLUDE_DIR "${_wt_inc}" CACHE PATH "Wt include directory" FORCE )
 endif( InterSpec_FETCH_DEPENDENCIES )
 
 
@@ -673,11 +696,13 @@ foreach(_file ${CSS_RESOURCES_TO_COPY})
 endforeach()
 
 
-find_path(
-    WT_RESOURCES_DIRECTORY
+if( NOT WT_RESOURCES_DIRECTORY )
+  find_path( WT_RESOURCES_DIRECTORY
     form.css
-    ${Wt_INCLUDE_DIR}/../share/Wt/resources
-)
+    HINTS ${Wt_INCLUDE_DIR}/../share/Wt/resources
+    NO_DEFAULT_PATH
+  )
+endif( NOT WT_RESOURCES_DIRECTORY )
 
 #Set SpecUtils compile options
 set(SpecUtils_NO_BOOST_LIB OFF
@@ -744,8 +769,8 @@ target_compile_options(InterSpecLib PRIVATE
      $<$<CXX_COMPILER_ID:MSVC>:
           >)
 
-# Turn off "note: The practice of declaring the Bind placeholders (_1, _2, ...) in the global namespace is deprecated...."
-# warnings (these come from Wt I think, not our code)
+# TODO: Remove BOOST_BIND_GLOBAL_PLACEHOLDERS once Wt 4 migration is complete
+#  (Wt 3 triggered this, but InterSpec code may still use boost::bind global placeholders)
 SET(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -D BOOST_BIND_GLOBAL_PLACEHOLDERS")
           
 if(WIN32)
@@ -800,19 +825,24 @@ set( RAPID_XML_INC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/3rdpa
 
 target_include_directories( InterSpecLib
   PUBLIC
-    ${Wt_INCLUDE_DIR}
-    ${Boost_INCLUDE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_BINARY_DIR}
     ${RAPID_XML_INC_DIR}
     external_libs
 )
 
+# Mark Wt headers as SYSTEM to suppress warnings from those headers
+if( InterSpec_FETCH_DEPENDENCIES )
+  target_include_directories( InterSpecLib SYSTEM PUBLIC ${wt_SOURCE_DIR}/src )
+else()
+  target_include_directories( InterSpecLib SYSTEM PUBLIC ${Wt_INCLUDE_DIR} )
+endif()
+
 
 if( InterSpec_FETCH_DEPENDENCIES )
   target_link_libraries( InterSpecLib
     PUBLIC
-      Boost::math Boost::scope_exit Boost::uuid Boost::iostreams Boost::assign Boost::multi_array Boost::crc Boost::process Boost::crc
+      Boost::math Boost::scope_exit Boost::uuid Boost::iostreams Boost::assign Boost::multi_array Boost::crc Boost::process
       wt
       wthttp
       wtdbosqlite3
@@ -824,63 +854,16 @@ if( InterSpec_FETCH_DEPENDENCIES )
       ${wt_BINARY_DIR}
       ${boost_SOURCE_DIR}/libs/numeric/ublas/include
   )
-  
-  # Need to fix copying the "resources" directory and configs and stuff probably
-endif( InterSpec_FETCH_DEPENDENCIES )
-
-# We will explicitly set the Wt include directory, marked as SYSTEM, to
-#  avoid a ton of warning messages from those headers (if you take this
-#  next line out, things will still work just fine, just with more warnings)
-target_include_directories( InterSpecLib PUBLIC SYSTEM ${Wt_INCLUDE_DIR} )
-
-if(WIN32)
-    if( NOT InterSpec_FETCH_DEPENDENCIES )
-      if( BUILD_AS_UNIT_TEST_SUITE )
-        target_link_libraries(InterSpecLib PUBLIC  debug "${Wt_TEST_DEBUG_LIBRARY}" optimized "${Wt_TEST_LIBRARY}" )
-      else( BUILD_AS_UNIT_TEST_SUITE )
-        target_link_libraries(InterSpecLib PUBLIC  debug "${Wt_HTTP_DEBUG_LIBRARY}" optimized "${Wt_HTTP_LIBRARY}" )
-      endif( BUILD_AS_UNIT_TEST_SUITE )
-      
-      target_link_libraries(InterSpecLib PUBLIC
-        debug ${Wt_DEBUG_LIBRARY} ${Wt_DBO_DEBUG_LIBRARY} ${Wt_DBOSQLITE3_DEBUG_LIBRARY}
-        optimized ${Wt_LIBRARY} ${Wt_DBO_LIBRARY} ${Wt_DBOSQLITE3_LIBRARY}
-      )
-    endif( NOT InterSpec_FETCH_DEPENDENCIES )
-    
-    target_link_directories(InterSpecLib PUBLIC ${Boost_LIBRARY_DIR})
-else(WIN32)
+else( InterSpec_FETCH_DEPENDENCIES )
+  # Wt 4 modern CMake targets; include dirs and transitive deps are automatic
   if( BUILD_AS_UNIT_TEST_SUITE )
-    target_link_libraries(InterSpecLib PUBLIC ${Wt_TEST_LIBRARY})
+    target_link_libraries( InterSpecLib PUBLIC Wt::Test )
   else( BUILD_AS_UNIT_TEST_SUITE )
-    target_link_libraries(InterSpecLib PUBLIC ${Wt_HTTP_LIBRARY})
+    target_link_libraries( InterSpecLib PUBLIC Wt::HTTP )
   endif( BUILD_AS_UNIT_TEST_SUITE )
-  
-  target_link_libraries(InterSpecLib PUBLIC ${Wt_LIBRARY} ${Wt_DBO_LIBRARY} ${Wt_DBOSQLITE3_LIBRARY} )
-endif(WIN32)
 
-
-
-target_link_libraries(
-    InterSpecLib
-    PUBLIC
-    Threads::Threads
-    SpecUtils
-    SandiaDecay
-    Minuit2::Minuit2
-    Cuba-3.0
-    muparserx
-    Boost::thread
-    Boost::date_time
-    Boost::system
-    Boost::filesystem
-    Boost::program_options
-    Boost::regex
-    Boost::random
-    ZLIB::ZLIB
-    Eigen3::Eigen
-    Ceres::ceres
-    ${CMAKE_DL_LIBS}
-)
+  target_link_libraries( InterSpecLib PUBLIC Wt::Wt Wt::Dbo Wt::DboSqlite3 )
+endif( InterSpec_FETCH_DEPENDENCIES )
 
 
 if( BUILD_AS_OSX_APP )
@@ -937,22 +920,18 @@ if(MSVC AND (NOT hasParent))
   set_target_properties( InterSpecExe PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 endif(MSVC AND (NOT hasParent))
 
-#20180104: on my mac I tried compiling Wt with support for PDF (libharu), but only
-#  had the static libhpdfs, so I had to add bellow to link to this
-FIND_LIBRARY( HPDF_LIBRARY NAME hpdfs HINTS ${Wt_INCLUDE_DIR}/../lib )
-if(NOT HPDF_LIBRARY)
-    message(
-        "Could not find libharu - if Wt was built with PDF support, you will get link errors"
-    )
-else()
-    target_link_libraries(InterSpecLib PUBLIC ${HPDF_LIBRARY})
+# For pre-installed Wt 4, HPDF and PNG are linked transitively through Wt::Wt -> HPDF::HPDF.
+# For FetchContent builds, we may need explicit linking.
+if( InterSpec_FETCH_DEPENDENCIES )
+  FIND_LIBRARY( HPDF_LIBRARY NAME hpdf hpdfs HINTS ${Wt_INCLUDE_DIR}/../lib )
+  if( HPDF_LIBRARY )
+    target_link_libraries( InterSpecLib PUBLIC ${HPDF_LIBRARY} )
     FIND_LIBRARY( PNG_LIBRARY NAME png HINTS ${Wt_INCLUDE_DIR}/../lib )
-    if(NOT PNG_LIBRARY)
-        message(FATAL_ERROR "Could not find libpng - requred for libharu")
-    else()
-        target_link_libraries(InterSpecLib PUBLIC ${PNG_LIBRARY})
-    endif()
-endif()
+    if( PNG_LIBRARY )
+      target_link_libraries( InterSpecLib PUBLIC ${PNG_LIBRARY} )
+    endif( PNG_LIBRARY )
+  endif( HPDF_LIBRARY )
+endif( InterSpec_FETCH_DEPENDENCIES )
 
 #bellow is what I need to get things working 20131120 for statically linked
 if(TRY_TO_STATIC_LINK)
@@ -969,15 +948,9 @@ if(TRY_TO_STATIC_LINK)
         endif(USE_OSX_NATIVE_MENU)
     endif(APPLE AND NOT IOS)
 
-    if(USE_MYSQL_DB)
-        include(cmake/WtFindMysql.txt)
-        target_link_libraries(InterSpecLib PUBLIC ${MYSQL_LIBRARIES})
-    endif(USE_MYSQL_DB)
-
-    if(Wt_FCGI_LIBRARY)
-        include(cmake/WtFindFcgi.txt)
-        target_link_libraries(InterSpecLib PUBLIC ${FCGI_LIBRARIES})
-    endif(Wt_FCGI_LIBRARY)
+    if( USE_MYSQL_DB AND TARGET Wt::DboMySQL )
+      target_link_libraries( InterSpecLib PUBLIC Wt::DboMySQL )
+    endif( USE_MYSQL_DB AND TARGET Wt::DboMySQL )
 
     if(("${CMAKE_SYSTEM}" MATCHES "Linux") AND (NOT ANDROID))
         find_library( RT_LIB rt REQUIRES )
@@ -990,21 +963,23 @@ if(TRY_TO_STATIC_LINK)
 endif(TRY_TO_STATIC_LINK)
 
 
-if(Wt_DBOSQLITE3_LIBRARY)
-    find_file( HAS_WT_DBO_SQLITE3 "Sqlite3" PATHS "${Wt_INCLUDE_DIR}/Wt/Dbo/backend/" NO_DEFAULT_PATH )
-endif(Wt_DBOSQLITE3_LIBRARY)
+if( TARGET Wt::DboSqlite3 OR InterSpec_FETCH_DEPENDENCIES )
+  set( HAS_WT_DBO_SQLITE3 TRUE )
+  set( HAS_WTDBOSQLITE3 1 )
+endif()
 
-if(Wt_MYSQL_LIBRARY)
-    find_file( HAS_WT_DBO_MYSQL "MySQL" PATHS "${Wt_INCLUDE_DIR}/Wt/Dbo/backend/" NO_DEFAULT_PATH )
-endif(Wt_MYSQL_LIBRARY)
+if( TARGET Wt::DboMySQL )
+  set( HAS_WT_DBO_MYSQL TRUE )
+  set( HAS_WTDBOMYSQL 1 )
+endif()
 
 
-if(Wt_MYSQL_LIBRARY AND BUILD_FOR_WEB_DEPLOYMENT AND USE_MYSQL_DB)
+if(HAS_WT_DBO_MYSQL AND BUILD_FOR_WEB_DEPLOYMENT AND USE_MYSQL_DB)
     set(DATABASE_PASSWORD_FILE "/path/to/passwords/databases.xml"
         CACHE STRING
         "Location of the XML passwords file for connecting to MySQL database"
     )
-endif(Wt_MYSQL_LIBRARY AND BUILD_FOR_WEB_DEPLOYMENT AND USE_MYSQL_DB)
+endif(HAS_WT_DBO_MYSQL AND BUILD_FOR_WEB_DEPLOYMENT AND USE_MYSQL_DB)
 
 if(USE_MYSQL_DB AND NOT HAS_WT_DBO_MYSQL)
     MESSAGE(FATAL_ERROR   "You do not have the MySQL Wt Dbo backend installed, but you have asked to use it")
@@ -1023,10 +998,7 @@ configure_file(
 #    target_include_directories(InterSpecLib PUBLIC target)
 #endif(ANDROID)
 
-if( WIN32 )
-  # The following are only needed for Wt 3.7.1, not 3.3.4
-  target_link_libraries( InterSpecLib PUBLIC opengl32.lib d2d1.lib windowscodecs.lib Dwrite.lib )
-endif( WIN32 )
+# Wt 3.7.1-specific Windows libs (opengl32, d2d1, windowscodecs, Dwrite) removed for Wt 4
 
 # after the target_link_libraries() for InterSpecLib / InterSpecExe
 if (CMAKE_CXX_STANDARD LESS 17)

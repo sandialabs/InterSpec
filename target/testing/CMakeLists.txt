@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 
+cmake_policy(SET CMP0167 NEW)
+
 project( InterSpecTests )
 
 set( CMAKE_CXX_STANDARD 17 )
@@ -181,7 +183,7 @@ add_test( NAME TGammaInteractionCalc
 )
 
 # VoigtDistribution unit tests (requires Eigen3 and Ceres)
-find_package(Eigen3 QUIET)
+find_package(Eigen3 3.4...6.0 QUIET)
 find_package(Ceres QUIET)
 find_package(Boost COMPONENTS unit_test_framework QUIET)
 
